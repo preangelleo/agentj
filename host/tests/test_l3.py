@@ -325,6 +325,20 @@ class Doctor(unittest.TestCase):
         plain = _cli("doctor", "--offline", env=self.env).stdout
         self.assertRegex(plain, r"(?m)^[✓!✗] version")
 
+    def test_inside_claude_code_hidden_token_is_a_warning_not_a_failure(self):
+        # Claude Code hides CLAUDE_CODE_OAUTH_TOKEN from the commands it runs; doctor run by the agent must say so
+        with tempfile.TemporaryDirectory() as d:
+            st = State(pathlib.Path(d) / "s")
+            st.init(relay="ws://127.0.0.1:1")
+            fake = pathlib.Path(d) / "bin"; fake.mkdir()
+            (fake / "claude").write_text("#!/bin/sh\necho '9.9.9 (Claude Code)'\n"); (fake / "claude").chmod(0o755)
+            env = {"PATH": str(fake), "HOME": d, "CLAUDECODE": "1"}
+            with mock.patch.dict(os.environ, env, clear=True):
+                st.set_agent("claude", d) if hasattr(st, "set_agent") else None
+                c = doctor.check_agent_cli(st, {})
+            self.assertEqual(c["status"], "warn")
+            self.assertIn("inside Claude Code", c["detail"] if "detail" in c else json.dumps(c))
+
     def test_fail_only_for_blockers(self):
         with tempfile.TemporaryDirectory() as d:
             st = State(pathlib.Path(d) / "s")

@@ -248,6 +248,12 @@ def check_agent_cli(st: State, svc: dict) -> dict:
                   "安装 Claude Code（https://claude.com/claude-code）或 Codex / install Claude Code or Codex")
     k, exe, ver, login, where = found[0]
     s = f"{AGENT_LABEL[k]} {ver} · {tilde(os.path.abspath(exe))} · {where}"
+    if login == WARN and k == "claude" and os.environ.get("CLAUDECODE") == "1":
+        # run by Claude Code itself: it is logged in, but it hides CLAUDE_CODE_OAUTH_TOKEN from the commands it runs
+        return _c("agent_cli", WARN, s.replace("no login found", "no saved login file (this doctor runs inside Claude Code, "
+                  "which hides its own token from commands)"),
+                  "人类在自己的终端跑一次 `claude` 登录即可（服务要用）/ the human runs `claude` once in their own terminal "
+                  "and logs in, so the always-on service can use it")
     if login == WARN:
         return _c("agent_cli", WARN if not c else FAIL, s, f"运行 `{k}` 登录一次 / run `{k}` once and log in")
     if login == "env":

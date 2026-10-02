@@ -80,8 +80,15 @@ The ID (`aji_…`, valid 30 days) lets whoever holds it read your reports and ou
 (mode 0600); never print it, never paste it into this conversation. Use it only as `$(cat ~/.jarvis-install/feedback-id)`.
 If this fails, continue the install and tell your human; you can still email `me@agentjarvis.net`.
 
-**The feedback rule.** Whenever a step fails, or stalls for more than a few minutes, **tell your human first**, then
-send one report. Fields:
+**The feedback rule.** Send a report (after telling your human — see `owner_informed`) in each of these cases:
+- a step **fails**, or **stalls** for more than a few minutes;
+- something **surprised or confused** you, even if you got past it: a `!` from `jarvis doctor` you could not explain,
+  a version or wording that did not match this document, a command that needed a retry. Report it the first time it
+  happens (`resolved: true` + what you did) — these small frictions are what we most want to hear about;
+- your human **stops before the end** ("later", "not today", they leave): one report "stopped at Step N" + why, if they said;
+- the **end** (Step 12): the completion report, always.
+
+The limit is 4 reports per hour, so put several small frictions into one report if they come close together. Fields:
 
 | Field | Value |
 |---|---|
@@ -161,6 +168,8 @@ uv tool update-shell        # adds uv's tool directory to PATH; then open a new 
 jarvis --version
 jarvis doctor
 ```
+`jarvis --version` is the host program's own version (e.g. `0.6.0a1`); it is numbered separately from this document (`0.7.0`).
+
 Alternative without uv: `pipx install "git+https://github.com/preangelleo/agentjarvis#subdirectory=host"` (needs Python 3.11+).
 `jarvis doctor` lists what is ready and what is not (prerequisites, the fence, connectivity). Continue unless it reports
 an error that a later step does not fix; report anything you cannot explain.
