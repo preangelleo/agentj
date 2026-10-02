@@ -196,9 +196,17 @@ class Units(unittest.TestCase):
         self.assertEqual(a[a.index("--permission-prompt-tool") + 1], agents.PERM_TOOL)
         self.assertEqual(a[a.index("--disallowedTools") + 1], agents.PERM_TOOL)   # the model itself cannot call it
         self.assertEqual(a[a.index("--resume") + 1], "sid-1")
-        c = " ".join(agents.CodexAgent(None, {"kind": "codex", "dir": "/tmp", "model": None}).argv("tid"))
-        for bad in ("dangerously", "bypass", "--sandbox", "-s ", "approval"):
+        from jarvis_host.agent_codex import CodexAgent
+        cx = CodexAgent(None, {"kind": "codex", "dir": "/tmp", "model": None})
+        c = " ".join(cx.argv())
+        for bad in ("dangerously", "bypass", "--sandbox", "-s ", "approval", "-c", "--enable", "--disable"):
             self.assertNotIn(bad, c)
+        # app-server (ADR-A70): the only thread settings serve adds make Codex ask more, never less (Invariant 11)
+        self.assertEqual(cx.policy(), {"approvalsReviewer": "user", "approvalPolicy": "untrusted"})
+        cx.human = {"approval_policy": {"granular": {"rules": False, "sandbox_approval": False, "mcp_elicitations": False}}}
+        self.assertEqual(cx.policy(), {"approvalsReviewer": "user"})        # a granular policy of theirs stays theirs
+        self.assertEqual(CodexAgent(None, {"kind": "codex", "dir": "/tmp", "model": None}, research=True).policy()["sandbox"],
+                         "read-only")
 
 
 # ------------------------------------------------------------------ approval flows (no relay)
@@ -366,9 +374,9 @@ class Flows(unittest.TestCase):
             return n
         n = asyncio.run(go())
         to_b = [o for c, o in self.sent[:n] if c == 12]
-        self.assertEqual([o["t"] for o in to_b], ["status", "push_key", "msg", "msg"])
-        self.assertEqual((to_b[2]["from"], to_b[2]["name"]), ("device", "A"))
-        self.assertEqual(to_b[3]["from"], "agent")
+        self.assertEqual([o["t"] for o in to_b], ["status", "estop_state", "push_key", "msg", "msg"])
+        self.assertEqual((to_b[3]["from"], to_b[3]["name"]), ("device", "A"))
+        self.assertEqual(to_b[4]["from"], "agent")
         to_a = [o for c, o in self.sent[n:] if c == 11]
         self.assertEqual([o.get("seq") for o in to_a if o["t"] == "msg"], [2])
         self.assertEqual(to_a[0], {"t": "status", "s": "none", "agent": None})
@@ -484,9 +492,12 @@ class Chain(unittest.TestCase):
                 with socket.socket(socket.AF_UNIX) as c:
                     c.settimeout(5)
                     c.connect(str(self.st.perm_sock_path))
-                    c.sendall(json.dumps({"t": "claim", "token": "nope"}).encode() + b"\n")
-                    c.sendall(json.dumps({"t": "ask", "id": 1, "tool": "Bash", "input": {"command": "x"}}).encode() + b"\n")
-                    return c.recv(4096)
+                    try:
+                        c.sendall(json.dumps({"t": "claim", "token": "nope"}).encode() + b"\n")
+                        c.sendall(json.dumps({"t": "ask", "id": 1, "tool": "Bash", "input": {"command": "x"}}).encode() + b"\n")
+                        return c.recv(4096)
+                    except (ConnectionResetError, BrokenPipeError):   # closed before the second line: nothing either
+                        return b""
             ans = await asyncio.to_thread(call)
             host.stopping.set()
             await run

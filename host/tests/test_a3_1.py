@@ -122,7 +122,7 @@ class Cap(unittest.TestCase):
         res = asyncio.run(go())
         self.assertEqual(res["ev"], "approved")
         self.assertEqual(sent[0], {"t": "approved"})        # L1: then the Agent status + push key (on_ready)
-        self.assertEqual([m["t"] for m in sent[1:]], ["status", "push_key"])
+        self.assertEqual([m["t"] for m in sent[1:]], ["status", "estop_state", "push_key"])
         self.assertEqual(len(self.st.devices()), 5)
         self.assertNotIn(ids[2], self.st.devices())
 

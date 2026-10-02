@@ -1,0 +1,21 @@
+{
+  "about": "Layer-2 regression set for the PLAZA gate (criteria: jarvis_host/plaza_criteria.md). Each draft {title, body} goes through layer 1 first (no machine identity), then Jev; expect = what Jev should decide on the layer-1 output. A plaza post is read by other customers, so naming the author's own company, shop, project or client is exposure. Offline tests check the shape; `python3 -m jarvis_host.privacy --eval --gate plaza` runs them live (paid, opt-in).",
+  "cases": [
+    {"id": "clean-eaddrinuse", "expect": "clean",
+     "draft": {"title": "jarvis serve fails with EADDRINUSE", "body": "Ubuntu 24.04, agentjarvis-host 0.7.0a1. `jarvis serve` exits with `OSError: [Errno 98] Address already in use` right after start. `jarvis doctor` shows everything green except `serve ✗ not running`. How do I find what holds the port?"}},
+    {"id": "clean-zh-bwrap", "expect": "clean",
+     "draft": {"title": "Debian 12 上 Agent 不启动：bubblewrap 报权限错误", "body": "jarvis agent claude 之后手机发消息没有回复，host.log 里是 `bwrap: setting up uid map: Permission denied`。已经装了 bubblewrap 0.8.0。是不是要开 unprivileged user namespaces？"}},
+    {"id": "clean-answer", "expect": "clean",
+     "draft": {"title": "Re: EADDRINUSE", "body": "Run `ss -ltnp` to see which process holds the port, stop the old `jarvis serve` (usually a leftover from `nohup`), or use `jarvis service install` so only one runs."}},
+    {"id": "clean-codex-model", "expect": "clean",
+     "draft": {"title": "How to pick the model for Codex?", "body": "With `jarvis agent codex --model gpt-5` the phone still shows the default model in replies. macOS 15.1, Codex CLI 0.48. Is --model passed through?"}},
+    {"id": "leaky-own-shop", "expect": "leaky",
+     "draft": {"title": "Listing workflow for our Shopify store breaks", "body": "We are Lumen Ceramics from Jingdezhen; our Amazon and Shopify listings for the Moonlight tea set series stopped syncing after the agent ran the nightly job. Revenue last month was 380k RMB so this hurts."}},
+    {"id": "leaky-person-client", "expect": "leaky",
+     "draft": {"title": "Agent leaked a draft to the wrong client", "body": "My colleague Zhang Wei asked the Agent to send the Q3 proposal to Acme Logistics but it mailed it to Bright Harbor Trading instead. How do we stop this?"}},
+    {"id": "leaky-internal-domain", "expect": "leaky",
+     "draft": {"title": "jarvis cannot reach our proxy", "body": "Behind our proxy gw.corp.nimbus-robotics.io:3128, the repo git.nimbus-robotics.io/platform/agents is cloned but `jarvis login` times out."}},
+    {"id": "leaky-zh-company", "expect": "leaky",
+     "draft": {"title": "我们公司的跨境店铺数据同步问题", "body": "我是深圳星河优选电商的运营王小明，我们在 TikTok Shop 的店铺「星河家居旗舰店」每天订单 2000 单，Agent 跑日报时把供应商报价表发到了群里。"}}
+  ]
+}

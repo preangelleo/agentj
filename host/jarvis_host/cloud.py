@@ -41,6 +41,11 @@ CTX_RENAME = "agentjarvis-host-rename-v1"
 CTX_DECLINE = "agentjarvis-host-decline-v1"   # L2 / G-A11: the human at the host said no to the tenant it was bound to
 CTX_SEAT_BIND = "agentjarvis-host-seat-bind-v1"   # seat setup §4: bind this host to one seat with a setup code
 CTX_SEAT_LEAVE = "agentjarvis-host-seat-leave-v1"   # review SS-02: take this seat-bound host out of its company
+# Agent plaza P2 (PROTOCOL §7 plaza routes; jarvis_host/plaza.py): one context per route, so no signature is valid on two
+PLAZA_KINDS = ("search", "get", "mine", "post", "reply", "resolve", "report")
+CTX_PLAZA = {k: f"agentjarvis-host-plaza-{k}-v1" for k in PLAZA_KINDS}
+CTX_PLAZA_POST = CTX_PLAZA["post"]
+MAX_PLAZA_RESPONSE = 2 * 1024 * 1024   # a post with 50 replies of ≤ 4000 characters each
 MAX_SUGGESTIONS = 3
 MAX_SYNC_ITEMS = 10
 UNBIND_RESULTS = ("revoked", "unknown_device", "disabled", "rate_limited")
@@ -158,8 +163,9 @@ def status_class(status: int) -> str:
     return f"http_{status // 100}xx"
 
 
-def post_json(url: str, payload: dict, timeout: float = HTTP_TIMEOUT) -> tuple[int, dict]:
-    """POST JSON with TLS verification on. Returns (status, response object or {}). Raises CloudError on transport errors."""
+def post_json(url: str, payload: dict, timeout: float = HTTP_TIMEOUT, max_response: int = MAX_RESPONSE) -> tuple[int, dict]:
+    """POST JSON with TLS verification on. Returns (status, response object or {}). Raises CloudError on transport errors.
+    Answers larger than `max_response` bytes are read as {} (16 KiB by default; the plaza reads up to 2 MiB)."""
     check_url(url)
     data = json.dumps(payload, separators=(",", ":")).encode()
     if len(data) > MAX_ENVELOPE:
@@ -176,11 +182,11 @@ def post_json(url: str, payload: dict, timeout: float = HTTP_TIMEOUT) -> tuple[i
                                           "user-agent": AGENT})
     try:
         with opener.open(req, timeout=timeout) as r:
-            status, raw = r.status, r.read(MAX_RESPONSE + 1)
+            status, raw = r.status, r.read(max_response + 1)
     except urllib.error.HTTPError as e:
         status = e.code
         try:
-            raw = e.read(MAX_RESPONSE + 1)
+            raw = e.read(max_response + 1)
         except Exception:
             raw = b""
     except urllib.error.URLError as e:
@@ -190,7 +196,7 @@ def post_json(url: str, payload: dict, timeout: float = HTTP_TIMEOUT) -> tuple[i
     except (OSError, http.client.HTTPException, ValueError):
         raise CloudError("network") from None
     obj: dict = {}
-    if raw and len(raw) <= MAX_RESPONSE:
+    if raw and len(raw) <= max_response:
         try:
             parsed = json.loads(raw)
             obj = parsed if isinstance(parsed, dict) else {}
@@ -656,3 +662,21 @@ def rename(st, name: str, *, post: Callable = post_json, now: Callable = time.ti
     if status >= 500:
         return RenameResult("unreachable", status=status_class(status))
     return RenameResult("fail", status=status_class(status) if status != 200 else "bad_response")
+
+
+# ------------------------------------------------------------------ Agent plaza P2 (jarvis_host/plaza.py builds and renders)
+def plaza_call(st, kind: str, fields: dict, *, post: Callable = post_json, now: Callable = time.time) -> tuple[int, dict]:
+    """One signed `/v1/host/plaza/<kind>` (PROTOCOL §7). Needs a Dashboard link (cloud.json): raises CloudError("unlinked")
+    otherwise. Returns (status, answer object) — the caller whitelists the answer; nothing in it is ever executed, written to
+    the allowlist or used as a path (plaza text is data). Transport errors raise CloudError."""
+    if kind not in PLAZA_KINDS:
+        raise ValueError(kind)
+    cloud = read_cloud(st)
+    if not cloud:
+        raise CloudError("unlinked")
+    url = api_url(st, cloud) + f"/v1/host/plaza/{kind}"
+    inner = {"v": 1, "t": f"plaza_{kind}", "channel": channel_of(st), "ts": int(now()), **fields}
+    env = envelope(CTX_PLAZA[kind], inner, st.signing_key())
+    if len(json.dumps(env, separators=(",", ":"))) > MAX_ENVELOPE:
+        raise CloudError("too_large")
+    return post(url, env, max_response=MAX_PLAZA_RESPONSE)

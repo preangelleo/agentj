@@ -81,10 +81,33 @@ export const APPROVE_CONTEXT = 'agentjarvis-approve-v1';
 const hex = (b) => Array.from(b, (x) => x.toString(16).padStart(2, '0')).join('');
 /** hex SHA-256 of what the phone shows for a request: tool, newline, summary (UTF-8). */
 export async function shownDigest(tool, summary) { return hex(await sha256(enc.encode(`${tool}\n${summary}`))); }
-/** The exact bytes a device signs (Ed25519) to answer a request. decision: 'allow' | 'deny'. */
-export async function approveMessage(channel, device, id, decision, tool, summary) {
-  if (decision !== 'allow' && decision !== 'deny') throw new Error('bad decision');
-  return enc.encode(`${APPROVE_CONTEXT}\n${channel}\n${device}\n${id}\n${decision}\n${await shownDigest(tool, summary)}`);
+/** The exact bytes a device signs (Ed25519) to answer a request. decision: 'allow' | 'deny' | 'allow_batch'.
+ *  allow_batch (batch approval of the same low-risk kind for the rest of the turn) also signs hex SHA-256 of the scope text
+ *  exactly as shown, on one more line, so the host can tell the human agreed to THAT scope and no wider one. */
+export async function approveMessage(channel, device, id, decision, tool, summary, scope) {
+  if (decision !== 'allow' && decision !== 'deny' && decision !== 'allow_batch') throw new Error('bad decision');
+  if ((decision === 'allow_batch') !== (typeof scope === 'string' && scope.length > 0)) throw new Error('scope only with allow_batch');
+  const base = `${APPROVE_CONTEXT}\n${channel}\n${device}\n${id}\n${decision}\n${await shownDigest(tool, summary)}`;
+  return enc.encode(decision === 'allow_batch' ? `${base}\n${hex(await sha256(enc.encode(scope)))}` : base);
+}
+// ---------------------------------------------------------------- phone controls (PROTOCOL §8). Mirrors host/jarvis_host/controls.py.
+export const CONTROL_CONTEXT = 'agentjarvis-control-v1';
+export const CONTROL_ACTIONS = ['mem_rm', 'mem_undo', 'estop', 'resume', 'task_on', 'task_off'];
+/** The text whose SHA-256 a control signature covers (the target, with the content hash the phone saw). */
+export function controlObject(action, o) {
+  if (action === 'mem_rm') return `${o.src}\n${o.file}\n${o.fsha}\n${o.iid}`;
+  if (action === 'mem_undo') return String(o.id);
+  if (action === 'estop' || action === 'resume') return 'all';
+  if (action === 'task_on' || action === 'task_off') return `${o.id}\n${o.tsha}`;
+  throw new Error('bad action');
+}
+/** The exact bytes a device signs for a write command: delete / undo a memory item, stop everything, resume, enable / disable a
+ *  scheduled task. nonce = 32 hex, ts = ms since the epoch (the host accepts ±120 s, each nonce once). */
+export async function controlMessage(channel, device, action, nonce, ts, o) {
+  if (!CONTROL_ACTIONS.includes(action)) throw new Error('bad action');
+  if (!/^[0-9a-f]{32}$/.test(nonce) || !Number.isInteger(ts)) throw new Error('bad nonce / ts');
+  const d = hex(await sha256(enc.encode(controlObject(action, o))));
+  return enc.encode(`${CONTROL_CONTEXT}\n${channel}\n${device}\n${action}\n${nonce}\n${ts}\n${d}`);
 }
 /** The device's Ed25519 approval key: private half non-extractable (it can sign, never leave WebCrypto); public half raw 32 B. */
 export async function generateSigningKeypair() {

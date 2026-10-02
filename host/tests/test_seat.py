@@ -424,14 +424,17 @@ class Detect(unittest.TestCase):
         # the one running the install changes nothing: still ask
         self.assertEqual(self.run_detect(CLAUDECODE="1")["decision"], "ask_owner")
 
-    def test_opencode_detected_not_supported(self):
+    def test_opencode_counts_once_it_has_a_model_key(self):
+        """Since the OpenCode adapter (ADR-A55): supported; usable when its own key store exists (`opencode auth login`)."""
         self.fake("opencode", "0.9.0")
         self.fake("codex")
         self.cred(".codex/auth.json")
         d = self.run_detect()
         oc = d["harnesses"][2]
-        self.assertEqual((oc["installed"], oc["supported"], oc["note"]), (True, False, "coming in a later version"))
+        self.assertEqual((oc["installed"], oc["supported"], oc["logged_in"]), (True, True, False))
         self.assertEqual(d["decision"], "use:codex")
+        self.cred(".local/share/opencode/auth.json")
+        self.assertEqual(self.run_detect()["decision"], "ask_owner")
 
     def test_version_must_answer(self):
         self.fake("claude", rc=1)

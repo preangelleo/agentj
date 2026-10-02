@@ -171,11 +171,27 @@ if mac:
             s.close()
             return "connected to tmux " + n
     t("tmux socket", tmux_sock)
+# G-A56: other programs' control sockets. Only visibility for herdr (never a byte to the human's real herdr session); a bare
+# connect for the container engine (the daemon is sent nothing).
+def herdr_sock():
+    p = os.path.join(home, ".config", "herdr", "herdr.sock")
+    os.stat(p)
+    return "visible"
+t("herdr socket", herdr_sock)
+t("herdr folder", lambda: os.listdir(os.path.join(home, ".config", "herdr")) or (_ for _ in ()).throw(FileNotFoundError("empty")))
+def docker_sock():
+    for p in ("/var/run/docker.sock", "/run/docker.sock"):
+        if os.path.exists(p):
+            s = socket.socket(socket.AF_UNIX); s.settimeout(2); s.connect(p); s.close()
+            return "connected " + p
+    raise FileNotFoundError("no docker socket")
+t("docker socket", docker_sock)
 r["tmp"] = sorted(os.listdir("/tmp")) if not mac else "shared on macOS (no mount namespace)"
 rt = os.environ.get("XDG_RUNTIME_DIR") or f"/run/user/{os.getuid()}"
 r["runtime"] = sorted(os.listdir(rt)) if os.path.isdir(rt) else []
-r["env"] = sorted(k for k in ("DBUS_SESSION_BUS_ADDRESS", "WAYLAND_DISPLAY", "DISPLAY", "TMUX", "SSH_AUTH_SOCK",
-                              "AGENTJARVIS_STATE_DIR") if k in os.environ)
+r["env"] = sorted(k for k in os.environ if k in ("DBUS_SESSION_BUS_ADDRESS", "WAYLAND_DISPLAY", "DISPLAY", "TMUX", "SSH_AUTH_SOCK",
+                                                "AGENTJARVIS_STATE_DIR", "DOCKER_HOST")
+                  or k.startswith(("HERDR_", "ZELLIJ", "WEZTERM_", "KITTY_", "NVIM")))
 open("attack.json", "w").write(json.dumps(r, ensure_ascii=False, indent=1))
 print("done")
 '''
@@ -269,7 +285,8 @@ class FencedChain(unittest.TestCase):
                   and not (private and k == "rename above state dir") and not (private_code and k == "rename above jarvis code")}
         self.assertEqual(opened, {}, f"reached from inside the fence: {opened}")
         for k in ("read host_ed25519.key", "read devices.json", "read approver.json", "control socket", "re-claim perm.sock",
-                  "serve /proc root", "write jarvis code", "write jarvis code file", "signal serve"):
+                  "serve /proc root", "write jarvis code", "write jarvis code file", "signal serve", "herdr socket",
+                  "herdr folder", "docker socket"):
             self.assertTrue(r[k].startswith("blocked:"), k)
         if sys.platform != "darwin":
             self.assertTrue(r["permtool environ"].startswith("blocked:"), "permtool environ")
@@ -421,6 +438,164 @@ class Decide(unittest.TestCase):
         self.assertEqual(len(self.st.devices()), 1)
 
 
+INSIDE = r"""
+import json, os, socket, subprocess, sys
+out = {"env": sorted(k for k in os.environ if k.startswith(("HERDR_", "ZELLIJ", "WEZTERM_", "KITTY_", "TMUX", "NVIM"))
+                     or k in ("DOCKER_HOST", "CONTAINER_HOST"))}
+for name, p in json.loads(sys.argv[1]).items():
+    try:
+        s = socket.socket(socket.AF_UNIX); s.settimeout(3); s.connect(p); s.close()
+        out[name] = "open"
+    except OSError as e:
+        out[name] = "blocked:" + type(e).__name__
+    out[name + " exists"] = os.path.exists(p) and not os.path.samefile(p, "/dev/null")
+if len(sys.argv) > 2:   # herdr's own client, as an injected Agent would use it
+    r = subprocess.run([sys.argv[2], "status", "server"], capture_output=True, text=True, timeout=20)
+    out["herdr status"] = (r.stdout + r.stderr).strip()[:200]
+print(json.dumps(out))
+"""
+
+
+def _herdr() -> str | None:
+    import shutil
+    return shutil.which("herdr")
+
+
+@unittest.skipUnless(_fence_ok(), "fence not available on this machine")
+class ControlSockets(unittest.TestCase):
+    """G-A56: control sockets outside the runtime dir and /tmp. A herdr server in a TEMPORARY HOME (never the human's own
+    session: no HERDR_* of this shell reaches it, its socket is under the temp HOME), a listening socket in an arbitrary
+    folder (tmux -S / emacs / nvim style), and the docker socket."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory(prefix="aj-ctl-")
+        self.home = pathlib.Path(self.tmp.name) / "home"
+        (self.home / "proj").mkdir(parents=True)
+        self.st = _state(self.tmp.name, passphrase=False)
+        self.st.perm_dir.mkdir(exist_ok=True)
+        self.work = self.home / "proj"
+        self.procs = []
+
+    def tearDown(self):
+        for p in self.procs:
+            if p.poll() is None:
+                p.terminate()
+                try:
+                    p.wait(5)
+                except Exception:  # noqa: BLE001
+                    p.kill()
+        self.tmp.cleanup()
+
+    def _env(self, **extra) -> dict:
+        env = {"PATH": os.environ.get("PATH", "/usr/bin:/bin"), "HOME": str(self.home), "LANG": "C.UTF-8"}
+        env.update(extra)
+        return env
+
+    def _inside(self, env, targets: dict, allow_docker=False, herdr=None) -> dict:
+        import subprocess
+        if sys.platform == "darwin":
+            a = fence.sandbox_argv(self.st, str(self.work), home=str(self.home), allow_docker=allow_docker, environ=env)
+        else:
+            a = fence.bwrap_argv(self.st, str(self.work), home=str(self.home), runtime="", allow_docker=allow_docker, environ=env)
+        argv = a + [sys.executable, "-c", INSIDE, json.dumps(targets)] + ([herdr] if herdr else [])
+        r = subprocess.run(argv, capture_output=True, text=True, env=env, timeout=60)
+        self.assertEqual(r.returncode, 0, r.stderr[-800:])
+        return json.loads(r.stdout)
+
+    def test_hide_env_by_prefix(self):
+        env = {"HERDR_SOCKET_PATH": "/x", "HERDR_PANE_ID": "1", "HERDR_NEW_THING": "1", "ZELLIJ_SESSION_NAME": "s",
+               "WEZTERM_UNIX_SOCKET": "/w", "KITTY_WINDOW_ID": "3", "NVIM": "/n", "VSCODE_IPC_HOOK_CLI": "/v", "DOCKER_HOST": "unix:///d",
+               "HOME": "/h", "PATH": "/p"}
+        names = fence.hide_env(env)
+        for k in env:
+            if k not in ("HOME", "PATH"):
+                self.assertIn(k, names)
+        self.assertNotIn("HOME", names)
+        self.assertNotIn("DOCKER_HOST", fence.hide_env(env, allow_docker=True))
+
+    @unittest.skipUnless(_herdr(), "herdr not installed")
+    def test_a_herdr_server_is_unreachable_from_inside(self):
+        import subprocess
+        herdr = _herdr()
+        env = self._env(TERM="xterm")
+        srv = subprocess.Popen([herdr, "server"], env=env, cwd=str(self.home), stdin=subprocess.DEVNULL,
+                               stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
+        self.procs.append(srv)
+        sock = self.home / ".config" / "herdr" / "herdr.sock"
+        t0 = time.monotonic()
+        while not sock.exists() and time.monotonic() - t0 < 15:
+            time.sleep(0.1)
+        self.assertTrue(sock.exists(), "test herdr server started in the temporary HOME")
+        outside = subprocess.run([herdr, "status", "server"], env=env, capture_output=True, text=True, timeout=20).stdout
+        self.assertIn("status: running", outside, "control: outside the fence the herdr client reaches the server")
+        # what an Agent started from a herdr pane inherits
+        agent_env = self._env(HERDR_ENV="1", HERDR_SOCKET_PATH=str(sock), HERDR_PANE_ID="p1", HERDR_BIN_PATH=herdr)
+        r = self._inside(agent_env, {"herdr": str(sock)}, herdr=herdr)
+        try:
+            subprocess.run([herdr, "server", "stop"], env=env, capture_output=True, timeout=20)
+        except Exception:  # noqa: BLE001
+            pass
+        if os.environ.get("AJ_EVIDENCE_DIR"):
+            pathlib.Path(os.environ["AJ_EVIDENCE_DIR"], "fence-herdr.json").write_text(
+                json.dumps({"outside": outside.strip()[:200], "inside": r}, ensure_ascii=False, indent=1))
+        self.assertTrue(r["herdr"].startswith("blocked"), r)
+        self.assertFalse(r["herdr exists"], r)
+        self.assertNotIn("status: running", r["herdr status"], r)   # Linux: "not running"; macOS: "Operation not permitted"
+        self.assertEqual(r["env"], [], "no HERDR_* variable inside")
+
+    @unittest.skipUnless(sys.platform == "linux", "Linux: from /proc/net/unix (macOS: named folders only, G-A56)")
+    def test_a_listening_socket_in_any_folder_is_hidden(self):
+        import socket
+        p = self.home / "proj" / "tmux-custom.sock"     # tmux -S / emacs / nvim --listen style: an arbitrary path
+        srv = socket.socket(socket.AF_UNIX)
+        srv.bind(str(p))
+        srv.listen()
+        try:
+            c = socket.socket(socket.AF_UNIX)
+            c.connect(str(p))
+            c.close()                                    # control: reachable outside
+            r = self._inside(self._env(), {"custom": str(p)})
+        finally:
+            srv.close()
+        self.assertTrue(r["custom"].startswith("blocked"), r)
+        a = fence.bwrap_argv(self.st, str(self.work), home=str(self.home), runtime="", environ=self._env())
+        self.assertNotIn(str(self.st.perm_sock_path), a, "the permission socket is never hidden")
+
+    def test_docker_socket_is_hidden_unless_the_human_allowed_it(self):
+        import socket
+        dock = next((p for p in ("/run/docker.sock", "/var/run/docker.sock") if os.path.exists(p)), None)
+        if not dock or not os.access(dock, os.W_OK):
+            self.skipTest("no docker socket this user can use")
+        try:
+            c = socket.socket(socket.AF_UNIX); c.settimeout(3); c.connect(dock); c.close()
+        except OSError:
+            self.skipTest("the docker daemon is not running")
+        env = self._env(DOCKER_HOST=f"unix://{dock}")
+        r = self._inside(env, {"docker": dock})
+        self.assertTrue(r["docker"].startswith("blocked"), r)
+        self.assertEqual(r["env"], [], "DOCKER_HOST unset")
+        r2 = self._inside(env, {"docker": dock}, allow_docker=True)
+        self.assertEqual(r2["docker"], "open", "--allow-docker: the human's explicit choice")
+        self.assertEqual(r2["env"], ["DOCKER_HOST"])
+
+    @unittest.skipUnless(sys.platform == "linux", "bubblewrap argv")
+    def test_control_folders_and_the_runtime_dir_without_xdg(self):
+        (self.home / ".config" / "herdr").mkdir(parents=True)
+        (self.home / ".screen").mkdir()
+        a = fence.bwrap_argv(self.st, str(self.work), home=str(self.home), runtime="", environ=self._env())
+        tmpfs = [a[i + 1] for i, x in enumerate(a) if x == "--tmpfs"]
+        self.assertIn(str((self.home / ".config" / "herdr").resolve()), tmpfs)
+        self.assertIn(str((self.home / ".screen").resolve()), tmpfs)
+        if os.path.isdir(f"/run/user/{os.getuid()}"):
+            self.assertIn(os.path.realpath(f"/run/user/{os.getuid()}"), tmpfs, "hidden also when XDG_RUNTIME_DIR is unset")
+        self.assertLess(tmpfs.index(str((self.home / ".config" / "herdr").resolve())), tmpfs.index(str(self.st.root.resolve())))
+        # never the home itself or a folder that holds the Agent's folder
+        d = fence.control_dirs(str(self.home), {"HERDR_SOCKET_PATH": str(self.home / "h.sock"),
+                                                "SCREENDIR": str(self.work)}, workdir=str(self.work))
+        self.assertNotIn(str(self.home.resolve()), d)
+        self.assertNotIn(str(self.work.resolve()), d)
+
+
 class FenceConfig(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
@@ -445,6 +620,16 @@ class FenceConfig(unittest.TestCase):
         cfg["agent"]["fence"] = "no"
         self.st.write_private(self.st.config_path, json.dumps(cfg).encode())
         self.assertTrue(self.st.agent_config()["fence"], "anything but an explicit false reads as fenced")
+        self.assertFalse(self.st.agent_config()["docker"], "docker hidden by default (G-A56)")
+        cfg["agent"]["docker"] = "yes"
+        self.st.write_private(self.st.config_path, json.dumps(cfg).encode())
+        self.assertFalse(self.st.agent_config()["docker"], "anything but an explicit true keeps docker hidden")
+        self.st.set_agent_config("claude", str(work), docker=True)
+        self.assertTrue(self.st.agent_config()["docker"])
+        from jarvis_host import doctor
+        row = doctor.check_agent(self.st)
+        self.assertEqual(row["status"], doctor.WARN)
+        self.assertIn("--allow-docker", row["summary"])
 
     def test_fence_unavailable_means_the_agent_is_not_started(self):
         work = pathlib.Path(self.tmp.name) / "w"

@@ -61,6 +61,24 @@
     "body": "eyJ2IjoxLCJ0Ijoic2VhdF9iaW5kIiwiY2hhbm5lbCI6Im9kT0xrYXVTeWpId2Y2VldhV19pS3ciLCJ0cyI6MTc5MDAwMDAwMCwidG9rZW4iOiJhanRfQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQSIsIm5hbWUiOiLmtYvor5XkuIDlj7cifQ",
     "sig": "Q1w4Ep6hT4u4_OcAD_XaVRrqfrwqL2zjJFArRt7hwmhKSzgvYX81nalYOhS-THGNPo4zo67c65B25KCrRCFYBA"
    }
+  },
+  {
+   "context": "agentjarvis-host-plaza-post-v1",
+   "inner": {
+    "v": 1,
+    "t": "plaza_post",
+    "channel": "odOLkauSyjHwf6VWaW_iKw",
+    "ts": 1790000000,
+    "nonce": "AAAAAAAAAAAAAAAAAAAAAA",
+    "title": "jarvis serve 报错 EADDRINUSE",
+    "body": "端口被占用，怎么办？\n第二行",
+    "show_name": false
+   },
+   "envelope": {
+    "pk": "A6EHv_POEL4dcN0Y50vAmWfk1jCbpQ1fHdyGZBJVMbg",
+    "body": "eyJ2IjoxLCJ0IjoicGxhemFfcG9zdCIsImNoYW5uZWwiOiJvZE9Ma2F1U3lqSHdmNlZXYVdfaUt3IiwidHMiOjE3OTAwMDAwMDAsIm5vbmNlIjoiQUFBQUFBQUFBQUFBQUFBQUFBQUFBQSIsInRpdGxlIjoiamFydmlzIHNlcnZlIOaKpemUmSBFQUREUklOVVNFIiwiYm9keSI6Iuerr-WPo-iiq-WNoOeUqO-8jOaAjuS5iOWKnu-8n1xu56ys5LqM6KGMIiwic2hvd19uYW1lIjpmYWxzZX0",
+    "sig": "cDrCCirK0I-2lq92NBKQUaJTfcwTkjnz2mUN9Ttf8Q6r5DLynu2GMrUIwe8Gt-7TWgTfrScLkgKJN1gOOViwBg"
+   }
   }
  ]
 }

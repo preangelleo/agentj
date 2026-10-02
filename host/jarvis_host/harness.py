@@ -1,9 +1,11 @@
 """`jarvis agent detect [--json]` (seat setup §4.1, item 9): which agent harnesses this computer has, and which are usable.
 
-For `claude` and `codex`: installed = the binary is on PATH (or AGENTJARVIS_CLAUDE_BIN / AGENTJARVIS_CODEX_BIN, the same
-lookup `serve` uses) and `--version` answers; logged in = a credential file / Keychain item *exists* — never opened, never
-read. `opencode` is detected but not supported yet. Decision: 0 usable → "none", exactly 1 → "use:<name>", ≥ 2 →
-"ask_owner" (the installing agent must ask its human — it never picks one itself, never the one running the install).
+For `claude`, `codex` and `opencode`: installed = the binary is on PATH (or AGENTJARVIS_CLAUDE_BIN / AGENTJARVIS_CODEX_BIN /
+AGENTJARVIS_OPENCODE_BIN, the same lookup `serve` uses) and `--version` answers; logged in = a credential file / Keychain item
+*exists* — never opened, never read (OpenCode: its own credential store `<XDG_DATA_HOME or ~/.local/share>/opencode/auth.json`,
+written by `opencode auth login`, or a model vendor's API-key variable set, by NAME). Decision: 0 usable → "none", exactly 1 →
+"use:<name>", ≥ 2 → "ask_owner" (the installing agent must ask its human — it never picks one itself, never the one running
+the install). OpenCode counts like the other two.
 
 Logged-in values: True (file / Keychain item / env var by NAME), False (nothing found), None = cannot tell: Claude Code
 with no saved login file while this command runs inside Claude Code itself (CLAUDECODE=1), which hides its own token from
@@ -21,8 +23,12 @@ from .service import tilde
 from .text import clean_line
 
 LABEL = {"claude": "Claude Code", "codex": "Codex", "opencode": "OpenCode"}
-BIN_ENV = {"claude": "AGENTJARVIS_CLAUDE_BIN", "codex": "AGENTJARVIS_CODEX_BIN"}
-SUPPORTED = ("claude", "codex")
+BIN_ENV = {"claude": "AGENTJARVIS_CLAUDE_BIN", "codex": "AGENTJARVIS_CODEX_BIN", "opencode": "AGENTJARVIS_OPENCODE_BIN"}
+SUPPORTED = ("claude", "codex", "opencode")
+# API-key variables of the model vendors OpenCode knows (its bundled models.dev list, 1.18.32): checked by NAME only
+OPENCODE_KEY_ENV = ("ZHIPU_API_KEY", "DEEPSEEK_API_KEY", "DASHSCOPE_API_KEY", "MOONSHOT_API_KEY", "ARK_API_KEY",
+                    "MINIMAX_API_KEY", "SILICONFLOW_CN_API_KEY", "OPENROUTER_API_KEY", "OPENCODE_API_KEY", "OPENAI_API_KEY",
+                    "ANTHROPIC_API_KEY", "GEMINI_API_KEY", "GOOGLE_GENERATIVE_AI_API_KEY")
 NAMES = ("claude", "codex", "opencode")
 LATER = "coming in a later version"
 VERSION_TIMEOUT = 15
@@ -76,6 +82,22 @@ def codex_login() -> tuple[str, str]:
     return "warn", "no login found"
 
 
+def opencode_login() -> tuple[str, str]:
+    """OpenCode keeps vendor keys in its own store (`opencode auth login`): existence only, never content."""
+    data = os.environ.get("XDG_DATA_HOME") or os.path.expanduser("~/.local/share")
+    p = os.path.join(data, "opencode", "auth.json")
+    if os.path.isfile(p):
+        return "ok", f"login {tilde(p)}"
+    for k in OPENCODE_KEY_ENV:
+        if os.environ.get(k):
+            return "env", f"env {k} (name only)"
+    return "warn", "no model key found (opencode auth login)"
+
+
+def login_of(name: str) -> tuple[str, str]:
+    return {"claude": claude_login, "codex": codex_login, "opencode": opencode_login}[name]()
+
+
 def _one(name: str) -> dict:
     exe = agent_bin(name)
     version = version_of(exe) if exe else None
@@ -86,7 +108,7 @@ def _one(name: str) -> dict:
         return rec
     if not rec["installed"]:
         return rec
-    status, _ = claude_login() if name == "claude" else codex_login()
+    status, _ = login_of(name)
     if status in ("ok", "env"):
         rec["logged_in"] = True
     elif name == "claude" and os.environ.get("CLAUDECODE") == "1":
@@ -116,7 +138,8 @@ def summary(d: dict) -> str:
 
 
 DECISION_TEXT = {
-    "none": "没有可用的 Agent：先安装并登录 Claude Code 或 Codex / no usable agent: install and log in to Claude Code or Codex first",
+    "none": "没有可用的 Agent：已有 Claude Code / Codex 就先登录；都没有就装 OpenCode 并配好模型（install.md 第 3 步）/ no usable "
+            "agent: log in to Claude Code or Codex, or install OpenCode and set up a model (install.md Step 3)",
     "ask_owner": "有多个可用：问你的人类要用哪一个，不要替他选 / more than one is usable: ask your human which one — never pick one yourself",
 }
 

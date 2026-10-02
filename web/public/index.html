@@ -66,16 +66,69 @@
   </section>
 
   <section id="chat-view" class="view chat" hidden>
+    <div class="ctl-bar">
+      <nav class="tabs" aria-label="更多">
+        <button type="button" id="open-mem" class="btn tab">记忆</button>
+        <button type="button" id="open-act" class="btn tab">记录</button>
+        <button type="button" id="open-tasks" class="btn tab">定时任务</button>
+      </nav>
+      <button type="button" id="estop" class="btn btn-stop">全部停下</button>
+    </div>
+    <div id="estop-banner" class="estop-banner" role="alert" hidden>
+      <p><strong>⛔ 已急停</strong> <span id="estop-by" class="small"></span><br><span class="small">Agent 不接新消息，待批准的都已拒绝，定时任务暂停。</span></p>
+      <button type="button" id="resume" class="btn btn-strong">恢复</button>
+    </div>
     <p id="agent-status" class="agent-status" data-s="none" role="status" aria-live="polite" hidden></p>
     <div id="push-row" class="push-row" hidden>
       <span id="push-text" class="small"></span>
       <button type="button" id="push-on" class="btn" hidden>开启锁屏提醒</button>
     </div>
     <ul id="messages" class="messages" aria-live="polite"></ul>
-    <div class="composer">
-      <textarea id="msg-input" rows="1" maxlength="4000" placeholder="说点什么，回车发送" aria-label="消息"></textarea>
-      <button type="button" id="send" class="btn btn-strong">发送</button>
+    <div class="dock">
+      <div id="grant-bar" class="grant-bar" role="status" aria-live="polite" hidden>
+        <span id="grant-text" class="grant-text"></span>
+        <button type="button" id="grant-off" class="btn grant-off">收回授权</button>
+      </div>
+      <div id="cmd-bar" class="cmd-bar" role="group" aria-label="命令" hidden>
+        <button type="button" class="btn cmd" data-cmd="compact">压缩</button>
+        <button type="button" class="btn cmd" data-cmd="clear">清空</button>
+        <button type="button" class="btn cmd" data-cmd="model">换模型</button>
+        <button type="button" class="btn cmd" data-cmd="context">上下文</button>
+        <button type="button" class="btn cmd" data-cmd="cost">花费</button>
+        <button type="button" class="btn cmd" data-cmd="usage">用量</button>
+        <button type="button" class="btn cmd" data-cmd="status">状态</button>
+        <button type="button" class="btn cmd cmd-stop" data-cmd="stop">停止</button>
+      </div>
+      <div class="composer">
+        <button type="button" id="cmd-toggle" class="btn cmd-toggle" aria-expanded="false" aria-controls="cmd-bar">命令</button>
+        <textarea id="msg-input" rows="1" maxlength="4000" placeholder="说点什么，回车发送（/ 开头 = 命令）" aria-label="消息"></textarea>
+        <button type="button" id="send" class="btn btn-strong">发送</button>
+      </div>
     </div>
+  </section>
+
+  <section id="mem-view" class="view sub" hidden>
+    <div class="sub-head"><button type="button" class="btn back" data-back>← 对话</button><h1>它记住了什么</h1></div>
+    <p class="small">这些是 Agent 每次开工都会读的记忆，就在你的电脑上。可以逐条删除：原文先进电脑上的回收站，7 天内可以撤销。</p>
+    <p id="mem-status" class="small" role="status" aria-live="polite"></p>
+    <div id="mem-list" class="mem-list"></div>
+    <h2 class="trash-h">最近删除（7 天内可恢复）</h2>
+    <ul id="mem-trash" class="plain-list"></ul>
+  </section>
+
+  <section id="act-view" class="view sub" hidden>
+    <div class="sub-head"><button type="button" class="btn back" data-back>← 对话</button><h1>操作与审批记录</h1></div>
+    <p class="small">只存在你的电脑上（保留 30 天），经端到端加密传到这台手机；我们的服务器上没有。</p>
+    <p id="act-status" class="small" role="status" aria-live="polite"></p>
+    <ul id="act-list" class="act-list"></ul>
+    <div class="row"><button type="button" id="act-more" class="btn" hidden>加载更早的</button></div>
+  </section>
+
+  <section id="tasks-view" class="view sub" hidden>
+    <div class="sub-head"><button type="button" class="btn back" data-back>← 对话</button><h1>定时任务</h1></div>
+    <p class="small">来自 Agent 工作目录的 workflows/*/task.json。启用与否只由人决定；改了任务文件要重新启用。</p>
+    <p id="tasks-status" class="small" role="status" aria-live="polite"></p>
+    <ul id="tasks-list" class="tasks-list"></ul>
   </section>
 
   <section id="revoked-view" class="view" hidden>
@@ -90,5 +143,16 @@
     <div class="row"><button type="button" id="retry" class="btn btn-strong">重试</button></div>
   </section>
 </main>
+<div id="sheet" class="sheet" role="dialog" aria-modal="true" aria-labelledby="sheet-title" hidden>
+  <div class="sheet-box">
+    <h2 id="sheet-title"></h2>
+    <p id="sheet-text"></p>
+    <div class="row sheet-row">
+      <button type="button" id="sheet-no" class="btn">取消</button>
+      <button type="button" id="sheet-yes" class="btn btn-strong"></button>
+    </div>
+  </div>
+</div>
+<div id="toast" class="toast" role="status" aria-live="polite" hidden><span id="toast-text"></span><button type="button" id="toast-btn" class="btn" hidden></button></div>
 </body>
 </html>

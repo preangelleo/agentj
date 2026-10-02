@@ -82,6 +82,12 @@ class State:
     def push_path(self): return self.root / "push.json"   # Web Push subscriptions per device (PROTOCOL §9)
     @property
     def vapid_path(self): return self.root / "push_vapid.key"   # this host's VAPID P-256 private key (PROTOCOL §9)
+    @property
+    def estop_path(self): return self.root / "estop.json"   # the stop-everything switch (controls.py), survives restarts
+    @property
+    def controls_path(self): return self.root / "controls.log"   # one line per signed phone command, hashes only
+    @property
+    def tasks_path(self): return self.root / "tasks.json"   # which scheduled tasks the human enabled + last runs (tasks.py)
 
     def exists(self) -> bool:
         return self.x25519_path.exists() and self.ed25519_path.exists() and self.config_path.exists()
@@ -115,7 +121,8 @@ class State:
             raise PermissionError(f"{self.root} must be 0700")
         for p in (self.x25519_path, self.ed25519_path, self.devices_path, self.config_path, self.log_path, self.cloud_path,
                   self.cloud_lock_path, self.config_lock_path, self.devices_lock_path, self.unbind_path,
-                  self.approvals_path, self.agent_path, self.push_path, self.vapid_path, self.approver_path):
+                  self.approvals_path, self.agent_path, self.push_path, self.vapid_path, self.approver_path,
+                  self.estop_path, self.controls_path, self.tasks_path):
             if p.exists() and p.stat().st_mode & 0o077:
                 raise PermissionError(f"{p} must be 0600")
 
@@ -260,10 +267,10 @@ class State:
         return name
 
     # ------------------------------------------------------------ agent bridge (L1, PROTOCOL §8)
-    AGENT_KINDS = ("claude", "codex")
+    AGENT_KINDS = ("claude", "codex", "opencode")
 
     def agent_config(self) -> dict | None:
-        """{"kind": "claude"|"codex", "dir": absolute path, "model": str|None} or None (no agent: terminal chat as in A2)."""
+        """{"kind": "claude"|"codex"|"opencode", "dir": absolute path, "model": str|None} or None (no agent: terminal chat as in A2)."""
         try:
             a = self.config().get("agent")
         except (OSError, ValueError):
@@ -272,11 +279,12 @@ class State:
             return None
         m = a.get("model")
         # fence (L2): on unless the human explicitly chose `--unfenced` at this terminal; anything else reads as on
+        # docker (G-A56): the container engines stay hidden unless the human explicitly chose `--allow-docker`
         return {"kind": a["kind"], "dir": a["dir"], "model": m if isinstance(m, str) and m else None,
-                "fence": a.get("fence") is not False}
+                "fence": a.get("fence") is not False, "docker": a.get("docker") is True}
 
     def set_agent_config(self, kind: str | None, directory: str | None = None, model: str | None = None,
-                         fence: bool = True) -> None:
+                         fence: bool = True, docker: bool = False) -> None:
         with self.config_lock():
             cfg = self.config()
             if kind is None:
@@ -292,7 +300,17 @@ class State:
                     if d == p or d.startswith(p.rstrip(os.sep) + os.sep):
                         raise ValueError("protected_dir")
                 cfg["agent"] = {"kind": kind, "dir": d, "model": model or None, "fence": bool(fence)}
+                if docker:
+                    cfg["agent"]["docker"] = True
             _write_private(self.config_path, json.dumps(cfg, indent=1, ensure_ascii=False).encode())
+
+    def set_agent_model(self, model: str | None) -> None:
+        """/model from the phone (slash.py): only the model of the configured Agent changes."""
+        with self.config_lock():
+            cfg = self.config()
+            if isinstance(cfg.get("agent"), dict):
+                cfg["agent"]["model"] = model or None
+                _write_private(self.config_path, json.dumps(cfg, indent=1, ensure_ascii=False).encode())
 
     def agent_session(self, kind: str) -> str | None:
         try:
@@ -350,7 +368,7 @@ class State:
     # ------------------------------------------------------------ metadata log (never message text)
     # report_* events (PROTOCOL §7) carry only seq / status class / trigger — never labels, codes or URLs
     LOG_FIELDS = {"channel", "cid", "device", "name", "reason", "kind", "bytes", "code_ok", "seq", "status", "trigger",
-                  "tenant", "request", "result", "id", "tool", "agent", "decision", "locked", "fence", "change"}
+                  "tenant", "request", "result", "id", "tool", "agent", "decision", "locked", "fence", "change", "action"}
 
     def log(self, ev: str, **kw) -> None:
         rec = {"ts": int(time.time()), "ev": ev, **{k: v for k, v in kw.items() if k in self.LOG_FIELDS}}

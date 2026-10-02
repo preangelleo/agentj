@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import pathlib
 import platform as _pf
 import shutil
@@ -178,27 +179,34 @@ def check_dashboard(st: State) -> dict:
     return _c("dashboard", OK, f"API {api} · Dashboard {app}")
 
 
-AGENT_LABEL = {"claude": "Claude Code", "codex": "Codex"}
+AGENT_LABEL = {"claude": "Claude Code", "codex": "Codex", "opencode": "OpenCode"}
 BIN_ENV = harness.BIN_ENV
 # one implementation for doctor and `jarvis agent detect` (existence checks only, never content)
 _agent_bin, _version_of = harness.agent_bin, harness.version_of
-_claude_login, _codex_login = harness.claude_login, harness.codex_login
+_claude_login, _codex_login, _opencode_login = harness.claude_login, harness.codex_login, harness.opencode_login
+
+
+def _login(k: str) -> tuple[str, str]:
+    return {"claude": _claude_login, "codex": _codex_login, "opencode": _opencode_login}[k]()
 
 
 def check_agent(st: State) -> dict:
     c = st.agent_config() if st.exists() else None
     if not c:
-        return _c("agent", WARN, "还没接 Agent / no Agent configured", "jarvis agent claude --dir <folder>   (or: codex)")
+        return _c("agent", WARN, "还没接 Agent / no Agent configured", "jarvis agent claude --dir <folder>   (or: codex / opencode)")
     if not os.path.isdir(c["dir"]):
         return _c("agent", FAIL, f"{AGENT_LABEL[c['kind']]} · 目录不存在 / folder missing {tilde(c['dir'])}",
                   f"jarvis agent {c['kind']} --dir <folder>")
     fz = "fenced" if c.get("fence", True) else "UNFENCED (--unfenced)"
+    if c.get("fence", True) and c.get("docker"):
+        return _c("agent", WARN, f"{AGENT_LABEL[c['kind']]} · {tilde(c['dir'])} · fenced, docker allowed (--allow-docker): "
+                  "容器引擎能挂载整台电脑的文件 / the container engine can mount every file", f"jarvis agent {c['kind']} --dir <folder>  (docker hidden again)")
     return _c("agent", OK, f"{AGENT_LABEL[c['kind']]} · {tilde(c['dir'])} · {fz}")
 
 
 def check_agent_cli(st: State, svc: dict) -> dict:
     c = st.agent_config() if st.exists() else None
-    kinds = [c["kind"]] if c else ["claude", "codex"]
+    kinds = [c["kind"]] if c else ["claude", "codex", "opencode"]
     found = []
     for k in kinds:
         exe = _agent_bin(k)
@@ -208,15 +216,16 @@ def check_agent_cli(st: State, svc: dict) -> dict:
         if ver is None:
             return _c("agent_cli", FAIL, f"{AGENT_LABEL[k]} {tilde(exe)} 运行失败 / does not run (`{k} --version`)",
                       f"重装 {AGENT_LABEL[k]} / reinstall {AGENT_LABEL[k]}")
-        login, where = (_claude_login() if k == "claude" else _codex_login())
+        login, where = _login(k)
         found.append((k, exe, ver, login, where))
     if not found:
         if c:
             return _c("agent_cli", FAIL, f"{AGENT_LABEL[c['kind']]} 不在 PATH / `{c['kind']}` not on PATH",
                       "安装后重开终端；装了服务的话重新 `jarvis service install` 记下新 PATH / install it, then re-run "
                       "`jarvis service install` so the service gets the new PATH")
-        return _c("agent_cli", WARN, "没找到 claude / codex / neither `claude` nor `codex` on PATH",
-                  "安装 Claude Code（https://claude.com/claude-code）或 Codex / install Claude Code or Codex")
+        return _c("agent_cli", WARN, "没找到 claude / codex / opencode / none of `claude`, `codex`, `opencode` on PATH",
+                  "安装 Claude Code（https://claude.com/claude-code）或 Codex；都用不了就装 OpenCode（install.md 第 3 步）/ "
+                  "install Claude Code or Codex, or OpenCode (install.md Step 3)")
     k, exe, ver, login, where = found[0]
     s = f"{AGENT_LABEL[k]} {ver} · {tilde(os.path.abspath(exe))} · {where}"
     if login == WARN and k == "claude" and os.environ.get("CLAUDECODE") == "1":
@@ -225,6 +234,9 @@ def check_agent_cli(st: State, svc: dict) -> dict:
                   "which hides its own token from commands)"),
                   "人类在自己的终端跑一次 `claude` 登录即可（服务要用）/ the human runs `claude` once in their own terminal "
                   "and logs in, so the always-on service can use it")
+    if login == WARN and k == "opencode":
+        return _c("agent_cli", WARN if not c else FAIL, s, "人类在自己的终端运行 `opencode auth login` 存好模型服务的 key "
+                  "（install.md 第 3 步）/ the human runs `opencode auth login` in their own terminal")
     if login == WARN:
         return _c("agent_cli", WARN if not c else FAIL, s, f"运行 `{k}` 登录一次 / run `{k}` once and log in")
     if login == "env":
@@ -233,6 +245,49 @@ def check_agent_cli(st: State, svc: dict) -> dict:
                       service.token_hint(svc.get("name") or service.DEFAULT_UNIT))
         return _c("agent_cli", OK, s)
     return _c("agent_cli", OK, s)
+
+
+def codex_allow_rules() -> int:
+    """How many `decision="allow"` prefix rules the human's Codex has (`$CODEX_HOME/rules/*.rules`): counted, never printed."""
+    d = os.path.join(os.environ.get("CODEX_HOME") or os.path.expanduser("~/.codex"), "rules")
+    n = 0
+    try:
+        names = sorted(os.listdir(d))[:50]
+    except OSError:
+        return 0
+    for f in names:
+        if f.endswith(".rules"):
+            try:
+                with open(os.path.join(d, f), encoding="utf-8", errors="replace") as fh:
+                    n += sum(1 for ln in fh.read(1 << 20).splitlines()
+                             if "prefix_rule" in ln and re.search(r'decision\s*=\s*"allow"', ln))
+            except OSError:
+                continue
+    return n
+
+
+def check_danger(st: State) -> dict:
+    """The danger list (ADR-A47 / A49): built in; config.json can only add. Anything that tries to remove or switch it off is
+    ignored — and said here."""
+    from . import danger
+    try:
+        cfg = st.config() if st.exists() else {}
+    except (OSError, ValueError):
+        cfg = {}
+    issues = danger.config_issues(cfg)
+    extra = len(danger.parse_extra(cfg.get("danger_extra"))[0])
+    c = st.agent_config() if st.exists() else None
+    tail = ""
+    if c and c["kind"] == "codex":
+        n = codex_allow_rules()
+        if n:   # Codex runs these outside its sandbox without asking anyone (its docs); a hook of ours cannot turn them into a card
+            tail = (f"；但你的 Codex 有 {n} 条「总是允许」规则（$CODEX_HOME/rules），匹配的命令不经手机直接运行 / "
+                    f"{n} Codex allow rule(s) run without the phone")
+    if issues:
+        return _c("danger", WARN, f"危险清单照常生效，配置里有 {len(issues)} 处被忽略 / ignored config: " + issues[0][:160],
+                  "危险清单只能加严：用 danger_extra 添加规则，不能删减或关闭 / the list can only grow (danger_extra)")
+    return _c("danger", WARN if tail else OK, f"花钱 / 删除 / 对外发送 / 改凭据 / 改价 永远手机逐条批准"
+              + (f" + 本机附加 {extra} 条" if extra else "") + tail)
 
 
 def check_fence(st: State) -> dict:
@@ -286,7 +341,8 @@ def check_passphrase(st: State) -> dict:
 def check_harness() -> dict:
     """`jarvis agent detect` in one line: which harnesses are usable, and the install decision (seat setup §4.1)."""
     d = harness.detect()
-    hint = {"none": "安装并登录 Claude Code 或 Codex / install and log in to Claude Code or Codex",
+    hint = {"none": "登录 Claude Code 或 Codex；都没有就装 OpenCode 并配好模型（install.md 第 3 步）/ log in to Claude Code or "
+                    "Codex, or install OpenCode with a model (install.md Step 3)",
             "ask_owner": "多个可用：由人类决定接哪一个 / more than one usable: the human decides which one"}.get(d["decision"], "")
     return _c("harness", WARN if d["decision"] == "none" else OK, harness.summary(d), hint)
 
@@ -345,6 +401,47 @@ def check_linger(svc: dict, environ=None) -> dict | None:
               "loginctl enable-linger $USER   (服务器上必须 / needed on a server)")
 
 
+def check_estop(st: State) -> dict:
+    """The stop switch (ADR-A51): on = the Agent and the scheduled tasks do nothing until a human resumes."""
+    from . import controls
+    if not st.exists():
+        return _c("estop", OK, "未急停 / not stopped")
+    e = controls.estop_state(st)
+    if e["on"]:
+        by = e.get("by") or "?"
+        if by.startswith("phone:"):
+            by = "手机 / phone " + (st.devices().get(by[6:], {}).get("name") or by[6:])
+        return _c("estop", WARN, f"⛔ 已急停 / STOPPED ({by})",
+                  "确认没事了再恢复 / resume when it is safe: jarvis resume   (或手机上「恢复」/ or 恢复 on the phone)")
+    return _c("estop", OK, "未急停 / not stopped")
+
+
+def check_tasks(st: State) -> dict:
+    from . import tasks
+    c = st.agent_config() if st.exists() else None
+    rows = tasks.rows(st, c["dir"]) if c else []
+    if not rows:
+        return _c("tasks", OK, "没有定时任务 / no scheduled tasks")
+    bad = [r for r in rows if r["problems"]]
+    on = sum(1 for r in rows if r["enabled"])
+    stale = [r for r in rows if r["stale"]]
+    s = f"{len(rows)} 个任务，{on} 个已启用 / {len(rows)} tasks, {on} enabled"
+    if bad or stale:
+        what = (f"{bad[0]['id']}: {bad[0]['problems'][0]}" if bad else f"{stale[0]['id']} 改动后需重新启用 / changed, enable again")
+        return _c("tasks", WARN, s + f" · {len(bad)} 无效 / invalid, {len(stale)} 待重新启用 / changed — " + what[:120],
+                  "jarvis tasks list")
+    return _c("tasks", OK, s)
+
+
+def check_activity(st: State) -> dict:
+    from . import activity
+    if not st.exists():
+        return _c("activity", OK, "—")
+    on = activity.enabled(st)
+    return _c("activity", OK, ("开 / on" if on else "关 / off") + f" · 本机 {activity.size(st) // 1024} KiB，保留 30 天 / kept 30 days"
+              + " (jarvis config activity on|off)")
+
+
 def check_update(offline: bool = False) -> dict:
     if offline:
         return _c("update", WARN, "跳过 / skipped (--offline)")
@@ -370,8 +467,8 @@ def run(st: State | None = None, offline: bool = False) -> list[dict]:
         out += [_c("relay", WARN, "跳过 / skipped (--offline)"), _c("dashboard", WARN, "跳过 / skipped (--offline)")]
     else:
         out += [check_relay(st), check_dashboard(st)]
-    out += [check_agent(st), check_agent_cli(st, svc), check_harness(), check_fence(st), check_passphrase(st), check_bound(st),
-            check_serve(st), check_service(svc)]
+    out += [check_agent(st), check_agent_cli(st, svc), check_harness(), check_fence(st), check_danger(st), check_passphrase(st), check_bound(st),
+            check_serve(st), check_service(svc), check_estop(st), check_tasks(st), check_activity(st)]
     lg = check_linger(svc)
     if lg:
         out.append(lg)

@@ -2,17 +2,17 @@
 export default {
   "v": 1,
   "algo": "sha256",
-  "combined": "2e67772397cf2c8e7672295e744d420e1a0c09637eb057e170ac4a99dcf64d7e",
+  "combined": "59d8e2ca0b18e91a24f104ed74b857b9fcbe91b009260b2967fd4e3f04bc3801",
   "files": {
-    "app.css": "a48524d28ebc3b76905905815019112c33fedbe786a17b95519927acf17ab3e6",
-    "app.js": "e1ed210f0d8c66cc3709f85f2efe496f534a825e92fdb108891fc2afe57d3ae6",
+    "app.css": "7514e1ecf536af130a68f0d3ce13e343078cc1fe661562c9e0a4db548f6885a0",
+    "app.js": "2faa3ba421f4141d08325c56ebdea6435ad6d6df216c50814f328ba1ddd91df5",
     "apple-touch-icon.png": "1e54fea68cb2e682f910ee97836ff15534c0c59d6e6580e8f1bdee8cf4e40726",
     "icon-192.png": "d56ed68cd6c3da0b0cbfdd2a2a94f583852394e1f7694e85aad19e85d319bf1c",
     "icon-512.png": "118a5b9bc9f94dfd5630a23620aa98841d4fc861a62c0151df754f39127e9806",
-    "index.html": "3fc3edc2e6c4ff0c0573eb13cf014d517fe06e29451001bac64d7cabd42b6959",
+    "index.html": "09af31c676ea373902142e56cce4a42cd658a484af34ba93f77f863e708a9c85",
     "manifest.webmanifest": "b2292ee967f6e429c88ec92e458dc229db4f13c6246a54e477125a13d47c3e5e",
     "proto/noise.js": "8b5410f5f52989f1289f8fe196ae1612ef92879444edbf46d37cd3c4cbf0e5cf",
-    "proto/wire.js": "ab43b154a7a52898d9ee94c5bc7e36fc793c67d638abe2cdd5a96af2eefa8b43",
+    "proto/wire.js": "b20ec00ae657ffbd1607629d4fe16a43e919ed8d842eccc07e6134d4706bc311",
     "robots.txt": "331ea9090db0c9f6f597bd9840fd5b171830f6e0b3ba1cb24dfa91f0c95aedc1",
     "sw.js": "df5132f054f7181bf2195c121ee20db074135b06003946b6ce6a64dd4e19bf9f"
   }

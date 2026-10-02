@@ -50,8 +50,8 @@ class Envelope(unittest.TestCase):
             self.assertEqual(env["body"], c["envelope"]["body"], c["context"])
             self.assertEqual(env["sig"], c["envelope"]["sig"], c["context"])
             self.assertEqual(env["pk"], c["envelope"]["pk"])
-        # the vector covers the contexts this host actually signs with (seat-bind included, seat setup §4)
-        self.assertEqual(sorted(c["context"] for c in VEC["cases"]), sorted([cloud.CTX_LOGIN, cloud.CTX_REPORT, cloud.CTX_SEAT_BIND]))
+        # the vector covers the contexts this host actually signs with (seat-bind included, seat setup §4; plaza post, P2)
+        self.assertEqual(sorted(c["context"] for c in VEC["cases"]), sorted([cloud.CTX_LOGIN, cloud.CTX_REPORT, cloud.CTX_SEAT_BIND, cloud.CTX_PLAZA_POST]))
 
     def test_channel_derivation_matches_vector(self):
         sk = Ed25519PrivateKey.from_private_bytes(bytes.fromhex(VEC["ed25519_seed_hex"]))

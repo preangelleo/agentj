@@ -21,7 +21,7 @@ from dataclasses import dataclass, field
 from websockets.asyncio.client import connect
 
 from . import agent as agents
-from . import approvals, cloud, fence, gate, update, webpush, wire
+from . import activity, approvals, cloud, controls, danger, fence, gate, memory, slash, tasks, update, webpush, wire
 from .noise import IK, IKPSK2, CipherState, Handshake, NoiseError
 from .reporter import Reporter, in_daemon_thread
 from .state import MAX_DEVICES, DeviceLimit, State
@@ -54,6 +54,13 @@ ASK_TTL = _ttl("AGENTJARVIS_TEST_ASK_TTL", 120)   # a permission request the pho
 BACKLOG = 100          # recent chat kept in memory (never on disk) and replayed to a device after it (re)connects
 MAX_ASKS = 16          # outstanding permission requests at once; more are denied at once
 PUSH_GAP = {"reply": 20, "ask": 2}   # minimum seconds between two pushes of a kind to one device
+BATCH_MAX = 20         # automatic approvals one batch grant may give (ADR-A48) …
+BATCH_SECS = 600       # … within this many seconds, and never past the end of the Agent's turn
+MAX_GRANTS = 8         # batch grants open at once
+CHUNK = 11 * 1024      # phone-control answers are split into app messages of about this many JSON bytes (MAX_JSON = 16 KiB)
+ITEM_SHOW = 6000       # a memory item longer than this is shown cut on the phone (its id still covers the whole text)
+_RID = re.compile(r"[A-Za-z0-9_-]{1,32}")
+PHONE_CONTROLS = ("mem_list", "mem_rm", "mem_undo", "act_list", "task_list", "task_set", "estop", "resume")
 
 
 @dataclass
@@ -85,6 +92,23 @@ class Ask:
     input_sha: str
     deadline: float               # monotonic
     fut: asyncio.Future
+    cats: list = field(default_factory=list)   # danger categories ([] = low risk), danger.classify
+    why: str = ""
+    scope: tuple | None = None     # (kind, key) for a low-risk request that may be batch-approved
+    scope_text: str | None = None  # what the phone shows for that scope; an allow_batch signature covers it
+    task: str | None = None        # the scheduled task this request comes from (display only)
+
+
+@dataclass
+class Grant:
+    """A batch approval (ADR-A48): the human allowed "this kind of low-risk action" for the rest of this Agent turn."""
+    rid: str                      # the signed request that created it
+    tool: str
+    scope: tuple                  # (kind, key)
+    text: str
+    device: str
+    left: int
+    until: float                  # monotonic
 
 
 @dataclass
@@ -131,6 +155,19 @@ class Host:
         self.push_key = None
         self.push_last: dict[tuple, float] = {}
         self.post_q: asyncio.Queue | None = None
+        # danger list (ADR-A47 / A49): fixed rules + the human's additions from config.json (additions only)
+        self.danger_extra = danger.parse_extra(self.cfg.get("danger_extra"))[0]
+        if self.agent_cfg:
+            self.agent_cfg["danger_extra"] = self.danger_extra
+        self.grants: dict[str, Grant] = {}
+        # phone controls (PROMPT-26 item 3, ADR-A50 – A54): signed commands, the stop switch, the task scheduler
+        self.turn_lock = asyncio.Lock()        # one user of the Agent at a time: a chat turn or a scheduled task run
+        self.nonces = controls.Nonces()
+        self.estop = controls.estop_state(st)
+        self.scheduler = tasks.Scheduler(self)
+        self.task_label: str | None = None
+        self.turn_by: str | None = None
+        self.turn_t0 = 0.0
 
     # ------------------------------------------------------------ output
     def emit(self, ev: str, **kw) -> None:
@@ -142,6 +179,9 @@ class Host:
                 return
             if ev == "ask":
                 print(f"· 等手机批准 [{kw['id'][:8]}] {kw['tool']}", flush=True)
+                return
+            if ev == "grant":     # the scope may hold a folder name: metadata mode prints the id only
+                print(f"· 手机授权本轮批量批准 [{kw['id'][:8]}]", flush=True)
                 return
         if ev == "msg":  # continuation lines are marked, so a device cannot print lines that look like host output
             print(f"« {kw['name']}: " + kw["text"].replace("\n", "\n  │ "), flush=True)
@@ -163,6 +203,16 @@ class Host:
             print(f"· 等手机批准 [{kw['id'][:8]}] {kw['tool']}: " + kw["summary"].replace("\n", "\n  │ "), flush=True)
         elif ev == "ask_done":
             print(f"· 批准结果 [{kw['id'][:8]}]：{kw['result']}", flush=True)
+        elif ev == "auto":
+            print(f"· 按手机的批量授权自动批准 [{kw['id'][:8]}] {kw['tool']}", flush=True)
+        elif ev == "grant":
+            print(f"· 手机授权：本轮自动批准同类低风险操作（{kw['scope']}）", flush=True)
+        elif ev == "grant_end":
+            print(f"· 批量授权结束 [{kw['id'][:8]}]：{kw['why']}", flush=True)
+        elif ev == "estop":
+            print("· 已急停：Agent 停下、待批准全部拒绝、批量授权收回、定时任务暂停" if kw["on"] else "· 已恢复", flush=True)
+        elif ev == "task_done":
+            print(f"· 定时任务 {kw['id']}：{kw['verdict']}", flush=True)
         elif ev == "update":   # a version string from GitHub, already parsed as one (update.parse)
             print(f"· 有新版本 {kw['latest']}（本机 {kw['current']}）：在终端运行 `jarvis update apply` 升级", flush=True)
         elif ev in ("ready", "approved", "revoked", "denied", "closed"):
@@ -386,6 +436,15 @@ class Host:
             text = obj.get("text")
             if not isinstance(text, str) or text_units(text) > wire.MAX_TEXT:  # reject, never silently truncate
                 return await self.close_cid(s.cid, "bad_msg")
+            if self.stopped() and self.agent:      # stopped: nothing is queued to run later behind the human's back
+                self.st.log("msg_refused", cid=s.cid, device=s.device, reason="estop")
+                self.activity("message_refused", by=s.name or s.device, text=text[:120])
+                await self.send_app(s, {"t": "msg", "id": secrets.token_hex(8), "ts": int(time.time() * 1000), "seq": self.seq,
+                                        "from": "notice", "text": "已急停：这条没有交给 Agent，也不会排队。恢复后再发。"})
+                return
+            cmd = slash.parse(text)
+            if cmd and self.agent and not self.agent.passthrough(cmd[0]):
+                return await self.on_slash(s, cmd[0], cmd[1], confirm=False, typed=True)
             self.emit("msg", device=s.device, name=s.name, text=clean(text, wire.MAX_TEXT))
             self.st.log("msg_in", cid=s.cid, device=s.device)
             entry = self._remember("device", text, device=s.device, name=s.name)
@@ -393,6 +452,7 @@ class Host:
                 if o is not s and o.state == "ready" and self.st.is_allowed(o.pub):
                     await self.send_app(o, self._render(entry, o))
             if self.agent:
+                self.turn_by = s.name or s.device
                 self.agent.submit(text)
         elif t == "answer":
             await self._answer(s, obj)
@@ -413,6 +473,17 @@ class Host:
                 self.st.log("push_off", device=s.device)
         elif t == "vis" and isinstance(obj.get("fg"), bool):
             s.fg = obj["fg"]
+        elif t == "grant_off":          # take a batch approval back (narrows only: any ready, paired device may)
+            gid = obj.get("id")
+            for g in list(self.grants.values()):
+                if gid is None or g.rid == gid:
+                    self.end_grant(g.rid, "revoked", by=s.device)
+        elif t in PHONE_CONTROLS:
+            await self.on_control(s, t, obj)
+        elif t == "slash":              # a command from the phone's 「命令」 buttons (or typed: the page sends it like this)
+            name, arg = obj.get("cmd"), obj.get("arg", "")
+            if isinstance(name, str) and isinstance(arg, str) and len(name) <= 32 and text_units(arg) <= slash.ARG_MAX:
+                await self.on_slash(s, name.lower(), arg.strip(), confirm=obj.get("confirm") is True, typed=False)
 
     # ------------------------------------------------------------ deadlines
     async def _handshake_timeout(self, s: Session) -> None:
@@ -524,7 +595,8 @@ class Host:
                 if cmd == "status":
                     await self._ctl_send(w, {"ok": True, "relay_up": self.relay_up, "channel": self.channel,
                                              "agent": self.agent.kind if self.agent else None, "agent_status": self.eff_status(),
-                                             "asks": len(self.asks),
+                                             "asks": len(self.asks), "estop": self.estop,
+                                             "task_running": self.scheduler.current_id,
                                              "sessions": [{"device": s.device, "name": s.name, "state": s.state}
                                                           for s in self.sessions.values() if s.state != "new"]})
                 elif cmd == "report_view":
@@ -536,6 +608,29 @@ class Host:
                 elif cmd == "revoke":
                     removed, closed = await self.revoke(str(req.get("device", "")))
                     await self._ctl_send(w, {"ok": removed, "closed": closed})
+                elif cmd == "stop":                 # `jarvis stop` (the terminal: no signature needed — it only stops)
+                    await self.do_estop("terminal", "终端")
+                    await self._ctl_send(w, {"ok": True, "estop": self.estop})
+                elif cmd == "resume":               # `jarvis resume` checked the approval passphrase before calling
+                    await self.do_resume("terminal", "终端")
+                    await self._ctl_send(w, {"ok": True, "estop": self.estop})
+                elif cmd == "task_run":
+                    tid = str(req.get("id", ""))
+                    if self.stopped():
+                        await self._ctl_send(w, {"ok": False, "error": "stopped"})
+                    elif not self.agent_cfg:
+                        await self._ctl_send(w, {"ok": False, "error": "no_agent"})
+                    else:
+                        try:
+                            tasks.find(self.agent_cfg["dir"], tid)
+                        except tasks.TaskError:
+                            await self._ctl_send(w, {"ok": False, "error": "unknown"})
+                        else:
+                            self.scheduler.request(tid, "manual")
+                            await self._ctl_send(w, {"ok": True, "queued": tid})
+                elif cmd == "tasks_changed":
+                    self.scheduler.wake.set()
+                    await self._ctl_send(w, {"ok": True})
                 elif cmd == "agent_name_changed":   # `jarvis name` / `jarvis admin` renamed: tell the Dashboard soon
                     self.reporter.trigger("agent_name")
                     await self._ctl_send(w, {"ok": True})
@@ -736,10 +831,12 @@ class Host:
         return n
 
     # ------------------------------------------------------------ chat backlog (memory only) + per-device rendering
-    def _remember(self, frm: str, text: str, device: str | None = None, name: str = "") -> dict:
+    def _remember(self, frm: str, text: str, device: str | None = None, name: str = "", x: dict | None = None) -> dict:
         self.seq += 1
         e = {"seq": self.seq, "from": frm, "device": device, "name": name, "text": text, "id": secrets.token_hex(8),
              "ts": int(time.time() * 1000)}
+        if x:
+            e["x"] = x
         self.backlog.append(e)
         return e
 
@@ -748,6 +845,8 @@ class Host:
         m = {"t": "msg", "id": e["id"], "text": e["text"], "ts": e["ts"], "seq": e["seq"], "from": frm}
         if frm == "device":
             m["name"] = e["name"]
+        if e.get("x"):
+            m.update(e["x"])
         return m
 
     async def on_ready(self, s: Session, since) -> None:
@@ -759,6 +858,7 @@ class Host:
         if since > self.seq:            # a device that remembers a seq from before this serve started: replay it all
             since = 0
         await self.send_app(s, self._status_msg())
+        await self.send_app(s, self._estop_msg())
         await self.send_app(s, {"t": "push_key", "k": webpush.b64u(webpush.vapid_public(self._push_key()))})
         for e in list(self.backlog):
             if e["seq"] > since:
@@ -766,9 +866,14 @@ class Host:
         for a in list(self.asks.values()):
             if not a.fut.done():
                 await self.send_app(s, self._ask_msg(a))
+        for g in list(self.grants.values()):
+            if self._grant_live(g):
+                await self.send_app(s, self._grant_msg(g))
 
     # ------------------------------------------------------------ agent bridge (PROTOCOL §8)
     def eff_status(self) -> str:
+        if self.stopped():
+            return "stopped"
         if not self.agent:
             return "none"
         if any(not a.fut.done() for a in self.asks.values()):
@@ -840,14 +945,58 @@ class Host:
                 self._post(self._send_ready, lambda s, e=e: self._render(e, s))
             await asyncio.sleep(UPDATE_WAKE)
 
+    def agent_turn_start(self, text: str) -> None:
+        self.turn_t0 = time.monotonic()
+        self.activity("turn_start", by=self.turn_by, text=text[:120])
+        self.turn_by = None
+
     def agent_turn_end(self) -> None:
         self.st.log("turn_end", agent=self.agent.kind if self.agent else None)
+        self.activity("turn_end", secs=round(time.monotonic() - self.turn_t0, 1) if self.turn_t0 else None,
+                      result="stopped" if self.agent and self.agent.halting else "done")
+        for gid in list(self.grants):     # a batch approval never outlives the turn it was given in (ADR-A48)
+            self.end_grant(gid, "turn_end")
         if self.turn_text:
             self.turn_text = False
             self.push_notify("reply")
 
     def _ask_msg(self, a: Ask) -> dict:
-        return {"t": "ask", "id": a.rid, "tool": a.tool, "summary": a.summary, "ttl": max(0, int(a.deadline - time.monotonic()))}
+        m = {"t": "ask", "id": a.rid, "tool": a.tool, "summary": a.summary, "ttl": max(0, int(a.deadline - time.monotonic())),
+             "cat": list(a.cats), "why": a.why}
+        if a.scope_text:
+            m["batch"] = a.scope_text
+            m["batch_max"], m["batch_secs"] = BATCH_MAX, BATCH_SECS
+        if a.task:
+            m["task"] = a.task[:80]
+        return m
+
+    # ------------------------------------------------------------ batch approval (ADR-A48)
+    def _grant_msg(self, g: Grant) -> dict:
+        return {"t": "grant", "id": g.rid, "scope": g.text, "left": g.left, "secs": max(0, int(g.until - time.monotonic()))}
+
+    def _grant_live(self, g: Grant) -> bool:
+        return g.left > 0 and time.monotonic() < g.until and self.st.sign_key(g.device) is not None
+
+    def end_grant(self, gid: str, why: str, by: str | None = None) -> None:
+        g = self.grants.pop(gid, None)
+        if g is None:
+            return
+        self.st.log("grant_end", id=gid, reason=why, device=by or g.device)
+        self.activity("grant_end", id=gid, why=why)
+        self.emit("grant_end", id=gid, why=why)
+        self._post(self._send_ready, lambda s: {"t": "grant_end", "id": gid, "why": why})
+
+    def _grant_for(self, tool: str, scope: tuple | None) -> Grant | None:
+        if scope is None:
+            return None
+        for g in list(self.grants.values()):
+            if not self._grant_live(g):
+                self.end_grant(g.rid, "limit" if g.left <= 0 else ("expired" if time.monotonic() >= g.until
+                                                                    else "device_gone"))
+                continue
+            if g.tool == tool and danger.same_scope(g.scope, scope):
+                return g
+        return None
 
     def _approvers(self) -> list[str]:
         return [d for d, v in self.st.devices().items() if v.get("sk")]
@@ -923,24 +1072,50 @@ class Host:
             if self.perm_w is w:
                 await self._perm_send(w, {"t": "answer", "id": rid, **ans})
 
-    async def ask(self, tool: str, tool_input: dict, gone: asyncio.Future | None = None) -> dict:
+    async def ask(self, tool: str, tool_input: dict, gone: asyncio.Future | None = None, batch: bool = True) -> dict:
+        """batch=False: never offered for (or approved by) a batch grant (a Codex sandbox / network escalation)."""
         kind = self.agent.kind if self.agent else "?"
         summary = agents.summarize(tool, tool_input)
         digest, isha = approvals.shown_digest(tool, summary), approvals.input_digest(tool_input)
         rid = secrets.token_hex(16)
-        base = dict(rid=rid, agent=kind, tool=tool, input_sha256=isha, shown_sha256=digest)
+        v = danger.classify(tool, tool_input, self.danger_extra)
+        workdir = (self.agent_cfg or {}).get("dir")
+        sc = None if v.danger or not batch else danger.batch_scope(tool, tool_input, workdir, self.danger_extra)
+        base = dict(rid=rid, agent=kind, tool=tool, input_sha256=isha, shown_sha256=digest, cats=v.cats)
+        if self.stopped():                # stopped: nothing is asked, nothing runs
+            approvals.record(self.st, **base, decision="deny", reason="estop")
+            self.st.log("ask_done", id=rid, tool=tool, decision="deny", reason="estop")
+            self.activity("decision", id=rid, tool=tool, result="deny", reason="estop", cats=v.cats, summary=summary)
+            return {"behavior": "deny", "message": "已急停（全部停下）：什么都不执行，等人恢复。"}
+        g = None if v.danger else self._grant_for(tool, sc[:2] if sc else None)
+        if g is not None:                 # inside a live batch approval: allowed at once, logged, one quiet line on the phone
+            g.left -= 1
+            approvals.record(self.st, **base, decision="allow", reason="batch", device=g.device, grant=g.rid)
+            self.st.log("ask_done", id=rid, tool=tool, decision="allow", reason="batch", device=g.device)
+            self.activity("auto", id=rid, tool=tool, summary=summary, by=self._dname(g.device), task=self.task_label)
+            self.emit("auto", id=rid, tool=tool, grant=g.rid)
+            line = summary.split("\n", 1)[0][:200]
+            self._post(self._send_ready, lambda s: {"t": "auto", "id": rid, "tool": tool, "summary": line, "grant": g.rid})
+            if g.left <= 0:
+                self.end_grant(g.rid, "limit")
+            else:
+                self._post(self._send_ready, lambda s: self._grant_msg(g))
+            return {"behavior": "allow", "updatedInput": tool_input}
         if not self._approvers():
             approvals.record(self.st, **base, decision="deny", reason="no_device")
             self.st.log("ask_done", id=rid, tool=tool, decision="deny", reason="no_device")
+            self.activity("decision", id=rid, tool=tool, result="deny", reason="no_device", cats=v.cats, summary=summary)
             self.emit("ask_done", id=rid, result="deny", reason="no_device")
             return {"behavior": "deny", "message": "没有能批准的已配对手机：默认拒绝。先用 jarvis pair 配对一台手机。"}
         if sum(1 for a in self.asks.values() if not a.fut.done()) >= MAX_ASKS:
             approvals.record(self.st, **base, decision="deny", reason="too_many")
             return {"behavior": "deny", "message": "同时等待批准的请求太多：默认拒绝。"}
         a = Ask(rid, tool, summary, digest, tool_input, isha, time.monotonic() + self.ask_ttl,
-                asyncio.get_running_loop().create_future())
+                asyncio.get_running_loop().create_future(), cats=v.cats, why=v.why,
+                scope=sc[:2] if sc else None, scope_text=sc[2] if sc else None, task=self.task_label)
         self.asks[rid] = a
-        self.st.log("ask", id=rid, tool=tool, agent=kind)
+        self.activity("ask", id=rid, tool=tool, cats=v.cats, why=v.why or None, summary=summary, task=self.task_label)
+        self.st.log("ask", id=rid, tool=tool, agent=kind, kind="danger" if v.danger else "low")
         self.emit("ask", id=rid, tool=tool, summary=summary)
         self._post(self._send_ready, lambda s: self._ask_msg(a))   # same queue as the Agent's text: order is kept
         self.status_changed()
@@ -953,7 +1128,8 @@ class Host:
                                          return_when=asyncio.FIRST_COMPLETED)
             if a.fut in done:
                 decision, did, sk, sig = a.fut.result()
-                reason = "device" if did else "serve_stop"   # serve stopping resolves pending requests with no device
+                # serve stopping / the stop switch resolve pending requests with no device
+                reason = "device" if did else ("estop" if self.stopped() else "serve_stop")
             else:
                 decision, did, sk, sig = "deny", None, None, None
                 reason = "agent_gone" if gone in done else ("serve_stop" if self.stopping.is_set() else "timeout")
@@ -961,36 +1137,334 @@ class Host:
                     a.fut.set_result((decision, None, None, None))
         finally:
             self.asks.pop(rid, None)
-        approvals.record(self.st, **base, decision=decision, reason=reason, device=did, sign_pub=sk, sig=sig)
-        result = decision if reason == "device" else ("timeout" if reason == "timeout" else "gone")
+        approvals.record(self.st, **base, decision=decision, reason=reason, device=did, sign_pub=sk, sig=sig,
+                         scope=a.scope_text if decision == "allow_batch" else None)
+        raw = decision
+        if decision == "allow_batch" and reason == "device":
+            self._open_grant(a, did)
+        decision = "allow" if decision == "allow_batch" else decision
+        result = decision if reason == "device" else {"timeout": "timeout", "estop": "stopped"}.get(reason, "gone")
         self.st.log("ask_done", id=rid, tool=tool, decision=decision, reason=reason, device=did)
+        self.activity("decision", id=rid, tool=tool, result=raw if reason == "device" else reason, reason=reason,
+                      by=self._dname(did) if did else None, cats=a.cats, task=a.task, summary=summary[:200])
         self.emit("ask_done", id=rid, result=result, reason=reason, device=did)
         self._post(self._send_ready, lambda s: {"t": "ask_done", "id": rid, "result": result})
         self.status_changed()
         if decision == "allow":
             return {"behavior": "allow", "updatedInput": tool_input}
         msg = {"device": "用户在手机上拒绝了这个操作。", "timeout": f"手机上 {int(self.ask_ttl)} 秒内没有批准：默认拒绝。",
-               "serve_stop": "jarvis serve 已停止：默认拒绝。"}.get(reason, "已拒绝。")
+               "serve_stop": "jarvis serve 已停止：默认拒绝。", "estop": "已急停（全部停下）：默认拒绝。"}.get(reason, "已拒绝。")
         return {"behavior": "deny", "message": msg}
 
+    def policy_refused(self, tool: str, tool_input: dict, why: str, notice: str) -> None:
+        """A request the harness asked that would give it more than the human's own configuration allows (Codex beyond its own
+        sandbox, ADR-A73): refused without a card — approvals.log (reason `policy`), host.log, activity, one notice."""
+        summary = agents.summarize(tool, tool_input)
+        rid = secrets.token_hex(16)
+        v = danger.classify(tool, tool_input, self.danger_extra)
+        approvals.record(self.st, rid=rid, agent=self.agent.kind if self.agent else "?", tool=tool,
+                         input_sha256=approvals.input_digest(tool_input), shown_sha256=approvals.shown_digest(tool, summary),
+                         cats=v.cats, decision="deny", reason="policy")
+        self.st.log("ask_done", id=rid, tool=tool, decision="deny", reason="policy")
+        self.activity("decision", id=rid, tool=tool, result="policy", reason="policy", why=why, cats=v.cats,
+                      task=self.task_label, summary=summary[:200])
+        self.emit("ask_done", id=rid, result="deny", reason="policy")
+        self.agent_notice(f"{notice}（{why}：{summary.splitlines()[0][:120]}）")
+
+    def _open_grant(self, a: Ask, did: str) -> None:
+        if a.scope is None:
+            return
+        while len(self.grants) >= MAX_GRANTS:
+            self.end_grant(next(iter(self.grants)), "limit")
+        g = Grant(a.rid, a.tool, a.scope, a.scope_text or "", did, BATCH_MAX, time.monotonic() + BATCH_SECS)
+        self.grants[g.rid] = g
+        self.st.log("grant", id=g.rid, tool=g.tool, device=did)
+        self.activity("grant", id=g.rid, tool=g.tool, scope=g.text, by=self._dname(did))
+        self.emit("grant", id=g.rid, scope=g.text)
+        self._post(self._send_ready, lambda s: self._grant_msg(g))
+
     async def _answer(self, s: Session, obj: dict) -> None:
-        rid, ok, sig = obj.get("id"), obj.get("ok"), obj.get("sig")
+        rid, ok, sig, batch = obj.get("id"), obj.get("ok"), obj.get("sig"), obj.get("batch", False)
         a = self.asks.get(rid) if isinstance(rid, str) else None
         if a is None or a.fut.done():
             return                         # unknown or already decided (another phone, timeout): nothing to do
-        if not isinstance(ok, bool) or not isinstance(sig, str) or time.monotonic() > a.deadline:
+        if not isinstance(ok, bool) or not isinstance(sig, str) or not isinstance(batch, bool) \
+                or time.monotonic() > a.deadline:
             self.st.log("answer_refused", id=rid, device=s.device, reason="shape_or_late")
+            return
+        if batch and (not ok or a.scope is None or a.cats):
+            # a dangerous request (or one that was not offered for batching) can only be decided one by one (ADR-A47)
+            self.st.log("answer_refused", id=rid, device=s.device, reason="no_batch")
             return
         sk = self.st.sign_key(s.device)
         try:
             sigb = wire.unb64u(sig)
         except ValueError:
             sigb = b""
-        decision = "allow" if ok else "deny"
-        if not sk or not approvals.verify(sk, sigb, self.channel, s.device, rid, decision, a.digest):
+        decision = "allow_batch" if batch else ("allow" if ok else "deny")
+        scope = a.scope_text if batch else None   # the host checks the scope IT offered: a phone cannot widen it
+        if not sk or not approvals.verify(sk, sigb, self.channel, s.device, rid, decision, a.digest, scope):
             self.st.log("answer_refused", id=rid, device=s.device, reason="no_key" if not sk else "bad_signature")
             return
         a.fut.set_result((decision, s.device, sk, sigb))
+
+    # ------------------------------------------------------------ phone controls (PROTOCOL §8 "phone controls", ADR-A50 – A54)
+    def stopped(self) -> bool:
+        return bool(self.estop.get("on"))
+
+    def activity(self, kind: str, **kw) -> None:
+        try:
+            activity.record(self.st, kind, **kw)
+        except Exception:  # noqa: BLE001 — the activity log never costs anything else
+            pass
+
+    def _dname(self, did: str | None) -> str | None:
+        if not did:
+            return None
+        return self.st.devices().get(did, {}).get("name") or did
+
+    def _estop_msg(self) -> dict:
+        by = self.estop.get("by", "")
+        name = self.estop.get("by_name") or ("终端" if by == "terminal" else self._dname(by[6:]) if by.startswith("phone:") else by)
+        return {"t": "estop_state", "on": self.stopped(), "at": self.estop.get("at", 0), "by": (name or "")[:64]}
+
+    async def do_estop(self, by: str, name: str) -> None:
+        """Stop everything: persist the switch first (a crash right after still comes back stopped), then deny every open
+        permission request, end every batch grant, interrupt the Agent's turn (its queue is dropped), end a running task."""
+        rec = controls.set_estop(self.st, True, by)
+        self.estop = {**rec, "by_name": name}
+        self.st.log("estop", status="on", device=by.split(":", 1)[1] if by.startswith("phone:") else None)
+        self.emit("estop", on=True, by=by)
+        self.activity("estop", by=name)
+        for a in list(self.asks.values()):
+            if not a.fut.done():
+                a.fut.set_result(("deny", None, None, None))
+        for gid in list(self.grants):
+            self.end_grant(gid, "estop")
+        busy = False
+        if self.agent:
+            busy = await self.agent.halt(clear_queue=True)
+        ran = await self.scheduler.stop_current()
+        self.status_changed()
+        m = self._estop_msg()
+        self._post(self._send_ready, lambda s: m)
+        note = "已急停（" + name + "）：" + ("正在进行的一轮已中断；" if busy else "") + ("正在跑的定时任务已中断；" if ran else "") + \
+            "待批准的全部拒绝，批量授权已收回，定时任务暂停。恢复之前 Agent 不接新消息。"
+        e = self._remember("notice", note)
+        self._post(self._send_ready, lambda s, e=e: self._render(e, s))
+
+    async def do_resume(self, by: str, name: str) -> None:
+        rec = controls.set_estop(self.st, False, by)
+        self.estop = {**rec, "by_name": name}
+        self.st.log("estop", status="off", device=by.split(":", 1)[1] if by.startswith("phone:") else None)
+        self.emit("estop", on=False, by=by)
+        self.activity("resume", by=name)
+        self.status_changed()
+        m = self._estop_msg()
+        self._post(self._send_ready, lambda s: m)
+        e = self._remember("notice", f"已恢复（{name}）：Agent 接收新消息，定时任务按各自的启用状态继续。")
+        self._post(self._send_ready, lambda s, e=e: self._render(e, s))
+        self.scheduler.wake.set()
+
+    def task_finished(self, res: dict) -> None:
+        """A scheduled run ended: its batch grants end with it; one notice to the phones (task name + the VERDICT sentence)."""
+        for gid in list(self.grants):
+            self.end_grant(gid, "turn_end")
+        title = res.get("title") or res["id"]
+        if res.get("stopped"):
+            text = f"定时任务「{title}」：被急停中断"
+        else:
+            text = f"定时任务「{title}」：{res['verdict']} — {res['line']}" + ("（只读运行）" if res.get("readonly") else "")
+        self.st.log("task_done", id=res["id"], result=res["verdict"])
+        self.emit("task_done", id=res["id"], verdict=res["verdict"], line=res["line"], report=res.get("report"))
+        self.activity("task_done", id=res["id"], title=title, verdict=res["verdict"], line=res["line"], secs=res.get("secs"),
+                      readonly=res.get("readonly"), report=res.get("report"), stopped=res.get("stopped"))
+        e = self._remember("notice", clean(text, wire.MAX_TEXT))
+        self._post(self._send_ready, lambda s, e=e: self._render(e, s))
+        self.push_notify("reply")
+
+    async def _send_chunks(self, s: Session, head: dict, key: str, items: list, tail: dict | None = None) -> None:
+        """Send `items` as several app messages {**head, key: [...], "more": bool} of ≤ CHUNK JSON bytes each."""
+        batch, size = [], 0
+        for it in items:
+            n = len(json.dumps(it, ensure_ascii=False).encode())
+            if batch and size + n > CHUNK:
+                await self.send_app(s, {**head, key: batch, "more": True})
+                batch, size = [], 0
+            batch.append(it)
+            size += n
+        await self.send_app(s, {**head, key: batch, "more": False, **(tail or {})})
+
+    async def _ctl_res(self, s: Session, r: str, action: str, ok: bool, **kw) -> None:
+        await self.send_app(s, {"t": "ctl_res", "r": r, "action": action, "ok": ok, **kw})
+
+    async def on_control(self, s: Session, t: str, obj: dict) -> None:
+        r = obj.get("r")
+        if not isinstance(r, str) or not _RID.fullmatch(r):
+            return
+        if t == "mem_list":
+            return await self.send_memory(s, r)
+        if t == "act_list":
+            before = obj.get("before") if isinstance(obj.get("before"), str) else None
+            items, nxt = await asyncio.to_thread(activity.page, self.st, before)
+            return await self._send_chunks(s, {"t": "act_page", "r": r}, "items", items,
+                                           {"next": nxt, "on": activity.enabled(self.st)})
+        if t == "task_list":
+            wd = self.agent_cfg["dir"] if self.agent_cfg else None
+            rows = await asyncio.to_thread(tasks.rows, self.st, wd)
+            for x in rows:
+                x["running"] = self.scheduler.current_id == x["id"]
+            return await self._send_chunks(s, {"t": "tasks", "r": r}, "items", rows,
+                                           {"paused": self.stopped(), "agent": self.agent_cfg["kind"] if self.agent_cfg else None})
+        # ---- writes: signed like an approval (Invariant 20)
+        action = {"mem_rm": "mem_rm", "mem_undo": "mem_undo", "estop": "estop", "resume": "resume",
+                  "task_set": "task_on" if obj.get("on") is True else "task_off"}[t]
+        target = {k: obj.get(k) for k in ("src", "file", "fsha", "iid", "id", "tsha")}
+        if action in ("mem_rm",) and not all(isinstance(target[k], str) and len(target[k]) <= 300
+                                              for k in ("src", "file", "fsha", "iid")):
+            return await self._ctl_res(s, r, action, False, why="shape")
+        if action in ("mem_undo", "task_on", "task_off") and not (isinstance(target["id"], str) and len(target["id"]) <= 64):
+            return await self._ctl_res(s, r, action, False, why="shape")
+        if action in ("task_on", "task_off") and not isinstance(target["tsha"], str):
+            target["tsha"] = ""
+        why = controls.check(self.st, self.nonces, self.channel, s.device, obj, action, target)
+        sig = obj.get("sig") if isinstance(obj.get("sig"), str) else None
+        if why:
+            self.st.log("control_refused", device=s.device, action=action, reason=why)
+            controls.log(self.st, action=action, device=s.device, result="refused:" + why)
+            self.activity("control_refused", action=action, by=s.name or s.device, why=why)
+            return await self._ctl_res(s, r, action, False, why=why)
+        name = s.name or s.device
+        result, extra = "ok", {}
+        try:
+            if action == "estop":
+                await self.do_estop("phone:" + s.device, name)
+            elif action == "resume":
+                await self.do_resume("phone:" + s.device, name)
+            elif action == "mem_rm":
+                if not self.agent_cfg:
+                    raise memory.MemoryError_("unknown_source")
+                rec = await asyncio.to_thread(memory.remove, self.st, self.agent_cfg["kind"], self.agent_cfg["dir"],
+                                              target["src"], target["file"], target["fsha"], target["iid"])
+                extra = {"undo": rec["id"], "label": rec["label"]}
+                self.activity("mem_rm", by=name, label=rec["label"], text=memory.preview(rec, 200), undo=rec["id"])
+            elif action == "mem_undo":
+                rec = await asyncio.to_thread(memory.restore, self.st, target["id"])
+                self.activity("mem_undo", by=name, label=rec.get("label"), text=memory.preview(rec, 200))
+            else:
+                wd = self.agent_cfg["dir"] if self.agent_cfg else None
+                on = action == "task_on"
+                await asyncio.to_thread(tasks.set_enabled, self.st, wd, target["id"], on, "phone:" + s.device,
+                                        target["tsha"] if on else None)
+                self.activity(action, by=name, id=target["id"])
+                self.scheduler.wake.set()
+        except memory.MemoryError_ as e:
+            result = e.reason
+        except tasks.TaskError as e:
+            result = e.reason
+        except OSError:
+            result = "io"
+        self.st.log("control", device=s.device, action=action, result=result)
+        controls.log(self.st, action=action, device=s.device, result=result, obj=target, sig=sig, n=obj.get("n"),
+                     ts=obj.get("ts"))
+        await self._ctl_res(s, r, action, result == "ok", **({} if result == "ok" else {"why": result}), **extra)
+
+    async def send_memory(self, s: Session, r: str) -> None:
+        c = self.agent_cfg
+        res = await asyncio.to_thread(memory.scan, c["kind"] if c else None, c["dir"] if c else None)
+        tr = await asyncio.to_thread(memory.trash, self.st)
+        srcs = []
+        items = []
+        for src in res["sources"]:
+            srcs.append({"id": src["id"], "label": src["label"], "path": src["path"], "kind": src["kind"],
+                         **({"problem": src["problem"]} if src.get("problem") else {}),
+                         "n": sum(len(f["items"]) for f in src["files"]),
+                         "bad": [{"file": f["file"][:120], "problem": f["problem"]} for f in src["files"] if f.get("problem")][:10]})
+            for f in src["files"]:
+                for it in f["items"]:
+                    text = it["text"]
+                    x = {"src": src["id"], "file": f["file"], "fsha": f["fsha"], "iid": it["iid"], "kind": it["kind"],
+                         "text": text[:ITEM_SHOW]}
+                    if len(text) > ITEM_SHOW:
+                        x["cut"] = len(text)
+                    for k in ("title", "desc"):
+                        if it.get(k):
+                            x[k] = it[k][:200]
+                    items.append(x)
+        trash = [{"id": t["id"], "ts": t.get("ts", 0), "label": t.get("label", ""), "text": memory.preview(t, 160)}
+                 for t in tr[:30]]
+        await self.send_app(s, {"t": "mem_sources", "r": r, "harness": res["harness"], "sources": srcs[:20], "trash": trash})
+        await self._send_chunks(s, {"t": "mem_items", "r": r}, "items", items)
+
+    # ------------------------------------------------------------ slash commands (slash.py, ADR-A70 – A72)
+    def cmd_card(self, name: str, res: "slash.Result", by: str | None = None) -> None:
+        """A command result → one chat entry `from: "cmd"` (kept in the backlog like every message) on every phone."""
+        x = {"cmd": name, "ok": res.kind in ("ok", "info"), "kind": res.kind}
+        if res.models:
+            x["models"] = res.models[:40]
+        if res.undo:
+            x["undo"] = True
+        if res.sep:
+            x["sep"] = True
+        if by:
+            x["by"] = by[:64]
+        text = res.text if text_units(res.text) <= wire.MAX_TEXT else res.text[:3900] + " …"
+        self.emit("agent_notice", text=f"/{name}：{text}")
+        e = self._remember("cmd", text, x=x)
+        self._post(self._send_ready, lambda s, e=e: self._render(e, s))
+
+    def cmd_done(self, cmd, res: "slash.Result") -> None:
+        """Called by the Agent's queue when a command ran (agent.Cmd)."""
+        self.st.log("slash", cmd=cmd.name, result=res.kind)
+        self.activity("slash", cmd=cmd.name, result=res.kind, by=cmd.by)
+        self.cmd_card(cmd.name, res, cmd.by)
+
+    def set_model(self, model: str) -> None:
+        """/model <name>: kept in config.json (`agent.model`), so a restart uses it too."""
+        self.st.set_agent_model(model)
+        if self.agent_cfg is not None:
+            self.agent_cfg["model"] = model
+
+    async def on_slash(self, s: Session, name: str, arg: str, confirm: bool, typed: bool) -> None:
+        """A command from a ready session of a paired device (the only place one can come from). /stop and /help at once;
+        the rest after the turn in front of it (the Agent's queue). Logged: command name + result class, never text."""
+        by = s.name or s.device
+        self.st.log("slash_in", cid=s.cid, device=s.device, cmd=name if name in slash.WHITELIST + slash.INTERNAL else "other")
+
+        def done(res):
+            self.st.log("slash", cmd=name if name in slash.WHITELIST + slash.INTERNAL else "other", result=res.kind)
+            self.activity("slash", cmd=name if name in slash.WHITELIST + slash.INTERNAL else "other", result=res.kind, by=by)
+            self.cmd_card(name if name in slash.WHITELIST + slash.INTERNAL else "refused", res, by)
+        if not self.agent:
+            return done(slash.Result(slash.HELP if name == "help" else "还没接 Agent：在电脑上运行 jarvis agent claude --dir <目录>。",
+                                     "info" if name == "help" else "error"))
+        if name not in slash.WHITELIST + slash.INTERNAL or (name in slash.INTERNAL and typed):
+            if self.agent.kind == "claude" and not getattr(self.agent, "init", None):
+                return done(slash.Result("还不知道 Claude Code 有哪些技能：先发一条普通消息，再试一次。\n" + slash.REFUSE,
+                                         "refused"))
+            return done(slash.Result(slash.REFUSE, "refused"))
+        if name == "help":
+            return done(await self.agent.command("help", arg))
+        if name == "stop":
+            return done(await self.stop_turn(by))
+        if self.stopped():
+            return done(slash.Result("已急停：恢复之后再用这个命令。", "refused"))
+        if name == "clear" and not confirm:
+            return done(slash.Result("清空要在手机上确认：点输入框旁的「命令」→「清空」。", "info"))
+        if self.agent.status in ("working", "compacting") or not self.agent.q.empty():
+            self.cmd_card(name, slash.Result("这一轮结束后执行。", "info"), by)
+        self.agent.submit(agents.Cmd(name, arg, by))
+
+    async def stop_turn(self, by: str) -> "slash.Result":
+        """/stop: the stop switch's interrupt for the running turn (and a running scheduled task) — nothing is paused,
+        the queue and every task's enabling stay as they are."""
+        busy = await self.agent.halt(clear_queue=False) if self.agent else False
+        ran = await self.scheduler.stop_running()
+        self.status_changed()
+        if busy or ran:
+            return slash.Result("已停下" + ("这一轮" if busy else "") + ("、正在跑的定时任务" if ran else "") +
+                                "。没有暂停任何东西：可以接着发消息。")
+        return slash.Result("现在没有正在进行的一轮。", "info")
 
     # ------------------------------------------------------------ Web Push (PROTOCOL §9): no content, host → push service
     def _push_key(self):
@@ -1058,7 +1532,7 @@ class Host:
         os.chmod(sock, 0o600)
         self.st.log("serve_start", channel=self.channel)
         self.post_q = asyncio.Queue()
-        tasks = [asyncio.create_task(self.relay_loop()), asyncio.create_task(self.reporter.run()),
+        jobs = [asyncio.create_task(self.relay_loop()), asyncio.create_task(self.reporter.run()),
                  asyncio.create_task(self.sync_loop()), asyncio.create_task(self.post_loop()),
                  asyncio.create_task(self.update_loop())]
         perm_server = None
@@ -1078,18 +1552,20 @@ class Host:
             self.agent.start()
             self.sent_status = self.eff_status()
             self.st.log("agent_on", agent=self.agent.kind, fence=self.agent_cfg.get("fence", True))
+        jobs.append(asyncio.create_task(self.scheduler.loop()))
         if self.read_stdin:
-            tasks.append(asyncio.create_task(self.stdin_loop()))
+            jobs.append(asyncio.create_task(self.stdin_loop()))
         try:
             await self.stopping.wait()
         finally:
             for a in list(self.asks.values()):      # serve stopping: every pending request is denied
                 if not a.fut.done():
                     a.fut.set_result(("deny", None, None, None))
+            await self.scheduler.stop_current()
             if self.agent:
                 await self.agent.stop()
             await asyncio.sleep(0)
-            for t in tasks:
+            for t in jobs:
                 t.cancel()
             server.close()
             if perm_server:

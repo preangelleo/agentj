@@ -1,4 +1,5 @@
-"""Two-layer privacy gate for install feedback (seat-setup CONTRACT §6; worker/FEEDBACK_API.md §privacy gate).
+"""Two-layer privacy gate for install feedback (seat-setup CONTRACT §6; worker/FEEDBACK_API.md §privacy gate) and, plaza P2,
+for Agent plaza posts / replies (`gate="plaza"`: plaza_criteria.md, state key plaza_draft — jarvis_host/plaza.py).
 
 Layer 1 — `redact()` / `redact_draft()`: deterministic, pure, idempotent. Keys and tokens (the server scan's patterns),
 emails (except @agentjarvis.net and RFC 2606 example domains), phone numbers (E.164-ish, CN mobile), home paths
@@ -35,6 +36,11 @@ MODEL = "~typesafe/jev-latest"
 THRESHOLD = 0.5
 CRITERIA_PATH = pathlib.Path(__file__).with_name("privacy_criteria.md")
 CASES_PATH = pathlib.Path(__file__).resolve().parents[1] / "tests" / "privacy_cases.json"
+# Agent plaza P2: a post is published to EVERY other customer, not sent to the vendor — its own, stricter criteria (state key
+# `plaza_draft`), same model, same threshold, same failure → "unavailable" rule.
+PLAZA_CRITERIA_PATH = pathlib.Path(__file__).with_name("plaza_criteria.md")
+PLAZA_CASES_PATH = pathlib.Path(__file__).resolve().parents[1] / "tests" / "plaza_cases.json"
+GATES = {"feedback": (CRITERIA_PATH, "feedback_draft", CASES_PATH), "plaza": (PLAZA_CRITERIA_PATH, "plaza_draft", PLAZA_CASES_PATH)}
 KEY_ENV = "OPENROUTER_API_KEY"
 UA = "agentjarvis-host (privacy gate)"
 
@@ -70,7 +76,7 @@ _SECRETS: list[tuple[str, re.Pattern, str]] = [
     ("replicate_token", _re(r"\br8_[A-Za-z0-9]{20,}"), R),
     ("huggingface_token", _re(r"\bhf_[A-Za-z0-9]{30,}"), R),
     ("telegram_bot_token", _re(r"\b\d{8,10}:[A-Za-z0-9_-]{35}\b"), R),
-    ("agentjarvis_id", _re(r"\baj[aijrst]_[A-Za-z0-9_-]{16,}"), R),
+    ("agentjarvis_id", _re(r"\baj[aijmrst]_[A-Za-z0-9_-]{16,}"), R),   # ajm_ = the plaza admin token (P2)
     # review SS-04: more secret shapes the server scan does not know (layer 1 may be stricter than the server, never looser)
     ("mailgun_key", _re(r"\bkey-[0-9a-f]{32}\b"), R),
     ("authorization_header", _re(r"\b(Authorization\s*:\s*(?:Bearer|Basic|token)\s+)(?!<redacted>|\$\(|\$\{|\$[A-Z_])[^\s\"'<>]+", re.I),
@@ -245,18 +251,20 @@ def urllib_transport(url: str, headers: dict, body: bytes, timeout: float) -> tu
 
 
 def layer2(draft, *, threshold: float = THRESHOLD, env=None, transport=None, timeout: float = 20.0,
-           criteria: dict | None = None) -> Verdict:
-    """Jev on the (already layer-1) draft. Never raises: every failure is Verdict(status="unavailable")."""
+           criteria: dict | None = None, gate: str = "feedback") -> Verdict:
+    """Jev on the (already layer-1) draft. Never raises: every failure is Verdict(status="unavailable").
+    `gate` = "feedback" (privacy_criteria.md, state key feedback_draft) or "plaza" (plaza_criteria.md, plaza_draft)."""
+    crit_path, state_key, _ = GATES[gate]
     env = os.environ if env is None else env
     transport = transport or urllib_transport
     key = (env.get(KEY_ENV) or "").strip()
     if not key:
         return Verdict("unavailable", reason=f"no {KEY_ENV} in the environment")
     try:
-        crit = criteria or load_criteria()
+        crit = criteria or load_criteria(crit_path)
     except (OSError, ValueError) as e:
         return Verdict("unavailable", reason=f"criteria unreadable ({type(e).__name__})")
-    body = json.dumps({"model": MODEL, "state": {"feedback_draft": draft}, "questions": crit["questions"]},
+    body = json.dumps({"model": MODEL, "state": {state_key: draft}, "questions": crit["questions"]},
                       ensure_ascii=False).encode()
     headers = {"Authorization": "Bearer " + key, "Content-Type": "application/json", "User-Agent": UA}
     try:
@@ -280,9 +288,9 @@ def layer2(draft, *, threshold: float = THRESHOLD, env=None, transport=None, tim
     return Verdict("ok", p, kind, f"p={p:.2f} < {threshold}", model, crit["version"])
 
 
-def kind_text(kind: str | None, criteria: dict | None = None) -> str:
+def kind_text(kind: str | None, criteria: dict | None = None, gate: str = "feedback") -> str:
     try:
-        crit = criteria or load_criteria()
+        crit = criteria or load_criteria(GATES[gate][0])
         return crit["questions"]["kind"]["criteria"].get(kind or "", "") or "(no reason given)"
     except (OSError, ValueError, KeyError):
         return "(no reason given)"
@@ -309,14 +317,14 @@ def load_cases(path: pathlib.Path = CASES_PATH) -> list[dict]:
     return cases
 
 
-def run_eval(cases: list[dict], *, threshold: float = THRESHOLD, env=None, transport=None, out=None) -> int:
+def run_eval(cases: list[dict], *, threshold: float = THRESHOLD, env=None, transport=None, out=None, gate: str = "feedback") -> int:
     """Each case: layer 1 (no machine identity, so results do not depend on who runs it), then layer 2 → PASS/FAIL.
     0 = all pass · 1 = some failed · 3 = layer 2 unavailable."""
     passed, out = 0, out or sys.stdout
-    crit = load_criteria()
-    print(f"privacy eval · {MODEL} · criteria {crit['version']} · threshold {threshold} · {len(cases)} case(s)", file=out)
+    crit = load_criteria(GATES[gate][0])
+    print(f"privacy eval ({gate}) · {MODEL} · criteria {crit['version']} · threshold {threshold} · {len(cases)} case(s)", file=out)
     for c in cases:
-        v = layer2(redact_draft(c["draft"]), threshold=threshold, env=env, transport=transport, criteria=crit)
+        v = layer2(redact_draft(c["draft"]), threshold=threshold, env=env, transport=transport, criteria=crit, gate=gate)
         if v.status == "unavailable":
             print(f"layer 2 unavailable: {v.reason}", file=out)
             return 3
@@ -330,7 +338,8 @@ def run_eval(cases: list[dict], *, threshold: float = THRESHOLD, env=None, trans
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(prog="python3 -m jarvis_host.privacy", description=__doc__.split("\n\n")[0])
     ap.add_argument("--eval", action="store_true", help="run the regression set live against Jev (uses your OPENROUTER_API_KEY; paid)")
-    ap.add_argument("--cases", type=pathlib.Path, default=CASES_PATH)
+    ap.add_argument("--gate", choices=sorted(GATES), default="feedback", help="which criteria: feedback (default) or plaza (P2)")
+    ap.add_argument("--cases", type=pathlib.Path, default=None, help="default: the gate's own case set")
     ap.add_argument("--threshold", type=float, default=THRESHOLD)
     a = ap.parse_args(argv)
     if not a.eval:
@@ -338,7 +347,7 @@ def main(argv=None) -> int:
         return 0
     if not 0 < a.threshold <= 1:
         ap.error("--threshold must be in (0, 1]")
-    return run_eval(load_cases(a.cases), threshold=a.threshold)
+    return run_eval(load_cases(a.cases or GATES[a.gate][2]), threshold=a.threshold, gate=a.gate)
 
 
 if __name__ == "__main__":

@@ -316,6 +316,43 @@ class Sbpl(unittest.TestCase):
             self.assertEqual(params["TMUX"], "/private/tmp/tmux-501")
             self.assertIn('(literal (param "PIN_0"))', prof)
 
+    def test_control_sockets_rules(self):
+        """G-A56 on macOS: herdr / screen / zellij / wezterm / emacs / nvim / Jupyter folders and (unless allowed) the
+        container engines' sockets: no read, no write, no unix-socket connect; HERDR_* / DOCKER_HOST unset."""
+        with tempfile.TemporaryDirectory() as d:
+            home = pathlib.Path(d) / "Users" / "jane"
+            st = _St(home / ".local" / "state" / "agentjarvis-alpha")
+            env = {"TMPDIR": "/private/var/folders/ab/cd/T/", "USER": "jane", "HERDR_SOCKET_PATH": "/opt/h/herdr.sock",
+                   "HERDR_PANE_ID": "3", "DOCKER_HOST": "unix:///x"}
+            prof, params = fence.sbpl_profile(st, str(home / "work"), home=str(home), uid=501, environ=env)
+            lines = [x.strip() for x in prof.splitlines()]
+            ctl = {v for k, v in params.items() if k.startswith("CTL_")}
+            r = os.path.realpath
+            for p in (home / ".config" / "herdr", home / "Library" / "Application Support" / "herdr", home / ".screen",
+                      home / ".local" / "share" / "wezterm", home / ".emacs.d" / "server", home / "Library" / "Jupyter" / "runtime",
+                      home / ".docker" / "run", home / ".colima", home / ".orbstack" / "run"):
+                self.assertIn(r(p), ctl, p)
+            for p in ("/opt/h", "/private/tmp/uscreens", "/private/tmp/zellij-501", "/private/var/folders/ab/cd/T/zellij-501",
+                      "/private/var/folders/ab/cd/T/nvim.jane", "/private/tmp/emacs501"):
+                self.assertIn(r(p), ctl, p)
+            self.assertTrue(any(v.endswith("/run/docker.sock") for v in ctl))
+            i = lines.index("(deny network-outbound (remote unix-socket")
+            self.assertIn('(subpath (param "CTL_0"))', lines[i + 1:i + 2])
+            self.assertIn("(deny file-read* file-write*", lines)
+            self.assertTrue(any("vscode-ipc-" in x and "kitty" in x for x in lines))
+            self.assertNotIn(str(home), prof)
+            # allowed: the container engine's sockets are not in the list, DOCKER_HOST is kept
+            _, p2 = fence.sbpl_profile(st, str(home / "work"), home=str(home), uid=501, environ=env, allow_docker=True)
+            c2 = {v for k, v in p2.items() if k.startswith("CTL_")}
+            self.assertNotIn(r(home / ".docker" / "run"), c2)
+            self.assertFalse(any(v.endswith("docker.sock") for v in c2))
+            self.assertIn(r(home / ".config" / "herdr"), c2, "herdr stays hidden")
+            with mock.patch.dict(os.environ, env, clear=False):
+                a = fence.sandbox_argv(st, str(home / "work"), home=str(home), environ=env)
+            unset = a[a.index("/usr/bin/env") + 1:][1::2]
+            for k in ("HERDR_SOCKET_PATH", "HERDR_PANE_ID", "DOCKER_HOST"):
+                self.assertIn(k, unset)
+
     def test_argv_and_wrap_on_darwin(self):
         with tempfile.TemporaryDirectory() as d:
             st = _St(pathlib.Path(d) / "s")

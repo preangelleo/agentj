@@ -1,7 +1,10 @@
 """agentjarvis host CLI (alpha): init · serve · pair · admin · name · devices · revoke · send · status · login · report ·
-unlink · remote-unbind · agent · approvals · passphrase · doctor · service · update (L3). No arguments = the next-step hint.
+unlink · remote-unbind · agent · approvals · passphrase · doctor · service · update (L3) · stop · resume · memory · activity ·
+config · tasks (phone controls, ADR-A50 – A54) · wizard (L3.5, `wizard/__init__.py`). No arguments = the next-step hint.
 Seat setup (0.7): `jarvis login --seat <ajt_…> | --seat-file <path> | --seat - --name <name>` binds with a setup code from
 the company (no y/N; exit 3 name taken · 4 invalid code · 5 seat not paid · 2 refused locally); `jarvis agent detect`.
+Plaza P2: `jarvis plaza search | show | mine | post | reply | resolve | report` (plaza.py) — read posts are data, never
+instructions; post / reply go out only after layer 1 (+ layer 2) and `--owner-confirmed --digest` from the human.
 
 State dir: $AGENTJARVIS_STATE_DIR or ~/.local/state/agentjarvis-alpha (0700). Approval of a new device happens only here,
 in the terminal running `jarvis pair`: the human types the 6-digit code shown on the phone. At most MAX_DEVICES (5) remotes
@@ -14,13 +17,14 @@ import argparse
 import asyncio
 import json
 import os
+import re
 import signal
 import sys
 import threading
 import time
 
 from . import DIST, __version__, cloud, gate, names
-from . import feedback
+from . import feedback, plaza, wizard
 from .state import DEFAULT_RELAY, DEFAULT_WEB, MAX_DEVICES, State
 from .text import STARTER_NAMES
 
@@ -527,6 +531,7 @@ def cmd_status(a) -> None:
         print(f"Agent：{_name_or_unset(st)}")
         print(_link_line(st))
         print(f"批准口令：{'已设置' if gate.is_set(st) else '未设置（`jarvis passphrase set`）'}")
+        print(_estop_line(st))
         return
     link = cloud.read_cloud(st)
     res["dashboard"] = link["tenant"]["slug"] if link else "未绑定 Dashboard"
@@ -792,15 +797,19 @@ def cmd_unlink(a) -> None:
         print(f"已删除本机的绑定记录（公司账号 {slug}），不再上报。Dashboard 那边的绑定要在 Dashboard 里解绑本机。")
 
 
-AGENT_LABEL = {"claude": "Claude Code", "codex": "Codex"}
+AGENT_LABEL = {"claude": "Claude Code", "codex": "Codex", "opencode": "OpenCode"}
 
 
 def _agent_line(st: State) -> str:
     c = st.agent_config()
     if not c:
         return "接的 Agent：无（手机消息只显示在这个终端；`jarvis agent claude --dir <目录>` 接上 Claude Code）"
-    extra = "；手机上批准权限请求" if c["kind"] == "claude" else "；只收发文字（权限按你自己的 Codex 配置）"
+    extra = {"claude": "；手机上批准权限请求",
+             "codex": "；手机上批准权限请求（jarvis 让 Codex 每条非只读命令和每个改动都先问：untrusted，审批人 = 你）",
+             "opencode": "；手机上批准权限请求（OpenCode 的规则由 jarvis 加严：除只读操作外都问手机）"}.get(c["kind"], "")
     fz = " · 隔离运行（看不到 jarvis 的密钥与设备名单）" if c.get("fence", True) else " · ⚠ 不隔离运行（--unfenced）"
+    if c.get("fence", True) and c.get("docker"):
+        fz += " · ⚠ 允许用 docker（--allow-docker）"
     return (f"接的 Agent：{AGENT_LABEL[c['kind']]} · 目录 {c['dir']}" + (f" · 模型 {c['model']}" if c["model"] else "")
             + fz + extra)
 
@@ -811,7 +820,9 @@ def cmd_agent(a) -> None:
         sys.exit(harness.main(as_json=a.json))
     st = State()
     _need_init(st)
-    if a.mode in ("claude", "codex"):
+    if a.mode in ("claude", "codex", "opencode"):
+        if a.mode == "opencode" and a.model and not re.fullmatch(r"[A-Za-z0-9._-]+/[^\s/][^\s]*", a.model):
+            sys.exit("✗ OpenCode 的模型写成「服务商/模型」，例如 zhipuai/glm-5.3 或 deepseek/deepseek-flash（`opencode models` 列出可用的）")
         if a.unfenced:
             print("⚠ 不隔离运行：Agent 能读到本机的密钥和设备名单、能改 jarvis 的设置——你在手机上批准的任何一条命令\n"
                   "  都可能借此给自己加一台遥控器。只在 bubblewrap 用不了、而你清楚风险时才这样做。", flush=True)
@@ -819,12 +830,19 @@ def cmd_agent(a) -> None:
                 gate.verify(st, _secret("输入批准口令确认："))
             except gate.GateError as e:
                 sys.exit("✗ " + _gate_msg(e))
+        elif a.allow_docker:
+            print("⚠ 允许 Agent 用 docker / podman：能用容器引擎就能把整台电脑的文件挂进容器——包括 jarvis 的密钥和设备名单，\n"
+                  "  隔离对它基本失效。只在 Agent 确实要跑容器、而你清楚风险时才这样做。", flush=True)
+            try:
+                gate.verify(st, _secret("输入批准口令确认："))
+            except gate.GateError as e:
+                sys.exit("✗ " + _gate_msg(e))
         try:
-            st.set_agent_config(a.mode, a.dir, a.model, fence=not a.unfenced)
+            st.set_agent_config(a.mode, a.dir, a.model, fence=not a.unfenced, docker=bool(a.allow_docker and not a.unfenced))
         except ValueError as e:
             sys.exit({"bad_dir": "目录不存在",
                       "protected_dir": "这个目录是 jarvis 自己的（状态目录或程序目录），不能给 Agent 用：换一个工作目录"}.get(str(e), str(e)))
-        st.log("agent_config", agent=a.mode, fence=not a.unfenced)
+        st.log("agent_config", agent=a.mode, fence=not a.unfenced, change="docker" if a.allow_docker else None)
         if not a.unfenced:
             from . import fence
             why = fence.problem(st, st.agent_config()["dir"])
@@ -838,7 +856,7 @@ def cmd_agent(a) -> None:
             st.set_agent_session(k, None)
         print("已忘掉之前的对话：下一条手机消息开一段新对话。")
     print(_agent_line(st))
-    if a.mode in ("claude", "codex", "off"):
+    if a.mode in ("claude", "codex", "opencode", "off"):
         print("重启 `jarvis serve` 后生效。Agent 以你自己的身份、登录和权限设置运行，本程序不会给它更多权限。")
 
 
@@ -846,10 +864,12 @@ def cmd_approvals(a) -> None:
     from . import approvals
     st = State()
     _need_init(st)
-    recs = approvals.read_log(st)[-a.last:] if a.last else approvals.read_log(st)
+    every = approvals.read_log(st)
+    recs = every[-a.last:] if a.last else every
+    index = {str(r.get("id")): r for r in every if r.get("decision") == "allow_batch"}
     bad = 0
     for r in recs:
-        v = approvals.check_record(st, r) if a.verify else ""
+        v = approvals.check_record(st, r, index) if a.verify else ""
         bad += v == "bad"
         if a.json:
             print(json.dumps({**r, **({"verify": v} if v else {})}, ensure_ascii=False))
@@ -857,13 +877,318 @@ def cmd_approvals(a) -> None:
             when = time.strftime("%m-%d %H:%M:%S", time.localtime(r.get("ts", 0)))
             who = f"手机 {r.get('device')}" if r.get("device") else {"timeout": "超时", "no_device": "无可批准手机",
                                                                        "serve_stop": "serve 停止", "agent_gone": "Agent 撤回",
-                                                                       "too_many": "请求过多"}.get(r.get("reason"), r.get("reason"))
-            mark = {"ok": " ✓签名有效", "ok_removed": " ✓签名有效（设备已移除）", "bad": " ✗签名无效", "unsigned": ""}.get(v, "")
-            print(f"{when}  {r.get('decision', '?'):5}  {r.get('tool', '?'):12}  {who}{mark}")
+                                                                       "too_many": "请求过多",
+                                                                       "policy": "超出 Agent 自己的沙箱，自动拒绝"}.get(r.get("reason"), r.get("reason"))
+            if r.get("reason") == "batch":
+                who = f"按手机 {r.get('device')} 的批量授权自动批准（{str(r.get('grant'))[:8]}…）"
+            mark = {"ok": " ✓签名有效", "ok_removed": " ✓签名有效（设备已移除）", "bad": " ✗签名无效", "unsigned": "",
+                    "auto": " ✓授权签名有效"}.get(v, "")
+            cats = ("  [" + "、".join(r["cats"]) + "]") if r.get("cats") else ""
+            print(f"{when}  {r.get('decision', '?'):11}  {r.get('tool', '?'):12}  {who}{mark}{cats}")
     if not recs:
         print("还没有批准记录。")
     if a.verify and bad:
         sys.exit(f"{bad} 条记录签名无效")
+
+
+# ------------------------------------------------------------------ phone controls, terminal side (ADR-A50 – A54)
+def _estop_line(st: State) -> str:
+    from . import controls
+    e = controls.estop_state(st)
+    if not e["on"]:
+        return "急停：未急停 / not stopped"
+    when = time.strftime("%m-%d %H:%M", time.localtime(e.get("at") or 0))
+    by = e.get("by") or "?"
+    by = "终端" if by == "terminal" else ("手机 " + (st.devices().get(by[6:], {}).get("name") or by[6:])) if by.startswith("phone:") else by
+    return f"急停：⛔ 已急停（{when}，{by}）· 恢复：`jarvis resume` / STOPPED — `jarvis resume`"
+
+
+def cmd_stop(a) -> None:
+    """Stop everything. No passphrase: stopping only ever takes power away."""
+    from . import activity, controls
+    st = State()
+    _need_init(st)
+    try:
+        res = names.ctl_call(st, {"cmd": "stop"}, 15)
+    except names.ServeBusy:
+        res = None
+    if res is None:       # serve not running (or not answering): the switch is a file — serve starts stopped
+        controls.set_estop(st, True, "terminal")
+        st.log("estop", status="on")
+        activity.record(st, "estop", by="终端")
+    print("⛔ 已急停：Agent 停下、待批准的全部拒绝、批量授权收回、定时任务暂停；serve 重启后仍是急停。恢复：`jarvis resume`")
+
+
+def cmd_resume(a) -> None:
+    from . import activity, controls
+    st = State()
+    _need_init(st)
+    if not controls.estop_state(st)["on"]:
+        print("没有急停，不用恢复。")
+        return
+    if gate.is_set(st):     # resuming gives the Agent its power back: the human's passphrase, like approving a remote
+        try:
+            gate.verify(st, _secret("输入批准口令恢复："))
+        except gate.GateError as e:
+            sys.exit("✗ " + _gate_msg(e))
+    try:
+        res = names.ctl_call(st, {"cmd": "resume"}, 15)
+    except names.ServeBusy:
+        sys.exit("jarvis serve 在运行但没有响应：没有恢复")
+    if res is None:
+        controls.set_estop(st, False, "terminal")
+        st.log("estop", status="off")
+        activity.record(st, "resume", by="终端")
+    print("✓ 已恢复：Agent 接收新消息，定时任务按各自的启用状态继续。")
+
+
+def _mem_target(st: State, a) -> tuple[str | None, str | None]:
+    c = st.agent_config()
+    kind = a.harness or (c["kind"] if c else None)
+    d = a.dir or (c["dir"] if c else None)
+    if kind and not d:
+        d = os.getcwd()
+    return kind, (os.path.realpath(os.path.expanduser(d)) if d else None)
+
+
+def _mem_items(src: dict) -> list[dict]:
+    return [{"file": f["file"], "fsha": f["fsha"], **it} for f in src["files"] if f.get("fsha") for it in f["items"]]
+
+
+def cmd_memory(a) -> None:
+    from . import memory
+    st = State()
+    _need_init(st)
+    kind, d = _mem_target(st, a)
+    if a.mode == "restore":
+        if not a.args:
+            tr = memory.trash(st)
+            if a.json:
+                print(json.dumps([{k: r.get(k) for k in ("id", "ts", "label", "kind")} | {"text": memory.preview(r, 200)}
+                                  for r in tr], ensure_ascii=False, indent=1))
+                return
+            if not tr:
+                print("回收站是空的（删掉的记忆保留 7 天）。")
+            for r in tr:
+                when = time.strftime("%m-%d %H:%M", time.localtime(r.get("ts", 0)))
+                print(f"{r['id']}  {when}  {r.get('label', '')}  {memory.preview(r)}")
+            return
+        try:
+            r = memory.restore(st, a.args[0])
+        except memory.MemoryError_ as e:
+            sys.exit(f"✗ 没有恢复：{_MEM_WHY.get(e.reason, e.reason)}")
+        from . import activity
+        activity.record(st, "mem_undo", by="终端", label=r.get("label"), text=memory.preview(r, 200))
+        print(f"✓ 已恢复到 {memory.tilde(r['path'])}")
+        return
+    if not kind:
+        sys.exit("还没接 Agent：`jarvis agent claude --dir <目录>`（或用 --harness claude|codex|opencode --dir <目录>）")
+    res = memory.scan(kind, d)
+    if a.mode == "list":
+        if a.json:
+            print(json.dumps(res, ensure_ascii=False, indent=1))
+            return
+        print(f"{memory.LABEL_HARNESS.get(kind, kind)} · 工作目录 {memory.tilde(d)}")
+        for i, s in enumerate(res["sources"], 1):
+            n = len(_mem_items(s))
+            state = _MEM_WHY.get(s.get("problem"), s.get("problem")) if s.get("problem") else f"{n} 条"
+            print(f"  {i}. {s['label']}  {s['path']}  — {state}")
+        print("看一处：`jarvis memory show <编号>`；删一条：`jarvis memory rm <编号> <条目号>`；恢复：`jarvis memory restore`")
+        return
+    if not a.args:
+        sys.exit("要给记忆来源的编号（`jarvis memory list` 里看）")
+    try:
+        src = res["sources"][int(a.args[0]) - 1]
+    except (ValueError, IndexError):
+        src = next((s for s in res["sources"] if s["id"] == a.args[0]), None)
+        if src is None:
+            sys.exit(f"没有这个来源：{a.args[0]}")
+    items = _mem_items(src)
+    if a.mode == "show":
+        if a.json:
+            print(json.dumps({**src, "items": items}, ensure_ascii=False, indent=1))
+            return
+        print(f"{src['label']}  {src['path']}" + (f"  — {_MEM_WHY.get(src['problem'], src['problem'])}" if src.get("problem") else ""))
+        for i, it in enumerate(items, 1):
+            first = (it.get("title") + "：" if it.get("title") else "") + " ".join(it["text"].split())
+            print(f"  {i:>3}. {first[:150]}" + (f"   [{it['file']}]" if it["file"] else ""))
+        return
+    # rm
+    if len(a.args) < 2:
+        sys.exit("要给条目号：`jarvis memory rm <来源编号> <条目号>`（`jarvis memory show <来源编号>` 里看）")
+    try:
+        it = items[int(a.args[1]) - 1]
+    except (ValueError, IndexError):
+        sys.exit(f"没有第 {a.args[1]} 条")
+    try:
+        rec = memory.remove(st, kind, d, src["id"], it["file"], it["fsha"], it["iid"])
+    except memory.MemoryError_ as e:
+        sys.exit(f"✗ 没有删除：{_MEM_WHY.get(e.reason, e.reason)}")
+    from . import activity
+    activity.record(st, "mem_rm", by="终端", label=rec["label"], text=memory.preview(rec, 200), undo=rec["id"])
+    print(f"✓ 已删除（原文进了回收站，7 天内可恢复）：`jarvis memory restore {rec['id']}`")
+
+
+_MEM_WHY = {"not_found": "不存在", "symlink": "是软链接，不跟随", "too_large": "文件太大（> 256 KiB），不显示",
+            "changed": "文件刚被改过，请重新查看后再删", "unknown_item": "没有这一条（可能已经被改掉了）",
+            "unknown_source": "没有这个来源", "exists": "那个文件已经存在且内容不同，没有覆盖", "io": "读写失败",
+            "too_many_files": "文件太多，只显示前 200 个", "total_limit": "总量超过 2 MiB，后面的不显示"}
+
+
+def cmd_activity(a) -> None:
+    from . import activity
+    st = State()
+    _need_init(st)
+    if a.clear:
+        n = activity.clear(st)
+        print(f"已删除 {n} 天的操作记录。")
+        return
+    since = None
+    if a.since:
+        m = __import__("re").fullmatch(r"(\d+)([hdm])", a.since)
+        if m:
+            since = int((time.time() - int(m.group(1)) * {"h": 3600, "d": 86400, "m": 60}[m.group(2)]) * 1000)
+        else:
+            try:
+                import datetime as _dt
+                since = int(_dt.datetime.fromisoformat(a.since).astimezone().timestamp() * 1000)
+            except ValueError:
+                sys.exit("--since 要写成 2h / 3d / 2026-10-01 / 2026-10-01T08:00")
+    items = activity.all_since(st, since)
+    if a.json:
+        for r in items:
+            r.pop("c", None)
+            print(json.dumps(r, ensure_ascii=False))
+        return
+    if not activity.enabled(st):
+        print("（操作记录已关闭：`jarvis config activity on` 打开）")
+    if not items:
+        print("还没有操作记录。")
+    for r in items:
+        print(time.strftime("%m-%d %H:%M:%S", time.localtime(r.get("ts", 0) / 1000)) + "  " + activity_line(r))
+
+
+def activity_line(r: dict) -> str:
+    k = r.get("k")
+    by = f"（{r['by']}）" if r.get("by") else ""
+    t = r.get("text") or r.get("summary") or ""
+    t = " ".join(str(t).split())[:120]
+    cats = ("[" + "、".join(r["cats"]) + "] ") if r.get("cats") else ""
+    task = f"〔定时任务 {r['task']}〕" if r.get("task") else ""
+    return {
+        "turn_start": f"对话开始{by}：{t}", "turn_end": f"对话结束（{r.get('result', '')}，{r.get('secs', '?')} 秒）",
+        "ask": f"权限请求 {task}{cats}{r.get('tool', '')}：{t}",
+        "decision": f"决定 {r.get('result', '')}{by} {r.get('tool', '')}",
+        "auto": f"按批量授权自动批准{by} {r.get('tool', '')}：{t}", "grant": f"批量授权{by}：{r.get('scope', '')}",
+        "grant_end": f"批量授权结束：{r.get('why', '')}", "estop": f"⛔ 急停{by}", "resume": f"恢复{by}",
+        "message_refused": f"急停中，拒收消息{by}：{t}", "mem_rm": f"删除记忆{by} {r.get('label', '')}：{t}",
+        "mem_undo": f"恢复记忆{by} {r.get('label', '')}：{t}", "task_on": f"启用定时任务{by} {r.get('id', '')}",
+        "task_off": f"停用定时任务{by} {r.get('id', '')}", "task_run": f"定时任务开始 {r.get('title', r.get('id', ''))}（{r.get('trigger', '')}）",
+        "task_done": f"定时任务结束 {r.get('title', r.get('id', ''))}：{r.get('verdict', '')} — {r.get('line', '')}"
+                     + ("（只读运行）" if r.get("readonly") else ""),
+        "control_refused": f"拒绝了手机命令 {r.get('action', '')}{by}：{r.get('why', '')}", "truncated": "（今天的记录已达上限，后面的没有记）",
+    }.get(k, str(k))
+
+
+def cmd_config(a) -> None:
+    from . import activity
+    st = State()
+    _need_init(st)
+    if a.key == "activity":
+        if a.value in ("on", "off"):
+            activity.set_enabled(st, a.value == "on")
+            st.log("activity_switch", status=a.value)
+        on = activity.enabled(st)
+        print(("开：本机记录操作与审批（activity.log，只在这台电脑上，30 天，最多 20 MiB）；手机的「记录」页读它。"
+               if on else "关：不再记录（已有的保留到 30 天；`jarvis activity --clear` 立即删除）。")
+              + f" 现有 {activity.size(st) // 1024} KiB / activity log " + ("on" if on else "off"))
+
+
+def cmd_tasks(a) -> None:
+    from . import activity, tasks
+    st = State()
+    _need_init(st)
+    c = st.agent_config()
+    wd = c["dir"] if c else None
+    if a.mode == "list":
+        rows = tasks.rows(st, wd)
+        if a.json:
+            print(json.dumps(rows, ensure_ascii=False, indent=1))
+            return
+        if not wd:
+            print("还没接 Agent：定时任务在 Agent 工作目录的 workflows/*/task.json 里。")
+            return
+        print(_estop_line(st))
+        if not rows:
+            print(f"{memory_tilde(wd)}/workflows 下没有任务。")
+        for r in rows:
+            state = ("✗ 无效：" + r["problems"][0]) if r["problems"] else ("✓ 已启用" if r["enabled"] else
+                                                                         "! 已改动，需重新启用" if r["stale"] else "· 未启用")
+            nx = time.strftime(" · 下次 %m-%d %H:%M", time.localtime(r["next"])) if r.get("next") else ""
+            last = r.get("last") or {}
+            lt = f" · 上次 {last.get('verdict')}" if last else ""
+            print(f"  {r['id']:<20} {state}  {r.get('schedule') or ''} ({r.get('tz') or ''}) {r.get('mode') or ''}{nx}{lt}")
+        return
+    if not a.id:
+        sys.exit("要给任务 id（`jarvis tasks list`）")
+    try:
+        e = tasks.find(wd, a.id)
+    except tasks.TaskError:
+        sys.exit(f"没有这个任务：{a.id}")
+    if a.mode == "show":
+        row = next(r for r in tasks.rows(st, wd) if r["id"] == a.id)
+        print(json.dumps({**row, "dir": memory_tilde(e["dir"]), "needs": (e["task"] or {}).get("needs")}, ensure_ascii=False, indent=1))
+        return
+    if a.mode in ("enable", "disable"):
+        on = a.mode == "enable"
+        if on:
+            if e["problems"]:
+                sys.exit("✗ task.json 无效，不能启用：" + e["problems"][0])
+            if not gate.is_set(st):
+                sys.exit("✗ 先设置批准口令（`jarvis passphrase set`）：启用定时任务要用它确认")
+            print(f"启用「{e['task']['title']['zh']}」：按 {e['task']['schedule']}（{e['task']['tz']}）自动运行 "
+                  f"{'（只读运行）' if e['task']['mode'] == 'research' else ''}；改了 task.json 或 {e['task']['prompt_file']} 就要重新启用。",
+                  flush=True)
+            try:
+                gate.verify(st, _secret("输入批准口令确认："))
+            except gate.GateError as err:
+                sys.exit("✗ " + _gate_msg(err))
+        try:
+            tasks.set_enabled(st, wd, a.id, on, "terminal")
+        except tasks.TaskError as err:
+            sys.exit(f"✗ {err.detail or err.reason}")
+        activity.record(st, "task_on" if on else "task_off", by="终端", id=a.id)
+        st.log("task_on" if on else "task_off", id=a.id)
+        _ctl_quiet(st, {"cmd": "tasks_changed"})
+        print(("✓ 已启用" if on else "✓ 已停用") + f"：{a.id}")
+        return
+    # run
+    if e["problems"]:
+        sys.exit("✗ task.json 无效：" + e["problems"][0])
+    if a.dry_run:
+        t = e["task"]
+        nx = tasks.next_run(t["schedule"], t["tz"])
+        print(json.dumps({"id": a.id, "harness": c["kind"] if c else None, "cwd": memory_tilde(wd), "prompt_file":
+                          f"workflows/{a.id}/{t['prompt_file']}", "mode": t["mode"], "read_only": t["mode"] == "research",
+                          "fenced": bool(c and c.get("fence", True)), "timeout_s": int(tasks.RUN_TIMEOUT),
+                          "next": nx.isoformat() if nx else None, "prompt_head": tasks.prompt_for(e, t["mode"] == "research")[:400]},
+                         ensure_ascii=False, indent=1))
+        return
+    try:
+        res = names.ctl_call(st, {"cmd": "task_run", "id": a.id}, 10)
+    except names.ServeBusy:
+        sys.exit("jarvis serve 没有响应")
+    if res is None:
+        sys.exit("要 jarvis serve 在运行（运行时的审批要经手机）")
+    if not res.get("ok"):
+        sys.exit({"stopped": "已急停：先 `jarvis resume`", "no_agent": "还没接 Agent", "unknown": "serve 找不到这个任务"}
+                 .get(res.get("error"), str(res)))
+    print(f"已排队：{a.id}（等当前这一轮结束后运行；结果会发到手机，也写进 `jarvis activity`）")
+
+
+def memory_tilde(p: str | None) -> str:
+    from .memory import tilde
+    return tilde(p) if p else "?"
 
 
 def cmd_remote_unbind(a) -> None:
@@ -1012,7 +1337,7 @@ NEXT_STEPS = (   # (command, 中文, English)
     ("jarvis login", "把本机加到 Dashboard 公司账号（有席位设置码：--seat-file）",
      "add this host to your Dashboard company (setup code: --seat-file)"),
     ("jarvis passphrase set", "设批准口令（自己输，别让 Agent 代劳）", "set the approval passphrase (yourself)"),
-    ("jarvis agent claude --dir <folder>", "接上 Claude Code（或 codex）", "connect Claude Code (or codex)"),
+    ("jarvis agent claude --dir <folder>", "接上 Claude Code（或 codex / opencode）", "connect Claude Code (or codex / opencode)"),
     ("jarvis service install", "后台常驻运行 serve", "keep `jarvis serve` running"),
     ("jarvis pair", "手机扫码配对", "pair your phone (scan the QR)"),
 )
@@ -1120,16 +1445,18 @@ def main(argv=None) -> None:
     ru = sub.add_parser("remote-unbind", help="允许 / 禁止 Dashboard 请求本机解绑遥控器（默认允许；只能减少访问）")
     ru.add_argument("mode", nargs="?", choices=["on", "off", "status"], default="status")
     ru.set_defaults(fn=cmd_remote_unbind)
-    ag = sub.add_parser("agent", help="接哪个 Agent：claude / codex / off；reset = 开一段新对话（重启 serve 生效）；"
+    ag = sub.add_parser("agent", help="接哪个 Agent：claude / codex / opencode / off；reset = 开一段新对话（重启 serve 生效）；"
                                       "detect = 本机有哪些可用 / which agents are usable here")
-    ag.add_argument("mode", nargs="?", choices=["claude", "codex", "off", "reset", "status", "detect"], default="status",
+    ag.add_argument("mode", nargs="?", choices=["claude", "codex", "opencode", "off", "reset", "status", "detect"], default="status",
                     help="detect = 本机有哪些可用（不需要 init；只看是否安装、登录文件是否存在）/ which agents are usable here "
                          "(no init needed; checks only what is installed and whether login files exist)")
     ag.add_argument("--json", action="store_true", help="detect 的机器可读输出 / machine-readable detect output")
     ag.add_argument("--dir", help="Agent 的工作目录（默认当前目录）")
-    ag.add_argument("--model", help="模型（默认用你自己的设置）")
+    ag.add_argument("--model", help="模型（默认用你自己的设置）；OpenCode 写成 服务商/模型，例如 zhipuai/glm-5.3")
     ag.add_argument("--unfenced", action="store_true",
                     help="不隔离运行 Agent（不推荐；要输入批准口令）。默认 Agent 在 bubblewrap 里运行，看不到 jarvis 的状态")
+    ag.add_argument("--allow-docker", action="store_true",
+                    help="隔离里也让 Agent 用 docker / podman（不推荐；要输入批准口令）。默认容器引擎的 socket 对 Agent 隐藏")
     ag.set_defaults(fn=cmd_agent)
     pp = sub.add_parser("passphrase", help="批准口令：set 设置 · change 修改 · reset 忘了（会吊销全部遥控器）· status")
     pp.add_argument("mode", nargs="?", choices=["set", "change", "reset", "status"], default="status")
@@ -1140,6 +1467,33 @@ def main(argv=None) -> None:
     ap.add_argument("--last", type=int, default=0, help="只看最后 N 条")
     ap.set_defaults(fn=cmd_approvals)
     feedback.add_parser(sub)
+    sub.add_parser("stop", help="⛔ 全部停下：中断 Agent、拒绝待批准、收回批量授权、暂停定时任务（重启后仍停）/ stop everything"
+                   ).set_defaults(fn=cmd_stop)
+    sub.add_parser("resume", help="从急停恢复（要批准口令）/ resume after a stop (approval passphrase)").set_defaults(fn=cmd_resume)
+    me = sub.add_parser("memory", help="Agent 记住了什么：list · show <来源> · rm <来源> <条目> · restore [id] / what the Agent remembers")
+    me.add_argument("mode", choices=["list", "show", "rm", "restore"])
+    me.add_argument("args", nargs="*")
+    me.add_argument("--harness", choices=["claude", "codex", "opencode"], help="默认 = 接的 Agent / default: the configured Agent")
+    me.add_argument("--dir", help="工作目录（默认 = Agent 的目录）")
+    me.add_argument("--json", action="store_true")
+    me.set_defaults(fn=cmd_memory)
+    ac = sub.add_parser("activity", help="操作与审批记录（本机 activity.log，30 天）/ activity and approvals, newest last")
+    ac.add_argument("--since", help="2h / 3d / 2026-10-01 / 2026-10-01T08:00")
+    ac.add_argument("--json", action="store_true")
+    ac.add_argument("--clear", action="store_true", help="立即删除全部记录 / delete all of it now")
+    ac.set_defaults(fn=cmd_activity)
+    cf = sub.add_parser("config", help="开关：activity on|off（操作记录）/ switches")
+    cf.add_argument("key", choices=["activity"])
+    cf.add_argument("value", nargs="?", choices=["on", "off", "status"], default="status")
+    cf.set_defaults(fn=cmd_config)
+    tk = sub.add_parser("tasks", help="定时任务：list · show · enable（要口令）· disable · run [--dry-run] / scheduled tasks")
+    tk.add_argument("mode", choices=["list", "show", "enable", "disable", "run"])
+    tk.add_argument("id", nargs="?")
+    tk.add_argument("--dry-run", action="store_true", help="run：只显示会怎么跑，不运行 / show the plan only")
+    tk.add_argument("--json", action="store_true")
+    tk.set_defaults(fn=cmd_tasks)
+    wizard.add_parser(sub)
+    plaza.add_parser(sub)
     a = p.parse_args(argv)
     if a.cmd is None:
         cmd_hint()
