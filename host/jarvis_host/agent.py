@@ -6,7 +6,7 @@ Bridge ≤ session: the agent runs as this OS user, in the directory the human c
 and permission rules. We never pass a bypass / skip-permissions / allowed-tools flag; the phone only answers the questions
 the agent itself would have asked, and an approval returns the tool input unchanged.
 
-L2: the agent runs inside the fence (fence.py) unless the human chose `--unfenced`; if the fence cannot start, the agent is
+L2 / L3: the agent runs inside the fence (fence.py: bubblewrap on Linux, sandbox-exec on macOS) unless the human chose `--unfenced`; if the fence cannot start, the agent is
 not started at all. Claude Code gets its first message only after our permission tool has claimed serve's socket.
 """
 from __future__ import annotations
@@ -16,6 +16,7 @@ import contextlib
 import json
 import os
 import shutil
+import signal
 import sys
 
 from . import fence
@@ -71,6 +72,16 @@ def summarize(tool: str, tool_input) -> str:
         s = json.dumps(inp, ensure_ascii=False, separators=(", ", ": "))
     s = clean(s, 4000)
     return s if text_units(s) <= 2000 else s[:1990] + " …"
+
+
+def _signal_tree(p, sig: int) -> None:
+    """The Agent runs in its own session (start_new_session): signal its whole process group, so what it started in the
+    background goes with it. Linux's fence also ends the PID namespace; macOS has none (G-A53)."""
+    try:
+        os.killpg(p.pid, sig)
+    except (ProcessLookupError, PermissionError, OSError):
+        with contextlib.suppress(ProcessLookupError):
+            p.send_signal(sig)
 
 
 class Agent:
@@ -228,12 +239,10 @@ class ClaudeAgent(Agent):
         if self.proc is p:
             self.proc = None
         if p.returncode is None:
-            with contextlib.suppress(ProcessLookupError):
-                p.terminate()
+            _signal_tree(p, signal.SIGTERM)
             with contextlib.suppress(Exception):
                 await asyncio.wait_for(p.wait(), 5)
-            with contextlib.suppress(ProcessLookupError):
-                p.kill()
+            _signal_tree(p, signal.SIGKILL)
 
     async def _drain_err(self, proc) -> None:
         with contextlib.suppress(Exception):
@@ -304,11 +313,10 @@ class ClaudeAgent(Agent):
         if p and p.returncode is None:
             with contextlib.suppress(ProcessLookupError):
                 p.stdin.close()
-                p.terminate()
+            _signal_tree(p, signal.SIGTERM)
             with contextlib.suppress(Exception):
                 await asyncio.wait_for(p.wait(), 5)
-            with contextlib.suppress(ProcessLookupError):
-                p.kill()
+            _signal_tree(p, signal.SIGKILL)
 
 
 class CodexAgent(Agent):
@@ -385,8 +393,7 @@ class CodexAgent(Agent):
         await super().stop()
         p = self.proc
         if p and p.returncode is None:
-            with contextlib.suppress(ProcessLookupError):
-                p.terminate()
+            _signal_tree(p, signal.SIGTERM)
 
 
 def make(host, cfg: dict | None):

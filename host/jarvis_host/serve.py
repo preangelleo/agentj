@@ -21,7 +21,7 @@ from dataclasses import dataclass, field
 from websockets.asyncio.client import connect
 
 from . import agent as agents
-from . import approvals, cloud, fence, gate, webpush, wire
+from . import approvals, cloud, fence, gate, update, webpush, wire
 from .noise import IK, IKPSK2, CipherState, Handshake, NoiseError
 from .reporter import Reporter, in_daemon_thread
 from .state import MAX_DEVICES, DeviceLimit, State
@@ -36,6 +36,8 @@ def _ttl(env: str, default: int) -> float:
         return default
 
 
+UPDATE_FIRST = 300      # s after start before the first daily update check (update.daily keeps 24 h between checks)
+UPDATE_WAKE = 3600      # s between looks at the 24 h clock
 PAIR_TTL = _ttl("AGENTJARVIS_TEST_PAIR_TTL", 300)        # QR / pairing code lifetime (s)
 HS_TTL = _ttl("AGENTJARVIS_TEST_HS_TTL", 30)             # a connection must finish its handshake + hello within this (s)
 APPROVE_TTL = _ttl("AGENTJARVIS_TEST_APPROVE_TTL", 120)  # time the human has to type the safety code (s)
@@ -161,6 +163,8 @@ class Host:
             print(f"· 等手机批准 [{kw['id'][:8]}] {kw['tool']}: " + kw["summary"].replace("\n", "\n  │ "), flush=True)
         elif ev == "ask_done":
             print(f"· 批准结果 [{kw['id'][:8]}]：{kw['result']}", flush=True)
+        elif ev == "update":   # a version string from GitHub, already parsed as one (update.parse)
+            print(f"· 有新版本 {kw['latest']}（本机 {kw['current']}）：在终端运行 `jarvis update apply` 升级", flush=True)
         elif ev in ("ready", "approved", "revoked", "denied", "closed"):
             print(f"· {ev} {kw.get('name') or ''} {kw.get('device') or ''}".rstrip(), flush=True)
 
@@ -819,6 +823,23 @@ class Host:
         e = self._remember("notice", text)
         self._post(self._send_ready, lambda s, e=e: self._render(e, s))
 
+    async def update_loop(self) -> None:
+        """Once a day: is there a newer host on the public repo? Tell the phones once per version (E2E, like every message);
+        never install anything (Z4: the human runs `jarvis update apply`)."""
+        await asyncio.sleep(UPDATE_FIRST)
+        while True:
+            try:
+                note = await asyncio.to_thread(update.daily, self.st)
+            except Exception:  # noqa: BLE001 — a failed check costs nothing
+                note = None
+            if note:
+                latest = update.read_rec(self.st).get("latest")
+                self.st.log("update_available", status=str(latest)[:32])
+                self.emit("update", latest=latest, current=update.__version__)
+                e = self._remember("notice", note)
+                self._post(self._send_ready, lambda s, e=e: self._render(e, s))
+            await asyncio.sleep(UPDATE_WAKE)
+
     def agent_turn_end(self) -> None:
         self.st.log("turn_end", agent=self.agent.kind if self.agent else None)
         if self.turn_text:
@@ -1038,7 +1059,8 @@ class Host:
         self.st.log("serve_start", channel=self.channel)
         self.post_q = asyncio.Queue()
         tasks = [asyncio.create_task(self.relay_loop()), asyncio.create_task(self.reporter.run()),
-                 asyncio.create_task(self.sync_loop()), asyncio.create_task(self.post_loop())]
+                 asyncio.create_task(self.sync_loop()), asyncio.create_task(self.post_loop()),
+                 asyncio.create_task(self.update_loop())]
         perm_server = None
         if self.agent_cfg:
             psock = self.st.perm_sock_path

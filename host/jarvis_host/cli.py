@@ -1,5 +1,5 @@
 """agentjarvis host CLI (alpha): init · serve · pair · admin · name · devices · revoke · send · status · login · report ·
-unlink · remote-unbind · agent · approvals · passphrase · doctor · service (L3). No arguments = the next-step hint.
+unlink · remote-unbind · agent · approvals · passphrase · doctor · service · update (L3). No arguments = the next-step hint.
 Seat setup (0.7): `jarvis login --seat <ajt_…> | --seat-file <path> | --seat - --name <name>` binds with a setup code from
 the company (no y/N; exit 3 name taken · 4 invalid code · 5 seat not paid · 2 refused locally); `jarvis agent detect`.
 
@@ -13,6 +13,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
+import os
 import signal
 import sys
 import threading
@@ -81,10 +82,57 @@ def cmd_serve(a) -> None:
     asyncio.run(main())
 
 
+def _qr_mode(out=None, environ=None) -> str:
+    """How to draw the pairing QR on this terminal: "compact" (Unicode half blocks, needs a UTF-8 terminal), "ansi" (colour
+    blocks, any ANSI terminal — also a plain SSH session with LANG=C), "ascii" (no colours either: TERM=dumb / not a tty)."""
+    out = out or sys.stdout
+    e = os.environ if environ is None else environ
+    enc = (getattr(out, "encoding", None) or "ascii").lower()
+    try:
+        "▀▄█".encode(enc)
+        utf = True
+    except (LookupError, UnicodeEncodeError):
+        utf = False
+    # Python itself writes UTF-8 under the C locale (PEP 538/540), so the stream says nothing about the terminal: a server
+    # SSH session without a UTF-8 locale (LANG unset / C / POSIX) gets the colour-block QR, which needs no Unicode at all
+    ctype = e.get("LC_CTYPE") or ""
+    if ctype.lower().replace("-", "") == "c.utf8":   # what Python's own C-locale coercion puts here: not the terminal's word
+        ctype = ""
+    loc = (e.get("LC_ALL") or ctype or e.get("LANG") or "").lower().replace("-", "")
+    if "utf8" not in loc:
+        utf = False
+    if utf and not e.get("AGENTJARVIS_QR_ASCII"):
+        return "compact"
+    if e.get("TERM", "") not in ("", "dumb") and not e.get("AGENTJARVIS_QR_ASCII") and getattr(out, "isatty", lambda: False)():
+        return "ansi"
+    return "ascii"
+
+
+def _qr_ascii(qr, border: int = 2) -> str:
+    """Plain characters only: '##' = dark module, two spaces = light (reads like a printed code on a light background;
+    on a dark terminal some phones still read it inverted — otherwise use --link)."""
+    rows = []
+    for row in qr.matrix_iter(scale=1, border=border):
+        rows.append("".join("##" if dark else "  " for dark in row))
+    return "\n".join(rows)
+
+
 def _print_qr(link: str) -> None:
     import segno
     qr = segno.make(link, error="m")
-    qr.terminal(compact=True, border=2)
+    mode = _qr_mode()
+    if mode == "compact":
+        qr.terminal(compact=True, border=2)
+    elif mode == "ansi":
+        qr.terminal(compact=False, border=2)
+    else:
+        print(_qr_ascii(qr), flush=True)
+
+
+def _remote_session(environ=None) -> bool:
+    """A terminal over SSH without a desktop (a cloud server): no browser, a QR may not render well."""
+    e = os.environ if environ is None else environ
+    return bool(e.get("SSH_CONNECTION") or e.get("SSH_TTY")) and not (e.get("DISPLAY") or e.get("WAYLAND_DISPLAY"))
 
 
 def cmd_pair(a) -> None:
@@ -113,6 +161,10 @@ def cmd_pair(a) -> None:
             print(f"\n把这个链接发到手机上打开（{mins} 分钟内有效，只能用一次；它就是配对密钥，别发给别人）：\n{first['link']}\n", flush=True)
         else:
             print(f"\n用手机相机扫上面的二维码（{mins} 分钟内有效，只能用一次）。扫不了就加 --link 重新运行。\n", flush=True)
+            if _remote_session():
+                print("（SSH 登录的服务器：手机扫不到终端里的码时，Ctrl-C 后运行 `jarvis pair --link`，把打印出的链接用你自己的方式"
+                      "发到手机上打开——同一个链接，它就是配对密钥，别发给别人。/ Over SSH: if the phone cannot scan it, run "
+                      "`jarvis pair --link` and open the same link on the phone.）\n", flush=True)
         if st.device_full():
             print(f"注意：本机已有 {MAX_DEVICES} 台遥控器（上限）。新设备扫码后，要先在这里解绑一台旧的才能批准它。\n", flush=True)
 
@@ -339,6 +391,20 @@ def cmd_name(a) -> None:
     sys.exit("✗ " + msg)
 
 
+def ssh_tunnel_hint(port: int, environ=None) -> str | None:
+    """`jarvis admin` over SSH: the page listens on 127.0.0.1 of the server only — reach it through an SSH tunnel."""
+    e = os.environ if environ is None else environ
+    conn = (e.get("SSH_CONNECTION") or "").split()
+    if len(conn) < 4:
+        return None
+    import getpass
+    server = conn[2]
+    host = f"[{server}]" if ":" in server else server
+    return (f"你是用 SSH 登录的：管理页只在这台服务器的 127.0.0.1 上。在你自己的电脑上另开一个终端运行\n"
+            f"  ssh -N -L {port}:127.0.0.1:{port} {getpass.getuser()}@{host}\n"
+            f"再在那台电脑的浏览器里打开上面的链接。/ Over SSH: run the line above on your own computer, then open the link there.")
+
+
 def cmd_admin(a) -> None:
     from .admin import AdminServer
     st = State()
@@ -374,6 +440,9 @@ def cmd_admin(a) -> None:
         else:
             print(f"Agent 管理页：{url}", flush=True)
             print("（只在本机打开；链接 10 分钟内有效、只能用一次。回车 = 打印一个新链接，旧链接和已打开的页面都作废；Ctrl-C 退出）", flush=True)
+            tunnel = ssh_tunnel_hint(srv.port)
+            if tunnel:
+                print(tunnel, flush=True)
     show()
 
     def stdin_loop() -> None:
@@ -863,6 +932,81 @@ def cmd_service(a) -> None:
     print("服务只记元数据，不记消息 / the service logs metadata only, never messages.")
 
 
+def cmd_update(a) -> None:
+    from . import service, update
+    if a.mode == "auto":
+        st = State()
+        _need_init(st)
+        if a.switch in ("on", "off"):
+            with st.config_lock():
+                cfg = st.config()
+                cfg["update_check"] = a.switch == "on"
+                st.write_private(st.config_path, json.dumps(cfg, indent=1, ensure_ascii=False).encode())
+            st.log("update_check_switch", status=a.switch)
+        on = update.auto_enabled(st)
+        print(("开：jarvis serve 每天向 GitHub 上的公开仓库查一次最新版本号，有新版就给手机发一条提醒（从不自动安装）。"
+               if on else "关：serve 不查新版本（`jarvis update check` 仍可手动查）。")
+              + " / daily update check " + ("on" if on else "off"))
+        return
+    r = update.check()
+    if a.mode == "check":
+        if a.json:
+            print(json.dumps(r, ensure_ascii=False))
+            return
+        print(_update_line(r))
+        if r["status"] in ("newer", "unknown"):
+            print("升级 = 人在自己的终端运行 / to upgrade, the human runs:  jarvis update apply")
+            print(f"  （它会执行 / it runs:  {r['command']}）")
+        return
+    # apply
+    if r["status"] == "unknown":
+        sys.exit(f"✗ 查不到最新版本（{r['why']}），没有升级。稍后再试，或手动运行：{r['command']} / could not find out the "
+                 "latest version; nothing changed")
+    if r["status"] != "newer":
+        print(_update_line(r))
+        return
+    try:
+        update.preflight()
+    except update.Refused as e:
+        print(update.REFUSED[e.reason], file=sys.stderr)
+        print(f"  （命令 / command:  {r['command']}）", file=sys.stderr)
+        sys.exit(2)
+    print(f"新版本 {r['latest']}（本机 {r['current']}，安装方式 {r['install']}）。将运行 / will run:\n  {r['command']}")
+    svc = service.status()
+    if svc.get("installed"):
+        print("之后会重新安装并重启服务 / then the service is re-installed and restarted")
+    try:
+        ans = input("现在升级？/ upgrade now? [y/N] ")
+    except EOFError:
+        ans = ""
+    if ans.strip().lower() not in ("y", "yes"):
+        sys.exit("没有升级 / not upgraded")
+    import subprocess
+    for c in update.commands(update.install_kind()):
+        rc = subprocess.run(c).returncode
+        if rc != 0:
+            sys.exit(f"✗ 升级命令失败（退出码 {rc}）：{' '.join(c)} / upgrade command failed")
+    argv = service.jarvis_argv()
+    v = subprocess.run(argv + ["--version"], capture_output=True, text=True)
+    print("✓ 现在是 / now: " + (v.stdout.strip() or v.stderr.strip() or "?"))
+    if svc.get("installed"):
+        rc = subprocess.run(argv + ["service", "install"]).returncode
+        if rc != 0:
+            sys.exit("✗ 服务没能重新安装：运行 `jarvis service install` / the service was not re-installed")
+    print("完成 / done. `jarvis doctor` 再检查一遍 / run `jarvis doctor` to check")
+
+
+def _update_line(r: dict) -> str:
+    s = r["status"]
+    if s == "newer":
+        return f"! 有新版本 / newer version: {r['latest']}（本机 / installed {r['current']}）"
+    if s == "current":
+        return f"✓ 已是最新 / up to date: {r['current']}"
+    if s == "ahead":
+        return f"✓ 本机 {r['current']} 比发布版 {r['latest']} 新（开发版） / ahead of the release"
+    return f"! 查不到最新版本 / could not check ({r['why']}); 本机 / installed {r['current']}"
+
+
 NEXT_STEPS = (   # (command, 中文, English)
     ("jarvis init", "生成本机身份", "create this host's identity"),
     ("jarvis login", "把本机加到 Dashboard 公司账号（有席位设置码：--seat-file）",
@@ -911,6 +1055,13 @@ def main(argv=None) -> None:
     sv.add_argument("mode", choices=["install", "uninstall", "status"], help="install 安装并启动 · uninstall 停止并删除 · status 状态")
     sv.add_argument("--json", action="store_true", help="status 的机器可读输出 / machine-readable status")
     sv.set_defaults(fn=cmd_service)
+    up = sub.add_parser("update", help="新版本：check 查（谁都可以）· apply 升级（只由人在终端确认）· auto on|off 每天自动查 / updates",
+                        description="check: 查最新版本并给出与安装方式匹配的升级命令（网络不通 = 查不到，不算错）。apply: 只在交互终端里、"
+                                    "人输入 y 之后才执行；没有 --yes。auto: serve 每天查一次、有新版就提醒手机（从不自动安装）。")
+    up.add_argument("mode", choices=["check", "apply", "auto"])
+    up.add_argument("switch", nargs="?", choices=["on", "off", "status"], default="status", help="auto 的开关 / for auto")
+    up.add_argument("--json", action="store_true", help="check 的机器可读输出 / machine-readable check")
+    up.set_defaults(fn=cmd_update)
     i = sub.add_parser("init", help="生成主机身份密钥")
     i.add_argument("--relay", default=DEFAULT_RELAY)
     i.add_argument("--web", default=DEFAULT_WEB)

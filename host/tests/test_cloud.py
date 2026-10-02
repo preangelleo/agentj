@@ -61,7 +61,7 @@ class Envelope(unittest.TestCase):
 
     def test_contexts_distinct_from_relay(self):
         self.assertEqual(len({cloud.CTX_LOGIN, cloud.CTX_POLL, cloud.CTX_REPORT, "agentjarvis-relay-auth-v1"}), 4)
-        self.assertEqual(cloud.AGENT, "agentjarvis-host/0.7.0a1")
+        self.assertEqual(cloud.AGENT, "agentjarvis-host/0.8.0a1")
 
 
 class Report(unittest.TestCase):

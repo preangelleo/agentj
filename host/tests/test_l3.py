@@ -45,7 +45,7 @@ def _cli(*args, env=None, timeout=60, stdin=subprocess.DEVNULL):
 class Version(unittest.TestCase):
     def test_one_source(self):
         v = jarvis_host.__version__
-        self.assertEqual(v, "0.7.0a1")
+        self.assertEqual(v, "0.8.0a1")
         self.assertEqual(cloud.VERSION, v)
         self.assertEqual(cloud.AGENT, f"agentjarvis-host/{v}")
         r = _cli("--version")
@@ -309,7 +309,8 @@ class Doctor(unittest.TestCase):
         r = _cli("doctor", "--json", "--offline", env=self.env)
         self.assertEqual(r.returncode, 1, "not initialised = ✗")
         d = json.loads(r.stdout)
-        self.assertEqual([c["id"] for c in d["checks"]], self.IDS)
+        ids = [c["id"] for c in d["checks"]]
+        self.assertEqual([i for i in ids if i != "linger"], self.IDS + ["update"], "linger only where systemd reports it")
         self.assertEqual(d["version"], jarvis_host.__version__)
         by = {c["id"]: c for c in d["checks"]}
         self.assertEqual((by["state"]["status"], by["state"]["hint"]), ("fail", "jarvis init"))
@@ -350,8 +351,10 @@ class Doctor(unittest.TestCase):
             with mock.patch.object(sys, "platform", "win32"):
                 self.assertEqual(doctor.check_platform()["status"], "fail")
                 self.assertIn("WSL2", doctor.check_platform()["hint"])
-            with mock.patch.object(sys, "platform", "darwin"):
-                self.assertIn("--unfenced", doctor.check_fence(st)["hint"])
+            with mock.patch.object(sys, "platform", "darwin"), mock.patch.object(fence, "SANDBOX_EXEC", "/nonexistent/sandbox-exec"):
+                c = doctor.check_fence(st)        # macOS (L3): sandbox-exec, not "--unfenced only"
+                self.assertEqual(c["status"], "warn")
+                self.assertIn("sandbox-exec", c["summary"])
 
     def test_relay_probe(self):
         from fakerelay import FakeRelay
@@ -450,7 +453,7 @@ class WheelInstall(unittest.TestCase):
         self.assertIn(p["prefix"], p["code"], "the installed venv is what the fence keeps read-only")
         self.assertIsNone(p["src"], "installed: no PYTHONPATH for the agent")
         self.assertEqual(p["assets"], ["app.css", "app.js", "index.html"])
-        self.assertEqual(p["exec"], [self.venv + "/bin/jarvis"])
+        self.assertEqual([os.path.realpath(x) for x in p["exec"]], [os.path.realpath(self.venv + "/bin/jarvis")])  # /tmp → /private/tmp on macOS
         self.assertEqual(p["mcp"], {"type": "stdio", "command": p["py"], "args": ["-P", "-m", "jarvis_host.permtool"]})
         self.assertEqual(p["ver"], [3, int(self.py.split(".")[1])], "the venv runs the Python we claim as the floor")
 
@@ -460,10 +463,12 @@ class WheelInstall(unittest.TestCase):
             self.assertEqual(subprocess.run([self.venv + "/bin/jarvis", "init"], env=env, capture_output=True, cwd="/").returncode, 0)
             r = subprocess.run([self.venv + "/bin/jarvis", "doctor", "--json", "--offline"], env=env, capture_output=True, text=True, cwd="/")
             d_ = json.loads(r.stdout)
-            self.assertEqual([c["id"] for c in d_["checks"]], Doctor.IDS)
+            self.assertEqual([c["id"] for c in d_["checks"] if c["id"] != "linger"], Doctor.IDS + ["update"])
             self.assertEqual({c["id"]: c["status"] for c in d_["checks"]}["state"], "ok")
 
-    @unittest.skipUnless(sys.platform.startswith("linux") and shutil.which("bwrap"), "fence is Linux + bubblewrap")
+    @unittest.skipUnless((sys.platform.startswith("linux") and shutil.which("bwrap")) or
+                         (sys.platform == "darwin" and os.access(fence.SANDBOX_EXEC, os.X_OK)),
+                         "fence = Linux + bubblewrap or macOS + sandbox-exec (L3)")
     def test_fenced_chain_against_the_installed_package(self):
         # inside the venv (read-only in the fence, so the stand-in claude can be read there); no jarvis_host/ beside it
         t = pathlib.Path(self.venv, "share", "aj-tests")

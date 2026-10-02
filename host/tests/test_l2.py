@@ -34,8 +34,9 @@ PKG = pathlib.Path(jarvis_host.__file__).resolve().parent   # wherever it is imp
 PASS = "correct horse battery"
 
 ATTACK = r'''
-import json, os, socket, sys
+import json, os, socket, subprocess, sys
 st, serve_pid, home = sys.argv[1], int(sys.argv[2]), os.path.expanduser("~")
+mac = sys.platform == "darwin"
 r = {}
 def t(name, fn):
     try:
@@ -59,10 +60,39 @@ def reclaim():
 t("re-claim perm.sock", reclaim)
 t("serve /proc root", lambda: open(f"/proc/{serve_pid}/root{st}/host_ed25519.key", "rb").read())
 t("serve /proc environ", lambda: open(f"/proc/{serve_pid}/environ", "rb").read())
+t("signal serve", lambda: os.kill(serve_pid, 0) or "signal allowed")
 def pids():
-    mine = {os.getpid(), os.getppid()}
+    if mac:
+        import ctypes
+        arr = (ctypes.c_int * 8192)()
+        n = ctypes.CDLL(None, use_errno=True).proc_listpids(1, 0, arr, ctypes.sizeof(arr))
+        if n <= 0:
+            raise PermissionError("proc_listpids")
+        return [str(arr[i]) for i in range(n // 4) if arr[i]]
     return [p for p in os.listdir("/proc") if p.isdigit()]
-r["pids visible"] = len(pids())
+try:
+    r["pids visible"] = len(pids())
+except OSError:
+    r["pids visible"] = "blocked"
+if mac:
+    import ctypes
+    libc = ctypes.CDLL(None, use_errno=True)
+    def pidpath():
+        b = ctypes.create_string_buffer(4096)
+        if libc.proc_pidpath(serve_pid, b, 4096) <= 0:
+            raise PermissionError("proc_pidpath")
+        return b.value
+    t("serve process info", pidpath)
+    def serve_env():   # KERN_PROCARGS2 is not filtered by the sandbox (G-A53): what matters is that serve keeps no secret there
+        mib, size = (ctypes.c_int * 3)(1, 49, serve_pid), ctypes.c_size_t(1 << 20)
+        b = ctypes.create_string_buffer(1 << 20)
+        if libc.sysctl(mib, 3, b, ctypes.byref(size), None, 0) != 0:
+            return "not readable"
+        raw = b.raw[:size.value]
+        secret = [k for k in (b"AGENTJARVIS_PERM_TOKEN=",) if k in raw]   # the human's own variables reach the Agent anyway
+        return ("visible (residual); jarvis secrets in it: " + (",".join(x.decode() for x in secret) or "none")
+                if b"HOME=" in raw else "argv only")
+    r["serve environ (sysctl)"] = serve_env()
 def environ_of_permtool():
     for p in pids():
         try:
@@ -72,16 +102,76 @@ def environ_of_permtool():
         if cmd.split(b"\0")[-3:-1] == [b"-m", b"jarvis_host.permtool"]:   # the tool itself, not claude's --mcp-config
             return open(f"/proc/{p}/environ", "rb").read()
     raise LookupError("no permtool")
-t("permtool environ", environ_of_permtool)
-def w_ok(p):
-    if not os.access(p, os.W_OK):
-        raise PermissionError("not writable")
+if mac:   # no /proc; sysctl shows same-user environments (G-A53) — the token is in the Agent's own environment anyway, spent
+    r["permtool environ"] = "n/a on macOS: same token as in this process's own environment, already spent (re-claim refused)"
+else:
+    t("permtool environ", environ_of_permtool)
+def w_ok(p):                     # a real open for writing (append, no create, nothing written): access() is not enough
+    if os.path.isdir(p):           # under a sandbox; a directory → try to create a probe file in it
+        q = os.path.join(p, ".aj-probe")
+        os.close(os.open(q, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600))
+        os.unlink(q)
+        return "writable"
+    os.close(os.open(p, os.O_WRONLY | os.O_APPEND))
     return "writable"
 t("write jarvis code", lambda: w_ok(sys.argv[3]))
+t("write jarvis code file", lambda: w_ok(os.path.join(sys.argv[3], "__init__.py")))
 for rc in (".bashrc", ".profile", ".zshrc"):
     if os.path.exists(os.path.join(home, rc)):
         t("write ~/" + rc, lambda rc=rc: w_ok(os.path.join(home, rc)))
-r["tmp"] = sorted(os.listdir("/tmp"))
+def rename_away(d):             # moving a directory above jarvis's code / state aside would let a new one be planted
+    os.rename(d, d + ".aj-probe")
+    os.rename(d + ".aj-probe", d)   # (put back at once if it ever worked)
+    return "renamed"
+t("rename above jarvis code", lambda: rename_away(sys.argv[4]))
+t("rename above state dir", lambda: rename_away(os.path.dirname(st)))
+if mac:
+    def create_new(p):
+        os.close(os.open(p, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600))
+        os.unlink(p)
+        return "created"
+    t("plant a LaunchAgent", lambda: create_new(os.path.join(home, "Library", "LaunchAgents", "aj-probe.plist")))
+    t("create a missing ~/.zlogin", lambda: create_new(os.path.join(home, ".zlogin")) if not os.path.exists(
+        os.path.join(home, ".zlogin")) else w_ok(os.path.join(home, ".zlogin")))
+    def launchd_job():
+        p = subprocess.run(["launchctl", "submit", "-l", "aj.l3.probe", "--", "/usr/bin/true"], capture_output=True)
+        if p.returncode == 0:
+            subprocess.run(["launchctl", "remove", "aj.l3.probe"], capture_output=True)
+            return "job created"
+        raise PermissionError("launchctl submit refused")
+    t("launchd job (launchctl submit)", launchd_job)
+    def setuid_crontab():
+        p = subprocess.run(["/usr/bin/crontab", "-l"], capture_output=True)
+        if p.returncode == 0 or b"no crontab" in p.stderr:
+            return "crontab runs"
+        raise PermissionError(p.stderr.decode()[:60] or "refused")
+    t("crontab (setuid)", setuid_crontab)
+    def lsopen():
+        p = subprocess.run(["/usr/bin/open", "-g", "-j", "-a", "TextEdit"], capture_output=True)
+        if p.returncode == 0:
+            subprocess.run(["/usr/bin/osascript", "-e", 'quit app "TextEdit"'], capture_output=True)
+            return "opened an app"
+        raise PermissionError("LaunchServices refused")
+    t("open an app (LaunchServices)", lsopen)
+    def apple_event():
+        p = subprocess.run(["/usr/bin/osascript", "-e", 'tell application "Finder" to get name of startup disk'],
+                           capture_output=True)
+        if p.returncode == 0:
+            return "apple event sent"
+        raise PermissionError(p.stderr.decode()[-60:])
+    t("Apple Events (osascript)", apple_event)
+    def tmux_sock():
+        d = f"/private/tmp/tmux-{os.getuid()}"
+        socks = sorted(os.listdir(d)) if os.path.isdir(d) else []
+        if not socks:
+            raise FileNotFoundError("no tmux server running")
+        for n in socks:
+            s = socket.socket(socket.AF_UNIX); s.settimeout(2)
+            s.connect(os.path.join(d, n))
+            s.close()
+            return "connected to tmux " + n
+    t("tmux socket", tmux_sock)
+r["tmp"] = sorted(os.listdir("/tmp")) if not mac else "shared on macOS (no mount namespace)"
 rt = os.environ.get("XDG_RUNTIME_DIR") or f"/run/user/{os.getuid()}"
 r["runtime"] = sorted(os.listdir(rt)) if os.path.isdir(rt) else []
 r["env"] = sorted(k for k in ("DBUS_SESSION_BUS_ADDRESS", "WAYLAND_DISPLAY", "DISPLAY", "TMUX", "SSH_AUTH_SOCK",
@@ -149,7 +239,8 @@ class FencedChain(unittest.TestCase):
             await wait(lambda: host.agent is not None)
             s = _ready(host, ph)
             self.assertEqual(stat.S_IMODE(self.st.perm_dir.stat().st_mode), 0o700)
-            cmd = f"{sys.executable} attack.py {self.st.root.resolve()} {os.getpid()} {PKG.resolve()}"
+            top = min(fence.code_paths(), key=len)       # the outermost code directory: its parent is what could be renamed
+            cmd = f"{sys.executable} attack.py {self.st.root.resolve()} {os.getpid()} {PKG.resolve()} {os.path.dirname(top)}"
             await host._app(s, {"t": "msg", "id": "a" * 16, "text": "RUN: " + cmd, "ts": 0})
             await wait(lambda: any(o["t"] == "ask" for _, o in sent))
             self.assertTrue(host.perm_claimed.is_set())
@@ -170,15 +261,35 @@ class FencedChain(unittest.TestCase):
         r = json.loads((self.work / "attack.json").read_text())
         if os.environ.get("AJ_EVIDENCE_DIR"):          # acceptance evidence: what the hostile command saw from inside
             pathlib.Path(os.environ["AJ_EVIDENCE_DIR"], "fence-attack.json").write_text(json.dumps(r, ensure_ascii=False, indent=1))
-        opened = {k: v for k, v in r.items() if isinstance(v, str) and v.startswith("open:")}
+        st_parent = os.path.dirname(os.path.realpath(self.st.root))
+        private = sys.platform != "darwin" and st_parent.startswith("/tmp/")   # Linux: the fence's private tmpfs, not the real one
+        code_parent = os.path.dirname(min(fence.code_paths(), key=len))
+        private_code = sys.platform != "darwin" and code_parent.startswith("/tmp/")   # e.g. a wheel installed under /tmp
+        opened = {k: v for k, v in r.items() if isinstance(v, str) and v.startswith("open:")
+                  and not (private and k == "rename above state dir") and not (private_code and k == "rename above jarvis code")}
         self.assertEqual(opened, {}, f"reached from inside the fence: {opened}")
         for k in ("read host_ed25519.key", "read devices.json", "read approver.json", "control socket", "re-claim perm.sock",
-                  "serve /proc root", "write jarvis code", "permtool environ"):
+                  "serve /proc root", "write jarvis code", "write jarvis code file", "signal serve"):
             self.assertTrue(r[k].startswith("blocked:"), k)
-        self.assertLess(r["pids visible"], 10, "a private PID namespace: jarvis's processes are not there")
-        under_tmp = {pathlib.PurePath(p).relative_to("/tmp").parts[0] for p in [os.path.realpath(self.tmp.name), *fence.code_paths()]
-                     if p.startswith("/tmp/")}
-        self.assertEqual(set(r["tmp"]), under_tmp, "a private /tmp: only the path to the agent's folder (and jarvis's code, read-only)")
+        if sys.platform != "darwin":
+            self.assertTrue(r["permtool environ"].startswith("blocked:"), "permtool environ")
+        if not private_code:
+            self.assertTrue(r["rename above jarvis code"].startswith("blocked:"), "rename above jarvis code")
+        if not private:
+            self.assertTrue(r["rename above state dir"].startswith("blocked:"), "rename above state dir")
+        self.assertTrue(os.path.isdir(st_parent) and (self.st.root / "config.json").exists(), "the real state dir is in place")
+        if sys.platform == "darwin":      # no PID / mount namespace: the same rules as an SBPL deny-list (fence.sbpl_profile)
+            self.assertTrue(r["serve environ (sysctl)"].endswith(("none", "argv only", "not readable")), "no jarvis secret")
+            for k in ("serve process info", "plant a LaunchAgent", "create a missing ~/.zlogin",
+                      "launchd job (launchctl submit)", "crontab (setuid)", "open an app (LaunchServices)", "tmux socket"):
+                self.assertTrue(r[k].startswith("blocked:"), k)
+            self.assertEqual(r["pids visible"], "blocked", "no process list outside the sandbox")
+        else:
+            self.assertLess(r["pids visible"], 10, "a private PID namespace: jarvis's processes are not there")
+            under_tmp = {pathlib.PurePath(p).relative_to("/tmp").parts[0] for p in [os.path.realpath(self.tmp.name),
+                                                                                    *fence.code_paths()] if p.startswith("/tmp/")}
+            self.assertEqual(set(r["tmp"]), under_tmp,
+                             "a private /tmp: only the path to the agent's folder (and jarvis's code, read-only)")
         self.assertNotIn("bus", r["runtime"])
         self.assertEqual(r["env"], [])
         for f, b in before.items():
@@ -351,7 +462,9 @@ class FenceConfig(unittest.TestCase):
         async def go():
             from jarvis_host import agent as agents
             ag = agents.make(host, self.st.agent_config())
-            with mock.patch.object(fence.shutil, "which", return_value=None), \
+            gone = (mock.patch.object(fence, "SANDBOX_EXEC", "/nonexistent/sandbox-exec") if sys.platform == "darwin"
+                    else mock.patch.object(fence.shutil, "which", return_value=None))
+            with gone, \
                     mock.patch.object(agents, "_bin", return_value="/usr/bin/true"), \
                     mock.patch("asyncio.create_subprocess_exec", fake_exec):
                 fence._probe_cache.clear()
@@ -361,7 +474,7 @@ class FenceConfig(unittest.TestCase):
         fence._probe_cache.clear()
         self.assertEqual(started, [])
         self.assertTrue(ag.is_down())
-        self.assertIn("bubblewrap", notices[-1])
+        self.assertIn("sandbox-exec" if sys.platform == "darwin" else "bubblewrap", notices[-1])
         self.assertIn("--unfenced", notices[-1])
         self.assertIn('"ev": "agent_fence_fail"', self.st.log_path.read_text())
 

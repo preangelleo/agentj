@@ -14,6 +14,7 @@ file they create themselves (0600, next to the unit, read-only for the fenced Ag
 """
 from __future__ import annotations
 
+import contextlib
 import os
 import plistlib
 import re
@@ -123,15 +124,23 @@ def _systemctl(*args: str, check: bool = False, timeout: int = 30) -> subprocess
 
 
 def _linger() -> str | None:
+    """"yes" / "no" / None (not a systemd-logind system). `loginctl show-user` fails for a user with no session at all
+    (a fresh server before the first login, a container): then logind's own record, /var/lib/systemd/linger/<user>."""
     exe = shutil.which("loginctl")
     user = os.environ.get("USER") or ""
+    if not user:
+        import getpass
+        with contextlib.suppress(Exception):
+            user = getpass.getuser()
     if not exe or not user:
         return None
     try:
         r = subprocess.run([exe, "show-user", user, "-p", "Linger", "--value"], capture_output=True, text=True, timeout=10)
+        if r.stdout.strip() in ("yes", "no"):
+            return r.stdout.strip()
     except (OSError, subprocess.TimeoutExpired):
-        return None
-    return r.stdout.strip() or None
+        pass
+    return "yes" if os.path.exists(os.path.join("/var/lib/systemd/linger", user)) else "no"
 
 
 # ------------------------------------------------------------------ macOS: LaunchAgent

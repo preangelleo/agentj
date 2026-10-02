@@ -17,7 +17,7 @@ import tempfile
 import urllib.error
 import urllib.request
 
-from . import DIST, __version__, cloud, fence, gate, harness, names, service, wire
+from . import DIST, __version__, cloud, fence, gate, harness, names, service, update, wire
 from .state import DEFAULT_RELAY, State
 
 OK, WARN, FAIL = "ok", "warn", "fail"
@@ -63,6 +63,16 @@ def _is_wsl() -> bool:
     try:
         with open("/proc/version") as f:
             return "microsoft" in f.read().lower()
+    except OSError:
+        return False
+
+
+def _in_container() -> bool:
+    if os.path.exists("/.dockerenv") or os.path.exists("/run/.containerenv"):
+        return True
+    try:
+        with open("/proc/1/cgroup") as f:
+            return any(x in f.read() for x in ("docker", "containerd", "kubepods", "lxc"))
     except OSError:
         return False
 
@@ -229,13 +239,14 @@ def check_fence(st: State) -> dict:
     c = st.agent_config() if st.exists() else None
     if c and not c.get("fence", True):
         return _c("fence", WARN, "你选了不隔离运行 / you chose --unfenced", "jarvis agent " + c["kind"] + " --dir <folder>  (fenced again)")
-    if sys.platform == "darwin":
-        return _c("fence", WARN, "macOS：还没有 Agent 隔离 / not fenced yet on macOS",
-                  "start with `jarvis agent claude --dir <folder> --unfenced` (asks the passphrase); Mac fence = later L3")
-    if not sys.platform.startswith("linux"):
-        return _c("fence", WARN if not c else FAIL, "不支持 / unsupported", "Linux / WSL2")
+    mac = sys.platform == "darwin"
+    if not mac and not sys.platform.startswith("linux"):
+        return _c("fence", WARN if not c else FAIL, "不支持 / unsupported", "Linux / macOS / WSL2")
     bad = FAIL if c else WARN
-    if not shutil.which("bwrap"):
+    if mac and not os.access(fence.SANDBOX_EXEC, os.X_OK):
+        return _c("fence", bad, "没有 /usr/bin/sandbox-exec / sandbox-exec missing",
+                  "这台 Mac 缺系统自带的 sandbox-exec：请反馈 / report it (feedback); the Agent does not start fenced")
+    if not mac and not shutil.which("bwrap"):
         return _c("fence", bad, "没有 bubblewrap（bwrap） / bubblewrap missing", _bwrap_hint())
     workdir = c["dir"] if c and os.path.isdir(c["dir"]) else None
     if st.exists() and workdir:
@@ -247,7 +258,17 @@ def check_fence(st: State) -> dict:
             why = fence.problem(tst, d)
             fence._probe_cache.pop(f"{tst.root}|{d}", None)
     if why is None:
+        if mac:
+            return _c("fence", OK, "macOS 沙箱可用 / sandbox-exec works (SBPL profile)")
         return _c("fence", OK, "bubblewrap 可用 / bubblewrap works (unprivileged user namespaces)")
+    if mac:
+        return _c("fence", bad, f"macOS 沙箱起不来 / sandbox-exec cannot start ({why})",
+                  "jarvis 本身是不是在别的沙箱里运行（例如某个 Agent 的沙箱）？在你自己的终端里运行 / run jarvis from your own "
+                  "terminal, not from inside another sandbox")
+    if _in_container():
+        return _c("fence", bad, f"bubblewrap 起不来 / bubblewrap cannot start ({why}) — 在容器里 / inside a container",
+                  "容器默认禁止用户命名空间：把主机装在虚拟机 / 云服务器本身上，而不是 Docker 里（或由你决定放宽容器的 seccomp）/ "
+                  "containers block user namespaces: install the host on the VM / server itself, not inside Docker")
     return _c("fence", bad, f"bubblewrap 起不来 / bubblewrap cannot start ({why})",
               "系统禁了非特权用户命名空间：Ubuntu 24.04+ `sudo sysctl kernel.apparmor_restrict_unprivileged_userns=0`（或给 bwrap 一份 "
               "AppArmor profile）；Debian 旧版 `sudo sysctl kernel.unprivileged_userns_clone=1` / unprivileged user namespaces are off")
@@ -305,6 +326,42 @@ def check_service(svc: dict) -> dict:
     return _c("service", FAIL, f"{n} 已安装但没在运行 / installed but {svc.get('active')}", hint)
 
 
+def check_linger(svc: dict, environ=None) -> dict | None:
+    """Linux + systemd: is the user manager kept after logout (`loginctl enable-linger`)? Needed on a server, where nobody
+    stays logged in; on a desktop session it is fine either way. None = not applicable."""
+    if svc.get("kind") != "systemd":
+        return None
+    e = os.environ if environ is None else environ
+    lg = service._linger()
+    if lg == "yes":
+        return _c("linger", OK, "已开 / on (serve keeps running after logout)")
+    if lg is None:
+        return None
+    desktop = bool(e.get("DISPLAY") or e.get("WAYLAND_DISPLAY"))
+    if desktop and not e.get("SSH_CONNECTION"):
+        return _c("linger", OK, "关（桌面会话：登录期间服务照常） / off — fine on a desktop while you are logged in",
+                  "")
+    return _c("linger", WARN, "关：退出 SSH 登录后服务会停 / off: the service stops when you log out",
+              "loginctl enable-linger $USER   (服务器上必须 / needed on a server)")
+
+
+def check_update(offline: bool = False) -> dict:
+    if offline:
+        return _c("update", WARN, "跳过 / skipped (--offline)")
+    r = update.check(timeout=NET_TIMEOUT)
+    if r["status"] == "newer":
+        return _c("update", WARN, f"有新版本 / newer version {r['latest']} (installed {r['current']})",
+                  "人在终端运行 / the human runs: jarvis update apply")
+    if r["status"] == "current":
+        return _c("update", OK, f"已是最新 / up to date ({r['current']})")
+    if r["status"] == "ahead":
+        return _c("update", OK, f"比发布版新 / ahead of the release ({r['current']} > {r['latest']})")
+    if r["why"] == "off":
+        return _c("update", WARN, "不检查 / check disabled (AGENTJARVIS_UPDATE_URL=off)")
+    return _c("update", WARN, f"查不到最新版本 / could not check ({r['why']})",
+              "离线或 GitHub 不通：不影响使用 / offline or GitHub unreachable: jarvis still works")
+
+
 def run(st: State | None = None, offline: bool = False) -> list[dict]:
     st = st or State()
     svc = service.status()
@@ -315,6 +372,10 @@ def run(st: State | None = None, offline: bool = False) -> list[dict]:
         out += [check_relay(st), check_dashboard(st)]
     out += [check_agent(st), check_agent_cli(st, svc), check_harness(), check_fence(st), check_passphrase(st), check_bound(st),
             check_serve(st), check_service(svc)]
+    lg = check_linger(svc)
+    if lg:
+        out.append(lg)
+    out.append(check_update(offline))
     return out
 
 

@@ -1,6 +1,6 @@
 ---
 document: agent-jarvis-install
-version: 0.8.1
+version: 0.9.0
 released: 2026-10-02
 status: alpha (invite-only by word of mouth; pages are not indexed)
 host_package: agentjarvis-host (the `jarvis` command)
@@ -65,7 +65,7 @@ curl -fsSL https://alpha.agentjarvis.net/install.md.sha256 -o install.md.sha256
 curl -fsSL https://raw.githubusercontent.com/preangelleo/agentjarvis/main/install.md -o install.github.md
 if command -v sha256sum >/dev/null; then sha256sum -c install.md.sha256; else shasum -a 256 -c install.md.sha256; fi   # → "install.md: OK"
 cmp install.md install.github.md && echo "site and GitHub copies match"
-grep -m1 '^version:' install.md                                           # → version: 0.8.1
+grep -m1 '^version:' install.md                                           # → version: 0.9.0
 ```
 - Both checks pass → continue with that `install.md` (note its `version:` for feedback).
 - A mismatch → **stop**, tell your human, and report it (Step 2 first, then a feedback with stage `1-verify`).
@@ -104,7 +104,7 @@ The limit is 4 reports per hour, so put several small frictions into one report 
 | `host_form` | `mac` · `linux-desktop` · `linux-server` · `windows` (= WSL2) · `unknown` |
 | `os` | e.g. `Ubuntu 24.04 x86_64`, `macOS 15.1 arm64` |
 | `agent_kind` / `agent_version` | `claude-code` · `codex` · `other` / your own version (e.g. `claude --version`) |
-| `install_md_version` | `0.8.0` |
+| `install_md_version` | `0.9.0` |
 | `problem` | step number + the command + the **exact** error text + what you tried |
 | `resolved` / `resolution` | `true` + how you got past it, or `false` (then `resolution` may be omitted) |
 | `owner_informed` | `true` — only after your human has seen the text |
@@ -122,7 +122,7 @@ the exact JSON, send after their "yes".
   "os": "Ubuntu 24.04 x86_64",
   "agent_kind": "claude-code",
   "agent_version": "2.1.0",
-  "install_md_version": "0.8.0",
+  "install_md_version": "0.9.0",
   "problem": "Step 4: `uv tool install ...` failed: <exact error text>. Tried: <what you tried>.",
   "resolved": false,
   "owner_informed": true
@@ -154,11 +154,11 @@ you, checks again before sending, and keeps a receipt for reading our reply (Ste
 
 | Need | Check | If missing |
 |---|---|---|
-| macOS or Linux (Windows: inside **WSL2** only) | `uname -sm` | Windows without WSL2 → stop, tell your human |
+| macOS or Linux — your own computer **or your own cloud server** (Windows: inside **WSL2** only) | `uname -sm` | Windows without WSL2 → stop, tell your human. A Linux server reached over SSH (no desktop) → also follow section **S** |
 | `curl`, `git` | `curl --version; git --version` | install with the OS package manager (✋ `sudo` = the human types their password) |
 | An agent for the phone: **Claude Code or Codex**, logged in | `claude --version`, `codex --version`, `opencode --version` (each may be missing) | see "Which agent" below |
 | `uv` | `uv --version` | official installer (below), then open a new shell |
-| Linux only: **bubblewrap** | `bwrap --version` | ✋ `sudo apt install bubblewrap` · `sudo dnf install bubblewrap` · `sudo pacman -S bubblewrap` |
+| Linux only: **bubblewrap** (macOS: nothing to install — the built-in `sandbox-exec` is used) | `bwrap --version` | ✋ `sudo apt install bubblewrap` · `sudo dnf install bubblewrap` · `sudo pacman -S bubblewrap` |
 | A phone with a current browser (iPhone: iOS 16.4+ for lock-screen alerts) | ask your human | — |
 | No other `jarvis` command already on PATH | `command -v jarvis` | if it prints something, tell your human before Step 4 |
 
@@ -166,8 +166,9 @@ you, checks again before sending, and keeps a receipt for reading our reply (Ste
 curl -fsSL https://claude.ai/install.sh | bash        # Claude Code (official: https://code.claude.com/docs/en/setup)
 curl -LsSf https://astral.sh/uv/install.sh | sh       # uv (official: https://docs.astral.sh/uv/)
 ```
-`uv` downloads Python 3.13 itself if the system has an older one. On Linux the Agent is started inside bubblewrap so it
-cannot see or change Jarvis's own keys; without bubblewrap it does not start (Step 9).
+`uv` downloads Python 3.13 itself if the system has an older one. The Agent is started inside a fence so it cannot see or
+change Jarvis's own keys: bubblewrap on Linux, `sandbox-exec` on macOS. When the fence cannot start, the Agent does not
+start (Step 9). Inside a Docker-style container the fence usually cannot start — install on the VM / server itself.
 
 **Which agent (the harness rule).** The phone talks to **one** agent on this computer: Claude Code or Codex. You are
 probably one of them yourself — that does **not** make you the choice.
@@ -189,7 +190,7 @@ uv tool update-shell        # adds uv's tool directory to PATH; then open a new 
 jarvis --version
 jarvis doctor
 ```
-`jarvis --version` is the host program's own version (e.g. `0.7.0a1`); it is numbered separately from this document (`0.8.0`).
+`jarvis --version` is the host program's own version (e.g. `0.8.0a1`); it is numbered separately from this document (`0.9.0`).
 
 Alternative without uv: `pipx install "git+https://github.com/preangelleo/agentjarvis#subdirectory=host"` (needs Python 3.11+).
 `jarvis doctor` lists what is ready and what is not (prerequisites, the fence, connectivity, which agents are usable).
@@ -199,7 +200,7 @@ Continue unless it reports an error that a later step does not fix; report anyth
 ```bash
 ( umask 077; cat > ~/.jarvis-install/feedback-report <<'JSON'
 { "stage": "...", "host_form": "...", "os": "...", "agent_kind": "...", "agent_version": "...",
-  "install_md_version": "0.8.0", "problem": "...", "resolved": false, "owner_informed": true }
+  "install_md_version": "0.9.0", "problem": "...", "resolved": false, "owner_informed": true }
 JSON
 )
 jarvis feedback check ~/.jarvis-install/feedback-report     # redacts, writes feedback-report.checked.json (0600), prints it + a verdict
@@ -314,19 +315,22 @@ jarvis agent detect --json      # → {"harnesses":[…], "usable":[…], "decis
 
 Ask your human which folder the phone's agent should work in (for a first test, a new empty folder such as
 `~/jarvis-work` is best: `mkdir -p ~/jarvis-work`).
-- **Linux:**
-  ```bash
-  jarvis agent <agent> --dir ~/jarvis-work    # <agent> = claude or codex (Codex: text only, no approval cards)
-  jarvis agent                                # shows the choice and that it runs fenced
-  ```
-- **macOS:** the fence is not available on macOS yet, so the agent can only run unfenced. ✋ The human runs, in their own
-  terminal, `jarvis agent <agent> --dir ~/jarvis-work --unfenced` and types their passphrase. Trade-off, in one
-  sentence: unfenced, a command the human approves on the phone could read or change Jarvis's own settings, so approve
-  only what you understand.
+```bash
+jarvis agent <agent> --dir ~/jarvis-work    # <agent> = claude or codex (Codex: text only, no approval cards)
+jarvis agent                                # shows the choice and that it runs fenced
+```
+The same on Linux (bubblewrap) and macOS (`sandbox-exec`). `jarvis doctor` shows `✓ fence`.
+- **macOS + Codex:** Codex's own sandbox cannot run inside ours on macOS, so in Codex's default sandbox modes the commands
+  Codex wants to run fail ("sandbox … Operation not permitted"); chat still works. Tell your human in one sentence; how
+  Codex is configured (`sandbox_mode` in their own `~/.codex/config.toml`) is **their** choice — never change it yourself.
+  Claude Code is not affected (unless the human turned on Claude Code's own optional sandbox).
+- **The fence does not start** (the output warns; e.g. a container, or user namespaces disabled): report it with that exact
+  text — do not change kernel or AppArmor settings to get around it. Only the human may decide to run the Agent unfenced:
+  ✋ in their own terminal `jarvis agent <agent> --dir ~/jarvis-work --unfenced` (asks their passphrase). Trade-off, in one
+  sentence: unfenced, a command the human approves on the phone could read or change Jarvis's own settings.
 
 The agent runs as the human's own user, with their own Claude Code / Codex login, settings and permission rules; Jarvis adds
-no permissions. If the output warns that the fence is unavailable (Linux), report it with that exact text — do not
-change kernel or AppArmor settings to get around it.
+no permissions.
 
 ---
 
@@ -336,7 +340,10 @@ change kernel or AppArmor settings to get around it.
 jarvis service install       # systemd user service (Linux) / launchd agent (macOS), starts `jarvis serve`
 jarvis service status        # → running, connected to the relay
 ```
-If `jarvis service install` fails (no systemd user session, a container, …), report it, then use a fallback:
+On a server (nobody stays logged in) the service must survive logout: if `jarvis service install` or `jarvis doctor`
+says `loginctl enable-linger $USER`, ✋ your human runs exactly that once (Ubuntu may ask for their password), then
+`jarvis service install` again. If `jarvis service install` fails (no systemd user session, a container, …), report it,
+then use a fallback:
 ```bash
 tmux new -d -s jarvis 'jarvis serve'                      # if tmux exists
 nohup jarvis serve >~/.jarvis-serve.log 2>&1 &            # otherwise
@@ -354,7 +361,9 @@ install`, or restart the tmux / nohup process).
    ```bash
    jarvis pair
    ```
-   (or `jarvis admin`, which prints a one-time link to a page on 127.0.0.1 that does the same.)
+   (or `jarvis admin`, which prints a one-time link to a page on 127.0.0.1 that does the same.) On a server over SSH
+   the QR code is drawn right in the SSH terminal; if the phone cannot scan it, `jarvis pair --link` prints the same link
+   for the human to open on the phone (section S).
 3. In the phone page tap **扫码** and scan the QR code from the terminal (on iPhone use this button, not the Camera
    app, so the pairing lands in the home-screen app). The phone shows **6 digits**; the human types them into the
    terminal, then their passphrase.
@@ -384,6 +393,43 @@ talk to the Agent from your phone.**
 
 ---
 
+## U. Upgrade — stage `6-host`
+
+The human decides when new host code arrives; nothing upgrades itself. `jarvis serve` checks the public repo once a day
+and, when there is a newer version, sends the phone one line saying so.
+```bash
+jarvis update check          # you may run this: latest version, and the upgrade command for how it was installed
+```
+- `newer` → tell your human the version and the printed command; ✋ **they** run `jarvis update apply` in their own
+  terminal (it shows the command and asks y/N; it refuses without an interactive terminal — do not try to get around
+  that). It re-installs the service by itself, so the running service restarts on the new version. Then `jarvis doctor`.
+- `could not check` (offline, GitHub unreachable) is not an error.
+- The daily check: `jarvis update auto off` / `on` (GitHub sees that request — see the end of this document).
+
+---
+
+## S. On a cloud server (AWS, a VPS) — stage `6-host` (`host_form`: `linux-server`)
+
+Supported: the host can run on the human's own cloud server instead of their computer; the data stays on that machine.
+- **Log in** with SSH as a normal user (not root; create one if the server only has root — ✋ human). A Linux server with
+  systemd (Ubuntu 24.04, Debian 12, Amazon Linux 2023 …); a VM, not a Docker container (the fence needs user namespaces).
+- **Install** exactly as in Steps 3–5 (`curl … | sh` for uv, `uv tool install …`, ✋ `sudo apt install bubblewrap`). On
+  Ubuntu 24.04 `jarvis doctor` may say bubblewrap cannot start (AppArmor restricts user namespaces): report it; the fix is
+  the human's decision.
+- **Agent login on a server:** the human runs `claude` (or `codex login`) over SSH once and follows its device / browser
+  sign-in on their own computer or phone.
+- **Always on:** ✋ `loginctl enable-linger $USER` once, then `jarvis service install` (Step 10). `jarvis doctor` shows
+  `✓ linger`.
+- **Pairing:** `jarvis pair` draws the QR code in the SSH terminal (plain colour blocks when the terminal is not UTF-8). If
+  the phone cannot scan it: `jarvis pair --link`, and the human opens that link on the phone by their own means (it is the
+  pairing key: one use, 5 minutes — never paste it into this conversation).
+- **The local admin page** listens on the server's 127.0.0.1 only. Over SSH `jarvis admin` prints the tunnel to run on
+  the human's own computer, `ssh -N -L <port>:127.0.0.1:<port> <user>@<server>`; then they open the printed link there.
+- No inbound port is opened, ever (safety rule 5): the host connects out to the relay.
+- **Windows** is still WSL2 (Step 3), not a server form.
+
+---
+
 ## R. Roll back — stage `R-rollback`
 
 ```bash
@@ -406,9 +452,15 @@ or logs out Claude Code / Codex, and never touches the agent's work folder.
   device ids and labels, online state, host software version, machine name — `jarvis report-hostname off` stops that).
   With a seat setup code also: the seat's status and times, which account opened the setup link, the email address the
   admin sent it to (if any), and which computer it bound. The code itself is stored only as a hash.
+- **GitHub**, not us, sees the daily update check (this computer's IP, the time, the host version); `jarvis update auto off`.
 - **Feedback** you send is plain text on purpose (redacted). Full list and current status: https://alpha.agentjarvis.net/security/
 
 ## Changelog
+- 0.9.0 (2026-10-02): host `0.8.0a1`. macOS: the Agent is fenced by the built-in `sandbox-exec` (no more `--unfenced`
+  by default; Codex's own sandbox cannot nest on macOS — Step 9). Section U: `jarvis update check` → the human runs
+  `jarvis update apply` (terminal only); `serve` checks daily and only notifies. Section S: the human's own cloud server
+  (SSH, linger, QR in the terminal or `jarvis pair --link`, admin page through an SSH tunnel; feedback `host_form`
+  `linux-server`).
 - 0.8.1 (2026-10-02): the sentence from a company names it by its company ID (not its display name); Step 7 (a):
   `jarvis unlink` also takes this computer out of the company it joined with a setup code, and a repeat of
   `jarvis login --seat-file` after a network error is safe (same answer).
