@@ -45,6 +45,22 @@
     "body": "eyJ2IjoxLCJ0IjoicmVwb3J0IiwiY2hhbm5lbCI6Im9kT0xrYXVTeWpId2Y2VldhV19pS3ciLCJ0cyI6MTc5MDAwMDAwMCwic2VxIjoxNzkwMDAwMDAwMDAwLCJhZ2VudCI6ImFnZW50amFydmlzLWhvc3QvMC4zLjBhMyIsImRldmljZXMiOlt7ImlkIjoiQUFBQUFBQUFBQUFBQUFBQSIsIm5hbWUiOiJMZW8g55qE5omL5py6IiwicGFpcmVkX2F0IjoxNzg5OTkwMDAwLCJvbmxpbmUiOnRydWV9XSwicGVuZGluZyI6eyJjb3VudCI6MSwic2luY2UiOjE3ODk5OTk5OTB9fQ",
     "sig": "rrvH0Nyt3fpa6h-CHn5sFxGyUyAHRz57tM4z2-nHcI6ja8hFwnf-K5vW-s0R2W2Mn9-1DaBBP9jeivioZBp1Ag"
    }
+  },
+  {
+   "context": "agentjarvis-host-seat-bind-v1",
+   "inner": {
+    "v": 1,
+    "t": "seat_bind",
+    "channel": "odOLkauSyjHwf6VWaW_iKw",
+    "ts": 1790000000,
+    "token": "ajt_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+    "name": "测试一号"
+   },
+   "envelope": {
+    "pk": "A6EHv_POEL4dcN0Y50vAmWfk1jCbpQ1fHdyGZBJVMbg",
+    "body": "eyJ2IjoxLCJ0Ijoic2VhdF9iaW5kIiwiY2hhbm5lbCI6Im9kT0xrYXVTeWpId2Y2VldhV19pS3ciLCJ0cyI6MTc5MDAwMDAwMCwidG9rZW4iOiJhanRfQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQSIsIm5hbWUiOiLmtYvor5XkuIDlj7cifQ",
+    "sig": "Q1w4Ep6hT4u4_OcAD_XaVRrqfrwqL2zjJFArRt7hwmhKSzgvYX81nalYOhS-THGNPo4zo67c65B25KCrRCFYBA"
+   }
   }
  ]
 }

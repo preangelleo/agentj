@@ -12,13 +12,12 @@ import os
 import pathlib
 import platform as _pf
 import shutil
-import subprocess
 import sys
 import tempfile
 import urllib.error
 import urllib.request
 
-from . import DIST, __version__, cloud, fence, gate, names, service, wire
+from . import DIST, __version__, cloud, fence, gate, harness, names, service, wire
 from .state import DEFAULT_RELAY, State
 
 OK, WARN, FAIL = "ok", "warn", "fail"
@@ -170,11 +169,10 @@ def check_dashboard(st: State) -> dict:
 
 
 AGENT_LABEL = {"claude": "Claude Code", "codex": "Codex"}
-BIN_ENV = {"claude": "AGENTJARVIS_CLAUDE_BIN", "codex": "AGENTJARVIS_CODEX_BIN"}
-
-
-def _agent_bin(kind: str) -> str | None:
-    return os.environ.get(BIN_ENV[kind]) or shutil.which(kind)
+BIN_ENV = harness.BIN_ENV
+# one implementation for doctor and `jarvis agent detect` (existence checks only, never content)
+_agent_bin, _version_of = harness.agent_bin, harness.version_of
+_claude_login, _codex_login = harness.claude_login, harness.codex_login
 
 
 def check_agent(st: State) -> dict:
@@ -186,43 +184,6 @@ def check_agent(st: State) -> dict:
                   f"jarvis agent {c['kind']} --dir <folder>")
     fz = "fenced" if c.get("fence", True) else "UNFENCED (--unfenced)"
     return _c("agent", OK, f"{AGENT_LABEL[c['kind']]} · {tilde(c['dir'])} · {fz}")
-
-
-def _version_of(exe: str) -> str | None:
-    try:
-        r = subprocess.run([exe, "--version"], capture_output=True, text=True, timeout=15, stdin=subprocess.DEVNULL)
-    except (OSError, subprocess.TimeoutExpired):
-        return None
-    return _short((r.stdout or r.stderr).splitlines()[0] if (r.stdout or r.stderr) else "?", 40) if r.returncode == 0 else None
-
-
-def _claude_login() -> tuple[str, str]:
-    """(status, where) — existence only, never content."""
-    cfg = os.environ.get("CLAUDE_CONFIG_DIR") or os.path.expanduser("~/.claude")
-    if os.path.isfile(os.path.join(cfg, ".credentials.json")):
-        return OK, f"login {tilde(os.path.join(cfg, '.credentials.json'))}"
-    if sys.platform == "darwin" and shutil.which("security"):
-        try:   # no -w: asks only whether the Keychain item exists, never its value
-            r = subprocess.run(["security", "find-generic-password", "-s", "Claude Code-credentials"],
-                               capture_output=True, timeout=10)
-            if r.returncode == 0:
-                return OK, "login in Keychain"
-        except (OSError, subprocess.TimeoutExpired):
-            pass
-    for k in ("CLAUDE_CODE_OAUTH_TOKEN", "ANTHROPIC_API_KEY"):
-        if os.environ.get(k):
-            return "env", f"env {k} (name only)"
-    return WARN, "no login found"
-
-
-def _codex_login() -> tuple[str, str]:
-    home = os.environ.get("CODEX_HOME") or os.path.expanduser("~/.codex")
-    if os.path.isfile(os.path.join(home, "auth.json")):
-        return OK, f"login {tilde(os.path.join(home, 'auth.json'))}"
-    for k in ("CODEX_API_KEY", "OPENAI_API_KEY"):
-        if os.environ.get(k):
-            return "env", f"env {k} (name only)"
-    return WARN, "no login found"
 
 
 def check_agent_cli(st: State, svc: dict) -> dict:
@@ -301,10 +262,19 @@ def check_passphrase(st: State) -> dict:
     return _c("passphrase", WARN, "未设置 / not set", "jarvis passphrase set   (自己在终端里输 / type it yourself, never via an agent)")
 
 
+def check_harness() -> dict:
+    """`jarvis agent detect` in one line: which harnesses are usable, and the install decision (seat setup §4.1)."""
+    d = harness.detect()
+    hint = {"none": "安装并登录 Claude Code 或 Codex / install and log in to Claude Code or Codex",
+            "ask_owner": "多个可用：由人类决定接哪一个 / more than one usable: the human decides which one"}.get(d["decision"], "")
+    return _c("harness", WARN if d["decision"] == "none" else OK, harness.summary(d), hint)
+
+
 def check_bound(st: State) -> dict:
     link = cloud.read_cloud(st) if st.exists() else None
     if link:
-        return _c("bound", OK, f"Dashboard 公司账号 / company {link['tenant']['slug']}")
+        via = "席位设置码 / via seat setup" if link["via"] == "seat" else "8 位代码 / via code"
+        return _c("bound", OK, f"Dashboard 公司账号 / company {link['tenant']['slug']} · {via}")
     return _c("bound", WARN, "未绑定 Dashboard / not bound", "jarvis login")
 
 
@@ -343,7 +313,7 @@ def run(st: State | None = None, offline: bool = False) -> list[dict]:
         out += [_c("relay", WARN, "跳过 / skipped (--offline)"), _c("dashboard", WARN, "跳过 / skipped (--offline)")]
     else:
         out += [check_relay(st), check_dashboard(st)]
-    out += [check_agent(st), check_agent_cli(st, svc), check_fence(st), check_passphrase(st), check_bound(st),
+    out += [check_agent(st), check_agent_cli(st, svc), check_harness(), check_fence(st), check_passphrase(st), check_bound(st),
             check_serve(st), check_service(svc)]
     return out
 

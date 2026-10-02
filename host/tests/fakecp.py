@@ -5,6 +5,7 @@ from __future__ import annotations
 import base64
 import hashlib
 import json
+import re
 import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -14,11 +15,15 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
 
 CONTEXTS = {"/v1/host/login": "agentjarvis-host-login-v1", "/v1/host/poll": "agentjarvis-host-poll-v1",
             "/v1/host/report": "agentjarvis-host-report-v1", "/v1/host/sync": "agentjarvis-host-sync-v1",
-            "/v1/host/rename": "agentjarvis-host-rename-v1"}
+            "/v1/host/rename": "agentjarvis-host-rename-v1", "/v1/host/seat-bind": "agentjarvis-host-seat-bind-v1",
+            "/v1/host/seat-leave": "agentjarvis-host-seat-leave-v1"}
 KEYS = {"login": {"v", "t", "channel", "ts"}, "poll": {"v", "t", "channel", "ts", "login_id"},
         "report": {"v", "t", "channel", "ts", "seq", "agent", "devices", "pending"},
-        "sync": {"v", "t", "channel", "ts", "results"}, "rename": {"v", "t", "channel", "ts", "name"}}
+        "sync": {"v", "t", "channel", "ts", "results"}, "rename": {"v", "t", "channel", "ts", "name"},
+        "seat_bind": {"v", "t", "channel", "ts", "token", "name"}, "seat_leave": {"v", "t", "channel", "ts"}}
 OPTIONAL = {"report": {"agent_name", "machine"}}   # A3.2: optional report keys
+PATH_OF = {"seat_bind": "/v1/host/seat-bind", "seat_leave": "/v1/host/seat-leave"}   # inner `t` → path where they differ
+SEAT_TOKEN = re.compile(r"ajt_[A-Za-z0-9_-]{43}")
 
 
 def unb64u(s: str) -> bytes:
@@ -52,6 +57,16 @@ class FakeCP:
         self.taken = {"wren"}                  # names (lower case) already used in the company
         self.bound_extra = {"devices": [{"id": "EVILEVILEVILEVIL", "pub": "A" * 43, "name": "evil"}],
                             "approve": ["EVILEVILEVILEVIL"], "allowlist": ["x"]}
+        # seat setup §4: /v1/host/seat-bind
+        self.seat_tokens: set[str] = set()     # issued, unexpired codes (single use: removed when bound)
+        self.seat_binds: list[dict] = []       # accepted (signature-valid) seat-bind bodies
+        self.seat_script: list = []            # scripted answers: "invalid" | "taken" | "payment" | "rate" | "already_bound"
+        #                                        | "bad_name" | "garbled" (200 without a usable body) | int (5xx)
+        self.seat_channel_bound: set[str] = set()
+        self.seat_bound_token: dict[str, tuple] = {}   # channel → (code, name) that bound it (review SS-02: idempotent replay)
+        # review SS-02: /v1/host/seat-leave
+        self.seat_leaves: list[dict] = []      # accepted (signature-valid) seat-leave bodies
+        self.leave_script: list = []           # scripted answers: "not_found" | "rate" | int (5xx)
         cp = self
 
         class H(BaseHTTPRequestHandler):
@@ -119,7 +134,7 @@ class FakeCP:
         t = inner.get("t")
         extra = set(inner) - KEYS.get(t, set())
         if (inner.get("v") != 1 or t not in KEYS or not KEYS[t] <= set(inner) or not extra <= OPTIONAL.get(t, set())
-                or CONTEXTS[f"/v1/host/{t}"] != ctx):
+                or CONTEXTS[PATH_OF.get(t, f"/v1/host/{t}")] != ctx):
             return None, (400, {"error": "bad_request"})
         return inner, None
 
@@ -147,6 +162,47 @@ class FakeCP:
                     return 200, {"status": "pending"}
                 return 200, {"status": "bound", "host_id": "h_1", "tenant": {"slug": "acme-co", "name": "Acme\x1b[2J Co"},
                              **self.bound_extra, **({"agent_name": self.bound_name} if self.bound_name is not None else {})}
+            if path == "/v1/host/seat-bind":
+                self.seat_binds.append(inner)
+                if not (isinstance(inner["token"], str) and SEAT_TOKEN.fullmatch(inner["token"])):
+                    return 400, {"error": "bad_request"}
+                step = self.seat_script.pop(0) if self.seat_script else None
+                answers = {"invalid": (404, {"error": "invalid_setup"}), "payment": (402, {"error": "payment_required"}),
+                           "rate": (429, {"error": "rate_limited"}), "already_bound": (409, {"error": "already_bound"}),
+                           "bad_name": (400, {"error": "bad_name"}), "garbled": (200, {"status": "bound", "host_id": "!"})}
+                if step in answers:
+                    return answers[step]
+                if isinstance(step, int):
+                    return step, {"error": "internal"}
+                if inner["channel"] in self.seat_channel_bound:
+                    prev = self.seat_bound_token.get(inner["channel"])
+                    if prev and prev[0] == inner["token"]:      # the same code from the same key: replay of the 200
+                        return 200, {"status": "bound", "host_id": "h_seat", "tenant": {"slug": "acme-co", "name": "Acme\x1b[2J Co"},
+                                     "agent_name": prev[1]}
+                    return 409, {"error": "already_bound"}
+                if inner["token"] not in self.seat_tokens:
+                    return 404, {"error": "invalid_setup"}
+                if step == "taken" or inner["name"].lower() in self.taken:
+                    base = inner["name"]
+                    return 409, {"error": "name_taken", "suggestions": [f"{base} 2", "bad‮name", f"{base} 3", 7]}
+                self.seat_tokens.discard(inner["token"])
+                self.seat_channel_bound.add(inner["channel"])
+                self.seat_bound_token[inner["channel"]] = (inner["token"], inner["name"])
+                self.taken.add(inner["name"].lower())
+                return 200, {"status": "bound", "host_id": "h_seat", "tenant": {"slug": "acme-co", "name": "Acme\x1b[2J Co"},
+                             "agent_name": inner["name"], **self.bound_extra}
+            if path == "/v1/host/seat-leave":
+                self.seat_leaves.append(inner)
+                step = self.leave_script.pop(0) if self.leave_script else None
+                if step == "rate":
+                    return 429, {"error": "rate_limited"}
+                if isinstance(step, int):
+                    return step, {"error": "internal"}
+                if step == "not_found" or inner["channel"] not in self.seat_channel_bound:
+                    return 404, {"error": "not_found"}
+                self.seat_channel_bound.discard(inner["channel"])
+                self.seat_bound_token.pop(inner["channel"], None)
+                return 200, {"status": "left"}
             if path == "/v1/host/rename":
                 self.renames.append(inner)
                 step = self.rename_script.pop(0) if self.rename_script else None

@@ -73,7 +73,8 @@ class Flow(unittest.TestCase):
             self.assertEqual(cp.rejected, [])
             self.assertEqual(self.st.devices_path.read_bytes(), before, "a malicious bound answer changes nothing")
             link = json.loads(self.st.cloud_path.read_text())
-            self.assertEqual(set(link), {"api", "host_id", "tenant", "linked_at", "last_seq"})
+            self.assertEqual(set(link), {"api", "host_id", "tenant", "linked_at", "last_seq", "via"})
+            self.assertEqual(link["via"], "code", "the 8-character code path records how it was linked")
             self.assertEqual(os.stat(self.st.cloud_path).st_mode & 0o777, 0o600)
             self.assertEqual(len(cp.reports), 1, "login sends a first report")
 
@@ -87,7 +88,7 @@ class Flow(unittest.TestCase):
             self.assertEqual(rep["devices"], [{"id": did, "name": "Leo 的手机", "paired_at": rep["devices"][0]["paired_at"],
                                                "online": False}])
             self.assertEqual(rep["pending"], {"count": 0, "since": None})
-            self.assertEqual(rep["agent"], "agentjarvis-host/0.6.0a1")
+            self.assertEqual(rep["agent"], "agentjarvis-host/0.7.0a1")
             self.assertGreater(rep["seq"], cp.reports[0]["seq"])
             self.assertEqual(cp.rejected, [])
             self.assertIn("acme-co", self.jarvis("devices").stdout)

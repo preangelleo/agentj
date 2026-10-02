@@ -34,6 +34,7 @@ jarvis --version
 | `protocol/` | wire spec (`PROTOCOL.md`), the shared JavaScript Noise implementation, official test vectors |
 | `host/` | the host CLI `jarvis` (Python 3.13): pairing, relay connection, agent bridge, approvals, fence |
 | `web/` | the phone web client (static, no dependencies) and its Cloudflare Worker |
+| `tools/sim-phone/` | a simulated phone for test environments without a real phone: headless Chromium running the real web client; it never bypasses pairing |
 | `install.md` | the instructions an AI agent follows to install Agent Jarvis |
 
 The relay, the Dashboard (accounts and billing) and the website are not in this repository.

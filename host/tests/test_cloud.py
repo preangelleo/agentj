@@ -50,6 +50,8 @@ class Envelope(unittest.TestCase):
             self.assertEqual(env["body"], c["envelope"]["body"], c["context"])
             self.assertEqual(env["sig"], c["envelope"]["sig"], c["context"])
             self.assertEqual(env["pk"], c["envelope"]["pk"])
+        # the vector covers the contexts this host actually signs with (seat-bind included, seat setup §4)
+        self.assertEqual(sorted(c["context"] for c in VEC["cases"]), sorted([cloud.CTX_LOGIN, cloud.CTX_REPORT, cloud.CTX_SEAT_BIND]))
 
     def test_channel_derivation_matches_vector(self):
         sk = Ed25519PrivateKey.from_private_bytes(bytes.fromhex(VEC["ed25519_seed_hex"]))
@@ -59,7 +61,7 @@ class Envelope(unittest.TestCase):
 
     def test_contexts_distinct_from_relay(self):
         self.assertEqual(len({cloud.CTX_LOGIN, cloud.CTX_POLL, cloud.CTX_REPORT, "agentjarvis-relay-auth-v1"}), 4)
-        self.assertEqual(cloud.AGENT, "agentjarvis-host/0.6.0a1")
+        self.assertEqual(cloud.AGENT, "agentjarvis-host/0.7.0a1")
 
 
 class Report(unittest.TestCase):
@@ -252,7 +254,7 @@ class Whitelist(unittest.TestCase):
             self.assertEqual(res["status"], "bound")
             self.assertEqual(st.devices_path.read_bytes(), before)
             raw = json.loads(st.cloud_path.read_text())
-            self.assertEqual(set(raw), {"api", "host_id", "tenant", "linked_at", "last_seq"})
+            self.assertEqual(set(raw), {"api", "host_id", "tenant", "linked_at", "last_seq", "via"})
             self.assertEqual(set(raw["tenant"]), {"slug", "name"})
             self.assertNotIn("\x1b", raw["tenant"]["name"])
             self.assertEqual(os.stat(st.cloud_path).st_mode & 0o777, 0o600)

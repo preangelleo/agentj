@@ -114,11 +114,11 @@ before msg1, and IK keeps the device's static key off the wire. No file/voice; r
 channel only (no per-IP limit); web client = "tampering would be detected" tier as a goal, not reached in alpha (source and
 release hashes not public yet), and never zero-access (Z3). Per-IP relay limits exist since L2 (§2).
 
-## 7. Host ↔ control plane (A3, A3.1, A3.2, L2): signed envelopes
+## 7. Host ↔ control plane (A3, A3.1, A3.2, L2, seat setup): signed envelopes
 The host talks to the Dashboard's control plane over HTTPS at `https://api.agentjarvis.net/v1/host/*` (public, no Access;
 config `api`, env `AGENTJARVIS_API_URL`). It authenticates with its **existing** `host_ed25519` key (§1) — no bearer token, no
 new secret. **Nothing the control plane answers can add or approve a device**: the host *pushes* metadata; the answers it
-parses are `login` / `poll` status fields, — A3.1 — `sync`'s list of *unbind requests* (whitelisted) and — A3.2 — the Agent
+parses are `login` / `poll` / `seat-bind` / `seat-leave` status fields, — A3.1 — `sync`'s list of *unbind requests* (whitelisted) and — A3.2 — the Agent
 name (a display string). An unbind request can
 only remove a device, and only after the host's own checks (below); §4–§7 stay the only way in. A device that exists only in the Dashboard's database is unknown to the host and is silently refused (§4.6).
 
@@ -126,7 +126,8 @@ only remove a device, and only after the host's own checks (below); §4–§7 st
 `{"pk": b64url(ed25519_pub 32 B), "body": b64url(UTF-8 JSON), "sig": b64url(Ed25519(sk, CONTEXT + "\n" + body_field))}`
 — the signed message is the ASCII bytes of the context string, a newline, and the `body` field **exactly as sent** (base64url text).
 Contexts: `agentjarvis-host-login-v1` · `agentjarvis-host-poll-v1` · `agentjarvis-host-report-v1` · `agentjarvis-host-sync-v1` ·
-`agentjarvis-host-rename-v1` (A3.2) · `agentjarvis-host-decline-v1` (L2) (distinct from the relay's
+`agentjarvis-host-rename-v1` (A3.2) · `agentjarvis-host-decline-v1` (L2) · `agentjarvis-host-seat-bind-v1` (seat setup) ·
+`agentjarvis-host-seat-leave-v1` (seat setup, review SS-02) (distinct from the relay's
 `agentjarvis-relay-auth-v1`, so no signature is valid in two places). Every inner body has `v:1`, `t`, `channel`, `ts` (unix s).
 Server checks, in order: size and shape → `pk` is 32 bytes → `channel == channel_id(pk)` (§1) → signature → `|ts − now| ≤ 300 s`
 → strict schema (unknown keys = 400; the only optional keys are `report`'s `agent_name` and `machine`). Failures: malformed 400 `bad_request` · signature / derivation 401 `bad_signature` ·
@@ -140,6 +141,8 @@ stale 401 `stale` · then per endpoint. Vector: `protocol/vectors/host-envelope.
 | `POST /v1/host/sync` (A3.1) | `{"v":1,"t":"sync","channel","ts","results":[{"id","result"}]}` (≤ 10; result ∈ `revoked` `unknown_device` `disabled` `rate_limited`) | 200 `{"unbind":[{"id","device"}],"agent_name"}` (≤ 10, this host's pending requests; A3.2 `agent_name` = canonical name, string or null) · 403 `not_bound` · 429 `rate_limited` (L2: a sync **with** results costs one of ≤ 60 per host per hour; over it nothing is written — keep the results, retry later; a sync without results is never limited) |
 | `POST /v1/host/report` | `{"v":1,"t":"report","channel","ts","seq","agent","devices":[{"id","name","paired_at","online"}],"pending":{"count","since"}}` + optional (A3.2) `"agent_name"` (string per §7 Agent-name rules, or null) and `"machine"` (hostname via `clean_label`, ≤ 64, or null) | 200 `{"ok":true}` · 403 `not_bound` · 409 `replay` (seq ≤ last) · 429 `rate_limited` |
 | `POST /v1/host/rename` (A3.2) | `{"v":1,"t":"rename","channel","ts","name"}` | 200 `{"ok":true,"name"}` · 400 `bad_name` · 409 `{"error":"name_taken","suggestions":[…]}` (≤ 3) · 403 `not_bound` · 429 `rate_limited` (≤ 20 successes per host per hour; and ≤ 60 failures — 400 / 409 — per host per hour, claimed before the name is checked, so past it nothing is checked or revealed) |
+| `POST /v1/host/seat-bind` (seat setup) | `{"v":1,"t":"seat_bind","channel","ts","token","name"}` (`token` matches `^ajt_[A-Za-z0-9_-]{43}$`; `name` already normalised per the Agent-name rules) | 200 `{"status":"bound","host_id","tenant":{"slug","name"},"agent_name"}` (also for an idempotent **replay**: the channel is already bound by this same key through the setup this code belongs to — same answer, nothing written) · 404 `invalid_setup` (unknown, expired, revoked or already used — one answer) · 409 `{"error":"name_taken","suggestions":[…]}` · 402 `payment_required` (the company no longer pays for that seat) · 409 `already_bound` · 400 `bad_name` / `name_required` / `bad_request` · 429 `rate_limited` (`retry-after`; ≤ 10 failed seat-binds per IP bucket per hour, ≤ 10 per channel per hour, claimed before the code is looked at) |
+| `POST /v1/host/seat-leave` (seat setup, review SS-02) | `{"v":1,"t":"seat_leave","channel","ts"}` | 200 `{"status":"left"}` · 404 `not_found` (this channel is not bound with this key, or it was bound with the 8-character code, not a seat setup) · 429 `rate_limited` (≤ 10 per channel per hour, `retry-after`) |
 
 Any endpoint may answer 500 `{"error":"internal"}` (no detail); the host treats it like any 5xx.
 
@@ -149,7 +152,7 @@ Any endpoint may answer 500 `{"error":"internal"}` (no detail); the host treats 
   0/1), 10 min, single use, stored hashed (a hash collision → a new code). The host polls every `interval` seconds until
   `bound` / `rejected` / `expired`. On `bound` the host prints the tenant it was bound to and asks its human
   「绑定到租户 <slug>（<name>）？[y/N]」 (`--yes` for scripts); only `y` writes `cloud.json` (0600: `api`, `host_id`, `tenant`,
-  `linked_at`, `last_seq`). On N (or EOF) nothing is written and nothing is reported, and — L2 — the host sends a signed
+  `linked_at`, `last_seq`, `via: "code"`). On N (or EOF) nothing is written and nothing is reported, and — L2 — the host sends a signed
   `decline` for that `login_id`, which unbinds it from the tenant that bound it (below) — someone who read the code off this
   terminal can neither silently receive this host's metadata nor keep its channel (and a seat) in their company.
 - **Decline (L2, G-A11)**: allowed only when (a) the login is this channel's own (same `channel`, same `pk`), (b) its status is
@@ -166,6 +169,45 @@ Any endpoint may answer 500 `{"error":"internal"}` (no detail); the host treats 
   the host *out* of a tenant; it never binds, approves or adds anything.
 - **A3.2 confirm**: the bound answer's `agent_name` joins the question —
   「添加到公司账号 <slug>（<name>），Agent 名「<agent_name>」？[y/N]」; only `y` writes `cloud.json` **and** sets the local Agent name.
+- **Seat bind (seat setup)** — the alternative to the 8-character code. A company owner who paid for a seat creates a **setup
+  code** for that one seat in the Dashboard (`ajt_` + 43 base64url characters = 256 random bits; the server stores only its
+  SHA-256; 7 days; single use; revocable) and gives it — inside one sentence for an Agent, or by email to an employee — to the
+  computer that should take the seat. `jarvis login --seat <code> --name <name>` (also `--seat-file <path>`, a 0600 regular file,
+  not a symlink, so the code stays out of argv and shell history; `--seat -` = one line on stdin) refuses locally, sending
+  nothing, a code that does not match `^ajt_[A-Za-z0-9_-]{43}$` and a name that fails the Agent-name rules; otherwise it sends
+  one signed `seat-bind`. **There is no y/N question: possession of the code is the human's consent** — they handed it to this
+  computer's Agent. On 200 the host writes `cloud.json` exactly like the code path plus `via: "seat"` (the code path writes
+  `via: "code"`; a file without `via` is read as `"code"`), sets the local Agent name to the answer's `agent_name` (or the name
+  it sent), logs `cloud_linked kind=seat`, prints 「✓ 已添加到公司账号 <slug>（<name>）的席位，Agent 名「<name>」」 + an English
+  line, and sends the first report; `jarvis status` / `jarvis doctor` show "linked via seat setup" vs "via code". Exit codes:
+  0 bound · 3 `name_taken` (suggestions printed) · 4 `invalid_setup` · 5 `payment_required` · 2 refused locally · 1 anything
+  else. The code is never logged, printed, stored or sent anywhere but this endpoint.
+  **What it can and cannot do**: it binds this one host — signed by its own key, so the server learns nothing it would not
+  learn from the code path — to that one seat of that company, once. It cannot read anything, cannot add or approve a device,
+  cannot add a passkey and is not a session; the answer passes the same whitelist as a bound `poll` answer. Pairing and
+  approval stay on the host (§4). **What the server learns** beyond the code path: which setup bound which host and when
+  (the setup row's `host_id`, `bound_at`; the host row's `setup_id`) — plus the seat metadata the owner's side creates (company,
+  status, times, the invited email if the owner typed one, who claimed it in the browser). **Risk accepted (no y/N)**: an
+  Agent tricked into using someone else's code binds this host to a stranger's company; the stranger then receives this
+  host's metadata (channel id, public key, Agent name, hostname unless `report-hostname off`, device ids / labels / online
+  flags once phones are paired) — never messages, keys or pairing codes, and no way in. The human sees the company in the
+  output and in `jarvis status`; `jarvis unlink` takes the host out of that company (seat leave, below) and stops all
+  reporting at once. install.md tells the Agent to show the human the company it joined.
+  **Replay**: when the 200 is lost (timeout) the host has written nothing; running the same `jarvis login --seat` again sends the
+  same code from the same key, and the server — seeing the channel bound by this key through the setup whose hash this code
+  has (still `bound`) — answers the same 200 without writing anything (it costs the channel allowance a success costs). Any
+  other seat-bind on a bound channel is 409 `already_bound`.
+- **Seat leave (seat setup, review SS-02)** — the undo of a seat bind, for the host's human: the company was not the expected one
+  (a planted or wrong code), or the employee leaves. `jarvis unlink` of a `via: "seat"` link first sends a signed `seat-leave`
+  (best effort; it prints 「已通知 Dashboard 把本机移出公司 <slug>」 or why not — then the owner must recall the seat) and then removes
+  `cloud.json` exactly as before; a `via: "code"` link is removed locally only, as before. Allowed **any time**, but only for the
+  host bound on this channel with this same key **through a seat setup** (`setup_id` not null). Effect, one D1 batch whose first
+  statement — the conditional update of the host to `unbound` — carries all of that and the budget (≤ 10 per channel per hour):
+  the setup becomes `revoked` (its code can never bind again), the holder's `seat_holder` membership goes unless they hold another
+  seat of that company, the host's device rows are deleted and its pending unbind requests `cancelled`, one `seat_leave` ledger
+  charge, one audit row `seat_left`. Answers: 200 `{"status":"left"}`; 404 `not_found` (not bound / another key / code-bound — also
+  for a repeat after a lost answer: the goal holds, nothing more is written); 429. It can only take the host *out*; it never
+  binds, approves or adds anything.
 - **Which URL the host prints**: its configured Dashboard (`AGENTJARVIS_APP_URL` → config `app` →
   `https://alpha-app.agentjarvis.net`). The server's `verification_uri` is printed only when its origin (scheme, host, port) equals
   that; otherwise it is ignored, so a compromised control plane cannot point the human at a look-alike page.
@@ -222,7 +264,8 @@ Any endpoint may answer 500 `{"error":"internal"}` (no detail); the host treats 
 - **What the control plane learns** (disclosed on `/security`): channel id and host public key, bound tenant, the Agent name
   (the owner's, and the one the host reports) and the host's hostname (`machine`), device ids and
   self-chosen labels, pairing times, online flags, the count/start of pending pairings, report times, the host software version
-  (`agent`), every login attempt with its poll times (kept 24 h) and whether the host declined it, sync times and unbind results, and — at Cloudflare's ingress — the request IP (stored only as a
+  (`agent`), every login attempt with its poll times (kept 24 h) and whether the host declined it, sync times and unbind results, — seat setup — which setup code (by id; the code itself only as SHA-256) bound the host and
+when, and — at Cloudflare's ingress — the request IP (stored only as a
   salted hash of the IPv4 address / IPv6 /64, 48 h). Never: keys other than the host's public key, device public keys, safety
   codes, pairing links, message text.
 

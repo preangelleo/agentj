@@ -1,5 +1,7 @@
 """agentjarvis host CLI (alpha): init · serve · pair · admin · name · devices · revoke · send · status · login · report ·
 unlink · remote-unbind · agent · approvals · passphrase · doctor · service (L3). No arguments = the next-step hint.
+Seat setup (0.7): `jarvis login --seat <ajt_…> | --seat-file <path> | --seat - --name <name>` binds with a setup code from
+the company (no y/N; exit 3 name taken · 4 invalid code · 5 seat not paid · 2 refused locally); `jarvis agent detect`.
 
 State dir: $AGENTJARVIS_STATE_DIR or ~/.local/state/agentjarvis-alpha (0700). Approval of a new device happens only here,
 in the terminal running `jarvis pair`: the human types the 6-digit code shown on the phone. At most MAX_DEVICES (5) remotes
@@ -17,6 +19,7 @@ import threading
 import time
 
 from . import DIST, __version__, cloud, gate, names
+from . import feedback
 from .state import DEFAULT_RELAY, DEFAULT_WEB, MAX_DEVICES, State
 from .text import STARTER_NAMES
 
@@ -458,6 +461,7 @@ def cmd_status(a) -> None:
         return
     link = cloud.read_cloud(st)
     res["dashboard"] = link["tenant"]["slug"] if link else "未绑定 Dashboard"
+    res["linked_via"] = link["via"] if link else None   # "seat" (seat setup code) | "code" (8-character jarvis login)
     res["agent_name"] = st.agent_name()
     res["passphrase"] = gate.is_set(st)
     print(json.dumps(res, ensure_ascii=False, indent=1))
@@ -465,7 +469,10 @@ def cmd_status(a) -> None:
 
 def _link_line(st: State) -> str:
     link = cloud.read_cloud(st)
-    return f"Dashboard：已添加到公司账号 {link['tenant']['slug']}（{link['tenant']['name']}）" if link else "未绑定 Dashboard"
+    if not link:
+        return "未绑定 Dashboard"
+    via = "用席位设置码绑定 / linked via seat setup" if link["via"] == "seat" else "用 8 位代码绑定 / linked via code"
+    return f"Dashboard：已添加到公司账号 {link['tenant']['slug']}（{link['tenant']['name']}）· {via}"
 
 
 def _report_now(st: State) -> cloud.ReportResult:
@@ -489,12 +496,98 @@ _POLL_NOTES = {"slow_down": "服务器要求放慢，轮询间隔 +5 秒", "time
                "http_5xx": "服务器暂时出错，继续等"}
 
 
+SEAT_FILE_MAX = 256
+# exit codes of `jarvis login --seat` (seat setup §4.1); everything else is 1 like `jarvis login`, 2 = refused locally
+SEAT_EXIT = {"name_taken": 3, "invalid_setup": 4, "payment_required": 5, "bad_code": 2, "bad_name": 2, "name_required": 2}
+
+
+def _read_seat_code(a) -> str:
+    """The setup code from --seat <code>, --seat - (one line on stdin) or --seat-file <path> (a regular file the human /
+    agent wrote with mode 0600; refused when group / others may read it). Never printed, never logged."""
+    if a.seat_file:
+        import os
+        import stat as _stat
+        try:
+            fd = os.open(a.seat_file, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
+        except OSError as e:
+            sys.exit(f"✗ --seat-file：读不了 / cannot open it ({e.strerror})")
+        try:
+            s = os.fstat(fd)
+            if not _stat.S_ISREG(s.st_mode):
+                sys.exit("✗ --seat-file 必须是普通文件 / must be a regular file")
+            if s.st_mode & 0o077:
+                sys.exit("✗ --seat-file 别人也能读：先 `chmod 600` 它 / group or others can read it: `chmod 600` it first")
+            raw = os.read(fd, SEAT_FILE_MAX + 1)
+        finally:
+            os.close(fd)
+        if len(raw) > SEAT_FILE_MAX:
+            sys.exit("✗ --seat-file 太大，里面应该只有设置码 / too large: it should hold only the setup code")
+        text = raw.decode("utf-8", "replace")
+    elif a.seat == "-":
+        text = sys.stdin.readline(SEAT_FILE_MAX + 1)
+    else:
+        text = a.seat
+    return text.strip()
+
+
+def _seat_login(st: State, a) -> None:
+    """`jarvis login --seat …` (seat setup §4.1): no y/N — the human gave the code to this computer's Agent, that is the
+    decision. Prints the company it joined (the human must see it); never the code."""
+    if a.name is None:
+        print("✗ 用设置码绑定要同时给 Agent 起名：--name \"<名字>\" / --seat needs --name \"<name>\"", file=sys.stderr)
+        sys.exit(2)
+    code = _read_seat_code(a)
+    try:
+        api = cloud.api_url(st, override=a.api)
+    except cloud.CloudError:
+        sys.exit("拒绝：API 地址必须是 https://（http:// 只允许 127.0.0.1 / localhost）")
+    try:
+        res = cloud.seat_bind(st, api, code, a.name)
+    except cloud.CloudError as e:
+        sys.exit(f"连不上控制面（{e.kind}）：{api}")
+    s = res["status"]
+    if s == "bound":
+        t, name = res["tenant"], res["agent_name"]
+        st.set_agent_name(name)
+        st.log("agent_name_set", kind="seat")
+        _ctl_quiet(st, {"cmd": "agent_name_changed"})
+        print(f"✓ 已添加到公司账号 {t['slug']}（{t['name']}）的席位，Agent 名「{name}」")
+        print(f"✓ Added to a seat of company {t['slug']} ({t['name']}); Agent name \"{name}\". "
+              "If this is not the company you expected: `jarvis unlink` — this also takes this computer out of that company.")
+        r = _report_now(st)
+        print("首次上报：成功 / first report: ok" if r.kind == "ok"
+              else f"首次上报失败（{r.status}），serve 启动后会自动重试 / first report failed, serve retries")
+        return
+    msgs = {
+        "bad_code": "设置码格式不对（应是 ajt_ 加 43 个字符）：从那句话里原样复制 / not a setup code (ajt_ + 43 characters): copy it exactly",
+        "bad_name": "Agent 名不合规（1–32 个字，不能有控制字符）/ bad Agent name (1–32 characters, no control characters)",
+        "name_required": "Agent 名不能为空 / the Agent name is required",
+        "name_taken": "这个 Agent 名在公司里已经有了，换一个 / this Agent name is already used in the company",
+        "invalid_setup": "设置码无效、已用过、已过期或已被作废——请向管理员要一个新的 / "
+                         "the setup code is invalid, used, expired or revoked — ask the company's owner for a new one",
+        "payment_required": "这个席位已经不在付费状态，请联系公司管理员 / this seat is no longer paid: contact the company's owner",
+        "already_bound": "本机在 Dashboard 里仍是已绑定状态：先让公司所有者在 Dashboard 里解绑本机 / "
+                         "this host is still bound in a Dashboard: the owner removes it there first",
+        "rate_limited": "尝试太频繁，过一小时再试 / too many attempts: try again within the hour",
+    }
+    msg = "✗ " + msgs.get(s, f"绑定失败 / bind failed（{res.get('http')}{' ' + res['error'] if res.get('error') else ''}）")
+    if s == "name_taken" and res.get("suggestions"):
+        msg += "\n  可以试试 / try: " + "、".join(f"「{x}」" for x in res["suggestions"])
+    print(msg, file=sys.stderr)
+    sys.exit(SEAT_EXIT.get(s, 1))
+
+
 def cmd_login(a) -> None:
     st = State()
     _need_init(st)
     link = cloud.read_cloud(st)
     if link:
         sys.exit(f"本机已添加到 Dashboard 公司账号 {link['tenant']['slug']}。要换绑先运行 `jarvis unlink`（并在 Dashboard 里解绑本机）。")
+    if a.seat is not None or a.seat_file:
+        _seat_login(st, a)
+        return
+    if a.name is not None:
+        sys.exit("--name 只和 --seat / --seat-file 一起用（8 位代码的方式在 Dashboard 里起名）/ --name goes with --seat only")
     try:
         api = cloud.api_url(st, override=a.api)
         app = cloud.app_url(st)
@@ -602,13 +695,32 @@ def cmd_unlink(a) -> None:
     st = State()
     _need_init(st)
     link = cloud.read_cloud(st)
+    slug = link["tenant"]["slug"] if link else "?"
+    left = False
+    if link and link["via"] == "seat":
+        # review SS-02: a seat link is also undone on the Dashboard (signed seat-leave), best effort — cloud.json goes anyway
+        try:
+            r = cloud.seat_leave(st, link["api"])
+        except Exception:                                    # never let the notice keep the local unlink from happening
+            r = {"status": "fail", "http": "error"}
+        left = r["status"] == "left"
+        if left:
+            print(f"已通知 Dashboard 把本机移出公司 {slug} / The Dashboard took this computer out of company {slug}.")
+        elif r["status"] == "not_found":
+            print(f"Dashboard 上本机已不在公司 {slug} 的席位里 / This computer is no longer in a seat of company {slug}.")
+        else:
+            why = {"rate_limited": "太频繁，稍后再试 / rate limited"}.get(r["status"], f"连不上或出错（{r.get('http', '')}）")
+            print(f"没能通知 Dashboard 把本机移出公司 {slug}：{why}。请让公司管理员在 Dashboard 里收回这个席位。"
+                  f" / Could not tell the Dashboard; ask the company's owner to recall the seat.")
     removed = cloud.delete_cloud(st)
     if not removed:
         print("本机没有绑定 Dashboard。")
         return
     st.log("cloud_unlinked")
-    slug = link["tenant"]["slug"] if link else "?"
-    print(f"已删除本机的绑定记录（公司账号 {slug}），不再上报。Dashboard 那边的绑定要在 Dashboard 里解绑本机。")
+    if left:
+        print(f"已删除本机的绑定记录（公司账号 {slug}），不再上报。")
+    else:
+        print(f"已删除本机的绑定记录（公司账号 {slug}），不再上报。Dashboard 那边的绑定要在 Dashboard 里解绑本机。")
 
 
 AGENT_LABEL = {"claude": "Claude Code", "codex": "Codex"}
@@ -625,6 +737,9 @@ def _agent_line(st: State) -> str:
 
 
 def cmd_agent(a) -> None:
+    if a.mode == "detect":   # works before `jarvis init`: only looks at PATH and whether login files exist
+        from . import harness
+        sys.exit(harness.main(as_json=a.json))
     st = State()
     _need_init(st)
     if a.mode in ("claude", "codex"):
@@ -750,7 +865,8 @@ def cmd_service(a) -> None:
 
 NEXT_STEPS = (   # (command, 中文, English)
     ("jarvis init", "生成本机身份", "create this host's identity"),
-    ("jarvis login", "把本机加到 Dashboard 公司账号", "add this host to your Dashboard company"),
+    ("jarvis login", "把本机加到 Dashboard 公司账号（有席位设置码：--seat-file）",
+     "add this host to your Dashboard company (setup code: --seat-file)"),
     ("jarvis passphrase set", "设批准口令（自己输，别让 Agent 代劳）", "set the approval passphrase (yourself)"),
     ("jarvis agent claude --dir <folder>", "接上 Claude Code（或 codex）", "connect Claude Code (or codex)"),
     ("jarvis service install", "后台常驻运行 serve", "keep `jarvis serve` running"),
@@ -834,6 +950,16 @@ def main(argv=None) -> None:
     lo = sub.add_parser("login", help="把本机添加到 Dashboard 公司账号（占 1 个席位；只上报元数据，不含消息内容）")
     lo.add_argument("--api", help=f"控制面地址（默认 $AGENTJARVIS_API_URL 或 {cloud.DEFAULT_API}）")
     lo.add_argument("--yes", action="store_true", help="不询问，直接确认 Dashboard 报回来的公司账号（脚本 / 测试用）")
+    seat = lo.add_mutually_exclusive_group()
+    seat.add_argument("--seat", metavar="CODE",
+                      help="用公司给的席位设置码（ajt_…）直接绑定，不用 8 位代码、不问 y/N；`-` = 从标准输入读一行 / "
+                           "bind with a seat setup code from the company (no 8-character code, no y/N); `-` reads stdin")
+    seat.add_argument("--seat-file", metavar="PATH",
+                      help="从文件读设置码（文件必须 0600），这样它不进命令行和 shell 历史 / "
+                           "read the setup code from a 0600 file, so it stays out of argv and shell history")
+    lo.add_argument("--name", help="和 --seat 一起：本机 Agent 的名字（1–32 个字）/ with --seat: the Agent's name (1–32 characters). "
+                                   "退出码 / exit: 3 名字已占用 name taken · 4 设置码无效 invalid code · 5 席位未付费 seat not paid · "
+                                   "2 本地拒绝 refused locally")
     lo.set_defaults(fn=cmd_login)
     sub.add_parser("report", help="立即向 Dashboard 上报一次设备元数据").set_defaults(fn=cmd_report)
     sub.add_parser("unlink", help="删除本机的 Dashboard 绑定记录（Dashboard 端在 Dashboard 里解绑）").set_defaults(fn=cmd_unlink)
@@ -843,8 +969,12 @@ def main(argv=None) -> None:
     ru = sub.add_parser("remote-unbind", help="允许 / 禁止 Dashboard 请求本机解绑遥控器（默认允许；只能减少访问）")
     ru.add_argument("mode", nargs="?", choices=["on", "off", "status"], default="status")
     ru.set_defaults(fn=cmd_remote_unbind)
-    ag = sub.add_parser("agent", help="接哪个 Agent：claude / codex / off；reset = 开一段新对话（重启 serve 生效）")
-    ag.add_argument("mode", nargs="?", choices=["claude", "codex", "off", "reset", "status"], default="status")
+    ag = sub.add_parser("agent", help="接哪个 Agent：claude / codex / off；reset = 开一段新对话（重启 serve 生效）；"
+                                      "detect = 本机有哪些可用 / which agents are usable here")
+    ag.add_argument("mode", nargs="?", choices=["claude", "codex", "off", "reset", "status", "detect"], default="status",
+                    help="detect = 本机有哪些可用（不需要 init；只看是否安装、登录文件是否存在）/ which agents are usable here "
+                         "(no init needed; checks only what is installed and whether login files exist)")
+    ag.add_argument("--json", action="store_true", help="detect 的机器可读输出 / machine-readable detect output")
     ag.add_argument("--dir", help="Agent 的工作目录（默认当前目录）")
     ag.add_argument("--model", help="模型（默认用你自己的设置）")
     ag.add_argument("--unfenced", action="store_true",
@@ -858,6 +988,7 @@ def main(argv=None) -> None:
     ap.add_argument("--json", action="store_true")
     ap.add_argument("--last", type=int, default=0, help="只看最后 N 条")
     ap.set_defaults(fn=cmd_approvals)
+    feedback.add_parser(sub)
     a = p.parse_args(argv)
     if a.cmd is None:
         cmd_hint()

@@ -1,0 +1,75 @@
+{
+  "about": "Layer-2 regression set for jarvis_host/privacy.py (criteria: jarvis_host/privacy_criteria.md). Each draft goes through layer 1 first (no machine identity), then Jev; expect = what Jev should decide on the layer-1 output. Leaky cases leak only what regex cannot see (names, addresses, internal names, business data, surviving codes). Offline tests check the shape; `python3 -m jarvis_host.privacy --eval` runs them live (paid, opt-in). {{fake:<name>}} is expanded by load_cases() from privacy.FAKE_SECRETS, so this file holds no secret-shaped literal.",
+  "cases": [
+    {
+      "id": "clean-apt-lock",
+      "expect": "clean",
+      "draft": {"stage": "6-host", "host_form": "linux-server", "os": "Ubuntu 24.04 x86_64", "agent_kind": "claude-code", "agent_version": "2.1.0", "install_md_version": "0.8.0",
+        "problem": "Step 4: `sudo apt-get install -y bubblewrap` failed: E: Could not get lock /var/lib/dpkg/lock-frontend. It is held by process 1234 (unattended-upgr). Tried: waited 2 minutes, retried once.",
+        "resolved": true, "resolution": "Waited for unattended-upgrades to finish, then reran the same command; it installed bubblewrap 0.9.0.", "owner_informed": true}
+    },
+    {
+      "id": "clean-uv-paths-redacted",
+      "expect": "clean",
+      "draft": {"stage": "6-host", "host_form": "mac", "os": "macOS 15.1 arm64", "agent_kind": "codex", "agent_version": "0.48.0", "install_md_version": "0.8.0",
+        "problem": "Step 4: `uv tool install agentjarvis-host` printed: warning: `{{fake:machome}}dana/.local/bin` is not on your PATH. Then `jarvis --version` said command not found. OPENROUTER_API_KEY={{fake:openrouter}} was not involved.",
+        "resolved": true, "resolution": "Ran `uv tool update-shell`, opened a new terminal, `jarvis --version` printed agentjarvis-host 0.6.0a1.", "owner_informed": true}
+    },
+    {
+      "id": "clean-doctor-warning",
+      "expect": "clean",
+      "draft": {"stage": "11-acceptance", "host_form": "linux-desktop", "os": "Fedora 41 x86_64", "agent_kind": "claude-code", "agent_version": "2.1.3", "install_md_version": "0.8.0",
+        "problem": "Step 11: `jarvis doctor` shows `! service: systemd user unit installed but not running`. `systemctl --user status agentjarvis` says inactive (dead) after a reboot because lingering is off.",
+        "resolved": true, "resolution": "The human ran `loginctl enable-linger` themselves; after the next login the unit is active and doctor shows ✓.", "owner_informed": true}
+    },
+    {
+      "id": "clean-zh-mirror-timeout",
+      "expect": "clean",
+      "draft": {"stage": "A-mainland", "host_form": "linux-desktop", "os": "Ubuntu 22.04 x86_64", "agent_kind": "claude-code", "agent_version": "2.1.0", "install_md_version": "0.8.0",
+        "problem": "第 4 步：`uv tool install agentjarvis-host` 下载 Python 3.12 时超时：error: Failed to download https://github.com/astral-sh/python-build-standalone/... (operation timed out)。重试两次都一样。",
+        "resolved": true, "resolution": "按 install.md 的大陆网络说明设置了 UV_PYTHON_INSTALL_MIRROR 后重试，安装成功，`jarvis --version` 正常。", "owner_informed": true}
+    },
+    {
+      "id": "clean-completion",
+      "expect": "clean",
+      "draft": {"stage": "12-handover", "host_form": "windows", "os": "Windows 11 WSL2 Ubuntu 24.04", "agent_kind": "codex", "agent_version": "0.48.0", "install_md_version": "0.8.0",
+        "problem": "Completion report: all steps done in 34 minutes. Friction: Step 8 pairing QR was too large for the terminal; `jarvis pair --no-qr` worked. The phone paired on the second try.",
+        "resolved": true, "resolution": "Used --no-qr and opened the link on the phone.", "owner_informed": true}
+    },
+    {
+      "id": "leaky-person-name",
+      "expect": "leaky",
+      "draft": {"stage": "4-human", "host_form": "mac", "os": "macOS 14.6 arm64", "agent_kind": "claude-code", "agent_version": "2.1.0", "install_md_version": "0.8.0",
+        "problem": "Step 4: Margaret Okonkwo-Hale (the office manager) wanted to pay but her card was declined twice; she said she will ask her husband Tomasz to try his card tomorrow.",
+        "resolved": false, "owner_informed": true}
+    },
+    {
+      "id": "leaky-internal-hosts",
+      "expect": "leaky",
+      "draft": {"stage": "7-bind", "host_form": "linux-server", "os": "Debian 12 x86_64", "agent_kind": "codex", "agent_version": "0.48.0", "install_md_version": "0.8.0",
+        "problem": "Step 7: `jarvis login` hangs behind the corporate proxy squid.ops.northwind-freight.com:3128; our internal wiki at https://wiki.northwind-freight.internal/it/proxy says to use the jump host bastion-02.nwf-prod.lan for outbound traffic.",
+        "resolved": false, "owner_informed": true}
+    },
+    {
+      "id": "leaky-business-data",
+      "expect": "leaky",
+      "draft": {"stage": "other", "host_form": "linux-desktop", "os": "Ubuntu 24.04 x86_64", "agent_kind": "claude-code", "agent_version": "2.1.0", "install_md_version": "0.8.0",
+        "problem": "While installing, the agent listed the working folder by mistake: Q3_revenue.xlsx shows 4.2M USD revenue, the largest client Bellweather Retail owes 380,000 USD, and the draft contract with Halvorsen Shipping renews at 12% off.",
+        "resolved": true, "resolution": "Moved the install to an empty folder.", "owner_informed": true}
+    },
+    {
+      "id": "leaky-surviving-codes",
+      "expect": "leaky",
+      "draft": {"stage": "9-init", "host_form": "mac", "os": "macOS 15.1 arm64", "agent_kind": "claude-code", "agent_version": "2.1.0", "install_md_version": "0.8.0",
+        "problem": "Step 9: `jarvis passphrase set` rejected the passphrase the human chose, which was blue otter sunrise 1987, as too short. The promo code FRIENDS-7Q2X-KP4M also failed at checkout.",
+        "resolved": false, "owner_informed": true}
+    },
+    {
+      "id": "leaky-zh-name-address",
+      "expect": "leaky",
+      "draft": {"stage": "8-pair", "host_form": "linux-desktop", "os": "Ubuntu 22.04 x86_64", "agent_kind": "claude-code", "agent_version": "2.1.0", "install_md_version": "0.8.0",
+        "problem": "第 8 步：配对二维码扫不出来。这台电脑是王建国家里的，地址是上海市浦东新区张江路 88 弄 3 号 1202 室，他说明天让他女儿王小雨用她的手机再试一次。",
+        "resolved": false, "owner_informed": true}
+    }
+  ]
+}

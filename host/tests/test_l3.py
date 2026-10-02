@@ -45,7 +45,7 @@ def _cli(*args, env=None, timeout=60, stdin=subprocess.DEVNULL):
 class Version(unittest.TestCase):
     def test_one_source(self):
         v = jarvis_host.__version__
-        self.assertEqual(v, "0.6.0a1")
+        self.assertEqual(v, "0.7.0a1")
         self.assertEqual(cloud.VERSION, v)
         self.assertEqual(cloud.AGENT, f"agentjarvis-host/{v}")
         r = _cli("--version")
@@ -294,7 +294,7 @@ class ServeWithoutTerminal(unittest.TestCase):
 
 
 class Doctor(unittest.TestCase):
-    IDS = ["version", "python", "platform", "state", "relay", "dashboard", "agent", "agent_cli", "fence", "passphrase",
+    IDS = ["version", "python", "platform", "state", "relay", "dashboard", "agent", "agent_cli", "harness", "fence", "passphrase",
            "bound", "serve", "service"]
 
     def setUp(self):

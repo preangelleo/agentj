@@ -8,6 +8,10 @@ touch the allowlist (devices.json) — enforced by tests/test_cloud.py (AST chec
 name in poll / sync / rename answers is whitelisted through text.agent_name_problem (§1) and only *returned*; the caller
 (CLI after the human's y, serve, `jarvis name`) stores it — it is a display string and never reaches devices.json. Every cloud.json mutation (login, seq update, unlink) runs under one fcntl lock file in the
 state dir (cloud.lock, 0600), so the CLI and `serve` never interleave (A3-04).
+Seat setup (contract seat-setup §4): `seat_bind` sends a setup code the human handed to this host (`ajt_…`, checked locally
+against its shape, never logged, never printed, never sent anywhere but `/v1/host/seat-bind`); the answer goes through the
+same bound-answer whitelist as `poll` and is written only to cloud.json (`via: "seat"`). There is no y/N: possession of the
+code is the human's decision.
 """
 from __future__ import annotations
 
@@ -35,6 +39,8 @@ CTX_LOGIN, CTX_POLL, CTX_REPORT = "agentjarvis-host-login-v1", "agentjarvis-host
 CTX_SYNC = "agentjarvis-host-sync-v1"
 CTX_RENAME = "agentjarvis-host-rename-v1"
 CTX_DECLINE = "agentjarvis-host-decline-v1"   # L2 / G-A11: the human at the host said no to the tenant it was bound to
+CTX_SEAT_BIND = "agentjarvis-host-seat-bind-v1"   # seat setup §4: bind this host to one seat with a setup code
+CTX_SEAT_LEAVE = "agentjarvis-host-seat-leave-v1"   # review SS-02: take this seat-bound host out of its company
 MAX_SUGGESTIONS = 3
 MAX_SYNC_ITEMS = 10
 UNBIND_RESULTS = ("revoked", "unknown_device", "disabled", "rate_limited")
@@ -55,6 +61,7 @@ _USER_CODE = re.compile(r"[BCDFGHJKLMNPQRSTVWXZ2-9]{4}-[BCDFGHJKLMNPQRSTVWXZ2-9]
 _SLUG = re.compile(r"(?!.*--)[a-z0-9][a-z0-9-]{1,28}[a-z0-9]")
 _ERROR = re.compile(r"[a-z_]{1,32}")
 _PRINTABLE_URL = re.compile(r"[\x21-\x7e]{1,512}")
+SEAT_CODE = re.compile(r"ajt_[A-Za-z0-9_-]{43}")   # 256 random bits, base64url (contract seat-setup §1)
 
 
 class CloudError(Exception):
@@ -258,7 +265,9 @@ def read_cloud(st) -> dict | None:
         return None
     return {"api": api, "host_id": hid,
             "tenant": {"slug": slug, "name": clean_line(str(ten.get("name", "")), 64) or slug},
-            "linked_at": _int(d.get("linked_at"), 0, MAX_SEQ) or 0, "last_seq": _int(d.get("last_seq"), 0, MAX_SEQ) or 0}
+            "linked_at": _int(d.get("linked_at"), 0, MAX_SEQ) or 0, "last_seq": _int(d.get("last_seq"), 0, MAX_SEQ) or 0,
+            # files written before the seat path existed (≤ 0.6) were all made by the code path
+            "via": "seat" if d.get("via") == "seat" else "code"}
 
 
 @contextlib.contextmanager
@@ -275,7 +284,8 @@ def cloud_lock(st):
 def _write_cloud_file(st, d: dict) -> None:
     """The one writer of cloud.json (0600, tmp + rename). Callers hold cloud_lock."""
     rec = {"api": d["api"], "host_id": d["host_id"], "tenant": {"slug": d["tenant"]["slug"], "name": d["tenant"]["name"]},
-           "linked_at": int(d["linked_at"]), "last_seq": int(d["last_seq"])}
+           "linked_at": int(d["linked_at"]), "last_seq": int(d["last_seq"]),
+           "via": "seat" if d.get("via") == "seat" else "code"}
     st.write_private(st.cloud_path, json.dumps(rec, indent=1, ensure_ascii=False).encode())
 
 
@@ -441,10 +451,83 @@ def login(st, api: str, *, show: Callable[[dict], None], confirm: Callable[[dict
                 return {"status": "declined", "tenant": p["tenant"], "host_id": p["host_id"],
                         "undone": decline(st, base, lg["login_id"], post=post, now=now)}
             write_cloud(st, {"api": base, "host_id": p["host_id"], "tenant": p["tenant"], "linked_at": int(now()),
-                             "last_seq": 0})
-            st.log("cloud_linked", tenant=p["tenant"]["slug"])
+                             "last_seq": 0, "via": "code"})
+            st.log("cloud_linked", tenant=p["tenant"]["slug"], kind="code")
             return {"status": "bound", "tenant": p["tenant"], "host_id": p["host_id"], "agent_name": p["agent_name"]}
         return {"status": p["status"]}
+
+
+# ------------------------------------------------------------------ seat bind (seat setup §4: a setup code from the owner)
+SEAT_RESULTS = ("bound", "name_taken", "invalid_setup", "payment_required", "already_bound", "bad_name", "name_required",
+                "bad_code", "rate_limited", "error")
+
+
+def seat_code_ok(code) -> bool:
+    """The local shape check: `ajt_` + 43 base64url characters, nothing else (no whitespace, no prefix / suffix)."""
+    return isinstance(code, str) and SEAT_CODE.fullmatch(code) is not None
+
+
+def seat_bind(st, api: str, token: str, name: str, *, post: Callable = post_json, now: Callable = time.time) -> dict:
+    """Signed `/v1/host/seat-bind` (PROTOCOL §7). Refuses locally — nothing sent — a code that is not `ajt_` + 43 base64url
+    characters (`bad_code`) and a name that fails the Agent-name rules (`bad_name` / `name_required`); the name is sent
+    normalised. Returns {"status": one of SEAT_RESULTS, ...}. On bound, cloud.json is written (`via: "seat"`) exactly like
+    the code path and `cloud_linked kind=seat` is logged; the caller sets the local Agent name. The code is never logged,
+    never put in a result and never sent anywhere else; the answer passes the same whitelist as a bound poll answer, and
+    nothing in it can add or approve a device (this module never touches the allowlist)."""
+    if not seat_code_ok(token):
+        return {"status": "bad_code"}
+    problem = agent_name_problem(name)
+    if problem:
+        return {"status": problem}
+    name = normalise_agent_name(name)
+    base = check_url(api)
+    inner = {"v": 1, "t": "seat_bind", "channel": channel_of(st), "ts": int(now()), "token": token, "name": name}
+    try:
+        status, obj = post(base + "/v1/host/seat-bind", envelope(CTX_SEAT_BIND, inner, st.signing_key()))
+    except CloudError as e:
+        st.log("seat_bind", result="error", status=e.kind)
+        return {"status": "error", "http": e.kind}
+    err = parse_error(obj)
+    if status == 200:
+        p = parse_poll(obj)
+        if not p or p["status"] != "bound":
+            st.log("seat_bind", result="error", status="bad_response")
+            return {"status": "error", "http": "bad_response"}
+        write_cloud(st, {"api": base, "host_id": p["host_id"], "tenant": p["tenant"], "linked_at": int(now()),
+                         "last_seq": 0, "via": "seat"})
+        st.log("cloud_linked", tenant=p["tenant"]["slug"], kind="seat")
+        return {"status": "bound", "tenant": p["tenant"], "host_id": p["host_id"], "agent_name": p["agent_name"] or name}
+    kind = ("name_taken" if status == 409 and err == "name_taken" else
+            "already_bound" if status == 409 and err == "already_bound" else
+            "invalid_setup" if status == 404 else
+            "payment_required" if status == 402 else
+            "rate_limited" if status == 429 else
+            err if status == 400 and err in ("bad_name", "name_required") else "error")
+    st.log("seat_bind", result=kind, status=status_class(status))
+    out: dict = {"status": kind}
+    if kind == "name_taken":
+        out["suggestions"] = parse_suggestions(obj)
+    elif kind == "error":
+        out.update(http=status_class(status), error=err)
+    return out
+
+
+def seat_leave(st, base: str, *, post: Callable = post_json, now: Callable = time.time) -> dict:
+    """Signed `/v1/host/seat-leave` (PROTOCOL §7, review SS-02): take this host — bound through a seat setup — out of its
+    company (host unbound there, the setup revoked, the seat freed). It can only take the host *out*; nothing in the answer
+    is acted on but its status. Returns {"status": "left" | "not_found" | "rate_limited" | "fail", "http": …}; never raises
+    (a transport failure is "fail" with the class in "http"). Does not touch cloud.json — the caller (`jarvis unlink`)
+    removes it afterwards whatever the answer."""
+    inner = {"v": 1, "t": "seat_leave", "channel": channel_of(st), "ts": int(now())}
+    try:
+        status, obj = post(check_url(base) + "/v1/host/seat-leave", envelope(CTX_SEAT_LEAVE, inner, st.signing_key()))
+    except CloudError as e:
+        st.log("seat_leave", result="fail", status=e.kind)
+        return {"status": "fail", "http": e.kind}
+    res = ("left" if status == 200 and obj.get("status") == "left" else "not_found" if status == 404
+           else "rate_limited" if status == 429 else "fail")
+    st.log("seat_leave", result=res, status=status_class(status))
+    return {"status": res, "http": status_class(status)}
 
 
 def decline(st, base: str, login_id: str, *, post: Callable = post_json, now: Callable = time.time) -> str:
