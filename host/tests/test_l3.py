@@ -45,7 +45,7 @@ def _cli(*args, env=None, timeout=60, stdin=subprocess.DEVNULL):
 class Version(unittest.TestCase):
     def test_one_source(self):
         v = jarvis_host.__version__
-        self.assertEqual(v, "0.8.0a1")
+        self.assertEqual(v, "0.8.1a1")
         self.assertEqual(cloud.VERSION, v)
         self.assertEqual(cloud.AGENT, f"agentjarvis-host/{v}")
         r = _cli("--version")
@@ -428,8 +428,14 @@ class WheelInstall(unittest.TestCase):
         import zipfile
         names_ = zipfile.ZipFile(self.wheel).namelist()
         for f in ("jarvis_host/__init__.py", "jarvis_host/permtool.py", "jarvis_host/admin/index.html",
-                  "jarvis_host/admin/app.js", "jarvis_host/admin/app.css", "jarvis_host/service.py", "jarvis_host/doctor.py"):
+                  "jarvis_host/admin/app.js", "jarvis_host/admin/app.css", "jarvis_host/service.py", "jarvis_host/doctor.py",
+                  "jarvis_host/admin/i18n/admin.zh.json", "jarvis_host/admin/i18n/admin.en.json", "jarvis_host/admin/favicon.ico",
+                  "jarvis_host/admin/brand/lang.js", "jarvis_host/admin/brand/palette.css", "jarvis_host/admin/brand/base.css",
+                  "jarvis_host/admin/brand/fonts/ubuntu-400.woff2", "jarvis_host/admin/brand/fonts/UFL-1.0-ubuntu.txt",
+                  "jarvis_host/admin/brand/img/shield-64.png"):
             self.assertIn(f, names_)
+        self.assertFalse([n for n in names_ if n.endswith(".src.json") or "shield-source" in n], "no copy source, no big logo source")
+        self.assertLess(pathlib.Path(self.wheel).stat().st_size, 1_500_000, "wheel stays small")
         self.assertFalse([n for n in names_ if n.startswith("tests/") or "wiredump" in n or "fakeclaude" in n])
         ep = next(n for n in names_ if n.endswith("entry_points.txt"))
         self.assertIn("jarvis = jarvis_host.cli:main", zipfile.ZipFile(self.wheel).read(ep).decode())
@@ -452,7 +458,8 @@ class WheelInstall(unittest.TestCase):
         self.assertNotIn(str(HOST), r.stdout, "nothing points back into the checkout")
         self.assertIn(p["prefix"], p["code"], "the installed venv is what the fence keeps read-only")
         self.assertIsNone(p["src"], "installed: no PYTHONPATH for the agent")
-        self.assertEqual(p["assets"], ["app.css", "app.js", "index.html"])
+        for f in ("app.css", "app.js", "index.html", "favicon.ico", "apple-touch-icon.png", "brand", "i18n"):
+            self.assertIn(f, p["assets"])
         self.assertEqual([os.path.realpath(x) for x in p["exec"]], [os.path.realpath(self.venv + "/bin/jarvis")])  # /tmp → /private/tmp on macOS
         self.assertEqual(p["mcp"], {"type": "stdio", "command": p["py"], "args": ["-P", "-m", "jarvis_host.permtool"]})
         self.assertEqual(p["ver"], [3, int(self.py.split(".")[1])], "the venv runs the Python we claim as the floor")

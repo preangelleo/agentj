@@ -62,6 +62,9 @@ export async function startFakeHost() {
   const log = [];                   // app messages received from devices
   let up = true;
   let lastSas = null, lastLabel = null;
+  // Canned answers to the phone's read requests and signed writes (screens.mjs gallery). The fake does NOT verify the
+  // signature — the real host does (host/tests, tests/e2e_controls.mjs); this only lets the page reach every screen.
+  const fixtures = {};
 
   async function sendApp(c, obj) { c.sendBin(frame(KIND.DATA, await c.send.encrypt(EMPTY, padJson(obj)))); }
 
@@ -86,6 +89,7 @@ export async function startFakeHost() {
       if (m.t === 'hello' && c.mode === 'pair') { c.awaiting = true; lastSas = c.sas; }
       else if (m.t === 'hello' && c.mode === 'resume') await sendApp(c, { t: 'ready' });
       else if (m.t === 'msg') await sendApp(c, { t: 'msg', id: randomBytes(8).toString('hex'), text: 'echo: ' + m.text, ts: Date.now() });
+      else if (m.r && fixtures[m.t]) for (const x of [].concat(fixtures[m.t](m))) await sendApp(c, { ...x, r: m.r });
       return;
     } else return c.close(4010);
     const msg2 = await c.hs.writeMessage();
@@ -126,6 +130,10 @@ export async function startFakeHost() {
       up = v;
       for (const c of conns) { if (!v) { c.hs = c.send = c.recv = null; c.mode = null; c.awaiting = false; } c.sendText(JSON.stringify({ t: 'host', up: v })); }
     },
+    /** app message → every ready session (status, ask, push_key, grant, estop_state, cmd cards …) */
+    async send(obj) { for (const c of conns) if (c.send && c.mode === 'resume') await sendApp(c, obj); },
+    /** fixtures[t] = (request) => answer | [answers]; each answer gets the request's r */
+    answer(t, fn) { fixtures[t] = fn; },
     revokeAll() { allow.clear(); for (const c of conns) c.close(4010); },
     sendRaw(u8) { for (const c of conns) c.sendBin(u8); },
     stop: () => new Promise((r) => { for (const c of conns) c.close(1001); server.closeAllConnections?.(); server.close(() => r()); }),

@@ -6,6 +6,7 @@ import http.client
 import json
 import os
 import pathlib
+import re
 import shutil
 import signal
 import secrets
@@ -264,7 +265,7 @@ class ControlPlane(unittest.TestCase):
             rep = cp.reports[-1]
             self.assertEqual(rep["agent_name"], "Wren")
             self.assertEqual(rep["machine"], text.machine_name())
-            self.assertEqual(rep["agent"], "agentjarvis-host/0.8.0a1")
+            self.assertEqual(rep["agent"], "agentjarvis-host/0.8.1a1")
 
     def test_rename_signed_and_answers_whitelisted(self):
         with FakeCP() as cp:
@@ -610,7 +611,7 @@ class Page(unittest.TestCase):
         self.assertEqual(st["agent_name"], "Wren")
         self.assertEqual(set(st), {"agent_name", "machine", "channel", "version", "serve", "dashboard", "remote_unbind", "limit",
                                    "devices", "pairing", "passphrase_set"})
-        self.assertEqual((st["limit"], st["version"], st["serve"]["running"]), (5, "0.8.0a1", False))
+        self.assertEqual((st["limit"], st["version"], st["serve"]["running"]), (5, "0.8.1a1", False))
         for bad in (auth.replace("Bearer ", "bearer "), auth + "x", "Basic " + auth[7:], auth[7:]):
             self.assertEqual(self.state_status(bad), 404, bad)
         r, _ = self.req("GET", "/api/state", headers={"Cookie": f"aj_admin_{self.port}={auth[7:]}"})
@@ -859,12 +860,21 @@ class Page(unittest.TestCase):
         html = (admin.ASSET_DIR / "index.html").read_text()
         self.assertNotIn("style=", html)
         self.assertNotIn("<script>", html)
-        for f in ("index.html", "app.js", "app.css"):
+        for f in ("app.js", "app.css"):
             self.assertNotRegex((admin.ASSET_DIR / f).read_text(), r"https?://(?!127\.0\.0\.1)[a-z]", f"{f}: no third-party resources")
-        for needle in ("建议一个员工对应一个 Agent", "一个 Agent 就是一个计费席位，它只能运行在一台电脑或服务器上。它的名字只是个标签，就像给宠物起名，叫什么都行。", "127.0.0.1", "jarvis pair", "看着手机，输入手机上的 6 位安全码", "显示链接",
-                       "Dashboard 远程解绑", "给这个 Agent 起个名字", "只看手机屏幕上的 6 位码", "history.replaceState",
-                       "sessionStorage", "Authorization", "/api/session/end", "正在添加遥控器"):
-            self.assertIn(needle, html + js, needle)
+        # index.html: only plain footer navigations to the official site, never a resource from another origin
+        self.assertNotRegex(html, r"(?:src|srcset|action|formaction)\s*=\s*\"?https?:", "no third-party resources")
+        self.assertNotRegex(html, r"<link[^>]+href=\"https?:", "no third-party stylesheets / icons / preloads")
+        self.assertEqual(sorted(set(re.findall(r'href="(https?://[^"]+)"', html))),
+                         [f"https://agentjarvis.net/{p}/" for p in ("contact", "docs", "privacy", "security")])
+        zh = json.loads((admin.ASSET_DIR / "i18n/admin.zh.json").read_text())
+        words = "\n".join(zh.values())
+        for needle in ("建议一个员工用一个 Agent", "一个 Agent 就是一个计费席位，只能运行在一台电脑或服务器上。它的名字只是个标签，就像给宠物起名，叫什么都行。",
+                       "127.0.0.1", "jarvis pair", "看着手机，输入手机上的 6 位码", "显示链接", "从公司后台解绑", "给这个 Agent 起个名字",
+                       "6 位码只显示在手机上，这个页面永远不会显示它", "正在添加手机遥控器", "只在这台电脑上能打开"):
+            self.assertIn(needle, words, needle)
+        for needle in ("history.replaceState", "sessionStorage", "Authorization", "/api/session/end", "review A32-04"):
+            self.assertIn(needle, js, needle)
 
 
 # ------------------------------------------------------------------ §4 the page against a real serve: approval = the code

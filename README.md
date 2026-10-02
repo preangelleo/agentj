@@ -1,6 +1,10 @@
+<p align="center"><img src="https://agentjarvis.net/brand/img/shield-128.png" width="96" height="96" alt="Agent Jarvis shield logo"></p>
+
 # Agent Jarvis
 
-Control **your own** Claude Code (or Codex) from your phone: chat with it, and approve or deny what it wants to do,
+Docs (中文 / English): <https://agentjarvis.net/docs/> · machine-readable index: <https://agentjarvis.net/llms.txt>
+
+Control **your own** Claude Code, Codex or OpenCode from your phone: chat with it, and approve or deny what it wants to do,
 from anywhere.
 
 - A small host program, `jarvis`, runs on your computer (macOS or Linux) next to your agent.
@@ -13,13 +17,13 @@ from anywhere.
 
 **Zero access is the product rule:** our servers never hold a key that can read your messages, your agent's replies or
 your credentials. What we can and cannot see — and what is not done yet — is listed honestly, item by item, at
-<https://alpha.agentjarvis.net/security/>.
+<https://agentjarvis.net/security/>.
 
 ## Install
 
-Tell your AI agent: **"read https://alpha.agentjarvis.net/install.md and do it"** — it installs, sets up and stops
+Tell your AI agent: **"read https://agentjarvis.net/install.md and do it"** — it installs, sets up and stops
 for you at every step only a human can do. [`install.md`](install.md) in this repository is the same file, byte for byte;
-the site publishes its SHA-256 at <https://alpha.agentjarvis.net/install.md.sha256>.
+the site publishes its SHA-256 at <https://agentjarvis.net/install.md.sha256>.
 
 The host CLI on its own:
 ```bash

@@ -33,6 +33,9 @@ path = "jarvis_host/__init__.py"
 
 [tool.hatch.build.targets.wheel]
 packages = ["jarvis_host"]       # the package + its data files (admin/ page); tests and the frame recorder never ship
+# admin/ ships the page, its zh/en dictionaries and the synced brand core (fonts + shield images, ~0.5 MB); the Chinese
+# copy source (polished into admin.zh.json by agentjarvis/i18n/polish.py) stays in the repo.
+exclude = ["jarvis_host/admin/i18n/*.src.json", "jarvis_host/admin/i18n/*.override.json"]
 
 [tool.hatch.build.targets.sdist]
 include = ["jarvis_host", "pyproject.toml"]

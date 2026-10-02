@@ -6,141 +6,199 @@
 <meta name="robots" content="noindex,nofollow">
 <meta name="referrer" content="no-referrer">
 <meta name="color-scheme" content="light dark">
-<title>Agent Jarvis · 网页版（Alpha）</title>
-<meta name="theme-color" content="#faf9f5">
+<title>Agent Jarvis · 手机遥控器</title>
+<script src="brand/lang.js"></script>
+<meta name="theme-color" content="#faf9f5" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#141414" media="(prefers-color-scheme: dark)">
+<meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="Jarvis">
-<link rel="icon" href="icon-192.png">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<link rel="icon" href="favicon.ico" sizes="any">
+<link rel="icon" href="brand/img/favicon-32.png" type="image/png" sizes="32x32">
 <link rel="apple-touch-icon" href="apple-touch-icon.png">
 <link rel="manifest" href="manifest.webmanifest">
+<link rel="preload" href="brand/fonts/ubuntu-400.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="brand/palette.css">
+<link rel="stylesheet" href="brand/base.css">
 <link rel="stylesheet" href="app.css">
+<script src="brand/ui.js" defer></script>
 <script type="module" src="app.js"></script>
 </head>
-<body>
-<header class="top">
-  <span class="brand">Agent Jarvis</span>
-  <button type="button" id="badge" class="badge" aria-expanded="false" aria-controls="badge-panel">网页版 · 改了会被发现（建设中）</button>
+<body data-conn="idle" data-agent="none">
+<header class="bar">
+  <div class="bar__in">
+    <img id="logo" class="bar__logo" src="brand/img/logo-mark.png" width="40" height="40" alt="">
+    <div class="bar__who">
+      <p class="bar__name"><span id="brand-name">Agent Jarvis</span><span id="agent-status" class="agent-status" data-s="none" role="status" aria-live="polite" hidden></span></p>
+      <p id="status" class="status" data-state="idle" role="status" aria-live="polite" data-i18n="st.idle">还没配对</p>
+    </div>
+    <button type="button" id="badge" class="badge" aria-expanded="false" aria-controls="badge-panel"><span class="badge__chip" data-i18n="badge.label">网页版</span></button>
+    <details id="menu" class="menu">
+      <summary class="menu__btn" data-i18n-attr="aria-label=menu.open" aria-label="菜单"><span class="menu__icon" aria-hidden="true"></span></summary>
+      <div class="menu__panel">
+        <div class="menu__row"><span class="menu__label" data-i18n="menu.lang">语言</span><div class="aj-lang" data-aj-lang-switch>中文 / EN</div></div>
+        <div class="menu__row"><span class="menu__label" data-i18n="menu.theme">外观</span><button type="button" class="aj-btn aj-btn--sm menu__theme" data-aj-theme-switch>跟随系统</button></div>
+        <button type="button" id="menu-about" class="menu__item" data-i18n="menu.about">这个网页版有多安全</button>
+        <a class="menu__item" href="https://agentjarvis.net/docs/phone/" target="_blank" rel="noopener" data-i18n="menu.help">手机怎么用</a>
+        <a class="menu__item" href="https://agentjarvis.net/security/" target="_blank" rel="noopener" data-i18n="menu.security">数据安全</a>
+        <a class="menu__item" href="https://agentjarvis.net/privacy/" target="_blank" rel="noopener" data-i18n="menu.privacy">隐私</a>
+        <a class="menu__item" href="https://agentjarvis.net/terms/" target="_blank" rel="noopener" data-i18n="menu.terms">条款</a>
+        <a class="menu__item" href="https://agentjarvis.net/" target="_blank" rel="noopener" data-i18n="menu.site">Agent Jarvis 官网</a>
+        <p class="menu__foot"><img src="brand/img/shield-64.png" width="20" height="20" alt=""><span data-i18n="menu.foot">我们看不到你的聊天内容。</span></p>
+      </div>
+    </details>
+  </div>
 </header>
 
-<section id="badge-panel" class="panel info" hidden>
-  <h2>这个网页版有多安全</h2>
+<section id="badge-panel" class="panel" hidden>
+  <div class="panel__head"><img src="brand/img/shield-64.png" width="32" height="32" alt=""><h2 data-i18n="badge.title">这个网页版有多安全</h2></div>
   <ul>
-    <li>你的手机和你的电脑之间端到端加密，我们的中继只转发看不懂的密文。</li>
-    <li>但这个网页本身是我们下发的。我们如果改了页面代码，就能看到你在这里看到的内容。所以网页版这一级的目标是「改了会被发现」，不是「零访问」。</li>
-    <li>alpha 还没做到「会被发现」：源码还没公开，版本哈希也还没写进签名的公开发布记录。今天下面这个数字只能证明「和我们说的版本一致」，还不是独立核对；而且页面自己显示的数字也可能被改。</li>
-    <li>零访问的入口将是原生 App（计划中，还没有）：界面打包进安装包、签名分发，不从我们这里临时取代码。</li>
+    <li data-i18n="badge.p1">你的手机和你的电脑之间是端到端加密的。我们的转发服务器只转发加密后的内容，看不懂。</li>
+    <li data-i18n="badge.p2">但这个网页本身是我们的服务器发给你的。如果我们（或黑进我们服务器的人）改了网页代码，就能看到你在这里看到的内容。所以网页版的目标是「改了会被发现」，做不到「我们看不到你的数据」。</li>
+    <li data-i18n="badge.p3">Beta 测试版还没做到「改了会被发现」：源码还没公开，版本哈希也还没写进签名的公开发布记录。今天下面这串数字只能说明「和我们说的版本一致」，还算不上独立核对；而且页面上显示的数字本身也可能被改。</li>
+    <li data-i18n="badge.p4">真正让我们看不到数据的入口会是原生 App（计划中，还没有）：界面打包在安装包里，签名后分发，不临时从我们这里取代码。</li>
   </ul>
-  <p class="small">本页版本哈希（SHA-256，覆盖页面的每个文件）：</p>
+  <p class="small" data-i18n="badge.hash">本页版本哈希（SHA-256，覆盖页面的每个文件）：</p>
   <p><code id="version-hash" class="hash">—</code></p>
-  <p class="small">源码公开后的核对方法：在公开源码的根目录运行 <code>node web/build.mjs --print-hash</code>，与公开发布记录里的哈希比对；再把你手机上实际加载的每个文件下载下来，与 <code>version.json</code> 里的每个哈希比对。只有你自己算出来的才算数。</p>
-  <button type="button" id="badge-close" class="btn">收起</button>
+  <p class="small" data-i18n="badge.verify">源码公开后可以这样核对：在公开源码的根目录运行 node web/build.mjs --print-hash，和公开发布记录里的哈希比对；再把手机上实际加载的每个文件下载下来，和 version.json 里的哈希逐个比对。只有你自己算出来的才算数。</p>
+  <button type="button" id="badge-close" class="aj-btn" data-i18n="badge.close">收起</button>
 </section>
 
-<main class="wrap">
-  <p id="status" class="status" data-state="idle" role="status" aria-live="polite">未配对</p>
-
-  <section id="pair-view" class="view" hidden>
-    <h1>连上你的电脑</h1>
-    <p class="lead">在电脑上运行 <code>jarvis pair</code>，然后扫二维码，或把链接粘贴到这里。</p>
-    <div class="row">
-      <button type="button" id="scan" class="btn btn-strong">扫码</button>
+<main id="main" class="wrap">
+  <aside id="a2hs" class="hint" hidden>
+    <img src="brand/img/icon-192.png" width="44" height="44" alt="">
+    <div class="hint__body">
+      <p class="hint__title" data-i18n="a2hs.title">加到主屏幕，用起来像 App</p>
+      <p id="a2hs-text" class="small"></p>
+      <p class="hint__row"><a id="a2hs-more" class="hint__link" href="https://agentjarvis.net/docs/phone/" target="_blank" rel="noopener" data-i18n="a2hs.more">详细步骤</a><button type="button" id="a2hs-ok" class="aj-btn aj-btn--sm" data-i18n="a2hs.ok">知道了</button></p>
     </div>
-    <p id="scan-hint" class="small" hidden>用系统相机扫描电脑上的二维码</p>
+  </aside>
+
+  <section id="pair-view" class="view pair" hidden>
+    <div class="pair__hero">
+      <img src="brand/img/shield-256.png" width="96" height="96" alt="">
+      <div class="aj-lang pair__lang" data-aj-lang-switch>中文 / EN</div>
+    </div>
+    <h1 data-i18n="pair.title">连上你的电脑</h1>
+    <p class="lead" data-i18n="pair.lead">Agent 在你的电脑上干活，这台手机就是它的遥控器。不用注册登录，配对一次，以后打开就能用。</p>
+    <ol class="steps">
+      <li><span id="pair-step1" data-i18n="pair.step1">在电脑上运行 jarvis pair，屏幕上会出现一个二维码。</span></li>
+      <li><span id="pair-step2" data-i18n="pair.step2">用手机扫这个二维码，或者把链接粘贴到下面。</span></li>
+      <li><span data-i18n="pair.step3">手机上会显示 6 位码。在电脑上输入它，再输入你的批准口令。</span></li>
+    </ol>
+    <p id="pair-iphone" class="note" data-i18n="pair.iphone" hidden>iPhone 要先把这个网页添加到主屏幕，再从主屏幕打开它来配对。别用相机扫码：那样配对的是 Safari 里的网页，和主屏幕上的不是同一个。</p>
+    <div class="row">
+      <button type="button" id="scan" class="aj-btn aj-btn--primary aj-btn--block" data-i18n="pair.scan">扫二维码</button>
+    </div>
+    <p id="scan-hint" class="small" hidden></p>
     <div id="scan-box" class="scan" hidden>
       <video id="scan-video" playsinline muted></video>
-      <button type="button" id="scan-stop" class="btn">停止扫码</button>
+      <button type="button" id="scan-stop" class="aj-btn" data-i18n="pair.scanStop">停止扫码</button>
     </div>
-    <label for="pair-link" class="label">或粘贴配对链接</label>
-    <textarea id="pair-link" rows="3" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="粘贴 jarvis pair 显示的链接"></textarea>
+    <label for="pair-link" class="label" data-i18n="pair.or">或者粘贴配对链接</label>
+    <textarea id="pair-link" class="aj-textarea" rows="3" autocomplete="off" autocapitalize="off" spellcheck="false" data-i18n-attr="placeholder=pair.placeholder" placeholder="粘贴 jarvis pair --link 显示的链接"></textarea>
+    <p id="pair-error" class="error" role="alert" hidden></p>
     <div class="row">
-      <button type="button" id="pair-go" class="btn btn-strong">开始配对</button>
+      <button type="button" id="pair-go" class="aj-btn aj-btn--primary aj-btn--block" data-i18n="pair.go">开始配对</button>
     </div>
-    <p id="pair-error" class="error" hidden></p>
+    <nav class="mini-foot" aria-label="Agent Jarvis">
+      <a href="https://agentjarvis.net/docs/phone/" target="_blank" rel="noopener" data-i18n="menu.help">手机怎么用</a>
+      <a href="https://agentjarvis.net/security/" target="_blank" rel="noopener" data-i18n="menu.security">数据安全</a>
+      <a href="https://agentjarvis.net/privacy/" target="_blank" rel="noopener" data-i18n="menu.privacy">隐私</a>
+    </nav>
   </section>
 
-  <section id="sas-view" class="view" hidden>
-    <h1>核对安全码</h1>
-    <p id="sas" class="sas" aria-label="安全码">------</p>
-    <p class="lead center">在电脑终端输入这 6 位数字并回车</p>
-    <p class="small center">数字只在这里显示。批准后本页会自动进入对话。</p>
+  <section id="sas-view" class="view sas-view" hidden>
+    <img class="sas-view__logo" src="brand/img/status/logo-question.png" width="72" height="72" alt="">
+    <h1 data-i18n="sas.title">在电脑上输入这 6 位码</h1>
+    <p id="sas" class="sas" data-i18n-attr="aria-label=sas.aria" aria-label="6 位码">------</p>
+    <p class="lead center" data-i18n="sas.lead">在电脑上输入这 6 位数字，回车，再输入你的批准口令。</p>
+    <p class="small center" data-i18n="sas.note">这串数字只显示在手机上。电脑批准后，这里会自动进入对话。</p>
   </section>
 
   <section id="chat-view" class="view chat" hidden>
     <div class="ctl-bar">
-      <nav class="tabs" aria-label="更多">
-        <button type="button" id="open-mem" class="btn tab">记忆</button>
-        <button type="button" id="open-act" class="btn tab">记录</button>
-        <button type="button" id="open-tasks" class="btn tab">定时任务</button>
+      <nav class="tabs" data-i18n-attr="aria-label=nav.aria" aria-label="更多">
+        <button type="button" id="open-mem" class="aj-btn tab" data-i18n="nav.mem">记忆</button>
+        <button type="button" id="open-act" class="aj-btn tab" data-i18n="nav.act">记录</button>
+        <button type="button" id="open-tasks" class="aj-btn tab" data-i18n="nav.tasks">定时任务</button>
       </nav>
-      <button type="button" id="estop" class="btn btn-stop">全部停下</button>
+      <button type="button" id="estop" class="aj-btn btn-stop" data-i18n="estop.btn">全部停下</button>
     </div>
     <div id="estop-banner" class="estop-banner" role="alert" hidden>
-      <p><strong>⛔ 已急停</strong> <span id="estop-by" class="small"></span><br><span class="small">Agent 不接新消息，待批准的都已拒绝，定时任务暂停。</span></p>
-      <button type="button" id="resume" class="btn btn-strong">恢复</button>
+      <p><strong data-i18n="estop.banner">已全部停下</strong><span id="estop-by" class="small"></span><br><span class="small" data-i18n="estop.bannerNote">Agent 不接新消息，等你批准的请求都已拒绝，定时任务已暂停。</span></p>
+      <button type="button" id="resume" class="aj-btn aj-btn--primary" data-i18n="estop.resume">恢复</button>
     </div>
-    <p id="agent-status" class="agent-status" data-s="none" role="status" aria-live="polite" hidden></p>
     <div id="push-row" class="push-row" hidden>
       <span id="push-text" class="small"></span>
-      <button type="button" id="push-on" class="btn" hidden>开启锁屏提醒</button>
+      <button type="button" id="push-on" class="aj-btn aj-btn--sm" data-i18n="push.btn" hidden>开启锁屏提醒</button>
+    </div>
+    <div id="chat-empty" class="chat-empty">
+      <img src="brand/img/logo-mark.png" width="64" height="64" alt="">
+      <p class="chat-empty__title" data-i18n="chat.emptyTitle">已连上你的电脑</p>
+      <p class="small" data-i18n="chat.emptyText">跟 Agent 说句话吧。它在你的电脑上干活，碰到有风险的操作，会先发一张审批卡片问你。</p>
     </div>
     <ul id="messages" class="messages" aria-live="polite"></ul>
     <div class="dock">
       <div id="grant-bar" class="grant-bar" role="status" aria-live="polite" hidden>
         <span id="grant-text" class="grant-text"></span>
-        <button type="button" id="grant-off" class="btn grant-off">收回授权</button>
+        <button type="button" id="grant-off" class="aj-btn aj-btn--sm grant-off" data-i18n="grant.off">收回授权</button>
       </div>
-      <div id="cmd-bar" class="cmd-bar" role="group" aria-label="命令" hidden>
-        <button type="button" class="btn cmd" data-cmd="compact">压缩</button>
-        <button type="button" class="btn cmd" data-cmd="clear">清空</button>
-        <button type="button" class="btn cmd" data-cmd="model">换模型</button>
-        <button type="button" class="btn cmd" data-cmd="context">上下文</button>
-        <button type="button" class="btn cmd" data-cmd="cost">花费</button>
-        <button type="button" class="btn cmd" data-cmd="usage">用量</button>
-        <button type="button" class="btn cmd" data-cmd="status">状态</button>
-        <button type="button" class="btn cmd cmd-stop" data-cmd="stop">停止</button>
+      <div id="cmd-bar" class="cmd-bar" role="group" data-i18n-attr="aria-label=cmd.aria" aria-label="命令" hidden>
+        <button type="button" class="aj-btn cmd" data-cmd="compact" data-i18n="cmd.compact">压缩</button>
+        <button type="button" class="aj-btn cmd" data-cmd="clear" data-i18n="cmd.clear">清空</button>
+        <button type="button" class="aj-btn cmd" data-cmd="model" data-i18n="cmd.model">换模型</button>
+        <button type="button" class="aj-btn cmd" data-cmd="context" data-i18n="cmd.context">上下文</button>
+        <button type="button" class="aj-btn cmd" data-cmd="cost" data-i18n="cmd.cost">花费</button>
+        <button type="button" class="aj-btn cmd" data-cmd="usage" data-i18n="cmd.usage">用量</button>
+        <button type="button" class="aj-btn cmd" data-cmd="status" data-i18n="cmd.status">状态</button>
+        <button type="button" class="aj-btn cmd cmd-stop" data-cmd="stop" data-i18n="cmd.stop">停止</button>
       </div>
       <div class="composer">
-        <button type="button" id="cmd-toggle" class="btn cmd-toggle" aria-expanded="false" aria-controls="cmd-bar">命令</button>
-        <textarea id="msg-input" rows="1" maxlength="4000" placeholder="说点什么，回车发送（/ 开头 = 命令）" aria-label="消息"></textarea>
-        <button type="button" id="send" class="btn btn-strong">发送</button>
+        <button type="button" id="cmd-toggle" class="aj-btn cmd-toggle" aria-expanded="false" aria-controls="cmd-bar" data-i18n="cmd.toggle">命令</button>
+        <textarea id="msg-input" class="aj-textarea" rows="1" maxlength="4000" data-i18n-attr="placeholder=chat.placeholder,aria-label=chat.aria" placeholder="跟 Agent 说点什么" aria-label="消息"></textarea>
+        <button type="button" id="send" class="aj-btn aj-btn--primary send" data-i18n="chat.send">发送</button>
       </div>
     </div>
   </section>
 
   <section id="mem-view" class="view sub" hidden>
-    <div class="sub-head"><button type="button" class="btn back" data-back>← 对话</button><h1>它记住了什么</h1></div>
-    <p class="small">这些是 Agent 每次开工都会读的记忆，就在你的电脑上。可以逐条删除：原文先进电脑上的回收站，7 天内可以撤销。</p>
+    <div class="sub-head"><button type="button" class="aj-btn back" data-back data-i18n-attr="aria-label=nav.back" aria-label="返回对话"><span class="back__arrow" aria-hidden="true">←</span></button><h1 data-i18n="mem.title">它记住了什么</h1></div>
+    <p class="small" data-i18n="mem.intro">这些是 Agent 每次开工都会读的记忆，存在你的电脑上。可以逐条删除：删掉的内容先进电脑上的回收站，7 天内可以撤销。</p>
     <p id="mem-status" class="small" role="status" aria-live="polite"></p>
     <div id="mem-list" class="mem-list"></div>
-    <h2 class="trash-h">最近删除（7 天内可恢复）</h2>
+    <h2 class="trash-h" data-i18n="mem.trash">最近删除（7 天内可以恢复）</h2>
     <ul id="mem-trash" class="plain-list"></ul>
   </section>
 
   <section id="act-view" class="view sub" hidden>
-    <div class="sub-head"><button type="button" class="btn back" data-back>← 对话</button><h1>操作与审批记录</h1></div>
-    <p class="small">只存在你的电脑上（保留 30 天），经端到端加密传到这台手机；我们的服务器上没有。</p>
+    <div class="sub-head"><button type="button" class="aj-btn back" data-back data-i18n-attr="aria-label=nav.back" aria-label="返回对话"><span class="back__arrow" aria-hidden="true">←</span></button><h1 data-i18n="act.title">操作和审批记录</h1></div>
+    <p class="small" data-i18n="act.intro">记录只存在你的电脑上（保留 30 天），加密后传到这台手机；我们的服务器上没有。</p>
     <p id="act-status" class="small" role="status" aria-live="polite"></p>
     <ul id="act-list" class="act-list"></ul>
-    <div class="row"><button type="button" id="act-more" class="btn" hidden>加载更早的</button></div>
+    <div class="row"><button type="button" id="act-more" class="aj-btn" data-i18n="act.more" hidden>加载更早的</button></div>
   </section>
 
   <section id="tasks-view" class="view sub" hidden>
-    <div class="sub-head"><button type="button" class="btn back" data-back>← 对话</button><h1>定时任务</h1></div>
-    <p class="small">来自 Agent 工作目录的 workflows/*/task.json。启用与否只由人决定；改了任务文件要重新启用。</p>
+    <div class="sub-head"><button type="button" class="aj-btn back" data-back data-i18n-attr="aria-label=nav.back" aria-label="返回对话"><span class="back__arrow" aria-hidden="true">←</span></button><h1 data-i18n="tasks.title">定时任务</h1></div>
+    <p class="small" data-i18n="tasks.intro">任务来自 Agent 工作目录里的 workflows/*/task.json。启用哪个由你决定；任务文件改过，就要重新启用。</p>
     <p id="tasks-status" class="small" role="status" aria-live="polite"></p>
     <ul id="tasks-list" class="tasks-list"></ul>
   </section>
 
-  <section id="revoked-view" class="view" hidden>
-    <h1>此设备已被主机移除</h1>
-    <p class="lead">电脑不再认这台设备。要继续用，在电脑上运行 <code>jarvis pair</code> 重新配对。</p>
-    <div class="row"><button type="button" id="repair" class="btn btn-strong">重新配对</button></div>
+  <section id="revoked-view" class="view state-view" hidden>
+    <img src="brand/img/status/logo-offline.png" width="72" height="72" alt="">
+    <h1 data-i18n="revoked.title">这台手机已被电脑移除</h1>
+    <p class="lead" data-i18n="revoked.lead">电脑不再认这台手机。要继续用，先在电脑上运行 jarvis pair，再重新配对。</p>
+    <div class="row"><button type="button" id="repair" class="aj-btn aj-btn--primary aj-btn--block" data-i18n="revoked.btn">重新配对</button></div>
   </section>
 
-  <section id="error-view" class="view" hidden>
-    <h1>连接断开</h1>
+  <section id="error-view" class="view state-view" hidden>
+    <img src="brand/img/status/logo-offline.png" width="72" height="72" alt="">
+    <h1 data-i18n="error.title">连接断开了</h1>
     <p id="error-text" class="lead"></p>
-    <div class="row"><button type="button" id="retry" class="btn btn-strong">重试</button></div>
+    <div class="row"><button type="button" id="retry" class="aj-btn aj-btn--primary aj-btn--block" data-i18n="error.retry">重试</button></div>
   </section>
 </main>
 <div id="sheet" class="sheet" role="dialog" aria-modal="true" aria-labelledby="sheet-title" hidden>
@@ -148,11 +206,11 @@
     <h2 id="sheet-title"></h2>
     <p id="sheet-text"></p>
     <div class="row sheet-row">
-      <button type="button" id="sheet-no" class="btn">取消</button>
-      <button type="button" id="sheet-yes" class="btn btn-strong"></button>
+      <button type="button" id="sheet-no" class="aj-btn" data-i18n="sheet.cancel">取消</button>
+      <button type="button" id="sheet-yes" class="aj-btn aj-btn--primary"></button>
     </div>
   </div>
 </div>
-<div id="toast" class="toast" role="status" aria-live="polite" hidden><span id="toast-text"></span><button type="button" id="toast-btn" class="btn" hidden></button></div>
+<div id="toast" class="toast" role="status" aria-live="polite" hidden><span id="toast-text"></span><button type="button" id="toast-btn" class="aj-btn aj-btn--sm" hidden></button></div>
 </body>
 </html>

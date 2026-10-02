@@ -39,11 +39,34 @@ REQUEST_DEADLINE = 10              # headers + body must have arrived within thi
 MAX_BODY = 4096
 PAIR_WAIT = 8                      # how long a POST waits for serve's answer to a code / unbind (s)
 ASSET_DIR = pathlib.Path(__file__).resolve().parent / "admin"
-ASSETS = {"/": ("index.html", "text/html; charset=utf-8"), "/app.js": ("app.js", "text/javascript; charset=utf-8"),
-          "/app.css": ("app.css", "text/css; charset=utf-8")}
+# Static files carry no data and need no session. The brand files under admin/brand/ are a byte copy of agentjarvis/brand
+# (`node agentjarvis/brand/sync.mjs host/jarvis_host/admin --set admin`; a test runs it with --check). Only
+# these types are ever served, from a map built once at import — a request path is looked up, never joined onto a directory.
+BRAND_TYPES = {".css": "text/css; charset=utf-8", ".js": "text/javascript; charset=utf-8", ".woff2": "font/woff2",
+               ".png": "image/png", ".webp": "image/webp"}
+LANGS = ("zh", "en")
+
+
+def _assets() -> dict[str, tuple[str, str]]:
+    a = {"/": ("index.html", "text/html; charset=utf-8"), "/app.js": ("app.js", "text/javascript; charset=utf-8"),
+         "/app.css": ("app.css", "text/css; charset=utf-8"), "/favicon.ico": ("favicon.ico", "image/x-icon"),
+         "/apple-touch-icon.png": ("apple-touch-icon.png", "image/png")}
+    for lang in LANGS:     # the built dictionaries only (never the *.zh.src.json source)
+        a[f"/i18n/admin.{lang}.json"] = (f"i18n/admin.{lang}.json", "application/json; charset=utf-8")
+    brand = ASSET_DIR / "brand"
+    for f in sorted(brand.rglob("*")) if brand.is_dir() else ():
+        if f.is_file() and f.suffix in BRAND_TYPES:
+            rel = f.relative_to(ASSET_DIR).as_posix()
+            a["/" + rel] = (rel, BRAND_TYPES[f.suffix])
+    return a
+
+
+ASSETS = _assets()
+_LANG_QUERY = re.compile(r"lang=(?:zh|en)")   # brand/lang.js keeps ?lang= in the address bar when storage is blocked
 SECURITY_HEADERS = (
     ("Content-Security-Policy", "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; "
-                                "connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'"),
+                                "font-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; "
+                                "form-action 'none'"),
     ("X-Frame-Options", "DENY"), ("Cache-Control", "no-store"), ("Referrer-Policy", "no-referrer"),
     ("X-Content-Type-Options", "nosniff"), ("Cross-Origin-Resource-Policy", "same-origin"),
 )
@@ -474,8 +497,8 @@ def make_handler(admin: Admin, auth: Auth, port_ref: list):
             path = u.path
             if method == "GET":
                 self._deadline.cancel()
-                if path in ASSETS and not u.query:       # static, no data: no session needed
-                    return self._asset(*ASSETS[path])
+                if path in ASSETS and (not u.query or (path == "/" and _LANG_QUERY.fullmatch(u.query))):
+                    return self._asset(*ASSETS[path])    # static, no data: no session needed
                 if path == "/api/state" and not u.query and self._session():
                     return self._json(200, admin.state())
                 return self._bare(404)

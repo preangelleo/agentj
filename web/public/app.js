@@ -8,13 +8,33 @@ import { IK, IKPSK2, Handshake, generateKeypair } from './proto/noise.js';
 import { KIND, MAX_TEXT, padJson, unpadJson, parsePairing as parseLink, pairPrologue, resumePrologue, safetyCode, frame,
   b64u, deviceId, approveMessage, generateSigningKeypair, controlMessage } from './proto/wire.js';
 import VERSION from './version.js';
+import DICT from './i18n.js';
 
 const $ = (id) => document.getElementById(id);
 const enc = new TextEncoder();
 const EMPTY = new Uint8Array(0);
 const VIEWS = ['pair-view', 'sas-view', 'chat-view', 'mem-view', 'act-view', 'tasks-view', 'revoked-view', 'error-view'];
 const PANELS = ['chat-view', 'mem-view', 'act-view', 'tasks-view'];   // views of a ready session
-const PAIR_FAIL = '未获批准或已过期，请在电脑上重新运行 jarvis pair';
+
+// ---------------------------------------------------------------- language (window.AJLang from brand/lang.js; zh default, en)
+// Every user-visible string comes from i18n.js (built from web/i18n/web.{zh,en}.json). Dictionary text is ours, so `code`
+// spans in it become <code> elements (createElement + textContent; never HTML). Host / Agent text is shown as plain text.
+const fmtVars = (str, vars) => (vars ? String(str).replace(/\{(\w+)\}/g, (m, k) => (Object.prototype.hasOwnProperty.call(vars, k) ? String(vars[k]) : m)) : str);
+function t(key, vars) { return window.AJLang ? window.AJLang.t(DICT, key, vars) : fmtVars(DICT.zh[key] ?? key, vars); }
+const lang = () => (window.AJLang ? window.AJLang.get() : 'zh');
+const locale = () => (lang() === 'en' ? 'en-GB' : 'zh-CN');
+function fillText(node, str) {                       // `x` → <code>x</code>; everything else text nodes
+  const parts = String(str).split('`');
+  node.replaceChildren(...parts.map((p, i) => { if (i % 2 === 0) return document.createTextNode(p); const c = document.createElement('code'); c.textContent = p; return c; }));
+}
+const plain = (str) => String(str).replace(/`/g, '');
+function applyStatic() {
+  document.title = t('meta.title');
+  for (const n of document.querySelectorAll('[data-i18n]')) fillText(n, t(n.dataset.i18n));
+  for (const n of document.querySelectorAll('[data-i18n-attr]')) {
+    for (const pair of n.dataset.i18nAttr.split(',')) { const [a, k] = pair.split('='); n.setAttribute(a.trim(), plain(t(k.trim()))); }
+  }
+}
 
 // Read the pairing fragment first thing and strip it from the URL / history (it carries the one-time PSK).
 let pendingLink = null;
@@ -27,14 +47,35 @@ if (location.hash.startsWith('#p=')) {
 let state = 'idle';
 Object.defineProperty(window, '__ajState', { get: () => state, enumerable: false, configurable: false });
 
-function setStatus(s, text) {
+let statusKey = ['st.idle'];
+function setStatus(s, key, vars) {
   state = s;
+  statusKey = [key, vars];
   const el = $('status');
   el.dataset.state = s;
-  el.textContent = text;
+  el.textContent = plain(t(key, vars));
+  document.body.dataset.conn = s;
   $('send').disabled = s !== 'ready' || estopOn;
+  if (agentLast && agentLast[1]) setAgentStatus(agentLast[0], agentLast[1]);
+  renderLogo();
 }
-function show(view) { for (const v of VIEWS) $(v).hidden = v !== view; }
+let view = null;
+function show(v) { view = v; for (const x of VIEWS) $(x).hidden = x !== v; renderA2hs(); }
+
+// The header shield follows the Agent / connection state (brand/img/status/*): working = blue, waiting for you = orange,
+// pairing = purple, offline / stopped = grey; idle = the green shield.
+const LOGO = { mark: 'brand/img/logo-mark.png', working: 'brand/img/status/logo-working.png', waiting: 'brand/img/status/logo-waiting.png',
+  question: 'brand/img/status/logo-question.png', offline: 'brand/img/status/logo-offline.png' };
+let agentSt = 'none';
+function renderLogo() {
+  let v = 'mark';
+  if (state === 'ready') v = estopOn ? 'offline' : ({ working: 'working', compacting: 'working', waiting: 'waiting', down: 'offline', stopped: 'offline' })[agentSt] ?? 'mark';
+  else if (state === 'pairing' || state === 'awaiting-approval') v = 'question';
+  else if (state === 'waiting-host' || state === 'error' || state === 'revoked') v = 'offline';
+  const img = $('logo');
+  if (img.getAttribute('src') !== LOGO[v]) img.setAttribute('src', LOGO[v]);
+  img.dataset.v = v;
+}
 
 // ---------------------------------------------------------------- IndexedDB (db "agentjarvis", store "kv")
 function idb() {
@@ -88,7 +129,7 @@ function deviceLabel() {
   const os = /Android/.test(ua) ? 'Android' : /iPhone|iPad|iPod/.test(ua) ? 'iOS' : /Mac OS X/.test(ua) ? 'macOS'
     : /Windows/.test(ua) ? 'Windows' : /Linux|CrOS/.test(ua) ? 'Linux' : '';
   const br = /Edg\//.test(ua) ? 'Edge' : /Firefox\/|FxiOS/.test(ua) ? 'Firefox' : /CriOS|Chrome\//.test(ua) ? 'Chrome'
-    : /Safari\//.test(ua) ? 'Safari' : '浏览器';
+    : /Safari\//.test(ua) ? 'Safari' : '浏览器';   // the device label is data for the host's device list, not UI text
   return ('网页 · ' + [os, br].filter(Boolean).join(' ')).slice(0, 64);
 }
 
@@ -126,8 +167,8 @@ function openSession(mode, ctx) {
   ws.binaryType = 'arraybuffer';
   const s = { ws, mode, ctx, phase: 'wait-host', hs: null, send: null, recv: null, chain: Promise.resolve(), sendChain: Promise.resolve(), closedByUs: false };
   sess = s;
-  setStatus('connecting', '连接中…');
-  ws.onopen = () => { if (sess === s && s.phase === 'wait-host') setStatus('waiting-host', '等电脑上线…'); };
+  setStatus('connecting', 'st.connecting');
+  ws.onopen = () => { if (sess === s && s.phase === 'wait-host') setStatus('waiting-host', 'st.waitingHost'); };
   // Frames are handled strictly in order (async crypto must not interleave).
   ws.onmessage = (ev) => { s.chain = s.chain.then(() => onFrame(s, ev.data)).catch((e) => protocolFail(s, e)); };
   ws.onclose = (ev) => { s.chain = s.chain.then(() => onClose(s, ev)); };
@@ -158,7 +199,7 @@ async function onFrame(s, data) {
       await sendApp(s, { t: 'hello' });
       $('sas').textContent = await safetyCode(h);
       show('sas-view');
-      setStatus('awaiting-approval', '等电脑批准');
+      setStatus('awaiting-approval', 'st.awaiting');
     } else {
       s.phase = 'ready-wait';
       await sendApp(s, { t: 'hello', since: lastSeq });   // the host replays the chat this page has not seen (memory only)
@@ -215,7 +256,7 @@ function enterReady(s) {
   backoff = 1000;
   show(panel);
   if (panel !== 'chat-view') openPanel(panel);       // reconnected while a page was open: load it again
-  setStatus('ready', '已连接');
+  setStatus('ready', 'st.ready');
   if (document.visibilityState !== 'visible') sendApp(s, { t: 'vis', fg: false }).catch(() => {});
 }
 
@@ -230,12 +271,12 @@ async function hostUp(s) {
     const sk = await signKey();
     const info = sk ? { v: 1, name: deviceLabel(), sk: b64u(sk.pub) } : { v: 1, name: deviceLabel() };
     msg1 = frame(KIND.PAIR_INIT, p.pairingId, await s.hs.writeMessage(enc.encode(JSON.stringify(info))));
-    setStatus('pairing', '配对中…');
+    setStatus('pairing', 'st.pairing');
   } else {
     s.hs = await new Handshake({ protocol: IK, initiator: true, prologue: resumePrologue(s.ctx.channel), s: dev, rs: s.ctx.hostPub }).init();
     const sk = await signKey();                       // a device paired before L1 registers its approval key here (host keeps the first)
     msg1 = frame(KIND.RESUME_INIT, await s.hs.writeMessage(enc.encode(JSON.stringify(sk ? { v: 1, sk: b64u(sk.pub) } : { v: 1 }))));
-    setStatus('connecting', '正在恢复连接…');
+    setStatus('connecting', 'st.resuming');
   }
   if (s !== sess || s.ws.readyState !== WebSocket.OPEN) return;
   s.phase = 'hs';
@@ -249,7 +290,7 @@ function hostDown(s) {
   }
   resetCrypto(s);                                     // the host lost all session state; redo RESUME on its next "up"
   s.phase = 'wait-host';
-  setStatus('waiting-host', '电脑离线');
+  setStatus('waiting-host', 'st.hostDown');
 }
 
 function onClose(s, ev) {
@@ -266,43 +307,47 @@ function protocolFail(s, e) {
   if (s !== sess) return;
   const wasPair = s.mode === 'pair';
   closeSession();
-  if (e && e.name === 'NotSupportedError') return fatal('这个浏览器不支持所需的加密算法（X25519）。换最新版 Chrome、Safari 或 Firefox 再试。');
-  setStatus('error', '连接异常，已断开');
-  $('error-text').textContent = wasPair ? '配对数据没通过校验，已断开。请在电脑上重新运行 jarvis pair。'
-    : '收到无法校验的数据，已断开以保护你的对话。';
-  $('retry').textContent = wasPair ? '返回' : '重连';
-  $('retry').dataset.action = wasPair ? 'idle' : 'resume';
+  if (e && e.name === 'NotSupportedError') return fatal('error.noCrypto');
+  setStatus('error', 'st.error');
+  showError(wasPair ? 'error.pairBad' : 'error.dataBad', wasPair ? 'error.back' : 'error.reconnect', wasPair ? 'idle' : 'resume');
+}
+
+// error view: texts are keys so a language switch re-renders them
+let errorKeys = null;
+function renderError() {
+  if (!errorKeys) return;
+  fillText($('error-text'), t(errorKeys[0]));
+  $('retry').textContent = t(errorKeys[1]);
+}
+function showError(textKey, btnKey, action) {
+  errorKeys = [textKey, btnKey];
+  renderError();
+  $('retry').dataset.action = action;
   show('error-view');
 }
 
 function pairFailed() {
-  setStatus('error', PAIR_FAIL);
-  $('error-text').textContent = PAIR_FAIL;
-  $('retry').textContent = '返回';
-  $('retry').dataset.action = 'idle';
-  show('error-view');
+  setStatus('error', 'st.pairFail');
+  showError('st.pairFail', 'error.back', 'idle');
 }
 
 function revoked() {
   closeSession();
-  setStatus('revoked', '此设备已被主机移除');
+  setStatus('revoked', 'st.revoked');
   show('revoked-view');
 }
 
-function fatal(text) {
+function fatal(key) {
   closeSession();
-  setStatus('error', '无法使用');
-  $('error-text').textContent = text;
-  $('retry').textContent = '重试';
-  $('retry').dataset.action = 'reload';
-  show('error-view');
+  setStatus('error', 'st.unusable');
+  showError(key, 'error.retry', 'reload');
 }
 
 function scheduleReconnect() {
   clearTimeout(reconnectTimer);
   const wait = backoff;
   backoff = Math.min(backoff * 2, 30000);
-  setStatus('connecting', `连接断开，${Math.round(wait / 1000)} 秒后重连…`);
+  setStatus('connecting', 'st.retryIn', { n: Math.round(wait / 1000) });
   reconnectTimer = setTimeout(() => { reconnectTimer = null; resume(); }, wait);
 }
 
@@ -335,7 +380,7 @@ function startPairing(input) {
   try { p = parsePairing(input); } catch {
     showIdle();
     const err = $('pair-error');
-    err.textContent = '链接无效或已过期，请在电脑上重新运行 jarvis pair';
+    err.textContent = t('pair.badLink');
     err.hidden = false;
     return;
   }
@@ -348,14 +393,14 @@ function startPairing(input) {
 function showIdle() {
   closeSession();
   show('pair-view');
-  setStatus('idle', '未配对');
+  setStatus('idle', 'st.idle');
 }
 
 // ---------------------------------------------------------------- scanning (BarcodeDetector + camera, when available)
 let scanStream = null;
 async function startScan() {
   const hint = $('scan-hint');
-  hint.textContent = '用系统相机扫描电脑上的二维码';
+  fillText(hint, t('pair.scanHint'));
   let formats = [];
   if ('BarcodeDetector' in window && navigator.mediaDevices?.getUserMedia) {
     try { formats = await window.BarcodeDetector.getSupportedFormats(); } catch { formats = []; }
@@ -364,7 +409,7 @@ async function startScan() {
   try {
     scanStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' }, audio: false });
   } catch {
-    hint.textContent = '没拿到相机权限。用系统相机扫描电脑上的二维码';
+    fillText(hint, t('pair.scanNoCam'));
     hint.hidden = false;
     return;
   }
@@ -385,7 +430,7 @@ async function startScan() {
   tick();
 }
 function stopScan() {
-  if (scanStream) for (const t of scanStream.getTracks()) t.stop();
+  if (scanStream) for (const tr of scanStream.getTracks()) tr.stop();
   scanStream = null;
   $('scan-video').srcObject = null;
   $('scan-box').hidden = true;
@@ -407,70 +452,78 @@ function addMessage(dir, text, from = '', name = '') {
   }
   const list = $('messages');
   list.append(li);
+  chatEmpty();
   li.scrollIntoView({ block: 'end' });
 }
+function chatEmpty() { $('chat-empty').hidden = $('messages').childElementCount > 0; }
 
 // ---------------------------------------------------------------- Agent status (PROTOCOL §8)
 const AGENT_NAME = { claude: 'Claude Code', codex: 'Codex', opencode: 'OpenCode' };
-const STATUS_TEXT = { idle: '空闲', working: '干活中…', compacting: '压缩中…', waiting: '等你批准', down: '没在运行', stopped: '已急停' };
+const STATUS_KEYS = ['idle', 'working', 'compacting', 'waiting', 'down', 'stopped'];
+let agentLast = null;
 function setAgentStatus(st, agent) {
+  agentLast = [st, agent];
   const el = $('agent-status');
-  if (!agent || !STATUS_TEXT[st]) { el.hidden = true; return; }
+  if (!agent || !STATUS_KEYS.includes(st)) { el.hidden = true; $('brand-name').hidden = false; agentSt = 'none'; document.body.dataset.agent = 'none'; renderLogo(); return; }
   el.hidden = false;
+  $('brand-name').hidden = true;
   el.dataset.s = st;
-  el.textContent = `${AGENT_NAME[agent] ?? 'Agent'} · ${STATUS_TEXT[st]}`;
+  // the state is only true while connected; otherwise the header shows the Agent's name and the connection line says why
+  el.textContent = state === 'ready' ? `${AGENT_NAME[agent] ?? 'Agent'} · ${t('ag.' + st)}` : (AGENT_NAME[agent] ?? 'Agent');
+  agentSt = st;
+  document.body.dataset.agent = st;
+  renderLogo();
 }
 
 // ---------------------------------------------------------------- approvals (PROTOCOL §8)
 const asks = new Map();                               // id → { li, tool, summary, deadline, timer, scope }
-const ASK_RESULT = { allow: '已批准', deny: '已拒绝', timeout: '超时，已自动拒绝', gone: '已取消', stopped: '已作废（全部停下）' };
+const ASK_RESULTS = ['allow', 'deny', 'timeout', 'gone', 'stopped'];
 // the danger list (PROTOCOL §8, ADR-A47): fixed categories decided by the host; a dangerous request has no batch button
-const CAT_LABEL = { spend: '花钱 · Spend', delete: '删除 · Delete', send: '对外发送 · Send', credentials: '改凭据 · Credentials', price: '改价 · Price' };
-const LOW_LABEL = '低风险 · Low risk';
+const CATS = ['spend', 'delete', 'send', 'credentials', 'price'];
 const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text !== undefined) e.textContent = text; return e; };
 async function showAsk(s, m) {
   if (typeof m.id !== 'string' || !/^[0-9a-f]{32}$/.test(m.id) || typeof m.tool !== 'string' || typeof m.summary !== 'string') return;
   if (asks.has(m.id)) return;
   const ttl = Number.isInteger(m.ttl) && m.ttl >= 0 && m.ttl <= 600 ? m.ttl : 0;
-  const cats = Array.isArray(m.cat) ? m.cat.filter((c) => CAT_LABEL[c]) : [];
+  const cats = Array.isArray(m.cat) ? m.cat.filter((c) => CATS.includes(c)) : [];
   const danger = cats.length > 0;
   const scope = !danger && typeof m.batch === 'string' && m.batch.length > 0 && m.batch.length <= 400 ? m.batch : null;
   const li = el('li', danger ? 'ask ask-danger' : 'ask');
   li.dataset.dir = 'in'; li.dataset.from = 'ask'; li.dataset.risk = danger ? 'danger' : 'low';
   const tags = el('p', 'ask-tags');
-  if (danger) for (const c of cats) { const t = el('span', 'tag tag-danger', CAT_LABEL[c]); t.dataset.cat = c; tags.append(t); }
-  else tags.append(el('span', 'tag tag-low', LOW_LABEL));
-  const h = el('p', 'ask-title', danger ? `⚠ 危险操作，必须逐条批准：${m.tool}` : `Agent 想要执行：${m.tool}`);
-  if (typeof m.task === 'string' && m.task) tags.append(el('span', 'tag tag-task', `定时任务「${m.task.slice(0, 80)}」`));
-  const why = typeof m.why === 'string' && m.why ? el('p', 'ask-why', `命中：${m.why.slice(0, 200)}`) : null;
+  if (danger) for (const c of cats) { const tg = el('span', 'tag tag-danger', t('ask.cat.' + c)); tg.dataset.cat = c; tags.append(tg); }
+  else tags.append(el('span', 'tag tag-low', t('ask.low')));
+  const h = el('p', 'ask-title', t(danger ? 'ask.titleDanger' : 'ask.title', { tool: m.tool }));
+  if (typeof m.task === 'string' && m.task) tags.append(el('span', 'tag tag-task', t('ask.task', { task: m.task.slice(0, 80) })));
+  const whyEl = typeof m.why === 'string' && m.why ? el('p', 'ask-why', t('ask.why', { why: m.why.slice(0, 200) })) : null;
   const pre = el('pre', 'ask-summary', m.summary);
   const meta = el('p', 'ask-meta');
   const row = el('div', 'ask-row');
-  const yes = el('button', 'btn btn-strong ask-allow', danger ? '批准这一条' : '批准'); yes.type = 'button';
-  const no = el('button', 'btn ask-deny', '拒绝'); no.type = 'button';
+  const yes = el('button', 'aj-btn aj-btn--primary ask-allow', t(danger ? 'ask.allowOne' : 'ask.allow')); yes.type = 'button';
+  const no = el('button', 'aj-btn ask-deny', t('ask.deny')); no.type = 'button';
   row.append(no, yes);
   let batchBtn = null;
   if (scope) {
     const max = Number.isInteger(m.batch_max) ? m.batch_max : 20;
     const mins = Number.isInteger(m.batch_secs) ? Math.round(m.batch_secs / 60) : 10;
-    batchBtn = el('button', 'btn ask-batch'); batchBtn.type = 'button';
-    batchBtn.append(el('span', 'ask-batch-main', '批准，并在这一轮里自动批准同类低风险操作'),
-      el('span', 'ask-batch-scope', `同类 = ${scope} · 最多 ${max} 次 / ${mins} 分钟 · 这一轮结束即失效 · 危险操作照样逐条问你`));
+    batchBtn = el('button', 'aj-btn ask-batch'); batchBtn.type = 'button';
+    batchBtn.append(el('span', 'ask-batch-main', t('ask.batch')),
+      el('span', 'ask-batch-scope', t('ask.batchScope', { scope, max, mins })));
     row.append(batchBtn);
   }
-  li.append(tags, h, ...(why ? [why] : []), pre, meta, row);
+  li.append(tags, h, ...(whyEl ? [whyEl] : []), pre, meta, row);
   const a = { li, tool: m.tool, summary: m.summary, deadline: Date.now() + ttl * 1000, timer: null, meta, row, done: false, scope };
   asks.set(m.id, a);
   const tick = () => {
     if (a.done) return;
     const left = Math.max(0, Math.ceil((a.deadline - Date.now()) / 1000));
-    a.meta.textContent = left > 0 ? `还剩 ${left} 秒，不按就自动拒绝` : '时间到，等电脑确认…';
+    a.meta.textContent = left > 0 ? t('ask.left', { n: left }) : t('ask.timeUp');
     if (left > 0) a.timer = setTimeout(tick, 1000);
   };
   const sk = await signKey();
   if (!sk) {
     row.replaceChildren();
-    const p = el('p', 'small', '这个浏览器不支持签名（Ed25519），不能在这里批准。换最新版 Chrome / Safari / Firefox 后重新配对。');
+    const p = el('p', 'small', t('ask.noSign'));
     row.append(p);
   }
   yes.addEventListener('click', () => answer(m.id, true));
@@ -478,6 +531,7 @@ async function showAsk(s, m) {
   if (batchBtn) batchBtn.addEventListener('click', () => answer(m.id, true, true));
   tick();
   $('messages').append(li);
+  chatEmpty();
   li.scrollIntoView({ block: 'end' });
 }
 async function answer(id, ok, batch = false) {
@@ -493,17 +547,17 @@ async function answer(id, ok, batch = false) {
     const msg = await approveMessage(s.ctx.channel, await myDeviceId(), id, decision, a.tool, a.summary, batch ? a.scope : undefined);
     const sig = new Uint8Array(await crypto.subtle.sign({ name: 'Ed25519' }, sk.priv, msg));
     await sendApp(s, batch ? { t: 'answer', id, ok: true, batch: true, sig: b64u(sig) } : { t: 'answer', id, ok, sig: b64u(sig) });
-    a.meta.textContent = batch ? '已发送批准（含本轮同类授权），等电脑确认…' : ok ? '已发送批准，等电脑确认…' : '已发送拒绝，等电脑确认…';
+    a.meta.textContent = t(batch ? 'ask.sentBatch' : ok ? 'ask.sentAllow' : 'ask.sentDeny');
   } catch {
     for (const b of a.row.querySelectorAll('button')) b.disabled = false;
   }
 }
 function askDone(id, result) {
   const a = asks.get(id);
-  if (!a || !ASK_RESULT[result]) return;
+  if (!a || !ASK_RESULTS.includes(result)) return;
   a.done = true; clearTimeout(a.timer);
   a.row.replaceChildren();
-  a.meta.textContent = ASK_RESULT[result];
+  a.meta.textContent = t('ask.result.' + result);
   a.li.dataset.result = result;
 }
 
@@ -511,9 +565,10 @@ function askDone(id, result) {
 const grants = new Map();                             // grant id → { scope, left }
 function showAuto(m) {
   if (typeof m.tool !== 'string' || typeof m.summary !== 'string') return;
-  const li = el('li', 'auto', `已按你的授权自动批准：${m.tool} · ${m.summary.slice(0, 200)}`);
+  const li = el('li', 'auto', t('ask.auto', { tool: m.tool, summary: m.summary.slice(0, 200) }));
   li.dataset.dir = 'in'; li.dataset.from = 'auto';
   $('messages').append(li);
+  chatEmpty();
   li.scrollIntoView({ block: 'end' });
 }
 function renderGrants() {
@@ -521,18 +576,18 @@ function renderGrants() {
   const live = [...grants.values()];
   bar.hidden = live.length === 0;
   $('grant-text').textContent = live.length === 0 ? '' :
-    `本轮自动批准中：${live.map((g) => `${g.scope}（还剩 ${g.left} 次）`).join('；')}`;
+    t('grant.live', { list: live.map((g) => t('grant.item', { scope: g.scope, n: g.left })).join(lang() === 'en' ? '; ' : '；') });
 }
 function setGrant(m) {
   if (typeof m.id !== 'string' || !/^[0-9a-f]{32}$/.test(m.id) || typeof m.scope !== 'string') return;
   grants.set(m.id, { scope: m.scope.slice(0, 400), left: Number.isInteger(m.left) ? m.left : 0 });
   renderGrants();
 }
-const GRANT_END = { turn_end: '这一轮结束，批量授权已失效', revoked: '已收回批量授权', limit: '批量授权已用完', expired: '批量授权已过期', device_gone: '批量授权已失效（授权的设备已移除）', estop: '已急停，批量授权已收回' };
-function endGrant(id, why) {
+const GRANT_END = ['turn_end', 'revoked', 'limit', 'expired', 'device_gone', 'estop'];
+function endGrant(id, code) {
   if (!grants.delete(id)) return;
   renderGrants();
-  if (why !== 'turn_end') addMessage('in', GRANT_END[why] ?? '批量授权已结束', 'notice');
+  if (code !== 'turn_end') addMessage('in', t('grant.end.' + (GRANT_END.includes(code) ? code : 'other')), 'notice');
 }
 async function revokeGrants() {
   const s = sess;
@@ -570,10 +625,9 @@ function command(obj) {                               // one signed write → th
     else setTimeout(() => { if (pending.delete(r)) resolve({ ok: false, why: 'timeout' }); }, 20000);
   });
 }
-const WHY = { changed: '文件刚被改过：已刷新，请再看一眼', unknown_item: '这一条已经不在了（已刷新）', bad_signature: '签名不对，电脑拒绝了',
-  no_key: '这台设备没有批准密钥：重新配对后再试', stale: '手机时间和电脑差太多，电脑拒绝了', timeout: '电脑没有回应', offline: '没连上电脑',
-  not_found: '回收站里没有这一条了', exists: '那个文件已经存在且内容不同，没有覆盖', symlink: '是软链接，不跟随',
-  invalid: '任务文件无效，不能启用', unknown: '没有这个任务', io: '读写失败', shape: '请求格式不对', replay: '重复的请求' };
+const WHY_CODES = ['changed', 'unknown_item', 'bad_signature', 'no_key', 'stale', 'timeout', 'offline', 'not_found', 'exists', 'symlink',
+  'invalid', 'unknown', 'io', 'shape', 'replay'];
+const why = (code) => (WHY_CODES.includes(code) ? t('why.' + code) : String(code ?? ''));   // error code from the host → plain words
 
 // the confirm sheet (two-step for every write)
 function confirmSheet(title, text, yes) {
@@ -605,43 +659,50 @@ function openPanel(v) {
   if (v === 'tasks-view') loadTasks();
   window.scrollTo(0, 0);
 }
+function reloadPanel() { if (state === 'ready' && panel !== 'chat-view') openPanel(panel); }
 
 // ---- stop everything
 function setEstop(m) {
   estopOn = m.on === true;
   $('estop-banner').hidden = !estopOn;
   $('estop').hidden = estopOn;
-  $('estop-by').textContent = estopOn && typeof m.by === 'string' && m.by ? `（${m.by.slice(0, 64)}）` : '';
+  estopBy = estopOn && typeof m.by === 'string' && m.by ? m.by.slice(0, 64) : '';
   $('send').disabled = state !== 'ready' || estopOn;
-  $('msg-input').placeholder = estopOn ? '已急停：恢复后再发' : '说点什么，回车发送（/ 开头 = 命令）';
+  renderEstop();
+  renderLogo();
+}
+let estopBy = '';
+function renderEstop() {
+  $('estop-by').textContent = estopBy ? t('estop.by', { by: estopBy }) : '';
+  $('msg-input').placeholder = t(estopOn ? 'chat.placeholderStopped' : 'chat.placeholder');
 }
 async function onEstop() {
-  if (!await confirmSheet('全部停下？', '马上中断 Agent 正在做的这一轮，拒绝所有待批准的请求，收回批量授权，暂停全部定时任务。之后它不接新消息，直到你按「恢复」。', '确定，全部停下')) return;
+  if (!await confirmSheet(t('estop.confirmTitle'), t('estop.confirmText'), t('estop.confirmYes'))) return;
   const res = await command(await signed('estop', {}, { t: 'estop' }).catch(() => ({ t: 'estop' })));
-  if (!res.ok) toast('没有停下：' + (WHY[res.why] ?? res.why));
+  if (!res.ok) toast(t('estop.fail', { why: why(res.why) }));
 }
 async function onResume() {
-  if (!await confirmSheet('恢复？', 'Agent 重新接收消息，定时任务按各自的启用状态继续。', '恢复')) return;
+  if (!await confirmSheet(t('estop.resumeTitle'), t('estop.resumeText'), t('estop.resumeYes'))) return;
   const res = await command(await signed('resume', {}, { t: 'resume' }).catch(() => ({ t: 'resume' })));
-  if (!res.ok) toast('没有恢复：' + (WHY[res.why] ?? res.why));
+  if (!res.ok) toast(t('estop.resumeFail', { why: why(res.why) }));
 }
 
 // ---- 它记住了什么
 const memItems = new Map();                           // key → item
 function loadMemory() {
-  $('mem-status').textContent = '正在读取…';
+  $('mem-status').textContent = t('mem.loading');
   const list = $('mem-list'); list.replaceChildren(); memItems.clear();
   const boxes = new Map();
   const r = request({ t: 'mem_list' }, (m) => {
     if (m.t === 'mem_sources') {
       const H = { claude: 'Claude Code', codex: 'Codex', opencode: 'OpenCode' };
-      $('mem-status').textContent = m.harness ? `${H[m.harness] ?? m.harness} 的记忆来源（只列这些位置）：` : '还没接 Agent。';
+      $('mem-status').textContent = m.harness ? t('mem.sources', { agent: H[m.harness] ?? m.harness }) : t('mem.noAgent');
       for (const src of Array.isArray(m.sources) ? m.sources : []) {
         const sec = el('section', 'mem-src');
         const head = el('h2', 'mem-src-h', String(src.label ?? ''));
         const path = el('p', 'small mem-path', String(src.path ?? ''));
-        const PROB = { not_found: '（没有这个文件）', symlink: '（软链接，不跟随）', too_large: '（太大，不显示）', io: '（读不了）', too_many_files: '（文件太多，只显示前 200 个）' };
-        const note = el('span', 'small mem-note', src.problem ? (PROB[src.problem] ?? `（${src.problem}）`) : `${Number.isInteger(src.n) ? src.n : 0} 条`);
+        const PROB = ['not_found', 'symlink', 'too_large', 'io', 'too_many_files'];
+        const note = el('span', 'small mem-note', src.problem ? (PROB.includes(src.problem) ? t('mem.prob.' + src.problem) : `(${src.problem})`) : t('mem.count', { n: Number.isInteger(src.n) ? src.n : 0 }));
         head.append(' ', note);
         const ul = el('ul', 'mem-items');
         sec.append(head, path, ul);
@@ -664,9 +725,9 @@ function loadMemory() {
         const body = el('div', 'mem-body');
         if (it.title) body.append(el('p', 'mem-title', String(it.title) + (it.file ? `  ·  ${it.file}` : '')));
         if (it.desc) body.append(el('p', 'small mem-desc', String(it.desc)));
-        body.append(el('pre', 'mem-text', it.text + (it.cut ? `\n…（太长，只显示前 ${it.text.length} 字，共 ${it.cut} 字）` : '')));
-        const del = el('button', 'btn mem-del', '删除'); del.type = 'button';
-        del.setAttribute('aria-label', '删除这条记忆');
+        body.append(el('pre', 'mem-text', it.text + (it.cut ? '\n' + t('mem.cut', { shown: it.text.length, total: it.cut }) : '')));
+        const del = el('button', 'aj-btn aj-btn--sm mem-del', t('mem.del')); del.type = 'button';
+        del.setAttribute('aria-label', t('mem.delAria'));
         del.addEventListener('click', () => deleteMemory(key));
         li.append(body, del);
         ul.append(li);
@@ -677,12 +738,12 @@ function loadMemory() {
 }
 function renderTrash(items) {
   const ul = $('mem-trash'); ul.replaceChildren();
-  if (!items.length) { ul.append(el('li', 'small', '没有。')); return; }
-  for (const t of items) {
+  if (!items.length) { ul.append(el('li', 'small', t('mem.trashEmpty'))); return; }
+  for (const x of items) {
     const li = el('li', 'trash-item');
-    li.append(el('span', 'trash-text', `${String(t.label ?? '')}：${String(t.text ?? '')}`));
-    const b = el('button', 'btn', '恢复'); b.type = 'button';
-    b.addEventListener('click', () => undoMemory(String(t.id)));
+    li.append(el('span', 'trash-text', `${String(x.label ?? '')}${lang() === 'en' ? ': ' : '：'}${String(x.text ?? '')}`));
+    const b = el('button', 'aj-btn aj-btn--sm', t('mem.restore')); b.type = 'button';
+    b.addEventListener('click', () => undoMemory(String(x.id)));
     li.append(b);
     ul.append(li);
   }
@@ -691,60 +752,51 @@ async function deleteMemory(key) {
   const it = memItems.get(key);
   if (!it) return;
   const preview = it.text.replace(/\s+/g, ' ').slice(0, 120);
-  if (!await confirmSheet('删除这条记忆？', `「${preview}」\n原文先进电脑上的回收站，7 天内可以撤销。`, '删除')) return;
+  if (!await confirmSheet(t('mem.delTitle'), (lang() === 'en' ? `"${preview}"` : `「${preview}」`) + '\n' + plain(t('mem.delText')), t('mem.delYes'))) return;
   const target = { src: it.src, file: it.file, fsha: it.fsha, iid: it.iid };
   let res;
   try { res = await command(await signed('mem_rm', target, { t: 'mem_rm', ...target })); } catch (e) { res = { ok: false, why: e.message }; }
   if (res.ok) {
-    toast('已删除', '撤销', () => undoMemory(String(res.undo)));
+    toast(t('mem.deleted'), t('mem.undo'), () => undoMemory(String(res.undo)));
   } else {
-    toast('没有删除：' + (WHY[res.why] ?? res.why));
+    toast(t('mem.delFail', { why: why(res.why) }));
   }
   loadMemory();
 }
 async function undoMemory(id) {
   let res;
   try { res = await command(await signed('mem_undo', { id }, { t: 'mem_undo', id })); } catch (e) { res = { ok: false, why: e.message }; }
-  toast(res.ok ? '已恢复' : '没有恢复：' + (WHY[res.why] ?? res.why));
+  toast(res.ok ? t('mem.restored') : t('mem.restoreFail', { why: why(res.why) }));
   if (panel === 'mem-view') loadMemory();
 }
 
-// ---- 操作与审批记录
+// ---- 操作与审批记录 (Activity)
 let actNext = null;
-const ACT_RESULT = { allow: '批准', deny: '拒绝', allow_batch: '批准（含本轮同类）', timeout: '超时自动拒绝', no_device: '没有能批准的手机，拒绝',
-  estop: '急停，拒绝', serve_stop: 'serve 停止，拒绝', agent_gone: 'Agent 撤回', too_many: '请求太多，拒绝',
-  policy: '超出 Agent 自己的沙箱设置，自动拒绝' };
+const ACT_RESULTS = ['allow', 'deny', 'allow_batch', 'timeout', 'no_device', 'estop', 'serve_stop', 'agent_gone', 'too_many', 'policy'];
+const ACT_KINDS = ['turn_start', 'turn_end', 'ask', 'decision', 'auto', 'grant', 'grant_end', 'estop', 'resume', 'message_refused', 'mem_rm',
+  'mem_undo', 'task_on', 'task_off', 'task_run', 'task_done', 'control_refused', 'slash', 'truncated'];
 function actText(r) {
-  const by = r.by ? `（${r.by}）` : '';
-  const t = String(r.text ?? r.summary ?? '').replace(/\s+/g, ' ').slice(0, 200);
-  const cats = Array.isArray(r.cats) && r.cats.length ? `[${r.cats.map((c) => (CAT_LABEL[c] ?? c).split(' · ')[0]).join('、')}] ` : '';
-  const task = r.task ? `〔定时任务 ${r.task}〕` : '';
-  switch (r.k) {
-    case 'turn_start': return `对话开始${by}：${t}`;
-    case 'turn_end': return `对话结束${r.result === 'stopped' ? '（被急停中断）' : ''}${r.secs !== undefined ? `，${r.secs} 秒` : ''}`;
-    case 'ask': return `权限请求 ${task}${cats}${r.tool ?? ''}：${t}`;
-    case 'decision': return `${ACT_RESULT[r.result] ?? r.result}${by}：${task}${r.tool ?? ''}${t ? ' ' + t : ''}`;
-    case 'auto': return `按批量授权自动批准${by}：${r.tool ?? ''} ${t}`;
-    case 'grant': return `批量授权${by}：${r.scope ?? ''}`;
-    case 'grant_end': return `批量授权结束（${r.why ?? ''}）`;
-    case 'estop': return `⛔ 全部停下${by}`;
-    case 'resume': return `恢复${by}`;
-    case 'message_refused': return `急停中拒收消息${by}：${t}`;
-    case 'mem_rm': return `删除记忆${by} ${r.label ?? ''}：${t}`;
-    case 'mem_undo': return `恢复记忆${by} ${r.label ?? ''}：${t}`;
-    case 'task_on': return `启用定时任务${by}：${r.id ?? ''}`;
-    case 'task_off': return `停用定时任务${by}：${r.id ?? ''}`;
-    case 'task_run': return `定时任务开始：${r.title ?? r.id ?? ''}`;
-    case 'task_done': return `定时任务结束：${r.title ?? r.id ?? ''} — ${r.verdict ?? ''}：${r.line ?? ''}${r.readonly ? '（只读运行）' : ''}`;
-    case 'control_refused': return `拒绝了一条手机命令 ${r.action ?? ''}${by}：${r.why ?? ''}`;
-    case 'slash': return `命令 /${r.cmd ?? ''}${by}：${CMD_RESULT[r.result] ?? r.result ?? ''}`;
-    case 'truncated': return '（这一天的记录已达上限）';
-    default: return String(r.k ?? '');
-  }
+  const by = r.by ? t('act.by', { by: r.by }) : '';
+  const tx = String(r.text ?? r.summary ?? '').replace(/\s+/g, ' ').slice(0, 200);
+  const sep = lang() === 'en' ? ', ' : '、';
+  const cats = Array.isArray(r.cats) && r.cats.length ? `[${r.cats.map((c) => (CATS.includes(c) ? t('ask.cat.' + c) : c)).join(sep)}] ` : '';
+  const task = r.task ? t('act.task', { task: r.task }) : '';
+  if (!ACT_KINDS.includes(r.k)) return String(r.k ?? '');
+  const v = {
+    by, t: tx, task, cats, tool: r.tool ?? '', scope: r.scope ?? '', why: r.why ?? '', label: r.label ?? '', id: r.id ?? '',
+    title: r.title ?? r.id ?? '', verdict: r.verdict ?? '', line: r.line ?? '', action: r.action ?? '', cmd: r.cmd ?? '',
+    ro: r.readonly ? t('act.k.readonly') : '',
+    stopped: r.result === 'stopped' ? t('act.k.turn_end_stopped') : '',
+    secs: r.secs !== undefined ? t('act.k.secs', { n: r.secs }) : '',
+    result: r.k === 'slash' ? (['ok', 'info', 'error', 'refused'].includes(r.result) ? t('cmd.result.' + r.result) : r.result ?? '')
+      : ACT_RESULTS.includes(r.result) ? t('act.result.' + r.result) : r.result ?? '',
+  };
+  if (r.k === 'decision') v.t = tx ? ' ' + tx : '';
+  return t('act.k.' + r.k, v);
 }
 function loadActivity(fresh) {
   if (fresh) { $('act-list').replaceChildren(); actNext = null; }
-  $('act-status').textContent = '正在读取…';
+  $('act-status').textContent = t('act.loading');
   $('act-more').hidden = true;
   const r = request({ t: 'act_list', before: fresh ? null : actNext }, (m) => {
     if (m.t !== 'act_page') return;
@@ -752,7 +804,7 @@ function loadActivity(fresh) {
       const li = el('li', 'act-item');
       li.dataset.k = String(it.k ?? '');
       if (it.result) li.dataset.result = String(it.result);
-      const when = Number.isInteger(it.ts) ? new Date(it.ts).toLocaleString('zh-CN', { hour12: false, month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit' }) : '';
+      const when = Number.isInteger(it.ts) ? new Date(it.ts).toLocaleString(locale(), { hour12: false, month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit' }) : '';
       li.append(el('span', 'act-time', when), el('span', 'act-text', actText(it)));
       $('act-list').append(li);
     }
@@ -761,70 +813,71 @@ function loadActivity(fresh) {
       actNext = typeof m.next === 'string' ? m.next : null;
       $('act-more').hidden = !actNext;
       const n = $('act-list').children.length;
-      $('act-status').textContent = (m.on === false ? '（电脑上的操作记录已关闭：jarvis config activity on 打开）' : '') + (n ? `最近 ${n} 条，最新的在上面。` : '还没有记录。');
+      $('act-status').textContent = (m.on === false ? t('act.off') + ' ' : '') + (n ? t('act.recent', { n }) : t('act.none'));
     }
   });
 }
 
-// ---- 定时任务
+// ---- 定时任务 (scheduled tasks)
 function loadTasks() {
-  $('tasks-status').textContent = '正在读取…';
+  $('tasks-status').textContent = t('tasks.loading');
   const ul = $('tasks-list'); ul.replaceChildren();
   const r = request({ t: 'task_list' }, (m) => {
     if (m.t !== 'tasks') return;
-    for (const t of Array.isArray(m.items) ? m.items : []) ul.append(taskCard(t, m.paused === true));
+    for (const x of Array.isArray(m.items) ? m.items : []) ul.append(taskCard(x, m.paused === true));
     if (m.more === false) {
       pending.delete(r);
       const n = ul.children.length;
-      $('tasks-status').textContent = (m.paused ? '⛔ 已急停：全部定时任务暂停，恢复后按各自的启用状态继续。' : '') + (n ? '' : (m.agent ? '工作目录的 workflows/ 下还没有任务。' : '还没接 Agent。'));
+      $('tasks-status').textContent = (m.paused ? t('tasks.paused') : '') + (n ? '' : (m.agent ? t('tasks.none') : t('tasks.noAgent')));
     }
   });
 }
-function taskCard(t, paused) {
+const tzText = (tk) => (tk.tz === 'local' ? t('tasks.localTz') : tk.tz ?? '');
+function taskCard(tk, paused) {
   const li = el('li', 'task-card');
-  const title = t.title && typeof t.title.zh === 'string' ? t.title.zh : String(t.id);
-  li.dataset.id = String(t.id); li.dataset.enabled = String(!!t.enabled);
+  const title = tk.title && typeof tk.title[lang()] === 'string' ? tk.title[lang()] : tk.title && typeof tk.title.zh === 'string' ? tk.title.zh : String(tk.id);
+  li.dataset.id = String(tk.id); li.dataset.enabled = String(!!tk.enabled);
   li.append(el('p', 'task-title', title));
   const tags = el('p', 'ask-tags');
-  if (t.mode === 'research') tags.append(el('span', 'tag tag-low', '只读运行'));
-  if (t.mode === 'normal') tags.append(el('span', 'tag', '可起草 · 危险动作问手机'));
-  tags.append(el('span', 'tag ' + (t.enabled ? 'tag-on' : 'tag-off'), t.problems?.length ? '无效' : t.enabled ? (paused ? '已启用（急停中暂停）' : '已启用') : t.stale ? '已改动，需重新启用' : '未启用'));
-  if (t.running) tags.append(el('span', 'tag tag-task', '正在运行'));
+  if (tk.mode === 'research') tags.append(el('span', 'tag tag-low', t('tasks.readonly')));
+  if (tk.mode === 'normal') tags.append(el('span', 'tag', t('tasks.normal')));
+  tags.append(el('span', 'tag ' + (tk.enabled ? 'tag-on' : 'tag-off'), t(tk.problems?.length ? 'tasks.invalid' : tk.enabled ? (paused ? 'tasks.onPaused' : 'tasks.on') : tk.stale ? 'tasks.stale' : 'tasks.off')));
+  if (tk.running) tags.append(el('span', 'tag tag-task', t('tasks.running')));
   li.append(tags);
-  li.append(el('p', 'small', `时间：${cronText(t.schedule)}（${t.tz === 'local' ? '电脑本地时间' : t.tz ?? ''}）` + (Number.isInteger(t.next) ? ` · 下次 ${new Date(t.next * 1000).toLocaleString('zh-CN', { hour12: false, month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}` : '')));
-  if (t.problems?.length) li.append(el('p', 'error small', `task.json 无效：${t.problems[0]}`));
-  if (t.last && typeof t.last === 'object') li.append(el('p', 'small', `上次：${t.last.verdict ?? ''} — ${t.last.line ?? ''}`));
-  if (!t.problems?.length || t.enabled) {
-    const on = !t.enabled;
-    const b = el('button', 'btn ' + (on ? 'btn-strong' : ''), on ? '启用' : '停用'); b.type = 'button';
-    b.addEventListener('click', () => setTask(t, on, title));
+  li.append(el('p', 'small', t('tasks.when', { when: cronText(tk.schedule), tz: tzText(tk) }) + (Number.isInteger(tk.next) ? t('tasks.next', { at: new Date(tk.next * 1000).toLocaleString(locale(), { hour12: false, month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' }) }) : '')));
+  if (tk.problems?.length) li.append(el('p', 'error small', t('tasks.bad', { p: tk.problems[0] })));
+  if (tk.last && typeof tk.last === 'object') li.append(el('p', 'small', t('tasks.last', { verdict: tk.last.verdict ?? '', line: tk.last.line ?? '' })));
+  if (!tk.problems?.length || tk.enabled) {
+    const on = !tk.enabled;
+    const b = el('button', on ? 'aj-btn aj-btn--primary aj-btn--sm' : 'aj-btn aj-btn--sm', t(on ? 'tasks.enable' : 'tasks.disable')); b.type = 'button';
+    b.addEventListener('click', () => setTask(tk, on, title));
     li.append(b);
   }
   return li;
 }
-const WEEK = ['周日', '周一', '周二', '周三', '周四', '周五', '周六', '周日'];
 function cronText(expr) {                             // the common shapes in words; anything else as the raw cron fields
   if (typeof expr !== 'string') return '?';
   const f = expr.split(' ');
   if (f.length !== 5) return expr;
   const [m, h, dom, mon, dow] = f;
+  const week = t('cron.days').split('|');
   const hm = /^\d+$/.test(m) && /^\d+$/.test(h) ? `${h.padStart(2, '0')}:${m.padStart(2, '0')}` : null;
-  if (expr === '* * * * *') return '每分钟';
-  if (/^\*\/\d+$/.test(m) && h === '*' && dom === '*' && mon === '*' && dow === '*') return `每 ${m.slice(2)} 分钟`;
-  if (/^\d+$/.test(m) && h === '*' && dom === '*' && mon === '*' && dow === '*') return `每小时第 ${m} 分`;
-  if (hm && dom === '*' && mon === '*' && dow === '*') return `每天 ${hm}`;
-  if (hm && dom === '*' && mon === '*' && /^[0-7](,[0-7])*$/.test(dow)) return `每${dow.split(',').map((d) => WEEK[+d]).join('、')} ${hm}`;
-  if (hm && dom === '*' && mon === '*' && dow === '1-5') return `工作日 ${hm}`;
-  if (hm && /^\d+$/.test(dom) && mon === '*' && dow === '*') return `每月 ${dom} 日 ${hm}`;
-  return `cron ${expr}`;
+  if (expr === '* * * * *') return t('cron.everyMin');
+  if (/^\*\/\d+$/.test(m) && h === '*' && dom === '*' && mon === '*' && dow === '*') return t('cron.everyN', { n: m.slice(2) });
+  if (/^\d+$/.test(m) && h === '*' && dom === '*' && mon === '*' && dow === '*') return t('cron.hourly', { m });
+  if (hm && dom === '*' && mon === '*' && dow === '*') return t('cron.daily', { hm });
+  if (hm && dom === '*' && mon === '*' && /^[0-7](,[0-7])*$/.test(dow)) return t('cron.weekly', { days: dow.split(',').map((d) => week[+d]).join(t('cron.daySep')), hm });
+  if (hm && dom === '*' && mon === '*' && dow === '1-5') return t('cron.weekdays', { hm });
+  if (hm && /^\d+$/.test(dom) && mon === '*' && dow === '*') return t('cron.monthly', { d: dom, hm });
+  return t('cron.raw', { expr });
 }
-async function setTask(t, on, title) {
-  const text = on ? `「${title}」会按 ${cronText(t.schedule)}（${t.tz === 'local' ? '电脑本地时间' : t.tz}）自动运行${t.mode === 'research' ? '，只读运行' : ''}；运行中的危险动作照样逐条问你。改了任务文件就要重新启用。` : `「${title}」不再自动运行。`;
-  if (!await confirmSheet(on ? '启用这个定时任务？' : '停用这个定时任务？', text, on ? '启用' : '停用')) return;
-  const target = { id: String(t.id), tsha: typeof t.tsha === 'string' ? t.tsha : '' };
+async function setTask(tk, on, title) {
+  const text = on ? t('tasks.textOn', { title, when: cronText(tk.schedule), tz: tzText(tk), ro: tk.mode === 'research' ? t('tasks.textOnRo') : '' }) : t('tasks.textOff', { title });
+  if (!await confirmSheet(t(on ? 'tasks.confirmOn' : 'tasks.confirmOff'), text, t(on ? 'tasks.enable' : 'tasks.disable'))) return;
+  const target = { id: String(tk.id), tsha: typeof tk.tsha === 'string' ? tk.tsha : '' };
   let res;
   try { res = await command(await signed(on ? 'task_on' : 'task_off', target, { t: 'task_set', on, ...target })); } catch (e) { res = { ok: false, why: e.message }; }
-  toast(res.ok ? (on ? '已启用' : '已停用') : '没有改：' + (WHY[res.why] ?? res.why));
+  toast(res.ok ? t(on ? 'tasks.enabled' : 'tasks.disabled') : t('tasks.fail', { why: why(res.why) }));
   loadTasks();
 }
 
@@ -833,9 +886,7 @@ async function setTask(t, on, title) {
 // command is refused by the host (or, for Claude Code, passed on when it is one of its skills). Results come back as chat
 // entries `from: "cmd"` (cards). Only this page's paired session can send them; nothing is stored on the phone.
 const CMDS = ['clear', 'compact', 'model', 'context', 'cost', 'usage', 'status', 'help', 'stop'];
-const CMD_LABEL = { clear: '清空', compact: '压缩', model: '换模型', context: '上下文', cost: '花费', usage: '用量', status: '状态',
-  help: '帮助', stop: '停止', undo_clear: '撤销清空', refused: '命令' };
-const CMD_RESULT = { ok: '完成', info: '完成', error: '没做成', refused: '拒绝' };
+const CMD_LABELS = [...CMDS, 'undo_clear', 'refused'];
 const CMD_RE = /^\/([A-Za-z][\w:.-]{0,63})(?:[ \t]+([\s\S]*))?$/;
 function sendCmd(cmd, arg = '', confirm = false) {
   const s = sess;
@@ -845,16 +896,16 @@ function sendCmd(cmd, arg = '', confirm = false) {
 }
 async function runCmd(cmd, arg = '') {
   if (cmd === 'clear') {
-    if (!await confirmSheet('清空对话？', '清空后 Agent 不再记得这段对话（旧对话仍保存在电脑上，清空后可以「撤销清空」）。', '清空')) return false;
+    if (!await confirmSheet(t('cmd.clearTitle'), t('cmd.clearText'), t('cmd.clearYes'))) return false;
     return sendCmd('clear', '', true);
   }
   return sendCmd(cmd, arg);
 }
 function toggleCmdBar(open) {
   const bar = $('cmd-bar');
-  const show = open ?? bar.hidden;
-  bar.hidden = !show;
-  $('cmd-toggle').setAttribute('aria-expanded', String(show));
+  const showIt = open ?? bar.hidden;
+  bar.hidden = !showIt;
+  $('cmd-toggle').setAttribute('aria-expanded', String(showIt));
 }
 function addCmdCard(m) {
   const name = typeof m.cmd === 'string' ? m.cmd : 'refused';
@@ -863,17 +914,17 @@ function addCmdCard(m) {
   li.dataset.dir = 'in'; li.dataset.from = 'cmd'; li.dataset.cmd = name; li.dataset.kind = kind;
   if (Number.isInteger(m.seq)) lastSeq = m.seq;
   const head = el('p', 'cmd-head');
-  head.append(el('span', '', name === 'refused' ? '命令' : `/${name === 'undo_clear' ? 'clear' : name} · ${CMD_LABEL[name] ?? name}`));
+  head.append(el('span', '', name === 'refused' ? t('cmd.refused') : `/${name === 'undo_clear' ? 'clear' : name} · ${CMD_LABELS.includes(name) ? t('cmd.' + name) : name}`));
   if (typeof m.by === 'string' && m.by) head.append(el('span', 'cmd-by', m.by.slice(0, 64)));
   li.append(head, el('p', 'cmd-text', m.text));
   if (Array.isArray(m.models) && m.models.length) {
     const box = el('div', 'cmd-models');
     for (const x of m.models.slice(0, 40)) {
       if (!x || typeof x.id !== 'string') continue;
-      const b = el('button', 'btn cmd-model'); b.type = 'button';
+      const b = el('button', 'aj-btn cmd-model'); b.type = 'button';
       b.dataset.model = x.id;
       if (x.cur) b.setAttribute('aria-current', 'true');
-      b.append(el('span', '', (typeof x.name === 'string' && x.name ? x.name : x.id) + (x.cur ? '（当前）' : '')),
+      b.append(el('span', '', (typeof x.name === 'string' && x.name ? x.name : x.id) + (x.cur ? t('cmd.current') : '')),
         el('span', 'cmd-model-desc', [x.id, typeof x.desc === 'string' ? x.desc : ''].filter(Boolean).join(' · ')));
       b.addEventListener('click', () => { for (const o of box.querySelectorAll('button')) o.disabled = true; sendCmd('model', x.id); });
       box.append(b);
@@ -885,12 +936,13 @@ function addCmdCard(m) {
   }
   if (m.undo === true) {
     const row = el('div', 'cmd-row');
-    const u = el('button', 'btn cmd-undo', '撤销清空'); u.type = 'button';
+    const u = el('button', 'aj-btn aj-btn--sm cmd-undo', t('cmd.undo')); u.type = 'button';
     u.addEventListener('click', () => { u.disabled = true; sendCmd('undo_clear'); });
     row.append(u);
     li.append(row);
   }
   $('messages').append(li);
+  chatEmpty();
   li.scrollIntoView({ block: 'end' });
 }
 
@@ -898,12 +950,18 @@ function addCmdCard(m) {
 let pushKey = null;
 const pushSupported = () => 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window && window.isSecureContext;
 const isIOS = () => /iPhone|iPad|iPod/.test(navigator.userAgent);
+const isAndroid = () => /Android/.test(navigator.userAgent);
 const standalone = () => matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
 let swReg = null;
 async function registration() {
   if (swReg) return swReg;
-  swReg = await navigator.serviceWorker.register('sw.js', { scope: './' });
+  swReg = await navigator.serviceWorker.register('sw.js' + (lang() === 'en' ? '?lang=en' : ''), { scope: './' });
   return swReg;
+}
+function reregister() {                               // the worker's two notification sentences follow the language
+  if (!pushSupported()) return;
+  swReg = null;
+  registration().catch(() => {});
 }
 const sameKey = (sub, key) => {
   const k = sub?.options?.applicationServerKey;
@@ -915,11 +973,13 @@ function subMsg(sub) {
   const j = sub.toJSON();
   return { t: 'push_sub', endpoint: j.endpoint, p256dh: j.keys?.p256dh, auth: j.keys?.auth };
 }
+let pushState = 'none';
 function pushUi(stateName) {
+  pushState = stateName;
   const row = $('push-row'), btn = $('push-on'), txt = $('push-text');
   row.hidden = stateName === 'none';
   btn.hidden = stateName !== 'offer';
-  txt.textContent = { offer: '锁屏后也想知道 Agent 回话了？', on: '锁屏提醒已开启（提醒里不含内容）', ios: 'iPhone 要先「分享 → 添加到主屏幕」，从主屏幕打开后才能开锁屏提醒', denied: '通知被浏览器禁止了：去浏览器设置里允许本站通知', none: '' }[stateName] ?? '';
+  txt.textContent = ['offer', 'on', 'ios', 'denied', 'failed'].includes(stateName) ? t('push.' + stateName) : '';
 }
 async function gotPushKey(s, k) {
   let key;
@@ -949,8 +1009,30 @@ async function enablePush() {
     await sendApp(sess, subMsg(sub));
     pushUi('on');
   } catch {
-    $('push-text').textContent = '没开成：这个浏览器不支持网页推送，或推送服务连不上。';
+    pushUi('failed');
+    $('push-on').hidden = false;
   }
+}
+
+// ---------------------------------------------------------------- Add to Home Screen hint (phones only, not when installed)
+// The one thing this page keeps in local storage besides brand/lang.js's language + theme: that the hint was dismissed.
+const A2HS_KEY = 'aj.a2hs';
+let a2hsDismissed = false;
+try { a2hsDismissed = localStorage.getItem(A2HS_KEY) === '1'; } catch { /* blocked storage: show it again next time */ }
+function renderA2hs() {
+  const box = $('a2hs');
+  if (!box) return;
+  const kind = isIOS() ? 'ios' : isAndroid() ? 'android' : null;
+  box.hidden = a2hsDismissed || standalone() || !kind || !['pair-view', 'chat-view'].includes(view);
+  if (!box.hidden) fillText($('a2hs-text'), t('a2hs.' + kind));
+  $('pair-iphone').hidden = !(isIOS() && !standalone());
+  fillText($('pair-step1'), t(isIOS() ? 'pair.step1ios' : 'pair.step1'));   // iPhone Safari cannot scan inside the page:
+  fillText($('pair-step2'), t(isIOS() ? 'pair.step2ios' : 'pair.step2'));   // pair with the link, from the Home Screen app
+}
+function dismissA2hs() {
+  a2hsDismissed = true;
+  try { localStorage.setItem(A2HS_KEY, '1'); } catch { /* blocked storage */ }
+  renderA2hs();
 }
 
 async function onSend() {
@@ -970,18 +1052,44 @@ async function onSend() {
     await sendApp(sess, { t: 'msg', id: randHex(8), text, ts: Date.now() });
   } catch { return; }                                 // the status line already reflects the broken connection
   input.value = '';
+  input.style.height = '';
   addMessage('out', text);
 }
 
+// ---------------------------------------------------------------- language switch: re-render everything that is ours
+function relang() {
+  applyStatic();
+  setStatus(state, statusKey[0], statusKey[1]);
+  if (agentLast) setAgentStatus(agentLast[0], agentLast[1]);
+  pushUi(pushState);
+  renderGrants();
+  renderEstop();
+  renderError();
+  renderA2hs();
+  if (!$('scan-hint').hidden) fillText($('scan-hint'), t('pair.scanHint'));
+  if (!$('pair-error').hidden) $('pair-error').textContent = t('pair.badLink');
+  reloadPanel();
+  reregister();
+}
+
 // ---------------------------------------------------------------- wiring
+function closeMenu() { $('menu').open = false; }
+function toggleBadge(open) {
+  const p = $('badge-panel');
+  p.hidden = !(open ?? p.hidden);
+  $('badge').setAttribute('aria-expanded', String(!p.hidden));
+  if (!p.hidden) p.scrollIntoView({ block: 'nearest' });
+}
 function wire() {
   $('version-hash').textContent = VERSION.combined;
-  $('badge').addEventListener('click', () => {
-    const panel = $('badge-panel');
-    panel.hidden = !panel.hidden;
-    $('badge').setAttribute('aria-expanded', String(!panel.hidden));
-  });
-  $('badge-close').addEventListener('click', () => { $('badge-panel').hidden = true; $('badge').setAttribute('aria-expanded', 'false'); });
+  $('badge').addEventListener('click', () => toggleBadge());
+  $('badge-close').addEventListener('click', () => toggleBadge(false));
+  $('menu-about').addEventListener('click', () => { closeMenu(); toggleBadge(true); });
+  document.addEventListener('click', (e) => { if ($('menu').open && !e.target.closest('#menu')) closeMenu(); });
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && $('menu').open) { closeMenu(); $('menu').querySelector('summary').focus(); } });
+  for (const a of $('menu').querySelectorAll('a')) a.addEventListener('click', closeMenu);
+  $('a2hs-ok').addEventListener('click', dismissA2hs);
+  $('scan').hidden = !('BarcodeDetector' in window);          // iPhone Safari has no in-page scanner: paste the link instead
   $('pair-go').addEventListener('click', () => startPairing($('pair-link').value));
   $('scan').addEventListener('click', () => { startScan(); });
   $('scan-stop').addEventListener('click', stopScan);
@@ -1002,6 +1110,9 @@ function wire() {
   $('msg-input').addEventListener('keydown', (e) => {
     if (e.key === 'Enter' && !e.shiftKey && !e.isComposing && e.keyCode !== 229) { e.preventDefault(); onSend(); }
   });
+  $('msg-input').addEventListener('input', () => {             // grow with the text, up to the CSS max-height
+    const i = $('msg-input'); i.style.height = 'auto'; i.style.height = Math.min(i.scrollHeight + 2, 160) + 'px';
+  });
   $('repair').addEventListener('click', async () => { await dbDel('host'); showIdle(); });   // keeps the device key
   $('retry').addEventListener('click', () => {
     const a = $('retry').dataset.action;
@@ -1019,15 +1130,17 @@ function wire() {
     if (sess && sess.phase === 'ready') sendApp(sess, { t: 'vis', fg }).catch(() => {});   // the host pushes only while hidden
     if (fg) reconnectNow();
   });
+  if (window.AJLang) window.AJLang.onChange(relang);
 }
 
 async function main() {
+  applyStatic();
+  renderEstop();
   wire();
-  if (!globalThis.crypto?.subtle || !globalThis.indexedDB || !globalThis.WebSocket) return fatal('这个浏览器缺少必要功能（WebCrypto / IndexedDB / WebSocket）。');
+  if (!globalThis.crypto?.subtle || !globalThis.indexedDB || !globalThis.WebSocket) return fatal('error.missing');
   if (pushSupported()) registration().catch(() => {});
   try { await deviceKey(); } catch (e) {
-    return fatal(e && e.name === 'NotSupportedError' ? '这个浏览器不支持所需的加密算法（X25519）。换最新版 Chrome、Safari 或 Firefox 再试。'
-      : '无法在本机保存设备密钥（可能是隐私模式）。换普通窗口再试。');
+    return fatal(e && e.name === 'NotSupportedError' ? 'error.noCrypto' : 'error.noStore');
   }
   if (pendingLink) { const l = pendingLink; pendingLink = null; return startPairing(l); }
   const host = await dbGet('host');

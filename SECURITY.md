@@ -18,11 +18,11 @@ services, and do not access data that is not yours.
 - The web client (`web/`): anything that leaks keys or plaintext, or lets a page other than the client act as a device.
 - `install.md`: instructions that could make an agent do something unsafe.
 - Our hosted services (`*.agentjarvis.net`) where a finding breaks the promises on
-  <https://alpha.agentjarvis.net/security/> — for example, our servers being able to read message content.
+  <https://agentjarvis.net/security/> — for example, our servers being able to read message content.
 
 Out of scope: findings that need a compromised OS account on the host, social engineering, and issues in
 third-party agents (Claude Code, Codex) themselves.
 
 ## Bounty
 
-There is no bug bounty yet. This is an alpha.
+There is no bug bounty yet. This is a beta.
