@@ -1,0 +1,38 @@
+[project]
+name = "agentjarvis-host"
+dynamic = ["version"]            # single source: jarvis_host/__init__.py (`jarvis --version`)
+description = "agentjarvis host CLI (alpha): talk to your own Claude Code / Codex from your phone, end-to-end encrypted over a blind relay"
+requires-python = ">=3.11"       # tested on 3.11 and 3.13; uv fetches an interpreter by itself when the system one is older
+license = "Apache-2.0"
+dependencies = [
+  "cryptography>=44",   # X25519 / Ed25519 / AES-GCM (OpenSSL)
+  "websockets>=14",     # relay connection
+  "segno>=1.6",         # terminal QR
+]
+classifiers = [
+  "Programming Language :: Python :: 3",
+  "Operating System :: POSIX :: Linux",
+  "Operating System :: MacOS",
+]
+
+[project.urls]
+Homepage = "https://github.com/preangelleo/agentjarvis"
+
+[project.scripts]
+jarvis = "jarvis_host.cli:main"
+
+[dependency-groups]
+dev = ["noiseprotocol==0.3.1"]   # test-only third oracle for the Noise state machine; never imported at runtime
+
+[build-system]
+requires = ["hatchling>=1.24"]
+build-backend = "hatchling.build"
+
+[tool.hatch.version]
+path = "jarvis_host/__init__.py"
+
+[tool.hatch.build.targets.wheel]
+packages = ["jarvis_host"]       # the package + its data files (admin/ page); tests and the frame recorder never ship
+
+[tool.hatch.build.targets.sdist]
+include = ["jarvis_host", "pyproject.toml"]

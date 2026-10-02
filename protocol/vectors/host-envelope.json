@@ -1,0 +1,50 @@
+{
+ "description": "PROTOCOL.md §7 host envelope. Ed25519 private key = bytes 0..31 (seed). Signed message = context + '\\n' + envelope.body (ASCII).",
+ "ed25519_seed_hex": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+ "pk": "A6EHv_POEL4dcN0Y50vAmWfk1jCbpQ1fHdyGZBJVMbg",
+ "channel": "odOLkauSyjHwf6VWaW_iKw",
+ "cases": [
+  {
+   "context": "agentjarvis-host-login-v1",
+   "inner": {
+    "v": 1,
+    "t": "login",
+    "channel": "odOLkauSyjHwf6VWaW_iKw",
+    "ts": 1790000000
+   },
+   "envelope": {
+    "pk": "A6EHv_POEL4dcN0Y50vAmWfk1jCbpQ1fHdyGZBJVMbg",
+    "body": "eyJ2IjoxLCJ0IjoibG9naW4iLCJjaGFubmVsIjoib2RPTGthdVN5akh3ZjZWV2FXX2lLdyIsInRzIjoxNzkwMDAwMDAwfQ",
+    "sig": "lvKr4I73ZcnKFlXppVunxWfmd2p7LW2wyO1q9A-K2w2hsYLqqBj_vCv3RvoSX1pcCXxHnKo-kfgcFi2UIQbuBQ"
+   }
+  },
+  {
+   "context": "agentjarvis-host-report-v1",
+   "inner": {
+    "v": 1,
+    "t": "report",
+    "channel": "odOLkauSyjHwf6VWaW_iKw",
+    "ts": 1790000000,
+    "seq": 1790000000000,
+    "agent": "agentjarvis-host/0.3.0a3",
+    "devices": [
+     {
+      "id": "AAAAAAAAAAAAAAAA",
+      "name": "Leo 的手机",
+      "paired_at": 1789990000,
+      "online": true
+     }
+    ],
+    "pending": {
+     "count": 1,
+     "since": 1789999990
+    }
+   },
+   "envelope": {
+    "pk": "A6EHv_POEL4dcN0Y50vAmWfk1jCbpQ1fHdyGZBJVMbg",
+    "body": "eyJ2IjoxLCJ0IjoicmVwb3J0IiwiY2hhbm5lbCI6Im9kT0xrYXVTeWpId2Y2VldhV19pS3ciLCJ0cyI6MTc5MDAwMDAwMCwic2VxIjoxNzkwMDAwMDAwMDAwLCJhZ2VudCI6ImFnZW50amFydmlzLWhvc3QvMC4zLjBhMyIsImRldmljZXMiOlt7ImlkIjoiQUFBQUFBQUFBQUFBQUFBQSIsIm5hbWUiOiJMZW8g55qE5omL5py6IiwicGFpcmVkX2F0IjoxNzg5OTkwMDAwLCJvbmxpbmUiOnRydWV9XSwicGVuZGluZyI6eyJjb3VudCI6MSwic2luY2UiOjE3ODk5OTk5OTB9fQ",
+    "sig": "rrvH0Nyt3fpa6h-CHn5sFxGyUyAHRz57tM4z2-nHcI6ja8hFwnf-K5vW-s0R2W2Mn9-1DaBBP9jeivioZBp1Ag"
+   }
+  }
+ ]
+}

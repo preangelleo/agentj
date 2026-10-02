@@ -1,0 +1,11 @@
+# never commit secrets, local state or build caches
+.env
+.env.*
+*.pem
+*.key
+.venv/
+__pycache__/
+*.pyc
+node_modules/
+.wrangler/
+.DS_Store

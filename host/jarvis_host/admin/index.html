@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="referrer" content="no-referrer">
+<title>Agent 管理页 · agentjarvis</title>
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="/app.css">
+<script src="/app.js" defer></script>
+</head>
+<body>
+<header class="top">
+  <span class="brand">agentjarvis</span>
+  <span class="tag">本机 Agent 管理页</span>
+  <span class="who mono" id="top-host"></span>
+  <button class="btn btn-small" id="logout" type="button">退出</button>
+</header>
+
+<main class="wrap">
+  <div class="msg" id="msg" role="status" aria-live="polite" hidden></div>
+  <div id="app" hidden>
+  <section class="hero" aria-labelledby="agent-name">
+    <h1 id="agent-name">…</h1>
+    <p class="sub" id="agent-sub"></p>
+    <p class="note" id="local-note">这是这台主机自己的 Agent 管理页，只在本机打开（127.0.0.1），批准遥控器只能在这里或终端 <code>jarvis pair</code> 完成。</p>
+  </section>
+
+  <section class="card" aria-labelledby="h-conn">
+    <h2 id="h-conn">连接状态</h2>
+    <dl class="kv">
+      <dt>jarvis serve</dt><dd id="serve-state">…</dd>
+      <dt>中继</dt><dd id="relay-state">…</dd>
+      <dt>Dashboard 公司账号</dt><dd id="dash-state">…</dd>
+    </dl>
+    <p class="small" id="serve-hint" hidden>配对需要 <code>jarvis serve</code> 在运行：在另一个终端运行它。不运行也可以在这里改名、解绑遥控器。</p>
+  </section>
+
+  <section class="card" aria-labelledby="h-devs">
+    <h2 id="h-devs">遥控器 <span id="dev-count">0 / 5</span></h2>
+    <p class="small" id="dev-empty" hidden>还没有遥控器。用下面的「添加遥控器」配对一台手机。</p>
+    <ul class="devs" id="dev-list"></ul>
+  </section>
+
+  <section class="card" aria-labelledby="h-pair" id="pair">
+    <h2 id="h-pair">添加遥控器</h2>
+    <div id="pair-idle">
+      <p class="small">在这里显示二维码，用手机相机扫；手机连上后，看着手机，把手机上的 6 位安全码输入这里。</p>
+      <div class="row"><button class="btn btn-strong" id="pair-start" type="button">添加遥控器</button></div>
+    </div>
+    <div id="pair-result" class="result" hidden></div>
+
+    <div id="pair-waiting" hidden>
+      <p>用手机相机扫这个二维码（<span id="pair-expires"></span>，只能用一次）。</p>
+      <img id="pair-qr" class="qr" alt="配对二维码" width="264" height="264">
+      <div class="row">
+        <button class="btn btn-small" id="pair-show-link" type="button">显示链接</button>
+        <button class="btn btn-small" id="pair-cancel" type="button">取消</button>
+      </div>
+      <div id="pair-link-box" class="warn" hidden>
+        <p class="small">这个链接就是配对密钥：只发给你自己的手机，别发给别人。</p>
+        <code id="pair-link" class="link"></code>
+      </div>
+    </div>
+
+    <div id="pair-pending" hidden>
+      <p>一台设备已连上（它自称「<span id="pair-device-name"></span>」，<strong>名字由设备自己填，不可信</strong>）。</p>
+      <p class="small">安全码只显示在手机屏幕上——这个页面永远不会显示它。还剩 <span id="pair-deadline"></span> 秒。</p>
+      <label class="label" for="pair-code">看着手机，输入手机上的 6 位安全码（只看手机屏幕上的 6 位码）</label>
+      <input class="input code-input" id="pair-code" inputmode="numeric" autocomplete="off" maxlength="6" pattern="[0-9]{6}" spellcheck="false">
+      <label class="label" for="pair-pass">批准口令（只有你知道；在终端用 <code>jarvis passphrase set</code> 设置）</label>
+      <input class="input" id="pair-pass" type="password" autocomplete="off" maxlength="256" spellcheck="false" data-lpignore="true" data-1p-ignore>
+      <p class="warn small" id="pair-pass-unset" hidden>还没有设置批准口令：先在这台电脑的终端运行 <code>jarvis passphrase set</code>，否则无法批准。</p>
+      <p class="warn small" id="pair-pass-wrong" hidden></p>
+      <div class="row">
+        <button class="btn btn-strong" id="pair-approve" type="button" disabled>批准</button>
+        <button class="btn btn-danger" id="pair-deny" type="button">拒绝</button>
+      </div>
+    </div>
+
+    <div id="pair-full" hidden>
+      <p>一台新设备在等批准（它自称「<span id="pair-full-name"></span>」，名字由设备自己填，不可信）。</p>
+      <p class="warn">已达 5 台上限，需先解绑一台遥控器才能添加新的。选一台解绑（它会立即断开，再用要重新扫码配对）：</p>
+      <ul class="devs" id="pair-full-list"></ul>
+      <div class="row"><button class="btn btn-danger" id="pair-full-deny" type="button">不解绑，拒绝新设备</button></div>
+    </div>
+  </section>
+
+  <section class="card" aria-labelledby="h-name" id="name-card">
+    <h2 id="h-name">Agent 名</h2>
+    <p class="small">员工每天跟它说话时，它就是一个有名字的 Agent。绑定了 Dashboard 时，名字先在 Dashboard 改（公司内不能重名），成功才改本机。</p>
+    <label class="label" for="name-input">新名字</label>
+    <div class="row">
+      <input class="input" id="name-input" maxlength="64" autocomplete="off" placeholder="给这个 Agent 起个名字">
+      <button class="btn btn-strong" id="name-save" type="button">保存</button>
+    </div>
+    <div class="chips" id="name-chips" aria-label="建议名"></div>
+    <div class="msg" id="name-msg" role="status" hidden></div>
+    <div class="chips" id="name-suggestions" aria-label="可用的名字" hidden></div>
+  </section>
+
+  <section class="card" aria-labelledby="h-remote">
+    <h2 id="h-remote">Dashboard 远程解绑</h2>
+    <label class="switch"><input type="checkbox" id="remote-unbind"> <span>允许 Dashboard 的所有者请求本机解绑一台遥控器</span></label>
+    <p class="small" id="remote-unbind-note"></p>
+  </section>
+
+  <section class="card tip" aria-labelledby="h-tip">
+    <h2 id="h-tip">使用建议</h2>
+    <p>建议一个员工对应一个 Agent；5 台遥控器是同一个人的手机、平板、电脑。多人同时指挥同一个 Agent 容易互相打架。（技术上不限制。）</p>
+    <p class="small">一个 Agent 就是一个计费席位，它只能运行在一台电脑或服务器上。它的名字只是个标签，就像给宠物起名，叫什么都行。</p>
+    <p class="small">配对二维码 / 链接永远只由本机显示；Dashboard、邮件或客服给你的二维码都不要扫。</p>
+  </section>
+  </div>
+</main>
+
+<footer class="foot">
+  <span id="foot-version">agentjarvis 主机端</span> · <span>通道 <span class="mono" id="foot-channel"></span></span>
+</footer>
+</body>
+</html>

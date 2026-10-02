@@ -1,0 +1,126 @@
+/* agentjarvis web client. Same palette / type roles as the A1 site (site/public/assets/site.css): owner design language,
+   system font stacks only, nothing loaded from other domains. */
+:root {
+  --lotion: #faf9f5;
+  --salt: #f0eee6;
+  --sooty: #141414;
+  --noir: #2c2b26;
+  --last-straw: #e3dacc;
+  --black-mana: #858585;
+  --assassin: #2d4f83;
+  --peek-a-blue: #c7dedc;
+  --banana-republic: #ffe292;
+  --channel: #fbc8c6;
+  --strawberry-field: #f7827e;
+  --snowy-mint: #dff3d1;
+  --sage-sensation: #b7e396;
+
+  --bg: var(--lotion);
+  --surface: var(--salt);
+  --text: var(--sooty);
+  --muted: #6b6a63;
+  --line: var(--last-straw);
+  --bubble-in: var(--salt);
+  --bubble-out: var(--assassin);
+  --bubble-out-text: var(--lotion);
+
+  --font-body: "Ubuntu", "Trebuchet MS", Tahoma, "PingFang SC", "Hiragino Sans GB", "Noto Sans CJK SC",
+    "Source Han Sans SC", "Microsoft YaHei", ui-sans-serif, system-ui, sans-serif;
+  --font-title: "Lexend", "Trebuchet MS", Tahoma, "PingFang SC", "Noto Sans CJK SC", "Microsoft YaHei",
+    ui-sans-serif, system-ui, sans-serif;
+  --font-mono: ui-monospace, "SFMono-Regular", "Ubuntu Mono", Menlo, Consolas, "Noto Sans Mono CJK SC", monospace;
+  --radius: 10px;
+}
+
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body { margin: 0; background: var(--bg); color: var(--text); font-family: var(--font-body); font-size: 16px; line-height: 1.6;
+  overflow-wrap: anywhere; min-height: 100dvh; display: flex; flex-direction: column; }
+[hidden] { display: none !important; }
+code { font-family: var(--font-mono); font-size: 0.9em; background: var(--surface); border: 1px solid var(--line); border-radius: 4px; padding: 0 0.3em; }
+h1 { font-family: var(--font-title); font-size: clamp(1.4rem, 5.5vw, 1.9rem); line-height: 1.3; margin: 0.6em 0 0.4em; }
+h2 { font-family: var(--font-title); font-size: 1.15rem; margin: 0 0 0.5em; }
+.lead { font-size: 1.05rem; }
+.small { font-size: 0.875rem; color: var(--muted); }
+.center { text-align: center; }
+
+.top { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem 1rem; padding: 0.5rem 1rem;
+  border-bottom: 1.5px dashed var(--salt); position: sticky; top: 0; z-index: 2; background: var(--bg); }  /* badge always visible */
+.brand { font-family: var(--font-title); font-weight: 700; font-size: 1.1rem; }
+.badge { margin-left: auto; min-height: 44px; font: inherit; font-size: 0.85rem; font-weight: 700; padding: 0.3rem 0.8rem;
+  border-radius: 999px; background: var(--banana-republic); color: var(--sooty); border: 1px solid #e6c766; cursor: pointer; }
+
+.panel.info { margin: 0.75rem 1rem 0; padding: 1rem 1.1rem; background: var(--surface); border-radius: var(--radius); border: 1px solid var(--line); }
+.panel.info ul { padding-left: 1.2em; margin: 0 0 0.8em; }
+.hash { display: block; font-size: 0.8rem; word-break: break-all; }
+
+.wrap { width: 100%; max-width: 44rem; margin: 0 auto; padding: 0 1rem 1rem; flex: 1; display: flex; flex-direction: column; }
+.status { margin: 0.75rem 0 0; font-size: 0.9rem; display: inline-flex; align-items: center; gap: 0.45rem; color: var(--muted); }
+.status::before { content: ""; width: 0.6rem; height: 0.6rem; border-radius: 50%; background: var(--black-mana); flex: none; }
+.status[data-state="ready"]::before { background: #3f9b52; }
+.status[data-state="connecting"]::before, .status[data-state="waiting-host"]::before, .status[data-state="pairing"]::before,
+.status[data-state="awaiting-approval"]::before { background: #d4a72c; }
+.status[data-state="revoked"]::before, .status[data-state="error"]::before { background: var(--strawberry-field); }
+
+.view { display: flex; flex-direction: column; }
+.row { display: flex; flex-wrap: wrap; gap: 0.6rem; margin: 0.6rem 0; }
+.btn { min-height: 44px; min-width: 44px; padding: 0.55rem 1.1rem; border-radius: 8px; font: inherit; font-weight: 500;
+  border: 1px solid var(--line); background: var(--salt); color: var(--sooty); cursor: pointer; }
+.btn:hover { border-color: var(--black-mana); }
+.btn-strong { background: var(--assassin); border-color: var(--assassin); color: var(--lotion); }
+.btn-strong:hover { background: #24406b; }
+.btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.btn:focus-visible, .badge:focus-visible, textarea:focus-visible { outline: 2px solid var(--assassin); outline-offset: 2px; }
+.label { font-weight: 700; margin-top: 1rem; }
+textarea { font: inherit; color: var(--text); background: var(--lotion); border: 1px solid var(--line); border-radius: 8px;
+  padding: 0.55rem 0.7rem; width: 100%; max-width: 100%; min-height: 44px; resize: vertical; }
+#pair-link { font-family: var(--font-mono); font-size: 0.85rem; margin-top: 0.35rem; }
+.error { color: #9b2c22; }
+
+.scan { margin: 0.4rem 0; display: flex; flex-direction: column; gap: 0.5rem; }
+.scan video { width: 100%; max-width: 28rem; aspect-ratio: 1; object-fit: cover; border-radius: var(--radius); background: #000; }
+
+.sas { font-family: var(--font-mono); font-size: clamp(3rem, 16vw, 5rem); font-weight: 700; letter-spacing: 0.12em;
+  text-align: center; margin: 1rem 0 0.5rem; padding: 0.6rem 0; background: var(--surface); border-radius: var(--radius);
+  font-variant-numeric: tabular-nums; }
+
+.chat { flex: 1; min-height: 0; }
+.messages { list-style: none; margin: 0.75rem 0; padding: 0; display: flex; flex-direction: column; gap: 0.5rem; flex: 1;
+  overflow-y: auto; min-height: 12rem; }
+.messages li { scroll-margin-bottom: 6rem; max-width: 85%; padding: 0.5rem 0.8rem; border-radius: 14px; white-space: pre-wrap; }
+.messages li[data-dir="in"] { align-self: flex-start; background: var(--bubble-in); border-bottom-left-radius: 4px; }
+.messages li[data-dir="out"] { align-self: flex-end; background: var(--bubble-out); color: var(--bubble-out-text); border-bottom-right-radius: 4px; }
+.composer { display: flex; gap: 0.5rem; align-items: flex-end; position: sticky; bottom: 0; background: var(--bg);
+  padding: 0.5rem 0 calc(0.5rem + env(safe-area-inset-bottom)); }
+.composer textarea { flex: 1; resize: none; max-height: 10rem; }
+
+@media (prefers-color-scheme: dark) {
+  :root { --bg: var(--sooty); --surface: var(--noir); --text: var(--lotion); --muted: #b9b7ae; --line: var(--black-mana);
+    --bubble-in: var(--noir); --bubble-out: #3a5f96; }
+  .top { border-bottom-color: var(--noir); }
+  textarea { background: var(--noir); }
+  .btn { background: var(--noir); color: var(--lotion); }
+  .btn-strong { background: #3a5f96; border-color: #3a5f96; }
+  .error { color: var(--strawberry-field); }
+}
+
+/* L1: Agent status, approval cards, push row (PROTOCOL §8–§9) */
+.agent-status { margin: 0.6rem 0 0; padding: 0.45rem 0.8rem; border-radius: 999px; font-size: 0.9rem; font-weight: 700;
+  align-self: flex-start; background: var(--surface); border: 1px solid var(--line); }
+.agent-status[data-s="working"], .agent-status[data-s="waiting"], .agent-status[data-s="idle"], .agent-status[data-s="down"] { color: var(--sooty); }
+.agent-status[data-s="working"] { background: var(--peek-a-blue); border-color: #a9c9c6; }
+.agent-status[data-s="waiting"] { background: var(--banana-republic); border-color: #e6c766; }
+.agent-status[data-s="idle"] { background: var(--snowy-mint); border-color: var(--sage-sensation); }
+.agent-status[data-s="down"] { background: var(--channel); border-color: var(--strawberry-field); }
+.push-row { display: flex; flex-wrap: wrap; align-items: center; gap: 0.4rem 0.8rem; margin: 0.5rem 0 0; }
+.messages li[data-from="notice"] { align-self: center; background: transparent; color: var(--muted); font-size: 0.875rem; }
+.messages li .who { display: block; font-size: 0.75rem; opacity: 0.8; }
+.messages li.ask { align-self: stretch; max-width: 100%; background: #fff7dc; border: 1.5px solid #e6c766; color: var(--sooty); }
+.ask-title { margin: 0 0 0.4rem; font-weight: 700; }
+.ask-summary { margin: 0; font-family: var(--font-mono); font-size: 0.85rem; white-space: pre-wrap; word-break: break-word;
+  background: var(--lotion); border: 1px solid var(--line); border-radius: 6px; padding: 0.5rem 0.6rem; max-height: 14rem; overflow: auto; }
+.ask-meta { margin: 0.4rem 0 0; font-size: 0.875rem; color: #5c5b55; }
+.ask-row { display: flex; gap: 0.6rem; margin-top: 0.5rem; }
+.ask-row .btn { flex: 1; min-height: 56px; font-size: 1.05rem; }
+.messages li.ask[data-result="allow"] { border-color: var(--sage-sensation); background: var(--snowy-mint); }
+.messages li.ask[data-result="deny"], .messages li.ask[data-result="timeout"] { border-color: var(--strawberry-field); background: #fdeceb; }

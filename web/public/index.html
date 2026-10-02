@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex,nofollow">
+<meta name="referrer" content="no-referrer">
+<meta name="color-scheme" content="light dark">
+<title>Agent Jarvis · 网页版（Alpha）</title>
+<meta name="theme-color" content="#faf9f5">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Jarvis">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="stylesheet" href="app.css">
+<script type="module" src="app.js"></script>
+</head>
+<body>
+<header class="top">
+  <span class="brand">Agent Jarvis</span>
+  <button type="button" id="badge" class="badge" aria-expanded="false" aria-controls="badge-panel">网页版 · 改了会被发现（建设中）</button>
+</header>
+
+<section id="badge-panel" class="panel info" hidden>
+  <h2>这个网页版有多安全</h2>
+  <ul>
+    <li>你的手机和你的电脑之间端到端加密，我们的中继只转发看不懂的密文。</li>
+    <li>但这个网页本身是我们下发的。我们如果改了页面代码，就能看到你在这里看到的内容。所以网页版这一级的目标是「改了会被发现」，不是「零访问」。</li>
+    <li>alpha 还没做到「会被发现」：源码还没公开，版本哈希也还没写进签名的公开发布记录。今天下面这个数字只能证明「和我们说的版本一致」，还不是独立核对；而且页面自己显示的数字也可能被改。</li>
+    <li>零访问的入口将是原生 App（计划中，还没有）：界面打包进安装包、签名分发，不从我们这里临时取代码。</li>
+  </ul>
+  <p class="small">本页版本哈希（SHA-256，覆盖页面的每个文件）：</p>
+  <p><code id="version-hash" class="hash">—</code></p>
+  <p class="small">源码公开后的核对方法：在公开源码的根目录运行 <code>node web/build.mjs --print-hash</code>，与公开发布记录里的哈希比对；再把你手机上实际加载的每个文件下载下来，与 <code>version.json</code> 里的每个哈希比对。只有你自己算出来的才算数。</p>
+  <button type="button" id="badge-close" class="btn">收起</button>
+</section>
+
+<main class="wrap">
+  <p id="status" class="status" data-state="idle" role="status" aria-live="polite">未配对</p>
+
+  <section id="pair-view" class="view" hidden>
+    <h1>连上你的电脑</h1>
+    <p class="lead">在电脑上运行 <code>jarvis pair</code>，然后扫二维码，或把链接粘贴到这里。</p>
+    <div class="row">
+      <button type="button" id="scan" class="btn btn-strong">扫码</button>
+    </div>
+    <p id="scan-hint" class="small" hidden>用系统相机扫描电脑上的二维码</p>
+    <div id="scan-box" class="scan" hidden>
+      <video id="scan-video" playsinline muted></video>
+      <button type="button" id="scan-stop" class="btn">停止扫码</button>
+    </div>
+    <label for="pair-link" class="label">或粘贴配对链接</label>
+    <textarea id="pair-link" rows="3" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="粘贴 jarvis pair 显示的链接"></textarea>
+    <div class="row">
+      <button type="button" id="pair-go" class="btn btn-strong">开始配对</button>
+    </div>
+    <p id="pair-error" class="error" hidden></p>
+  </section>
+
+  <section id="sas-view" class="view" hidden>
+    <h1>核对安全码</h1>
+    <p id="sas" class="sas" aria-label="安全码">------</p>
+    <p class="lead center">在电脑终端输入这 6 位数字并回车</p>
+    <p class="small center">数字只在这里显示。批准后本页会自动进入对话。</p>
+  </section>
+
+  <section id="chat-view" class="view chat" hidden>
+    <p id="agent-status" class="agent-status" data-s="none" role="status" aria-live="polite" hidden></p>
+    <div id="push-row" class="push-row" hidden>
+      <span id="push-text" class="small"></span>
+      <button type="button" id="push-on" class="btn" hidden>开启锁屏提醒</button>
+    </div>
+    <ul id="messages" class="messages" aria-live="polite"></ul>
+    <div class="composer">
+      <textarea id="msg-input" rows="1" maxlength="4000" placeholder="说点什么，回车发送" aria-label="消息"></textarea>
+      <button type="button" id="send" class="btn btn-strong">发送</button>
+    </div>
+  </section>
+
+  <section id="revoked-view" class="view" hidden>
+    <h1>此设备已被主机移除</h1>
+    <p class="lead">电脑不再认这台设备。要继续用，在电脑上运行 <code>jarvis pair</code> 重新配对。</p>
+    <div class="row"><button type="button" id="repair" class="btn btn-strong">重新配对</button></div>
+  </section>
+
+  <section id="error-view" class="view" hidden>
+    <h1>连接断开</h1>
+    <p id="error-text" class="lead"></p>
+    <div class="row"><button type="button" id="retry" class="btn btn-strong">重试</button></div>
+  </section>
+</main>
+</body>
+</html>
