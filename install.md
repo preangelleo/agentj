@@ -185,7 +185,7 @@ Tell your human, in their language:
 2. Register a **company**. *Individuals: any name works as the company name.*
 3. Buy **1 seat** (one seat = one Agent = this computer): **$99 per month**, paid on Stripe's page. If you were given a
    promo code, type it into the **promo code** box in the Dashboard's billing panel *before* pressing "Buy seats" — the
-   Stripe page then shows **$20 per month** (for life, while the subscription stays active; one use per code).
+   Stripe page then shows **$20 per month for life** (while the subscription stays active; one use per code).
 4. Keep the Dashboard page open; the next step needs it.
 
 Wait until they say it is done. You never see the email code, the card or the promo code.
