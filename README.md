@@ -19,6 +19,8 @@ from anywhere.
 your credentials. What we can and cannot see, and what is not done yet, is listed item by item at
 <https://agentj.app/security/>.
 
+The service is **$20 per seat per month**. You pay your AI model provider separately.
+
 ## Install
 
 The real guide is <https://agentj.app/install.md>. Tell your AI agent: **"read https://agentj.app/install.md and do it"**.
