@@ -234,9 +234,10 @@ class InstallSkill(Base):
                                       "linked_at": 1, "last_seq": 0})
         ok = "https://api.agentjarvis.net/v1/plaza/dl/" + fx.URL_PART
         self.assertEqual(cloud.transfer_url(self.e.st, ok, "dl"), ok)
-        for bad in ("http://api.agentjarvis.net/v1/plaza/dl/" + fx.URL_PART, "https://api.agentjarvis.net:8443/v1/plaza/dl/" + fx.URL_PART,
-                    "https://user@api.agentjarvis.net/v1/plaza/dl/" + fx.URL_PART, "https://api.agentjarvis.net.evil.example/v1/plaza/dl/" + fx.URL_PART,
-                    "https://alpha-app.agentjarvis.net/v1/plaza/dl/" + fx.URL_PART):
+        host = "api.agentjarvis.net"
+        origins = ("http://" + host, "https://" + host + ":8443", "https://user" + "@" + host, "https://" + host + ".evil.example",
+                   "https://alpha-app.agentjarvis.net")
+        for bad in (o + "/v1/plaza/dl/" + fx.URL_PART for o in origins):
             with self.subTest(bad), self.assertRaises(cloud.CloudError):
                 cloud.transfer_url(self.e.st, bad, "dl")
         got = []
