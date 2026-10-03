@@ -205,7 +205,8 @@ def control_sockets(environ=None, allow_docker: bool = False) -> list[str]:
                 add(v[len("unix://"):])
     uid = os.getuid()
     try:
-        lines = open("/proc/net/unix", encoding="utf-8", errors="replace").read().splitlines()[1:]
+        with open("/proc/net/unix", encoding="utf-8", errors="replace") as fh:
+            lines = fh.read().splitlines()[1:]
     except OSError:
         lines = []
     for ln in lines:

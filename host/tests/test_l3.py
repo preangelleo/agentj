@@ -46,7 +46,7 @@ def _cli(*args, env=None, timeout=60, stdin=subprocess.DEVNULL):
 class Version(unittest.TestCase):
     def test_one_source(self):
         v = agentj.__version__
-        self.assertEqual(v, "0.10.1a1")
+        self.assertEqual(v, "0.10.2a1")
         self.assertEqual(cloud.VERSION, v)
         self.assertEqual(cloud.AGENT, f"agentj/{v}")
         r = _cli("--version")
@@ -177,6 +177,7 @@ class RealSystemdService(unittest.TestCase):
         self.assertEqual(r.returncode, 0, r.stderr + r.stdout)
         self.assertNotIn(SECRET, r.stdout + r.stderr)
         self.assertIn("CLAUDE_CODE_OAUTH_TOKEN", r.stdout, "the human is told the service cannot see the variable")
+        self.assertIn("`agentj doctor`", r.stdout.splitlines()[-1], "the last line: run doctor next, report every !")
         text = self.unit.read_text()
         self.assertNotIn(SECRET, text)
         self.assertIn(f'Environment="AGENTJ_STATE_DIR={self.st.root}"', text)

@@ -2,7 +2,9 @@
 
   check <draft.json>   layer 1 (deterministic redaction) + layer 2 (Jev, only with the customer's OPENROUTER_API_KEY);
                        writes <draft>.checked.json (0600), prints the redacted JSON + the verdict.
-                       exit 0 = OK to show the human · 2 = blocked by layer 2 · 3 = layer 2 unavailable · 1 = error
+                       exit 0 = OK to show the human · 2 = blocked by layer 2 · 3 = layer 2 unavailable (not a
+                       rejection: the human reads it, then send --owner-confirmed) · 1 = error, incl. a draft the API
+                       would refuse (missing / wrong fields, named; nothing written, layer 2 not called)
   send <checked.json>  re-runs both layers on the exact bytes; posts them only if they pass, or — when layer 2 is
                        unavailable / blocked — only with --owner-confirmed (the human read it and said yes). Stores
                        {id, receipt, created_at} in <state>/feedback/receipts.json (0600); prints the fb_ id only.
@@ -140,6 +142,63 @@ def _verdict_line(v: privacy.Verdict, threshold: float) -> str:
     return f"layer 2 unavailable: {v.reason} — only layer 1 ran"
 
 
+# ------------------------------------------------------------------ the server's shape (worker/src/feedback.ts validate())
+STAGES = ("0-safety", "1-verify", "2-probe", "3-plan", "4-human", "5-agent-cli", "6-host", "7-bind", "8-pair", "9-init",
+          "10-migrate", "11-acceptance", "12-handover", "R-rollback", "A-mainland", "B-failure", "other")
+HOST_FORMS = ("mac", "windows", "linux-desktop", "linux-server", "unknown")
+AGENT_KINDS = ("claude-code", "codex", "opencode", "other")
+MAX_TEXT, MAX_BODY = 16384, 40 * 1024
+# (field, max length in UTF-16 units like the server counts, required, allowed values)
+STRING_FIELDS = (("stage", 20, True, STAGES), ("host_form", 20, True, HOST_FORMS), ("os", 200, True, None),
+                 ("agent_kind", 20, True, AGENT_KINDS), ("agent_version", 100, True, None),
+                 ("install_md_version", 50, True, None), ("problem", MAX_TEXT, True, None), ("resolution", MAX_TEXT, False, None))
+FIELDS = tuple(f[0] for f in STRING_FIELDS) + ("resolved", "owner_informed")
+
+
+def _units(s: str) -> int:
+    return len(s.encode("utf-16-le")) // 2
+
+
+def shape_problems(obj: dict) -> list[str]:
+    """Everything the feedback API would answer `400 invalid` for, as plain lines (empty = the shape is fine). The same
+    rules as the server, so `check` fails here instead of `send` getting an HTTP 400."""
+    out, missing = [], []
+    unknown = [k for k in obj if k not in FIELDS]
+    if unknown:
+        out.append("unknown field(s), remove them: " + ", ".join(sorted(map(str, unknown))))
+    for k, mx, req, allowed in STRING_FIELDS:
+        v = obj.get(k)
+        if v is None or v == "":
+            if req:
+                missing.append(k)
+            continue
+        if not isinstance(v, str):
+            out.append(f"{k}: must be text (a JSON string)")
+        elif _units(v) > mx:
+            out.append(f"{k}: too long ({_units(v)} characters, at most {mx})")
+        elif allowed and v not in allowed:
+            out.append(f"{k}: \"{clean_line(v, 40)}\" is not allowed; one of: {' · '.join(allowed)}")
+    if "resolved" not in obj:
+        missing.append("resolved")
+    elif not isinstance(obj["resolved"], bool):
+        out.append("resolved: must be true or false")
+    elif obj["resolved"] and not obj.get("resolution"):
+        out.append("resolution: required when resolved is true (how you got past it)")
+    if "owner_informed" not in obj:
+        missing.append("owner_informed")
+    elif obj["owner_informed"] is not True:
+        out.append("owner_informed: must be true; it means your human has read exactly what is sent")
+    if missing:
+        out.insert(0, "missing: " + ", ".join(missing))
+    return out
+
+
+def _shape_refusal(probs: list[str], what: str) -> str:
+    return (f"{what}: the report is not in the shape the feedback API accepts (install.md Step 2, the field table):\n"
+            + "\n".join("  - " + p for p in probs)
+            + "\nFix the draft and run `agentj feedback check` on it again.")
+
+
 # ------------------------------------------------------------------ commands
 def run_check(draft: pathlib.Path, threshold: float = privacy.THRESHOLD, *, transport=None, env=None, identity=None,
               out=None) -> int:
@@ -148,9 +207,15 @@ def run_check(draft: pathlib.Path, threshold: float = privacy.THRESHOLD, *, tran
     host, user = identity if identity is not None else privacy.local_identity()
     hits: collections.Counter = collections.Counter()
     redacted = privacy.redact_draft(obj, host, user, hits)
-    v = privacy.layer2(redacted, threshold=threshold, env=env, transport=transport)
     dest = checked_path(draft)
     text = json.dumps(redacted, ensure_ascii=False, indent=2) + "\n"
+    probs = shape_problems(redacted)
+    if len(text.encode()) > MAX_BODY:
+        probs.append(f"the whole report is {len(text.encode())} bytes; at most {MAX_BODY}: shorten problem / resolution")
+    if probs:    # before layer 2 (a paid call) and before writing anything: `send` would only get HTTP 400
+        print(_shape_refusal(probs, "not checked, nothing written"), file=out)
+        return EXIT_ERROR
+    v = privacy.layer2(redacted, threshold=threshold, env=env, transport=transport)
     _write_private(dest, text.encode())
     print(_layer1_summary(hits), file=out)
     print(text, end="", file=out)
@@ -164,9 +229,18 @@ def run_check(draft: pathlib.Path, threshold: float = privacy.THRESHOLD, *, tran
               f"again — or, if your human reads it and says it is fine to send: agentj feedback send {dest} --owner-confirmed",
               file=out)
         return EXIT_BLOCKED
-    print("next: your human must read the JSON above and confirm explicitly; only after their yes: "
-          f"agentj feedback send {dest} --owner-confirmed", file=out)
+    print(UNAVAILABLE_NEXT.format(dest=dest), file=out)
     return EXIT_UNAVAILABLE
+
+
+# exit 3 of `check`: said so that the AI needs no extra round-trip to work out what to do
+UNAVAILABLE_NEXT = (
+    "what exit 3 means: the second, automatic privacy check could not run here (it needs an OpenRouter key on this "
+    "computer, or the network to reach it). The report is NOT rejected; the first pass did run and already replaced what "
+    "it recognised. Do not look for, ask for or set a key yourself.\n"
+    "next: show your human the JSON above exactly as printed and ask them to read it for anything private (names, "
+    "addresses, keys, paths, account details). Only if they say yes: agentj feedback send {dest} --owner-confirmed\n"
+    "If they want something removed, edit the draft and run check again. If they say no, do not send it.")
 
 
 def run_send(checked: pathlib.Path, *, owner_confirmed: bool = False, session_file: str = SESSION_FILE,
@@ -180,6 +254,12 @@ def run_send(checked: pathlib.Path, *, owner_confirmed: bool = False, session_fi
     if privacy.redact_draft(obj, host, user) != obj:
         print("refused: layer 1 would still change this file (edited after check?). Run `agentj feedback check` on the draft "
               "again and send the new .checked.json.", file=out)
+        return EXIT_ERROR
+    probs = shape_problems(obj)
+    if len(raw) > MAX_BODY:
+        probs.append(f"the whole report is {len(raw)} bytes; at most {MAX_BODY}: shorten problem / resolution")
+    if probs:
+        print(_shape_refusal(probs, "not sent"), file=out)
         return EXIT_ERROR
     v = privacy.layer2(obj, threshold=threshold, env=env, transport=transport)
     print(_verdict_line(v, threshold), file=out)
@@ -303,8 +383,8 @@ def cmd_replies(a) -> None:
 
 def add_parser(sub) -> None:
     fb = sub.add_parser("feedback", help="安装反馈：check 脱敏+隐私检查 · send 发送 · replies 读回复 / install feedback with a privacy gate",
-                        description=__doc__.split("\n\n")[0] + " Exit codes: 0 ok · 1 error · 2 blocked by layer 2 · "
-                        "3 layer 2 unavailable (needs the human's explicit yes).")
+                        description=__doc__.split("\n\n")[0] + " Exit codes: 0 ok · 1 error (also: missing or wrong "
+                        "fields, named) · 2 blocked by layer 2 · 3 layer 2 unavailable (needs the human's explicit yes).")
     fs = fb.add_subparsers(dest="feedback_cmd", required=True)
     c = fs.add_parser("check", help="脱敏 + 隐私检查，写出 <draft>.checked.json / redact + check, write <draft>.checked.json")
     c.add_argument("draft", help="the draft feedback JSON (FEEDBACK_API.md fields)")

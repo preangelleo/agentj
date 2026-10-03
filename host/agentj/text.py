@@ -136,3 +136,13 @@ def machine_name() -> str | None:
         return clean_hostname(socket.gethostname())
     except OSError:
         return None
+
+
+def ask_yes(question: str, read=None) -> bool:
+    """The one y/N question of the CLI (`agentj login`, `agentj update apply`, `agentj docs-rule --write`): only `y` / `yes`
+    (any case) is a yes; Enter, anything else or end of input is a no."""
+    try:
+        ans = (read or input)(question)
+    except EOFError:
+        ans = ""
+    return ans.strip().lower() in ("y", "yes")

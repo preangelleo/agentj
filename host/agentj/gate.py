@@ -131,5 +131,5 @@ MESSAGES = {
     "too_short": f"批准口令至少 {MIN_LEN} 个字符。",
     "too_long": f"批准口令最多 {MAX_LEN} 个字符。",
     "mismatch": "两次输入不一致。",
-    "exists": "已经设置过批准口令；要改用 `agentj passphrase change`。",
+    "exists": "已经设置过批准口令；要改用 `agentj passphrase change`，忘了就用 `agentj passphrase reset`（所有手机都要重新配对）。",
 }

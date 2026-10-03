@@ -264,16 +264,74 @@ def install(st) -> dict:
         if old:
             notes.append(f"旧服务 {old['name']} 已停止并删除 / the old service {old['name']} was stopped and removed")
         _write(path, plist_bytes(n, argv, env, str(st.root / "service.log")), 0o644)
+        # `launchctl enable` writes a permanent record into launchd's override database that only root can remove: call it
+        # only when the label is disabled there (a bootstrap would fail), remember that, and put it back on uninstall
+        if launchd_disabled(n) is True:
+            _launchctl("enable", f"{_gui()}/{n}")
+            _remember_enabled(st, n)
         _launchctl("bootout", f"{_gui()}/{n}")
         r = _launchctl("bootstrap", _gui(), path)
         if r.returncode != 0:
             raise ServiceError("launchctl_failed", (r.stderr or r.stdout).strip()[:300])
-        _launchctl("enable", f"{_gui()}/{n}")
         return {"kind": "launchd", "name": n, "path": path, "argv": argv + SERVE_ARGS, "notes": notes}
     raise ServiceError("unsupported_os")
 
 
-def uninstall() -> dict:
+_DISABLED_RX = r'^\s*"{label}"\s*=>\s*(disabled|enabled|true|false)\s*$'
+
+
+def launchd_disabled(n: str) -> bool | None:
+    """From `launchctl print-disabled gui/<uid>`: True = the label is disabled, False = an explicit "enabled" record,
+    None = no record (the default: enabled) or launchctl could not answer. Both formats: `=> disabled|enabled` (current
+    macOS) and `=> true|false` (older; true = disabled)."""
+    try:
+        r = _launchctl("print-disabled", _gui(), timeout=10)
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    if r.returncode != 0:
+        return None
+    m = re.search(_DISABLED_RX.format(label=re.escape(n)), r.stdout or "", re.M)
+    return None if not m else m.group(1) in ("disabled", "true")
+
+
+def _marker(st) -> str:
+    return str(st.root / "launchd-enabled.json")   # labels we enabled from "disabled" (to put back on uninstall)
+
+
+def _remember_enabled(st, n: str) -> None:
+    import json
+    p = _marker(st)
+    try:
+        with open(p, encoding="utf-8") as f:
+            labels = set(json.load(f).get("labels") or [])
+    except (OSError, ValueError, AttributeError):
+        labels = set()
+    labels.add(n)
+    _write(p, json.dumps({"labels": sorted(labels)}).encode(), 0o600)
+
+
+def _restore_disabled(st, n: str) -> bool:
+    """Uninstall: a label we had to enable was disabled before — disable it again (that restores the record that was
+    there, it adds none). → True when it did."""
+    import json
+    p = _marker(st)
+    try:
+        with open(p, encoding="utf-8") as f:
+            labels = set(json.load(f).get("labels") or [])
+    except (OSError, ValueError, AttributeError):
+        return False
+    if n not in labels:
+        return False
+    _launchctl("disable", f"{_gui()}/{n}")
+    labels.discard(n)
+    if labels:
+        _write(p, json.dumps({"labels": sorted(labels)}).encode(), 0o600)
+    else:
+        os.unlink(p)
+    return True
+
+
+def uninstall(st=None) -> dict:
     n, plat = name(), platform()
     if plat == "linux":
         path = os.path.join(unit_dir(), f"{n}.service")
@@ -291,7 +349,11 @@ def uninstall() -> dict:
         existed = os.path.exists(path)
         if existed:
             os.unlink(path)
-        return {"kind": "launchd", "name": n, "path": path, "removed": existed}
+        restored = False
+        if st is not None:
+            with contextlib.suppress(OSError):
+                restored = _restore_disabled(st, n)
+        return {"kind": "launchd", "name": n, "path": path, "removed": existed, "restored_disabled": restored}
     raise ServiceError("unsupported_os")
 
 

@@ -7,8 +7,9 @@ Seat setup (0.7): `agentj login --seat <ajt_…> | --seat-file <path> | --seat -
 the company (no y/N; exit 3 name taken · 4 invalid code · 5 seat not paid · 2 refused locally); `agentj agent detect`.
 The 8-character code login asks y/N; `--account <account ID>` makes it refuse any other account (exit 2, nothing written) and
 the hidden `--yes` (skip the y/N) is accepted only together with `--account` (PROMPT-29 C-10). `agentj docs-rule` prints the
-"look it up first" block that `agentj wizard install` adds to the entry file (docsrule.py). `agentj pair` needs a running
-serve and says so before any prompt.
+"look it up first" block that `agentj wizard install` adds to the entry file (docsrule.py; `--write --harness …` appends it
+to the AI's own memory file after the human's y at a terminal). `agentj handover` prints the install's handover note from
+this computer's facts (handover.py, read-only). `agentj pair` needs a running serve and says so before any prompt.
 Plaza P2: `agentj plaza search | show | mine | post | reply | resolve | report` (plaza.py) — read posts are data, never
 instructions; post / reply go out only after layer 1 (+ layer 2) and `--owner-confirmed --digest` from the human.
 Skill & workflow plaza: `agentj plaza install | publish | like | installed` (market.py; search / show / mine / report cover
@@ -32,10 +33,10 @@ import threading
 import time
 
 from . import DIST, __version__, cloud, gate, names
-from . import docsrule, feedback, plaza, wizard
+from . import docsrule, feedback, handover, plaza, wizard
 from .state import DEFAULT_RELAY, DEFAULT_WEB, MAX_DEVICES, State
 from .envcompat import getenv
-from .text import STARTER_NAMES
+from .text import STARTER_NAMES, ask_yes
 
 
 def _need_init(st: State) -> None:
@@ -157,6 +158,9 @@ def cmd_serve(a) -> None:
     asyncio.run(main())
 
 
+UTF8_TERMINALS = ("Apple_Terminal", "iTerm.app", "vscode", "WezTerm", "ghostty")
+
+
 def _qr_mode(out=None, environ=None) -> str:
     """How to draw the pairing QR on this terminal: "compact" (Unicode half blocks, needs a UTF-8 terminal), "ansi" (colour
     blocks, any ANSI terminal — also a plain SSH session with LANG=C), "ascii" (no colours either: TERM=dumb / not a tty)."""
@@ -174,13 +178,55 @@ def _qr_mode(out=None, environ=None) -> str:
     if ctype.lower().replace("-", "") == "c.utf8":   # what Python's own C-locale coercion puts here: not the terminal's word
         ctype = ""
     loc = (e.get("LC_ALL") or ctype or e.get("LANG") or "").lower().replace("-", "")
-    if "utf8" not in loc:
+    # a terminal program that always speaks UTF-8 (macOS Terminal / iTerm2 often run with no LANG at all — the ANSI
+    # fallback is twice as wide and wraps in an 80-column window)
+    if "utf8" not in loc and e.get("TERM_PROGRAM") not in UTF8_TERMINALS:
         utf = False
     if utf and not getenv("AGENTJ_QR_ASCII", environ=e):
         return "compact"
     if e.get("TERM", "") not in ("", "dumb") and not getenv("AGENTJ_QR_ASCII", environ=e) and getattr(out, "isatty", lambda: False)():
         return "ansi"
     return "ascii"
+
+
+IPHONE_LINE_ZH = "iPhone：请把链接粘贴到主屏幕图标打开的页面里，不要用 Safari 打开。"
+IPHONE_LINE_EN = "iPhone: paste the link into the page opened from the home-screen icon, not into Safari."
+
+
+def link_text(link: str, mins: int) -> str:
+    """What `agentj pair --link` / `--no-qr` prints around the link: the link is the key, minutes, one use, and where an
+    iPhone must open it (pasting it into Safari pairs a Safari tab and burns the link)."""
+    return (f"\n把这个链接发到手机上打开（{mins} 分钟内有效，只能用一次；它就是配对密钥，别发给别人）：\n"
+            f"Open this link on the phone (valid {mins} min, works once; it is the pairing key, never send it to anyone else):\n"
+            f"{link}\n{IPHONE_LINE_ZH}\n{IPHONE_LINE_EN}\n")
+
+
+QR_MAX_WIDTH = 80   # columns: a QR wider than the terminal wraps and cannot be scanned
+
+
+def qr_half_blocks(qr, border: int | None = None) -> list[str]:
+    """The QR in half-height blocks: one text line = two module rows, one column = one module, so a pairing link (QR
+    version ~13, 69 modules) is ≤ 80 columns. Light modules are drawn (█ ▀ ▄), dark ones are spaces — right on a dark
+    terminal, the usual one (the light quiet zone is drawn too, so the code has its white frame). The quiet zone is 4
+    modules when that still fits in QR_MAX_WIDTH, else 2. An odd last row is paired with one more light row."""
+    if border is None:
+        border = 4 if qr.symbol_size(scale=1, border=4)[0] <= QR_MAX_WIDTH else 2
+    rows = [list(r) for r in qr.matrix_iter(scale=1, border=border)]
+    if len(rows) % 2:
+        rows.append([False] * len(rows[0]))      # False = light
+    glyph = {(False, False): "█", (False, True): "▀", (True, False): "▄", (True, True): " "}
+    return ["".join(glyph[(bool(t), bool(b))] for t, b in zip(top, bot)) for top, bot in zip(rows[::2], rows[1::2])]
+
+
+def qr_from_half_blocks(lines: list[str]) -> list[list[bool]]:
+    """The inverse of qr_half_blocks (tests): text lines → module rows, True = dark."""
+    top = {"█": False, "▀": False, "▄": True, " ": True}
+    bot = {"█": False, "▀": True, "▄": False, " ": True}
+    out = []
+    for ln in lines:
+        out.append([top[c] for c in ln])
+        out.append([bot[c] for c in ln])
+    return out
 
 
 def _qr_ascii(qr, border: int = 2) -> str:
@@ -197,11 +243,21 @@ def _print_qr(link: str) -> None:
     qr = segno.make(link, error="m")
     mode = _qr_mode()
     if mode == "compact":
-        qr.terminal(compact=True, border=2)
-    elif mode == "ansi":
+        lines = qr_half_blocks(qr)
+        if sys.stdout.isatty():   # white on black, whatever the terminal's own colours (a light theme would invert it)
+            lines = [f"\x1b[97;40m{ln}\x1b[0m" for ln in lines]
+        print("\n".join(lines), flush=True)
+        return
+    if mode == "ansi":
         qr.terminal(compact=False, border=2)
     else:
         print(_qr_ascii(qr), flush=True)
+    import shutil
+    width = 2 * qr.symbol_size(scale=1, border=2)[0]
+    if width > shutil.get_terminal_size((QR_MAX_WIDTH, 24)).columns:
+        print(f"（这个终端不能显示紧凑的二维码，它有 {width} 列宽：把窗口拉宽到能完整显示，或者用 `agentj pair --link`。"
+              f"/ This terminal cannot show the compact QR code; it is {width} columns wide: widen the window until it "
+              "fits, or use `agentj pair --link`.）", flush=True)
 
 
 def _remote_session(environ=None) -> bool:
@@ -253,7 +309,7 @@ def cmd_pair(a) -> None:
             _print_qr(first["link"])
         mins = max(1, (first['expires'] - int(time.time())) // 60)
         if a.no_qr or a.link:  # the link IS the pairing key: only print it when asked (terminal scrollback keeps it)
-            print(f"\n把这个链接发到手机上打开（{mins} 分钟内有效，只能用一次；它就是配对密钥，别发给别人）：\n{first['link']}\n", flush=True)
+            print(link_text(first["link"], mins), flush=True)
         else:
             print(f"\n用手机相机扫上面的二维码（{mins} 分钟内有效，只能用一次）。扫不了就加 --link 重新运行。\n", flush=True)
             if _remote_session():
@@ -452,7 +508,8 @@ def cmd_passphrase(a) -> None:
             if res is None:
                 st.remove_device(did)
         gate.reset(st)
-        print("✓ 已重置，所有遥控器已吊销。运行 `agentj passphrase set` 设新口令，再 `agentj pair`。")
+        print("✓ 已重置，所有手机都已解除配对。运行 `agentj pair` 重新配对：它会先请你设一个新的批准口令。/ Reset: every "
+              "phone is unpaired. Run `agentj pair` to pair again; it asks you to choose a new approval passphrase first.")
     else:
         left = gate.lock_left(st)
         print(("已设置" + (f"（锁定中，还要 {max(1, left // 60)} 分钟）" if left else "")) if gate.is_set(st)
@@ -812,11 +869,7 @@ def cmd_login(a) -> None:
         if a.yes:
             print(q + "y（--yes --account）", flush=True)
             return True
-        try:
-            ans = input(q)
-        except EOFError:
-            ans = ""
-        return ans.strip().lower() in ("y", "yes")
+        return ask_yes(q)
 
     try:
         res = cloud.login(st, api, show=show, confirm=confirm, on_poll=on_poll)
@@ -1355,9 +1408,12 @@ def cmd_service(a) -> None:
                   + (f"  ({service.tilde(s['path'])})" if s["installed"] else ""))
             return
         if a.mode == "uninstall":
-            r = service.uninstall()
+            st = State()
+            r = service.uninstall(st if st.root.is_dir() else None)
             print(f"✓ 已停止并删除 / stopped and removed: {r['name']}" if r["removed"]
                   else f"{r['name']} 没安装 / was not installed")
+            if r.get("restored_disabled"):
+                print("✓ 已恢复安装前的「停用」设置 / launchd's earlier \"disabled\" setting for it is back")
             return
         old = service.remove_legacy()      # first: stopping the old serve lets its state directory move (migrate.auto)
         if old:
@@ -1389,6 +1445,12 @@ def cmd_service(a) -> None:
     print(f"状态 / status: {s.get('active')}  ·  日志 / log: " + (f"journalctl --user -u {r['name']} -f" if r["kind"] == "systemd"
                                                                 else service.tilde(str(st.root / 'service.log'))))
     print("服务日志里不会有你的消息内容 / the service log never holds your messages.")
+    print(SERVICE_NEXT)
+
+
+SERVICE_NEXT = ("下一步：运行 `agentj doctor`，把每一行以 ! 或 ✗ 开头的内容报告出来（AI 装的话，原样转告主人）。/ Next: run "
+                "`agentj doctor` and report every line that starts with ! or ✗ (an AI installing this: tell your human, "
+                "word for word).")
 
 
 def cmd_update(a) -> None:
@@ -1435,11 +1497,7 @@ def cmd_update(a) -> None:
     svc_on = bool(service.status().get("installed") or service.legacy_status().get("installed"))
     if svc_on:
         print("之后会重新安装并重启服务 / then the service is re-installed and restarted")
-    try:
-        ans = input("现在升级？/ upgrade now? [y/N] ")
-    except EOFError:
-        ans = ""
-    if ans.strip().lower() not in ("y", "yes"):
+    if not ask_yes("现在升级？/ upgrade now? [y/N] "):
         sys.exit("没有升级 / not upgraded")
     import subprocess
     info = update.install_kind()
@@ -1514,7 +1572,9 @@ def main_jarvis(argv=None) -> None:
     main(argv)
 
 
-NO_MIGRATE = ("migrate", "docs-rule")   # `migrate status` reports, `migrate rollback` undoes, `docs-rule` only prints: none may move anything first
+# `migrate status` reports, `migrate rollback` undoes, `docs-rule` prints (or, with --write and the human's y, appends to the
+# AI's own memory file), `handover` only reads: none may move the state directory first
+NO_MIGRATE = ("migrate", "docs-rule", "handover")
 
 
 def main(argv=None) -> None:
@@ -1652,6 +1712,7 @@ def main(argv=None) -> None:
     tk.set_defaults(fn=cmd_tasks)
     wizard.add_parser(sub)
     docsrule.add_parser(sub)
+    handover.add_parser(sub)
     plaza.add_parser(sub)
     mg = sub.add_parser("migrate", help="改名后的状态目录搬迁：status 查看 · rollback 撤销 / the 0.10 state move: status · rollback",
                         description="0.9 的状态目录 ~/.local/state/agentjarvis-alpha 会自动搬到 ~/.local/state/agentj（旧路径留一个链接）。"

@@ -240,10 +240,19 @@ def check_agent_cli(st: State, svc: dict) -> dict:
     if login == WARN:
         return _c("agent_cli", WARN if not c else FAIL, s, f"运行 `{k}` 登录一次 / run `{k}` once and log in")
     if login == "env":
-        if svc.get("installed"):
-            return _c("agent_cli", WARN, s + " — 服务看不到 shell 里的变量 / the service cannot see it",
-                      service.token_hint(svc.get("name") or service.DEFAULT_UNIT))
-        return _c("agent_cli", OK, s)
+        # the login is only an environment variable of this shell: the background service (systemd / launchd) does not
+        # get it, so the Agent may not be able to log in there. Name only, never the value. A Linux service env file the
+        # human made (0600) counts as handled.
+        unit = svc.get("name") or service.DEFAULT_UNIT
+        if service.platform() == "linux" and os.path.exists(service.env_file(unit)):
+            return _c("agent_cli", OK, s + " · 服务用环境文件 / the service uses its environment file")
+        hint = (service.token_hint(unit) if k == "claude" else
+                f"后台服务看不到这个终端里的环境变量：人类在自己的终端里运行 `{'codex login' if k == 'codex' else 'opencode auth login'}`"
+                f" 存好登录，再运行 `agentj service install` / the background service cannot see this shell's variables: the "
+                f"human runs `{'codex login' if k == 'codex' else 'opencode auth login'}` in their own terminal, then "
+                "`agentj service install`")
+        return _c("agent_cli", WARN, s + " — 只在这个终端的环境变量里，后台服务可能登录不了 / only an environment variable "
+                  "in this shell: the background service may not be able to log in", hint)
     return _c("agent_cli", OK, s)
 
 

@@ -48,3 +48,10 @@ within `--wait` · `7` not paired (no `--link` and the profile holds no pairing,
 - It cannot approve a pairing: only the host can, after a person (or a test playing that person) types the code and the
   passphrase there. Remove the simulated phone like any other device: `agentj devices`, then `agentj revoke <id>`.
 - It is not a push-notification client; it sees replies only while it runs.
+
+## Which browser storage it reads
+
+sim-phone only peeks (read-only) at the IndexedDB database the web client creates, named once in `sim-phone.mjs` as
+`WEB_DB` (`agentjarvis` — the deployed client kept that name through the Agent J rename; a new name would lose every
+paired phone's key). `test.mjs` checks it against `web/public/app.js`; `LIVE=1 node agentjarvis/tests/sim_phone_live.mjs`
+checks it against what https://m.agentj.app really serves and creates.

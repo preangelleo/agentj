@@ -45,6 +45,11 @@ import { join, resolve, delimiter } from 'node:path';
 import { setTimeout as sleep } from 'node:timers/promises';
 
 const DEFAULT_WEB = 'https://m.agentj.app';
+/** The IndexedDB database the deployed web client keeps its device key and pairing in (`web/public/app.js` → idb():
+ *  `indexedDB.open('agentjarvis', 1)`, store "kv"). The one place sim-phone names it; `test.mjs` checks it against app.js and
+ *  `tests/sim_phone_live.mjs` (LIVE=1) against what m.agentj.app really creates. It kept the old name through the rename
+ *  to Agent J — renaming it would lose every paired phone's key, so it is not a brand string. */
+export const WEB_DB = 'agentjarvis';
 const PAIR_WAIT_S = 180;
 const EXIT = { ok: 0, usage: 1, chromium: 2, pairFailed: 3, pairTimeout: 4, noReply: 5, noCard: 6, notPaired: 7 };
 
@@ -115,7 +120,7 @@ function cdp(wsUrl) {
   };
 }
 
-async function launch(bin, profileDir) {
+export async function launch(bin, profileDir) {
   const persistent = !!profileDir;
   const profile = persistent ? resolve(profileDir) : mkdtempSync(join(tmpdir(), 'sim-phone-'));
   mkdirSync(profile, { recursive: true });
@@ -174,11 +179,11 @@ const SNAPSHOT = `(() => {
     agent: ag && !ag.hidden ? ag.dataset.s || '' : '' };
 })()`;
 
-const BOOT = `(async () => {
+export const BOOT = `(async () => {
   const dbs = indexedDB.databases ? await indexedDB.databases() : [];
-  if (!dbs.some((d) => d.name === 'agentj')) return { device: false, paired: false };
+  if (!dbs.some((d) => d.name === ${JSON.stringify(WEB_DB)})) return { device: false, paired: false };
   return await new Promise((res) => {
-    const r = indexedDB.open('agentjarvis');
+    const r = indexedDB.open(${JSON.stringify(WEB_DB)});
     r.onerror = () => res(null);
     r.onsuccess = () => {
       const db = r.result;

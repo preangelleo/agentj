@@ -4,5 +4,5 @@ Hosts ≤ 0.9 check for updates by reading this file by path (host/jarvis_host/_
 line below as text, so it stays here, literal, equal to agentj.__version__ (tests/test_rename.py). A service unit written by
 0.9 may still run `python -m jarvis_host.cli serve`: jarvis_host.cli hands over to the agentj CLI.
 """
-__version__ = "0.10.1a1"
+__version__ = "0.10.2a1"
 DIST = "agentj"

@@ -2,13 +2,17 @@
 
 One short, stable block. `agentj wizard install` adds it to the work folder's entry file (CLAUDE.md / AGENTS.md) when it
 is not there yet (wizard/__init__.py: never over the human's text, appended once, idempotent), `agentj wizard apply` keeps
-it in a generated entry file, and `agentj docs-rule [--lang zh|en]` prints exactly the same block (no side effects) so the
-installing agent can save it into its own long-term memory after its human's yes.
+it in a generated entry file, and `agentj docs-rule [--lang zh|en]` prints exactly the same block (no side effects).
+`agentj docs-rule --write --harness claude|codex|opencode [--lang zh|en]` appends it once to the installing AI's own
+user-level memory file — only after the human answers y at a terminal (no --yes; on a pipe nothing is written, exit 2).
 
 The markers make it recognisable: any text containing BEGIN counts as "already there" — a block the human edited or
 shortened is theirs and is never rewritten.
 """
 from __future__ import annotations
+
+import os
+import sys
 
 BEGIN = "<!-- agentj:docs-rule v1 -->"
 END = "<!-- /agentj:docs-rule -->"
@@ -77,14 +81,127 @@ def merged(data: bytes | None, blk: bytes) -> bytes | None:
     return data + sep + blk
 
 
+# --write: the AI's own user-level memory file, per harness (what install.md Step 13 lists)
+MEMORY_FILES = {"claude": "~/.claude/CLAUDE.md", "codex": "~/.codex/AGENTS.md", "opencode": "~/.config/opencode/AGENTS.md"}
+EXIT_REFUSED = 2
+
+
+def memory_file(harness: str) -> str:
+    return os.path.expanduser(MEMORY_FILES[harness])
+
+
+def _tilde(p: str) -> str:
+    h = os.path.expanduser("~").rstrip("/")
+    return "~" + p[len(h):] if h and (p == h or p.startswith(h + "/")) else p
+
+
+def _command(a) -> str:
+    return f"agentj docs-rule --write --harness {a.harness}" + (f" --lang {a.lang}" if a.lang else "")
+
+
+def write(a, out=None, stdin=None, read=None) -> int:
+    """`agentj docs-rule --write --harness …`: show the file and the block, then ask the human once (y/N) at a terminal.
+    Append-only and once; a new file is created 0600 (parent folders 0700); a symlinked file is never followed. No --yes:
+    on a pipe (an AI's own command, a script) nothing is written and the human is told to run it themselves → exit 2."""
+    from .text import ask_yes
+    out, stdin = out or sys.stdout, stdin or sys.stdin
+    path = memory_file(a.harness)
+    shown = _tilde(path)
+    blk = block(a.lang).encode()
+    print(f"文件 / file: {shown}", file=out)
+    if os.path.islink(path):
+        print(f"✗ {shown} 是一个链接（symlink），没有写入：请自己打开它指向的文件，把下面这段加到末尾。/ {shown} is a symlink: "
+              "nothing written. Open the file it points to yourself and add the block below at the end.", file=out)
+        print(block(a.lang), end="", file=out)
+        return EXIT_REFUSED
+    try:
+        cur = _read(path)
+    except OSError as e:
+        print(f"✗ 读不了 {shown}（{e.strerror}），没有写入 / cannot read it; nothing written", file=out)
+        return 1
+    if present(cur):
+        print(f"✓ 已经在里面了，什么都没改 / already there; nothing changed ({MARK} …)", file=out)
+        return 0
+    print("要加到末尾的内容 / the block to add at the end:\n", file=out)
+    print(block(a.lang), file=out)
+    if not getattr(stdin, "isatty", lambda: False)():
+        cmd = _command(a)
+        print("没有写入：这一步要主人自己在键盘上回答 y/N，AI 替不了。请主人在自己的终端窗口里（不是在和 AI 的对话框里）"
+              f"原样运行这条命令：\n  {cmd}\n/ Nothing written: this needs your human's own y/N at the keyboard, an AI cannot "
+              "answer it. Ask your human to run this exact command in a terminal window of their own (not in the chat with "
+              f"the AI):\n  {cmd}", file=out)
+        return EXIT_REFUSED
+    if not ask_yes(f"Add this to {shown}? [y/N] ", read):
+        print("没有写入 / nothing written", file=out)
+        return 0
+    new = merged(cur, blk)
+    if new is None:        # appeared while we were asking
+        print("✓ 已经在里面了，什么都没改 / already there; nothing changed", file=out)
+        return 0
+    tail = new[len(cur or b""):]
+    try:
+        _append(path, tail)
+    except OSError as e:
+        print(f"✗ 没写进去（{e.strerror}）/ not written", file=out)
+        return 1
+    print(f"✓ 已加到 {shown} 末尾 / added at the end of {shown}", file=out)
+    return 0
+
+
+def _read(path: str) -> bytes | None:
+    try:
+        fd = os.open(path, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
+    except FileNotFoundError:
+        return None
+    try:
+        chunks = []
+        while True:
+            b = os.read(fd, 1 << 16)
+            if not b:
+                return b"".join(chunks)
+            chunks.append(b)
+    finally:
+        os.close(fd)
+
+
+def _append(path: str, data: bytes) -> None:
+    parent = os.path.dirname(path)
+    if not os.path.isdir(parent):
+        os.makedirs(parent, mode=0o700, exist_ok=True)
+    fd = os.open(path, os.O_WRONLY | os.O_APPEND | os.O_CREAT | getattr(os, "O_NOFOLLOW", 0), 0o600)
+    try:
+        os.write(fd, data)
+    finally:
+        os.close(fd)
+
+
 def cmd(a) -> None:
+    if a.write:
+        if not a.harness:
+            print("✗ --write 要和 --harness claude|codex|opencode 一起用 / --write needs --harness claude|codex|opencode",
+                  file=sys.stderr)
+            sys.exit(EXIT_REFUSED)
+        sys.exit(write(a))
+    if a.harness:
+        print("✗ --harness 只和 --write 一起用 / --harness goes with --write", file=sys.stderr)
+        sys.exit(EXIT_REFUSED)
     print(block(a.lang), end="")
 
 
 def add_parser(sub) -> None:
-    d = sub.add_parser("docs-rule", help="打印「先查文档」这条规则（主人同意后，可以存进 AI 的长期记忆）/ print the "
-                                         "\"look it up first\" rule (save it to your long-term memory with your human's yes)",
-                       description="只打印，不改任何东西。和 `agentj wizard install` 写进 CLAUDE.md / AGENTS.md 的是同一段。"
-                                   " / Prints only; changes nothing. The same block `agentj wizard install` adds to the entry file.")
+    d = sub.add_parser("docs-rule", help="打印「先查文档」这条规则；加 --write 由主人确认后存进 AI 自己的记忆文件 / print the "
+                                         "\"look it up first\" rule; --write saves it to the AI's own memory file after the "
+                                         "human's y",
+                       description="不加 --write：只打印，不改任何东西（和 `agentj wizard install` 写进 CLAUDE.md / AGENTS.md 的是"
+                                   "同一段）。--write --harness claude|codex|opencode：显示文件和内容，问一次 y/N，只有主人在终端"
+                                   "里回答 y 才加到末尾；不是终端就不写（退出码 2）。/ Without --write: prints only. With --write: "
+                                   "shows the file and the block and asks y/N once; only a y typed at a terminal appends it; "
+                                   "not a terminal = nothing written (exit 2).")
     d.add_argument("--lang", choices=list(LANGS), help="只要中文或英文（默认两种都有）/ one language only (default: both)")
+    d.add_argument("--write", action="store_true",
+                   help="主人确认后，加到 AI 的用户级记忆文件末尾（只加一次）/ append it once to the AI's user-level memory "
+                        "file, after the human's y")
+    d.add_argument("--harness", choices=sorted(MEMORY_FILES),
+                   help="和 --write 一起：claude → ~/.claude/CLAUDE.md · codex → ~/.codex/AGENTS.md · opencode → "
+                        "~/.config/opencode/AGENTS.md")
     d.set_defaults(fn=cmd)
