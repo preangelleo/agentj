@@ -58,8 +58,8 @@
    "hit": true
   },
   {
-   "text": "key = sk-proj-abcdefghijklmnopqrstuvwxyz012345",
-   "hit": true
+   "hit": true,
+   "text_b64": "a2V5ID0gc2stcHJvai1hYmNkZWZnaGlqa2xtbm9wcXJzdHV2d3h5ejAxMjM0NQ=="
   },
   {
    "text": "contact me at alex.real.person@mailbox.org",
