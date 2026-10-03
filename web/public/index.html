@@ -2,7 +2,7 @@
 <html lang="zh-CN">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no,interactive-widget=resizes-content">
 <meta name="robots" content="noindex,nofollow">
 <meta name="referrer" content="no-referrer">
 <meta name="color-scheme" content="light dark">
@@ -10,6 +10,7 @@
 <script src="brand/lang.js"></script>
 <meta name="theme-color" content="#faf9f5" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#141414" media="(prefers-color-scheme: dark)">
+<script src="js/boot.js"></script>
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="Agent J">
@@ -25,190 +26,408 @@
 <script src="brand/ui.js" defer></script>
 <script type="module" src="app.js"></script>
 </head>
-<body data-conn="idle" data-agent="none">
-<header class="bar">
-  <div class="bar__in">
-    <img id="logo" class="bar__logo" src="brand/img/logo-mark.png" width="40" height="40" alt="">
-    <div class="bar__who">
-      <p class="bar__name"><span id="brand-name">Agent J</span></p>
-      <div class="bar__sub"><p id="status" class="status" data-state="idle" role="status" aria-live="polite" data-i18n="st.idle">还没配对</p><span id="agent-status" class="agent-status" data-s="none" role="status" aria-live="polite" hidden></span></div>
-    </div>
-    <button type="button" id="badge" class="badge" aria-expanded="false" aria-controls="badge-panel"><span class="badge__chip" data-i18n="badge.label">网页版</span></button>
-    <details id="menu" class="menu">
-      <summary class="menu__btn" data-i18n-attr="aria-label=menu.open" aria-label="菜单"><span class="menu__icon" aria-hidden="true"></span></summary>
-      <div class="menu__panel">
-        <div class="menu__row"><span class="menu__label" data-i18n="menu.lang">语言</span><div class="aj-lang" data-aj-lang-switch>中文 / EN</div></div>
-        <div class="menu__row"><span class="menu__label" data-i18n="menu.theme">外观</span><button type="button" class="aj-btn aj-btn--sm menu__theme" data-aj-theme-switch>跟随系统</button></div>
-        <button type="button" id="menu-about" class="menu__item" data-i18n="menu.about">这个网页版有多安全</button>
-        <a class="menu__item" href="https://agentj.app/docs/phone/" target="_blank" rel="noopener" data-i18n="menu.help">手机怎么用</a>
-        <a class="menu__item" href="https://agentj.app/security/" target="_blank" rel="noopener" data-i18n="menu.security">数据安全</a>
-        <a class="menu__item" href="https://agentj.app/privacy/" target="_blank" rel="noopener" data-i18n="menu.privacy">隐私</a>
-        <a class="menu__item" href="https://agentj.app/terms/" target="_blank" rel="noopener" data-i18n="menu.terms">条款</a>
-        <a class="menu__item" href="https://agentj.app/" target="_blank" rel="noopener" data-i18n="menu.site">Agent J 官网</a>
-        <p class="menu__foot"><img src="brand/img/shield-64.png" width="20" height="20" alt=""><span data-i18n="menu.foot">我们看不到你的聊天内容。</span></p>
+<body data-status="unknown" data-conn="off" data-view="pair" data-agent="none">
+  <div class="aura" aria-hidden="true"></div>
+  <!-- The context window as a water level (relay): the screen is the tank, the surface rises as the window fills. -->
+  <div class="water" id="water" data-known="0" aria-hidden="true">
+    <svg class="wave" viewBox="0 0 240 14" preserveAspectRatio="none"><path d="M0 8 C 20 2, 40 2, 60 8 S 100 14, 120 8 S 160 2, 180 8 S 220 14, 240 8 L240 14 L0 14 Z"/></svg>
+    <svg class="wave wave2" viewBox="0 0 240 14" preserveAspectRatio="none"><path d="M0 8 C 20 2, 40 2, 60 8 S 100 14, 120 8 S 160 2, 180 8 S 220 14, 240 8 L240 14 L0 14 Z"/></svg>
+  </div>
+  <div class="flow" aria-hidden="true"></div>
+
+  <header class="top">
+    <!-- The logo wears the state; tap = the page's type size (中 → 大 → 中 → 小), hold = 中. -->
+    <img class="orb" id="orb" src="brand/img/logo-mark.png" alt="" width="40" height="40" data-i18n-attr="title=r.orb.title" title="点一下换字号，按住恢复">
+    <!-- Model · effort; tap a half = the next one, hold = the default (relay ADR-035). -->
+    <div class="meta" id="meta" aria-live="polite" hidden><span class="mt"><span id="metaModel">—</span><span id="metaSep"></span><span id="metaEffort"></span><span id="metaStale"></span></span></div>
+    <p id="status" class="connline" data-state="idle" role="status" aria-live="polite" data-i18n="st.idle">还没配对</p>
+    <span class="vh" role="status" aria-live="polite"><b id="capText"></b><span id="capSub"></span></span>
+    <button type="button" id="badge" class="ajbadge" aria-expanded="false" aria-controls="badge-panel"><span class="badge__chip" data-i18n="badge.label">网页版</span></button>
+    <button class="bulb" id="keysBtn" type="button" data-i18n-attr="aria-label=r.keys.btn,title=r.keys.btnTitle" aria-label="快捷键" title="快捷键（?）">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18h6M10 21h4"/><path d="M12 3a6 6 0 0 0-3.6 10.8c.6.5 1 1.2 1.1 2V16h5v-.2c.1-.8.5-1.5 1.1-2A6 6 0 0 0 12 3z"/></svg>
+    </button>
+    <details id="aj-menu" class="ajmenu">
+      <summary class="ajmenu__btn" data-i18n-attr="aria-label=menu.open" aria-label="菜单"><span class="ajmenu__icon" aria-hidden="true"></span></summary>
+      <div class="ajmenu__panel">
+        <p class="ajmenu__name"><span id="brand-name">Agent J</span></p>
+        <button type="button" id="open-mem" class="ajmenu__item" data-i18n="nav.mem">记忆</button>
+        <button type="button" id="open-act" class="ajmenu__item" data-i18n="nav.act">记录</button>
+        <button type="button" id="open-tasks" class="ajmenu__item" data-i18n="nav.tasks">定时任务</button>
+        <div id="push-row" class="ajmenu__row push-row" hidden>
+          <span id="push-text" class="small"></span>
+          <button type="button" id="push-on" class="aj-btn aj-btn--sm" data-i18n="push.btn" hidden>开启锁屏提醒</button>
+        </div>
+        <div class="ajmenu__row"><span class="ajmenu__label" data-i18n="menu.lang">语言</span><div class="aj-lang" data-aj-lang-switch>中文 / EN</div></div>
+        <div class="ajmenu__row"><span class="ajmenu__label" data-i18n="menu.theme">外观</span><button type="button" class="aj-btn aj-btn--sm ajmenu__theme" data-aj-theme-switch>跟随系统</button></div>
+        <button type="button" id="menu-about" class="ajmenu__item" data-i18n="menu.about">这个网页版有多安全</button>
+        <a class="ajmenu__item" href="https://agentj.app/docs/phone/" target="_blank" rel="noopener" data-i18n="menu.help">手机怎么用</a>
+        <a class="ajmenu__item" href="https://agentj.app/security/" target="_blank" rel="noopener" data-i18n="menu.security">数据安全</a>
+        <a class="ajmenu__item" href="https://agentj.app/privacy/" target="_blank" rel="noopener" data-i18n="menu.privacy">隐私</a>
+        <a class="ajmenu__item" href="https://agentj.app/terms/" target="_blank" rel="noopener" data-i18n="menu.terms">条款</a>
+        <button type="button" id="unpair" class="ajmenu__item ajmenu__danger" data-i18n="menu.unpair" hidden>解除配对</button>
+        <p class="ajmenu__foot"><img src="brand/img/shield-64.png" width="20" height="20" alt=""><span data-i18n="menu.foot">我们看不到你的聊天内容。</span></p>
       </div>
     </details>
-  </div>
-</header>
+  </header>
 
-<section id="badge-panel" class="panel" hidden>
-  <div class="panel__head"><img src="brand/img/shield-64.png" width="32" height="32" alt=""><h2 data-i18n="badge.title">这个网页版有多安全</h2></div>
-  <ul>
-    <li data-i18n="badge.p1">手机和电脑之间的内容是加密的，我们的服务器看不懂。</li>
-    <li data-i18n="badge.p2">不过这个网页本身是从我们的服务器加载的：要是网页被人改过，就能看到你在这里看到的内容。以后的手机 App 没有这个问题。</li>
-  </ul>
-  <p class="small" data-i18n="badge.hash">本页的版本号（用来核对网页有没有被改过）：</p>
-  <p><code id="version-hash" class="hash">—</code></p>
-  <p class="small" data-i18n="badge.verify">怎么核对、我们存了什么，都写在「数据安全」页：agentj.app/security/</p>
-  <button type="button" id="badge-close" class="aj-btn" data-i18n="badge.close">收起</button>
-</section>
+  <!-- ================================================================ chat (relay's page) -->
+  <div class="chatv" id="chat-view">
+    <!-- The rule under the header is the weekly quota; the one above the composer is the 5-hour window. -->
+    <div class="meter" id="mWeek" role="img" data-known="0" data-i18n-attr="aria-label=r.meter.week" aria-label="本周额度"><i></i><span class="lab">weekly</span></div>
 
-<main id="main" class="wrap">
-  <aside id="a2hs" class="hint" hidden>
-    <img src="brand/img/icon-192.png" width="44" height="44" alt="">
-    <div class="hint__body">
-      <p class="hint__title" data-i18n="a2hs.title">添加到主屏幕，用起来像 App</p>
-      <p id="a2hs-text" class="small"></p>
-      <p class="hint__row"><a id="a2hs-more" class="hint__link" href="https://agentj.app/docs/phone/" target="_blank" rel="noopener" data-i18n="a2hs.more">详细步骤</a><button type="button" id="a2hs-ok" class="aj-btn aj-btn--sm" data-i18n="a2hs.ok">知道了</button></p>
+    <div class="stage" id="stage">
+      <button class="pz prev" id="pgPrev" type="button" data-i18n-attr="aria-label=r.pg.prev,title=r.pg.prevTitle" aria-label="上一条（更早）" title="上一条（j / ←）">&#8249;</button>
+      <div class="deck" id="deck">
+        <section class="om" id="om" hidden data-src="leo" data-i18n-attr="aria-label=r.om.aria" aria-label="原话">
+          <div class="omhd"><span id="omIcon" aria-hidden="true"></span><b id="omLabel"></b><span class="t" id="omTime"></span><span class="pg" id="pg"></span></div>
+          <div class="omq" id="omQuote" role="link" tabindex="0" hidden data-i18n-attr="aria-label=r.quote.jump" aria-label="跳到被回复的那一条">
+            <div class="qb"><div class="qh"><b id="omqWho"></b><span id="omqMeta"></span></div><div class="qt" id="omqText"></div></div>
+          </div>
+          <div class="omtxt" id="omText"></div>
+          <div class="omatt" id="omAtt" hidden></div>
+          <button class="ommore" id="omMore" type="button" aria-expanded="false" data-i18n-attr="aria-label=r.om.expand" aria-label="展开原话（o）"><i>…</i></button>
+        </section>
+        <div class="rm" id="rm">
+          <main id="main">
+            <div class="read" id="read">
+              <div class="rmhd"><div class="speaker" id="agent">Agent J</div><span class="t" id="rmTime"></span><span class="t rmpart" id="rmPart"></span></div>
+              <blockquote class="words empty" id="words"><p data-i18n="r.empty">还没有消息</p></blockquote>
+              <div class="cmdx" id="cmdx" hidden></div>
+              <div class="elsewhere localnote" id="localNote" hidden>
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="5" width="16" height="11" rx="1.5"/><path d="M2 19h20"/></svg>
+                <span data-i18n="r.local">这件事要在电脑上处理</span>
+              </div>
+              <div class="thinking" aria-hidden="true"><i></i><i></i><i></i></div>
+              <div class="stale" id="stale"></div>
+            </div>
+          </main>
+          <!-- The card's last row: 阅读 · 朗读 · 转发 · 复制 · 回复, right-packed. -->
+          <div class="rmbar" id="rmbar" role="toolbar" data-i18n-attr="aria-label=r.bar.aria" aria-label="这条回复">
+            <button class="act" id="readBtn" type="button" data-i18n-attr="aria-label=r.bar.read,title=r.bar.read" aria-label="全屏阅读（f · 双击卡片）" title="全屏阅读（f · 双击卡片）">
+              <svg class="g g0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M12 6.5C10.2 5.2 7.6 4.7 3.5 4.9v13.2c4.1-.2 6.7.3 8.5 1.6 1.8-1.3 4.4-1.8 8.5-1.6V4.9c-4.1-.2-6.7.3-8.5 1.6z"/><path d="M12 6.5v13.2"/></svg>
+            </button>
+            <button class="act" id="speakBtn" type="button" data-state="idle" data-i18n-attr="aria-label=r.speak.idle,title=r.speak.idle" aria-label="朗读这一条" title="朗读这一条">
+              <svg class="g g0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M11 5 6 9H3v6h3l5 4z"/><path d="M15.5 8.5a5 5 0 0 1 0 7M18.5 5.5a9 9 0 0 1 0 13"/></svg>
+              <svg class="g gspin" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><path d="M12 3a9 9 0 1 1-9 9" /></svg>
+              <svg class="g gpause" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M9 6v12M15 6v12"/></svg>
+              <svg class="g gplay" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round"><path d="M8 5.5v13l10.5-6.5z"/></svg>
+              <i class="bang" aria-hidden="true">!</i>
+            </button>
+            <button class="act" id="fwdBtn" type="button" data-state="idle" data-i18n-attr="aria-label=r.share.idle,title=r.share.idle" aria-label="分享这一条" title="分享这一条">
+              <svg class="g g0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M14 5l6 6-6 6"/><path d="M20 11h-9a7 7 0 0 0-7 7v1"/></svg>
+              <svg class="g gok" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12.5 4.5 4.5L19 7.5"/></svg>
+              <i class="bang" aria-hidden="true">!</i>
+            </button>
+            <button class="act" id="copyReply" type="button" data-i18n-attr="aria-label=r.bar.copy,title=r.bar.copy" aria-label="复制整条回复（y）" title="复制整条回复（y）">
+              <svg class="g g0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="8" y="8" width="12" height="12" rx="2.5"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/></svg>
+            </button>
+            <button class="act" id="replyBtn" type="button" data-i18n-attr="aria-label=r.bar.reply,title=r.bar.reply" aria-label="回复这一条（r）" title="回复这一条（r）">
+              <svg class="g g0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M10 5 4 11l6 6"/><path d="M4 11h9a7 7 0 0 1 7 7v1"/></svg>
+            </button>
+          </div>
+        </div>
+      </div>
+      <button class="pz next" id="pgNext" type="button" data-i18n-attr="aria-label=r.pg.next,title=r.pg.nextTitle" aria-label="下一条（更新）" title="下一条（k / →）">&#8250;</button>
+      <!-- 全部停下: a red banner over the stage while the stop switch is on. -->
+      <div id="estop-banner" class="estop-banner" role="alert" hidden>
+        <p><strong data-i18n="estop.banner">已全部停下</strong><span id="estop-by" class="small"></span><br><span class="small" data-i18n="estop.bannerNote">Agent 不接新消息，等你批准的请求都已拒绝，定时任务已暂停。</span></p>
+        <button type="button" id="resume" class="estop-resume" data-i18n="estop.resume">恢复</button>
+      </div>
+      <div class="scrim" aria-hidden="true"></div>
+      <section class="sheet" id="sheet" data-i18n-attr="aria-label=r.sheet.aria" aria-label="待决">
+        <div class="grab"></div>
+        <div class="sheetacts">
+          <button class="qcancel" id="askCancel" type="button" hidden data-i18n-attr="aria-label=r.q.cancelAria" aria-label="取消这个问题（告诉 Agent 你要直接打字）">取消问题</button>
+          <button class="close" id="sheetClose" type="button" data-i18n-attr="aria-label=r.sheet.foldAria" aria-label="收起（只是收起，请求仍在等你）">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M6 9l6 6 6-6"/></svg><span data-i18n="r.sheet.fold">收起</span>
+          </button>
+        </div>
+        <div class="ask"><span class="dot"></span><span id="askText"></span><span class="askmore" id="askMore"></span></div>
+        <div class="asktags" id="askTags"></div>
+        <h2 id="sheetTitle"></h2>
+        <div class="cmd" id="cmdBox"><span class="tool" id="tool"></span><pre id="cmd"></pre></div>
+        <p class="why" id="why" hidden></p>
+        <div class="qs" id="qs" hidden></div>
+        <p class="askstate" id="askState" hidden role="status" aria-live="polite"></p>
+        <button class="asksend" id="askSend" type="button" hidden disabled data-i18n="r.q.confirm">确认</button>
+        <div class="apprbtns" id="apprBtns" hidden>
+          <button class="apprdeny" id="apprDeny" type="button" data-i18n-attr="aria-label=r.appr.denyAria" aria-label="拒绝这次操作"><span data-i18n="r.appr.deny">拒绝</span></button>
+          <button class="apprallow" id="apprAllow" type="button" data-i18n-attr="aria-label=r.appr.allowAria" aria-label="长按批准这次操作"><span class="fill"></span><span class="lbl" id="apprAllowLbl">长按批准</span></button>
+        </div>
+        <button class="apprbatch" id="apprBatch" type="button" hidden><span class="fill"></span><span class="lbl"><b id="apprBatchLbl"></b><small id="apprBatchScope"></small></span></button>
+        <p class="askleft" id="askLeft" hidden></p>
+        <div class="elsewhere">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="5" width="16" height="11" rx="1.5"/><path d="M2 19h20"/></svg>
+          <span id="elsewhereText"></span>
+        </div>
+      </section>
+      <button class="pendtag" id="pendTag" type="button" hidden><span class="dot"></span><span id="pendText"></span></button>
     </div>
-  </aside>
 
-  <section id="pair-view" class="view pair" hidden>
-    <div class="pair__hero">
-      <img src="brand/img/shield-256.png" width="96" height="96" alt="">
-      <div class="aj-lang pair__lang" data-aj-lang-switch>中文 / EN</div>
-    </div>
-    <h1 data-i18n="pair.title">连上你的电脑</h1>
-    <p class="lead" data-i18n="pair.lead">Agent 在你的电脑上干活，这台手机就是它的遥控器。不用注册登录，配对一次，以后打开就能用。</p>
-    <ol class="steps">
-      <li><span id="pair-step1" data-i18n="pair.step1">在电脑上运行 agentj pair，屏幕上会出现一个二维码。</span></li>
-      <li><span id="pair-step2" data-i18n="pair.step2">用手机扫这个二维码，或者把链接粘贴到下面。</span></li>
-      <li><span data-i18n="pair.step3">手机上会显示 6 位码。在电脑上输入它，再输入你的批准口令。</span></li>
-    </ol>
-    <p id="pair-iphone" class="note" data-i18n="pair.iphone" hidden>iPhone 要先把这个网页添加到主屏幕，再从主屏幕打开它来配对。别用相机扫码：那样配对的是 Safari 里的网页，和主屏幕上的不是同一个。</p>
-    <div class="row">
-      <button type="button" id="scan" class="aj-btn aj-btn--primary aj-btn--block" data-i18n="pair.scan">扫二维码</button>
-    </div>
-    <p id="scan-hint" class="small" hidden></p>
-    <div id="scan-box" class="scan" hidden>
-      <video id="scan-video" playsinline muted></video>
-      <button type="button" id="scan-stop" class="aj-btn" data-i18n="pair.scanStop">停止扫码</button>
-    </div>
-    <label for="pair-link" class="label" data-i18n="pair.or">或者粘贴配对链接</label>
-    <textarea id="pair-link" class="aj-textarea" rows="3" autocomplete="off" autocapitalize="off" spellcheck="false" data-i18n-attr="placeholder=pair.placeholder" placeholder="粘贴 agentj pair --link 显示的链接"></textarea>
-    <p id="pair-error" class="error" role="alert" hidden></p>
-    <div class="row">
-      <button type="button" id="pair-go" class="aj-btn aj-btn--primary aj-btn--block" data-i18n="pair.go">开始配对</button>
-    </div>
-    <nav class="mini-foot" aria-label="Agent J">
-      <a href="https://agentj.app/docs/phone/" target="_blank" rel="noopener" data-i18n="menu.help">手机怎么用</a>
-      <a href="https://agentj.app/security/" target="_blank" rel="noopener" data-i18n="menu.security">数据安全</a>
-      <a href="https://agentj.app/privacy/" target="_blank" rel="noopener" data-i18n="menu.privacy">隐私</a>
-    </nav>
-  </section>
+    <div class="tray" id="tray" hidden role="list" data-i18n-attr="aria-label=r.tray.aria" aria-label="待发附件"></div>
+    <template id="srcIcons">
+      <svg data-kind="leo" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></svg>
+      <svg data-kind="dev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="2.5" width="12" height="19" rx="2.5"/><path d="M11 18.5h2"/></svg>
+      <svg data-kind="host" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="5" width="16" height="11" rx="1.5"/><path d="M2 19h20"/></svg>
+      <svg data-kind="agent" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="7" width="16" height="12" rx="3"/><path d="M12 7V3M9 13h.01M15 13h.01"/></svg>
+      <svg data-kind="sys" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.9 1.9 0 0 0 3.4 0"/></svg>
+      <svg data-kind="task" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="13" r="8"/><path d="M12 9v4l2.5 2.5M9 2h6"/></svg>
+      <svg data-kind="cmd" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m5 8 4 4-4 4M12 17h7"/></svg>
+    </template>
+    <template id="chipIcons">
+      <svg data-kind="image" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2.5"/><circle cx="8.5" cy="9.5" r="1.6"/><path d="m4 18 5-5 4 4 3-2.5 4 3.5"/></svg>
+      <svg data-kind="file" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3v5h5M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/></svg>
+      <svg data-kind="audio" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18V5l11-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="17" cy="16" r="3"/></svg>
+      <svg data-kind="x" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"/></svg>
+    </template>
 
-  <section id="sas-view" class="view sas-view" hidden>
-    <img class="sas-view__logo" src="brand/img/status/logo-question.png" width="72" height="72" alt="">
-    <h1 data-i18n="sas.title">在电脑上输入这 6 位码</h1>
-    <p id="sas" class="sas" data-i18n-attr="aria-label=sas.aria" aria-label="6 位码">------</p>
-    <p class="lead center" data-i18n="sas.lead">在电脑上输入这 6 位数字，回车，再输入你的批准口令。</p>
-    <p class="small center" data-i18n="sas.note">这串数字只显示在手机上。电脑批准后，这里会自动进入对话。</p>
-  </section>
-
-  <section id="chat-view" class="view chat" hidden>
-    <div class="ctl-bar">
-      <nav class="tabs" data-i18n-attr="aria-label=nav.aria" aria-label="更多">
-        <button type="button" id="open-mem" class="aj-btn tab" data-i18n="nav.mem">记忆</button>
-        <button type="button" id="open-act" class="aj-btn tab" data-i18n="nav.act">记录</button>
-        <button type="button" id="open-tasks" class="aj-btn tab" data-i18n="nav.tasks">定时任务</button>
-      </nav>
-      <button type="button" id="estop" class="aj-btn btn-stop" data-i18n="estop.btn">全部停下</button>
-    </div>
-    <div id="estop-banner" class="estop-banner" role="alert" hidden>
-      <p><strong data-i18n="estop.banner">已全部停下</strong><span id="estop-by" class="small"></span><br><span class="small" data-i18n="estop.bannerNote">Agent 不接新消息，等你批准的请求都已拒绝，定时任务已暂停。</span></p>
-      <button type="button" id="resume" class="aj-btn aj-btn--primary" data-i18n="estop.resume">恢复</button>
-    </div>
-    <div id="push-row" class="push-row" hidden>
-      <span id="push-text" class="small"></span>
-      <button type="button" id="push-on" class="aj-btn aj-btn--sm" data-i18n="push.btn" hidden>开启锁屏提醒</button>
-    </div>
-    <div id="chat-empty" class="chat-empty">
-      <img src="brand/img/logo-mark.png" width="64" height="64" alt="">
-      <p class="chat-empty__title" data-i18n="chat.emptyTitle">已连上你的电脑</p>
-      <p class="small" data-i18n="chat.emptyText">跟 Agent 说句话吧。需要你点头的时候，它会在这里弹出卡片问你。</p>
-    </div>
-    <ul id="messages" class="messages" aria-live="polite"></ul>
-    <div class="dock">
+    <div class="meter" id="m5h" role="img" data-known="0" data-i18n-attr="aria-label=r.meter.h5" aria-label="5 小时额度"><i></i><span class="lab">5h</span></div>
+    <footer class="composer">
+      <div class="slashmenu" id="menu" hidden role="menu" data-i18n-attr="aria-label=r.menu.aria" aria-label="全部命令"></div>
+      <div class="ptt" id="ptt" hidden role="status" aria-live="assertive"><b id="pttTime">0:00</b><span id="pttHint"></span></div>
+      <div class="tools" id="tools">
+        <button class="tool" id="tDoc" type="button" data-i18n-attr="aria-label=r.tool.doc,title=r.tool.docTitle" aria-label="发文件" title="文件">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3v5h5M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/></svg>
+        </button>
+        <button class="tool" id="tPhoto" type="button" data-i18n-attr="aria-label=r.tool.photo,title=r.tool.photoTitle" aria-label="发相册图片" title="相册">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2.5"/><circle cx="8.5" cy="9.5" r="1.6"/><path d="m4 18 5-5 4 4 3-2.5 4 3.5"/></svg>
+        </button>
+        <button class="tool" id="tCamera" type="button" data-i18n-attr="aria-label=r.tool.camera,title=r.tool.cameraTitle" aria-label="拍一张" title="拍照">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8h3l1.6-2.2h6.8L17 8h3a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1z"/><circle cx="12" cy="13.5" r="3.4"/></svg>
+        </button>
+        <button class="tool mic" id="mic" type="button" data-i18n-attr="aria-label=r.mic.aria,title=r.mic.title" aria-label="按住说话，松开转成文字，上滑取消；双击锁定录音，再点一下结束" title="按住说话 · 松开转成文字 · 上滑取消 · 双击锁定录音，再点一下结束">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M12 15a3 3 0 0 0 3-3V6a3 3 0 0 0-6 0v6a3 3 0 0 0 3 3z"/><path d="M19 11a7 7 0 0 1-14 0M12 18v3"/></svg>
+          <span id="micLabel">按住说话</span>
+        </button>
+      </div>
+      <div class="qbar" id="qbar" hidden>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 5 4 11l6 6"/><path d="M4 11h9a7 7 0 0 1 7 7v1"/></svg>
+        <button class="qb" id="qbJump" type="button" data-i18n-attr="aria-label=r.quote.jump" aria-label="跳到被回复的那一条"><span class="qh" id="qbHead"></span><span class="qt" id="qbText"></span></button>
+        <button class="qx" id="qbX" type="button" data-i18n-attr="aria-label=r.quote.cancel,title=r.quote.cancel" aria-label="取消回复（Esc）" title="取消回复（Esc）">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"/></svg>
+        </button>
+      </div>
+      <!-- Batch approvals still live (Agent J): between the reply strip and the field. -->
       <div id="grant-bar" class="grant-bar" role="status" aria-live="polite" hidden>
         <span id="grant-text" class="grant-text"></span>
-        <button type="button" id="grant-off" class="aj-btn aj-btn--sm grant-off" data-i18n="grant.off">收回授权</button>
+        <button type="button" id="grant-off" class="grant-off" data-i18n="grant.off">收回授权</button>
       </div>
-      <div id="cmd-bar" class="cmd-bar" role="group" data-i18n-attr="aria-label=cmd.aria" aria-label="命令" hidden>
-        <button type="button" class="aj-btn cmd" data-cmd="compact" data-i18n="cmd.compact">压缩</button>
-        <button type="button" class="aj-btn cmd" data-cmd="clear" data-i18n="cmd.clear">清空</button>
-        <button type="button" class="aj-btn cmd" data-cmd="model" data-i18n="cmd.model">换模型</button>
-        <button type="button" class="aj-btn cmd" data-cmd="context" data-i18n="cmd.context">上下文</button>
-        <button type="button" class="aj-btn cmd" data-cmd="cost" data-i18n="cmd.cost">花费</button>
-        <button type="button" class="aj-btn cmd" data-cmd="usage" data-i18n="cmd.usage">用量</button>
-        <button type="button" class="aj-btn cmd" data-cmd="status" data-i18n="cmd.status">状态</button>
-        <button type="button" class="aj-btn cmd cmd-stop" data-cmd="stop" data-i18n="cmd.stop">停止</button>
+      <div class="row">
+        <input id="fPhoto" type="file" hidden multiple accept="image/*">
+        <input id="fCamera" type="file" hidden accept="image/*" capture="environment">
+        <input id="fDoc" type="file" hidden multiple accept=".txt,.md,.pdf,.csv,.json,text/plain,text/markdown,application/pdf,text/csv,application/json">
+        <div class="slashmenu sug" id="sug" hidden role="listbox" data-i18n-attr="aria-label=r.sug.aria" aria-label="匹配的命令"></div>
+        <button class="attach" id="slashBtn" type="button" data-i18n-attr="aria-label=r.menu.aria" aria-label="全部命令" aria-haspopup="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16M4 12h16M4 17h16"/></svg>
+        </button>
+        <label class="field"><textarea id="input" rows="1" placeholder="说点什么" enterkeyhint="send" aria-autocomplete="list" aria-controls="sug"></textarea><span class="asrtag" id="asrTag" hidden data-i18n="r.asr.tag">转写中…</span><button class="clr" id="clr" type="button" hidden tabindex="-1" data-i18n-attr="aria-label=r.clr.aria,title=r.clr.title" aria-label="清空输入框" title="清空文字（附件不动）"><i><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"/></svg></i></button></label>
+        <button class="saycancel" id="sayCancel" type="button" hidden data-i18n-attr="aria-label=r.say.cancelAria,title=r.say.cancelAria" aria-label="取消发送" title="取消发送"><b>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"/></svg><span data-i18n="r.say.cancel">取消</span></b>
+        </button>
+        <button class="send" id="send" type="button" data-i18n-attr="aria-label=r.say.send" aria-label="发送" disabled>
+          <i class="rocket" aria-hidden="true"></i>
+        </button>
       </div>
-      <div class="composer">
-        <button type="button" id="cmd-toggle" class="aj-btn cmd-toggle" aria-expanded="false" aria-controls="cmd-bar" data-i18n="cmd.toggle">命令</button>
-        <textarea id="msg-input" class="aj-textarea" rows="1" maxlength="4000" data-i18n-attr="placeholder=chat.placeholder,aria-label=chat.aria" placeholder="跟 Agent 说点什么" aria-label="消息"></textarea>
-        <button type="button" id="send" class="aj-btn aj-btn--primary send" data-i18n="chat.send">发送</button>
+    </footer>
+  </div>
+
+  <!-- ================================================================ Agent J pages (brand theme, over the chat) -->
+  <div class="ajpages" id="pages">
+    <aside id="a2hs" class="hint" hidden>
+      <img src="brand/img/icon-192.png" width="44" height="44" alt="">
+      <div class="hint__body">
+        <p class="hint__title" data-i18n="a2hs.title">添加到主屏幕，用起来像 App</p>
+        <p id="a2hs-text" class="small"></p>
+        <p class="hint__row"><a id="a2hs-more" class="hint__link" href="https://agentj.app/docs/phone/" target="_blank" rel="noopener" data-i18n="a2hs.more">详细步骤</a><button type="button" id="a2hs-ok" class="aj-btn aj-btn--sm" data-i18n="a2hs.ok">知道了</button></p>
       </div>
+    </aside>
+
+    <section id="pair-view" class="view pair" hidden>
+      <div class="pair__hero">
+        <img src="brand/img/shield-256.png" width="96" height="96" alt="">
+        <div class="aj-lang pair__lang" data-aj-lang-switch>中文 / EN</div>
+      </div>
+      <h1 data-i18n="pair.title">连上你的电脑</h1>
+      <p class="lead" data-i18n="pair.lead">Agent 在你的电脑上干活，这台手机就是它的遥控器。不用注册登录，配对一次，以后打开就能用。</p>
+      <ol class="steps">
+        <li><span id="pair-step1" data-i18n="pair.step1">在电脑上运行 agentj pair，屏幕上会出现一个二维码。</span></li>
+        <li><span id="pair-step2" data-i18n="pair.step2">用手机扫这个二维码，或者把链接粘贴到下面。</span></li>
+        <li><span data-i18n="pair.step3">手机上会显示 6 位码。在电脑上输入它，再输入你的批准口令。</span></li>
+      </ol>
+      <p id="pair-iphone" class="note" data-i18n="pair.iphone" hidden>iPhone 要先把这个网页添加到主屏幕，再从主屏幕打开它来配对。别用相机扫码：那样配对的是 Safari 里的网页，和主屏幕上的不是同一个。</p>
+      <div class="ajrow">
+        <button type="button" id="scan" class="aj-btn aj-btn--primary aj-btn--block" data-i18n="pair.scan">扫二维码</button>
+      </div>
+      <p id="scan-hint" class="small" hidden></p>
+      <div id="scan-box" class="scan" hidden>
+        <video id="scan-video" playsinline muted></video>
+        <button type="button" id="scan-stop" class="aj-btn" data-i18n="pair.scanStop">停止扫码</button>
+      </div>
+      <label for="pair-link" class="label" data-i18n="pair.or">或者粘贴配对链接</label>
+      <textarea id="pair-link" class="aj-textarea" rows="3" autocomplete="off" autocapitalize="off" spellcheck="false" data-i18n-attr="placeholder=pair.placeholder" placeholder="粘贴 agentj pair --link 显示的链接"></textarea>
+      <p id="pair-error" class="error" role="alert" hidden></p>
+      <div class="ajrow">
+        <button type="button" id="pair-go" class="aj-btn aj-btn--primary aj-btn--block" data-i18n="pair.go">开始配对</button>
+      </div>
+      <nav class="mini-foot" aria-label="Agent J">
+        <a href="https://agentj.app/docs/phone/" target="_blank" rel="noopener" data-i18n="menu.help">手机怎么用</a>
+        <a href="https://agentj.app/security/" target="_blank" rel="noopener" data-i18n="menu.security">数据安全</a>
+        <a href="https://agentj.app/privacy/" target="_blank" rel="noopener" data-i18n="menu.privacy">隐私</a>
+      </nav>
+    </section>
+
+    <section id="sas-view" class="view sas-view" hidden>
+      <img class="sas-view__logo" src="brand/img/status/logo-question.png" width="72" height="72" alt="">
+      <h1 data-i18n="sas.title">在电脑上输入这 6 位码</h1>
+      <p id="sas" class="sas" data-i18n-attr="aria-label=sas.aria" aria-label="6 位码">------</p>
+      <p class="lead center" data-i18n="sas.lead">在电脑上输入这 6 位数字，回车，再输入你的批准口令。</p>
+      <p class="small center" data-i18n="sas.note">这串数字只显示在手机上。电脑批准后，这里会自动进入对话。</p>
+    </section>
+
+    <section id="mem-view" class="view sub" hidden>
+      <div class="sub-head"><button type="button" class="aj-btn back" data-back data-i18n-attr="aria-label=nav.back" aria-label="返回对话"><span class="back__arrow" aria-hidden="true">←</span></button><h1 data-i18n="mem.title">它记住了什么</h1></div>
+      <p class="small" data-i18n="mem.intro">这些是 Agent 每次开工都会读的记忆，存在你的电脑上。可以逐条删除：删掉的内容先进电脑上的回收站，7 天内可以撤销。</p>
+      <p id="mem-status" class="small" role="status" aria-live="polite"></p>
+      <div id="mem-list" class="mem-list"></div>
+      <h2 class="trash-h" data-i18n="mem.trash">最近删除（7 天内可以恢复）</h2>
+      <ul id="mem-trash" class="plain-list"></ul>
+    </section>
+
+    <section id="act-view" class="view sub" hidden>
+      <div class="sub-head"><button type="button" class="aj-btn back" data-back data-i18n-attr="aria-label=nav.back" aria-label="返回对话"><span class="back__arrow" aria-hidden="true">←</span></button><h1 data-i18n="act.title">操作和审批记录</h1></div>
+      <p class="small" data-i18n="act.intro">这些记录存在你的电脑上，保留 30 天。</p>
+      <p id="act-status" class="small" role="status" aria-live="polite"></p>
+      <ul id="act-list" class="act-list"></ul>
+      <div class="ajrow"><button type="button" id="act-more" class="aj-btn" data-i18n="act.more" hidden>加载更早的</button></div>
+    </section>
+
+    <section id="tasks-view" class="view sub" hidden>
+      <div class="sub-head"><button type="button" class="aj-btn back" data-back data-i18n-attr="aria-label=nav.back" aria-label="返回对话"><span class="back__arrow" aria-hidden="true">←</span></button><h1 data-i18n="tasks.title">定时任务</h1></div>
+      <p class="small" data-i18n="tasks.intro">这些是 Agent 可以按时自动做的事。启用哪个由你决定；任务改过之后，要重新启用。</p>
+      <p id="tasks-status" class="small" role="status" aria-live="polite"></p>
+      <ul id="tasks-list" class="tasks-list"></ul>
+    </section>
+
+    <section id="revoked-view" class="view state-view" hidden>
+      <img src="brand/img/status/logo-offline.png" width="72" height="72" alt="">
+      <h1 data-i18n="revoked.title">这台手机已被电脑移除</h1>
+      <p class="lead" data-i18n="revoked.lead">电脑不再认这台手机。要继续用，先在电脑上运行 agentj pair，再重新配对。</p>
+      <p id="revoked-draft" class="small" data-i18n="revoked.draft" hidden>没发出去的草稿、输入记录和加密它们的密钥，都已从这台手机上删除。</p>
+      <div class="ajrow"><button type="button" id="repair" class="aj-btn aj-btn--primary aj-btn--block" data-i18n="revoked.btn">重新配对</button></div>
+    </section>
+
+    <section id="error-view" class="view state-view" hidden>
+      <img src="brand/img/status/logo-offline.png" width="72" height="72" alt="">
+      <h1 data-i18n="error.title">连接断开了</h1>
+      <p id="error-text" class="lead"></p>
+      <div class="ajrow"><button type="button" id="retry" class="aj-btn aj-btn--primary aj-btn--block" data-i18n="error.retry">重试</button></div>
+    </section>
+  </div>
+
+  <!-- ================================================================ dialogs and overlays -->
+  <section id="badge-panel" class="ajmodal" role="dialog" aria-modal="true" aria-labelledby="badge-title" hidden>
+    <div class="box">
+      <div class="panel__head"><img src="brand/img/shield-64.png" width="32" height="32" alt=""><h2 id="badge-title" data-i18n="badge.title">这个网页版有多安全</h2></div>
+      <ul>
+        <li data-i18n="badge.p1">手机和电脑之间的内容是加密的，我们的服务器看不懂。</li>
+        <li data-i18n="badge.p2">不过这个网页本身是从我们的服务器加载的：要是网页被人改过，就能看到你在这里看到的内容。以后的手机 App 没有这个问题。</li>
+        <li data-i18n="badge.p3">草稿和发过的话只存在这台手机上，而且是加密存的；朗读用手机自己的语音，分享走手机自己的分享面板。</li>
+      </ul>
+      <p class="small" data-i18n="badge.hash">本页的版本号（用来核对网页有没有被改过）：</p>
+      <p><code id="version-hash" class="hash">—</code></p>
+      <p class="small" data-i18n="badge.verify">怎么核对、我们存了什么，都写在「数据安全」页：agentj.app/security/</p>
+      <button type="button" id="badge-close" class="aj-btn" data-i18n="badge.close">收起</button>
     </div>
   </section>
-
-  <section id="mem-view" class="view sub" hidden>
-    <div class="sub-head"><button type="button" class="aj-btn back" data-back data-i18n-attr="aria-label=nav.back" aria-label="返回对话"><span class="back__arrow" aria-hidden="true">←</span></button><h1 data-i18n="mem.title">它记住了什么</h1></div>
-    <p class="small" data-i18n="mem.intro">这些是 Agent 每次开工都会读的记忆，存在你的电脑上。可以逐条删除：删掉的内容先进电脑上的回收站，7 天内可以撤销。</p>
-    <p id="mem-status" class="small" role="status" aria-live="polite"></p>
-    <div id="mem-list" class="mem-list"></div>
-    <h2 class="trash-h" data-i18n="mem.trash">最近删除（7 天内可以恢复）</h2>
-    <ul id="mem-trash" class="plain-list"></ul>
-  </section>
-
-  <section id="act-view" class="view sub" hidden>
-    <div class="sub-head"><button type="button" class="aj-btn back" data-back data-i18n-attr="aria-label=nav.back" aria-label="返回对话"><span class="back__arrow" aria-hidden="true">←</span></button><h1 data-i18n="act.title">操作和审批记录</h1></div>
-    <p class="small" data-i18n="act.intro">这些记录存在你的电脑上，保留 30 天。</p>
-    <p id="act-status" class="small" role="status" aria-live="polite"></p>
-    <ul id="act-list" class="act-list"></ul>
-    <div class="row"><button type="button" id="act-more" class="aj-btn" data-i18n="act.more" hidden>加载更早的</button></div>
-  </section>
-
-  <section id="tasks-view" class="view sub" hidden>
-    <div class="sub-head"><button type="button" class="aj-btn back" data-back data-i18n-attr="aria-label=nav.back" aria-label="返回对话"><span class="back__arrow" aria-hidden="true">←</span></button><h1 data-i18n="tasks.title">定时任务</h1></div>
-    <p class="small" data-i18n="tasks.intro">这些是 Agent 可以按时自动做的事。启用哪个由你决定；任务改过之后，要重新启用。</p>
-    <p id="tasks-status" class="small" role="status" aria-live="polite"></p>
-    <ul id="tasks-list" class="tasks-list"></ul>
-  </section>
-
-  <section id="revoked-view" class="view state-view" hidden>
-    <img src="brand/img/status/logo-offline.png" width="72" height="72" alt="">
-    <h1 data-i18n="revoked.title">这台手机已被电脑移除</h1>
-    <p class="lead" data-i18n="revoked.lead">电脑不再认这台手机。要继续用，先在电脑上运行 agentj pair，再重新配对。</p>
-    <div class="row"><button type="button" id="repair" class="aj-btn aj-btn--primary aj-btn--block" data-i18n="revoked.btn">重新配对</button></div>
-  </section>
-
-  <section id="error-view" class="view state-view" hidden>
-    <img src="brand/img/status/logo-offline.png" width="72" height="72" alt="">
-    <h1 data-i18n="error.title">连接断开了</h1>
-    <p id="error-text" class="lead"></p>
-    <div class="row"><button type="button" id="retry" class="aj-btn aj-btn--primary aj-btn--block" data-i18n="error.retry">重试</button></div>
-  </section>
-</main>
-<div id="sheet" class="sheet" role="dialog" aria-modal="true" aria-labelledby="sheet-title" hidden>
-  <div class="sheet-box">
-    <h2 id="sheet-title"></h2>
-    <p id="sheet-text"></p>
-    <div class="row sheet-row">
-      <button type="button" id="sheet-no" class="aj-btn" data-i18n="sheet.cancel">取消</button>
-      <button type="button" id="sheet-yes" class="aj-btn aj-btn--primary"></button>
+  <div id="confirm" class="ajmodal ajconfirm" role="dialog" aria-modal="true" aria-labelledby="confirm-title" hidden>
+    <div class="box">
+      <h2 id="confirm-title"></h2>
+      <p id="confirm-text"></p>
+      <div class="ajrow confirm-row">
+        <button type="button" id="confirm-no" class="aj-btn" data-i18n="sheet.cancel">取消</button>
+        <button type="button" id="confirm-yes" class="aj-btn aj-btn--primary"></button>
+      </div>
     </div>
   </div>
-</div>
-<div id="toast" class="toast" role="status" aria-live="polite" hidden><span id="toast-text"></span><button type="button" id="toast-btn" class="aj-btn aj-btn--sm" hidden></button></div>
+  <div class="toast" id="toast" role="status"></div>
+  <div class="cam" id="cam" hidden role="dialog" aria-modal="true" data-i18n-attr="aria-label=r.cam.aria" aria-label="拍照">
+    <div class="box">
+      <div class="msg" id="camMsg"></div>
+      <video id="camVideo" autoplay playsinline muted hidden></video>
+      <canvas id="camShot" hidden></canvas>
+      <div class="row">
+        <button type="button" id="camSnap" class="go" hidden data-i18n="r.cam.snap">拍照</button>
+        <button type="button" id="camRetake" hidden data-i18n="r.cam.retake">重拍</button>
+        <button type="button" id="camUse" class="go" hidden data-i18n="r.cam.use">使用这张</button>
+        <button type="button" id="camFile" hidden data-i18n="r.cam.file">选择文件</button>
+        <button type="button" id="camCancel" data-i18n="r.cam.cancel">取消</button>
+      </div>
+    </div>
+  </div>
+  <!-- The full-screen reader: double tap / × / Esc / back closes it. -->
+  <div class="rd" id="rd" hidden role="dialog" aria-modal="true" data-i18n-attr="aria-label=r.rd.aria" aria-label="全屏阅读">
+    <div class="rdbar" role="toolbar" data-i18n-attr="aria-label=r.rd.size" aria-label="字号">
+      <div class="sz">
+      <button id="rdMinus" type="button" data-i18n-attr="aria-label=r.rd.minus,title=r.rd.minus" aria-label="字小一号（-）" title="字小一号（-）"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M5 12h14"/></svg></button>
+      <input id="rdSlider" type="range" min="14" max="32" step="1" value="20" data-i18n-attr="aria-label=r.rd.size" aria-label="字号">
+      <button id="rdPlus" type="button" data-i18n-attr="aria-label=r.rd.plus,title=r.rd.plus" aria-label="字大一号（+）" title="字大一号（+）"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M5 12h14M12 5v14"/></svg></button>
+      <span class="fs" id="rdFsN" aria-hidden="true">20</span>
+      </div>
+      <button class="x" id="rdClose" type="button" data-i18n-attr="aria-label=r.rd.close,title=r.rd.close" aria-label="退出全屏阅读（Esc · 双击）" title="退出全屏阅读（Esc · 双击）"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"/></svg></button>
+    </div>
+    <div class="rdsc" id="rdScroll"><div class="rdin">
+      <div class="who" id="rdWho"></div>
+      <div class="words rdw" id="rdWords"></div>
+    </div></div>
+  </div>
+  <div class="keys" id="keys" hidden role="dialog" aria-modal="true" aria-labelledby="keysTitle">
+    <div class="box">
+      <h2 id="keysTitle" data-i18n="r.keys.title">键盘快捷键</h2>
+      <h3 data-i18n="r.keys.hEdit">编辑（同终端）</h3>
+      <dl>
+        <dt><kbd>i</kbd> / <kbd>Esc</kbd></dt><dd data-i18n="r.keys.i">进入 / 离开输入框（有补全列表时 Esc 先收列表）</dd>
+        <dt><kbd>Ctrl</kbd>+<kbd>A</kbd> <kbd>E</kbd></dt><dd data-i18n="r.keys.ae">到行首 / 行尾</dd>
+        <dt><kbd>Ctrl</kbd>+<kbd>U</kbd> <kbd>K</kbd></dt><dd data-i18n="r.keys.uk">删到行首 / 删到行尾</dd>
+        <dt><kbd>Ctrl</kbd>+<kbd>W</kbd></dt><dd data-i18n="r.keys.w">删前一个词（装到桌面的网页版 App 窗口里可用；Win/Linux 普通浏览器标签页里 Chrome 可能直接关标签）</dd>
+        <dt><kbd>Ctrl</kbd>+<kbd>Y</kbd></dt><dd data-i18n="r.keys.y">贴回刚删掉的</dd>
+        <dt><kbd>↑</kbd> <kbd>↓</kbd></dt><dd data-i18n="r.keys.hist">输入框空着时翻之前发过的话</dd>
+      </dl>
+      <h3 data-i18n="r.keys.hPage">翻页（输入框外）</h3>
+      <dl>
+        <dt><kbd>j</kbd> / <kbd>←</kbd></dt><dd data-i18n="r.keys.j">上一条（更早）</dd>
+        <dt><kbd>k</kbd> / <kbd>→</kbd></dt><dd data-i18n="r.keys.k">下一条（更新）</dd>
+        <dt><kbd>g</kbd> <kbd>G</kbd></dt><dd data-i18n="r.keys.g">最新一条 / 最早一条</dd>
+        <dt><kbd>o</kbd></dt><dd data-i18n="r.keys.o">展开 / 收起原话</dd>
+      </dl>
+      <h3 data-i18n="r.keys.hRead">阅读（输入框外）</h3>
+      <dl>
+        <dt><kbd>↑</kbd> <kbd>↓</kbd></dt><dd data-i18n="r.keys.scroll">在这条消息里往上 / 往下滚一段</dd>
+        <dt><kbd data-i18n="r.keys.space">空格</kbd></dt><dd data-i18n="r.keys.spaceDd">往下翻一屏（Shift+空格 往上）</dd>
+        <dt><kbd>f</kbd> · <span data-i18n="r.keys.dbl">双击卡片</span></dt><dd data-i18n="r.keys.f">全屏阅读；里面 + - 调字号，Esc / 双击 / f 退出</dd>
+        <dt><kbd>y</kbd></dt><dd data-i18n="r.keys.yy">复制整条回复</dd>
+        <dt><kbd>Y</kbd></dt><dd data-i18n="r.keys.YY">复制整段原话</dd>
+        <dt><kbd>r</kbd></dt><dd data-i18n="r.keys.r">回复这一条（引用条出现在输入框上方，Esc 取消）</dd>
+        <dt><kbd>?</kbd></dt><dd data-i18n="r.keys.q">显示这张表（右上角灯泡也行）</dd>
+      </dl>
+      <h3 data-i18n="r.keys.hAtt">附件 / 语音</h3>
+      <dl>
+        <dt><kbd>a</kbd> <kbd>p</kbd> <kbd>c</kbd></dt><dd data-i18n="r.keys.apc">文件 · 相册 · 拍照</dd>
+        <dt><kbd>m</kbd> <span data-i18n="r.keys.hold">按住</span></dt><dd data-i18n="r.keys.m">按住说话，松开转文字</dd>
+        <dt><kbd>m</kbd> <kbd>m</kbd> <span data-i18n="r.keys.dbl2">双击</span></dt><dd data-i18n="r.keys.mm">锁定录音，松手继续录；任意键结束，Esc 取消</dd>
+        <dt>🎤 <span data-i18n="r.keys.dbl3">双击</span></dt><dd data-i18n="r.keys.mic">锁定录音，松手继续录；再点一下结束，Esc 取消</dd>
+      </dl>
+      <h3 data-i18n="r.keys.hClear">清空与中断</h3>
+      <dl>
+        <dt><kbd>Esc</kbd> <kbd>Esc</kbd></dt><dd data-i18n="r.keys.ee">清空文字和附件</dd>
+        <dt><kbd>Esc</kbd> <kbd>Esc</kbd></dt><dd data-i18n="r.keys.eei">已经空了（≥1 秒）：中断当前任务</dd>
+      </dl>
+      <button type="button" class="close" id="keysClose" data-i18n="r.keys.ok">知道了</button>
+    </div>
+  </div>
+  <div class="dropzone" id="dropzone" hidden aria-hidden="true">
+    <div class="card"><span id="dropText"></span><small id="dropSub"></small></div>
+  </div>
+  <i class="probe" id="chromeProbe" aria-hidden="true"></i>
+  <i class="satband" id="satband" aria-hidden="true"></i>
 </body>
 </html>

@@ -42,7 +42,7 @@ import tempfile
 import time
 
 from . import slash
-from .agent import LINE_LIMIT, Agent, _bin, _signal_tree
+from .agent import LINE_LIMIT, UNCERTAIN, Agent, _bin, _signal_tree
 from .slash import Result
 from .envcompat import getenv
 from .text import clean, clean_line
@@ -75,7 +75,7 @@ def our_rules() -> list[dict]:
          _rule("read", "*", "allow"), _rule("read", "*.env", "ask"), _rule("read", "*.env.*", "ask"),
          _rule("read", "*.env.example", "allow")]
     r += [_rule(t, "*", "allow") for t in READ_ONLY_TOOLS]
-    r += [_rule("question", "*", "deny"),   # a TUI-only prompt nobody could answer: the model asks in text instead
+    r += [_rule("question", "*", "allow"),  # §10.7: the model may ASK the human — question.asked → a card on the phone
           _rule("task", "*", "deny")]       # subagent sessions inherit only deny rules, not ours (G-A65)
     r += [_rule("bash", p, "allow") for p in BASH_READ_ONLY]
     r += [_rule("bash", p, "ask") for p in BASH_BACK_TO_ASK]
@@ -96,10 +96,14 @@ def session_rules(agent_rules, research: bool = False) -> list[dict]:
     agent_rules = [r for r in (agent_rules or []) if isinstance(r, dict) and all(isinstance(r.get(k), str)
                                                                                 for k in ("permission", "pattern", "action"))]
     own = [_rule(r["permission"], r["pattern"], r["action"]) for r in agent_rules if _own_dir_rule(r)]
-    deny = [_rule(r["permission"], r["pattern"], "deny") for r in agent_rules if r["action"] == "deny"]
+    # every deny of the human's ruleset — except OpenCode's own built-in `question` deny that its defaults allow again right
+    # after (PROMPT-33 §10.7: the model may ask the human); a human whose ruleset really ends in a question deny keeps it
+    q_off = evaluate("question", "*", agent_rules) == "deny"
+    deny = [_rule(r["permission"], r["pattern"], "deny") for r in agent_rules if r["action"] == "deny"
+            and (r["permission"] != "question" or q_off)]
     ours = our_rules()
-    if research:
-        ours = [dict(r, action="deny") if r["action"] == "ask" else r for r in ours]
+    if research:          # a read-only scheduled run asks nobody anything: every ask (and the question tool) is a deny
+        ours = [dict(r, action="deny") if r["action"] == "ask" or r["permission"] == "question" else r for r in ours]
     out = ours + own + deny
     seen, dedup = set(), []
     for r in out:                       # keep the LAST copy of a duplicate (only the last one can decide)
@@ -346,6 +350,8 @@ class OpenCodeAgent(Agent):
         self.turn_done: asyncio.Event | None = None
         self.turn_t0 = 0.0
         self.pending: dict[str, asyncio.Future] = {}   # permission id → "gone" (replied elsewhere / process gone)
+        self.questions: dict[str, asyncio.Future] = {}  # question id → "gone" (§10.7)
+        self.q_sent: dict[str, list] = {}               # question id → the answers serve POSTed (P33-X05 tamper check)
         self.ours: set[str] = set()                     # permission ids serve replied to
         self.emitted: set[str] = set()                  # text part ids already on the phone
         self.connected = asyncio.Event()
@@ -375,11 +381,11 @@ class OpenCodeAgent(Agent):
     async def _spawn(self) -> bool:
         if not _bin("AGENTJ_OPENCODE_BIN", "opencode"):
             self.failed_start = True
-            self.host.agent_notice("这台电脑上没找到 OpenCode（opencode 命令）。装好并配好模型后再试。")
+            self.fail_notice("这台电脑上没找到 OpenCode（opencode 命令）。装好并配好模型后再试。")
             return False
         if self.cfg.get("model") and not split_model(self.cfg["model"]):
             self.failed_start = True
-            self.host.agent_notice("OpenCode 的模型要写成「服务商/模型」，例如 zhipuai/glm-5.3：在电脑终端重新运行 "
+            self.fail_notice("OpenCode 的模型要写成「服务商/模型」，例如 zhipuai/glm-5.3：在电脑终端重新运行 "
                                    "`agentj agent opencode --dir … --model zhipuai/glm-5.3`。")
             return False
         port, password = free_port(), secrets.token_urlsafe(32)
@@ -409,7 +415,7 @@ class OpenCodeAgent(Agent):
             await self._kill(proc)
             last = self._last_err()
             self.failed_start = True
-            self.host.agent_notice("OpenCode 没有启动" + (f"：{last}" if last else "。"))
+            self.fail_notice("OpenCode 没有启动" + (f"：{last}" if last else "。"))
             return False
         self._bg(self._drain(proc.stdout))
         self._bg(self._watch(proc))
@@ -421,7 +427,7 @@ class OpenCodeAgent(Agent):
             self.quiet_exit = True
             await self._kill(proc)
             self.failed_start = True
-            self.host.agent_notice(f"OpenCode 起来了，但没能接上它（{type(e).__name__}）：为了安全，这条消息没有交给它。")
+            self.fail_notice(f"OpenCode 起来了，但没能接上它（{type(e).__name__}）：为了安全，这条消息没有交给它。")
             return False
         self._bg(self._events(proc))
         try:
@@ -430,7 +436,7 @@ class OpenCodeAgent(Agent):
             self.quiet_exit = True
             await self._kill(proc)
             self.failed_start = True
-            self.host.agent_notice("OpenCode 的事件流没有接上：为了安全，这条消息没有交给它（审批会收不到）。")
+            self.fail_notice("OpenCode 的事件流没有接上：为了安全，这条消息没有交给它（审批会收不到）。")
             return False
         return self.proc is proc
 
@@ -511,7 +517,7 @@ class OpenCodeAgent(Agent):
         if self.turn_done and not self.turn_done.is_set():
             if not quiet:
                 last = self._last_err()
-                self.host.agent_notice(f"OpenCode 退出了（{code}）" + (f"：{last}" if last else ""))
+                self.fail_notice(f"OpenCode 退出了（{code}）" + (f"：{last}" if last else ""))
             self.turn_done.set()
         elif not quiet:
             self.host.agent_notice(f"OpenCode 退出了（{code}）：下一条消息会重新启动它。")
@@ -623,7 +629,7 @@ class OpenCodeAgent(Agent):
             err = p.get("error") if isinstance(p.get("error"), dict) else {}
             if err.get("name") != "MessageAbortedError":
                 msg = (err.get("data") or {}).get("message") if isinstance(err.get("data"), dict) else None
-                self.host.agent_notice("OpenCode 这一轮没有正常完成" + (f"：{clean(msg, 300)}" if isinstance(msg, str) and msg
+                self.fail_notice("OpenCode 这一轮没有正常完成" + (f"：{clean(msg, 300)}" if isinstance(msg, str) and msg
                                                                        else f"（{clean(str(err.get('name') or '?'), 60)}）。"))
         elif t == "session.status" and p.get("sessionID") == self.sid:
             s = p.get("status") if isinstance(p.get("status"), dict) else {}
@@ -641,8 +647,52 @@ class OpenCodeAgent(Agent):
             info = p.get("info") if isinstance(p.get("info"), dict) else {}
             if "permission" in info and self.rules and not ends_with_ours(info.get("permission"), self.rules):
                 self._tamper("session_rules")
-        elif t == "question.asked" and isinstance(p.get("id"), str) and self.client:   # denied by our rules; never left hanging
-            self._bg(self._quiet(self.client.request("POST", f"/question/{p['id']}/reject", {})))
+        elif t == "question.asked" and isinstance(p.get("id"), str) and self.client:   # §10.7: a card on the phone
+            if p.get("sessionID") not in (self.sid, None) or p["id"] in self.questions:
+                return
+            self._bg(self._question(p["id"], p.get("questions")))
+        elif t in ("question.replied", "question.rejected"):
+            rid = p.get("requestID")
+            f = self.questions.get(rid)
+            if f and not f.done():
+                f.set_result(True)
+            if t == "question.replied":
+                # P33-X05: the question endpoint takes the server password, which the Agent's own tool processes inherit.
+                # An answer serve did not POST (or different from the one it POSTed, which the human signed) means
+                # something else answered for the human: OpenCode is stopped at once, like a foreign permission reply.
+                mine = self.q_sent.pop(rid, None)
+                if mine is None or ("answers" in p and p.get("answers") != mine):
+                    self._tamper("foreign_question_reply")
+            else:
+                self.q_sent.pop(rid, None)
+
+    async def _question(self, qid: str, qs) -> None:
+        """question.asked → one card; the answer = the picked labels per question (`reply`); cancel / timeout / anything the
+        card cannot show → `reject` (the model is told nobody chose, and asks in text)."""
+        from .approvals import norm_questions
+        gone = asyncio.get_running_loop().create_future()
+        self.questions[qid] = gone
+        client = self.client
+        body, path = {}, f"/question/{qid}/reject"
+        try:
+            raw = [{"question": q.get("question"), "header": q.get("header") or "", "multiSelect": bool(q.get("multiple")),
+                    "options": q.get("options")} for q in qs] if isinstance(qs, list) else None
+            card = norm_questions(raw) if raw and not self.research else None
+            if card is not None:
+                outcome, picks = await self.host.question(card, gone, task=getattr(self.host, "task_label", None))
+                if outcome == "answer" and picks:
+                    body = {"answers": [[q["o"][n - 1]["l"] for n in p] for q, p in zip(card, picks)]}
+                    path = f"/question/{qid}/reply"
+        except Exception:  # noqa: BLE001 — fail closed: rejected
+            body, path = {}, f"/question/{qid}/reject"
+        finally:
+            self.questions.pop(qid, None)
+        if gone.done() or not client:
+            return
+        if path.endswith("/reply"):
+            self.q_sent[qid] = body["answers"]          # before the POST: its question.replied must match exactly this
+        with contextlib.suppress(OSError, HTTPError, asyncio.TimeoutError):
+            await client.request("POST", path, body)
 
     @staticmethod
     async def _quiet(coro) -> None:
@@ -659,7 +709,7 @@ class OpenCodeAgent(Agent):
     def _tamper(self, why: str) -> None:
         p = self.proc
         self.host.st.log("agent_tamper", agent=self.kind, reason=why)
-        self.host.agent_notice("有程序绕过手机改了 OpenCode 的权限（直接批准请求或改了会话规则）：为了安全，已停止 OpenCode。"
+        self.host.agent_notice("有程序绕过手机操作了 OpenCode（直接批准请求、替你回答问题或改了会话规则）：为了安全，已停止 OpenCode。"
                                "下一条消息会重新启动它；如果不是你做的，检查这台电脑上 Agent 最近运行过的程序。")
         if p:
             self.quiet_exit = True
@@ -703,7 +753,7 @@ class OpenCodeAgent(Agent):
             await self._attach()
             return True
         except (OSError, HTTPError, ValueError, KeyError, TypeError, AttributeError, asyncio.TimeoutError) as e:
-            self.host.agent_notice(f"OpenCode 没能打开这段对话（{type(e).__name__}）：这条没有交给它。")
+            self.fail_notice(f"OpenCode 没能打开这段对话（{type(e).__name__}）：这条没有交给它。")
             return False
 
     async def turn(self, text: str) -> None:
@@ -719,8 +769,18 @@ class OpenCodeAgent(Agent):
             m = split_model(self.cfg.get("model"))
             if m:
                 body["model"] = m
+            box = {}
+            client, sid = self.client, self.sid
+
+            async def post():
+                box["st"], _ = await client.request("POST", f"/session/{sid}/prompt_async", body)
+                if box["st"] in (200, 204):             # §10.2: prompt_async accepted = delivered
+                    return True
+                # 4xx: OpenCode refused it (never delivered); anything else may have been taken (P33-X08)
+                return False if isinstance(box["st"], int) and 400 <= box["st"] < 500 else UNCERTAIN
             try:
-                st, _ = await self.client.request("POST", f"/session/{self.sid}/prompt_async", body)
+                await self.deliver(post)
+                st = box["st"]
             except (OSError, HTTPError, AttributeError, asyncio.TimeoutError):
                 if self.proc:
                     await self._kill(self.proc)
@@ -731,12 +791,62 @@ class OpenCodeAgent(Agent):
                 await self._kill(self.proc)
                 continue
             if st not in (200, 204):
-                self.host.agent_notice(f"OpenCode 没有接这条消息（HTTP {st}）。")
+                self.fail_notice(f"OpenCode 没有接这条消息（HTTP {st}）。")
                 return
             await self._wait_turn()
             with contextlib.suppress(OSError, HTTPError, asyncio.TimeoutError):
                 await self._catch_up()                    # a text part whose end event never came
+            if self.persist and self.collect is None:
+                with contextlib.suppress(Exception):
+                    await self.context_meter()
             return
+
+    async def context_meter(self) -> None:
+        """§10.10: the newest assistant message's tokens / the model's `limit.context`; quotas stay null (vendor quotas)."""
+        info = await self._last_assistant()
+        used = self._ctx(info)
+        m = self._model_of(info)
+        limit = None
+        prov = await self._providers()
+        if m:
+            for p in prov.get("providers") or []:
+                if isinstance(p, dict) and p.get("id") == m["providerID"]:
+                    mm = (p.get("models") or {}).get(m["modelID"]) if isinstance(p.get("models"), dict) else None
+                    lim = mm.get("limit") if isinstance(mm, dict) else None
+                    limit = lim.get("context") if isinstance(lim, dict) else None
+        if not self.models_cache:
+            self._set_models(prov)
+        mid = f"{m['providerID']}/{m['modelID']}" if m else self.cur_model()
+        upd = {"model": mid, "model_name": self.model_name(mid)}
+        if isinstance(used, int) and isinstance(limit, int) and limit > 0:
+            upd["ctx"] = {"used": used, "max": limit}
+        self.meter(**upd)
+
+    def _set_models(self, prov: dict) -> None:
+        out = []
+        for p in prov.get("providers") or []:
+            if not isinstance(p, dict) or not isinstance(p.get("id"), str) or not isinstance(p.get("models"), dict):
+                continue
+            for mid, mm in p["models"].items():
+                full = f"{p['id']}/{mid}"
+                if isinstance(mid, str) and slash.MODEL_RE.match(full):
+                    name = mm.get("name") if isinstance(mm, dict) and isinstance(mm.get("name"), str) else mid
+                    out.append({"id": clean_line(full, 100), "name": clean_line(name, 60), "efforts": None})
+        if out:
+            self.models_cache = out[:40]
+            fn = getattr(self.host, "models_changed", None)
+            if fn:
+                fn()
+
+    async def refresh_models(self) -> None:
+        if self.client:
+            self._set_models(await self._providers())
+
+    async def apply_model(self, model, effort, default: bool = False):
+        """OpenCode: the model rides on every prompt_async ("provider/model"); no effort until a probe proves the field."""
+        if model is not None and not split_model(model):
+            return "unknown_model"
+        return await super().apply_model(model, effort, default)
 
     async def _wait_turn(self) -> None:
         """Until session.idle; every WATCH s also ask OpenCode itself, so a lost idle event cannot hang the queue."""
@@ -951,4 +1061,5 @@ class OpenCodeAgent(Agent):
         if not split_model(arg) or not slash.MODEL_RE.match(arg) or (models and arg not in {m["id"] for m in models}):
             return Result(f"没有这个模型：{clean_line(arg, 100)}（写成「服务商/模型」）", "error")
         self.host.set_model(arg)
+        self.meter(model=arg, model_name=self.model_name(arg))
         return Result(f"已切换到 {arg}：从下一条消息起使用，写进了 config.json。")

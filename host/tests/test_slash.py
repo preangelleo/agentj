@@ -277,6 +277,7 @@ class ClaudeChain(_Chain):
             self.assertFalse(c["host"].stopped())
             await c["say"]("还在吗")
             await c["wait"](lambda: any(m["text"] == "ECHO: 还在吗" for m in c["msgs"]()))
+            await c["wait"](lambda: c["host"].agent.status == "idle")   # the reply lands just before the turn's end
             nothing = await c["cmd"]("stop")
             self.assertEqual(nothing["kind"], "info")
             hp = await c["cmd"]("help")
@@ -637,6 +638,8 @@ class OpenCodeChain(_Chain):
             await asyncio.sleep(0.3)
             await host._app(c["s"], _signed(c["ph"], "estop", {}, {"t": "estop", "r": "e1"}))
             await c["wait"](lambda: host.stopped() and host.agent.status != "working")
+            # the stand-in logs the abort request when it gets it: wait for it rather than race the end of the chain
+            await c["wait"](lambda: sum(1 for r in self.logged() if r.get("path", "").endswith("/abort")) >= 2)
         self.run_chain(script)
         lg = self.logged()
         self.assertEqual(sum(1 for r in lg if r.get("path", "").endswith("/abort")), 2, "/stop and the stop switch")

@@ -13,6 +13,8 @@ sees whether serve asked for `untrusted`). What a turn does (the text of the mes
     PERM: <path>           item/permissions/requestApproval for write access to <path>
     NET: <cmd>             a command with a networkApprovalContext
     SLEEP: <s>             works for s seconds (turn/interrupt ends it: status "interrupted")
+    ASK: <json questions>  item/tool/requestUserInput; replies "ANSWERS: <the answers it got>"   (PROTOCOL §10.7)
+    FORM                   mcpServer/elicitation/request; replies "FORM: <the answer>"
     anything else          one agentMessage "ECHO: <text>"
 Every client message and every answer to a server request is logged to FAKE_CX_LOG (JSONL). FAKE_CX_POLICY = the human's
 approval_policy for config/read (JSON); FAKE_CX_THREADS = thread ids that "already exist" (resume); FAKE_CX_SANDBOX = the
@@ -76,7 +78,7 @@ def usage(tid, add):
                  "reasoningOutputTokens": 0},
         "modelContextWindow": 258400}})
     note("account/rateLimits/updated", {"rateLimits": {"limitId": "codex", "primary": {"usedPercent": 20, "windowDurationMins": 10080,
-                                                                                      "resetsAt": 1791046812}, "secondary": None}})
+                                                                                      "resetsAt": 1791046812}, "secondary": {"usedPercent": 7, "windowDurationMins": 300, "resetsAt": 1790950000}}})
 
 
 def say(tid, turn, text):
@@ -157,6 +159,14 @@ def run_turn(tid, turn, text):
                 "threadId": tid, "turnId": turn, "itemId": "perm-1", "cwd": os.getcwd(), "startedAtMs": 0, "reason": "needs to write",
                 "permissions": {"fileSystem": {"write": [text[6:].strip()]}, "network": None}})
             say(tid, turn, "granted: " + json.dumps(r.get("permissions"), sort_keys=True))
+        elif text.startswith("ASK: "):                # item/tool/requestUserInput (PROTOCOL §10.7), questions as JSON
+            r = server_request("item/tool/requestUserInput", {"threadId": tid, "turnId": turn, "itemId": "ui-1",
+                                                               "questions": json.loads(text[5:])})
+            say(tid, turn, "ANSWERS: " + json.dumps(r.get("answers"), ensure_ascii=False, sort_keys=True))
+        elif text == "FORM":                          # an MCP elicitation (a form nobody on the phone can fill)
+            r = server_request("mcpServer/elicitation/request", {"threadId": tid, "turnId": turn, "serverName": "x",
+                                                                 "message": "fill this", "requestedSchema": {}})
+            say(tid, turn, "FORM: " + json.dumps(r, sort_keys=True))
         elif text.startswith("SLEEP: "):
             t0 = time.time()
             while time.time() - t0 < float(text[7:]):
@@ -200,7 +210,8 @@ def handle(m):
         return {"userAgent": "agentjarvis/0.159.2-fake (Linux; x86_64)", "codexHome": "~/.codex"}
     if method == "config/read":
         pol = json.loads(os.environ["FAKE_CX_POLICY"]) if os.environ.get("FAKE_CX_POLICY") else None
-        return {"config": {"approval_policy": pol, "approvals_reviewer": "auto_review", "sandbox_mode": None, "model": "gpt-fake"}}
+        return {"config": {"approval_policy": pol, "approvals_reviewer": "auto_review", "sandbox_mode": None, "model": "gpt-fake",
+                           "model_reasoning_effort": "medium"}}
     if method in ("thread/start", "thread/resume"):
         if method == "thread/resume":
             tid = p.get("threadId")
@@ -243,13 +254,15 @@ def handle(m):
         threading.Thread(target=compact, daemon=True).start()
         return {}
     if method == "model/list":
-        return {"data": [{"id": "gpt-fake", "model": "gpt-fake", "displayName": "GPT Fake", "description": "default", "hidden": False},
+        effs = [{"reasoningEffort": e, "description": e} for e in ("low", "medium", "high")]
+        return {"data": [{"id": "gpt-fake", "model": "gpt-fake", "displayName": "GPT Fake", "description": "default", "hidden": False,
+                          "supportedReasoningEfforts": effs, "defaultReasoningEffort": "medium"},
                          {"id": "gpt-fake-mini", "model": "gpt-fake-mini", "displayName": "GPT Fake Mini", "description": "small",
                           "hidden": False},
                          {"id": "gpt-hidden", "model": "gpt-hidden", "displayName": "Hidden", "hidden": True}], "nextCursor": None}
     if method == "account/rateLimits/read":
         return {"rateLimits": {"limitId": "codex", "primary": {"usedPercent": 20, "windowDurationMins": 10080, "resetsAt": 1791046812},
-                               "secondary": None}}
+                               "secondary": {"usedPercent": 7, "windowDurationMins": 300, "resetsAt": 1790950000}}}
     if method == "thread/delete":
         THREADS.pop(p.get("threadId"), None)
         return {}

@@ -11,8 +11,11 @@
     "security": "Data security",
     "privacy": "Privacy",
     "terms": "Terms",
-    "site": "Agent J website",
-    "foot": "We can't see your conversations."
+    "foot": "We can't see your conversations.",
+    "unpair": "Unpair this phone",
+    "unpairTitle": "Unpair this phone?",
+    "unpairText": "This phone forgets the computer, together with its drafts and what you sent. To use it again, run `agentj pair` on the computer and pair again.",
+    "unpairYes": "Unpair"
   },
   "badge": {
     "label": "Web app",
@@ -21,7 +24,8 @@
     "p2": "This web page itself, though, is loaded from our servers: if someone changed it, they could see what you see here. The phone app we're planning won't have that problem.",
     "hash": "This page's version number (for checking it hasn't been changed):",
     "verify": "How to check it, and what we keep, is on the Data security page: agentj.app/security/",
-    "close": "Close"
+    "close": "Close",
+    "p3": "Drafts and what you sent are kept on this phone only, encrypted; read-aloud uses the phone's own voices and sharing uses the phone's own share sheet."
   },
   "st": {
     "idle": "Not paired yet",
@@ -63,7 +67,6 @@
     "note": "The code is only shown on this phone. Once your computer approves, the chat opens here by itself."
   },
   "nav": {
-    "aria": "More",
     "mem": "Memory",
     "act": "Activity",
     "tasks": "Schedules",
@@ -83,14 +86,6 @@
     "resumeText": "Your Agent takes messages again, and scheduled tasks go back to their own on/off settings.",
     "resumeYes": "Resume",
     "resumeFail": "Didn't resume: {why}"
-  },
-  "ag": {
-    "idle": "Idle",
-    "working": "Working…",
-    "compacting": "Compacting…",
-    "waiting": "Waiting for you",
-    "down": "Not running",
-    "stopped": "Stopped"
   },
   "push": {
     "offer": "Want to know when your Agent replies, even with the screen locked?",
@@ -115,27 +110,9 @@
     }
   },
   "chat": {
-    "emptyTitle": "Connected to your computer",
-    "emptyText": "Say something to your Agent. Whenever it needs your OK, it pops up a card here to ask you.",
-    "placeholder": "Message",
-    "placeholderStopped": "Stopped — resume to send",
-    "aria": "Message",
-    "send": "Send"
+    "placeholderStopped": "Stopped — resume to send"
   },
   "cmd": {
-    "toggle": "Commands",
-    "aria": "Commands",
-    "compact": "Compact",
-    "clear": "Clear",
-    "model": "Model",
-    "context": "Context",
-    "cost": "Cost",
-    "usage": "Usage",
-    "status": "Status",
-    "help": "Help",
-    "stop": "Stop",
-    "undo_clear": "Undo clear",
-    "refused": "Command",
     "current": " (current)",
     "undo": "Undo clear",
     "result": {
@@ -157,29 +134,13 @@
       "credentials": "Changes passwords or keys",
       "price": "Changes prices"
     },
-    "titleDanger": "⚠ This one needs your OK: {tool}",
-    "title": "Your Agent wants to run: {tool}",
     "task": "Scheduled task \"{task}\"",
     "why": "Why: {why}",
-    "allowOne": "Approve this one",
-    "allow": "Approve",
-    "deny": "Deny",
-    "batch": "Approve, and auto-approve similar low-risk actions this turn",
     "batchScope": "Similar = {scope} · up to {max} times / {mins} min · ends with this turn · spending, deleting and the like still ask you one by one",
     "left": "{n} s left — denied if you don't answer",
     "timeUp": "Time's up, waiting for your computer…",
     "noSign": "This browser can't sign approvals, so you can't approve here. Use the latest Chrome, Safari or Firefox and pair again.",
-    "sentBatch": "Approval sent (including similar actions this turn), waiting for your computer…",
-    "sentAllow": "Approval sent, waiting for your computer…",
-    "sentDeny": "Denial sent, waiting for your computer…",
-    "auto": "Auto-approved as you allowed: {tool} · {summary}",
-    "result": {
-      "allow": "Approved",
-      "deny": "Denied",
-      "timeout": "Timed out — denied",
-      "gone": "Cancelled",
-      "stopped": "Void (everything stopped)"
-    }
+    "auto": "Auto-approved as you allowed: {tool} · {summary}"
   },
   "why": {
     "changed": "The file just changed — refreshed, please check again",
@@ -323,7 +284,8 @@
   "revoked": {
     "title": "This phone was removed by your computer",
     "lead": "Your computer no longer trusts this phone. To keep using it, run `agentj pair` on your computer and pair again.",
-    "btn": "Pair again"
+    "btn": "Pair again",
+    "draft": "Your unsent draft, your input history and the key that encrypted them were deleted from this phone."
   },
   "error": {
     "title": "Disconnected",
@@ -342,5 +304,484 @@
     "android": "In Chrome, tap ⋮ at the top right, then Add to Home Screen or Install app.",
     "more": "Step-by-step guide",
     "ok": "Got it"
+  },
+  "r": {
+    "orb": {
+      "title": "Tap to change the text size, hold to reset"
+    },
+    "fz": {
+      "m": "Text size: medium",
+      "l": "Text size: large",
+      "s": "Text size: small"
+    },
+    "capt": {
+      "working": "Working",
+      "idle": "Waiting for your next message",
+      "unknown": "Checking the status",
+      "permission": "An action needs your approval",
+      "question": "A question needs your answer"
+    },
+    "waited": "· waiting {n} min",
+    "stale": "Last synced at {hm}; it refreshes when the connection is back.",
+    "meter": {
+      "week": "Weekly quota",
+      "h5": "5-hour quota",
+      "used": "{label}: {pct}% used",
+      "unknown": "{label} (no data)"
+    },
+    "usage": {
+      "none": "The Agent on the computer has not reported usage yet",
+      "age": "Data from {s} s ago",
+      "week": "week {p}%",
+      "h5": "5 h {p}%",
+      "ctx": "context {p}%",
+      "ctxPost": "context — (updating after the compaction)",
+      "ago": "{s} s ago"
+    },
+    "pill": {
+      "unsupported": "The Agent on the computer cannot switch models from the phone yet",
+      "noEffort": "This model has no effort levels to switch",
+      "default": "Back to the default: {name} · {effort}",
+      "queued": "The Agent is busy; it switches after this turn",
+      "fail": "Not switched: {why}",
+      "why": {
+        "unknown_model": "the computer does not know this model",
+        "unknown_effort": "this model does not support that effort",
+        "busy": "the Agent is busy",
+        "unsupported": "not supported on the computer",
+        "stopped": "everything is stopped",
+        "offline": "not connected to the computer",
+        "timeout": "the computer did not answer",
+        "other": "something went wrong"
+      }
+    },
+    "empty": "No messages yet",
+    "emptyReady": "Connected to your computer. Say something to the Agent; when it needs your OK, it asks you here.",
+    "noReply": "(no reply to this one)",
+    "part": "part {k}/{n}",
+    "om": {
+      "aria": "Original message",
+      "expand": "Show the whole message (o)",
+      "collapse": "Collapse the message (o)",
+      "collapseShort": "Less ▴",
+      "none": "(the original message was not recorded)",
+      "attOnly": "(attachments only)"
+    },
+    "src": {
+      "you": "You",
+      "otherDevice": "Another device",
+      "host": "Computer",
+      "agent": "{name} itself",
+      "sys": "Notice",
+      "local": "Handle it on the computer",
+      "task": "Scheduled task",
+      "taskNamed": "Scheduled task · {name}",
+      "cmd": "Command"
+    },
+    "local": "This has to be handled on the computer",
+    "pg": {
+      "prev": "Previous (older)",
+      "prevTitle": "Previous (j / ←)",
+      "next": "Next (newer)",
+      "nextTitle": "Next (k / →)"
+    },
+    "bar": {
+      "aria": "This reply",
+      "read": "Read full screen (f · double-tap the card)",
+      "copy": "Copy the whole reply (y)",
+      "reply": "Reply to this one (r)"
+    },
+    "copy": {
+      "fail": "Copy failed",
+      "nothing": "Nothing to copy",
+      "reply": "Reply copied",
+      "source": "Message copied"
+    },
+    "md": {
+      "copy": "Copy",
+      "copyAria": "Copy the code",
+      "copied": "Copied",
+      "image": "image"
+    },
+    "speak": {
+      "idle": "Read this one aloud",
+      "gen": "Preparing to read…",
+      "playing": "Pause reading",
+      "paused": "Resume reading",
+      "ready": "Tap to start reading",
+      "failed": "Reading failed; tap to retry",
+      "err": {
+        "novoice": "This phone has no on-device voice (only the phone's own voices are used, so the text is never sent anywhere)",
+        "empty": "Nothing to read in this one",
+        "unsupported": "This browser cannot read aloud",
+        "engine": "Reading aloud failed"
+      }
+    },
+    "share": {
+      "idle": "Share this one",
+      "sending": "Opening the share sheet…",
+      "sent": "Shared",
+      "failed": "Sharing failed; tap to retry",
+      "copied": "This device cannot share directly; copied — paste it where you want"
+    },
+    "quote": {
+      "jump": "Go to the message this replies to",
+      "cancel": "Cancel the reply (Esc)",
+      "head": "Reply · {who}",
+      "headEx": "Quote · {who}",
+      "copied": "copied",
+      "noText": "(no text in this one)",
+      "gone": "That one is no longer in the history",
+      "wrap": "“{text}”",
+      "excerptTag": "excerpt"
+    },
+    "rd": {
+      "aria": "Full-screen reader",
+      "size": "Text size",
+      "minus": "Smaller (-)",
+      "plus": "Larger (+)",
+      "close": "Close the reader (Esc · double-tap)",
+      "px": "{n} pixels"
+    },
+    "sheet": {
+      "aria": "Waiting for you",
+      "fold": "Hide",
+      "foldAria": "Hide (only hides it; the request is still waiting)"
+    },
+    "ask": {
+      "nod": "Your OK, please",
+      "answer": "Your answer, please",
+      "more": "{n} more waiting"
+    },
+    "pend": {
+      "question": "A question is waiting",
+      "permission": "An action is waiting for you"
+    },
+    "verb": {
+      "Bash": "Run a command",
+      "Write": "Write a file",
+      "Edit": "Edit a file",
+      "MultiEdit": "Edit a file",
+      "NotebookEdit": "Edit a notebook",
+      "Read": "Read a file",
+      "WebFetch": "Open a web address",
+      "WebSearch": "Search the web",
+      "Delete": "Delete a file",
+      "ExternalDirectory": "Use files outside its folder",
+      "CodexPermissions": "Ask for more permissions",
+      "other": "Use {tool}",
+      "danger": "⚠ {verb}"
+    },
+    "appr": {
+      "deny": "Deny",
+      "denyAria": "Deny this action",
+      "allowAria": "Press and hold to approve this action",
+      "hold": "Hold to approve",
+      "holdOne": "Hold to approve this one",
+      "batchHold": "Hold: approve, and auto-approve the same low-risk kind for the rest of this turn",
+      "holdHint": "Keep holding to approve",
+      "net": "Not connected, nothing was sent; try again or handle it on the computer",
+      "fail": "Not sent; try again or handle it on the computer",
+      "elsewhere": "Handle it on the computer",
+      "elsewhereLive": "Or on the computer · the first answer counts",
+      "st": {
+        "localOnly": "This kind can only be approved on the computer; the phone can only deny",
+        "localOnlyShort": "Approve this kind on the computer",
+        "allow_sent": "Approval sent; waiting for the computer…",
+        "deny_sent": "Denial sent; waiting for the computer…",
+        "batch_sent": "Approval sent (with the same kind for this turn); waiting for the computer…",
+        "approved": "Approved",
+        "denied": "Denied",
+        "terminal": "Handled on the computer",
+        "timeout": "Timed out; denied",
+        "ended": "This request has ended",
+        "stopped": "Void (everything stopped)"
+      }
+    },
+    "q": {
+      "title1": "Answer a question",
+      "titleN": "Answer {n} questions",
+      "confirm": "Confirm",
+      "sending": "Sending…",
+      "cancel": "Cancel the question",
+      "cancelSure": "Really cancel?",
+      "cancelAria": "Cancel this question (tell the Agent you will type instead)",
+      "elsewhere": "You can also answer on the computer",
+      "elsewhereLive": "Or answer on the computer · the first answer counts",
+      "net": "Not connected, nothing was sent; try again or answer on the computer",
+      "fail": "Not sent; try again or answer on the computer",
+      "st": {
+        "answered": "Answered: {labels}",
+        "sent": "Sent; waiting for it to apply",
+        "cancel_sent": "Cancel sent; waiting for it to apply",
+        "cancelled": "Question cancelled; type your answer instead",
+        "terminal": "Answered on the computer",
+        "timeout": "Timed out; reply in words",
+        "ended": "This question has ended",
+        "detached": "The phone was disconnected; answer on the computer",
+        "stopped": "Void (everything stopped)"
+      }
+    },
+    "list": {
+      "sep": ", ",
+      "sep2": "; "
+    },
+    "tool": {
+      "doc": "Send a file",
+      "docTitle": "File",
+      "photo": "Send photos",
+      "photoTitle": "Photos",
+      "camera": "Take a photo",
+      "cameraTitle": "Camera"
+    },
+    "mic": {
+      "aria": "Hold to talk, let go to turn it into text, slide up to cancel; double-tap to lock, tap again to finish",
+      "title": "Hold to talk · let go for text · slide up to cancel · double-tap to lock, tap again to finish",
+      "hold": "Hold to talk",
+      "releaseCancel": "Let go to cancel",
+      "releaseText": "Let go for text",
+      "releaseVoice": "Let go for voice"
+    },
+    "ptt": {
+      "locked": "Locked",
+      "hint": "Let go to turn it into text · slide up to cancel",
+      "longHint": "Let go to attach it as audio · slide up to cancel",
+      "releaseCancel": "Lift your finger to cancel",
+      "opening": "Opening the microphone…",
+      "lockM": "Press M again to lock",
+      "lockTap": "Tap again to lock",
+      "anyKey": "Any key ends it",
+      "tapEnd": "Tap to finish",
+      "anyKeyEsc": "Any key ends it · Esc cancels",
+      "tapEndSlide": "Tap again to finish · slide up to cancel",
+      "tapEndEsc": "Tap again to finish · Esc cancels",
+      "left": "Ends by itself in {s} s · {stop}",
+      "capped": "The locked take reached {m} minutes and ended",
+      "noRec": "This browser cannot record",
+      "noMic": "No microphone permission",
+      "ready": "The microphone is ready; hold to talk",
+      "short": "Hold to talk · double-tap to lock",
+      "cancelled": "Cancelled"
+    },
+    "asr": {
+      "tag": "Transcribing…",
+      "noSpeech": "Didn't catch that; say it again",
+      "not_installed": "Voice transcription is not installed on the computer: run `agentj asr install` there (about 180 MB). Until then, use your keyboard's dictation.",
+      "off": "Voice transcription is off on the computer; type, or use your keyboard's dictation",
+      "broken": "Voice transcription is broken on the computer: run `agentj asr status` there",
+      "busy": "The previous take is still being transcribed; wait a moment",
+      "timeout": "Transcription timed out; say it again",
+      "bad_audio": "This recording could not be read; say it again",
+      "net": "Transcription failed: not connected to the computer",
+      "too_long": "Too long; keep it shorter, or double-tap to lock for a long take (sent as an attachment)",
+      "other": "Transcription failed; say it again"
+    },
+    "voice": {
+      "asAtt": "A long take: attached as audio (transcribed on the computer when sent)",
+      "asAttNoAsr": "A long take: attached as audio (no transcription on the computer; the Agent gets the audio file)",
+      "trayFull": "The tray already has {max} attachments; this take goes to text instead"
+    },
+    "clr": {
+      "aria": "Clear the text",
+      "title": "Clear the text (attachments stay)",
+      "done": "Text cleared",
+      "undo": "Undo"
+    },
+    "clear": {
+      "done": "Cleared",
+      "sending": "Sending; clear it afterwards"
+    },
+    "cap": {
+      "wan": "{n} × 10,000 characters",
+      "zi": "{n} characters",
+      "chars": "{n} characters",
+      "toast": "Reached the {cap} limit",
+      "cut": "Reached the {cap} limit; {n} characters were left out",
+      "title": "Up to {n} characters"
+    },
+    "ph": {
+      "long": "Say something (up to {cap})",
+      "short": "Say something (≤ {cap})"
+    },
+    "draft": {
+      "restored": "Restored the draft you had not sent"
+    },
+    "paste": {
+      "long": "Long text: attached as a file"
+    },
+    "file": {
+      "paste": "paste",
+      "camera": "photo",
+      "voice": "voice"
+    },
+    "kind": {
+      "image": "Image",
+      "audio": "Audio",
+      "file": "File"
+    },
+    "tray": {
+      "aria": "Attachments to send",
+      "count": "Attachments {n}/{max}",
+      "remove": "Remove {name}",
+      "full": "At most {max} attachments; {n} were not added",
+      "voice": "Voice {d}",
+      "voiceTitle": "Voice · {d} · {size} · transcribed on the computer when sent",
+      "heldTitle": "{kind} · {name} · not fully uploaded; it continues when you send"
+    },
+    "up": {
+      "empty": "The file is empty; not sent",
+      "too_big": "The file is too big; the limit is 25 MB",
+      "type": "This file type is not supported",
+      "too_many": "Too many attachments waiting; send or remove some first",
+      "quota": "The inbox on the computer is full; clear some space",
+      "disk": "The computer's disk is full or not writable",
+      "unsafe_inbox": "The inbox folder on the computer looks unsafe; nothing was written (check the .agentj folder there)",
+      "sha_mismatch": "The transfer was corrupted; try again",
+      "size_mismatch": "The transfer was corrupted; try again",
+      "expired": "The attachment expired on the computer; remove it and pick it again",
+      "net": "The upload stopped: not connected to the computer",
+      "read": "Could not read this file; pick it again",
+      "shape": "The upload was malformed",
+      "asr_off": "Voice transcription is off on the computer",
+      "other": "Upload failed; try again",
+      "notReady": "This file is not ready yet; wait a few seconds and pick it again",
+      "notReadyImage": "This image is not ready yet (it may still be in the cloud); wait a few seconds and pick it again"
+    },
+    "drop": {
+      "text": "Drop to add the files",
+      "full": "Over {max} attachments; dropping adds none",
+      "fullSub": "{have} already, dragging {n}",
+      "sub": "{n} files · room for {left}"
+    },
+    "verb2": {
+      "paste": "pasting",
+      "drop": "dropping"
+    },
+    "take": {
+      "tooMany": "At most {max} attachments: {have} already, {verb} {n}; none were added",
+      "none": "No files that can be sent",
+      "skipped": "{n} files have an unsupported format and were skipped"
+    },
+    "clip": {
+      "denied": "Could not read the clipboard (tap “Paste” or allow clipboard access)",
+      "fail": "The clipboard could not be read",
+      "text": "The clipboard holds text; long-press the field to paste",
+      "none": "No image on the clipboard"
+    },
+    "cam": {
+      "aria": "Camera",
+      "snap": "Take photo",
+      "retake": "Retake",
+      "use": "Use this one",
+      "file": "Choose a file",
+      "cancel": "Cancel",
+      "asking": "Asking to use the camera…",
+      "noApi": "This browser cannot use the camera directly",
+      "denied": "No camera permission",
+      "none": "No camera found",
+      "busy": "Another program is using the camera",
+      "fail": "The camera does not open",
+      "fallback": "{msg}; choose a file instead",
+      "bad": "That shot failed; take it again"
+    },
+    "dot": ".",
+    "say": {
+      "send": "Send",
+      "cancel": "Cancel",
+      "cancelAria": "Cancel sending",
+      "waitUploads": "Waiting for the attachments to upload…",
+      "reupload": "Uploading the attachments again…",
+      "badAtt": "{n} attachments did not upload; remove them and send again",
+      "stopped": "Everything is stopped: this was not given to the Agent and is not queued. Send it after resuming.",
+      "cancelled": "Sending cancelled; your text and attachments are still here",
+      "tooLate": "Already delivered; it could not be cancelled",
+      "cancelNet": "Not cancelled: not connected to the computer",
+      "cancelFail": "Could not cancel",
+      "withdrawn": "Withdrawn: it was not given to the Agent; the text is back in the field",
+      "failedLater": "This one could not be given to the Agent; send it again",
+      "err": {
+        "shape": "This message is malformed; not sent",
+        "too_long": "Too long; not sent",
+        "stopped": "Everything is stopped; not sent",
+        "att_gone": "An attachment expired on the computer; remove it and pick it again",
+        "att_open": "Attachments are still uploading; send in a moment",
+        "too_many_att": "At most 10 attachments",
+        "reply_unknown": "The message you reply to is gone; cancel the reply and send again",
+        "dup": "This one was already sent",
+        "too_many": "16 messages are still waiting; send this once the earlier ones are through",
+        "no_agent": "No Agent is chosen on the computer: run `agentj agent claude` (or codex / opencode) there",
+        "offline": "Not connected to the computer; not sent",
+        "timeout": "The computer did not answer; not sent",
+        "other": "Not sent; try again"
+      }
+    },
+    "menu": {
+      "aria": "All commands",
+      "run": "Run now",
+      "insert": "Insert into the field",
+      "skills": "The Agent's skills",
+      "clip": "Paste the image on the clipboard (as an attachment)",
+      "app": "App status and settings"
+    },
+    "sug": {
+      "aria": "Matching commands"
+    },
+    "run": {
+      "compact": "Compact the context",
+      "clear": "Clear the conversation (undoable)",
+      "model": "See which models you can switch to",
+      "context": "How much context is used",
+      "cost": "Cost",
+      "usage": "Usage limits",
+      "status": "Status",
+      "stop": "Interrupt the current turn",
+      "sent": "Sent {cmd}"
+    },
+    "int": {
+      "sent": "Interrupted the current task",
+      "idle": "Nothing is running right now",
+      "waiting": "It is waiting for your answer; Esc does not answer for you",
+      "offline": "Not connected to the computer",
+      "fail": "Could not interrupt"
+    },
+    "keys": {
+      "btn": "Shortcuts",
+      "btnTitle": "Shortcuts (?)",
+      "title": "Keyboard shortcuts",
+      "hEdit": "Editing (like a terminal)",
+      "hPage": "Paging (outside the field)",
+      "hRead": "Reading (outside the field)",
+      "hAtt": "Attachments / voice",
+      "hClear": "Clear and interrupt",
+      "i": "Enter / leave the field (with a suggestion list open, Esc closes it first)",
+      "ae": "Start / end of the line",
+      "uk": "Delete to the start / end of the line",
+      "w": "Delete the previous word (works in the installed web app window; in a normal Chrome tab on Windows / Linux it may close the tab)",
+      "y": "Paste back what was just deleted",
+      "hist": "With an empty field: earlier messages you sent",
+      "j": "Previous (older)",
+      "k": "Next (newer)",
+      "g": "Newest / oldest",
+      "o": "Expand / collapse the message",
+      "scroll": "Scroll up / down inside the reply",
+      "space": "Space",
+      "spaceDd": "Down one screen (`Shift`+`Space` up)",
+      "dbl": "double-tap the card",
+      "f": "Full-screen reader; inside, `+` `-` change the size, `Esc` / double-tap / `f` close it",
+      "yy": "Copy the whole reply",
+      "YY": "Copy the whole message",
+      "r": "Reply to this one (the quote shows above the field, `Esc` cancels)",
+      "q": "Show this list (or the bulb at the top right)",
+      "apc": "File · photos · camera",
+      "hold": "hold",
+      "m": "Hold to talk, let go for text",
+      "dbl2": "double",
+      "dbl3": "double-tap",
+      "mm": "Lock the recording, it keeps going; any key ends it, Esc cancels",
+      "mic": "Lock the recording, it keeps going; tap again to finish, Esc cancels",
+      "ee": "Clear the text and attachments",
+      "eei": "Already empty (≥ 1 s): interrupt the current task",
+      "ok": "Got it"
+    }
   }
 }

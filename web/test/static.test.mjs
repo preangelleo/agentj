@@ -20,13 +20,19 @@ const read = (p) => readFileSync(p, 'utf8');
 const pub = (r) => join(PUBLIC_DIR, r);
 const JS = files.filter((f) => f.endsWith('.js'));
 const APP = read(pub('app.js'));
+// PROMPT-33: the page is app.js + the modules under js/ (relay's page ported). Every rule that used to look at app.js
+// alone now looks at all of them (OURS) — the same rules over more code, never fewer.
+const MODULES = ['api', 'blobs', 'boot', 'controls', 'md', 'push', 'relay', 'session', 'snap', 'speak', 'store', 't', 'ui', 'wav'];
+const OURS_FILES = ['app.js', ...MODULES.map((m) => `js/${m}.js`)];
+const OURS = OURS_FILES.map((r) => read(pub(r))).join('\n');
 const HTML = read(pub('index.html'));
 
 test('expected files ship, robots.txt disallows all', () => {
   for (const r of ['index.html', 'app.js', 'app.css', 'i18n.js', 'sw.js', 'manifest.webmanifest', 'proto/noise.js', 'proto/wire.js', 'version.json', 'version.js',
     'robots.txt', 'favicon.ico', 'apple-touch-icon.png', 'brand/palette.css', 'brand/base.css', 'brand/lang.js', 'brand/ui.js', 'brand/img/icon-192.png',
     'brand/img/icon-512.png', 'brand/img/icon-512-maskable.png', 'brand/img/logo-mark.png', 'brand/img/status/logo-working.png',
-    'brand/img/status/logo-waiting.png', 'brand/img/status/logo-question.png', 'brand/img/status/logo-offline.png']) {
+    'brand/img/status/logo-waiting.png', 'brand/img/status/logo-question.png', 'brand/img/status/logo-offline.png',
+    ...OURS_FILES, 'assets/rocket-mask-128.png', 'assets/rocket-mask-256.png', 'assets/rocket-lotion.png', 'assets/rocket-whoosh.mp3']) {
     assert.ok(files.includes(pub(r)), `missing public/${r}`);
   }
   assert.equal(read(pub('robots.txt')), 'User-agent: *\nDisallow: /\n');
@@ -91,29 +97,66 @@ test('index.html: CSP-compatible (no inline script/style, no on*=), noindex, zh-
   assert.match(HTML, /以后的手机 App/);                          // A2 review M-4: nothing promised in the present tense (PROMPT-29 wording)
   assert.doesNotMatch(HTML, /在公开源码上运行[^<]*结果应与上面一致/);   // the source is not public yet
   assert.match(APP, /parseLink\(input, undefined, allowRelay\)/); // A2 review L-2: the relay is pinned
-  for (const id of ['status', 'pair-link', 'pair-go', 'scan', 'sas', 'messages', 'msg-input', 'send', 'badge', 'badge-panel', 'version-hash', 'repair', 'retry']) {
+  // PROMPT-33: the chat ids are relay's (the old #messages / #msg-input list is gone by design — the deck replaced it)
+  for (const id of ['status', 'pair-link', 'pair-go', 'scan', 'sas', 'send', 'badge', 'badge-panel', 'version-hash', 'repair', 'retry',
+    'input', 'deck', 'om', 'rm', 'words', 'rmbar', 'sheet', 'pendTag', 'tray', 'mic', 'menu', 'sug', 'keys', 'rd', 'qbar', 'meta', 'water',
+    'mWeek', 'm5h', 'brand-name', 'aj-menu', 'estop-banner', 'grant-bar', 'push-row', 'confirm', 'unpair', 'mem-view', 'act-view', 'tasks-view']) {
     assert.match(HTML, new RegExp(`id="${id}"`), `missing #${id}`);
   }
+  const ids = [...HTML.matchAll(/\sid="([^"]+)"/g)].map((m) => m[1]);
+  assert.equal(new Set(ids).size, ids.length, 'ids are unique (relay and Agent J ids merged without a clash)');
 });
 
-test('app.js: only WebSocket egress, non-extractable device key, no plaintext at rest, no logging', () => {
-  for (const bad of [/\bfetch\s*\(/, /XMLHttpRequest/, /sendBeacon/, /\bEventSource\b/, /sessionStorage/, /\bconsole\./, /exportKey/, /document\.cookie/, /postMessage/]) {
-    assert.doesNotMatch(APP, bad, `app.js uses ${bad}`);
+const code = (s) => s.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:\\'"])\/\/.*$/gm, '$1');
+test('app.js + js/*.js: only WebSocket egress, non-extractable keys, no plaintext at rest, no logging', () => {
+  for (const r of OURS_FILES) {
+    const s = read(pub(r));
+    for (const bad of [/\bfetch\s*\(/, /XMLHttpRequest/, /sendBeacon/, /\bEventSource\b/, /sessionStorage/, /\bconsole\./, /exportKey/, /document\.cookie/, /postMessage/,
+      /\bnew Worker\b/, /importScripts/, /\bimport\s*\(/]) {
+      assert.doesNotMatch(s, bad, `${r} uses ${bad}`);
+    }
   }
-  // localStorage: only the "Add to Home Screen hint dismissed" flag (brand/lang.js keeps the language + theme); never chat text
-  assert.deepEqual([...APP.matchAll(/localStorage\.(\w+)\(([^,)]*)/g)].map((m) => `${m[1]}(${m[2]})`).sort(), ['getItem(A2HS_KEY)', 'setItem(A2HS_KEY)']);
-  assert.match(APP, /const A2HS_KEY = 'aj\.a2hs';/);
-  assert.equal((APP.match(/localStorage/g) || []).length, 2, 'localStorage appears only in the two A2HS lines');
-  assert.match(APP, /generateKeypair\(false\)/);
+  // localStorage: the "Add to Home Screen hint dismissed" flag + two display preferences (reader type size, the launch
+  // colour of an iPhone home-screen app); brand/lang.js keeps the language + theme. Never chat text, drafts or history.
+  const ls = OURS_FILES.flatMap((r) => [...code(read(pub(r))).matchAll(/localStorage\.(\w+)\(([^,)]*)/g)].map((m) => `${m[1]}(${m[2]})`));
+  assert.deepEqual(ls.sort(), ['getItem("aj.chrome")', 'getItem(A2HS_KEY)', 'getItem(RD_KEY)', 'setItem("aj.chrome")', 'setItem(A2HS_KEY)', 'setItem(RD_KEY)'].sort());
+  assert.equal(OURS_FILES.reduce((n, r) => n + (code(read(pub(r))).match(/localStorage/g) || []).length, 0), 6, 'localStorage appears only in those six calls');
+  assert.match(OURS, /const A2HS_KEY = 'aj\.a2hs';/);
+  assert.match(OURS, /RD_KEY = "aj\.readerFs"/);
+  assert.match(OURS, /generateKeypair\(false\)/);
   assert.match(APP, /history\.replaceState/);
-  assert.match(APP, /textContent = text/);
-  assert.deepEqual([...new Set([...APP.matchAll(/dbPut\('(\w+)'/g)].map((m) => m[1]))].sort(), ['device', 'host', 'sign'], 'IndexedDB writes: device key + approval key + host record only');
-  assert.match(APP, /indexedDB\.open\('agentjarvis', 1\)/, 'the IndexedDB name stays "agentjarvis" (paired phones keep their keys)');
-  assert.match(APP, /generateSigningKeypair\(\)/);
+  // the Agent's words: Markdown through md.js (DOM nodes) or plain paragraphs via textContent — never markup
+  assert.match(read(pub('js/relay.js')), /RelayMD\.toDOM\(RelayMD\.parse\(tx\), document\)/);
+  assert.match(read(pub('js/relay.js')), /n\.textContent = p\.trim\(\)/);
+  // IndexedDB: device key + approval key + host record + the sealing key (CryptoKeys, non-extractable) in clear;
+  // drafts and input history ONLY through putSealed (AES-GCM ciphertext {v, iv, ct})
+  const puts = [...new Set(OURS_FILES.flatMap((r) => [...read(pub(r)).matchAll(/dbPut\('(\w+)'/g)].map((m) => m[1])))].sort();
+  assert.deepEqual(puts, ['device', 'host', 'local', 'sign'], 'plain IndexedDB writes: keys + host record only');
+  const sealed = [...new Set(OURS_FILES.flatMap((r) => [...read(pub(r)).matchAll(/putSealed\("(\w+)"/g)].map((m) => m[1])))].sort();
+  assert.deepEqual(sealed, ['draft', 'ihist'], 'sealed records: draft + input history');
+  const STORE = read(pub('js/store.js'));
+  assert.match(STORE, /export async function putSealed\(name, obj\) \{\n  const w = wipes;\n  const rec = await seal\(obj\);\n  if \(w === wipes\) await dbPut\(name, rec\);\n\}/, 'putSealed writes only ciphertext, and never after a wipe');
+  // §10.14 / P33-X13: revoke wipes like unpair — drafts, history, the sealing key, and everything in memory
+  assert.match(APP, /async function revoked\(\) \{\n  session\.closeSession\(\);\n[^}]*await forgetLocal\(\);/, 'revoked() wipes local records');
+  assert.match(APP, /async function forgetLocal\(\) \{\n  relay\.forgetLocal\(\);\n  blobs\.forgetAll\(\);\n  await wipeLocal\(\);\n\}/);
+  assert.doesNotMatch(APP, /saveDraft/, 'revocation never saves the draft');
+  assert.match(STORE, /generateKey\(\{ name: 'AES-GCM', length: 256 \}, false, \['encrypt', 'decrypt'\]\)/, 'sealing key not extractable');
+  assert.match(STORE, /for \(const k of \['draft', 'ihist', 'local'\]\)/, 'unpair / re-pair wipes drafts, history and the sealing key');
+  assert.match(STORE, /indexedDB\.open\('agentjarvis', 1\)/, 'the IndexedDB name stays "agentjarvis" (paired phones keep their keys)');
+  assert.match(OURS, /generateSigningKeypair\(\)/);
   const WIRE = readFileSync(new URL('../../protocol/wire.js', import.meta.url), 'utf8');
   assert.match(WIRE, /generateKey\(\{ name: 'Ed25519' \}, false, \['sign', 'verify'\]\)/, 'approval key: private half not extractable');
-  assert.match(APP, /from '\.\/proto\/noise\.js'/);
-  assert.match(APP, /from '\.\/proto\/wire\.js'/);
+  assert.match(OURS, /from '\.\.\/proto\/noise\.js'/);
+  assert.match(OURS, /from '\.\/proto\/wire\.js'/);
+  // signed decisions: approvals, question answers and control writes are Ed25519-signed with the device key
+  const API = read(pub('js/api.js'));
+  assert.match(API, /approveMessage\(channel\(\), await myDeviceId\(\), p\.id, decision, p\.tool, p\.summary/);
+  assert.match(API, /questionMessage\(channel\(\), await myDeviceId\(\), q\.id, clean \? 'answer' : 'cancel', q\.raw, clean\)/);
+  assert.match(API, /crypto\.subtle\.sign\(\{ name: 'Ed25519' \}, sk\.priv, msg\)/);
+  // read aloud never uses a network voice; share goes to the phone's own sheet; whoosh from our own origin
+  assert.match(read(pub('js/speak.js')), /filter\(\(v\) => v\.localService !== false\)/);
+  assert.match(read(pub('js/relay.js')), /navigator\.share\(\{text\}\)/);
+  assert.match(read(pub('js/relay.js')), /new Audio\("assets\/rocket-whoosh\.mp3"\)/);
 });
 
 // ---------------------------------------------------------------- Worker
@@ -135,13 +178,14 @@ test('worker: public (no Access since 2026-10-02) → asset with the full header
     assert.equal(r.headers.get('strict-transport-security'), 'max-age=31536000', `${origin}: HSTS`);
   }
   const r = await handle(req('https://m.agentj.app/'), env());
-  assert.equal(r.headers.get('permissions-policy'), 'camera=(self), microphone=(), geolocation=()');
+  // PROMPT-33: hold-to-talk records in the page (getUserMedia audio) → microphone=(self); nothing else widened
+  assert.equal(r.headers.get('permissions-policy'), 'camera=(self), microphone=(self), geolocation=()');
   assert.equal(r.headers.get('x-robots-tag'), 'noindex, nofollow, noarchive');
   assert.equal(r.headers.get('referrer-policy'), 'no-referrer');
   assert.equal(r.headers.get('x-frame-options'), 'DENY');
   assert.equal(r.headers.get('x-content-type-options'), 'nosniff');
   assert.match(r.headers.get('strict-transport-security'), /max-age=\d+/);
-  assert.equal(r.headers.get('cache-control'), 'private, no-store');
+  assert.equal(r.headers.get('cache-control'), 'private, no-store, no-transform');
   assert.equal((await handle(req('https://m.agentj.app/app.js', { method: 'HEAD' }), env())).status, 200);
   // a stale / forged Access header changes nothing
   assert.equal((await handle(req('https://m.agentj.app/', { headers: { 'cf-access-jwt-assertion': 'a.b.c' } }), env())).status, 200);
@@ -208,9 +252,8 @@ test('sw.js: push display only — no fetch handler, no cache, no network, gener
   assert.match(SW, /en: \{ reply: 'New reply', ask: 'A request is waiting for your approval' \}/);
   assert.match(SW, /showNotification\('Agent J', \{ body: BODY\[LANG\]\[k\]/, 'the notification body is one of the two fixed sentences');
   assert.match(SW, /const SW_VERSION = 'aj-web-[\w-]+';/, 'sw.js carries a version string (bumped with each shell redesign)');
-  const APP2 = readFileSync(join(PUBLIC_DIR, 'app.js'), 'utf8');
-  assert.match(APP2, /userVisibleOnly: true/);
-  assert.match(APP2, /serviceWorker\.register\('sw\.js'/);
+  assert.match(OURS, /userVisibleOnly: true/);
+  assert.match(OURS, /serviceWorker\.register\('sw\.js'/);
 });
 
 test('manifest + icons are local files from the brand (192, 512, 512 maskable), colours from tokens', () => {
@@ -247,7 +290,7 @@ test('i18n: zh and en have the same keys and placeholders; i18n.js and index.htm
   assert.equal(read(pub('i18n.js')), i18nModule(DICT), 'public/i18n.js is stale — run build.mjs');
   assert.equal(HTML, syncHtml(HTML, DICT.zh), 'index.html Chinese text differs from web.zh.json — run build.mjs');
   for (const m of HTML.matchAll(/data-i18n="([\w.]+)"/g)) assert.ok(DICT.zh[m[1]], `index.html: unknown key ${m[1]}`);
-  for (const m of APP.matchAll(/\bt\('([\w.]+)'/g)) {
+  for (const m of OURS.matchAll(/\bt\('([\w.]+)'/g)) {
     if (m[1].endsWith('.')) assert.ok(Object.keys(DICT.zh).some((k) => k.startsWith(m[1])), `app.js: no keys under ${m[1]}`);
     else assert.ok(DICT.zh[m[1]], `app.js: unknown key ${m[1]}`);
   }
@@ -275,9 +318,15 @@ test('i18n: no internal terms or banned words in either dictionary, the page tex
   }
   // every user-visible Chinese string lives in the dictionary: app.js code has no Chinese except the device label sent to
   // the host ("网页 · Chrome" is data for the computer's device list) and comments
-  const code = APP.replace(/\/\/.*$/gm, '').replace(/\/\*[\s\S]*?\*\//g, '');
-  const cjk = [...new Set(code.match(/[㐀-鿿]+/g) || [])];
+  const appCode = APP.replace(/\/\/.*$/gm, '').replace(/\/\*[\s\S]*?\*\//g, '');
+  const cjk = [...new Set(appCode.match(/[㐀-鿿]+/g) || [])];
   assert.ok(cjk.includes('网页') && cjk.every((w) => ['浏览器', '网页'].includes(w)), `app.js has UI Chinese outside the dictionary: ${cjk.join(' ')}`);
+  for (const r of OURS_FILES.filter((x) => x !== 'app.js')) {             // the modules: no Chinese in code at all
+    const c = read(pub(r)).replace(/\/\/.*$/gm, '').replace(/\/\*[\s\S]*?\*\//g, '');
+    assert.deepEqual(c.match(/[㐀-鿿]+/g) || [], [], `${r} has UI Chinese outside the dictionary`);
+  }
+  // relay was Leo's private tool: no owner name, private bot or assistant name may reach the product's words (PROMPT-33)
+  for (const [where, text] of sources) assert.doesNotMatch(text, /\bLeo\b|Telegram|贾维斯|\bJarvis\b|J\.A\.R\.V\.I\.S/i, `${where}: relay's private wording`);
 });
 
 test('i18n: the forbidden-term check itself works (positive control)', { skip: NO_GLOSSARY }, () => {
@@ -316,5 +365,16 @@ test('Agent name from the host: text only, control / format chars dropped, ≤ 3
   // shown via textContent only, default "Agent J"
   assert.match(APP, /\$\('brand-name'\)\.textContent = agentName \?\? DEFAULT_NAME;/);
   assert.match(APP, /const DEFAULT_NAME = 'Agent J';/);
-  assert.match(APP, /if \(m\.t === 'status'\) \{ setAgentName\(m\.name\);/);
+  assert.match(APP, /case 'status': setAgentName\(m\.name\);/);
+});
+
+// G-A130 / ADR-A140 (PR1): Cloudflare Web Analytics injects its beacon <script> into HTML answered to a browser unless the
+// response carries Cache-Control: no-transform — every answer of this Worker carries it (page, asset, bare 404).
+test('worker: G-A130 every response carries Cache-Control no-transform (HTML page as Chrome asks, asset, 404)', async () => {
+  const chrome = { accept: 'text/html,application/xhtml+xml,*/*;q=0.8', 'user-agent': 'Mozilla/5.0 Chrome/141.0.0.0' };
+  for (const r of [await handle(req('https://m.agentj.app/', { headers: chrome }), env()), await handle(req('https://m.agentj.app/app.js'), env()),
+    await handle(req('https://evil.example/', { headers: chrome }), env()), await handle(req('https://m.agentj.app/', { method: 'POST' }), env())]) {
+    assert.match(r.headers.get('cache-control') ?? '', /(^|, )no-transform(,|$)/, `${r.status}`);
+  }
+  assert.match(webHeaders(RELAY)['cache-control'], /no-store, no-transform/);
 });

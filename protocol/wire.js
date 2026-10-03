@@ -8,6 +8,16 @@ export const KIND = { PAIR_INIT: 1, RESUME_INIT: 2, HS_RESP: 3, DATA: 4 };
 export const PAD = 256;
 export const MAX_JSON = 16 * 1024;
 export const MAX_TEXT = 4000;            // UTF-16 code units (String.length), the same count the host uses
+// §10.0 (PROMPT-33): once BOTH ends announced capability "p33" (device hello `caps`, host approved / ready `caps`)
+export const CAP_P33 = 'p33';
+export const MAX_JSON_P33 = 60 * 1024;   // padded plaintext ≤ 61 696, relay payload ≤ 61 713 < 65 536
+export const MAX_TEXT_P33 = 20000;       // UTF-16 code units per message; say text + excerpt together
+export const EXCERPT_MAX = 2000;
+export const FRAG_MAX_N = 128;
+export const FRAG_MAX_TOTAL = 2 * 1024 * 1024;
+export const BLOB_CHUNK = 45056;         // raw bytes per blob_chunk → 60 075 base64url chars → one 60 160-byte padded frame
+export const BLOB_MAX = 25 * 1024 * 1024;
+export const ASR_MAX = 44 + 120 * 16000 * 2;   // a purpose:"asr" take: ≤ 120 s of 16 kHz mono PCM16 WAV
 export const PAIR_PROLOGUE = 'agentjarvis/v1/pair\n';
 export const RESUME_PROLOGUE = 'agentjarvis/v1/resume\n';
 
@@ -36,10 +46,11 @@ export async function safetyCode(h) {
   return String(v % 1_000_000).padStart(6, '0');
 }
 
-/** JSON app message → padded plaintext (len u16 ‖ json ‖ zeros, total a multiple of 256). */
-export function padJson(obj) {
+/** JSON app message → padded plaintext (len u16 ‖ json ‖ zeros, total a multiple of 256).
+ *  maxJson: MAX_JSON, or MAX_JSON_P33 once both ends announced p33 (PROTOCOL §10.0). */
+export function padJson(obj, maxJson = MAX_JSON) {
   const j = enc.encode(JSON.stringify(obj));
-  if (j.length > MAX_JSON) throw new Error('message too large');
+  if (j.length > maxJson) throw new Error('message too large');
   const total = Math.ceil((j.length + 2) / PAD) * PAD;
   const out = new Uint8Array(total);
   new DataView(out.buffer).setUint16(0, j.length, false);
@@ -47,10 +58,10 @@ export function padJson(obj) {
   return out;
 }
 
-export function unpadJson(pt) {
+export function unpadJson(pt, maxJson = MAX_JSON) {
   if (pt.length < 2 || pt.length % PAD !== 0) throw new Error('bad padding');
   const n = new DataView(pt.buffer, pt.byteOffset, 2).getUint16(0, false);
-  if (n > MAX_JSON || n > pt.length - 2) throw new Error('bad length');
+  if (n > maxJson || n > pt.length - 2) throw new Error('bad length');
   for (let i = 2 + n; i < pt.length; i++) if (pt[i] !== 0) throw new Error('bad padding');
   const obj = JSON.parse(dec.decode(pt.subarray(2, 2 + n)));
   if (!obj || typeof obj !== 'object' || Array.isArray(obj) || typeof obj.t !== 'string') throw new Error('bad message');
@@ -114,3 +125,127 @@ export async function generateSigningKeypair() {
   const kp = await crypto.subtle.generateKey({ name: 'Ed25519' }, false, ['sign', 'verify']);
   return { priv: kp.privateKey, pub: new Uint8Array(await crypto.subtle.exportKey('raw', kp.publicKey)) };
 }
+
+// ---------------------------------------------------------------- relay parity (PROTOCOL §10, PROMPT-33). Mirrors host/agentj/wire.py.
+/** UTF-16 code units (what String.length counts). */
+export const units = (s) => s.length;
+const LONE = /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/;
+const C0 = /[\u0000-\u0008\u000B-\u001F]/;
+/** §10.0 text rule: null when valid, else 'shape' (not a string, a lone surrogate, a C0 control other than tab / newline —
+ *  CR included: a sender turns CR LF / CR into LF first, see normalizeNewlines) or 'too_long' (> limit UTF-16 units). */
+export function textProblem(s, limit = MAX_TEXT_P33) {
+  if (typeof s !== 'string' || LONE.test(s) || C0.test(s)) return 'shape';
+  return s.length > limit ? 'too_long' : null;
+}
+export const normalizeNewlines = (s) => s.replace(/\r\n?/g, '\n');
+const ID22 = /^[A-Za-z0-9_-]{22}$/;
+const RID = /^[A-Za-z0-9_-]{1,32}$/;
+export const isId22 = (v) => typeof v === 'string' && ID22.test(v);
+export const isRid = (v) => typeof v === 'string' && RID.test(v);
+/** A device-chosen id (`sid` / `bid`): 128 random bits as 22 base64url characters. */
+export const newId22 = () => b64u(crypto.getRandomValues(new Uint8Array(16)));
+
+/** §10.1 the receiver side of `frag`: feed every app message; get back the message to handle (a reassembled one, or the
+ *  message itself), or null while a frag is open / after a broken one (one open `f` at a time, ≤ 128 slices, ≤ 2 MiB). */
+export class Defrag {
+  constructor() { this.f = null; }
+  feed(m) {
+    if (m.t !== 'frag') { this.f = null; return m; }
+    const { f, i, n, d } = m;
+    if (typeof f !== 'string' || !Number.isInteger(i) || !Number.isInteger(n) || typeof d !== 'string' || !(i >= 0 && i < n && n <= FRAG_MAX_N)) { this.f = null; return null; }
+    if (i === 0) { this.f = f; this.n = n; this.parts = []; this.size = 0; }
+    if (this.f !== f || this.n !== n || this.parts.length !== i) { this.f = null; return null; }
+    this.parts.push(d);
+    this.size += enc.encode(d).length;
+    if (this.size > FRAG_MAX_TOTAL) { this.f = null; return null; }
+    if (this.parts.length < n) return null;
+    this.f = null;
+    let inner;
+    try { inner = JSON.parse(this.parts.join('')); } catch { return null; }
+    if (!inner || typeof inner !== 'object' || Array.isArray(inner) || typeof inner.t !== 'string' || inner.t === 'frag') return null;
+    return inner;
+  }
+}
+/** §10.1 the sender side (the host's; here for tests and stand-in hosts): [obj] when it fits, else N `frag` messages. */
+export function fragSplit(obj, fid, maxJson = MAX_JSON_P33) {
+  const text = JSON.stringify(obj);
+  const total = enc.encode(text).length;
+  if (total <= maxJson) return [obj];
+  if (total > FRAG_MAX_TOTAL) throw new Error('message too large even for frag');
+  const budget = maxJson - 120, slices = [];
+  let cur = '', size = 0;
+  for (const ch of text) {
+    const n = enc.encode(JSON.stringify(ch)).length - 2;
+    if (size + n > budget) { slices.push(cur); cur = ''; size = 0; }
+    cur += ch; size += n;
+  }
+  if (cur) slices.push(cur);
+  if (slices.length > FRAG_MAX_N) throw new Error('message too large even for frag');
+  return slices.map((d, i) => ({ t: 'frag', f: fid, i, n: slices.length, d }));
+}
+
+/** §10.7 questions: what an answer (or a cancel) signs. qs = the card's [{q, h, m, o: [{l, d}]}] exactly as shown. */
+export const QUESTION_CONTEXT = 'agentjarvis-question-v1';
+const h256 = async (s) => hex(await sha256(enc.encode(s)));
+export async function questionDigest(qs) {
+  const lines = [];
+  for (const q of qs) {
+    lines.push(`q ${await h256(q.h ?? '')} ${await h256(q.q)} ${q.m ? 'm' : 's'}`);
+    for (const o of q.o) lines.push(`o ${await h256(o.l)} ${await h256(o.d ?? '')}`);
+  }
+  return h256(lines.join('\n'));
+}
+/** picks: [[1,3],[2]] (1-based, ascending; exactly one for a single-choice question) → "1,3;2"; null (cancel) → "-". */
+export const picksText = (picks) => (picks == null ? '-' : picks.map((p) => p.join(',')).join(';'));
+export function checkPicks(qs, picks) {
+  if (!Array.isArray(picks) || picks.length !== qs.length) return false;
+  return qs.every((q, k) => {
+    const p = picks[k];
+    if (!Array.isArray(p) || !p.length || !p.every(Number.isInteger)) return false;
+    for (let i = 1; i < p.length; i++) if (p[i] <= p[i - 1]) return false;
+    return p[0] >= 1 && p[p.length - 1] <= q.o.length && (q.m || p.length === 1);
+  });
+}
+export async function questionMessage(channel, device, id, action, qs, picks) {
+  if (action !== 'answer' && action !== 'cancel') throw new Error('bad action');
+  if ((action === 'cancel') !== (picks == null)) throw new Error('picks only with answer');
+  if (action === 'answer' && !checkPicks(qs, picks)) throw new Error('bad picks');
+  return enc.encode(`${QUESTION_CONTEXT}\n${channel}\n${device}\n${id}\n${action}\n${await questionDigest(qs)}\n${picksText(picks)}`);
+}
+
+/** §10.2 a `say` (validated like the host does; throws on anything the host would answer shape / too_long). */
+export function sayMessage({ sid = newId22(), text = '', att, reply_to, excerpt, ts = Date.now() } = {}) {
+  const t = normalizeNewlines(text), ex = excerpt == null ? null : normalizeNewlines(excerpt);
+  const bad = textProblem(t) || (ex != null ? textProblem(ex, EXCERPT_MAX) : null);
+  if (bad) throw new Error(bad);
+  if (t.length + (ex ? ex.length : 0) > MAX_TEXT_P33) throw new Error('too_long');
+  if (ex != null && reply_to == null) throw new Error('excerpt only with reply_to');
+  if (att != null && (!Array.isArray(att) || att.length > 10 || !att.every(isId22) || new Set(att).size !== att.length)) throw new Error('bad att');
+  if (!t.trim() && !(att && att.length)) throw new Error('empty');
+  const m = { t: 'say', sid, text: t, ts };
+  if (att && att.length) m.att = att;
+  if (reply_to != null) m.reply_to = reply_to;
+  if (ex != null) m.excerpt = ex;
+  return m;
+}
+/** §10.3 blob messages. */
+export const blobOpen = ({ bid = newId22(), purpose = 'att', name, mime, size, sha256: s, origin = 'file', secs }) =>
+  ({ t: 'blob_open', bid, purpose, name, mime, size, sha256: s, origin, ...(secs != null ? { secs } : {}) });
+export const blobChunk = (bid, o, bytes) => ({ t: 'blob_chunk', bid, o, d: b64u(bytes) });
+export const blobEnd = (bid) => ({ t: 'blob_end', bid });
+export const blobDrop = (bid) => ({ t: 'blob_drop', bid });
+export async function sha256hex(bytes) { return hex(await sha256(bytes)); }
+/** 16 kHz mono PCM16 little-endian WAV (44-byte header) from samples in [-1, 1] — what purpose:"asr" accepts (§10.9). */
+export function wav16k(samples) {
+  const n = samples.length, out = new Uint8Array(44 + 2 * n), v = new DataView(out.buffer);
+  const str = (o, s) => { for (let i = 0; i < s.length; i++) out[o + i] = s.charCodeAt(i); };
+  str(0, 'RIFF'); v.setUint32(4, 36 + 2 * n, true); str(8, 'WAVE'); str(12, 'fmt ');
+  v.setUint32(16, 16, true); v.setUint16(20, 1, true); v.setUint16(22, 1, true); v.setUint32(24, 16000, true);
+  v.setUint32(28, 32000, true); v.setUint16(32, 2, true); v.setUint16(34, 16, true); str(36, 'data'); v.setUint32(40, 2 * n, true);
+  for (let i = 0; i < n; i++) { const x = Math.max(-1, Math.min(1, samples[i])); v.setInt16(44 + 2 * i, x < 0 ? x * 0x8000 : x * 0x7fff, true); }
+  return out;
+}
+/** §10.5 / §10.11 / §10.12 requests (answered to the asking session only). */
+export const histGet = (r, { before, after, limit } = {}) => ({ t: 'hist_get', r, ...(before != null ? { before } : {}), ...(after != null ? { after } : {}), ...(limit != null ? { limit } : {}) });
+export const modelSet = (r, { model = null, effort = null, def = false } = {}) => (def ? { t: 'model_set', r, default: true } : { t: 'model_set', r, model, effort });
+export const menuGet = (r) => ({ t: 'menu_get', r });

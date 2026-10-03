@@ -519,10 +519,26 @@ def run(st: State | None = None, offline: bool = False) -> list[dict]:
     out += [check_agent(st), check_agent_cli(st, svc), check_harness(), check_fence(st), check_danger(st), check_passphrase(st), check_bound(st),
             check_serve(st), check_service(svc, service.legacy_status()), check_alias(), check_estop(st), check_tasks(st),
             check_activity(st)]
+    out += check_asr(st)
     lg = check_linger(svc)
     if lg:
         out.append(lg)
     out.append(check_update(offline))
+    return out
+
+
+def check_asr(st: State) -> list[dict]:
+    """Local transcription (PROTOCOL §10.9): the rows come from asr.py (its engine, model, worker). A failure there is a row,
+    never a crash of the doctor."""
+    try:
+        from . import asr
+        rows = asr.doctor_rows(st.root)
+    except Exception as e:  # noqa: BLE001
+        return [_c("asr", WARN, f"本地语音转写：检查失败（{type(e).__name__}）/ local transcription: check failed")]
+    out = []
+    for r in rows if isinstance(rows, list) else []:
+        if isinstance(r, dict) and isinstance(r.get("id"), str) and r.get("status") in MARK and isinstance(r.get("summary"), str):
+            out.append(_c(r["id"][:10], r["status"], r["summary"][:200], str(r.get("hint") or "")[:300]))
     return out
 
 

@@ -17,7 +17,7 @@ export interface WebEnv {
 const RELAY_RE = /^wss:\/\/[a-z0-9.-]+$/;
 
 export function notFound(): Response {
-  return new Response("Not Found", { status: 404, headers: { "content-type": "text/plain", "x-robots-tag": "noindex, nofollow" } });
+  return new Response("Not Found", { status: 404, headers: { "content-type": "text/plain", "x-robots-tag": "noindex, nofollow", "cache-control": "no-store, no-transform" } });
 }
 
 /** relay = the connect-src source list (space-separated). */
@@ -29,13 +29,13 @@ export function csp(relay: string): string {
 export function webHeaders(relay: string): Record<string, string> {
   return {
     "content-security-policy": csp(relay),
-    "permissions-policy": "camera=(self), microphone=(), geolocation=()",
+    "permissions-policy": "camera=(self), microphone=(self), geolocation=()",
     "x-robots-tag": "noindex, nofollow, noarchive",
     "referrer-policy": "no-referrer",
     "x-frame-options": "DENY",
     "x-content-type-options": "nosniff",
     "strict-transport-security": "max-age=31536000",
-    "cache-control": "private, no-store",
+    "cache-control": "private, no-store, no-transform",   // no-transform: Cloudflare never injects into it (G-A130)
   };
 }
 

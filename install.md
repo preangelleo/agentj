@@ -1,15 +1,15 @@
 ---
 document: agentj-install
-version: 0.14.1
+version: 0.15.0
 released: 2026-10-03
 status: beta (anyone can sign up; not advertised yet, pages are not indexed)
 host_package: agentj (the `agentj` command)
-host_version: 0.10.2a1
-source_tag: v0.10.2a1
-host_wheel: agentj-0.10.2a1-py3-none-any.whl
-host_wheel_sha256: 3d5c7f6bcdb7715fc71bbaecc2e30733d2ff973ae3c255a1444c7ff31b034d0f
-host_sdist: agentj-0.10.2a1.tar.gz
-host_sdist_sha256: 33a0ec56369c9e3e223af6b18130a7fb658cbf940f0faccce6814db61e0c1fc5
+host_version: 0.11.0a1
+source_tag: v0.11.0a1
+host_wheel: agentj-0.11.0a1-py3-none-any.whl
+host_wheel_sha256: be0c70eb03166b41ddf1f101927eaa874041e33ddf0fbe73dfa45884006cb78f
+host_sdist: agentj-0.11.0a1.tar.gz
+host_sdist_sha256: 94157e37ea80f3565bbb389a168a3bd92e62fdebb8979d02260f7165610d4212
 canonical_url: https://agentj.app/install.md
 sha256_url: https://agentj.app/install.md.sha256
 alias: https://agentjarvis.net/install.md (the older address: the same file, kept for one more version)
@@ -94,7 +94,7 @@ add this computer with Step 7 (a).
      `--allow-docker` — Step 9;
    - pairing: opening the phone page, running `agentj pair`, scanning the QR code or moving the pairing link to the phone,
      typing the phone's 6-digit code and then the passphrase into their own terminal — Step 11;
-   - trying it on the phone (sending a message, pressing **批准**) — Step 12;
+   - trying it on the phone (sending a message, holding **长按批准**) — Step 12;
    - saying yes or no to the completion feedback (Step 12); saying yes or no to the docs-first rule and, with a yes,
      running the `agentj docs-rule --write` line themselves, which asks them y/N (Step 13);
    - later: `agentj update apply` (Section U), `agentj passphrase reset`, `agentj resume` (both ask the passphrase);
@@ -128,7 +128,7 @@ curl -fsSL https://agentj.app/install.md.sha256 -o install.md.sha256
 curl -fsSL https://raw.githubusercontent.com/preangelleo/agentj/main/install.md -o install.github.md
 if command -v sha256sum >/dev/null; then sha256sum -c install.md.sha256; else shasum -a 256 -c install.md.sha256; fi   # → "install.md: OK"
 cmp install.md install.github.md && echo "site and GitHub copies match"
-grep -m1 '^version:' install.md                                           # → version: 0.14.1
+grep -m1 '^version:' install.md                                           # → version: 0.15.0
 ```
 - Both checks pass → continue with that `install.md` (note its `version:` for feedback). Keep the file: Step 4 reads the
   program's SHA-256 values from its front matter.
@@ -173,7 +173,7 @@ together. Fields:
 | `host_form` | `mac` · `linux-desktop` · `linux-server` · `windows` (= WSL2) · `unknown` |
 | `os` | e.g. `Ubuntu 24.04 x86_64`, `macOS 15.1 arm64` |
 | `agent_kind` / `agent_version` | `claude-code` · `codex` · `opencode` · `other` / your own version (e.g. `claude --version`) |
-| `install_md_version` | `0.14.1` |
+| `install_md_version` | `0.15.0` |
 | `problem` | step number + the command + the **exact** error text + what you tried |
 | `resolved` / `resolution` | `true` + how you got past it, or `false` (then `resolution` may be omitted) |
 | `owner_informed` | `true` — only after your human has seen the text |
@@ -191,7 +191,7 @@ the exact JSON, send after their "yes".
   "os": "Ubuntu 24.04 x86_64",
   "agent_kind": "claude-code",
   "agent_version": "2.1.0",
-  "install_md_version": "0.14.1",
+  "install_md_version": "0.15.0",
   "problem": "Step 4: `uv tool install ...` failed: <exact error text>. Tried: <what you tried>.",
   "resolved": false,
   "owner_informed": true
@@ -321,11 +321,11 @@ unreachable — retry, and tell your human if it persists. GitHub may be slow or
 carry over). So start every command line from here on with `export PATH="$HOME/.local/bin:$PATH";` — or call
 `~/.local/bin/agentj` by its full path. This document writes `agentj` for short.
 
-The program is pinned to one release: the tag `v0.10.2a1` (front matter `source_tag`). The tag never moves, and its
+The program is pinned to one release: the tag `v0.11.0a1` (front matter `source_tag`). The tag never moves, and its
 `host/` folder is byte for byte the same code as the two files on our site whose SHA-256 is in this document's front matter.
 ```bash
-uv tool install "git+https://github.com/preangelleo/agentj@v0.10.2a1#subdirectory=host"
-export PATH="$HOME/.local/bin:$PATH"; agentj --version     # → agentj 0.10.2a1
+uv tool install "git+https://github.com/preangelleo/agentj@v0.11.0a1#subdirectory=host"
+export PATH="$HOME/.local/bin:$PATH"; agentj --version     # → agentj 0.11.0a1
 export PATH="$HOME/.local/bin:$PATH"; agentj doctor
 ```
 **Your human's own terminal must find `agentj` too** — they run `agentj passphrase set` and `agentj pair` themselves
@@ -353,10 +353,10 @@ echo "$WS  $W" | sha256sum -c - && echo "$SS  $S" | sha256sum -c -    # macOS: s
 uv tool install "./$W"          # the wheel; its dependencies come from PyPI or the mirror in UV_DEFAULT_INDEX
 ```
 `uv tool install "./$S"` installs from the checked source archive instead (it builds the same program).
-`https://agentj.app/dl/latest.txt` and `https://agentj.app/dl/latest-sdist.txt` name the same two files. `agentj --version` is the program's own version (`0.10.2a1`); it is
-numbered separately from this document (`0.14.1`).
+`https://agentj.app/dl/latest.txt` and `https://agentj.app/dl/latest-sdist.txt` name the same two files. `agentj --version` is the program's own version (`0.11.0a1`); it is
+numbered separately from this document (`0.15.0`).
 
-Alternative without uv: `pipx install "git+https://github.com/preangelleo/agentj@v0.10.2a1#subdirectory=host"` (needs Python 3.11+).
+Alternative without uv: `pipx install "git+https://github.com/preangelleo/agentj@v0.11.0a1#subdirectory=host"` (needs Python 3.11+).
 `agentj doctor` lists what is ready and what is not (prerequisites, the fence, connectivity, which agents are usable).
 Continue unless it reports an error that a later step does not fix; report anything you cannot explain.
 
@@ -364,7 +364,7 @@ Continue unless it reports an error that a later step does not fix; report anyth
 ```bash
 ( umask 077; cat > ~/.agentj-install/feedback-report <<'JSON'
 { "stage": "...", "host_form": "...", "os": "...", "agent_kind": "...", "agent_version": "...",
-  "install_md_version": "0.14.1", "problem": "...", "resolved": false, "owner_informed": true }
+  "install_md_version": "0.15.0", "problem": "...", "resolved": false, "owner_informed": true }
 JSON
 )
 agentj feedback check ~/.agentj-install/feedback-report     # redacts, writes feedback-report.checked.json (0600), prints it + a verdict
@@ -599,8 +599,8 @@ already allows (plain reads; file changes inside its writable folders); anything
 them about: commands matching a Codex "always allow" rule they saved earlier (`~/.codex/rules/*.rules`, `decision="allow"`)
 run without asking anyone — `agentj doctor` counts them; removing a rule is **their** decision, never edit it yourself.
 
-**Commands from the phone.** The phone's 「命令」 ("Commands") button (or typing `/compact`, `/clear`, `/model`, `/context`, `/cost`,
-`/usage`, `/status`, `/help`, `/stop`) works for all three agents without going back to the computer: Agent J carries each one
+**Commands from the phone.** The phone's ≡ button 「全部命令」 ("All commands") left of the message box (or typing `/compact`,
+`/clear`, `/model`, `/context`, `/cost`, `/usage`, `/status`, `/help`, `/stop`) works for all three agents without going back to the computer: Agent J carries each one
 out through the agent's own headless interface — no terminal multiplexer (herdr, tmux …) is needed or installed. `/clear` asks
 on the phone first and can be undone; `/stop` stops only the running turn. Other commands (ones that change settings) are
 answered 「这个命令请在电脑上执行」.
@@ -648,6 +648,27 @@ nohup agentj serve >~/.agentj-serve.log 2>&1 &            # otherwise
 ```
 Changing the agent or folder later: run Step 9 again, then restart (`agentj service uninstall && agentj service
 install`, or restart the tmux / nohup process).
+
+### 10a. Optional: talking to the Agent from the phone — stage `6-host`
+
+The phone's 「按住说话」 ("Hold to talk") button turns speech into text **on this computer**, with a local speech model;
+the recording never goes to us or to any speech service. It is optional — without it your human types, or uses the
+phone keyboard's own dictation. **Offer it; never install it on your own.**
+1. Ask your human, in their language: "Do you want to talk to your Agent by voice from the phone? It needs a speech model
+   on this computer: about 180 MB to download (about 255 MB through the mainland-China mirrors), about 300 MB on disk,
+   a few minutes. Without it, your phone keyboard's dictation works too."
+2. Only with their yes:
+   ```bash
+   agentj asr install --yes     # downloads, checks every file's SHA-256, installs into Agent J's own folder
+   agentj asr status            # → ready
+   ```
+   `--yes` stands for the yes your human just gave (without a terminal the command would otherwise refuse). It picks the
+   mainland-China mirrors by itself when GitHub is unreachable (Step 3b); `--mirror hf-mirror` or `--mirror modelscope`
+   forces one.
+3. It says this computer cannot run the model (no engine for this system or Python) → tell your human that voice will
+   go through the phone keyboard's dictation; nothing else to do. Do not build or install anything else instead.
+4. Their no → skip. They can run `agentj asr install` themselves later; the phone reminds them when they hold the voice
+   button.
 
 ---
 
@@ -720,23 +741,27 @@ paired again the same way.
 
 Ask your human to do these on the phone and tell you the result:
 1. Send 「list the files in this folder」 (any language) → a reply from their Claude Code (or Codex, or OpenCode) arrives.
-2. **Claude Code or OpenCode:** ask it to create a file `scratch.txt` and then delete it → a card with **「批准」 /
-   「拒绝」** ("Approve" / "Deny") appears → approve → done. Deleting is one of the five kinds, so that card is red, with
-   「批准这一条」 ("Approve this one"). No answer within 120 s = denied.
+2. **Claude Code or OpenCode:** ask it to create a file `scratch.txt` and then delete it → the screen turns orange and a card
+   with **「拒绝」 ("Deny")** and **「长按批准」 ("Hold to approve")** comes up → press and hold the approve button about a
+   second (a tap alone never approves) → done. Deleting is one of the five kinds, so that card is marked ⚠ and its button
+   is 「长按批准这一条」 ("Hold to approve this one"). No answer within 120 s = denied.
    **Codex:** ask it to create a file `scratch.txt`. If Codex's own sandbox lets it write in the work folder
-   (`workspace-write`), a card with 「批准」 / 「拒绝」 appears for the file change → approve. If its sandbox is read-only,
+   (`workspace-write`), a card appears for the file change → hold 「长按批准」 to approve. If its sandbox is read-only,
    no card comes; the phone shows 「这一步超出了你 Codex 自己的沙箱设置，已拒绝；…」 instead. Either answer proves that
-   Codex's requests reach the phone. Its sandbox setting shows on the phone with the 「命令」 button → 「状态」 ("Status").
+   Codex's requests reach the phone. Its sandbox setting shows on the phone with ≡ → 「状态」 ("Status").
    If the file stays behind (declined, or on macOS where Codex's commands fail), tell your human and, with their yes,
    remove it yourself: `rm ~/agentj-work/scratch.txt`.
-3. Optional: tap 「开启锁屏提醒」 ("Turn on lock-screen alerts"); the alerts never contain the message, only that
-   something arrived.
-4. Show them the buttons above the chat: 「记忆」 ("Memory": what the Agent remembers, item by item, delete with undo),
+3. Optional: in the top-right 「菜单」 ("Menu") tap 「开启锁屏提醒」 ("Turn on lock-screen alerts"); the alerts never
+   contain the message, only that something arrived.
+4. Show them the top-right 「菜单」 ("Menu"): 「记忆」 ("Memory": what the Agent remembers, item by item, delete with undo),
    「记录」 ("Activity": every turn, request and decision, kept only on this computer for 30 days — `agentj config activity
-   off` turns it off), 「定时任务」 ("Schedules": only a human turns one on) and the red 「全部停下」 ("Stop everything": stops
+   off` turns it off), 「定时任务」 ("Schedules": only a human turns one on). The ≡ button by the message box, 「全部命令」 ("All commands"),
+   holds `/compact`, `/clear` and the rest, and 「全部停下」 ("Stop everything": stops
    the Agent, every open card, batch approvals and scheduled tasks until 「恢复」 ("Resume") on the phone, or `agentj resume`
    on the computer, which asks the passphrase; `agentj stop` on the computer does the same as the button).
-   「命令」 ("Commands") by the message box opens `/compact`, `/clear` and the rest.
+   Each message is a page (swipe for older ones); the screen's colour is the Agent's state (green waiting, blue working,
+   orange needs an OK, purple a question). If they installed voice (Step 10a), 「按住说话」 ("Hold to talk") turns speech
+   into text on this computer.
 
 You can check on this computer: `agentj status`, `agentj devices` (the phone is listed), `agentj approvals --verify`
 (each decision with a valid phone signature).
@@ -842,11 +867,11 @@ prints something and `uv tool list` (or `pipx list`) shows `agentjarvis-host`, t
 the new name, then:
 ```bash
 jarvis service uninstall      # stop the old service first (Step 10 used tmux / nohup instead? stop that process)
-uv tool uninstall agentjarvis-host && uv tool install "git+https://github.com/preangelleo/agentj@v0.10.2a1#subdirectory=host"
+uv tool uninstall agentjarvis-host && uv tool install "git+https://github.com/preangelleo/agentj@v0.11.0a1#subdirectory=host"
 agentj doctor
 agentj service install        # start it again under the new name (or the tmux / nohup fallback, Step 10)
 ```
-With pipx instead of uv: `pipx uninstall agentjarvis-host && pipx install "git+https://github.com/preangelleo/agentj@v0.10.2a1#subdirectory=host"`.
+With pipx instead of uv: `pipx uninstall agentjarvis-host && pipx install "git+https://github.com/preangelleo/agentj@v0.11.0a1#subdirectory=host"`.
 - After the move, `agentj` puts back a `jarvis` command (a link to `agentj`, only if no other `jarvis` exists) for one more
   version; it prints a notice that points here. New installs never get `jarvis`.
 - The state moves by itself on the first run of `agentj`: from `~/.local/state/agentjarvis-alpha` to `~/.local/state/agentj`.
@@ -1032,6 +1057,13 @@ or logs out Claude Code / Codex / OpenCode (nor removes a model key), and never 
   Full list and current status: https://agentj.app/security/
 
 ## Changelog
+- 0.15.0 (2026-10-03): host `0.11.0a1` — the phone page is new: one message per page (swipe for older ones), the whole
+  screen shows the Agent's state by colour, pictures / files / voice from the phone (end-to-end encrypted to this
+  computer), questions from the Agent as cards, model and effort switchable from the phone, the chat history kept on
+  this computer (`agentj config history off` turns that off). Step 9 / 12: the ≡ button 「全部命令」 ("All commands")
+  replaces 「命令」; approving is a press-and-hold (「长按批准」 / 「长按批准这一条」), Memory / Activity / Schedules / lock-screen
+  alerts are in the top-right 「菜单」. New optional Step 10a: offer local speech-to-text (`agentj asr install`, about
+  180 MB) — only with your human's yes.
 - 0.14.1 (2026-10-03): Step 6 money facts: Agent J has no free period at all, and the note about a leftover Stripe-side
   wording is gone (the Checkout never offers one). The 7-day full refund is unchanged.
 - 0.14.0 (2026-10-03): fixes from a friend-style end-to-end run on a Mac. **Read it from disk:** the top of this file asks

@@ -725,7 +725,7 @@ class SchedulerChain(unittest.TestCase):
         kinds = [r["k"] for r in activity.all_since(self.st)]
         for k in ("task_run", "task_done", "ask", "decision", "estop", "resume", "turn_start", "turn_end"):
             self.assertIn(k, kinds)
-        starts = [json.loads(x) for x in self.argv_log.read_text().splitlines()]
+        starts = [s for s in (json.loads(x) for x in self.argv_log.read_text().splitlines()) if "argv" in s]   # control lines: §10.10 meters
         research = [a for a in starts if any("research" in x for x in a["argv"] if "danger hook" in x)]
         self.assertEqual(len(research), 1, "the research run's hook carries the read-only flag")
         self.assertTrue(all("--resume" not in a["argv"] for a in starts if any("danger hook" in x and "research" in x for x in a["argv"])))

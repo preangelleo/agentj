@@ -27,7 +27,7 @@ is the same file, byte for byte; the site publishes its SHA-256 at <https://agen
 
 The host program on its own, pinned to the release tag (Python 3.11 or newer; if yours is older, uv fetches one):
 ```bash
-uv tool install "git+https://github.com/preangelleo/agentj@v0.10.2a1#subdirectory=host"
+uv tool install "git+https://github.com/preangelleo/agentj@v0.11.0a1#subdirectory=host"
 agentj --version
 ```
 

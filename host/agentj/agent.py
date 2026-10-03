@@ -46,6 +46,7 @@ CLAIM_WAIT = 30               # s: the permission tool must claim perm.sock this
 # model, stopping a turn. Never set_permission_mode / apply_flag_settings / update_settings / mcp_* (bridge ≤ session).
 CONTROL_SUBTYPES = ("interrupt", "get_context_usage", "get_status", "list_models", "set_model")
 CONTROL_WAIT = 20
+CLAUDE_EFFORTS = ("low", "medium", "high", "xhigh", "max")   # `claude --effort` (2.1.285), "for the current session"
 
 
 @dataclass
@@ -54,6 +55,15 @@ class Cmd:
     name: str
     arg: str = ""
     by: str | None = None
+    turn: int | None = None          # its history page (PROTOCOL §10.5 `cmd` turn), filled in when it ran
+    data: dict | None = None         # model_set (§10.11): {"r", "model", "effort", "default", "device"}
+
+
+UNCERTAIN = object()        # Agent.deliver: fn's answer "maybe delivered" (e.g. a 5xx after the request was sent, P33-X08)
+
+
+class Withdrawn(Exception):
+    """The phone took the message back (`say_cancel`) before it reached the harness: nothing was written."""
 
 
 def split_text(text: str, limit: int = MAX_TEXT) -> list[str]:
@@ -105,6 +115,17 @@ def summarize(tool: str, tool_input) -> str:
     return s if text_units(s) <= 2000 else s[:1990] + " …"
 
 
+def _num(v) -> bool:
+    return isinstance(v, (int, float)) and not isinstance(v, bool) and v >= 0
+
+
+def _unix(v) -> int | None:
+    """A reset time in unix seconds (harnesses report seconds or milliseconds); None when it is not a number."""
+    if not _num(v) or v <= 0:
+        return None
+    return int(v / 1000) if v > 10_000_000_000 else int(v)
+
+
 def _signal_tree(p, sig: int) -> None:
     """The Agent runs in its own session (start_new_session): signal its whole process group, so what it started in the
     background goes with it. Linux's fence also ends the PID namespace; macOS has none (G-A53)."""
@@ -127,6 +148,8 @@ class Agent:
         self.halting = False
         self.ended: set = set()       # processes serve ended on purpose: their exit is not news (no notice)
         self.turn_proc = None         # the process the running turn talks to (an older one's exit cannot end it)
+        self.cur_send = None          # the phone's `say` this turn delivers (compose.Send), None for anything else
+        self.models_cache: list = []  # §10.11: [{"id", "name", "efforts"}] as the harness listed them
 
     def set_status(self, s: str) -> None:
         if s != self.status:
@@ -139,12 +162,112 @@ class Agent:
     def start(self) -> None:
         self.task = asyncio.create_task(self.run())
 
+    def meter(self, **kw) -> None:
+        """§10.10: a number the harness reported exactly (never an estimate) → the phones' meters."""
+        fn = getattr(self.host, "meter_update", None)
+        if fn:
+            fn(**kw)
+
+    def fail_notice(self, text: str) -> None:
+        """A notice that means this turn did not finish normally (its page ends `failed`)."""
+        fn = getattr(self.host, "turn_failed", None)
+        if fn:
+            fn()
+        self.host.agent_notice(text)
+
+    def local_fail(self, text: str) -> None:
+        """A turn that cannot run until the human changes something on the computer (fence / hooks): failed + 「在电脑上处理」."""
+        fn = getattr(self.host, "turn_failed", None)
+        if fn:
+            fn()
+        self.local_only(text)
+
+    def local_only(self, text: str) -> None:
+        """§10.8: something only the human at the computer can answer — a page with relay's 「在电脑上处理」 card."""
+        fn = getattr(self.host, "local_notice", None)
+        (fn or self.host.agent_notice)(text)
+
+    async def deliver(self, fn):
+        """The "delivered" moment (§10.2): fn = the write to the harness (Claude Code's stdin line, Codex `turn/start`, OpenCode
+        `prompt_async`). Run under the say's lock, so a `say_cancel` either wins before it (Withdrawn, nothing written) or
+        waits and reads already_delivered. fn returning False = refused by the harness (the say is `failed`)."""
+        s = self.cur_send
+        if s is None:
+            return await fn()
+        async with s.lock:
+            if s.state == "cancelled":
+                raise Withdrawn()
+            if s.state == "delivered":          # a retry of the same message after the process died
+                return await fn()
+            s.state = "delivering"
+            try:
+                r = await fn()
+            except BaseException:
+                # P33-X08: the write raised part-way — the harness may already have the message. Never `failed` (that
+                # would let a withdraw answer `cancelled` and release attachments the Agent may be reading).
+                s.state = "uncertain"
+                fn3 = getattr(self.host, "say_uncertain", None)
+                if fn3:
+                    fn3(s)
+                raise
+            s.state = "uncertain" if r is UNCERTAIN else "failed" if r is False else "delivered"
+        if s.state == "uncertain":
+            fn3 = getattr(self.host, "say_uncertain", None)
+            if fn3:
+                fn3(s)
+            return r
+        fn2 = getattr(self.host, "say_delivered", None)
+        if fn2 and s.state == "delivered":
+            fn2(s)
+        return r
+
     async def run(self) -> None:
         while True:
             text = await self.q.get()
+            if getattr(text, "sid", None) is not None:      # a phone's say (compose.Send): wait for its transcripts
+                send = text
+                if not await send.wait_ready() or send.state == "cancelled":     # withdrawn while it waited
+                    if self.q.empty() and self.status == "working":
+                        self.set_status("down" if self.is_down() else "idle")
+                    continue
+                async with getattr(self.host, "turn_lock", None) or contextlib.nullcontext():
+                    if send.state == "cancelled":
+                        if self.q.empty() and self.status == "working":
+                            self.set_status("down" if self.is_down() else "idle")
+                        continue
+                    self.halting = False
+                    self.cur_send = send
+                    self.set_status("working")
+                    if hasattr(self.host, "agent_turn_start"):
+                        self.host.agent_turn_start(send.text, send)
+                    try:
+                        await self.turn(send.text)
+                    except asyncio.CancelledError:
+                        raise
+                    except Withdrawn:
+                        pass
+                    except Exception as e:  # noqa: BLE001 — an adapter bug costs one turn, never serve
+                        self.fail_notice(f"Agent 出错（{type(e).__name__}），这条没有完成。")
+                    finally:
+                        self.cur_send = None
+                    self.host.agent_turn_end()
+                    if self.q.empty():
+                        self.set_status("down" if self.is_down() else "idle")
+                continue
             if isinstance(text, Cmd):
                 async with getattr(self.host, "turn_lock", None) or contextlib.nullcontext():
                     self.halting = False
+                    if text.name == "model_set":            # the phone's pill (§10.11): no card, a model_res + meter
+                        try:
+                            why = await self.model_set(text.data or {})
+                        except asyncio.CancelledError:
+                            raise
+                        except Exception:  # noqa: BLE001
+                            why = "unsupported"
+                        self.host.model_set_done(text, why)
+                        if self.q.empty():
+                            self.set_status("down" if self.is_down() else "idle")
+                        continue
                     try:
                         res = await self.command(text.name, text.arg)
                     except asyncio.CancelledError:
@@ -166,7 +289,7 @@ class Agent:
                 except asyncio.CancelledError:
                     raise
                 except Exception as e:  # noqa: BLE001 — an adapter bug costs one turn, never serve
-                    self.host.agent_notice(f"Agent 出错（{type(e).__name__}），这条没有完成。")
+                    self.fail_notice(f"Agent 出错（{type(e).__name__}），这条没有完成。")
                 self.host.agent_turn_end()
                 if self.q.empty():
                     self.set_status("down" if self.is_down() else "idle")
@@ -178,7 +301,10 @@ class Agent:
         kept (Claude Code --resume / Codex thread id). Returns True when a turn was running."""
         if clear_queue:
             while not self.q.empty():
-                self.q.get_nowait()
+                item = self.q.get_nowait()
+                fn = getattr(self.host, "queue_dropped", None)
+                if fn:
+                    fn(item)
         busy = self.status == "working"
         p = getattr(self, "proc", None)
         if p is None or p.returncode is not None:
@@ -214,7 +340,7 @@ class Agent:
         why = fence.problem(self.host.st, self.cfg["dir"])
         if why:
             self.host.st.log("agent_fence_fail", agent=self.kind, reason=why)
-            self.host.agent_notice(f"{fence.REASONS.get(why, why)}。为了安全，Agent 没有启动。"
+            self.local_fail(f"{fence.REASONS.get(why, why)}。为了安全，Agent 没有启动。"
                                    "在这台电脑的终端运行 `agentj agent " + self.kind + " --unfenced` 才能不隔离运行（不推荐）。")
             return None
         return fence.wrap(self.host.st, argv, self.cfg["dir"], allow_docker=self.cfg.get("docker", False))
@@ -276,6 +402,70 @@ class Agent:
 
     async def cmd_help(self, arg: str) -> Result:
         return Result(slash.HELP)
+
+    # ------------------------------------------------ model and effort pill (PROTOCOL §10.11)
+    EFFORTS: tuple | None = None      # the harness's effort levels when its model list does not say (None = no effort)
+
+    def cur_model(self) -> str | None:
+        return self.cfg.get("model")
+
+    def cur_effort(self) -> str | None:
+        return self.cfg.get("effort")
+
+    async def list_models(self) -> list[dict]:
+        """[{"id", "name", "efforts": [...] | None}] — what the harness offers (cached; [] when it gave no list)."""
+        if not self.models_cache:
+            with contextlib.suppress(Exception):
+                await self.refresh_models()
+        return self.models_cache
+
+    def efforts_for(self, model: str | None, models: list[dict]):
+        for m in models:
+            if m["id"] == model:
+                return m.get("efforts")
+        return list(self.EFFORTS) if self.EFFORTS else None
+
+    async def model_set(self, d: dict) -> str | None:
+        """None = applied; else why not: unknown_model | unknown_effort | unsupported."""
+        if d.get("default") is True:
+            await self.apply_model(None, None, default=True)
+            return None
+        model, effort = d.get("model"), d.get("effort")
+        models = await self.list_models()
+        if model is not None and (not isinstance(model, str) or not slash.MODEL_RE.match(model)
+                                  or (models and model not in {m["id"] for m in models})):
+            return "unknown_model"
+        if effort is not None:
+            eff = self.efforts_for(model or self.cur_model(), models)
+            if not eff:
+                return "unsupported"
+            if effort not in eff:
+                return "unknown_effort"
+        if model is None and effort is None:
+            return None
+        return await self.apply_model(model, effort)
+
+    async def apply_model(self, model: str | None, effort: str | None, default: bool = False) -> str | None:
+        """Store the choice (config.json agent.model / agent.effort) so the next turn uses it; adapters add what the harness
+        needs on top."""
+        if default:
+            self.host.set_model(None)
+            self.host.set_effort(None)
+        if model is not None:
+            self.host.set_model(model)
+        if effort is not None:
+            self.host.set_effort(effort)
+        self.meter(model=self.cur_model(), model_name=self.model_name(self.cur_model()), effort=self.cur_effort())
+        return None
+
+    def model_name(self, model: str | None) -> str | None:
+        for m in self.models_cache:
+            if m["id"] == model:
+                return m["name"]
+        return None
+
+    async def refresh_models(self) -> None:
+        """Ask the harness for its list once it runs (adapters); the host sends `models` to the phones."""
 
 
 def source_root() -> str | None:
@@ -361,6 +551,8 @@ class ClaudeAgent(Agent):
              "--settings", json.dumps(hook_settings(self.cfg.get("danger_extra"), research), separators=(",", ":"))]
         if self.cfg.get("model"):
             a += ["--model", self.cfg["model"]]
+        if self.cfg.get("effort") in CLAUDE_EFFORTS:      # §10.11: "for the current session" — no settings write
+            a += ["--effort", self.cfg["effort"]]
         if resume:
             a += ["--resume", resume]
         return a
@@ -369,13 +561,13 @@ class ClaudeAgent(Agent):
         exe = _bin("AGENTJ_CLAUDE_BIN", "claude")
         if not exe:
             self.failed_start = True
-            self.host.agent_notice("这台电脑上没找到 Claude Code（claude 命令）。装好并登录后再试。")
+            self.fail_notice("这台电脑上没找到 Claude Code（claude 命令）。装好并登录后再试。")
             return False
         why = hooks_blocked(self.cfg["dir"])
         if why:
             self.failed_start = True
             self.host.st.log("agent_hooks_off", agent=self.kind)
-            self.host.agent_notice(f"{why}。危险动作（花钱、删除、对外发送、改凭据、改价）必须经手机逐条批准，这要靠一个 hook，"
+            self.local_fail(f"{why}。危险动作（花钱、删除、对外发送、改凭据、改价）必须经手机逐条批准，这要靠一个 hook，"
                                    "所以 Agent 没有启动。去掉 disableAllHooks 这一项后再发一条消息。")
             return False
         argv = self.launch_argv(self.argv(self.host.st.agent_session(self.kind)))
@@ -403,7 +595,7 @@ class ClaudeAgent(Agent):
             await asyncio.wait_for(self.host.perm_claimed.wait(), CLAIM_WAIT)
         except asyncio.TimeoutError:
             self.host.st.log("agent_no_claim", agent=self.kind)
-            self.host.agent_notice("Claude Code 的批准通道没有接上：为了安全，这条消息没有交给它。")
+            self.fail_notice("Claude Code 的批准通道没有接上：为了安全，这条消息没有交给它。")
             await self._kill(proc)
             return False
         if proc.returncode is not None or self.proc is not proc:
@@ -490,17 +682,23 @@ class ClaudeAgent(Agent):
         if self.turn_proc is proc and self.turn_done and not self.turn_done.is_set():
             last = clean(self.err_tail.strip().splitlines()[-1], 200) if self.err_tail.strip() else ""
             if not quiet and not self.halting:
-                self.host.agent_notice(f"Claude Code 退出了（{code}）" + (f"：{last}" if last else ""))
+                self.fail_notice(f"Claude Code 退出了（{code}）" + (f"：{last}" if last else ""))
             self.turn_done.set()
 
     def on_event(self, ev: dict) -> None:
         t = ev.get("type")
         if t == "system" and ev.get("subtype") == "init":
+            first = not self.init
             self.got_init = True
             self.init = ev
             sid = ev.get("session_id")
             if isinstance(sid, str):
                 self.host.st.set_agent_session(self.kind, sid)
+            if first:
+                m = self.cur_model()
+                self.meter(model=m, model_name=self.model_name(m), effort=self.cur_effort())
+                if not self.models_cache and getattr(self, "_models_task", None) is None:
+                    self._models_task = asyncio.get_running_loop().create_task(self.refresh_models())
         elif t == "system" and ev.get("subtype") == "status":
             if ev.get("status") == "compacting":
                 self.set_status("compacting")
@@ -520,6 +718,15 @@ class ClaudeAgent(Agent):
         elif t == "rate_limit_event":
             if isinstance(ev.get("rate_limit_info"), dict):
                 self.rate = ev["rate_limit_info"]
+                wins = self.rate.get("unifiedWindows") if isinstance(self.rate.get("unifiedWindows"), dict) else {}
+                upd = {}
+                for k, key in (("five_hour", "h5"), ("seven_day", "week")):
+                    w = wins.get(k)
+                    if isinstance(w, dict) and isinstance(w.get("utilization"), (int, float)) \
+                            and not isinstance(w.get("utilization"), bool):
+                        upd[key] = {"pct": round(100 * float(w["utilization"]), 1), "reset": _unix(w.get("resetsAt"))}
+                if upd:
+                    self.meter(**upd)
         elif t == "assistant":
             msg = ev.get("message") if isinstance(ev.get("message"), dict) else {}
             synthetic = msg.get("model") == "<synthetic>"
@@ -539,7 +746,7 @@ class ClaudeAgent(Agent):
             if (ev.get("is_error") or ev.get("subtype") not in ("success", None)) and not self.halting \
                     and self.capture is None:
                 r = ev.get("result")
-                self.host.agent_notice("Agent 这一轮没有正常完成" + (f"：{clean(r, 300)}" if isinstance(r, str) and r else "。"))
+                self.fail_notice("Agent 这一轮没有正常完成" + (f"：{clean(r, 300)}" if isinstance(r, str) and r else "。"))
             if self.turn_done:
                 self.turn_done.set()
 
@@ -549,15 +756,78 @@ class ClaudeAgent(Agent):
                 return
             self.turn_done, self.turn_proc = asyncio.Event(), self.proc
             line = json.dumps({"type": "user", "message": {"role": "user", "content": text}}, ensure_ascii=False) + "\n"
+            proc = self.proc
+
+            async def write():
+                proc.stdin.write(line.encode())
+                await proc.stdin.drain()
             try:
-                self.proc.stdin.write(line.encode())
-                await self.proc.stdin.drain()
+                await self.deliver(write)          # §10.2: the stdin line written = delivered
             except (ConnectionError, AttributeError):
                 self.proc = None
                 continue
             await self.turn_done.wait()
             if self.got_init or attempt:   # a resumed process that died before init is retried once, fresh
+                if self.capture is None:
+                    await self.context_meter()
                 return
+
+    async def context_meter(self) -> None:
+        """§10.10: `get_context_usage` after each turn end (and compaction) — the exact numbers Claude Code reports."""
+        if self.proc is None or self.proc.returncode is not None:
+            return
+        try:
+            u = await asyncio.wait_for(self.control("get_context_usage"), 5)
+        except (RuntimeError, ConnectionError, OSError, ValueError, asyncio.TimeoutError):
+            return
+        used, mx = u.get("totalTokens"), u.get("maxTokens")
+        if _num(used) and _num(mx) and mx > 0:
+            self.meter(ctx={"used": int(used), "max": int(mx)})
+
+    def cur_model(self) -> str | None:
+        m = self.cfg.get("model") or self.init.get("model")
+        return m if isinstance(m, str) and m else None
+
+    EFFORTS = CLAUDE_EFFORTS
+
+    async def refresh_models(self) -> None:
+        try:
+            r = await self.control("list_models")
+        except (RuntimeError, ConnectionError, OSError, ValueError, asyncio.TimeoutError):
+            self._models_task = None
+            return
+        out = []
+        for m in r.get("models") or []:
+            if isinstance(m, dict) and isinstance(m.get("value"), str) and slash.MODEL_RE.match(m["value"]):
+                out.append({"id": clean_line(m["value"], 100), "name": clean_line(str(m.get("displayName") or m["value"]), 60),
+                            "efforts": list(CLAUDE_EFFORTS),
+                            "resolved": clean_line(str(m.get("resolvedModel") or ""), 100)})
+        self.models_cache = out[:40]
+        fn = getattr(self.host, "models_changed", None)
+        if fn:
+            fn()
+        cur = self.cur_model()
+        self.meter(model=cur, model_name=self.model_name(cur))
+
+    def model_name(self, model: str | None) -> str | None:
+        for m in self.models_cache:
+            if model and (m["id"] == model or m.get("resolved") == model):
+                return m["name"]
+        return None
+
+    async def apply_model(self, model: str | None, effort: str | None, default: bool = False) -> str | None:
+        """Model: the `set_model` control request (already allowed, CONTROL_SUBTYPES). Effort: no allowed control request
+        exists (apply_flag_settings stays forbidden, Invariant 26), so the idle process is restarted with
+        `--resume <id> --effort <level>`. Default (long press): both cleared, the process restarted without the flags."""
+        if model is not None and not default and self.proc is not None and self.proc.returncode is None:
+            try:
+                await self.control("set_model", model=model)
+            except (RuntimeError, ConnectionError, OSError, asyncio.TimeoutError):
+                return "unsupported"
+        if default or effort is not None:
+            await self._end_proc()                 # the next message starts Claude Code with the new flags
+            self.init, self.got_init = {}, False
+        return await super().apply_model(model, effort, default)
 
     async def stop(self) -> None:
         await super().stop()
@@ -598,6 +868,7 @@ class ClaudeAgent(Agent):
         t0 = time.monotonic()
         r = await self.local("/compact")
         b = r["boundary"]
+        await self.context_meter()
         if b:
             return Result(f"已压缩：{slash.tokens(b.get('pre_tokens'))} → {slash.tokens(b.get('post_tokens'))} tokens"
                           f"{slash.secs(b.get('duration_ms') if isinstance(b.get('duration_ms'), int) else (time.monotonic() - t0) * 1000)}")
@@ -681,6 +952,7 @@ class ClaudeAgent(Agent):
         except (RuntimeError, ConnectionError, OSError, asyncio.TimeoutError) as e:
             return Result(f"没有切换（{clean(str(e), 120) or type(e).__name__}）。", "error")
         self.host.set_model(arg)
+        self.meter(model=arg, model_name=self.model_name(arg))
         return Result(f"已切换到 {arg}：立即生效，写进了 config.json（重启后也用它）。")
 
     async def cmd_help(self, arg: str) -> Result:

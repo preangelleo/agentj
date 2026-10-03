@@ -2,6 +2,13 @@
 local control socket (driven by `agentj pair` in a terminal), shows plaintext only on this machine's terminal.
 
 Spec: protocol/PROTOCOL.md. Logs (host.log) carry metadata only, never message text.
+
+Relay parity (PROTOCOL §10, PROMPT-33): a device that announces capability `p33` in its hello gets the bigger limits (60 KiB
+messages, 20 000-unit text, `frag` for anything larger), the persistent history instead of §8's `msg` stream (history.py:
+every message, reply, notice, command result and task run is a page), `say` with attachments / quote / withdraw (compose.py),
+end-to-end blobs (uploads.py → inbox.py), voice transcribed on this computer (asr.py), questions as signed cards, meters, the
+model / effort pill and the menu (menu.py); after it is ready the relay is told to raise its frame budget (op 0x03 BULK). An
+older device keeps exactly §3 / §8.
 """
 from __future__ import annotations
 
@@ -12,6 +19,8 @@ import json
 import os
 import re
 import secrets
+import shutil
+import signal
 import sys
 import threading
 import time
@@ -22,11 +31,13 @@ from websockets.asyncio.client import connect
 
 from . import agent as agents
 from . import activity, approvals, cloud, controls, danger, fence, gate, memory, slash, tasks, update, webpush, wire
+from . import asr as asr_mod
+from . import compose, history, inbox, menu, uploads
 from .noise import IK, IKPSK2, CipherState, Handshake, NoiseError
 from .reporter import Reporter, in_daemon_thread
 from .envcompat import getenv
 from .state import MAX_DEVICES, DeviceLimit, State
-from .text import LABEL_DIGITS, LABEL_MAX, clean, clean_label, text_units  # noqa: F401  (re-exported)
+from .text import LABEL_DIGITS, LABEL_MAX, clean, clean_label, clean_line, text_units  # noqa: F401  (re-exported)
 
 
 def _ttl(env: str, default: int) -> float:
@@ -62,6 +73,27 @@ CHUNK = 11 * 1024      # phone-control answers are split into app messages of ab
 ITEM_SHOW = 6000       # a memory item longer than this is shown cut on the phone (its id still covers the whole text)
 _RID = re.compile(r"[A-Za-z0-9_-]{1,32}")
 PHONE_CONTROLS = ("mem_list", "mem_rm", "mem_undo", "act_list", "task_list", "task_set", "estop", "resume")
+# §10 (PROMPT-33)
+Q_TTL = _ttl("AGENTJ_TEST_Q_TTL", 180)     # a question nobody answers is ended (relay's default)
+MAX_QUESTIONS = 4                           # open at once; more are answered "nobody answered" at once
+ASR_TAKE = 60.0                             # s per take (asr_res timeout)
+ASR_QUEUE = 3                               # takes waiting per device (more → busy)
+FF_MAX_SECS = 119                           # say-time ffmpeg: at most this much audio (≤ uploads.ASR_MAX as WAV)
+FF_CPU_SECS = 60                            # RLIMIT_CPU of one conversion
+# declared MIME → the ffmpeg demuxer (pinned: no content probing, so a playlist or another format is never opened)
+FF_DEMUX = {"audio/webm": "matroska", "audio/ogg": "ogg", "audio/mpeg": "mp3", "audio/mp4": "mov", "audio/aac": "aac",
+            "audio/wav": "wav", "audio/x-wav": "wav"}
+METER_GAP = 2.0                             # ≤ 1 meter message per 2 s
+HIST_READY = 50                             # turns a p33 device gets on ready (it pages for more)
+SWEEP_EVERY = 60
+RETAIN_EVERY = 86_400
+P33_ONLY = ("say", "say_cancel", "blob_open", "blob_chunk", "blob_end", "blob_drop", "hist_get", "menu_get", "model_set",
+            "q_answer")
+METER_KEYS = ("model", "model_name", "effort", "ctx", "h5", "week")
+Q_CANCEL = "用户在手机上取消了这个问题，没有选择任何选项。请不要替他做选择，停下来等他直接输入文字。"
+Q_TIMEOUT = "没有人作答，请改用文字列出选项"
+ASR_WHY = {"not_installed": "not_installed", "bad_audio": "bad_audio", "timeout": "timeout", "busy": "busy",
+           "engine_failed": "broken", "off": "off", "broken": "broken", "no_speech": "no_speech"}
 
 
 @dataclass
@@ -80,6 +112,19 @@ class Session:
     pending_since: float = 0.0    # monotonic; when the human started being asked (reported as wall time, §7)
     sign_pub: bytes = b""         # the device's Ed25519 approval key from the pairing msg1 (PROTOCOL §8)
     fg: bool = True               # the page is visible (device "vis"); no push while a visible session is ready
+    p33: bool = False             # the device announced capability "p33" in its hello (PROTOCOL §10.0)
+    hist: dict | None = None      # its hello's {"epoch", "last"}: where its history pages stop (§10.5)
+
+
+@dataclass
+class Question:
+    """A question the Agent asked (AskUserQuestion / requestUserInput / question.asked), waiting for a signed pick (§10.7)."""
+    qid: str
+    qs: list
+    digest: str                   # approvals.question_digest(qs): what approvals.log keeps
+    deadline: float               # monotonic
+    fut: asyncio.Future
+    task: str | None = None
 
 
 @dataclass
@@ -169,6 +214,23 @@ class Host:
         self.task_label: str | None = None
         self.turn_by: str | None = None
         self.turn_t0 = 0.0
+        # relay parity (PROTOCOL §10, PROMPT-33)
+        self.hist = history.History(st)
+        self.lang = compose.lang_of(st)
+        self.uploads = uploads.Uploads(st, self.agent_cfg["dir"] if self.agent_cfg else None,
+                                       asr_off=lambda: self.asr_state() == "off")
+        self.sends = compose.Sends()
+        self.questions: dict[str, Question] = {}
+        self.cur_turn: int | None = None        # the history page the running Agent turn answers
+        self.cur_failed = False
+        self.meter_state = {k: None for k in METER_KEYS}
+        self.meter_at = 0.0
+        self.meter_task: asyncio.Task | None = None
+        self.asr = asr_mod                       # tests swap in a stand-in engine
+        self.asr_lock: asyncio.Lock | None = None
+        self.ff_lock: asyncio.Lock | None = None    # one say-time ffmpeg conversion at a time (P33-X09)
+        self.asr_waiting: dict[str, int] = {}
+        self.model_sets = 0
 
     # ------------------------------------------------------------ output
     def emit(self, ev: str, **kw) -> None:
@@ -256,11 +318,28 @@ class Host:
         self.st.log("close", cid=cid, device=s.device if s else None, reason=reason)
 
     async def send_app(self, s: Session, obj: dict) -> bool:
+        """One app message. To a p33 session (§10.0 / §10.1) up to 60 KiB per frame, anything larger as back-to-back `frag`
+        frames under the same lock (nothing in between); to an older session §3's 16 KiB."""
         async with self.send_lock:  # nonce order == wire order
             if self.sessions.get(s.cid) is not s:  # closed / revoked while this send was queued
                 return False
-            ct = s.send.encrypt(b"", wire.pad_json(obj))
-            await self._op(wire.OP_DATA, s.cid, bytes([wire.DATA]) + ct)
+            if s.p33:
+                try:
+                    msgs = wire.frag_split(obj, secrets.token_hex(8))
+                except ValueError:
+                    self.st.log("send_too_big", cid=s.cid, kind=str(obj.get("t"))[:16])
+                    return False
+                limit = wire.MAX_JSON_P33
+            else:
+                msgs, limit = [obj], wire.MAX_JSON
+            for i, m in enumerate(msgs):
+                # P33-X07: a revoke detaches the session synchronously while an earlier fragment's write is awaited —
+                # re-check before every fragment, so a revoked device never gets the rest of a big message
+                if i and (self.sessions.get(s.cid) is not s or (s.state == "ready" and not self.st.is_allowed(s.pub))):
+                    self.st.log("frag_abort", cid=s.cid, device=s.device)
+                    return False
+                ct = s.send.encrypt(b"", wire.pad_json(m, limit))
+                await self._op(wire.OP_DATA, s.cid, bytes([wire.DATA]) + ct)
             return True
 
     async def relay_loop(self) -> None:
@@ -347,7 +426,7 @@ class Host:
         elif s.state == "new" and kind == wire.RESUME_INIT:
             await self._resume_init(s, body)
         elif kind == wire.DATA and s.state in ("hello", "pending", "ready"):
-            obj = wire.unpad_json(s.recv.decrypt(b"", body))
+            obj = wire.unpad_json(s.recv.decrypt(b"", body), wire.MAX_JSON_P33 if s.p33 else wire.MAX_JSON)
             await self._app(s, obj)
         else:
             await self.close_cid(s.cid, "unexpected_kind")
@@ -406,12 +485,18 @@ class Host:
         if s.state == "hello":
             if t != "hello":
                 return await self.close_cid(s.cid, "expected_hello")
+            caps = obj.get("caps")
+            s.p33 = isinstance(caps, list) and wire.CAP_P33 in caps[:16]
+            h = obj.get("hist")
+            if s.p33 and isinstance(h, dict) and type(h.get("epoch")) is int and type(h.get("last")) is int:
+                s.hist = {"epoch": h["epoch"], "last": h["last"]}
             if s.mode == "resume":
                 if not self.st.is_allowed(s.pub):  # revoked between msg1 and hello
                     return await self.close_cid(s.cid, "revoked")
                 s.state = "ready"
                 self._set_timer(s, None)
-                await self.send_app(s, {"t": "ready"})
+                await self.send_app(s, {"t": "ready", **self._caps(s)})
+                await self._bulk(s)
                 self.st.log("resume_ok", cid=s.cid, device=s.device)
                 self.emit("ready", device=s.device, name=s.name)
                 self.reporter.trigger("online")
@@ -435,26 +520,24 @@ class Host:
             return await self.close_cid(s.cid, "revoked")
         if t == "msg":
             text = obj.get("text")
-            if not isinstance(text, str) or text_units(text) > wire.MAX_TEXT:  # reject, never silently truncate
+            limit = wire.MAX_TEXT_P33 if s.p33 else wire.MAX_TEXT
+            if not isinstance(text, str) or text_units(text) > limit:  # reject, never silently truncate
                 return await self.close_cid(s.cid, "bad_msg")
             if self.stopped() and self.agent:      # stopped: nothing is queued to run later behind the human's back
                 self.st.log("msg_refused", cid=s.cid, device=s.device, reason="estop")
                 self.activity("message_refused", by=s.name or s.device, text=text[:120])
-                await self.send_app(s, {"t": "msg", "id": secrets.token_hex(8), "ts": int(time.time() * 1000), "seq": self.seq,
-                                        "from": "notice", "text": "已急停：这条没有交给 Agent，也不会排队。恢复后再发。"})
+                if not s.p33:
+                    await self.send_app(s, {"t": "msg", "id": secrets.token_hex(8), "ts": int(time.time() * 1000),
+                                            "seq": self.seq, "from": "notice",
+                                            "text": "已急停：这条没有交给 Agent，也不会排队。恢复后再发。"})
                 return
             cmd = slash.parse(text)
             if cmd and self.agent and not self.agent.passthrough(cmd[0]):
                 return await self.on_slash(s, cmd[0], cmd[1], confirm=False, typed=True)
-            self.emit("msg", device=s.device, name=s.name, text=clean(text, wire.MAX_TEXT))
-            self.st.log("msg_in", cid=s.cid, device=s.device)
-            entry = self._remember("device", text, device=s.device, name=s.name)
-            for o in list(self.sessions.values()):     # other phones see what was said; the sender already shows it
-                if o is not s and o.state == "ready" and self.st.is_allowed(o.pub):
-                    await self.send_app(o, self._render(entry, o))
-            if self.agent:
-                self.turn_by = s.name or s.device
-                self.agent.submit(text)
+            await self._accept(s, text, sid=None)
+        elif t in P33_ONLY:
+            if s.p33:                          # §10 messages only from a device that announced p33 (§10.0)
+                await self.on_p33(s, t, obj)
         elif t == "answer":
             await self._answer(s, obj)
         elif t == "push_sub":
@@ -481,7 +564,7 @@ class Host:
                     self.end_grant(g.rid, "revoked", by=s.device)
         elif t in PHONE_CONTROLS:
             await self.on_control(s, t, obj)
-        elif t == "slash":              # a command from the phone's 「命令」 buttons (or typed: the page sends it like this)
+        elif t == "slash":              # a command from the phone's ≡「全部命令」 menu (or typed: the page sends it like this)
             name, arg = obj.get("cmd"), obj.get("arg", "")
             if isinstance(name, str) and isinstance(arg, str) and len(name) <= 32 and text_units(arg) <= slash.ARG_MAX:
                 await self.on_slash(s, name.lower(), arg.strip(), confirm=obj.get("confirm") is True, typed=False)
@@ -576,7 +659,8 @@ class Host:
             return res
         s.state = "ready"
         self.reporter.trigger("approve")
-        await self.send_app(s, {"t": "approved"})
+        await self.send_app(s, {"t": "approved", **self._caps(s)})
+        await self._bulk(s)
         self.st.log("pair_approved", cid=s.cid, device=s.device, name=s.name, code_ok=True)
         self.emit("approved", device=s.device, name=s.name)
         asyncio.create_task(self.on_ready(s, None))
@@ -636,6 +720,20 @@ class Host:
                     self.reporter.trigger("agent_name")
                     self.name_changed()
                     await self._ctl_send(w, {"ok": True})
+                elif cmd == "history_clear" and req.get("all") is True:     # `agentj history clear --all` (P33-C07)
+                    n = self.hist.purge()
+                    self.hist_meta_all()
+                    await self._ctl_send(w, {"ok": True, "deleted": n, "epoch": self.hist.epoch})
+                elif cmd == "history_clear":        # `agentj history clear` while serve runs (§10.5): archive + new epoch
+                    name = self.hist.reset("cli")
+                    if name:
+                        self.hist_meta_all()
+                    self.st.log("history_clear", status="ok" if name else "empty")
+                    await self._ctl_send(w, {"ok": True, "archived": bool(name), "epoch": self.hist.epoch})
+                elif cmd == "history_reload":       # `agentj history on|off` / `agentj config history …`
+                    self.hist = history.History(self.st)
+                    self.hist_meta_all()
+                    await self._ctl_send(w, {"ok": True, "on": self.hist.on})
                 elif cmd == "send":
                     text = str(req.get("text", ""))
                     if text_units(text) > wire.MAX_TEXT:
@@ -672,6 +770,8 @@ class Host:
             subs = webpush.load_subs(self.st)
             if subs.pop(did, None):
                 webpush.save_subs(self.st, subs)
+            with contextlib.suppress(Exception):
+                self.uploads.device_gone(did)       # its partial uploads and never-announced files go too
         for c in victims:
             await self._notify_close(c)
             self.st.log("close", cid=c, device=did, reason="revoked")
@@ -823,12 +923,15 @@ class Host:
         self.name_changed()
 
     async def broadcast(self, text: str, frm: str = "host") -> int:
-        """Callers check text_units(text) <= MAX_TEXT first. Kept in the in-memory backlog for devices that reconnect."""
+        """Callers check text_units(text) <= MAX_TEXT first. Kept in the in-memory backlog for devices that reconnect; a page
+        `src.k: host` for p33 devices (what the human at the computer said to the phones)."""
         entry = self._remember(frm, text)
+        turn = self.hist.add({"k": "host", "text": wire.well_formed(text)}, end="done")
         n = 0
         for s in list(self.sessions.values()):
             if s.state == "ready" and self.st.is_allowed(s.pub):
-                n += await self.send_app(s, self._render(entry, s))
+                n += await self.send_app(s, {"t": "hist_turn", "epoch": self.hist.epoch, "turn": turn} if s.p33
+                                         else self._render(entry, s))
         if n:
             self.st.log("msg_out", bytes=len(text.encode()))
         return n
@@ -863,9 +966,27 @@ class Host:
         await self.send_app(s, self._status_msg())
         await self.send_app(s, self._estop_msg())
         await self.send_app(s, {"t": "push_key", "k": webpush.b64u(webpush.vapid_public(self._push_key()))})
-        for e in list(self.backlog):
-            if e["seq"] > since:
-                await self.send_app(s, self._render(e, s))
+        if s.p33:                       # §10.5: history pages instead of §8's msg replay; meters, models (§10.10 / §10.11)
+            await self.send_app(s, self._meter_msg())
+            if self.agent:
+                await self.send_app(s, self._models_msg())
+            await self.send_app(s, {"t": "hist_meta", **self.hist.meta()})
+            h = s.hist or {}
+            if h.get("epoch") == self.hist.epoch:
+                turns, more = self.hist.page(after=h.get("last", 0), limit=HIST_READY)
+                if more:                # more than 50 missed: the newest 50; it pages back with hist_get before
+                    turns, _ = self.hist.page(limit=HIST_READY)
+            else:
+                turns, _ = self.hist.page(limit=HIST_READY)
+            for t in turns:
+                await self.send_app(s, {"t": "hist_turn", "epoch": self.hist.epoch, "turn": t})
+            for q in list(self.questions.values()):
+                if not q.fut.done():
+                    await self.send_app(s, self._question_msg(q))
+        else:
+            for e in list(self.backlog):
+                if e["seq"] > since:
+                    await self.send_app(s, self._render(e, s))
         for a in list(self.asks.values()):
             if not a.fut.done():
                 await self.send_app(s, self._ask_msg(a))
@@ -879,14 +1000,21 @@ class Host:
             return "stopped"
         if not self.agent:
             return "none"
-        if any(not a.fut.done() for a in self.asks.values()):
+        if any(not a.fut.done() for a in self.asks.values()) or self._open_question():
             return "waiting"
         return self.agent.status
 
+    def _open_question(self) -> bool:
+        return any(not q.fut.done() for q in self.questions.values())
+
     def _status_msg(self) -> dict:
-        """PROTOCOL §8 status; `name` = the Agent's display name (or null), so the phone can show it (title, top left)."""
-        return {"t": "status", "s": self.eff_status(), "agent": self.agent.kind if self.agent else None,
-                "name": self.st.agent_name()}
+        """PROTOCOL §8 status; `name` = the Agent's display name (or null), so the phone can show it (title, top left).
+        §10.10: `kind: "question"` while a question is open (the phone's purple)."""
+        m = {"t": "status", "s": self.eff_status(), "agent": self.agent.kind if self.agent else None,
+             "name": self.st.agent_name()}
+        if m["s"] == "waiting" and self._open_question():
+            m["kind"] = "question"
+        return m
 
     def name_changed(self) -> None:
         """The Agent name changed (`agentj name`, the admin page, a Dashboard rename adopted in sync): every ready phone gets
@@ -914,11 +1042,55 @@ class Host:
             if s.state == "ready" and self.st.is_allowed(s.pub):
                 await self.send_app(s, obj_fn(s))
 
+    async def _send_legacy(self, obj_fn) -> None:
+        """§8 `msg` entries: only to sessions WITHOUT p33 (a p33 device gets the same as history pages, §10.5)."""
+        for s in list(self.sessions.values()):
+            if s.state == "ready" and not s.p33 and self.st.is_allowed(s.pub):
+                await self.send_app(s, obj_fn(s))
+
+    async def _send_p33(self, obj_fn) -> None:
+        for s in list(self.sessions.values()):
+            if s.state == "ready" and s.p33 and self.st.is_allowed(s.pub):
+                await self.send_app(s, obj_fn(s))
+
+    async def _send_device(self, device: str, obj: dict) -> None:
+        """An answer for one device (say_state, asr_res …): every ready p33 session of it (it may have reconnected)."""
+        for s in list(self.sessions.values()):
+            if s.state == "ready" and s.p33 and s.device == device and self.st.is_allowed(s.pub):
+                await self.send_app(s, obj)
+
+    # ------------------------------------------------------------ history pages (PROTOCOL §10.5)
+    def hist_emit(self, turns: list[dict]) -> None:
+        ep = self.hist.epoch
+        for t in turns:
+            self._post(self._send_p33, lambda s, t=t: {"t": "hist_turn", "epoch": ep, "turn": t})
+
+    def hist_meta_all(self) -> None:
+        m = {"t": "hist_meta", **self.hist.meta()}
+        self._post(self._send_p33, lambda s: m)
+
+    def hist_add(self, src: dict, reply: str = "", end: str = "done", card: dict | None = None) -> dict:
+        t = self.hist.add(src, wire.well_formed(reply), end, card)
+        self.hist_emit([t])
+        return t
+
+    def hist_update(self, tid: int | None, **kw) -> list[dict]:
+        if tid is None:
+            return []
+        if isinstance(kw.get("append"), str):
+            kw["append"] = wire.well_formed(kw["append"])
+        changed = self.hist.update(tid, **kw)
+        self.hist_emit(changed)
+        return changed
+
     def status_changed(self) -> None:
         st = self.eff_status()
+        if st == "waiting" and self._open_question():
+            st = "waiting:question"
         if st == self.sent_status:
             return
         self.sent_status = st
+        st = st.split(":")[0]
         self.emit("agent_status", s=st)
         msg = self._status_msg()
         self._post(self._send_ready, lambda s: msg)
@@ -932,12 +1104,33 @@ class Host:
         for chunk in agents.split_text(text, wire.MAX_TEXT):
             self.emit("agent_msg", text=clean(chunk, wire.MAX_TEXT))
             e = self._remember("agent", chunk)
-            self._post(self._send_ready, lambda s, e=e: self._render(e, s))
+            self._post(self._send_legacy, lambda s, e=e: self._render(e, s))
+        # §10.5: the reply of a page = every finished reply text of that turn, joined by a blank line (results only)
+        if self.cur_turn is not None and self.hist.get(self.cur_turn) is not None:
+            changed = self.hist_update(self.cur_turn, append=text)
+            if changed:
+                self.cur_turn = changed[-1]["id"]
+        else:                          # the Agent spoke outside a turn of ours (e.g. a background task finished)
+            self.hist_add({"k": "agent", "text": ""}, text, "done")
 
     def agent_notice(self, text: str) -> None:
+        local, self.notice_local = getattr(self, "notice_local", False), False
         self.emit("agent_notice", text=text)
         e = self._remember("notice", text)
-        self._post(self._send_ready, lambda s, e=e: self._render(e, s))
+        self._post(self._send_legacy, lambda s, e=e: self._render(e, s))
+        self.hist_add({"k": "sys", "text": "", **({"local": True} if local else {})}, text, "done")
+
+    def local_notice(self, text: str) -> None:
+        """§10.8: something only the human at the computer can answer: a `sys` page with `local: true` (relay's
+        「在电脑上处理」 card) — a notice for older phones (the same agent_notice path, marked)."""
+        self.notice_local = True
+        try:
+            self.agent_notice(text)
+        finally:
+            self.notice_local = False
+
+    def turn_failed(self) -> None:
+        self.cur_failed = True
 
     async def update_loop(self) -> None:
         """Once a day: is there a newer host on the public repo? Tell the phones once per version (E2E, like every message);
@@ -953,18 +1146,25 @@ class Host:
                 self.st.log("update_available", status=str(latest)[:32])
                 self.emit("update", latest=latest, current=update.__version__)
                 e = self._remember("notice", note)
-                self._post(self._send_ready, lambda s, e=e: self._render(e, s))
+                self._post(self._send_legacy, lambda s, e=e: self._render(e, s))
+                self.hist_add({"k": "sys", "text": ""}, note, "done")
             await asyncio.sleep(UPDATE_WAKE)
 
-    def agent_turn_start(self, text: str) -> None:
+    def agent_turn_start(self, text: str, send=None) -> None:
         self.turn_t0 = time.monotonic()
-        self.activity("turn_start", by=self.turn_by, text=text[:120])
+        by = send.by if send is not None and send.by else self.turn_by
+        self.activity("turn_start", by=by, text=text[:120])
         self.turn_by = None
+        self.cur_turn, self.cur_failed = (send.turn if send is not None else None), False
 
     def agent_turn_end(self) -> None:
         self.st.log("turn_end", agent=self.agent.kind if self.agent else None)
+        halted = bool(self.agent and self.agent.halting)
         self.activity("turn_end", secs=round(time.monotonic() - self.turn_t0, 1) if self.turn_t0 else None,
-                      result="stopped" if self.agent and self.agent.halting else "done")
+                      result="stopped" if halted else "done")
+        if self.cur_turn is not None:
+            self.hist_update(self.cur_turn, end="stopped" if halted else ("failed" if self.cur_failed else "done"))
+        self.cur_turn, self.cur_failed = None, False
         for gid in list(self.grants):     # a batch approval never outlives the turn it was given in (ADR-A48)
             self.end_grant(gid, "turn_end")
         if self.turn_text:
@@ -1085,6 +1285,8 @@ class Host:
 
     async def ask(self, tool: str, tool_input: dict, gone: asyncio.Future | None = None, batch: bool = True) -> dict:
         """batch=False: never offered for (or approved by) a batch grant (a Codex sandbox / network escalation)."""
+        if tool == "AskUserQuestion" and self.agent and self.agent.kind == "claude" and isinstance(tool_input, dict):
+            return await self._ask_user_question(tool_input, gone)       # §10.7: a question card, not an approval card
         kind = self.agent.kind if self.agent else "?"
         summary = agents.summarize(tool, tool_input)
         digest, isha = approvals.shown_digest(tool, summary), approvals.input_digest(tool_input)
@@ -1180,7 +1382,7 @@ class Host:
         self.activity("decision", id=rid, tool=tool, result="policy", reason="policy", why=why, cats=v.cats,
                       task=self.task_label, summary=summary[:200])
         self.emit("ask_done", id=rid, result="deny", reason="policy")
-        self.agent_notice(f"{notice}（{why}：{summary.splitlines()[0][:120]}）")
+        self.local_notice(f"{notice}（{why}：{summary.splitlines()[0][:120]}）")
 
     def _open_grant(self, a: Ask, did: str) -> None:
         if a.scope is None:
@@ -1250,6 +1452,9 @@ class Host:
         for a in list(self.asks.values()):
             if not a.fut.done():
                 a.fut.set_result(("deny", None, None, None))
+        for q in list(self.questions.values()):        # §10.7: an open question is cancelled at once (`stopped`)
+            if not q.fut.done():
+                q.fut.set_result(("stopped", None, None, None, None))
         for gid in list(self.grants):
             self.end_grant(gid, "estop")
         busy = False
@@ -1262,7 +1467,8 @@ class Host:
         note = "已急停（" + name + "）：" + ("正在进行的一轮已中断；" if busy else "") + ("正在跑的定时任务已中断；" if ran else "") + \
             "待批准的全部拒绝，批量授权已收回，定时任务暂停。恢复之前 Agent 不接新消息。"
         e = self._remember("notice", note)
-        self._post(self._send_ready, lambda s, e=e: self._render(e, s))
+        self._post(self._send_legacy, lambda s, e=e: self._render(e, s))
+        self.hist_add({"k": "sys", "text": ""}, note, "done")
 
     async def do_resume(self, by: str, name: str) -> None:
         rec = controls.set_estop(self.st, False, by)
@@ -1273,8 +1479,10 @@ class Host:
         self.status_changed()
         m = self._estop_msg()
         self._post(self._send_ready, lambda s: m)
-        e = self._remember("notice", f"已恢复（{name}）：Agent 接收新消息，定时任务按各自的启用状态继续。")
-        self._post(self._send_ready, lambda s, e=e: self._render(e, s))
+        note = f"已恢复（{name}）：Agent 接收新消息，定时任务按各自的启用状态继续。"
+        e = self._remember("notice", note)
+        self._post(self._send_legacy, lambda s, e=e: self._render(e, s))
+        self.hist_add({"k": "sys", "text": ""}, note, "done")
         self.scheduler.wake.set()
 
     def task_finished(self, res: dict) -> None:
@@ -1291,7 +1499,10 @@ class Host:
         self.activity("task_done", id=res["id"], title=title, verdict=res["verdict"], line=res["line"], secs=res.get("secs"),
                       readonly=res.get("readonly"), report=res.get("report"), stopped=res.get("stopped"))
         e = self._remember("notice", clean(text, wire.MAX_TEXT))
-        self._post(self._send_ready, lambda s, e=e: self._render(e, s))
+        self._post(self._send_legacy, lambda s, e=e: self._render(e, s))
+        # §10.5: a task run is its own page (src.k task): the title, the verdict sentence
+        self.hist_add({"k": "task", "name": clean(str(title), 64), "text": ""}, clean(text, wire.MAX_TEXT_P33),
+                      "stopped" if res.get("stopped") else "done")
         self.push_notify("reply")
 
     async def _send_chunks(self, s: Session, head: dict, key: str, items: list, tail: dict | None = None) -> None:
@@ -1408,8 +1619,10 @@ class Host:
         await self._send_chunks(s, {"t": "mem_items", "r": r}, "items", items)
 
     # ------------------------------------------------------------ slash commands (slash.py, ADR-A70 – A72)
-    def cmd_card(self, name: str, res: "slash.Result", by: str | None = None) -> None:
-        """A command result → one chat entry `from: "cmd"` (kept in the backlog like every message) on every phone."""
+    def cmd_card(self, name: str, res: "slash.Result", by: str | None = None, turn: int | None = None,
+                 interim: bool = False) -> None:
+        """A command result → one chat entry `from: "cmd"` (kept in the backlog like every message) on every older phone, and
+        the command's page (§10.5 `src.k: cmd`, `card` = the same fields) for p33 phones. interim = 「这一轮结束后执行。」."""
         x = {"cmd": name, "ok": res.kind in ("ok", "info"), "kind": res.kind}
         if res.models:
             x["models"] = res.models[:40]
@@ -1422,13 +1635,52 @@ class Host:
         text = res.text if text_units(res.text) <= wire.MAX_TEXT else res.text[:3900] + " …"
         self.emit("agent_notice", text=f"/{name}：{text}")
         e = self._remember("cmd", text, x=x)
-        self._post(self._send_ready, lambda s, e=e: self._render(e, s))
+        self._post(self._send_legacy, lambda s, e=e: self._render(e, s))
+        if turn is not None and self.hist.get(turn) is not None:
+            self.hist_update(turn, text=wire.well_formed(res.text), end="open" if interim else "done",
+                             card=None if interim else x)
+        elif not interim:
+            self.hist_add({"k": "cmd", "text": "/" + name, **({"name": by[:64]} if by else {})}, res.text, "done", x)
+
+    def cmd_turn(self, s: Session | None, name: str, arg: str = "") -> int:
+        """The page of a command, opened when it is asked for (its result fills it in)."""
+        src = {"k": "cmd", "text": ("/" + name + (" " + arg if arg else ""))[:200]}
+        if s is not None:
+            src.update(dev=s.device, name=(s.name or s.device)[:64])
+        return self.hist_add(src, "", "open")["id"]
 
     def cmd_done(self, cmd, res: "slash.Result") -> None:
-        """Called by the Agent's queue when a command ran (agent.Cmd)."""
+        """Called by the Agent's queue when a command ran (agent.Cmd). /clear that cleared (and 「撤销清空」) also reset the
+        history (§10.5): the command's page is closed, then archived / restored, and the result is the first page after."""
         self.st.log("slash", cmd=cmd.name, result=res.kind)
         self.activity("slash", cmd=cmd.name, result=res.kind, by=cmd.by)
-        self.cmd_card(cmd.name, res, cmd.by)
+        if cmd.name == "clear" and res.undo:
+            self.hist_update(cmd.turn, text=wire.well_formed(res.text), end="done")
+            if self.hist.reset("clear"):
+                self.hist_meta_all()
+            return self.cmd_card(cmd.name, res, cmd.by)
+        if cmd.name == "undo_clear" and res.kind == "ok":
+            self.hist_update(cmd.turn, text=wire.well_formed(res.text), end="done")
+            if self.hist.undo_reset():
+                self.hist_meta_all()
+            return self.cmd_card(cmd.name, res, cmd.by)
+        self.cmd_card(cmd.name, res, cmd.by, cmd.turn)
+
+    def queue_dropped(self, item) -> None:
+        """The stop switch dropped something still queued (agent.halt): a say is withdrawn (its attachments staged again,
+        its page ends `stopped`), a command's page ends `stopped`."""
+        if getattr(item, "sid", None) is not None:
+            item.state = "cancelled"
+            self.uploads.release(item.blobs)
+            if item.prep is not None and not item.prep.done():
+                item.prep.cancel()
+            self.hist_update(item.turn, end="stopped")
+            self._post(self._send_device, item.device, {"t": "say_state", "sid": item.sid, "s": "cancelled", "why": "stopped"})
+        elif isinstance(item, agents.Cmd):
+            if item.name == "model_set":
+                self.model_set_done(item, "stopped")
+            else:
+                self.hist_update(item.turn, end="stopped")
 
     def set_model(self, model: str) -> None:
         """/model <name>: kept in config.json (`agent.model`), so a restart uses it too."""
@@ -1436,16 +1688,20 @@ class Host:
         if self.agent_cfg is not None:
             self.agent_cfg["model"] = model
 
-    async def on_slash(self, s: Session, name: str, arg: str, confirm: bool, typed: bool) -> None:
+    async def on_slash(self, s: Session, name: str, arg: str, confirm: bool, typed: bool) -> int:
         """A command from a ready session of a paired device (the only place one can come from). /stop and /help at once;
-        the rest after the turn in front of it (the Agent's queue). Logged: command name + result class, never text."""
+        the rest after the turn in front of it (the Agent's queue). Logged: command name + result class, never text.
+        Returns the id of the command's history page (§10.5)."""
         by = s.name or s.device
-        self.st.log("slash_in", cid=s.cid, device=s.device, cmd=name if name in slash.WHITELIST + slash.INTERNAL else "other")
+        known = name in slash.WHITELIST + slash.INTERNAL
+        self.st.log("slash_in", cid=s.cid, device=s.device, cmd=name if known else "other")
+        turn = self.cmd_turn(s, name if known else "refused", arg if known else "")
 
         def done(res):
-            self.st.log("slash", cmd=name if name in slash.WHITELIST + slash.INTERNAL else "other", result=res.kind)
-            self.activity("slash", cmd=name if name in slash.WHITELIST + slash.INTERNAL else "other", result=res.kind, by=by)
-            self.cmd_card(name if name in slash.WHITELIST + slash.INTERNAL else "refused", res, by)
+            self.st.log("slash", cmd=name if known else "other", result=res.kind)
+            self.activity("slash", cmd=name if known else "other", result=res.kind, by=by)
+            self.cmd_card(name if known else "refused", res, by, turn)
+            return turn
         if not self.agent:
             return done(slash.Result(slash.HELP if name == "help" else "还没接 Agent：在电脑上运行 agentj agent claude --dir <目录>。",
                                      "info" if name == "help" else "error"))
@@ -1461,10 +1717,11 @@ class Host:
         if self.stopped():
             return done(slash.Result("已急停：恢复之后再用这个命令。", "refused"))
         if name == "clear" and not confirm:
-            return done(slash.Result("清空要在手机上确认：点输入框旁的「命令」→「清空」。", "info"))
+            return done(slash.Result("清空要在手机上确认：点输入框左边的 ≡「全部命令」→「清空对话（可撤销）」。", "info"))
         if self.agent.status in ("working", "compacting") or not self.agent.q.empty():
-            self.cmd_card(name, slash.Result("这一轮结束后执行。", "info"), by)
-        self.agent.submit(agents.Cmd(name, arg, by))
+            self.cmd_card(name, slash.Result("这一轮结束后执行。", "info"), by, turn, interim=True)
+        self.agent.submit(agents.Cmd(name, arg, by, turn))
+        return turn
 
     async def stop_turn(self, by: str) -> "slash.Result":
         """/stop: the stop switch's interrupt for the running turn (and a running scheduled task) — nothing is paused,
@@ -1476,6 +1733,513 @@ class Host:
             return slash.Result("已停下" + ("这一轮" if busy else "") + ("、正在跑的定时任务" if ran else "") +
                                 "。没有暂停任何东西：可以接着发消息。")
         return slash.Result("现在没有正在进行的一轮。", "info")
+
+    # ============================================================ relay parity (PROTOCOL §10, PROMPT-33)
+    def _caps(self, s: Session | None = None) -> dict:
+        """What `approved` / `ready` announce (§10.0): our capability, local transcription, history — to a device that
+        announced p33 itself (an older one gets exactly §3's message)."""
+        if s is not None and not s.p33:
+            return {}
+        return {"caps": [wire.CAP_P33], "asr": self.asr_state(), "hist": "on" if self.hist.on else "off"}
+
+    async def _bulk(self, s: Session) -> None:
+        """§10.13: a ready, allowlisted p33 device may upload faster — tell the relay (it answers the device {"t":"rate"});
+        never for a pairing in progress. A relay without BULK ignores the op."""
+        if s.p33 and s.state == "ready" and self.st.is_allowed(s.pub) and self.sessions.get(s.cid) is s:
+            with contextlib.suppress(Exception):
+                await self._op(wire.OP_BULK, s.cid)
+
+    async def on_p33(self, s: Session, t: str, obj: dict) -> None:
+        if t == "say":
+            return await self.on_say(s, obj)
+        if t == "say_cancel":
+            sid = obj.get("sid")
+            if not wire.is_id22(sid):
+                return
+            r, send = await self.sends.cancel(s.device, sid)
+            if r == "cancelled" and send is not None:
+                self.uploads.release(send.blobs)        # the attachments are staged again under the same ids
+                self.hist_update(send.turn, end="stopped", card={"withdrawn": True})
+                self.st.log("say_cancel", cid=s.cid, device=s.device, result=r)
+                self._post(self._send_device, s.device, {"t": "say_state", "sid": sid, "s": "cancelled"})
+            await self.send_app(s, {"t": "say_cancel_res", "sid": sid, "r": r})
+            return
+        if t == "blob_open":
+            for m in self.uploads.open(s.device, obj):
+                await self.send_app(s, m)
+            return
+        if t == "blob_chunk":
+            for m in self.uploads.chunk(s.device, obj):
+                await self.send_app(s, m)
+            return
+        if t == "blob_end":
+            out, take = self.uploads.end(s.device, obj.get("bid"))
+            for m in out:
+                await self.send_app(s, m)
+            if take is not None:
+                asyncio.create_task(self._asr_take(s.device, take))
+            return
+        if t == "blob_drop":
+            for m in self.uploads.drop(s.device, obj.get("bid")):
+                await self.send_app(s, m)
+            return
+        if t == "hist_get":
+            r = obj.get("r")
+            if not wire.is_rid(r):
+                return
+            lim = obj.get("limit")
+            lim = lim if type(lim) is int and 1 <= lim <= history.PAGE_MAX else history.PAGE_MAX
+            b, a = obj.get("before"), obj.get("after")
+            turns, more = self.hist.page(before=b if type(b) is int else None, after=a if type(a) is int else None, limit=lim)
+            return await self.send_app(s, {"t": "hist_page", "r": r, **self.hist.meta(), "turns": turns, "more": more})
+        if t == "menu_get":
+            r = obj.get("r")
+            if not wire.is_rid(r):
+                return
+            skills = []
+            if self.agent and self.agent.kind == "claude":
+                skills = [x for x in (getattr(self.agent, "init", {}) or {}).get("skills") or [] if isinstance(x, str)]
+            wd = self.agent_cfg["dir"] if self.agent_cfg else None
+            res = await asyncio.to_thread(menu.served, wd, skills, self.lang)
+            return await self.send_app(s, {"t": "menu", "r": r, **res})
+        if t == "model_set":
+            return await self.on_model_set(s, obj)
+        if t == "q_answer":
+            return self._q_answer(s, obj)
+
+    # ------------------------------------------------------------ say (§10.2)
+    async def _accept(self, s: Session, text: str, sid: str | None, blobs: list | None = None, quote: dict | None = None,
+                      quote_text: str | None = None) -> compose.Send | None:
+        """A message for the Agent from a ready session: its page (src.k phone), the §8 entry for older phones, and the
+        queued Send (withdrawable until delivered). Returns the Send (None without an Agent)."""
+        blobs = blobs or []
+        self.emit("msg", device=s.device, name=s.name, text=clean(text, wire.MAX_TEXT_P33))
+        self.st.log("msg_in", cid=s.cid, device=s.device)
+        entry = self._remember("device", text, device=s.device, name=s.name)
+        for o in list(self.sessions.values()):     # other older phones see what was said; the sender already shows it
+            if o is not s and o.state == "ready" and not o.p33 and self.st.is_allowed(o.pub):
+                await self.send_app(o, self._render(entry, o))
+        src = {"k": "phone", "dev": s.device, "name": (s.name or s.device)[:64], "text": text}
+        if quote:
+            src["quote"] = quote
+        if blobs:
+            src["att"] = [{"name": b.name[:128], "mime": b.mime, "bytes": b.size, "kind": b.kind} for b in blobs]
+        turn = self.hist_add(src, "", "open" if self.agent else "done")
+        if not self.agent:
+            return None
+        send = compose.Send(s.device, sid or secrets.token_urlsafe(16), turn["id"], blobs=blobs, by=s.name or s.device)
+        files = [{"path": b.path, "mime": b.mime, "bytes": b.size, "origin": b.origin, "secs": b.secs,
+                  "voice": getattr(b, "voice", "")} for b in blobs]
+        voice = [f for f in files if f["origin"] == "recording" and f["mime"].startswith("audio/")]
+        if voice:
+            send.ready = asyncio.get_running_loop().create_future()
+            send.prep = asyncio.create_task(self._prep_say(send, text, files, voice, quote_text))
+        else:
+            send.text = compose.render(text, files, self.lang, quote_text)
+        self.sends.add(send)
+        self.turn_by = s.name or s.device
+        self.agent.submit(send)
+        return send
+
+    async def on_say(self, s: Session, obj: dict) -> None:
+        sid = obj.get("sid")
+        if not wire.is_id22(sid):
+            return
+
+        async def res(**kw):
+            await self.send_app(s, {"t": "say_res", "sid": sid, **kw})
+        text, att, reply_to, excerpt = obj.get("text"), obj.get("att"), obj.get("reply_to"), obj.get("excerpt")
+        if not isinstance(text, str) or (att is not None and not isinstance(att, list)) \
+                or (reply_to is not None and type(reply_to) is not int) or (excerpt is not None and reply_to is None) \
+                or not isinstance(obj.get("ts", 0), int):
+            return await res(ok=False, why="shape")
+        why = wire.text_problem(text) or (wire.text_problem(excerpt, compose.EXCERPT_MAX) if excerpt is not None else None)
+        if why:
+            return await res(ok=False, why=why)
+        if wire.units(text) + (wire.units(excerpt) if excerpt else 0) > wire.MAX_TEXT_P33:
+            return await res(ok=False, why="too_long")
+        if not text.strip() and not att:
+            return await res(ok=False, why="shape")
+        if self.sends.used(s.device, sid):
+            return await res(ok=False, why="dup")
+        if self.sends.full(s.device):       # 16 of this device's sends still wait: refuse, never evict one (P33-C03)
+            return await res(ok=False, why="too_many")
+        if self.stopped() and self.agent:
+            self.st.log("msg_refused", cid=s.cid, device=s.device, reason="estop")
+            self.activity("message_refused", by=s.name or s.device, text=text[:120])
+            return await res(ok=False, why="stopped")
+        if not self.agent:
+            return await res(ok=False, why="no_agent")
+        cmd = slash.parse(text) if not att and reply_to is None else None
+        if cmd and not self.agent.passthrough(cmd[0]):
+            self.sends.add(compose.Send(s.device, sid, 0, state="delivered"))
+            turn = await self.on_slash(s, cmd[0], cmd[1], confirm=False, typed=True)
+            self._post(self.send_app, s, {"t": "say_res", "sid": sid, "ok": True, "state": "delivered", "turn": turn})
+            return
+        quote = quote_text = None
+        if reply_to is not None:
+            qt = self.hist.get(reply_to)
+            if qt is None:
+                return await res(ok=False, why="reply_unknown")
+            quote = compose.quote_info(qt, excerpt, self.lang)
+            quote_text = compose.quote_block(qt, excerpt, self.lang)
+        try:
+            blobs = self.uploads.claim(s.device, att)
+        except uploads.Refused as e:
+            return await res(ok=False, why=e.why, **({"att": e.att} if e.att else {}))
+        send = await self._accept(s, text, sid, blobs, quote, quote_text)
+        # through the same queue as its page (hist_turn), so the phone has the page before the answer that names it
+        self._post(self.send_app, s, {"t": "say_res", "sid": sid, "ok": True, "state": "queued", "turn": send.turn})
+        if send.prep is not None:
+            self._post(self._send_device, s.device, {"t": "say_state", "sid": sid, "s": "transcribing"})
+
+    async def _prep_say(self, send: compose.Send, text: str, files: list, voice: list, quote_text: str | None) -> None:
+        """Say-time transcription (§10.9): every recording of one message within SAY_ASR_BUDGET together; past it the message
+        goes out anyway with 「转写失败（超过 60 秒）」. A withdraw cancels this task."""
+        deadline = time.monotonic() + compose.SAY_ASR_BUDGET
+        try:
+            for f in voice:
+                left = deadline - time.monotonic()
+                if left <= 0:
+                    f["asr"] = {"ok": False, "why": "timeout", "secs": f.get("secs")}
+                    continue
+                f["asr"] = await self._transcribe_file(f, left, send.device)
+            send.text = compose.render(text, files, self.lang, quote_text)
+        finally:
+            if send.ready is not None and not send.ready.done():
+                send.ready.set_result(True)
+
+    async def _transcribe_file(self, f: dict, budget: float, device: str) -> dict:
+        state = self.asr_state()
+        if state != "ready":
+            return {"ok": False, "why": ASR_WHY.get(state, "broken"), "secs": f.get("secs")}
+        # P33-C02: only the host-private copy in the state dir (uploads.Blob.voice) — never the inbox file, which the Agent
+        # can rewrite or replace with a link between upload and say
+        path, tmp = f.get("voice") or "", None
+        if not path or not os.path.isfile(path) or os.path.islink(path):
+            return {"ok": False, "why": "bad_audio", "secs": f.get("secs")}
+        try:
+            if f["mime"] not in uploads.WAV_MIMES or not uploads.wav_ok(path):
+                demux = FF_DEMUX.get(f["mime"])
+                ff = shutil.which("ffmpeg")
+                if not ff or not demux:
+                    return {"ok": False, "why": "format", "secs": f.get("secs")}
+                d = self.uploads.root / device
+                d.mkdir(mode=0o700, parents=True, exist_ok=True)
+                tmp = str(d / f"conv-{secrets.token_hex(6)}.wav")
+                done = await self._ffmpeg(ff, demux, path, tmp, max(1.0, budget / 2))
+                if done != "ok":
+                    return {"ok": False, "why": "timeout" if done == "timeout" else "format", "secs": f.get("secs")}
+                if not uploads.wav_ok(tmp):
+                    return {"ok": False, "why": "format", "secs": f.get("secs")}
+                path = tmp
+            r = await self._transcribe(path, min(ASR_TAKE, budget))
+        finally:
+            if tmp:
+                with contextlib.suppress(OSError):
+                    os.unlink(tmp)
+        if r.get("ok") and (r.get("text") or "").strip():
+            return {"ok": True, "text": wire.well_formed(r["text"]), "secs": f.get("secs")}
+        return {"ok": False, "why": "no_speech" if r.get("ok") else ASR_WHY.get(r.get("reason"), "broken"), "secs": f.get("secs")}
+
+    async def _ffmpeg(self, ff: str, demux: str, src: str, dst: str, timeout: float) -> str:
+        """One container → 16 kHz mono PCM16 WAV conversion (P33-C04 / X09): the demuxer pinned from the declared MIME (no
+        content probing: an HLS playlist is not opened as one), local files only (`-protocol_whitelist file`), at most
+        FF_MAX_SECS of audio and uploads.ASR_MAX output bytes (also RLIMIT_FSIZE / RLIMIT_CPU in the child), one conversion
+        per host at a time, and the child killed + reaped on timeout, withdraw (task cancelled) and every other exit.
+        → "ok" | "timeout" | "fail"."""
+        if self.ff_lock is None:
+            self.ff_lock = asyncio.Lock()
+        argv = [ff, "-nostdin", "-hide_banner", "-loglevel", "error", "-protocol_whitelist", "file", "-f", demux,
+                "-t", str(FF_MAX_SECS), "-i", "file:" + src, "-map", "0:a:0", "-vn", "-sn", "-dn", "-map_metadata", "-1",
+                "-bitexact", "-ac", "1", "-ar", "16000", "-sample_fmt", "s16", "-t", str(FF_MAX_SECS),
+                "-fs", str(uploads.ASR_MAX), "-f", "wav", "-y", "file:" + dst]
+
+        def limits():                                   # in the child, before exec
+            import resource
+            with contextlib.suppress(Exception):
+                resource.setrlimit(resource.RLIMIT_FSIZE, (uploads.ASR_MAX + 65536, uploads.ASR_MAX + 65536))
+            with contextlib.suppress(Exception):
+                resource.setrlimit(resource.RLIMIT_CPU, (int(FF_CPU_SECS), int(FF_CPU_SECS)))
+        async with self.ff_lock:
+            p = await asyncio.create_subprocess_exec(*argv, stdin=asyncio.subprocess.DEVNULL,
+                                                     stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.DEVNULL,
+                                                     preexec_fn=limits, start_new_session=True)
+            try:
+                await asyncio.wait_for(p.wait(), timeout)
+            except asyncio.TimeoutError:
+                return "timeout"
+            finally:
+                if p.returncode is None:                # timeout, a withdraw (CancelledError) or anything else
+                    with contextlib.suppress(ProcessLookupError, OSError):
+                        os.killpg(p.pid, signal.SIGKILL)
+                    with contextlib.suppress(ProcessLookupError):
+                        p.kill()
+                    with contextlib.suppress(Exception):
+                        await asyncio.shield(p.wait())
+            return "ok" if p.returncode == 0 else "fail"
+
+    def say_delivered(self, send: compose.Send) -> None:
+        """The harness has the message (agent.Agent.deliver): the attachments belong to the Agent now."""
+        self.uploads.commit(send.blobs)
+        self.st.log("say_delivered", device=send.device, id=send.turn)
+        self._post(self._send_device, send.device, {"t": "say_state", "sid": send.sid, "s": "delivered"})
+
+    def say_uncertain(self, send: compose.Send) -> None:
+        """The write to the harness failed part-way (P33-X08): it may have the message, so the attachments stay where they
+        are (never deleted by the staged TTL, never released to the phone) and a withdraw answers already_delivered."""
+        self.uploads.commit(send.blobs)
+        self.st.log("say_uncertain", device=send.device, id=send.turn)
+
+    # ------------------------------------------------------------ voice (§10.9)
+    def asr_state(self) -> str:
+        """`ready.asr` (§10.0): asr.ready_state — cheap (no disk walk), read for every ready and every take."""
+        try:
+            v = self.asr.ready_state(self.st.root)
+        except Exception:  # noqa: BLE001
+            return "broken"
+        return v if v in ("ready", "not_installed", "off", "broken") else "broken"
+
+    async def _transcribe(self, path: str, timeout: float) -> dict:
+        """One decode at a time per host (an asyncio.Lock is FIFO: takes are transcribed in the order they finished)."""
+        if self.asr_lock is None:
+            self.asr_lock = asyncio.Lock()
+        async with self.asr_lock:
+            try:
+                r = await asyncio.wait_for(asyncio.to_thread(self.asr.transcribe, path, timeout_s=timeout,
+                                                                    state_dir=self.st.root), timeout + 5)
+            except asyncio.TimeoutError:
+                return {"ok": False, "reason": "timeout"}
+            except Exception:  # noqa: BLE001
+                return {"ok": False, "reason": "engine_failed"}
+        return r if isinstance(r, dict) else {"ok": False, "reason": "engine_failed"}
+
+    async def _asr_take(self, device: str, b) -> None:
+        """A finished `asr` blob → asr_res to that device. The audio never reaches the inbox and is deleted after."""
+        res = {"t": "asr_res", "bid": b.bid}
+        try:
+            state = self.asr_state()
+            if state != "ready":
+                res.update(ok=False, why=ASR_WHY.get(state, "broken"))
+            elif self.asr_waiting.get(device, 0) >= ASR_QUEUE:
+                res.update(ok=False, why="busy")
+            elif not uploads.wav_ok(str(self.uploads.part_path(b))):
+                res.update(ok=False, why="bad_audio")
+            else:
+                self.asr_waiting[device] = self.asr_waiting.get(device, 0) + 1
+                try:
+                    r = await self._transcribe(str(self.uploads.part_path(b)), ASR_TAKE)
+                finally:
+                    self.asr_waiting[device] -= 1
+                text = wire.well_formed(r.get("text") or "") if r.get("ok") else ""
+                if r.get("ok") and text.strip():
+                    cut = history._cut_units(text, wire.MAX_TEXT_P33)
+                    res.update(ok=True, text=text[:cut], engine=str(r.get("engine") or "")[:16],
+                               ms=int(r.get("ms") or 0) if isinstance(r.get("ms"), (int, float)) else 0)
+                else:
+                    res.update(ok=False, why="no_speech" if r.get("ok") else ASR_WHY.get(r.get("reason"), "broken"))
+        finally:
+            self.uploads.asr_done(b)
+        self.st.log("asr", device=device, result="ok" if res.get("ok") else res.get("why"))
+        await self._send_device(device, res)
+
+    # ------------------------------------------------------------ meters (§10.10)
+    def _meter_msg(self) -> dict:
+        m = dict(self.meter_state)
+        return {"t": "meter", **m, "at": int(time.time())}
+
+    def meter_update(self, **kw) -> None:
+        changed = False
+        for k, v in kw.items():
+            if k not in METER_KEYS:
+                continue
+            if isinstance(v, str):
+                v = clean_line(v, {"model": 100, "model_name": 64, "effort": 16}.get(k, 64)) or None
+            if self.meter_state.get(k) != v:
+                self.meter_state[k] = v
+                changed = True
+        if not changed:
+            return
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            return
+        if self.meter_task is None or self.meter_task.done():
+            self.meter_task = loop.create_task(self._meter_later())
+
+    async def _meter_later(self) -> None:
+        await asyncio.sleep(max(0.0, self.meter_at + METER_GAP - time.monotonic()))
+        self.meter_at = time.monotonic()
+        m = self._meter_msg()
+        self._post(self._send_p33, lambda s: m)
+
+    # ------------------------------------------------------------ model and effort (§10.11)
+    def _models_msg(self) -> dict:
+        a = self.agent
+        cur_m = a.cur_model() if a else None
+        models = [{"id": m["id"], "name": m["name"], "efforts": m.get("efforts"), "cur": m["id"] == cur_m
+                   or (m.get("resolved") and m.get("resolved") == cur_m)} for m in (a.models_cache if a else [])]
+        dm = getattr(a, "human", {}).get("model") if a and a.kind == "codex" else None
+        de = getattr(a, "human", {}).get("model_reasoning_effort") if a and a.kind == "codex" else None
+        return {"t": "models", "models": models[:40], "effort": a.cur_effort() if a else None,
+                "default": {"model": dm if isinstance(dm, str) else None, "effort": de if isinstance(de, str) else None}}
+
+    def models_changed(self) -> None:
+        m = self._models_msg()
+        self._post(self._send_p33, lambda s: m)
+
+    def set_effort(self, effort: str | None) -> None:
+        self.st.set_agent_effort(effort)
+        if self.agent_cfg is not None:
+            self.agent_cfg["effort"] = effort
+
+    async def on_model_set(self, s: Session, obj: dict) -> None:
+        r = obj.get("r")
+        if not wire.is_rid(r):
+            return
+
+        async def res(ok, why=None):
+            await self.send_app(s, {"t": "model_res", "r": r, "ok": ok, **({"why": why} if why else {})})
+        if self.stopped():
+            return await res(False, "stopped")
+        if not self.agent:
+            return await res(False, "unsupported")
+        d = {"r": r, "cid": s.cid}
+        if obj.get("default") is True:
+            d["default"] = True
+        else:
+            m, e = obj.get("model"), obj.get("effort")
+            if (m is not None and (not isinstance(m, str) or len(m) > 100)) or (e is not None and (not isinstance(e, str)
+                                                                                                    or len(e) > 16)):
+                return await res(False, "unknown_model" if m is not None and not isinstance(m, str) else "unknown_effort")
+            d.update(model=m, effort=e)
+        if self.model_sets >= 2:
+            return await res(False, "busy")
+        self.model_sets += 1
+        self.st.log("model_set", cid=s.cid, device=s.device)
+        self.agent.submit(agents.Cmd("model_set", "", s.name or s.device, None, d))
+
+    def model_set_done(self, cmd, why: str | None) -> None:
+        self.model_sets = max(0, self.model_sets - 1)
+        d = cmd.data or {}
+        s = self.sessions.get(d.get("cid"))
+        self.activity("slash", cmd="model", result="ok" if why is None else "error", by=cmd.by)
+        if s is not None and s.state == "ready":
+            m = {"t": "model_res", "r": d.get("r"), "ok": why is None, **({"why": why} if why else {})}
+            self._post(self.send_app, s, m)
+        self.models_changed()
+
+    # ------------------------------------------------------------ questions (§10.7): an answer is an approval
+    def _question_msg(self, q: Question) -> dict:
+        m = {"t": "question", "id": q.qid, "qs": q.qs, "ttl": max(0, int(q.deadline - time.monotonic()))}
+        if q.task:
+            m["task"] = q.task[:80]
+        return m
+
+    async def question(self, qs: list, gone: asyncio.Future | None = None, task: str | None = None) -> tuple[str, list | None]:
+        """Ask the phones; → ("answer", picks) | ("cancel", None) | ("timeout" | "gone" | "stopped" | "no_device", None).
+        Every outcome is one approvals.log line (hashes and option numbers, never the text)."""
+        kind = self.agent.kind if self.agent else "?"
+        qid = secrets.token_hex(16)
+        digest = approvals.question_digest(qs)
+        base = dict(qid=qid, agent=kind, q_sha256=digest)
+        if self.stopped():
+            approvals.record_question(self.st, **base, decision="stopped", reason="estop")
+            return "stopped", None
+        if not self._approvers() or sum(1 for q in self.questions.values() if not q.fut.done()) >= MAX_QUESTIONS:
+            approvals.record_question(self.st, **base, decision="no_device", reason="no_device")
+            return "no_device", None
+        q = Question(qid, qs, digest, time.monotonic() + Q_TTL, asyncio.get_running_loop().create_future(), task)
+        self.questions[qid] = q
+        self.st.log("question", id=qid, agent=kind)
+        self.activity("question", id=qid, n=len(qs), task=task)
+        self.emit("question", id=qid, n=len(qs))
+        self._post(self._send_p33, lambda s: self._question_msg(q))
+        self.status_changed()
+        self.push_notify("ask")
+        did = sk = sig = picks = None
+        try:
+            waiters = {q.fut} | ({gone} if gone else set())
+            done, _ = await asyncio.wait(waiters, timeout=max(0.0, q.deadline - time.monotonic()),
+                                         return_when=asyncio.FIRST_COMPLETED)
+            if q.fut in done:
+                decision, picks, did, sk, sig = q.fut.result()
+                reason = "device" if did else ("estop" if self.stopped() else "serve_stop")
+            else:
+                decision, reason = ("gone", "agent_gone") if gone in done else \
+                    (("gone", "serve_stop") if self.stopping.is_set() else ("timeout", "timeout"))
+                if not q.fut.done():
+                    q.fut.set_result((decision, None, None, None, None))
+        finally:
+            self.questions.pop(qid, None)
+        if decision not in ("answer", "cancel"):
+            decision = {"estop": "stopped", "serve_stop": "gone", "timeout": "timeout", "agent_gone": "gone"}.get(reason,
+                                                                                                                  decision)
+        approvals.record_question(self.st, **base, decision=decision, reason=reason, device=did, sign_pub=sk, sig=sig,
+                                  picks=approvals.picks_text(picks) if decision in ("answer", "cancel") else None)
+        result = {"answer": "answered", "cancel": "cancelled"}.get(decision, decision)
+        self.st.log("question_done", id=qid, result=result, device=did)
+        self.activity("question_done", id=qid, result=result, by=self._dname(did) if did else None)
+        self._post(self._send_p33, lambda s: {"t": "question_done", "id": qid, "result": result})
+        self.status_changed()
+        return decision, picks
+
+    def _q_answer(self, s: Session, obj: dict) -> None:
+        qid, sig = obj.get("id"), obj.get("sig")
+        q = self.questions.get(qid) if isinstance(qid, str) else None
+        if q is None or q.fut.done():
+            return
+        cancel = obj.get("cancel") is True
+        picks = None if cancel else obj.get("pick")
+        if not isinstance(sig, str) or time.monotonic() > q.deadline or (cancel and "pick" in obj) \
+                or (not cancel and not approvals.check_picks(q.qs, picks)):
+            self.st.log("answer_refused", id=qid, device=s.device, reason="shape_or_late")
+            return
+        sk = self.st.sign_key(s.device)
+        try:
+            sigb = wire.unb64u(sig)
+        except ValueError:
+            sigb = b""
+        action = "cancel" if cancel else "answer"
+        if not sk or not approvals.verify_question(sk, sigb, self.channel, s.device, qid, action, q.qs, picks):
+            self.st.log("answer_refused", id=qid, device=s.device, reason="no_key" if not sk else "bad_signature")
+            return
+        q.fut.set_result((action, picks, s.device, sk, sigb))
+
+    async def _ask_user_question(self, tool_input: dict, gone: asyncio.Future | None) -> dict:
+        """Claude Code's AskUserQuestion reaches the permission tool like any tool (probed with 2.1.285, reports/qa/parity/):
+        an answer = allow with the input AS THE HOST RECEIVED IT plus `answers` (built by the host from option numbers) —
+        the one exception to "updatedInput = input" (Invariant 11); cancel / timeout = deny with a fixed message."""
+        card = approvals.norm_questions(tool_input.get("questions"))
+        if card is None:
+            return {"behavior": "deny", "message": Q_TIMEOUT}
+        decision, picks = await self.question(card, gone, task=self.task_label)
+        if decision == "answer" and picks:
+            ans = {}
+            for q, p in zip(card, picks):
+                labels = [q["o"][n - 1]["l"] for n in p]
+                ans[q["q"]] = ", ".join(labels) if q["m"] else labels[0]
+            return {"behavior": "allow", "updatedInput": {**tool_input, "answers": ans}}
+        if decision == "cancel":
+            return {"behavior": "deny", "message": Q_CANCEL}
+        return {"behavior": "deny", "message": Q_TIMEOUT}
+
+    # ------------------------------------------------------------ housekeeping
+    async def sweep_loop(self) -> None:
+        """Staged uploads nobody sent expire (their inbox file goes, §10.3); the inbox keeps 30 days / 2 GiB (§10.4)."""
+        last_retain = 0.0
+        while True:
+            with contextlib.suppress(Exception):
+                self.uploads.sweep()
+            if time.monotonic() - last_retain > RETAIN_EVERY or not last_retain:
+                last_retain = time.monotonic()
+                if self.agent_cfg:
+                    with contextlib.suppress(Exception):
+                        gone = await asyncio.to_thread(inbox.retain, self.agent_cfg["dir"], self.uploads.staged_paths(),
+                                                       log=self.st.log)
+                        if gone:
+                            self.st.log("inbox_retain", status=str(len(gone)))
+            await asyncio.sleep(SWEEP_EVERY)
 
     # ------------------------------------------------------------ Web Push (PROTOCOL §9): no content, host → push service
     def _push_key(self):
@@ -1564,6 +2328,7 @@ class Host:
             self.sent_status = self.eff_status()
             self.st.log("agent_on", agent=self.agent.kind, fence=self.agent_cfg.get("fence", True))
         jobs.append(asyncio.create_task(self.scheduler.loop()))
+        jobs.append(asyncio.create_task(self.sweep_loop()))
         if self.read_stdin:
             jobs.append(asyncio.create_task(self.stdin_loop()))
         try:
@@ -1572,9 +2337,14 @@ class Host:
             for a in list(self.asks.values()):      # serve stopping: every pending request is denied
                 if not a.fut.done():
                     a.fut.set_result(("deny", None, None, None))
+            for q in list(self.questions.values()):
+                if not q.fut.done():
+                    q.fut.set_result(("gone", None, None, None, None))
             await self.scheduler.stop_current()
             if self.agent:
                 await self.agent.stop()
+            with contextlib.suppress(Exception):         # the resident ASR worker (§10.9) goes with serve
+                await asyncio.to_thread(getattr(self.asr, "shutdown", lambda: None))
             await asyncio.sleep(0)
             for t in jobs:
                 t.cancel()

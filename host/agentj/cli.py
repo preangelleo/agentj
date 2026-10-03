@@ -1,6 +1,7 @@
 """Agent J host CLI `agentj` (alpha): init · serve · pair · admin · name · devices · revoke · send · status · login · report ·
 unlink · remote-unbind · agent · approvals · passphrase · doctor · service · update (L3) · stop · resume · memory · activity ·
-config · tasks (phone controls, ADR-A50 – A54) · wizard (L3.5, `wizard/__init__.py`) · migrate · alias (0.10 rename).
+config · tasks (phone controls, ADR-A50 – A54) · wizard (L3.5, `wizard/__init__.py`) · migrate · alias (0.10 rename) ·
+history · inbox · asr (relay parity, PROTOCOL §10: the phone's pages, uploads, local speech-to-text — asr.py).
 No arguments = the next-step hint. `jarvis` (the ≤ 0.9 name) still works for one version cycle on computers that migrated
 (a symlink made by alias.py, never shipped in the wheel): one notice line on stderr, then the same CLI. Every command first runs migrate.auto() (the 0.9 → 0.10 state move; messages on stderr).
 Seat setup (0.7): `agentj login --seat <ajt_…> | --seat-file <path> | --seat - --name <name>` binds with a setup code from
@@ -36,7 +37,7 @@ from . import DIST, __version__, cloud, gate, names
 from . import docsrule, feedback, handover, plaza, wizard
 from .state import DEFAULT_RELAY, DEFAULT_WEB, MAX_DEVICES, State
 from .envcompat import getenv
-from .text import STARTER_NAMES, ask_yes
+from .text import STARTER_NAMES, ask_yes, clean
 
 
 def _need_init(st: State) -> None:
@@ -1066,6 +1067,10 @@ def cmd_approvals(a) -> None:
             mark = {"ok": " ✓签名有效", "ok_removed": " ✓签名有效（设备已移除）", "bad": " ✗签名无效", "unsigned": "",
                     "auto": " ✓授权签名有效"}.get(v, "")
             cats = ("  [" + "、".join(r["cats"]) + "]") if r.get("cats") else ""
+            if r.get("kind") == "question":       # §10.7: the picks as option numbers, never the question text
+                cats = f"  选了 {r.get('picks')}" if r.get("decision") == "answer" else ""
+                print(f"{when}  {r.get('decision', '?'):11}  {'提问':12}  {who}{mark}{cats}")
+                continue
             print(f"{when}  {r.get('decision', '?'):11}  {r.get('tool', '?'):12}  {who}{mark}{cats}")
     if not recs:
         print("还没有批准记录。")
@@ -1272,10 +1277,141 @@ def activity_line(r: dict) -> str:
     }.get(k, str(k))
 
 
+def _history_switch(st: State, on: bool) -> None:
+    from . import history
+    history.set_enabled(st, on)
+    st.log("history_switch", status="on" if on else "off")
+    try:
+        names.ctl_call(st, {"cmd": "history_reload"}, 10)     # a running serve picks it up at once
+    except names.ServeBusy:
+        pass
+
+
+def _history_line(st: State) -> str:
+    from . import history
+    h = history.History(st)
+    if not h.on:
+        n, b = h.on_disk()
+        left = ("" if not n else
+                f"\n已有的记录没有删：{n} 个文件（{b / 1024 / 1024:.1f} MiB，{h.dir}）还在这台电脑上；"
+                f"`agentj history clear --all` 立即全部删除（含归档，不能撤销） / existing history is NOT deleted: {n} "
+                f"file(s) remain; `agentj history clear --all` deletes them (archives too, cannot be undone)")
+        return ("关：新的聊天记录只在内存里（最近 100 页），重启就没了 / history off: the newest 100 pages in memory only"
+                + left)
+    return (f"开：聊天记录存在这台电脑上（{h.dir}，0600，最近 {history.KEEP} 页，归档 {len(h.archives())} 份）· "
+            f"共 {h.meta()['count']} 页 / history on: kept on this computer")
+
+
+def cmd_history(a) -> None:
+    """`agentj history [show <id>|clear|off|on]` (PROTOCOL §10.5): the pages the phone shows, on this computer only."""
+    from . import history
+    st = State()
+    _need_init(st)
+    if a.mode in ("on", "off"):
+        _history_switch(st, a.mode == "on")
+        print(_history_line(st))
+        return
+    if a.mode == "clear" and getattr(a, "all", False):    # P33-C07: delete current + every archive (not undoable)
+        try:
+            res = names.ctl_call(st, {"cmd": "history_clear", "all": True}, 10)
+        except names.ServeBusy:
+            sys.exit("agentj serve 没有响应，没有删除 / serve did not answer: nothing deleted")
+        if res is None:
+            res = {"deleted": history.History(st).purge()}
+        st.log("history_purge", status=str(res.get("deleted", 0)))
+        print(f"已删除这台电脑上的全部聊天记录（{res.get('deleted', 0)} 个文件，含归档）/ deleted all history on this "
+              "computer (archives too)")
+        return
+    if a.mode == "clear":
+        try:
+            res = names.ctl_call(st, {"cmd": "history_clear"}, 10)
+        except names.ServeBusy:
+            sys.exit("agentj serve 没有响应，没有清空 / serve did not answer: nothing cleared")
+        if res is None:                                   # serve not running: the files directly
+            name = history.History(st).reset("cli")
+            res = {"archived": bool(name)}
+        print("已归档，手机上从新的一页开始（归档保留最近 10 份；`--all` 连归档一起删除）/ archived; the phone starts a new "
+              "page (`--all` deletes the archives too)"
+              if res.get("archived") else "没有可清空的记录 / nothing to clear")
+        return
+    h = history.History(st)
+    if a.mode == "show":
+        try:
+            t = h.get(int(a.id))
+        except (TypeError, ValueError):
+            sys.exit("用法：agentj history show <页码> / usage: agentj history show <id>")
+        if t is None:
+            sys.exit("没有这一页（可能在归档里）/ no such page in the current history")
+        if a.json:
+            print(json.dumps(t, ensure_ascii=False, indent=1))
+            return
+        src = t["src"]
+        when = time.strftime("%m-%d %H:%M", time.localtime(t["ts"] / 1000))
+        print(f"#{t['id']} {when} · {src.get('k')}{(' · ' + src['name']) if src.get('name') else ''} · {t['end']}")
+        if src.get("text"):
+            print("— 原话 / source:\n" + clean(src["text"], 20_000))
+        print("— 回复 / reply:\n" + clean(t["reply"]["text"], 200_000))
+        return
+    print(_history_line(st))
+    if a.json:
+        print(json.dumps({**h.meta(), "on": h.on, "archives": h.archives()}, ensure_ascii=False))
+        return
+    for t in h.page(limit=10)[0]:
+        first = (t["src"].get("text") or t["reply"]["text"] or "").split("\n", 1)[0]
+        print(f"  #{t['id']:<5} {t['src'].get('k'):6} {clean(first, 60)}")
+
+
+def cmd_inbox(a) -> None:
+    """`agentj inbox [list|clear|path]` (PROTOCOL §10.4): what the phone uploaded into the Agent's folder."""
+    from . import inbox
+    st = State()
+    _need_init(st)
+    ag = st.agent_config()
+    if not ag:
+        sys.exit("还没接 Agent（`agentj agent claude --dir <目录>`），没有收件箱 / no Agent folder yet")
+    wd = ag["dir"]
+    if a.mode == "path":
+        print(inbox.inbox_dir(wd))
+        return
+    if a.mode == "clear":
+        try:
+            n = inbox.clear(wd, log=st.log)
+        except inbox.Unsafe:
+            sys.exit(f"{inbox.inbox_dir(wd)} 或它上面的 .agentj 是链接（或不属于你），为安全起见什么都没删 / "
+                     "the inbox or .agentj is a link (or not yours): nothing deleted")
+        st.log("inbox_clear", status=str(n))
+        print(f"已删除 {n} 个文件 / deleted {n} file(s)")
+        return
+    ds = inbox.days(wd)
+    if a.json:
+        print(json.dumps({"path": inbox.inbox_dir(wd), "days": [{"day": d, "files": f, "bytes": b} for d, f, b in ds]},
+                         ensure_ascii=False))
+        return
+    print(f"{inbox.inbox_dir(wd)}  （保留 {inbox.RETAIN_DAYS} 天，最多 {inbox.QUOTA // 1024 ** 3} GiB / kept "
+          f"{inbox.RETAIN_DAYS} days, ≤ {inbox.QUOTA // 1024 ** 3} GiB）")
+    if not ds:
+        print("空的 / empty")
+    for d, f, b in ds:
+        print(f"  {d}  {f} 个文件  {b / 1024 / 1024:.1f} MiB")
+
+
+def cmd_asr(a) -> None:
+    """`agentj asr install|status|test <wav>|engine <e>|remove` (PROTOCOL §10.9): asr.py does the work."""
+    from . import asr
+    st = State()
+    _need_init(st)
+    sys.exit(asr.cli_main(list(a.args or []), state_dir=st.root))
+
+
 def cmd_config(a) -> None:
     from . import activity
     st = State()
     _need_init(st)
+    if a.key == "history":
+        if a.value in ("on", "off"):
+            _history_switch(st, a.value == "on")
+        print(_history_line(st))
+        return
     if a.key == "activity":
         if a.value in ("on", "off"):
             activity.set_enabled(st, a.value == "on")
@@ -1700,10 +1836,25 @@ def main(argv=None) -> None:
     ac.add_argument("--json", action="store_true")
     ac.add_argument("--clear", action="store_true", help="立即删除全部记录 / delete all of it now")
     ac.set_defaults(fn=cmd_activity)
-    cf = sub.add_parser("config", help="开关：activity on|off（操作记录）/ switches")
-    cf.add_argument("key", choices=["activity"])
+    cf = sub.add_parser("config", help="开关：activity on|off（操作记录）· history on|off（聊天记录存在这台电脑上）/ switches")
+    cf.add_argument("key", choices=["activity", "history"])
     cf.add_argument("value", nargs="?", choices=["on", "off", "status"], default="status")
     cf.set_defaults(fn=cmd_config)
+    hi = sub.add_parser("history", help="聊天记录（手机翻页看到的，存在这台电脑上）：status · show <页> · clear · on · off / "
+                                        "the phone's pages, kept on this computer")
+    hi.add_argument("mode", nargs="?", choices=["status", "show", "clear", "on", "off"], default="status")
+    hi.add_argument("id", nargs="?")
+    hi.add_argument("--json", action="store_true")
+    hi.add_argument("--all", action="store_true", help="clear：连同全部归档立即删除（不能撤销）/ with clear: delete current + every archive")
+    hi.set_defaults(fn=cmd_history)
+    ib = sub.add_parser("inbox", help="手机传来的文件（在 Agent 目录的 .agentj/inbox 里）：list · clear · path / uploads from the phone")
+    ib.add_argument("mode", nargs="?", choices=["list", "clear", "path"], default="list")
+    ib.add_argument("--json", action="store_true")
+    ib.set_defaults(fn=cmd_inbox)
+    sr = sub.add_parser("asr", help="本机语音转写：install · status · test <wav> · engine <sherpa|voxtype|off> · remove / "
+                                    "local speech-to-text", add_help=False)
+    sr.add_argument("args", nargs=argparse.REMAINDER)
+    sr.set_defaults(fn=cmd_asr)
     tk = sub.add_parser("tasks", help="定时任务：list · show · enable（要口令）· disable · run [--dry-run] / scheduled tasks")
     tk.add_argument("mode", choices=["list", "show", "enable", "disable", "run"])
     tk.add_argument("id", nargs="?")

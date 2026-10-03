@@ -17,6 +17,8 @@ What a prompt does (the text of the message):
     DROPSSE               closes every event stream, then answers while nobody listens (the client must catch up)
     FOREIGN: <cmd>        asks, then the server ITSELF replies "once" (what a stolen password would allow)
     SLEEP: <s>            works for s seconds (POST /session/{id}/abort ends it, like OpenCode: MessageAbortedError)
+    ASK: <json questions> the question tool: denied by the rules → "question tool denied"; else question.asked, then
+                          "ANSWERS: <answers>" on /question/{id}/reply, "REJECTED" on /reject
     anything else         one text part "ECHO: <text>"
 Slash-command endpoints (PROMPT-26 7a): POST /session/{id}/summarize (a summary text part that is NOT a reply, then the
 assistant message with summary:true and small tokens), POST /session/{id}/abort, GET /config/providers, GET /global/health;
@@ -47,6 +49,7 @@ DEFAULT_RULES = [
 LOCK = threading.RLock()
 SESSIONS: dict = {}          # id → {"permission": [...], "messages": [...], "busy": bool}
 PENDING: dict = {}           # permission id → {"info": {...}, "ev": Event, "reply": str|None, "message": str|None}
+QUESTIONS: dict = {}         # question id → {"ev": Event, "answers": list|None}  (PROTOCOL §10.7)
 CLIENTS: list = []           # open SSE writers
 N = [0]
 RUN = os.urandom(4).hex()
@@ -186,6 +189,18 @@ def run_prompt(sid, text):
                 text_part(sid, msg, f"edited: {path}")
             else:
                 text_part(sid, msg, "被拒绝: edit")
+        elif text.startswith("ASK: "):           # the question tool (PROTOCOL §10.7): gated by the `question` permission
+            if ask(sid, "question", ["*"], {}) == "deny":
+                text_part(sid, msg, "question tool denied")
+            else:
+                qid = nid("que")
+                slot = {"ev": threading.Event(), "answers": None}
+                QUESTIONS[qid] = slot
+                publish("question.asked", {"id": qid, "sessionID": sid, "questions": json.loads(text[5:]),
+                                           "tool": {"messageID": msg["info"]["id"], "callID": "call_q"}})
+                slot["ev"].wait(600)
+                text_part(sid, msg, "REJECTED" if slot["answers"] is None else
+                          "ANSWERS: " + json.dumps(slot["answers"], ensure_ascii=False))
         elif text.startswith("SLEEP: "):
             t0 = time.time()
             while time.time() - t0 < float(text[7:]) and not s.get("abort"):
@@ -311,6 +326,15 @@ class H(BaseHTTPRequestHandler):
             ok = reply_to(parts[3], (body or {}).get("response"), None)
             self._send(200 if ok else 404, ok)
         elif len(parts) == 3 and parts[0] == "question":
+            slot = QUESTIONS.pop(parts[1], None)
+            if slot is None:
+                return self._send(404, {"name": "QuestionNotFoundError"})
+            if parts[2] == "reply":
+                slot["answers"] = (body or {}).get("answers")
+                publish("question.replied", {"sessionID": "?", "requestID": parts[1], "answers": slot["answers"]})
+            else:
+                publish("question.rejected", {"sessionID": "?", "requestID": parts[1]})
+            slot["ev"].set()
             self._send(200, True)
         elif len(parts) == 3 and parts[0] == "session" and parts[2] == "abort" and parts[1] in SESSIONS:
             SESSIONS[parts[1]]["abort"] = True

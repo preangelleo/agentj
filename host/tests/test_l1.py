@@ -468,7 +468,7 @@ class Chain(unittest.TestCase):
             host.stopping.set()
             await run
         asyncio.run(go())
-        starts = [json.loads(x) for x in self.argv_log.read_text().splitlines()]
+        starts = [s for s in (json.loads(x) for x in self.argv_log.read_text().splitlines()) if "argv" in s]   # control lines: §10.10 meters
         self.assertEqual(len(starts), 2, "one process, restarted once after the crash")
         sid = self.st.agent_session("claude")
         self.assertTrue(sid)

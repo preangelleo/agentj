@@ -33,8 +33,8 @@ from agentj import cli, cloud, docsrule, doctor, feedback, handover, privacy, se
 from agentj.state import DEFAULT_RELAY, DEFAULT_WEB, State  # noqa: E402
 
 SECRET = "sk-" + "ant-oat01-" + "AJMACFIX" + "x" * 20   # fake token shape, assembled so scanners do not flag the source
-LABELS_ZH = ("「全部停下」", "「恢复」", "「定时任务」", "「命令」", "「管理账单」")
-LABELS_EN = ('"Stop everything"', '"Resume"', '"Schedules"', '"Commands"', '"Manage billing"')
+LABELS_ZH = ("「全部停下」", "「恢复」", "「定时任务」", "≡「全部命令」", "「长按批准」", "「管理账单」")   # P33: the new phone page
+LABELS_EN = ('"Stop everything"', '"Resume"', '"Schedules"', '≡ "All commands"', '"Hold to approve"', '"Manage billing"')
 
 
 def _env(home: str, **extra) -> dict:

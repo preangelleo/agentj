@@ -11,8 +11,11 @@
     "security": "数据安全",
     "privacy": "隐私",
     "terms": "条款",
-    "site": "Agent J 官网",
-    "foot": "我们看不到你的聊天内容。"
+    "foot": "我们看不到你的聊天内容。",
+    "unpair": "解除配对",
+    "unpairTitle": "解除配对？",
+    "unpairText": "这台手机会忘掉这台电脑，草稿和发过的话也一起清掉。要再用，在电脑上运行 `agentj pair` 重新配对。",
+    "unpairYes": "解除配对"
   },
   "badge": {
     "label": "网页版",
@@ -21,7 +24,8 @@
     "p2": "不过这个网页本身是从我们的服务器加载的：要是网页被人改过，就能看到你在这里看到的内容。以后的手机 App 没有这个问题。",
     "hash": "本页的版本号（用来核对网页有没有被改过）：",
     "verify": "怎么核对、我们存了什么，都写在「数据安全」页：agentj.app/security/",
-    "close": "收起"
+    "close": "收起",
+    "p3": "草稿和发过的话只存在这台手机上，而且是加密存的；朗读用手机自己的语音，分享走手机自己的分享面板。"
   },
   "st": {
     "idle": "还没配对",
@@ -63,7 +67,6 @@
     "note": "这串数字只显示在手机上。电脑批准后，这里会自动进入对话。"
   },
   "nav": {
-    "aria": "更多",
     "mem": "记忆",
     "act": "记录",
     "tasks": "定时任务",
@@ -83,14 +86,6 @@
     "resumeText": "Agent 重新接收消息，定时任务按各自的启用状态继续。",
     "resumeYes": "恢复",
     "resumeFail": "没有恢复：{why}"
-  },
-  "ag": {
-    "idle": "空闲",
-    "working": "正在干活…",
-    "compacting": "正在压缩…",
-    "waiting": "等你批准",
-    "down": "没在运行",
-    "stopped": "已全部停下"
   },
   "push": {
     "offer": "锁屏后也想知道 Agent 回话了吗？",
@@ -115,27 +110,9 @@
     }
   },
   "chat": {
-    "emptyTitle": "已连上你的电脑",
-    "emptyText": "跟 Agent 说句话吧。需要你点头的时候，它会在这里弹出卡片问你。",
-    "placeholder": "跟 Agent 说点什么",
-    "placeholderStopped": "已全部停下，恢复后再发",
-    "aria": "消息",
-    "send": "发送"
+    "placeholderStopped": "已全部停下，恢复后再发"
   },
   "cmd": {
-    "toggle": "命令",
-    "aria": "命令",
-    "compact": "压缩",
-    "clear": "清空",
-    "model": "换模型",
-    "context": "上下文",
-    "cost": "花费",
-    "usage": "用量",
-    "status": "状态",
-    "help": "帮助",
-    "stop": "停止",
-    "undo_clear": "撤销清空",
-    "refused": "命令",
     "current": "（当前）",
     "undo": "撤销清空",
     "result": {
@@ -157,29 +134,13 @@
       "credentials": "改密码或密钥",
       "price": "改价格"
     },
-    "titleDanger": "⚠ 这一步要你亲自点头：{tool}",
-    "title": "Agent 想要执行：{tool}",
     "task": "定时任务「{task}」",
     "why": "原因：{why}",
-    "allowOne": "批准这一条",
-    "allow": "批准",
-    "deny": "拒绝",
-    "batch": "批准，并在这一轮里自动批准同类低风险操作",
     "batchScope": "同类 = {scope} · 最多 {max} 次 / {mins} 分钟 · 这一轮结束就失效 · 花钱、删除这类操作照样一条条问你",
     "left": "还剩 {n} 秒，不按就自动拒绝",
     "timeUp": "时间到，等电脑确认…",
     "noSign": "这个浏览器不支持签名，不能在这里批准。换最新版 Chrome、Safari 或 Firefox，再重新配对。",
-    "sentBatch": "已发送批准（含这一轮的同类操作），等电脑确认…",
-    "sentAllow": "已发送批准，等电脑确认…",
-    "sentDeny": "已发送拒绝，等电脑确认…",
-    "auto": "已按你的授权自动批准：{tool} · {summary}",
-    "result": {
-      "allow": "已批准",
-      "deny": "已拒绝",
-      "timeout": "超时，已自动拒绝",
-      "gone": "已取消",
-      "stopped": "已作废（全部停下）"
-    }
+    "auto": "已按你的授权自动批准：{tool} · {summary}"
   },
   "why": {
     "changed": "文件刚被改过，已刷新，请再看一眼",
@@ -323,7 +284,8 @@
   "revoked": {
     "title": "这台手机已被电脑移除",
     "lead": "电脑不再认这台手机。要继续用，先在电脑上运行 `agentj pair`，再重新配对。",
-    "btn": "重新配对"
+    "btn": "重新配对",
+    "draft": "没发出去的草稿、输入记录和加密它们的密钥，都已从这台手机上删除。"
   },
   "error": {
     "title": "连接断开了",
@@ -342,5 +304,484 @@
     "android": "在 Chrome 里点右上角的 ⋮，再点「添加到主屏幕」或「安装应用」。",
     "more": "详细步骤",
     "ok": "知道了"
+  },
+  "r": {
+    "orb": {
+      "title": "点一下换字号，按住恢复"
+    },
+    "fz": {
+      "m": "字号：中",
+      "l": "字号：大",
+      "s": "字号：小"
+    },
+    "capt": {
+      "working": "正在工作",
+      "idle": "等你下一句",
+      "unknown": "正在确认状态",
+      "permission": "请你批准一个操作",
+      "question": "请你回答一个问题"
+    },
+    "waited": "· 已等 {n} 分钟",
+    "stale": "最后同步于 {hm}，连上后自动刷新。",
+    "meter": {
+      "week": "本周额度",
+      "h5": "5 小时额度",
+      "used": "{label} 已用 {pct}%",
+      "unknown": "{label}（没有数据）"
+    },
+    "usage": {
+      "none": "电脑上的 Agent 还没报告用量",
+      "age": "{s} 秒前的数据",
+      "week": "周 {p}%",
+      "h5": "5 小时 {p}%",
+      "ctx": "上下文 {p}%",
+      "ctxPost": "上下文 —（压缩后待更新）",
+      "ago": "{s} 秒前"
+    },
+    "pill": {
+      "unsupported": "电脑上的 Agent 还不支持在手机上换模型",
+      "noEffort": "这个模型没有可换的思考强度",
+      "default": "恢复默认：{name} · {effort}",
+      "queued": "Agent 正在忙，这一轮结束后再切换",
+      "fail": "没切成：{why}",
+      "why": {
+        "unknown_model": "电脑上没有这个模型",
+        "unknown_effort": "这个模型不支持这个思考强度",
+        "busy": "Agent 正在忙",
+        "unsupported": "电脑上不支持",
+        "stopped": "已全部停下",
+        "offline": "没连上电脑",
+        "timeout": "电脑没有回应",
+        "other": "出错了"
+      }
+    },
+    "empty": "还没有消息",
+    "emptyReady": "已连上你的电脑。跟 Agent 说句话吧；需要你点头的时候，它会在这里问你。",
+    "noReply": "（这一条没有回复）",
+    "part": "第 {k}/{n} 段",
+    "om": {
+      "aria": "原话",
+      "expand": "展开原话（o）",
+      "collapse": "收起原话（o）",
+      "collapseShort": "收起 ▴",
+      "none": "（这一条的原话没有记录）",
+      "attOnly": "（只有附件）"
+    },
+    "src": {
+      "you": "你",
+      "otherDevice": "另一台设备",
+      "host": "电脑",
+      "agent": "{name} 自己",
+      "sys": "提示",
+      "local": "在电脑上处理",
+      "task": "定时任务",
+      "taskNamed": "定时任务 · {name}",
+      "cmd": "命令"
+    },
+    "local": "这件事要在电脑上处理",
+    "pg": {
+      "prev": "上一条（更早）",
+      "prevTitle": "上一条（j / ←）",
+      "next": "下一条（更新）",
+      "nextTitle": "下一条（k / →）"
+    },
+    "bar": {
+      "aria": "这条回复",
+      "read": "全屏阅读（f · 双击卡片）",
+      "copy": "复制整条回复（y）",
+      "reply": "回复这一条（r）"
+    },
+    "copy": {
+      "fail": "复制失败",
+      "nothing": "没有可复制的内容",
+      "reply": "已复制回复",
+      "source": "已复制原话"
+    },
+    "md": {
+      "copy": "拷贝",
+      "copyAria": "拷贝代码",
+      "copied": "已复制",
+      "image": "图片"
+    },
+    "speak": {
+      "idle": "朗读这一条",
+      "gen": "正在准备朗读…",
+      "playing": "暂停朗读",
+      "paused": "继续朗读",
+      "ready": "点一下开始朗读",
+      "failed": "朗读失败，点一下重试",
+      "err": {
+        "novoice": "这台手机没有本地朗读语音（为了不把文字发给别人，只用手机自带的语音）",
+        "empty": "这条没有可朗读的文字",
+        "unsupported": "这个浏览器不能朗读",
+        "engine": "朗读失败"
+      }
+    },
+    "share": {
+      "idle": "分享这一条",
+      "sending": "正在打开分享…",
+      "sent": "已分享",
+      "failed": "分享失败，点一下重试",
+      "copied": "这台设备不能直接分享，已复制，粘贴到要发的地方"
+    },
+    "quote": {
+      "jump": "跳到被回复的那一条",
+      "cancel": "取消回复（Esc）",
+      "head": "回复 · {who}",
+      "headEx": "引用 · {who}",
+      "copied": "已复制",
+      "noText": "（这一条没有文字）",
+      "gone": "那一条已不在历史里",
+      "wrap": "「{text}」",
+      "excerptTag": "选段"
+    },
+    "rd": {
+      "aria": "全屏阅读",
+      "size": "字号",
+      "minus": "字小一号（-）",
+      "plus": "字大一号（+）",
+      "close": "退出全屏阅读（Esc · 双击）",
+      "px": "{n} 像素"
+    },
+    "sheet": {
+      "aria": "待决",
+      "fold": "收起",
+      "foldAria": "收起（只是收起，请求仍在等你）"
+    },
+    "ask": {
+      "nod": "请你点头",
+      "answer": "请你回答",
+      "more": "后面还有 {n} 个"
+    },
+    "pend": {
+      "question": "有一个问题等你回答",
+      "permission": "有一个操作等你批准"
+    },
+    "verb": {
+      "Bash": "运行一条命令",
+      "Write": "写入一个文件",
+      "Edit": "修改一个文件",
+      "MultiEdit": "修改一个文件",
+      "NotebookEdit": "修改一个笔记本",
+      "Read": "读取一个文件",
+      "WebFetch": "访问一个网址",
+      "WebSearch": "搜索网络",
+      "Delete": "删除一个文件",
+      "ExternalDirectory": "访问工作目录外的文件",
+      "CodexPermissions": "申请更多权限",
+      "other": "调用 {tool}",
+      "danger": "⚠ {verb}"
+    },
+    "appr": {
+      "deny": "拒绝",
+      "denyAria": "拒绝这次操作",
+      "allowAria": "长按批准这次操作",
+      "hold": "长按批准",
+      "holdOne": "长按批准这一条",
+      "batchHold": "长按：批准，并在这一轮里自动批准同类低风险操作",
+      "holdHint": "按住不放才会批准",
+      "net": "没连上电脑，没发出去；可以再试或在电脑上处理",
+      "fail": "没发出去；可以再试或在电脑上处理",
+      "elsewhere": "在电脑上处理",
+      "elsewhereLive": "也可以在电脑上处理 · 谁先答算谁的",
+      "st": {
+        "localOnly": "这类只能在电脑上批准；手机上只能拒绝",
+        "localOnlyShort": "这类只能在电脑上批准",
+        "allow_sent": "已发送批准，等电脑确认…",
+        "deny_sent": "已发送拒绝，等电脑确认…",
+        "batch_sent": "已发送批准（含这一轮的同类操作），等电脑确认…",
+        "approved": "已批准",
+        "denied": "已拒绝",
+        "terminal": "已在电脑上处理",
+        "timeout": "超时，已自动拒绝",
+        "ended": "这个请求已经结束",
+        "stopped": "已作废（全部停下）"
+      }
+    },
+    "q": {
+      "title1": "回答一个问题",
+      "titleN": "回答 {n} 个问题",
+      "confirm": "确认",
+      "sending": "发送中…",
+      "cancel": "取消问题",
+      "cancelSure": "确定取消？",
+      "cancelAria": "取消这个问题（告诉 Agent 你要直接打字）",
+      "elsewhere": "也可以在电脑上回答",
+      "elsewhereLive": "也可以在电脑上回答 · 谁先答算谁的",
+      "net": "没连上电脑，没发出去；可以再试或在电脑上回答",
+      "fail": "没发出去；可以再试或在电脑上回答",
+      "st": {
+        "answered": "已回答：{labels}",
+        "sent": "已发送，等待生效",
+        "cancel_sent": "已发送取消，等待生效",
+        "cancelled": "已取消这个问题，直接打字回复吧",
+        "terminal": "已在电脑上回答",
+        "timeout": "已超时，请用文字回复",
+        "ended": "这个问题已经结束",
+        "detached": "手机作答已断开，请在电脑上回答",
+        "stopped": "已作废（全部停下）"
+      }
+    },
+    "list": {
+      "sep": "、",
+      "sep2": "；"
+    },
+    "tool": {
+      "doc": "发文件",
+      "docTitle": "文件",
+      "photo": "发相册图片",
+      "photoTitle": "相册",
+      "camera": "拍一张",
+      "cameraTitle": "拍照"
+    },
+    "mic": {
+      "aria": "按住说话，松开转成文字，上滑取消；双击锁定录音，再点一下结束",
+      "title": "按住说话 · 松开转成文字 · 上滑取消 · 双击锁定录音，再点一下结束",
+      "hold": "按住说话",
+      "releaseCancel": "松开取消",
+      "releaseText": "松开转文字",
+      "releaseVoice": "松开发语音"
+    },
+    "ptt": {
+      "locked": "已锁定",
+      "hint": "松开转成文字 · 上滑取消",
+      "longHint": "松开作为语音附件 · 上滑取消",
+      "releaseCancel": "松开手指，取消录音",
+      "opening": "正在打开麦克风…",
+      "lockM": "再按一下 M：锁定录音",
+      "lockTap": "再点一下：锁定录音",
+      "anyKey": "任意键结束",
+      "tapEnd": "点一下结束",
+      "anyKeyEsc": "任意键结束 · Esc 取消",
+      "tapEndSlide": "再点一下结束 · 上滑取消",
+      "tapEndEsc": "再点一下结束 · Esc 取消",
+      "left": "还剩 {s} 秒自动结束 · {stop}",
+      "capped": "锁定录音已满 {m} 分钟，自动结束",
+      "noRec": "这个浏览器不能录音",
+      "noMic": "拿不到麦克风权限",
+      "ready": "麦克风已就绪，按住说话",
+      "short": "按住说话 · 双击锁定",
+      "cancelled": "已取消"
+    },
+    "asr": {
+      "tag": "转写中…",
+      "noSpeech": "没听清，再说一次",
+      "not_installed": "电脑上还没装语音转写：在电脑上运行 `agentj asr install`（约 180 MB）。装好前可以用手机输入法的听写。",
+      "off": "电脑上关掉了语音转写，先打字或用输入法听写吧",
+      "broken": "电脑上的语音转写坏了：在电脑上运行 `agentj asr status` 看看",
+      "busy": "上一段还在转写，稍等再说",
+      "timeout": "转写超时了，再说一次",
+      "bad_audio": "这段录音读不出来，再说一次",
+      "net": "转写失败：没连上电脑",
+      "too_long": "这段太长了，按住说短一点，或者双击锁定录长的（作为附件）",
+      "other": "转写失败，再说一次"
+    },
+    "voice": {
+      "asAtt": "语音较长，已作为音频附件（发送时在电脑上转写）",
+      "asAttNoAsr": "语音较长，已作为音频附件（电脑上没装转写，会原样交给 Agent）",
+      "trayFull": "附件已满 {max} 个，这段语音改为转成文字"
+    },
+    "clr": {
+      "aria": "清空输入框",
+      "title": "清空文字（附件不动）",
+      "done": "已清空文字",
+      "undo": "撤销"
+    },
+    "clear": {
+      "done": "已清空",
+      "sending": "正在发送，发完再清"
+    },
+    "cap": {
+      "wan": "{n} 万字",
+      "zi": "{n} 字",
+      "chars": "{n} 个字符",
+      "toast": "已到 {cap} 上限",
+      "cut": "已到 {cap} 上限，多出的 {n} 字没有加上",
+      "title": "最多 {n} 字"
+    },
+    "ph": {
+      "long": "说点什么（最多 {cap}）",
+      "short": "说点什么（≤{cap}）"
+    },
+    "draft": {
+      "restored": "已恢复上次没发出去的草稿"
+    },
+    "paste": {
+      "long": "内容较长，已转为附件"
+    },
+    "file": {
+      "paste": "粘贴",
+      "camera": "拍照",
+      "voice": "语音"
+    },
+    "kind": {
+      "image": "图片",
+      "audio": "音频",
+      "file": "文件"
+    },
+    "tray": {
+      "aria": "待发附件",
+      "count": "待发附件 {n}/{max}",
+      "remove": "删掉 {name}",
+      "full": "最多 {max} 个附件，多出的 {n} 个没加上",
+      "voice": "语音 {d}",
+      "voiceTitle": "语音 · {d} · {size} · 发送时在电脑上转写",
+      "heldTitle": "{kind} · {name} · 还没传完，发送时接着传"
+    },
+    "up": {
+      "empty": "文件是空的，没有发出去",
+      "too_big": "文件太大了，上限 25 MB",
+      "type": "这种文件类型不支持",
+      "too_many": "附件攒得太多了，先发掉或删掉几个",
+      "quota": "电脑上的收件箱满了，先清一清",
+      "disk": "电脑的磁盘写不进去了",
+      "unsafe_inbox": "电脑上的收件箱目录不安全，没有写入（在电脑上检查 .agentj 目录）",
+      "sha_mismatch": "传输出错了，再试一次",
+      "size_mismatch": "传输出错了，再试一次",
+      "expired": "附件在电脑上过期了，删掉重新选",
+      "net": "上传中断了：没连上电脑",
+      "read": "读不出这个文件，再选一次",
+      "shape": "上传的格式不对",
+      "asr_off": "电脑上关掉了语音转写",
+      "other": "上传失败，再试一次",
+      "notReady": "这个文件还没准备好，稍等几秒再选一次",
+      "notReadyImage": "这张图还没准备好（可能还在云端没下载），稍等几秒再选一次"
+    },
+    "drop": {
+      "text": "松手添加文件",
+      "full": "超过 {max} 个附件，松手不会添加",
+      "fullSub": "已有 {have} 个，正在拖入 {n} 个",
+      "sub": "{n} 个文件 · 还能放 {left} 个"
+    },
+    "verb2": {
+      "paste": "粘贴",
+      "drop": "拖入"
+    },
+    "take": {
+      "tooMany": "最多 {max} 个附件：已有 {have} 个，{verb} {n} 个，一个都没加上",
+      "none": "没有可上传的文件",
+      "skipped": "{n} 个文件格式不支持，已略过"
+    },
+    "clip": {
+      "denied": "没能读取剪贴板（需要点「粘贴」或允许访问剪贴板）",
+      "fail": "剪贴板读不出来",
+      "text": "剪贴板里是文字，长按输入框粘贴",
+      "none": "剪贴板里没有图片"
+    },
+    "cam": {
+      "aria": "拍照",
+      "snap": "拍照",
+      "retake": "重拍",
+      "use": "使用这张",
+      "file": "选择文件",
+      "cancel": "取消",
+      "asking": "正在请求使用摄像头…",
+      "noApi": "这个浏览器不能直接用摄像头",
+      "denied": "没有获得摄像头权限",
+      "none": "没有找到摄像头",
+      "busy": "摄像头被别的程序占用",
+      "fail": "摄像头打不开",
+      "fallback": "{msg}，改用选择文件",
+      "bad": "这张没拍好，再拍一次"
+    },
+    "dot": "。",
+    "say": {
+      "send": "发送",
+      "cancel": "取消",
+      "cancelAria": "取消发送",
+      "waitUploads": "等附件传完…",
+      "reupload": "附件重新上传中…",
+      "badAtt": "有 {n} 个附件没传上去，删掉再发",
+      "stopped": "已全部停下：这条没交给 Agent，也不会排队。恢复后再发。",
+      "cancelled": "已取消发送，文字和附件都还在",
+      "tooLate": "已经送到了，没能取消",
+      "cancelNet": "没能取消：没连上电脑",
+      "cancelFail": "没能取消",
+      "withdrawn": "已撤回：这条没交给 Agent，文字放回了输入框",
+      "failedLater": "这条没能交给 Agent，再发一次吧",
+      "err": {
+        "shape": "格式不对，没发出去",
+        "too_long": "太长了，没发出去",
+        "stopped": "已全部停下，没发出去",
+        "att_gone": "附件在电脑上过期了，删掉重选",
+        "att_open": "附件还在上传，稍等再发",
+        "too_many_att": "最多 10 个附件",
+        "reply_unknown": "回复的那条对不上，取消回复再发",
+        "dup": "这条已经发过了",
+        "too_many": "还有 16 条在排队，等前面的发出去再发",
+        "no_agent": "电脑上还没选 Agent：运行 `agentj agent claude`（或 codex / opencode）",
+        "offline": "没连上电脑，没发出去",
+        "timeout": "电脑没回应，没发出去",
+        "other": "没发出去，再试一次"
+      }
+    },
+    "menu": {
+      "aria": "全部命令",
+      "run": "一键执行",
+      "insert": "插入到输入框",
+      "skills": "Agent 的技能",
+      "clip": "粘贴剪贴板里的图片（作为附件）",
+      "app": "App 状态与设置"
+    },
+    "sug": {
+      "aria": "匹配的命令"
+    },
+    "run": {
+      "compact": "压缩上下文",
+      "clear": "清空对话（可撤销）",
+      "model": "看看能换哪些模型",
+      "context": "上下文用了多少",
+      "cost": "花费",
+      "usage": "用量额度",
+      "status": "状态",
+      "stop": "中断当前这一轮",
+      "sent": "已发送 {cmd}"
+    },
+    "int": {
+      "sent": "已中断当前任务",
+      "idle": "现在没有在跑的任务",
+      "waiting": "正在等你回答，Esc 不代答",
+      "offline": "没连上电脑",
+      "fail": "没能中断"
+    },
+    "keys": {
+      "btn": "快捷键",
+      "btnTitle": "快捷键（?）",
+      "title": "键盘快捷键",
+      "hEdit": "编辑（同终端）",
+      "hPage": "翻页（输入框外）",
+      "hRead": "阅读（输入框外）",
+      "hAtt": "附件 / 语音",
+      "hClear": "清空与中断",
+      "i": "进入 / 离开输入框（有补全列表时 Esc 先收列表）",
+      "ae": "到行首 / 行尾",
+      "uk": "删到行首 / 删到行尾",
+      "w": "删前一个词（装到桌面的网页版 App 窗口里可用；Win/Linux 普通浏览器标签页里 Chrome 可能直接关标签）",
+      "y": "贴回刚删掉的",
+      "hist": "输入框空着时翻之前发过的话",
+      "j": "上一条（更早）",
+      "k": "下一条（更新）",
+      "g": "最新一条 / 最早一条",
+      "o": "展开 / 收起原话",
+      "scroll": "在这条消息里往上 / 往下滚一段",
+      "space": "空格",
+      "spaceDd": "往下翻一屏（`Shift`+`空格` 往上）",
+      "dbl": "双击卡片",
+      "f": "全屏阅读；里面 `+` `-` 调字号，`Esc` / 双击 / `f` 退出",
+      "yy": "复制整条回复",
+      "YY": "复制整段原话",
+      "r": "回复这一条（引用条出现在输入框上方，`Esc` 取消）",
+      "q": "显示这张表（右上角灯泡也行）",
+      "apc": "文件 · 相册 · 拍照",
+      "hold": "按住",
+      "m": "按住说话，松开转文字",
+      "dbl2": "双击",
+      "dbl3": "双击",
+      "mm": "锁定录音，松手继续录；任意键结束，Esc 取消",
+      "mic": "锁定录音，松手继续录；再点一下结束，Esc 取消",
+      "ee": "清空文字和附件",
+      "eei": "已经空了（≥1 秒）：中断当前任务",
+      "ok": "知道了"
+    }
   }
 }

@@ -300,9 +300,12 @@ class State:
         if not isinstance(a, dict) or a.get("kind") not in self.AGENT_KINDS or not isinstance(a.get("dir"), str):
             return None
         m = a.get("model")
+        e = a.get("effort")
         # fence (L2): on unless the human explicitly chose `--unfenced` at this terminal; anything else reads as on
         # docker (G-A56): the container engines stay hidden unless the human explicitly chose `--allow-docker`
+        # effort (PROMPT-33 §10.11): the phone's pill; a short word the harness validates, or None (its default)
         return {"kind": a["kind"], "dir": a["dir"], "model": m if isinstance(m, str) and m else None,
+                "effort": e if isinstance(e, str) and e.isalpha() and len(e) <= 16 else None,
                 "fence": a.get("fence") is not False, "docker": a.get("docker") is True}
 
     def set_agent_config(self, kind: str | None, directory: str | None = None, model: str | None = None,
@@ -332,6 +335,17 @@ class State:
             cfg = self.config()
             if isinstance(cfg.get("agent"), dict):
                 cfg["agent"]["model"] = model or None
+                _write_private(self.config_path, json.dumps(cfg, indent=1, ensure_ascii=False).encode())
+
+    def set_agent_effort(self, effort: str | None) -> None:
+        """The phone's effort pill (PROMPT-33 §10.11): stored like the model; None = the harness's own default."""
+        with self.config_lock():
+            cfg = self.config()
+            if isinstance(cfg.get("agent"), dict):
+                if effort:
+                    cfg["agent"]["effort"] = effort
+                else:
+                    cfg["agent"].pop("effort", None)
                 _write_private(self.config_path, json.dumps(cfg, indent=1, ensure_ascii=False).encode())
 
     def agent_session(self, kind: str) -> str | None:

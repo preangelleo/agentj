@@ -78,7 +78,7 @@ class Rules(unittest.TestCase):
         ev = lambda p, s: oc.evaluate(p, s, fakeopencode.DEFAULT_RULES, r)  # noqa: E731
         for perm, pat, want in [("bash", "rm -rf x", "ask"), ("edit", "a.txt", "ask"), ("external_directory", "/x/*", "ask"),
                                 ("doom_loop", "bash", "ask"), ("websearch", "q", "ask"), ("gmail_send", "*", "ask"),
-                                ("task", "general", "deny"), ("question", "*", "deny"), ("read", "a.py", "allow"),
+                                ("task", "general", "deny"), ("question", "*", "allow"), ("read", "a.py", "allow"),
                                 ("read", "x/.env", "ask"), ("read", ".env.local", "ask"), ("read", ".env.example", "allow"),
                                 ("webfetch", "https://x", "allow"), ("glob", "*", "allow"), ("bash", "ls -la", "allow"),
                                 ("bash", "git status", "allow"), ("bash", "cat a > b", "ask"), ("bash", "ls $(rm x)", "ask"),

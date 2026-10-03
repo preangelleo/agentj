@@ -174,6 +174,26 @@ def beyond_sandbox(sandbox, method: str, tool: str, inp: dict, params: dict, cha
     return "未知请求"
 
 
+def question_card(qs) -> list | None:
+    """Codex `item/tool/requestUserInput` questions → the §10.7 card (single choice each), or None when the phone cannot
+    answer it: a secret question, one without options, or anything over the card's limits."""
+    from .approvals import norm_questions
+    if not isinstance(qs, list) or not qs:
+        return None
+    raw, ids = [], set()
+    for q in qs:
+        if not isinstance(q, dict) or q.get("isSecret") or not isinstance(q.get("id"), str) or q["id"] in ids \
+                or not isinstance(q.get("options"), list) or not q["options"]:
+            return None
+        if not all(isinstance(o, dict) for o in q["options"]):
+            return None      # P33-X04: never drop an entry — the card's option k must be exactly the request's option k
+        ids.add(q["id"])
+        raw.append({"question": q.get("question"), "header": q.get("header") or "", "multiSelect": False,
+                    "options": [{"label": o.get("label"), "description": o.get("description") or ""} for o in q["options"]]})
+    card = norm_questions(raw)
+    return card if card is not None and len(card) == len(qs) else None
+
+
 class RPCError(Exception):
     def __init__(self, err):
         super().__init__(str(err)[:200])
@@ -248,7 +268,7 @@ class CodexAgent(Agent):
     async def _spawn(self) -> bool:
         if not _agentmod._bin("AGENTJ_CODEX_BIN", "codex"):
             self.failed_start = True
-            self.host.agent_notice("这台电脑上没找到 Codex（codex 命令）。装好并登录后再试。")
+            self.fail_notice("这台电脑上没找到 Codex（codex 命令）。装好并登录后再试。")
             return False
         argv = self.launch_argv(self.argv())
         if argv is None:
@@ -272,13 +292,14 @@ class CodexAgent(Agent):
             cfg = await self.call("config/read", {"cwd": self.cfg["dir"]}, START_WAIT)
             c = (cfg or {}).get("config") if isinstance(cfg, dict) else None
             c = c if isinstance(c, dict) else {}
-            self.human = {k: c.get(k) for k in ("approval_policy", "approvals_reviewer", "sandbox_mode", "model")}
+            self.human = {k: c.get(k) for k in ("approval_policy", "approvals_reviewer", "sandbox_mode", "model",
+                                                "model_reasoning_effort")}
         except (RPCError, ConnectionError, OSError, asyncio.TimeoutError) as e:
             self.host.st.log("agent_prepare_fail", agent=self.kind, reason=type(e).__name__)
             await self._kill(p)
             self.failed_start = True
             last = self._last_err()
-            self.host.agent_notice("Codex（app-server）没有启动" + (f"：{last}" if last else f"（{type(e).__name__}）。"))
+            self.fail_notice("Codex（app-server）没有启动" + (f"：{last}" if last else f"（{type(e).__name__}）。"))
             return False
         return self.proc is p
 
@@ -312,11 +333,63 @@ class CodexAgent(Agent):
         if not isinstance(th, dict) or not isinstance(th.get("id"), str):
             raise RPCError({"message": "no thread"})
         self.tid = th["id"]
-        self.thread = {k: res.get(k) for k in ("model", "sandbox", "approvalPolicy", "approvalsReviewer", "cwd")}
+        self.thread = {k: res.get(k) for k in ("model", "sandbox", "approvalPolicy", "approvalsReviewer", "cwd",
+                                               "reasoningEffort")}
         self.usage = None
         if self.persist:
             self.host.st.set_agent_session(self.kind, self.tid)
+            m = self.cur_model()
+            self.meter(model=m, model_name=self.model_name(m), effort=self.cur_effort())
+            if not self.models_cache:
+                self._bg(self.refresh_models())
         return True
+
+    # ------------------------------------------------ model and effort pill (§10.11): turn/start model / effort
+    def cur_model(self) -> str | None:
+        m = self.cfg.get("model") or self.thread.get("model") or self.human.get("model")
+        return m if isinstance(m, str) and m else None
+
+    def cur_effort(self) -> str | None:
+        e = self.cfg.get("effort") or self.thread.get("reasoningEffort") or self.human.get("model_reasoning_effort")
+        return e if isinstance(e, str) and e else None
+
+    async def refresh_models(self) -> None:
+        if self.proc is None:
+            return
+        try:
+            res = await self.call("model/list", {}, 20)
+        except (RPCError, ConnectionError, OSError, asyncio.TimeoutError):
+            return
+        out = []
+        for m in (res or {}).get("data") or []:
+            if not isinstance(m, dict) or not isinstance(m.get("id"), str) or m.get("hidden") or not slash.MODEL_RE.match(m["id"]):
+                continue
+            effs = []
+            for e in m.get("supportedReasoningEfforts") or []:
+                v = e.get("reasoningEffort") if isinstance(e, dict) else e
+                if isinstance(v, str) and len(v) <= 16 and v not in effs:
+                    effs.append(v)
+            out.append({"id": clean_line(m["id"], 100), "name": clean_line(str(m.get("displayName") or m["id"]), 60),
+                        "efforts": effs or None})
+        self.models_cache = out[:40]
+        fn = getattr(self.host, "models_changed", None)
+        if fn:
+            fn()
+        m = self.cur_model()
+        self.meter(model=m, model_name=self.model_name(m))
+        with contextlib.suppress(RPCError, ConnectionError, OSError, asyncio.TimeoutError):   # the quota meters, once
+            res = await self.call("account/rateLimits/read", {}, 20)
+            r = (res or {}).get("rateLimits") if isinstance(res, dict) else None
+            if isinstance(r, dict):
+                self.rate = r
+                self.rate_meter(r)
+
+    async def apply_model(self, model: str | None, effort: str | None, default: bool = False) -> str | None:
+        """Codex keeps a turn's model / effort for the turns after it, so "default" sends the human's own configured values
+        (config/read) once with the next turn/start."""
+        if default:
+            self.revert = {"model": self.human.get("model"), "effort": self.human.get("model_reasoning_effort")}
+        return await super().apply_model(model, effort, default)
 
     async def _ready(self) -> bool:
         if self.proc is None and not await self._spawn():
@@ -324,7 +397,7 @@ class CodexAgent(Agent):
         try:
             return await self._thread()
         except (RPCError, ConnectionError, OSError, asyncio.TimeoutError) as e:
-            self.host.agent_notice(f"Codex 没能打开这段对话（{clean(str(e), 120) or type(e).__name__}）。")
+            self.fail_notice(f"Codex 没能打开这段对话（{clean(str(e), 120) or type(e).__name__}）。")
             return False
 
     # ------------------------------------------------ the process
@@ -372,7 +445,7 @@ class CodexAgent(Agent):
         if self.turn_proc is p and self.turn_done and not self.turn_done.is_set():
             if not quiet and not self.halting:
                 last = self._last_err()
-                self.host.agent_notice(f"Codex 退出了（{code}）" + (f"：{last}" if last else ""))
+                self.fail_notice(f"Codex 退出了（{code}）" + (f"：{last}" if last else ""))
             self.turn_done.set()
 
     async def _kill(self, p) -> None:
@@ -415,15 +488,20 @@ class CodexAgent(Agent):
             if t.get("status") == "failed" and not self.halting:
                 e = t.get("error") if isinstance(t.get("error"), dict) else {}
                 m = e.get("message")
-                self.host.agent_notice("Codex 这一轮没有正常完成" + (f"：{clean(m, 300)}" if isinstance(m, str) and m else "。"))
+                self.fail_notice("Codex 这一轮没有正常完成" + (f"：{clean(m, 300)}" if isinstance(m, str) and m else "。"))
             if self.turn_done:
                 self.turn_done.set()
         elif method == "thread/tokenUsage/updated" and th == self.tid:
             if isinstance(p.get("tokenUsage"), dict):
                 self.usage = p["tokenUsage"]
+                used = (self.usage.get("last") or {}).get("totalTokens") if isinstance(self.usage.get("last"), dict) else None
+                win = self.usage.get("modelContextWindow")
+                if isinstance(used, int) and isinstance(win, int) and win > 0 and not self.research and self.persist:
+                    self.meter(ctx={"used": used, "max": win})
         elif method == "account/rateLimits/updated":
             if isinstance(p.get("rateLimits"), dict):
                 self.rate = p["rateLimits"]
+                self.rate_meter(self.rate)
         elif method == "error" and th == self.tid and not p.get("willRetry") and not self.halting:
             e = p.get("error") if isinstance(p.get("error"), dict) else {}
             if isinstance(e.get("message"), str):
@@ -482,10 +560,48 @@ class CodexAgent(Agent):
             self._answer(rid, {"decision": "denied"})
         elif method == "mcpServer/elicitation/request":                   # nobody on the phone can fill a form: decline
             self._answer(rid, {"action": "decline"})
-        elif method == "item/tool/requestUserInput":                      # asked in text instead (like OpenCode's question)
-            self._answer(rid, {"answers": {}})
+            if not self.research:
+                self.local_only("Codex 要你填一张表（MCP elicitation）：手机上填不了，已拒绝；需要的话在电脑上处理。")
+        elif method == "item/tool/requestUserInput":                      # §10.7: a question card on the phone
+            qs = p.get("questions") if isinstance(p.get("questions"), list) else []
+            card = question_card(qs)
+            if card is None or self.research:
+                self._answer(rid, {"answers": {}})
+                if not self.research:
+                    self.local_only("这个问题需要在电脑上回答（Codex 问的是要保密或要自己填写的内容）。")
+                return
+            self._bg(self._ask_user(rid, qs, card))
         else:
             self._answer(rid, error={"code": -32601, "message": "not supported by agentj"})
+
+    async def _ask_user(self, rid, qs: list, card: list) -> None:
+        """One question card; the answer is the picked option's label per question id, cancel / timeout = no answers."""
+        gone = asyncio.get_running_loop().create_future()
+        self.pending[rid] = gone
+        ans = {"answers": {}}
+        try:
+            outcome, picks = await self.host.question(card, gone, task=getattr(self.host, "task_label", None))
+            if outcome == "answer" and picks:
+                # the label comes from the signed card itself (P33-X04), the id from the request at the same position
+                ans = {"answers": {q["id"]: {"answers": [c["o"][p[0] - 1]["l"]]} for q, c, p in zip(qs, card, picks)}}
+        except Exception:  # noqa: BLE001 — fail closed: nobody answered
+            ans = {"answers": {}}
+        finally:
+            self.pending.pop(rid, None)
+            if not gone.done():
+                self._answer(rid, ans)
+
+    def rate_meter(self, r) -> None:
+        """account rate limits → the 5 h / week meters (the 300-minute window → h5, 10 080 → week); exact numbers only."""
+        upd = {}
+        for k in ("primary", "secondary"):
+            w = r.get(k) if isinstance(r, dict) else None
+            if isinstance(w, dict) and isinstance(w.get("usedPercent"), (int, float)) and not isinstance(w.get("usedPercent"), bool):
+                key = {300: "h5", 10080: "week"}.get(w.get("windowDurationMins"))
+                if key:
+                    upd[key] = {"pct": float(w["usedPercent"]), "reset": _agentmod._unix(w.get("resetsAt"))}
+        if upd and self.persist:
+            self.meter(**upd)
 
     def _refuse(self, rid, tool: str, inp: dict, no: dict, why: str) -> None:
         """Beyond the human's own sandbox: declined at once, no card; a notice and a refused-by-policy record."""
@@ -519,13 +635,21 @@ class CodexAgent(Agent):
         self.turn_done, self.turn_proc = asyncio.Event(), self.proc
         self.turn_id, self.turn_status = None, {}
         params = {"threadId": self.tid, "input": [{"type": "text", "text": text, "text_elements": []}]}
+        rev = getattr(self, "revert", None)
         if self.cfg.get("model"):
             params["model"] = self.cfg["model"]
+        elif rev and isinstance(rev.get("model"), str):
+            params["model"] = rev["model"]
+        if self.cfg.get("effort"):                 # §10.11: "for this turn and subsequent turns" (app-server 0.160)
+            params["effort"] = self.cfg["effort"]
+        elif rev and isinstance(rev.get("effort"), str):
+            params["effort"] = rev["effort"]
         try:
-            r = await self.call("turn/start", params)
+            r = await self.deliver(lambda: self.call("turn/start", params))    # §10.2: turn/start sent = delivered
+            self.revert = None
         except (RPCError, ConnectionError, OSError, asyncio.TimeoutError) as e:
             if not self.halting:
-                self.host.agent_notice(f"Codex 没有接这条消息（{clean(str(e), 160) or type(e).__name__}）。")
+                self.fail_notice(f"Codex 没有接这条消息（{clean(str(e), 160) or type(e).__name__}）。")
             return
         t = (r or {}).get("turn") if isinstance(r, dict) else None
         if isinstance(t, dict) and isinstance(t.get("id"), str):
@@ -626,6 +750,8 @@ class CodexAgent(Agent):
                 res = await self.call("account/rateLimits/read", {}, 20)
                 r = (res or {}).get("rateLimits") if isinstance(res, dict) else None
         r = r if isinstance(r, dict) else self.rate
+        if isinstance(r, dict):
+            self.rate_meter(r)
         lines = self._rate_lines(r or {})
         return Result("套餐用量：" + ("；".join(lines) if lines else slash.NONE + "（Codex 没有报告）"), "ok" if lines else "info")
 
@@ -664,4 +790,5 @@ class CodexAgent(Agent):
         if not slash.MODEL_RE.match(arg) or (models and arg not in {m["id"] for m in models}):
             return Result(f"没有这个模型：{clean_line(arg, 100)}", "error")
         self.host.set_model(arg)
+        self.meter(model=arg, model_name=self.model_name(arg))
         return Result(f"已切换到 {arg}：从下一条消息起使用，写进了 config.json。")

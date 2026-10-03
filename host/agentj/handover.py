@@ -101,12 +101,12 @@ def _zh(f: dict) -> str:
         "",
         "**平时怎么用**",
         "- 直接打字告诉它要做什么。",
-        "- 需要你点头时，手机上会弹出来问你，点「批准」或「拒绝」；2 分钟不按就当拒绝。花钱、删除、对外发送、改密码或密钥、"
-        "改价格，这五类事每一次都要你单独点「批准这一条」。",
+        "- 需要你点头时，手机上会弹出来问你：按住「长按批准」才算批准（点一下不算），点「拒绝」就拒绝；2 分钟不按就当拒绝。"
+        "花钱、删除、对外发送、改密码或密钥、改价格，这五类事每一次都要你单独「长按批准这一条」。",
         "- 红色的「全部停下」：马上让它停手，定时任务也停。要继续，在手机上点「恢复」，或者在电脑上运行 `agentj resume`"
         "（要输批准口令）。",
         "- 「记忆」看它记住了什么，「记录」看它最近做了什么，「定时任务」看它按时做的事（只有你能打开），"
-        "「命令」里有压缩、清空、换模型这些。",
+        "输入框左边的 ≡「全部命令」里有压缩、清空、换模型这些。",
         "",
     ]
     if f["service"] is False:
@@ -170,13 +170,15 @@ def _en(f: dict) -> str:
         "",
         "**Every day**",
         "- Just type what you want done.",
-        "- Whenever it needs your OK, your phone asks you: tap \"Approve\" or \"Deny\". No answer within 2 minutes counts as "
-        "deny. Spending money, deleting, sending anything out, changing passwords or keys, and changing prices always need "
-        "your OK one at a time (\"Approve this one\").",
+        "- Whenever it needs your OK, your phone asks you: press and hold \"Hold to approve\" to approve (a tap is not "
+        "enough), or tap \"Deny\". No answer within 2 minutes counts as deny. Spending money, deleting, sending anything "
+        "out, changing passwords or keys, and changing prices always need your OK one at a time (\"Hold to approve this "
+        "one\").",
         "- The red \"Stop everything\" button stops it at once, scheduled tasks too. To carry on, tap \"Resume\" on the "
         "phone, or run `agentj resume` on the computer (it asks your approval passphrase).",
         "- \"Memory\" shows what it remembers, \"Activity\" what it did, \"Schedules\" what it does on a schedule (only you "
-        "can turn one on), and \"Commands\" has compact, clear, switch model and the rest.",
+        "can turn one on), and the ≡ \"All commands\" button left of the text box has compact, clear, switch model and the "
+        "rest.",
         "",
     ]
     if f["service"] is False:

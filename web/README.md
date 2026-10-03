@@ -1,13 +1,19 @@
 # web — the Agent J web client (`m.agentj.app`, public but not indexed; legacy `alpha-web.agentjarvis.net`)
 
-Device side of `../protocol/PROTOCOL.md` §2–§4 and §8–§9: pair with a QR / link (IKpsk2 + 6-digit code typed on the host), resume (IK),
-chat with the host's Agent (status pill, approval cards signed with a non-extractable Ed25519 key), content-free Web Push.
+Device side of `../protocol/PROTOCOL.md` §2–§4 and §8–§10: pair with a QR / link (IKpsk2 + 6-digit code typed on the host), resume (IK),
+and — since PROMPT-33 — **relay's phone page** on that session (`../parity/DESIGN.md` §a): the whole screen is the Agent's state
+colour, history pages (source card + reply card), reader, quote / excerpt, attachments and voice end to end (§10.3 / §10.9),
+approval sheet (hold to approve, Ed25519-signed) and question cards, meters, model · effort pill, ≡ menu, keyboard shortcuts;
+plus Agent J's pairing, security badge, language, theme, memory / activity / tasks, 全部停下, content-free Web Push.
 One host only (N=1). Tier: **"tampering would be detectable"**, not zero-access (badge on every screen; see
 https://agentj.app/security/).
 
 | Path | What |
 |---|---|
-| `public/index.html` `app.js` `app.css` | the client (ES module, no deps, textContent only, no third-party resources); layout only in `app.css`, everything else from the design system |
+| `public/index.html` `app.css` | relay's markup + CSS (variables renamed where the design system already has the name; palette names mapped to tokens) + Agent J's screens; no inline style / script |
+| `public/app.js` | boot: language, legacy-host redirect, pairing / SAS / removed / error views, Agent name, session hooks, the app-message switch |
+| `public/js/*.js` | `relay.js` relay's page script (one module: its sections share state) · `api.js` the adapter (relay call → §10 message) · `snap.js` messages → relay's snapshot + history view · `session.js` Noise, frag, padding, pacing · `blobs.js` uploads · `wav.js` 16 kHz WAV · `speak.js` on-device read aloud · `store.js` IndexedDB + sealed drafts / input history · `controls.js` · `push.js` · `md.js` (relay's Markdown, DOM only) · `t.js` · `ui.js` · `boot.js` (head, launch colour) |
+| `public/assets/` | relay's rocket masks + whoosh (copied from `pwa/assets/`) |
 | `public/brand/…` + `public/favicon.ico` `apple-touch-icon.png` | **build copies** of `../brand/` (set `web`: tokens, base.css, `lang.js`, `ui.js`, self-hosted fonts, shield + PWA + status logos); never edit here |
 | `i18n/web.zh.src.json` → `web.zh.json` | Chinese UI text: write the source, run `python3 agentjarvis/i18n/polish.py --surface web web/i18n/` (sinify; cache `../i18n/cache/web.json`, log `../i18n/log/web.md`, commit both); `web.zh.override.json` = human fixes that win over the polish |
 | `i18n/web.en.json` | English UI text, written on its own (same keys and `{placeholders}`); wording rules in `../i18n/TERMS.md` |
@@ -19,7 +25,10 @@ https://agentj.app/security/).
 | `build.mjs` | copies proto + brand, writes `i18n.js`, syncs the Chinese text inside `[data-i18n]` / `[data-i18n-attr]` of `index.html`, writes the manifest; `--print-hash` prints `combined` from the sources without writing. In the public export (web/ without `../brand`) the committed `public/brand/` copy is the source — same bytes, same hash |
 | `worker.ts` + `wrangler.toml` | Worker `agentjarvis-web` (no imports) on `WEB_HOST` + `LEGACY_WEB_HOST`: any other host / non-GET/HEAD / malformed relay URL → 404; CSP `connect-src` = `RELAY_URL` + `LEGACY_RELAY_URL` exactly, security headers (`webHeaders()`), `noindex` |
 | `test/serve.mjs` | `startWebServer({port:0, relayCsp:'ws://127.0.0.1:*'})` → `{url, port, stop}`, same headers as the Worker |
-| `test/fakehost.mjs` | JS fake relay+host (responder, real noise.js) used by `screens.mjs`: `send(appMsg)`, `answer(t, fn)` canned replies for memory / activity / tasks / stop (signatures NOT checked — the real host does that); not a relay implementation |
+| `test/fakehost.mjs` | JS fake relay+host (responder, real noise.js) speaking §8 + §10 (say, blobs + WAV check, hist_* + frag, question, meter, models, menu, say_cancel, slash); verifies answer signatures with wire.js; `p33:false` = an older host; not a relay implementation |
+| `test/browser.mjs` | own headless Chromium (never :9222), fake camera + microphone, page helpers |
+| `test/parity_cases.mjs` | one named case per `../parity/features.json` id (pwa + agentj-only), driven by `screens.mjs` |
+| `test/sidebyside.mjs` | relay's `pwa/index.html` (stub endpoints) next to this client, 10 states → `reports/qa/parity/shots/` |
 
 ## Build & test
 ```bash
@@ -27,29 +36,44 @@ python3 agentjarvis/i18n/polish.py --surface web web/i18n/   # after changing we
 node web/build.mjs                    # after any change in public/, i18n/, brand/ or protocol/
 node --test web/test/*.test.mjs       # static rules, proto + brand byte-identity, i18n (keys, placeholders,
                                                   # polish --check, no internal terms from i18n/glossary.json), manifest, Worker
-node web/test/screens.mjs             # own headless Chromium (never :9222): flow checks + every screen at 360×800 /
+node web/test/screens.mjs             # own headless Chromium (never :9222): §0 security regressions (P33-X01 / X02;
+                                                  # AJ_SECURITY_ONLY=1 alone) + flow checks + every screen at 360×800 /
                                                   # 1440×900 × light/dark × 中文/English, audited (overflow, tap ≥ 44 px, console
-                                                  # errors, off-origin requests) + language persistence; shots → /tmp/aj-web-shots/
-                                                  # (AJ_QUICK=1: two combinations only)
+                                                  # errors, off-origin requests) + language persistence + 160 parity cases;
+                                                  # shots → /tmp/aj-web-shots/, results → reports/qa/parity/web-web_test_screens.mjs.json (parity format)
+                                                  # (AJ_QUICK=1 two gallery combos · AJ_PARITY_ONLY=id,… · AJ_NO_PARITY=1)
+node web/test/sidebyside.mjs          # relay vs Agent J screenshots (reports/qa/parity/shots/*-pair.png)
 ```
 
-Design: phone first (one centred column, `--col`, wider on desktop), header = status shield (`brand/img/status/*`: idle green,
-working blue, waiting-for-you orange, pairing purple, offline/stopped grey) + Agent name/state + the security badge + menu
-(language, theme, 「这个网页版有多安全」, links to agentj.app docs / security / privacy / terms). The whole page is washed
-lightly with the Agent state (`body[data-agent]`, `body[data-conn]`). Primary = Sooty; shield green only as an accent.
-「添加到主屏幕」 hint (`#a2hs`): phone browsers only, not when installed, dismissed once (`localStorage["aj.a2hs"]`). iPhone Safari
-has no in-page QR scanner: there the scan button is hidden and the pairing steps say to add the page to the Home Screen first
-and paste the link from `agentj pair --link` (a Camera-app scan would pair the Safari tab, which has separate storage).
+Design: relay's phone page (its ADR-033 … 052): the page IS the state colour (idle green, working blue with a light running along
+the top, waiting orange with breathing edges, question purple, offline / stopped grey; dark theme = the same hues deepened), the
+water level = context window, the two grey rules = weekly / 5-hour quota. Agent J's pages (pairing, …) are the brand canvas.
+Storage: localStorage holds only `aj.a2hs`, `aj.readerFs`, `aj.chrome` (+ lang / theme from brand/lang.js); drafts and the ↑↓
+history are AES-GCM sealed in IndexedDB (`draft`, `ihist`; key `local`, non-extractable, in the same IndexedDB — it stops a
+casual read of the stored files, not code running in this origin or a copied browser profile) and wiped, with the key, by
+重新配对 / 解除配对 / a new pairing and as soon as the computer revokes the phone.
+Sends are bound to one session generation and one computer (P33-X01 / X02): nothing queued before a reconnect is sent after
+it (unsent words stay in the field; uploads resume after `ready` to the same computer only); unpair / re-pair / revoke drop
+every upload, queued send, the tray and the field. Markdown (`md.js`) is bounded: tables ≤ 32 × 300 / 4 000 cells, ≤ 20 000
+elements; links https / http / mailto only, with the real host shown when the words differ.
 
-## Driving it (e2e)
-States in `#status[data-state]` (mirror `window.__ajState`): `idle connecting waiting-host pairing awaiting-approval ready revoked error`.
-Pair: open `<url>#p=…` (or fill `#pair-link`, click `#pair-go`) → `awaiting-approval`, 6 digits in `#sas` → host approves → `ready`.
-Chat: `#msg-input` + Enter or `#send`; `#messages li[data-dir=in|out][data-from=agent|host|you|device|notice]`.
-Agent: `#agent-status[data-s=idle|working|compacting|waiting|down|stopped]` (text 「<Agent> · <state>」 while connected); cards `#messages li.ask` (`.ask-summary`, `.ask-allow`, `.ask-deny`,
-`[data-result=allow|deny|timeout|gone]`); push `#push-row` / `#push-on`. Revoked: `#repair` (clears host, keeps device key).
-Error: `#retry`. Local relays must be `ws://127.0.0.1:<port>` (what `parsePairing` accepts besides `wss://`).
-Agent name: `#brand-name` (line 1) + `document.title` = the `name` of the host's `{"t":"status"}` (cleaned, ≤ 32 code points,
-textContent), `Agent J` when null / absent; cached as `name` in the IndexedDB `host` record for cold starts.
+## Driving it (e2e) — relay's ids
+States: `window.__ajState` / `#status[data-state]` = `idle connecting waiting-host pairing awaiting-approval ready revoked error`;
+`body[data-view]` = `pair sas chat mem act tasks revoked error`; `body[data-status]` = relay's `idle working waiting unknown`
+(+ `data-kind=question`), `body[data-agent]` = the host's status, `body[data-conn]` = `on|off`, `body[data-sheet]` = `1` when the
+sheet is up.
+Pair: open `<url>#p=…` (or `#pair-link` + `#pair-go`) → 6 digits in `#sas` → host approves → `ready`. Removed: `#repair`. Error: `#retry`.
+Pages: `#deck` · source card `#om[data-src=leo|dev|host|agent|sys|task|cmd]` (`#omLabel`, `#omText`, `#omQuote`, `#omMore`,
+`#omAtt`) · reply card `#rm` (`#words`, `#agent` = the Agent name, `#rmTime`, `#pg` "n / total", `#cmdx`, `#localNote`) · actions
+`#readBtn #speakBtn #fwdBtn #copyReply #replyBtn` · landscape `#pgPrev #pgNext` · reader `#rd` (`#rdSlider #rdPlus #rdMinus #rdClose`).
+Composer: `#input` + Enter or `#send`; `#sayCancel`; `#clr`; tools `#tDoc #tPhoto #tCamera #mic` (inputs `#fDoc #fPhoto #fCamera`);
+tray `#tray .chip[data-st=up|ready|held|failed]`; quote strip `#qbar` (`#qbJump #qbX`); grants `#grant-bar` / `#grant-off`;
+≡ `#slashBtn` → `#menu` (`[data-run]` one-tap commands, `[data-estop]`, `[data-slash]` insert); `/` list `#sug`; voice bubble `#ptt`.
+Sheet: `#sheet` (`#sheetTitle #tool #cmd #why #askTags #askLeft #apprDeny #apprAllow #apprBatch #qs .opt #askSend #askCancel
+#sheetClose`), `#pendTag`. Header: `#orb` (type size), `#meta` (`#metaModel #metaEffort`), `#mWeek #m5h #water`, `#badge`,
+`#keysBtn` → `#keys`, `#aj-menu` (`#brand-name #open-mem #open-act #open-tasks #push-row #push-on #menu-about #unpair`).
+Agent J: `#estop-banner` / `#resume`, `#confirm` (`#confirm-yes #confirm-no`), `#badge-panel` / `#version-hash`.
+Local relays must be `ws://127.0.0.1:<port>` (what `parsePairing` accepts besides `wss://`).
 
 ## Hosts (rename to agentj.app, one version cycle of overlap)
 - Relays: `allowRelay()` accepts exactly `wss://relay.agentj.app` and `wss://alpha-relay.agentjarvis.net` (pairing links from

@@ -7,6 +7,8 @@ asks it via `tools/call` before running a "tool". Behaviour per user message:
 Like Claude Code, every call first goes through the PreToolUse hooks from --settings (the danger list): "ask" → the
 permission tool even when an allow rule matches; "deny" / exit 2 → denied; "allow" → runs. Then the allow rules of
 FAKE_CLAUDE_USER_SETTINGS (a settings.json path: permissions.allow, e.g. "Bash(rm:*)") — a match runs without asking.
+  ASK: <json questions>  → AskUserQuestion through the permission tool (PROTOCOL §10.7); replies "ANSWERS: <answers>
+                           (input kept)" on allow, "DENIED: <message>" on deny
   SLOW                   → reply after 1.5 s
   LONG                   → one 9 000-character reply (the host must split it, never truncate)
   CRASH                  → exit 3 mid-turn (the host restarts with --resume)
@@ -17,6 +19,8 @@ FAKE_CLAUDE_USER_SETTINGS (a settings.json path: permissions.allow, e.g. "Bash(r
                            replay serve must not push), result local_command "compact"
   /cost                  → a synthetic "Total cost: $0.0123 …" + result local_command "cost"
   /fake-skill            → "SKILL fake-skill ran" (a skill named in init.skills)
+  FAKE_CLAUDE_SCRIPT     (optional env: a JSON file {"<message>": {"sleep": s, "reply": "<text>"}}) → that reply after that
+                           sleep, for a message listed there (screenshots that need a real-looking answer)
   anything else          → "ECHO: <text>"
 Every turn ends with a rate_limit_event before its result (what /usage shows).
 FAKE_CLAUDE_LOG (optional): append one JSON line per start with argv, so tests can assert the flags.
@@ -166,6 +170,7 @@ def synthetic(text):
 
 
 last_synth = ["Set model to `Fake` for this session only"]
+SCRIPT = json.load(open(os.environ["FAKE_CLAUDE_SCRIPT"])) if os.environ.get("FAKE_CLAUDE_SCRIPT") else {}
 for line in sys.stdin:
     ev = json.loads(line)
     if ev.get("type") == "control_request":          # e.g. interrupt (only read between turns: serve ends the process anyway)
@@ -197,6 +202,17 @@ for line in sys.stdin:
                 time.sleep(float(ln[7:]))
             elif ln.startswith("SAY: "):
                 say(ln[5:])
+    elif text.startswith("ASK: "):          # AskUserQuestion through the permission tool, as Claude Code 2.1.285 does (§10.7)
+        inp = {"questions": json.loads(text[5:])}
+        res = rpc("tools/call", {"name": "approve", "arguments": {"tool_name": "AskUserQuestion", "input": inp,
+                                                                  "tool_use_id": "toolu_ask"}})
+        ans = json.loads(res["content"][0]["text"])
+        if ans["behavior"] == "allow":
+            up = ans["updatedInput"]
+            kept = {k: v for k, v in up.items() if k != "answers"} == inp
+            say("ANSWERS: " + json.dumps(up.get("answers"), ensure_ascii=False, sort_keys=True) + (" (input kept)" if kept else " (INPUT CHANGED)"))
+        else:
+            say("DENIED: " + ans["message"])
     elif text.startswith("RUN: "):
         say(run_one(text[5:]))
     elif text.startswith("RUNSEQ: "):
@@ -214,6 +230,9 @@ for line in sys.stdin:
         sys.exit(3)
     elif text == "/fake-skill":
         say("SKILL fake-skill ran")
+    elif text in SCRIPT:
+        time.sleep(float(SCRIPT[text].get("sleep") or 0))
+        say(SCRIPT[text].get("reply") or "")
     else:
         say(f"ECHO: {text}")
     out({"type": "rate_limit_event", "rate_limit_info": {"status": "allowed", "unifiedWindows": {

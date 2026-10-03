@@ -83,6 +83,116 @@ def record(st, *, rid: str, agent: str, tool: str, input_sha256: str, shown_sha2
     return rec
 
 
+# ---------------------------------------------------------------- questions (PROTOCOL §10.7): an answer is an approval
+Q_CONTEXT = "agentjarvis-question-v1"
+Q_ACTIONS = ("answer", "cancel")
+
+
+Q_MAX_QS, Q_MAX_OPTS = 8, 16
+
+
+def _h(s: str) -> str:
+    return hashlib.sha256(s.encode()).hexdigest()
+
+
+def norm_questions(raw) -> list | None:
+    """Claude Code's AskUserQuestion `questions` (or an adapter's equivalent in the same shape) → the card's
+    [{"q", "h", "m", "o": [{"l", "d"}]}]; None when the card cannot show it EXACTLY (over a bound, a duplicate question or
+    label, empty, wrong types, a control character) — then there is no card and the harness is told nobody answered, so
+    the model asks in text. Never truncated: the signature and the answer both bind the exact text."""
+    if not isinstance(raw, list) or not 1 <= len(raw) <= Q_MAX_QS:
+        return None
+    seen, out = set(), []
+    for q in raw:
+        if not isinstance(q, dict):
+            return None
+        text, head, opts = q.get("question"), q.get("header") or "", q.get("options")
+        if not isinstance(text, str) or not text.strip() or wire.text_problem(text, 1000) or text in seen:
+            return None
+        if not isinstance(head, str) or wire.text_problem(head, 64):
+            return None
+        if not isinstance(opts, list) or not 1 <= len(opts) <= Q_MAX_OPTS:
+            return None
+        labels, o = set(), []
+        for x in opts:
+            if not isinstance(x, dict):
+                return None
+            lab, d = x.get("label"), x.get("description") or ""
+            if not isinstance(lab, str) or not lab.strip() or wire.text_problem(lab, 200) or lab in labels:
+                return None
+            if not isinstance(d, str) or wire.text_problem(d, 500):
+                return None
+            labels.add(lab)
+            o.append({"l": lab, "d": d})
+        seen.add(text)
+        out.append({"q": text, "h": head, "m": q.get("multiSelect") is True, "o": o})
+    return out
+
+
+def question_text(qs: list) -> str:
+    """Q: one line per question `q <sha(h)> <sha(q)> m|s`, then one line per option `o <sha(l)> <sha(d)>` (d absent = "")."""
+    lines = []
+    for q in qs:
+        lines.append(f"q {_h(q.get('h') or '')} {_h(q['q'])} {'m' if q.get('m') else 's'}")
+        for o in q["o"]:
+            lines.append(f"o {_h(o['l'])} {_h(o.get('d') or '')}")
+    return "\n".join(lines)
+
+
+def question_digest(qs: list) -> str:
+    """hex SHA-256 of Q — what approvals.log keeps instead of the questions."""
+    return _h(question_text(qs))
+
+
+def picks_text(picks) -> str:
+    """P: `1,3;2` (questions by `;`, 1-based option numbers by `,`); `-` = cancel."""
+    return "-" if picks is None else ";".join(",".join(str(n) for n in p) for p in picks)
+
+
+def question_message(channel: str, device: str, qid: str, action: str, qs: list, picks) -> bytes:
+    if action not in Q_ACTIONS:
+        raise ValueError("bad action")
+    if (action == "cancel") != (picks is None):
+        raise ValueError("picks only with answer")
+    return (f"{Q_CONTEXT}\n{channel}\n{device}\n{qid}\n{action}\n{question_digest(qs)}\n{picks_text(picks)}").encode()
+
+
+def check_picks(qs: list, picks) -> bool:
+    """Exactly one option number for a single-select question, ≥ 1 for a multi-select one; 1-based, ascending, in range."""
+    if not isinstance(picks, list) or len(picks) != len(qs):
+        return False
+    for q, p in zip(qs, picks):
+        if not isinstance(p, list) or not p or not all(type(n) is int for n in p):
+            return False
+        if p != sorted(set(p)) or p[0] < 1 or p[-1] > len(q["o"]):
+            return False
+        if not q.get("m") and len(p) != 1:
+            return False
+    return True
+
+
+def verify_question(sign_pub: bytes, sig: bytes, channel: str, device: str, qid: str, action: str, qs: list, picks) -> bool:
+    if len(sign_pub) != 32 or len(sig) != 64:
+        return False
+    try:
+        Ed25519PublicKey.from_public_bytes(sign_pub).verify(sig, question_message(channel, device, qid, action, qs, picks))
+        return True
+    except (InvalidSignature, ValueError):
+        return False
+
+
+def record_question(st, *, qid: str, agent: str, q_sha256: str, decision: str, reason: str, picks: str | None = None,
+                    device: str | None = None, sign_pub: bytes | None = None, sig: bytes | None = None) -> dict:
+    """One approvals.log line per question outcome (kind "question"): the hash of what was shown, the picks as numbers,
+    the device, its key and signature — never the question or option text. decision: answer | cancel | timeout | gone |
+    stopped | no_device; reason: device | timeout | agent_gone | serve_stop | estop | no_device."""
+    rec = {"ts": int(time.time()), "kind": "question", "id": qid, "channel": st.config()["channel"], "agent": agent,
+           "q_sha256": q_sha256, "decision": decision, "reason": reason, "picks": picks, "device": device,
+           "sk": wire.b64u(sign_pub) if sign_pub else None, "sig": wire.b64u(sig) if sig else None}
+    st.append_private(st.approvals_path, json.dumps(rec, ensure_ascii=False))
+    return rec
+
+
 def read_log(st) -> list[dict]:
     try:
         lines = st.approvals_path.read_text().splitlines()
@@ -104,6 +214,23 @@ def check_record(st, r: dict, index: dict | None = None) -> str:
     'bad' (signature does not verify / key differs from the paired device's) · 'unsigned' (a host-side decision:
     timeout, no device, serve stopped — these never carry a signature) · for an automatic batch approval: 'auto' when the
     allow_batch line it names (index: id → record) verifies and covers the same tool, else 'bad'."""
+    if r.get("kind") == "question":
+        if r.get("reason") != "device":
+            return "unsigned"
+        try:
+            sk, sig = wire.unb64u(r.get("sk") or ""), wire.unb64u(r.get("sig") or "")
+        except ValueError:
+            return "bad"
+        msg = (f"{Q_CONTEXT}\n{r.get('channel')}\n{r.get('device')}\n{r.get('id')}\n{r.get('decision')}\n"
+               f"{r.get('q_sha256')}\n{r.get('picks')}").encode()
+        try:
+            if len(sk) != 32 or len(sig) != 64 or r.get("decision") not in Q_ACTIONS:
+                return "bad"
+            Ed25519PublicKey.from_public_bytes(sk).verify(sig, msg)
+        except (InvalidSignature, ValueError):
+            return "bad"
+        cur = st.sign_key(str(r.get("device")))
+        return "ok_removed" if cur is None else ("ok" if cur == sk else "bad")
     if r.get("reason") == "batch":
         g = (index or {}).get(str(r.get("grant")))
         if not g or g.get("decision") != "allow_batch" or g.get("tool") != r.get("tool") or g.get("device") != r.get("device"):
