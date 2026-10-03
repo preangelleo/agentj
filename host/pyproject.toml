@@ -1,7 +1,7 @@
 [project]
 name = "agentj"
 dynamic = ["version"]            # single source: agentj/__init__.py (`agentj --version`)
-description = "Agent J host CLI `agentj` (alpha): talk to your own Claude Code / Codex from your phone, end-to-end encrypted over a blind relay"
+description = "Agent J on your computer (`agentj`): talk to your own Claude Code, Codex or OpenCode from your phone, end-to-end encrypted"
 requires-python = ">=3.11"       # tested on 3.11 and 3.13; uv fetches an interpreter by itself when the system one is older
 license = "Apache-2.0"
 dependencies = [

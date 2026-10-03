@@ -92,9 +92,9 @@ def rename(st, raw, *, post=None) -> dict:
 RENAME_MESSAGES = {
     "name_required": "名字不能是空的",
     "bad_name": "名字不合规：1–32 个字，不能有控制字符、不可见字符或换行（首尾空格会去掉，连续空格合成一个）",
-    "name_taken": "公司里已经有叫这个名字的 Agent 了",
-    "unreachable": "连不上 Dashboard，名字没改",
-    "not_bound": "Dashboard 那边已经解绑本机，名字没改（`agentj unlink` 清掉本地绑定记录后，可以只改本机的名字）",
+    "name_taken": "这个账号里已经有叫这个名字的 Agent 了",
+    "unreachable": "连不上账号后台，名字没改",
+    "not_bound": "账号后台那边已经把这台电脑移除了，名字没改（运行 `agentj unlink` 清掉这台电脑上的账号记录后，可以只改这台电脑上的名字）",
     "rate_limited": "改名太频繁（每小时最多 20 次），名字没改，稍后再试",
-    "failed": "Dashboard 拒绝了这次改名，名字没改",
+    "failed": "账号后台没接受这次改名，名字没改",
 }

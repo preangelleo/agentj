@@ -2,7 +2,7 @@
 export default {
   "v": 1,
   "algo": "sha256",
-  "combined": "a7cc53ba86c255c2eee2f61f5d9a64a92a8a0c39c05cb4b8304869b55f62b77a",
+  "combined": "6c88b1cae5089ccccb2e231734d6a6fa153482cda6618f10c20658a2414c27fe",
   "files": {
     "app.css": "c795e988118e409fd46032d719980be228574908bd20fa3e075a7a10e481df7f",
     "app.js": "dffc5ed512d5c502599d798fcd36eccbb6902d987d4b2bbf2f853388175ff903",
@@ -35,8 +35,8 @@ export default {
     "brand/palette.css": "29a3e3ef6648f4e4f005e5deff69a8ed352def6f6bcbd134c492b3f55f93c6aa",
     "brand/ui.js": "292c5affb2e94a011eaa3acfb11ad433919f2c3d0d623140500e27abf45c7fec",
     "favicon.ico": "67e0e85f193865bc45808c000f238f852c07b0c7c8a424f525052e68c83cc65c",
-    "i18n.js": "43053749178908b17b06e917d4008898ea023c84dfb0d33cf4aafa199013670e",
-    "index.html": "b52035c0448537cc71339d0670e9fe5a0c7d48a584d6ca1bd734e248b791dca2",
+    "i18n.js": "cda2795eb183562b213c09bfc3c9a9cd1c900f8a50e007311bb343584bdf85d5",
+    "index.html": "8eac06076d8c45222bddebc367cf784f38be30e7b6b74606aba8d35f768887a1",
     "manifest.webmanifest": "ea4604db0bd62d36fe27229acf34a4ed4e770cc550221641ac5e2a86546fa40d",
     "proto/noise.js": "800c4cc56d5cc1cc012a3701c5d0851a87bfc2fe5397aa34f05f58992b96d365",
     "proto/wire.js": "779132d4becb6c34a637964329a25d03e8acb7053312f5cf3b33a3cb3f1e7537",

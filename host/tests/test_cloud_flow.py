@@ -62,10 +62,10 @@ class Flow(unittest.TestCase):
         with FakeCP(interval=4, bound_after=2) as cp:
             r = self.agentj("login", "--api", cp.url, env={"AGENTJ_APP_URL": cp.url}, input="y\n")
             self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
-            self.assertIn(f"本机通道号：{self.st.config()['channel']} — Dashboard 里显示的应该一样", r.stdout)
+            self.assertIn(f"这台电脑的通道号：{self.st.config()['channel']}（账号后台里显示的应该一样）", r.stdout)
             self.assertIn("BCDF-2345", r.stdout)
             self.assertIn(cp.url + "/link", r.stdout, "the server's URI is shown: it is on the configured Dashboard origin")
-            self.assertIn("添加到公司账号 acme-co（Acme [2J Co）？[y/N]", r.stdout)
+            self.assertIn("加到 Agent J 账号 acme-co（Acme [2J Co）？[y/N]", r.stdout)
             self.assertIn("acme-co", r.stdout)
             self.assertNotIn("\x1b", r.stdout)
             gaps = [b - a for a, b in zip(cp.poll_times, cp.poll_times[1:])]
@@ -79,7 +79,7 @@ class Flow(unittest.TestCase):
             self.assertEqual(os.stat(self.st.cloud_path).st_mode & 0o777, 0o600)
             self.assertEqual(len(cp.reports), 1, "login sends a first report")
 
-            again = self.agentj("login", "--api", cp.url, "--yes")
+            again = self.agentj("login", "--api", cp.url, "--yes", "--account", "acme-co")
             self.assertNotEqual(again.returncode, 0)
             self.assertIn("agentj unlink", again.stderr)
 
@@ -89,7 +89,7 @@ class Flow(unittest.TestCase):
             self.assertEqual(rep["devices"], [{"id": did, "name": "Leo 的手机", "paired_at": rep["devices"][0]["paired_at"],
                                                "online": False}])
             self.assertEqual(rep["pending"], {"count": 0, "since": None})
-            self.assertEqual(rep["agent"], "agentj/0.10.0a1")
+            self.assertEqual(rep["agent"], "agentj/0.10.1a1")
             self.assertGreater(rep["seq"], cp.reports[0]["seq"])
             self.assertEqual(cp.rejected, [])
             self.assertIn("acme-co", self.agentj("devices").stdout)
@@ -98,7 +98,7 @@ class Flow(unittest.TestCase):
             r = self.agentj("unlink")
             self.assertEqual(r.returncode, 0)
             self.assertFalse(self.st.cloud_path.exists())
-            self.assertIn("未绑定 Dashboard", self.agentj("status").stdout)
+            self.assertIn("Agent J 账号：还没加入", self.agentj("status").stdout)
             self.assertNotEqual(self.agentj("report").returncode, 0)
         text = self.st.log_path.read_text()
         self.assertNotIn("BCDF-2345", text)
@@ -111,22 +111,22 @@ class Flow(unittest.TestCase):
             with FakeCP(interval=4, bound_after=1) as cp:
                 r = self.agentj("login", "--api", cp.url, input=answer)
                 self.assertNotEqual(r.returncode, 0, answer)
-                self.assertIn("添加到公司账号 acme-co", r.stdout)
-                self.assertIn("本机什么都没写", r.stderr)
-                self.assertIn("解绑本机", r.stderr)
+                self.assertIn("加到 Agent J 账号 acme-co", r.stdout)
+                self.assertIn("这台电脑什么都没写", r.stderr)
+                self.assertIn("把这台电脑移除", r.stderr)
                 self.assertFalse(self.st.cloud_path.exists(), answer)
                 self.assertEqual(cp.reports, [], "nothing reported")
         self.assertEqual(self.st.devices_path.read_bytes(), before)
         self.assertNotIn("cloud_linked", self.st.log_path.read_text())
 
     def test_login_yes_flag_and_foreign_verification_uri(self):
-        """--yes for scripts; F7: a verification_uri off the configured Dashboard origin is not printed."""
+        """--yes (with --account) for scripts; F7: a verification_uri off the configured Dashboard origin is not printed."""
         with FakeCP(interval=4, bound_after=1) as cp:
-            r = self.agentj("login", "--api", cp.url, "--yes", env={"AGENTJ_APP_URL": "https://agentj.app/account"})
+            r = self.agentj("login", "--api", cp.url, "--yes", "--account", "acme-co", env={"AGENTJ_APP_URL": "https://agentj.app/account"})
             self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
-            self.assertIn("在已登录的 Dashboard 里打开 https://agentj.app/account/\n", r.stdout)
+            self.assertIn("在已登录的账号后台里打开 https://agentj.app/account/\n", r.stdout)
             self.assertNotIn(cp.url, r.stdout)
-            self.assertIn("y（--yes）", r.stdout)
+            self.assertIn("y（--yes --account）", r.stdout)
             self.assertTrue(self.st.cloud_path.exists())
 
     def test_already_bound_login(self):
@@ -134,7 +134,7 @@ class Flow(unittest.TestCase):
             cp.login_mode = "already_bound"
             r = self.agentj("login", env={"AGENTJ_API_URL": cp.url})
             self.assertNotEqual(r.returncode, 0)
-            self.assertIn("先在 Dashboard 里解绑本机", r.stderr)
+            self.assertIn("先在账号后台把它移除", r.stderr)
             self.assertFalse(self.st.cloud_path.exists())
 
     def test_login_refuses_plain_http_to_a_remote_host(self):
@@ -158,7 +158,7 @@ class Flow(unittest.TestCase):
             cp.script = ["unbound"]
             r = self.agentj("report")
             self.assertNotEqual(r.returncode, 0)
-            self.assertIn("not_bound", r.stderr)
+            self.assertIn("已经把这台电脑移除了", r.stderr)
             self.assertTrue(any(e["ev"] == "report_unbound" for e in self.log()))
             self.assertTrue(self.st.cloud_path.exists())
 

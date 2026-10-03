@@ -1,5 +1,5 @@
 """`agentj feedback` + the two-layer privacy gate (seat-setup CONTRACT §6). Offline: layer 2 and our API are fakes.
-Run: host/.venv/bin/python -m unittest discover -s host/tests -p test_feedback.py
+Run (in host/): .venv/bin/python -m unittest discover -s tests -p test_feedback.py
 """
 import _hermetic  # noqa: F401,I001  (never the real ~/.local/state; see _hermetic.py)
 import contextlib

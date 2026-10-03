@@ -12,36 +12,52 @@ from anywhere.
 - Phone and computer talk **end-to-end encrypted** (Noise protocol) through a blind relay that only forwards ciphertext.
 - When the agent asks for permission, your phone shows a card; every decision is signed by the phone and logged on your
   computer. No answer in 120 seconds = denied.
-- The agent runs with your own login, settings and permission rules; on Linux it runs fenced (bubblewrap) so it cannot
-  see or change Agent J's keys or the list of paired phones.
+- The agent runs with your own login, settings and permission rules, inside a fence so it cannot see or change Agent J's
+  keys or the list of paired phones: bubblewrap on Linux, the built-in `sandbox-exec` on macOS.
 
 **Zero access is the product rule:** our servers never hold a key that can read your messages, your agent's replies or
-your credentials. What we can and cannot see — and what is not done yet — is listed honestly, item by item, at
+your credentials. What we can and cannot see, and what is not done yet, is listed item by item at
 <https://agentj.app/security/>.
 
 ## Install
 
-Tell your AI agent: **"read https://agentj.app/install.md and do it"** — it installs, sets up and stops
-for you at every step only a human can do. [`install.md`](install.md) in this repository is the same file, byte for byte;
-the site publishes its SHA-256 at <https://agentj.app/install.md.sha256>.
+The real guide is <https://agentj.app/install.md>. Tell your AI agent: **"read https://agentj.app/install.md and do it"**.
+It installs, sets up and stops for you at every step only a human can do. [`install.md`](install.md) in this repository
+is the same file, byte for byte; the site publishes its SHA-256 at <https://agentj.app/install.md.sha256>.
 
-The host CLI on its own:
+The host program on its own, pinned to the release tag (Python 3.11 or newer; if yours is older, uv fetches one):
 ```bash
-uv tool install "git+https://github.com/preangelleo/agentj#subdirectory=host"
+uv tool install "git+https://github.com/preangelleo/agentj@v0.10.1a1#subdirectory=host"
 agentj --version
 ```
+
+Phone: <https://m.agentj.app> · your account (seats, billing): <https://agentj.app/account>
+
+## Check what you installed
+
+Every release is a git tag (`v<version>`), and the same code is published on our site as a wheel and a source archive.
+Their SHA-256 values are in two places: next to the files on the site, and in the front matter of `install.md`
+(`host_wheel_sha256`, `host_sdist_sha256`). Since `install.md` here must equal the site's copy byte for byte, the hashes in
+this repository and on the site have to agree.
+```bash
+W=$(curl -fsSL https://agentj.app/dl/latest.txt)          # the wheel; latest-sdist.txt names the source archive
+curl -fsSLO "https://agentj.app/dl/$W" && curl -fsSLO "https://agentj.app/dl/$W.sha256"
+sha256sum -c "$W.sha256"                                  # macOS: shasum -a 256 -c "$W.sha256"   → OK
+grep "^host_wheel_sha256:" install.md                     # the same value, from this repository
+```
+There are no publisher signatures yet.
 
 ## What is here
 
 | Path | What |
 |---|---|
 | `protocol/` | wire spec (`PROTOCOL.md`), the shared JavaScript Noise implementation, official test vectors |
-| `host/` | the host CLI `agentj` (Python 3.13): pairing, relay connection, agent bridge, approvals, fence |
+| `host/` | the host CLI `agentj` (Python ≥ 3.11): pairing, relay connection, agent bridge, approvals, fence |
 | `web/` | the phone web client (static, no dependencies) and its Cloudflare Worker |
 | `tools/sim-phone/` | a simulated phone for test environments without a real phone: headless Chromium running the real web client; it never bypasses pairing |
 | `install.md` | the instructions an AI agent follows to install Agent J |
 
-The relay, the Dashboard (accounts and billing) and the website are not in this repository.
+The relay, the account dashboard and the website are not in this repository.
 
 ## Tests
 
@@ -55,12 +71,12 @@ client's badge panel at <https://m.agentj.app>.
 
 ## Status
 
-**Alpha** — invite-only by word of mouth, not promoted, pages not indexed. Expect breaking changes. Not yet: signed
-releases, a release log, native apps, Windows (use WSL2), the macOS fence.
+**Beta.** Anyone can sign up; not advertised yet, pages not indexed. Expect breaking changes. Not yet: signed releases, a release
+log, native apps, Windows (use WSL2).
 
 ## Security
 
-Please report vulnerabilities privately — see [SECURITY.md](SECURITY.md).
+Please report vulnerabilities privately; see [SECURITY.md](SECURITY.md).
 
 ## License
 

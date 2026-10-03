@@ -1,4 +1,3 @@
 {
-  "badge.verify": "源码公开后可以这样核对：在公开源码的根目录运行 `node web/build.mjs --print-hash`，和公开发布记录里的哈希比对；再把手机上实际加载的每个文件下载下来，和 `version.json` 里的哈希逐个比对。只有你自己算出来的才算数。",
   "tasks.next": " · 下次 {at}"
 }

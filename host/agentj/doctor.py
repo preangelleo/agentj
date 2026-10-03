@@ -142,7 +142,7 @@ def check_relay(st: State) -> dict:
     if ok:
         return _c("relay", OK, f"{relay} (TLS + WebSocket)")
     return _c("relay", FAIL, f"{relay} 连不上 / unreachable ({why})",
-              "检查网络 / 代理（HTTPS_PROXY）；公司防火墙要放行 wss:// / check network, proxy, firewall (wss://)")
+              "检查网络和代理（HTTPS_PROXY）；有防火墙的话要放行 wss:// / check network, proxy, firewall (wss://)")
 
 
 def _http(url: str, data: bytes | None, timeout: float) -> int:
@@ -162,21 +162,21 @@ def check_dashboard(st: State) -> dict:
     try:
         api, app = cloud.api_url(st), cloud.app_url(st)
     except cloud.CloudError:
-        return _c("dashboard", FAIL, "API / Dashboard 地址不是 https:// / not https://", "检查 config.json / AGENTJ_API_URL")
+        return _c("dashboard", FAIL, "服务器 / 账号后台地址不是 https:// / not https://", "检查 config.json / AGENTJ_API_URL")
     try:
         code = _http(api.rstrip("/") + "/v1/host/poll", b"{}", NET_TIMEOUT)
     except Exception as e:  # noqa: BLE001
         return _c("dashboard", FAIL, f"{api} 连不上 / unreachable ({type(e).__name__})", "检查网络 / 代理 / check network, proxy")
     if code != 400:
         return _c("dashboard", FAIL, f"{api} 答复异常 / unexpected answer (HTTP {code})",
-                  "控制面暂时不可用，稍后再试 / control plane unavailable, retry later")
+                  "Agent J 服务器暂时不可用，稍后再试 / the Agent J server is unavailable, retry later")
     try:
         app_code = _http(app, None, NET_TIMEOUT)
     except Exception as e:  # noqa: BLE001
-        return _c("dashboard", WARN, f"API ok · Dashboard {app} 连不上 / unreachable ({type(e).__name__})", "")
+        return _c("dashboard", WARN, f"服务器 ok · 账号后台 {app} 连不上 / account dashboard unreachable ({type(e).__name__})", "")
     if app_code >= 500:
-        return _c("dashboard", WARN, f"API ok · Dashboard {app} HTTP {app_code}", "")
-    return _c("dashboard", OK, f"API {api} · Dashboard {app}")
+        return _c("dashboard", WARN, f"服务器 ok · 账号后台 / account dashboard {app} HTTP {app_code}", "")
+    return _c("dashboard", OK, f"服务器 / server {api} · 账号后台 / account dashboard {app}")
 
 
 AGENT_LABEL = {"claude": "Claude Code", "codex": "Codex", "opencode": "OpenCode"}
@@ -350,9 +350,9 @@ def check_harness() -> dict:
 def check_bound(st: State) -> dict:
     link = cloud.read_cloud(st) if st.exists() else None
     if link:
-        via = "席位设置码 / via seat setup" if link["via"] == "seat" else "8 位代码 / via code"
-        return _c("bound", OK, f"Dashboard 公司账号 / company {link['tenant']['slug']} · {via}")
-    return _c("bound", WARN, "未绑定 Dashboard / not bound", "agentj login")
+        via = "用设置码加入 / joined with a setup code" if link["via"] == "seat" else "用 8 位代码加入 / joined with the 8-character code"
+        return _c("bound", OK, f"Agent J 账号 / Agent J account {link['tenant']['slug']} · {via}")
+    return _c("bound", WARN, "还没加到 Agent J 账号 / not in an Agent J account yet", "agentj login")
 
 
 def check_serve(st: State) -> dict:
@@ -485,15 +485,15 @@ def check_update(offline: bool = False) -> dict:
     r = update.check(timeout=NET_TIMEOUT)
     if r["status"] == "newer":
         return _c("update", WARN, f"有新版本 / newer version {r['latest']} (installed {r['current']})",
-                  "人在终端运行 / the human runs: agentj update apply")
+                  "告诉主人，由他在终端运行 / tell your human; they run: agentj update apply")
     if r["status"] == "current":
         return _c("update", OK, f"已是最新 / up to date ({r['current']})")
     if r["status"] == "ahead":
-        return _c("update", OK, f"比发布版新 / ahead of the release ({r['current']} > {r['latest']})")
+        return _c("update", OK, f"比公开仓库最新的发布版还新，不用管 / ahead of the newest public release, nothing to do ({r['current']} > {r['latest']})")
     if r["why"] == "off":
         return _c("update", WARN, "不检查 / check disabled (AGENTJ_UPDATE_URL=off)")
     return _c("update", WARN, f"查不到最新版本 / could not check ({r['why']})",
-              "离线或 GitHub 不通：不影响使用 / offline or GitHub unreachable: agentj still works")
+              "不是错误：多半是没网或 GitHub 连不上，不影响使用 / not an error: offline or GitHub unreachable; agentj still works")
 
 
 def run(st: State | None = None, offline: bool = False) -> list[dict]:

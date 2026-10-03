@@ -39,8 +39,8 @@ REQUEST_DEADLINE = 10              # headers + body must have arrived within thi
 MAX_BODY = 4096
 PAIR_WAIT = 8                      # how long a POST waits for serve's answer to a code / unbind (s)
 ASSET_DIR = pathlib.Path(__file__).resolve().parent / "admin"
-# Static files carry no data and need no session. The brand files under admin/brand/ are a byte copy of agentjarvis/brand
-# (`node agentjarvis/brand/sync.mjs host/agentj/admin --set admin`; a test runs it with --check). Only
+# Static files carry no data and need no session. The brand files under admin/brand/ are a byte copy of the shared brand
+# kit (its sync script with `--set admin` writes them; a test runs it with --check). Only
 # these types are ever served, from a map built once at import — a request path is looked up, never joined onto a directory.
 BRAND_TYPES = {".css": "text/css; charset=utf-8", ".js": "text/javascript; charset=utf-8", ".woff2": "font/woff2",
                ".png": "image/png", ".webp": "image/webp"}

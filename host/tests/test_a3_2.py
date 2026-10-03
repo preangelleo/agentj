@@ -266,7 +266,7 @@ class ControlPlane(unittest.TestCase):
             rep = cp.reports[-1]
             self.assertEqual(rep["agent_name"], "Wren")
             self.assertEqual(rep["machine"], text.machine_name())
-            self.assertEqual(rep["agent"], "agentj/0.10.0a1")
+            self.assertEqual(rep["agent"], "agentj/0.10.1a1")
 
     def test_rename_signed_and_answers_whitelisted(self):
         with FakeCP() as cp:
@@ -401,14 +401,14 @@ class Cli(unittest.TestCase):
         self.assertEqual(r.returncode, 0)
         self.assertFalse(self.st.report_machine())
         with FakeCP(interval=4, bound_after=1) as cp:
-            r = self.agentj("login", "--api", cp.url, "--yes", env={"AGENTJ_APP_URL": cp.url})
-            self.assertIn("本机不上报主机名", r.stdout)
+            r = self.agentj("login", "--api", cp.url, "--yes", "--account", "acme-co", env={"AGENTJ_APP_URL": cp.url})
+            self.assertIn("账号后台不显示这台电脑的名字", r.stdout)
             self.assertIsNone(cp.reports[-1]["machine"])
         self.agentj("unlink")
         self.agentj("report-hostname", "on")
         with FakeCP(interval=4, bound_after=1) as cp:
-            r = self.agentj("login", "--api", cp.url, "--yes", env={"AGENTJ_APP_URL": cp.url})
-            self.assertIn("会上报本机主机名", r.stdout)
+            r = self.agentj("login", "--api", cp.url, "--yes", "--account", "acme-co", env={"AGENTJ_APP_URL": cp.url})
+            self.assertIn("账号后台会显示这台电脑的名字", r.stdout)
             self.assertIn("agentj report-hostname off", r.stdout)
             self.assertEqual(cp.reports[-1]["machine"], text.machine_name())
 
@@ -458,7 +458,7 @@ class Cli(unittest.TestCase):
             self.assertEqual(r.returncode, 0, r.stderr)
             self.assertEqual(cp.renames[-1]["name"], "Nova")
             self.assertEqual(self.st.agent_name(), "Nova")
-            self.assertIn("Dashboard 和本机都已改好", r.stdout)
+            self.assertIn("账号后台和这台电脑都改好了", r.stdout)
             self.assertTrue(any(rep.get("agent_name") == "Nova" for rep in cp.reports), "a report acknowledges the new name")
             r = self.agentj("name", "wren")
             self.assertNotEqual(r.returncode, 0)
@@ -471,7 +471,7 @@ class Cli(unittest.TestCase):
             self.assertEqual(self.st.agent_name(), "Nova")
         r = self.agentj("name", "Orion")   # control plane gone
         self.assertNotEqual(r.returncode, 0)
-        self.assertIn("连不上 Dashboard，名字没改", r.stderr)
+        self.assertIn("连不上账号后台，名字没改", r.stderr)
         self.assertEqual(self.st.agent_name(), "Nova")
 
     def test_login_confirm_shows_and_sets_the_agent_name(self):
@@ -479,7 +479,7 @@ class Cli(unittest.TestCase):
             cp.bound_name = "助理一号"
             r = self.agentj("login", "--api", cp.url, input="n\n", env={"AGENTJ_APP_URL": cp.url})
             self.assertNotEqual(r.returncode, 0)
-            self.assertIn("添加到公司账号 acme-co（Acme [2J Co），Agent 名「助理一号」？[y/N]", r.stdout)
+            self.assertIn("加到 Agent J 账号 acme-co（Acme [2J Co），Agent 名「助理一号」？[y/N]", r.stdout)
             self.assertIsNone(self.st.agent_name(), "N writes nothing — not the name either")
             self.assertFalse(self.st.cloud_path.exists())
         with FakeCP(interval=4, bound_after=1) as cp:
@@ -493,10 +493,68 @@ class Cli(unittest.TestCase):
     def test_login_with_a_bad_bound_name_keeps_the_old_prompt(self):
         with FakeCP(interval=4, bound_after=1) as cp:
             cp.bound_name = "bad\u202ename"
-            r = self.agentj("login", "--api", cp.url, "--yes", env={"AGENTJ_APP_URL": cp.url})
+            r = self.agentj("login", "--api", cp.url, "--yes", "--account", "acme-co", env={"AGENTJ_APP_URL": cp.url})
             self.assertEqual(r.returncode, 0, r.stderr)
-            self.assertIn("添加到公司账号 acme-co（Acme [2J Co）？[y/N] y", r.stdout)
+            self.assertIn("加到 Agent J 账号 acme-co（Acme [2J Co）？[y/N] y（--yes --account）", r.stdout)
             self.assertIsNone(self.st.agent_name())
+
+    def test_pair_without_serve_fails_fast_with_what_to_do(self):
+        """S-10 (PROMPT-29): no running serve → one plain message (service install / status), before any prompt."""
+        for args in (("pair",), ("pair", "--link"), ("pair", "--no-qr")):
+            r = self.agentj(*args)
+            self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
+            self.assertIn("agentj service install", r.stderr)
+            self.assertIn("agentj service status", r.stderr)
+            self.assertNotIn("批准口令", r.stdout + r.stderr, "no passphrase question before the serve check")
+        lsock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)     # a socket that never answers = busy, not "not running"
+        lsock.bind(str(self.st.sock_path))
+        lsock.listen(8)
+        try:
+            r = self.agentj("pair", "--link")
+            self.assertEqual(r.returncode, 1)
+            self.assertIn("没有响应", r.stderr)
+        finally:
+            lsock.close()
+            os.unlink(self.st.sock_path)
+
+    def test_login_yes_needs_the_matching_account(self):
+        """C-10 (PROMPT-29): --yes is hidden, only valid with --account, and a different account binds nothing."""
+        r = self.agentj("login", "--help")
+        self.assertNotIn("--yes", r.stdout)
+        self.assertIn("--account", r.stdout)
+        with FakeCP(interval=4, bound_after=1) as cp:
+            r = self.agentj("login", "--api", cp.url, "--yes", env={"AGENTJ_APP_URL": cp.url})
+            self.assertEqual(r.returncode, 2, r.stdout + r.stderr)
+            self.assertIn("--yes 只能和 --account", r.stderr)
+            self.assertIn("--yes works only together with --account", r.stderr)
+            self.assertEqual(cp.logins, {}, "refused before anything was sent")
+            r = self.agentj("login", "--api", cp.url, "--yes", "--account", "Not_An_ID", env={"AGENTJ_APP_URL": cp.url})
+            self.assertEqual(r.returncode, 2)
+            self.assertEqual(cp.logins, {})
+            r = self.agentj("login", "--seat-file", "/nonexistent", "--name", "x", "--yes", "--account", "acme-co",
+                            env={"AGENTJ_APP_URL": cp.url})
+            self.assertEqual(r.returncode, 2, "--account is for the code login only")
+        self.assertFalse(self.st.cloud_path.exists())
+        with FakeCP(interval=4, bound_after=1) as cp:
+            cp.bound_name = "助理一号"
+            r = self.agentj("login", "--api", cp.url, "--yes", "--account", "other-co", env={"AGENTJ_APP_URL": cp.url})
+            self.assertEqual(r.returncode, 2, r.stdout + r.stderr)
+            self.assertIn("acme-co", r.stderr)
+            self.assertIn("other-co", r.stderr)
+            self.assertIn("Nothing was written", r.stderr)
+            self.assertNotIn("[y/N]", r.stdout, "no prompt for an account that is not the named one")
+            self.assertFalse(self.st.cloud_path.exists(), "nothing bound")
+            self.assertIsNone(self.st.agent_name())
+            self.assertEqual(cp.reports, [])
+        with FakeCP(interval=4, bound_after=1) as cp:      # --account without --yes: still checked, then the human's y/N
+            r = self.agentj("login", "--api", cp.url, "--account", "other-co", input="y\n", env={"AGENTJ_APP_URL": cp.url})
+            self.assertEqual(r.returncode, 2)
+            self.assertFalse(self.st.cloud_path.exists())
+        with FakeCP(interval=4, bound_after=1) as cp:
+            r = self.agentj("login", "--api", cp.url, "--account", "ACME-CO", input="y\n", env={"AGENTJ_APP_URL": cp.url})
+            self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+            self.assertIn("[y/N]", r.stdout)
+            self.assertTrue(self.st.cloud_path.exists())
 
 
 # ------------------------------------------------------------------ §4 the page: admission and request checks
@@ -612,7 +670,7 @@ class Page(unittest.TestCase):
         self.assertEqual(st["agent_name"], "Wren")
         self.assertEqual(set(st), {"agent_name", "machine", "channel", "version", "serve", "dashboard", "remote_unbind", "limit",
                                    "devices", "pairing", "passphrase_set"})
-        self.assertEqual((st["limit"], st["version"], st["serve"]["running"]), (5, "0.10.0a1", False))
+        self.assertEqual((st["limit"], st["version"], st["serve"]["running"]), (5, "0.10.1a1", False))
         for bad in (auth.replace("Bearer ", "bearer "), auth + "x", "Basic " + auth[7:], auth[7:]):
             self.assertEqual(self.state_status(bad), 404, bad)
         r, _ = self.req("GET", "/api/state", headers={"Cookie": f"aj_admin_{self.port}={auth[7:]}"})
@@ -870,8 +928,8 @@ class Page(unittest.TestCase):
                          [f"https://agentj.app/{p}/" for p in ("contact", "docs", "privacy", "security")])
         zh = json.loads((admin.ASSET_DIR / "i18n/admin.zh.json").read_text())
         words = "\n".join(zh.values())
-        for needle in ("建议一个员工用一个 Agent", "一个 Agent 就是一个计费席位，只能运行在一台电脑或服务器上。它的名字只是个标签，就像给宠物起名，叫什么都行。",
-                       "127.0.0.1", "agentj pair", "看着手机，输入手机上的 6 位码", "显示链接", "从公司后台解绑", "给这个 Agent 起个名字",
+        for needle in ("建议一个人用一个 Agent", "一个 Agent 就是一个计费席位，只能运行在一台电脑或服务器上。它的名字只是个标签，就像给宠物起名，叫什么都行。",
+                       "127.0.0.1", "agentj pair", "看着手机，输入手机上的 6 位码", "显示链接", "从账号后台解绑", "给这个 Agent 起个名字",
                        "6 位码只显示在手机上，这个页面永远不会显示它", "正在添加手机遥控器", "只在这台电脑上能打开"):
             self.assertIn(needle, words, needle)
         for needle in ("history.replaceState", "sessionStorage", "Authorization", "/api/session/end", "review A32-04"):

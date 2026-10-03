@@ -32,6 +32,15 @@ from .envcompat import getenv
 
 REPO = "https://github.com/preangelleo/agentj"
 SPEC = f"git+{REPO}#subdirectory=host"
+
+
+def spec_at(version: str | None) -> str:
+    """The install spec pinned to the public export's tag `v<version>` (0.10.1+: every export is tagged). A copy installed
+    from a pinned tag (or from our site's wheel) would not move with `uv tool upgrade`, so the upgrade names the new tag.
+    Unknown / unparsable version → the unpinned `main` spec."""
+    if version and parse(version) is not None:
+        return f"git+{REPO}@v{version}#subdirectory=host"
+    return SPEC
 LATEST_URL = "https://raw.githubusercontent.com/preangelleo/agentj/main/host/agentj/__init__.py"
 URL_ENV = "AGENTJ_UPDATE_URL"     # tests / mirrors; "off" disables every check
 TIMEOUT = 6
@@ -133,23 +142,27 @@ def install_kind(prefix: str | None = None) -> dict:
     return {"kind": "pip", "where": prefix, "legacy": False}
 
 
-def commands(info: dict) -> list[list[str]]:
-    """The upgrade, as argv lists run one after the other (stop at the first failure)."""
+def commands(info: dict, latest: str | None = None) -> list[list[str]]:
+    """The upgrade, as argv lists run one after the other (stop at the first failure). With `latest` known, uv / pipx / pip
+    install exactly the tag `v<latest>` (spec_at) — the version the check reported, also for a copy pinned to an older tag."""
     k = info["kind"]
+    pinned = spec_at(latest) if latest else None
     if k == "uv":
         uv = shutil.which("uv") or "uv"
         if info.get("legacy"):         # registered as agentjarvis-host: `upgrade` cannot rename a tool — reinstall it
-            return [[uv, "tool", "uninstall", LEGACY_DIST], [uv, "tool", "install", SPEC]]
+            return [[uv, "tool", "uninstall", LEGACY_DIST], [uv, "tool", "install", pinned or SPEC]]
+        if pinned:
+            return [[uv, "tool", "install", "--force", pinned]]
         return [[uv, "tool", "upgrade", DIST]]
     if k == "pipx":
         px = shutil.which("pipx") or "pipx"
         if info.get("legacy"):
-            return [[px, "uninstall", LEGACY_DIST], [px, "install", SPEC]]
-        return [[px, "install", "--force", info.get("spec") or SPEC]]
+            return [[px, "uninstall", LEGACY_DIST], [px, "install", pinned or SPEC]]
+        return [[px, "install", "--force", pinned or info.get("spec") or SPEC]]
     if k == "checkout":
         src = info["where"]
         return [["git", "-C", src, "pull", "--ff-only"], [shutil.which("uv") or "uv", "sync", "--project", src]]
-    return [[os.path.join(info["where"], "bin", "python"), "-m", "pip", "install", "--upgrade", SPEC]]
+    return [[os.path.join(info["where"], "bin", "python"), "-m", "pip", "install", "--upgrade", pinned or SPEC]]
 
 
 def new_argv(info: dict) -> list[str]:
@@ -163,8 +176,8 @@ def new_argv(info: dict) -> list[str]:
     return agentj_argv()
 
 
-def command_text(info: dict) -> str:
-    return " && ".join(shlex.join(c) for c in commands(info))
+def command_text(info: dict, latest: str | None = None) -> str:
+    return " && ".join(shlex.join(c) for c in commands(info, latest))
 
 
 def check(timeout: float = TIMEOUT) -> dict:
@@ -174,8 +187,26 @@ def check(timeout: float = TIMEOUT) -> dict:
     c = compare(latest, __version__) if latest else None
     status = "unknown" if c is None else {1: "newer", 0: "current", -1: "ahead"}[c]
     out = {"current": __version__, "latest": latest, "status": status, "why": why if status == "unknown" else "ok",
-           "install": info["kind"], "command": command_text(info)}
+           "install": info["kind"], "command": command_text(info, latest if status == "newer" else None)}
     return out
+
+
+# ------------------------------------------------------------------ what each status means, in plain words (C-10 / S-8)
+EXPLAIN = {
+    "newer": "有新版本。要升级，由主人自己在这台电脑的终端里运行 `agentj update apply`（它会先把命令给你看、问你确认，不会自动装）。"
+             "如果你是 AI 助手：把这件事告诉你的主人，由他来运行。/ A newer version is out. To upgrade, your human runs "
+             "`agentj update apply` in a terminal on this computer (it shows the command and asks first; nothing installs by "
+             "itself). If you are an AI assistant: tell your human; they run it.",
+    "current": "已经是最新版，不用做什么。/ Up to date. Nothing to do.",
+    "ahead": "这台电脑上的版本比公开仓库里最新的发布版还新。这不是错误，不用做什么：通常是从 agentj.app 下载安装的版本比 GitHub "
+             "上的副本先更新了。/ This computer runs a newer build than the public repo's newest release. Not an error, nothing "
+             "to do: usually it was installed from agentj.app before the GitHub copy caught up.",
+    "unknown": "这次没查到最新版本。这不是错误，不用做什么：多半是网络不通或 GitHub 暂时连不上，过一会儿再运行 `agentj update check` "
+               "就行。/ Could not check this time. Not an error, nothing to do: usually there is no network or GitHub could not "
+               "be reached; run `agentj update check` again later.",
+}
+WHY = {"off": "检查已关闭 / checking is switched off (AGENTJ_UPDATE_URL=off)", "network": "网络不通 / no network",
+       "unparsable": "看不懂返回的版本号 / the answer had no version"}
 
 
 # ------------------------------------------------------------------ daily check in `serve` (state: update.json, 0600)

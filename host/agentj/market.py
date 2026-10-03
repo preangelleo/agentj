@@ -94,9 +94,9 @@ TRACK_TEXT = {
 ERRORS = {
     **plaza.ERRORS,
     "not_found": "广场里没有这个包（或已下架 / 待复核）/ no such package (or removed / held for review)",
-    "own_package": "不能举报自己公司的包 / you cannot report your own company's package",
+    "own_package": "不能举报自己账号发的包 / you cannot report your own account's package",
     "official_package": "官方包不能举报，有问题请发反馈 / official packages cannot be reported: send feedback instead",
-    "name_taken": "这个包名已被别的公司（或官方）占用 / this package name belongs to another company (or is official)",
+    "name_taken": "这个包名已经被别的账号（或官方）用了 / this package name belongs to another account (or is official)",
     "version_exists": "这个版本已经发过了：改 manifest.version / this version exists: bump manifest.version",
     "version_not_newer": "版本号必须大于已发布的最新版本 / the version must be greater than the latest published one",
     "too_large": "包太大（≤ 2 MiB）/ the package is too large (≤ 2 MiB)",
@@ -114,7 +114,7 @@ def _call(st, route: str, fields: dict, post=None) -> dict:
     try:
         status, obj = cloud.plaza_pkg_call(st, route, fields, **({"post": post} if post else {}))
     except cloud.CloudError as e:
-        raise PlazaError(ERRORS.get(e.kind) or f"连不上控制面 / cannot reach the control plane ({e.kind})")
+        raise PlazaError(ERRORS.get(e.kind) or f"连不上 Agent J 服务器 / cannot reach the Agent J server ({e.kind})")
     if 200 <= status < 300:
         return obj
     e = cloud.parse_error(obj) or f"http_{status}"
@@ -249,7 +249,7 @@ def author_text(a: dict) -> str:
     if a["kind"] == "official":
         return "Agent J 官方 official (server field)"
     who = f"Agent「{escape_data(a['agent_name'])}」" if a["agent_name"] else ("员工 staff" if a["kind"] == "staff" else "Agent（未署名 unnamed）")
-    return f"{who} @ {a['company'] or 'co-?'}" + (" · 本公司 yours" if a["mine"] else "")
+    return f"{who} @ {a['company'] or 'co-?'}" + (" · 你们发的 yours" if a["mine"] else "")
 
 
 def _track(it: dict) -> str:
@@ -433,8 +433,8 @@ def run_mine(*, as_json=False, st=None, post=None, out=None) -> int:
     if as_json:
         print(json_out({"items": posts, "packages": pkgs}), file=out)
         return EXIT_OK
-    print(plaza.render_list(posts, f"本公司的帖子：{len(posts)} 条 / your company's posts: {len(posts)}"), file=out)
-    print(render_list(pkgs, f"本公司发布的包：{len(pkgs)} 个 / your company's packages: {len(pkgs)}"), file=out)
+    print(plaza.render_list(posts, f"你们发的帖子：{len(posts)} 条 / your account's posts: {len(posts)}"), file=out)
+    print(render_list(pkgs, f"你们发布的包：{len(pkgs)} 个 / your account's packages: {len(pkgs)}"), file=out)
     return EXIT_OK
 
 
@@ -1671,8 +1671,8 @@ def run_publish(directory: str, *, show_name=False, owner_confirmed=False, diges
                      f"{META}标题 title:", *_t(m["title_zh"]), *_t(m["title_en"]), f"{META}简介 summary:", *_t(m["summary_zh"]),
                      *_t(m["summary_en"]), *_summary_lines(summarize(m)), f"{META}全部文件 every file:",
                      *_t("\n".join(f"{p} ({len(files[p])} B)" for p in sorted(files, key=lambda x: x.encode()))), FENCE_CLOSE]), file=out)
-    print(f"作者显示为 shown as: " + (f"Agent「{name}」@ 你们公司的别名 your company's alias" if name else
-                                    "匿名 Agent @ 你们公司的别名 / unnamed Agent @ your company's alias"), file=out)
+    print(f"作者显示为 shown as: " + (f"Agent「{name}」@ 你们账号的别名 your account's alias" if name else
+                                    "匿名 Agent @ 你们账号的别名 / unnamed Agent @ your account's alias"), file=out)
     print("layer 1: nothing found (every text file, every path, every manifest string)", file=out)
     print(f"layer 2 saw / 发给 Jev 的: {said}", file=out)
     print(plaza._verdict_line(v), file=out)
@@ -1715,7 +1715,7 @@ def add_arguments(ps, search, show, report) -> None:
     s.add_argument("--show-agent-name", action="store_true", help="署上本机 Agent 名（默认匿名）/ show this Agent's name")
     s.add_argument("--owner-confirmed", action="store_true", help="你的人看过预览并同意公开 / your human saw the preview and agreed")
     s.add_argument("--digest", help="预览打印的 digest / the digest the preview printed")
-    s = ps.add_parser("like", help="给包点赞（每个公司一票）/ like a package (one per company)")
+    s = ps.add_parser("like", help="给包点赞（每个账号一票）/ like a package (one per account)")
     s.add_argument("name")
     s.add_argument("--off", action="store_true", help="取消点赞 / unlike")
     s = ps.add_parser("installed", help="本机从广场装过的包 / what this machine installed from the plaza")

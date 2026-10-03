@@ -103,7 +103,7 @@ class Versions(unittest.TestCase):
             self.assertIsNone(update.compare(bad, "0.8.0"))
 
     def test_version_is_this_round(self):
-        self.assertEqual(agentj.__version__, "0.10.0a1")
+        self.assertEqual(agentj.__version__, "0.10.1a1")
 
 
 class Fetch(unittest.TestCase):
@@ -214,6 +214,42 @@ class Apply(unittest.TestCase):
         res = _cli("update", "check", "--json", env={update.URL_ENV: _closed_port_url()})
         self.assertEqual(res.returncode, 0, "offline is not an error")
         self.assertEqual(json.loads(res.stdout)["status"], "unknown")
+        self.assertEqual(sorted(json.loads(res.stdout)), ["command", "current", "install", "latest", "status", "why"],
+                         "--json shape unchanged")
+
+    def test_check_explains_every_status_in_plain_words(self):
+        """S-8 / B-2 (PROMPT-29): newer → tell your human, they run apply; current / ahead / unknown → nothing to do."""
+        cases = [("9.9.9", "newer", ["tell your human", "agentj update apply"]),
+                 (agentj.__version__, "current", ["Up to date. Nothing to do."]),
+                 ("0.0.1", "ahead", ["Not an error, nothing to do", "newest public release is 0.0.1"])]
+        for ver, status, needles in cases:
+            with _Repo(_init_text(ver)) as r:
+                res = _cli("update", "check", env={update.URL_ENV: r.url})
+                self.assertEqual(res.returncode, 0)
+                self.assertIn(status, res.stdout)
+                for n in needles:
+                    self.assertIn(n, res.stdout, status)
+                if status != "newer":
+                    self.assertNotIn("it runs:", res.stdout, f"{status}: no upgrade command to act on")
+        res = _cli("update", "check", env={update.URL_ENV: _closed_port_url()})
+        self.assertEqual(res.returncode, 0)
+        for n in ("unknown", "Not an error, nothing to do", "no network"):
+            self.assertIn(n, res.stdout)
+
+    def test_upgrade_names_the_new_tag(self):
+        """A copy installed from a pinned tag (or our wheel) does not move with `uv tool upgrade`: install v<latest>."""
+        self.assertEqual(update.spec_at("0.10.2a1"), "git+https://github.com/preangelleo/agentj@v0.10.2a1#subdirectory=host")
+        self.assertEqual(update.spec_at("garbage"), update.SPEC)
+        uv = update.commands({"kind": "uv", "where": "/x", "legacy": False}, "0.10.2a1")
+        self.assertEqual(uv[0][1:], ["tool", "install", "--force", update.spec_at("0.10.2a1")])
+        self.assertEqual(update.commands({"kind": "uv", "where": "/x", "legacy": False})[0][1:], ["tool", "upgrade", "agentj"])
+        px = update.commands({"kind": "pipx", "where": "/x", "spec": "git+old@v0.10.1a1", "legacy": False}, "0.10.2a1")
+        self.assertEqual(px[0][-1], update.spec_at("0.10.2a1"))
+        self.assertEqual(update.commands({"kind": "pip", "where": "/x", "legacy": False}, "0.10.2a1")[0][-1],
+                         update.spec_at("0.10.2a1"))
+        with _Repo(_init_text("9.9.9")) as r, mock.patch.dict(os.environ, {update.URL_ENV: r.url}), \
+                mock.patch.object(update, "install_kind", return_value={"kind": "uv", "where": "/x", "legacy": False}):
+            self.assertIn("@v9.9.9#subdirectory=host", update.check(3)["command"])
 
 
 class Daily(unittest.TestCase):

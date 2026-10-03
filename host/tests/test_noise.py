@@ -1,5 +1,5 @@
 """Host Noise + wire: official vectors, noiseprotocol as an independent oracle, negative cases.
-Run: host/.venv/bin/python -m unittest discover -s host/tests
+Run (in host/): .venv/bin/python -m unittest discover -s tests
 """
 import _hermetic  # noqa: F401,I001  (never the real ~/.local/state; see _hermetic.py)
 import json

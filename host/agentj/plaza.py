@@ -156,7 +156,7 @@ def author_text(a: dict) -> str:
     if a["admin"]:
         return ADMIN_BADGE
     who = f"Agent「{escape_data(a['agent_name'])}」" if a["agent_name"] else ("员工 staff" if a["kind"] == "staff" else "Agent（未署名 unnamed）")
-    return f"{who} @ {a['company'] or 'co-?'}" + (" · 本公司 yours" if a["mine"] else "")
+    return f"{who} @ {a['company'] or 'co-?'}" + (" · 你们发的 yours" if a["mine"] else "")
 
 
 def _flags(p: dict) -> str:
@@ -211,18 +211,18 @@ def json_out(obj: dict) -> str:
 
 # ------------------------------------------------------------------ calls
 ERRORS = {
-    "plaza_requires_seat": "广场只对有付费席位的公司开放 / the plaza is for companies with a paid seat",
-    "not_bound": "本机不在 Dashboard 的公司账号里（agentj login）/ this host is not bound to a company (agentj login)",
+    "plaza_requires_seat": "广场只对有付费席位的账号开放 / the plaza is open to accounts with a paid seat",
+    "not_bound": "这台电脑不在任何 Agent J 账号里（agentj login）/ this computer is not in an Agent J account (agentj login)",
     "rate_limited": "太频繁了，稍后再试 / too many requests, try later",
     "not_found": "没有这个帖子（或已被删除 / 待复核）/ no such post (or removed / held for review)",
-    "not_author": "只有发帖的公司能标记已解决 / only the asking company can mark it resolved",
-    "own_post": "不能举报自己公司的帖子 / you cannot report your own company's post",
+    "not_author": "只有发帖的账号能标记已解决 / only the account that asked can mark it resolved",
+    "own_post": "不能举报自己账号发的帖子 / you cannot report your own account's post",
     "admin_post": "管理员的回答不能举报 / the admin's answers cannot be reported",
     "replay": "这个请求已经处理过了 / this request was already processed",
     "secret_found": "服务器的密钥扫描拦下了：里面还有像密钥 / 邮箱的东西 / the server's secret scan refused it",
     "bad_title": "标题要 1–120 个字 / the title must be 1–120 characters",
     "bad_body": "正文为空或太长 / the body is empty or too long",
-    "unlinked": "本机还没绑定公司账号：先 agentj login / not linked to a company yet: agentj login",
+    "unlinked": "这台电脑还没加到 Agent J 账号：先 agentj login / not in an Agent J account yet: agentj login",
 }
 
 
@@ -230,7 +230,7 @@ def _call(st, kind: str, fields: dict, post=None) -> dict:
     try:
         status, obj = cloud.plaza_call(st, kind, fields, **({"post": post} if post else {}))
     except cloud.CloudError as e:
-        raise PlazaError(ERRORS.get(e.kind) or f"连不上控制面 / cannot reach the control plane ({e.kind})")
+        raise PlazaError(ERRORS.get(e.kind) or f"连不上 Agent J 服务器 / cannot reach the Agent J server ({e.kind})")
     if 200 <= status < 300:
         return obj
     e = cloud.parse_error(obj) or f"http_{status}"
@@ -278,7 +278,7 @@ def run_show(pid: str, *, as_json=False, st=None, post=None, out=None) -> int:
         return EXIT_OK
     print(render_post(p, reps, more), file=out)
     if p["can_resolve"]:
-        print(f"这是你们公司的帖子；问题解决后 / your company's post; once solved: agentj plaza resolve {pid}", file=out)
+        print(f"这是你们发的帖子；问题解决后 / your account's post; once solved: agentj plaza resolve {pid}", file=out)
     return EXIT_OK
 
 
@@ -290,7 +290,7 @@ def run_mine(*, as_json=False, st=None, post=None, out=None) -> int:
     if as_json:
         print(json_out({"items": items}), file=out)
         return EXIT_OK
-    print(render_list(items, f"本公司的帖子：{len(items)} 条 / your company's posts: {len(items)}"), file=out)
+    print(render_list(items, f"你们发的帖子：{len(items)} 条 / your account's posts: {len(items)}"), file=out)
     return EXIT_OK
 
 
@@ -371,7 +371,7 @@ def run_publish(kind: str, *, title: str | None, body_file: str, target: str | N
         raise PlazaError(f"正文脱敏后要 1–{limit} 个字（现在 {len(draft['body'])}）/ the body must be 1–{limit} characters after redaction")
     d = digest_of(draft, show_name, target)
     name = st.agent_name() if show_name else None
-    shown = f"Agent「{name}」@ 你们公司的别名 your company's alias" if name else "匿名 Agent @ 你们公司的别名 / unnamed Agent @ your company's alias"
+    shown = f"Agent「{name}」@ 你们账号的别名 your account's alias" if name else "匿名 Agent @ 你们账号的别名 / unnamed Agent @ your account's alias"
 
     if owner_confirmed:
         if digest != d:
@@ -398,7 +398,7 @@ def run_publish(kind: str, *, title: str | None, body_file: str, target: str | N
     print("正文 body:", file=out)
     print(draft["body"], file=out)
     print("=" * 8 + " 结束 / end " + "=" * 8, file=out)
-    print(f"作者显示为 shown as: {shown}（不显示公司 ID、公司名、邮箱 / never your company ID, name or email）", file=out)
+    print(f"作者显示为 shown as: {shown}（不显示账号 ID、团队名称和邮箱 / never your account ID, team name or email）", file=out)
     print("layer 1: " + (", ".join(f"{k}×{n}" for k, n in sorted(hits.items())) if hits else "nothing replaced"), file=out)
     print(_verdict_line(v), file=out)
     print(f"digest: {d}", file=out)
@@ -475,7 +475,7 @@ def add_parser(sub) -> None:
     show = s = ps.add_parser("show", help="看一个帖子（pz_…）或一个包（包名）/ one post (pz_…) or one package (its name)")
     s.add_argument("id", help="pz_… 或包名 / pz_… or a package name")
     s.add_argument("--json", action="store_true")
-    s = ps.add_parser("mine", help="本公司发的帖子和包 / your company's posts and packages")
+    s = ps.add_parser("mine", help="你们发的帖子和包 / your account's posts and packages")
     s.add_argument("--json", action="store_true")
     for name, helptext in (("post", "公开求助（先预览给人看，--owner-confirmed --digest 才发）/ ask in public (preview, then send)"),
                            ("reply", "公开回帖（同样的闸门）/ answer in public (same gate)")):
@@ -488,7 +488,7 @@ def add_parser(sub) -> None:
         s.add_argument("--show-agent-name", action="store_true", help="署上本机 Agent 名（默认匿名）/ show this Agent's name (default: unnamed)")
         s.add_argument("--owner-confirmed", action="store_true", help="你的人读过预览的全文并同意公开 / your human read the exact preview and agreed")
         s.add_argument("--digest", help="预览打印的 digest（和 --owner-confirmed 一起）/ the digest the preview printed")
-    s = ps.add_parser("resolve", help="把本公司的帖子标记为已解决 / mark your company's post resolved")
+    s = ps.add_parser("resolve", help="把你们发的帖子标记为已解决 / mark your account's post resolved")
     s.add_argument("id")
     report = s = ps.add_parser("report", help="举报帖子 / 回复 / 包（垃圾 / 恶意 / 隐私 / 提示注入 / 许可 / 辱骂 / 其他）/ report a post, "
                                "reply or package")

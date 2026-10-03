@@ -91,13 +91,15 @@ class Dictionaries(unittest.TestCase):
             for p in g["banned_patterns_zh"]:
                 self.assertIsNone(re.search(p, text), where)
             self.assertNotRegex(text, r"(?i)dashboard(?! )|\bDashboard\b(?! ?(?:page|’|'s))" if where.startswith("zh") else r"$^",
-                                f"{where}: 公司后台, not Dashboard")
+                                f"{where}: 账号后台, not Dashboard")
             if where.startswith("zh"):
-                self.assertNotRegex(text, r"中继|安全码|智能体", f"{where}: TERMS.md wording")
+                self.assertNotRegex(text, r"中继|安全码|智能体|公司", f"{where}: TERMS.md wording (no 公司: 账号后台 / Agent J 账号)")
+            else:
+                self.assertNotRegex(text, r"(?i)\bcompan(y|ies)\b", f"{where}: account, not company")
 
     def test_fixed_terms_in_chinese(self):
         zh = "\n".join(_dicts()["zh"].values())
-        for term in ("Agent 管理页", "手机遥控器", "批准口令", "6 位码", "公司后台", "公司账号", "转发服务器", "电脑端程序", "席位"):
+        for term in ("Agent 管理页", "手机遥控器", "批准口令", "6 位码", "账号后台", "Agent J 账号", "转发服务器", "电脑端程序", "席位"):
             self.assertIn(term, zh)
 
 
@@ -167,7 +169,7 @@ class BrandCopy(unittest.TestCase):
     def test_brand_copy_is_current(self):
         r = subprocess.run(["node", str(BRAND / "sync.mjs"), str(PAGE), "--set", "admin", "--check"], capture_output=True,
                            text=True, timeout=60)
-        self.assertEqual(r.returncode, 0, "run: node agentjarvis/brand/sync.mjs host/agentj/admin --set admin\n"
+        self.assertEqual(r.returncode, 0, f"run: node {BRAND / 'sync.mjs'} {PAGE} --set admin\n"
                          + r.stdout + r.stderr)
 
 
@@ -176,8 +178,7 @@ class PolishedCopy(unittest.TestCase):
     def test_zh_json_matches_source_and_cache(self):
         r = subprocess.run([sys.executable, str(I18N / "polish.py"), "--check", str(PAGE / "i18n")], capture_output=True,
                            text=True, timeout=60)
-        self.assertEqual(r.returncode, 0, "run: python3 agentjarvis/i18n/polish.py --surface admin "
-                         "host/agentj/admin/i18n/\n" + r.stdout + r.stderr)
+        self.assertEqual(r.returncode, 0, f"run: python3 {I18N / 'polish.py'} --surface admin {PAGE / 'i18n'}\n" + r.stdout + r.stderr)
 
 
 if __name__ == "__main__":

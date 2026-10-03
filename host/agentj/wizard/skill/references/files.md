@@ -20,6 +20,9 @@ passwords or tokens anywhere — name services only.
 
 Write the entry file your harness reads (you are Claude Code → `CLAUDE.md`; Codex or OpenCode → `AGENTS.md`). If the
 human said they also use the other one, write both with the same body.
+Do not write the section between `<!-- agentj:docs-rule v1 -->` and `<!-- /agentj:docs-rule -->` ("Questions about Agent J
+itself" / 「关于 Agent J 本身的问题」) and do not copy it into staging: `agentj wizard apply` adds it to the entry file by itself.
+Follow it whenever your human asks about Agent J itself.
 
 Every `documentation/*.md` starts with this frontmatter (dates as YYYY-MM-DD; `stale_after` = today + 90 days for
 CONSTITUTION / IDENTITY / WORKFLOW / ROLES, + 180 for SOUL / MEMORY, + 14 for NEXT_SESSION):

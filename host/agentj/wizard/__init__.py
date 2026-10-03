@@ -42,7 +42,7 @@ import urllib.parse
 import urllib.request
 from pathlib import Path
 
-from .. import taskspec
+from .. import docsrule, taskspec
 from ..envcompat import getenv
 
 SKILL_NAME = "agentj-workflow-wizard"
@@ -301,7 +301,7 @@ def skill_files() -> dict[str, bytes]:
     return out
 
 
-def install(root: Path, harnesses: list[str]) -> list[dict]:
+def install(root: Path, harnesses: list[str], lang: str | None = None) -> list[dict]:
     files = {}
     for h in harnesses:
         for rel, data in skill_files().items():
@@ -311,8 +311,33 @@ def install(root: Path, harnesses: list[str]) -> list[dict]:
         m = read_manifest(root)
         m["harness"] = sorted(set(m.get("harness") or []) | set(harnesses))
         res += _remove_legacy_skill(root, m)
+        res += _ensure_docs_rule(root, m, sorted({ENTRY[h] for h in harnesses}), docsrule.block(lang).encode())
         _write_manifest(root, m)
     return res
+
+
+def _ensure_docs_rule(root: Path, m: dict, rels: list[str], blk: bytes) -> list[dict]:
+    """PROMPT-29 C-5: the entry file(s) carry the "look it up first" block. Absent file → created with just the block (ours:
+    a later `apply` may replace it). Present without the block → the block is appended once, nothing else touched; a file
+    that was ours stays ours, a file that was the human's stays theirs. Block already there (in any form) → left alone.
+    A symlinked entry file is never followed. Caller holds the lock."""
+    out = []
+    for rel in rels:
+        path = root / rel
+        if path.is_symlink():
+            out.append({"path": rel, "status": "skipped"})
+            continue
+        cur = _read_regular(path)
+        new = docsrule.merged(cur, blk)
+        if new is None:
+            out.append({"path": rel, "status": "unchanged"})
+            continue
+        rec = m["files"].get(rel) if isinstance(m["files"].get(rel), dict) else None
+        _write_file(path, new)
+        if cur is None or (rec and rec.get("sha256") == sha256(cur)):
+            m["files"][rel] = {"sha256": sha256(new), "source": "docs-rule", "at": int(time.time())}
+        out.append({"path": rel, "status": "created" if cur is None else "added"})
+    return out
 
 
 def _remove_legacy_skill(root: Path, m: dict) -> list[dict]:
@@ -393,6 +418,10 @@ def apply(root: Path, staging: Path) -> list[dict]:
     elif staging == root / STAGING_REL and not staging.exists():
         _adopt_legacy(root)
     files = _staged(staging)
+    for rel in ENTRY_FILES:     # PROMPT-29 C-5: a generated entry file keeps the "look it up first" block (the one on disk, else both languages)
+        if rel in files:
+            on_disk = None if (root / rel).is_symlink() else docsrule.extract(_read_regular(root / rel))
+            files[rel] = docsrule.merged(files[rel], on_disk or docsrule.block().encode()) or files[rel]
     hits = secret_hits(files)
     if hits:
         raise WizardError("refused — looks like a key / password / token (the wizard never writes one; write 待定 / TBD and "
@@ -827,11 +856,15 @@ def dry_run(st, root: Path, tid: str, *, harness: str | None = None, model: str 
 
 # ================================================================== CLI
 def _say(rows: list[dict]) -> None:
-    sym = {"created": "+", "updated": "~", "unchanged": "=", "kept": "!", "removed": "-"}
+    sym = {"created": "+", "updated": "~", "unchanged": "=", "kept": "!", "removed": "-", "added": "+", "skipped": "!"}
     for r in rows:
         line = f"  {sym.get(r['status'], '?')} {r['status']:<9} {r['path']}"
         if r["status"] == "kept":
             line += f"   (你改过它，没有覆盖；新版本在 {r['new']} / you changed it — the new version is {r['new']})"
+        elif r["status"] == "added":
+            line += "   (在末尾加了一段「先查文档」，原来的内容没动 / added the \"look it up first\" section at the end; nothing else changed)"
+        elif r["status"] == "skipped":
+            line += "   (是个链接，没有动它 / a symlink: left alone)"
         print(line)
 
 
@@ -862,7 +895,7 @@ def cmd_install(a) -> int:
         except (OSError, ValueError):
             cfg = None
         hs = [cfg["kind"]] if cfg and cfg.get("kind") in HARNESSES else list(HARNESSES)
-    rows = install(root, hs)
+    rows = install(root, hs, a.lang)
     if a.json:
         print(json.dumps({"dir": str(root), "harness": hs, "files": rows}, ensure_ascii=False))
         return 0
@@ -997,6 +1030,8 @@ def add_parser(sub) -> None:
 
     i = p("install", cmd_install, "把向导 skill 装进工作目录（不覆盖已有文件）/ install the wizard skill (never overwrites)")
     i.add_argument("--harness", choices=[*HARNESSES, "all"], help="默认 = agentj agent 选的那个，没选则三个都装")
+    i.add_argument("--lang", choices=list(docsrule.LANGS),
+                   help="入口文件里「先查文档」那段只用一种语言（默认中英都有）/ one language for the \"look it up first\" section")
     i.add_argument("--json", action="store_true")
     ap = p("apply", cmd_apply, "把暂存目录里生成的文件落盘（改过的文件不覆盖，写 .wizard-new）/ place generated files")
     ap.add_argument("--from", dest="src", default=STAGING_REL, help=f"暂存目录（默认 {STAGING_REL}）")

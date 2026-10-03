@@ -570,7 +570,7 @@ class ReadsAndSmallWrites(Base):
         o = out.getvalue()
         self.assertIn("liked", o)
         self.assertIn("unliked", o)
-        self.assertIn("本公司发布的包", o)
+        self.assertIn("你们发布的包", o)
 
     def test_cli_wiring(self):
         with mock.patch.dict(os.environ, {"AGENTJ_STATE_DIR": str(self.e.st.root)}), contextlib.redirect_stderr(io.StringIO()):

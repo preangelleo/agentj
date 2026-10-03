@@ -97,7 +97,7 @@ class Install(Base):
     def test_install_all_three_then_rerun_is_unchanged(self):
         rows = wizard.install(self.root, list(wizard.HARNESSES))
         n = len(wizard.skill_files())
-        self.assertEqual(len(rows), 3 * n)
+        self.assertEqual(len(rows), 3 * n + 2, "three skill copies + the two entry files (docs rule)")
         self.assertTrue(all(r["status"] == "created" for r in rows))
         for d in (".claude/skills", ".agents/skills", ".opencode/skills"):
             sk = self.root / d / wizard.SKILL_NAME / "SKILL.md"
@@ -105,6 +105,90 @@ class Install(Base):
             self.assertTrue(sk.read_text().startswith("---\nname: agentj-workflow-wizard\n"))
         self.assertTrue(all(r["status"] == "unchanged" for r in wizard.install(self.root, list(wizard.HARNESSES))))
         self.assertEqual(json.loads((self.root / wizard.MANIFEST_REL).read_text())["harness"], sorted(wizard.HARNESSES))
+
+    # ---- PROMPT-29 C-5: the "look it up first" block in the entry file
+    def test_docs_rule_created_when_no_entry_file(self):
+        from agentj import docsrule
+        rows = {r["path"]: r["status"] for r in wizard.install(self.root, ["claude"])}
+        self.assertEqual(rows["CLAUDE.md"], "created")
+        self.assertNotIn("AGENTS.md", rows, "only the entry file of the chosen harness")
+        self.assertEqual((self.root / "CLAUDE.md").read_text(), docsrule.block())
+        self.assertIn("CLAUDE.md", self.manifest(), "a file we created is ours: a later apply may replace it")
+        rows = {r["path"]: r["status"] for r in wizard.install(self.root, ["codex", "opencode"])}
+        self.assertEqual(rows["AGENTS.md"], "created")
+        self.assertEqual(rows.get("CLAUDE.md"), None)
+
+    def test_docs_rule_appended_once_to_the_humans_file_and_nothing_else_changes(self):
+        from agentj import docsrule
+        mine = "# 我自己的规矩\n\n别动我的文件。"          # no trailing newline on purpose
+        (self.root / "AGENTS.md").write_text(mine)
+        rows = {r["path"]: r["status"] for r in wizard.install(self.root, ["codex"], "en")}
+        self.assertEqual(rows["AGENTS.md"], "added")
+        text = (self.root / "AGENTS.md").read_text()
+        self.assertTrue(text.startswith(mine + "\n\n"), "the human's text is kept byte for byte, block after one blank line")
+        self.assertTrue(text.endswith(docsrule.block("en")))
+        self.assertEqual(text.count(docsrule.BEGIN), 1)
+        self.assertNotIn("AGENTS.md", self.manifest(), "the human's file stays theirs")
+        for _ in range(2):                                  # idempotent, also with another language asked for
+            rows = {r["path"]: r["status"] for r in wizard.install(self.root, ["codex"], "zh")}
+            self.assertEqual(rows["AGENTS.md"], "unchanged")
+            self.assertEqual((self.root / "AGENTS.md").read_text(), text)
+
+    def test_docs_rule_the_human_edited_is_left_alone(self):
+        from agentj import docsrule
+        edited = "# mine\n\n" + docsrule.BEGIN + "\n先问我，再查文档。\n" + docsrule.END + "\n"
+        (self.root / "CLAUDE.md").write_text(edited)
+        wizard.install(self.root, ["claude"])
+        self.assertEqual((self.root / "CLAUDE.md").read_text(), edited)
+
+    def test_docs_rule_never_follows_a_symlinked_entry_file(self):
+        outside = pathlib.Path(self.tmp) / "elsewhere.md"
+        outside.write_text("x\n")
+        (self.root / "CLAUDE.md").symlink_to(outside)
+        rows = {r["path"]: r["status"] for r in wizard.install(self.root, ["claude"])}
+        self.assertEqual(rows["CLAUDE.md"], "skipped")
+        self.assertEqual(outside.read_text(), "x\n")
+
+    def test_docs_rule_survives_apply_and_keeps_the_block_on_disk(self):
+        from agentj import docsrule
+        wizard.install(self.root, ["claude"], "zh")
+        st = self.root / wizard.STAGING_REL
+        for rel, data in good_files().items():
+            (st / rel).parent.mkdir(parents=True, exist_ok=True)
+            (st / rel).write_bytes(data)
+        rows = {r["path"]: r["status"] for r in wizard.apply(self.root, st)}
+        self.assertEqual(rows["CLAUDE.md"], "updated", "our stub is replaced by the generated entry file")
+        text = (self.root / "CLAUDE.md").read_text()
+        self.assertTrue(text.startswith(good_files()["CLAUDE.md"].decode()))
+        self.assertTrue(text.endswith(docsrule.block("zh")), "the same block (language) as before")
+        self.assertEqual(text.count(docsrule.BEGIN), 1)
+        self.assertEqual(wizard.doctor(self.root)[0]["status"], "ok")
+        # a re-run where the human kept their own entry file: the proposal carries the block too
+        (self.root / "CLAUDE.md").write_text("# 我改过\n" + docsrule.block("zh"))
+        for rel, data in good_files().items():
+            (st / rel).parent.mkdir(parents=True, exist_ok=True)
+            (st / rel).write_bytes(data)
+        rows = {r["path"]: r["status"] for r in wizard.apply(self.root, st)}
+        self.assertEqual(rows["CLAUDE.md"], "kept")
+        self.assertIn(docsrule.BEGIN, (self.root / ("CLAUDE.md" + wizard.NEW)).read_text())
+
+    def test_docs_rule_command_prints_exactly_the_block(self):
+        from agentj import docsrule
+        env = {**os.environ, "HOME": self.tmp, "AGENTJ_STATE_DIR": str(pathlib.Path(self.tmp) / "nostate")}
+        for args, lang in (([], None), (["--lang", "zh"], "zh"), (["--lang", "en"], "en")):
+            r = subprocess.run([sys.executable, "-m", "agentj.cli", "docs-rule", *args], cwd=HOST, env=env,
+                               capture_output=True, text=True, timeout=60)
+            self.assertEqual((r.returncode, r.stderr), (0, ""))
+            self.assertEqual(r.stdout, docsrule.block(lang))
+        self.assertFalse((pathlib.Path(self.tmp) / "nostate").exists(), "no side effects")
+        for lang in ("zh", "en"):
+            b = docsrule.block(lang)
+            self.assertIn("https://agentj.app/llms.txt", b)
+            self.assertIn(f"https://agentj.app/docs/<slug>/{lang}.md", b)
+            self.assertIn("agentj plaza search", b)
+            self.assertIn("agentj feedback", b)
+            self.assertNotIn("公司", b)
+            self.assertNotRegex(b, r"(?i)company")
 
     def test_customer_edit_is_never_overwritten(self):
         wizard.install(self.root, ["claude"])

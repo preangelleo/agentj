@@ -189,11 +189,11 @@ class Host:
         elif ev == "relay":
             print(f"· 中继{'已连接' if kw['up'] else '断开，正在重连'}", flush=True)
         elif ev == "agent_name":   # a §1-valid name (no control / format / line-break chars), quoted, after the "· " marker
-            print(f"· Agent 名已按 Dashboard 改为「{kw['name']}」", flush=True)
+            print(f"· Agent 名已按账号后台改为「{kw['name']}」", flush=True)
         elif ev == "agent_name_refused":
-            print("· Dashboard 发来的 Agent 名不合规，本机没有采用（保留原名）", flush=True)
+            print("· 账号后台发来的 Agent 名用不了，这台电脑保留原名", flush=True)
         elif ev == "remote_unbind":
-            print(f"· Dashboard 请求解绑遥控器 {kw.get('name') or ''} {kw['device']}：{kw['result']}", flush=True)
+            print(f"· 账号后台请求解绑遥控器 {kw.get('name') or ''} {kw['device']}：{kw['result']}", flush=True)
         elif ev == "agent_msg":
             print("» Agent: " + kw["text"].replace("\n", "\n  │ "), flush=True)
         elif ev == "agent_notice":

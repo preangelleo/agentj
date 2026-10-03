@@ -1,6 +1,6 @@
 """`agentj plaza` (Agent plaza P2): the data fence, prompt-injection fixtures, the privacy gate (layer 1, layer 2, the human's
 --owner-confirmed + digest), whitelisted answers, signed envelopes. Offline: the control plane and Jev are fakes.
-Run: host/.venv/bin/python -m unittest discover -s host/tests -p test_plaza.py
+Run (in host/): .venv/bin/python -m unittest discover -s tests -p test_plaza.py
 """
 import _hermetic  # noqa: F401,I001  (never the real ~/.local/state; see _hermetic.py)
 import contextlib

@@ -201,8 +201,8 @@ class SeatCli(unittest.TestCase):
             cp.seat_tokens.add(self.code)
             r = self.agentj("login", "--api", cp.url, "--seat", self.code, "--name", "助理一号")
             self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
-            self.assertIn("✓ 已添加到公司账号 acme-co（Acme [2J Co）的席位，Agent 名「助理一号」", r.stdout)
-            self.assertIn("Added to a seat of company acme-co", r.stdout)
+            self.assertIn("✓ 已加到 Agent J 账号 acme-co（Acme [2J Co）的一个席位，Agent 名「助理一号」", r.stdout)
+            self.assertIn("Added to a seat of the Agent J account acme-co", r.stdout)
             self.assertNotIn("[y/N]", r.stdout, "no y/N question on the seat path")
             self.assertNotIn("\x1b", r.stdout)
             self.assertIn("首次上报：成功", r.stdout)
@@ -211,16 +211,16 @@ class SeatCli(unittest.TestCase):
         self.assertEqual(self.st.agent_name(), "助理一号")
         self.assertEqual(json.loads(self.st.cloud_path.read_text())["via"], "seat")
         st = self.agentj("status")
-        self.assertIn("linked via seat setup", st.stdout)
+        self.assertIn("joined with a setup code", st.stdout)
         doc = json.loads(self.agentj("doctor", "--json", "--offline").stdout)
         bound = next(c for c in doc["checks"] if c["id"] == "bound")
-        self.assertIn("via seat setup", bound["summary"])
+        self.assertIn("joined with a setup code", bound["summary"])
         for p in self.st.root.iterdir():
             if p.is_file():
                 self.assertNotIn(self.code.encode(), p.read_bytes(), p.name)
         again = self.agentj("login", "--seat", self.code, "--name", "x")
         self.assertEqual(again.returncode, 1)
-        self.assertIn("已添加到 Dashboard 公司账号 acme-co", again.stderr)
+        self.assertIn("已经加到 Agent J 账号 acme-co", again.stderr)
 
     def test_seat_file_and_stdin(self):
         with FakeCP() as cp:
@@ -249,8 +249,8 @@ class SeatCli(unittest.TestCase):
     def test_exit_codes(self):
         with FakeCP() as cp:
             cp.seat_tokens.add(self.code)
-            for step, rc, text in (("taken", 3, "已经有了"), ("invalid", 4, "向管理员要一个新的"),
-                                   ("payment", 5, "不在付费状态"), ("rate", 1, "太频繁"), ("already_bound", 1, "仍是已绑定"),
+            for step, rc, text in (("taken", 3, "已经有叫这个名字"), ("invalid", 4, "向管理员要一个新的"),
+                                   ("payment", 5, "没在付费了"), ("rate", 1, "太频繁"), ("already_bound", 1, "还挂在别的地方"),
                                    (503, 1, "http_5xx")):
                 cp.seat_script = [step]
                 r = self.agentj("login", "--api", cp.url, "--seat", self.code, "--name", "Wren")
@@ -290,7 +290,7 @@ class SeatCli(unittest.TestCase):
             r = self.agentj("login", "--api", cp.url, "--seat", self.code, "--name", "Wren7")
             self.assertEqual(r.returncode, 0, "replay of the same code from the same key → the same 200")
             self.assertEqual(json.loads(self.st.cloud_path.read_text())["via"], "seat")
-            self.assertIn("this also takes this computer out of that company", r.stdout)
+            self.assertIn("it also takes this computer out of that account", r.stdout)
 
     def test_unlink_of_a_seat_link_leaves_the_company(self):
         """Review SS-02: `agentj unlink` of a seat link sends a signed seat-leave first, then removes cloud.json."""
@@ -299,8 +299,8 @@ class SeatCli(unittest.TestCase):
             self.assertEqual(self.agentj("login", "--api", cp.url, "--seat", self.code, "--name", "Leaver").returncode, 0)
             r = self.agentj("unlink")
             self.assertEqual(r.returncode, 0, r.stderr)
-            self.assertIn("已通知 Dashboard 把本机移出公司 acme-co", r.stdout)
-            self.assertNotIn("要在 Dashboard 里解绑本机", r.stdout)
+            self.assertIn("已经把这台电脑移出账号 acme-co", r.stdout)
+            self.assertNotIn("还要在账号后台里把这台电脑移除", r.stdout)
             self.assertFalse(self.st.cloud_path.exists())
             self.assertEqual(len(cp.seat_leaves), 1)
             self.assertEqual(set(cp.seat_leaves[0]), {"v", "t", "channel", "ts"})
@@ -311,7 +311,7 @@ class SeatCli(unittest.TestCase):
             cp.seat_tokens.add(code2)
             self.assertEqual(self.agentj("login", "--api", cp.url, "--seat", code2, "--name", "Back").returncode, 0)
             # failures: cloud.json still goes, the human is told to ask the owner
-            for step, text in (("rate", "太频繁"), (503, "连不上或出错"), ("not_found", "已不在公司 acme-co 的席位里")):
+            for step, text in (("rate", "太频繁"), (503, "连不上或出错"), ("not_found", "已经不在账号 acme-co 的席位里")):
                 if not self.st.cloud_path.exists():
                     code3 = new_code()
                     cp.seat_tokens.add(code3)
@@ -333,7 +333,7 @@ class SeatCli(unittest.TestCase):
         # the fake control plane is gone now
         r = self.agentj("unlink")
         self.assertEqual(r.returncode, 0, r.stderr)
-        self.assertIn("没能通知 Dashboard", r.stdout)
+        self.assertIn("没能通知账号后台", r.stdout)
         self.assertIn("收回这个席位", r.stdout)
         self.assertFalse(self.st.cloud_path.exists())
 
@@ -344,7 +344,7 @@ class SeatCli(unittest.TestCase):
             r = self.agentj("unlink")
             self.assertEqual(r.returncode, 0, r.stderr)
             self.assertEqual(cp.seat_leaves, [], "a code-bound link sends nothing")
-            self.assertIn("Dashboard 那边的绑定要在 Dashboard 里解绑本机", r.stdout)
+            self.assertIn("还要在账号后台里把这台电脑移除", r.stdout)
             self.assertFalse(self.st.cloud_path.exists())
 
     def test_help_is_bilingual(self):
