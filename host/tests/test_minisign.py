@@ -1,5 +1,6 @@
 """minisign.py (protocol/PLAZA_PACKAGES.md §2): the protocol vector, every bad case, the plaza trusted comment, legacy mode,
 untrusted keys, and a cross-check against the real `minisign` binary (throw-away key in a temp dir; skipped without it)."""
+import _hermetic  # noqa: F401,I001  (never the real ~/.local/state; see _hermetic.py)
 import base64
 import json
 import os
@@ -12,7 +13,7 @@ import unittest
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 import market_fixtures as fx  # noqa: E402
-from jarvis_host import bundle, minisign  # noqa: E402
+from agentj import bundle, minisign  # noqa: E402
 
 VEC = json.loads((pathlib.Path(__file__).resolve().parents[2] / "protocol" / "vectors" / "minisign.json").read_text())
 MINISIGN = shutil.which("minisign") or (os.path.expanduser("~/.local/bin/minisign") if os.path.exists(os.path.expanduser("~/.local/bin/minisign")) else None)

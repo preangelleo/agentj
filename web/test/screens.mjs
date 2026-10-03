@@ -8,6 +8,8 @@
 //      no horizontal overflow, every visible tap target ≥ 44×44 px, no console errors / CSP violations, no request
 //      leaving the page's own origin (+ the local relay)
 //   4. language: the switch sets <html lang>, survives a reload (localStorage "aj.lang"), ?lang=en wins and is saved
+//   5. legacy host (alpha-web.agentjarvis.net, served through CDP Fetch interception — nothing goes to the network):
+//      no pairing → location.replace to https://m.agentj.app with path + query + #p= intact; a pairing → stays and runs
 // Run: node web/test/screens.mjs      Output: /tmp/aj-web-shots/*.png (AJ_SHOTS to change)
 //      AJ_QUICK=1 → gallery only for 360 light zh + 1440 dark en
 import { spawn } from 'node:child_process';
@@ -194,8 +196,8 @@ try {
       tx.oncomplete = () => res({ ext: d.result.priv.extractable, type: d.result.priv.type, alg: d.result.priv.algorithm.name, host: !!hst.result?.approved, psk: 'psk' in (hst.result || {}) }); }; })`);
     check(dev.ext === false && dev.type === 'private' && dev.alg === 'X25519', `${tag}: device key is a non-extractable X25519 CryptoKey in IndexedDB`);
     check(dev.host && !dev.psk, `${tag}: approved host persisted without the PSK`);
-    await typeAndEnter(p, '你好，贾维斯');
-    check(await waitIn(p, 'echo: 你好，贾维斯'), `${tag}: Enter sends; host echo rendered`);
+    await typeAndEnter(p, '你好，助理');
+    check(await waitIn(p, 'echo: 你好，助理'), `${tag}: Enter sends; host echo rendered`);
     const xss = '<img src=x onerror=alert(1)><b>bold</b>';
     await typeAndEnter(p, xss);
     check(await waitIn(p, 'echo: ' + xss), `${tag}: markup round-trips as text`);
@@ -204,6 +206,38 @@ try {
     check((await evaluate(p, `document.querySelectorAll('#messages img, #messages b, #messages script').length`)) === 0, `${tag}: no element injection (textContent only)`);
     check((await evaluate(p, `document.querySelectorAll('#messages li[data-dir=out]').length`)) === 2, `${tag}: outgoing items data-dir=out`);
     await layoutOk(p, `chat ${tag}`);
+
+    // Agent display name: host → device status carries "name" (string | null; old hosts send none) — untrusted text
+    const brand = () => evaluate(p, `document.getElementById('brand-name').textContent + '|' + document.title`);
+    check((await brand()) === `Agent J|${ZH['meta.title']}`, `${tag}: no name yet → "Agent J" + the default title`);
+    await fake.send({ t: 'status', s: 'idle', agent: 'claude', name: '市场部 Agent' });
+    await waitFor(p, `document.getElementById('brand-name').textContent === '市场部 Agent'`);
+    check((await brand()) === '市场部 Agent|市场部 Agent', `${tag}: the host's name top-left and as the tab title`);
+    check((await text(p, '#agent-status')).startsWith('Claude Code · ') && !(await evaluate(p, `document.getElementById('agent-status').hidden`)),
+      `${tag}: the Claude Code · state pill stays next to the name`);
+    const evil = '<img src=x onerror=alert(1)>\u202e\u0000\u200b\n' + '长'.repeat(60);
+    await fake.send({ t: 'status', s: 'working', agent: 'claude', name: evil });
+    await waitFor(p, `document.body.dataset.agent === 'working'`);
+    const shown = await evaluate(p, `(() => { const b = document.getElementById('brand-name'); return { t: b.textContent, kids: b.children.length, title: document.title }; })()`);
+    check(shown.kids === 0 && shown.t === shown.title && [...shown.t].length <= 32 && !/[\u0000-\u001f\u200b\u202e]/.test(shown.t) && shown.t.startsWith('<img src=x onerror=alert(1)> 长'),
+      `${tag}: hostile name → plain text, control/format chars gone, ≤ 32 code points ("${shown.t}")`);
+    check((await evaluate(p, `document.querySelectorAll('.bar__who *').length`)) === 5, `${tag}: no element injected into the header`);
+    await layoutOk(p, `long name ${tag}`);
+    await fake.send({ t: 'status', s: 'idle', agent: 'claude', name: null });
+    await waitFor(p, `document.getElementById('brand-name').textContent === 'Agent J'`);
+    check((await brand()) === `Agent J|${ZH['meta.title']}`, `${tag}: name null → back to "Agent J"`);
+    await fake.send({ t: 'status', s: 'idle', agent: 'claude', name: 'Wren' });
+    await fake.send({ t: 'status', s: 'idle', agent: 'claude' });       // an old host: no "name" → the default
+    await waitFor(p, `document.getElementById('brand-name').textContent === 'Agent J'`);
+    check(true, `${tag}: status without "name" (old host) → "Agent J"`);
+    await fake.send({ t: 'status', s: 'idle', agent: 'claude', name: 'Wren' });
+    await waitFor(p, `new Promise((res) => { const r = indexedDB.open('agentjarvis'); r.onsuccess = () => { const g = r.result.transaction('kv').objectStore('kv').get('host'); g.onsuccess = () => { r.result.close(); res(g.result && g.result.name === 'Wren'); }; }; })`);
+    fake.setUp(false);
+    await navigate(p, BASE);                                           // cold start while the computer is offline
+    await waitState(p, 'waiting-host');
+    check((await brand()) === 'Wren|Wren', `${tag}: cold start shows the cached name before the connection is up`);
+    fake.setUp(true);
+    await waitState(p, 'ready');
 
     fake.setUp(false);
     await waitState(p, 'waiting-host');
@@ -233,6 +267,7 @@ try {
     const after = await evaluate(p, `new Promise((res) => { const r = indexedDB.open('agentjarvis'); r.onsuccess = () => { const tx = r.result.transaction('kv');
       const d = tx.objectStore('kv').get('device'), hst = tx.objectStore('kv').get('host'); tx.oncomplete = () => res({ dev: !!d.result, host: !!hst.result }); }; })`);
     check(after.dev && !after.host, `${tag}: 重新配对 clears the host, keeps the device key`);
+    check((await text(p, '#brand-name')) === 'Agent J', `${tag}: re-pairing drops the cached name`);
 
     await p.send('Page.navigate', { url: fake.newPairing(BASE) });   // same-document: only the fragment changes
     await waitState(p, 'awaiting-approval');
@@ -316,20 +351,21 @@ try {
       await evaluate(p, `document.getElementById('a2hs-ok').click()`);
       check(await evaluate(p, `document.getElementById('a2hs').hidden && localStorage.getItem('aj.a2hs') === '1'`), `${tag}: 「${plain(L['a2hs.ok'])}」 dismisses the hint and remembers it`);
     }
-    await fake.send({ t: 'status', s: 'idle', agent: 'claude' });
+    const NAME = lang === 'en' ? 'Sales Agent' : '市场部 Agent';
+    await fake.send({ t: 'status', s: 'idle', agent: 'claude', name: NAME });
     await waitFor(p, `document.getElementById('agent-status').dataset.s === 'idle'`);
-    check((await text(p, '#agent-status')).startsWith('Claude Code · '), `${tag}: header shows the Agent name + state`);
+    check((await text(p, '#agent-status')).startsWith('Claude Code · ') && (await text(p, '#brand-name')) === NAME, `${tag}: header shows the Agent's name + the harness · state pill`);
     await shot('07-chat-idle');
 
     await typeAndEnter(p, lang === 'en' ? 'Check today’s orders and draft a restock list' : '看一下今天的订单，拟一份补货清单');
     await sleep(200);
-    await fake.send({ t: 'status', s: 'working', agent: 'claude' });
+    await fake.send({ t: 'status', s: 'working', agent: 'claude', name: NAME });
     await fake.send({ t: 'push_key', k: Buffer.from(Uint8Array.of(4, ...crypto.getRandomValues(new Uint8Array(64)))).toString('base64url') });
     await fake.say(lang === 'en' ? 'On it. 132 orders today; 3 items are running low. Drafting the list now…' : '好的。今天 132 单，有 3 个商品库存偏低，正在拟补货清单…');
     await waitFor(p, `document.body.dataset.agent === 'working'`);
     await shot('08-chat-working');
 
-    await fake.send({ t: 'status', s: 'waiting', agent: 'claude' });
+    await fake.send({ t: 'status', s: 'waiting', agent: 'claude', name: NAME });
     await fake.send({ t: 'ask', id: hex(16), tool: 'Bash', summary: 'cat orders/2026-10-03.csv | wc -l', ttl: 120, batch: 'Bash：cat', batch_max: 20, batch_secs: 600 });
     await fake.send({ t: 'ask', id: hex(16), tool: 'Bash', summary: 'rm -rf exports/old/', ttl: 120, cat: ['delete'], why: 'rm -rf' });
     await waitFor(p, `document.querySelectorAll('#messages li.ask').length === 2`);
@@ -364,7 +400,7 @@ try {
     await shot('15-stop-everything-confirm');
     await evaluate(p, `document.getElementById('sheet-yes').click()`);
     await waitFor(p, `!document.getElementById('estop-banner').hidden`);
-    await fake.send({ t: 'status', s: 'stopped', agent: 'claude' });
+    await fake.send({ t: 'status', s: 'stopped', agent: 'claude', name: NAME });
     await waitFor(p, `document.body.dataset.agent === 'stopped'`);
     check((await evaluate(p, `document.getElementById('msg-input').placeholder`)) === L['chat.placeholderStopped'], `${tag}: composer says everything is stopped`);
     await shot('16-stopped');
@@ -372,7 +408,7 @@ try {
     await waitFor(p, `!document.getElementById('sheet').hidden`);
     await evaluate(p, `document.getElementById('sheet-yes').click()`);
     await waitFor(p, `document.getElementById('estop-banner').hidden`);
-    await fake.send({ t: 'status', s: 'idle', agent: 'claude' });
+    await fake.send({ t: 'status', s: 'idle', agent: 'claude', name: NAME });
 
     fake.setUp(false);
     await waitState(p, 'waiting-host');
@@ -417,6 +453,54 @@ try {
     await waitState(p, 'awaiting-approval');
     check((await evaluate(p, 'location.href')) === BASE + '?lang=en' && (await text(p, '#sas-view h1')) === EN['sas.title'], 'lang: a pairing link keeps ?lang= while its #p= fragment is stripped');
     noProblems(p, 'lang');
+    await p.dispose();
+  }
+
+  // ---------- 5. legacy web host: served via CDP Fetch interception (the local server's bytes + Worker headers under the
+  // real https origin; m.agentj.app answers with a script-free stub). Nothing leaves this machine.
+  {
+    const LEG = 'https://alpha-web.agentjarvis.net', NEW = 'https://m.agentj.app';
+    const p = await newPage(360, 800, 'light');
+    await p.send('Fetch.enable', { patterns: [{ urlPattern: LEG + '/*' }, { urlPattern: NEW + '/*' }] });
+    const STUB = Buffer.from('<!doctype html><title>stub</title><p>m.agentj.app</p>').toString('base64');
+    const SKIP = new Set(['content-length', 'connection', 'keep-alive', 'transfer-encoding', 'date']);
+    p.on(async (m) => {
+      if (m.method !== 'Fetch.requestPaused') return;
+      const { requestId, request } = m.params;
+      const u = new URL(request.url);
+      try {
+        if (u.origin === NEW || u.pathname === '/__seed') {
+          await p.send('Fetch.fulfillRequest', { requestId, responseCode: 200, responseHeaders: [{ name: 'content-type', value: 'text/html' }], body: STUB });
+          return;
+        }
+        const r = await fetch(new URL(u.pathname.slice(1) + u.search, BASE));
+        const headers = [...r.headers].filter(([k]) => !SKIP.has(k)).map(([name, value]) => ({ name, value }));
+        await p.send('Fetch.fulfillRequest', { requestId, responseCode: r.status, responseHeaders: headers, body: Buffer.from(await r.arrayBuffer()).toString('base64') });
+      } catch { /* page gone */ }
+    });
+    const href = async () => { try { return await evaluate(p, 'location.href'); } catch { return ''; } };
+    async function landsOn(want, ms = 8000) {
+      let h = '';
+      for (let t = 0; t < ms; t += 100) { h = await href(); if (h === want) return true; await sleep(100); }
+      return h;
+    }
+    const link = fake.newPairing(LEG + '/?lang=en');
+    await p.send('Page.navigate', { url: link });
+    const r1 = await landsOn(link.replace(LEG, NEW));
+    check(r1 === true, `legacy: no pairing + pairing link → ${NEW} with path, query and #p= intact${r1 === true ? '' : ' (got ' + r1 + ')'}`);
+    await p.send('Page.navigate', { url: LEG + '/' });
+    const r2 = await landsOn(NEW + '/');
+    check(r2 === true, `legacy: no pairing → ${NEW}/${r2 === true ? '' : ' (got ' + r2 + ')'}`);
+    // a phone paired on the legacy origin: its pairing lives in that origin's IndexedDB "agentjarvis"
+    await navigate(p, LEG + '/__seed');
+    await evaluate(p, `new Promise((res, rej) => { const r = indexedDB.open('agentjarvis', 1); r.onupgradeneeded = () => r.result.createObjectStore('kv');
+      r.onsuccess = () => { const tx = r.result.transaction('kv', 'readwrite'); tx.objectStore('kv').put({ relay: ${JSON.stringify(RELAY)}, channel: ${JSON.stringify(fake.channel)},
+        hostPub: crypto.getRandomValues(new Uint8Array(32)), approved: true, name: 'Wren' }, 'host'); tx.oncomplete = () => { r.result.close(); res(true); }; tx.onerror = () => rej(tx.error); }; })`);
+    await navigate(p, LEG + '/');
+    await sleep(1500);
+    check((await href()) === LEG + '/', 'legacy: a paired phone stays on the legacy host (no redirect)');
+    check((await evaluate(p, `document.getElementById('pair-view').hidden && document.getElementById('brand-name').textContent === 'Wren' && document.title === 'Wren'`)),
+      'legacy: …and runs normally (resume, cached Agent name shown)');
     await p.dispose();
   }
   browser.close();

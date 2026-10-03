@@ -1,9 +1,9 @@
-// agentjarvis web client service worker — Web Push only (PROTOCOL §9). No fetch handler, no cache: every page load still
+// agentj web client service worker — Web Push only (PROTOCOL §9). No fetch handler, no cache: every page load still
 // comes from the network, so the version hash in the page stays the whole story. A push carries no content, only its
 // kind ("reply" | "ask"), encrypted by the host to this browser's subscription keys.
 // SW_VERSION changes with every redesign of the shell: a changed sw.js is what makes phones install the new worker
 // (skipWaiting + clients.claim take over at once, so notification text / icons follow the new shell without a second visit).
-const SW_VERSION = 'aj-web-2026-10-03-brand1';
+const SW_VERSION = 'aj-web-2026-10-03-agentj1';
 // The notification text follows the page language: the page registers sw.js?lang=en when English is chosen (the worker
 // cannot read the page's localStorage). Still only these two fixed sentences per language — never any content.
 const BODY = {
@@ -18,7 +18,7 @@ self.addEventListener('activate', (e) => { e.waitUntil(self.clients.claim()); })
 self.addEventListener('push', (e) => {
   let k = 'reply';
   try { const d = e.data && e.data.json(); if (d && BODY.zh[d.k]) k = d.k; } catch { /* malformed → generic */ }
-  e.waitUntil(self.registration.showNotification('Agent Jarvis', { body: BODY[LANG][k], tag: 'aj-' + k, renotify: true,
+  e.waitUntil(self.registration.showNotification('Agent J', { body: BODY[LANG][k], tag: 'aj-' + k, renotify: true,
     icon: 'brand/img/icon-192.png', badge: 'brand/img/favicon-192-round.png', data: { v: SW_VERSION } }));
 });
 

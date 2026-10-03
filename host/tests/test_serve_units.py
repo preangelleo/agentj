@@ -1,5 +1,6 @@
 """Host-side units: terminal sanitising of untrusted device text, state perms, test-TTL knobs only shorten, and the
 session rules the A2 reviews asked for (atomic revoke under a stalled relay, peer errors cost only their own session)."""
+import _hermetic  # noqa: F401,I001  (never the real ~/.local/state; see _hermetic.py)
 import asyncio
 import os
 import pathlib
@@ -8,9 +9,9 @@ import tempfile
 import unittest
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
-from jarvis_host import serve, wire  # noqa: E402
-from jarvis_host.noise import CipherState  # noqa: E402
-from jarvis_host.state import State  # noqa: E402
+from agentj import serve, wire  # noqa: E402
+from agentj.noise import CipherState  # noqa: E402
+from agentj.state import State  # noqa: E402
 
 
 class Units(unittest.TestCase):
@@ -148,7 +149,7 @@ class Sessions(unittest.TestCase):
             pub, k = os.urandom(32), os.urandom(32)
             did = self.st.add_device(pub, "phone")
             self._ready(h, 1, pub, did, k)
-            self.st.remove_device(did)  # e.g. an offline `jarvis revoke` while serve could not be reached
+            self.st.remove_device(did)  # e.g. an offline `agentj revoke` while serve could not be reached
             await h.on_frame(self._data(1, k, {"t": "msg", "text": "hi"}))
             self.assertNotIn("msg", h.events_seen)
             self.assertNotIn(1, h.sessions)

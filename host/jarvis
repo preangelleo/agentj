@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# agentjarvis host CLI launcher (alpha). Named `jarvis` inside this directory only — it does not shadow another `jarvis` on PATH.
-# Uses the project-local venv (uv); creates it on first run.
+# Compatibility launcher (one version cycle): this checkout's CLI used to be `host/jarvis`; it is `host/bin/agentj` now.
+# Prints one notice line on stderr, then runs the same CLI.
 set -euo pipefail
 here="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd -P)"
 if [[ ! -x "$here/.venv/bin/python" ]]; then

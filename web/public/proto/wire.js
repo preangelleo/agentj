@@ -1,4 +1,4 @@
-// agentjarvis wire helpers shared by the web client and the Node tests (spec: PROTOCOL.md). Mirrors host/jarvis_host/wire.py.
+// agentj wire helpers shared by the web client and the Node tests (spec: PROTOCOL.md). Mirrors host/agentj/wire.py.
 import { concat, sha256, hmac } from './noise.js';
 
 const enc = new TextEncoder();
@@ -76,7 +76,7 @@ export function parsePairing(input, nowSec = Math.floor(Date.now() / 1000), allo
 
 export function frame(kind, ...parts) { return concat(Uint8Array.of(kind), ...parts); }
 
-// ---------------------------------------------------------------- approvals (PROTOCOL §8). Mirrors host/jarvis_host/approvals.py.
+// ---------------------------------------------------------------- approvals (PROTOCOL §8). Mirrors host/agentj/approvals.py.
 export const APPROVE_CONTEXT = 'agentjarvis-approve-v1';
 const hex = (b) => Array.from(b, (x) => x.toString(16).padStart(2, '0')).join('');
 /** hex SHA-256 of what the phone shows for a request: tool, newline, summary (UTF-8). */
@@ -90,7 +90,7 @@ export async function approveMessage(channel, device, id, decision, tool, summar
   const base = `${APPROVE_CONTEXT}\n${channel}\n${device}\n${id}\n${decision}\n${await shownDigest(tool, summary)}`;
   return enc.encode(decision === 'allow_batch' ? `${base}\n${hex(await sha256(enc.encode(scope)))}` : base);
 }
-// ---------------------------------------------------------------- phone controls (PROTOCOL §8). Mirrors host/jarvis_host/controls.py.
+// ---------------------------------------------------------------- phone controls (PROTOCOL §8). Mirrors host/agentj/controls.py.
 export const CONTROL_CONTEXT = 'agentjarvis-control-v1';
 export const CONTROL_ACTIONS = ['mem_rm', 'mem_undo', 'estop', 'resume', 'task_on', 'task_off'];
 /** The text whose SHA-256 a control signature covers (the target, with the content hash the phone saw). */

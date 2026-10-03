@@ -1,16 +1,16 @@
 #!/usr/bin/env node
 // sim-phone — a simulated phone for test environments without a real phone.
 //
-// It is a real (headless) Chromium running the real Agent Jarvis web client. It never bypasses pairing: it shows the
+// It is a real (headless) Chromium running the real Agent J web client. It never bypasses pairing: it shows the
 // 6-digit safety code like a phone does, and a human (or the test) still types those 6 digits and the approval
-// passphrase into the host (`jarvis pair` / `jarvis admin`). Node >= 22, no npm dependencies.
+// passphrase into the host (`agentj pair` / `agentj admin`). Node >= 22, no npm dependencies.
 //
 // Usage:
 //   node sim-phone.mjs --link <pairing link> [--web <url>] [--profile <dir>] [--send "<text>"] [--approve | --deny] [--wait <s>]
 //   node sim-phone.mjs --profile <dir> [--send "<text>"] [--approve | --deny] [--wait <s>]     (an already paired profile)
 //
-//   --link <url>     the pairing link: `jarvis pair --no-qr` prints it; the `jarvis admin` page shows it under 显示链接
-//   --web <url>      the web client to open (default: the link's own origin, else https://alpha-web.agentjarvis.net)
+//   --link <url>     the pairing link: `agentj pair --no-qr` prints it; the `agentj admin` page shows it under 显示链接
+//   --web <url>      the web client to open (default: the link's own origin, else https://m.agentj.app)
 //   --profile <dir>  keep the browser profile (the device key and pairing) in <dir>, so later runs resume as the same phone
 //   --send <text>    after pairing / resuming, send this message and print the replies
 //   --approve        answer the next approval card with 批准 (allow)
@@ -21,7 +21,7 @@
 //   CODE 123456          the safety code the page shows — type it (and the passphrase) into the host
 //   PAIRED               the host approved this phone (or a saved profile resumed: RESUMED)
 //   SENT <text>          the message left the phone
-//   REPLY <line>         one line of a reply from the computer (Agent or `jarvis send`)
+//   REPLY <line>         one line of a reply from the computer (Agent or `agentj send`)
 //   ASK <tool>: <line>   an approval card appeared (first line of what the Agent wants to run)
 //   ANSWERED allow|deny  this tool pressed 批准 / 拒绝
 //   ASK-RESULT <result>  what the host decided: allow | deny | timeout | gone
@@ -44,7 +44,7 @@ import { fileURLToPath } from 'node:url';
 import { join, resolve, delimiter } from 'node:path';
 import { setTimeout as sleep } from 'node:timers/promises';
 
-const DEFAULT_WEB = 'https://alpha-web.agentjarvis.net';
+const DEFAULT_WEB = 'https://m.agentj.app';
 const PAIR_WAIT_S = 180;
 const EXIT = { ok: 0, usage: 1, chromium: 2, pairFailed: 3, pairTimeout: 4, noReply: 5, noCard: 6, notPaired: 7 };
 
@@ -176,7 +176,7 @@ const SNAPSHOT = `(() => {
 
 const BOOT = `(async () => {
   const dbs = indexedDB.databases ? await indexedDB.databases() : [];
-  if (!dbs.some((d) => d.name === 'agentjarvis')) return { device: false, paired: false };
+  if (!dbs.some((d) => d.name === 'agentj')) return { device: false, paired: false };
   return await new Promise((res) => {
     const r = indexedDB.open('agentjarvis');
     r.onerror = () => res(null);
@@ -231,7 +231,7 @@ async function run(a) {
         t.dispatchEvent(new Event('input', { bubbles: true })); document.querySelector('#pair-go').click(); return true; })()`);
       const shown = await waitFor(page, (s) => (s.state === 'awaiting-approval' && /^\d{6}$/.test(s.sas)) ? s
         : s.pairError || ['error', 'revoked'].includes(s.state) ? { fail: s } : null, 60000);
-      if (!shown) throw new Exit(EXIT.pairTimeout, 'no safety code: the computer did not answer (is `jarvis serve` running, is the link fresh?)');
+      if (!shown) throw new Exit(EXIT.pairTimeout, 'no safety code: the computer did not answer (is `agentj serve` running, is the link fresh?)');
       if (shown.fail) throw new Exit(EXIT.pairFailed, `pairing did not start: ${oneLine(shown.fail.pairError || shown.fail.status)}`);
       out(`CODE ${shown.sas}`);
       const done = await waitFor(page, (s) => s.state === 'ready' ? s : ['error', 'revoked', 'idle'].includes(s.state) ? { fail: s } : null, PAIR_WAIT_S * 1000);
@@ -241,7 +241,7 @@ async function run(a) {
     } else {
       if (!boot.paired) throw new Exit(EXIT.notPaired, 'this profile has no paired computer — run once with --link');
       const done = await waitFor(page, (s) => s.state === 'ready' ? s : s.state === 'revoked' ? { fail: s } : null, Math.max(30, a.wait) * 1000);
-      if (!done) throw new Exit(EXIT.notPaired, 'could not reconnect to the paired computer (is `jarvis serve` running?)');
+      if (!done) throw new Exit(EXIT.notPaired, 'could not reconnect to the paired computer (is `agentj serve` running?)');
       if (done.fail) throw new Exit(EXIT.pairFailed, 'this phone was removed from the computer (revoked)');
       out('RESUMED');
     }

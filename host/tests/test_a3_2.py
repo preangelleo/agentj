@@ -1,7 +1,8 @@
 """A3.2: Agent name rules (Python mirror of dashboard/public/agentname.js), the name over
-the control plane (poll / sync / report / rename), `jarvis name`, and the host-local Agent admin page (`jarvis admin`):
+the control plane (poll / sync / report / rename), `agentj name`, and the host-local Agent admin page (`agentj admin`):
 loopback only, one-time token (URL fragment) → bearer session (no cookie), Host / Origin / JSON / size checks, and approval only through the typed code — driven
-against a real `jarvis serve` on a test relay with a Python device."""
+against a real `agentj serve` on a test relay with a Python device."""
+import _hermetic  # noqa: F401,I001  (never the real ~/.local/state; see _hermetic.py)
 import http.client
 import json
 import os
@@ -22,14 +23,14 @@ HERE = pathlib.Path(__file__).resolve().parent
 HOST = HERE.parent
 sys.path.insert(0, str(HOST))
 sys.path.insert(0, str(HERE))
-from jarvis_host import gate, admin, cloud, names, serve, text, wire  # noqa: E402
-from jarvis_host.state import State  # noqa: E402
+from agentj import gate, admin, cloud, names, serve, text, wire  # noqa: E402
+from agentj.state import State  # noqa: E402
 from fakecp import FakeCP  # noqa: E402
 from fakerelay import FakeRelay, PyDevice  # noqa: E402
 
 # The same cases the JS side (dashboard/public/agentname.js) must pass: (input, normalised | None if refused).
 NAME_CASES = [
-    ("贾维斯一号", "贾维斯一号"), ("Wren", "Wren"), ("市场部 Agent", "市场部 Agent"), ("  Wren  ", "Wren"),
+    ("助理一号", "助理一号"), ("Wren", "Wren"), ("市场部 Agent", "市场部 Agent"), ("  Wren  ", "Wren"),
     ("市场部    Agent", "市场部 Agent"), ("\t Wren \n", "Wren"), ("\u3000Wren\u3000", "Wren"), ("\ufeffWren", None),
     ("\x85Wren\x85", "Wren"), ("\x1cWren", None), ("\u2028Wren\u2029", "Wren"), ("\u00a0 Wren \u202f", "Wren"),
     ("a" * 32, "a" * 32), ("名" * 32, "名" * 32), ("😀" * 32, "😀" * 32), ("Ｗｒｅｎ", "Ｗｒｅｎ"), ("A  B  C", "A B C"),
@@ -194,7 +195,7 @@ class NameRules(unittest.TestCase):
                 self.assertEqual(st.devices(), {}, "every revoke stays revoked")
             # and across processes
             ids = [st.add_device(os.urandom(32), f"p{i}") for i in range(5)]
-            code = ("import sys, pathlib; sys.path.insert(0, %r); from jarvis_host.state import State; "
+            code = ("import sys, pathlib; sys.path.insert(0, %r); from agentj.state import State; "
                     "State(pathlib.Path(%r)).remove_device(sys.argv[1])") % (str(HOST), str(st.root))
             ps = [subprocess.Popen([sys.executable, "-c", code, i]) for i in ids]
             self.assertEqual([p.wait(30) for p in ps], [0] * 5)
@@ -265,7 +266,7 @@ class ControlPlane(unittest.TestCase):
             rep = cp.reports[-1]
             self.assertEqual(rep["agent_name"], "Wren")
             self.assertEqual(rep["machine"], text.machine_name())
-            self.assertEqual(rep["agent"], "agentjarvis-host/0.9.0a1")
+            self.assertEqual(rep["agent"], "agentj/0.10.0a1")
 
     def test_rename_signed_and_answers_whitelisted(self):
         with FakeCP() as cp:
@@ -354,26 +355,26 @@ class ControlPlane(unittest.TestCase):
 
     def test_cloud_py_still_never_writes_config_or_devices(self):
         import ast
-        tree = ast.parse((HOST / "jarvis_host" / "cloud.py").read_text())
+        tree = ast.parse((HOST / "agentj" / "cloud.py").read_text())
         for node in ast.walk(tree):
             if isinstance(node, ast.Attribute):
                 self.assertNotIn(node.attr, ("set_agent_name", "set_remote_unbind", "config_path", "add_device", "remove_device"))
 
 
-# ------------------------------------------------------------------ CLI: jarvis name / login / status
+# ------------------------------------------------------------------ CLI: agentj name / login / status
 class Cli(unittest.TestCase):
     def setUp(self):
         self.dir = tempfile.mkdtemp(prefix="aj-a32-", dir="/tmp")
-        self.env = {**os.environ, "AGENTJARVIS_STATE_DIR": self.dir, "PYTHONPATH": str(HOST)}
-        self.env.pop("AGENTJARVIS_API_URL", None)
+        self.env = {**os.environ, "AGENTJ_STATE_DIR": self.dir, "PYTHONPATH": str(HOST)}
+        self.env.pop("AGENTJ_API_URL", None)
         self.st = State(pathlib.Path(self.dir))
         self.st.init(relay="ws://127.0.0.1:1")
 
     def tearDown(self):
         shutil.rmtree(self.dir, ignore_errors=True)
 
-    def jarvis(self, *args, input="", env=None):
-        return subprocess.run([sys.executable, "-m", "jarvis_host.cli", *args], cwd=HOST, env={**self.env, **(env or {})},
+    def agentj(self, *args, input="", env=None):
+        return subprocess.run([sys.executable, "-m", "agentj.cli", *args], cwd=HOST, env={**self.env, **(env or {})},
                               capture_output=True, text=True, timeout=60, input=input)
 
     def test_revoke_cli_refuses_when_serve_is_silent(self):
@@ -382,38 +383,38 @@ class Cli(unittest.TestCase):
         lsock.bind(str(self.st.sock_path))
         lsock.listen(8)
         try:
-            r = self.jarvis("revoke", did)
+            r = self.agentj("revoke", did)
         finally:
             lsock.close()
             self.st.sock_path.unlink()
         self.assertNotEqual(r.returncode, 0)
         self.assertIn("没有响应", r.stderr)
         self.assertIn(did, self.st.devices())
-        r = self.jarvis("revoke", did)          # no socket file = serve not running → direct, locked edit
+        r = self.agentj("revoke", did)          # no socket file = serve not running → direct, locked edit
         self.assertEqual(r.returncode, 0, r.stderr)
         self.assertNotIn(did, self.st.devices())
 
     def test_report_hostname_command_and_login_notice(self):
-        r = self.jarvis("report-hostname")
-        self.assertIn("jarvis report-hostname off", r.stdout)
-        r = self.jarvis("report-hostname", "off")
+        r = self.agentj("report-hostname")
+        self.assertIn("agentj report-hostname off", r.stdout)
+        r = self.agentj("report-hostname", "off")
         self.assertEqual(r.returncode, 0)
         self.assertFalse(self.st.report_machine())
         with FakeCP(interval=4, bound_after=1) as cp:
-            r = self.jarvis("login", "--api", cp.url, "--yes", env={"AGENTJARVIS_APP_URL": cp.url})
+            r = self.agentj("login", "--api", cp.url, "--yes", env={"AGENTJ_APP_URL": cp.url})
             self.assertIn("本机不上报主机名", r.stdout)
             self.assertIsNone(cp.reports[-1]["machine"])
-        self.jarvis("unlink")
-        self.jarvis("report-hostname", "on")
+        self.agentj("unlink")
+        self.agentj("report-hostname", "on")
         with FakeCP(interval=4, bound_after=1) as cp:
-            r = self.jarvis("login", "--api", cp.url, "--yes", env={"AGENTJARVIS_APP_URL": cp.url})
+            r = self.agentj("login", "--api", cp.url, "--yes", env={"AGENTJ_APP_URL": cp.url})
             self.assertIn("会上报本机主机名", r.stdout)
-            self.assertIn("jarvis report-hostname off", r.stdout)
+            self.assertIn("agentj report-hostname off", r.stdout)
             self.assertEqual(cp.reports[-1]["machine"], text.machine_name())
 
     def test_admin_url_file(self):
         path = os.path.join(self.dir, "admin-url.jsonl")
-        p = subprocess.Popen([sys.executable, "-m", "jarvis_host.cli", "admin", "--events", "jsonl", "--url-file", path],
+        p = subprocess.Popen([sys.executable, "-m", "agentj.cli", "admin", "--events", "jsonl", "--url-file", path],
                              cwd=HOST, env=self.env, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
         try:
             ev = json.loads(p.stdout.readline())
@@ -430,69 +431,69 @@ class Cli(unittest.TestCase):
             p.wait(10)
             for f in (p.stdin, p.stdout, p.stderr):
                 f.close()
-        r = self.jarvis("admin", "--url-file", path)
+        r = self.agentj("admin", "--url-file", path)
         self.assertNotEqual(r.returncode, 0, "an existing file is never reused")
         self.assertIn("--url-file", r.stderr)
 
     def test_name_unlinked_is_local_only(self):
-        r = self.jarvis("name")
+        r = self.agentj("name")
         self.assertIn("还没起名", r.stdout)
-        self.assertIn("贾维斯一号", r.stdout)
-        r = self.jarvis("name", "  市场部   Agent ")
+        self.assertIn("助理一号", r.stdout)
+        r = self.agentj("name", "  市场部   Agent ")
         self.assertEqual(r.returncode, 0, r.stderr)
         self.assertIn("「市场部 Agent」", r.stdout)
         self.assertEqual(self.st.agent_name(), "市场部 Agent")
-        r = self.jarvis("name", "bad\u202ename")
+        r = self.agentj("name", "bad\u202ename")
         self.assertNotEqual(r.returncode, 0)
         self.assertIn("不合规", r.stderr)
         self.assertEqual(self.st.agent_name(), "市场部 Agent")
-        self.assertIn("市场部 Agent", self.jarvis("status").stdout)
-        self.assertIn("Agent：「市场部 Agent」", self.jarvis("devices").stdout)
-        self.assertNotIn("agent_name", json.loads(self.jarvis("devices", "--json").stdout or "{}"))
+        self.assertIn("市场部 Agent", self.agentj("status").stdout)
+        self.assertIn("Agent：「市场部 Agent」", self.agentj("devices").stdout)
+        self.assertNotIn("agent_name", json.loads(self.agentj("devices", "--json").stdout or "{}"))
 
     def test_name_linked_goes_to_the_dashboard_first(self):
         with FakeCP() as cp:
             _link(self.st, cp.url)
-            r = self.jarvis("name", "Nova")
+            r = self.agentj("name", "Nova")
             self.assertEqual(r.returncode, 0, r.stderr)
             self.assertEqual(cp.renames[-1]["name"], "Nova")
             self.assertEqual(self.st.agent_name(), "Nova")
             self.assertIn("Dashboard 和本机都已改好", r.stdout)
             self.assertTrue(any(rep.get("agent_name") == "Nova" for rep in cp.reports), "a report acknowledges the new name")
-            r = self.jarvis("name", "wren")
+            r = self.agentj("name", "wren")
             self.assertNotEqual(r.returncode, 0)
             self.assertIn("已经有叫这个名字", r.stderr)
             self.assertIn("「wren 2」", r.stderr)
             self.assertEqual(self.st.agent_name(), "Nova", "409 → nothing written locally")
             cp.rename_script = ["unbound"]
-            r = self.jarvis("name", "Orion")
+            r = self.agentj("name", "Orion")
             self.assertNotEqual(r.returncode, 0)
             self.assertEqual(self.st.agent_name(), "Nova")
-        r = self.jarvis("name", "Orion")   # control plane gone
+        r = self.agentj("name", "Orion")   # control plane gone
         self.assertNotEqual(r.returncode, 0)
         self.assertIn("连不上 Dashboard，名字没改", r.stderr)
         self.assertEqual(self.st.agent_name(), "Nova")
 
     def test_login_confirm_shows_and_sets_the_agent_name(self):
         with FakeCP(interval=4, bound_after=1) as cp:
-            cp.bound_name = "贾维斯一号"
-            r = self.jarvis("login", "--api", cp.url, input="n\n", env={"AGENTJARVIS_APP_URL": cp.url})
+            cp.bound_name = "助理一号"
+            r = self.agentj("login", "--api", cp.url, input="n\n", env={"AGENTJ_APP_URL": cp.url})
             self.assertNotEqual(r.returncode, 0)
-            self.assertIn("添加到公司账号 acme-co（Acme [2J Co），Agent 名「贾维斯一号」？[y/N]", r.stdout)
+            self.assertIn("添加到公司账号 acme-co（Acme [2J Co），Agent 名「助理一号」？[y/N]", r.stdout)
             self.assertIsNone(self.st.agent_name(), "N writes nothing — not the name either")
             self.assertFalse(self.st.cloud_path.exists())
         with FakeCP(interval=4, bound_after=1) as cp:
-            cp.bound_name = "贾维斯一号"
-            r = self.jarvis("login", "--api", cp.url, input="y\n", env={"AGENTJARVIS_APP_URL": cp.url})
+            cp.bound_name = "助理一号"
+            r = self.agentj("login", "--api", cp.url, input="y\n", env={"AGENTJ_APP_URL": cp.url})
             self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
-            self.assertEqual(self.st.agent_name(), "贾维斯一号")
-            self.assertEqual(cp.reports[-1]["agent_name"], "贾维斯一号")
+            self.assertEqual(self.st.agent_name(), "助理一号")
+            self.assertEqual(cp.reports[-1]["agent_name"], "助理一号")
             self.assertIsNotNone(cp.reports[-1]["machine"])
 
     def test_login_with_a_bad_bound_name_keeps_the_old_prompt(self):
         with FakeCP(interval=4, bound_after=1) as cp:
             cp.bound_name = "bad\u202ename"
-            r = self.jarvis("login", "--api", cp.url, "--yes", env={"AGENTJARVIS_APP_URL": cp.url})
+            r = self.agentj("login", "--api", cp.url, "--yes", env={"AGENTJ_APP_URL": cp.url})
             self.assertEqual(r.returncode, 0, r.stderr)
             self.assertIn("添加到公司账号 acme-co（Acme [2J Co）？[y/N] y", r.stdout)
             self.assertIsNone(self.st.agent_name())
@@ -611,7 +612,7 @@ class Page(unittest.TestCase):
         self.assertEqual(st["agent_name"], "Wren")
         self.assertEqual(set(st), {"agent_name", "machine", "channel", "version", "serve", "dashboard", "remote_unbind", "limit",
                                    "devices", "pairing", "passphrase_set"})
-        self.assertEqual((st["limit"], st["version"], st["serve"]["running"]), (5, "0.9.0a1", False))
+        self.assertEqual((st["limit"], st["version"], st["serve"]["running"]), (5, "0.10.0a1", False))
         for bad in (auth.replace("Bearer ", "bearer "), auth + "x", "Basic " + auth[7:], auth[7:]):
             self.assertEqual(self.state_status(bad), 404, bad)
         r, _ = self.req("GET", "/api/state", headers={"Cookie": f"aj_admin_{self.port}={auth[7:]}"})
@@ -866,11 +867,11 @@ class Page(unittest.TestCase):
         self.assertNotRegex(html, r"(?:src|srcset|action|formaction)\s*=\s*\"?https?:", "no third-party resources")
         self.assertNotRegex(html, r"<link[^>]+href=\"https?:", "no third-party stylesheets / icons / preloads")
         self.assertEqual(sorted(set(re.findall(r'href="(https?://[^"]+)"', html))),
-                         [f"https://agentjarvis.net/{p}/" for p in ("contact", "docs", "privacy", "security")])
+                         [f"https://agentj.app/{p}/" for p in ("contact", "docs", "privacy", "security")])
         zh = json.loads((admin.ASSET_DIR / "i18n/admin.zh.json").read_text())
         words = "\n".join(zh.values())
         for needle in ("建议一个员工用一个 Agent", "一个 Agent 就是一个计费席位，只能运行在一台电脑或服务器上。它的名字只是个标签，就像给宠物起名，叫什么都行。",
-                       "127.0.0.1", "jarvis pair", "看着手机，输入手机上的 6 位码", "显示链接", "从公司后台解绑", "给这个 Agent 起个名字",
+                       "127.0.0.1", "agentj pair", "看着手机，输入手机上的 6 位码", "显示链接", "从公司后台解绑", "给这个 Agent 起个名字",
                        "6 位码只显示在手机上，这个页面永远不会显示它", "正在添加手机遥控器", "只在这台电脑上能打开"):
             self.assertIn(needle, words, needle)
         for needle in ("history.replaceState", "sessionStorage", "Authorization", "/api/session/end", "review A32-04"):
@@ -879,16 +880,16 @@ class Page(unittest.TestCase):
 
 # ------------------------------------------------------------------ §4 the page against a real serve: approval = the code
 class PagePairing(unittest.TestCase):
-    """`jarvis serve` (subprocess) on a test relay, `jarvis admin --events jsonl` (subprocess), a Python device."""
+    """`agentj serve` (subprocess) on a test relay, `agentj admin --events jsonl` (subprocess), a Python device."""
 
     def setUp(self):
         self.dir = tempfile.mkdtemp(prefix="aj-a32p-", dir="/tmp")
         self.relay = FakeRelay().__enter__()
-        self.env = {**os.environ, "AGENTJARVIS_STATE_DIR": self.dir, "PYTHONPATH": str(HOST),
-                    "AGENTJARVIS_TEST_REPORT_DEBOUNCE": "0.1"}
-        self.env.pop("AGENTJARVIS_API_URL", None)
+        self.env = {**os.environ, "AGENTJ_STATE_DIR": self.dir, "PYTHONPATH": str(HOST),
+                    "AGENTJ_TEST_REPORT_DEBOUNCE": "0.1"}
+        self.env.pop("AGENTJ_API_URL", None)
         self.st = State(pathlib.Path(self.dir))
-        self.st.init(relay=self.relay.url, web="https://alpha-web.agentjarvis.net")
+        self.st.init(relay=self.relay.url, web="https://m.agentj.app")
         gate.set_passphrase(self.st, PASS)   # L2: the human's approval passphrase
         self.procs, self.devices = [], []
         self.serve = self.spawn("serve", "--events", "jsonl", "--no-stdin", stdin=subprocess.DEVNULL)
@@ -925,7 +926,7 @@ class PagePairing(unittest.TestCase):
         shutil.rmtree(self.dir, ignore_errors=True)
 
     def spawn(self, *args, stdin):
-        p = subprocess.Popen([sys.executable, "-m", "jarvis_host.cli", *args], cwd=HOST, env=self.env, stdin=stdin,
+        p = subprocess.Popen([sys.executable, "-m", "agentj.cli", *args], cwd=HOST, env=self.env, stdin=stdin,
                              stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
         self.procs.append(p)
         return p

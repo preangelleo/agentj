@@ -1,4 +1,4 @@
-// agentjarvis web client (alpha). Spec: agentjarvis/protocol/PROTOCOL.md §2–§4. One host only (N=1).
+// agentj web client (alpha). Spec: agentjarvis/protocol/PROTOCOL.md §2–§4. One host only (N=1).
 // PR1: every human-typed byte leaves this page only inside a Noise transport message; message text is rendered with
 // textContent only; the device's X25519 private key is a non-extractable CryptoKey kept in IndexedDB; chat history is
 // kept in memory only (nothing plaintext at rest). L1 (PROTOCOL §8–§9): the Agent's replies, status and permission requests
@@ -29,11 +29,43 @@ function fillText(node, str) {                       // `x` → <code>x</code>; 
 }
 const plain = (str) => String(str).replace(/`/g, '');
 function applyStatic() {
-  document.title = t('meta.title');
   for (const n of document.querySelectorAll('[data-i18n]')) fillText(n, t(n.dataset.i18n));
   for (const n of document.querySelectorAll('[data-i18n-attr]')) {
     for (const pair of n.dataset.i18nAttr.split(',')) { const [a, k] = pair.split('='); n.setAttribute(a.trim(), plain(t(k.trim()))); }
   }
+  renderName();
+}
+
+// ---------------------------------------------------------------- Agent display name (host → device {"t":"status",…,"name"})
+// The name the owner gave this Agent, shown top-left (#brand-name) and as the tab title; "Agent J" when the host sends
+// none (null or absent — hosts from before the rename never send it). It comes from the host, so it is untrusted display
+// text: textContent only; format / surrogate / private-use / unassigned characters dropped, any whitespace (tabs, line
+// breaks, line / paragraph separators) folded to one space, other control characters dropped, capped at 32 code points (the Agent-name maximum). The last name is cached in the
+// host record (IndexedDB "host"), so a cold start shows it before the connection is up; re-pairing drops it with the record.
+const DEFAULT_NAME = 'Agent J';
+const NAME_MAX = 32;
+let agentName = null;                                // null = the default
+function cleanName(v) {
+  if (typeof v !== 'string') return null;
+  const s = v.slice(0, 512).replace(/[\p{Cf}\p{Cs}\p{Co}\p{Cn}]/gu, '').replace(/\s+/gu, ' ').replace(/\p{Cc}/gu, '').replace(/ {2,}/g, ' ').trim();
+  const cps = Array.from(s);
+  return (cps.length > NAME_MAX ? cps.slice(0, NAME_MAX).join('').trimEnd() : s) || null;
+}
+function renderName() {
+  $('brand-name').textContent = agentName ?? DEFAULT_NAME;
+  document.title = agentName ?? t('meta.title');
+}
+function setAgentName(v, save = true) {
+  const n = cleanName(v);
+  const changed = n !== agentName;
+  agentName = n;
+  renderName();
+  if (save && changed && sess) saveName(sess.ctx.channel, n).catch(() => { /* only a cache */ });
+}
+async function saveName(channel, name) {
+  const h = await dbGet('host');
+  if (!h || !h.approved || h.channel !== channel || (h.name ?? null) === name) return;
+  await dbPut('host', { ...h, name });
 }
 
 // Read the pairing fragment first thing and strip it from the URL / history (it carries the one-time PSK).
@@ -133,15 +165,31 @@ function deviceLabel() {
   return ('网页 · ' + [os, br].filter(Boolean).join(' ')).slice(0, 64);
 }
 
-// The client only ever talks to the relay next to it (alpha-web.X → alpha-relay.X): a pasted link cannot move this device
-// to somebody else's relay + host (CSP connect-src enforces the same on this origin; this keeps it true in any shell).
-// A page served from 127.0.0.1 exists only in tests and may also use a local relay.
+// The client only ever talks to our relay: relay.agentj.app, or the legacy alpha-relay.agentjarvis.net that pairing links
+// from not-yet-updated hosts still carry (one version cycle; the same relay Worker answers on both hosts and both reach the
+// same channel). A pasted link cannot move this device to somebody else's relay + host (CSP connect-src enforces the same
+// on this origin; this keeps it true in any shell). A page served from 127.0.0.1 exists only in tests and may also use a
+// local relay.
+const RELAY_HOSTS = ['relay.agentj.app', 'alpha-relay.agentjarvis.net'];
 function allowRelay(url) {
   const u = new URL(url);
-  if (location.hostname === '127.0.0.1') {
-    return (u.protocol === 'ws:' && u.hostname === '127.0.0.1') || (u.protocol === 'wss:' && u.hostname.startsWith('alpha-relay.'));
-  }
-  return u.protocol === 'wss:' && !u.port && u.hostname === location.hostname.replace(/^alpha-web\./, 'alpha-relay.');
+  const ours = u.protocol === 'wss:' && !u.port && RELAY_HOSTS.includes(u.hostname);
+  if (location.hostname === '127.0.0.1') return ours || (u.protocol === 'ws:' && u.hostname === '127.0.0.1');
+  return ours;
+}
+
+// The legacy web host (alpha-web.agentjarvis.net) still serves this page for one version cycle: a phone paired there keeps
+// its keys in that origin's IndexedDB and keeps working there. A visitor with no pairing there goes to the new origin with
+// path + query + fragment intact (a #p= pairing link arrives whole; it was only stripped from this page's history).
+const LEGACY_WEB_HOST = 'alpha-web.agentjarvis.net';
+const WEB_ORIGIN = 'https://m.agentj.app';
+async function leaveLegacyHost() {
+  if (location.hostname !== LEGACY_WEB_HOST) return false;
+  let paired = false;
+  try { const h = await dbGet('host'); paired = !!(h && h.approved); } catch { /* no storage → nothing to keep here */ }
+  if (paired) return false;
+  location.replace(WEB_ORIGIN + location.pathname + location.search + (pendingLink ?? location.hash));
+  return true;
 }
 const parsePairing = (input) => parseLink(input, undefined, allowRelay);
 
@@ -218,6 +266,7 @@ async function onApp(s, m) {
     if (s.mode !== 'pair' || s.phase !== 'approval') throw new ProtocolError('unexpected approved');
     const host = { relay: s.ctx.relay, channel: s.ctx.channel, hostPub: s.ctx.hostPub, approved: true };
     await dbPut('host', host);
+    setAgentName(null, false);                        // a new pairing: its name comes with the host's first status
     s.mode = 'resume'; s.ctx = host;                  // drop the PSK; a later host restart resumes on this socket
     $('messages').replaceChildren(); asks.clear(); grants.clear(); renderGrants(); lastSeq = 0; panel = 'chat-view';
     return enterReady(s);
@@ -238,7 +287,7 @@ async function onApp(s, m) {
     addMessage(from === 'you' ? 'out' : from === 'device' ? 'out' : 'in', m.text, from, typeof m.name === 'string' ? m.name : '');
     return;
   }
-  if (m.t === 'status') return setAgentStatus(m.s, m.agent);
+  if (m.t === 'status') { setAgentName(m.name); return setAgentStatus(m.s, m.agent); }
   if (m.t === 'ask') return showAsk(s, m);
   if (m.t === 'ask_done') return askDone(m.id, m.result);
   if (m.t === 'auto') return showAuto(m);
@@ -354,6 +403,7 @@ function scheduleReconnect() {
 async function resume() {
   const host = await dbGet('host');
   if (!host || !host.approved) return showIdle();
+  setAgentName(host.name, false);                     // the cached name, shown before the connection is up
   show('chat-view');
   openSession('resume', { relay: host.relay, channel: host.channel, hostPub: new Uint8Array(host.hostPub) });
 }
@@ -392,6 +442,7 @@ function startPairing(input) {
 
 function showIdle() {
   closeSession();
+  setAgentName(null, false);
   show('pair-view');
   setStatus('idle', 'st.idle');
 }
@@ -464,12 +515,12 @@ let agentLast = null;
 function setAgentStatus(st, agent) {
   agentLast = [st, agent];
   const el = $('agent-status');
-  if (!agent || !STATUS_KEYS.includes(st)) { el.hidden = true; $('brand-name').hidden = false; agentSt = 'none'; document.body.dataset.agent = 'none'; renderLogo(); return; }
-  el.hidden = false;
-  $('brand-name').hidden = true;
+  if (!agent || !STATUS_KEYS.includes(st)) { el.hidden = true; agentSt = 'none'; document.body.dataset.agent = 'none'; renderLogo(); return; }
+  // the harness · state pill after the connection line; the state is only true while connected, so it shows only then
+  // (the Agent's own display name is line 1, #brand-name)
+  el.hidden = state !== 'ready';
   el.dataset.s = st;
-  // the state is only true while connected; otherwise the header shows the Agent's name and the connection line says why
-  el.textContent = state === 'ready' ? `${AGENT_NAME[agent] ?? 'Agent'} · ${t('ag.' + st)}` : (AGENT_NAME[agent] ?? 'Agent');
+  el.textContent = `${AGENT_NAME[agent] ?? 'Agent'} · ${t('ag.' + st)}`;
   agentSt = st;
   document.body.dataset.agent = st;
   renderLogo();
@@ -1134,6 +1185,7 @@ function wire() {
 }
 
 async function main() {
+  if (await leaveLegacyHost()) return;
   applyStatic();
   renderEstop();
   wire();

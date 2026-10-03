@@ -5,6 +5,7 @@ permission tool failing closed. Flows (no relay; a fake ready session records wh
 refusal path, default deny on timeout, the approvals log, and the whole chain with a stand-in `claude` (fakeclaude.py) that
 starts the real permission tool and asks it before running a command.
 """
+import _hermetic  # noqa: F401,I001  (never the real ~/.local/state; see _hermetic.py)
 import asyncio
 import json
 import os
@@ -23,9 +24,9 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey 
 from cryptography.hazmat.primitives.asymmetric.utils import encode_dss_signature  # noqa: E402
 from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat  # noqa: E402
 
-from jarvis_host import agent as agents  # noqa: E402
-from jarvis_host import approvals, permtool, serve, webpush, wire  # noqa: E402
-from jarvis_host.state import State  # noqa: E402
+from agentj import agent as agents  # noqa: E402
+from agentj import approvals, permtool, serve, webpush, wire  # noqa: E402
+from agentj.state import State  # noqa: E402
 
 HERE = pathlib.Path(__file__).resolve().parent
 MARK = "AJ-L1-明文-cmd-7f3a"
@@ -171,8 +172,8 @@ class Units(unittest.TestCase):
         self.assertIsNone(webpush.parse_sub({**good, "endpoint": "https://evil.com/x"}))
 
     def test_permtool_fails_closed(self):
-        os.environ["AGENTJARVIS_PERM_SOCK"] = "/nonexistent/perm.sock"
-        os.environ["AGENTJARVIS_PERM_TOKEN"] = "t"
+        os.environ["AGENTJ_PERM_SOCK"] = "/nonexistent/perm.sock"
+        os.environ["AGENTJ_PERM_TOKEN"] = "t"
         try:
             init = permtool.handle({"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {"protocolVersion": "2025-06-18"}})
             self.assertEqual(init["result"]["capabilities"], {"tools": {}})
@@ -185,8 +186,8 @@ class Units(unittest.TestCase):
             self.assertEqual(json.loads(r["result"]["content"][0]["text"])["behavior"], "deny")
             self.assertIsNone(permtool.handle({"jsonrpc": "2.0", "method": "notifications/initialized"}))
         finally:
-            os.environ.pop("AGENTJARVIS_PERM_SOCK")
-            os.environ.pop("AGENTJARVIS_PERM_TOKEN")
+            os.environ.pop("AGENTJ_PERM_SOCK")
+            os.environ.pop("AGENTJ_PERM_TOKEN")
 
     def test_claude_argv_never_widens_permissions(self):
         a = agents.ClaudeAgent(None, {"kind": "claude", "dir": "/tmp", "model": None}).argv("sid-1")
@@ -196,7 +197,7 @@ class Units(unittest.TestCase):
         self.assertEqual(a[a.index("--permission-prompt-tool") + 1], agents.PERM_TOOL)
         self.assertEqual(a[a.index("--disallowedTools") + 1], agents.PERM_TOOL)   # the model itself cannot call it
         self.assertEqual(a[a.index("--resume") + 1], "sid-1")
-        from jarvis_host.agent_codex import CodexAgent
+        from agentj.agent_codex import CodexAgent
         cx = CodexAgent(None, {"kind": "codex", "dir": "/tmp", "model": None})
         c = " ".join(cx.argv())
         for bad in ("dangerously", "bypass", "--sandbox", "-s ", "approval", "-c", "--enable", "--disable"):
@@ -379,7 +380,7 @@ class Flows(unittest.TestCase):
         self.assertEqual(to_b[4]["from"], "agent")
         to_a = [o for c, o in self.sent[n:] if c == 11]
         self.assertEqual([o.get("seq") for o in to_a if o["t"] == "msg"], [2])
-        self.assertEqual(to_a[0], {"t": "status", "s": "none", "agent": None})
+        self.assertEqual(to_a[0], {"t": "status", "s": "none", "agent": None, "name": None})
 
 
 # ------------------------------------------------------------------ the whole chain with a stand-in claude
@@ -393,7 +394,7 @@ class Chain(unittest.TestCase):
         wrapper = pathlib.Path(self.tmp.name) / "claude"
         wrapper.write_text(f"#!/bin/sh\nexec {sys.executable} {HERE / 'fakeclaude.py'} \"$@\"\n")
         wrapper.chmod(0o700)
-        self.env = {"AGENTJARVIS_CLAUDE_BIN": str(wrapper), "FAKE_CLAUDE_LOG": str(self.argv_log)}
+        self.env = {"AGENTJ_CLAUDE_BIN": str(wrapper), "FAKE_CLAUDE_LOG": str(self.argv_log)}
         os.environ.update(self.env)
         self.st.set_agent_config("claude", str(self.work))
 

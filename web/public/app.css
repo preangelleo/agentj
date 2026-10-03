@@ -1,4 +1,4 @@
-/* Agent Jarvis phone remote (web client). Built on the shared design system: brand/palette.css (colours, fonts, roles,
+/* Agent J phone remote (web client). Built on the shared design system: brand/palette.css (colours, fonts, roles,
    light + dark) and brand/base.css (reset, buttons, forms, language switch). This file only lays out the app.
    Rules: primary = near-black Sooty; the shield green is an accent only (logo, dots, focus). No inline styles (CSP). */
 
@@ -51,9 +51,18 @@ code { font-family: var(--font-mono); font-size: 0.88em; background: var(--code-
   align-items: center; column-gap: var(--sp-3); }
 .bar__logo { grid-area: logo; width: 40px; height: 40px; flex: none; }
 .bar__who { grid-area: who; min-width: 0; }
-.bar__name { font-family: var(--font-title); font-weight: 700; font-size: 1.0625rem; line-height: 1.3;
+.bar__name { margin: 0; font-family: var(--font-title); font-weight: 700; font-size: 1.0625rem; line-height: 1.3;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.agent-status, #brand-name { display: block; overflow: hidden; text-overflow: ellipsis; }
+/* line 1: the Agent's display name (from the host; ellipsis when long). line 2: connection dot + text, then — while
+   connected — the harness · state pill; the connection text gives way first so the state stays readable */
+#brand-name { display: block; overflow: hidden; text-overflow: ellipsis; }
+.bar__sub { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.bar__sub .status { flex: 0 1 auto; min-width: 8px; }
+body[data-conn="ready"] .bar__sub .status { flex-shrink: 100; }
+.agent-status { flex: 0 1 auto; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  font-size: var(--fs-xs); line-height: 1.4; color: var(--text-muted); }
+.agent-status::before { content: "·"; margin-right: 6px; }
+.agent-status[hidden] { display: none; }
 .status { margin: 0; font-size: var(--fs-xs); color: var(--text-muted); display: flex; align-items: center; gap: 6px;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis; line-height: 1.4; }
 .status::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--c-argent); flex: none; }

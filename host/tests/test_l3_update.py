@@ -1,19 +1,20 @@
-"""L3: upgrades the human decides (`jarvis update`), the macOS fence (sandbox-exec), the cloud-server form.
+"""L3: upgrades the human decides (`agentj update`), the macOS fence (sandbox-exec), the cloud-server form.
 
 - Update: version ordering, the latest version from a (local stand-in for the) public repo, network failure = "unknown"
   (never an error), install-kind detection (uv tool / pipx / checkout / pip) → the matching command, `apply` refused without
-  an interactive terminal (no --yes exists), refused when jarvis's files are read-only (inside the fence), the daily check
+  an interactive terminal (no --yes exists), refused when agentj's files are read-only (inside the fence), the daily check
   (once per 24 h, persisted, one phone notice per version, switch off) and serve's loop delivering that notice to a phone.
 - macOS fence as text (runs on Linux too): the SBPL profile denies the state dir (files + unix sockets) except agentperm/,
-  keeps jarvis's code / start-up files / LaunchAgents read-only, pins the directories above them, limits signals and process
+  keeps agentj's code / start-up files / LaunchAgents read-only, pins the directories above them, limits signals and process
   info to the sandbox, refuses launchd jobs / Apple Events / LaunchServices / tmux + launchd sockets; paths only as -D
   parameters. Linux: ancestors of protected paths are bind-pinned (a rename would let the Agent plant code).
 - Doctor rows: update (offline / unreachable = !, never ✗), linger, the macOS fence row.
 - Cloud form: the pairing QR picks Unicode / ANSI / plain ASCII by terminal; SSH sessions get the `--link` hint and the
-  `ssh -L` tunnel line for `jarvis admin`.
+  `ssh -L` tunnel line for `agentj admin`.
 - Real macOS runs (skipped elsewhere): a LaunchAgent installed / running / removed under a throwaway label; opt-in
   (AJ_REAL_CLAUDE=1) the real Claude Code inside the sandbox through serve + the permission tool + a phone approval.
 """
+import _hermetic  # noqa: F401,I001  (never the real ~/.local/state; see _hermetic.py)
 import asyncio
 import contextlib
 import http.server
@@ -35,18 +36,18 @@ HERE = pathlib.Path(__file__).resolve().parent
 HOST = HERE.parent
 sys.path.insert(0, str(HOST))
 sys.path.insert(0, str(HERE))
-import jarvis_host  # noqa: E402
-from jarvis_host import cli, doctor, fence, names, serve, service, update  # noqa: E402
-from jarvis_host.state import State  # noqa: E402
+import agentj  # noqa: E402
+from agentj import cli, doctor, fence, names, serve, service, update  # noqa: E402
+from agentj.state import State  # noqa: E402
 
 
 def _cli(*args, env=None, timeout=60, stdin=subprocess.DEVNULL):
-    return subprocess.run([sys.executable, "-m", "jarvis_host.cli", *args], cwd=HOST, env={**os.environ, **(env or {})},
+    return subprocess.run([sys.executable, "-m", "agentj.cli", *args], cwd=HOST, env={**os.environ, **(env or {})},
                           capture_output=True, text=True, timeout=timeout, stdin=stdin)
 
 
 class _Repo:
-    """A local stand-in for raw.githubusercontent.com: serves `body` with `code` at /host/jarvis_host/__init__.py."""
+    """A local stand-in for raw.githubusercontent.com: serves `body` with `code` at /host/agentj/__init__.py."""
 
     def __init__(self, body: str = "", code: int = 200):
         self.body, self.code, self.hits = body, code, 0
@@ -64,7 +65,7 @@ class _Repo:
             def log_message(self, *a):
                 pass
         self.srv = http.server.ThreadingHTTPServer(("127.0.0.1", 0), H)
-        self.url = f"http://127.0.0.1:{self.srv.server_port}/host/jarvis_host/__init__.py"
+        self.url = f"http://127.0.0.1:{self.srv.server_port}/host/agentj/__init__.py"
 
     def __enter__(self):
         threading.Thread(target=self.srv.serve_forever, daemon=True).start()
@@ -76,7 +77,7 @@ class _Repo:
 
 
 def _init_text(v: str) -> str:
-    return f'"""agentjarvis host."""\n__version__ = "{v}"\nDIST = "agentjarvis-host"\n'
+    return f'"""agentj host."""\n__version__ = "{v}"\nDIST = "agentj"\n'
 
 
 def _closed_port_url() -> str:
@@ -102,7 +103,7 @@ class Versions(unittest.TestCase):
             self.assertIsNone(update.compare(bad, "0.8.0"))
 
     def test_version_is_this_round(self):
-        self.assertEqual(jarvis_host.__version__, "0.9.0a1")
+        self.assertEqual(agentj.__version__, "0.10.0a1")
 
 
 class Fetch(unittest.TestCase):
@@ -110,8 +111,8 @@ class Fetch(unittest.TestCase):
         with _Repo(_init_text("9.9.9")) as r, mock.patch.dict(os.environ, {update.URL_ENV: r.url}):
             self.assertEqual(update.fetch_latest(3), ("9.9.9", "ok"))
             res = update.check(3)
-            self.assertEqual((res["status"], res["latest"], res["current"]), ("newer", "9.9.9", jarvis_host.__version__))
-        with _Repo(_init_text(jarvis_host.__version__)) as r, mock.patch.dict(os.environ, {update.URL_ENV: r.url}):
+            self.assertEqual((res["status"], res["latest"], res["current"]), ("newer", "9.9.9", agentj.__version__))
+        with _Repo(_init_text(agentj.__version__)) as r, mock.patch.dict(os.environ, {update.URL_ENV: r.url}):
             self.assertEqual(update.check(3)["status"], "current")
         with _Repo(_init_text("0.0.1")) as r, mock.patch.dict(os.environ, {update.URL_ENV: r.url}):
             self.assertEqual(update.check(3)["status"], "ahead")
@@ -131,7 +132,7 @@ class Fetch(unittest.TestCase):
         for off in ("off", "http://example.com/x", "file:///etc/passwd"):     # plain http only to loopback; never a file
             with mock.patch.dict(os.environ, {update.URL_ENV: off}):
                 self.assertEqual(update.fetch_latest(2), (None, "off"), off)
-        self.assertTrue(update.LATEST_URL.startswith("https://raw.githubusercontent.com/preangelleo/agentjarvis/main/host/"))
+        self.assertTrue(update.LATEST_URL.startswith("https://raw.githubusercontent.com/preangelleo/agentj/main/host/"))
 
 
 class InstallKind(unittest.TestCase):
@@ -140,9 +141,9 @@ class InstallKind(unittest.TestCase):
             (pathlib.Path(d) / "uv-receipt.toml").write_text("[tool]\n")
             k = update.install_kind(d)
             self.assertEqual(k["kind"], "uv")
-            self.assertEqual(update.commands(k)[0][1:], ["tool", "upgrade", "agentjarvis-host"])
+            self.assertEqual(update.commands(k)[0][1:], ["tool", "upgrade", "agentj"])
         with tempfile.TemporaryDirectory() as d:
-            spec = "git+file:///srv/mirror/agentjarvis#subdirectory=host"
+            spec = "git+file:///srv/mirror/agentj#subdirectory=host"
             (pathlib.Path(d) / "pipx_metadata.json").write_text(json.dumps({"main_package": {"package_or_url": spec}}))
             k = update.install_kind(d)
             self.assertEqual((k["kind"], update.commands(k)[0][1:]), ("pipx", ["install", "--force", spec]),
@@ -153,7 +154,7 @@ class InstallKind(unittest.TestCase):
             c = update.commands(k)
             self.assertEqual(c[0][:2] + c[0][3:], ["git", "-C", "pull", "--ff-only"])
             self.assertEqual(c[1][1:3], ["sync", "--project"])
-            with mock.patch("jarvis_host.agent.source_root", return_value=None):
+            with mock.patch("agentj.agent.source_root", return_value=None):
                 k = update.install_kind(d)
                 self.assertEqual(k["kind"], "pip")
                 self.assertEqual(update.commands(k)[0][-1], update.SPEC)
@@ -169,7 +170,7 @@ class Apply(unittest.TestCase):
             self.assertEqual(res.returncode, 2, res.stdout + res.stderr)
             self.assertIn("human at an interactive terminal", res.stderr)
             self.assertIn("command", res.stderr)
-            piped = subprocess.run([sys.executable, "-m", "jarvis_host.cli", "update", "apply"], cwd=HOST, input="y\n",
+            piped = subprocess.run([sys.executable, "-m", "agentj.cli", "update", "apply"], cwd=HOST, input="y\n",
                                    env={**os.environ, **env}, capture_output=True, text=True, timeout=60)
             self.assertEqual(piped.returncode, 2, "a y on a pipe is not a human at a terminal")
             self.assertNotEqual(_cli("update", "apply", "--yes", env=env).returncode, 0, "there is no --yes")
@@ -197,7 +198,7 @@ class Apply(unittest.TestCase):
         res = _cli("update", "apply", env={update.URL_ENV: _closed_port_url()})
         self.assertEqual(res.returncode, 1)
         self.assertIn("nothing changed", res.stderr)
-        with _Repo(_init_text(jarvis_host.__version__)) as r:
+        with _Repo(_init_text(agentj.__version__)) as r:
             res = _cli("update", "apply", env={update.URL_ENV: r.url})
             self.assertEqual(res.returncode, 0)
             self.assertIn("up to date", res.stdout)
@@ -208,7 +209,7 @@ class Apply(unittest.TestCase):
             d = json.loads(res.stdout)
             self.assertEqual((d["status"], d["latest"], d["install"]), ("newer", "9.9.9", "checkout"))
             plain = _cli("update", "check", env={update.URL_ENV: r.url}).stdout
-            self.assertIn("jarvis update apply", plain)
+            self.assertIn("agentj update apply", plain)
             self.assertIn("git -C", plain)
         res = _cli("update", "check", "--json", env={update.URL_ENV: _closed_port_url()})
         self.assertEqual(res.returncode, 0, "offline is not an error")
@@ -236,7 +237,7 @@ class Daily(unittest.TestCase):
         with mock.patch.dict(os.environ, {update.URL_ENV: "https://example.invalid/x"}):
             note = update.daily(self.st, t0, fetch("9.9.9"))
             self.assertIn("9.9.9", note)
-            self.assertIn("jarvis update apply", note)
+            self.assertIn("agentj update apply", note)
             self.assertIsNone(update.daily(self.st, t0 + 3600, fetch("9.9.9")))
             self.assertEqual(calls, ["9.9.9"], "within 24 h: no second request")
             self.assertIsNone(update.daily(self.st, t0 + update.DAY + 1, fetch("9.9.9")), "same version: told once")
@@ -244,7 +245,7 @@ class Daily(unittest.TestCase):
             self.assertEqual(oct((self.st.root / "update.json").stat().st_mode & 0o777), "0o600")
             rec = update.read_rec(self.st)
             self.assertEqual(set(rec), {"checked", "latest", "why", "notified"}, "a version and a time, nothing else")
-            self.assertEqual(_cli("update", "auto", "off", env={"AGENTJARVIS_STATE_DIR": str(self.st.root)}).returncode, 0)
+            self.assertEqual(_cli("update", "auto", "off", env={"AGENTJ_STATE_DIR": str(self.st.root)}).returncode, 0)
             self.assertFalse(update.auto_enabled(self.st))
             self.assertIsNone(update.daily(self.st, t0 + 9 * update.DAY, fetch("9.9.11")))
             self.assertEqual(len(calls), 3, "switched off: no request at all")
@@ -285,10 +286,10 @@ class Sbpl(unittest.TestCase):
     def test_profile_rules(self):
         with tempfile.TemporaryDirectory() as d:
             home = pathlib.Path(d) / "Users" / "jane"
-            (home / ".local" / "state" / "agentjarvis-alpha" / "agentperm").mkdir(parents=True)
+            (home / ".local" / "state" / "agentj" / "agentperm").mkdir(parents=True)
             (home / "Library" / "LaunchAgents").mkdir(parents=True)
             (home / ".zshrc").write_text("")
-            st = _St(home / ".local" / "state" / "agentjarvis-alpha")
+            st = _St(home / ".local" / "state" / "agentj")
             prof, params = fence.sbpl_profile(st, str(home / "work"), home=str(home), uid=501)
             lines = [x.strip() for x in prof.splitlines()]
             self.assertEqual(lines[:2], ["(version 1)", "(allow default)"])
@@ -308,7 +309,7 @@ class Sbpl(unittest.TestCase):
             for p in (home / ".zshrc", home / ".zlogin", home / "Library" / "LaunchAgents", home / ".ssh" / "authorized_keys"):
                 self.assertIn(os.path.realpath(p) if p.exists() else str(p), ro, f"{p} read-only (also when absent)")
             for c in fence.code_paths():
-                self.assertIn(c, ro, "jarvis's code read-only")
+                self.assertIn(c, ro, "agentj's code read-only")
             pin = {v for k, v in params.items() if k.startswith("PIN_")}
             for a in (home / ".local", home / ".local" / "state", home / "Library"):
                 self.assertIn(os.path.realpath(a), pin, f"{a} cannot be renamed away")
@@ -321,7 +322,7 @@ class Sbpl(unittest.TestCase):
         container engines' sockets: no read, no write, no unix-socket connect; HERDR_* / DOCKER_HOST unset."""
         with tempfile.TemporaryDirectory() as d:
             home = pathlib.Path(d) / "Users" / "jane"
-            st = _St(home / ".local" / "state" / "agentjarvis-alpha")
+            st = _St(home / ".local" / "state" / "agentj")
             env = {"TMPDIR": "/private/var/folders/ab/cd/T/", "USER": "jane", "HERDR_SOCKET_PATH": "/opt/h/herdr.sock",
                    "HERDR_PANE_ID": "3", "DOCKER_HOST": "unix:///x"}
             prof, params = fence.sbpl_profile(st, str(home / "work"), home=str(home), uid=501, environ=env)
@@ -362,7 +363,7 @@ class Sbpl(unittest.TestCase):
             i = a.index("/usr/bin/env")
             self.assertTrue(all(x == "-D" for x in a[3:i:2]), "every path is a -D KEY=VALUE")
             unset = a[i + 1:]
-            for k in ("DBUS_SESSION_BUS_ADDRESS", "TMUX", "SSH_AUTH_SOCK", "DISPLAY", "AGENTJARVIS_STATE_DIR"):
+            for k in ("DBUS_SESSION_BUS_ADDRESS", "TMUX", "SSH_AUTH_SOCK", "DISPLAY", "AGENTJ_STATE_DIR"):
                 self.assertIn(k, unset[1::2])
             with mock.patch.object(sys, "platform", "darwin"):
                 w = fence.wrap(st, ["claude", "-p"], d)
@@ -397,7 +398,7 @@ class Ancestors(unittest.TestCase):
             top = min(fence.code_paths(), key=len)
             parent = os.path.dirname(top)
             if os.access(os.path.dirname(parent), os.W_OK):
-                self.assertIn(parent, binds, "the directory holding jarvis's code is pinned")
+                self.assertIn(parent, binds, "the directory holding agentj's code is pinned")
                 self.assertLess(a.index(parent), max(i for i, x in enumerate(a) if x == "--ro-bind"))
 
 
@@ -407,8 +408,8 @@ class DoctorRows(unittest.TestCase):
         with _Repo(_init_text("9.9.9")) as r, mock.patch.dict(os.environ, {update.URL_ENV: r.url}):
             c = doctor.check_update()
             self.assertEqual((c["id"], c["status"]), ("update", "warn"))
-            self.assertIn("jarvis update apply", c["hint"])
-        with _Repo(_init_text(jarvis_host.__version__)) as r, mock.patch.dict(os.environ, {update.URL_ENV: r.url}):
+            self.assertIn("agentj update apply", c["hint"])
+        with _Repo(_init_text(agentj.__version__)) as r, mock.patch.dict(os.environ, {update.URL_ENV: r.url}):
             self.assertEqual(doctor.check_update()["status"], "ok")
         with mock.patch.dict(os.environ, {update.URL_ENV: _closed_port_url()}):
             c = doctor.check_update()
@@ -464,11 +465,11 @@ class CloudForm(unittest.TestCase):
                          "LC_CTYPE=C.UTF-8 set by Python's PEP 538 coercion is ignored")
         self.assertEqual(cli._qr_mode(Out("ascii", True), {"TERM": "dumb"}), "ascii")
         self.assertEqual(cli._qr_mode(Out("utf-8", False), {"TERM": "xterm"}), "ascii", "not a terminal, no UTF-8 locale")
-        self.assertEqual(cli._qr_mode(Out("utf-8", True), {**utf8, "AGENTJARVIS_QR_ASCII": "1"}), "ascii")
+        self.assertEqual(cli._qr_mode(Out("utf-8", True), {**utf8, "AGENTJ_QR_ASCII": "1"}), "ascii")
 
     def test_ascii_qr_is_plain_and_square(self):
         import segno
-        qr = segno.make("https://alpha-web.agentjarvis.net/#p=" + "A" * 120, error="m")
+        qr = segno.make("https://m.agentj.app/#p=" + "A" * 120, error="m")
         txt = cli._qr_ascii(qr)
         rows = txt.splitlines()
         self.assertTrue(set(txt) <= {"#", " ", "\n"})
@@ -494,11 +495,11 @@ class RealLaunchAgent(unittest.TestCase):
     """A real `launchctl bootstrap gui/$UID` under a throwaway label + temp state dir; always removed afterwards."""
 
     def setUp(self):
-        self.name = f"net.agentjarvis.test-{secrets.token_hex(4)}"
+        self.name = f"net.agentj.test-{secrets.token_hex(4)}"
         self.dir = tempfile.mkdtemp(prefix="aj-svc-")
         self.st = State(pathlib.Path(self.dir) / "s")
         self.st.init(relay="ws://127.0.0.1:1")
-        self.env = {"AGENTJARVIS_STATE_DIR": str(self.st.root), "AGENTJARVIS_SERVICE_NAME": self.name,
+        self.env = {"AGENTJ_STATE_DIR": str(self.st.root), "AGENTJ_SERVICE_NAME": self.name,
                     update.URL_ENV: "off"}
         self.plist = pathlib.Path(service.plist_path(self.name))
 

@@ -1,6 +1,6 @@
 {
-  "name": "Agent Jarvis",
-  "short_name": "Jarvis",
+  "name": "Agent J",
+  "short_name": "Agent J",
   "description": "在手机上，跟你电脑上的 Agent 说话。 Talk to the Agent on your computer, from your phone.",
   "lang": "zh-CN",
   "start_url": "./",

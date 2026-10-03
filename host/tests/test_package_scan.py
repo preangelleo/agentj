@@ -1,11 +1,12 @@
 """Package-mode layer 1 (market.package_scan) against the shared cases the server's scanPackageText also runs
 (protocol/vectors/package-scan.json): code-shaped "name = value" lines pass, literal secrets / e-mails / keys refuse."""
+import _hermetic  # noqa: F401,I001  (never the real ~/.local/state; see _hermetic.py)
 import base64
 import json
 import pathlib
 import unittest
 
-from jarvis_host import market
+from agentj import market
 
 V = json.loads((pathlib.Path(__file__).resolve().parents[2] / "protocol" / "vectors" / "package-scan.json").read_text())
 

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""A stand-in for `codex app-server` (Codex 0.159.2's JSON-RPC over stdio, the parts jarvis uses): no model, deterministic.
+"""A stand-in for `codex app-server` (Codex 0.159.2's JSON-RPC over stdio, the parts agentj uses): no model, deterministic.
 
     fakecodex.py app-server        (JSON-RPC 2.0, one object per line on stdin / stdout)
     fakecodex.py --version
@@ -166,7 +166,7 @@ def run_turn(tid, turn, text):
                 time.sleep(0.05)
             if status == "completed":
                 say(tid, turn, "slept")
-        elif text.startswith("[agentjarvis 定时任务"):        # a scheduled task: its prompt lines RUN: / SAY:
+        elif text.startswith("[agentj 定时任务"):        # a scheduled task: its prompt lines RUN: / SAY:
             for ln in text.splitlines():
                 if ln.startswith("RUN: "):
                     command(tid, turn, ln[5:])

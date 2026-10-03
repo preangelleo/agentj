@@ -46,14 +46,19 @@ test('version.json / version.js match the shipped files', () => {
 });
 
 // The only absolute URLs anywhere: plain links to our own site's pages (navigation, never a resource the page loads —
-// CSP default-src 'self' + connect-src = the relay enforce that too). The relay URL lives only in the Worker CSP config.
-const SITE_LINK = /^https:\/\/agentjarvis\.net\/(?:[a-z]+\/)*$/;
+// CSP default-src 'self' + connect-src = the relays enforce that too), plus — in app.js only — the new web origin the
+// legacy host sends an unpaired visitor to. The relay URLs live only in the Worker CSP config (app.js pins relay HOSTS).
+const SITE_LINK = /^https:\/\/agentj\.app\/(?:[a-z]+\/)*$/;
+const NEW_WEB_ORIGIN = 'https://m.agentj.app';
 const LICENCE_TEXT = new Set(['brand/fonts/UFL-1.0-ubuntu.txt', 'brand/fonts/OFL-1.1-lexend.txt', 'brand/fonts/README.md']);   // licence texts cite their sources
-test('no URLs to anywhere in shipped files except links to agentjarvis.net pages', () => {
+test('no URLs to anywhere in shipped files except links to agentj.app pages', () => {
   for (const f of files) {
     const s = read(f);
     if (!LICENCE_TEXT.has(rel(f))) {
-      for (const m of s.matchAll(/\b(?:https?|wss?):\/\/[^\s"'<>)`]*/gi)) assert.match(m[0], SITE_LINK, `${rel(f)} contains URL ${m[0]}`);
+      for (const m of s.matchAll(/\b(?:https?|wss?):\/\/[^\s"'<>)`]*/gi)) {
+        if (rel(f) === 'app.js' && m[0] === NEW_WEB_ORIGIN) continue;
+        assert.match(m[0], SITE_LINK, `${rel(f)} contains URL ${m[0]}`);
+      }
     }
     assert.doesNotMatch(s, /(?:src|href)\s*=\s*"\/\//i, `${rel(f)} protocol-relative URL`);
     assert.doesNotMatch(s, /@import/i, `${rel(f)} @import`);
@@ -102,7 +107,8 @@ test('app.js: only WebSocket egress, non-extractable device key, no plaintext at
   assert.match(APP, /generateKeypair\(false\)/);
   assert.match(APP, /history\.replaceState/);
   assert.match(APP, /textContent = text/);
-  assert.deepEqual([...APP.matchAll(/dbPut\('(\w+)'/g)].map((m) => m[1]).sort(), ['device', 'host', 'sign'], 'IndexedDB writes: device key + approval key + host record only');
+  assert.deepEqual([...new Set([...APP.matchAll(/dbPut\('(\w+)'/g)].map((m) => m[1]))].sort(), ['device', 'host', 'sign'], 'IndexedDB writes: device key + approval key + host record only');
+  assert.match(APP, /indexedDB\.open\('agentjarvis', 1\)/, 'the IndexedDB name stays "agentjarvis" (paired phones keep their keys)');
   assert.match(APP, /generateSigningKeypair\(\)/);
   const WIRE = readFileSync(new URL('../../protocol/wire.js', import.meta.url), 'utf8');
   assert.match(WIRE, /generateKey\(\{ name: 'Ed25519' \}, false, \['sign', 'verify'\]\)/, 'approval key: private half not extractable');
@@ -111,18 +117,24 @@ test('app.js: only WebSocket egress, non-extractable device key, no plaintext at
 });
 
 // ---------------------------------------------------------------- Worker
-const RELAY = 'wss://alpha-relay.agentjarvis.net';
-const env = () => ({ WEB_HOST: 'alpha-web.agentjarvis.net', RELAY_URL: RELAY,
+const RELAY = 'wss://relay.agentj.app';
+const LEGACY_RELAY = 'wss://alpha-relay.agentjarvis.net';
+const env = () => ({ WEB_HOST: 'm.agentj.app', LEGACY_WEB_HOST: 'alpha-web.agentjarvis.net', RELAY_URL: RELAY, LEGACY_RELAY_URL: LEGACY_RELAY,
   ASSETS: { fetch: async (req) => new Response(req.method === 'HEAD' ? null : '<html>client</html>', { headers: { 'content-type': 'text/html' } }) } });
 const req = (url, { method = 'GET', headers = {} } = {}) => new Request(url, { method, headers });
 
-test('worker: public (no Access since 2026-10-02) → asset with the full header set, still noindex', async () => {
-  const r = await handle(req('https://alpha-web.agentjarvis.net/'), env());
-  assert.equal(r.status, 200);
-  assert.equal(await r.text(), '<html>client</html>');
-  assert.equal(r.headers.get('content-security-policy'),
-    "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: blob:; connect-src wss://alpha-relay.agentjarvis.net; " +
-    "media-src 'self' blob:; frame-ancestors 'none'; base-uri 'none'; form-action 'none'; object-src 'none'");
+test('worker: public (no Access since 2026-10-02) → asset with the full header set, still noindex — on both hosts', async () => {
+  for (const origin of ['https://m.agentj.app', 'https://alpha-web.agentjarvis.net']) {
+    const r = await handle(req(origin + '/'), env());
+    assert.equal(r.status, 200, origin);
+    assert.equal(await r.text(), '<html>client</html>');
+    // connect-src = exactly our two relays (the legacy one: pairing links from not-yet-updated hosts), on both hosts
+    assert.equal(r.headers.get('content-security-policy'),
+      "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: blob:; connect-src wss://relay.agentj.app wss://alpha-relay.agentjarvis.net; " +
+      "media-src 'self' blob:; frame-ancestors 'none'; base-uri 'none'; form-action 'none'; object-src 'none'", origin);
+    assert.equal(r.headers.get('strict-transport-security'), 'max-age=31536000', `${origin}: HSTS`);
+  }
+  const r = await handle(req('https://m.agentj.app/'), env());
   assert.equal(r.headers.get('permissions-policy'), 'camera=(self), microphone=(), geolocation=()');
   assert.equal(r.headers.get('x-robots-tag'), 'noindex, nofollow, noarchive');
   assert.equal(r.headers.get('referrer-policy'), 'no-referrer');
@@ -130,28 +142,40 @@ test('worker: public (no Access since 2026-10-02) → asset with the full header
   assert.equal(r.headers.get('x-content-type-options'), 'nosniff');
   assert.match(r.headers.get('strict-transport-security'), /max-age=\d+/);
   assert.equal(r.headers.get('cache-control'), 'private, no-store');
-  assert.equal((await handle(req('https://alpha-web.agentjarvis.net/app.js', { method: 'HEAD' }), env())).status, 200);
+  assert.equal((await handle(req('https://m.agentj.app/app.js', { method: 'HEAD' }), env())).status, 200);
   // a stale / forged Access header changes nothing
-  assert.equal((await handle(req('https://alpha-web.agentjarvis.net/', { headers: { 'cf-access-jwt-assertion': 'a.b.c' } }), env())).status, 200);
+  assert.equal((await handle(req('https://m.agentj.app/', { headers: { 'cf-access-jwt-assertion': 'a.b.c' } }), env())).status, 200);
 });
 
 test('worker: wrong host, non-GET/HEAD, malformed RELAY_URL → bare 404 without the asset', async () => {
   const cases = [
-    req('https://alpha.agentjarvis.net/'),
+    req('https://agentj.app/'),
     req('https://agentjarvis-web.example.workers.dev/'),
-    req('https://web.agentjarvis.net/'),
+    req('https://web.agentj.app/'),
+    req('https://alpha-web.agentj.app/'),
+    req('https://agentjarvis.net/'),
+    req('https://m.agentj.app.evil.example/'),
     req('https://alpha-web.agentjarvis.net/', { method: 'POST' }),
-    req('https://alpha-web.agentjarvis.net/', { method: 'PUT' }),
-    req('https://alpha-web.agentjarvis.net/', { method: 'DELETE' }),
+    req('https://m.agentj.app/', { method: 'POST' }),
+    req('https://m.agentj.app/', { method: 'PUT' }),
+    req('https://m.agentj.app/', { method: 'DELETE' }),
   ];
   for (const r of cases) {
     const res = await handle(r, env());
     assert.equal(res.status, 404, `${r.method} ${r.url}`);
     assert.equal(await res.text(), 'Not Found');
   }
-  for (const RELAY_URL of ["wss://x; script-src 'unsafe-inline'", 'ws://alpha-relay.agentjarvis.net', '']) {
-    assert.equal((await handle(req('https://alpha-web.agentjarvis.net/'), { ...env(), RELAY_URL })).status, 404, `malformed RELAY_URL ${RELAY_URL} fails closed`);
+  for (const RELAY_URL of ["wss://x; script-src 'unsafe-inline'", 'ws://relay.agentj.app', '']) {
+    assert.equal((await handle(req('https://m.agentj.app/'), { ...env(), RELAY_URL })).status, 404, `malformed RELAY_URL ${RELAY_URL} fails closed`);
   }
+  for (const LEGACY_RELAY_URL of ["wss://x; script-src 'unsafe-inline'", 'ws://alpha-relay.agentjarvis.net', 'wss://a wss://b']) {
+    assert.equal((await handle(req('https://m.agentj.app/'), { ...env(), LEGACY_RELAY_URL })).status, 404, `malformed LEGACY_RELAY_URL ${LEGACY_RELAY_URL} fails closed`);
+  }
+  // without the legacy vars: only the new host, only the new relay
+  const bare = { ...env(), LEGACY_WEB_HOST: undefined, LEGACY_RELAY_URL: undefined };
+  assert.equal((await handle(req('https://alpha-web.agentjarvis.net/'), bare)).status, 404);
+  assert.match((await handle(req('https://m.agentj.app/'), bare)).headers.get('content-security-policy'), /connect-src wss:\/\/relay\.agentj\.app; /);
+  assert.equal((await handle(req('https://m.agentj.app/'), { ...env(), WEB_HOST: '' })).status, 404, 'no WEB_HOST → nothing');
 });
 
 test('worker: self-contained (no imports, so it builds from the public tree); csp()/webHeaders() are what serve.mjs reuses; wrangler.toml pins the brief', () => {
@@ -162,10 +186,12 @@ test('worker: self-contained (no imports, so it builds from the public tree); cs
   assert.equal(Object.keys(webHeaders(RELAY)).length, 8);
   const t = read(join(PUBLIC_DIR, '..', 'wrangler.toml'));
   for (const line of ['name = "agentjarvis-web"', 'main = "worker.ts"', 'compatibility_date = "2026-09-01"',
-    'workers_dev = false', 'preview_urls = false', 'pattern = "alpha-web.agentjarvis.net", custom_domain = true', 'directory = "public"', 'binding = "ASSETS"',
-    'run_worker_first = true', 'WEB_HOST = "alpha-web.agentjarvis.net"', 'RELAY_URL = "wss://alpha-relay.agentjarvis.net"']) {
+    'workers_dev = false', 'preview_urls = false', 'pattern = "m.agentj.app", custom_domain = true', 'directory = "public"', 'binding = "ASSETS"',
+    'run_worker_first = true', 'WEB_HOST = "m.agentj.app"', 'RELAY_URL = "wss://relay.agentj.app"',
+    'LEGACY_WEB_HOST = "alpha-web.agentjarvis.net"', 'LEGACY_RELAY_URL = "wss://alpha-relay.agentjarvis.net"']) {
     assert.ok(t.includes(line), `wrangler.toml missing: ${line}`);
   }
+  assert.deepEqual([...t.matchAll(/pattern = "([^"]+)", custom_domain = true/g)].map((m) => m[1]), ['m.agentj.app', 'alpha-web.agentjarvis.net']);
   assert.match(t, /\[observability\]\nenabled = false/);
   assert.doesNotMatch(t, /ACCESS_/, 'no Access vars');
   const acct = t.match(/^account_id = "(.*)"$/m);
@@ -180,7 +206,7 @@ test('sw.js: push display only — no fetch handler, no cache, no network, gener
   }
   assert.match(SW, /zh: \{ reply: '有新回复', ask: '有一个请求等你批准' \}/);
   assert.match(SW, /en: \{ reply: 'New reply', ask: 'A request is waiting for your approval' \}/);
-  assert.match(SW, /showNotification\('Agent Jarvis', \{ body: BODY\[LANG\]\[k\]/, 'the notification body is one of the two fixed sentences');
+  assert.match(SW, /showNotification\('Agent J', \{ body: BODY\[LANG\]\[k\]/, 'the notification body is one of the two fixed sentences');
   assert.match(SW, /const SW_VERSION = 'aj-web-[\w-]+';/, 'sw.js carries a version string (bumped with each shell redesign)');
   const APP2 = readFileSync(join(PUBLIC_DIR, 'app.js'), 'utf8');
   assert.match(APP2, /userVisibleOnly: true/);
@@ -190,7 +216,7 @@ test('sw.js: push display only — no fetch handler, no cache, no network, gener
 test('manifest + icons are local files from the brand (192, 512, 512 maskable), colours from tokens', () => {
   const m = JSON.parse(readFileSync(join(PUBLIC_DIR, 'manifest.webmanifest'), 'utf8'));
   assert.equal(m.display, 'standalone');
-  assert.equal(m.name, 'Agent Jarvis');
+  assert.equal(m.name, 'Agent J');
   assert.ok(m.short_name && m.short_name.length <= 12);
   for (const i of m.icons) assert.ok(!/^[a-z]+:/i.test(i.src) && i.src.startsWith('brand/img/') && statSync(join(PUBLIC_DIR, i.src)).size > 0, i.src);
   assert.deepEqual(m.icons.map((i) => `${i.sizes}/${i.purpose}`), ['192x192/any', '512x512/any', '512x512/maskable']);
@@ -259,3 +285,36 @@ test('i18n: the forbidden-term check itself works (positive control)', { skip: N
   for (const s of planted) assert.ok(GLOSSARY.forbidden.some((f) => jsRe(f.pattern).test(s)), `no forbidden pattern catches ${s}`);
 });
 
+
+// ---------------------------------------------------------------- rename (agentj.app): relay pinning, legacy host, Agent name
+test('app.js pins exactly our two relay hosts; the legacy host sends a visitor with no pairing to m.agentj.app, hash intact', () => {
+  assert.match(APP, /const RELAY_HOSTS = \['relay\.agentj\.app', 'alpha-relay\.agentjarvis\.net'\];/);
+  assert.match(APP, /const ours = u\.protocol === 'wss:' && !u\.port && RELAY_HOSTS\.includes\(u\.hostname\);/);
+  assert.match(APP, /const LEGACY_WEB_HOST = 'alpha-web\.agentjarvis\.net';/);
+  assert.match(APP, /const WEB_ORIGIN = 'https:\/\/m\.agentj\.app';/);
+  assert.match(APP, /location\.replace\(WEB_ORIGIN \+ location\.pathname \+ location\.search \+ \(pendingLink \?\? location\.hash\)\)/);
+  assert.match(APP, /async function main\(\) \{\n  if \(await leaveLegacyHost\(\)\) return;/, 'the legacy check runs first (before any key is made there)');
+  assert.doesNotMatch(APP, /startsWith\('alpha-relay\.'\)|replace\(\/\^alpha-web/, 'no relay derived from the page host any more');
+});
+
+// cleanName() lifted out of app.js and run here on hostile input (the screens test drives the same through the page)
+const CLEAN_SRC = APP.match(/const NAME_MAX = \d+;[\s\S]*?\nfunction cleanName\(v\) \{[\s\S]*?\n\}/)[0];
+const cleanName = new Function(`${CLEAN_SRC}; return cleanName;`)();
+test('Agent name from the host: text only, control / format chars dropped, ≤ 32 code points, null → default', () => {
+  assert.equal(cleanName('Leo 的助手'), 'Leo 的助手');
+  assert.equal(cleanName('  市场部   Agent  '), '市场部 Agent');
+  for (const v of [null, undefined, 42, {}, [], '', '   ', '\u200b\u202e\u0000']) assert.equal(cleanName(v), null, JSON.stringify(v));
+  assert.equal(cleanName('a\u202eb\u200dc\u0007d\u2028e\ufeff'), 'abcd e');         // bidi override, ZWJ, BEL dropped; LS = a break
+  assert.equal(cleanName('a\tb\nc\u3000d'), 'a b c d');
+  assert.equal(cleanName('a \u0007 b'), 'a b');
+  assert.equal(cleanName('\ue000x\ud800y'), 'xy');                                    // private use, lone surrogate
+  const long = cleanName('名'.repeat(40));
+  assert.equal(Array.from(long).length, 32);
+  assert.equal(Array.from(cleanName('😀'.repeat(40))).length, 32, 'counted in code points, never splits a surrogate pair');
+  assert.equal(cleanName('<img src=x onerror=alert(1)>'), '<img src=x onerror=alert(1)>', 'markup stays text (textContent renders it)');
+  assert.ok(cleanName('x'.repeat(100000)).length <= 32);
+  // shown via textContent only, default "Agent J"
+  assert.match(APP, /\$\('brand-name'\)\.textContent = agentName \?\? DEFAULT_NAME;/);
+  assert.match(APP, /const DEFAULT_NAME = 'Agent J';/);
+  assert.match(APP, /if \(m\.t === 'status'\) \{ setAgentName\(m\.name\);/);
+});

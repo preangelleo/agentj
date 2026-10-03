@@ -1,4 +1,4 @@
-# agentjarvis wire protocol v1 (alpha A2 + A3 §7 + L1 §8–§9; phone controls and slash commands in §8)
+# agentj wire protocol v1 (alpha A2 + A3 §7 + L1 §8–§9; phone controls and slash commands in §8)
 
 > Source of truth for the blind relay, the host (`host/`) and the web client (`web/`). PR1: the relay only ever sees
 > the bytes described in §2; everything a human types travels inside §3's Noise transport messages.
@@ -9,7 +9,7 @@
 | X25519, AES-256-GCM, SHA-256, HMAC | WebCrypto (`crypto.subtle`) | `cryptography` (OpenSSL) |
 | Ed25519 (host ↔ relay auth only) | WebCrypto in the relay Worker | `cryptography` |
 
-Noise state machine: `protocol/noise.js` and `host/jarvis_host/noise.py`, ~150 lines each, written to the Noise spec rev 34
+Noise state machine: `protocol/noise.js` and `host/agentj/noise.py`, ~150 lines each, written to the Noise spec rev 34
 and pinned by the cacophony test vectors in `protocol/vectors/` (both sides) plus a JS↔Python interop test.
 Suites: **`Noise_IKpsk2_25519_AESGCM_SHA256`** (first pairing) and **`Noise_IK_25519_AESGCM_SHA256`** (every later connection).
 
@@ -19,7 +19,7 @@ Suites: **`Noise_IKpsk2_25519_AESGCM_SHA256`** (first pairing) and **`Noise_IK_2
 - **Device**: one X25519 static key. Browser: WebCrypto, `extractable: false`, kept in IndexedDB. **Device id** =
   `b64url(SHA-256("agentjarvis/device/v1" ‖ device_x25519_pub)[0:12])` (16 chars), computed by the host.
 
-## 2. Relay (`wss://alpha-relay.agentjarvis.net`)
+## 2. Relay (`wss://relay.agentj.app`)
 - `GET /v1/host/<channel>` and `GET /v1/dev/<channel>` with `Upgrade: websocket`; anything else (including `GET /`) → bare 404.
 - **Host auth**: relay sends text `{"t":"challenge","n":b64url(32 random)}`; host answers text
   `{"t":"auth","pk":b64url(ed25519_pub),"sig":b64url(Ed25519(sk, "agentjarvis-relay-auth-v1\n" + channel + "\n" + n))}`.
@@ -70,8 +70,8 @@ First byte = message kind (visible to the relay — see §5):
   from a cid it has not seen `0x11` for as a new connection.
 
 ## 4. Pairing (QR) and approval — only on the host
-1. `jarvis pair` asks the running `jarvis serve` for a pairing: random `pairing_id` (16 B) and `psk` (32 B), expires in 5 min.
-2. QR = `https://alpha-web.agentjarvis.net/#p=` + b64url(JSON `{"v":1,"r":relay_wss_url,"c":channel,"k":b64url(host_x25519_pub),
+1. `agentj pair` asks the running `agentj serve` for a pairing: random `pairing_id` (16 B) and `psk` (32 B), expires in 5 min.
+2. QR = `https://m.agentj.app/#p=` + b64url(JSON `{"v":1,"r":relay_wss_url,"c":channel,"k":b64url(host_x25519_pub),
    "i":b64url(pairing_id),"p":b64url(psk),"x":expiry_unix}`). The fragment never reaches any server; the client strips it with
    `history.replaceState` right after reading it.
 3. Device sends PAIR_INIT. The host **consumes the pairing on the first PAIR_INIT carrying its id whose msg1 decrypts** (one-time;
@@ -86,16 +86,16 @@ First byte = message kind (visible to the relay — see §5):
 4. The device shows the **safety code** `SAS = u32_be(HMAC-SHA256(key=h, "agentjarvis-sas-v1")[0:4]) mod 10^6`, 6 digits,
    `h` = final handshake hash. The host does **not** display it: the human types the phone's 6 digits into the host terminal
    within **120 s** (passkey entry — forces a real comparison). Match = approve; mismatch, empty input or timeout = deny (one try).
-   **L2: a non-empty code also needs the approval passphrase** (`jarvis passphrase set`, scrypt hash in `approver.json`, 0600):
+   **L2: a non-empty code also needs the approval passphrase** (`agentj passphrase set`, scrypt hash in `approver.json`, 0600):
    the control-socket message is `{"cmd":"code","code":…,"pass":…}`; `serve` checks the passphrase (after the 5-remote cap,
    before the code). Wrong → `{"ev":"pass_wrong","left":n}` and the device keeps waiting (the code is not used up); 5 wrong in a
    row → locked 1 min, doubling up to 1 h (persisted), and the pairing ends `pass_locked`; none set → `pass_not_set`. The local
-   admin page (`jarvis admin`) sends the same message, so a holder of its link or session still cannot approve without it.
+   admin page (`agentj admin`) sends the same message, so a holder of its link or session still cannot approve without it.
 5. Approve → device static key + label go into the host's allowlist (`devices.json`, 0600), host sends `approved`. Deny/timeout →
    host closes the device socket; it never sends that device an application message.
 6. Later connections: RESUME_INIT (IK). The host learns the device static key from msg1 and **silently closes** the socket unless
    it is on the allowlist (logged as `unknown_device`). Accepted → HS_RESP, `hello` from device, then `ready` from host.
-7. **Revoke** (`jarvis revoke <device id>`): removed from the allowlist, then every live session of that device is detached in one
+7. **Revoke** (`agentj revoke <device id>`): removed from the allowlist, then every live session of that device is detached in one
    step before any network I/O (nothing it sends afterwards is acted on, nothing more is sent to it), then closed via op `0x02`
    (best effort, 2 s each); its next RESUME_INIT is rejected. Ready sessions also re-check the allowlist on every message.
 8. The host keeps at most 64 sessions (the relay allows 32 device sockets per channel; the cap also bounds a misbehaving relay).
@@ -115,8 +115,8 @@ channel only (no per-IP limit); web client = "tampering would be detected" tier 
 release hashes not public yet), and never zero-access (Z3). Per-IP relay limits exist since L2 (§2).
 
 ## 7. Host ↔ control plane (A3, A3.1, A3.2, L2, seat setup, L3.5, plaza P2): signed envelopes
-The host talks to the Dashboard's control plane over HTTPS at `https://api.agentjarvis.net/v1/host/*` (public, no Access;
-config `api`, env `AGENTJARVIS_API_URL`). It authenticates with its **existing** `host_ed25519` key (§1) — no bearer token, no
+The host talks to the Dashboard's control plane over HTTPS at `https://agentj.app/api/v1/host/*` (public, no Access;
+config `api`, env `AGENTJ_API_URL`). It authenticates with its **existing** `host_ed25519` key (§1) — no bearer token, no
 new secret. **Nothing the control plane answers can add or approve a device**: the host *pushes* metadata; the answers it
 parses are `login` / `poll` / `seat-bind` / `seat-leave` status fields, — A3.1 — `sync`'s list of *unbind requests* (whitelisted) and — A3.2 — the Agent
 name (a display string). An unbind request can
@@ -185,21 +185,21 @@ Any endpoint may answer 500 `{"error":"internal"}` (no detail); the host treats 
   pending / rejected / expired, purged (> 24 h), or the hosts row is no longer bound (the owner already removed it: the goal holds,
   but nothing is changed); 409 `already_confirmed` when (d) fails; 429 `rate_limited` past 10 declines per channel per hour; the
   envelope errors as above. A report racing the decline: whichever batch runs first wins (report first → 409; decline first →
-  the report gets 403 `not_bound`). After a decline the channel is free: a new `jarvis login` works at once. Decline can only take
+  the report gets 403 `not_bound`). After a decline the channel is free: a new `agentj login` works at once. Decline can only take
   the host *out* of a tenant; it never binds, approves or adds anything.
 - **A3.2 confirm**: the bound answer's `agent_name` joins the question —
   「添加到公司账号 <slug>（<name>），Agent 名「<agent_name>」？[y/N]」; only `y` writes `cloud.json` **and** sets the local Agent name.
 - **Seat bind (seat setup)** — the alternative to the 8-character code. A company owner who paid for a seat creates a **setup
   code** for that one seat in the Dashboard (`ajt_` + 43 base64url characters = 256 random bits; the server stores only its
   SHA-256; 7 days; single use; revocable) and gives it — inside one sentence for an Agent, or by email to an employee — to the
-  computer that should take the seat. `jarvis login --seat <code> --name <name>` (also `--seat-file <path>`, a 0600 regular file,
+  computer that should take the seat. `agentj login --seat <code> --name <name>` (also `--seat-file <path>`, a 0600 regular file,
   not a symlink, so the code stays out of argv and shell history; `--seat -` = one line on stdin) refuses locally, sending
   nothing, a code that does not match `^ajt_[A-Za-z0-9_-]{43}$` and a name that fails the Agent-name rules; otherwise it sends
   one signed `seat-bind`. **There is no y/N question: possession of the code is the human's consent** — they handed it to this
   computer's Agent. On 200 the host writes `cloud.json` exactly like the code path plus `via: "seat"` (the code path writes
   `via: "code"`; a file without `via` is read as `"code"`), sets the local Agent name to the answer's `agent_name` (or the name
   it sent), logs `cloud_linked kind=seat`, prints 「✓ 已添加到公司账号 <slug>（<name>）的席位，Agent 名「<name>」」 + an English
-  line, and sends the first report; `jarvis status` / `jarvis doctor` show "linked via seat setup" vs "via code". Exit codes:
+  line, and sends the first report; `agentj status` / `agentj doctor` show "linked via seat setup" vs "via code". Exit codes:
   0 bound · 3 `name_taken` (suggestions printed) · 4 `invalid_setup` · 5 `payment_required` · 2 refused locally · 1 anything
   else. The code is never logged, printed, stored or sent anywhere but this endpoint.
   **What it can and cannot do**: it binds this one host — signed by its own key, so the server learns nothing it would not
@@ -211,14 +211,14 @@ Any endpoint may answer 500 `{"error":"internal"}` (no detail); the host treats 
   Agent tricked into using someone else's code binds this host to a stranger's company; the stranger then receives this
   host's metadata (channel id, public key, Agent name, hostname unless `report-hostname off`, device ids / labels / online
   flags once phones are paired) — never messages, keys or pairing codes, and no way in. The human sees the company in the
-  output and in `jarvis status`; `jarvis unlink` takes the host out of that company (seat leave, below) and stops all
+  output and in `agentj status`; `agentj unlink` takes the host out of that company (seat leave, below) and stops all
   reporting at once. install.md tells the Agent to show the human the company it joined.
-  **Replay**: when the 200 is lost (timeout) the host has written nothing; running the same `jarvis login --seat` again sends the
+  **Replay**: when the 200 is lost (timeout) the host has written nothing; running the same `agentj login --seat` again sends the
   same code from the same key, and the server — seeing the channel bound by this key through the setup whose hash this code
   has (still `bound`) — answers the same 200 without writing anything (it costs the channel allowance a success costs). Any
   other seat-bind on a bound channel is 409 `already_bound`.
 - **Seat leave (seat setup, review SS-02)** — the undo of a seat bind, for the host's human: the company was not the expected one
-  (a planted or wrong code), or the employee leaves. `jarvis unlink` of a `via: "seat"` link first sends a signed `seat-leave`
+  (a planted or wrong code), or the employee leaves. `agentj unlink` of a `via: "seat"` link first sends a signed `seat-leave`
   (best effort; it prints 「已通知 Dashboard 把本机移出公司 <slug>」 or why not — then the owner must recall the seat) and then removes
   `cloud.json` exactly as before; a `via: "code"` link is removed locally only, as before. Allowed **any time**, but only for the
   host bound on this channel with this same key **through a seat setup** (`setup_id` not null). Effect, one D1 batch whose first
@@ -230,25 +230,25 @@ Any endpoint may answer 500 `{"error":"internal"}` (no detail); the host treats 
   binds, approves or adds anything.
 - **Templates (L3.5)** — the closed template library for the workflow design wizard (`dashboard/DASHBOARD_API.md` §8). Read-only:
   an answer can only hand the host template text; the host writes it nowhere but `<work folder>/workflows/<id>/`, never runs it and
-  never enables it (`jarvis wizard add-template` writes `task.json` with `enabled: false` and refuses a package that says otherwise).
+  never enables it (`agentj wizard add-template` writes `task.json` with `enabled: false` and refuses a package that says otherwise).
   **Replay**: unlike `rename`, these requests carry a 128-bit `nonce` the server accepts once (its SHA-256 with the channel is kept
   48 h; ±300 s `ts` bounds the window anyway); a replayed envelope gets 409 `replay` and costs no budget. **Integrity**: the host
   re-computes every file's SHA-256 and the package digest — SHA-256 over the sorted lines `path \0 sha256(file) \n` — and compares
   them with the package and with the listing it fetched first; any mismatch, a path that is not a plain relative path, a missing
   `TEMPLATE.md` / `RUN.md` / `DRYRUN.md` / `task.json` or a task.json that breaks the contract (ARCHITECTURE ADR-A61) → nothing is
   written. Both come from the same server: this is TLS + signed request + hashes, **not a publisher signature** (L7).
-  The fenced Agent cannot call these (it cannot see the host key): the human or the installing agent runs `jarvis wizard
+  The fenced Agent cannot call these (it cannot see the host key): the human or the installing agent runs `agentj wizard
   templates / add-template` in a terminal.
 - **Agent plaza (P2)** — the only §7 routes that carry customer-written **text**, and only text a human chose to publish
   (Dashboard `DASHBOARD_API.md` §9). Allowed for a host bound with this key to a company with a paid or comp seat (else 403
   `not_bound` / `plaza_requires_seat`). **Writes** (`post`, `reply`, `resolve`, `report`) carry `nonce` = 16 random bytes as 22
   base64url characters, used once across all plaza routes (the server keeps it 1 h, > 2 × the ±300 s window): a replayed
   envelope → 409 `replay`, nothing written. The host sends a post / reply only after its human confirmed the exact text
-  (`jarvis plaza post|reply … --owner-confirmed --digest <d>`: the 16-hex digest = SHA-256 of the redacted, cleaned
+  (`agentj plaza post|reply … --owner-confirmed --digest <d>`: the 16-hex digest = SHA-256 of the redacted, cleaned
   `{title?, body}` + `show_name` + target, printed by the preview; layer 1 + optional layer 2 on this machine, ARCHITECTURE
   ADR-A67). `show_name: true` lets the server show this Agent's canonical name as the author (never the company slug or name).
   **Reads** are DATA: the host parses answers through a whitelist (ids by regex, enums, booleans, integers, cleaned strings)
-  and prints text only inside its data fence (`<<<PLAZA DATA — …>>>` … `<<<END PLAZA DATA>>>`; jarvis lines start `│ ── `, text
+  and prints text only inside its data fence (`<<<PLAZA DATA — …>>>` … `<<<END PLAZA DATA>>>`; agentj lines start `│ ── `, text
   lines `│    ┆ `, `<<<` / `>>>` runs in text escaped); nothing read from the plaza is executed, written to the allowlist, used
   as a path or put into a prompt the host builds; the admin badge is printed only for `author.kind = "admin"` with
   `admin: true`. Answers up to 2 MiB. Vector: `agentjarvis-host-plaza-post-v1` in `vectors/host-envelope.json`.
@@ -256,30 +256,30 @@ Any endpoint may answer 500 `{"error":"internal"}` (no detail); the host treats 
   host searched for and read (only counted per hour, not stored), reports and resolves.
 - **Skill & workflow plaza** (`PLAZA_PACKAGES.md` is the wire; Dashboard `DASHBOARD_API.md` §10) — same seat rule and nonce rule
   (`installed`, `like`, `report`, `publish` carry a nonce, shared with the Q&A routes). Package bytes never travel inside an
-  envelope: `get` answers a ≤ 10-minute signed `GET https://api.agentjarvis.net/v1/plaza/dl/<token>` URL, `publish` a ≤ 10-minute
+  envelope: `get` answers a ≤ 10-minute signed `GET https://agentj.app/api/v1/plaza/dl/<token>` URL, `publish` a ≤ 10-minute
   signed `PUT …/v1/plaza/up/<token>` URL (bad / expired token → bare 404). The host verifies the bundle itself (`bundle.parse`, and
   the minisign signature before it says 官方认证) and installs only after its Owner's digest-bound yes. Vector:
   `agentjarvis-host-plaza-pkg-publish-v1` in `vectors/host-envelope.json`.
-- **Which URL the host prints**: its configured Dashboard (`AGENTJARVIS_APP_URL` → config `app` →
-  `https://alpha-app.agentjarvis.net`). The server's `verification_uri` is printed only when its origin (scheme, host, port) equals
+- **Which URL the host prints**: its configured Dashboard (`AGENTJ_APP_URL` → config `app` →
+  `https://agentj.app/account`). The server's `verification_uri` is printed only when its origin (scheme, host, port) equals
   that; otherwise it is ignored, so a compromised control plane cannot point the human at a look-alike page.
 - **Report** = the host's own view, replaced wholesale on every accepted report: devices on its allowlist (`id` per §1, `name` =
   the device's self-chosen label after `clean_label`, ≤ 64 chars, `paired_at` unix s, `online` = has a ready session), at most 64;
   `pending` = how many pairings are waiting for the human at the host terminal and since when (no label, no code, no pairing id);
-  `seq` strictly increasing per host (the host uses `max(last_seq + 1, now_ms)`); `agent` = `agentjarvis-host/<version>`
+  `seq` strictly increasing per host (the host uses `max(last_seq + 1, now_ms)`); `agent` = `agentj/<version>`
   (server rule `^agentjarvis-[a-z-]+/[0-9A-Za-z.+-]{1,32}$`). The server **refuses** (400) a `name` containing control, format
   (bidi, zero-width), surrogate, line/paragraph-separator characters or any space other than U+0020 — `clean_label` never emits
   them, so it does not clean on the host's behalf. The seq gate, the device-row replacement and the rate charge are one D1 batch:
   a report that finishes after a newer one, or races an unbind, changes nothing (409 `replay` / 403 `not_bound`); replays never use
   up the hourly budget.
-- **Host-side state**: every `cloud.json` mutation (login write, seq update, `jarvis unlink`) holds an `fcntl` lock on
+- **Host-side state**: every `cloud.json` mutation (login write, seq update, `agentj unlink`) holds an `fcntl` lock on
   `cloud.lock` (0600) in the state dir and re-reads under it, so `serve` and the CLI never interleave and a seq update can never
-  recreate a file `jarvis unlink` removed. Requests honour the standard `HTTPS_PROXY` environment (a proxy sees the API hostname
+  recreate a file `agentj unlink` removed. Requests honour the standard `HTTPS_PROXY` environment (a proxy sees the API hostname
   and timing; TLS is verified end to end); loopback never uses a proxy.
   Sent on `serve` start, on approve / revoke / pairing pending / pairing end / device online change (debounced 2 s), and every
   300 s as a heartbeat. Best effort: a failed report is logged as metadata (`report_fail`, HTTP status class) and never blocks `serve`.
 - **Agent name (A3.2)** — one thing, three names: an Agent = 1 seat (billing) = 1 host (physical) = a name staff talk to.
-  Rules (one copy per language: `dashboard/public/agentname.js`, `host/jarvis_host/text.py`): trim Unicode White_Space at both
+  Rules (one copy per language: `dashboard/public/agentname.js`, `host/agentj/text.py`): trim Unicode White_Space at both
   ends (the exact set is spelled out in `agentname.js`; JS `trim()` and Python `strip()` differ, so neither is used as is) and
   collapse runs of U+0020; valid iff 1–32 code points with no `\p{Cc}` `\p{Cf}` `\p{Cs}` `\p{Zl}` `\p{Zp}` and no `\p{Zs}` other than U+0020.
   Anything the host **sends** (`report.agent_name`, `rename.name`) must already be in that normalised form — the server refuses
@@ -291,7 +291,7 @@ Any endpoint may answer 500 `{"error":"internal"}` (no detail); the host treats 
   `agent_name_synced`, prints a serve line, and sends a report — the signed report back is the acknowledgement. The server sends
   `agent_name: null` (in `sync` and `poll`) for a canonical name that fails the rules (a legacy A3.1 name the owner has not yet
   renamed); the host then keeps its own. Host-initiated
-  rename (`jarvis name <new>` or the host's local Agent 管理页): while linked the host calls `/v1/host/rename` first and writes
+  rename (`agentj name <new>` or the host's local Agent 管理页): while linked the host calls `/v1/host/rename` first and writes
   locally only on 200 (on 409 it shows the suggestions; unreachable → 「连不上 Dashboard，名字没改」); unlinked → local only.
   **Replay**: `rename` carries no nonce or seq — only the ±300 s `ts` window. Accepted (review A3_2 A32-07): a replayed
   envelope can only set a name this host itself signed within the last 5 minutes, it still needs the host to be bound with
@@ -301,13 +301,13 @@ Any endpoint may answer 500 `{"error":"internal"}` (no detail); the host treats 
   an agent prompt or HTML, and it cannot add or approve a device, route, or run code (invariant 8).
 - **Remote limit** (Q32, 2026-10-02): the allowlist holds at most **5** devices (`state.MAX_DEVICES`, enforced in
   `add_device`, the one writer). When it is full, `serve` refuses an approval with `device_limit` even if the code is right; the
-  pending event `jarvis pair` receives then carries `full`, `limit` and the current devices (id, label, paired_at, online), and
-  `jarvis pair` shows 「已达 5 台上限，需先解绑一台遥控器才能添加新的」, lists them, and on the human's number + y sends
-  `{"cmd":"unbind","device"}` over the local control socket (= `jarvis revoke`) before asking for the code.
+  pending event `agentj pair` receives then carries `full`, `limit` and the current devices (id, label, paired_at, online), and
+  `agentj pair` shows 「已达 5 台上限，需先解绑一台遥控器才能添加新的」, lists them, and on the human's number + y sends
+  `{"cmd":"unbind","device"}` over the local control socket (= `agentj revoke`) before asking for the code.
 - **Unbind requests (sync, A3.1)**: `serve` syncs every 20 s while linked (60 s otherwise), off the event loop. For each
-  request it decides itself: switch off (`jarvis remote-unbind off`, config `remote_unbind: false`) → `disabled`; device not on
+  request it decides itself: switch off (`agentj remote-unbind off`, config `remote_unbind: false`) → `disabled`; device not on
   its allowlist → `unknown_device`; 3 already executed in the last hour → `rate_limited`; else it revokes exactly like
-  `jarvis revoke` → `revoked`. Every decision is a `remote_unbind` line in `host.log` (request id, device id, result) and a line on
+  `agentj revoke` → `revoked`. Every decision is a `remote_unbind` line in `host.log` (request id, device id, result) and a line on
   the serve terminal; results go back on the next sync (≥ 2 s later — syncs are never closer, whatever the answers say; one
   HTTP call in flight). Beyond 30 decisions an hour the host stops deciding (requests stay pending, one `remote_unbind_throttled`
   line). Caps and decided request ids (7 days, ≤ 512) persist in `remote_unbind.json`, so a request id is never acted on twice
@@ -323,13 +323,13 @@ nonce per request, 48 h; not the template id), and — at Cloudflare's ingress �
   codes, pairing links, message text.
 
 ## 8. Agent bridge (L1): the phone ↔ the customer's own agent
-The host drives the agent the human chose (`jarvis agent claude|codex|opencode --dir <dir> [--model M]`, config `agent`; read when
+The host drives the agent the human chose (`agentj agent claude|codex|opencode --dir <dir> [--model M]`, config `agent`; read when
 `serve` starts) **as the same OS user, with the human's own login, settings and permission rules**, through official headless
 interfaces only:
 - **Claude Code**: one long-lived `claude -p --input-format stream-json --output-format stream-json --verbose
-  --permission-prompt-tool mcp__agentjarvis__approve --disallowedTools mcp__agentjarvis__approve --mcp-config <inline JSON>
+  --permission-prompt-tool mcp__agentj__approve --disallowedTools mcp__agentj__approve --mcp-config <inline JSON>
   --settings <danger hook JSON>` in the chosen directory; restarted with `--resume <session id>` (kept in `agent.json`, 0600) after it exits. The MCP server is
-  `python -m jarvis_host.permtool` (stdio, standard library only); it inherits `AGENTJARVIS_PERM_SOCK` / `AGENTJARVIS_PERM_TOKEN`
+  `python -m agentj.permtool` (stdio, standard library only); it inherits `AGENTJ_PERM_SOCK` / `AGENTJ_PERM_TOKEN`
   from the agent's environment (never on a command line). `--disallowedTools` hides the tool from the model, so only Claude
   Code's permission check can call it.
 - **Permission socket (L2)**: `agentperm/perm.sock` (dir 0700, socket 0600). The token is **one-time, per agent start**: the
@@ -340,21 +340,21 @@ interfaces only:
   closed without an answer and logged `perm_refused`. If the claimed connection drops, every open request is denied and the
   agent is restarted with a new token. The tool and `serve` make themselves non-dumpable (`PR_SET_DUMPABLE 0`).
 - **Fence (L2)**: on Linux the agent runs inside bubblewrap (`fence.py`): private PID namespace and /proc, private `/tmp` and
-  `$XDG_RUNTIME_DIR`, the host's state directory replaced by an empty tmpfs with only `agentperm/` bound back, jarvis's code and
+  `$XDG_RUNTIME_DIR`, the host's state directory replaced by an empty tmpfs with only `agentperm/` bound back, agentj's code and
   the shell start-up / autostart / systemd-user / `authorized_keys` files read-only, session-bus / display / tmux variables
   unset, `no_new_privs`; other programs' control sockets (G-A56): the herdr / screen / wezterm / emacs / Jupyter folders are
   an empty tmpfs, every listening socket this user owns at start (from `/proc/net/unix`), systemd's local sshd socket and —
-  unless the human chose `jarvis agent … --allow-docker` (passphrase) — the docker / podman / containerd / lxd / libvirt sockets
+  unless the human chose `agentj agent … --allow-docker` (passphrase) — the docker / podman / containerd / lxd / libvirt sockets
   are a read-only `/dev/null`, and `HERDR_*` / `ZELLIJ*` / `WEZTERM_*` / `KITTY_*` / `NVIM*` / VS Code IPC / `DOCKER_HOST`
-  variables are unset (macOS: the same folders are denied read, write and unix-socket connect). Same user, same login, same settings — nothing the agent may do is widened, only jarvis is out of its
+  variables are unset (macOS: the same folders are denied read, write and unix-socket connect). Same user, same login, same settings — nothing the agent may do is widened, only agentj is out of its
   reach. If bubblewrap cannot start, the agent is not started (notice on the phone) unless the human chose
-  `jarvis agent … --unfenced` at the terminal (asks for the approval passphrase). Codex runs in the same fence. **Never** passed: `--dangerously-skip-permissions`, `--permission-mode`, `--allowedTools`, a permission rule in `--settings` or anything that
+  `agentj agent … --unfenced` at the terminal (asks for the approval passphrase). Codex runs in the same fence. **Never** passed: `--dangerously-skip-permissions`, `--permission-mode`, `--allowedTools`, a permission rule in `--settings` or anything that
   widens what the session may do — the phone only answers questions Claude Code itself would have asked, and an approval
   returns the tool input unchanged (`updatedInput` = input).
 - **Danger list (PROMPT-26 item 2)**: `--settings` = `{"hooks":{"PreToolUse":[{"matcher":"*","hooks":[{"type":"command",
-  "command":"<venv python> -P -m jarvis_host.danger hook <b64url JSON of config danger_extra, or -> || exit 2","timeout":30}]}]},
+  "command":"<venv python> -P -m agentj.danger hook <b64url JSON of config danger_extra, or -> || exit 2","timeout":30}]}]},
   "disableAllHooks":false}` and nothing else. For a call in one of five fixed categories — `spend` (花钱), `delete` (删除),
-  `send` (对外发送), `credentials` (改凭据), `price` (改价); `jarvis_host/danger.py` — the hook prints
+  `send` (对外发送), `credentials` (改凭据), `price` (改价); `agentj/danger.py` — the hook prints
   `{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"ask","permissionDecisionReason":…}}`, which Claude Code
   routes to the permission tool even when the human's own rules allow the call; for any other call it prints nothing; it never
   answers allow. Hook failure = exit 2 = the call is blocked. If the human's user / project / local settings say
@@ -365,7 +365,7 @@ interfaces only:
   Basic `opencode` / a random per-start `OPENCODE_SERVER_PASSWORD`; models.dev fetch, LSP download, auto-update, share and the web
   UI off (`OPENCODE_DISABLE_*`, `OPENCODE_CONFIG_CONTENT` += `autoupdate:false`, `share:"disabled"`). The conversation is one
   session (id in `agent.json`): created with `POST /session {"permission": R}` or, on resume, `PATCH /session/{id}
-  {"permission": R}` unless its rules already end with R, where R = jarvis's rules (everything asks; read-only tools and a short
+  {"permission": R}` unless its rules already end with R, where R = agentj's rules (everything asks; read-only tools and a short
   read-only bash list allowed; `task`, `question` denied) followed by every `deny` rule of the human's own agent ruleset
   (`GET /agent`). Messages: `POST /session/{id}/prompt_async {"parts":[{"type":"text","text"}][,"model":{providerID,modelID}]}`
   (`--model provider/model`). Events (`GET /event`, SSE): finished `message.part.updated` text parts → replies; `session.idle` →
@@ -391,7 +391,7 @@ App messages (all inside §3 transport messages):
 | direction | message | meaning |
 |---|---|---|
 | host → device | `{"t":"msg","id","text","ts","seq":n,"from":"agent"\|"host"\|"you"\|"device"\|"notice"[,"name"]}` | chat; `seq` increases per serve run; `you` = this device said it, `device` = another paired device (`name` = its label), `notice` = a host-side note (agent missing / exited / turn failed) |
-| host → device | `{"t":"status","s":"none"\|"idle"\|"working"\|"compacting"\|"waiting"\|"down"\|"stopped","agent":"claude"\|"codex"\|"opencode"\|null}` | 未接 / 空闲 / 干活中 / 压缩中 / 等你批准 / 没在运行 / 已急停 (phone controls); sent on ready and on every change |
+| host → device | `{"t":"status","s":"none"\|"idle"\|"working"\|"compacting"\|"waiting"\|"down"\|"stopped","agent":"claude"\|"codex"\|"opencode"\|null,"name":"<Agent name>"\|null}` | 未接 / 空闲 / 干活中 / 压缩中 / 等你批准 / 没在运行 / 已急停 (phone controls); sent on ready and on every change. `name` (0.10, additive): the Agent's display name (null = unnamed → show "Agent J"); sent again whenever it changes (`agentj name`, admin page, Dashboard rename) — older phones ignore it |
 | host → device | `{"t":"ask","id":"<32 hex>","tool":"<≤ 64>","summary":"<≤ 2000>","ttl":<s left>,"cat":[…],"why":"<≤ 200>"[,"batch":"<scope>","batch_max":20,"batch_secs":600][,"task":"<≤ 80>"]}` | a permission request; `summary` = what the phone shows (command / path / compact JSON); `cat` = danger categories (`[]` = low risk), `why` = the rule that fired; `batch` (low risk only) = the scope a batch approval would cover; `task` = the scheduled task it comes from (display only, not signed) |
 | host → device | `{"t":"ask_done","id","result":"allow"\|"deny"\|"timeout"\|"gone"\|"stopped"}` | decided (by any phone, the timeout, the agent withdrawing / serve stopping, or 全部停下) |
 | device → host | `{"t":"answer","id","ok":bool,"sig":"<b64url 64 B>"[,"batch":true]}` | the human's decision, signed; `batch:true` (with `ok:true`) = `allow_batch`: this one and the rest of this turn's calls of that scope |
@@ -420,26 +420,26 @@ App messages (all inside §3 transport messages):
   since the phone looked — refresh), `unknown_item`, `unknown_source`, `not_found`, `exists`, `symlink`, `invalid`,
   `unknown`, `io`. Every write, accepted or refused, is one line in `controls.log` (0600: time, action, device, result,
   SHA-256 of the object, nonce, ts, signature — never the object text). JS: `protocol/wire.js` `controlMessage` /
-  `controlObject`; Python: `host/jarvis_host/controls.py`.
-- **Stop everything** (`estop`, or `jarvis stop` at the terminal): the switch is written first (`estop.json`, 0600; a
+  `controlObject`; Python: `host/agentj/controls.py`.
+- **Stop everything** (`estop`, or `agentj stop` at the terminal): the switch is written first (`estop.json`, 0600; a
   restart comes back stopped; an unreadable file reads as stopped), then every open request is denied (`ask_done` result
   `stopped`, approvals.log reason `estop`), every batch grant ends (`grant_end` why `estop`), the Agent's turn is
   interrupted (Claude Code: the stream-json `control_request` `interrupt`, ≤ 2 s, then its whole process tree is ended —
   measured with 2.1.285: an interrupt alone leaves a backgrounded Bash running), queued messages are dropped, a running
   scheduled task is ended. While stopped: a device `msg` is answered to that device only with a `notice` 「已急停：这条没有交给
   Agent，也不会排队。恢复后再发。」 and never reaches the Agent; every permission request is denied at once; no task runs;
-  `status` = `stopped`. Only a signed `resume` from a phone or `jarvis resume` (approval passphrase) turns it off.
-- **Scheduled tasks** (`jarvis tasks`, `host/jarvis_host/tasks.py`): a run is the configured harness once, headless, in the
+  `status` = `stopped`. Only a signed `resume` from a phone or `agentj resume` (approval passphrase) turns it off.
+- **Scheduled tasks** (`agentj tasks`, `host/agentj/tasks.py`): a run is the configured harness once, headless, in the
   fence, cwd = the Agent's folder, prompt = the task's `prompt_file` with a header naming the workflow; it takes the same
   lock as a chat turn. Claude Code gets the usual permission tool + `--settings` hook; `mode: research` adds `research`
   to the hook's argv, and the hook then answers `permissionDecision: "deny"` for every call that is not read-only
   (`danger.readonly`: read tools, an allowlist of read-only commands with no redirection to a file, `git` read
   sub-commands, `sed -n`, GET-only `curl`, MCP tools whose name starts with a read verb). Codex / OpenCode: the chat adapter once
-  in a throw-away conversation (Codex `ephemeral` thread; OpenCode session 「Agent Jarvis 定时任务」, not stored), approvals on the
+  in a throw-away conversation (Codex `ephemeral` thread; OpenCode session 「Agent J 定时任务」, not stored), approvals on the
   phone; research — Codex `sandbox: "read-only"` and every request that is not read-only declined without a card, OpenCode our
   rules with every "ask" turned into "deny". The result reaches the phones as one `notice`: 「定时任务「<title>」：
   <verdict> — <the VERDICT sentence>」(+「（只读运行）」).
-- **Slash commands** (PROMPT-26 7a; ARCHITECTURE ADR-A70 – A72; `host/jarvis_host/slash.py`): only from a ready session of a
+- **Slash commands** (PROMPT-26 7a; ARCHITECTURE ADR-A70 – A72; `host/agentj/slash.py`): only from a ready session of a
   paired device. Whitelist `/clear` `/compact` `/model [name]` `/context` `/cost` `/usage` `/status` `/help` `/stop` (+
   `undo_clear` from the clear card). A message `/name …` whose name is not on the list: Claude Code's own skill (init `skills`) →
   sent as an ordinary message; anything else → a `refused` card 「这个命令请在电脑上执行。…」 and nothing reaches the Agent. `/stop`
@@ -464,7 +464,7 @@ App messages (all inside §3 transport messages):
   appends one more line, `"\n" + hex(SHA-256(scope))` of the scope text exactly as shown; the host verifies it against the scope
   it offered for that id, so a wider scope does not verify. The Noise session
   already proves which device sent the answer; the signature makes each decision a record that can be re-checked later.
-  JS: `protocol/wire.js` `approveMessage`; Python: `host/jarvis_host/approvals.py`. Browser key: WebCrypto Ed25519,
+  JS: `protocol/wire.js` `approveMessage`; Python: `host/agentj/approvals.py`. Browser key: WebCrypto Ed25519,
   `extractable: false`, in IndexedDB (`generateSigningKeypair`).
 - **Host rules**: a request is answered only by a ready session whose device is on the allowlist and has an approval key, for an
   id still open, before its deadline, with a signature that verifies; anything else is ignored and logged as metadata
@@ -478,7 +478,7 @@ App messages (all inside §3 transport messages):
   SHA-256 of the tool input, SHA-256 of what was shown, decision (`allow` · `deny` · `allow_batch`), reason (`device` · `batch` ·
   `timeout` · `no_device` · `serve_stop` · `agent_gone` · `too_many` · `estop`), device id, its public key and signature, `cats`, and for
   `allow_batch` `scope_sha256`, for an automatic approval `auto: "batch"` + `grant` (the signed request's id) — **never the tool
-  input or the scope text itself**. `jarvis approvals --verify` re-checks every signed line against the device's current key and
+  input or the scope text itself**. `agentj approvals --verify` re-checks every signed line against the device's current key and
   every automatic line against the `allow_batch` it names.
 - **What leaves the host**: the chat text, the summaries, the decisions — and (phone controls) memory items, activity
   entries, task rows and notices — travel only inside §3 transport messages (the relay
@@ -493,14 +493,14 @@ App messages (all inside §3 transport messages):
   404 / 410. **The subscription never reaches our servers.**
 - Endpoints are accepted only on `https` (default port, no credentials) at `fcm.googleapis.com`, `updates.push.services.mozilla.com`,
   `push.services.mozilla.com`, `web.push.apple.com`, `*.push.apple.com`, `*.notify.windows.com` — so a device cannot make the host
-  post to arbitrary URLs. (Tests add one exact local origin through `AGENTJARVIS_TEST_PUSH_ORIGIN`.)
+  post to arbitrary URLs. (Tests add one exact local origin through `AGENTJ_TEST_PUSH_ORIGIN`.)
 - The host posts directly to the push service (RFC 8030) with a VAPID JWT (RFC 8292: `aud` = the endpoint's origin, `exp` 12 h,
-  `sub` = `https://agentjarvis.net`) and an aes128gcm body (RFC 8291) whose plaintext is `{"k":"reply"}` or `{"k":"ask"}` padded
+  `sub` = `https://agentj.app`) and an aes128gcm body (RFC 8291) whose plaintext is `{"k":"reply"}` or `{"k":"ask"}` padded
   with spaces to 32 bytes — every push has the same size. `TTL: 3600`; `Urgency: high` for `ask`, `normal` for `reply`.
 - When: one `reply` push per finished agent turn that produced text, one `ask` push per permission request; never to a device
   whose page is visible (`{"t":"vis","fg":bool}` from the page; a ready session counts as visible until it says otherwise);
   at most one `reply` per 20 s and one `ask` per 2 s per device.
-- The service worker (`web/public/sw.js`) has no fetch handler and no cache; it shows **Agent Jarvis — 有新回复** or **Agent
-  Jarvis — 有一个请求等你批准**, nothing else, and focuses the page on tap.
+- The service worker (`web/public/sw.js`) has no fetch handler and no cache; it shows **Agent J — 有新回复** or **Agent
+  Agent J — 有一个请求等你批准**, nothing else, and focuses the page on tap.
 - **What the push service (Google / Apple / Mozilla) sees**: that a push for this subscription was sent, when, its constant size,
   its urgency, the host's IP (or its proxy's) and the host's VAPID public key. Never text, never which kind.

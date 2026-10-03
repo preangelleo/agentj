@@ -1,4 +1,4 @@
-"""Test-only stand-ins for the blind relay (PROTOCOL.md §2) and a device (§3–§4), so host tests can drive a real `jarvis serve`
+"""Test-only stand-ins for the blind relay (PROTOCOL.md §2) and a device (§3–§4), so host tests can drive a real `agentj serve`
 through a full pairing without wrangler/workerd. The relay verifies the host's auth like the real one (channel derivation +
 Ed25519 over the challenge) and forwards opaque frames; the device is the web client's protocol on the host's own noise.py."""
 from __future__ import annotations
@@ -14,8 +14,8 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
 from websockets.asyncio.server import serve as ws_serve
 from websockets.sync.client import connect as ws_connect
 
-from jarvis_host import wire
-from jarvis_host.noise import IKPSK2, Handshake, Keypair
+from agentj import wire
+from agentj.noise import IKPSK2, Handshake, Keypair
 
 _PATH = re.compile(r"/v1/(host|dev)/([A-Za-z0-9_-]{22})")
 

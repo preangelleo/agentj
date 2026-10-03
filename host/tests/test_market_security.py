@@ -2,6 +2,7 @@
 1 install.verify only inside a real sandbox · 2 auto-running agent / IDE config refused + every file listed in the preview ·
 3 hidden characters · 4 downgrade / reserved names / unsigning · 5 author-name forgery · 6 --replace ownership + backups in
 the state dir · 7 JSON depth. Temp dirs only; the sandbox tests need a working bubblewrap (skipped elsewhere)."""
+import _hermetic  # noqa: F401,I001  (never the real ~/.local/state; see _hermetic.py)
 import gzip
 import http.server
 import io
@@ -20,7 +21,7 @@ from unittest import mock
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 import market_fixtures as fx  # noqa: E402
-from jarvis_host import bundle, cloud, market, plaza  # noqa: E402
+from agentj import bundle, cloud, market, plaza  # noqa: E402
 
 VECTORS = json.loads((pathlib.Path(__file__).resolve().parents[2] / "protocol" / "vectors" / "bundle-rules.json").read_text())
 REAL_HOME = pwd.getpwuid(os.getuid()).pw_dir
@@ -97,7 +98,7 @@ print("RESULT " + json.dumps(r))
 
 class VerifySandbox(Base):
     def hostile(self):
-        mark = f"jarvis-test-{uuid.uuid4().hex}"
+        mark = f"agentj-test-{uuid.uuid4().hex}"
         self.targets = {"test_home": str(self.e.home / "pwned"), "tmp": f"/tmp/{mark}", "var_tmp": f"/var/tmp/{mark}",
                         "state": str(self.e.st.root / "pwned"), "root": str(self.e.root / "pwned")}
         for p in self.targets.values():
@@ -118,7 +119,7 @@ class VerifySandbox(Base):
         files = {**fx.SKILL_FILES, "scripts/demo.py": self.hostile()}
         _, m = self.build(files=files)
         _, files = bundle.parse(self.build(files=files)[0])
-        with tempfile.TemporaryDirectory(prefix="jarvis-verify-") as tmp:
+        with tempfile.TemporaryDirectory(prefix="agentj-verify-") as tmp:
             scratch = pathlib.Path(tmp)
             market.write_tree(scratch / "pkg", files)
             rc, tail = market.run_verify(m["install"]["verify"], scratch / "pkg", scratch, kind="bubblewrap",
@@ -134,9 +135,9 @@ class VerifySandbox(Base):
         self.assertNotEqual(r["internet"], "connected")
         self.assertEqual(r["real_home"], [], "the real home is an empty tmpfs")
         self.assertIn(r["test_home"], ("FileNotFoundError", []), "$HOME is hidden")
-        self.assertIn(r["state"], ("FileNotFoundError", []), "jarvis's state is hidden")
+        self.assertIn(r["state"], ("FileNotFoundError", []), "agentj's state is hidden")
         self.assertEqual(set(r["env"]) - {"PWD"}, {"PATH", "HOME", "TMPDIR", "LANG"})
-        self.assertTrue(r["home"].endswith("/home") and "jarvis-verify-" in r["home"])
+        self.assertTrue(r["home"].endswith("/home") and "agentj-verify-" in r["home"])
 
     @unittest.skipUnless(market.sandbox_kind() == "bubblewrap", "needs a working bubblewrap")
     def test_hostile_verify_through_install(self):
@@ -195,7 +196,7 @@ class VerifySandbox(Base):
             self.assertIsNone(market._probe_sandbox())
 
     def test_bwrap_argv(self):
-        scratch = self.e.root / "jarvis-verify-x"
+        scratch = self.e.root / "agentj-verify-x"
         a = market.verify_bwrap_argv(scratch, scratch / "pkg", hide=[str(self.e.st.root), "/"], homes=[str(self.e.home), REAL_HOME],
                                      bwrap="/usr/bin/bwrap")
         self.assertEqual(a[:8], ["/usr/bin/bwrap", "--ro-bind", "/", "/", "--dev", "/dev", "--proc", "/proc"])
@@ -218,8 +219,8 @@ class VerifySandbox(Base):
     def test_sbpl_profile(self):
         MAC_HOME = "/" + "Users/alice"   # a macOS home (spelled in two parts: the public export forbids the literal)
         hostile = '/private/var/folders/x/T/a"b) (allow network*) ;'
-        prof, params = market.verify_sbpl_profile(hostile, hide=[MAC_HOME + "/.agentjarvis"], homes=[MAC_HOME, MAC_HOME])
-        self.assertEqual(params, {"SCRATCH": os.path.realpath(hostile), "HIDE_0": MAC_HOME, "HIDE_1": MAC_HOME + "/.agentjarvis"})
+        prof, params = market.verify_sbpl_profile(hostile, hide=[MAC_HOME + "/.agentj"], homes=[MAC_HOME, MAC_HOME])
+        self.assertEqual(params, {"SCRATCH": os.path.realpath(hostile), "HIDE_0": MAC_HOME, "HIDE_1": MAC_HOME + "/.agentj"})
         self.assertNotIn("alice", prof)
         self.assertNotIn('a"b', prof, "paths travel as -D parameters, never spliced into the profile")
         lines = prof.splitlines()
@@ -376,7 +377,7 @@ class CompromisedServer(Base):
 
     def test_reserved_names_need_the_official_signature(self):
         key = fx.TestKey()
-        for name, over in (("jarvis-tools", {}), ("official", {}), ("plaza-x", {}), ("demo-skill", {"install": {"skill_dir_name": "agentjarvis-core"}})):
+        for name, over in (("agentj-tools", {}), ("official", {}), ("plaza-x", {}), ("demo-skill", {"install": {"skill_dir_name": "agentjarvis-core"}})):
             with self.subTest(name=name, **over):
                 self.srv.packages.clear()
                 self.add(name=name, manifest=over)
@@ -384,11 +385,11 @@ class CompromisedServer(Base):
                 self.assertEqual(rc, market.EXIT_SIGNATURE, out)
                 self.assertIn("reserved", out)
         self.srv.packages.clear()
-        self.add(name="jarvis-tools", key=key, track="official", certified=True)
-        rc, out = self.install("jarvis-tools", keyring=key.keyring)
+        self.add(name="agentj-tools", key=key, track="official", certified=True)
+        rc, out = self.install("agentj-tools", keyring=key.keyring)
         self.assertEqual(rc, 0, out)
         self.assertIn(market.CERT_BADGE, out)
-        for ok in ("jarvisx", "my-jarvis", "administrator-notes"):
+        for ok in ("jarvisx", "my-agentj", "administrator-notes"):
             self.assertIsNone(market.RESERVED.match(ok), ok)
         self.assertEqual(self.e.tree(), [])
 
@@ -500,7 +501,7 @@ class Depth(Base):
     def test_parse_deep_bundle_is_a_bundle_error(self):
         for n in (40, 100000):
             with self.subTest(n):
-                raw = ('{"files":[],"manifest":{"x":' + "[" * n + "]" * n + '},"schema":"agentjarvis.bundle/v1"}').encode()
+                raw = ('{"files":[],"manifest":{"x":' + "[" * n + "]" * n + '},"schema":"agentj.bundle/v1"}').encode()
                 with self.assertRaises(bundle.BundleError):
                     bundle.parse(gzip.compress(raw, mtime=0))
 

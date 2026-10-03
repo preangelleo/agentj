@@ -1,4 +1,4 @@
-# agentjarvis web client — alpha-web.agentjarvis.net (static, public but noindex; host + method checks and CSP in worker.ts).
+# agentj web client — m.agentj.app + legacy alpha-web.agentjarvis.net (one version cycle) (static, public but noindex; host + method checks and CSP in worker.ts).
 # Deploy: see web/README.md. Token comes from the environment (cf-mint), never from this file.
 name = "agentjarvis-web"
 main = "worker.ts"
@@ -10,7 +10,8 @@ workers_dev = false
 preview_urls = false
 
 routes = [
-  { pattern = "alpha-web.agentjarvis.net", custom_domain = true },
+  { pattern = "m.agentj.app", custom_domain = true },
+  { pattern = "alpha-web.agentjarvis.net", custom_domain = true },   # legacy: paired phones keep their keys there
 ]
 
 [assets]
@@ -19,8 +20,10 @@ binding = "ASSETS"
 run_worker_first = true   # every request goes through worker.ts (host + method checks, CSP pinned to the relay)
 
 [vars]
-WEB_HOST = "alpha-web.agentjarvis.net"
-RELAY_URL = "wss://alpha-relay.agentjarvis.net"
+WEB_HOST = "m.agentj.app"
+LEGACY_WEB_HOST = "alpha-web.agentjarvis.net"
+RELAY_URL = "wss://relay.agentj.app"
+LEGACY_RELAY_URL = "wss://alpha-relay.agentjarvis.net"
 
 # PR1: no request logging.
 [observability]

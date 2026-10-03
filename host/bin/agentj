@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+# Agent J host CLI launcher for this source checkout (alpha): `host/bin/agentj`. Not on PATH by itself.
+# Uses the project-local venv (uv); creates it on first run.
+set -euo pipefail
+here="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/.." && pwd -P)"
+if [[ ! -x "$here/.venv/bin/python" ]]; then
+  uv sync --project "$here" --no-dev -q
+fi
+PYTHONPATH="$here${PYTHONPATH:+:$PYTHONPATH}" exec "$here/.venv/bin/python" -m agentj.cli "$@"

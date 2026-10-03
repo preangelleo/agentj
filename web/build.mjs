@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// agentjarvis web client — build step (zero npm deps, deterministic, no timestamps).
+// agentj web client — build step (zero npm deps, deterministic, no timestamps).
 //   1. copies protocol/{noise,wire}.js → public/proto/ byte-for-byte (the client must not carry its own crypto)
 //   2. (in the monorepo) copies the shared design system (agentjarvis/brand, set "web": tokens, base, lang.js, ui.js, fonts, shield + PWA +
 //      status icons) → public/brand/… + public/favicon.ico + public/apple-touch-icon.png (same as `brand/sync.mjs --set web`)

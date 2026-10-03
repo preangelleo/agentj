@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""A stand-in for `opencode serve` (OpenCode 1.18.32's HTTP API, the parts jarvis uses): no model, deterministic.
+"""A stand-in for `opencode serve` (OpenCode 1.18.32's HTTP API, the parts agentj uses): no model, deterministic.
 
     fakeopencode.py serve --hostname 127.0.0.1 --port N      (prints "opencode server listening on http://127.0.0.1:N")
     fakeopencode.py --version
@@ -34,7 +34,7 @@ import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
-from jarvis_host.agent_opencode import evaluate  # noqa: E402  (OpenCode's matcher, ported; the e2e checks the real one)
+from agentj.agent_opencode import evaluate  # noqa: E402  (OpenCode's matcher, ported; the e2e checks the real one)
 
 DEFAULT_RULES = [
     {"permission": "*", "pattern": "*", "action": "allow"}, {"permission": "doom_loop", "pattern": "*", "action": "ask"},

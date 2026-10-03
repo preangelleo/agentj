@@ -11,6 +11,7 @@ the stop switch and /stop interrupt the turn, an `exec`-era thread id is resumed
 sandbox + non-read-only requests declined; normal = card with the task's name); OpenCode: summarize (the summary is not a
 reply), abort on /stop and the stop switch, a scheduled run in its own session with deny-instead-of-ask rules.
 """
+import _hermetic  # noqa: F401,I001  (never the real ~/.local/state; see _hermetic.py)
 import asyncio
 import json
 import os
@@ -23,10 +24,10 @@ import unittest
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
-from jarvis_host import agent as agents  # noqa: E402
-from jarvis_host import agent_codex as cx  # noqa: E402
-from jarvis_host import agent_opencode as oc  # noqa: E402
-from jarvis_host import activity, approvals, danger, fence, slash, tasks  # noqa: E402
+from agentj import agent as agents  # noqa: E402
+from agentj import agent_codex as cx  # noqa: E402
+from agentj import agent_opencode as oc  # noqa: E402
+from agentj import activity, approvals, danger, fence, slash, tasks  # noqa: E402
 
 from test_danger import _sign  # noqa: E402
 from test_l1 import Phone, _host, _ready, _state  # noqa: E402
@@ -122,10 +123,10 @@ class _Chain(unittest.TestCase):
         wrapper = pathlib.Path(self.tmp.name) / self.KIND
         wrapper.write_text(f"#!/bin/sh\nexec {sys.executable} {HERE / fake} \"$@\"\n")
         wrapper.chmod(0o700)
-        self.env = {"claude": {"AGENTJARVIS_CLAUDE_BIN": str(wrapper), "FAKE_CLAUDE_LOG": str(self.log)},
-                    "codex": {"AGENTJARVIS_CODEX_BIN": str(wrapper), "FAKE_CX_LOG": str(self.log)},
-                    "opencode": {"AGENTJARVIS_OPENCODE_BIN": str(wrapper), "FAKE_OC_LOG": str(self.log),
-                                 "AGENTJARVIS_TEST_OC_WATCH": "1"}}[self.KIND]
+        self.env = {"claude": {"AGENTJ_CLAUDE_BIN": str(wrapper), "FAKE_CLAUDE_LOG": str(self.log)},
+                    "codex": {"AGENTJ_CODEX_BIN": str(wrapper), "FAKE_CX_LOG": str(self.log)},
+                    "opencode": {"AGENTJ_OPENCODE_BIN": str(wrapper), "FAKE_OC_LOG": str(self.log),
+                                 "AGENTJ_TEST_OC_WATCH": "1"}}[self.KIND]
         os.environ.update(self.env)
         self.fenced = fence.problem(self.st, str(self.work)) is None
         if sys.platform.startswith("linux") and shutil.which("bwrap"):
@@ -644,7 +645,7 @@ class OpenCodeChain(_Chain):
         prompts = [r["body"] for r in lg if r.get("path", "").endswith("/prompt_async")]
         self.assertIn({"providerID": "opencode", "modelID": "fake-two"}, [p.get("model") for p in prompts])
         made = [r["body"] for r in lg if r["method"] == "POST" and r["path"] == "/session"]
-        task = [m for m in made if m["title"] == "Agent Jarvis 定时任务"]
+        task = [m for m in made if m["title"] == "Agent J 定时任务"]
         self.assertEqual(len(task), 1)
         self.assertNotIn("ask", {r["action"] for r in task[0]["permission"]}, "research: deny instead of ask")
         self.assert_activity_has_no_text()

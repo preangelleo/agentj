@@ -1,15 +1,16 @@
-"""L3-min: installable package, install-location-aware code paths, `jarvis doctor`, `jarvis service`, serve without a TTY.
+"""L3-min: installable package, install-location-aware code paths, `agentj doctor`, `agentj service`, serve without a TTY.
 
-- Version: one source (`jarvis_host.__version__`) → `jarvis --version`, the report agent string, pyproject (dynamic).
+- Version: one source (`agentj.__version__`) → `agentj --version`, the report agent string, pyproject (dynamic).
 - Service: the systemd unit / launchd plist text (absolute paths, no secret even when one is in the environment, refused
   names); a REAL `systemctl --user` install under a throwaway name (`agentjarvis-test-<rand>`, temp state dir) on Linux:
   active, serve answers its control socket without any terminal, uninstall leaves nothing behind.
 - serve with stdin = /dev/null (EOF at once) keeps running; `--events quiet` never prints message / reply / command text.
 - Doctor: the check list and order, ✗ only for blockers, no secret / home path in --json, the relay probe on a local relay.
 - Wheel: build the wheel, install it into a fresh venv (Python 3.11 when available — the floor we claim), and run from
-  there: `jarvis --version`, the code paths the fence protects, the permission tool's interpreter, the admin assets, the
+  there: `agentj --version`, the code paths the fence protects, the permission tool's interpreter, the admin assets, the
   service ExecStart, and the fenced hostile-command chain (test_l2.FencedChain) against the *installed* package.
 """
+import _hermetic  # noqa: F401,I001  (never the real ~/.local/state; see _hermetic.py)
 import contextlib
 import io
 import json
@@ -30,42 +31,43 @@ HERE = pathlib.Path(__file__).resolve().parent
 HOST = HERE.parent
 sys.path.insert(0, str(HOST))
 sys.path.insert(0, str(HERE))
-import jarvis_host  # noqa: E402
-from jarvis_host import agent, cloud, doctor, fence, names, serve, service  # noqa: E402
-from jarvis_host.state import State  # noqa: E402
+import agentj  # noqa: E402
+from agentj import agent, cloud, doctor, fence, names, serve, service  # noqa: E402
+from agentj.state import State  # noqa: E402
 
 SECRET = "sk-" + "ant-oat01-" + "AJL3MARKER" + "x" * 20   # fake token shape, assembled so scanners do not flag the source
 
 
 def _cli(*args, env=None, timeout=60, stdin=subprocess.DEVNULL):
-    return subprocess.run([sys.executable, "-m", "jarvis_host.cli", *args], cwd=HOST, env={**os.environ, **(env or {})},
+    return subprocess.run([sys.executable, "-m", "agentj.cli", *args], cwd=HOST, env={**os.environ, **(env or {})},
                           capture_output=True, text=True, timeout=timeout, stdin=stdin)
 
 
 class Version(unittest.TestCase):
     def test_one_source(self):
-        v = jarvis_host.__version__
-        self.assertEqual(v, "0.9.0a1")
+        v = agentj.__version__
+        self.assertEqual(v, "0.10.0a1")
         self.assertEqual(cloud.VERSION, v)
-        self.assertEqual(cloud.AGENT, f"agentjarvis-host/{v}")
+        self.assertEqual(cloud.AGENT, f"agentj/{v}")
         r = _cli("--version")
-        self.assertEqual((r.returncode, r.stdout.strip()), (0, f"agentjarvis-host {v}"))
+        self.assertEqual((r.returncode, r.stdout.strip()), (0, f"agentj {v}"))
         py = (HOST / "pyproject.toml").read_text()
         self.assertIn('dynamic = ["version"]', py)
         self.assertNotIn("\nversion =", py)
-        self.assertIn('jarvis = "jarvis_host.cli:main"', py)
+        self.assertIn('agentj = "agentj.cli:main"', py)
+        self.assertNotIn("\njarvis =", py, "no `jarvis` console script: fresh installs never get that name")
 
     def test_no_args_prints_the_next_step(self):
         with tempfile.TemporaryDirectory() as d:
-            r = _cli(env={"AGENTJARVIS_STATE_DIR": d + "/s"})
+            r = _cli(env={"AGENTJ_STATE_DIR": d + "/s"})
             self.assertEqual(r.returncode, 0, r.stderr)
-            for step in ("jarvis init", "jarvis login", "jarvis passphrase set", "jarvis agent claude", "jarvis service install",
-                         "jarvis pair"):
+            for step in ("agentj init", "agentj login", "agentj passphrase set", "agentj agent claude", "agentj service install",
+                         "agentj pair"):
                 self.assertIn(step, r.stdout)
-            self.assertIn("next:  jarvis init", r.stdout)
+            self.assertIn("next:  agentj init", r.stdout)
             State(pathlib.Path(d) / "s").init(relay="ws://127.0.0.1:1")
-            r = _cli(env={"AGENTJARVIS_STATE_DIR": d + "/s"})
-            self.assertIn("next:  jarvis login", r.stdout)
+            r = _cli(env={"AGENTJ_STATE_DIR": d + "/s"})
+            self.assertIn("next:  agentj login", r.stdout)
 
     def test_new_help_is_bilingual(self):
         for cmd in (["doctor", "--help"], ["service", "--help"]):
@@ -78,7 +80,7 @@ class ServiceText(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.env = {"PATH": "/opt/x/bin:relative/bin:/usr/bin", "HOME": self.tmp.name, "XDG_CONFIG_HOME": self.tmp.name + "/cfg",
-                    "CLAUDE_CODE_OAUTH_TOKEN": SECRET, "ANTHROPIC_API_KEY": SECRET, "AGENTJARVIS_STATE_DIR": self.tmp.name + "/st",
+                    "CLAUDE_CODE_OAUTH_TOKEN": SECRET, "ANTHROPIC_API_KEY": SECRET, "AGENTJ_STATE_DIR": self.tmp.name + "/st",
                     "HTTPS_PROXY": f"http://user:{SECRET}@proxy:8080", "NO_PROXY": "localhost"}
 
     def tearDown(self):
@@ -90,14 +92,14 @@ class ServiceText(unittest.TestCase):
         self.assertNotIn("HTTPS_PROXY", env, "a proxy with credentials is not copied")
         self.assertEqual(env["NO_PROXY"], "localhost")
         self.assertTrue(any("HTTPS_PROXY" in n for n in notes))
-        argv = ["/opt/aj venv/bin/jarvis"]
-        text = service.unit_text("agentjarvis", argv, env, self.env)
+        argv = ["/opt/aj venv/bin/agentj"]
+        text = service.unit_text("agentj", argv, env, self.env)
         self.assertNotIn(SECRET, text)
         self.assertNotIn("OAUTH_TOKEN=", text.replace("e.g. CLAUDE_CODE_OAUTH_TOKEN=…", ""))
-        self.assertIn('ExecStart="/opt/aj venv/bin/jarvis" "serve" "--events" "quiet" "--no-stdin"', text)
+        self.assertIn('ExecStart="/opt/aj venv/bin/agentj" "serve" "--events" "quiet" "--no-stdin"', text)
         for line in ("Restart=on-failure", "RestartSec=5", "WantedBy=default.target", "StandardInput=null",
-                     'Environment="PATH=/opt/x/bin:/usr/bin"', f'Environment="AGENTJARVIS_STATE_DIR={self.tmp.name}/st"',
-                     f"EnvironmentFile=-{self.tmp.name}/cfg/systemd/user/agentjarvis.env"):
+                     'Environment="PATH=/opt/x/bin:/usr/bin"', f'Environment="AGENTJ_STATE_DIR={self.tmp.name}/st"',
+                     f"EnvironmentFile=-{self.tmp.name}/cfg/systemd/user/agentj.env"):
             self.assertIn(line, text.splitlines())
         for ln in text.splitlines():
             if ln.startswith(("ExecStart=", "EnvironmentFile=")):
@@ -106,35 +108,35 @@ class ServiceText(unittest.TestCase):
 
     def test_launchd_plist(self):
         env, _ = service.service_env(self.env)
-        b = service.plist_bytes("net.agentjarvis.host", ["/opt/v/bin/jarvis"], env, "/st/service.log")
+        b = service.plist_bytes("net.agentj.host", ["/opt/v/bin/agentj"], env, "/st/service.log")
         self.assertNotIn(SECRET.encode(), b)
         p = plistlib.loads(b)
-        self.assertEqual(p["Label"], "net.agentjarvis.host")
-        self.assertEqual(p["ProgramArguments"], ["/opt/v/bin/jarvis", "serve", "--events", "quiet", "--no-stdin"])
+        self.assertEqual(p["Label"], "net.agentj.host")
+        self.assertEqual(p["ProgramArguments"], ["/opt/v/bin/agentj", "serve", "--events", "quiet", "--no-stdin"])
         self.assertTrue(p["RunAtLoad"] and p["KeepAlive"])
         self.assertEqual((p["StandardOutPath"], p["StandardErrorPath"], p["StandardInPath"]),
                          ("/st/service.log", "/st/service.log", "/dev/null"))
-        self.assertEqual(set(p["EnvironmentVariables"]), {"PATH", "AGENTJARVIS_STATE_DIR", "NO_PROXY"})
+        self.assertEqual(set(p["EnvironmentVariables"]), {"PATH", "AGENTJ_STATE_DIR", "NO_PROXY"})
 
     def test_names(self):
         for bad in ("vibe-remote-bridge", "Vibe-Remote", "../x", "a b", "x.service", ""):
-            with mock.patch.dict(os.environ, {"AGENTJARVIS_SERVICE_NAME": bad}):
+            with mock.patch.dict(os.environ, {"AGENTJ_SERVICE_NAME": bad}):
                 if bad == "":
                     self.assertIn(service.name(), (service.DEFAULT_UNIT, service.DEFAULT_LABEL))
                     continue
                 with self.assertRaises(service.ServiceError):
                     service.name()
-        with mock.patch.dict(os.environ, {"AGENTJARVIS_SERVICE_NAME": "agentjarvis-test-1"}):
+        with mock.patch.dict(os.environ, {"AGENTJ_SERVICE_NAME": "agentjarvis-test-1"}):
             self.assertEqual(service.name(), "agentjarvis-test-1")
 
-    def test_execstart_is_the_venv_jarvis(self):
-        argv = service.jarvis_argv()
+    def test_execstart_is_the_venv_agentj(self):
+        argv = service.agentj_argv()
         self.assertTrue(os.path.isabs(argv[0]))
         self.assertTrue(argv[0].startswith(os.path.dirname(os.path.abspath(sys.executable))) or argv[0] == os.path.abspath(sys.executable))
 
     def test_token_hint_names_the_variable_never_the_value(self):
         with mock.patch.dict(os.environ, {"CLAUDE_CODE_OAUTH_TOKEN": SECRET}):
-            h = service.token_hint("agentjarvis")
+            h = service.token_hint("agentj")
         self.assertIn("CLAUDE_CODE_OAUTH_TOKEN", h)
         self.assertNotIn(SECRET, h)
 
@@ -157,7 +159,7 @@ class RealSystemdService(unittest.TestCase):
         self.dir = tempfile.mkdtemp(prefix="aj-svc-", dir="/tmp")
         self.st = State(pathlib.Path(self.dir) / "s")
         self.st.init(relay="ws://127.0.0.1:1")         # a relay that refuses: serve keeps retrying, stays up
-        self.env = {"AGENTJARVIS_STATE_DIR": str(self.st.root), "AGENTJARVIS_SERVICE_NAME": self.name,
+        self.env = {"AGENTJ_STATE_DIR": str(self.st.root), "AGENTJ_SERVICE_NAME": self.name,
                     "CLAUDE_CODE_OAUTH_TOKEN": SECRET}
         self.unit = pathlib.Path(service.unit_dir()) / f"{self.name}.service"
 
@@ -177,7 +179,7 @@ class RealSystemdService(unittest.TestCase):
         self.assertIn("CLAUDE_CODE_OAUTH_TOKEN", r.stdout, "the human is told the service cannot see the variable")
         text = self.unit.read_text()
         self.assertNotIn(SECRET, text)
-        self.assertIn(f'Environment="AGENTJARVIS_STATE_DIR={self.st.root}"', text)
+        self.assertIn(f'Environment="AGENTJ_STATE_DIR={self.st.root}"', text)
         exe = text.split("ExecStart=", 1)[1].split('"')[1]
         self.assertTrue(os.path.isabs(exe) and os.access(exe, os.X_OK), exe)
         # active, and serve answers its control socket — no terminal, stdin = /dev/null
@@ -216,7 +218,7 @@ class RealSystemdService(unittest.TestCase):
         """Same context as the installed service (user manager, no TTY): the fence probe and a fenced command both work."""
         work = pathlib.Path(self.dir) / "work"
         work.mkdir()
-        code = ("import pathlib, subprocess, sys\nfrom jarvis_host import fence\nfrom jarvis_host.state import State\n"
+        code = ("import pathlib, subprocess, sys\nfrom agentj import fence\nfrom agentj.state import State\n"
                 f"st = State(pathlib.Path({str(self.st.root)!r})); w = {str(work)!r}\n"
                 "why = fence.problem(st, w)\n"
                 "r = subprocess.run(fence.wrap(st, ['/bin/sh', '-c', 'ls ' + str(st.root)], w), capture_output=True, text=True)\n"
@@ -228,7 +230,7 @@ class RealSystemdService(unittest.TestCase):
         self.assertEqual(r.stdout.strip(), "None ['agentperm'] 0", "fence up; the state dir shows only agentperm/")
 
     def test_install_refuses_while_a_terminal_serve_runs(self):
-        p = subprocess.Popen([sys.executable, "-m", "jarvis_host.cli", "serve", "--events", "jsonl", "--no-stdin"], cwd=HOST,
+        p = subprocess.Popen([sys.executable, "-m", "agentj.cli", "serve", "--events", "jsonl", "--no-stdin"], cwd=HOST,
                              env={**os.environ, **self.env}, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         try:
             deadline = time.time() + 15
@@ -253,8 +255,8 @@ class ServeWithoutTerminal(unittest.TestCase):
         shutil.rmtree(self.dir, ignore_errors=True)
 
     def _run(self, *extra):
-        p = subprocess.Popen([sys.executable, "-m", "jarvis_host.cli", "serve", *extra], cwd=HOST,
-                             env={**os.environ, "AGENTJARVIS_STATE_DIR": str(self.st.root)}, stdin=subprocess.DEVNULL,
+        p = subprocess.Popen([sys.executable, "-m", "agentj.cli", "serve", *extra], cwd=HOST,
+                             env={**os.environ, "AGENTJ_STATE_DIR": str(self.st.root)}, stdin=subprocess.DEVNULL,
                              stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
         try:
             deadline = time.time() + 15
@@ -295,12 +297,12 @@ class ServeWithoutTerminal(unittest.TestCase):
 
 class Doctor(unittest.TestCase):
     IDS = ["version", "python", "platform", "state", "relay", "dashboard", "agent", "agent_cli", "harness", "fence", "danger", "passphrase",
-           "bound", "serve", "service", "estop", "tasks", "activity"]
+           "bound", "serve", "service", "alias", "estop", "tasks", "activity"]
 
     def setUp(self):
         self.dir = tempfile.mkdtemp(prefix="aj-doc-", dir="/tmp")
-        self.env = {"AGENTJARVIS_STATE_DIR": self.dir + "/s", "CLAUDE_CODE_OAUTH_TOKEN": SECRET,
-                    "AGENTJARVIS_SERVICE_NAME": f"agentjarvis-test-{secrets.token_hex(4)}"}
+        self.env = {"AGENTJ_STATE_DIR": self.dir + "/s", "CLAUDE_CODE_OAUTH_TOKEN": SECRET,
+                    "AGENTJ_SERVICE_NAME": f"agentjarvis-test-{secrets.token_hex(4)}"}
 
     def tearDown(self):
         shutil.rmtree(self.dir, ignore_errors=True)
@@ -311,9 +313,9 @@ class Doctor(unittest.TestCase):
         d = json.loads(r.stdout)
         ids = [c["id"] for c in d["checks"]]
         self.assertEqual([i for i in ids if i != "linger"], self.IDS + ["update"], "linger only where systemd reports it")
-        self.assertEqual(d["version"], jarvis_host.__version__)
+        self.assertEqual(d["version"], agentj.__version__)
         by = {c["id"]: c for c in d["checks"]}
-        self.assertEqual((by["state"]["status"], by["state"]["hint"]), ("fail", "jarvis init"))
+        self.assertEqual((by["state"]["status"], by["state"]["hint"]), ("fail", "agentj init"))
         self.assertEqual(_cli("init", env=self.env).returncode, 0)
         r = _cli("doctor", "--json", "--offline", env=self.env)
         d = json.loads(r.stdout)
@@ -371,9 +373,9 @@ class InstallAware(unittest.TestCase):
         a = agent.ClaudeAgent.__new__(agent.ClaudeAgent)
         a.cfg = {"model": None}
         argv = a.argv(None)
-        mcp = json.loads(argv[argv.index("--mcp-config") + 1])["mcpServers"]["agentjarvis"]
+        mcp = json.loads(argv[argv.index("--mcp-config") + 1])["mcpServers"]["agentj"]
         self.assertEqual(mcp["command"], sys.executable)
-        self.assertEqual(mcp["args"], ["-P", "-m", "jarvis_host.permtool"])
+        self.assertEqual(mcp["args"], ["-P", "-m", "agentj.permtool"])
 
     def test_source_checkout_detected(self):
         self.assertEqual(agent.source_root(), os.path.realpath(HOST))
@@ -409,7 +411,7 @@ class WheelInstall(unittest.TestCase):
         r = subprocess.run([uv, "build", "--wheel", "--out-dir", cls.tmp + "/dist", str(HOST)], capture_output=True,
                            text=True, timeout=300)
         assert r.returncode == 0, r.stderr
-        cls.wheel = next(pathlib.Path(cls.tmp, "dist").glob("agentjarvis_host-*.whl"))
+        cls.wheel = next(pathlib.Path(cls.tmp, "dist").glob("agentj-*.whl"))
         cls.py = "3.11" if subprocess.run([uv, "python", "find", "3.11"], capture_output=True).returncode == 0 else "3.13"
         venv = cls.tmp + "/venv"
         r = subprocess.run([uv, "venv", "-q", "-p", cls.py, venv], capture_output=True, text=True, timeout=300)
@@ -427,29 +429,44 @@ class WheelInstall(unittest.TestCase):
     def test_wheel_contents(self):
         import zipfile
         names_ = zipfile.ZipFile(self.wheel).namelist()
-        for f in ("jarvis_host/__init__.py", "jarvis_host/permtool.py", "jarvis_host/admin/index.html",
-                  "jarvis_host/admin/app.js", "jarvis_host/admin/app.css", "jarvis_host/service.py", "jarvis_host/doctor.py",
-                  "jarvis_host/admin/i18n/admin.zh.json", "jarvis_host/admin/i18n/admin.en.json", "jarvis_host/admin/favicon.ico",
-                  "jarvis_host/admin/brand/lang.js", "jarvis_host/admin/brand/palette.css", "jarvis_host/admin/brand/base.css",
-                  "jarvis_host/admin/brand/fonts/ubuntu-400.woff2", "jarvis_host/admin/brand/fonts/UFL-1.0-ubuntu.txt",
-                  "jarvis_host/admin/brand/img/shield-64.png"):
+        for f in ("agentj/__init__.py", "agentj/permtool.py", "agentj/admin/index.html",
+                  "agentj/admin/app.js", "agentj/admin/app.css", "agentj/service.py", "agentj/doctor.py",
+                  "agentj/admin/i18n/admin.zh.json", "agentj/admin/i18n/admin.en.json", "agentj/admin/favicon.ico",
+                  "agentj/admin/brand/lang.js", "agentj/admin/brand/palette.css", "agentj/admin/brand/base.css",
+                  "agentj/admin/brand/fonts/ubuntu-400.woff2", "agentj/admin/brand/fonts/UFL-1.0-ubuntu.txt",
+                  "agentj/admin/brand/img/shield-64.png"):
             self.assertIn(f, names_)
         self.assertFalse([n for n in names_ if n.endswith(".src.json") or "shield-source" in n], "no copy source, no big logo source")
         self.assertLess(pathlib.Path(self.wheel).stat().st_size, 1_500_000, "wheel stays small")
         self.assertFalse([n for n in names_ if n.startswith("tests/") or "wiredump" in n or "fakeclaude" in n])
         ep = next(n for n in names_ if n.endswith("entry_points.txt"))
-        self.assertIn("jarvis = jarvis_host.cli:main", zipfile.ZipFile(self.wheel).read(ep).decode())
+        eps = zipfile.ZipFile(self.wheel).read(ep).decode()
+        self.assertEqual([x.strip() for x in eps.splitlines() if "=" in x], ["agentj = agentj.cli:main"],
+                         "one console script: `agentj` (no `jarvis` — only migrated computers get a symlink)")
+        for f in ("jarvis_host/__init__.py", "jarvis_host/cli.py"):
+            self.assertIn(f, names_, "the 0.9 compatibility shim ships")
+
+    def test_the_old_module_still_runs_and_no_jarvis_script(self):
+        self.assertFalse(os.path.lexists(self.venv + "/bin/jarvis"))
+        with tempfile.TemporaryDirectory() as d:      # what alias.py makes on a migrated computer: a symlink named jarvis
+            os.symlink(self.venv + "/bin/agentj", d + "/jarvis")
+            r = subprocess.run([d + "/jarvis", "--version"], capture_output=True, text=True, env=self.env, cwd="/")
+            self.assertEqual(r.stdout.strip(), f"agentj {agentj.__version__}", r.stderr)
+            self.assertIn("`jarvis` is now `agentj`", r.stderr)
+        r = subprocess.run([self.venv + "/bin/python", "-P", "-m", "jarvis_host.cli", "--version"], capture_output=True, text=True,
+                           env=self.env, cwd="/")
+        self.assertEqual(r.stdout.strip(), f"agentj {agentj.__version__}", r.stderr)
 
     def test_runs_from_the_installed_location(self):
-        r = subprocess.run([self.venv + "/bin/jarvis", "--version"], capture_output=True, text=True, env=self.env, cwd="/")
-        self.assertEqual(r.stdout.strip(), f"agentjarvis-host {jarvis_host.__version__}", r.stderr)
+        r = subprocess.run([self.venv + "/bin/agentj", "--version"], capture_output=True, text=True, env=self.env, cwd="/")
+        self.assertEqual(r.stdout.strip(), f"agentj {agentj.__version__}", r.stderr)
         probe = (
-            "import json, os, sys, jarvis_host\n"
-            "from jarvis_host import admin, agent, fence, service\n"
+            "import json, os, sys, agentj\n"
+            "from agentj import admin, agent, fence, service\n"
             "a = agent.ClaudeAgent.__new__(agent.ClaudeAgent); a.cfg = {'model': None}\n"
-            "argv = a.argv(None); mcp = json.loads(argv[argv.index('--mcp-config') + 1])['mcpServers']['agentjarvis']\n"
-            "print(json.dumps({'pkg': jarvis_host.__file__, 'prefix': os.path.realpath(sys.prefix), 'code': fence.code_paths(),"
-            " 'src': agent.source_root(), 'assets': sorted(os.listdir(admin.ASSET_DIR)), 'exec': service.jarvis_argv(),"
+            "argv = a.argv(None); mcp = json.loads(argv[argv.index('--mcp-config') + 1])['mcpServers']['agentj']\n"
+            "print(json.dumps({'pkg': agentj.__file__, 'prefix': os.path.realpath(sys.prefix), 'code': fence.code_paths(),"
+            " 'src': agent.source_root(), 'assets': sorted(os.listdir(admin.ASSET_DIR)), 'exec': service.agentj_argv(),"
             " 'mcp': mcp, 'py': sys.executable, 'ver': list(sys.version_info[:2])}))\n")
         r = subprocess.run([self.venv + "/bin/python", "-P", "-c", probe], capture_output=True, text=True, env=self.env, cwd="/")
         self.assertEqual(r.returncode, 0, r.stderr)
@@ -460,15 +477,15 @@ class WheelInstall(unittest.TestCase):
         self.assertIsNone(p["src"], "installed: no PYTHONPATH for the agent")
         for f in ("app.css", "app.js", "index.html", "favicon.ico", "apple-touch-icon.png", "brand", "i18n"):
             self.assertIn(f, p["assets"])
-        self.assertEqual([os.path.realpath(x) for x in p["exec"]], [os.path.realpath(self.venv + "/bin/jarvis")])  # /tmp → /private/tmp on macOS
-        self.assertEqual(p["mcp"], {"type": "stdio", "command": p["py"], "args": ["-P", "-m", "jarvis_host.permtool"]})
+        self.assertEqual([os.path.realpath(x) for x in p["exec"]], [os.path.realpath(self.venv + "/bin/agentj")])  # /tmp → /private/tmp on macOS
+        self.assertEqual(p["mcp"], {"type": "stdio", "command": p["py"], "args": ["-P", "-m", "agentj.permtool"]})
         self.assertEqual(p["ver"], [3, int(self.py.split(".")[1])], "the venv runs the Python we claim as the floor")
 
     def test_doctor_and_init_from_the_wheel(self):
         with tempfile.TemporaryDirectory() as d:
-            env = {**self.env, "AGENTJARVIS_STATE_DIR": d + "/s", "AGENTJARVIS_SERVICE_NAME": f"agentjarvis-test-{secrets.token_hex(4)}"}
-            self.assertEqual(subprocess.run([self.venv + "/bin/jarvis", "init"], env=env, capture_output=True, cwd="/").returncode, 0)
-            r = subprocess.run([self.venv + "/bin/jarvis", "doctor", "--json", "--offline"], env=env, capture_output=True, text=True, cwd="/")
+            env = {**self.env, "AGENTJ_STATE_DIR": d + "/s", "AGENTJ_SERVICE_NAME": f"agentjarvis-test-{secrets.token_hex(4)}"}
+            self.assertEqual(subprocess.run([self.venv + "/bin/agentj", "init"], env=env, capture_output=True, cwd="/").returncode, 0)
+            r = subprocess.run([self.venv + "/bin/agentj", "doctor", "--json", "--offline"], env=env, capture_output=True, text=True, cwd="/")
             d_ = json.loads(r.stdout)
             self.assertEqual([c["id"] for c in d_["checks"] if c["id"] != "linger"], Doctor.IDS + ["update"])
             self.assertEqual({c["id"]: c["status"] for c in d_["checks"]}["state"], "ok")
@@ -477,7 +494,7 @@ class WheelInstall(unittest.TestCase):
                          (sys.platform == "darwin" and os.access(fence.SANDBOX_EXEC, os.X_OK)),
                          "fence = Linux + bubblewrap or macOS + sandbox-exec (L3)")
     def test_fenced_chain_against_the_installed_package(self):
-        # inside the venv (read-only in the fence, so the stand-in claude can be read there); no jarvis_host/ beside it
+        # inside the venv (read-only in the fence, so the stand-in claude can be read there); no agentj/ beside it
         t = pathlib.Path(self.venv, "share", "aj-tests")
         shutil.copytree(HERE, t / "tests", ignore=shutil.ignore_patterns("__pycache__"))
         r = subprocess.run([self.venv + "/bin/python", "-m", "unittest", "-v", "tests.test_l2.FencedChain", "tests.test_l2.Package",
@@ -486,7 +503,7 @@ class WheelInstall(unittest.TestCase):
         self.assertEqual(r.returncode, 0, r.stderr[-3000:])
         self.assertRegex(r.stderr, r"Ran [3-9] tests")
         self.assertNotIn("skipped", r.stderr, "the fenced chain really ran")
-        self.assertNotIn("jarvis_host" + os.sep, "".join(os.listdir(t)), "no package copy next to the tests")
+        self.assertNotIn("agentj" + os.sep, "".join(os.listdir(t)), "no package copy next to the tests")
 
 
 if __name__ == "__main__":

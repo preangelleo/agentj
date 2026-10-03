@@ -17,8 +17,8 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
 from cryptography.hazmat.primitives import serialization  # noqa: E402
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey  # noqa: E402
 
-from jarvis_host import bundle, cloud, minisign, wire  # noqa: E402
-from jarvis_host.state import State  # noqa: E402
+from agentj import bundle, cloud, minisign, wire  # noqa: E402
+from agentj.state import State  # noqa: E402
 
 API = "http://127.0.0.1:9"
 URL_PART = "eyJ2IjoxLCJ2aWQiOiJwdl9BQUFBIn0" + "." + "c2lnbmF0dXJlLXRva2Vu"
@@ -36,7 +36,7 @@ def write_files(root: pathlib.Path, files: dict) -> pathlib.Path:
 
 
 def skill_manifest(name="demo-skill", **over) -> dict:
-    m = {"schema_version": "agentjarvis.catalog/v1", "name": name, "type": "skill", "version": "1.0.0",
+    m = {"schema_version": "agentj.catalog/v1", "name": name, "type": "skill", "version": "1.0.0",
          "title_zh": "示例技能", "title_en": "Demo skill", "summary_zh": "一个用于测试的技能。", "summary_en": "A skill for tests.",
          "tags": ["测试", "demo"], "category": "data", "entry": "SKILL.md",
          "requires": {"harness": ["claude_code", "codex", "opencode"], "os": ["linux"],
@@ -70,7 +70,7 @@ def make_skill(root: pathlib.Path, name="demo-skill", files=None, **over) -> pat
 
 
 def workflow_manifest(name="demo-flow", **over) -> dict:
-    m = {"schema_version": "agentjarvis.catalog/v1", "name": name, "type": "workflow", "version": "1.2.0",
+    m = {"schema_version": "agentj.catalog/v1", "name": name, "type": "workflow", "version": "1.2.0",
          "title_zh": "示例工作流", "title_en": "Demo workflow", "summary_zh": "测试用工作流。", "summary_en": "A workflow for tests.",
          "tags": ["workflow"], "category": "workflow", "entry": "scaffold/CLAUDE.md",
          "requires": {"harness": ["claude_code", "codex", "opencode"], "skills": ["demo-skill", "secret-scan"]},
@@ -244,8 +244,8 @@ class Env:
         self.st.init(relay="ws://127.0.0.1:1")
         cloud.write_cloud(self.st, {"api": API, "host_id": "h_1", "tenant": {"slug": "acme-co", "name": "Acme"},
                                     "linked_at": 1, "last_seq": 0})
-        self.st.set_agent_name("贾维斯一号")
-        env = {k: v for k, v in os.environ.items() if k not in ("XDG_CONFIG_HOME", "AGENT_WORKSPACE", "AGENTJARVIS_API_URL")}
+        self.st.set_agent_name("助理一号")
+        env = {k: v for k, v in os.environ.items() if k not in ("XDG_CONFIG_HOME", "AGENT_WORKSPACE", "AGENTJ_API_URL")}
         env["HOME"] = str(self.home)
         self._patch = mock.patch.dict(os.environ, env, clear=True)
         self._patch.start()

@@ -1,4 +1,4 @@
-# Agent Jarvis 广场包格式 v1（agentjarvis.catalog/v1）
+# Agent J 广场包格式 v1（agentj.catalog/v1）
 
 > 给平台侧（vibe-remote 广场后端 / 安装器）对齐用。本目录 `skills/*`、`workflows/*` 每个子目录就是一个可直接导入的包。
 > English summary: every package is a self-contained folder with a `manifest.json` at its root. The platform imports the folder as-is, verifies `files[].sha256`, and installs it into the harness skill directory (skill) or scaffolds it into a new workspace sub-folder (workflow).
@@ -35,7 +35,7 @@ workflows/<name>/                  # type = workflow
 
 ```jsonc
 {
-  "schema_version": "agentjarvis.catalog/v1",
+  "schema_version": "agentj.catalog/v1",
   "name": "gmail-read",                  // 全局唯一 id，小写连字符；= 目录名
   "type": "skill",                       // skill | workflow
   "version": "1.0.0",                    // semver
@@ -61,9 +61,9 @@ workflows/<name>/                  # type = workflow
     "verify": "python3 scripts/gmail_read.py --help"   // 安装器跑它判断装好没（不得需要凭据、不得出网）
   },
   "files": [{"path": "SKILL.md", "sha256": "…", "bytes": 1234}],   // 由 tools/build_manifest.py 生成，勿手写
-  "license": "Proprietary (Agent Jarvis 官方，付费用户授权使用)",   // 上游开源的写上游许可，如 "MIT"
+  "license": "Proprietary (Agent J 官方，付费用户授权使用)",   // 上游开源的写上游许可，如 "MIT"
   "upstream": null,                      // 改编自开源上游时：{"name","license","url","modified":true}
-  "author": "Agent Jarvis 官方",
+  "author": "Agent J 官方",
   "certified": true,
   "verification": {"level": "live-key", "date": "2026-10-02", "note_zh": "IMAP 读最近 1 封"},   // 可选；缺省 = 离线验证
   "updated_at": "2026-10-02"
@@ -111,7 +111,7 @@ workflows/<name>/                  # type = workflow
 
 ## 6. 发布闸门
 
-每包必须：`python3 tools/check_pkg.py <包目录>` 全绿（manifest 校验 + 文件哈希 + 脱敏 denylist + 绝对路径 + 凭据形状）→ `secret-gate`（public 三道）→ 贾维斯人工逐包复核。
+每包必须：`python3 tools/check_pkg.py <包目录>` 全绿（manifest 校验 + 文件哈希 + 脱敏 denylist + 绝对路径 + 凭据形状）→ `secret-gate`（public 三道）→ 助理人工逐包复核。
 
 ## 7. 平台侧必须实现（包里不绕过）
 

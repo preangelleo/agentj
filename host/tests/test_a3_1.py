@@ -1,5 +1,6 @@
 """A3.1: at most 5 remotes per host (Q32, 2026-10-02), enforced by the host; the full-list prompt's unbind; and the
 Dashboard's unbind requests, which the host executes only after its own checks (allowlist, switch, hourly cap)."""
+import _hermetic  # noqa: F401,I001  (never the real ~/.local/state; see _hermetic.py)
 import asyncio
 import json
 import os
@@ -10,8 +11,8 @@ import time
 import unittest
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
-from jarvis_host import gate, cloud, serve, wire  # noqa: E402
-from jarvis_host.state import MAX_DEVICES, DeviceLimit, State  # noqa: E402
+from agentj import gate, cloud, serve, wire  # noqa: E402
+from agentj.state import MAX_DEVICES, DeviceLimit, State  # noqa: E402
 from fakecp import FakeCP  # noqa: E402
 
 RID = [wire.b64u(bytes([i]) * 16) for i in range(1, 12)]   # 22-char request ids

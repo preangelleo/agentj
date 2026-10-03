@@ -1,6 +1,7 @@
 """Host Noise + wire: official vectors, noiseprotocol as an independent oracle, negative cases.
 Run: host/.venv/bin/python -m unittest discover -s host/tests
 """
+import _hermetic  # noqa: F401,I001  (never the real ~/.local/state; see _hermetic.py)
 import json
 import os
 import pathlib
@@ -9,8 +10,8 @@ import unittest
 import warnings
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
-from jarvis_host import wire  # noqa: E402
-from jarvis_host.noise import IK, IKPSK2, Handshake, Keypair, NoiseError  # noqa: E402
+from agentj import wire  # noqa: E402
+from agentj.noise import IK, IKPSK2, Handshake, Keypair, NoiseError  # noqa: E402
 
 VECTORS = json.loads((pathlib.Path(__file__).resolve().parents[2] / "protocol/vectors/noise-ik.json").read_text())["vectors"]
 H = bytes.fromhex

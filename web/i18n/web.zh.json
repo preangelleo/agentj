@@ -1,6 +1,6 @@
 {
   "meta": {
-    "title": "Agent Jarvis · 手机遥控器"
+    "title": "Agent J · 手机遥控器"
   },
   "menu": {
     "open": "菜单",
@@ -11,7 +11,7 @@
     "security": "数据安全",
     "privacy": "隐私",
     "terms": "条款",
-    "site": "Agent Jarvis 官网",
+    "site": "Agent J 官网",
     "foot": "我们看不到你的聊天内容。"
   },
   "badge": {
@@ -38,24 +38,24 @@
     "error": "连接出错，已断开",
     "revoked": "这台手机已被电脑移除",
     "unusable": "用不了",
-    "pairFail": "没有批准，或者链接过期了。请在电脑上重新运行 jarvis pair"
+    "pairFail": "没有批准，或者链接过期了。请在电脑上重新运行 agentj pair"
   },
   "pair": {
     "title": "连上你的电脑",
     "lead": "Agent 在你的电脑上干活，这台手机就是它的遥控器。不用注册登录，配对一次，以后打开就能用。",
-    "step1": "在电脑上运行 `jarvis pair`，屏幕上会出现一个二维码。",
-    "step1ios": "在电脑上运行 `jarvis pair --link`，屏幕上会显示一个配对链接。",
+    "step1": "在电脑上运行 `agentj pair`，屏幕上会出现一个二维码。",
+    "step1ios": "在电脑上运行 `agentj pair --link`，屏幕上会显示一个配对链接。",
     "step2": "用手机扫这个二维码，或者把链接粘贴到下面。",
     "step2ios": "把这个链接传到手机上，复制后粘贴到下面。",
     "step3": "手机上会显示 6 位码。在电脑上输入它，再输入你的批准口令。",
     "scan": "扫二维码",
-    "scanHint": "这个浏览器没法在网页里扫码。在电脑上运行 `jarvis pair --link`，复制显示的链接，粘贴到下面。",
-    "scanNoCam": "没拿到相机权限。也可以在电脑上运行 `jarvis pair --link`，把显示的链接粘贴到下面。",
+    "scanHint": "这个浏览器没法在网页里扫码。在电脑上运行 `agentj pair --link`，复制显示的链接，粘贴到下面。",
+    "scanNoCam": "没拿到相机权限。也可以在电脑上运行 `agentj pair --link`，把显示的链接粘贴到下面。",
     "scanStop": "停止扫码",
     "or": "或者粘贴配对链接",
-    "placeholder": "粘贴 jarvis pair --link 显示的链接",
+    "placeholder": "粘贴 agentj pair --link 显示的链接",
     "go": "开始配对",
-    "badLink": "链接失效了。请在电脑上重新运行 jarvis pair",
+    "badLink": "链接失效了。请在电脑上重新运行 agentj pair",
     "iphone": "iPhone 要先把这个网页添加到主屏幕，再从主屏幕打开它来配对。别用相机扫码：那样配对的是 Safari 里的网页，和主屏幕上的不是同一个。"
   },
   "sas": {
@@ -237,7 +237,7 @@
     "intro": "记录只存在你的电脑上（保留 30 天），加密后传到这台手机；我们的服务器上没有。",
     "loading": "正在读取…",
     "more": "加载更早的",
-    "off": "电脑上的操作记录已关闭。在电脑上运行 jarvis config activity on 可以打开。",
+    "off": "电脑上的操作记录已关闭。在电脑上运行 agentj config activity on 可以打开。",
     "recent": "最近 {n} 条，最新的在最上面。",
     "none": "还没有记录。",
     "by": "（{by}）",
@@ -324,7 +324,7 @@
   },
   "revoked": {
     "title": "这台手机已被电脑移除",
-    "lead": "电脑不再认这台手机。要继续用，先在电脑上运行 `jarvis pair`，再重新配对。",
+    "lead": "电脑不再认这台手机。要继续用，先在电脑上运行 `agentj pair`，再重新配对。",
     "btn": "重新配对"
   },
   "error": {
@@ -332,7 +332,7 @@
     "retry": "重试",
     "back": "返回",
     "reconnect": "重新连接",
-    "pairBad": "配对数据没通过校验，已断开。请在电脑上重新运行 jarvis pair。",
+    "pairBad": "配对数据没通过校验，已断开。请在电脑上重新运行 agentj pair。",
     "dataBad": "收到一段无法校验的数据，为了保护你的对话，已断开。",
     "noCrypto": "这个浏览器不支持需要的加密算法。换最新版 Chrome、Safari 或 Firefox 再试。",
     "missing": "这个浏览器缺少必要的功能。换最新版 Chrome、Safari 或 Firefox 再试。",

@@ -1,14 +1,14 @@
-"""L2: the Agent cannot approve devices, use the permission tool's token or change jarvis's state (G-A8 / G-A24).
+"""L2: the Agent cannot approve devices, use the permission tool's token or change agentj's state (G-A8 / G-A24).
 
 Chain: real `serve` (no relay) + the stand-in `claude` (fakeclaude.py) + the real permission tool + the real bubblewrap fence.
 The phone *approves* a hostile command (the human was fooled — the G-A24 case) and that command tries every way we know to
-reach jarvis from inside: read the keys / allowlist / passphrase hash, write the allowlist, talk to the control socket, re-claim
-the permission socket with the token in its own environment, walk /proc into serve's view, patch jarvis's code or the shell
+reach agentj from inside: read the keys / allowlist / passphrase hash, write the allowlist, talk to the control socket, re-claim
+the permission socket with the token in its own environment, walk /proc into serve's view, patch agentj's code or the shell
 start-up files. Each must fail, serve must log the refused claim, and the state must be unchanged afterwards.
 
 Gate: the approval passphrase (scrypt, persisted lock that doubles), and `decide` refusing every code without it — the path a
 same-user process *outside* the fence (or a holder of an admin-page session) would take. Plus: fence unavailable = agent not
-started; the shipped package records no wire frames; the signed `decline` after N at `jarvis login`.
+started; the shipped package records no wire frames; the signed `decline` after N at `agentj login`.
 """
 import asyncio
 import json
@@ -23,14 +23,15 @@ from unittest import mock
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
-import jarvis_host  # noqa: E402
-from jarvis_host import cloud, fence, gate, serve, wire  # noqa: E402
-from jarvis_host.state import State  # noqa: E402
+import _hermetic  # noqa: E402,F401  (never the real ~/.local/state; see _hermetic.py)
+import agentj  # noqa: E402
+from agentj import cloud, fence, gate, serve, wire  # noqa: E402
+from agentj.state import State  # noqa: E402
 
 from test_l1 import Phone, _host, _ready  # noqa: E402
 
 HERE = pathlib.Path(__file__).resolve().parent
-PKG = pathlib.Path(jarvis_host.__file__).resolve().parent   # wherever it is imported from: checkout or an installed wheel (L3)
+PKG = pathlib.Path(agentj.__file__).resolve().parent   # wherever it is imported from: checkout or an installed wheel (L3)
 PASS = "correct horse battery"
 
 ATTACK = r'''
@@ -51,8 +52,8 @@ def ctl():
     s.sendall(b'{"cmd":"pair"}\n'); return s.recv(200)
 t("control socket", ctl)
 def reclaim():
-    s = socket.socket(socket.AF_UNIX); s.settimeout(3); s.connect(os.environ["AGENTJARVIS_PERM_SOCK"])
-    s.sendall((json.dumps({"t": "claim", "token": os.environ.get("AGENTJARVIS_PERM_TOKEN", "")}) + "\n").encode())
+    s = socket.socket(socket.AF_UNIX); s.settimeout(3); s.connect(os.environ["AGENTJ_PERM_SOCK"])
+    s.sendall((json.dumps({"t": "claim", "token": os.environ.get("AGENTJ_PERM_TOKEN", "")}) + "\n").encode())
     got = s.recv(200)
     if not got:
         raise ConnectionRefusedError("closed")
@@ -89,8 +90,8 @@ if mac:
         if libc.sysctl(mib, 3, b, ctypes.byref(size), None, 0) != 0:
             return "not readable"
         raw = b.raw[:size.value]
-        secret = [k for k in (b"AGENTJARVIS_PERM_TOKEN=",) if k in raw]   # the human's own variables reach the Agent anyway
-        return ("visible (residual); jarvis secrets in it: " + (",".join(x.decode() for x in secret) or "none")
+        secret = [k for k in (b"AGENTJ_PERM_TOKEN=",) if k in raw]   # the human's own variables reach the Agent anyway
+        return ("visible (residual); agentj secrets in it: " + (",".join(x.decode() for x in secret) or "none")
                 if b"HOME=" in raw else "argv only")
     r["serve environ (sysctl)"] = serve_env()
 def environ_of_permtool():
@@ -99,7 +100,7 @@ def environ_of_permtool():
             cmd = open(f"/proc/{p}/cmdline", "rb").read()
         except OSError:
             continue
-        if cmd.split(b"\0")[-3:-1] == [b"-m", b"jarvis_host.permtool"]:   # the tool itself, not claude's --mcp-config
+        if cmd.split(b"\0")[-3:-1] == [b"-m", b"agentj.permtool"]:   # the tool itself, not claude's --mcp-config
             return open(f"/proc/{p}/environ", "rb").read()
     raise LookupError("no permtool")
 if mac:   # no /proc; sysctl shows same-user environments (G-A53) — the token is in the Agent's own environment anyway, spent
@@ -114,16 +115,16 @@ def w_ok(p):                     # a real open for writing (append, no create, n
         return "writable"
     os.close(os.open(p, os.O_WRONLY | os.O_APPEND))
     return "writable"
-t("write jarvis code", lambda: w_ok(sys.argv[3]))
-t("write jarvis code file", lambda: w_ok(os.path.join(sys.argv[3], "__init__.py")))
+t("write agentj code", lambda: w_ok(sys.argv[3]))
+t("write agentj code file", lambda: w_ok(os.path.join(sys.argv[3], "__init__.py")))
 for rc in (".bashrc", ".profile", ".zshrc"):
     if os.path.exists(os.path.join(home, rc)):
         t("write ~/" + rc, lambda rc=rc: w_ok(os.path.join(home, rc)))
-def rename_away(d):             # moving a directory above jarvis's code / state aside would let a new one be planted
+def rename_away(d):             # moving a directory above agentj's code / state aside would let a new one be planted
     os.rename(d, d + ".aj-probe")
     os.rename(d + ".aj-probe", d)   # (put back at once if it ever worked)
     return "renamed"
-t("rename above jarvis code", lambda: rename_away(sys.argv[4]))
+t("rename above agentj code", lambda: rename_away(sys.argv[4]))
 t("rename above state dir", lambda: rename_away(os.path.dirname(st)))
 if mac:
     def create_new(p):
@@ -190,7 +191,7 @@ r["tmp"] = sorted(os.listdir("/tmp")) if not mac else "shared on macOS (no mount
 rt = os.environ.get("XDG_RUNTIME_DIR") or f"/run/user/{os.getuid()}"
 r["runtime"] = sorted(os.listdir(rt)) if os.path.isdir(rt) else []
 r["env"] = sorted(k for k in os.environ if k in ("DBUS_SESSION_BUS_ADDRESS", "WAYLAND_DISPLAY", "DISPLAY", "TMUX", "SSH_AUTH_SOCK",
-                                                "AGENTJARVIS_STATE_DIR", "DOCKER_HOST")
+                                                "AGENTJ_STATE_DIR", "DOCKER_HOST")
                   or k.startswith(("HERDR_", "ZELLIJ", "WEZTERM_", "KITTY_", "NVIM")))
 open("attack.json", "w").write(json.dumps(r, ensure_ascii=False, indent=1))
 print("done")
@@ -224,12 +225,12 @@ class FencedChain(unittest.TestCase):
         wrapper = pathlib.Path(self.tmp.name) / "claude"
         wrapper.write_text(f"#!/bin/sh\nexec {sys.executable} {HERE / 'fakeclaude.py'} \"$@\"\n")
         wrapper.chmod(0o700)
-        os.environ["AGENTJARVIS_CLAUDE_BIN"] = str(wrapper)
+        os.environ["AGENTJ_CLAUDE_BIN"] = str(wrapper)
         self.st.set_agent_config("claude", str(self.work))
         (self.work / "attack.py").write_text(ATTACK)
 
     def tearDown(self):
-        os.environ.pop("AGENTJARVIS_CLAUDE_BIN", None)
+        os.environ.pop("AGENTJ_CLAUDE_BIN", None)
         self.tmp.cleanup()
 
     def test_an_approved_hostile_command_cannot_reach_jarvis(self):
@@ -282,31 +283,31 @@ class FencedChain(unittest.TestCase):
         code_parent = os.path.dirname(min(fence.code_paths(), key=len))
         private_code = sys.platform != "darwin" and code_parent.startswith("/tmp/")   # e.g. a wheel installed under /tmp
         opened = {k: v for k, v in r.items() if isinstance(v, str) and v.startswith("open:")
-                  and not (private and k == "rename above state dir") and not (private_code and k == "rename above jarvis code")}
+                  and not (private and k == "rename above state dir") and not (private_code and k == "rename above agentj code")}
         self.assertEqual(opened, {}, f"reached from inside the fence: {opened}")
         for k in ("read host_ed25519.key", "read devices.json", "read approver.json", "control socket", "re-claim perm.sock",
-                  "serve /proc root", "write jarvis code", "write jarvis code file", "signal serve", "herdr socket",
+                  "serve /proc root", "write agentj code", "write agentj code file", "signal serve", "herdr socket",
                   "herdr folder", "docker socket"):
             self.assertTrue(r[k].startswith("blocked:"), k)
         if sys.platform != "darwin":
             self.assertTrue(r["permtool environ"].startswith("blocked:"), "permtool environ")
         if not private_code:
-            self.assertTrue(r["rename above jarvis code"].startswith("blocked:"), "rename above jarvis code")
+            self.assertTrue(r["rename above agentj code"].startswith("blocked:"), "rename above agentj code")
         if not private:
             self.assertTrue(r["rename above state dir"].startswith("blocked:"), "rename above state dir")
         self.assertTrue(os.path.isdir(st_parent) and (self.st.root / "config.json").exists(), "the real state dir is in place")
         if sys.platform == "darwin":      # no PID / mount namespace: the same rules as an SBPL deny-list (fence.sbpl_profile)
-            self.assertTrue(r["serve environ (sysctl)"].endswith(("none", "argv only", "not readable")), "no jarvis secret")
+            self.assertTrue(r["serve environ (sysctl)"].endswith(("none", "argv only", "not readable")), "no agentj secret")
             for k in ("serve process info", "plant a LaunchAgent", "create a missing ~/.zlogin",
                       "launchd job (launchctl submit)", "crontab (setuid)", "open an app (LaunchServices)", "tmux socket"):
                 self.assertTrue(r[k].startswith("blocked:"), k)
             self.assertEqual(r["pids visible"], "blocked", "no process list outside the sandbox")
         else:
-            self.assertLess(r["pids visible"], 10, "a private PID namespace: jarvis's processes are not there")
+            self.assertLess(r["pids visible"], 10, "a private PID namespace: agentj's processes are not there")
             under_tmp = {pathlib.PurePath(p).relative_to("/tmp").parts[0] for p in [os.path.realpath(self.tmp.name),
                                                                                     *fence.code_paths()] if p.startswith("/tmp/")}
             self.assertEqual(set(r["tmp"]), under_tmp,
-                             "a private /tmp: only the path to the agent's folder (and jarvis's code, read-only)")
+                             "a private /tmp: only the path to the agent's folder (and agentj's code, read-only)")
         self.assertNotIn("bus", r["runtime"])
         self.assertEqual(r["env"], [])
         for f, b in before.items():
@@ -626,7 +627,7 @@ class FenceConfig(unittest.TestCase):
         self.assertFalse(self.st.agent_config()["docker"], "anything but an explicit true keeps docker hidden")
         self.st.set_agent_config("claude", str(work), docker=True)
         self.assertTrue(self.st.agent_config()["docker"])
-        from jarvis_host import doctor
+        from agentj import doctor
         row = doctor.check_agent(self.st)
         self.assertEqual(row["status"], doctor.WARN)
         self.assertIn("--allow-docker", row["summary"])
@@ -645,7 +646,7 @@ class FenceConfig(unittest.TestCase):
             raise AssertionError("must not start")
 
         async def go():
-            from jarvis_host import agent as agents
+            from agentj import agent as agents
             ag = agents.make(host, self.st.agent_config())
             gone = (mock.patch.object(fence, "SANDBOX_EXEC", "/nonexistent/sandbox-exec") if sys.platform == "darwin"
                     else mock.patch.object(fence.shutil, "which", return_value=None))
@@ -676,7 +677,7 @@ class FenceConfig(unittest.TestCase):
         self.assertEqual([b for b in binds if b[0].startswith(root) and b[0] != perm], [], "nothing else from the state dir")
         ro = [a[i + 1] for i, x in enumerate(a) if x == "--ro-bind"]
         pkg = str(PKG.resolve())
-        self.assertTrue(any(pkg == r or pkg.startswith(r + "/") for r in ro), f"jarvis's code is read-only: {pkg} in {ro}")
+        self.assertTrue(any(pkg == r or pkg.startswith(r + "/") for r in ro), f"agentj's code is read-only: {pkg} in {ro}")
         for k in ("DBUS_SESSION_BUS_ADDRESS", "TMUX", "SSH_AUTH_SOCK", "WAYLAND_DISPLAY", "DISPLAY"):
             self.assertIn(k, a[a.index("--unsetenv"):])
 
@@ -714,10 +715,10 @@ class Decline(unittest.TestCase):
                    "/v1/host/decline": (200, {"status": "declined"})}
 
         def post(url, payload):
-            path = url.split("agentjarvis.test", 1)[1]
+            path = url.split("agentj.test", 1)[1]
             calls.append((path, payload))
             return answers[path]
-        res = cloud.login(self.st, "https://api.agentjarvis.test", show=lambda lg: None, confirm=lambda t, n=None: False,
+        res = cloud.login(self.st, "https://api.agentj.test", show=lambda lg: None, confirm=lambda t, n=None: False,
                           post=post, sleep=lambda s: None)
         self.assertEqual((res["status"], res["undone"]), ("declined", "undone"))
         self.assertFalse(self.st.cloud_path.exists(), "nothing written on N")
@@ -731,7 +732,7 @@ class Decline(unittest.TestCase):
             wire.unb64u(env["sig"]), f"{cloud.CTX_DECLINE}\n{env['body']}".encode())
         for status, body, want in ((409, {"error": "already_confirmed"}, "already_confirmed"), (404, {"error": "not_found"}, "not_found"),
                                    (429, {"error": "rate_limited"}, "fail"), (500, {}, "fail")):
-            self.assertEqual(cloud.decline(self.st, "https://api.agentjarvis.test", login_id,
+            self.assertEqual(cloud.decline(self.st, "https://api.agentj.test", login_id,
                                            post=lambda u, p, s=status, b=body: (s, b)), want)
 
 

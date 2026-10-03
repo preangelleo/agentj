@@ -1,7 +1,8 @@
-"""Seat setup (reports/design/seat-setup/CONTRACT.md §4, §4.1) host side: `jarvis login --seat | --seat-file | --seat -`
+"""Seat setup (reports/design/seat-setup/CONTRACT.md §4, §4.1) host side: `agentj login --seat | --seat-file | --seat -`
 against the fake control plane (every answer: 200 / 404 / 409 name_taken / 402 / 429 / already_bound / 400 / 5xx / a
 garbled 200), the local refusals (code shape, Agent name — nothing is sent), cloud.json `via`, status / doctor showing it,
-the code never in any output, log or file, and `jarvis agent detect` with a fake HOME + fake binaries on PATH."""
+the code never in any output, log or file, and `agentj agent detect` with a fake HOME + fake binaries on PATH."""
+import _hermetic  # noqa: F401,I001  (never the real ~/.local/state; see _hermetic.py)
 import json
 import os
 import pathlib
@@ -18,8 +19,8 @@ HERE = pathlib.Path(__file__).resolve().parent
 HOST = HERE.parent
 sys.path.insert(0, str(HOST))
 sys.path.insert(0, str(HERE))
-from jarvis_host import cloud, doctor, harness  # noqa: E402
-from jarvis_host.state import State  # noqa: E402
+from agentj import cloud, doctor, harness  # noqa: E402
+from agentj.state import State  # noqa: E402
 from fakecp import FakeCP  # noqa: E402
 
 
@@ -122,7 +123,7 @@ class SeatBindUnit(unittest.TestCase):
             cloud.seat_bind(self.st, "http://example.com", new_code(), "Wren")
 
     def test_legacy_cloud_json_reads_as_code(self):
-        self.st.write_private(self.st.cloud_path, json.dumps({"api": "https://api.agentjarvis.net", "host_id": "h_1",
+        self.st.write_private(self.st.cloud_path, json.dumps({"api": "https://agentj.app/api", "host_id": "h_1",
                                                                "tenant": {"slug": "acme-co", "name": "A"}, "linked_at": 1,
                                                                "last_seq": 5}).encode())
         self.assertEqual(cloud.read_cloud(self.st)["via"], "code")
@@ -168,12 +169,12 @@ class SeatLeaveUnit(unittest.TestCase):
 
 
 class SeatCli(unittest.TestCase):
-    """The real `jarvis login --seat …` (subprocess) — exit codes, output, the code never printed."""
+    """The real `agentj login --seat …` (subprocess) — exit codes, output, the code never printed."""
 
     def setUp(self):
         self.dir = tempfile.mkdtemp(prefix="aj-seat-", dir="/tmp")
-        self.env = {**os.environ, "AGENTJARVIS_STATE_DIR": self.dir + "/s", "PYTHONPATH": str(HOST)}
-        self.env.pop("AGENTJARVIS_API_URL", None)
+        self.env = {**os.environ, "AGENTJ_STATE_DIR": self.dir + "/s", "PYTHONPATH": str(HOST)}
+        self.env.pop("AGENTJ_API_URL", None)
         self.st = State(pathlib.Path(self.dir) / "s")
         self.st.init(relay="ws://127.0.0.1:1")
         self.code = new_code()
@@ -181,8 +182,8 @@ class SeatCli(unittest.TestCase):
     def tearDown(self):
         shutil.rmtree(self.dir, ignore_errors=True)
 
-    def jarvis(self, *args, input=""):
-        r = subprocess.run([sys.executable, "-m", "jarvis_host.cli", *args], cwd=HOST, env=self.env, capture_output=True,
+    def agentj(self, *args, input=""):
+        r = subprocess.run([sys.executable, "-m", "agentj.cli", *args], cwd=HOST, env=self.env, capture_output=True,
                            text=True, timeout=60, input=input)
         self.assertNotIn(self.code, r.stdout + r.stderr, "the setup code is never printed")
         return r
@@ -198,26 +199,26 @@ class SeatCli(unittest.TestCase):
     def test_bind_with_argv_then_status_and_doctor(self):
         with FakeCP() as cp:
             cp.seat_tokens.add(self.code)
-            r = self.jarvis("login", "--api", cp.url, "--seat", self.code, "--name", "贾维斯一号")
+            r = self.agentj("login", "--api", cp.url, "--seat", self.code, "--name", "助理一号")
             self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
-            self.assertIn("✓ 已添加到公司账号 acme-co（Acme [2J Co）的席位，Agent 名「贾维斯一号」", r.stdout)
+            self.assertIn("✓ 已添加到公司账号 acme-co（Acme [2J Co）的席位，Agent 名「助理一号」", r.stdout)
             self.assertIn("Added to a seat of company acme-co", r.stdout)
             self.assertNotIn("[y/N]", r.stdout, "no y/N question on the seat path")
             self.assertNotIn("\x1b", r.stdout)
             self.assertIn("首次上报：成功", r.stdout)
             self.assertEqual(len(cp.reports), 1, "the first report is sent")
-            self.assertEqual(cp.reports[0]["agent_name"], "贾维斯一号")
-        self.assertEqual(self.st.agent_name(), "贾维斯一号")
+            self.assertEqual(cp.reports[0]["agent_name"], "助理一号")
+        self.assertEqual(self.st.agent_name(), "助理一号")
         self.assertEqual(json.loads(self.st.cloud_path.read_text())["via"], "seat")
-        st = self.jarvis("status")
+        st = self.agentj("status")
         self.assertIn("linked via seat setup", st.stdout)
-        doc = json.loads(self.jarvis("doctor", "--json", "--offline").stdout)
+        doc = json.loads(self.agentj("doctor", "--json", "--offline").stdout)
         bound = next(c for c in doc["checks"] if c["id"] == "bound")
         self.assertIn("via seat setup", bound["summary"])
         for p in self.st.root.iterdir():
             if p.is_file():
                 self.assertNotIn(self.code.encode(), p.read_bytes(), p.name)
-        again = self.jarvis("login", "--seat", self.code, "--name", "x")
+        again = self.agentj("login", "--seat", self.code, "--name", "x")
         self.assertEqual(again.returncode, 1)
         self.assertIn("已添加到 Dashboard 公司账号 acme-co", again.stderr)
 
@@ -225,23 +226,23 @@ class SeatCli(unittest.TestCase):
         with FakeCP() as cp:
             cp.seat_tokens.add(self.code)
             loose = self.seat_file(0o644)
-            r = self.jarvis("login", "--api", cp.url, "--seat-file", loose, "--name", "Wren9")
+            r = self.agentj("login", "--api", cp.url, "--seat-file", loose, "--name", "Wren9")
             self.assertEqual(r.returncode, 1)
             self.assertIn("chmod 600", r.stderr)
             self.assertEqual(cp.seat_binds, [], "a group/world-readable file is refused before anything is sent")
             os.unlink(loose)
             os.symlink(self.seat_file(), os.path.join(self.dir, "link"))
-            r = self.jarvis("login", "--api", cp.url, "--seat-file", os.path.join(self.dir, "link"), "--name", "Wren9")
+            r = self.agentj("login", "--api", cp.url, "--seat-file", os.path.join(self.dir, "link"), "--name", "Wren9")
             self.assertEqual(r.returncode, 1, "a symlink is not followed")
             self.assertEqual(cp.seat_binds, [])
-            r = self.jarvis("login", "--api", cp.url, "--seat-file", self.seat_file(), "--name", "Wren9")
+            r = self.agentj("login", "--api", cp.url, "--seat-file", self.seat_file(), "--name", "Wren9")
             self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
             self.assertEqual(cp.seat_binds[-1]["token"], self.code)
         os.unlink(self.st.cloud_path)
         self.code = new_code()
         with FakeCP() as cp:
             cp.seat_tokens.add(self.code)
-            r = self.jarvis("login", "--api", cp.url, "--seat", "-", "--name", "Wren8", input=self.code + "\n")
+            r = self.agentj("login", "--api", cp.url, "--seat", "-", "--name", "Wren8", input=self.code + "\n")
             self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
             self.assertEqual(cp.seat_binds[-1]["token"], self.code)
 
@@ -252,24 +253,24 @@ class SeatCli(unittest.TestCase):
                                    ("payment", 5, "不在付费状态"), ("rate", 1, "太频繁"), ("already_bound", 1, "仍是已绑定"),
                                    (503, 1, "http_5xx")):
                 cp.seat_script = [step]
-                r = self.jarvis("login", "--api", cp.url, "--seat", self.code, "--name", "Wren")
+                r = self.agentj("login", "--api", cp.url, "--seat", self.code, "--name", "Wren")
                 self.assertEqual(r.returncode, rc, (step, r.stderr))
                 self.assertIn(text, r.stderr, step)
                 self.assertFalse(self.st.cloud_path.exists(), step)
             cp.seat_script = ["taken"]
-            r = self.jarvis("login", "--api", cp.url, "--seat", self.code, "--name", "Wren")
+            r = self.agentj("login", "--api", cp.url, "--seat", self.code, "--name", "Wren")
             self.assertIn("「Wren 2」、「Wren 3」", r.stderr, "suggestions are printed")
             self.assertNotIn("‮", r.stderr)
             n = len(cp.seat_binds)
             # local refusals: exit 2, nothing sent
             for args in (("--seat", self.code[:-1], "--name", "W"), ("--seat", self.code, "--name", "a‮b"),
                          ("--seat", self.code, "--name", " "), ("--seat", self.code)):
-                r = self.jarvis("login", "--api", cp.url, *args)
+                r = self.agentj("login", "--api", cp.url, *args)
                 self.assertEqual(r.returncode, 2, (args[1][:6], r.stderr))
             self.assertEqual(len(cp.seat_binds), n)
-            r = self.jarvis("login", "--api", cp.url, "--seat", self.code, "--seat-file", "/nonexistent", "--name", "W")
+            r = self.agentj("login", "--api", cp.url, "--seat", self.code, "--seat-file", "/nonexistent", "--name", "W")
             self.assertEqual(r.returncode, 2, "--seat and --seat-file are exclusive (argparse)")
-            r = self.jarvis("login", "--api", cp.url, "--name", "W")
+            r = self.agentj("login", "--api", cp.url, "--name", "W")
             self.assertEqual(r.returncode, 1, "--name alone is not a login")
         log = self.st.log_path.read_text()
         self.assertNotIn(self.code, log)
@@ -279,24 +280,24 @@ class SeatCli(unittest.TestCase):
         with FakeCP() as cp:
             cp.seat_tokens.add(self.code)
             cp.seat_script = [503]                    # a failed first try (as a lost answer looks to the host)
-            r = self.jarvis("login", "--api", cp.url, "--seat", self.code, "--name", "Wren7")
+            r = self.agentj("login", "--api", cp.url, "--seat", self.code, "--name", "Wren7")
             self.assertEqual(r.returncode, 1)
             self.assertFalse(self.st.cloud_path.exists())
             # the next try binds; then, with the local record gone as after a lost 200, the same code replays
-            r = self.jarvis("login", "--api", cp.url, "--seat", self.code, "--name", "Wren7")
+            r = self.agentj("login", "--api", cp.url, "--seat", self.code, "--name", "Wren7")
             self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
             os.unlink(self.st.cloud_path)
-            r = self.jarvis("login", "--api", cp.url, "--seat", self.code, "--name", "Wren7")
+            r = self.agentj("login", "--api", cp.url, "--seat", self.code, "--name", "Wren7")
             self.assertEqual(r.returncode, 0, "replay of the same code from the same key → the same 200")
             self.assertEqual(json.loads(self.st.cloud_path.read_text())["via"], "seat")
             self.assertIn("this also takes this computer out of that company", r.stdout)
 
     def test_unlink_of_a_seat_link_leaves_the_company(self):
-        """Review SS-02: `jarvis unlink` of a seat link sends a signed seat-leave first, then removes cloud.json."""
+        """Review SS-02: `agentj unlink` of a seat link sends a signed seat-leave first, then removes cloud.json."""
         with FakeCP() as cp:
             cp.seat_tokens.add(self.code)
-            self.assertEqual(self.jarvis("login", "--api", cp.url, "--seat", self.code, "--name", "Leaver").returncode, 0)
-            r = self.jarvis("unlink")
+            self.assertEqual(self.agentj("login", "--api", cp.url, "--seat", self.code, "--name", "Leaver").returncode, 0)
+            r = self.agentj("unlink")
             self.assertEqual(r.returncode, 0, r.stderr)
             self.assertIn("已通知 Dashboard 把本机移出公司 acme-co", r.stdout)
             self.assertNotIn("要在 Dashboard 里解绑本机", r.stdout)
@@ -308,16 +309,16 @@ class SeatCli(unittest.TestCase):
             # the channel is free: a new code binds at once
             code2 = new_code()
             cp.seat_tokens.add(code2)
-            self.assertEqual(self.jarvis("login", "--api", cp.url, "--seat", code2, "--name", "Back").returncode, 0)
+            self.assertEqual(self.agentj("login", "--api", cp.url, "--seat", code2, "--name", "Back").returncode, 0)
             # failures: cloud.json still goes, the human is told to ask the owner
             for step, text in (("rate", "太频繁"), (503, "连不上或出错"), ("not_found", "已不在公司 acme-co 的席位里")):
                 if not self.st.cloud_path.exists():
                     code3 = new_code()
                     cp.seat_tokens.add(code3)
                     cp.seat_channel_bound.clear()
-                    self.assertEqual(self.jarvis("login", "--api", cp.url, "--seat", code3, "--name", f"N{len(cp.seat_leaves)}").returncode, 0)
+                    self.assertEqual(self.agentj("login", "--api", cp.url, "--seat", code3, "--name", f"N{len(cp.seat_leaves)}").returncode, 0)
                 cp.leave_script = [step]
-                r = self.jarvis("unlink")
+                r = self.agentj("unlink")
                 self.assertEqual(r.returncode, 0, (step, r.stderr))
                 self.assertIn(text, r.stdout, step)
                 self.assertFalse(self.st.cloud_path.exists(), step)
@@ -328,9 +329,9 @@ class SeatCli(unittest.TestCase):
     def test_unlink_unreachable_still_removes_the_local_link(self):
         with FakeCP() as cp:
             cp.seat_tokens.add(self.code)
-            self.assertEqual(self.jarvis("login", "--api", cp.url, "--seat", self.code, "--name", "Gone").returncode, 0)
+            self.assertEqual(self.agentj("login", "--api", cp.url, "--seat", self.code, "--name", "Gone").returncode, 0)
         # the fake control plane is gone now
-        r = self.jarvis("unlink")
+        r = self.agentj("unlink")
         self.assertEqual(r.returncode, 0, r.stderr)
         self.assertIn("没能通知 Dashboard", r.stdout)
         self.assertIn("收回这个席位", r.stdout)
@@ -340,23 +341,23 @@ class SeatCli(unittest.TestCase):
         with FakeCP() as cp:
             cloud.write_cloud(self.st, {"api": cp.url, "host_id": "h_1", "tenant": {"slug": "acme-co", "name": "A"},
                                         "linked_at": 1, "last_seq": 0, "via": "code"})
-            r = self.jarvis("unlink")
+            r = self.agentj("unlink")
             self.assertEqual(r.returncode, 0, r.stderr)
             self.assertEqual(cp.seat_leaves, [], "a code-bound link sends nothing")
             self.assertIn("Dashboard 那边的绑定要在 Dashboard 里解绑本机", r.stdout)
             self.assertFalse(self.st.cloud_path.exists())
 
     def test_help_is_bilingual(self):
-        out = self.jarvis("login", "--help").stdout
+        out = self.agentj("login", "--help").stdout
         for s in ("--seat", "--seat-file", "--name", "设置码", "setup code"):
             self.assertIn(s, out)
-        out = " ".join(self.jarvis("agent", "--help").stdout.split())
+        out = " ".join(self.agentj("agent", "--help").stdout.split())
         self.assertIn("detect", out)
         self.assertIn("which agents are usable", out)
 
 
 class Detect(unittest.TestCase):
-    """`jarvis agent detect` with a fake HOME and fake binaries on PATH: existence checks only, never content."""
+    """`agentj agent detect` with a fake HOME and fake binaries on PATH: existence checks only, never content."""
     MARK = "CREDMARKER-" + "z" * 12
 
     def setUp(self):
@@ -461,13 +462,13 @@ class Detect(unittest.TestCase):
         self.cred(".claude/.credentials.json")
         self.cred(".codex/auth.json")
         env = {**self.env(**{"CLAUDE_CODE_OAUTH_TOKEN": self.MARK}), "PYTHONPATH": str(HOST)}
-        r = subprocess.run([sys.executable, "-m", "jarvis_host.cli", "agent", "detect", "--json"], cwd=HOST, env=env,
+        r = subprocess.run([sys.executable, "-m", "agentj.cli", "agent", "detect", "--json"], cwd=HOST, env=env,
                            capture_output=True, text=True, timeout=60)
         self.assertEqual(r.returncode, 0, r.stderr)
         d = json.loads(r.stdout)
         self.assertEqual(d["decision"], "ask_owner")
         self.assertEqual(set(d), {"harnesses", "usable", "decision"})
-        t = subprocess.run([sys.executable, "-m", "jarvis_host.cli", "agent", "detect"], cwd=HOST, env=env,
+        t = subprocess.run([sys.executable, "-m", "agentj.cli", "agent", "detect"], cwd=HOST, env=env,
                            capture_output=True, text=True, timeout=60)
         self.assertEqual(t.returncode, 0, t.stderr)
         self.assertIn("ask your human which one", t.stdout)
@@ -476,8 +477,8 @@ class Detect(unittest.TestCase):
             self.assertNotIn(self.home, out)
 
     def test_works_before_init(self):
-        env = {**self.env(), "PYTHONPATH": str(HOST), "AGENTJARVIS_STATE_DIR": os.path.join(self.home, "nope")}
-        r = subprocess.run([sys.executable, "-m", "jarvis_host.cli", "agent", "detect", "--json"], cwd=HOST, env=env,
+        env = {**self.env(), "PYTHONPATH": str(HOST), "AGENTJ_STATE_DIR": os.path.join(self.home, "nope")}
+        r = subprocess.run([sys.executable, "-m", "agentj.cli", "agent", "detect", "--json"], cwd=HOST, env=env,
                            capture_output=True, text=True, timeout=60)
         self.assertEqual((r.returncode, json.loads(r.stdout)["decision"]), (0, "none"))
         self.assertFalse(os.path.exists(os.path.join(self.home, "nope")))

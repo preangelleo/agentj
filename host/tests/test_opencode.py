@@ -2,13 +2,14 @@
 
 Units: the session ruleset (ours last, the human's denies after it, never "always"), OpenCode's matcher (ported), the
 read-only bash list agrees with the danger list (no dangerous command of test_danger's table is allowed without a card),
-OPENCODE_CONFIG_CONTENT / environment, request → card mapping, harness detection, `jarvis agent opencode --model`.
+OPENCODE_CONFIG_CONTENT / environment, request → card mapping, harness detection, `agentj agent opencode --model`.
 Chain (a stand-in `opencode serve`, tests/fakeopencode.py, started by serve inside the fence): message → reply, rm → danger
 card → reject (with the reason) → file stays, approve → once → runs, batch for low risk / never for danger, the human's own
 deny stays deny, a wrong password is refused, the event stream drops and comes back (missed text caught up), a reply
 serve did not send stops OpenCode, resume re-applies our rules, the process exiting → notice. The real OpenCode runs in
 `tests/e2e_agent.mjs --opencode`.
 """
+import _hermetic  # noqa: F401,I001  (never the real ~/.local/state; see _hermetic.py)
 import asyncio
 import base64
 import io
@@ -28,9 +29,9 @@ from unittest import mock
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
-from jarvis_host import agent as agents  # noqa: E402
-from jarvis_host import agent_opencode as oc  # noqa: E402
-from jarvis_host import approvals, danger, fence, harness  # noqa: E402
+from agentj import agent as agents  # noqa: E402
+from agentj import agent_opencode as oc  # noqa: E402
+from agentj import approvals, danger, fence, harness  # noqa: E402
 
 from test_danger import CASES, _sign  # noqa: E402
 from test_l1 import Phone, _host, _ready, _state  # noqa: E402
@@ -177,25 +178,25 @@ class Detect(unittest.TestCase):
                     f = bins / n
                     f.write_text("#!/bin/sh\necho 1.0\n")
                     f.chmod(0o700)
-                os.environ.update(AGENTJARVIS_OPENCODE_BIN=str(bins / "opencode"), AGENTJARVIS_CLAUDE_BIN="/nonexistent",
-                                  AGENTJARVIS_CODEX_BIN="/nonexistent", HOME=d)
+                os.environ.update(AGENTJ_OPENCODE_BIN=str(bins / "opencode"), AGENTJ_CLAUDE_BIN="/nonexistent",
+                                  AGENTJ_CODEX_BIN="/nonexistent", HOME=d)
                 r = harness.detect()
                 oc_rec = next(h for h in r["harnesses"] if h["name"] == "opencode")
                 self.assertTrue(oc_rec["supported"] and oc_rec["installed"] and oc_rec["logged_in"])
                 self.assertEqual(r["decision"], "use:opencode")
-                os.environ["AGENTJARVIS_CLAUDE_BIN"] = str(bins / "claude")
+                os.environ["AGENTJ_CLAUDE_BIN"] = str(bins / "claude")
                 pathlib.Path(d, ".claude").mkdir()
                 pathlib.Path(d, ".claude", ".credentials.json").write_text("{}")
                 self.assertEqual(harness.detect()["decision"], "ask_owner")
                 p.chmod(0o600)
 
     def test_cli_agent_opencode_model_shape(self):
-        from jarvis_host import cli
+        from agentj import cli
         with tempfile.TemporaryDirectory() as d:
             st = _state(d)
             work = pathlib.Path(d, "w")
             work.mkdir()
-            with mock.patch.dict(os.environ, {"AGENTJARVIS_STATE_DIR": str(st.root)}):
+            with mock.patch.dict(os.environ, {"AGENTJ_STATE_DIR": str(st.root)}):
                 with self.assertRaises(SystemExit) as e, redirect_stdout(io.StringIO()):
                     cli.main(["agent", "opencode", "--dir", str(work), "--model", "glm-5.3"])
                 self.assertIn("服务商/模型", str(e.exception))
@@ -218,8 +219,8 @@ class Chain(unittest.TestCase):
         wrapper = pathlib.Path(self.tmp.name) / "opencode"
         wrapper.write_text(f"#!/bin/sh\nexec {sys.executable} {HERE / 'fakeopencode.py'} \"$@\"\n")
         wrapper.chmod(0o700)
-        self.env = {"AGENTJARVIS_OPENCODE_BIN": str(wrapper), "FAKE_OC_LOG": str(self.log), "FAKE_OC_ENV_LOG": str(self.envlog),
-                    "AGENTJARVIS_TEST_OC_WATCH": "1"}
+        self.env = {"AGENTJ_OPENCODE_BIN": str(wrapper), "FAKE_OC_LOG": str(self.log), "FAKE_OC_ENV_LOG": str(self.envlog),
+                    "AGENTJ_TEST_OC_WATCH": "1"}
         os.environ.update(self.env)
         self.fenced = fence.problem(self.st, str(self.work)) is None
         if sys.platform.startswith("linux") and shutil.which("bwrap"):
@@ -386,13 +387,13 @@ class Chain(unittest.TestCase):
         self.assertEqual(sum(1 for r in rq if r.get("path") == "/event" and r["method"] == "GET") >= 3, True)
 
     def test_no_opencode_and_bad_model_are_notices(self):
-        os.environ["AGENTJARVIS_OPENCODE_BIN"] = str(pathlib.Path(self.tmp.name) / "missing")
+        os.environ["AGENTJ_OPENCODE_BIN"] = str(pathlib.Path(self.tmp.name) / "missing")
         with mock.patch("shutil.which", return_value=None):
             async def script(c):
                 await c["say"]("在吗")
                 await c["wait"](lambda: any("没找到 OpenCode" in m["text"] for m in c["msgs"]()))
                 await c["wait"](lambda: c["statuses"]()[-1:] == ["down"])
-            os.environ["AGENTJARVIS_OPENCODE_BIN"] = ""
+            os.environ["AGENTJ_OPENCODE_BIN"] = ""
             self.run_chain(script)
 
 

@@ -10,7 +10,7 @@ FAKE_CLAUDE_USER_SETTINGS (a settings.json path: permissions.allow, e.g. "Bash(r
   SLOW                   → reply after 1.5 s
   LONG                   → one 9 000-character reply (the host must split it, never truncate)
   CRASH                  → exit 3 mid-turn (the host restarts with --resume)
-  [agentjarvis 定时任务 … (a scheduled task's prompt) → runs its lines RUN: <cmd> / SLEEP: <s> / SAY: <text> in order
+  [agentj 定时任务 … (a scheduled task's prompt) → runs its lines RUN: <cmd> / SLEEP: <s> / SAY: <text> in order
   {"type":"control_request"} → a control_response (read only between turns): get_context_usage / get_status / list_models
                            / set_model / interrupt answer like Claude Code 2.1.285; any other subtype → error
   /compact               → status compacting, compact_boundary (21262 → 1344), the kept synthetic message re-sent (the
@@ -44,7 +44,7 @@ if log:
     with open(log, "a") as f:
         f.write(json.dumps({"argv": sys.argv[1:], "cwd": os.getcwd()}) + "\n")
 
-mcp = json.loads(arg("--mcp-config"))["mcpServers"]["agentjarvis"]
+mcp = json.loads(arg("--mcp-config"))["mcpServers"]["agentj"]
 perm = subprocess.Popen([mcp["command"], *mcp["args"]], stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True)
 rid = 0
 
@@ -189,7 +189,7 @@ for line in sys.stdin:
         out({"type": "result", "subtype": "success", "is_error": False, "local_command": "cost", "session_id": sid,
              "result": "Total cost:            $0.0123\nUsage by model:\n    claude-fake-1:  10 input, 62 output ($0.0123)"})
         continue
-    if text.startswith("[agentjarvis 定时任务"):       # a scheduled task run: its RUN.md is a tiny script for this stand-in
+    if text.startswith("[agentj 定时任务"):       # a scheduled task run: its RUN.md is a tiny script for this stand-in
         for ln in text.splitlines():
             if ln.startswith("RUN: "):
                 say(run_one(ln[5:]))

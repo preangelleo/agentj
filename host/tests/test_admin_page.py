@@ -1,4 +1,4 @@
-"""The Agent settings page (`jarvis admin`) as shipped: zh/en dictionaries, user wording, packaged brand files, content types.
+"""The Agent settings page (`agentj admin`) as shipped: zh/en dictionaries, user wording, packaged brand files, content types.
 
 - Dictionaries: zh and en have the same keys and the same {placeholders}; every key the page uses exists; no internal term
   (agentjarvis/i18n/glossary.json `forbidden`) or banned Chinese word reaches the user.
@@ -9,6 +9,7 @@
 Language persistence is client-side (brand/lang.js: localStorage "aj.lang" of this origin, or ?lang=); its own tests live in
 agentjarvis/brand/test/lang.test.mjs.
 """
+import _hermetic  # noqa: F401,I001  (never the real ~/.local/state; see _hermetic.py)
 import http.client
 import json
 import pathlib
@@ -23,8 +24,8 @@ HERE = pathlib.Path(__file__).resolve().parent
 HOST = HERE.parent
 sys.path.insert(0, str(HOST))
 
-from jarvis_host import admin  # noqa: E402
-from jarvis_host.state import State  # noqa: E402
+from agentj import admin  # noqa: E402
+from agentj.state import State  # noqa: E402
 
 AJ = HOST.parent                                  # agentjarvis/ in the private checkout
 BRAND = AJ / "brand"
@@ -166,7 +167,7 @@ class BrandCopy(unittest.TestCase):
     def test_brand_copy_is_current(self):
         r = subprocess.run(["node", str(BRAND / "sync.mjs"), str(PAGE), "--set", "admin", "--check"], capture_output=True,
                            text=True, timeout=60)
-        self.assertEqual(r.returncode, 0, "run: node agentjarvis/brand/sync.mjs host/jarvis_host/admin --set admin\n"
+        self.assertEqual(r.returncode, 0, "run: node agentjarvis/brand/sync.mjs host/agentj/admin --set admin\n"
                          + r.stdout + r.stderr)
 
 
@@ -176,7 +177,7 @@ class PolishedCopy(unittest.TestCase):
         r = subprocess.run([sys.executable, str(I18N / "polish.py"), "--check", str(PAGE / "i18n")], capture_output=True,
                            text=True, timeout=60)
         self.assertEqual(r.returncode, 0, "run: python3 agentjarvis/i18n/polish.py --surface admin "
-                         "host/jarvis_host/admin/i18n/\n" + r.stdout + r.stderr)
+                         "host/agentj/admin/i18n/\n" + r.stdout + r.stderr)
 
 
 if __name__ == "__main__":

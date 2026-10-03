@@ -1,5 +1,6 @@
 """bundle.py (protocol/PLAZA_PACKAGES.md §1): deterministic build, strict parse, paths, forbidden files, limits, manifest checks,
 and every package of the real catalog (read-only; skipped when the catalog is absent)."""
+import _hermetic  # noqa: F401,I001  (never the real ~/.local/state; see _hermetic.py)
 import ast
 import base64
 import gzip
@@ -13,7 +14,7 @@ import unittest
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 import market_fixtures as fx  # noqa: E402
-from jarvis_host import bundle  # noqa: E402
+from agentj import bundle  # noqa: E402
 
 # Known catalog defects (reported to the catalog owner); a package listed here may be refused, every other must build.
 CATALOG_KNOWN_BAD: dict = {}   # every catalog package must bundle (app-foundry fixed by the 500 summary cap)
@@ -188,7 +189,7 @@ class Parse(unittest.TestCase):
         self.refuse(self.mutated(lambda b: b["files"].insert(0, dict(b["files"][0]))))
         self.refuse(self.mutated(lambda b: b["files"].reverse()))
         self.refuse(self.mutated(lambda b: b.update(extra=1)))
-        self.refuse(self.mutated(lambda b: b.update(schema="agentjarvis.bundle/v2")))
+        self.refuse(self.mutated(lambda b: b.update(schema="agentj.bundle/v2")))
         self.refuse(self.mutated(lambda b: b["files"][0].update(mode=0o777)))
 
     def test_paths_inside_a_bundle(self):

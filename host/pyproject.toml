@@ -1,7 +1,7 @@
 [project]
-name = "agentjarvis-host"
-dynamic = ["version"]            # single source: jarvis_host/__init__.py (`jarvis --version`)
-description = "agentjarvis host CLI (alpha): talk to your own Claude Code / Codex from your phone, end-to-end encrypted over a blind relay"
+name = "agentj"
+dynamic = ["version"]            # single source: agentj/__init__.py (`agentj --version`)
+description = "Agent J host CLI `agentj` (alpha): talk to your own Claude Code / Codex from your phone, end-to-end encrypted over a blind relay"
 requires-python = ">=3.11"       # tested on 3.11 and 3.13; uv fetches an interpreter by itself when the system one is older
 license = "Apache-2.0"
 dependencies = [
@@ -16,10 +16,13 @@ classifiers = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/preangelleo/agentjarvis"
+Homepage = "https://agentj.app"
+Source = "https://github.com/preangelleo/agentj"
 
 [project.scripts]
-jarvis = "jarvis_host.cli:main"
+agentj = "agentj.cli:main"
+# no `jarvis` script on purpose: a fresh install never gets that name (and uv never refuses because another program owns
+# ~/.local/bin/jarvis); computers that migrate from 0.9 get a `jarvis` symlink from agentj/alias.py instead
 
 [dependency-groups]
 dev = ["noiseprotocol==0.3.1"]   # test-only third oracle for the Noise state machine; never imported at runtime
@@ -29,13 +32,13 @@ requires = ["hatchling>=1.24"]
 build-backend = "hatchling.build"
 
 [tool.hatch.version]
-path = "jarvis_host/__init__.py"
+path = "agentj/__init__.py"
 
 [tool.hatch.build.targets.wheel]
-packages = ["jarvis_host"]       # the package + its data files (admin/ page); tests and the frame recorder never ship
+packages = ["agentj", "jarvis_host"]   # the package + its data files (admin/ page) + the ≤ 0.9 compatibility shim; tests never ship
 # admin/ ships the page, its zh/en dictionaries and the synced brand core (fonts + shield images, ~0.5 MB); the Chinese
 # copy source (polished into admin.zh.json by agentjarvis/i18n/polish.py) stays in the repo.
-exclude = ["jarvis_host/admin/i18n/*.src.json", "jarvis_host/admin/i18n/*.override.json"]
+exclude = ["agentj/admin/i18n/*.src.json", "agentj/admin/i18n/*.override.json"]
 
 [tool.hatch.build.targets.sdist]
-include = ["jarvis_host", "pyproject.toml"]
+include = ["agentj", "jarvis_host", "pyproject.toml"]

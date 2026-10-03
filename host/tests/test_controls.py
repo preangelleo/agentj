@@ -9,6 +9,7 @@ stop everything (open requests denied, grants ended, messages refused, persisted
 a task through the stand-in Claude Code inside the fence (approvals reach the phone with the task's name, a research run is
 read-only, VERDICT → one notice), a stop ends a running task and a running chat turn at once.
 """
+import _hermetic  # noqa: F401,I001  (never the real ~/.local/state; see _hermetic.py)
 import asyncio
 import datetime as dt
 import json
@@ -24,8 +25,8 @@ from unittest import mock
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
-from jarvis_host import activity, approvals, controls, memory, serve, tasks, wire  # noqa: E402
-from jarvis_host.state import State  # noqa: E402
+from agentj import activity, approvals, controls, memory, serve, tasks, wire  # noqa: E402
+from agentj.state import State  # noqa: E402
 
 from test_l1 import Phone, _host, _ready, _state  # noqa: E402
 
@@ -409,11 +410,11 @@ class Cli(unittest.TestCase):
             d = pathlib.Path(d)
             work = d / "work"
             work.mkdir()
-            env = {**os.environ, "AGENTJARVIS_STATE_DIR": str(d / "state"), "CLAUDE_CONFIG_DIR": str(d / "cfg")}
-            jarvis = str(HERE.parent / "jarvis")
+            env = {**os.environ, "AGENTJ_STATE_DIR": str(d / "state"), "CLAUDE_CONFIG_DIR": str(d / "cfg")}
+            agentj = str(HERE.parent / "bin" / "agentj")
 
             def run(*a, inp=None, ok=True):
-                r = subprocess.run([jarvis, *a], env=env, input=inp, capture_output=True, text=True, timeout=60)
+                r = subprocess.run([agentj, *a], env=env, input=inp, capture_output=True, text=True, timeout=60)
                 if ok:
                     self.assertEqual(r.returncode, 0, (a, r.stdout, r.stderr))
                 return r
@@ -630,7 +631,7 @@ class SchedulerChain(unittest.TestCase):
         wrapper = pathlib.Path(self.tmp.name) / "claude"
         wrapper.write_text(f"#!/bin/sh\nexec {sys.executable} {HERE / 'fakeclaude.py'} \"$@\"\n")
         wrapper.chmod(0o700)
-        self.env = mock.patch.dict(os.environ, {"AGENTJARVIS_CLAUDE_BIN": str(wrapper), "FAKE_CLAUDE_LOG": str(self.argv_log)})
+        self.env = mock.patch.dict(os.environ, {"AGENTJ_CLAUDE_BIN": str(wrapper), "FAKE_CLAUDE_LOG": str(self.argv_log)})
         self.env.start()
         self.st.set_agent_config("claude", str(self.work))
 
@@ -639,7 +640,7 @@ class SchedulerChain(unittest.TestCase):
         self.tmp.cleanup()
 
     def test_tasks_run_fenced_with_phone_approvals_readonly_and_stop(self):
-        from jarvis_host import fence
+        from agentj import fence
         if fence.problem(self.st, str(self.work)):
             self.skipTest("no fence on this machine")
         ph = Phone(self.st)

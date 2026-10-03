@@ -1,5 +1,6 @@
-"""`jarvis plaza install | publish | like | installed` + package search / show / report / mine (market.py). Offline: the control
+"""`agentj plaza install | publish | like | installed` + package search / show / report / mine (market.py). Offline: the control
 plane, the download / upload URLs and Jev are fakes; HOME, the workspace and the state dir are temp dirs."""
+import _hermetic  # noqa: F401,I001  (never the real ~/.local/state; see _hermetic.py)
 import contextlib
 import io
 import json
@@ -13,7 +14,7 @@ from unittest import mock
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 import market_fixtures as fx  # noqa: E402
-from jarvis_host import bundle, cli, cloud, market, plaza, wire  # noqa: E402
+from agentj import bundle, cli, cloud, market, plaza, wire  # noqa: E402
 
 OR_KEY = "sk-or-v1-" + "e" * 64
 
@@ -75,7 +76,7 @@ class InstallSkill(Base):
         self.assertNotIn(market.CERT_BADGE, out)
         for s in ("DEMO_TOKEN", "密钥 SECRET", "Example 账号", "https://example.com/signup", "python3 -m pip install",
                   "python3 scripts/demo.py --self-test", str(self.e.home / ".claude/skills/demo-skill"), "NOT INSTALLED",
-                  "--accept-unverified --owner-confirmed --digest", "SHOWN ONLY, never run by jarvis"):
+                  "--accept-unverified --owner-confirmed --digest", "SHOWN ONLY, never run by agentj"):
             self.assertIn(s, out)
         self.assertRegex(digest_of(out), r"^[0-9a-f]{16}$")
         self.assertEqual([c["inner"]["t"] for c in self.srv.calls], ["plaza_pkg_get"])
@@ -153,7 +154,7 @@ class InstallSkill(Base):
         with self.assertRaises(plaza.PlazaError):
             self.install(owner_confirmed=True, digest=digest_of(out), accept_unverified=True)
         self.assertEqual((t / "mine.md").read_text(), "the user's own file")
-        # the folder is not jarvis's install of this package: --replace refuses too (preview and confirm)
+        # the folder is not agentj's install of this package: --replace refuses too (preview and confirm)
         with self.assertRaisesRegex(plaza.PlazaError, "不是这个包装的"):
             self.install(replace=True)
         with self.assertRaisesRegex(plaza.PlazaError, "不是这个包装的"):
@@ -191,14 +192,14 @@ class InstallSkill(Base):
     def test_verify_runs_with_an_empty_environment_offline(self):
         probe = ("import os, sys, socket, pathlib\n"
                  "env = dict(os.environ)\n"
-                 "assert 'OPENROUTER_API_KEY' not in env and 'AGENTJARVIS_STATE_DIR' not in env, env\n"
+                 "assert 'OPENROUTER_API_KEY' not in env and 'AGENTJ_STATE_DIR' not in env, env\n"
                  "assert set(env) <= {'PATH','HOME','TMPDIR','LANG','LC_ALL','PYTHONDONTWRITEBYTECODE','PYTHONNOUSERSITE','LC_CTYPE','PWD'}, sorted(env)\n"
-                 "assert env['HOME'] != os.path.expanduser('~root') and 'jarvis-verify-' in env['HOME'], env['HOME']\n"
+                 "assert env['HOME'] != os.path.expanduser('~root') and 'agentj-verify-' in env['HOME'], env['HOME']\n"
                  "assert pathlib.Path('SKILL.md').exists()\n"
                  "pathlib.Path('junk-from-verify.txt').write_text('x')\n"
                  "print('self-test OK')\n")
         self.add_skill(files={**fx.SKILL_FILES, "scripts/demo.py": probe})
-        with mock.patch.dict(os.environ, {"OPENROUTER_API_KEY": OR_KEY, "AGENTJARVIS_STATE_DIR": str(self.e.st.root)}):
+        with mock.patch.dict(os.environ, {"OPENROUTER_API_KEY": OR_KEY, "AGENTJ_STATE_DIR": str(self.e.st.root)}):
             rc, out = self.preview_and_confirm(accept_unverified=True)
         self.assertEqual(rc, market.EXIT_OK, out)
         t = self.e.home / ".claude" / "skills" / "demo-skill"
@@ -230,13 +231,13 @@ class InstallSkill(Base):
         self.assertEqual(self.e.tree(), [])
 
     def test_https_api_requires_https_transfer(self):
-        cloud.write_cloud(self.e.st, {"api": "https://api.agentjarvis.net", "host_id": "h_1", "tenant": {"slug": "acme-co", "name": "A"},
+        cloud.write_cloud(self.e.st, {"api": "https://agentj.app/api", "host_id": "h_1", "tenant": {"slug": "acme-co", "name": "A"},
                                       "linked_at": 1, "last_seq": 0})
-        ok = "https://api.agentjarvis.net/v1/plaza/dl/" + fx.URL_PART
+        ok = "https://agentj.app/api/v1/plaza/dl/" + fx.URL_PART
         self.assertEqual(cloud.transfer_url(self.e.st, ok, "dl"), ok)
-        host = "api.agentjarvis.net"
+        host = "agentj.app/api"
         origins = ("http://" + host, "https://" + host + ":8443", "https://user" + "@" + host, "https://" + host + ".evil.example",
-                   "https://alpha-app.agentjarvis.net")
+                   "https://agentj.app/account")
         for bad in (o + "/v1/plaza/dl/" + fx.URL_PART for o in origins):
             with self.subTest(bad), self.assertRaises(cloud.CloudError):
                 cloud.transfer_url(self.e.st, bad, "dl")
@@ -343,8 +344,8 @@ class InstallWorkflow(Base):
         self.assertFalse((t / ".codex").exists(), "claude_code: no Codex role files")
         self.assertTrue((t / ".handoff").exists() and (t / "reports/.gitkeep").exists())
         self.assertEqual(stat.S_IMODE(os.stat(t / "tools/check.py").st_mode), 0o755)
-        self.assertIn("jarvis plaza install demo-skill", out2)
-        self.assertIn("jarvis plaza install secret-scan", out2)
+        self.assertIn("agentj plaza install demo-skill", out2)
+        self.assertIn("agentj plaza install secret-scan", out2)
         self.assertIn("python3 tools/check.py", out2)
 
     def test_sign_as_and_codex_roles(self):
@@ -434,7 +435,7 @@ class Publish(Base):
         self.assertEqual(self.srv.calls, [], "nothing sent at preview")
         for p in fx.SKILL_FILES:
             self.assertIn(p, out)
-        self.assertIn("贾维斯一号", out)
+        self.assertIn("助理一号", out)
         self.assertIn("layer 2 saw", out)
         sent = jev.seen[0]["state"]["plaza_draft"]
         self.assertEqual(set(sent), {"manifest", "README.md", "SKILL.md"})
@@ -538,7 +539,7 @@ class ReadsAndSmallWrites(Base):
         out = io.StringIO()
         market.run_show("demo-skill", st=self.e.st, post=self.srv, out=out)
         self.assertIn("中文说明", out.getvalue())
-        self.assertIn("jarvis plaza install demo-skill", out.getvalue())
+        self.assertIn("agentj plaza install demo-skill", out.getvalue())
         self.assertEqual(self.srv.calls[-1]["inner"], {**self.srv.calls[-1]["inner"], "name": "demo-skill"})
         self.assertNotIn("version", self.srv.calls[-1]["inner"])
         self.srv.answers["qa_get"] = (404, {"error": "not_found"})
@@ -572,7 +573,7 @@ class ReadsAndSmallWrites(Base):
         self.assertIn("本公司发布的包", o)
 
     def test_cli_wiring(self):
-        with mock.patch.dict(os.environ, {"AGENTJARVIS_STATE_DIR": str(self.e.st.root)}), contextlib.redirect_stderr(io.StringIO()):
+        with mock.patch.dict(os.environ, {"AGENTJ_STATE_DIR": str(self.e.st.root)}), contextlib.redirect_stderr(io.StringIO()):
             for argv, code in ((["plaza", "install", "demo-skill", "--owner-confirmed"], 1),
                                (["plaza", "report", "demo-skill", "--reason", "because"], 2),
                                (["plaza", "search", "--type", "everything"], 2),

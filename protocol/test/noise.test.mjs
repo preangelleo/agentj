@@ -106,14 +106,14 @@ test('padding: multiples of 256, strict unpad', () => {
 
 test('pairing link parsing', () => {
   const now = 1_800_000_000;
-  const good = { v: 1, r: 'wss://alpha-relay.agentjarvis.net', c: 'A'.repeat(22), k: b64u(new Uint8Array(32)), i: b64u(new Uint8Array(16)), p: b64u(new Uint8Array(32)), x: now + 60 };
-  const link = (o) => 'https://alpha-web.agentjarvis.net/#p=' + b64u(new TextEncoder().encode(JSON.stringify(o)));
+  const good = { v: 1, r: 'wss://relay.agentj.app', c: 'A'.repeat(22), k: b64u(new Uint8Array(32)), i: b64u(new Uint8Array(16)), p: b64u(new Uint8Array(32)), x: now + 60 };
+  const link = (o) => 'https://m.agentj.app/#p=' + b64u(new TextEncoder().encode(JSON.stringify(o)));
   assert.equal(parsePairing(link(good), now).channel, 'A'.repeat(22));
   assert.throws(() => parsePairing(link({ ...good, x: now - 1 }), now), /expired/);
   assert.throws(() => parsePairing(link({ ...good, r: 'https://evil.example' }), now));
   assert.throws(() => parsePairing(link({ ...good, k: b64u(new Uint8Array(31)) }), now));
   // a client can pin its relay: a link pointing at someone else's relay is refused (A2 review L-2)
-  const pin = (u) => u === 'wss://alpha-relay.agentjarvis.net';
+  const pin = (u) => u === 'wss://relay.agentj.app';
   assert.equal(parsePairing(link(good), now, pin).relay, good.r);
   assert.throws(() => parsePairing(link({ ...good, r: 'wss://relay.evil.example' }), now, pin), /not allowed/);
 });

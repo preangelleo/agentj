@@ -1,6 +1,6 @@
 {
   "meta": {
-    "title": "Agent Jarvis · Phone remote"
+    "title": "Agent J · Phone remote"
   },
   "menu": {
     "open": "Menu",
@@ -11,7 +11,7 @@
     "security": "Data security",
     "privacy": "Privacy",
     "terms": "Terms",
-    "site": "Agent Jarvis website",
+    "site": "Agent J website",
     "foot": "We can't see your conversations."
   },
   "badge": {
@@ -38,25 +38,25 @@
     "error": "Connection error — disconnected",
     "revoked": "This phone was removed by your computer",
     "unusable": "Can't run here",
-    "pairFail": "Not approved, or the link expired. Run jarvis pair on your computer again."
+    "pairFail": "Not approved, or the link expired. Run agentj pair on your computer again."
   },
   "pair": {
     "title": "Connect to your computer",
     "lead": "Your Agent works on your computer; this phone is its remote. No sign-up or login — pair once and it's ready whenever you open it.",
-    "step1": "On your computer, run `jarvis pair`. A QR code appears on screen.",
-    "step1ios": "On your computer, run `jarvis pair --link`. It prints a pairing link.",
+    "step1": "On your computer, run `agentj pair`. A QR code appears on screen.",
+    "step1ios": "On your computer, run `agentj pair --link`. It prints a pairing link.",
     "step2": "Scan that code with this phone, or paste the link below.",
     "step2ios": "Get that link onto this phone, copy it and paste it below.",
     "step3": "Your phone shows a 6-digit code. Type it on your computer, then enter your approval passphrase.",
     "iphone": "On iPhone, first add this page to your Home Screen, then open it from there to pair. Don't scan with the Camera app: that pairs the Safari tab, which is separate from the Home Screen app.",
     "scan": "Scan QR code",
-    "scanHint": "This browser can't scan inside a web page. Run `jarvis pair --link` on your computer, copy the link and paste it below.",
-    "scanNoCam": "No camera access. You can also run `jarvis pair --link` on your computer and paste the link below.",
+    "scanHint": "This browser can't scan inside a web page. Run `agentj pair --link` on your computer, copy the link and paste it below.",
+    "scanNoCam": "No camera access. You can also run `agentj pair --link` on your computer and paste the link below.",
     "scanStop": "Stop scanning",
     "or": "Or paste the pairing link",
-    "placeholder": "Paste the link from jarvis pair --link",
+    "placeholder": "Paste the link from agentj pair --link",
     "go": "Pair",
-    "badLink": "That link is invalid or has expired. Run jarvis pair on your computer again."
+    "badLink": "That link is invalid or has expired. Run agentj pair on your computer again."
   },
   "sas": {
     "title": "Type this 6-digit code on your computer",
@@ -237,7 +237,7 @@
     "intro": "This record lives only on your computer (kept 30 days) and reaches this phone encrypted. It's not on our servers.",
     "loading": "Loading…",
     "more": "Load older",
-    "off": "Activity recording is off on your computer. Run jarvis config activity on there to turn it on.",
+    "off": "Activity recording is off on your computer. Run agentj config activity on there to turn it on.",
     "recent": "Latest {n}, newest first.",
     "none": "Nothing recorded yet.",
     "by": " ({by})",
@@ -324,7 +324,7 @@
   },
   "revoked": {
     "title": "This phone was removed by your computer",
-    "lead": "Your computer no longer trusts this phone. To keep using it, run `jarvis pair` on your computer and pair again.",
+    "lead": "Your computer no longer trusts this phone. To keep using it, run `agentj pair` on your computer and pair again.",
     "btn": "Pair again"
   },
   "error": {
@@ -332,7 +332,7 @@
     "retry": "Try again",
     "back": "Back",
     "reconnect": "Reconnect",
-    "pairBad": "The pairing data didn't check out, so we disconnected. Run jarvis pair on your computer again.",
+    "pairBad": "The pairing data didn't check out, so we disconnected. Run agentj pair on your computer again.",
     "dataBad": "Received data that couldn't be verified, so we disconnected to protect your conversation.",
     "noCrypto": "This browser doesn't support the encryption we need. Try the latest Chrome, Safari or Firefox.",
     "missing": "This browser is missing features we need. Try the latest Chrome, Safari or Firefox.",

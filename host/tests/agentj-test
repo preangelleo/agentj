@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+# Test launcher: same as ../agentj, but through tests/wiredump.py (frame recorder for the end-to-end tests). Never shipped.
+set -euo pipefail
+here="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/.." && pwd -P)"
+if [[ ! -x "$here/.venv/bin/python" ]]; then
+  uv sync --project "$here" -q
+fi
+PYTHONPATH="$here${PYTHONPATH:+:$PYTHONPATH}" exec "$here/.venv/bin/python" "$here/tests/wiredump.py" "$@"

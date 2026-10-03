@@ -2,12 +2,12 @@
 export default {
   "v": 1,
   "algo": "sha256",
-  "combined": "b00a86f2647d59a9d65047a9aee38cb00654fcca10d1d66f3a0dc6561b06a614",
+  "combined": "a7cc53ba86c255c2eee2f61f5d9a64a92a8a0c39c05cb4b8304869b55f62b77a",
   "files": {
-    "app.css": "895a8c58a7eec2ae3a7327e12a15fd249c4d2021043a82b4ec2697b33b584acb",
-    "app.js": "26a3a55dedf85c1137483e7a910b1bec292180584f0d6eaf92264e6029175a93",
+    "app.css": "c795e988118e409fd46032d719980be228574908bd20fa3e075a7a10e481df7f",
+    "app.js": "dffc5ed512d5c502599d798fcd36eccbb6902d987d4b2bbf2f853388175ff903",
     "apple-touch-icon.png": "9869693952fa05ee21aa365ec41a80d362bc7c53963354051b8c660c617864dc",
-    "brand/base.css": "f0fe49c96539d61fd1d80e2e8c08ecd51726cbac86ffe0abb123082184423688",
+    "brand/base.css": "9b4083857aea2c978de98f40bbb343d69c1c23535f96a2cee5dbc63e1c8fca29",
     "brand/fonts/OFL-1.1-lexend.txt": "5da8505887d0fa7fe963445fd58852707fda34adfeb65af25c99d152bab285bd",
     "brand/fonts/README.md": "ab4f0787c418f42b755426b57440b84b7d45fc640864bef2c535cbd09eb27c15",
     "brand/fonts/UFL-1.0-ubuntu.txt": "2f0015108d68627bd788d313f529c21ff4da2c2c42a5e1f3883acc83480f9002",
@@ -31,16 +31,16 @@ export default {
     "brand/img/status/logo-question.png": "437da56b312277fa0a998661f64d6817e67dde80ad1cb6452637291bba7cb023",
     "brand/img/status/logo-waiting.png": "e785b83f80ed911527be292add38065daeb50345193d32023a3552b3cbee81a6",
     "brand/img/status/logo-working.png": "4ad5463ed1dd7a05914509a80c6e64a077e774b9278e06644a83097764686365",
-    "brand/lang.js": "7b6641f3ab27f3307b3015e991d6eaea6eb44b6cb12d7523a9b36385df2768ec",
-    "brand/palette.css": "3b35d679592d4effb617580838b97a3e750fd4f97f7763693f1f91ff7cbbf873",
-    "brand/ui.js": "aa8031f98051a799e2d0b7696e161304ad8501bcb668e0f91531e713eaf8a7e5",
+    "brand/lang.js": "10be539b1da7d70215a5053e46b741e522fe19bc184db2dda21dd42e283c0483",
+    "brand/palette.css": "29a3e3ef6648f4e4f005e5deff69a8ed352def6f6bcbd134c492b3f55f93c6aa",
+    "brand/ui.js": "292c5affb2e94a011eaa3acfb11ad433919f2c3d0d623140500e27abf45c7fec",
     "favicon.ico": "67e0e85f193865bc45808c000f238f852c07b0c7c8a424f525052e68c83cc65c",
-    "i18n.js": "3479548da604ca3cfc4114871ecf10cadfae89b19d44ba0187614f569b9f69df",
-    "index.html": "01b631cef53d5c74c7a0632a9a27f7fb6fd21fd1ef668a0f5d615611fbe37115",
-    "manifest.webmanifest": "a8b6f73b5934b4a56d183bebb0a36b0cc81b9679d8c5618ac4cd1bf263cd40e1",
-    "proto/noise.js": "8b5410f5f52989f1289f8fe196ae1612ef92879444edbf46d37cd3c4cbf0e5cf",
-    "proto/wire.js": "b20ec00ae657ffbd1607629d4fe16a43e919ed8d842eccc07e6134d4706bc311",
+    "i18n.js": "43053749178908b17b06e917d4008898ea023c84dfb0d33cf4aafa199013670e",
+    "index.html": "b52035c0448537cc71339d0670e9fe5a0c7d48a584d6ca1bd734e248b791dca2",
+    "manifest.webmanifest": "ea4604db0bd62d36fe27229acf34a4ed4e770cc550221641ac5e2a86546fa40d",
+    "proto/noise.js": "800c4cc56d5cc1cc012a3701c5d0851a87bfc2fe5397aa34f05f58992b96d365",
+    "proto/wire.js": "779132d4becb6c34a637964329a25d03e8acb7053312f5cf3b33a3cb3f1e7537",
     "robots.txt": "331ea9090db0c9f6f597bd9840fd5b171830f6e0b3ba1cb24dfa91f0c95aedc1",
-    "sw.js": "d1fbaf99dcafa5f154ed8c82c49373a569ddf5a6de9fdabcbc04d0d750dd0f82"
+    "sw.js": "f2a15ba0a2bf42c66005e4693bfa50954fde3218924a5430bb474f28fb3c2e63"
   }
 };

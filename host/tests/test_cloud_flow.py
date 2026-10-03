@@ -1,6 +1,7 @@
-"""PROTOCOL.md §7 end to end against a fake control plane on 127.0.0.1: the real `jarvis login` (subprocess) to bound,
-`jarvis report` with and without a running serve, 409 replay self-healing, 403 not_bound, and a real `jarvis serve`
+"""PROTOCOL.md §7 end to end against a fake control plane on 127.0.0.1: the real `agentj login` (subprocess) to bound,
+`agentj report` with and without a running serve, 409 replay self-healing, 403 not_bound, and a real `agentj serve`
 that keeps running (and keeps answering its control socket) while the control plane fails or hangs."""
+import _hermetic  # noqa: F401,I001  (never the real ~/.local/state; see _hermetic.py)
 import json
 import os
 import pathlib
@@ -16,16 +17,16 @@ HERE = pathlib.Path(__file__).resolve().parent
 HOST = HERE.parent
 sys.path.insert(0, str(HOST))
 sys.path.insert(0, str(HERE))
-from jarvis_host import cloud, wire  # noqa: E402
-from jarvis_host.state import State  # noqa: E402
+from agentj import cloud, wire  # noqa: E402
+from agentj.state import State  # noqa: E402
 from fakecp import FakeCP  # noqa: E402
 
 
 class Flow(unittest.TestCase):
     def setUp(self):
         self.dir = tempfile.mkdtemp(prefix="aj-cf-", dir="/tmp")
-        self.env = {**os.environ, "AGENTJARVIS_STATE_DIR": self.dir, "PYTHONPATH": str(HOST)}
-        self.env.pop("AGENTJARVIS_API_URL", None)
+        self.env = {**os.environ, "AGENTJ_STATE_DIR": self.dir, "PYTHONPATH": str(HOST)}
+        self.env.pop("AGENTJ_API_URL", None)
         self.st = State(pathlib.Path(self.dir))
         self.st.init(relay="ws://127.0.0.1:1")  # a relay that refuses: serve keeps retrying it, never crashes
         self.procs = []
@@ -43,9 +44,9 @@ class Flow(unittest.TestCase):
                 p.stderr.close()
         shutil.rmtree(self.dir, ignore_errors=True)
 
-    def jarvis(self, *args, env=None, timeout=60, input=""):
+    def agentj(self, *args, env=None, timeout=60, input=""):
         """stdin is the human at this terminal: empty (EOF) unless a test types something."""
-        return subprocess.run([sys.executable, "-m", "jarvis_host.cli", *args], cwd=HOST, env={**self.env, **(env or {})},
+        return subprocess.run([sys.executable, "-m", "agentj.cli", *args], cwd=HOST, env={**self.env, **(env or {})},
                               capture_output=True, text=True, timeout=timeout, input=input)
 
     def log(self):
@@ -59,7 +60,7 @@ class Flow(unittest.TestCase):
         did = self.st.add_device(os.urandom(32), "Leo 的手机")
         before = self.st.devices_path.read_bytes()
         with FakeCP(interval=4, bound_after=2) as cp:
-            r = self.jarvis("login", "--api", cp.url, env={"AGENTJARVIS_APP_URL": cp.url}, input="y\n")
+            r = self.agentj("login", "--api", cp.url, env={"AGENTJ_APP_URL": cp.url}, input="y\n")
             self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
             self.assertIn(f"本机通道号：{self.st.config()['channel']} — Dashboard 里显示的应该一样", r.stdout)
             self.assertIn("BCDF-2345", r.stdout)
@@ -78,27 +79,27 @@ class Flow(unittest.TestCase):
             self.assertEqual(os.stat(self.st.cloud_path).st_mode & 0o777, 0o600)
             self.assertEqual(len(cp.reports), 1, "login sends a first report")
 
-            again = self.jarvis("login", "--api", cp.url, "--yes")
+            again = self.agentj("login", "--api", cp.url, "--yes")
             self.assertNotEqual(again.returncode, 0)
-            self.assertIn("jarvis unlink", again.stderr)
+            self.assertIn("agentj unlink", again.stderr)
 
-            r = self.jarvis("report")  # serve not running: devices.json, everything offline
+            r = self.agentj("report")  # serve not running: devices.json, everything offline
             self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
             rep = cp.reports[-1]
             self.assertEqual(rep["devices"], [{"id": did, "name": "Leo 的手机", "paired_at": rep["devices"][0]["paired_at"],
                                                "online": False}])
             self.assertEqual(rep["pending"], {"count": 0, "since": None})
-            self.assertEqual(rep["agent"], "agentjarvis-host/0.9.0a1")
+            self.assertEqual(rep["agent"], "agentj/0.10.0a1")
             self.assertGreater(rep["seq"], cp.reports[0]["seq"])
             self.assertEqual(cp.rejected, [])
-            self.assertIn("acme-co", self.jarvis("devices").stdout)
-            self.assertIn("acme-co", self.jarvis("status").stdout)
+            self.assertIn("acme-co", self.agentj("devices").stdout)
+            self.assertIn("acme-co", self.agentj("status").stdout)
 
-            r = self.jarvis("unlink")
+            r = self.agentj("unlink")
             self.assertEqual(r.returncode, 0)
             self.assertFalse(self.st.cloud_path.exists())
-            self.assertIn("未绑定 Dashboard", self.jarvis("status").stdout)
-            self.assertNotEqual(self.jarvis("report").returncode, 0)
+            self.assertIn("未绑定 Dashboard", self.agentj("status").stdout)
+            self.assertNotEqual(self.agentj("report").returncode, 0)
         text = self.st.log_path.read_text()
         self.assertNotIn("BCDF-2345", text)
         self.assertNotIn("http://", text)
@@ -108,7 +109,7 @@ class Flow(unittest.TestCase):
         before = self.st.devices_path.read_bytes()
         for answer in ("n\n", "", "\n", "yes please\n"):
             with FakeCP(interval=4, bound_after=1) as cp:
-                r = self.jarvis("login", "--api", cp.url, input=answer)
+                r = self.agentj("login", "--api", cp.url, input=answer)
                 self.assertNotEqual(r.returncode, 0, answer)
                 self.assertIn("添加到公司账号 acme-co", r.stdout)
                 self.assertIn("本机什么都没写", r.stderr)
@@ -121,9 +122,9 @@ class Flow(unittest.TestCase):
     def test_login_yes_flag_and_foreign_verification_uri(self):
         """--yes for scripts; F7: a verification_uri off the configured Dashboard origin is not printed."""
         with FakeCP(interval=4, bound_after=1) as cp:
-            r = self.jarvis("login", "--api", cp.url, "--yes", env={"AGENTJARVIS_APP_URL": "https://alpha-app.agentjarvis.net"})
+            r = self.agentj("login", "--api", cp.url, "--yes", env={"AGENTJ_APP_URL": "https://agentj.app/account"})
             self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
-            self.assertIn("在已登录的 Dashboard 里打开 https://alpha-app.agentjarvis.net/\n", r.stdout)
+            self.assertIn("在已登录的 Dashboard 里打开 https://agentj.app/account/\n", r.stdout)
             self.assertNotIn(cp.url, r.stdout)
             self.assertIn("y（--yes）", r.stdout)
             self.assertTrue(self.st.cloud_path.exists())
@@ -131,13 +132,13 @@ class Flow(unittest.TestCase):
     def test_already_bound_login(self):
         with FakeCP() as cp:
             cp.login_mode = "already_bound"
-            r = self.jarvis("login", env={"AGENTJARVIS_API_URL": cp.url})
+            r = self.agentj("login", env={"AGENTJ_API_URL": cp.url})
             self.assertNotEqual(r.returncode, 0)
             self.assertIn("先在 Dashboard 里解绑本机", r.stderr)
             self.assertFalse(self.st.cloud_path.exists())
 
     def test_login_refuses_plain_http_to_a_remote_host(self):
-        r = self.jarvis("login", "--api", "http://example.com")
+        r = self.agentj("login", "--api", "http://example.com")
         self.assertNotEqual(r.returncode, 0)
         self.assertIn("https://", r.stderr)
 
@@ -155,15 +156,15 @@ class Flow(unittest.TestCase):
         with FakeCP() as cp:
             self.link(cp)
             cp.script = ["unbound"]
-            r = self.jarvis("report")
+            r = self.agentj("report")
             self.assertNotEqual(r.returncode, 0)
             self.assertIn("not_bound", r.stderr)
             self.assertTrue(any(e["ev"] == "report_unbound" for e in self.log()))
             self.assertTrue(self.st.cloud_path.exists())
 
     def _serve(self):
-        env = {**self.env, "AGENTJARVIS_TEST_REPORT_DEBOUNCE": "0.1", "AGENTJARVIS_TEST_HEARTBEAT": "1"}
-        p = subprocess.Popen([sys.executable, "-m", "jarvis_host.cli", "serve", "--events", "jsonl", "--no-stdin"], cwd=HOST,
+        env = {**self.env, "AGENTJ_TEST_REPORT_DEBOUNCE": "0.1", "AGENTJ_TEST_HEARTBEAT": "1"}
+        p = subprocess.Popen([sys.executable, "-m", "agentj.cli", "serve", "--events", "jsonl", "--no-stdin"], cwd=HOST,
                              env=env, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
         self.procs.append(p)
         deadline = time.time() + 15
@@ -190,7 +191,7 @@ class Flow(unittest.TestCase):
             # start report + heartbeats keep coming although the control plane fails / hangs
             self._wait(lambda: len(cp.reports) >= 5, 20)
             self.assertIsNone(p.poll(), "serve still running")
-            st = self.jarvis("status")
+            st = self.agentj("status")
             self.assertEqual(st.returncode, 0)
             self.assertEqual(json.loads(st.stdout)["dashboard"], "acme-co")
             self._wait(lambda: any(e["ev"] == "report_ok" for e in self.log()))
@@ -203,9 +204,9 @@ class Flow(unittest.TestCase):
             seqs = [r["seq"] for r in cp.reports]
             self.assertEqual(seqs, sorted(set(seqs)), "seq strictly increasing")
 
-            # `jarvis report` while serve runs asks serve for the live view
+            # `agentj report` while serve runs asks serve for the live view
             n = len(cp.reports)
-            r = self.jarvis("report")
+            r = self.agentj("report")
             self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
             self.assertGreater(len(cp.reports), n)
 
@@ -227,7 +228,7 @@ class Flow(unittest.TestCase):
 
     def test_report_view_over_control_socket(self):
         import asyncio
-        from jarvis_host.cli import _ctl_call
+        from agentj.cli import _ctl_call
         with FakeCP() as cp:
             self.link(cp)
             self._serve()

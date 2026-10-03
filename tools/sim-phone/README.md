@@ -4,7 +4,7 @@
 bypasses pairing — a human (or the test) still types the 6 digits and the passphrase into the host.
 
 `sim-phone.mjs` starts a headless Chromium (its own profile and debugging port, never your normal browser), opens the
-Agent Jarvis web client, takes the pairing link the way the phone's 扫码 does (the client's own `startPairing`, via its
+Agent J web client, takes the pairing link the way the phone's 扫码 does (the client's own `startPairing`, via its
 "paste the pairing link" box), prints the 6-digit safety code the page shows, waits until you approve it on the host,
 and can then send one message, print the replies, and answer the next approval card.
 
@@ -15,7 +15,7 @@ Requirements: Node ≥ 22 (no npm packages) and Chromium or Google Chrome. It lo
 ## Use
 
 ```bash
-jarvis pair --no-qr                 # terminal 1: prints the pairing link, then asks for the 6-digit code
+agentj pair --no-qr                 # terminal 1: prints the pairing link, then asks for the 6-digit code
 node tools/sim-phone/sim-phone.mjs --link '<the link>' --profile ./phone --send "hello"
 #   CODE 123456        ← type these 6 digits (then your passphrase) into terminal 1
 #   PAIRED
@@ -27,8 +27,8 @@ node tools/sim-phone/sim-phone.mjs --profile ./phone --send "delete the build fo
 
 | Option | Meaning |
 |---|---|
-| `--link <url>` | the pairing link from `jarvis pair --no-qr`, or from 显示链接 under the QR on the `jarvis admin` page |
-| `--web <url>` | the web client to open; default: the link's own origin, else `https://alpha-web.agentjarvis.net` |
+| `--link <url>` | the pairing link from `agentj pair --no-qr`, or from 显示链接 under the QR on the `agentj admin` page |
+| `--web <url>` | the web client to open; default: the link's own origin, else `https://m.agentj.app` |
 | `--profile <dir>` | keep the phone (device key + pairing) in `<dir>`; later runs without `--link` resume as the same phone |
 | `--send <text>` | send one message after pairing / resuming and print the replies |
 | `--approve` / `--deny` | answer the next approval card with 批准 / 拒绝 |
@@ -44,7 +44,7 @@ within `--wait` · `7` not paired (no `--link` and the profile holds no pairing,
 
 ## What it does not do
 
-- It does not read QR images: pass the link text (`jarvis pair --no-qr` prints it).
+- It does not read QR images: pass the link text (`agentj pair --no-qr` prints it).
 - It cannot approve a pairing: only the host can, after a person (or a test playing that person) types the code and the
-  passphrase there. Remove the simulated phone like any other device: `jarvis devices`, then `jarvis revoke <id>`.
+  passphrase there. Remove the simulated phone like any other device: `agentj devices`, then `agentj revoke <id>`.
 - It is not a push-notification client; it sees replies only while it runs.

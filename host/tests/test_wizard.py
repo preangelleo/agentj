@@ -1,9 +1,10 @@
-"""Workflow design wizard (L3.5, ARCHITECTURE ADR-A59–A62): `jarvis wizard install | apply | diff | resolve | doctor |
+"""Workflow design wizard (L3.5, ARCHITECTURE ADR-A59–A62): `agentj wizard install | apply | diff | resolve | doctor |
 templates | add-template | dry-run` and the task contract (`taskspec`). Install never overwrites; the manifest decides what
 counts as "the customer changed it"; doctor checks each item and exits 0 only when nothing is ✗; template download is signed,
 refused when unbound / unpaid, and every SHA-256 is checked before anything is written (fake Dashboard over loopback HTTP);
 dry-run reads the VERDICT line of a stand-in harness, fenced when bubblewrap works here. Templates here are synthetic: the
 real ones are closed and never in this package."""
+import _hermetic  # noqa: F401,I001  (never the real ~/.local/state; see _hermetic.py)
 import base64
 import hashlib
 import http.server
@@ -20,15 +21,15 @@ import unittest
 HERE = pathlib.Path(__file__).resolve().parent
 HOST = HERE.parent
 sys.path.insert(0, str(HOST))
-from jarvis_host import cloud, fence, taskspec, wire, wizard  # noqa: E402
-from jarvis_host.state import State  # noqa: E402
+from agentj import cloud, fence, taskspec, wire, wizard  # noqa: E402
+from agentj.state import State  # noqa: E402
 
 BOOT = wizard.BOOT_SET
 FAKE_KEY = "sk-ant-" + "api03-" + "Q" * 12 + "w7" * 12   # assembled at runtime so repository scanners see no key
 
 
 def fm(kind: str, stale: str = "2099-01-01") -> str:
-    return f"---\ntype: {kind}\nstatus: draft\ngenerated: {{ by: jarvis-workflow-wizard/claude-code, at: 2026-10-02T10:00:00Z }}\nverified: []\nstale_after: {stale}\n---\n"
+    return f"---\ntype: {kind}\nstatus: draft\ngenerated: {{ by: agentj-workflow-wizard/claude-code, at: 2026-10-02T10:00:00Z }}\nverified: []\nstale_after: {stale}\n---\n"
 
 
 def good_files(entry=("CLAUDE.md",), workflows=()) -> dict[str, bytes]:
@@ -38,7 +39,7 @@ def good_files(entry=("CLAUDE.md",), workflows=()) -> dict[str, bytes]:
     for d in BOOT:
         files[f"documentation/{d}"] = (fm(d[:-3].title()) + f"# {d}\n\n内容：待定\n").encode()
     files["documentation/STRUCTURE.json"] = json.dumps({
-        "project": "森野户外", "agent_name": "小森", "language": "zh", "generated_by": "jarvis-workflow-wizard", "version": "0.1.0",
+        "project": "森野户外", "agent_name": "小森", "language": "zh", "generated_by": "agentj-workflow-wizard", "version": "0.1.0",
         "entry": list(entry), "boot_set": [f"documentation/{d}" for d in BOOT], "documents": [],
         "workflows": [{"id": w, "dir": f"workflows/{w}", "status": "dormant", "level": "report"} for w in workflows]},
         ensure_ascii=False).encode()
@@ -87,7 +88,7 @@ class TaskSpec(unittest.TestCase):
         self.assertEqual(taskspec.problems(task(), "listing"), ["id does not match its folder"])
 
     def test_secret_kinds_cover_every_privacy_secret_rule(self):
-        from jarvis_host import privacy
+        from agentj import privacy
         self.assertTrue({k for k, _, _ in privacy._SECRETS} | {"high_entropy"} <= taskspec.SECRET_KINDS)
 
 
@@ -101,7 +102,7 @@ class Install(Base):
         for d in (".claude/skills", ".agents/skills", ".opencode/skills"):
             sk = self.root / d / wizard.SKILL_NAME / "SKILL.md"
             self.assertTrue(sk.is_file(), d)
-            self.assertTrue(sk.read_text().startswith("---\nname: jarvis-workflow-wizard\n"))
+            self.assertTrue(sk.read_text().startswith("---\nname: agentj-workflow-wizard\n"))
         self.assertTrue(all(r["status"] == "unchanged" for r in wizard.install(self.root, list(wizard.HARNESSES))))
         self.assertEqual(json.loads((self.root / wizard.MANIFEST_REL).read_text())["harness"], sorted(wizard.HARNESSES))
 
@@ -134,7 +135,7 @@ class Install(Base):
         with self.assertRaises(wizard.WizardError):
             wizard.place(self.root, {"documentation/X.md": b"x"}, "wizard")
         self.assertEqual(list(outside.iterdir()), [])
-        for rel in ("../x.md", "/etc/x", "a/../../x", ".agentjarvis/wizard-manifest.json", "CLAUDE.md.wizard-new", ""):
+        for rel in ("../x.md", "/etc/x", "a/../../x", ".agentjarvis/wizard-manifest.json", ".agentj/wizard-manifest.json", "CLAUDE.md.wizard-new", ""):
             with self.assertRaises(wizard.WizardError, msg=rel):
                 wizard.place(self.root, {rel: b"x"}, "wizard")
         # a symlinked target file is replaced by a proposal, never followed
@@ -147,13 +148,13 @@ class Install(Base):
         self.assertEqual(victim.read_text(), "keep")
 
     def test_cli_install_defaults_and_hint(self):
-        env = {**os.environ, "AGENTJARVIS_STATE_DIR": self.tmp + "/state", "PYTHONPATH": str(HOST)}
-        r = subprocess.run([sys.executable, "-m", "jarvis_host.cli", "wizard", "install", "--dir", str(self.root)],
+        env = {**os.environ, "AGENTJ_STATE_DIR": self.tmp + "/state", "PYTHONPATH": str(HOST)}
+        r = subprocess.run([sys.executable, "-m", "agentj.cli", "wizard", "install", "--dir", str(self.root)],
                            capture_output=True, text=True, env=env, timeout=60)
         self.assertEqual(r.returncode, 0, r.stderr)
         self.assertIn("帮我设计工作流", r.stdout)
         self.assertTrue((self.root / ".opencode/skills" / wizard.SKILL_NAME / "references/questions.md").is_file())
-        r = subprocess.run([sys.executable, "-m", "jarvis_host.cli", "wizard", "install"], capture_output=True, text=True,
+        r = subprocess.run([sys.executable, "-m", "agentj.cli", "wizard", "install"], capture_output=True, text=True,
                            env=env, timeout=60)
         self.assertNotEqual(r.returncode, 0)
         self.assertIn("--dir", r.stderr)
@@ -283,8 +284,8 @@ class Doctor(Base):
         p.write_text(p.read_text().replace("2099-01-01", "2026-01-01"))
         st = {c["name"]: c["status"] for c in wizard.doctor(self.root, today="2026-10-02")}
         self.assertEqual((st["pending"], st["frontmatter"]), ("warn", "warn"))
-        env = {**os.environ, "PYTHONPATH": str(HOST), "AGENTJARVIS_STATE_DIR": self.tmp + "/state"}
-        cmd = [sys.executable, "-m", "jarvis_host.cli", "wizard", "doctor", "--dir", str(self.root), "--json"]
+        env = {**os.environ, "PYTHONPATH": str(HOST), "AGENTJ_STATE_DIR": self.tmp + "/state"}
+        cmd = [sys.executable, "-m", "agentj.cli", "wizard", "doctor", "--dir", str(self.root), "--json"]
         r = subprocess.run(cmd, capture_output=True, text=True, env=env, timeout=60)
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
         self.assertTrue(json.loads(r.stdout)["ok"])
@@ -425,8 +426,8 @@ class Templates(Base):
 
     def test_cli_templates_and_add_template(self):
         self.bind()
-        env = {**os.environ, "AGENTJARVIS_STATE_DIR": str(self.st.root), "PYTHONPATH": str(HOST)}
-        base = [sys.executable, "-m", "jarvis_host.cli", "wizard"]
+        env = {**os.environ, "AGENTJ_STATE_DIR": str(self.st.root), "PYTHONPATH": str(HOST)}
+        base = [sys.executable, "-m", "agentj.cli", "wizard"]
         r = subprocess.run(base + ["templates", "--json"], capture_output=True, text=True, env=env, timeout=60)
         self.assertEqual(r.returncode, 0, r.stderr)
         self.assertEqual(json.loads(r.stdout)["templates"][0]["id"], "daily-report")
@@ -470,7 +471,7 @@ class DryRun(Base):
         self.fake.write_text(FAKE_HARNESS)
         self.fake.chmod(0o755)
         self.argv_file = self.root / "argv.txt"      # inside the work folder: writable inside the fence too
-        self.env = {"AGENTJARVIS_CLAUDE_BIN": str(self.fake), "WIZ_ARGV": str(self.argv_file), "WIZ_STATE": str(self.st.root)}
+        self.env = {"AGENTJ_CLAUDE_BIN": str(self.fake), "WIZ_ARGV": str(self.argv_file), "WIZ_STATE": str(self.st.root)}
 
     def run_dry(self, mode="attention", **kw):
         old = {k: os.environ.get(k) for k in [*self.env, "WIZ_MODE"]}
@@ -509,7 +510,7 @@ class DryRun(Base):
         self.unfenced()
         self.assertIsNone(self.run_dry(mode="none")["verdict"])
         self.assertEqual(self.run_dry(mode="fail")["verdict"], "fail")
-        self.env["AGENTJARVIS_CLAUDE_BIN"] = str(pathlib.Path(self.tmp) / "nope")
+        self.env["AGENTJ_CLAUDE_BIN"] = str(pathlib.Path(self.tmp) / "nope")
         old = os.environ.get("PATH")
         os.environ["PATH"] = "/nonexistent"
         try:
@@ -520,8 +521,8 @@ class DryRun(Base):
 
     def test_cli_exit_codes(self):
         self.unfenced()
-        env = {**os.environ, **self.env, "AGENTJARVIS_STATE_DIR": str(self.st.root), "PYTHONPATH": str(HOST)}
-        cmd = [sys.executable, "-m", "jarvis_host.cli", "wizard", "dry-run", "daily-report", "--dir", str(self.root), "--json"]
+        env = {**os.environ, **self.env, "AGENTJ_STATE_DIR": str(self.st.root), "PYTHONPATH": str(HOST)}
+        cmd = [sys.executable, "-m", "agentj.cli", "wizard", "dry-run", "daily-report", "--dir", str(self.root), "--json"]
         for mode, code, verdict in (("attention", 0, "attention"), ("ok", 0, "ok"), ("fail", 1, "fail"), ("none", 1, None)):
             r = subprocess.run(cmd, capture_output=True, text=True, env={**env, "WIZ_MODE": mode}, timeout=60)
             self.assertEqual(r.returncode, code, mode + r.stderr)

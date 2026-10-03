@@ -1,0 +1,198 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="referrer" content="no-referrer">
+<meta name="robots" content="noindex">
+<title>Agent 管理页 · Agent J</title>
+<script src="/brand/lang.js"></script>
+<link rel="stylesheet" href="/brand/palette.css">
+<link rel="stylesheet" href="/brand/base.css">
+<link rel="stylesheet" href="/app.css">
+<link rel="preload" href="/brand/fonts/ubuntu-400.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="icon" href="/favicon.ico" sizes="any">
+<link rel="icon" href="/brand/img/favicon-32.png" type="image/png" sizes="32x32">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<script src="/brand/ui.js" defer></script>
+<script src="/app.js" defer></script>
+</head>
+<body class="adm-loading">
+<a class="aj-skip" href="#main" data-i18n="skip">跳到正文</a>
+<header class="aj-header adm-header">
+  <div class="aj-header__inner adm-header__inner">
+    <div class="aj-brand adm-brand">
+      <img src="/brand/img/shield-64.png" width="32" height="32" alt="">
+      <span class="aj-brand__name">Agent J</span>
+      <span class="aj-badge aj-badge--beta">Beta</span>
+    </div>
+    <div class="adm-context">
+      <span class="adm-context__name" id="top-name"></span>
+      <span class="adm-context__local"><span class="adm-lock" aria-hidden="true"></span><span data-i18n="header.local">只在这台电脑上能打开</span></span>
+    </div>
+    <div class="aj-header__end">
+      <div class="aj-lang" data-aj-lang-switch>中文 / EN</div>
+      <button class="aj-btn aj-btn--sm aj-btn--quiet adm-logout" id="logout" type="button" data-i18n="header.logout" hidden>退出</button>
+    </div>
+  </div>
+</header>
+
+<main id="main" class="aj-container adm-main">
+  <div class="aj-callout adm-msg" id="msg" role="status" aria-live="polite" hidden></div>
+
+  <div id="app" hidden>
+    <section class="adm-hero" aria-labelledby="agent-name">
+      <p class="aj-eyebrow"><img class="adm-hero__shield" src="/brand/img/shield-64.png" width="20" height="20" alt=""><span data-i18n="hero.eyebrow"></span></p>
+      <h1 id="agent-name" class="adm-hero__name"></h1>
+      <p class="aj-subtitle adm-hero__sub" id="agent-sub"></p>
+      <p class="adm-hero__note" data-i18n="hero.note"></p>
+    </section>
+
+    <div class="adm-grid">
+      <div class="adm-col adm-col--main">
+        <section class="aj-card adm-card" aria-labelledby="h-devs">
+          <div class="adm-card__head">
+            <h2 class="aj-card__title" id="h-devs" data-i18n="devices.title"></h2>
+            <div class="adm-count" id="dev-count-wrap">
+              <span class="adm-meter" id="dev-meter" aria-hidden="true"></span>
+              <span class="adm-count__num" id="dev-count">0 / 5</span>
+              <span class="aj-badge aj-badge--note" id="dev-full" data-i18n="devices.full" hidden></span>
+            </div>
+          </div>
+          <p class="aj-muted" id="dev-empty" data-i18n="devices.empty" hidden></p>
+          <ul class="adm-devs" id="dev-list"></ul>
+        </section>
+
+        <section class="aj-card adm-card" aria-labelledby="h-pair" id="pair">
+          <h2 class="aj-card__title" id="h-pair" data-i18n="pair.title"></h2>
+
+          <div id="pair-idle" class="adm-stack">
+            <p class="aj-muted" data-i18n="pair.intro"></p>
+            <div class="adm-actions">
+              <button class="aj-btn aj-btn--primary" id="pair-start" type="button" data-i18n="pair.start"></button>
+            </div>
+            <p class="aj-field__hint" id="pair-need-program" data-i18n="pair.need_program" hidden></p>
+          </div>
+          <div id="pair-result" class="aj-callout" role="status" hidden></div>
+
+          <div id="pair-waiting" class="adm-stack" hidden>
+            <p id="pair-scan"></p>
+            <div class="adm-qr-wrap"><img id="pair-qr" class="adm-qr" data-i18n-attr="alt:pair.qr_alt" alt="" width="264" height="264"></div>
+            <div class="adm-actions">
+              <button class="aj-btn aj-btn--sm" id="pair-show-link" type="button" aria-expanded="false" aria-controls="pair-link-box" data-i18n="pair.show_link"></button>
+              <button class="aj-btn aj-btn--sm aj-btn--quiet" id="pair-cancel" type="button" data-i18n="pair.cancel"></button>
+            </div>
+            <div id="pair-link-box" class="aj-callout aj-callout--note" hidden>
+              <p data-i18n="pair.link_warn"></p>
+              <code id="pair-link" class="adm-link"></code>
+            </div>
+          </div>
+
+          <div id="pair-pending" class="adm-stack" hidden>
+            <div class="aj-callout aj-callout--warm">
+              <p id="pair-device-lead"></p>
+              <p class="aj-small"><strong data-i18n="pair.untrusted"></strong></p>
+            </div>
+            <p class="aj-muted" id="pair-code-where"></p>
+            <div class="aj-field">
+              <label for="pair-code" data-i18n="pair.code_label"></label>
+              <input class="aj-input adm-code" id="pair-code" inputmode="numeric" autocomplete="off" maxlength="6" pattern="[0-9]{6}" spellcheck="false">
+            </div>
+            <div class="aj-field">
+              <label for="pair-pass" data-i18n="pair.pass_label"></label>
+              <input class="aj-input adm-pass" id="pair-pass" type="password" autocomplete="off" maxlength="256" spellcheck="false" data-lpignore="true" data-1p-ignore aria-describedby="pair-pass-hint">
+              <p class="aj-field__hint" id="pair-pass-hint" data-i18n="pair.pass_hint"></p>
+            </div>
+            <p class="aj-callout aj-callout--note" id="pair-pass-unset" data-i18n="pair.pass_unset" hidden></p>
+            <p class="aj-callout aj-callout--danger" id="pair-pass-wrong" role="alert" hidden></p>
+            <div class="adm-actions">
+              <button class="aj-btn aj-btn--primary" id="pair-approve" type="button" data-i18n="pair.approve" disabled></button>
+              <button class="aj-btn aj-btn--danger" id="pair-deny" type="button" data-i18n="pair.deny"></button>
+            </div>
+          </div>
+
+          <div id="pair-full" class="adm-stack" hidden>
+            <div class="aj-callout aj-callout--warm">
+              <p id="pair-full-lead"></p>
+              <p class="aj-small"><strong data-i18n="pair.untrusted"></strong></p>
+            </div>
+            <p class="aj-callout aj-callout--note" id="pair-full-warn"></p>
+            <ul class="adm-devs" id="pair-full-list"></ul>
+            <div class="adm-actions">
+              <button class="aj-btn aj-btn--danger" id="pair-full-deny" type="button" data-i18n="pair.full_deny"></button>
+            </div>
+          </div>
+        </section>
+      </div>
+
+      <div class="adm-col adm-col--side">
+        <section class="aj-card adm-card" aria-labelledby="h-conn">
+          <h2 class="aj-card__title" id="h-conn" data-i18n="conn.title"></h2>
+          <dl class="adm-kv">
+            <div class="adm-kv__row"><dt data-i18n="conn.program"></dt><dd><span class="aj-dot" id="serve-dot"></span><span id="serve-state"></span></dd></div>
+            <div class="adm-kv__row"><dt data-i18n="conn.relay"></dt><dd><span class="aj-dot" id="relay-dot"></span><span id="relay-state"></span></dd></div>
+            <div class="adm-kv__row"><dt data-i18n="conn.company"></dt><dd><span id="dash-state"></span></dd></div>
+          </dl>
+          <p class="aj-callout aj-callout--note" id="serve-hint" data-i18n="conn.hint" hidden></p>
+        </section>
+
+        <section class="aj-card adm-card" aria-labelledby="h-name" id="name-card">
+          <h2 class="aj-card__title" id="h-name" data-i18n="name.title"></h2>
+          <p class="aj-muted" data-i18n="name.intro"></p>
+          <div class="aj-field">
+            <label for="name-input" data-i18n="name.label"></label>
+            <div class="adm-inline">
+              <input class="aj-input" id="name-input" maxlength="64" autocomplete="off" data-i18n-attr="placeholder:name.placeholder">
+              <button class="aj-btn aj-btn--primary" id="name-save" type="button" data-i18n="name.save"></button>
+            </div>
+          </div>
+          <div class="adm-chips" id="name-chips" role="group" data-i18n-attr="aria-label:name.starters_label"></div>
+          <div class="aj-callout" id="name-msg" role="status" hidden></div>
+          <div class="adm-chips" id="name-suggestions" role="group" data-i18n-attr="aria-label:name.suggestions_label" hidden></div>
+        </section>
+
+        <section class="aj-card adm-card" aria-labelledby="h-remote">
+          <h2 class="aj-card__title" id="h-remote" data-i18n="remote.title"></h2>
+          <label class="aj-check adm-switch"><input type="checkbox" id="remote-unbind"><span data-i18n="remote.label"></span></label>
+          <p class="aj-muted aj-small" id="remote-unbind-note"></p>
+        </section>
+
+        <section class="aj-card aj-card--2 adm-card" aria-labelledby="h-tip">
+          <h2 class="aj-card__title" id="h-tip" data-i18n="tips.title"></h2>
+          <ul class="adm-tips">
+            <li data-i18n="tips.one"></li>
+            <li data-i18n="tips.seat"></li>
+            <li data-i18n="tips.qr"></li>
+          </ul>
+        </section>
+      </div>
+    </div>
+  </div>
+</main>
+
+<footer class="aj-footer adm-footer">
+  <div class="aj-footer__inner">
+    <div class="aj-footer__brand">
+      <div class="aj-brand"><img src="/brand/img/shield-64.png" width="32" height="32" alt=""><span class="aj-brand__name">Agent J</span></div>
+      <p data-i18n="footer.tagline"></p>
+      <div class="adm-footer__switches">
+        <div class="aj-lang" data-aj-lang-switch>中文 / EN</div>
+        <button class="aj-btn aj-btn--sm adm-theme" type="button" data-aj-theme-switch data-i18n-attr="title:footer.theme_label,aria-label:footer.theme_label"></button>
+      </div>
+    </div>
+    <nav class="aj-footer__cols adm-footer__cols" aria-label="Footer">
+      <div class="aj-footer__col"><h2 data-i18n="footer.help"></h2><ul>
+        <li><a href="https://agentj.app/docs/" target="_blank" rel="noopener noreferrer" data-i18n="footer.docs"></a></li>
+        <li><a href="https://agentj.app/contact/" target="_blank" rel="noopener noreferrer" data-i18n="footer.contact"></a></li></ul></div>
+      <div class="aj-footer__col"><h2 data-i18n="footer.trust"></h2><ul>
+        <li><a href="https://agentj.app/security/" target="_blank" rel="noopener noreferrer" data-i18n="footer.security"></a></li>
+        <li><a href="https://agentj.app/privacy/" target="_blank" rel="noopener noreferrer" data-i18n="footer.privacy"></a></li></ul></div>
+    </nav>
+  </div>
+  <div class="aj-footer__small">
+    <span><span id="foot-version"></span><span class="adm-sep" aria-hidden="true"> · </span><span id="foot-channel"></span></span>
+    <span><span>© 2026 Agent J · Beta</span><span class="adm-sep" aria-hidden="true"> · </span><span data-i18n="footer.small"></span></span>
+  </div>
+</footer>
+</body>
+</html>

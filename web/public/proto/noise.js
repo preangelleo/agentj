@@ -1,4 +1,4 @@
-// Minimal Noise (rev 34) for agentjarvis: Noise_IK / Noise_IKpsk2 over 25519 / AESGCM / SHA256.
+// Minimal Noise (rev 34) for agentj: Noise_IK / Noise_IKpsk2 over 25519 / AESGCM / SHA256.
 // Runtime crypto is WebCrypto only (browser + Node + Workers) — no third-party code. Pinned by protocol/vectors/ and the
 // JS↔Python interop test. Keys are { priv: CryptoKey (X25519, may be non-extractable), pub: Uint8Array(32) }.
 const subtle = globalThis.crypto.subtle;

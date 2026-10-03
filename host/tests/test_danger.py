@@ -7,6 +7,7 @@ nothing that widens; a human who switched hooks off gets a notice, not a start. 
 and end with the turn, on revoke, at the limit. Opt-in (AJ_REAL_CLAUDE=1): the real Claude Code with the human's settings
 allowing `rm` still asks the phone (reports/qa/danger/).
 """
+import _hermetic  # noqa: F401,I001  (never the real ~/.local/state; see _hermetic.py)
 import asyncio
 import io
 import json
@@ -23,8 +24,8 @@ from unittest import mock
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
-from jarvis_host import agent as agents  # noqa: E402
-from jarvis_host import approvals, danger, serve, wire  # noqa: E402
+from agentj import agent as agents  # noqa: E402
+from agentj import approvals, danger, serve, wire  # noqa: E402
 
 from test_l1 import Phone, _host, _ready, _state  # noqa: E402
 
@@ -277,7 +278,7 @@ class ReadOnly(unittest.TestCase):
 
 class DoctorRow(unittest.TestCase):
     def test_doctor_reports_ignored_config(self):
-        from jarvis_host import doctor
+        from agentj import doctor
         with tempfile.TemporaryDirectory() as d:
             st = _state(d)
             self.assertEqual(doctor.check_danger(st)["status"], doctor.OK)
@@ -298,7 +299,7 @@ class DoctorRow(unittest.TestCase):
 class Hook(unittest.TestCase):
     def run_hook(self, payload, *args):
         env = dict(os.environ, PYTHONPATH=str(HERE.parent))
-        return subprocess.run([sys.executable, "-P", "-m", "jarvis_host.danger", "hook", *args],
+        return subprocess.run([sys.executable, "-P", "-m", "agentj.danger", "hook", *args],
                               input=payload if isinstance(payload, str) else json.dumps(payload),
                               capture_output=True, text=True, env=env, timeout=30)
 
@@ -320,7 +321,7 @@ class Hook(unittest.TestCase):
         for tool, x, _ in CASES:
             r = danger.classify(tool, _inp(tool, x))
             self.assertIn(r.danger, (True, False))
-        src = (HERE.parent / "jarvis_host" / "danger.py").read_text()
+        src = (HERE.parent / "agentj" / "danger.py").read_text()
         self.assertNotIn('"permissionDecision": "allow"', src)
         # "deny" exists only in the read-only branch of a scheduled research run (ADR-A53), never for a chat turn
         self.assertEqual(src.count('"permissionDecision": "deny"'), 1)
@@ -338,7 +339,7 @@ class Argv(unittest.TestCase):
         self.assertEqual(len(hooks), 1)
         self.assertEqual(hooks[0]["matcher"], "*")
         cmd = hooks[0]["hooks"][0]["command"]
-        self.assertIn("-P -m jarvis_host.danger hook ", cmd)
+        self.assertIn("-P -m agentj.danger hook ", cmd)
         self.assertTrue(cmd.endswith("|| exit 2"))
         self.assertEqual(danger.decode_extra(cmd.split(" hook ")[1].split(" ")[0]), [{"category": "send", "bash": "x"}])
         joined = " ".join(a)
@@ -605,8 +606,8 @@ class Batch(unittest.TestCase):
         asyncio.run(self.host.on_ready(s2, 0))
         mine = [o for c, o in self.sent if c == 13 and o["t"] == "grant"]
         self.assertEqual(len(mine), 1)
-        from jarvis_host import cli
-        with mock.patch.dict(os.environ, {"AGENTJARVIS_STATE_DIR": str(self.st.root)}):
+        from agentj import cli
+        with mock.patch.dict(os.environ, {"AGENTJ_STATE_DIR": str(self.st.root)}):
             buf = io.StringIO()
             with redirect_stdout(buf):
                 cli.cmd_approvals(mock.Mock(verify=True, json=False, last=0))

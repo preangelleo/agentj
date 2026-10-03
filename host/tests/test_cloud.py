@@ -1,5 +1,6 @@
 """PROTOCOL.md §7 host side, in-process: envelope vectors, report schema, seq, URL policy, whitelisted parsing, the
 "cloud code never touches the allowlist" invariant, login polling/back-off, and the serve report scheduler."""
+import _hermetic  # noqa: F401,I001  (never the real ~/.local/state; see _hermetic.py)
 import ast
 import asyncio
 import json
@@ -14,11 +15,11 @@ import unittest
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey  # noqa: E402
-from jarvis_host import cloud, reporter, wire  # noqa: E402
-from jarvis_host.state import State  # noqa: E402
+from agentj import cloud, reporter, wire  # noqa: E402
+from agentj.state import State  # noqa: E402
 from fakecp import FakeCP  # noqa: E402
 
-PKG = pathlib.Path(__file__).resolve().parents[1] / "jarvis_host"
+PKG = pathlib.Path(__file__).resolve().parents[1] / "agentj"
 VEC = json.loads((pathlib.Path(__file__).resolve().parents[2] / "protocol/vectors/host-envelope.json").read_text())
 
 
@@ -61,7 +62,7 @@ class Envelope(unittest.TestCase):
 
     def test_contexts_distinct_from_relay(self):
         self.assertEqual(len({cloud.CTX_LOGIN, cloud.CTX_POLL, cloud.CTX_REPORT, "agentjarvis-relay-auth-v1"}), 4)
-        self.assertEqual(cloud.AGENT, "agentjarvis-host/0.9.0a1")
+        self.assertEqual(cloud.AGENT, "agentj/0.10.0a1")
 
 
 class Report(unittest.TestCase):
@@ -128,7 +129,7 @@ class Report(unittest.TestCase):
 
 
     def test_unlink_between_seq_read_and_replace_waits_for_the_lock(self):
-        """A3-04: `jarvis unlink` (another process / thread) lands exactly between _store_seq's re-read and its replace."""
+        """A3-04: `agentj unlink` (another process / thread) lands exactly between _store_seq's re-read and its replace."""
         _link(self.st, "http://127.0.0.1:9")
         real_read = cloud.read_cloud
         unlinker: list[threading.Thread] = []
@@ -159,7 +160,7 @@ class Report(unittest.TestCase):
     def test_lock_is_exclusive_across_processes(self):
         import subprocess
         _link(self.st, "http://127.0.0.1:9")
-        code = ("import sys, pathlib; sys.path.insert(0, sys.argv[1]); from jarvis_host import cloud; from jarvis_host.state import State;"
+        code = ("import sys, pathlib; sys.path.insert(0, sys.argv[1]); from agentj import cloud; from agentj.state import State;"
                 "print(cloud.delete_cloud(State(pathlib.Path(sys.argv[2]))))")
         with cloud.cloud_lock(self.st):
             p = subprocess.Popen([sys.executable, "-c", code, str(PKG.parent), str(self.st.root)], stdout=subprocess.PIPE, text=True)
@@ -172,12 +173,12 @@ class Report(unittest.TestCase):
 
 class Urls(unittest.TestCase):
     def test_plain_http_only_to_loopback(self):
-        for bad in ("http://example.com", "http://10.0.0.1:8787", "http://api.agentjarvis.net", "ftp://x",
-                    "https://u:p@api.agentjarvis.net", "https://api.agentjarvis.net/?x=1", "javascript:alert(1)", "",
+        for bad in ("http://example.com", "http://10.0.0.1:8787", "http://agentj.app/api", "ftp://x",
+                    "https://u:p@agentj.app/api", "https://agentj.app/api/?x=1", "javascript:alert(1)", "",
                     "https://a\x1b[2J.net"):
             with self.assertRaises(cloud.CloudError, msg=bad):
                 cloud.check_url(bad)
-        for ok in ("https://api.agentjarvis.net", "http://127.0.0.1:1234", "http://localhost:9/"):
+        for ok in ("https://agentj.app/api", "http://127.0.0.1:1234", "http://localhost:9/"):
             cloud.check_url(ok)
         with self.assertRaises(cloud.CloudError) as e:
             cloud.post_json("http://192.0.2.1/v1/host/report", {"x": 1})
@@ -186,45 +187,46 @@ class Urls(unittest.TestCase):
     def test_api_url_precedence(self):
         with tempfile.TemporaryDirectory() as d:
             st = _state(d)
-            old = os.environ.pop("AGENTJARVIS_API_URL", None)
+            old = os.environ.pop("AGENTJ_API_URL", None)
             try:
                 self.assertEqual(cloud.api_url(st), cloud.DEFAULT_API)
                 self.assertEqual(cloud.api_url(st, {"api": "http://127.0.0.1:2"}), "http://127.0.0.1:2")
-                os.environ["AGENTJARVIS_API_URL"] = "http://127.0.0.1:3/"
+                os.environ["AGENTJ_API_URL"] = "http://127.0.0.1:3/"
                 self.assertEqual(cloud.api_url(st, {"api": "http://127.0.0.1:2"}), "http://127.0.0.1:3")
                 self.assertEqual(cloud.api_url(st, override="https://x.example"), "https://x.example")
-                os.environ["AGENTJARVIS_API_URL"] = "http://evil.example"
+                os.environ["AGENTJ_API_URL"] = "http://evil.example"
                 with self.assertRaises(cloud.CloudError):
                     cloud.api_url(st)
             finally:
-                os.environ.pop("AGENTJARVIS_API_URL", None)
+                os.environ.pop("AGENTJ_API_URL", None)
                 if old is not None:
-                    os.environ["AGENTJARVIS_API_URL"] = old
+                    os.environ["AGENTJ_API_URL"] = old
 
 
     def test_dashboard_uri_only_on_the_configured_origin(self):
         """F7: the human is sent to the configured Dashboard; a server-chosen URL only if it is on that origin."""
-        app = "https://alpha-app.agentjarvis.net"
-        self.assertEqual(cloud.dashboard_uri(app, "https://alpha-app.agentjarvis.net/"), "https://alpha-app.agentjarvis.net/")
-        self.assertEqual(cloud.dashboard_uri(app, "https://alpha-app.agentjarvis.net:443/link"), "https://alpha-app.agentjarvis.net:443/link")
-        for evil in ("https://alpha-app.agentjarvis.net.evil.example/", "https://evil.example/alpha-app.agentjarvis.net",
-                     "http://alpha-app.agentjarvis.net/", "https://alpha-app.agentjarvis.net:8443/", "https://u@alpha-app.agentjarvis.net/",
-                     "https://agentjarvis.net/", None, "", "https://alpha-app.agentjarvis.net/\x1b[2J"):
+        app = "https://agentj.app/account"     # 0.10: the Dashboard lives under a path; the check compares the origin only
+        self.assertEqual(cloud.dashboard_uri(app, "https://agentj.app/account/"), "https://agentj.app/account/")
+        self.assertEqual(cloud.dashboard_uri(app, "https://agentj.app/account/link"), "https://agentj.app/account/link")
+        self.assertEqual(cloud.dashboard_uri(app, "https://agentj.app:443/account/link"), "https://agentj.app:443/account/link")
+        for evil in ("https://agentj.app.evil.example/account/", "https://evil.example/agentj.app/account",
+                     "http://agentj.app/account/", "https://agentj.app:8443/account/", "https://u@agentj.app/account/",
+                     "https://alpha-app.agentjarvis.net/link", None, "", "https://agentj.app/account/\x1b[2J"):
             self.assertEqual(cloud.dashboard_uri(app, evil), app + "/", evil)
         with tempfile.TemporaryDirectory() as d:
             st = _state(d)
-            old = os.environ.pop("AGENTJARVIS_APP_URL", None)
+            old = os.environ.pop("AGENTJ_APP_URL", None)
             try:
                 self.assertEqual(cloud.app_url(st), cloud.DEFAULT_APP)
-                os.environ["AGENTJARVIS_APP_URL"] = "http://localhost:8123/"
+                os.environ["AGENTJ_APP_URL"] = "http://localhost:8123/"
                 self.assertEqual(cloud.app_url(st), "http://localhost:8123")
-                os.environ["AGENTJARVIS_APP_URL"] = "http://evil.example"
+                os.environ["AGENTJ_APP_URL"] = "http://evil.example"
                 with self.assertRaises(cloud.CloudError):
                     cloud.app_url(st)
             finally:
-                os.environ.pop("AGENTJARVIS_APP_URL", None)
+                os.environ.pop("AGENTJ_APP_URL", None)
                 if old is not None:
-                    os.environ["AGENTJARVIS_APP_URL"] = old
+                    os.environ["AGENTJ_APP_URL"] = old
 
 
 class Whitelist(unittest.TestCase):
@@ -235,7 +237,7 @@ class Whitelist(unittest.TestCase):
                              "agent_name": None})
         self.assertIsNone(cloud.parse_poll({"status": "approved"}))
         self.assertIsNone(cloud.parse_poll({"status": "bound", "host_id": "h", "tenant": {"slug": "Bad Slug", "name": ""}}))
-        good = {"login_id": "A" * 22, "user_code": "BCDF-2345", "verification_uri": "https://alpha-app.agentjarvis.net/link",
+        good = {"login_id": "A" * 22, "user_code": "BCDF-2345", "verification_uri": "https://agentj.app/account/link",
                 "expires_in": 600, "interval": 1, "devices": []}
         self.assertEqual(set(cloud.parse_login(good)), {"login_id", "user_code", "verification_uri", "expires_in", "interval"})
         self.assertEqual(cloud.parse_login(good)["interval"], 4)  # never poll faster than 4 s
