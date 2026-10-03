@@ -1,0 +1,35 @@
+{
+ "note": "minisign 0.12 test vector (throw-away test key, NOT the plaza key). Prehashed (ED) mode. Implementations must verify `minisig` over `message_b64` with `pubkey`, and must REJECT each `bad` case.",
+ "pubkey": "RWRBu87nEEyHGPHAK+luuR8UshiPrqHjfFsPMvJqnVBlEb5x070nvWro",
+ "message_b64": "YWdlbnRqYXJ2aXMgbWluaXNpZ24gdmVjdG9yCg==",
+ "message_sha256": "b54922eba1f9921fbb7c266153b087ec9c046b3278c47d8234fb367010da02c9",
+ "minisig": "untrusted comment: signature from minisign secret key\nRURBu87nEEyHGHBthdy9B7ZNNUDoYeORTIotJYqqsZ073QiuMOLxUUl6MEXy18CjPZvukluqqDzkYfvxe17N6/mhtCKtkpd7fgA=\ntrusted comment: agentjarvis-plaza/v1 name=demo-skill version=1.0.0 type=skill sha256=b54922eba1f9921fbb7c266153b087ec9c046b3278c47d8234fb367010da02c9\n3sqAxHTobt5t/KsD6mCe+GaZH+vhD+y2ZVUJ2fKq+352kLsg/cEoV3qLPIjTcZPMiz7sKPu78iQHxVcIv0b9DQ==\n",
+ "trusted_comment": "agentjarvis-plaza/v1 name=demo-skill version=1.0.0 type=skill sha256=b54922eba1f9921fbb7c266153b087ec9c046b3278c47d8234fb367010da02c9",
+ "bad": [
+  {
+   "why": "message changed",
+   "message_b64": "YWdlbnRqYXJ2aXMgbWluaXNpZ24gdmVjdG9yCng=",
+   "minisig": "untrusted comment: signature from minisign secret key\nRURBu87nEEyHGHBthdy9B7ZNNUDoYeORTIotJYqqsZ073QiuMOLxUUl6MEXy18CjPZvukluqqDzkYfvxe17N6/mhtCKtkpd7fgA=\ntrusted comment: agentjarvis-plaza/v1 name=demo-skill version=1.0.0 type=skill sha256=b54922eba1f9921fbb7c266153b087ec9c046b3278c47d8234fb367010da02c9\n3sqAxHTobt5t/KsD6mCe+GaZH+vhD+y2ZVUJ2fKq+352kLsg/cEoV3qLPIjTcZPMiz7sKPu78iQHxVcIv0b9DQ==\n"
+  },
+  {
+   "why": "signature bit flipped",
+   "message_b64": "YWdlbnRqYXJ2aXMgbWluaXNpZ24gdmVjdG9yCg==",
+   "minisig": "untrusted comment: signature from minisign secret key\nRURBu87nEEyHGHBthdy9B7ZNNUDpYeORTIotJYqqsZ073QiuMOLxUUl6MEXy18CjPZvukluqqDzkYfvxe17N6/mhtCKtkpd7fgA=\ntrusted comment: agentjarvis-plaza/v1 name=demo-skill version=1.0.0 type=skill sha256=b54922eba1f9921fbb7c266153b087ec9c046b3278c47d8234fb367010da02c9\n3sqAxHTobt5t/KsD6mCe+GaZH+vhD+y2ZVUJ2fKq+352kLsg/cEoV3qLPIjTcZPMiz7sKPu78iQHxVcIv0b9DQ==\n"
+  },
+  {
+   "why": "trusted comment changed",
+   "message_b64": "YWdlbnRqYXJ2aXMgbWluaXNpZ24gdmVjdG9yCg==",
+   "minisig": "untrusted comment: signature from minisign secret key\nRURBu87nEEyHGHBthdy9B7ZNNUDoYeORTIotJYqqsZ073QiuMOLxUUl6MEXy18CjPZvukluqqDzkYfvxe17N6/mhtCKtkpd7fgA=\ntrusted comment: agentjarvis-plaza/v1 name=demo-skill version=9.0.0 type=skill sha256=b54922eba1f9921fbb7c266153b087ec9c046b3278c47d8234fb367010da02c9\n3sqAxHTobt5t/KsD6mCe+GaZH+vhD+y2ZVUJ2fKq+352kLsg/cEoV3qLPIjTcZPMiz7sKPu78iQHxVcIv0b9DQ==\n"
+  },
+  {
+   "why": "global signature bit flipped",
+   "message_b64": "YWdlbnRqYXJ2aXMgbWluaXNpZ24gdmVjdG9yCg==",
+   "minisig": "untrusted comment: signature from minisign secret key\nRURBu87nEEyHGHBthdy9B7ZNNUDoYeORTIotJYqqsZ073QiuMOLxUUl6MEXy18CjPZvukluqqDzkYfvxe17N6/mhtCKtkpd7fgA=\ntrusted comment: agentjarvis-plaza/v1 name=demo-skill version=1.0.0 type=skill sha256=b54922eba1f9921fbb7c266153b087ec9c046b3278c47d8234fb367010da02c9\n3sqAxHTpbt5t/KsD6mCe+GaZH+vhD+y2ZVUJ2fKq+352kLsg/cEoV3qLPIjTcZPMiz7sKPu78iQHxVcIv0b9DQ==\n"
+  },
+  {
+   "why": "key id changed",
+   "message_b64": "YWdlbnRqYXJ2aXMgbWluaXNpZ24gdmVjdG9yCg==",
+   "minisig": "untrusted comment: signature from minisign secret key\nRURBus7nEEyHGHBthdy9B7ZNNUDoYeORTIotJYqqsZ073QiuMOLxUUl6MEXy18CjPZvukluqqDzkYfvxe17N6/mhtCKtkpd7fgA=\ntrusted comment: agentjarvis-plaza/v1 name=demo-skill version=1.0.0 type=skill sha256=b54922eba1f9921fbb7c266153b087ec9c046b3278c47d8234fb367010da02c9\n3sqAxHTobt5t/KsD6mCe+GaZH+vhD+y2ZVUJ2fKq+352kLsg/cEoV3qLPIjTcZPMiz7sKPu78iQHxVcIv0b9DQ==\n"
+  }
+ ]
+}

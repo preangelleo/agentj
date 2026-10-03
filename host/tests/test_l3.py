@@ -45,7 +45,7 @@ def _cli(*args, env=None, timeout=60, stdin=subprocess.DEVNULL):
 class Version(unittest.TestCase):
     def test_one_source(self):
         v = jarvis_host.__version__
-        self.assertEqual(v, "0.8.1a1")
+        self.assertEqual(v, "0.9.0a1")
         self.assertEqual(cloud.VERSION, v)
         self.assertEqual(cloud.AGENT, f"agentjarvis-host/{v}")
         r = _cli("--version")

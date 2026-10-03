@@ -200,7 +200,7 @@ def post_json(url: str, payload: dict, timeout: float = HTTP_TIMEOUT, max_respon
         try:
             parsed = json.loads(raw)
             obj = parsed if isinstance(parsed, dict) else {}
-        except ValueError:
+        except (ValueError, RecursionError):   # a hostile answer nested deeper than the parser goes
             obj = {}
     return status, obj
 
@@ -680,3 +680,122 @@ def plaza_call(st, kind: str, fields: dict, *, post: Callable = post_json, now: 
     if len(json.dumps(env, separators=(",", ":"))) > MAX_ENVELOPE:
         raise CloudError("too_large")
     return post(url, env, max_response=MAX_PLAZA_RESPONSE)
+
+
+# ------------------------------------------------------------------ skill & workflow plaza (protocol/PLAZA_PACKAGES.md §4; jarvis_host/market.py)
+PKG_ROUTES = ("search", "get", "mine", "installed", "like", "report", "publish")
+CTX_PKG = {r: f"agentjarvis-host-plaza-pkg-{r}-v1" for r in PKG_ROUTES}
+MAX_BUNDLE = 2 * 1024 * 1024          # = bundle.MAX_BUNDLE: what a download may be and what an upload may carry
+TRANSFER_TIMEOUT = 60
+_TOKEN = re.compile(r"[A-Za-z0-9_-]{8,400}\.[A-Za-z0-9_-]{8,100}")
+
+
+def plaza_pkg_call(st, route: str, fields: dict, *, post: Callable = post_json, now: Callable = time.time) -> tuple[int, dict]:
+    """One signed `POST /v1/host/plaza/pkg/<route>` (context `agentjarvis-host-plaza-pkg-<route>-v1`, t = `plaza_pkg_<route>`).
+    Same rules as plaza_call: needs the Dashboard link; the answer is whitelisted by the caller and never executed."""
+    if route not in PKG_ROUTES:
+        raise ValueError(route)
+    cloud = read_cloud(st)
+    if not cloud:
+        raise CloudError("unlinked")
+    url = api_url(st, cloud) + f"/v1/host/plaza/pkg/{route}"
+    inner = {"v": 1, "t": f"plaza_pkg_{route}", "channel": channel_of(st), "ts": int(now()), **fields}
+    env = envelope(CTX_PKG[route], inner, st.signing_key())
+    if len(json.dumps(env, separators=(",", ":"))) > MAX_ENVELOPE:
+        raise CloudError("too_large")
+    return post(url, env, max_response=MAX_PLAZA_RESPONSE)
+
+
+def transfer_url(st, url, kind: str) -> str:
+    """A signed download (`dl`) / upload (`up`) URL from a server answer is accepted only when it is exactly
+    `<the configured API origin>/v1/plaza/<kind>/<token>`: same scheme, host and port as the API this host signs to (https;
+    plain http only when that API is itself a loopback test server), no credentials, query or fragment. Else
+    CloudError("refused_url") — a compromised answer cannot make the host fetch from, or upload to, anywhere else."""
+    if kind not in ("dl", "up"):
+        raise ValueError(kind)
+    base = api_url(st, read_cloud(st))
+    if not isinstance(url, str) or not _PRINTABLE_URL.fullmatch(url):
+        raise CloudError("refused_url")
+    u = urllib.parse.urlsplit(url)
+    if u.username or u.password or u.query or u.fragment or _origin(url) != _origin(base):
+        raise CloudError("refused_url")
+    if u.scheme != "https" and not (u.scheme == "http" and (u.hostname or "").lower() in LOOPBACK):
+        raise CloudError("refused_url")
+    prefix = f"/v1/plaza/{kind}/"
+    if not u.path.startswith(prefix) or not _TOKEN.fullmatch(u.path[len(prefix):]):
+        raise CloudError("refused_url")
+    return url
+
+
+def _opener(url: str):
+    handlers: list = [_NoRedirect()]
+    if (urllib.parse.urlsplit(url).hostname or "").lower() in LOOPBACK:
+        handlers.append(urllib.request.ProxyHandler({}))
+    else:
+        handlers.append(urllib.request.HTTPSHandler(context=ssl.create_default_context()))
+    return urllib.request.build_opener(*handlers)
+
+
+def _transport_error(e: Exception) -> CloudError:
+    if isinstance(e, urllib.error.URLError):
+        return CloudError("timeout" if isinstance(e.reason, (socket.timeout, TimeoutError)) else "network")
+    if isinstance(e, (socket.timeout, TimeoutError)):
+        return CloudError("timeout")
+    return CloudError("network")
+
+
+def http_get(url: str, *, max_bytes: int = MAX_BUNDLE, timeout: float = TRANSFER_TIMEOUT) -> tuple[int, bytes]:
+    """Plain GET (TLS verified, no redirects, no proxy for loopback). A body over `max_bytes` → CloudError("too_large")."""
+    req = urllib.request.Request(url, method="GET", headers={"accept": "application/octet-stream", "user-agent": AGENT})
+    try:
+        with _opener(url).open(req, timeout=timeout) as r:
+            status, raw = r.status, r.read(max_bytes + 1)
+    except urllib.error.HTTPError as e:
+        return e.code, b""
+    except (urllib.error.URLError, OSError, http.client.HTTPException, ValueError) as e:
+        raise _transport_error(e) from None
+    if len(raw) > max_bytes:
+        raise CloudError("too_large")
+    return status, raw
+
+
+def http_put(url: str, body: bytes, *, timeout: float = TRANSFER_TIMEOUT) -> tuple[int, dict]:
+    """Plain PUT of a bundle (application/octet-stream). → (status, JSON answer or {})."""
+    req = urllib.request.Request(url, data=body, method="PUT", headers={
+        "content-type": "application/octet-stream", "accept": "application/json", "user-agent": AGENT})
+    try:
+        with _opener(url).open(req, timeout=timeout) as r:
+            status, raw = r.status, r.read(MAX_RESPONSE + 1)
+    except urllib.error.HTTPError as e:
+        status = e.code
+        try:
+            raw = e.read(MAX_RESPONSE + 1)
+        except Exception:
+            raw = b""
+    except (urllib.error.URLError, OSError, http.client.HTTPException, ValueError) as e:
+        raise _transport_error(e) from None
+    obj: dict = {}
+    if raw and len(raw) <= MAX_RESPONSE:
+        try:
+            parsed = json.loads(raw)
+            obj = parsed if isinstance(parsed, dict) else {}
+        except (ValueError, RecursionError):
+            obj = {}
+    return status, obj
+
+
+def plaza_download(st, url, *, get: Callable = http_get) -> tuple[int, bytes]:
+    """GET a signed download URL (transfer_url-checked) → (status, bundle bytes ≤ 2 MiB)."""
+    url = transfer_url(st, url, "dl")
+    status, raw = get(url, max_bytes=MAX_BUNDLE, timeout=TRANSFER_TIMEOUT)
+    if not isinstance(raw, (bytes, bytearray)) or len(raw) > MAX_BUNDLE:
+        raise CloudError("too_large")
+    return status, bytes(raw)
+
+
+def plaza_upload(st, url, body: bytes, *, put: Callable = http_put) -> tuple[int, dict]:
+    """PUT a bundle (≤ 2 MiB) to a signed upload URL (transfer_url-checked)."""
+    url = transfer_url(st, url, "up")
+    if len(body) > MAX_BUNDLE:
+        raise CloudError("too_large")
+    return put(url, body, timeout=TRANSFER_TIMEOUT)

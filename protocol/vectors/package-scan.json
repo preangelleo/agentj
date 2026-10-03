@@ -1,0 +1,73 @@
+{
+ "note": "package-mode secret scan (PLAZA_PACKAGES.md §1): `hit` = the text must be refused. Server worker/src/scan.ts scanPackageText and host market.package_scan must agree on every case.",
+ "cases": [
+  {
+   "text": "pwd = app_password or env_value(pk, env_file)",
+   "hit": false
+  },
+  {
+   "text": "app_password: Optional[str] = None,",
+   "hit": false
+  },
+  {
+   "text": "return build(\"youtube\", \"v3\", credentials=creds(a), cache_discovery=False)",
+   "hit": false
+  },
+  {
+   "text": "`DATABASE_URL=postgresql://user:密码@…` 会把密码直接带出来",
+   "hit": false
+  },
+  {
+   "text": "envf.write_text(\"CLOUDFLARE_API_TOKEN=t\\nCLOUDFLARE_ACCOUNT_ID=a\\n\")",
+   "hit": false
+  },
+  {
+   "text": "(ws / \".env\").write_text(\"OPENROUTER_API_KEY=ws-key\\nSINIFY_MODEL=deepseek/deepseek-v4-pro-0813\\n\")",
+   "hit": false
+  },
+  {
+   "text": "extra.write_text(\"export OPENROUTER_API_KEY='file-key'\\n\")",
+   "hit": false
+  },
+  {
+   "text": "TELEGRAM_BOT_TOKEN=<BotFather 给的 token>",
+   "hit": false
+  },
+  {
+   "text": "password = self.config.smtp.password",
+   "hit": false
+  },
+  {
+   "text": "token=YOUR_TOKEN_HERE",
+   "hit": false
+  },
+  {
+   "text": "api_key = 'example-key-1234567890'",
+   "hit": false
+  },
+  {
+   "text": "password = 'Hunter2Hunter2Hunter2'",
+   "hit": true
+  },
+  {
+   "text": "API_TOKEN=Xq7pL2vR9sT4wY8zK3mN",
+   "hit": true
+  },
+  {
+   "text": "postgresql://admin:S3cr3tPassw0rdX@db.example.com/x",
+   "hit": true
+  },
+  {
+   "text": "key = sk-proj-abcdefghijklmnopqrstuvwxyz012345",
+   "hit": true
+  },
+  {
+   "text": "contact me at alex.real.person@mailbox.org",
+   "hit": true
+  },
+  {
+   "text": "aGVsbG8gd29ybGQgdGhpcyBpcyBhIHRlc3QgUXo5WjdKMmtM8x",
+   "hit": true
+  }
+ ]
+}

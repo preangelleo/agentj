@@ -1,0 +1,126 @@
+{
+ "note": "Bundle rules added after the PROMPT-28 security review (PLAZA_PACKAGES.md §1). Server bundle.ts and host bundle.py must agree on every case: `ok:false` = the bundle is refused (reason given).",
+ "forbidden_paths_rule": "case-insensitive, at any depth: a file named .mcp.json, .envrc, opencode.json, opencode.jsonc; .claude/settings.json or .claude/settings.local.json; .codex/config.toml or .codex/hooks.json; anything under a .vscode/, .idea/, .devcontainer/, .husky/, .cursor/, .gemini/, .opencode/ or .codex/ directory (the installer generates .codex/agents itself). Reason: agent / IDE configuration that runs commands by itself (hooks, MCP servers, tasks, plugins).",
+ "hidden_characters_rule": "refused in every file that decodes as UTF-8 and in every manifest string: U+061C, U+180E, U+200B, U+200E, U+200F, U+202A–U+202E, U+2060–U+2064, U+2066–U+2069, U+FFF9–U+FFFB, U+E0000–U+E007F, and U+FEFF anywhere but the first character of a file. U+200C / U+200D (ZWNJ / ZWJ: scripts, emoji) stay allowed. Reason: instructions the Owner and the reviewer cannot see.",
+ "depth_rule": "manifest JSON nesting deeper than 32 (an object or array inside 32 others) → refused.",
+ "paths": [
+  {
+   "path": "scaffold/.claude/settings.json",
+   "ok": false
+  },
+  {
+   "path": "scaffold/.claude/Settings.Local.json",
+   "ok": false
+  },
+  {
+   "path": ".mcp.json",
+   "ok": false
+  },
+  {
+   "path": "scaffold/.MCP.json",
+   "ok": false
+  },
+  {
+   "path": "scaffold/.envrc",
+   "ok": false
+  },
+  {
+   "path": "scaffold/opencode.json",
+   "ok": false
+  },
+  {
+   "path": "scaffold/.opencode/plugin/x.ts",
+   "ok": false
+  },
+  {
+   "path": "scaffold/.codex/config.toml",
+   "ok": false
+  },
+  {
+   "path": "scaffold/.codex/agents/writer.toml",
+   "ok": false
+  },
+  {
+   "path": "scaffold/.vscode/tasks.json",
+   "ok": false
+  },
+  {
+   "path": ".idea/workspace.xml",
+   "ok": false
+  },
+  {
+   "path": "scaffold/.devcontainer/devcontainer.json",
+   "ok": false
+  },
+  {
+   "path": "scaffold/.husky/pre-commit",
+   "ok": false
+  },
+  {
+   "path": "scaffold/.cursor/mcp.json",
+   "ok": false
+  },
+  {
+   "path": "scaffold/.gemini/settings.json",
+   "ok": false
+  },
+  {
+   "path": "scaffold/.claude/agents/writer.md",
+   "ok": true
+  },
+  {
+   "path": "scaffold/.claude/skills/start-session/SKILL.md",
+   "ok": true
+  },
+  {
+   "path": "scaffold/.claude/commands/go.md",
+   "ok": true
+  },
+  {
+   "path": "scaffold/.gitignore",
+   "ok": true
+  },
+  {
+   "path": "docs/vscode-tips.md",
+   "ok": true
+  }
+ ],
+ "texts": [
+  {
+   "text": "plain text 中文 ok",
+   "ok": true
+  },
+  {
+   "text": "﻿BOM at the start is fine",
+   "ok": true
+  },
+  {
+   "text": "emoji 👨‍👩‍👧 and ZWNJ ‌ fine",
+   "ok": true
+  },
+  {
+   "text": "hidden​zero width space",
+   "ok": false
+  },
+  {
+   "text": "trojan ‮ source",
+   "ok": false
+  },
+  {
+   "text": "isolate ⁦x⁩",
+   "ok": false
+  },
+  {
+   "text": "tag chars 󠁩󠁧󠁮",
+   "ok": false
+  },
+  {
+   "text": "late BOM x﻿y",
+   "ok": false
+  },
+  {
+   "text": "word⁠joiner",
+   "ok": false
+  }
+ ]
+}

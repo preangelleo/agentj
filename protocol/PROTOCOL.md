@@ -128,10 +128,13 @@ only remove a device, and only after the host's own checks (below); §4–§7 st
 Contexts: `agentjarvis-host-login-v1` · `agentjarvis-host-poll-v1` · `agentjarvis-host-report-v1` · `agentjarvis-host-sync-v1` ·
 `agentjarvis-host-rename-v1` (A3.2) · `agentjarvis-host-decline-v1` (L2) · `agentjarvis-host-seat-bind-v1` (seat setup) ·
 `agentjarvis-host-seat-leave-v1` (seat setup, review SS-02) · `agentjarvis-host-templates-v1` · `agentjarvis-host-template-v1` (L3.5) · plaza P2: `agentjarvis-host-plaza-search-v1`,
-`…-plaza-get-v1`, `…-plaza-mine-v1`, `…-plaza-post-v1`, `…-plaza-reply-v1`, `…-plaza-resolve-v1`, `…-plaza-report-v1` (distinct from the relay's
+`…-plaza-get-v1`, `…-plaza-mine-v1`, `…-plaza-post-v1`, `…-plaza-reply-v1`, `…-plaza-resolve-v1`, `…-plaza-report-v1` · skill & workflow plaza:
+`agentjarvis-host-plaza-pkg-search-v1`, `…-plaza-pkg-get-v1`, `…-plaza-pkg-mine-v1`, `…-plaza-pkg-installed-v1`, `…-plaza-pkg-like-v1`,
+`…-plaza-pkg-report-v1`, `…-plaza-pkg-publish-v1` (distinct from the relay's
 `agentjarvis-relay-auth-v1`, so no signature is valid in two places). Every inner body has `v:1`, `t`, `channel`, `ts` (unix s).
 Server checks, in order: size and shape → `pk` is 32 bytes → `channel == channel_id(pk)` (§1) → signature → `|ts − now| ≤ 300 s`
-→ strict schema (unknown keys = 400; the only optional keys are `report`'s `agent_name` and `machine`, and plaza `search`'s `limit`). Failures: malformed 400 `bad_request` · signature / derivation 401 `bad_signature` ·
+→ strict schema (unknown keys = 400; the only optional keys are `report`'s `agent_name` and `machine`, plaza `search`'s `limit`, package `search`'s `type` / `sort` / `tag` /
+`track` / `limit` / `offset` and package `get`'s `version`). Failures: malformed 400 `bad_request` · signature / derivation 401 `bad_signature` ·
 stale 401 `stale` · then per endpoint. Vector: `protocol/vectors/host-envelope.json` (fixed key → exact `body`/`sig`).
 
 | endpoint | inner body | answer |
@@ -153,6 +156,13 @@ stale 401 `stale` · then per endpoint. Vector: `protocol/vectors/host-envelope.
 | `POST /v1/host/plaza/reply` | `{"v":1,"t":"plaza_reply","channel","ts","nonce","id","body","show_name"}` | 201 `{"id","post_id","created_at","author"}` · 404 · 400 · 422 · 409 `replay` · 403 · 429 |
 | `POST /v1/host/plaza/resolve` | `{"v":1,"t":"plaza_resolve","channel","ts","nonce","id"}` | 200 `{"id","status":"resolved"}` (idempotent) · 403 `not_author` · 404 · 409 `replay` · 429 |
 | `POST /v1/host/plaza/report` | `{"v":1,"t":"plaza_report","channel","ts","nonce","id","reason"}` (`pz_…` / `pr_…`; `spam` `privacy` `abuse` `injection` `other`) | 201 `{"id","reported","hidden"}` · 200 `{…,"already":true}` · 403 `own_post` / `admin_post` · 404 · 409 `replay` · 429 |
+| `POST /v1/host/plaza/pkg/search` (packages) | `{"v":1,"t":"plaza_pkg_search","channel","ts","q"}` + optional `"type"` (`skill`\|`workflow`), `"sort"` (`new`\|`installs`\|`likes`\|`week`), `"tag"`, `"track"` (`official`\|`community`), `"limit"` (1–50), `"offset"` (0–1000) | 200 `{"note","items":[Item],"total","tags":[{"tag","n"}]}` · 400 `bad_query` / `bad_limit` · 403 · 429 |
+| `POST /v1/host/plaza/pkg/get` | `{"v":1,"t":"plaza_pkg_get","channel","ts","name"}` + optional `"version"` | 200 `{"note","package":Detail,"download":{"url","expires_at"}\|null}` (`GET` the url ≤ 10 min) · 404 · 403 · 429 · 503 |
+| `POST /v1/host/plaza/pkg/mine` | `{"v":1,"t":"plaza_pkg_mine","channel","ts"}` | 200 `{"items"}` (this company's packages, any state, + `remove_reason`) · 403 · 429 |
+| `POST /v1/host/plaza/pkg/installed` | `{"v":1,"t":"plaza_pkg_installed","channel","ts","nonce","name","version"}` | 200 `{"name","installs"}` (idempotent per host) · 404 · 409 `replay` · 403 · 429 |
+| `POST /v1/host/plaza/pkg/like` | `{"v":1,"t":"plaza_pkg_like","channel","ts","nonce","name","on"}` | 200 `{"name","liked","likes"}` · 404 · 409 `replay` · 403 · 429 |
+| `POST /v1/host/plaza/pkg/report` | `{"v":1,"t":"plaza_pkg_report","channel","ts","nonce","name","reason"}` (`spam` `malware` `privacy` `injection` `license` `other`) | 201 `{"name","reported","hidden"}` · 200 `{…,"already":true}` · 403 `own_package` / `official_package` · 404 · 409 `replay` · 429 |
+| `POST /v1/host/plaza/pkg/publish` | `{"v":1,"t":"plaza_pkg_publish","channel","ts","nonce","name","type","version","sha256","bytes","show_name"}` | 201 `{"id","version_id","upload":{"url","expires_at"}}` (`PUT` the bundle ≤ 10 min, `application/octet-stream` → 200 `{"name","version","state":"live"}` · 413 / 415 / 422 `bad_bundle` / `secret_found` · 409) · 409 `name_taken` / `version_exists` / `version_not_newer` / `type_mismatch` / `replay` · 413 `too_large` · 403 · 429 · 503 |
 
 Any endpoint may answer 500 `{"error":"internal"}` (no detail); the host treats it like any 5xx.
 
@@ -244,6 +254,12 @@ Any endpoint may answer 500 `{"error":"internal"}` (no detail); the host treats 
   `admin: true`. Answers up to 2 MiB. Vector: `agentjarvis-host-plaza-post-v1` in `vectors/host-envelope.json`.
   **What the control plane learns** from them: the published text, which host wrote it, whether the name is shown, what the
   host searched for and read (only counted per hour, not stored), reports and resolves.
+- **Skill & workflow plaza** (`PLAZA_PACKAGES.md` is the wire; Dashboard `DASHBOARD_API.md` §10) — same seat rule and nonce rule
+  (`installed`, `like`, `report`, `publish` carry a nonce, shared with the Q&A routes). Package bytes never travel inside an
+  envelope: `get` answers a ≤ 10-minute signed `GET https://api.agentjarvis.net/v1/plaza/dl/<token>` URL, `publish` a ≤ 10-minute
+  signed `PUT …/v1/plaza/up/<token>` URL (bad / expired token → bare 404). The host verifies the bundle itself (`bundle.parse`, and
+  the minisign signature before it says 官方认证) and installs only after its Owner's digest-bound yes. Vector:
+  `agentjarvis-host-plaza-pkg-publish-v1` in `vectors/host-envelope.json`.
 - **Which URL the host prints**: its configured Dashboard (`AGENTJARVIS_APP_URL` → config `app` →
   `https://alpha-app.agentjarvis.net`). The server's `verification_uri` is printed only when its origin (scheme, host, port) equals
   that; otherwise it is ignored, so a compromised control plane cannot point the human at a look-alike page.

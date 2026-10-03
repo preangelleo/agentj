@@ -102,7 +102,7 @@ class Versions(unittest.TestCase):
             self.assertIsNone(update.compare(bad, "0.8.0"))
 
     def test_version_is_this_round(self):
-        self.assertEqual(jarvis_host.__version__, "0.8.1a1")
+        self.assertEqual(jarvis_host.__version__, "0.9.0a1")
 
 
 class Fetch(unittest.TestCase):

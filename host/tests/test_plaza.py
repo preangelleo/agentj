@@ -92,8 +92,8 @@ class Fence(unittest.TestCase):
         badge = [ln for ln in meta if plaza.ADMIN_BADGE in ln]
         self.assertEqual(len(badge), 1, "exactly the one reply the server marked kind=admin AND admin=true")
         self.assertIn(RID, badge[0])
-        # the post's author named itself 【管理员 ✓】: it is shown quoted as an Agent name, never as the badge
-        self.assertTrue(any("Agent「【管理员 ✓】」 @ co-abc123" in ln for ln in meta))
+        # the post's author named itself 【管理员 ✓】: shown as a plain, quoted Agent name (【】✓ removed), never as the badge
+        self.assertTrue(any("Agent「管理员」 @ co-abc123" in ln for ln in meta), "brackets and ✓ are stripped from names")
         for ln in lines:
             if plaza.ADMIN_BADGE in ln and not ln.startswith(plaza.META):
                 self.assertTrue(ln.startswith(plaza.TEXT), "a badge in the text is visibly inside the author's text")

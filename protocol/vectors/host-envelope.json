@@ -79,6 +79,27 @@
     "body": "eyJ2IjoxLCJ0IjoicGxhemFfcG9zdCIsImNoYW5uZWwiOiJvZE9Ma2F1U3lqSHdmNlZXYVdfaUt3IiwidHMiOjE3OTAwMDAwMDAsIm5vbmNlIjoiQUFBQUFBQUFBQUFBQUFBQUFBQUFBQSIsInRpdGxlIjoiamFydmlzIHNlcnZlIOaKpemUmSBFQUREUklOVVNFIiwiYm9keSI6Iuerr-WPo-iiq-WNoOeUqO-8jOaAjuS5iOWKnu-8n1xu56ys5LqM6KGMIiwic2hvd19uYW1lIjpmYWxzZX0",
     "sig": "cDrCCirK0I-2lq92NBKQUaJTfcwTkjnz2mUN9Ttf8Q6r5DLynu2GMrUIwe8Gt-7TWgTfrScLkgKJN1gOOViwBg"
    }
+  },
+  {
+   "context": "agentjarvis-host-plaza-pkg-publish-v1",
+   "inner": {
+    "v": 1,
+    "t": "plaza_pkg_publish",
+    "channel": "odOLkauSyjHwf6VWaW_iKw",
+    "ts": 1790000000,
+    "nonce": "AQEBAQEBAQEBAQEBAQEBAQ",
+    "name": "demo-skill",
+    "type": "skill",
+    "version": "1.0.0",
+    "sha256": "b54922eba1f9921fbb7c266153b087ec9c046b3278c47d8234fb367010da02c9",
+    "bytes": 1234,
+    "show_name": false
+   },
+   "envelope": {
+    "pk": "A6EHv_POEL4dcN0Y50vAmWfk1jCbpQ1fHdyGZBJVMbg",
+    "body": "eyJ2IjoxLCJ0IjoicGxhemFfcGtnX3B1Ymxpc2giLCJjaGFubmVsIjoib2RPTGthdVN5akh3ZjZWV2FXX2lLdyIsInRzIjoxNzkwMDAwMDAwLCJub25jZSI6IkFRRUJBUUVCQVFFQkFRRUJBUUVCQVEiLCJuYW1lIjoiZGVtby1za2lsbCIsInR5cGUiOiJza2lsbCIsInZlcnNpb24iOiIxLjAuMCIsInNoYTI1NiI6ImI1NDkyMmViYTFmOTkyMWZiYjdjMjY2MTUzYjA4N2VjOWMwNDZiMzI3OGM0N2Q4MjM0ZmIzNjcwMTBkYTAyYzkiLCJieXRlcyI6MTIzNCwic2hvd19uYW1lIjpmYWxzZX0",
+    "sig": "pcZfdBQRDmE6QpXZBPaiJQj89hZGd-iE21PIjLXbXaPf0TIv6UVDKdYORlV9jGfIiawR6Pa_3b6-tHrQmZNCBA"
+   }
   }
  ]
 }
