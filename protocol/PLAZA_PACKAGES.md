@@ -22,7 +22,7 @@
 - **Publish only after both privacy layers and the Owner's yes**: layer 1 (deterministic; any hit refuses — we never silently
   rewrite code) + layer 2 (Jev on the customer's machine) → exact file list + digest → `--owner-confirmed --digest`.
 - **Official = signed.** A package is shown as 官方认证 / certified by the host **only** if its bundle carries a valid minisign
-  signature by a key compiled into `jarvis` (`host/jarvis_host/minisign.py` `TRUSTED_KEYS`). The server's `certified` flag alone
+  signature by a key compiled into `jarvis` (`host/jarvis_host/minisign.py` `TRUSTED_SIGNERS`). The server's `certified` flag alone
   never makes the host say "certified"; a certified-flagged package without a valid signature is refused (it is either tampered
   or a server bug). Community packages are labelled 未认证 / unverified everywhere and need `--accept-unverified` to install.
 - **PR1**: package bytes are public-to-customers text a customer chose to publish (third deliberate plaintext channel, after
@@ -71,7 +71,7 @@
   plaza key (secret key file mode 600 on the admin's machine only, never uploaded; public key id
   `B79F925B0585F9D4`, `RWTU+YUFW5KftwwG/MQxB1V0OEpzftjDN8udv1Id9oYK9+OUanc2uyb5`, compiled into the host).
 - **Trusted comment** (exact): `agentjarvis-plaza/v1 name=<name> version=<version> type=<type> sha256=<bundle sha256 hex>`.
-  The host verifies the signature, the global signature over the trusted comment, the key id ∈ `TRUSTED_KEYS`, and that all four
+  The host verifies the signature, the global signature over the trusted comment, the key id ∈ `TRUSTED_SIGNERS`, and that all four
   fields equal the manifest's and the bundle's. Any mismatch → refuse (exit 5, nothing written). The same exit 5 for a package
   the server flags official / certified that carries no signature, and for any served signature that does not verify.
 - The `.minisig` text (≤ 1 KiB) is stored with the version row and served with it; the server never holds the secret key.
@@ -108,11 +108,11 @@ liked, state, author:{kind: official|agent|staff, company?: "co-xxxxxx", agent_n
 (object, workflow), files:[{path, bytes}], license, upstream, sha256, bytes, signature (minisig text|null), versions:[{version,
 created_at}]}` — all from the stored manifest of that version; every string cleaned (§9 text rules) on the way in.
 
-**Download** `GET https://api.agentjarvis.net/v1/plaza/dl/<token>`: token = `b64u(JSON{v:1,vid,exp})` + `.` + `b64u(HMAC-SHA256(
+**Download** `GET https://api.agentjarvis.net/v1/plaza/dl/<url part>`: the URL part = `b64u(JSON{v:1,vid,exp})` + `.` + `b64u(HMAC-SHA256(
 PLAZA_URL_KEY, "agentjarvis/plaza/dl/v1\n" + first part))`, valid ≤ 10 min; the package must still be visible and the version
 live (else 404). 200 `application/octet-stream`, `cache-control: private, no-store`, body = the bundle. Bad / expired → bare 404.
 
-**Upload** `PUT https://api.agentjarvis.net/v1/plaza/up/<token>` (same token shape, context `…/up/v1`, payload `{v:1,vid,exp}`,
+**Upload** `PUT https://api.agentjarvis.net/v1/plaza/up/<url part>` (same URL-part shape, context `…/up/v1`, payload `{v:1,vid,exp}`,
 ≤ 10 min, the version must be `uploading`): body = the bundle (`content-type: application/octet-stream`, ≤ 2 MiB). The server checks
 sha256 + length = the publish request's, parses it (§1), checks name / type / version = the request's, `certified` absent or false,
 then cleans + secret-scans (`worker/src/scan.ts`) every text field of the manifest and **every file that decodes as UTF-8** — a hit
@@ -260,7 +260,7 @@ Everything above holds; these fill gaps or tighten it (the host and the page rel
   sandbox, no launchd jobs / Apple Events / LaunchServices; the probe also checks that the home is unreadable inside. Other
   systems → no sandbox. 60 s timeout, process group killed.
 - **Against a compromised server** (beyond §2; checked at preview and confirm): a package whose `name` or
-  `install.skill_dir_name` matches the reserved namespace (§9) without a valid signature by a `TRUSTED_KEYS` key → exit 5; a
+  `install.skill_dir_name` matches the reserved namespace (§9) without a valid signature by a `TRUSTED_SIGNERS` key → exit 5; a
   package `installed.json` records as installed signed/official, now offered without a valid signature → exit 5; a version lower
   (SemVer precedence) than the highest one `installed.json` records for that name → refused unless `--version` named it
   explicitly (then the preview says 降级 DOWNGRADE). Out of scope for now: revocation lists (a signed but withdrawn version, a

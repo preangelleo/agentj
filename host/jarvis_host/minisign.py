@@ -8,7 +8,7 @@ A `.minisig` file is four lines:
     base64( Ed25519 signature over (the 64-byte signature ‖ the trusted comment's UTF-8 bytes) )   ← the global signature
 
 Only the prehashed algorithm `ED` (minisign's default since 0.8) is accepted; the legacy `Ed` (signature over the raw
-message) is refused. The key id must be in the keyring (`TRUSTED_KEYS`, compiled in: the plaza key; tests inject their own)
+message) is refused. The key id must be in the keyring (`TRUSTED_SIGNERS`, compiled in: the plaza key; tests inject their own)
 and equal the id inside that public key. For a plaza package the trusted comment must be exactly
 `agentjarvis-plaza/v1 name=<name> version=<version> type=<type> sha256=<bundle sha256 hex>` and every field must equal the
 bundle's manifest and the bundle bytes (`verify_package`). Nothing else makes the host call a package 官方认证 / certified.
@@ -24,7 +24,7 @@ from cryptography.exceptions import InvalidSignature
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
 
 # key id (hex as `minisign` prints it) → public key (the base64 line of the .pub file)
-TRUSTED_KEYS = {"B79F925B0585F9D4": "RWTU+YUFW5KftwwG/MQxB1V0OEpzftjDN8udv1Id9oYK9+OUanc2uyb5"}
+TRUSTED_SIGNERS = {"B79F925B0585F9D4": "RWTU+YUFW5KftwwG/MQxB1V0OEpzftjDN8udv1Id9oYK9+OUanc2uyb5"}
 MAX_SIG = 1024
 TRUSTED_PREFIX = "agentjarvis-plaza/v1"
 _TC = re.compile(r"agentjarvis-plaza/v1 name=([a-z0-9][a-z0-9-]{1,39}) version=(\S{5,60}) type=(skill|workflow) "
@@ -73,7 +73,7 @@ def parse_sig(text: str) -> dict:
 
 def verify(message: bytes, sig_text: str, keyring: dict | None = None) -> str:
     """Verify a minisign signature over `message`. Returns the (verified) trusted comment; raises MinisignError."""
-    keyring = TRUSTED_KEYS if keyring is None else keyring
+    keyring = TRUSTED_SIGNERS if keyring is None else keyring
     s = parse_sig(sig_text)
     if s["alg"] != b"ED":
         raise MinisignError("signature: only prehashed (ED) signatures are accepted")

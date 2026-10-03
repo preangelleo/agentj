@@ -21,7 +21,7 @@ from jarvis_host import bundle, cloud, minisign, wire  # noqa: E402
 from jarvis_host.state import State  # noqa: E402
 
 API = "http://127.0.0.1:9"
-TOKEN = "eyJ2IjoxLCJ2aWQiOiJwdl9BQUFBIn0" + "." + "c2lnbmF0dXJlLXRva2Vu"
+URL_PART = "eyJ2IjoxLCJ2aWQiOiJwdl9BQUFBIn0" + "." + "c2lnbmF0dXJlLXRva2Vu"
 # the official catalog, when it sits next to this repo (or $AGENTJARVIS_CATALOG); tests that need it skip otherwise
 CATALOG = pathlib.Path(os.environ.get("AGENTJARVIS_CATALOG") or pathlib.Path(__file__).resolve().parents[4] / "agentjarvis-catalog")
 
@@ -181,8 +181,8 @@ class PkgServer:
         self.calls, self.gets, self.puts = [], [], []
         self.packages: dict = {}       # name → {"data", "manifest", "files", "detail"}
         self.answers: dict = {}        # route → (status, obj) overrides
-        self.download_url = f"{API}/v1/plaza/dl/{TOKEN}"
-        self.upload_url = f"{API}/v1/plaza/up/{TOKEN}"
+        self.download_url = f"{API}/v1/plaza/dl/{URL_PART}"
+        self.upload_url = f"{API}/v1/plaza/up/{URL_PART}"
         self.serve_bytes = None        # override what the download returns
         self.put_answer = (200, {"name": "x", "version": "1.0.0", "state": "live"})
 

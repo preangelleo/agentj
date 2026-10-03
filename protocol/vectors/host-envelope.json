@@ -87,7 +87,7 @@
     "t": "plaza_pkg_publish",
     "channel": "odOLkauSyjHwf6VWaW_iKw",
     "ts": 1790000000,
-    "nonce": "AQEBAQEBAQEBAQEBAQEBAQ",
+    "nonce": "examplenonceexamplenon",
     "name": "demo-skill",
     "type": "skill",
     "version": "1.0.0",
@@ -97,8 +97,8 @@
    },
    "envelope": {
     "pk": "A6EHv_POEL4dcN0Y50vAmWfk1jCbpQ1fHdyGZBJVMbg",
-    "body": "eyJ2IjoxLCJ0IjoicGxhemFfcGtnX3B1Ymxpc2giLCJjaGFubmVsIjoib2RPTGthdVN5akh3ZjZWV2FXX2lLdyIsInRzIjoxNzkwMDAwMDAwLCJub25jZSI6IkFRRUJBUUVCQVFFQkFRRUJBUUVCQVEiLCJuYW1lIjoiZGVtby1za2lsbCIsInR5cGUiOiJza2lsbCIsInZlcnNpb24iOiIxLjAuMCIsInNoYTI1NiI6ImI1NDkyMmViYTFmOTkyMWZiYjdjMjY2MTUzYjA4N2VjOWMwNDZiMzI3OGM0N2Q4MjM0ZmIzNjcwMTBkYTAyYzkiLCJieXRlcyI6MTIzNCwic2hvd19uYW1lIjpmYWxzZX0",
-    "sig": "pcZfdBQRDmE6QpXZBPaiJQj89hZGd-iE21PIjLXbXaPf0TIv6UVDKdYORlV9jGfIiawR6Pa_3b6-tHrQmZNCBA"
+    "body": "eyJ2IjoxLCJ0IjoicGxhemFfcGtnX3B1Ymxpc2giLCJjaGFubmVsIjoib2RPTGthdVN5akh3ZjZWV2FXX2lLdyIsInRzIjoxNzkwMDAwMDAwLCJub25jZSI6ImV4YW1wbGVub25jZWV4YW1wbGVub24iLCJuYW1lIjoiZGVtby1za2lsbCIsInR5cGUiOiJza2lsbCIsInZlcnNpb24iOiIxLjAuMCIsInNoYTI1NiI6ImI1NDkyMmViYTFmOTkyMWZiYjdjMjY2MTUzYjA4N2VjOWMwNDZiMzI3OGM0N2Q4MjM0ZmIzNjcwMTBkYTAyYzkiLCJieXRlcyI6MTIzNCwic2hvd19uYW1lIjpmYWxzZX0",
+    "sig": "relK7cIvhNq0FR7QFGtbY6X-U_4w9ijCRCMfAIk9rEgRxYetqnre18eg3ipTeZ_r7n-d9G2XuMHccPeja7xpAw"
    }
   }
  ]

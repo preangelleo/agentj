@@ -46,8 +46,8 @@ class Vector(unittest.TestCase):
             minisign.verify(self.msg, VEC["minisig"])
 
     def test_compiled_key(self):
-        self.assertEqual(list(minisign.TRUSTED_KEYS), ["B79F925B0585F9D4"])
-        kid, pk = minisign.parse_pubkey(minisign.TRUSTED_KEYS["B79F925B0585F9D4"])
+        self.assertEqual(list(minisign.TRUSTED_SIGNERS), ["B79F925B0585F9D4"])
+        kid, pk = minisign.parse_pubkey(minisign.TRUSTED_SIGNERS["B79F925B0585F9D4"])
         self.assertEqual((kid, len(pk)), ("B79F925B0585F9D4", 32))
 
     def test_malformed(self):

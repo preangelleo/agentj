@@ -214,14 +214,14 @@ class InstallSkill(Base):
 
     def test_download_url_and_bytes_checked(self):
         self.add_skill()
-        for url in ("https://evil.example/v1/plaza/dl/" + fx.TOKEN, "http://127.0.0.1:10/v1/plaza/dl/" + fx.TOKEN,
-                    f"{fx.API}/v1/plaza/up/{fx.TOKEN}", f"{fx.API}/v1/plaza/dl/{fx.TOKEN}?x=1", f"{fx.API}/v1/plaza/dl/../../x",
+        for url in ("https://evil.example/v1/plaza/dl/" + fx.URL_PART, "http://127.0.0.1:10/v1/plaza/dl/" + fx.URL_PART,
+                    f"{fx.API}/v1/plaza/up/{fx.URL_PART}", f"{fx.API}/v1/plaza/dl/{fx.URL_PART}?x=1", f"{fx.API}/v1/plaza/dl/../../x",
                     "file:///etc/passwd", None):
             with self.subTest(url):
                 self.srv.download_url = url
                 with self.assertRaisesRegex(plaza.PlazaError, "download"):
                     self.install()
-        self.srv.download_url = f"{fx.API}/v1/plaza/dl/{fx.TOKEN}"
+        self.srv.download_url = f"{fx.API}/v1/plaza/dl/{fx.URL_PART}"
         data, _ = self.add_skill(manifest={"summary_en": "other"})
         self.srv.serve_bytes = data[:-1] + b"\x00"
         self.srv.packages["demo-skill"]["detail"]["sha256"] = bundle.sha256(b"something else")
@@ -232,11 +232,11 @@ class InstallSkill(Base):
     def test_https_api_requires_https_transfer(self):
         cloud.write_cloud(self.e.st, {"api": "https://api.agentjarvis.net", "host_id": "h_1", "tenant": {"slug": "acme-co", "name": "A"},
                                       "linked_at": 1, "last_seq": 0})
-        ok = "https://api.agentjarvis.net/v1/plaza/dl/" + fx.TOKEN
+        ok = "https://api.agentjarvis.net/v1/plaza/dl/" + fx.URL_PART
         self.assertEqual(cloud.transfer_url(self.e.st, ok, "dl"), ok)
-        for bad in ("http://api.agentjarvis.net/v1/plaza/dl/" + fx.TOKEN, "https://api.agentjarvis.net:8443/v1/plaza/dl/" + fx.TOKEN,
-                    "https://user@api.agentjarvis.net/v1/plaza/dl/" + fx.TOKEN, "https://api.agentjarvis.net.evil.example/v1/plaza/dl/" + fx.TOKEN,
-                    "https://alpha-app.agentjarvis.net/v1/plaza/dl/" + fx.TOKEN):
+        for bad in ("http://api.agentjarvis.net/v1/plaza/dl/" + fx.URL_PART, "https://api.agentjarvis.net:8443/v1/plaza/dl/" + fx.URL_PART,
+                    "https://user@api.agentjarvis.net/v1/plaza/dl/" + fx.URL_PART, "https://api.agentjarvis.net.evil.example/v1/plaza/dl/" + fx.URL_PART,
+                    "https://alpha-app.agentjarvis.net/v1/plaza/dl/" + fx.URL_PART):
             with self.subTest(bad), self.assertRaises(cloud.CloudError):
                 cloud.transfer_url(self.e.st, bad, "dl")
         got = []
@@ -311,7 +311,7 @@ class Signature(Base):
         key = fx.TestKey()
         self.add_skill(key=key, track="official", certified=True)
         rc, _ = self.install()
-        self.assertEqual(rc, market.EXIT_SIGNATURE, "a test key is not in TRUSTED_KEYS")
+        self.assertEqual(rc, market.EXIT_SIGNATURE, "a test key is not in TRUSTED_SIGNERS")
 
 
 class InstallWorkflow(Base):
@@ -488,11 +488,11 @@ class Publish(Base):
     def test_upload_url_and_server_scan(self):
         _, out = self.pub()
         d = digest_of(out)
-        self.srv.upload_url = "https://evil.example/v1/plaza/up/" + fx.TOKEN
+        self.srv.upload_url = "https://evil.example/v1/plaza/up/" + fx.URL_PART
         with self.assertRaisesRegex(plaza.PlazaError, "not uploaded"):
             self.pub(owner_confirmed=True, digest=d)
         self.assertEqual(self.srv.puts, [])
-        self.srv.upload_url = f"{fx.API}/v1/plaza/up/{fx.TOKEN}"
+        self.srv.upload_url = f"{fx.API}/v1/plaza/up/{fx.URL_PART}"
         self.srv.put_answer = (422, {"error": "secret_found", "path": "scripts/demo.py", "kind": "aws_key"})
         with self.assertRaisesRegex(plaza.PlazaError, "scripts/demo.py: aws_key"):
             self.pub(owner_confirmed=True, digest=d)

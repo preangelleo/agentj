@@ -11,7 +11,7 @@ told so; `--skip-verify` skips it deliberately. `install.post_install` is shown,
 Beyond the signature: a reserved (official-looking) name needs a valid official signature; an unsigned copy of a package
 installed signed, and an older version than the installed one (without an explicit --version), are refused.
 
-官方认证 / certified only when the bundle's minisign signature verifies with a key compiled into jarvis (minisign.TRUSTED_KEYS)
+官方认证 / certified only when the bundle's minisign signature verifies with a key compiled into jarvis (minisign.TRUSTED_SIGNERS)
 and its trusted comment names this exact name / version / type / bundle SHA-256. The server's `certified` / `official` flag
 alone never earns the badge; a package the server flags certified whose signature does not verify is refused (exit 5).
 Community packages are 未认证 / unverified and need `--accept-unverified` at confirm time.

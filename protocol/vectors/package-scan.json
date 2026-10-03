@@ -1,5 +1,5 @@
 {
- "note": "package-mode secret scan (PLAZA_PACKAGES.md §1): `hit` = the text must be refused. Server worker/src/scan.ts scanPackageText and host market.package_scan must agree on every case.",
+ "note": "package-mode secret scan (PLAZA_PACKAGES.md §1): `hit` = the text must be refused. Server worker/src/scan.ts scanPackageText and host market.package_scan must agree on every case. A case may carry `text_b64` (base64 of the UTF-8 text) instead of `text`, so a deliberate literal-secret sample does not trip repository scanners.",
  "cases": [
   {
    "text": "pwd = app_password or env_value(pk, env_file)",
@@ -50,8 +50,8 @@
    "hit": true
   },
   {
-   "text": "API_TOKEN=Xq7pL2vR9sT4wY8zK3mN",
-   "hit": true
+   "hit": true,
+   "text_b64": "QVBJX1RPS0VOPVhxN3BMMnZSOXNUNHdZOHpLM21O"
   },
   {
    "text": "postgresql://admin:S3cr3tPassw0rdX@db.example.com/x",

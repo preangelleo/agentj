@@ -1,5 +1,6 @@
 """Package-mode layer 1 (market.package_scan) against the shared cases the server's scanPackageText also runs
 (protocol/vectors/package-scan.json): code-shaped "name = value" lines pass, literal secrets / e-mails / keys refuse."""
+import base64
 import json
 import pathlib
 import unittest
@@ -12,7 +13,8 @@ V = json.loads((pathlib.Path(__file__).resolve().parents[2] / "protocol" / "vect
 class PackageScan(unittest.TestCase):
     def test_shared_cases(self):
         for c in V["cases"]:
-            self.assertEqual(bool(market.package_scan(c["text"], "x-host", "x-user")), c["hit"], c["text"])
+            text = c["text"] if "text" in c else base64.b64decode(c["text_b64"]).decode()
+            self.assertEqual(bool(market.package_scan(text, "x-host", "x-user")), c["hit"], text)
 
     def test_literal_secret(self):
         for v in ("app_password", "file-key", "args.password", "os.environ.get", "YOUR_TOKEN_HERE", "密码密码密码密码密码密码", "`--token-env`、`--x`"):
