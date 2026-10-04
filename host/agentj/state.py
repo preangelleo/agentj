@@ -313,11 +313,7 @@ class State:
                 "language": preferences.get(prefs, "appearance.language", "zh"),
                 "model": m if isinstance(m, str) and m else None,
                 "effort": e if isinstance(e, str) and e.isalpha() and len(e) <= 16 else None,
-                "fence": a.get("fence") is not False, "docker": a.get("docker") is True,
-                "session_mode": preferences.get(prefs, "agent.session_mode", "shared"),
-                "shared_session_id": preferences.get(prefs, "agent.shared_session_id", ""),
-                "shared_opencode_port": preferences.get(prefs, "agent.shared_opencode_port", 0),
-                "high_risk_warnings": preferences.get(prefs, "agent.high_risk_warnings", True)}
+                "fence": a.get("fence") is not False, "docker": a.get("docker") is True}
 
     def set_agent_config(self, kind: str | None, directory: str | None = None, model: str | None = None,
                          fence: bool = True, docker: bool = False) -> None:

@@ -647,7 +647,7 @@ class FenceConfig(unittest.TestCase):
 
         async def go():
             from agentj import agent as agents
-            ag = agents.make(host, {**self.st.agent_config(), "session_mode": "independent"})
+            ag = agents.make(host, self.st.agent_config())
             gone = (mock.patch.object(fence, "SANDBOX_EXEC", "/nonexistent/sandbox-exec") if sys.platform == "darwin"
                     else mock.patch.object(fence.shutil, "which", return_value=None))
             with gone, \

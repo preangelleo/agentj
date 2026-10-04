@@ -468,7 +468,7 @@ def cred_path(p: str) -> str | None:
         return f"凭据文件 {base}"
     if _CRED_EXT.search(base):
         return f"密钥 / 证书文件 {base}"
-    if _CRED_DIRS.search(q) or re.search(r"(?:^|/)(?:credentials|secrets)(?:/|$)", q):
+    if _CRED_DIRS.search(q):
         return f"凭据目录里的文件 {base}"
     return None
 
@@ -1503,47 +1503,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-
-# Shared-mode projection of the same classifier (ADR-A145). The independent
-# danger list and its five categories remain unchanged.
-_SHARED_PUBLIC_DELETE = frozenset({
-    'delete.git_push', 'delete.gh_api', 'delete.s3', 'delete.s3_sync',
-    'delete.heroku', 'delete.terraform', 'delete.pulumi', 'delete.cloud',
-    'delete.stripe', 'delete.mcp', 'delete.http', 'delete.registry',
-})
-
-
-def classify_shared(tool: str, tool_input, extra=None) -> Verdict:
-    """Only spending, public deletion, external delivery and credential access.
-
-    Uses the independent classifier/lexer/path rules; local file deletion and
-    price edits are not a new shared-mode approval policy.
-    """
-    if tool in ('exec_command', 'shell_command'):
-        inp = tool_input if isinstance(tool_input, dict) else {}
-        tool, tool_input = 'Bash', {'command': inp.get('cmd', inp.get('command', ''))}
-    if tool == 'apply_patch':
-        inp = tool_input if isinstance(tool_input, dict) else {}
-        paths = re.findall(r'^\*\*\* (?:Add|Update|Delete) File: (.+)$', str(inp.get('command', '')), re.M)
-        credential = next((p for p in paths if cred_path(p)), None)
-        if credential:
-            tool, tool_input = 'Edit', {'file_path': credential}
-    v = classify(tool, tool_input, extra)
-    cats = [c for c in v.cats if c in ('spend', 'send', 'credentials') or
-            (c == 'delete' and any(r in _SHARED_PUBLIC_DELETE or
-             r.startswith(('delete.gh_', 'delete.npm', 'delete.pypi', 'delete.cargo')) for r in v.rules))]
-    inp = tool_input if isinstance(tool_input, dict) else {}
-    paths = [inp.get(k) for k in ('file_path', 'path', 'notebook_path', 'target', 'destination')]
-    if tool == 'Bash' and isinstance(inp.get('command'), str):
-        for cmd in lex(inp['command']):
-            paths.extend(cmd.words)
-            paths.extend(cmd.redirs)
-    credential_read = any(isinstance(p, str) and cred_path(p) for p in paths)
-    # Read-only secret-manager/MCP calls also reveal credentials.
-    credential_read |= tool.startswith('mcp__') and bool(re.search(
-        r'(?:secret|credential|password|private_key|api_key|vault)', tool, re.I))
-    if credential_read and 'credentials' not in cats:
-        cats.append('credentials')
-        v.rules.append('shared.credential_access')
-    cats.sort(key=CATEGORIES.index)
-    return Verdict(cats, v.rules if cats else [], v.why or ('读取凭据 / Read credentials' if credential_read else ''))

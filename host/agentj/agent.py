@@ -981,9 +981,6 @@ class ClaudeAgent(Agent):
 def make(host, cfg: dict | None):
     if not cfg:
         return None
-    if cfg.get("session_mode") == "shared" and not cfg.get("_workflow_ceo"):
-        from .shared import make_shared
-        return make_shared(host, cfg)
     if cfg["kind"] == "claude":
         return ClaudeAgent(host, cfg)
     if cfg["kind"] == "codex":

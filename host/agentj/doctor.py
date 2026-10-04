@@ -197,7 +197,7 @@ def check_agent(st: State) -> dict:
     if not os.path.isdir(c["dir"]):
         return _c("agent", FAIL, f"{AGENT_LABEL[c['kind']]} · 目录不存在 / folder missing {tilde(c['dir'])}",
                   f"agentj agent {c['kind']} --dir <folder>")
-    fz = "shared (native owner session; outside independent fence)" if c.get("session_mode") == "shared" else "fenced" if c.get("fence", True) else "UNFENCED (--unfenced)"
+    fz = "fenced" if c.get("fence", True) else "UNFENCED (--unfenced)"
     if c.get("fence", True) and c.get("docker"):
         return _c("agent", WARN, f"{AGENT_LABEL[c['kind']]} · {tilde(c['dir'])} · fenced, docker allowed (--allow-docker): "
                   "容器引擎能挂载整台电脑的文件 / the container engine can mount every file", f"agentj agent {c['kind']} --dir <folder>  (docker hidden again)")
@@ -208,25 +208,21 @@ def check_agent_cli(st: State, svc: dict) -> dict:
     c = st.agent_config() if st.exists() else None
     kinds = [c["kind"]] if c else ["claude", "codex", "opencode"]
     found = []
-    try:
-        binary_env = service.effective_binary_environment(svc)
-    except (OSError, service.ServiceError):
-        return _c("agent_cli", FAIL, "Invalid service binary environment", "Check AGENTJ_*_BIN path assignments only; never dump the env file")
     for k in kinds:
         from .binaries import resolve
-        resolution = resolve(k, binary_env)
+        resolution = resolve(k)
         if resolution["wrapper"] and not resolution["path"]:
             return _c("agent_cli", FAIL if c else WARN,
                       f"{AGENT_LABEL[k]}: mise/asdf wrapper has no unambiguous real executable; wrapper was not run",
                       f"Set {harness.BIN_ENV[k]} to the real executable, then run `agentj service install`")
-        exe = resolution["path"] if svc.get("installed") else _agent_bin(k)
+        exe = _agent_bin(k)
         if not exe:
             continue
         ver = _version_of(exe)
         if ver is None:
             return _c("agent_cli", FAIL, f"{AGENT_LABEL[k]} {tilde(exe)} 运行失败 / does not run (`{k} --version`)",
                       f"重装 {AGENT_LABEL[k]} / reinstall {AGENT_LABEL[k]}")
-        login, where = harness.opencode_login(ver) if k == "opencode" else _login(k)
+        login, where = _login(k)
         found.append((k, exe, ver, login, where))
     if not found:
         if c:
@@ -238,7 +234,6 @@ def check_agent_cli(st: State, svc: dict) -> dict:
                   "install Claude Code or Codex, or OpenCode (install.md Step 3)")
     k, exe, ver, login, where = found[0]
     s = f"{AGENT_LABEL[k]} {ver} · {tilde(os.path.abspath(exe))} · {where}"
-    s += " · selection: " + resolve(k, binary_env)["reason"]
     if login == WARN and k == "claude" and os.environ.get("CLAUDECODE") == "1":
         # run by Claude Code itself: it is logged in, but it hides CLAUDE_CODE_OAUTH_TOKEN from the commands it runs
         return _c("agent_cli", WARN, s.replace("no login found", "no saved login file (this doctor runs inside Claude Code, "
@@ -358,13 +353,9 @@ def check_passphrase(st: State) -> dict:
     return _c("passphrase", WARN, "未设置 / not set", "agentj passphrase set   (自己在终端里输 / type it yourself, never via an agent)")
 
 
-def check_harness(svc=None) -> dict:
+def check_harness() -> dict:
     """`agentj agent detect` in one line: which harnesses are usable, and the install decision (seat setup §4.1)."""
-    try:
-        env = service.effective_binary_environment(svc or {})
-    except (OSError, service.ServiceError):
-        return _c("harness", FAIL, "Invalid saved binary paths", "Check only AGENTJ_*_BIN assignments")
-    d = harness.detect(env)
+    d = harness.detect()
     hint = {"none": "登录 Claude Code 或 Codex；都没有就装 OpenCode 并配好模型（install.md 第 3 步）/ log in to Claude Code or "
                     "Codex, or install OpenCode with a model (install.md Step 3)",
             "ask_owner": "多个可用：由人类决定接哪一个 / more than one usable: the human decides which one"}.get(d["decision"], "")
@@ -411,13 +402,6 @@ def check_service(svc: dict, legacy: dict | None = None) -> dict:
     n = svc.get("name")
     if not svc.get("installed"):
         return _c("service", WARN, "没安装 / not installed", "agentj service install")
-    try:
-        mismatch = service.binary_env_mismatches(n)
-    except (OSError, service.ServiceError):
-        return _c("service", FAIL, "Cannot inspect harness path settings", "Check service env path assignments; never dump credentials")
-    if mismatch:
-        return _c("service", FAIL, "unit/env file harness paths disagree: " + ", ".join(mismatch),
-                  "Run `agentj service install` to remove stale unit paths; saved env overrides are preserved")
     if svc.get("active") == "active":
         return _c("service", OK, f"{n} 已安装、运行中 / installed, active")
     hint = (f"journalctl --user -u {n} -n 50" if svc.get("kind") == "systemd" else "cat <state dir>/service.log")
@@ -543,7 +527,7 @@ def run(st: State | None = None, offline: bool = False) -> list[dict]:
     mig = check_migration(st)
     if mig:
         out.append(mig)
-    out += [check_agent(st), check_agent_cli(st, svc), check_harness(svc), check_fence(st), check_danger(st), check_passphrase(st), check_bound(st),
+    out += [check_agent(st), check_agent_cli(st, svc), check_harness(), check_fence(st), check_danger(st), check_passphrase(st), check_bound(st),
             check_serve(st), check_service(svc, service.legacy_status()), check_alias(), check_estop(st), check_tasks(st),
             check_activity(st)]
     out += check_asr(st)

@@ -69,11 +69,6 @@ class Phone:
 
 def _host(st, sent):
     host = serve.Host(st, events="jsonl", read_stdin=False)
-    # These SDK/stream-json fixtures exercise the still-supported independent
-    # fence, not interactive shared sessions. Select their mode explicitly;
-    # production default/upgrade and native shared paths have separate tests.
-    if host.agent_cfg:
-        host.agent_cfg['session_mode']='independent'
 
     async def no_relay():           # no relay in these units (a failed reconnect would drop the fake sessions)
         await host.stopping.wait()

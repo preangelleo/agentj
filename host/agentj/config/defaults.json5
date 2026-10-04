@@ -5,11 +5,6 @@
     "working_root": "",
     // Personal additions only; packaged main-Agent constitution always takes priority.
     "instructions": "",
-    // P40b: explicit attachment only until all three runtime/security gates pass.
-    "session_mode": "shared",
-    "shared_session_id": "",
-    "shared_opencode_port": 0,
-    "high_risk_warnings": true,
   },
   "voice":
   {
