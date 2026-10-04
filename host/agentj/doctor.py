@@ -209,6 +209,12 @@ def check_agent_cli(st: State, svc: dict) -> dict:
     kinds = [c["kind"]] if c else ["claude", "codex", "opencode"]
     found = []
     for k in kinds:
+        from .binaries import resolve
+        resolution = resolve(k)
+        if resolution["wrapper"] and not resolution["path"]:
+            return _c("agent_cli", FAIL if c else WARN,
+                      f"{AGENT_LABEL[k]}: mise/asdf wrapper has no unambiguous real executable; wrapper was not run",
+                      f"Set {harness.BIN_ENV[k]} to the real executable, then run `agentj service install`")
         exe = _agent_bin(k)
         if not exe:
             continue
@@ -353,7 +359,13 @@ def check_harness() -> dict:
     hint = {"none": "登录 Claude Code 或 Codex；都没有就装 OpenCode 并配好模型（install.md 第 3 步）/ log in to Claude Code or "
                     "Codex, or install OpenCode with a model (install.md Step 3)",
             "ask_owner": "多个可用：由人类决定接哪一个 / more than one usable: the human decides which one"}.get(d["decision"], "")
-    return _c("harness", WARN if d["decision"] == "none" else OK, harness.summary(d), hint)
+    installs = []
+    for h in d["harnesses"]:
+        for row in h.get("installations", []):
+            installs.append(f"{h['name']}: {tilde(row['path'])} {row.get('version') or '—'}" + (" [Agent J uses this]" if row['selected'] else "") + (" [mise/asdf wrapper: never executed]" if row['wrapper'] else ""))
+        if h.get("resolution", {}).get("wrapper"):
+            hint += f"; {h['name']}: set {harness.BIN_ENV[h['name']]} to a real executable, then agentj service install"
+    return _c("harness", WARN if d["decision"] == "none" else OK, harness.summary(d) + ("\n" + "\n".join(installs) if installs else ""), hint)
 
 
 def check_bound(st: State) -> dict:
@@ -439,8 +451,7 @@ def check_linger(svc: dict, environ=None) -> dict | None:
         return _c("linger", OK, "已开 / on (serve keeps running after logout)")
     if lg is None:
         return None
-    desktop = bool(e.get("DISPLAY") or e.get("WAYLAND_DISPLAY"))
-    if desktop and not e.get("SSH_CONNECTION"):
+    if not service.linger_needed(e):
         return _c("linger", OK, "关（桌面会话：登录期间服务照常） / off — fine on a desktop while you are logged in",
                   "")
     return _c("linger", WARN, "关：退出 SSH 登录后服务会停 / off: the service stops when you log out",

@@ -92,7 +92,9 @@ export function manifest(files) {
   const paths = [...files.keys()].sort();
   const entries = Object.fromEntries(paths.map((p) => [p, sha(files.get(p))]));
   const listing = paths.map((p) => `${entries[p]}  ${p}\n`).join('');
-  return { v: 1, algo: 'sha256', combined: sha(listing), files: entries };
+  const version = readFileSync(new URL('../host/agentj/__init__.py', import.meta.url), 'utf8').match(/^__version__ = "([^"]+)"$/m)?.[1];
+  if (!version) throw new Error('host release version missing');
+  return { v: 1, version, algo: 'sha256', combined: sha(listing), files: entries };
 }
 
 export function build() {

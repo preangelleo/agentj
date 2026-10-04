@@ -78,7 +78,7 @@ body{
   margin:0;background:var(--pg);color:var(--ink);overscroll-behavior:none;
   font:calc(16px*var(--fz))/1.6 var(--font-body);-webkit-font-smoothing:antialiased;
   display:flex;flex-direction:column;position:fixed;left:0;right:0;
-  top:var(--vvtop,0px);height:100vh;height:var(--vvh,100dvh);
+  top:var(--vvtop,0px);min-height:0;height:100vh;height:var(--vvh,100dvh);
   padding:env(safe-area-inset-top) env(safe-area-inset-right) 0 env(safe-area-inset-left);
 }
 /* ---- the state IS the background ----------------------------------------
@@ -1066,7 +1066,7 @@ body[data-agent="stopped"]{--state:var(--black-mana)}
 .ptt.lock b::after{content:attr(data-lock)}
 
 /* ---- dialogs in the brand theme: the security panel and the two-step confirm ---- */
-.ajmodal{position:fixed;inset:0;z-index:45;display:grid;place-items:center;padding:16px;background:rgba(20,20,20,.55);
+.ajmodal{position:fixed;left:0;right:0;top:var(--vvtop,0px);height:var(--vvh,100dvh);z-index:45;display:grid;place-items:center;padding:16px;background:rgba(20,20,20,.55);
   backdrop-filter:blur(3px);-webkit-backdrop-filter:blur(3px)}
 .ajmodal[hidden]{display:none}
 .ajmodal .box{width:min(30rem,100%);max-height:calc(var(--vvh,100dvh) - 32px);overflow-y:auto;padding:var(--sp-5);border-radius:24px;
@@ -1181,3 +1181,8 @@ body[data-agent="stopped"]{--state:var(--black-mana)}
   .badge__chip{width:28px;height:28px;padding:0;justify-content:center;font-size:0;gap:0}
   .badge__chip::before{width:10px;height:10px}
 }
+
+/* Pairing controls precede the instructions and stay within the visual viewport. */
+#pair-controls{scroll-margin-top:0}
+#pair-controls .ajrow{margin-top:8px}
+#pair-controls #pair-link{min-height:64px}

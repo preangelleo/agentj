@@ -84,6 +84,7 @@ function show(v) {
   document.body.dataset.view = v;
   for (const [k, id] of Object.entries(VIEWS)) $(id).hidden = k !== v;
   $('unpair').hidden = !['chat', 'mem', 'act', 'tasks'].includes(v);
+  $('scan-repair').hidden = $('unpair').hidden;
   for (const id of ['open-mem', 'open-act', 'open-tasks']) $(id).hidden = !['chat', 'mem', 'act', 'tasks'].includes(v);
   push.renderA2hs(v);
   renderLogo();
@@ -297,45 +298,81 @@ async function forgetHost() {
   showIdle();
 }
 
-// ---------------------------------------------------------------- scanning (BarcodeDetector + camera, when available)
+// In-app scanner keeps the pairing keys in this standalone app's own storage.
 let scanStream = null;
+let scanGeneration = 0;
 async function startScan() {
+  stopScan();
+  const generation = scanGeneration;
   const hint = $('scan-hint');
-  fillText(hint, t('pair.scanHint'));
-  let formats = [];
-  if ('BarcodeDetector' in window && navigator.mediaDevices?.getUserMedia) {
-    try { formats = await window.BarcodeDetector.getSupportedFormats(); } catch { formats = []; }
-  }
-  if (!formats.includes('qr_code')) { hint.hidden = false; return; }
+  hint.hidden = true;
+  let det = null;
   try {
-    scanStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' }, audio: false });
-  } catch {
-    fillText(hint, t('pair.scanNoCam'));
-    hint.hidden = false;
-    return;
+    if (window.BarcodeDetector && (await window.BarcodeDetector.getSupportedFormats()).includes('qr_code'))
+      det = new window.BarcodeDetector({ formats: ['qr_code'] });
+  } catch { /* bundled decoder below */ }
+  if (!navigator.mediaDevices?.getUserMedia || (!det && !window.jsQR)) {
+    fillText(hint, t('pair.scanHint')); hint.hidden = false; return;
   }
-  const det = new window.BarcodeDetector({ formats: ['qr_code'] });
+  let stream;
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: 'environment' } }, audio: false });
+  } catch {
+    fillText(hint, t('pair.scanNoCam')); hint.hidden = false; return;
+  }
+  if (generation !== scanGeneration) { stream.getTracks().forEach(tr => tr.stop()); return; }
+  scanStream = stream;
   const video = $('scan-video');
-  video.srcObject = scanStream;
+  video.srcObject = stream;
   $('scan-box').hidden = false;
-  try { await video.play(); } catch { /* autoplay of a muted stream is allowed */ }
-  const stream = scanStream;
+  try { await video.play(); } catch { stopScan(); fillText(hint, t('pair.scanNoCam')); hint.hidden = false; return; }
+  const canvas = document.createElement('canvas');
+  const ctx = canvas.getContext('2d', { willReadFrequently: true });
   const tick = async () => {
     if (scanStream !== stream) return;
+    let link;
     try {
-      const hit = (await det.detect(video)).find((c) => typeof c.rawValue === 'string' && c.rawValue.includes('#p='));
-      if (hit) { stopScan(); startPairing(hit.rawValue); return; }
-    } catch { /* frame not ready */ }
-    setTimeout(tick, 250);
+      if (det) {
+        const hits = await det.detect(video);
+        link = hits.find(c => typeof c.rawValue === 'string' && c.rawValue.includes('#p='))?.rawValue;
+      } else if (video.readyState >= 2 && video.videoWidth) {
+        const scale = Math.min(1, 800 / video.videoWidth);
+        canvas.width = Math.round(video.videoWidth * scale); canvas.height = Math.round(video.videoHeight * scale);
+        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+        const frame = ctx.getImageData(0, 0, canvas.width, canvas.height);
+        link = window.jsQR(frame.data, frame.width, frame.height)?.data;
+      }
+      if (scanStream !== stream) return;
+      if (link) { parseLink(link); stopScan(); await startPairing(link); return; }
+    } catch { /* an unreadable frame or unrelated QR: keep scanning */ }
+    if (scanStream === stream) setTimeout(tick, 250);
   };
   tick();
 }
 function stopScan() {
+  ++scanGeneration;
   if (scanStream) for (const tr of scanStream.getTracks()) tr.stop();
   scanStream = null;
   $('scan-video').srcObject = null;
   $('scan-box').hidden = true;
 }
+document.addEventListener('visibilitychange', () => { if (document.hidden) stopScan(); });
+window.addEventListener('pagehide', stopScan);
+function fitPairViewport() {
+  const vv = window.visualViewport;
+  if (vv) {
+    document.documentElement.style.setProperty('--vvh', vv.height + 'px');
+    document.documentElement.style.setProperty('--vvtop', vv.offsetTop + 'px');
+  }
+  document.body.dataset.kb = vv && window.innerHeight - vv.height > 120 ? '1' : '0';
+  if (document.activeElement === $('pair-link')) $('pair-controls').scrollIntoView({ block: 'start' });
+}
+window.visualViewport?.addEventListener('resize', fitPairViewport);
+window.visualViewport?.addEventListener('scroll', fitPairViewport);
+window.addEventListener('resize', fitPairViewport);
+document.addEventListener('focusin', () => { fitPairViewport(); setTimeout(fitPairViewport, 300); });
+document.addEventListener('focusout', () => setTimeout(fitPairViewport, 300));
+fitPairViewport();
 
 // ---------------------------------------------------------------- language switch: re-render everything that is ours
 function relang() {
@@ -377,7 +414,8 @@ function wire() {
   });
   for (const a of $('aj-menu').querySelectorAll('a')) a.addEventListener('click', closeMenu);
   $('a2hs-ok').addEventListener('click', () => push.dismissA2hs(view));
-  $('scan').hidden = !('BarcodeDetector' in window);          // iPhone Safari has no in-page scanner: paste the link instead
+  $('scan').hidden = false;
+  $('pair-link').addEventListener('focus', () => { stopScan(); fitPairViewport(); setTimeout(fitPairViewport, 300); });
   $('pair-go').addEventListener('click', () => startPairing($('pair-link').value));
   $('scan').addEventListener('click', () => { startScan(); });
   $('scan-stop').addEventListener('click', stopScan);
@@ -392,6 +430,10 @@ function wire() {
   $('unpair').addEventListener('click', async () => {
     closeMenu();
     if (await confirmSheet(t('menu.unpairTitle'), t('menu.unpairText'), t('menu.unpairYes'))) forgetHost();
+  });
+  $('scan-repair').addEventListener('click', async () => {
+    closeMenu();
+    if (await confirmSheet(t('menu.unpairTitle'), t('menu.unpairText'), t('menu.unpairYes'))) { await forgetHost(); await startScan(); }
   });
   $('repair').addEventListener('click', forgetHost);   // keeps the device key
   $('retry').addEventListener('click', () => {

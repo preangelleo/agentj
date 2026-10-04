@@ -24,6 +24,7 @@
 <link rel="stylesheet" href="brand/base.css">
 <link rel="stylesheet" href="app.css">
 <script src="brand/ui.js" defer></script>
+<script src="vendor/jsQR.js"></script>
 <script type="module" src="app.js"></script>
 </head>
 <body data-status="unknown" data-conn="off" data-view="pair" data-agent="none">
@@ -64,6 +65,7 @@
         <a class="ajmenu__item" href="https://agentj.app/security/" target="_blank" rel="noopener" data-i18n="menu.security">数据安全</a>
         <a class="ajmenu__item" href="https://agentj.app/privacy/" target="_blank" rel="noopener" data-i18n="menu.privacy">隐私</a>
         <a class="ajmenu__item" href="https://agentj.app/terms/" target="_blank" rel="noopener" data-i18n="menu.terms">条款</a>
+        <button type="button" id="scan-repair" class="ajmenu__item" data-i18n="pair.scan" hidden>扫二维码</button>
         <button type="button" id="unpair" class="ajmenu__item ajmenu__danger" data-i18n="menu.unpair" hidden>解除配对</button>
         <p class="ajmenu__foot"><img src="brand/img/shield-64.png" width="20" height="20" alt=""><span data-i18n="menu.foot">我们看不到你的聊天内容。</span></p>
       </div>
@@ -243,6 +245,14 @@
     </aside>
 
     <section id="pair-view" class="view pair" hidden>
+      <div id="pair-controls">
+      <label for="pair-link" class="label" data-i18n="pair.or">或者粘贴配对链接</label>
+      <textarea id="pair-link" class="aj-textarea" rows="3" autocomplete="off" autocapitalize="off" spellcheck="false" data-i18n-attr="placeholder=pair.placeholder" placeholder="粘贴 agentj pair --link 显示的链接"></textarea>
+      <p id="pair-error" class="error" role="alert" hidden></p>
+      <div class="ajrow">
+        <button type="button" id="pair-go" class="aj-btn aj-btn--primary aj-btn--block" data-i18n="pair.go">开始配对</button>
+      </div>
+      </div>
       <div class="pair__hero">
         <img src="brand/img/shield-256.png" width="96" height="96" alt="">
         <div class="aj-lang pair__lang" data-aj-lang-switch>中文 / EN</div>
@@ -251,10 +261,10 @@
       <p class="lead" data-i18n="pair.lead">Agent 在你的电脑上干活，这台手机就是它的遥控器。不用注册登录，配对一次，以后打开就能用。</p>
       <ol class="steps">
         <li><span id="pair-step1" data-i18n="pair.step1">在电脑上运行 agentj pair，屏幕上会出现一个二维码。</span></li>
-        <li><span id="pair-step2" data-i18n="pair.step2">用手机扫这个二维码，或者把链接粘贴到下面。</span></li>
+        <li><span id="pair-step2" data-i18n="pair.step2">点「扫二维码」，或把配对链接粘贴到上方。</span></li>
         <li><span data-i18n="pair.step3">手机上会显示 6 位码。在电脑上输入它，再输入你的批准口令。</span></li>
       </ol>
-      <p id="pair-iphone" class="note" data-i18n="pair.iphone" hidden>iPhone 要先把这个网页添加到主屏幕，再从主屏幕打开它来配对。别用相机扫码：那样配对的是 Safari 里的网页，和主屏幕上的不是同一个。</p>
+      <p id="pair-iphone" class="note" data-i18n="pair.iphone" hidden>iPhone 要先把这个网页添加到主屏幕，再从主屏幕打开它，点这里的「扫二维码」来配对；也可以粘贴链接。系统相机打开的是另一份 Safari 网页。</p>
       <div class="ajrow">
         <button type="button" id="scan" class="aj-btn aj-btn--primary aj-btn--block" data-i18n="pair.scan">扫二维码</button>
       </div>
@@ -262,12 +272,6 @@
       <div id="scan-box" class="scan" hidden>
         <video id="scan-video" playsinline muted></video>
         <button type="button" id="scan-stop" class="aj-btn" data-i18n="pair.scanStop">停止扫码</button>
-      </div>
-      <label for="pair-link" class="label" data-i18n="pair.or">或者粘贴配对链接</label>
-      <textarea id="pair-link" class="aj-textarea" rows="3" autocomplete="off" autocapitalize="off" spellcheck="false" data-i18n-attr="placeholder=pair.placeholder" placeholder="粘贴 agentj pair --link 显示的链接"></textarea>
-      <p id="pair-error" class="error" role="alert" hidden></p>
-      <div class="ajrow">
-        <button type="button" id="pair-go" class="aj-btn aj-btn--primary aj-btn--block" data-i18n="pair.go">开始配对</button>
       </div>
       <nav class="mini-foot" aria-label="Agent J">
         <a href="https://agentj.app/docs/phone/" target="_blank" rel="noopener" data-i18n="menu.help">手机怎么用</a>

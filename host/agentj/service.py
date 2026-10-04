@@ -33,7 +33,7 @@ DEFAULT_LABEL = "net.agentj.host"
 LEGACY_UNIT = "agentjarvis"                # ≤ 0.9
 LEGACY_LABEL = "net.agentjarvis.host"
 _NAME_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,63}")
-CAPTURED_ENV = ("AGENTJ_STATE_DIR", "AGENTJ_CLAUDE_BIN", "AGENTJ_CODEX_BIN")   # written with the new names; read either
+CAPTURED_ENV = ("AGENTJ_STATE_DIR", "AGENTJ_CLAUDE_BIN", "AGENTJ_CODEX_BIN", "AGENTJ_OPENCODE_BIN")   # written with the new names; read either
 PROXY_ENV = ("HTTPS_PROXY", "https_proxy", "HTTP_PROXY", "http_proxy", "NO_PROXY", "no_proxy", "ALL_PROXY", "all_proxy")
 TOKEN_ENV = "CLAUDE_CODE_OAUTH_TOKEN"
 
@@ -139,6 +139,14 @@ def service_env(environ: dict | None = None) -> tuple[dict, list[str]]:
         if getenv(k, None, e):
             out[k] = getenv(k, None, e)
     notes = []
+    from .binaries import resolve, ENV
+    for kind, key in ENV.items():
+        resolution = resolve(kind, e)
+        if resolution["path"]:
+            out[key] = resolution["path"]
+        elif resolution["wrapper"]:
+            out.pop(key, None)
+            notes.append(f"{kind}: wrapper cannot be resolved; set {key} to the real executable, then agentj service install")
     for k in PROXY_ENV:
         v = e.get(k)
         if not v:
@@ -188,6 +196,11 @@ def _systemctl(*args: str, check: bool = False, timeout: int = 30) -> subprocess
     if check and r.returncode != 0:
         raise ServiceError("systemctl_failed", f"systemctl --user {' '.join(args)}: {(r.stderr or r.stdout).strip()[:300]}")
     return r
+
+
+def linger_needed(environ=None) -> bool:
+    e = os.environ if environ is None else environ
+    return not (bool(e.get("DISPLAY") or e.get("WAYLAND_DISPLAY")) and not e.get("SSH_CONNECTION"))
 
 
 def _linger() -> str | None:
@@ -253,7 +266,7 @@ def install(st) -> dict:
         _systemctl("daemon-reload", check=True)
         _systemctl("enable", f"{n}.service", check=True)
         _systemctl("restart", f"{n}.service", check=True)   # starts it, or picks up a rewritten unit (reinstall / upgrade)
-        if _linger() == "no":
+        if _linger() == "no" and linger_needed():
             notes.append("服务器 / 无人登录也要运行：`loginctl enable-linger $USER`（否则退出登录后 serve 会停） / "
                          "on a server run `loginctl enable-linger $USER`, or serve stops when you log out")
         return {"kind": "systemd", "name": n, "path": path, "argv": argv + SERVE_ARGS, "notes": notes}

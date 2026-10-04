@@ -526,7 +526,8 @@ def hooks_blocked(workdir: str) -> str | None:
 
 
 def _bin(env: str, name: str) -> str | None:
-    return getenv(env) or shutil.which(name)
+    from .binaries import resolve
+    return resolve(name)["path"]
 
 
 class ClaudeAgent(Agent):

@@ -1,24 +1,28 @@
-# Agent J 0.12.1a1 release notes
+# Agent J 0.12.2a1 release notes
 
-Host 0.12.1a1 / install 0.16.1; phone-web scope.
-Phone parity must pass --strict. Full Android/Telegram parity is incomplete.
+Host 0.12.2a1 / install 0.12.2a1; phone-web scope.
+Phone parity passes --strict --release v0.12.2a1 with only the two documented B4/B5 waivers.
+Full Android/Telegram parity is incomplete.
 No APK is included in this release. Android source is for review, not a released app.
 
 Publication status: local preparation only. Live site verification is DEFERRED until
 the public commit and tag are pushed, the site is deployed, and cold installation passes.
-The operator must finish LIVE verification or restore host 0.12.0a1 / install 0.16.0 by 14:50 JST.
 
+On publication failure, restore v0.12.1a1 / public f458443c, including site and phone web.
 ## Changes
 
-- Sparse JSON5 configuration with transactional application, configuration history and migrations.
-- Optional configuration skill for locally installed agent harnesses; owner permission required.
-- Opt-in own-key cloud speech and local phone read-aloud.
-- Optional owner-private Telegram text input and final replies.
+- In-app QR camera pairing with bundled Apache-2.0 decoder and paste fallback.
+- Pairing/chat/settings follow the visual viewport above the keyboard.
+- Resolve harness mise/asdf wrappers without executing them; preserve explicit overrides.
+- OpenCode startup progress and turn-idle timeouts give actionable notices.
+- Doctor lists installations; desktop linger and install feedback version examples corrected.
 
-- Constitutional English / Chinese main Agent identity core v2: chief-of-staff positioning,
-  intermediate decision ownership and uniform Workflow Design Bible structure.
-- Workroot selection and CEO routing in initialization; checked by offline doctor.
-- Home page chief-of-staff positioning synchronized with its metadata and AI-readable summaries.
+## Transitional release exclusions (PROMPT-41)
+
+- B4 shared desktop session and desktop user-input mirroring are NOT implemented.
+- B5 owner-permission inheritance and one-card high-risk batching are NOT implemented.
+- B3 has local OpenCode + DeepSeek evidence; iOS/Android real-device acceptance remains deferred.
+- Only shared-desktop-session and shared-owner-permissions are exempted from phone strict for this tag.
 
 ## Material acceptance limits
 
@@ -49,3 +53,5 @@ The operator must finish LIVE verification or restore host 0.12.0a1 / install 0.
 - `tg-malicious-gate` (telegram; todo): Telegram 群两层恶意过滤. No exclusion: full Telegram surface gates remain red until implementation and behavioral tests.
 - `tg-reply-routing` (telegram; partial): Telegram 来源判定与回传. No exclusion: full Telegram surface gates remain red until implementation and behavioral tests.
 - `tg-owner-text` (telegram; partial): Telegram 主人私聊文本. No exclusion: full Telegram surface gates remain red until implementation and behavioral tests.
+- `shared-desktop-session` (bridge; partial): 手机与电脑接入同一个会话. P40 B4 pending: adapters still start their own conversations. No desktop input mirroring or tested shared/resume binding; do not claim same-session parity.
+- `shared-owner-permissions` (bridge; partial): 共享会话沿用机主权限、真高危同类批量审批. P40 B5 pending: independent-session adapters still impose their own permission rules. No tested owner-policy inheritance or one-card high-risk batching; existing fence retained.

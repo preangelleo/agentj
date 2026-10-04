@@ -1,5 +1,6 @@
 // Static + Worker checks for the web client. Run: node --test web/test/*.test.mjs
 import { test } from 'node:test';
+import { createHash } from 'node:crypto';
 import assert from 'node:assert/strict';
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join, relative, sep } from 'node:path';
@@ -60,7 +61,14 @@ const LICENCE_TEXT = new Set(['brand/fonts/UFL-1.0-ubuntu.txt', 'brand/fonts/OFL
 test('no URLs to anywhere in shipped files except links to agentj.app pages', () => {
   for (const f of files) {
     const s = read(f);
-    if (!LICENCE_TEXT.has(rel(f))) {
+    const vendored = {
+      'vendor/jsQR.js': 'bc40c8a15196236b2314db0856f72ca0b49980cd5413b8c852a7349f5fee0859',
+      'vendor/jsQR-LICENSE.txt': 'c6596eb7be8581c18be736c846fb9173b69eccf6ef94c5135893ec56bd92ba08',
+    };
+    // License URLs in these immutable upstream bytes are attribution, not requests.
+    // Any changed bytes must be reviewed again; the live browser gate checks zero off-site traffic.
+    if (vendored[rel(f)]) assert.equal(createHash('sha256').update(readFileSync(f)).digest('hex'), vendored[rel(f)]);
+    if (!LICENCE_TEXT.has(rel(f)) && !vendored[rel(f)]) {
       for (const m of s.matchAll(/\b(?:https?|wss?):\/\/[^\s"'<>)`]*/gi)) {
         if (rel(f) === 'app.js' && m[0] === NEW_WEB_ORIGIN) continue;
         assert.match(m[0], SITE_LINK, `${rel(f)} contains URL ${m[0]}`);

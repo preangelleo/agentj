@@ -47,7 +47,9 @@ from .slash import Result
 from .envcompat import getenv
 from .text import clean, clean_line
 
-START_WAIT = 60          # s for `opencode serve` to print its address
+START_WAIT = 60          # seconds with no startup output before failing
+START_MAX = 300          # bounded cold start even if output continues
+TURN_IDLE = 300          # no meaningful turn progress; SSE heartbeats do not count
 CONNECT_WAIT = 15        # s for the event stream to connect before the first message is sent
 SSE_IDLE = 90            # s without any byte (OpenCode sends heartbeats) before the stream is re-opened
 REQ_TIMEOUT = 30
@@ -359,6 +361,8 @@ class OpenCodeAgent(Agent):
         self.emitted: set[str] = set()                  # text part ids already on the phone
         self.connected = asyncio.Event()
         self.err_tail = ""
+        self.start_progress = self.turn_progress = time.monotonic()
+        self.provider_fail_noted = False
         self.quiet_exit = False
         self.retry_noted = False
         self.saw_busy = False                           # this turn's session went busy (a stale idle cannot end it)
@@ -404,21 +408,40 @@ class OpenCodeAgent(Agent):
         self._bg(self._drain_err(proc))
         self.host.st.log("agent_start", agent=self.kind, fence=self.cfg.get("fence", True))
         listening = None
+        self.start_progress = started = time.monotonic()
+        line_task = asyncio.create_task(proc.stdout.readline())
         try:
-            async with asyncio.timeout(START_WAIT):
-                while line := await proc.stdout.readline():
-                    m = re.search(rb"listening on http://127\.0\.0\.1:(\d+)", line)
-                    if m:
-                        listening = int(m.group(1))
+            while time.monotonic() - started < START_MAX:
+                left = min(START_WAIT - (time.monotonic() - self.start_progress),
+                           START_MAX - (time.monotonic() - started))
+                if left <= 0:
+                    break
+                done, _ = await asyncio.wait({line_task}, timeout=min(left, 1))
+                if not done:
+                    if proc.returncode is not None:
                         break
-        except TimeoutError:
-            pass
+                    continue
+                line = line_task.result()
+                if not line:
+                    break
+                self.start_progress = time.monotonic()
+                m = re.search(rb"listening on http://127\.0\.0\.1:(\d+)", line)
+                if m:
+                    listening = int(m.group(1))
+                    break
+                line_task = asyncio.create_task(proc.stdout.readline())
+        finally:
+            if not line_task.done():
+                line_task.cancel()
+                with contextlib.suppress(asyncio.CancelledError):
+                    await line_task
         if listening != port:
             await asyncio.sleep(0.2)
             await self._kill(proc)
-            last = self._last_err()
+            reason = "process exited" if proc.returncode is not None else "startup limit reached" if time.monotonic() - started >= START_MAX else "no startup progress"
+            self.host.st.log("agent_startup_timeout", agent=self.kind, reason=reason)
             self.failed_start = True
-            self.fail_notice("OpenCode 没有启动" + (f"：{last}" if last else "。"))
+            self.fail_notice("主机已连接，但 OpenCode 启动失败或长时间没有启动进度。这条消息没有交给它。请在电脑运行 `agentj doctor`，核实真实可执行文件；然后运行 `agentj service install`。 / Host connected; OpenCode did not start (" + reason + "). Run `agentj doctor`, then `agentj service install`.")
             return False
         self._bg(self._drain(proc.stdout))
         self._bg(self._watch(proc))
@@ -501,6 +524,7 @@ class OpenCodeAgent(Agent):
     async def _drain_err(self, proc) -> None:
         with contextlib.suppress(Exception):
             while line := await proc.stderr.readline():
+                self.start_progress = time.monotonic()
                 self.err_tail = (self.err_tail + line.decode("utf-8", "replace"))[-2000:]
 
     async def _watch(self, proc) -> None:
@@ -617,6 +641,8 @@ class OpenCodeAgent(Agent):
     def on_event(self, ev: dict) -> None:
         t = ev.get("type")
         p = ev.get("properties") if isinstance(ev.get("properties"), dict) else {}
+        if t == "message.part.updated" and (p.get("part") or {}).get("sessionID") == self.sid:
+            self.turn_progress = time.monotonic()
         if t == "permission.asked":
             self._on_perm(p)
         elif t == "permission.replied":
@@ -631,9 +657,28 @@ class OpenCodeAgent(Agent):
         elif t == "session.error" and p.get("sessionID") in (self.sid, None):
             err = p.get("error") if isinstance(p.get("error"), dict) else {}
             if err.get("name") != "MessageAbortedError":
-                msg = (err.get("data") or {}).get("message") if isinstance(err.get("data"), dict) else None
-                self.fail_notice("OpenCode 这一轮没有正常完成" + (f"：{clean(msg, 300)}" if isinstance(msg, str) and msg
-                                                                       else f"（{clean(str(err.get('name') or '?'), 60)}）。"))
+                name = str(err.get("name") or "")
+                data = err.get("data") if isinstance(err.get("data"), dict) else {}
+                code = data.get("statusCode")
+                code = code if type(code) is int and 100 <= code <= 599 else None
+                detail = str(data.get("message") or "").lower()
+                reason = ("login" if code in (401,403) or "auth" in name.lower() or "key" in name.lower()
+                          else "balance" if code == 402 else "rate_limit" if code == 429
+                          else "model" if code == 404 or "modelnotfound" in name.lower()
+                          else "network" if any(x in detail for x in ("fetch failed","certificate","enotfound","econnrefused","connect timeout","unable to connect"))
+                          else "provider")
+                self.host.st.log("agent_provider_fail", agent=self.kind, reason=reason, http_status=code)
+                notes = {
+                    "login": "模型服务登录或 key 无效：在电脑运行 `opencode auth login`，然后在 OpenCode 终端试发消息。 / Provider login/key failed; run `opencode auth login`.",
+                    "balance": "模型服务余额不足：在电脑核实你的 provider 余额，然后在 OpenCode 终端试发消息。 / Check your provider balance in OpenCode.",
+                    "rate_limit": "模型服务限流：等一会儿再在 OpenCode 终端试发消息；这条消息不会自动重发。 / Provider rate limit; wait and retry manually.",
+                    "model": "模型名称不可用：运行 `opencode models` 核实服务商/模型 ID，再用 `agentj agent opencode --model <provider/model>` 更新。 / Run `opencode models`, then update the model ID.",
+                    "network": "模型服务网络连接失败：在电脑的 OpenCode 终端试发消息，核实网络与代理设置。 / Provider connection failed; check network/proxy in OpenCode.",
+                    "provider": "模型服务或 OpenCode 报错：在电脑运行 `agentj doctor`，然后在 OpenCode 终端试发消息，核实模型名称、余额和网络。 / Provider/OpenCode error; run `agentj doctor`, then check model, balance and network in OpenCode.",
+                }
+                if not self.provider_fail_noted:
+                    self.provider_fail_noted = True
+                    self.fail_notice("主机已连接，但这一轮没有正常完成。" + notes[reason])
         elif t == "session.status" and p.get("sessionID") == self.sid:
             s = p.get("status") if isinstance(p.get("status"), dict) else {}
             if s.get("type") in ("busy", "retry"):
@@ -767,6 +812,8 @@ class OpenCodeAgent(Agent):
                 return
             self.turn_done, self.turn_proc = asyncio.Event(), self.proc
             self.turn_t0 = time.time() * 1000
+            self.turn_progress = time.monotonic()
+            self.provider_fail_noted = False
             self.retry_noted = self.saw_busy = False
             body = {"parts": [{"type": "text", "text": text}]}
             if self.persist and not self.cfg.get("_workflow_ceo"):
@@ -862,6 +909,13 @@ class OpenCodeAgent(Agent):
         while not self.turn_done.is_set():
             with contextlib.suppress(asyncio.TimeoutError):
                 await asyncio.wait_for(self.turn_done.wait(), WATCH)
+            if not self.pending and not self.questions and time.monotonic() - self.turn_progress >= TURN_IDLE:
+                self.fail_notice("主机已连接，但 OpenCode 长时间没有回复或处理进度。请在电脑运行 `agentj doctor`；确认 `opencode auth login` 已登录你选用的模型服务，并在 OpenCode 终端试发一条消息。这条消息不会自动重发。")
+                await self.interrupt_request(self.proc)
+                self._turn_end()
+                return
+            if self.pending or self.questions:
+                self.turn_progress = time.monotonic()
             if self.turn_done.is_set() or not self.client or self.pending:
                 quiet_since = None
                 continue

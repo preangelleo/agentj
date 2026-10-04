@@ -37,7 +37,8 @@ VERSION_TIMEOUT = 15
 
 def agent_bin(kind: str) -> str | None:
     env = BIN_ENV.get(kind)
-    return (getenv(env) if env else None) or shutil.which(kind)
+    from .binaries import resolve
+    return resolve(kind)["path"] if env else None
 
 
 def version_of(exe: str) -> str | None:
@@ -100,10 +101,22 @@ def login_of(name: str) -> tuple[str, str]:
 
 
 def _one(name: str) -> dict:
-    exe = agent_bin(name)
+    from .binaries import resolve, installations, wrapper
+    resolution = resolve(name)
+    exe = resolution["path"]
     version = version_of(exe) if exe else None
+    versions = {exe: version} if exe else {}
+    installs = []
+    for path in installations(name):
+        wrapped = wrapper(path)
+        real = os.path.realpath(path)
+        if not wrapped and real not in versions:
+            versions[real] = version_of(real)
+        installs.append({"path": path, "wrapper": wrapped, "selected": bool(exe and real == exe),
+                         "version": None if wrapped else versions.get(real)})
     rec = {"name": name, "installed": version is not None, "logged_in": False, "supported": name in SUPPORTED,
-           "version": version}
+           "version": version, "executable": exe, "resolution": resolution,
+           "installations": installs}
     if name not in SUPPORTED:
         rec.update(logged_in=None, note=LATER)
         return rec
@@ -148,7 +161,14 @@ DECISION_TEXT = {
 def main(as_json: bool = False) -> int:
     d = detect()
     if as_json:
-        print(json.dumps(d, ensure_ascii=False))
+        def local_paths(value):
+            if isinstance(value, dict): return {k: local_paths(v) for k, v in value.items()}
+            if isinstance(value, list): return [local_paths(v) for v in value]
+            if isinstance(value, str):
+                home = os.path.expanduser("~")
+                return "~" + value[len(home):] if value == home or value.startswith(home + os.sep) else value
+            return value
+        print(json.dumps(local_paths(d), ensure_ascii=False))
         return 0
     for h in d["harnesses"]:
         state = ("没装 / not installed" if not h["installed"] else

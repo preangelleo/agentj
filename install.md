@@ -1,15 +1,15 @@
 ---
 document: agentj-install
-version: 0.16.1
+version: 0.12.2a1
 released: 2026-10-04
 status: beta (anyone can sign up; not advertised yet, pages are not indexed)
 host_package: agentj (the `agentj` command)
-host_version: 0.12.1a1
-source_tag: v0.12.1a1
-host_wheel: agentj-0.12.1a1-py3-none-any.whl
-host_wheel_sha256: bfa978f00a78f018caf7e11eb3b57499e8f0c9549263f04723d2e7a867db3a6f
-host_sdist: agentj-0.12.1a1.tar.gz
-host_sdist_sha256: 4ccded7973fc921a873284f12aebdd0270591017283237c5a65c38eec7afa96a
+host_version: 0.12.2a1
+source_tag: v0.12.2a1
+host_wheel: agentj-0.12.2a1-py3-none-any.whl
+host_wheel_sha256: d92b6fbb460ba0f60bab93bdaf17fd5c92e226ff4b3532a8beffb617751cc0b3
+host_sdist: agentj-0.12.2a1.tar.gz
+host_sdist_sha256: 620bd5b6bbaf741a42b3cf9e9d27fa040eea52881a4d200c958e91bb18c11713
 canonical_url: https://agentj.app/install.md
 sha256_url: https://agentj.app/install.md.sha256
 alias: https://agentjarvis.net/install.md (the older address: the same file, kept for one more version)
@@ -18,6 +18,8 @@ mirror_url: https://github.com/preangelleo/agentj/blob/main/install.md
 signature: none yet — integrity = the SHA-256 published on the site must match the GitHub copy (Step 1); the program's own files are pinned by source_tag and the two host_*_sha256 values above (Step 4)
 language: en (talk to your human in their language)
 ---
+
+> P40 local candidate: not published yet. This candidate fixes camera pairing, keyboard layout and harness binary resolution. Shared desktop sessions and owner-permission inheritance are still pending; the current host uses an independent conversation. Keep the published 0.12.1a1 installation until a verified release is announced.
 
 # Install Agent J — instructions for the AI agent on this computer
 
@@ -128,7 +130,7 @@ curl -fsSL https://agentj.app/install.md.sha256 -o install.md.sha256
 curl -fsSL https://raw.githubusercontent.com/preangelleo/agentj/main/install.md -o install.github.md
 if command -v sha256sum >/dev/null; then sha256sum -c install.md.sha256; else shasum -a 256 -c install.md.sha256; fi   # → "install.md: OK"
 cmp install.md install.github.md && echo "site and GitHub copies match"
-grep -m1 '^version:' install.md                                           # → version: 0.16.1
+grep -m1 '^version:' install.md                                           # → version: 0.12.2a1
 ```
 - Both checks pass → continue with that `install.md` (note its `version:` for feedback). Keep the file: Step 4 reads the
   program's SHA-256 values from its front matter.
@@ -173,7 +175,7 @@ together. Fields:
 | `host_form` | `mac` · `linux-desktop` · `linux-server` · `windows` (= WSL2) · `unknown` |
 | `os` | e.g. `Ubuntu 24.04 x86_64`, `macOS 15.1 arm64` |
 | `agent_kind` / `agent_version` | `claude-code` · `codex` · `opencode` · `other` / your own version (e.g. `claude --version`) |
-| `install_md_version` | `0.15.0` |
+| `install_md_version` | the `version` in this file’s front matter |
 | `problem` | step number + the command + the **exact** error text + what you tried |
 | `resolved` / `resolution` | `true` + how you got past it, or `false` (then `resolution` may be omitted) |
 | `owner_informed` | `true` — only after your human has seen the text |
@@ -191,13 +193,25 @@ the exact JSON, send after their "yes".
   "os": "Ubuntu 24.04 x86_64",
   "agent_kind": "claude-code",
   "agent_version": "2.1.0",
-  "install_md_version": "0.15.0",
+  "install_md_version": "<version from this file’s front matter>",
   "problem": "Step 4: `uv tool install ...` failed: <exact error text>. Tried: <what you tried>.",
   "resolved": false,
   "owner_informed": true
 }
 JSON
 )
+python3 - <<'PY_VERSION'
+import json, re
+from pathlib import Path
+base = Path("~/.agentj-install").expanduser()
+guide = (base / "install.md").read_text()
+front = guide.split("---", 2)[1]
+version = re.search(r"(?m)^version:\s*(\S+)\s*$", front).group(1)
+report = base / "feedback.json"
+data = json.loads(report.read_text())
+data["install_md_version"] = version
+report.write_text(json.dumps(data, ensure_ascii=False) + "\n")
+PY_VERSION
 curl -sS -w '\nHTTP %{http_code}\n' -X POST https://agentj.app/api/v1/feedback \
   -H "Authorization: Bearer $(cat ~/.agentj-install/feedback-id)" \
   -H "Content-Type: application/json" --data @"$HOME/.agentj-install/feedback.json"
@@ -225,6 +239,8 @@ curl -sS "https://agentj.app/api/v1/feedback?mine" -H "Authorization: Bearer $(c
 you, checks again before sending, and keeps a receipt for reading our reply (Step 4 shows how). Same rule, same fields.
 
 ---
+
+Before selecting OpenCode, run `agentj agent detect --json` after installing Agent J: it lists all discovered installations and marks the executable Agent J uses. Multiple versions can coexist; PATH order affects your terminal. Agent J bypasses known mise/asdf wrappers without running them. An existing `AGENTJ_OPENCODE_BIN` remains authoritative. If resolution is ambiguous, set it to the real executable and run `agentj service install` again.
 
 ## 3. Check the prerequisites — stage `2-probe`
 
@@ -315,13 +331,15 @@ unreachable — retry, and tell your human if it persists. GitHub may be slow or
 
 ---
 
+The astral installer warning that `uv` / `uvx` are shadowed is informational if `uv --version` succeeds. To use the newly installed copy explicitly, run `~/.local/bin/uv --version`; reopen your terminal after updating PATH.
+
 ## 4. Install the `agentj` program — stage `6-host`
 
 **Each command in a fresh shell.** Most agents run every command in a new shell (the working folder and `export` do not
 carry over). So start every command line from here on with `export PATH="$HOME/.local/bin:$PATH";` — or call
 `~/.local/bin/agentj` by its full path. This document writes `agentj` for short.
 
-The program is pinned to one release: the tag `v0.12.1a1` (front matter `source_tag`). The tag never moves, and its
+The program is pinned to one release: the tag `v0.12.2a1` (front matter `source_tag`). The tag never moves, and its
 `host/` folder is byte for byte the same code as the two files on our site whose SHA-256 is in this document's front matter.
 ```bash
 cd ~/.agentj-install
@@ -329,7 +347,7 @@ W=$(sed -n 's/^host_wheel: //p' install.md); WS=$(sed -n 's/^host_wheel_sha256: 
 curl -fsSLO "https://agentj.app/dl/$W"
 echo "$WS  $W" | sha256sum -c -   # macOS: shasum -a 256 -c -; mismatch → stop
 uv tool install "./$W"
-export PATH="$HOME/.local/bin:$PATH"; agentj --version     # → agentj 0.12.1a1
+export PATH="$HOME/.local/bin:$PATH"; agentj --version     # → agentj 0.12.2a1
 export PATH="$HOME/.local/bin:$PATH"; agentj doctor
 ```
 **Your human's own terminal must find `agentj` too** — they run `agentj passphrase set` and `agentj pair` themselves
@@ -357,12 +375,12 @@ echo "$WS  $W" | sha256sum -c - && echo "$SS  $S" | sha256sum -c -    # macOS: s
 uv tool install "./$W"          # the wheel; its dependencies come from PyPI or the mirror in UV_DEFAULT_INDEX
 ```
 `uv tool install "./$S"` installs from the checked source archive instead (it builds the same program).
-`https://agentj.app/dl/latest.txt` and `https://agentj.app/dl/latest-sdist.txt` name the same two files. `agentj --version` is the program's own version (`0.12.1a1`); it is
-numbered separately from this document (`0.16.1`).
+`https://agentj.app/dl/latest.txt` and `https://agentj.app/dl/latest-sdist.txt` name the same two files. `agentj --version` is the program's own version (`0.12.2a1`); it is
+numbered separately from this document (`0.12.2a1`).
 
-Alternative from the matching published source tag: `uv tool install "git+https://github.com/preangelleo/agentj@v0.12.1a1#subdirectory=host"`.
+Alternative from the matching published source tag: `uv tool install "git+https://github.com/preangelleo/agentj@v0.12.2a1#subdirectory=host"`.
 
-Alternative without uv: `pipx install "git+https://github.com/preangelleo/agentj@v0.12.1a1#subdirectory=host"` (needs Python 3.11+).
+Alternative without uv: `pipx install "git+https://github.com/preangelleo/agentj@v0.12.2a1#subdirectory=host"` (needs Python 3.11+).
 `agentj doctor` lists what is ready and what is not (prerequisites, the fence, connectivity, which agents are usable).
 Continue unless it reports an error that a later step does not fix; report anything you cannot explain.
 
@@ -370,9 +388,21 @@ Continue unless it reports an error that a later step does not fix; report anyth
 ```bash
 ( umask 077; cat > ~/.agentj-install/feedback-report <<'JSON'
 { "stage": "...", "host_form": "...", "os": "...", "agent_kind": "...", "agent_version": "...",
-  "install_md_version": "0.15.0", "problem": "...", "resolved": false, "owner_informed": true }
+  "install_md_version": "<version from this file’s front matter>", "problem": "...", "resolved": false, "owner_informed": true }
 JSON
 )
+python3 - <<'PY_VERSION'
+import json, re
+from pathlib import Path
+base = Path("~/.agentj-install").expanduser()
+guide = (base / "install.md").read_text()
+front = guide.split("---", 2)[1]
+version = re.search(r"(?m)^version:\s*(\S+)\s*$", front).group(1)
+report = base / "feedback-report"
+data = json.loads(report.read_text())
+data["install_md_version"] = version
+report.write_text(json.dumps(data, ensure_ascii=False) + "\n")
+PY_VERSION
 agentj feedback check ~/.agentj-install/feedback-report     # redacts, writes feedback-report.checked.json (0600), prints it + a verdict
 ```
 | `check` exit | What you do |
@@ -713,11 +743,8 @@ The steps:
 2. ✋ The human runs, in **their own terminal** on this computer, `agentj pair` (Android) or `agentj pair --link`
    (iPhone: it draws the QR code **and** prints the pairing link). `agentj admin` prints a one-time link to a page on
    127.0.0.1 that does the same. On a server over SSH the QR code is drawn right in the SSH terminal (section S).
-3. ✋ **Android:** in the page tap **「扫二维码」** ("Scan QR code") and point the camera at the QR code. If the page says
-   「这个浏览器不能在网页里扫码。…」 or 「没拿到相机权限。…」, use the link as for iPhone.
-4. ✋ **iPhone** (Safari cannot scan inside a page, so there is no scan button): get the link onto the phone (below), then in
-   the icon's window paste it into the box under **「或者粘贴配对链接」** ("Or paste the pairing link"; the box says
-   「粘贴 agentj pair --link 显示的链接」) and tap **「开始配对」** ("Pair").
+3. ✋ On either iPhone or Android, tap **「扫二维码」** ("Scan QR code") inside the Home Screen app and point the camera at the QR code. Allow camera access. The app includes its own QR decoder; Safari does not need native BarcodeDetector support.
+4. ✋ If camera access is denied or unavailable, paste the pairing link into the field at the top under **「或者粘贴配对链接」** ("Or paste the pairing link") and tap **「开始配对」** ("Pair"). Keep this window open; the system Camera app opens a separate browser tab instead. The page keeps the input and button above the keyboard.
 5. The phone shows **6 digits** under 「在电脑上输入这 6 位码」 ("Type this 6-digit code on your computer"); the human types
    them into the terminal (or the admin page), then their passphrase. The phone shows 「等电脑批准」, then 「已连接」
    ("Connected") and opens the chat.
@@ -879,11 +906,11 @@ prints something and `uv tool list` (or `pipx list`) shows `agentjarvis-host`, t
 the new name, then:
 ```bash
 jarvis service uninstall      # stop the old service first (Step 10 used tmux / nohup instead? stop that process)
-uv tool uninstall agentjarvis-host && uv tool install "git+https://github.com/preangelleo/agentj@v0.12.1a1#subdirectory=host"
+uv tool uninstall agentjarvis-host && uv tool install "git+https://github.com/preangelleo/agentj@v0.12.2a1#subdirectory=host"
 agentj doctor
 agentj service install        # start it again under the new name (or the tmux / nohup fallback, Step 10)
 ```
-With pipx instead of uv: `pipx uninstall agentjarvis-host && pipx install "git+https://github.com/preangelleo/agentj@v0.12.1a1#subdirectory=host"`.
+With pipx instead of uv: `pipx uninstall agentjarvis-host && pipx install "git+https://github.com/preangelleo/agentj@v0.12.2a1#subdirectory=host"`.
 - After the move, `agentj` puts back a `jarvis` command (a link to `agentj`, only if no other `jarvis` exists) for one more
   version; it prints a notice that points here. New installs never get `jarvis`.
 - The state moves by itself on the first run of `agentj`: from `~/.local/state/agentjarvis-alpha` to `~/.local/state/agentj`.
@@ -1162,4 +1189,4 @@ or logs out Claude Code / Codex / OpenCode (nor removes a model key), and never 
 
 - 0.16.0 (2026-10-04): versioned 0.12 host candidate; pinned wheel primary install; commented sparse configuration, own-key voice providers and bundled configuration skill. Promote only with matching public GitHub installer mirror.
 
-- 0.16.1 (2026-10-04): host 0.12.1a1; main Agent core v2 adds chief-of-staff positioning, intermediate decision ownership and uniform Workflow Design Bible structure. Root selection and CEO routing are checked by doctor; homepage and AI-readable summaries use the same positioning.
+- 0.12.2a1 (2026-10-04): local host 0.12.2a1 candidate; in-app QR pairing, keyboard fit, harness wrapper resolution, startup/progress errors, doctor install inventory and desktop linger. Shared desktop session and owner-permission inheritance are not implemented; B4/B5 are deferred to the 0.13 release.
