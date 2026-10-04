@@ -268,6 +268,8 @@ class CodexAgent(Agent):
             self._send({"jsonrpc": "2.0", "id": rid, **({"error": error} if error else {"result": result})})
 
     # ------------------------------------------------ start
+    def initialize_capabilities(self): return {}
+
     async def _spawn(self) -> bool:
         if not _agentmod._bin("AGENTJ_CODEX_BIN", "codex"):
             self.failed_start = True
@@ -288,7 +290,7 @@ class CodexAgent(Agent):
         self._bg(self._drain_err(p))
         try:
             init = await self.call("initialize", {"clientInfo": {"name": "agentj", "title": "Agent J",
-                                                                "version": "1"}}, START_WAIT)
+                                                                "version": "1"}, "capabilities": self.initialize_capabilities()}, START_WAIT)
             self._send({"jsonrpc": "2.0", "method": "initialized"})
             ua = (init or {}).get("userAgent") if isinstance(init, dict) else None
             self.version = clean_line(ua.split("/", 1)[1].split(" ", 1)[0], 40) if isinstance(ua, str) and "/" in ua else ""

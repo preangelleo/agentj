@@ -1572,6 +1572,10 @@ def cmd_service(a) -> None:
                   f"{s['active']}" + (f" · {s['enabled']}" if s.get("enabled") else "")
                   + (f"  ({service.tilde(s['path'])})" if s["installed"] else ""))
             return
+        if a.mode == "restart":
+            r = service.restart()
+            print(f"✓ 已重启 / restarted: {r['name']}")
+            return
         if a.mode == "uninstall":
             st = State()
             r = service.uninstall(st if st.root.is_dir() else None)
@@ -1743,6 +1747,8 @@ NO_MIGRATE = ("migrate", "docs-rule", "handover")
 
 
 def main(argv=None) -> None:
+    from .service import load_launch_binary_env
+    load_launch_binary_env()
     args = list(sys.argv[1:] if argv is None else argv)
     if args and args[0] in ("voice", "theme", "menu", "key", "channel", "skill"):
         from . import personalize
@@ -1763,7 +1769,7 @@ def main(argv=None) -> None:
     dc.set_defaults(fn=cmd_doctor)
     sv = sub.add_parser("service", help="开机 / 登录后自动运行 serve：install · uninstall · status / run serve as a service",
                         description="Linux: systemd user unit · macOS: LaunchAgent. 不写任何密钥 / never writes a secret.")
-    sv.add_argument("mode", choices=["install", "uninstall", "status"], help="install 安装并启动 · uninstall 停止并删除 · status 状态")
+    sv.add_argument("mode", choices=["install", "uninstall", "status", "restart"], help="install 安装并启动 · uninstall 停止并删除 · status 状态")
     sv.add_argument("--json", action="store_true", help="status 的机器可读输出 / machine-readable status")
     sv.set_defaults(fn=cmd_service)
     up = sub.add_parser("update", help="新版本：check 查（谁都可以）· apply 升级（只由人在终端确认）· auto on|off 每天自动查 / updates",
