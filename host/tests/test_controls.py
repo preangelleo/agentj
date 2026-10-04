@@ -669,6 +669,7 @@ class SchedulerChain(unittest.TestCase):
 
         async def go():
             with mock.patch.object(tasks, "TICK", 0.3):
+                os.environ["FAKE_CLAUDE_LOG"] = str(self.work / "workflows" / "research-one" / ".argv.jsonl")
                 run = asyncio.create_task(host.run())
                 await wait(lambda: host.agent is not None)
                 s = _ready(host, ph)
@@ -676,7 +677,7 @@ class SchedulerChain(unittest.TestCase):
                 await wait(lambda: any("任务research-one" in n for n in notices()))
                 n = [x for x in notices() if "任务research-one" in x][0]
                 self.assertEqual(n, "定时任务「任务research-one」：attention — 两个异常（只读运行）")
-                self.assertFalse((self.work / "research-wrote.txt").exists(), "read-only run: the write never ran")
+                self.assertFalse((self.work / "workflows" / "research-one" / "research-wrote.txt").exists(), "read-only run: the write never ran")
                 self.assertEqual([o for _, o in sent if o["t"] == "ask"], [], "denied by the hook, not asked")
                 reports = list((self.work / "workflows/research-one/reports").glob("run-*.md"))
                 self.assertEqual(len(reports), 1)
@@ -686,18 +687,22 @@ class SchedulerChain(unittest.TestCase):
                 await asyncio.sleep(1.2)
                 self.assertEqual(sum("任务research-one" in x for x in notices()), 1)
                 # 2. a normal task run by hand: the write asks the phone, with the task's name on the card
+                os.environ["FAKE_CLAUDE_LOG"] = str(self.work / "workflows" / "normal-one" / ".argv.jsonl")
                 host.scheduler.request("normal-one")
                 await wait(lambda: any(o["t"] == "ask" for _, o in sent))
                 ask = [o for _, o in sent if o["t"] == "ask"][-1]
                 self.assertEqual((ask["summary"], ask["task"]), ("touch normal-wrote.txt", "任务normal-one"))
                 await host._app(s, ph.answer(ask, True))
                 await wait(lambda: any("任务normal-one" in x for x in notices()))
-                self.assertTrue((self.work / "normal-wrote.txt").exists())
+                self.assertFalse((self.work / "normal-wrote.txt").exists(), "CEO writes stay in its own folder")
+                self.assertTrue((self.work / "workflows" / "normal-one" / "normal-wrote.txt").exists())
                 self.assertIn("ok — 一切正常", [x for x in notices() if "normal-one" in x][0])
+                os.environ["FAKE_CLAUDE_LOG"] = str(self.argv_log)
                 # 3. a chat turn still works afterwards (the chat process stepped aside and comes back)
                 await host._app(s, {"t": "msg", "id": "a" * 16, "text": "还在吗", "ts": 0})
                 await wait(lambda: any(o.get("text") == "ECHO: 还在吗" for _, o in sent if o["t"] == "msg"))
                 # 4. stop everything while a task runs → ended at once, nothing after the sleep runs
+                os.environ["FAKE_CLAUDE_LOG"] = str(self.work / "workflows" / "slow-one" / ".argv.jsonl")
                 host.scheduler.request("slow-one")
                 await wait(lambda: host.scheduler.current_id == "slow-one")
                 await asyncio.sleep(1.5)
@@ -705,6 +710,7 @@ class SchedulerChain(unittest.TestCase):
                 await host._app(s, sign(ph, "estop", {}, {"t": "estop", "r": "s1"}))
                 await wait(lambda: any("被急停中断" in x for x in notices()), 10000)
                 self.assertLess(time.monotonic() - t0, 10)
+                os.environ["FAKE_CLAUDE_LOG"] = str(self.argv_log)
                 # 5. a chat turn in the middle of a long step is ended too
                 await host._app(s, sign(ph, "resume", {}, {"t": "resume", "r": "r1"}))
                 await host._app(s, {"t": "msg", "id": "b" * 16, "text": "RUNSEQ: @sleep 30 ;; touch late.txt", "ts": 0})
@@ -718,14 +724,15 @@ class SchedulerChain(unittest.TestCase):
                 await run
         asyncio.run(go())
         time.sleep(1)
-        self.assertFalse((self.work / "slow-wrote.txt").exists(), "the stopped task never got past its sleep")
+        self.assertFalse((self.work / "workflows" / "slow-one" / "slow-wrote.txt").exists(), "the stopped task never got past its sleep")
         self.assertFalse((self.work / "late.txt").exists(), "the stopped chat turn never got past its sleep")
         last = tasks.load(self.st)["last"]
         self.assertEqual((last["research-one"]["verdict"], last["normal-one"]["verdict"]), ("attention", "ok"))
         kinds = [r["k"] for r in activity.all_since(self.st)]
         for k in ("task_run", "task_done", "ask", "decision", "estop", "resume", "turn_start", "turn_end"):
             self.assertIn(k, kinds)
-        starts = [s for s in (json.loads(x) for x in self.argv_log.read_text().splitlines()) if "argv" in s]   # control lines: §10.10 meters
+        log_files = [self.argv_log] + list((self.work / "workflows").glob("*/.argv.jsonl"))
+        starts = [s for log in log_files for s in (json.loads(x) for x in log.read_text().splitlines()) if "argv" in s]   # control lines: §10.10 meters
         research = [a for a in starts if any("research" in x for x in a["argv"] if "danger hook" in x)]
         self.assertEqual(len(research), 1, "the research run's hook carries the read-only flag")
         self.assertTrue(all("--resume" not in a["argv"] for a in starts if any("danger hook" in x and "research" in x for x in a["argv"])))

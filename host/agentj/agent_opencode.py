@@ -340,11 +340,14 @@ class OpenCodeAgent(Agent):
     kind = "opencode"
 
     def __init__(self, host, cfg: dict, persist: bool = True, research: bool = False):
+        if not persist:
+            cfg = dict(cfg)
+            cfg["_workflow_ceo"] = True
         super().__init__(host, cfg)
         self.proc: asyncio.subprocess.Process | None = None
         self.client: Client | None = None
         self.sid: str | None = None
-        self.root = cfg.get("dir") or "/"
+        self.root = self.cfg.get("dir") or "/"
         self.rules: list[dict] = []
         self.failed_start = False
         self.turn_done: asyncio.Event | None = None
@@ -766,6 +769,9 @@ class OpenCodeAgent(Agent):
             self.turn_t0 = time.time() * 1000
             self.retry_noted = self.saw_busy = False
             body = {"parts": [{"type": "text", "text": text}]}
+            if self.persist and not self.cfg.get("_workflow_ceo"):
+                from . import main_identity
+                body["system"] = main_identity.prompt(self.cfg)
             m = split_model(self.cfg.get("model"))
             if m:
                 body["model"] = m
@@ -793,6 +799,8 @@ class OpenCodeAgent(Agent):
             if st not in (200, 204):
                 self.fail_notice(f"OpenCode 没有接这条消息（HTTP {st}）。")
                 return
+            if self.persist and not self.cfg.get("_workflow_ceo"):
+                main_identity.audit(self.cfg, self.kind, self.host.st, self.sid)
             await self._wait_turn()
             with contextlib.suppress(OSError, HTTPError, asyncio.TimeoutError):
                 await self._catch_up()                    # a text part whose end event never came

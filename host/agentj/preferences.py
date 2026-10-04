@@ -85,9 +85,12 @@ def validate(doc,raw=''):
         if not valid: raise ConfigError(k,'expected '+typ,line)
         if 'enum' in m and v not in m['enum']: raise ConfigError(k,'allowed: '+', '.join(m['enum']),line)
         if isinstance(v,str):
-            if any(ord(c)<32 for c in v) or len(v)>m.get('maxLength',1000): raise ConfigError(k,'invalid characters or length',line)
+            if any(ord(c)<32 and not (k=='agent.instructions' and c in '\n\t') for c in v) or len(v)>m.get('maxLength',1000): raise ConfigError(k,'invalid characters or length',line)
             if m.get('pattern') and not re.fullmatch(m['pattern'],v): raise ConfigError(k,'expected environment variable NAME, never a secret',line)
         if typ in ('integer','number') and not m.get('minimum',-math.inf)<=v<=m.get('maximum',math.inf): raise ConfigError(k,f"allowed range: {m.get('minimum')}..{m.get('maximum')}",line)
+    root = get(doc, 'agent.working_root', '')
+    if root and not (os.path.isabs(root) or root == '~' or root.startswith('~/')):
+        raise ConfigError('agent.working_root', 'use an absolute path or ~/path')
     out=merge(defaults(),{k:v for k,v in doc.items() if k!='version'})
     for k in ('menu.items','keyboard.bindings','channels.items'):
         rows=get(doc,k,[]); ids=set()

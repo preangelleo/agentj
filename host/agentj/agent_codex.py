@@ -205,6 +205,9 @@ class CodexAgent(Agent):
     kind = "codex"
 
     def __init__(self, host, cfg: dict, persist: bool = True, research: bool = False):
+        if not persist:
+            cfg = dict(cfg)
+            cfg["_workflow_ceo"] = True
         super().__init__(host, cfg)
         self.proc: asyncio.subprocess.Process | None = None
         self.failed_start = False
@@ -320,6 +323,9 @@ class CodexAgent(Agent):
         if self.tid and (want == self.tid or not self.persist):
             return True
         base = {"cwd": self.cfg["dir"], **self.policy()}
+        if self.persist and not self.cfg.get("_workflow_ceo"):
+            from . import main_identity
+            base["developerInstructions"] = main_identity.prompt(self.cfg)
         res = None
         if want:
             try:
@@ -332,6 +338,8 @@ class CodexAgent(Agent):
         th = (res or {}).get("thread") if isinstance(res, dict) else None
         if not isinstance(th, dict) or not isinstance(th.get("id"), str):
             raise RPCError({"message": "no thread"})
+        if self.persist and not self.cfg.get("_workflow_ceo"):
+            main_identity.audit(self.cfg, self.kind, self.host.st, th["id"])
         self.tid = th["id"]
         self.thread = {k: res.get(k) for k in ("model", "sandbox", "approvalPolicy", "approvalsReviewer", "cwd",
                                                "reasoningEffort")}

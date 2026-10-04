@@ -25,15 +25,15 @@ yourself. → shows where the answer goes (`references/files.md`).
 | 13 | 你在哪个时区、几点上下班？每天几点要收到报告？/ Time zone, working hours, and when should the daily report arrive? | 默认：北京时间 9:00–18:00，报告 08:00 | WORKFLOW, MEMORY |
 | 14 | 数据和表格用什么工具？/ Which ERP, data and spreadsheet tools? | 领星 · 积加 · 马帮 · 店小秘 · 卖家精灵 · Helium 10 · Jungle Scout · 飞书 · Google Sheets · Excel · 没有 | ROLES tools, MEMORY |
 | 15 | 客服用什么？有没有已经在跑的自动化（RPA、Zapier、脚本）？有的话最重要的 1–3 条叫什么、多久跑一次。/ Customer-service tool? Any automation already running (RPA, Zapier, scripts) — the 1–3 most important, how often? | 客服：Gorgias · eDesk · Zendesk · 平台后台 · 没有；自动化：影刀 · 按键精灵 · Zapier · Make · n8n · 扣子 · 自己写的脚本 · 没有 | ROLES, WORKFLOW (existing automation, keep running) |
-| 16 | 下面这几件事，各想自动化到什么程度？「报告」= 我只出报告；「起草」= 我起草、你在手机上批；「不要」= 先不做。/ For each, how far should I go? report = I only report · draft = I draft, you approve on the phone · none = not now | 经营日报 · 广告复盘 · Listing 撰写与巡检 · 客服回复草稿 · 选品调研 — 例：「日报 报告，广告 报告，listing 起草，客服 起草，选品 不要」 | WORKFLOW, STRUCTURE.json workflows |
+| 16 | 下面这几件事，各想自动化到什么程度？「报告」= 工作流 CEO 出报告，我读回；「起草」= 工作流 CEO 起草、你在手机上批；「不要」= 先不做。/ For each, how far should I go? report = the workflow CEO reports · draft = the workflow CEO drafts, you approve on the phone · none = not now | 经营日报 · 广告复盘 · Listing 撰写与巡检 · 客服回复草稿 · 选品调研 — 例：「日报 报告，广告 报告，listing 起草，客服 起草，选品 不要」 | WORKFLOW, STRUCTURE.json workflows |
 | 17 | 除了手机上的推送，还要把报告或提醒发到哪里？做文案、图片用哪家服务？**只说用哪家，不要发任何密码或 key。** / Besides phone push, where else should reports go? Which service for copy / images? Only the name — never a key. | 通知：企业微信 · 飞书 · 钉钉 · Slack · Telegram · 不需要；模型 / 图片：已有的 ChatGPT / Claude 订阅 · OpenRouter · Replicate · 暂不需要 | ROLES tools, NEXT_SESSION (to set up) |
-| 18 | 要给我起个名字吗？可以用你在后台给这个 Agent 起的名字。/ Want to give me a name? You can reuse the Agent name from the Dashboard. | 建议：助理一号 · Wren · 运营部 Agent，或自己起；跳过 = 用「待定」 | IDENTITY, entry file |
+| 18 | 要给我起个名字吗？可以用你在后台给这个 Agent 起的名字。/ Want to give me a name? You can reuse the Agent name from the Dashboard. | 建议：助理一号 · Wren · 董事长助理，或自己起；跳过 = 用「待定」 | IDENTITY, entry file |
 | 19 | 希望多快用上第一个工作流？/ How soon should the first workflow be in use? | 1 这周 · 2 这个月 · 3 先试试看 | NEXT_SESSION goals |
 | 20 | （确认）这是我记下的，对吗？要改哪一条？/ (Confirm) Here is what I noted — right? What should change? | 12 行以内的摘要，含「待定」清单 | — |
 
 Notes
 - Question 11: the four always-ask actions are fixed rules of this product; the human can only add to them, never remove.
-- Question 16 lists the five starter templates. If a template is installed under `workflows/<id>/`, mention it is already
+- Question 16 lists the five starter templates. If a template is installed under `<id>/` (or its recorded legacy path), mention it is already
   there (dormant). Ids: 经营日报 `daily-report` · 广告复盘 `ads-review` · Listing `listing` · 客服 `customer-service` ·
   选品 `product-selection`.
 - Question 17 is the only place services come up. If they ask how to set a key, say it is done later by them directly in

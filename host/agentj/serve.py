@@ -1073,7 +1073,11 @@ class Host:
                 await self._send_ready(lambda _: self.preferences_msg())
                 return self.config_problem
             await self._send_ready(lambda _: self.preferences_msg())
-            return {"ok": True, "applied": True, "verify": {"ok": True, "detail": "host configuration activated; voice needs a listening test"}, "needs": []}
+            restart = any(preferences.get(old, key) != preferences.get(candidate, key)
+                          for key in ("agent.working_root", "agent.instructions", "appearance.language"))
+            return {"ok": True, "applied": not restart,
+                    "verify": {"ok": True, "detail": "stored; restart serve for main-Agent instructions" if restart else "host configuration activated; voice needs a listening test"},
+                    "needs": ["restart serve"] if restart else []}
 
     async def preferences_loop(self):
         while not self.stopping.is_set():

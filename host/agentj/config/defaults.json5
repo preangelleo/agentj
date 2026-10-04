@@ -1,5 +1,11 @@
 // Factory defaults; put only your changes in the user override file.
 {
+  "agent": {
+    // Empty preserves existing work folder; fresh init defaults to ~/coding.
+    "working_root": "",
+    // Personal additions only; packaged main-Agent constitution always takes priority.
+    "instructions": "",
+  },
   "voice":
   {
     // Empty follows 嘿 + Agent name / 留空跟随 Agent 名; default=""

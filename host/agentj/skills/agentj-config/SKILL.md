@@ -34,3 +34,17 @@ Forbidden: hidden `~/.local/state/agentj/` credentials/devices/approval state, p
 Telegram is optional, own-bot, private owner text only. Enrollment is human-only. Do not promise Telegram media, group routing or approvals. iOS PWA cannot listen for a wake phrase in the background. Do not promise tested arbitrary acoustic wake detection based on a text-comparison test.
 
 Diagnosis: `agentj doctor --json`, `agentj config validate --json`, `agentj config history`, `agentj config diff --against last-good`. Escalate unresolved failures to the community with sanitized diagnostic facts, never conversations or secrets; posting still needs owner approval. Do not claim "99%" is measured.
+
+Main-Agent identity has two layers. The versioned EN/ZH constitution in the host package is read-only,
+hash-checked and injected at every main-session launch/resume for Claude, Codex and OpenCode.
+Do not edit or replace it: the human needs one chief of staff to route, read VERDICT reports, ask each
+workflow CEO to repair failures, maintain workflow/global skills and give the daily morning brief.
+Turning the main Agent into a workflow CEO breaks that single window.
+Only append compatible personal instructions via `agentj config set agent.instructions <text>`.
+Core role wins contradictions. Inspect `agentj config get agent.instructions` and verify `main-core`
+and `main-inject` in doctor after restarting serve and sending a message. Style/language are user choices.
+The working root lives in `agent.working_root`; prefer `agentj init --working-root <existing root>` to
+record it and seed absent root entry files. Existing files are never moved or replaced. New workflows
+are one lowercase-hyphen direct child folder each. Each owns its CEO entry; root entries reference
+`agentj.main_identity` rather than copy the core role. Do not confuse work-root selection with host
+package/state installation directories. Identity/root changes require restarting serve.

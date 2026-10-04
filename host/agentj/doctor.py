@@ -521,6 +521,7 @@ def run(st: State | None = None, offline: bool = False) -> list[dict]:
             check_activity(st)]
     out += check_asr(st)
     out += check_preferences(st)
+    out += check_main_identity(st)
     lg = check_linger(svc)
     if lg:
         out.append(lg)
@@ -569,4 +570,53 @@ def check_preferences(st):
         rows.append(_c("config",FAIL,"configuration unreadable","agentj config validate --json"))
     hw=voice.hardware()
     rows.append(_c("hardware",OK,json.dumps(hw,ensure_ascii=False)))
+    return rows
+
+
+def check_main_identity(st):
+    from . import main_identity, preferences, wizard
+    rows = []
+    try:
+        version = main_identity.verify_core()["version"]
+        rows.append(_c("main-core", OK, f"Packaged EN/ZH main-Agent core v{version}: pinned hashes verified"))
+        cfg = st.agent_config() if st.exists() else None
+        pref = preferences.get(preferences.effective(st), "agent.working_root", "")
+        old = st.config().get("agent", {}).get("dir") if st.exists() else None
+        root = main_identity.working_root(cfg or {"working_root": pref or old or "~/coding"})
+        if not root.is_dir():
+            rows.append(_c("work-root", FAIL if cfg or pref else WARN, "Working root is missing", "agentj init --working-root ~/coding"))
+        else:
+            from .fence import protected_paths
+            protected = any(root == pathlib.Path(p).resolve() or pathlib.Path(p).resolve() in root.parents for p in protected_paths(st))
+            if protected:
+                rows.append(_c("work-root", FAIL, "Working root is inside a protected Agent J path", "Choose your coding root"))
+            else:
+                present = all((root / name).is_file() for name in ("CLAUDE.md", "AGENTS.md"))
+                refs = present and all("agentj:main-core" in (root / name).read_text() for name in ("CLAUDE.md", "AGENTS.md"))
+                rows.append(_c("work-root", OK if refs and pref else WARN, tilde(str(root)),
+                               "agentj init --working-root <existing root>; existing files stay put" if not refs or not pref else ""))
+                # An unrelated owner manifest is not an Agent J contract until the
+                # root adopts our core reference or explicitly declares main_agent.
+                # Migration records its location; it never forces a rewrite.
+                adopted = any((root / name).is_file() and "agentj:main-core" in (root / name).read_text()
+                              for name in ("CLAUDE.md", "AGENTS.md"))
+                try:
+                    structure = json.loads((root / "documentation/STRUCTURE.json").read_text())
+                    adopted = adopted or isinstance(structure, dict) and structure.get("main_agent") is True
+                except (OSError, ValueError):
+                    pass
+                for check in wizard.doctor(root):
+                    name = check.get("name", "")
+                    if check.get("status") == FAIL and name.startswith(("main", "workflow", "structure")):
+                        rows.append(_c("root-" + name, FAIL if adopted else WARN,
+                                       check.get("detail", "Invalid root structure") if adopted else "Existing owner documents retained; review before adopting the Agent J root contract",
+                                       check.get("hint", "agentj wizard doctor") if adopted else "Review root entries and CEO roster; no automatic move or overwrite"))
+        if cfg:
+            ok, reason = main_identity.latest_audit(st, cfg)
+            status = OK if ok else WARN if reason.startswith("no verified main Agent launch") else FAIL
+            rows.append(_c("main-inject", status, reason, "Restart serve and send a message" if not ok else ""))
+            if old and str(pathlib.Path(old).resolve()) != str(root):
+                rows.append(_c("root-migrate", WARN, "Old files were kept in the previous work folder", "Review CEO roster and paths; no automatic move"))
+    except (main_identity.IdentityError, preferences.ConfigError, OSError, ValueError):
+        rows.append(_c("main-core", FAIL, "Main-Agent core or root configuration integrity failed", "Reinstall the trusted package; agentj config validate --json"))
     return rows

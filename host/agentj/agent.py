@@ -32,7 +32,7 @@ import sys
 import time
 from dataclasses import dataclass
 
-from . import danger, fence, slash
+from . import danger, fence, slash, main_identity
 from .slash import Result
 from .envcompat import getenv
 from .text import clean, clean_line, text_units
@@ -141,7 +141,11 @@ class Agent:
     kind = "?"
 
     def __init__(self, host, cfg: dict):
-        self.host, self.cfg = host, cfg
+        # Main adapters share the host model/effort configuration; workflow CEOs
+        # receive their own configuration and must not mutate the main session.
+        self.host, self.cfg = host, dict(cfg) if cfg.get("_workflow_ceo") else cfg
+        if not cfg.get("_workflow_ceo"):
+            self.cfg["dir"] = str(main_identity.working_root(cfg))
         self.q: asyncio.Queue[str] = asyncio.Queue()
         self.status = "idle"
         self.task: asyncio.Task | None = None
@@ -335,6 +339,14 @@ class Agent:
 
     def launch_argv(self, argv: list[str]) -> list[str] | None:
         """argv inside the fence (or as is when the human chose --unfenced); None + a notice when the fence cannot start."""
+        if not self.cfg.get("_workflow_ceo"):
+            try:
+                main_identity.verify_core()
+                main_identity.validate_working_root(self.cfg, self.host.st)
+            except (main_identity.IdentityError, OSError):
+                self.host.st.log("agent_identity_fail", agent=self.kind, reason="core_or_root_invalid")
+                self.local_fail("主 Agent 核心或工作根目录校验失败，未启动。Core or working root validation failed; Agent was not started. Run agentj doctor.")
+                return None
         if not self.cfg.get("fence", True):
             return argv
         why = fence.problem(self.host.st, self.cfg["dir"])
@@ -549,6 +561,8 @@ class ClaudeAgent(Agent):
              "--output-format", "stream-json", "--verbose", "--permission-prompt-tool", PERM_TOOL,
              "--disallowedTools", PERM_TOOL, "--mcp-config", json.dumps(mcp),
              "--settings", json.dumps(hook_settings(self.cfg.get("danger_extra"), research), separators=(",", ":"))]
+        if not self.cfg.get("_workflow_ceo"):
+            a += ["--append-system-prompt", main_identity.prompt(self.cfg)]
         if self.cfg.get("model"):
             a += ["--model", self.cfg["model"]]
         if self.cfg.get("effort") in CLAUDE_EFFORTS:      # §10.11: "for the current session" — no settings write
@@ -600,6 +614,8 @@ class ClaudeAgent(Agent):
             return False
         if proc.returncode is not None or self.proc is not proc:
             return False
+        if not self.cfg.get("_workflow_ceo"):
+            main_identity.audit(self.cfg, self.kind, self.host.st, self.host.st.agent_session(self.kind))
         return True
 
     async def control(self, subtype: str, **kw) -> dict:

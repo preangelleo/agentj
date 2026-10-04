@@ -511,6 +511,34 @@
       "apply": "hot",
       "verify": "agentj config validate --json + acoustic sample",
       "since": "0.12"
+    },
+    "agent.working_root": {
+      "type": "string",
+      "default": "",
+      "description": "Work root; new workflows are direct child folders / 工作根目录；新工作流建一层子目录",
+      "aliases": [
+        "agent.working_root",
+        "工作根目录"
+      ],
+      "tier": "user",
+      "apply": "restart:serve",
+      "verify": "agentj doctor --offline --json",
+      "since": "0.13",
+      "maxLength": 4096
+    },
+    "agent.instructions": {
+      "type": "string",
+      "default": "",
+      "description": "Append personal instructions; constitutional core wins conflicts / 追加个人指令；冲突时核心角色优先",
+      "aliases": [
+        "agent.instructions",
+        "个人指令"
+      ],
+      "tier": "user",
+      "apply": "restart:serve",
+      "verify": "agentj doctor --offline --json",
+      "since": "0.13",
+      "maxLength": 6000
     }
   }
 }

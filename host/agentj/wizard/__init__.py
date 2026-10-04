@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import contextlib
 import difflib
+from datetime import date, timedelta
 import fcntl
 import hashlib
 import http.client
@@ -243,7 +244,8 @@ def place(root: Path, files: dict[str, bytes], source: str) -> list[dict]:
 def pending(root: Path) -> list[str]:
     """Relative paths that have a `.wizard-new` proposal waiting (entry files, documentation/, workflows/, skill folders)."""
     found = set()
-    for top in ["CLAUDE.md", "AGENTS.md", "documentation", "workflows", *SKILL_DIRS.values()]:
+    for top in ["CLAUDE.md", "AGENTS.md", "documentation", "workflows",
+                *(p.name for p in _workflow_dirs(root)), *SKILL_DIRS.values()]:
         p = root / top
         if p.is_file() or p.is_symlink():
             continue
@@ -311,9 +313,73 @@ def install(root: Path, harnesses: list[str], lang: str | None = None) -> list[d
         m = read_manifest(root)
         m["harness"] = sorted(set(m.get("harness") or []) | set(harnesses))
         res += _remove_legacy_skill(root, m)
-        res += _ensure_docs_rule(root, m, sorted({ENTRY[h] for h in harnesses}), docsrule.block(lang).encode())
+        res += _ensure_docs_rule(root, m, sorted({ENTRY[h] for h in harnesses}), (core_reference(lang) + "\n" + docsrule.block(lang)).encode())
         _write_manifest(root, m)
     return res
+
+
+from ..main_identity import VERSION as CORE_VERSION
+CORE_REF = f"<!-- agentj:main-core v{CORE_VERSION} -->"
+
+
+def core_reference(lang: str | None = None) -> str:
+    """Reference the package-owned prompt; editable entries never copy that prompt."""
+    text = ("核心身份由 Agent J 随包只读的 agentj/identity/core.zh.md 和 core.en.md 核心文件每次启动注入。根入口只引用，"
+            "不重写它；个人指令只能追加，冲突时核心优先。" if lang == "zh" else
+            "The host injects the immutable core from the agentj/identity/core.en.md and core.zh.md package assets on every start. "
+            "This root entry references it; personal instructions append only, and the core prevails on conflict.")
+    return CORE_REF + "\n" + text + "\n<!-- /agentj:main-core -->\n"
+
+
+def bootstrap_root(root: Path, harnesses: list[str] | None = None, lang: str | None = None) -> list[dict]:
+    """Seed root routing docs before the interview; never replace any pre-existing file.
+
+    Init may call this after working_root selection. Existing users receive proposals through place(), not relocation.
+    """
+    harnesses = harnesses or list(HARNESSES)
+    zh = lang == "zh"
+    intro = ("主 Agent / 董事长助理：人类与所有工作流 CEO 的唯一窗口。具体业务交给工作流 CEO。" if zh else
+             "Main Agent / chief of staff: the human's single window to every workflow CEO. Route business work to its CEO.")
+    body = core_reference(lang) + "\n" + intro + "\n\n" + "New session: read " + ", ".join("documentation/" + x for x in BOOT_SET) + ".\n"
+    body += ("\nWorking root: this folder. New workflows use one lowercase-hyphen child folder, one job per folder. "
+             "Keep existing files in place and record their locations. Consult documentation/ROLES.md before routing.\n")
+    contents = {
+        "CONSTITUTION.md": "Core identity: see the host-injected immutable package core. User documents may append, never replace it.\nAsk the human before spending, public deletion, credentials or irreversible external action. No credentials in reports.\n",
+        "IDENTITY.md": intro + "\n" + "User preferences and Agent name: TBD; run the workflow wizard.\n",
+        "SOUL.md": "Speak the human's language, briefly, results first. Personal tone: TBD.\n",
+        "WORKFLOW.md": ("Route requests using ROLES to workflow CEOs (sub-session, headless or scheduled). No owner: propose a workflow.\n"
+                        "Read each report and its VERDICT: ok|attention|fail; exit codes alone prove nothing. Missing/skipped reports remain incomplete.\n"
+                        "For failure: dispatch evidence to the owner, ask for repair and rerun, then read the new report.\n"
+                        "Morning brief: read all overnight reports, summarize what ran and decisions needed; never call skipped work normal.\n"
+                        "Brief time: TBD. Keep workflow/global skills and registry consistent; owners repair business work.\n"),
+        "ROLES.md": "# CEO roster\n\n| Workflow | CEO entry | Execution | Report location | Status |\n|---|---|---|---|---|\n\nNo workflows registered yet. Run the wizard; every workflow owns its CEO folder and VERDICT report.\n",
+        "NEXT_SESSION.md": "Working root recorded; files were not moved. Next: workflow wizard and CEO roster.\n",
+        "MEMORY.md": "Working root: this folder. New workflows are direct lowercase-hyphen children. Existing locations remain unchanged.\nNever store credentials here.\n",
+    }
+    if zh:
+        body = core_reference(lang) + "\n" + intro + "\n\n新会话先读：" + "、".join("documentation/" + x for x in BOOT_SET) + "。\n"
+        body += "\n工作根目录是本目录。新工作流一律在本目录下建一层小写、连字符子目录，一个目录一件事。已有文件不搬迁，记录原位置。先查 documentation/ROLES.md 再路由。\n"
+        contents = {
+            "CONSTITUTION.md": "核心身份引用 host 每次注入的随包只读核心；用户文档只追加，不替换角色。花钱、删除公开内容、触碰凭据或不可逆外部操作先请人批准。报告不含凭据。\n",
+            "IDENTITY.md": intro + "\n用户偏好与名字：待定；运行工作流向导确认。\n",
+            "SOUL.md": "说人类的语言，简短，先报结果。个人语气：待定。\n",
+            "WORKFLOW.md": "查 ROLES，把业务交对应 CEO（子会话、headless 或定时任务）；没有负责人就提议建工作流。\n读实际报告及 VERDICT: ok|attention|fail；退出码不能证明成功，缺失或跳过仍是未完成。\n故障证据派给所属 CEO 修复并重跑，读新报告再关闭。\n晨报：读全部夜间报告，只报做了什么、需要人决定什么；跳过不能算正常。晨报时间待定。\n维护全部工作流与 global skills、花名册；业务修理归对应 CEO。\n",
+            "ROLES.md": "# CEO 花名册\n\n| 工作流 | CEO 入口 | 执行方式 | 报告位置 | 状态 |\n|---|---|---|---|---|\n\n尚未注册工作流。运行向导；每个工作流拥有自己的 CEO 子目录和 VERDICT 报告。\n",
+            "NEXT_SESSION.md": "工作根目录已记录，已有文件未搬动。下一步：工作流向导与 CEO 花名册。\n",
+            "MEMORY.md": "本目录是工作根目录。新工作流建一层小写、连字符子目录。已有位置不变。不存凭据。\n",
+        }
+    files = {ENTRY[h]: body.encode() for h in harnesses}
+    for name, content in contents.items():
+        fm = ("---\ntype: " + name[:-3].title() + "\nstatus: draft\ngenerated: { by: agentj-main-agent-bootstrap, at: "
+              + time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()) + " }\nverified: []\nstale_after: "
+              + str(date.today() + timedelta(days=14 if name == "NEXT_SESSION.md" else 90)) + "\n---\n")
+        files["documentation/" + name] = (fm + content).encode()
+    files["documentation/STRUCTURE.json"] = (json.dumps({"project": "TBD", "main_agent": True,
+        "working_root": str(root), "entry": sorted({ENTRY[h] for h in harnesses}),
+        "boot_set": ["documentation/" + x for x in BOOT_SET], "documents": [], "workflows": []}, indent=2) + "\n").encode()
+    # Existing documents are protected even when an older wizard wrote them: bootstrap is not a migration rewrite.
+    files = {r: d for r, d in files.items() if not os.path.lexists(root / r)}
+    return place(root, files, "main-agent-bootstrap") if files else []
 
 
 def _ensure_docs_rule(root: Path, m: dict, rels: list[str], blk: bytes) -> list[dict]:
@@ -328,7 +394,11 @@ def _ensure_docs_rule(root: Path, m: dict, rels: list[str], blk: bytes) -> list[
             out.append({"path": rel, "status": "skipped"})
             continue
         cur = _read_regular(path)
-        new = docsrule.merged(cur, blk)
+        new = docsrule.merged(cur, docsrule.extract(blk) or blk)
+        current = new if new is not None else cur
+        if current is not None and CORE_REF.encode() not in current:
+            reference = blk.split(docsrule.BEGIN.encode(), 1)[0].strip()
+            new = current.rstrip(b"\n") + b"\n\n" + reference + b"\n"
         if new is None:
             out.append({"path": rel, "status": "unchanged"})
             continue
@@ -379,9 +449,11 @@ def _staged(staging: Path) -> dict[str, bytes]:
             raise WizardError(f"refused: {rel} is a symlink")
         if p.is_dir():
             continue
-        ok = rel in ENTRY_FILES or (rel.startswith("documentation/") and rel.endswith((".md", ".json")))
+        ok = (rel in ENTRY_FILES or (rel.startswith("documentation/") and rel.endswith((".md", ".json")))
+              or (len(p.relative_to(staging).parts) == 2 and re.fullmatch(r"[a-z][a-z0-9]*(?:-[a-z0-9]+)*", rel.split("/")[0])
+                  and p.name in ENTRY_FILES))
         if not ok:
-            raise WizardError(f"refused: {rel} — the wizard writes only CLAUDE.md, AGENTS.md and documentation/*.md|json")
+            raise WizardError(f"refused: {rel} — the wizard writes only root entries, documentation/*.md|json and one-level workflow CEO entries")
         data = p.read_bytes()
         if len(data) > MAX_FILE:
             raise WizardError(f"refused: {rel} is larger than {MAX_FILE // 1024} KiB")
@@ -420,6 +492,8 @@ def apply(root: Path, staging: Path) -> list[dict]:
     files = _staged(staging)
     for rel in ENTRY_FILES:     # PROMPT-29 C-5: a generated entry file keeps the "look it up first" block (the one on disk, else both languages)
         if rel in files:
+            if CORE_REF.encode() not in files[rel]:
+                files[rel] += b"\n" + core_reference().encode()
             on_disk = None if (root / rel).is_symlink() else docsrule.extract(_read_regular(root / rel))
             files[rel] = docsrule.merged(files[rel], on_disk or docsrule.block().encode()) or files[rel]
     hits = secret_hits(files)
@@ -458,11 +532,22 @@ def _docs(root: Path) -> list[str]:
                   if p.is_file() and not p.is_symlink() and not p.name.endswith(NEW) and p.suffix in (".md", ".json"))
 
 
+def workflow_dir(root: Path, tid: str) -> Path:
+    """New workflows are direct children; existing legacy folders remain in place."""
+    direct, legacy = root / tid, root / "workflows" / tid
+    if direct.exists() or direct.is_symlink():
+        return direct
+    if legacy.exists() or legacy.is_symlink():
+        return legacy
+    return direct
+
+
 def _workflow_dirs(root: Path) -> list[Path]:
+    out = [p for p in root.iterdir() if p.is_dir() and not p.is_symlink() and (p / "task.json").is_file()]
     w = root / "workflows"
-    if not w.is_dir() or w.is_symlink():
-        return []
-    return sorted(p for p in w.iterdir() if p.is_dir() and not p.is_symlink())
+    if w.is_dir() and not w.is_symlink():
+        out += [p for p in w.iterdir() if p.is_dir() and not p.is_symlink()]
+    return sorted(out)
 
 
 def doctor(root: Path, today: str | None = None) -> list[dict]:
@@ -544,16 +629,31 @@ def doctor(root: Path, today: str | None = None) -> list[dict]:
             probs.append("workflows must be a list")
             wf = []
         named = set()
+        if s.get("main_agent") is True:
+            if s.get("working_root") != str(root):
+                probs.append("working_root must match this root folder; existing files are not moved")
+            for e in entries:
+                if "agentj:main-core" not in (root / e).read_text(encoding="utf-8", errors="replace"):
+                    probs.append(f"{e} must reference the injected package core")
         for w in wf:
-            if not (isinstance(w, dict) and isinstance(w.get("id"), str)):
+            if not (isinstance(w, dict) and isinstance(w.get("id"), str) and taskspec.ID_RE.fullmatch(w["id"])):
                 probs.append("workflows entries must be objects with an id")
                 continue
             named.add(w["id"])
-            if w.get("status") != "planned" and not (root / "workflows" / w["id"] / "task.json").is_file():
-                probs.append(f"workflow {w['id']} has no workflows/{w['id']}/task.json (mark it status: planned)")
+            if s.get("main_agent") is True:
+                wid = w["id"]
+                if not re.fullmatch(r"[a-z][a-z0-9]*(?:-[a-z0-9]+)*", wid):
+                    probs.append(f"workflow {wid} must have a lowercase-hyphen id")
+                if w.get("dir") not in (wid, f"workflows/{wid}"):
+                    probs.append(f"workflow {wid} must be one root child, or a recorded legacy folder")
+                ceo = w.get("ceo_entry")
+                if ceo not in (f"{w.get('dir')}/CLAUDE.md", f"{w.get('dir')}/AGENTS.md") or not (root / str(ceo)).is_file():
+                    probs.append(f"workflow {wid} needs its own CEO entry file")
+            if w.get("status") != "planned" and not (workflow_dir(root, w["id"]) / "task.json").is_file():
+                probs.append(f"workflow {w['id']} has no task.json (mark it status: planned)")
         for d in _workflow_dirs(root):
             if (d / "task.json").is_file() and d.name not in named:
-                probs.append(f"workflows/{d.name} is installed but not listed in STRUCTURE.json workflows")
+                probs.append(f"{d.relative_to(root)} is installed but not listed in STRUCTURE.json workflows")
         add("structure", "fail" if probs else "ok", "; ".join(probs[:8]) if probs else "matches the files on disk")
 
     scope = {}
@@ -735,7 +835,33 @@ def add_template(st, root: Path, tid: str, post=None) -> tuple[dict, list[dict]]
     if status != 200:
         raise _refusal(status, pkg)
     files = verify_package(pkg, want)
-    res = place(root, {f"workflows/{tid}/{p}": d for p, d in files.items()}, f"template:{tid}@{want['version']}")
+    wf = workflow_dir(root, tid).relative_to(root).as_posix()
+    proposed = {f"{wf}/{p}": d for p, d in files.items()}
+    entry = (f"# {tid} — workflow CEO / 工作流 CEO\n\n"
+             "You are the CEO of this workflow only. Read RUN.md and the root documentation/CONSTITUTION.md, "
+             "MEMORY.md and ROLES.md. Execute business work here, write reports/ with a final VERDICT, "
+             "and return the report path to the main Agent. Repair and rerun this workflow when dispatched.\n"
+             "此身份只属于本工作流 CEO；根主 Agent 是董事长助理。先读 RUN.md 与工作根目录文档，交回报告路径。\n")
+    for e in ENTRY_FILES:
+        proposed[f"{wf}/{e}"] = entry.encode()
+    structure = root / "documentation/STRUCTURE.json"
+    try:
+        doc = json.loads(structure.read_text())
+    except (OSError, ValueError):
+        doc = None
+    if isinstance(doc, dict) and doc.get("main_agent") is True and isinstance(doc.get("workflows"), list):
+        if not any(isinstance(w, dict) and w.get("id") == tid for w in doc["workflows"]):
+            doc["workflows"].append({"id": tid, "dir": wf, "status": "dormant", "level": "report",
+                "ceo_entry": f"{wf}/AGENTS.md", "reports": f"{wf}/reports/", "execution": "scheduled"})
+            proposed["documentation/STRUCTURE.json"] = (json.dumps(doc, indent=2, ensure_ascii=False) + "\n").encode()
+        roster = root / "documentation/ROLES.md"
+        try:
+            roster_body = roster.read_bytes()
+        except OSError:
+            roster_body = None
+        if roster_body is not None and f"{wf}/AGENTS.md".encode() not in roster_body:
+            proposed["documentation/ROLES.md"] = roster_body.rstrip(b"\n") + (f"\n| {tid} | {wf}/AGENTS.md | scheduled | {wf}/reports/ | dormant |\n").encode()
+    res = place(root, proposed, f"template:{tid}@{want['version']}")
     return want, res
 
 
@@ -803,9 +929,9 @@ def dry_run(st, root: Path, tid: str, *, harness: str | None = None, model: str 
     from .. import fence
     if not taskspec.ID_RE.fullmatch(tid or ""):
         raise WizardError("bad template id")
-    wf = root / "workflows" / tid
+    wf = workflow_dir(root, tid)
     if wf.is_symlink() or not wf.is_dir():
-        raise WizardError(f"workflows/{tid} is not installed (agentj wizard add-template {tid})")
+        raise WizardError(f"{tid} is not installed (agentj wizard add-template {tid})")
     task, probs = taskspec.load(wf / "task.json", tid)
     if probs:
         raise WizardError("task.json: " + probs[0])
@@ -849,7 +975,7 @@ def dry_run(st, root: Path, tid: str, *, harness: str | None = None, model: str 
         rep.mkdir(exist_ok=True)
         name = time.strftime("dry-run-%Y%m%d-%H%M%S.md")
         _write_file(rep / name, out.encode("utf-8"))
-        res["report"] = f"workflows/{tid}/reports/{name}"
+        res["report"] = (rep / name).relative_to(root).as_posix()
     res["output"] = out
     return res
 
@@ -877,7 +1003,7 @@ def _dir_arg(a) -> Path:
             cfg = st.agent_config() if st.exists() else None
         except (OSError, ValueError):
             cfg = None
-        d = (cfg or {}).get("dir")
+        d = (cfg or {}).get("working_root") or (cfg or {}).get("dir")
     return workspace(d)
 
 
@@ -978,7 +1104,7 @@ def cmd_add_template(a) -> int:
     if a.json:
         print(json.dumps({"id": want["id"], "version": want["version"], "sha256": want["sha256"], "files": rows}, ensure_ascii=False))
         return 0
-    print(f"模板 {want['id']} {want['version']}（{want['title']['zh']}）已装到 workflows/{want['id']}/，休眠（enabled: false）")
+    print(f"模板 {want['id']} {want['version']}（{want['title']['zh']}）已装到 {workflow_dir(root, want['id']).relative_to(root)}/，休眠（enabled: false）")
     print(f"  每个文件的 SHA-256 已核对 / every file's SHA-256 checked (package {want['sha256'][:16]}…)")
     _say(rows)
     print(f"  演练 / dry run: agentj wizard dry-run {want['id']} --dir {root}")

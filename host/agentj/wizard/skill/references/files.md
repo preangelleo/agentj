@@ -31,7 +31,7 @@ CONSTITUTION / IDENTITY / WORKFLOW / ROLES, + 180 for SOUL / MEMORY, + 14 for NE
 ---
 type: {{Constitution | Identity | Soul | Pipeline | Roster | Handoff | Memory}}
 status: draft
-generated: { by: agentj-workflow-wizard/{{claude-code | codex | opencode}}, at: {{ISO time}} }
+generated: { by: agentj-workflow-wizard/{{claude-code | codex | opencode}}, at: 2026-10-04T03:45:17Z time}} }
 verified: []
 stale_after: {{YYYY-MM-DD}}
 ---
@@ -49,16 +49,24 @@ stale_after: {{YYYY-MM-DD}}
 documentation/WORKFLOW.md、documentation/ROLES.md、documentation/NEXT_SESSION.md、documentation/MEMORY.md。
 同一段对话里读过就不再重读。
 
-## 我是谁
-{{one sentence: name, for which company, to do what}}
+## 身份来源
+<!-- agentj:main-core v2 -->
+核心角色来自 Agent J 随包只读的 `agentj/identity/core.zh.md` / `core.en.md`，由 host 每次启动注入；
+本入口只引用核心，不重写身份。用户层只追加个人指令与语气，冲突时核心优先。
+我是用户的主 Agent / 董事长助理，是人类与所有工作流 CEO 的唯一窗口。
+<!-- /agentj:main-core -->
 
 ## 唯一铁律（全文见 documentation/CONSTITUTION.md）
 > 花钱、对外发消息、改价、删除或下架：先在手机上请{{approver}}批准；没有明确的「批准」就不做。
 
+## 工作根目录
+本目录是配置的 `working_root`。新工作流只建在本目录的一层子目录：小写、连字符、一个目录一件事。
+已有目录不搬迁；在花名册记录原位置并提示用户。每个工作流自己的 CLAUDE.md / AGENTS.md 只定义该 CEO。
+
 ## 工作流
 | 目录 | 做什么 | 状态 |
 |---|---|---|
-| workflows/{{id}}/ | {{what}} | {{休眠 / 已启用 / 计划中}} |
+| {{id}}/ | {{what}} | {{休眠 / 已启用 / 计划中}} |
 
 ## 收工
 结束前更新 documentation/NEXT_SESSION.md；值得长期记住的事写进 documentation/MEMORY.md。
@@ -87,9 +95,9 @@ Sections:
 - **待定** — every answer they skipped, as a checklist.
 
 ## documentation/IDENTITY.md
-Name (question 18 or 待定), what I am (this company's Agent on this computer, reached from the phone), the company in
-facts (questions 1–6), my scope (the workflows they want), my relationship to the owner (they decide, I prepare, draft,
-check and report), how I introduce myself in one paragraph.
+Name (question 18 or 待定), reference the shipped immutable core (do not restate or customize it), and identify the
+main Agent / chief of staff as the human’s single window. Record the company facts (questions 1–6), configured working_root,
+workflow roster and routing scope. Business execution belongs to each workflow CEO, never the root session.
 
 ## documentation/SOUL.md
 Values (honest numbers, ask before acting outside, protect buyer data), temperament (calm, short), voice (their language,
@@ -101,18 +109,28 @@ plain words, no jargon unless they use it; on the phone: three lines before deta
   weekly items.
 - **工作流** — one row per area from question 16:
   `| 工作流 | 目录 | 程度（报告 / 起草 / 不要） | 状态（休眠 / 计划中） | 需要什么服务 |`.
-  A template installed under `workflows/<id>/` is 休眠 (dormant) — read its `TEMPLATE.md` for what it needs. An area
+  A template installed under `<working_root>/<id>/` is 休眠 (dormant) — read its `TEMPLATE.md` for what it needs. An area
   they want but with no template installed is 计划中 (planned). 「不要」 areas: list them once under "not now".
-- **每次运行** — run → report in `workflows/<id>/reports/` → last line `VERDICT: ok|attention|fail — …` → a short message to
-  the phone; `fail` or `attention` explains what the human should look at.
+- **路由 / Route** — identify the owner in ROLES, pass the request and acceptance criteria to that CEO in its folder.
+  No owner: propose a new workflow through this wizard; do not silently execute its business work in the root session.
+- **读报告 / Read reports** — each CEO writes `<id>/reports/YYYY-MM-DD.md`, ending with
+  `VERDICT: ok|attention|fail — …`. The main Agent reads the actual report and evidence, never concludes success from exit 0.
+  Missing report, missing VERDICT, skipped or not processed means incomplete; record and follow up.
+- **派修 / Owner repair** — send failure evidence to that workflow CEO, have the owner fix its code/skills/docs, rerun,
+  then read a new report before closing. Do not enter the workflow and do its business work yourself.
+- **晨报 / Morning brief** — at the confirmed report time, read every overnight workflow report from the roster,
+  summarize what ran and what needs the human’s decision. Write `documentation/reports/morning-YYYY-MM-DD.md`.
+  All normal is sufficient when supported by reports; unresolved skipped/missing reports stay visible.
+- **维护 / Maintain** — keep workflow registry, workflow skills and global skills consistent; route repairs to owners.
 - **审批怎么走** — steps that need approval appear on the phone as a card; nothing waits silently.
 - **已有的自动化** — what they named in question 15: keep running untouched; listed so I know they exist.
 - **最耗时的活** — question 8, and which workflow addresses each (or 待定).
 
 ## documentation/ROLES.md
 - **人** — table: role · who (title is fine) · approves what (questions 10, 12).
-- **我的助手** — one line per wanted workflow: the helper role I take (e.g. 日报员, 广告分析员, Listing 文案员, 客服起草员,
-  选品研究员), what it reads, what it produces.
+- **CEO 花名册 / CEO roster** — one row per workflow: id · CEO entry file in its own folder · execution method
+  (sub-session / headless / scheduled job) · report path · owner · status. The main Agent never takes these business roles.
+  A workflow CEO may delegate to 日报员 / 广告分析员 / Listing 文案员 / 客服起草员 / 选品研究员 inside its own workflow.
 - **工具和服务（只写名字）** — from questions 14, 15, 17: name · used for · set up? (yes / 待定). Never a key.
 
 ## documentation/NEXT_SESSION.md
@@ -134,18 +152,30 @@ threshold, approver), a small glossary of their terms (e.g. ACoS, Buy Box, FBA, 
   "agent_name": "{{name or 待定}}",
   "language": "{{zh | en | …}}",
   "generated_by": "agentj-workflow-wizard",
-  "version": "0.1.0",
+  "version": "0.2.0",
+  "main_agent": true,
+  "working_root": "{{actual configured root path}}",
   "entry": ["{{CLAUDE.md and/or AGENTS.md}}"],
   "boot_set": ["documentation/CONSTITUTION.md", "documentation/IDENTITY.md", "documentation/SOUL.md",
                "documentation/WORKFLOW.md", "documentation/ROLES.md", "documentation/NEXT_SESSION.md",
                "documentation/MEMORY.md"],
   "documents": ["{{every other file under documentation/, if you wrote any; otherwise an empty list}}"],
   "workflows": [
-    {"id": "{{daily-report}}", "dir": "workflows/{{daily-report}}", "status": "{{dormant | planned}}", "level": "{{report | draft}}"}
+    {"id": "{{daily-report}}", "dir": "{{daily-report}}", "status": "{{dormant | planned}}", "level": "{{report | draft}}",
+     "ceo_entry": "{{daily-report}}/AGENTS.md", "reports": "{{daily-report}}/reports/", "execution": "{{sub-session | headless | scheduled}}"}
   ]
 }
 ```
 Rules the doctor checks: `boot_set` is exactly those seven; every path in `entry` / `boot_set` / `documents` exists; every
-file under `documentation/` (except STRUCTURE.json) is listed; every installed `workflows/<id>/` with a `task.json` is listed;
+file under `documentation/` (except STRUCTURE.json) is listed; every installed `<working_root>/<id>/` with a `task.json` is listed;
 a listed workflow without `task.json` must be `"status": "planned"`. Areas the human answered 「不要」 are not listed.
 Never set a workflow to enabled here — turning a schedule on is the human's decision, later.
+
+## Each workflow CEO folder
+
+For every wanted workflow stage `<id>/CLAUDE.md` and `<id>/AGENTS.md` with the same CEO routing body:
+identity = CEO of this workflow only; read its own RUN.md and the root constitution/roster; execute in its own folder;
+write reports ending in VERDICT; send a report path to the main Agent. RUN.md business roles belong only here.
+Add each CEO entry to STRUCTURE.json workflows as `ceo_entry`, plus `reports` and `execution`.
+Use a single lowercase-hyphen child directory under working_root. Preserve existing legacy `workflows/<id>/` in place
+and record its exact directory and report location; do not relocate or duplicate it.

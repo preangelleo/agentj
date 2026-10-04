@@ -342,7 +342,10 @@ class Argv(unittest.TestCase):
         self.assertIn("-P -m agentj.danger hook ", cmd)
         self.assertTrue(cmd.endswith("|| exit 2"))
         self.assertEqual(danger.decode_extra(cmd.split(" hook ")[1].split(" ")[0]), [{"category": "send", "bash": "x"}])
-        joined = " ".join(a)
+        # The identity is prose (e.g. "skipped is not success"), not a permission flag.
+        # Exclude only its value; keep every flag, settings object and tool argument audited.
+        prompt_index = a.index("--append-system-prompt")
+        joined = " ".join(a[:prompt_index + 1] + a[prompt_index + 2:])
         for bad in ("dangerously", "bypass", "--allowedTools", "--allowed-tools", "--permission-mode", "skip", "permissions",
                     "defaultMode", '"allow"'):
             self.assertNotIn(bad, joined)

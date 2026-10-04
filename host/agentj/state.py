@@ -304,7 +304,14 @@ class State:
         # fence (L2): on unless the human explicitly chose `--unfenced` at this terminal; anything else reads as on
         # docker (G-A56): the container engines stay hidden unless the human explicitly chose `--allow-docker`
         # effort (PROMPT-33 §10.11): the phone's pill; a short word the harness validates, or None (its default)
-        return {"kind": a["kind"], "dir": a["dir"], "model": m if isinstance(m, str) and m else None,
+        from . import preferences
+        prefs = preferences.effective(self)
+        root = preferences.get(prefs, "agent.working_root")
+        directory = os.path.realpath(os.path.expanduser(root)) if root else a["dir"]
+        return {"kind": a["kind"], "dir": directory, "working_root": directory,
+                "instructions": preferences.get(prefs, "agent.instructions", ""),
+                "language": preferences.get(prefs, "appearance.language", "zh"),
+                "model": m if isinstance(m, str) and m else None,
                 "effort": e if isinstance(e, str) and e.isalpha() and len(e) <= 16 else None,
                 "fence": a.get("fence") is not False, "docker": a.get("docker") is True}
 
@@ -328,6 +335,12 @@ class State:
                 if docker:
                     cfg["agent"]["docker"] = True
             _write_private(self.config_path, json.dumps(cfg, indent=1, ensure_ascii=False).encode())
+        # An explicit folder is a human/API root selection, not a legacy fallback.
+        # Record it in the one JSON5 owner so older saved preferences cannot silently
+        # send the next session to a different (possibly deleted) directory.
+        if kind is not None and directory is not None:
+            from . import working_root
+            working_root.record(self, pathlib.Path(d))
 
     def set_agent_model(self, model: str | None) -> None:
         """/model from the phone (slash.py): only the model of the configured Agent changes."""
@@ -404,7 +417,8 @@ class State:
     # ------------------------------------------------------------ metadata log (never message text)
     # report_* events (PROTOCOL §7) carry only seq / status class / trigger — never labels, codes or URLs
     LOG_FIELDS = {"channel", "cid", "device", "name", "reason", "kind", "bytes", "code_ok", "seq", "status", "trigger",
-                  "tenant", "request", "result", "id", "tool", "agent", "decision", "locked", "fence", "change", "action"}
+                  "tenant", "request", "result", "id", "tool", "agent", "decision", "locked", "fence", "change", "action",
+                  "version", "language", "core_sha256", "prompt_sha256", "mechanism", "working_root_sha256", "identity_session"}
 
     def log(self, ev: str, **kw) -> None:
         rec = {"ts": int(time.time()), "ev": ev, **{k: v for k, v in kw.items() if k in self.LOG_FIELDS}}

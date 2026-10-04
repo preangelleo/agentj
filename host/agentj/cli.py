@@ -68,13 +68,28 @@ def _ctl_quiet(st: State, req: dict) -> dict | None:
 
 def cmd_init(a) -> None:
     st = State()
+    from . import working_root
     try:
-        cfg = st.init(relay=a.relay, web=a.web, force=a.force)
+        root = working_root.select(st, getattr(a, "working_root", None), interactive=sys.stdin.isatty())
+    except (ValueError, OSError) as e:
+        sys.exit("✗ " + str(e))
+    try:
+        if st.exists() and getattr(a, "working_root", None) and not a.force:
+            cfg = st.config()  # record a root for installed users without regenerating keys
+        else:
+            cfg = st.init(relay=a.relay, web=a.web, force=a.force)
     except FileExistsError as e:
         sys.exit(f"{e}（要重建身份密钥用 --force；所有已配对设备都要重配）")
     print(f"这台电脑的身份已生成：{st.root}\n通道 {cfg['channel']}\n转发服务器 {cfg['relay']}\n下一步：运行 `agentj`，看看还差哪几步 / next: run `agentj` to see what is left")
     from . import preferences
     preferences.ensure()
+    working_root.record(st, root)
+    from . import wizard
+    wizard.bootstrap_root(root, lang=preferences.get(preferences.effective(st), "appearance.language", "zh"))
+    print(f"工作根目录 / Working root: {root}; existing files were kept; new workflows use direct child folders.")
+    old_dir = cfg.get("agent", {}).get("dir")
+    if old_dir and os.path.realpath(old_dir) != str(root):
+        print("现有工作流没有搬动 / Existing workflows were not moved: " + old_dir)
     from .config_migrations import run
     run(st)
     _alias_auto(sys.stdout)
@@ -1025,7 +1040,12 @@ def cmd_agent(a) -> None:
             except gate.GateError as e:
                 sys.exit("✗ " + _gate_msg(e))
         try:
-            st.set_agent_config(a.mode, a.dir, a.model, fence=not a.unfenced, docker=bool(a.allow_docker and not a.unfenced))
+            from . import working_root
+            root = working_root.select(st, a.dir)
+            st.set_agent_config(a.mode, str(root), a.model, fence=not a.unfenced, docker=bool(a.allow_docker and not a.unfenced))
+            from . import wizard
+            from . import preferences
+            wizard.bootstrap_root(root, lang=preferences.get(preferences.effective(st), "appearance.language", "zh"))
         except ValueError as e:
             sys.exit({"bad_dir": "目录不存在",
                       "protected_dir": "这个目录是 Agent J 自己的（状态目录或程序目录），不能给 Agent 用：换一个工作目录"}.get(str(e), str(e)))
@@ -1757,6 +1777,7 @@ def main(argv=None) -> None:
     i.add_argument("--relay", default=DEFAULT_RELAY)
     i.add_argument("--web", default=DEFAULT_WEB)
     i.add_argument("--force", action="store_true")
+    i.add_argument("--working-root", help="工作根目录：已有目录或 ~/coding / work root; existing files stay put")
     i.set_defaults(fn=cmd_init)
     s = sub.add_parser("serve", help="在前台运行 Agent J，收发手机消息（平时用 agentj service install 让它在后台运行）/ run Agent J in the foreground")
     s.add_argument("--events", choices=["text", "jsonl", "quiet"], default="text",

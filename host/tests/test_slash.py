@@ -554,10 +554,12 @@ class CodexChain(_Chain):
 
         async def script(c):
             host = c["host"]
+            os.environ["FAKE_CX_LOG"] = str(self.work / "workflows" / "look" / ".fake.jsonl")
             res = await host.scheduler.run("look", "manual")
             self.assertEqual((res["verdict"], res["readonly"]), ("ok", True), res)
-            self.assertFalse((self.work / "research-wrote.txt").exists(), "read-only run: declined without a card")
+            self.assertFalse((self.work / "workflows" / "look" / "research-wrote.txt").exists(), "read-only run: declined without a card")
             self.assertEqual(c["asks"](), [])
+            os.environ["FAKE_CX_LOG"] = str(self.work / "workflows" / "work" / ".fake.jsonl")
             t = asyncio.create_task(host.scheduler.run("work", "manual"))
             await c["wait"](lambda: c["asks"]())
             a = c["asks"]()[-1]
@@ -565,10 +567,13 @@ class CodexChain(_Chain):
             await host._app(c["s"], c["ph"].answer(a, True))
             res = await t
             self.assertEqual(res["verdict"], "ok", res)
-            self.assertTrue((self.work / "normal-wrote.txt").exists())
+            self.assertFalse((self.work / "normal-wrote.txt").exists(), "CEO writes stay in its own folder")
+            self.assertTrue((self.work / "workflows" / "work" / "normal-wrote.txt").exists())
             self.assertIsNone(self.st.agent_session("codex"), "a scheduled run never becomes the chat's conversation")
         self.run_chain(script)
-        starts = [x["params"] for x in self.logged() if x.get("method") == "thread/start"]
+        rows = [json.loads(line) for log in (self.work / "workflows").glob("*/.fake.jsonl") for line in log.read_text().splitlines()]
+        starts = [x["params"] for x in rows if x.get("method") == "thread/start"]
+        starts.sort(key=lambda x: x.get("sandbox") != "read-only")
         self.assertEqual([(s.get("sandbox"), s.get("ephemeral"), s.get("approvalPolicy")) for s in starts],
                          [("read-only", True, "untrusted"), (None, True, "untrusted")])
 
@@ -627,9 +632,14 @@ class OpenCodeChain(_Chain):
             await c["wait"](lambda: any(m["text"] == "ECHO: 五" for m in c["msgs"]()))
             # a scheduled research run: its own session, not stored, deny-instead-of-ask rules
             chat = self.st.agent_session("opencode")
-            res = await host.scheduler.run("look", "manual")
+            task_log = self.work / "workflows" / "look" / ".fake.jsonl"
+            os.environ["FAKE_OC_LOG"] = str(task_log)
+            try:
+                res = await host.scheduler.run("look", "manual")
+            finally:
+                os.environ["FAKE_OC_LOG"] = str(self.log)
             self.assertEqual((res["verdict"], res["readonly"]), ("fail", True), res)   # the fake answers no VERDICT itself
-            self.assertFalse((self.work / "r.txt").exists())
+            self.assertFalse((self.work / "workflows" / "look" / "r.txt").exists())
             self.assertEqual(c["asks"](), [])
             self.assertEqual(self.st.agent_session("opencode"), chat, "a scheduled run never becomes the chat's conversation")
             # the stop switch → abort
@@ -642,6 +652,8 @@ class OpenCodeChain(_Chain):
             await c["wait"](lambda: sum(1 for r in self.logged() if r.get("path", "").endswith("/abort")) >= 2)
         self.run_chain(script)
         lg = self.logged()
+        task_log = self.work / "workflows" / "look" / ".fake.jsonl"
+        lg += [json.loads(x) for x in task_log.read_text().splitlines()]
         self.assertEqual(sum(1 for r in lg if r.get("path", "").endswith("/abort")), 2, "/stop and the stop switch")
         summ = [r for r in lg if r.get("path", "").endswith("/summarize")]
         self.assertEqual(summ[0]["body"], {"providerID": "opencode", "modelID": "big-pickle"})

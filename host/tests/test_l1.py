@@ -195,7 +195,10 @@ class Units(unittest.TestCase):
 
     def test_claude_argv_never_widens_permissions(self):
         a = agents.ClaudeAgent(None, {"kind": "claude", "dir": "/tmp", "model": None}).argv("sid-1")
-        joined = " ".join(a)
+        # The identity is prose (e.g. "skipped is not success"), not a permission flag.
+        # Exclude only its value; keep every flag, settings object and tool argument audited.
+        prompt_index = a.index("--append-system-prompt")
+        joined = " ".join(a[:prompt_index + 1] + a[prompt_index + 2:])
         for bad in ("dangerously", "bypass", "--allowedTools", "--allowed-tools", "--permission-mode", "skip"):
             self.assertNotIn(bad, joined)
         self.assertEqual(a[a.index("--permission-prompt-tool") + 1], agents.PERM_TOOL)

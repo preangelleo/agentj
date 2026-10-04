@@ -1,13 +1,12 @@
-# Agent J 0.12.0a1 release notes
+# Agent J 0.12.1a1 release notes
 
-Host 0.12.0a1 / install 0.16.0; phone-web scope.
+Host 0.12.1a1 / install 0.16.1; phone-web scope.
 Phone parity must pass --strict. Full Android/Telegram parity is incomplete.
 No APK is included in this release. Android source is for review, not a released app.
 
 Publication status: local preparation only. Live site verification is DEFERRED until
 the public commit and tag are pushed, the site is deployed, and cold installation passes.
-The release operator must finish live verification or restore host 0.11 / install 0.15
-before the 2026-10-04 12:30 JST deadline.
+The operator must finish LIVE verification or restore host 0.12.0a1 / install 0.16.0 by 14:50 JST.
 
 ## Changes
 
@@ -15,6 +14,11 @@ before the 2026-10-04 12:30 JST deadline.
 - Optional configuration skill for locally installed agent harnesses; owner permission required.
 - Opt-in own-key cloud speech and local phone read-aloud.
 - Optional owner-private Telegram text input and final replies.
+
+- Constitutional English / Chinese main Agent identity core v2: chief-of-staff positioning,
+  intermediate decision ownership and uniform Workflow Design Bible structure.
+- Workroot selection and CEO routing in initialization; checked by offline doctor.
+- Home page chief-of-staff positioning synchronized with its metadata and AI-readable summaries.
 
 ## Material acceptance limits
 

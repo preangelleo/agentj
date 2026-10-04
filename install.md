@@ -1,15 +1,15 @@
 ---
 document: agentj-install
-version: 0.16.0
+version: 0.16.1
 released: 2026-10-04
 status: beta (anyone can sign up; not advertised yet, pages are not indexed)
 host_package: agentj (the `agentj` command)
-host_version: 0.12.0a1
-source_tag: v0.12.0a1
-host_wheel: agentj-0.12.0a1-py3-none-any.whl
-host_wheel_sha256: 210cdf50671fa923d8c5c5919c06ba5be672e81bb9f2a6fa83e5d237ee751480
-host_sdist: agentj-0.12.0a1.tar.gz
-host_sdist_sha256: 6213a9d92928881e32c59f7b0808a5889a6623ec99face6450693b16c600bd7c
+host_version: 0.12.1a1
+source_tag: v0.12.1a1
+host_wheel: agentj-0.12.1a1-py3-none-any.whl
+host_wheel_sha256: bfa978f00a78f018caf7e11eb3b57499e8f0c9549263f04723d2e7a867db3a6f
+host_sdist: agentj-0.12.1a1.tar.gz
+host_sdist_sha256: 4ccded7973fc921a873284f12aebdd0270591017283237c5a65c38eec7afa96a
 canonical_url: https://agentj.app/install.md
 sha256_url: https://agentj.app/install.md.sha256
 alias: https://agentjarvis.net/install.md (the older address: the same file, kept for one more version)
@@ -36,7 +36,7 @@ curl -fsSL https://agentj.app/install.md -o ~/.agentj-install/install.md
 ---
 
 You are an AI coding agent (Claude Code, Codex, OpenCode or similar) on a computer whose human wants to control **their own
-Claude Code (or Codex, or OpenCode) from their phone**: chat with it, and approve or deny what it wants to do, from anywhere.
+main Agent / chairman’s assistant from their phone**, using Claude Code, Codex or OpenCode: one conversation, one entry point to all their workflows. It routes business work to each workflow’s CEO, reads reports and VERDICTs rather than exit codes, sends failures back to their owner for repair, maintains workflows and global skills, and gives a daily morning brief. It must never become a single-workflow CEO or business worker.
 Agent J does that with a small program, `agentj`, that runs on this computer and talks to the phone end-to-end encrypted
 through a relay that cannot read anything.
 
@@ -128,7 +128,7 @@ curl -fsSL https://agentj.app/install.md.sha256 -o install.md.sha256
 curl -fsSL https://raw.githubusercontent.com/preangelleo/agentj/main/install.md -o install.github.md
 if command -v sha256sum >/dev/null; then sha256sum -c install.md.sha256; else shasum -a 256 -c install.md.sha256; fi   # → "install.md: OK"
 cmp install.md install.github.md && echo "site and GitHub copies match"
-grep -m1 '^version:' install.md                                           # → version: 0.16.0
+grep -m1 '^version:' install.md                                           # → version: 0.16.1
 ```
 - Both checks pass → continue with that `install.md` (note its `version:` for feedback). Keep the file: Step 4 reads the
   program's SHA-256 values from its front matter.
@@ -321,7 +321,7 @@ unreachable — retry, and tell your human if it persists. GitHub may be slow or
 carry over). So start every command line from here on with `export PATH="$HOME/.local/bin:$PATH";` — or call
 `~/.local/bin/agentj` by its full path. This document writes `agentj` for short.
 
-The program is pinned to one release: the tag `v0.12.0a1` (front matter `source_tag`). The tag never moves, and its
+The program is pinned to one release: the tag `v0.12.1a1` (front matter `source_tag`). The tag never moves, and its
 `host/` folder is byte for byte the same code as the two files on our site whose SHA-256 is in this document's front matter.
 ```bash
 cd ~/.agentj-install
@@ -329,7 +329,7 @@ W=$(sed -n 's/^host_wheel: //p' install.md); WS=$(sed -n 's/^host_wheel_sha256: 
 curl -fsSLO "https://agentj.app/dl/$W"
 echo "$WS  $W" | sha256sum -c -   # macOS: shasum -a 256 -c -; mismatch → stop
 uv tool install "./$W"
-export PATH="$HOME/.local/bin:$PATH"; agentj --version     # → agentj 0.12.0a1
+export PATH="$HOME/.local/bin:$PATH"; agentj --version     # → agentj 0.12.1a1
 export PATH="$HOME/.local/bin:$PATH"; agentj doctor
 ```
 **Your human's own terminal must find `agentj` too** — they run `agentj passphrase set` and `agentj pair` themselves
@@ -357,12 +357,12 @@ echo "$WS  $W" | sha256sum -c - && echo "$SS  $S" | sha256sum -c -    # macOS: s
 uv tool install "./$W"          # the wheel; its dependencies come from PyPI or the mirror in UV_DEFAULT_INDEX
 ```
 `uv tool install "./$S"` installs from the checked source archive instead (it builds the same program).
-`https://agentj.app/dl/latest.txt` and `https://agentj.app/dl/latest-sdist.txt` name the same two files. `agentj --version` is the program's own version (`0.12.0a1`); it is
-numbered separately from this document (`0.16.0`).
+`https://agentj.app/dl/latest.txt` and `https://agentj.app/dl/latest-sdist.txt` name the same two files. `agentj --version` is the program's own version (`0.12.1a1`); it is
+numbered separately from this document (`0.16.1`).
 
-Alternative from the matching published source tag: `uv tool install "git+https://github.com/preangelleo/agentj@v0.12.0a1#subdirectory=host"`.
+Alternative from the matching published source tag: `uv tool install "git+https://github.com/preangelleo/agentj@v0.12.1a1#subdirectory=host"`.
 
-Alternative without uv: `pipx install "git+https://github.com/preangelleo/agentj@v0.12.0a1#subdirectory=host"` (needs Python 3.11+).
+Alternative without uv: `pipx install "git+https://github.com/preangelleo/agentj@v0.12.1a1#subdirectory=host"` (needs Python 3.11+).
 `agentj doctor` lists what is ready and what is not (prerequisites, the fence, connectivity, which agents are usable).
 Continue unless it reports an error that a later step does not fix; report anything you cannot explain.
 
@@ -538,13 +538,21 @@ agentj agent detect --json      # → {"harnesses":[…], "usable":[…], "decis
 **Two things in this step you must do with your human — neither may be skipped or decided for them** (the folder
 question here, the safety reminder further down). Step 10 starts only after both.
 
-**Must-do 1 — ✋ ask which folder.** Ask your human, in one short message, which folder the phone's agent should work in,
-and wait for the answer. Suggest a new empty folder for a first test, such as `~/agentj-work` (`mkdir -p ~/agentj-work`);
-never pick their home folder or an existing project yourself. Use the folder they name wherever `~/agentj-work` appears
-below.
+**Must-do 1 — ✋ ask which folder is the work root.** Look for existing workflow-root candidates within the human’s home (for example
+`~/coding`, `~/Coding` or `~/projects`) and the folder they already use for all workflows. Show the candidates, ask them to
+confirm one or specify another, and wait. With none, recommend creating `~/coding`. Never pick the home directory or a
+single business project as the main Agent root. Create only the confirmed directory; do not move, delete or replace any
+existing files. Use the confirmed root wherever `~/coding` appears below. The main Agent session runs here; root
+`CLAUDE.md` / `AGENTS.md` refer to its bundled constitutional role. Every new workflow gets one lowercase, hyphenated
+child directory here, one directory per responsibility, with its own CEO entry and business RUN.md.
+
+`agentj init` includes root selection, records it in JSON5, and checks it with doctor.
+Record the confirmed root with `agentj init --working-root <confirmed-root>`, then select that same root with
+`agentj agent --dir` below. On an existing installation this records the root without regenerating identity keys;
+existing files stay in place and receive additive structure notices when needed.
 ```bash
-agentj agent <agent> --dir ~/agentj-work    # <agent> = claude, codex or opencode
-agentj agent opencode --dir ~/agentj-work --model zhipuai/glm-5.3   # OpenCode: name the model (`provider/model`, Step 3a)
+agentj agent <agent> --dir ~/coding    # <agent> = claude, codex or opencode
+agentj agent opencode --dir ~/coding --model zhipuai/glm-5.3   # OpenCode: name the model (`provider/model`, Step 3a)
 agentj agent                                # shows the choice and that it runs fenced
 ```
 The same on Linux (bubblewrap) and macOS (`sandbox-exec`). `agentj doctor` shows `✓ fence`.
@@ -554,11 +562,11 @@ The same on Linux (bubblewrap) and macOS (`sandbox-exec`). `agentj doctor` shows
   Claude Code is not affected (unless the human turned on Claude Code's own optional sandbox).
 - **The fence does not start** (the output warns; e.g. a container, or user namespaces disabled): report it with that exact
   text — do not change kernel or AppArmor settings to get around it. Only the human may decide to run the Agent unfenced:
-  ✋ in their own terminal `agentj agent <agent> --dir ~/agentj-work --unfenced` (asks their passphrase). Trade-off, in one
+  ✋ in their own terminal `agentj agent <agent> --dir ~/coding --unfenced` (asks their passphrase). Trade-off, in one
   sentence: unfenced, a command the human approves on the phone could read or change Agent J's own settings.
 - **Docker / podman inside the fence:** hidden by default (a user who can use the container engine can mount every file on
   the computer, Agent J's keys included). If the phone's agent really has to run containers, only the human may allow it:
-  ✋ `agentj agent <agent> --dir ~/agentj-work --allow-docker` (asks their passphrase). Never suggest it on your own.
+  ✋ `agentj agent <agent> --dir ~/coding --allow-docker` (asks their passphrase). Never suggest it on your own.
   Terminal multiplexers' control sockets (herdr, tmux, screen, zellij, wezterm, kitty) are hidden too: the phone's agent
   cannot type into the human's terminal panes.
 
@@ -604,11 +612,16 @@ out through the agent's own headless interface — no terminal multiplexer (herd
 on the phone first and can be undone; `/stop` stops only the running turn. Other commands (ones that change settings) are
 answered 「这个命令请在电脑上执行」.
 
+The host injects the versioned English / Chinese core v2 role into every harness start. `agentj doctor` checks
+its package hash and injection mechanism. User instructions in JSON5 / `agentj-config` can append personal preferences;
+they cannot remove the core role, and the core wins on conflicts. Humans can edit workspace documents, but we strongly
+recommend keeping the main Agent role: one assistant must own the window while CEOs own business execution.
+
 **Then install the workflow design wizard** into the same folder (it never overwrites a file that is already there):
 ```bash
-agentj wizard install --dir ~/agentj-work
+agentj wizard install --dir ~/coding
 agentj wizard templates                                  # the starter templates this seat may download
-agentj wizard add-template <id> --dir ~/agentj-work      # each one your human wants (or all five) — installed dormant
+agentj wizard add-template <id> --dir ~/coding      # each one your human wants (or all five) — installed dormant
 ```
 `agentj wizard install` also adds the "look it up first" rule (the same text as `agentj docs-rule`) to the work folder's
 `CLAUDE.md` / `AGENTS.md`, so the phone's Agent knows where to find answers about Agent J (Step 13); it never rewrites a
@@ -617,7 +630,7 @@ Tell your human, in their language: once the phone is paired (Step 11), they say
 workflows") on the phone, and their Agent interviews them — at most 20 short questions, one at a time, about fifteen minutes,
 never a password or key — then writes their workflow handbook into this folder. The answers and the files stay on
 this computer. Templates are installed **dormant**: nothing runs on a schedule until your human decides to turn one on.
-Optional: `agentj wizard dry-run <id> --dir ~/agentj-work` tries one on fictional sample data with their own Claude Code /
+Optional: `agentj wizard dry-run <id> --dir ~/coding` tries one on fictional sample data with their own Claude Code /
 Codex, inside the same fence, touching no account. If `agentj wizard templates` answers `payment_required` or `not_bound`,
 skip the templates — the wizard works without them.
 
@@ -749,7 +762,7 @@ Ask your human to do these on the phone and tell you the result:
    no card comes; the phone shows 「这一步超出了你 Codex 自己的沙箱设置，已拒绝；…」 instead. Either answer proves that
    Codex's requests reach the phone. Its sandbox setting shows on the phone with ≡ → 「状态」 ("Status").
    If the file stays behind (declined, or on macOS where Codex's commands fail), tell your human and, with their yes,
-   remove it yourself: `rm ~/agentj-work/scratch.txt`.
+   remove it yourself: `rm ~/coding/scratch.txt`.
 3. Optional: in the top-right 「菜单」 ("Menu") tap 「开启锁屏提醒」 ("Turn on lock-screen alerts"); the alerts never
    contain the message, only that something arrived.
 4. Show them the top-right 「菜单」 ("Menu"): 「记忆」 ("Memory": what the Agent remembers, item by item, delete with undo),
@@ -866,11 +879,11 @@ prints something and `uv tool list` (or `pipx list`) shows `agentjarvis-host`, t
 the new name, then:
 ```bash
 jarvis service uninstall      # stop the old service first (Step 10 used tmux / nohup instead? stop that process)
-uv tool uninstall agentjarvis-host && uv tool install "git+https://github.com/preangelleo/agentj@v0.12.0a1#subdirectory=host"
+uv tool uninstall agentjarvis-host && uv tool install "git+https://github.com/preangelleo/agentj@v0.12.1a1#subdirectory=host"
 agentj doctor
 agentj service install        # start it again under the new name (or the tmux / nohup fallback, Step 10)
 ```
-With pipx instead of uv: `pipx uninstall agentjarvis-host && pipx install "git+https://github.com/preangelleo/agentj@v0.12.0a1#subdirectory=host"`.
+With pipx instead of uv: `pipx uninstall agentjarvis-host && pipx install "git+https://github.com/preangelleo/agentj@v0.12.1a1#subdirectory=host"`.
 - After the move, `agentj` puts back a `jarvis` command (a link to `agentj`, only if no other `jarvis` exists) for one more
   version; it prints a notice that points here. New installs never get `jarvis`.
 - The state moves by itself on the first run of `agentj`: from `~/.local/state/agentjarvis-alpha` to `~/.local/state/agentj`.
@@ -1148,3 +1161,5 @@ or logs out Claude Code / Codex / OpenCode (nor removes a model key), and never 
   of that version).
 
 - 0.16.0 (2026-10-04): versioned 0.12 host candidate; pinned wheel primary install; commented sparse configuration, own-key voice providers and bundled configuration skill. Promote only with matching public GitHub installer mirror.
+
+- 0.16.1 (2026-10-04): host 0.12.1a1; main Agent core v2 adds chief-of-staff positioning, intermediate decision ownership and uniform Workflow Design Bible structure. Root selection and CEO routing are checked by doctor; homepage and AI-readable summaries use the same positioning.

@@ -73,6 +73,60 @@ class Base(unittest.TestCase):
         return json.loads((self.root / wizard.MANIFEST_REL).read_text())["files"]
 
 
+class MainAgentRoot(Base):
+    def test_bootstrap_seeds_root_and_preserves_existing_files(self):
+        mine = "# personal entry\n"
+        (self.root / "CLAUDE.md").write_text(mine)
+        rows = wizard.bootstrap_root(self.root, lang="zh")
+        self.assertEqual((self.root / "CLAUDE.md").read_text(), mine)
+        self.assertNotIn("CLAUDE.md", {r["path"] for r in rows})
+        agent_entry = (self.root / "AGENTS.md").read_text()
+        self.assertIn(wizard.CORE_REF, agent_entry)
+        self.assertIn("agentj/identity/core.zh.md", agent_entry)
+        self.assertIn("董事长助理", agent_entry)
+        workflow = (self.root / "documentation/WORKFLOW.md").read_text()
+        self.assertIn("退出码不能证明成功", workflow)
+        self.assertIn("所属 CEO 修复并重跑", workflow)
+        self.assertIn("晨报", workflow)
+        snapshot = {p: p.read_bytes() for p in self.root.rglob("*") if p.is_file()}
+        self.assertEqual(wizard.bootstrap_root(self.root), [])
+        self.assertEqual(snapshot, {p: p.read_bytes() for p in self.root.rglob("*") if p.is_file()})
+
+    def test_apply_places_ceo_entries_only_in_one_level_workflow_folders(self):
+        wizard.apply(self.root, stage(self.root, {"daily-report/AGENTS.md": b"CEO of daily-report only\n"}))
+        self.assertTrue((self.root / "daily-report/AGENTS.md").is_file())
+        for bad in ("Daily-report/AGENTS.md", "nested/daily-report/AGENTS.md", "daily_report/AGENTS.md"):
+            with self.assertRaises(wizard.WizardError):
+                wizard.apply(self.root, stage(self.root, {bad: b"CEO\n"}))
+            shutil.rmtree(self.root / wizard.STAGING_REL)
+
+    def test_new_structure_requires_core_and_ceo_routing(self):
+        wizard.bootstrap_root(self.root)
+        self.assertFalse([c for c in wizard.doctor(self.root) if c["status"] == "fail"])
+        f = self.root / "documentation/STRUCTURE.json"
+        doc = json.loads(f.read_text())
+        doc["workflows"] = [{"id": "daily-report", "dir": "daily-report", "status": "planned"}]
+        f.write_text(json.dumps(doc))
+        self.assertEqual(next(c["status"] for c in wizard.doctor(self.root) if c["name"] == "structure"), "fail")
+        (self.root / "daily-report").mkdir()
+        (self.root / "daily-report/AGENTS.md").write_text("CEO of daily-report only\n")
+        doc["workflows"][0]["ceo_entry"] = "daily-report/AGENTS.md"
+        f.write_text(json.dumps(doc))
+        self.assertEqual(next(c["status"] for c in wizard.doctor(self.root) if c["name"] == "structure"), "ok")
+        doc["workflows"][0]["dir"] = "somewhere/deep/daily-report"
+        f.write_text(json.dumps(doc))
+        self.assertEqual(next(c["status"] for c in wizard.doctor(self.root) if c["name"] == "structure"), "fail")
+
+    def test_existing_legacy_workflow_stays_in_place(self):
+        legacy = self.root / "workflows/daily-report"
+        legacy.mkdir(parents=True)
+        (legacy / "task.json").write_text(json.dumps(task()))
+        self.assertEqual(wizard.workflow_dir(self.root, "daily-report"), legacy)
+        self.assertEqual(wizard._workflow_dirs(self.root), [legacy])
+        self.assertFalse((self.root / "daily-report").exists())
+        self.assertEqual(wizard.workflow_dir(self.root, "ads-review"), self.root / "ads-review")
+
+
 # ================================================================== task contract
 class TaskSpec(unittest.TestCase):
     def test_valid_and_each_violation(self):
@@ -112,7 +166,8 @@ class Install(Base):
         rows = {r["path"]: r["status"] for r in wizard.install(self.root, ["claude"])}
         self.assertEqual(rows["CLAUDE.md"], "created")
         self.assertNotIn("AGENTS.md", rows, "only the entry file of the chosen harness")
-        self.assertEqual((self.root / "CLAUDE.md").read_text(), docsrule.block())
+        self.assertIn(docsrule.block(), (self.root / "CLAUDE.md").read_text())
+        self.assertIn(wizard.CORE_REF, (self.root / "CLAUDE.md").read_text())
         self.assertIn("CLAUDE.md", self.manifest(), "a file we created is ours: a later apply may replace it")
         rows = {r["path"]: r["status"] for r in wizard.install(self.root, ["codex", "opencode"])}
         self.assertEqual(rows["AGENTS.md"], "created")
@@ -126,7 +181,7 @@ class Install(Base):
         self.assertEqual(rows["AGENTS.md"], "added")
         text = (self.root / "AGENTS.md").read_text()
         self.assertTrue(text.startswith(mine + "\n\n"), "the human's text is kept byte for byte, block after one blank line")
-        self.assertTrue(text.endswith(docsrule.block("en")))
+        self.assertIn(docsrule.block("en"), text)
         self.assertEqual(text.count(docsrule.BEGIN), 1)
         self.assertNotIn("AGENTS.md", self.manifest(), "the human's file stays theirs")
         for _ in range(2):                                  # idempotent, also with another language asked for
@@ -139,7 +194,7 @@ class Install(Base):
         edited = "# mine\n\n" + docsrule.BEGIN + "\n先问我，再查文档。\n" + docsrule.END + "\n"
         (self.root / "CLAUDE.md").write_text(edited)
         wizard.install(self.root, ["claude"])
-        self.assertEqual((self.root / "CLAUDE.md").read_text(), edited)
+        self.assertTrue((self.root / "CLAUDE.md").read_text().startswith(edited.rstrip("\n")))
 
     def test_docs_rule_never_follows_a_symlinked_entry_file(self):
         outside = pathlib.Path(self.tmp) / "elsewhere.md"
@@ -345,7 +400,7 @@ class Doctor(Base):
             self.assertEqual(self.status(name), "ok", f"{name} restored")
 
     def test_structure_must_list_installed_workflows_and_tasks_must_follow_the_contract(self):
-        wf = self.root / "workflows/daily-report"
+        wf = self.root / "daily-report"
         wf.mkdir(parents=True)
         (wf / "task.json").write_text(json.dumps(task()))
         (wf / "RUN.md").write_text("run")
@@ -460,18 +515,39 @@ class Templates(Base):
         want, placed = wizard.add_template(self.st, self.root, "daily-report")
         self.assertEqual(want["version"], "1.0.0")
         self.assertTrue(all(r["status"] == "created" for r in placed))
-        t = json.loads((self.root / "workflows/daily-report/task.json").read_text())
+        t = json.loads((self.root / "daily-report/task.json").read_text())
         self.assertIs(t["enabled"], False)
-        self.assertTrue((self.root / "workflows/daily-report/samples/orders.csv").is_file())
-        self.assertEqual(self.manifest()["workflows/daily-report/RUN.md"]["source"], "template:daily-report@1.0.0")
+        self.assertTrue((self.root / "daily-report/samples/orders.csv").is_file())
+        self.assertEqual(self.manifest()["daily-report/RUN.md"]["source"], "template:daily-report@1.0.0")
         # every request: a fresh nonce, the host's channel, the right `t`
         ts = [(p, i["t"], i["channel"]) for p, i in self.srv.cfg["seen"]]
         self.assertEqual(ts[-1], ("/v1/host/templates/daily-report", "template", cloud.channel_of(self.st)))
         self.assertEqual(len(self.srv.cfg["nonces"]), len(self.srv.cfg["seen"]))
         # re-install over a customer edit keeps the edit
-        (self.root / "workflows/daily-report/RUN.md").write_text("my run")
+        (self.root / "daily-report/RUN.md").write_text("my run")
         st = {r["path"]: r["status"] for r in wizard.add_template(self.st, self.root, "daily-report")[1]}
-        self.assertEqual(st["workflows/daily-report/RUN.md"], "kept")
+        self.assertEqual(st["daily-report/RUN.md"], "kept")
+
+    def test_download_registers_new_workflow_ceo_and_preserves_legacy_location(self):
+        self.bind()
+        wizard.bootstrap_root(self.root)
+        wizard.add_template(self.st, self.root, "daily-report")
+        for e in wizard.ENTRY_FILES:
+            self.assertIn("workflow CEO", (self.root / "daily-report" / e).read_text())
+        doc = json.loads((self.root / "documentation/STRUCTURE.json").read_text())
+        self.assertEqual(doc["workflows"][0]["dir"], "daily-report")
+        self.assertEqual(doc["workflows"][0]["ceo_entry"], "daily-report/AGENTS.md")
+        self.assertIn("daily-report/AGENTS.md", (self.root / "documentation/ROLES.md").read_text())
+        self.assertFalse([c for c in wizard.doctor(self.root) if c["status"] == "fail"])
+        # An existing root never relocates legacy workflow files during installation.
+        legacy_root = pathlib.Path(self.tmp) / "legacy-work"
+        legacy = legacy_root / "workflows/daily-report"
+        legacy.mkdir(parents=True)
+        (legacy / "RUN.md").write_text("customer run\n")
+        wizard.add_template(self.st, legacy_root, "daily-report")
+        self.assertEqual((legacy / "RUN.md").read_text(), "customer run\n")
+        self.assertTrue((legacy / "RUN.md.wizard-new").is_file())
+        self.assertFalse((legacy_root / "daily-report").exists())
 
     def test_tampered_packages_are_refused_before_writing(self):
         self.bind()
@@ -494,6 +570,7 @@ class Templates(Base):
                 wizard.add_template(self.st, self.root, "daily-report")
             self.assertIn("bad_package", str(cm.exception), name)
             self.assertFalse((self.root / "workflows").exists(), name)
+            self.assertFalse((self.root / "daily-report").exists(), name)
 
     def test_server_refusals_are_reported_by_code(self):
         self.bind()
@@ -543,7 +620,7 @@ class DryRun(Base):
         super().setUp()
         self.st = State(pathlib.Path(self.tmp) / "state")
         self.st.init()
-        wf = self.root / "workflows/daily-report"
+        wf = self.root / "daily-report"
         (wf / "samples").mkdir(parents=True)
         (wf / "task.json").write_text(json.dumps(task()))
         (wf / "RUN.md").write_text("run")

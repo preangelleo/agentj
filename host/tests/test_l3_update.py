@@ -103,7 +103,7 @@ class Versions(unittest.TestCase):
             self.assertIsNone(update.compare(bad, "0.8.0"))
 
     def test_version_is_this_round(self):
-        self.assertEqual(agentj.__version__, "0.12.0a1")
+        self.assertEqual(agentj.__version__, "0.12.1a1")
 
 
 class Fetch(unittest.TestCase):

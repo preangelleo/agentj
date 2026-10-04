@@ -72,11 +72,11 @@ def _regular(path: str) -> bytes | None:
         os.close(fd)
 
 
-def discover(workdir: str | None) -> list[dict]:
+def _discover_legacy(workdir: str | None, direct: bool = False) -> list[dict]:
     """[{id, dir, task|None, problems, tsha|None}] for every folder under <workdir>/workflows (symlinks are not followed)."""
     if not workdir:
         return []
-    root = os.path.join(workdir, "workflows")
+    root = workdir if direct else os.path.join(workdir, "workflows")
     try:
         if stat.S_ISLNK(os.lstat(root).st_mode):
             return []
@@ -91,7 +91,9 @@ def discover(workdir: str | None) -> list[dict]:
                 continue
         except OSError:
             continue
-        ent = {"id": name, "dir": d, "task": None, "problems": [], "tsha": None}
+        if direct and not os.path.lexists(os.path.join(d, "task.json")):
+            continue
+        ent = {"relative_dir": name if direct else "workflows/" + name, "id": name, "dir": d, "task": None, "problems": [], "tsha": None}
         if not taskspec.ID_RE.fullmatch(name):
             ent["problems"] = ["folder name is not a task id"]
             out.append(ent)
@@ -119,6 +121,19 @@ def discover(workdir: str | None) -> list[dict]:
             ent["tsha"] = contract_sha(raw, prompt)
         out.append(ent)
     return out
+
+
+def discover(workdir: str | None) -> list[dict]:
+    """New root/<id> folders and unchanged legacy workflows/<id>; duplicates fail closed."""
+    rows = _discover_legacy(workdir, direct=True) + _discover_legacy(workdir)
+    counts = {}
+    for row in rows:
+        counts[row["id"]] = counts.get(row["id"], 0) + 1
+    for row in rows:
+        if counts[row["id"]] > 1:
+            row["problems"] = ["duplicate workflow id across root and legacy folders"]
+            row["tsha"] = None
+    return rows
 
 
 def contract_sha(task_json: bytes, prompt: bytes) -> str:
@@ -279,9 +294,10 @@ def parse_verdict(text: str) -> tuple[str, str] | None:
 def prompt_for(e: dict, research: bool) -> str:
     task = e["task"]
     body = (_regular(os.path.join(e["dir"], task["prompt_file"])) or b"").decode("utf-8", "replace")
-    head = (f"[agentj 定时任务 / scheduled task] workflows/{e['id']}/{task['prompt_file']} — {task['title']['zh']} / "
-            f"{task['title']['en']}. 说明里的相对路径以 workflows/{e['id']}/ 为准 / paths in the instructions are relative to "
-            f"workflows/{e['id']}/.")
+    relative = e.get("relative_dir", "workflows/" + e["id"])
+    head = (f"[agentj 定时任务 / scheduled task] {relative}/{task['prompt_file']} — {task['title']['zh']} / "
+            f"{task['title']['en']}. 说明里的相对路径以 {relative}/ 为准 / paths in the instructions are relative to "
+            f"{relative}/.")
     if research:
         head += (" 这是只读运行：写文件、改动东西、对外发送的工具调用都会被拒绝；把结论写在回答里。/ Read-only run: every call that "
                  "writes, changes or sends is refused; put everything in your answer.")
@@ -460,7 +476,7 @@ class Scheduler:
                 os.write(fd, (head + out).encode("utf-8"))
             finally:
                 os.close(fd)
-            return f"workflows/{e['id']}/reports/{name}"
+            return f"{e.get('relative_dir', 'workflows/' + e['id'])}/reports/{name}"
         except OSError:
             return None
 
@@ -483,7 +499,10 @@ class Scheduler:
         from . import fence
         host = self.host
         cfg = dict(host.agent_cfg or {})
-        wd = cfg.get("dir")
+        cfg["_workflow_ceo"] = True
+        cfg.pop("working_root", None)
+        cfg["dir"] = e["dir"]
+        wd = cfg["dir"]
         prompt = prompt_for(e, research)
         if kind == "claude":
             a = agents.ClaudeAgent(host, cfg)
