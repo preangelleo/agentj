@@ -36,7 +36,7 @@ export async function launch({ allowOrigins = [], args = [] } = {}) {
   const chrome = spawn(CHROMIUM, ['--headless=new', `--user-data-dir=${profile}`, '--remote-debugging-port=0', '--remote-debugging-address=127.0.0.1',
     '--no-first-run', '--no-default-browser-check', '--disable-gpu', '--hide-scrollbars', '--disable-background-networking',
     '--disable-component-update', '--disable-sync', '--disable-extensions', '--mute-audio', '--autoplay-policy=no-user-gesture-required',
-    '--use-fake-ui-for-media-stream', '--use-fake-device-for-media-stream', ...args, 'about:blank'], { stdio: ['ignore', 'ignore', 'pipe'] });
+    '--use-fake-ui-for-media-stream', '--use-fake-device-for-media-stream', ...(process.env.AJ_MEDIA_DIAGNOSTICS === '1' ? ['--enable-logging=stderr', '--vmodule=audio*=2,media_stream*=2,user_media*=2'] : []), ...args, 'about:blank'], { stdio: ['ignore', 'ignore', 'pipe'] });
   let err = '';
   chrome.stderr.on('data', (d) => { err += d; });
   const f = join(profile, 'DevToolsActivePort');
@@ -47,7 +47,13 @@ export async function launch({ allowOrigins = [], args = [] } = {}) {
   const browser = cdp(version.webSocketDebuggerUrl); await browser.ready;
   return {
     port, browser, allowOrigins,
-    async close() { try { browser.close(); } catch { /* gone */ } chrome.kill('SIGTERM'); await sleep(300); try { rmSync(profile, { recursive: true, force: true }); } catch { /* ignore */ } },
+    async mediaDiagnostics() {
+      const processes=await browser.send('SystemInfo.getProcessInfo').catch(()=>({processInfo:[]}));
+      const histograms=await browser.send('Browser.getHistograms',{query:'Media.Audio',delta:false}).catch(()=>({histograms:[]}));
+      return {processes:processes.processInfo, histograms:histograms.histograms, errors:{outputHostDown:(err.match(/PcmOpen:.*Host is down/g)||[]).length, outputAuthorizationTimeout:(err.match(/Output device authorization timed out/g)||[]).length},
+        native:err.split('\n').filter(s=>/audio|media_stream|user_media|service_process_host|Out of memory|crash/i.test(s)).slice(-40)};
+    },
+    async close() { if (process.env.AJ_MEDIA_DIAGNOSTICS === '1') console.error('native-media-final', JSON.stringify(await this.mediaDiagnostics().catch(e => ({error:String(e)})))); try { browser.close(); } catch { /* gone */ } chrome.kill('SIGTERM'); await sleep(300); try { rmSync(profile, { recursive: true, force: true }); } catch { /* ignore */ } },
   };
 }
 
@@ -56,7 +62,7 @@ export async function newPage(B, w, h, scheme, { ua, touch, allow = [] } = {}) {
   const { browserContextId } = await B.browser.send('Target.createBrowserContext', { disposeOnDetach: true });
   const { targetId } = await B.browser.send('Target.createTarget', { url: 'about:blank', browserContextId });
   const p = cdp(`ws://127.0.0.1:${B.port}/devtools/page/${targetId}`); await p.ready;
-  p.problems = []; p.offsite = [];
+  p.problems = []; p.offsite = []; p.mediaDiagnostics = B.mediaDiagnostics;
   p.on((m) => {
     if (m.method === 'Log.entryAdded' && (m.params.entry.level === 'error' || /Content Security Policy/i.test(m.params.entry.text))) p.problems.push(`log: ${m.params.entry.text} ${m.params.entry.url || ''}`);
     if (m.method === 'Runtime.exceptionThrown') p.problems.push(`exception: ${m.params.exceptionDetails.text} ${m.params.exceptionDetails.exception?.description || ''}`);
@@ -68,6 +74,48 @@ export async function newPage(B, w, h, scheme, { ua, touch, allow = [] } = {}) {
     if (m.method === 'Network.webSocketCreated' && !allow.some((o) => m.params.url.startsWith(o))) p.offsite.push(m.params.url);
   });
   await p.send('Page.enable'); await p.send('Runtime.enable'); await p.send('Log.enable'); await p.send('Network.enable');
+  // Metadata-only media diagnostics: recording failures used to lose the native
+  // decoder error inside toWav's safe null fallback. No audio/body is captured.
+  await p.send('Page.addScriptToEvaluateOnNewDocument', { source: `(() => {
+    const trace = window.__ajMediaDiagnostics = [];
+    window.addEventListener('agentj-audio-error', e => note('toWav.failed', e.detail));
+    const note = (kind, detail = {}) => { trace.push({kind, ...detail}); if(trace.length > 32) trace.shift(); };
+    const gum = navigator.mediaDevices?.getUserMedia;
+    if(gum) navigator.mediaDevices.getUserMedia = function(...args) {
+      note('getUserMedia.start');
+      const result = gum.apply(this,args);
+      result.then(() => note('getUserMedia.ok'), error => note('getUserMedia.failed', {error: error.name}));
+      return result;
+    };
+    const Recorder = window.MediaRecorder;
+    if(Recorder) window.MediaRecorder = new Proxy(Recorder, {construct(target,args,newTarget) {
+      const recorder = Reflect.construct(target,args,newTarget);
+      note('MediaRecorder.created', {mime: recorder.mimeType});
+      for(const event of ['start','stop','dataavailable','error']) recorder.addEventListener(event, e =>
+        note('MediaRecorder.' + event, {bytes: e.data?.size, error: e.error?.name}));
+      return recorder;
+    }});
+    for (const name of ['AudioContext', 'webkitAudioContext', 'OfflineAudioContext', 'webkitOfflineAudioContext']) {
+      const C = window[name]; if(!C) continue;
+      const proto = C.prototype;
+      for (const method of ['decodeAudioData', 'startRendering']) {
+        const fn = proto[method]; if(!fn || fn.__ajDiagnostic) continue;
+        const wrapped = function(...args) {
+          note(name + '.' + method, {bytes: method === 'decodeAudioData' ? args[0]?.byteLength : undefined});
+          try {
+            const result = fn.apply(this,args);
+            if(result?.then) result.then(() => note(method + '.ok'), error => note(method + '.failed', {error: error.name}));
+            return result;
+          } catch(error) { note(method + '.threw', {error: error.name}); throw error; }
+        };
+        wrapped.__ajDiagnostic = true; proto[method] = wrapped;
+      }
+      window[name] = new Proxy(C, { construct(target, args, newTarget) {
+        try { const instance = Reflect.construct(target,args,newTarget); note(name + '.created', {state: instance.state, rate: instance.sampleRate}); return instance; }
+        catch(error) { note(name + '.failed', {error: error.name}); throw error; }
+      }});
+    }
+  })()` });
   await p.send('Emulation.setDeviceMetricsOverride', { width: w, height: h, deviceScaleFactor: 1, mobile: w < 500 });
   if (touch) await p.send('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 5 });
   await p.send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: scheme }] });
@@ -86,6 +134,7 @@ export async function evaluate(p, expr) {
 export async function navigate(p, url) { const load = p.waitFor('Page.loadEventFired'); await p.send('Page.navigate', { url }); await load; await sleep(250); }
 export async function waitFor(p, expr, ms = 8000) {
   for (let t = 0; t < ms; t += 50) { if (await evaluate(p, expr)) return true; await sleep(50); }
+  if (process.env.AJ_MEDIA_DIAGNOSTICS === '1' && p.mediaDiagnostics) console.error('native-media-diagnostic', JSON.stringify({page:await evaluate(p, `Promise.all(['microphone','camera'].map(name=>navigator.permissions.query({name}).then(x=>({name,state:x.state})).catch(()=>({name,state:'unknown'})))).then(permissions=>({focus:document.hasFocus(),visibility:document.visibilityState,permissions}))`).catch(()=>null), native:await p.mediaDiagnostics().catch(e => ({ error: String(e) }))}));
   throw new Error('timeout: ' + expr);
 }
 export async function waitState(p, want, ms = 10000) {

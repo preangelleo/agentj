@@ -2,6 +2,14 @@
 // ffmpeg: decodeAudioData (whatever MediaRecorder produced — webm/opus, mp4/aac) → OfflineAudioContext(1, ⌈s·16000⌉, 16000)
 // (resample + mono) → a 44-byte RIFF header + samples. Nothing leaves the page here; the WAV then travels as a §10.3 blob.
 export const RATE = 16000;
+// Metadata only: no recorded samples, messages or exception text is retained.
+export let lastWavFailure = null;
+function failed(phase, error, blob) {
+  lastWavFailure = {phase, error: error?.name || 'UnsupportedAudio', bytes: blob?.size || 0,
+    mime: blob?.type || ''};
+  window.dispatchEvent(new CustomEvent('agentj-audio-error', {detail: {...lastWavFailure}}));
+  return null;
+}
 
 /** Float32 mono samples → WAV bytes (Uint8Array). */
 export function wavBytes(samples, rate = RATE) {
@@ -23,15 +31,19 @@ export function wavBytes(samples, rate = RATE) {
 /** A recorded Blob → {blob: audio/wav Blob, secs} or null when this browser cannot decode it (the caller then sends the
  *  original container as an attachment, PROTOCOL §10.9). */
 export async function toWav(blob) {
-  const AC = window.AudioContext || window.webkitAudioContext;
   const OAC = window.OfflineAudioContext || window.webkitOfflineAudioContext;
-  if (!AC || !OAC) return null;
-  let ctx;
+  lastWavFailure = null;
+  if (!OAC) return failed('context-unavailable', null, blob);
+  let ctx, phase = 'context-create';
   try {
-    ctx = new AC();
+    // Decoding is offline work. A real-time context opens an output device even
+    // though nothing is played, and can stall capture when that device is absent.
+    ctx = new OAC(1, 1, RATE);
+    phase = 'decode';
     const buf = await new Promise((ok, no) => {
       blob.arrayBuffer().then((ab) => { const p = ctx.decodeAudioData(ab, ok, no); if (p && p.catch) p.catch(no); }, no);
     });
+    phase = 'resample';
     const secs = buf.duration;
     const len = Math.max(1, Math.ceil(secs * RATE));
     const off = new OAC(1, len, RATE);
@@ -41,6 +53,5 @@ export async function toWav(blob) {
     src.start(0);
     const rendered = await off.startRendering();
     return { blob: new Blob([wavBytes(rendered.getChannelData(0))], { type: 'audio/wav' }), secs };
-  } catch { return null; }
-  finally { try { ctx && ctx.close(); } catch { /* already closed */ } }
+  } catch (error) { return failed(phase, error, blob); }
 }

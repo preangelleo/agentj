@@ -53,14 +53,21 @@ export async function runCases({ B, web, fake, only }) {
   async function clearTray() { await ev(`[...document.querySelectorAll('#tray .chip .x')].forEach((b) => b.click())`); await wait(`!document.querySelectorAll('#tray .chip').length`); }
   // the sheet slides in (transform .55 s): measure where a button IS, not where it is passing through
   const intoView = async (sel) => { await ev(`document.querySelector(${JSON.stringify(sel)}).scrollIntoView({ block: 'center' })`); await wait(`(() => { const s = document.getElementById('sheet'); return !s.contains(document.querySelector(${JSON.stringify(sel)})) || getComputedStyle(s).transform === 'none' || getComputedStyle(s).transform === 'matrix(1, 0, 0, 1, 0, 0)'; })()`, 2000).catch(() => {}); };
+  // .rec is painted while getUserMedia is still pending. Measure a valid
+  // recording's duration only after the native recorder is available.
+  const captureReady = () => wait(`!document.getElementById('ptt').hidden && /^\\d+:\\d\\d$/.test(document.getElementById('pttTime').textContent)`, 3000);
   async function touchHold(sel, ms, { moveUp = 0 } = {}) {
     await intoView(sel);
     const r = await rect(P, sel);
     await P.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: r.x, y: r.y }] });
-    await sleep(ms / 2);
-    if (moveUp) await P.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: r.x, y: r.y - moveUp }] });
-    await sleep(ms / 2);
-    await P.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+    try {
+      if (sel === '#mic') await captureReady();
+      await sleep(ms / 2);
+      if (moveUp) await P.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: r.x, y: r.y - moveUp }] });
+      await sleep(ms / 2);
+    } finally {
+      await P.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+    }
   }
   async function touchTap(sel) { await intoView(sel); const r = await rect(P, sel); await tap(P, r.x, r.y); }
   async function dblTap(sel) { const r = await rect(P, sel === '#words' ? '#main' : sel); await tap(P, r.x, r.y); await sleep(80); await tap(P, r.x, r.y); }
@@ -106,8 +113,9 @@ export async function runCases({ B, web, fake, only }) {
     if (only && !only.includes(id)) return;
     try { await fn(); results[id] = 'pass'; console.log(`PASS  parity ${id}`); }
     catch (e) {
-      const snapS = P ? await ev(`JSON.stringify({pg: document.getElementById('pg').textContent, om: document.getElementById('omText').textContent.slice(0, 40), words: document.getElementById('words').textContent.slice(0, 40), st: document.body.dataset.status, conn: document.body.dataset.conn, sheet: document.body.dataset.sheet, view: document.body.dataset.view, toast: document.getElementById('toast').textContent, state: window.__ajState, q: document.getElementById('omQuote').hidden})`).catch(() => '') : '';
+      const snapS = P ? await ev(`JSON.stringify({pg: document.getElementById('pg').textContent, om: document.getElementById('omText').textContent.slice(0, 40), words: document.getElementById('words').textContent.slice(0, 40), st: document.body.dataset.status, conn: document.body.dataset.conn, sheet: document.body.dataset.sheet, view: document.body.dataset.view, toast: document.getElementById('toast').textContent, state: window.__ajState, q: document.getElementById('omQuote').hidden, timer: document.getElementById('pttTime').textContent, hint: document.getElementById('pttHint').textContent, mic: document.getElementById('mic').className})`).catch(() => '') : '';
       e.message += ' @ ' + snapS;
+      if (P) e.message += ' | media: ' + await ev('JSON.stringify(window.__ajMediaDiagnostics || [])').catch(() => 'unavailable');
       if (P && process.env.AJ_FAIL_SHOTS) { try { const { shoot } = await import('./browser.mjs'); writeFileSync(`/tmp/aj-fail-${id}.png`, await shoot(P)); e.message += ' vvh=' + await ev(`document.documentElement.style.getPropertyValue('--vvh') + ' ih=' + innerHeight + ' bh=' + document.body.getBoundingClientRect().height`); } catch { /* best effort */ } }
       results[id] = 'fail'; fails.push(`${id}: ${e.message}`); console.log(`FAIL  parity ${id} — ${e.message}${P ? ' | problems: ' + P.problems.slice(-3).join(' | ') : ''}`); }
   }
@@ -626,10 +634,15 @@ export async function runCases({ B, web, fake, only }) {
     await ev(`document.activeElement.blur()`);
     const r = await rect(P, '#mic');
     await P.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: r.x, y: r.y }] });
-    await wait(`!document.getElementById('ptt').hidden && document.getElementById('mic').classList.contains('rec')`, 3000);
-    await sleep(1600);
-    ok(/^\d:\d\d$/.test(await text('#pttTime')) && (await text('#pttHint')) === T('r.ptt.hint'), 'timer + hint while holding');
-    await P.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+    try {
+      await captureReady();
+      await sleep(1600);
+      ok(/^\d:\d\d$/.test(await text('#pttTime')) && (await text('#pttHint')) === T('r.ptt.hint'), 'timer + hint while holding');
+    } finally {
+      // A failed timer assertion must not leave a touch/recording alive and turn
+      // all following recording cases into cascading failures.
+      await P.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+    }
     await wait(`document.getElementById('input').value === '前面的字' + ${JSON.stringify(fake.st.asrText)}`, 15000);
     ok(fake.st.wavs.length === 1 && fake.st.wavs[0].ok, 'the host got a 16 kHz mono PCM16 WAV made in the page');
   });
@@ -653,6 +666,7 @@ export async function runCases({ B, web, fake, only }) {
     await dblTap('#mic');
     await wait(`document.getElementById('mic').classList.contains('lock') && document.getElementById('ptt').classList.contains('lock')`, 3000);
     ok((await ev(`getComputedStyle(document.getElementById('pttTime'), '::after').content`)).includes(T('r.ptt.locked')), 'the bubble says 已锁定');
+    await captureReady();
     await sleep(1500);
     await touchTap('#mic');
     await wait(`document.getElementById('input').value === ${JSON.stringify(fake.st.asrText)}`, 15000);
@@ -711,7 +725,7 @@ export async function runCases({ B, web, fake, only }) {
     await clearField();
     await ev(`document.getElementById('mic').focus()`);
     await key(P, ' ', { code: 'Space', type: 'down', text: ' ' });
-    await wait(`document.getElementById('mic').classList.contains('rec')`, 3000);
+    await captureReady();
     await sleep(1300);
     await key(P, ' ', { code: 'Space', type: 'up' });
     await wait(`document.getElementById('input').value === ${JSON.stringify(fake.st.asrText)}`, 15000);
@@ -1164,7 +1178,7 @@ export async function runCases({ B, web, fake, only }) {
   await C('key-m-hold', async () => {
     await blur();
     await key(P, 'm', { code: 'KeyM', type: 'down' });
-    await wait(`document.getElementById('mic').classList.contains('rec')`, 3000);
+    await captureReady();
     await sleep(1300);
     await key(P, 'm', { code: 'KeyM', type: 'up' });
     await wait(`document.getElementById('input').value === ${JSON.stringify(fake.st.asrText)}`, 15000);
@@ -1174,6 +1188,7 @@ export async function runCases({ B, web, fake, only }) {
     await blur(); await sleep(500);
     await key(P, 'm', { code: 'KeyM' }); await sleep(80); await key(P, 'm', { code: 'KeyM' });
     await wait(`document.getElementById('mic').classList.contains('lock')`, 3000);
+    await captureReady();
     await sleep(1300);
     await key(P, 'x', { code: 'KeyX' });
     await wait(`document.getElementById('input').value === ${JSON.stringify(fake.st.asrText)}`, 15000);
@@ -1189,6 +1204,7 @@ export async function runCases({ B, web, fake, only }) {
       await sleep(60);
     }
     await wait(`document.getElementById('mic').classList.contains('lock')`, 3000);
+    await captureReady();
     await sleep(1200);
     await mouseHold('#mic', 60);
     await wait(`document.getElementById('input').value === ${JSON.stringify(fake.st.asrText)}`, 15000);

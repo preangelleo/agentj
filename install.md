@@ -1,15 +1,15 @@
 ---
 document: agentj-install
-version: 0.12.2a1
+version: 0.17.0
 released: 2026-10-04
 status: beta (anyone can sign up; not advertised yet, pages are not indexed)
 host_package: agentj (the `agentj` command)
-host_version: 0.12.2a1
-source_tag: v0.12.2a1
-host_wheel: agentj-0.12.2a1-py3-none-any.whl
-host_wheel_sha256: d92b6fbb460ba0f60bab93bdaf17fd5c92e226ff4b3532a8beffb617751cc0b3
-host_sdist: agentj-0.12.2a1.tar.gz
-host_sdist_sha256: 620bd5b6bbaf741a42b3cf9e9d27fa040eea52881a4d200c958e91bb18c11713
+host_version: 0.13.0a1
+source_tag: v0.13.0a1
+host_wheel: agentj-0.13.0a1-py3-none-any.whl
+host_wheel_sha256: e0c6d0d6d116b806b64634f03479d2eaeb49ff862cacda91a7cc1e8b5b4fb601
+host_sdist: agentj-0.13.0a1.tar.gz
+host_sdist_sha256: 307abc88bf10aa3f3ef28533e233230701696fab5adc1457f1b91e8c9620084c
 canonical_url: https://agentj.app/install.md
 sha256_url: https://agentj.app/install.md.sha256
 alias: https://agentjarvis.net/install.md (the older address: the same file, kept for one more version)
@@ -19,7 +19,7 @@ signature: none yet — integrity = the SHA-256 published on the site must match
 language: en (talk to your human in their language)
 ---
 
-> P40 local candidate: not published yet. This candidate fixes camera pairing, keyboard layout and harness binary resolution. Shared desktop sessions and owner-permission inheritance are still pending; the current host uses an independent conversation. Keep the published 0.12.1a1 installation until a verified release is announced.
+> P40d local candidate: not published yet. Shared desktop sessions and owner permissions are verified for Claude Code, Codex and OpenCode; high-risk warnings remain enabled. Keep the published 0.12.2a1 installation until a verified release is announced.
 
 # Install Agent J — instructions for the AI agent on this computer
 
@@ -130,7 +130,7 @@ curl -fsSL https://agentj.app/install.md.sha256 -o install.md.sha256
 curl -fsSL https://raw.githubusercontent.com/preangelleo/agentj/main/install.md -o install.github.md
 if command -v sha256sum >/dev/null; then sha256sum -c install.md.sha256; else shasum -a 256 -c install.md.sha256; fi   # → "install.md: OK"
 cmp install.md install.github.md && echo "site and GitHub copies match"
-grep -m1 '^version:' install.md                                           # → version: 0.12.2a1
+grep -m1 '^version:' install.md                                           # → version: 0.17.0
 ```
 - Both checks pass → continue with that `install.md` (note its `version:` for feedback). Keep the file: Step 4 reads the
   program's SHA-256 values from its front matter.
@@ -339,7 +339,7 @@ The astral installer warning that `uv` / `uvx` are shadowed is informational if 
 carry over). So start every command line from here on with `export PATH="$HOME/.local/bin:$PATH";` — or call
 `~/.local/bin/agentj` by its full path. This document writes `agentj` for short.
 
-The program is pinned to one release: the tag `v0.12.2a1` (front matter `source_tag`). The tag never moves, and its
+The program is pinned to one release: the tag `v0.13.0a1` (front matter `source_tag`). The tag never moves, and its
 `host/` folder is byte for byte the same code as the two files on our site whose SHA-256 is in this document's front matter.
 ```bash
 cd ~/.agentj-install
@@ -347,7 +347,7 @@ W=$(sed -n 's/^host_wheel: //p' install.md); WS=$(sed -n 's/^host_wheel_sha256: 
 curl -fsSLO "https://agentj.app/dl/$W"
 echo "$WS  $W" | sha256sum -c -   # macOS: shasum -a 256 -c -; mismatch → stop
 uv tool install "./$W"
-export PATH="$HOME/.local/bin:$PATH"; agentj --version     # → agentj 0.12.2a1
+export PATH="$HOME/.local/bin:$PATH"; agentj --version     # → agentj 0.13.0a1
 export PATH="$HOME/.local/bin:$PATH"; agentj doctor
 ```
 **Your human's own terminal must find `agentj` too** — they run `agentj passphrase set` and `agentj pair` themselves
@@ -375,12 +375,12 @@ echo "$WS  $W" | sha256sum -c - && echo "$SS  $S" | sha256sum -c -    # macOS: s
 uv tool install "./$W"          # the wheel; its dependencies come from PyPI or the mirror in UV_DEFAULT_INDEX
 ```
 `uv tool install "./$S"` installs from the checked source archive instead (it builds the same program).
-`https://agentj.app/dl/latest.txt` and `https://agentj.app/dl/latest-sdist.txt` name the same two files. `agentj --version` is the program's own version (`0.12.2a1`); it is
-numbered separately from this document (`0.12.2a1`).
+`https://agentj.app/dl/latest.txt` and `https://agentj.app/dl/latest-sdist.txt` name the same two files. `agentj --version` is the program's own version (`0.13.0a1`); it is
+numbered separately from this document (`0.17.0`).
 
-Alternative from the matching published source tag: `uv tool install "git+https://github.com/preangelleo/agentj@v0.12.2a1#subdirectory=host"`.
+Alternative from the matching published source tag: `uv tool install "git+https://github.com/preangelleo/agentj@v0.13.0a1#subdirectory=host"`.
 
-Alternative without uv: `pipx install "git+https://github.com/preangelleo/agentj@v0.12.2a1#subdirectory=host"` (needs Python 3.11+).
+Alternative without uv: `pipx install "git+https://github.com/preangelleo/agentj@v0.13.0a1#subdirectory=host"` (needs Python 3.11+).
 `agentj doctor` lists what is ready and what is not (prerequisites, the fence, connectivity, which agents are usable).
 Continue unless it reports an error that a later step does not fix; report anything you cannot explain.
 
@@ -906,11 +906,11 @@ prints something and `uv tool list` (or `pipx list`) shows `agentjarvis-host`, t
 the new name, then:
 ```bash
 jarvis service uninstall      # stop the old service first (Step 10 used tmux / nohup instead? stop that process)
-uv tool uninstall agentjarvis-host && uv tool install "git+https://github.com/preangelleo/agentj@v0.12.2a1#subdirectory=host"
+uv tool uninstall agentjarvis-host && uv tool install "git+https://github.com/preangelleo/agentj@v0.13.0a1#subdirectory=host"
 agentj doctor
 agentj service install        # start it again under the new name (or the tmux / nohup fallback, Step 10)
 ```
-With pipx instead of uv: `pipx uninstall agentjarvis-host && pipx install "git+https://github.com/preangelleo/agentj@v0.12.2a1#subdirectory=host"`.
+With pipx instead of uv: `pipx uninstall agentjarvis-host && pipx install "git+https://github.com/preangelleo/agentj@v0.13.0a1#subdirectory=host"`.
 - After the move, `agentj` puts back a `jarvis` command (a link to `agentj`, only if no other `jarvis` exists) for one more
   version; it prints a notice that points here. New installs never get `jarvis`.
 - The state moves by itself on the first run of `agentj`: from `~/.local/state/agentjarvis-alpha` to `~/.local/state/agentj`.
@@ -1189,4 +1189,34 @@ or logs out Claude Code / Codex / OpenCode (nor removes a model key), and never 
 
 - 0.16.0 (2026-10-04): versioned 0.12 host candidate; pinned wheel primary install; commented sparse configuration, own-key voice providers and bundled configuration skill. Promote only with matching public GitHub installer mirror.
 
-- 0.12.2a1 (2026-10-04): local host 0.12.2a1 candidate; in-app QR pairing, keyboard fit, harness wrapper resolution, startup/progress errors, doctor install inventory and desktop linger. Shared desktop session and owner-permission inheritance are not implemented; B4/B5 are deferred to the 0.13 release.
+- 0.17.0 (2026-10-04): host 0.13.0a1 local candidate; shared native sessions by default,
+  committed Claude Stop/native phone approvals, ordinary Claude startup and mobile interruption,
+  native Codex same-thread continuation and OpenCode attach; four-class high-risk warnings with
+  signed per-turn category approval. Pairing is preserved on upgrade. Publish only after ready.json
+  and all strict/export/secret gates pass.
+
+### Shared native sessions (0.13)
+The default `agent.session_mode=shared` follows the native harness permissions.
+Routine file/script/dependency/git-commit work receives no extra Agent J card;
+spending, public deletion, external send/publish and credential access require a
+signed phone decision. Keep `agent.high_risk_warnings=true`. Credential values
+stay on the computer, including in approval summaries. Native asks still apply.
+`agentj config set agent.session_mode independent` retains the separate fenced mode.
+
+Claude attaches to the live session in the exact working directory. Multiple sessions
+require `agent.shared_session_id`. Without a live session it starts ordinary Claude;
+workspace trust remains a native owner choice, and `claude --resume` can continue its
+saved ID. Existing terminal interruption requires an exact Herdr route; an owned
+ordinary session uses one Esc. Permission dialogs are never answered with Esc.
+OpenCode attaches using an exact session ID and `agent.shared_opencode_port` when
+an owner server is already running; otherwise it starts an owned ordinary session.
+Codex resumes an exact/stored thread and alternates owner/phone turns; it does not
+claim simultaneous TUI attachment. Unknown custom permission profiles fail closed.
+Shared mode deliberately uses the native owner's local OS authority outside the
+independent fence. Never disable native permissions to suppress approvals.
+
+Upgrading 0.12 adds the shared default without deleting state or requiring re-pairing.
+Until the local release report says ready=true and the official tag is published,
+keep the stable 0.12.2a1 release. Do not install a local candidate as a workaround.
+
+Credential troubleshooting safety: check only storage existence (v1 `auth.json`, v2 `opencode.db`) and, if the owner needs identification, a masked suffix of at most four characters. Never dump `auth.json`, SQLite rows, tokens, environment files or database contents to chat/logs. Existence does not prove a valid provider key. After `opencode auth login` changes a key, run `agentj service restart`; with shared attachment also restart the owner's OpenCode server when idle. Keep `AGENTJ_OPENCODE_BIN` in the service env file: existing saved overrides win on upgrade, units/plists contain no binary override. Without an override, first PATH executable wins; a mise/asdf shim resolves only to its configured version or one unambiguous installation. Doctor reports the selected path and why; selection changes are printed by service install.

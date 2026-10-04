@@ -169,6 +169,12 @@ class Pairing:
     done: asyncio.Future = field(default_factory=lambda: asyncio.get_running_loop().create_future())
 
 
+def approval_summary(tool, tool_input, verdict):
+    if 'credentials' in verdict.cats:
+        return f"{tool} · 读取或修改凭据 / Read or change credentials.\n具体内容仅在电脑查看，不发送凭据到手机。 / Inspect exact details on the computer."
+    return agents.summarize(tool, tool_input)
+
+
 class Host:
     def __init__(self, st: State, events: str = "text", read_stdin: bool = True):
         self.st = st
@@ -1200,6 +1206,25 @@ class Host:
         else:                          # the Agent spoke outside a turn of ours (e.g. a background task finished)
             self.hist_add({"k": "agent", "text": ""}, text, "done")
 
+    def desktop_input(self, text: str) -> None:
+        self.desktop_end()
+        self.desktop_turn = self.hist_add({"k": "host", "name": "电脑 / Desktop", "text": text}, "", "open")["id"]
+
+    def desktop_text(self, text: str) -> None:
+        tid = getattr(self, "desktop_turn", None)
+        if tid is None:
+            self.hist_add({"k": "agent", "text": ""}, text, "done")
+        else:
+            changed = self.hist_update(tid, append=text)
+            if changed:
+                self.desktop_turn = changed[-1]["id"]
+
+    def desktop_end(self) -> None:
+        tid = getattr(self, "desktop_turn", None)
+        if tid is not None:
+            self.hist_update(tid, end="done")
+        self.desktop_turn = None
+
     def agent_notice(self, text: str) -> None:
         local, self.notice_local = getattr(self, "notice_local", False), False
         self.emit("agent_notice", text=text)
@@ -1372,15 +1397,18 @@ class Host:
             if self.perm_w is w:
                 await self._perm_send(w, {"t": "answer", "id": rid, **ans})
 
-    async def ask(self, tool: str, tool_input: dict, gone: asyncio.Future | None = None, batch: bool = True) -> dict:
+    async def ask(self, tool: str, tool_input: dict, gone: asyncio.Future | None = None, batch: bool = True, risk_scope: bool = False) -> dict:
         """batch=False: never offered for (or approved by) a batch grant (a Codex sandbox / network escalation)."""
         if tool == "AskUserQuestion" and self.agent and self.agent.kind == "claude" and isinstance(tool_input, dict):
             return await self._ask_user_question(tool_input, gone)       # §10.7: a question card, not an approval card
         kind = self.agent.kind if self.agent else "?"
-        summary = agents.summarize(tool, tool_input)
+        classifier = danger.classify_shared if (self.agent_cfg or {}).get("session_mode") == "shared" else danger.classify
+        v = classifier(tool, tool_input, self.danger_extra)
+        summary = approval_summary(tool, tool_input, v)
+        if risk_scope:
+            summary += "\n本回合同类高危动作合并批准。 / Applies to this risk category for this turn."
         digest, isha = approvals.shown_digest(tool, summary), approvals.input_digest(tool_input)
         rid = secrets.token_hex(16)
-        v = danger.classify(tool, tool_input, self.danger_extra)
         workdir = (self.agent_cfg or {}).get("dir")
         sc = None if v.danger or not batch else danger.batch_scope(tool, tool_input, workdir, self.danger_extra)
         base = dict(rid=rid, agent=kind, tool=tool, input_sha256=isha, shown_sha256=digest, cats=v.cats)
@@ -1453,7 +1481,10 @@ class Host:
         self._post(self._send_ready, lambda s: {"t": "ask_done", "id": rid, "result": result})
         self.status_changed()
         if decision == "allow":
-            return {"behavior": "allow", "updatedInput": tool_input}
+            answer = {"behavior": "allow", "updatedInput": tool_input}
+            if risk_scope:
+                answer["risk_grant"] = {"rid": rid, "device": did, "sign_pub": sk}
+            return answer
         msg = {"device": "用户在手机上拒绝了这个操作。", "timeout": f"手机上 {int(self.ask_ttl)} 秒内没有批准：默认拒绝。",
                "serve_stop": "agentj serve 已停止：默认拒绝。", "estop": "已急停（全部停下）：默认拒绝。"}.get(reason, "已拒绝。")
         return {"behavior": "deny", "message": msg}
@@ -1461,9 +1492,10 @@ class Host:
     def policy_refused(self, tool: str, tool_input: dict, why: str, notice: str) -> None:
         """A request the harness asked that would give it more than the human's own configuration allows (Codex beyond its own
         sandbox, ADR-A73): refused without a card — approvals.log (reason `policy`), host.log, activity, one notice."""
-        summary = agents.summarize(tool, tool_input)
         rid = secrets.token_hex(16)
-        v = danger.classify(tool, tool_input, self.danger_extra)
+        classifier = danger.classify_shared if (self.agent_cfg or {}).get("session_mode") == "shared" else danger.classify
+        v = classifier(tool, tool_input, self.danger_extra)
+        summary = approval_summary(tool, tool_input, v)
         approvals.record(self.st, rid=rid, agent=self.agent.kind if self.agent else "?", tool=tool,
                          input_sha256=approvals.input_digest(tool_input), shown_sha256=approvals.shown_digest(tool, summary),
                          cats=v.cats, decision="deny", reason="policy")
