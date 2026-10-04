@@ -1811,7 +1811,6 @@ function pttLock(p){
   try{ if (navigator.vibrate) navigator.vibrate([15, 60, 15]); }catch(_){}
   pttUI(p);
 }
-const MIC_OPEN_MAX_MS = 15000;
 function pttStart(id, y){
   if (ptt) return;
   if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia || !window.MediaRecorder){
@@ -1822,18 +1821,10 @@ function pttStart(id, y){
                    pend: 0, tUp: 0, locked: false, lockT0: 0, cap: 0, viaM: false};
   p.timer = setInterval(() => pttUI(p), 250);
   pttUI(p);
-  // Native permission/device acquisition may never settle. Do not leave a
-  // locked take waiting forever, and do not retain a stream arriving after cancel.
-  p.openTimer = setTimeout(() => {
-    if (p.over || p.rec) return;
-    window.dispatchEvent(new CustomEvent('agentj-audio-error', {detail: {stage: 'capture', error: 'TimeoutError'}}));
-    pttEnd(p, "cancel", true);
-    toast(t('r.ptt.noMic'), 3000);
-  }, MIC_OPEN_MAX_MS);
   navigator.mediaDevices.getUserMedia({audio: true}).then(stream => {
-    clearTimeout(p.openTimer);
     if (p.over){
       stream.getTracks().forEach(tr => tr.stop());
+      toast(t('r.ptt.ready'), 2400);
       return;
     }
     p.stream = stream;
@@ -1848,16 +1839,14 @@ function pttStart(id, y){
     try{ if (navigator.vibrate) navigator.vibrate(20); }catch(_){}
     pttUI(p);
   }, () => {
-    clearTimeout(p.openTimer);
-    if (p.over) return;
-    pttEnd(p, "cancel", true);
+    if (!p.over) pttEnd(p, "cancel", true);
     toast(t('r.ptt.noMic'), 3000);
   });
 }
 function pttEnd(p, reason, quiet){
   if (!p || p.over) return;
   p.over = true;
-  clearInterval(p.timer); clearTimeout(p.pend); clearTimeout(p.cap); clearTimeout(p.openTimer);
+  clearInterval(p.timer); clearTimeout(p.pend); clearTimeout(p.cap);
   if (ptt === p) ptt = null;
   if (p.locked) lockEndAt = performance.now();
   const held = (p.tUp || performance.now()) - p.t0;

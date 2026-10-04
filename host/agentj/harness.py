@@ -84,39 +84,30 @@ def codex_login() -> tuple[str, str]:
     return "warn", "no login found"
 
 
-def opencode_login(version: str | None = None) -> tuple[str, str]:
-    """Storage existence is a hint, never proof of a usable key. No DB/content read."""
+def opencode_login() -> tuple[str, str]:
+    """OpenCode keeps vendor keys in its own store (`opencode auth login`): existence only, never content."""
     data = os.environ.get("XDG_DATA_HOME") or os.path.expanduser("~/.local/share")
-    root = os.path.join(data, "opencode")
-    is_v2 = bool(version and version.lstrip("v").startswith("2."))
-    stores = [("opencode.db", "v2 SQLite store exists; key validity unverified"),
-              ("auth.json", "v1 credential store exists; key validity unverified")]
-    if version and not is_v2:
-        stores.reverse()
-    for filename, description in stores:
-        if version and ((is_v2 and filename != "opencode.db") or (not is_v2 and filename != "auth.json")):
-            continue
-        p = os.path.join(root, filename)
-        if os.path.isfile(p):
-            return "ok", f"{description}: {tilde(p)}"
+    p = os.path.join(data, "opencode", "auth.json")
+    if os.path.isfile(p):
+        return "ok", f"login {tilde(p)}"
     for k in OPENCODE_KEY_ENV:
         if os.environ.get(k):
             return "env", f"env {k} (name only)"
-    return "warn", "no model key store found (opencode auth login); restart Agent J after changing keys"
+    return "warn", "no model key found (opencode auth login)"
 
 
 def login_of(name: str) -> tuple[str, str]:
     return {"claude": claude_login, "codex": codex_login, "opencode": opencode_login}[name]()
 
 
-def _one(name: str, environ=None) -> dict:
+def _one(name: str) -> dict:
     from .binaries import resolve, installations, wrapper
-    resolution = resolve(name, environ)
+    resolution = resolve(name)
     exe = resolution["path"]
     version = version_of(exe) if exe else None
     versions = {exe: version} if exe else {}
     installs = []
-    for path in installations(name, environ):
+    for path in installations(name):
         wrapped = wrapper(path)
         real = os.path.realpath(path)
         if not wrapped and real not in versions:
@@ -131,7 +122,7 @@ def _one(name: str, environ=None) -> dict:
         return rec
     if not rec["installed"]:
         return rec
-    status, _ = opencode_login(version) if name == "opencode" else login_of(name)
+    status, _ = login_of(name)
     if status in ("ok", "env"):
         rec["logged_in"] = True
     elif name == "claude" and os.environ.get("CLAUDECODE") == "1":
@@ -139,9 +130,9 @@ def _one(name: str, environ=None) -> dict:
     return rec
 
 
-def detect(environ=None) -> dict:
+def detect() -> dict:
     """{"harnesses": [{name, installed, logged_in, supported, version[, note]}], "usable": [...], "decision": ...}."""
-    hs = [_one(n, environ) for n in NAMES]
+    hs = [_one(n) for n in NAMES]
     usable = [h["name"] for h in hs if h["supported"] and h["installed"] and h["logged_in"] is not False]
     decision = "none" if not usable else f"use:{usable[0]}" if len(usable) == 1 else "ask_owner"
     return {"harnesses": hs, "usable": usable, "decision": decision}
