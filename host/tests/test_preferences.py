@@ -25,6 +25,16 @@ class PreferencesTest(unittest.TestCase):
             self.assertEqual(p.command(['reset','unknown.section']),1)
         self.assertEqual(p.get(p.effective(self.st),'appearance.theme'),'dark')
 
+    def test_012_upgrade_defaults_shared_without_repairing_device(self):
+        self.st.set_agent_config('claude',str(self.home))
+        self.st.add_device(bytes(range(32)),'existing phone',bytes(range(32)))
+        paths=[self.st.x25519_path,self.st.ed25519_path,self.st.devices_path]
+        before={p:p.read_bytes() for p in paths}
+        self.assertEqual(self.st.agent_config()['session_mode'],'shared')
+        self.assertTrue(self.st.agent_config()['high_risk_warnings'])
+        self.assertEqual({p:p.read_bytes() for p in paths},before)
+        self.assertEqual(len(self.st.devices()),1)
+
     def test_json5_comments_unicode_and_trailing_commas(self):
         doc=p.parse("{version:1, // retained\n appearance:{theme:'dark',}, voice:{wake_word:'嘿小J'},}")
         self.assertEqual(p.get(p.validate(doc),'voice.wake_word'),'嘿小J')

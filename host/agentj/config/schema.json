@@ -539,6 +539,65 @@
       "verify": "agentj doctor --offline --json",
       "since": "0.13",
       "maxLength": 6000
+    },
+    "agent.session_mode": {
+      "type": "string",
+      "default": "shared",
+      "description": "Attach to native owner sessions; independent remains available / 默认共享机主会话，独立模式仍可选择",
+      "aliases": [
+        "会话模式",
+        "session mode"
+      ],
+      "tier": "user",
+      "apply": "restart",
+      "verify": "agentj config validate --json",
+      "since": "0.13",
+      "enum": [
+        "independent",
+        "shared"
+      ]
+    },
+    "agent.shared_session_id": {
+      "type": "string",
+      "default": "",
+      "description": "Exact existing Claude/OpenCode session ID / 电脑现有会话 ID",
+      "aliases": [
+        "共享会话编号",
+        "shared session id"
+      ],
+      "tier": "user",
+      "apply": "restart",
+      "verify": "agentj config validate --json",
+      "since": "0.13",
+      "maxLength": 128
+    },
+    "agent.shared_opencode_port": {
+      "type": "integer",
+      "default": 0,
+      "description": "Existing OpenCode loopback server port / 现有 OpenCode 回环端口",
+      "aliases": [
+        "共享 OpenCode 端口",
+        "shared OpenCode port"
+      ],
+      "tier": "user",
+      "apply": "restart",
+      "verify": "agentj config validate --json",
+      "since": "0.13",
+      "minimum": 0,
+      "maximum": 65535
+    },
+    "agent.high_risk_warnings": {
+      "type": "boolean",
+      "default": true,
+      "description": "Additional high-risk warnings; disable explicitly on this computer / 本机显式关闭额外高危提醒",
+      "aliases": [
+        "高危提醒",
+        "high risk warnings"
+      ],
+      "tier": "user",
+      "apply": "restart",
+      "verify": "agentj config validate --json",
+      "since": "0.13"
     }
   }
 }

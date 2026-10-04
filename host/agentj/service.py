@@ -5,6 +5,7 @@ Linux = a systemd *user* unit (`~/.config/systemd/user/agentj.service`); macOS =
 (inside its venv, which the fence keeps read-only), with `serve --events quiet --no-stdin`: no terminal, and the log
 (journal / `service.log` in the state dir) gets metadata lines only — never a message, a reply or a command.
 
+Harness binary paths live only in the owner environment file; units/plists never bake in binary overrides.
 Never a secret in the unit / plist: only PATH (captured at install so `claude` / `codex` / `bwrap` resolve) and, when set,
 AGENTJ_STATE_DIR / AGENTJ_CLAUDE_BIN / AGENTJ_CODEX_BIN (paths). The Agent uses its own login (~/.claude,
 ~/.codex). If the only Claude Code login is the CLAUDE_CODE_OAUTH_TOKEN variable, the human puts it into an environment
@@ -23,6 +24,8 @@ import os
 import plistlib
 import re
 import shutil
+import shlex
+from pathlib import Path
 import subprocess
 import sys
 
@@ -159,6 +162,120 @@ def service_env(environ: dict | None = None) -> tuple[dict, list[str]]:
     return out, notes
 
 
+def binary_env(path: str) -> dict:
+    """Read path assignments only; never evaluate a shell or return credential entries."""
+    try:
+        content = Path(path).read_text()
+    except FileNotFoundError:
+        return {}
+    out = {}
+    for line in content.splitlines():
+        key, sep, value = line.strip().partition("=")
+        if sep and key in CAPTURED_ENV[1:]:
+            try:
+                parts = shlex.split(value, comments=False, posix=True)
+            except ValueError:
+                raise ServiceError("bad_binary_env") from None
+            if len(parts) != 1 or not parts[0]:
+                raise ServiceError("bad_binary_env")
+            out[key] = parts[0]
+    return out
+
+
+def prepare_binary_env(n: str, environ=None, previous=None) -> tuple[dict, list[str]]:
+    """Owner's saved override > invoking shell > PATH. Append absent paths only."""
+    from .binaries import ENV
+    e = dict(os.environ if environ is None else environ)
+    path = env_file(n, e)
+    saved = binary_env(path)
+    e.update(saved)
+    env, notes = service_env(e)
+    selected = {k: saved[k] if k in saved else env[k] for k in ENV.values() if k in env or k in saved}
+    previous = installed_binary_env(n) or previous or {}
+    for kind, key in ENV.items():
+        if key in selected:
+            origin = "saved owner override" if key in saved else "shell override" if getenv(key, None, e) else "first PATH executable; configured mise/asdf version when PATH is a shim"
+            notes.append(f"{kind}: {tilde(selected[key])} ({origin})")
+            old = previous.get(key)
+            if old and os.path.expanduser(old) != os.path.expanduser(selected[key]):
+                notes.append(f"{kind}: selection changed / 选择变化: {tilde(old)} -> {tilde(selected[key])}")
+    missing = {k: v for k, v in selected.items() if k not in saved}
+    if missing:
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        # Preserve all existing bytes, including unknown owner entries. No secret
+        # is copied to units, logs, command arguments or diagnostics.
+        prior = Path(path).read_bytes() if Path(path).exists() else b""
+        def quote(value):
+            if any(c in value for c in "\n\r\0"):
+                raise ServiceError("bad_binary_env")
+            return '"' + value.replace("\\", "\\\\").replace('"', '\\"') + '"'
+        addition = ("\n" if prior and not prior.endswith(b"\n") else "") + "".join(k + "=" + quote(v) + "\n" for k, v in missing.items())
+        _write(path, prior + addition.encode(), 0o600)
+    for key in ENV.values():
+        env.pop(key, None)
+    if platform() == "macos":
+        env["AGENTJ_SERVICE_ENV_FILE"] = path
+    return env, notes
+
+
+def installed_binary_env(n: str) -> dict:
+    """Only harness paths from the existing unit/plist; never show other variables."""
+    path = Path(unit_dir()) / (n + ".service") if platform() == "linux" else Path(plist_path(n))
+    try:
+        if platform() == "macos":
+            values = plistlib.loads(path.read_bytes()).get("EnvironmentVariables", {})
+        else:
+            values = {}
+            for line in path.read_text().splitlines():
+                if line.startswith("Environment="):
+                    for item in shlex.split(line.partition("=")[2]):
+                        key, sep, value = item.partition("=")
+                        if sep and key in CAPTURED_ENV[1:]:
+                            values[key] = value.replace("%%", "%")
+        return {k: v for k, v in values.items() if k in CAPTURED_ENV[1:]}
+    except (OSError, ValueError):
+        return {}
+
+
+def previous_binary_selection(st, n: str) -> dict:
+    import json
+    try:
+        record = json.loads((st.root / 'service-binaries.json').read_text())
+        if record.get('name') != n or record.get('platform') != platform(): return {}
+        return {k:v for k,v in record.get('paths',{}).items() if k in CAPTURED_ENV[1:] and isinstance(v,str)}
+    except (OSError,ValueError,AttributeError): return {}
+
+
+def remember_binary_selection(st, n: str) -> None:
+    import json
+    from .binaries import ENV, resolve
+    e = dict(os.environ);e.update(binary_env(env_file(n)))
+    paths = {key: resolve(kind,e)['path'] for kind,key in ENV.items() if resolve(kind,e)['path']}
+    _write(str(st.root / 'service-binaries.json'),json.dumps({'name':n,'platform':platform(),'paths':paths}).encode(),0o600)
+
+
+def effective_binary_environment(svc: dict) -> dict:
+    """Doctor resolves the installed service's saved paths, rather than its shell's PATH."""
+    env = dict(os.environ)
+    if svc.get('installed') and svc.get('name'):
+        env.update(binary_env(env_file(svc['name'])))
+    return env
+
+
+def binary_env_mismatches(n: str) -> list[str]:
+    saved = binary_env(env_file(n))
+    installed = installed_binary_env(n)
+    return [key for key, value in installed.items() if key in saved and value != saved[key]]
+
+
+def load_launch_binary_env() -> None:
+    # Launchd has no EnvironmentFile directive. Only our service sets this path;
+    # loading binary assignments here avoids baking them into the plist.
+    path = os.environ.get("AGENTJ_SERVICE_ENV_FILE")
+    if path:
+        os.environ.update(binary_env(path))
+
+
 # ------------------------------------------------------------------ Linux: systemd --user
 def _sd_quote(v: str) -> str:
     return '"' + v.replace("\\", "\\\\").replace('"', '\\"').replace("%", "%%") + '"'
@@ -172,6 +289,8 @@ def unit_dir(environ: dict | None = None) -> str:
 
 def env_file(n: str, environ: dict | None = None) -> str:
     """The optional environment file the human may create (0600). Lives next to the unit: read-only for the fenced Agent."""
+    if platform() == "macos":
+        return os.path.join(os.path.expanduser("~"), "Library", "LaunchAgents", f"{n}.env")
     return os.path.join(unit_dir(environ), f"{n}.env")
 
 
@@ -182,7 +301,7 @@ def unit_text(n: str, argv: list[str], env: dict, environ: dict | None = None) -
              "[Service]", "Type=simple",
              "ExecStart=" + " ".join(_sd_quote(x) for x in argv + SERVE_ARGS),
              "Restart=on-failure", "RestartSec=5", "TimeoutStopSec=20", "StandardInput=null"]
-    lines += [f"Environment={_sd_quote(f'{k}={v}')}" for k, v in env.items()]
+    lines += [f"Environment={_sd_quote(f'{k}={v}')}" for k, v in env.items() if k not in CAPTURED_ENV[1:]]
     lines += ["# optional, created by you (0600) — e.g. CLAUDE_CODE_OAUTH_TOKEN=… ; the leading '-' = may be absent",
               "EnvironmentFile=-" + env_file(n, environ).replace("%", "%%"), "", "[Install]", "WantedBy=default.target", ""]
     return "\n".join(lines)
@@ -229,7 +348,7 @@ def plist_path(n: str) -> str:
 
 
 def plist_bytes(n: str, argv: list[str], env: dict, log_path: str) -> bytes:
-    return plistlib.dumps({"Label": n, "ProgramArguments": argv + SERVE_ARGS, "EnvironmentVariables": env,
+    return plistlib.dumps({"Label": n, "ProgramArguments": argv + SERVE_ARGS, "EnvironmentVariables": {k: v for k, v in env.items() if k not in CAPTURED_ENV[1:]},
                            "RunAtLoad": True, "KeepAlive": True, "ThrottleInterval": 5, "ProcessType": "Background",
                            "StandardInPath": "/dev/null", "StandardOutPath": log_path, "StandardErrorPath": log_path})
 
@@ -242,12 +361,12 @@ def _gui() -> str:
     return f"gui/{os.getuid()}"
 
 
-# ------------------------------------------------------------------ the three verbs
+# ------------------------------------------------------------------ the service verbs
 def install(st) -> dict:
     """Write + enable + start. → {"kind", "name", "path", "argv", "notes"}; raises ServiceError."""
     n, plat = name(), platform()
     argv = agentj_argv()
-    env, notes = service_env()
+    notes = []
     if not os.environ.get("HOME"):
         raise ServiceError("no_home")
     if os.environ.get(TOKEN_ENV):
@@ -259,6 +378,8 @@ def install(st) -> dict:
         d = unit_dir()
         os.makedirs(d, exist_ok=True)
         path = os.path.join(d, f"{n}.service")
+        env, selected_notes = prepare_binary_env(n, previous=previous_binary_selection(st, n))
+        notes.extend(selected_notes)
         old = remove_legacy()         # stops the old serve first: its state directory can then move (migrate.py)
         if old:
             notes.append(f"旧服务 {old['name']} 已停止并删除 / the old service {old['name']} was stopped and removed")
@@ -266,6 +387,7 @@ def install(st) -> dict:
         _systemctl("daemon-reload", check=True)
         _systemctl("enable", f"{n}.service", check=True)
         _systemctl("restart", f"{n}.service", check=True)   # starts it, or picks up a rewritten unit (reinstall / upgrade)
+        remember_binary_selection(st, n)
         if _linger() == "no" and linger_needed():
             notes.append("服务器 / 无人登录也要运行：`loginctl enable-linger $USER`（否则退出登录后 serve 会停） / "
                          "on a server run `loginctl enable-linger $USER`, or serve stops when you log out")
@@ -273,6 +395,8 @@ def install(st) -> dict:
     if plat == "macos":
         path = plist_path(n)
         os.makedirs(os.path.dirname(path), exist_ok=True)
+        env, selected_notes = prepare_binary_env(n, previous=previous_binary_selection(st, n))
+        notes.extend(selected_notes)
         old = remove_legacy()
         if old:
             notes.append(f"旧服务 {old['name']} 已停止并删除 / the old service {old['name']} was stopped and removed")
@@ -286,6 +410,7 @@ def install(st) -> dict:
         r = _launchctl("bootstrap", _gui(), path)
         if r.returncode != 0:
             raise ServiceError("launchctl_failed", (r.stderr or r.stdout).strip()[:300])
+        remember_binary_selection(st, n)
         return {"kind": "launchd", "name": n, "path": path, "argv": argv + SERVE_ARGS, "notes": notes}
     raise ServiceError("unsupported_os")
 
@@ -342,6 +467,20 @@ def _restore_disabled(st, n: str) -> bool:
     else:
         os.unlink(p)
     return True
+
+
+def restart() -> dict:
+    """Restart only the named Agent J service; never a relay or foreign harness."""
+    n = name()
+    if platform() == "linux":
+        _systemctl("restart", f"{n}.service", check=True)
+    elif platform() == "macos":
+        r = _launchctl("kickstart", "-k", f"{_gui()}/{n}")
+        if r.returncode:
+            raise ServiceError("launchctl_failed")
+    else:
+        raise ServiceError("unsupported_os")
+    return {"name": n}
 
 
 def uninstall(st=None) -> dict:
@@ -429,6 +568,7 @@ def _write(path: str, data: bytes, mode: int) -> None:
 
 
 MESSAGES = {
+    "bad_binary_env": "AGENTJ_*_BIN 路径格式无效：检查服务 env 文件 / invalid harness path in service environment file",
     "bad_name": "服务名不合规（AGENTJ_SERVICE_NAME） / invalid service name",
     "no_systemctl": "没有 systemctl：这台 Linux 不用 systemd，自己用 tmux / supervisord 跑 `agentj serve` / no systemd here",
     "no_user_manager": "systemd 用户实例不可用（没有登录会话？）：先 `loginctl enable-linger $USER` 再重新登录 / "

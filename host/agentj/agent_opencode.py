@@ -669,7 +669,7 @@ class OpenCodeAgent(Agent):
                           else "provider")
                 self.host.st.log("agent_provider_fail", agent=self.kind, reason=reason, http_status=code)
                 notes = {
-                    "login": "模型服务登录或 key 无效：在电脑运行 `opencode auth login`，然后在 OpenCode 终端试发消息。 / Provider login/key failed; run `opencode auth login`.",
+                    "login": "模型服务登录或 key 无效：在电脑运行 `opencode auth login`；换 key 后运行 `agentj service restart`，再试发消息。 / Provider login/key failed; run `opencode auth login`, then `agentj service restart` after changing keys (restart the desktop OpenCode server too when attached).",
                     "balance": "模型服务余额不足：在电脑核实你的 provider 余额，然后在 OpenCode 终端试发消息。 / Check your provider balance in OpenCode.",
                     "rate_limit": "模型服务限流：等一会儿再在 OpenCode 终端试发消息；这条消息不会自动重发。 / Provider rate limit; wait and retry manually.",
                     "model": "模型名称不可用：运行 `opencode models` 核实服务商/模型 ID，再用 `agentj agent opencode --model <provider/model>` 更新。 / Run `opencode models`, then update the model ID.",
