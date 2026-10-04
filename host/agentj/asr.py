@@ -275,9 +275,11 @@ def _installed_ok(d: pathlib.Path) -> tuple[bool, str | None]:
     return True, None
 
 
-def ready_state(state_dir=None) -> str:
+def ready_state(state_dir=None, engine_override=None) -> str:
     """Just the `ready.asr` word (ready | not_installed | off | broken) — cheap: no disk walk, for every `ready`."""
     s = settings(state_dir)
+    if engine_override in ("sensevoice", "voxtype", "off"):
+        s["engine"]="sherpa" if engine_override=="sensevoice" else engine_override
     if s["engine"] == "off":
         return "off"
     if s["engine"] == "voxtype":
@@ -286,11 +288,13 @@ def ready_state(state_dir=None) -> str:
     return ("broken" if problem else "ready") if installed else "not_installed"
 
 
-def status(state_dir=None) -> dict:
+def status(state_dir=None, engine_override=None) -> dict:
     """What `ready.asr` / `agentj asr status` / doctor show. `state` ∈ ready | not_installed | off | broken (PROTOCOL
     §10.0); `active` = the engine a take would use now (None when none)."""
     d = asr_dir(state_dir)
     s = settings(state_dir)
+    if engine_override in ("sensevoice", "voxtype", "off"):
+        s["engine"]="sherpa" if engine_override=="sensevoice" else engine_override
     installed, problem = _installed_ok(d)
     rec = _read_json(d / "installed.json")
     vox = shutil.which("voxtype")
@@ -314,9 +318,9 @@ def status(state_dir=None) -> dict:
     return out
 
 
-def doctor_rows(state_dir=None) -> list[dict]:
+def doctor_rows(state_dir=None, engine_override=None) -> list[dict]:
     """Rows in doctor.py's shape ({"id","status","summary","hint"}, status ok|warn|fail). ASR is optional: never a ✗."""
-    s = status(state_dir)
+    s = status(state_dir,engine_override=engine_override)
     if s["state"] == "ready" and s["active"] == "sherpa":
         row = (OK, f"本机转写可用 / local speech-to-text ready · SenseVoice-Small · sherpa-onnx {s['sherpa_version']} · "
                    f"{s['threads']} 线程 / threads · {s['disk_bytes'] // 1_000_000} MB", "")
@@ -526,12 +530,14 @@ def voxtype_clean(stdout: str) -> str:
     return asr_worker.clean_text("\n".join(lines))
 
 
-def transcribe(wav_path: str, *, timeout_s: float, state_dir=None) -> dict:
+def transcribe(wav_path: str, *, timeout_s: float, state_dir=None, engine_override=None) -> dict:
     """→ {"ok": True, "text", "engine", "ms"} or {"ok": False, "reason", "detail"}; reason ∈ REASONS (`why(reason)` is the
     asr_res word). The WAV is checked here (header only; 16 kHz mono PCM16, or 8–48 kHz mono/stereo PCM16 that the worker
     converts). timeout_s covers waiting in the queue too. Thread-safe; never raises for audio or engine problems."""
     deadline = time.monotonic() + max(0.1, float(timeout_s))
     s = settings(state_dir)
+    if engine_override in ("sensevoice", "voxtype", "off"):
+        s["engine"]="sherpa" if engine_override=="sensevoice" else engine_override
     if s["engine"] == "off":
         return _fail("off", "speech-to-text is switched off (agentj asr engine auto)")
     d = asr_dir(state_dir)

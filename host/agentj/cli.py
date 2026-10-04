@@ -73,6 +73,10 @@ def cmd_init(a) -> None:
     except FileExistsError as e:
         sys.exit(f"{e}（要重建身份密钥用 --force；所有已配对设备都要重配）")
     print(f"这台电脑的身份已生成：{st.root}\n通道 {cfg['channel']}\n转发服务器 {cfg['relay']}\n下一步：运行 `agentj`，看看还差哪几步 / next: run `agentj` to see what is left")
+    from . import preferences
+    preferences.ensure()
+    from .config_migrations import run
+    run(st)
     _alias_auto(sys.stdout)
 
 
@@ -1400,7 +1404,12 @@ def cmd_asr(a) -> None:
     from . import asr
     st = State()
     _need_init(st)
-    sys.exit(asr.cli_main(list(a.args or []), state_dir=st.root))
+    args=list(a.args or [])
+    if len(args)==2 and args[0]=='engine':
+        from . import preferences
+        selected={'auto':'sensevoice','sherpa':'sensevoice','voxtype':'voxtype','off':'off'}.get(args[1])
+        if selected:sys.exit(preferences.command(['set','voice.asr.engine',selected]))
+    sys.exit(asr.cli_main(args, state_dir=st.root))
 
 
 def cmd_config(a) -> None:
@@ -1714,6 +1723,13 @@ NO_MIGRATE = ("migrate", "docs-rule", "handover")
 
 
 def main(argv=None) -> None:
+    args = list(sys.argv[1:] if argv is None else argv)
+    if args and args[0] in ("voice", "theme", "menu", "key", "channel", "skill"):
+        from . import personalize
+        raise SystemExit(personalize.command(args))
+    if args and args[0] == "config" and not (len(args) >= 3 and args[1] in ("activity", "history") and args[2] in ("on", "off", "status")):
+        from . import preferences
+        raise SystemExit(preferences.command(args[1:]))
     if argv is None and os.path.basename(sys.argv[0] or "") == "jarvis":   # the compat symlink made on a migrated computer
         print(JARVIS_NOTICE, file=sys.stderr, flush=True)
     p = argparse.ArgumentParser(prog="agentj", description="Agent J 主机端（alpha）：用手机和你自己的 Agent 对话 / Agent J host "

@@ -1,0 +1,95 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <uses-permission android:name="android.permission.INTERNET" />
+    <!-- The reply watcher reconnects when a network comes back instead of waiting out its backoff (ADR-050). -->
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <!-- WebView (Chromium) refuses getUserMedia without it: the page's own hold-to-talk. -->
+    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
+    <!-- Reply notifications without the microphone (listening stopped): ADR-050. -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_REMOTE_MESSAGING" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT" />
+    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
+    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <uses-permission android:name="android.permission.VIBRATE" />
+    <!-- Swiped away: an exact alarm brings listening back in ~2 s (ReviveReceiver). USE_EXACT_ALARM
+         is granted at install on 33+; 31–32 use SCHEDULE_EXACT_ALARM, on by default there. -->
+    <uses-permission android:name="android.permission.USE_EXACT_ALARM" />
+    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" android:maxSdkVersion="32" />
+
+    <!-- allowBackup=false: the relay address (secret path) and the WebView's device cookie
+         never leave the phone through cloud or adb backup. -->
+    <application
+        android:name=".JarvisApp"
+        android:allowBackup="false"
+        android:fullBackupContent="false"
+        android:dataExtractionRules="@xml/no_backup"
+        android:icon="@drawable/ic_launcher"
+        android:roundIcon="@drawable/ic_launcher"
+        android:label="Agent J"
+        android:supportsRtl="false"
+        android:usesCleartextTraffic="false"
+        android:theme="@style/Theme.Jarvis">
+
+        <activity
+            android:name=".MainActivity"
+            android:exported="true"
+            android:launchMode="singleTask"
+            android:windowSoftInputMode="adjustResize"
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboard|keyboardHidden|navigation|uiMode|density">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+            <meta-data android:name="android.app.shortcuts" android:resource="@xml/shortcuts" />
+        </activity>
+
+        <!-- Exported so the launcher's long-press shortcut can open it (a launcher is another
+             app). It takes no extras and shows nothing secret: the address is masked. -->
+        <activity
+            android:name=".StatusActivity"
+            android:exported="true"
+            android:label="Agent J 状态"
+            android:taskAffinity="app.agentj.android.status"
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboardHidden|uiMode" />
+
+        <provider
+            android:name=".PickProvider"
+            android:authorities="${applicationId}.picks"
+            android:exported="false"
+            android:grantUriPermissions="true" />
+
+        <service
+            android:name=".WakeService"
+            android:exported="false"
+            android:foregroundServiceType="microphone|remoteMessaging" />
+
+        <!-- Quick Settings tile: start / stop listening. Exported to the system UI only (the
+             BIND_QUICK_SETTINGS_TILE permission); it takes nothing in and shows nothing. -->
+        <service
+            android:name=".ListenTile"
+            android:exported="true"
+            android:label="Agent J"
+            android:icon="@drawable/ic_tile_mic"
+            android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
+            <intent-filter>
+                <action android:name="android.service.quicksettings.action.QS_TILE" />
+            </intent-filter>
+        </service>
+
+        <receiver android:name=".BootReceiver" android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+            </intent-filter>
+        </receiver>
+
+        <!-- Our own alarm only (explicit PendingIntent); nothing outside can reach it. -->
+        <receiver android:name=".ReviveReceiver" android:exported="false" />
+    </application>
+</manifest>

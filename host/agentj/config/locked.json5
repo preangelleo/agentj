@@ -1,0 +1,7 @@
+// Security floor: cannot be weakened by user configuration.
+{
+  "version": 1,
+  "security.e2e": true,
+  "security.signed_approvals": true,
+  "security.danger_categories": 5
+}

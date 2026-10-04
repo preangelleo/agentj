@@ -1,15 +1,15 @@
 ---
 document: agentj-install
-version: 0.15.0
-released: 2026-10-03
+version: 0.16.0
+released: 2026-10-04
 status: beta (anyone can sign up; not advertised yet, pages are not indexed)
 host_package: agentj (the `agentj` command)
-host_version: 0.11.0a1
-source_tag: v0.11.0a1
-host_wheel: agentj-0.11.0a1-py3-none-any.whl
-host_wheel_sha256: be0c70eb03166b41ddf1f101927eaa874041e33ddf0fbe73dfa45884006cb78f
-host_sdist: agentj-0.11.0a1.tar.gz
-host_sdist_sha256: 94157e37ea80f3565bbb389a168a3bd92e62fdebb8979d02260f7165610d4212
+host_version: 0.12.0a1
+source_tag: v0.12.0a1
+host_wheel: agentj-0.12.0a1-py3-none-any.whl
+host_wheel_sha256: 210cdf50671fa923d8c5c5919c06ba5be672e81bb9f2a6fa83e5d237ee751480
+host_sdist: agentj-0.12.0a1.tar.gz
+host_sdist_sha256: 6213a9d92928881e32c59f7b0808a5889a6623ec99face6450693b16c600bd7c
 canonical_url: https://agentj.app/install.md
 sha256_url: https://agentj.app/install.md.sha256
 alias: https://agentjarvis.net/install.md (the older address: the same file, kept for one more version)
@@ -128,7 +128,7 @@ curl -fsSL https://agentj.app/install.md.sha256 -o install.md.sha256
 curl -fsSL https://raw.githubusercontent.com/preangelleo/agentj/main/install.md -o install.github.md
 if command -v sha256sum >/dev/null; then sha256sum -c install.md.sha256; else shasum -a 256 -c install.md.sha256; fi   # → "install.md: OK"
 cmp install.md install.github.md && echo "site and GitHub copies match"
-grep -m1 '^version:' install.md                                           # → version: 0.15.0
+grep -m1 '^version:' install.md                                           # → version: 0.16.0
 ```
 - Both checks pass → continue with that `install.md` (note its `version:` for feedback). Keep the file: Step 4 reads the
   program's SHA-256 values from its front matter.
@@ -321,11 +321,15 @@ unreachable — retry, and tell your human if it persists. GitHub may be slow or
 carry over). So start every command line from here on with `export PATH="$HOME/.local/bin:$PATH";` — or call
 `~/.local/bin/agentj` by its full path. This document writes `agentj` for short.
 
-The program is pinned to one release: the tag `v0.11.0a1` (front matter `source_tag`). The tag never moves, and its
+The program is pinned to one release: the tag `v0.12.0a1` (front matter `source_tag`). The tag never moves, and its
 `host/` folder is byte for byte the same code as the two files on our site whose SHA-256 is in this document's front matter.
 ```bash
-uv tool install "git+https://github.com/preangelleo/agentj@v0.11.0a1#subdirectory=host"
-export PATH="$HOME/.local/bin:$PATH"; agentj --version     # → agentj 0.11.0a1
+cd ~/.agentj-install
+W=$(sed -n 's/^host_wheel: //p' install.md); WS=$(sed -n 's/^host_wheel_sha256: //p' install.md)
+curl -fsSLO "https://agentj.app/dl/$W"
+echo "$WS  $W" | sha256sum -c -   # macOS: shasum -a 256 -c -; mismatch → stop
+uv tool install "./$W"
+export PATH="$HOME/.local/bin:$PATH"; agentj --version     # → agentj 0.12.0a1
 export PATH="$HOME/.local/bin:$PATH"; agentj doctor
 ```
 **Your human's own terminal must find `agentj` too** — they run `agentj passphrase set` and `agentj pair` themselves
@@ -341,7 +345,7 @@ env -i HOME="$HOME" TERM=dumb "${SHELL:-/bin/bash}" -lic 'command -v agentj' 2>/
   (or `~/.local/bin/agentj` instead of `agentj`). Either way, you keep using `export PATH=…;` or the full path
   `~/.local/bin/agentj` in your own commands — `uv tool update-shell` does not change the shell you are running in.
 
-**From our site** (GitHub slow or blocked — mainland China, Step 3b — or if you want to check the files yourself): the
+**Alternative source archive from our site** (GitHub slow or blocked — mainland China, Step 3b — or if you want to check the files yourself): the
 same program as a wheel and as a source archive. Check each against the SHA-256 **written in this document** (which
 Step 1 already compared with the GitHub copy), not only against the `.sha256` file next to it. Run as one block:
 ```bash
@@ -353,10 +357,12 @@ echo "$WS  $W" | sha256sum -c - && echo "$SS  $S" | sha256sum -c -    # macOS: s
 uv tool install "./$W"          # the wheel; its dependencies come from PyPI or the mirror in UV_DEFAULT_INDEX
 ```
 `uv tool install "./$S"` installs from the checked source archive instead (it builds the same program).
-`https://agentj.app/dl/latest.txt` and `https://agentj.app/dl/latest-sdist.txt` name the same two files. `agentj --version` is the program's own version (`0.11.0a1`); it is
-numbered separately from this document (`0.15.0`).
+`https://agentj.app/dl/latest.txt` and `https://agentj.app/dl/latest-sdist.txt` name the same two files. `agentj --version` is the program's own version (`0.12.0a1`); it is
+numbered separately from this document (`0.16.0`).
 
-Alternative without uv: `pipx install "git+https://github.com/preangelleo/agentj@v0.11.0a1#subdirectory=host"` (needs Python 3.11+).
+Alternative from the matching published source tag: `uv tool install "git+https://github.com/preangelleo/agentj@v0.12.0a1#subdirectory=host"`.
+
+Alternative without uv: `pipx install "git+https://github.com/preangelleo/agentj@v0.12.0a1#subdirectory=host"` (needs Python 3.11+).
 `agentj doctor` lists what is ready and what is not (prerequisites, the fence, connectivity, which agents are usable).
 Continue unless it reports an error that a later step does not fix; report anything you cannot explain.
 
@@ -860,11 +866,11 @@ prints something and `uv tool list` (or `pipx list`) shows `agentjarvis-host`, t
 the new name, then:
 ```bash
 jarvis service uninstall      # stop the old service first (Step 10 used tmux / nohup instead? stop that process)
-uv tool uninstall agentjarvis-host && uv tool install "git+https://github.com/preangelleo/agentj@v0.11.0a1#subdirectory=host"
+uv tool uninstall agentjarvis-host && uv tool install "git+https://github.com/preangelleo/agentj@v0.12.0a1#subdirectory=host"
 agentj doctor
 agentj service install        # start it again under the new name (or the tmux / nohup fallback, Step 10)
 ```
-With pipx instead of uv: `pipx uninstall agentjarvis-host && pipx install "git+https://github.com/preangelleo/agentj@v0.11.0a1#subdirectory=host"`.
+With pipx instead of uv: `pipx uninstall agentjarvis-host && pipx install "git+https://github.com/preangelleo/agentj@v0.12.0a1#subdirectory=host"`.
 - After the move, `agentj` puts back a `jarvis` command (a link to `agentj`, only if no other `jarvis` exists) for one more
   version; it prints a notice that points here. New installs never get `jarvis`.
 - The state moves by itself on the first run of `agentj`: from `~/.local/state/agentjarvis-alpha` to `~/.local/state/agentj`.
@@ -1140,3 +1146,5 @@ or logs out Claude Code / Codex / OpenCode (nor removes a model key), and never 
   1 seat; `agentj login` / `passphrase` / `agent` / `service` / `pair`; feedback session first and a completion feedback
   at the end. Replaces the 0.1–0.6 design drafts (planned packages, signing and workspace initialization were not part
   of that version).
+
+- 0.16.0 (2026-10-04): versioned 0.12 host candidate; pinned wheel primary install; commented sparse configuration, own-key voice providers and bundled configuration skill. Promote only with matching public GitHub installer mirror.

@@ -2,6 +2,8 @@
 
 # Agent J
 
+This 0.12 candidate tree is for review. The published installation remains the complete 0.11 path until the public mirror/tag and all release gates pass. Android is a debug review APK, with offline model provenance and physical-device acceptance still pending; it is not a store release.
+
 Docs (中文 / English): <https://agentj.app/docs/> · machine-readable index: <https://agentj.app/llms.txt>
 
 Control **your own** Claude Code, Codex or OpenCode from your phone: chat with it, and approve or deny what it wants to do,
@@ -29,7 +31,7 @@ is the same file, byte for byte; the site publishes its SHA-256 at <https://agen
 
 The host program on its own, pinned to the release tag (Python 3.11 or newer; if yours is older, uv fetches one):
 ```bash
-uv tool install "git+https://github.com/preangelleo/agentj@v0.11.0a1#subdirectory=host"
+uv tool install "git+https://github.com/preangelleo/agentj@v0.12.0a1#subdirectory=host"
 agentj --version
 ```
 

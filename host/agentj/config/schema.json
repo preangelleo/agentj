@@ -1,0 +1,516 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "keys": {
+    "version": {
+      "type": "integer",
+      "default": 1,
+      "description": "Configuration format / 配置格式",
+      "aliases": [
+        "version",
+        "配置格式"
+      ],
+      "tier": "locked",
+      "apply": "hot",
+      "verify": "agentj config validate --json",
+      "since": "0.12"
+    },
+    "voice.wake_word": {
+      "type": "string",
+      "default": "",
+      "description": "Empty follows 嘿 + Agent name / 留空跟随 Agent 名",
+      "aliases": [
+        "唤醒词",
+        "wake word",
+        "hotword",
+        "voice wake word"
+      ],
+      "tier": "user",
+      "apply": "hot",
+      "verify": "agentj config validate --json",
+      "since": "0.12",
+      "maxLength": 80
+    },
+    "voice.wake_enabled": {
+      "type": "boolean",
+      "default": false,
+      "description": "Background listening is opt-in / 后台监听须主动启用",
+      "aliases": [
+        "免提",
+        "hands free",
+        "voice wake enabled"
+      ],
+      "tier": "user",
+      "apply": "hot",
+      "verify": "agentj config validate --json",
+      "since": "0.12"
+    },
+    "voice.asr.mode": {
+      "type": "string",
+      "default": "local",
+      "description": "Local audio stays on host; cloud sends to your provider / 云端会把语音发给所选服务商",
+      "aliases": [
+        "语音识别",
+        "ASR",
+        "voice asr mode",
+        "识别模式"
+      ],
+      "tier": "user",
+      "apply": "hot",
+      "verify": "agentj config validate --json",
+      "since": "0.12",
+      "enum": [
+        "local",
+        "cloud"
+      ]
+    },
+    "voice.asr.engine": {
+      "type": "string",
+      "default": "sensevoice",
+      "description": "Local ASR implementation / 本地识别引擎",
+      "aliases": [
+        "voice asr engine",
+        "识别引擎"
+      ],
+      "tier": "user",
+      "apply": "hot",
+      "verify": "agentj config validate --json",
+      "since": "0.12",
+      "enum": [
+        "sensevoice",
+        "voxtype",
+        "off"
+      ]
+    },
+    "voice.asr.provider": {
+      "type": "string",
+      "default": "openrouter",
+      "description": "Cloud provider with your own local key / 使用自己的本机 key",
+      "aliases": [
+        "voice asr provider",
+        "识别服务商"
+      ],
+      "tier": "user",
+      "apply": "hot",
+      "verify": "agentj config validate --json",
+      "since": "0.12",
+      "enum": [
+        "openrouter",
+        "openai"
+      ]
+    },
+    "voice.asr.model": {
+      "type": "string",
+      "default": "qwen/qwen3-asr-1.7b",
+      "description": "Provider model ID; choose one with audio input / 服务商支持音频输入的模型 ID",
+      "aliases": [
+        "voice asr model",
+        "识别模型"
+      ],
+      "tier": "user",
+      "apply": "hot",
+      "verify": "agentj config validate --json",
+      "since": "0.12",
+      "maxLength": 160
+    },
+    "voice.asr.key_env": {
+      "type": "string",
+      "default": "OPENROUTER_API_KEY",
+      "description": "Environment variable NAME only; never paste a key / 仅变量名，勿填密钥",
+      "aliases": [
+        "voice asr key env",
+        "识别密钥变量"
+      ],
+      "tier": "user",
+      "apply": "hot",
+      "verify": "agentj config validate --json",
+      "since": "0.12",
+      "pattern": "^[A-Z][A-Z0-9_]{0,79}$"
+    },
+    "voice.tts.mode": {
+      "type": "string",
+      "default": "phone",
+      "description": "Phone local voices, host OS speech, or your cloud provider / 手机本地、主机或云端",
+      "aliases": [
+        "播报",
+        "TTS",
+        "voice tts mode",
+        "播报模式"
+      ],
+      "tier": "user",
+      "apply": "hot",
+      "verify": "agentj config validate --json",
+      "since": "0.12",
+      "enum": [
+        "phone",
+        "host",
+        "cloud"
+      ]
+    },
+    "voice.tts.voice": {
+      "type": "string",
+      "default": "",
+      "description": "Local OS voice ID / 本地系统音色 ID",
+      "aliases": [
+        "音色",
+        "男声",
+        "女声",
+        "voice tts voice"
+      ],
+      "tier": "user",
+      "apply": "hot",
+      "verify": "agentj config validate --json",
+      "since": "0.12",
+      "maxLength": 160
+    },
+    "voice.tts.rate": {
+      "type": "number",
+      "default": 1.0,
+      "description": "Speech rate / 语速",
+      "aliases": [
+        "voice tts rate",
+        "播报语速"
+      ],
+      "tier": "user",
+      "apply": "hot",
+      "verify": "agentj config validate --json",
+      "since": "0.12",
+      "minimum": 0.5,
+      "maximum": 2.0
+    },
+    "voice.tts.provider": {
+      "type": "string",
+      "default": "openai",
+      "description": "Own-key provider; reply audio crosses our relay only as ciphertext / 自有密钥服务商；回复音频只以密文经过中继",
+      "aliases": [
+        "voice tts provider",
+        "播报服务商"
+      ],
+      "tier": "user",
+      "apply": "hot",
+      "verify": "agentj config validate --json",
+      "since": "0.12",
+      "enum": [
+        "openai",
+        "elevenlabs"
+      ]
+    },
+    "voice.tts.model": {
+      "type": "string",
+      "default": "gpt-4o-mini-tts",
+      "description": "Cloud speech model / 云端语音模型",
+      "aliases": [
+        "voice tts model",
+        "播报模型"
+      ],
+      "tier": "user",
+      "apply": "hot",
+      "verify": "agentj config validate --json",
+      "since": "0.12",
+      "maxLength": 160
+    },
+    "voice.tts.key_env": {
+      "type": "string",
+      "default": "OPENAI_API_KEY",
+      "description": "Environment variable NAME only / 仅环境变量名",
+      "aliases": [
+        "voice tts key env",
+        "播报密钥变量"
+      ],
+      "tier": "user",
+      "apply": "hot",
+      "verify": "agentj config validate --json",
+      "since": "0.12",
+      "pattern": "^[A-Z][A-Z0-9_]{0,79}$"
+    },
+    "voice.speak_replies": {
+      "type": "boolean",
+      "default": false,
+      "description": "Automatically read completed replies / 自动朗读完成的回复",
+      "aliases": [
+        "朗读回复",
+        "voice speak replies"
+      ],
+      "tier": "user",
+      "apply": "hot",
+      "verify": "agentj config validate --json",
+      "since": "0.12"
+    },
+    "voice.speak_notifications": {
+      "type": "boolean",
+      "default": false,
+      "description": "Read generic notifications (no locked-screen content) / 播报通用提醒",
+      "aliases": [
+        "通知播报",
+        "voice speak notifications"
+      ],
+      "tier": "user",
+      "apply": "hot",
+      "verify": "agentj config validate --json",
+      "since": "0.12"
+    },
+    "appearance.theme": {
+      "type": "string",
+      "default": "system",
+      "description": "Phone theme / 手机主题",
+      "aliases": [
+        "主题",
+        "深色",
+        "appearance theme"
+      ],
+      "tier": "user",
+      "apply": "hot",
+      "verify": "agentj config validate --json",
+      "since": "0.12",
+      "enum": [
+        "system",
+        "light",
+        "dark"
+      ]
+    },
+    "appearance.language": {
+      "type": "string",
+      "default": "zh",
+      "description": "Interface language / 界面语言",
+      "aliases": [
+        "语言",
+        "language",
+        "appearance language"
+      ],
+      "tier": "user",
+      "apply": "hot",
+      "verify": "agentj config validate --json",
+      "since": "0.12",
+      "enum": [
+        "zh",
+        "en"
+      ]
+    },
+    "menu.items": {
+      "type": "array",
+      "default": [],
+      "description": "Menu entries: id, cmd, desc, group, order; inserts text only / 菜单只插文字",
+      "aliases": [
+        "命令菜单",
+        "skills",
+        "menu items"
+      ],
+      "tier": "user",
+      "apply": "hot",
+      "verify": "agentj config validate --json",
+      "since": "0.12",
+      "merge": "id"
+    },
+    "keyboard.bindings": {
+      "type": "array",
+      "default": [],
+      "description": "Key entries: id, combo, action; allowed actions only / 快捷键只引用允许动作",
+      "aliases": [
+        "快捷键",
+        "keyboard bindings"
+      ],
+      "tier": "user",
+      "apply": "hot",
+      "verify": "agentj config validate --json",
+      "since": "0.12",
+      "merge": "id"
+    },
+    "channels.items": {
+      "type": "array",
+      "default": [
+        {
+          "id": "phone",
+          "type": "phone",
+          "disabled": false
+        }
+      ],
+      "description": "Optional channels; Telegram sends content to Telegram / 可选通道；Telegram 可读通道内容",
+      "aliases": [
+        "通道",
+        "Telegram",
+        "channels items"
+      ],
+      "tier": "user",
+      "apply": "restart:serve",
+      "verify": "agentj config validate --json",
+      "since": "0.12",
+      "merge": "id"
+    },
+    "approval.timeout": {
+      "type": "integer",
+      "default": 120,
+      "description": "May only shorten approval lifetime / 只可缩短审批有效期",
+      "aliases": [
+        "审批超时",
+        "approval timeout"
+      ],
+      "tier": "user",
+      "apply": "hot",
+      "verify": "agentj config validate --json",
+      "since": "0.12",
+      "minimum": 10,
+      "maximum": 120
+    },
+    "security.e2e": {
+      "type": "boolean",
+      "default": true,
+      "description": "End-to-end encryption cannot be disabled / 端到端加密不可关闭",
+      "aliases": [
+        "security e2e",
+        "端到端加密"
+      ],
+      "tier": "locked",
+      "apply": "hot",
+      "verify": "agentj config validate --json",
+      "since": "0.12"
+    },
+    "security.signed_approvals": {
+      "type": "boolean",
+      "default": true,
+      "description": "Paired signature required / 必须已配对签名",
+      "aliases": [
+        "security signed approvals",
+        "审批签名"
+      ],
+      "tier": "locked",
+      "apply": "hot",
+      "verify": "agentj config validate --json",
+      "since": "0.12"
+    },
+    "security.danger_categories": {
+      "type": "integer",
+      "default": 5,
+      "description": "All five dangerous categories always need separate approval / 危险五类单独批准",
+      "aliases": [
+        "security danger categories",
+        "危险类别"
+      ],
+      "tier": "locked",
+      "apply": "hot",
+      "verify": "agentj config validate --json",
+      "since": "0.12"
+    },
+    "human.devices": {
+      "type": "string",
+      "default": "",
+      "description": "Use the existing human-authorized command / 使用现有人类授权命令",
+      "aliases": [
+        "human devices",
+        "配对设备"
+      ],
+      "tier": "human",
+      "apply": "restart:serve",
+      "verify": "agentj config validate --json",
+      "since": "0.12"
+    },
+    "human.danger_extra": {
+      "type": "string",
+      "default": "",
+      "description": "Use the existing human-authorized command / 使用现有人类授权命令",
+      "aliases": [
+        "human danger extra",
+        "额外危险规则"
+      ],
+      "tier": "human",
+      "apply": "restart:serve",
+      "verify": "agentj config validate --json",
+      "since": "0.12"
+    },
+    "human.remote_unbind": {
+      "type": "string",
+      "default": "",
+      "description": "Use the existing human-authorized command / 使用现有人类授权命令",
+      "aliases": [
+        "human remote unbind",
+        "远程解绑"
+      ],
+      "tier": "human",
+      "apply": "restart:serve",
+      "verify": "agentj config validate --json",
+      "since": "0.12"
+    },
+    "human.report_hostname": {
+      "type": "string",
+      "default": "",
+      "description": "Use the existing human-authorized command / 使用现有人类授权命令",
+      "aliases": [
+        "human report hostname",
+        "主机名报告"
+      ],
+      "tier": "human",
+      "apply": "restart:serve",
+      "verify": "agentj config validate --json",
+      "since": "0.12"
+    },
+    "human.relay": {
+      "type": "string",
+      "default": "",
+      "description": "Use the existing human-authorized command / 使用现有人类授权命令",
+      "aliases": [
+        "human relay",
+        "中继地址"
+      ],
+      "tier": "human",
+      "apply": "restart:serve",
+      "verify": "agentj config validate --json",
+      "since": "0.12"
+    },
+    "human.web": {
+      "type": "string",
+      "default": "",
+      "description": "Use the existing human-authorized command / 使用现有人类授权命令",
+      "aliases": [
+        "human web",
+        "网页地址"
+      ],
+      "tier": "human",
+      "apply": "restart:serve",
+      "verify": "agentj config validate --json",
+      "since": "0.12"
+    },
+    "human.fence": {
+      "type": "string",
+      "default": "",
+      "description": "Use the existing human-authorized command / 使用现有人类授权命令",
+      "aliases": [
+        "human fence",
+        "围栏"
+      ],
+      "tier": "human",
+      "apply": "restart:serve",
+      "verify": "agentj config validate --json",
+      "since": "0.12"
+    },
+    "voice.wake_pronunciation": {
+      "type": "string",
+      "default": "",
+      "description": "Optional model phonemes for an unknown name / 生僻名字的模型音素",
+      "aliases": [
+        "读音",
+        "pronunciation",
+        "voice wake pronunciation",
+        "唤醒读音"
+      ],
+      "tier": "user",
+      "apply": "hot",
+      "verify": "agentj voice test-wake --text <phrase>",
+      "since": "0.12",
+      "maxLength": 800
+    },
+    "voice.wake_threshold": {
+      "type": "number",
+      "default": 0.25,
+      "minimum": 0.05,
+      "maximum": 0.95,
+      "description": "Offline KWS acceptance threshold; lower may cause false wakes / 离线唤醒阈值，低值更容易误唤醒",
+      "aliases": [
+        "唤醒灵敏度",
+        "wake sensitivity",
+        "voice wake threshold"
+      ],
+      "tier": "user",
+      "apply": "hot",
+      "verify": "agentj config validate --json + acoustic sample",
+      "since": "0.12"
+    }
+  }
+}

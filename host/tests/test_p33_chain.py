@@ -41,10 +41,10 @@ class FakeASR:
     def __init__(self, state="ready"):
         self.state, self.calls = state, []
 
-    def ready_state(self, state_dir=None):
+    def ready_state(self, state_dir=None, engine_override=None):
         return self.state
 
-    def transcribe(self, path, *, timeout_s, state_dir=None):
+    def transcribe(self, path, *, timeout_s, state_dir=None, engine_override=None):
         self.calls.append((path, timeout_s))
         size = os.path.getsize(path)
         return {"ok": True, "text": f"听到了 {size} 字节", "engine": "fake", "ms": 3}

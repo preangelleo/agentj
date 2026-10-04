@@ -28,11 +28,11 @@ fake_asr = os.environ.pop("AGENTJ_TEST_FAKE_ASR", None)   # a stand-in speech en
 if fake_asr:
     class _FakeASR:
         @staticmethod
-        def ready_state(state_dir=None):
+        def ready_state(state_dir=None, engine_override=None):
             return "ready"
 
         @staticmethod
-        def transcribe(path, *, timeout_s, state_dir=None):
+        def transcribe(path, *, timeout_s, state_dir=None, engine_override=None):
             return {"ok": True, "text": f"{fake_asr} {os.path.getsize(path)}", "engine": "fake", "ms": 1}
     serve.asr_mod = _FakeASR()
 

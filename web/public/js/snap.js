@@ -133,7 +133,7 @@ export function snapshot() {
 export function toPage(t) {
   if (!t || !Number.isInteger(t.id) || t.id < 0) return null;
   const src = t.src && typeof t.src === 'object' ? t.src : {};
-  const k = ['phone', 'host', 'agent', 'sys', 'task', 'cmd'].includes(src.k) ? src.k : 'sys';
+  const k = ['phone', 'host', 'agent', 'sys', 'task', 'cmd', 'telegram'].includes(src.k) ? src.k : 'sys';
   const q = src.quote && typeof src.quote === 'object' && Number.isInteger(src.quote.id) ? {
     id: src.quote.id, who: typeof src.quote.who === 'string' ? src.quote.who.slice(0, 64) : '', ts: Number(src.quote.ts) || null,
     text: typeof src.quote.text === 'string' ? src.quote.text.slice(0, 2000) : '', excerpt: src.quote.ex === true } : null;

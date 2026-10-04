@@ -279,9 +279,9 @@ class FencedChain(unittest.TestCase):
         if os.environ.get("AJ_EVIDENCE_DIR"):          # acceptance evidence: what the hostile command saw from inside
             pathlib.Path(os.environ["AJ_EVIDENCE_DIR"], "fence-attack.json").write_text(json.dumps(r, ensure_ascii=False, indent=1))
         st_parent = os.path.dirname(os.path.realpath(self.st.root))
-        private = sys.platform != "darwin" and st_parent.startswith("/tmp/")   # Linux: the fence's private tmpfs, not the real one
+        private = sys.platform != "darwin" and st_parent.startswith(("/tmp/", "/var/tmp/"))   # Linux: the fence's private tmpfs, not the real one
         code_parent = os.path.dirname(min(fence.code_paths(), key=len))
-        private_code = sys.platform != "darwin" and code_parent.startswith("/tmp/")   # e.g. a wheel installed under /tmp
+        private_code = sys.platform != "darwin" and code_parent.startswith(("/tmp/", "/var/tmp/"))   # e.g. a wheel installed under /tmp
         opened = {k: v for k, v in r.items() if isinstance(v, str) and v.startswith("open:")
                   and not (private and k == "rename above state dir") and not (private_code and k == "rename above agentj code")}
         self.assertEqual(opened, {}, f"reached from inside the fence: {opened}")

@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Debug twin of main/res/xml/shortcuts.xml: the package here is the .debug one. -->
+<shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
+    <shortcut android:shortcutId="status" android:enabled="true"
+        android:icon="@drawable/ic_launcher" android:shortcutShortLabel="@string/status_short">
+        <intent android:action="android.intent.action.VIEW"
+            android:targetPackage="app.agentj.android.debug" android:targetClass="app.agentj.android.StatusActivity" />
+    </shortcut>
+</shortcuts>

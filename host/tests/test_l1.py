@@ -73,6 +73,10 @@ def _host(st, sent):
     async def no_relay():           # no relay in these units (a failed reconnect would drop the fake sessions)
         await host.stopping.wait()
     host.relay_loop = no_relay
+    # These legacy transport fixtures set ask_ttl directly and do not exercise
+    # user configuration. A watcher must not import another test's HOME file.
+    # Real preference activation is covered by test_preferences and CLI e2e.
+    host.preferences_loop = no_relay
 
     async def send_app(s, obj):
         sent.append((s.cid, obj))

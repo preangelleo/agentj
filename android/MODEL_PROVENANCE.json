@@ -1,0 +1,21 @@
+{
+  "engine": "sherpa-onnx",
+  "version": "1.13.8",
+  "model": "sherpa-onnx-kws-zipformer-zh-en-3M-2025-12-20",
+  "sha256": {
+    "model.tar.bz2": "68447f4fbc67e70eee3a93961f36e81e98f47aef73ce7e7ca00885c6cd3616a6",
+    "sherpa.aar": "633c24321e06b1fe79feafa03ea16cbc0f8a286641e2da3559bac91bdb13bd96",
+    "silero_vad.onnx": "a35ebf52fd3ce5f1469b2a36158dba761bc47b973ea3382b3186ca15b1f5af28"
+  },
+  "urls": {
+    "model.tar.bz2": "https://github.com/k2-fsa/sherpa-onnx/releases/download/kws-models/sherpa-onnx-kws-zipformer-zh-en-3M-2025-12-20.tar.bz2",
+    "sherpa.aar": "https://github.com/k2-fsa/sherpa-onnx/releases/download/v1.13.8/sherpa-onnx-1.13.8.aar",
+    "silero_vad.onnx": "https://github.com/dscripka/openWakeWord/releases/download/v0.5.1/silero_vad.onnx"
+  },
+  "license_evidence": {
+    "model_author_card": "https://modelscope.cn/models/pkufool/icefall-kws-zipformer-zh-en-3M-2025-12-20",
+    "model_author_metadata": "license: Apache License 2.0",
+    "clarification_issue": "https://github.com/k2-fsa/sherpa-onnx/issues/3802",
+    "notice": "Original author metadata says Apache 2.0; GitHub archive has no license/notice. Training-data and bundled lexicon clarification remains open. Review APK only; do not imply cleared store distribution."
+  }
+}

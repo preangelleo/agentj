@@ -1,0 +1,73 @@
+// Factory defaults; put only your changes in the user override file.
+{
+  "voice":
+  {
+    // Empty follows 嘿 + Agent name / 留空跟随 Agent 名; default=""
+    "wake_word": "",
+    // Optional model phonemes for an unknown name / 生僻名字的模型音素; default=""
+    "wake_pronunciation": "",
+    // Background listening is opt-in / 后台监听须主动启用; default=false
+    "wake_enabled": false,
+    // Offline KWS acceptance threshold; lower may cause false wakes / 离线唤醒阈值，低值更容易误唤醒; default=0.25
+    "wake_threshold": 0.25,
+    "asr":
+    {
+      // Local audio stays on host; cloud sends to your provider / 云端会把语音发给所选服务商; default="local"
+      "mode": "local",
+      // Local ASR implementation / 本地识别引擎; default="sensevoice"
+      "engine": "sensevoice",
+      // Cloud provider with your own local key / 使用自己的本机 key; default="openrouter"
+      "provider": "openrouter",
+      // Provider model ID; choose one with audio input / 服务商支持音频输入的模型 ID; default="qwen/qwen3-asr-1.7b"
+      "model": "qwen/qwen3-asr-1.7b",
+      // Environment variable NAME only; never paste a key / 仅变量名，勿填密钥; default="OPENROUTER_API_KEY"
+      "key_env": "OPENROUTER_API_KEY",
+    },
+    "tts":
+    {
+      // Phone local voices, host OS speech, or your cloud provider / 手机本地、主机或云端; default="phone"
+      "mode": "phone",
+      // Local OS voice ID / 本地系统音色 ID; default=""
+      "voice": "",
+      // Speech rate / 语速; default=1.0
+      "rate": 1.0,
+      // Own-key provider; reply audio crosses our relay only as ciphertext / 自有密钥服务商；回复音频只以密文经过中继; default="openai"
+      "provider": "openai",
+      // Cloud speech model / 云端语音模型; default="gpt-4o-mini-tts"
+      "model": "gpt-4o-mini-tts",
+      // Environment variable NAME only / 仅环境变量名; default="OPENAI_API_KEY"
+      "key_env": "OPENAI_API_KEY",
+    },
+    // Automatically read completed replies / 自动朗读完成的回复; default=false
+    "speak_replies": false,
+    // Read generic notifications (no locked-screen content) / 播报通用提醒; default=false
+    "speak_notifications": false,
+  },
+  "appearance":
+  {
+    // Phone theme / 手机主题; default="system"
+    "theme": "system",
+    // Interface language / 界面语言; default="zh"
+    "language": "zh",
+  },
+  "menu":
+  {
+    // Menu entries: id, cmd, desc, group, order; inserts text only / 菜单只插文字; default=[]
+    "items": [],
+  },
+  "keyboard":
+  {
+    // Key entries: id, combo, action; allowed actions only / 快捷键只引用允许动作; default=[]
+    "bindings": [],
+  },
+  "channels":
+  {
+    // Optional channels; Telegram sends content to Telegram / 可选通道；Telegram 可读通道内容; default=[{"id": "phone", "type": "phone", "disabled": false}]
+    "items": [{"id": "phone", "type": "phone", "disabled": false}],
+  },
+  "approval":
+  {
+    // May only shorten approval lifetime / 只可缩短审批有效期; default=120
+    "timeout": 120,
+  },
+}

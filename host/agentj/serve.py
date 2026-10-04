@@ -32,7 +32,7 @@ from websockets.asyncio.client import connect
 from . import agent as agents
 from . import activity, approvals, cloud, controls, danger, fence, gate, memory, slash, tasks, update, webpush, wire
 from . import asr as asr_mod
-from . import compose, history, inbox, menu, uploads
+from . import compose, history, inbox, menu, uploads, preferences
 from .noise import IK, IKPSK2, CipherState, Handshake, NoiseError
 from .reporter import Reporter, in_daemon_thread
 from .envcompat import getenv
@@ -88,7 +88,7 @@ HIST_READY = 50                             # turns a p33 device gets on ready (
 SWEEP_EVERY = 60
 RETAIN_EVERY = 86_400
 P33_ONLY = ("say", "say_cancel", "blob_open", "blob_chunk", "blob_end", "blob_drop", "hist_get", "menu_get", "model_set",
-            "q_answer")
+            "q_answer", "tts_get")
 METER_KEYS = ("model", "model_name", "effort", "ctx", "h5", "week")
 Q_CANCEL = "用户在手机上取消了这个问题，没有选择任何选项。请不要替他做选择，停下来等他直接输入文字。"
 Q_TIMEOUT = "没有人作答，请改用文字列出选项"
@@ -178,6 +178,7 @@ class Host:
         self.sk = st.signing_key()
         self.events = events
         self.read_stdin = read_stdin
+        self.telegram = None
         self.ws = None
         self.sessions: dict[int, Session] = {}
         self.pairing: Pairing | None = None
@@ -187,7 +188,20 @@ class Host:
         self.name_refused = False   # one agent_name_refused line per refused streak, not one per sync
         self.reporter = Reporter(st, self.report_view)  # Dashboard metadata reports (§7); no-op unless linked
         # agent bridge (L1, PROTOCOL §8) and Web Push (§9)
-        self.ask_ttl = ASK_TTL
+        try:
+            self.preferences = preferences.validate(preferences.read()[1])
+            from . import voice
+            voice.validate_runtime(self.preferences)
+            self.config_problem = None
+        except (preferences.ConfigError,OSError) as e:
+            try:
+                self.preferences = preferences.validate(json.loads(preferences.runtime(st).read_text()))
+            except (OSError, ValueError):
+                self.preferences = preferences.defaults()
+            self.config_problem = e.result() if isinstance(e,preferences.ConfigError) else {"ok":False,"key":"/","error":"configuration unreadable"}
+        self.config_stamp = None
+        self.config_apply_lock = asyncio.Lock()
+        self.ask_ttl = min(ASK_TTL, preferences.get(self.preferences, "approval.timeout", ASK_TTL))
         self.agent_cfg = st.agent_config()
         self.perm_token: str | None = None          # one-time: issued per agent start, spent by the first claim (L2)
         self.perm_w: asyncio.StreamWriter | None = None   # the claimed connection of the agent's permission tool
@@ -684,6 +698,12 @@ class Host:
                                              "task_running": self.scheduler.current_id,
                                              "sessions": [{"device": s.device, "name": s.name, "state": s.state}
                                                           for s in self.sessions.values() if s.state != "new"]})
+                elif cmd == "config_apply":
+                    await self._ctl_send(w, await self.apply_preferences(req.get("raw")))
+                elif cmd == "config_revision":
+                    import hashlib
+                    revision=hashlib.sha256(json.dumps(self.preferences,sort_keys=True).encode()).hexdigest()
+                    await self._ctl_send(w,{"ok":True,"revision":revision})
                 elif cmd == "report_view":
                     online, pending = self.report_view()
                     await self._ctl_send(w, {"ok": True, "online": sorted(online), "pending": pending})
@@ -964,6 +984,7 @@ class Host:
         if since > self.seq:            # a device that remembers a seq from before this serve started: replay it all
             since = 0
         await self.send_app(s, self._status_msg())
+        if s.p33: await self.send_app(s, self.preferences_msg())
         await self.send_app(s, self._estop_msg())
         await self.send_app(s, {"t": "push_key", "k": webpush.b64u(webpush.vapid_public(self._push_key()))})
         if s.p33:                       # §10.5: history pages instead of §8's msg replay; meters, models (§10.10 / §10.11)
@@ -1016,11 +1037,73 @@ class Host:
             m["kind"] = "question"
         return m
 
+    def preferences_msg(self):
+        # Preferences contain only pure data; no environment values or sensitive State fields.
+        value = dict(self.preferences)
+        value = preferences.merge(value, {})
+        if not preferences.get(value, "voice.wake_word"):
+            preferences.put(value, "voice.wake_word", "嘿 " + (self.st.agent_name() or "Agent J"))
+        from . import wake
+        try:
+            value["voice"]["wake_tokens"] = wake.keyword(preferences.get(value,"voice.wake_word"),preferences.get(value,"voice.wake_pronunciation",""))
+        except preferences.ConfigError as e:
+            value["voice"]["wake_tokens"] = ""
+            if preferences.get(value,"voice.wake_enabled"):
+                return {"t":"preferences","value":value,"problem":e.result()}
+        return {"t": "preferences", "value": value, "problem": self.config_problem}
+
+    async def apply_preferences(self, raw=None):
+        async with self.config_apply_lock:
+            old = self.preferences
+            try:
+                candidate = preferences.validate(preferences.parse(raw) if isinstance(raw,str) else preferences.read()[1])
+                # Providers and channels with external dependencies are checked before activation.
+                from . import voice
+                voice.validate_runtime(candidate)
+                if isinstance(raw,str):
+                    preferences.commit_files(self.st,raw,candidate)
+                else:
+                    preferences.save_good(self.st,candidate)
+                self.preferences = candidate
+                self.ask_ttl = min(ASK_TTL, preferences.get(candidate, "approval.timeout"))
+                self.config_problem = None
+            except (preferences.ConfigError, OSError) as e:
+                self.preferences = old
+                self.config_problem = e.result() if isinstance(e, preferences.ConfigError) else {"ok": False, "key": "/", "error": "runtime persistence failed ("+type(e).__name__+", errno="+str(e.errno)+")"}
+                await self._send_ready(lambda _: self.preferences_msg())
+                return self.config_problem
+            await self._send_ready(lambda _: self.preferences_msg())
+            return {"ok": True, "applied": True, "verify": {"ok": True, "detail": "host configuration activated; voice needs a listening test"}, "needs": []}
+
+    async def preferences_loop(self):
+        while not self.stopping.is_set():
+            try:
+                raw = preferences.path().read_bytes()
+                import hashlib
+                stamp = hashlib.sha256(raw).digest()
+                if stamp != self.config_stamp:
+                    self.config_stamp = stamp
+                    import fcntl
+                    fd=os.open(self.st.root / "preferences.lock",os.O_RDWR|os.O_CREAT,0o600)
+                    try:
+                        fcntl.flock(fd,fcntl.LOCK_SH|fcntl.LOCK_NB)
+                        await self.apply_preferences()
+                    except BlockingIOError:
+                        self.config_stamp=None
+                    finally:
+                        os.close(fd)
+            except FileNotFoundError:
+                pass
+            except OSError:
+                self.config_problem = {"ok": False, "key": "/", "error": "configuration unreadable"}
+            await asyncio.sleep(0.5)
+
     def name_changed(self) -> None:
         """The Agent name changed (`agentj name`, the admin page, a Dashboard rename adopted in sync): every ready phone gets
         a fresh status at once."""
         msg = self._status_msg()
         self._post(self._send_ready, lambda s: msg)
+        self._post(self._send_ready, lambda s: self.preferences_msg())
 
     def _post(self, coro_fn, *args) -> None:
         """Agent callbacks are synchronous; outbound sends are queued so the phone sees them in order."""
@@ -1164,6 +1247,8 @@ class Host:
                       result="stopped" if halted else "done")
         if self.cur_turn is not None:
             self.hist_update(self.cur_turn, end="stopped" if halted else ("failed" if self.cur_failed else "done"))
+        if self.telegram and self.cur_turn is not None:
+            self.telegram.completed(self.hist.get(self.cur_turn))
         self.cur_turn, self.cur_failed = None, False
         for gid in list(self.grants):     # a batch approval never outlives the turn it was given in (ADR-A48)
             self.end_grant(gid, "turn_end")
@@ -1749,7 +1834,34 @@ class Host:
             with contextlib.suppress(Exception):
                 await self._op(wire.OP_BULK, s.cid)
 
+    async def on_tts(self, s, obj):
+        if self.sessions.get(s.cid) is not s or s.state != "ready" or not self.st.is_allowed(s.pub): return
+        from . import voice
+        import base64
+        r=obj.get("r")
+        if not wire.is_id22(r): return
+        if getattr(self, "tts_busy", False):
+            return await self.send_app(s,{"t":"tts_end","r":r,"ok":False,"why":"busy"})
+        turn=self.hist.get(obj.get("id"))
+        if not turn or turn.get("end") not in ("done", "stopped", "failed"):
+            return await self.send_app(s,{"t":"tts_end","r":r,"ok":False,"why":"missing"})
+        self.tts_busy=True
+        try:
+            text=turn.get("reply",{}).get("text","")
+            audio=await asyncio.to_thread(voice.synthesize,text,self.preferences)
+            for i in range(0,len(audio),24*1024):
+                if self.sessions.get(s.cid) is not s or not self.st.is_allowed(s.pub): return
+                if not await self.send_app(s,{"t":"tts_chunk","r":r,"i":i//(24*1024),"data":base64.b64encode(audio[i:i+24*1024]).decode()}): return
+            await self.send_app(s,{"t":"tts_end","r":r,"ok":True,"bytes":len(audio),"mime":"audio/wav"})
+        except Exception:
+            await self.send_app(s,{"t":"tts_end","r":r,"ok":False,"why":"engine"})
+        finally:
+            self.tts_busy=False
+
     async def on_p33(self, s: Session, t: str, obj: dict) -> None:
+        if t == "tts_get":
+            asyncio.create_task(self.on_tts(s, obj))
+            return
         if t == "say":
             return await self.on_say(s, obj)
         if t == "say_cancel":
@@ -1801,6 +1913,9 @@ class Host:
                 skills = [x for x in (getattr(self.agent, "init", {}) or {}).get("skills") or [] if isinstance(x, str)]
             wd = self.agent_cfg["dir"] if self.agent_cfg else None
             res = await asyncio.to_thread(menu.served, wd, skills, self.lang)
+            configured = preferences.get(self.preferences, "menu.items", [])
+            if configured:
+                res.update(source="config", items=[{k: v for k, v in x.items() if k != "id"} for x in menu.arrange(configured)])
             return await self.send_app(s, {"t": "menu", "r": r, **res})
         if t == "model_set":
             return await self.on_model_set(s, obj)
@@ -1820,6 +1935,8 @@ class Host:
             if o is not s and o.state == "ready" and not o.p33 and self.st.is_allowed(o.pub):
                 await self.send_app(o, self._render(entry, o))
         src = {"k": "phone", "dev": s.device, "name": (s.name or s.device)[:64], "text": text}
+        if getattr(s,"source_kind",None)=="telegram":
+            src["k"]="telegram"
         if quote:
             src["quote"] = quote
         if blobs:
@@ -1994,8 +2111,11 @@ class Host:
     # ------------------------------------------------------------ voice (§10.9)
     def asr_state(self) -> str:
         """`ready.asr` (§10.0): asr.ready_state — cheap (no disk walk), read for every ready and every take."""
+        if preferences.get(self.preferences, "voice.asr.mode") == "cloud":
+            from . import voice
+            return "ready" if voice.has_key(preferences.get(self.preferences, "voice.asr.key_env")) else "broken"
         try:
-            v = self.asr.ready_state(self.st.root)
+            v = self.asr.ready_state(self.st.root, engine_override=preferences.get(self.preferences,"voice.asr.engine"))
         except Exception:  # noqa: BLE001
             return "broken"
         return v if v in ("ready", "not_installed", "off", "broken") else "broken"
@@ -2006,8 +2126,12 @@ class Host:
             self.asr_lock = asyncio.Lock()
         async with self.asr_lock:
             try:
-                r = await asyncio.wait_for(asyncio.to_thread(self.asr.transcribe, path, timeout_s=timeout,
-                                                                    state_dir=self.st.root), timeout + 5)
+                from . import voice
+                if preferences.get(self.preferences, "voice.asr.mode") == "cloud":
+                    r = await asyncio.wait_for(asyncio.to_thread(voice.cloud_asr, path, self.preferences, timeout), timeout + 5)
+                else:
+                    r = await asyncio.wait_for(asyncio.to_thread(self.asr.transcribe, path, timeout_s=timeout,
+                                                                        state_dir=self.st.root, engine_override=preferences.get(self.preferences, "voice.asr.engine")), timeout + 5)
             except asyncio.TimeoutError:
                 return {"ok": False, "reason": "timeout"}
             except Exception:  # noqa: BLE001
@@ -2299,7 +2423,7 @@ class Host:
                 raise SystemExit(f"agentj serve is already running ({sock})")
             except (ConnectionRefusedError, FileNotFoundError):
                 sock.unlink()
-        old = os.umask(0o177)
+        old = os.umask(0o077)
         try:
             server = await asyncio.start_unix_server(self.on_ctl, path=str(sock))
         finally:
@@ -2309,7 +2433,7 @@ class Host:
         self.post_q = asyncio.Queue()
         jobs = [asyncio.create_task(self.relay_loop()), asyncio.create_task(self.reporter.run()),
                  asyncio.create_task(self.sync_loop()), asyncio.create_task(self.post_loop()),
-                 asyncio.create_task(self.update_loop())]
+                 asyncio.create_task(self.update_loop()), asyncio.create_task(self.preferences_loop())]
         perm_server = None
         if self.agent_cfg:
             psock = self.st.perm_sock_path
@@ -2317,7 +2441,7 @@ class Host:
             os.chmod(self.st.perm_dir, 0o700)
             with contextlib.suppress(FileNotFoundError):
                 psock.unlink()
-            old = os.umask(0o177)
+            old = os.umask(0o077)
             try:
                 perm_server = await asyncio.start_unix_server(self.on_perm, path=str(psock), limit=8 * 1024 * 1024)
             finally:
@@ -2327,6 +2451,9 @@ class Host:
             self.agent.start()
             self.sent_status = self.eff_status()
             self.st.log("agent_on", agent=self.agent.kind, fence=self.agent_cfg.get("fence", True))
+        from .telegram import Telegram
+        self.telegram=Telegram(self)
+        jobs.append(asyncio.create_task(self.telegram.run()))
         jobs.append(asyncio.create_task(self.scheduler.loop()))
         jobs.append(asyncio.create_task(self.sweep_loop()))
         if self.read_stdin:

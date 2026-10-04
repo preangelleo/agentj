@@ -46,7 +46,7 @@ def _cli(*args, env=None, timeout=60, stdin=subprocess.DEVNULL):
 class Version(unittest.TestCase):
     def test_one_source(self):
         v = agentj.__version__
-        self.assertEqual(v, "0.11.0a1")
+        self.assertEqual(v, "0.12.0a1")
         self.assertEqual(cloud.VERSION, v)
         self.assertEqual(cloud.AGENT, f"agentj/{v}")
         r = _cli("--version")
@@ -142,6 +142,8 @@ class ServiceText(unittest.TestCase):
 
 
 def _user_systemd() -> bool:
+    # A live user manager reads its real HOME; isolated tests must opt in explicitly.
+    if os.environ.get("AGENTJ_TEST_SYSTEMD") != "1": return False
     if not sys.platform.startswith("linux") or not shutil.which("systemctl") or os.environ.get("AJ_SKIP_SYSTEMD"):
         return False
     try:
@@ -313,7 +315,7 @@ class Doctor(unittest.TestCase):
         self.assertEqual(r.returncode, 1, "not initialised = ✗")
         d = json.loads(r.stdout)
         ids = [c["id"] for c in d["checks"]]
-        self.assertEqual([i for i in ids if i != "linger"], self.IDS + ["asr", "update"], "linger only where systemd reports it")
+        self.assertEqual([i for i in ids if i != "linger"], self.IDS + ["asr", "config", "hardware", "update"], "linger only where systemd reports it")
         self.assertEqual(d["version"], agentj.__version__)
         by = {c["id"]: c for c in d["checks"]}
         self.assertEqual((by["state"]["status"], by["state"]["hint"]), ("fail", "agentj init"))
@@ -438,7 +440,7 @@ class WheelInstall(unittest.TestCase):
                   "agentj/admin/brand/img/shield-64.png"):
             self.assertIn(f, names_)
         self.assertFalse([n for n in names_ if n.endswith(".src.json") or "shield-source" in n], "no copy source, no big logo source")
-        self.assertLess(pathlib.Path(self.wheel).stat().st_size, 1_500_000, "wheel stays small")
+        self.assertLess(pathlib.Path(self.wheel).stat().st_size, 1_900_000, "wheel stays bounded: offline bilingual keyword lexicon adds ~0.85 MB; no acoustic models ship here")
         self.assertFalse([n for n in names_ if n.startswith("tests/") or "wiredump" in n or "fakeclaude" in n])
         ep = next(n for n in names_ if n.endswith("entry_points.txt"))
         eps = zipfile.ZipFile(self.wheel).read(ep).decode()
@@ -488,7 +490,7 @@ class WheelInstall(unittest.TestCase):
             self.assertEqual(subprocess.run([self.venv + "/bin/agentj", "init"], env=env, capture_output=True, cwd="/").returncode, 0)
             r = subprocess.run([self.venv + "/bin/agentj", "doctor", "--json", "--offline"], env=env, capture_output=True, text=True, cwd="/")
             d_ = json.loads(r.stdout)
-            self.assertEqual([c["id"] for c in d_["checks"] if c["id"] != "linger"], Doctor.IDS + ["asr", "update"])
+            self.assertEqual([c["id"] for c in d_["checks"] if c["id"] != "linger"], Doctor.IDS + ["asr", "config", "hardware", "update"])
             self.assertEqual({c["id"]: c["status"] for c in d_["checks"]}["state"], "ok")
 
     @unittest.skipUnless((sys.platform.startswith("linux") and shutil.which("bwrap")) or

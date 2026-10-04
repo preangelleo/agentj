@@ -179,7 +179,7 @@ class RealEngineServe(_Chain):
             serve.ASR_TAKE = self.take_ttl
             self.assertTrue((await take(zh, "ok.wav"))["ok"])
             # off: ready.asr off, a new asr blob refused at open; a long recording goes untranscribed
-            asr._set_setting(self.st.root, engine="off")
+            c["host"].preferences["voice"]["asr"]["engine"] = "off"
             self.assertEqual(c["host"]._caps()["asr"], "off")
             bid = wire.b64u(os.urandom(16))
             await c["host"]._app(c["s"], {"t": "blob_open", "bid": bid, "purpose": "asr", "name": "x.wav",
@@ -189,7 +189,7 @@ class RealEngineServe(_Chain):
             att = await c["upload"](zh, mime="audio/wav", purpose="att", origin="recording", secs=6, name="off.wav")
             r, t = await c["said"]("关了转写", att=[att])
             self.assertIn("转写失败（语音转写已关闭）", t["reply"]["text"])
-            asr._set_setting(self.st.root, engine="auto")
+            c["host"].preferences["voice"]["asr"]["engine"] = "sensevoice"
             self.assertEqual(c["host"]._caps()["asr"], "ready")
             # broken: an install whose model changed (here: the venv is gone) → broken, never a crash
             os.unlink(link)

@@ -619,7 +619,9 @@ export default {
   "r.keys.mic": "锁定录音，松手继续录；再点一下结束，Esc 取消",
   "r.keys.ee": "清空文字和附件",
   "r.keys.eei": "已经空了（≥1 秒）：中断当前任务",
-  "r.keys.ok": "知道了"
+  "r.keys.ok": "知道了",
+  "preferences.notification": "你的 Agent 已回复。",
+  "preferences.error": "配置未生效："
  },
  "en": {
   "meta.title": "Agent J · Phone remote",
@@ -1240,6 +1242,8 @@ export default {
   "r.keys.mic": "Lock the recording, it keeps going; tap again to finish, Esc cancels",
   "r.keys.ee": "Clear the text and attachments",
   "r.keys.eei": "Already empty (≥ 1 s): interrupt the current task",
-  "r.keys.ok": "Got it"
+  "r.keys.ok": "Got it",
+  "preferences.notification": "Your agent has replied.",
+  "preferences.error": "Configuration not applied: "
  }
 };

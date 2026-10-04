@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- targetPackage must be the literal package: a @string reference is not resolved here and
+     ends up as "@<resource id>" in the component (1.0 bug). Debug builds use the twin in
+     src/debug/res/xml with the .debug package. -->
+<shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
+    <shortcut android:shortcutId="status" android:enabled="true"
+        android:icon="@drawable/ic_launcher" android:shortcutShortLabel="@string/status_short">
+        <intent android:action="android.intent.action.VIEW"
+            android:targetPackage="app.agentj.android" android:targetClass="app.agentj.android.StatusActivity" />
+    </shortcut>
+</shortcuts>

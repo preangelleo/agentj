@@ -9,7 +9,8 @@ import { t, lang, onLang, fillText } from './t.js';
 import { el, toast, toastOff, toastAction, human, stamp, mmss, confirmSheet } from './ui.js';
 import { Upload, TYPES as DROP_TYPES, MAX_BYTES as UPLOAD_MAX, MAX_ATT, ASR_MAX_BYTES } from './blobs.js';
 import { toWav } from './wav.js';
-import { Speaker } from './speak.js';
+import { Speaker, configureSpeech } from './speak.js';
+import { isReady } from './session.js';
 import { getSealed, putSealed, dbDel } from './store.js';
 
 let C = null;                        // ctx from app.js: api, myDev(), estopOn(), canSign(), panels …
@@ -608,6 +609,8 @@ function resetHistory(ep){
 }
 /** A turn pushed by the host (hist_turn): new, a reply part appended, or its end. */
 export function upsertTurn(p){
+  const previous=hist.turns.find(x=>x.id===p.id);
+  if(previous?.end==='open' && p.end==='done') announceTurn(p,true);
   const i = hist.turns.findIndex(x => x.id === p.id);
   if (i >= 0) hist.turns[i] = p;
   else if (!hist.turns.length || p.id > hist.turns[hist.turns.length - 1].id){
@@ -678,6 +681,7 @@ function currentPage(){ const ps = pages(); return ps[Math.min(ps.length - 1, Ma
 function sourceOf(src){
   if (!src) return {kind: "leo", label: t('r.src.you')};
   if (src.k === "phone") return src.dev && src.dev === C.myDev() ? {kind: "leo", label: t('r.src.you')} : {kind: "dev", label: src.name || t('r.src.otherDevice')};
+  if (src.k === "telegram") return {kind:"tg",label:"Telegram"};
   if (src.k === "host") return {kind: "host", label: t('r.src.host')};
   if (src.k === "agent") return {kind: "agent", label: t('r.src.agent', {name: C.agentName()})};
   if (src.k === "task") return {kind: "task", label: src.name ? t('r.src.taskNamed', {name: src.name}) : t('r.src.task')};
@@ -1644,7 +1648,7 @@ function menuFromHost(j){
   }
   return {items, skills, source: j.source === "file" ? "file" : "default"};
 }
-const IN_APP = / JarvisApp\/\d/.test(navigator.userAgent);
+const IN_APP = / (?:JarvisApp|AgentJApp)\/\d/.test(navigator.userAgent);
 const CLIP_READ = !!(navigator.clipboard && navigator.clipboard.read) && !IN_APP;
 function renderMenu(){
   const nodes = [];
@@ -1763,6 +1767,7 @@ const DTAP_MS = 300, LOCK_MAX_MS = 10 * 60 * 1000, LOCK_WARN_MS = 60 * 1000, LOC
 let ptt = null;
 let lockEndAt = -1e9;
 function pttUI(p){
+  if (p) speaker?.stop();
   const b = el("mic"), box = el("ptt");
   b.classList.toggle("rec", !!p && !p.cancel);
   b.classList.toggle("cancel", !!p && p.cancel);
@@ -2375,7 +2380,7 @@ export function init(ctx){
     if (!b) return;
     e.stopPropagation();
     if (b.id === "keysEntry"){ openKeys(); return; }
-    if (b.id === "appEntry"){ closeMenu(); location.href = "jarvis-app://status"; return; }
+    if (b.id === "appEntry"){ closeMenu(); location.href = / AgentJApp\//.test(navigator.userAgent) ? "agentj-app://status" : "jarvis-app://status"; return; }
     if (b.id === "clipEntry"){ closeMenu(); pasteClipImages(); return; }
     if (b.dataset.run){ closeMenu(); if (await runCmd(b.dataset.run)) { toNewest(); toast(t('r.run.sent', {cmd: "/" + b.dataset.run}), 1600); } return; }
     if (b.dataset.estop){ closeMenu(); C.estop(b.dataset.estop === "stop"); return; }
@@ -2617,3 +2622,40 @@ export function onEstop(){ paintPlaceholder(); renderMenu(); refreshSend(); }
 export function rerender(){ if (cur) render(cur); else showPage(); }
 /** For the screens test: internal state worth asserting. */
 export function debug(){ return {pageAt, follow, pages: pages().length, total: totalPages(), atts: atts.map(a => ({st: a.st, name: a.name, id: a.id || null, origin: a.origin})), queued: queued.length, asrBusy, hist: hist.turns.map(x => x.id), menuItems: menuItems.map(x => x[0]), ptt: ptt ? {locked: ptt.locked, cancel: ptt.cancel} : null, histMem: histMem.slice(), killBuf}; }
+
+
+let userPreferences={};
+export function applyPreferences(value){
+  userPreferences=value||{};configureSpeech(userPreferences.voice);
+  speaker?.stop();
+  const app=userPreferences.appearance||{};
+  if(app.language)window.AJLang?.set(app.language);
+  if(app.theme==='system')document.documentElement.removeAttribute('data-theme');
+  else if(['light','dark'].includes(app.theme))document.documentElement.setAttribute('data-theme',app.theme);
+  loadMenu();
+}
+export function announceTurn(turn,old){
+  if(!old || turn.end!=='done' || new URLSearchParams(location.search).has('watcher'))return;
+  if(userPreferences.voice?.speak_replies)speaker?.tap(turn.id,typeof turn.reply==='string'?turn.reply:(turn.reply?.text||''));
+  else if(userPreferences.voice?.speak_notifications && userPreferences.voice?.tts?.mode==='phone')speaker?.tap('notification-'+turn.id,t('preferences.notification'));
+}
+document.addEventListener('keydown',e=>{
+  const combo=[e.ctrlKey?'ctrl':null,e.altKey?'alt':null,e.shiftKey?'shift':null,e.metaKey?'meta':null,e.key.toLowerCase()].filter(Boolean).join('+');
+  const binding=(userPreferences.keyboard?.bindings||[]).find(x=>x.combo===combo);
+  if(!binding)return;
+  const fn={'open-menu':()=>{menu.hidden=!menu.hidden;},'read-reply':speakTap,'stop-speech':()=>speaker?.stop(),'focus-input':()=>input?.focus(),'interrupt':()=>C.api.slash('stop')}[binding.action];
+  if(fn){e.preventDefault();e.stopImmediatePropagation();fn();}
+},true);
+
+export function configProblem(error){toast(t('preferences.error')+String(error).slice(0,300),8000);}
+
+// Native shell reads this local endpoint snapshot; ciphertext is decrypted only inside this WebView.
+window.agentjNative=Object.freeze({snapshot:()=>({
+  ready:isReady(),
+  wake_threshold:userPreferences.voice?.wake_threshold||0.25,
+  wake_tokens:userPreferences.voice?.wake_tokens||'',wake_enabled:userPreferences.voice?.wake_enabled===true,
+  latest:hist.turns.filter(x=>x.end==='done').at(-1)?.id||0,
+  speak_notifications:userPreferences.voice?.speak_notifications===true,
+  theme:userPreferences.appearance?.theme||'system',
+  tts_mode:userPreferences.voice?.tts?.mode||'phone',tts_voice:userPreferences.voice?.tts?.voice||'',tts_rate:userPreferences.voice?.tts?.rate||1,language:userPreferences.appearance?.language||'zh'
+})});

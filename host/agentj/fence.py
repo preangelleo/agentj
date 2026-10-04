@@ -116,7 +116,8 @@ def state_aliases(st, home: str | None = None) -> list[str]:
 
 def protected_paths(st) -> list[str]:
     """What the agent must not see or change; its working folder may not be inside any of these."""
-    return sorted({_real(str(st.root))} | set(other_states(st)) | set(code_paths()))
+    from .preferences import path as preferences_path
+    return sorted({_real(str(st.root)), _real(str(preferences_path().parent))} | set(other_states(st)) | set(code_paths()))
 
 
 def _under(path: str, root: str) -> bool:
@@ -245,6 +246,8 @@ def bwrap_argv(st, workdir: str, home: str | None = None, runtime: str | None = 
     home = _real(home or os.path.expanduser("~"))
     runtime = runtime if runtime is not None else env.get("XDG_RUNTIME_DIR", "")
     root, perm, work = _real(str(st.root)), _real(str(st.perm_dir)), _real(workdir)
+    from .preferences import path as preferences_path
+    prefs = _real(str(preferences_path().parent))
     a = [shutil.which("bwrap") or "bwrap", "--dev-bind", "/", "/", "--unshare-pid", "--proc", "/proc",
          "--die-with-parent", "--new-session"]
     hidden = [d for d in ("/tmp", "/var/tmp") if os.path.isdir(d)]
@@ -259,7 +262,7 @@ def bwrap_argv(st, workdir: str, home: str | None = None, runtime: str | None = 
     visible = lambda p: not any(_under(p, d) for d in hidden) or any(_under(p, b) for b in back)  # noqa: E731
     ro = [p for p in (os.path.join(home, rel) for rel in _RO_FILES) if os.path.lexists(p) and visible(_real(p))]
     code = code_paths()
-    for d in ancestors([_real(p) for p in ro] + code + [root]):   # pinned: cannot be renamed away (still writable inside)
+    for d in ancestors([_real(p) for p in ro] + code + [root, prefs]):   # pinned: cannot be renamed away (still writable inside)
         if visible(d):
             a += ["--bind", d, d]
     for p in ro:
@@ -277,6 +280,8 @@ def bwrap_argv(st, workdir: str, home: str | None = None, runtime: str | None = 
     for d in other_states(st, home):     # a second (old) state directory: hidden whole; the legacy symlink resolves to root
         if visible(d):
             a += ["--tmpfs", d]
+    if os.path.isdir(prefs) and visible(prefs):
+        a += ["--tmpfs", prefs]
     a += ["--tmpfs", root, "--bind", perm, perm]
     for k in hide_env(env, allow_docker):
         a += ["--unsetenv", k]
@@ -298,7 +303,8 @@ def sbpl_profile(st, workdir: str, home: str | None = None, uid: int | None = No
     directory is denied, exactly like the bwrap mount order."""
     home = _real(home or os.path.expanduser("~"))
     uid = os.getuid() if uid is None else uid
-    params = {"STATE": _real(str(st.root)), "PERM": _real(str(st.perm_dir)), "TMUX": f"/private/tmp/tmux-{uid}"}
+    from .preferences import path as preferences_path
+    params = {"PREFERENCES": _real(str(preferences_path().parent)), "STATE": _real(str(st.root)), "PERM": _real(str(st.perm_dir)), "TMUX": f"/private/tmp/tmux-{uid}"}
     alt = list(dict.fromkeys(other_states(st, home) + [p for p in state_aliases(st, home) if p != params["STATE"]]))
     for i, p in enumerate(alt):
         params[f"STATE_ALT_{i}"] = p
@@ -307,7 +313,7 @@ def sbpl_profile(st, workdir: str, home: str | None = None, uid: int | None = No
     ro = list(dict.fromkeys(ro))
     for i, p in enumerate(ro):
         params[f"RO_{i}"] = p
-    pin = ancestors(ro + [params["STATE"]])
+    pin = ancestors(ro + [params["STATE"], params["PREFERENCES"]])
     for i, p in enumerate(pin):
         params[f"PIN_{i}"] = p
     n_ro = len(ro)
@@ -317,6 +323,7 @@ def sbpl_profile(st, workdir: str, home: str | None = None, uid: int | None = No
     lines = [
         "(version 1)",
         "(allow default)",
+        '(deny file-read* file-write* (subpath (param "PREFERENCES")))',
         ";; 1. the host's state directory: invisible and unconnectable, except the permission tool's folder",
         '(deny file-read* file-write* (subpath (param "STATE")))',
         '(deny network-outbound (remote unix-socket (subpath (param "STATE"))))',

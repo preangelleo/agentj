@@ -520,6 +520,7 @@ def run(st: State | None = None, offline: bool = False) -> list[dict]:
             check_serve(st), check_service(svc, service.legacy_status()), check_alias(), check_estop(st), check_tasks(st),
             check_activity(st)]
     out += check_asr(st)
+    out += check_preferences(st)
     lg = check_linger(svc)
     if lg:
         out.append(lg)
@@ -532,7 +533,8 @@ def check_asr(st: State) -> list[dict]:
     never a crash of the doctor."""
     try:
         from . import asr
-        rows = asr.doctor_rows(st.root)
+        from . import preferences
+        rows = asr.doctor_rows(st.root,engine_override=preferences.get(preferences.effective(st),"voice.asr.engine"))
     except Exception as e:  # noqa: BLE001
         return [_c("asr", WARN, f"本地语音转写：检查失败（{type(e).__name__}）/ local transcription: check failed")]
     out = []
@@ -552,3 +554,19 @@ def main(as_json: bool = False, offline: bool = False) -> int:
             print(f"{MARK[c['status']]} {c['id']:<10} {c['summary']}" + (f"\n    → {c['hint']}" if c["hint"] and c["status"] != OK else ""))
         print(("✗ 有问题要修 / something to fix" if failed else "✓ 没有阻塞问题 / nothing blocking") + f"  ({DIST} {__version__})")
     return 1 if failed else 0
+
+
+def check_preferences(st):
+    from . import preferences, voice
+    rows=[]
+    try:
+        cfg=preferences.effective(st)
+        voice.validate_runtime(cfg)
+        rows.append(_c("config",OK,"JSON5 valid: "+tilde(str(preferences.path()))))
+    except preferences.ConfigError as e:
+        rows.append(_c("config",FAIL,str(e),"agentj config validate --json; agentj config rollback"))
+    except OSError:
+        rows.append(_c("config",FAIL,"configuration unreadable","agentj config validate --json"))
+    hw=voice.hardware()
+    rows.append(_c("hardware",OK,json.dumps(hw,ensure_ascii=False)))
+    return rows

@@ -7,7 +7,7 @@ lines — and `<state>/history/meta.json` {epoch, next_id, undo}. `history off` 
 (epoch = the serve start time, so a phone never mixes two runs).
 
 A turn: {"id", "ts" (ms), "src": Src, "reply": {"text", "part"?: [k, N]}, "end": open|done|stopped|failed, "card"?}.
-Src = {"k": phone|host|agent|sys|task|cmd, "dev"?, "name"?, "text", "quote"?, "att"?, "local"?}. The reply of a turn = every
+Src = {"k": phone|host|agent|sys|task|cmd|telegram, "dev"?, "name"?, "text", "quote"?, "att"?, "local"?}. The reply of a turn = every
 finished reply text of that Agent turn joined by a blank line — results only, never tool calls; a reply over PART_MAX UTF-16
 units continues on the next page (`part`), nothing is truncated.
 
@@ -34,7 +34,7 @@ PAGE_MAX = 50
 PAGE_BYTES = 2 * 1024 * 1024
 FILE_MAX = 32 * 1024 * 1024  # current.jsonl is compacted once it passes this many bytes (P33-C06), as well as COMPACT_AT lines
 KEEP_BYTES = 16 * 1024 * 1024  # what compaction (and memory) keeps: the newest turns up to KEEP and up to this many JSON bytes
-SRC_KINDS = ("phone", "host", "agent", "sys", "task", "cmd")
+SRC_KINDS = ("phone", "host", "agent", "sys", "task", "cmd", "telegram")
 ENDS = ("open", "done", "stopped", "failed")
 SEP = "\n\n"
 

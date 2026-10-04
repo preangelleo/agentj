@@ -154,7 +154,7 @@ test('app.js + js/*.js: only WebSocket egress, non-extractable keys, no plaintex
   assert.match(API, /questionMessage\(channel\(\), await myDeviceId\(\), q\.id, clean \? 'answer' : 'cancel', q\.raw, clean\)/);
   assert.match(API, /crypto\.subtle\.sign\(\{ name: 'Ed25519' \}, sk\.priv, msg\)/);
   // read aloud never uses a network voice; share goes to the phone's own sheet; whoosh from our own origin
-  assert.match(read(pub('js/speak.js')), /filter\(\(v\) => v\.localService !== false\)/);
+  assert.match(read(pub('js/speak.js')), /filter\(\(v\) => v\.localService === true\)/);
   assert.match(read(pub('js/relay.js')), /navigator\.share\(\{text\}\)/);
   assert.match(read(pub('js/relay.js')), /new Audio\("assets\/rocket-whoosh\.mp3"\)/);
 });

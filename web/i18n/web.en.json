@@ -783,5 +783,9 @@
       "eei": "Already empty (≥ 1 s): interrupt the current task",
       "ok": "Got it"
     }
+  },
+  "preferences": {
+    "notification": "Your agent has replied.",
+    "error": "Configuration not applied: "
   }
 }

@@ -31,6 +31,7 @@ let onSayState = () => {};
 export function onState(fn) { onSayState = fn; }
 /** → true when m was one of ours. */
 export function route(m) {
+  if (m.t === "tts_chunk" || m.t === "tts_end") { routeSpeech(m); return true; }
   if (m.t === 'say_res' && typeof m.sid === 'string') { const f = sayWait.get(m.sid); if (f) { sayWait.delete(m.sid); f(m); } return true; }
   if (m.t === 'say_cancel_res' && typeof m.sid === 'string') { const f = cancelWait.get(m.sid); if (f) { cancelWait.delete(m.sid); f(m.r); } return true; }
   if (m.t === 'say_state' && typeof m.sid === 'string') { onSayState(m); return true; }
@@ -141,3 +142,27 @@ let signReady = false;
 export const canSign = () => signReady;
 /** Called by main() after the legacy-host check: makes / loads the approval key once. */
 export async function initSign() { signReady = !!(await signKey()); return signReady; }
+
+
+const speechWait = new Map();
+export function speechAudio(id) {
+  const r=newId(), g=gen();
+  if (!g) return Promise.reject(new Error('offline'));
+  return new Promise((resolve,reject)=>{
+    const timer=setTimeout(()=>{speechWait.delete(r);reject(new Error('timeout'));},90000);
+    speechWait.set(r,{parts:[],size:0,g,resolve,reject,timer});
+    sendApp({t:'tts_get',r,id},g).catch(()=>{clearTimeout(timer);speechWait.delete(r);reject(new Error('offline'));});
+  });
+}
+function routeSpeech(m) {
+  const w=speechWait.get(m.r); if(!w)return;
+  const fail=()=>{clearTimeout(w.timer);speechWait.delete(m.r);w.reject(new Error('speech failed'));};
+  if(w.g!==gen())return fail();
+  if(m.t==='tts_chunk'){
+    if(m.i!==w.parts.length || typeof m.data!=='string' || m.data.length>32768)return fail();
+    try{const bytes=Uint8Array.from(atob(m.data),c=>c.charCodeAt(0));w.size+=bytes.length;if(w.size>8*1024*1024)return fail();w.parts.push(bytes);}catch{return fail();}
+  }else{
+    if(!m.ok || m.bytes!==w.size || m.mime!=='audio/wav')return fail();
+    clearTimeout(w.timer);speechWait.delete(m.r);w.resolve(new Blob(w.parts,{type:'audio/wav'}));
+  }
+}

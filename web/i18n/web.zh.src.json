@@ -783,5 +783,9 @@
       "eei": "已经空了（≥1 秒）：中断当前任务",
       "ok": "知道了"
     }
+  },
+  "preferences": {
+    "notification": "你的 Agent 已回复。",
+    "error": "配置未生效："
   }
 }

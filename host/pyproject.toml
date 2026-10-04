@@ -7,6 +7,8 @@ license = "Apache-2.0"
 dependencies = [
   "cryptography>=44",   # X25519 / Ed25519 / AES-GCM (OpenSSL)
   "websockets>=14",     # relay connection
+  "pypinyin>=0.55,<1", # local Chinese wake-word phonemes
+  "json5>=0.12,<1", # pure-data commented user configuration
   "segno>=1.6",         # terminal QR
 ]
 classifiers = [

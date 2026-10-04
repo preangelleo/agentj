@@ -118,10 +118,10 @@ class _Engine:
     def __init__(self):
         self.paths = []
 
-    def ready_state(self, _root):
+    def ready_state(self, _root, engine_override=None):
         return "ready"
 
-    def transcribe(self, path, timeout_s=60, state_dir=None):
+    def transcribe(self, path, timeout_s=60, state_dir=None, engine_override=None):
         self.paths.append(path)
         return {"ok": True, "text": hashlib.sha256(pathlib.Path(path).read_bytes()).hexdigest()}
 

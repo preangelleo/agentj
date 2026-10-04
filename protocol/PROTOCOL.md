@@ -865,3 +865,12 @@ switched off) arrive as `sys` turns with `"local":true` and show relay's 「在�
 | `say_cancel`, `grant_off` | no | they only withdraw / narrow, and only for that device's own items |
 | `hist_get`, `menu_get`, `mem_list`, `act_list`, `task_list` | no | reads, answered to the asking session only |
 | `model_set`, `slash` | no | the human's own everyday settings, no permission change, reversible (`/clear` confirmed on the phone and undoable) |
+
+
+### 10.15 Preferences and optional synthesized speech (0.12)
+
+Only authenticated paired p33 sessions receive `preferences {value,problem}`. Value is bounded pure-data schema configuration plus generated wake phonemes; never named environment values, owner Telegram IDs, approval/device state or credentials. `problem` preserves runtime last-good and is visible. Default wake phrase derives from current Agent name; an explicit phrase overrides it. Older clients ignore this message.
+
+`tts_get {r:<id22>,id:<completed turn>}` accepts only completed reply text, no arbitrary input/provider URL. Host uses its configured local engine or own-key fixed cloud provider. Response `tts_chunk {r,i,data:<base64>}` is ordered 24KiB chunks, capped at 8MiB total; `tts_end {r,ok,bytes,mime:"audio/wav"}` finalizes, or a redacted why fails. All travel inside Noise, with per-chunk session/allowlist checks. Client binds synthesis to session generation and discards out-of-order, oversized or stale audio. Revoke stops further delivery. Synthesized plaintext stays at endpoints/provider; ciphertext can cross the blind relay.
+
+Telegram is a separate opt-in vendor-readable channel, not a Noise approval session. Owner-private text has src.k=telegram; no Telegram sender can sign an approval or become a paired device. Enrollment is human-only and keys remain local. Group/media parity is pending.

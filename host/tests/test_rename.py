@@ -524,6 +524,8 @@ class ServiceName(unittest.TestCase):
 
 
 def _user_systemd() -> bool:
+    # A live user manager reads its real HOME; isolated tests must opt in explicitly.
+    if os.environ.get("AGENTJ_TEST_SYSTEMD") != "1": return False
     if not sys.platform.startswith("linux") or not shutil.which("systemctl") or os.environ.get("AJ_SKIP_SYSTEMD"):
         return False
     try:

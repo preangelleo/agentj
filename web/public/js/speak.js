@@ -3,6 +3,10 @@
 // network voices — e.g. desktop Chrome's "Google …" ones — would send the text to their vendor, so they are never used).
 // Markdown is reduced to its words (code blocks skipped). Play / pause / stop on the same button, state per turn id.
 import { RelayMD } from './md.js';
+import { speechAudio } from './api.js';
+let prefs={};
+export function configureSpeech(value){prefs=value||{};}
+export const speechPreferences=()=>prefs;
 
 export const supported = () => typeof window.speechSynthesis === 'object' && typeof window.SpeechSynthesisUtterance === 'function';
 
@@ -40,8 +44,9 @@ export function chunks(text) {
 }
 
 export function localVoice(lang) {
-  const vs = (window.speechSynthesis.getVoices() || []).filter((v) => v.localService !== false);
+  const vs = (window.speechSynthesis.getVoices() || []).filter((v) => v.localService === true);
   const want = lang === 'zh' ? /^(zh|cmn)/i : /^en/i;
+  if(prefs.tts?.voice) return vs.find(v=>v.name===prefs.tts.voice||v.voiceURI===prefs.tts.voice)||null;
   return vs.find((v) => want.test(v.lang) && v.default) || vs.find((v) => want.test(v.lang)) || null;
 }
 
@@ -52,12 +57,29 @@ export class Speaker {
   set(id, st, why) { if (id === this.id) this.st = st; this.onState(id, st, why); }
   stop() {
     const id = this.id; this.gen++; this.queue = [];
+    if(this.audio){this.audio.pause();this.audio.src='';this.audio=null;}
+    if(this.url){URL.revokeObjectURL(this.url);this.url=null;}
     try { window.speechSynthesis.cancel(); } catch { /* nothing playing */ }
     this.id = null; this.st = 'idle';
     if (id !== null) this.onState(id, 'idle');
   }
+  async hostTap(id){
+    if(this.id===id && this.audio){
+      if(this.audio.paused){try{await this.audio.play();this.set(id,'playing');}catch{this.set(id,'failed','engine');}}
+      else{this.audio.pause();this.set(id,'paused');}return;
+    }
+    this.stop();this.id=id;this.st='gen';this.onState(id,'gen');const g=this.gen;
+    try{
+      const blob=await speechAudio(id);if(g!==this.gen)return;
+      this.url=URL.createObjectURL(blob);this.audio=new Audio(this.url);
+      this.audio.onended=()=>{if(g===this.gen)this.stop();};
+      this.audio.onerror=()=>{if(g===this.gen){this.stop();this.onState(id,'failed','engine');}};
+      await this.audio.play();if(g===this.gen)this.set(id,'playing');
+    }catch{if(g===this.gen){this.stop();this.onState(id,'failed','engine');}}
+  }
   /** Tap on 朗读 for turn id with its reply text. */
   tap(id, md) {
+    if (prefs.tts?.mode && prefs.tts.mode !== "phone") return this.hostTap(id);
     if (!supported()) { this.onState(id, 'failed', 'unsupported'); return; }
     const ss = window.speechSynthesis;
     if (this.id === id && this.st === 'playing') { ss.pause(); this.set(id, 'paused'); return; }
@@ -77,7 +99,7 @@ export class Speaker {
       const part = this.queue.shift();
       if (part === undefined) { this.id = null; this.st = 'idle'; this.onState(id, 'idle'); return; }
       const u = new window.SpeechSynthesisUtterance(part);
-      try{ u.voice = voice; }catch{ /* a voice object the engine does not know */ } u.lang = voice.lang;
+      try{ u.voice = voice; }catch{ /* a voice object the engine does not know */ } u.lang = voice.lang; u.rate = prefs.tts?.rate || 1;
       u.onstart = () => { if (gen === this.gen && this.st !== 'paused') this.set(id, 'playing'); };
       u.onend = () => next();
       u.onerror = (e) => { if (gen !== this.gen || (e && e.error === 'interrupted')) return; this.gen++; this.id = null; this.st = 'idle'; this.onState(id, 'failed', 'engine'); };

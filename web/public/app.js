@@ -195,6 +195,7 @@ controls.configure({ show, estopChanged: () => { relay.onEstop(); rerender(); } 
 function onApp(m) {
   if (api.route(m) || blobs.handle(m)) return;
   switch (m.t) {
+    case 'preferences': relay.applyPreferences(m.value); if(m.problem)relay.configProblem(m.problem.error); return;
     case 'status': setAgentName(m.name); snap.setStatus(m); return;
     case 'ask': snap.addAsk(m); return;
     case 'ask_done': snap.askDone(m); return;

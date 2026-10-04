@@ -199,3 +199,12 @@ test('P33-C08: links — https / http / mailto only, rel=noopener noreferrer, th
   assert.equal(links(r).length, 0, 'never a javascript: / data: link');
   assert.ok(r.textContent.includes('javascript:alert(1)'), 'shown as its source text');
 });
+
+test('P34: speech selects configured local voice and refuses network or unknown-locality voices',async()=>{
+ const {configureSpeech,localVoice}=await import('../public/js/speak.js');
+ globalThis.window={speechSynthesis:{getVoices:()=>[{name:'network',localService:false,lang:'en-US'},{name:'unknown',lang:'en-US'},{name:'local',localService:true,lang:'en-US'}]}};
+ configureSpeech({tts:{voice:'network'}});assert.equal(localVoice('en'),null);
+ configureSpeech({tts:{voice:'unknown'}});assert.equal(localVoice('en'),null);
+ configureSpeech({tts:{voice:'local'}});assert.equal(localVoice('en').name,'local');
+ configureSpeech({});delete globalThis.window;
+});
