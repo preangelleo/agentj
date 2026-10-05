@@ -1,6 +1,6 @@
 ---
 document: agentj-install
-version: 0.18.0
+version: 0.18.1
 released: 2026-10-05
 status: beta (anyone can sign up; not advertised yet, pages are not indexed)
 host_package: agentj (the `agentj` command)
@@ -451,8 +451,9 @@ human the money facts below in their language. Then tell them:
    Bluetooth must be on on both), or use a USB security key — or simply do this whole step on the phone's browser.
 3. Open the account: the team name 「团队名称（选填）」 ("Team name (optional)") may stay empty → 「开通账号」 ("Open my
    account"). We make the account ID; the page shows it as 「账号 ID：…」 ("Account ID: …").
-4. Buy **1 seat** (one seat = one Agent = this computer) under 「账单」 ("Billing"): 「买几个席位」 ("Seats to buy") 1; a
-   promo code goes into 「优惠码（可不填）」 ("Promo code (optional)") — or on Stripe's page; then 「购买席位」 ("Buy
+4. Buy **1 seat** (one seat = one Agent = this computer) under 「账单」 ("Billing"): pick 「月付」 ("Monthly") or 「年付」
+   ("Yearly", picked by default) — their choice, do not push either; 「买几个席位」 ("Seats to buy") 1; a promo or invite
+   code goes into 「优惠码或邀请码（可不填）」 ("Promo or invite code (optional)") — or on Stripe's page; then 「购买席位」 ("Buy
    seats") and pay on Stripe's page. Stripe's page shows the price in **US dollars** and the merchant name
    **AgentJ.app**.
    **Back from Stripe and the page asks them to sign in?** The payment went through — they sign in again (passkey or
@@ -465,7 +466,8 @@ human the money facts below in their language. Then tell them:
 Wait until they say it is done. You never see the email code, the card or the promo code.
 
 **Money facts** (the pricing page https://agentj.app/pricing/ is the source; say them as they are, do not round):
-- **$20 per seat per month, in US dollars.** Billed monthly, cancel any time; the first payment is refundable for 7 days (below).
+- **$20 per seat per month, or $200 per seat per year, in US dollars.** Billed monthly or yearly, cancel any time; the first
+  payment is refundable for 7 days (below).
 - **On Stripe's page:** amounts are in **US dollars** (a card in another currency is converted by the card's bank). Nothing
   is free up front — never promise a free period; the 7-day refund below is the way to try it without risk.
 - **Paying:** a credit or debit card on Stripe's page. Visa, Mastercard and American Express work; a card from a mainland
@@ -1196,6 +1198,9 @@ or logs out Claude Code / Codex / OpenCode (nor removes a model key), and never 
 - 0.18.0 (2026-10-05): host 0.14.0a1. With the phone not connected, a high-risk action in a shared Claude Code
   session goes to Claude Code's own permission dialog on this computer instead of being refused; Codex and OpenCode
   still block it. The stale "local candidate" note at the top is gone.
+
+- 0.18.1 (2026-10-05): host unchanged (0.14.0a1). Step 6 billing: monthly ($20) or yearly ($200) per seat, and the
+  code field takes a promo or an invite code.
 
 ### Shared native sessions (0.13)
 The default `agent.session_mode=shared` follows the native harness permissions.
