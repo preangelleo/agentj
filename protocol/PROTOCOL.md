@@ -139,10 +139,10 @@ Contexts: `agentjarvis-host-login-v1` · `agentjarvis-host-poll-v1` · `agentjar
 `agentjarvis-host-seat-leave-v1` (seat setup, review SS-02) · `agentjarvis-host-templates-v1` · `agentjarvis-host-template-v1` (L3.5) · plaza P2: `agentjarvis-host-plaza-search-v1`,
 `…-plaza-get-v1`, `…-plaza-mine-v1`, `…-plaza-post-v1`, `…-plaza-reply-v1`, `…-plaza-resolve-v1`, `…-plaza-report-v1` · skill & workflow plaza:
 `agentjarvis-host-plaza-pkg-search-v1`, `…-plaza-pkg-get-v1`, `…-plaza-pkg-mine-v1`, `…-plaza-pkg-installed-v1`, `…-plaza-pkg-like-v1`,
-`…-plaza-pkg-report-v1`, `…-plaza-pkg-publish-v1` (distinct from the relay's
+`…-plaza-pkg-report-v1`, `…-plaza-pkg-publish-v1` · `agentjarvis-host-upgrade-auth-v1` (F12, 0.15) (distinct from the relay's
 `agentjarvis-relay-auth-v1`, so no signature is valid in two places). Every inner body has `v:1`, `t`, `channel`, `ts` (unix s).
 Server checks, in order: size and shape → `pk` is 32 bytes → `channel == channel_id(pk)` (§1) → signature → `|ts − now| ≤ 300 s`
-→ strict schema (unknown keys = 400; the only optional keys are `report`'s `agent_name` and `machine`, plaza `search`'s `limit`, package `search`'s `type` / `sort` / `tag` /
+→ strict schema (unknown keys = 400; the only optional keys are `report`'s `agent_name`, `machine`, `language` and `language_at` (A1, 0.15), plaza `search`'s `limit`, package `search`'s `type` / `sort` / `tag` /
 `track` / `limit` / `offset` and package `get`'s `version`). Failures: malformed 400 `bad_request` · signature / derivation 401 `bad_signature` ·
 stale 401 `stale` · then per endpoint. Vector: `protocol/vectors/host-envelope.json` (fixed key → exact `body`/`sig`).
 
@@ -152,7 +152,7 @@ stale 401 `stale` · then per endpoint. Vector: `protocol/vectors/host-envelope.
 | `POST /v1/host/poll` | `{"v":1,"t":"poll","channel","ts","login_id"}` | 200 `{"status":"pending"\|"bound"\|"rejected"\|"expired"\|"declined"}` + when bound `{"host_id","tenant":{"slug","name"},"agent_name"}` (A3.2: the canonical Agent name the owner gave; L2: `declined` = this host already declined it) · 429 `slow_down` (< 4 s apart) · 404 |
 | `POST /v1/host/decline` (L2) | `{"v":1,"t":"decline","channel","ts","login_id"}` | 200 `{"status":"declined"}` (also for a repeat: idempotent) · 404 `not_found` (nothing to decline, see below) · 409 `already_confirmed` (this host has reported since the bind) · 429 `rate_limited` (≤ 10 per channel per hour, `retry-after`) |
 | `POST /v1/host/sync` (A3.1) | `{"v":1,"t":"sync","channel","ts","results":[{"id","result"}]}` (≤ 10; result ∈ `revoked` `unknown_device` `disabled` `rate_limited`) | 200 `{"unbind":[{"id","device"}],"agent_name"}` (≤ 10, this host's pending requests; A3.2 `agent_name` = canonical name, string or null) · 403 `not_bound` · 429 `rate_limited` (L2: a sync **with** results costs one of ≤ 60 per host per hour; over it nothing is written — keep the results, retry later; a sync without results is never limited) |
-| `POST /v1/host/report` | `{"v":1,"t":"report","channel","ts","seq","agent","devices":[{"id","name","paired_at","online"}],"pending":{"count","since"}}` + optional (A3.2) `"agent_name"` (string per §7 Agent-name rules, or null) and `"machine"` (hostname via `clean_label`, ≤ 64, or null) | 200 `{"ok":true}` · 403 `not_bound` · 409 `replay` (seq ≤ last) · 429 `rate_limited` |
+| `POST /v1/host/report` | `{"v":1,"t":"report","channel","ts","seq","agent","devices":[{"id","name","paired_at","online"}],"pending":{"count","since"}}` + optional (A3.2) `"agent_name"` (string per §7 Agent-name rules, or null) and `"machine"` (hostname via `clean_label`, ≤ 64, or null) + optional (A1, 0.15) `"language"` (`zh`\|`en`) and `"language_at"` (integer ms, 0 = never set on this host) — see **Language sync** below | 200 `{"ok":true}` (A1: + `"language","language_at"` = the account's value after the merge) · 403 `not_bound` · 409 `replay` (seq ≤ last) · 429 `rate_limited` |
 | `POST /v1/host/rename` (A3.2) | `{"v":1,"t":"rename","channel","ts","name"}` | 200 `{"ok":true,"name"}` · 400 `bad_name` · 409 `{"error":"name_taken","suggestions":[…]}` (≤ 3) · 403 `not_bound` · 429 `rate_limited` (≤ 20 successes per host per hour; and ≤ 60 failures — 400 / 409 — per host per hour, claimed before the name is checked, so past it nothing is checked or revealed) |
 | `POST /v1/host/seat-bind` (seat setup) | `{"v":1,"t":"seat_bind","channel","ts","token","name"}` (`token` matches `^ajt_[A-Za-z0-9_-]{43}$`; `name` already normalised per the Agent-name rules) | 200 `{"status":"bound","host_id","tenant":{"slug","name"},"agent_name"}` (also for an idempotent **replay**: the channel is already bound by this same key through the setup this code belongs to — same answer, nothing written) · 404 `invalid_setup` (unknown, expired, revoked or already used — one answer) · 409 `{"error":"name_taken","suggestions":[…]}` · 402 `payment_required` (the company no longer pays for that seat) · 409 `already_bound` · 400 `bad_name` / `name_required` / `bad_request` · 429 `rate_limited` (`retry-after`; ≤ 10 failed seat-binds per IP bucket per hour, ≤ 10 per channel per hour, claimed before the code is looked at) |
 | `POST /v1/host/seat-leave` (seat setup, review SS-02) | `{"v":1,"t":"seat_leave","channel","ts"}` | 200 `{"status":"left"}` · 404 `not_found` (this channel is not bound with this key, or it was bound with the 8-character code, not a seat setup) · 429 `rate_limited` (≤ 10 per channel per hour, `retry-after`) |
@@ -173,7 +173,42 @@ stale 401 `stale` · then per endpoint. Vector: `protocol/vectors/host-envelope.
 | `POST /v1/host/plaza/pkg/report` | `{"v":1,"t":"plaza_pkg_report","channel","ts","nonce","name","reason"}` (`spam` `malware` `privacy` `injection` `license` `other`) | 201 `{"name","reported","hidden"}` · 200 `{…,"already":true}` · 403 `own_package` / `official_package` · 404 · 409 `replay` · 429 |
 | `POST /v1/host/plaza/pkg/publish` | `{"v":1,"t":"plaza_pkg_publish","channel","ts","nonce","name","type","version","sha256","bytes","show_name"}` | 201 `{"id","version_id","upload":{"url","expires_at"}}` (`PUT` the bundle ≤ 10 min, `application/octet-stream` → 200 `{"name","version","state":"live"}` · 413 / 415 / 422 `bad_bundle` / `secret_found` · 409) · 409 `name_taken` / `version_exists` / `version_not_newer` / `type_mismatch` / `replay` · 413 `too_large` · 403 · 429 · 503 |
 
+| `POST /v1/host/upgrade-auth` (F12, 0.15) | `{"v":1,"t":"upgrade_auth","channel","ts","code","version"}` (`code` = C1 `AJUP-XXXXX-XXXXX-XXXXX-XXXXX`, normalised by the host; `version` = the release the host is about to install) | 200 `{"ok":true,"version","expires_at"}` (ms) · 404 `invalid_authorization` (unknown, another account's, or this host is not bound — one answer) · 409 `{"error":"version_mismatch","version":<the grant's version>}` · 410 `expired` · 409 `already_used` (this host already spent it) · 429 `rate_limited` (≤ 10 tries per channel per hour) |
+
 Any endpoint may answer 500 `{"error":"internal"}` (no detail); the host treats it like any 5xx.
+
+- **Upgrade authorization (F12, contracts C1–C3, 0.15)**: the owner's upgrade email carries a code bound to (account, target
+  version), valid 14 days, usable **once per bound host** of that account (every seat can upgrade with the same email). The
+  server stores only a hash of it and logs nothing but an `upgrade_authorized` audit row without the code. The host never
+  logs, prints or stores the code (only its SHA-256 next to the version, so a rerun after a failed install on this same host
+  can continue — the server answers `already_used`, the local record matches). Host order (`agentj update apply
+  --authorization <code> [--version <v>]` / `--from-email <file|->`): parse (case, spaces and dashes from mail clients are
+  accepted; the mail's `目标版本：<v>` / `Target version: <v>` line) → refuse locally when agentj's own files are read-only
+  (inside the fence) or the host is not linked → `update.check()` must say `newer` **and** latest == target (else refused:
+  nothing installed, the code not used) → this call → only on 200: the same install commands as the interactive apply,
+  pinned to `v<target>`, stdin closed (no y/N, no terminal) → the new `agentj --version` must be the target → marker
+  `upgraded.json` → the service is re-installed (restart). The answer decides nothing but go / no-go: what is installed is
+  pinned by the host. After the restart, `serve` sends the phones one notice in the owner's language —
+  「已升级到 <v>（doctor: N ✓ / M ! / K ✗）」 / "Upgraded to <v> (doctor: N ✓ / M ! / K ✗)" — once (the marker is removed as
+  it is read; ignored after 14 days). Exit codes: 0 ok · 1 failed or nothing could be checked (retry later) · 2 refused here ·
+  3 invalid authorization · 4 version mismatch · 5 expired · 6 already used · 7 rate limited · 8 `unsupported` (a bare
+  404 without a JSON `error`: a ≤ 0.14 server has no upgrade-auth route; nothing installed, the code not used); the last lines are a fixed
+  `UPGRADE_RESULT ok|refused|failed` block (`reason`, `from`, `to`, `service`, [`latest`], [`authorized_version`], `why`,
+  `next`) the Agent copies back. Without the two flags `apply` is unchanged: a human types y at a terminal.
+- **Language sync (A1, 0.15) — one value, last write wins**: the account has exactly one `language` (`zh`|`en`) with
+  `language_at` (ms); it decides the web UI, every platform mail and the language Agent J speaks with the owner. On the host
+  it is `appearance.language`; `language_at` is recorded in the state dir (`language.json`, 0600) whenever the effective value
+  changes locally (`agentj config`, the phone's `pref_set` §10.16, a hand edit picked up by serve); a host that never set it
+  reports 0. Every report carries both. Server: host `language_at` > account `language_at` → the account takes the host's
+  value (audit `language_synced`, from host); ties keep the account value; the 200 always carries the account's
+  `{"language","language_at"}` after the merge. Host: answer `language_at` > local → applied through the same preferences
+  write path as `agentj config set` (history, last-good, activation), stamped with the account's time (so it is not
+  reported back as newer), and `preferences` is broadcast to the phones. Several hosts of one account converge through the
+  account. A host not linked to the cloud keeps its local value. An older server sends neither key; the host ignores
+  anything that is not `zh`/`en` plus a non-negative integer.
+  A ≤ 0.14 server refuses the two unknown keys with 400 `bad_request` (before its seq gate): the host then retries once at
+  once without them (fresh seq) and, if that is accepted, records `no_language` in `cloud.json` and leaves the keys out
+  until the record is 24 h old, agentj's version or the API URL changes — no sync against such a server, no doubled reports.
 
 - **Login = RFC 8628 device-code shape**: the host shows `user_code` + `verification_uri`; a signed-in owner types the code into the
   Dashboard, sees the host's **channel id** (the host prints it too — compare them), picks a tenant and binds (needs a free seat) or
@@ -865,6 +900,7 @@ switched off) arrive as `sys` turns with `"local":true` and show relay's 「在�
 | `say_cancel`, `grant_off` | no | they only withdraw / narrow, and only for that device's own items |
 | `hist_get`, `menu_get`, `mem_list`, `act_list`, `task_list` | no | reads, answered to the asking session only |
 | `model_set`, `slash` | no | the human's own everyday settings, no permission change, reversible (`/clear` confirmed on the phone and undoable) |
+| `pref_set` (§10.16) | no | four everyday display / voice settings only (language, theme, hands-free, read replies aloud); nothing that lowers safety |
 
 
 ### 10.15 Preferences and optional synthesized speech (0.12)
@@ -874,3 +910,91 @@ Only authenticated paired p33 sessions receive `preferences {value,problem}`. Va
 `tts_get {r:<id22>,id:<completed turn>}` accepts only completed reply text, no arbitrary input/provider URL. Host uses its configured local engine or own-key fixed cloud provider. Response `tts_chunk {r,i,data:<base64>}` is ordered 24KiB chunks, capped at 8MiB total; `tts_end {r,ok,bytes,mime:"audio/wav"}` finalizes, or a redacted why fails. All travel inside Noise, with per-chunk session/allowlist checks. Client binds synthesis to session generation and discards out-of-order, oversized or stale audio. Revoke stops further delivery. Synthesized plaintext stays at endpoints/provider; ciphertext can cross the blind relay.
 
 Telegram is a separate opt-in vendor-readable channel, not a Noise approval session. Owner-private text has src.k=telegram; no Telegram sender can sign an approval or become a paired device. Enrollment is human-only and keys remain local. Group/media parity is pending.
+
+### 10.16 Settings from the phone — `pref_set` / `pref_res` (C6 / A1, 0.15)
+
+Device → host (p33 sessions only, ready and allowlisted, inside Noise like every §10 message): `{"t":"pref_set","r":<rid
+≤ 32>,"key","value"}`. Whitelist, exactly: `appearance.language` (`zh`|`en`, the one language value of A1),
+`appearance.theme` (`system`|`light`|`dark`), `voice.wake_enabled` (boolean), `voice.speak_replies` (boolean), `agent.high_risk_warnings` (boolean, default false), `agent.session_mode` (`shared`|`independent`), `agent.isolation` (boolean,
+default true: an independent session runs fenced) and `agent.allow_docker` (boolean, default false) — F14 (P45b). The value is
+checked against the schema type / enum before anything is written. Anything that could lower safety —
+every `human.*` / `security.*` key, approval timeouts — is **not**
+settable this way: the panel shows it read-only with the `agentj config …` command the human runs at the computer. The
+global type size (`appearance.font_scale`) stays phone-local. The host writes exactly like `agentj config set` (structural
+JSON5 edit under `preferences.lock`, history, last-good, activation), then answers the asking session
+`{"t":"pref_res","r","ok":true|false,"key"}` + `"problem"` on failure — `not_allowed` (not in the whitelist) · `bad_value`
+· `busy` (the preferences file is locked by another writer for 5 s) · `rejected` (validation / activation failed) — and
+then broadcasts the normal `preferences` message to every ready session. A no-op (same value) answers ok without a write.
+A language change is hot: the main Agent speaks the new language from its next turn (A1), and a linked host reports it to
+the account soon.
+
+`preferences` (§10.15) gains `host` — read-only facts for the settings panel: `{"version": <agentj version>,
+"language_at": <ms, 0 = never set here>, "settable": [the keys above], "devices": [{"id","name","paired_at","online"}]}`
+(the paired phones as metadata, never keys). The safety switches the panel shows read-only are already in
+`value.agent.high_risk_warnings` / `value.agent.session_mode` / `value.agent.isolation` / `value.agent.allow_docker` (F14: all phone-settable; warnings default off; native permissions unchanged). Isolation / docker apply from the next Agent start. There is no wire message to rename or unpair a phone from
+another phone: pairing changes stay with the human at the computer (`agentj devices …`) or the account Dashboard's
+host-checked unbind (§7 sync); the phone's own "forget this computer" is local to that phone.
+
+## 11. Admin password and secret cards (F17, P46) — `agentj sudo` · `agentj secret request`
+The two human-only steps the Agent cannot do itself go through a paired phone, never through chat or a terminal. Code:
+`host/agentj/elevate.py`, `web/public/js/elevate.js`; wire helpers in `protocol/wire.js` (`elevateFields`, `elevateDigest`,
+`elevateMessage`, `sealValue`).
+
+**Agent → host.** One JSON line on `<state>/agentperm/elevate.sock` (dir 0700, socket 0600, `SO_PEERCRED` same uid; inside
+`agentperm/` so a fenced Agent reaches it too): `{"t":"sudo","argv":[…],"why","effect","cwd","timeout"}` or
+`{"t":"secret","name","purpose","dest","cwd","verify_url"?,"verify_header"?,"verify_cmd"?}`. One JSON line back, never the
+value: sudo `{"result":"done","code","stdout","stderr","truncated"}` (≤ 256 KiB each) · secret `{"result":"saved","receipt":
+{"name","dest","length","fingerprint":"sha256:<8 hex>","verify":"ok"|"fail"|"skipped","detail":"HTTP 200"|"exit 1"|…}}` ·
+otherwise `denied` · `timeout` · `gone` (the CLI hung up before a decision: the card is withdrawn) · `stopped` · `locked`
+(`secs`) · `bad_password` · `no_device` · `busy` (> 4 open) · `failed` (`why`) · `refused` (`why`, `detail`: the request
+itself is malformed — argv 1–256 strings, shown command ≤ 2 000 chars, `why` required ≤ 300; `name` a variable name; `dest`
+`env:<file>[#KEY]` (one `KEY=value` line, the rest of the file kept) or `file:<path>` (whole file), never inside the state
+directory, never a symlink or another user's file, parent must exist; `verify_url` https (http only to loopback), header
+template `Name: …{value}…`; one check at most). The CLI: exit = the command's status, 125 + `SUDO_RESULT:` / `SECRET_RESULT:`
+on stderr for a card outcome, 3 = saved but the check failed.
+
+**Host → device.** `{"t":"elev","id":<32 hex>,"kind":"sudo"|"secret","n":<32 hex one-time nonce>,"epk":<b64url X25519, this
+card only>,"ttl":s,"tries":n[,"bad":k]` + sudo `"cmd","why","effect"` / secret `"name","purpose","dest","verify"`}` — sent
+to every ready allowlisted session and again after a resume; a wrong password re-sends the same id with a NEW `n` and `epk`.
+`{"t":"elev_done","id","result"[,"code"][,"verify"]}` ends it everywhere. Web Push kind `ask` wakes the phone.
+TTL: sudo 120 s, secret 300 s (from each arming).
+
+**Device → host.** `{"t":"elev_answer","id","ok":bool,"n","ts":<ms>,"sig"[,"epk","ct"]}`.
+- digest `D` = hex SHA-256(`"agentjarvis-elevate-v1\n" + kind + "\n"` + one line per shown field `hex SHA-256(field)`, joined
+  by `\n`); fields sudo: cmd, why, effect · secret: name, purpose, dest, verify (`""` when absent).
+- seal (`ok` only): phone ephemeral X25519 `e`; `k = HKDF-SHA256(ikm = X25519(e, epk), salt = epk ‖ e_pub, info =
+  "agentjarvis-seal-v1")`; `ct = iv(12) ‖ AES-256-GCM(k, iv, value, AAD = "agentjarvis-seal-v1\n" channel \n device \n id \n
+  kind \n n \n D)`. The value is UTF-8 (≤ 8 KiB); the page clears the field and zeroes the bytes after sealing.
+- signature: Ed25519(device approval key, `"agentjarvis-elevate-v1\n" channel \n device \n id \n kind \n (allow|deny) \n n \n
+  ts \n D \n (hex SHA-256(ct) | "-")`).
+- The host acts only for a ready session of an allowlisted device with an approval key, an open card before its deadline,
+  `n` equal to the card's CURRENT nonce (then cleared: one attempt per nonce), `|now − ts| ≤ 120 s`, and a signature that
+  verifies over what IT stored; anything else changes nothing (`elev_refused` in host.log, a `refused` line with the reason in
+  `elevate.log`: `shape` · `late` · `stale` · `replay` · `no_key` · `bad_signature`). The seal is opened with the card's
+  in-memory private key only, then: sudo → `sudo -S -k -p <random marker> -- argv` in `cwd` with `LC_ALL=C` and a
+  minimal environment, the password + `\n` written to stdin from a bytearray that is zeroed, stdin closed; a second prompt (or
+  sudo's "incorrect password") = wrong password → the card re-arms (≤ 3 tries per card); 3 wrong in a row across cards →
+  every sudo card refused for 60 s, doubling to 1 h (`elevate.json`, 0600, survives restarts); secret → written through a
+  temp file + rename (0600, `O_NOFOLLOW`), then the check the card showed (GET without redirects; or `/bin/sh -c` with the
+  value only in that child's `$NAME`), only `ok`/`fail` + status class kept.
+- Stop everything (`estop`) ends open cards (`stopped`); a command already running finishes.
+
+**Logs.** `elevate.log` (0600): ts, kind, id, result, reason, device + approval key + signature + `n` + `sig_ts` +
+`ct_sha256` + `channel` for signed outcomes (re-checkable: `agentj secret log`), `shown_sha256`, sudo `argv_sha256` + exit
+code, secret `name` + `dest_sha256` + check result. Never a password, a secret, the command text or the destination path.
+host.log: `elev_card` / `elev_done` / `elev_refused` (id, kind, result/reason, device).
+
+**Admin helper (optional, `agentj sudo-helper install | sync | uninstall | status`).** One ordinary §11 sudo card (password on the
+phone) installs, as root: `/usr/local/libexec/agentj-elevate` (standard-library Python run as `/usr/bin/python3 -I -S`),
+`/etc/agentj/elevate-keys.json` (this channel + the approval keys of the phones paired now) and
+`/etc/sudoers.d/agentj-elevate` (`<user> ALL=(root) NOPASSWD: /usr/bin/python3 -I -S /usr/local/libexec/agentj-elevate`,
+`visudo -cf` first). The card's command snapshots the generated files into a root-owned staging folder and checks the SHA-256
+values printed in the command before installing, so what the phone showed is what goes in. Afterwards a sudo card carries
+`"helper":[device ids]`; a listed phone may answer `ok:true` with no `epk`/`ct` (signature line `ct` = `-`), and serve runs
+`sudo -n -- /usr/bin/python3 -I -S /usr/local/libexec/agentj-elevate` with `{"channel","device","id","n","ts","sig","argv",
+"why","effect","cwd"}` on stdin. The helper (root) recomputes `D` from argv / why / effect, verifies the Ed25519 signature
+(pure-Python RFC 8032) against its root-owned allowlist, requires `|now − ts| ≤ 120 s` and an unseen nonce (root-owned
+ledger, 10 min), logs `argv_sha256` and runs argv with a fixed PATH. The Agent (same user) can call the helper, but cannot
+sign. A phone removed from Agent J must also be removed from the helper (`sync` / `uninstall`, each one password card).
+Not covered: Face ID / WebAuthn user verification before 「同意」, Windows, a macOS SMAppService helper (macOS gets the same
+sudoers helper, `root:wheel` + `shasum`; static tests only).

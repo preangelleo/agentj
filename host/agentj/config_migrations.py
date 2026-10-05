@@ -14,7 +14,14 @@ def _sparse_v1(raw):
     p.parse(raw)
     return raw
 
-MIGRATIONS = (("202610040001", _sparse_v1),)
+def _tts_successor(raw):
+    # Exact former factory value only. Snapshot/custom models and non-OpenAI choices survive.
+    doc = p.parse(raw)
+    if p.get(doc, 'voice.tts.provider', 'openai') == 'openai' and p.get(doc, 'voice.tts.model') == 'gpt-4o-mini-tts':
+        return p.edit(raw, 'voice.tts.model', 'gpt-realtime-2.1-mini')
+    return raw
+
+MIGRATIONS = (("202610040001", _sparse_v1), ("202610050047", _tts_successor))
 
 def run(st=None, *, pending=False):
     st = st or State()

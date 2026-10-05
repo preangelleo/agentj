@@ -31,8 +31,13 @@ function subMsg(sub) {
   return { t: 'push_sub', endpoint: j.endpoint, p256dh: j.keys?.p256dh, auth: j.keys?.auth };
 }
 let pushState = 'none';
+const watchers = [];
+/** Settings (F13) shows the same state: 'none' | 'offer' | 'on' | 'ios' | 'denied' | 'failed'. */
+export const state = () => pushState;
+export function onChange(fn) { watchers.push(fn); }
 export function pushUi(stateName = pushState) {
   pushState = stateName;
+  for (const f of watchers) { try { f(stateName); } catch { /* a view's problem, not the push state's */ } }
   const row = el('push-row'), btn = el('push-on'), txt = el('push-text');
   row.hidden = stateName === 'none';
   btn.hidden = stateName !== 'offer';
@@ -68,6 +73,21 @@ export async function enablePush() {
   } catch {
     pushUi('failed');
     el('push-on').hidden = false;
+  }
+}
+
+/** Settings → 锁屏提醒 → 关闭: drop this browser's subscription and tell the host (§9 `push_off`). → true when done. */
+export async function disablePush() {
+  try {
+    const reg = await registration();
+    const sub = await reg.pushManager.getSubscription();
+    if (sub) await sub.unsubscribe();
+    if (isReady()) await sendApp({ t: 'push_off' });
+    pushUi(pushKey ? 'offer' : 'none');
+    return true;
+  } catch {
+    pushUi('failed');
+    return false;
   }
 }
 

@@ -103,7 +103,7 @@ class Versions(unittest.TestCase):
             self.assertIsNone(update.compare(bad, "0.8.0"))
 
     def test_version_is_this_round(self):
-        self.assertEqual(agentj.__version__, "0.14.0a1")
+        self.assertEqual(agentj.__version__, "0.15.0a1")
 
 
 class Fetch(unittest.TestCase):
@@ -163,18 +163,13 @@ class InstallKind(unittest.TestCase):
 
 
 class Apply(unittest.TestCase):
-    def test_no_terminal_no_upgrade(self):
-        with _Repo(_init_text("9.9.9")) as r:
-            env = {update.URL_ENV: r.url}
-            res = _cli("update", "apply", env=env)
-            self.assertEqual(res.returncode, 2, res.stdout + res.stderr)
-            self.assertIn("human at an interactive terminal", res.stderr)
-            self.assertIn("command", res.stderr)
-            piped = subprocess.run([sys.executable, "-m", "agentj.cli", "update", "apply"], cwd=HOST, input="y\n",
-                                   env={**os.environ, **env}, capture_output=True, text=True, timeout=60)
-            self.assertEqual(piped.returncode, 2, "a y on a pipe is not a human at a terminal")
-            self.assertNotEqual(_cli("update", "apply", "--yes", env=env).returncode, 0, "there is no --yes")
-            self.assertEqual(r.hits, 2, "both refusals checked the version first; nothing ran")
+    def test_cli_noninteractive_with_fake_installer(self):
+        from agentj import cli
+        with mock.patch.object(update, "apply", return_value={"result":"ok", "reason":"upgraded", "from":"0.14.0a1", "to":"0.15.0a1", "service":"restarted", "exit":0}) as apply, mock.patch.object(update,"check",return_value={"status":"newer"}), mock.patch("sys.stdout",new_callable=io.StringIO):
+            with self.assertRaises(SystemExit) as e:
+                cli.main(["update", "apply", "--yes"])
+            self.assertEqual(e.exception.code,0)
+            apply.assert_called_once()
 
     def test_preflight(self):
         class TTY(io.StringIO):
@@ -182,9 +177,7 @@ class Apply(unittest.TestCase):
                 return True
         with tempfile.TemporaryDirectory() as d:
             update.preflight(TTY(), TTY(), prefix=d)               # a human at a terminal, writable install: ok
-            with self.assertRaises(update.Refused) as e:
-                update.preflight(io.StringIO(), TTY(), prefix=d)
-            self.assertEqual(e.exception.reason, "no_terminal")
+            update.preflight(io.StringIO(), io.StringIO(), prefix=d)
             os.chmod(d, 0o500)
             try:
                 if not os.access(d, os.W_OK):                         # (root ignores modes)
@@ -197,11 +190,11 @@ class Apply(unittest.TestCase):
     def test_unknown_and_current(self):
         res = _cli("update", "apply", env={update.URL_ENV: _closed_port_url()})
         self.assertEqual(res.returncode, 1)
-        self.assertIn("nothing changed", res.stderr)
+        self.assertIn("UPGRADE_RESULT failed", res.stdout)
         with _Repo(_init_text(agentj.__version__)) as r:
             res = _cli("update", "apply", env={update.URL_ENV: r.url})
             self.assertEqual(res.returncode, 0)
-            self.assertIn("up to date", res.stdout)
+            self.assertIn("UPGRADE_RESULT ok", res.stdout)
 
     def test_check_cli(self):
         with _Repo(_init_text("9.9.9")) as r:
@@ -219,7 +212,7 @@ class Apply(unittest.TestCase):
 
     def test_check_explains_every_status_in_plain_words(self):
         """S-8 / B-2 (PROMPT-29): newer → tell your human, they run apply; current / ahead / unknown → nothing to do."""
-        cases = [("9.9.9", "newer", ["tell your human", "agentj update apply"]),
+        cases = [("9.9.9", "newer", ["Agent upgrades", "agentj update apply"]),
                  (agentj.__version__, "current", ["Up to date. Nothing to do."]),
                  ("0.0.1", "ahead", ["Not an error, nothing to do", "newest public release is 0.0.1"])]
         for ver, status, needles in cases:
@@ -334,7 +327,7 @@ class Sbpl(unittest.TestCase):
                          '(allow file-read* file-write* (subpath (param "PERM")))',
                          '(allow network-outbound (remote unix-socket (subpath (param "PERM"))))',
                          "(deny signal)", "(allow signal (target same-sandbox))", "(deny process-info*)",
-                         "(allow process-info* (target same-sandbox))", "(deny job-creation)", "(deny appleevent-send)",
+                         "(allow process-info* (target same-sandbox))", "(deny appleevent-send)",
                          "(deny lsopen)", '(deny network-outbound (remote unix-socket (subpath (param "TMUX"))))'):
                 self.assertIn(rule, lines)
             # the permission folder is allowed back AFTER the state dir is denied (later rules win in SBPL)
@@ -342,12 +335,15 @@ class Sbpl(unittest.TestCase):
                             lines.index('(allow file-read* file-write* (subpath (param "PERM")))'))
             self.assertNotIn(str(home), prof, "paths only as -D parameters, never spliced into the rules")
             ro = {v for k, v in params.items() if k.startswith("RO_")}
-            for p in (home / ".zshrc", home / ".zlogin", home / "Library" / "LaunchAgents", home / ".ssh" / "authorized_keys"):
+            for p in (home / ".ssh" / "authorized_keys", home / ".Xauthority"):
                 self.assertIn(os.path.realpath(p) if p.exists() else str(p), ro, f"{p} read-only (also when absent)")
+            for p in (home / ".zshrc", home / ".zlogin", home / "Library" / "LaunchAgents"):   # F14: the owner's general config
+                self.assertNotIn(os.path.realpath(p) if p.exists() else str(p), ro, f"F14: {p} writable")
+            self.assertNotIn("(deny job-creation)", lines, "F14: launchd jobs are the Agent's own to manage")
             for c in fence.code_paths():
-                self.assertIn(c, ro, "agentj's code read-only")
+                self.assertNotIn(c, ro, "F14: agentj code is writable")
             pin = {v for k, v in params.items() if k.startswith("PIN_")}
-            for a in (home / ".local", home / ".local" / "state", home / "Library"):
+            for a in (home / ".local", home / ".local" / "state"):
                 self.assertIn(os.path.realpath(a), pin, f"{a} cannot be renamed away")
             self.assertEqual(params["STATE"], os.path.realpath(st.root))
             self.assertEqual(params["TMUX"], "/private/tmp/tmux-501")
@@ -399,8 +395,9 @@ class Sbpl(unittest.TestCase):
             i = a.index("/usr/bin/env")
             self.assertTrue(all(x == "-D" for x in a[3:i:2]), "every path is a -D KEY=VALUE")
             unset = a[i + 1:]
-            for k in ("DBUS_SESSION_BUS_ADDRESS", "TMUX", "SSH_AUTH_SOCK", "DISPLAY", "AGENTJ_STATE_DIR"):
+            for k in ("TMUX", "SSH_AUTH_SOCK", "DISPLAY", "AGENTJ_STATE_DIR"):
                 self.assertIn(k, unset[1::2])
+            self.assertNotIn("DBUS_SESSION_BUS_ADDRESS", unset[1::2])
             with mock.patch.object(sys, "platform", "darwin"):
                 w = fence.wrap(st, ["claude", "-p"], d)
                 self.assertEqual((w[0], w[-2:]), (fence.SANDBOX_EXEC, ["claude", "-p"]))
@@ -431,11 +428,8 @@ class Ancestors(unittest.TestCase):
             st.init(relay="ws://127.0.0.1:1")
             a = fence.bwrap_argv(st, d)
             binds = [a[i + 1] for i, x in enumerate(a) if x == "--bind"]
-            top = min(fence.code_paths(), key=len)
-            parent = os.path.dirname(top)
-            if os.access(os.path.dirname(parent), os.W_OK):
-                self.assertIn(parent, binds, "the directory holding agentj's code is pinned")
-                self.assertLess(a.index(parent), max(i for i, x in enumerate(a) if x == "--ro-bind"))
+            ro = [a[i + 1] for i, x in enumerate(a) if x == "--ro-bind"]
+            self.assertFalse(set(fence.code_paths()) & set(ro), "F14: no code readonly bind")
 
 
 # ------------------------------------------------------------------ doctor rows

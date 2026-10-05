@@ -31,7 +31,7 @@ class PreferencesTest(unittest.TestCase):
         paths=[self.st.x25519_path,self.st.ed25519_path,self.st.devices_path]
         before={p:p.read_bytes() for p in paths}
         self.assertEqual(self.st.agent_config()['session_mode'],'shared')
-        self.assertTrue(self.st.agent_config()['high_risk_warnings'])
+        self.assertFalse(self.st.agent_config()['high_risk_warnings'])
         self.assertEqual({p:p.read_bytes() for p in paths},before)
         self.assertEqual(len(self.st.devices()),1)
 
@@ -39,7 +39,7 @@ class PreferencesTest(unittest.TestCase):
         doc=p.parse("{version:1, // retained\n appearance:{theme:'dark',}, voice:{wake_word:'嘿小J'},}")
         self.assertEqual(p.get(p.validate(doc),'voice.wake_word'),'嘿小J')
     def test_locked_human_unknown_and_duplicate_rejected(self):
-        for raw in ['{security:{e2e:false}}','{human:{fence:"off"}}','{appearance:{themes:"light"}}','{voice:{},voice:{}}']:
+        for raw in ['{security:{e2e:false}}','{human:{devices:"x"}}','{appearance:{themes:"light"}}','{voice:{},voice:{}}']:
             with self.subTest(raw=raw),self.assertRaises(p.ConfigError):p.parse(raw)
     def test_line_and_legal_values(self):
         with self.assertRaises(p.ConfigError) as cm:p.parse('{\n appearance: {\n theme:"wrong"\n }}')
@@ -95,12 +95,12 @@ class PreferencesTest(unittest.TestCase):
         from agentj.serve import Host
         h=Host(self.st,read_stdin=False)
         self.assertEqual(h.preferences['appearance']['theme'],'dark');self.assertIsNotNone(h.config_problem)
-    def test_skill_three_harness_links_clean_uninstall_and_owner_required(self):
+    def test_skill_three_harness_links_clean_uninstall_without_owner_gate(self):
         import io
         from agentj.personalize import command
         with patch('sys.stdout',new_callable=io.StringIO),patch('os.isatty',return_value=False):
-            self.assertEqual(command(['skill','install']),2)
-            self.assertEqual(command(['skill','install','--owner-confirmed']),0)
+            self.assertEqual(command(['skill','install']),0)   # F14: no owner-confirmed / terminal gate
+            self.assertEqual(command(['skill','install','--owner-confirmed']),0)   # still accepted, idempotent
             for rel in ['.claude/skills/agentj-config','.codex/skills/agentj-config','.config/opencode/skills/agentj-config']:
                 self.assertTrue((self.home/rel).is_symlink())
             self.assertEqual(command(['skill','uninstall']),0)
@@ -115,8 +115,8 @@ class PreferencesTest(unittest.TestCase):
     def test_timestamp_migrations_preserve_bytes_and_are_idempotent(self):
         from agentj import config_migrations as m
         p.ensure(); raw="// owner comment\n{appearance:{theme:'dark'}}\n";p.path().write_text(raw)
-        self.assertEqual(m.run(self.st,pending=True)['pending'],['202610040001'])
-        self.assertEqual(m.run(self.st)['applied'],['202610040001'])
+        self.assertEqual(m.run(self.st,pending=True)['pending'],['202610040001','202610050047'])
+        self.assertEqual(m.run(self.st)['applied'],['202610040001','202610050047'])
         self.assertEqual(m.run(self.st)['applied'],[]);self.assertEqual(p.path().read_text(),raw)
     def test_migration_marker_failure_restores_both_files_and_retries(self):
         from agentj import config_migrations as m

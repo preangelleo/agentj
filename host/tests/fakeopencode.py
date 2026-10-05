@@ -287,11 +287,12 @@ class H(BaseHTTPRequestHandler):
         elif len(parts) == 2 and parts[0] == "session" and parts[1] in SESSIONS:
             self._send(200, {"id": parts[1], "permission": SESSIONS[parts[1]]["permission"], "cost": 0,
                              "tokens": {"input": 6178, "output": 5, "reasoning": 0, "cache": {"read": 1941, "write": 0}}})
-        elif p == "/config/providers":
-            self._send(200, {"providers": [{"id": "opencode", "name": "OpenCode Zen", "models": {
+        elif p in ("/provider", "/config/providers"):
+            key = "all" if p == "/provider" else "providers"
+            self._send(200, {key: [{"id": "opencode", "name": "OpenCode Zen", "models": {
                 "big-pickle": {"id": "big-pickle", "name": "Big Pickle", "limit": {"context": 200000, "output": 32000}},
                 "fake-two": {"id": "fake-two", "name": "Fake Two", "limit": {"context": 100000}}}}],
-                "default": {"opencode": "big-pickle"}})
+                "default": {"opencode": "big-pickle"}, "connected": ["opencode"]})
         elif p == "/global/health":
             self._send(200, {"healthy": True, "version": "1.18.32-fake"})
         elif len(parts) == 3 and parts[0] == "session" and parts[2] == "message" and parts[1] in SESSIONS:

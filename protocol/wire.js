@@ -249,3 +249,45 @@ export function wav16k(samples) {
 export const histGet = (r, { before, after, limit } = {}) => ({ t: 'hist_get', r, ...(before != null ? { before } : {}), ...(after != null ? { after } : {}), ...(limit != null ? { limit } : {}) });
 export const modelSet = (r, { model = null, effort = null, def = false } = {}) => (def ? { t: 'model_set', r, default: true } : { t: 'model_set', r, model, effort });
 export const menuGet = (r) => ({ t: 'menu_get', r });
+
+// ---------------------------------------------------------------- sudo / secret cards (PROTOCOL §11, F17). Mirrors host/agentj/elevate.py.
+export const ELEVATE_CONTEXT = 'agentjarvis-elevate-v1';
+export const SEAL_CONTEXT = 'agentjarvis-seal-v1';
+/** The texts the card shows, in the order the host hashes them. sudo: cmd, why, effect · secret: name, purpose, dest, verify. */
+export function elevateFields(c) {
+  if (c.kind === 'sudo') return [c.cmd, c.why, c.effect || ''];
+  if (c.kind === 'secret') return [c.name, c.purpose, c.dest, c.verify || ''];
+  throw new Error('bad kind');
+}
+/** hex SHA-256 of `context\nkind\n` + one `sha256(field)` line per shown field. */
+export async function elevateDigest(kind, fields) {
+  if (kind !== 'sudo' && kind !== 'secret') throw new Error('bad kind');
+  const lines = [ELEVATE_CONTEXT, kind];
+  for (const f of fields) lines.push(hex(await sha256(enc.encode(f))));
+  return hex(await sha256(enc.encode(lines.join('\n'))));
+}
+/** The exact bytes a device signs for a card: decision allow | deny, the card's one-time nonce, ts (ms), the shown digest and
+ *  hex SHA-256 of the sealed value ('-' for deny). */
+export function elevateMessage(channel, device, id, kind, decision, nonce, ts, digest, ctSha) {
+  if (decision !== 'allow' && decision !== 'deny') throw new Error('bad decision');
+  if (!Number.isInteger(ts)) throw new Error('bad ts');
+  return enc.encode([ELEVATE_CONTEXT, channel, device, id, kind, decision, nonce, String(ts), digest, ctSha || '-'].join('\n'));
+}
+/** Seal a password / secret to the card's one-time host key: ephemeral X25519, HKDF-SHA256(salt = host_epk ‖ epk,
+ *  info = SEAL_CONTEXT), AES-256-GCM with AAD = SEAL_CONTEXT\nchannel\ndevice\nid\nkind\nnonce\ndigest. → { epk, ct = iv ‖
+ *  ciphertext, ctSha }. The caller zeroes `value` afterwards. */
+export async function sealValue(hostEpk, value, channel, device, id, kind, nonce, digest) {
+  const subtle = crypto.subtle;
+  const kp = await subtle.generateKey({ name: 'X25519' }, false, ['deriveBits']);
+  const epk = new Uint8Array(await subtle.exportKey('raw', kp.publicKey));
+  const hk = await subtle.importKey('raw', hostEpk, { name: 'X25519' }, false, []);
+  const shared = new Uint8Array(await subtle.deriveBits({ name: 'X25519', public: hk }, kp.privateKey, 256));
+  const ikm = await subtle.importKey('raw', shared, 'HKDF', false, ['deriveKey']);
+  shared.fill(0);
+  const key = await subtle.deriveKey({ name: 'HKDF', hash: 'SHA-256', salt: concat(hostEpk, epk), info: enc.encode(SEAL_CONTEXT) },
+    ikm, { name: 'AES-GCM', length: 256 }, false, ['encrypt']);
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const aad = enc.encode([SEAL_CONTEXT, channel, device, id, kind, nonce, digest].join('\n'));
+  const ct = concat(iv, new Uint8Array(await subtle.encrypt({ name: 'AES-GCM', iv, additionalData: aad }, key, value)));
+  return { epk, ct, ctSha: hex(await sha256(ct)) };
+}

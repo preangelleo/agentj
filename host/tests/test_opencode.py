@@ -226,6 +226,10 @@ class Chain(unittest.TestCase):
         if sys.platform.startswith("linux") and shutil.which("bwrap"):
             self.assertTrue(self.fenced, "the stand-in runs inside the fence where bubblewrap works")
         self.st.set_agent_config("opencode", str(self.work), fence=self.fenced)
+        # These legacy card scenarios explicitly exercise the optional warnings.
+        from agentj import preferences
+        preferences.path().parent.mkdir(parents=True, exist_ok=True)
+        preferences.path().write_text(preferences.edit(preferences.read()[0], "agent.high_risk_warnings", True))
 
     def tearDown(self):
         for k in list(self.env) + ["FAKE_OC_AGENT_RULES", "FAKE_OC_SESSIONS"]:

@@ -204,6 +204,35 @@ def check_agent(st: State) -> dict:
     return _c("agent", OK, f"{AGENT_LABEL[c['kind']]} · {tilde(c['dir'])} · {fz}")
 
 
+def check_codex_shared(st: State) -> dict | None:
+    """P51: what the first phone message will do in Codex shared mode (never a dead end)."""
+    c = st.agent_config() if st.exists() else None
+    if not c or c.get("kind") != "codex" or c.get("session_mode") != "shared" or not os.path.isdir(c["dir"]):
+        return None
+    from . import shared_codex
+    sid = c.get("shared_session_id") or st.agent_session("codex") or ""
+    if sid:
+        try:
+            path = shared_codex.selected_rollout(c["dir"], sid)
+            meta = shared_codex.first_meta(path) or {}
+            if os.path.realpath(meta.get("cwd") or "") != os.path.realpath(c["dir"]):
+                raise shared_codex.Refusal("wrong thread/project")
+            _, ctx, active = shared_codex.scan(path)
+        except (OSError, ValueError) as e:
+            zh, en = shared_codex.REASONS.get(shared_codex.brief(e), ("所选会话不可用。", "The selected thread is unavailable."))
+            return _c("codex_shared", WARN, f"Codex 共享：{zh}手机第一条消息会新开一个 Codex 会话 / {en} The first phone message starts a new Codex session",
+                      "电脑上 `codex resume` 选好会话后在设置里填它的 ID；或者不管它 / pick a thread on the computer, or leave it")
+        busy = "；电脑上正在回答，手机消息会排队 / desktop turn running, phone messages queue" if active else ""
+        perms = "" if ctx else "；还没有完整一轮，按你的 Codex 默认权限 / no completed turn yet, your Codex defaults apply"
+        return _c("codex_shared", OK, f"Codex 共享：接续会话 {sid[:8]}{busy}{perms} / continuing thread {sid[:8]}")
+    found = shared_codex.discover(c["dir"])
+    if found:
+        return _c("codex_shared", OK, f"Codex 共享：没指定会话，接续这个目录最近的 {found[:8]} / no thread selected; continuing the newest one here ({found[:8]})")
+    return _c("codex_shared", WARN, "Codex 共享：这个目录还没有 Codex 会话，手机第一条消息会新开一个 / "
+              "no Codex thread in this folder yet; the first phone message starts one",
+              f"想接着电脑上的会话：在 {tilde(c['dir'])} 里先跑一次 `codex` / to share a desktop session, run `codex` in that folder first")
+
+
 def check_agent_cli(st: State, svc: dict) -> dict:
     c = st.agent_config() if st.exists() else None
     kinds = [c["kind"]] if c else ["claude", "codex", "opencode"]
@@ -245,6 +274,20 @@ def check_agent_cli(st: State, svc: dict) -> dict:
                   "which hides its own token from commands)"),
                   "人类在自己的终端跑一次 `claude` 登录即可（服务要用）/ the human runs `claude` once in their own terminal "
                   "and logs in, so the always-on service can use it")
+    if k == 'opencode' and harness.opencode_v2(ver):
+        return _c('agent_cli', FAIL if c else WARN, s + ' · v2 API compatibility pending',
+                  '优先使用 Claude Code，或选择兼容的 OpenCode v1。v2 /api 协议尚未接入；数据库存在不能证明 provider 已认证。 / Prefer Claude Code or compatible OpenCode v1; v2 API adaptation is pending, not a login/key failure.')
+    if k == "opencode" and c:
+        from .names import ctl_call, ServeBusy
+        try: auth = ctl_call(st, {'cmd':'opencode_auth'}, timeout=5) or {}
+        except (OSError, ValueError, ServeBusy): auth = {}
+        if auth.get('known'):
+            connected = auth.get('selected_connected')
+            return _c('agent_cli', FAIL if connected is False else WARN,
+                      s + (' · selected provider disconnected' if connected is False else ' · provider connection recorded; key validity unverified'),
+                      '优先使用 Claude Code。OpenCode /provider.connected 只证明已配置连接；核实选中 provider/model。换 key 后运行 agentj service restart；共享模式重启原 OpenCode serve。 / Prefer Claude Code. Connected is not a live key test. Restart the relevant serve after changing keys.')
+        return _c('agent_cli', WARN, s + ' · runtime provider authentication unknown',
+                  '优先使用 Claude Code；OpenCode 需运行中的 GET /provider.connected 才能确认所选连接。凭据文件或数据库存在不等于已登录；换 key 后重启对应 serve。 / Prefer Claude Code; store existence is not authentication. Check the running provider connection and restart serve after changing keys.')
     if login == WARN and k == "opencode":
         return _c("agent_cli", WARN if not c else FAIL, s, "人类在自己的终端运行 `opencode auth login` 存好模型服务的 key "
                   "（install.md 第 3 步）/ the human runs `opencode auth login` in their own terminal")
@@ -317,10 +360,10 @@ def check_fence(st: State) -> dict:
     mac = sys.platform == "darwin"
     if not mac and not sys.platform.startswith("linux"):
         return _c("fence", WARN if not c else FAIL, "不支持 / unsupported", "Linux / macOS / WSL2")
-    bad = FAIL if c else WARN
+    bad = WARN   # F14: without a fence the Agent still runs, with the harness's own permissions
     if mac and not os.access(fence.SANDBOX_EXEC, os.X_OK):
         return _c("fence", bad, "没有 /usr/bin/sandbox-exec / sandbox-exec missing",
-                  "这台 Mac 缺系统自带的 sandbox-exec：请反馈 / report it (feedback); the Agent does not start fenced")
+                  "这台 Mac 缺系统自带的 sandbox-exec：请反馈 / report it (feedback); the Agent runs unfenced meanwhile")
     if not mac and not shutil.which("bwrap"):
         return _c("fence", bad, "没有 bubblewrap（bwrap） / bubblewrap missing", _bwrap_hint())
     workdir = c["dir"] if c and os.path.isdir(c["dir"]) else None
@@ -521,7 +564,7 @@ def check_update(offline: bool = False) -> dict:
     r = update.check(timeout=NET_TIMEOUT)
     if r["status"] == "newer":
         return _c("update", WARN, f"有新版本 / newer version {r['latest']} (installed {r['current']})",
-                  "告诉主人，由他在终端运行 / tell your human; they run: agentj update apply")
+                  "Agent 自己升级 / the Agent runs: agentj update apply")
     if r["status"] == "current":
         return _c("update", OK, f"已是最新 / up to date ({r['current']})")
     if r["status"] == "ahead":
@@ -543,7 +586,11 @@ def run(st: State | None = None, offline: bool = False) -> list[dict]:
     mig = check_migration(st)
     if mig:
         out.append(mig)
-    out += [check_agent(st), check_agent_cli(st, svc), check_harness(svc), check_fence(st), check_danger(st), check_passphrase(st), check_bound(st),
+    out += [check_agent(st)]
+    shared_row = check_codex_shared(st)
+    if shared_row:
+        out.append(shared_row)
+    out += [check_agent_cli(st, svc), check_harness(svc), check_fence(st), check_danger(st), check_passphrase(st), check_bound(st),
             check_serve(st), check_service(svc, service.legacy_status()), check_alias(), check_estop(st), check_tasks(st),
             check_activity(st)]
     out += check_asr(st)
@@ -589,8 +636,24 @@ def check_preferences(st):
     rows=[]
     try:
         cfg=preferences.effective(st)
+        from .config_migrations import run
+        pending=run(st,pending=True)['pending']
+        if pending and st.exists():
+            rows.append(_c("voice-migration",WARN,"configuration migrations pending; applied automatically at next serve start",
+                           "agentj config migrate; agentj doctor --offline --json"))
+        _,overrides=preferences.read()
+        provider=preferences.get(cfg,'voice.tts.provider')
+        model=preferences.get(overrides,'voice.tts.model')
+        factory=preferences.SCHEMA['voice.tts.model'].get('providerDefaults',{}).get(provider,preferences.SCHEMA['voice.tts.model']['default']) if provider in ('openai','elevenlabs') else None
+        if factory and model and model!=factory:
+            old=model in ('gpt-4o-mini-tts','tts-1','tts-1-hd','gpt-4o-mini-tts-2025-03-20','gpt-4o-mini-tts-2025-12-15') and provider=='openai'
+            rows.append(_c("voice-model",WARN,
+                           "selected speech model retained; OpenAI shutdown 2027-01-06" if old else "custom speech model retained; check provider availability",
+                           "agentj config set voice.tts.model "+factory))
         voice.validate_runtime(cfg)
         rows.append(_c("config",OK,"JSON5 valid: "+tilde(str(preferences.path()))))
+        if preferences.get(cfg,'voice.tts.mode')=='host' and provider=='command':
+            rows.append(_c("voice-command",OK,"local speech command is available; stdout/stderr stay private"))
     except preferences.ConfigError as e:
         rows.append(_c("config",FAIL,str(e),"agentj config validate --json; agentj config rollback"))
     except OSError:

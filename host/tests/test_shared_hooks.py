@@ -204,44 +204,14 @@ class DisconnectedHooks(unittest.TestCase):
     def decision(out):
         return None if out is None else out.get('permissionDecision',(out.get('decision') or {}).get('behavior'))
 
-    def test_claude_host_gone_high_risk_asks_natively(self):
-        for tool,inp in self.DANGER:
-            with self.subTest(tool=tool,inp=inp):
-                out=self.run_hook('claude',{'hook_event_name':'PreToolUse','tool_name':tool,'tool_input':inp},'PreToolUse')
-                self.assertEqual(out['permissionDecision'],'ask','a desktop push must reach the native dialog, not a hard deny')
-                self.assertEqual(out['hookEventName'],'PreToolUse')
-                self.assertEqual(out['permissionDecisionReason'],shared_hook.UNAVAILABLE)
-                self.assertIsNone(self.run_hook('claude',{'hook_event_name':'PermissionRequest','tool_name':tool,'tool_input':inp},'PermissionRequest'),
-                    'PermissionRequest leaves the native dialog to the person at the computer')
-
-    def test_routine_keeps_native_authority_for_every_family(self):
-        for family in ('claude','codex','opencode',None):
-            for name in ('PreToolUse','PermissionRequest'):
-                for tool,inp in self.ROUTINE:
-                    with self.subTest(family=family,name=name,tool=tool):
-                        self.assertIsNone(self.run_hook(family,{'hook_event_name':name,'tool_name':tool,'tool_input':inp},
-                                                        None if family=='opencode' else name))
-
-    def test_codex_opencode_and_unknown_channels_keep_deny(self):
-        # Verified on codex-cli 0.159.2: PreToolUse "ask" is an unsupported output
-        # (hook marked Failed, the tool then ran), and under on-request a credential
-        # read ran with no approval. OpenCode 1.18.32 before-hooks cannot ask.
-        for family,event in (('codex','PreToolUse'),('opencode',None),(None,'PreToolUse'),(None,'PermissionRequest')):
-            for tool,inp in self.DANGER:
-                with self.subTest(family=family,event=event,tool=tool):
-                    out=self.run_hook(family,{'hook_event_name':event or 'PreToolUse','tool_name':tool,'tool_input':inp},event)
-                    self.assertEqual(self.decision(out),'deny')
-                    self.assertEqual(out.get('permissionDecisionReason',(out.get('decision') or {}).get('message')),shared_hook.BLOCKED)
-
-    def test_malformed_payloads_ask_on_claude_and_never_allow(self):
-        for payload in self.MALFORMED[:3]+['x'*(shared_hook.MAX_FRAME+1)]:
-            with self.subTest(payload=payload[:20]):
-                self.assertEqual(self.run_hook('claude',payload,'PreToolUse')['permissionDecision'],'ask')
-                self.assertIsNone(self.run_hook('claude',payload,'PermissionRequest'))
-                self.assertEqual(self.decision(self.run_hook('codex',payload,'PreToolUse')),'deny')
-        self.assertEqual(self.run_hook('claude',self.MALFORMED[3],'PreToolUse')['permissionDecision'],'deny',
-                         'a malformed tool call itself has nothing well-formed to show a person')
-        self.assertIsNone(self.run_hook('claude','{broken','Stop'),'bad telemetry cannot grant execution or block desktop exit')
+    def test_disconnected_bridge_keeps_native_authority_for_every_family(self):
+        for family in ('claude', 'codex', 'opencode', None):
+            for name in ('PreToolUse', 'PermissionRequest'):
+                for tool, inp in self.DANGER + self.ROUTINE:
+                    with self.subTest(family=family, name=name, tool=tool):
+                        self.assertIsNone(self.run_hook(family, {'hook_event_name':name, 'tool_name':tool, 'tool_input':inp}, None if family=='opencode' else name))
+        for payload in self.MALFORMED:
+            self.assertIsNone(self.run_hook('claude', payload, 'PreToolUse'))
 
     def test_no_fallback_path_ever_allows(self):
         payloads=[{'hook_event_name':n,'tool_name':t,'tool_input':i} for n in ('PreToolUse','PermissionRequest')
@@ -267,7 +237,7 @@ class DisconnectedHooks(unittest.TestCase):
         r=subprocess.run([node,'--input-type=module','-e',js,plugin.as_uri(),'git commit -m local','git push origin main'],
                          capture_output=True,text=True,timeout=60)
         self.assertEqual(r.returncode,0,r.stderr)
-        self.assertEqual(json.loads(r.stdout),['ran','blocked:'+shared_hook.BLOCKED])
+        self.assertEqual(json.loads(r.stdout),['ran','ran'])
 
 
 class ConnectedPhoneDenyUnchanged(unittest.IsolatedAsyncioTestCase):

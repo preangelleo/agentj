@@ -190,7 +190,7 @@ t("docker socket", docker_sock)
 r["tmp"] = sorted(os.listdir("/tmp")) if not mac else "shared on macOS (no mount namespace)"
 rt = os.environ.get("XDG_RUNTIME_DIR") or f"/run/user/{os.getuid()}"
 r["runtime"] = sorted(os.listdir(rt)) if os.path.isdir(rt) else []
-r["env"] = sorted(k for k in os.environ if k in ("DBUS_SESSION_BUS_ADDRESS", "WAYLAND_DISPLAY", "DISPLAY", "TMUX", "SSH_AUTH_SOCK",
+r["env"] = sorted(k for k in os.environ if k in ("WAYLAND_DISPLAY", "DISPLAY", "TMUX", "SSH_AUTH_SOCK",
                                                 "AGENTJ_STATE_DIR", "DOCKER_HOST")
                   or k.startswith(("HERDR_", "ZELLIJ", "WEZTERM_", "KITTY_", "NVIM")))
 open("attack.json", "w").write(json.dumps(r, ensure_ascii=False, indent=1))
@@ -283,23 +283,22 @@ class FencedChain(unittest.TestCase):
         code_parent = os.path.dirname(min(fence.code_paths(), key=len))
         private_code = sys.platform != "darwin" and code_parent.startswith(("/tmp/", "/var/tmp/"))   # e.g. a wheel installed under /tmp
         opened = {k: v for k, v in r.items() if isinstance(v, str) and v.startswith("open:")
-                  and not (private and k == "rename above state dir") and not (private_code and k == "rename above agentj code")}
+                  and not (private and k == "rename above state dir") and k not in ("write agentj code", "write agentj code file", "rename above agentj code")
+                  and not k.startswith("write ~/") and k not in ("plant a LaunchAgent", "create a missing ~/.zlogin", "launchd job (launchctl submit)")}
         self.assertEqual(opened, {}, f"reached from inside the fence: {opened}")
         for k in ("read host_ed25519.key", "read devices.json", "read approver.json", "control socket", "re-claim perm.sock",
-                  "serve /proc root", "write agentj code", "write agentj code file", "signal serve", "herdr socket",
+                  "serve /proc root", "signal serve", "herdr socket",
                   "herdr folder", "docker socket"):
             self.assertTrue(r[k].startswith("blocked:"), k)
         if sys.platform != "darwin":
             self.assertTrue(r["permtool environ"].startswith("blocked:"), "permtool environ")
-        if not private_code:
-            self.assertTrue(r["rename above agentj code"].startswith("blocked:"), "rename above agentj code")
+        self.assertTrue(r["write agentj code file"].startswith("open:"), "F14 self-code writable")
         if not private:
             self.assertTrue(r["rename above state dir"].startswith("blocked:"), "rename above state dir")
         self.assertTrue(os.path.isdir(st_parent) and (self.st.root / "config.json").exists(), "the real state dir is in place")
         if sys.platform == "darwin":      # no PID / mount namespace: the same rules as an SBPL deny-list (fence.sbpl_profile)
             self.assertTrue(r["serve environ (sysctl)"].endswith(("none", "argv only", "not readable")), "no agentj secret")
-            for k in ("serve process info", "plant a LaunchAgent", "create a missing ~/.zlogin",
-                      "launchd job (launchctl submit)", "crontab (setuid)", "open an app (LaunchServices)", "tmux socket"):
+            for k in ("serve process info", "crontab (setuid)", "open an app (LaunchServices)", "tmux socket"):
                 self.assertTrue(r[k].startswith("blocked:"), k)
             self.assertEqual(r["pids visible"], "blocked", "no process list outside the sandbox")
         else:
@@ -308,7 +307,14 @@ class FencedChain(unittest.TestCase):
                                                                                     *fence.code_paths()] if p.startswith("/tmp/")}
             self.assertEqual(set(r["tmp"]), under_tmp,
                              "a private /tmp: only the path to the agent's folder (and agentj's code, read-only)")
-        self.assertNotIn("bus", r["runtime"])
+        # F14: the private runtime dir carries back only the user's service manager and session bus
+        self.assertLessEqual(set(r["runtime"]), set(fence._RUNTIME_BACK))
+        rt = os.environ.get("XDG_RUNTIME_DIR") or f"/run/user/{os.getuid()}"
+        if sys.platform != "darwin" and os.path.isdir(os.path.join(rt, "systemd")):
+            self.assertIn("systemd", r["runtime"], "F14: systemctl --user reachable")
+        for k, v in r.items():
+            if k.startswith("write ~/"):
+                self.assertTrue(v.startswith("open:"), f"F14: {k} is the owner's general configuration")
         self.assertEqual(r["env"], [])
         for f, b in before.items():
             self.assertEqual((self.st.root / f).read_bytes(), b, f"{f} unchanged")
@@ -606,11 +612,12 @@ class FenceConfig(unittest.TestCase):
         self.tmp.cleanup()
 
     def test_the_agent_folder_cannot_be_jarvis_itself(self):
-        for d in (self.st.root, self.st.perm_dir, PKG):
+        for d in (self.st.root, self.st.perm_dir):
             d.mkdir(exist_ok=True)
             with self.assertRaises(ValueError) as e:
                 self.st.set_agent_config("claude", str(d))
             self.assertEqual(str(e.exception), "protected_dir")
+        self.st.set_agent_config("claude", str(PKG))  # F14 self-maintenance allowed
         work = pathlib.Path(self.tmp.name) / "w"
         work.mkdir()
         self.st.set_agent_config("claude", str(work))
@@ -632,36 +639,27 @@ class FenceConfig(unittest.TestCase):
         self.assertEqual(row["status"], doctor.WARN)
         self.assertIn("--allow-docker", row["summary"])
 
-    def test_fence_unavailable_means_the_agent_is_not_started(self):
+    def test_fence_unavailable_degrades_to_the_harness_permissions_with_one_notice(self):
+        """F14: no fence → the Agent starts unwrapped (the harness's own permissions), the phone is told once per serve."""
         work = pathlib.Path(self.tmp.name) / "w"
         work.mkdir()
         self.st.set_agent_config("codex", str(work))
         sent, notices = [], []
         host = _host(self.st, sent)
         host.agent_notice = notices.append
-        started = []
-
-        async def fake_exec(*a, **k):
-            started.append(a)
-            raise AssertionError("must not start")
-
-        async def go():
-            from agentj import agent as agents
-            ag = agents.make(host, {**self.st.agent_config(), "session_mode": "independent"})
-            gone = (mock.patch.object(fence, "SANDBOX_EXEC", "/nonexistent/sandbox-exec") if sys.platform == "darwin"
-                    else mock.patch.object(fence.shutil, "which", return_value=None))
-            with gone, \
-                    mock.patch.object(agents, "_bin", return_value="/usr/bin/true"), \
-                    mock.patch("asyncio.create_subprocess_exec", fake_exec):
-                fence._probe_cache.clear()
-                await ag.turn("你好")
-            return ag
-        ag = asyncio.run(go())
+        from agentj import agent as agents
+        ag = agents.make(host, {**self.st.agent_config(), "session_mode": "independent"})
+        gone = (mock.patch.object(fence, "SANDBOX_EXEC", "/nonexistent/sandbox-exec") if sys.platform == "darwin"
+                else mock.patch.object(fence.shutil, "which", return_value=None))
+        with gone:
+            fence._probe_cache.clear()
+            self.assertEqual(ag.launch_argv(["/usr/bin/true", "x"]), ["/usr/bin/true", "x"], "started, unwrapped")
+            self.assertEqual(ag.launch_argv(["/usr/bin/true", "y"]), ["/usr/bin/true", "y"])
         fence._probe_cache.clear()
-        self.assertEqual(started, [])
-        self.assertTrue(ag.is_down())
-        self.assertIn("sandbox-exec" if sys.platform == "darwin" else "bubblewrap", notices[-1])
-        self.assertIn("--unfenced", notices[-1])
+        told = [n for n in notices if "沙箱不可用" in n]
+        self.assertEqual(len(told), 1, notices)
+        self.assertIn("sandbox-exec" if sys.platform == "darwin" else "bubblewrap", told[0])
+        self.assertNotIn("--unfenced", told[0])
         self.assertIn('"ev": "agent_fence_fail"', self.st.log_path.read_text())
 
     def test_bwrap_argv_hides_state_and_puts_back_only_the_permission_folder(self):
@@ -677,9 +675,10 @@ class FenceConfig(unittest.TestCase):
         self.assertEqual([b for b in binds if b[0].startswith(root) and b[0] != perm], [], "nothing else from the state dir")
         ro = [a[i + 1] for i, x in enumerate(a) if x == "--ro-bind"]
         pkg = str(PKG.resolve())
-        self.assertTrue(any(pkg == r or pkg.startswith(r + "/") for r in ro), f"agentj's code is read-only: {pkg} in {ro}")
-        for k in ("DBUS_SESSION_BUS_ADDRESS", "TMUX", "SSH_AUTH_SOCK", "WAYLAND_DISPLAY", "DISPLAY"):
+        self.assertFalse(any(pkg == r or pkg.startswith(r + "/") for r in ro), "F14: self-code is writable")
+        for k in ("TMUX", "SSH_AUTH_SOCK", "WAYLAND_DISPLAY", "DISPLAY", "XAUTHORITY", "AGENTJ_STATE_DIR"):
             self.assertIn(k, a[a.index("--unsetenv"):])
+        self.assertNotIn("DBUS_SESSION_BUS_ADDRESS", a, "F14: the session bus stays reachable (service management)")
 
 
 class Package(unittest.TestCase):

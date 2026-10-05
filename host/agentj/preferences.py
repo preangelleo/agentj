@@ -1,6 +1,6 @@
 """Pure-data user preferences. Schema is the catalogue; hidden State remains human-only.
 Writes are serialized and atomic, bounded history stores overrides, and serve acknowledges
-before a CLI reports an applied change. No credentials or executable hooks in this layer.
+before a CLI reports an applied change. No credentials in this layer. Local TTS argv is the explicit host-only execution seam.
 """
 from __future__ import annotations
 import argparse
@@ -88,10 +88,24 @@ def validate(doc,raw=''):
             if any(ord(c)<32 and not (k=='agent.instructions' and c in '\n\t') for c in v) or len(v)>m.get('maxLength',1000): raise ConfigError(k,'invalid characters or length',line)
             if m.get('pattern') and not re.fullmatch(m['pattern'],v): raise ConfigError(k,'expected environment variable NAME, never a secret',line)
         if typ in ('integer','number') and not m.get('minimum',-math.inf)<=v<=m.get('maximum',math.inf): raise ConfigError(k,f"allowed range: {m.get('minimum')}..{m.get('maximum')}",line)
+    cats = get(doc, 'updates.skill_categories', [])
+    if len(cats)>4 or any(c not in ('content','app','commerce','general') for c in cats): raise ConfigError('updates.skill_categories','allowed: content, app, commerce, general')
     root = get(doc, 'agent.working_root', '')
     if root and not (os.path.isabs(root) or root == '~' or root.startswith('~/')):
         raise ConfigError('agent.working_root', 'use an absolute path or ~/path')
     out=merge(defaults(),{k:v for k,v in doc.items() if k!='version'})
+    # Defaults belong to the selected provider; explicit model/key choices always win.
+    provider=get(out,'voice.tts.provider')
+    for key in ('voice.tts.model','voice.tts.key_env'):
+        if get(doc,key) is None:
+            put(out,key,SCHEMA[key].get('providerDefaults',{}).get(provider,SCHEMA[key]['default']))
+    command=get(out,'voice.tts.command')
+    if len(command)>32 or any(not isinstance(a,str) or not a or len(a)>1000 or any(ord(c)<32 for c in a) for a in command):
+        raise ConfigError('voice.tts.command','expected at most 32 non-empty argv strings; no inline credentials')
+    if command and not any('{output}' in a for a in command[1:]):
+        raise ConfigError('voice.tts.command','include {output} in an output argument; text arrives on stdin')
+    if get(out,'voice.tts.mode')=='cloud' and get(out,'voice.tts.provider')=='command':
+        raise ConfigError('voice.tts.mode','local command uses host mode')
     for k in ('menu.items','keyboard.bindings','channels.items'):
         rows=get(doc,k,[]); ids=set()
         if len(rows)>60: raise ConfigError(k,'maximum 60 entries',_line(raw,k))
@@ -116,6 +130,24 @@ def validate(doc,raw=''):
         if k=='channels.items':
             for x in effective:
                 if x.get('type') not in ('phone','telegram'): raise ConfigError(k,'supported channels: phone, telegram')
+    groups = get(out, 'telegram.groups', [])
+    ids = set()
+    if len(groups) > 20: raise ConfigError('telegram.groups', 'maximum 20 groups')
+    for row in groups:
+        if (not isinstance(row, dict) or set(row) - {'id','members','profile','label'}
+                or not isinstance(row.get('id'), str) or not re.fullmatch(r'-[1-9][0-9]{0,18}', row['id'])
+                or row['id'] in ids):
+            raise ConfigError('telegram.groups', 'unique negative chat id string required')
+        ids.add(row['id'])
+        members = row.get('members', [])
+        if (not isinstance(members, list) or not members or len(members) > 100
+                or any(type(uid) is not int or uid <= 0 for uid in members)):
+            raise ConfigError('telegram.groups', 'explicit positive numeric sender allowlist required')
+        if row.get('profile','proxy') not in ('proxy','family'):
+            raise ConfigError('telegram.groups', 'profiles: proxy, family')
+        label = row.get('label','Telegram group')
+        if not isinstance(label,str) or len(label)>64 or any(ord(c)<32 for c in label):
+            raise ConfigError('telegram.groups', 'plain label up to 64 characters required')
     if get(out,'voice.asr.mode')=='cloud' and not get(out,'voice.asr.model'): raise ConfigError('voice.asr.model','cloud ASR requires an audio-capable model ID')
     if get(out,'voice.tts.mode')=='cloud' and not get(out,'voice.tts.voice'): raise ConfigError('voice.tts.voice','cloud TTS requires a provider voice ID')
     if len(json.dumps(out).encode()) > 12000: raise ConfigError("/", "effective configuration must be at most 12 KiB")
@@ -237,6 +269,90 @@ def commit_files(st,newraw,candidate):
     for previous in sorted(snapshot.parent.glob("*.json5"))[:-20]:
         try:previous.unlink()
         except OSError:st.log("config_history_cleanup_failed")
+    note_language(st,candidate)
+
+
+# ------------------------------------------------------------------ A1 (P44): the one language value and when it was set
+# `appearance.language` is THE language (web UI, account mails, the language Agent J speaks with the owner). Its "last set"
+# time is not a preference (the schema stays pure user data): it lives next to the host state as language.json (0600)
+# {"language": "zh"|"en", "at": <ms>}. note_language() is called after every activation/commit of a configuration; a
+# recorded language that differs from the effective one = a local change → stamped now. The account sync (cloud report,
+# last write wins) passes the account's own `at`, so an applied account value is not re-sent as a newer host change.
+LANG_FILE = 'language.json'
+
+def _lang_rec(st):
+    try:
+        d = json.loads((st.root/LANG_FILE).read_text())
+    except (OSError, ValueError):
+        return None
+    if isinstance(d,dict) and d.get('language') in ('zh','en') and type(d.get('at')) is int and d['at'] >= 0:
+        return d
+    return None
+
+def _first_at():
+    """No record yet (a host from before 0.15): a language the owner wrote into the file counts from the file's mtime; the
+    factory default counts as never set (0), so an account value wins over it."""
+    try:
+        raw = path().read_text()
+        doc = json5.loads(raw, allow_duplicate_keys=False)
+        if get(doc,'appearance.language') in ('zh','en'):
+            return int(path().stat().st_mtime*1000)
+    except (OSError, ValueError):
+        pass
+    return 0
+
+def language_state(st, effective_doc=None):
+    """(language, language_at ms) of this host. Never raises."""
+    rec = _lang_rec(st)
+    if effective_doc is None:
+        try: effective_doc = effective(st)
+        except (ConfigError, OSError, ValueError): effective_doc = {}
+    lang = get(effective_doc,'appearance.language') or (rec or {}).get('language') or SCHEMA['appearance.language']['default']
+    if rec and rec['language'] == lang:
+        return lang, rec['at']
+    # no record yet, or the file was edited while serve was not running: record it now (idempotent from then on)
+    note_language(st,{'appearance':{'language':lang}})
+    rec = _lang_rec(st)
+    if rec and rec['language'] == lang:
+        return lang, rec['at']
+    return lang, 0
+
+def note_language(st, candidate, at=None):
+    """Record when the effective language changed (see above). `at` = the account's time for a value taken from the
+    account. Returns True when a new record was written."""
+    lang = get(candidate,'appearance.language')
+    if lang not in ('zh','en') or not st.root.is_dir():
+        return False
+    rec = _lang_rec(st)
+    if rec and rec['language'] == lang and at is None:
+        return False
+    stamp = int(at) if at is not None else (_first_at() if rec is None else int(time.time()*1000))
+    try:
+        _write_private(st.root/LANG_FILE, json.dumps({'language':lang,'at':stamp}).encode())
+    except OSError:
+        return False
+    return True
+
+
+def set_language(st, lang, at):
+    """Account → host (A1 sync): write `appearance.language` through the same transactional path as `agentj config set`
+    (serve acknowledges it, or the file is committed when serve is not running), then stamp the account's time.
+    Returns the transact() result, or None when nothing had to change."""
+    if lang not in ('zh','en'):
+        raise ConfigError('appearance.language','allowed: zh, en')
+    st.root.mkdir(parents=True,exist_ok=True,mode=0o700)
+    fd = os.open(st.root/'preferences.lock',os.O_RDWR|os.O_CREAT,0o600)
+    try:
+        fcntl.flock(fd,fcntl.LOCK_EX)
+        ensure(); raw,doc = read()
+        if get(validate(doc),'appearance.language') == lang:
+            note_language(st,{'appearance':{'language':lang}},at)
+            return None
+        result = transact(st, edit(raw,'appearance.language',lang))
+    finally:
+        os.close(fd)
+    note_language(st,{'appearance':{'language':lang}},at)
+    return result
 
 
 def transact(st,newraw):
@@ -270,7 +386,7 @@ def resolve_key(key):
 def command(args):
     p=argparse.ArgumentParser(prog='agentj config')
     p.add_argument('action',nargs='?',default='path',choices=['path','keys','get','show','set','unset','validate','diff','reset','history','rollback','apply','explain','migrate'])
-    p.add_argument('key',nargs='?'); p.add_argument('value',nargs='?'); p.add_argument('--json',action='store_true'); p.add_argument('--json-value',action='store_true'); p.add_argument('--dry-run',action='store_true'); p.add_argument('--search',default=''); p.add_argument('--file'); p.add_argument('--source',action='store_true'); p.add_argument('--effective',action='store_true'); p.add_argument('--against',default='default'); p.add_argument('--all',action='store_true'); p.add_argument('--pending',action='store_true')
+    p.add_argument('key',nargs='?'); p.add_argument('value',nargs='?'); p.add_argument('--json',action='store_true'); p.add_argument('--json-value',action='store_true'); p.add_argument('--dry-run',action='store_true'); p.add_argument('--search',default=''); p.add_argument('--file'); p.add_argument('--source',action='store_true'); p.add_argument('--effective',action='store_true'); p.add_argument('--against',default='default'); p.add_argument('--all',action='store_true'); p.add_argument('--yes',action='store_true'); p.add_argument('--pending',action='store_true')
     a=p.parse_args(args); st=State()
     try:
         a.key=resolve_key(a.key)
@@ -313,8 +429,10 @@ def command(args):
                     newraw=edit(raw,key,value,remove=a.action!='set')
                 elif a.action=='reset':
                     if a.all:
-                        if not os.isatty(0): raise ConfigError('/','reset --all needs human terminal confirmation',code=2)
-                        if input('Reset all user preferences? [y/N] ').lower()!='y': raise ConfigError('/','cancelled',code=2)
+                        # F14: --yes (or --dry-run) is the owner's (or, at their request, the Agent's) answer; no terminal needed
+                        if not (a.yes or a.dry_run):
+                            if not os.isatty(0): raise ConfigError('/','reset --all resets every preference: add --yes',code=1)
+                            if input('Reset all user preferences? [y/N] ').lower()!='y': raise ConfigError('/','cancelled',code=1)
                         newraw=template()
                     elif key:
                         if not any(k.startswith(key+'.') for k in SCHEMA):raise ConfigError(key,'unknown section; use agentj config keys')
@@ -335,3 +453,24 @@ def command(args):
         print(json.dumps(result,ensure_ascii=False)); return 0
     except ConfigError as e: print(json.dumps(e.result(),ensure_ascii=False)); return e.code
     except (OSError,KeyError) as e: print(json.dumps({'ok':False,'error':type(e).__name__})); return 1
+
+
+def account_is_newer(st, account, effective_doc=None):
+    """A1 last write wins: the account's {"language","language_at"} replaces the local value only when strictly newer."""
+    if not isinstance(account,dict) or account.get('language') not in ('zh','en') or type(account.get('language_at')) is not int:
+        return False
+    return account['language_at'] > language_state(st, effective_doc)[1]
+
+
+def adopt_account_language(st, account):
+    """CLI paths that report without serve (`agentj report`, a rename): apply a newer account language locally (the same
+    transactional write as `agentj config set`). Returns True when the local value changed. Never raises."""
+    try:
+        if not account_is_newer(st, account):
+            return False
+        res = set_language(st, account['language'], account['language_at'])
+        if res is not None:
+            st.log('language_synced', status=account['language'])
+        return res is not None
+    except (ConfigError, OSError, ValueError):
+        return False

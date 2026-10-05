@@ -486,7 +486,7 @@ def read_installed(st) -> list[dict]:
     out = []
     for r in items if isinstance(items, list) else []:
         if isinstance(r, dict) and isinstance(r.get("name"), str) and _NAME.fullmatch(r["name"]):
-            out.append({k: r.get(k) for k in ("name", "type", "version", "sha256", "harness", "target", "certified", "installed_at")})
+            out.append({k: r.get(k) for k in ("name", "type", "version", "sha256", "harness", "target", "certified", "installed_at", "category")})
     return out
 
 
@@ -1472,7 +1472,7 @@ def run_install(name: str, *, version=None, harness=None, workspace=None, params
                   f"{old} ({e.strerror})", file=out)
             bak = old
     rec = {"name": m["name"], "type": m["type"], "version": m["version"], "sha256": sha, "harness": h, "target": str(target),
-           "certified": certified, "installed_at": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")}
+           "category": m.get("category"), "certified": certified, "installed_at": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")}
     _record_install(st, rec)
     st.log("plaza_pkg_install", name=m["name"], result="ok")
     print(f"已安装 / installed: {m['name']} {m['version']} → {target}" + (f"（旧目录 old one → {bak}）" if bak else ""), file=out)

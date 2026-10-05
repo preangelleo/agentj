@@ -1,5 +1,6 @@
 // Factory defaults; put only your changes in the user override file.
 {
+  "updates": {"mode": "auto", "skill_categories": []},
   "agent": {
     // Empty preserves existing work folder; fresh init defaults to ~/coding.
     "working_root": "",
@@ -9,7 +10,10 @@
     "session_mode": "shared",
     "shared_session_id": "",
     "shared_opencode_port": 0,
-    "high_risk_warnings": true,
+    "high_risk_warnings": false,
+    // F14: the fence hides Agent J's data in independent sessions; off = harness permissions only
+    "isolation": true,
+    "allow_docker": false,
   },
   "voice":
   {
@@ -44,10 +48,13 @@
       "rate": 1.0,
       // Own-key provider; reply audio crosses our relay only as ciphertext / 自有密钥服务商；回复音频只以密文经过中继; default="openai"
       "provider": "openai",
-      // Cloud speech model / 云端语音模型; default="gpt-4o-mini-tts"
-      "model": "gpt-4o-mini-tts",
+      // Cloud speech model / 云端语音模型; default="gpt-realtime-2.1-mini"
+      "model": "gpt-realtime-2.1-mini",
       // Environment variable NAME only / 仅环境变量名; default="OPENAI_API_KEY"
       "key_env": "OPENAI_API_KEY",
+      // Local argv, no shell; stdin text and {output} WAV. No inline credentials.
+      "command": [],
+      "command_timeout": 60,
     },
     // Automatically read completed replies / 自动朗读完成的回复; default=false
     "speak_replies": false,
@@ -58,7 +65,7 @@
   {
     // Phone theme / 手机主题; default="system"
     "theme": "system",
-    // Interface language / 界面语言; default="zh"
+    // Your language (phone, account emails, how Agent J speaks with you) / 你的语言（手机界面、账号邮件、Agent J 的对话语言）; default="zh"
     "language": "zh",
   },
   "menu":
@@ -81,4 +88,13 @@
     // May only shorten approval lifetime / 只可缩短审批有效期; default=120
     "timeout": 120,
   },
+  // Legacy pointers (no effect; F14 user tier)
+  "human": {
+    "danger_extra": "",
+    "report_hostname": "",
+    "fence": "",
+  },
+  "telegram": {"groups": []},
+  // Variable names only; values stay in the host service environment.
+  "proxy": {"https_env": "", "http_env": "", "no_proxy_env": ""},
 }

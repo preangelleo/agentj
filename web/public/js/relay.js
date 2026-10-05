@@ -10,7 +10,7 @@ import { el, toast, toastOff, toastAction, human, stamp, mmss, confirmSheet } fr
 import { Upload, TYPES as DROP_TYPES, MAX_BYTES as UPLOAD_MAX, MAX_ATT, ASR_MAX_BYTES } from './blobs.js';
 import { toWav } from './wav.js';
 import { Speaker, configureSpeech } from './speak.js';
-import { isReady } from './session.js';
+import { isReady, sendApp, hostId } from './session.js';
 import { getSealed, putSealed, dbDel } from './store.js';
 
 let C = null;                        // ctx from app.js: api, myDev(), estopOn(), canSign(), panels …
@@ -575,6 +575,7 @@ function paintLogo(st, kind){
 // takes the reader to the newest page wherever they are (ADR-036); older pages loading at the front never move them.
 const hist = {turns: [], count: 0, firstId: 0, lastId: 0, epoch: 0, route: true, busy: false, want: 0, older: false};
 let pageAt = -1, follow = true, pagesCache = null, shownKey = null;
+const noticeReads = new Set();
 const tailSeen = {primed: false, id: 0, reply: "", virt: false};
 function newTurnArrived(ps){
   const tt = ps[ps.length - 1];
@@ -697,6 +698,13 @@ function showPage(){
   const p = ps[pageAt];
   const key = (p.id === null ? "live" : p.id) + "|" + pageAt;
   const om = el("om"), src = p.source;
+  if (src?.notice_id && !document.hidden && isReady()) {
+    const receiptKey = hostId() + ':' + src.notice_id;
+    if (!noticeReads.has(receiptKey)) {
+      noticeReads.add(receiptKey);
+      sendApp({t:'notice_read', id:src.notice_id}).catch(() => noticeReads.delete(receiptKey));
+    }
+  }
   const blank = p.id === null && !p.reply;
   om.hidden = blank;
   const who = sourceOf(src);
@@ -1979,7 +1987,7 @@ function noteEmpty(){
   else if (emptySince === null || emptySince === undefined) emptySince = performance.now();
 }
 const typingIn = tg => !!tg && (tg.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(tg.tagName));
-const dialogOpen = () => !el("cam").hidden || !el("keys").hidden || !el("confirm").hidden || !el("badge-panel").hidden;
+const dialogOpen = () => !el("cam").hidden || !el("keys").hidden || !el("confirm").hidden || !el("badge-panel").hidden || !el("settings").hidden;
 function openKeys(){ closeMenu(); closeSug(); el("keys").hidden = false; el("keysClose").focus(); }
 function closeKeys(){ el("keys").hidden = true; if (document.activeElement) document.activeElement.blur(); }
 async function pasteClipImages(){
@@ -2167,7 +2175,7 @@ export function init(ctx){
   new MutationObserver(() => paintChrome()).observe(document.body,
     {attributes: true, attributeFilter: ["data-status", "data-conn", "data-kind", "data-sheet", "data-kb", "data-reader", "data-view"]});
   new MutationObserver(() => paintChrome(true)).observe(document.documentElement, {attributes: true, attributeFilter: ["data-theme"]});
-  document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") paintChrome(true); });
+  document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") { paintChrome(true); showPage(); } });
   window.addEventListener("pageshow", () => paintChrome(true));
   window.addEventListener("focus", () => paintChrome(true));
   try{ matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => paintChrome(true)); }catch(_){}
@@ -2538,7 +2546,7 @@ export function init(ctx){
     if (e.key === "Escape"){
       if (rdOpen()){ e.preventDefault(); closeReader(); return; }
       if (!el("keys").hidden){ e.preventDefault(); closeKeys(); return; }
-      if (!el("cam").hidden || !el("confirm").hidden || !el("badge-panel").hidden) return;
+      if (!el("cam").hidden || !el("confirm").hidden || !el("badge-panel").hidden || !el("settings").hidden) return;
       if (!menu.hidden){ e.preventDefault(); closeMenu(); return; }
       if (replyTo){ e.preventDefault(); escAt = 0; cancelReply(); return; }
       const now = performance.now();
@@ -2552,6 +2560,11 @@ export function init(ctx){
       escArmedInterrupt = composerEmpty() && emptySince !== null && now - emptySince >= EMPTY_GUARD_MS;
       if (tg === input){ e.preventDefault(); input.blur(); }
       return;
+    }
+    // F13: ⌘, (mac) / Ctrl+, opens Settings from anywhere on the chat screen, the field and the reader included.
+    if ((e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey && (e.key === "," || e.code === "Comma")){
+      if (dialogOpen() && el("settings").hidden) return;
+      e.preventDefault(); if (rdOpen()) closeReader(); closeMenu(); C.settings && C.settings(); return;
     }
     if (rdOpen()){
       if (e.ctrlKey || e.metaKey || e.altKey || (tg && tg.id === "rdSlider" && e.key.startsWith("Arrow"))) return;
@@ -2570,6 +2583,7 @@ export function init(ctx){
     }
     if (e.ctrlKey || e.metaKey || e.altKey || typingIn(tg) || typingIn(document.activeElement) || dialogOpen()) return;
     if (e.key === "?"){ e.preventDefault(); openKeys(); return; }
+    if (e.key === "s" && !e.shiftKey){ e.preventDefault(); closeMenu(); closeSug(); C.settings && C.settings(); return; }
     if (isM(e)){
       e.preventDefault();
       if (mKey || e.repeat) return;

@@ -16,13 +16,20 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
 CONTEXTS = {"/v1/host/login": "agentjarvis-host-login-v1", "/v1/host/poll": "agentjarvis-host-poll-v1",
             "/v1/host/report": "agentjarvis-host-report-v1", "/v1/host/sync": "agentjarvis-host-sync-v1",
             "/v1/host/rename": "agentjarvis-host-rename-v1", "/v1/host/seat-bind": "agentjarvis-host-seat-bind-v1",
-            "/v1/host/seat-leave": "agentjarvis-host-seat-leave-v1"}
+            "/v1/host/seat-leave": "agentjarvis-host-seat-leave-v1",
+            "/v1/host/upgrade-auth": "agentjarvis-host-upgrade-auth-v1"}
 KEYS = {"login": {"v", "t", "channel", "ts"}, "poll": {"v", "t", "channel", "ts", "login_id"},
         "report": {"v", "t", "channel", "ts", "seq", "agent", "devices", "pending"},
         "sync": {"v", "t", "channel", "ts", "results"}, "rename": {"v", "t", "channel", "ts", "name"},
-        "seat_bind": {"v", "t", "channel", "ts", "token", "name"}, "seat_leave": {"v", "t", "channel", "ts"}}
-OPTIONAL = {"report": {"agent_name", "machine"}}   # A3.2: optional report keys
-PATH_OF = {"seat_bind": "/v1/host/seat-bind", "seat_leave": "/v1/host/seat-leave"}   # inner `t` → path where they differ
+        "seat_bind": {"v", "t", "channel", "ts", "token", "name"}, "seat_leave": {"v", "t", "channel", "ts"},
+        "upgrade_auth": {"v", "t", "channel", "ts", "code", "version"}}
+OPTIONAL = {"report": {"agent_name", "machine", "language", "language_at", "harness", "notices_v", "notice_receipts"}}   # A3.2 / A1 (0.15): optional report keys
+# the live 0.14 dashboard (agentjarvis/dashboard/src/hostapi.ts at the 0.14 release): same KEYS, report OPTIONAL only
+# ["agent_name", "machine"] (anything else → 400 bad_request in openEnvelope, before the seq gate), and no upgrade-auth route
+# (→ the front Worker's bare `404 Not Found`, text/plain)
+OPTIONAL_014 = {"report": {"agent_name", "machine"}}
+PATH_OF = {"seat_bind": "/v1/host/seat-bind", "seat_leave": "/v1/host/seat-leave",
+           "upgrade_auth": "/v1/host/upgrade-auth"}   # inner `t` → path where they differ
 SEAT_TOKEN = re.compile(r"ajt_[A-Za-z0-9_-]{43}")
 
 
@@ -67,6 +74,16 @@ class FakeCP:
         # review SS-02: /v1/host/seat-leave
         self.seat_leaves: list[dict] = []      # accepted (signature-valid) seat-leave bodies
         self.leave_script: list = []           # scripted answers: "not_found" | "rate" | int (5xx)
+        # A1 (0.15): the account's one language value; None = an older server (the report answer carries neither key)
+        self.account_language: str | None = None
+        self.account_language_at = 0
+        # F12 / C2: /v1/host/upgrade-auth — grants {code: version}; spent {(channel, code)}
+        self.grants: dict[str, str] = {}
+        self.grant_expired: set[str] = set()
+        self.spent: set[tuple] = set()
+        self.upgrade_auths: list[dict] = []
+        self.upgrade_script: list = []         # scripted answers: "rate" | int (5xx)
+        self.server_014 = False                # P44 back-compat: answer like the live 0.14 server (see OPTIONAL_014)
         cp = self
 
         class H(BaseHTTPRequestHandler):
@@ -85,6 +102,14 @@ class FakeCP:
                 n = int(self.headers.get("content-length", 0))
                 raw = self.rfile.read(n)
                 ctx = CONTEXTS.get(self.path)
+                if cp.server_014 and self.path == "/v1/host/upgrade-auth":
+                    b = b"Not Found"
+                    self.send_response(404)
+                    self.send_header("content-type", "text/plain")
+                    self.send_header("content-length", str(len(b)))
+                    self.end_headers()
+                    self.wfile.write(b)
+                    return
                 if not ctx:
                     return self._send(404, {"error": "not_found"})
                 inner, err = cp.verify(ctx, raw, self.headers.get("content-type", ""))
@@ -133,7 +158,7 @@ class FakeCP:
             return None, (401, {"error": "stale"})
         t = inner.get("t")
         extra = set(inner) - KEYS.get(t, set())
-        if (inner.get("v") != 1 or t not in KEYS or not KEYS[t] <= set(inner) or not extra <= OPTIONAL.get(t, set())
+        if (inner.get("v") != 1 or t not in KEYS or not KEYS[t] <= set(inner) or not extra <= (OPTIONAL_014 if self.server_014 else OPTIONAL).get(t, set())
                 or CONTEXTS[PATH_OF.get(t, f"/v1/host/{t}")] != ctx):
             return None, (400, {"error": "bad_request"})
         return inner, None
@@ -230,6 +255,24 @@ class FakeCP:
                 self.unbind = [u for u in self.unbind if u["id"] not in done]
                 name = {} if self.sync_name is None else {"agent_name": None if self.sync_name == "NULL" else self.sync_name}
                 return 200, {"unbind": list(self.unbind), **self.sync_extra, **name}
+            if path == "/v1/host/upgrade-auth":
+                self.upgrade_auths.append(inner)
+                step = self.upgrade_script.pop(0) if self.upgrade_script else None
+                if step == "rate":
+                    return 429, {"error": "rate_limited"}
+                if isinstance(step, int):
+                    return step, {"error": "internal"}
+                v = self.grants.get(inner["code"])
+                if v is None:
+                    return 404, {"error": "invalid_authorization"}
+                if inner["version"] != v:
+                    return 409, {"error": "version_mismatch", "version": v}
+                if inner["code"] in self.grant_expired:
+                    return 410, {"error": "expired"}
+                if (inner["channel"], inner["code"]) in self.spent:
+                    return 409, {"error": "already_used"}
+                self.spent.add((inner["channel"], inner["code"]))
+                return 200, {"ok": True, "version": v, "expires_at": int(time.time() * 1000) + 86_400_000}
             # report
             self.reports.append(inner)
             step = self.script.pop(0) if self.script else None
@@ -244,4 +287,10 @@ class FakeCP:
             if inner["seq"] <= self.last_seq:
                 return 409, {"error": "replay"}
             self.last_seq = inner["seq"]
-            return 200, {"ok": True, "approve": ["EVILEVILEVILEVIL"]}
+            out = {"ok": True, "approve": ["EVILEVILEVILEVIL"]}
+            if self.account_language is not None:     # A1: last write wins, ties keep the account value
+                if (inner.get("language") in ("zh", "en") and isinstance(inner.get("language_at"), int)
+                        and inner["language_at"] > self.account_language_at):
+                    self.account_language, self.account_language_at = inner["language"], inner["language_at"]
+                out.update(language=self.account_language, language_at=self.account_language_at)
+            return 200, out

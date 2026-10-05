@@ -331,7 +331,7 @@ class Hook(unittest.TestCase):
 class Argv(unittest.TestCase):
     def test_settings_add_one_hook_and_nothing_that_widens(self):
         a = agents.ClaudeAgent(None, {"kind": "claude", "dir": "/tmp", "model": None,
-                                      "danger_extra": [{"category": "send", "bash": "x"}]}).argv(None)
+                                      "high_risk_warnings": True, "danger_extra": [{"category": "send", "bash": "x"}]}).argv(None)
         st = json.loads(a[a.index("--settings") + 1])
         self.assertEqual(set(st), {"hooks", "disableAllHooks"})
         self.assertIs(st["disableAllHooks"], False)
@@ -379,6 +379,7 @@ class Argv(unittest.TestCase):
             sent, notices = [], []
             host = _host(st, sent)
             host.agent_notice = notices.append
+            host.agent_cfg["high_risk_warnings"] = True
 
             async def go():
                 ag = agents.make(host, host.agent_cfg)

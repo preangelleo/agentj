@@ -279,7 +279,8 @@ class CodexAgent(Agent):
         if argv is None:
             self.failed_start = True
             return False
-        self.proc = p = await asyncio.create_subprocess_exec(*argv, cwd=self.cfg["dir"], env=dict(os.environ),
+        from .proxy import environment
+        self.proc = p = await asyncio.create_subprocess_exec(*argv, cwd=self.cfg["dir"], env=environment(os.environ, self.host.preferences),
                                                              stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE,
                                                              stderr=asyncio.subprocess.PIPE, limit=LINE_LIMIT,
                                                              start_new_session=True)
@@ -310,14 +311,24 @@ class CodexAgent(Agent):
 
     def policy(self) -> dict:
         """What serve asks of a thread: only ever stricter than the human's own settings (Invariant 11)."""
-        p = {"approvalsReviewer": "user"}
-        if not isinstance(self.human.get("approval_policy"), dict):     # granular: theirs stays (ours could loosen it)
-            p["approvalPolicy"] = "untrusted"
+        # F14: inherit native approval policy/reviewer; do not impose untrusted.
+        p = {}
+        if self.cfg.get("high_risk_warnings", False):
+            p["approvalsReviewer"] = "user"
+            if not isinstance(self.human.get("approval_policy"), dict):
+                p["approvalPolicy"] = "untrusted"
         if self.research:
             p["sandbox"] = "read-only"
         if self.cfg.get("model"):
             p["model"] = self.cfg["model"]
         return p
+
+    async def reload_identity(self) -> None:
+        """A1: developerInstructions are sent on thread/start|resume: end the idle app-server; the next turn spawns it and
+        resumes the same thread with the new identity text."""
+        if self.persist:
+            await self._end_proc()
+            self.tid = None
 
     async def _thread(self) -> bool:
         """The conversation's thread loaded in this app-server (resume the stored one, else a new one)."""

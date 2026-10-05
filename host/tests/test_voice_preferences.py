@@ -33,7 +33,7 @@ class VoicePreferencesTest(unittest.TestCase):
             self.assertEqual(voice.cloud_asr(f,cfg)['text'],'hello')
             self.assertEqual(request.call_args.args[0],voice.ASR_URL);self.assertIn(b'qwen/qwen3-asr-1.7b',request.call_args.args[2])
     def test_cloud_tts_direct_provider_and_errors_redacted(self):
-        cfg=p.defaults();cfg['voice']['tts'].update(mode='cloud',voice='alloy',key_env='AJ_TEST_TTS_KEY')
+        cfg=p.defaults();cfg['voice']['tts'].update(mode='cloud',model='gpt-4o-mini-tts',voice='alloy',key_env='AJ_TEST_TTS_KEY')
         with patch.dict(os.environ,{'AJ_TEST_TTS_KEY':'test-only-sentinel'}),patch('agentj.voice._request',return_value=b'RIFF-test') as request:
             self.assertEqual(voice.synthesize('hello',cfg),b'RIFF-test');self.assertEqual(request.call_args.args[0],voice.TTS_URL)
         # Synthetic error marker verifies redaction; no real provider credential.

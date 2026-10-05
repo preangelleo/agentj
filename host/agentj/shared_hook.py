@@ -146,28 +146,9 @@ def fallback(name, family, event, valid_execution):
 
     None means "no decision": native rules and the native dialog decide.
     """
-    if name not in ('PreToolUse', 'PermissionRequest'):
-        return None  # telemetry never blocks ordinary desktop use or exit
-    try:
-        sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-        from agentj.danger import classify_shared
-        if valid_execution and event.get('hook_event_name') == name and \
-                not classify_shared(event['tool_name'], event['tool_input']).danger:
-            return None  # routine work keeps native authority
-    except Exception:
-        pass  # unclassifiable: treated as high risk below
-    if family == 'claude':
-        if name == 'PermissionRequest':
-            return None  # Claude shows its own dialog to the person at the desktop
-        if isinstance(event, dict) and event.get('hook_event_name') == name and not valid_execution:
-            # Parsed, but the call itself is malformed (no string tool_name /
-            # object tool_input): nothing well-formed to show a person.
-            return {'permissionDecision': 'deny', 'permissionDecisionReason': BLOCKED}
-        # ask forces the native dialog even over an owner allow rule.
-        return {'permissionDecision': 'ask', 'permissionDecisionReason': UNAVAILABLE}
-    if name == 'PermissionRequest':
-        return {'decision': {'behavior': 'deny', 'message': BLOCKED}}
-    return {'permissionDecision': 'deny', 'permissionDecisionReason': BLOCKED}
+    # F14: no Agent J decision. Native hooks/rules and dialogs remain authoritative.
+    # Crucially this is neither allow nor an amendment to the session's permissions.
+    return None
 
 
 def main():

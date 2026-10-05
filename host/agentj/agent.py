@@ -16,8 +16,8 @@ that answers "ask" for the five dangerous categories, so they reach the phone ca
 allow them; it never answers "allow" (only ever stricter). `disableAllHooks: false` in the same flag keeps a settings file the
 Agent writes later from switching it off; a human who disabled hooks in their own settings gets a notice instead of a start.
 
-L2 / L3: the agent runs inside the fence (fence.py: bubblewrap on Linux, sandbox-exec on macOS) unless the human chose `--unfenced`; if the fence cannot start, the agent is
-not started at all. Claude Code gets its first message only after our permission tool has claimed serve's socket.
+L2 / L3: the agent runs inside the fence (fence.py: bubblewrap on Linux, sandbox-exec on macOS) unless the owner chose `--unfenced`; if the fence cannot start, the agent
+runs unfenced with the harness's own permissions (F14) and the phone is told once. Claude Code gets its first message only after our permission tool has claimed serve's socket.
 """
 from __future__ import annotations
 
@@ -199,6 +199,11 @@ class Agent:
         if s is None:
             return await fn()
         async with s.lock:
+            if getattr(s, 'official_notice_id', None):
+                from . import notices
+                if not notices.active(self.host.st, s.official_notice_id):
+                    self.host.official_pending.pop(s.official_notice_id, None)
+                    raise Withdrawn()
             if s.state == "cancelled":
                 raise Withdrawn()
             if s.state == "delivered":          # a retry of the same message after the process died
@@ -245,6 +250,7 @@ class Agent:
                     if hasattr(self.host, "agent_turn_start"):
                         self.host.agent_turn_start(send.text, send)
                     try:
+                        await self._identity_refresh()
                         await self.turn(send.text)
                     except asyncio.CancelledError:
                         raise
@@ -289,6 +295,7 @@ class Agent:
                 if hasattr(self.host, "agent_turn_start"):
                     self.host.agent_turn_start(text)
                 try:
+                    await self._identity_refresh()
                     await self.turn(text)
                 except asyncio.CancelledError:
                     raise
@@ -338,7 +345,8 @@ class Agent:
         """The permission tool's connection to serve dropped (ClaudeAgent restarts; others have none)."""
 
     def launch_argv(self, argv: list[str]) -> list[str] | None:
-        """argv inside the fence (or as is when the human chose --unfenced); None + a notice when the fence cannot start."""
+        """argv inside the fence; as is when the owner chose --unfenced, or (F14) when the fence cannot start — degraded to
+        the harness's own permissions with one notice per serve. None only when the identity check fails."""
         if not self.cfg.get("_workflow_ceo"):
             try:
                 main_identity.verify_core()
@@ -351,10 +359,13 @@ class Agent:
             return argv
         why = fence.problem(self.host.st, self.cfg["dir"])
         if why:
-            self.host.st.log("agent_fence_fail", agent=self.kind, reason=why)
-            self.local_fail(f"{fence.REASONS.get(why, why)}。为了安全，Agent 没有启动。"
-                                   "在这台电脑的终端运行 `agentj agent " + self.kind + " --unfenced` 才能不隔离运行（不推荐）。")
-            return None
+            # F14: no fence → run with the harness's own permissions (what a shared session has), told once per serve
+            self.host.st.log("agent_fence_fail", agent=self.kind, reason=why, status="degraded")
+            if not getattr(self.host, "fence_degraded_told", False):
+                self.host.fence_degraded_told = True
+                self.host.agent_notice(f"沙箱不可用，按普通模式运行（{fence.REASONS.get(why, why)}）。"
+                                       "Sandbox unavailable: running in normal mode with the harness's own permissions.")
+            return argv
         return fence.wrap(self.host.st, argv, self.cfg["dir"], allow_docker=self.cfg.get("docker", False))
 
     async def turn(self, text: str) -> None:
@@ -379,6 +390,24 @@ class Agent:
 
     async def drop_conversation(self) -> None:
         """Forget the loaded conversation (the next turn opens the one agent.json names)."""
+
+    # ------------------------------------------------ A1 (P44): the injected main identity changed (the owner's language)
+    identity_stale = False
+
+    def identity_changed(self) -> None:
+        """serve: the text main_identity.prompt(self.cfg) yields changed. Applied before the next turn (hot, never mid-turn)."""
+        if not self.cfg.get("_workflow_ceo"):
+            self.identity_stale = True
+
+    async def _identity_refresh(self) -> None:
+        if self.identity_stale:
+            self.identity_stale = False
+            await self.reload_identity()
+            self.halting = False
+
+    async def reload_identity(self) -> None:
+        """Default: nothing (OpenCode sends `system` with every prompt; a shared session is the owner's own harness — we
+        inject nothing there and never restart it). ClaudeAgent / CodexAgent override this."""
 
     async def _end_proc(self) -> None:
         p = getattr(self, "proc", None)
@@ -534,6 +563,11 @@ class ClaudeAgent(Agent):
     """One long-lived `claude -p --input-format stream-json` process; restarted with --resume <session id> if it exits."""
     kind = "claude"
 
+    async def reload_identity(self) -> None:
+        """A1: --append-system-prompt is read at start: end the idle process; the next turn starts Claude Code again with
+        --resume (same conversation) and the new identity text."""
+        await self._end_proc()
+
     def __init__(self, host, cfg: dict):
         super().__init__(host, cfg)
         self.proc: asyncio.subprocess.Process | None = None
@@ -561,7 +595,7 @@ class ClaudeAgent(Agent):
         a = [_bin("AGENTJ_CLAUDE_BIN", "claude") or "claude", "-p", "--input-format", "stream-json",
              "--output-format", "stream-json", "--verbose", "--permission-prompt-tool", PERM_TOOL,
              "--disallowedTools", PERM_TOOL, "--mcp-config", json.dumps(mcp),
-             "--settings", json.dumps(hook_settings(self.cfg.get("danger_extra"), research), separators=(",", ":"))]
+             "--settings", json.dumps(hook_settings(self.cfg.get("danger_extra"), research) if research or self.cfg.get("high_risk_warnings", False) else {}, separators=(",", ":"))]
         if not self.cfg.get("_workflow_ceo"):
             a += ["--append-system-prompt", main_identity.prompt(self.cfg)]
         if self.cfg.get("model"):
@@ -578,7 +612,7 @@ class ClaudeAgent(Agent):
             self.failed_start = True
             self.fail_notice("这台电脑上没找到 Claude Code（claude 命令）。装好并登录后再试。")
             return False
-        why = hooks_blocked(self.cfg["dir"])
+        why = hooks_blocked(self.cfg["dir"]) if self.cfg.get("high_risk_warnings", False) or self.cfg.get("_research") else None
         if why:
             self.failed_start = True
             self.host.st.log("agent_hooks_off", agent=self.kind)
@@ -589,7 +623,8 @@ class ClaudeAgent(Agent):
         if argv is None:
             self.failed_start = True
             return False
-        env = dict(os.environ)
+        from .proxy import environment
+        env = environment(os.environ, self.host.preferences)
         env.update(self.host.new_perm_env())
         src = source_root()
         if src:   # a source checkout (launcher + PYTHONPATH): the tool must import this same package

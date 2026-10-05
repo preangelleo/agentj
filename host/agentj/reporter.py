@@ -1,7 +1,7 @@
 """Report scheduler for `agentj serve` (PROTOCOL.md §7). Best effort and never blocking:
 
 - triggers (start, approve, revoke, pairing pending/end, device online/gone) are coalesced by a 2 s debounce;
-- a heartbeat every 300 s;
+- a heartbeat every 60 s (45 s for 10 minutes after an urgent notice);
 - the blocking HTTPS call runs on a daemon thread with a hard timeout, at most one in flight;
 - ≤ RATE_PER_HOUR reports per sliding hour (Dashboard allows 120; the rest is headroom for `agentj report`);
 - 403 not_bound → `report_unbound` once, then silent for that binding until restart (cloud.json is kept).
@@ -30,8 +30,8 @@ def _ttl(env: str, default: float) -> float:
 
 
 DEBOUNCE = _ttl("AGENTJ_TEST_REPORT_DEBOUNCE", 2)
-HEARTBEAT = _ttl("AGENTJ_TEST_HEARTBEAT", 300)
-HARD_TIMEOUT = 2 * cloud.HTTP_TIMEOUT + 5   # a 409 retry may make two requests
+HEARTBEAT = _ttl("AGENTJ_TEST_HEARTBEAT", 60)
+HARD_TIMEOUT = 4 * cloud.HTTP_TIMEOUT + 5   # F19 + language fallback + a replay retry may make four requests
 RATE_PER_HOUR = 100
 
 
@@ -58,8 +58,12 @@ def in_daemon_thread(fn: Callable, *args) -> asyncio.Future:
 
 class Reporter:
     def __init__(self, st, view: Callable[[], tuple], *, send: Callable = cloud.send_report, debounce: float | None = None,
-                 heartbeat: float | None = None, hard_timeout: float = HARD_TIMEOUT, rate_per_hour: int = RATE_PER_HOUR):
+                 heartbeat: float | None = None, hard_timeout: float = HARD_TIMEOUT, rate_per_hour: int = RATE_PER_HOUR,
+                 on_account: Callable[[dict], None] | None = None, on_notices: Callable[[list], None] | None = None):
         self.st, self.view, self.send = st, view, send
+        self.on_notices = on_notices
+        self.urgent_until = 0.0
+        self.on_account = on_account     # A1: the 200's account language (serve applies a newer one, last write wins)
         self.debounce = DEBOUNCE if debounce is None else debounce
         self.heartbeat = HEARTBEAT if heartbeat is None else heartbeat
         self.hard_timeout, self.rate_per_hour = hard_timeout, rate_per_hour
@@ -79,7 +83,8 @@ class Reporter:
     async def run(self) -> None:
         self.trigger("start")
         while True:
-            wait = self.heartbeat if self.last_attempt is None else max(0.0, self.last_attempt + self.heartbeat - time.monotonic())
+            interval = min(self.heartbeat, 45) if time.monotonic() < self.urgent_until else self.heartbeat
+            wait = interval if self.last_attempt is None else max(0.0, self.last_attempt + interval - time.monotonic())
             try:
                 await asyncio.wait_for(self.wake.wait(), wait)
             except TimeoutError:
@@ -124,6 +129,17 @@ class Reporter:
                 res = cloud.ReportResult("fail", "error")
             if res.kind == "ok":
                 self.st.log("report_ok", seq=res.seq, trigger=why)
+                items = getattr(res, "notices", None)
+                if items is not None and self.on_notices:
+                    if any(n['priority'] == 'urgent' for n in items): self.urgent_until = time.monotonic() + 600
+                    try: self.on_notices(items)
+                    except Exception: self.st.log("notice_delivery_failed")
+                acct = getattr(res, "account", None)
+                if acct and self.on_account:
+                    try:
+                        self.on_account(acct)
+                    except Exception:  # noqa: BLE001 — a sync bug must never stop reporting
+                        self.st.log("language_sync_failed")
             elif res.kind == "unbound":
                 self.unbound_host = link["host_id"]
                 self.st.log("report_unbound", trigger=why)

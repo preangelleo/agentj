@@ -307,11 +307,64 @@ def unit_text(n: str, argv: list[str], env: dict, environ: dict | None = None) -
     return "\n".join(lines)
 
 
+_SD = ("org.freedesktop.systemd1", "/org/freedesktop/systemd1", "org.freedesktop.systemd1.Manager")
+
+
+def _unit_path(unit: str) -> str:
+    """D-Bus object path of a unit (systemd's bus_label_escape: every byte outside [A-Za-z0-9] → _xx)."""
+    return "/org/freedesktop/systemd1/unit/" + "".join(c if c.isascii() and c.isalnum() else "_%02x" % ord(c) for c in unit)
+
+
+def _bus_systemctl(args: tuple, timeout: int) -> subprocess.CompletedProcess | None:
+    """F14: the same `systemctl --user` verbs over the user's session bus (busctl). Inside the Agent's fence (a private PID
+    namespace) systemctl refuses the manager's private socket — its peer has no PID there (ENODATA) — while the bus
+    broker relays fine. Only the verbs this module uses; None = not one of them, or no busctl."""
+    exe = shutil.which("busctl")
+    if not exe or not args:
+        return None
+    verb, rest = args[0], [a for a in args[1:] if not a.startswith("--")]
+    unit = rest[0] if rest else ""
+
+    def call(method, sig="", *vals):
+        return subprocess.run([exe, "--user", "call", *_SD, method, *([sig, *map(str, vals)] if sig else [])],
+                              capture_output=True, text=True, timeout=timeout)
+
+    def prop(path, iface, name):
+        r = subprocess.run([exe, "--user", "get-property", _SD[0], path, iface, name], capture_output=True, text=True, timeout=timeout)
+        val = r.stdout.strip().split(" ", 1)[-1].strip('"') if r.returncode == 0 else ""
+        return subprocess.CompletedProcess(r.args, r.returncode, val + "\n" if val else "", r.stderr)
+    if verb == "show-environment":
+        return prop(_SD[1], _SD[2], "Environment")
+    if verb == "daemon-reload":
+        return call("Reload")
+    if verb == "enable" and unit:
+        return call("EnableUnitFiles", "asbb", 1, unit, "false", "true")
+    if verb == "restart" and unit:
+        return call("RestartUnit", "ss", unit, "replace")
+    if verb == "reset-failed" and unit:
+        return call("ResetFailedUnit", "s", unit)
+    if verb == "disable" and unit:
+        r = call("DisableUnitFiles", "asb", 1, unit, "false")
+        if "--now" in args:
+            call("StopUnit", "ss", unit, "replace")
+        return r
+    if verb in ("is-enabled", "cat") and unit:
+        r = call("GetUnitFileState", "s", unit)
+        val = r.stdout.strip().split(" ", 1)[-1].strip('"') if r.returncode == 0 else ""
+        return subprocess.CompletedProcess(r.args, 0 if val == "enabled" or (verb == "cat" and val) else 1, val + "\n", r.stderr)
+    if verb == "is-active" and unit:
+        r = prop(_unit_path(unit), "org.freedesktop.systemd1.Unit", "ActiveState")
+        return subprocess.CompletedProcess(r.args, 0 if r.stdout.strip() == "active" else 3, r.stdout or "unknown\n", r.stderr)
+    return None
+
+
 def _systemctl(*args: str, check: bool = False, timeout: int = 30) -> subprocess.CompletedProcess:
     exe = shutil.which("systemctl")
     if not exe:
         raise ServiceError("no_systemctl")
     r = subprocess.run([exe, "--user", *args], capture_output=True, text=True, timeout=timeout)
+    if r.returncode != 0 and "via local transport" in (r.stderr or ""):   # F14: inside the Agent's fence → the bus
+        r = _bus_systemctl(args, timeout) or r
     if check and r.returncode != 0:
         raise ServiceError("systemctl_failed", f"systemctl --user {' '.join(args)}: {(r.stderr or r.stdout).strip()[:300]}")
     return r

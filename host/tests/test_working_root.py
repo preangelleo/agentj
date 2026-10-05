@@ -108,7 +108,7 @@ class WorkingRoot(unittest.TestCase):
         self.st.set_agent_config('claude', str(root))
         def rows(): return {x['id']:x for x in doctor.check_main_identity(self.st)}
         self.assertEqual(rows()['main-core']['status'], 'ok')
-        self.assertIn('core v2:', rows()['main-core']['summary'])
+        self.assertIn('core v3:', rows()['main-core']['summary'])
         self.assertEqual(rows()['main-inject']['status'], 'warn')
         cfg = self.st.agent_config(); main_identity.audit(cfg, 'claude', self.st, 'fake-session')
         self.assertEqual(rows()['main-inject']['status'], 'ok')
@@ -167,8 +167,10 @@ class WorkingRoot(unittest.TestCase):
                 raw = preferences.edit(preferences.read()[0], key, value)
                 result = await host.apply_preferences(raw)
                 self.assertTrue(result['ok'])
-                self.assertFalse(result['applied'])
-                self.assertEqual(result['needs'], ['restart serve'])
+                # A1 (0.15): the language is hot for the next turn (the identity line is re-injected), no serve restart
+                hot = key == 'appearance.language'
+                self.assertEqual(result['applied'], hot)
+                self.assertEqual(result['needs'], [] if hot else ['restart serve'])
                 self.assertEqual(preferences.get(preferences.effective(self.st), key), value)
         asyncio.run(check())
 

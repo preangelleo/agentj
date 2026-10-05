@@ -1,8 +1,7 @@
 """Host ↔ control plane (PROTOCOL.md §7): signed envelopes.
 
 The host *pushes* metadata. Answers are parsed through explicit whitelists (login / poll status fields, an `error`
-code, `ok`, and — A3.1 sync — a list of unbind requests {id, device}), and nothing from any answer is ever written anywhere
-but cloud.json — and only after the human at this terminal confirmed the tenant (`agentj login`). This module must never
+code, `ok`, F19 pinned-signature official data in notices.json, and — A3.1 sync — a list of unbind requests {id, device}), and binding answers are written only to cloud.json — and only after the human at this terminal confirmed the tenant (`agentj login`). This module must never
 touch the allowlist (devices.json) — enforced by tests/test_cloud.py (AST check): unbind requests are only *returned* to
 `serve`, which checks them against its own allowlist, switch and hourly limit before revoking anything. A3.2: the Agent
 name in poll / sync / rename answers is whitelisted through text.agent_name_problem (§1) and only *returned*; the caller
@@ -42,6 +41,7 @@ CTX_RENAME = "agentjarvis-host-rename-v1"
 CTX_DECLINE = "agentjarvis-host-decline-v1"   # L2 / G-A11: the human at the host said no to the tenant it was bound to
 CTX_SEAT_BIND = "agentjarvis-host-seat-bind-v1"   # seat setup §4: bind this host to one seat with a setup code
 CTX_SEAT_LEAVE = "agentjarvis-host-seat-leave-v1"   # review SS-02: take this seat-bound host out of its company
+CTX_UPGRADE_AUTH = "agentjarvis-host-upgrade-auth-v1"   # F12 / contract C2: spend an upgrade authorization code (update.py)
 # Agent plaza P2 (PROTOCOL §7 plaza routes; agentj/plaza.py): one context per route, so no signature is valid on two
 PLAZA_KINDS = ("search", "get", "mine", "post", "reply", "resolve", "report")
 CTX_PLAZA = {k: f"agentjarvis-host-plaza-{k}-v1" for k in PLAZA_KINDS}   # wire strings: never renamed
@@ -81,6 +81,8 @@ class ReportResult(NamedTuple):
     kind: str            # ok | unbound | fail | unlinked
     status: str = ""     # "200" | "http_4xx" | "http_5xx" | "timeout" | "network" | "bad_response" | ...
     seq: int | None = None
+    account: dict | None = None   # A1: account language
+    notices: list | None = None   # verified official data, saved privately before callback
 
 
 # ------------------------------------------------------------------ envelope
@@ -274,7 +276,18 @@ def read_cloud(st) -> dict | None:
             "tenant": {"slug": slug, "name": clean_line(str(ten.get("name", "")), 64) or slug},
             "linked_at": _int(d.get("linked_at"), 0, MAX_SEQ) or 0, "last_seq": _int(d.get("last_seq"), 0, MAX_SEQ) or 0,
             # files written before the seat path existed (≤ 0.6) were all made by the code path
-            "via": "seat" if d.get("via") == "seat" else "code"}
+            "via": "seat" if d.get("via") == "seat" else "code",
+            "no_language": _parse_no_language(d.get("no_language"))}
+
+
+def _parse_no_language(v) -> dict | None:
+    """A1 back-compat marker: {"at": ms, "agent": AGENT, "api": url} = that server refused the report's language keys."""
+    if not isinstance(v, dict):
+        return None
+    at, agent, api = _int(v.get("at"), 0, MAX_SEQ), v.get("agent"), v.get("api")
+    if at is None or not isinstance(agent, str) or len(agent) > 64 or not isinstance(api, str) or not _PRINTABLE_URL.fullmatch(api):
+        return None
+    return {"at": at, "agent": agent, "api": api, **({"notices_only": True} if v.get("notices_only") is True else {})}
 
 
 @contextlib.contextmanager
@@ -293,6 +306,9 @@ def _write_cloud_file(st, d: dict) -> None:
     rec = {"api": d["api"], "host_id": d["host_id"], "tenant": {"slug": d["tenant"]["slug"], "name": d["tenant"]["name"]},
            "linked_at": int(d["linked_at"]), "last_seq": int(d["last_seq"]),
            "via": "seat" if d.get("via") == "seat" else "code"}
+    nl = _parse_no_language(d.get("no_language"))
+    if nl:
+        rec["no_language"] = nl
     st.write_private(st.cloud_path, json.dumps(rec, indent=1, ensure_ascii=False).encode())
 
 
@@ -351,10 +367,25 @@ def report_devices(st, online) -> list[dict]:
 
 
 def build_report(st, online, pending, *, seq: int, ts: int) -> dict:
-    """Inner report body, key order as in §7 / the vector; A3.2 appends agent_name (§1 or null) and machine (≤ 64 or null)."""
+    """Inner report body, key order as in §7 / the vector; A3.2 appends agent_name (§1 or null) and machine (≤ 64 or null);
+    A1 (0.15) appends the owner's one language value and when it was last set on this host (ms; 0 = never set here)."""
+    from . import preferences, notices
+    lang, at = preferences.language_state(st)
     return {"v": 1, "t": "report", "channel": channel_of(st), "ts": int(ts), "seq": int(seq), "agent": AGENT,
             "devices": report_devices(st, online), "pending": norm_pending(pending), "agent_name": _clean_or_none(st.agent_name()),
-            "machine": machine_name() if st.report_machine() else None}
+            "machine": machine_name() if st.report_machine() else None, "language": lang, "language_at": int(at), "harness": (st.agent_config() or {}).get("kind", "unknown"),
+            "notices_v": 1, "notice_receipts": notices.receipts(st)}
+
+
+def parse_account_language(obj) -> dict | None:
+    """A1: the 200 report answer's {"language", "language_at"} (the account's value after the merge), else None. Only
+    'zh' / 'en' and a non-negative integer ms are accepted; anything else is ignored (an older server sends neither)."""
+    if not isinstance(obj, dict):
+        return None
+    lang, at = obj.get("language"), obj.get("language_at")
+    if lang in ("zh", "en") and type(at) is int and 0 <= at <= MAX_SEQ:
+        return {"language": lang, "language_at": at}
+    return None
 
 
 def _clean_or_none(name):
@@ -371,35 +402,104 @@ def _report_envelope(st, inner: dict) -> dict:
     return env
 
 
-def send_report(st, online, pending, *, post: Callable = post_json, now: Callable = time.time) -> ReportResult:
-    """One signed report (blocking; serve runs it off the event loop). A 409 replay is retried once with a bigger seq."""
+LANGUAGE_KEYS = ("language", "language_at")
+NOTICE_KEYS = ("harness", "notices_v", "notice_receipts")
+NO_LANGUAGE_REPROBE_MS = 24 * 3600 * 1000   # a server that refused the language keys is asked again after a day
+
+
+def _skip_language(cloud: dict, api: str, now_ms: int) -> bool:
+    """A1 back-compat: this server (same api, same agentj version) refused the language keys less than a day ago."""
+    nl = cloud.get("no_language")
+    return bool(nl and not nl.get("notices_only") and nl["agent"] == AGENT and nl["api"] == api and 0 <= now_ms - nl["at"] < NO_LANGUAGE_REPROBE_MS)
+
+
+def _skip_notices(cloud: dict, api: str, now_ms: int) -> bool:
+    nl = cloud.get('no_language')
+    return bool(nl and nl['agent'] == AGENT and nl['api'] == api and 0 <= now_ms - nl['at'] < NO_LANGUAGE_REPROBE_MS)
+
+
+def _store_no_language(st, host_id: str, mark: dict | None) -> None:
+    """Record (or clear, mark=None) the "server has no language sync" marker — under the lock, re-reading first (as _store_seq)."""
+    with cloud_lock(st):
+        cur = read_cloud(st)
+        if cur and cur["host_id"] == host_id and cur.get("no_language") != mark:
+            cur["no_language"] = mark
+            _write_cloud_file(st, cur)
+
+
+def report_post_json(url, payload):
+    return post_json(url, payload, max_response=128 * 1024)
+
+
+def send_report(st, online, pending, *, post: Callable = report_post_json, now: Callable = time.time) -> ReportResult:
+    """One signed report (blocking; serve runs it off the event loop). A 409 replay is retried once with a bigger seq.
+    F19 back-compat first retries without notice capability/receipts/harness, preserving F13 language.
+    A1 back-compat: a ≤ 0.14 server refuses unknown inner keys with 400 bad_request (before its seq gate, so the seq is not
+    spent there); a report carrying `language` / `language_at` that gets that answer is retried once at once without them
+    (fresh, bigger seq). If that one is accepted, cloud.json remembers it (`no_language`) and later reports leave the keys out
+    until the marker is a day old, agentj's version changes or the API URL changes (a relink writes a fresh file)."""
     cloud = read_cloud(st)
     if not cloud:
         return ReportResult("unlinked")
     try:
-        url = api_url(st, cloud) + "/v1/host/report"
+        base = api_url(st, cloud)
+        url = base + "/v1/host/report"
     except CloudError as e:
         return ReportResult("fail", e.kind)
     last = cloud["last_seq"]
-    for attempt in (0, 1):
+    strip = _skip_language(cloud, base, int(now() * 1000))
+    strip_notices = _skip_notices(cloud, base, int(now()*1000))
+    replay_retry = probe_retry = False
+    notice_retry = False
+    seq = None
+    while True:
         t = now()
         seq = next_seq(last, t)
-        env = _report_envelope(st, build_report(st, online, pending, seq=seq, ts=int(t)))
+        inner = build_report(st, online, pending, seq=seq, ts=int(t))
+        if strip_notices:
+            for k in NOTICE_KEYS:
+                inner.pop(k, None)
+        if strip:
+            for k in LANGUAGE_KEYS:
+                inner.pop(k, None)
+        env = _report_envelope(st, inner)
         _store_seq(st, cloud["host_id"], seq)
         try:
             status, obj = post(url, env)
         except CloudError as e:
             return ReportResult("fail", e.kind, seq)
         if status == 200 and obj.get("ok") is True:
-            return ReportResult("ok", "200", seq)
+            if notice_retry and not probe_retry:
+                _store_no_language(st, cloud["host_id"], {"at": int(t * 1000), "agent": AGENT, "api": base, "notices_only": True})
+                st.log("report_notices", result="server_without_notices")
+            elif probe_retry:     # accepted only without the keys: an older server
+                _store_no_language(st, cloud["host_id"], {"at": int(t * 1000), "agent": AGENT, "api": base})
+                st.log("report_language", result="server_without_language_sync")
+            elif not strip_notices and cloud.get("no_language"):
+                _store_no_language(st, cloud["host_id"], None)   # the re-probe went through: the server syncs now
+            data = None
+            from . import notices
+            snap = notices.snapshot(obj.get("notices"), cloud["host_id"], seq, int(t*1000))
+            if snap is not None:
+                data = notices.ingest(st, snap, cloud["host_id"], int(t*1000))
+                notices.acknowledge(st, inner.get("notice_receipts", []))
+            return ReportResult("ok", "200", seq, None if strip else parse_account_language(obj), data)
         err = parse_error(obj)
-        if status == 409 and err == "replay" and attempt == 0:
+        if status == 409 and err == "replay" and not replay_retry:
+            replay_retry = True
             last = seq  # self-heal: next try uses max(last_seq + 1, now_ms)
+            continue
+        if status == 400 and err == "bad_request" and not strip_notices:
+            strip_notices = notice_retry = True
+            last = seq
+            continue
+        if status == 400 and err == "bad_request" and not strip:
+            strip = probe_retry = True
+            last = seq  # fresh seq for the retry (the refused one never reached the server's seq gate, but never reuse it)
             continue
         if status == 403 and err == "not_bound":
             return ReportResult("unbound", status_class(status), seq)
         return ReportResult("fail", status_class(status) if status != 200 else "bad_response", seq)
-    return ReportResult("fail", "http_4xx", seq)
 
 
 # ------------------------------------------------------------------ login (RFC 8628 shape)
@@ -551,6 +651,61 @@ def decline(st, base: str, login_id: str, *, post: Callable = post_json, now: Ca
            else "not_found" if status == 404 else "fail")
     st.log("cloud_decline", result=res, status=status_class(status))
     return res
+
+
+# ------------------------------------------------------------------ upgrade authorization (F12, contract C2)
+UPGRADE_AUTH_ERRORS = ("invalid_authorization", "version_mismatch", "expired", "already_used")
+
+
+def upgrade_auth(st, code: str, version: str, *, post: Callable = post_json, now: Callable = time.time) -> dict:
+    """Signed `POST /v1/host/upgrade-auth` (PROTOCOL §7, F12): spend the owner's upgrade authorization code (from the
+    upgrade email) for exactly `version`. The caller has already checked the code's shape and that `version` is the newest
+    published release. Returns {"status": "ok" | "unlinked" | "invalid_authorization" | "version_mismatch" | "expired" |
+    "already_used" | "not_bound" | "rate_limited" | "unsupported" (bare 404: the server predates upgrade-auth) | "unreachable" |
+    "fail", "http": …} (+ "version": the grant's version on a mismatch,
+    "expires_at" on ok). Never raises. The code is never logged, printed or stored; nothing in the answer is acted on but
+    its status — the answer cannot pick what gets installed (the caller pins `version`)."""
+    cloud = read_cloud(st)
+    if not cloud:
+        return {"status": "unlinked", "http": ""}
+    try:
+        url = api_url(st, cloud) + "/v1/host/upgrade-auth"
+    except CloudError as e:
+        return {"status": "fail", "http": e.kind}
+    inner = {"v": 1, "t": "upgrade_auth", "channel": channel_of(st), "ts": int(now()), "code": code, "version": version}
+    try:
+        status, obj = post(url, envelope(CTX_UPGRADE_AUTH, inner, st.signing_key()))
+    except CloudError as e:
+        st.log("upgrade_auth", result="unreachable", status=e.kind)
+        return {"status": "unreachable", "http": e.kind}
+    err = parse_error(obj)
+    out: dict = {"http": status_class(status)}
+    if status == 200 and obj.get("ok") is True and obj.get("version") == version:
+        out["status"] = "ok"
+        exp = _int(obj.get("expires_at"), 0, MAX_SEQ)
+        if exp is not None:
+            out["expires_at"] = exp
+    elif status in (404, 409, 410) and err in UPGRADE_AUTH_ERRORS:
+        out["status"] = err
+        v = obj.get("version")
+        if err == "version_mismatch" and isinstance(v, str) and _PRINTABLE_URL.fullmatch(v) and len(v) <= 32:
+            out["version"] = v
+    elif status == 404 and err is None:
+        out["status"] = "unsupported"      # a bare 404 (no JSON error): a ≤ 0.14 server has no upgrade-auth route yet
+    elif status == 404:
+        out["status"] = "invalid_authorization"
+    elif status == 403 and err == "not_bound":
+        out["status"] = "not_bound"
+    elif status == 410:
+        out["status"] = "expired"
+    elif status == 429:
+        out["status"] = "rate_limited"
+    elif status >= 500:
+        out["status"] = "unreachable"
+    else:
+        out["status"] = "fail"
+    st.log("upgrade_auth", result=out["status"], status=out["http"])
+    return out
 
 
 # ------------------------------------------------------------------ sync (A3.1: the owner's unbind requests)

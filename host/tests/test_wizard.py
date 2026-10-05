@@ -709,17 +709,18 @@ class DryRun(Base):
         self.assertIn("STATE_HIDDEN", r["output"])
         self.assertTrue((self.root / r["report"]).is_file())
 
-    def test_refuses_without_init_and_without_fence(self):
+    def test_refuses_without_init_degrades_without_fence(self):
         bare = State(pathlib.Path(self.tmp) / "nostate")
         os.environ.update(self.env)
         try:
             with self.assertRaises(wizard.WizardError):
                 wizard.dry_run(bare, self.root, "daily-report")
             from unittest import mock
-            with mock.patch.object(fence, "problem", return_value="no_bwrap"):
-                with self.assertRaises(wizard.WizardError) as cm:
-                    wizard.dry_run(self.st, self.root, "daily-report")
-            self.assertIn("fence", str(cm.exception))
+            with mock.patch.object(fence, "problem", return_value="no_bwrap"):   # F14: degraded, said in the result
+                r = self.run_dry()
+            self.assertFalse(r["fenced"])
+            self.assertEqual(r["fence_unavailable"], "no_bwrap")
+            os.environ.update(self.env)
             with self.assertRaises(wizard.WizardError):
                 wizard.dry_run(self.st, self.root, "listing")            # not installed
         finally:

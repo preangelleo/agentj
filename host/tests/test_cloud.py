@@ -62,7 +62,7 @@ class Envelope(unittest.TestCase):
 
     def test_contexts_distinct_from_relay(self):
         self.assertEqual(len({cloud.CTX_LOGIN, cloud.CTX_POLL, cloud.CTX_REPORT, "agentjarvis-relay-auth-v1"}), 4)
-        self.assertEqual(cloud.AGENT, "agentj/0.14.0a1")
+        self.assertEqual(cloud.AGENT, "agentj/0.15.0a1")
 
 
 class Report(unittest.TestCase):
@@ -85,7 +85,9 @@ class Report(unittest.TestCase):
         inner = cloud.build_report(self.st, {ids[-1], "not-a-device"}, {"count": 1, "since": 1789999990.7, "x": 1},
                                    seq=5, ts=1790000000)
         self.assertEqual(list(inner), ["v", "t", "channel", "ts", "seq", "agent", "devices", "pending",
-                                      "agent_name", "machine"])
+                                      "agent_name", "machine", "language", "language_at", "harness", "notices_v", "notice_receipts"])   # A1 (0.15) appends the language
+        self.assertIn(inner["language"], ("zh", "en"))
+        self.assertIs(type(inner["language_at"]), int)
         self.assertEqual(inner["channel"], self.st.config()["channel"])
         self.assertLessEqual(len(inner["devices"]), 64)
         self.assertEqual(len(inner["devices"]), 64)

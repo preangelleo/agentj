@@ -1,38 +1,33 @@
-"""The agent fence (L2 / G-A8, G-A24): `agentj serve` starts the customer's agent (Claude Code / Codex) inside a
-bubblewrap mount + PID namespace where agentj itself is out of reach. Same OS user, same login, same settings (Invariant 11);
-what changes is only what the agent's process tree can *see*:
+"""The agent fence (L2 / G-A8, G-A24; F14 0.15): `agentj serve` starts the customer's agent (Claude Code / Codex) inside a
+bubblewrap mount + PID namespace that hides Agent J's *data* — and only that. Same OS user, same login, same settings
+(Invariant 11). F14: Agent J adds no lock of its own; what the fence keeps is the data-safety floor:
 
 - this host's state directory is an empty tmpfs — keys, allowlist, control socket, passphrase hash, approvals.log, cloud
-  link are invisible; only `agentperm/` (the permission tool's socket) is bound back in;
-- agentj's own code (the package, its venv, the launcher) is read-only, so nothing can be planted for the next start;
-- a private PID namespace and /proc: agentj's processes (and /proc/<pid>/root, which would lead around the tmpfs) do not exist;
-- a private /tmp and $XDG_RUNTIME_DIR (and /run/user/<uid>): tmux / X11 / Wayland / compositor / D-Bus / systemd-user
-  sockets — the usual ways to make an *unfenced* process run something — are gone; their environment variables are unset;
-- control sockets that live elsewhere (G-A56, found after L3: herdr keeps its socket in ~/.config/herdr): herdr, GNU screen,
-  wezterm, emacs / Jupyter folders are an empty tmpfs; every listening socket this user owns at start (tmux -S, nvim, ssh-agent,
-  …), systemd's local sshd socket and — unless the human chose `--allow-docker` — the docker / podman / containerd / lxd /
-  libvirt sockets (docker group = root: it could mount agentj's state) are a read-only /dev/null; HERDR_* / ZELLIJ* /
-  WEZTERM_* / KITTY_* / NVIM* / VS Code IPC / DOCKER_HOST variables are unset;
-- shell start-up files, ~/.ssh/authorized_keys and user autostart / systemd units are read-only (no planting for later);
-- bubblewrap sets no_new_privs: setuid helpers (crontab, at, sudo, pkexec) gain nothing.
+  link, paired devices are invisible; only `agentperm/` (the permission tool's socket) is bound back in; the preferences
+  folder and an older state directory likewise;
+- credentials of other programs: ssh-agent / keyring sockets (the runtime dir stays private apart from what is bound back),
+  SSH_AUTH_SOCK / XAUTHORITY are unset, ~/.ssh/authorized_keys and ~/.Xauthority are read-only;
+- other sessions' control sockets (G-A56: herdr, GNU screen, wezterm, emacs / Jupyter folders, tmux, every listening socket
+  this user owns at start) and — unless the owner allowed it — the docker / podman / containerd / lxd / libvirt sockets;
+- a private PID namespace and /proc: agentj's processes (and /proc/<pid>/root, which would lead around the tmpfs) do not exist.
 
-What it does not stop on Linux (disclosed, ARCHITECTURE G-A29 / G-A56): the network namespace is shared (the agent needs the internet), so a
-local service that accepts the user's own credentials — sshd with the user's key, an X11 server or a session bus listening
-on an abstract socket, a TCP debug / API port (Chrome's CDP, a Jupyter kernel, a docker TCP API) — can still lead out, and a
-control socket created after the Agent started in a folder not listed here is not hidden. A separate OS user for the agent closes that (L3 hardened mode). The approval passphrase
-(gate.py) still stands in front of every device approval.
+What the Agent may do in its own independent session (F14): change the owner's general configuration (shell start-up files,
+autostart, ~/.config/systemd, environment.d, compositor configs), write Agent J's own code and venv, and manage its own
+services — the user's systemd manager (`$XDG_RUNTIME_DIR/systemd/private`) and session bus (`$XDG_RUNTIME_DIR/bus`) are
+bound back into the private runtime dir (plain `systemctl --user` still refuses the private socket from inside the PID
+namespace — its peer has no PID there — so `agentj service …` falls back to the bus, service.py; `busctl --user` works for
+any unit). Consequence, disclosed: a process started through the user's service manager runs
+outside the fence, so on Linux the fence is a data-visibility layer, not a boundary against a determined Agent; the
+approval signatures (approvals / permtool) and pairing (gate.py) are checked by serve, outside the Agent's reach.
 
 Linux = bubblewrap ≥ 0.4 + unprivileged user namespaces (L2). macOS = `sandbox-exec` with an SBPL profile generated per
 start (L3, `sbpl_profile`): the same rules expressed as a deny-list on top of `(allow default)` — the state directory is
-unreadable and unconnectable except `agentperm/`, agentj's code / shell start-up files / LaunchAgents / authorized_keys are
-read-only (also when they do not exist yet), signals and process information only within the Agent's own sandbox, no launchd
-jobs (`launchctl submit`), no Apple Events, no LaunchServices (`open -a Terminal x.command`), no tmux / ssh-agent sockets,
-no herdr / screen / zellij / wezterm / emacs / nvim / Jupyter / VS Code / kitty sockets and (unless `--allow-docker`) no
-Docker Desktop / colima / OrbStack / podman machine sockets;
-setuid programs (sudo, crontab, at) do not run inside any sandbox. macOS has no PID or mount namespace: the Agent still sees
-the process list's *argv* via sysctl (not environments: the kernel withholds those), shares /tmp and $TMPDIR, and shares the
-network (as on Linux). Elsewhere, or when the fence cannot start, the agent is not started unless the human chose
-`agentj agent … --unfenced` at the terminal.
+unreadable and unconnectable except `agentperm/`, authorized_keys is read-only, signals and process information only within
+the Agent's own sandbox, no Apple Events, no LaunchServices, no tmux / ssh-agent sockets, no herdr / screen / zellij / wezterm
+/ emacs / nvim / Jupyter / VS Code / kitty sockets and (unless allowed) no container engine sockets; launchd jobs and
+~/Library/LaunchAgents are the Agent's own to manage (F14). macOS has no PID or mount namespace: the Agent still sees the
+process list's *argv* via sysctl, shares /tmp and $TMPDIR, and shares the network (as on Linux). Elsewhere, or when the
+fence cannot start, the agent runs unfenced with the harness's own permissions (F14: degraded, one notice on the phone).
 """
 from __future__ import annotations
 
@@ -42,7 +37,7 @@ import stat
 import subprocess
 import sys
 
-_HIDE_ENV = ("DBUS_SESSION_BUS_ADDRESS", "WAYLAND_DISPLAY", "DISPLAY", "XAUTHORITY", "HYPRLAND_INSTANCE_SIGNATURE",
+_HIDE_ENV = ("WAYLAND_DISPLAY", "DISPLAY", "XAUTHORITY", "HYPRLAND_INSTANCE_SIGNATURE",
              "SWAYSOCK", "I3SOCK", "TMUX", "TMUX_PANE", "STY", "SSH_AUTH_SOCK", "GNOME_KEYRING_CONTROL", "KITTY_LISTEN_ON",
              "AGENTJ_STATE_DIR", "AGENTJARVIS_STATE_DIR", "EMACS_SOCKET_NAME", "SCREENDIR", "JUPYTER_RUNTIME_DIR")
 # terminal multiplexers / editors that let a client run something in *their* (unfenced) panes: every variable they export
@@ -62,11 +57,11 @@ _CONTAINER_SOCKETS = ("/run/docker.sock", "/var/run/docker.sock", "/run/containe
                       "/var/lib/incus/unix.socket", "/run/libvirt/libvirt-sock", "/var/run/libvirt/libvirt-sock")
 _SYSTEM_SOCKETS = ("/run/ssh-unix-local/socket",)   # systemd's AF_UNIX sshd entry: a login as this user, outside the fence
 MAX_SOCKETS = 256                                   # bound on the per-start socket list (argv size)
-_RO_FILES = (".bashrc", ".bash_profile", ".bash_login", ".profile", ".bash_logout", ".zshrc", ".zprofile", ".zshenv",
-             ".zlogin", ".config/fish", ".ssh/authorized_keys", ".ssh/authorized_keys2", ".ssh/rc", ".ssh/config",
-             ".config/autostart", ".config/systemd", ".local/share/systemd", ".config/environment.d", ".pam_environment",
-             ".Xauthority", ".xprofile", ".xinitrc", ".config/hypr", ".config/sway", ".config/i3",
-             "Library/LaunchAgents")   # macOS: where `agentj service install` puts its plist (L3)
+# F14: only credential files stay read-only (who may log in as this user, the X cookie). Shell start-up files, autostart,
+# systemd user units, environment.d and compositor configs are the owner's general configuration: the Agent may change them.
+_RO_FILES = (".ssh/authorized_keys", ".ssh/authorized_keys2", ".Xauthority")
+# F14: the user's service manager and session bus, bound back into the otherwise private runtime dir (service management)
+_RUNTIME_BACK = ("systemd", "bus")
 
 
 def _real(p: str) -> str:
@@ -117,7 +112,7 @@ def state_aliases(st, home: str | None = None) -> list[str]:
 def protected_paths(st) -> list[str]:
     """What the agent must not see or change; its working folder may not be inside any of these."""
     from .preferences import path as preferences_path
-    return sorted({_real(str(st.root)), _real(str(preferences_path().parent))} | set(other_states(st)) | set(code_paths()))
+    return sorted({_real(str(st.root)), _real(str(preferences_path().parent))} | set(other_states(st)))
 
 
 def _under(path: str, root: str) -> bool:
@@ -256,19 +251,24 @@ def bwrap_argv(st, workdir: str, home: str | None = None, runtime: str | None = 
             hidden.append(_real(rt))
     for d in hidden:
         a += ["--tmpfs", d]
+    for rt in (d for d in hidden if d not in ("/tmp", "/var/tmp")):   # the runtime dir(s)
+        for rel in _RUNTIME_BACK:
+            p = os.path.join(rt, rel)
+            if os.path.exists(p):
+                a += ["--bind", p, p]
     back = [p for p in (home, work) if any(_under(p, d) for d in hidden)]   # a HOME or folder under /tmp (tests)
     for p in sorted(set(back), key=len):
         a += ["--bind", p, p]
     visible = lambda p: not any(_under(p, d) for d in hidden) or any(_under(p, b) for b in back)  # noqa: E731
     ro = [p for p in (os.path.join(home, rel) for rel in _RO_FILES) if os.path.lexists(p) and visible(_real(p))]
-    code = code_paths()
+    code = code_paths()  # F14: bind back writable when installed under private /tmp.
     for d in ancestors([_real(p) for p in ro] + code + [root, prefs]):   # pinned: cannot be renamed away (still writable inside)
         if visible(d):
             a += ["--bind", d, d]
     for p in ro:
         a += ["--ro-bind", p, p]
-    for p in code:                  # read-only — also when installed under /tmp (a temporary HOME): put back on top
-        a += ["--ro-bind", p, p]
+    for p in code:
+        a += ["--bind", p, p]
     # other programs' control sockets (G-A56): whole folders become an empty tmpfs, single sockets a read-only /dev/null
     dirs = [d for d in control_dirs(home, env, allow_docker, work) if os.path.isdir(d) and visible(d) and not _under(d, root)]
     for d in dirs:
@@ -308,7 +308,7 @@ def sbpl_profile(st, workdir: str, home: str | None = None, uid: int | None = No
     alt = list(dict.fromkeys(other_states(st, home) + [p for p in state_aliases(st, home) if p != params["STATE"]]))
     for i, p in enumerate(alt):
         params[f"STATE_ALT_{i}"] = p
-    ro = list(code_paths()) + [os.path.join(home, rel) for rel in _RO_FILES + _MAC_RO]
+    ro = [os.path.join(home, rel) for rel in _RO_FILES + _MAC_RO]
     ro = [_real(p) if os.path.lexists(p) else p for p in ro]   # a start-up file that does not exist yet stays protected
     ro = list(dict.fromkeys(ro))
     for i, p in enumerate(ro):
@@ -331,7 +331,7 @@ def sbpl_profile(st, workdir: str, home: str | None = None, uid: int | None = No
                                                f'(deny network-outbound (remote unix-socket (subpath (param "STATE_ALT_{i}"))))')],
         '(allow file-read* file-write* (subpath (param "PERM")))',
         '(allow network-outbound (remote unix-socket (subpath (param "PERM"))))',
-        ";; 2. agentj's code, shell start-up files, autostart, authorized_keys: read-only (also when absent: no planting)",
+        ";; 2. credential files (authorized_keys, .Xauthority, .ssh/environment): read-only (also when absent)",
         "(deny file-write*",
         *[f'  (subpath (param "RO_{i}"))' for i in range(n_ro)],
         ")",
@@ -344,8 +344,7 @@ def sbpl_profile(st, workdir: str, home: str | None = None, uid: int | None = No
         "(allow signal (target same-sandbox))",
         "(deny process-info*)",
         "(allow process-info* (target same-sandbox))",
-        ";; 4. the usual ways to make an unfenced process run something",
-        "(deny job-creation)",
+        ";; 4. other sessions' terminals and apps (launchd jobs are the Agent's own to manage, F14)",
         "(deny appleevent-send)",
         "(deny lsopen)",
         '(deny network-outbound (remote unix-socket (subpath (param "TMUX"))))',

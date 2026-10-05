@@ -143,7 +143,7 @@ export function toPage(t) {
   return {
     id: t.id, ts: typeof t.ts === 'number' ? t.ts / 1000 : null,
     source: { k, dev: typeof src.dev === 'string' ? src.dev : null, name: typeof src.name === 'string' ? src.name.slice(0, 64) : '',
-      text: typeof src.text === 'string' ? src.text : '', quote: q, att, local: src.local === true },
+      text: typeof src.text === 'string' ? src.text : '', quote: q, att, local: src.local === true, ...(k === 'sys' && typeof src.notice_id === 'string' && /^[A-Za-z0-9_-]{22}$/.test(src.notice_id) ? {notice_id:src.notice_id} : {}) },
     reply: typeof reply.text === 'string' ? reply.text : '',
     part: Array.isArray(reply.part) && reply.part.length === 2 ? reply.part.map(Number) : null,
     end: ['open', 'done', 'stopped', 'failed'].includes(t.end) ? t.end : 'done',

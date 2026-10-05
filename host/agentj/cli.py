@@ -34,7 +34,8 @@ import threading
 import time
 
 from . import DIST, __version__, cloud, gate, names
-from . import docsrule, feedback, handover, plaza, wizard
+from . import docsrule, feedback, handover, plaza, support, wizard
+from . import elevate, elevate_helper
 from .state import DEFAULT_RELAY, DEFAULT_WEB, MAX_DEVICES, State
 from .envcompat import getenv
 from .text import STARTER_NAMES, ask_yes, clean
@@ -160,6 +161,14 @@ def cmd_serve(a) -> None:
     from .serve import Host
     st = State()
     _need_init(st)
+    from .config_migrations import run
+    from . import preferences
+    try:
+        run(st)  # stopped-host, locked, idempotent model migration before activation
+    except (preferences.ConfigError, OSError):
+        # Preserve Host's existing last-good recovery for a manually broken JSON5 file.
+        # Migration rollback already restored disk; doctor reports the pending step.
+        st.log("config_migration_failed")
     host = Host(st, events=a.events, read_stdin=not a.no_stdin)
 
     async def main():
@@ -728,6 +737,8 @@ def _report_now(st: State) -> cloud.ReportResult:
     res = cloud.send_report(st, online, pending)
     if res.kind == "ok":
         st.log("report_ok", seq=res.seq, trigger="cli")
+        from . import preferences
+        preferences.adopt_account_language(st, res.account)    # A1: a newer account language (serve broadcasts it)
     elif res.kind == "unbound":
         st.log("report_unbound", trigger="cli")
     elif res.kind == "fail":
@@ -1025,20 +1036,10 @@ def cmd_agent(a) -> None:
     if a.mode in ("claude", "codex", "opencode"):
         if a.mode == "opencode" and a.model and not re.fullmatch(r"[A-Za-z0-9._-]+/[^\s/][^\s]*", a.model):
             sys.exit("✗ OpenCode 的模型写成「服务商/模型」，例如 zhipuai/glm-5.3 或 deepseek/deepseek-flash（`opencode models` 列出可用的）")
-        if a.unfenced:
-            print("⚠ 不隔离运行：Agent 能读到本机的密钥和设备名单、能改 Agent J 的设置——你在手机上批准的任何一条命令\n"
-                  "  都可能借此给自己加一台遥控器。只在 bubblewrap 用不了、而你清楚风险时才这样做。", flush=True)
-            try:
-                gate.verify(st, _secret("输入批准口令确认："))
-            except gate.GateError as e:
-                sys.exit("✗ " + _gate_msg(e))
+        if a.unfenced:   # F14: the owner's (or, at the owner's request, the Agent's) switch — no passphrase
+            print("⚠ 不隔离运行：Agent 按底层 harness 自己的权限运行，能看到 Agent J 的状态目录。随时可以去掉 --unfenced 改回来。", flush=True)
         elif a.allow_docker:
-            print("⚠ 允许 Agent 用 docker / podman：能用容器引擎就能把整台电脑的文件挂进容器——包括 Agent J 的密钥和设备名单，\n"
-                  "  隔离对它基本失效。只在 Agent 确实要跑容器、而你清楚风险时才这样做。", flush=True)
-            try:
-                gate.verify(st, _secret("输入批准口令确认："))
-            except gate.GateError as e:
-                sys.exit("✗ " + _gate_msg(e))
+            print("⚠ 允许 Agent 用 docker / podman：容器能挂载这台电脑上的任何文件（包括 Agent J 的状态目录）。", flush=True)
         try:
             from . import working_root
             root = working_root.select(st, a.dir)
@@ -1054,7 +1055,7 @@ def cmd_agent(a) -> None:
             from . import fence
             why = fence.problem(st, st.agent_config()["dir"])
             if why:
-                print(f"⚠ {fence.REASONS.get(why, why)}：serve 启动时不会运行 Agent。", flush=True)
+                print(f"⚠ {fence.REASONS.get(why, why)}：serve 会按普通模式运行 Agent（不隔离，底层 harness 的权限照常）。", flush=True)
     elif a.mode == "off":
         st.set_agent_config(None)
         st.log("agent_config", agent="off")
@@ -1127,7 +1128,7 @@ def cmd_stop(a) -> None:
         controls.set_estop(st, True, "terminal")
         st.log("estop", status="on")
         activity.record(st, "estop", by="终端")
-    print("⛔ 已急停：Agent 停下、待批准的全部拒绝、批量授权收回、定时任务暂停；serve 重启后仍是急停。恢复：`agentj resume`")
+    print("⛔ 已急停：Agent 停下、待批准的全部拒绝、批量授权收回、定时任务暂停；serve 重启后仍是急停。恢复：已配对手机上点「恢复」，或终端 `agentj resume`")
 
 
 def cmd_resume(a) -> None:
@@ -1137,11 +1138,15 @@ def cmd_resume(a) -> None:
     if not controls.estop_state(st)["on"]:
         print("没有急停，不用恢复。")
         return
-    if gate.is_set(st):     # resuming gives the Agent its power back: the human's passphrase, like approving a remote
+    # F14: a stop is the owner's emergency switch — one tap on a paired phone lifts it (signed, no passphrase). At the
+    # terminal the owner proves presence with the passphrase or, without one, a keyboard: the Agent cannot lift its own stop.
+    if gate.is_set(st):
         try:
-            gate.verify(st, _secret("输入批准口令恢复："))
+            gate.verify(st, _secret("输入批准口令恢复（或在已配对手机上点「恢复」）："))
         except gate.GateError as e:
             sys.exit("✗ " + _gate_msg(e))
+    elif not sys.stdin.isatty():
+        sys.exit("✗ 急停只能由主人解除：在已配对手机上点「恢复」，或主人在自己的终端运行 `agentj resume`。")
     try:
         res = names.ctl_call(st, {"cmd": "resume"}, 15)
     except names.ServeBusy:
@@ -1297,6 +1302,7 @@ def activity_line(r: dict) -> str:
         "task_off": f"停用定时任务{by} {r.get('id', '')}", "task_run": f"定时任务开始 {r.get('title', r.get('id', ''))}（{r.get('trigger', '')}）",
         "task_done": f"定时任务结束 {r.get('title', r.get('id', ''))}：{r.get('verdict', '')} — {r.get('line', '')}"
                      + ("（只读运行）" if r.get("readonly") else ""),
+        "shared": f"共享会话 {r.get('agent', '')} {r.get('ev', '')}：{r.get('reason', '')}",
         "control_refused": f"拒绝了手机命令 {r.get('action', '')}{by}：{r.get('why', '')}", "truncated": "（今天的记录已达上限，后面的没有记）",
     }.get(k, str(k))
 
@@ -1491,15 +1497,9 @@ def cmd_tasks(a) -> None:
         if on:
             if e["problems"]:
                 sys.exit("✗ task.json 无效，不能启用：" + e["problems"][0])
-            if not gate.is_set(st):
-                sys.exit("✗ 先设置批准口令（`agentj passphrase set`）：启用定时任务要用它确认")
             print(f"启用「{e['task']['title']['zh']}」：按 {e['task']['schedule']}（{e['task']['tz']}）自动运行 "
                   f"{'（只读运行）' if e['task']['mode'] == 'research' else ''}；改了 task.json 或 {e['task']['prompt_file']} 就要重新启用。",
                   flush=True)
-            try:
-                gate.verify(st, _secret("输入批准口令确认："))
-            except gate.GateError as err:
-                sys.exit("✗ " + _gate_msg(err))
         try:
             tasks.set_enabled(st, wd, a.id, on, "terminal")
         except tasks.TaskError as err:
@@ -1638,6 +1638,10 @@ def cmd_update(a) -> None:
                if on else "关：serve 不查新版本（`agentj update check` 仍可手动查）。")
               + " / daily update check " + ("on" if on else "off"))
         return
+    if a.mode == "apply" and (a.authorization or a.from_email):
+        return _update_authorized(a)
+    if a.mode != "apply" and (a.authorization or a.from_email or a.version):
+        sys.exit("✗ 升级参数只用于 apply / upgrade options require apply")
     r = update.check()
     if a.mode == "check":
         if a.json:
@@ -1648,40 +1652,30 @@ def cmd_update(a) -> None:
         if r["status"] == "newer":
             print(f"  （agentj update apply 会运行 / it runs:  {r['command']}）")
         return
-    # apply
-    if r["status"] == "unknown":
-        sys.exit(f"✗ 查不到最新版本（{r['why']}），没有升级。稍后再试，或手动运行：{r['command']} / could not find out the "
-                 "latest version; nothing changed")
-    if r["status"] != "newer":
-        print(_update_line(r))
-        print("  " + update.EXPLAIN[r["status"]])
-        return
-    try:
-        update.preflight()
-    except update.Refused as e:
-        print(update.REFUSED[e.reason], file=sys.stderr)
-        print(f"  （命令 / command:  {r['command']}）", file=sys.stderr)
-        sys.exit(2)
-    print(f"新版本 {r['latest']}（本机 {r['current']}，安装方式 {r['install']}）。将运行 / will run:\n  {r['command']}")
-    svc_on = bool(service.status().get("installed") or service.legacy_status().get("installed"))
-    if svc_on:
-        print("之后会重新安装并重启服务 / then the service is re-installed and restarted")
-    if not ask_yes("现在升级？/ upgrade now? [y/N] "):
-        sys.exit("没有升级 / not upgraded")
-    import subprocess
-    info = update.install_kind()
-    for c in update.commands(info, r["latest"]):
-        rc = subprocess.run(c).returncode
-        if rc != 0:
-            sys.exit(f"✗ 升级命令失败（退出码 {rc}）：{' '.join(c)} / upgrade command failed")
-    argv = update.new_argv(info)
-    v = subprocess.run(argv + ["--version"], capture_output=True, text=True)
-    print("✓ 现在是 / now: " + (v.stdout.strip() or v.stderr.strip() or "?"))
-    if svc_on:
-        rc = subprocess.run(argv + ["service", "install"]).returncode
-        if rc != 0:
-            sys.exit("✗ 服务没能重新安装：运行 `agentj service install` / the service was not re-installed")
-    print("完成 / done. `agentj doctor` 再检查一遍 / run `agentj doctor` to check")
+    res = update.apply(State(), a.version, check_fn=lambda: r, say=print)
+    print(update.result_block(res))
+    raise SystemExit(res["exit"])
+
+
+def _update_authorized(a) -> None:
+    """F12 / contract C3: the owner's upgrade email authorises the Agent to upgrade to exactly one version — no y/N, no
+    terminal. Ends with update.result_block (fixed format the Agent copies back); the exit code says which outcome."""
+    from . import update
+    if a.authorization and a.from_email:
+        sys.exit("✗ 只用一个：--authorization 或 --from-email / use one of --authorization or --from-email")
+    mail = None
+    if a.from_email:
+        try:
+            mail = update.parse_email(update.read_email(a.from_email))
+        except (OSError, ValueError):
+            mail = {"problem": "bad_email"}
+    st = State()
+
+    def say(line: str) -> None:
+        print(line, flush=True)
+    res = update.authorized_apply(st, a.authorization, a.version, mail=mail, say=say)
+    print(update.result_block(res), flush=True)
+    sys.exit(res["exit"])
 
 
 def _update_line(r: dict) -> str:
@@ -1772,12 +1766,16 @@ def main(argv=None) -> None:
     sv.add_argument("mode", choices=["install", "uninstall", "status", "restart"], help="install 安装并启动 · uninstall 停止并删除 · status 状态")
     sv.add_argument("--json", action="store_true", help="status 的机器可读输出 / machine-readable status")
     sv.set_defaults(fn=cmd_service)
-    up = sub.add_parser("update", help="新版本：check 查（谁都可以）· apply 升级（只由人在终端确认）· auto on|off 每天自动查 / updates",
-                        description="check: 查最新版本并给出与安装方式匹配的升级命令（网络不通 = 查不到，不算错）。apply: 只在交互终端里、"
-                                    "人输入 y 之后才执行；没有 --yes。auto: serve 每天查一次、有新版就提醒手机（从不自动安装）。")
+    up = sub.add_parser("update", help="check 查版本 · apply Agent 自升级（无需终端）· auto on|off",
+                        description="apply needs no y/N or terminal, restarts and runs doctor. F12 authorization remains optional.")
+    up.add_argument("--yes", action="store_true", help="兼容脚本；默认已不询问 / compatibility; apply already needs no confirmation")
     up.add_argument("mode", choices=["check", "apply", "auto"])
     up.add_argument("switch", nargs="?", choices=["on", "off", "status"], default="status", help="auto 的开关 / for auto")
     up.add_argument("--json", action="store_true", help="check 的机器可读输出 / machine-readable check")
+    up.add_argument("--authorization", metavar="AJUP-…", help="主人升级邮件里的授权码 / the authorization code from the owner's upgrade email")
+    up.add_argument("--from-email", metavar="FILE|-", help="整封升级邮件（文件或 - 读标准输入）：从中找授权码和目标版本 / the whole "
+                                                          "upgrade email (file, or - for stdin): code and target version are read from it")
+    up.add_argument("--version", help="目标版本（缺省：邮件里的目标版本，或公开仓库的最新版）/ target version (default: the email's, or the latest)")
     up.set_defaults(fn=cmd_update)
     i = sub.add_parser("init", help="生成主机身份密钥")
     i.add_argument("--relay", default=DEFAULT_RELAY)
@@ -1851,9 +1849,9 @@ def main(argv=None) -> None:
     ag.add_argument("--dir", help="Agent 的工作目录（默认当前目录）")
     ag.add_argument("--model", help="模型（默认用你自己的设置）；OpenCode 写成 服务商/模型，例如 zhipuai/glm-5.3")
     ag.add_argument("--unfenced", action="store_true",
-                    help="不隔离运行 Agent（不推荐；要输入批准口令）。默认 Agent 在 bubblewrap 里运行，看不到 Agent J 的状态")
+                    help="不隔离运行 Agent（按底层 harness 自己的权限）。默认 Agent 在 bubblewrap 里运行，看不到 Agent J 的状态")
     ag.add_argument("--allow-docker", action="store_true",
-                    help="隔离里也让 Agent 用 docker / podman（不推荐；要输入批准口令）。默认容器引擎的 socket 对 Agent 隐藏")
+                    help="隔离里也让 Agent 用 docker / podman（默认不开；主人要求时可直接打开）。默认容器引擎的 socket 对 Agent 隐藏")
     ag.set_defaults(fn=cmd_agent)
     pp = sub.add_parser("passphrase", help="批准口令：set 设置 · change 修改 · reset 忘了（会吊销全部遥控器）· status")
     pp.add_argument("mode", nargs="?", choices=["set", "change", "reset", "status"], default="status")
@@ -1866,7 +1864,7 @@ def main(argv=None) -> None:
     feedback.add_parser(sub)
     sub.add_parser("stop", help="⛔ 全部停下：中断 Agent、拒绝待批准、收回批量授权、暂停定时任务（重启后仍停）/ stop everything"
                    ).set_defaults(fn=cmd_stop)
-    sub.add_parser("resume", help="从急停恢复（要批准口令）/ resume after a stop (approval passphrase)").set_defaults(fn=cmd_resume)
+    sub.add_parser("resume", help="从急停恢复（已配对手机点「恢复」即可；终端要批准口令或主人的键盘）/ resume after a stop (paired phone, or the owner at the terminal)").set_defaults(fn=cmd_resume)
     me = sub.add_parser("memory", help="Agent 记住了什么：list · show <来源> · rm <来源> <条目> · restore [id] / what the Agent remembers")
     me.add_argument("mode", choices=["list", "show", "rm", "restore"])
     me.add_argument("args", nargs="*")
@@ -1898,16 +1896,19 @@ def main(argv=None) -> None:
                                     "local speech-to-text", add_help=False)
     sr.add_argument("args", nargs=argparse.REMAINDER)
     sr.set_defaults(fn=cmd_asr)
-    tk = sub.add_parser("tasks", help="定时任务：list · show · enable（要口令）· disable · run [--dry-run] / scheduled tasks")
+    tk = sub.add_parser("tasks", help="定时任务：list · show · enable · disable · run [--dry-run] / scheduled tasks")
     tk.add_argument("mode", choices=["list", "show", "enable", "disable", "run"])
     tk.add_argument("id", nargs="?")
     tk.add_argument("--dry-run", action="store_true", help="run：只显示会怎么跑，不运行 / show the plan only")
     tk.add_argument("--json", action="store_true")
     tk.set_defaults(fn=cmd_tasks)
     wizard.add_parser(sub)
+    elevate.add_parser(sub)   # F17: agentj sudo · agentj secret request
+    elevate_helper.add_parser(sub)   # F17: agentj sudo-helper install · sync · uninstall · status
     docsrule.add_parser(sub)
     handover.add_parser(sub)
     plaza.add_parser(sub)
+    support.add_parser(sub)   # F18: agentj support ask | report | thread | list
     mg = sub.add_parser("migrate", help="改名后的状态目录搬迁：status 查看 · rollback 撤销 / the 0.10 state move: status · rollback",
                         description="0.9 的状态目录 ~/.local/state/agentjarvis-alpha 会自动搬到 ~/.local/state/agentj（旧路径留一个链接）。"
                                     "rollback 搬回去（serve 必须没在运行）/ the old state directory moves automatically; rollback moves it back")

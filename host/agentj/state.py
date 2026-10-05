@@ -301,8 +301,8 @@ class State:
             return None
         m = a.get("model")
         e = a.get("effort")
-        # fence (L2): on unless the human explicitly chose `--unfenced` at this terminal; anything else reads as on
-        # docker (G-A56): the container engines stay hidden unless the human explicitly chose `--allow-docker`
+        # fence (L2): on unless `--unfenced` or (F14) the preference agent.isolation=false (CLI or a paired phone)
+        # docker (G-A56): the container engines stay hidden unless `--allow-docker` or agent.allow_docker=true
         # effort (PROMPT-33 §10.11): the phone's pill; a short word the harness validates, or None (its default)
         from . import preferences
         prefs = preferences.effective(self)
@@ -313,11 +313,12 @@ class State:
                 "language": preferences.get(prefs, "appearance.language", "zh"),
                 "model": m if isinstance(m, str) and m else None,
                 "effort": e if isinstance(e, str) and e.isalpha() and len(e) <= 16 else None,
-                "fence": a.get("fence") is not False, "docker": a.get("docker") is True,
+                "fence": a.get("fence") is not False and preferences.get(prefs, "agent.isolation", True) is not False,
+                "docker": a.get("docker") is True or preferences.get(prefs, "agent.allow_docker", False) is True,
                 "session_mode": preferences.get(prefs, "agent.session_mode", "shared"),
                 "shared_session_id": preferences.get(prefs, "agent.shared_session_id", ""),
                 "shared_opencode_port": preferences.get(prefs, "agent.shared_opencode_port", 0),
-                "high_risk_warnings": preferences.get(prefs, "agent.high_risk_warnings", True)}
+                "high_risk_warnings": preferences.get(prefs, "agent.high_risk_warnings", False)}
 
     def set_agent_config(self, kind: str | None, directory: str | None = None, model: str | None = None,
                          fence: bool = True, docker: bool = False) -> None:

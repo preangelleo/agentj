@@ -23,7 +23,7 @@ const JS = files.filter((f) => f.endsWith('.js'));
 const APP = read(pub('app.js'));
 // PROMPT-33: the page is app.js + the modules under js/ (relay's page ported). Every rule that used to look at app.js
 // alone now looks at all of them (OURS) — the same rules over more code, never fewer.
-const MODULES = ['api', 'blobs', 'boot', 'controls', 'md', 'push', 'relay', 'session', 'snap', 'speak', 'store', 't', 'ui', 'wav'];
+const MODULES = ['api', 'blobs', 'boot', 'controls', 'md', 'push', 'relay', 'session', 'settings', 'snap', 'speak', 'store', 't', 'ui', 'wav', 'elevate'];
 const OURS_FILES = ['app.js', ...MODULES.map((m) => `js/${m}.js`)];
 const OURS = OURS_FILES.map((r) => read(pub(r))).join('\n');
 const HTML = read(pub('index.html'));
@@ -57,6 +57,7 @@ test('version.json / version.js match the shipped files', () => {
 // legacy host sends an unpaired visitor to. The relay URLs live only in the Worker CSP config (app.js pins relay HOSTS).
 // (F1: the menu's 「邀请与积分」 opens the account page at its invite block — the one link with a fragment)
 const SITE_LINK = /^https:\/\/agentj\.app\/(?:[a-z]+\/)*(?:#invite)?$/;
+const MAIL_LINK = /^mailto:founder@agentj\.app$/;   // F13: Settings → 帮助和反馈 (the one address the site footer shows too)
 const NEW_WEB_ORIGIN = 'https://m.agentj.app';
 const LICENCE_TEXT = new Set(['brand/fonts/UFL-1.0-ubuntu.txt', 'brand/fonts/OFL-1.1-lexend.txt', 'brand/fonts/README.md']);   // licence texts cite their sources
 test('no URLs to anywhere in shipped files except links to agentj.app pages', () => {
@@ -79,7 +80,7 @@ test('no URLs to anywhere in shipped files except links to agentj.app pages', ()
     assert.doesNotMatch(s, /@import/i, `${rel(f)} @import`);
   }
   for (const m of HTML.matchAll(/<(\w+)\b[^>]*\s(src|href)="([^"]*)"/g)) {
-    if (m[1] === 'a') assert.match(m[3], SITE_LINK, `index.html links to ${m[3]}`);
+    if (m[1] === 'a') assert.match(m[3], MAIL_LINK.test(m[3]) ? MAIL_LINK : SITE_LINK, `index.html links to ${m[3]}`);
     else assert.match(m[3], /^(data:,|[a-z][\w./-]*)$/, `index.html loads ${m[3]}`);
   }
   for (const m of HTML.matchAll(/<a\b[^>]*>/g)) assert.match(m[0], /rel="noopener"/, 'site links open with rel=noopener');
@@ -109,7 +110,8 @@ test('index.html: CSP-compatible (no inline script/style, no on*=), noindex, zh-
   // PROMPT-33: the chat ids are relay's (the old #messages / #msg-input list is gone by design — the deck replaced it)
   for (const id of ['status', 'pair-link', 'pair-go', 'scan', 'sas', 'send', 'badge', 'badge-panel', 'version-hash', 'repair', 'retry',
     'input', 'deck', 'om', 'rm', 'words', 'rmbar', 'sheet', 'pendTag', 'tray', 'mic', 'menu', 'sug', 'keys', 'rd', 'qbar', 'meta', 'water',
-    'mWeek', 'm5h', 'brand-name', 'aj-menu', 'estop-banner', 'grant-bar', 'push-row', 'confirm', 'unpair', 'mem-view', 'act-view', 'tasks-view']) {
+    'mWeek', 'm5h', 'brand-name', 'aj-menu', 'estop-banner', 'grant-bar', 'push-row', 'confirm', 'unpair', 'mem-view', 'act-view', 'tasks-view',
+    'setBtn', 'settings', 'keysBtn', 'set-font-plus', 'set-refresh', 'set-a2hs', 'set-risk-cmd', 'set-mode-cmd', 'set-iso-cmd', 'set-docker-cmd']) {
     assert.match(HTML, new RegExp(`id="${id}"`), `missing #${id}`);
   }
   const ids = [...HTML.matchAll(/\sid="([^"]+)"/g)].map((m) => m[1]);
@@ -128,8 +130,10 @@ test('app.js + js/*.js: only WebSocket egress, non-extractable keys, no plaintex
   // localStorage: the "Add to Home Screen hint dismissed" flag + two display preferences (reader type size, the launch
   // colour of an iPhone home-screen app); brand/lang.js keeps the language + theme. Never chat text, drafts or history.
   const ls = OURS_FILES.flatMap((r) => [...code(read(pub(r))).matchAll(/localStorage\.(\w+)\(([^,)]*)/g)].map((m) => `${m[1]}(${m[2]})`));
-  assert.deepEqual(ls.sort(), ['getItem("aj.chrome")', 'getItem(A2HS_KEY)', 'getItem(RD_KEY)', 'setItem("aj.chrome")', 'setItem(A2HS_KEY)', 'setItem(RD_KEY)'].sort());
-  assert.equal(OURS_FILES.reduce((n, r) => n + (code(read(pub(r))).match(/localStorage/g) || []).length, 0), 6, 'localStorage appears only in those six calls');
+  // F13: + the reply text size from Settings (FONT_KEY = "aj.fontScale", a number 0.8 … 1.6).
+  assert.deepEqual(ls.sort(), ['getItem("aj.chrome")', 'getItem(A2HS_KEY)', 'getItem(RD_KEY)', 'getItem(FONT_KEY)', 'setItem("aj.chrome")', 'setItem(A2HS_KEY)', 'setItem(RD_KEY)', 'setItem(FONT_KEY)'].sort());
+  assert.equal(OURS_FILES.reduce((n, r) => n + (code(read(pub(r))).match(/localStorage/g) || []).length, 0), 8, 'localStorage appears only in those eight calls');
+  assert.match(OURS, /const FONT_KEY = 'aj\.fontScale';/);
   assert.match(OURS, /const A2HS_KEY = 'aj\.a2hs';/);
   assert.match(OURS, /RD_KEY = "aj\.readerFs"/);
   assert.match(OURS, /generateKeypair\(false\)/);
@@ -147,7 +151,7 @@ test('app.js + js/*.js: only WebSocket egress, non-extractable keys, no plaintex
   assert.match(STORE, /export async function putSealed\(name, obj\) \{\n  const w = wipes;\n  const rec = await seal\(obj\);\n  if \(w === wipes\) await dbPut\(name, rec\);\n\}/, 'putSealed writes only ciphertext, and never after a wipe');
   // §10.14 / P33-X13: revoke wipes like unpair — drafts, history, the sealing key, and everything in memory
   assert.match(APP, /async function revoked\(\) \{\n  session\.closeSession\(\);\n[^}]*await forgetLocal\(\);/, 'revoked() wipes local records');
-  assert.match(APP, /async function forgetLocal\(\) \{\n  relay\.forgetLocal\(\);\n  blobs\.forgetAll\(\);\n  await wipeLocal\(\);\n\}/);
+  assert.match(APP, /async function forgetLocal\(\) \{\n  relay\.forgetLocal\(\);\n  blobs\.forgetAll\(\);\n  elevate\.clear\(\);\n  await wipeLocal\(\);\n\}/);   // F17: open sudo / secret cards go too
   assert.doesNotMatch(APP, /saveDraft/, 'revocation never saves the draft');
   assert.match(STORE, /generateKey\(\{ name: 'AES-GCM', length: 256 \}, false, \['encrypt', 'decrypt'\]\)/, 'sealing key not extractable');
   assert.match(STORE, /for \(const k of \['draft', 'ihist', 'local'\]\)/, 'unpair / re-pair wipes drafts, history and the sealing key');
@@ -257,9 +261,9 @@ test('sw.js: push display only — no fetch handler, no cache, no network, gener
   for (const bad of [/addEventListener\(\s*['"]fetch/, /\bcaches\b/, /\bfetch\s*\(/, /importScripts/, /XMLHttpRequest/, /\bconsole\./, /indexedDB/]) {
     assert.doesNotMatch(SW, bad, `sw.js uses ${bad}`);
   }
-  assert.match(SW, /zh: \{ reply: '有新回复', ask: '有一个请求等你批准' \}/);
-  assert.match(SW, /en: \{ reply: 'New reply', ask: 'A request is waiting for your approval' \}/);
-  assert.match(SW, /showNotification\('Agent J', \{ body: BODY\[LANG\]\[k\]/, 'the notification body is one of the two fixed sentences');
+  assert.match(SW, /zh: \{ reply: '有新回复', ask: '有一个请求等你批准', security: 'Agent J 有紧急安全更新' \}/);
+  assert.match(SW, /en: \{ reply: 'New reply', ask: 'A request is waiting for your approval', security: 'Agent J has an urgent security update' \}/);
+  assert.match(SW, /showNotification\('Agent J', \{ body: BODY\[LANG\]\[k\]/, 'the notification body is one of the three fixed sentences');
   assert.match(SW, /const SW_VERSION = 'aj-web-[\w-]+';/, 'sw.js carries a version string (bumped with each shell redesign)');
   assert.match(OURS, /userVisibleOnly: true/);
   assert.match(OURS, /serviceWorker\.register\('sw\.js'/);
@@ -306,7 +310,8 @@ test('i18n: zh and en have the same keys and placeholders; i18n.js and index.htm
 });
 
 test('i18n: the Chinese is the polished output (i18n/polish.py --check, offline)', { skip: !existsSync(POLISH) && 'no agentjarvis/i18n (public export)' }, () => {
-  const r = spawnSync('python3', [POLISH, '--check', I18N_DIR], { encoding: 'utf8' });
+  // 0.15 (P44): the web dictionary is polished with qwen/qwen3.6-flash (the release brief's model), so the check uses it too
+  const r = spawnSync('python3', [POLISH, '--check', '--model', 'qwen/qwen3.6-flash', I18N_DIR], { encoding: 'utf8' });
   assert.equal(r.status, 0, r.stdout + r.stderr);
 });
 
@@ -401,4 +406,45 @@ test('worker: G-A130 every response carries Cache-Control no-transform (HTML pag
     assert.match(r.headers.get('cache-control') ?? '', /(^|, )no-transform(,|$)/, `${r.status}`);
   }
   assert.match(webHeaders(RELAY)['cache-control'], /no-store, no-transform/);
+});
+
+test('F13 Settings: the gear replaced the bulb; s / ⌘, / Ctrl+, / ? wired; pref_set only for the four user keys; safety rows read-only', () => {
+  const SET = read(pub('js/settings.js')), RELAY = read(pub('js/relay.js'));
+  const top = HTML.slice(HTML.indexOf('<header class="top">'), HTML.indexOf('</header>'));
+  assert.match(top, /id="setBtn"[^>]*aria-controls="settings"/, 'the header has the Settings gear');
+  assert.doesNotMatch(top, /id="keysBtn"/, 'the lightbulb left the header');
+  const panel = HTML.slice(HTML.indexOf('<section id="settings"'), HTML.indexOf('</section>', HTML.indexOf('<section id="settings"')));
+  assert.match(panel, /id="keysBtn"/, 'the shortcut sheet is a second-level item in Settings');
+  assert.match(HTML, /<dt><kbd>s<\/kbd> · <kbd>Ctrl<\/kbd>\+<kbd>,<\/kbd><\/dt><dd data-i18n="r\.keys\.s">/, 'the shortcut sheet lists s · Ctrl+,');
+  assert.match(RELAY, /\(e\.ctrlKey \|\| e\.metaKey\) && !e\.altKey && !e\.shiftKey && \(e\.key === "," \|\| e\.code === "Comma"\)/);
+  assert.match(RELAY, /if \(e\.key === "s" && !e\.shiftKey\)\{ e\.preventDefault\(\); closeMenu\(\); closeSug\(\); C\.settings && C\.settings\(\); return; \}/);
+  assert.match(RELAY, /if \(e\.key === "\?"\)\{ e\.preventDefault\(\); openKeys\(\); return; \}/, '? still opens the sheet');
+  assert.match(RELAY, /el\("keysBtn"\)\.addEventListener\("click", openKeys\)/);
+  // C6 / Amendment A1: exactly these keys go to the host; the font size never does; nothing lowers safety from the phone
+  assert.match(SET, /export const PREF_KEYS = \['appearance\.language', 'appearance\.theme', 'voice\.speak_replies', 'voice\.wake_enabled', 'agent\.high_risk_warnings', 'agent\.session_mode', 'agent\.isolation', 'agent\.allow_docker'\];/);
+  assert.match(SET, /if \(!PREF_KEYS\.includes\(key\)\) return false;/);
+  assert.match(SET, /ask1\(\{ t: 'pref_set', key, value \}, 'pref_res', 8000\)/);
+  assert.doesNotMatch(SET, /pref_set'[^\n]*agent\./);
+  assert.match(panel, /data-pref="agent\.high_risk_warnings"/, 'risk switch available');
+  assert.match(panel, /data-pref="agent\.session_mode"/, 'mode switch available');
+  assert.match(SET, /cmdFor\('agent\.high_risk_warnings'/);
+  assert.match(SET, /cmdFor\('agent\.session_mode'/);
+  // F14 (P45b): isolation and docker are the owner's switches on a paired phone
+  assert.match(panel, /data-pref="agent\.isolation"/, 'isolation switch available');
+  assert.match(panel, /data-pref="agent\.allow_docker"/, 'docker switch available');
+  assert.match(SET, /cmdFor\('agent\.isolation'/);
+  assert.match(SET, /cmdFor\('agent\.allow_docker'/);
+  // update app: unregister every worker, drop Cache Storage, reload — no fetch (CSP connect-src = the relays only)
+  assert.match(SET, /navigator\.serviceWorker\.getRegistrations\(\)/);
+  assert.match(SET, /await r\.unregister\(\)/);
+  assert.match(SET, /caches\.delete\(k\)/);
+  // Add to Home Screen: the Android prompt kept for our button; the iPhone guide; hidden when standalone
+  assert.match(SET, /addEventListener\('beforeinstallprompt', \(e\) => \{ e\.preventDefault\(\); installEvt = e;/);
+  assert.match(SET, /if \(push\.standalone\(\)\) return 'done';/);
+  assert.equal((panel.match(/<li>/g) || []).length, 3, 'three illustrated iPhone steps');
+  // reply text size: 7 steps, below and above 1 (0.14 sizes sit inside the range); the reply card uses --rs
+  assert.match(SET, /export const FONT_STEPS = \[0\.8, 0\.9, 1, 1\.1, 1\.25, 1\.4, 1\.6\];/);
+  assert.match(read(pub('app.css')), /\.words\{font-size:calc\(18px\*var\(--fz\)\*var\(--rs\)\)/);
+  // push off is the §9 message, inside the session
+  assert.match(read(pub('js/push.js')), /sendApp\(\{ t: 'push_off' \}\)/);
 });

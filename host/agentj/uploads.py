@@ -58,6 +58,8 @@ def magic_ok(mime: str, head: bytes) -> bool:
         return head[:4] == b"RIFF" and head[8:12] == b"WEBP"
     if mime in ("image/heic", "image/heif"):
         return head[4:8] == b"ftyp" and head[8:12] in HEIF_BRANDS
+    if mime == "video/mp4":
+        return head[4:8] == b"ftyp"
     if mime == "application/pdf":
         return head[:5] == b"%PDF-"
     if mime in WAV_MIMES:

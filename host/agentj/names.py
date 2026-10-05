@@ -61,6 +61,8 @@ def announce(st) -> None:
         res = cloud.send_report(st, set(), {"count": 0, "since": None})
         if res.kind == "ok":
             st.log("report_ok", seq=res.seq, trigger="agent_name")
+            from . import preferences
+            preferences.adopt_account_language(st, res.account)   # A1: a newer account language
         elif res.kind == "fail":
             st.log("report_fail", status=res.status, trigger="agent_name")
 

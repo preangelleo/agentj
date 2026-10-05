@@ -1,6 +1,6 @@
-# Agent J 0.14.0a1 release notes
+# Agent J 0.15.0a1 release notes
 
-Host 0.14.0a1 / install 0.18.0; phone-web scope.
+Host 0.15.0a1 / install 0.19.0; phone-web scope.
 Phone parity must pass --strict. Full Android/Telegram parity is incomplete.
 Full Android/Telegram parity is incomplete.
 No APK is included in this release. Android source is for review, not a released app.
@@ -8,7 +8,7 @@ No APK is included in this release. Android source is for review, not a released
 Publication status: local preparation only. Live site verification is DEFERRED until
 the public commit and tag are pushed, the site is deployed, and cold installation passes.
 
-On publication failure, restore v0.13.0a1 / public 94cdf4f, including the site.
+On publication failure, restore v0.14.0a1 / public f9ff761, including the site.
 ## Changes
 
 - Sparse JSON5 configuration with transactional application, configuration history and migrations.
@@ -16,10 +16,15 @@ On publication failure, restore v0.13.0a1 / public 94cdf4f, including the site.
 - Opt-in own-key cloud speech and local phone read-aloud.
 - Optional owner-private Telegram text input and final replies.
 
-- Phone not connected (host gone, socket error/timeout): a high-risk action in a shared Claude Code session
-  goes to Claude Code's own permission dialog on the computer (ask); Codex and OpenCode keep blocking it.
-  No fallback path ever answers allow (ADR-A146).
-- Install guide 0.18.1 (same tag, host unchanged) adds the yearly price and invite-code wording with the billing release.
+- F14 partial candidate: explicit apply is noninteractive; optional risk warnings default off and native permissions remain authoritative.
+- Self-code is writable and phone risk/session settings are editable. Independent config/service controls and human gates remain: NOT READY TO PUBLISH.
+- Real 0.14 wheel migration is verified outside its independent fence; service lifecycle uses a local simulator, not a real restart.
+- Upgrade by authorization (optional compatibility): `agentj update apply --authorization <code>` (or `--from-email`) upgrades to exactly the
+  version named in the owner's upgrade email, without a y/N prompt; the code is checked by the account service first.
+- One language value (appearance.language) for the web app, platform mail and the main Agent's conversation,
+  synchronised with the account (last write wins); hosts not linked to the cloud keep their local value.
+- Phone settings panel (pref_set for a whitelist of user-tier keys only); denser chat screen.
+- Against an account service older than 0.15 the host keeps working: no authorization path, language stays local.
 
 ## Material acceptance limits
 
@@ -44,9 +49,3 @@ On publication failure, restore v0.13.0a1 / public 94cdf4f, including the site.
 - `android-reply-notify` (android; partial): Android：新回复锁屏通知. Agent J product fork builds/test APK exists; real-device wake/background/lockscreen and operator-JS trust acceptance pending.
 - `android-deep-link` (android; partial): Android：点通知直达那一页. Agent J product fork builds/test APK exists; real-device wake/background/lockscreen and operator-JS trust acceptance pending.
 - `android-popup-on-wake` (android; partial): Android：唤醒后悬浮聆听球 / 把 App 拉到前台. Agent J product fork builds/test APK exists; real-device wake/background/lockscreen and operator-JS trust acceptance pending.
-- `telegram-channel` (telegram; partial): Telegram 双向通道（私聊/群聊、恶意拦截、回传）. Own bot, owner-private text send/final-reply/stop implemented; groups, media, malicious-group gate pending. Never a signed approval channel.
-- `tg-media` (telegram; todo): Telegram 附件与语音接收. No exclusion: full Telegram surface gates remain red until implementation and behavioral tests.
-- `tg-groups` (telegram; todo): Telegram 群 profile/allowlist. No exclusion: full Telegram surface gates remain red until implementation and behavioral tests.
-- `tg-malicious-gate` (telegram; todo): Telegram 群两层恶意过滤. No exclusion: full Telegram surface gates remain red until implementation and behavioral tests.
-- `tg-reply-routing` (telegram; partial): Telegram 来源判定与回传. No exclusion: full Telegram surface gates remain red until implementation and behavioral tests.
-- `tg-owner-text` (telegram; partial): Telegram 主人私聊文本. No exclusion: full Telegram surface gates remain red until implementation and behavioral tests.

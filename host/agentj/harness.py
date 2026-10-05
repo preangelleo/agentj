@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -84,12 +85,16 @@ def codex_login() -> tuple[str, str]:
     return "warn", "no login found"
 
 
+def opencode_v2(version):
+    return bool(version and re.search(r'(?:^|\s)v?2\.', version))
+
+
 def opencode_login(version: str | None = None) -> tuple[str, str]:
     """Storage existence is a hint, never proof of a usable key. No DB/content read."""
     data = os.environ.get("XDG_DATA_HOME") or os.path.expanduser("~/.local/share")
     root = os.path.join(data, "opencode")
-    is_v2 = bool(version and version.lstrip("v").startswith("2."))
-    stores = [("opencode.db", "v2 SQLite store exists; key validity unverified"),
+    is_v2 = opencode_v2(version)
+    stores = [("opencode.db", "v2 SQLite database exists; credential rows and key validity unverified"),
               ("auth.json", "v1 credential store exists; key validity unverified")]
     if version and not is_v2:
         stores.reverse()
@@ -132,6 +137,8 @@ def _one(name: str, environ=None) -> dict:
     if not rec["installed"]:
         return rec
     status, _ = opencode_login(version) if name == "opencode" else login_of(name)
+    if name == "opencode":
+        rec["note"] = "Local credential hints only; verify the running selected provider connection. Prefer Claude Code."
     if status in ("ok", "env"):
         rec["logged_in"] = True
     elif name == "claude" and os.environ.get("CLAUDECODE") == "1":
@@ -161,8 +168,8 @@ def summary(d: dict) -> str:
 
 
 DECISION_TEXT = {
-    "none": "没有可用的 Agent：已有 Claude Code / Codex 就先登录；都没有就装 OpenCode 并配好模型（install.md 第 3 步）/ no usable "
-            "agent: log in to Claude Code or Codex, or install OpenCode and set up a model (install.md Step 3)",
+    "none": "没有可用的 Agent：优先安装并登录 Claude Code；也可使用 Codex 或 OpenCode 并配好模型（install.md 第 3 步）/ no usable "
+            "agent: prefer Claude Code; otherwise use Codex or configure an OpenCode provider (install.md Step 3)",
     "ask_owner": "有多个可用：问你的人类要用哪一个，不要替他选 / more than one is usable: ask your human which one — never pick one yourself",
 }
 

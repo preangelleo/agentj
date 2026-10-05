@@ -30,9 +30,10 @@ from dataclasses import dataclass, field
 from websockets.asyncio.client import connect
 
 from . import agent as agents
-from . import activity, approvals, cloud, controls, danger, fence, gate, memory, slash, tasks, update, webpush, wire
+from . import notices, activity, approvals, cloud, controls, danger, fence, gate, memory, slash, tasks, update, webpush, wire
 from . import asr as asr_mod
 from . import compose, history, inbox, menu, uploads, preferences
+from . import elevate  # F17: sudo + secret cards (PROTOCOL §11)
 from .noise import IK, IKPSK2, CipherState, Handshake, NoiseError
 from .reporter import Reporter, in_daemon_thread
 from .envcompat import getenv
@@ -65,7 +66,7 @@ REMOTE_DECISIONS_PER_HOUR = 30   # cap on all decisions incl. refusals: bounds l
 ASK_TTL = _ttl("AGENTJ_TEST_ASK_TTL", 120)   # a permission request the phone does not answer in time is denied (s)
 BACKLOG = 100          # recent chat kept in memory (never on disk) and replayed to a device after it (re)connects
 MAX_ASKS = 16          # outstanding permission requests at once; more are denied at once
-PUSH_GAP = {"reply": 20, "ask": 2}   # minimum seconds between two pushes of a kind to one device
+PUSH_GAP = {"reply": 20, "ask": 2, "security": 2}   # minimum seconds between two pushes of a kind to one device
 BATCH_MAX = 20         # automatic approvals one batch grant may give (ADR-A48) …
 BATCH_SECS = 600       # … within this many seconds, and never past the end of the Agent's turn
 MAX_GRANTS = 8         # batch grants open at once
@@ -81,14 +82,17 @@ ASR_QUEUE = 3                               # takes waiting per device (more →
 FF_MAX_SECS = 119                           # say-time ffmpeg: at most this much audio (≤ uploads.ASR_MAX as WAV)
 FF_CPU_SECS = 60                            # RLIMIT_CPU of one conversion
 # declared MIME → the ffmpeg demuxer (pinned: no content probing, so a playlist or another format is never opened)
-FF_DEMUX = {"audio/webm": "matroska", "audio/ogg": "ogg", "audio/mpeg": "mp3", "audio/mp4": "mov", "audio/aac": "aac",
+FF_DEMUX = {"video/mp4": "mov", "audio/webm": "matroska", "audio/ogg": "ogg", "audio/mpeg": "mp3", "audio/mp4": "mov", "audio/aac": "aac",
             "audio/wav": "wav", "audio/x-wav": "wav"}
 METER_GAP = 2.0                             # ≤ 1 meter message per 2 s
 HIST_READY = 50                             # turns a p33 device gets on ready (it pages for more)
 SWEEP_EVERY = 60
 RETAIN_EVERY = 86_400
 P33_ONLY = ("say", "say_cancel", "blob_open", "blob_chunk", "blob_end", "blob_drop", "hist_get", "menu_get", "model_set",
-            "q_answer", "tts_get")
+            "q_answer", "tts_get", "pref_set", "notice_read")
+# F14: paired phones may change optional warnings, session mode, isolation, docker and the upgrade mode (F19); native permissions stay authoritative.
+PREF_SET_KEYS = ("updates.mode", "appearance.language", "appearance.theme", "voice.wake_enabled", "voice.speak_replies",
+                 "agent.high_risk_warnings", "agent.session_mode", "agent.isolation", "agent.allow_docker")
 METER_KEYS = ("model", "model_name", "effort", "ctx", "h5", "week")
 Q_CANCEL = "用户在手机上取消了这个问题，没有选择任何选项。请不要替他做选择，停下来等他直接输入文字。"
 Q_TIMEOUT = "没有人作答，请改用文字列出选项"
@@ -192,7 +196,8 @@ class Host:
         self.stopping = asyncio.Event()
         self.relay_up = False
         self.name_refused = False   # one agent_name_refused line per refused streak, not one per sync
-        self.reporter = Reporter(st, self.report_view)  # Dashboard metadata reports (§7); no-op unless linked
+        self.official_pending = {}
+        self.reporter = Reporter(st, self.report_view, on_account=self.account_language, on_notices=self.official_notices)  # Dashboard metadata reports (§7); no-op unless linked
         # agent bridge (L1, PROTOCOL §8) and Web Push (§9)
         try:
             self.preferences = preferences.validate(preferences.read()[1])
@@ -251,6 +256,7 @@ class Host:
         self.ff_lock: asyncio.Lock | None = None    # one say-time ffmpeg conversion at a time (P33-X09)
         self.asr_waiting: dict[str, int] = {}
         self.model_sets = 0
+        self.elevate = elevate.Elevator(self)   # F17: admin password / secret cards (PROTOCOL §11)
 
     # ------------------------------------------------------------ output
     def emit(self, ev: str, **kw) -> None:
@@ -560,6 +566,8 @@ class Host:
                 await self.on_p33(s, t, obj)
         elif t == "answer":
             await self._answer(s, obj)
+        elif t in elevate.PHONE_TYPES:  # F17: a signed, sealed sudo password / secret for an open card (§11)
+            await self.elevate.on_phone(s, obj)
         elif t == "push_sub":
             sub = webpush.parse_sub(obj)
             if sub is None:
@@ -697,7 +705,11 @@ class Host:
             while line := await r.readline():
                 req = json.loads(line)
                 cmd = req.get("cmd")
-                if cmd == "status":
+                if cmd == "opencode_auth":
+                    agent = self.agent
+                    result = await agent.authentication() if agent and hasattr(agent, "authentication") else {"known": False}
+                    await self._ctl_send(w, {"ok": True, **result})
+                elif cmd == "status":
                     await self._ctl_send(w, {"ok": True, "relay_up": self.relay_up, "channel": self.channel,
                                              "agent": self.agent.kind if self.agent else None, "agent_status": self.eff_status(),
                                              "asks": len(self.asks), "estop": self.estop,
@@ -1020,6 +1032,7 @@ class Host:
         for g in list(self.grants.values()):
             if self._grant_live(g):
                 await self.send_app(s, self._grant_msg(g))
+        await self.elevate.on_ready(s)
 
     # ------------------------------------------------------------ agent bridge (PROTOCOL §8)
     def eff_status(self) -> str:
@@ -1047,6 +1060,8 @@ class Host:
         # Preferences contain only pure data; no environment values or sensitive State fields.
         value = dict(self.preferences)
         value = preferences.merge(value, {})
+        # Local executable configuration never belongs on the phone.
+        value.get("voice", {}).get("tts", {}).pop("command", None)
         if not preferences.get(value, "voice.wake_word"):
             preferences.put(value, "voice.wake_word", "嘿 " + (self.st.agent_name() or "Agent J"))
         from . import wake
@@ -1055,10 +1070,28 @@ class Host:
         except preferences.ConfigError as e:
             value["voice"]["wake_tokens"] = ""
             if preferences.get(value,"voice.wake_enabled"):
-                return {"t":"preferences","value":value,"problem":e.result()}
-        return {"t": "preferences", "value": value, "problem": self.config_problem}
+                return {"t":"preferences","value":value,"problem":e.result(),"host":self.host_info()}
+        return {"t": "preferences", "value": value, "problem": self.config_problem, "host": self.host_info()}
 
-    async def apply_preferences(self, raw=None):
+    def host_info(self) -> dict:
+        """P44 (C6): read-only facts the phone's settings panel shows next to `value` — this computer's program version,
+        when its language was last set (A1), the phone-settable keys, and the paired phones (metadata only: id, label,
+        paired_at, online now). The safety switches are in `value.agent.*`; the panel shows them read-only with the
+        `agentj config …` command."""
+        lang, at = preferences.language_state(self.st, self.preferences)
+        online = {x.device for x in self.sessions.values() if x.state == "ready" and x.device}
+        devs = []
+        for did, v in sorted(self.st.devices().items(), key=lambda kv: (kv[1] or {}).get("paired_at", 0) if isinstance(kv[1], dict) else 0):
+            if isinstance(did, str) and isinstance(v, dict):
+                pa = v.get("paired_at")
+                devs.append({"id": did, "name": clean_label(str(v.get("name", ""))), "online": did in online,
+                             "paired_at": int(pa) if isinstance(pa, (int, float)) and not isinstance(pa, bool) else 0})
+        return {"version": update.__version__, "language_at": at, "settable": list(PREF_SET_KEYS), "devices": devs}
+
+    async def apply_preferences(self, raw=None, ack=None, language_at=None):
+        """Activate a configuration (raw = new file text to commit; None = the file as it is now). ack(result) is awaited
+        before the `preferences` broadcast (pref_res first, C6). language_at = the account's time when the account's
+        language is being applied (A1), so it is not reported back as a newer host change."""
         async with self.config_apply_lock:
             old = self.preferences
             try:
@@ -1076,14 +1109,113 @@ class Host:
             except (preferences.ConfigError, OSError) as e:
                 self.preferences = old
                 self.config_problem = e.result() if isinstance(e, preferences.ConfigError) else {"ok": False, "key": "/", "error": "runtime persistence failed ("+type(e).__name__+", errno="+str(e.errno)+")"}
+                if ack:
+                    await ack(self.config_problem)
                 await self._send_ready(lambda _: self.preferences_msg())
                 return self.config_problem
-            await self._send_ready(lambda _: self.preferences_msg())
+            lang_changed = preferences.get(old, "appearance.language") != preferences.get(candidate, "appearance.language")
+            preferences.note_language(self.st, candidate, language_at)
+            if lang_changed:
+                self.language_changed(preferences.get(candidate, "appearance.language"), from_account=language_at is not None)
             restart = any(preferences.get(old, key) != preferences.get(candidate, key)
-                          for key in ("agent.working_root", "agent.instructions", "appearance.language"))
-            return {"ok": True, "applied": not restart,
-                    "verify": {"ok": True, "detail": "stored; restart serve for main-Agent instructions" if restart else "host configuration activated; voice needs a listening test"},
-                    "needs": ["restart serve"] if restart else []}
+                          for key in ("agent.working_root", "agent.instructions", "agent.isolation", "agent.allow_docker",
+                                      "proxy.https_env", "proxy.http_env", "proxy.no_proxy_env"))
+            if self.agent_cfg is not None:   # F14: the next Agent process starts with the new isolation / docker choice
+                raw = self.st.config().get("agent") or {}
+                self.agent_cfg["fence"] = raw.get("fence") is not False and preferences.get(candidate, "agent.isolation", True) is not False
+                self.agent_cfg["docker"] = raw.get("docker") is True or preferences.get(candidate, "agent.allow_docker", False) is True
+            result = {"ok": True, "applied": not restart,
+                      "verify": {"ok": True, "detail": "stored; restart serve for Agent instructions or proxy variables" if restart else "host configuration activated; voice needs a listening test"},
+                      "needs": ["restart serve"] if restart else []}
+            if ack:
+                await ack(result)
+            await self._send_ready(lambda _: self.preferences_msg())
+            return result
+
+    def language_changed(self, lang, from_account: bool = False) -> None:
+        """A1: the one language changed. The main Agent speaks it from its next turn (identity text, hot); the account
+        learns a local change with the next report (soon: triggered here)."""
+        if self.agent_cfg is not None:
+            self.agent_cfg["language"] = lang
+        if self.agent is not None and getattr(self.agent, "cfg", None) is not None and not self.agent.cfg.get("_workflow_ceo"):
+            self.agent.cfg["language"] = lang
+            self.agent.identity_changed()
+        self.st.log("language_set", status=lang, trigger="account" if from_account else "local")
+        if not from_account:
+            self.reporter.trigger("language")
+
+    async def set_pref(self, key: str, value, ack=None, language_at=None) -> dict:
+        """One user-tier key written the way `agentj config set` writes it (structural JSON5 edit under preferences.lock,
+        history, last-good), then activated. Used by `pref_set` (C6) and the account language sync (A1)."""
+        import fcntl
+        fd = os.open(self.st.root / "preferences.lock", os.O_RDWR | os.O_CREAT, 0o600)
+        try:
+            for _ in range(50):                      # ≤ 5 s; never block the event loop on the file lock
+                try:
+                    fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                    break
+                except BlockingIOError:
+                    await asyncio.sleep(0.1)
+            else:
+                res = {"ok": False, "key": key, "error": "busy"}
+                if ack:
+                    await ack(res)
+                return res
+            try:
+                preferences.ensure()
+                raw, _ = preferences.read()
+                newraw = preferences.edit(raw, key, value)
+            except (preferences.ConfigError, OSError, ValueError, AssertionError, IndexError, KeyError):
+                res = {"ok": False, "key": key, "error": "configuration unreadable"}
+                if ack:
+                    await ack(res)
+                return res
+            return await self.apply_preferences(newraw, ack=ack, language_at=language_at)
+        finally:
+            os.close(fd)
+
+    def account_language(self, account: dict) -> None:
+        """Reporter callback (A1): the account's language after the server's merge. Applied only when strictly newer
+        than this host's (last write wins; ties keep what is here — the server already kept the account value)."""
+        if not preferences.account_is_newer(self.st, account, self.preferences):
+            return
+        if preferences.get(self.preferences, "appearance.language") == account["language"]:
+            preferences.note_language(self.st, self.preferences, account["language_at"])
+            return
+        self.st.log("language_synced", status=account["language"])
+        asyncio.get_running_loop().create_task(
+            self.set_pref("appearance.language", account["language"], language_at=account["language_at"]))
+
+    async def on_pref_set(self, s: Session, obj: dict) -> None:
+        """C6 `pref_set {r, key, value}` from a ready, paired p33 session (E2E). Whitelist PREF_SET_KEYS only; the value
+        is checked against the schema (type / enum) before anything is written. → `pref_res {r, ok, key, problem?}`,
+        then the normal `preferences` broadcast."""
+        r, key, value = obj.get("r"), obj.get("key"), obj.get("value")
+        if not wire.is_rid(r):
+            return
+        key_out = key if isinstance(key, str) and len(key) <= 64 else None
+
+        async def res(ok: bool, problem: str | None = None) -> None:
+            m = {"t": "pref_res", "r": r, "ok": ok, "key": key_out}
+            if problem:
+                m["problem"] = problem
+            if self.sessions.get(s.cid) is s and s.state == "ready" and self.st.is_allowed(s.pub):
+                await self.send_app(s, m)
+        if key not in PREF_SET_KEYS:
+            self.st.log("pref_set_refused", device=s.device)
+            return await res(False, "not_allowed")
+        meta = preferences.SCHEMA[key]
+        typ_ok = {"boolean": type(value) is bool, "string": isinstance(value, str)}.get(meta["type"], False)
+        if not typ_ok or ("enum" in meta and value not in meta["enum"]):
+            return await res(False, "bad_value")
+        if preferences.get(self.preferences, key) == value:
+            return await res(True)
+
+        async def ack(result: dict) -> None:
+            await res(bool(result.get("ok")), None if result.get("ok") else
+                      ("busy" if result.get("error") == "busy" else "rejected"))
+        self.st.log("pref_set", device=s.device, status=key)
+        await self.set_pref(key, value, ack=ack)
 
     async def preferences_loop(self):
         while not self.stopping.is_set():
@@ -1244,9 +1376,36 @@ class Host:
     def turn_failed(self) -> None:
         self.cur_failed = True
 
+    def official_notices(self, items: list) -> None:
+        """Only cloud's pinned-signature inbox reaches here. Body stays data; trusted local policy owns behavior."""
+        cats = notices.local_categories(self.st, self.preferences)
+        for n in items:
+            action = notices.policy(n, self.preferences, cats)
+            if action == "silent":
+                notices.processed(self.st, n['id'])
+                continue
+            if notices.presented(self.st, n['id']):
+                text = "Agent J 官方 / Agent J official · " + n['title_' + self.lang] + "\n" + n['body_' + self.lang]
+                entry = self._remember("notice", text)
+                self._post(self._send_legacy, lambda s, e=entry: self._render(e, s))
+                self.hist_add({"k": "sys", "text": "", "notice_id": n['id']}, text, "done")
+                self.push_notify("security" if n['type'] == "security" else "ask" if n['priority'] == "urgent" else "reply")
+            # The phone hears immediately; Agent delivery waits for a fresh snapshot after recovery.
+            if not self.agent or self.stopped():
+                continue
+            if n['id'] in self.official_pending:
+                continue
+            send = notices.NoticeSend(self, n, action, self.lang)
+            self.official_pending[n['id']] = send
+            self.agent.submit(send)
+            self.st.log("official_notice", id=n['id'], type=n['type'], action=action)
+        if notices.receipts(self.st): self.reporter.trigger("notice_receipt")
+
     async def update_loop(self) -> None:
         """Once a day: is there a newer host on the public repo? Tell the phones once per version (E2E, like every message);
-        never install anything (Z4: the human runs `agentj update apply`)."""
+        never install anything (Z4: the human runs `agentj update apply`). F12 first: after an authorized upgrade the phones
+        hear once that it happened (update.take_marker)."""
+        await self.upgraded_notice()
         await asyncio.sleep(UPDATE_FIRST)
         while True:
             try:
@@ -1261,6 +1420,27 @@ class Host:
                 self._post(self._send_legacy, lambda s, e=e: self._render(e, s))
                 self.hist_add({"k": "sys", "text": ""}, note, "done")
             await asyncio.sleep(UPDATE_WAKE)
+
+    async def upgraded_notice(self) -> None:
+        """F12 / C3: serve restarted after `agentj update apply --authorization`: one line to the phones, in the owner's
+        language, with the doctor counts — "已升级到 <v>（doctor: N ✓ / M ! / K ✗）". Once per version (the marker is removed
+        as it is read)."""
+        try:
+            rec = update.take_marker(self.st)
+        except Exception:  # noqa: BLE001
+            rec = None
+        if not rec:
+            return
+        try:
+            from . import doctor
+            counts = update.doctor_counts(await asyncio.to_thread(doctor.run, self.st))
+        except Exception:  # noqa: BLE001 — the line still goes out, with "doctor: ?"
+            counts = None
+        note = update.upgraded_text(rec, counts, preferences.get(self.preferences, "appearance.language", "zh"))
+        self.st.log("upgrade_notice", status=str(rec.get("to"))[:32])
+        e = self._remember("notice", note)
+        self._post(self._send_legacy, lambda s, e=e: self._render(e, s))
+        self.hist_add({"k": "sys", "text": ""}, note, "done")
 
     def agent_turn_start(self, text: str, send=None) -> None:
         self.turn_t0 = time.monotonic()
@@ -1278,6 +1458,9 @@ class Host:
             self.hist_update(self.cur_turn, end="stopped" if halted else ("failed" if self.cur_failed else "done"))
         if self.telegram and self.cur_turn is not None:
             self.telegram.completed(self.hist.get(self.cur_turn))
+        send = getattr(self.agent, 'cur_send', None)
+        if getattr(send, 'official_notice_id', None):
+            self.official_pending.pop(send.official_notice_id, None)
         self.cur_turn, self.cur_failed = None, False
         for gid in list(self.grants):     # a batch approval never outlives the turn it was given in (ADR-A48)
             self.end_grant(gid, "turn_end")
@@ -1578,6 +1761,7 @@ class Host:
                 q.fut.set_result(("stopped", None, None, None, None))
         for gid in list(self.grants):
             self.end_grant(gid, "estop")
+        self.elevate.cancel_all("stopped")            # F17: open sudo / secret cards end (a running command finishes)
         busy = False
         if self.agent:
             busy = await self.agent.halt(clear_queue=True)
@@ -1895,6 +2079,14 @@ class Host:
             self.tts_busy=False
 
     async def on_p33(self, s: Session, t: str, obj: dict) -> None:
+        if t == "notice_read":
+            nid = obj.get("id")
+            if isinstance(nid, str) and notices.ID.fullmatch(nid) and notices.mark_read(self.st, nid):
+                self.reporter.trigger("notice_read")
+                self.st.log("notice_read", id=nid, device=s.device)
+            return
+        if t == "pref_set":
+            return await self.on_pref_set(s, obj)
         if t == "tts_get":
             asyncio.create_task(self.on_tts(s, obj))
             return
@@ -2062,8 +2254,8 @@ class Host:
             if send.ready is not None and not send.ready.done():
                 send.ready.set_result(True)
 
-    async def _transcribe_file(self, f: dict, budget: float, device: str) -> dict:
-        state = self.asr_state()
+    async def _transcribe_file(self, f: dict, budget: float, device: str, local_only: bool = False) -> dict:
+        state = self.asr.ready_state(state_dir=self.st.root, engine_override=preferences.get(self.preferences, "voice.asr.engine")) if local_only else self.asr_state()
         if state != "ready":
             return {"ok": False, "why": ASR_WHY.get(state, "broken"), "secs": f.get("secs")}
         # P33-C02: only the host-private copy in the state dir (uploads.Blob.voice) — never the inbox file, which the Agent
@@ -2086,7 +2278,7 @@ class Host:
                 if not uploads.wav_ok(tmp):
                     return {"ok": False, "why": "format", "secs": f.get("secs")}
                 path = tmp
-            r = await self._transcribe(path, min(ASR_TAKE, budget))
+            r = await self._transcribe(path, min(ASR_TAKE, budget), local_only=local_only)
         finally:
             if tmp:
                 with contextlib.suppress(OSError):
@@ -2134,6 +2326,11 @@ class Host:
 
     def say_delivered(self, send: compose.Send) -> None:
         """The harness has the message (agent.Agent.deliver): the attachments belong to the Agent now."""
+        if getattr(send, 'official_notice_id', None):
+            notices.processed(self.st, send.official_notice_id)
+            self.official_pending.pop(send.official_notice_id, None)
+            self.reporter.trigger("notice_delivered")
+            return
         self.uploads.commit(send.blobs)
         self.st.log("say_delivered", device=send.device, id=send.turn)
         self._post(self._send_device, send.device, {"t": "say_state", "sid": send.sid, "s": "delivered"})
@@ -2141,6 +2338,12 @@ class Host:
     def say_uncertain(self, send: compose.Send) -> None:
         """The write to the harness failed part-way (P33-X08): it may have the message, so the attachments stay where they
         are (never deleted by the staged TTL, never released to the phone) and a withdraw answers already_delivered."""
+        if getattr(send, 'official_notice_id', None):
+            # Native transport may have accepted it: do not replay auto-upgrade authority on an uncertain write.
+            notices.processed(self.st, send.official_notice_id)
+            self.official_pending.pop(send.official_notice_id, None)
+            self.st.log("notice_delivery_uncertain", id=send.official_notice_id)
+            return
         self.uploads.commit(send.blobs)
         self.st.log("say_uncertain", device=send.device, id=send.turn)
 
@@ -2156,14 +2359,14 @@ class Host:
             return "broken"
         return v if v in ("ready", "not_installed", "off", "broken") else "broken"
 
-    async def _transcribe(self, path: str, timeout: float) -> dict:
+    async def _transcribe(self, path: str, timeout: float, local_only: bool = False) -> dict:
         """One decode at a time per host (an asyncio.Lock is FIFO: takes are transcribed in the order they finished)."""
         if self.asr_lock is None:
             self.asr_lock = asyncio.Lock()
         async with self.asr_lock:
             try:
                 from . import voice
-                if preferences.get(self.preferences, "voice.asr.mode") == "cloud":
+                if not local_only and preferences.get(self.preferences, "voice.asr.mode") == "cloud":
                     r = await asyncio.wait_for(asyncio.to_thread(voice.cloud_asr, path, self.preferences, timeout), timeout + 5)
                 else:
                     r = await asyncio.wait_for(asyncio.to_thread(self.asr.transcribe, path, timeout_s=timeout,
@@ -2419,7 +2622,7 @@ class Host:
             if now - self.push_last.get((did, kind), -1e9) < PUSH_GAP[kind]:
                 continue
             self.push_last[(did, kind)] = now
-            fut = in_daemon_thread(webpush.send, self._push_key(), sub, kind, "high" if kind == "ask" else "normal")
+            fut = in_daemon_thread(webpush.send, self._push_key(), sub, kind, "high" if kind in ("ask", "security") else "normal")
             fut.add_done_callback(lambda f, did=did: self._push_done(did, f))
 
     def _push_done(self, did: str, f) -> None:
@@ -2487,6 +2690,7 @@ class Host:
             self.agent.start()
             self.sent_status = self.eff_status()
             self.st.log("agent_on", agent=self.agent.kind, fence=self.agent_cfg.get("fence", True))
+        await self.elevate.start()                 # F17: <state>/agentperm/elevate.sock for `agentj sudo` / `agentj secret`
         from .telegram import Telegram
         self.telegram=Telegram(self)
         jobs.append(asyncio.create_task(self.telegram.run()))
@@ -2504,6 +2708,7 @@ class Host:
                 if not q.fut.done():
                     q.fut.set_result(("gone", None, None, None, None))
             await self.scheduler.stop_current()
+            await self.elevate.stop()
             if self.agent:
                 await self.agent.stop()
             with contextlib.suppress(Exception):         # the resident ASR worker (§10.9) goes with serve

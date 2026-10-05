@@ -18,6 +18,8 @@ import * as blobs from './js/blobs.js';
 import * as controls from './js/controls.js';
 import * as push from './js/push.js';
 import * as relay from './js/relay.js';
+import * as settings from './js/settings.js';
+import * as elevate from './js/elevate.js';     // F17: sudo / secret cards (§11)
 
 const $ = el;
 
@@ -147,6 +149,7 @@ let lastSeq = 0;
 function onHostGone() {
   snap.S.asks.clear(); snap.S.qs.clear(); snap.S.order = [];   // the host re-sends every request still open after ready
   controls.clearGrants();
+  elevate.clear();                                    // F17: the host re-sends open sudo / secret cards after ready
 }
 session.configure({
   setStatus,
@@ -196,10 +199,12 @@ controls.configure({ show, estopChanged: () => { relay.onEstop(); rerender(); } 
 function onApp(m) {
   if (api.route(m) || blobs.handle(m)) return;
   switch (m.t) {
-    case 'preferences': relay.applyPreferences(m.value); if(m.problem)relay.configProblem(m.problem.error); return;
+    case 'preferences': relay.applyPreferences(m.value); settings.setPrefs(m.value, m.host); if(m.problem)relay.configProblem(m.problem.error); return;
     case 'status': setAgentName(m.name); snap.setStatus(m); return;
     case 'ask': snap.addAsk(m); return;
     case 'ask_done': snap.askDone(m); return;
+    case 'elev': elevate.add(m); return;             // F17 (§11)
+    case 'elev_done': elevate.done(m); return;
     case 'question': snap.addQuestion(m); return;
     case 'question_done': snap.questionDone(m); return;
     case 'auto': controls.showAuto(m); return;
@@ -251,6 +256,7 @@ async function revoked() {
 async function forgetLocal() {
   relay.forgetLocal();
   blobs.forgetAll();
+  elevate.clear();
   await wipeLocal();
 }
 function fatal(key) {
@@ -427,9 +433,18 @@ function wire() {
   for (const b of document.querySelectorAll('[data-back]')) b.addEventListener('click', () => controls.openPanel('chat'));
   $('act-more').addEventListener('click', () => controls.loadActivity(false));
   $('resume').addEventListener('click', controls.onResume);
-  $('unpair').addEventListener('click', async () => {
+  const unpairAsk = async () => {
     closeMenu();
     if (await confirmSheet(t('menu.unpairTitle'), t('menu.unpairText'), t('menu.unpairYes'))) forgetHost();
+  };
+  $('unpair').addEventListener('click', unpairAsk);
+  settings.configure({                                // F13: the gear, before relay.init so its Esc runs first
+    agentName: () => agentName ?? DEFAULT_NAME,
+    paired: () => !['idle', 'pairing', 'awaiting-approval', 'revoked'].includes(state),
+    connected: () => state === 'ready',
+    myId: api.myIdSync,
+    unpair: unpairAsk,
+    reload: () => location.reload(),
   });
   $('scan-repair').addEventListener('click', async () => {
     closeMenu();
@@ -481,6 +496,7 @@ async function main() {
     asr: () => session.peer.asr,
     p33: () => session.peer.p33,
     saidOld: (text) => snap.synthSaid(text, api.myIdSync()),
+    settings: settings.toggleFromKey,
   });
   if (pendingLink) { const l = pendingLink; pendingLink = null; return startPairing(l); }
   const host = await dbGet('host');

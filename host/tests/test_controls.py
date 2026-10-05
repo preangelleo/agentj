@@ -429,10 +429,8 @@ class Cli(unittest.TestCase):
             tid = out.split("restore ")[1].split("`")[0]
             run("memory", "restore", tid)
             self.assertEqual((work / "CLAUDE.md").read_text(), "- a\n- b 第二条\n\n段落\n")
-            r = run("tasks", "enable", "daily", inp="wrong-pass\n", ok=False)
-            self.assertNotEqual(r.returncode, 0, "enable needs the passphrase")
             self.assertIn("· 未启用", run("tasks", "list").stdout)
-            run("tasks", "enable", "daily", inp="pass-phrase-1\n")
+            run("tasks", "enable", "daily", inp="")          # F14: no passphrase, no terminal
             self.assertIn("✓ 已启用", run("tasks", "list").stdout)
             self.assertIn('"read_only": true', run("tasks", "run", "daily", "--dry-run").stdout)
             self.assertNotEqual(run("tasks", "run", "daily", ok=False).returncode, 0, "a real run needs serve")

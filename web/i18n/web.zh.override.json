@@ -5,5 +5,21 @@
   "pair.scanHint": "这里无法使用相机扫码，请把配对链接粘贴到上方。",
   "pair.scanNoCam": "相机权限被拒绝，或设备没有可用相机。请在设置中允许相机，或把配对链接粘贴到上方。",
   "pair.step2": "点「扫二维码」，或把配对链接粘贴到上方。",
-  "pair.iphone": "iPhone 要先把这个网页添加到主屏幕，再从主屏幕打开它，点这里的「扫二维码」来配对；也可以粘贴链接。系统相机打开的是另一份 Safari 网页。"
+  "pair.iphone": "iPhone 要先把这个网页添加到主屏幕，再从主屏幕打开它，点这里的「扫二维码」来配对；也可以粘贴链接。系统相机打开的是另一份 Safari 网页。",
+  "badge.p1": "手机和电脑之间的内容是加密的，我们的服务器看不懂。",
+  "tasks.textOn": "「{title}」会在{when}（{tz}）自动运行{ro}。需要批准的操作，照样会先问你。任务改了就要重新启用。",
+  "a2hs.title": "添加到主屏幕，用起来像 App",
+  "r.say.badAtt": "有 {n} 个附件没传上去，删掉再发",
+  "r.say.stopped": "已全部停下：这条没交给 Agent，也不会排队。恢复后再发。",
+  "r.say.withdrawn": "已撤回：这条没交给 Agent，文字放回了输入框",
+  "r.say.err.shape": "格式不对，没发出去",
+  "r.say.err.att_gone": "附件在电脑上过期了，删掉重选",
+  "r.say.err.reply_unknown": "回复的那条对不上，取消回复再发",
+  "r.say.err.no_agent": "电脑上还没选 Agent：运行 `agentj agent claude`（或 codex / opencode）",
+  "r.say.err.timeout": "电脑没回应，没发出去",
+  "r.keys.m": "按住说话，松开转文字",
+  "set.updates": "升级方式",
+  "set.updatesAuto": "自动升级并告诉我",
+  "set.updatesAsk": "先问我",
+  "set.updatesSecurity": "紧急安全修复会立即升级，并告诉你原因。"
 }

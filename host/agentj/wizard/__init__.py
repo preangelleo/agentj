@@ -954,10 +954,11 @@ def dry_run(st, root: Path, tid: str, *, harness: str | None = None, model: str 
         res["unfenced_by_human"] = True
     else:
         why = fence.problem(st, work)
-        if why:
-            raise WizardError(f"{fence.REASONS.get(why, why)} — the dry run does not start without the fence")
-        argv = fence.wrap(st, argv, work)
-        res["fenced"] = True
+        if why:   # F14: like serve, degrade to the harness's own permissions and say so in the result
+            res["fence_unavailable"] = why
+        else:
+            argv = fence.wrap(st, argv, work)
+            res["fenced"] = True
     t0 = time.monotonic()
     try:
         p = run(argv, input=stdin, capture_output=True, text=True, timeout=timeout, cwd=work,
@@ -1123,7 +1124,7 @@ def cmd_dry_run(a) -> int:
             print(f"跳过 / skipped: {r['skipped']}")
         else:
             print(out.rstrip()[-6000:])
-            print(f"\n— {r['harness']} · {'fenced' if r['fenced'] else 'UNFENCED (the human chose --unfenced)'} · {r['seconds']} s · "
+            print(f"\n— {r['harness']} · {'fenced' if r['fenced'] else 'UNFENCED (sandbox unavailable: ' + r['fence_unavailable'] + ')' if r.get('fence_unavailable') else 'UNFENCED (--unfenced)'} · {r['seconds']} s · "
                   f"report {r['report']}")
             print(f"VERDICT {r['verdict']} — {r['summary']}" if r["verdict"] else "没有 VERDICT 行 = 失败 / no VERDICT line = failed")
     if r.get("skipped"):

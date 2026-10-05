@@ -23,7 +23,7 @@ from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
 from .envcompat import getenv
 
-KINDS = ("reply", "ask")
+KINDS = ("reply", "ask", "security")
 PAYLOAD_LEN = 32               # every push plaintext is padded to this many bytes before encryption
 RS = 4096
 TTL = 3600

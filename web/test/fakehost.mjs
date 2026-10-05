@@ -99,6 +99,7 @@ export async function startFakeHost() {
     epoch: 1, nextId: 1, turns: [], blobs: new Map(), staged: new Set(), queued: new Map(), opens: [], cancels: [], answers: [],
     qAnswers: [], chunks: 0, wavs: [], menu: null, models: null, meter: null, sigOk: [], says: [], modelSets: [], rate: true,
     firsts: [], errors: [],
+    prefs: null, prefSet: true, prefSets: [], version: null,
   };
 
   // one ordered send queue per connection: CipherState nonces must hit the socket in the order they were taken
@@ -198,6 +199,19 @@ export async function startFakeHost() {
       st.qAnswers.push(m);
       return broadcast({ t: 'question_done', id: m.id, result: m.cancel ? 'cancelled' : 'answered' });
     }
+    if (m.t === 'pref_set') {                       // F13 · C6 / Amendment A1: user-tier whitelist only; older hosts (prefSet:false) ignore it
+      st.prefSets.push(m);
+      if (!st.prefSet) return;
+      const allowed = PREF_ENUM[m.key];
+      if (!allowed) return sendApp(c, { t: 'pref_res', r: m.r, ok: false, key: m.key, problem: 'not_allowed' });
+      if (!allowed.includes(m.value)) return sendApp(c, { t: 'pref_res', r: m.r, ok: false, key: m.key, problem: 'bad_value' });
+      st.prefs = st.prefs || { appearance: { language: 'zh', theme: 'system' }, voice: { speak_replies: false, wake_enabled: false }, agent: { high_risk_warnings: true, session_mode: 'shared' } };
+      const [a, b] = m.key.split('.');
+      st.prefs[a] = { ...(st.prefs[a] || {}), [b]: m.value };
+      await sendApp(c, { t: 'pref_res', r: m.r, ok: true, key: m.key });
+      await broadcast(prefsMsg());
+      return;
+    }
     if (m.t === 'slash') {
       st.slashes = (st.slashes || []).concat([m]);
       await addTurn({ k: 'cmd', text: '/' + m.cmd + (m.arg ? ' ' + m.arg : '') }, m.cmd === 'stop' ? '已中断这一轮。' : `/${m.cmd} 完成。`, 'done',
@@ -207,6 +221,13 @@ export async function startFakeHost() {
     if (m.r && fixtures[m.t]) for (const x of [].concat(fixtures[m.t](m))) await sendApp(c, { ...x, r: m.r });
   }
 
+  // the `preferences` message; a 0.15 host adds its `host` block (version, phone-settable keys, paired phones — metadata)
+  function prefsMsg(value = st.prefs) {
+    const m = { t: 'preferences', value, problem: null };
+    if (st.prefSet) m.host = { version: st.version || '0.15.0a1', language_at: 0, settable: Object.keys(PREF_ENUM),
+      devices: [...conns].filter((c) => c.devId).map((c) => ({ id: c.devId, name: lastLabel || '', online: !!c.isReady, paired_at: 0 })) };
+    return m;
+  }
   async function afterReady(c) {
     if (!c.p33) return;
     if (st.rate) c.sendText(JSON.stringify({ t: 'rate', n: 240, w: 10 }));
@@ -216,6 +237,7 @@ export async function startFakeHost() {
     for (const turn of since.slice(0, 50)) await sendApp(c, { t: 'hist_turn', epoch: st.epoch, turn });
     if (st.meter) await sendApp(c, { t: 'meter', ...st.meter });
     if (st.models) await sendApp(c, { t: 'models', ...st.models });
+    if (st.prefs) await sendApp(c, prefsMsg());
   }
 
   async function onSay(c, m) {
@@ -343,6 +365,8 @@ export async function startFakeHost() {
     get sas() { return lastSas; },
     get label() { return lastLabel; },
     get frames() { return [...conns].reduce((n, c) => n + c.frames, 0); },
+    /** F17: ready devices with their approval key (b64u Ed25519 public) — to check a signed elev_answer. */
+    get devs() { return [...conns].filter((c) => c.isReady && c.devId).map((c) => ({ id: c.devId, sk: allow.get(b64u(c.devPub))?.sk || null })); },
     newPairing(base, ttl = 300) {
       const id = randomBytes(16), psk = randomBytes(32);
       pairings.set(b64u(id), { psk });
@@ -378,6 +402,7 @@ export async function startFakeHost() {
       if (obj.t === 'estop_state') st.estop = obj.on;
       await broadcast(obj);
     },
+    prefsMsg,
     answer(t, fn) { fixtures[t] = fn; },
     revokeAll() { allow.clear(); for (const c of conns) c.close(4010); },
     /** drop every device socket like a network failure (not a revoke) */
@@ -387,7 +412,8 @@ export async function startFakeHost() {
       Object.assign(st, { p33: true, asr: 'ready', asrText: '这是转写出来的文字', asrWhy: null, asrTexts: [], asrDelays: [], sayMode: 'delivered', sayDelay: 0,
         autoReply: true, replyFor: null, epoch: st.epoch + 1, turns: [], blobs: new Map(), staged: new Set(), queued: new Map(), opens: [], cancels: [],
         answers: [], qAnswers: [], chunks: 0, wavs: [], menu: null, models: null, meter: null, sigOk: [], says: [], modelSets: [], slashes: [],
-        stallAfter: 0, blobErr: null, sayWhy: null, estop: false, rate: true, firsts: [], errors: [], lastError: undefined });
+        stallAfter: 0, blobErr: null, sayWhy: null, estop: false, rate: true, firsts: [], errors: [], lastError: undefined,
+        prefs: null, prefSet: true, prefSets: [], version: null });
       st.asksOpen = new Map();
       log.length = 0;
     },
@@ -396,5 +422,7 @@ export async function startFakeHost() {
     stop: () => new Promise((r) => { for (const c of conns) c.close(1001); server.closeAllConnections?.(); server.close(() => r()); }),
   };
 }
+// the phone-settable keys (contract C6 / Amendment A1) and their values; everything else → not_allowed
+const PREF_ENUM = { 'updates.mode': ['auto', 'ask'], 'appearance.language': ['zh', 'en'], 'appearance.theme': ['system', 'light', 'dark'], 'voice.speak_replies': [true, false], 'voice.wake_enabled': [true, false], 'agent.high_risk_warnings': [true, false], 'agent.session_mode': ['shared', 'independent'], 'agent.isolation': [true, false], 'agent.allow_docker': [true, false] };
 const TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/gif', 'image/heic', 'image/heif', 'application/pdf', 'text/plain', 'text/markdown', 'text/csv',
   'application/json', 'audio/webm', 'audio/ogg', 'audio/mpeg', 'audio/mp4', 'audio/aac', 'audio/wav', 'audio/x-wav'];

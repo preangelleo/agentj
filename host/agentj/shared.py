@@ -165,7 +165,7 @@ class SharedClaudeAgent(Agent):
             if self.host.stopped() or self.host.st.sign_key(grant["device"]) != grant["sign_pub"]:
                 self.permissions.discard(cat)
                 self.risk_grants.pop(cat, None)
-        if name == "PreToolUse" and self.cfg.get("high_risk_warnings", True):
+        if name == "PreToolUse" and self.cfg.get("high_risk_warnings", False):
             verdict = danger.classify_shared(event.get("tool_name"), event.get("tool_input"), self.cfg.get("danger_extra"))
             if verdict.cats and set(verdict.cats) <= self.permissions:
                 for cat in verdict.cats:
@@ -234,6 +234,8 @@ class SharedClaudeAgent(Agent):
                ("CLAUDECODE", "CLAUDE_CODE_SESSION_ID", "CLAUDE_CODE_ENTRYPOINT", "CLAUDE_AGENT_SDK_SESSION_ID",
                 "CLAUDE_CODE_CHILD_SESSION", "CLAUDE_CODE_MESSAGING_SOCKET", "CLAUDE_CODE_MESSAGING_TOKEN",
                 "CLAUDE_PID", "CLAUDE_CODE_SESSION_ATTENDED", "CLAUDE_EFFORT", "CLAUDE_CODE_EXECPATH")}
+        from .proxy import environment
+        env = environment(env, self.host.preferences)
         env["TERM"] = "xterm-256color"
         try:
             argv = [exe]
@@ -463,7 +465,7 @@ class SharedOpenCodeAgent(OpenCodeAgent):
         self.risk_channel=None
 
     async def prepare_risk(self):
-        if not self.cfg.get('high_risk_warnings',True) or self.risk_channel:
+        if not self.cfg.get('high_risk_warnings',False) or self.risk_channel:
             return
         self.risk_channel=shared_hook.Channel(self.risk,shared_hook.channel_path(self.host.st.root,'opencode'))
         await self.risk_channel.start()
@@ -696,7 +698,7 @@ class SharedOpenCodeAgent(OpenCodeAgent):
 
 
 def make_shared(host, cfg):
-    if cfg.get("high_risk_warnings") is not False and cfg["kind"] not in ("claude", "codex", "opencode"):
+    if cfg.get("high_risk_warnings", False) and cfg["kind"] not in ("claude", "codex", "opencode"):
         return UnavailableSharedAgent(host, cfg)
     if cfg["kind"] == "claude":
         return SharedClaudeAgent(host, cfg)

@@ -215,6 +215,8 @@ class Units(unittest.TestCase):
         for bad in ("dangerously", "bypass", "--sandbox", "-s ", "approval", "-c", "--enable", "--disable"):
             self.assertNotIn(bad, c)
         # app-server (ADR-A70): the only thread settings serve adds make Codex ask more, never less (Invariant 11)
+        self.assertEqual(cx.policy(), {})
+        cx.cfg["high_risk_warnings"] = True
         self.assertEqual(cx.policy(), {"approvalsReviewer": "user", "approvalPolicy": "untrusted"})
         cx.human = {"approval_policy": {"granular": {"rules": False, "sandbox_approval": False, "mcp_elicitations": False}}}
         self.assertEqual(cx.policy(), {"approvalsReviewer": "user"})        # a granular policy of theirs stays theirs

@@ -64,7 +64,8 @@ class HookTrust(unittest.IsolatedAsyncioTestCase):
    return {'thread':{'id':SID},'approvalPolicy':'never','approvalsReviewer':'user','sandbox':{'type':'dangerFullAccess'}}
   a.call=AsyncMock(side_effect=call)
   original={'approvalPolicy':'never','approvalsReviewer':'user','sandboxPolicy':{'type':'dangerFullAccess'}}
-  with patch('agentj.shared_codex.selected_rollout'),patch('agentj.shared_codex.owner_context',return_value=(original,{})):
+  with patch('agentj.shared_codex.selected_rollout'),patch('agentj.shared_codex.first_meta',return_value={'id':SID,'cwd':'/var/tmp'}),\
+       patch('agentj.shared_codex.scan',return_value=({},{},False)),patch('agentj.shared_codex.owner_context',return_value=(original,{})):
    self.assertTrue(await a._thread())
   self.assertEqual([m for m,_ in seen],['hooks/list','thread/resume'])
   params=seen[1][1];self.assertEqual(params['config'],{'hooks.state':{'OWN':{'trusted_hash':'HASH'}}})

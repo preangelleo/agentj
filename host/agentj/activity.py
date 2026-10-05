@@ -25,7 +25,7 @@ TEXT_MAX = 300
 _DAY = re.compile(r"(\d{4}-\d{2}-\d{2})\.jsonl")
 KINDS = ("turn_start", "turn_end", "ask", "decision", "auto", "grant", "grant_end", "estop", "resume", "message_refused",
          "mem_rm", "mem_undo", "task_on", "task_off", "task_run", "task_done", "control_refused", "activity_on", "truncated",
-         "slash")
+         "slash", "shared")
 _last_purge = [0.0]
 
 

@@ -46,7 +46,7 @@ def _cli(*args, env=None, timeout=60, stdin=subprocess.DEVNULL):
 class Version(unittest.TestCase):
     def test_one_source(self):
         v = agentj.__version__
-        self.assertEqual(v, "0.14.0a1")
+        self.assertEqual(v, "0.15.0a1")
         self.assertEqual(cloud.VERSION, v)
         self.assertEqual(cloud.AGENT, f"agentj/{v}")
         r = _cli("--version")
@@ -395,7 +395,7 @@ class InstallAware(unittest.TestCase):
                 a = fence.bwrap_argv(st, d)
             i = a.index("--tmpfs")
             self.assertEqual(a[i + 1], "/tmp")
-            j = [k for k in range(len(a) - 2) if a[k] == "--ro-bind" and a[k + 1] == fake]
+            j = [k for k in range(len(a) - 2) if a[k] == "--bind" and a[k + 1] == fake]
             self.assertTrue(j and j[0] > i, "the venv under /tmp is put back read-only on top of the private /tmp")
 
 
@@ -440,7 +440,7 @@ class WheelInstall(unittest.TestCase):
                   "agentj/admin/brand/img/shield-64.png"):
             self.assertIn(f, names_)
         self.assertFalse([n for n in names_ if n.endswith(".src.json") or "shield-source" in n], "no copy source, no big logo source")
-        self.assertLess(pathlib.Path(self.wheel).stat().st_size, 1_900_000, "wheel stays bounded: offline bilingual keyword lexicon adds ~0.85 MB; no acoustic models ship here")
+        self.assertLess(pathlib.Path(self.wheel).stat().st_size, 2_000_000, "wheel stays bounded: offline bilingual keyword lexicon adds ~0.85 MB; 0.15 code (cards, support, notices) ~1.93 MB; no acoustic models ship here")
         self.assertFalse([n for n in names_ if n.startswith("tests/") or "wiredump" in n or "fakeclaude" in n])
         ep = next(n for n in names_ if n.endswith("entry_points.txt"))
         eps = zipfile.ZipFile(self.wheel).read(ep).decode()
@@ -494,7 +494,7 @@ class WheelInstall(unittest.TestCase):
             self.assertEqual({c["id"]: c["status"] for c in d_["checks"]}["state"], "ok")
             core = next(c for c in d_["checks"] if c["id"] == "main-core")
             self.assertEqual(core["status"], "ok")
-            self.assertIn("core v2:", core["summary"])
+            self.assertIn("core v3:", core["summary"])
 
     @unittest.skipUnless((sys.platform.startswith("linux") and shutil.which("bwrap")) or
                          (sys.platform == "darwin" and os.access(fence.SANDBOX_EXEC, os.X_OK)),

@@ -191,12 +191,13 @@
       "since": "0.12",
       "enum": [
         "openai",
-        "elevenlabs"
+        "elevenlabs",
+        "command"
       ]
     },
     "voice.tts.model": {
       "type": "string",
-      "default": "gpt-4o-mini-tts",
+      "default": "gpt-realtime-2.1-mini",
       "description": "Cloud speech model / 云端语音模型",
       "aliases": [
         "voice tts model",
@@ -206,7 +207,10 @@
       "apply": "hot",
       "verify": "agentj config validate --json",
       "since": "0.12",
-      "maxLength": 160
+      "maxLength": 160,
+      "providerDefaults": {
+        "elevenlabs": "eleven_v4"
+      }
     },
     "voice.tts.key_env": {
       "type": "string",
@@ -220,7 +224,10 @@
       "apply": "hot",
       "verify": "agentj config validate --json",
       "since": "0.12",
-      "pattern": "^[A-Z][A-Z0-9_]{0,79}$"
+      "pattern": "^[A-Z][A-Z0-9_]{0,79}$",
+      "providerDefaults": {
+        "elevenlabs": "ELEVENLABS_API_KEY"
+      }
     },
     "voice.speak_replies": {
       "type": "boolean",
@@ -270,11 +277,13 @@
     "appearance.language": {
       "type": "string",
       "default": "zh",
-      "description": "Interface language / 界面语言",
+      "description": "Your language: phone screens, account emails and the language Agent J speaks with you / 你的语言：手机界面、账号邮件，以及 Agent J 和你交流用的语言",
       "aliases": [
         "语言",
         "language",
-        "appearance language"
+        "appearance language",
+        "对话语言",
+        "conversation language"
       ],
       "tier": "user",
       "apply": "hot",
@@ -405,12 +414,12 @@
     "human.danger_extra": {
       "type": "string",
       "default": "",
-      "description": "Use the existing human-authorized command / 使用现有人类授权命令",
+      "description": "Legacy pointer, no effect: extra warnings are agent.high_risk_warnings / 旧指针，无作用：额外提醒见 agent.high_risk_warnings",
       "aliases": [
         "human danger extra",
         "额外危险规则"
       ],
-      "tier": "human",
+      "tier": "user",
       "apply": "restart:serve",
       "verify": "agentj config validate --json",
       "since": "0.12"
@@ -431,12 +440,12 @@
     "human.report_hostname": {
       "type": "string",
       "default": "",
-      "description": "Use the existing human-authorized command / 使用现有人类授权命令",
+      "description": "Legacy pointer, no effect: use agentj report / 旧指针，无作用：用 agentj report",
       "aliases": [
         "human report hostname",
         "主机名报告"
       ],
-      "tier": "human",
+      "tier": "user",
       "apply": "restart:serve",
       "verify": "agentj config validate --json",
       "since": "0.12"
@@ -470,12 +479,12 @@
     "human.fence": {
       "type": "string",
       "default": "",
-      "description": "Use the existing human-authorized command / 使用现有人类授权命令",
+      "description": "Legacy pointer, no effect: isolation is agent.isolation / 旧指针，无作用：隔离见 agent.isolation",
       "aliases": [
         "human fence",
         "围栏"
       ],
-      "tier": "human",
+      "tier": "user",
       "apply": "restart:serve",
       "verify": "agentj config validate --json",
       "since": "0.12"
@@ -588,8 +597,8 @@
     },
     "agent.high_risk_warnings": {
       "type": "boolean",
-      "default": true,
-      "description": "Additional high-risk warnings; disable explicitly on this computer / 本机显式关闭额外高危提醒",
+      "default": false,
+      "description": "Optional extra warnings, off by default / 可选额外提醒，默认关闭",
       "aliases": [
         "高危提醒",
         "high risk warnings"
@@ -598,6 +607,150 @@
       "apply": "restart",
       "verify": "agentj config validate --json",
       "since": "0.13"
+    },
+    "updates.mode": {
+      "type": "string",
+      "tier": "user",
+      "default": "auto",
+      "enum": [
+        "auto",
+        "ask"
+      ],
+      "description": "自动升级并通知主人，或先询问；紧急安全修复会立即升级。 Upgrade automatically and tell the owner, or ask first. Urgent security fixes upgrade immediately.",
+      "aliases": [
+        "updates.mode",
+        "升级方式"
+      ],
+      "apply": "hot",
+      "verify": "agentj config validate --json",
+      "since": "0.15"
+    },
+    "updates.skill_categories": {
+      "type": "array",
+      "tier": "user",
+      "default": [],
+      "description": "本机推荐技能分类：内容创作、App 开发、电商、通用。 Locally relevant skill categories: content, app, commerce, general.",
+      "aliases": [
+        "updates.skill_categories",
+        "技能推荐分类"
+      ],
+      "apply": "hot",
+      "verify": "agentj config validate --json",
+      "since": "0.15"
+    },
+    "telegram.groups": {
+      "type": "array",
+      "default": [],
+      "description": "Group profiles and numeric sender allowlists / 群配置与发送人白名单",
+      "aliases": [
+        "telegram.groups",
+        "Telegram 群白名单"
+      ],
+      "tier": "user",
+      "apply": "hot",
+      "verify": "agentj config validate --json",
+      "since": "0.15"
+    },
+    "proxy.https_env": {
+      "type": "string",
+      "default": "",
+      "description": "Variable NAME passed as HTTPS_PROXY / HTTPS_PROXY 的来源变量名",
+      "aliases": [
+        "proxy.https_env",
+        "HTTPS 代理变量名"
+      ],
+      "tier": "user",
+      "apply": "restart",
+      "verify": "agentj config validate --json",
+      "since": "0.15",
+      "pattern": "(?:[A-Z][A-Z0-9_]{0,79})?",
+      "maxLength": 80
+    },
+    "proxy.http_env": {
+      "type": "string",
+      "default": "",
+      "description": "Variable NAME passed as HTTP_PROXY / HTTP_PROXY 的来源变量名",
+      "aliases": [
+        "proxy.http_env",
+        "HTTP 代理变量名"
+      ],
+      "tier": "user",
+      "apply": "restart",
+      "verify": "agentj config validate --json",
+      "since": "0.15",
+      "pattern": "(?:[A-Z][A-Z0-9_]{0,79})?",
+      "maxLength": 80
+    },
+    "proxy.no_proxy_env": {
+      "type": "string",
+      "default": "",
+      "description": "Variable NAME passed as NO_PROXY / NO_PROXY 的来源变量名",
+      "aliases": [
+        "proxy.no_proxy_env",
+        "代理绕过变量名"
+      ],
+      "tier": "user",
+      "apply": "restart",
+      "verify": "agentj config validate --json",
+      "since": "0.15",
+      "pattern": "(?:[A-Z][A-Z0-9_]{0,79})?",
+      "maxLength": 80
+    },
+    "voice.tts.command": {
+      "type": "array",
+      "default": [],
+      "description": "Local speech argv; UTF-8 text on stdin, write PCM WAV to {output}; no secrets / 本地发声参数；stdin 收文字，{output} 写 WAV，勿填密钥",
+      "aliases": [
+        "voice tts command",
+        "本地发声命令"
+      ],
+      "tier": "user",
+      "apply": "hot",
+      "verify": "agentj doctor --offline --json",
+      "since": "0.15"
+    },
+    "voice.tts.command_timeout": {
+      "type": "number",
+      "default": 60,
+      "description": "Local speech deadline in seconds / 本地发声超时秒数",
+      "aliases": [
+        "voice tts command timeout",
+        "本地发声超时"
+      ],
+      "tier": "user",
+      "apply": "hot",
+      "verify": "agentj config validate --json",
+      "since": "0.15",
+      "minimum": 0.1,
+      "maximum": 300
+    },
+    "agent.isolation": {
+      "type": "boolean",
+      "default": true,
+      "description": "Independent sessions run in the fence (data hidden); off = the harness's own permissions / 独立会话在隔离里运行（隐藏数据）；关闭则按底层 harness 自己的权限",
+      "aliases": [
+        "隔离",
+        "isolation",
+        "fence"
+      ],
+      "tier": "user",
+      "apply": "restart",
+      "verify": "agentj config validate --json",
+      "since": "0.15"
+    },
+    "agent.allow_docker": {
+      "type": "boolean",
+      "default": false,
+      "description": "Let the fenced Agent use docker / podman, off by default / 让隔离中的 Agent 使用 docker / podman，默认关闭",
+      "aliases": [
+        "docker",
+        "允许 docker",
+        "allow docker"
+      ],
+      "tier": "user",
+      "apply": "restart",
+      "verify": "agentj config validate --json",
+      "since": "0.15"
     }
   }
 }

@@ -1076,7 +1076,7 @@ export async function runCases({ B, web, fake, only }) {
   await C('keys-panel', async () => {
     await click('#keysBtn');
     await wait(`!document.getElementById('keys').hidden`);
-    ok((await ev(`document.querySelectorAll('#keys dt').length`)) === 23 && (await ev(`document.querySelectorAll('#keys dd').length`)) === 23, 'all relay shortcuts listed');
+    ok((await ev(`document.querySelectorAll('#keys dt').length`)) === 24 && (await ev(`document.querySelectorAll('#keys dd').length`)) === 24, 'all relay shortcuts listed + F13 s · Ctrl+, (Settings)');
     await click('#keysClose');
   });
   await C('key-j-older', async () => { await blur(); await key(P, 'j', { code: 'KeyJ' }); await wait(`document.getElementById('pg').textContent === '3 / 4'`); });

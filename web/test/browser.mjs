@@ -142,10 +142,10 @@ export async function waitState(p, want, ms = 10000) {
   for (let t = 0; t < ms; t += 100) { s = await evaluate(p, 'window.__ajState'); if (s === want) return true; await sleep(100); }
   throw new Error(`state ${s} != ${want} (status: ${await evaluate(p, `document.getElementById('status').textContent + ' / ' + document.getElementById('error-text').textContent`)}; problems: ${p.problems.join(' | ')})`);
 }
-export async function key(p, k, { code, shift, ctrl, text, type = 'both', keyCode } = {}) {
-  const mod = (shift ? 8 : 0) | (ctrl ? 2 : 0);
+export async function key(p, k, { code, shift, ctrl, meta, text, type = 'both', keyCode } = {}) {
+  const mod = (shift ? 8 : 0) | (ctrl ? 2 : 0) | (meta ? 4 : 0);
   const base = { key: k, code: code || (k.length === 1 ? 'Key' + k.toUpperCase() : k), modifiers: mod, windowsVirtualKeyCode: keyCode ?? (k.length === 1 ? k.toUpperCase().charCodeAt(0) : { Escape: 27, Enter: 13, ArrowUp: 38, ArrowDown: 40, ArrowLeft: 37, ArrowRight: 39, Tab: 9, ' ': 32 }[k] || 0) };
-  if (type !== 'up') await p.send('Input.dispatchKeyEvent', { type: text === undefined && (ctrl || k.length > 1) ? 'rawKeyDown' : 'keyDown', ...base, ...(text !== undefined ? { text } : k.length === 1 && !ctrl ? { text: k } : {}) });
+  if (type !== 'up') await p.send('Input.dispatchKeyEvent', { type: text === undefined && (ctrl || meta || k.length > 1) ? 'rawKeyDown' : 'keyDown', ...base, ...(text !== undefined ? { text } : k.length === 1 && !ctrl && !meta ? { text: k } : {}) });
   if (type !== 'down') await p.send('Input.dispatchKeyEvent', { type: 'keyUp', ...base });
 }
 export async function tap(p, x, y) {

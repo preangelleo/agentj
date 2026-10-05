@@ -2,6 +2,7 @@
 import argparse
 import json
 import os
+import sys
 from pathlib import Path
 from . import preferences as p
 
@@ -47,6 +48,7 @@ def command(args):
                 from .telegram import enroll
                 result=enroll(a.owner_id,a.key_env)
                 if not result['ok']:print(json.dumps(result));return 2
+                print(result['notice'],file=sys.stderr)
                 rows=p.merge(rows,[{'id':'telegram','type':'telegram'}])
             elif group=='channel' and a.action=='remove':
                 rows=[x for x in rows if x['id']!=a.value]+[{'id':a.value,'disabled':True}]
@@ -60,9 +62,8 @@ def command(args):
 def skill(a):
     source=Path(__file__).with_name('skills')/'agentj-config'
     targets=[Path.home()/p for p in ('.claude/skills/agentj-config','.codex/skills/agentj-config','.agents/skills/agentj-config','.config/opencode/skills/agentj-config')]
-    if a.action=='install' and not a.owner_confirmed:
-        if not os.isatty(0):print(json.dumps({'ok':False,'needs':['human'],'error':'Ask owner before installing links in Claude Code, Codex and OpenCode. Then use --owner-confirmed.'}));return 2
-        if input('Install agentj-config skill links for your AIs? [y/N] ').lower()!='y':return 2
+    # F14: no owner-confirmed / terminal gate (--owner-confirmed still accepted). Each link must point at this package's own
+    # skill folder; a foreign file or link at a target is a conflict, never replaced.
     if a.action not in ('install','uninstall','list','status'):return 1
     out=[]
     for target in targets:

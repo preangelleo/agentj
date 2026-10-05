@@ -149,6 +149,17 @@ def config_content(user: str | None) -> str:
     return json.dumps(cfg, separators=(",", ":"))
 
 
+def provider_error_reason(name, data):
+    code = data.get('statusCode')
+    code = code if type(code) is int and 100 <= code <= 599 else None
+    detail = str(data.get('message') or '').lower()
+    return ("login" if code == 401 or "auth" in name.lower() or "key" in name.lower()
+                          else "access" if code == 403 else "balance" if code == 402 else "rate_limit" if code == 429
+                          else "model" if code == 404 or "modelnotfound" in name.lower()
+                          else "network" if any(x in detail for x in ("fetch failed","certificate","enotfound","econnrefused","connect timeout","unable to connect"))
+                          else "internal" if name == "UnknownError" else "provider")
+
+
 def opencode_env(base: dict, password: str) -> dict:
     env = dict(base)
     env.update(OPENCODE_SERVER_PASSWORD=password, OPENCODE_SERVER_USERNAME=USER, OPENCODE_DISABLE_MODELS_FETCH="1",
@@ -390,6 +401,12 @@ class OpenCodeAgent(Agent):
             self.failed_start = True
             self.fail_notice("这台电脑上没找到 OpenCode（opencode 命令）。装好并配好模型后再试。")
             return False
+        from .harness import version_of, opencode_v2
+        version = await asyncio.to_thread(version_of, _bin('AGENTJ_OPENCODE_BIN', 'opencode'))
+        if opencode_v2(version):
+            self.failed_start = True
+            self.fail_notice('OpenCode v2 的 /api 协议尚未接入 Agent J；这不是模型 key 无效。优先切换 Claude Code，或使用兼容的 OpenCode v1。 / OpenCode v2 API is not supported by this adapter; this is not an invalid model key. Prefer Claude Code or use OpenCode v1.')
+            return False
         if self.cfg.get("model") and not split_model(self.cfg["model"]):
             self.failed_start = True
             self.fail_notice("OpenCode 的模型要写成「服务商/模型」，例如 zhipuai/glm-5.3：在电脑终端重新运行 "
@@ -400,7 +417,8 @@ class OpenCodeAgent(Agent):
         if argv is None:
             self.failed_start = True
             return False
-        proc = await asyncio.create_subprocess_exec(*argv, cwd=self.cfg["dir"], env=opencode_env(os.environ, password),
+        from .proxy import environment
+        proc = await asyncio.create_subprocess_exec(*argv, cwd=self.cfg["dir"], env=opencode_env(environment(os.environ, self.host.preferences), password),
                                                     stdin=asyncio.subprocess.DEVNULL, stdout=asyncio.subprocess.PIPE,
                                                     stderr=asyncio.subprocess.PIPE, limit=LINE_LIMIT, start_new_session=True)
         self.proc, self.err_tail, self.quiet_exit, self.failed_start = proc, "", False, False
@@ -482,7 +500,7 @@ class OpenCodeAgent(Agent):
         if ag is None:
             raise HTTPError("no primary agent")
         self.agent_rules = ag.get("permission") if isinstance(ag.get("permission"), list) else []
-        self.rules = session_rules(self.agent_rules, self.research)
+        self.rules = session_rules(self.agent_rules, self.research) if self.research or self.cfg.get("high_risk_warnings", False) else list(self.agent_rules)
         await self._attach()
 
     async def _attach(self) -> None:
@@ -662,13 +680,12 @@ class OpenCodeAgent(Agent):
                 code = data.get("statusCode")
                 code = code if type(code) is int and 100 <= code <= 599 else None
                 detail = str(data.get("message") or "").lower()
-                reason = ("login" if code in (401,403) or "auth" in name.lower() or "key" in name.lower()
-                          else "balance" if code == 402 else "rate_limit" if code == 429
-                          else "model" if code == 404 or "modelnotfound" in name.lower()
-                          else "network" if any(x in detail for x in ("fetch failed","certificate","enotfound","econnrefused","connect timeout","unable to connect"))
-                          else "provider")
+                reason = provider_error_reason(name, data)
                 self.host.st.log("agent_provider_fail", agent=self.kind, reason=reason, http_status=code)
+                # Provider.getLanguage caches model clients; key changes require serve restart.
                 notes = {
+                    "access": "服务商拒绝访问（403）：核实地区、代理、账户权限及模型授权；403 不一定是 key 无效。 / Provider access denied: check region, proxy and account/model permission; 403 does not prove an invalid key.",
+                    "internal": "OpenCode 内部错误：检查本机 OpenCode 状态，再重启对应 serve。 / OpenCode internal error; check local status and restart the relevant serve.",
                     "login": "模型服务登录或 key 无效：在电脑运行 `opencode auth login`；换 key 后运行 `agentj service restart`，再试发消息。 / Provider login/key failed; run `opencode auth login`, then `agentj service restart` after changing keys (restart the desktop OpenCode server too when attached).",
                     "balance": "模型服务余额不足：在电脑核实你的 provider 余额，然后在 OpenCode 终端试发消息。 / Check your provider balance in OpenCode.",
                     "rate_limit": "模型服务限流：等一会儿再在 OpenCode 终端试发消息；这条消息不会自动重发。 / Provider rate limit; wait and retry manually.",
@@ -974,10 +991,21 @@ class OpenCodeAgent(Agent):
 
     async def _providers(self) -> dict:
         try:
-            st, r = await self.client.request("GET", "/config/providers")
+            st, r = await self.client.request("GET", "/provider")
         except (OSError, HTTPError, AttributeError, asyncio.TimeoutError):
             return {}
-        return r if st == 200 and isinstance(r, dict) else {}
+        return {"providers": r.get("all", []), "default": r.get("default", {}),
+                "connected": r.get("connected")} if st == 200 and isinstance(r, dict) else {}
+
+    async def authentication(self) -> dict:
+        prov = await self._providers()
+        connected = prov.get('connected')
+        selected = split_model(self.cfg.get('model'))
+        pid = selected['providerID'] if selected else None
+        known = isinstance(connected, list) and all(isinstance(x, str) for x in connected)
+        return {'known': known, 'selected_connected': (pid in connected if pid and known else None),
+                'connected_count': len(connected) if known else None,
+                'restart_after_key_change': True}
 
     async def _last_assistant(self) -> dict:
         """info of the newest assistant message of this conversation (tokens, modelID, providerID), or {}."""

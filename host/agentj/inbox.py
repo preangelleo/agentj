@@ -41,7 +41,7 @@ ALLOWED = {
     "image/jpeg": ".jpg", "image/png": ".png", "image/webp": ".webp", "image/gif": ".gif", "image/heic": ".heic",
     "image/heif": ".heif", "application/pdf": ".pdf", "text/plain": ".txt", "text/markdown": ".md", "text/csv": ".csv",
     "application/json": ".json", "audio/webm": ".webm", "audio/ogg": ".ogg", "audio/mpeg": ".mp3", "audio/mp4": ".m4a",
-    "audio/aac": ".aac", "audio/wav": ".wav", "audio/x-wav": ".wav",
+    "video/mp4": ".mp4", "audio/aac": ".aac", "audio/wav": ".wav", "audio/x-wav": ".wav",
 }
 
 

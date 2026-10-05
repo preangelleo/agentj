@@ -185,23 +185,20 @@ class DocsRuleWrite(unittest.TestCase):
         self.assertEqual(docsrule.memory_file("codex"), os.path.join(self.home, ".codex", "AGENTS.md"))
         self.assertEqual(docsrule.memory_file("opencode"), os.path.join(self.home, ".config", "opencode", "AGENTS.md"))
 
-    def test_not_a_tty_writes_nothing_and_says_who_runs_what(self):
-        rc, out, asked = self.run_write(tty=False)
-        self.assertEqual(rc, 2)
-        self.assertEqual(asked, [], "no question on a pipe")
-        self.assertFalse(self.f.exists())
-        self.assertFalse(self.f.parent.exists())
-        self.assertIn("agentj docs-rule --write --harness claude --lang zh", out)
-        self.assertIn("own", out)
+    def test_pipe_writes_without_a_question(self):
+        """F14: no terminal y/N — the Agent may run it itself (a pipe writes, nothing is asked)."""
+        rc, out, asked = self.run_write(tty=False, answer="n")
+        self.assertEqual(rc, 0, out)
+        self.assertEqual(asked, [], "no question")
+        self.assertEqual(self.f.read_bytes(), docsrule.block("zh").encode())
         self.assertIn("~/.claude/CLAUDE.md", out)
         self.assertIn(docsrule.BEGIN, out, "the block is shown")
 
-    def test_no_answer_writes_nothing(self):
-        for ans in ("n", "", "no", "yes please"):
-            rc, out, asked = self.run_write(answer=ans)
-            self.assertEqual(rc, 0)
-            self.assertEqual(asked, ["Add this to ~/.claude/CLAUDE.md? [y/N] "])
-            self.assertFalse(self.f.exists(), ans)
+    def test_zh_rule_says_search_yourself(self):
+        zh = docsrule.block("zh")
+        self.assertIn("自己搜一下广场", zh)
+        self.assertNotIn("请主人在电脑上搜", zh)
+        self.assertIn("Run it yourself", docsrule.block("en"))
 
     def test_yes_creates_0600_then_idempotent(self):
         rc, out, _ = self.run_write(answer="Y")
@@ -239,9 +236,8 @@ class DocsRuleWrite(unittest.TestCase):
 
     def test_cli(self):
         r = _cli(self.home, "docs-rule", "--write", "--harness", "codex", "--lang", "en")
-        self.assertEqual(r.returncode, 2, r.stderr)
-        self.assertIn("agentj docs-rule --write --harness codex --lang en", r.stdout)
-        self.assertFalse((pathlib.Path(self.home) / ".codex").exists())
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual((pathlib.Path(self.home) / ".codex" / "AGENTS.md").read_text(), docsrule.block("en"))
         self.assertEqual(_cli(self.home, "docs-rule", "--write").returncode, 2, "--write needs --harness")
         self.assertEqual(_cli(self.home, "docs-rule", "--harness", "claude").returncode, 2, "--harness needs --write")
         r = _cli(self.home, "docs-rule", "--lang", "zh")
@@ -249,11 +245,11 @@ class DocsRuleWrite(unittest.TestCase):
         r = _cli(self.home, "docs-rule", "--write", "--harness", "claude", "--yes")
         self.assertEqual(r.returncode, 2)
         self.assertIn("--yes", r.stderr, "no --yes flag")
-        self.assertEqual(_tree(self.home), [], "nothing created, no state dir, no migration")
+        self.assertEqual(_tree(self.home), [".codex", ".codex/AGENTS.md"], "only the written file: no state dir, no migration")
         self.assertIn("docs-rule", cli.NO_MIGRATE)
 
-    def test_real_terminal_y(self):
-        """The real CLI on a pseudo-terminal: the program asks, the human types y."""
+    def test_real_terminal_writes_without_asking(self):
+        """The real CLI on a pseudo-terminal: F14 — it writes at once, no y/N."""
         import pty
         pid, fd = pty.fork()
         if pid == 0:     # child
@@ -275,6 +271,7 @@ class DocsRuleWrite(unittest.TestCase):
                 sent = True
         _, status = os.waitpid(pid, 0)
         self.assertEqual(os.waitstatus_to_exitcode(status), 0, buf.decode(errors="replace"))
+        self.assertFalse(sent, "no question asked")
         f = pathlib.Path(self.home) / ".config" / "opencode" / "AGENTS.md"
         self.assertEqual(f.read_text(), docsrule.block())
 
