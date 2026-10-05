@@ -1,15 +1,15 @@
 ---
 document: agentj-install
-version: 0.19.1
-released: 2026-10-05
+version: 0.19.2
+released: 2026-10-06
 status: beta (anyone can sign up; not advertised yet, pages are not indexed)
 host_package: agentj (the `agentj` command)
-host_version: 0.15.1a1
-source_tag: v0.15.1a1
-host_wheel: agentj-0.15.1a1-py3-none-any.whl
-host_wheel_sha256: c4af632f10b49d2a17bd345bdabcf2a7e3b37b59caf38d09d877779fce083447
-host_sdist: agentj-0.15.1a1.tar.gz
-host_sdist_sha256: b111907af5a00cda45b52750a52bb0daddb771037d837d2f934dcbddfff29718
+host_version: 0.15.2a1
+source_tag: v0.15.2a1
+host_wheel: agentj-0.15.2a1-py3-none-any.whl
+host_wheel_sha256: 24d4196e6cdf8c4a4773f12c65b27a33566b978bb614ab9a6c432e8ce97cd89b
+host_sdist: agentj-0.15.2a1.tar.gz
+host_sdist_sha256: 43f8737d6b47839057b0a91f639e493a28b6e5e1290ae30afd9870d171532114
 canonical_url: https://agentj.app/install.md
 sha256_url: https://agentj.app/install.md.sha256
 alias: https://agentjarvis.net/install.md (the older address: the same file, kept for one more version)
@@ -264,7 +264,7 @@ Ask (kind `question`; `bug` if you think it is a bug, `report` for a docs proble
 with your file-writing tool or a heredoc, then post it with the install session from Step 2:
 ```bash
 ( umask 077; cat > ~/.agentj-install/support.json <<'JSON'
-{"kind": "question", "install_md_version": "0.19.1",
+{"kind": "question", "install_md_version": "0.19.2",
  "body": "Step 4: `uv tool install` fails with: <the exact error, redacted>. OS: Ubuntu 24.04 x86_64. Agent: claude-code. Tried: …"}
 JSON
 )
@@ -422,7 +422,7 @@ The astral installer warning that `uv` / `uvx` are shadowed is informational if 
 carry over). So start every command line from here on with `export PATH="$HOME/.local/bin:$PATH";` — or call
 `~/.local/bin/agentj` by its full path. This document writes `agentj` for short.
 
-The program is pinned to one release: the tag `v0.15.1a1` (front matter `source_tag`). The tag never moves, and its
+The program is pinned to one release: the tag `v0.15.2a1` (front matter `source_tag`). The tag never moves, and its
 `host/` folder is byte for byte the same code as the two files on our site whose SHA-256 is in this document's front matter.
 ```bash
 cd ~/.agentj-install
@@ -430,7 +430,7 @@ W=$(sed -n 's/^host_wheel: //p' install.md); WS=$(sed -n 's/^host_wheel_sha256: 
 curl -fsSLO "https://agentj.app/dl/$W"
 echo "$WS  $W" | sha256sum -c -   # macOS: shasum -a 256 -c -; mismatch → stop
 uv tool install "./$W"
-export PATH="$HOME/.local/bin:$PATH"; agentj --version     # → agentj 0.15.1a1
+export PATH="$HOME/.local/bin:$PATH"; agentj --version     # → agentj 0.15.2a1
 export PATH="$HOME/.local/bin:$PATH"; agentj doctor
 ```
 **Your human's own terminal must find `agentj` too** — they run `agentj passphrase set` and `agentj pair` themselves
@@ -458,12 +458,12 @@ echo "$WS  $W" | sha256sum -c - && echo "$SS  $S" | sha256sum -c -    # macOS: s
 uv tool install "./$W"          # the wheel; its dependencies come from PyPI or the mirror in UV_DEFAULT_INDEX
 ```
 `uv tool install "./$S"` installs from the checked source archive instead (it builds the same program).
-`https://agentj.app/dl/latest.txt` and `https://agentj.app/dl/latest-sdist.txt` name the same two files. `agentj --version` is the program's own version (`0.15.1a1`); it is
+`https://agentj.app/dl/latest.txt` and `https://agentj.app/dl/latest-sdist.txt` name the same two files. `agentj --version` is the program's own version (`0.15.2a1`); it is
 numbered separately from this document (`0.17.0`).
 
-Alternative from the matching published source tag: `uv tool install "git+https://github.com/preangelleo/agentj@v0.15.1a1#subdirectory=host"`.
+Alternative from the matching published source tag: `uv tool install "git+https://github.com/preangelleo/agentj@v0.15.2a1#subdirectory=host"`.
 
-Alternative without uv: `pipx install "git+https://github.com/preangelleo/agentj@v0.15.1a1#subdirectory=host"` (needs Python 3.11+).
+Alternative without uv: `pipx install "git+https://github.com/preangelleo/agentj@v0.15.2a1#subdirectory=host"` (needs Python 3.11+).
 `agentj doctor` lists what is ready and what is not (prerequisites, the fence, connectivity, which agents are usable).
 Continue unless it reports an error that a later step does not fix; report anything you cannot explain.
 
@@ -931,12 +931,16 @@ not add commands of your own. For a language other than Chinese or English, show
 to explain any line. If `agentj handover` says there is no such command, this computer runs an older `agentj`: tell your
 human and go to Section U.
 
+For "what does this colour / line / button mean" questions later, the illustrated user guide is
+https://agentj.app/docs/manual/ — and the main Agent has the same text as its bundled skill `agentj-manual` (host 0.15.2+).
+
 After that message you may add **one short note** for each of these, only when it is true of this install and you
 checked it — in plain words, without commands:
 - Step 10 used the `tmux` / `nohup` fallback instead of the service → after the computer restarts, Agent J must be
   started again (they can ask you).
 - The phone was paired in a Safari / browser tab instead of the Home Screen icon → lock-screen alerts need the icon:
-  add it to the Home Screen and pair once more from there.
+  add it to the Home Screen and open it from there. If they saved Face ID when the phone asked after pairing (host
+  0.15.2+), 「用 Face ID 连回电脑」 on that screen reconnects without a new pairing; otherwise pair once more from there.
 - An Android phone without Google services (Step 11) → lock-screen alerts may not arrive on this phone.
 
 **Make the "look it up first" rule outlast this conversation.** Your next conversation will not remember this one.
@@ -1002,7 +1006,7 @@ The daily check remains a notification, not an unattended installation; `agentj 
 In the default shared session, reinstall directly using Step 4's checked wheel (SHA-256 must match this document and
 its public GitHub copy), preserving the host's identity, paired phones, account and preferences:
 ```bash
-uv tool install --force "./agentj-0.15.1a1-py3-none-any.whl"
+uv tool install --force "./agentj-0.15.2a1-py3-none-any.whl"
 agentj --version
 agentj service install
 agentj service restart
@@ -1010,7 +1014,7 @@ agentj doctor
 ```
 The matching published tag is another source, after verifying the tag object against the upgrade email:
 ```bash
-uv tool install --force "git+https://github.com/preangelleo/agentj@v0.15.1a1#subdirectory=host"
+uv tool install --force "git+https://github.com/preangelleo/agentj@v0.15.2a1#subdirectory=host"
 ```
 **0.14 independent session** (`agent.session_mode=independent`): 0.14's fence keeps Agent J's own program read-only and
 hides the service manager, so the Agent on the phone cannot reinstall or restart from inside it (measured: the install
@@ -1036,11 +1040,11 @@ prints something and `uv tool list` (or `pipx list`) shows `agentjarvis-host`, t
 the new name, then:
 ```bash
 jarvis service uninstall      # stop the old service first (Step 10 used tmux / nohup instead? stop that process)
-uv tool uninstall agentjarvis-host && uv tool install "git+https://github.com/preangelleo/agentj@v0.15.1a1#subdirectory=host"
+uv tool uninstall agentjarvis-host && uv tool install "git+https://github.com/preangelleo/agentj@v0.15.2a1#subdirectory=host"
 agentj doctor
 agentj service install        # start it again under the new name (or the tmux / nohup fallback, Step 10)
 ```
-With pipx instead of uv: `pipx uninstall agentjarvis-host && pipx install "git+https://github.com/preangelleo/agentj@v0.15.1a1#subdirectory=host"`.
+With pipx instead of uv: `pipx uninstall agentjarvis-host && pipx install "git+https://github.com/preangelleo/agentj@v0.15.2a1#subdirectory=host"`.
 - After the move, `agentj` puts back a `jarvis` command (a link to `agentj`, only if no other `jarvis` exists) for one more
   version; it prints a notice that points here. New installs never get `jarvis`.
 - The state moves by itself on the first run of `agentj`: from `~/.local/state/agentjarvis-alpha` to `~/.local/state/agentj`.
@@ -1362,6 +1366,14 @@ or logs out Claude Code / Codex / OpenCode (nor removes a model key), and never 
   old pairing link of the same computer) resumes instead of pairing again, and it is no longer told it was removed when
   it was not. At five phones, approving a new one unpairs the least recently used one (offline first) and names it;
   pairing again from the same browser replaces its old entry instead of taking a new slot. `agentj revoke` is unchanged.
+
+- 0.19.2 (2026-10-06): host 0.15.2a1. Face ID resume: after the first pairing the phone can save a passkey; from the
+  home-screen app, a private tab or after clearing site data, "Reconnect with Face ID" on the pairing page replaces the
+  QR scan and reuses the same device entry (`agentj devices` shows it). Files the Agent mentions in a reply (images,
+  audio, video, PDF, HTML preview, other deliverables inside its working folder) reach the phone, hash-checked; secrets
+  and files outside the folder are never sent. Code highlighting, formulas and flowcharts render on the phone. Messages
+  typed while offline are queued and sent in order once connected. User guide at /docs/manual/ (also the
+  `agentj-manual` skill); the Agent can look back through the phone history; /compact (or "压缩") first writes a handover file.
 
 ### Shared native sessions (0.13)
 The default `agent.session_mode=shared` follows the native harness permissions.

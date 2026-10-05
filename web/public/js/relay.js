@@ -5,13 +5,16 @@
 // IndexedDB. The sections keep relay's order and `// ----` markers; they share ~40 bindings (cur, hist, atts, ptt, …),
 // which is why they stay one module (the leaf parts live in md.js, blobs.js, wav.js, speak.js, ui.js; padding, frag and signatures come from proto/wire.js).
 import { RelayMD } from './md.js';
+import { upgrade as upgradeWords, forget as forgetRendered } from './render.js';   // P57: lazy code / math / diagrams
 import { t, lang, onLang, fillText } from './t.js';
 import { el, toast, toastOff, toastAction, human, stamp, mmss, confirmSheet } from './ui.js';
 import { Upload, TYPES as DROP_TYPES, MAX_BYTES as UPLOAD_MAX, MAX_ATT, ASR_MAX_BYTES } from './blobs.js';
+import { renderPage as renderMedia, forgetAll as forgetMedia } from './media.js';   // F21: files the reply shows (§13)
 import { toWav } from './wav.js';
 import { Speaker, configureSpeech } from './speak.js';
 import { isReady, sendApp, hostId } from './session.js';
 import { getSealed, putSealed, dbDel } from './store.js';
+import { Outbox, paint as paintOutbox, MAX as OUT_MAX } from './outbox.js';
 
 let C = null;                        // ctx from app.js: api, myDev(), estopOn(), canSign(), panels …
 const BRAND_LOGO = { idle: 'brand/img/logo-mark.png', working: 'brand/img/status/logo-working.png',
@@ -41,7 +44,7 @@ function renderWords(text, pending = false){
 }
 function fill(w, tx){
   if (tx){
-    try{ w.replaceChildren(RelayMD.toDOM(RelayMD.parse(tx), document)); return; }catch(_){}
+    try{ w.replaceChildren(RelayMD.toDOM(RelayMD.parse(tx), document)); upgradeWords(w); return; }catch(_){}
   }
   w.replaceChildren();
   const paras = tx ? tx.split(/\n\s*\n/) : [emptyText()];
@@ -745,6 +748,7 @@ function showPage(){
     if (moved) stick = true;
   }
   renderWords(p.reply || (p.end === "open" || p.id === null ? "" : t('r.noReply')), p.end === "open" && p.id !== null);
+  renderMedia(el("words"), p);
   document.body.dataset.pageOpen = p.end === "open" ? "1" : "0";
   paintActs();
 }
@@ -1101,6 +1105,8 @@ export function setConn(on, text){
     }
   }
   if (on && !was) uploadsResume();
+  if (on) drainOut(); else outbox.lost();          // 0.15.2: the offline queue goes out on ready, stops on a drop
+  paintOut();
   wordsSrc = null; showPage(); paintChrome(); refreshSend();
 }
 
@@ -1137,7 +1143,7 @@ function fitViewport(){
 // ---- composer --------------------------------------------------------------------------
 let sending = false, asrBusy = 0;
 function refreshSend(){
-  el("send").disabled = sending || asrBusy > 0 || !input.value.trim() || !C.connected();
+  el("send").disabled = sending || asrBusy > 0 || !input.value.trim() || !(C.connected() || outbox.host !== null);   // offline: it queues (null = not paired)
   const c = el("clr"); if (c) c.hidden = !input.value;
   noteEmpty();
 }
@@ -1260,7 +1266,7 @@ function stage(a){
   if (!a.up) a.up = new Upload(a.file, {purpose: "att", origin: a.origin, name: a.name, mime: a.file.type, secs: a.dur, onProgress: p => { a.pct = p; paintChip(a); }});
   paintChip(a);
   a.promise = a.up.start().then(r => {
-    if (!atts.includes(a)) return;
+    if (!atts.includes(a) && !a.out) return;                        // a.out: held whole with an offline-queued message
     if (r.ok){ a.st = "ready"; a.id = a.up.bid; }
     else if (r.why === ""){ /* held or dropped by the page */ }
     else if (r.why === "net"){                                       // the connection went: resumes after the reconnect
@@ -1557,8 +1563,10 @@ async function runCmd(cmd, arg = ""){
 }
 async function say(){
   const text = input.value;
-  if (!text.trim() || sending || asrBusy || !C.connected()) return;
+  if (!text.trim() || sending || asrBusy) return;
   if (C.estopOn()){ toast(t('r.say.stopped'), 3200); return; }
+  // 0.15.2: not connected, or older messages still waiting → it queues behind them (/stop, /clear never wait)
+  if (!C.connected() || (outbox.items.length && !/^\/(stop|clear)(\s|$)/i.test(text.trim()))) return sayLater(text);
   const c = CMD_RE.exec(text.trim());
   if (c && CMDS.includes(c[1].toLowerCase()) && !atts.length && !replyTo){
     if (!await runCmd(c[1].toLowerCase(), (c[2] || "").trim())) return;
@@ -1620,6 +1628,89 @@ async function say(){
     inflight = null;
     sending = false; autosize(); paintQueued();
   }
+}
+
+// ---- the offline queue (0.15.2, PROTOCOL §14; outbox.js) ---------------------------------------------------
+// Not connected (no network, connecting, the computer away): Send still takes the message. Its words, quote and a sid
+// chosen now go into the sealed outbox and show as a pending line above the field with 「网络恢复后自动发送」; on `ready`
+// they go out in order, one say at a time. Attachments: the files cannot be stored (only their names are), so a message
+// with files is held whole in this page's memory and uploaded + sent on `ready`; after a reload its files are gone and
+// its line says so — when the drain reaches it, its words come back to the field instead of going out without them.
+const held = new Map();       // sid → the tray entries of a queued message (memory only; uploads continue under a.out)
+const outbox = new Outbox({}, {
+  say: outSay,
+  live: () => C.connected(),
+  hostNow: hostId,
+  done: outDone,
+  changed: () => { paintOut(); if (C) refreshSend(); },
+});
+function paintOut(){
+  if (!C) return;
+  paintOutbox(el("outbox"), outbox.items, {line: t('offline.line'), lostNote: t('offline.attLost'),
+    isLost: e => !!(e.att && e.att.length && !held.has(e.sid)), showLine: !C.connected() && (outbox.items.length > 0 || navigator.onLine === false)});
+}
+function drainOut(){ if (outbox.items.length) outbox.drain(); }
+function sayLater(text){
+  const c = CMD_RE.exec(text.trim());
+  const cmd = c && CMDS.includes(c[1].toLowerCase()) && !atts.length && !replyTo ? c[1].toLowerCase() : null;
+  // 全部停下 / 清空 are "now or not at all": a stop that lands minutes later would cut whatever runs then
+  if (cmd === "stop" || cmd === "clear"){ toast(t('offline.now'), 2800); return; }
+  const bad = atts.filter(a => a.st === "failed");
+  if (bad.length){ toast(t('r.say.badAtt', {n: bad.length}), 3200); return; }
+  const list = atts.slice(), rt = replyTo;
+  const e = {sid: C.api.newSid(), text, ts: Date.now(), rt: rt ? {id: rt.id, excerpt: rt.excerpt || null} : null,
+    att: list.length ? list.map(a => ({name: a.name, kind: a.kind})) : null};
+  if (list.length) held.set(e.sid, list);           // before add(): its line is painted with the files still here
+  if (outbox.add(e) === "full"){ held.delete(e.sid); toast(t('offline.full', {n: OUT_MAX}), 3200); return; }
+  if (list.length){
+    for (const a of list){ a.out = true; atts.splice(atts.indexOf(a), 1); if (a.node) a.node.remove(); }
+    paintTray();
+  }
+  pushHist(text);
+  if (rt && replyTo === rt) cancelReply();
+  if (input.value === text) input.value = "";
+  autosize(); saveDraft(); toNewest();
+  if (C.connected()) drainOut();
+}
+// One queued message → say_res-like (outbox.verdict decides). Files: upload (or resume) first, then the say with the
+// sid fixed at queue time; att_gone (host restarted / 30 min) → those files once more, same sid.
+async function outSay(e){
+  const list = held.get(e.sid);
+  if (e.att && e.att.length && !list) return {ok: false, why: "att_lost"};
+  const live = list || [];
+  for (let n = 0; ; n++){
+    for (const a of live) if (a.st !== "ready") stage(a);
+    if (live.length) await Promise.all(live.map(a => a.promise));
+    if (live.some(a => a.st === "up")) return {ok: false, why: "offline"};          // the connection went again
+    if (live.some(a => a.st !== "ready")) return {ok: false, why: "att_failed"};
+    const r = await C.api.say({sid: e.sid, text: e.text, att: live.map(a => a.id), reply_to: e.rt ? e.rt.id : null, excerpt: e.rt ? e.rt.excerpt : null});
+    if (r.ok || r.why !== "att_gone" || n) return r;
+    const gone = new Set(Array.isArray(r.att) ? r.att : live.map(a => a.id));
+    for (const a of live) if (gone.has(a.id)){ a.up = null; a.st = "up"; }
+  }
+}
+function outDone(e, r, kind){
+  const list = held.get(e.sid) || [];
+  held.delete(e.sid);
+  if (kind === "sent"){
+    if (r.ok && r.state === "queued") queued.push({sid: e.sid, text: e.text, atts: list.slice(), rt: null});
+    for (const a of list) if (a.url){ URL.revokeObjectURL(a.url); a.url = null; }
+    if (r.ok && !C.p33()) C.saidOld(e.text);
+    paintQueued();
+    return;
+  }
+  // refused for good: the words come back to an empty field, the files to the tray (still staged, like a withdraw)
+  if (!input.value){ input.value = e.text; input.dispatchEvent(new Event("input")); }
+  for (const a of list){
+    a.out = false;
+    if (atts.length < MAX_ATT){ a.node = null; atts.push(a); paintChip(a); }
+    else { if (a.up) a.up.drop(); if (a.url){ URL.revokeObjectURL(a.url); a.url = null; } }
+  }
+  paintTray();
+  if (r.why === "att_lost") toast(t('offline.attBack'), 4200);
+  else if (r.why === "att_failed") toast(t('r.say.badAtt', {n: list.filter(a => a.st !== "ready").length || 1}), 3200);
+  else if (r.why === "stopped") toast(t('r.say.stopped'), 3600);
+  else toast(t('r.say.err.' + (SAY_ERR.includes(r.why) ? r.why : "other")), 3000);
 }
 
 // ---- the ≡ menu and `/` completion (§10.12) --------------------------------------------------------------
@@ -2096,6 +2187,11 @@ export function forgetLocal(){
   clearTimeout(draftTimer);
   if (inflight){ inflight.cancelled = true; inflight.forgotten = true; if (inflight.wake) inflight.wake(); }
   queued.length = 0;
+  outbox.wipe();
+  for (const l of held.values()) for (const a of l) if (a.url){ URL.revokeObjectURL(a.url); a.url = null; }
+  held.clear();
+  forgetMedia();                                     // F21: fetched files and their object URLs (§13)
+  forgetRendered();                                  // P57: rendered copies of the Agent's words (code / math / diagrams)
   for (const a of atts.slice()) removeAtt(a, false);
   if (replyTo) cancelReply();
   if (input){ input.value = ""; autosize(); }
@@ -2112,7 +2208,7 @@ function relang(){
   wordsSrc = null; qsKey = null;
   renderMenu();
   pttUI(ptt); paintTray(); for (const a of atts) paintChip(a);
-  paintPlaceholder(); paintReply(); setOm(el("om").classList.contains("open"));
+  paintPlaceholder(); paintReply(); setOm(el("om").classList.contains("open")); paintOut();
   if (cur) render(cur); else showPage();
 }
 
@@ -2637,6 +2733,7 @@ export function init(ctx){
   try{ document.fonts.ready.then(paintPlaceholder); }catch(_){}
   getSealed("ihist").then(h => { if (Array.isArray(h)) histMem = h.filter(x => typeof x === "string").slice(-HIST_MAX); });
   restoreDraft();
+  outbox.open(); addEventListener("online", paintOut); addEventListener("offline", paintOut);
   showPage();
   pttUI(null);
   paintTray();

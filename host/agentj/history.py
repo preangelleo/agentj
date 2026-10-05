@@ -6,7 +6,8 @@ of a turn, appended (the last line of an id wins), rewritten atomically to the n
 lines — and `<state>/history/meta.json` {epoch, next_id, undo}. `history off` = the newest MEM_KEEP turns in memory only
 (epoch = the serve start time, so a phone never mixes two runs).
 
-A turn: {"id", "ts" (ms), "src": Src, "reply": {"text", "part"?: [k, N]}, "end": open|done|stopped|failed, "card"?}.
+A turn: {"id", "ts" (ms), "src": Src, "reply": {"text", "part"?: [k, N]}, "end": open|done|stopped|failed, "card"?,
+"media"?, "media_skip"? (F21, PROTOCOL §13: files the finished reply shows — media.py)}.
 Src = {"k": phone|host|agent|sys|task|cmd|telegram, "dev"?, "name"?, "text", "quote"?, "att"?, "local"?}. The reply of a turn = every
 finished reply text of that Agent turn joined by a blank line — results only, never tool calls; a reply over PART_MAX UTF-16
 units continues on the next page (`part`), nothing is truncated.
@@ -208,7 +209,7 @@ class History:
         return self.turns.get(tid) if type(tid) is int else None
 
     def update(self, tid: int, *, append: str | None = None, end: str | None = None, card: dict | None = None,
-               text: str | None = None) -> list[dict]:
+               text: str | None = None, media: tuple | None = None) -> list[dict]:
         """Change one turn; returns every turn that changed (an append past PART_MAX adds a continuation page and renumbers
         the parts), the last one being where the next append goes. [] when the id is gone. text = replace the reply (a
         command's interim line → its result)."""
@@ -242,6 +243,12 @@ class History:
                 x["end"] = end
         if card is not None:
             t["card"] = card
+        if media is not None:                  # F21 (§13): (media, media_skip) of a finished page — set as a whole
+            for k, v in zip(("media", "media_skip"), media):
+                if v:
+                    t[k] = v
+                else:
+                    t.pop(k, None)
         self._save_meta()
         for x in changed:
             self._append(x)

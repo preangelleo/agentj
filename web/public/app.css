@@ -1335,3 +1335,77 @@ p.setval{grid-column:1 / -1;text-align:left;margin:0}
 .elev .elev-note,.elev .elev-left{margin:var(--sp-2) 0 0;font-size:calc(13px*var(--fz));line-height:1.5;color:var(--text-muted)}
 .elev .aj-btn{min-height:48px}
 .elev .elev-label[hidden],.elev .elev-input[hidden]{display:none}
+
+/* ---- 0.15.2 offline queue (outbox.js): messages sent while not connected wait above the field --------
+   Each one a quiet one-line bubble (dashed: not sent yet), right-aligned like the human's own words; under them the one
+   line 「网络恢复后自动发送」. No buttons: they go out by themselves, in order, once the computer answers again. */
+.outbox{display:flex;flex-direction:column;align-items:flex-end;gap:6px;max-height:30vh;overflow-y:auto;overscroll-behavior:contain}
+.outbox[hidden]{display:none}
+.outbox .obi{max-width:86%;display:flex;flex-direction:column;gap:2px;padding:8px 12px;border-radius:14px 14px 4px 14px;
+  background:var(--surface);border:1px dashed var(--line);color:var(--ink-soft)}
+.outbox .obt{font:400 calc(14px*var(--fz))/1.35 var(--font-body);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.outbox .obn{font:500 calc(12px*var(--fz))/1.3 var(--font-body);color:var(--ink)}
+.outbox .obl{font:500 calc(12px*var(--fz))/1.3 var(--font-body);color:var(--ink-soft);letter-spacing:.02em;padding:0 4px}
+
+/* ---- 0.15.2 P57 render.js: highlighted code, typeset math, diagrams (lazy; md.js marks, render.js upgrades) ----------
+   The reply sits on the state colour with lotion ink, code on a Sooty veil — in both themes — so the token colours are
+   the palette's light tints (readable on that veil at any state colour). Math and code scroll sideways, never the page.
+   A diagram is an <img> on its own paper (lotion; Noir in dark), fit to the column; a tap shows it full size. */
+.codeblock code.hljs .hljs-keyword,.codeblock code.hljs .hljs-selector-tag,.codeblock code.hljs .hljs-built_in.hljs-keyword{color:var(--c-banana-republic)}
+.codeblock code.hljs .hljs-string,.codeblock code.hljs .hljs-regexp,.codeblock code.hljs .hljs-addition,.codeblock code.hljs .hljs-symbol{color:var(--c-shield-soft)}
+.codeblock code.hljs .hljs-number,.codeblock code.hljs .hljs-literal,.codeblock code.hljs .hljs-variable.language_{color:var(--c-mellow-marrow)}
+.codeblock code.hljs .hljs-title,.codeblock code.hljs .hljs-section,.codeblock code.hljs .hljs-selector-id,.codeblock code.hljs .hljs-selector-class{color:var(--cotton-clouds)}
+.codeblock code.hljs .hljs-built_in,.codeblock code.hljs .hljs-type,.codeblock code.hljs .hljs-attr,.codeblock code.hljs .hljs-attribute,.codeblock code.hljs .hljs-property,.codeblock code.hljs .hljs-params{color:var(--c-peek-a-blue)}
+.codeblock code.hljs .hljs-meta,.codeblock code.hljs .hljs-tag,.codeblock code.hljs .hljs-name{color:var(--c-dust-of-the-moon)}
+.codeblock code.hljs .hljs-comment,.codeblock code.hljs .hljs-quote{color:inherit;opacity:.62;font-style:italic}
+.codeblock code.hljs .hljs-deletion{color:var(--c-danger-soft)}
+.codeblock code.hljs .hljs-emphasis{font-style:italic}
+.codeblock code.hljs .hljs-strong{font-weight:700}
+.words .math.display{display:block;max-width:100%;overflow-x:auto;overflow-y:hidden;-webkit-overflow-scrolling:touch;
+  overscroll-behavior-x:contain;margin:.3em 0 .8em;padding:.1em 0}
+div.math.display{text-align:center}
+.words .math .katex-display{margin:0}
+/* the design system's img/svg reset (max-width:100%) squeezes KaTeX's 400em-wide \sqrt SVGs inside their clip box */
+.words .math svg{max-width:none}
+.words .math .katex{font-size:1.05em}
+.words .math:not(.display) .katex{white-space:nowrap}
+.codeblock.drawn pre{display:none}
+.codeblock .diagram{margin:0 10px 10px;padding:12px;border-radius:10px;background:var(--c-lotion);overflow-x:auto;
+  -webkit-overflow-scrolling:touch;overscroll-behavior-x:contain;cursor:zoom-in}
+.codeblock .diagram.dk{background:var(--c-noir)}
+.codeblock .diagram img{display:block;max-width:100%;height:auto;margin:0 auto}
+.codeblock .diagram.full{cursor:zoom-out}
+.codeblock .diagram.full img{max-width:none;width:max(150%,calc(var(--w,0)*1px))}
+.codeblock .rxnote{padding:0 16px 4px;font:400 calc(13px*var(--fz))/1.4 var(--font-body);color:var(--ink-soft)}
+
+/* F21 (§13): files the Agent's reply shows — inline in the words (`.mslot`) or in the strip under them; the viewer. */
+.mstrip{display:flex;flex-direction:column;gap:10px;margin-top:14px}
+.mstrip[hidden]{display:none}
+.mslot{display:block;margin:.5em 0}
+.mcard{display:flex;flex-direction:column;gap:6px;padding:10px;border-radius:14px;background:var(--surface);border:1px solid var(--line);max-width:100%}
+.mcard.inline{display:inline-flex;width:100%;box-sizing:border-box}
+.mbody{display:flex;align-items:center;justify-content:center;min-height:44px}
+.mbody img{display:block;max-width:100%;max-height:60vh;height:auto;border-radius:10px;cursor:zoom-in}
+.mbody video{display:block;width:100%;max-height:60vh;border-radius:10px;background:#000}
+.mbody audio{display:block;width:100%}
+.mtap{min-height:44px;min-width:44px;padding:0 18px;border-radius:var(--r-pill);background:var(--raised);border:1px solid var(--line);color:var(--ink);
+  font:500 calc(14px*var(--fz))/1.2 var(--font-body)}
+.mtap:disabled{opacity:.75}
+.mcard[data-state=error] .mtap{color:var(--ink-soft)}
+.mmeta{display:flex;gap:8px;align-items:baseline;min-width:0;font:400 calc(13px*var(--fz))/1.35 var(--font-body);color:var(--ink-soft)}
+.mname{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--ink)}
+.msize{flex:none;font-family:var(--font-mono)}
+.macts{display:flex;flex-wrap:wrap;gap:8px}
+.macts:empty{display:none}
+.mcard .mact{display:inline-flex;align-items:center;min-height:44px;padding:0 16px;border-radius:var(--r-pill);background:var(--raised);border:1px solid var(--line);
+  color:var(--ink);text-decoration:none;font:500 calc(14px*var(--fz))/1.2 var(--font-body)}
+.mskip{font:400 calc(13px*var(--fz))/1.45 var(--font-body);color:var(--ink-soft)}
+.mview{position:fixed;inset:0;z-index:60;display:flex;flex-direction:column;background:rgba(0,0,0,.92)}
+.mview[hidden]{display:none}
+.mstage{flex:1;min-height:0;display:flex;align-items:center;justify-content:center;overflow:hidden;touch-action:none}
+.mzoom{max-width:100%;max-height:100%;transform-origin:center center;user-select:none;-webkit-user-select:none}
+.mframe{width:100%;height:100%;border:0;background:#fff}
+.mnote{padding:8px 16px calc(8px + env(safe-area-inset-bottom));font:400 calc(12px*var(--fz))/1.4 var(--font-body);color:#ddd;text-align:center}
+.mnote[hidden]{display:none}
+.mview-x{position:absolute;top:calc(8px + env(safe-area-inset-top));right:8px;width:48px;height:48px;border-radius:50%;
+  background:rgba(0,0,0,.6);border:1px solid rgba(255,255,255,.5);color:#fff;font:400 28px/1 var(--font-body);z-index:1}

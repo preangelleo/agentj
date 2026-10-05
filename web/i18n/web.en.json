@@ -947,5 +947,50 @@
       "verifyOk": "Check passed.",
       "verifyFail": "But the check failed — the key may be wrong."
     }
+  },
+  "offline": {
+    "line": "Will send when you're back online",
+    "aria": "Messages waiting for the network",
+    "full": "Up to {n} messages can wait; send more once you're back online",
+    "now": "Not connected to the computer: stop and clear only work when connected",
+    "attLost": "The files were lost when the page reloaded; this one won't send by itself",
+    "attBack": "The files were lost when the page reloaded: not sent, your words are back in the box — pick the files again and send"
+  },
+  "pk": {
+    "restore": "Reconnect with Face ID",
+    "askTitle": "Remember this phone with Face ID?",
+    "askText": "Next time you open it from the Home Screen, a new tab or a browser that cleared its data, just verify and you're in — no QR code again.",
+    "save": "Save",
+    "later": "Not now",
+    "saved": "Remembered. Face ID now gets you back to this computer.",
+    "saveFail": "Couldn't remember it. Your pairing works as before.",
+    "dead": "This phone's Face ID record no longer works. Scan the QR code to pair again.",
+    "failed": "Couldn't reach the computer. Try again, or scan the QR code.",
+    "computer": " · computer"
+  },
+  "render": {
+    "fail": "Couldn't draw this diagram. Here's the source.",
+    "diagram": "Diagram"
+  },
+  "media": {
+    "tap": "Tap to load",
+    "loading": "Loading…",
+    "retry": "Didn't arrive — tap to try again",
+    "expired": "Expired",
+    "shaBad": "The file didn't match, so it isn't shown",
+    "open": "Open",
+    "download": "Download",
+    "share": "Share",
+    "preview": "Preview",
+    "close": "Close",
+    "viewer": "View file",
+    "htmlNote": "The preview runs no scripts and loads no pictures, styles or fonts from the internet.",
+    "skip": {
+      "too_big": "{name} is too big ({mb} MB) — not sent to the phone.",
+      "outside": "{name} isn't in the working folder — not sent.",
+      "secret": "{name} may contain a key — not sent.",
+      "type": "{name} is a kind of file that can't be sent.",
+      "gone": "{name} wasn't found — not sent."
+    }
   }
 }
