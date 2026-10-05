@@ -1,6 +1,8 @@
 """Opt-in direct Telegram Bot API channel. Own bot key stays in owner's process.
 Telegram can read messages. No Telegram command may sign or answer an approval.
 Owner private chat (the enrolled numeric user ID) and explicitly allowlisted group senders; production bots are never used in tests.
+P59 (ADR-A165): files the owner's reply references follow it into the private chat (tg_media; never to a group), and the
+owner's /compact / 「压缩」 runs the phone's command path (handover first) with the result line sent back.
 """
 import asyncio
 import json
@@ -34,10 +36,12 @@ def enroll(owner,key_env,confirm=None):
         cfg=st.config();cfg['telegram']={'owner_id':owner,'key_env':key_env,'generation':uuid.uuid4().hex};st.write_private(st.config_path,json.dumps(cfg).encode())
     return {'ok':True,'notice':NOTICE}
 
+BASE='https://api.telegram.org'   # tests point this at a local fake Bot API; never a real bot in tests
+
 def api(cfg,method,values,timeout=20):
     key=os.environ.get(cfg['key_env'])
     if not key:raise ValueError('missing bot key')
-    req=urllib.request.Request('https://api.telegram.org/bot'+key+'/'+method,data=json.dumps(values).encode(),headers={'Content-Type':'application/json'},method='POST')
+    req=urllib.request.Request(BASE+'/bot'+key+'/'+method,data=json.dumps(values).encode(),headers={'Content-Type':'application/json'},method='POST')
     class NoRedirect(urllib.request.HTTPRedirectHandler):
         def redirect_request(self,*args):return None
     try:
@@ -48,6 +52,34 @@ def api(cfg,method,values,timeout=20):
         if not result.get('ok'):raise ValueError()
         return result.get('result')
     except Exception:raise ValueError('Telegram request failed; no credentials or provider body logged') from None
+
+def upload(cfg,method,fields,field,name,mime,data,timeout=120):
+    """P59 (F21 over Telegram): one multipart/form-data upload (sendPhoto / sendAudio / sendVideo / sendDocument). Fixed
+    endpoint, no redirect, bounded answer; errors never carry the token-bearing URL or the provider body."""
+    key=os.environ.get(cfg['key_env'])
+    if not key:raise ValueError('missing bot key')
+    boundary='agentj'+uuid.uuid4().hex
+    safe=re.sub(r'[\x00-\x1f"\\]','_',name)[:128] or 'file'
+    body=bytearray()
+    for k,v in fields.items():
+        body+=('--'+boundary+'\r\nContent-Disposition: form-data; name="'+k+'"\r\n\r\n'+str(v)+'\r\n').encode()
+    body+=('--'+boundary+'\r\nContent-Disposition: form-data; name="'+field+'"; filename="'+safe+'"\r\nContent-Type: '+mime+'\r\n\r\n').encode()
+    body+=data+('\r\n--'+boundary+'--\r\n').encode()
+    req=urllib.request.Request(BASE+'/bot'+key+'/'+method,data=bytes(body),headers={'Content-Type':'multipart/form-data; boundary='+boundary},method='POST')
+    class NoRedirect(urllib.request.HTTPRedirectHandler):
+        def redirect_request(self,*args):return None
+    try:
+        with urllib.request.build_opener(NoRedirect).open(req,timeout=timeout) as r:
+            answer=r.read(1024*1024+1)
+            if len(answer)>1024*1024:raise ValueError()
+        result=json.loads(answer)
+        if not result.get('ok'):raise ValueError()
+        return result.get('result')
+    except Exception:raise ValueError('Telegram upload failed; no credentials or provider body logged') from None
+
+class MediaOut:
+    """Queued after the owner's reply text: the files that reply shows (tg_media). Never for a group route."""
+    def __init__(self,text):self.text=text
 
 def chunks(text,limit=4000):
     """Telegram limits text in UTF-16 units, including supplementary-plane emoji."""
@@ -61,7 +93,7 @@ def chunks(text,limit=4000):
 
 class Telegram:
     def __init__(self,host):
-        self.host=host;self.offset=0;self.out=asyncio.Queue(maxsize=20);self.error=False;self.turn_enrollment={};self.enrollment=None;self.username=None;self.bot_id=None;self.turn_routes={}
+        self.host=host;self.offset=0;self.out=asyncio.Queue(maxsize=20);self.error=False;self.turn_enrollment={};self.enrollment=None;self.username=None;self.bot_id=None;self.turn_routes={};self.cmd_routes={}
         self.ledger=host.st.root/'telegram-offset.json'
         try:
             saved=json.loads(self.ledger.read_text());self.offset=saved.get('offset',0);self.enrollment=saved.get('enrollment')
@@ -93,6 +125,47 @@ class Telegram:
             payload = text if chat_id == enrolled['owner_id'] else {'chat_id':chat_id,'text':text,'sender_id':uid}
             try:self.out.put_nowait((enrolled,payload))
             except asyncio.QueueFull:self.host.st.log('telegram_overflow')
+            # P59: files only to the owner's private chat; a group-sourced reply never carries any (ADR-A165)
+            if chat_id == enrolled['owner_id'] and getattr(getattr(self.host,'media',None),'workdir',None):
+                try:self.out.put_nowait((enrolled,MediaOut(turn.get('reply',{}).get('text',''))))
+                except asyncio.QueueFull:self.host.st.log('telegram_overflow')
+
+    def cmd_result(self,turn,text):
+        """serve.cmd_card: a command asked for over Telegram (the owner's /compact) has its result → back to the owner."""
+        enrolled=self.cmd_routes.pop(turn,None)
+        if enrolled is None or not self.enabled() or configuration(self.host.st)!=enrolled or not text:return
+        from .privacy import redact
+        try:self.out.put_nowait((enrolled,'/compact：'+redact(text)))
+        except asyncio.QueueFull:self.host.st.log('telegram_overflow')
+
+    async def send_media(self,cfg,text):
+        """The files the owner's reply shows (tg_media: the phone's checks + Telegram's limits), then one skip note."""
+        from . import tg_media
+        from .media import Gone
+        items,skips=await asyncio.to_thread(tg_media.collect,self.host.media,text)
+        sent=0
+        for rec in items:
+            if configuration(self.host.st)!=cfg or not self.enabled():return
+            if sent:await asyncio.sleep(tg_media.GAP)
+            method,field=tg_media.method_of(rec)
+            try:data=await asyncio.to_thread(tg_media.read_checked,rec)
+            except (Gone,OSError):
+                skips.append({'name':rec['name'],'why':'gone'});continue
+            fields={'chat_id':cfg['owner_id']}
+            if method!='sendDocument':fields['caption']=rec['name'][:1024]
+            try:
+                await asyncio.to_thread(upload,cfg,method,fields,field,rec['name'],rec['mime'],data);sent+=1
+            except ValueError:
+                if method=='sendDocument':
+                    skips.append({'name':rec['name'],'why':'failed'});continue
+                try:   # Telegram refused it as a photo / audio / video (dimensions, codec): the same bytes as a file
+                    await asyncio.to_thread(upload,cfg,'sendDocument',{'chat_id':cfg['owner_id']},'document',rec['name'],rec['mime'],data);sent+=1
+                except ValueError:skips.append({'name':rec['name'],'why':'failed'})
+        if skips and configuration(self.host.st)==cfg and self.enabled():
+            note=tg_media.skip_lines(skips,getattr(self.host,'lang','zh'))
+            for part in chunks(note):
+                await asyncio.to_thread(api,cfg,'sendMessage',{'chat_id':cfg['owner_id'],'text':part})
+        if items or skips:self.host.st.log('telegram_media',status=f'{sent}/{len(skips)}')
 
     async def incoming(self,update,cfg):
         if not self.enabled() or configuration(self.host.st)!=cfg:return False
@@ -115,6 +188,18 @@ class Telegram:
             await asyncio.to_thread(api,cfg,'sendMessage',{'chat_id':chat_id,'text':'Use your paired phone or local terminal for this action.'});return False
         if command == '/stop' and owner:
             await self.host.stop_turn('telegram owner');return True
+        # P59 (F24 from Telegram): /compact and the bare 「压缩」 words are the phone's command, not a message with an envelope.
+        # Owner's private chat only: a group member never compacts the owner's conversation.
+        from . import slash
+        word=slash.parse(re.sub(r'^(/\w+)@\w+',r'\1',raw)) if raw else None
+        if word and word[0]=='compact':
+            if not owner:
+                await asyncio.to_thread(api,cfg,'sendMessage',{'chat_id':chat_id,'text':'只有机主在私聊里才能压缩上下文。Only the owner can compact the context, in a private chat.'})
+                self.host.st.log('telegram_compact',result='refused')
+                return False
+            try:has_media=bool(media_of(m))
+            except ValueError:has_media=True
+            if not has_media:return await self.compact(cfg,chat_id,uid)
         if not self.host.agent or self.host.stopped():return False
         from .text import clean
         from .privacy import redact
@@ -160,6 +245,20 @@ class Telegram:
             self.turn_enrollment[send.turn]=dict(cfg)
             self.turn_routes[send.turn]=(chat_id,uid,device)
         return True
+    async def compact(self,cfg,chat_id,uid):
+        """The owner's /compact: the same path as the phone's (serve.on_slash → the Agent's queue → compactprep: the
+        handover first, then the compaction); the result line comes back through cmd_result."""
+        session=SimpleNamespace(device='telegram:'+str(chat_id)+':'+str(uid),name='Telegram owner',cid=0,source_kind='telegram')
+        self.host.st.log('telegram_compact',result='asked')
+        turn=await self.host.on_slash(session,'compact','',confirm=False,typed=True)
+        page=self.host.hist.get(turn) if type(turn) is int else None
+        if page is not None and page.get('end')!='open':   # answered at once (no Agent, stop switch): already on the page
+            self.cmd_routes[turn]=dict(cfg);self.cmd_result(turn,page.get('reply',{}).get('text',''))
+        elif type(turn) is int:
+            self.cmd_routes[turn]=dict(cfg)
+            while len(self.cmd_routes)>20:self.cmd_routes.pop(next(iter(self.cmd_routes)))
+        return True
+
     async def run(self):
         while not self.host.stopping.is_set():
             cfg=configuration(self.host.st)
@@ -174,6 +273,10 @@ class Telegram:
                 while not self.out.empty():
                     enrolled,text=self.out.get_nowait()
                     if enrolled!=cfg or configuration(self.host.st)!=cfg:continue
+                    if isinstance(text,MediaOut):
+                        try:await self.send_media(cfg,text.text)
+                        except Exception:self.host.st.log('telegram_media_fail')
+                        continue
                     dest=cfg['owner_id']
                     if isinstance(text,dict):
                         dest=text['chat_id'];uid_out=text['sender_id']
@@ -230,7 +333,7 @@ def download(cfg,media,path):
         class NoRedirect(urllib.request.HTTPRedirectHandler):
             def redirect_request(self,*args):return None
         opener=urllib.request.build_opener(NoRedirect)
-        with opener.open('https://api.telegram.org/file/bot'+key+'/'+remote,timeout=30) as r:
+        with opener.open(BASE+'/file/bot'+key+'/'+remote,timeout=30) as r:
             fd=os.open(path,os.O_WRONLY|os.O_CREAT|os.O_EXCL|os.O_NOFOLLOW,0o600)
             total=0;head=b''
             with os.fdopen(fd,'wb') as f:

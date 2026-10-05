@@ -933,6 +933,11 @@
     "net": "Not connected to the computer. Wait until it reconnects.",
     "noSign": "This phone can't approve yet: run `agentj pair` on the computer to pair again.",
     "fail": "Not sent. Try again.",
+    "fa": {
+      "cancel": "Face ID didn't go through. Nothing was sent.",
+      "refused": "The computer didn't accept this Face ID. Nothing was done — you can tap Approve again.",
+      "none": "This phone confirms with Face ID, but Face ID isn't available on this page. Do it on the computer yourself, or pair this phone again."
+    },
     "r": {
       "done": "The command finished.",
       "doneFail": "The command ran but failed (exit code {code}).",

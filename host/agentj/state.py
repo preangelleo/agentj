@@ -337,6 +337,25 @@ class State:
                 return did, pk
         return None
 
+    def passkey_of_device(self, did: str) -> dict | None:
+        """The pk record of a listed device, or None (no passkey: its F17 cards need no Face ID — ADR-A163)."""
+        rec = self.devices().get(did)
+        pk = rec.get("pk") if isinstance(rec, dict) else None
+        return dict(pk) if isinstance(pk, dict) and isinstance(pk.get("id"), str) else None
+
+    def passkey_count(self, did: str, cred_id: str, count: int) -> bool:
+        """Remember a verified non-zero signCount (a cloned authenticator then fails on the next use, ADR-A163)."""
+        if not count:
+            return False
+        with self.devices_lock():
+            d = self.devices()
+            pk = (d.get(did) or {}).get("pk")
+            if not isinstance(pk, dict) or pk.get("id") != cred_id:
+                return False
+            pk["sc"] = count
+            _write_private(self.devices_path, json.dumps(d, indent=1, ensure_ascii=False).encode())
+        return True
+
     def set_passkey(self, pub: bytes, pk: dict) -> bool:
         """Store (or replace: one passkey per device) the passkey of the device with this static key, if still listed."""
         did = wire.device_id(pub)

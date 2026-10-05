@@ -1400,6 +1400,9 @@ div.math.display{text-align:center}
 .mcard .mact{display:inline-flex;align-items:center;min-height:44px;padding:0 16px;border-radius:var(--r-pill);background:var(--raised);border:1px solid var(--line);
   color:var(--ink);text-decoration:none;font:500 calc(14px*var(--fz))/1.2 var(--font-body)}
 .mskip{font:400 calc(13px*var(--fz))/1.45 var(--font-body);color:var(--ink-soft)}
+/* P59 (ADR-A164): a [label](local file) keeps its words above the card; a refused file's note sits where it was written */
+.mslot .mlabel{display:block;margin:0 0 6px}
+.mslot .mskip{display:block}
 .mview{position:fixed;inset:0;z-index:60;display:flex;flex-direction:column;background:rgba(0,0,0,.92)}
 .mview[hidden]{display:none}
 .mstage{flex:1;min-height:0;display:flex;align-items:center;justify-content:center;overflow:hidden;touch-action:none}

@@ -183,10 +183,17 @@ class OpenCodeAuthentication(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(state,'ok');self.assertIn('credential rows and key validity unverified',note)
 
     async def test_v2_reports_protocol_incompatibility_before_spawn(self):
-        agent=object.__new__(OpenCodeAgent);agent.failed_start=False;agent.cfg={'model':'deepseek/chat'};agent.fail_notice=Mock()
+        # P60: Agent J's own serve speaks v2 now (agent_opencode2); only a shared session attached to the owner's server refuses
+        from agentj.agent_opencode2 import OpenCodeV2Agent
+        class Attached(OpenCodeAgent):
+            pass
+        agent=object.__new__(Attached);agent.failed_start=False;agent.cfg={'model':'deepseek/chat'};agent.fail_notice=Mock()
         with patch('agentj.agent_opencode._bin',return_value='/var/tmp/fake-opencode'),patch('agentj.harness.version_of',return_value='opencode v2.0.23'),patch('asyncio.create_subprocess_exec') as spawn:
             self.assertFalse(await agent._spawn())
         spawn.assert_not_called();self.assertIn('v2',agent.fail_notice.call_args.args[0]);self.assertIn('not an invalid',agent.fail_notice.call_args.args[0])
+        own=object.__new__(OpenCodeAgent);own.host=SimpleNamespace(st=SimpleNamespace(log=Mock()))
+        self.assertTrue(own._switch('opencode v2.0.23'));self.assertIs(type(own),OpenCodeV2Agent)
+        self.assertTrue(own._switch('1.18.34'));self.assertIs(type(own),OpenCodeAgent)
 
     def test_doctor_uses_runtime_connection_not_database_as_proof(self):
         from agentj import doctor

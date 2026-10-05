@@ -46,7 +46,7 @@ def _cli(*args, env=None, timeout=60, stdin=subprocess.DEVNULL):
 class Version(unittest.TestCase):
     def test_one_source(self):
         v = agentj.__version__
-        self.assertEqual(v, "0.15.2a1")
+        self.assertEqual(v, "0.15.3a1")
         self.assertEqual(cloud.VERSION, v)
         self.assertEqual(cloud.AGENT, f"agentj/{v}")
         r = _cli("--version")
@@ -440,7 +440,7 @@ class WheelInstall(unittest.TestCase):
                   "agentj/admin/brand/img/shield-64.png"):
             self.assertIn(f, names_)
         self.assertFalse([n for n in names_ if n.endswith(".src.json") or "shield-source" in n], "no copy source, no big logo source")
-        self.assertLess(pathlib.Path(self.wheel).stat().st_size, 2_000_000, "wheel stays bounded: offline bilingual keyword lexicon adds ~0.85 MB; 0.15 code (cards, support, notices) ~1.93 MB; no acoustic models ship here")
+        self.assertLess(pathlib.Path(self.wheel).stat().st_size, 2_100_000, "wheel stays bounded: offline bilingual keyword lexicon adds ~0.85 MB; 0.15 code (cards, support, notices) ~1.93 MB; P60 OpenCode v2 adapter + provider CLI ~0.01 MB; no acoustic models ship here")
         self.assertFalse([n for n in names_ if n.startswith("tests/") or "wiredump" in n or "fakeclaude" in n])
         ep = next(n for n in names_ if n.endswith("entry_points.txt"))
         eps = zipfile.ZipFile(self.wheel).read(ep).decode()

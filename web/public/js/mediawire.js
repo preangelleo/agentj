@@ -49,5 +49,36 @@ export function matchSlot(ref, items, used = new Set()) {
   const byName = free.filter((m) => m.name === base(r));
   return byName.length === 1 ? byName[0] : null;
 }
+/** P59 (ADR-A164): where each item and skip note of a page goes. refs = the data-ref of every slot in reading order (md.js
+ *  `![](local)` and `[label](local)`). → { at: per slot {mid} | {skip: <index into skips>} | null (keep the source text),
+ *  rest: the items no slot shows (the strip under the words), restSkips: the skip notes no slot shows }.
+ *  Order of preference: the same reference, then the only item with that file name (two items of one name: no guess), then an item another slot already
+ *  shows (the reply wrote it twice: shown twice, where it was written), then a refusal of that file name (its one-line note
+ *  in place of the Markdown). Nothing is guessed when two items share a name. */
+export function placeSlots(refs, items, skips = []) {
+  const at = refs.map(() => null), used = new Set(), usedSkip = new Set();
+  const rs = refs.map(normRef);
+  rs.forEach((r, i) => {
+    const m = items.find((x) => !used.has(x.mid) && normRef(x.ref) === r);
+    if (m) { at[i] = { mid: m.mid }; used.add(m.mid); }
+  });
+  const byName = (r) => { const n = base(r), all = n ? items.filter((x) => x.name === n) : []; return all.length === 1 ? all[0] : null; };
+  rs.forEach((r, i) => {
+    if (at[i]) return;
+    const m = byName(r);
+    if (m && !used.has(m.mid)) { at[i] = { mid: m.mid }; used.add(m.mid); }
+  });
+  rs.forEach((r, i) => {
+    if (at[i]) return;
+    const m = items.find((x) => normRef(x.ref) === r) || byName(r);
+    if (m) { at[i] = { mid: m.mid }; return; }
+    const n = base(r);
+    if (!n) return;
+    let k = skips.findIndex((s, j) => !usedSkip.has(j) && s.name === n);
+    if (k < 0) k = skips.findIndex((s) => s.name === n);
+    if (k >= 0) { at[i] = { skip: k }; usedSkip.add(k); }
+  });
+  return { at, rest: items.filter((m) => !used.has(m.mid)), restSkips: skips.filter((_, j) => !usedSkip.has(j)) };
+}
 /** Blob type: QuickTime H.264 plays as MP4 on both engines; everything else as the computer typed it. */
 export const blobType = (m) => (m.mime === 'video/quicktime' ? 'video/mp4' : m.mime);

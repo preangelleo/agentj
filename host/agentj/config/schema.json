@@ -660,7 +660,7 @@
         "HTTPS 代理变量名"
       ],
       "tier": "user",
-      "apply": "restart",
+      "apply": "harness",
       "verify": "agentj config validate --json",
       "since": "0.15",
       "pattern": "(?:[A-Z][A-Z0-9_]{0,79})?",
@@ -675,7 +675,7 @@
         "HTTP 代理变量名"
       ],
       "tier": "user",
-      "apply": "restart",
+      "apply": "harness",
       "verify": "agentj config validate --json",
       "since": "0.15",
       "pattern": "(?:[A-Z][A-Z0-9_]{0,79})?",
@@ -690,11 +690,54 @@
         "代理绕过变量名"
       ],
       "tier": "user",
-      "apply": "restart",
+      "apply": "harness",
       "verify": "agentj config validate --json",
       "since": "0.15",
       "pattern": "(?:[A-Z][A-Z0-9_]{0,79})?",
       "maxLength": 80
+    },
+    "proxy.https": {
+      "type": "string",
+      "default": "",
+      "description": "HTTPS_PROXY for the Agent's harness only, e.g. http://127.0.0.1:7890; no user:password@ (use proxy.https_env) / 只给 Agent 子进程的 HTTPS 代理，例如 http://127.0.0.1:7890；不写账号密码",
+      "aliases": [
+        "proxy.https",
+        "代理",
+        "HTTPS 代理"
+      ],
+      "tier": "user",
+      "apply": "harness",
+      "verify": "agentj config validate --json",
+      "since": "0.15.3",
+      "maxLength": 300
+    },
+    "proxy.http": {
+      "type": "string",
+      "default": "",
+      "description": "HTTP_PROXY for the Agent's harness only; empty follows proxy.https / 只给 Agent 子进程的 HTTP 代理；留空跟随 HTTPS 代理",
+      "aliases": [
+        "proxy.http",
+        "HTTP 代理"
+      ],
+      "tier": "user",
+      "apply": "harness",
+      "verify": "agentj config validate --json",
+      "since": "0.15.3",
+      "maxLength": 300
+    },
+    "proxy.no_proxy": {
+      "type": "string",
+      "default": "",
+      "description": "NO_PROXY for the Agent's harness, comma-separated hosts; empty with a proxy set bypasses localhost / 不走代理的主机，逗号分隔；留空时本机地址自动绕过",
+      "aliases": [
+        "proxy.no_proxy",
+        "代理绕过"
+      ],
+      "tier": "user",
+      "apply": "harness",
+      "verify": "agentj config validate --json",
+      "since": "0.15.3",
+      "maxLength": 1000
     },
     "voice.tts.command": {
       "type": "array",

@@ -173,6 +173,50 @@ try {
     } finally { await p.dispose(); }
   });
 
+  // P59 / ADR-A163: a card that names this device's passkey (`fa`) on a page with no WebAuthn → refused on the phone with
+  // one clear line, nothing sent; 拒绝 still works. And the host's `elev_refused` (Face ID not accepted) frees the card.
+  await C('f17-faceid-unavailable', async () => {
+    const p = await paired('zh');
+    try {
+      await ev(p, `delete window.PublicKeyCredential; true`);
+      const card = await hostCard('sudo', { cmd: 'true', why: 'w', effect: '', fa: 'AAAAAAAAAAAAAAAAAAAAAA' });
+      await fake.send(card.m);
+      await waitFor(p, `!!document.getElementById('elev') && !document.getElementById('elev').hidden`);
+      await type(p, PW);
+      await ev(p, `document.getElementById('elev-allow').click()`);
+      await waitFor(p, `document.getElementById('toast').textContent.includes('用不了 Face ID')`);
+      await new Promise((r) => setTimeout(r, 300));
+      assert.equal(answers().length, 0, 'nothing sent');
+      assert.equal(await ev(p, `document.getElementById('elev').hidden`), false, 'the card stays');
+      await ev(p, `document.getElementById('elev-deny').click()`);
+      for (let i = 0; i < 100 && !answers().length; i++) await new Promise((r) => setTimeout(r, 50));
+      const a = answers()[0];
+      assert.ok(a && a.ok === false && !('fa' in a), 'decline needs no Face ID');
+      await fake.send({ t: 'elev_done', id: card.m.id, result: 'denied' });
+      await waitFor(p, `document.getElementById('elev').hidden`);
+      await noTrace(p, PW);
+    } finally { await p.dispose(); }
+  });
+
+  await C('f17-faceid-refused-by-host', async () => {
+    const p = await paired('en');
+    try {
+      const card = await hostCard('sudo', { cmd: 'true', why: 'w', effect: '' });
+      await fake.send(card.m);
+      await waitFor(p, `!!document.getElementById('elev') && !document.getElementById('elev').hidden`);
+      await type(p, PW);
+      await ev(p, `document.getElementById('elev-allow').click()`);
+      for (let i = 0; i < 100 && !answers().length; i++) await new Promise((r) => setTimeout(r, 50));
+      assert.equal(await ev(p, `document.getElementById('elev-input').disabled`), true, 'sending');
+      await fake.send({ t: 'elev_refused', id: card.m.id, why: 'passkey' });
+      await waitFor(p, `document.getElementById('toast').textContent.includes("didn't accept this Face ID")`);
+      assert.equal(await ev(p, `document.getElementById('elev-input').disabled`), false, 'usable again');
+      assert.equal(await ev(p, `document.getElementById('elev').hidden`), false, 'the card stays');
+      await fake.send({ t: 'elev_done', id: card.m.id, result: 'denied' });
+      await waitFor(p, `document.getElementById('elev').hidden`);
+    } finally { await p.dispose(); }
+  });
+
   for (const lang of ['zh', 'en']) {
     await C(`f17-secret-${lang}`, async () => {
       const p = await paired(lang);

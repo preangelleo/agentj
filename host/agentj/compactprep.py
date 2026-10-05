@@ -28,6 +28,10 @@ State (`<state>/compactprep.json`, 0600, ≤ KEEP_KEYS conversations): per sessi
 the compaction: a meter that has not moved since is stale, never a reason to remind)}. /clear drops the conversation's
 record (a new conversation starts clean). Metadata only in the log: event names + result classes, never text or paths.
 
+P59 (ADR-A165): `proactive` — Codex compacts by itself inside a turn with no hook before it, so a meter ≥ AUTO_PREP_AT at
+the end of a user turn runs the preparation turn early (once per epoch, reply hidden); its auto-compaction event calls
+`compacted(auto=True)`. The owner's /compact from Telegram arrives through serve.on_slash like the phone's.
+
 Not here: shared sessions (the owner's own harness; nothing is injected there), workflow CEO sessions and scheduled runs.
 """
 from __future__ import annotations
@@ -47,6 +51,8 @@ DIR = "handover"
 PREP_TIMEOUT = 300.0        # s: the preparation turn (an approval card for the write may be in it)
 FRESH = 900.0               # s: a handover older than this is not "prepared" (the Agent updates it instead)
 REMIND_AT = 0.5             # ctx used / max above this → the reminder line (once per epoch)
+AUTO_PREP_AT = 0.85         # P59: ≥ this at the end of a turn → prepare before the harness's own compaction (proactive)
+AUTO_KINDS = ("codex",)     # P59: adapters whose own compaction gets the proactive preparation (see proactive)
 KEEP_KEYS = 50
 READ_MAX = 1024 * 1024
 STATE_FILE = "compactprep.json"
@@ -68,6 +74,16 @@ REMIND = {"zh": "（Agent J：上下文已经用了一半多。请在这次回�
                 "压缩前会自动先写好交接。）",
           "en": "(Agent J: the context is more than half full. At the end of this reply add one sentence: the context is past "
                 "half; say \"compact\" or send /compact when convenient — the handover is written automatically first.)"}
+PREP_AUTO = {   # P59 (ADR-A165): the context is nearly full and the harness will compact by itself soon
+    "zh": (MARK + "\n（Agent J：上下文快满了，Codex 很快会自动压缩。先把交接写进 `{path}`（Markdown，覆盖旧内容），让压缩后的你读它"
+           "就能接着干：\n1. 最初的目标，尽量用用户的原话；\n2. 已完成 / 进行中 / 下一步；\n3. 做过的决定和原因；\n4. 重要的绝对路径；\n"
+           "5. 还没解决的问题。\n不要写任何密钥、token、密码或其他凭据。写完只回一句「交接写好了」，不要做别的事。）"),
+    "en": (MARK + "\n(Agent J: the context is nearly full and Codex will compact it by itself soon. Write the handover to "
+           "`{path}` first (Markdown, replace what is there) so that you can carry on after the compaction by reading it:\n"
+           "1. the original goal, in the user's own words where possible;\n2. done / in progress / next steps;\n"
+           "3. decisions made and why;\n4. important absolute paths;\n5. open questions.\nNo keys, tokens, passwords or other "
+           "credentials. When it is written, reply with one line \"Handover written\" and do nothing else.)"),
+}
 FAILED = {"zh": "压缩前没能先写好交接，已经直接压缩了。",
           "en": "The handover could not be written before compacting; compacted anyway."}
 DONE = {"zh": "压缩前已写好交接：{path}", "en": "Handover written before compacting: {path}"}
@@ -215,9 +231,10 @@ async def compact(agent, fn, arg):
     return res
 
 
-async def _prepare(agent, key: str, path: str, L: str):
+async def _prepare(agent, key: str, path: str, L: str, text: dict | None = None):
     """One ordinary turn with the preparation instruction. True = the handover was written during it; False = not
     (missing, unchanged, timed out, refused); "stopped" = the stop switch / `/stop` ended it."""
+    text = text or PREP
     host = agent.host
     ensure_dir(agent.cfg["dir"])
     before = probe(agent.cfg["dir"], key)
@@ -235,7 +252,7 @@ async def _prepare(agent, key: str, path: str, L: str):
     _log(agent, "compact_prep", result="start")
     result = None
     try:
-        await asyncio.wait_for(agent.turn(PREP[L].format(path=path)), PREP_TIMEOUT)
+        await asyncio.wait_for(agent.turn(text[L].format(path=path)), PREP_TIMEOUT)
     except asyncio.TimeoutError:
         result = "timeout"
         with contextlib.suppress(Exception):
@@ -287,6 +304,44 @@ async def compacted(agent, prev_at: float | None = None, auto: bool = False) -> 
     r["ctx_at"] = ctx[0] if ctx else None
     save(st, d)
     _log(agent, "compacted", result="auto" if auto else "ok", status="note" if r["note"] else "no_note")
+
+
+async def proactive(agent) -> bool:
+    """P59 (ADR-A165): the harness compacts by itself when its context is full (Codex inside a turn, with no hook for us to
+    run first). So at the END of a user turn whose meter reads ≥ AUTO_PREP_AT, and when this epoch has neither a fresh
+    handover nor an earlier attempt, run the preparation turn now (its one-line answer is not shown: collected, not sent).
+    Nothing is compacted here. Once per epoch whatever the outcome. Returns True when the handover was written.
+    Only for AUTO_KINDS (the adapters that can run a turn without showing it); never for a shared / CEO / scheduled run."""
+    if getattr(agent, "kind", None) not in AUTO_KINDS or not applies(agent) or getattr(agent, "halting", False) \
+            or not hasattr(agent, "collect") or agent.collect is not None:
+        return False
+    stopper = getattr(agent.host, "stopped", None)
+    if callable(stopper) and stopper():
+        return False
+    key = session_key(agent)
+    ctx = _ctx(agent)
+    if key is None or not ctx or ctx[0] / ctx[1] < AUTO_PREP_AT:
+        return False
+    st = agent.host.st
+    d, r = record(st, key)
+    if r.get("auto_n") == r["n"] or ctx[0] == r.get("ctx_at"):
+        return False                               # tried in this epoch already / the meter has not moved since compacting
+    r["auto_n"] = r["n"]
+    save(st, d)
+    if prepared(agent, key, r):
+        _log(agent, "compact_auto_prep", result="already")
+        return False
+    agent.collect = []                             # the Agent's 「交接写好了」 is not a reply to anything the user said
+    try:
+        ok = await _prepare(agent, key, handover_path(agent, key), lang(agent), PREP_AUTO)
+    finally:
+        agent.collect = None
+    if ok is True:
+        d, r = record(st, key)
+        r["prep_at"], r["prep_n"] = int(time.time()), r["n"]
+        save(st, d)
+    _log(agent, "compact_auto_prep", result="ok" if ok is True else ("stopped" if ok == "stopped" else "failed"))
+    return ok is True
 
 
 def cleared(agent, key: str | None) -> None:

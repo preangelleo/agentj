@@ -54,7 +54,8 @@ test('md.js: a local image is a slot (source text inside), a remote image a link
   assert.equal(r.all().filter((n) => n.className === 'mslot' || n.tag === 'img').length, 0, 'remote: a link, nothing fetched');
   for (const s of ['![x](data:image/png;base64,AAAA)', '![x](javascript:alert(1))'])
     assert.equal(render(s).all().length, 1, `${s}: one paragraph of text, no slot / link`);
-  assert.equal(render('[文件](out/a.csv)').all().filter((n) => n.className === 'mslot').length, 0, 'a plain link is not a slot');
+  // P59 (ADR-A164): a link to a local file is a slot too (marked data-link); a link to a remote file stays a link
+  assert.equal(render('[文件](out/a.csv)').all().filter((n) => n.className === 'mslot' && n.getAttribute('data-link') === '1').length, 1, 'a local link is a link slot');
   assert.equal(render('`![x](out/a.png)`').all().filter((n) => n.className === 'mslot').length, 0, 'inside code: text');
   assert.equal(render('![e](out/a\\_b.png)').all().find((n) => n.className === 'mslot').getAttribute('data-ref'), 'out/a_b.png');
   assert.equal(render('![e](<my chart.png>)').all().find((n) => n.className === 'mslot').getAttribute('data-ref'), 'my chart.png');

@@ -1014,7 +1014,7 @@ values printed in the command before installing, so what the phone showed is wha
 (pure-Python RFC 8032) against its root-owned allowlist, requires `|now − ts| ≤ 120 s` and an unseen nonce (root-owned
 ledger, 10 min), logs `argv_sha256` and runs argv with a fixed PATH. The Agent (same user) can call the helper, but cannot
 sign. A phone removed from Agent J must also be removed from the helper (`sync` / `uninstall`, each one password card).
-Not covered: Face ID / WebAuthn user verification before 「同意」, Windows, a macOS SMAppService helper (macOS gets the same
+Face ID before 「同意」 for a phone that saved a passkey: §16.1 (0.15.3). Not covered: Windows, a macOS SMAppService helper (macOS gets the same
 sudoers helper, `root:wheel` + `shasum`; static tests only).
 
 ## 12. Passkey: the same phone without a second pairing (F20, 0.15.2)
@@ -1161,6 +1161,9 @@ and SVG are never opened as a page of their own; file → download (`<a download
 share (iOS: 「存储到文件」). Blobs live in an in-memory LRU ≤ 64 MiB (never stored); object URLs are revoked when another
 page is shown and on unpair / revoke. The Web Worker CSP needed no change: `img-src` and `media-src` already allow `blob:`,
 and `srcdoc` is not a fetch (`frame-src` does not apply).
+- 0.15.3 (P59, ADR-A164, no wire change): a `[label](local file)` link is a slot too, and the full-screen reader fills its
+  slots from the same Blobs; an item placed at a slot is not repeated under the words, a `media_skip` whose name matches a
+  slot shows its note there. Matching uses `ref` as above.
 - Telegram (§10.15) is unchanged: it still sends the reply text only.
 
 ## 14. Offline queue on the phone (0.15.2)
@@ -1251,3 +1254,35 @@ scheduled run (§10 tasks). Code: `agentj/compactprep.py`, `agentj/recall.py`.
 - Shipped skills: every folder under `agentj/skills/` (agentj-config, agentj-recall, agentj-manual, …) is linked by
   `agentj skill install` into `~/.claude/skills`, `~/.codex/skills`, `~/.agents/skills`, `~/.config/opencode/skills`;
   a foreign same-name entry is kept and reported (`conflict`); `agentj doctor` row `skills` (✓ / ! with the hint).
+
+## 16. 0.15.3 (P59) additions
+
+### 16.1 Face ID before 「同意」 on a sudo / secret card (F17 收尾, P59, ADR-A163)
+Applies only to a device whose record holds a passkey (§12 `pk`); every other device works exactly as in §11.
+- **Host → that device**: the §11 `elev` card carries `"fa":<b64url credential id>` = the `pk.id` of the RECEIVING device's
+  own record (built per session; another device never learns it). Re-sent cards (resume, wrong password) carry it again.
+- **Phone**: when the card arrives it computes `challenge = SHA-256(UTF-8("agentjarvis/passkey/elevate/v1" \n channel \n
+  device \n id \n kind \n "approve" \n n \n D))` (`D` = the §11 shown digest, `n` = the card's current nonce; parts are
+  non-empty, no `\n`). On 「同意」, straight from the tap and before any other await: `navigator.credentials.get({publicKey:
+  {challenge, rpId: location.hostname, userVerification: "required", allowCredentials: [{type: "public-key", id: fa}]}})`.
+  Cancel / failure → nothing is sent, the card stays open with 「没有通过 Face ID，什么也没发出。」. A page with no WebAuthn
+  (`PublicKeyCredential` / `credentials.get` missing) refuses locally: 「这台手机设了用 Face ID 确认，但这个页面用不了 Face ID。
+  请到电脑上自己操作，或重新扫码配对这台手机。」 — never a silent fallback to password-only. 「拒绝」 never asks for Face ID.
+- **Device → host**: an `ok:true` `elev_answer` (sealed, or the admin-helper approve-only form) adds
+  `"fa":{"id","cd","ad","sig"}` (b64url: credential id, clientDataJSON, authenticatorData, signature). The secret / password
+  travels exactly as in §11 (sealed `ct`); `fa` is not part of the Ed25519 signed line.
+- **Host checks** (after every §11 check, so a bad answer never costs the nonce): the device record has `pk` → `fa` present
+  (else `passkey_missing`); `fa.id` = `pk.id`; `cd.type` = `webauthn.get`, `cd.challenge` = the challenge above recomputed
+  from what the HOST stored (channel, this session's device id, card id, kind, current nonce, digest), origin allowed (§12),
+  not cross-origin; `ad.rpIdHash` = SHA-256(`pk.rp`), flags UP + UV; the signature with the stored SPKI; signCount (0 =
+  synced, ignored; else > the stored one, which is then stored) — the §12 verifier (`passkey.verify_assertion`). Any
+  failure → `passkey_bad`. Both are §11 refusals (card unchanged, `elev_refused` in host.log + `elev_passkey` with the
+  verifier's reason, `refused` in `elevate.log`) and additionally `{"t":"elev_refused","id","why":"passkey"}` to that
+  session, so the page leaves "sending" and shows 「电脑没认这次 Face ID，什么也没做。可以再点一次同意。」. An approval that
+  passed records `"passkey":"uv"` in its `elevate.log` line. `fa` from a device without `pk` is ignored.
+- **Replay**: the challenge binds the card id, the decision and the current one-time `n` (cleared once an answer is acted
+  on; a wrong password re-arms with a new `n` → a new Face ID), so an assertion approves one card, one attempt, only what
+  was shown. No timestamp in the challenge (it is made before the tap, iOS gesture rule); `n` + the §11 `ts` window give
+  freshness.
+- **After a §12 restore** the record has a new device id + approval key but the same `pk`: the next card names the same
+  credential and the challenge uses the new device id; nothing else changes.

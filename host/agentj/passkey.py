@@ -2,8 +2,8 @@
 
 Pure functions only (no state, no I/O except one test switch read from the environment): the host's checks of a
 registration (`pk_reg`) and of a restore assertion (`pk_restore`), the user handle layout and the restore challenge. The
-session glue lives in serve.py, the allowlist edits in state.py. Written so F17's sudo / secret cards can later ask for a
-passkey ceremony before 「同意」 with the same verifier (PROTOCOL §11 GAP).
+session glue lives in serve.py, the allowlist edits in state.py. F17's sudo / secret cards ask for a
+passkey ceremony before 「同意」 with the same verifier (PROTOCOL §16.1, ADR-A163).
 
 What is deliberately NOT checked: the attestation (the page asks for 'none'; the registering session is already the approved
 device and could register any key it likes), and the signature counter of a synced passkey (iCloud Keychain sends 0)."""
@@ -27,6 +27,7 @@ ALGS = (ALG_ES256, ALG_EDDSA, ALG_RS256)
 HANDLE_V = 1
 HANDLE_LEN = 50                 # 0x01 ‖ relay index u8 ‖ channel (16) ‖ host X25519 public key (32)
 RESTORE_LABEL = b"agentjarvis/passkey/restore/v1\n"
+ELEVATE_LABEL = "agentjarvis/passkey/elevate/v1"   # F17 收尾 (P59, ADR-A163): Face ID before 「同意」 on a sudo / secret card
 OFFER_TTL = 300                 # s: a pk_offer nonce is good for one pk_reg within this
 TS_WINDOW_MS = 5 * 60 * 1000    # |now − ts| of a restore
 NONCE_KEEP = 600                # s a restore nonce is remembered (replay)
@@ -99,6 +100,26 @@ def restore_challenge(dev_x25519: bytes, dev_ed25519: bytes, ts_ms: int, nonce: 
     if len(dev_x25519) != 32 or len(dev_ed25519) != 32 or len(nonce) != 16 or not 0 <= ts_ms < 2**64:
         raise ValueError("bad challenge parts")
     return hashlib.sha256(RESTORE_LABEL + dev_x25519 + dev_ed25519 + ts_ms.to_bytes(8, "big") + nonce).digest()
+
+
+# ---------------------------------------------------------------- F17 card approval (P59, PROTOCOL §16.1, ADR-A163)
+def elevate_challenge(channel: str, device: str, rid: str, kind: str, nonce: str, digest: str) -> bytes:
+    """SHA-256(UTF-8(label \n channel \n device \n card id \n kind \n "approve" \n card nonce \n shown digest)). The card
+    nonce is the host's one-time `n` of THIS arming (cleared when an answer is acted on), so an assertion approves exactly
+    one card, one decision, one attempt, and only what was shown. No timestamp: the page computes it when the card
+    arrives, so the Face ID sheet can follow the tap with nothing slow in between (iOS); `n` already gives freshness."""
+    parts = (ELEVATE_LABEL, channel, device, rid, kind, "approve", nonce, digest)
+    if not all(isinstance(x, str) and x and "\n" not in x for x in parts):
+        raise ValueError("bad challenge parts")
+    return hashlib.sha256("\n".join(parts).encode()).digest()
+
+
+def approval_fields(fa) -> dict:
+    """Shape of the `fa` object of an `elev_answer` ({"id","cd","ad","sig"}, b64url). Raises PasskeyError("bad", …)."""
+    if not isinstance(fa, dict):
+        raise PasskeyError("bad", "fa")
+    return {"id": wire.b64u(b64(fa.get("id"), MAX_CRED_ID, "id")), "cd": b64(fa.get("cd"), MAX_CD, "cd"),
+            "ad": b64(fa.get("ad"), MAX_AD, "ad"), "sig": b64(fa.get("sig"), 1024, "sig")}
 
 
 # ---------------------------------------------------------------- pieces
@@ -195,7 +216,7 @@ def restore_fields(obj: dict) -> dict:
 
 
 def verify_assertion(pk: dict, f: dict, challenge: bytes) -> int:
-    """A restore assertion `f` (restore_fields) against the stored `pk` record → the signCount to store (0 = synced
+    """A restore assertion `f` (restore_fields; or approval_fields for a F17 card) against the stored `pk` record → the signCount to store (0 = synced
     passkey, not tracked). The caller already matched f["id"] to pk["id"] and checked the user handle."""
     client_data(f["cd"], "webauthn.get", challenge)
     rp_hash, flags, count = auth_data(f["ad"])

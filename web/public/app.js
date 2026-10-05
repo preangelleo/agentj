@@ -218,6 +218,7 @@ function onApp(m) {
     case 'ask_done': snap.askDone(m); return;
     case 'elev': elevate.add(m); return;             // F17 (§11)
     case 'elev_done': elevate.done(m); return;
+    case 'elev_refused': elevate.refused(m); return;   // ADR-A163: Face ID not accepted, the card stays open
     case 'pk_offer': offerPasskey(m).catch(() => {}); return;    // F20 (§12)
     case 'pk_reg_res': pkSaved(m).catch(() => {}); return;
     case 'question': snap.addQuestion(m); return;

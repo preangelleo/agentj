@@ -95,6 +95,6 @@
     "fence": "",
   },
   "telegram": {"groups": []},
-  // Variable names only; values stay in the host service environment.
-  "proxy": {"https_env": "", "http_env": "", "no_proxy_env": ""},
+  // Harness child processes only. Direct values (no user:password@) or variable NAMES; a value wins over a name.
+  "proxy": {"https": "", "http": "", "no_proxy": "", "https_env": "", "http_env": "", "no_proxy_env": ""},
 }

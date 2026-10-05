@@ -84,6 +84,15 @@ async def _realtime_audio(text,cfg,timeout):
             raise ValueError('event limit')
 
 
+# A166: the user's speech script inherits the service environment (its own provider keys live there), minus Agent J's
+# own runtime values: AGENTJ_* paths and the per-start OpenCode server credential, which would let it drive the harness.
+_COMMAND_ENV_DROP=('OPENCODE_SERVER_PASSWORD','OPENCODE_SERVER_USERNAME')
+
+
+def _command_env():
+    return {k:v for k,v in os.environ.items() if k not in _COMMAND_ENV_DROP and not k.startswith('AGENTJ_')}
+
+
 def _command_audio(text,cfg,timeout):
     # The user's own script owns its service integration and local credentials.
     # Text is never placed in argv; stdout/stderr and exception details are never surfaced.
@@ -95,7 +104,7 @@ def _command_audio(text,cfg,timeout):
         proc=None
         try:
             proc=subprocess.Popen(args,stdin=subprocess.PIPE,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,
-                                  cwd=tmp,start_new_session=True)
+                                  cwd=tmp,start_new_session=True,env=_command_env())
             try:
                 proc.communicate(text.encode('utf-8'),timeout=min(timeout,p.get(cfg,'voice.tts.command_timeout')))
             finally:

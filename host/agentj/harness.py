@@ -107,7 +107,7 @@ def opencode_login(version: str | None = None) -> tuple[str, str]:
     for k in OPENCODE_KEY_ENV:
         if os.environ.get(k):
             return "env", f"env {k} (name only)"
-    return "warn", "no model key store found (opencode auth login); restart Agent J after changing keys"
+    return "warn", "no model key store found (opencode auth login); Agent J restarts its own OpenCode before the next message after a key change"
 
 
 def login_of(name: str) -> tuple[str, str]:
@@ -135,6 +135,11 @@ def _one(name: str, environ=None) -> dict:
         rec.update(logged_in=None, note=LATER)
         return rec
     if not rec["installed"]:
+        return rec
+    if name == "opencode" and opencode_v2(version):   # P59 measured 2.0.23; P60: Agent J's own serve speaks v2 (agent_opencode2)
+        rec.update(logged_in=None,
+                   note="OpenCode v2: keys live in its database (several per provider: `opencode auth switch <provider>` picks "
+                        "the active one); the running server's connections are the proof, not the file. Prefer Claude Code.")
         return rec
     status, _ = opencode_login(version) if name == "opencode" else login_of(name)
     if name == "opencode":

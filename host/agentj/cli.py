@@ -1046,6 +1046,24 @@ def cmd_agent(a) -> None:
     elif a.mode == "off":
         st.set_agent_config(None)
         st.log("agent_config", agent="off")
+    elif a.mode == "restart":   # P59 (A167): the harness Agent J owns, before its next turn; the conversation is kept
+        try:
+            res = names.ctl_call(st, {"cmd": "agent_restart"}, 10)
+        except names.ServeBusy:
+            sys.exit("✗ agentj serve 在运行但没有响应：没有重启 / serve is running but not answering")
+        when = (res or {}).get("when")
+        if res is not None and res.get("error") == "unknown command":   # a serve older than this CLI
+            sys.exit("✗ 正在运行的 serve 版本较旧：运行 `agentj service restart` / the running serve is older: `agentj service restart`")
+        if res is None or when == "next_start":
+            print("✓ Agent 现在没有在运行：下一条消息启动时就用新的设置（代理、key），接着原来的对话。"
+                  " / Not running now: the next message starts it with the new settings, same conversation.")
+        elif when == "next_turn":
+            print("✓ 已安排重启：下一条消息之前重启 Agent 的进程（不打断正在进行的这一轮），接着原来的对话。"
+                  " / Restart scheduled before the next message (the running turn is not interrupted); same conversation.")
+        else:
+            sys.exit("✗ 共享会话用的是你电脑上原来的进程，Agent J 不替你重启：请在电脑上自己重启它。"
+                     " / A shared session is your own process: restart it yourself.")
+        return
     elif a.mode == "reset":
         for k in st.AGENT_KINDS:
             st.set_agent_session(k, None)
@@ -1828,8 +1846,9 @@ def main(argv=None) -> None:
     ru.add_argument("mode", nargs="?", choices=["on", "off", "status"], default="status")
     ru.set_defaults(fn=cmd_remote_unbind)
     ag = sub.add_parser("agent", help="接哪个 Agent：claude / codex / opencode / off；reset = 开一段新对话（重启 serve 生效）；"
+                                      "restart = 下一条消息前重启 Agent 进程、对话不变（换了 key 或代理后）；"
                                       "detect = 本机有哪些可用 / which agents are usable here")
-    ag.add_argument("mode", nargs="?", choices=["claude", "codex", "opencode", "off", "reset", "status", "detect"], default="status",
+    ag.add_argument("mode", nargs="?", choices=["claude", "codex", "opencode", "off", "reset", "restart", "status", "detect"], default="status",
                     help="detect = 本机有哪些可用（不需要 init；只看是否安装、登录文件是否存在）/ which agents are usable here "
                          "(no init needed; checks only what is installed and whether login files exist)")
     ag.add_argument("--json", action="store_true", help="detect 的机器可读输出 / machine-readable detect output")
@@ -1891,6 +1910,8 @@ def main(argv=None) -> None:
     tk.set_defaults(fn=cmd_tasks)
     wizard.add_parser(sub)
     elevate.add_parser(sub)   # F17: agentj sudo · agentj secret request
+    from . import opencode_provider
+    opencode_provider.add_parser(sub)   # P60 / F25: agentj provider add|list|remove (OpenCode base_url + key)
     elevate_helper.add_parser(sub)   # F17: agentj sudo-helper install · sync · uninstall · status
     docsrule.add_parser(sub)
     handover.add_parser(sub)

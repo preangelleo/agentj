@@ -463,6 +463,7 @@ class SharedOpenCodeAgent(OpenCodeAgent):
         super().__init__(host,cfg)
         self.risk=RiskGuard(self)
         self.risk_channel=None
+        self.owned_server=False   # P59: True once Agent J started this ordinary server itself (restartable, same session)
 
     async def prepare_risk(self):
         if not self.cfg.get('high_risk_warnings',False) or self.risk_channel:
@@ -491,6 +492,16 @@ class SharedOpenCodeAgent(OpenCodeAgent):
     async def _prepare(self):
         # Called only by the inherited native server startup. No independent
         # session_rules, PATCH permission or main identity injection is applied.
+        sid = self.cfg.get("shared_session_id")
+        if self.owned_server and isinstance(sid, str) and sid:
+            # P59 (A167): our own server restarted (credentials / proxy changed): the same ordinary session again
+            status, session = await self.client.request("GET", f"/session/{sid}")
+            if (status == 200 and isinstance(session, dict) and session.get("id") == sid
+                    and os.path.realpath(session.get("directory") or "") == os.path.realpath(self.cfg["dir"])):
+                self.sid, self.rules = sid, []
+                self.host.st.set_agent_session(self.kind, sid)
+                await self._prime()
+                return
         status, session = await self.client.request("POST", "/session", {"title": "Agent J shared"})
         if status != 200 or not isinstance(session, dict) or not isinstance(session.get("id"), str):
             raise HTTPError("ordinary session creation failed")
@@ -505,11 +516,12 @@ class SharedOpenCodeAgent(OpenCodeAgent):
     async def _spawn(self):
         await self.prepare_risk()
         port = self.cfg.get("shared_opencode_port")
-        if not port and not self.cfg.get("shared_session_id"):
+        if not port and (not self.cfg.get("shared_session_id") or self.owned_server):
             # An explicit shared experiment without an owner session starts an
             # ordinary native server/session. Native config and permissions stay
             # untouched. A stale explicit owner selector never falls through here.
             self.cfg["fence"] = False
+            self.owned_server = True
             return await super()._spawn()
         if type(port) is not int or not 1 <= port <= 65535:
             self.local_fail("指定电脑 OpenCode server 的 loopback 端口。 / Set the existing OpenCode loopback port.")
@@ -640,6 +652,7 @@ class SharedOpenCodeAgent(OpenCodeAgent):
         if initial is not None and not initial.done():
             if not await initial:
                 return
+        await self._creds_check()   # P59: only our own server (owned_server); never the owner's attached one
         if self.proc is None and not await self._spawn():
             return
         if self.risk_channel:

@@ -26,7 +26,8 @@ const MOD = { LABELS: { copy: "Copy", copyAria: "Copy code", copied: "Copied", i
 // unclosed fences run to the end), ordered/unordered lists with nesting,
 // blockquotes, [links](http..) / <http..> / bare http(s) URLs, horizontal rules,
 // GFM pipe tables. Images are shown as a link, never fetched (F21: an image of a local
-// file becomes a slot that media.js fills with the bytes the computer sent inside the session).
+// file becomes a slot that media.js fills with the bytes the computer sent inside the session; P59: so does a
+// [label](local file) link).
 (function (root) {
   "use strict";
   const LABELS = root.LABELS;
@@ -276,6 +277,9 @@ const MOD = { LABELS: { copy: "Copy", copyAria: "Copy code", copied: "Copied", i
         // F21 (§13): an image of a local file → a slot media.js fills with the file the computer sent (the source text
         // stays inside it until then, and for good when nothing was sent); never fetched from the path itself
         if (!href && img && localRef(dest)) out.push({ tag: "mslot", ref: localRef(dest), children: [text(s.slice(i, L.end))] });
+        // P59 (ADR-A164): a link to a local file too — media.js puts the file's card there (label kept as words); the
+        // source text stays when the computer sent nothing for it
+        else if (!href && !inLink && localRef(dest)) out.push({ tag: "mslot", ref: localRef(dest), link: true, label: flatText(parseInline(L.label, depth + 1, true)), children: [text(s.slice(i, L.end))] });
         else if (!href) out.push(text(s.slice(i, L.end)));      // unsafe: show the source
         else if (img) out.push({ tag: "a", attrs: { href }, children: [text(L.label || LABELS.image)] });
         else out.push({ tag: "a", attrs: { href }, children: parseInline(L.label, depth + 1, true) });
@@ -649,6 +653,10 @@ const MOD = { LABELS: { copy: "Copy", copyAria: "Copy code", copied: "Copied", i
         const sp = doc.createElement("span");
         sp.className = "mslot";
         sp.setAttribute("data-ref", String(n.ref == null ? "" : n.ref).slice(0, 1024));
+        if (n.link === true) {                       // P59: a [label](local file) — the label as an attribute value (text)
+          sp.setAttribute("data-link", "1");
+          sp.setAttribute("data-label", String(n.label == null ? "" : n.label).slice(0, 200));
+        }
         toDOM(n.children, doc, sp, budget);
         parent.appendChild(sp);
         continue;

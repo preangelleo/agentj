@@ -149,15 +149,79 @@ def config_content(user: str | None) -> str:
     return json.dumps(cfg, separators=(",", ":"))
 
 
-def provider_error_reason(name, data):
+_REGION = ("region", "country", "territory", "location is not supported", "not available in your", "unsupported_country")
+_QUOTA = ("quota", "insufficient", "balance", "billing", "credit", "payment")
+_NETWORK = ("fetch failed", "certificate", "enotfound", "econnrefused", "econnreset", "etimedout", "connect timeout",
+            "unable to connect", "socket hang up", "proxy", "tunnel")
+
+
+def provider_error_reason(name, data, connected=None, provider=None):
+    """session.error → one class (research 2026-10-04 §5: APIError.statusCode, ProviderAuthError, ProviderModelNotFoundError,
+    UnknownError). The provider's own message / body is read only to classify, never logged or shown.
+    P60 (measured, 1.18.32): a provider without a key in serve's view is no auth error but `UnknownError` "Model not found:
+    <provider>/<model>" (the provider is missing from serve's provider state) — a model-not-found whose provider was not in
+    serve's `connected` list at start (`connected`, `provider`) is `no_key`, never 「OpenCode 内部错误」."""
     code = data.get('statusCode')
     code = code if type(code) is int and 100 <= code <= 599 else None
-    detail = str(data.get('message') or '').lower()
-    return ("login" if code == 401 or "auth" in name.lower() or "key" in name.lower()
-                          else "access" if code == 403 else "balance" if code == 402 else "rate_limit" if code == 429
-                          else "model" if code == 404 or "modelnotfound" in name.lower()
-                          else "network" if any(x in detail for x in ("fetch failed","certificate","enotfound","econnrefused","connect timeout","unable to connect"))
-                          else "internal" if name == "UnknownError" else "provider")
+    detail = (str(data.get('message') or '') + ' ' + str(data.get('responseBody') or '')[:2000]).lower()
+    lname = name.lower()
+    if code == 451 or (code in (400, 403, None) and any(x in detail for x in _REGION)):
+        return "region"
+    if code == 402 or (code in (403, 429) and any(x in detail for x in _QUOTA)):
+        return "balance"
+    reason = ("login" if code == 401 or "auth" in lname or "key" in lname
+              else "access" if code == 403 else "rate_limit" if code == 429
+              else "model" if code == 404 or "modelnotfound" in lname or "model not found" in detail or "modelnotfound" in detail
+              else "network" if any(x in detail for x in _NETWORK)
+              else "internal" if name == "UnknownError" else "provider")
+    if reason == "model" and provider and isinstance(connected, list) and provider not in connected:
+        return "no_key"
+    return reason
+
+
+# One line per class, on the phone (fail_notice) and in `agentj doctor` (last turn's class). Provider.getLanguage caches the
+# model client (with its key) per provider/model inside serve, without an invalidation hook — so a changed key needs a
+# restart of `opencode serve`: Agent J does that itself before the next message (auth_fingerprint, P59 / A167).
+PROVIDER_NOTES = {
+    "login": "模型服务登录失败或 key 无效：在电脑运行 `opencode auth login` 换好 key，再发一条消息即可——Agent J 发现 key 变了会自动重启 OpenCode，接着这段对话。 / Provider login/key failed: run `opencode auth login`; Agent J restarts its OpenCode on the next message and keeps the conversation.",
+    "region": "服务商不支持你所在的地区：让电脑上的 Agent 配好代理（例如说「帮我把代理设成 http://127.0.0.1:7890」），或改用 Claude Code。 / Provider unavailable in your region: set a proxy (agentj config set proxy.https …) or use Claude Code.",
+    "access": "服务商拒绝访问（403）：核实地区、代理、账户权限及模型授权；403 不一定是 key 无效。 / Provider access denied: check region, proxy and account/model permission; 403 does not prove an invalid key.",
+    "balance": "模型服务余额或额度不足：在服务商后台充值或查看额度，然后再试。 / Provider balance or quota exhausted; check your provider account.",
+    "rate_limit": "模型服务限流：等一会儿再发；这条消息不会自动重发。 / Provider rate limit; wait and retry manually.",
+    "no_key": "OpenCode 里没有「{provider}」可用的 key：只在终端里 export 的 key，后台运行的 Agent J 看不到。在电脑运行 `opencode auth login` 选 {provider} 存好 key，再发一条消息即可——Agent J 会自动重启 OpenCode 读到它。 / OpenCode has no key for {provider} (a key exported only in your shell is invisible to the Agent J service): store it with `opencode auth login`, then just send again.",
+    "model": "模型名称不可用：运行 `opencode models` 核实服务商/模型 ID，再用 `agentj agent opencode --model <provider/model>` 更新。 / Run `opencode models`, then update the model ID.",
+    "network": "连不上模型服务：核实网络与代理设置（`agentj config get proxy.https`）。 / Provider connection failed; check network and proxy.",
+    "internal": "OpenCode 内部错误：在电脑运行 `agentj doctor`，再让 Agent 运行 `agentj agent restart`。 / OpenCode internal error; run `agentj doctor`, then `agentj agent restart`.",
+    "provider": "模型服务或 OpenCode 报错：在电脑运行 `agentj doctor`，核实模型名称、余额和网络。 / Provider/OpenCode error; run `agentj doctor`, then check model, balance and network.",
+}
+
+
+PROVIDER_LOGIN_ATTACHED = ("模型服务登录失败或 key 无效：在电脑运行 `opencode auth login` 换好 key，然后重启你电脑上原来的 OpenCode（它不是 Agent J 启动的）。"
+                           " / Provider login/key failed: run `opencode auth login`, then restart your own OpenCode server.")
+
+
+def auth_fingerprint() -> tuple:
+    """Metadata of OpenCode v1's credential store and global config (inode, mtime, size) — never their content. A change
+    means `opencode auth login` (or a config edit) happened since this serve started."""
+    data = os.environ.get("XDG_DATA_HOME") or os.path.expanduser("~/.local/share")
+    conf = os.environ.get("XDG_CONFIG_HOME") or os.path.expanduser("~/.config")
+    out = []
+    for p in (os.path.join(data, "opencode", "auth.json"), os.path.join(conf, "opencode", "opencode.json"),
+              os.path.join(conf, "opencode", "opencode.jsonc")):
+        try:
+            st = os.stat(p)
+            out.append((st.st_ino, st.st_mtime_ns, st.st_size))
+        except OSError:
+            out.append(None)
+    return tuple(out)
+
+
+# P60: serve keeps its provider state (which providers have a key) and every model client (key baked in) for the life of
+# the process (measured: a key fixed in auth.json still failed 401 / "Model not found" until serve restarted). The
+# fingerprint above catches auth.json / config edits; a key that lives elsewhere (the service's environment file, OpenCode
+# v2's credential database) is caught by this: after one of these failures an owned serve ends once the turn is over, so
+# the next message starts a fresh one that reads the current keys.
+RESTART_AFTER = ("login", "no_key", "model", "access", "region")
 
 
 def opencode_env(base: dict, password: str) -> dict:
@@ -300,9 +364,9 @@ class Client:
         except (asyncio.IncompleteReadError, EOFError) as e:      # the server went away mid-answer
             raise HTTPError("incomplete answer") from e
 
-    async def events(self, idle: float = SSE_IDLE):
+    async def events(self, idle: float = SSE_IDLE, path: str = "/event"):
         """Yield every SSE event (decoded JSON) until the stream ends; raises HTTPError on a non-200 answer."""
-        status, headers, r, w = await asyncio.wait_for(self._open("GET", "/event", accept="text/event-stream"), REQ_TIMEOUT)
+        status, headers, r, w = await asyncio.wait_for(self._open("GET", path, accept="text/event-stream"), REQ_TIMEOUT)
         try:
             if status != 200:
                 raise HTTPError(f"event stream {status}")
@@ -351,6 +415,8 @@ def free_port() -> int:
 # ---------------------------------------------------------------- the adapter
 class OpenCodeAgent(Agent):
     kind = "opencode"
+    EVENT_PATH = "/event"          # v2 (agent_opencode2): /api/event
+    v2 = False
 
     def __init__(self, host, cfg: dict, persist: bool = True, research: bool = False):
         if not persist:
@@ -374,6 +440,8 @@ class OpenCodeAgent(Agent):
         self.err_tail = ""
         self.start_progress = self.turn_progress = time.monotonic()
         self.provider_fail_noted = False
+        self.restart_after_turn = False                 # P60: a key / provider failure this turn → end serve after it
+        self.connected_at_start: list | None = None     # P60: providers with a key in this serve process (GET /provider)
         self.quiet_exit = False
         self.retry_noted = False
         self.saw_busy = False                           # this turn's session went busy (a stale idle cannot end it)
@@ -382,6 +450,8 @@ class OpenCodeAgent(Agent):
         self.agent_rules: list = []
         self.collect: list | None = None                # run_once: texts are collected, not sent
         self.quiet = False                              # compaction: the summary is not a reply
+        self.auth_fp: tuple | None = None               # P59: auth_fingerprint() when the owned serve started
+        self.last_provider_fail: dict | None = None     # P59: {reason, http_status, at} of the last session.error (doctor)
 
     def is_down(self) -> bool:
         return self.failed_start
@@ -403,7 +473,10 @@ class OpenCodeAgent(Agent):
             return False
         from .harness import version_of, opencode_v2
         version = await asyncio.to_thread(version_of, _bin('AGENTJ_OPENCODE_BIN', 'opencode'))
-        if opencode_v2(version):
+        own = self._own_protocol()
+        if own:
+            self._switch(version)
+        elif opencode_v2(version):                # a shared session attaches to the owner's own server: v1 only for now
             self.failed_start = True
             self.fail_notice('OpenCode v2 的 /api 协议尚未接入 Agent J；这不是模型 key 无效。优先切换 Claude Code，或使用兼容的 OpenCode v1。 / OpenCode v2 API is not supported by this adapter; this is not an invalid model key. Prefer Claude Code or use OpenCode v1.')
             return False
@@ -418,6 +491,7 @@ class OpenCodeAgent(Agent):
             self.failed_start = True
             return False
         from .proxy import environment
+        self.auth_fp = auth_fingerprint()        # P59: what the credentials looked like when this serve started
         proc = await asyncio.create_subprocess_exec(*argv, cwd=self.cfg["dir"], env=opencode_env(environment(os.environ, self.host.preferences), password),
                                                     stdin=asyncio.subprocess.DEVNULL, stdout=asyncio.subprocess.PIPE,
                                                     stderr=asyncio.subprocess.PIPE, limit=LINE_LIMIT, start_new_session=True)
@@ -500,6 +574,11 @@ class OpenCodeAgent(Agent):
         if ag is None:
             raise HTTPError("no primary agent")
         self.agent_rules = ag.get("permission") if isinstance(ag.get("permission"), list) else []
+        self.connected_at_start = None                  # P60: which providers this serve process has a key for (fixed for its life)
+        with contextlib.suppress(OSError, HTTPError, asyncio.TimeoutError):
+            st, pv = await self.client.request("GET", "/provider")
+            if st == 200 and isinstance(pv, dict) and isinstance(pv.get("connected"), list):
+                self.connected_at_start = [x for x in pv["connected"] if isinstance(x, str)]
         self.rules = session_rules(self.agent_rules, self.research) if self.research or self.cfg.get("high_risk_warnings", False) else list(self.agent_rules)
         await self._attach()
 
@@ -584,7 +663,7 @@ class OpenCodeAgent(Agent):
         while self.proc is proc and proc.returncode is None and self.client:
             client = self.client
             try:
-                async for ev in client.events():
+                async for ev in client.events(path=self.EVENT_PATH):
                     if not self.connected.is_set():
                         self.connected.set()
                     if not first:
@@ -679,20 +758,15 @@ class OpenCodeAgent(Agent):
                 data = err.get("data") if isinstance(err.get("data"), dict) else {}
                 code = data.get("statusCode")
                 code = code if type(code) is int and 100 <= code <= 599 else None
-                detail = str(data.get("message") or "").lower()
-                reason = provider_error_reason(name, data)
+                sel = split_model(self.cfg.get("model"))
+                pid = sel["providerID"] if sel else None
+                reason = provider_error_reason(name, data, self.connected_at_start, pid)
                 self.host.st.log("agent_provider_fail", agent=self.kind, reason=reason, http_status=code)
-                # Provider.getLanguage caches model clients; key changes require serve restart.
-                notes = {
-                    "access": "服务商拒绝访问（403）：核实地区、代理、账户权限及模型授权；403 不一定是 key 无效。 / Provider access denied: check region, proxy and account/model permission; 403 does not prove an invalid key.",
-                    "internal": "OpenCode 内部错误：检查本机 OpenCode 状态，再重启对应 serve。 / OpenCode internal error; check local status and restart the relevant serve.",
-                    "login": "模型服务登录或 key 无效：在电脑运行 `opencode auth login`；换 key 后运行 `agentj service restart`，再试发消息。 / Provider login/key failed; run `opencode auth login`, then `agentj service restart` after changing keys (restart the desktop OpenCode server too when attached).",
-                    "balance": "模型服务余额不足：在电脑核实你的 provider 余额，然后在 OpenCode 终端试发消息。 / Check your provider balance in OpenCode.",
-                    "rate_limit": "模型服务限流：等一会儿再在 OpenCode 终端试发消息；这条消息不会自动重发。 / Provider rate limit; wait and retry manually.",
-                    "model": "模型名称不可用：运行 `opencode models` 核实服务商/模型 ID，再用 `agentj agent opencode --model <provider/model>` 更新。 / Run `opencode models`, then update the model ID.",
-                    "network": "模型服务网络连接失败：在电脑的 OpenCode 终端试发消息，核实网络与代理设置。 / Provider connection failed; check network/proxy in OpenCode.",
-                    "provider": "模型服务或 OpenCode 报错：在电脑运行 `agentj doctor`，然后在 OpenCode 终端试发消息，核实模型名称、余额和网络。 / Provider/OpenCode error; run `agentj doctor`, then check model, balance and network in OpenCode.",
-                }
+                self.last_provider_fail = {"reason": reason, "http_status": code, "at": int(time.time())}
+                if reason in RESTART_AFTER and self.owns_harness():
+                    self.restart_after_turn = True        # P60: the next message gets a fresh serve (current keys)
+                notes = PROVIDER_NOTES if self.owns_harness() else {**PROVIDER_NOTES, "login": PROVIDER_LOGIN_ATTACHED}
+                notes = {**notes, "no_key": notes["no_key"].replace("{provider}", clean_line(pid or "该服务商", 40))}
                 if not self.provider_fail_noted:
                     self.provider_fail_noted = True
                     self.fail_notice("主机已连接，但这一轮没有正常完成。" + notes[reason])
@@ -805,9 +879,12 @@ class OpenCodeAgent(Agent):
         if gone.done() or not self.client:
             return                                        # replied elsewhere (a reject of the same session) or gone
         self.ours.add(rid)
-        body = {"reply": reply} if reply == "once" else {"reply": "reject", "message": msg}
         with contextlib.suppress(OSError, HTTPError, asyncio.TimeoutError):
-            await self.client.request("POST", f"/permission/{rid}/reply", body)
+            await self._reply_permission(rid, reply, msg)
+
+    async def _reply_permission(self, rid: str, reply: str, msg: str) -> None:
+        body = {"reply": reply} if reply == "once" else {"reply": "reject", "message": msg}
+        await self.client.request("POST", f"/permission/{rid}/reply", body)
 
     # ------------------------------------------------ turns
     async def _session_ok(self) -> bool:
@@ -821,16 +898,74 @@ class OpenCodeAgent(Agent):
             self.fail_notice(f"OpenCode 没能打开这段对话（{type(e).__name__}）：这条没有交给它。")
             return False
 
+    def owns_harness(self) -> bool:
+        """Independent mode, or a shared session whose `opencode serve` Agent J started itself (shared.py owned_server)."""
+        return getattr(self, "owned_server", self.cfg.get("session_mode") != "shared")
+
+    async def _creds_check(self) -> None:
+        """P59 (A167): `opencode auth login` (or a config edit) since our serve started → restart it before this turn; the
+        next spawn re-attaches the same session id (the conversation lives in OpenCode's own store). Owned serve only."""
+        p = self.proc
+        if (p is None or getattr(p, "returncode", 0) is not None or not hasattr(p, "pid") or self.auth_fp is None
+                or not self.owns_harness()):
+            return
+        if await asyncio.to_thread(auth_fingerprint) == self.auth_fp:
+            return
+        self.host.st.log("agent_restart", agent=self.kind, reason="credentials_changed")
+        await self._kill(p)
+        if self.proc is p:
+            self.proc, self.client = None, None
+
+    # ------------------------------------------------ P60: v1 or v2 — decided before any v1-only code runs
+    def _own_protocol(self) -> bool:
+        """This adapter (not a shared session's subclass, which attaches to the owner's own server: v1 only for now)."""
+        return type(self) is OpenCodeAgent or self.v2
+
+    def _switch(self, version) -> bool:
+        """The class for the installed OpenCode (v2 = agent_opencode2: its own /api protocol). True when it changed."""
+        from .harness import opencode_v2
+        if opencode_v2(version) == self.v2:
+            return False
+        from .agent_opencode2 import OpenCodeV2Agent
+        self.__class__ = OpenCodeV2Agent if opencode_v2(version) else OpenCodeAgent
+        self.host.st.log("agent_protocol", agent=self.kind, version="v2" if self.v2 else "v1")
+        return True
+
+    async def _protocol(self) -> bool:
+        """Ask `opencode --version` once per executable (path + mtime: an upgrade in place is seen) and switch the class."""
+        exe = _bin("AGENTJ_OPENCODE_BIN", "opencode")
+        if not exe or not self._own_protocol():
+            return False
+        try:
+            key = (os.path.realpath(exe), os.stat(exe).st_mtime_ns)
+        except OSError:
+            return False
+        if getattr(self, "_proto_key", None) == key:
+            return False
+        from .harness import version_of
+        version = await asyncio.to_thread(version_of, exe)
+        self._proto_key = key
+        return self._switch(version)
+
+    async def command(self, name: str, arg: str) -> Result:
+        await self._protocol()                    # the slash command runs on the class for the installed version
+        return await super().command(name, arg)
+
     async def turn(self, text: str) -> None:
+        if await self._protocol():
+            return await self.turn(text)          # now the other class's turn
+        await self._creds_check()
         for attempt in range(2):
             if self.proc is None and not await self._spawn():
                 return
+            if self.v2:                           # switched while starting (upgraded in place)
+                return await self.turn(text)
             if not await self._session_ok():
                 return
             self.turn_done, self.turn_proc = asyncio.Event(), self.proc
             self.turn_t0 = time.time() * 1000
             self.turn_progress = time.monotonic()
-            self.provider_fail_noted = False
+            self.provider_fail_noted = self.restart_after_turn = False
             self.retry_noted = self.saw_busy = False
             body = {"parts": [{"type": "text", "text": text}]}
             if self.persist and not self.cfg.get("_workflow_ceo"):
@@ -866,6 +1001,14 @@ class OpenCodeAgent(Agent):
             if self.persist and not self.cfg.get("_workflow_ceo"):
                 main_identity.audit(self.cfg, self.kind, self.host.st, self.sid)
             await self._wait_turn()
+            if not self.provider_fail_noted:
+                self.last_provider_fail = None            # P59: a clean turn clears doctor's "last turn failed"
+            if self.restart_after_turn and self.proc:     # P60: a key / provider failure — the next message gets a fresh serve
+                self.restart_after_turn = False
+                self.host.st.log("agent_restart", agent=self.kind, reason="provider_failure")
+                await self._kill(self.proc)
+                self.proc = self.client = None
+                return
             with contextlib.suppress(OSError, HTTPError, asyncio.TimeoutError):
                 await self._catch_up()                    # a text part whose end event never came
             if self.persist and self.collect is None:

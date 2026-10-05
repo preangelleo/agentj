@@ -103,6 +103,8 @@ def text_part(sid, msg, text):
     part = {"id": nid("prt"), "sessionID": sid, "messageID": msg["info"]["id"], "type": "text", "text": text,
             "time": {"start": now, "end": now}}
     msg["parts"].append(part)
+    # like OpenCode: the message's info (role) before its parts — the shared adapter reads only assistant parts (P59)
+    publish("message.updated", {"info": {"id": msg["info"]["id"], "sessionID": sid, "role": msg["info"]["role"]}})
     publish("message.part.updated", {"sessionID": sid, "part": part, "time": now})
 
 
@@ -240,6 +242,12 @@ def run_prompt(sid, text):
                 publish("session.error", {"sessionID": sid, "error": {"name": "MessageAbortedError", "data": {}}})
             else:
                 text_part(sid, msg, "slept")
+        elif text.strip() == "WHOAMI":            # P59: which serve process answered (a restart = a new RUN id)
+            text_part(sid, msg, f"RUN-ID: {RUN}")
+        elif text.startswith("FAIL: "):           # P59: a provider failure — "FAIL: <status> <message>" → session.error
+            code, _, why = text[6:].partition(" ")
+            publish("session.error", {"sessionID": sid, "error": {"name": "APIError", "data": {
+                "message": why, "statusCode": int(code), "isRetryable": False}}})
         elif text.strip() == "DROPSSE":
             drop_streams()
             time.sleep(0.5)
@@ -316,7 +324,7 @@ class H(BaseHTTPRequestHandler):
         elif p == "/session/status":
             self._send(200, {k: {"type": "busy"} for k, v in SESSIONS.items() if v["busy"]})
         elif len(parts) == 2 and parts[0] == "session" and parts[1] in SESSIONS:
-            self._send(200, {"id": parts[1], "permission": SESSIONS[parts[1]]["permission"], "cost": 0,
+            self._send(200, {"id": parts[1], "permission": SESSIONS[parts[1]]["permission"], "cost": 0, "directory": CWD,
                              "tokens": {"input": 6178, "output": 5, "reasoning": 0, "cache": {"read": 1941, "write": 0}}})
         elif p in ("/provider", "/config/providers"):
             key = "all" if p == "/provider" else "providers"
@@ -341,7 +349,10 @@ class H(BaseHTTPRequestHandler):
         if p == "/session":
             sid = nid("ses")
             SESSIONS[sid] = {"permission": list((body or {}).get("permission") or []), "messages": [], "busy": False}
-            self._send(200, {"id": sid, "permission": SESSIONS[sid]["permission"]})
+            if os.environ.get("FAKE_OC_STORE"):     # P59: sessions outlive the process, like OpenCode's own database
+                with open(os.environ["FAKE_OC_STORE"], "a") as f:
+                    f.write(json.dumps({"id": sid, "permission": SESSIONS[sid]["permission"]}) + "\n")
+            self._send(200, {"id": sid, "permission": SESSIONS[sid]["permission"], "directory": CWD})
         elif len(parts) == 3 and parts[0] == "session" and parts[2] == "prompt_async":
             if parts[1] not in SESSIONS:
                 return self._send(404, {"name": "NotFoundError"})
@@ -414,11 +425,16 @@ def main():
         with open(os.environ["FAKE_OC_ENV_LOG"], "w") as f:
             json.dump({k: (v if k in ("OPENCODE_CONFIG_CONTENT", "OPENCODE_DISABLE_MODELS_FETCH", "OPENCODE_DISABLE_AUTOUPDATE",
                                       "OPENCODE_DISABLE_SHARE", "OPENCODE_DISABLE_LSP_DOWNLOAD") else "set")
-                       for k, v in os.environ.items() if k.startswith("OPENCODE_")}, f)
+                       for k, v in os.environ.items() if k.startswith("OPENCODE_")}
+                      | {k: v for k, v in os.environ.items() if k.lower() in ("https_proxy", "http_proxy", "no_proxy")}, f)
     port = int(a[a.index("--port") + 1]) if "--port" in a else 4096
     host = a[a.index("--hostname") + 1] if "--hostname" in a else "127.0.0.1"
     for s in json.loads(os.environ.get("FAKE_OC_SESSIONS") or "[]"):     # sessions that "already exist" (resume)
         SESSIONS[s] = {"permission": [], "messages": [], "busy": False}
+    if os.environ.get("FAKE_OC_STORE") and os.path.exists(os.environ["FAKE_OC_STORE"]):
+        for ln in open(os.environ["FAKE_OC_STORE"]).read().splitlines():
+            row = json.loads(ln)
+            SESSIONS[row["id"]] = {"permission": row["permission"], "messages": [], "busy": False}
     srv = ThreadingHTTPServer((host, port), H)
     srv.daemon_threads = True
     print(f"opencode server listening on http://{host}:{port}", flush=True)

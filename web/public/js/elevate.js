@@ -8,6 +8,7 @@ import { signKey } from './store.js';
 import { myDeviceId, myIdSync } from './api.js';
 import { t, onLang } from './t.js';
 import { mk, toast } from './ui.js';
+import { elevateChallenge, canAssert, approve } from './faceid.js';
 
 const cards = new Map();           // id → card (in arrival order)
 let root = null, timer = 0, busy = false, shownId = null;
@@ -66,6 +67,15 @@ export function add(m) {
     c.name = str(m.name, 128); c.purpose = str(m.purpose, 300); c.dest = str(m.dest, 1100); c.verify = str(m.verify ?? '', 800);
     if (!c.name || c.purpose === null || c.dest === null || c.verify === null) return;
   }
+  // ADR-A163: this device saved a passkey (F20) → 「同意」 needs Face ID. The host names our own credential id; the challenge
+  // (card id + this arming's nonce + what is shown) is made now, so the tap can go straight to the system sheet.
+  if (typeof m.fa === 'string' && m.fa.length > 0 && m.fa.length <= 1400) {
+    c.fa = m.fa;
+    (async () => {
+      const digest = await elevateDigest(c.kind, elevateFields(c));
+      c.faCh = await elevateChallenge(channel(), await myDeviceId(), c.id, c.kind, c.n, digest);
+    })().catch(() => { c.faCh = null; });
+  }
   const old = cards.get(m.id);
   cards.set(m.id, c);
   if (old && shownId === m.id) { shownId = null; busy = false; }
@@ -89,6 +99,13 @@ export function done(m) {
     toast(text, 3600);
   }
   render();
+}
+/** The computer did not accept this approval's Face ID (§16.1 `elev_refused`): the card stays open, nothing was done. */
+export function refused(m) {
+  const c = cards.get(m.id);
+  if (!c) return;
+  if (shownId === m.id) { busy = false; paintButtons(); }
+  toast(t('elev.fa.refused'), 3600);
 }
 /** Unpair / revoke / a new pairing: forget every card at once. */
 export function clear() {
@@ -170,8 +187,21 @@ async function decide(ok) {
   if (ok && !nopw && !input.value) return;
   const g = gen();
   if (!g) { toast(t('elev.net'), 3000); return; }
+  // ADR-A163: Face ID first, straight from the tap (before any await). Cancel / failure → nothing sent, the card stays.
+  let fa = null;
+  if (ok && c.fa) {
+    if (!canAssert()) { toast(t('elev.fa.none'), 5000); return; }
+    if (!c.faCh) { toast(t('elev.fail'), 3000); return; }
+    busy = true; paintButtons();
+    try { fa = await approve(c.faCh, c.fa); } catch { fa = null; }
+    if (!fa || cards.get(c.id) !== c) {
+      busy = false; paintButtons();
+      if (!fa) toast(t('elev.fa.cancel'), 3000);
+      return;
+    }
+  }
   const sk = await signKey();
-  if (!sk) { toast(t('elev.noSign'), 3600); return; }
+  if (!sk) { busy = false; paintButtons(); toast(t('elev.noSign'), 3600); return; }
   busy = true; paintButtons();
   let value = null;
   try {
@@ -190,6 +220,7 @@ async function decide(ok) {
     input.value = '';
     const sig = new Uint8Array(await crypto.subtle.sign({ name: 'Ed25519' }, sk.priv, elevateMessage(ch, dev, c.id, c.kind, ok ? 'allow' : 'deny', c.n, ts, digest, ctSha)));
     m.sig = b64u(sig);
+    if (fa) m.fa = fa;
     await sendApp(m, g);
     toast(t(ok ? (c.kind === 'sudo' ? 'elev.sent.sudo' : 'elev.sent.secret') : 'elev.sent.deny'), 2600);
   } catch {

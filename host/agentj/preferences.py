@@ -148,6 +148,12 @@ def validate(doc,raw=''):
         label = row.get('label','Telegram group')
         if not isinstance(label,str) or len(label)>64 or any(ord(c)<32 for c in label):
             raise ConfigError('telegram.groups', 'plain label up to 64 characters required')
+    from .proxy import url_problem, bypass_problem   # P59: direct proxy values; never echo the value (it may hold a password)
+    for field in ('https','http'):
+        why=url_problem(field,get(out,'proxy.'+field,''))
+        if why: raise ConfigError('proxy.'+field,why,_line(raw,'proxy.'+field))
+    why=bypass_problem(get(out,'proxy.no_proxy',''))
+    if why: raise ConfigError('proxy.no_proxy',why,_line(raw,'proxy.no_proxy'))
     if get(out,'voice.asr.mode')=='cloud' and not get(out,'voice.asr.model'): raise ConfigError('voice.asr.model','cloud ASR requires an audio-capable model ID')
     if get(out,'voice.tts.mode')=='cloud' and not get(out,'voice.tts.voice'): raise ConfigError('voice.tts.voice','cloud TTS requires a provider voice ID')
     if len(json.dumps(out).encode()) > 12000: raise ConfigError("/", "effective configuration must be at most 12 KiB")

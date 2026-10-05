@@ -9,7 +9,7 @@ import { upgrade as upgradeWords, forget as forgetRendered } from './render.js';
 import { t, lang, onLang, fillText } from './t.js';
 import { el, toast, toastOff, toastAction, human, stamp, mmss, confirmSheet } from './ui.js';
 import { Upload, TYPES as DROP_TYPES, MAX_BYTES as UPLOAD_MAX, MAX_ATT, ASR_MAX_BYTES } from './blobs.js';
-import { renderPage as renderMedia, forgetAll as forgetMedia } from './media.js';   // F21: files the reply shows (§13)
+import { renderPage as renderMedia, forgetAll as forgetMedia, renderReader as renderReaderMedia, clearReader as clearReaderMedia } from './media.js';   // F21: files the reply shows (§13); P59: in the reader too
 import { toWav } from './wav.js';
 import { Speaker, configureSpeech } from './speak.js';
 import { isReady, sendApp, hostId } from './session.js';
@@ -749,6 +749,7 @@ function showPage(){
   }
   renderWords(p.reply || (p.end === "open" || p.id === null ? "" : t('r.noReply')), p.end === "open" && p.id !== null);
   renderMedia(el("words"), p);
+  if (rdAt && rdAt.key === shownKey) renderReaderMedia(el("rdWords"), p);   // P59: the reader's slots, same Blobs
   document.body.dataset.pageOpen = p.end === "open" ? "1" : "0";
   paintActs();
 }
@@ -1004,6 +1005,7 @@ function openReader(){
   const max = mainEl.scrollHeight - mainEl.clientHeight;
   rdAt = {key: shownKey, scroll: mainEl.scrollTop, text: tx};
   fill(el("rdWords"), tx);
+  renderReaderMedia(el("rdWords"), p);                 // P59 (ADR-A164): local pictures / files in place, not their Markdown
   el("rdWho").textContent = C.agentName() + (p.ts ? " · " + hhmm(p.ts) : "");
   if (document.activeElement === input) input.blur();
   const rd = el("rd");
@@ -1019,6 +1021,7 @@ function closeReader(fromPop){
   const rd = el("rd");
   rd.hidden = true; delete rd.dataset.modalOpen; delete document.body.dataset.reader;
   el("rdWords").replaceChildren();
+  clearReaderMedia();
   if (rdAt && rdAt.key === shownKey){ mainEl.scrollTop = rdAt.scroll; stick = atBottom(); paintMore(); }
   rdAt = null;
   if (!fromPop && rdPushed && history.state && history.state.ajReader){ rdSkipPop = true; history.back(); }
@@ -1057,7 +1060,7 @@ function dblTap(node, ok, fn){
     if (rdPtr === "mouse" && performance.now() - rdGuard > 400) fn();
   });
 }
-const rdTarget = tg => !(tg && tg.closest && tg.closest("button, a, input, [role=link], .rmbar"));
+const rdTarget = tg => !(tg && tg.closest && tg.closest("button, a, input, [role=link], .rmbar, .mcard"));
 const rdDist = ts => Math.hypot(ts[0].clientX - ts[1].clientX, ts[0].clientY - ts[1].clientY);
 
 // ---- swipe to page: within 30° of horizontal = a page turn; past 25 % or a fling commits ----------

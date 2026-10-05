@@ -854,7 +854,8 @@ class Host:
                 if cmd == "opencode_auth":
                     agent = self.agent
                     result = await agent.authentication() if agent and hasattr(agent, "authentication") else {"known": False}
-                    await self._ctl_send(w, {"ok": True, **result})
+                    fail = getattr(agent, "last_provider_fail", None)     # P59: the last turn's failure class (doctor)
+                    await self._ctl_send(w, {"ok": True, **result, **({"last_failure": fail} if fail else {})})
                 elif cmd == "status":
                     await self._ctl_send(w, {"ok": True, "relay_up": self.relay_up, "channel": self.channel,
                                              "agent": self.agent.kind if self.agent else None, "agent_status": self.eff_status(),
@@ -862,6 +863,8 @@ class Host:
                                              "task_running": self.scheduler.current_id,
                                              "sessions": [{"device": s.device, "name": s.name, "state": s.state}
                                                           for s in self.sessions.values() if s.state != "new"]})
+                elif cmd == "agent_restart":        # `agentj agent restart` (P59): the owned harness, before its next turn
+                    await self._ctl_send(w, self.restart_harness("cli"))
                 elif cmd == "config_apply":
                     await self._ctl_send(w, await self.apply_preferences(req.get("raw")))
                 elif cmd == "config_revision":
@@ -1214,6 +1217,7 @@ class Host:
         value = preferences.merge(value, {})
         # Local executable configuration never belongs on the phone.
         value.get("voice", {}).get("tts", {}).pop("command", None)
+        value.pop("proxy", None)        # P59: host-only (local proxy addresses / variable names stay on the computer)
         if not preferences.get(value, "voice.wake_word"):
             preferences.put(value, "voice.wake_word", "嘿 " + (self.st.agent_name() or "Agent J"))
         from . import wake
@@ -1270,8 +1274,12 @@ class Host:
             if lang_changed:
                 self.language_changed(preferences.get(candidate, "appearance.language"), from_account=language_at is not None)
             restart = any(preferences.get(old, key) != preferences.get(candidate, key)
-                          for key in ("agent.working_root", "agent.instructions", "agent.isolation", "agent.allow_docker",
-                                      "proxy.https_env", "proxy.http_env", "proxy.no_proxy_env"))
+                          for key in ("agent.working_root", "agent.instructions", "agent.isolation", "agent.allow_docker"))
+            # P59 (A167): proxy settings reach only harness children, read at their launch → restart the owned harness
+            # before its next turn (conversation kept), not serve. A shared/attached harness keeps its own environment.
+            proxied = any(preferences.get(old, "proxy." + k) != preferences.get(candidate, "proxy." + k)
+                          for k in ("https", "http", "no_proxy", "https_env", "http_env", "no_proxy_env"))
+            harness_note = self.restart_harness("proxy") if proxied else None
             if self.agent_cfg is not None:   # F14: the next Agent process starts with the new isolation / docker choice
                 raw = self.st.config().get("agent") or {}
                 self.agent_cfg["fence"] = raw.get("fence") is not False and preferences.get(candidate, "agent.isolation", True) is not False
@@ -1279,10 +1287,25 @@ class Host:
             result = {"ok": True, "applied": not restart,
                       "verify": {"ok": True, "detail": "stored; restart serve for Agent instructions or proxy variables" if restart else "host configuration activated; voice needs a listening test"},
                       "needs": ["restart serve"] if restart else []}
+            if harness_note is not None:
+                result["harness"] = harness_note
+                if harness_note.get("when") == "own":
+                    result["needs"] = result["needs"] + ["restart the shared harness yourself"]
             if ack:
                 await ack(result)
             await self._send_ready(lambda _: self.preferences_msg())
             return result
+
+    def restart_harness(self, why: str) -> dict:
+        """P59 (A167): restart the harness process Agent J owns before its next turn, the conversation kept (Claude Code
+        --resume, Codex thread, OpenCode session id). Never mid-turn (the main Agent may be the one asking), never a
+        shared/attached harness (the owner's own process)."""
+        a = self.agent
+        if a is None:
+            return {"ok": True, "when": "next_start"}
+        if not a.owns_harness():
+            return {"ok": False, "when": "own", "error": "shared"}
+        return {"ok": True, "when": a.request_restart(why)}
 
     def language_changed(self, lang, from_account: bool = False) -> None:
         """A1: the one language changed. The main Agent speaks it from its next turn (identity text, hot); the account
@@ -2164,6 +2187,8 @@ class Host:
                              card=None if interim else x)
         elif not interim:
             self.hist_add({"k": "cmd", "text": "/" + name, **({"name": by[:64]} if by else {})}, res.text, "done", x)
+        if self.telegram and turn is not None and not interim:      # P59: the owner's Telegram /compact gets its result line
+            self.telegram.cmd_result(turn, res.text)
 
     def cmd_turn(self, s: Session | None, name: str, arg: str = "") -> int:
         """The page of a command, opened when it is asked for (its result fills it in)."""

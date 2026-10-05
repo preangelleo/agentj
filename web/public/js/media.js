@@ -18,8 +18,8 @@ import { t } from './t.js';
 import { human } from './ui.js';
 import { unb64u } from '../proto/wire.js';
 
-import { CHUNK, WINDOW, EAGER, LRU_MAX, MAX_ITEMS, CAPS, WHYS, HTML_CSP, sanitize, sandboxAttrs, normRef, matchSlot, blobType } from './mediawire.js';
-export { CHUNK, WINDOW, EAGER, LRU_MAX, MAX_ITEMS, CAPS, WHYS, HTML_CSP, sanitize, sandboxAttrs, normRef, matchSlot, blobType };
+import { CHUNK, WINDOW, EAGER, LRU_MAX, MAX_ITEMS, CAPS, WHYS, HTML_CSP, sanitize, sandboxAttrs, normRef, matchSlot, placeSlots, blobType } from './mediawire.js';
+export { CHUNK, WINDOW, EAGER, LRU_MAX, MAX_ITEMS, CAPS, WHYS, HTML_CSP, sanitize, sandboxAttrs, normRef, matchSlot, placeSlots, blobType };
 const STALL_MS = 20000;
 const PARALLEL = 2;                          // fetches at once (the computer allows 3 per session)
 const MIB = 1024 * 1024;
@@ -110,11 +110,24 @@ export function forgetAll() {
 export const cacheSize = () => cacheBytes;
 
 // ---------------------------------------------------------------- rendering
-let shown = { key: null, urls: [], io: null };
+// Two scopes own object URLs: the page on screen (`main`) and the full-screen reader (`reader`, P59 / ADR-A164). Both take
+// their Blobs from the one LRU above (fetchMedia), so opening the reader never fetches a file a second time.
+const scope = () => ({ key: null, urls: [], io: null });
+let shown = scope();
+let reading = scope();
+function clearScope(sc) {
+  for (const u of sc.urls) URL.revokeObjectURL(u);
+  if (sc.io) sc.io.disconnect();
+}
 function clearShown() {
-  for (const u of shown.urls) URL.revokeObjectURL(u);
-  if (shown.io) shown.io.disconnect();
-  shown = { key: null, urls: [], io: null };
+  clearScope(shown);
+  shown = scope();
+  closeViewer();
+}
+/** The reader closed (or shows other words): its object URLs go; the Blobs stay in the LRU. */
+export function clearReader() {
+  clearScope(reading);
+  reading = scope();
   closeViewer();
 }
 const mk = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text !== undefined) e.textContent = text; return e; };
@@ -129,38 +142,71 @@ function strip(words) {
   if (s.previousElementSibling !== words) words.after(s);
   return s;
 }
+const pageKey = (p, items, skips) => (p && p.id !== null && (items.length || skips.length)
+  ? p.id + '|' + items.map((m) => m.mid).join(',') + '|' + skips.length : null);
+
+/** Fill a words element's slots: the item's card (image inline, audio / video players, pdf / html / file cards), a
+ *  refusal's one-line note, or nothing (the source text stays). → what no slot showed: {rest, restSkips}. */
+function fillSlots(words, items, skips, sc) {
+  const slots = [...words.querySelectorAll('.mslot')];
+  const { at, rest, restSkips } = placeSlots(slots.map((s) => s.dataset.ref), items, skips);
+  slots.forEach((s, i) => {
+    const a = at[i];
+    if (!a) return;
+    const label = s.dataset.link === '1' ? (s.dataset.label || '').trim() : '';
+    if (a.mid) {
+      const m = items.find((x) => x.mid === a.mid);
+      s.dataset.mid = m.mid;
+      const c = card(m, true, sc);
+      if (label && label !== m.name) s.replaceChildren(mk('span', 'mlabel', label), c); else s.replaceChildren(c);
+    } else {
+      s.dataset.skip = '1';
+      s.replaceChildren(mk('span', 'mskip', skipText(skips[a.skip])));
+    }
+  });
+  return { rest, restSkips };
+}
+const observer = (sc) => (typeof IntersectionObserver === 'function' ? new IntersectionObserver((es) => {
+  for (const e of es) if (e.isIntersecting) { sc.io.unobserve(e.target); e.target._load?.(); }
+}) : null);
 
 /** After the page's words are on screen: fill its inline slots, the strip under the words and the skip notes.
  *  p = the page (snap.toPage: {id, media, mediaSkip}). Idempotent while the same page and list are shown. */
 export function renderPage(words, p) {
   const box = strip(words);
   const items = (p && p.media) || [], skips = (p && p.mediaSkip) || [];
-  const key = p && p.id !== null && (items.length || skips.length) ? p.id + '|' + items.map((m) => m.mid).join(',') + '|' + skips.length : null;
-  const slots = [...words.querySelectorAll('.mslot')];
-  const fresh = slots.some((s) => !s.dataset.mid);
+  const key = pageKey(p, items, skips);
+  const fresh = [...words.querySelectorAll('.mslot')].some((s) => !s.dataset.mid && !s.dataset.skip);
   if (key === shown.key && (!key || !fresh)) return;
   clearShown();
   shown.key = key;
   box.replaceChildren();
   box.hidden = !key;
   if (!key) return;
-  shown.io = typeof IntersectionObserver === 'function' ? new IntersectionObserver((es) => {
-    for (const e of es) if (e.isIntersecting) { shown.io.unobserve(e.target); e.target._load?.(); }
-  }) : null;
-  const used = new Set();
-  for (const s of slots) {
-    const m = matchSlot(s.dataset.ref, items, used);
-    if (!m) continue;
-    used.add(m.mid);
-    s.dataset.mid = m.mid;
-    s.replaceChildren(card(m, true));
-  }
-  for (const m of items) if (!used.has(m.mid)) box.appendChild(card(m, false));
-  for (const sk of skips) box.appendChild(mk('div', 'mskip', skipText(sk)));
+  shown.io = observer(shown);
+  const { rest, restSkips } = fillSlots(words, items, skips, shown);
+  for (const m of rest) box.appendChild(card(m, false, shown));
+  for (const sk of restSkips) box.appendChild(mk('div', 'mskip', skipText(sk)));
+  box.hidden = !box.childElementCount;
 }
 
-function card(m, inline) {
+/** P59: the full-screen reader's words (relay.js fills them with md.js like the page's): the same slots filled the same way,
+ *  from the same verified Blobs. Only the slots — what the reply did not place stays in the strip under the page. */
+export function renderReader(words, p) {
+  const items = (p && p.media) || [], skips = (p && p.mediaSkip) || [];
+  const key = pageKey(p, items, skips);
+  const fresh = [...words.querySelectorAll('.mslot')].some((s) => !s.dataset.mid && !s.dataset.skip);
+  if (key === reading.key && (!key || !fresh)) return;
+  clearReader();
+  reading.key = key;
+  if (!key) return;
+  reading.io = observer(reading);
+  fillSlots(words, items, skips, reading);
+}
+
+function card(m, inline, sc) {
   const c = mk('div', 'mcard' + (inline ? ' inline' : ''));
+  c._sc = sc;
   c.dataset.kind = m.kind; c.dataset.state = 'idle'; c.dataset.mid = m.mid;
   const body = mk('div', 'mbody');
   const meta = mk('div', 'mmeta');
@@ -187,14 +233,14 @@ function card(m, inline) {
   status.addEventListener('click', (e) => { e.stopPropagation(); load(true); });
   c._load = () => load(false);
   if (m.kind === 'image') {
-    if (m.bytes <= EAGER || !shown.io) queueMicrotask(() => load(false));
-    else shown.io.observe(c);
+    if (m.bytes <= EAGER || !sc.io) queueMicrotask(() => load(false));
+    else sc.io.observe(c);
   }
   return c;
 }
 
 function urlOf(c, blob) {
-  if (!c._url) { c._url = URL.createObjectURL(blob); shown.urls.push(c._url); }
+  if (!c._url) { c._url = URL.createObjectURL(blob); c._sc.urls.push(c._url); }
   return c._url;
 }
 function show(m, c, body, acts, blob, open) {

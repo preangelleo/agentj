@@ -275,19 +275,26 @@ def check_agent_cli(st: State, svc: dict) -> dict:
                   "人类在自己的终端跑一次 `claude` 登录即可（服务要用）/ the human runs `claude` once in their own terminal "
                   "and logs in, so the always-on service can use it")
     if k == 'opencode' and harness.opencode_v2(ver):
-        return _c('agent_cli', FAIL if c else WARN, s + ' · v2 API compatibility pending',
-                  '优先使用 Claude Code，或选择兼容的 OpenCode v1。v2 /api 协议尚未接入；数据库存在不能证明 provider 已认证。 / Prefer Claude Code or compatible OpenCode v1; v2 API adaptation is pending, not a login/key failure.')
+        s += ' · v2 (/api)'                         # P60: supported (agent_opencode2); the live check below asks the server
     if k == "opencode" and c:
         from .names import ctl_call, ServeBusy
         try: auth = ctl_call(st, {'cmd':'opencode_auth'}, timeout=5) or {}
         except (OSError, ValueError, ServeBusy): auth = {}
+        # P59: the last turn's failure class (401 / 403-region / quota / rate / model / network …), never its message
+        fail = auth.get('last_failure') if isinstance(auth.get('last_failure'), dict) else {}
+        from .agent_opencode import PROVIDER_NOTES
+        reason = fail.get('reason') if fail.get('reason') in PROVIDER_NOTES else None
+        if reason:
+            code = fail.get('http_status') if type(fail.get('http_status')) is int else None
+            s += f" · last turn failed: {reason}" + (f" (HTTP {code})" if code else "")
         if auth.get('known'):
             connected = auth.get('selected_connected')
-            return _c('agent_cli', FAIL if connected is False else WARN,
+            return _c('agent_cli', FAIL if connected is False or reason in ('login', 'no_key', 'region', 'balance', 'model') else WARN,
                       s + (' · selected provider disconnected' if connected is False else ' · provider connection recorded; key validity unverified'),
-                      '优先使用 Claude Code。OpenCode /provider.connected 只证明已配置连接；核实选中 provider/model。换 key 后运行 agentj service restart；共享模式重启原 OpenCode serve。 / Prefer Claude Code. Connected is not a live key test. Restart the relevant serve after changing keys.')
+                      (PROVIDER_NOTES[reason].replace('{provider}', '<provider>') + ' ' if reason else '') +
+                      '优先使用 Claude Code。OpenCode /provider.connected 只证明已配置连接；核实选中 provider/model。换 key 后 Agent J 在下一条消息前自动重启它启动的 OpenCode，接着原对话（也可运行 agentj agent restart）；附着的电脑 OpenCode 要你自己重启。 / Prefer Claude Code. Connected is not a live key test. After a key change Agent J restarts its own OpenCode before the next message (or `agentj agent restart`); restart an attached desktop server yourself.')
         return _c('agent_cli', WARN, s + ' · runtime provider authentication unknown',
-                  '优先使用 Claude Code；OpenCode 需运行中的 GET /provider.connected 才能确认所选连接。凭据文件或数据库存在不等于已登录；换 key 后重启对应 serve。 / Prefer Claude Code; store existence is not authentication. Check the running provider connection and restart serve after changing keys.')
+                  '优先使用 Claude Code；OpenCode 需运行中的 GET /provider.connected 才能确认所选连接。凭据文件或数据库存在不等于已登录；换 key 后 Agent J 会在下一条消息前自动重启它启动的 OpenCode。 / Prefer Claude Code; store existence is not authentication. Check the running provider connection; Agent J restarts its own OpenCode after a key change.')
     if login == WARN and k == "opencode":
         return _c("agent_cli", WARN if not c else FAIL, s, "人类在自己的终端运行 `opencode auth login` 存好模型服务的 key "
                   "（install.md 第 3 步）/ the human runs `opencode auth login` in their own terminal")

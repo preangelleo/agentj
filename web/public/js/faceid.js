@@ -111,3 +111,28 @@ export async function assert(challenge) {
 export function forgetDead(credId) {
   try { globalThis.PublicKeyCredential?.signalUnknownCredential?.({ rpId: location.hostname, credentialId: credId })?.catch?.(() => {}); } catch { /* optional API */ }
 }
+
+// ---------------------------------------------------------------- F17 收尾 (P59, ADR-A163, PROTOCOL §16.1): Face ID before 「同意」
+export const ELEVATE_LABEL = 'agentjarvis/passkey/elevate/v1';
+/** SHA-256(UTF-8(label \n channel \n device \n card id \n kind \n "approve" \n card nonce \n shown digest)) — same as
+ *  host/agentj/passkey.py elevate_challenge. Computed when the card arrives (no timestamp), so the tap goes straight to get(). */
+export async function elevateChallenge(channel, device, id, kind, nonce, digest) {
+  const parts = [ELEVATE_LABEL, channel, device, id, kind, 'approve', nonce, digest];
+  if (!parts.every((x) => typeof x === 'string' && x && !x.includes('\n'))) throw new Error('bad challenge parts');
+  return sha256(new TextEncoder().encode(parts.join('\n')));
+}
+
+/** WebAuthn get() exists at all (no platform check: the record already holds a passkey made on this phone). */
+export const canAssert = () => !!(globalThis.PublicKeyCredential && navigator.credentials?.get);
+
+/** Face ID for one card. NOT async on purpose: get() starts synchronously inside the tap (iOS user-gesture rule).
+ *  → a promise of the `fa` object {id, cd, ad, sig}; rejects on cancel / failure. */
+export function approve(challenge, credId) {
+  return navigator.credentials.get({ publicKey: {
+    challenge, rpId: location.hostname, userVerification: 'required', timeout: 60000,
+    allowCredentials: [{ type: 'public-key', id: unb64u(credId) }],
+  } }).then((cred) => {
+    const r = cred.response;
+    return { id: b64u(buf(cred.rawId)), cd: b64u(buf(r.clientDataJSON)), ad: b64u(buf(r.authenticatorData)), sig: b64u(buf(r.signature)) };
+  });
+}

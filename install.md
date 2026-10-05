@@ -1,15 +1,15 @@
 ---
 document: agentj-install
-version: 0.19.2
+version: 0.19.3
 released: 2026-10-06
 status: beta (anyone can sign up; not advertised yet, pages are not indexed)
 host_package: agentj (the `agentj` command)
-host_version: 0.15.2a1
-source_tag: v0.15.2a1
-host_wheel: agentj-0.15.2a1-py3-none-any.whl
-host_wheel_sha256: 24d4196e6cdf8c4a4773f12c65b27a33566b978bb614ab9a6c432e8ce97cd89b
-host_sdist: agentj-0.15.2a1.tar.gz
-host_sdist_sha256: 43f8737d6b47839057b0a91f639e493a28b6e5e1290ae30afd9870d171532114
+host_version: 0.15.3a1
+source_tag: v0.15.3a1
+host_wheel: agentj-0.15.3a1-py3-none-any.whl
+host_wheel_sha256: 23534f757bbfefa78222a9de7e18dd9ae7b89de0e47439dcbb0537cd00398174
+host_sdist: agentj-0.15.3a1.tar.gz
+host_sdist_sha256: 9db78fb575259cf948fb2e9742ba21167c3a8df4538e8f61c34798af27626010
 canonical_url: https://agentj.app/install.md
 sha256_url: https://agentj.app/install.md.sha256
 alias: https://agentjarvis.net/install.md (the older address: the same file, kept for one more version)
@@ -264,7 +264,7 @@ Ask (kind `question`; `bug` if you think it is a bug, `report` for a docs proble
 with your file-writing tool or a heredoc, then post it with the install session from Step 2:
 ```bash
 ( umask 077; cat > ~/.agentj-install/support.json <<'JSON'
-{"kind": "question", "install_md_version": "0.19.2",
+{"kind": "question", "install_md_version": "0.19.3",
  "body": "Step 4: `uv tool install` fails with: <the exact error, redacted>. OS: Ubuntu 24.04 x86_64. Agent: claude-code. Tried: …"}
 JSON
 )
@@ -378,15 +378,18 @@ opencode --version
    vendors' official pages — https://open.bigmodel.cn/pricing and https://api-docs.deepseek.com/zh-cn/quick_start/pricing — send
    your human there; do not quote prices from memory.
 2. They create an API key on that platform.
-3. In **their own terminal** (not through you) they run `opencode auth login --provider zhipuai` (and, for DeepSeek,
-   `opencode auth login --provider deepseek`) and paste the key there. OpenCode keeps it in its own credential store on this
-   computer (`~/.local/share/opencode/auth.json`); the key never leaves this computer except to that vendor.
+3. In **their own terminal** (not through you) they run `opencode auth login`, pick the vendor in the list (Zhipu, then
+   again for DeepSeek) and paste the key there. Do not add `--provider`: OpenCode v2 (what the `curl` installer gives)
+   refuses that flag; v2 also takes the name directly (`opencode auth login zhipuai`). OpenCode keeps the key in its own
+   credential store on this computer (v1 `~/.local/share/opencode/auth.json`, v2 its `opencode.db`); the key never leaves
+   this computer except to that vendor. v2 keeps several keys per vendor and uses only the selected one: after adding a
+   second key, `opencode auth switch zhipuai` selects it.
 
 You: never ask for the key, never have it pasted into this conversation, never print, copy, upload or put it in a file,
 a command line, feedback or an environment you set up. Check only that a key exists: `opencode auth list` shows provider
 names; `agentj agent detect --json` (after Step 4) reports OpenCode as logged in.
 
-Model ids are `provider/model` — check with `opencode models zhipuai` / `opencode models deepseek` (expected
+Model ids are `provider/model` — check with `opencode models` (v1 also filters: `opencode models zhipuai`; expected
 `zhipuai/glm-5.3`, `deepseek/deepseek-flash`). The conversation goes from this computer straight to that vendor under the
 human's own account and terms; Agent J never sees it.
 
@@ -422,7 +425,7 @@ The astral installer warning that `uv` / `uvx` are shadowed is informational if 
 carry over). So start every command line from here on with `export PATH="$HOME/.local/bin:$PATH";` — or call
 `~/.local/bin/agentj` by its full path. This document writes `agentj` for short.
 
-The program is pinned to one release: the tag `v0.15.2a1` (front matter `source_tag`). The tag never moves, and its
+The program is pinned to one release: the tag `v0.15.3a1` (front matter `source_tag`). The tag never moves, and its
 `host/` folder is byte for byte the same code as the two files on our site whose SHA-256 is in this document's front matter.
 ```bash
 cd ~/.agentj-install
@@ -430,7 +433,7 @@ W=$(sed -n 's/^host_wheel: //p' install.md); WS=$(sed -n 's/^host_wheel_sha256: 
 curl -fsSLO "https://agentj.app/dl/$W"
 echo "$WS  $W" | sha256sum -c -   # macOS: shasum -a 256 -c -; mismatch → stop
 uv tool install "./$W"
-export PATH="$HOME/.local/bin:$PATH"; agentj --version     # → agentj 0.15.2a1
+export PATH="$HOME/.local/bin:$PATH"; agentj --version     # → agentj 0.15.3a1
 export PATH="$HOME/.local/bin:$PATH"; agentj doctor
 ```
 **Your human's own terminal must find `agentj` too** — they run `agentj passphrase set` and `agentj pair` themselves
@@ -458,12 +461,12 @@ echo "$WS  $W" | sha256sum -c - && echo "$SS  $S" | sha256sum -c -    # macOS: s
 uv tool install "./$W"          # the wheel; its dependencies come from PyPI or the mirror in UV_DEFAULT_INDEX
 ```
 `uv tool install "./$S"` installs from the checked source archive instead (it builds the same program).
-`https://agentj.app/dl/latest.txt` and `https://agentj.app/dl/latest-sdist.txt` name the same two files. `agentj --version` is the program's own version (`0.15.2a1`); it is
+`https://agentj.app/dl/latest.txt` and `https://agentj.app/dl/latest-sdist.txt` name the same two files. `agentj --version` is the program's own version (`0.15.3a1`); it is
 numbered separately from this document (`0.17.0`).
 
-Alternative from the matching published source tag: `uv tool install "git+https://github.com/preangelleo/agentj@v0.15.2a1#subdirectory=host"`.
+Alternative from the matching published source tag: `uv tool install "git+https://github.com/preangelleo/agentj@v0.15.3a1#subdirectory=host"`.
 
-Alternative without uv: `pipx install "git+https://github.com/preangelleo/agentj@v0.15.2a1#subdirectory=host"` (needs Python 3.11+).
+Alternative without uv: `pipx install "git+https://github.com/preangelleo/agentj@v0.15.3a1#subdirectory=host"` (needs Python 3.11+).
 `agentj doctor` lists what is ready and what is not (prerequisites, the fence, connectivity, which agents are usable).
 Continue unless it reports an error that a later step does not fix; report anything you cannot explain.
 
@@ -1006,7 +1009,7 @@ The daily check remains a notification, not an unattended installation; `agentj 
 In the default shared session, reinstall directly using Step 4's checked wheel (SHA-256 must match this document and
 its public GitHub copy), preserving the host's identity, paired phones, account and preferences:
 ```bash
-uv tool install --force "./agentj-0.15.2a1-py3-none-any.whl"
+uv tool install --force "./agentj-0.15.3a1-py3-none-any.whl"
 agentj --version
 agentj service install
 agentj service restart
@@ -1014,7 +1017,7 @@ agentj doctor
 ```
 The matching published tag is another source, after verifying the tag object against the upgrade email:
 ```bash
-uv tool install --force "git+https://github.com/preangelleo/agentj@v0.15.2a1#subdirectory=host"
+uv tool install --force "git+https://github.com/preangelleo/agentj@v0.15.3a1#subdirectory=host"
 ```
 **0.14 independent session** (`agent.session_mode=independent`): 0.14's fence keeps Agent J's own program read-only and
 hides the service manager, so the Agent on the phone cannot reinstall or restart from inside it (measured: the install
@@ -1040,11 +1043,11 @@ prints something and `uv tool list` (or `pipx list`) shows `agentjarvis-host`, t
 the new name, then:
 ```bash
 jarvis service uninstall      # stop the old service first (Step 10 used tmux / nohup instead? stop that process)
-uv tool uninstall agentjarvis-host && uv tool install "git+https://github.com/preangelleo/agentj@v0.15.2a1#subdirectory=host"
+uv tool uninstall agentjarvis-host && uv tool install "git+https://github.com/preangelleo/agentj@v0.15.3a1#subdirectory=host"
 agentj doctor
 agentj service install        # start it again under the new name (or the tmux / nohup fallback, Step 10)
 ```
-With pipx instead of uv: `pipx uninstall agentjarvis-host && pipx install "git+https://github.com/preangelleo/agentj@v0.15.2a1#subdirectory=host"`.
+With pipx instead of uv: `pipx uninstall agentjarvis-host && pipx install "git+https://github.com/preangelleo/agentj@v0.15.3a1#subdirectory=host"`.
 - After the move, `agentj` puts back a `jarvis` command (a link to `agentj`, only if no other `jarvis` exists) for one more
   version; it prints a notice that points here. New installs never get `jarvis`.
 - The state moves by itself on the first run of `agentj`: from `~/.local/state/agentjarvis-alpha` to `~/.local/state/agentj`.
@@ -1375,6 +1378,15 @@ or logs out Claude Code / Codex / OpenCode (nor removes a model key), and never 
   typed while offline are queued and sent in order once connected. User guide at /docs/manual/ (also the
   `agentj-manual` skill); the Agent can look back through the phone history; /compact (or "压缩") first writes a handover file.
 
+- 0.19.3 (2026-10-06): host 0.15.3a1. OpenCode works with both the old (1.x) and the new (2.x, what the official
+  installer ships now) versions; a missing key names the provider instead of "internal error", and after you change a
+  key Agent J restarts its own OpenCode and continues the same conversation, with no manual restart. A phone that saved
+  Face ID must pass Face ID before approving an admin-password or secret card (deny never asks). The full-screen reader
+  shows the Agent's images and turns links to local files into cards in place. Telegram: the owner's private chat also
+  receives the files a reply refers to (groups get text only), and /compact (or "压缩") there writes the handover first.
+  Read-aloud can use ElevenLabs v4 or your own local speech script. Restricted regions: tell the Agent your proxy
+  address (for example http://127.0.0.1:7890) and it sets it for the next message.
+
 ### Shared native sessions (0.13)
 The default `agent.session_mode=shared` follows the native harness permissions.
 Agent J adds no permission decision of its own (0.15, F14); the extra high-risk
@@ -1405,27 +1417,19 @@ Existing AI coding tool rules remain authoritative, including their native dialo
 Agent J never fabricates an approval or returns "allow" on behalf of an unavailable phone.
 The extra high-risk reminder is optional and off by default; change it in phone Settings.
 
-Credential troubleshooting safety: check only storage existence (v1 `auth.json`, v2 `opencode.db`) and, if the owner needs identification, a masked suffix of at most four characters. Never dump `auth.json`, SQLite rows, tokens, environment files or database contents to chat/logs. Existence does not prove a valid provider key. After `opencode auth login` changes a key, run `agentj service restart`; with shared attachment also restart the owner's OpenCode server when idle. Keep `AGENTJ_OPENCODE_BIN` in the service env file: existing saved overrides win on upgrade, units/plists contain no binary override. Without an override, first PATH executable wins; a mise/asdf shim resolves only to its configured version or one unambiguous installation. Doctor reports the selected path and why; selection changes are printed by service install.
+Credential troubleshooting safety: check only storage existence (v1 `auth.json`, v2 `opencode.db`) and, if the owner needs identification, a masked suffix of at most four characters. Never dump `auth.json`, SQLite rows, tokens, environment files or database contents to chat/logs. Existence does not prove a valid provider key. After `opencode auth login` changes a key, Agent J restarts the `opencode serve` it started itself before the next message (same conversation; `agentj agent restart` does it on request); an attached owner OpenCode server must be restarted by the owner when idle. Keep `AGENTJ_OPENCODE_BIN` in the service env file: existing saved overrides win on upgrade, units/plists contain no binary override. Without an override, first PATH executable wins; a mise/asdf shim resolves only to its configured version or one unambiguous installation. Doctor reports the selected path and why; selection changes are printed by service install.
 
 
 ## Restricted regions: configure a proxy / 受限地区：代理怎么配
 
-Prefer Claude Code. If the provider is unreachable in your region, ask the Agent on your computer to check the network, configure your proxy, and then complete Claude Code login. Never paste proxy credentials, subscription links or model keys into phone chat.
+Prefer Claude Code. If the model provider is unreachable where you are (Hong Kong, for example), the simplest way is to tell the Agent on your computer: "Set my proxy to http://127.0.0.1:7890" (the port of your local proxy app). It runs `agentj config set proxy.https http://127.0.0.1:7890`. Never paste proxy passwords, subscription links or model keys into phone chat.
 
-Agent J's owned Claude Code, Codex and OpenCode subprocesses inherit `HTTPS_PROXY`, `HTTP_PROXY` and `NO_PROXY` from the host service. Setting them in an interactive shell does not configure a background service. Ask your Agent to check the service environment. A shared session belongs to the existing desktop process: set its proxy before starting it and restart that process after changes.
+The setting reaches only the Claude Code, Codex or OpenCode process Agent J starts for you, as `HTTPS_PROXY`, `HTTP_PROXY` and `NO_PROXY`; local addresses bypass it. Voice, updates and the phone connection are not affected. The Agent's process restarts before your next message and the conversation continues. A shared session uses your own desktop process: set its proxy before starting it, and restart it yourself after a change.
 
-If another named variable already holds a proxy setting, configure only that variable's name:
+A proxy that needs a username and password is not written into the settings. Ask the Agent to keep it in an environment variable and set only the variable's name, for example `proxy.https_env: "AJ_HTTPS_PROXY"` (also `proxy.http_env` and `proxy.no_proxy_env`). If both are set, the address wins.
 
-```json5
-proxy: {
-  https_env: "AJ_HTTPS_PROXY",
-  http_env: "AJ_HTTP_PROXY",
-  no_proxy_env: "AJ_NO_PROXY"
-}
-```
+OpenCode needs a provider connection and a matching `provider/model`. An existing v1 `auth.json` or v2 `opencode.db` does not prove a working key. The v1 runtime diagnostic uses `GET /provider` and its `connected` list; this records configured connections, not a live balance or key test. After you replace a key with `opencode auth login`, Agent J restarts the OpenCode it started before your next message and keeps the conversation; you can also ask the Agent to run `agentj agent restart`. If Agent J is attached to your own desktop OpenCode server, restart that server yourself. Phone failure lines and `agentj doctor` name the kind of failure: sign-in or key (401), region (403/451), access (403), balance or quota, rate limit, model name, network.
 
-Run `agentj service restart` after changing these mappings. Include `localhost,127.0.0.1,::1` in the bypass value. Values stay in your own service or OS environment, never in Agent J preferences, logs or phone messages. Verify access by sending a normal message to the selected model.
+Both OpenCode v1 and v2 work: the official install script now installs v2 (2.0.x; `npm i -g opencode-ai` still gives v1), and Agent J detects the version when it starts OpenCode. v2 can store several keys for one provider (for example "DeepSeek 2"), but only the selected one is used; after adding a new key, run `opencode auth switch <provider>` to select it. If OpenCode has no key at all for the selected provider (for example, the key is only exported in your terminal, which the background service cannot see), the phone says so and names the provider; store the key, then just send again. Attaching to an OpenCode server you run yourself (shared session) is v1-only for now. HTTP 403 can mean region or account/model access restrictions, not necessarily an invalid key.
 
-OpenCode needs a provider connection and a matching `provider/model`. An existing v1 `auth.json` or v2 `opencode.db` does not prove a working key. The v1 runtime diagnostic uses `GET /provider` and its `connected` list; this records configured connections, not a live balance or key test. After replacing a key, restart the relevant serve process: `agentj service restart` for independent mode, or the original desktop OpenCode server for shared mode.
-
-OpenCode 2.0.23's database has been inspected in isolation. Agent J's session adapter still uses the v1 protocol and does not support the v2 `/api` surface. The diagnostic reports this compatibility issue explicitly. Prefer Claude Code or a compatible OpenCode v1 installation. HTTP 403 can mean region or account/model access restrictions, not necessarily an invalid key.
+If a third-party provider gave you a base_url and a key (OpenAI-compatible or Anthropic-compatible), run `agentj provider add <name> --base-url <url> --model <model>`: it declares the provider in OpenCode's config, which references the key by variable name only (`{env:<NAME>_API_KEY}`); then run the `agentj secret request` line it prints so the owner pastes the key on the phone's secret card (you never see it), switch with `agentj agent opencode --dir <dir> --model <name>/<model>` and `agentj service restart`.

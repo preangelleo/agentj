@@ -15,6 +15,8 @@ Layers, inside the Noise session that already hides everything from the relay (P
 - **One time**: a card is good for 120 s (sudo) / 300 s (secret) and one attempt per nonce; a wrong sudo password re-arms the
   card with a new nonce and a new host key (≤ 3 tries), and consecutive wrong passwords lock all sudo cards (1 min, doubling,
   ≤ 1 h, persisted in `elevate.json`).
+- **Face ID** (P59, ADR-A163): a device whose record holds a passkey (F20) must add a WebAuthn assertion (user verified)
+  over `passkey.elevate_challenge(card, nonce, digest)` to 「同意」; 「拒绝」 never needs one; devices without a passkey: unchanged.
 - **Never**: the password is not in argv, the environment, a log, the Agent's output or the chat — it goes to `sudo -S -k`
   on stdin from a bytearray that is zeroed after the write. A secret is written 0600 and only its receipt goes back.
 - **Audit**: `elevate.log` (0600), one line per outcome: time, kind, id, result, device, its key and signature, the digest
@@ -49,7 +51,7 @@ from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey, X
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 
-from . import wire
+from . import passkey, wire
 
 SIG_CONTEXT = "agentjarvis-elevate-v1"
 SEAL_CONTEXT = "agentjarvis-seal-v1"
@@ -549,7 +551,7 @@ class Elevator:
             return []
         return sorted(d for d in h.get("devices") or [] if self.st.sign_key(d))
 
-    def card_msg(self, c: dict) -> dict:
+    def card_msg(self, c: dict, s=None) -> dict:
         m = {"t": "elev", "id": c["id"], "kind": c["kind"], "n": c["nonce"], "epk": wire.b64u(c["epk"]),
              "ttl": max(0, int(c["deadline"] - time.monotonic())), "tries": TRIES - c["fails"]}
         if c["fails"]:
@@ -560,6 +562,9 @@ class Elevator:
                 m["helper"] = list(c["helper"])       # these phones may approve without a password (elevate_helper)
         else:
             m.update(name=c["name"], purpose=c["purpose"], dest=c["dest"], verify=c.get("verify") or "")
+        pk = self.st.passkey_of_device(s.device) if s is not None and s.device else None
+        if pk:
+            m["fa"] = pk["id"]   # ADR-A163: this device saved a passkey → 「同意」 needs it (its own credential id only)
         return m
 
     async def _to_phones(self, obj_fn) -> None:
@@ -577,7 +582,7 @@ class Elevator:
     async def on_ready(self, s) -> None:
         for c in list(self.cards.values()):
             if not c["fut"].done() and not c.get("busy"):
-                await self.host.send_app(s, self.card_msg(c))
+                await self.host.send_app(s, self.card_msg(c, s))
 
     def _finish(self, c: dict, result: dict) -> None:
         if not c["fut"].done():
@@ -607,7 +612,7 @@ class Elevator:
         self.cards[c["id"]] = c
         self.st.log("elev_card", id=c["id"], kind=c["kind"])
         self.host.push_notify("ask")
-        await self._to_phones(lambda s: self.card_msg(c))
+        await self._to_phones(lambda s: self.card_msg(c, s))
         try:
             while True:
                 waits = [c["fut"]] + ([gone] if gone is not None else [])
@@ -617,7 +622,7 @@ class Elevator:
                     res = c["fut"].result()
                     if res.get("result") == "retry":       # wrong password: re-armed, shown again
                         c["fut"] = asyncio.get_running_loop().create_future()
-                        await self._to_phones(lambda s: self.card_msg(c))
+                        await self._to_phones(lambda s: self.card_msg(c, s))
                         continue
                     break
                 if gone is not None and gone.done() and not c.get("busy"):
@@ -630,7 +635,7 @@ class Elevator:
                     res = await c["fut"]
                     if res.get("result") == "retry":
                         c["fut"] = asyncio.get_running_loop().create_future()
-                        await self._to_phones(lambda s: self.card_msg(c))
+                        await self._to_phones(lambda s: self.card_msg(c, s))
                         continue
                     break
         finally:
@@ -658,12 +663,15 @@ class Elevator:
         if why:
             self.st.log("elev_refused", id=rid, device=s.device, reason=why)
             audit(self.st, c, result="refused", reason=why, device=s.device, channel=self.host.channel)
+            if why.startswith("passkey"):          # ADR-A163: tell this phone, so its card leaves "sending" and stays open
+                await self.host.send_app(s, {"t": "elev_refused", "id": c["id"], "why": "passkey"})
             return
         sk = self.st.sign_key(s.device)
         ok = obj["ok"]
         ct_sha = hashlib.sha256(wire.unb64u(obj["ct"])).hexdigest() if ok and "ct" in obj else None
         signed = dict(device=s.device, sk=wire.b64u(sk), sig=obj["sig"], n=obj["n"], sig_ts=obj["ts"],
-                      decision="allow" if ok else "deny", ct_sha256=ct_sha, channel=self.host.channel)
+                      decision="allow" if ok else "deny", ct_sha256=ct_sha, channel=self.host.channel,
+                      passkey="uv" if ok and self.st.passkey_of_device(s.device) else None)
         if not ok:
             audit(self.st, c, result="denied", reason="device", **signed)
             return self._finish(c, {"result": "denied", "_logged": True})
@@ -741,6 +749,26 @@ class Elevator:
             Ed25519PublicKey.from_public_bytes(sk).verify(sigb, msg)
         except (InvalidSignature, ValueError):
             return "bad_signature"
+        return self._check_passkey(s, c, obj) if ok else None   # 拒绝 never needs Face ID
+
+    def _check_passkey(self, s, c: dict, obj: dict) -> str | None:
+        """ADR-A163: a device whose record holds a passkey (F20) approves only with a fresh WebAuthn assertion (UP + UV)
+        over elevate_challenge(this card, this nonce, what was shown). A device without one: unchanged."""
+        pk = self.st.passkey_of_device(s.device)
+        if not pk:
+            return None
+        if "fa" not in obj:
+            return "passkey_missing"
+        try:
+            f = passkey.approval_fields(obj["fa"])
+            if f["id"] != pk["id"]:
+                raise passkey.PasskeyError("bad", "credential")
+            ch = passkey.elevate_challenge(self.host.channel, s.device, c["id"], c["kind"], obj["n"], c["digest"])
+            count = passkey.verify_assertion(pk, f, ch)
+        except (passkey.PasskeyError, ValueError) as e:
+            self.st.log("elev_passkey", id=c["id"], device=s.device, reason=getattr(e, "detail", "bad"))
+            return "passkey_bad"
+        self.st.passkey_count(s.device, pk["id"], count)
         return None
 
     def _save(self, c: dict, value: bytearray) -> dict:

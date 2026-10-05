@@ -31,6 +31,7 @@ Maintain Agent J package files yourself when the AI coding tool permits it. Cred
 | 恢复全部默认 | Inspect `agentj config diff`, say what will be reset, then `agentj config reset --all --yes` |
 | 关掉审批 | Refuse: five danger categories and signed paired-device approval are locked. |
 | 帮我把 ElevenLabs Key 存上 | `agentj secret request --name ELEVENLABS_API_KEY --purpose 'TTS 配音' --dest env:~/.config/systemd/user/agentj.env#ELEVENLABS_API_KEY --verify-url https://api.elevenlabs.io/v1/user --verify-header 'xi-api-key: {value}'`; report the receipt, never the value. That file is the service environment (macOS: `~/Library/LaunchAgents/agentj.env`); restart the service afterwards |
+| 接第三方模型服务（给了 base_url + key，OpenCode） | `agentj provider add <id> --base-url <url> --model <model> [--api anthropic]`, then run the printed `agentj secret request … --dest env:<service env file>#<ID>_API_KEY --verify-url <url>/models` (the owner pastes the key on the phone), `agentj agent opencode --dir <dir> --model <id>/<model>`, `agentj service restart`; verify with one message. Built-in providers (openrouter, deepseek …) use `opencode auth login <provider>` instead. OpenCode v2 keeps several keys per provider: `opencode auth switch <provider>` picks the active one. |
 | 要装系统软件 / 需要 sudo | `agentj sudo --why '转码需要 ffmpeg' --effect '安装一个系统包' -- apt-get install -y ffmpeg` (exit 125 + `SUDO_RESULT:` = declined / expired / locked; never retry in a loop) |
 
 Telegram is optional, own-bot, private owner text only. Enroll with `agentj channel add telegram --owner-id <the owner's numeric Telegram ID>` (bot key from the named environment variable; only that owner's private chat is accepted). Do not promise Telegram media, group routing or approvals. iOS PWA cannot listen for a wake phrase in the background. Do not promise tested arbitrary acoustic wake detection based on a text-comparison test.
@@ -62,7 +63,7 @@ are one lowercase-hyphen direct child folder each. Each owns its CEO entry; root
 `agentj.main_identity` rather than copy the core role. Do not confuse work-root selection with host
 package/state installation directories. Identity/root changes require restarting serve.
 
-Credential troubleshooting safety: check only storage existence (v1 `auth.json`, v2 `opencode.db`) and, if the owner needs identification, a masked suffix of at most four characters. Never dump `auth.json`, SQLite rows, tokens, environment files or database contents to chat/logs. Existence does not prove a valid provider key. After `opencode auth login` changes a key, run `agentj service restart`; with shared attachment also restart the owner's OpenCode server when idle. Keep `AGENTJ_OPENCODE_BIN` in the service env file: existing saved overrides win on upgrade, units/plists contain no binary override. Without an override, first PATH executable wins; a mise/asdf shim resolves only to its configured version or one unambiguous installation. Doctor reports the selected path and why; selection changes are printed by service install.
+Credential troubleshooting safety: check only storage existence (v1 `auth.json`, v2 `opencode.db`) and, if the owner needs identification, a masked suffix of at most four characters. Never dump `auth.json`, SQLite rows, tokens, environment files or database contents to chat/logs. Existence does not prove a valid provider key. After `opencode auth login` changes a key, Agent J restarts the `opencode serve` it started itself before the next message (same conversation; see "Proxy values and harness restart"); an attached owner OpenCode server must be restarted by the owner when idle. Keep `AGENTJ_OPENCODE_BIN` in the service env file: existing saved overrides win on upgrade, units/plists contain no binary override. Without an override, first PATH executable wins; a mise/asdf shim resolves only to its configured version or one unambiguous installation. Doctor reports the selected path and why; selection changes are printed by service install.
 
 
 ## Voice providers (P47, checked 2026-10-05)
@@ -89,10 +90,31 @@ Explicit model/key-env choices are preserved, including `eleven_multilingual_v2`
 OpenAI model/key-env override when switching providers, or set `model:'eleven_v4'` and
 `key_env:'ELEVENLABS_API_KEY'` in the same file edit/apply. Agent J's single-speaker request uses
 `POST /v1/text-to-speech/{voice_id}?output_format=pcm_16000`, `model_id:'eleven_v4'`, `xi-api-key`;
-raw PCM is wrapped as WAV. [Official v4 API example](https://elevenlabs.io/v4) uses Text to Speech;
-[Text to Dialogue](https://elevenlabs.io/docs/api-reference/text-to-dialogue/convert) also exists for
-multiple speakers. The local production-channel client uses the same TTS endpoint. No API smoke call
-was made for P47; validate a synthetic sample only when authorized, and never print the key or provider errors.
+raw PCM is wrapped as WAV. No API smoke call was made; validate a synthetic sample only when authorized,
+and never print the key or provider errors.
+
+### ElevenLabs v4 Chinese clone — recommended setup (P59, checked 2026-10-06)
+
+Model id is exactly `eleven_v4` (released 2026-09-28; [models](https://elevenlabs.io/docs/overview/models),
+[changelog](https://elevenlabs.io/docs/changelog/2026/9/28)); `voice.tts.model` accepts it as-is (any `eleven_*` id).
+`GET /v1/models` lists it as text-to-speech capable, 10,000 characters/request; Agent J sends at most 4,000.
+The docs steer v4 mainly to Text to Dialogue and `eleven_v4_turbo` to the Dialogue WebSocket, which Agent J does not
+use — keep `eleven_v4`. If the first real sample fails, set `model:'eleven_multilingual_v2'` (same endpoint, Mandarin).
+Speed range for ElevenLabs is 0.7–1.2.
+
+用自己的声音（中文克隆）：
+1. 主人在 elevenlabs.io → Voices → Add voice → Instant Voice Clone 上传 1–2 分钟清晰的本人中文录音，按提示确认授权。只克隆本人或已获授权的声音。
+2. 在 My Voices 里点这个声音，复制它的 Voice ID（一串字母数字，不是密钥，可以在对话里说）。也可以从 Voice Library 挑一个中文声音加到 My Voices 再复制 ID。
+3. 密钥：`agentj secret request --name ELEVENLABS_API_KEY …`（见上表），绝不在对话里要。
+4. 设置（只写变量名，不写密钥）：
+
+```json5
+{voice:{tts:{mode:'cloud',provider:'elevenlabs',model:'eleven_v4',
+  key_env:'ELEVENLABS_API_KEY',voice:'PASTE_VOICE_ID',rate:1.0}}}
+```
+
+5. `agentj config validate --json`，`agentj service restart`（新密钥要重启才进服务环境），主人同意后 `agentj voice test --say '你好，我是你的助手'`。
+回复文字会直接发给 ElevenLabs，按字数计费；先跟主人说清楚再切。
 
 ## Local speech command
 
@@ -106,7 +128,8 @@ was made for P47; validate a synthetic sample only when authorized, and never pr
 
 `voice.tts.command` is an argv array (≤32 strings), not a shell command; shell metacharacters aren't
 expanded. A Python script can use `command:['/absolute/path/to/python','/absolute/path/to/script.py','{output}']`.
-The provider reads no cloud key itself; the script inherits the owner's host environment. It runs in a private
+The provider reads no cloud key itself; the script inherits the service environment (where the owner's own keys
+live) minus Agent J's runtime values (`AGENTJ_*`, the OpenCode server login). It runs in a private (0700)
 temporary directory with the host user's normal authority. Do not claim an external service stays offline just
 because it is invoked by a local script. `command_timeout` is 0.1–300 seconds, further bounded by the caller's
 speech deadline (normally 60 s). Timeout/failure kills the process group; stdout/stderr are discarded, errors
@@ -114,7 +137,8 @@ are generic. Returned audio is ≤8 MiB and must be valid PCM16 WAV; symlink/FIF
 rejected. The argv stays on the host and is omitted from phone preference broadcasts.
 
 Apply the provider/mode/argv together through a JSON5 edit then `agentj config apply`; these are user-tier
-keys. Verify with `agentj config validate --json`, `agentj doctor --offline --json` and a synthetic sample via `agentj voice test --say 'hello'`. Automatic-read settings and the phone Read
+keys (the existing tier system: human tier is only pairing/relay pointers). Set them from the computer only; the
+phone cannot set them and never sees the argv. Default is off (`mode:'phone'`, empty argv). Verify with `agentj config validate --json`, `agentj doctor --offline --json` and a synthetic sample via `agentj voice test --say 'hello'`. Automatic-read settings and the phone Read
 button continue using this host audio path. The Settings panel has no provider picker; its automatic-read
 switch remains shared with `agentj config`. Agent J doesn't install a new service or impose a human-tier gate.
 
@@ -123,7 +147,7 @@ switch remains shared with `agentj config`. Agent J doesn't install a new servic
 Prefer Claude Code. Proxy configuration stores variable NAMES only:
 `proxy.https_env`, `proxy.http_env`, `proxy.no_proxy_env`. Values already live in the
 host service environment; never copy them into preferences, conversation or logs.
-Changes require `agentj service restart`. Existing shared harness processes need
+Changes restart the owned harness before its next turn (P59, below). Existing shared harness processes need
 their own original environment and restart. A configured missing source variable
 removes its target from the owned child environment rather than silently using an old proxy.
 
@@ -134,3 +158,19 @@ reply to this bot; family profiles accept all allowlisted member messages. Group
 Text, captions and local transcripts pass relay's rule + own-key Jev gate; no key/outage
 is marked explicitly (fail-open like relay). Media never goes to the classifier.
 Telegram can read this optional channel. It cannot enroll devices or answer approvals.
+
+## Proxy values and harness restart (P59)
+
+For "帮我把代理设成 http://127.0.0.1:7890" (a local Clash/V2Ray port): `agentj config set proxy.https http://127.0.0.1:7890 --dry-run --json`, then without `--dry-run`.
+`proxy.http` empty follows `proxy.https`; with a proxy set and no NO_PROXY anywhere, `localhost,127.0.0.1,::1` is bypassed (`proxy.no_proxy` overrides).
+Accepted: `http|https|socks5|socks5h://host:port`, nothing else. A proxy with `user:password@` is refused on purpose: put the URL into an
+environment variable of the service (`agentj secret request --name AJ_HTTPS_PROXY --dest env:<service env file>#AJ_HTTPS_PROXY …`) and set
+`proxy.https_env AJ_HTTPS_PROXY`. A value wins over a `*_env` name. Remove with `agentj config reset proxy`.
+Scope: only the harness processes Agent J launches (owned Claude Code, Codex, OpenCode, and the Claude Code a shared session spawns) —
+not ASR, the TTS command, updates or the relay connection. The result's `harness.when`: `next_turn` = the owned harness restarts
+before the next message with the conversation kept; `next_start` = nothing running, the next start uses it; `own` = a shared
+session's own process: tell the owner to restart it.
+`agentj agent restart` does the same restart on request (after the owner changed a key or the network); it never interrupts the running turn.
+OpenCode: a changed `auth.json` / global config (metadata only) restarts our own `opencode serve` automatically before the next message, re-attaching
+the same session. Failure lines and `agentj doctor` name the class: login (401), region (403/451 region), access (403), balance (402/quota), rate_limit (429), model, network, internal.
+For region/network failures suggest the proxy above or Claude Code; never suggest pasting keys or proxy passwords into chat.

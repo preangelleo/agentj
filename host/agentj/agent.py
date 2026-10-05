@@ -262,6 +262,12 @@ class Agent:
                     finally:
                         self.cur_send = None
                     self.host.agent_turn_end()
+                    try:                                    # P59: context nearly full → the handover before the harness
+                        await compactprep.proactive(self)   # compacts by itself (Codex; ADR-A165)
+                    except asyncio.CancelledError:
+                        raise
+                    except Exception:  # noqa: BLE001 — never costs the queue
+                        self.host.st.log("compact_auto_prep", agent=self.kind, result="error")
                     if self.q.empty():
                         self.set_status("down" if self.is_down() else "idle")
                 continue
@@ -412,10 +418,33 @@ class Agent:
             self.identity_stale = True
 
     async def _identity_refresh(self) -> None:
+        if self.restart_pending:              # P59 (A167): an owned-harness restart asked for while a turn ran (or idle)
+            self.restart_pending = False
+            p = getattr(self, "proc", None)
+            if p is not None and p.returncode is None and self.owns_harness():
+                self.host.st.log("agent_restart", agent=self.kind, reason=self.restart_why)
+                await self._end_proc()        # the next spawn resumes the same conversation with the new environment
+                self.halting = False
         if self.identity_stale:
             self.identity_stale = False
             await self.reload_identity()
             self.halting = False
+
+    # ------------------------------------------------ P59 (A167): restart the harness Agent J owns, conversation kept
+    restart_pending = False
+    restart_why = ""
+
+    def owns_harness(self) -> bool:
+        """Is the harness process Agent J's own child (independent mode)? A shared session is the owner's process."""
+        return self.cfg.get("session_mode") != "shared" and hasattr(self, "proc")
+
+    def request_restart(self, why: str) -> str:
+        """Before the next turn (never mid-turn: the main Agent may be the one asking). → "next_turn" | "next_start"."""
+        p = getattr(self, "proc", None)
+        if p is None or p.returncode is not None:
+            return "next_start"
+        self.restart_pending, self.restart_why = True, why[:32]
+        return "next_turn"
 
     async def reload_identity(self) -> None:
         """Default: nothing (OpenCode sends `system` with every prompt; a shared session is the owner's own harness — we

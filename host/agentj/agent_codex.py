@@ -30,7 +30,7 @@ import shlex
 import signal
 import time
 
-from . import danger, slash
+from . import compactprep, danger, slash
 from . import agent as _agentmod
 from .agent import LINE_LIMIT, Agent, _signal_tree
 from .slash import Result
@@ -499,6 +499,10 @@ class CodexAgent(Agent):
             if method == "item/completed" and it.get("type") == "agentMessage" and th == self.tid \
                     and isinstance(it.get("text"), str) and it["text"].strip():
                 self._emit(it["text"])
+            elif method == "item/completed" and it.get("type") == "contextCompaction" and th == self.tid:
+                self._auto_compacted(p.get("turnId"))
+        elif method == "thread/compacted" and th == self.tid:     # the older form of the same event (still sent by some)
+            self._auto_compacted(p.get("turnId"))
         elif method == "turn/started" and th == self.tid:
             t = p.get("turn") if isinstance(p.get("turn"), dict) else {}
             if isinstance(t.get("id"), str):
@@ -531,6 +535,19 @@ class CodexAgent(Agent):
             f = self.pending.get(p.get("requestId"))
             if f and not f.done():
                 f.set_result(True)
+
+    def _auto_compacted(self, turn_id) -> None:
+        """P59 (ADR-A165): Codex compacted this thread by itself (its auto-compaction inside a turn: a `contextCompaction`
+        item, or the older `thread/compacted`). Ours (`/compact`, quiet) is counted by compactprep.compact itself. A new
+        epoch: the next user message carries the handover note when one was written before (compactprep.compacted)."""
+        if self.quiet or not self.persist or self.research:
+            return
+        if turn_id is not None and turn_id == getattr(self, "_compacted_turn", None):
+            return                                  # both forms of one compaction
+        self._compacted_turn = turn_id
+        self.host.st.log("codex_auto_compact", agent=self.kind)
+        with contextlib.suppress(RuntimeError):
+            self._bg(compactprep.compacted(self, auto=True))
 
     # ------------------------------------------------ approvals (server → client requests)
     def _on_request(self, m: dict) -> None:

@@ -15,6 +15,8 @@ sees whether serve asked for `untrusted`). What a turn does (the text of the mes
     SLEEP: <s>             works for s seconds (turn/interrupt ends it: status "interrupted")
     ASK: <json questions>  item/tool/requestUserInput; replies "ANSWERS: <the answers it got>"   (PROTOCOL §10.7)
     FORM                   mcpServer/elicitation/request; replies "FORM: <the answer>"
+    AUTOCOMPACT [legacy]   Codex's own compaction inside the turn (contextCompaction item, meter → 5000; `legacy` adds
+                           thread/compacted too), then "ECHO: …"     (P59)
     anything else          one agentMessage "ECHO: <text>"
 Every client message and every answer to a server request is logged to FAKE_CX_LOG (JSONL). FAKE_CX_POLICY = the human's
 approval_policy for config/read (JSON); FAKE_CX_THREADS = thread ids that "already exist" (resume); FAKE_CX_SANDBOX = the
@@ -207,6 +209,17 @@ def run_turn(tid, turn, text):
                 time.sleep(0.05)
             if status == "completed":
                 say(tid, turn, "slept")
+        elif text.startswith("AUTOCOMPACT"):          # P59: Codex's own compaction inside a turn (context full)
+            legacy = text.strip() == "AUTOCOMPACT legacy"
+            note("item/started", {"item": {"type": "contextCompaction", "id": "ac1"}, "threadId": tid, "turnId": turn})
+            THREADS[tid]["last"] = 5000
+            note("thread/tokenUsage/updated", {"threadId": tid, "turnId": turn, "tokenUsage": {
+                "total": {"totalTokens": THREADS[tid]["total"]}, "last": {"totalTokens": 5000}, "modelContextWindow": 258400}})
+            note("item/completed", {"item": {"type": "contextCompaction", "id": "ac1"}, "threadId": tid, "turnId": turn})
+            if legacy:
+                note("thread/compacted", {"threadId": tid, "turnId": turn})
+            say(tid, turn, "ECHO: " + text)
+            return                                    # no usage(): the meter stays at the compacted figure
         elif text.startswith("[agentj 定时任务"):        # a scheduled task: its prompt lines RUN: / SAY:
             for ln in text.splitlines():
                 if ln.startswith("RUN: "):

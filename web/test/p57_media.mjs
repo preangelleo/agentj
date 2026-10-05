@@ -183,9 +183,10 @@ try {
     try {
       const turn = await fake.addTurn({ k: 'phone', dev: null, text: '网页' }, '报告网页：[report.html](out/report.html)', 'done');
       await fake.updateTurn(turn.id, { media: ITEMS.filter((x) => x.kind === 'html') });
-      await waitFor(p, `!!document.querySelector('#mstrip .mcard[data-kind=html] .mtap')`);
+      // P59 (ADR-A164): the reply links the file, so its card sits at the link in the words (no longer in the strip)
+      await waitFor(p, `!!document.querySelector('#words .mslot[data-link] .mcard[data-kind=html] .mtap') && document.getElementById('mstrip').hidden`);
       const title0 = await ev(p, 'document.title');
-      await ev(p, `document.querySelector('#mstrip .mcard[data-kind=html] .mtap').click()`);
+      await ev(p, `document.querySelector('#words .mcard[data-kind=html] .mtap').click()`);
       await waitFor(p, `!!document.querySelector('.mview iframe.mframe')`, 10000);
       const fr = await ev(p, `(() => { const f = document.querySelector('.mview iframe'); return { sandbox: f.getAttribute('sandbox'), csp: f.getAttribute('csp'),
         ref: f.getAttribute('referrerpolicy'), src: f.getAttribute('src'), srcdoc: f.srcdoc.includes('季度报告'), doc: f.contentDocument === null, note: document.querySelector('.mview .mnote').textContent }; })()`);
