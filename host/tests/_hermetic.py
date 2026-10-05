@@ -11,3 +11,6 @@ if not os.environ.get("AGENTJ_STATE_DIR"):
     _d = tempfile.mkdtemp(prefix="aj-tests-state-")
     os.environ["AGENTJ_STATE_DIR"] = os.path.join(_d, "state")
     atexit.register(shutil.rmtree, _d, True)
+# P57: `serve` links the bundled skills into ~/.claude/skills etc. (personalize.ensure) — never into the developer's real home
+# from a test (the tests run serve with the real HOME); test_p57_agent tests ensure() itself with a patched home.
+os.environ.setdefault("AGENTJ_SKILL_LINK", "off")

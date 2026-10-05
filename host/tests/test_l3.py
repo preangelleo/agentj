@@ -46,7 +46,7 @@ def _cli(*args, env=None, timeout=60, stdin=subprocess.DEVNULL):
 class Version(unittest.TestCase):
     def test_one_source(self):
         v = agentj.__version__
-        self.assertEqual(v, "0.15.1a1")
+        self.assertEqual(v, "0.15.2a1")
         self.assertEqual(cloud.VERSION, v)
         self.assertEqual(cloud.AGENT, f"agentj/{v}")
         r = _cli("--version")
@@ -315,7 +315,7 @@ class Doctor(unittest.TestCase):
         self.assertEqual(r.returncode, 1, "not initialised = ✗")
         d = json.loads(r.stdout)
         ids = [c["id"] for c in d["checks"]]
-        self.assertEqual([i for i in ids if i != "linger"], self.IDS + ["asr", "config", "hardware", "main-core", "work-root", "update"], "linger only where systemd reports it")
+        self.assertEqual([i for i in ids if i != "linger"], self.IDS + ["asr", "config", "hardware", "main-core", "work-root", "skills", "update"], "linger only where systemd reports it")
         self.assertEqual(d["version"], agentj.__version__)
         by = {c["id"]: c for c in d["checks"]}
         self.assertEqual((by["state"]["status"], by["state"]["hint"]), ("fail", "agentj init"))
@@ -490,11 +490,11 @@ class WheelInstall(unittest.TestCase):
             self.assertEqual(subprocess.run([self.venv + "/bin/agentj", "init"], env=env, capture_output=True, cwd="/").returncode, 0)
             r = subprocess.run([self.venv + "/bin/agentj", "doctor", "--json", "--offline"], env=env, capture_output=True, text=True, cwd="/")
             d_ = json.loads(r.stdout)
-            self.assertEqual([c["id"] for c in d_["checks"] if c["id"] != "linger"], Doctor.IDS + ["asr", "config", "hardware", "main-core", "work-root", "update"])
+            self.assertEqual([c["id"] for c in d_["checks"] if c["id"] != "linger"], Doctor.IDS + ["asr", "config", "hardware", "main-core", "work-root", "skills", "update"])
             self.assertEqual({c["id"]: c["status"] for c in d_["checks"]}["state"], "ok")
             core = next(c for c in d_["checks"] if c["id"] == "main-core")
             self.assertEqual(core["status"], "ok")
-            self.assertIn("core v3:", core["summary"])
+            self.assertIn("core v4:", core["summary"])
 
     @unittest.skipUnless((sys.platform.startswith("linux") and shutil.which("bwrap")) or
                          (sys.platform == "darwin" and os.access(fence.SANDBOX_EXEC, os.X_OK)),

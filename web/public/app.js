@@ -10,17 +10,19 @@ import { parsePairing as parseLink } from './proto/wire.js';
 import VERSION from './version.js';
 import { t, lang, fillText, plain, applyStatic, onLang } from './js/t.js';
 import { el, toast, confirmSheet, closeConfirm } from './js/ui.js';
-import { dbGet, dbPut, dbDel, deviceKey, wipeLocal, markPaired, wasPaired, askPersist } from './js/store.js';
-import { b64u } from './proto/wire.js';
+import { dbGet, dbPut, dbDel, deviceKey, signKey, wipeLocal, markPaired, wasPaired, askPersist } from './js/store.js';
+import { b64u, unb64u } from './proto/wire.js';
 import * as session from './js/session.js';
 import * as snap from './js/snap.js';
 import * as api from './js/api.js';
 import * as blobs from './js/blobs.js';
+import * as media from './js/media.js';       // F21: files the Agent shows (§13)
 import * as controls from './js/controls.js';
 import * as push from './js/push.js';
 import * as relay from './js/relay.js';
 import * as settings from './js/settings.js';
 import * as elevate from './js/elevate.js';     // F17: sudo / secret cards (§11)
+import * as passkey from './js/faceid.js';     // F20: the same phone without a second pairing (§12)
 
 const $ = el;
 
@@ -127,7 +129,8 @@ const RELAY_HOSTS = ['relay.agentj.app', 'alpha-relay.agentjarvis.net'];
 function allowRelay(url) {
   const u = new URL(url);
   const ours = u.protocol === 'wss:' && !u.port && RELAY_HOSTS.includes(u.hostname);
-  if (location.hostname === '127.0.0.1') return ours || (u.protocol === 'ws:' && u.hostname === '127.0.0.1');
+  // localhost too (F20): WebAuthn refuses an IP address as rp id, so the passkey tests serve the page as localhost
+  if (['127.0.0.1', 'localhost'].includes(location.hostname)) return ours || (u.protocol === 'ws:' && u.hostname === '127.0.0.1');
   return ours;
 }
 
@@ -172,6 +175,7 @@ session.configure({
     markPaired(true);
     askPersist();
     $('pair-wiped').hidden = true;
+    $('pair-error').hidden = true;
     setAgentName(null, false);                        // a new pairing: its name comes with the host's first status
     snap.synthReset(); snap.S.hist = { epoch: 0, first: 0, last: 0, count: 0 }; relay.historyReset(0);
     lastSeq = 0; controls.panel !== 'chat' && controls.openPanel('chat');
@@ -191,6 +195,7 @@ session.configure({
   onHostDown: onHostGone,
   onRevoked: revoked,
   onPairFailed: pairFailed,
+  onRestoreFailed: pkFailed,
   onProtocolFail(wasPair, e) {
     if (e && e.name === 'NotSupportedError') return fatal('error.noCrypto');
     setStatus('error', 'st.error');
@@ -205,7 +210,7 @@ api.onState((m) => relay.onSayState(m));
 controls.configure({ show, estopChanged: () => { relay.onEstop(); rerender(); } });
 
 function onApp(m) {
-  if (api.route(m) || blobs.handle(m)) return;
+  if (api.route(m) || blobs.handle(m) || media.handle(m)) return;
   switch (m.t) {
     case 'preferences': relay.applyPreferences(m.value); settings.setPrefs(m.value, m.host); if(m.problem)relay.configProblem(m.problem.error); return;
     case 'status': setAgentName(m.name); snap.setStatus(m); return;
@@ -213,6 +218,8 @@ function onApp(m) {
     case 'ask_done': snap.askDone(m); return;
     case 'elev': elevate.add(m); return;             // F17 (§11)
     case 'elev_done': elevate.done(m); return;
+    case 'pk_offer': offerPasskey(m).catch(() => {}); return;    // F20 (§12)
+    case 'pk_reg_res': pkSaved(m).catch(() => {}); return;
     case 'question': snap.addQuestion(m); return;
     case 'question_done': snap.questionDone(m); return;
     case 'auto': controls.showAuto(m); return;
@@ -302,6 +309,7 @@ function startPairing(input) {
   try { p = parsePairing(input); } catch {
     showIdle();
     const err = $('pair-error');
+    delete err.dataset.k;
     err.textContent = t('pair.badLink');
     err.hidden = false;
     return;
@@ -316,6 +324,75 @@ function showIdle() {
   setAgentName(null, false);
   show('pair');
   setStatus('idle', 'st.idle');
+  renderPk().catch(() => { $('pk-restore').hidden = true; });
+}
+
+// ---------------------------------------------------------------- F20 passkey (PROTOCOL §12): no second pairing
+// Register: once, after a pairing (the host sends pk_offer only then), one sheet; 「以后再说」 changes nothing and the
+// question never comes back for this pairing (host record `pkAsked`). The system Face ID sheet must follow the tap, so
+// nothing slow runs between 「保存」 and navigator.credentials.create.
+async function offerPasskey(m) {
+  const h = await dbGet('host');
+  if (!h || !h.approved || h.pkAsked || h.channel !== session.channel()) return;
+  const ri = passkey.relayIndex(h.relay);
+  const nonce = unb64u(m.n);
+  if (ri < 0 || nonce.length !== 32 || !(await passkey.supported())) return;
+  await dbPut('host', { ...h, pkAsked: true });
+  const g = session.gen();
+  const name = agentName ?? DEFAULT_NAME;
+  const no = $('confirm-no');
+  no.dataset.i18n = 'pk.later'; no.textContent = t('pk.later');
+  let yes;
+  try { yes = await confirmSheet(t('pk.askTitle'), t('pk.askText'), t('pk.save')); } finally { no.dataset.i18n = 'sheet.cancel'; no.textContent = t('sheet.cancel'); }
+  if (!yes) return;
+  let reg;
+  try { reg = await passkey.register(nonce, { relayIndex: ri, channel: h.channel, hostPub: h.hostPub, name, displaySuffix: t('pk.computer') }); } catch { return; }   // cancelled / no Face ID: nothing changes
+  session.sendApp(reg, g).catch(() => toast(t('pk.saveFail')));
+}
+async function pkSaved(m) {
+  toast(t(m.ok ? 'pk.saved' : 'pk.saveFail'));
+  const h = await dbGet('host');
+  if (m.ok && h && h.approved && h.channel === session.channel()) await dbPut('host', { ...h, pk: true });
+}
+// Restore: on the empty pairing screen, one button when this browser has Face ID / a platform authenticator. The new
+// device key + approval key exist already (main() made them); the challenge binds the passkey's answer to them.
+let pkPrep = null;
+let pkCred = null;
+async function renderPk() {
+  const b = $('pk-restore');
+  const sk = await signKey();
+  if (view !== 'pair' || state !== 'idle' || !sk || !(await passkey.supported())) { b.hidden = true; return; }
+  pkPrep = await passkey.prepareRestore((await deviceKey()).pub, sk.pub);
+  b.hidden = view !== 'pair' || state !== 'idle';
+}
+async function pkRestore() {
+  let prep = pkPrep;
+  if (!prep || Date.now() - prep.ts > 4 * 60 * 1000) prep = await passkey.prepareRestore((await deviceKey()).pub, (await signKey()).pub);
+  pkPrep = null;
+  let a;
+  try { a = await passkey.assert(prep.challenge); } catch (e) {                  // cancelled / no passkey here / not focused
+    document.body.dataset.pkErr = (e && e.name) || 'error';                       // diagnostics only (tests read it)
+    return renderPk();
+  }
+  let to;
+  try {
+    to = passkey.decodeHandle(a.uh, { testRelay: new URLSearchParams(location.search).get('relay') });
+    if (!allowRelay(to.relay)) throw new Error('relay');
+  } catch { return pkFailed('bad'); }
+  pkCred = a.id;
+  $('pk-restore').hidden = true;
+  $('pair-error').hidden = true;
+  session.openSession('restore', { relay: to.relay, channel: to.channel, hostPub: to.hostPub,
+    pk: { id: a.id, cd: a.cd, ad: a.ad, sig: a.sig, uh: b64u(a.uh), ts: prep.ts, nonce: b64u(prep.nonce) } });
+}
+function pkFailed(why) {
+  const dead = why === 'unknown' || why === 'revoked';
+  if (dead && pkCred) passkey.forgetDead(pkCred);
+  showIdle();
+  const err = $('pair-error');
+  err.dataset.k = dead ? 'pk.dead' : 'pk.failed';
+  err.textContent = t(err.dataset.k);
+  err.hidden = false;
 }
 /** 重新配对 / 解除配对: forget the computer, and with it the sealed drafts and input history. Keeps the device key. */
 async function forgetHost() {
@@ -417,7 +494,7 @@ function relang() {
   renderError();
   push.renderA2hs(view);
   if (!$('scan-hint').hidden) fillText($('scan-hint'), t('pair.scanHint'));
-  if (!$('pair-error').hidden) $('pair-error').textContent = t('pair.badLink');
+  if (!$('pair-error').hidden) $('pair-error').textContent = t($('pair-error').dataset.k || 'pair.badLink');
   controls.reloadPanel();
   push.reregister();
 }
@@ -450,6 +527,7 @@ function wire() {
   $('pair-link').addEventListener('focus', () => { stopScan(); fitPairViewport(); setTimeout(fitPairViewport, 300); });
   $('pair-go').addEventListener('click', () => startPairing($('pair-link').value));
   $('scan').addEventListener('click', () => { startScan(); });
+  $('pk-restore').addEventListener('click', () => { stopScan(); pkRestore().catch(() => pkFailed('bad')); });
   $('scan-stop').addEventListener('click', stopScan);
   $('push-on').addEventListener('click', push.enablePush);
   $('grant-off').addEventListener('click', controls.revokeGrants);
@@ -494,6 +572,7 @@ function wire() {
     const fg = document.visibilityState === 'visible';
     if (session.isReady()) session.sendApp({ t: 'vis', fg }).catch(() => {});   // the host pushes only while hidden
     if (fg) session.reconnectNow();
+    if (fg && view === 'pair' && state === 'idle') renderPk().catch(() => {});   // a fresh challenge timestamp
   });
   onLang(relang);
 }

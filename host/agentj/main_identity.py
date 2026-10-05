@@ -11,8 +11,8 @@ import json
 from pathlib import Path
 
 DATA = Path(__file__).with_name("identity")
-VERSION = 3
-HASHES = {'en': '5bfec8310eddada52399d6c939181d983605a41fdfe835272c0072fd9ea2ba30', 'zh': 'c4a96ec0a51b56d0448a2ce68cb7b2640fc8761e9ff86a066125d8c9da1e87a4'}
+VERSION = 4   # v4 (P57, 0.15.2): F22 behaviour rules (progress lines, redo, recall, "that project") + F24 compaction rules
+HASHES = {'en': '069700579c7ec75a51cc9dd47af28d4641232d006e6236442ff81cc761601f66', 'zh': 'be440ad3f47d31b319d241e7d445ca2ea73851ca909aea996d7fd2c2250c6364'}
 MECHANISMS = {"claude": "append-system-prompt", "codex": "developerInstructions", "opencode": "prompt_async.system"}
 
 class IdentityError(ValueError):

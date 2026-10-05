@@ -108,7 +108,7 @@ class WorkingRoot(unittest.TestCase):
         self.st.set_agent_config('claude', str(root))
         def rows(): return {x['id']:x for x in doctor.check_main_identity(self.st)}
         self.assertEqual(rows()['main-core']['status'], 'ok')
-        self.assertIn('core v3:', rows()['main-core']['summary'])
+        self.assertIn('core v4:', rows()['main-core']['summary'])
         self.assertEqual(rows()['main-inject']['status'], 'warn')
         cfg = self.st.agent_config(); main_identity.audit(cfg, 'claude', self.st, 'fake-session')
         self.assertEqual(rows()['main-inject']['status'], 'ok')

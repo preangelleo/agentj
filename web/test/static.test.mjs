@@ -23,7 +23,7 @@ const JS = files.filter((f) => f.endsWith('.js'));
 const APP = read(pub('app.js'));
 // PROMPT-33: the page is app.js + the modules under js/ (relay's page ported). Every rule that used to look at app.js
 // alone now looks at all of them (OURS) — the same rules over more code, never fewer.
-const MODULES = ['api', 'blobs', 'boot', 'controls', 'md', 'push', 'relay', 'session', 'settings', 'snap', 'speak', 'store', 't', 'ui', 'wav', 'elevate'];
+const MODULES = ['api', 'blobs', 'boot', 'controls', 'md', 'push', 'relay', 'session', 'settings', 'snap', 'speak', 'store', 't', 'ui', 'wav', 'elevate', 'outbox', 'render'];
 const OURS_FILES = ['app.js', ...MODULES.map((m) => `js/${m}.js`)];
 const OURS = OURS_FILES.map((r) => read(pub(r))).join('\n');
 const HTML = read(pub('index.html'));
@@ -59,14 +59,22 @@ test('version.json / version.js match the shipped files', () => {
 const SITE_LINK = /^https:\/\/agentj\.app\/(?:[a-z]+\/)*(?:#invite)?$/;
 const MAIL_LINK = /^mailto:founder@agentj\.app$/;   // F13: Settings → 帮助和反馈 (the one address the site footer shows too)
 const NEW_WEB_ORIGIN = 'https://m.agentj.app';
-const LICENCE_TEXT = new Set(['brand/fonts/UFL-1.0-ubuntu.txt', 'brand/fonts/OFL-1.1-lexend.txt', 'brand/fonts/README.md']);   // licence texts cite their sources
+const LICENCE_TEXT = new Set(['brand/fonts/UFL-1.0-ubuntu.txt', 'brand/fonts/OFL-1.1-lexend.txt', 'brand/fonts/README.md',
+  'vendor/VERSIONS.md', 'vendor/hljs/LICENSE.txt', 'vendor/katex/LICENSE.txt', 'vendor/mermaid/LICENSE.txt']);   // licence texts cite their sources
+// Upstream bytes, pinned: any change must be reviewed again (P57 adds highlight.js / KaTeX / mermaid, loaded lazily by
+// js/render.js; every file + its source is in vendor/VERSIONS.md, re-checked by p57_render.test.mjs).
+const VENDORED = {
+  'vendor/jsQR.js': 'bc40c8a15196236b2314db0856f72ca0b49980cd5413b8c852a7349f5fee0859',
+  'vendor/jsQR-LICENSE.txt': 'c6596eb7be8581c18be736c846fb9173b69eccf6ef94c5135893ec56bd92ba08',
+  'vendor/hljs/highlight.min.js': '8ab71eb09c51f501e5e25157d9cff100e46cc29bcbfc744d0b746d451fca7f53',
+  'vendor/katex/katex.min.js': '103a53763cc033bba8d175bf3f0ba597c3505c9b6747dd3f2c7bc2a6bfcc8ae7',
+  'vendor/katex/katex.min.css': 'd4ab5b8ee16989b070cdb0ea24bd6ad48fc8df1b787f280f29d3ae4f959f2c00',
+  'vendor/mermaid/mermaid.min.js': '6484afc32872a3aa16cac9a76ba1816a1ed4cc870a6593cc2e17757750f518b2',
+};
 test('no URLs to anywhere in shipped files except links to agentj.app pages', () => {
   for (const f of files) {
     const s = read(f);
-    const vendored = {
-      'vendor/jsQR.js': 'bc40c8a15196236b2314db0856f72ca0b49980cd5413b8c852a7349f5fee0859',
-      'vendor/jsQR-LICENSE.txt': 'c6596eb7be8581c18be736c846fb9173b69eccf6ef94c5135893ec56bd92ba08',
-    };
+    const vendored = VENDORED;
     // License URLs in these immutable upstream bytes are attribution, not requests.
     // Any changed bytes must be reviewed again; the live browser gate checks zero off-site traffic.
     if (vendored[rel(f)]) assert.equal(createHash('sha256').update(readFileSync(f)).digest('hex'), vendored[rel(f)]);
@@ -77,7 +85,7 @@ test('no URLs to anywhere in shipped files except links to agentj.app pages', ()
       }
     }
     assert.doesNotMatch(s, /(?:src|href)\s*=\s*"\/\//i, `${rel(f)} protocol-relative URL`);
-    assert.doesNotMatch(s, /@import/i, `${rel(f)} @import`);
+    if (!vendored[rel(f)]) assert.doesNotMatch(s, /@import/i, `${rel(f)} @import`);   // (hljs's CSS grammar names it)
   }
   for (const m of HTML.matchAll(/<(\w+)\b[^>]*\s(src|href)="([^"]*)"/g)) {
     if (m[1] === 'a') assert.match(m[3], MAIL_LINK.test(m[3]) ? MAIL_LINK : SITE_LINK, `index.html links to ${m[3]}`);
@@ -90,7 +98,12 @@ test('no innerHTML / eval / new Function / string timers / document.write anywhe
   for (const f of JS.concat(pub('index.html'))) {
     // brand/*.js say in their header comments that they avoid these APIs; there only the code counts
     const s = rel(f).startsWith('brand/') ? read(f).replace(/\/\*[\s\S]*?\*\//g, '') : read(f);
+    // pinned upstream libraries (P57: hljs / KaTeX / mermaid) may carry innerHTML / document.write code paths the page
+    // never calls (hljs.highlightElement, DOMPurify …); eval / new Function / string timers stay banned there too, and
+    // CSP script-src 'self' (no 'unsafe-eval') stops them at run time anyway.
+    const upstream = !!VENDORED[rel(f)];
     for (const bad of [/\binnerHTML\b/, /\bouterHTML\b/, /insertAdjacentHTML/, /\beval\s*\(/, /new\s+Function\b/, /document\.write/, /setTimeout\(\s*['"`]/, /setInterval\(\s*['"`]/]) {
+      if (upstream && /HTML|write/.test(bad.source)) continue;
       assert.doesNotMatch(s, bad, `${rel(f)} uses ${bad}`);
     }
   }
@@ -152,7 +165,7 @@ test('app.js + js/*.js: only WebSocket egress, non-extractable keys, no plaintex
   // 0.15.1 (P55): + 'iid', the random install id (the other copy of localStorage "aj.iid") — no text, no key material
   assert.deepEqual(puts, ['device', 'host', 'iid', 'local', 'sign'], 'plain IndexedDB writes: keys + host record + install id only');
   const sealed = [...new Set(OURS_FILES.flatMap((r) => [...read(pub(r)).matchAll(/putSealed\("(\w+)"/g)].map((m) => m[1])))].sort();
-  assert.deepEqual(sealed, ['draft', 'ihist'], 'sealed records: draft + input history');
+  assert.deepEqual(sealed, ['draft', 'ihist', 'outbox'], 'sealed records: draft + input history + the offline queue (0.15.2)');
   const STORE = read(pub('js/store.js'));
   assert.match(STORE, /export async function putSealed\(name, obj\) \{\n  const w = wipes;\n  const rec = await seal\(obj\);\n  if \(w === wipes\) await dbPut\(name, rec\);\n\}/, 'putSealed writes only ciphertext, and never after a wipe');
   // §10.14 / P33-X13: revoke wipes like unpair — drafts, history, the sealing key, and everything in memory
@@ -160,7 +173,7 @@ test('app.js + js/*.js: only WebSocket egress, non-extractable keys, no plaintex
   assert.match(APP, /async function forgetLocal\(\) \{\n  relay\.forgetLocal\(\);\n  blobs\.forgetAll\(\);\n  elevate\.clear\(\);\n  await wipeLocal\(\);\n\}/);   // F17: open sudo / secret cards go too
   assert.doesNotMatch(APP, /saveDraft/, 'revocation never saves the draft');
   assert.match(STORE, /generateKey\(\{ name: 'AES-GCM', length: 256 \}, false, \['encrypt', 'decrypt'\]\)/, 'sealing key not extractable');
-  assert.match(STORE, /for \(const k of \['draft', 'ihist', 'local'\]\)/, 'unpair / re-pair wipes drafts, history and the sealing key');
+  assert.match(STORE, /for \(const k of \['draft', 'ihist', 'outbox', 'local'\]\)/, 'unpair / re-pair wipes drafts, history, the offline queue and the sealing key');
   assert.match(STORE, /indexedDB\.open\('agentjarvis', 1\)/, 'the IndexedDB name stays "agentjarvis" (paired phones keep their keys)');
   assert.match(OURS, /generateSigningKeypair\(\)/);
   const WIRE = readFileSync(new URL('../../protocol/wire.js', import.meta.url), 'utf8');
@@ -192,7 +205,7 @@ test('worker: public (no Access since 2026-10-02) → asset with the full header
     assert.equal(await r.text(), '<html>client</html>');
     // connect-src = exactly our two relays (the legacy one: pairing links from not-yet-updated hosts), on both hosts
     assert.equal(r.headers.get('content-security-policy'),
-      "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: blob:; connect-src wss://relay.agentj.app wss://alpha-relay.agentjarvis.net; " +
+      "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src wss://relay.agentj.app wss://alpha-relay.agentjarvis.net; " +
       "media-src 'self' blob:; frame-ancestors 'none'; base-uri 'none'; form-action 'none'; object-src 'none'", origin);
     assert.equal(r.headers.get('strict-transport-security'), 'max-age=31536000', `${origin}: HSTS`);
   }

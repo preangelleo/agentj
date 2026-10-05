@@ -1,6 +1,6 @@
-# Agent J 0.15.1a1 release notes
+# Agent J 0.15.2a1 release notes
 
-Host 0.15.1a1 / install 0.19.1; phone-web scope.
+Host 0.15.2a1 / install 0.19.2; phone-web scope.
 Phone parity must pass --strict. Full Android/Telegram parity is incomplete.
 Full Android/Telegram parity is incomplete.
 No APK is included in this release. Android source is for review, not a released app.
@@ -8,7 +8,7 @@ No APK is included in this release. Android source is for review, not a released
 Publication status: local preparation only. Live site verification is DEFERRED until
 the public commit and tag are pushed, the site is deployed, and cold installation passes.
 
-On publication failure, restore v0.15.0a1 / public 52d35aa, including the site.
+On publication failure, restore v0.15.1a1 / public 305e67c, including the site.
 ## Changes
 
 - Sparse JSON5 configuration with transactional application, configuration history and migrations.
@@ -16,11 +16,15 @@ On publication failure, restore v0.15.0a1 / public 52d35aa, including the site.
 - Opt-in own-key cloud speech and local phone read-aloud.
 - Optional owner-private Telegram text input and final replies.
 
-- Pairing hotfix: a phone whose page was closed and reopened (or that opens an old pairing link of the same computer)
-  resumes; a refused or timed-out pairing is no longer shown as "removed by the computer".
-- At five phones, approving a new one unpairs the least recently used one (offline first) and names it;
-  pairing again from the same browser replaces its old entry. A removed phone is told why (replaced / revoked).
-- Real iPhone acceptance (private browsing, home-screen app) is pending; the browser-side evidence is local Chromium.
+- Face ID resume (WebAuthn passkey, optional): a phone saved once can reconnect from the home-screen app, a private
+  tab or after clearing site data with one Face ID instead of a new QR scan; the same device entry is reused.
+- Files the agent mentions (images, audio, video, PDF, HTML preview, other deliverables) reach the phone end to end
+  encrypted and hash-checked; secrets-like paths and files outside the agent's working folder are never sent.
+- Code highlighting, formulas and flowcharts render locally (vendored, pinned); the web CSP allows inline styles
+  (style-src 'unsafe-inline', for flowcharts); script-src is unchanged.
+- Messages typed while offline are queued encrypted on the phone and sent in order once connected.
+- User guide (/docs/manual/) with the agentj-manual skill; agentj recall; /compact first writes a handover file.
+- Real iPhone acceptance (Face ID, media, offline queue) is pending; the browser-side evidence is local Chromium.
 
 ## Material acceptance limits
 

@@ -25,7 +25,8 @@ const MOD = { LABELS: { copy: "Copy", copyAria: "Copy code", copied: "Copied", i
 // **strong** / __strong__, *em* / _em_, ~~del~~, `code`, fenced code (``` / ~~~,
 // unclosed fences run to the end), ordered/unordered lists with nesting,
 // blockquotes, [links](http..) / <http..> / bare http(s) URLs, horizontal rules,
-// GFM pipe tables. Images are shown as a link, never fetched.
+// GFM pipe tables. Images are shown as a link, never fetched (F21: an image of a local
+// file becomes a slot that media.js fills with the bytes the computer sent inside the session).
 (function (root) {
   "use strict";
   const LABELS = root.LABELS;
@@ -36,6 +37,12 @@ const MOD = { LABELS: { copy: "Copy", copyAria: "Copy code", copied: "Copied", i
   const MAX_ROWS = 300;          // rows past this (or past the cell budget) are shown as their lines
   const MAX_CELLS = 4000;        // table cells per parse(), shared by every table in the text
   const MAX_NODES = 20000;       // elements per toDOM(); the rest of the text is appended as one text node
+  // P57 (render lane): md.js only MARKS code / math / diagrams — every node is still createElement + textContent.
+  // render.js (lazy, after the page settles) upgrades the marks with the vendored highlight.js / KaTeX / mermaid.
+  // Past these sizes a block is not marked at all, so it stays exactly the plain text it is today.
+  const MAX_CODE_HL = 20000;     // a fenced block longer than this gets no data-lang (no highlighting)
+  const MAX_TEX = 4000;          // longer "math" stays text
+  const MAX_MERMAID = 10000;     // a longer ```mermaid block stays a code block
   let cellBudget = MAX_CELLS;    // reset by parse()
   const PUNCT = /[!-\/:-@\[-`{-~]/;
   const WORD = /[\p{L}\p{N}]/u;
@@ -53,6 +60,15 @@ const MOD = { LABELS: { copy: "Copy", copyAria: "Copy code", copied: "Copied", i
     try { u = new URL(s); } catch (_) { return null; }
     if (u.protocol !== "http:" && u.protocol !== "https:") return null;
     return u.href;
+  }
+  // F21: a destination naming a file on the computer (absolute, ~/, ./, relative or file:) — the host may have sent it
+  // with the page (media.js). Any other scheme (http(s) stays a link; data:, javascript:, mailto: …) and "//host" → null.
+  function localRef(raw) {
+    if (typeof raw !== "string") return null;
+    const s = raw.trim();
+    if (!s || s.length > 1024 || /[\u0000-\u001f\u007f]/.test(s) || s.startsWith("//")) return null;
+    if (/^file:/i.test(s)) return s;
+    return /^[A-Za-z][A-Za-z0-9+.-]*:/.test(s) ? null : s;
   }
   // The destination a reader should see next to the words: the host (the address for mailto:), or null when the words
   // already are that address (a bare URL, an autolink, a link whose words are its own address, a mailto: showing its address).
@@ -184,18 +200,62 @@ const MOD = { LABELS: { copy: "Copy", copyAria: "Copy code", copied: "Copied", i
     return /^https?:\/\/./i.test(u) ? u : null;
   }
 
+  // ------------------------------------------------------------------ math (P57)
+  // Delimiters: display $$…$$ and \[…\] (own lines, or inside a paragraph), inline \(…\) and $…$.
+  // The $…$ rule is Pandoc's, so prices stay prices: the opening $ has a non-space right after it; the closing $ has a
+  // non-space (not "\", not "$") right before it and is NOT followed by a digit or "$"; it is the next unescaped $ after
+  // the opener (no $ inside inline math); nothing in between crosses a line
+  // break or a backtick; ≤ MAX_TEX characters. So "$3 and $4", "$3/$4", "5$ or 6$" are text and "$x^2$" is math.
+  // "\$" is always a literal dollar. \(…\) and \[…\] stay on one line inside a paragraph; $$…$$ may span its lines.
+  // mc: one scan cache per parseInline call — "the next X at/after f is at k" — so a run of openers stays linear.
+  function nextAt(s, tok, from, mc, test) {
+    const c = mc[tok];
+    if (c && c.f <= from && (c.k < 0 || c.k >= from)) return c.k;
+    let k = from;
+    for (;;) { k = s.indexOf(test ? "$" : tok, k); if (k < 0 || !test || test(s, k)) break; k++; }
+    mc[tok] = { f: from, k };
+    return k;
+  }
+  const dollarCloses = (s, k) => !/[\s\\$]/.test(s[k - 1]) && !/[0-9$]/.test(s[k + 1] || "");
+  function mathAt(s, i, mc) {
+    const two = s.slice(i, i + 2);
+    const pair = two === "$$" ? ["$$", true] : two === "\\[" ? ["\\]", true] : two === "\\(" ? ["\\)", false] : null;
+    let k, end;
+    if (pair) {
+      k = nextAt(s, pair[0], i + 2, mc);
+      if (k < 0) return null;
+      if (pair[0] !== "$$") { const nl = nextAt(s, "\n", i, mc); if (nl >= 0 && nl < k) return null; }
+      end = k + 2;
+    } else {
+      if (s[i] !== "$" || i > 0 && s[i - 1] === "$" || !s[i + 1] || /\s/.test(s[i + 1])) return null;
+      k = nextAt(s, "$c", i + 1, mc, (x, j) => x[j - 1] !== "\\");   // the NEXT unescaped $ must be the closer:
+      if (k < 0 || !dollarCloses(s, k)) return null;                    // "$5，公式 $E=mc^2$" → only "$E=mc^2$" is math
+      const nl = nextAt(s, "\n", i, mc), bt = nextAt(s, "`", i, mc);
+      if (nl >= 0 && nl < k || bt >= 0 && bt < k) return null;
+      end = k + 1;
+    }
+    const tex = s.slice(i + (pair ? 2 : 1), k);
+    if (!tex.trim() || tex.length > MAX_TEX) return null;
+    return { end, node: { tag: "math", tex, display: pair ? pair[1] : false, src: s.slice(i, end) } };
+  }
+
   function parseInline(s, depth, inLink) {
     depth = depth || 0;
     const out = [];
     let buf = "";
     const flush = () => { if (buf) { out.push(text(buf)); buf = ""; } };
     if (depth > MAX_DEPTH) return [text(s)];
+    const mc = {};
     // Once a closer search for (char, len) fails, every later one would scan the
     // same suffix and fail too: remembering that keeps "*a *b *c …" linear.
     const noClose = {};
     let i = 0;
     while (i < s.length) {
       const ch = s[i];
+      if (ch === "$" || ch === "\\" && (s[i + 1] === "(" || s[i + 1] === "[")) {   // P57 math (before "\" escapes)
+        const mt = mathAt(s, i, mc);
+        if (mt) { flush(); out.push(mt.node); i = mt.end; continue; }
+      }
       if (ch === "\\" && i + 1 < s.length && PUNCT.test(s[i + 1])) { buf += s[i + 1]; i += 2; continue; }
       if (ch === "\n") { flush(); out.push({ tag: "br" }); i++; continue; }
       if (ch === "`") {
@@ -210,9 +270,13 @@ const MOD = { LABELS: { copy: "Copy", copyAria: "Copy code", copied: "Copied", i
         const img = ch === "!";
         const L = tryLink(s, img ? i + 1 : i);
         if (!L || (inLink && !img)) { buf += ch; i++; continue; }
-        const href = safeHref(L.dest.replace(/\\([!-\/:-@\[-`{-~])/g, "$1"));
+        const dest = L.dest.replace(/\\([!-\/:-@\[-`{-~])/g, "$1");
+        const href = safeHref(dest);
         flush();
-        if (!href) out.push(text(s.slice(i, L.end)));           // unsafe: show the source
+        // F21 (§13): an image of a local file → a slot media.js fills with the file the computer sent (the source text
+        // stays inside it until then, and for good when nothing was sent); never fetched from the path itself
+        if (!href && img && localRef(dest)) out.push({ tag: "mslot", ref: localRef(dest), children: [text(s.slice(i, L.end))] });
+        else if (!href) out.push(text(s.slice(i, L.end)));      // unsafe: show the source
         else if (img) out.push({ tag: "a", attrs: { href }, children: [text(L.label || LABELS.image)] });
         else out.push({ tag: "a", attrs: { href }, children: parseInline(L.label, depth + 1, true) });
         i = L.end; continue;
@@ -269,6 +333,7 @@ const MOD = { LABELS: { copy: "Copy", copyAria: "Copy code", copied: "Copied", i
     quote: /^ {0,3}> ?/,
     item: /^( *)([-*+]|\d{1,9}[.)])( +|$)(.*)$/,
     tableSep: /^ *\|? *:?-+:? *(\| *:?-+:? *)*\|? *$/,
+    math: /^ {0,3}(\$\$|\\\[)(.*)$/,               // P57: a display-math block opens
   };
   const indentOf = l => l.match(/^ */)[0].length;
   const detab = l => l.replace(/\t/g, "    ");
@@ -299,15 +364,47 @@ const MOD = { LABELS: { copy: "Copy", copyAria: "Copy code", copied: "Copied", i
   function startsBlock(lines, i) {
     const l = lines[i];
     return RE.fence.test(l) || RE.heading.test(l) || RE.hr.test(l) || RE.quote.test(l) ||
-           RE.item.test(l) && !RE.blank.test(l.replace(RE.item, "$4")) || isTableStart(lines, i);
+           RE.item.test(l) && !RE.blank.test(l.replace(RE.item, "$4")) || isTableStart(lines, i) || RE.math.test(l);
+  }
+
+  // P57: a display-math block — "$$ … $$" / "\[ … \]" on one line, or the opener's line … a line ending in the closer,
+  // with no blank line in between and ≤ MAX_TEX characters; otherwise null (the lines stay a paragraph). The closer
+  // line and the length come from per-call caches (mc), so a page of unclosed "$$" lines stays linear.
+  function mathBlock(lines, i, mc) {
+    const m = RE.math.exec(lines[i]), close = m[1] === "$$" ? "$$" : "\\]";
+    const rest = m[2].replace(/\s+$/, "");
+    const node = (tex, next) => tex.trim() && tex.length <= MAX_TEX
+      ? { node: { tag: "math", tex, display: true, block: true, src: lines.slice(i, next).join("\n") }, next } : null;
+    if (rest.endsWith(close)) return rest.length > close.length ? node(rest.slice(0, -close.length), i + 1) : null;
+    const scan = (key, ok) => {
+      const c = mc[key];
+      if (c && c.f <= i + 1 && (c.k < 0 || c.k >= i + 1)) return c.k;
+      let k = i + 1;
+      while (k < lines.length && !ok(lines[k])) k++;
+      if (k >= lines.length) k = -1;
+      mc[key] = { f: i + 1, k };
+      return k;
+    };
+    const k = scan(close, (l) => l.replace(/\s+$/, "").endsWith(close)), b = scan("blank", (l) => RE.blank.test(l));
+    if (k < 0 || b >= 0 && b < k) return null;
+    if (!mc.pre) { mc.pre = [0]; for (const l of lines) mc.pre.push(mc.pre[mc.pre.length - 1] + l.length + 1); }
+    if (mc.pre[k + 1] - mc.pre[i] > MAX_TEX + 8) return null;
+    const last = lines[k].replace(/\s+$/, "");
+    return node([rest, ...lines.slice(i + 1, k), last.slice(0, -close.length)].join("\n"), k + 1);
   }
 
   function parseBlocks(lines, depth) {
     const out = [];
+    const mc = {};                                   // P57: mathBlock's scan caches for these lines
     let i = 0;
     while (i < lines.length) {
       const line = lines[i];
       if (RE.blank.test(line)) { i++; continue; }
+
+      if (RE.math.test(line)) {                      // P57 display math; not a block → falls through to a paragraph
+        const mb = mathBlock(lines, i, mc);
+        if (mb) { out.push(mb.node); i = mb.next; continue; }
+      }
 
       let m = RE.fence.exec(line);
       if (m) {
@@ -495,9 +592,25 @@ const MOD = { LABELS: { copy: "Copy", copyAria: "Copy code", copied: "Copied", i
     const pre = doc.createElement("pre");
     const code = doc.createElement("code");
     code.textContent = String(node.code == null ? "" : node.code);
+    // P57 marks for render.js: ```mermaid → .mermaid-src (still a code block: copy, and the fallback); any other
+    // named language → <pre data-lang>. Oversized blocks get no mark and stay plain.
+    const lang = String(node.lang || "").toLowerCase(), len = String(node.code == null ? "" : node.code).length;
+    if (lang === "mermaid") { if (len <= MAX_MERMAID) wrap.className = "codeblock mermaid-src"; }
+    else if (/^[\w+#.-]{1,32}$/.test(lang) && len <= MAX_CODE_HL) pre.setAttribute("data-lang", lang);
     pre.appendChild(code);
     wrap.append(bar, pre);
     return wrap;
+  }
+
+  // P57: math → <span class="math"> (inline) / <div class="math display"> (its own block) whose text is the source
+  // as written, delimiters included (so until render.js typesets it — or if it never does — the reader sees exactly
+  // what the agent wrote), and data-tex = the TeX between the delimiters (an attribute value, never markup).
+  function mathEl(node, doc) {
+    const el = doc.createElement(node.block ? "div" : "span");
+    el.className = node.display ? "math display" : "math";
+    el.setAttribute("data-tex", String(node.tex));
+    el.textContent = String(node.src);
+    return el;
   }
 
   // The plain text of a subtree (iterative: no recursion limit, linear).
@@ -509,6 +622,7 @@ const MOD = { LABELS: { copy: "Copy", copyAria: "Copy code", copied: "Copied", i
       if (!top || typeof top !== "object") continue;
       if (typeof top.text === "string") out.push(top.text);
       else if (top.tag === "pre") out.push("\n" + String(top.code == null ? "" : top.code) + "\n");
+      else if (top.tag === "math") out.push(String(top.src));
       else if (top.tag === "br" || top.tag === "p" || top.tag === "tr" || top.tag === "li") { out.push("\n"); if (top.children) stack.push(top.children); }
       else if (top.children) stack.push(top.children);
     }
@@ -530,6 +644,15 @@ const MOD = { LABELS: { copy: "Copy", copyAria: "Copy code", copied: "Copied", i
       }
       budget.left--;
       if (n.tag === "pre") { parent.appendChild(codeBlock(n, doc)); continue; }
+      if (n.tag === "math") { parent.appendChild(mathEl(n, doc)); continue; }
+      if (n.tag === "mslot") {                       // F21: <span class="mslot" data-ref="…"> + the source text
+        const sp = doc.createElement("span");
+        sp.className = "mslot";
+        sp.setAttribute("data-ref", String(n.ref == null ? "" : n.ref).slice(0, 1024));
+        toDOM(n.children, doc, sp, budget);
+        parent.appendChild(sp);
+        continue;
+      }
       if (!TAGS.has(n.tag)) continue;
       // An <a> whose href does not pass is never created: it becomes a <span>.
       const href = n.tag === "a" ? safeHref(String((n.attrs || {}).href)) : null;
@@ -595,8 +718,8 @@ const MOD = { LABELS: { copy: "Copy", copyAria: "Copy code", copied: "Copied", i
     return legacyCopy(t, doc);
   }
 
-  root.RelayMD = { parse, parseInline: (s) => { linkWork = 0; cellBudget = MAX_CELLS; return parseInline(s); }, toDOM, safeHref, shownTarget, copyText, legacyCopy, LABELS,
-    LIMITS: { MAX_INPUT, MAX_COLS, MAX_ROWS, MAX_CELLS, MAX_NODES } };
+  root.RelayMD = { parse, parseInline: (s) => { linkWork = 0; cellBudget = MAX_CELLS; return parseInline(s); }, toDOM, safeHref, localRef, shownTarget, copyText, legacyCopy, LABELS,
+    LIMITS: { MAX_INPUT, MAX_COLS, MAX_ROWS, MAX_CELLS, MAX_NODES, MAX_CODE_HL, MAX_TEX, MAX_MERMAID } };
 })(MOD);
 export const RelayMD = MOD.RelayMD;
 export default RelayMD;

@@ -59,17 +59,54 @@ def command(args):
     if group=='skill':return skill(a)
     return 1
 
+SKILLS=Path(__file__).with_name('skills')
+HARNESS_DIRS=('.claude/skills','.codex/skills','.agents/skills','.config/opencode/skills')
+
+def bundled():
+    """Every skill shipped in the package (P57: generic — a new folder under agentj/skills/ with a SKILL.md ships itself)."""
+    try:return sorted(d.name for d in SKILLS.iterdir() if d.is_dir() and (d/'SKILL.md').is_file() and not d.name.startswith(('.','_')))
+    except OSError:return []
+
+def links(home=None):
+    """[(skill, source, target)] for every bundled skill × the four harness skill folders."""
+    home=Path(home) if home else Path.home()
+    return [(n,SKILLS/n,home/h/n) for n in bundled() for h in HARNESS_DIRS]
+
+def status(home=None):
+    out=[]
+    for name,source,target in links(home):
+        own=target.is_symlink() and target.resolve()==source.resolve()
+        out.append({'skill':name,'path':str(target),'installed':own,'conflict':os.path.lexists(target) and not own})
+    return out
+
+def ensure(home=None,force=False):
+    """P57: `serve` links every bundled skill where nothing is in the way yet, before the Agent starts — the main Agent's
+    skills (agentj-config, agentj-recall, agentj-manual) work without anyone running `agentj skill install`. A foreign file or
+    link at a target is never replaced; `agentj skill uninstall` removes ours (they come back at the next serve start only
+    where the target is free again). → {"linked": n, "conflicts": n}; never raises."""
+    # Only an installed package links by itself: a source checkout (host/pyproject.toml beside the package — tests, e2e suites,
+    # development) never writes into the real ~/.claude etc.; AGENTJ_SKILL_LINK=off turns it off anywhere (tests/_hermetic.py).
+    if not force and (os.environ.get('AGENTJ_SKILL_LINK')=='off' or (SKILLS.parent.parent/'pyproject.toml').is_file()):
+        return {'linked':0,'conflicts':0,'off':True}
+    linked=conflicts=0
+    for _name,source,target in links(home):
+        try:
+            if target.is_symlink() and target.resolve()==source.resolve():continue
+            if os.path.lexists(target):conflicts+=1;continue
+            target.parent.mkdir(parents=True,exist_ok=True);target.symlink_to(source);linked+=1
+        except OSError:conflicts+=1
+    return {'linked':linked,'conflicts':conflicts}
+
 def skill(a):
-    source=Path(__file__).with_name('skills')/'agentj-config'
-    targets=[Path.home()/p for p in ('.claude/skills/agentj-config','.codex/skills/agentj-config','.agents/skills/agentj-config','.config/opencode/skills/agentj-config')]
     # F14: no owner-confirmed / terminal gate (--owner-confirmed still accepted). Each link must point at this package's own
-    # skill folder; a foreign file or link at a target is a conflict, never replaced.
+    # skill folder; a foreign file or link at a target is a conflict, never replaced. P57: every bundled skill, not only
+    # agentj-config (agentj-recall, agentj-manual, …).
     if a.action not in ('install','uninstall','list','status'):return 1
     out=[]
-    for target in targets:
+    for name,source,target in links():
         own=target.is_symlink() and target.resolve()==source.resolve()
         if a.action=='install':
             if not os.path.lexists(target):target.parent.mkdir(parents=True,exist_ok=True);target.symlink_to(source);own=True
         elif a.action=='uninstall' and own:target.unlink();own=False
-        out.append({'path':str(target),'installed':own,'conflict':os.path.lexists(target) and not own})
-    print(json.dumps({'ok':not any(x['conflict'] for x in out),'harnesses':out}));return 1 if any(x['conflict'] for x in out) else 0
+        out.append({'skill':name,'path':str(target),'installed':own,'conflict':os.path.lexists(target) and not own})
+    print(json.dumps({'ok':not any(x['conflict'] for x in out),'skills':bundled(),'harnesses':out}));return 1 if any(x['conflict'] for x in out) else 0

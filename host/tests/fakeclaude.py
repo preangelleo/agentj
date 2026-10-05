@@ -117,6 +117,33 @@ def run_one(cmd):
         r = subprocess.run(ans["updatedInput"]["command"], shell=True, capture_output=True, text=True)
         return f"已执行（退出码 {r.returncode}）：{cmd}"
     return f"被拒绝：{ans['message']}"
+# P57 (F24): the host's compaction preparation and host notes, as a cooperative Agent would treat them.
+#   "[agentj:compact-prepare]" + a `<…/.agentj/handover/<key>.md>` path → writes that file (unless FAKE_NO_HANDOVER=1;
+#   FAKE_PREP_SLEEP=s first → a preparation that times out) and replies "交接写好了"; lines starting 「（Agent J：」 /
+#   "(Agent J: " (the handover note / the context reminder) are logged as {"host_note": …} and taken off, so the rest of
+#   the message behaves as before; FAKE_CTX_USED = the context the next turn reports (compaction drops it).
+def p57_prepare(text):
+    import re as _re
+    m = _re.search(r"`([^`]*\.agentj/handover/[^`]+\.md)`", text)
+    if os.environ.get("FAKE_PREP_SLEEP"):
+        time.sleep(float(os.environ["FAKE_PREP_SLEEP"]))
+    if m and os.environ.get("FAKE_NO_HANDOVER") != "1":
+        with open(m.group(1), "w") as f:
+            f.write("# Handover\n- goal: the user's words\n- done / in progress / next\n- decisions\n- paths\n- open questions\n")
+        return "交接写好了"
+    return "没写交接"
+
+
+def p57_notes(text, logf):
+    keep = []
+    for ln in text.split("\n"):
+        if ln.startswith(("（Agent J：", "(Agent J: ")):
+            logf(ln)
+        else:
+            keep.append(ln)
+    return "\n".join(keep).strip("\n")
+
+
 sid = arg("--resume") or str(uuid.uuid4())
 MODEL = [arg("--model") or "claude-fake-1"]
 
@@ -145,7 +172,7 @@ def control(ev):
         r["response"] = {"categories": [{"name": "System prompt", "tokens": 6396, "kind": "used"},
                                         {"name": "Messages", "tokens": 2648, "kind": "used"},
                                         {"name": "Free space", "tokens": 179239, "kind": "free"}],
-                         "totalTokens": 20761, "maxTokens": 200000, "percentage": 10}
+                         "totalTokens": CTX[0], "maxTokens": 200000, "percentage": round(CTX[0] / 2000)}
     elif st == "get_status":
         r["response"] = {"sections": [{"title": "Session", "rows": [
             {"label": "Version", "value": "2.1.285-fake"}, {"label": "Session ID", "value": sid},
@@ -170,6 +197,13 @@ def synthetic(text):
 
 
 last_synth = ["Set model to `Fake` for this session only"]
+CTX = [int(os.environ.get("FAKE_CTX_USED") or 20761)]
+
+
+def note_log(ln):
+    if log:
+        with open(log, "a") as f:
+            f.write(json.dumps({"host_note": ln}, ensure_ascii=False) + "\n")
 SCRIPT = json.load(open(os.environ["FAKE_CLAUDE_SCRIPT"])) if os.environ.get("FAKE_CLAUDE_SCRIPT") else {}
 for line in sys.stdin:
     ev = json.loads(line)
@@ -178,7 +212,13 @@ for line in sys.stdin:
         continue
     text = ev["message"]["content"]
     init()
+    if isinstance(text, str) and ("（Agent J：" in text or "(Agent J: " in text) and not text.startswith("[agentj:"):
+        text = p57_notes(text, note_log)
+    if isinstance(text, str) and os.environ.get("FAKE_CTX_USED") and text != "/compact":
+        CTX[0] = int(os.environ["FAKE_CTX_USED"])
     if text == "/compact":
+        if os.environ.get("FAKE_CTX_USED"):
+            CTX[0] = 1344
         out({"type": "system", "subtype": "status", "status": "compacting", "session_id": sid})
         time.sleep(0.2)
         out({"type": "system", "subtype": "status", "status": None, "compact_result": "success", "session_id": sid})
@@ -221,6 +261,8 @@ for line in sys.stdin:
                 time.sleep(float(step[7:]))
                 continue
             say(run_one(step))
+    elif text.startswith("[agentj:compact-prepare]"):
+        say(p57_prepare(text))
     elif text == "SLOW":
         time.sleep(1.5)
         say("慢回复")
