@@ -2,6 +2,14 @@
 
 PermissionRequest is the only allow-returning boundary: it answers a native
 request through Host.ask. PreToolUse may only return ask, never allow.
+
+Unavailable approval channel (host gone, socket error/timeout, ADR-A146): the
+fallback never allows. Claude high-risk/unclassifiable PreToolUse returns ask
+(the native dialog reaches the person at this computer) and PermissionRequest
+returns nothing (native dialog). Codex 0.159 treats PreToolUse ask as an
+unsupported output and runs the tool, and its native policies auto-run some
+high-risk commands, so Codex keeps deny; OpenCode's tool.execute.before cannot
+ask, so it keeps deny too. Unknown channels fail closed (deny).
 """
 from __future__ import annotations
 import asyncio
@@ -17,6 +25,20 @@ import sys
 EVENTS = ('SessionStart', 'UserPromptSubmit', 'PreToolUse', 'PostToolUse', 'PostToolUseFailure',
           'SubagentStart', 'SubagentStop', 'Stop', 'PreCompact', 'PostCompact', 'SessionEnd', 'PermissionRequest')
 MAX_FRAME = 2 * 1024 * 1024
+# Host-generated channel names; the fallback derives the harness from the
+# channel argument already baked into every installed hook command.
+CHANNELS = {'claude': 'shared-claude.sock', 'codex': 'shared-codex.sock', 'opencode': 'shared-opencode.sock'}
+UNAVAILABLE = 'Agent J phone not connected — confirm on this computer.'
+BLOCKED = 'Agent J phone not connected; high-risk action blocked (this harness cannot hand it to a native prompt).'
+
+
+def channel_path(root, family):
+    return Path(root) / CHANNELS[family]
+
+
+def family_of(channel):
+    name = Path(str(channel)).name
+    return next((family for family, known in CHANNELS.items() if known == name), None)
 
 
 def settings(path, events=EVENTS):
@@ -30,7 +52,8 @@ def install(directory, path, family="claude"):
     """Merge only our hook entries; preserve every native permission and owner hook.
 
     Owner local settings must be valid and not symlinks. Shared hooks are durable
-    so `claude --resume` loads them too; disconnected high-risk requests deny.
+    so `claude --resume` loads them too; disconnected high-risk requests fall back
+    to the native ask (Claude) or deny (Codex), see main().
     """
     dest = Path(directory) / ('.claude' if family == 'claude' else '.codex') / ('settings.local.json' if family == 'claude' else 'hooks.json')
     if dest.is_symlink() or dest.parent.is_symlink():
@@ -118,6 +141,35 @@ class Channel:
             self.path.unlink(missing_ok=True)
 
 
+def fallback(name, family, event, valid_execution):
+    """Decision when the approval channel is unavailable. Never returns allow.
+
+    None means "no decision": native rules and the native dialog decide.
+    """
+    if name not in ('PreToolUse', 'PermissionRequest'):
+        return None  # telemetry never blocks ordinary desktop use or exit
+    try:
+        sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+        from agentj.danger import classify_shared
+        if valid_execution and event.get('hook_event_name') == name and \
+                not classify_shared(event['tool_name'], event['tool_input']).danger:
+            return None  # routine work keeps native authority
+    except Exception:
+        pass  # unclassifiable: treated as high risk below
+    if family == 'claude':
+        if name == 'PermissionRequest':
+            return None  # Claude shows its own dialog to the person at the desktop
+        if isinstance(event, dict) and event.get('hook_event_name') == name and not valid_execution:
+            # Parsed, but the call itself is malformed (no string tool_name /
+            # object tool_input): nothing well-formed to show a person.
+            return {'permissionDecision': 'deny', 'permissionDecisionReason': BLOCKED}
+        # ask forces the native dialog even over an owner allow rule.
+        return {'permissionDecision': 'ask', 'permissionDecisionReason': UNAVAILABLE}
+    if name == 'PermissionRequest':
+        return {'decision': {'behavior': 'deny', 'message': BLOCKED}}
+    return {'permissionDecision': 'deny', 'permissionDecisionReason': BLOCKED}
+
+
 def main():
     event = {}
     valid_execution = False
@@ -144,23 +196,16 @@ def main():
             print(json.dumps(answer))
         return 0
     except Exception:
-        # Stop telemetry never blocks ordinary desktop use when the host is gone.
-        # A detached phone must not disable routine desktop work. Keep native
-        # rules/approval UI for routine operations, but retain fail-closed warnings
-        # for the same four high-risk classes. Never return an allow decision.
+        # Host gone / socket error / timeout / bad event (ADR-A146). A detached
+        # phone must not disable desktop work: routine operations keep native
+        # rules; high-risk ones go to the native ask where that provably reaches
+        # a person (Claude), otherwise deny. Never return an allow decision.
         expected = sys.argv[2] if len(sys.argv) > 2 and sys.argv[2] in EVENTS else None
         name = expected or (event.get('hook_event_name') if isinstance(event, dict) else None) or 'PreToolUse'
-        if name in ('PreToolUse', 'PermissionRequest'):
-            try:
-                sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-                from agentj.danger import classify_shared
-                if valid_execution and isinstance(event, dict) and event.get('hook_event_name') == name and not classify_shared(event.get('tool_name', '?'), event.get('tool_input') or {}).danger:
-                    return 0
-            except Exception:
-                pass  # Unclassifiable requests still fail closed.
-            result={'decision':{'behavior':'deny','message':'Agent J shared approval channel unavailable.'}} if name == 'PermissionRequest' else {'permissionDecision':'deny','permissionDecisionReason':'Agent J shared approval channel unavailable.'}
-            print(json.dumps({'hookSpecificOutput':{'hookEventName':name,**result}}))
-            return 0
+        family = family_of(sys.argv[1]) if len(sys.argv) > 1 else None
+        result = fallback(name, family, event if isinstance(event, dict) else {}, valid_execution)
+        if result is not None:
+            print(json.dumps({'hookSpecificOutput': {'hookEventName': name, **result}}))  # ASCII-safe under any locale
         return 0
 
 

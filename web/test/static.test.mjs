@@ -55,7 +55,8 @@ test('version.json / version.js match the shipped files', () => {
 // The only absolute URLs anywhere: plain links to our own site's pages (navigation, never a resource the page loads —
 // CSP default-src 'self' + connect-src = the relays enforce that too), plus — in app.js only — the new web origin the
 // legacy host sends an unpaired visitor to. The relay URLs live only in the Worker CSP config (app.js pins relay HOSTS).
-const SITE_LINK = /^https:\/\/agentj\.app\/(?:[a-z]+\/)*$/;
+// (F1: the menu's 「邀请与积分」 opens the account page at its invite block — the one link with a fragment)
+const SITE_LINK = /^https:\/\/agentj\.app\/(?:[a-z]+\/)*(?:#invite)?$/;
 const NEW_WEB_ORIGIN = 'https://m.agentj.app';
 const LICENCE_TEXT = new Set(['brand/fonts/UFL-1.0-ubuntu.txt', 'brand/fonts/OFL-1.1-lexend.txt', 'brand/fonts/README.md']);   // licence texts cite their sources
 test('no URLs to anywhere in shipped files except links to agentj.app pages', () => {
@@ -357,6 +358,21 @@ test('app.js pins exactly our two relay hosts; the legacy host sends a visitor w
 // cleanName() lifted out of app.js and run here on hostile input (the screens test drives the same through the page)
 const CLEAN_SRC = APP.match(/const NAME_MAX = \d+;[\s\S]*?\nfunction cleanName\(v\) \{[\s\S]*?\n\}/)[0];
 const cleanName = new Function(`${CLEAN_SRC}; return cleanName;`)();
+test('F1: the menu offers 「邀请与积分」, a plain new-tab link to the account page\'s invite block (no script, no token in the URL)', () => {
+  const a = HTML.match(/<a [^>]*data-i18n="menu\.invite"[^>]*>([^<]*)<\/a>/);
+  assert.ok(a, 'menu invite entry present');
+  const tag = a[0];
+  assert.match(tag, /\bhref="https:\/\/agentj\.app\/account\/#invite"/);
+  assert.match(tag, /\btarget="_blank"/);
+  assert.match(tag, /\brel="noopener"/);
+  assert.match(tag, /class="ajmenu__item"/);
+  const d = dictionaries();
+  assert.equal(d.zh['menu.invite'], '邀请与积分');
+  assert.equal(d.en['menu.invite'], 'Invites and points');
+  assert.equal(a[1], d.zh['menu.invite'], 'zh fallback text in the page = the dictionary');
+  // the entry sits inside the ≡ menu, before the help links
+  assert.ok(HTML.indexOf('data-i18n="menu.invite"') < HTML.indexOf('data-i18n="menu.help"'));
+});
 test('Agent name from the host: text only, control / format chars dropped, ≤ 32 code points, null → default', () => {
   assert.equal(cleanName('Leo 的助手'), 'Leo 的助手');
   assert.equal(cleanName('  市场部   Agent  '), '市场部 Agent');

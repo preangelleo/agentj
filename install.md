@@ -1,15 +1,15 @@
 ---
 document: agentj-install
-version: 0.17.0
-released: 2026-10-04
+version: 0.18.0
+released: 2026-10-05
 status: beta (anyone can sign up; not advertised yet, pages are not indexed)
 host_package: agentj (the `agentj` command)
-host_version: 0.13.0a1
-source_tag: v0.13.0a1
-host_wheel: agentj-0.13.0a1-py3-none-any.whl
-host_wheel_sha256: e0c6d0d6d116b806b64634f03479d2eaeb49ff862cacda91a7cc1e8b5b4fb601
-host_sdist: agentj-0.13.0a1.tar.gz
-host_sdist_sha256: 307abc88bf10aa3f3ef28533e233230701696fab5adc1457f1b91e8c9620084c
+host_version: 0.14.0a1
+source_tag: v0.14.0a1
+host_wheel: agentj-0.14.0a1-py3-none-any.whl
+host_wheel_sha256: fd70676af879283d8b65d5586c838fff864c1206b744d397bded39ec169c711c
+host_sdist: agentj-0.14.0a1.tar.gz
+host_sdist_sha256: 73c44ec288088bddc908dafb6be180a68333e70c51102a5b503f9852740e05a1
 canonical_url: https://agentj.app/install.md
 sha256_url: https://agentj.app/install.md.sha256
 alias: https://agentjarvis.net/install.md (the older address: the same file, kept for one more version)
@@ -18,8 +18,6 @@ mirror_url: https://github.com/preangelleo/agentj/blob/main/install.md
 signature: none yet — integrity = the SHA-256 published on the site must match the GitHub copy (Step 1); the program's own files are pinned by source_tag and the two host_*_sha256 values above (Step 4)
 language: en (talk to your human in their language)
 ---
-
-> P40d local candidate: not published yet. Shared desktop sessions and owner permissions are verified for Claude Code, Codex and OpenCode; high-risk warnings remain enabled. Keep the published 0.12.2a1 installation until a verified release is announced.
 
 # Install Agent J — instructions for the AI agent on this computer
 
@@ -339,7 +337,7 @@ The astral installer warning that `uv` / `uvx` are shadowed is informational if 
 carry over). So start every command line from here on with `export PATH="$HOME/.local/bin:$PATH";` — or call
 `~/.local/bin/agentj` by its full path. This document writes `agentj` for short.
 
-The program is pinned to one release: the tag `v0.13.0a1` (front matter `source_tag`). The tag never moves, and its
+The program is pinned to one release: the tag `v0.14.0a1` (front matter `source_tag`). The tag never moves, and its
 `host/` folder is byte for byte the same code as the two files on our site whose SHA-256 is in this document's front matter.
 ```bash
 cd ~/.agentj-install
@@ -347,7 +345,7 @@ W=$(sed -n 's/^host_wheel: //p' install.md); WS=$(sed -n 's/^host_wheel_sha256: 
 curl -fsSLO "https://agentj.app/dl/$W"
 echo "$WS  $W" | sha256sum -c -   # macOS: shasum -a 256 -c -; mismatch → stop
 uv tool install "./$W"
-export PATH="$HOME/.local/bin:$PATH"; agentj --version     # → agentj 0.13.0a1
+export PATH="$HOME/.local/bin:$PATH"; agentj --version     # → agentj 0.14.0a1
 export PATH="$HOME/.local/bin:$PATH"; agentj doctor
 ```
 **Your human's own terminal must find `agentj` too** — they run `agentj passphrase set` and `agentj pair` themselves
@@ -375,12 +373,12 @@ echo "$WS  $W" | sha256sum -c - && echo "$SS  $S" | sha256sum -c -    # macOS: s
 uv tool install "./$W"          # the wheel; its dependencies come from PyPI or the mirror in UV_DEFAULT_INDEX
 ```
 `uv tool install "./$S"` installs from the checked source archive instead (it builds the same program).
-`https://agentj.app/dl/latest.txt` and `https://agentj.app/dl/latest-sdist.txt` name the same two files. `agentj --version` is the program's own version (`0.13.0a1`); it is
+`https://agentj.app/dl/latest.txt` and `https://agentj.app/dl/latest-sdist.txt` name the same two files. `agentj --version` is the program's own version (`0.14.0a1`); it is
 numbered separately from this document (`0.17.0`).
 
-Alternative from the matching published source tag: `uv tool install "git+https://github.com/preangelleo/agentj@v0.13.0a1#subdirectory=host"`.
+Alternative from the matching published source tag: `uv tool install "git+https://github.com/preangelleo/agentj@v0.14.0a1#subdirectory=host"`.
 
-Alternative without uv: `pipx install "git+https://github.com/preangelleo/agentj@v0.13.0a1#subdirectory=host"` (needs Python 3.11+).
+Alternative without uv: `pipx install "git+https://github.com/preangelleo/agentj@v0.14.0a1#subdirectory=host"` (needs Python 3.11+).
 `agentj doctor` lists what is ready and what is not (prerequisites, the fence, connectivity, which agents are usable).
 Continue unless it reports an error that a later step does not fix; report anything you cannot explain.
 
@@ -906,11 +904,11 @@ prints something and `uv tool list` (or `pipx list`) shows `agentjarvis-host`, t
 the new name, then:
 ```bash
 jarvis service uninstall      # stop the old service first (Step 10 used tmux / nohup instead? stop that process)
-uv tool uninstall agentjarvis-host && uv tool install "git+https://github.com/preangelleo/agentj@v0.13.0a1#subdirectory=host"
+uv tool uninstall agentjarvis-host && uv tool install "git+https://github.com/preangelleo/agentj@v0.14.0a1#subdirectory=host"
 agentj doctor
 agentj service install        # start it again under the new name (or the tmux / nohup fallback, Step 10)
 ```
-With pipx instead of uv: `pipx uninstall agentjarvis-host && pipx install "git+https://github.com/preangelleo/agentj@v0.13.0a1#subdirectory=host"`.
+With pipx instead of uv: `pipx uninstall agentjarvis-host && pipx install "git+https://github.com/preangelleo/agentj@v0.14.0a1#subdirectory=host"`.
 - After the move, `agentj` puts back a `jarvis` command (a link to `agentj`, only if no other `jarvis` exists) for one more
   version; it prints a notice that points here. New installs never get `jarvis`.
 - The state moves by itself on the first run of `agentj`: from `~/.local/state/agentjarvis-alpha` to `~/.local/state/agentj`.
@@ -1195,6 +1193,10 @@ or logs out Claude Code / Codex / OpenCode (nor removes a model key), and never 
   signed per-turn category approval. Pairing is preserved on upgrade. Publish only after ready.json
   and all strict/export/secret gates pass.
 
+- 0.18.0 (2026-10-05): host 0.14.0a1. With the phone not connected, a high-risk action in a shared Claude Code
+  session goes to Claude Code's own permission dialog on this computer instead of being refused; Codex and OpenCode
+  still block it. The stale "local candidate" note at the top is gone.
+
 ### Shared native sessions (0.13)
 The default `agent.session_mode=shared` follows the native harness permissions.
 Routine file/script/dependency/git-commit work receives no extra Agent J card;
@@ -1216,7 +1218,15 @@ Shared mode deliberately uses the native owner's local OS authority outside the
 independent fence. Never disable native permissions to suppress approvals.
 
 Upgrading 0.12 adds the shared default without deleting state or requiring re-pairing.
-Until the local release report says ready=true and the official tag is published,
-keep the stable 0.12.2a1 release. Do not install a local candidate as a workaround.
+Install only the published tag and files named in the front matter; never a local
+candidate as a workaround.
+
+### Phone not connected (0.14)
+When the Agent J host has stopped or the phone is not connected, routine work keeps
+the native permissions and Agent J never answers "allow". For the same four
+high-risk classes, Claude Code shows its own permission dialog on this computer
+(even over an owner allow rule), so the person at the computer decides. Codex and
+OpenCode cannot hand that decision to a native dialog: there the high-risk action
+stays blocked until the phone is connected again.
 
 Credential troubleshooting safety: check only storage existence (v1 `auth.json`, v2 `opencode.db`) and, if the owner needs identification, a masked suffix of at most four characters. Never dump `auth.json`, SQLite rows, tokens, environment files or database contents to chat/logs. Existence does not prove a valid provider key. After `opencode auth login` changes a key, run `agentj service restart`; with shared attachment also restart the owner's OpenCode server when idle. Keep `AGENTJ_OPENCODE_BIN` in the service env file: existing saved overrides win on upgrade, units/plists contain no binary override. Without an override, first PATH executable wins; a mise/asdf shim resolves only to its configured version or one unambiguous installation. Doctor reports the selected path and why; selection changes are printed by service install.

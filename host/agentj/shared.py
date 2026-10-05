@@ -217,7 +217,7 @@ class SharedClaudeAgent(Agent):
         if hooks_blocked(self.cfg["dir"]):
             raise ValueError("native Claude hooks disabled")
         self.loop = asyncio.get_running_loop()
-        self.channel = shared_hook.Channel(self, self.host.st.root / "shared-claude.sock")
+        self.channel = shared_hook.Channel(self, shared_hook.channel_path(self.host.st.root, "claude"))
         await self.channel.start()
         shared_hook.install(self.cfg["dir"], self.channel.path)
 
@@ -465,7 +465,7 @@ class SharedOpenCodeAgent(OpenCodeAgent):
     async def prepare_risk(self):
         if not self.cfg.get('high_risk_warnings',True) or self.risk_channel:
             return
-        self.risk_channel=shared_hook.Channel(self.risk,self.host.st.root/'shared-opencode.sock')
+        self.risk_channel=shared_hook.Channel(self.risk,shared_hook.channel_path(self.host.st.root,'opencode'))
         await self.risk_channel.start()
         shared_opencode_hook.install(self.cfg['dir'],self.risk_channel.path)
 

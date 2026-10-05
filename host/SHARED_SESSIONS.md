@@ -62,10 +62,14 @@ phone peer credential request before calling any tool, which was not counted as
 high-risk acceptance. A separate phone-origin native permission request passed.
 Publication remains governed by the complete strict/export/secret gates and ready.json.
 
-When the phone channel is detached, routine desktop tools retain native rules and
-permission UI. Only the same four high-risk categories fail closed; hooks never
-return allow while disconnected. Native CLI resume also verifies a real routine
-Read after the host exits.
+When the phone channel is detached (host gone, socket error/timeout), routine
+desktop tools retain native rules and permission UI, and hooks never return allow
+(ADR-A146). For the same four high-risk categories: Claude PreToolUse returns
+`ask` (the native dialog, even over an owner allow rule) and PermissionRequest
+returns nothing, so the person at the computer decides. Codex and OpenCode keep
+deny: Codex 0.159 runs the tool when PreToolUse answers `ask` and its native
+policies auto-run some high-risk commands; OpenCode's before-hook cannot ask.
+Native CLI resume also verifies a real routine Read after the host exits.
 
 A same-category rejection blocks retries without another phone card until a new
 prompt. Both approvals and rejections are scoped to the current turn epoch.

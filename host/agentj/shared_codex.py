@@ -147,7 +147,7 @@ class SharedCodexAgent(CodexAgent):
 
     async def _spawn(self):
         if self.cfg.get('high_risk_warnings',True) and not self.risk_channel:
-            self.risk_channel=shared_hook.Channel(self.risk,self.host.st.root/'shared-codex.sock')
+            self.risk_channel=shared_hook.Channel(self.risk,shared_hook.channel_path(self.host.st.root,'codex'))
             await self.risk_channel.start()
             shared_hook.install(self.cfg['dir'],self.risk_channel.path,family='codex')
         return await super()._spawn()

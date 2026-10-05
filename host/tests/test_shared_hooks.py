@@ -180,30 +180,116 @@ class NativeRiskHooks(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(result['hookSpecificOutput']['permissionDecision'],'deny')
 
 class DisconnectedHooks(unittest.TestCase):
-    def test_malformed_or_oversized_execution_payload_fails_closed(self):
-        import subprocess,sys
-        for payload in ('{broken', 'null', 'x' * (shared_hook.MAX_FRAME+1), '{"hook_event_name":"Stop"}', '{"hook_event_name":"PreToolUse","tool_name":"Read","tool_input":"malformed"}'):
-            r=subprocess.run([sys.executable,shared_hook.__file__,'/var/tmp/absent-agentj-channel','PreToolUse'],input=payload,text=True,capture_output=True,check=True)
-            self.assertEqual(json.loads(r.stdout)['hookSpecificOutput']['permissionDecision'],'deny')
-        r=subprocess.run([sys.executable,shared_hook.__file__,'/var/tmp/absent-agentj-channel','Stop'],input='{broken',text=True,capture_output=True,check=True)
-        self.assertEqual(r.stdout,'','bad telemetry cannot grant execution or block desktop exit')
+    """F11 / ADR-A146: the real hook script with no host listening on its channel."""
+    DANGER=[('Bash',{'command':'git push origin main'}),('Bash',{'command':'stripe payments create'}),
+            ('Bash',{'command':'gh api -X DELETE repos/owner/repo'}),('Read',{'file_path':'/tmp/demo.pem'}),
+            ('exec_command',{'cmd':'cat ~/.ssh/id_ed25519'}),('apply_patch',{'command':'*** Update File: /tmp/demo.pem'})]
+    ROUTINE=[('Read',{'file_path':'/tmp/package.json'}),('Bash',{'command':'git commit -m local'})]
+    MALFORMED=['{broken','null','{"hook_event_name":"Stop"}',
+               '{"hook_event_name":"PreToolUse","tool_name":"Read","tool_input":"malformed"}']
 
-    def test_routine_keeps_native_authority_and_high_risk_is_denied(self):
-        import subprocess, sys
-        for name,tool,inp,risk in [
-            ('PreToolUse','Read',{'file_path':'/tmp/package.json'},False),
-            ('PermissionRequest','Bash',{'command':'git commit -m local'},False),
-            ('PreToolUse','exec_command',{'cmd':'cat ~/.ssh/id_ed25519'},True),
-            ('PreToolUse','apply_patch',{'command':'*** Update File: /tmp/demo.pem'},True),
-            ('PermissionRequest','Read',{'file_path':'/tmp/demo.pem'},True)]:
-            with self.subTest(name=name,tool=tool):
-                r=subprocess.run([sys.executable, shared_hook.__file__, '/var/tmp/absent-agentj-channel'],
-                    input=json.dumps({'hook_event_name':name,'tool_name':tool,'tool_input':inp}),
-                    text=True,capture_output=True,check=True)
-                if risk:
-                    d=json.loads(r.stdout)['hookSpecificOutput']
-                    self.assertEqual(d.get('permissionDecision',d.get('decision',{}).get('behavior')),'deny')
-                else:
-                    self.assertEqual(r.stdout,'','absence of a decision preserves native authority')
+    def setUp(self):
+        tmp=tempfile.TemporaryDirectory(prefix='absent-agentj-',dir='/var/tmp');self.addCleanup(tmp.cleanup)
+        self.root=Path(tmp.name)
+
+    def run_hook(self,family,payload,event=None):
+        import subprocess,sys
+        channel=str(shared_hook.channel_path(self.root,family)) if family else str(self.root/'absent-agentj-channel')
+        argv=[sys.executable,shared_hook.__file__,channel]+([event] if event else [])
+        r=subprocess.run(argv,input=payload if isinstance(payload,str) else json.dumps(payload),
+                         text=True,capture_output=True,check=True,timeout=60)
+        return json.loads(r.stdout)['hookSpecificOutput'] if r.stdout.strip() else None
+
+    @staticmethod
+    def decision(out):
+        return None if out is None else out.get('permissionDecision',(out.get('decision') or {}).get('behavior'))
+
+    def test_claude_host_gone_high_risk_asks_natively(self):
+        for tool,inp in self.DANGER:
+            with self.subTest(tool=tool,inp=inp):
+                out=self.run_hook('claude',{'hook_event_name':'PreToolUse','tool_name':tool,'tool_input':inp},'PreToolUse')
+                self.assertEqual(out['permissionDecision'],'ask','a desktop push must reach the native dialog, not a hard deny')
+                self.assertEqual(out['hookEventName'],'PreToolUse')
+                self.assertEqual(out['permissionDecisionReason'],shared_hook.UNAVAILABLE)
+                self.assertIsNone(self.run_hook('claude',{'hook_event_name':'PermissionRequest','tool_name':tool,'tool_input':inp},'PermissionRequest'),
+                    'PermissionRequest leaves the native dialog to the person at the computer')
+
+    def test_routine_keeps_native_authority_for_every_family(self):
+        for family in ('claude','codex','opencode',None):
+            for name in ('PreToolUse','PermissionRequest'):
+                for tool,inp in self.ROUTINE:
+                    with self.subTest(family=family,name=name,tool=tool):
+                        self.assertIsNone(self.run_hook(family,{'hook_event_name':name,'tool_name':tool,'tool_input':inp},
+                                                        None if family=='opencode' else name))
+
+    def test_codex_opencode_and_unknown_channels_keep_deny(self):
+        # Verified on codex-cli 0.159.2: PreToolUse "ask" is an unsupported output
+        # (hook marked Failed, the tool then ran), and under on-request a credential
+        # read ran with no approval. OpenCode 1.18.32 before-hooks cannot ask.
+        for family,event in (('codex','PreToolUse'),('opencode',None),(None,'PreToolUse'),(None,'PermissionRequest')):
+            for tool,inp in self.DANGER:
+                with self.subTest(family=family,event=event,tool=tool):
+                    out=self.run_hook(family,{'hook_event_name':event or 'PreToolUse','tool_name':tool,'tool_input':inp},event)
+                    self.assertEqual(self.decision(out),'deny')
+                    self.assertEqual(out.get('permissionDecisionReason',(out.get('decision') or {}).get('message')),shared_hook.BLOCKED)
+
+    def test_malformed_payloads_ask_on_claude_and_never_allow(self):
+        for payload in self.MALFORMED[:3]+['x'*(shared_hook.MAX_FRAME+1)]:
+            with self.subTest(payload=payload[:20]):
+                self.assertEqual(self.run_hook('claude',payload,'PreToolUse')['permissionDecision'],'ask')
+                self.assertIsNone(self.run_hook('claude',payload,'PermissionRequest'))
+                self.assertEqual(self.decision(self.run_hook('codex',payload,'PreToolUse')),'deny')
+        self.assertEqual(self.run_hook('claude',self.MALFORMED[3],'PreToolUse')['permissionDecision'],'deny',
+                         'a malformed tool call itself has nothing well-formed to show a person')
+        self.assertIsNone(self.run_hook('claude','{broken','Stop'),'bad telemetry cannot grant execution or block desktop exit')
+
+    def test_no_fallback_path_ever_allows(self):
+        payloads=[{'hook_event_name':n,'tool_name':t,'tool_input':i} for n in ('PreToolUse','PermissionRequest')
+                  for t,i in self.DANGER+self.ROUTINE]+self.MALFORMED
+        for family in ('claude','codex','opencode',None):
+            for event in ('PreToolUse','PermissionRequest',None):
+                for payload in payloads:
+                    out=self.run_hook(family,payload,event)
+                    self.assertNotIn(self.decision(out),('allow','approve'),(family,event,payload))
+                    self.assertNotIn('updatedInput',json.dumps(out or {}))
+
+    def test_installed_opencode_plugin_blocks_high_risk_and_passes_routine(self):
+        import shutil,subprocess
+        node=shutil.which('node')
+        if not node: self.skipTest('node not installed')
+        from agentj import shared_opencode_hook
+        project=self.root/'project';project.mkdir()
+        plugin=shared_opencode_hook.install(project,shared_hook.channel_path(self.root,'opencode'))
+        js=("const {AgentJShared}=await import(process.argv[1]);const h=await AgentJShared({directory:'/var/tmp'});"
+            "const out=[];for(const command of process.argv.slice(2)){"
+            "try{await h['tool.execute.before']({tool:'bash',sessionID:'s'},{args:{command}});out.push('ran')}"
+            "catch(e){out.push('blocked:'+e.message)}}console.log(JSON.stringify(out));")
+        r=subprocess.run([node,'--input-type=module','-e',js,plugin.as_uri(),'git commit -m local','git push origin main'],
+                         capture_output=True,text=True,timeout=60)
+        self.assertEqual(r.returncode,0,r.stderr)
+        self.assertEqual(json.loads(r.stdout),['ran','blocked:'+shared_hook.BLOCKED])
+
+
+class ConnectedPhoneDenyUnchanged(unittest.IsolatedAsyncioTestCase):
+    """A live host whose paired phone answers deny is still a deny; F11 changes only the unavailable path."""
+    async def test_connected_phone_deny_reaches_the_hook_script_as_deny(self):
+        import subprocess,sys
+        tmp=tempfile.TemporaryDirectory(prefix='cc-hooks-',dir='/var/tmp');self.addCleanup(tmp.cleanup)
+        root=Path(tmp.name);host=Mock();host.st.root=root;host.stopped.return_value=False
+        host.ask=AsyncMock(return_value={'behavior':'deny'})
+        a=shared.SharedClaudeAgent(host,{'kind':'claude','dir':str(root),'_workflow_ceo':True,'high_risk_warnings':True})
+        a.session={'sessionId':'owner'}
+        chan=shared_hook.Channel(a,shared_hook.channel_path(root,'claude'));await chan.start()
+        try:
+            async def hook(name):
+                proc=await asyncio.create_subprocess_exec(sys.executable,shared_hook.__file__,str(chan.path),name,
+                    stdin=subprocess.PIPE,stdout=subprocess.PIPE)
+                out,_=await proc.communicate(json.dumps({'hook_event_name':name,'session_id':'owner','tool_name':'Bash',
+                    'tool_input':{'command':'git push origin main'}}).encode())
+                return json.loads(out)['hookSpecificOutput']
+            self.assertEqual((await hook('PreToolUse'))['permissionDecision'],'ask')
+            self.assertEqual((await hook('PermissionRequest'))['decision']['behavior'],'deny')
+            host.ask.assert_awaited_once()
+        finally:await chan.stop()
 
 if __name__=='__main__':unittest.main()

@@ -2,6 +2,8 @@
 
 No rules, tool arguments or native permission answers are changed by this plugin.
 The existing permission.asked path still forwards the owner's native approvals.
+OpenCode 1.18 tool.execute.before has no ask outcome (only mutate args or throw),
+so a disconnected high-risk request stays blocked (ADR-A146).
 """
 import json
 import os
@@ -37,7 +39,9 @@ export const AgentJShared = async ({directory}) => {
     const args={...output.args};if(args.filePath)args.file_path=args.filePath;
     const result=await request({hook_event_name:'PreToolUse',session_id:input.sessionID,
       cwd:directory,tool_name:names[input.tool]||('mcp__'+input.tool),tool_input:args});
-    if(result.hookSpecificOutput?.permissionDecision==='deny')throw new Error('Denied by paired phone');
+    // OpenCode's before-hook cannot ask: deny or ask both block the call.
+    const decision=result.hookSpecificOutput?.permissionDecision;
+    if(decision==='deny'||decision==='ask')throw new Error(result.hookSpecificOutput.permissionDecisionReason||'Denied by paired phone');
   }};
 };
 '''.replace('PYTHON',json.dumps(sys.executable)).replace('HOOK',json.dumps(str(Path(shared_hook.__file__).resolve()))).replace('CHANNEL',json.dumps(str(channel)))

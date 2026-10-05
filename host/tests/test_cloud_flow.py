@@ -89,7 +89,7 @@ class Flow(unittest.TestCase):
             self.assertEqual(rep["devices"], [{"id": did, "name": "Leo 的手机", "paired_at": rep["devices"][0]["paired_at"],
                                                "online": False}])
             self.assertEqual(rep["pending"], {"count": 0, "since": None})
-            self.assertEqual(rep["agent"], "agentj/0.13.0a1")
+            self.assertEqual(rep["agent"], "agentj/0.14.0a1")
             self.assertGreater(rep["seq"], cp.reports[0]["seq"])
             self.assertEqual(cp.rejected, [])
             self.assertIn("acme-co", self.agentj("devices").stdout)

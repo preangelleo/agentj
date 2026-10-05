@@ -1,6 +1,6 @@
-# Agent J 0.13.0a1 release notes
+# Agent J 0.14.0a1 release notes
 
-Host 0.13.0a1 / install 0.17.0; phone-web scope.
+Host 0.14.0a1 / install 0.18.0; phone-web scope.
 Phone parity must pass --strict. Full Android/Telegram parity is incomplete.
 Full Android/Telegram parity is incomplete.
 No APK is included in this release. Android source is for review, not a released app.
@@ -8,7 +8,7 @@ No APK is included in this release. Android source is for review, not a released
 Publication status: local preparation only. Live site verification is DEFERRED until
 the public commit and tag are pushed, the site is deployed, and cold installation passes.
 
-On publication failure, restore v0.12.2a1 / public 628fffb, including site and phone web.
+On publication failure, restore v0.13.0a1 / public 94cdf4f, including the site.
 ## Changes
 
 - Sparse JSON5 configuration with transactional application, configuration history and migrations.
@@ -16,10 +16,10 @@ On publication failure, restore v0.12.2a1 / public 628fffb, including site and p
 - Opt-in own-key cloud speech and local phone read-aloud.
 - Optional owner-private Telegram text input and final replies.
 
-- Saved service binary overrides survive reinstall/upgrade; no unit/plist binary hardcoding.
-- Doctor explains installation selection and detects conflicting service paths.
-- OpenCode v1/v2 storage hints never expose provider keys; login changes require service restart.
-- Shared-session/default/high-risk claims require completed strict inventory evidence; no P41 waivers apply.
+- Phone not connected (host gone, socket error/timeout): a high-risk action in a shared Claude Code session
+  goes to Claude Code's own permission dialog on the computer (ask); Codex and OpenCode keep blocking it.
+  No fallback path ever answers allow (ADR-A146).
+- Install guide 0.18.1 (same tag, host unchanged) adds the yearly price and invite-code wording with the billing release.
 
 ## Material acceptance limits
 
