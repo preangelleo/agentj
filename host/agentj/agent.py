@@ -32,7 +32,7 @@ import sys
 import time
 from dataclasses import dataclass
 
-from . import compactprep, danger, fence, slash, main_identity
+from . import danger, fence, slash, main_identity
 from .slash import Result
 from .envcompat import getenv
 from .text import clean, clean_line, text_units
@@ -153,7 +153,6 @@ class Agent:
         self.ended: set = set()       # processes serve ended on purpose: their exit is not news (no notice)
         self.turn_proc = None         # the process the running turn talks to (an older one's exit cannot end it)
         self.cur_send = None          # the phone's `say` this turn delivers (compose.Send), None for anything else
-        self.cur_cmd = None           # the command (Cmd) running now — F24 shows its progress on that page
         self.models_cache: list = []  # §10.11: [{"id", "name", "efforts"}] as the harness listed them
 
     def set_status(self, s: str) -> None:
@@ -252,7 +251,7 @@ class Agent:
                         self.host.agent_turn_start(send.text, send)
                     try:
                         await self._identity_refresh()
-                        await self.turn(compactprep.decorate(self, send))   # F24: handover note / context reminder
+                        await self.turn(send.text)
                     except asyncio.CancelledError:
                         raise
                     except Withdrawn:
@@ -279,15 +278,12 @@ class Agent:
                         if self.q.empty():
                             self.set_status("down" if self.is_down() else "idle")
                         continue
-                    self.cur_cmd = text              # F24: compactprep shows its progress on this command's page
                     try:
                         res = await self.command(text.name, text.arg)
                     except asyncio.CancelledError:
                         raise
                     except Exception as e:  # noqa: BLE001 — a command bug costs one card, never serve
                         res = Result(f"命令出错（{type(e).__name__}）。", "error")
-                    finally:
-                        self.cur_cmd = None
                     self.host.cmd_done(text, res)
                     if self.q.empty():
                         self.set_status("down" if self.is_down() else "idle")
@@ -390,14 +386,6 @@ class Agent:
         fn = getattr(self, "cmd_" + name, None) if name in slash.WHITELIST + slash.INTERNAL else None
         if fn is None:
             return Result(slash.REFUSE, "refused")
-        if name == "compact" and compactprep.applies(self):    # F24: the handover first, then the compaction as before
-            return await compactprep.compact(self, fn, arg)
-        if name == "clear" and compactprep.applies(self):
-            key = compactprep.session_key(self)
-            res = await fn(arg)
-            if res.undo:
-                compactprep.cleared(self, key)
-            return res
         return await fn(arg)
 
     async def drop_conversation(self) -> None:
@@ -774,8 +762,6 @@ class ClaudeAgent(Agent):
             if self.capture is None:               # Claude Code compacted on its own in the middle of a turn
                 self.host.agent_notice(f"Claude Code 自动压缩了上下文：{slash.tokens(meta.get('pre_tokens'))} → "
                                        f"{slash.tokens(meta.get('post_tokens'))} tokens")
-                with contextlib.suppress(RuntimeError):      # F24: a new epoch (handover note / reminder) all the same
-                    asyncio.get_running_loop().create_task(compactprep.compacted(self, auto=True))
         elif t == "control_response":
             r = ev.get("response") if isinstance(ev.get("response"), dict) else {}
             f = self.ctl.get(r.get("request_id"))

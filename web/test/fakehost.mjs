@@ -161,7 +161,6 @@ export async function startFakeHost() {
       return afterReady(c);
     }
     if (!c.isReady) return;
-    if (st.onApp && await st.onApp(c, m, (o) => sendApp(c, o))) return;   // a test's own handler (P57 media: media_get)
     if (m.t === 'msg') { st.says.push(m); if (st.autoReply) await sendApp(c, { t: 'msg', id: randomBytes(8).toString('hex'), text: 'echo: ' + m.text, ts: Date.now(), from: 'agent', seq: ++st.seq }); return; }
     if (m.t === 'say') return onSay(c, m);
     if (m.t === 'say_cancel') {

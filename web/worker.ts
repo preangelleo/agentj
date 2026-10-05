@@ -20,12 +20,9 @@ export function notFound(): Response {
   return new Response("Not Found", { status: 404, headers: { "content-type": "text/plain", "x-robots-tag": "noindex, nofollow", "cache-control": "no-store, no-transform" } });
 }
 
-/** relay = the connect-src source list (space-separated).
- *  style-src 'unsafe-inline' (0.15.2, P57): mermaid lays a diagram out in the live page — a <style> element and style=""
- *  attributes — before render.js turns it into an <img>. Scripts stay 'self' only (no inline script, no eval), and the page
- *  never parses Agent text as HTML, so no Agent text can become a style; img / font / connect stay 'self' / the relays. */
+/** relay = the connect-src source list (space-separated). */
 export function csp(relay: string): string {
-  return "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; " +
+  return "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: blob:; " +
     `connect-src ${relay}; media-src 'self' blob:; frame-ancestors 'none'; base-uri 'none'; form-action 'none'; object-src 'none'`;
 }
 

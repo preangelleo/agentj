@@ -34,7 +34,7 @@ import threading
 import time
 
 from . import DIST, __version__, cloud, gate, names
-from . import docsrule, feedback, handover, plaza, recall, support, wizard
+from . import docsrule, feedback, handover, plaza, support, wizard
 from . import elevate, elevate_helper
 from .state import DEFAULT_RELAY, DEFAULT_WEB, MAX_DEVICES, State
 from .envcompat import getenv
@@ -647,8 +647,7 @@ def cmd_devices(a) -> None:
         print("还没有已批准的设备。用 `agentj pair` 配对。")
     for did, v in devs.items():
         when = time.strftime("%Y-%m-%d %H:%M", time.localtime(v.get("paired_at", 0)))
-        fid = "  Face ID ✓" if isinstance(v.get("pk"), dict) else ""   # F20: this phone can reconnect with its passkey
-        print(f"{did}  {'在线' if did in online else '离线'}  {v.get('name', '')}  配对于 {when}{fid}")
+        print(f"{did}  {'在线' if did in online else '离线'}  {v.get('name', '')}  配对于 {when}")
 
 
 def cmd_revoke(a) -> None:
@@ -1724,7 +1723,7 @@ def main_jarvis(argv=None) -> None:
 
 # `migrate status` reports, `migrate rollback` undoes, `docs-rule` prints (or, with --write and the human's y, appends to the
 # AI's own memory file), `handover` only reads: none may move the state directory first
-NO_MIGRATE = ("migrate", "docs-rule", "handover", "recall")   # recall: read-only, usually inside the fence
+NO_MIGRATE = ("migrate", "docs-rule", "handover")
 
 
 def main(argv=None) -> None:
@@ -1896,7 +1895,6 @@ def main(argv=None) -> None:
     handover.add_parser(sub)
     plaza.add_parser(sub)
     support.add_parser(sub)   # F18: agentj support ask | report | thread | list
-    recall.add_parser(sub)    # F22 (P57): agentj recall <keywords> [--days N] [--date D] — the main Agent finds an earlier conversation
     mg = sub.add_parser("migrate", help="改名后的状态目录搬迁：status 查看 · rollback 撤销 / the 0.10 state move: status · rollback",
                         description="0.9 的状态目录 ~/.local/state/agentjarvis-alpha 会自动搬到 ~/.local/state/agentj（旧路径留一个链接）。"
                                     "rollback 搬回去（serve 必须没在运行）/ the old state directory moves automatically; rollback moves it back")

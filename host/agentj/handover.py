@@ -18,7 +18,6 @@ from .state import DEFAULT_WEB, MAX_DEVICES, State, state_dir
 
 LANGS = ("zh", "en")
 DOCS_URL = "https://agentj.app/docs/"
-MANUAL_URL = "https://agentj.app/docs/manual/"   # F23 (0.15.2): the illustrated user guide (= the Agent's agentj-manual skill)
 REFUND_DAYS = 7
 CONTACT = "founder@agentj.app"   # refunds and billing (site pricing / refund policy)
 AGENT_LABEL = {"claude": "Claude Code", "codex": "Codex", "opencode": "OpenCode"}
@@ -134,7 +133,6 @@ def _zh(f: dict) -> str:
         "**不想用了**：先在账号后台的「管理账单」里取消订阅——卸载不会停止扣费。然后在电脑上运行 `agentj service uninstall` "
         "和 `uv tool uninstall agentj`。",
         "",
-        f"**使用说明**（手机上每种颜色、每条线、每个按钮是什么意思，带截图）：{MANUAL_URL} 。也可以直接在手机上问 Agent J「这个颜色是什么意思」。",
         f"**说明文档**：{DOCS_URL} 。有问题就问这台电脑上帮你装 Agent J 的 AI，它会先去说明文档里查，查不到再帮你问 Agent J 的团队。",
     ]
     return "\n".join(out) + "\n"
@@ -215,8 +213,6 @@ def _en(f: dict) -> str:
         "uninstalling does not stop the billing. Then run `agentj service uninstall` and `uv tool uninstall agentj` on "
         "the computer.",
         "",
-        f"**User guide** (what every colour, line and button on the phone means, with screenshots): {MANUAL_URL}. You can also "
-        "just ask Agent J on the phone \"what does this colour mean?\".",
         f"**Help pages:** {DOCS_URL}. Questions? Ask the AI that set up Agent J on this computer: it looks things up in the "
         "help pages first and asks the Agent J team if they don't answer it.",
     ]

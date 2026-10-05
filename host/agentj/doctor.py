@@ -596,7 +596,6 @@ def run(st: State | None = None, offline: bool = False) -> list[dict]:
     out += check_asr(st)
     out += check_preferences(st)
     out += check_main_identity(st)
-    out.append(check_skills())
     lg = check_linger(svc)
     if lg:
         out.append(lg)
@@ -711,22 +710,3 @@ def check_main_identity(st):
     except (main_identity.IdentityError, preferences.ConfigError, OSError, ValueError):
         rows.append(_c("main-core", FAIL, "Main-Agent core or root configuration integrity failed", "Reinstall the trusted package; agentj config validate --json"))
     return rows
-
-
-def check_skills(home=None) -> dict:
-    """P57: every skill the package ships (agentj/skills/*: agentj-config, agentj-recall, agentj-manual …) linked into the
-    four harness skill folders. Never ✗: the main Agent works without them (its core names `agentj recall`); a foreign
-    copy of the same name is the owner's and stays (a conflict, reported, never replaced)."""
-    from . import personalize
-    try:
-        rows = personalize.status(home)
-    except OSError:
-        return _c("skills", WARN, "随包技能：检查失败 / bundled skills: check failed")
-    names = personalize.bundled()
-    missing = sorted({r["skill"] for r in rows if not r["installed"] and not r["conflict"]})
-    foreign = sorted({r["skill"] for r in rows if r["conflict"]})
-    if not missing and not foreign:
-        return _c("skills", OK, f"随包技能已安装 / bundled skills linked: {', '.join(names)}")
-    parts = ([f"未安装 / not linked: {', '.join(missing)}"] if missing else []) + \
-            ([f"同名的是你自己的，保留 / your own copy kept: {', '.join(foreign)}"] if foreign else [])
-    return _c("skills", WARN, "随包技能 / bundled skills — " + "; ".join(parts), "agentj skill install" if missing else "")

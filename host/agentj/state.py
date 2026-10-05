@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import contextlib
 import fcntl
-import hmac
 import json
 import os
 import pathlib
@@ -325,57 +324,6 @@ class State:
 
     def device_full(self) -> bool:
         return len(self.devices()) >= MAX_DEVICES
-
-    # ------------------------------------------------------------ F20 passkey (PROTOCOL §12): lives INSIDE the device record,
-    # so every way a record leaves the allowlist (revoke, eviction, iid replace, unbind) takes its passkey with it; nothing
-    # else (removed.json, logs) ever holds a credential id or key.
-    def passkey_of(self, cred_id: str) -> tuple[str, dict] | None:
-        """(device id, its pk record) for a credential id, or None (unknown — or its device was removed)."""
-        for did, v in self.devices().items():
-            pk = v.get("pk") if isinstance(v, dict) else None
-            if isinstance(pk, dict) and isinstance(pk.get("id"), str) and hmac.compare_digest(pk["id"], cred_id):
-                return did, pk
-        return None
-
-    def set_passkey(self, pub: bytes, pk: dict) -> bool:
-        """Store (or replace: one passkey per device) the passkey of the device with this static key, if still listed."""
-        did = wire.device_id(pub)
-        with self.devices_lock():
-            d = self.devices()
-            rec = d.get(did)
-            if not isinstance(rec, dict) or rec.get("pub") != wire.b64u(pub):
-                return False
-            rec["pk"] = dict(pk)
-            _write_private(self.devices_path, json.dumps(d, indent=1, ensure_ascii=False).encode())
-        return True
-
-    def passkey_restore(self, old: str, cred_id: str, pub: bytes, sign_pub: bytes, count: int = 0,
-                        iid: str | None = None) -> str | None:
-        """A verified passkey restore, in ONE locked write: the record `old` (still listed, still holding this credential)
-        takes the new X25519 key (→ a new device id) and the new approval key — the old ones died with the old browser
-        context — keeps its name, paired_at and passkey, and is marked seen. → the new device id, or None (the record left
-        the allowlist meanwhile, or the new key belongs to another listed record). The caller ends the old id's sessions."""
-        new = wire.device_id(pub)
-        with self.devices_lock():
-            d = self.devices()
-            rec = d.get(old)
-            pk = rec.get("pk") if isinstance(rec, dict) else None
-            if not isinstance(pk, dict) or pk.get("id") != cred_id or (new != old and new in d):
-                return None
-            rec = dict(rec, pub=wire.b64u(pub), sk=wire.b64u(sign_pub), seen=int(time.time()), pk=dict(pk))
-            if count:
-                rec["pk"]["sc"] = count
-            if iid:
-                rec["iid"] = iid
-            else:
-                rec.pop("iid", None)      # the old browser's install hash must not match (and replace) this record later
-            d.pop(old)
-            d[new] = rec
-            _write_private(self.devices_path, json.dumps(d, indent=1, ensure_ascii=False).encode())
-        if new != old:
-            self.note_removed(old, "replaced")
-        self.forget_removed(new)
-        return new
 
     # ------------------------------------------------------------ remote unbind switch (A3.1, PROTOCOL §7 sync)
     def remote_unbind(self) -> bool:

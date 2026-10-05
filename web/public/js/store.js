@@ -120,8 +120,8 @@ export async function putSealed(name, obj) {
   if (w === wipes) await dbPut(name, rec);
 }
 export async function getSealed(name) { try { return await unseal(await dbGet(name)); } catch { return null; } }
-/** Unpair / revoke: the drafts, the input history, the offline queue (0.15.2, outbox.js) and the key that sealed them go. */
+/** Unpair / revoke: the drafts, the input history and the key that sealed them go. */
 export async function wipeLocal() {
   localKey = null; wipes++;
-  for (const k of ['draft', 'ihist', 'outbox', 'local']) { try { await dbDel(k); } catch { /* nothing stored */ } }
+  for (const k of ['draft', 'ihist', 'local']) { try { await dbDel(k); } catch { /* nothing stored */ } }
 }

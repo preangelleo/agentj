@@ -113,13 +113,6 @@ async function onFrame(s, data) {
       s.phase = 'approval';
       await sendOn(s, g, { t: 'hello', caps: ['p33'] }, MAX_JSON);
       H.onSas(await safetyCode(h));
-    } else if (s.mode === 'restore') {
-      // F20 (§12): hello, then the one pk_restore — the host answers pk_ok + ready, or pk_fail + close
-      s.phase = 'pk-wait';
-      await sendOn(s, g, { t: 'hello', caps: ['p33'], ...H.helloExtra() }, MAX_JSON);
-      const pk = { t: 'pk_restore', ...s.ctx.pk };
-      try { pk.iid = await installId(s.ctx.channel); } catch { /* no storage: the record simply keeps no install hash */ }
-      await sendOn(s, g, pk, MAX_JSON);
     } else {
       s.phase = 'ready-wait';
       // the host replays what this page has not seen: §8 since (old hosts), §10.5 hist (p33 hosts)
@@ -144,16 +137,6 @@ function readCaps(m) {
 }
 
 async function onApp(s, m) {
-  if (s.mode === 'restore') {                         // F20 (§12): a passkey restore in progress
-    if (m.t === 'pk_ok') { s.pkOk = true; return; }
-    if (m.t === 'pk_fail') { s.pkFail = ['unknown', 'bad', 'expired', 'revoked'].includes(m.why) ? m.why : 'bad'; return; }
-    if (m.t === 'removed') { s.pkFail = 'unknown'; return; }   // a host without §12: this key is simply not listed
-    if (m.t !== 'ready' || s.phase !== 'pk-wait') throw new ProtocolError('unexpected ' + m.t);
-    readCaps(m);
-    const host = await H.onApproved(s.ctx);           // the same record a pairing stores; nothing else is wiped
-    s.mode = 'resume'; s.ctx = host;
-    return enterReady(s);
-  }
   if (m.t === 'removed' && s.mode === 'resume') {     // §3: the host says why it will close this device (then closes)
     s.removed = m.why === 'replaced' ? 'replaced' : 'revoked';
     return;
@@ -206,9 +189,7 @@ async function hostUp(s) {
   } else {
     s.hs = await new Handshake({ protocol: IK, initiator: true, prologue: resumePrologue(s.ctx.channel), s: dev, rs: s.ctx.hostPub }).init();
     const sk = await signKey();                       // a device paired before L1 registers its approval key here (host keeps the first)
-    const info = sk ? { v: 1, sk: b64u(sk.pub) } : { v: 1 };
-    if (s.mode === 'restore') info.pk = 1;            // F20: inside the encrypted msg1 — the relay sees a plain RESUME
-    msg1 = frame(KIND.RESUME_INIT, await s.hs.writeMessage(enc.encode(JSON.stringify(info))));
+    msg1 = frame(KIND.RESUME_INIT, await s.hs.writeMessage(enc.encode(JSON.stringify(sk ? { v: 1, sk: b64u(sk.pub) } : { v: 1 }))));
     H.setStatus('connecting', 'st.resuming');
   }
   if (s !== sess || s.ws.readyState !== WebSocket.OPEN) return;
@@ -218,7 +199,6 @@ async function hostUp(s) {
 }
 
 function hostDown(s) {
-  if (s.mode === 'restore' && s.phase !== 'wait-host') { closeSession(); return H.onRestoreFailed?.('bad'); }
   if (s.mode === 'pair' && s.phase !== 'wait-host') {  // host restarted mid-pairing: the pairing is gone
     closeSession();
     return H.onPairFailed();
@@ -232,7 +212,6 @@ function hostDown(s) {
 function onClose(s, ev) {
   if (s !== sess) return;                             // superseded or closed by us
   sess = null; endGen(s);
-  if (s.mode === 'restore') return H.onRestoreFailed?.(s.pkFail || 'bad');   // F20: never "removed", never a retry loop
   if (s.mode === 'pair') return H.onPairFailed();     // a pairing that ended (refused, timed out, …) never means "removed"
   if (s.removed) { refusals = 0; return H.onRevoked(s.removed); }
   // A close from the computer (4010), or a RESUME answered by a close rather than a network drop: probably no longer on the
@@ -248,7 +227,6 @@ function protocolFail(s, e) {
   if (s !== sess) return;
   const wasPair = s.mode === 'pair';
   closeSession();
-  if (s.mode === 'restore') return H.onRestoreFailed?.('bad');
   H.onProtocolFail(wasPair, e);
 }
 

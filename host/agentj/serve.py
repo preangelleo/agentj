@@ -33,9 +33,7 @@ from . import agent as agents
 from . import notices, activity, approvals, cloud, controls, danger, fence, gate, memory, slash, tasks, update, webpush, wire
 from . import asr as asr_mod
 from . import compose, history, inbox, menu, uploads, preferences
-from . import media as media_mod  # F21: files the Agent shows to the phone (PROTOCOL §13)
 from . import elevate  # F17: sudo + secret cards (PROTOCOL §11)
-from . import passkey  # F20: the same phone without a second pairing (PROTOCOL §12)
 from .noise import IK, IKPSK2, CipherState, Handshake, NoiseError
 from .reporter import Reporter, in_daemon_thread
 from .envcompat import getenv
@@ -91,7 +89,7 @@ HIST_READY = 50                             # turns a p33 device gets on ready (
 SWEEP_EVERY = 60
 RETAIN_EVERY = 86_400
 P33_ONLY = ("say", "say_cancel", "blob_open", "blob_chunk", "blob_end", "blob_drop", "hist_get", "menu_get", "model_set",
-            "q_answer", "tts_get", "pref_set", "notice_read", "media_get")
+            "q_answer", "tts_get", "pref_set", "notice_read")
 # F14: paired phones may change optional warnings, session mode, isolation, docker and the upgrade mode (F19); native permissions stay authoritative.
 PREF_SET_KEYS = ("updates.mode", "appearance.language", "appearance.theme", "voice.wake_enabled", "voice.speak_replies",
                  "agent.high_risk_warnings", "agent.session_mode", "agent.isolation", "agent.allow_docker")
@@ -122,8 +120,6 @@ class Session:
     hist: dict | None = None      # its hello's {"epoch", "last"}: where its history pages stop (§10.5)
     iid: str = ""                 # 0.15.1: the browser install's per-host id from the pairing msg1 (same browser → replace)
     gone: str = ""                # 0.15.1: a removed device that resumed: "replaced" | "revoked" — told so after its hello
-    pk_offer: tuple | None = None  # F20 (§12): (nonce, monotonic issue time) of the one open pk_offer of this session
-    since: object = None          # F20: a passkey restore's hello `since`, used once the restore is accepted
 
 
 @dataclass
@@ -198,7 +194,6 @@ class Host:
         self.ws = None
         self.sessions: dict[int, Session] = {}
         self.pairing: Pairing | None = None
-        self.pk_guard = passkey.Guard()   # F20: pk_restore rate limit + nonce replay memory (in memory only)
         self.send_lock = asyncio.Lock()
         self.stopping = asyncio.Event()
         self.relay_up = False
@@ -251,9 +246,6 @@ class Host:
         self.lang = compose.lang_of(st)
         self.uploads = uploads.Uploads(st, self.agent_cfg["dir"] if self.agent_cfg else None,
                                        asr_off=lambda: self.asr_state() == "off")
-        self.media = media_mod.Media(st, self.agent_cfg["dir"] if self.agent_cfg else None)   # F21 (§13)
-        self.media_streams: dict[tuple, asyncio.Task] = {}   # (cid, mid) → the window being sent
-        self.media_jobs: set = set()
         self.sends = compose.Sends()
         self.questions: dict[str, Question] = {}
         self.cur_turn: int | None = None        # the history page the running Agent turn answers
@@ -314,8 +306,6 @@ class Host:
             print(f"· 定时任务 {kw['id']}：{kw['verdict']}", flush=True)
         elif ev == "update":   # a version string from GitHub, already parsed as one (update.parse)
             print(f"· 有新版本 {kw['latest']}（本机 {kw['current']}）：在终端运行 `agentj update apply` 升级", flush=True)
-        elif ev == "passkey":   # F20: no QR, no code — the paired phone proved itself with its passkey (§12)
-            print(f"· 手机用 Face ID 连回来了（同一台，没有新增遥控器）：{kw.get('name') or ''} {kw.get('device') or ''}".rstrip(), flush=True)
         elif ev in ("ready", "approved", "revoked", "denied", "closed"):
             print(f"· {ev} {kw.get('name') or ''} {kw.get('device') or ''}".rstrip(), flush=True)
 
@@ -463,7 +453,7 @@ class Host:
             await self._pair_init(s, body)
         elif s.state == "new" and kind == wire.RESUME_INIT:
             await self._resume_init(s, body)
-        elif kind == wire.DATA and s.state in ("hello", "pending", "ready", "pk"):
+        elif kind == wire.DATA and s.state in ("hello", "pending", "ready"):
             obj = wire.unpad_json(s.recv.decrypt(b"", body), wire.MAX_JSON_P33 if s.p33 else wire.MAX_JSON)
             await self._app(s, obj)
         else:
@@ -503,17 +493,6 @@ class Host:
     async def _resume_init(self, s: Session, msg1: bytes) -> None:
         hs = Handshake(IK, False, self.kp, prologue=wire.resume_prologue(self.channel))
         payload = hs.read_message(msg1)
-        if not self.st.is_allowed(hs.rs) and self._pk_hello(payload):
-            # F20 (§12): an unlisted key that asks for a passkey restore (`pk:1` + an approval key in msg1): finish the
-            # handshake, take its hello, then wait ≤ 30 s for one pk_restore — no `ready`, no `removed` before that
-            did = wire.device_id(hs.rs)
-            self.st.log("pk_hello", cid=s.cid, device=did)
-            msg2 = hs.write_message(b"")
-            s.send, s.recv, s.h = hs.split()
-            s.pub, s.device, s.mode, s.state = hs.rs, did, "pk", "hello"
-            s.sign_pub = _sign_key(json.loads(payload))
-            await self._op(wire.OP_DATA, s.cid, bytes([wire.HS_RESP]) + msg2)
-            return
         if not self.st.is_allowed(hs.rs):
             # 0.15.1: finish the handshake and, after its hello, tell the device WHY (PROTOCOL §3 `removed`) — a page that
             # only sees the close cannot tell "a newer pairing took your place" from "removed" from a passing hiccup.
@@ -552,14 +531,20 @@ class Host:
             h = obj.get("hist")
             if s.p33 and isinstance(h, dict) and type(h.get("epoch")) is int and type(h.get("last")) is int:
                 s.hist = {"epoch": h["epoch"], "last": h["last"]}
-            if s.mode == "pk":                     # F20: the next (and only) message must be pk_restore
-                s.state, s.since = "pk", obj.get("since")
-                self._set_timer(s, self._pk_timeout(s))
-                return
             if s.mode == "resume":
                 if not self.st.is_allowed(s.pub):  # revoked between msg1 and hello
                     return await self.close_cid(s.cid, "revoked")
-                return await self._accept_resume(s, obj.get("since"))
+                s.state = "ready"
+                self._set_timer(s, None)
+                await self.send_app(s, {"t": "ready", **self._caps(s)})
+                await self._bulk(s)
+                self.st.log("resume_ok", cid=s.cid, device=s.device)
+                with contextlib.suppress(OSError):
+                    self.st.touch_seen(s.device)
+                self.emit("ready", device=s.device, name=s.name)
+                self.reporter.trigger("online")
+                await self.on_ready(s, obj.get("since"))
+                return
             # pairing: hello decrypted ⇒ device knows the PSK. Wait for the human.
             p = self.pairing
             if not p or p.cid != s.cid:
@@ -574,8 +559,6 @@ class Host:
             return
         if s.state == "pending":
             return  # nothing from an unapproved device is acted on
-        if s.state == "pk":
-            return await self._pk_restore(s, obj)
         if not self.st.is_allowed(s.pub):  # belt and braces: a ready session whose device left the allowlist
             return await self.close_cid(s.cid, "revoked")
         if t == "msg":
@@ -600,8 +583,6 @@ class Host:
                 await self.on_p33(s, t, obj)
         elif t == "answer":
             await self._answer(s, obj)
-        elif t in ("pk_reg", "pk_offer_req"):  # F20 (§12): register this device's passkey
-            await self._pk_reg(s, t, obj)
         elif t in elevate.PHONE_TYPES:  # F17: a signed, sealed sudo password / secret for an open card (§11)
             await self.elevate.on_phone(s, obj)
         elif t == "push_sub":
@@ -732,113 +713,12 @@ class Host:
         self.reporter.trigger("approve")
         await self.send_app(s, {"t": "approved", **self._caps(s)})
         await self._bulk(s)
-        await self._pk_offer(s)                 # F20: once, right after a pairing (never on a resume)
         self.st.log("pair_approved", cid=s.cid, device=s.device, name=s.name, code_ok=True)
         self.emit("approved", device=s.device, name=s.name)
         asyncio.create_task(self.on_ready(s, None))
         res = {"ev": "approved", "device": s.device, "name": s.name}
         res.update({k: got[k] for k in ("replaced", "evicted") if got[k]})
         return res
-
-    async def _accept_resume(self, s: Session, since) -> None:
-        """A resume (or a passkey restore, §12) is accepted: `ready`, BULK, history replay."""
-        s.state = "ready"
-        self._set_timer(s, None)
-        await self.send_app(s, {"t": "ready", **self._caps(s)})
-        await self._bulk(s)
-        self.st.log("resume_ok", cid=s.cid, device=s.device)
-        with contextlib.suppress(OSError):
-            self.st.touch_seen(s.device)
-        self.emit("ready", device=s.device, name=s.name)
-        self.reporter.trigger("online")
-        await self.on_ready(s, since)
-
-    # ------------------------------------------------------------ F20 passkey (PROTOCOL §12) — proves "the same phone", nothing more
-    @staticmethod
-    def _pk_hello(payload: bytes) -> bool:
-        """Does a RESUME msg1 ask for a passkey restore? `pk:1` and an approval key (the restore replaces it)."""
-        try:
-            info = json.loads(payload) if payload else None
-        except ValueError:
-            return False
-        return isinstance(info, dict) and info.get("pk") == 1 and bool(_sign_key(info))
-
-    async def _pk_timeout(self, s: Session) -> None:
-        await asyncio.sleep(HS_TTL)
-        if self.sessions.get(s.cid) is s and s.state == "pk":
-            self.st.log("pk_restore", cid=s.cid, device=s.device, result="fail", reason="timeout")
-            await self._pk_fail(s, "expired")
-
-    async def _pk_fail(self, s: Session, why: str) -> None:
-        s.state = "closing"                   # nothing more from it is acted on
-        await self.send_app(s, {"t": "pk_fail", "why": why})
-        await self.close_cid(s.cid, "pk_fail")
-
-    async def _pk_restore(self, s: Session, obj: dict) -> None:
-        """The one message a pk session may send. Every check passes or the session ends with pk_fail; then the device
-        record that holds this passkey takes the session's key (State.passkey_restore) and the old id ends like a P55
-        `replaces` (sessions, push subscription, uploads; told `replaced` if it resumes)."""
-        self._set_timer(s, None)
-        old = None
-        try:
-            if obj.get("t") != "pk_restore":
-                raise passkey.PasskeyError("bad", "not_pk_restore")
-            if not self.pk_guard.attempt():
-                raise passkey.PasskeyError("bad", "rate")
-            f = passkey.restore_fields(obj)
-            if not passkey.ts_ok(f["ts"]):
-                raise passkey.PasskeyError("expired", "ts")
-            if not self.pk_guard.fresh(f["nonce"]):
-                raise passkey.PasskeyError("bad", "replay")
-            hit = self.st.passkey_of(f["id"])
-            if not hit:
-                raise passkey.PasskeyError("unknown", "credential")
-            old, pk = hit
-            if not passkey.handle_matches(f["uh"], self.channel, self.kp.pub):
-                raise passkey.PasskeyError("bad", "user_handle")
-            challenge = passkey.restore_challenge(s.pub, s.sign_pub, f["ts"], f["nonce"])
-            count = passkey.verify_assertion(pk, f, challenge)
-            new = self.st.passkey_restore(old, f["id"], s.pub, s.sign_pub, count, _iid(obj) or None)
-            if not new:
-                raise passkey.PasskeyError("unknown", "gone")
-        except passkey.PasskeyError as e:
-            self.st.log("pk_restore", cid=s.cid, device=old or s.device, result="fail", reason=e.detail)
-            return await self._pk_fail(s, e.why)
-        if old != new:
-            self.st.log("auto_unbind", device=old, reason="passkey")
-            await self._drop_device(old, "replaced")
-        s.device, s.mode = new, "resume"
-        s.name = self.st.devices().get(new, {}).get("name", "")
-        self.st.log("pk_restore", cid=s.cid, device=new, result="ok", id=old)
-        self.emit("passkey", device=new, name=s.name)
-        await self.send_app(s, {"t": "pk_ok"})
-        await self._accept_resume(s, s.since)
-
-    async def _pk_offer(self, s: Session) -> None:
-        """Offer a passkey registration to a ready p33 device whose record has none (after a pairing, or on request)."""
-        if not s.p33 or s.state != "ready" or not self.st.is_allowed(s.pub):
-            return
-        nonce = secrets.token_bytes(32)
-        s.pk_offer = (nonce, time.monotonic())
-        await self.send_app(s, {"t": "pk_offer", "n": wire.b64u(nonce)})
-
-    async def _pk_reg(self, s: Session, t: str, obj: dict) -> None:
-        if not s.p33:
-            return
-        if t == "pk_offer_req":
-            return await self._pk_offer(s)
-        offer, s.pk_offer = s.pk_offer, None          # single use, whatever the outcome
-        try:
-            if not offer or time.monotonic() - offer[1] > passkey.OFFER_TTL:
-                raise passkey.PasskeyError("expired", "no_offer")
-            rec = passkey.verify_registration(obj, offer[0])
-            if not self.st.set_passkey(s.pub, rec):
-                raise passkey.PasskeyError("unknown", "gone")
-        except passkey.PasskeyError as e:
-            self.st.log("pk_reg", cid=s.cid, device=s.device, result="fail", reason=e.detail)
-            return await self.send_app(s, {"t": "pk_reg_res", "ok": False, "why": e.why})
-        self.st.log("pk_reg", cid=s.cid, device=s.device, result="ok")
-        await self.send_app(s, {"t": "pk_reg_res", "ok": True})
 
     # ------------------------------------------------------------ control socket (local, 0600)
     async def _ctl_send(self, w: asyncio.StreamWriter, obj: dict) -> None:
@@ -1460,70 +1340,6 @@ class Host:
         self.hist_emit(changed)
         return changed
 
-    # ------------------------------------------------------------ media out (F21, PROTOCOL §13, media.py)
-    def media_later(self, tid: int | None) -> None:
-        """A page ended: find the files its reply shows (in a thread — hashing and the secret scan read them), then update
-        the page with `media` / `media_skip`. Never delays the end itself."""
-        if tid is None or not self.media.workdir:
-            return
-        try:
-            job = asyncio.get_running_loop().create_task(self._attach_media(tid))
-        except RuntimeError:            # not inside the loop (a unit test calling a callback directly)
-            return
-        self.media_jobs.add(job)
-        job.add_done_callback(self.media_jobs.discard)
-
-    async def _attach_media(self, tid: int) -> None:
-        t = self.hist.get(tid)
-        if t is None:
-            return
-        ids = next((ids for ids in self.hist.parts.values() if tid in ids), [tid])   # a long reply: every part's text
-        text = "\n\n".join(x["reply"]["text"] for x in (self.hist.get(i) for i in ids) if x)
-        try:
-            items, skips = await asyncio.to_thread(self.media.scan, text, tid)
-        except Exception:  # noqa: BLE001 — a scan that fails offers nothing; the page stays as it is
-            self.st.log("media_scan_fail", turn=tid)
-            return
-        if items or skips:
-            self.hist_update(tid, media=(items, skips))
-            self.st.log("media_page", turn=tid, status=f"{len(items)}/{len(skips)}")
-
-    def on_media_get(self, s: Session, obj: dict) -> None:
-        """§13 `media_get {mid, o}` from a ready, allowlisted p33 session (any approved device: the history is shared)."""
-        mid, o = obj.get("mid"), obj.get("o")
-        if not wire.is_id22(mid):
-            return
-        if type(o) is not int or o < 0:
-            self._post(self.send_app, s, {"t": "media_err", "mid": mid, "why": "shape"})
-            return
-        key = (s.cid, mid)
-        old = self.media_streams.pop(key, None)
-        if old is not None:
-            old.cancel()
-        if sum(1 for k in self.media_streams if k[0] == s.cid) >= 3:
-            self._post(self.send_app, s, {"t": "media_err", "mid": mid, "why": "busy"})
-            return
-        task = asyncio.get_running_loop().create_task(self._media_window(s, mid, o))
-        self.media_streams[key] = task
-        task.add_done_callback(lambda _t, k=key: self.media_streams.get(k) is _t and self.media_streams.pop(k, None))
-
-    async def _media_window(self, s: Session, mid: str, o: int) -> None:
-        def live() -> bool:
-            return self.sessions.get(s.cid) is s and s.state == "ready" and self.st.is_allowed(s.pub)
-        try:
-            win = await asyncio.to_thread(self.media.window, mid, o)
-        except (media_mod.Gone, OSError) as e:
-            if live():
-                await self.send_app(s, {"t": "media_err", "mid": mid, "why": "gone"})
-            self.st.log("media_gone", device=s.device, reason=str(e)[:32])
-            return
-        for off, data, last in win:
-            if not live():              # revoked / closed between two chunks: nothing more goes out
-                return
-            if not await self.send_app(s, {"t": "media_chunk", "mid": mid, "o": off, "d": wire.b64u(data), "last": last}):
-                return
-            await asyncio.sleep(1 / media_mod.FPS)
-
     def status_changed(self) -> None:
         st = self.eff_status()
         if st == "waiting" and self._open_question():
@@ -1552,7 +1368,7 @@ class Host:
             if changed:
                 self.cur_turn = changed[-1]["id"]
         else:                          # the Agent spoke outside a turn of ours (e.g. a background task finished)
-            self.media_later(self.hist_add({"k": "agent", "text": ""}, text, "done")["id"])
+            self.hist_add({"k": "agent", "text": ""}, text, "done")
 
     def desktop_input(self, text: str) -> None:
         self.desktop_end()
@@ -1571,7 +1387,6 @@ class Host:
         tid = getattr(self, "desktop_turn", None)
         if tid is not None:
             self.hist_update(tid, end="done")
-            self.media_later(tid)
         self.desktop_turn = None
 
     def agent_notice(self, text: str) -> None:
@@ -1673,7 +1488,6 @@ class Host:
                       result="stopped" if halted else "done")
         if self.cur_turn is not None:
             self.hist_update(self.cur_turn, end="stopped" if halted else ("failed" if self.cur_failed else "done"))
-            self.media_later(self.cur_turn)
         if self.telegram and self.cur_turn is not None:
             self.telegram.completed(self.hist.get(self.cur_turn))
         send = getattr(self.agent, 'cur_send', None)
@@ -2341,8 +2155,6 @@ class Host:
             for m in self.uploads.drop(s.device, obj.get("bid")):
                 await self.send_app(s, m)
             return
-        if t == "media_get":
-            return self.on_media_get(s, obj)
         if t == "hist_get":
             r = obj.get("r")
             if not wire.is_rid(r):
@@ -2906,16 +2718,11 @@ class Host:
             finally:
                 os.umask(old)
             os.chmod(psock, 0o600)
-            from . import personalize                # P57: bundled skills linked where free, before the harness starts
-            self.st.log("skills_linked", **personalize.ensure())
             self.agent = agents.make(self, self.agent_cfg)
             self.agent.start()
             self.sent_status = self.eff_status()
             self.st.log("agent_on", agent=self.agent.kind, fence=self.agent_cfg.get("fence", True))
         await self.elevate.start()                 # F17: <state>/agentperm/elevate.sock for `agentj sudo` / `agentj secret`
-        from .recall import Server as RecallServer
-        self.recall = RecallServer(self)           # F22 (P57): <state>/agentperm/recall.sock for `agentj recall` (§15.4)
-        await self.recall.start()
         from .telegram import Telegram
         self.telegram=Telegram(self)
         jobs.append(asyncio.create_task(self.telegram.run()))
@@ -2934,7 +2741,6 @@ class Host:
                     q.fut.set_result(("gone", None, None, None, None))
             await self.scheduler.stop_current()
             await self.elevate.stop()
-            await self.recall.stop()
             if self.agent:
                 await self.agent.stop()
             with contextlib.suppress(Exception):         # the resident ASR worker (§10.9) goes with serve

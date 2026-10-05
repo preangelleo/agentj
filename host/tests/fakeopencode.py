@@ -160,50 +160,19 @@ def bash_call(sid, msg, cmd, foreign=False):
     return False
 
 
-# P57 (F24): the host's compaction preparation and host notes, as a cooperative Agent would treat them.
-#   "[agentj:compact-prepare]" + a `<…/.agentj/handover/<key>.md>` path → writes that file (unless FAKE_NO_HANDOVER=1;
-#   FAKE_PREP_SLEEP=s first → a preparation that times out) and replies "交接写好了"; lines starting 「（Agent J：」 /
-#   "(Agent J: " (the handover note / the context reminder) are logged as {"host_note": …} and taken off, so the rest of
-#   the message behaves as before; FAKE_CTX_USED = the context the next turn reports (compaction drops it).
-def p57_prepare(text):
-    import re as _re
-    m = _re.search(r"`([^`]*\.agentj/handover/[^`]+\.md)`", text)
-    if os.environ.get("FAKE_PREP_SLEEP"):
-        time.sleep(float(os.environ["FAKE_PREP_SLEEP"]))
-    if m and os.environ.get("FAKE_NO_HANDOVER") != "1":
-        with open(m.group(1), "w") as f:
-            f.write("# Handover\n- goal: the user's words\n- done / in progress / next\n- decisions\n- paths\n- open questions\n")
-        return "交接写好了"
-    return "没写交接"
-
-
-def p57_notes(text, logf):
-    keep = []
-    for ln in text.split("\n"):
-        if ln.startswith(("（Agent J：", "(Agent J: ")):
-            logf(ln)
-        else:
-            keep.append(ln)
-    return "\n".join(keep).strip("\n")
-
-
 def run_prompt(sid, text):
-    if ("（Agent J：" in text or "(Agent J: " in text) and not text.startswith("[agentj:"):
-        text = p57_notes(text, lambda ln: log(method="HOST_NOTE", path="", host_note=ln))
     s = SESSIONS[sid]
     s["busy"] = True
     s["abort"] = False
     s["messages"].append({"info": {"id": nid("msg"), "role": "user", "time": {"created": int(time.time() * 1000)}},
                           "parts": [{"id": nid("prt"), "type": "text", "text": text, "sessionID": sid}]})
     msg = {"info": {"id": nid("msg"), "role": "assistant", "time": {"created": int(time.time() * 1000)}, "modelID": "big-pickle",
-                    "providerID": "opencode", "cost": 0, "tokens": {"total": int(os.environ.get("FAKE_CTX_USED") or 8124), "input": 6178, "output": 5, "reasoning": 0,
+                    "providerID": "opencode", "cost": 0, "tokens": {"total": 8124, "input": 6178, "output": 5, "reasoning": 0,
                                                                    "cache": {"read": 1941, "write": 0}}}, "parts": []}
     s["messages"].append(msg)
     publish("session.status", {"sessionID": sid, "status": {"type": "busy"}})
     try:
-        if text.startswith("[agentj:compact-prepare]"):
-            text_part(sid, msg, p57_prepare(text))
-        elif text.startswith("RUN: "):
+        if text.startswith("RUN: "):
             bash_call(sid, msg, text[5:].strip())
         elif text.startswith("RUNSEQ: "):
             for c in text[8:].split(";;"):

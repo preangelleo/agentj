@@ -34,18 +34,13 @@ _CMD = re.compile(r"^/([A-Za-z][\w:.-]{0,63})(?:[ \t]+(.*))?$", re.S)
 MODEL_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:/\[\]@+-]{0,99}$")
 REFUSE = "这个命令请在电脑上执行。手机上能用的：/clear /compact /model /context /cost /usage /status /help /stop"
 NONE = "—"
-# F24: the whole message, nothing else (「把这个文件压缩一下」 stays a message)
-SAY_COMPACT = ("压缩", "压缩一下", "压缩吧", "压缩上下文", "compact", "compact now", "compact the context")
 
 
 def parse(text) -> tuple[str, str] | None:
     """("name", "arg") for a message that is a command (`/name` or `/name args`), else None. `/srv/x …` is not a command
-    (the name must end at a space or the end), so a path at the start of a message stays a message. F24: a message that is
-    nothing but 「压缩」 (SAY_COMPACT) is `/compact` — the word the context reminder teaches (PROTOCOL §15)."""
+    (the name must end at a space or the end), so a path at the start of a message stays a message."""
     if not isinstance(text, str):
         return None
-    if text.strip().rstrip("。.!！").strip().lower() in SAY_COMPACT:
-        return "compact", ""
     m = _CMD.match(text.strip())
     if not m:
         return None

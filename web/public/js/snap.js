@@ -4,7 +4,6 @@
 // It also owns the page's view of the history (§10.5): turns from hist_page / hist_turn on a p33 host, or — on a host
 // that did not announce p33 — turns built here in memory from §8's msg stream (never stored).
 import { peer, request, done as reqDone } from './session.js';
-import { sanitize as mediaOf } from './mediawire.js';   // F21 (§13)
 
 export const S = {
   conn: false,                 // a ready session with the host up
@@ -149,7 +148,6 @@ export function toPage(t) {
     part: Array.isArray(reply.part) && reply.part.length === 2 ? reply.part.map(Number) : null,
     end: ['open', 'done', 'stopped', 'failed'].includes(t.end) ? t.end : 'done',
     card: t.card && typeof t.card === 'object' ? t.card : null,
-    ...((m) => ({ media: m.media, mediaSkip: m.skip }))(mediaOf(t)),   // F21: files the reply shows (§13)
   };
 }
 export function setMeta(m) {
