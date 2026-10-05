@@ -38,7 +38,7 @@ from . import docsrule, feedback, handover, plaza, support, wizard
 from . import elevate, elevate_helper
 from .state import DEFAULT_RELAY, DEFAULT_WEB, MAX_DEVICES, State
 from .envcompat import getenv
-from .text import STARTER_NAMES, ask_yes, clean
+from .text import STARTER_NAMES, ask_yes, clean, clean_label
 
 
 def _need_init(st: State) -> None:
@@ -346,7 +346,7 @@ def cmd_pair(a) -> None:
                       "发到手机上打开——同一个链接，它就是配对密钥，别发给别人。/ Over SSH: if the phone cannot scan it, run "
                       "`agentj pair --link` and open the same link on the phone.）\n", flush=True)
         if st.device_full():
-            print(f"注意：本机已有 {MAX_DEVICES} 台遥控器（上限）。新设备扫码后，要先在这里解绑一台旧的才能批准它。\n", flush=True)
+            print(f"注意：本机已有 {MAX_DEVICES} 台遥控器（上限）。批准新设备时会自动解绑最久没用的那台（离线的先走）。\n", flush=True)
 
         reading: asyncio.Future | None = None   # the one outstanding readline on serve's stream
 
@@ -380,38 +380,13 @@ def cmd_pair(a) -> None:
         ev = await take()
         while True:
             kind = ev.get("ev")
-            if kind == "pending" and ev.get("full"):
-                devs = ev.get("devices") or []
-                print(f"一台新设备在等批准（它自称「{ev['name']}」，名字由设备自己填，不可信）。", flush=True)
-                print(f"已达 {ev.get('limit', MAX_DEVICES)} 台上限，需先解绑一台遥控器才能添加新的。现有的：", flush=True)
-                for i, d in enumerate(devs, 1):
-                    pa = d.get("paired_at")
-                    when = time.strftime("%Y-%m-%d %H:%M", time.localtime(pa if isinstance(pa, (int, float)) else 0))
-                    print(f"  {i}. {d.get('name') or '（没有名字）'}  {'在线' if d.get('online') else '离线'}  配对于 {when}  ({d['id']})",
-                          flush=True)
-                ans = await race(f"输入编号解绑那一台（1–{len(devs)}）；直接回车 = 不解绑，并拒绝新设备：")
-                if ans is None:
-                    ev = await take()
-                    continue
-                ans = ans.strip()
-                pick = int(ans) if len(ans) <= 2 and ans.isascii() and ans.isdecimal() else 0
-                if 1 <= pick <= len(devs):
-                    d = devs[pick - 1]
-                    sure = await race(f"确认解绑第 {pick} 台「{d.get('name') or '（没有名字）'}」（设备 {d['id']}）？它会立即断开，再用要重新扫码配对 [y/N] ")
-                    if sure is None:
-                        ev = await take()
-                        continue
-                    if sure.strip().lower() in ("y", "yes"):
-                        await send({"cmd": "unbind", "device": d["id"]})
-                        res = await take()
-                        print(f"✓ 已解绑 {d.get('name') or d['id']}" if res.get("ok") else "✗ 没解绑成功（它可能已经被吊销了）", flush=True)
-                        ev = await take()  # serve re-sends the pending event: now with room (or still full)
-                    continue
-                await send({"cmd": "code", "code": ""})
-                ev = await take()
-                continue
             if kind == "pending":
                 print(f"一台设备已连上（它自称「{ev['name']}」，名字由设备自己填，不可信）。", flush=True)
+                if isinstance(ev.get("replaces"), dict):
+                    print(f"它是之前配对过的同一个浏览器：批准后替换旧记录「{_dev_line(ev['replaces'])}」，不多占一台。", flush=True)
+                elif isinstance(ev.get("evict"), dict):
+                    print(f"已满 {ev.get('limit', MAX_DEVICES)} 台：批准后会自动解绑最早的遥控器「{_dev_line(ev['evict'])}」。"
+                          "不想让它走，就直接回车拒绝，先用 `agentj revoke <设备>` 解绑别的。", flush=True)
                 print("安全码只显示在手机屏幕上——这个终端永远不会显示它。", flush=True)
                 code = await race("看着手机，输入手机上的 6 位安全码并回车（120 秒内；直接回车 = 拒绝）：")
                 if code is None:
@@ -439,6 +414,10 @@ def cmd_pair(a) -> None:
                 ev = await take()
                 continue
             if kind == "approved":
+                if isinstance(ev.get("replaced"), dict):
+                    print(f"已替换同一浏览器的旧记录：{_dev_line(ev['replaced'])}", flush=True)
+                if isinstance(ev.get("evicted"), dict):
+                    print(f"已自动解绑最早的遥控器：{_dev_line(ev['evicted'])}", flush=True)
                 print(f"✓ 已批准：{ev['name']}（设备 {ev['device']}）。在 serve 终端里打字就能发给它。")
                 return
             reasons = {"code_mismatch": "安全码不一致，已拒绝", "denied": "已拒绝", "timeout": "120 秒未确认，已拒绝",
@@ -450,6 +429,13 @@ def cmd_pair(a) -> None:
             sys.exit(f"✗ {msg}")
 
     asyncio.run(main())
+
+
+def _dev_line(d: dict) -> str:
+    """「<名称> 配对于 <时间>」 for one remote in a serve event (names are device-chosen: one cleaned line)."""
+    pa = d.get("paired_at")
+    when = time.strftime("%Y-%m-%d %H:%M", time.localtime(pa if isinstance(pa, (int, float)) and not isinstance(pa, bool) else 0))
+    return f"{clean_label(str(d.get('name') or '')) or '（没有名字）'} 配对于 {when}" + ("（在线）" if d.get("online") is True else "")
 
 
 def _ask_async(prompt: str) -> asyncio.Future:
@@ -656,7 +642,7 @@ def cmd_devices(a) -> None:
         return
     print(f"Agent：{_name_or_unset(st)}")
     print(_link_line(st))
-    print(f"遥控器 {len(devs)}/{MAX_DEVICES}" + ("（已满：先 `agentj revoke <设备>` 才能再配对）" if len(devs) >= MAX_DEVICES else ""))
+    print(f"遥控器 {len(devs)}/{MAX_DEVICES}" + ("（已满：再批准新设备会自动解绑最久没用的那台；想自己挑就先 `agentj revoke <设备>`）" if len(devs) >= MAX_DEVICES else ""))
     if not devs:
         print("还没有已批准的设备。用 `agentj pair` 配对。")
     for did, v in devs.items():

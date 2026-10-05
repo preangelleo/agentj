@@ -208,3 +208,37 @@ test('P34: speech selects configured local voice and refuses network or unknown-
  configureSpeech({tts:{voice:'local'}});assert.equal(localVoice('en').name,'local');
  configureSpeech({});delete globalThis.window;
 });
+
+// 0.15.1 (P55): which closes mean "removed". Before, every 4010 did — a refused pairing and a handshake the host timed out
+// while iOS kept the page asleep both showed 「这台手机已被电脑移除」 and wiped the drafts.
+test('P55: a close is "removed" only when the host said so, or twice in a row; a pairing that ends is "not approved"', async () => {
+  const session = await import('../public/js/session.js');
+  class FakeWS { constructor() { FakeWS.last = this; this.readyState = 1; } send() {} close() {} }
+  FakeWS.OPEN = 1;
+  const saved = globalThis.WebSocket;
+  globalThis.WebSocket = FakeWS;
+  const calls = [];
+  session.configure({ setStatus() {}, resume() {}, onHostDown: () => calls.push('down'), onRevoked: (why) => calls.push('revoked:' + why),
+    onPairFailed: () => calls.push('pairFailed') });
+  const ctx = { relay: 'ws://127.0.0.1:1', channel: 'c'.repeat(22), hostPub: new Uint8Array(32) };
+  const close = async (s, code) => { FakeWS.last.onclose({ code }); await s.chain; };
+  try {
+    let s = session.openSession('pair', ctx); s.phase = 'approval';
+    await close(s, 4010);
+    assert.deepEqual(calls.splice(0), ['pairFailed'], 'a refused / timed-out pairing (4010) is a failed pairing');
+    s = session.openSession('resume', ctx); s.phase = 'hs';
+    await close(s, 4010);
+    assert.deepEqual(calls.splice(0), ['down'], 'one unexplained refusal: reconnect, nothing wiped');
+    s = session.openSession('resume', ctx); s.phase = 'hs';
+    await close(s, 1000);
+    assert.deepEqual(calls.splice(0), ['revoked:revoked'], 'refused again (an older host): removed');
+    s = session.openSession('resume', ctx); s.phase = 'ready-wait'; s.removed = 'replaced';   // the host's `removed` message
+    await close(s, 4010);
+    assert.deepEqual(calls.splice(0), ['revoked:replaced'], 'the host said why: shown at once');
+    for (let i = 0; i < 3; i++) { s = session.openSession('resume', ctx); s.phase = 'hs'; await close(s, 1006); }
+    assert.deepEqual(calls.splice(0), ['down', 'down', 'down'], 'network drops (1006) never count as refusals');
+  } finally {
+    session.closeSession();
+    globalThis.WebSocket = saved;
+  }
+});

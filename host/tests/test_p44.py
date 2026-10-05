@@ -254,8 +254,9 @@ class Cli(_Env):
             self.assertEqual([(a["code"], a["version"]) for a in cp.upgrade_auths], [(CODE, "9.9.9")])
 
     def test_flags_only_with_apply_and_interactive_unchanged(self):
-        self.assertNotEqual(self._cli("update", "check", "--authorization", CODE).returncode, 0)
-        self.assertNotEqual(self._cli("update", "apply", "--version", "9.9.9").returncode, 0, "--version alone is not consent")
+        off = {update.URL_ENV: "off"}   # never the live latest (0.15.0a1 went live: the outcome must not depend on it)
+        self.assertNotEqual(self._cli("update", "check", "--authorization", CODE, extra=off).returncode, 0)
+        self.assertNotEqual(self._cli("update", "apply", "--version", "9.9.9", extra=off).returncode, 0, "--version alone is not consent")
         res = self._cli("update", "apply", "--authorization", CODE, "--from-email", "-", stdin_text=MAIL_EN)
         self.assertNotEqual(res.returncode, 0)
         res = self._cli("update", "apply", extra={update.URL_ENV: "off"})

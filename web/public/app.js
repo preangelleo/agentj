@@ -10,7 +10,8 @@ import { parsePairing as parseLink } from './proto/wire.js';
 import VERSION from './version.js';
 import { t, lang, fillText, plain, applyStatic, onLang } from './js/t.js';
 import { el, toast, confirmSheet, closeConfirm } from './js/ui.js';
-import { dbGet, dbPut, dbDel, deviceKey, wipeLocal } from './js/store.js';
+import { dbGet, dbPut, dbDel, deviceKey, wipeLocal, markPaired, wasPaired, askPersist } from './js/store.js';
+import { b64u } from './proto/wire.js';
 import * as session from './js/session.js';
 import * as snap from './js/snap.js';
 import * as api from './js/api.js';
@@ -113,7 +114,8 @@ function deviceLabel() {
   const ua = navigator.userAgent;
   const os = /Android/.test(ua) ? 'Android' : /iPhone|iPad|iPod/.test(ua) ? 'iOS' : /Mac OS X/.test(ua) ? 'macOS'
     : /Windows/.test(ua) ? 'Windows' : /Linux|CrOS/.test(ua) ? 'Linux' : '';
-  const br = /Edg\//.test(ua) ? 'Edge' : /Firefox\/|FxiOS/.test(ua) ? 'Firefox' : /CriOS|Chrome\//.test(ua) ? 'Chrome'
+  // 0.15.1: the Home Screen app and a Safari tab keep separate storage (= separate remotes): say which one it is
+  const br = push.standalone() ? '主屏幕' : /Edg\//.test(ua) ? 'Edge' : /Firefox\/|FxiOS/.test(ua) ? 'Firefox' : /CriOS|Chrome\//.test(ua) ? 'Chrome'
     : /Safari\//.test(ua) ? 'Safari' : '浏览器';   // the device label is data for the host's device list, not UI text
   return ('网页 · ' + [os, br].filter(Boolean).join(' ')).slice(0, 64);
 }
@@ -162,15 +164,21 @@ session.configure({
   },
   onSas: (code) => { $('sas').textContent = code; show('sas'); setStatus('awaiting-approval', 'st.awaiting'); },
   async onApproved(ctx) {
-    const host = { relay: ctx.relay, channel: ctx.channel, hostPub: ctx.hostPub, approved: true };
+    // dk = this browser's device public key: a later page that finds the pairing but another device key knows the browser
+    // lost the key (0.15.1) instead of failing the resume and calling it "removed"
+    const host = { relay: ctx.relay, channel: ctx.channel, hostPub: ctx.hostPub, approved: true, dk: b64u((await deviceKey()).pub) };
     await forgetLocal();                              // a new pairing starts empty: nothing of the previous computer goes to it
     await dbPut('host', host);
+    markPaired(true);
+    askPersist();
+    $('pair-wiped').hidden = true;
     setAgentName(null, false);                        // a new pairing: its name comes with the host's first status
     snap.synthReset(); snap.S.hist = { epoch: 0, first: 0, last: 0, count: 0 }; relay.historyReset(0);
     lastSeq = 0; controls.panel !== 'chat' && controls.openPanel('chat');
     return host;
   },
   onReady() {
+    backfillPairing().catch(() => { /* only a hint for later */ });
     onHostGone();
     controls.openPanel(controls.panel);
     setStatus('ready', 'st.ready');
@@ -243,11 +251,27 @@ function pairFailed() {
 }
 // Removed by the computer (§10.14, P33-X13): the session ends, and the drafts, the input history, the key that sealed them,
 // the tray and anything queued are deleted from this phone at once; the screen says so when there was an unsent draft.
-async function revoked() {
+/** A phone paired before 0.15.1 has neither the marker nor `dk`: the first ready resume proved its key, record both. */
+async function backfillPairing() {
+  if (!wasPaired()) markPaired(true);
+  const h = await dbGet('host');
+  if (h && h.approved && typeof h.dk !== 'string' && h.channel === session.channel()) await dbPut('host', { ...h, dk: b64u((await deviceKey()).pub) });
+}
+// why (0.15.1, PROTOCOL §3 `removed`): 'replaced' = a newer pairing took this phone's place on a full computer.
+async function revoked(why = 'revoked') {
   session.closeSession();
   const hadDraft = !!$('input').value.trim() || !!(await dbGet('draft').catch(() => null));
   await forgetLocal();
-  setStatus('revoked', 'st.revoked');
+  // this computer no longer knows the phone: the record stays only to say so after a reload (no resume, no network);
+  // a new QR for the same computer pairs again (main() resumes instead only for a still-approved pairing)
+  const h = await dbGet('host').catch(() => null);
+  if (h && (h.approved || h.removed !== why)) await dbPut('host', { ...h, approved: false, removed: why }).catch(() => {});
+  markPaired(false);
+  const replaced = why === 'replaced';
+  setStatus('revoked', replaced ? 'st.replaced' : 'st.revoked');
+  $('revoked-title').dataset.i18n = replaced ? 'revoked.replacedTitle' : 'revoked.title';
+  $('revoked-lead').dataset.i18n = replaced ? 'revoked.replacedLead' : 'revoked.lead';
+  applyStatic($('revoked-view'));
   show('revoked');
   $('revoked-draft').hidden = !hadDraft;
 }
@@ -299,6 +323,8 @@ async function forgetHost() {
   const wiped = forgetLocal();
   await dbDel('host');
   await wiped;
+  markPaired(false);
+  $('pair-wiped').hidden = true;
   snap.synthReset(); snap.S.hist = { epoch: 0, first: 0, last: 0, count: 0 }; relay.historyReset(0);
   $('input').value = '';
   showIdle();
@@ -498,9 +524,29 @@ async function main() {
     saidOld: (text) => snap.synthSaid(text, api.myIdSync()),
     settings: settings.toggleFromKey,
   });
-  if (pendingLink) { const l = pendingLink; pendingLink = null; return startPairing(l); }
   const host = await dbGet('host');
-  if (host && host.approved) { show('chat'); return resume(); }
+  // 0.15.1: the browser deleted this phone's pairing (Safari private tab closed, site data cleared, …) — say so, not "removed"
+  let lost = !host && wasPaired();
+  if (host && host.approved && typeof host.dk === 'string' && host.dk !== b64u((await deviceKey()).pub)) {
+    await dbDel('host');                              // the pairing survived but its device key did not: it can never resume
+    lost = true;
+  }
+  if (lost) { markPaired(false); $('pair-wiped').hidden = false; }
+  if (pendingLink) {
+    const l = pendingLink; pendingLink = null;
+    // 0.15.1: a QR link of the computer this phone is already paired with (reopened from history / a bookmark, or the
+    // camera again): the link is one-time and probably spent — keep the pairing and resume. A removed phone has no host
+    // record any more (revoked()), so scanning a new QR after a removal still pairs.
+    let same = false;
+    try {
+      const q = parseLink(l, 0, allowRelay);
+      same = !!host && host.approved && !lost && q.channel === host.channel && b64u(q.hostPub) === b64u(new Uint8Array(host.hostPub));
+    } catch { /* a bad link: startPairing says so */ }
+    if (!same) return startPairing(l);
+    toast(t('pair.already'));
+  }
+  if (host && host.approved && !lost) { askPersist(); show('chat'); return resume(); }
+  if (host && !host.approved && ['replaced', 'revoked'].includes(host.removed)) return revoked(host.removed);
   showIdle();
 }
 

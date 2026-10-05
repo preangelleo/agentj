@@ -1,6 +1,6 @@
-# Agent J 0.15.0a1 release notes
+# Agent J 0.15.1a1 release notes
 
-Host 0.15.0a1 / install 0.19.0; phone-web scope.
+Host 0.15.1a1 / install 0.19.1; phone-web scope.
 Phone parity must pass --strict. Full Android/Telegram parity is incomplete.
 Full Android/Telegram parity is incomplete.
 No APK is included in this release. Android source is for review, not a released app.
@@ -8,7 +8,7 @@ No APK is included in this release. Android source is for review, not a released
 Publication status: local preparation only. Live site verification is DEFERRED until
 the public commit and tag are pushed, the site is deployed, and cold installation passes.
 
-On publication failure, restore v0.14.0a1 / public f9ff761, including the site.
+On publication failure, restore v0.15.0a1 / public 52d35aa, including the site.
 ## Changes
 
 - Sparse JSON5 configuration with transactional application, configuration history and migrations.
@@ -16,15 +16,11 @@ On publication failure, restore v0.14.0a1 / public f9ff761, including the site.
 - Opt-in own-key cloud speech and local phone read-aloud.
 - Optional owner-private Telegram text input and final replies.
 
-- F14 partial candidate: explicit apply is noninteractive; optional risk warnings default off and native permissions remain authoritative.
-- Self-code is writable and phone risk/session settings are editable. Independent config/service controls and human gates remain: NOT READY TO PUBLISH.
-- Real 0.14 wheel migration is verified outside its independent fence; service lifecycle uses a local simulator, not a real restart.
-- Upgrade by authorization (optional compatibility): `agentj update apply --authorization <code>` (or `--from-email`) upgrades to exactly the
-  version named in the owner's upgrade email, without a y/N prompt; the code is checked by the account service first.
-- One language value (appearance.language) for the web app, platform mail and the main Agent's conversation,
-  synchronised with the account (last write wins); hosts not linked to the cloud keep their local value.
-- Phone settings panel (pref_set for a whitelist of user-tier keys only); denser chat screen.
-- Against an account service older than 0.15 the host keeps working: no authorization path, language stays local.
+- Pairing hotfix: a phone whose page was closed and reopened (or that opens an old pairing link of the same computer)
+  resumes; a refused or timed-out pairing is no longer shown as "removed by the computer".
+- At five phones, approving a new one unpairs the least recently used one (offline first) and names it;
+  pairing again from the same browser replaces its old entry. A removed phone is told why (replaced / revoked).
+- Real iPhone acceptance (private browsing, home-screen app) is pending; the browser-side evidence is local Chromium.
 
 ## Material acceptance limits
 

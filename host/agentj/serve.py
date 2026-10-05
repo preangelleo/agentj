@@ -118,6 +118,8 @@ class Session:
     fg: bool = True               # the page is visible (device "vis"); no push while a visible session is ready
     p33: bool = False             # the device announced capability "p33" in its hello (PROTOCOL §10.0)
     hist: dict | None = None      # its hello's {"epoch", "last"}: where its history pages stop (§10.5)
+    iid: str = ""                 # 0.15.1: the browser install's per-host id from the pairing msg1 (same browser → replace)
+    gone: str = ""                # 0.15.1: a removed device that resumed: "replaced" | "revoked" — told so after its hello
 
 
 @dataclass
@@ -480,6 +482,7 @@ class Host:
         if not isinstance(info, dict) or info.get("v") != 1 or not isinstance(info.get("name", ""), str):
             return await self.close_cid(s.cid, "pair_bad_payload")
         s.sign_pub = _sign_key(info)
+        s.iid = _iid(info)
         msg2 = hs.write_message(b"")
         s.send, s.recv, s.h = hs.split()
         s.pub, s.device, s.mode, s.state = hs.rs, wire.device_id(hs.rs), "pair", "hello"
@@ -491,8 +494,17 @@ class Host:
         hs = Handshake(IK, False, self.kp, prologue=wire.resume_prologue(self.channel))
         payload = hs.read_message(msg1)
         if not self.st.is_allowed(hs.rs):
-            self.st.log("unknown_device", cid=s.cid, device=wire.device_id(hs.rs))
-            return await self.close_cid(s.cid, "unknown_device")
+            # 0.15.1: finish the handshake and, after its hello, tell the device WHY (PROTOCOL §3 `removed`) — a page that
+            # only sees the close cannot tell "a newer pairing took your place" from "removed" from a passing hiccup.
+            # Nothing else is answered on this session; the IK handshake proved the device holds the key it claims.
+            did = wire.device_id(hs.rs)
+            self.st.log("unknown_device", cid=s.cid, device=did)
+            msg2 = hs.write_message(b"")
+            s.send, s.recv, s.h = hs.split()
+            s.pub, s.device, s.mode, s.state = hs.rs, did, "gone", "hello"
+            s.gone = self.st.removed_why(did) or "revoked"
+            await self._op(wire.OP_DATA, s.cid, bytes([wire.HS_RESP]) + msg2)
+            return
         try:
             info = json.loads(payload) if payload else {}
         except ValueError:
@@ -511,6 +523,9 @@ class Host:
         if s.state == "hello":
             if t != "hello":
                 return await self.close_cid(s.cid, "expected_hello")
+            if s.mode == "gone":
+                await self.send_app(s, {"t": "removed", "why": s.gone})
+                return await self.close_cid(s.cid, "unknown_device")
             caps = obj.get("caps")
             s.p33 = isinstance(caps, list) and wire.CAP_P33 in caps[:16]
             h = obj.get("hist")
@@ -524,6 +539,8 @@ class Host:
                 await self.send_app(s, {"t": "ready", **self._caps(s)})
                 await self._bulk(s)
                 self.st.log("resume_ok", cid=s.cid, device=s.device)
+                with contextlib.suppress(OSError):
+                    self.st.touch_seen(s.device)
                 self.emit("ready", device=s.device, name=s.name)
                 self.reporter.trigger("online")
                 await self.on_ready(s, obj.get("since"))
@@ -625,16 +642,24 @@ class Host:
         if not p.done.done():
             p.done.set_result(result)
 
+    def _online(self) -> set:
+        return {x.device for x in self.sessions.values() if x.state == "ready"}
+
     def _pending_event(self, s: Session) -> dict:
-        """What `agentj pair` shows while a device waits. When the allowlist is full it also gets the current devices, so
-        the human can unbind one before approving (Q32: at most MAX_DEVICES remotes per host)."""
+        """What `agentj pair` shows while a device waits. 0.15.1 (P55): a full allowlist no longer blocks — the event says
+        which remote approving would replace: `replaces` (the same browser paired before under a lost key) or `evict` (the
+        stalest remote, offline first). Approving = consent; `agentj revoke` stays for picking one by hand."""
         ev = {"ev": "pending", "name": s.name, "device": s.device, "limit": MAX_DEVICES, "deadline_in": max(0, int(s.deadline - time.monotonic()))}
         devs = self.st.devices()
-        if len(devs) >= MAX_DEVICES and s.device not in devs:   # re-pairing a listed device does not need a free slot
-            online = {x.device for x in self.sessions.values() if x.state == "ready"}
-            ev["full"] = True
-            ev["devices"] = [{"id": d, "name": v.get("name", ""), "paired_at": v.get("paired_at", 0), "online": d in online}
-                             for d, v in sorted(devs.items(), key=lambda kv: kv[1].get("paired_at", 0))]
+        online = self._online()
+        twin = next((k for k, v in devs.items() if s.iid and isinstance(v, dict) and v.get("iid") == s.iid and k != s.device), None)
+        if twin:
+            ev["replaces"] = {"id": twin, "name": devs[twin].get("name", ""), "paired_at": devs[twin].get("paired_at", 0),
+                              "online": twin in online}
+        else:
+            cand = self.st.evict_candidate(online, s.device)
+            if cand:
+                ev["evict"] = cand
         return ev
 
     async def decide(self, p: Pairing, code: str, passphrase: str | None = None) -> dict:
@@ -647,12 +672,6 @@ class Host:
         if time.monotonic() > s.deadline:  # the timer may not have run yet; the deadline is what counts
             res = {"ev": "denied", "reason": "timeout"}
             await self.close_cid(s.cid, "approve_timeout", res)
-            return res
-        if self.st.device_full() and s.device not in self.st.devices():  # hard cap for a NEW device: unbind one first
-            res = {"ev": "denied", "reason": "device_limit"}
-            self.st.log("pair_denied", cid=s.cid, device=s.device, reason="device_limit")
-            await self.close_cid(s.cid, "device_limit", res)
-            self.emit("denied", device=s.device, name=s.name)
             return res
         if code.strip():
             if not passphrase and gate.is_set(self.st):     # nothing typed: ask again, no try used
@@ -679,12 +698,17 @@ class Host:
             await self.close_cid(s.cid, res["reason"], res)
             self.emit("denied", device=s.device, name=s.name)
             return res
-        try:
-            self.st.add_device(s.pub, s.name, s.sign_pub or None)
-        except DeviceLimit:
+        try:   # 0.15.1: full → the stalest remote makes room (State.pair_device); same browser → its old record goes
+            got = self.st.pair_device(s.pub, s.name, s.sign_pub or None, iid=s.iid or None, evict=True,
+                                      online=self._online() - {s.device})
+        except DeviceLimit:   # not reachable with evict=True; kept so a future cap change fails closed
             res = {"ev": "denied", "reason": "device_limit"}
             await self.close_cid(s.cid, "device_limit", res)
             return res
+        for kind in ("replaced", "evicted"):
+            if got[kind]:
+                self.st.log("auto_unbind", device=got[kind]["id"], reason="same_browser" if kind == "replaced" else "full")
+                await self._drop_device(got[kind]["id"], "replaced")
         s.state = "ready"
         self.reporter.trigger("approve")
         await self.send_app(s, {"t": "approved", **self._caps(s)})
@@ -692,7 +716,9 @@ class Host:
         self.st.log("pair_approved", cid=s.cid, device=s.device, name=s.name, code_ok=True)
         self.emit("approved", device=s.device, name=s.name)
         asyncio.create_task(self.on_ready(s, None))
-        return {"ev": "approved", "device": s.device, "name": s.name}
+        res = {"ev": "approved", "device": s.device, "name": s.name}
+        res.update({k: got[k] for k in ("replaced", "evicted") if got[k]})
+        return res
 
     # ------------------------------------------------------------ control socket (local, 0600)
     async def _ctl_send(self, w: asyncio.StreamWriter, obj: dict) -> None:
@@ -798,11 +824,17 @@ class Host:
         """Allowlist first, then detach every session of the device before the first await: from that instant none of
         its frames is acted on and nothing more is sent to it, however slow the relay is to carry the close notices."""
         removed = self.st.remove_device(did)
+        n = await self._drop_device(did, "revoked", removed)
+        return removed, n
+
+    async def _drop_device(self, did: str, why: str, removed: bool = True) -> int:
+        """A device already left the allowlist (revoke, or replaced by a newer pairing): end its sessions, its push
+        subscription and its uploads. Its page learns why on its next resume (`removed`, PROTOCOL §3)."""
         victims = [c for c, s in list(self.sessions.items()) if s.device == did]
         for c in victims:
             self._detach(c)
         if removed:
-            self.st.log("revoked", device=did)
+            self.st.log("revoked", device=did, reason=why)
             self.reporter.trigger("revoke")
             self.emit("revoked", device=did)
             subs = webpush.load_subs(self.st)
@@ -812,8 +844,8 @@ class Host:
                 self.uploads.device_gone(did)       # its partial uploads and never-announced files go too
         for c in victims:
             await self._notify_close(c)
-            self.st.log("close", cid=c, device=did, reason="revoked")
-        return removed, len(victims)
+            self.st.log("close", cid=c, device=did, reason=why)
+        return len(victims)
 
     async def _ctl_pair(self, r: asyncio.StreamReader, w: asyncio.StreamWriter) -> None:
         if not self.relay_up:
@@ -2724,6 +2756,15 @@ class Host:
             with contextlib.suppress(FileNotFoundError):
                 sock.unlink()
             self.st.log("serve_stop")
+
+
+_IID = re.compile(r"[A-Za-z0-9_-]{22}")
+
+
+def _iid(info: dict) -> str:
+    """The page's per-host install id (0.15.1, PROTOCOL §3): base64url of 16 bytes, or "" (older page / malformed)."""
+    v = info.get("iid")
+    return v if isinstance(v, str) and _IID.fullmatch(v) else ""
 
 
 def _sign_key(info: dict) -> bytes:

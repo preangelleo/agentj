@@ -8,7 +8,7 @@
 // session; `hello` is always the first message of a generation; app messages go only on a `ready` generation.
 import { IK, IKPSK2, Handshake } from '../proto/noise.js';
 import { KIND, MAX_JSON, MAX_JSON_P33, MAX_TEXT_P33, padJson, unpadJson, Defrag, pairPrologue, resumePrologue, safetyCode, frame, b64u } from '../proto/wire.js';
-import { deviceKey, signKey } from './store.js';
+import { deviceKey, signKey, installId } from './store.js';
 
 const enc = new TextEncoder();
 const EMPTY = new Uint8Array(0);
@@ -46,6 +46,11 @@ let H = null;                                   // hooks from app.js
 let sess = null;
 let reconnectTimer = null;
 let backoff = 1000;
+// 0.15.1 (P55): a close we cannot explain is not a removal. A host from 0.15.1 on says why it refuses a device (`removed`,
+// PROTOCOL §3) before closing; an older host only closes (4010). One unexplained refusal = reconnect; a second one in a
+// row (no `ready` between) = removed. Before, every 4010 — a pairing refused, a handshake that timed out while iOS had the
+// page asleep — showed "removed by your computer" and wiped the drafts.
+let refusals = 0;
 export const peer = { p33: false, asr: 'off', hist: 'off' };
 export function configure(hooks) { H = hooks; }
 export const current = () => sess;
@@ -69,7 +74,8 @@ export function openSession(mode, ctx) {
   const ws = new WebSocket(ctx.relay + '/v1/dev/' + ctx.channel);
   ws.binaryType = 'arraybuffer';
   const s = { ws, mode, ctx, phase: 'wait-host', hs: null, gen: null, recv: null, chain: Promise.resolve(),
-    closedByUs: false, frag: new Defrag(), pacer: new Pacer() };
+    closedByUs: false, frag: new Defrag(), pacer: new Pacer(), removed: null };
+  if (mode === 'pair') refusals = 0;
   sess = s;
   H.setStatus('connecting', 'st.connecting');
   ws.onopen = () => { if (sess === s && s.phase === 'wait-host') H.setStatus('waiting-host', 'st.waitingHost'); };
@@ -131,6 +137,10 @@ function readCaps(m) {
 }
 
 async function onApp(s, m) {
+  if (m.t === 'removed' && s.mode === 'resume') {     // §3: the host says why it will close this device (then closes)
+    s.removed = m.why === 'replaced' ? 'replaced' : 'revoked';
+    return;
+  }
   if (m.t === 'approved') {
     if (s.mode !== 'pair' || s.phase !== 'approval') throw new ProtocolError('unexpected approved');
     readCaps(m);
@@ -158,6 +168,7 @@ async function onApp(s, m) {
 function enterReady(s) {
   s.phase = 'ready';
   backoff = 1000;
+  refusals = 0;
   H.onReady();
   if (document.visibilityState !== 'visible') sendApp({ t: 'vis', fg: false }).catch(() => {});
 }
@@ -172,6 +183,7 @@ async function hostUp(s) {
     s.hs = await new Handshake({ protocol: IKPSK2, initiator: true, prologue: pairPrologue(p.channel, p.pairingId), s: dev, rs: p.hostPub, psk: p.psk }).init();
     const sk = await signKey();
     const info = sk ? { v: 1, name: H.deviceLabel(), sk: b64u(sk.pub) } : { v: 1, name: H.deviceLabel() };
+    try { info.iid = await installId(p.channel); } catch { /* no storage: the host simply cannot match it */ }
     msg1 = frame(KIND.PAIR_INIT, p.pairingId, await s.hs.writeMessage(enc.encode(JSON.stringify(info))));
     H.setStatus('pairing', 'st.pairing');
   } else {
@@ -200,10 +212,13 @@ function hostDown(s) {
 function onClose(s, ev) {
   if (s !== sess) return;                             // superseded or closed by us
   sess = null; endGen(s);
-  if (ev.code === 4010) return H.onRevoked();
-  if (s.mode === 'pair') return H.onPairFailed();
-  // An approved device whose RESUME is answered by a close (not a network drop) is no longer on the allowlist.
-  if ((s.phase === 'hs' || s.phase === 'ready-wait') && ev.code !== 1006) return H.onRevoked();
+  if (s.mode === 'pair') return H.onPairFailed();     // a pairing that ended (refused, timed out, …) never means "removed"
+  if (s.removed) { refusals = 0; return H.onRevoked(s.removed); }
+  // A close from the computer (4010), or a RESUME answered by a close rather than a network drop: probably no longer on the
+  // allowlist — but an older host also closes this way for a handshake that timed out. Ask again once before saying so.
+  if (ev.code === 4010 || ((s.phase === 'hs' || s.phase === 'ready-wait') && ev.code !== 1006)) {
+    if (++refusals >= 2) { refusals = 0; return H.onRevoked('revoked'); }
+  }
   H.onHostDown();
   scheduleReconnect();
 }

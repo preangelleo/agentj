@@ -65,7 +65,8 @@ First byte = message kind (visible to the relay — see §5):
   messages travel as `frag` (§10.1). A peer that did not announce `p33` keeps exactly these 16 KiB / 4 000 limits.
 - **App messages**: `{"t":"hello"}` (device → host, first DATA after every handshake — for pairing it is the host's proof that the
   device knows the PSK, because IKpsk2 mixes the PSK only into msg2; L1: a resume's hello may carry `"since":<seq>`, §8) ·
-  `{"t":"approved"}` (host → device, once, after the human approves) · `{"t":"ready"}` (host → device, after a resume is accepted) ·
+  `{"t":"approved"}` (host → device, once, after the human approves) · `{"t":"ready"}` (host → device, after a resume is accepted) · `{"t":"removed","why":"replaced"|"revoked"}` (host → device,
+  0.15.1: instead of `ready` when the resuming device is not on the allowlist, then the close — §4 step 6) ·
   `{"t":"msg","id":"<16 hex>","text":"…","ts":<ms>}` (both ways; host → device adds `seq` and `from`, §8). L1 adds the Agent and
   push messages of §8–§9. Unknown `t` values are ignored by both sides (forward compatible).
 - Any decryption failure, bad kind, or out-of-order message closes that session (host sends op `0x02`).
@@ -81,7 +82,7 @@ First byte = message kind (visible to the relay — see §5):
 3. Device sends PAIR_INIT. The host **consumes the pairing on the first PAIR_INIT carrying its id whose msg1 decrypts** (one-time;
    a msg1 that does not decrypt was not made with the QR's host key — the relay never sees that key — so it does not use up the
    QR); unknown / used / expired ids are dropped and logged. msg1's payload must be a JSON object `{"v":1,"name":<string>}`,
-   otherwise the session and the pairing end. Host answers HS_RESP; device decrypts it (proves the host knows the PSK and its
+   otherwise the session and the pairing end (0.15.1: an optional `"iid"`, step 9). Host answers HS_RESP; device decrypts it (proves the host knows the PSK and its
    static key) and sends `hello`; the host decrypting `hello` proves the device knows the PSK.
    **Deadlines** (host-enforced, monotonic clock): QR admission 5 min · every connection must reach `hello` within **30 s** of
    appearing (otherwise closed; a pairing in progress ends) · approval 120 s from `hello`, re-checked when the code is typed.
@@ -97,12 +98,29 @@ First byte = message kind (visible to the relay — see §5):
    admin page (`agentj admin`) sends the same message, so a holder of its link or session still cannot approve without it.
 5. Approve → device static key + label go into the host's allowlist (`devices.json`, 0600), host sends `approved`. Deny/timeout →
    host closes the device socket; it never sends that device an application message.
-6. Later connections: RESUME_INIT (IK). The host learns the device static key from msg1 and **silently closes** the socket unless
-   it is on the allowlist (logged as `unknown_device`). Accepted → HS_RESP, `hello` from device, then `ready` from host.
+6. Later connections: RESUME_INIT (IK). The host learns the device static key from msg1. Accepted → HS_RESP, `hello` from device,
+   then `ready` from host. Not on the allowlist (logged as `unknown_device`): ≤ 0.15.0 the host **silently closed** the socket;
+   **0.15.1** (P55) it finishes the handshake and answers the `hello` with `{"t":"removed","why":"replaced"|"revoked"}` before
+   the close — `replaced` when a newer pairing took the device's place (step 9), `revoked` otherwise (a human removed it, or the
+   host never knew it). Nothing else is answered on that session. The reason comes from `removed.json` (0600, device ids +
+   reason + time, newest 64; an id re-paired is dropped from it).
+   **Device side (0.15.1)**: a close during pairing = the pairing failed (never "removed"); `removed` = removed, with that reason;
+   a close without `removed` (4010, or a RESUME answered by a non-1006 close — an older host, or a hello deadline that ran out
+   while the phone slept) = reconnect once, and only a second one in a row (no `ready` between) counts as removed.
 7. **Revoke** (`agentj revoke <device id>`): removed from the allowlist, then every live session of that device is detached in one
    step before any network I/O (nothing it sends afterwards is acted on, nothing more is sent to it), then closed via op `0x02`
    (best effort, 2 s each); its next RESUME_INIT is rejected. Ready sessions also re-check the allowlist on every message.
 8. The host keeps at most 64 sessions (the relay allows 32 device sockets per channel; the cap also bounds a misbehaving relay).
+9. **At most 5 remotes; a new one makes room (0.15.1, P55).** Approving a NEW device on a full allowlist no longer fails
+   `device_limit`: in the same locked write that adds it, the host removes the stalest remote — offline before online, then the
+   longest unseen (`seen` = last accepted resume, ≤ 1 write a minute; else `paired_at`), then the earliest paired. The human who
+   typed the code and the passphrase for the new device consented; the `pending` event already names the one that will go
+   (`evict`), `agentj pair` prints 「已自动解绑最早的遥控器：<名称> 配对于 <时间>」 after approving, and `agentj revoke` stays for
+   picking by hand. Its sessions, push subscription and uploads end as on a revoke; it is told `replaced` on its next resume.
+   **Same browser, lost key**: the pairing msg1 may carry `"iid"` = b64url(SHA-256(`"agentjarvis/iid/v1\n" ‖ channel ‖ "\n" ‖
+   install id`)[0:16]) (22 chars), the install id being 16 random bytes the page keeps in both localStorage and IndexedDB.
+   A new key whose `iid` matches a listed device replaces that record (`replaces` in the pending event, `replaced` in the
+   result) instead of taking another slot. Per-host hash: two computers cannot match their values; nothing about the phone is in it.
 
 ## 5. What the relay (and Cloudflare) can see
 Channel id, connection times and IPs, message kind byte, pairing id (once, one-time), frame sizes (padded to 256 B),

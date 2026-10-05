@@ -266,7 +266,7 @@ class ControlPlane(unittest.TestCase):
             rep = cp.reports[-1]
             self.assertEqual(rep["agent_name"], "Wren")
             self.assertEqual(rep["machine"], text.machine_name())
-            self.assertEqual(rep["agent"], "agentj/0.15.0a1")
+            self.assertEqual(rep["agent"], "agentj/0.15.1a1")
 
     def test_rename_signed_and_answers_whitelisted(self):
         with FakeCP() as cp:
@@ -670,7 +670,7 @@ class Page(unittest.TestCase):
         self.assertEqual(st["agent_name"], "Wren")
         self.assertEqual(set(st), {"agent_name", "machine", "channel", "version", "serve", "dashboard", "remote_unbind", "limit",
                                    "devices", "pairing", "passphrase_set"})
-        self.assertEqual((st["limit"], st["version"], st["serve"]["running"]), (5, "0.15.0a1", False))
+        self.assertEqual((st["limit"], st["version"], st["serve"]["running"]), (5, "0.15.1a1", False))
         for bad in (auth.replace("Bearer ", "bearer "), auth + "x", "Basic " + auth[7:], auth[7:]):
             self.assertEqual(self.state_status(bad), 404, bad)
         r, _ = self.req("GET", "/api/state", headers={"Cookie": f"aj_admin_{self.port}={auth[7:]}"})
@@ -1104,29 +1104,27 @@ class PagePairing(unittest.TestCase):
         self.assertTrue(dev2.closed(), "cancel = abandoned: serve denies and closes the waiting device")
         self.assertEqual(self.st.devices(), {})
 
-    def test_full_list_unbind_then_approve(self):
+    def test_full_list_approve_unbinds_the_oldest(self):
+        """0.15.1 (P55): a full host shows which remote approving will unbind, and the right code approves."""
         old = [self.st.add_device(os.urandom(32), f"旧遥控器{i}") for i in range(5)]
+        d = self.st.devices()
+        for i, did in enumerate(old):
+            d[did]["paired_at"] = 1_790_000_000 + i
+        self.st.write_private(self.st.devices_path, json.dumps(d).encode())
         dev, code, st = self.start_and_pair("第六台")
         p = st["pairing"]
-        self.assertEqual(p["phase"], "full")
+        self.assertEqual(p["phase"], "pending")
+        self.assertEqual(p["makes_room"]["kind"], "evict")
+        self.assertEqual((p["makes_room"]["device"]["id"], p["makes_room"]["device"]["name"]), (old[0], "旧遥控器0"))
         self.assertEqual(len(st["devices"]), 5)
         s, d = self.post("/api/pair/code", {"code": code, "passphrase": PASS})
-        self.assertEqual((s, d["error"]), (409, "unbind_first"), "the right code cannot approve while full")
-        s, d = self.post("/api/pair/unbind", {"device": dev.id})
-        self.assertEqual(s, 409, "the waiting device itself is not an unbind target")
-        s, d = self.post("/api/pair/unbind", {"device": "NOPENOPENOPENOPE"})
-        self.assertEqual(s, 409)
-        s, d = self.post("/api/pair/unbind", {"device": old[2]})
-        self.assertEqual(s, 200, d)
-        self.assertTrue(d["ok"])
-        self.assertEqual(d["pairing"]["phase"], "pending")
-        self.assertNotIn(old[2], self.st.devices())
-        s, d = self.post("/api/pair/code", {"code": code, "passphrase": PASS})
         self.assertEqual(d["pairing"]["phase"], "approved")
+        self.assertEqual(d["pairing"]["makes_room"]["kind"], "evicted")
+        self.assertEqual(d["pairing"]["makes_room"]["device"]["id"], old[0])
         self.assertEqual(dev.app(), {"t": "approved"})
         self.assertEqual(len(self.st.devices()), 5)
         self.assertIn(dev.id, self.st.devices())
-
+        self.assertNotIn(old[0], self.st.devices())
 
 if __name__ == "__main__":
     unittest.main()

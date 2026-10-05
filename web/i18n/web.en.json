@@ -41,7 +41,8 @@
     "error": "Connection error — disconnected",
     "revoked": "This phone was removed by your computer",
     "unusable": "Can't run here",
-    "pairFail": "Not approved, or the link expired. Run agentj pair on your computer again."
+    "pairFail": "Not approved, or the link expired. Run agentj pair on your computer again.",
+    "replaced": "Replaced by a newer device"
   },
   "pair": {
     "title": "Connect to your computer",
@@ -59,7 +60,9 @@
     "or": "Or paste the pairing link",
     "placeholder": "Paste the link from agentj pair --link",
     "go": "Pair",
-    "badLink": "That link is invalid or has expired. Run agentj pair on your computer again."
+    "badLink": "That link is invalid or has expired. Run agentj pair on your computer again.",
+    "wiped": "This browser deleted the pairing it had saved on this phone (for example a private tab was closed, or the browser cleared website data). Your computer did not remove this phone. Run `agentj pair` on the computer and pair once more. On iPhone, don't use Private Browsing; better, add the page to your Home Screen and open it from the icon.",
+    "already": "This phone is already paired with this computer, so you can carry on."
   },
   "sas": {
     "title": "Type this 6-digit code on your computer",
@@ -286,7 +289,9 @@
     "title": "This phone was removed by your computer",
     "lead": "Your computer no longer trusts this phone. To keep using it, run `agentj pair` on your computer and pair again.",
     "btn": "Pair again",
-    "draft": "Your unsent draft, your input history and the key that encrypted them were deleted from this phone."
+    "draft": "Your unsent draft, your input history and the key that encrypted them were deleted from this phone.",
+    "replacedTitle": "A newer device took this phone's place",
+    "replacedLead": "Your computer already had the most remotes it allows (5), so a newly paired device replaced this one. To keep using this phone, run `agentj pair` on the computer and pair again."
   },
   "error": {
     "title": "Disconnected",

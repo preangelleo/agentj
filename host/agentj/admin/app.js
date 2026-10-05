@@ -179,6 +179,12 @@ function renderPairing(s) {
   const res = $('pair-result');
   if (phase === 'approved') {
     rich(res, t('pair.approved', { name: (p.device && p.device.name) || t('pair.new_device') }));
+    const room = p.makes_room && p.makes_room.device;
+    if (room) {   // 0.15.1: which remote made room for it (a full list, or the same browser paired again)
+      const line = el('span', 'aj-small');
+      rich(line, t(p.makes_room.kind === 'replaced' ? 'pair.replaced_done' : 'pair.evicted_done', roomVars(room)));
+      res.append(el('br'), line);
+    }
     res.className = 'aj-callout';
   } else if (phase === 'denied') {
     rich(res, t(DENY.has(p.reason) ? `deny.${p.reason}` : 'deny.denied'));
@@ -208,6 +214,7 @@ function renderPairing(s) {
     if (typeof p.pass_wrong === 'number') rich(wrong, t('pair.pass_wrong', { n: p.pass_wrong }));
     else wrong.replaceChildren();
     show('pair-pass-unset', s.passphrase_set === false);
+    renderRoom($('pair-room'), p.makes_room);
   } else {
     $('pair-code').value = '';
     $('pair-pass').value = '';
@@ -219,6 +226,18 @@ function renderPairing(s) {
     $('pair-full-list').replaceChildren(...s.devices.map((d) => deviceRow(d, 'pair.full_unbind', unbindForPairing)));
   }
   return phase === 'waiting' || phase === 'pending' || phase === 'full';
+}
+
+function roomVars(d) {
+  const at = when(d.paired_at);
+  return { name: d.name || t('devices.noname'), when: at || t('devices.unknown_time') };
+}
+/** 0.15.1: a full list no longer blocks — say which remote approving will replace. */
+function renderRoom(node, room) {
+  if (!room || !room.device) { node.hidden = true; node.replaceChildren(); return; }
+  const key = room.kind === 'replaces' ? 'pair.replaces_note' : room.device.online ? 'pair.evict_note_online' : 'pair.evict_note';
+  rich(node, t(key, roomVars(room.device)));
+  node.hidden = false;
 }
 
 function setLinkBox(open) {

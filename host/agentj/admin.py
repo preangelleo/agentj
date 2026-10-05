@@ -157,6 +157,7 @@ class Pairing:
         self.cond = threading.Condition()
         self.seq, self.last_ev, self.closed = 0, "", False
         self.phase, self.reason, self.device, self.deadline = "waiting", None, None, None
+        self.makes_room: dict | None = None   # 0.15.1: {"kind": "evict"|"replaces", "device": {id, name, paired_at, online}}
         self.pass_wrong: int | None = None   # tries left after a wrong approval passphrase (the device keeps waiting)
         try:
             self.sock.sendall(b'{"cmd":"pair"}\n')
@@ -205,13 +206,15 @@ class Pairing:
             self.pass_wrong = left if isinstance(left, int) and not isinstance(left, bool) else 0
             return
         if kind == "pending":
-            self.phase = "full" if ev.get("full") else "pending"
+            self.phase = "full" if ev.get("full") else "pending"   # "full" = a serve before 0.15.1 (unbind first)
             self.device = {"id": str(ev.get("device", ""))[:16], "name": clean_label(str(ev.get("name", "")))}
+            self.makes_room = _room("replaces", ev.get("replaces")) or _room("evict", ev.get("evict"))
             d = ev.get("deadline_in")
             self.deadline = time.monotonic() + (d if isinstance(d, (int, float)) and not isinstance(d, bool) else 0)
         elif kind == "approved":
             self.phase, self.reason = "approved", None
             self.device = {"id": str(ev.get("device", ""))[:16], "name": clean_label(str(ev.get("name", "")))}
+            self.makes_room = _room("replaced", ev.get("replaced")) or _room("evicted", ev.get("evicted"))
         elif kind == "expired":
             self.phase, self.reason = "expired", None
         elif kind in ("denied", "gone", "replaced", "error"):
@@ -246,7 +249,19 @@ class Pairing:
                 v["reason"] = self.reason
             if self.phase == "pending" and self.pass_wrong is not None:
                 v["pass_wrong"] = self.pass_wrong
+            if self.makes_room and self.phase in ("pending", "approved"):
+                v["makes_room"] = {"kind": self.makes_room["kind"], "device": dict(self.makes_room["device"])}
             return v
+
+
+def _room(kind: str, d) -> dict | None:
+    """A remote serve says approving replaces / replaced (0.15.1), cleaned for the page: id, one-line name, time, online."""
+    if not isinstance(d, dict) or not (isinstance(d.get("id"), str) and _DEVICE_ID.fullmatch(d["id"])):
+        return None
+    pa = d.get("paired_at")
+    return {"kind": kind, "device": {"id": d["id"], "name": clean_label(str(d.get("name", ""))),
+                                     "paired_at": int(pa) if isinstance(pa, (int, float)) and not isinstance(pa, bool) else 0,
+                                     "online": d.get("online") is True}}
 
 
 # ------------------------------------------------------------------ the page's actions

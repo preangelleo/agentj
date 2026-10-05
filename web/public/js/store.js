@@ -5,8 +5,8 @@
 // What that buys (P33-C05, PROTOCOL §10.14): the key sits in the same origin's IndexedDB as the ciphertext, so it stops a
 // casual read of the stored files (a backup, a copied store) — not code running in this origin, and not someone who copies
 // the whole browser profile and runs it. The same holds for the device keys.
-import { generateKeypair } from '../proto/noise.js';
-import { generateSigningKeypair } from '../proto/wire.js';
+import { generateKeypair, sha256, concat } from '../proto/noise.js';
+import { generateSigningKeypair, b64u } from '../proto/wire.js';
 
 function idb() {
   return new Promise((res, rej) => {
@@ -38,6 +38,38 @@ export async function deviceKey() {
   await dbPut('device', { priv: kp.priv, pub: kp.pub });
   return (devKey = kp);
 }
+
+// ---------------------------------------------------------------- 0.15.1 (P55): surviving a lost key, and saying so
+// Install id: 16 random bytes kept in BOTH localStorage ("aj.iid") and IndexedDB ("iid"), so either copy restores the
+// other. The pairing msg1 carries only a per-computer hash of it (PROTOCOL §3 `iid`): when this browser lost its device
+// key but kept one copy, the computer replaces the old record instead of counting a second remote; two computers cannot
+// match their hashes. It is not a fingerprint: nothing about the phone goes into it, and unpairing does not reset it.
+const IID_KEY = 'aj.iid';
+let iidRaw = null;
+async function installRaw() {
+  if (iidRaw) return iidRaw;
+  let v = null;
+  try { v = localStorage.getItem(IID_KEY); } catch { /* blocked storage */ }
+  if (!/^[A-Za-z0-9_-]{22}$/.test(v || '')) { try { v = await dbGet('iid'); } catch { v = null; } }
+  if (!/^[A-Za-z0-9_-]{22}$/.test(v || '')) v = b64u(crypto.getRandomValues(new Uint8Array(16)));
+  try { localStorage.setItem(IID_KEY, v); } catch { /* blocked storage */ }
+  try { await dbPut('iid', v); } catch { /* the other copy still holds it */ }
+  return (iidRaw = v);
+}
+/** The install id as this computer (channel) sees it: b64url(SHA-256("agentjarvis/iid/v1\n" + channel + "\n" + id)[0:16]). */
+export async function installId(channel) {
+  const raw = await installRaw();
+  return b64u((await sha256(concat(new TextEncoder().encode('agentjarvis/iid/v1\n' + channel + '\n'), new TextEncoder().encode(raw)))).slice(0, 16));
+}
+// Paired marker (localStorage "aj.paired"): set on approval, cleared on unpair. When the page opens with the marker but
+// without its pairing in IndexedDB, the browser deleted the site's data — the page says exactly that, not "removed".
+const PAIRED_KEY = 'aj.paired';
+export function markPaired(on) {
+  try { if (on) localStorage.setItem(PAIRED_KEY, String(Math.floor(Date.now() / 1000))); else localStorage.removeItem(PAIRED_KEY); } catch { /* blocked */ }
+}
+export function wasPaired() { try { return !!localStorage.getItem(PAIRED_KEY); } catch { return false; } }
+/** Ask the browser not to evict this origin's storage (no prompt in Safari / Chrome; a refusal changes nothing). */
+export function askPersist() { try { navigator.storage?.persist?.().catch(() => {}); } catch { /* not supported */ } }
 
 // Ed25519 approval key (PROTOCOL §8). null = this browser cannot sign → it can chat but not approve.
 let signKp;

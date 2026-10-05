@@ -61,26 +61,30 @@ class Cap(unittest.TestCase):
         host.sessions[7] = s
         return s
 
-    def test_decide_refuses_when_full_even_with_the_right_code(self):
-        _fill(self.st)
+    def test_full_host_approves_by_unbinding_the_stalest(self):
+        """0.15.1 (P55) replaced A3.1's "refuse when full": the right code + passphrase approve, the stalest remote makes room
+        (details and ordering: test_p55_pairing)."""
+        ids = _fill(self.st)
         host = serve.Host(self.st, events="jsonl", read_stdin=False)
+
+        async def send_app(s, obj):
+            return True
+        host.send_app = send_app
 
         async def go():
             s = self._pending(host)
             p = serve.Pairing(os.urandom(16), os.urandom(32), time.time() + 60, time.monotonic() + 60, ctl=None, cid=7)
             host.pairing = p
             ev = host._pending_event(s)
-            self.assertTrue(ev["full"])
+            self.assertNotIn("full", ev)
             self.assertEqual(ev["limit"], 5)
-            self.assertEqual(len(ev["devices"]), 5)
-            self.assertEqual(set(ev["devices"][0]), {"id", "name", "paired_at", "online"})
-            res = await host.decide(p, wire.safety_code(s.h), PASS)   # the right code
-            return res
+            self.assertEqual(set(ev["evict"]), {"id", "name", "paired_at", "online"})
+            return await host.decide(p, wire.safety_code(s.h), PASS)   # the right code
         res = asyncio.run(go())
-        self.assertEqual(res, {"ev": "denied", "reason": "device_limit"})
+        self.assertEqual(res["ev"], "approved")
+        self.assertIn(res["evicted"]["id"], ids)
         self.assertEqual(len(self.st.devices()), 5)
-        self.assertNotIn(7, host.sessions, "the waiting device is dropped")
-        self.assertIn('"reason": "device_limit"', self.st.log_path.read_text())
+        self.assertIn('"ev": "auto_unbind"', self.st.log_path.read_text())
 
     def test_re_pairing_a_listed_device_is_not_a_new_one(self):
         """Review A31-04 (claude): a full host still lets a listed device re-pair, without the full-list prompt."""
@@ -97,7 +101,7 @@ class Cap(unittest.TestCase):
             s.device = ids[0]
             p = serve.Pairing(os.urandom(16), os.urandom(32), time.time() + 60, time.monotonic() + 60, ctl=None, cid=7)
             host.pairing = p
-            self.assertNotIn("full", host._pending_event(s))
+            self.assertNotIn("evict", host._pending_event(s))
             return await host.decide(p, wire.safety_code(s.h), PASS)
         self.assertEqual(asyncio.run(go())["ev"], "approved")
         self.assertEqual(len(self.st.devices()), 5)
@@ -118,7 +122,7 @@ class Cap(unittest.TestCase):
             host.pairing = p
             removed, _ = await host.revoke(ids[2])           # what the ctl "unbind" command does
             self.assertTrue(removed)
-            self.assertNotIn("full", host._pending_event(s))
+            self.assertNotIn("evict", host._pending_event(s))
             return await host.decide(p, wire.safety_code(s.h), PASS)
         res = asyncio.run(go())
         self.assertEqual(res["ev"], "approved")

@@ -7,14 +7,12 @@
   "header.logout": "退出",
   "header.adding": "正在添加手机遥控器",
   "header.unnamed": "还没起名字",
-
   "hero.eyebrow": "Agent 管理页",
   "hero.unnamed": "这个 Agent 还没有名字",
   "hero.adding": "正在添加手机遥控器",
   "hero.sub": "1 个席位 · 运行在 {machine} 上",
   "hero.sub_here": "1 个席位 · 运行在这台主机上",
   "hero.note": "这个页面只在这台电脑上打开（地址是 127.0.0.1）。批准新的手机遥控器，只能在这里，或者在终端里运行 `agentj pair`。",
-
   "conn.title": "连接状态",
   "conn.program": "电脑端程序",
   "conn.program_on": "正在运行",
@@ -28,7 +26,6 @@
   "conn.company_hidden": "已加入 Agent J 账号（配对时不显示账号名）",
   "conn.company_linked": "已加入 Agent J 账号 {slug}（{name}）",
   "conn.hint": "添加手机遥控器时，电脑端程序得在运行。没在运行的话，在终端运行 `agentj service install`。它没运行时，你照样可以在这里改名、解绑手机遥控器。",
-
   "devices.title": "手机遥控器",
   "devices.count_label": "已配对 {n} 台，最多 {limit} 台",
   "devices.full": "已满",
@@ -42,7 +39,6 @@
   "devices.confirm_unbind": "解绑「{name}」？它会马上断开，以后再用要重新扫码配对。",
   "devices.unbound": "已解绑「{name}」。",
   "devices.unbind_failed": "没解绑成功。",
-
   "pair.title": "添加手机遥控器",
   "pair.intro": "点下面的按钮，这里会出现一个二维码。用手机相机扫它，手机上会显示 6 位码，把这 6 位码输到这里就行。",
   "pair.start": "添加手机遥控器",
@@ -73,13 +69,17 @@
   "pair.unbound_next": "已解绑「{name}」。现在看着手机，输入手机上的 6 位码。",
   "pair.unbind_failed": "没解绑成功（可能已经解绑过了）。",
   "pair.approved": "已批准「{name}」，它现在是这台主机的手机遥控器。",
+  "pair.evict_note": "这台主机的手机遥控器已经满 5 台了。批准后，会自动解绑最久没用的那台：「{name}」（{when} 配对，现在离线）。不想让它走，就点拒绝，先在下面的列表里解绑别的。",
+  "pair.evict_note_online": "这台主机的手机遥控器已经满 5 台，而且都在线。批准后，会自动解绑最久没用的那台：「{name}」（{when} 配对），它会马上断开。不想让它走，就点拒绝，先在下面的列表里解绑别的。",
+  "pair.replaces_note": "这是之前配对过的同一个浏览器（它丢了原来的配对数据）。批准后会替换旧记录「{name}」（{when} 配对），不多占一台。",
+  "pair.evicted_done": "已自动解绑最早的遥控器：「{name}」（{when} 配对）。",
+  "pair.replaced_done": "已替换同一个浏览器的旧记录：「{name}」（{when} 配对）。",
   "pair.new_device": "新设备",
   "pair.unnamed_device": "没有名字的设备",
   "pair.expired": "二维码过期了（5 分钟内有效），请重新添加。",
   "pair.cancelled": "已取消配对。",
   "pair.start_failed": "没法开始配对。",
   "pair.submit_failed": "没提交成功。",
-
   "deny.code_mismatch": "6 位码对不上，已拒绝。",
   "deny.denied": "已拒绝。",
   "deny.timeout": "120 秒内没有确认，已拒绝。",
@@ -95,7 +95,6 @@
   "deny.cancelled": "已取消。",
   "deny.pass_locked": "批准口令连续输错，暂时锁定了，请稍后再试。",
   "deny.pass_not_set": "还没设置批准口令：先在这台电脑的终端运行 `agentj passphrase set`。",
-
   "err.serve_not_running": "电脑端程序没有运行：先在终端运行 `agentj service install`，再添加手机遥控器。",
   "err.serve_busy": "电脑端程序暂时没响应，稍后再试。",
   "err.pair_failed": "没法开始配对。",
@@ -107,7 +106,6 @@
   "err.passphrase_required": "还要输入批准口令。",
   "err.bad_code": "6 位码格式不对。",
   "err.generic": "这一步没做成，刷新页面再试一次。",
-
   "name.title": "Agent 的名字",
   "name.intro": "每天跟它说话时，它就是一个有名字的 Agent。加入了 Agent J 账号的话，名字先在账号后台改（同一个账号里不能重名），改好了，这台电脑上的名字才跟着改。",
   "name.label": "新名字",
@@ -129,23 +127,19 @@
   "name.err.not_bound": "账号后台那边已经把这台电脑移出了账号，名字没改。在终端运行 `agentj unlink` 清掉这台电脑上的记录后，就能只改这台电脑上的名字。",
   "name.err.rate_limited": "改名太频繁了（每小时最多 20 次），名字没改，过一会儿再试。",
   "name.err.failed": "账号后台没接受这次改名，名字没改。",
-
   "remote.title": "从账号后台解绑",
   "remote.label": "允许在账号后台解绑这台电脑的手机遥控器",
   "remote.on": "已打开：账号的管理员可以在账号后台解绑这台电脑的手机遥控器，每小时最多 3 次。只能解绑，不能添加。",
   "remote.off": "已关闭：账号后台发来的解绑请求，这台电脑一律拒绝。要解绑就在这里，或者在终端运行 `agentj revoke`。",
   "remote.failed": "没改成功。",
-
   "tips.title": "使用建议",
   "tips.one": "建议一个人用一个 Agent。5 台手机遥控器，是给同一个人的手机、平板和电脑用的。几个人同时指挥同一个 Agent，很容易互相打架。",
   "tips.seat": "一个 Agent 就是一个计费席位，只能运行在一台电脑或服务器上。它的名字只是个标签，就像给宠物起名，叫什么都行。",
   "tips.qr": "配对用的二维码和链接，只会在这台电脑上显示。账号后台、邮件或客服发给你的二维码，一律别扫。",
-
   "session.logged_out": "这个页面还没登录，或者登录已经失效。在这台电脑的终端运行 `agentj admin`（或者在它的终端里按回车），拿一个新链接。",
   "session.link_used": "这个链接已经用过或者过期了。在运行 `agentj admin` 的终端里按回车，拿一个新链接。",
   "session.bye": "已退出。要再打开，在运行 `agentj admin` 的终端里按回车，拿一个新链接。",
   "session.unreachable": "暂时连不上 Agent 管理页（`agentj admin` 可能已经关了）。",
-
   "footer.tagline": "电脑上的 AI 助手干活，你用手机指挥它。",
   "footer.help": "帮助",
   "footer.trust": "信任",

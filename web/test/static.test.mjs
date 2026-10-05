@@ -131,8 +131,13 @@ test('app.js + js/*.js: only WebSocket egress, non-extractable keys, no plaintex
   // colour of an iPhone home-screen app); brand/lang.js keeps the language + theme. Never chat text, drafts or history.
   const ls = OURS_FILES.flatMap((r) => [...code(read(pub(r))).matchAll(/localStorage\.(\w+)\(([^,)]*)/g)].map((m) => `${m[1]}(${m[2]})`));
   // F13: + the reply text size from Settings (FONT_KEY = "aj.fontScale", a number 0.8 … 1.6).
-  assert.deepEqual(ls.sort(), ['getItem("aj.chrome")', 'getItem(A2HS_KEY)', 'getItem(RD_KEY)', 'getItem(FONT_KEY)', 'setItem("aj.chrome")', 'setItem(A2HS_KEY)', 'setItem(RD_KEY)', 'setItem(FONT_KEY)'].sort());
-  assert.equal(OURS_FILES.reduce((n, r) => n + (code(read(pub(r))).match(/localStorage/g) || []).length, 0), 8, 'localStorage appears only in those eight calls');
+  // 0.15.1 (P55): + the install id (IID_KEY = "aj.iid", 16 random bytes, b64url) and the paired marker (PAIRED_KEY =
+  // "aj.paired", a unix time) — no key, no channel, nothing about the computer.
+  assert.deepEqual(ls.sort(), ['getItem("aj.chrome")', 'getItem(A2HS_KEY)', 'getItem(RD_KEY)', 'getItem(FONT_KEY)', 'setItem("aj.chrome")', 'setItem(A2HS_KEY)', 'setItem(RD_KEY)', 'setItem(FONT_KEY)',
+    'getItem(IID_KEY)', 'setItem(IID_KEY)', 'getItem(PAIRED_KEY)', 'setItem(PAIRED_KEY)', 'removeItem(PAIRED_KEY)'].sort());
+  assert.equal(OURS_FILES.reduce((n, r) => n + (code(read(pub(r))).match(/localStorage/g) || []).length, 0), 13, 'localStorage appears only in those thirteen calls');
+  assert.match(OURS, /const IID_KEY = 'aj\.iid';/);
+  assert.match(OURS, /const PAIRED_KEY = 'aj\.paired';/);
   assert.match(OURS, /const FONT_KEY = 'aj\.fontScale';/);
   assert.match(OURS, /const A2HS_KEY = 'aj\.a2hs';/);
   assert.match(OURS, /RD_KEY = "aj\.readerFs"/);
@@ -144,13 +149,14 @@ test('app.js + js/*.js: only WebSocket egress, non-extractable keys, no plaintex
   // IndexedDB: device key + approval key + host record + the sealing key (CryptoKeys, non-extractable) in clear;
   // drafts and input history ONLY through putSealed (AES-GCM ciphertext {v, iv, ct})
   const puts = [...new Set(OURS_FILES.flatMap((r) => [...read(pub(r)).matchAll(/dbPut\('(\w+)'/g)].map((m) => m[1])))].sort();
-  assert.deepEqual(puts, ['device', 'host', 'local', 'sign'], 'plain IndexedDB writes: keys + host record only');
+  // 0.15.1 (P55): + 'iid', the random install id (the other copy of localStorage "aj.iid") — no text, no key material
+  assert.deepEqual(puts, ['device', 'host', 'iid', 'local', 'sign'], 'plain IndexedDB writes: keys + host record + install id only');
   const sealed = [...new Set(OURS_FILES.flatMap((r) => [...read(pub(r)).matchAll(/putSealed\("(\w+)"/g)].map((m) => m[1])))].sort();
   assert.deepEqual(sealed, ['draft', 'ihist'], 'sealed records: draft + input history');
   const STORE = read(pub('js/store.js'));
   assert.match(STORE, /export async function putSealed\(name, obj\) \{\n  const w = wipes;\n  const rec = await seal\(obj\);\n  if \(w === wipes\) await dbPut\(name, rec\);\n\}/, 'putSealed writes only ciphertext, and never after a wipe');
   // §10.14 / P33-X13: revoke wipes like unpair — drafts, history, the sealing key, and everything in memory
-  assert.match(APP, /async function revoked\(\) \{\n  session\.closeSession\(\);\n[^}]*await forgetLocal\(\);/, 'revoked() wipes local records');
+  assert.match(APP, /async function revoked\(why = 'revoked'\) \{\n  session\.closeSession\(\);\n[^}]*await forgetLocal\(\);/, 'revoked() wipes local records');   // 0.15.1: + why
   assert.match(APP, /async function forgetLocal\(\) \{\n  relay\.forgetLocal\(\);\n  blobs\.forgetAll\(\);\n  elevate\.clear\(\);\n  await wipeLocal\(\);\n\}/);   // F17: open sudo / secret cards go too
   assert.doesNotMatch(APP, /saveDraft/, 'revocation never saves the draft');
   assert.match(STORE, /generateKey\(\{ name: 'AES-GCM', length: 256 \}, false, \['encrypt', 'decrypt'\]\)/, 'sealing key not extractable');
@@ -331,10 +337,10 @@ test('i18n: no internal terms or banned words in either dictionary, the page tex
     for (const p of GLOSSARY.banned_patterns_zh) assert.doesNotMatch(v, new RegExp(p), `zh ${k}: banned pattern ${p}`);
   }
   // every user-visible Chinese string lives in the dictionary: app.js code has no Chinese except the device label sent to
-  // the host ("网页 · Chrome" is data for the computer's device list) and comments
+  // the host ("网页 · Chrome" is data for the computer's device list; 0.15.1: "网页 · iOS 主屏幕" for the Home Screen app) and comments
   const appCode = APP.replace(/\/\/.*$/gm, '').replace(/\/\*[\s\S]*?\*\//g, '');
   const cjk = [...new Set(appCode.match(/[㐀-鿿]+/g) || [])];
-  assert.ok(cjk.includes('网页') && cjk.every((w) => ['浏览器', '网页'].includes(w)), `app.js has UI Chinese outside the dictionary: ${cjk.join(' ')}`);
+  assert.ok(cjk.includes('网页') && cjk.every((w) => ['浏览器', '网页', '主屏幕'].includes(w)), `app.js has UI Chinese outside the dictionary: ${cjk.join(' ')}`);
   for (const r of OURS_FILES.filter((x) => x !== 'app.js')) {             // the modules: no Chinese in code at all
     const c = read(pub(r)).replace(/\/\/.*$/gm, '').replace(/\/\*[\s\S]*?\*\//g, '');
     assert.deepEqual(c.match(/[㐀-鿿]+/g) || [], [], `${r} has UI Chinese outside the dictionary`);

@@ -27,7 +27,26 @@ MAX_DEVICES = 5   # remotes per host = per seat (Q32, 2026-10-02); enforced here
 
 
 class DeviceLimit(Exception):
-    """The allowlist already holds MAX_DEVICES devices: unbind one (`agentj revoke`) before approving another."""
+    """The allowlist already holds MAX_DEVICES devices and the caller did not allow an eviction (State.pair_device)."""
+
+
+def _num(v) -> int:
+    return int(v) if isinstance(v, (int, float)) and not isinstance(v, bool) else 0
+
+
+def evict_order(devs: dict, online=frozenset()) -> list[str]:
+    """Who goes first when a new remote needs a place (0.15.1): offline before online, then the longest unseen (last
+    resume, else pairing time), then the earliest paired. Stable over the allowlist order for exact ties."""
+    def key(kv):
+        did, v = kv
+        v = v if isinstance(v, dict) else {}
+        return (did in online, max(_num(v.get("seen")), _num(v.get("paired_at"))), _num(v.get("paired_at")))
+    return [k for k, _ in sorted(devs.items(), key=key)]
+
+
+def _brief(did: str, v, online=frozenset()) -> dict:
+    v = v if isinstance(v, dict) else {}
+    return {"id": did, "name": str(v.get("name", "")), "paired_at": _num(v.get("paired_at")), "online": did in online}
 
 
 def state_dir() -> pathlib.Path:
@@ -88,6 +107,8 @@ class State:
     def config_lock_path(self): return self.root / "config.lock"   # flock for config.json read-modify-writes (CLI ↔ serve ↔ admin)
     @property
     def unbind_path(self): return self.root / "remote_unbind.json"   # Dashboard unbind decisions: times + request ids only
+    @property
+    def removed_path(self): return self.root / "removed.json"   # 0.15.1: why a device left the allowlist (ids, reason, time)
     @property
     def perm_dir(self): return self.root / "agentperm"   # the only part of the state dir the fenced agent can see (L2)
     @property
@@ -180,17 +201,91 @@ class State:
 
     def add_device(self, pub: bytes, name: str, sign_pub: bytes | None = None) -> str:
         """sign_pub = the device's Ed25519 approval key (PROTOCOL §8), sent inside the encrypted pairing msg1."""
+        return self.pair_device(pub, name, sign_pub)["device"]
+
+    def pair_device(self, pub: bytes, name: str, sign_pub: bytes | None = None, *, iid: str | None = None,
+                    evict: bool = False, online: frozenset | set = frozenset()) -> dict:
+        """Add (or re-pair) one device in ONE locked read-modify-write (0.15.1, P55). → {"device", "replaced": rec|None,
+        "evicted": rec|None} where rec = {"id", "name", "paired_at", "online"}.
+        - same key (= same device id) → its record is rewritten, nothing else changes (ADR-015's rule, here since A3.1);
+        - same browser install (`iid`, a per-host hash the page sends in its pairing msg1) under another key — the browser
+          lost its key, the human paired it again → the old record is replaced, not kept as a second remote;
+        - a NEW device on a full allowlist: evict=False → DeviceLimit; evict=True → the stalest remote goes (offline before
+          online, then the longest unseen). The human who typed the code + passphrase for the new device agreed to it."""
         did = wire.device_id(pub)
+        replaced = evicted = None
         with self.devices_lock():
             d = self.devices()
+            if did not in d and iid:
+                twin = next((k for k, v in d.items() if isinstance(v, dict) and v.get("iid") == iid), None)
+                if twin:
+                    replaced = _brief(twin, d.pop(twin), online)
             if did not in d and len(d) >= MAX_DEVICES:
-                raise DeviceLimit(len(d))
+                if not evict:
+                    raise DeviceLimit(len(d))
+                victim = evict_order(d, online)[0]
+                evicted = _brief(victim, d.pop(victim), online)
             rec = {"pub": wire.b64u(pub), "name": name, "paired_at": int(time.time())}
             if sign_pub:
                 rec["sk"] = wire.b64u(sign_pub)
+            if iid:
+                rec["iid"] = iid
             d[did] = rec
             _write_private(self.devices_path, json.dumps(d, indent=1, ensure_ascii=False).encode())
-        return did
+        for gone in (replaced, evicted):
+            if gone:
+                self.note_removed(gone["id"], "replaced")
+        self.forget_removed(did)
+        return {"device": did, "replaced": replaced, "evicted": evicted}
+
+    def evict_candidate(self, online: frozenset | set = frozenset(), new: str | None = None) -> dict | None:
+        """Who pair_device(evict=True) would take for a new device right now (None = there is room / it is listed)."""
+        d = self.devices()
+        if new in d or len(d) < MAX_DEVICES:
+            return None
+        k = evict_order(d, online)[0]
+        return _brief(k, d[k], online)
+
+    def touch_seen(self, did: str) -> None:
+        """A device resumed: remember when (decides who is "longest unseen" when the list is full). ≤ 1 write a minute."""
+        now = int(time.time())
+        with self.devices_lock():
+            d = self.devices()
+            rec = d.get(did)
+            if not isinstance(rec, dict) or now - _num(rec.get("seen")) < 60:
+                return
+            rec["seen"] = now
+            _write_private(self.devices_path, json.dumps(d, indent=1, ensure_ascii=False).encode())
+
+    # why a device left: "replaced" (a newer pairing took its place) or "revoked" (a human removed it). A removed device that
+    # resumes is told which (PROTOCOL §3 `removed`), so its page never says "the computer removed you" when it did not.
+    REMOVED_KEEP = 64
+
+    def removed_ledger(self) -> dict:
+        try:
+            d = json.loads(self.removed_path.read_text())
+        except (FileNotFoundError, ValueError, UnicodeDecodeError):
+            return {}
+        return {k: v for k, v in d.items() if isinstance(k, str) and isinstance(v, dict) and v.get("why") in ("replaced", "revoked")} \
+            if isinstance(d, dict) else {}
+
+    def note_removed(self, did: str, why: str) -> None:
+        with self.devices_lock():
+            d = self.removed_ledger()
+            d.pop(did, None)
+            d[did] = {"why": why, "at": int(time.time())}
+            keep = sorted(d.items(), key=lambda kv: _num(kv[1].get("at")))[-self.REMOVED_KEEP:]
+            _write_private(self.removed_path, json.dumps(dict(keep)).encode())
+
+    def forget_removed(self, did: str) -> None:
+        with self.devices_lock():
+            d = self.removed_ledger()
+            if d.pop(did, None) is not None:
+                _write_private(self.removed_path, json.dumps(d).encode())
+
+    def removed_why(self, did: str) -> str | None:
+        v = self.removed_ledger().get(did)
+        return v["why"] if v else None
 
     def sign_key(self, did: str) -> bytes | None:
         v = self.devices().get(did, {}).get("sk")
@@ -217,13 +312,14 @@ class State:
         rec = self.devices().get(wire.device_id(pub))
         return bool(rec) and rec.get("pub") == wire.b64u(pub)
 
-    def remove_device(self, did: str) -> bool:
+    def remove_device(self, did: str, why: str = "revoked") -> bool:
         with self.devices_lock():
             d = self.devices()
             if did not in d:
                 return False
             del d[did]
             _write_private(self.devices_path, json.dumps(d, indent=1, ensure_ascii=False).encode())
+        self.note_removed(did, why)
         return True
 
     def device_full(self) -> bool:

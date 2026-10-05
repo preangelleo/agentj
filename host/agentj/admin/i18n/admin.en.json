@@ -7,14 +7,12 @@
   "header.logout": "Sign out",
   "header.adding": "Adding a phone remote",
   "header.unnamed": "No name yet",
-
   "hero.eyebrow": "Agent settings page",
   "hero.unnamed": "This Agent has no name yet",
   "hero.adding": "Adding a phone remote",
   "hero.sub": "1 seat · running on {machine}",
   "hero.sub_here": "1 seat · running on this host",
   "hero.note": "This page only opens on this computer (its address is 127.0.0.1). A new phone remote can only be approved here, or by running `agentj pair` in a terminal.",
-
   "conn.title": "Connection",
   "conn.program": "The agentj program",
   "conn.program_on": "Running",
@@ -28,7 +26,6 @@
   "conn.company_hidden": "In an Agent J account (name hidden while pairing)",
   "conn.company_linked": "In the Agent J account {slug} ({name})",
   "conn.hint": "To add a phone remote, the agentj program has to be running. If it isn't, run `agentj service install` in a terminal. Without it you can still rename the Agent and unlink remotes here.",
-
   "devices.title": "Phone remotes",
   "devices.count_label": "{n} of {limit} paired",
   "devices.full": "Full",
@@ -42,7 +39,6 @@
   "devices.confirm_unbind": "Unlink “{name}”? It disconnects right away and would need to scan a new code to come back.",
   "devices.unbound": "Unlinked “{name}”.",
   "devices.unbind_failed": "Couldn't unlink it.",
-
   "pair.title": "Add a phone remote",
   "pair.intro": "Press the button and a QR code shows up here. Scan it with your phone's camera; the phone then shows a 6-digit code, which you type in here.",
   "pair.start": "Add a phone remote",
@@ -73,13 +69,17 @@
   "pair.unbound_next": "Unlinked “{name}”. Now type the 6-digit code shown on the phone.",
   "pair.unbind_failed": "Couldn't unlink it (it may already be gone).",
   "pair.approved": "Approved “{name}”. It is now a phone remote for this host.",
+  "pair.evict_note": "All 5 phone remote slots on this host are taken. Approving unlinks the remote unused the longest: “{name}” (paired {when}, offline now). To keep it, deny, then unlink another one in the list below first.",
+  "pair.evict_note_online": "All 5 phone remote slots on this host are taken and all are online. Approving unlinks the remote unused the longest: “{name}” (paired {when}); it disconnects right away. To keep it, deny, then unlink another one in the list below first.",
+  "pair.replaces_note": "This is the same browser that paired before (it lost its pairing data). Approving replaces its old entry “{name}” (paired {when}) instead of taking another slot.",
+  "pair.evicted_done": "Unlinked the oldest remote automatically: “{name}” (paired {when}).",
+  "pair.replaced_done": "Replaced the same browser’s old entry: “{name}” (paired {when}).",
   "pair.new_device": "the new device",
   "pair.unnamed_device": "a device with no name",
   "pair.expired": "The QR code expired (it lasts 5 minutes). Start again to get a new one.",
   "pair.cancelled": "Pairing cancelled.",
   "pair.start_failed": "Couldn't start pairing.",
   "pair.submit_failed": "That didn't go through.",
-
   "deny.code_mismatch": "The 6-digit code didn't match, so the device was declined.",
   "deny.denied": "Declined.",
   "deny.timeout": "Nobody confirmed within 120 seconds, so the device was declined.",
@@ -95,7 +95,6 @@
   "deny.cancelled": "Cancelled.",
   "deny.pass_locked": "Too many wrong approval passphrases — it's locked for a while. Try again later.",
   "deny.pass_not_set": "No approval passphrase yet. Run `agentj passphrase set` in a terminal on this computer first.",
-
   "err.serve_not_running": "The agentj program isn't running. Run `agentj service install` in a terminal, then add the phone remote.",
   "err.serve_busy": "The agentj program isn't answering right now. Try again in a moment.",
   "err.pair_failed": "Couldn't start pairing.",
@@ -107,7 +106,6 @@
   "err.passphrase_required": "The approval passphrase is needed too.",
   "err.bad_code": "That isn't a valid 6-digit code.",
   "err.generic": "That didn't work. Reload the page and try again.",
-
   "name.title": "The Agent's name",
   "name.intro": "It's the name you'll use every day when you talk to this Agent. If this computer is in an Agent J account, the name changes on the account dashboard first (names are unique within an account) and only then here.",
   "name.label": "New name",
@@ -129,23 +127,19 @@
   "name.err.not_bound": "The account dashboard has already taken this computer out of the account, so the name didn't change. Run `agentj unlink` in a terminal to clear that record; after that you can rename it here only.",
   "name.err.rate_limited": "Too many renames (at most 20 an hour). The name didn't change — try again later.",
   "name.err.failed": "The account dashboard turned this rename down, so the name didn't change.",
-
   "remote.title": "Unlinking from the account dashboard",
   "remote.label": "Allow unlinking this computer's phone remotes from the account dashboard",
   "remote.on": "On: the account owner can unlink this computer's phone remotes from the account dashboard, up to 3 an hour. It can only remove, never add.",
   "remote.off": "Off: this computer refuses every unlink request from the account dashboard. Unlink here instead, or with `agentj revoke` in a terminal.",
   "remote.failed": "Couldn't change that.",
-
   "tips.title": "Good to know",
   "tips.one": "One person per Agent works best. The 5 phone remotes are meant for the same person's phone, tablet and computer. When several people steer one Agent at once, they get in each other's way.",
   "tips.seat": "One Agent is one paid seat, and it runs on one computer or server. Its name is just a label — like naming a pet, anything goes.",
   "tips.qr": "Pairing QR codes and links only ever appear on this computer. If the account dashboard, an email or a support person sends you a QR code, don't scan it.",
-
   "session.logged_out": "You're not signed in, or the session has ended. Run `agentj admin` in a terminal on this computer (or press Enter in its terminal) to get a fresh link.",
   "session.link_used": "This link was already used or has expired. Press Enter in the terminal running `agentj admin` to get a fresh one.",
   "session.bye": "Signed out. To come back, press Enter in the terminal running `agentj admin` for a fresh link.",
   "session.unreachable": "Can't reach the Agent settings page right now (`agentj admin` may have stopped).",
-
   "footer.tagline": "Your AI assistant works on your computer. You run it from your phone.",
   "footer.help": "Help",
   "footer.trust": "Trust",

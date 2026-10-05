@@ -259,6 +259,7 @@
         <img src="brand/img/shield-256.png" width="96" height="96" alt="">
         <div class="aj-lang pair__lang" data-aj-lang-switch>中文 / EN</div>
       </div>
+      <p id="pair-wiped" class="note" role="status" data-i18n="pair.wiped" hidden>这个浏览器清掉了本机保存的配对数据（比如无痕浏览的标签页关掉了，或者浏览器清理了网站数据）。电脑没有移除这台手机。在电脑上运行 agentj pair，重新配对一次就好；iPhone 上别用无痕浏览，最好添加到主屏幕，从图标打开。</p>
       <h1 data-i18n="pair.title">连上你的电脑</h1>
       <p class="lead" data-i18n="pair.lead">Agent 在你的电脑上干活，这台手机就是它的遥控器。不用注册登录，配对一次，以后打开就能用。</p>
       <ol class="steps">
@@ -316,8 +317,8 @@
 
     <section id="revoked-view" class="view state-view" hidden>
       <img src="brand/img/status/logo-offline.png" width="72" height="72" alt="">
-      <h1 data-i18n="revoked.title">这台手机已被电脑移除</h1>
-      <p class="lead" data-i18n="revoked.lead">电脑不再认这台手机。要继续用，先在电脑上运行 agentj pair，再重新配对。</p>
+      <h1 id="revoked-title" data-i18n="revoked.title">这台手机已被电脑移除</h1>
+      <p id="revoked-lead" class="lead" data-i18n="revoked.lead">电脑不再认这台手机。要继续用，先在电脑上运行 agentj pair，再重新配对。</p>
       <p id="revoked-draft" class="small" data-i18n="revoked.draft" hidden>没发出去的草稿、输入记录和加密它们的密钥，都已从这台手机上删除。</p>
       <div class="ajrow"><button type="button" id="repair" class="aj-btn aj-btn--primary aj-btn--block" data-i18n="revoked.btn">重新配对</button></div>
     </section>
