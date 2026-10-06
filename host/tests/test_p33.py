@@ -555,7 +555,7 @@ class SendApp(unittest.TestCase):
             self.assertEqual(got[-1], big)
             self.assertEqual([(o, c) for o, c, _ in frames if o == wire.OP_BULK], [(wire.OP_BULK, 5)],
                              "BULK only for the ready p33 session")
-            self.assertEqual(host._caps()["caps"], ["p33"])
+            self.assertEqual(host._caps()["caps"], ["p33", "heartbeat"])
             self.assertIn(host._caps()["asr"], ("ready", "not_installed", "off", "broken"))
 
 

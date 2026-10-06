@@ -52,8 +52,8 @@ def validate_working_root(cfg: dict, st) -> Path:
 # A host-generated line right after the hashed core (the core files stay byte-identical and pinned by HASHES); it is part
 # of the injected text, so prompt_sha256 (audit / doctor) covers it. Changing the language is hot for the next turn
 # (Agent.identity_changed: Claude Code / Codex restart with --resume / thread resume, OpenCode sends `system` every prompt).
-LANGUAGE_LINE = {"zh": "默认用中文与主人交流。/ Speak with the owner in 中文 by default.\n",
-                 "en": "Speak with the owner in English by default.\n"}
+LANGUAGE_LINE = {"zh": "只用中文与主人交流；不要附英文译文。\n",
+                 "en": "Reply to the owner only in English; do not append a translation.\n"}
 
 
 # F17 (P46): a host-generated line after the language line (the hashed core stays byte-identical): the two human-only steps

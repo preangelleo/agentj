@@ -645,10 +645,12 @@ class OpenCodeChain(_Chain):
             self.assertFalse((self.work / "workflows" / "look" / "r.txt").exists())
             self.assertEqual(c["asks"](), [])
             self.assertEqual(self.st.agent_session("opencode"), chat, "a scheduled run never becomes the chat's conversation")
-            # the stop switch → abort
+            # A working queue item can still be starting its server; wait for actual model delivery before testing abort.
+            sleep_prompts = sum(r.get('path', '').endswith('/prompt_async') and
+                                any(p.get('text') == 'SLEEP: 20' for p in (r.get('body') or {}).get('parts', [])) for r in self.logged())
             await c["say"]("SLEEP: 20")
-            await c["wait"](lambda: host.agent.status == "working")
-            await asyncio.sleep(0.3)
+            await c["wait"](lambda: sum(r.get('path', '').endswith('/prompt_async') and
+                                any(p.get('text') == 'SLEEP: 20' for p in (r.get('body') or {}).get('parts', [])) for r in self.logged()) > sleep_prompts)
             await host._app(c["s"], _signed(c["ph"], "estop", {}, {"t": "estop", "r": "e1"}))
             await c["wait"](lambda: host.stopped() and host.agent.status != "working")
             # the stand-in logs the abort request when it gets it: wait for it rather than race the end of the chain

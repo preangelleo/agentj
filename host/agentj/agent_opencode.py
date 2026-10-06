@@ -203,11 +203,12 @@ PROVIDER_LOGIN_ATTACHED = ("模型服务登录失败或 key 无效：在电脑�
 def auth_fingerprint() -> tuple:
     """Metadata of OpenCode v1's credential store and global config (inode, mtime, size) — never their content. A change
     means `opencode auth login` (or a config edit) happened since this serve started."""
+    from .provider_runtime import env_path
     data = os.environ.get("XDG_DATA_HOME") or os.path.expanduser("~/.local/share")
     conf = os.environ.get("XDG_CONFIG_HOME") or os.path.expanduser("~/.config")
     out = []
     for p in (os.path.join(data, "opencode", "auth.json"), os.path.join(conf, "opencode", "opencode.json"),
-              os.path.join(conf, "opencode", "opencode.jsonc")):
+              os.path.join(conf, "opencode", "opencode.jsonc"), env_path()):
         try:
             st = os.stat(p)
             out.append((st.st_ino, st.st_mtime_ns, st.st_size))
@@ -452,14 +453,32 @@ class OpenCodeAgent(Agent):
         self.quiet = False                              # compaction: the summary is not a reply
         self.auth_fp: tuple | None = None               # P59: auth_fingerprint() when the owned serve started
         self.last_provider_fail: dict | None = None     # P59: {reason, http_status, at} of the last session.error (doctor)
+        # Configured names are available before any model request can run (including broken keys).
+        self._set_models({})
+        self.meter(model=self.cur_model(), model_name=self.model_name(self.cur_model()))
+
+    def provider_note(self, reason, pid, fallback):
+        from .provider_runtime import key_name, request_key
+        zh = self.cfg.get("language", "en").startswith("zh")
+        if reason in ("login", "no_key") and pid and key_name(pid):
+            self._bg(request_key(self.host, pid))
+            return ("模型服务 Key 无效或缺失，请在手机密钥卡填写新 Key；也可从菜单「模型与 Key」打开。存好后再发消息。" if zh else
+                    "The provider key is missing or invalid. Update it on the phone key card, or open Models & Key in the menu, then send again.")
+        if reason in ('login', 'no_key'):
+            name = clean_line(pid or ('当前服务商' if zh else 'the selected provider'), 40)
+            return (f'「{name}」的账户授权或 API Key 不可用。请在手机菜单「模型与 Key」切换到已配置的服务商；若该账户使用 OAuth，需要先完成服务商的账户授权。' if zh else
+                    f'The account authorization or API key for {name} is unavailable. Open Models & Key on the phone and select a configured provider. If this account uses OAuth, complete the provider account authorization first.')
+        parts = fallback.split(" / ", 1)
+        return parts[0] if zh else parts[-1]
 
     def is_down(self) -> bool:
         return self.failed_start
 
-    def _bg(self, coro) -> None:
+    def _bg(self, coro) -> asyncio.Task:
         t = asyncio.create_task(coro)
         self.tasks.add(t)
         t.add_done_callback(self.tasks.discard)
+        return t
 
     def argv(self, port: int) -> list[str]:
         exe = _bin("AGENTJ_OPENCODE_BIN", "opencode") or "opencode"
@@ -491,14 +510,15 @@ class OpenCodeAgent(Agent):
             self.failed_start = True
             return False
         from .proxy import environment
+        from .provider_runtime import fresh_environment
         self.auth_fp = auth_fingerprint()        # P59: what the credentials looked like when this serve started
-        proc = await asyncio.create_subprocess_exec(*argv, cwd=self.cfg["dir"], env=opencode_env(environment(os.environ, self.host.preferences), password),
+        proc = await asyncio.create_subprocess_exec(*argv, cwd=self.cfg["dir"], env=opencode_env(environment(fresh_environment(os.environ), self.host.preferences), password),
                                                     stdin=asyncio.subprocess.DEVNULL, stdout=asyncio.subprocess.PIPE,
                                                     stderr=asyncio.subprocess.PIPE, limit=LINE_LIMIT, start_new_session=True)
         self.proc, self.err_tail, self.quiet_exit, self.failed_start = proc, "", False, False
         self.connected = asyncio.Event()
         self._bg(self._drain_err(proc))
-        self.host.st.log("agent_start", agent=self.kind, fence=self.cfg.get("fence", True))
+        self.host.st.log("agent_start", agent=self.kind, fence=self.cfg.get("fence", True), session_mode=self.cfg.get("session_mode", "independent"), isolation_effective=getattr(self, "isolation_effective", False))
         listening = None
         self.start_progress = started = time.monotonic()
         line_task = asyncio.create_task(proc.stdout.readline())
@@ -540,7 +560,11 @@ class OpenCodeAgent(Agent):
         self.client = Client(port, password)
         try:
             await self._prepare()
+            await self.refresh_models()
+            self.meter(model=self.cur_model(), model_name=self.model_name(self.cur_model()))
         except (OSError, HTTPError, ValueError, KeyError, TypeError, asyncio.TimeoutError) as e:
+            if getattr(proc, "_agentj_requested_stop", False) or any(proc is ended for ended in self.ended) or self.halting:
+                return False  # a requested stop during startup is not a provider/startup failure
             self.host.st.log("agent_prepare_fail", agent=self.kind, reason=type(e).__name__)
             self.quiet_exit = True
             await self._kill(proc)
@@ -769,7 +793,7 @@ class OpenCodeAgent(Agent):
                 notes = {**notes, "no_key": notes["no_key"].replace("{provider}", clean_line(pid or "该服务商", 40))}
                 if not self.provider_fail_noted:
                     self.provider_fail_noted = True
-                    self.fail_notice("主机已连接，但这一轮没有正常完成。" + notes[reason])
+                    self.fail_notice(self.provider_note(reason, pid, notes[reason]))
         elif t == "session.status" and p.get("sessionID") == self.sid:
             s = p.get("status") if isinstance(p.get("status"), dict) else {}
             if s.get("type") in ("busy", "retry"):
@@ -1012,41 +1036,80 @@ class OpenCodeAgent(Agent):
             with contextlib.suppress(OSError, HTTPError, asyncio.TimeoutError):
                 await self._catch_up()                    # a text part whose end event never came
             if self.persist and self.collect is None:
-                with contextlib.suppress(Exception):
-                    await self.context_meter()
+                context_task = self.refresh_usage()
+                if self.cfg.get('session_mode') != 'shared':
+                    await context_task  # compactprep reads this meter before decorating the next turn
             return
 
-    async def context_meter(self) -> None:
-        """§10.10: the newest assistant message's tokens / the model's `limit.context`; quotas stay null (vendor quotas)."""
+    async def context_meter(self, include_quota: bool = True) -> None:
+        """Measured tokens with native/config limits or checked provider/model policy."""
+        selected = self.cur_model()
         info = await self._last_assistant()
         used = self._ctx(info)
         m = self._model_of(info)
-        limit = None
-        prov = await self._providers()
-        if m:
-            for p in prov.get("providers") or []:
-                if isinstance(p, dict) and p.get("id") == m["providerID"]:
-                    mm = (p.get("models") or {}).get(m["modelID"]) if isinstance(p.get("models"), dict) else None
-                    lim = mm.get("limit") if isinstance(mm, dict) else None
-                    limit = lim.get("context") if isinstance(lim, dict) else None
+        from .provider_runtime import configured, probe
+        from .model_limits import context_limit, positive
+        local = configured()
+        config_provider = local.get(m["providerID"], {}) if m else {}
+        models = config_provider.get('models')
+        config_model = models.get(m['modelID'], {}) if m and isinstance(models, dict) else {}
+        limits = config_model.get('limit') if isinstance(config_model, dict) else None
+        explicit = positive(limits.get('context')) if isinstance(limits, dict) else None
+        prov = {} if explicit is not None else await self._providers()
+        native = next((p for p in prov.get("providers") or [] if isinstance(p, dict) and m and p.get("id") == m["providerID"]), {})
+        limit = context_limit(m["providerID"], m["modelID"], local.get(m["providerID"]), native) if m else None
         if not self.models_cache:
             self._set_models(prov)
-        mid = f"{m['providerID']}/{m['modelID']}" if m else self.cur_model()
-        upd = {"model": mid, "model_name": self.model_name(mid)}
-        if isinstance(used, int) and isinstance(limit, int) and limit > 0:
+        mid = f"{m['providerID']}/{m['modelID']}" if m else selected
+        upd = {"model": mid, "model_name": self.model_name(mid), "ctx": None}
+        if type(used) is int and used >= 0:
             upd["ctx"] = {"used": used, "max": limit}
-        self.meter(**upd)
+        if mid and include_quota:
+            upd['quota_windows'] = await asyncio.to_thread(probe, mid.split('/', 1)[0])
+        if self.cur_model() == selected:
+            self.meter(**upd)
+
+    def refresh_usage(self) -> asyncio.Task:
+        """Independent, bounded context and subscription probes after a completed turn."""
+        selected = self.cur_model()
+        async def context():
+            try:
+                await asyncio.wait_for(self.context_meter(include_quota=False), 8)
+            except (OSError, HTTPError, ValueError, AttributeError, asyncio.TimeoutError) as e:
+                self.host.st.log('agent_meter_fail', agent=self.kind, reason=type(e).__name__)
+        async def quota():
+            if not selected or '/' not in selected:
+                return
+            from .provider_runtime import probe
+            try:
+                windows = await asyncio.wait_for(asyncio.to_thread(probe, selected.split('/', 1)[0]), 10)
+            except (OSError, ValueError, asyncio.TimeoutError):
+                windows = []
+            if self.cur_model() == selected:
+                self.meter(quota_windows=windows)
+        context_task = self._bg(context())
+        self._bg(quota())
+        return context_task
 
     def _set_models(self, prov: dict) -> None:
-        out = []
-        for p in prov.get("providers") or []:
+        from .provider_runtime import configured
+        out, seen = [], set()
+        local = [{"id": pid, **p} for pid, p in configured().items() if isinstance(p, dict)]
+        for p in local + (prov.get("providers") or []):
             if not isinstance(p, dict) or not isinstance(p.get("id"), str) or not isinstance(p.get("models"), dict):
                 continue
             for mid, mm in p["models"].items():
                 full = f"{p['id']}/{mid}"
                 if isinstance(mid, str) and slash.MODEL_RE.match(full):
                     name = mm.get("name") if isinstance(mm, dict) and isinstance(mm.get("name"), str) else mid
+                    if full in seen:
+                        continue
+                    seen.add(full)
                     out.append({"id": clean_line(full, 100), "name": clean_line(name, 60), "efforts": None})
+                    if len(out) >= 40:
+                        break
+            if len(out) >= 40:
+                break
         if out:
             self.models_cache = out[:40]
             fn = getattr(self.host, "models_changed", None)
@@ -1054,14 +1117,17 @@ class OpenCodeAgent(Agent):
                 fn()
 
     async def refresh_models(self) -> None:
-        if self.client:
-            self._set_models(await self._providers())
+        self._set_models(await self._providers() if self.client else {})
 
     async def apply_model(self, model, effort, default: bool = False):
         """OpenCode: the model rides on every prompt_async ("provider/model"); no effort until a probe proves the field."""
         if model is not None and not split_model(model):
             return "unknown_model"
-        return await super().apply_model(model, effort, default)
+        previous = self.cur_model()
+        why = await super().apply_model(model, effort, default)
+        if why is None and self.cur_model() != previous:
+            self.meter(ctx=None, quota_windows=[])
+        return why
 
     async def _wait_turn(self) -> None:
         """Until session.idle; every WATCH s also ask OpenCode itself, so a lost idle event cannot hang the queue."""
@@ -1070,7 +1136,7 @@ class OpenCodeAgent(Agent):
             with contextlib.suppress(asyncio.TimeoutError):
                 await asyncio.wait_for(self.turn_done.wait(), WATCH)
             if not self.pending and not self.questions and time.monotonic() - self.turn_progress >= TURN_IDLE:
-                self.fail_notice("主机已连接，但 OpenCode 长时间没有回复或处理进度。请在电脑运行 `agentj doctor`；确认 `opencode auth login` 已登录你选用的模型服务，并在 OpenCode 终端试发一条消息。这条消息不会自动重发。")
+                self.fail_notice("OpenCode 长时间没有回复。这条消息不会自动重发；可在手机「模型与 Key」检查或切换服务商后重试。" if self.cfg.get('language', 'en').startswith('zh') else "OpenCode has not responded for a long time. This message will not be resent automatically. Check or switch providers in Models & Key on the phone, then retry.")
                 await self.interrupt_request(self.proc)
                 self._turn_end()
                 return
@@ -1130,7 +1196,11 @@ class OpenCodeAgent(Agent):
     async def _ready(self) -> bool:
         if self.proc is None and not await self._spawn():
             return False
-        return await self._session_ok()
+        ok = await self._session_ok()
+        if ok:
+            await self.refresh_models()
+            self.meter(model=self.cur_model(), model_name=self.model_name(self.cur_model()))
+        return ok
 
     async def _providers(self) -> dict:
         try:

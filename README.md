@@ -2,7 +2,7 @@
 
 # Agent J
 
-This 0.12 candidate tree is for review. The published installation remains the complete 0.11 path until the public mirror/tag and all release gates pass. Android is a debug review APK, with offline model provenance and physical-device acceptance still pending; it is not a store release.
+This 0.15.6a1 candidate tree is for review. The published installation remains 0.15.5a1 until the public mirror/tag and all release gates pass. Android is a debug review APK, with offline model provenance and physical-device acceptance still pending; it is not a store release.
 
 Docs (中文 / English): <https://agentj.app/docs/> · machine-readable index: <https://agentj.app/llms.txt>
 
@@ -14,8 +14,10 @@ from anywhere.
 - Phone and computer talk **end-to-end encrypted** (Noise protocol) through a blind relay that only forwards ciphertext.
 - When the agent asks for permission, your phone shows a card; every decision is signed by the phone and logged on your
   computer. No answer in 120 seconds = denied.
-- The agent runs with your own login, settings and permission rules, inside a fence so it cannot see or change Agent J's
-  keys or the list of paired phones: bubblewrap on Linux, the built-in `sandbox-exec` on macOS.
+- The agent uses your own login, settings and native permission rules. When Agent J starts OpenCode with isolation
+  enabled, a fence hides Agent J's keys and paired-phone data: bubblewrap on Linux, built-in `sandbox-exec` on macOS.
+  An OpenCode server you started yourself is not wrapped or restarted by Agent J; requested and actual isolation are
+  reported separately.
 
 **Zero access is the product rule:** our servers never hold a key that can read your messages, your agent's replies or
 your credentials. What we can and cannot see, and what is not done yet, is listed item by item at
@@ -31,7 +33,7 @@ is the same file, byte for byte; the site publishes its SHA-256 at <https://agen
 
 The host program on its own, pinned to the release tag (Python 3.11 or newer; if yours is older, uv fetches one):
 ```bash
-uv tool install "git+https://github.com/preangelleo/agentj@v0.15.5a1#subdirectory=host"
+uv tool install "git+https://github.com/preangelleo/agentj@v0.15.6a1#subdirectory=host"
 agentj --version
 ```
 

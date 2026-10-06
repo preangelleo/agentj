@@ -52,6 +52,7 @@
       <summary class="ajmenu__btn" data-i18n-attr="aria-label=menu.open" aria-label="菜单"><span class="ajmenu__icon" aria-hidden="true"></span></summary>
       <div class="ajmenu__panel">
         <p class="ajmenu__name"><span id="brand-name">Agent J</span></p>
+        <button type="button" id="open-models" class="ajmenu__item" data-i18n="models.title">模型与 Key</button>
         <button type="button" id="open-mem" class="ajmenu__item" data-i18n="nav.mem">记忆</button>
         <button type="button" id="open-act" class="ajmenu__item" data-i18n="nav.act">记录</button>
         <button type="button" id="open-tasks" class="ajmenu__item" data-i18n="nav.tasks">定时任务</button>
@@ -248,14 +249,6 @@
     </aside>
 
     <section id="pair-view" class="view pair" hidden>
-      <div id="pair-controls">
-      <label for="pair-link" class="label" data-i18n="pair.or">或者粘贴配对链接</label>
-      <textarea id="pair-link" class="aj-textarea" rows="3" autocomplete="off" autocapitalize="off" spellcheck="false" data-i18n-attr="placeholder=pair.placeholder" placeholder="粘贴 agentj pair --link 显示的链接"></textarea>
-      <p id="pair-error" class="error" role="alert" hidden></p>
-      <div class="ajrow">
-        <button type="button" id="pair-go" class="aj-btn aj-btn--primary aj-btn--block" data-i18n="pair.go">开始配对</button>
-      </div>
-      </div>
       <div class="pair__hero">
         <img src="brand/img/shield-256.png" width="96" height="96" alt="">
         <div class="aj-lang pair__lang" data-aj-lang-switch>中文 / EN</div>
@@ -265,7 +258,7 @@
       <p class="lead" data-i18n="pair.lead">Agent 在你的电脑上干活，这台手机就是它的遥控器。不用注册登录，配对一次，以后打开就能用。</p>
       <ol class="steps">
         <li><span id="pair-step1" data-i18n="pair.step1">在电脑上运行 agentj pair，屏幕上会出现一个二维码。</span></li>
-        <li><span id="pair-step2" data-i18n="pair.step2">点「扫二维码」，或把配对链接粘贴到上方。</span></li>
+        <li><span id="pair-step2" data-i18n="pair.step2">点「扫二维码」，或把配对链接粘贴到下方。</span></li>
         <li><span data-i18n="pair.step3">手机上会显示 6 位码。在电脑上输入它，再输入你的批准口令。</span></li>
       </ol>
       <p id="pair-iphone" class="note" data-i18n="pair.iphone" hidden>iPhone 要先把这个网页添加到主屏幕，再从主屏幕打开它，点这里的「扫二维码」来配对；也可以粘贴链接。系统相机打开的是另一份 Safari 网页。</p>
@@ -273,16 +266,39 @@
         <button type="button" id="pk-restore" class="aj-btn aj-btn--primary aj-btn--block" data-i18n="pk.restore" hidden>用 Face ID 连回电脑</button>
         <button type="button" id="scan" class="aj-btn aj-btn--primary aj-btn--block" data-i18n="pair.scan">扫二维码</button>
       </div>
-      <p id="scan-hint" class="small" hidden></p>
-      <div id="scan-box" class="scan" hidden>
-        <video id="scan-video" playsinline muted></video>
-        <button type="button" id="scan-stop" class="aj-btn" data-i18n="pair.scanStop">停止扫码</button>
+      <div id="pair-controls">
+      <label for="pair-link" class="label" data-i18n="pair.or">或者粘贴配对链接</label>
+      <textarea id="pair-link" class="aj-textarea" rows="3" autocomplete="off" autocapitalize="off" spellcheck="false" data-i18n-attr="placeholder=pair.placeholder" placeholder="粘贴 agentj pair --link 显示的链接"></textarea>
+      <p id="pair-error" class="error" role="alert" hidden></p>
+      <div class="ajrow">
+        <button type="button" id="pair-go" class="aj-btn aj-btn--primary aj-btn--block" data-i18n="pair.go">开始配对</button>
       </div>
+      </div>
+      <p id="scan-hint" class="small" hidden></p>
       <nav class="mini-foot" aria-label="Agent J">
         <a href="https://agentj.app/docs/phone/" target="_blank" rel="noopener" data-i18n="menu.help">手机怎么用</a>
         <a href="https://agentj.app/security/" target="_blank" rel="noopener" data-i18n="menu.security">数据安全</a>
         <a href="https://agentj.app/privacy/" target="_blank" rel="noopener" data-i18n="menu.privacy">隐私</a>
       </nav>
+    </section>
+
+    <section id="scan-view" class="camera-page view" hidden>
+      <div id="scan-box" class="scan" hidden><video id="scan-video" playsinline muted></video></div>
+      <div class="camera-actions">
+        <button type="button" id="scan-back" class="aj-btn" data-i18n="camera.back">返回</button>
+        <button type="button" id="scan-trigger" class="aj-btn aj-btn--primary" data-i18n="camera.scan">扫描</button>
+        <button type="button" id="scan-stop" class="aj-btn" data-i18n="pair.scanStop">停止扫码</button>
+      </div>
+      <p id="camera-hint" class="camera-hint" role="status" data-i18n="camera.aim">把配对二维码放进画面，点「扫描」。</p>
+    </section>
+    <section id="models-view" class="view" hidden>
+      <h1 data-i18n="models.title">模型与 Key</h1>
+      <p class="lead" data-i18n="models.note">选个模型，或者通过加密密钥卡更新服务商的 Key。</p>
+      <div id="model-options" class="model-options"></div>
+      <h2 data-i18n="models.providers">服务商 Key</h2>
+      <div id="provider-options" class="model-options"></div>
+      <p id="provider-status" role="status"></p>
+      <button type="button" id="models-back" class="aj-btn" data-i18n="camera.back">返回</button>
     </section>
 
     <section id="sas-view" class="view sas-view" hidden>

@@ -5,12 +5,12 @@
 so these chains put the default back on purpose: `State.agent_config()["session_mode"]` as a fresh install has it.
 
 - SharedV2Chain: default config + v2 stand-in (fakeopencode2.py: every v1 route answers HTML) — message, card, /stop, /clear,
-  key failures + restart, slash commands; shared semantics kept (no fence, no rules of ours, no injected identity);
+  key failures + restart, slash commands; shared native permissions kept; P67 owned fence and main identity;
 - OwnerV2: an owner-started v2 server (`shared_opencode_port`) → attached since P64 (text, cards, desktop mirroring; never a
   new session / PATCH / model change / kill);
 - SharedV1Owned: the same owned server on v1 now honours the model, /clear, /model and the key-failure restart (before P63 it
   ignored `--model` and refused every slash command).
-No network, no real keys."""
+No external network or real keys; a local HTTP fixture exercises subscription usage."""
 import _hermetic  # noqa: F401,I001
 import asyncio
 import json
@@ -77,10 +77,10 @@ class SharedV2Chain(_DefaultMode, p60.V2Chain):
             self.assertEqual(created[0]["b"]["title"], "Agent J shared")
             self.assertEqual(created[0]["b"]["model"], {"id": "chat", "providerID": "deepseek"})
             self.assertNotIn("permissions", created[0]["b"], "shared: OpenCode's own rules, none of ours")
-            self.assertFalse(any("/instructions/" in r["p"] or r["m"] == "PATCH" for r in reqs),
-                             "shared: no injected identity, no PATCH of the session")
+            self.assertTrue(any("/instructions/entries/agentj.identity" in r["p"] for r in reqs), "P67 owned shared identity")
+            self.assertFalse(any(r["m"] == "PATCH" for r in reqs), "shared native permission rules stay")
             ev = [json.loads(x) for x in self.st.log_path.read_text().splitlines()]
-            self.assertIn(False, [e.get("fence") for e in ev if e.get("ev") == "agent_start"], "shared: never fenced")
+            self.assertIn(True, [e.get("isolation_effective") for e in ev if e.get("ev") == "agent_start"], "P67 owned shared is fenced")
             self.assertIn("v2", [e.get("version") for e in ev if e.get("ev") == "agent_protocol"])
             self.assertFalse(any("尚未接入" in m for m in c.msgs()))
             sid = a.sid
@@ -104,17 +104,18 @@ class SharedV2Chain(_DefaultMode, p60.V2Chain):
             self.assertTrue(res.text.startswith("已停下这一轮"), res.text)
             await c.idle()
             self.assertTrue(any(r["p"].endswith("/interrupt") for r in self.requests()))
-            # key failures: no key → names the provider, serve restarted, SAME ordinary session; 401 → auth switch hint
+            # key failures: no key → names the provider, serve restarted, SAME ordinary session; 401 → phone Models & Key path
             before = await self._whoami(c)
             await c.say("NOKEY")
-            await c.wait(lambda: any("没有「deepseek」可用的 key" in m for m in c.msgs()))
+            await c.wait(lambda: any("「deepseek」的账户授权或 API Key 不可用" in m for m in c.msgs()))
             await c.idle()
             self.assertNotEqual(await self._whoami(c), before, "a fresh serve after a key failure")
             # the new serve is asked for the same ordinary session first (the stand-in keeps sessions in memory only, so it
             # answers 404 and a new one opens; the real OpenCode keeps them in its database — e2e_p60 --mode shared)
             self.assertGreaterEqual(len([r for r in self.requests() if r["p"] == f"/api/session/{sid}" and r["m"] == "GET"]), 2)
+            previous_key_notices = sum("模型与 Key" in m for m in c.msgs())
             await c.say("BADKEY")
-            await c.wait(lambda: any("opencode auth switch deepseek" in m for m in c.msgs()))
+            await c.wait(lambda: sum("模型与 Key" in m for m in c.msgs()) > previous_key_notices)
             await c.idle()
             # /clear → a new ordinary session
             r = await c.host.agent.command("clear", "")
@@ -248,7 +249,7 @@ class OwnerV2(_DefaultMode, p60.V2Chain):
         agentj = [r for r in reqs if not (r["p"].endswith("/prompt") and r["b"] and r["b"].get("text") in
                                           ("typed at the desk", "RUN: echo desk-ok"))]
         self.assertFalse([r for r in agentj if r["p"] == "/api/session" and r["m"] == "POST"], "never a new session")
-        self.assertFalse([r for r in agentj if r["m"] in ("PATCH", "PUT")], "no PATCH of rules, no injected identity")
+        self.assertFalse([r for r in agentj if r["m"] == "PATCH" or (r["m"] == "PUT" and not r["p"].endswith("/agentj.language"))], "owner keeps rules and identity; phone language entry only")
         self.assertFalse([r for r in agentj if r["p"].endswith("/model") and r["m"] == "POST"], "the owner's model stays")
         ev = [json.loads(x) for x in self.st.log_path.read_text().splitlines()]
         self.assertFalse([e for e in ev if e.get("ev") == "agent_tamper"], "the desktop is a legitimate approver")
@@ -322,6 +323,55 @@ class SharedV1Owned(p59.Chain):
         self.run_chain(script)
         titles = [r["body"].get("title") for r in self.posts() if r["path"] == "/session"]
         self.assertEqual(titles, ["Agent J shared"] * 2)
+
+    def test_owned_v1_phone_language_context_and_subscription_reach_wire(self):
+        import dataclasses
+        import http.server
+        import threading
+        from unittest import mock
+        from agentj import main_identity, opencode_provider, provider_runtime, __version__
+        requests = []
+        class Usage(http.server.BaseHTTPRequestHandler):
+            def do_GET(inner):
+                requests.append((inner.path, inner.headers.get('Authorization') == 'Bearer fixture-p67-usage', inner.headers.get('User-Agent'), inner.headers.get('Accept')))
+                value = {'subscription': {'weekly_usage_usd': 2, 'weekly_limit_usd': 10, 'monthly_usage_usd': 4, 'monthly_limit_usd': 20}}
+                body = json.dumps(value).encode()
+                inner.send_response(200); inner.send_header('Content-Length',str(len(body))); inner.end_headers(); inner.wfile.write(body)
+            def log_message(inner, *args):
+                pass
+        server=http.server.ThreadingHTTPServer(('127.0.0.1',0),Usage)
+        thread=threading.Thread(target=server.serve_forever,daemon=True);thread.start()
+        file=pathlib.Path(opencode_provider.config_file());file.parent.mkdir(parents=True,exist_ok=True)
+        file.write_text(json.dumps({'provider':{'opencode':{'npm':'@ai-sdk/openai-compatible','options':{'baseURL':'https://fixture.invalid/v1','apiKey':'{env:P67_FAKE_USAGE_KEY}'},'models':{'big-pickle':{'name':'Big Pickle','limit':{'context':200000}}}}}}))
+        try:
+            async def script(c):
+                c.host.language_changed('zh')
+                session=next(iter(c.host.sessions.values()))
+                c.host.sessions[12]=dataclasses.replace(session,cid=12,p33=True)
+                meters=[]; original=c.host.send_app
+                async def capture(s,obj):
+                    if obj.get('t')=='meter': meters.append(obj)
+                    return await original(s,obj)
+                c.host.send_app=capture
+                await c.say('hello')
+                await c.wait(lambda:any('ECHO: hello' in x for x in c.msgs()))
+                await c.wait(lambda:any(x.get('ctx')=={'used':8124,'max':200000} and len(x.get('quota_windows') or [])==2 for x in meters))
+                prompts=[x['body'] for x in self.posts() if x['path'].endswith('/prompt_async')]
+                self.assertEqual(prompts[-1]['model'],{'providerID':'opencode','modelID':'big-pickle'})
+                self.assertEqual(prompts[-1]['system'],main_identity.prompt(c.host.agent.cfg))
+                self.assertIn('只用中文',prompts[-1]['system'])
+                self.assertNotIn('permissions',prompts[-1])
+                self.assertEqual(requests[-1],('/v1/usage',True,'agentj/'+__version__,'application/json'))
+                c.host.language_changed('en')
+                await c.say('again')
+                await c.wait(lambda:any('ECHO: again' in x for x in c.msgs()))
+                prompts=[x['body'] for x in self.posts() if x['path'].endswith('/prompt_async')]
+                self.assertIn('Reply to the owner only in English',prompts[-1]['system'])
+                self.assertNotIn('只用中文',prompts[-1]['system'])
+            with mock.patch.dict(os.environ,{'P67_FAKE_USAGE_KEY':'fixture-p67-usage'}), mock.patch.object(provider_runtime,'public_url',side_effect=lambda base,suffix:f'http://127.0.0.1:{server.server_port}/v1/{suffix}'):
+                self.run_chain(script)
+        finally:
+            server.shutdown();server.server_close();thread.join()
 
     def posts(self):
         return [json.loads(x) for x in self.log.read_text().splitlines() if '"POST"' in x]

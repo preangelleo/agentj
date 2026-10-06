@@ -156,7 +156,7 @@ export async function startFakeHost() {
     if (m.t === 'hello' && c.mode === 'resume') {
       c.p33 = st.p33 && Array.isArray(m.caps) && m.caps.includes('p33');
       c.hello = m;
-      await sendApp(c, st.p33 ? { t: 'ready', caps: ['p33'], asr: st.asr, hist: 'on' } : { t: 'ready' });
+      await sendApp(c, st.p33 ? { t: 'ready', caps: ['p33', ...(st.heartbeat ? ['heartbeat'] : [])], asr: st.asr, hist: 'on' } : { t: 'ready' });
       c.isReady = true;
       return afterReady(c);
     }
@@ -378,7 +378,7 @@ export async function startFakeHost() {
       for (const c of conns) if (c.awaiting) {
         c.awaiting = false; c.mode = 'resume'; allow.set(b64u(c.devPub), { sk: c.sk });
         c.p33 = st.p33 && Array.isArray(c.helloCaps) && c.helloCaps.includes('p33');
-        await sendApp(c, st.p33 ? { t: 'approved', caps: ['p33'], asr: st.asr, hist: 'on' } : { t: 'approved' });
+        await sendApp(c, st.p33 ? { t: 'approved', caps: ['p33', ...(st.heartbeat ? ['heartbeat'] : [])], asr: st.asr, hist: 'on' } : { t: 'approved' });
         c.isReady = true; c.hello = null;
         await afterReady(c);
       }

@@ -166,3 +166,26 @@ function routeSpeech(m) {
     clearTimeout(w.timer);speechWait.delete(m.r);w.resolve(new Blob(w.parts,{type:'audio/wav'}));
   }
 }
+
+// P67: authenticated paired-phone recovery, outside the broken model's execution path.
+export async function providers() {
+  if (!isReady()) return null;
+  const m = await ask1({t:'provider_get'}, 'providers', 15000);
+  return m.t === 'providers' ? m : null;
+}
+export async function providerKey(provider) {
+  if (!isReady()) return {ok:false,why:'offline'};
+  const m = await ask1({t:'provider_key',provider}, 'provider_res', 15000);
+  return m.t === 'provider_res' ? m : {ok:false,why:m.t};
+}
+export async function asrInstall() {
+  if (!isReady()) return {ok:false,why:'offline'};
+  const m = await ask1({t:'asr_install',enable:true}, 'asr_install_res', 600000);
+  return m.t === 'asr_install_res' ? m : {ok:false,why:m.t};
+}
+
+export async function models() {
+  if (!isReady()) return null;
+  const m = await ask1({t:'models_get'}, 'models', 15000);
+  return m.t === 'models' ? m : null;
+}

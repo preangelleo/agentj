@@ -1,6 +1,6 @@
-# Agent J 0.15.5a1 release notes
+# Agent J 0.15.6a1 release notes
 
-Host 0.15.5a1 / install 0.19.5; phone-web scope.
+Host 0.15.6a1 / install 0.19.6; phone-web scope.
 Phone parity must pass --strict. Full Android/Telegram parity is incomplete.
 Full Android/Telegram parity is incomplete.
 No APK is included in this release. Android source is for review, not a released app.
@@ -8,7 +8,7 @@ No APK is included in this release. Android source is for review, not a released
 Publication status: local preparation only. Live site verification is DEFERRED until
 the public commit and tag are pushed, the site is deployed, and cold installation passes.
 
-On publication failure, restore v0.15.4a1 / public 5ed03beb, including site and phone web.
+On publication failure, restore v0.15.5a1 and its published main, including site and phone web.
 ## Changes
 
 - Sparse JSON5 configuration with transactional application, configuration history and migrations.
@@ -16,12 +16,15 @@ On publication failure, restore v0.15.4a1 / public 5ed03beb, including site and 
 - Opt-in own-key cloud speech and local phone read-aloud.
 - Optional owner-private Telegram text input and final replies.
 
-- A restricted installation assistant guides setup, account linking, phone pairing and an owner-supplied formal model key.
-- Temporary installation leases expire and are revoked after completion or failure; interrupted setup can resume.
-- Software seats require the friend's own account and ordinary Checkout; installing grants no software seat.
-- First-month promotional issuance remains disabled pending complete hosted payment-method acceptance.
-- App migration 0019 is additive; the operator must back up and read back both databases before deployment.
-- Physical phone and macOS acceptance remain pending; Linux and Chrome results are recorded separately.
+- Phone Models & Key manages configured OpenCode models and requests provider-specific secret cards.
+- Saved environment keys are reloaded before the next owned OpenCode request.
+- OpenCode reports the selected model, available subscription usage windows and context usage.
+- The QR scanner opens a full-screen camera page; pairing instructions precede pasted links.
+- Phone replies and errors follow the selected language; ASR installation is available from the phone.
+- Shared native authority and independent isolation are recorded separately in runtime logs.
+- Encrypted heartbeat and foreground checks detect silent disconnects, resume the paired session and flag failed sends.
+- Installer and doctor share a real Linux isolation preflight and precise per-bwrap Ubuntu24.04 AppArmor guidance.
+- Physical iPhone and platform-specific acceptance limits remain explicit; Chrome QA is recorded separately.
 
 ## Material acceptance limits
 

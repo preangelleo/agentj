@@ -65,7 +65,7 @@ class Classify(unittest.TestCase):
                 "name": "UnknownError", "data": {"message": "Model not found: openrouter/deepseek/deepseek-v4-flash"}}}})
             self.assertEqual(a.restart_after_turn, owned)
             self.assertEqual(a.last_provider_fail["reason"], "no_key")
-        self.assertIn("「openrouter」", notices[0])
+        self.assertIn("openrouter", notices[0])
         self.assertNotIn("内部错误", notices[0])
 
 
@@ -279,12 +279,13 @@ class V2Chain(unittest.TestCase):
             # 5. no key for the provider (v2: provider.no-route) → no_key notice naming it; serve restarted after the turn
             before = await self._whoami(c)
             await c.say("NOKEY")
-            await c.wait(lambda: any("没有「deepseek」可用的 key" in m for m in c.msgs()))
+            await c.wait(lambda: any("「deepseek」的账户授权或 API Key 不可用" in m for m in c.msgs()))
             await c.idle()
             self.assertNotEqual(await self._whoami(c), before, "a fresh serve after a key failure")
-            # 6. 401 → login notice with the v2 hint (several keys per provider: auth switch)
+            # 6. 401 → single-language phone Models & Key path
+            previous_key_notices = sum("模型与 Key" in m for m in c.msgs())
             await c.say("BADKEY")
-            await c.wait(lambda: any("opencode auth switch deepseek" in m for m in c.msgs()))
+            await c.wait(lambda: sum("模型与 Key" in m for m in c.msgs()) > previous_key_notices)
             await c.idle()
             ev = [json.loads(x) for x in self.st.log_path.read_text().splitlines()]
             self.assertIn("v2", [e.get("version") for e in ev if e.get("ev") == "agent_protocol"])

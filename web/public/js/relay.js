@@ -1,3 +1,4 @@
+import { quotaWindows } from './dashboard.js';
 // The chat screen = relay's phone page (pwa/index.html <script>, ADR-022 … ADR-052 there), ported section by section.
 // What changed is only the transport and the wording: relay's HTTP calls (requests, the event stream, raw uploads) go through the
 // adapter `ctx.api` (Noise session, PROTOCOL §10), every string comes from the i18n dictionaries, Telegram forwarding is
@@ -391,19 +392,25 @@ function paintUsage(u){
   u = u || {};
   paintPill(u);
   el("meta").title = u.source ? t('r.usage.age', {s: Math.round(u.age_s || 0)}) : t('r.usage.none');
-  for (const [id, p, label] of [["mWeek", u.week_pct, 'r.meter.week'], ["m5h", u.five_hour_pct, 'r.meter.h5']]){
-    const bar = el(id), known = typeof p === "number";
-    bar.dataset.known = known ? "1" : "0";
-    bar.firstElementChild.style.width = known ? p + "%" : "0";
-    bar.setAttribute("aria-label", known ? t('r.meter.used', {label: t(label), pct: p}) : t('r.meter.unknown', {label: t(label)}));
-    bar.title = bar.getAttribute("aria-label");
+  const windows = quotaWindows(u);
+  for (const [idx, id] of ['mWeek', 'm5h'].entries()) {
+    const bar = el(id), x = windows[idx];
+    bar.hidden = !x; bar.dataset.known = x ? '1' : '0';
+    bar.firstElementChild.style.width = x ? x.pct + '%' : '0';
+    bar.querySelector('.lab').textContent = x ? `${x.window} ${Math.round(x.pct)}%` : '';
+    const label = x ? t('r.meter.' + ({weekly:'week',daily:'daily',monthly:'monthly','5h':'h5'}[x.window])) : '';
+    bar.setAttribute('aria-label', x ? t('r.meter.used', {label, pct:x.pct}) : '');
+    bar.title = bar.getAttribute('aria-label');
   }
   const w = el("water"), ctx = u.context_pct;
-  const post = !!postCompact && typeof ctx !== "number";
+  const post = !!postCompact && typeof ctx !== "number" && !Number.isFinite(u.context_used);
   w.dataset.post = post ? "1" : "0";
   w.dataset.known = post || typeof ctx === "number" ? "1" : "0";
   w.style.setProperty("--lvl", post ? POST_COMPACT_LEVEL : typeof ctx === "number" ? ctx / 100 : 0);
   w.dataset.lvl = typeof ctx === "number" ? String(ctx) : "";
+  w.setAttribute('aria-label', typeof ctx === 'number' ? t('r.usage.ctx', {p:ctx}) : t('r.usage.none'));
+  w.title = Number.isFinite(u.context_used) ? (Number.isFinite(u.context_limit) && u.context_limit > 0 ? `${u.context_used} / ${u.context_limit}` : `${u.context_used} tokens`) : w.getAttribute('aria-label');
+  if (Number.isFinite(u.context_used) && typeof ctx !== 'number') w.setAttribute('aria-label', w.title);
 }
 const POST_COMPACT_LEVEL = 0.03;
 let postCompact = false;
@@ -426,9 +433,9 @@ function meterToast(){
   const u = (cur && cur.usage) || {};
   if (!u.source){ toast(t('r.usage.none'), 3200); return; }
   const bits = [];
-  if (u.week_pct != null) bits.push(t('r.usage.week', {p: u.week_pct}));
-  if (u.five_hour_pct != null) bits.push(t('r.usage.h5', {p: u.five_hour_pct}));
+  for (const x of quotaWindows(u)) bits.push(t('r.meter.used', {label:t('r.meter.' + ({weekly:'week',daily:'daily',monthly:'monthly','5h':'h5'}[x.window])),pct:x.pct}));
   if (u.context_pct != null) bits.push(t('r.usage.ctx', {p: u.context_pct}));
+  else if (Number.isFinite(u.context_used)) bits.push(`${u.context_used} tokens`);
   else if (postCompact) bits.push(t('r.usage.ctxPost'));
   if (u.age_s != null) bits.push(t('r.usage.ago', {s: Math.round(u.age_s)}));
   toast(bits.join(" · ") || "—", 3600);
@@ -720,6 +727,7 @@ function showPage(){
   const ot = el("omText");
   ot.textContent = tx || (src && src.att && src.att.length ? t('r.om.attOnly') : t('r.om.none'));
   ot.classList.toggle("none", !tx);
+  if (!tx && !src?.att?.length && !src?.quote) om.hidden = true;
   const att = el("omAtt");
   att.replaceChildren();
   if (src && src.att && src.att.length){
@@ -1785,6 +1793,7 @@ function renderMenu(){
   const k = item("?", t('r.keys.title'), {});
   k.className = "keysentry"; k.id = "keysEntry";
   if (CLIP_READ){ const c = item("📋", t('r.menu.clip'), {}); c.className = "clipentry"; c.id = "clipEntry"; }
+  const modelsEntry = item('◉', t('models.title'), {}); modelsEntry.id = 'modelsEntry';
   if (IN_APP){ const a = item("⚙", t('r.menu.app'), {}); a.id = "appEntry"; }
   menu.replaceChildren(...nodes);
 }
@@ -1916,6 +1925,7 @@ function pttLock(p){
 const MIC_OPEN_MAX_MS = 15000;
 function pttStart(id, y){
   if (ptt) return;
+  if (C.asr() !== "ready"){ C.asrInstall?.(); return; }
   if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia || !window.MediaRecorder){
     toast(t('r.ptt.noRec'), 3000); return;
   }
@@ -2003,7 +2013,7 @@ async function takeFinished(blob, dur){
     }
     toast(t('r.voice.trayFull', {max: MAX_ATT}), 3200);
   }
-  if (C.asr() !== "ready"){ toast(t('r.asr.' + (C.asr() === "off" ? "off" : C.asr() === "broken" ? "broken" : "not_installed")), 5200); return; }
+  if (C.asr() !== "ready"){ C.asrInstall?.(); return; }
   asrBusy++; asrUI();
   const ep = localEpoch;
   const job = transcribe(blob, dur);
@@ -2497,6 +2507,7 @@ export function init(ctx){
     const b = e.target.closest && e.target.closest("button");
     if (!b) return;
     e.stopPropagation();
+    if (b.id === "modelsEntry"){ closeMenu(); C.models?.(); return; }
     if (b.id === "keysEntry"){ openKeys(); return; }
     if (b.id === "appEntry"){ closeMenu(); location.href = / AgentJApp\//.test(navigator.userAgent) ? "agentj-app://status" : "jarvis-app://status"; return; }
     if (b.id === "clipEntry"){ closeMenu(); pasteClipImages(); return; }

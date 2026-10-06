@@ -1,4 +1,4 @@
-"""Native shared sessions, outside the independent fence.
+"""Native shared sessions; Agent J-owned OpenCode honors the requested fence.
 
 Claude uses the proven relay messaging and committed Stop state machine.
 Native approvals are signed phone requests; pre-execution warnings only tighten
@@ -535,13 +535,12 @@ class SharedOpenCodeAgent(OpenCodeAgent):
             return False
 
     def launch_argv(self, argv):
-        # Only the new ordinary server is owned here. Native permissions and HOME
-        # remain the owner's; no fence or permission-relaxing flags are injected.
-        return argv
+        from .provider_runtime import shared_launch
+        return shared_launch(self, argv)
 
     async def _prepare(self):
-        # Called only by the inherited native server startup. No independent
-        # session_rules, PATCH permission or main identity injection is applied.
+        # Native server startup keeps native rules: no independent session_rules
+        # or permission PATCH. Owned main identity is supplied on each phone turn.
         self.connected_at_start = None                # P63: which providers this owned serve has a key for (no_key class)
         if self.owned_server:
             with contextlib.suppress(OSError, HTTPError, asyncio.TimeoutError):
@@ -575,7 +574,6 @@ class SharedOpenCodeAgent(OpenCodeAgent):
             # An explicit shared experiment without an owner session starts an
             # ordinary native server/session. Native config and permissions stay
             # untouched. A stale explicit owner selector never falls through here.
-            self.cfg["fence"] = False
             self.owned_server = True
             if not await self._installed_v2():        # P63: the v1 plugin is not a v2 plugin (shared_opencode2)
                 await self.prepare_risk()
@@ -758,6 +756,11 @@ class SharedOpenCodeAgent(OpenCodeAgent):
         self.phone_messages.add(mid)
         self.turn_proc = self.proc
         body = {"messageID": mid, "parts": [{"type": "text", "text": text}]}
+        from . import main_identity
+        main = self.owned_server and self.persist and not self.cfg.get('_workflow_ceo')
+        # Owned main gets its full constitution; an attached owner keeps native
+        # identity and receives only this phone turn's language instruction.
+        body['system'] = main_identity.prompt(self.cfg) if main else main_identity.LANGUAGE_LINE[main_identity.language_of(self.cfg)]
         m = split_model(self.cfg.get("model")) if self.owned_server else None
         if m:                       # P63: the owner's `agentj agent opencode --model` / phone /model on our own server
             body["model"] = m
@@ -767,7 +770,14 @@ class SharedOpenCodeAgent(OpenCodeAgent):
                 raise HTTPError("prompt refused")
             return True
         await self.deliver(post)
+        if main:
+            if not hasattr(self, 'identity_sent'):
+                self.identity_sent = {}
+            self.identity_sent[self.sid] = body['system']
+            main_identity.audit(self.cfg, self.kind, self.host.st, self.sid)
         await self._wait_turn()
+        if self.owned_server and self.persist and self.collect is None:
+            self.refresh_usage()
         if self.restart_after_turn and self.owned_server and self.proc and not isinstance(self.proc, _ExternalServer):
             self.restart_after_turn = False       # P60/P63: a key / provider failure — the next message gets a fresh serve
             self.host.st.log("agent_restart", agent=self.kind, reason="provider_failure")

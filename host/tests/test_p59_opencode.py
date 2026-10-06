@@ -330,7 +330,7 @@ class Chain(unittest.TestCase):
             self.assertEqual(c.host.agent.sid, sid)
             # 5. a provider 401 → one phone line with the class; doctor sees the class, never the message
             await c.say("FAIL: 401 secret-provider-detail")
-            await c.wait(lambda: any("自动重启" in m for m in c.msgs()))
+            await c.wait(lambda: any("模型与 Key" in m for m in c.msgs()))
             self.assertEqual(c.host.agent.last_provider_fail["reason"], "login")
             await c.say("hello")
             await c.wait(lambda: any(m == "ECHO: hello" for m in c.msgs()))

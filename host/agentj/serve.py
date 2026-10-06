@@ -86,16 +86,17 @@ FF_CPU_SECS = 60                            # RLIMIT_CPU of one conversion
 # declared MIME → the ffmpeg demuxer (pinned: no content probing, so a playlist or another format is never opened)
 FF_DEMUX = {"video/mp4": "mov", "audio/webm": "matroska", "audio/ogg": "ogg", "audio/mpeg": "mp3", "audio/mp4": "mov", "audio/aac": "aac",
             "audio/wav": "wav", "audio/x-wav": "wav"}
+MODEL_REFRESH_TIMEOUT = 8.0                # Background catalogue work never stalls the relay reader.
 METER_GAP = 2.0                             # ≤ 1 meter message per 2 s
 HIST_READY = 50                             # turns a p33 device gets on ready (it pages for more)
 SWEEP_EVERY = 60
 RETAIN_EVERY = 86_400
 P33_ONLY = ("say", "say_cancel", "blob_open", "blob_chunk", "blob_end", "blob_drop", "hist_get", "menu_get", "model_set",
-            "q_answer", "tts_get", "pref_set", "notice_read", "media_get")
+            "q_answer", "tts_get", "pref_set", "notice_read", "media_get", "provider_get", "provider_key", "asr_install", "models_get", "ping")
 # F14: paired phones may change optional warnings, session mode, isolation, docker and the upgrade mode (F19); native permissions stay authoritative.
 PREF_SET_KEYS = ("updates.mode", "appearance.language", "appearance.theme", "voice.wake_enabled", "voice.speak_replies",
                  "agent.high_risk_warnings", "agent.session_mode", "agent.isolation", "agent.allow_docker")
-METER_KEYS = ("model", "model_name", "effort", "ctx", "h5", "week")
+METER_KEYS = ("model", "model_name", "effort", "ctx", "h5", "week", "quota_windows")
 Q_CANCEL = "用户在手机上取消了这个问题，没有选择任何选项。请不要替他做选择，停下来等他直接输入文字。"
 Q_TIMEOUT = "没有人作答，请改用文字列出选项"
 ASR_WHY = {"not_installed": "not_installed", "bad_audio": "bad_audio", "timeout": "timeout", "busy": "busy",
@@ -856,6 +857,50 @@ class Host:
                     result = await agent.authentication() if agent and hasattr(agent, "authentication") else {"known": False}
                     fail = getattr(agent, "last_provider_fail", None)     # P59: the last turn's failure class (doctor)
                     await self._ctl_send(w, {"ok": True, **result, **({"last_failure": fail} if fail else {})})
+                elif cmd == "opencode_runtime":
+                    # Owner-local diagnostic: only boolean state, model ids and meters.
+                    from . import main_identity
+                    from .agent_opencode import split_model
+                    agent = self.agent
+                    cfg = getattr(agent, 'cfg', {}) or {}
+                    sid = getattr(agent, 'sid', None)
+                    cached = getattr(agent, 'identity_sent', {}) or {}
+                    identity_current = False
+                    with contextlib.suppress(ValueError, OSError):
+                        identity_current = cached.get(sid) == main_identity.prompt(cfg)
+                    model = getattr(agent, 'session_model', None)
+                    model = model if isinstance(model, dict) else {}
+                    native_model = model.get('providerID', '') + '/' + model.get('id', '') if all(isinstance(model.get(k), str) for k in ('providerID', 'id')) else None
+                    meters = getattr(self, 'meter_state', {}) or {}
+                    ctx = meters.get('ctx')
+                    ctx = {'used': ctx['used'], 'max': ctx.get('max')} if isinstance(ctx, dict) and type(ctx.get('used')) is int and ctx['used'] >= 0 and (ctx.get('max') is None or type(ctx.get('max')) is int and ctx['max'] > 0) else None
+                    windows = meters.get('quota_windows')
+                    import math
+                    windows = [{k: x[k] for k in ('window', 'used', 'limit', 'pct')} for x in windows if isinstance(x, dict) and x.get('window') in ('weekly', 'daily', 'monthly') and all(type(x.get(k)) in (int, float) and math.isfinite(x[k]) for k in ('used', 'limit', 'pct'))] if isinstance(windows, list) else None
+                    await self._ctl_send(w, {'ok': True, 'adapter': type(agent).__name__ if agent else None, 'owned_server': bool(getattr(agent, 'owned_server', False)), 'persist': bool(getattr(agent, 'persist', False)), 'workflow_ceo': bool(cfg.get('_workflow_ceo')), 'language': main_identity.language_of(cfg), 'identity_cached_current': identity_current, 'cfg_model': agent.cur_model() if agent and hasattr(agent, 'cur_model') else None, 'native_session_model': native_model if split_model(native_model) else None, 'meter': {'model': meters.get('model'), 'ctx': ctx, 'quota_windows': windows}})
+                elif cmd == "opencode_metadata":
+                    agent = self.agent
+                    selected = agent.cur_model() if agent and agent.kind == 'opencode' else None
+                    prov = await agent._providers() if selected else {}
+                    found = False
+                    limit = None
+                    if isinstance(selected, str) and '/' in selected:
+                        pid, mid = selected.split('/', 1)
+                        for p in prov.get('providers') or []:
+                            models = p.get('models') if isinstance(p, dict) else None
+                            if isinstance(p, dict) and p.get('id') == pid and isinstance(models, dict) and mid in models:
+                                found = True
+                                mm = models[mid]
+                                limits = mm.get('limit') if isinstance(mm, dict) else None
+                                value = limits.get('context') if isinstance(limits, dict) else None
+                                if type(value) is int and value > 0:
+                                    limit = value
+                    info = await agent._last_assistant() if selected else {}
+                    used = agent._ctx(info) if selected else None
+                    used = used if type(used) is int and used >= 0 else None
+                    actual = info.get('providerID', '') + '/' + info.get('modelID', '') if all(isinstance(info.get(k), str) for k in ('providerID', 'modelID')) else None
+                    from .agent_opencode import split_model
+                    await self._ctl_send(w, {'ok': True, 'model': selected, 'assistant_model': actual if split_model(actual) else None, 'metadata_present': found, 'context_limit': limit, 'context_used': used})
                 elif cmd == "status":
                     await self._ctl_send(w, {"ok": True, "relay_up": self.relay_up, "channel": self.channel,
                                              "agent": self.agent.kind if self.agent else None, "agent_status": self.eff_status(),
@@ -1166,6 +1211,18 @@ class Host:
             await self.send_app(s, self._meter_msg())
             if self.agent:
                 await self.send_app(s, self._models_msg())
+                if self.agent.kind == 'opencode':
+                    from . import provider_runtime
+                    selected = self.agent.cur_model()
+                    if isinstance(selected, str) and '/' in selected:
+                        provider = selected.split('/', 1)[0]
+                        name = provider_runtime.key_name(provider)
+                        if name and not provider_runtime.fresh_environment(os.environ).get(name):
+                            asyncio.create_task(provider_runtime.request_key(self, provider))
+                        async def quota_initial(pid=provider):
+                            windows = await asyncio.to_thread(provider_runtime.probe, pid)
+                            self.meter_update(quota_windows=windows)
+                        asyncio.create_task(quota_initial())
             await self.send_app(s, {"t": "hist_meta", **self.hist.meta()})
             h = s.hist or {}
             if h.get("epoch") == self.hist.epoch:
@@ -2290,7 +2347,7 @@ class Host:
         announced p33 itself (an older one gets exactly §3's message)."""
         if s is not None and not s.p33:
             return {}
-        return {"caps": [wire.CAP_P33], "asr": self.asr_state(), "hist": "on" if self.hist.on else "off"}
+        return {"caps": [wire.CAP_P33, "heartbeat"], "asr": self.asr_state(), "hist": "on" if self.hist.on else "off"}
 
     async def _bulk(self, s: Session) -> None:
         """§10.13: a ready, allowlisted p33 device may upload faster — tell the relay (it answers the device {"t":"rate"});
@@ -2324,6 +2381,11 @@ class Host:
             self.tts_busy=False
 
     async def on_p33(self, s: Session, t: str, obj: dict) -> None:
+        if t == "ping":
+            r = obj.get("r")
+            if wire.is_rid(r):
+                await self.send_app(s, {"t": "pong", "r": r})
+            return
         if t == "notice_read":
             nid = obj.get("id")
             if isinstance(nid, str) and notices.ID.fullmatch(nid) and notices.mark_read(self.st, nid):
@@ -2392,6 +2454,61 @@ class Host:
             if configured:
                 res.update(source="config", items=[{k: v for k, v in x.items() if k != "id"} for x in menu.arrange(configured)])
             return await self.send_app(s, {"t": "menu", "r": r, **res})
+        if t in ("provider_get", "provider_key", "asr_install"):
+            from . import provider_runtime
+            r = obj.get("r")
+            if not wire.is_rid(r):
+                return
+            if t == "provider_get":
+                ps = [{"id": k, "name": k, "key_editable": bool(provider_runtime.key_name(k))}
+                      for k in provider_runtime.configured()]
+                return await self.send_app(s, {"t": "providers", "r": r, "providers": ps})
+            if t == "provider_key":
+                pid = obj.get("provider")
+                ok = isinstance(pid, str) and bool(provider_runtime.key_name(pid))
+                await self.send_app(s, {"t": "provider_res", "r": r, "ok": ok, **({} if ok else {"why": "unsupported"})})
+                if ok:
+                    asyncio.create_task(provider_runtime.request_key(self, pid))
+                return
+            if getattr(self, "_asr_installing", False):
+                return await self.send_app(s, {"t": "asr_install_res", "r": r, "ok": False, "why": "busy"})
+            self._asr_installing = True
+            async def install_asr():
+                try:
+                    code = await asyncio.to_thread(self.asr.install, state_dir=self.st.root, yes=True, out=lambda _: None)
+                    if code == 0 and obj.get('enable') is True:
+                        await self.set_pref('voice.asr.mode', 'local')
+                        await self.set_pref('voice.asr.engine', 'auto')
+                    state = self.asr_state()
+                    ok = code == 0 and state == 'ready'
+                    self.st.log("asr_install", device=s.device, result="ok" if ok else "failed")
+                    await self.send_app(s, {"t": "asr_install_res", "r": r, "ok": ok, "state": state, **({} if ok else {'why': state if code == 0 else 'failed'})})
+                except Exception:
+                    await self.send_app(s, {"t": "asr_install_res", "r": r, "ok": False, "why": "failed"})
+                finally:
+                    self._asr_installing = False
+            asyncio.create_task(install_asr())
+            return
+        if t == "models_get":
+            r = obj.get('r')
+            if not wire.is_rid(r):
+                return
+            agent = self.agent
+            # Local config/cache is immediately usable, even when a native API stalls.
+            if agent and agent.kind == 'opencode':
+                agent._set_models({})
+            await self.send_app(s, {**self._models_msg(), 'r': r})
+            refresh = getattr(agent, 'refresh_models', None)
+            pending = getattr(self, '_catalogue_refresh_task', None)
+            if callable(refresh) and (pending is None or pending.done()):
+                async def refresh_catalogue():
+                    from .agent_opencode import HTTPError
+                    with contextlib.suppress(OSError, ValueError, HTTPError, AttributeError, asyncio.TimeoutError):
+                        await asyncio.wait_for(refresh(), MODEL_REFRESH_TIMEOUT)
+                # _set_models calls models_changed when native refresh succeeds. Never
+                # await the native API in the relay frame reader (ping/provider_get).
+                self._catalogue_refresh_task = asyncio.create_task(refresh_catalogue())
+            return
         if t == "model_set":
             return await self.on_model_set(s, obj)
         if t == "q_answer":
@@ -2656,6 +2773,8 @@ class Host:
     # ------------------------------------------------------------ meters (§10.10)
     def _meter_msg(self) -> dict:
         m = dict(self.meter_state)
+        if m.get("quota_windows") is None:
+            m.pop("quota_windows", None)
         return {"t": "meter", **m, "at": int(time.time())}
 
     def meter_update(self, **kw) -> None:
@@ -2938,7 +3057,7 @@ class Host:
             self.agent = agents.make(self, self.agent_cfg)
             self.agent.start()
             self.sent_status = self.eff_status()
-            self.st.log("agent_on", agent=self.agent.kind, fence=self.agent_cfg.get("fence", True))
+            self.st.log("agent_on", agent=self.agent.kind, isolation_requested=self.agent_cfg.get("fence", True), session_mode=self.agent_cfg.get("session_mode", "independent"), phase="configured")
         await self.elevate.start()                 # F17: <state>/agentperm/elevate.sock for `agentj sudo` / `agentj secret`
         from .recall import Server as RecallServer
         self.recall = RecallServer(self)           # F22 (P57): <state>/agentperm/recall.sock for `agentj recall` (§15.4)

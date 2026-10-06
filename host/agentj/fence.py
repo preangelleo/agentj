@@ -27,7 +27,10 @@ the Agent's own sandbox, no Apple Events, no LaunchServices, no tmux / ssh-agent
 / emacs / nvim / Jupyter / VS Code / kitty sockets and (unless allowed) no container engine sockets; launchd jobs and
 ~/Library/LaunchAgents are the Agent's own to manage (F14). macOS has no PID or mount namespace: the Agent still sees the
 process list's *argv* via sysctl, shares /tmp and $TMPDIR, and shares the network (as on Linux). Elsewhere, or when the
-fence cannot start, the agent runs unfenced with the harness's own permissions (F14: degraded, one notice on the phone).
+fence cannot start, the legacy independent Agent.launch_argv path runs unfenced with the harness's own permissions
+(F14: degraded, one notice on the phone). P67's Agent J-owned shared OpenCode path instead refuses startup when requested
+isolation cannot start (provider_runtime.shared_launch); it never silently degrades. An explicitly selected unfenced mode
+remains unfenced. A server the owner started is attached as owner-managed; Agent J cannot rewrap that existing process.
 """
 from __future__ import annotations
 
@@ -383,6 +386,33 @@ def kind() -> str:
 _probe_cache: dict[str, str | None] = {}
 
 
+def apparmor_userns_policy() -> bool | None:
+    """Public kernel policy only; None when unavailable, never changes it."""
+    if sys.platform != "linux":
+        return None
+    try:
+        with open("/proc/sys/kernel/apparmor_restrict_unprivileged_userns") as f:
+            value = f.read(16).strip()
+            return value == "1" if value in ("0", "1") else None
+    except OSError:
+        return None
+
+
+def apparmor_userns_restricted() -> bool:
+    return apparmor_userns_policy() is True
+
+
+def apparmor_hint() -> str:
+    """Per-binary Ubuntu 24.04+ fix; administrators review existing profiles first."""
+    return ("Ubuntu 24.04+：保持 kernel.apparmor_restrict_unprivileged_userns=1。由管理员检查已有 bwrap profile；"
+            "若缺失，在 /etc/apparmor.d/bwrap-agentj 放下列配置（仅 /usr/bin/bwrap 获 userns，不覆盖已有 profile）：\n"
+            "abi <abi/4.0>,\ninclude <tunables/global>\n"
+            "profile bwrap-agentj /usr/bin/bwrap flags=(unconfined) {\n  userns,\n}\n"
+            "sudo apparmor_parser -r /etc/apparmor.d/bwrap-agentj；然后 agentj doctor --offline。"
+            " / Keep the system restriction enabled; an administrator can permit userns only for /usr/bin/bwrap "
+            "with this profile and reload it. Review existing profiles first; rerun doctor after repair.")
+
+
 def problem(st, workdir: str) -> str | None:
     """None when the fence starts on this machine, else a short reason (cached per process). macOS: the probe also checks
     that the profile really applies (the state directory must be unreadable from inside)."""
@@ -403,7 +433,7 @@ def problem(st, workdir: str) -> str | None:
                 _probe_cache[key] = None if r.returncode == 0 else "sandbox_failed"
             else:
                 r = subprocess.run(bwrap_argv(st, workdir) + ["/bin/sh", "-c", "exit 0"], capture_output=True, timeout=10)
-                _probe_cache[key] = None if r.returncode == 0 else "bwrap_failed"
+                _probe_cache[key] = None if r.returncode == 0 else ("apparmor_userns" if apparmor_userns_restricted() else "bwrap_failed")
         except (OSError, subprocess.TimeoutExpired):
             _probe_cache[key] = "sandbox_failed" if sys.platform == "darwin" else "bwrap_failed"
     return _probe_cache[key]
@@ -422,6 +452,7 @@ def wrap(st, argv: list[str], workdir: str, allow_docker: bool = False) -> list[
 REASONS = {
     "unsupported_os": "这个系统上还没有 Agent 隔离（支持 Linux 与 macOS；Windows 请用 WSL2）",
     "no_bwrap": "没找到 bubblewrap（bwrap），Agent 隔离起不来：装上它（apt / dnf / pacman install bubblewrap）",
+    "apparmor_userns": "bubblewrap 起不来且 AppArmor userns 限制开启；请用 agentj doctor 查看仅 /usr/bin/bwrap 的修法",
     "bwrap_failed": "bubblewrap 起不来（多半是系统禁止了非特权用户命名空间，或在容器里），Agent 隔离起不来",
     "no_sandbox_exec": "这台 Mac 上没有 /usr/bin/sandbox-exec，Agent 隔离起不来",
     "sandbox_failed": "macOS 沙箱（sandbox-exec）起不来（Agent J 自己是不是已经在别的沙箱里运行？），Agent 隔离起不来",

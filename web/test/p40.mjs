@@ -1,11 +1,13 @@
 import { execFileSync } from 'node:child_process';
+import { resolve } from 'node:path';
+import { pathToFileURL } from 'node:url';
 import assert from 'node:assert/strict';
 import { writeFileSync, mkdirSync } from 'node:fs';
 import { parityRecorder } from '../../parity/lib.mjs';
 import { startFakeHost } from './fakehost.mjs';
 import { startWebServer } from './serve.mjs';
 import { launch, newPage, navigate, evaluate, waitFor, shoot, sleep } from './browser.mjs';
-const out = new URL('../../../reports/qa/release-0.13/', import.meta.url);
+const out = process.env.AJ_P40_OUT ? pathToFileURL(resolve(process.env.AJ_P40_OUT)+'/') : new URL('../../../reports/qa/release-0.13/', import.meta.url);
 mkdirSync(out,{recursive:true});
 const server=await startWebServer(); const browser=await launch();
 const results=[];const fake=await startFakeHost();
@@ -19,8 +21,16 @@ try {
    assert.equal(await evaluate(page,`typeof window.jsQR`),'function');
    assert.equal(await evaluate(page,`document.getElementById('scan').hidden`),false);
    await evaluate(page,`document.getElementById('scan').click()`);
-   await waitFor(page,`!document.getElementById('scan-box').hidden`);
+   try { await waitFor(page,`document.body.dataset.view==='scan' && document.getElementById('scan-video').srcObject?.active`); }
+   catch (error) {
+    console.error('p40-camera-entry',JSON.stringify(await evaluate(page,`({view:document.body.dataset.view,state:window.__ajState,visible:document.visibilityState,focused:document.hasFocus(),hint:document.getElementById('camera-hint').textContent,stream:!!document.getElementById('scan-video').srcObject,media:window.__ajMediaDiagnostics})`)));
+    throw error;
+   }
    assert.equal(await evaluate(page,`!!document.getElementById('scan-video').srcObject`),true);
+   const entry=await evaluate(page,`(()=>{const v=document.getElementById('scan-video'),r=v.getBoundingClientRect();let hidden=false;for(let e=v;e;e=e.parentElement){const s=getComputedStyle(e);hidden ||= e.hidden || s.display==='none' || s.visibility==='hidden';}return {view:document.body.dataset.view,state:window.__ajState,visible:document.visibilityState,focused:document.hasFocus(),active:v.srcObject?.active,hiddenAncestor:hidden,rect:{x:r.x,y:r.y,width:r.width,height:r.height},media:window.__ajMediaDiagnostics};})()`);
+   assert.equal(entry.hiddenAncestor,false);assert.equal(entry.active,true);
+   assert.deepEqual(entry.rect,{x:0,y:0,width:w,height:h});
+   console.log('p40-camera-entry-ok',JSON.stringify(entry));
    await evaluate(page,`document.getElementById('scan-stop').click()`);
    assert.equal(await evaluate(page,`document.getElementById('scan-video').srcObject`),null);
    const qrLink=fake.newPairing(server.url);
@@ -34,10 +44,21 @@ try {
    for (const b of boxes) { assert.ok(b.top>=0,JSON.stringify(b));assert.ok(b.bottom<=h-300,JSON.stringify(b)); }
    await evaluate(page,`const kb=document.createElement('div');kb.id='sim-keyboard';kb.style.cssText='position:fixed;left:0;right:0;top:${h-300}px;height:300px;background:#343434;color:white;z-index:1000;text-align:center;padding-top:60px';kb.textContent='Simulated keyboard · 300px';document.documentElement.append(kb)`);
    writeFileSync(new URL(`keyboard-${w}x${h}.png`,out),await shoot(page,'unused'));
-   // A denied camera must return a readable paste fallback and leave no active stream.
-   await evaluate(page,`Object.defineProperty(navigator.mediaDevices,'getUserMedia',{value:async()=>{throw new DOMException('denied','NotAllowedError')}});document.getElementById('scan').click()`);
-   await waitFor(page,`!document.getElementById('scan-hint').hidden`);
-   assert.match(await evaluate(page,`document.getElementById('scan-hint').textContent`),/相机|Camera/);
+   // Leo's new page stays fullscreen on denial; only tracks stop. Retry and Back
+   // must be real controls, never a hidden legacy pairing hint.
+   await evaluate(page,`window.p40Gum=navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices);Object.defineProperty(navigator.mediaDevices,'getUserMedia',{configurable:true,writable:true,value:async()=>{throw new DOMException('denied','NotAllowedError')}});document.getElementById('scan').click()`);
+   await waitFor(page,`document.body.dataset.view==='scan' && !document.getElementById('camera-hint').hidden && document.getElementById('camera-hint').textContent.includes('相机')`);
+   assert.match(await evaluate(page,`document.getElementById('camera-hint').textContent`),/相机|Camera/);
+   assert.equal(await evaluate(page,`document.getElementById('scan-video').srcObject`),null);
+   assert.equal(await evaluate(page,`getComputedStyle(document.querySelector('.top')).display`),'none');
+   const camera=await evaluate(page,`(()=>{const r=document.getElementById('scan-view').getBoundingClientRect();return {w:r.width,h:r.height,top:r.top,back:!document.getElementById('scan-back').hidden};})()`);
+   assert.equal(camera.w,w);assert.equal(camera.h,h);assert.equal(camera.top,0);assert.equal(camera.back,true);
+   await evaluate(page,`navigator.mediaDevices.getUserMedia=window.p40Gum;document.getElementById('scan-trigger').click()`);
+   await waitFor(page,`document.body.dataset.view==='scan' && document.getElementById('scan-video').srcObject?.active`);
+   await evaluate(page,`window.p40Track=document.getElementById('scan-video').srcObject.getTracks()[0];document.getElementById('scan-back').click()`);
+   await waitFor(page,`document.body.dataset.view==='pair'`);
+   assert.equal(await evaluate(page,`window.p40Track.readyState`),'ended');
+   assert.equal(await evaluate(page,`document.getElementById('scan-video').srcObject`),null);
    // Pair after the pairing field has already set a viewport height. Grow it,
    // then open chat's keyboard: a stale body --vvh must not shadow the root.
    await evaluate(page,`__vv.height=${h};__vv.dispatchEvent(new Event('resize'));`);

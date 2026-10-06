@@ -342,7 +342,7 @@ export async function runCases({ B, web, fake, only }) {
   await C('weekly-bar', async () => {
     ok((await ev(`document.querySelector('#mWeek i').style.width`)) === '55%', 'weekly 55 %');
     await click('#mWeek');
-    await waitToast(T('r.usage.week', { p: 55 }));
+    await waitToast(T('r.meter.used', { label: T('r.meter.week'), pct: 55 }));
   });
   await C('five-hour-bar', async () => { ok((await ev(`document.querySelector('#m5h i').style.width`)) === '30%' && (await ev(`document.getElementById('m5h').dataset.known`)) === '1', '5 h 30 %'); });
   await C('model-pill', async () => { ok((await text('#meta')) === 'Opus 5.5 · medium', 'model · effort: ' + await text('#meta')); });

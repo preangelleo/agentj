@@ -321,10 +321,10 @@ class Language(_Env):
         main_identity.verify_core()                       # the hashed core files are unchanged
         zh = main_identity.prompt({"language": "zh"})
         en = main_identity.prompt({"language": "en", "instructions": "be terse"})
-        self.assertIn("Speak with the owner in 中文 by default.", zh)
-        self.assertIn("默认用中文与主人交流", zh)
-        self.assertIn("Speak with the owner in English by default.", en)
-        self.assertLess(en.index("Speak with the owner"), en.index("be terse"), "core + language before user preferences")
+        self.assertIn("只用中文与主人交流；不要附英文译文。", zh)
+        self.assertNotIn("Speak with the owner in 中文", zh)
+        self.assertIn("Reply to the owner only in English; do not append a translation.", en)
+        self.assertLess(en.index("Reply to the owner"), en.index("be terse"), "core + language before user preferences")
         self.assertNotEqual(main_identity.expected({"language": "zh"}, "claude")["prompt_sha256"],
                             main_identity.expected({"language": "en"}, "claude")["prompt_sha256"])
 

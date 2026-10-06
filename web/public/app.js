@@ -83,14 +83,14 @@ function setStatus(s, key, vars) {
   rerender();
 }
 let view = null;
-const VIEWS = { pair: 'pair-view', sas: 'sas-view', mem: 'mem-view', act: 'act-view', tasks: 'tasks-view', revoked: 'revoked-view', error: 'error-view' };
+const VIEWS = { pair: 'pair-view', scan: 'scan-view', models: 'models-view', sas: 'sas-view', mem: 'mem-view', act: 'act-view', tasks: 'tasks-view', revoked: 'revoked-view', error: 'error-view' };
 function show(v) {
   view = v;
   document.body.dataset.view = v;
   for (const [k, id] of Object.entries(VIEWS)) $(id).hidden = k !== v;
-  $('unpair').hidden = !['chat', 'mem', 'act', 'tasks'].includes(v);
+  $('unpair').hidden = !['chat', 'mem', 'act', 'tasks', 'models'].includes(v);
   $('scan-repair').hidden = $('unpair').hidden;
-  for (const id of ['open-mem', 'open-act', 'open-tasks']) $(id).hidden = !['chat', 'mem', 'act', 'tasks'].includes(v);
+  for (const id of ['open-mem', 'open-act', 'open-tasks', 'open-models']) $(id).hidden = !['chat', 'mem', 'act', 'tasks', 'models'].includes(v);
   push.renderA2hs(v);
   renderLogo();
 }
@@ -411,35 +411,42 @@ async function forgetHost() {
 // In-app scanner keeps the pairing keys in this standalone app's own storage.
 let scanStream = null;
 let scanGeneration = 0;
+let scanActive = false;
 async function startScan() {
-  stopScan();
+  if (view === "scan" && scanStream) return;
+  stopScan(false);
   const generation = scanGeneration;
-  const hint = $('scan-hint');
-  hint.hidden = true;
+  show("scan");
+  if (!history.state?.ajScan) history.pushState({ajScan:true}, "");
+  const hint = $('camera-hint');
+  fillText(hint, t('camera.aim')); hint.hidden = false;
   let det = null;
   try {
     if (window.BarcodeDetector && (await window.BarcodeDetector.getSupportedFormats()).includes('qr_code'))
       det = new window.BarcodeDetector({ formats: ['qr_code'] });
   } catch { /* bundled decoder below */ }
   if (!navigator.mediaDevices?.getUserMedia || (!det && !window.jsQR)) {
-    fillText(hint, t('pair.scanHint')); hint.hidden = false; return;
+    fillText(hint, t('pair.scanHint')); hint.hidden = false; stopScan(false); return;
   }
+  if (generation !== scanGeneration) return;
   let stream;
   try {
     stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: 'environment' } }, audio: false });
   } catch {
-    fillText(hint, t('pair.scanNoCam')); hint.hidden = false; return;
+    if (generation !== scanGeneration) return;
+    fillText(hint, t('pair.scanNoCam')); hint.hidden = false; stopScan(false); return;
   }
   if (generation !== scanGeneration) { stream.getTracks().forEach(tr => tr.stop()); return; }
   scanStream = stream;
   const video = $('scan-video');
   video.srcObject = stream;
   $('scan-box').hidden = false;
-  try { await video.play(); } catch { stopScan(); fillText(hint, t('pair.scanNoCam')); hint.hidden = false; return; }
+  try { await video.play(); } catch { if(generation !== scanGeneration) return; stopScan(false); fillText(hint, t('pair.scanNoCam')); hint.hidden = false; return; }
   const canvas = document.createElement('canvas');
   const ctx = canvas.getContext('2d', { willReadFrequently: true });
   const tick = async () => {
     if (scanStream !== stream) return;
+    if (!scanActive) { setTimeout(tick, 250); return; }
     let link;
     try {
       if (det) {
@@ -459,15 +466,23 @@ async function startScan() {
   };
   tick();
 }
-function stopScan() {
+function stopScan(leave = true) {
   ++scanGeneration;
   if (scanStream) for (const tr of scanStream.getTracks()) tr.stop();
   scanStream = null;
   $('scan-video').srcObject = null;
   $('scan-box').hidden = true;
+  scanActive = false;
+  $('scan-trigger').textContent = t('camera.scan');
+  if (leave) {
+    if (view === 'scan') show('pair');
+    // Avoid a queued popstate overriding a successful QR pairing approval page.
+    if (history.state?.ajScan) history.replaceState(null, '');
+  }
 }
 document.addEventListener('visibilitychange', () => { if (document.hidden) stopScan(); });
-window.addEventListener('pagehide', stopScan);
+window.addEventListener('pagehide', () => stopScan());
+window.addEventListener('popstate', () => { if(view === 'scan') stopScan(); });
 function fitPairViewport() {
   const vv = window.visualViewport;
   if (vv) {
@@ -500,6 +515,45 @@ function relang() {
   push.reregister();
 }
 
+async function openModels() {
+  closeMenu(); show('models');
+  const modelBox = $('model-options'), providerBox = $('provider-options');
+  modelBox.replaceChildren(); providerBox.replaceChildren();
+  $('provider-status').textContent = t('models.loading');
+  const [catalog, response] = await Promise.all([api.models(),api.providers()]);
+  if (view !== 'models') return;
+  if (catalog) snap.setModels(catalog);
+  const c = snap.snapshot().switch;
+  for (const m of c?.models || []) {
+    const b = document.createElement('button'); b.type = 'button'; b.className = 'aj-btn'; b.dataset.modelId = m.id; b.textContent = m.name && m.name !== m.id ? `${m.name} · ${m.id}` : m.id;
+    b.addEventListener('click', async () => {
+      b.disabled = true;
+      const result = await api.model({model:m.id, effort:m.efforts?.[0] || null});
+      b.disabled = false; toast(t(result.ok ? 'models.changed' : 'models.failed'));
+    }); modelBox.append(b);
+  }
+  if (!c?.models?.length) modelBox.textContent = t('r.pill.unsupported');
+  if (view !== 'models') return;
+  $('provider-status').textContent = response ? '' : t('models.unavailable');
+  for (const provider of response?.providers || []) {
+    if (!provider || typeof provider.id !== 'string') continue;
+    const b = document.createElement('button'); b.type = 'button'; b.className = 'aj-btn';
+    b.textContent = t('models.key', {provider: provider.name || provider.id}); b.disabled = !provider.key_editable;
+    b.addEventListener('click', async () => {
+      b.disabled = true; const result = await api.providerKey(provider.id); b.disabled = false;
+      $('provider-status').textContent = t(result.ok ? 'models.card' : 'models.failed');
+    }); providerBox.append(b);
+  }
+}
+let asrInstalling = false;
+async function installAsr() {
+  if (asrInstalling) return toast(t('asrFix.busy'));
+  if (!(await confirmSheet(t('asrFix.title'), t('asrFix.note'), t('asrFix.install')))) return;
+  asrInstalling = true; toast(t('asrFix.busy'), 6000);
+  try { const r = await api.asrInstall(); if(r.ok) session.peer.asr = r.state || 'ready'; toast(t(r.ok ? 'asrFix.ready' : 'asrFix.failed'), 5000); }
+  finally { asrInstalling = false; }
+}
+
 // ---------------------------------------------------------------- wiring
 function closeMenu() { $('aj-menu').open = false; }
 function toggleBadge(open) {
@@ -529,7 +583,11 @@ function wire() {
   $('pair-go').addEventListener('click', () => startPairing($('pair-link').value));
   $('scan').addEventListener('click', () => { startScan(); });
   $('pk-restore').addEventListener('click', () => { stopScan(); pkRestore().catch(() => pkFailed('bad')); });
-  $('scan-stop').addEventListener('click', stopScan);
+  $('scan-stop').addEventListener('click', () => stopScan());
+  $('scan-back').addEventListener('click', () => stopScan());
+  $('scan-trigger').addEventListener('click', () => { if (!scanStream) { startScan(); return; } scanActive = !scanActive; $('scan-trigger').textContent = t(scanActive ? 'camera.pause' : 'camera.scan'); });
+  $('open-models').addEventListener('click', openModels);
+  $('models-back').addEventListener('click', () => show('chat'));
   $('push-on').addEventListener('click', push.enablePush);
   $('grant-off').addEventListener('click', controls.revokeGrants);
   $('open-mem').addEventListener('click', () => { closeMenu(); controls.openPanel('mem'); });
@@ -603,6 +661,8 @@ async function main() {
     p33: () => session.peer.p33,
     saidOld: (text) => snap.synthSaid(text, api.myIdSync()),
     settings: settings.toggleFromKey,
+    models: openModels,
+    asrInstall: installAsr,
   });
   const host = await dbGet('host');
   // 0.15.1: the browser deleted this phone's pairing (Safari private tab closed, site data cleared, …) — say so, not "removed"

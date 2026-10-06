@@ -119,7 +119,8 @@ class StartupProgress(unittest.IsolatedAsyncioTestCase):
         a.turn_done=asyncio.Event();a.turn_progress=time.monotonic()-10;a.interrupt_request=AsyncMock()
         with patch.object(oc,'WATCH',.001),patch.object(oc,'TURN_IDLE',.01):await a._wait_turn()
         self.assertTrue(a.turn_done.is_set());a.interrupt_request.assert_awaited_once()
-        self.assertIn('opencode auth login',str(a.host.agent_notice.call_args))
+        self.assertIn('Models & Key',str(a.host.agent_notice.call_args))
+        self.assertNotIn('opencode auth login',str(a.host.agent_notice.call_args))
 
     async def test_provider_errors_are_classified_without_echo_and_not_duplicated(self):
         from unittest.mock import Mock

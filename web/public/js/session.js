@@ -46,12 +46,14 @@ let H = null;                                   // hooks from app.js
 let sess = null;
 let reconnectTimer = null;
 let backoff = 1000;
+let heartbeatTimer = null, heartbeatRun = 0;
+const HEARTBEAT_MS = 20000, HEARTBEAT_TIMEOUT_MS = 10000;
 // 0.15.1 (P55): a close we cannot explain is not a removal. A host from 0.15.1 on says why it refuses a device (`removed`,
 // PROTOCOL §3) before closing; an older host only closes (4010). One unexplained refusal = reconnect; a second one in a
 // row (no `ready` between) = removed. Before, every 4010 — a pairing refused, a handshake that timed out while iOS had the
 // page asleep — showed "removed by your computer" and wiped the drafts.
 let refusals = 0;
-export const peer = { p33: false, asr: 'off', hist: 'off' };
+export const peer = { heartbeat: false, p33: false, asr: 'off', hist: 'off' };
 export function configure(hooks) { H = hooks; }
 export const current = () => sess;
 export const isReady = () => !!sess && sess.phase === 'ready';
@@ -64,6 +66,7 @@ export const jsonMax = () => (peer.p33 ? P33_JSON : MAX_JSON);
 export const textMax = () => (peer.p33 ? P33_TEXT : OLD_TEXT);
 
 export function closeSession() {
+  clearTimeout(heartbeatTimer); heartbeatTimer = null; heartbeatRun++;
   clearTimeout(reconnectTimer); reconnectTimer = null;
   const s = sess; sess = null;
   if (s) { endGen(s); s.closedByUs = true; try { s.ws.close(1000); } catch { /* already closed */ } }
@@ -138,6 +141,7 @@ async function onFrame(s, data) {
 }
 
 function readCaps(m) {
+  peer.heartbeat = Array.isArray(m.caps) && m.caps.includes('heartbeat');
   peer.p33 = Array.isArray(m.caps) && m.caps.includes('p33');
   peer.asr = ['ready', 'not_installed', 'off', 'broken'].includes(m.asr) ? m.asr : (peer.p33 ? 'not_installed' : 'off');
   peer.hist = m.hist === 'on' ? 'on' : 'off';
@@ -187,6 +191,7 @@ function enterReady(s) {
   backoff = 1000;
   refusals = 0;
   H.onReady();
+  armHeartbeat();
   if (document.visibilityState !== 'visible') sendApp({ t: 'vis', fg: false }).catch(() => {});
 }
 
@@ -259,7 +264,26 @@ export function scheduleReconnect() {
   H.setStatus('connecting', 'st.retryIn', { n: Math.round(wait / 1000) });
   reconnectTimer = setTimeout(() => { reconnectTimer = null; H.resume(); }, wait);
 }
+function armHeartbeat() {
+  clearTimeout(heartbeatTimer);
+  heartbeatTimer = peer.heartbeat && isReady() ? setTimeout(checkConnection, HEARTBEAT_MS) : null;
+}
+/** Detect an open socket whose peer stopped answering; no message is declared received by this probe. */
+export async function checkConnection() {
+  const s = sess, g = gen(), run = ++heartbeatRun;
+  if (!s || !g || !peer.heartbeat || document.visibilityState !== 'visible') return;
+  const answer = await ask1({t: 'ping'}, 'pong', HEARTBEAT_TIMEOUT_MS);
+  if (sess !== s || gen() !== g || run !== heartbeatRun || document.visibilityState !== 'visible') return;
+  if (answer.t !== 'pong') {
+    closeSession();
+    H.onHostDown();
+    scheduleReconnect();
+    return;
+  }
+  armHeartbeat();
+}
 export function reconnectNow() {
+  if (isReady()) checkConnection();
   if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; backoff = 1000; H.resume(); }
 }
 
@@ -297,7 +321,10 @@ export function request(obj, onMsg, g = gen()) {
   if (!isReady() || !g) return null;
   const r = randHex(8);
   pending.set(r, onMsg);
-  sendApp({ ...obj, r }, g).catch(() => pending.delete(r));
+  sendApp({ ...obj, r }, g).catch(() => {
+    const answer = pending.get(r);
+    if (answer) { pending.delete(r); answer({t: 'offline'}); }
+  });
   return r;
 }
 export function done(r) { pending.delete(r); }
@@ -310,3 +337,9 @@ export function ask1(obj, want, ms = 20000) {
   });
 }
 export const pendingCount = () => pending.size;
+
+// iOS freezes background timers; a foreground probe starts a fresh deadline instead of expiring an old one.
+globalThis.document?.addEventListener?.('visibilitychange', () => {
+  clearTimeout(heartbeatTimer); heartbeatTimer = null; heartbeatRun++;
+  if (document.visibilityState === 'visible' && isReady()) checkConnection();
+});

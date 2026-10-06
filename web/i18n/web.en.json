@@ -49,13 +49,13 @@
     "lead": "Your Agent works on your computer; this phone is its remote. No sign-up or login — pair once and it's ready whenever you open it.",
     "step1": "On your computer, run `agentj pair`. A QR code appears on screen.",
     "step1ios": "On your computer, run `agentj pair --link`. It prints a pairing link.",
-    "step2": "Tap Scan QR code, or paste the pairing link above.",
+    "step2": "Tap Scan QR code, or paste the pairing link below.",
     "step2ios": "Get that link onto this phone, copy it and paste it below.",
     "step3": "Your phone shows a 6-digit code. Type it on your computer, then enter your approval passphrase.",
     "iphone": "On iPhone, add this page to your Home Screen and open it there. Use Scan QR code here or paste the link. The system Camera opens a separate Safari tab.",
     "scan": "Scan QR code",
-    "scanHint": "Camera scanning is unavailable. Paste the pairing link above.",
-    "scanNoCam": "Camera permission was denied or no camera is available. Allow camera access in settings, or paste the pairing link above.",
+    "scanHint": "Camera scanning is unavailable. Paste the pairing link below.",
+    "scanNoCam": "Camera access was denied or no camera is available. Allow access or paste the pairing link below.",
     "scanStop": "Stop scanning",
     "or": "Or paste the pairing link",
     "placeholder": "Paste the link from agentj pair --link",
@@ -333,7 +333,9 @@
       "week": "Weekly quota",
       "h5": "5-hour quota",
       "used": "{label}: {pct}% used",
-      "unknown": "{label} (no data)"
+      "unknown": "{label} (no data)",
+      "daily": "Daily quota",
+      "monthly": "Monthly quota"
     },
     "usage": {
       "none": "The Agent on the computer has not reported usage yet",
@@ -370,7 +372,7 @@
       "expand": "Show the whole message (o)",
       "collapse": "Collapse the message (o)",
       "collapseShort": "Less ▴",
-      "none": "(the original message was not recorded)",
+      "none": "No linked input",
       "attOnly": "(attachments only)"
     },
     "src": {
@@ -997,5 +999,30 @@
       "type": "{name} is a kind of file that can't be sent.",
       "gone": "{name} wasn't found — not sent."
     }
+  },
+  "camera": {
+    "back": "Back",
+    "scan": "Scan",
+    "pause": "Pause scanning",
+    "aim": "Place the pairing QR code in view, then tap Scan."
+  },
+  "models": {
+    "title": "Models & Key",
+    "note": "Choose a model or update your provider key using an encrypted key card.",
+    "providers": "Provider keys",
+    "loading": "Loading providers…",
+    "unavailable": "This host cannot load providers right now.",
+    "key": "Update {provider} key",
+    "card": "The encrypted key card is open. Enter your new key there.",
+    "changed": "Model switched",
+    "failed": "Could not complete this action. Try again shortly."
+  },
+  "asrFix": {
+    "title": "Enable voice transcription",
+    "note": "Your host will download and install voice transcription components. This can take a few minutes.",
+    "install": "Install on host",
+    "busy": "Your host is installing voice transcription…",
+    "ready": "Voice transcription is ready. Record again to use it.",
+    "failed": "Installation did not complete. Check the host network and try again."
   }
 }

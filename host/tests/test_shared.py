@@ -197,7 +197,7 @@ class OpenCodeAttachment(unittest.IsolatedAsyncioTestCase):
 
 class OpenCodeOrdinaryStartup(unittest.IsolatedAsyncioTestCase):
     async def test_no_session_creates_native_without_patch_or_permission_override(self):
-        cfg={'kind':'opencode','dir':'/var/tmp/work','_workflow_ceo':True,'session_mode':'shared','high_risk_warnings':False}
+        cfg={'kind':'opencode','dir':'/var/tmp/work','_workflow_ceo':True,'session_mode':'shared','high_risk_warnings':False,'fence':False}
         a=shared.SharedOpenCodeAgent(Host(),cfg);a.client=Mock()
         a.client.request=AsyncMock(side_effect=[(200,{'id':'sesNew','directory':'/var/tmp/work'}),(200,[])])
         await a._prepare()

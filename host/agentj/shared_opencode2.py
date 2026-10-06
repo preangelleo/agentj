@@ -7,8 +7,8 @@ never answered (0.15.3a1). The independent mode was fine: P60's e2e only ran tha
 
 This class is that owned ordinary server on v2: the protocol is agent_opencode2's (session / prompt / `/api/event` /
 permission reply / interrupt / compact / model / forms → question cards), the shared semantics are shared.py's:
-- no fence (`cfg["fence"] = False`), the owner's HOME and OpenCode's own permission rules; no rules of ours are added;
-- the main-Agent identity is not injected — a shared session reads the working root's native AGENTS.md (as on v1);
+- P67: owned server honors configured filesystem isolation; native permission rules stay unchanged;
+- P67: owned server gets the main-Agent identity and phone language; an external owner keeps native identity;
 - the ordinary session is titled "Agent J shared", kept across serve restarts (key / proxy change), its id in
   `shared_session_id`;
 - `high_risk_warnings`: the v1 pre-execution plugin (`shared_opencode_hook`, OpenCode 1.x `tool.execute.before`) is not a
@@ -53,16 +53,29 @@ class SharedOpenCodeV2Agent(OpenCodeV2Agent):
         return switch_shared(self, version)
 
     def launch_argv(self, argv):
-        return argv                                  # no fence, no permission flags: as shared.py's owned server
+        from .provider_runtime import shared_launch
+        return shared_launch(self, argv)
 
     async def _identity(self) -> None:
-        return None                                  # native AGENTS.md (shared semantics), never an injected entry
+        if self.owned_server:
+            return await OpenCodeV2Agent._identity(self)
+        # Owner-managed native identity stays; only the chosen conversation language is added.
+        from .main_identity import LANGUAGE_LINE, language_of
+        text = LANGUAGE_LINE[language_of(self.cfg)]
+        if getattr(self, '_language_sent', None) == (self.sid, text):
+            return
+        st, _ = await self.client.request('PUT', f'/api/experimental/session/{quote(self.sid)}/instructions/entries/agentj.language', {'value': text})
+        if st in (200, 204):
+            self._language_sent = (self.sid, text)
+        else:
+            raise HTTPError('language instruction rejected')
 
     async def _prepare(self) -> None:
         st, info = await self.client.request("GET", "/api/info")
         if st != 200 or not isinstance(info, dict) or not isinstance(info.get("version"), str):
             raise HTTPError(f"info {st}")
         self.root = self.cfg["dir"]
+        self.identity_sent = getattr(self, "identity_sent", {})
         self.agent_rules, self.rules = [], []
         if self.cfg.get("high_risk_warnings", False):    # the v1 plugin is not a v2 plugin: v2's own ask rules instead
             ag = None

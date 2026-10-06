@@ -360,19 +360,25 @@ def check_danger(st: State) -> dict:
               + (f" + 本机附加 {extra} 条" if extra else "") + tail)
 
 
-def check_fence(st: State) -> dict:
+def _fence_row(status: str, summary: str, hint: str = "") -> dict:
+    return {**_c("fence", status, summary, hint), "apparmor_restrict_userns": fence.apparmor_userns_policy()}
+
+
+def check_fence(st: State, *, required: bool = False) -> dict:
     c = st.agent_config() if st.exists() else None
-    if c and not c.get("fence", True):
-        return _c("fence", WARN, "你选了不隔离运行 / you chose --unfenced", "agentj agent " + c["kind"] + " --dir <folder>  (fenced again)")
+    if c and not c.get("fence", True) and not required:
+        return _fence_row(WARN, "你选了不隔离运行 / you chose --unfenced", "agentj agent " + c["kind"] + " --dir <folder>  (fenced again)")
     mac = sys.platform == "darwin"
     if not mac and not sys.platform.startswith("linux"):
-        return _c("fence", WARN if not c else FAIL, "不支持 / unsupported", "Linux / macOS / WSL2")
-    bad = WARN   # F14: without a fence the Agent still runs, with the harness's own permissions
+        return _fence_row(FAIL if required or c else WARN, "不支持 / unsupported", "Linux / macOS / WSL2")
+    owned_shared = bool(c and c.get("kind") == "opencode" and c.get("session_mode") == "shared" and not c.get("shared_opencode_port"))
+    bad = FAIL if required or owned_shared else WARN   # Owned shared OpenCode fails closed; legacy harnesses may degrade.
     if mac and not os.access(fence.SANDBOX_EXEC, os.X_OK):
-        return _c("fence", bad, "没有 /usr/bin/sandbox-exec / sandbox-exec missing",
+        return _fence_row(bad, "没有 /usr/bin/sandbox-exec / sandbox-exec missing",
                   "这台 Mac 缺系统自带的 sandbox-exec：请反馈 / report it (feedback); the Agent runs unfenced meanwhile")
     if not mac and not shutil.which("bwrap"):
-        return _c("fence", bad, "没有 bubblewrap（bwrap） / bubblewrap missing", _bwrap_hint())
+        return {**_fence_row(bad, "没有 bubblewrap（bwrap） / bubblewrap missing",
+                     _bwrap_hint() + ("\n" + fence.apparmor_hint() if fence.apparmor_userns_restricted() else "")), "reason": "no_bwrap"}
     workdir = c["dir"] if c and os.path.isdir(c["dir"]) else None
     if st.exists() and workdir:
         why = fence.problem(st, workdir)
@@ -384,19 +390,29 @@ def check_fence(st: State) -> dict:
             fence._probe_cache.pop(f"{tst.root}|{d}", None)
     if why is None:
         if mac:
-            return _c("fence", OK, "macOS 沙箱可用 / sandbox-exec works (SBPL profile)")
-        return _c("fence", OK, "bubblewrap 可用 / bubblewrap works (unprivileged user namespaces)")
+            return _fence_row(OK, "macOS 沙箱可用 / sandbox-exec works (SBPL profile)")
+        return {**_fence_row(OK, "bubblewrap 可用 / bubblewrap works (unprivileged user namespaces)"), "reason": None}
     if mac:
-        return _c("fence", bad, f"macOS 沙箱起不来 / sandbox-exec cannot start ({why})",
+        return _fence_row(bad, f"macOS 沙箱起不来 / sandbox-exec cannot start ({why})",
                   "Agent J 本身是不是在别的沙箱里运行（例如某个 Agent 的沙箱）？在你自己的终端里运行 / run agentj from your own "
                   "terminal, not from inside another sandbox")
     if _in_container():
-        return _c("fence", bad, f"bubblewrap 起不来 / bubblewrap cannot start ({why}) — 在容器里 / inside a container",
+        return _fence_row(bad, f"bubblewrap 起不来 / bubblewrap cannot start ({why}) — 在容器里 / inside a container",
                   "容器默认禁止用户命名空间：把主机装在虚拟机 / 云服务器本身上，而不是 Docker 里（或由你决定放宽容器的 seccomp）/ "
                   "containers block user namespaces: install the host on the VM / server itself, not inside Docker")
-    return _c("fence", bad, f"bubblewrap 起不来 / bubblewrap cannot start ({why})",
-              "系统禁了非特权用户命名空间：Ubuntu 24.04+ `sudo sysctl kernel.apparmor_restrict_unprivileged_userns=0`（或给 bwrap 一份 "
-              "AppArmor profile）；Debian 旧版 `sudo sysctl kernel.unprivileged_userns_clone=1` / unprivileged user namespaces are off")
+    if fence.apparmor_userns_restricted():
+        return {**_fence_row(bad, f"bubblewrap 起不来且 AppArmor userns 限制开启 / bubblewrap probe failed with AppArmor userns restriction ({why})",
+                     fence.apparmor_hint()), "reason": "apparmor_userns"}
+    return {**_fence_row(bad, f"bubblewrap 起不来 / bubblewrap cannot start ({why})",
+                 "检查用户命名空间内核支持及本机安全策略，再运行 agentj doctor --offline；不自动放宽系统策略。 / Check kernel user namespace support and local policy; rerun doctor. No policy changes are automatic."), "reason": why}
+
+
+def isolation_preflight() -> dict:
+    """Installer: actual fence probe, no customer state, network or privileged writes."""
+    with tempfile.TemporaryDirectory() as d:
+        st = State(pathlib.Path(d) / "s")
+        st.root.mkdir(mode=0o700)
+        return check_fence(st, required=True)
 
 
 def check_passphrase(st: State) -> dict:
@@ -627,8 +643,8 @@ def check_asr(st: State) -> list[dict]:
     return out
 
 
-def main(as_json: bool = False, offline: bool = False) -> int:
-    checks = run(offline=offline)
+def main(as_json: bool = False, offline: bool = False, isolation_only: bool = False) -> int:
+    checks = [isolation_preflight()] if isolation_only else run(offline=offline)
     failed = any(c["status"] == FAIL for c in checks)
     if as_json:
         print(json.dumps({"tool": DIST, "version": __version__, "ok": not failed, "checks": checks}, ensure_ascii=False, indent=1))

@@ -331,6 +331,7 @@ class Agent:
         if p is None or p.returncode is not None:
             return busy
         self.halting = True                  # the adapter says nothing about the process it was told to end
+        p._agentj_requested_stop = True      # survives watcher cleanup while startup HTTP calls unwind
         self.ended.add(p)
         with contextlib.suppress(Exception):
             await self.interrupt_request(p)
@@ -365,6 +366,7 @@ class Agent:
                 self.host.st.log("agent_identity_fail", agent=self.kind, reason="core_or_root_invalid")
                 self.local_fail("主 Agent 核心或工作根目录校验失败，未启动。Core or working root validation failed; Agent was not started. Run agentj doctor.")
                 return None
+        self.isolation_effective = False
         if not self.cfg.get("fence", True):
             return argv
         why = fence.problem(self.host.st, self.cfg["dir"])
@@ -376,7 +378,9 @@ class Agent:
                 self.host.agent_notice(f"沙箱不可用，按普通模式运行（{fence.REASONS.get(why, why)}）。"
                                        "Sandbox unavailable: running in normal mode with the harness's own permissions.")
             return argv
-        return fence.wrap(self.host.st, argv, self.cfg["dir"], allow_docker=self.cfg.get("docker", False))
+        wrapped = fence.wrap(self.host.st, argv, self.cfg["dir"], allow_docker=self.cfg.get("docker", False))
+        self.isolation_effective = True
+        return wrapped
 
     async def turn(self, text: str) -> None:
         raise NotImplementedError
@@ -870,14 +874,23 @@ class ClaudeAgent(Agent):
     async def context_meter(self) -> None:
         """§10.10: `get_context_usage` after each turn end (and compaction) — the exact numbers Claude Code reports."""
         if self.proc is None or self.proc.returncode is not None:
+            self.meter(ctx=None)
             return
+        selected = self.cur_model()
         try:
             u = await asyncio.wait_for(self.control("get_context_usage"), 5)
         except (RuntimeError, ConnectionError, OSError, ValueError, asyncio.TimeoutError):
+            if self.cur_model() == selected:
+                self.meter(ctx=None)
             return
+        u = u if isinstance(u, dict) else {}
         used, mx = u.get("totalTokens"), u.get("maxTokens")
-        if _num(used) and _num(mx) and mx > 0:
-            self.meter(ctx={"used": int(used), "max": int(mx)})
+        from .model_limits import positive
+        # Claude exposes no trustworthy OpenAI provider endpoint here; retain
+        # measured tokens without substituting an alias or stale percentage.
+        ctx = {"used": used, "max": positive(mx)} if type(used) is int and used >= 0 else None
+        if self.cur_model() == selected:
+            self.meter(ctx=ctx)
 
     def cur_model(self) -> str | None:
         m = self.cfg.get("model") or self.init.get("model")

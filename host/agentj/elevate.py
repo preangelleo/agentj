@@ -775,6 +775,11 @@ class Elevator:
     def _save(self, c: dict, value: bytearray) -> dict:
         if len(value) > MAX_VALUE:
             return {"result": "failed", "why": "value"}
+        verified = None
+        if c.get('verify_before_write'):
+            verified = verify_secret(c, value)
+            if verified.get('verify') != 'ok':
+                return {'result': 'failed', 'why': 'verify', 'detail': verified.get('detail', '')}
         try:
             write_secret(c["dest_spec"], value)
         except Refused as e:
@@ -782,7 +787,7 @@ class Elevator:
         except OSError:
             return {"result": "failed", "why": "io"}
         receipt = {"name": c["name"], "dest": c["dest"], "length": len(value), "fingerprint": fingerprint(value)}
-        receipt.update(verify_secret(c, value))
+        receipt.update(verified or verify_secret(c, value))
         return {"result": "saved", "receipt": receipt}
 
     # ---------------------------------------------------------- the Agent's socket

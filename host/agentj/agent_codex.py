@@ -298,6 +298,8 @@ class CodexAgent(Agent):
             cfg = await self.call("config/read", {"cwd": self.cfg["dir"]}, START_WAIT)
             c = (cfg or {}).get("config") if isinstance(cfg, dict) else None
             c = c if isinstance(c, dict) else {}
+            from .model_limits import codex_context_metadata
+            self.context_metadata = codex_context_metadata(c)
             self.human = {k: c.get(k) for k in ("approval_policy", "approvals_reviewer", "sandbox_mode", "model",
                                                 "model_reasoning_effort")}
         except (RPCError, ConnectionError, OSError, asyncio.TimeoutError) as e:
@@ -504,6 +506,9 @@ class CodexAgent(Agent):
         elif method == "thread/compacted" and th == self.tid:     # the older form of the same event (still sent by some)
             self._auto_compacted(p.get("turnId"))
         elif method == "turn/started" and th == self.tid:
+            self.usage = None
+            if not self.research and self.persist:
+                self.meter(ctx=None)  # a new turn/model must not retain an old percentage
             t = p.get("turn") if isinstance(p.get("turn"), dict) else {}
             if isinstance(t.get("id"), str):
                 self.turn_id = t["id"]
@@ -517,12 +522,12 @@ class CodexAgent(Agent):
             if self.turn_done:
                 self.turn_done.set()
         elif method == "thread/tokenUsage/updated" and th == self.tid:
-            if isinstance(p.get("tokenUsage"), dict):
-                self.usage = p["tokenUsage"]
-                used = (self.usage.get("last") or {}).get("totalTokens") if isinstance(self.usage.get("last"), dict) else None
-                win = self.usage.get("modelContextWindow")
-                if isinstance(used, int) and isinstance(win, int) and win > 0 and not self.research and self.persist:
-                    self.meter(ctx={"used": used, "max": win})
+            self.usage = p["tokenUsage"] if isinstance(p.get("tokenUsage"), dict) else {}
+            used = (self.usage.get("last") or {}).get("totalTokens") if isinstance(self.usage.get("last"), dict) else None
+            from .model_limits import codex_context_limit
+            win = codex_context_limit(self.cur_model(), self.usage.get("modelContextWindow"), getattr(self, 'context_metadata', None))
+            if not self.research and self.persist:
+                self.meter(ctx={"used": used, "max": win} if type(used) is int and used >= 0 else None)
         elif method == "account/rateLimits/updated":
             if isinstance(p.get("rateLimits"), dict):
                 self.rate = p["rateLimits"]

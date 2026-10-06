@@ -1,15 +1,15 @@
 ---
 document: agentj-install
-version: 0.19.5
-released: 2026-10-07
+version: 0.19.6
+released: 2026-10-06
 status: beta (anyone can sign up; not advertised yet, pages are not indexed)
 host_package: agentj (the `agentj` command)
-host_version: 0.15.5a1
-source_tag: v0.15.5a1
-host_wheel: agentj-0.15.5a1-py3-none-any.whl
-host_wheel_sha256: 7a3bbbac3e9ecf462e2a1ee116a928459a0a9ad848d141dc2478a38352491801
-host_sdist: agentj-0.15.5a1.tar.gz
-host_sdist_sha256: 349eb8e234b866aab7c6d11585a9c15dea4594bd34d01014dc640e2dbc0f4329
+host_version: 0.15.6a1
+source_tag: v0.15.6a1
+host_wheel: agentj-0.15.6a1-py3-none-any.whl
+host_wheel_sha256: f7c2419be345403054807021919ffbacb099242e1c3270054d6e0abaeac6eae2
+host_sdist: agentj-0.15.6a1.tar.gz
+host_sdist_sha256: faa64b0e41bcc2bd01617dc890562964ece210de994c276d80583583cc75ee67
 canonical_url: https://agentj.app/install.md
 sha256_url: https://agentj.app/install.md.sha256
 alias: https://agentjarvis.net/install.md (the older address: the same file, kept for one more version)
@@ -264,7 +264,7 @@ Ask (kind `question`; `bug` if you think it is a bug, `report` for a docs proble
 with your file-writing tool or a heredoc, then post it with the install session from Step 2:
 ```bash
 ( umask 077; cat > ~/.agentj-install/support.json <<'JSON'
-{"kind": "question", "install_md_version": "0.19.5",
+{"kind": "question", "install_md_version": "0.19.6",
  "body": "Step 4: `uv tool install` fails with: <the exact error, redacted>. OS: Ubuntu 24.04 x86_64. Agent: claude-code. Tried: …"}
 JSON
 )
@@ -425,7 +425,7 @@ The astral installer warning that `uv` / `uvx` are shadowed is informational if 
 carry over). So start every command line from here on with `export PATH="$HOME/.local/bin:$PATH";` — or call
 `~/.local/bin/agentj` by its full path. This document writes `agentj` for short.
 
-The program is pinned to one release: the tag `v0.15.5a1` (front matter `source_tag`). The tag never moves, and its
+The program is pinned to one release: the tag `v0.15.6a1` (front matter `source_tag`). The tag never moves, and its
 `host/` folder is byte for byte the same code as the two files on our site whose SHA-256 is in this document's front matter.
 ```bash
 cd ~/.agentj-install
@@ -433,7 +433,7 @@ W=$(sed -n 's/^host_wheel: //p' install.md); WS=$(sed -n 's/^host_wheel_sha256: 
 curl -fsSLO "https://agentj.app/dl/$W"
 echo "$WS  $W" | sha256sum -c -   # macOS: shasum -a 256 -c -; mismatch → stop
 uv tool install "./$W"
-export PATH="$HOME/.local/bin:$PATH"; agentj --version     # → agentj 0.15.5a1
+export PATH="$HOME/.local/bin:$PATH"; agentj --version     # → agentj 0.15.6a1
 export PATH="$HOME/.local/bin:$PATH"; agentj doctor
 ```
 **Your human's own terminal must find `agentj` too** — they run `agentj passphrase set` and `agentj pair` themselves
@@ -461,12 +461,12 @@ echo "$WS  $W" | sha256sum -c - && echo "$SS  $S" | sha256sum -c -    # macOS: s
 uv tool install "./$W"          # the wheel; its dependencies come from PyPI or the mirror in UV_DEFAULT_INDEX
 ```
 `uv tool install "./$S"` installs from the checked source archive instead (it builds the same program).
-`https://agentj.app/dl/latest.txt` and `https://agentj.app/dl/latest-sdist.txt` name the same two files. `agentj --version` is the program's own version (`0.15.5a1`); it is
+`https://agentj.app/dl/latest.txt` and `https://agentj.app/dl/latest-sdist.txt` name the same two files. `agentj --version` is the program's own version (`0.15.6a1`); it is
 numbered separately from this document (`0.17.0`).
 
-Alternative from the matching published source tag: `uv tool install "git+https://github.com/preangelleo/agentj@v0.15.5a1#subdirectory=host"`.
+Alternative from the matching published source tag: `uv tool install "git+https://github.com/preangelleo/agentj@v0.15.6a1#subdirectory=host"`.
 
-Alternative without uv: `pipx install "git+https://github.com/preangelleo/agentj@v0.15.5a1#subdirectory=host"` (needs Python 3.11+).
+Alternative without uv: `pipx install "git+https://github.com/preangelleo/agentj@v0.15.6a1#subdirectory=host"` (needs Python 3.11+).
 `agentj doctor` lists what is ready and what is not (prerequisites, the fence, connectivity, which agents are usable).
 Continue unless it reports an error that a later step does not fix; report anything you cannot explain.
 
@@ -807,7 +807,7 @@ phone keyboard's own dictation. **Offer it; never install it on your own.**
    forces one.
 3. It says this computer cannot run the model (no engine for this system or Python) → tell your human that voice will
    go through the phone keyboard's dictation; nothing else to do. Do not build or install anything else instead.
-4. Their no → skip. They can run `agentj asr install` themselves later; the phone reminds them when they hold the voice
+4. Their no → skip. They can install later from the phone’s missing-ASR prompt; no computer command is required when they hold the voice
    button.
 
 ---
@@ -1009,7 +1009,7 @@ The daily check remains a notification, not an unattended installation; `agentj 
 In the default shared session, reinstall directly using Step 4's checked wheel (SHA-256 must match this document and
 its public GitHub copy), preserving the host's identity, paired phones, account and preferences:
 ```bash
-uv tool install --force "./agentj-0.15.5a1-py3-none-any.whl"
+uv tool install --force "./agentj-0.15.6a1-py3-none-any.whl"
 agentj --version
 agentj service install
 agentj service restart
@@ -1017,7 +1017,7 @@ agentj doctor
 ```
 The matching published tag is another source, after verifying the tag object against the upgrade email:
 ```bash
-uv tool install --force "git+https://github.com/preangelleo/agentj@v0.15.5a1#subdirectory=host"
+uv tool install --force "git+https://github.com/preangelleo/agentj@v0.15.6a1#subdirectory=host"
 ```
 **0.14 independent session** (`agent.session_mode=independent`): 0.14's fence keeps Agent J's own program read-only and
 hides the service manager, so the Agent on the phone cannot reinstall or restart from inside it (measured: the install
@@ -1043,11 +1043,11 @@ prints something and `uv tool list` (or `pipx list`) shows `agentjarvis-host`, t
 the new name, then:
 ```bash
 jarvis service uninstall      # stop the old service first (Step 10 used tmux / nohup instead? stop that process)
-uv tool uninstall agentjarvis-host && uv tool install "git+https://github.com/preangelleo/agentj@v0.15.5a1#subdirectory=host"
+uv tool uninstall agentjarvis-host && uv tool install "git+https://github.com/preangelleo/agentj@v0.15.6a1#subdirectory=host"
 agentj doctor
 agentj service install        # start it again under the new name (or the tmux / nohup fallback, Step 10)
 ```
-With pipx instead of uv: `pipx uninstall agentjarvis-host && pipx install "git+https://github.com/preangelleo/agentj@v0.15.5a1#subdirectory=host"`.
+With pipx instead of uv: `pipx uninstall agentjarvis-host && pipx install "git+https://github.com/preangelleo/agentj@v0.15.6a1#subdirectory=host"`.
 - After the move, `agentj` puts back a `jarvis` command (a link to `agentj`, only if no other `jarvis` exists) for one more
   version; it prints a notice that points here. New installs never get `jarvis`.
 - The state moves by itself on the first run of `agentj`: from `~/.local/state/agentjarvis-alpha` to `~/.local/state/agentj`.
@@ -1066,8 +1066,33 @@ Supported: the host can run on the human's own cloud server instead of their com
 - **Log in** with SSH as a normal user (not root; create one if the server only has root — ✋ human). A Linux server with
   systemd (Ubuntu 24.04, Debian 12, Amazon Linux 2023 …); a VM, not a Docker container (the fence needs user namespaces).
 - **Install** exactly as in Steps 3–5 (`curl … | sh` for uv, `uv tool install …`, ✋ `sudo apt install bubblewrap`). On
-  Ubuntu 24.04 `agentj doctor` may say bubblewrap cannot start (AppArmor restricts user namespaces): report it; the fix is
-  the human's decision.
+  Ubuntu 24.04: run `agentj doctor --isolation-only --json`. This checks both bubblewrap and
+  `kernel.apparmor_restrict_unprivileged_userns`, then actually starts a fenced probe as the normal user.
+  A restriction value of `1` is compatible with a working scoped AppArmor profile; a successful probe takes precedence.
+  If bubblewrap is missing, ✋ the owner installs `sudo apt install bubblewrap`. If the probe still reports
+  `apparmor_userns`, ✋ the owner may add the exact `/usr/bin/bwrap` profile below, or ask their administrator.
+  Do not change the global user-namespace restriction or disable AppArmor. Do not replace an existing profile: inspect it
+  with the administrator first. The installation assistant uses this same pure diagnostic after package installation and
+  before starting a service; failure preserves its resume marker and stops, so fixing the policy and rerunning resumes
+  without new pairing, account unlinking or another temporary allowance.
+
+  ```sh
+  sudo test ! -e /etc/apparmor.d/bwrap-agentj
+  sudo sh -c 'set -C; cat > /etc/apparmor.d/bwrap-agentj' <<'PROFILE'
+  abi <abi/4.0>,
+  include <tunables/global>
+  profile bwrap-agentj /usr/bin/bwrap flags=(unconfined) {
+    userns,
+  }
+  PROFILE
+  sudo chmod 644 /etc/apparmor.d/bwrap-agentj
+  sudo apparmor_parser -r /etc/apparmor.d/bwrap-agentj
+  agentj doctor --isolation-only --json
+  ```
+
+  The file creation command refuses an existing file. Load only this profile, then repeat the probe as the original
+  normal user, never as root. The permission applies only to `/usr/bin/bwrap`; it does not grant other executables
+  unprivileged user namespaces.
 - **Agent login on a server:** the human runs `claude` (or `codex login`) over SSH once and follows its device / browser
   sign-in on their own computer or phone.
 - **Always on:** ✋ `loginctl enable-linger $USER` once, then `agentj service install` (Step 10). `agentj doctor` shows
@@ -1394,6 +1419,13 @@ or logs out Claude Code / Codex / OpenCode (nor removes a model key), and never 
   with an error when the background service fails to restart: you get a clear result, and on macOS re-installing the
   background service is more reliable.
 
+- 0.19.6 (2026-10-06): host 0.15.6a1 candidate. Phone Models & Key requests provider-specific secret cards,
+  reloads saved environment keys and switches configured OpenCode models. The phone displays available subscription
+  usage windows and context usage, uses a full-screen QR scanner, and can install missing ASR on the host.
+  Replies and errors follow the selected language; isolation logs report requested and actual fence states separately.
+  Linux installer/doctor preflight diagnoses missing bubblewrap and scoped Ubuntu24.04 AppArmor userns policy before service startup.
+  Publication follows P44 qualification; this source candidate does not mean the live service has upgraded.
+
 ### Shared native sessions (0.13)
 The default `agent.session_mode=shared` follows the native harness permissions.
 Agent J adds no permission decision of its own (0.15, F14); the extra high-risk
@@ -1437,6 +1469,27 @@ A proxy that needs a username and password is not written into the settings. Ask
 
 OpenCode needs a provider connection and a matching `provider/model`. An existing v1 `auth.json` or v2 `opencode.db` does not prove a working key. The v1 runtime diagnostic uses `GET /provider` and its `connected` list; this records configured connections, not a live balance or key test. After you replace a key with `opencode auth login`, Agent J restarts the OpenCode it started before your next message and keeps the conversation; you can also ask the Agent to run `agentj agent restart`. If Agent J is attached to your own desktop OpenCode server, restart that server yourself. Phone failure lines and `agentj doctor` name the kind of failure: sign-in or key (401), region (403/451), access (403), balance or quota, rate limit, model name, network.
 
-Both OpenCode v1 and v2 work: the official install script now installs v2 (2.0.x; `npm i -g opencode-ai` still gives v1), and Agent J detects the version when it starts OpenCode, in the default settings (shared session) and in the independent mode alike. v2 can store several keys for one provider (for example "DeepSeek 2"), but only the selected one is used; after adding a new key, run `opencode auth switch <provider>` to select it. If OpenCode has no key at all for the selected provider (for example, the key is only exported in your terminal, which the background service cannot see), the phone says so and names the provider; store the key, then just send again. An OpenCode server you started yourself (`agent.shared_opencode_port` and `agent.shared_session_id` set) can be attached on v1 and v2: the phone sends text and answers approvals, and what you type at the computer (and the replies) shows up on the phone; model changes and slash commands stay on the computer. On a v2 server of your own, high-risk warnings are unavailable — to use them, remove the port setting so Agent J starts OpenCode itself. If your server has a password, Agent J never reads another program's environment: the phone shows an `agentj secret request --name OPENCODE_SERVER_PASSWORD --purpose "Your OpenCode server password" --dest "env:<Agent J service env file>#OPENCODE_SERVER_PASSWORD"` line — run it on the computer, paste the password on the phone's secret card, then `agentj service restart`. HTTP 403 can mean region or account/model access restrictions, not necessarily an invalid key.
+Both OpenCode v1 and v2 work: the official install script now installs v2 (2.0.x; `npm i -g opencode-ai` still gives v1), and Agent J detects the version when it starts OpenCode, in the default settings (shared session) and in the independent mode alike. v2 can store several keys for one provider (for example "DeepSeek 2"), but only the selected one is used; after adding a new key, run `opencode auth switch <provider>` to select it. If OpenCode has no key at all for the selected provider (for example, the key is only exported in your terminal, which the background service cannot see), the phone says so and names the provider; use the provider-specific secret card offered on the phone, then send again. For an env-backed custom provider, the host reloads its service environment before starting its owned OpenCode child; `opencode auth login` is not the recovery path for that environment variable. An OpenCode server you started yourself (`agent.shared_opencode_port` and `agent.shared_session_id` set) can be attached on v1 and v2: the phone sends text and answers approvals, and what you type at the computer (and the replies) shows up on the phone; configured OpenCode models can be selected from the phone’s Models & Key menu; unsupported native slash commands stay on the computer. On a v2 server of your own, high-risk warnings are unavailable — to use them, remove the port setting so Agent J starts OpenCode itself. If your server has a password, Agent J never reads another program's environment: the phone shows an `agentj secret request --name OPENCODE_SERVER_PASSWORD --purpose "Your OpenCode server password" --dest "env:<Agent J service env file>#OPENCODE_SERVER_PASSWORD"` line — run it on the computer, paste the password on the phone's secret card, then `agentj service restart`. HTTP 403 can mean region or account/model access restrictions, not necessarily an invalid key.
 
 If a third-party provider gave you a base_url and a key (OpenAI-compatible or Anthropic-compatible), run `agentj provider add <name> --base-url <url> --model <model>`: it declares the provider in OpenCode's config, which references the key by variable name only (`{env:<NAME>_API_KEY}`); then run the `agentj secret request` line it prints so the owner pastes the key on the phone's secret card (you never see it), switch with `agentj agent opencode --dir <dir> --model <name>/<model>` and `agentj service restart`.
+
+
+## Phone recovery and model status (0.19.6)
+
+The phone menu’s Models & Key is available even when model authentication has failed. For an env-backed provider,
+a missing key or HTTP 401 requests its named secret card, with the configured provider verification endpoint; the
+value travels only through the paired encrypted card and stays on the host. Never ask the owner to paste it into
+conversation. Saving that card makes the next owned OpenCode child reread the service env file; restarting only
+a child with inherited stale parent environment is not sufficient. Native-auth providers keep their provider-specific
+auth path; attached owner servers and unavailable verification remain explicitly diagnosed.
+
+OpenCode reports selected provider/model and switches only among configured provider.models. Compatible providers
+are probed at GET <base_url>/v1/usage for weekly/daily/monthly usage and limit windows; labels follow the real
+window, and only unavailable telemetry is hidden. Context used/limit comes from the OpenCode session token usage
+and model metadata. Unknown context limits are not invented. Errors and the next main-Agent turn use the account’s
+selected language. The hashed bilingual identity core remains version5; only the selected language is injected per turn.
+
+The scanner opens a separate full-screen camera page, with explicit scan and exit actions. Pairing instructions
+come before the pasted-link field. A missing ASR model offers installation on the phone, then recording can resume.
+Owned shared OpenCode retains native permissions; requested isolation and actual fence activation are recorded
+separately, with explicit failure/degradation evidence. Do not infer an active fence from a requested config value.

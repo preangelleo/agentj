@@ -1559,7 +1559,7 @@ def cmd_remote_unbind(a) -> None:
 
 def cmd_doctor(a) -> None:
     from . import doctor
-    sys.exit(doctor.main(as_json=a.json, offline=a.offline))
+    sys.exit(doctor.main(as_json=a.json, offline=a.offline, isolation_only=a.isolation_only))
 
 
 def cmd_service(a) -> None:
@@ -1769,6 +1769,7 @@ def main(argv=None) -> None:
                         description="自检 / health check: ✓ ok · ! warning · ✗ must fix. Exit 0 unless a ✗. Never prints secrets.")
     dc.add_argument("--json", action="store_true", help="机器可读 / machine-readable (paths shown with ~)")
     dc.add_argument("--offline", action="store_true", help="跳过网络检查 / skip the network checks")
+    dc.add_argument("--isolation-only", action="store_true", help="仅隔离预检：不读用户状态、不联网 / isolation preflight only, no user state or network")
     dc.set_defaults(fn=cmd_doctor)
     sv = sub.add_parser("service", help="开机 / 登录后自动运行 serve：install · uninstall · status / run serve as a service",
                         description="Linux: systemd user unit · macOS: LaunchAgent. 不写任何密钥 / never writes a secret.")
@@ -1936,7 +1937,7 @@ def main(argv=None) -> None:
     al.add_argument("--json", action="store_true")
     al.set_defaults(fn=cmd_alias)
     a = p.parse_args(argv)
-    if a.cmd not in NO_MIGRATE:
+    if a.cmd not in NO_MIGRATE and not (a.cmd == "doctor" and a.isolation_only):
         from . import migrate
         try:
             if migrate.auto() == "moved":

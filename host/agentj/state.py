@@ -590,7 +590,7 @@ class State:
     # report_* events (PROTOCOL §7) carry only seq / status class / trigger — never labels, codes or URLs
     LOG_FIELDS = {"channel", "cid", "device", "name", "reason", "kind", "bytes", "code_ok", "seq", "status", "trigger",
                   "tenant", "request", "result", "id", "tool", "agent", "decision", "locked", "fence", "change", "action",
-                  "version", "language", "core_sha256", "prompt_sha256", "mechanism", "working_root_sha256", "identity_session"}
+                  "session_mode", "isolation_requested", "isolation_effective", "phase", "version", "language", "core_sha256", "prompt_sha256", "mechanism", "working_root_sha256", "identity_session"}
 
     def log(self, ev: str, **kw) -> None:
         rec = {"ts": int(time.time()), "ev": ev, **{k: v for k, v in kw.items() if k in self.LOG_FIELDS}}

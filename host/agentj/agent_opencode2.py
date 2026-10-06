@@ -269,7 +269,7 @@ class OpenCodeV2Agent(OpenCodeAgent):
         notes = {**notes, "no_key": notes["no_key"].replace("{provider}", clean_line(pid or "该服务商", 40)),
                  "login": notes["login"] + V2_SWITCH.replace("{provider}", clean_line(pid or "<服务商>", 40))}
         self.provider_fail_noted = True
-        self.fail_notice("主机已连接，但这一轮没有正常完成。" + notes[reason])
+        self.fail_notice(self.provider_note(reason, pid, notes[reason]))
 
     async def _form(self, form: dict) -> None:
         """form.created → one question card (choices only); anything else, a cancel / timeout → the form is cancelled and the
@@ -436,8 +436,9 @@ class OpenCodeV2Agent(OpenCodeAgent):
             with contextlib.suppress(OSError, HTTPError, asyncio.TimeoutError):
                 await self._catch_up()
             if self.persist and self.collect is None:
-                with contextlib.suppress(Exception):
-                    await self.context_meter()
+                context_task = self.refresh_usage()
+                if self.cfg.get('session_mode') != 'shared':
+                    await context_task  # preserve the ordinary-session compaction reminder boundary
             return
 
     async def _wait_turn(self) -> None:
@@ -451,7 +452,7 @@ class OpenCodeV2Agent(OpenCodeAgent):
                 self.turn_progress = time.monotonic()
                 continue
             if time.monotonic() - self.turn_progress >= TURN_IDLE:
-                self.fail_notice("主机已连接，但 OpenCode 长时间没有回复或处理进度。请在电脑运行 `agentj doctor`；确认 `opencode auth login` 已登录你选用的模型服务。这条消息不会自动重发。")
+                self.fail_notice("OpenCode 长时间没有回复。这条消息不会自动重发；可在手机「模型与 Key」检查或切换服务商后重试。" if self.cfg.get('language', 'en').startswith('zh') else "OpenCode has not responded for a long time. This message will not be resent automatically. Check or switch providers in Models & Key on the phone, then retry.")
                 await self.interrupt_request(self.proc)
                 self._turn_end()
                 return

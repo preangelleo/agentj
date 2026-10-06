@@ -98,6 +98,8 @@ function usage() {
   const ctx = m.ctx && Number.isFinite(m.ctx.used) && Number.isFinite(m.ctx.max) && m.ctx.max > 0 ? Math.max(0, Math.min(100, Math.round(m.ctx.used / m.ctx.max * 100))) : null;
   return { source: 'meter', model: typeof m.model_name === 'string' && m.model_name ? m.model_name.slice(0, 64) : (typeof m.model === 'string' ? m.model : null),
     model_id: typeof m.model === 'string' ? m.model : null, effort: typeof m.effort === 'string' ? m.effort.slice(0, 16) : null,
+    ...(Array.isArray(m.quota_windows) ? {quota_windows:m.quota_windows} : {}),
+    context_used:m.ctx?.used, context_limit:m.ctx?.max,
     week_pct: pct(m.week), five_hour_pct: pct(m.h5), context_pct: ctx, h5_reset: m.h5 && m.h5.reset, week_reset: m.week && m.week.reset,
     age_s: (Date.now() - S.meterAt) / 1000 };
 }
