@@ -423,7 +423,15 @@ AUTH_REASONS = {
                        "the upgrade command failed. The authorization is recorded on this computer: run the same command again to retry"),
     "not_upgraded": (1, "命令跑完了，但程序版本没有变成目标版本", "the commands ran but the program is not at the target version"),
     "already_current": (0, "已经是目标版本，不用再升级", "already at the target version; nothing to do"),
+    # P63: a formal failure (apply() used to hit KeyError here and print a traceback instead of UPGRADE_RESULT)
+    "service_failed": (1, "程序已升级，但服务没能重新安装：运行 `agentj service install`",
+                       "upgraded, but the service was not re-installed: run `agentj service install`"),
 }
+
+
+def _exit_of(reason: str) -> int:
+    """Exit code of a result reason; one not in AUTH_REASONS is a plain failure (1), never a KeyError."""
+    return AUTH_REASONS.get(reason, (1,))[0]
 
 
 def authorized_apply(st, code: str | None, target: str | None, *, mail: dict | None = None, prefix: str | None = None,
@@ -440,7 +448,7 @@ def authorized_apply(st, code: str | None, target: str | None, *, mail: dict | N
     out = {"from": __version__, "to": target, "service": "unchanged"}
 
     def done(reason: str, result: str | None = None, **kw) -> dict:
-        ex = AUTH_REASONS[reason][0]
+        ex = _exit_of(reason)
         return {**out, **kw, "result": result or ("ok" if ex == 0 else "failed" if ex == 1 else "refused"), "reason": reason,
                 "exit": ex}
     if mail is not None:
@@ -533,7 +541,7 @@ def apply(st, target=None, *, prefix=None, check_fn=None, run=None, say=None, sv
     target = target or r.get("latest")
     out = {"from": __version__, "to": target, "service": "unchanged"}
     def done(reason, result=None, **kw):
-        ex = AUTH_REASONS[reason][0]
+        ex = _exit_of(reason)
         return {**out, **kw, "result": result or ("ok" if ex == 0 else "failed" if ex == 1 else "refused"),
                 "reason": reason, "exit": ex}
     if target is not None and parse(target) is None:
@@ -549,7 +557,10 @@ def apply(st, target=None, *, prefix=None, check_fn=None, run=None, say=None, sv
     info = install_kind(prefix)
     if svc_on is None:
         from . import service
-        svc_on = bool(service.status().get("installed") or service.legacy_status().get("installed"))
+        try:
+            svc_on = bool(service.status().get("installed") or service.legacy_status().get("installed"))
+        except Exception:  # noqa: BLE001 — no service manager: nothing to restart (as authorized_apply)
+            svc_on = False
     for cmd in commands(info, target):
         say("$ " + shlex.join(cmd))
         try:
@@ -598,5 +609,4 @@ def result_block(res: dict) -> str:
 
 REASON_EXTRA = {
     "upgraded": ("已升级", "upgraded"),
-    "service_failed": ("程序已升级，但服务没能重新安装：运行 `agentj service install`", "upgraded, but the service was not re-installed: run `agentj service install`"),
 }

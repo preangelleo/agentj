@@ -1,0 +1,262 @@
+"""P63: the DEFAULT settings (agent.session_mode = shared, no owner server) with the OpenCode the official installer ships (v2).
+
+0.15.3a1 refused it: the shared session's owned ordinary server asked `opencode --version` and said 「OpenCode v2 的 /api 协议尚未
+接入」 — only the independent mode (what P60's e2e ran) spoke v2. The host fixtures force the independent mode (test_l1._host),
+so these chains put the default back on purpose: `State.agent_config()["session_mode"]` as a fresh install has it.
+
+- SharedV2Chain: default config + v2 stand-in (fakeopencode2.py: every v1 route answers HTML) — message, card, /stop, /clear,
+  key failures + restart, slash commands; shared semantics kept (no fence, no rules of ours, no injected identity);
+- OwnerV2: an owner-started v2 server (`shared_opencode_port`) → one plain notice (not a key problem; what to change), nothing
+  sent to it;
+- SharedV1Owned: the same owned server on v1 now honours the model, /clear, /model and the key-failure restart (before P63 it
+  ignored `--model` and refused every slash command).
+No network, no real keys."""
+import _hermetic  # noqa: F401,I001
+import asyncio
+import json
+import os
+import pathlib
+import socket
+import subprocess
+import sys
+import time
+import unittest
+
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+from agentj import shared, shared_opencode2 as soc2  # noqa: E402
+import test_p59_opencode as p59  # noqa: E402
+import test_p60_opencode as p60  # noqa: E402
+
+HERE = pathlib.Path(__file__).resolve().parent
+
+
+def _default_mode_host(extra=None):
+    """test_l1._host forces the independent mode; put back what a fresh install has (the default), plus `extra`."""
+    def make(st, sent):
+        host = ORIG_HOST(st, sent)
+        default = st.agent_config()["session_mode"]
+        assert default == "shared", default
+        host.agent_cfg["session_mode"] = default
+        host.agent_cfg.update(extra or {})
+        return host
+    return make
+
+
+ORIG_HOST = p60._host
+
+
+class _DefaultMode:
+    extra: dict = {}
+
+    def setUp(self):
+        super().setUp()
+        p60._host = _default_mode_host(self.extra)
+
+    def tearDown(self):
+        p60._host = ORIG_HOST
+        super().tearDown()
+
+
+class SharedV2Chain(_DefaultMode, p60.V2Chain):
+    test_v2_message_card_stop_clear_and_failures = None     # (inherited fixtures only; those run in test_p60_opencode)
+    test_v2_slash_commands = None
+
+    def test_default_shared_v2_message_card_stop_clear_and_failures(self):
+        async def script(c):
+            await c.say("你好")
+            await c.wait(lambda: "ECHO: 你好" in c.msgs())
+            await c.idle()
+            a = c.host.agent
+            self.assertIs(type(a), soc2.SharedOpenCodeV2Agent)
+            self.assertTrue(a.owned_server and a.owns_harness())
+            reqs = self.requests()
+            self.assertTrue(reqs and all(r["p"].startswith("/api/") for r in reqs), [r["p"] for r in reqs])
+            created = [r for r in reqs if r["p"] == "/api/session" and r["m"] == "POST"]
+            self.assertEqual(len(created), 1)
+            self.assertEqual(created[0]["b"]["title"], "Agent J shared")
+            self.assertEqual(created[0]["b"]["model"], {"id": "chat", "providerID": "deepseek"})
+            self.assertNotIn("permissions", created[0]["b"], "shared: OpenCode's own rules, none of ours")
+            self.assertFalse(any("/instructions/" in r["p"] or r["m"] == "PATCH" for r in reqs),
+                             "shared: no injected identity, no PATCH of the session")
+            ev = [json.loads(x) for x in self.st.log_path.read_text().splitlines()]
+            self.assertIn(False, [e.get("fence") for e in ev if e.get("ev") == "agent_start"], "shared: never fenced")
+            self.assertIn("v2", [e.get("version") for e in ev if e.get("ev") == "agent_protocol"])
+            self.assertFalse(any("尚未接入" in m for m in c.msgs()))
+            sid = a.sid
+            self.assertEqual((self.st.agent_session("opencode"), a.cfg["shared_session_id"]), (sid, sid))
+            # OpenCode's own question → a card on the phone; approve runs it, deny tells the model
+            await c.say("RUN: echo hi-shared")
+            await c.wait(lambda: len(c.asks()) == 1)
+            await c.host._app(c.s, c.ph.answer(c.asks()[-1], True))
+            await c.wait(lambda: "OUT: hi-shared" in c.msgs())
+            await c.idle()
+            await c.say("RUN: echo no")
+            await c.wait(lambda: len(c.asks()) == 2)
+            await c.host._app(c.s, c.ph.answer(c.asks()[-1], False))
+            await c.wait(lambda: any(m.startswith("REJECTED: ") for m in c.msgs()))
+            await c.idle()
+            # /stop during a long turn → interrupt; the next message works
+            await c.say("SLEEP: 30")
+            await c.wait(lambda: c.host.agent.status == "working")
+            await asyncio.sleep(0.5)
+            res = await c.host.stop_turn("phone")
+            self.assertTrue(res.text.startswith("已停下这一轮"), res.text)
+            await c.idle()
+            self.assertTrue(any(r["p"].endswith("/interrupt") for r in self.requests()))
+            # key failures: no key → names the provider, serve restarted, SAME ordinary session; 401 → auth switch hint
+            before = await self._whoami(c)
+            await c.say("NOKEY")
+            await c.wait(lambda: any("没有「deepseek」可用的 key" in m for m in c.msgs()))
+            await c.idle()
+            self.assertNotEqual(await self._whoami(c), before, "a fresh serve after a key failure")
+            # the new serve is asked for the same ordinary session first (the stand-in keeps sessions in memory only, so it
+            # answers 404 and a new one opens; the real OpenCode keeps them in its database — e2e_p60 --mode shared)
+            self.assertGreaterEqual(len([r for r in self.requests() if r["p"] == f"/api/session/{sid}" and r["m"] == "GET"]), 2)
+            await c.say("BADKEY")
+            await c.wait(lambda: any("opencode auth switch deepseek" in m for m in c.msgs()))
+            await c.idle()
+            # /clear → a new ordinary session
+            r = await c.host.agent.command("clear", "")
+            self.assertTrue(r.undo, r.text)
+            await c.say("after clear")
+            await c.wait(lambda: "ECHO: after clear" in c.msgs())
+            await c.idle()
+            self.assertNotEqual(c.host.agent.sid, sid)
+            self.assertEqual(c.host.agent.cfg["shared_session_id"], c.host.agent.sid)
+            ev = [json.loads(x) for x in self.st.log_path.read_text().splitlines()]
+            self.assertEqual([e["reason"] for e in ev if e.get("ev") == "agent_provider_fail"], ["no_key", "login"])
+            self.assertEqual([e["reason"] for e in ev if e.get("ev") == "agent_restart"], ["provider_failure"] * 2)
+        self.run_chain(script)
+
+    def test_default_shared_v2_slash_commands(self):
+        async def script(c):
+            await c.say("hello")
+            await c.wait(lambda: "ECHO: hello" in c.msgs())
+            await c.idle()
+            a = c.host.agent
+            self.assertIn("上下文", (await a.command("context", "")).text)
+            self.assertTrue((await a.command("cost", "")).text.startswith("本会话花费"))
+            self.assertIn("OpenCode 2.0.23", (await a.command("status", "")).text)
+            r = await a.command("model", "")
+            self.assertEqual([m["id"] for m in r.models or []], ["opencode/chat"])
+            r = await a.command("model", "opencode/chat")
+            self.assertTrue(r.text.startswith("已切换到 opencode/chat"), r.text)
+            await c.say("after switch")
+            await c.wait(lambda: "ECHO: after switch" in c.msgs())
+            await c.idle()
+            switch = [x for x in self.requests() if x["p"].endswith("/model") and x["m"] == "POST"]
+            self.assertEqual(switch[-1]["b"], {"model": {"id": "chat", "providerID": "opencode"}})
+            r = await a.command("compact", "")
+            self.assertTrue(r.text.startswith("已压缩"), r.text)
+            self.assertNotIn("SUMMARY (not a reply)", c.msgs())
+        self.run_chain(script)
+
+
+def _free_port():
+    with socket.socket() as s:
+        s.bind(("127.0.0.1", 0))
+        return s.getsockname()[1]
+
+
+class OwnerV2(_DefaultMode, p60.V2Chain):
+    """`shared_opencode_port` names a server the owner started; on v2 it is never driven: a notice says what to change."""
+    test_v2_message_card_stop_clear_and_failures = None
+    test_v2_slash_commands = None
+
+    def setUp(self):
+        self.port = _free_port()
+        self.extra = {"shared_opencode_port": self.port, "shared_session_id": "sesOwner"}
+        super().setUp()
+        env = {k: v for k, v in os.environ.items() if not k.startswith("OPENCODE_SERVER_")}
+        self.owner = subprocess.Popen([sys.executable, str(HERE / "fakeopencode2.py"), "serve", "--port", str(self.port)],
+                                      cwd=str(self.work), env=env, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
+        self.owner.stdout.readline()                    # "server listening on …"
+
+    def tearDown(self):
+        self.owner.kill()
+        self.owner.wait()
+        self.owner.stdout.close()
+        super().tearDown()
+
+    def test_owner_v2_server_gets_a_plain_notice_and_nothing_else(self):
+        async def script(c):
+            await c.say("你好")
+            await c.wait(lambda: any("跟模型 key 没关系" in m for m in c.msgs()))
+            note = next(m for m in c.msgs() if "跟模型 key 没关系" in m)
+            self.assertIn("agent.shared_opencode_port", note)
+            self.assertIn("independent", note)
+            self.assertIs(type(c.host.agent), shared.SharedOpenCodeAgent)
+            self.assertFalse(c.host.agent.owned_server, "never falls back to starting another server")
+        self.run_chain(script)
+        reqs = self.requests()
+        self.assertTrue(reqs and {r["p"] for r in reqs} == {"/api/info"}, "only the version probe reached the owner's server")
+        self.assertEqual(shared.OWNER_V2, shared.OWNER_V2.strip())
+
+
+class SharedV1Owned(p59.Chain):
+    """The default mode's owned server on v1: the owner's model on every prompt, /clear, /model, restart after a key failure."""
+    shared = True
+    test_key_change_restarts_owned_serve_same_conversation_and_cli_and_proxy = None
+
+    def setUp(self):
+        super().setUp()
+        self.st.set_agent_config("opencode", str(self.work), model="opencode/big-pickle",
+                                 fence=self.st.config()["agent"].get("fence", True))
+
+    def test_owned_v1_model_clear_model_command_and_key_failure_restart(self):
+        async def script(c):
+            first = await c.whoami()
+            a = c.host.agent
+            self.assertIs(type(a), shared.SharedOpenCodeAgent)
+            self.assertTrue(a.owned_server)
+            sid = a.sid
+            prompts = [r for r in self.posts() if r["path"].endswith("/prompt_async")]
+            self.assertEqual(prompts[-1]["body"]["model"], {"providerID": "opencode", "modelID": "big-pickle"})
+            # a provider 401 → the class on the phone, the owned serve restarted after the turn, same conversation
+            await c.say("FAIL: 401 nope")
+            await c.wait(lambda: c.host.agent.last_provider_fail is not None and c.host.agent.status == "idle")
+            self.assertEqual(c.host.agent.last_provider_fail["reason"], "login")
+            self.assertNotEqual(await c.whoami(), first)
+            self.assertEqual(c.host.agent.sid, sid)
+            # /model lists and switches; the next prompt carries it
+            r = await c.host.agent.command("model", "")
+            self.assertNotEqual(r.kind, "error", r.text)
+            # /clear → a new ordinary session (before P63: 「共享模式目前仅验证文字投递」)
+            r = await c.host.agent.command("clear", "")
+            self.assertTrue(r.undo, r.text)
+            await c.whoami()
+            self.assertNotEqual(c.host.agent.sid, sid)
+            self.assertEqual(self.st.agent_session("opencode"), c.host.agent.sid)
+            ev = [json.loads(x) for x in self.st.log_path.read_text().splitlines()]
+            self.assertIn("provider_failure", [e.get("reason") for e in ev if e.get("ev") == "agent_restart"])
+        self.run_chain(script)
+        titles = [r["body"].get("title") for r in self.posts() if r["path"] == "/session"]
+        self.assertEqual(titles, ["Agent J shared"] * 2)
+
+    def posts(self):
+        return [json.loads(x) for x in self.log.read_text().splitlines() if '"POST"' in x]
+
+
+class Pieces(unittest.TestCase):
+    def test_switch_keeps_the_shared_family(self):
+        from types import SimpleNamespace
+        from unittest.mock import Mock
+        a = object.__new__(shared.SharedOpenCodeAgent)
+        a.host, a.kind = SimpleNamespace(st=SimpleNamespace(log=Mock())), "opencode"
+        self.assertTrue(a._switch("opencode v2.0.23"))
+        self.assertIs(type(a), soc2.SharedOpenCodeV2Agent)
+        self.assertFalse(a._switch("2.0.24"))
+        self.assertTrue(a._switch("1.18.32"))
+        self.assertIs(type(a), shared.SharedOpenCodeAgent)
+
+    def test_owned_protocol_only_for_our_own_server(self):
+        a = object.__new__(shared.SharedOpenCodeAgent)
+        a.owned_server = False
+        self.assertFalse(a._own_protocol())
+        a.owned_server = True
+        self.assertTrue(a._own_protocol())
+
+
+if __name__ == "__main__":
+    unittest.main()

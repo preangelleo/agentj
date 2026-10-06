@@ -419,7 +419,8 @@ class FakeLaunchctl:
     def __call__(self, *args, timeout=30):
         self.calls.append(args)
         out = self.disabled_out if args[0] == "print-disabled" else ""
-        return subprocess.CompletedProcess(["launchctl", *args], 0, out, "")
+        rc = 113 if args[0] == "print" else 0     # P63: `print` of a label that bootout unloaded: "Could not find service"
+        return subprocess.CompletedProcess(["launchctl", *args], rc, out, "")
 
     def verbs(self):
         return [c[0] for c in self.calls]

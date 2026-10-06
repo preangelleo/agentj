@@ -1,6 +1,6 @@
-# Agent J 0.15.3a1 release notes
+# Agent J 0.15.4a1 release notes
 
-Host 0.15.3a1 / install 0.19.3; phone-web scope.
+Host 0.15.4a1 / install 0.19.4; phone-web scope.
 Phone parity must pass --strict. Full Android/Telegram parity is incomplete.
 Full Android/Telegram parity is incomplete.
 No APK is included in this release. Android source is for review, not a released app.
@@ -8,7 +8,7 @@ No APK is included in this release. Android source is for review, not a released
 Publication status: local preparation only. Live site verification is DEFERRED until
 the public commit and tag are pushed, the site is deployed, and cold installation passes.
 
-On publication failure, restore v0.15.2a1 / public 615ce72, including the site.
+On publication failure, restore v0.15.3a1 / public 6dc4b79, including the site.
 ## Changes
 
 - Sparse JSON5 configuration with transactional application, configuration history and migrations.
@@ -16,17 +16,13 @@ On publication failure, restore v0.15.2a1 / public 615ce72, including the site.
 - Opt-in own-key cloud speech and local phone read-aloud.
 - Optional owner-private Telegram text input and final replies.
 
-- A phone that saved Face ID must pass Face ID before approving an admin-password or secret card; the computer
-  verifies the assertion (bound to that card, one use). Deny never asks; phones without Face ID are unchanged.
-- The full-screen reader shows the agent's local images inline; links to local files become cards in place.
-- Telegram: the owner's private chat receives the files a reply refers to (same checks as the phone; groups get
-  text only); /compact there writes the handover first. Codex writes a handover itself at about 85% context.
-- Read-aloud can use ElevenLabs v4 (eleven_v4) or the owner's own local command; proxy.https / proxy.http values.
-- OpenCode 1.x and 2.x both work (2.x through its /api); a missing key names the provider; after a key change
-  or a key failure Agent J restarts its own OpenCode and resumes the conversation. `agentj provider` adds an
-  OpenAI- or Anthropic-compatible service by base URL, the key by name only.
-- Real iPhone / Telegram / OpenCode-on-a-friend's-computer acceptance is pending; evidence is local Chromium,
-  fake servers and the local real-model OpenCode run.
+- Fix: the default settings (shared session) now start OpenCode 2.x too (0.15.3a1 refused it there); Agent J's
+  own OpenCode follows the installed version, OpenCode's own permission rules apply. An OpenCode 2.x server
+  the owner started (agent.shared_opencode_port) is not attached: the phone says so and what to change.
+- Fix: `agentj update apply` prints its UPGRADE_RESULT when the service re-install fails (was a traceback);
+  macOS service install / restart waits for launchd to unload the old label before bootstrapping it again.
+- Evidence: fake servers in CI and a local real-model run on OpenCode 1.18.32 and 2.0.23 in both modes;
+  real macOS / a friend's computer acceptance is pending.
 
 ## Material acceptance limits
 

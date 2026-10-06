@@ -111,7 +111,7 @@ def remove_legacy() -> dict | None:
         _systemctl("daemon-reload")
         _systemctl("reset-failed", f"{n}.service")
     else:
-        _launchctl("bootout", f"{_gui()}/{n}")
+        _bootout_wait(n)
         os.unlink(path)
     return {"name": n, "path": path}
 
@@ -414,6 +414,43 @@ def _gui() -> str:
     return f"gui/{os.getuid()}"
 
 
+# P63: `bootout` returns before launchd has finished unloading the label; a `bootstrap` right after it fails with
+# "Bootstrap failed: 5: Input/output error" (a paying customer's upgrade, 2026-10-06). Wait — bounded — until the
+# label is really gone.
+BOOTOUT_WAIT = 10.0
+
+
+def _loaded(target: str) -> bool:
+    try:
+        return _launchctl("print", target, timeout=10).returncode == 0
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+
+
+def _bootout_wait(n: str, wait: float | None = None) -> bool:
+    """`launchctl bootout gui/<uid>/<label>`, then poll until it is unloaded (at most BOOTOUT_WAIT s). → True = gone."""
+    import time
+    target = f"{_gui()}/{n}"
+    with contextlib.suppress(OSError, subprocess.TimeoutExpired):
+        _launchctl("bootout", target)
+    end = time.monotonic() + (BOOTOUT_WAIT if wait is None else wait)
+    while _loaded(target):
+        if time.monotonic() >= end:
+            return False
+        time.sleep(0.25)
+    return True
+
+
+def _bootstrap(n: str, path: str) -> subprocess.CompletedProcess:
+    """bootout → wait until unloaded → bootstrap; a failure (5 = the label was still being torn down) gets one more round."""
+    for _ in range(2):
+        _bootout_wait(n)
+        r = _launchctl("bootstrap", _gui(), path)
+        if r.returncode == 0:
+            return r
+    return r
+
+
 # ------------------------------------------------------------------ the service verbs
 def install(st) -> dict:
     """Write + enable + start. → {"kind", "name", "path", "argv", "notes"}; raises ServiceError."""
@@ -459,8 +496,7 @@ def install(st) -> dict:
         if launchd_disabled(n) is True:
             _launchctl("enable", f"{_gui()}/{n}")
             _remember_enabled(st, n)
-        _launchctl("bootout", f"{_gui()}/{n}")
-        r = _launchctl("bootstrap", _gui(), path)
+        r = _bootstrap(n, path)
         if r.returncode != 0:
             raise ServiceError("launchctl_failed", (r.stderr or r.stdout).strip()[:300])
         remember_binary_selection(st, n)
@@ -529,8 +565,10 @@ def restart() -> dict:
         _systemctl("restart", f"{n}.service", check=True)
     elif platform() == "macos":
         r = _launchctl("kickstart", "-k", f"{_gui()}/{n}")
+        if r.returncode and os.path.exists(plist_path(n)):
+            r = _bootstrap(n, plist_path(n))     # P63: not loaded (a failed bootstrap before): load it again, the same way
         if r.returncode:
-            raise ServiceError("launchctl_failed")
+            raise ServiceError("launchctl_failed", (r.stderr or r.stdout or "").strip()[:300])
     else:
         raise ServiceError("unsupported_os")
     return {"name": n}

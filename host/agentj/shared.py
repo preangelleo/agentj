@@ -21,7 +21,7 @@ import sys
 import uuid
 
 from .agent import Agent
-from .agent_opencode import OpenCodeAgent, Client, HTTPError, CONNECT_WAIT, to_tool
+from .agent_opencode import OpenCodeAgent, Client, HTTPError, CONNECT_WAIT, to_tool, split_model
 from . import privacy, shared_hook, danger
 from .shared_state import AgentState
 from .agent import hooks_blocked, _bin
@@ -457,6 +457,14 @@ class _ExternalServer:
     returncode = None
 
 
+OWNER_V2 = ("电脑上开的 OpenCode server 是新版（v2），但共享会话暂时只支持旧版（v1）的 server。这跟模型 key 没关系。"
+            "两个办法选一个：① 去掉 agent.shared_opencode_port 和 agent.shared_session_id，让 Agent J 自己启动 OpenCode（还是共享会话，"
+            "新版旧版都能用）；② 切到独立会话（agent.session_mode = independent）。"
+            " / The OpenCode server you started is v2; a shared session attaches to v1 servers only. Not a key problem: unset"
+            " agent.shared_opencode_port and agent.shared_session_id (Agent J starts OpenCode itself, v1 or v2), or use the"
+            " independent mode.")
+
+
 class SharedOpenCodeAgent(OpenCodeAgent):
     """Existing loopback server + exact session; native rules are never PATCHed."""
     def __init__(self, host, cfg):
@@ -477,12 +485,44 @@ class SharedOpenCodeAgent(OpenCodeAgent):
         if self.risk_channel:
             await self.risk_channel.stop()
 
+    # P63: our own ordinary server (owned_server) follows the installed OpenCode — v2 = shared_opencode2 — and, being Agent
+    # J's child, takes the owner's model choice and the phone's slash commands; an owner server stays text-only.
+    def _own_protocol(self):
+        return self.owned_server
+
+    def _switch(self, version):
+        from .shared_opencode2 import switch_shared
+        return switch_shared(self, version)
+
     async def command(self, name, arg):
+        initial = getattr(self, "attach_task", None)
+        if initial is not None and not initial.done():
+            await initial
+        if self.v2:
+            return await self.command(name, arg)      # switched to shared_opencode2 while starting
+        if self.owned_server:
+            return await OpenCodeAgent.command(self, name, arg)
         from .slash import Result
         return Result("共享模式目前仅验证文字投递与桌面同步；此控制请在电脑执行。 / Use the desktop for this control.", "error")
 
     async def apply_model(self, model, effort, default=False):
+        if self.owned_server:
+            return await super().apply_model(model, effort, default)
         return "unsupported"
+
+    async def _session_ok(self):
+        """Owned serve: the session agent.json names (after /clear or 「撤销清空」 it changed), else a new ordinary one."""
+        if not self.owned_server:
+            return await super()._session_ok()
+        if self.sid is not None and self.sid == self.host.st.agent_session(self.kind):
+            return True
+        self.cfg["shared_session_id"] = self.host.st.agent_session(self.kind) or ""
+        try:
+            await self._prepare()
+            return True
+        except (OSError, HTTPError, ValueError, KeyError, TypeError, AttributeError, asyncio.TimeoutError) as e:
+            self.fail_notice(f"OpenCode 没能打开这段对话（{type(e).__name__}）：这条没有交给它。")
+            return False
 
     def launch_argv(self, argv):
         # Only the new ordinary server is owned here. Native permissions and HOME
@@ -492,6 +532,12 @@ class SharedOpenCodeAgent(OpenCodeAgent):
     async def _prepare(self):
         # Called only by the inherited native server startup. No independent
         # session_rules, PATCH permission or main identity injection is applied.
+        self.connected_at_start = None                # P63: which providers this owned serve has a key for (no_key class)
+        if self.owned_server:
+            with contextlib.suppress(OSError, HTTPError, asyncio.TimeoutError):
+                st, pv = await self.client.request("GET", "/provider")
+                if st == 200 and isinstance(pv, dict) and isinstance(pv.get("connected"), list):
+                    self.connected_at_start = [x for x in pv["connected"] if isinstance(x, str)]
         sid = self.cfg.get("shared_session_id")
         if self.owned_server and isinstance(sid, str) and sid:
             # P59 (A167): our own server restarted (credentials / proxy changed): the same ordinary session again
@@ -514,7 +560,6 @@ class SharedOpenCodeAgent(OpenCodeAgent):
         await self._prime()
 
     async def _spawn(self):
-        await self.prepare_risk()
         port = self.cfg.get("shared_opencode_port")
         if not port and (not self.cfg.get("shared_session_id") or self.owned_server):
             # An explicit shared experiment without an owner session starts an
@@ -522,7 +567,10 @@ class SharedOpenCodeAgent(OpenCodeAgent):
             # untouched. A stale explicit owner selector never falls through here.
             self.cfg["fence"] = False
             self.owned_server = True
+            if not await self._installed_v2():        # P63: the v1 plugin is not a v2 plugin (shared_opencode2)
+                await self.prepare_risk()
             return await super()._spawn()
+        await self.prepare_risk()
         if type(port) is not int or not 1 <= port <= 65535:
             self.local_fail("指定电脑 OpenCode server 的 loopback 端口。 / Set the existing OpenCode loopback port.")
             return False
@@ -531,6 +579,11 @@ class SharedOpenCodeAgent(OpenCodeAgent):
         self.client = Client(port, os.environ.get("OPENCODE_SERVER_PASSWORD", ""),
                              os.environ.get("OPENCODE_SERVER_USERNAME", "opencode"))
         self.proc = _ExternalServer()
+        if await self._owner_v2():
+            self.proc = None
+            self.failed_start = True
+            self.fail_notice(OWNER_V2)
+            return False
         try:
             await self._attach()
             if self.risk_channel:
@@ -555,6 +608,20 @@ class SharedOpenCodeAgent(OpenCodeAgent):
             self.fail_notice("不能附着电脑 OpenCode server/session。 / Cannot attach the desktop OpenCode server/session.")
             return False
         return True
+
+    async def _installed_v2(self):
+        from .harness import version_of, opencode_v2
+        exe = _bin("AGENTJ_OPENCODE_BIN", "opencode")
+        return bool(exe) and opencode_v2(await asyncio.to_thread(version_of, exe))
+
+    async def _owner_v2(self):
+        """The owner's server speaks v2 (its legacy routes answer HTML; the API is /api/*): never attached on v2."""
+        try:
+            status, info = await self.client.request("GET", "/api/info")
+        except (OSError, ValueError, HTTPError, asyncio.TimeoutError):
+            return False
+        return status == 200 and isinstance(info, dict) and isinstance(info.get("version"), str) \
+            and info["version"].lstrip("v").startswith("2")
 
     async def _attach(self):
         sid = self.cfg.get("shared_session_id")
@@ -652,8 +719,14 @@ class SharedOpenCodeAgent(OpenCodeAgent):
         if initial is not None and not initial.done():
             if not await initial:
                 return
+        if self.v2:                 # P63: switched to shared_opencode2 while starting
+            return await self.turn(text)
         await self._creds_check()   # P59: only our own server (owned_server); never the owner's attached one
         if self.proc is None and not await self._spawn():
+            return
+        if self.v2:
+            return await self.turn(text)
+        if self.owned_server and not await self._session_ok():
             return
         if self.risk_channel:
             await asyncio.wait_for(self.risk.ready.wait(),CONNECT_WAIT)
@@ -661,17 +734,26 @@ class SharedOpenCodeAgent(OpenCodeAgent):
         self.turn_done = asyncio.Event()
         self.turn_progress = __import__("time").monotonic()
         self.saw_busy = False
+        self.provider_fail_noted = self.restart_after_turn = False
         mid = "msg" + uuid.uuid4().hex
         self.phone_messages.add(mid)
         self.turn_proc = self.proc
+        body = {"messageID": mid, "parts": [{"type": "text", "text": text}]}
+        m = split_model(self.cfg.get("model")) if self.owned_server else None
+        if m:                       # P63: the owner's `agentj agent opencode --model` / phone /model on our own server
+            body["model"] = m
         async def post():
-            status, _ = await self.client.request("POST", f"/session/{self.sid}/prompt_async",
-                {"messageID": mid, "parts": [{"type": "text", "text": text}]})
+            status, _ = await self.client.request("POST", f"/session/{self.sid}/prompt_async", body)
             if status not in (200, 204):
                 raise HTTPError("prompt refused")
             return True
         await self.deliver(post)
         await self._wait_turn()
+        if self.restart_after_turn and self.owned_server and self.proc and not isinstance(self.proc, _ExternalServer):
+            self.restart_after_turn = False       # P60/P63: a key / provider failure — the next message gets a fresh serve
+            self.host.st.log("agent_restart", agent=self.kind, reason="provider_failure")
+            await self._kill(self.proc)
+            self.proc = self.client = None
 
     async def _catch_up(self):
         if not self.client or not self.sid:
