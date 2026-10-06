@@ -17,6 +17,7 @@ import sys
 import tempfile
 import time
 import unittest
+from unittest import mock
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey  # noqa: E402
@@ -566,7 +567,13 @@ class Cli(unittest.TestCase):
     def test_history_inbox_config_asr(self):
         with tempfile.TemporaryDirectory() as d:
             sd = pathlib.Path(d) / "s"
-            env = {**os.environ, "AGENTJ_STATE_DIR": str(sd), "HOME": d, "PYTHONPATH": str(HERE.parent)}
+            # P64: the in-process State calls below (set_agent_config → working_root.record) and the CLI must read ONE preferences
+            # file — before, the CLI used HOME=d's (init's default root d/coding) and this process wrote its own.
+            cfg_home = str(pathlib.Path(d) / ".config")
+            env = {**os.environ, "AGENTJ_STATE_DIR": str(sd), "HOME": d, "XDG_CONFIG_HOME": cfg_home, "PYTHONPATH": str(HERE.parent)}
+            xdg = mock.patch.dict(os.environ, {"XDG_CONFIG_HOME": cfg_home})
+            xdg.start()
+            self.addCleanup(xdg.stop)
             self.assertEqual(self.run_cli(env, "init", "--relay", "ws://127.0.0.1:1").returncode, 0)
             st = __import__("agentj.state", fromlist=["State"]).State(sd)
             h = history.History(st)

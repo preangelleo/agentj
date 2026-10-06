@@ -32,7 +32,7 @@ HOST = HERE.parent
 sys.path.insert(0, str(HOST))
 sys.path.insert(0, str(HERE))
 import agentj  # noqa: E402
-from agentj import agent, cloud, doctor, fence, names, serve, service  # noqa: E402
+from agentj import agent, cloud, doctor, fence, names, serve, service, update  # noqa: E402
 from agentj.state import State  # noqa: E402
 
 SECRET = "sk-" + "ant-oat01-" + "AJL3MARKER" + "x" * 20   # fake token shape, assembled so scanners do not flag the source
@@ -46,7 +46,7 @@ def _cli(*args, env=None, timeout=60, stdin=subprocess.DEVNULL):
 class Version(unittest.TestCase):
     def test_one_source(self):
         v = agentj.__version__
-        self.assertEqual(v, "0.15.4a1")
+        self.assertEqual(update.parse(v), update.parse(cloud.VERSION))
         self.assertEqual(cloud.VERSION, v)
         self.assertEqual(cloud.AGENT, f"agentj/{v}")
         r = _cli("--version")
@@ -494,7 +494,7 @@ class WheelInstall(unittest.TestCase):
             self.assertEqual({c["id"]: c["status"] for c in d_["checks"]}["state"], "ok")
             core = next(c for c in d_["checks"] if c["id"] == "main-core")
             self.assertEqual(core["status"], "ok")
-            self.assertIn("core v4:", core["summary"])
+            self.assertIn("core v5:", core["summary"])
 
     @unittest.skipUnless((sys.platform.startswith("linux") and shutil.which("bwrap")) or
                          (sys.platform == "darwin" and os.access(fence.SANDBOX_EXEC, os.X_OK)),
