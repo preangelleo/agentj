@@ -1,6 +1,6 @@
-# Agent J 0.15.6a1 release notes
+# Agent J 0.15.7a1 release notes
 
-Host 0.15.6a1 / install 0.19.6; phone-web scope.
+Host 0.15.7a1 / install 0.19.7; phone-web scope.
 Phone parity must pass --strict. Full Android/Telegram parity is incomplete.
 Full Android/Telegram parity is incomplete.
 No APK is included in this release. Android source is for review, not a released app.
@@ -8,7 +8,7 @@ No APK is included in this release. Android source is for review, not a released
 Publication status: local preparation only. Live site verification is DEFERRED until
 the public commit and tag are pushed, the site is deployed, and cold installation passes.
 
-On publication failure, restore v0.15.5a1 and its published main, including site and phone web.
+On publication failure, restore v0.15.6a1 and its published main, including site and phone web.
 ## Changes
 
 - Sparse JSON5 configuration with transactional application, configuration history and migrations.
@@ -16,15 +16,14 @@ On publication failure, restore v0.15.5a1 and its published main, including site
 - Opt-in own-key cloud speech and local phone read-aloud.
 - Optional owner-private Telegram text input and final replies.
 
-- Phone Models & Key manages configured OpenCode models and requests provider-specific secret cards.
-- Saved environment keys are reloaded before the next owned OpenCode request.
-- OpenCode reports the selected model, available subscription usage windows and context usage.
-- The QR scanner opens a full-screen camera page; pairing instructions precede pasted links.
-- Phone replies and errors follow the selected language; ASR installation is available from the phone.
-- Shared native authority and independent isolation are recorded separately in runtime logs.
-- Encrypted heartbeat and foreground checks detect silent disconnects, resume the paired session and flag failed sends.
-- Installer and doctor share a real Linux isolation preflight and precise per-bwrap Ubuntu24.04 AppArmor guidance.
-- Physical iPhone and platform-specific acceptance limits remain explicit; Chrome QA is recorded separately.
+- Silent replies stay in folded history without live notifications or unread counts.
+- Native provider profiles verify model responses before switching and support guarded restore.
+- Codex Desktop writer ownership keeps the original thread read-only until the App exits.
+- Accounts pay; seats provide the features, including confirmed purchases, transfers and paid-boundary cancellation.
+- Existing cancellation schedules survive purchases and renewal pause/resume.
+- Local agentj://pair opens the host management page; setup includes a remote and its first message.
+- Additive app migration 0020 requires dual D1 backup/bookmarks and strict pending checks in batch C.
+- Claude Desktop and physical macOS pairing remain pending real-device acceptance; these are not passed acceptance.
 
 ## Material acceptance limits
 

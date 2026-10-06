@@ -791,7 +791,8 @@
       "eei": "Already empty (≥ 1 s): interrupt the current task",
       "ok": "Got it",
       "s": "Open Settings"
-    }
+    },
+    "silentTurn": "Silent turn {time}"
   },
   "preferences": {
     "notification": "Your agent has replied.",
@@ -1024,5 +1025,7 @@
     "busy": "Your host is installing voice transcription…",
     "ready": "Voice transcription is ready. Record again to use it.",
     "failed": "Installation did not complete. Check the host network and try again."
-  }
+  },
+  "r.shared.following": "Following the computer’s Codex session. Sending will try to continue this same session.",
+  "r.shared.desktop_writer": "The Codex App is using this session; the phone is read-only. Quit the App completely, then resend to continue the same session."
 }

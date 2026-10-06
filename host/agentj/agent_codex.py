@@ -369,8 +369,12 @@ class CodexAgent(Agent):
 
     # ------------------------------------------------ model and effort pill (§10.11): turn/start model / effort
     def cur_model(self) -> str | None:
-        m = self.cfg.get("model") or self.thread.get("model") or self.human.get("model")
+        m = self.cfg.get("model") or self.thread.get("model") or self.human.get("model") or next(
+            (x["id"] for x in getattr(self, "models_cache", []) if x.get("default") is True), None)
         return m if isinstance(m, str) and m else None
+
+    def model_name(self, model: str | None) -> str | None:
+        return super().model_name(model) or model
 
     def cur_effort(self) -> str | None:
         e = self.cfg.get("effort") or self.thread.get("reasoningEffort") or self.human.get("model_reasoning_effort")
@@ -393,7 +397,7 @@ class CodexAgent(Agent):
                 if isinstance(v, str) and len(v) <= 16 and v not in effs:
                     effs.append(v)
             out.append({"id": clean_line(m["id"], 100), "name": clean_line(str(m.get("displayName") or m["id"]), 60),
-                        "efforts": effs or None})
+                        "efforts": effs or None, "default": m.get("isDefault") is True})
         self.models_cache = out[:40]
         fn = getattr(self.host, "models_changed", None)
         if fn:
@@ -515,6 +519,10 @@ class CodexAgent(Agent):
         elif method == "turn/completed" and th == self.tid:
             t = p.get("turn") if isinstance(p.get("turn"), dict) else {}
             self.turn_status = t
+            if isinstance(t.get("model"), str) and slash.MODEL_RE.fullmatch(t["model"]):
+                self.thread["model"] = t["model"]
+                mid = self.cur_model()
+                self.meter(model=mid, model_name=self.model_name(mid))
             if t.get("status") == "failed" and not self.halting:
                 e = t.get("error") if isinstance(t.get("error"), dict) else {}
                 m = e.get("message")
@@ -824,7 +832,8 @@ class CodexAgent(Agent):
                     if isinstance(m, dict) and isinstance(m.get("id"), str) and not m.get("hidden"):
                         models.append({"id": clean_line(m["id"], 100), "name": clean_line(str(m.get("displayName") or m["id"]), 60),
                                        "desc": clean_line(str(m.get("description") or ""), 120)})
-        cur = self.cfg.get("model") or self.thread.get("model") or self.human.get("model") or ""
+        cur = self.cfg.get("model") or self.thread.get("model") or self.human.get("model") or next(
+            (x["id"] for x in getattr(self, "models_cache", []) if x.get("default") is True), None) or ""
         if not arg:
             for m in models:
                 m["cur"] = m["id"] == cur

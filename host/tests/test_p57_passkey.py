@@ -339,7 +339,8 @@ class HostLevel(unittest.TestCase):
         a = Authenticator()
         _, _, idA = self.paired(a)
         self.run_(self.host.revoke(idA))
-        self.assertNotIn("pk", self.st.removed_path.read_text())
+        self.assertTrue(all(set(record) == {"why", "at"} for record in json.loads(self.st.removed_path.read_text()).values()),
+                        "removed ledger contains metadata only; random device IDs may contain pk")
         kp, _, got = self.restore(9, a)
         self.assertEqual(got, [{"t": "pk_fail", "why": "unknown"}])
         self.assertNotIn(9, self.host.sessions)

@@ -482,6 +482,12 @@ const effortsOf = (c, id) => { const m = c && c.models.find(x => x.id === id); r
 const samePick = (a, b) => !!a && !!b && a.model === b.model && (a.effort || null) === (b.effort || null);
 function paintPill(u){
   u = u || (cur && cur.usage) || {};
+  const shared = el('shared-status');
+  if (shared) {
+    const state = C && C.connected() && u.shared_status;
+    shared.hidden = !state;
+    shared.textContent = state ? t('r.shared.' + state) : '';
+  }
   const c = swCat(), real = realPick();
   if (pill.want && samePick(pill.want, real)){ pill.want = null; pill.sentAt = 0; }
   if (pill.want && pill.sentAt && Date.now() - pill.sentAt > PILL_SETTLE_MS){ pill.want = null; pill.sentAt = 0; }
@@ -586,6 +592,7 @@ function paintLogo(st, kind){
 const hist = {turns: [], count: 0, firstId: 0, lastId: 0, epoch: 0, route: true, busy: false, want: 0, older: false};
 let pageAt = -1, follow = true, pagesCache = null, shownKey = null;
 const noticeReads = new Set();
+const isSilent = text => typeof text === "string" && text.trim() === "\u3014\u4e0d\u56de\u7fa4\u3015";
 const tailSeen = {primed: false, id: 0, reply: "", virt: false};
 function newTurnArrived(ps){
   const tt = ps[ps.length - 1];
@@ -593,14 +600,14 @@ function newTurnArrived(ps){
   if (tailSeen.primed && tt.id !== null) arrived = tt.id > tailSeen.id;
   if (tt.id !== null) tailSeen.id = Math.max(tailSeen.id, tt.id);
   tailSeen.reply = tt.reply; tailSeen.virt = tt.id === null; tailSeen.primed = true;
-  return arrived;
+  return arrived && !isSilent(tt.reply);
 }
 function toNewest(){ follow = true; showPage(); }
 const SRC_KINDS = ["leo", "dev", "host", "agent", "sys", "task", "cmd"];
 function pages(){
   if (pagesCache) return pagesCache;
   const out = hist.turns.slice();
-  if (!out.length) out.push({id: null, reply: "", source: null, ts: null});
+  if (!out.length || out.every(x => isSilent(x.reply))) out.push({id: null, reply: "", source: null, ts: null});
   return (pagesCache = out);
 }
 function totalPages(){ return Math.max(pages().length, hist.count); }
@@ -621,7 +628,7 @@ function resetHistory(ep){
 /** A turn pushed by the host (hist_turn): new, a reply part appended, or its end. */
 export function upsertTurn(p){
   const previous=hist.turns.find(x=>x.id===p.id);
-  if(previous?.end==='open' && p.end==='done') announceTurn(p,true);
+  if(previous?.end==='open' && p.end==='done' && !isSilent(p.reply)) announceTurn(p,true);
   const i = hist.turns.findIndex(x => x.id === p.id);
   if (i >= 0) hist.turns[i] = p;
   else if (!hist.turns.length || p.id > hist.turns[hist.turns.length - 1].id){
@@ -703,8 +710,11 @@ function showPage(){
   if (!C) return;
   const ps = pages();
   if (newTurnArrived(ps)) follow = true;
-  if (follow || pageAt < 0 || pageAt > ps.length - 1) pageAt = ps.length - 1;
-  follow = pageAt === ps.length - 1;
+  if (follow || pageAt < 0 || pageAt > ps.length - 1) {
+    pageAt = ps.length - 1;
+    while (pageAt > 0 && isSilent(ps[pageAt].reply)) pageAt--;
+  }
+  follow = pageAt === ps.length - 1 && !isSilent(ps[pageAt].reply);
   const p = ps[pageAt];
   const key = (p.id === null ? "live" : p.id) + "|" + pageAt;
   const om = el("om"), src = p.source;
@@ -756,6 +766,15 @@ function showPage(){
     if (moved) stick = true;
   }
   renderWords(p.reply || (p.end === "open" || p.id === null ? "" : t('r.noReply')), p.end === "open" && p.id !== null);
+  if (isSilent(p.reply)) {
+    om.hidden = true;
+    renderWords("");
+    const row = document.createElement("details"), label = document.createElement("summary"), body = document.createElement("pre");
+    row.style.color = "#888";
+    label.textContent = t('r.silentTurn', {time: hhmm(p.ts)});
+    body.textContent = (src?.text || "") + "\n" + p.reply;
+    row.append(label, body); el("words").replaceChildren(row);
+  }
   renderMedia(el("words"), p);
   if (rdAt && rdAt.key === shownKey) renderReaderMedia(el("rdWords"), p);   // P59: the reader's slots, same Blobs
   document.body.dataset.pageOpen = p.end === "open" ? "1" : "0";
@@ -805,7 +824,7 @@ async function goPage(delta){
     ps = pages(); at = pageAt - 1;
   }
   if (at < 0 || at > ps.length - 1) return false;
-  pageAt = at; follow = at === ps.length - 1;
+  pageAt = at; follow = at === ps.length - 1 && !isSilent(ps[at].reply);
   showPage();
   return true;
 }
@@ -2771,7 +2790,7 @@ export function applyPreferences(value){
   loadMenu();
 }
 export function announceTurn(turn,old){
-  if(!old || turn.end!=='done' || new URLSearchParams(location.search).has('watcher'))return;
+  if(isSilent(typeof turn.reply === 'string' ? turn.reply : turn.reply?.text) || !old || turn.end!=='done' || new URLSearchParams(location.search).has('watcher'))return;
   if(userPreferences.voice?.speak_replies)speaker?.tap(turn.id,typeof turn.reply==='string'?turn.reply:(turn.reply?.text||''));
   else if(userPreferences.voice?.speak_notifications && userPreferences.voice?.tts?.mode==='phone')speaker?.tap('notification-'+turn.id,t('preferences.notification'));
 }

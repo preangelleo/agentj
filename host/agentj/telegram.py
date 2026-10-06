@@ -118,7 +118,8 @@ class Telegram:
         else:
             chat_id = enrolled['owner_id']
         text=turn.get('reply',{}).get('text','')
-        if text:
+        from .silent import is_silent
+        if text and not is_silent(text):
             from .privacy import redact
             text = redact(text)
             if chat_id != enrolled['owner_id']:text = group_filter(text, self.group(chat_id,uid).get('profile','proxy'))

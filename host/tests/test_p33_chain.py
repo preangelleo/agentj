@@ -300,7 +300,8 @@ class _Chain(unittest.TestCase):
                         and c["host"].meter_state.get("week") == want_week)
         await c["wait"](lambda: c["of"]("meter") and c["of"]("meter")[-1].get("ctx") == want_ctx, 6000)
         m = c["of"]("meter")[-1]
-        self.assertEqual(set(m) - {"t"}, {"model", "model_name", "effort", "ctx", "h5", "week", "at"})
+        self.assertIsNone(m.get("shared_status"))
+        self.assertEqual(set(m) - {"t"}, {"model", "model_name", "effort", "ctx", "h5", "week", "at", "shared_status"})
 
 
 # ------------------------------------------------------------------ Claude Code
