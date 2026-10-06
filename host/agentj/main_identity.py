@@ -113,6 +113,19 @@ def language_of(cfg: dict) -> str:
     return "zh" if str(cfg.get("language", "en")).lower().startswith("zh") else "en"
 
 
+SILENCE_LINE = {
+    "zh": "\n当后台例行任务没有需要主人处理的新结果、通知已重复或群消息无需回复时，最终回复可以只写〔不回群〕。仅此标记会静默结束：不推送、不计未读、不进入主消息流；历史保留可展开的静默回合。主人直接提问、错误、风险、等待审批或必须报告的结果不得静默。标记旁有正文会正常发送。切换服务商时先读 agentj-config skill，Key 只收手机密钥卡。\n",
+    "en": "\nFor routine background work with no new actionable result, duplicate notices, or group messages that need no answer, the entire final reply may be 〔不回群〕. Only this exact marker suppresses delivery and unread counts; history keeps an expandable silent turn. Never silence a direct question, error, risk, pending approval, or required result. Text alongside the marker is delivered normally. Read agentj-config before switching providers; keys enter only through the phone secret card.\n",
+}
+
+SHARED_CODEX_LINE = {'zh': '电脑上的 Codex App 打开会话时，手机会从本机记录显示它实际使用的模型，并提示当前只读。发送被原生写入权拒绝时，消息不会投递，也不会自动新开会话。完全退出 Codex App 后重发，可尝试接着同一会话；仅切到 New chat 或等一轮回答结束不保证释放写入权。不要承诺两个独立客户端能同时写这个会话，也不要删写锁、注入桌面私有管道或改权限。\n', 'en': 'While the Codex App holds a session, the phone follows its actual model from local records and shows read-only status. A native active-writer refusal leaves the message undelivered and never automatically starts another thread. Quit the Codex App completely, then resend to try continuing the same thread; switching to New chat or waiting for a reply does not guarantee release. Do not promise concurrent writes from separate clients, delete writer locks, inject the App’s private pipes or change permissions.\n'}
+
+PAIRING_LINE = {
+    "zh": "安装时绑定账号成功只是中间步骤：主动运行 agentj devices --json 检查遥控器。没有遥控器时，继续带主人完成安装手册的配对步骤；不能报告安装完成。运行 agentj admin，在这台电脑本机显示二维码、链接及输入六位码，由主人批准；也可从账号页点击添加遥控器（agentj://pair）。手机或浏览器都是遥控器。凭据、配对材料和本机管理链接不要发给云端、客服或写进报告。至少配好一个遥控器并验收首条消息，才报告安装完成。日常任务不以配对为额外权限锁。\n",
+    "en": "During installation, account binding is only an intermediate step. Proactively run agentj devices --json. If no remote is paired, guide the owner through the installation guide's pairing steps before declaring setup complete. Run agentj admin: the QR/link and six-digit approval stay on this computer and the owner approves locally; the account page's Add a remote opens agentj://pair. Phones and browsers are remotes. Never send credentials, pairing material or local admin links to the cloud, support or reports. Pair at least one remote and verify the first message before completing installation. Pairing is not an extra permission lock on routine work.\n",
+}
+
+
 def prompt(cfg: dict) -> str:
     verify_core()
     lang = language_of(cfg)
@@ -120,7 +133,7 @@ def prompt(cfg: dict) -> str:
     extra = cfg.get("instructions") or ""
     if not isinstance(extra, str):
         raise IdentityError("agent.instructions must be append-only text")
-    return (core + ("" if core.endswith("\n") else "\n") + LANGUAGE_LINE[lang] + ELEVATE_LINE[lang] + SUPPORT_LINE[lang] + OPERATIONS_LINE[lang]
+    return (core + ("" if core.endswith("\n") else "\n") + LANGUAGE_LINE[lang] + ELEVATE_LINE[lang] + SUPPORT_LINE[lang] + OPERATIONS_LINE[lang] + SILENCE_LINE[lang] + SHARED_CODEX_LINE[lang] + PAIRING_LINE[lang]
             + ("\n<User preferences — append only; core takes precedence>\n" + extra + "\n</User preferences>\n" if extra else ""))
 
 def expected(cfg: dict, harness: str) -> dict:

@@ -802,6 +802,14 @@ class Elevator:
                     return
             line = await asyncio.wait_for(r.readline(), 10)
             req = json.loads(line)
+            if isinstance(req,dict) and req.get('t')=='provider_profile':
+                from . import provider_profiles
+                # Same-user Agent-facing socket; fixed native provider targets only.
+                # Secret values stay entirely in the host; metadata is the receipt.
+                result=await asyncio.to_thread(provider_profiles.execute,req.get('spec'))
+                self.st.log('provider_profile',result='ok' if result.get('ok') else 'failed')
+                w.write((json.dumps(result)+'\n').encode());await w.drain();w.close()
+                return
             if not isinstance(req, dict) or req.get("t") not in KINDS:
                 raise Refused("shape", "t: sudo | secret")
             card = norm_sudo(req) if req["t"] == "sudo" else norm_secret(req, self.st.root)

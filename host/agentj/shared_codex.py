@@ -5,8 +5,9 @@ come from the selected rollout's last turn_context when that shape is verified.
 
 F14 (P51): a continuation that cannot be established is degraded, never a dead end:
 no resumable thread (none selected, rollout missing, other project, resume refused by
-Codex) -> a new native thread in the same folder with the owner's own Codex defaults;
-desktop turn running -> wait for it, then deliver; original permissions unreadable or
+Codex, except an active writer) -> a new native thread in the same folder with the owner's own Codex defaults;
+desktop turn running -> wait for it, then attempt delivery; an active native writer ->
+read-only follow, preserve the selected thread and refuse delivery with a next step; original permissions unreadable or
 an unverified profile shape -> resume with the owner's Codex config defaults (never a
 flattened copy of a custom profile, never extra overrides). Only Codex's own refusal
 of the turn is reported, with the concrete reason.
@@ -50,6 +51,7 @@ REASONS = {
     'native resume changed original approval policy': ('Codex 接续后审批策略和原会话不一致。', 'Codex resumed with a different approval policy.'),
     'native resume changed original profile': ('Codex 接续后权限配置和原会话不一致。', 'Codex resumed with a different permission profile.'),
     'shared pre-execution hook unavailable': ('这个 Codex 版本没装上高危提醒钩子。', 'This Codex version did not load the high-risk warning hook.'),
+    'desktop writer active': ('电脑上的 Codex App 正在使用这个会话，手机现在只读。完全退出 Codex App 后重发，就能接着同一个会话。', 'The Codex App on your computer is using this session; the phone is read-only. Quit the Codex App completely, then resend to continue this same session.'),
     'desktop turn did not finish': ('电脑上的 Codex 回合 30 分钟还没结束。', 'The desktop Codex turn has not finished for 30 minutes.'),
 }
 class Stopped(Exception):
@@ -69,6 +71,10 @@ def brief(error):
     text = _PATHISH.sub('<path>', ' '.join(text.split()))[:120]
     return type(error).__name__ + (': ' + text if text else '')
 
+
+def active_writer(error):
+    # Native -32600 has other meanings too. Match only the concrete writer conflict.
+    return isinstance(error, RPCError) and 'already has an active writer' in str(error.err.get('message') or '').lower()
 
 def scan(path):
     """(session_meta, last turn_context, desktop turn running) of one rollout, bounded lines."""
@@ -181,6 +187,8 @@ class SharedCodexAgent(CodexAgent):
         self.rollout_sid = None
         self.original = {}
         self.told = set()
+        self.shared_status = None
+        self.read_probe = False
         if not self.cfg.get("shared_session_id"):
             stored=self.host.st.agent_session(self.kind)
             if isinstance(stored,str) and UUID.fullmatch(stored):
@@ -193,15 +201,69 @@ class SharedCodexAgent(CodexAgent):
     async def reload_identity(self):
         """The owner's own session: no injected identity, never restarted for it (A1)."""
 
+    def follow_status(self, status):
+        self.shared_status = status
+        self.meter(shared_status=status)
+
+    def desktop_model(self, context):
+        from . import slash
+        model = context.get('model') if isinstance(context, dict) else None
+        if isinstance(model, str) and slash.MODEL_RE.fullmatch(model):
+            self.thread['model'] = model
+            # A configured phone model is a next-turn choice, not the App's current model.
+            self.meter(model=model, model_name=self.model_name(model))
+
+    def cur_model(self):
+        if getattr(self, 'shared_status', None) in ('following', 'desktop_writer') and self.thread.get('model'):
+            return self.thread['model']
+        return super().cur_model()
+
+    async def probe_writer(self):
+        """A short native resume probe; no hooks/config changes, no turn and no retained writer."""
+        if not self.rollout or scan(self.rollout)[2]:
+            return
+        saved_thread = dict(self.thread)
+        self.read_probe = True
+        try:
+            if await self._spawn():
+                try:
+                    await self.call('thread/resume', {'threadId': self.rollout_sid, 'excludeTurns': True})
+                except RPCError as error:
+                    if active_writer(error):
+                        self.follow_status('desktop_writer')
+                        self.writer_notice()
+        except (OSError, ConnectionError, asyncio.TimeoutError, RPCError):
+            pass                         # an unavailable probe never prevents local read-only following
+        finally:
+            if self.proc is not None:
+                await self._kill(self.proc)
+            self.thread = saved_thread
+            self.read_probe = False
+
+    def writer_notice(self):
+        self.note('shared_read_only', 'desktop writer active')
+        key = (self.cfg.get('shared_session_id'), 'desktop writer active')
+        if key not in self.told:
+            self.told.add(key)
+            self.host.agent_notice(REASONS['desktop writer active'][0] if str(self.cfg.get('language', 'en')).startswith('zh')
+                                   else REASONS['desktop writer active'][1])
+
     def read_desktop(self):
-        sid = self.cfg.get('shared_session_id')
+        sid = self.cfg.get('shared_session_id') or discover(self.cfg['dir'])
+        if not sid:
+            return
+        self.cfg['shared_session_id'] = sid
         if self.rollout is None or self.rollout_sid != sid:
             path = selected_rollout(self.cfg['dir'], sid)
             meta = first_meta(path)
             if not meta or meta.get('id') != sid or os.path.realpath(meta.get('cwd') or '') != os.path.realpath(self.cfg['dir']):
                 raise Refusal('wrong thread/project')
             self.rollout, self.rollout_sid = path, sid
+            # Capture the size before scanning: any concurrent append is reread, never skipped.
             self.offset = path.stat().st_size
+            self.follow_status('following')
+            self.desktop_model(scan(path)[1])
+            self.host.st.set_agent_session(self.kind, sid)
             return
         with self.rollout.open('rb') as f:
             if f.seek(0, 2) < self.offset:
@@ -217,6 +279,8 @@ class SharedCodexAgent(CodexAgent):
                 try: item=json.loads(line)
                 except ValueError: continue
                 p=item.get('payload') or {}
+                if item.get('type')=='turn_context' and isinstance(p.get('model'),str):
+                    self.desktop_model(p)
                 if self.phone_turn: continue
                 if item.get('type')=='response_item' and p.get('type')=='message':
                     role=p.get('role')
@@ -227,8 +291,16 @@ class SharedCodexAgent(CodexAgent):
                     self.host.desktop_end()
 
     async def observe(self):
+        probed = None
         while True:
-            try: self.read_desktop()
+            try:
+                self.read_desktop()
+                if self.rollout_sid and probed != self.rollout_sid and not self.phone_turn and self.proc is None and not scan(self.rollout)[2]:
+                    # Serialize against message/model commands using the same host turn lock.
+                    async with self.host.turn_lock:
+                        if not self.phone_turn and self.proc is None:
+                            await self.probe_writer()
+                            probed = self.rollout_sid
             except (OSError,ValueError): pass
             await asyncio.sleep(.25)
 
@@ -237,11 +309,12 @@ class SharedCodexAgent(CodexAgent):
             self.observer.cancel()
             with contextlib.suppress(asyncio.CancelledError): await self.observer
         await super().stop()
+        self.follow_status(None)
         if self.risk_channel:
             await self.risk_channel.stop()
 
     async def _spawn(self):
-        if self.cfg.get('high_risk_warnings',True) and not self.risk_channel:
+        if not self.read_probe and self.cfg.get('high_risk_warnings',True) and not self.risk_channel:
             self.risk_channel=shared_hook.Channel(self.risk,shared_hook.channel_path(self.host.st.root,'codex'))
             await self.risk_channel.start()
             shared_hook.install(self.cfg['dir'],self.risk_channel.path,family='codex')
@@ -249,7 +322,7 @@ class SharedCodexAgent(CodexAgent):
 
     def argv(self):
         argv=super().argv()
-        if self.risk_channel:
+        if self.risk_channel and not self.read_probe:
             entry=shared_hook.settings(self.risk_channel.path,('PreToolUse',))['hooks']['PreToolUse'][0]['hooks'][0]
             # An explicit launch hook is a trusted owner-installed bridge; it is
             # additive to native user/system/project hook sources. No native
@@ -344,12 +417,13 @@ class SharedCodexAgent(CodexAgent):
 
     async def _resume(self, sid, path):
         """Resume the owner's thread: verified original permissions, else the owner's Codex defaults."""
+        deferred = None
         try:
             original,_=owner_context(path,self.cfg['dir'],sid)
         except Refusal as why:
             if why.code in ('wrong thread/project', 'desktop turn active; alternate turns'): raise
             original=None
-            self.degraded(why.code, '已按你 Codex 自己的默认权限接着这个会话。',
+            deferred = (why.code, '已按你 Codex 自己的默认权限接着这个会话。',
                           "Continuing it with your own Codex default permissions.")
         params={'threadId':sid,'excludeTurns':True}
         if original:
@@ -361,11 +435,13 @@ class SharedCodexAgent(CodexAgent):
                     # externalSandbox has no resume override: the owner's defaults decide.
                     for k in ('approvalPolicy','approvalsReviewer','sandbox'): params.pop(k,None)
                     original=None
-                    self.degraded('unverified resume sandbox', '已按你 Codex 自己的默认权限接着这个会话。',
+                    deferred = ('unverified resume sandbox', '已按你 Codex 自己的默认权限接着这个会话。',
                                   "Continuing it with your own Codex default permissions.")
         hooks=await self._hook_config()
         if hooks: params['config']=hooks
         res=await self.call('thread/resume',params)
+        if deferred:
+            self.degraded(*deferred)
         if (res.get('thread') or {}).get('id')!=sid:
             raise RPCError({'message':'resume returned different thread'})
         if original and (res.get('approvalPolicy') != original['approvalPolicy'] or res.get('approvalsReviewer') != original['approvalsReviewer']
@@ -420,13 +496,28 @@ class SharedCodexAgent(CodexAgent):
                 if r.code == 'desktop turn active; alternate turns': continue    # it started again: wait again
                 why,path=r.code,None
             except RPCError as e:
+                if active_writer(e):
+                    self.cfg['shared_session_id'] = sid
+                    self.read_desktop()
+                    self.desktop_model(scan(path)[1])
+                    self.follow_status('desktop_writer')
+                    self.writer_notice()
+                    raise Refusal('desktop writer active') from e
                 why,path=brief(e),None
         if res is None:
             res=await self._new_thread(why or 'thread rollout unavailable or ambiguous')
         sid=res['thread']['id']
         self.cfg['shared_session_id']=sid
         self.tid=sid
+        self.follow_status(None)
+        self.told.discard((sid, 'desktop writer active'))
         self.thread={k:res.get(k) for k in ('model','sandbox','approvalPolicy','approvalsReviewer','cwd','reasoningEffort')}
+        if path and not self.thread.get('model'):
+            _, latest, _ = scan(path)
+            from . import slash
+            if isinstance(latest,dict) and isinstance(latest.get('model'),str) and slash.MODEL_RE.fullmatch(latest['model']):
+                self.thread['model']=latest['model']
+        mid=self.cur_model();self.meter(model=mid,model_name=self.model_name(mid))
         self.host.st.set_agent_session(self.kind,sid)
         return True
 
@@ -449,7 +540,9 @@ class SharedCodexAgent(CodexAgent):
             reason=brief(error)
             self.note('shared_refused', reason)
             zh, en = REASONS.get(reason, (None, None))
-            if zh:
+            if reason == 'desktop writer active':
+                self.local_fail(REASONS[reason][0] if str(self.cfg.get('language', 'en')).startswith('zh') else REASONS[reason][1])
+            elif zh:
                 self.local_fail(f'Codex 没收到这条消息：{zh}在电脑上处理后重发；看原因跑 `agentj activity`。 / '
                                 f'Not delivered to Codex: {en} Fix it on the computer and resend; `agentj activity` shows why.')
             elif isinstance(error, RPCError):

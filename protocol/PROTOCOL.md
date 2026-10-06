@@ -846,6 +846,8 @@ switched off) arrive as `sys` turns with `"local":true` and show relay's 「在�
   `modelContextWindow`), `account/rateLimits/read|updated` (the 300-minute window → `h5`, 10 080 → `week`), thread model /
   effort; OpenCode — the newest assistant message's tokens and the model's `limit.context`; quotas `null`.
 
+- Optional `meter.shared_status`: `following`, `desktop_writer`, or `null`. A Codex Desktop writer conflict preserves the selected thread and leaves phone input undelivered; the phone keeps a translated read-only banner across reconnect. The displayed model is from the last native rollout turn_context, independent of resume access. Other adapters clear this field. No native permission or pairing override is introduced.
+
 ### 10.11 Model and effort pill
 | direction | message |
 |---|---|

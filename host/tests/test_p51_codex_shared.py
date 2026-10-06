@@ -247,3 +247,51 @@ class Doctor(Base):
 
 if __name__=='__main__':
     unittest.main()
+
+class DesktopWriter(Base):
+    async def test_writer_conflict_preserves_selection_model_and_never_starts_thread(self):
+        self.rollout(SID,ctx={'cwd':str(self.proj),'model':'gpt-6-astra'})
+        a=self.agent(SID,model='wrong-phone-model',language='zh');self.resume_error='thread already has an active writer'
+        with self.assertRaises(Refusal) as error:await a._thread()
+        self.assertEqual(error.exception.code,'desktop writer active')
+        self.assertEqual([m for m,_ in self.calls],['thread/resume'])
+        self.assertEqual(a.cfg['shared_session_id'],SID);self.assertEqual(a.cur_model(),'gpt-6-astra')
+        self.assertEqual(a.shared_status,'desktop_writer')
+        self.host.st.set_agent_session.assert_called_with('codex',SID)
+        self.assertIn('手机现在只读',self.notices());self.assertIn('完全退出',self.notices())
+        self.assertFalse(self.events('shared_new_thread'))
+
+    async def test_retry_after_native_release_resumes_original_and_clears_state(self):
+        self.rollout(SID);a=self.agent(SID);self.resume_error='thread already has an active writer'
+        with self.assertRaises(Refusal):await a._thread()
+        self.resume_error=None;await a._thread()
+        self.assertEqual(a.tid,SID);self.assertIsNone(a.shared_status)
+        self.assertEqual([m for m,_ in self.calls],['thread/resume','thread/resume'])
+
+    async def test_existing_turn_context_is_read_before_any_rpc(self):
+        self.rollout(SID,ctx={'cwd':str(self.proj),'model':'gpt-6-astra'})
+        a=self.agent(SID,model='future-model');a.read_desktop()
+        self.assertEqual(a.cur_model(),'gpt-6-astra');self.assertEqual(self.calls,[])
+        self.host.meter_update.assert_any_call(model='gpt-6-astra',model_name='gpt-6-astra')
+
+    async def test_probe_reads_native_conflict_without_turn_hook_or_retained_process(self):
+        self.rollout(SID,ctx={'cwd':str(self.proj),'model':'gpt-6-astra'});a=self.agent(SID);a.read_desktop();self.resume_error='thread already has an active writer'
+        p=Mock()
+        async def spawn():
+            self.assertTrue(a.read_probe);a.proc=p;a.thread={};return True
+        a._spawn=AsyncMock(side_effect=spawn);a._kill=AsyncMock()
+        await a.probe_writer()
+        self.assertEqual(self.calls,[('thread/resume',{'threadId':SID,'excludeTurns':True})])
+        self.assertEqual(a.shared_status,'desktop_writer');self.assertFalse(a.read_probe)
+        a._kill.assert_awaited_once_with(p)
+        self.assertEqual(a.cur_model(),'gpt-6-astra')
+
+    async def test_running_desktop_probe_never_resumes(self):
+        self.rollout(SID,active=True);a=self.agent(SID);a.read_desktop();a._spawn=AsyncMock()
+        await a.probe_writer();a._spawn.assert_not_awaited()
+
+    async def test_refused_phone_input_is_not_delivered_and_is_marked_failed(self):
+        self.rollout(SID);a=self.agent(SID,language='en');a._ready=AsyncMock(side_effect=Refusal('desktop writer active'))
+        a.deliver=AsyncMock();await a.turn('hello')
+        a.deliver.assert_not_awaited();self.host.turn_failed.assert_called_once()
+        self.host.local_notice.assert_called_once_with(REASONS['desktop writer active'][1])
