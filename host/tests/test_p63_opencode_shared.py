@@ -6,8 +6,8 @@ so these chains put the default back on purpose: `State.agent_config()["session_
 
 - SharedV2Chain: default config + v2 stand-in (fakeopencode2.py: every v1 route answers HTML) — message, card, /stop, /clear,
   key failures + restart, slash commands; shared semantics kept (no fence, no rules of ours, no injected identity);
-- OwnerV2: an owner-started v2 server (`shared_opencode_port`) → one plain notice (not a key problem; what to change), nothing
-  sent to it;
+- OwnerV2: an owner-started v2 server (`shared_opencode_port`) → attached since P64 (text, cards, desktop mirroring; never a
+  new session / PATCH / model change / kill);
 - SharedV1Owned: the same owned server on v1 now honours the model, /clear, /model and the key-failure restart (before P63 it
   ignored `--model` and refused every slash command).
 No network, no real keys."""
@@ -160,38 +160,127 @@ def _free_port():
 
 
 class OwnerV2(_DefaultMode, p60.V2Chain):
-    """`shared_opencode_port` names a server the owner started; on v2 it is never driven: a notice says what to change."""
+    """P64: `shared_opencode_port` names a v2 server the OWNER started → attached: the named session only, text both ways,
+    phone cards, desktop mirroring, the desktop's own approvals; never a new session, a PATCH, an identity, a model change or a
+    kill. (Before P64: a plain notice only.)"""
     test_v2_message_card_stop_clear_and_failures = None
     test_v2_slash_commands = None
 
     def setUp(self):
         self.port = _free_port()
-        self.extra = {"shared_opencode_port": self.port, "shared_session_id": "sesOwner"}
+        self.extra = {"shared_opencode_port": self.port, "shared_session_id": ""}
         super().setUp()
         env = {k: v for k, v in os.environ.items() if not k.startswith("OPENCODE_SERVER_")}
         self.owner = subprocess.Popen([sys.executable, str(HERE / "fakeopencode2.py"), "serve", "--port", str(self.port)],
                                       cwd=str(self.work), env=env, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
         self.owner.stdout.readline()                    # "server listening on …"
+        self.saved_pw = os.environ.pop("OPENCODE_SERVER_PASSWORD", None)
+        sid = self.owner_call("POST", "/api/session", {"title": "mine", "location": {"directory": str(self.work)}})["data"]["id"]
+        self.extra["shared_session_id"] = sid
+        self.owner_sid = sid
+        self.log.write_text("")                         # only what Agent J sends from here on
 
     def tearDown(self):
+        if self.saved_pw is not None:
+            os.environ["OPENCODE_SERVER_PASSWORD"] = self.saved_pw
         self.owner.kill()
         self.owner.wait()
         self.owner.stdout.close()
         super().tearDown()
 
-    def test_owner_v2_server_gets_a_plain_notice_and_nothing_else(self):
+    def owner_call(self, method, path, body=None):
+        """The owner's own client (the desktop TUI) talking to the owner's server — not Agent J."""
+        import base64
+        import urllib.request
+        req = urllib.request.Request(f"http://127.0.0.1:{self.port}{path}", method=method,
+                                     data=None if body is None else json.dumps(body).encode(),
+                                     headers={"content-type": "application/json",
+                                              "authorization": "Basic " + base64.b64encode(b"opencode:").decode()})
+        with urllib.request.urlopen(req, timeout=10) as r:
+            raw = r.read()
+        return json.loads(raw) if raw else None
+
+    def test_owner_v2_server_attached_text_cards_desktop_mirror(self):
         async def script(c):
+            mirror = []
+            h = c.host
+            orig = (h.desktop_input, h.desktop_text, h.desktop_end)
+            h.desktop_input = lambda t: (mirror.append(("in", t)), orig[0](t))
+            h.desktop_text = lambda t: (mirror.append(("text", t)), orig[1](t))
+            h.desktop_end = lambda: (mirror.append(("end",)), orig[2]())
             await c.say("你好")
-            await c.wait(lambda: any("跟模型 key 没关系" in m for m in c.msgs()))
-            note = next(m for m in c.msgs() if "跟模型 key 没关系" in m)
-            self.assertIn("agent.shared_opencode_port", note)
-            self.assertIn("independent", note)
-            self.assertIs(type(c.host.agent), shared.SharedOpenCodeAgent)
-            self.assertFalse(c.host.agent.owned_server, "never falls back to starting another server")
+            await c.wait(lambda: "ECHO: 你好" in c.msgs())
+            await c.idle()
+            a = c.host.agent
+            self.assertIs(type(a), soc2.OwnerOpenCodeV2Agent)
+            self.assertFalse(a.owned_server or a.owns_harness())
+            self.assertEqual(a.sid, self.owner_sid)
+            self.assertFalse(any(m for m in c.msgs() if "没关系" in m or "尚未接入" in m))
+            # a card on the phone; approve runs it
+            await c.say("RUN: echo hi-owner")
+            await c.wait(lambda: len(c.asks()) == 1)
+            await c.host._app(c.s, c.ph.answer(c.asks()[-1], True))
+            await c.wait(lambda: "OUT: hi-owner" in c.msgs())
+            await c.idle()
+            # the owner types on the desktop: mirrored as desktop input + reply, not as a phone turn
+            self.owner_call("POST", f"/api/session/{self.owner_sid}/prompt", {"text": "typed at the desk"})
+            await c.wait(lambda: ("text", "ECHO: typed at the desk") in mirror)
+            self.assertIn(("in", "typed at the desk"), mirror)
+            await c.wait(lambda: mirror[-1] == ("end",))
+            self.assertNotIn("ECHO: typed at the desk", c.msgs())
+            # the desktop approves a request the phone was also shown: the card resolves, no tampering, still attached
+            self.owner_call("POST", f"/api/session/{self.owner_sid}/prompt", {"text": "RUN: echo desk-ok"})
+            await c.wait(lambda: len(c.asks()) == 2)
+            pending = self.owner_call("GET", f"/api/session/{self.owner_sid}/permission")["data"]
+            self.owner_call("POST", f"/api/session/{self.owner_sid}/permission/{pending[0]['id']}/reply", {"decision": "once"})
+            await c.wait(lambda: ("text", "OUT: desk-ok") in mirror)
+            await asyncio.sleep(0.3)
+            self.assertIs(c.host.agent.proc is not None, True)
+            # slash commands stay on the desktop
+            r = await a.command("model", "opencode/chat")
+            self.assertEqual(r.kind, "error")
+            await c.say("again")
+            await c.wait(lambda: "ECHO: again" in c.msgs())
+            await c.idle()
         self.run_chain(script)
         reqs = self.requests()
-        self.assertTrue(reqs and {r["p"] for r in reqs} == {"/api/info"}, "only the version probe reached the owner's server")
-        self.assertEqual(shared.OWNER_V2, shared.OWNER_V2.strip())
+        self.assertTrue(reqs and all(r["p"].startswith("/api/") for r in reqs), [r["p"] for r in reqs])
+        agentj = [r for r in reqs if not (r["p"].endswith("/prompt") and r["b"] and r["b"].get("text") in
+                                          ("typed at the desk", "RUN: echo desk-ok"))]
+        self.assertFalse([r for r in agentj if r["p"] == "/api/session" and r["m"] == "POST"], "never a new session")
+        self.assertFalse([r for r in agentj if r["m"] in ("PATCH", "PUT")], "no PATCH of rules, no injected identity")
+        self.assertFalse([r for r in agentj if r["p"].endswith("/model") and r["m"] == "POST"], "the owner's model stays")
+        ev = [json.loads(x) for x in self.st.log_path.read_text().splitlines()]
+        self.assertFalse([e for e in ev if e.get("ev") == "agent_tamper"], "the desktop is a legitimate approver")
+        self.assertIsNone(self.owner.poll(), "the owner's server is never killed")
+
+    def test_owner_v2_wrong_session_or_risk_layer_refused(self):
+        self.extra["shared_session_id"] = "ses_not_there"
+        async def script(c):
+            await c.say("hi")
+            await c.wait(lambda: any("不能附着" in m for m in c.msgs()))
+        self.run_chain(script)
+        self.assertFalse([r for r in self.requests() if r["m"] != "GET"], "nothing written to the owner's server")
+
+
+    def test_owner_server_with_a_password_agentj_lacks_says_how_to_hand_it_over(self):
+        port = _free_port()
+        env = {**{k: v for k, v in os.environ.items() if not k.startswith("OPENCODE_SERVER_")}, "OPENCODE_SERVER_PASSWORD": "owner-pw-only-here"}
+        locked = subprocess.Popen([sys.executable, str(HERE / "fakeopencode2.py"), "serve", "--port", str(port)],
+                                  cwd=str(self.work), env=env, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
+        try:
+            locked.stdout.readline()
+            self.extra["shared_opencode_port"] = port
+            async def script(c):
+                await c.say("hi")
+                await c.wait(lambda: any("OPENCODE_SERVER_PASSWORD" in json.dumps(o, ensure_ascii=False) for _, o in c.sent))
+                note = next(json.dumps(o, ensure_ascii=False) for _, o in c.sent if "OPENCODE_SERVER_PASSWORD" in json.dumps(o, ensure_ascii=False))
+                self.assertIn("agentj secret request --name OPENCODE_SERVER_PASSWORD", note)
+                self.assertIn("agentj service restart", note)
+                self.assertNotIn("owner-pw-only-here", note)
+            self.run_chain(script)
+        finally:
+            locked.kill(); locked.wait(); locked.stdout.close()
 
 
 class SharedV1Owned(p59.Chain):

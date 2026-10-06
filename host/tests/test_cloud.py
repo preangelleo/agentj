@@ -15,7 +15,7 @@ import unittest
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey  # noqa: E402
-from agentj import cloud, reporter, wire  # noqa: E402
+from agentj import __version__, cloud, reporter, wire  # noqa: E402
 from agentj.state import State  # noqa: E402
 from fakecp import FakeCP  # noqa: E402
 
@@ -62,7 +62,7 @@ class Envelope(unittest.TestCase):
 
     def test_contexts_distinct_from_relay(self):
         self.assertEqual(len({cloud.CTX_LOGIN, cloud.CTX_POLL, cloud.CTX_REPORT, "agentjarvis-relay-auth-v1"}), 4)
-        self.assertEqual(cloud.AGENT, "agentj/0.15.4a1")
+        self.assertEqual(cloud.AGENT, f"agentj/{__version__}")
 
 
 class Report(unittest.TestCase):

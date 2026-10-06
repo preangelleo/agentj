@@ -919,6 +919,8 @@ class Host:
                     await self._ctl_send(w, {"ok": True, "archived": bool(name), "epoch": self.hist.epoch})
                 elif cmd == "history_reload":       # `agentj history on|off` / `agentj config history …`
                     self.hist = history.History(self.st)
+                    if getattr(self, "recall", None):
+                        self.recall.bind_history()
                     self.hist_meta_all()
                     await self._ctl_send(w, {"ok": True, "on": self.hist.on})
                 elif cmd == "send":

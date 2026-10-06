@@ -71,6 +71,7 @@ def _cut_units(s: str, n: int) -> int:
 class History:
     def __init__(self, st, on: bool | None = None):
         self.st = st
+        self.changed = None  # optional local recall snapshot observer; never changes persisted history
         self.on = enabled(st) if on is None else on
         self.dir = st.root / "history"
         self.turns: dict[int, dict] = {}     # current epoch, oldest first
@@ -86,6 +87,13 @@ class History:
             self._load()
         else:
             self.epoch = int(time.time())
+
+    def _notify(self) -> None:
+        if self.changed:
+            try:
+                self.changed()
+            except Exception:
+                self.st.log("history_observer_fail")
 
     # ------------------------------------------------------------ disk
     @property
@@ -203,6 +211,7 @@ class History:
         self.turns[t["id"]] = t
         self._save_meta()
         self._append(t)
+        self._notify()
         return t
 
     def get(self, tid) -> dict | None:
@@ -252,6 +261,7 @@ class History:
         self._save_meta()
         for x in changed:
             self._append(x)
+        self._notify()
         return changed
 
     def meta(self) -> dict:
@@ -322,6 +332,7 @@ class History:
         if self.on:
             self.st.write_private(self.cur_path, b"")
         self._save_meta()
+        self._notify()
         return name
 
     def undo_reset(self) -> bool:
@@ -334,6 +345,7 @@ class History:
             self.turns, self.parts = dict(back), {}
             self._resize()
             self.epoch += 1
+            self._notify()
             return True
         path = self.arch_dir / name
         turns, _ = self._read(path)
@@ -350,6 +362,7 @@ class History:
             path.unlink()
         self._compact()
         self._save_meta()
+        self._notify()
         return True
 
     def on_disk(self) -> tuple[int, int]:
@@ -379,6 +392,7 @@ class History:
             with contextlib.suppress(OSError):
                 self.st.write_private(self.meta_path, json.dumps({"epoch": self.epoch, "next_id": self.next_id,
                                                                   "undo": None}).encode())
+        self._notify()
         return n
 
     def archives(self) -> list[str]:

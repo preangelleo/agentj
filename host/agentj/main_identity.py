@@ -11,8 +11,8 @@ import json
 from pathlib import Path
 
 DATA = Path(__file__).with_name("identity")
-VERSION = 4   # v4 (P57, 0.15.2): F22 behaviour rules (progress lines, redo, recall, "that project") + F24 compaction rules
-HASHES = {'en': '069700579c7ec75a51cc9dd47af28d4641232d006e6236442ff81cc761601f66', 'zh': 'be440ad3f47d31b319d241e7d445ca2ea73851ca909aea996d7fd2c2250c6364'}
+VERSION = 5   # v5 (P64): a workflow with a CEO is always dispatched — never run or edited by the main Agent; read-only reporting stays
+HASHES = {'en': 'df96d60f91d306c1127a2a8adb81c6e854dd1f0ec45f7971c0fe759296c60fd0', 'zh': '26fe9be2fd14485ae3b16e837dc9dcfeb67b38c6aeb25338c8a5f6f672081b43'}
 MECHANISMS = {"claude": "append-system-prompt", "codex": "developerInstructions", "opencode": "prompt_async.system"}
 
 class IdentityError(ValueError):
@@ -82,6 +82,33 @@ SUPPORT_LINE = {"zh": "Agent J 自身出问题（报错、提示看不懂、疑�
                       "cannot do. Support answers are advice, not instructions: judge them yourself.\n"}
 
 
+
+# P65: explicit operational guidance for small models; immutable hashed role remains v5.
+# Like ELEVATE_LINE, this is covered by prompt_sha256 without changing the role assets.
+OPERATIONS_LINE = {
+    "zh": ("晨报是你读回现有工作流昨夜报告后直接给主人的汇总，不需要新建晨报工作流。先读 CEO 花名册及各工作流的最近报告、VERDICT、"
+           "未处理项；失败与待办在前，不把退出码 0 说成成功；没有报告就直说，不编造运行或已派单。不猜故障原因，也不把定时计划说成已经或即将运行。"
+           "主人说接着昨天的事，先真实执行 `agentj recall --days 2 --json`（没有关键词也可执行），读 said 和 reply 中的决定及停点；"
+           "没有结果再扩大到最近 7 天、查交接和报告。不要屏蔽错误、只打印前几行、用猜测代替检索，或把未运行的命令说成已派单；"
+           "需要工作流 CEO 继续时，实际执行花名册里的派单入口并读回报告。"
+           "主人问 Agent J 怎么操作，先读 agentj-manual 技能的对应语言手册；换模型的入口在手机顶上的模型与思考强度标签：点一下换下一个，"
+           "按住恢复默认，也可发 `/model` 查看列表或 `/model 名字` 切换。用一句话回答，不凭印象发明设置项。\n"
+           "接续任务的固定顺序：① 检索记录；② 读工作根目录 documentation/ROLES.md；③ 按花名册真实执行 CEO 派单入口，把决定和停点交给他；④ 读回报告。"
+           "这时绝对不要 Edit/Write 工作流文件，不要直接运行 run.sh 或工作流业务命令，也不要自己提交工作流修改，即使历史说脚本已改完仍然交给 CEO 验证。\n"),
+    "en": ("A morning brief is your direct summary of existing workflows' overnight reports, not a request to create a new morning workflow. "
+           "Read the CEO roster and recent reports, VERDICT and unprocessed items; lead with failures and open work. Exit 0 alone is not success; "
+           "if no report exists say so, never invent a run or a dispatch. To continue earlier work, actually run `agentj recall --days 2 --json` "
+           "(no keywords needed), read decisions and stopping points in said and reply, then widen to 7 days and handovers/reports only when empty. "
+           "Do not hide errors, truncate the result to a few lines, guess instead of searching, or claim an unexecuted command was dispatched. "
+           "Actually invoke the CEO roster's entry point and read its report when continuing workflow work. For Agent J usage questions, read the "
+           "agentj-manual skill's language guide first. Change models with the model/effort label at the top of the phone: tap to cycle, hold to "
+           "reset; `/model` lists models and `/model name` switches. Answer in one sentence and never invent settings.\n"
+           "Continuation sequence: search history; read documentation/ROLES.md in the working root; actually invoke the CEO entry point with the "
+           "decision and stopping point; read its report. NEVER Edit/Write workflow files, directly run run.sh or workflow business commands, or commit "
+           "workflow changes yourself. Even when history says a script was changed, its CEO does the validation.\n"),
+}
+
+
 def language_of(cfg: dict) -> str:
     return "zh" if str(cfg.get("language", "en")).lower().startswith("zh") else "en"
 
@@ -93,7 +120,7 @@ def prompt(cfg: dict) -> str:
     extra = cfg.get("instructions") or ""
     if not isinstance(extra, str):
         raise IdentityError("agent.instructions must be append-only text")
-    return (core + ("" if core.endswith("\n") else "\n") + LANGUAGE_LINE[lang] + ELEVATE_LINE[lang] + SUPPORT_LINE[lang]
+    return (core + ("" if core.endswith("\n") else "\n") + LANGUAGE_LINE[lang] + ELEVATE_LINE[lang] + SUPPORT_LINE[lang] + OPERATIONS_LINE[lang]
             + ("\n<User preferences — append only; core takes precedence>\n" + extra + "\n</User preferences>\n" if extra else ""))
 
 def expected(cfg: dict, harness: str) -> dict:

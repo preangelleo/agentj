@@ -1,6 +1,6 @@
-# Agent J 0.15.4a1 release notes
+# Agent J 0.15.5a1 release notes
 
-Host 0.15.4a1 / install 0.19.4; phone-web scope.
+Host 0.15.5a1 / install 0.19.5; phone-web scope.
 Phone parity must pass --strict. Full Android/Telegram parity is incomplete.
 Full Android/Telegram parity is incomplete.
 No APK is included in this release. Android source is for review, not a released app.
@@ -8,7 +8,7 @@ No APK is included in this release. Android source is for review, not a released
 Publication status: local preparation only. Live site verification is DEFERRED until
 the public commit and tag are pushed, the site is deployed, and cold installation passes.
 
-On publication failure, restore v0.15.3a1 / public 6dc4b79, including the site.
+On publication failure, restore v0.15.4a1 / public 5ed03beb, including site and phone web.
 ## Changes
 
 - Sparse JSON5 configuration with transactional application, configuration history and migrations.
@@ -16,13 +16,12 @@ On publication failure, restore v0.15.3a1 / public 6dc4b79, including the site.
 - Opt-in own-key cloud speech and local phone read-aloud.
 - Optional owner-private Telegram text input and final replies.
 
-- Fix: the default settings (shared session) now start OpenCode 2.x too (0.15.3a1 refused it there); Agent J's
-  own OpenCode follows the installed version, OpenCode's own permission rules apply. An OpenCode 2.x server
-  the owner started (agent.shared_opencode_port) is not attached: the phone says so and what to change.
-- Fix: `agentj update apply` prints its UPGRADE_RESULT when the service re-install fails (was a traceback);
-  macOS service install / restart waits for launchd to unload the old label before bootstrapping it again.
-- Evidence: fake servers in CI and a local real-model run on OpenCode 1.18.32 and 2.0.23 in both modes;
-  real macOS / a friend's computer acceptance is pending.
+- A restricted installation assistant guides setup, account linking, phone pairing and an owner-supplied formal model key.
+- Temporary installation leases expire and are revoked after completion or failure; interrupted setup can resume.
+- Software seats require the friend's own account and ordinary Checkout; installing grants no software seat.
+- First-month promotional issuance remains disabled pending complete hosted payment-method acceptance.
+- App migration 0019 is additive; the operator must back up and read back both databases before deployment.
+- Physical phone and macOS acceptance remain pending; Linux and Chrome results are recorded separately.
 
 ## Material acceptance limits
 
