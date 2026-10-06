@@ -1,15 +1,15 @@
 ---
 document: agentj-install
-version: 0.19.5
-released: 2026-10-07
+version: 0.19.4
+released: 2026-10-06
 status: beta (anyone can sign up; not advertised yet, pages are not indexed)
 host_package: agentj (the `agentj` command)
-host_version: 0.15.5a1
-source_tag: v0.15.5a1
-host_wheel: agentj-0.15.5a1-py3-none-any.whl
-host_wheel_sha256: 7a3bbbac3e9ecf462e2a1ee116a928459a0a9ad848d141dc2478a38352491801
-host_sdist: agentj-0.15.5a1.tar.gz
-host_sdist_sha256: 349eb8e234b866aab7c6d11585a9c15dea4594bd34d01014dc640e2dbc0f4329
+host_version: 0.15.4a1
+source_tag: v0.15.4a1
+host_wheel: agentj-0.15.4a1-py3-none-any.whl
+host_wheel_sha256: 824eed6d012bd05a9870c1713bbe09f7372a1f1cb527251ee636b6f2f64339d7
+host_sdist: agentj-0.15.4a1.tar.gz
+host_sdist_sha256: 182e43988462293e30882c261269ed45366e598b06607a10b7f279830c0c84af
 canonical_url: https://agentj.app/install.md
 sha256_url: https://agentj.app/install.md.sha256
 alias: https://agentjarvis.net/install.md (the older address: the same file, kept for one more version)
@@ -264,7 +264,7 @@ Ask (kind `question`; `bug` if you think it is a bug, `report` for a docs proble
 with your file-writing tool or a heredoc, then post it with the install session from Step 2:
 ```bash
 ( umask 077; cat > ~/.agentj-install/support.json <<'JSON'
-{"kind": "question", "install_md_version": "0.19.5",
+{"kind": "question", "install_md_version": "0.19.4",
  "body": "Step 4: `uv tool install` fails with: <the exact error, redacted>. OS: Ubuntu 24.04 x86_64. Agent: claude-code. Tried: …"}
 JSON
 )
@@ -425,7 +425,7 @@ The astral installer warning that `uv` / `uvx` are shadowed is informational if 
 carry over). So start every command line from here on with `export PATH="$HOME/.local/bin:$PATH";` — or call
 `~/.local/bin/agentj` by its full path. This document writes `agentj` for short.
 
-The program is pinned to one release: the tag `v0.15.5a1` (front matter `source_tag`). The tag never moves, and its
+The program is pinned to one release: the tag `v0.15.4a1` (front matter `source_tag`). The tag never moves, and its
 `host/` folder is byte for byte the same code as the two files on our site whose SHA-256 is in this document's front matter.
 ```bash
 cd ~/.agentj-install
@@ -433,7 +433,7 @@ W=$(sed -n 's/^host_wheel: //p' install.md); WS=$(sed -n 's/^host_wheel_sha256: 
 curl -fsSLO "https://agentj.app/dl/$W"
 echo "$WS  $W" | sha256sum -c -   # macOS: shasum -a 256 -c -; mismatch → stop
 uv tool install "./$W"
-export PATH="$HOME/.local/bin:$PATH"; agentj --version     # → agentj 0.15.5a1
+export PATH="$HOME/.local/bin:$PATH"; agentj --version     # → agentj 0.15.4a1
 export PATH="$HOME/.local/bin:$PATH"; agentj doctor
 ```
 **Your human's own terminal must find `agentj` too** — they run `agentj passphrase set` and `agentj pair` themselves
@@ -461,12 +461,12 @@ echo "$WS  $W" | sha256sum -c - && echo "$SS  $S" | sha256sum -c -    # macOS: s
 uv tool install "./$W"          # the wheel; its dependencies come from PyPI or the mirror in UV_DEFAULT_INDEX
 ```
 `uv tool install "./$S"` installs from the checked source archive instead (it builds the same program).
-`https://agentj.app/dl/latest.txt` and `https://agentj.app/dl/latest-sdist.txt` name the same two files. `agentj --version` is the program's own version (`0.15.5a1`); it is
+`https://agentj.app/dl/latest.txt` and `https://agentj.app/dl/latest-sdist.txt` name the same two files. `agentj --version` is the program's own version (`0.15.4a1`); it is
 numbered separately from this document (`0.17.0`).
 
-Alternative from the matching published source tag: `uv tool install "git+https://github.com/preangelleo/agentj@v0.15.5a1#subdirectory=host"`.
+Alternative from the matching published source tag: `uv tool install "git+https://github.com/preangelleo/agentj@v0.15.4a1#subdirectory=host"`.
 
-Alternative without uv: `pipx install "git+https://github.com/preangelleo/agentj@v0.15.5a1#subdirectory=host"` (needs Python 3.11+).
+Alternative without uv: `pipx install "git+https://github.com/preangelleo/agentj@v0.15.4a1#subdirectory=host"` (needs Python 3.11+).
 `agentj doctor` lists what is ready and what is not (prerequisites, the fence, connectivity, which agents are usable).
 Continue unless it reports an error that a later step does not fix; report anything you cannot explain.
 
@@ -1009,7 +1009,7 @@ The daily check remains a notification, not an unattended installation; `agentj 
 In the default shared session, reinstall directly using Step 4's checked wheel (SHA-256 must match this document and
 its public GitHub copy), preserving the host's identity, paired phones, account and preferences:
 ```bash
-uv tool install --force "./agentj-0.15.5a1-py3-none-any.whl"
+uv tool install --force "./agentj-0.15.4a1-py3-none-any.whl"
 agentj --version
 agentj service install
 agentj service restart
@@ -1017,7 +1017,7 @@ agentj doctor
 ```
 The matching published tag is another source, after verifying the tag object against the upgrade email:
 ```bash
-uv tool install --force "git+https://github.com/preangelleo/agentj@v0.15.5a1#subdirectory=host"
+uv tool install --force "git+https://github.com/preangelleo/agentj@v0.15.4a1#subdirectory=host"
 ```
 **0.14 independent session** (`agent.session_mode=independent`): 0.14's fence keeps Agent J's own program read-only and
 hides the service manager, so the Agent on the phone cannot reinstall or restart from inside it (measured: the install
@@ -1043,11 +1043,11 @@ prints something and `uv tool list` (or `pipx list`) shows `agentjarvis-host`, t
 the new name, then:
 ```bash
 jarvis service uninstall      # stop the old service first (Step 10 used tmux / nohup instead? stop that process)
-uv tool uninstall agentjarvis-host && uv tool install "git+https://github.com/preangelleo/agentj@v0.15.5a1#subdirectory=host"
+uv tool uninstall agentjarvis-host && uv tool install "git+https://github.com/preangelleo/agentj@v0.15.4a1#subdirectory=host"
 agentj doctor
 agentj service install        # start it again under the new name (or the tmux / nohup fallback, Step 10)
 ```
-With pipx instead of uv: `pipx uninstall agentjarvis-host && pipx install "git+https://github.com/preangelleo/agentj@v0.15.5a1#subdirectory=host"`.
+With pipx instead of uv: `pipx uninstall agentjarvis-host && pipx install "git+https://github.com/preangelleo/agentj@v0.15.4a1#subdirectory=host"`.
 - After the move, `agentj` puts back a `jarvis` command (a link to `agentj`, only if no other `jarvis` exists) for one more
   version; it prints a notice that points here. New installs never get `jarvis`.
 - The state moves by itself on the first run of `agentj`: from `~/.local/state/agentjarvis-alpha` to `~/.local/state/agentj`.
@@ -1387,8 +1387,6 @@ or logs out Claude Code / Codex / OpenCode (nor removes a model key), and never 
   Read-aloud can use ElevenLabs v4 or your own local speech script. Restricted regions: tell the Agent your proxy
   address (for example http://127.0.0.1:7890) and it sets it for the next message.
 
-- 0.19.5 (2026-10-07): host 0.15.5a1. Adds a restricted installation assistant with temporary model leases,
-  account linking and phone pairing; interrupted setup can resume. Friends buy software seats in their own account.
 - 0.19.4 (2026-10-06): host 0.15.4a1. Fix: with the default settings, the new OpenCode (2.x, what the official installer
   ships) did not start; now it works in both the shared (default) and the independent mode. Upgrading no longer stops
   with an error when the background service fails to restart: you get a clear result, and on macOS re-installing the
@@ -1437,6 +1435,6 @@ A proxy that needs a username and password is not written into the settings. Ask
 
 OpenCode needs a provider connection and a matching `provider/model`. An existing v1 `auth.json` or v2 `opencode.db` does not prove a working key. The v1 runtime diagnostic uses `GET /provider` and its `connected` list; this records configured connections, not a live balance or key test. After you replace a key with `opencode auth login`, Agent J restarts the OpenCode it started before your next message and keeps the conversation; you can also ask the Agent to run `agentj agent restart`. If Agent J is attached to your own desktop OpenCode server, restart that server yourself. Phone failure lines and `agentj doctor` name the kind of failure: sign-in or key (401), region (403/451), access (403), balance or quota, rate limit, model name, network.
 
-Both OpenCode v1 and v2 work: the official install script now installs v2 (2.0.x; `npm i -g opencode-ai` still gives v1), and Agent J detects the version when it starts OpenCode, in the default settings (shared session) and in the independent mode alike. v2 can store several keys for one provider (for example "DeepSeek 2"), but only the selected one is used; after adding a new key, run `opencode auth switch <provider>` to select it. If OpenCode has no key at all for the selected provider (for example, the key is only exported in your terminal, which the background service cannot see), the phone says so and names the provider; store the key, then just send again. An OpenCode server you started yourself (`agent.shared_opencode_port` and `agent.shared_session_id` set) can be attached on v1 and v2: the phone sends text and answers approvals, and what you type at the computer (and the replies) shows up on the phone; model changes and slash commands stay on the computer. On a v2 server of your own, high-risk warnings are unavailable — to use them, remove the port setting so Agent J starts OpenCode itself. If your server has a password, Agent J never reads another program's environment: the phone shows an `agentj secret request --name OPENCODE_SERVER_PASSWORD --purpose "Your OpenCode server password" --dest "env:<Agent J service env file>#OPENCODE_SERVER_PASSWORD"` line — run it on the computer, paste the password on the phone's secret card, then `agentj service restart`. HTTP 403 can mean region or account/model access restrictions, not necessarily an invalid key.
+Both OpenCode v1 and v2 work: the official install script now installs v2 (2.0.x; `npm i -g opencode-ai` still gives v1), and Agent J detects the version when it starts OpenCode, in the default settings (shared session) and in the independent mode alike. v2 can store several keys for one provider (for example "DeepSeek 2"), but only the selected one is used; after adding a new key, run `opencode auth switch <provider>` to select it. If OpenCode has no key at all for the selected provider (for example, the key is only exported in your terminal, which the background service cannot see), the phone says so and names the provider; store the key, then just send again. One case does not work yet: attaching to a v2 OpenCode server you started yourself (`agent.shared_opencode_port` set). The phone then says so plainly; it is not a key problem: remove that setting so Agent J starts OpenCode itself (v1 or v2), or use the independent mode. Attaching to your own v1 server still works. HTTP 403 can mean region or account/model access restrictions, not necessarily an invalid key.
 
 If a third-party provider gave you a base_url and a key (OpenAI-compatible or Anthropic-compatible), run `agentj provider add <name> --base-url <url> --model <model>`: it declares the provider in OpenCode's config, which references the key by variable name only (`{env:<NAME>_API_KEY}`); then run the `agentj secret request` line it prints so the owner pastes the key on the phone's secret card (you never see it), switch with `agentj agent opencode --dir <dir> --model <name>/<model>` and `agentj service restart`.

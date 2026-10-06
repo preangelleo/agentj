@@ -23,7 +23,7 @@ HERE = pathlib.Path(__file__).resolve().parent
 HOST = HERE.parent
 sys.path.insert(0, str(HOST))
 sys.path.insert(0, str(HERE))
-from agentj import __version__, gate, admin, cloud, names, serve, text, wire  # noqa: E402
+from agentj import gate, admin, cloud, names, serve, text, wire  # noqa: E402
 from agentj.state import State  # noqa: E402
 from fakecp import FakeCP  # noqa: E402
 from fakerelay import FakeRelay, PyDevice  # noqa: E402
@@ -266,7 +266,7 @@ class ControlPlane(unittest.TestCase):
             rep = cp.reports[-1]
             self.assertEqual(rep["agent_name"], "Wren")
             self.assertEqual(rep["machine"], text.machine_name())
-            self.assertEqual(rep["agent"], f"agentj/{__version__}")
+            self.assertEqual(rep["agent"], "agentj/0.15.4a1")
 
     def test_rename_signed_and_answers_whitelisted(self):
         with FakeCP() as cp:
@@ -670,7 +670,7 @@ class Page(unittest.TestCase):
         self.assertEqual(st["agent_name"], "Wren")
         self.assertEqual(set(st), {"agent_name", "machine", "channel", "version", "serve", "dashboard", "remote_unbind", "limit",
                                    "devices", "pairing", "passphrase_set"})
-        self.assertEqual((st["limit"], st["version"], st["serve"]["running"]), (5, __version__, False))
+        self.assertEqual((st["limit"], st["version"], st["serve"]["running"]), (5, "0.15.4a1", False))
         for bad in (auth.replace("Bearer ", "bearer "), auth + "x", "Basic " + auth[7:], auth[7:]):
             self.assertEqual(self.state_status(bad), 404, bad)
         r, _ = self.req("GET", "/api/state", headers={"Cookie": f"aj_admin_{self.port}={auth[7:]}"})

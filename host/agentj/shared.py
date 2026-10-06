@@ -457,22 +457,12 @@ class _ExternalServer:
     returncode = None
 
 
-def owner_password_note() -> str:
-    """P64: how the owner hands their OpenCode server's password to Agent J — through the phone's secret card into the service
-    environment, never by Agent J reading another process's environment (Leo / Jarvis 2026-10-06)."""
-    from . import service
-    try:
-        env_file = service.env_file(service.name())
-    except Exception:  # noqa: BLE001 — the note must never fail
-        env_file = "<Agent J 服务的环境文件 / the Agent J service env file>"
-    cmd = (f"agentj secret request --name OPENCODE_SERVER_PASSWORD --purpose '你电脑上 OpenCode server 的密码' "
-           f"--dest env:{env_file}#OPENCODE_SERVER_PASSWORD")
-    return ("你电脑上开着的 OpenCode server 要密码，Agent J 还没有这把密码（它不会去读别的程序的环境变量）。在电脑上运行："
-            f"`{cmd}`，在手机的密钥卡片里贴上你启动 server 时设的 OPENCODE_SERVER_PASSWORD（用户名不是 opencode 的话，再用同样的方法存"
-            " OPENCODE_SERVER_USERNAME），然后运行 `agentj service restart`。"
-            f" / Your OpenCode server needs a password Agent J does not have (it never reads another program's environment). Run `{cmd}`,"
-            " paste the server's OPENCODE_SERVER_PASSWORD on the phone's secret card (OPENCODE_SERVER_USERNAME too if it is not"
-            " \"opencode\"), then `agentj service restart`.")
+OWNER_V2 = ("电脑上开的 OpenCode server 是新版（v2），但共享会话暂时只支持旧版（v1）的 server。这跟模型 key 没关系。"
+            "两个办法选一个：① 去掉 agent.shared_opencode_port 和 agent.shared_session_id，让 Agent J 自己启动 OpenCode（还是共享会话，"
+            "新版旧版都能用）；② 切到独立会话（agent.session_mode = independent）。"
+            " / The OpenCode server you started is v2; a shared session attaches to v1 servers only. Not a key problem: unset"
+            " agent.shared_opencode_port and agent.shared_session_id (Agent J starts OpenCode itself, v1 or v2), or use the"
+            " independent mode.")
 
 
 class SharedOpenCodeAgent(OpenCodeAgent):
@@ -580,6 +570,7 @@ class SharedOpenCodeAgent(OpenCodeAgent):
             if not await self._installed_v2():        # P63: the v1 plugin is not a v2 plugin (shared_opencode2)
                 await self.prepare_risk()
             return await super()._spawn()
+        await self.prepare_risk()
         if type(port) is not int or not 1 <= port <= 65535:
             self.local_fail("指定电脑 OpenCode server 的 loopback 端口。 / Set the existing OpenCode loopback port.")
             return False
@@ -588,20 +579,11 @@ class SharedOpenCodeAgent(OpenCodeAgent):
         self.client = Client(port, os.environ.get("OPENCODE_SERVER_PASSWORD", ""),
                              os.environ.get("OPENCODE_SERVER_USERNAME", "opencode"))
         self.proc = _ExternalServer()
-        self.owner_unauthorized = False
         if await self._owner_v2():
-            # P64: the owner's v2 server is attached (text, cards, desktop mirroring) by shared_opencode2's owner class
-            from .shared_opencode2 import OwnerOpenCodeV2Agent
-            self.proc = None
-            self.__class__ = OwnerOpenCodeV2Agent
-            self.host.st.log("agent_protocol", agent=self.kind, version="v2", owner=True)
-            return await self._spawn()
-        if self.owner_unauthorized:                   # P64: the owner's server wants a password Agent J does not have
             self.proc = None
             self.failed_start = True
-            self.local_fail(owner_password_note())
+            self.fail_notice(OWNER_V2)
             return False
-        await self.prepare_risk()                     # the v1 pre-execution plugin: v1 owner servers only
         try:
             await self._attach()
             if self.risk_channel:
@@ -633,12 +615,11 @@ class SharedOpenCodeAgent(OpenCodeAgent):
         return bool(exe) and opencode_v2(await asyncio.to_thread(version_of, exe))
 
     async def _owner_v2(self):
-        """The owner's server speaks v2 (its legacy routes answer HTML; the API is /api/*): OwnerOpenCodeV2Agent attaches it."""
+        """The owner's server speaks v2 (its legacy routes answer HTML; the API is /api/*): never attached on v2."""
         try:
             status, info = await self.client.request("GET", "/api/info")
         except (OSError, ValueError, HTTPError, asyncio.TimeoutError):
             return False
-        self.owner_unauthorized = status == 401
         return status == 200 and isinstance(info, dict) and isinstance(info.get("version"), str) \
             and info["version"].lstrip("v").startswith("2")
 

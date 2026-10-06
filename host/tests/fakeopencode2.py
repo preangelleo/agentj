@@ -220,13 +220,9 @@ class H(BaseHTTPRequestHandler):
                 if s["busy"]:
                     return self._send(409, {"_tag": "ConflictError", "message": "busy"})
                 s["busy"] = True
-                iid = nid("msg")
-                s["messages"].insert(0, {"id": iid, "type": "user", "text": body["text"], "time": {"created": int(time.time() * 1000)}})
-                # like 2.0.23 (measured, P64): every prompt — the phone's or one typed on the desktop — is an inbox event first
-                emit("session.inbox.enqueued", {"inboxID": iid, "sessionID": sid,
-                                                "item": {"type": "user", "payload": {"text": body["text"]}, "delivery": "steer"}})
+                s["messages"].insert(0, {"id": nid("msg"), "type": "user", "text": body["text"], "time": {"created": int(time.time() * 1000)}})
                 threading.Thread(target=work, args=(sid, body["text"]), daemon=True).start()
-                return self._send(200, {"data": {"id": iid, "sessionID": sid, "type": "user"}})
+                return self._send(200, {"data": {"id": nid("msg"), "sessionID": sid, "type": "user"}})
             if rest == ["interrupt"] and method == "POST":
                 s["interrupt"] = True
                 return self._send(200, {"interrupted": True})

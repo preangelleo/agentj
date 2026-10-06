@@ -1749,10 +1749,6 @@ def main(argv=None) -> None:
     from .service import load_launch_binary_env
     load_launch_binary_env()
     args = list(sys.argv[1:] if argv is None else argv)
-    if args and args[0] == "installer":
-        from . import installer
-        installer.main(args[1:])
-        return
     if args and args[0] in ("voice", "theme", "menu", "key", "channel", "skill"):
         from . import personalize
         raise SystemExit(personalize.command(args))

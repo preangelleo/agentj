@@ -298,7 +298,6 @@ def run_sudo(argv: list[str], password: bytearray, cwd: str, timeout: int, sudo:
             wipe(buf)
             with contextlib.suppress(OSError):
                 p.stdin.close()
-            p.stdin = None           # Python 3.11's communicate() flushes a closed stdin ("flush of closed file"); 3.12+ tolerates it
         try:
             out, err = p.communicate(timeout=timeout)
         except subprocess.TimeoutExpired:

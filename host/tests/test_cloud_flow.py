@@ -17,7 +17,7 @@ HERE = pathlib.Path(__file__).resolve().parent
 HOST = HERE.parent
 sys.path.insert(0, str(HOST))
 sys.path.insert(0, str(HERE))
-from agentj import __version__, cloud, wire  # noqa: E402
+from agentj import cloud, wire  # noqa: E402
 from agentj.state import State  # noqa: E402
 from fakecp import FakeCP  # noqa: E402
 
@@ -89,7 +89,7 @@ class Flow(unittest.TestCase):
             self.assertEqual(rep["devices"], [{"id": did, "name": "Leo 的手机", "paired_at": rep["devices"][0]["paired_at"],
                                                "online": False}])
             self.assertEqual(rep["pending"], {"count": 0, "since": None})
-            self.assertEqual(rep["agent"], f"agentj/{__version__}")
+            self.assertEqual(rep["agent"], "agentj/0.15.4a1")
             self.assertGreater(rep["seq"], cp.reports[0]["seq"])
             self.assertEqual(cp.rejected, [])
             self.assertIn("acme-co", self.agentj("devices").stdout)

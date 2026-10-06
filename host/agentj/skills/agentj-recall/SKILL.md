@@ -9,13 +9,7 @@ The phone has no conversation list, project picker or regenerate button on purpo
 1. Search: `agentj recall <2–4 keywords from the user's words> [--days 2 | --date YYYY-MM-DD] --json`
    (no keywords: `agentj recall --days 2` lists the newest pages). It searches the phone's pages on this computer —
    the current conversation and the ones `/clear` put aside — and works inside the fence (serve answers on its socket).
-   Hits are `{id, time, who, said, reply, archived}`; excerpts are redacted. Native sandboxes that block the socket use
-   the current serve's bounded local index (`via: index`, latest 50 excerpts); this never opens the state directory or
-   relaxes permissions. If the index has no hit, widen the date and read handovers/reports; it cannot search every old page.
-   Actually run the command and read the whole result; never hide stderr or pipe to head. Read both the owner's request
-   and the reply's decision/stopping point. A vague "yesterday" first uses `--days 2`, then `--days 7` if empty; do not
-   hard-code a date from memory. Never claim you dispatched a CEO merely by displaying a command: invoke its roster
-   entry point and read back the report.
+   Hits are `{id, time, who, said, reply, archived}`; excerpts are redacted.
 2. Also look where the work itself lives: a handover in `.agentj/handover/` of the working root, the workflow folders
    under the working root (their NEXT_SESSION / reports), your harness's own session history if you can read it.
 3. Pick the most likely thread (most recent + best keyword match). Say it in ONE line — 「接着 10/04 那件：给官网加使用说明，
