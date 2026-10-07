@@ -1557,6 +1557,15 @@ def cmd_remote_unbind(a) -> None:
     print("提醒：配对用的二维码和链接只会由这台电脑上的 `agentj pair` 显示。账号后台、邮件或客服发给你的二维码，一律别扫。")
 
 
+def cmd_onboarding(a) -> None:
+    """F28 (P72): what the installing Agent checks after each step — seat, the two required remotes, the welcome."""
+    st = State()
+    if not st.exists():
+        sys.exit("先运行 `agentj init` / run `agentj init` first")
+    from . import onboarding
+    sys.exit(onboarding.command(a, st))
+
+
 def cmd_doctor(a) -> None:
     from . import doctor
     sys.exit(doctor.main(as_json=a.json, offline=a.offline, isolation_only=a.isolation_only))
@@ -1945,6 +1954,10 @@ def main(argv=None) -> None:
     al.add_argument("mode", nargs="?", choices=["status", "install", "remove"], default="status")
     al.add_argument("--json", action="store_true")
     al.set_defaults(fn=cmd_alias)
+    ob = sub.add_parser("onboarding", help="首次使用进度：席位、这台电脑的浏览器、主力手机、欢迎消息 / first-use progress: seat, "
+                                           "this computer's browser, main phone, welcome")
+    ob.add_argument("--json", action="store_true")
+    ob.set_defaults(fn=cmd_onboarding)
     a = p.parse_args(argv)
     if a.cmd not in NO_MIGRATE and not (a.cmd == "doctor" and a.isolation_only):
         from . import migrate
