@@ -293,8 +293,8 @@
     "lead": "Your computer no longer trusts this phone. To keep using it, run `agentj pair` on your computer and pair again.",
     "btn": "Pair again",
     "draft": "Your unsent draft, your input history and the key that encrypted them were deleted from this phone.",
-    "replacedTitle": "A newer device took this phone's place",
-    "replacedLead": "Your computer already had the most remotes it allows (5), so a newly paired device replaced this one. To keep using this phone, run `agentj pair` on the computer and pair again."
+    "replacedTitle": "The other app took over",
+    "replacedLead": "Continue in the Home Screen app or browser you just connected. This side has disconnected; you do not need Face ID recovery again."
   },
   "error": {
     "title": "Disconnected",
@@ -312,7 +312,8 @@
     "ios": "In Safari, tap the Share button at the bottom, then Add to Home Screen. Then open it from the Home Screen and pair there — lock-screen alerts also only work from the Home Screen app.",
     "android": "In Chrome, tap ⋮ at the top right, then Add to Home Screen or Install app.",
     "more": "Step-by-step guide",
-    "ok": "Got it"
+    "ok": "Got it",
+    "openInstalled": "If already added to your Home Screen, open its icon. Safari and the Home Screen app keep separate pairing records."
   },
   "r": {
     "orb": {
@@ -1301,5 +1302,17 @@
       "stopped": "Everything is stopped; this pickup card is void.",
       "gone": "This pickup card is no longer valid."
     }
-  }
+  },
+  "r.silent.menu": "View silent history",
+  "r.silent.title": "Silent history",
+  "r.silent.loading": "Loading…",
+  "r.silent.more": "Load earlier",
+  "r.silent.close": "Close",
+  "r.silent.noHistory": "History unavailable",
+  "r.silent.noLoaded": "No silent turns loaded",
+  "r.silent.empty": "No silent turns",
+  "r.silent.noSource": "Source not recorded",
+  "r.silent.noText": "(Original input not recorded)",
+  "r.silent.reply": "Reply: ",
+  "r.silent.help": "Silent turns are kept here. Tap a row to view its original input."
 }

@@ -330,6 +330,7 @@ async function revoked(why = 'revoked') {
   if (h && (h.approved || h.removed !== why)) await dbPut('host', { ...h, approved: false, removed: why }).catch(() => {});
   markPaired(false);
   const replaced = why === 'replaced';
+  $('repair').hidden = replaced; // F36: continue in the other app; do not offer a takeover loop.
   setStatus('revoked', replaced ? 'st.replaced' : 'st.revoked');
   $('revoked-title').dataset.i18n = replaced ? 'revoked.replacedTitle' : 'revoked.title';
   $('revoked-lead').dataset.i18n = replaced ? 'revoked.replacedLead' : 'revoked.lead';

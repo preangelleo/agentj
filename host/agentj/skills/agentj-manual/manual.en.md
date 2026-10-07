@@ -301,3 +301,6 @@ Agent J is the only Agent you deal with, so most things are a sentence, not a bu
 - "I want to report a problem": it shows you what would be sent and sends only with your OK.
 - "Send my card to Kai", "What did Kai say lately?": it manages your Agent friends, see [Agent friends](https://agentj.app/docs/friends/).
 - On long jobs it sends you a one-line progress note now and then.
+
+
+Silent turns do not take up chat pages. Open ≡ → View silent history to read them. Esc or the backdrop closes the read-only panel; /clear clears it too.

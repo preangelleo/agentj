@@ -64,10 +64,11 @@ async function layoutOk(p, label) {
       .map((e) => ({ e, r: e.getBoundingClientRect(), h: hit(e) })).filter(({ r, h }) => (r.height < 44 && h[1] < 42) || (r.width < 44 && h[0] < 42))
       .map(({ e, r }) => (e.id || e.className || e.tagName) + ' ' + Math.round(r.width) + 'x' + Math.round(r.height));
     const wide = [...document.querySelectorAll('body *')].filter(vis).filter((e) => { const r = e.getBoundingClientRect(); return r.right > innerWidth + 1 && getComputedStyle(e).position !== 'fixed'; })
-      .filter((e) => !e.closest('.tablewrap, .codeblock, pre, .hash, .tray, .deck, .rd')).slice(0, 5).map((e) => e.id || e.className || e.tagName);
-    return { sw: document.documentElement.scrollWidth, iw: innerWidth, small, wide };
+      .filter((e) => !e.closest('.tablewrap, .codeblock, pre, .hash, .tray, .deck, .rd, .water')).slice(0, 5).map((e) => e.id || e.className || e.tagName);
+    return { sw: document.documentElement.scrollWidth, iw: innerWidth, small, wide, waves:[...document.querySelectorAll(".water .wave")].filter(vis).map(e=>({width:e.getBoundingClientRect().width,parent:e.parentElement.getBoundingClientRect().width})) };
   })()`);
   check(r.sw <= r.iw && r.wide.length === 0, `${label}: no horizontal overflow (scrollWidth ${r.sw} <= ${r.iw}${r.wide.length ? '; sticks out: ' + r.wide.join(', ') : ''})`);
+  check(r.waves.every(w=>Math.abs(w.width-2*w.parent)<1), `${label}: decorative waves retain exactly two parent widths`);
   check(r.small.length === 0, `${label}: every visible tap target ≥ 44×44 px${r.small.length ? ' — ' + r.small.join(', ') : ''}`);
 }
 const noProblems = (p, label) => {

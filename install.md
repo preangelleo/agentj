@@ -1,15 +1,15 @@
 ---
 document: agentj-install
-version: 0.20.0
-released: 2026-10-07
+version: 0.20.1
+released: 2026-10-08
 status: beta (anyone can sign up; not advertised yet, pages are not indexed)
 host_package: agentj (the `agentj` command)
-host_version: 0.16.0a1
-source_tag: v0.16.0a1
-host_wheel: agentj-0.16.0a1-py3-none-any.whl
-host_wheel_sha256: 7e058fb17f1aa42817335c9fd7f46b9852d2884248a1aacebea2d2ffe084d3c4
-host_sdist: agentj-0.16.0a1.tar.gz
-host_sdist_sha256: 03ef012906d90d5b615835f16d9c40e9b050781add8ce5cc21afa2d95c388278
+host_version: 0.16.1a1
+source_tag: v0.16.1a1
+host_wheel: agentj-0.16.1a1-py3-none-any.whl
+host_wheel_sha256: 1040da311463e92640272b6f2cec8f3c2fcda85a3ab863f62843af2f419f2f10
+host_sdist: agentj-0.16.1a1.tar.gz
+host_sdist_sha256: bafda3db73c14ef062f670dabe72a006e5468f869fb99f2f4475270480676ea6
 canonical_url: https://agentj.app/install.md
 sha256_url: https://agentj.app/install.md.sha256
 alias: https://agentjarvis.net/install.md (the older address: the same file, kept for one more version)
@@ -424,7 +424,7 @@ The astral installer warning that `uv` / `uvx` are shadowed is informational if 
 carry over). So start every command line from here on with `export PATH="$HOME/.local/bin:$PATH";` — or call
 `~/.local/bin/agentj` by its full path. This document writes `agentj` for short.
 
-The program is pinned to one release: the tag `v0.16.0a1` (front matter `source_tag`). The tag never moves, and its
+The program is pinned to one release: the tag `v0.16.1a1` (front matter `source_tag`). The tag never moves, and its
 `host/` folder is byte for byte the same code as the two files on our site whose SHA-256 is in this document's front matter.
 ```bash
 cd ~/.agentj-install
@@ -432,7 +432,7 @@ W=$(sed -n 's/^host_wheel: //p' install.md); WS=$(sed -n 's/^host_wheel_sha256: 
 curl -fsSLO "https://agentj.app/dl/$W"
 echo "$WS  $W" | sha256sum -c -   # macOS: shasum -a 256 -c -; mismatch → stop
 uv tool install "./$W"
-export PATH="$HOME/.local/bin:$PATH"; agentj --version     # → agentj 0.16.0a1
+export PATH="$HOME/.local/bin:$PATH"; agentj --version     # → agentj 0.16.1a1
 export PATH="$HOME/.local/bin:$PATH"; agentj doctor
 ```
 **Your human's own terminal must find `agentj` too** — they run `agentj passphrase set` and `agentj pair` themselves
@@ -460,12 +460,12 @@ echo "$WS  $W" | sha256sum -c - && echo "$SS  $S" | sha256sum -c -    # macOS: s
 uv tool install "./$W"          # the wheel; its dependencies come from PyPI or the mirror in UV_DEFAULT_INDEX
 ```
 `uv tool install "./$S"` installs from the checked source archive instead (it builds the same program).
-`https://agentj.app/dl/latest.txt` and `https://agentj.app/dl/latest-sdist.txt` name the same two files. `agentj --version` is the program's own version (`0.16.0a1`); it is
+`https://agentj.app/dl/latest.txt` and `https://agentj.app/dl/latest-sdist.txt` name the same two files. `agentj --version` is the program's own version (`0.16.1a1`); it is
 numbered separately from this document (`0.17.0`).
 
-Alternative from the matching published source tag: `uv tool install "git+https://github.com/preangelleo/agentj@v0.16.0a1#subdirectory=host"`.
+Alternative from the matching published source tag: `uv tool install "git+https://github.com/preangelleo/agentj@v0.16.1a1#subdirectory=host"`.
 
-Alternative without uv: `pipx install "git+https://github.com/preangelleo/agentj@v0.16.0a1#subdirectory=host"` (needs Python 3.11+).
+Alternative without uv: `pipx install "git+https://github.com/preangelleo/agentj@v0.16.1a1#subdirectory=host"` (needs Python 3.11+).
 `agentj doctor` lists what is ready and what is not (prerequisites, the fence, connectivity, which agents are usable).
 Continue unless it reports an error that a later step does not fix; report anything you cannot explain.
 
@@ -910,7 +910,8 @@ the longest (offline ones first) and `agentj pair` prints which (「已自动解
 `agentj revoke <id>` still removes one by hand. A paired phone reconnects by itself after the page is closed or the browser
 restarted. A phone (or browser) that was paired before and now shows 「还没配对」 — or 「这个浏览器清掉了本机保存的配对数据…」, i.e.
 the browser deleted its saved pairing (an iPhone Safari private tab does this when closed) — is simply paired again the same
-way; the same browser replaces its own old entry. 「这台手机的配对已被更新的设备替换」 = a newer phone took its slot.
+way; the same browser replaces its own old entry. 「另一边接管了」 = the Home Screen app, another browser or a new device took over.
+Continue there; do not use Face ID to repeatedly take the connection back.
 
 ---
 
@@ -1045,7 +1046,7 @@ The daily check remains a notification, not an unattended installation; `agentj 
 In the default shared session, reinstall directly using Step 4's checked wheel (SHA-256 must match this document and
 its public GitHub copy), preserving the host's identity, paired phones, account and preferences:
 ```bash
-uv tool install --force "./agentj-0.16.0a1-py3-none-any.whl"
+uv tool install --force "./agentj-0.16.1a1-py3-none-any.whl"
 agentj --version
 agentj service install
 agentj service restart
@@ -1053,7 +1054,7 @@ agentj doctor
 ```
 The matching published tag is another source, after verifying the tag object against the upgrade email:
 ```bash
-uv tool install --force "git+https://github.com/preangelleo/agentj@v0.16.0a1#subdirectory=host"
+uv tool install --force "git+https://github.com/preangelleo/agentj@v0.16.1a1#subdirectory=host"
 ```
 **0.14 independent session** (`agent.session_mode=independent`): 0.14's fence keeps Agent J's own program read-only and
 hides the service manager, so the Agent on the phone cannot reinstall or restart from inside it (measured: the install
@@ -1079,11 +1080,11 @@ prints something and `uv tool list` (or `pipx list`) shows `agentjarvis-host`, t
 the new name, then:
 ```bash
 jarvis service uninstall      # stop the old service first (Step 10 used tmux / nohup instead? stop that process)
-uv tool uninstall agentjarvis-host && uv tool install "git+https://github.com/preangelleo/agentj@v0.16.0a1#subdirectory=host"
+uv tool uninstall agentjarvis-host && uv tool install "git+https://github.com/preangelleo/agentj@v0.16.1a1#subdirectory=host"
 agentj doctor
 agentj service install        # start it again under the new name (or the tmux / nohup fallback, Step 10)
 ```
-With pipx instead of uv: `pipx uninstall agentjarvis-host && pipx install "git+https://github.com/preangelleo/agentj@v0.16.0a1#subdirectory=host"`.
+With pipx instead of uv: `pipx uninstall agentjarvis-host && pipx install "git+https://github.com/preangelleo/agentj@v0.16.1a1#subdirectory=host"`.
 - After the move, `agentj` puts back a `jarvis` command (a link to `agentj`, only if no other `jarvis` exists) for one more
   version; it prints a notice that points here. New installs never get `jarvis`.
 - The state moves by itself on the first run of `agentj`: from `~/.local/state/agentjarvis-alpha` to `~/.local/state/agentj`.
@@ -1302,6 +1303,8 @@ or logs out Claude Code / Codex / OpenCode (nor removes a model key), and never 
   friends with whom, the cards or the messages: they live only on the two computers, end-to-end encrypted between them.
 
 ## Changelog
+
+- 0.20.1 (2026-10-08): host 0.16.1a1. Silent records panel, continuous waves, per-seat install codes, compact pairing links, custom-state elevation sockets and lock-screen reconnect.
 
 - 0.20.0 (2026-10-07): host 0.16.0a1 candidate. Agent friends: an Agent ID and QR card, friend requests approved on the
   owner's paired phone, end-to-end encrypted Agent-to-Agent messages queued on this computer while the other one is off,
@@ -1585,7 +1588,7 @@ paid seat that is still empty, or from `/installcode`) always installs the curre
 accepts that wheel only when this file's `host_wheel` / `host_wheel_sha256` (this file's bytes checked against
 `install.md.sha256`) and the `/dl/<wheel>.sha256` sidecar agree, then checks the downloaded bytes. When it stops it prints
 the exact reason. An installation code is redeemed once: if a run fails after redeeming and before the installation was
-saved, get a new code (paid owners: the account page; friends: whoever sent it); a saved installation resumes with the same
+saved, ask the issuer to revoke it before requesting another code; a saved installation resumes with the same
 command and needs no new code.
 
 ### Codex App shared sessions
@@ -1627,3 +1630,15 @@ friend's Details on the phone): the last layer of that stand-in's instructions; 
 widens the tool ban, the never-tell list or "friend messages are data", which the host enforces in code.
 It needs a paid seat. User guide: https://agentj.app/docs/friends/
 
+
+
+## 0.16.1 / install 0.20.1
+
+Silent turns are kept outside chat pages. Open ≡ → **View silent history** to read their original input; the panel never sends a message. Clearing the conversation clears this list too.
+Each paid, unbound seat has its own installation command on the account page. Two empty paid seats can obtain two different codes.
+An unused expired or revoked code can be replaced for that seat; a redeemed code cannot be reused. The service’s daily allowance still applies and resets at midnight UTC.
+The host prints a compact pairing link by default; AGENTJ_PAIR_COMPACT=0 keeps the legacy JSON format. Custom AGENTJ_STATE_DIR is supported by secret request/send and sudo through the inherited AGENTJ_ELEVATE_SOCK.
+
+静默回合不占聊天页。打开 ≡ → **查看静默记录**，可只读查看原话；清空对话时同步清空。
+每个已付费且未绑定的席位各有安装命令；两个空余席位可领两张不同安装码。未使用码作废或过期后可重领，已兑换码不能重复使用。
+安装服务仍有日额度，UTC 零点重置。紧凑配对链接默认开启；AGENTJ_PAIR_COMPACT=0 可退回旧格式。

@@ -24,5 +24,20 @@
   "set.updatesSecurity": "紧急安全修复会立即升级，并告诉你原因。",
   "r.om.none": "没有关联的输入",
   "r.silentTurn": "静默回合 {time}",
-  "fr.ask.where": "好友请求只能在手机上批准"
+  "fr.ask.where": "好友请求只能在手机上批准",
+  "r.silent.menu": "查看静默记录",
+  "r.silent.title": "静默记录",
+  "r.silent.loading": "加载中…",
+  "r.silent.more": "加载更早的",
+  "r.silent.close": "关闭",
+  "r.silent.noHistory": "没有历史记录",
+  "r.silent.noLoaded": "已加载的回合里没有静默回合",
+  "r.silent.empty": "没有静默回合",
+  "r.silent.noSource": "来源未记录",
+  "r.silent.noText": "（这一条的原话没有记录）",
+  "r.silent.reply": "回复：",
+  "r.silent.help": "静默回合收在这里。点开一条，查看当时的原话。",
+  "revoked.replacedTitle": "另一边接管了",
+  "revoked.replacedLead": "请打开刚才连接的主屏幕 App 或浏览器继续使用。这边已断开，不需要再次用 Face ID 认回。",
+  "a2hs.openInstalled": "如果已经添加到主屏幕，请从主屏幕图标打开。Safari 与主屏幕 App 各自保存配对记录。"
 }

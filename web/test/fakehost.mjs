@@ -157,6 +157,7 @@ export async function startFakeHost() {
     log.push(m);
     if (m.t === 'hello' && c.mode === 'pair') { c.awaiting = true; c.helloCaps = m.caps; lastSas = c.sas; return; }
     if (m.t === 'hello' && c.mode === 'resume') {
+      if(c.removed){await sendApp(c,{t:'removed',why:'revoked'});return c.close(4010);}
       c.p33 = st.p33 && Array.isArray(m.caps) && m.caps.includes('p33');
       c.hello = m;
       await sendApp(c, st.p33 ? { t: 'ready', caps: ['p33', ...(st.heartbeat ? ['heartbeat'] : [])], asr: st.asr, hist: 'on' } : { t: 'ready' });
@@ -393,8 +394,9 @@ export async function startFakeHost() {
     } else if (kind === KIND.RESUME_INIT) {
       c.hs = await new Handshake({ protocol: IK, initiator: false, prologue: Uint8Array.from(resumePrologue(channel)), s: hostKp }).init();
       const info = JSON.parse(dec.decode(await c.hs.readMessage(b.subarray(1))));
-      if (!allow.has(b64u(c.hs.rs))) return c.close(4010);   // unknown device: silently closed
-      const a = allow.get(b64u(c.hs.rs)); if (!a.sk && info.sk) a.sk = info.sk;
+      if (st.refuseResumes > 0) { st.refuseResumes--; return c.close(4010); }
+      c.removed = !allow.has(b64u(c.hs.rs));   // modern host explicitly authenticates removal
+      const a = allow.get(b64u(c.hs.rs)); if (a && !a.sk && info.sk) a.sk = info.sk;
       c.mode = 'resume';
     } else if (kind === KIND.DATA && c.recv) {
       const m = unpad(await c.recv.decrypt(EMPTY, b.subarray(1)));
@@ -475,8 +477,9 @@ export async function startFakeHost() {
     },
     prefsMsg,
     answer(t, fn) { fixtures[t] = fn; },
-    revokeAll() { allow.clear(); for (const c of conns) c.close(4010); },
+    async revokeAll() { allow.clear(); for (const c of conns) { if(c.isReady)await sendApp(c,{t:'removed',why:'revoked'}); c.close(4010); } },
     /** drop every device socket like a network failure (not a revoke) */
+    refuseNextResumes(n) { st.refuseResumes = n; },
     kick(code = 1001) { for (const c of conns) c.close(code); },
     /** back to an empty host between test blocks (pairings and allowlist stay) */
     reset() {

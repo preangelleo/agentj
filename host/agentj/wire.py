@@ -91,7 +91,7 @@ PAIR_V2 = 2
 def pairing_link_v1(web_base: str, relay: str, channel: str, host_pub: bytes, pairing_id: bytes, psk: bytes,
                     expires: int) -> str:
     """The ≤ 0.15 JSON link (QR version 13-M, 69 modules). Every phone web parses it; 0.16.0a1 hosts still print it by default
-    (the live ≤ 0.15.8 phone web cannot parse the compact link; AGENTJ_PAIR_COMPACT=1 opts in — P73)."""
+    (the live 0.16 phone parses both; AGENTJ_PAIR_COMPACT=0 selects legacy JSON — P75)."""
     p = {"v": 1, "r": relay, "c": channel, "k": b64u(host_pub), "i": b64u(pairing_id), "p": b64u(psk), "x": expires}
     return web_base.rstrip("/") + "/#p=" + b64u(json.dumps(p, separators=(",", ":")).encode())
 

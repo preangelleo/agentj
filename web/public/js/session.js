@@ -48,11 +48,10 @@ let reconnectTimer = null;
 let backoff = 1000;
 let heartbeatTimer = null, heartbeatRun = 0;
 const HEARTBEAT_MS = 20000, HEARTBEAT_TIMEOUT_MS = 10000;
-// 0.15.1 (P55): a close we cannot explain is not a removal. A host from 0.15.1 on says why it refuses a device (`removed`,
-// PROTOCOL §3) before closing; an older host only closes (4010). One unexplained refusal = reconnect; a second one in a
-// row (no `ready` between) = removed. Before, every 4010 — a pairing refused, a handshake that timed out while iOS had the
-// page asleep — showed "removed by your computer" and wiped the drafts.
-let refusals = 0;
+// P75/F36: transport closes are never proof that a pairing was removed. iOS can freeze
+// a handshake past the host timeout. Only an authenticated `removed` can revoke it;
+// confirm a revoked record once with the same device key before clearing local data.
+let refusals = 0, removalProbe = false;
 export const peer = { heartbeat: false, p33: false, asr: 'off', hist: 'off' };
 export function configure(hooks) { H = hooks; }
 export const current = () => sess;
@@ -77,8 +76,8 @@ export function openSession(mode, ctx) {
   const ws = new WebSocket(ctx.relay + '/v1/dev/' + ctx.channel);
   ws.binaryType = 'arraybuffer';
   const s = { ws, mode, ctx, phase: 'wait-host', hs: null, gen: null, recv: null, chain: Promise.resolve(),
-    closedByUs: false, frag: new Defrag(), pacer: new Pacer(), removed: null };
-  if (mode === 'pair') refusals = 0;
+    closedByUs: false, frag: new Defrag(), pacer: new Pacer(), removed: null, foreground: globalThis.document?.visibilityState !== 'hidden' };
+  if (mode === 'pair') { refusals = 0; removalProbe = false; }
   sess = s;
   H.setStatus('connecting', 'st.connecting');
   ws.onopen = () => { if (sess === s && s.phase === 'wait-host') H.setStatus('waiting-host', 'st.waitingHost'); };
@@ -189,7 +188,7 @@ async function onApp(s, m) {
 function enterReady(s) {
   s.phase = 'ready';
   backoff = 1000;
-  refusals = 0;
+  refusals = 0; removalProbe = false;
   H.onReady();
   armHeartbeat();
   if (document.visibilityState !== 'visible') sendApp({ t: 'vis', fg: false }).catch(() => {});
@@ -239,12 +238,17 @@ function onClose(s, ev) {
   sess = null; endGen(s);
   if (s.mode === 'restore') return H.onRestoreFailed?.(s.pkFail || 'bad');   // F20: never "removed", never a retry loop
   if (s.mode === 'pair') return H.onPairFailed();     // a pairing that ended (refused, timed out, …) never means "removed"
-  if (s.removed) { refusals = 0; return H.onRevoked(s.removed); }
-  // A close from the computer (4010), or a RESUME answered by a close rather than a network drop: probably no longer on the
-  // allowlist — but an older host also closes this way for a handshake that timed out. Ask again once before saying so.
-  if (ev.code === 4010 || ((s.phase === 'hs' || s.phase === 'ready-wait') && ev.code !== 1006)) {
-    if (++refusals >= 2) { refusals = 0; return H.onRevoked('revoked'); }
+  if (s.removed) {
+    refusals = 0;
+    // A replaced browser must yield to the other one rather than taking it back.
+    if (s.removed === 'replaced' || removalProbe) {
+      removalProbe = false;
+      return H.onRevoked(s.removed);
+    }
+    removalProbe = true; // one silent confirmation using the existing record/key
   }
+  if (s.foreground && globalThis.document?.visibilityState !== 'hidden' &&
+      (ev.code === 4010 || ((s.phase === 'hs' || s.phase === 'ready-wait') && ev.code !== 1006))) ++refusals;
   H.onHostDown();
   scheduleReconnect();
 }
@@ -341,5 +345,6 @@ export const pendingCount = () => pending.size;
 // iOS freezes background timers; a foreground probe starts a fresh deadline instead of expiring an old one.
 globalThis.document?.addEventListener?.('visibilitychange', () => {
   clearTimeout(heartbeatTimer); heartbeatTimer = null; heartbeatRun++;
-  if (document.visibilityState === 'visible' && isReady()) checkConnection();
+  if (document.visibilityState === 'hidden' && sess) sess.foreground = false;
+  if (document.visibilityState === 'visible') { refusals = 0; reconnectNow(); }
 });

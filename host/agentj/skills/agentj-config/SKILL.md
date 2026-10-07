@@ -208,3 +208,5 @@ The refusal now names the holder (P73, ADR-A178): an Agent J leftover `codex app
 - Never append `sandbox_mode = …` with `echo >>` / an editor at the end of the file: it lands in the last table and does nothing. `agentj doctor` row `codex_perm` and `/status` show 「写了但没生效」 when that happened.
 - Shared mode (the owner's Codex App thread): the thread's own permissions from its last turn decide. If it only ever had Codex's built-in default (workspace-write, on-request), config.toml applies, else Agent J's default. A restriction the owner chose in the App stays; a refusal there means the owner opens the Codex App and sets **this conversation** to 完全访问 / Full access, then resends — not a config.toml change.
 - Friends' peer sessions are unaffected: always fenced, tool-less, read-only.
+
+With a custom AGENTJ_STATE_DIR, serve exports AGENTJ_ELEVATE_SOCK for secret request/send/result and sudo inside the fence. Keep this inherited path; do not redirect it or expose the full state directory.

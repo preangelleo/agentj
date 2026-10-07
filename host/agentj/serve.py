@@ -1090,9 +1090,8 @@ class Host:
         p = Pairing(secrets.token_bytes(16), secrets.token_bytes(32), time.time() + PAIR_TTL, time.monotonic() + PAIR_TTL, w)
         self.pairing = p
         p.timer = asyncio.create_task(self._expire_pairing(p))
-        # P73: phones from 0.16.0a1 parse both link formats, but the live ≤ 0.15.8 phone web only the JSON one and batch A
-        # (host) ships before batch B (web). The compact F29 link (QR 8-M instead of 13-M) is opt-in until the next host.
-        make = wire.pairing_link if os.environ.get("AGENTJ_PAIR_COMPACT") == "1" else wire.pairing_link_v1
+        # P75: the live 0.16 phone accepts both formats. Smaller QR by default; explicit 0 keeps JSON.
+        make = wire.pairing_link if os.environ.get("AGENTJ_PAIR_COMPACT") != "0" else wire.pairing_link_v1
         link = make(self.cfg["web"], self.cfg["relay"], self.channel, self.kp.pub, p.pid, p.psk, int(p.expires))
         self.st.log("pair_begin")
         await self._ctl_send(w, {"ev": "link", "link": link, "expires": int(p.expires)})

@@ -154,8 +154,8 @@ test('app.js + js/*.js: only WebSocket egress, non-extractable keys, no plaintex
   // 0.15.1 (P55): + the install id (IID_KEY = "aj.iid", 16 random bytes, b64url) and the paired marker (PAIRED_KEY =
   // "aj.paired", a unix time) — no key, no channel, nothing about the computer.
   assert.deepEqual(ls.sort(), ['getItem("aj.chrome")', 'getItem(A2HS_KEY)', 'getItem(RD_KEY)', 'getItem(FONT_KEY)', 'setItem("aj.chrome")', 'setItem(A2HS_KEY)', 'setItem(RD_KEY)', 'setItem(FONT_KEY)',
-    'getItem(IID_KEY)', 'setItem(IID_KEY)', 'getItem(PAIRED_KEY)', 'setItem(PAIRED_KEY)', 'removeItem(PAIRED_KEY)'].sort());
-  assert.equal(OURS_FILES.reduce((n, r) => n + (code(read(pub(r))).match(/localStorage/g) || []).length, 0), 13, 'localStorage appears only in those thirteen calls');
+    'getItem(IID_KEY)', 'setItem(IID_KEY)', 'getItem(PAIRED_KEY)', 'setItem(PAIRED_KEY)', 'removeItem(PAIRED_KEY)', "getItem('aj.homeInstalled')", "setItem('aj.homeInstalled')"].sort());
+  assert.equal(OURS_FILES.reduce((n, r) => n + (code(read(pub(r))).match(/localStorage/g) || []).length, 0), 15, 'localStorage appears only in these calls (homeInstalled is a boolean, never pairing data)');
   assert.match(OURS, /const IID_KEY = 'aj\.iid';/);
   assert.match(OURS, /const PAIRED_KEY = 'aj\.paired';/);
   assert.match(OURS, /const FONT_KEY = 'aj\.fontScale';/);

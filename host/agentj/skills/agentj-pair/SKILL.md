@@ -15,3 +15,5 @@ description: Guide the owner through pairing an Agent J remote (phone or browser
 8. Moving a seat to a different computer needs fresh pairing. History stays on the old computer.
 
 账号管付钱，席位管功能。一个邮箱一个账号；一个账号可以买多个席位。手机或浏览器叫「遥控器」，Agent 是绑定席位的电脑或服务器。
+
+0.16.1 defaults to the compact numeric pairing link (smaller QR); AGENTJ_PAIR_COMPACT=0 selects legacy JSON. Both are secrets and only the owner may use them.

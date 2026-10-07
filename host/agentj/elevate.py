@@ -72,6 +72,7 @@ MAX_OUT = 256 * 1024            # bytes of stdout / stderr returned to the Agent
 MAX_FRAME = 512 * 1024          # one request line from the CLI (a `secret send` file ≤ 256 KiB travels base64 in it)
 CMD_TIMEOUT, CMD_TIMEOUT_MAX = 600, 3600
 SOCK_NAME = "elevate.sock"
+ENV = "AGENTJ_ELEVATE_SOCK"
 PHONE_TYPES = ("elev_answer", "secret_out_open", "secret_out_decline")   # the last two: F32 (secret_out.py)
 RESULTS_NAME = "secret-results.json"
 RESULTS_KEEP = 100
@@ -571,8 +572,11 @@ class Elevator:
         finally:
             os.umask(old)
         os.chmod(self.sock_path, 0o600)
+        os.environ[ENV] = str(self.sock_path)
 
     async def stop(self) -> None:
+        if os.environ.get(ENV) == str(self.sock_path):
+            os.environ.pop(ENV, None)
         self.cancel_all("gone")
         self.out.end_all("gone")
         if self.server:
@@ -932,7 +936,7 @@ class Elevator:
 def client_request(st, req: dict, timeout: float = CMD_TIMEOUT_MAX + 400, on_card=None) -> dict:
     """One request on elevate.sock → the final JSON line. With `on_card` the request asks for the card id first (`early`):
     `on_card({"t":"card","id",…})` is called as soon as the host shows the card."""
-    path = st.perm_dir / SOCK_NAME
+    path = pathlib.Path(os.environ.get(ENV) or st.perm_dir / SOCK_NAME)
     if on_card is not None:
         req = {**req, "early": True}
     with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as s:

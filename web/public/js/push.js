@@ -95,18 +95,22 @@ export async function disablePush() {
 // The one thing this page keeps in local storage besides the language / theme (brand/lang.js) and the two display
 // preferences (reader size aj.readerFs, launch colour aj.chrome): that the hint was dismissed.
 const A2HS_KEY = 'aj.a2hs';
-let a2hsDismissed = false;
+let a2hsDismissed = false, installedHome = false, hintView = 'pair';
+try { installedHome = localStorage.getItem('aj.homeInstalled') === '1'; if (standalone()) localStorage.setItem('aj.homeInstalled', '1'); } catch {}
+// Safari may isolate app storage; related-app detection is optional, never a pairing gate.
+globalThis.navigator?.getInstalledRelatedApps?.().then(apps => { if (apps.length) { installedHome = true; renderA2hs(hintView); } }).catch(() => {});
 try { a2hsDismissed = localStorage.getItem(A2HS_KEY) === '1'; } catch { /* blocked storage: show it again next time */ }
 export function renderA2hs(view) {
+  hintView = view;
   const box = el('a2hs');
   if (!box) return;
   const kind = isIOS() ? 'ios' : isAndroid() ? 'android' : null;
-  box.hidden = a2hsDismissed || standalone() || !kind || !['pair', 'chat'].includes(view);
+  box.hidden = (a2hsDismissed && !(isIOS() && installedHome)) || standalone() || !kind || !['pair', 'chat'].includes(view);
   // pairing: the first thing on the page; chat: a card at the top of the reading area (the header stays free)
   const home = view === 'chat' ? el('stage') : el('pages');
   if (!box.hidden && box.parentElement !== home) home.prepend(box);
   box.classList.toggle('hint--stage', view === 'chat');
-  if (!box.hidden) fillText(el('a2hs-text'), t('a2hs.' + kind));
+  if (!box.hidden) fillText(el('a2hs-text'), t(kind === 'ios' && (installedHome || a2hsDismissed) ? 'a2hs.openInstalled' : 'a2hs.' + kind));
   el('pair-iphone').hidden = !(isIOS() && !standalone());
   fillText(el('pair-step1'), t(isIOS() ? 'pair.step1ios' : 'pair.step1'));   // iPhone Safari cannot scan inside the page:
   fillText(el('pair-step2'), t(isIOS() ? 'pair.step2ios' : 'pair.step2'));   // pair with the link, from the Home Screen app

@@ -619,11 +619,11 @@ function toNewest(){ follow = true; showPage(); }
 const SRC_KINDS = ["leo", "dev", "host", "agent", "sys", "task", "cmd"];
 function pages(){
   if (pagesCache) return pagesCache;
-  const out = hist.turns.slice();
-  if (!out.length || out.every(x => isSilent(x.reply))) out.push({id: null, reply: "", source: null, ts: null});
+  const out = hist.turns.filter(t => !isSilent(t.reply));
+  if (!out.length) out.push({id: null, reply: "", source: null, ts: null});
   return (pagesCache = out);
 }
-function totalPages(){ return Math.max(pages().length, hist.count); }
+function totalPages(){ return pages().length + Math.max(0, hist.count - hist.turns.length); }
 function noteHistory(s){
   const h = s.history;
   if (h && typeof h.last_id === "number"){
@@ -635,7 +635,7 @@ function noteHistory(s){
   showPage();
 }
 function resetHistory(ep){
-  hist.epoch = ep; hist.turns = []; hist.lastId = 0; hist.firstId = 0; hist.want = 0;
+  hist.count = 0; hist.epoch = ep; hist.turns = []; hist.lastId = 0; hist.firstId = 0; hist.want = 0;
   pagesCache = null; follow = true; pageAt = -1; tailSeen.id = 0;
 }
 /** A turn pushed by the host (hist_turn): new, a reply part appended, or its end. */
@@ -682,25 +682,39 @@ async function syncHistory(want){
   }catch(_){}
   hist.busy = false;
   showPage();
+  while (olderLeft()){ const b = await loadOlderBatch(); if (!b || !b.all) break; }
+  showPage();
 }
-async function loadOlder(){
-  if (hist.older || !hist.turns.length || hist.turns[0].id <= hist.firstId) return false;
+function olderLeft(){ return hist.turns.length > 0 && hist.turns[0].id > hist.firstId; }
+// One batch just older than the oldest loaded turn → {all, shown} (shown = how many
+// of them are pages), or null when there is nothing more / it failed.
+async function loadOlderBatch(){
+  if (hist.older || !olderLeft()) return null;
   hist.older = true;
   try{
     const j = await C.api.history({before: hist.turns[0].id, limit: 50});
+    // Older pages of a session that has since been cleared are not this session's.
     if (j && j.turns.length && (typeof j.epoch === "number" ? j.epoch : 0) === hist.epoch){
-      const older = j.turns.filter(x => x && typeof x.id === "number" && x.id < hist.turns[0].id);
+      const older = j.turns.filter(t => t && typeof t.id === "number" && t.id < hist.turns[0].id);
       hist.turns = older.concat(hist.turns); hist.firstId = j.first_id || hist.firstId;
       if (!older.length) hist.firstId = hist.turns[0].id;
       pagesCache = null;
-      if (!follow) pageAt += older.length;
+      const shown = older.filter(t => !isSilent(t.reply)).length;
+      if (!follow) pageAt += shown;
       hist.older = false;
-      return older.length > 0;
+      return {all: older.length, shown};
     }
-    if (j) hist.firstId = hist.turns[0].id;      // nothing older: this is the first one
   }catch(_){}
   hist.older = false;
-  return false;
+  return null;
+}
+// Paging back: a batch of nothing but silent turns adds no page, so keep going.
+async function loadOlder(){
+  for (;;){
+    const b = await loadOlderBatch();
+    if (!b || !b.all) return false;
+    if (b.shown) return true;
+  }
 }
 function hhmm(ts){
   if (typeof ts !== "number") return "";
@@ -725,9 +739,8 @@ function showPage(){
   if (newTurnArrived(ps)) follow = true;
   if (follow || pageAt < 0 || pageAt > ps.length - 1) {
     pageAt = ps.length - 1;
-    while (pageAt > 0 && isSilent(ps[pageAt].reply)) pageAt--;
   }
-  follow = pageAt === ps.length - 1 && !isSilent(ps[pageAt].reply);
+  follow = pageAt === ps.length - 1;
   const p = ps[pageAt];
   const key = (p.id === null ? "live" : p.id) + "|" + pageAt;
   const om = el("om"), src = p.source;
@@ -779,19 +792,11 @@ function showPage(){
     if (moved) stick = true;
   }
   renderWords(p.reply || (p.end === "open" || p.id === null ? "" : t('r.noReply')), p.end === "open" && p.id !== null);
-  if (isSilent(p.reply)) {
-    om.hidden = true;
-    renderWords("");
-    const row = document.createElement("details"), label = document.createElement("summary"), body = document.createElement("pre");
-    row.style.color = "#888";
-    label.textContent = t('r.silentTurn', {time: hhmm(p.ts)});
-    body.textContent = (src?.text || "") + "\n" + p.reply;
-    row.append(label, body); el("words").replaceChildren(row);
-  }
   renderMedia(el("words"), p);
   if (rdAt && rdAt.key === shownKey) renderReaderMedia(el("rdWords"), p);   // P59: the reader's slots, same Blobs
   document.body.dataset.pageOpen = p.end === "open" ? "1" : "0";
   paintActs();
+  if (!el("silent").hidden) renderSilent();
 }
 // A command result page (§8 cmd card → turn.card): the model buttons and 「撤销清空」 sit under the words.
 function paintCmdx(p){
@@ -844,7 +849,7 @@ async function goPage(delta){
     ps = pages(); at = pageAt - 1;
   }
   if (at < 0 || at > ps.length - 1) return false;
-  pageAt = at; follow = at === ps.length - 1 && !isSilent(ps[at].reply);
+  pageAt = at; follow = at === ps.length - 1;
   showPage();
   return true;
 }
@@ -906,14 +911,13 @@ function paintReply(){
 function cancelReply(){ if (!replyTo) return; replyTo = null; paintReply(); paintActs(); }
 async function jumpToTurn(id){
   if (typeof id !== "number" || !(id > 0)) return;
-  let i = pages().findIndex(p => p.id === id);
-  while (i < 0 && hist.turns.length && hist.turns[0].id > id){
-    if (!(await loadOlder())) break;
-    i = pages().findIndex(p => p.id === id);
+  while (!hist.turns.some(p => p.id === id) && olderLeft() && hist.turns[0].id > id){
+    const b = await loadOlderBatch(); if (!b || !b.all) break;
   }
+  if (hist.turns.some(p => p.id === id && isSilent(p.reply))){ openSilent(id); return; }
+  const i = pages().findIndex(p => p.id === id);
   if (i < 0){ toast(t('r.quote.gone'), 2200); return; }
-  pageAt = i; follow = i === pages().length - 1;
-  showPage();
+  pageAt = i; follow = i === pages().length - 1; showPage();
 }
 
 // ---- select to quote (relay ADR-046; §10.6 excerpt) ---------------------------------------
@@ -1846,6 +1850,7 @@ function renderMenu(){
   if (CLIP_READ){ const c = item("📋", t('r.menu.clip'), {}); c.className = "clipentry"; c.id = "clipEntry"; }
   const modelsEntry = item('◉', t('models.title'), {}); modelsEntry.id = 'modelsEntry';
   if (IN_APP){ const a = item("⚙", t('r.menu.app'), {}); a.id = "appEntry"; }
+  const sl = item("🔕", t("r.silent.menu"), {}); sl.id = "silentEntry";
   menu.replaceChildren(...nodes);
 }
 async function loadMenu(){
@@ -2142,7 +2147,71 @@ function noteEmpty(){
   else if (emptySince === null || emptySince === undefined) emptySince = performance.now();
 }
 const typingIn = tg => !!tg && (tg.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(tg.tagName));
-const dialogOpen = () => !el("cam").hidden || !el("keys").hidden || !el("confirm").hidden || !el("badge-panel").hidden || !el("settings").hidden;
+var silentKey = "", silentBusy = false;
+function silentWhen(ts){
+  if (typeof ts !== "number") return "";
+  const d = new Date((ts + skew) * 1000), now = new Date();
+  const day = d.toDateString() === now.toDateString() ? "" : (d.getMonth() + 1) + "-" + d.getDate() + " ";
+  return day + hhmm(ts);
+}
+function renderSilent(focusId){
+  const list = hist.turns.filter(t => isSilent(t.reply)).reverse();
+  const more = el("silentMore");
+  more.hidden = !olderLeft();
+  more.disabled = silentBusy;
+  more.textContent = silentBusy ? t('r.silent.loading') : t('r.silent.more');
+  const key = hist.epoch + ":" + list.map(t => t.id).join(",") + ":" + hist.route + ":" + olderLeft();
+  if (key === silentKey && focusId === undefined) return;
+  silentKey = key;
+  const box = el("silentList");
+  const open = new Set([...box.querySelectorAll("details[open]")].map(d => +d.dataset.id));
+  if (typeof focusId === "number") open.add(focusId);
+  if (!list.length){
+    const p = document.createElement("div"); p.className = "empty";
+    p.textContent = hist.route === false ? t('r.silent.noHistory') : olderLeft() ? t('r.silent.noLoaded') : t('r.silent.empty');
+    box.replaceChildren(p);
+    return;
+  }
+  box.replaceChildren(...list.map(turn => {
+    const src = turn.source && typeof turn.source === "object" ? turn.source : null;
+    const text = src && typeof src.text === "string" ? src.text.trim() : "";
+    const d = document.createElement("details"); d.dataset.id = String(turn.id); d.open = open.has(turn.id);
+    const sm = document.createElement("summary");
+    const tm = document.createElement("span"); tm.className = "t"; tm.textContent = silentWhen(turn.ts) || "—";
+    const sc = document.createElement("span"); sc.className = "s"; sc.textContent = src ? sourceOf(src).label : t('r.silent.noSource');
+    const ln = document.createElement("span"); ln.className = "l"; ln.textContent = text.split("\n")[0] || t('r.silent.noText');
+    sm.append(tm, sc, ln);
+    const full = document.createElement("div"); full.className = "full"; full.textContent = text || t('r.silent.noText');
+    const rp = document.createElement("div"); rp.className = "rep"; rp.textContent = t('r.silent.reply') + turn.reply.trim();
+    d.append(sm, full, rp);
+    return d;
+  }));
+  if (typeof focusId === "number"){
+    const d = box.querySelector(`details[data-id="${focusId}"]`);
+    if (d) d.scrollIntoView({block: "nearest"});
+  }
+}
+function openSilent(id){
+  closeMenu(); closeSug();
+  el("silent").hidden = false;
+  if (typeof id !== "number") el("silentList").scrollTop = 0;
+  renderSilent(id);
+  el("silentClose").focus({preventScroll: true});
+}
+function closeSilent(){ el("silent").hidden = true; if (document.activeElement) document.activeElement.blur(); }
+async function moreSilent(){
+  if (silentBusy) return;
+  silentBusy = true; renderSilent();
+  const had = hist.turns.filter(t => isSilent(t.reply)).length;
+  for (;;){
+    const b = await loadOlderBatch();
+    if (!b || !b.all || hist.turns.filter(t => isSilent(t.reply)).length > had) break;
+  }
+  silentBusy = false;
+  showPage(); renderSilent();
+}
+
+const dialogOpen = () => !el("silent").hidden || !el("cam").hidden || !el("keys").hidden || !el("confirm").hidden || !el("badge-panel").hidden || !el("settings").hidden;
 function openKeys(){ closeMenu(); closeSug(); el("keys").hidden = false; el("keysClose").focus(); }
 function closeKeys(){ el("keys").hidden = true; if (document.activeElement) document.activeElement.blur(); }
 async function pasteClipImages(){
@@ -2559,6 +2628,7 @@ export function init(ctx){
     if (!b) return;
     e.stopPropagation();
     if (b.id === "modelsEntry"){ closeMenu(); C.models?.(); return; }
+    if (b.id === "silentEntry"){ openSilent(); return; }
     if (b.id === "keysEntry"){ openKeys(); return; }
     if (b.id === "appEntry"){ closeMenu(); location.href = / AgentJApp\//.test(navigator.userAgent) ? "agentj-app://status" : "jarvis-app://status"; return; }
     if (b.id === "clipEntry"){ closeMenu(); pasteClipImages(); return; }
@@ -2696,6 +2766,9 @@ export function init(ctx){
   input.addEventListener("keydown", e => {
     if (e.key === "Enter" && !e.shiftKey && !e.isComposing && e.keyCode !== 229){ e.preventDefault(); unlockWhoosh(); say(); }
   });
+  el("silentClose").addEventListener("click", closeSilent);
+  el("silentMore").addEventListener("click", moreSilent);
+  el("silent").addEventListener("click", e => { if (e.target === el("silent")) closeSilent(); });
   el("keysClose").addEventListener("click", closeKeys);
   el("keysBtn").addEventListener("click", openKeys);
   el("keys").addEventListener("click", e => { if (e.target === el("keys")) closeKeys(); });
@@ -2705,6 +2778,7 @@ export function init(ctx){
     if (document.body.dataset.view !== "chat") return;
     const tg = e.target;
     if (e.key === "Escape"){
+      if (!el("silent").hidden){ e.preventDefault(); closeSilent(); return; }
       if (rdOpen()){ e.preventDefault(); closeReader(); return; }
       if (!el("keys").hidden){ e.preventDefault(); closeKeys(); return; }
       if (!el("cam").hidden || !el("confirm").hidden || !el("badge-panel").hidden || !el("settings").hidden) return;
