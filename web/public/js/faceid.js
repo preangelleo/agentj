@@ -136,3 +136,19 @@ export function approve(challenge, credId) {
     return { id: b64u(buf(cred.rawId)), cd: b64u(buf(r.clientDataJSON)), ad: b64u(buf(r.authenticatorData)), sig: b64u(buf(r.signature)) };
   });
 }
+
+// ---------------------------------------------------------------- F32 (P73, ADR-A180, PROTOCOL §18): the secret pickup card
+// Face ID opens it with the same assertion as above, kind "secret_out", over this digest of what the card shows (pure, so
+// node tests can check it against host/agentj/secret_out.py).
+export const SECRET_OUT_CTX = 'agentjarvis-secret-out-v1';
+export const SECRET_OUT_KIND = 'secret_out';
+/** What the card shows before Face ID, in the host's order: name, purpose, text|file, file name, size (bytes). */
+export const secretOutFields = (c) => [c.name, c.purpose || '', c.kind, c.filename || '', String(c.size)];
+const hexOf = (u) => Array.from(u, (b) => b.toString(16).padStart(2, '0')).join('');
+/** hex SHA-256(ctx \n kind \n one hex sha256(field) line per field). */
+export async function secretOutDigest(fields) {
+  const te = new TextEncoder();
+  const lines = [SECRET_OUT_CTX, SECRET_OUT_KIND];
+  for (const f of fields) lines.push(hexOf(await sha256(te.encode(f))));
+  return hexOf(await sha256(te.encode(lines.join('\n'))));
+}

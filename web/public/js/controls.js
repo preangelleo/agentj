@@ -8,7 +8,7 @@ import { myDeviceId } from './api.js';
 import { t, lang, locale, plain } from './t.js';
 import { el, mk, toast, toastAction, confirmSheet } from './ui.js';
 
-let H = null;          // {show(view), estopChanged()}
+let H = null;          // {show(view), estopChanged(), friends()}
 export function configure(h) { H = h; }
 export let panel = 'chat';
 export const estop = { on: false, by: '' };
@@ -30,14 +30,20 @@ function command(obj) {                               // one signed write → th
     else setTimeout(() => { done(r); resolve({ ok: false, why: 'timeout' }); }, 20000);
   });
 }
+/** One signed write → ctl_res, never throws (the friends page, §17.7: fr_set pg_set pg_del fr_add fr_discoverable fr_card). */
+export async function signedWrite(action, target, extra) {
+  try { return await command(await signed(action, target, extra)); } catch (e) { return { ok: false, why: e.message }; }
+}
 const WHY_CODES = ['changed', 'unknown_item', 'bad_signature', 'no_key', 'stale', 'timeout', 'offline', 'not_found', 'exists', 'symlink',
   'invalid', 'unknown', 'io', 'shape', 'replay'];
 const why = (code) => (WHY_CODES.includes(code) ? t('why.' + code) : String(code ?? ''));
+export const whyText = why;
 
 export function openPanel(v) {
-  if (!['chat', 'mem', 'act', 'tasks'].includes(v)) return;
+  if (!['chat', 'mem', 'act', 'tasks', 'friends'].includes(v)) return;
   panel = v;
   H.show(v === 'chat' ? 'chat' : v);
+  if (v === 'friends') H.friends();                   // §17.7: the friends page re-reads on every open / reconnect
   if (v === 'mem') loadMemory();
   if (v === 'act') loadActivity(true);
   if (v === 'tasks') loadTasks();

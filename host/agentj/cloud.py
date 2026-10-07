@@ -42,6 +42,7 @@ CTX_DECLINE = "agentjarvis-host-decline-v1"   # L2 / G-A11: the human at the hos
 CTX_SEAT_BIND = "agentjarvis-host-seat-bind-v1"   # seat setup §4: bind this host to one seat with a setup code
 CTX_SEAT_LEAVE = "agentjarvis-host-seat-leave-v1"   # review SS-02: take this seat-bound host out of its company
 CTX_UPGRADE_AUTH = "agentjarvis-host-upgrade-auth-v1"   # F12 / contract C2: spend an upgrade authorization code (update.py)
+CTX_PEER_CERT = "agentjarvis-host-peer-cert-v1"   # P71 (PROTOCOL §17.3): the Agent friends seat certificate for one mailbox
 # Agent plaza P2 (PROTOCOL §7 plaza routes; agentj/plaza.py): one context per route, so no signature is valid on two
 PLAZA_KINDS = ("search", "get", "mine", "post", "reply", "resolve", "report")
 CTX_PLAZA = {k: f"agentjarvis-host-plaza-{k}-v1" for k in PLAZA_KINDS}   # wire strings: never renamed
@@ -818,6 +819,66 @@ def rename(st, name: str, *, post: Callable = post_json, now: Callable = time.ti
     if status >= 500:
         return RenameResult("unreachable", status=status_class(status))
     return RenameResult("fail", status=status_class(status) if status != 200 else "bad_response")
+
+
+# ------------------------------------------------------------------ peer certificate (P71, PROTOCOL §17.3)
+_MBOX = re.compile(r"[A-Za-z0-9_-]{22}")
+_CERT = re.compile(r"[A-Za-z0-9_-]{1,1400}\.[A-Za-z0-9_-]{86}")
+
+
+class PeerCertResult(NamedTuple):
+    kind: str                       # ok | not_bound | payment_required | rate_limited | unlinked | unreachable | fail
+    cert: str | None = None
+    exp: int | None = None          # unix s
+    status: str = ""
+
+
+def parse_peer_cert(obj: dict, mbox: str, now: float) -> tuple[str, int] | None:
+    """A 200 answer {"cert","exp"}: the certificate's own payload must name this mailbox and an expiry in the future (the
+    signature is the relay's business — the host does not hold the cloud's public key)."""
+    cert, exp = obj.get("cert"), _int(obj.get("exp"), 0, MAX_SEQ)
+    if not isinstance(cert, str) or not _CERT.fullmatch(cert) or exp is None or exp <= now:
+        return None
+    try:
+        p = json.loads(wire.unb64u(cert.split(".", 1)[0]))
+    except (ValueError, UnicodeDecodeError):
+        return None
+    if not isinstance(p, dict) or p.get("v") != 1 or p.get("mbox") != mbox or _int(p.get("exp"), 0, MAX_SEQ) != exp:
+        return None
+    return cert, exp
+
+
+def peer_cert(st, mbox: str, *, post: Callable = post_json, now: Callable = time.time) -> PeerCertResult:
+    """One signed `/v1/host/peer/cert` (blocking): a 7-day certificate for this host's mailbox, or why not. 403 not_bound /
+    402 payment_required mean "needs a paid seat" — the caller then stays off the mailbox and asks again much later."""
+    if not isinstance(mbox, str) or not _MBOX.fullmatch(mbox):
+        return PeerCertResult("fail", status="bad_mbox")
+    cloud = read_cloud(st)
+    if not cloud:
+        return PeerCertResult("unlinked")
+    try:
+        url = api_url(st, cloud) + "/v1/host/peer/cert"
+    except CloudError as e:
+        return PeerCertResult("fail", status=e.kind)
+    t = now()
+    inner = {"v": 1, "t": "peer_cert", "channel": channel_of(st), "ts": int(t), "mbox": mbox}
+    try:
+        status, obj = post(url, envelope(CTX_PEER_CERT, inner, st.signing_key()))
+    except CloudError as e:
+        return PeerCertResult("unreachable", status=e.kind)
+    err = parse_error(obj)
+    if status == 200:
+        got = parse_peer_cert(obj, mbox, t)
+        return PeerCertResult("ok", got[0], got[1], "200") if got else PeerCertResult("fail", status="bad_response")
+    if status == 403:
+        return PeerCertResult("not_bound", status=status_class(status))
+    if status == 402:
+        return PeerCertResult("payment_required", status=status_class(status))
+    if status == 429:
+        return PeerCertResult("rate_limited", status=status_class(status))
+    if status >= 500:
+        return PeerCertResult("unreachable", status=status_class(status))
+    return PeerCertResult("fail", status=status_class(status) if err is None else err)
 
 
 # ------------------------------------------------------------------ Agent plaza P2 (agentj/plaza.py builds and renders)

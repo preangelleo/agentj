@@ -22,3 +22,18 @@ class OwnerIssuerTests(unittest.TestCase):
  def test_missing_issuer_never_requests_network(self):
   with tempfile.TemporaryDirectory() as d,patch.dict(os.environ,{},clear=True):
    with self.assertRaises(ValueError):installer.issue_owner(Path(d)/'code',opener=lambda *a,**k:self.fail('network'))
+class OwnerTokenNameTests(unittest.TestCase):
+ def test_both_names_env_then_file(self):
+  for name in installer.OWNER_TOKEN_NAMES:
+   self.assertEqual(installer.owner_token({name:' fixture-owner '}),'fixture-owner')
+  self.assertEqual(installer.owner_token({'AGENTJ_INSTALLER_OWNER_ISSUER_TOKEN':'canonical','INSTALL_ASSISTANT_OWNER_ISSUER_TOKEN':'legacy'}),'canonical')
+  self.assertEqual(installer.owner_token({'INSTALL_ASSISTANT_OWNER_ISSUER_TOKEN':''},{'AGENTJ_INSTALLER_OWNER_ISSUER_TOKEN':'from-file'}.get),'from-file')
+  self.assertEqual(installer.owner_token({},{'INSTALL_ASSISTANT_OWNER_ISSUER_TOKEN':'legacy-file'}.get),'legacy-file')
+  self.assertEqual(installer.owner_token({'INSTALL_ASSISTANT_OWNER_ISSUER_TOKEN':'env'},{'AGENTJ_INSTALLER_OWNER_ISSUER_TOKEN':'file'}.get),'env')
+  self.assertIsNone(installer.owner_token({},{}.get))
+ def test_issue_owner_reads_shared_store_name(self):
+  requests=[]
+  def opener(req,timeout):requests.append(req);return io.BytesIO(json.dumps(OwnerIssuerTests.value(None)).encode())
+  with tempfile.TemporaryDirectory() as d,patch.dict(os.environ,{'AGENTJ_INSTALLER_OWNER_ISSUER_TOKEN':'fixture-shared-name'},clear=True):
+   Path(d).chmod(0o700);installer.issue_owner(Path(d)/'code.json',opener=opener)
+  self.assertEqual(requests[0].get_header('Authorization'),'Bearer fixture-shared-name')

@@ -245,6 +245,8 @@ def check_record(st, r: dict, index: dict | None = None) -> str:
     try:
         msg = signed_message(str(r.get("channel")), str(r.get("device")), str(r.get("id")), str(r.get("decision")),
                              str(r.get("shown_sha256")))
+        if r.get("decision") == "allow" and isinstance(r.get("scope_sha256"), str):
+            msg += ("\n" + r["scope_sha256"]).encode()     # P71 friend_request: the group line (§17.7)
     except ValueError:                                  # allow_batch: the scope line is its hash, kept in the log
         msg = (f"{CONTEXT}\n{r.get('channel')}\n{r.get('device')}\n{r.get('id')}\nallow_batch\n{r.get('shown_sha256')}\n"
                f"{r.get('scope_sha256')}").encode() if r.get("decision") == "allow_batch" else b""

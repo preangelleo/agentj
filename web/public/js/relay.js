@@ -16,6 +16,7 @@ import { Speaker, configureSpeech } from './speak.js';
 import { isReady, sendApp, hostId } from './session.js';
 import { getSealed, putSealed, dbDel } from './store.js';
 import { Outbox, paint as paintOutbox, MAX as OUT_MAX } from './outbox.js';
+import { askKind as friendAsk, renderAsk as renderFriendAsk, addFriendCmd, openFromCmd } from './friends.js';   // §17.7: friend request / friend's question cards
 
 let C = null;                        // ctx from app.js: api, myDev(), estopOn(), canSign(), panels …
 const BRAND_LOGO = { idle: 'brand/img/logo-mark.png', working: 'brand/img/status/logo-working.png',
@@ -199,7 +200,7 @@ let leftTimer = 0;
 function paintLeft(item){
   clearTimeout(leftTimer);
   const p = el("askLeft");
-  if (!item || item.state !== "open" || !item.deadline){ p.hidden = true; return; }
+  if (!item || item.state !== "open" || !item.deadline || friendAsk(item)){ p.hidden = true; return; }   // friend cards say their own validity
   const left = Math.max(0, Math.ceil((item.deadline - Date.now()) / 1000));
   p.hidden = false;
   p.textContent = left > 0 ? t('ask.left', {n: left}) : t('ask.timeUp');
@@ -226,6 +227,7 @@ function renderCard(s){
   el("pendTag").hidden = !folded;
   el("apprBtns").hidden = true; el("apprBatch").hidden = true;
   el("sheet").classList.remove("danger");
+  el("frAsk").hidden = true;
   if (result){
     el("askText").textContent = t('r.ask.answer');
     el("cmdBox").hidden = true; el("qs").hidden = false; el("why").hidden = true;
@@ -256,13 +258,24 @@ function apprState(p){
   if (!p) return null;
   return p.state === "open" && apprSent.id === p.id ? apprSent.state : p.state;
 }
+const FR_DONE = {approved: "allow", denied: "deny", timeout: "timeout", ended: "ended", stopped: "stopped", terminal: "ended"};
 function apprText(p){
   const st = apprState(p);
+  if (friendAsk(p) && FR_DONE[st]) return t('fr.ask.done.' + (p.tool === "friend_request" ? "fr_" : "pq_") + FR_DONE[st]);
   if (st === "open") return p.local_only ? t('r.appr.st.localOnly') : "";
   return ["allow_sent", "deny_sent", "batch_sent", "approved", "denied", "terminal", "timeout", "ended", "stopped"].includes(st) ? t('r.appr.st.' + st) : "";
 }
 function renderPermission(card, p){
   el("askText").textContent = t('r.ask.nod');
+  if (friendAsk(p)){                                    // §17.7: friends.js draws the card into #frAsk; relay keeps the sheet
+    for (const id of ["cmdBox", "why", "qs", "askCancel", "askSend", "apprBtns", "apprBatch", "askState"]) el(id).hidden = true;
+    el("frAsk").hidden = false;
+    renderFriendAsk(p, {open: apprState(p) === "open", sign: C.canSign(), repaint: () => { if (cur) renderCard(cur); },
+      dismiss: () => { apprDismissed = p.id; if (cur && cur.card) foldedCard = cardKey(cur.card); if (cur) renderCard(cur); }});
+    el("elsewhereText").textContent = t(p.tool === "friend_request" ? 'fr.ask.where' : 'fr.q.where');
+    paintTags({...p, kind: "friend"});
+    return;
+  }
   el("cmdBox").hidden = false; el("qs").hidden = true;
   el("askCancel").hidden = true; el("askSend").hidden = true;
   const tool = (p && p.tool) || (card && card.tool_name) || "?";
@@ -785,8 +798,15 @@ function paintCmdx(p){
   const box = el("cmdx"), c = p.card;
   box.replaceChildren();
   const isCmd = !!c && p.source && p.source.k === "cmd";
-  box.hidden = !isCmd || !((Array.isArray(c.models) && c.models.length) || c.undo === true);
+  const openBtn = isCmd && typeof c.open === "string" && /^fr_(card|add)(:[A-Z0-9-]{1,40})?$/.test(c.open);   // P73
+  box.hidden = !isCmd || !((Array.isArray(c.models) && c.models.length) || c.undo === true || openBtn);
   if (box.hidden) return;
+  if (openBtn){
+    const o = document.createElement("button"); o.type = "button"; o.className = "cmdopen"; o.dataset.open = c.open;
+    o.textContent = t(c.open === "fr_card" ? 'cmd.openCard' : 'cmd.openAdd');
+    o.addEventListener("click", () => openFromCmd(c.open));
+    box.appendChild(o);
+  }
   if (Array.isArray(c.models)){
     for (const x of c.models.slice(0, 40)){
       if (!x || typeof x.id !== "string") continue;
@@ -1172,8 +1192,11 @@ function fitViewport(){
 
 // ---- composer --------------------------------------------------------------------------
 let sending = false, asrBusy = 0;
+// F27 (0.16): words OR at least one attachment (a voice note counts) is a message — the keyboard need not open just to type
+// a full stop. A failed file alone is not something to send; files still uploading are waited for by say(), never skipped.
+function hasSayable(){ return !!input.value.trim() || atts.some(a => a.st !== "failed"); }
 function refreshSend(){
-  el("send").disabled = sending || asrBusy > 0 || !input.value.trim() || !(C.connected() || outbox.host !== null);   // offline: it queues (null = not paired)
+  el("send").disabled = sending || asrBusy > 0 || !hasSayable() || !(C.connected() || outbox.host !== null);   // offline: it queues (null = not paired)
   const c = el("clr"); if (c) c.hidden = !input.value;
   noteEmpty();
 }
@@ -1290,6 +1313,7 @@ function paintTray(){
   tray.hidden = !atts.length;
   tray.setAttribute("aria-label", t('r.tray.count', {n: atts.length, max: MAX_ATT}));
   noteEmpty();
+  if (C) refreshSend();                                             // F27: a file alone can make Send live
 }
 function stage(a){
   a.st = "up"; a.pct = 0; a.err = "";
@@ -1305,6 +1329,7 @@ function stage(a){
     }
     else { a.st = "failed"; a.err = uploadError(r.why); toast(a.err, 3000); }
     paintChip(a);
+    refreshSend();                                                   // F27: a failed file alone is nothing to send
   });
   return a.promise;
 }
@@ -1593,7 +1618,14 @@ async function runCmd(cmd, arg = ""){
 }
 async function say(){
   const text = input.value;
-  if (!text.trim() || sending || asrBusy) return;
+  if (!hasSayable() || sending || asrBusy) return;                 // F27: files alone (no words) go too
+  // P73 (ADR-A176): /add-friend is the friends page's signed fr_add, sent from here (the approval key never leaves the page);
+  // it works while stopped (a request is not an Agent action) and opens the prefilled form when offline.
+  const fa = /^[/\uff0f]add[-_]friend(?:[ \t]+([\s\S]*))?$/i.exec(text.trim());
+  if (fa && !atts.length && !replyTo){
+    if (await addFriendCmd((fa[1] || "").trim())){ pushHist(text); input.value = ""; autosize(); saveDraft(); }
+    return;
+  }
   if (C.estopOn()){ toast(t('r.say.stopped'), 3200); return; }
   // 0.15.2: not connected, or older messages still waiting → it queues behind them (/stop, /clear never wait)
   if (!C.connected() || (outbox.items.length && !/^\/(stop|clear)(\s|$)/i.test(text.trim()))) return sayLater(text);

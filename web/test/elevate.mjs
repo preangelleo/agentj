@@ -102,8 +102,13 @@ try {
       const rows = await ev(p, `[...document.querySelectorAll('#elev-rows dd')].map((x) => x.textContent)`);
       assert.deepEqual(rows, ['apt-get install -y ffmpeg', '把录音转成 mp3 要用 ffmpeg', '安装一个系统软件包']);
       assert.match(await ev(p, `document.getElementById('elev-left').textContent`), /还剩 1\d\d 秒/);
-      assert.equal(await ev(p, `document.getElementById('elev-allow').disabled`), true, 'nothing typed: cannot approve');
+      // P73: nothing typed → the button says what is missing, nothing is sent (never a decline)
+      await ev(p, `document.getElementById('elev-allow').click()`);
+      await waitFor(p, `!document.getElementById('elev-empty').hidden`);
+      assert.equal(await ev(p, `document.getElementById('elev-empty').textContent`), '先输管理员密码，再点同意。');
+      assert.equal(answers().length, 0, 'nothing typed: nothing sent');
       await type(p, PW);
+      assert.equal(await ev(p, `document.getElementById('elev-empty').hidden`), true, 'typing clears the hint');
       writeFileSync(OUT + 'f17-sudo-zh-phone.png', await shoot(p, 'unused'));
       await ev(p, `document.getElementById('elev-allow').click()`);
       for (let i = 0; i < 100 && !answers().length; i++) await new Promise((r) => setTimeout(r, 50));
@@ -214,6 +219,57 @@ try {
       assert.equal(await ev(p, `document.getElementById('elev').hidden`), false, 'the card stays');
       await fake.send({ t: 'elev_done', id: card.m.id, result: 'denied' });
       await waitFor(p, `document.getElementById('elev').hidden`);
+    } finally { await p.dispose(); }
+  });
+
+  // P73 (support ticket 20261007-183234: one `denied` nobody meant): on a secret card the keyboard's Enter only ever submits —
+  // empty or whitespace says what is missing and sends nothing; 「不提供」 is a quiet button on its own line, below the main
+  // action, and needs a second tap; Enter with a value saves it.
+  await C('p73-secret-enter-and-decline', async () => {
+    const p = await paired('zh');
+    try {
+      const card = await hostCard('secret', { name: 'ELEVENLABS_API_KEY', purpose: '配音', dest: '/home/me/proj/.env (ELEVENLABS_API_KEY=…)', verify: '' });
+      await fake.send(card.m);
+      await waitFor(p, `!!document.getElementById('elev') && !document.getElementById('elev').hidden`);
+      const enter = () => p.send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13, text: '\r' })
+        .then(() => p.send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13 }));
+      await ev(p, `document.getElementById('elev-input').focus()`);
+      await enter();
+      await waitFor(p, `!document.getElementById('elev-empty').hidden`);
+      assert.match(await ev(p, `document.getElementById('elev-empty').textContent`), /ELEVENLABS_API_KEY/);
+      await type(p, '   ');
+      await enter();
+      await new Promise((r) => setTimeout(r, 200));
+      assert.equal(answers().length, 0, 'Enter on an empty / blank field sends nothing (no false)');
+      // layout: 保存 alone on its row; 不提供 below it, not side by side
+      const geo = await ev(p, `(() => { const a = document.getElementById('elev-allow').getBoundingClientRect(), d = document.getElementById('elev-deny').getBoundingClientRect();
+        return { gap: d.top - a.bottom, sameRow: Math.abs(a.top - d.top) < 4, quiet: document.getElementById('elev-deny').classList.contains('aj-btn--quiet') }; })()`);
+      assert.ok(!geo.sameRow && geo.gap >= 12 && geo.quiet, JSON.stringify(geo));
+      writeFileSync(OUT + 'p73-secret-card-zh-phone.png', await shoot(p, 'unused'));
+      await ev(p, `document.getElementById('elev-deny').click()`);
+      await new Promise((r) => setTimeout(r, 200));
+      assert.equal(answers().length, 0, 'one tap on 不提供 only asks');
+      assert.equal(await ev(p, `document.getElementById('elev-deny').textContent`), '确定不提供？再点一次');
+      await ev(p, `document.getElementById('elev-input').value = ''`);
+      await type(p, KEY);
+      await enter();
+      for (let i = 0; i < 100 && !answers().length; i++) await new Promise((r) => setTimeout(r, 50));
+      const a = answers()[0];
+      assert.ok(a && a.ok === true, 'Enter with a value = save');
+      assert.equal(await hostOpen(card, a), KEY);
+      await fake.send({ t: 'elev_done', id: card.m.id, result: 'saved', verify: 'skipped' });
+      await waitFor(p, `document.getElementById('elev').hidden`);
+      // a second card: two taps on 不提供 → a signed decline
+      const c2 = await hostCard('secret', { name: 'K2', purpose: 'p', dest: '/tmp/k2', verify: '' });
+      await fake.send(c2.m);
+      await waitFor(p, `!document.getElementById('elev').hidden`);
+      await ev(p, `document.getElementById('elev-deny').click()`);
+      await ev(p, `document.getElementById('elev-deny').click()`);
+      for (let i = 0; i < 100 && answers().length < 2; i++) await new Promise((r) => setTimeout(r, 50));
+      assert.equal(answers()[1].ok, false, 'two taps = decline');
+      await fake.send({ t: 'elev_done', id: c2.m.id, result: 'denied' });
+      await noTrace(p, KEY);
+      assert.equal(p.problems.length, 0, p.problems.join('\n'));
     } finally { await p.dispose(); }
   });
 

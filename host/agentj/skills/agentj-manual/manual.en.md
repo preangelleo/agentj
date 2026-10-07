@@ -120,6 +120,16 @@ Replies are laid out for you:
 
 While the Codex App holds a session, the phone follows its actual model from local records and shows read-only status. A native active-writer refusal leaves the message undelivered and never automatically starts another thread. Quit the Codex App completely, then resend to try continuing the same thread; switching to New chat or waiting for a reply does not guarantee release. Do not promise concurrent writes from separate clients, delete writer locks, inject the App’s private pipes or change permissions.
 
+When the phone says another program is using the session, it says which one: an Agent J leftover background process is cleaned up automatically and your message goes on; the Codex inside the ChatGPT App, the Codex App or a `codex` in a terminal must be quit first; if Agent J cannot find out, it tells you so.
+
+### Codex permissions: directly on your computer by default
+
+With Codex, as long as you never wrote `sandbox_mode` at the top of `~/.codex/config.toml`, Agent J lets it work like you do in your terminal: network, installs, files in your home folder. Risky actions (spending, deleting, sending, keys …) still wait for your approval on the phone.
+
+- If you set `sandbox_mode` yourself (for example `workspace-write`), it stays yours; anything beyond it is refused, and the notice says how to open it up.
+- `sandbox_mode` must be at the top of the file (before the first `[ ]`). Appended at the end it usually lands inside the last `[ ]` table, where Codex ignores it. `/status` on the phone or `agentj doctor` on the computer then says "written but not in effect". Just ask the Agent: it uses `agentj codex-sandbox`, which writes the right place; after an Agent J restart the same conversation follows the new setting at once.
+- When continuing a Codex App session, that conversation's own permissions in the Codex App apply; if you never chose any there (still the default), the rule above applies. Refused because of permissions? Set this conversation to Full access in the Codex App, then resend from the phone.
+
 ## Attachments: files, photos, camera
 
 （Screenshot：Attachments and a quote above the message box — https://agentj.app/docs/manual/attach.en.webp）
@@ -154,8 +164,15 @@ While the Codex App holds a session, the phone follows its actual model from loc
 | `/stop` | Interrupt the current turn |
 | `/help` | List these commands |
 
+The two commands in the "Friends" group are put into the message box when tapped; finish them and send:
+
+| Command | What it does |
+|---|---|
+| `/my-agent-id` | Your computer answers with your Agent ID (tap the code block to copy it), the share link and an "Open my card" button; never goes to the AI, costs no tokens |
+| `/add-friend ID [note]` | Add a friend: signed by this phone like "Add friend" on the friends page; a mistyped character is caught at once; without an ID it opens "Add friend" |
+
 The menu also has "Stop everything" and the Agent's own skills. Other commands, such as changing settings, are for the
-computer.
+computer. See [Agent friends](https://agentj.app/docs/friends/).
 
 The model and effort at the top: tap to switch to the next one, hold to go back to the default.
 
@@ -185,6 +202,23 @@ When the Agent needs an API key, this card says which key, what for, and where i
 written straight there — **not into the chat, and the Agent never sees it**.
 
 （Screenshot：Key card — https://agentj.app/docs/manual/secret.en.webp）
+Tapping save (or Enter) with nothing pasted just asks you to paste the key first — it never counts as a no. "Don't provide"
+sits on its own line below and needs a second tap. The card stays valid for 10 minutes, even if the Agent's command is
+interrupted meanwhile: submit as usual and it is saved.
+
+### Getting your own keys or configs on the phone (pickup card)
+
+To use something set up on the computer on your phone — a proxy ss:// link, a config file with a password — just ask the
+Agent ("send me the SS link"). Ordinary replies hide passwords, so the Agent sends a **secret pickup card** instead:
+
+- The card stays hidden and shows only the name, purpose and size. Tap "View with Face ID"; only after that does the
+  computer send the contents.
+- Copy text with "Copy", save a file with "Download file". Tap "Done" when finished and it is cleared from the page
+  (automatically after 2 minutes too); the chat keeps a single "picked up" line.
+- It can be picked up once within 10 minutes; tap "Not needed" if you don't want it.
+- If this phone hasn't set up Face ID yet, tap "Set up Face ID" on the card first.
+- The card goes only to your own paired phones. Telegram, groups and friends still can't get these secrets.
+
 More in [Admin rights and keys from your phone](https://agentj.app/docs/phone-admin/).
 
 ## Stop everything
@@ -233,6 +267,16 @@ The first time: scan the QR code on your computer, then type the phone's 6-digit
 the computer (see [Using your phone](https://agentj.app/docs/phone/)).
 
 （Screenshot：The 6-digit code during pairing — https://agentj.app/docs/manual/pair-code.en.webp）
+### If the code will not scan
+
+- Let the QR code fill most of the middle of the picture and hold the phone steady, not too close (too close and it
+  cannot focus). Turn the computer's screen brighter and avoid reflections.
+- After 10 seconds without a result the scanner suggests another way:
+  - In a browser tab: scan the code on the computer with the phone's own Camera app; it opens the pairing page.
+  - In the page opened from the Home Screen icon: run `agentj pair --link` on the computer, send the printed link to
+    this phone, tap Back and paste it into the box on the pairing screen.
+- That link is the pairing key: valid 5 minutes, works once, never send it to anyone else.
+
 After a successful pairing the phone asks once whether to remember this phone with Face ID. Save it and confirm with
 Face ID. From then on, when you open Agent J somewhere else on the same phone — from the Home Screen, in a new private
 tab, after clearing browser data — the pairing screen offers to reconnect with Face ID: **no QR code, no approval on the
@@ -255,4 +299,5 @@ Agent J is the only Agent you deal with, so most things are a sentence, not a bu
 - "Open the xx project": it finds that project in your work folder.
 - "Compact": handover first, then compaction.
 - "I want to report a problem": it shows you what would be sent and sends only with your OK.
+- "Send my card to Kai", "What did Kai say lately?": it manages your Agent friends, see [Agent friends](https://agentj.app/docs/friends/).
 - On long jobs it sends you a one-line progress note now and then.

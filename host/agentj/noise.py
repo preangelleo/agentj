@@ -1,12 +1,15 @@
-"""Minimal Noise (rev 34) for agentj: Noise_IK / Noise_IKpsk2 over 25519 / AESGCM / SHA256.
+"""Minimal Noise (rev 34) for agentj: Noise_IK / Noise_IKpsk2 (host ↔ device) and Noise_XX / Noise_KK (host ↔ host, agent
+friends, PROTOCOL §17.4) over 25519 / AESGCM / SHA256.
 
-Mirror of protocol/noise.js. Primitives come only from `cryptography` (OpenSSL) and the stdlib (hmac/hashlib).
-Pinned by protocol/vectors/noise-ik.json and cross-checked against the `noiseprotocol` package in tests.
+Mirror of protocol/noise.js for IK / IKpsk2 (the JS side has no XX / KK: phones never handshake with friends).
+Primitives come only from `cryptography` (OpenSSL) and the stdlib (hmac/hashlib). Pinned by protocol/vectors/noise-ik.json
+and noise-xx-kk.json, and cross-checked against the `noiseprotocol` package in tests.
 """
 from __future__ import annotations
 
 import hashlib
 import hmac as _hmac
+from collections.abc import Callable
 
 from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey, X25519PublicKey
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
@@ -14,10 +17,16 @@ from cryptography.hazmat.primitives import serialization
 
 IK = "Noise_IK_25519_AESGCM_SHA256"
 IKPSK2 = "Noise_IKpsk2_25519_AESGCM_SHA256"
+XX = "Noise_XX_25519_AESGCM_SHA256"
+KK = "Noise_KK_25519_AESGCM_SHA256"
 PATTERNS = {
     IK: [["e", "es", "s", "ss"], ["e", "ee", "se"]],
     IKPSK2: [["e", "es", "s", "ss"], ["e", "ee", "se", "psk"]],
+    XX: [["e"], ["e", "ee", "s", "es"], ["s", "se"]],
+    KK: [["e", "es", "ss"], ["e", "ee", "se"]],
 }
+# pre-messages: (initiator's static known to the responder, responder's static known to the initiator)
+PRE = {IK: (False, True), IKPSK2: (False, True), XX: (False, False), KK: (True, True)}
 MAX_NONCE = 2**64 - 1  # reserved by the spec (the JS side stops earlier, at 2^53: both fail closed long before)
 
 
@@ -120,10 +129,15 @@ class Handshake:
         self.h = name.ljust(32, b"\x00") if len(name) <= 32 else sha256(name)
         self.ck = self.h
         self.cs = CipherState()
-        if initiator and (rs is None or len(rs) != 32):
-            raise NoiseError("responder static key required")
+        self.h_before_payload: bytes | None = None  # h after the last message's tokens, before its payload (§17.4 signs it)
+        pre_i, pre_r = PRE[protocol]
+        if (pre_r if initiator else pre_i) and (rs is None or len(rs) != 32):
+            raise NoiseError("remote static key required")
         self.mix_hash(prologue)
-        self.mix_hash(rs if initiator else s.pub)  # pre-message: <- s
+        if pre_i:  # pre-message -> s (the initiator's static)
+            self.mix_hash(s.pub if initiator else rs)
+        if pre_r:  # pre-message <- s (the responder's static)
+            self.mix_hash(rs if initiator else s.pub)
 
     def mix_hash(self, d: bytes) -> None:
         self.h = sha256(self.h + d)
@@ -163,7 +177,8 @@ class Handshake:
     def done(self) -> bool:
         return self.i >= len(self.msgs)
 
-    def write_message(self, payload: bytes = b"") -> bytes:
+    def write_message(self, payload: bytes | Callable[[bytes], bytes] = b"") -> bytes:
+        """payload may be a function of the handshake hash after this message's tokens (PROTOCOL §17.4 signs that hash)."""
         if self.done() or not self.my_turn():
             raise NoiseError("not my turn")
         psk_mode = self.protocol == IKPSK2
@@ -182,7 +197,8 @@ class Handshake:
                 self.mix_key_and_hash(self.psk)
             else:
                 self.mix_key(self._dh(tok))
-        out.append(self.encrypt_and_hash(payload))
+        self.h_before_payload = self.h
+        out.append(self.encrypt_and_hash(payload(self.h) if callable(payload) else payload))
         self.i += 1
         return b"".join(out)
 
@@ -213,6 +229,7 @@ class Handshake:
                 self.mix_key_and_hash(self.psk)
             else:
                 self.mix_key(self._dh(tok))
+        self.h_before_payload = self.h
         payload = self.decrypt_and_hash(msg[o:])
         self.i += 1
         return payload

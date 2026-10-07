@@ -9,10 +9,25 @@ import urllib.request
 import uuid
 
 ORIGIN = 'https://install-assistant.agentj.app'
+# The shared env store names it AGENTJ_INSTALLER_OWNER_ISSUER_TOKEN; the service-side
+# name INSTALL_ASSISTANT_OWNER_ISSUER_TOKEN is still accepted (first non-empty wins).
+OWNER_TOKEN_NAMES = ('AGENTJ_INSTALLER_OWNER_ISSUER_TOKEN', 'INSTALL_ASSISTANT_OWNER_ISSUER_TOKEN')
+
+def owner_token(environ=None, read_file=None):
+    """Environment first, then (when given) an env-file reader, each under both names."""
+    environ = os.environ if environ is None else environ
+    for name in OWNER_TOKEN_NAMES:
+        value = (environ.get(name) or '').strip()
+        if value: return value
+    if read_file is not None:
+        for name in OWNER_TOKEN_NAMES:
+            value = (read_file(name) or '').strip()
+            if value: return value
+    return None
 
 def issue_owner(output: Path, *, opener=None, request_id=None, token=None):
     from datetime import datetime, timezone
-    token = token or os.environ.get('INSTALL_ASSISTANT_OWNER_ISSUER_TOKEN')
+    token = token or owner_token()
     if not token: raise ValueError('owner_issuer_not_configured')
     if output.exists() or output.is_symlink(): raise ValueError('output_exists')
     if not output.parent.is_dir() or output.parent.is_symlink(): raise ValueError('private_output_directory_required')

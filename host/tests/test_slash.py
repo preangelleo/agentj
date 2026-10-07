@@ -382,7 +382,8 @@ class CodexChain(_Chain):
         starts = [x["params"] for x in lg if x.get("method") == "thread/start"]
         self.assertEqual(len(starts), 1)
         self.assertEqual((starts[0]["approvalPolicy"], starts[0]["approvalsReviewer"]), ("untrusted", "user"))
-        self.assertNotIn("sandbox", starts[0], "the human's sandbox stays theirs")
+        # F30 (ADR-A175): no sandbox_mode in the owner's config → the main Agent runs directly on the system
+        self.assertEqual(starts[0]["sandbox"], "danger-full-access", "no explicit sandbox_mode: Agent J's default")
         answers = [x["answer"] for x in lg if "answer" in x]
         decisions = [a.get("decision") for a in answers if "decision" in a]
         self.assertEqual(decisions, ["decline", "accept", "accept", "accept", "decline", "decline", "accept", "decline", "decline"])
@@ -578,7 +579,7 @@ class CodexChain(_Chain):
         starts = [x["params"] for x in rows if x.get("method") == "thread/start"]
         starts.sort(key=lambda x: x.get("sandbox") != "read-only")
         self.assertEqual([(s.get("sandbox"), s.get("ephemeral"), s.get("approvalPolicy")) for s in starts],
-                         [("read-only", True, "untrusted"), (None, True, "untrusted")])
+                         [("read-only", True, "untrusted"), ("danger-full-access", True, "untrusted")])   # F30
 
 
 class OpenCodeChain(_Chain):

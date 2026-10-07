@@ -52,6 +52,7 @@
       <summary class="ajmenu__btn" data-i18n-attr="aria-label=menu.open" aria-label="菜单"><span class="ajmenu__icon" aria-hidden="true"></span></summary>
       <div class="ajmenu__panel">
         <p class="ajmenu__name"><span id="brand-name">Agent J</span></p>
+        <button type="button" id="open-friends" class="ajmenu__item" data-i18n="nav.friends">好友</button>
         <button type="button" id="open-models" class="ajmenu__item" data-i18n="models.title">模型与 Key</button>
         <button type="button" id="open-mem" class="ajmenu__item" data-i18n="nav.mem">记忆</button>
         <button type="button" id="open-act" class="ajmenu__item" data-i18n="nav.act">记录</button>
@@ -151,6 +152,7 @@
         <div class="ask"><span class="dot"></span><span id="askText"></span><span class="askmore" id="askMore"></span></div>
         <div class="asktags" id="askTags"></div>
         <h2 id="sheetTitle"></h2>
+        <div class="frask" id="frAsk" hidden></div>
         <div class="cmd" id="cmdBox"><span class="tool" id="tool"></span><pre id="cmd"></pre></div>
         <p class="why" id="why" hidden></p>
         <div class="qs" id="qs" hidden></div>
@@ -255,6 +257,7 @@
         <div class="aj-lang pair__lang" data-aj-lang-switch>中文 / EN</div>
       </div>
       <p id="pair-wiped" class="note" role="status" data-i18n="pair.wiped" hidden>这个浏览器清掉了本机保存的配对数据（比如无痕浏览的标签页关掉了，或者浏览器清理了网站数据）。电脑没有移除这台手机。在电脑上运行 agentj pair，重新配对一次就好；iPhone 上别用无痕浏览，最好添加到主屏幕，从图标打开。</p>
+      <p id="pair-friends" class="note" role="status" data-i18n="fr.unpaired" hidden>好友页要在已经配对的手机或浏览器上打开。先在下面配对这台手机，配好后会自动打开好友页。</p>
       <h1 data-i18n="pair.title">连上你的电脑</h1>
       <p class="lead" data-i18n="pair.lead">Agent 在你的电脑上干活，这台手机就是它的遥控器。不用注册登录，配对一次，以后打开就能用。</p>
       <ol class="steps">
@@ -332,6 +335,16 @@
       <p class="small" data-i18n="tasks.intro">这些是 Agent 可以按时自动做的事。启用哪个由你决定；任务改过之后，要重新启用。</p>
       <p id="tasks-status" class="small" role="status" aria-live="polite"></p>
       <ul id="tasks-list" class="tasks-list"></ul>
+    </section>
+
+    <!-- §17.7 agent friends: read-only conversations; no field here sends anything to a friend (js/friends.js) -->
+    <section id="friends-view" class="view sub" data-fv="list" hidden>
+      <div class="sub-head"><button type="button" id="fr-back" class="aj-btn back" data-i18n-attr="aria-label=fr.back" aria-label="返回"><span class="back__arrow" aria-hidden="true">←</span></button><h1 id="fr-title" data-i18n="fr.title">好友</h1></div>
+      <p id="fr-status" class="small" role="status" aria-live="polite" hidden></p>
+      <div class="fr-split">
+        <div id="fr-side" class="fr-side"></div>
+        <div id="fr-main" class="fr-main"></div>
+      </div>
     </section>
 
     <section id="revoked-view" class="view state-view" hidden>

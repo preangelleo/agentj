@@ -84,10 +84,69 @@ def unpad_json(pt: bytes, max_json: int = MAX_JSON) -> dict:
     return obj
 
 
-def pairing_link(web_base: str, relay: str, channel: str, host_pub: bytes, pairing_id: bytes, psk: bytes,
-                 expires: int) -> str:
+PAIR_DEFAULT_RELAY = "wss://relay.agentj.app"   # = protocol/wire.js PAIR_DEFAULT_RELAY (an empty relay field means this)
+PAIR_V2 = 2
+
+
+def pairing_link_v1(web_base: str, relay: str, channel: str, host_pub: bytes, pairing_id: bytes, psk: bytes,
+                    expires: int) -> str:
+    """The ≤ 0.15 JSON link (QR version 13-M, 69 modules). Every phone web parses it; 0.16.0a1 hosts still print it by default
+    (the live ≤ 0.15.8 phone web cannot parse the compact link; AGENTJ_PAIR_COMPACT=1 opts in — P73)."""
     p = {"v": 1, "r": relay, "c": channel, "k": b64u(host_pub), "i": b64u(pairing_id), "p": b64u(psk), "x": expires}
     return web_base.rstrip("/") + "/#p=" + b64u(json.dumps(p, separators=(",", ":")).encode())
+
+
+def pairing_link(web_base: str, relay: str, channel: str, host_pub: bytes, pairing_id: bytes, psk: bytes,
+                 expires: int) -> str:
+    """ADR-A177 (F29) compact link: `#p=` + the decimal digits of 0x02 ‖ channel(16) ‖ host_pub(32) ‖ pairing_id(16) ‖
+    psk(32) ‖ expiry(u32 BE) ‖ relay ("" = PAIR_DEFAULT_RELAY, else the URL without "wss://"; a ws:// test relay stays
+    whole). The digits go into a QR numeric segment (pairing_qr): version 8-M, 49 modules, instead of 13-M / 69."""
+    ch = unb64u(channel)
+    if len(ch) != 16 or b64u(ch) != channel or len(host_pub) != 32 or len(pairing_id) != 16 or len(psk) != 32:
+        raise ValueError("bad pairing fields")
+    if relay == PAIR_DEFAULT_RELAY:
+        r = b""
+    elif relay.startswith("wss://"):
+        r = relay[6:].encode()
+    elif relay.startswith("ws://"):
+        r = relay.encode()
+    else:
+        raise ValueError("bad relay url")
+    raw = bytes([PAIR_V2]) + ch + host_pub + pairing_id + psk + int(expires).to_bytes(4, "big") + r
+    return web_base.rstrip("/") + "/#p=" + str(int.from_bytes(raw, "big"))
+
+
+def parse_pairing_link(link: str) -> dict:
+    """Mirror of protocol/wire.js parsePairing without the expiry / relay checks (tests, fakes): either link format →
+    {relay, channel, host_pub, pid, psk, expires}."""
+    s = link.split("#p=", 1)[-1].strip()
+    if s.isdigit() and s.isascii():
+        if len(s) > 400:
+            raise ValueError("bad pairing link")
+        n = int(s)
+        b = n.to_bytes((n.bit_length() + 7) // 8, "big")
+        if len(b) < 101 or b[0] != PAIR_V2:
+            raise ValueError("unsupported version")
+        rest = b[101:].decode()
+        relay = PAIR_DEFAULT_RELAY if not rest else rest if rest.startswith("ws://") else "wss://" + rest
+        return {"relay": relay, "channel": b64u(b[1:17]), "host_pub": b[17:49], "pid": b[49:65], "psk": b[65:97],
+                "expires": int.from_bytes(b[97:101], "big")}
+    p = json.loads(unb64u(s))
+    if p.get("v") != 1:
+        raise ValueError("unsupported version")
+    return {"relay": p["r"], "channel": p["c"], "host_pub": unb64u(p["k"]), "pid": unb64u(p["i"]), "psk": unb64u(p["p"]),
+            "expires": p["x"]}
+
+
+def pairing_qr(link: str, error: str = "m"):
+    """The segno QR of a pairing link: the part up to `#p=` as a byte segment, the compact link's digits as a numeric
+    segment (an old JSON link, or anything else, is one segment as before)."""
+    import segno
+    from segno import consts
+    head, sep, tail = link.partition("#p=")
+    if sep and tail.isdigit() and tail.isascii():
+        return segno.make([(head + sep, consts.MODE_BYTE), (tail, consts.MODE_NUMERIC)], error=error)
+    return segno.make(link, error=error)
 
 
 # ---------------------------------------------------------------- §10.0 text rules (PROMPT-33)

@@ -300,7 +300,7 @@ class ServeWithoutTerminal(unittest.TestCase):
 
 class Doctor(unittest.TestCase):
     IDS = ["version", "python", "platform", "state", "relay", "dashboard", "agent", "agent_cli", "harness", "fence", "danger", "passphrase",
-           "bound", "onboard", "serve", "service", "alias", "estop", "tasks", "activity"]
+           "bound", "onboard", "serve", "friends", "service", "alias", "estop", "tasks", "activity"]
 
     def setUp(self):
         self.dir = tempfile.mkdtemp(prefix="aj-doc-", dir="/tmp")
@@ -440,7 +440,7 @@ class WheelInstall(unittest.TestCase):
                   "agentj/admin/brand/img/shield-64.png"):
             self.assertIn(f, names_)
         self.assertFalse([n for n in names_ if n.endswith(".src.json") or "shield-source" in n], "no copy source, no big logo source")
-        self.assertLess(pathlib.Path(self.wheel).stat().st_size, 2_100_000, "wheel stays bounded: offline bilingual keyword lexicon adds ~0.85 MB; 0.15 code (cards, support, notices) ~1.93 MB; P60 OpenCode v2 adapter + provider CLI ~0.01 MB; no acoustic models ship here")
+        self.assertLess(pathlib.Path(self.wheel).stat().st_size, 2_250_000, "wheel stays bounded: offline bilingual keyword lexicon adds ~0.85 MB; 0.15 code (cards, support, notices) ~1.93 MB; P60 OpenCode v2 adapter + provider CLI ~0.01 MB; P71 friends (peer / friends / guards / session / service + skill) ~0.05 MB; no acoustic models ship here")
         self.assertFalse([n for n in names_ if n.startswith("tests/") or "wiredump" in n or "fakeclaude" in n])
         ep = next(n for n in names_ if n.endswith("entry_points.txt"))
         eps = zipfile.ZipFile(self.wheel).read(ep).decode()
@@ -494,7 +494,7 @@ class WheelInstall(unittest.TestCase):
             self.assertEqual({c["id"]: c["status"] for c in d_["checks"]}["state"], "ok")
             core = next(c for c in d_["checks"] if c["id"] == "main-core")
             self.assertEqual(core["status"], "ok")
-            self.assertIn("core v5:", core["summary"])
+            self.assertIn("core v6:", core["summary"])
 
     @unittest.skipUnless((sys.platform.startswith("linux") and shutil.which("bwrap")) or
                          (sys.platform == "darwin" and os.access(fence.SANDBOX_EXEC, os.X_OK)),

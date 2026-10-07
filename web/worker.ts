@@ -50,13 +50,23 @@ export function relaySources(env: WebEnv): string | null {
   return `${env.RELAY_URL} ${env.LEGACY_RELAY_URL}`;
 }
 
+/** Page routes of the single-page client (0.16, §17.7): served as index.html; app.js reads location.pathname. Exact
+ *  matches only — "/friends/" would move every relative asset URL, so it stays a 404. */
+export const SPA_PATHS = ["/friends"];
+export function assetRequest(req: Request): Request {
+  const url = new URL(req.url);
+  if (!SPA_PATHS.includes(url.pathname)) return req;
+  url.pathname = "/";
+  return new Request(url.toString(), { method: req.method, headers: req.headers });
+}
+
 export async function handle(req: Request, env: WebEnv): Promise<Response> {
   const host = new URL(req.url).hostname;
   if (!env.WEB_HOST || (host !== env.WEB_HOST && !(env.LEGACY_WEB_HOST && host === env.LEGACY_WEB_HOST))) return notFound();
   if (req.method !== "GET" && req.method !== "HEAD") return notFound();
   const relays = relaySources(env);
   if (!relays) return notFound();
-  const res = await env.ASSETS.fetch(req);
+  const res = await env.ASSETS.fetch(assetRequest(req));
   const out = new Response(res.body, res);
   for (const [k, v] of Object.entries(webHeaders(relays))) out.headers.set(k, v);
   return out;

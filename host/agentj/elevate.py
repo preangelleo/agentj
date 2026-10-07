@@ -12,7 +12,7 @@ Layers, inside the Noise session that already hides everything from the relay (P
   inside the decrypted app message, bound to this card, this device, this attempt (nonce) and what was shown (digest).
 - **Signature**: Ed25519(device approval key, `"agentjarvis-elevate-v1\\n" channel \\n device \\n id \\n kind \\n
   allow|deny \\n nonce \\n ts \\n digest \\n hex(SHA-256(ct))|-`). The host checks it against what IT stored for the card.
-- **One time**: a card is good for 120 s (sudo) / 300 s (secret) and one attempt per nonce; a wrong sudo password re-arms the
+- **One time**: a card is good for 120 s (sudo) / 600 s (secret) and one attempt per nonce; a wrong sudo password re-arms the
   card with a new nonce and a new host key (≤ 3 tries), and consecutive wrong passwords lock all sudo cards (1 min, doubling,
   ≤ 1 h, persisted in `elevate.json`).
 - **Face ID** (P59, ADR-A163): a device whose record holds a passkey (F20) must add a WebAuthn assertion (user verified)
@@ -21,6 +21,11 @@ Layers, inside the Noise session that already hides everything from the relay (P
   on stdin from a bytearray that is zeroed after the write. A secret is written 0600 and only its receipt goes back.
 - **Audit**: `elevate.log` (0600), one line per outcome: time, kind, id, result, device, its key and signature, the digest
   of what was shown, SHA-256 of argv (sudo) / key name + SHA-256 of the destination (secret). Never a value.
+- **A secret card outlives its CLI** (P73, ADR-A180): an Agent harness may kill `agentj secret request` (a short shell
+  timeout, the turn ended). The card stays open until the phone answers or its 600 s run out, and the outcome (never the value)
+  goes to `secret-results.json` (0600) — `agentj secret result <id>` reads it back through the socket. A sudo card is still
+  withdrawn when its CLI goes away (nobody would get the command's output).
+- **Outbound** (F32, `secret_out.py`): `agentj secret send` — the owner picks up a value on a paired phone after Face ID.
 """
 from __future__ import annotations
 
@@ -56,7 +61,7 @@ from . import passkey, wire
 SIG_CONTEXT = "agentjarvis-elevate-v1"
 SEAL_CONTEXT = "agentjarvis-seal-v1"
 KINDS = ("sudo", "secret")
-TTL = {"sudo": 120, "secret": 300}
+TTL = {"sudo": 120, "secret": 600}
 TRIES = 3                       # wrong sudo passwords per card before it ends
 LOCK_AFTER = 3                  # consecutive wrong sudo passwords (any card) before the lock
 LOCK_BASE, LOCK_MAX = 60, 3600
@@ -64,10 +69,12 @@ TS_SKEW_MS = 120_000
 MAX_OPEN = 4
 MAX_VALUE = 8192                # bytes of a password / secret
 MAX_OUT = 256 * 1024            # bytes of stdout / stderr returned to the Agent (each)
-MAX_FRAME = 64 * 1024           # one request line from the CLI
+MAX_FRAME = 512 * 1024          # one request line from the CLI (a `secret send` file ≤ 256 KiB travels base64 in it)
 CMD_TIMEOUT, CMD_TIMEOUT_MAX = 600, 3600
 SOCK_NAME = "elevate.sock"
-PHONE_TYPES = ("elev_answer",)
+PHONE_TYPES = ("elev_answer", "secret_out_open", "secret_out_decline")   # the last two: F32 (secret_out.py)
+RESULTS_NAME = "secret-results.json"
+RESULTS_KEEP = 100
 NAME_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]{0,127}")
 _ID = re.compile(r"[0-9a-f]{32}")
 
@@ -488,8 +495,34 @@ def read_log(st) -> list[dict]:
     return out
 
 
+def results_path(st) -> pathlib.Path:
+    return st.root / RESULTS_NAME
+
+
+def read_results(st) -> dict:
+    """id → the last known outcome of a secret card (in or out); never a value. Unreadable → empty."""
+    try:
+        d = json.loads(results_path(st).read_text())
+    except (OSError, ValueError, UnicodeDecodeError):
+        return {}
+    return {k: v for k, v in d.items() if isinstance(k, str) and _ID.fullmatch(k) and isinstance(v, dict)} if isinstance(d, dict) else {}
+
+
+def remember(st, rid: str, rec: dict) -> None:
+    """Record a secret card's state (`pending` when shown, the outcome when it ends) in secret-results.json (0600), so an
+    Agent whose CLI was killed reads it later (`agentj secret result <id>`). Keeps the newest RESULTS_KEEP."""
+    d = read_results(st)
+    d[rid] = {**d.get(rid, {}), **rec, "id": rid, "at": int(time.time())}
+    keep = sorted(d.items(), key=lambda kv: kv[1].get("at", 0))[-RESULTS_KEEP:]
+    with contextlib.suppress(OSError):
+        st.write_private(results_path(st), json.dumps(dict(keep), ensure_ascii=False).encode())
+
+
 def check_record(st, r: dict) -> str:
-    """'ok' / 'ok_removed' (signature verifies; device still / no longer paired) · 'bad' · 'unsigned' (host-side outcome)."""
+    """'ok' / 'ok_removed' (signature verifies; device still / no longer paired) · 'bad' · 'unsigned' (host-side outcome) ·
+    'passkey' (F32 pickup: the paired device's Noise session + a user-verified passkey assertion; no Ed25519 line)."""
+    if r.get("kind") == "secret_out":
+        return "passkey" if r.get("passkey") == "uv" else "unsigned"
     if not r.get("sig"):
         return "unsigned"
     try:
@@ -516,12 +549,18 @@ class Elevator:
         self.sudo = None             # tests: a stand-in sudo; else AGENTJ_SUDO_BIN / PATH
         self.helper_status = None    # tests: a stand-in for elevate_helper.status()
         self.helper_cmd = None       # tests: a stand-in for the installed helper command line
+        from .secret_out import Outbox
+        self.out = Outbox(self)      # F32: outbound pickup cards (`agentj secret send`)
 
     @property
     def sock_path(self) -> pathlib.Path:
         return self.st.perm_dir / SOCK_NAME
 
     async def start(self) -> None:
+        # a card shown by a previous serve died with it (its one-time key lived only in that process's memory)
+        for rid, r in read_results(self.st).items():
+            if r.get("result") == "pending":
+                remember(self.st, rid, {"result": "gone", "why": "restart"})
         self.st.perm_dir.mkdir(mode=0o700, exist_ok=True)
         os.chmod(self.st.perm_dir, 0o700)
         with contextlib.suppress(FileNotFoundError):
@@ -535,6 +574,7 @@ class Elevator:
 
     async def stop(self) -> None:
         self.cancel_all("gone")
+        self.out.end_all("gone")
         if self.server:
             self.server.close()
             with contextlib.suppress(FileNotFoundError):
@@ -584,6 +624,7 @@ class Elevator:
         for c in list(self.cards.values()):
             if not c["fut"].done() and not c.get("busy"):
                 await self.host.send_app(s, self.card_msg(c, s))
+        await self.out.on_ready(s)
 
     def _finish(self, c: dict, result: dict) -> None:
         if not c["fut"].done():
@@ -593,9 +634,13 @@ class Elevator:
         for c in list(self.cards.values()):
             if not c.get("busy"):
                 self._finish(c, {"result": result})
+        if result == "stopped":                    # Stop everything also voids pickup cards (and wipes their values)
+            self.out.end_all(result)
 
-    async def request(self, card: dict, gone: asyncio.Future | None = None) -> dict:
-        """Show a card, wait for a decision, act; → the result for the Agent (never the value)."""
+    async def request(self, card: dict, gone: asyncio.Future | None = None, on_card=None) -> dict:
+        """Show a card, wait for a decision, act; → the result for the Agent (never the value). `on_card(c)` (async) runs
+        once the card exists (the CLI prints its id, so an interrupted Agent can read the outcome later). A secret card's
+        state and outcome go to secret-results.json (`remember`)."""
         if self.host.stopped():
             return {"result": "stopped"}
         if len([c for c in self.cards.values() if not c["fut"].done()]) >= MAX_OPEN:
@@ -612,6 +657,12 @@ class Elevator:
         self._arm(c)
         self.cards[c["id"]] = c
         self.st.log("elev_card", id=c["id"], kind=c["kind"])
+        if c["kind"] == "secret":
+            remember(self.st, c["id"], {"kind": "secret", "name": c["name"], "result": "pending",
+                                        "until": int(time.time() + TTL["secret"])})
+        if on_card is not None:
+            with contextlib.suppress(Exception):
+                await on_card(c)
         self.host.push_notify("ask")
         await self._to_phones(lambda s: self.card_msg(c, s))
         try:
@@ -652,9 +703,15 @@ class Elevator:
             done_msg["verify"] = res["receipt"]["verify"]
         await self._to_phones(lambda s: done_msg)
         self.st.log("elev_done", id=c["id"], kind=c["kind"], result=res["result"])
+        if c["kind"] == "secret":
+            remember(self.st, c["id"], {"result": res["result"], "until": None,
+                                        **{k: res[k] for k in ("why", "detail", "receipt") if res.get(k) is not None}})
+        res["id"] = c["id"]
         return res
 
     async def on_phone(self, s, obj: dict) -> None:
+        if obj.get("t") in ("secret_out_open", "secret_out_decline"):   # F32
+            return await self.out.on_phone(s, obj)
         rid = obj.get("id")
         c = self.cards.get(rid) if isinstance(rid, str) and _ID.fullmatch(rid) else None
         if c is None or c["fut"].done() or c.get("busy"):
@@ -790,6 +847,27 @@ class Elevator:
         receipt.update(verified or verify_secret(c, value))
         return {"result": "saved", "receipt": receipt}
 
+    async def result_of(self, req: dict) -> dict:
+        """`agentj secret result [<id>] [--wait]`: a card's last known state from secret-results.json (never a value). No id →
+        the newest ten. `wait` → poll until it is no longer pending (≤ the card's own deadline + a little)."""
+        rid = req.get("id")
+        if rid in (None, ""):
+            rows = sorted(read_results(self.st).values(), key=lambda r: r.get("at", 0))[-10:]
+            return {"result": "list", "items": rows}
+        if not isinstance(rid, str) or not _ID.fullmatch(rid):
+            return {"result": "refused", "why": "shape", "detail": "id: 32 hex characters (printed by the first command)"}
+        stop_at = time.monotonic() + TTL["secret"] + 30
+        while True:
+            r = read_results(self.st).get(rid)
+            if r is None:
+                return {"result": "unknown", "id": rid}
+            if r.get("result") != "pending" or not req.get("wait") or time.monotonic() > stop_at:
+                out = dict(r)
+                if out.get("result") == "pending" and out.get("until"):
+                    out["secs"] = max(0, int(out["until"] - time.time()))
+                return out
+            await asyncio.sleep(0.5)
+
     # ---------------------------------------------------------- the Agent's socket
     async def on_client(self, r: asyncio.StreamReader, w: asyncio.StreamWriter) -> None:
         gone = asyncio.get_running_loop().create_future()
@@ -810,17 +888,31 @@ class Elevator:
                 self.st.log('provider_profile',result='ok' if result.get('ok') else 'failed')
                 w.write((json.dumps(result)+'\n').encode());await w.drain();w.close()
                 return
-            if not isinstance(req, dict) or req.get("t") not in KINDS:
-                raise Refused("shape", "t: sudo | secret")
-            card = norm_sudo(req) if req["t"] == "sudo" else norm_secret(req, self.st.root)
-
-            async def eof():
-                with contextlib.suppress(Exception):
-                    await r.read()
-                if not gone.done():
-                    gone.set_result(True)
-            watch = asyncio.create_task(eof())
-            res = await self.request(card, gone)
+            if isinstance(req, dict) and req.get("t") == "secret_out":          # F32: a pickup card; answers at once
+                res = await self.out.send(req)
+            elif isinstance(req, dict) and req.get("t") == "secret_result":     # P73: the outcome of an earlier card
+                res = await self.result_of(req)
+            else:
+                if not isinstance(req, dict) or req.get("t") not in KINDS:
+                    raise Refused("shape", "t: sudo | secret | secret_out | secret_result")
+                card = norm_sudo(req) if req["t"] == "sudo" else norm_secret(req, self.st.root)
+                on_card = None
+                if req.get("early") is True:                                    # a CLI that prints the card id first
+                    async def on_card(c):
+                        w.write((json.dumps({"t": "card", "id": c["id"], "kind": c["kind"], "ttl": TTL[c["kind"]]}) + "\n").encode())
+                        await w.drain()
+                if card["kind"] == "sudo":
+                    # sudo: the CLI going away withdraws the card (nobody would get the output). A secret card does NOT
+                    # depend on its CLI (P73): it stays until the phone answers or it expires, the outcome is remembered.
+                    async def eof():
+                        with contextlib.suppress(Exception):
+                            await r.read()
+                        if not gone.done():
+                            gone.set_result(True)
+                    watch = asyncio.create_task(eof())
+                    res = await self.request(card, gone, on_card)
+                else:
+                    res = await asyncio.shield(asyncio.ensure_future(self.request(card, None, on_card)))
         except Refused as e:
             res = {"result": "refused", "why": e.why, "detail": e.detail}
         except (ValueError, asyncio.TimeoutError, asyncio.LimitOverrunError):
@@ -837,8 +929,12 @@ class Elevator:
 
 
 # ---------------------------------------------------------------- the CLI side (runs as the Agent)
-def client_request(st, req: dict, timeout: float = CMD_TIMEOUT_MAX + 400) -> dict:
+def client_request(st, req: dict, timeout: float = CMD_TIMEOUT_MAX + 400, on_card=None) -> dict:
+    """One request on elevate.sock → the final JSON line. With `on_card` the request asks for the card id first (`early`):
+    `on_card({"t":"card","id",…})` is called as soon as the host shows the card."""
     path = st.perm_dir / SOCK_NAME
+    if on_card is not None:
+        req = {**req, "early": True}
     with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as s:
         s.settimeout(timeout)
         try:
@@ -847,24 +943,31 @@ def client_request(st, req: dict, timeout: float = CMD_TIMEOUT_MAX + 400) -> dic
             return {"result": "unavailable"}
         s.sendall((json.dumps(req, ensure_ascii=False) + "\n").encode())
         buf = b""
-        while b"\n" not in buf:
+        while True:
+            while b"\n" not in buf:
+                try:
+                    chunk = s.recv(65536)
+                except (socket.timeout, OSError):
+                    return {"result": "unavailable"}
+                if not chunk:
+                    return {"result": "unavailable"}
+                buf += chunk
+            line, buf = buf.split(b"\n", 1)
             try:
-                chunk = s.recv(65536)
-            except (socket.timeout, OSError):
+                obj = json.loads(line)
+            except ValueError:
                 return {"result": "unavailable"}
-            if not chunk:
-                return {"result": "unavailable"}
-            buf += chunk
-        try:
-            return json.loads(buf.split(b"\n", 1)[0])
-        except ValueError:
-            return {"result": "unavailable"}
+            if isinstance(obj, dict) and obj.get("t") == "card" and on_card is not None:
+                on_card(obj)
+                continue
+            return obj
 
 
 MSG = {
     "denied": "手机上拒绝了。/ Declined on the phone.",
     "timeout": "手机上没人处理，卡片已过期。/ Nobody answered on the phone; the card expired.",
-    "gone": "卡片已撤回。/ The card was withdrawn.",
+    "gone": "命令提前结束，卡片已撤回（sudo 卡要这条命令一直等到手机处理）。请用 10 分钟的 shell 超时重新运行。/ The command ended "
+            "early, so the card was withdrawn (a sudo card needs its command to wait for the phone). Run it again with a 10-minute shell timeout.",
     "stopped": "已急停，没有发卡片。/ Agent J is stopped; no card was sent.",
     "locked": "管理员密码连续输错，已暂时锁定 {secs} 秒。/ Too many wrong passwords; locked for {secs} s.",
     "bad_password": "管理员密码错了 3 次，这张卡已结束。/ Wrong password three times; this card ended.",
@@ -875,12 +978,27 @@ MSG = {
     "failed": "没有完成：{why}。/ Not done: {why}.",
     "refused": "请求不合格：{detail}。/ Request refused: {detail}.",
 }
+# P73: what a secret card's outcome means, worded so the Agent tells the owner the right thing.
+SECRET_MSG = {
+    "gone": "卡片被撤回了：Agent J 服务停止或重启，手机上的提交没有保存。（命令被中断不会再撤回密钥卡。）请重新运行同一条命令，发一张新卡。"
+            "/ The card was withdrawn because Agent J stopped or restarted; nothing was saved. (An interrupted command no longer "
+            "withdraws a secret card.) Run the same command again for a new card.",
+    "denied": "主人在手机上点了「不提供」，没有保存。不要反复追问；先问主人要不要重新发卡。/ The owner tapped \u201cDon't provide\u201d "
+              "on the phone; nothing was saved. Do not keep asking; ask the owner before sending a new card.",
+    "timeout": "10 分钟内手机上没人提交，卡片已过期，什么都没保存。/ Nobody submitted on the phone within 10 minutes; the card "
+               "expired and nothing was saved.",
+    "pending": "卡片还在手机上等主人处理（还剩 {secs} 秒）。稍后再运行 `agentj secret result {id}`，或加 --wait 等结果。/ Still waiting "
+               "on the phone ({secs} s left). Run `agentj secret result {id}` later, or add --wait.",
+    "unknown": "没有这张卡的记录（id 不对，或记录已被新卡挤掉）。/ No record of that card.",
+}
 EXIT_CARD = 125
+EXIT_PENDING = 75
 
 
-def _say(res: dict) -> str:
-    return MSG.get(res.get("result"), str(res.get("result"))).format(
-        secs=res.get("secs", ""), why=res.get("why", ""), detail=res.get("detail") or res.get("why") or "")
+def _say(res: dict, kind: str = "") -> str:
+    table = {**MSG, **SECRET_MSG} if kind in ("secret", "secret_out") else MSG
+    return table.get(res.get("result"), str(res.get("result"))).format(
+        secs=res.get("secs", ""), why=res.get("why", ""), detail=res.get("detail") or res.get("why") or "", id=res.get("id", ""))
 
 
 def cmd_sudo(a) -> int:
@@ -910,14 +1028,9 @@ def cmd_sudo(a) -> int:
     return EXIT_CARD
 
 
-def cmd_secret(a) -> int:
-    from .state import State
-    if a.action == "log":
-        return cmd_log(a)
-    res = client_request(State(), {"t": "secret", "name": a.name, "purpose": a.purpose, "dest": a.dest,
-                                   "verify_url": a.verify_url or "", "verify_header": a.verify_header or "",
-                                   "verify_cmd": a.verify_cmd or "", "cwd": os.getcwd()})
-    if a.json:
+def _secret_report(res: dict, as_json: bool) -> int:
+    """Print a secret card's outcome (never a value) → exit code: 0 saved · 3 saved but the check failed · 75 pending · 125."""
+    if as_json:
         print(json.dumps(res, ensure_ascii=False))
     elif res.get("result") == "saved":
         r = res["receipt"]
@@ -925,10 +1038,47 @@ def cmd_secret(a) -> int:
              "skipped": "未校验 / not checked"}[r["verify"]]
         print(f"SECRET_SAVED: {r['name']} → {r['dest']} · {r['length']} chars · {r['fingerprint']} · {v}")
     else:
-        print(f"SECRET_RESULT: {res.get('result')} — {_say(res)}", file=sys.stderr)
+        print(f"SECRET_RESULT: {res.get('result')} — {_say(res, 'secret')}", file=sys.stderr)
+    if res.get("result") == "pending":
+        return EXIT_PENDING
     if res.get("result") != "saved":
         return EXIT_CARD
     return 0 if res["receipt"]["verify"] != "fail" else 3
+
+
+def cmd_secret(a) -> int:
+    from .state import State
+    if a.action == "log":
+        return cmd_log(a)
+    if a.action == "send":
+        from . import secret_out
+        return secret_out.cmd_send(a)
+    if a.action == "result":
+        res = client_request(State(), {"t": "secret_result", "id": a.id or "", "wait": bool(a.wait)})
+        if res.get("result") == "list":
+            if a.json:
+                print(json.dumps(res, ensure_ascii=False))
+                return 0
+            for r in res.get("items") or []:
+                when = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(r.get("at", 0)))
+                print(f"{when}  {r.get('id')}  {r.get('kind', '?'):10}  {r.get('result', '?'):9}  {r.get('name', '')}")
+            if not res.get("items"):
+                print("（没有记录 / no entries）")
+            return 0
+        if res.get("kind") == "secret_out":
+            from . import secret_out
+            return secret_out.report(res, a.json)
+        return _secret_report(res, a.json)
+
+    def on_card(c):
+        print(f"SECRET_CARD: {c['id']} — 已发到主人手机，最长等 {c.get('ttl', TTL['secret']) // 60} 分钟。若本命令被中断（超时/被杀），"
+              f"卡片仍然有效，稍后运行 `agentj secret result {c['id']}` 查看结果（加 --wait 可等）。/ Card sent to the owner's phone. "
+              f"If this command is interrupted the card stays valid; run `agentj secret result {c['id']}` later.",
+              file=sys.stderr, flush=True)
+    res = client_request(State(), {"t": "secret", "name": a.name, "purpose": a.purpose, "dest": a.dest,
+                                   "verify_url": a.verify_url or "", "verify_header": a.verify_header or "",
+                                   "verify_cmd": a.verify_cmd or "", "cwd": os.getcwd()}, on_card=on_card)
+    return _secret_report(res, a.json)
 
 
 def cmd_log(a) -> int:
@@ -958,14 +1108,24 @@ def add_parser(sub) -> None:
     sp.add_argument("--json", action="store_true")
     sp.add_argument("command", nargs="+", help="-- <command> [args…]")
     sp.set_defaults(fn=lambda a: sys.exit(cmd_sudo(a)))
-    sc = sub.add_parser("secret", help="request：请手机上的人把一个 API Key 贴进来，直接存进文件（Agent 看不到值）· log / "
-                                       "ask the human to paste a key on the phone; saved to a file, never shown to you")
-    sc.add_argument("action", choices=["request", "log"])
-    sc.add_argument("--name", help="变量名，如 ELEVENLABS_API_KEY")
+    sc = sub.add_parser("secret", help="request：请手机上的人把一个 API Key 贴进来，直接存进文件（Agent 看不到值）· send：把主人自己的"
+                                       "密钥/配置发到他的手机，Face ID 后领取 · result：查看一张卡的结果 · log / request: the human pastes a "
+                                       "key on the phone, saved to a file · send: hand the owner their own secret on the phone (Face ID) · "
+                                       "result: a card's outcome · log",
+                        description="request waits for the phone (≤ 10 min) but the card does not depend on it: if the command is "
+                                    "interrupted, run `agentj secret result <id>` later. send returns at once; the value never "
+                                    "appears in its output.")
+    sc.add_argument("action", choices=["request", "send", "result", "log"])
+    sc.add_argument("id", nargs="?", help="result：卡片 id（request/send 打印的）；不写 = 最近十张")
+    sc.add_argument("--name", help="request：变量名，如 ELEVENLABS_API_KEY · send：手机上显示的名字，如 'Shadowrocket SS 链接'")
     sc.add_argument("--purpose", help="用途（手机上原样显示）")
     sc.add_argument("--dest", help="存到哪：env:<文件>[#KEY]（.env 一行）或 file:<路径>（整个文件）")
     sc.add_argument("--verify-url", dest="verify_url", help="只读校验：GET 这个 https 地址，2xx = 有效")
     sc.add_argument("--verify-header", dest="verify_header", help="校验请求头模板，默认 'Authorization: Bearer {value}'")
     sc.add_argument("--verify-cmd", dest="verify_cmd", help="只读校验命令（值在环境变量 $NAME 里；手机上会显示这条命令）")
+    sc.add_argument("--file", help="send：把这个文件（≤ 256 KiB）交给主人，手机上可下载")
+    sc.add_argument("--value-from", dest="value_from", help="send：一段文本，从 env:<变量名> 或 file:<路径> 读（不要写在命令行上）")
+    sc.add_argument("--ttl", type=int, default=None, help="send：多少秒内可领（30–600，默认 600）")
+    sc.add_argument("--wait", action="store_true", help="result / send：等到有结果（领取、过期或拒绝）")
     sc.add_argument("--json", action="store_true")
     sc.set_defaults(fn=lambda a: sys.exit(cmd_secret(a)))

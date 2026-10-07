@@ -22,7 +22,11 @@ import * as push from './js/push.js';
 import * as relay from './js/relay.js';
 import * as settings from './js/settings.js';
 import * as elevate from './js/elevate.js';     // F17: sudo / secret cards (§11)
+import * as secretout from './js/secretout.js'; // F32: secret pickup cards (§18)
 import * as passkey from './js/faceid.js';     // F20: the same phone without a second pairing (§12)
+import * as friends from './js/friends.js';    // §17.7: /friends + the friend cards
+import { parseAgentId } from './proto/wire.js';
+import { SCAN_CONSTRAINTS, SCAN_FALLBACK, SCAN_SLOW_MS, scanFrame } from './js/scan.js';   // F29 (ADR-A177)
 
 const $ = el;
 
@@ -64,6 +68,44 @@ if (location.hash.startsWith('#p=')) {
   pendingLink = location.hash;
   history.replaceState(null, '', location.pathname + location.search);
 }
+// §17.1 / §17.7: m.agentj.app/friends opens the friends page on this phone's paired session; `#add=AJ-…` (a friend's share
+// link or QR) prefills 「加好友」 and is stripped from the address bar at once. Nothing of it is sent anywhere until the owner taps.
+const FRIENDS_PATH = '/friends';
+let wantFriends = location.pathname === FRIENDS_PATH;
+let pendingAdd = null;
+let pendingCard = false;           // P73: `/friends#card` (the /my-agent-id answer's link) opens 「我的名片」
+function takeAddHash() {
+  if (location.hash === '#card') { pendingCard = true; history.replaceState(null, '', location.pathname + location.search); return true; }
+  if (!location.hash.startsWith('#add=')) return false;
+  let raw = '';
+  try { raw = decodeURIComponent(location.hash.slice(5)); } catch { /* a broken escape: keep it empty */ }
+  pendingAdd = parseAgentId(raw) || raw.slice(0, 40);
+  history.replaceState(null, '', location.pathname + location.search);
+  return true;
+}
+if (takeAddHash()) wantFriends = true;
+function openFriendsWanted() {
+  if (!wantFriends) return false;
+  wantFriends = false;
+  $('pair-friends').hidden = true;
+  const add = pendingAdd; pendingAdd = null;
+  const card = pendingCard; pendingCard = false;
+  friends.open(add ? 'add' : card ? 'card' : 'list', add);
+  return true;
+}
+// P73: a link to this page's own friends screens inside a reply (the /my-agent-id answer: …/friends#add=… · …/friends#card)
+// opens the screen in place — no reload, no new tab, nothing sent.
+const OWN_FRIENDS = /^https:\/\/m\.agentj\.app\/friends(?:\?[^#]*)?#(card|add=[A-Za-z0-9-]{1,40})$/;   // brand/lang.js may add ?lang=
+document.addEventListener('click', (e) => {
+  const a = e.target instanceof Element ? e.target.closest('a[href]') : null;
+  if (!a || state !== 'ready') return;
+  const href = a.getAttribute('href') || '';
+  const own = OWN_FRIENDS.exec(href) || (href.startsWith(location.origin + '/friends#') ? OWN_FRIENDS.exec('https://m.agentj.app' + href.slice(location.origin.length)) : null);
+  if (!own) return;
+  e.preventDefault();
+  if (own[1] === 'card') friends.open('card');
+  else { let raw = own[1].slice(4); try { raw = decodeURIComponent(raw); } catch { /* keep */ } friends.open('add', parseAgentId(raw) || raw.slice(0, 40)); }
+}, true);
 
 // ---------------------------------------------------------------- state / views
 let state = 'idle';
@@ -83,14 +125,18 @@ function setStatus(s, key, vars) {
   rerender();
 }
 let view = null;
-const VIEWS = { pair: 'pair-view', scan: 'scan-view', models: 'models-view', sas: 'sas-view', mem: 'mem-view', act: 'act-view', tasks: 'tasks-view', revoked: 'revoked-view', error: 'error-view' };
+const VIEWS = { pair: 'pair-view', scan: 'scan-view', models: 'models-view', sas: 'sas-view', mem: 'mem-view', act: 'act-view', tasks: 'tasks-view', friends: 'friends-view', revoked: 'revoked-view', error: 'error-view' };
+const PAIRED_VIEWS = ['chat', 'mem', 'act', 'tasks', 'models', 'friends'];
 function show(v) {
   view = v;
   document.body.dataset.view = v;
   for (const [k, id] of Object.entries(VIEWS)) $(id).hidden = k !== v;
-  $('unpair').hidden = !['chat', 'mem', 'act', 'tasks', 'models'].includes(v);
+  $('unpair').hidden = !PAIRED_VIEWS.includes(v);
   $('scan-repair').hidden = $('unpair').hidden;
-  for (const id of ['open-mem', 'open-act', 'open-tasks', 'open-models']) $(id).hidden = !['chat', 'mem', 'act', 'tasks', 'models'].includes(v);
+  for (const id of ['open-mem', 'open-act', 'open-tasks', 'open-models', 'open-friends']) $(id).hidden = !PAIRED_VIEWS.includes(v);
+  // the address follows the friends page (m.agentj.app/friends can be bookmarked); leaving it for another paired view goes back to /
+  if (v === 'friends' && location.pathname !== FRIENDS_PATH) history.replaceState(history.state, '', FRIENDS_PATH + location.search);
+  else if (v !== 'friends' && PAIRED_VIEWS.includes(v) && location.pathname === FRIENDS_PATH) history.replaceState(history.state, '', '/' + location.search);
   push.renderA2hs(v);
   renderLogo();
 }
@@ -155,6 +201,7 @@ function onHostGone() {
   snap.S.asks.clear(); snap.S.qs.clear(); snap.S.order = [];   // the host re-sends every request still open after ready
   controls.clearGrants();
   elevate.clear();                                    // F17: the host re-sends open sudo / secret cards after ready
+  secretout.clear({ keepOpened: true });              // F32: and open pickup cards (a value on screen stays)
 }
 session.configure({
   setStatus,
@@ -186,6 +233,7 @@ session.configure({
     onHostGone();
     controls.openPanel(controls.panel);
     setStatus('ready', 'st.ready');
+    openFriendsWanted();
     api.myDeviceId().then(() => rerender());
     relay.onReady();
     blobs.onReconnect([]);
@@ -207,7 +255,8 @@ snap.configure({
   onTurn: (p) => relay.upsertTurn(p),
 });
 api.onState((m) => relay.onSayState(m));
-controls.configure({ show, estopChanged: () => { relay.onEstop(); rerender(); } });
+controls.configure({ show, estopChanged: () => { relay.onEstop(); rerender(); }, friends: () => friends.refresh() });
+friends.configure({ openPanel: controls.openPanel, agentName: () => agentName ?? DEFAULT_NAME });
 
 function onApp(m) {
   if (api.route(m) || blobs.handle(m) || media.handle(m)) return;
@@ -216,10 +265,15 @@ function onApp(m) {
     case 'status': setAgentName(m.name); snap.setStatus(m); return;
     case 'ask': snap.addAsk(m); return;
     case 'ask_done': snap.askDone(m); return;
+    case 'fr_changed': friends.changed(m); return;   // §17.7: something changed on the computer → the friends page re-reads
     case 'elev': elevate.add(m); return;             // F17 (§11)
     case 'elev_done': elevate.done(m); return;
     case 'elev_refused': elevate.refused(m); return;   // ADR-A163: Face ID not accepted, the card stays open
     case 'pk_offer': offerPasskey(m).catch(() => {}); return;    // F20 (§12)
+    case 'secret_out': secretout.add(m); return;       // F32 (§18): a pickup card (no value)
+    case 'secret_out_val': secretout.value(m); return; // the value, after Face ID, to this session only
+    case 'secret_out_done': secretout.done(m); return;
+    case 'secret_out_err': secretout.failed(m); return;
     case 'pk_reg_res': pkSaved(m).catch(() => {}); return;
     case 'question': snap.addQuestion(m); return;
     case 'question_done': snap.questionDone(m); return;
@@ -287,8 +341,10 @@ async function revoked(why = 'revoked') {
  *  uploads, queued and in-flight sends, the tray, the quote, the field and ↑↓ history; then the sealed records and their key. */
 async function forgetLocal() {
   relay.forgetLocal();
+  friends.forget();
   blobs.forgetAll();
   elevate.clear();
+  secretout.clear();
   await wipeLocal();
 }
 function fatal(key) {
@@ -325,6 +381,7 @@ function showIdle() {
   setAgentName(null, false);
   show('pair');
   setStatus('idle', 'st.idle');
+  $('pair-friends').hidden = !wantFriends;
   renderPk().catch(() => { $('pk-restore').hidden = true; });
 }
 
@@ -332,9 +389,17 @@ function showIdle() {
 // Register: once, after a pairing (the host sends pk_offer only then), one sheet; 「以后再说」 changes nothing and the
 // question never comes back for this pairing (host record `pkAsked`). The system Face ID sheet must follow the tap, so
 // nothing slow runs between 「保存」 and navigator.credentials.create.
+// F32: 「设置 Face ID」 on a pickup card asks for an offer even after 「以后再说」 (pkForce, one offer).
+let pkForce = false;
+secretout.configure({ setupFaceId: async () => {
+  if (!(await passkey.supported())) { toast(t('sout.noFaceId'), 5000); return; }
+  pkForce = true;
+  session.sendApp({ t: 'pk_offer_req' }).catch(() => { pkForce = false; toast(t('elev.fail'), 3000); });
+} });
 async function offerPasskey(m) {
   const h = await dbGet('host');
-  if (!h || !h.approved || h.pkAsked || h.channel !== session.channel()) return;
+  const forced = pkForce; pkForce = false;
+  if (!h || !h.approved || (h.pkAsked && !forced) || h.channel !== session.channel()) return;
   const ri = passkey.relayIndex(h.relay);
   const nonce = unb64u(m.n);
   if (ri < 0 || nonce.length !== 32 || !(await passkey.supported())) return;
@@ -431,7 +496,9 @@ async function startScan() {
   if (generation !== scanGeneration) return;
   let stream;
   try {
-    stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: 'environment' } }, audio: false });
+    // F29: ask for 1080p (iOS gives ~640×480 otherwise); a camera that fails on it (not a refusal) gets the old request
+    try { stream = await navigator.mediaDevices.getUserMedia(SCAN_CONSTRAINTS); }
+    catch (e) { if (e?.name === 'NotAllowedError' || e?.name === 'SecurityError') throw e; stream = await navigator.mediaDevices.getUserMedia(SCAN_FALLBACK); }
   } catch {
     if (generation !== scanGeneration) return;
     fillText(hint, t('pair.scanNoCam')); hint.hidden = false; stopScan(false); return;
@@ -444,20 +511,24 @@ async function startScan() {
   try { await video.play(); } catch { if(generation !== scanGeneration) return; stopScan(false); fillText(hint, t('pair.scanNoCam')); hint.hidden = false; return; }
   const canvas = document.createElement('canvas');
   const ctx = canvas.getContext('2d', { willReadFrequently: true });
+  let attempt = 0, since = 0, slowShown = false;
   const tick = async () => {
     if (scanStream !== stream) return;
     if (!scanActive) { setTimeout(tick, 250); return; }
+    // F29: 10 s of scanning without a result → say what else works (the home-screen app pairs from a pasted link; a Safari
+    // tab can use the system camera, which opens the pairing page itself)
+    if (!since) since = Date.now();
+    else if (!slowShown && Date.now() - since >= SCAN_SLOW_MS) {
+      slowShown = true;
+      fillText(hint, t(push.standalone() ? 'camera.slowApp' : 'camera.slow')); hint.hidden = false;
+    }
     let link;
     try {
       if (det) {
         const hits = await det.detect(video);
         link = hits.find(c => typeof c.rawValue === 'string' && c.rawValue.includes('#p='))?.rawValue;
       } else if (video.readyState >= 2 && video.videoWidth) {
-        const scale = Math.min(1, 800 / video.videoWidth);
-        canvas.width = Math.round(video.videoWidth * scale); canvas.height = Math.round(video.videoHeight * scale);
-        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-        const frame = ctx.getImageData(0, 0, canvas.width, canvas.height);
-        link = window.jsQR(frame.data, frame.width, frame.height)?.data;
+        link = scanFrame(ctx, video, video.videoWidth, video.videoHeight, attempt++, window.jsQR);
       }
       if (scanStream !== stream) return;
       if (link) { parseLink(link); stopScan(); await startPairing(link); return; }
@@ -512,6 +583,7 @@ function relang() {
   if (!$('scan-hint').hidden) fillText($('scan-hint'), t('pair.scanHint'));
   if (!$('pair-error').hidden) $('pair-error').textContent = t($('pair-error').dataset.k || 'pair.badLink');
   controls.reloadPanel();
+  friends.relang();
   push.reregister();
 }
 
@@ -593,6 +665,8 @@ function wire() {
   $('open-mem').addEventListener('click', () => { closeMenu(); controls.openPanel('mem'); });
   $('open-act').addEventListener('click', () => { closeMenu(); controls.openPanel('act'); });
   $('open-tasks').addEventListener('click', () => { closeMenu(); controls.openPanel('tasks'); });
+  $('open-friends').addEventListener('click', () => { closeMenu(); friends.open('list'); });
+  friends.wire();
   for (const b of document.querySelectorAll('[data-back]')) b.addEventListener('click', () => controls.openPanel('chat'));
   $('act-more').addEventListener('click', () => controls.loadActivity(false));
   $('resume').addEventListener('click', controls.onResume);
@@ -619,6 +693,11 @@ function wire() {
     if (a === 'resume') resume(); else if (a === 'reload') location.reload(); else showIdle();
   });
   addEventListener('hashchange', () => {             // a QR opened while this page is already open
+    if (takeAddHash()) {                              // a friend's link opened while the page is open
+      wantFriends = true;
+      if (state === 'ready') openFriendsWanted(); else if (view === 'pair') $('pair-friends').hidden = false;
+      return;
+    }
     if (!location.hash.startsWith('#p=')) return;
     const l = location.hash;
     history.replaceState(null, '', location.pathname + location.search);
@@ -685,7 +764,7 @@ async function main() {
     if (!same) return startPairing(l);
     toast(t('pair.already'));
   }
-  if (host && host.approved && !lost) { askPersist(); show('chat'); return resume(); }
+  if (host && host.approved && !lost) { askPersist(); show('chat'); resume(); openFriendsWanted(); return; }
   if (host && !host.approved && ['replaced', 'revoked'].includes(host.removed)) return revoked(host.removed);
   showIdle();
 }

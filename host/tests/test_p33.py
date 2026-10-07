@@ -504,7 +504,8 @@ class Menu(unittest.TestCase):
             r = menu.served(str(w), ["fake-skill", "clear"], "zh")
             self.assertEqual(r["source"], "default")
             self.assertEqual([i["cmd"] for i in r["items"]], ["/" + c for c in ("clear", "compact", "model", "context", "cost",
-                                                                              "usage", "status", "help", "stop")])
+                                                                              "usage", "status", "help", "stop",
+                                                                              "add-friend", "my-agent-id")])   # + P73 friends
             self.assertEqual(r["skills"], [{"cmd": "/fake-skill", "desc": ""}])
             self.assertIn("compact", r["cmds"])
             (w / ".agentj").mkdir()

@@ -4,7 +4,6 @@ Ed25519 over the challenge) and forwards opaque frames; the device is the web cl
 from __future__ import annotations
 
 import asyncio
-import base64
 import json
 import os
 import re
@@ -118,9 +117,8 @@ class FakeRelay:
 
 
 def parse_link(link: str) -> dict:
-    p = json.loads(base64.urlsafe_b64decode(link.split("#p=", 1)[1] + "=="))
-    return {"relay": p["r"], "channel": p["c"], "host_pub": wire.unb64u(p["k"]), "pid": wire.unb64u(p["i"]),
-            "psk": wire.unb64u(p["p"])}
+    p = wire.parse_pairing_link(link)   # ADR-A177: the compact digits link, or the old JSON one
+    return {k: p[k] for k in ("relay", "channel", "host_pub", "pid", "psk")}
 
 
 class PyDevice:

@@ -35,7 +35,7 @@ class Autonomy(unittest.TestCase):
     def test_native_policies_no_extra_risk_approval(self):
         a=ClaudeAgent(None,{'kind':'claude','dir':'/tmp','_workflow_ceo':True})
         argv=a.argv(None);self.assertEqual(json.loads(argv[argv.index('--settings')+1]),{})
-        self.assertEqual(CodexAgent(None,{'kind':'codex','dir':'/tmp'}).policy(),{})
+        self.assertEqual(CodexAgent(None,{'kind':'codex','dir':'/tmp'}).policy(),{'sandbox':'danger-full-access'})   # F30: no explicit sandbox_mode → directly on the system
     def test_self_code_writable_state_still_protected(self):
         with tempfile.TemporaryDirectory() as tmp:
             st=State(Path(tmp)/'state');st.init()
@@ -47,7 +47,7 @@ class Autonomy(unittest.TestCase):
     def test_defaults_and_identity(self):
         self.assertFalse(preferences.get(preferences.defaults(),'agent.high_risk_warnings'))
         self.assertEqual(preferences.get(preferences.defaults(),'agent.session_mode'),'shared')
-        self.assertEqual(main_identity.verify_core()['version'],5)
+        self.assertEqual(main_identity.verify_core()['version'],6)
         self.assertIn('without extra approvals',main_identity.prompt({'language':'en'}))
     def test_high_risk_shared_call_adds_no_decision(self):
         host=Mock();host.stopped.return_value=False

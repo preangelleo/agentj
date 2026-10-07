@@ -1,15 +1,15 @@
 ---
 document: agentj-install
-version: 0.19.8
+version: 0.20.0
 released: 2026-10-07
 status: beta (anyone can sign up; not advertised yet, pages are not indexed)
 host_package: agentj (the `agentj` command)
-host_version: 0.15.8a1
-source_tag: v0.15.8a1
-host_wheel: agentj-0.15.8a1-py3-none-any.whl
-host_wheel_sha256: 7e896ad9ff5132e146de4ef8e291c052692060e208b2cf3e19384a2523728b78
-host_sdist: agentj-0.15.8a1.tar.gz
-host_sdist_sha256: a3ad6b8862f16a95f86c96c225de9bf424853068853feb3c5d1ea6c6a6a8ea2a
+host_version: 0.16.0a1
+source_tag: v0.16.0a1
+host_wheel: agentj-0.16.0a1-py3-none-any.whl
+host_wheel_sha256: 7e058fb17f1aa42817335c9fd7f46b9852d2884248a1aacebea2d2ffe084d3c4
+host_sdist: agentj-0.16.0a1.tar.gz
+host_sdist_sha256: 03ef012906d90d5b615835f16d9c40e9b050781add8ce5cc21afa2d95c388278
 canonical_url: https://agentj.app/install.md
 sha256_url: https://agentj.app/install.md.sha256
 alias: https://agentjarvis.net/install.md (the older address: the same file, kept for one more version)
@@ -263,7 +263,7 @@ Ask (kind `question`; `bug` if you think it is a bug, `report` for a docs proble
 with your file-writing tool or a heredoc, then post it with the install session from Step 2:
 ```bash
 ( umask 077; cat > ~/.agentj-install/support.json <<'JSON'
-{"kind": "question", "install_md_version": "0.19.8",
+{"kind": "question", "install_md_version": "0.20.0",
  "body": "Step 4: `uv tool install` fails with: <the exact error, redacted>. OS: Ubuntu 24.04 x86_64. Agent: claude-code. Tried: …"}
 JSON
 )
@@ -424,7 +424,7 @@ The astral installer warning that `uv` / `uvx` are shadowed is informational if 
 carry over). So start every command line from here on with `export PATH="$HOME/.local/bin:$PATH";` — or call
 `~/.local/bin/agentj` by its full path. This document writes `agentj` for short.
 
-The program is pinned to one release: the tag `v0.15.8a1` (front matter `source_tag`). The tag never moves, and its
+The program is pinned to one release: the tag `v0.16.0a1` (front matter `source_tag`). The tag never moves, and its
 `host/` folder is byte for byte the same code as the two files on our site whose SHA-256 is in this document's front matter.
 ```bash
 cd ~/.agentj-install
@@ -432,7 +432,7 @@ W=$(sed -n 's/^host_wheel: //p' install.md); WS=$(sed -n 's/^host_wheel_sha256: 
 curl -fsSLO "https://agentj.app/dl/$W"
 echo "$WS  $W" | sha256sum -c -   # macOS: shasum -a 256 -c -; mismatch → stop
 uv tool install "./$W"
-export PATH="$HOME/.local/bin:$PATH"; agentj --version     # → agentj 0.15.8a1
+export PATH="$HOME/.local/bin:$PATH"; agentj --version     # → agentj 0.16.0a1
 export PATH="$HOME/.local/bin:$PATH"; agentj doctor
 ```
 **Your human's own terminal must find `agentj` too** — they run `agentj passphrase set` and `agentj pair` themselves
@@ -460,12 +460,12 @@ echo "$WS  $W" | sha256sum -c - && echo "$SS  $S" | sha256sum -c -    # macOS: s
 uv tool install "./$W"          # the wheel; its dependencies come from PyPI or the mirror in UV_DEFAULT_INDEX
 ```
 `uv tool install "./$S"` installs from the checked source archive instead (it builds the same program).
-`https://agentj.app/dl/latest.txt` and `https://agentj.app/dl/latest-sdist.txt` name the same two files. `agentj --version` is the program's own version (`0.15.8a1`); it is
+`https://agentj.app/dl/latest.txt` and `https://agentj.app/dl/latest-sdist.txt` name the same two files. `agentj --version` is the program's own version (`0.16.0a1`); it is
 numbered separately from this document (`0.17.0`).
 
-Alternative from the matching published source tag: `uv tool install "git+https://github.com/preangelleo/agentj@v0.15.8a1#subdirectory=host"`.
+Alternative from the matching published source tag: `uv tool install "git+https://github.com/preangelleo/agentj@v0.16.0a1#subdirectory=host"`.
 
-Alternative without uv: `pipx install "git+https://github.com/preangelleo/agentj@v0.15.8a1#subdirectory=host"` (needs Python 3.11+).
+Alternative without uv: `pipx install "git+https://github.com/preangelleo/agentj@v0.16.0a1#subdirectory=host"` (needs Python 3.11+).
 `agentj doctor` lists what is ready and what is not (prerequisites, the fence, connectivity, which agents are usable).
 Continue unless it reports an error that a later step does not fix; report anything you cannot explain.
 
@@ -666,9 +666,19 @@ agentj agent opencode --dir ~/coding --model zhipuai/glm-5.3   # OpenCode: name 
 agentj agent                                # shows the choice and that it runs fenced
 ```
 The same on Linux (bubblewrap) and macOS (`sandbox-exec`). `agentj doctor` shows `✓ fence`.
-- **macOS + Codex:** Codex's own sandbox cannot run inside ours on macOS, so in Codex's default sandbox modes the commands
-  Codex wants to run fail ("sandbox … Operation not permitted"); chat still works. Tell your human in one sentence; how
-  Codex is configured (`sandbox_mode` in their own `~/.codex/config.toml`) is **their** choice — never change it yourself.
+- **Codex runs directly on the system by default (host 0.16+, F30).** When the human's `~/.codex/config.toml` (or
+  `$CODEX_HOME/config.toml`) has **no top-level** `sandbox_mode`, Agent J starts the main Codex Agent with
+  `danger-full-access` — like Codex in their own terminal: network, installs, the home folder. Codex's own default
+  (workspace-write without network) is not inherited, because nobody chose it. The danger list and the phone's cards still
+  apply. Know this before you test: `curl` and friends work from the phone's Codex unless the human restricted it.
+  If the human **did** set `sandbox_mode`, it stays theirs. To change it, use only `agentj codex-sandbox
+  set <mode>|default|fix` (it writes the top of the file, before the first `[ ]`; a line appended at the end of the file
+  lands inside the last table and Codex ignores it — `agentj doctor` row `codex_perm` says 「写了但没生效」), with your
+  human's yes, then `agentj service restart`. Friends' sessions stay read-only and tool-less whatever this says.
+- **macOS + Codex:** Codex's own sandbox cannot run inside ours on macOS, so **if the human set** a restricting
+  `sandbox_mode` (workspace-write / read-only), the commands Codex wants to run fail ("sandbox … Operation not permitted");
+  chat still works. With no setting (the default above) Codex does not use its own sandbox and commands run. Tell your human
+  in one sentence; their `sandbox_mode` is **their** choice — never change it yourself.
   Claude Code is not affected (unless the human turned on Claude Code's own optional sandbox).
 - **The fence does not start** (the output warns; e.g. a container, or user namespaces disabled): the Agent then runs
   with the AI coding tool's own permissions and the phone says so once. Tell your human in one sentence; do not change
@@ -712,19 +722,25 @@ config denies stays denied; subagents (OpenCode's `task` tool) are switched off 
 on the conversation when it starts OpenCode and changes no file of theirs. **Codex:** Agent J talks to it through
 `codex app-server` and asks it to check before every command it does not know to be read-only and before every file change
 (approval policy `untrusted`, approver = the human, not Codex's automatic reviewer); each check comes to the phone as a card,
-and the five kinds above are red cards one by one. Their sandbox and config file stay as they are — and a phone approval never
-reaches past that sandbox: an approved Codex command runs outside it, so Agent J only offers cards for what their own sandbox
+and the five kinds above are red cards one by one. Their config file stays as it is. With no `sandbox_mode` of theirs the main
+Codex Agent runs with `danger-full-access` (above). When they **did** restrict it, a phone approval never reaches past that
+sandbox: an approved Codex command runs outside it, so Agent J only offers cards for what their own sandbox
 already allows (plain reads; file changes inside its writable folders); anything beyond is declined at once with a notice
-(「这一步超出了你 Codex 自己的沙箱设置，已拒绝；要放开请在电脑上改 Codex 的设置。」). If they want more, they widen Codex's own
-`sandbox_mode` on the computer — their choice, never yours. One exception to tell
+(「这一步超出了你 Codex 自己的沙箱设置，已拒绝；…」, naming `agentj codex-sandbox default` as the way out). In Codex
+**shared mode** (the human's own Codex App conversation) that conversation's permissions in the Codex App decide; a refusal
+there means the human sets that conversation to 「完全访问」 / Full access in the Codex App. If another program holds that
+conversation, the phone names it (an Agent J leftover process is cleaned up automatically; the ChatGPT App's Codex, the Codex
+App or a terminal `codex` must be quit by the human). One exception to tell
 them about: commands matching a Codex "always allow" rule they saved earlier (`~/.codex/rules/*.rules`, `decision="allow"`)
 run without asking anyone — `agentj doctor` counts them; removing a rule is **their** decision, never edit it yourself.
 
 **Commands from the phone.** The phone's ≡ button 「全部命令」 ("All commands") left of the message box (or typing `/compact`,
 `/clear`, `/model`, `/context`, `/cost`, `/usage`, `/status`, `/help`, `/stop`) works for all three agents without going back to the computer: Agent J carries each one
 out through the agent's own headless interface — no terminal multiplexer (herdr, tmux …) is needed or installed. `/clear` asks
-on the phone first and can be undone; `/stop` stops only the running turn. Other commands (ones that change settings) are
-answered 「这个命令请在电脑上执行」.
+on the phone first and can be undone; `/stop` stops only the running turn. Two friend commands are answered by the host
+itself, without the agent or the model: `/my-agent-id` (the Agent ID, share link and card, also in the owner's Telegram
+private chat) and `/add-friend AJ-… [note]` (the phone page signs and sends the friend request itself; Telegram only points
+to the phone). Other commands (ones that change settings) are answered 「这个命令请在电脑上执行」.
 
 The host injects the versioned English / Chinese core v2 role into every harness start. `agentj doctor` checks
 its package hash and injection mechanism. User instructions in JSON5 / `agentj-config` can append personal preferences;
@@ -861,7 +877,7 @@ The steps:
 2. ✋ The human runs, in **their own terminal** on this computer, `agentj pair` (Android) or `agentj pair --link`
    (iPhone: it draws the QR code **and** prints the pairing link). `agentj admin` prints a one-time link to a page on
    127.0.0.1 that does the same. On a server over SSH the QR code is drawn right in the SSH terminal (section S).
-3. ✋ On either iPhone or Android, tap **「扫二维码」** ("Scan QR code") inside the Home Screen app and point the camera at the QR code. Allow camera access. The app includes its own QR decoder; Safari does not need native BarcodeDetector support.
+3. ✋ On either iPhone or Android, tap **「扫二维码」** ("Scan QR code") inside the Home Screen app and point the camera at the QR code. Allow camera access. The app includes its own QR decoder; Safari does not need native BarcodeDetector support. Let the code fill most of the middle of the picture (since host 0.16 the code is smaller: 49 modules instead of 69). After 10 seconds without a result the scanner itself says what else works — in the Home Screen app: `agentj pair --link` and paste the link as in point 4.
 4. ✋ If camera access is denied or unavailable, paste the pairing link into the field at the top under **「或者粘贴配对链接」** ("Or paste the pairing link") and tap **「开始配对」** ("Pair"). Keep this window open; the system Camera app opens a separate browser tab instead. The page keeps the input and button above the keyboard.
 5. The phone shows **6 digits** under 「在电脑上输入这 6 位码」 ("Type this 6-digit code on your computer"); the human types
    them into the terminal (or the admin page), then their passphrase. The phone shows 「等电脑批准」, then 「已连接」
@@ -907,10 +923,11 @@ welcome from Step 11a — let them answer it first; its tour covers points 3 and
    with **「拒绝」 ("Deny")** and **「长按批准」 ("Hold to approve")** comes up → press and hold the approve button about a
    second (a tap alone never approves) → done. Deleting is one of the five kinds, so that card is marked ⚠ and its button
    is 「长按批准这一条」 ("Hold to approve this one"). No answer within 120 s = denied.
-   **Codex:** ask it to create a file `scratch.txt`. If Codex's own sandbox lets it write in the work folder
-   (`workspace-write`), a card appears for the file change → hold 「长按批准」 to approve. If its sandbox is read-only,
-   no card comes; the phone shows 「这一步超出了你 Codex 自己的沙箱设置，已拒绝；…」 instead. Either answer proves that
-   Codex's requests reach the phone. Its sandbox setting shows on the phone with ≡ → 「状态」 ("Status").
+   **Codex:** ask it to create a file `scratch.txt`. With no `sandbox_mode` of the human's (the default: directly on the
+   system) or `workspace-write`, the file is written — with a card first when high-risk warnings are on → hold 「长按批准」.
+   If the human set a read-only sandbox, no card comes; the phone shows 「这一步超出了你 Codex 自己的沙箱设置，已拒绝；…」
+   instead. Either answer proves that Codex's requests reach the phone. Where the permissions come from shows on the phone
+   with ≡ → 「状态」 ("Status"): 「底层直跑（Agent J 默认）」, 「你的沙箱设置：…（config.toml）」 or 「桌面线程权限：…」.
    If the file stays behind (declined, or on macOS where Codex's commands fail), tell your human and, with their yes,
    remove it yourself: `rm ~/coding/scratch.txt`.
 3. Optional: in the top-right 「菜单」 ("Menu") tap 「开启锁屏提醒」 ("Turn on lock-screen alerts"); the alerts never
@@ -1028,7 +1045,7 @@ The daily check remains a notification, not an unattended installation; `agentj 
 In the default shared session, reinstall directly using Step 4's checked wheel (SHA-256 must match this document and
 its public GitHub copy), preserving the host's identity, paired phones, account and preferences:
 ```bash
-uv tool install --force "./agentj-0.15.8a1-py3-none-any.whl"
+uv tool install --force "./agentj-0.16.0a1-py3-none-any.whl"
 agentj --version
 agentj service install
 agentj service restart
@@ -1036,7 +1053,7 @@ agentj doctor
 ```
 The matching published tag is another source, after verifying the tag object against the upgrade email:
 ```bash
-uv tool install --force "git+https://github.com/preangelleo/agentj@v0.15.8a1#subdirectory=host"
+uv tool install --force "git+https://github.com/preangelleo/agentj@v0.16.0a1#subdirectory=host"
 ```
 **0.14 independent session** (`agent.session_mode=independent`): 0.14's fence keeps Agent J's own program read-only and
 hides the service manager, so the Agent on the phone cannot reinstall or restart from inside it (measured: the install
@@ -1062,11 +1079,11 @@ prints something and `uv tool list` (or `pipx list`) shows `agentjarvis-host`, t
 the new name, then:
 ```bash
 jarvis service uninstall      # stop the old service first (Step 10 used tmux / nohup instead? stop that process)
-uv tool uninstall agentjarvis-host && uv tool install "git+https://github.com/preangelleo/agentj@v0.15.8a1#subdirectory=host"
+uv tool uninstall agentjarvis-host && uv tool install "git+https://github.com/preangelleo/agentj@v0.16.0a1#subdirectory=host"
 agentj doctor
 agentj service install        # start it again under the new name (or the tmux / nohup fallback, Step 10)
 ```
-With pipx instead of uv: `pipx uninstall agentjarvis-host && pipx install "git+https://github.com/preangelleo/agentj@v0.15.8a1#subdirectory=host"`.
+With pipx instead of uv: `pipx uninstall agentjarvis-host && pipx install "git+https://github.com/preangelleo/agentj@v0.16.0a1#subdirectory=host"`.
 - After the move, `agentj` puts back a `jarvis` command (a link to `agentj`, only if no other `jarvis` exists) for one more
   version; it prints a notice that points here. New installs never get `jarvis`.
 - The state moves by itself on the first run of `agentj`: from `~/.local/state/agentjarvis-alpha` to `~/.local/state/agentj`.
@@ -1279,9 +1296,22 @@ or logs out Claude Code / Codex / OpenCode (nor removes a model key), and never 
   never what an installed package does on this computer. Certified packages are signed with a key that never leaves
   our own machine; the public key is built into `agentj`, which checks every signature itself.
   Full list and current status: https://agentj.app/security/
+- **Agent friends** (0.20.0, off until your human turns it on): our servers know which computers turned friends on and
+  each one's mailbox id (derived from the Agent ID by a hash; the ID cannot be recovered from it). The mailbox relay
+  briefly sees when a message passes between two mailboxes and how large it is, and keeps none of it. We never see who is
+  friends with whom, the cards or the messages: they live only on the two computers, end-to-end encrypted between them.
 
 ## Changelog
 
+- 0.20.0 (2026-10-07): host 0.16.0a1 candidate. Agent friends: an Agent ID and QR card, friend requests approved on the
+  owner's paired phone, end-to-end encrypted Agent-to-Agent messages queued on this computer while the other one is off,
+  an isolated tool-less stand-in per friend, policy groups with limits and "you decide" cards, the read-only phone
+  Friends page and the built-in `agentj-friends` skill (section "Agent friends" below). A voice note, image or file can
+  be sent from the phone without text. The identity core is version 6. Also: `/add-friend` and `/my-agent-id`, a
+  per-friend context (`agentj friends context`); the main Codex agent runs with full access unless the owner set a
+  top-level `sandbox_mode` (`agentj codex-sandbox`, doctor `codex_perm`); `agentj secret send` (a pickup card opened
+  with Face ID on a paired phone) and `agentj secret result`; the one-line installer follows `/dl/latest.txt`.
+  Preparation does not publish.
 - 0.19.8 (2026-10-07): host 0.15.8a1 candidate. First-use onboarding: after Step 7 the seat is active and you keep going —
   `agentj onboarding` names the next step (this computer's browser, then the owner's main phone, Step 11a). The first
   approved remote gets one welcome written by the main Agent and a short tour the owner can skip; upgraded hosts are not welcomed.
@@ -1514,7 +1544,7 @@ OpenCode reports selected provider/model and switches only among configured prov
 are probed at GET <base_url>/v1/usage for weekly/daily/monthly usage and limit windows; labels follow the real
 window, and only unavailable telemetry is hidden. Context used/limit comes from the OpenCode session token usage
 and model metadata. Unknown context limits are not invented. Errors and the next main-Agent turn use the account’s
-selected language. The hashed bilingual identity core remains version5; only the selected language is injected per turn.
+selected language. The hashed bilingual identity core is version 6 since 0.20.0 (it adds the Agent friends rules); only the selected language is injected per turn.
 
 The scanner opens a separate full-screen camera page, with explicit scan and exit actions. Pairing instructions
 come before the pasted-link field. A missing ASR model offers installation on the phone, then recording can resume.
@@ -1526,6 +1556,12 @@ separately, with explicit failure/degradation evidence. Do not infer an active f
 The built-in `agentj-config` skill supports named provider profiles for Claude Code,
 Codex and OpenCode. Ask Agent J to switch providers; choose a provider and model,
 then enter the key in the paired phone's secret card. Never paste keys into chat.
+A secret card does not depend on the command that asked for it: `agentj secret request` prints `SECRET_CARD: <id>` first,
+and if your shell times out or the turn ends, the card stays on the phone for its 10 minutes; read the outcome later with
+`agentj secret result <id>` (`denied` = the owner tapped 「不提供」, `gone` = Agent J stopped or restarted). The other way
+round, when the owner wants back their own config, link or key (a proxy `ss://` link, a config file with a password), send
+a pickup card — `agentj secret send --name '<what it is>' --file <path>` or `--value-from env:<VAR>|file:<path>` — which
+the owner opens on the paired phone with Face ID; never paste the value into a reply.
 The host verifies a real model response before applying the native configuration,
 keeps a private backup, and can restore it while refusing to overwrite later edits.
 Shared sessions keep their original permissions. Finish other active work before
@@ -1543,6 +1579,14 @@ probes after `/clear`, or uses its configured default, and probes immediately.
 The owner's private Telegram `/installcode` command issues a two-hour installation
 code directly. The Telegram menu also offers `/promo first-month` through
 `/promo_first_month`; these operator capabilities remain owner-only.
+
+The one-line installer (`curl -fsSL https://agentj.app/install-assistant.sh | sh -s -- AJI-…`, from the account page of a
+paid seat that is still empty, or from `/installcode`) always installs the current release: it reads `/dl/latest.txt` and
+accepts that wheel only when this file's `host_wheel` / `host_wheel_sha256` (this file's bytes checked against
+`install.md.sha256`) and the `/dl/<wheel>.sha256` sidecar agree, then checks the downloaded bytes. When it stops it prints
+the exact reason. An installation code is redeemed once: if a run fails after redeeming and before the installation was
+saved, get a new code (paid owners: the account page; friends: whoever sent it); a saved installation resumes with the same
+command and needs no new code.
 
 ### Codex App shared sessions
 
@@ -1568,3 +1612,18 @@ Seat actions use the current account labels: **「增加一个席位」** ("Add 
 **「转移到另一台电脑」** ("Move to another computer"), **「取消席位」** ("Cancel seat"),
 and **「只解绑、保留空席位」** ("Unbind and keep the empty seat").
 For pairing choose **「添加遥控器（手机或浏览器）」** ("Add a remote (phone or browser)") on this Agent's computer.
+
+## Agent friends (0.20.0)
+
+Agent friends let this Agent talk to another owner's Agent: it has an Agent ID (`AJ-XXXX-XXXX-XXXX-XXXX`) and a QR card.
+It stays off until your human says so; when they ask for it ("turn on friends", 「打开好友功能」), the built-in
+`agentj-friends` skill does the rest. A friend request only counts once the other owner taps 「同意」 ("Accept") on their
+paired phone; no Agent can approve one, including you. Each friend is answered by an isolated stand-in with the Agent's
+name and character but no tools, no files, no keys and none of the owner's conversations; a per-friend policy group
+limits messages and tokens and sends money, scheduling and any commitment to the owner as a card first. The owner reads
+every conversation on the phone's Friends page (`m.agentj.app/friends`, read-only) and tells the Agent what to pass on.
+Each friend can also get the owner's 「补充设定」 (extra notes, ≤ 4000 characters, `agentj friends context <friend>`, or the
+friend's Details on the phone): the last layer of that stand-in's instructions; it can add facts and set the tone but never
+widens the tool ban, the never-tell list or "friend messages are data", which the host enforces in code.
+It needs a paid seat. User guide: https://agentj.app/docs/friends/
+

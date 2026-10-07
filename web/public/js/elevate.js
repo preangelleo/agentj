@@ -11,7 +11,7 @@ import { mk, toast } from './ui.js';
 import { elevateChallenge, canAssert, approve } from './faceid.js';
 
 const cards = new Map();           // id → card (in arrival order)
-let root = null, timer = 0, busy = false, shownId = null;
+let root = null, timer = 0, busy = false, shownId = null, denyArmed = 0;
 const MAX_FIELD = 8192;
 
 function build() {
@@ -32,17 +32,26 @@ function build() {
   label.htmlFor = 'elev-input';
   const bad = node('p', 'elev-bad', 'elev-bad');
   bad.hidden = true;
-  const acts = mk('div', 'ajrow confirm-row');
-  const deny = node('button', 'elev-deny', 'aj-btn'); deny.type = 'button';
+  const empty = node('p', 'elev-empty', 'elev-bad');
+  empty.hidden = true;
+  // P73 (ADR-A180): the main action alone on its row; 「拒绝 / 不提供」 a quiet text button on its own line under it, so a
+  // thumb aiming at 「保存到电脑」 cannot land on it. The keyboard's Enter / 完成 key only ever submits.
+  const acts = mk('div', 'ajrow confirm-row elev-acts');
   const allow = node('button', 'elev-allow', 'aj-btn aj-btn--primary'); allow.type = 'submit';
-  acts.append(deny, allow);
+  acts.append(allow);
+  const deny = node('button', 'elev-deny', 'aj-btn aj-btn--quiet elev-deny'); deny.type = 'button';
   form.append(node('p', 'elev-kicker', 'elev-kicker'), node('h2', 'elev-title'), node('dl', 'elev-rows', 'elev-rows'), bad, label, input,
-    node('p', 'elev-note', 'elev-note'), node('p', 'elev-left', 'elev-left'), acts);
+    empty, node('p', 'elev-note', 'elev-note'), node('p', 'elev-left', 'elev-left'), acts, deny);
   root.appendChild(form);
   document.body.appendChild(root);
   root.querySelector('#elev-form').addEventListener('submit', (e) => { e.preventDefault(); decide(true); });
-  root.querySelector('#elev-deny').addEventListener('click', () => decide(false));
-  root.querySelector('#elev-input').addEventListener('input', paintButtons);
+  root.querySelector('#elev-deny').addEventListener('click', () => askDeny());
+  root.querySelector('#elev-input').addEventListener('input', () => { $('elev-empty').hidden = true; paintButtons(); });
+  root.querySelector('#elev-input').addEventListener('keydown', (e) => {
+    if (e.key !== 'Enter' || e.isComposing) return;
+    e.preventDefault(); e.stopPropagation();
+    decide(true);                                  // Enter = submit, never decline (an empty field says so)
+  });
   onLang(() => { shownId = null; render(); });
   return root;
 }
@@ -152,6 +161,8 @@ function render() {
     $('elev-label').textContent = t(sudo ? 'elev.sudo.label' : 'elev.secret.label', { name: c.name || '' });
     $('elev-input').setAttribute('aria-label', $('elev-label').textContent);
     $('elev-note').textContent = t(nopw ? 'elev.sudo.noteHelper' : sudo ? 'elev.sudo.note' : 'elev.secret.note');
+    denyArmed = 0;
+    $('elev-empty').hidden = true;
     $('elev-deny').textContent = t(sudo ? 'elev.deny' : 'elev.secret.cancel');
     $('elev-allow').textContent = t(nopw ? 'elev.sudo.allowHelper' : sudo ? 'elev.sudo.allow' : 'elev.secret.allow');
     root.hidden = false;
@@ -169,7 +180,7 @@ function paintButtons() {
   if (!root) return;
   const c = cards.get(shownId);
   const v = $('elev-input').value;
-  $('elev-allow').disabled = busy || !c || (!viaHelper(c) && (!v || v.length > MAX_FIELD));
+  $('elev-allow').disabled = busy || !c || (!viaHelper(c) && v.length > MAX_FIELD);   // empty: enabled, says what is missing
   $('elev-deny').disabled = busy;
   $('elev-input').disabled = busy;
 }
@@ -179,12 +190,32 @@ function paintLeft(c) {
   if (left > 0) timer = setTimeout(() => { if (cards.get(c.id) === c) paintLeft(c); }, 1000);
 }
 
+/** 「不提供」 on a secret card needs a second tap within 4 s (the label asks 「确定不提供？」); sudo's 拒绝 is one tap. */
+function askDeny() {
+  const c = cards.get(shownId);
+  if (!c || busy) return;
+  if (c.kind === 'secret' && Date.now() > denyArmed) {
+    denyArmed = Date.now() + 4000;
+    $('elev-deny').textContent = t('elev.secret.cancelSure');
+    setTimeout(() => { if (Date.now() >= denyArmed && cards.get(shownId) === c) { denyArmed = 0; $('elev-deny').textContent = t('elev.secret.cancel'); } }, 4100);
+    return;
+  }
+  denyArmed = 0;
+  decide(false);
+}
+
 async function decide(ok) {
   const c = cards.get(shownId);
   if (!c || busy) return;
   const input = $('elev-input');
   const nopw = viaHelper(c);
-  if (ok && !nopw && !input.value) return;
+  if (ok && !nopw && !(c.kind === 'secret' ? input.value.trim() : input.value)) {   // nothing typed: say so, never send false
+    const e = $('elev-empty');
+    e.textContent = t(c.kind === 'secret' ? 'elev.secret.empty' : 'elev.sudo.empty', { name: c.name || '' });
+    e.hidden = false;
+    try { input.focus({ preventScroll: true }); } catch { /* old browsers */ }
+    return;
+  }
   const g = gen();
   if (!g) { toast(t('elev.net'), 3000); return; }
   // ADR-A163: Face ID first, straight from the tap (before any await). Cancel / failure → nothing sent, the card stays.

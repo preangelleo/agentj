@@ -79,6 +79,13 @@ First byte = message kind (visible to the relay — see §5):
 2. QR = `https://m.agentj.app/#p=` + b64url(JSON `{"v":1,"r":relay_wss_url,"c":channel,"k":b64url(host_x25519_pub),
    "i":b64url(pairing_id),"p":b64url(psk),"x":expiry_unix}`). The fragment never reaches any server; the client strips it with
    `history.replaceState` right after reading it.
+   **Compact link (F29, ADR-A177; what hosts ≥ 0.16 print):** `#p=` + the decimal digits (no leading zero) of the big-endian
+   number made of `0x02 ‖ channel(16 B, the b64url-decoded channel id) ‖ host_x25519_pub(32) ‖ pairing_id(16) ‖ psk(32) ‖
+   expiry_unix(u32 BE) ‖ relay` — relay = empty for `wss://relay.agentj.app`, else the UTF-8 relay URL without `wss://`
+   (a `ws://127.0.0.1:<port>` test relay is kept whole). The QR puts the part up to `#p=` in a byte segment and the digits in
+   a numeric segment, error correction M: version 8 (49 modules) instead of 13 (69). A client tells the two apart by the
+   payload (only digits → compact; the JSON form always starts `eyJ`), accepts both, and applies the same checks (relay rule,
+   key sizes, expiry) to either. At most 400 digits.
 3. Device sends PAIR_INIT. The host **consumes the pairing on the first PAIR_INIT carrying its id whose msg1 decrypts** (one-time;
    a msg1 that does not decrypt was not made with the QR's host key — the relay never sees that key — so it does not use up the
    QR); unknown / used / expired ids are dropped and logged. msg1's payload must be a JSON object `{"v":1,"name":<string>}`,
@@ -130,6 +137,8 @@ equal ~60 KiB frames (so its size is visible to ± one chunk, 44 KiB, and a voic
 long reply as a run of `frag` frames, and a BULK op (§10.13) tells the relay that this socket belongs to a device the host
 accepted. Never: file names, file types, file or audio content, transcripts, history text.
 
+**§17 (0.16)**: mailbox ids (never Agent IDs), which two mailboxes exchanged frames and when, padded sizes, the §17.2 kind byte; it stores none of it. Never: cards, friendships, message text.
+
 ## 6. Known alpha limits (see `ARCHITECTURE.md` GAP)
 No per-message ratchet (forward secrecy is per connection: fresh ephemerals every handshake). **msg1 has no forward secrecy**
 (IK / IKpsk2 encrypt the device static key and label to the host's static key; the PSK enters only in msg2): whoever later
@@ -157,7 +166,7 @@ Contexts: `agentjarvis-host-login-v1` · `agentjarvis-host-poll-v1` · `agentjar
 `agentjarvis-host-seat-leave-v1` (seat setup, review SS-02) · `agentjarvis-host-templates-v1` · `agentjarvis-host-template-v1` (L3.5) · plaza P2: `agentjarvis-host-plaza-search-v1`,
 `…-plaza-get-v1`, `…-plaza-mine-v1`, `…-plaza-post-v1`, `…-plaza-reply-v1`, `…-plaza-resolve-v1`, `…-plaza-report-v1` · skill & workflow plaza:
 `agentjarvis-host-plaza-pkg-search-v1`, `…-plaza-pkg-get-v1`, `…-plaza-pkg-mine-v1`, `…-plaza-pkg-installed-v1`, `…-plaza-pkg-like-v1`,
-`…-plaza-pkg-report-v1`, `…-plaza-pkg-publish-v1` · `agentjarvis-host-upgrade-auth-v1` (F12, 0.15) (distinct from the relay's
+`…-plaza-pkg-report-v1`, `…-plaza-pkg-publish-v1` · `agentjarvis-host-upgrade-auth-v1` (F12, 0.15) · `agentjarvis-host-peer-cert-v1` (§17.3, 0.16) (distinct from the relay's
 `agentjarvis-relay-auth-v1`, so no signature is valid in two places). Every inner body has `v:1`, `t`, `channel`, `ts` (unix s).
 Server checks, in order: size and shape → `pk` is 32 bytes → `channel == channel_id(pk)` (§1) → signature → `|ts − now| ≤ 300 s`
 → strict schema (unknown keys = 400; the only optional keys are `report`'s `agent_name`, `machine`, `language` and `language_at` (A1, 0.15), plaza `search`'s `limit`, package `search`'s `type` / `sort` / `tag` /
@@ -192,6 +201,7 @@ stale 401 `stale` · then per endpoint. Vector: `protocol/vectors/host-envelope.
 | `POST /v1/host/plaza/pkg/publish` | `{"v":1,"t":"plaza_pkg_publish","channel","ts","nonce","name","type","version","sha256","bytes","show_name"}` | 201 `{"id","version_id","upload":{"url","expires_at"}}` (`PUT` the bundle ≤ 10 min, `application/octet-stream` → 200 `{"name","version","state":"live"}` · 413 / 415 / 422 `bad_bundle` / `secret_found` · 409) · 409 `name_taken` / `version_exists` / `version_not_newer` / `type_mismatch` / `replay` · 413 `too_large` · 403 · 429 · 503 |
 
 | `POST /v1/host/upgrade-auth` (F12, 0.15) | `{"v":1,"t":"upgrade_auth","channel","ts","code","version"}` (`code` = C1 `AJUP-XXXXX-XXXXX-XXXXX-XXXXX`, normalised by the host; `version` = the release the host is about to install) | 200 `{"ok":true,"version","expires_at"}` (ms) · 404 `invalid_authorization` (unknown, another account's, or this host is not bound — one answer) · 409 `{"error":"version_mismatch","version":<the grant's version>}` · 410 `expired` · 409 `already_used` (this host already spent it) · 429 `rate_limited` (≤ 10 tries per channel per hour) |
+| `POST /v1/host/peer/cert` (§17.3, 0.16) | `{"v":1,"t":"peer_cert","channel","ts","mbox"}` (`mbox` = 22 b64url chars, §17.1) | 200 `{"cert","exp"}` (writes `hosts.peer_mbox`, `peer_enabled_at` the first time) · 402 `payment_required` (seat not paid / comp / grace) · 403 `not_bound` · 429 `rate_limited` (≤ 24 per host per day) · 503 `peer_unavailable` (no `PEER_CERT_KEY`) |
 
 Any endpoint may answer 500 `{"error":"internal"}` (no detail); the host treats it like any 5xx.
 
@@ -503,7 +513,8 @@ App messages (all inside §3 transport messages):
   <verdict> — <the VERDICT sentence>」(+「（只读运行）」).
 - **Slash commands** (PROMPT-26 7a; ARCHITECTURE ADR-A70 – A72; `host/agentj/slash.py`): only from a ready session of a
   paired device. Whitelist `/clear` `/compact` `/model [name]` `/context` `/cost` `/usage` `/status` `/help` `/stop` (+
-  `undo_clear` from the clear card). A message `/name …` whose name is not on the list: Claude Code's own skill (init `skills`) →
+  `undo_clear` from the clear card). P73: `/my-agent-id` and `/add-friend` (§17.7) are answered by the host before any of
+  this (no Agent needed, also while stopped, never the model). A message `/name …` whose name is not on the list: Claude Code's own skill (init `skills`) →
   sent as an ordinary message; anything else → a `refused` card 「这个命令请在电脑上执行。…」 and nothing reaches the Agent. `/stop`
   and `/help` run at once; the others queue behind the running turn (a 「这一轮结束后执行。」 card first) and take the turn lock;
   while stopped only `/help`. How (measured): Claude Code — `/compact` `/cost` sent as text (Claude Code executes them;
@@ -876,7 +887,8 @@ switched off) arrive as `sys` turns with `"local":true` and show relay's 「在�
 - `{"t":"menu_get","r"}` → `{"t":"menu","r","source":"file"|"default","items":[…],"skills":[{"cmd","desc"}],"cmds":["clear",…],
   "problems":[…]?}`: `skills` = Claude Code's own skills (init `skills`; empty for Codex / OpenCode), `cmds` = §8's whitelist (the
   one-tap command buttons, which keep executing directly). `/` completion matches all three; picking one inserts it.
-- Default items when no file: the whitelist commands with Chinese / English descriptions (never Leo's private skills).
+- Default items when no file: the whitelist commands with Chinese / English descriptions (never Leo's private skills), then
+  (P73) `/add-friend` and `/my-agent-id` in a 「好友」 / "Friends" group — inserted like every item, never in `cmds`.
 
 ### 10.13 Relay change — BULK
 - Host → relay op `0x03` (`[0x03][cid u32 BE]`, empty payload) after the device on `cid` is ready and allowlisted (never for a
@@ -965,7 +977,7 @@ The two human-only steps the Agent cannot do itself go through a paired phone, n
 `{"t":"secret","name","purpose","dest","cwd","verify_url"?,"verify_header"?,"verify_cmd"?}`. One JSON line back, never the
 value: sudo `{"result":"done","code","stdout","stderr","truncated"}` (≤ 256 KiB each) · secret `{"result":"saved","receipt":
 {"name","dest","length","fingerprint":"sha256:<8 hex>","verify":"ok"|"fail"|"skipped","detail":"HTTP 200"|"exit 1"|…}}` ·
-otherwise `denied` · `timeout` · `gone` (the CLI hung up before a decision: the card is withdrawn) · `stopped` · `locked`
+otherwise `denied` · `timeout` · `gone` (sudo: the CLI hung up before a decision, the card is withdrawn; secret since P73: only when serve stops / restarts — §18.1) · `stopped` · `locked`
 (`secs`) · `bad_password` · `no_device` · `busy` (> 4 open) · `failed` (`why`) · `refused` (`why`, `detail`: the request
 itself is malformed — argv 1–256 strings, shown command ≤ 2 000 chars, `why` required ≤ 300; `name` a variable name; `dest`
 `env:<file>[#KEY]` (one `KEY=value` line, the rest of the file kept) or `file:<path>` (whole file), never inside the state
@@ -977,7 +989,7 @@ on stderr for a card outcome, 3 = saved but the check failed.
 card only>,"ttl":s,"tries":n[,"bad":k]` + sudo `"cmd","why","effect"` / secret `"name","purpose","dest","verify"`}` — sent
 to every ready allowlisted session and again after a resume; a wrong password re-sends the same id with a NEW `n` and `epk`.
 `{"t":"elev_done","id","result"[,"code"][,"verify"]}` ends it everywhere. Web Push kind `ask` wakes the phone.
-TTL: sudo 120 s, secret 300 s (from each arming).
+TTL: sudo 120 s, secret 600 s (from each arming; 300 s before P73, §18.1).
 
 **Device → host.** `{"t":"elev_answer","id","ok":bool,"n","ts":<ms>,"sig"[,"epk","ct"]}`.
 - digest `D` = hex SHA-256(`"agentjarvis-elevate-v1\n" + kind + "\n"` + one line per shown field `hex SHA-256(field)`, joined
@@ -1288,3 +1300,216 @@ Applies only to a device whose record holds a passkey (§12 `pk`); every other d
   freshness.
 - **After a §12 restore** the record has a new device id + approval key but the same `pk`: the next card names the same
   credential and the challenge uses the new device id; nothing else changes.
+
+## 17. Agent friends (0.16.0, ADR-A173)
+
+Host ↔ host, end to end. The relay gains a **mailbox** route (§17.2); the cloud only signs a seat certificate (§17.3);
+friendships, cards and messages exist only on the two hosts. Code: `host/agentj/peer.py` (keys, ID, mailbox socket,
+handshakes, outbox), `friends.py` (store, policy groups, ledger, history), `peer_guard.py` (inbound / outbound gates),
+`peer_session.py` (the per-friend fenced, tool-less session), `relay/src/mailbox.ts`, `dashboard/src/peercert.ts`,
+`web/public/js/friends.js`.
+
+### 17.1 Identity
+- Keys, created on first use (`agentj friends id`, or `serve` with friends on): `peer_x25519` + `peer_ed25519` in
+  `<state>/peer/` (dir 0700, files 0600; the fence hides the whole state dir). Separate from the host / device / approval keys.
+- `h = SHA-256("agentj/peer-id/v1\n" ‖ x25519_pub ‖ ed25519_pub)`; **`id75` = the first 75 bits of `h`** (big-endian).
+- **Agent ID** = `AJ-` + 15 Crockford base32 characters of `id75` (alphabet `0123456789ABCDEFGHJKMNPQRSTVWXYZ`, most significant
+  first) + 1 check character = `(Σ_{i=0..14} (i+1)·v_i) mod 31` in the same alphabet (catches every single substitution except 0 ↔ Z and every adjacent swap), shown as 4 groups of 4:
+  `AJ-7KQ2-M9XA-4TPE-W3HC`. Parsing: strip `AJ`, `-`, spaces; upper-case; `I`/`L` → `1`, `O` → `0`; exactly 16 characters and a
+  matching check character, else invalid. (The ADR's "80 bit" ID is 75 bits + 5 check bits so that it fits 16 characters.)
+- `id_raw` = `id75 << 5` as 10 bytes big-endian. **mbox** = `b64url(SHA-256("agentj/mbox/v1\n" ‖ id_raw)[0:16])` (22 chars).
+  The relay and the cloud see only mboxes; an ID cannot be recovered from one.
+- Share link `https://m.agentj.app/friends#add=AJ-…` (fragment; stripped by the page; opens 「加好友」 prefilled — nothing is sent
+  until the owner taps). P73: `https://m.agentj.app/friends#card` opens 「我的名片」. Inside a reply on the paired page, links of
+  exactly these two forms (an optional `?query` allowed) open the screen in place, no navigation. Vectors:
+  `protocol/vectors/peer-id.json`.
+
+### 17.2 Relay mailbox (`GET /v1/mbox/<mbox>`, WebSocket; no `Origin` allowed — hosts only)
+- Auth like §2: relay text `{"t":"challenge","n"}`; host text `{"t":"auth","x":b64url(x25519_pub),"pk":b64url(ed25519_pub),
+  "sig":b64url(Ed25519(peer_ed25519, "agentj-mbox-auth-v1\n" + mbox + "\n" + n)),"cert":<§17.3 certificate>}` (≤ 2 048 chars).
+  Relay checks: `mbox` derives from (`x`, `pk`) as in §17.1, the signature, the certificate (signature with one of the
+  `PEER_CERT_PUB` keys, `exp` > now, its `mbox` = this mbox) → `{"t":"ok"}`; else close **4003**. A newer authenticated socket
+  for the same mbox replaces the old one (4001). Auth deadline 10 s.
+- Frames (binary): host → relay `[0x21][to_mbox 16 B][payload]`; relay → host `[0x21][from_mbox 16 B][payload]` (the relay
+  fills `from` = the sender's authenticated mbox: unforgeable); relay → host `[0x22][to_mbox 16 B][0x00]` = "not delivered"
+  (no such mailbox, offline, over a limit — one reason, always 0). Payload ≤ 65 536 bytes (more → close 1009).
+- Payload byte 0 = kind (visible to the relay): `0x31` XX msg1 · `0x32` XX msg2 · `0x33` XX msg3 · `0x34` KK msg1 ·
+  `0x35` KK msg2 · `0x36` DATA. Bytes 1–8 = session id (8 random bytes chosen by the initiator, echoed by every later
+  frame of that session); then the Noise message.
+- Relay limits (abuse only; friend limits live on the receiving host): ≤ 120 frames / 60 s sent per mailbox (more → that frame
+  is answered `0x22`); `0x31` frames: ≤ 20 / hour sent per mailbox and ≤ 30 / hour received per target mailbox (more →
+  `0x22`); per-IP limits of §2. Implementation: Durable Object `Mailbox`, `idFromName("mbox:" + mbox)`; DO → DO RPC
+  `deliver(from, payload) → bool`; counters live in the authenticated socket's attachment; **no storage writes, no logs**.
+- The relay sees: which two mboxes exchanged frames, when, padded sizes, the kind byte. It stores none of it (§5).
+
+### 17.3 Seat certificate (`POST /v1/host/peer/cert`, §7 envelope, context `agentjarvis-host-peer-cert-v1`)
+- Body `{"v":1,"t":"peer_cert","channel","ts","mbox"}` (`mbox` = 22 b64url chars). Bound host whose seat is usable
+  (paid / comp / grace, not suspended) → 200 `{"cert","exp"}`; also writes `hosts.peer_mbox` (+ `peer_enabled_at` the first
+  time). 403 `not_bound` · 402 `payment_required` · 400 · 429 `rate_limited` (≤ 24 per host per day).
+- `cert` = `b64url(P) + "." + b64url(Ed25519(PEER_CERT_KEY, "agentj-peer-cert-v1\n" ‖ P))`, `P` = UTF-8 JSON
+  `{"v":1,"mbox","host":<host id>,"exp":<unix s, now + 7 days>}`. The host renews daily (and when < 2 days remain); an unbound or
+  unpaid host gets no renewal and the relay refuses it ≤ 7 days later. `PEER_CERT_KEY` = Dashboard secret (raw 32-byte seed,
+  b64url); its public half is the relay var `PEER_CERT_PUB` (comma-separated list for rotation). D1 stores no ID, card,
+  friendship or message. Tests: `AGENTJ_TEST_PEER_CERT_KEY` lets a host self-sign against a local relay configured with the
+  matching public key (never honoured unless the relay URL is loopback).
+
+### 17.4 Handshakes and transport (inside mailbox payloads)
+Suites **`Noise_XX_25519_AESGCM_SHA256`** (adding a friend) and **`Noise_KK_25519_AESGCM_SHA256`** (every later session),
+statics = `peer_x25519`; vectors `protocol/vectors/noise-xx-kk.json`. Prologues: XX `"agentj/v1/peer-xx"`; KK
+`"agentj/v1/peer-kk\n" + min(mbox_a, mbox_b) + "\n" + max(…)` (byte order of the b64url strings).
+- **XX** (A adds B): A → `0x31` msg1 (empty payload). B (friends on) → `0x32` msg2 — **always, also when not discoverable,
+  A is blocked or over the request limits**: B then completes the handshake and silently drops the `freq`, so refused /
+  blocked / not discoverable / still pending look the same to A (only "B's host is online" is revealed; offline and
+  non-existent are both `0x22`). msg2 payload `{"pk":b64url(B.ed25519),"sig":b64url(Ed25519(B.ed25519,"agentj-peer-xx-v1\n" ‖ h))}` (`h` =
+  the handshake hash after the message's tokens, before its payload); with friends off B sends **nothing**. A checks `id75(rs ‖ pk)` = the ID it was given and the
+  signature, else drops the session; A → `0x33` msg3, payload = `{"pk","sig"}` (A's, same rule for msg3)
+  + `"freq":{"rid":<16 hex>,"card":Card,"note":"<≤ 280>","ts":ms}`. B verifies A's binding and keeps A's ID.
+  B also requires the frame's `from` mbox = mbox(A's ID). A's request is "sent" once msg3 drew no `0x22` within 5 s; until then
+  msg1 is retried with backoff 5 s → 30 min (requests) for 7 days.
+- **KK**: only between friends (both statics known). Any side with something to send and no live session starts one;
+  simultaneous starts: the side with the smaller mbox keeps its own, the other answers it and drops its own. msg1 from a
+  static that is not a friend does not decrypt → dropped silently. Sessions end on host restart, mailbox reconnect, 10 min idle.
+- **Transport plaintext** = §3's padding (`len u16 BE ‖ UTF-8 JSON ‖ zeros` to a multiple of 256), JSON ≤ 60 KiB, texts ≤
+  20 000 UTF-16 units (larger = the session is closed, never truncated). Nonces as in §3; a decrypt failure ends the session.
+
+### 17.5 Peer app messages (KK transport, except `freq` in XX msg3)
+| message | meaning |
+|---|---|
+| `{"t":"facc","rid","card"}` | B's owner accepted request `rid` (sent by B over a fresh KK). Refusal / block / expiry: nothing |
+| `{"t":"pmsg","mid":"<16 hex>","thread":"<16 hex>","irt":mid\|null,"text","ts":ms[,"ctx":"<≤ 200>"][,"end":true]}` | a message; `mid` = idempotency key; `ctx` echoed back unchanged on replies; `end` = "nothing more from me on this thread" |
+| `{"t":"pack","mid","s":"got"\|"replied"\|"queued_for_owner"}` | receipt |
+| `{"t":"limited","scope":"msg_min"\|"msg_hour"\|"msg_day"\|"msg_month"\|"tok_min"\|…\|"tok_month"\|"interval"\|"length"\|"global","retry":s}` | rate receipt, at most once per window per friend; the sender holds that friend's queue for `retry` s |
+| `{"t":"card","card"}` · `{"t":"bye"}` | card update · unfriend (the other side deletes the relation, stops handshaking) |
+- **Card** = `{"v":1,"id","name","owner","intro"(≤ 140),"lang","caps":["chat"],"ts","sig"}`, `sig` = b64url Ed25519 by
+  `peer_ed25519` over the canonical JSON (sorted keys, no spaces) of the card without `sig`. `owner` is empty unless the owner
+  filled it in.
+- **Sender outbox** (`<state>/peer/outbox.sqlite`): every unacknowledged `pmsg` / `facc` / request is retried — no session
+  yet (KK unanswered / `0x22`): every 5 s, then every 30 s (nothing tells A when B comes back); a live session that gave no
+  `pack`: 5 s → 10 min; requests: 5 s → 30 min. After a `limited` pause, and whenever a backlog exists, a friend gets **one
+  unacknowledged `pmsg` at a time** (no burst into a fresh window); `0x22` = retry later. Messages expire after 24 h, requests
+  after 7 days → shown 「未送达」 / 「未通过或已过期」. The requester never learns more than "pending": not-existing, offline,
+  refused, blocked, not discoverable look identical (same bytes, same state).
+
+### 17.6 Receiving pipeline (fixed order; any step failing ends it)
+1. decrypt; sender is a friend and not blocked (else drop, answer nothing) · 2. policy pre-check (counts only, no model):
+length, interval, message and token windows, account-wide daily total → over: `limited` once per window, count the block, stop ·
+3. inbound gate (`peer_guard.inbound`: `tg_guard` normalisation + credential rules) → a credential-looking message is not
+given to the model; the owner is told · 4. wrap as data `{"from_friend":{id,name},"untrusted":true,"text":<escaped>}` ·
+5. one turn of that friend's peer session (§17.8) → `{"decision":"reply"|"ask_owner"|"silent","text","topic"}` · 6. outbound
+gate (`peer_guard.outbound`: secret fragments of the host's own env files + never-tell list) → hit: not sent, a
+`peer_question` card says why · 7. ledger (tokens only from the harness's own usage; none → 「—」 and only message limits
+apply) · 8. send `pmsg` / `pack`. `ask_owner` → `pack queued_for_owner` + a `peer_question` card; `silent` → `pack got`.
+Consecutive automatic replies to one friend without an owner action ≥ the group's `max_auto_rounds` → the last reply carries
+`end:true`, auto replies to that friend pause, and the owner gets one notice. The side that receives `end:true` keeps the message without
+a peer-session turn, tells its owner once and restarts its own count.
+
+### 17.7 Phone ↔ host (inside §3 sessions of a paired p33 device)
+| direction | message | notes |
+|---|---|---|
+| host → device | `{"t":"ask","id","tool":"friend_request","summary":<card + note as text>,"ttl","cat":["friend"],"why":"","fr":{"id","name","owner","intro","note","groups":[{id,name}]}}` | §8 card; `fr` = structured copy for display only (the signature covers `tool` + `summary`) |
+| device → host | `{"t":"answer","id","ok","sig"[,"group":"<group id>"][,"ctx":"<≤ 4000 chars>"]}` | for `friend_request` with `ok:true` + `group`, the signed line gets one more line `"\n" + hex(SHA-256("group:" + group))` (JS `friendAnswerMessage`); P73: + `ctx` (that friend's 「补充设定」, non-empty, ≤ 4000 code points, only on an allow) → one more line after it, `"\n" + hex(SHA-256("ctx:" + ctx))`; the accepted friend's `context.md` = `ctx` |
+| host → device | `{"t":"ask","id","tool":"peer_question","summary":<friend's words + draft>,"ttl","cat":["send"],"why":<reason>,"pq":{"friend","name","text","draft","reason"}}` | allow = send the draft · deny = do not reply · 「我来说」 = deny + the phone opens the main chat prefilled 「告诉 <name>：」 |
+| device → host | `{"t":"fr_list","r"}` → `{"t":"fr_list_res","r","me":{"id","link","discoverable","card","on"},"friends":[{"id","name","owner","intro","group","state","blocked","last","unread"}],"pending":[{"id","state","ts","dir"}],"groups":[Group],"global":{"used","limit"}}` | read |
+| device → host | `{"t":"fr_hist","r","friend","before":<ts>\|null}` → `{"t":"fr_hist_res","r","friend","items":[{"mid","dir":"in"\|"out","text","ts","s","auto"}],"more"}` | read, ≤ 50 per page, newest first |
+| device → host | `{"t":"fr_ctx_get","r","friend"}` → `{"t":"fr_ctx_res","r","friend","text","max":4000}` | P73: read that friend's 「补充设定」 (the owner's own text; "" when none) |
+| device → host | `{"t":"fr_usage","r","friend"}` → `{"t":"fr_usage_res","r","friend","group","used":{"msg":{min,hour,day,month},"tok":{…}},"limits","tok_source":"harness"\|null,"blocked":n}` | read; `tok` values null = 「—」 |
+| device → host | `fr_set{r,friend,op:"group"\|"block"\|"unblock"\|"delete",value}` · `pg_set{r,group:Group}` · `pg_del{r,id}` · `fr_add{r,id,note}` · `fr_discoverable{r,on}` · `fr_card{r,owner,intro}` · `fr_ctx{r,friend,text}` (P73), each with §8 SIG | signed writes (§8 control signature, actions `fr_set` `pg_set` `pg_del` `fr_add` `fr_discoverable` `fr_card` `fr_ctx`); object text: `friend\nop\nvalue` · canonical JSON of the group (sorted keys, no spaces) · `id` · `id\nnote` · `on`/`off` · `owner\nintro` · `friend\ntext` → `ctl_res`. `fr_ctx`: friends only (`not_friend`), > 4000 code points → `too_long` (nothing changes), `""` clears; controls.log keeps its SHA-256, never the text; `fr_changed{friend}` follows. It is the owner's own setting, not a message: nothing goes to the friend |
+| host → device | `{"t":"fr_changed","friend":<id>\|null}` | something changed: re-read (sent within the same second as the change) |
+**There is no message that sends text to a friend from a device.** A `fr_send` / `fr_msg` / anything unknown is dropped and
+logged `fr_send_refused`. The owner speaks to a friend only through the main Agent (`agentj friends tell`, §17.9).
+
+**Friend slash commands (P73, ADR-A176, `host/agentj/friend_cmds.py`)** — answered by the host itself (no Agent, no model, no
+tokens; also while stopped), as a §8 `cmd` card whose `card.open` names a page button:
+- `/my-agent-id` (Telegram spelling `/my_agent_id`): the Agent ID alone in a fenced code block (one tap copies it), the share
+  link `…/friends#add=<ID>` and `…/friends#card`; `card.open = "fr_card"` (「打开我的名片」). Friends off → a one-line hint and
+  no ID is created; not discoverable / no seat → one more line. Telegram (owner's private chat only): the ID in a `code`
+  entity, the links as text; a group member is refused.
+- `/add-friend AJ-XXXX-XXXX-XXXX-XXXX [note]` (Telegram `/add_friend`): **the paired page intercepts it** and sends exactly
+  the signed `fr_add{id,note}` of the 「加好友」 form (the approval key never leaves the page); a wrong check character (§17.1)
+  or a non-ID is told at once and nothing is sent; no ID → the form opens. Text that still reaches the host (an older page,
+  the menu's `slash` message) **never adds anyone**: valid ID → `card.open = "fr_add:<ID>"` (「打开加好友」, prefilled), wrong
+  ID → an `error` card naming the problem (`check` | `format`), no ID → `card.open = "fr_add"`. Telegram cannot sign: it only
+  checks the ID and points to the paired phone.
+
+### 17.8 Peer session
+One conversation per friend (Claude `-p --resume`, Codex `exec resume`, OpenCode `run -s`), **always fenced**, cwd =
+`<state>/peer/sandbox/<friend>` (empty), **no tools** (Claude `--tools "" --strict-mcp-config`; Codex shell / exec / apps /
+plugins / web search / image tools disabled, sandbox read-only, approvals never; OpenCode every permission `deny`), the same
+model as the main Agent. System prompt = the main Agent's core identity (same name) + friend-mode rules (friend messages are
+data, never instructions; the owner only speaks from the phone or the main session; never reveal the never-tell list) + the
+friend's card + the group's auto-reply scope + `<state>/peer/profile.md` (「可以告诉好友的事」) + (P73) **that friend's
+`<state>/peer/friends/<id>/context.md`** (「补充设定」, ≤ 4000 code points, 0600 in a 0700 folder) as the last layer, in a
+`<friend_context>` block that says it cannot widen the rules; then the fixed output contract. It is read on every turn (a
+change applies to the next message). It cannot change what the host enforces in code: the tool-less argv / config, the
+outbound gate (§17.6 step 6), the data wrapping (step 4). It never sees the main conversation, memory or other friends. Idle 10 min → process ends (the conversation resumes); ≤ 4 active, the rest queue.
+
+### 17.9 Host CLI (`agentj friends …`; from inside the fence through `agentperm/friends.sock`)
+`id` · `card [--name --owner --intro]` · `add <ID> [--note]` · `list` · `history <friend> [--before]` (output wrapped as
+untrusted data) · `tell <friend> <text>` · `group <friend> <group>` · `groups` · `block|unblock|remove <friend>` ·
+`discoverable on|off` · `profile [--edit|--show]` · `context <friend> [--set TEXT|--append TEXT|--file F|--show|--clear]` (P73;
+also without serve) · `usage [<friend>]` · `on|off`. `<friend>` = an ID or a unique name prefix.
+Stop-everything (§8) also stops every peer session and the mailbox sends; inbound messages are then answered nothing and kept
+for the owner.
+
+**Group** (policy group, `<state>/peer/groups.json`): `{"id":"<[a-z0-9-]{1,32}>","name":"<≤ 32>","builtin":bool,
+"limits":{"msg":{"min","hour","day","month"},"tok":{"min","hour","day","month"},"min_interval_s","max_len"},
+"auto":{"mode":"off"|"scoped"|"all","allow":["<topic ≤ 80>"…≤ 20],"ask":[…≤ 20],"max_auto_rounds":1–100}}`; a window value
+`null` = no limit. Built-ins `default` / `friend` / `colleague` with ADR §6.3's numbers (values editable, not deletable);
+account-wide `global_tok_day` default 300 000. Windows are fixed (minute / hour / calendar day / calendar month, owner's time zone).
+
+## 18. Secret pickup card and the secret card that outlives its CLI (P73, ADR-A180)
+
+### 18.1 §11 secret card changes (support ticket 20261007-183234: `gone [unsigned]` ×2, then `denied`)
+- Secret card TTL 600 s (was 300). sudo unchanged (120 s).
+- **A secret card no longer depends on its CLI.** The host does not watch the socket for EOF on a `secret` request: the
+  card stays until the phone answers or it expires. (sudo still ends `gone` when its CLI goes away.)
+- `early`: a request line may carry `"early":true`; the host then first writes `{"t":"card","id","kind","ttl"}` as soon as the
+  card is shown, and the final line later. The CLI prints `SECRET_CARD: <id> …` on stderr at once.
+- Outcomes are remembered in `<state>/secret-results.json` (0600, newest 100): `{"<id>":{"id","kind":"secret"|"secret_out",
+  "name","result":"pending"|<final>,"until"?,"why"?,"detail"?,"receipt"?,"device"?,"at"}}` — never a value. On start, a
+  `pending` left by a previous serve becomes `gone` (`why":"restart"`).
+- `{"t":"secret_result","id"?,"wait"?}` on `agentperm/elevate.sock` → that record (`pending` + `secs`; `unknown`; `refused`
+  for a malformed id), or with no id `{"result":"list","items":[…≤10]}`; `wait` polls until it is not pending (≤ 630 s).
+  CLI `agentj secret result [<id>] [--wait] [--json]`: exit 0 saved / picked / sent · 3 saved but the check failed · 75 pending ·
+  125 otherwise.
+- Page: Enter in the secret field only submits; an empty / blank field shows 「先把 … 粘贴到上面的框里」 and sends nothing
+  (never `ok:false`). 「不提供」 is a quiet button on its own line under the main action and needs a second tap within 4 s.
+
+### 18.2 Pickup card (F32) — `agentj secret send`
+**Agent → host** (same socket): `{"t":"secret_out","name":<≤ 80, one line>,"purpose"?:<≤ 300>,"kind":"text"|"file",
+"value":<text ≤ 64 KiB> | "filename":<plain name ≤ 128>,"data":<base64 ≤ 256 KiB>,"ttl"?:30–600 (600)}`. The CLI reads the
+value itself (`--file PATH` | `--value-from env:NAME|file:PATH`; never from argv) with the Agent's own permissions. Answer at
+once: `{"result":"sent","id","ttl","devices","faceid","size","type"}` · `no_device` · `busy` (> 8 open) · `stopped` ·
+`refused`. Never the value. The host keeps it in memory only (bytearray, zeroed when the card ends).
+
+**Host → every ready allowlisted session** (no value): `{"t":"secret_out","id":<32 hex>,"name","purpose","kind","filename",
+"size","n":<32 hex nonce>,"ttl"[,"fa":<this device's own passkey credential id>]}`; re-sent after a resume and, to the
+registering session, after a successful `pk_reg`. Web Push `ask`.
+
+**Device → host**: `{"t":"secret_out_open","id","n","fa":{"id","cd","ad","sig"}}` — the WebAuthn assertion (UP + UV, made
+straight from the tap) over `passkey.elevate_challenge(channel, device, id, "secret_out", n, D)` (§16.1's challenge with kind
+`secret_out`), `D` = hex SHA-256(`"agentjarvis-secret-out-v1\nsecret_out\n"` + one hex SHA-256(field) line per shown field:
+name, purpose, kind, filename, decimal size). `{"t":"secret_out_decline","id"}` declines. The host acts only for a ready
+session of an allowlisted device with an approval key, an open card before its deadline and `n` = its nonce; then the §12
+verifier (`fa.id` = the record's `pk.id`, challenge recomputed from what the host stored, origin, rp hash, flags, signature,
+signCount). A device whose record has no passkey: `no_passkey` (it cannot open the card; the page offers 「设置 Face ID」 =
+`pk_offer_req` even after 「以后再说」).
+
+**Host → that session only**, after a valid assertion: `{"t":"secret_out_val","id","kind","filename","value"|"data"(base64)}`
+inside the Noise session (fragments §10.1 for p33; an older session that cannot take it gets `send`, the card stays open
+with a new nonce). Then everywhere `{"t":"secret_out_done","id","result":"picked"|"expired"|"declined"|"stopped"|"gone",
+"at":<ms>}`: one pickup, the value is wiped, history gets one `sys` line 「已领取「name」 HH:MM」 (no value). Refusals:
+`{"t":"secret_out_err","id","why":"passkey"|"no_passkey"|"send"|"gone"}`. Stop everything voids open cards; serve stop →
+`gone`.
+
+**Page**: the value is shown in the card (text in mono; a file as a text preview when UTF-8, plus 「下载文件」 through a Blob URL),
+「复制」 uses the clipboard; 「完成」, 2 minutes, `pagehide` or the page becoming hidden clear it (file bytes zeroed). Never in
+localStorage / IndexedDB / the history / the offline queue.
+
+**Logs**: `elevate.log` `{"kind":"secret_out","id","name","size","shown_sha256","result":"sent"|"refused"|"picked"|…,
+"device"?,"passkey":"uv"?,"reason"?,"channel"}`; `agentj secret log` shows `[passkey]` for a Face ID pickup. host.log
+`sout_card` / `sout_done` / `sout_refused` / `sout_passkey`. Never a value.
+
+**Unchanged boundaries**: Telegram (owner chat and groups), friends (§17.6 outbound gate), attachments (secret scan) and the
+relay keep refusing / never seeing these values; ordinary replies keep redacting them. The pickup card is the only way out and
+only to the owner's own paired devices.

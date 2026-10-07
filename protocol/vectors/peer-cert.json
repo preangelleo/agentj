@@ -1,0 +1,24 @@
+{
+ "description": "PROTOCOL.md §17.3 seat certificate. PEER_CERT_KEY = b64url(seed); its public half (relay PEER_CERT_PUB) = public_key. cert = b64url(P) + '.' + b64url(Ed25519(seed, 'agentj-peer-cert-v1\\n' ‖ P)); P = UTF-8 JSON with keys in the order v, mbox, host, exp (no spaces). exp = now + 604800.",
+ "seed_hex": "404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f",
+ "seed_b64url": "QEFCQ0RFRkdISUpLTE1OT1BRUlNUVVZXWFlaW1xdXl8",
+ "public_key": "JUO5L_EJVRFHatyDadtt3JM2ZaEZeN2hQE7hBmypVZ0",
+ "now": 1790000000,
+ "mbox": "EBESExQVFhcYGRobHB0eHw",
+ "host": "Hq3vTn0sXcYd5LmP8aBeWg",
+ "exp": 1790604800,
+ "payload": "{\"v\":1,\"mbox\":\"EBESExQVFhcYGRobHB0eHw\",\"host\":\"Hq3vTn0sXcYd5LmP8aBeWg\",\"exp\":1790604800}",
+ "payload_b64url": "eyJ2IjoxLCJtYm94IjoiRUJFU0V4UVZGaGNZR1JvYkhCMGVIdyIsImhvc3QiOiJIcTN2VG4wc1hjWWQ1TG1QOGFCZVdnIiwiZXhwIjoxNzkwNjA0ODAwfQ",
+ "sig": "KHFaZ5oA0YfhIs_1tEfKc4lPOuOgE5_tKTwFI2zU3R-E8f9UJ-KbrfS_6cvoiqfMLZoi1MKBAv7b9BMFTsudCQ",
+ "cert": "eyJ2IjoxLCJtYm94IjoiRUJFU0V4UVZGaGNZR1JvYkhCMGVIdyIsImhvc3QiOiJIcTN2VG4wc1hjWWQ1TG1QOGFCZVdnIiwiZXhwIjoxNzkwNjA0ODAwfQ.KHFaZ5oA0YfhIs_1tEfKc4lPOuOgE5_tKTwFI2zU3R-E8f9UJ-KbrfS_6cvoiqfMLZoi1MKBAv7b9BMFTsudCQ",
+ "invalid": [
+  {
+   "why": "payload changed after signing (exp + 1)",
+   "cert": "eyJ2IjoxLCJtYm94IjoiRUJFU0V4UVZGaGNZR1JvYkhCMGVIdyIsImhvc3QiOiJIcTN2VG4wc1hjWWQ1TG1QOGFCZVdnIiwiZXhwIjoxNzkwNjA0ODAxfQ.KHFaZ5oA0YfhIs_1tEfKc4lPOuOgE5_tKTwFI2zU3R-E8f9UJ-KbrfS_6cvoiqfMLZoi1MKBAv7b9BMFTsudCQ"
+  },
+  {
+   "why": "signature over P without the context prefix",
+   "cert": "eyJ2IjoxLCJtYm94IjoiRUJFU0V4UVZGaGNZR1JvYkhCMGVIdyIsImhvc3QiOiJIcTN2VG4wc1hjWWQ1TG1QOGFCZVdnIiwiZXhwIjoxNzkwNjA0ODAwfQ.4bupCgNDNro-IjAK0-gy9yqnfORVX_NvMxurs-PrD_3xGq20zoFHAMSq2hYD6HsehujYVlAbPnOKMMy95mlnDw"
+  }
+ ]
+}

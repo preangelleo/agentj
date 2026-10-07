@@ -170,8 +170,8 @@ class Pairing:
             reason = first.get("reason")
             raise PairError(reason if reason in DENY_REASONS else "pair_failed")
         self.link, self.expires = first["link"], int(first.get("expires") or 0)
-        import segno
-        self.qr_svg = segno.make(self.link, error="m").svg_data_uri(scale=6, border=2, dark="#141414", light="#faf9f5")
+        from . import wire
+        self.qr_svg = wire.pairing_qr(self.link).svg_data_uri(scale=6, border=2, dark="#141414", light="#faf9f5")
         self.sock.settimeout(None)
         threading.Thread(target=self._reader, daemon=True, name="agentj-admin-pair").start()
 

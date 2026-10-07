@@ -7,7 +7,7 @@ import { createServer } from 'node:http';
 import { readFile, stat } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { join, normalize, extname } from 'node:path';
-import { webHeaders } from '../worker.ts';
+import { webHeaders, SPA_PATHS } from '../worker.ts';
 
 export const PUBLIC_DIR = fileURLToPath(new URL('../public/', import.meta.url));
 const TYPES = { '.html': 'text/html; charset=utf-8', '.css': 'text/css; charset=utf-8', '.js': 'text/javascript; charset=utf-8',
@@ -19,6 +19,7 @@ export function startWebServer({ port = 0, relayCsp = 'ws://127.0.0.1:*' } = {})
   const server = createServer(async (req, res) => {
     if (req.method !== 'GET' && req.method !== 'HEAD') { res.writeHead(404).end(); return; }
     const url = new URL(req.url, 'http://x');
+    if (SPA_PATHS.includes(url.pathname)) url.pathname = '/';          // same page routes as worker.ts (/friends)
     const p = normalize(decodeURIComponent(url.pathname)).replace(/^(\.\.[/\\])+/, '');
     let file = join(PUBLIC_DIR, p);
     if (!file.startsWith(PUBLIC_DIR.replace(/\/$/, ''))) { res.writeHead(404).end(); return; }

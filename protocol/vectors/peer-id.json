@@ -1,0 +1,91 @@
+{
+ "_about": "PROTOCOL §17.1 Agent ID vectors (deterministic keys = SHA-256 of a label; x25519_priv / ed25519_seed are raw 32-byte private keys). `parse` = parse_id cases; check character = Σ (i+1)·v_i mod 31 (out null = invalid).",
+ "vectors": [
+  {
+   "x25519_priv": "e08a5cbe7f8913a1efd8fec92f83b21eee5b278a437b24bfb8916496b3762939",
+   "ed25519_seed": "bf78ace106a259fbfadd7d6813af3fb1d80f3b4887db282763d706fed01de834",
+   "x25519_pub": "945da082e6a9ceb30f610333f1cc6e07225a75a07e14e4c243e08e5f80eb5728",
+   "ed25519_pub": "0614643f5ea82b23bc0c33177e20f8e6317733d115d330c00e099b8484db5ed2",
+   "h": "7e21035a06d879352af199efe96e6f1d3356d2a67c8c2d53135165c1e7123493",
+   "id75_hex": "3f1081ad036c3c9a957",
+   "id": "AJ-FRGG-6PG6-V1WK-AAQA",
+   "id_raw": "7e21035a06d879352ae0",
+   "mbox": "z7RZb_J_Oql8003xAlvpVw"
+  },
+  {
+   "x25519_priv": "ae9f6148c41db4666ec50912ecef1d4e6a382838b5cf5e5c35e7f5bcb7f409a8",
+   "ed25519_seed": "c4ce05a3036c6c5b3ceb41ee173f61cdc9094b32021cacb0816e0335afda77f5",
+   "x25519_pub": "8aacb984ae3bbdaa4a2720776d012db296dee623b4857f5079fbd224f52b8138",
+   "ed25519_pub": "5a994d0be51cf39319e3dc04c0bd6aa8d0905cd35ae0bd85a1a66fd845ff80c3",
+   "h": "b450e54b4411a12532f04ae1209f7e913933429efc54d490db42e0c4745d7a93",
+   "id75_hex": "5a2872a5a208d092997",
+   "id": "AJ-PH8E-AJT4-26GJ-ACQ9",
+   "id_raw": "b450e54b4411a12532e0",
+   "mbox": "CtctDXJGoCl4HMlRL73Oog"
+  },
+  {
+   "x25519_priv": "bb289e0bdc253a38c71217959a2b39992b0e56af39a6e419a9284a135fb03a88",
+   "ed25519_seed": "b270df05397fb158495acd7218346c9773a2df0c9115186edd3edebdd0007962",
+   "x25519_pub": "c86eae7dc2ae7fd5624d80a4305492bf47d6f7baba31fed963a86fb36e8abb40",
+   "ed25519_pub": "a289185e0718214785258990b82f119b2845ed2c6cf8555f5fe6d2979628a613",
+   "h": "bd7183b7e16e96e3a57a837a03792f3009059377c35086b5a3d27bb2e3c1e0ed",
+   "id75_hex": "5eb8c1dbf0b74b71d2b",
+   "id": "AJ-QNRR-7DZ1-DTBE-79B7",
+   "id_raw": "bd7183b7e16e96e3a560",
+   "mbox": "tkjUwmQ4Hik4eEjPsg-Z4g"
+  },
+  {
+   "x25519_priv": "97279c655f9f8bb0266c057d9fe70a2569929309a9b06318bb85297e78f87fe8",
+   "ed25519_seed": "73a0066daa863c88c195db4173f43d0bb7f5203f04a6bae44453deb21a45c8b1",
+   "x25519_pub": "1ebd90b207c067701886aea00a00b1b84c9b18312904c52031839a17cfc7e158",
+   "ed25519_pub": "ddbc5bd7a1142c3399d4027aaee8b1cfcbf6aab876f1330e8f6226e2f83f189d",
+   "h": "c5d9fbc3f3c3bed06467271096d3512ef2caebbfa1be46f05fb35ca6a61bc73c",
+   "id75_hex": "62ecfde1f9e1df68323",
+   "id": "AJ-RQCZ-QGZK-REZD-0S3C",
+   "id_raw": "c5d9fbc3f3c3bed06460",
+   "mbox": "Vy_gqMnKs9wsWr95WZgAYA"
+  }
+ ],
+ "parse": [
+  {
+   "in": "AJ-FRGG-6PG6-V1WK-AAQA",
+   "out": "AJ-FRGG-6PG6-V1WK-AAQA"
+  },
+  {
+   "in": "aj-frgg-6pg6-v1wk-aaqa",
+   "out": "AJ-FRGG-6PG6-V1WK-AAQA"
+  },
+  {
+   "in": "FRGG6PG6V1WKAAQA",
+   "out": "AJ-FRGG-6PG6-V1WK-AAQA"
+  },
+  {
+   "in": " aj FRGG 6PG6 V1WK AAQA ",
+   "out": "AJ-FRGG-6PG6-V1WK-AAQA"
+  },
+  {
+   "in": "AJ-FRGG6PG6V1WKAAQB",
+   "out": null
+  },
+  {
+   "in": "AJ-FRGG6PG6V1WKAAQ",
+   "out": null
+  },
+  {
+   "in": "AJ-FRGG6PG6V1WKAAQA0",
+   "out": null
+  },
+  {
+   "in": "AJ-FRGU6PG6V1WKAAQA",
+   "out": null
+  },
+  {
+   "in": "",
+   "out": null
+  },
+  {
+   "in": "AJFRGG6PG6VlWKAAQA",
+   "out": "AJ-FRGG-6PG6-V1WK-AAQA"
+  }
+ ]
+}

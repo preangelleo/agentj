@@ -37,6 +37,8 @@ from . import media as media_mod  # F21: files the Agent shows to the phone (PRO
 from . import elevate  # F17: sudo + secret cards (PROTOCOL §11)
 from . import passkey  # F20: the same phone without a second pairing (PROTOCOL §12)
 from . import onboarding  # F28: seat → two required remotes → one welcome (P72)
+from . import friend_cmds  # P73: /my-agent-id · /add-friend, answered by the host (ADR-A176)
+from . import friends as friends_mod
 from .noise import IK, IKPSK2, CipherState, Handshake, NoiseError
 from .reporter import Reporter, in_daemon_thread
 from .envcompat import getenv
@@ -76,6 +78,7 @@ MAX_GRANTS = 8         # batch grants open at once
 CHUNK = 11 * 1024      # phone-control answers are split into app messages of about this many JSON bytes (MAX_JSON = 16 KiB)
 ITEM_SHOW = 6000       # a memory item longer than this is shown cut on the phone (its id still covers the whole text)
 _RID = re.compile(r"[A-Za-z0-9_-]{1,32}")
+FRIEND_READS = ("fr_list", "fr_hist", "fr_usage", "fr_ctx_get")   # P71 §17.7 (+ P73 fr_ctx_get); writes = controls.FRIEND_ACTIONS
 PHONE_CONTROLS = ("mem_list", "mem_rm", "mem_undo", "act_list", "task_list", "task_set", "estop", "resume")
 # §10 (PROMPT-33)
 Q_TTL = _ttl("AGENTJ_TEST_Q_TTL", 180)     # a question nobody answers is ended (relay's default)
@@ -269,6 +272,7 @@ class Host:
         self.asr_waiting: dict[str, int] = {}
         self.model_sets = 0
         self.elevate = elevate.Elevator(self)   # F17: admin password / secret cards (PROTOCOL §11)
+        self.peers = None                       # P71: Agent friends (peer_service.PeerService, PROTOCOL §17), set in run()
 
     # ------------------------------------------------------------ output
     def emit(self, ev: str, **kw) -> None:
@@ -585,6 +589,9 @@ class Host:
             limit = wire.MAX_TEXT_P33 if s.p33 else wire.MAX_TEXT
             if not isinstance(text, str) or text_units(text) > limit:  # reject, never silently truncate
                 return await self.close_cid(s.cid, "bad_msg")
+            hc = slash.parse(text)
+            if hc and friend_cmds.name_of(hc[0]):                   # P73: the host's own answer
+                return await self.on_slash(s, hc[0], hc[1], confirm=False, typed=True)
             if self.stopped() and self.agent:      # stopped: nothing is queued to run later behind the human's back
                 self.st.log("msg_refused", cid=s.cid, device=s.device, reason="estop")
                 self.activity("message_refused", by=s.name or s.device, text=text[:120])
@@ -600,6 +607,8 @@ class Host:
         elif t in P33_ONLY:
             if s.p33:                          # §10 messages only from a device that announced p33 (§10.0)
                 await self.on_p33(s, t, obj)
+        elif isinstance(t, str) and t.startswith(("fr_", "pg_")):   # P71 (§17.7): the friends page
+            await self.on_friends(s, t, obj)
         elif t == "answer":
             await self._answer(s, obj)
         elif t in ("pk_reg", "pk_offer_req"):  # F20 (§12): register this device's passkey
@@ -876,6 +885,7 @@ class Host:
             return await self.send_app(s, {"t": "pk_reg_res", "ok": False, "why": e.why})
         self.st.log("pk_reg", cid=s.cid, device=s.device, result="ok")
         await self.send_app(s, {"t": "pk_reg_res", "ok": True})
+        await self.elevate.out.on_ready(s)        # F32: open pickup cards now carry this device's Face ID (`fa`)
 
     # ------------------------------------------------------------ control socket (local, 0600)
     async def _ctl_send(self, w: asyncio.StreamWriter, obj: dict) -> None:
@@ -942,6 +952,7 @@ class Host:
                                              "agent": self.agent.kind if self.agent else None, "agent_status": self.eff_status(),
                                              "asks": len(self.asks), "estop": self.estop,
                                              "task_running": self.scheduler.current_id,
+                                             "friends": self.peers.status_view() if self.peers is not None else None,
                                              "sessions": [{"device": s.device, "name": s.name, "state": s.state}
                                                           for s in self.sessions.values() if s.state != "new"]})
                 elif cmd == "provider_model":
@@ -1079,8 +1090,10 @@ class Host:
         p = Pairing(secrets.token_bytes(16), secrets.token_bytes(32), time.time() + PAIR_TTL, time.monotonic() + PAIR_TTL, w)
         self.pairing = p
         p.timer = asyncio.create_task(self._expire_pairing(p))
-        link = wire.pairing_link(self.cfg["web"], self.cfg["relay"], self.channel, self.kp.pub, p.pid, p.psk,
-                                 int(p.expires))
+        # P73: phones from 0.16.0a1 parse both link formats, but the live ≤ 0.15.8 phone web only the JSON one and batch A
+        # (host) ships before batch B (web). The compact F29 link (QR 8-M instead of 13-M) is opt-in until the next host.
+        make = wire.pairing_link if os.environ.get("AGENTJ_PAIR_COMPACT") == "1" else wire.pairing_link_v1
+        link = make(self.cfg["web"], self.cfg["relay"], self.channel, self.kp.pub, p.pid, p.psk, int(p.expires))
         self.st.log("pair_begin")
         await self._ctl_send(w, {"ev": "link", "link": link, "expires": int(p.expires)})
         reader = asyncio.create_task(r.readline())
@@ -1320,6 +1333,9 @@ class Host:
         for g in list(self.grants.values()):
             if self._grant_live(g):
                 await self.send_app(s, self._grant_msg(g))
+        if s.p33 and self.peers is not None:      # P71: open friend cards (they survive a serve restart)
+            for m in self.peers.ask_msgs():
+                await self.send_app(s, m)
         await self.elevate.on_ready(s)
 
     # ------------------------------------------------------------ agent bridge (PROTOCOL §8)
@@ -2084,6 +2100,8 @@ class Host:
         self._post(self._send_ready, lambda s: self._grant_msg(g))
 
     async def _answer(self, s: Session, obj: dict) -> None:
+        if self.peers is not None and self.peers.answer(s.device, obj):
+            return                         # P71: a friend card (friend_request / peer_question), decided by its own rules
         rid, ok, sig, batch = obj.get("id"), obj.get("ok"), obj.get("sig"), obj.get("batch", False)
         a = self.asks.get(rid) if isinstance(rid, str) else None
         if a is None or a.fut.done():
@@ -2107,6 +2125,71 @@ class Host:
             self.st.log("answer_refused", id=rid, device=s.device, reason="no_key" if not sk else "bad_signature")
             return
         a.fut.set_result((decision, s.device, sk, sigb))
+
+    # ------------------------------------------------------------ Agent friends (P71, PROTOCOL §17.7)
+    def peer_broadcast(self, obj: dict) -> None:
+        """peer_service → every ready p33 phone (fr_changed, friend cards, their ask_done), in the order of the post queue."""
+        self._post(self._send_p33, lambda s, o=obj: o)
+
+    async def on_friends(self, s: Session, t: str, obj: dict) -> None:
+        """§17.7: reads answer the asking session; the six writes are signed like every phone control (controls.check) and
+        answered ctl_res. There is no message that sends text to a friend from a device: fr_send / fr_msg / anything else is
+        dropped and logged."""
+        r = obj.get("r")
+        if t not in FRIEND_READS and t not in controls.FRIEND_ACTIONS:
+            self.st.log("fr_send_refused", device=s.device, kind=t[:24])
+            return
+        if not s.p33 or self.peers is None or not isinstance(r, str) or not _RID.fullmatch(r):
+            return
+        if t in FRIEND_READS:
+            res = self.peers.read(t, obj)          # small files; the outbox sqlite lives on this thread
+            if res is not None:
+                await self.send_app(s, {**res, "r": r})
+            return
+        if t == "fr_set":
+            target = {"friend": obj.get("friend"), "op": obj.get("op"), "value": obj.get("value")}
+            bad = not (isinstance(target["friend"], str) and len(target["friend"]) <= 64 and isinstance(target["op"], str)
+                       and len(target["op"]) <= 16 and (target["value"] is None or (isinstance(target["value"], str)
+                                                                                  and len(target["value"]) <= 64)))
+        elif t == "pg_set":
+            target = {"group": obj.get("group")}
+            bad = not isinstance(target["group"], dict) or len(json.dumps(target["group"], ensure_ascii=False)) > 8192
+        elif t == "pg_del":
+            target = {"id": obj.get("id")}
+            bad = not (isinstance(target["id"], str) and len(target["id"]) <= 64)
+        elif t == "fr_add":
+            target = {"id": obj.get("id"), "note": obj.get("note")}
+            bad = not (isinstance(target["id"], str) and len(target["id"]) <= 64
+                       and (target["note"] is None or (isinstance(target["note"], str) and len(target["note"]) <= 280)))
+        elif t == "fr_discoverable":
+            target = {"on": obj.get("on")}
+            bad = not isinstance(target["on"], bool)
+        elif t == "fr_ctx":                    # P73 (ADR-A176): a friend's 「补充设定」, ≤ 4000 characters — the owner's own setting
+            target = {"friend": obj.get("friend"), "text": obj.get("text")}
+            bad = not (isinstance(target["friend"], str) and len(target["friend"]) <= 64 and isinstance(target["text"], str))
+            if not bad and len(target["text"]) > friends_mod.MAX_CONTEXT:
+                return await self._ctl_res(s, r, t, False, why="too_long")
+        else:
+            target = {"owner": obj.get("owner"), "intro": obj.get("intro")}
+            bad = not all(v is None or (isinstance(v, str) and len(v) <= 140) for v in target.values())
+        if bad:
+            return await self._ctl_res(s, r, t, False, why="shape")
+        why = controls.check(self.st, self.nonces, self.channel, s.device, obj, t, target)
+        if why:
+            self.st.log("control_refused", device=s.device, action=t, reason=why)
+            controls.log(self.st, action=t, device=s.device, result="refused:" + why)
+            return await self._ctl_res(s, r, t, False, why=why)
+        try:
+            ok, why, fid = await self.peers.write(t, target)
+        except OSError:
+            ok, why, fid = False, "io", None
+        result = "ok" if ok else str(why)
+        self.st.log("control", device=s.device, action=t, result=result)
+        controls.log(self.st, action=t, device=s.device, result=result, obj=target, sig=obj.get("sig"), n=obj.get("n"),
+                     ts=obj.get("ts"))
+        await self._ctl_res(s, r, t, ok, **({} if ok else {"why": why}))
+        if ok:
+            self.peers.changed(fid if t in ("fr_set", "fr_ctx") else None)
 
     # ------------------------------------------------------------ phone controls (PROTOCOL §8 "phone controls", ADR-A50 – A54)
     def stopped(self) -> bool:
@@ -2145,6 +2228,8 @@ class Host:
         for gid in list(self.grants):
             self.end_grant(gid, "estop")
         self.elevate.cancel_all("stopped")            # F17: open sudo / secret cards end (a running command finishes)
+        if self.peers is not None:                    # P71 §17.9: no mailbox frame leaves, every peer session ends
+            await self.peers.estop(True)
         busy = False
         if self.agent:
             busy = await self.agent.halt(clear_queue=True)
@@ -2164,6 +2249,8 @@ class Host:
         self.st.log("estop", status="off", device=by.split(":", 1)[1] if by.startswith("phone:") else None)
         self.emit("estop", on=False, by=by)
         self.activity("resume", by=name)
+        if self.peers is not None:
+            await self.peers.estop(False)
         self.status_changed()
         m = self._estop_msg()
         self._post(self._send_ready, lambda s: m)
@@ -2318,6 +2405,8 @@ class Host:
             x["undo"] = True
         if res.sep:
             x["sep"] = True
+        if getattr(res, "open", ""):          # P73: 「打开我的名片」 / 「打开加好友」 under a friend command's answer
+            x["open"] = res.open[:64]
         if by:
             x["by"] = by[:64]
         text = res.text if text_units(res.text) <= wire.MAX_TEXT else res.text[:3900] + " …"
@@ -2383,6 +2472,15 @@ class Host:
         the rest after the turn in front of it (the Agent's queue). Logged: command name + result class, never text.
         Returns the id of the command's history page (§10.5)."""
         by = s.name or s.device
+        hc = friend_cmds.name_of(name)
+        if hc:                                 # P73: answered here — no Agent, no model, no tokens; works while stopped
+            self.st.log("slash_in", cid=s.cid, device=s.device, cmd=hc)
+            turn = self.cmd_turn(s, hc, arg if hc == "add-friend" else "")
+            res = self.friend_cmd(hc, arg)
+            self.st.log("slash", cmd=hc, result=res.kind)
+            self.activity("slash", cmd=hc, result=res.kind, by=by)
+            self.cmd_card(hc, res, by, turn)
+            return turn
         known = name in slash.WHITELIST + slash.INTERNAL
         self.st.log("slash_in", cid=s.cid, device=s.device, cmd=name if known else "other")
         turn = self.cmd_turn(s, name if known else "refused", arg if known else "")
@@ -2412,6 +2510,13 @@ class Host:
             self.cmd_card(name, slash.Result("这一轮结束后执行。", "info"), by, turn, interim=True)
         self.agent.submit(agents.Cmd(name, arg, by, turn))
         return turn
+
+    def friend_cmd(self, name: str, arg: str = "", channel: str = "phone") -> "slash.Result":
+        """P73 (ADR-A176) `/my-agent-id` · `/add-friend` (friend_cmds.py). Never adds a friend: that is the phone's signed fr_add."""
+        lang = "en" if self.lang == "en" else "zh"
+        if name == "my-agent-id":
+            return friend_cmds.my_agent_id(self.st, lang, getattr(self.peers, "state", None))
+        return friend_cmds.add_friend(arg, lang, channel)
 
     async def stop_turn(self, by: str) -> "slash.Result":
         """/stop: the stop switch's interrupt for the running turn (and a running scheduled task) — nothing is paused,
@@ -2657,6 +2762,12 @@ class Host:
             return await res(ok=False, why="dup")
         if self.sends.full(s.device):       # 16 of this device's sends still wait: refuse, never evict one (P33-C03)
             return await res(ok=False, why="too_many")
+        hc = slash.parse(text) if not att and reply_to is None else None
+        if hc and friend_cmds.name_of(hc[0]):   # P73: /my-agent-id · /add-friend — the host's own answer, also stopped / no Agent
+            self.sends.add(compose.Send(s.device, sid, 0, state="delivered"))
+            turn = await self.on_slash(s, hc[0], hc[1], confirm=False, typed=True)
+            self._post(self.send_app, s, {"t": "say_res", "sid": sid, "ok": True, "state": "delivered", "turn": turn})
+            return
         if self.stopped() and self.agent:
             self.st.log("msg_refused", cid=s.cid, device=s.device, reason="estop")
             self.activity("message_refused", by=s.name or s.device, text=text[:120])
@@ -2696,7 +2807,10 @@ class Host:
                 if left <= 0:
                     f["asr"] = {"ok": False, "why": "timeout", "secs": f.get("secs")}
                     continue
-                f["asr"] = await self._transcribe_file(f, left, send.device)
+                try:
+                    f["asr"] = await self._transcribe_file(f, left, send.device)
+                except Exception:  # noqa: BLE001 — F27: a transcriber bug still sends the message (「转写失败」), never ""
+                    f["asr"] = {"ok": False, "why": "broken", "secs": f.get("secs")}
             send.text = compose.render(text, files, self.lang, quote_text) + getattr(send, "onboarding_note", "")
         finally:
             if send.ready is not None and not send.ready.done():
@@ -3119,6 +3233,10 @@ class Host:
             os.umask(old)
         os.chmod(sock, 0o600)
         self.st.log("serve_start", channel=self.channel)
+        from . import codex_procs                    # ADR-A178: app-servers an earlier serve left behind (one serve per state)
+        ended = await asyncio.to_thread(codex_procs.sweep, self.st)
+        if ended:
+            self.st.log("codex_leftover_ended", result=len(ended))
         self.post_q = asyncio.Queue()
         jobs = [asyncio.create_task(self.relay_loop()), asyncio.create_task(self.reporter.run()),
                  asyncio.create_task(self.sync_loop()), asyncio.create_task(self.post_loop()),
@@ -3146,6 +3264,12 @@ class Host:
         from .recall import Server as RecallServer
         self.recall = RecallServer(self)           # F22 (P57): <state>/agentperm/recall.sock for `agentj recall` (§15.4)
         await self.recall.start()
+        from .peer_service import PeerService     # P71: Agent friends (§17) + <state>/agentperm/friends.sock
+        self.peers = PeerService(self)
+        try:
+            await self.peers.start()
+        except Exception as e:  # noqa: BLE001 — friends never keep serve from running
+            self.st.log("peer_start_failed", reason=type(e).__name__)
         from .telegram import Telegram
         self.telegram=Telegram(self)
         jobs.append(asyncio.create_task(self.telegram.run()))
@@ -3165,6 +3289,9 @@ class Host:
             await self.scheduler.stop_current()
             await self.elevate.stop()
             await self.recall.stop()
+            if self.peers is not None:
+                with contextlib.suppress(Exception):
+                    await self.peers.stop()
             if self.agent:
                 await self.agent.stop()
             with contextlib.suppress(Exception):         # the resident ASR worker (§10.9) goes with serve

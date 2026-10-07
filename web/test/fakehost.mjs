@@ -145,7 +145,10 @@ export async function startFakeHost() {
     const a = st.asksOpen?.get(m.id);
     if (!a) return false;
     const decision = m.batch ? 'allow_batch' : m.ok ? 'allow' : 'deny';
-    const msg = await wire.approveMessage(channel, c.devId, m.id, decision, a.tool, a.summary, m.batch ? a.batch : undefined);
+    // §17.7: a friend_request accepted into a group signs one more line (friendAnswerMessage)
+    const msg = a.tool === 'friend_request' && m.ok && (m.group != null || m.ctx != null)
+      ? await wire.friendAnswerMessage(channel, c.devId, m.id, 'allow', a.tool, a.summary, m.group, m.ctx)
+      : await wire.approveMessage(channel, c.devId, m.id, decision, a.tool, a.summary, m.batch ? a.batch : undefined);
     const key = await webcrypto.subtle.importKey('raw', unb64u(sk), { name: 'Ed25519' }, false, ['verify']);
     return webcrypto.subtle.verify({ name: 'Ed25519' }, key, unb64u(m.sig), msg);
   }
@@ -162,6 +165,7 @@ export async function startFakeHost() {
     }
     if (!c.isReady) return;
     if (st.onApp && await st.onApp(c, m, (o) => sendApp(c, o))) return;   // a test's own handler (P57 media: media_get)
+    if (st.friends && /^(fr_|pg_)/.test(m.t)) return onFriends(c, m);     // §17.7 (0.16): the friends page
     if (m.t === 'msg') { st.says.push(m); if (st.autoReply) await sendApp(c, { t: 'msg', id: randomBytes(8).toString('hex'), text: 'echo: ' + m.text, ts: Date.now(), from: 'agent', seq: ++st.seq }); return; }
     if (m.t === 'say') return onSay(c, m);
     if (m.t === 'say_cancel') {
@@ -220,6 +224,64 @@ export async function startFakeHost() {
       return;
     }
     if (m.r && fixtures[m.t]) for (const x of [].concat(fixtures[m.t](m))) await sendApp(c, { ...x, r: m.r });
+  }
+
+  // ---- §17.7 agent friends: reads answered from st.friends, the six signed writes verified like the real host (§8 control
+  // signature with the device's approval key), applied, answered ctl_res and announced with fr_changed. Anything else that
+  // starts with fr_ (fr_send, fr_msg, …) is refused and logged — there is no device → friend message.
+  async function verifyControl(c, action, m, target) {
+    const sk = allow.get(b64u(c.devPub))?.sk;
+    if (!sk || typeof m.sig !== 'string' || typeof m.n !== 'string' || !Number.isInteger(m.ts)) return false;
+    try {
+      const msg = await wire.controlMessage(channel, c.devId, action, m.n, m.ts, target);
+      const key = await webcrypto.subtle.importKey('raw', unb64u(sk), { name: 'Ed25519' }, false, ['verify']);
+      return await webcrypto.subtle.verify({ name: 'Ed25519' }, key, unb64u(m.sig), msg);
+    } catch { return false; }
+  }
+  async function onFriends(c, m) {
+    const F = st.friends;
+    const reply = (o) => sendApp(c, { ...o, r: m.r });
+    if (m.t === 'fr_list') return reply({ t: 'fr_list_res', me: F.me, friends: F.friends, pending: F.pending, groups: F.groups, global: F.global });
+    if (m.t === 'fr_hist') {
+      let items = (F.hist[m.friend] || []).slice();                       // newest first
+      if (Number.isFinite(m.before)) items = items.filter((x) => x.ts < m.before);
+      return reply({ t: 'fr_hist_res', friend: m.friend, items: items.slice(0, F.page || 50), more: items.length > (F.page || 50) });
+    }
+    if (m.t === 'fr_ctx_get') return reply({ t: 'fr_ctx_res', friend: m.friend, text: (F.ctx || {})[m.friend] || '', max: 4000 });   // P73
+    if (m.t === 'fr_usage') return reply({ t: 'fr_usage_res', friend: m.friend, ...(F.usage[m.friend] || { group: 'default', used: { msg: { min: 0, hour: 0, day: 0, month: 0 }, tok: { min: null, hour: null, day: null, month: null } }, limits: {}, tok_source: null, blocked: 0 }) });
+    const TARGET = {
+      fr_set: () => ({ friend: m.friend, op: m.op, value: m.value }), pg_set: () => ({ group: m.group }), pg_del: () => ({ id: m.id }),
+      fr_add: () => ({ id: m.id, note: m.note }), fr_discoverable: () => ({ on: m.on }), fr_card: () => ({ owner: m.owner, intro: m.intro }),
+      fr_ctx: () => ({ friend: m.friend, text: m.text }),                                                   // P73
+    };
+    if (!TARGET[m.t]) { F.refused.push(m.t); return; }
+    const ok = await verifyControl(c, m.t, m, TARGET[m.t]());
+    F.writes.push({ ...m, sigOk: ok });
+    if (!ok) return reply({ t: 'ctl_res', ok: false, why: 'bad_signature' });
+    const f = F.friends.find((x) => x.id === m.friend);
+    if (m.t === 'fr_set') {
+      if (!f) return reply({ t: 'ctl_res', ok: false, why: 'not_friend' });
+      if (m.op === 'group') f.group = m.value;
+      if (m.op === 'block' || m.op === 'unblock') f.blocked = m.op === 'block';
+      if (m.op === 'delete') F.friends = F.friends.filter((x) => x !== f);
+    }
+    if (m.t === 'pg_set') { const i = F.groups.findIndex((g) => g.id === m.group.id); if (i >= 0) F.groups[i] = m.group; else F.groups.push(m.group); }
+    if (m.t === 'pg_del') {
+      const g = F.groups.find((x) => x.id === m.id);
+      if (!g || g.builtin) return reply({ t: 'ctl_res', ok: false, why: 'builtin' });
+      F.groups = F.groups.filter((x) => x !== g);
+      for (const x of F.friends) if (x.group === m.id) x.group = 'default';
+    }
+    if (m.t === 'fr_add') F.pending.push({ id: m.id, state: 'pending', ts: Date.now(), dir: 'out' });
+    if (m.t === 'fr_discoverable') F.me.discoverable = m.on === true;
+    if (m.t === 'fr_card') F.me.card = { ...F.me.card, owner: m.owner, intro: m.intro };
+    if (m.t === 'fr_ctx') {
+      if (!f) return reply({ t: 'ctl_res', ok: false, why: 'not_friend' });
+      if ([...String(m.text)].length > 4000) return reply({ t: 'ctl_res', ok: false, why: 'too_long' });
+      (F.ctx ||= {})[m.friend] = m.text;
+    }
+    await reply({ t: 'ctl_res', ok: true });
+    await broadcast({ t: 'fr_changed', friend: m.friend ?? null });
   }
 
   // the `preferences` message; a 0.15 host adds its `host` block (version, phone-settable keys, paired phones — metadata)
@@ -368,10 +430,16 @@ export async function startFakeHost() {
     get frames() { return [...conns].reduce((n, c) => n + c.frames, 0); },
     /** F17: ready devices with their approval key (b64u Ed25519 public) — to check a signed elev_answer. */
     get devs() { return [...conns].filter((c) => c.isReady && c.devId).map((c) => ({ id: c.devId, sk: allow.get(b64u(c.devPub))?.sk || null })); },
-    newPairing(base, ttl = 300) {
+    newPairing(base, ttl = 300, { compact = false } = {}) {
       const id = randomBytes(16), psk = randomBytes(32);
       pairings.set(b64u(id), { psk });
-      const p = { v: 1, r: relay, c: channel, k: b64u(hostKp.pub), i: b64u(id), p: b64u(psk), x: Math.floor(Date.now() / 1000) + ttl };
+      const x = Math.floor(Date.now() / 1000) + ttl;
+      if (compact) {   // ADR-A177: the digits link today's host prints (host wire.pairing_link)
+        const r = enc.encode(relay), b = new Uint8Array(101 + r.length);
+        b[0] = 2; b.set(wire.unb64u(channel), 1); b.set(hostKp.pub, 17); b.set(id, 49); b.set(psk, 65); new DataView(b.buffer).setUint32(97, x); b.set(r, 101);
+        return `${base}#p=` + BigInt('0x' + Buffer.from(b).toString('hex')).toString();
+      }
+      const p = { v: 1, r: relay, c: channel, k: b64u(hostKp.pub), i: b64u(id), p: b64u(psk), x };
       return `${base}#p=` + b64u(enc.encode(JSON.stringify(p)));
     },
     async approve() {
@@ -392,6 +460,8 @@ export async function startFakeHost() {
     async deliverQueued() { for (const [sid, q] of st.queued) { st.queued.delete(sid); st.says.push({ sid }); await sendApp(q.c, { t: 'say_state', sid, s: 'delivered' }); const turn = await addTurn(q.src, 'echo: ' + q.m.text, 'done'); void turn; } },
     async clearHistory() { st.epoch++; st.turns = []; await broadcast(meta()); },
     async ask(m) { st.asksOpen.set(m.id, m); await broadcast({ t: 'ask', ...m }); },
+    /** §17.7: turn the friends responder on with a state (sampleFriends()) — st.friends.writes / .refused record what came in */
+    friends(state) { st.friends = state; return state; },
     async askDone(id, result) { st.asksOpen.delete(id); await broadcast({ t: 'ask_done', id, result }); },
     setUp(v) {
       up = v;
@@ -414,7 +484,7 @@ export async function startFakeHost() {
         autoReply: true, replyFor: null, epoch: st.epoch + 1, turns: [], blobs: new Map(), staged: new Set(), queued: new Map(), opens: [], cancels: [],
         answers: [], qAnswers: [], chunks: 0, wavs: [], menu: null, models: null, meter: null, sigOk: [], says: [], modelSets: [], slashes: [],
         stallAfter: 0, blobErr: null, sayWhy: null, estop: false, rate: true, firsts: [], errors: [], lastError: undefined,
-        prefs: null, prefSet: true, prefSets: [], version: null });
+        prefs: null, prefSet: true, prefSets: [], version: null, friends: null });
       st.asksOpen = new Map();
       log.length = 0;
     },
@@ -427,3 +497,46 @@ export async function startFakeHost() {
 const PREF_ENUM = { 'updates.mode': ['auto', 'ask'], 'appearance.language': ['zh', 'en'], 'appearance.theme': ['system', 'light', 'dark'], 'voice.speak_replies': [true, false], 'voice.wake_enabled': [true, false], 'agent.high_risk_warnings': [true, false], 'agent.session_mode': ['shared', 'independent'], 'agent.isolation': [true, false], 'agent.allow_docker': [true, false] };
 const TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/gif', 'image/heic', 'image/heif', 'application/pdf', 'text/plain', 'text/markdown', 'text/csv',
   'application/json', 'audio/webm', 'audio/ogg', 'audio/mpeg', 'audio/mp4', 'audio/aac', 'audio/wav', 'audio/x-wav'];
+
+// §17.7 a friends state for the fake host: my card, three friends in the three built-in groups (ADR §6.3 numbers), one request
+// waiting, a conversation with auto replies and an owner-confirmed one, usage with and without a token source.
+export function sampleFriends({ myId = 'AJ-FRGG-6PG6-V1WK-AAQA', now = Date.now() } = {}) {
+  const win = (min, hour, day, month) => ({ min, hour, day, month });
+  const group = (id, name, msg, tok, iv, len, mode, allow, rounds) => ({ id, name, builtin: true, limits: { msg, tok, min_interval_s: iv, max_len: len },
+    auto: { mode, allow, ask: ['报价、付款、合作条款', '约时间', '任何需要承诺的事'], max_auto_rounds: rounds } });
+  const m = 60000;
+  return {
+    me: { id: myId, link: 'https://m.agentj.app/friends#add=' + myId, discoverable: true, on: true,
+      card: { v: 1, id: myId, name: '助理一号', owner: 'Leo', intro: '跨境电商选品和客服' } },
+    friends: [
+      { id: 'AJ-PH8E-AJT4-26GJ-ACQ9', name: '小鹿采购', owner: '王姐', intro: '深圳灯具工厂，负责报价和打样', group: 'default', state: 'friend', blocked: false, last: { ts: now - 5 * m, text: '好的，打样排期发你了' }, unread: 2 },
+      { id: 'AJ-QNRR-7DZ1-DTBE-79B7', name: 'Kai 的研发助手', owner: 'Kai', intro: '', group: 'colleague', state: 'friend', blocked: false, last: { ts: now - 90 * m, text: '接口文档我更新了' }, unread: 0 },
+      { id: 'AJ-RQCZ-QGZK-REZD-0S3C', name: 'Mina', owner: '', intro: '写稿', group: 'friend', state: 'friend', blocked: true, last: now - 3 * 86400000, unread: 0 },
+    ],
+    pending: [{ id: 'AJ-Q3TM-0000-0000-8XKN', state: 'pending', ts: now - 3600000, dir: 'out' }],
+    groups: [
+      group('default', '默认', win(3, 20, 50, 500), win(20000, 60000, 150000, 1500000), 10, 2000, 'scoped', ['寒暄', '名片和公开资料里的信息'], 6),
+      group('friend', '好友', win(10, 100, 300, 3000), win(100000, 300000, 600000, 6000000), 3, 8000, 'scoped', ['寒暄', '名片和公开资料里的信息', '日常协作、技术问题'], 12),
+      group('colleague', '同事', win(30, 500, 2000, null), win(500000, 2000000, 4000000, 40000000), 1, 20000, 'all', [], 30),
+      { id: 'g-vip', name: '老客户', builtin: false, limits: { msg: win(5, 50, 100, 1000), tok: win(null, null, 200000, 2000000), min_interval_s: 5, max_len: 4000 },
+        auto: { mode: 'off', allow: [], ask: ['报价'], max_auto_rounds: 6 } },
+    ],
+    global: { used: 48000, limit: 300000 },
+    hist: {
+      'AJ-PH8E-AJT4-26GJ-ACQ9': [
+        { mid: 'a4', dir: 'out', text: '主人说这批先按 3.5，量到 2000 可以谈 3.2。', ts: now - 4 * m, s: 'got', auto: false },
+        { mid: 'a3', dir: 'in', text: '500 个打样单价能不能降到 3.2 美元？', ts: now - 10 * m, s: 'queued_for_owner', auto: false },
+        { mid: 'a2', dir: 'out', text: '可以，主人这周已经确认了 SKU，15 号前没问题。', ts: now - 13 * m, s: 'replied', auto: true },
+        { mid: 'a1', dir: 'in', text: '10 月打样能排在 15 号前吗？', ts: now - 14 * m, s: '', auto: false },
+        { mid: 'a0', dir: 'out', text: '你好，我是助理一号。', ts: now - 86400000, s: 'undelivered', auto: true },
+      ],
+    },
+    usage: {
+      'AJ-PH8E-AJT4-26GJ-ACQ9': { group: 'default', used: { msg: win(1, 4, 9, 31), tok: win(1200, 6000, 12000, 48000) },
+        limits: { msg: win(3, 20, 50, 500), tok: win(20000, 60000, 150000, 1500000) }, tok_source: 'harness', blocked: 2 },
+      'AJ-QNRR-7DZ1-DTBE-79B7': { group: 'colleague', used: { msg: win(0, 2, 12, 140), tok: win(null, null, null, null) },
+        limits: { msg: win(30, 500, 2000, null), tok: win(500000, 2000000, 4000000, 40000000) }, tok_source: null, blocked: 0 },
+    },
+    page: 50, writes: [], refused: [],
+  };
+}

@@ -233,6 +233,15 @@ def check_codex_shared(st: State) -> dict | None:
               f"想接着电脑上的会话：在 {tilde(c['dir'])} 里先跑一次 `codex` / to share a desktop session, run `codex` in that folder first")
 
 
+def check_codex_perm(st: State) -> dict | None:
+    """F30 (ADR-A175): where the main Codex Agent's permissions come from; a sandbox_mode written inside a [table]."""
+    from . import codex_perm
+    try:
+        return codex_perm.doctor_row(st)
+    except Exception as e:  # noqa: BLE001 — a row, never a crash
+        return _c("codex_perm", WARN, f"Codex 权限：检查失败（{type(e).__name__}）/ Codex permissions: check failed")
+
+
 def check_agent_cli(st: State, svc: dict) -> dict:
     c = st.agent_config() if st.exists() else None
     kinds = [c["kind"]] if c else ["claude", "codex", "opencode"]
@@ -451,6 +460,15 @@ def check_bound(st: State) -> dict:
     return _c("bound", WARN, "还没加到 Agent J 账号 / not in an Agent J account yet", "agentj login")
 
 
+def _serve_status(st: State) -> dict | None:
+    if not st.exists():
+        return None
+    try:
+        return names.ctl_call(st, {"cmd": "status"}, 5)
+    except Exception:  # noqa: BLE001 — busy / not running: the row says so
+        return None
+
+
 def check_onboarding(st: State) -> dict:
     """F28 (P72): the seat and the two required remotes (this computer's browser, the main phone). Never ✗."""
     if not st.exists():
@@ -475,6 +493,55 @@ def check_serve(st: State) -> dict:
     up = res.get("relay_up")
     return _c("serve", OK if up else WARN, "在运行 / running · relay " + ("connected" if up else "reconnecting"),
               "" if up else "检查网络 / check the network")
+
+
+TOKEN_HARNESS = ("claude", "codex", "opencode")   # each reports its own usage per turn (peer_session.py); others: 「—」
+
+
+def check_friends(st: State, serve_status: dict | None = None) -> dict:
+    """P71 (§17): Agent friends — switch, peer keys, seat certificate and its expiry, mailbox connected, whether this harness
+    reports tokens (the friend token limits rely on it). Never ✗: friends are optional."""
+    import time as _time
+    from .friends import FriendStore
+    from .peer import PeerKeys
+    if not st.exists():
+        return _c("friends", OK, "—")
+    store = FriendStore(st)
+    if not store.on:
+        return _c("friends", OK, "关 / off (agentj friends on)")
+    keys = PeerKeys.load(st)
+    parts = [f"开 / on · {keys.id}" if keys else "开 / on · 还没有 ID / no ID yet"]
+    fr = (serve_status or {}).get("friends") if isinstance(serve_status, dict) else None
+    exp = fr.get("cert_exp") if isinstance(fr, dict) else None
+    if exp is None:
+        try:
+            d = json.loads((st.root / "peer" / "cert.json").read_text())
+            exp = d.get("exp") if isinstance(d, dict) and isinstance(d.get("exp"), int) else None
+        except (OSError, ValueError):
+            exp = None
+    state = fr.get("state") if isinstance(fr, dict) else None
+    hint, status = "", OK
+    if state == "need_seat" or (not cloud.read_cloud(st) and not exp):
+        parts.append("需要已付费席位 / needs a paid seat")
+        hint, status = "agentj login（加入 Agent J 账号并有可用席位）/ join an account with a usable seat", WARN
+    elif exp:
+        left = exp - _time.time()
+        parts.append(f"证书到 / certificate until {_time.strftime('%Y-%m-%d', _time.localtime(exp))}"
+                     + (" (已过期 / expired)" if left <= 0 else ""))
+        if left <= 0:
+            status = WARN
+    else:
+        parts.append("证书 / certificate —")
+    if fr is None:
+        parts.append("信箱 / mailbox —（serve 没在运行 / serve not running）")
+    else:
+        parts.append("信箱已连上 / mailbox connected" if fr.get("mbox_up") else "信箱未连上 / mailbox not connected")
+        if not fr.get("mbox_up") and status == OK and state != "off":
+            status, hint = WARN, hint or "检查网络；serve 会自动重连 / check the network; serve reconnects by itself"
+    c = st.agent_config()
+    kind = (c or {}).get("kind")
+    parts.append("tokens: " + ("harness 报 / reported by the harness" if kind in TOKEN_HARNESS else "—"))
+    return _c("friends", status, " · ".join(parts), hint)
 
 
 def check_service(svc: dict, legacy: dict | None = None) -> dict:
@@ -625,9 +692,12 @@ def run(st: State | None = None, offline: bool = False) -> list[dict]:
     shared_row = check_codex_shared(st)
     if shared_row:
         out.append(shared_row)
+    perm_row = check_codex_perm(st)
+    if perm_row:
+        out.append(perm_row)
     out += [check_agent_cli(st, svc), check_harness(svc), check_fence(st), check_danger(st), check_passphrase(st), check_bound(st), check_onboarding(st),
-            check_serve(st), check_service(svc, service.legacy_status()), check_alias(), check_estop(st), check_tasks(st),
-            check_activity(st)]
+            check_serve(st), check_friends(st, _serve_status(st)), check_service(svc, service.legacy_status()), check_alias(),
+            check_estop(st), check_tasks(st), check_activity(st)]
     out += check_asr(st)
     out += check_preferences(st)
     out += check_main_identity(st)

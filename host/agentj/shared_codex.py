@@ -189,6 +189,8 @@ class SharedCodexAgent(CodexAgent):
         self.told = set()
         self.shared_status = None
         self.read_probe = False
+        self.writer = {}                 # ADR-A178: who held the writer at the last refusal ({"kind", "pid", "how"})
+        self.perm_source = "pending"     # F30: desktop / config / agentj / codex, known once the thread is resumed
         if not self.cfg.get("shared_session_id"):
             stored=self.host.st.agent_session(self.kind)
             if isinstance(stored,str) and UUID.fullmatch(stored):
@@ -230,6 +232,9 @@ class SharedCodexAgent(CodexAgent):
                     await self.call('thread/resume', {'threadId': self.rollout_sid, 'excludeTurns': True})
                 except RPCError as error:
                     if active_writer(error):
+                        self.writer = await self.find_writer(self.rollout)
+                        if self.writer.get('kind') == 'agentj' and await self.end_leftover(self.writer):
+                            return               # our own leftover: ended; the next phone message resumes normally
                         self.follow_status('desktop_writer')
                         self.writer_notice()
         except (OSError, ConnectionError, asyncio.TimeoutError, RPCError):
@@ -240,13 +245,48 @@ class SharedCodexAgent(CodexAgent):
             self.thread = saved_thread
             self.read_probe = False
 
+    def writer_text(self):
+        """Who holds the writer, as found (ADR-A178); nothing looked up yet = the Codex App wording of P68c."""
+        zh = str(self.cfg.get('language', 'en')).startswith('zh')
+        w = getattr(self, 'writer', None) or {}
+        if not w.get('kind'):
+            return REASONS['desktop writer active'][0 if zh else 1]
+        from . import codex_procs
+        return codex_procs.text(w['kind'], w.get('pid'), zh)
+
+    async def find_writer(self, path):
+        from . import codex_procs
+        current = self.proc.pid if self.proc is not None and isinstance(getattr(self.proc, 'pid', None), int) else None
+        try:
+            w = await asyncio.to_thread(codex_procs.who, self.host.st, path, current)
+        except Exception:  # noqa: BLE001 — not knowing is said as such
+            w = {'kind': 'unknown', 'pid': None, 'how': None}
+        self.note('shared_writer', w.get('kind'))
+        return w
+
+    async def end_leftover(self, w):
+        """Our own leftover app-server holds the thread: end it (process group), tell the phone, retry the resume once."""
+        from . import codex_procs
+        pid = w.get('pid')
+        if not isinstance(pid, int) or pid not in await asyncio.to_thread(codex_procs.ours_alive, self.host.st,
+                                                                          {self.proc.pid} if self.proc is not None and isinstance(getattr(self.proc, 'pid', None), int) else set()):
+            return False
+        gone = await asyncio.to_thread(codex_procs._end, pid)
+        if not gone:
+            return False
+        codex_procs.forget(self.host.st, pid)
+        self.note('shared_writer_cleaned', 'agentj')
+        zh = str(self.cfg.get('language', 'en')).startswith('zh')
+        self.host.agent_notice(codex_procs.text('agentj_cleaned', None, zh))
+        self.writer = {}
+        return True
+
     def writer_notice(self):
         self.note('shared_read_only', 'desktop writer active')
         key = (self.cfg.get('shared_session_id'), 'desktop writer active')
         if key not in self.told:
             self.told.add(key)
-            self.host.agent_notice(REASONS['desktop writer active'][0] if str(self.cfg.get('language', 'en')).startswith('zh')
-                                   else REASONS['desktop writer active'][1])
+            self.host.agent_notice(self.writer_text())
 
     def read_desktop(self):
         sid = self.cfg.get('shared_session_id') or discover(self.cfg['dir'])
@@ -418,14 +458,27 @@ class SharedCodexAgent(CodexAgent):
     async def _resume(self, sid, path):
         """Resume the owner's thread: verified original permissions, else the owner's Codex defaults."""
         deferred = None
+        from . import codex_perm
+        self.perm_source = 'codex'
         try:
-            original,_=owner_context(path,self.cfg['dir'],sid)
+            original,context=owner_context(path,self.cfg['dir'],sid)
+            self.perm_source = 'desktop'
         except Refusal as why:
             if why.code in ('wrong thread/project', 'desktop turn active; alternate turns'): raise
             original=None
+            context = scan(path)[1] if why.code == 'unverified original permission profile' else None
             deferred = (why.code, '已按你 Codex 自己的默认权限接着这个会话。',
                           "Continuing it with your own Codex default permissions.")
         params={'threadId':sid,'excludeTurns':True}
+        if codex_perm.default_desktop_record(context):
+            # F30 (ADR-A175): the thread only ever had Codex's built-in default permissions — nobody chose them. The owner's
+            # explicit config.toml sandbox_mode applies, else Agent J's default (directly on the system). Approvals stay
+            # the thread's own (on-request); the high-risk hook and the danger list are unchanged.
+            mode, self.perm_source = codex_perm.main_sandbox(self.human.get('sandbox_mode'))
+            native = {'read-only':'readOnly','workspace-write':'workspaceWrite','danger-full-access':'dangerFullAccess'}[mode]
+            original = {'approvalPolicy': context.get('approval_policy'), 'approvalsReviewer': context.get('approvals_reviewer') or 'user',
+                        'sandboxPolicy': {'type': native}}
+            deferred = None
         if original:
             params.update(approvalPolicy=original['approvalPolicy'],approvalsReviewer=original['approvalsReviewer'])
             if 'permissions' in original: params['permissions']=original['permissions']
@@ -435,6 +488,7 @@ class SharedCodexAgent(CodexAgent):
                     # externalSandbox has no resume override: the owner's defaults decide.
                     for k in ('approvalPolicy','approvalsReviewer','sandbox'): params.pop(k,None)
                     original=None
+                    self.perm_source = 'codex'
                     deferred = ('unverified resume sandbox', '已按你 Codex 自己的默认权限接着这个会话。',
                                   "Continuing it with your own Codex default permissions.")
         hooks=await self._hook_config()
@@ -449,6 +503,7 @@ class SharedCodexAgent(CodexAgent):
             # Codex's own answer wins: deliver under what it actually resumed with.
             self.note('shared_degraded', 'native resume changed original policy/profile')
             original=None
+            self.perm_source = 'codex'
         self.original=original or {}
         return res
 
@@ -466,6 +521,7 @@ class SharedCodexAgent(CodexAgent):
         if not isinstance(sid,str) or not UUID.fullmatch(sid):
             raise RPCError({'message':'no thread'})
         self.original={}
+        self.perm_source='codex'
         self.cfg['shared_session_id']=sid
         self.note('shared_new_thread', why)
         self.host.agent_notice(f'已为你新开一个 Codex 会话（电脑上 `codex resume {sid}` 可以接着聊）。 / '
@@ -488,6 +544,7 @@ class SharedCodexAgent(CodexAgent):
             except Refusal as r:
                 path,why=None,r.code
         res=None
+        healed=False
         while path and res is None:
             await self.wait_desktop(path)
             try:
@@ -497,6 +554,12 @@ class SharedCodexAgent(CodexAgent):
                 why,path=r.code,None
             except RPCError as e:
                 if active_writer(e):
+                    # ADR-A178: who holds it; our own leftover app-server is ended and the resume retried once
+                    self.writer = await self.find_writer(path)
+                    if self.writer.get('kind') == 'agentj' and not healed:
+                        healed = True
+                        if await self.end_leftover(self.writer):
+                            continue
                     self.cfg['shared_session_id'] = sid
                     self.read_desktop()
                     self.desktop_model(scan(path)[1])
@@ -541,7 +604,7 @@ class SharedCodexAgent(CodexAgent):
             self.note('shared_refused', reason)
             zh, en = REASONS.get(reason, (None, None))
             if reason == 'desktop writer active':
-                self.local_fail(REASONS[reason][0] if str(self.cfg.get('language', 'en')).startswith('zh') else REASONS[reason][1])
+                self.local_fail(self.writer_text())
             elif zh:
                 self.local_fail(f'Codex 没收到这条消息：{zh}在电脑上处理后重发；看原因跑 `agentj activity`。 / '
                                 f'Not delivered to Codex: {en} Fix it on the computer and resend; `agentj activity` shows why.')

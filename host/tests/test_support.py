@@ -47,6 +47,7 @@ class FakeAPI:
 
     def __call__(self, url, payload, timeout=None, max_response=None):
         from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
+        cloud.check_url(url)   # the real gate post_json applies first (ADR-A181: a query here was refused_url in 0.15.x)
         inner = json.loads(_unb64(payload["body"]))
         ctx = support.CTX_MESSAGE if url.endswith("/v1/support/messages") else support.CTX_THREAD
         Ed25519PublicKey.from_public_bytes(_unb64(payload["pk"])).verify(_unb64(payload["sig"]), f"{ctx}\n{payload['body']}".encode())
@@ -115,8 +116,9 @@ class Support(unittest.TestCase):
         self.assertIn("可自行判断", out)
         self.assertIn(support.TEXT + "Run `agentj service restart`.", out)
         # the long poll asked for news after its own message
-        self.assertIn("after=7", api.reads[0][0])
+        self.assertNotIn("?", api.reads[0][0])               # ADR-A181: after / wait are signed, not on the URL
         self.assertEqual(api.reads[0][1]["after"], 7)
+        self.assertEqual(api.reads[0][1]["wait"], support.POLL_WAIT)
         self.assertEqual(support.load_threads(self.st)[0]["id"], TID)
 
     def test_layer2_flagged_sends_nothing(self):
@@ -215,6 +217,64 @@ class Support(unittest.TestCase):
         self.assertIn("support.add_parser(sub)", pathlib.Path(cli.__file__).read_text(), "registered in agentj --help")
         a = p.parse_args(["support", "report", "--kind", "report", "--attach-doctor", "the", "docs", "say"])
         self.assertEqual((a.support_cmd, a.kind, a.attach_doctor, a.text), ("report", "report", True, ["the", "docs", "say"]))
+
+
+class SignedReadOverHTTP(unittest.TestCase):
+    """ADR-A181 (ticket st_n70xcZziy7XOkuAGNxHpFA): the signed read goes through the REAL cloud.post_json + check_url to a
+    loopback server — no fake post. 0.15.8a1 put ?after=&wait= on the URL and check_url refused it (refused_url)."""
+
+    def setUp(self):
+        import http.server
+        import threading
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.st = State(pathlib.Path(self.tmp.name) / "s")
+        self.st.init(relay="ws://127.0.0.1:1")
+        self.seen = []
+        seen = self.seen
+
+        class H(http.server.BaseHTTPRequestHandler):
+            def do_POST(self):
+                body = json.loads(self.rfile.read(int(self.headers["content-length"])))
+                seen.append((self.path, body))
+                out = json.dumps({"thread": {"id": TID, "status": "answered"}, "cursor": 8, "waiting": False,
+                                  "messages": [{"seq": 8, "author": "support", "kind": "reply", "body": "Restart serve.", "created_at": "x"}]}).encode()
+                self.send_response(200)
+                self.send_header("content-type", "application/json")
+                self.send_header("content-length", str(len(out)))
+                self.end_headers()
+                self.wfile.write(out)
+
+            def log_message(self, *a):
+                pass
+
+        self.srv = http.server.ThreadingHTTPServer(("127.0.0.1", 0), H)
+        threading.Thread(target=self.srv.serve_forever, daemon=True).start()
+        self.addCleanup(self.srv.server_close)
+        self.addCleanup(self.srv.shutdown)
+        self.base = f"http://127.0.0.1:{self.srv.server_address[1]}"
+
+    def test_signed_read_posts_to_a_query_free_url_with_after_and_wait_signed(self):
+        from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
+        ch = support.Channel(self.st, base=self.base)          # default post = cloud.post_json (real check_url)
+        self.assertIs(ch.post, cloud.post_json)
+        status, view = ch.read(TID, 7, 3)
+        self.assertEqual(status, 200)
+        self.assertEqual(view["messages"][0]["body"], "Restart serve.")
+        path, env = self.seen[-1]
+        self.assertEqual(path, f"/v1/support/threads/{TID}")    # no query
+        Ed25519PublicKey.from_public_bytes(_unb64(env["pk"])).verify(_unb64(env["sig"]), f"{support.CTX_THREAD}\n{env['body']}".encode())
+        inner = json.loads(_unb64(env["body"]))
+        self.assertEqual({k: inner[k] for k in ("t", "thread", "after", "wait")}, {"t": "support_thread", "thread": TID, "after": 7, "wait": 3})
+        self.assertEqual(set(inner), {"v", "t", "channel", "ts", "thread", "after", "wait"})   # = dashboard SUPPORT_HOST_KINDS schema
+
+    def test_run_thread_end_to_end_and_the_old_query_form_is_what_check_url_refuses(self):
+        out = io.StringIO()
+        self.assertEqual(support.run_thread(TID, wait=2, ch=support.Channel(self.st, base=self.base), out=out), support.EXIT_OK)
+        self.assertIn("Restart serve.", out.getvalue())
+        with self.assertRaises(cloud.CloudError) as e:      # the 0.15.8a1 bug, pinned: a query on a signed POST never leaves
+            cloud.post_json(f"{self.base}/v1/support/threads/{TID}?after=0&wait=0", {})
+        self.assertEqual(e.exception.kind, "refused_url")
 
 
 class Identity(unittest.TestCase):

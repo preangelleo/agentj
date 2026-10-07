@@ -70,11 +70,30 @@ export function unpadJson(pt, maxJson = MAX_JSON) {
 
 /** Parse the QR / link payload (`…#p=<b64url json>` or the bare b64url). Throws on anything malformed or expired.
  *  allowRelay(url) → bool lets a client pin the relay it will talk to (a pasted link must not move it to someone else's). */
+// ADR-A177 (F29): the compact pairing link. `#p=` + decimal digits of the big-endian number made of
+// 0x02 ‖ channel(16) ‖ host_x25519_pub(32) ‖ pairing_id(16) ‖ psk(32) ‖ expiry(u32) ‖ relay — relay = "" for the default relay,
+// else the wss URL without its scheme (a local ws test relay stays whole). Digits go into a QR numeric segment (3.3 bits each, vs 8 for
+// a byte of base64url-inside-JSON-inside-base64url), so the QR drops from version 13 (69 modules) to 8 (49). The JSON v1 link
+// (b64url, always starts "eyJ") still parses: pairing links from not-yet-updated hosts keep working.
+export const PAIR_DEFAULT_RELAY = 'wss://relay.agentj.app';
+const PAIR_V2_FIXED = 1 + 16 + 32 + 16 + 32 + 4;
+function unpackPairingV2(digits) {
+  if (digits.length > 400) throw new Error('bad pairing link');
+  let h = BigInt(digits).toString(16);
+  if (h.length % 2) h = '0' + h;
+  const b = Uint8Array.from(h.match(/../g) || [], (x) => parseInt(x, 16));
+  if (b.length < PAIR_V2_FIXED || b[0] !== 2) throw new Error('unsupported version');
+  const rest = dec.decode(b.slice(PAIR_V2_FIXED));
+  const r = rest === '' ? PAIR_DEFAULT_RELAY : rest.startsWith('ws:') ? rest : PAIR_DEFAULT_RELAY.slice(0, 6) + rest;
+  const x = new DataView(b.buffer, b.byteOffset + 97, 4).getUint32(0, false);
+  return { v: 1, r, c: b64u(b.slice(1, 17)), k: b64u(b.slice(17, 49)), i: b64u(b.slice(49, 65)), p: b64u(b.slice(65, 97)), x };
+}
+
 export function parsePairing(input, nowSec = Math.floor(Date.now() / 1000), allowRelay = null) {
   let s = String(input).trim();
   const i = s.indexOf('#p=');
   if (i >= 0) s = s.slice(i + 3);
-  const p = JSON.parse(new TextDecoder().decode(unb64u(s)));
+  const p = /^[0-9]+$/.test(s) ? unpackPairingV2(s) : JSON.parse(new TextDecoder().decode(unb64u(s)));
   if (p.v !== 1) throw new Error('unsupported version');
   if (typeof p.r !== 'string' || !/^wss:\/\/[a-z0-9.-]+(:\d+)?$/.test(p.r) && !/^ws:\/\/127\.0\.0\.1:\d+$/.test(p.r)) throw new Error('bad relay url');
   if (allowRelay && !allowRelay(p.r)) throw new Error('relay not allowed');
@@ -103,13 +122,22 @@ export async function approveMessage(channel, device, id, decision, tool, summar
 }
 // ---------------------------------------------------------------- phone controls (PROTOCOL §8). Mirrors host/agentj/controls.py.
 export const CONTROL_CONTEXT = 'agentjarvis-control-v1';
-export const CONTROL_ACTIONS = ['mem_rm', 'mem_undo', 'estop', 'resume', 'task_on', 'task_off'];
+export const CONTROL_ACTIONS = ['mem_rm', 'mem_undo', 'estop', 'resume', 'task_on', 'task_off',
+  'fr_set', 'pg_set', 'pg_del', 'fr_add', 'fr_discoverable', 'fr_card',          // §17.7 agent friends (0.16)
+  'fr_ctx'];                                                                       // P73: a friend's 「补充设定」
 /** The text whose SHA-256 a control signature covers (the target, with the content hash the phone saw). */
 export function controlObject(action, o) {
   if (action === 'mem_rm') return `${o.src}\n${o.file}\n${o.fsha}\n${o.iid}`;
   if (action === 'mem_undo') return String(o.id);
   if (action === 'estop' || action === 'resume') return 'all';
   if (action === 'task_on' || action === 'task_off') return `${o.id}\n${o.tsha}`;
+  if (action === 'fr_set') return `${o.friend}\n${o.op}\n${o.value ?? ''}`;
+  if (action === 'pg_set') return canonicalJson(o.group);
+  if (action === 'pg_del') return String(o.id);
+  if (action === 'fr_add') return `${o.id}\n${o.note ?? ''}`;
+  if (action === 'fr_discoverable') return o.on ? 'on' : 'off';
+  if (action === 'fr_card') return `${o.owner ?? ''}\n${o.intro ?? ''}`;
+  if (action === 'fr_ctx') return `${o.friend}\n${o.text ?? ''}`;
   throw new Error('bad action');
 }
 /** The exact bytes a device signs for a write command: delete / undo a memory item, stop everything, resume, enable / disable a
@@ -291,3 +319,76 @@ export async function sealValue(hostEpk, value, channel, device, id, kind, nonce
   const ct = concat(iv, new Uint8Array(await subtle.encrypt({ name: 'AES-GCM', iv, additionalData: aad }, key, value)));
   return { epk, ct, ctSha: hex(await sha256(ct)) };
 }
+
+// ---------------------------------------------------------------- agent friends (PROTOCOL §17, 0.16). Mirrors host/agentj/peer.py.
+/** Sorted keys, no spaces, non-ASCII as is (Python: json.dumps(o, sort_keys=True, separators=(',', ':'), ensure_ascii=False)). */
+export function canonicalJson(o) {
+  if (Array.isArray(o)) return `[${o.map(canonicalJson).join(',')}]`;
+  if (o && typeof o === 'object') return `{${Object.keys(o).sort().map((k) => `${JSON.stringify(k)}:${canonicalJson(o[k])}`).join(',')}}`;
+  return JSON.stringify(o === undefined ? null : o);
+}
+/** §17.7 the bytes a device signs to answer a friend_request card: approveMessage, plus — for allow with a group — one more
+ *  line hex(SHA-256("group:" + group)), so the host knows the owner picked THAT group. Every other ask = approveMessage. */
+export const GROUP_ID_RE = /^[a-z0-9-]{1,32}$/;
+export async function friendAnswerMessage(channel, device, id, decision, tool, summary, group, ctx) {
+  const base = await approveMessage(channel, device, id, decision, tool, summary);
+  if (tool !== 'friend_request' || decision !== 'allow') return base;
+  let out = base;
+  if (group != null && group !== '') {
+    if (!GROUP_ID_RE.test(group)) throw new Error('bad group');
+    out = concat(out, enc.encode(`\n${hex(await sha256(enc.encode('group:' + group)))}`));
+  }
+  // P73 (ADR-A176): 「同意」 may carry this friend's 「补充设定」 — one more line hex(SHA-256("ctx:" + ctx)), after the group line
+  if (typeof ctx === 'string' && ctx !== '') {
+    if ([...ctx].length > FRIEND_CTX_MAX) throw new Error('ctx too long');
+    out = concat(out, enc.encode(`\n${hex(await sha256(enc.encode('ctx:' + ctx)))}`));
+  }
+  return out;
+}
+/** P73: the longest 「补充设定」 for one friend, in characters (Unicode code points; the host counts the same way). */
+export const FRIEND_CTX_MAX = 4000;
+/** §17.1 Agent ID: `AJ-` + 15 Crockford base32 characters of the first 75 bits of h + 1 check character, 4 groups of 4. */
+export const CROCKFORD = '0123456789ABCDEFGHJKMNPQRSTVWXYZ';
+const checkChar = (v) => CROCKFORD[v.reduce((n, x, i) => n + (i + 1) * x, 0) % 31];
+const showId = (s16) => `AJ-${s16.slice(0, 4)}-${s16.slice(4, 8)}-${s16.slice(8, 12)}-${s16.slice(12)}`;
+/** Whatever a person typed or pasted → the canonical `AJ-XXXX-XXXX-XXXX-XXXX`, or null (wrong length / letter / check). */
+export function parseAgentId(input) {
+  if (typeof input !== 'string' || input.length > 64) return null;
+  let s = input.replace(/[\s-]/g, '').toUpperCase();
+  if (s.length === 18 && s.startsWith('AJ')) s = s.slice(2);
+  s = s.replace(/[IL]/g, '1').replace(/O/g, '0');
+  if (s.length !== 16) return null;
+  const v = [...s].map((c) => CROCKFORD.indexOf(c));
+  if (v.some((x) => x < 0) || checkChar(v.slice(0, 15)) !== s[15]) return null;
+  return showId(s);
+}
+/** id_raw (10 bytes: id75 << 5) of a canonical or typed ID; null when invalid. */
+export function agentIdRaw(id) {
+  const p = parseAgentId(id);
+  if (!p) return null;
+  let n = 0n;
+  for (const c of p.replace(/^AJ-|-/g, '').slice(0, 15)) n = (n << 5n) | BigInt(CROCKFORD.indexOf(c));
+  n <<= 5n;
+  const out = new Uint8Array(10);
+  for (let i = 9; i >= 0; i--) { out[i] = Number(n & 255n); n >>= 8n; }
+  return out;
+}
+/** The Agent ID of a peer key pair (x25519 public ‖ ed25519 public, 32 bytes each). */
+export async function agentIdOf(x25519Pub, ed25519Pub) {
+  const h = await sha256(concat(enc.encode('agentj/peer-id/v1\n'), x25519Pub, ed25519Pub));
+  let n = 0n;
+  for (const b of h.slice(0, 10)) n = (n << 8n) | BigInt(b);
+  n >>= 5n;                                           // 80 → 75 bits
+  const v = [];
+  for (let i = 14; i >= 0; i--) v.push(Number((n >> BigInt(5 * i)) & 31n));
+  return showId(v.map((x) => CROCKFORD[x]).join('') + checkChar(v));
+}
+/** mbox = b64url(SHA-256("agentj/mbox/v1\n" ‖ id_raw)[0:16]) — what the relay sees instead of the ID. */
+export async function mboxOfId(id) {
+  const raw = agentIdRaw(id);
+  if (!raw) throw new Error('bad id');
+  return b64u((await sha256(concat(enc.encode('agentj/mbox/v1\n'), raw))).slice(0, 16));
+}
+/** The share link (fragment only: never reaches a server). */
+export const FRIEND_LINK_BASE = 'https://m.agentj.app/friends#add=';
+export const friendLink = (id) => FRIEND_LINK_BASE + parseAgentId(id);

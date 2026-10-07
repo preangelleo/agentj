@@ -192,7 +192,22 @@ class Telegram:
         # P59 (F24 from Telegram): /compact and the bare 「压缩」 words are the phone's command, not a message with an envelope.
         # Owner's private chat only: a group member never compacts the owner's conversation.
         from . import slash
-        word=slash.parse(re.sub(r'^(/\w+)@\w+',r'\1',raw)) if raw else None
+        word=slash.parse(re.sub(r'^(/[\w-]+)@\w+',r'\1',raw)) if raw else None
+        # P73 (ADR-A176): /my-agent-id and /add-friend are answered by the host (no model). Owner's private chat only. A friend
+        # request needs the paired phone's signature, so /add-friend here only checks the ID and points to the phone.
+        from . import friend_cmds
+        fc=friend_cmds.name_of(word[0]) if word else None
+        if fc:
+            lang='en' if getattr(self.host,'lang','zh')=='en' else 'zh'
+            if not owner:
+                await asyncio.to_thread(api,cfg,'sendMessage',{'chat_id':chat_id,'text':friend_cmds.T[lang]['tg_owner']})
+                self.host.st.log('telegram_friend_cmd',cmd=fc,result='refused');return False
+            if fc=='my-agent-id':
+                body=friend_cmds.my_agent_id_telegram(self.host.st,lang,getattr(getattr(self.host,'peers',None),'state',None))
+            else:
+                body={'text':friend_cmds.add_friend(word[1],lang,'telegram').text}
+            await asyncio.to_thread(api,cfg,'sendMessage',{'chat_id':chat_id,**body})
+            self.host.st.log('telegram_friend_cmd',cmd=fc,result='ok');return True
         if word and word[0]=='compact':
             if not owner:
                 await asyncio.to_thread(api,cfg,'sendMessage',{'chat_id':chat_id,'text':'只有机主在私聊里才能压缩上下文。Only the owner can compact the context, in a private chat.'})

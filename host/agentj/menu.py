@@ -36,6 +36,14 @@ DEFAULT_DESC = {
            "help": "Which commands work here", "stop": "Stop this turn"},
 }
 DEFAULT_GROUP = {"zh": "命令", "en": "Commands"}
+# P73 (ADR-A176): the two friend commands the host answers itself (friend_cmds.py); inserted like every menu item —
+# `/add-friend ` waits for the ID, the page then sends the signed fr_add.
+FRIEND_CMDS = ("add-friend", "my-agent-id")
+FRIEND_DESC = {
+    "zh": {"add-friend": "加好友：/add-friend AJ-XXXX-XXXX-XXXX-XXXX [附言]", "my-agent-id": "我的 Agent ID 和分享链接"},
+    "en": {"add-friend": "Add a friend: /add-friend AJ-XXXX-XXXX-XXXX-XXXX [note]", "my-agent-id": "My Agent ID and share link"},
+}
+FRIEND_GROUP = {"zh": "好友", "en": "Friends"}
 
 
 def _bad_text(s: str) -> bool:
@@ -97,7 +105,9 @@ def arrange(items: list[dict]) -> list[dict]:
 
 def defaults(lang: str = "zh") -> list[dict]:
     d = DEFAULT_DESC.get(lang, DEFAULT_DESC["zh"])
-    return [{"cmd": "/" + c, "desc": d[c], "group": DEFAULT_GROUP.get(lang, "命令")} for c in slash.WHITELIST]
+    fd = FRIEND_DESC.get(lang, FRIEND_DESC["zh"])
+    return ([{"cmd": "/" + c, "desc": d[c], "group": DEFAULT_GROUP.get(lang, "命令")} for c in slash.WHITELIST]
+            + [{"cmd": "/" + c, "desc": fd[c], "group": FRIEND_GROUP.get(lang, "好友")} for c in FRIEND_CMDS])
 
 
 def read(workdir: str | None) -> tuple[dict | None, list[str]]:
@@ -128,7 +138,7 @@ def served(workdir: str | None, skills: list | None, lang: str = "zh") -> dict:
     doc, errs = read(workdir)
     sk = []
     for s in skills or []:
-        if isinstance(s, str) and CMD_RE.match("/" + s) and s not in slash.WHITELIST:
+        if isinstance(s, str) and CMD_RE.match("/" + s) and s not in slash.WHITELIST and s not in FRIEND_CMDS:
             sk.append({"cmd": "/" + s, "desc": ""})
     out = {"skills": sk[:200], "cmds": list(slash.WHITELIST)}
     if doc is None:

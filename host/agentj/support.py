@@ -89,11 +89,15 @@ class Channel:
         return bearer_call("POST", url, self.install_id, fields)
 
     def read(self, thread: str, after: int, wait: int) -> tuple[int, dict]:
-        q = f"/v1/support/threads/{thread}?" + urllib.parse.urlencode({"after": after, "wait": wait})
+        path = f"/v1/support/threads/{thread}"
         if self.signed:
-            inner = {"v": 1, "t": "support_thread", "channel": cloud.channel_of(self.st), "ts": int(self.now()), "thread": thread, "after": after}
-            return self.post(self.base + q, cloud.envelope(CTX_THREAD, inner, self.st.signing_key()), timeout=wait + 15, max_response=MAX_RESPONSE)
-        return bearer_call("GET", self.base + q, self.install_id, None, timeout=wait + 15)
+            # ADR-A181: cloud.post_json refuses any URL with a query (check_url), so a bound host carries `after` and `wait`
+            # inside the signed body and POSTs to the bare path (0.15.x put them in `?after=&wait=` → refused_url, never read)
+            inner = {"v": 1, "t": "support_thread", "channel": cloud.channel_of(self.st), "ts": int(self.now()), "thread": thread,
+                     "after": after, "wait": wait}
+            return self.post(self.base + path, cloud.envelope(CTX_THREAD, inner, self.st.signing_key()), timeout=wait + 15, max_response=MAX_RESPONSE)
+        q = "?" + urllib.parse.urlencode({"after": after, "wait": wait})
+        return bearer_call("GET", self.base + path + q, self.install_id, None, timeout=wait + 15)
 
 
 def bearer_call(method: str, url: str, token: str, body: dict | None, timeout: float = 40) -> tuple[int, dict]:

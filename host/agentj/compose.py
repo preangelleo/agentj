@@ -34,6 +34,7 @@ T = {
         "asr_fail": "转写失败（{why}）——音频仍在上面的路径。",
         "quote_head": "【回复 #{id} · {who} · {hhmm}】",
         "excerpt": "（摘录）",
+        "voice_only_fail": "（这条消息只有语音、没有文字，而且语音没转写出来。请简短告诉对方没听清，请他再说一遍或者打字——不要自己猜他说了什么。）",
         "who": {"phone": "你", "host": "电脑", "agent": "Agent", "sys": "系统", "task": "定时任务", "cmd": "命令"},
         "why": {"timeout": "超过 60 秒", "no_speech": "没有听到说话", "not_installed": "电脑上还没装语音转写",
                 "off": "语音转写已关闭", "broken": "转写器出错", "busy": "转写器忙", "bad_audio": "音频格式不对",
@@ -48,6 +49,8 @@ T = {
         "asr_fail": "Transcription failed ({why}) — the audio is still at the path above.",
         "quote_head": "[Reply to #{id} · {who} · {hhmm}]",
         "excerpt": "(excerpt)",
+        "voice_only_fail": "(This message is a voice note only, with no text, and it could not be transcribed. Briefly tell them you "
+                           "did not catch it and ask them to say it again or type it — do not guess what was said.)",
         "who": {"phone": "you", "host": "computer", "agent": "Agent", "sys": "system", "task": "scheduled task",
                 "cmd": "command"},
         "why": {"timeout": "over 60 s", "no_speech": "no speech heard", "not_installed": "local transcription is not installed",
@@ -94,12 +97,16 @@ def quote_block(turn: dict, excerpt: str | None, lang: str) -> str:
 
 
 def render(text: str, files: list[dict], lang: str = "zh", quote: str | None = None) -> str:
-    """files: [{"path", "mime", "bytes", "origin", "asr"?: {"ok", "text"?, "why"?, "secs"?}}]"""
+    """files: [{"path", "mime", "bytes", "origin", "asr"?: {"ok", "text"?, "why"?, "secs"?}}]
+
+    F27 (0.16): `text` may be empty (or spaces) when files came with the message — the prompt is then the attachment block and
+    the transcripts alone, never an empty text part; voice notes alone that all failed to transcribe end with a line telling
+    the Agent to ask again instead of guessing."""
     t = T[lang]
     parts = []
     if quote:
         parts.append(quote)
-    if text:
+    if text and text.strip():
         parts.append(text)
     if files:
         lines = [t["att_head"].format(n=len(files))]
@@ -115,6 +122,9 @@ def render(text: str, files: list[dict], lang: str = "zh", quote: str | None = N
             parts.append(head + "\n" + a["text"])
         else:
             parts.append(head + "\n" + t["asr_fail"].format(why=t["why"].get(a.get("why"), a.get("why") or "?")))
+    if files and not (text and text.strip()) and all(f.get("asr") and not (f["asr"].get("ok") and (f["asr"].get("text") or "").strip())
+                                                     for f in files):
+        parts.append(t["voice_only_fail"])
     return "\n\n".join(parts)
 
 

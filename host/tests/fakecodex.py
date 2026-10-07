@@ -20,7 +20,9 @@ sees whether serve asked for `untrusted`). What a turn does (the text of the mes
     anything else          one agentMessage "ECHO: <text>"
 Every client message and every answer to a server request is logged to FAKE_CX_LOG (JSONL). FAKE_CX_POLICY = the human's
 approval_policy for config/read (JSON); FAKE_CX_THREADS = thread ids that "already exist" (resume); FAKE_CX_SANDBOX = the
-human's effective sandbox (read-only | workspace-write | danger-full-access, default the last), reported by thread/start|resume.
+human's effective sandbox (read-only | workspace-write | danger-full-access, default the last), reported by thread/start|resume,
+and config/read's `sandbox_mode` (an explicit owner setting); FAKE_CX_THREAD_SANDBOX = the sandbox a pre-existing thread kept
+(what a resume without `sandbox` gets, like Codex 0.159.2).
 """
 import json
 import os
@@ -254,7 +256,9 @@ def handle(m):
         return {"userAgent": "agentjarvis/0.159.2-fake (Linux; x86_64)", "codexHome": "~/.codex"}
     if method == "config/read":
         pol = json.loads(os.environ["FAKE_CX_POLICY"]) if os.environ.get("FAKE_CX_POLICY") else None
-        return {"config": {"approval_policy": pol, "approvals_reviewer": "auto_review", "sandbox_mode": None, "model": "gpt-fake",
+        # FAKE_CX_SANDBOX also stands for an explicit `sandbox_mode` in the owner's config.toml (F30: unset → Agent J sends
+        # danger-full-access itself)
+        return {"config": {"approval_policy": pol, "approvals_reviewer": "auto_review", "sandbox_mode": os.environ.get("FAKE_CX_SANDBOX"), "model": "gpt-fake",
                            "model_reasoning_effort": "medium"}}
     if method in ("thread/start", "thread/resume"):
         if method == "thread/resume":
@@ -263,8 +267,12 @@ def handle(m):
                 return {"__error": {"code": -32600, "message": f"thread not found: {tid}"}}
         else:
             tid = str(uuid.uuid4())
-        THREADS[tid] = {**THREADS.get(tid, {"total": 0, "last": 0}), "policy": p.get("approvalPolicy") or "never",
-                        "sandbox": p.get("sandbox"), "model": p.get("model") or "gpt-fake", "ephemeral": p.get("ephemeral")}
+        old = THREADS.get(tid) or {"total": 0, "last": 0, "sandbox": os.environ.get("FAKE_CX_THREAD_SANDBOX") if method == "thread/resume" else None}
+        # like Codex 0.159.2: a resume that names no sandbox keeps the thread's own (FAKE_CX_THREAD_SANDBOX for a thread that
+        # existed before this process) — ADR-A175
+        THREADS[tid] = {**old, "policy": p.get("approvalPolicy") or old.get("policy") or "never",
+                        "sandbox": p.get("sandbox") or (old.get("sandbox") if method == "thread/resume" else None),
+                        "model": p.get("model") or "gpt-fake", "ephemeral": p.get("ephemeral")}
         if method == "thread/start":
             note("thread/started", {"thread": {"id": tid}})
         return thread_answer(tid, p)

@@ -27,12 +27,16 @@ const CATS = ['spend', 'delete', 'send', 'credentials', 'price'];
 export function addAsk(m) {
   if (typeof m.id !== 'string' || !/^[0-9a-f]{32}$/.test(m.id) || typeof m.tool !== 'string' || typeof m.summary !== 'string') return;
   if (S.asks.has(m.id)) return;
-  const ttl = Number.isInteger(m.ttl) && m.ttl >= 0 && m.ttl <= 600 ? m.ttl : 120;
+  // §17.7 friend cards: a friend request waits up to 7 days, a friend's question up to a day (both shown with their own text)
+  const maxTtl = m.tool === 'friend_request' ? 604800 : m.tool === 'peer_question' ? 86400 : 600;
+  const ttl = Number.isInteger(m.ttl) && m.ttl >= 0 && m.ttl <= maxTtl ? m.ttl : 120;
   const cats = Array.isArray(m.cat) ? m.cat.filter((c) => CATS.includes(c)) : [];
   const scope = !cats.length && typeof m.batch === 'string' && m.batch.length > 0 && m.batch.length <= 400 ? m.batch : null;
   S.asks.set(m.id, { id: m.id, kind: 'permission', tool: m.tool.slice(0, 64), summary: m.summary, cats, why: typeof m.why === 'string' ? m.why.slice(0, 200) : '',
     scope, batch_max: Number.isInteger(m.batch_max) ? m.batch_max : 20, batch_secs: Number.isInteger(m.batch_secs) ? m.batch_secs : 600,
-    task: typeof m.task === 'string' ? m.task.slice(0, 80) : '', at: nowS(), deadline: Date.now() + ttl * 1000, state: 'open', final_at: null });
+    task: typeof m.task === 'string' ? m.task.slice(0, 80) : '', at: nowS(), deadline: Date.now() + ttl * 1000, state: 'open', final_at: null,
+    ...(m.tool === 'friend_request' && m.fr && typeof m.fr === 'object' ? { fr: m.fr } : {}),     // display-only copies (friends.js)
+    ...(m.tool === 'peer_question' && m.pq && typeof m.pq === 'object' ? { pq: m.pq } : {}) });
   S.order.push(m.id);
   onChange();
 }

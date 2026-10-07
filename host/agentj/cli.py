@@ -235,7 +235,7 @@ QR_MAX_WIDTH = 80   # columns: a QR wider than the terminal wraps and cannot be 
 
 def qr_half_blocks(qr, border: int | None = None) -> list[str]:
     """The QR in half-height blocks: one text line = two module rows, one column = one module, so a pairing link (QR
-    version ~13, 69 modules) is ≤ 80 columns. Light modules are drawn (█ ▀ ▄), dark ones are spaces — right on a dark
+    version 8, 49 modules since ADR-A177; an old-format link was version 13, 69) is ≤ 80 columns. Light modules are drawn (█ ▀ ▄), dark ones are spaces — right on a dark
     terminal, the usual one (the light quiet zone is drawn too, so the code has its white frame). The quiet zone is 4
     modules when that still fits in QR_MAX_WIDTH, else 2. An odd last row is paired with one more light row."""
     if border is None:
@@ -268,8 +268,8 @@ def _qr_ascii(qr, border: int = 2) -> str:
 
 
 def _print_qr(link: str) -> None:
-    import segno
-    qr = segno.make(link, error="m")
+    from . import wire
+    qr = wire.pairing_qr(link)   # ADR-A177: digits in a numeric segment (version 8, 49 modules)
     mode = _qr_mode()
     if mode == "compact":
         lines = qr_half_blocks(qr)
@@ -1751,7 +1751,7 @@ def main_jarvis(argv=None) -> None:
 
 # `migrate status` reports, `migrate rollback` undoes, `docs-rule` prints (or, with --write and the human's y, appends to the
 # AI's own memory file), `handover` only reads: none may move the state directory first
-NO_MIGRATE = ("migrate", "docs-rule", "handover", "recall")   # recall: read-only, usually inside the fence
+NO_MIGRATE = ("migrate", "docs-rule", "handover", "recall", "friends", "codex-sandbox")   # recall / friends / codex-sandbox: usually inside the fence
 
 
 def main(argv=None) -> None:
@@ -1941,6 +1941,10 @@ def main(argv=None) -> None:
     plaza.add_parser(sub)
     support.add_parser(sub)   # F18: agentj support ask | report | thread | list
     recall.add_parser(sub)    # F22 (P57): agentj recall <keywords> [--days N] [--date D] — the main Agent finds an earlier conversation
+    from . import peer_service
+    peer_service.add_parser(sub)   # P71 (§17.9): agentj friends … — through <state>/agentperm/friends.sock, also inside the fence
+    from . import codex_perm
+    codex_perm.add_parser(sub)     # F30 (P73): agentj codex-sandbox status|set|default|fix — always the top level of config.toml
     mg = sub.add_parser("migrate", help="改名后的状态目录搬迁：status 查看 · rollback 撤销 / the 0.10 state move: status · rollback",
                         description="0.9 的状态目录 ~/.local/state/agentjarvis-alpha 会自动搬到 ~/.local/state/agentj（旧路径留一个链接）。"
                                     "rollback 搬回去（serve 必须没在运行）/ the old state directory moves automatically; rollback moves it back")

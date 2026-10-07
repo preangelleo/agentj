@@ -252,7 +252,11 @@ class Agent:
                         self.host.agent_turn_start(send.text, send)
                     try:
                         await self._identity_refresh()
-                        await self.turn(compactprep.decorate(self, send))   # F24: handover note / context reminder
+                        if not (send.text or "").strip():   # F27: never an empty prompt (compose.render always names the files)
+                            send.state = "failed"
+                            self.fail_notice("这条消息是空的（没有文字，附件也没整理出来），没有发给 Agent。")
+                        else:
+                            await self.turn(compactprep.decorate(self, send))   # F24: handover note / context reminder
                     except asyncio.CancelledError:
                         raise
                     except Withdrawn:

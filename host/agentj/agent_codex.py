@@ -120,6 +120,11 @@ FULL = ("dangerFullAccess", "externalSandbox")
 NET_CMDS = frozenset({"curl", "wget", "http", "https", "xh", "nc", "ncat", "netcat", "telnet", "ssh", "scp", "sftp", "ftp",
                       "ping", "dig", "nslookup", "host", "whois", "aria2c"})
 POLICY_NOTICE = "这一步超出了你 Codex 自己的沙箱设置，已拒绝；要放开请在电脑上改 Codex 的设置。"
+# F30 (ADR-A175): ADR-A73 now only bites when the owner explicitly restricted Codex (config.toml / the desktop thread)
+CONFIG_NOTICE = ("（你在 config.toml 顶层写了 sandbox_mode = {mode}。想让 Agent 像在终端里一样直接跑：电脑上运行 "
+                 "`agentj codex-sandbox default`，再 `agentj service restart`；同一段对话也会按新设置。）")
+DESKTOP_NOTICE = ("这一步超出了这条 Codex 对话在桌面 App 里设的权限（{mode}），已拒绝；要放开请在 Codex 桌面 App 里把这条对话的权限"
+                  "改成「完全访问」（Full access），然后从手机重发。")
 
 
 def _roots(sb: dict, cwd: str) -> list[str]:
@@ -286,6 +291,8 @@ class CodexAgent(Agent):
                                                              start_new_session=True)
         self.failed_start, self.err_tail, self.tid, self.thread = False, "", None, {}
         self.waits, self.pending = {}, {}                      # this process's calls / open cards (its reader fails them)
+        from . import codex_procs                              # ADR-A178: a leftover is recognised (and ended) later
+        codex_procs.record(self.host.st, p.pid)
         self.host.st.log("agent_start", agent=self.kind, fence=self.cfg.get("fence", True))
         self._bg(self._read(p))
         self._bg(self._drain_err(p))
@@ -312,15 +319,20 @@ class CodexAgent(Agent):
         return self.proc is p
 
     def policy(self) -> dict:
-        """What serve asks of a thread: only ever stricter than the human's own settings (Invariant 11)."""
-        # F14: inherit native approval policy/reviewer; do not impose untrusted.
+        """What serve asks of a thread (start and resume alike, so a changed setting applies to the same conversation after
+        a restart — Codex 0.159.2 keeps an old thread's sandbox on a resume that names none, ADR-A175).
+        F14: inherit the owner's native approval policy/reviewer; do not impose untrusted.
+        F30: the sandbox is the owner's explicit `sandbox_mode`, else `danger-full-access` (the main Agent runs directly on
+        the system, like the owner's terminal; the danger list and phone cards still apply); research tasks read-only."""
+        from . import codex_perm
         p = {}
         if self.cfg.get("high_risk_warnings", False):
             p["approvalsReviewer"] = "user"
             if not isinstance(self.human.get("approval_policy"), dict):
                 p["approvalPolicy"] = "untrusted"
-        if self.research:
-            p["sandbox"] = "read-only"
+        elif isinstance(self.human.get("approval_policy"), (str, dict)):
+            p["approvalPolicy"] = self.human["approval_policy"]   # named on resume too: a changed setting applies at once
+        p["sandbox"], self.perm_source = codex_perm.main_sandbox(self.human.get("sandbox_mode"), self.research)
         if self.cfg.get("model"):
             p["model"] = self.cfg["model"]
         return p
@@ -458,6 +470,8 @@ class CodexAgent(Agent):
         except Exception:  # noqa: BLE001
             pass
         code = await p.wait()
+        from . import codex_procs
+        codex_procs.forget(self.host.st, p.pid)
         self.host.st.log("agent_exit", agent=self.kind, status=code)
         if self.proc is p:
             self.proc, self.tid = None, None
@@ -486,6 +500,8 @@ class CodexAgent(Agent):
             with contextlib.suppress(Exception):
                 await asyncio.wait_for(p.wait(), 5)
             _signal_tree(p, signal.SIGKILL)
+        from . import codex_procs                      # ended on purpose (stop / turn end): no longer a possible leftover
+        codex_procs.forget(self.host.st, p.pid)
 
     # ------------------------------------------------ notifications
     def _emit(self, text: str) -> None:
@@ -654,11 +670,22 @@ class CodexAgent(Agent):
         if upd and self.persist:
             self.meter(**upd)
 
+    def policy_notice(self) -> str:
+        """Why it was refused and what to change, by where the restriction comes from (F30)."""
+        from . import codex_perm
+        mode = codex_perm.mode_of(self.thread.get("sandbox"))
+        src = getattr(self, "perm_source", None)
+        if src == "desktop":
+            return DESKTOP_NOTICE.format(mode=mode or "?")
+        if src == "config":
+            return POLICY_NOTICE + CONFIG_NOTICE.format(mode=mode or self.human.get("sandbox_mode") or "?")
+        return POLICY_NOTICE
+
     def _refuse(self, rid, tool: str, inp: dict, no: dict, why: str) -> None:
         """Beyond the human's own sandbox: declined at once, no card; a notice and a refused-by-policy record."""
         self._answer(rid, no)
         if not self.research:                  # a read-only task's refusals are expected; it reports in its answer
-            self.host.policy_refused(clean_line(tool, 64) or "?", inp, why, POLICY_NOTICE)
+            self.host.policy_refused(clean_line(tool, 64) or "?", inp, why, self.policy_notice())
 
     async def _decide(self, rid, tool: str, inp: dict, yes: dict, no: dict, batch: bool) -> None:
         gone = asyncio.get_running_loop().create_future()
@@ -809,16 +836,27 @@ class CodexAgent(Agent):
     async def cmd_status(self, arg: str) -> Result:
         if self.proc is None:
             await self._spawn()
+        from . import codex_perm
         sb = self.thread.get("sandbox")
-        sbt = sb.get("type") if isinstance(sb, dict) else self.human.get("sandbox_mode")
-        pol = "每条非只读命令和每个文件改动都问手机（agentj 要求 untrusted）" \
-            if not isinstance(self.human.get("approval_policy"), dict) else "你自己的 granular 策略（agentj 没改）"
+        sbt = codex_perm.mode_of(sb) or self.human.get("sandbox_mode")
+        src = getattr(self, "perm_source", None) or codex_perm.main_sandbox(self.human.get("sandbox_mode"), self.research)[1]
+        if not sb and src in ("agentj", "config", "research"):
+            sbt = codex_perm.main_sandbox(self.human.get("sandbox_mode"), self.research)[0]
+        info = codex_perm.config_info()
+        if isinstance(self.human.get("approval_policy"), dict):
+            pol = "你自己的 granular 策略（agentj 没改）"
+        elif self.cfg.get("high_risk_warnings", False) and src != "desktop":
+            pol = "每条非只读命令和每个文件改动都问手机（高危提醒开着：agentj 要求 untrusted）"
+        else:
+            ap = self.thread.get("approvalPolicy") or self.human.get("approval_policy") or "on-request"
+            pol = f"{ap if isinstance(ap, str) else '自定义'}（{'这条对话自己的' if src == 'desktop' else '你的 Codex 设置 / Codex 默认'}）"
         lines = [f"Agent：Codex {self.version}".rstrip(),
                  f"对话：{self.host.st.agent_session(self.kind) or '（新对话）'}",
                  f"模型：{self.cfg.get('model') or self.thread.get('model') or self.human.get('model') or '默认'}",
                  f"目录：{self.cfg['dir']}",
                  f"审批：{pol}；危险清单生效",
-                 f"Codex 沙箱：{sbt or '默认'}（你的设置）",
+                 "权限：" + codex_perm.label(src, sbt),
+                 *(["⚠ 写了但没生效：" + codex_perm.misplaced_text(info["misplaced"])] if info.get("misplaced") else []),
                  "隔离（fence）：" + ("开" if self.cfg.get("fence", True) else "关（--unfenced）")]
         lines += self._rate_lines(self.rate or {})
         return Result("\n".join(lines))

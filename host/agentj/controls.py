@@ -30,7 +30,11 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
 from . import wire
 
 CONTEXT = "agentjarvis-control-v1"
-ACTIONS = ("mem_rm", "mem_undo", "estop", "resume", "task_on", "task_off")
+ACTIONS = ("mem_rm", "mem_undo", "estop", "resume", "task_on", "task_off",
+           # P71 (PROTOCOL §17.7): the friends page's signed writes
+           "fr_set", "pg_set", "pg_del", "fr_add", "fr_discoverable", "fr_card",
+           "fr_ctx")                   # P73 (ADR-A176): a friend's 「补充设定」 — the owner's own setting, never a message
+FRIEND_ACTIONS = ACTIONS[6:]
 TS_SKEW_MS = 120_000
 NONCE_KEEP_S = 600
 _NONCE = re.compile(r"[0-9a-f]{32}")
@@ -43,6 +47,14 @@ def object_text(action: str, obj: dict) -> str:
     mem_undo : trash id
     estop / resume : "all"
     task_on / task_off : task id \\n contract SHA-256 (task.json + its prompt file, tasks.contract_sha)
+    fr_set   : friend id \\n op (group | block | unblock | delete) \\n value (the group id; "" otherwise)
+    pg_set   : the group's canonical JSON (sorted keys, no spaces, UTF-8 — wire.js canonicalJson)
+    pg_del   : group id
+    fr_add   : Agent ID \\n note
+    fr_discoverable : "on" | "off"
+    fr_card  : owner \\n intro
+    fr_ctx   : friend id \\n text (the whole new 「补充设定」; "" clears it)
+    (a missing / null text field is "", as wire.js `?? ''`)
     """
     if action == "mem_rm":
         return f"{obj['src']}\n{obj['file']}\n{obj['fsha']}\n{obj['iid']}"
@@ -52,7 +64,25 @@ def object_text(action: str, obj: dict) -> str:
         return "all"
     if action in ("task_on", "task_off"):
         return f"{obj['id']}\n{obj['tsha']}"
+    if action == "fr_set":
+        return f"{obj['friend']}\n{obj['op']}\n{_s(obj.get('value'))}"
+    if action == "pg_set":
+        return json.dumps(obj["group"], sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+    if action == "pg_del":
+        return str(obj["id"])
+    if action == "fr_add":
+        return f"{obj['id']}\n{_s(obj.get('note'))}"
+    if action == "fr_discoverable":
+        return "on" if obj.get("on") else "off"
+    if action == "fr_card":
+        return f"{_s(obj.get('owner'))}\n{_s(obj.get('intro'))}"
+    if action == "fr_ctx":
+        return f"{obj['friend']}\n{_s(obj.get('text'))}"
     raise ValueError("bad action")
+
+
+def _s(v) -> str:
+    return "" if v is None else str(v)
 
 
 def object_digest(action: str, obj: dict) -> str:

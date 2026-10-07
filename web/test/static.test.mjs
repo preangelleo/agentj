@@ -23,7 +23,7 @@ const JS = files.filter((f) => f.endsWith('.js'));
 const APP = read(pub('app.js'));
 // PROMPT-33: the page is app.js + the modules under js/ (relay's page ported). Every rule that used to look at app.js
 // alone now looks at all of them (OURS) — the same rules over more code, never fewer.
-const MODULES = ['api', 'blobs', 'boot', 'controls', 'md', 'push', 'relay', 'session', 'settings', 'snap', 'speak', 'store', 't', 'ui', 'wav', 'elevate', 'outbox', 'render'];
+const MODULES = ['api', 'blobs', 'boot', 'controls', 'md', 'push', 'relay', 'session', 'settings', 'snap', 'speak', 'store', 't', 'ui', 'wav', 'elevate', 'outbox', 'render', 'friends', 'qr'];
 const OURS_FILES = ['app.js', ...MODULES.map((m) => `js/${m}.js`)];
 const OURS = OURS_FILES.map((r) => read(pub(r))).join('\n');
 const HTML = read(pub('index.html'));
@@ -81,6 +81,13 @@ test('no URLs to anywhere in shipped files except links to agentj.app pages', ()
     if (!LICENCE_TEXT.has(rel(f)) && !vendored[rel(f)]) {
       for (const m of s.matchAll(/\b(?:https?|wss?):\/\/[^\s"'<>)`]*/gi)) {
         if (rel(f) === 'app.js' && m[0] === NEW_WEB_ORIGIN) continue;
+        // 0.16 (§17.1): the friend share link is text the owner copies / shows as a QR, and the SVG namespace is a name —
+        // neither is ever requested (the browser gate still checks zero off-site traffic)
+        if (rel(f) === 'proto/wire.js' && m[0] === 'https://m.agentj.app/friends#add=') continue;
+        // ADR-A177: a compact pairing link with an empty relay field means our relay (the page still only connects where
+        // allowRelay + CSP connect-src allow)
+        if (rel(f) === 'proto/wire.js' && m[0] === 'wss://relay.agentj.app') continue;
+        if (rel(f) === 'js/qr.js' && m[0] === 'http://www.w3.org/2000/svg') continue;
         assert.match(m[0], SITE_LINK, `${rel(f)} contains URL ${m[0]}`);
       }
     }
@@ -170,7 +177,7 @@ test('app.js + js/*.js: only WebSocket egress, non-extractable keys, no plaintex
   assert.match(STORE, /export async function putSealed\(name, obj\) \{\n  const w = wipes;\n  const rec = await seal\(obj\);\n  if \(w === wipes\) await dbPut\(name, rec\);\n\}/, 'putSealed writes only ciphertext, and never after a wipe');
   // §10.14 / P33-X13: revoke wipes like unpair — drafts, history, the sealing key, and everything in memory
   assert.match(APP, /async function revoked\(why = 'revoked'\) \{\n  session\.closeSession\(\);\n[^}]*await forgetLocal\(\);/, 'revoked() wipes local records');   // 0.15.1: + why
-  assert.match(APP, /async function forgetLocal\(\) \{\n  relay\.forgetLocal\(\);\n  blobs\.forgetAll\(\);\n  elevate\.clear\(\);\n  await wipeLocal\(\);\n\}/);   // F17: open sudo / secret cards go too
+  assert.match(APP, /async function forgetLocal\(\) \{\n  relay\.forgetLocal\(\);\n  friends\.forget\(\);\n  blobs\.forgetAll\(\);\n  elevate\.clear\(\);\n  secretout\.clear\(\);\n  await wipeLocal\(\);\n\}/);   // F17: open sudo / secret cards go too; 0.16: the friends page's data too; F32: pickup cards (+ a shown value)
   assert.doesNotMatch(APP, /saveDraft/, 'revocation never saves the draft');
   assert.match(STORE, /generateKey\(\{ name: 'AES-GCM', length: 256 \}, false, \['encrypt', 'decrypt'\]\)/, 'sealing key not extractable');
   assert.match(STORE, /for \(const k of \['draft', 'ihist', 'outbox', 'local'\]\)/, 'unpair / re-pair wipes drafts, history, the offline queue and the sealing key');

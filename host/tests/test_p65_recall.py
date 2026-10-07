@@ -147,7 +147,7 @@ class Guidance(unittest.TestCase):
             for needle in ('agentj recall --days 2 --json', 'VERDICT', 'agentj-manual', '/model'):
                 self.assertIn(needle, prompt)
             self.assertIn(main_identity.OPERATIONS_LINE[lang], prompt)
-            self.assertEqual(main_identity.verify_core()['version'], 5)
+            self.assertEqual(main_identity.verify_core()['version'], 6)
 
 
 if __name__ == '__main__': unittest.main()

@@ -215,11 +215,12 @@ class Units(unittest.TestCase):
         for bad in ("dangerously", "bypass", "--sandbox", "-s ", "approval", "-c", "--enable", "--disable"):
             self.assertNotIn(bad, c)
         # app-server (ADR-A70): the only thread settings serve adds make Codex ask more, never less (Invariant 11)
-        self.assertEqual(cx.policy(), {})
+        # F30 (ADR-A175): plus the sandbox — the owner's explicit sandbox_mode, else danger-full-access (directly on the system)
+        self.assertEqual(cx.policy(), {"sandbox": "danger-full-access"})
         cx.cfg["high_risk_warnings"] = True
-        self.assertEqual(cx.policy(), {"approvalsReviewer": "user", "approvalPolicy": "untrusted"})
+        self.assertEqual(cx.policy(), {"approvalsReviewer": "user", "approvalPolicy": "untrusted", "sandbox": "danger-full-access"})
         cx.human = {"approval_policy": {"granular": {"rules": False, "sandbox_approval": False, "mcp_elicitations": False}}}
-        self.assertEqual(cx.policy(), {"approvalsReviewer": "user"})        # a granular policy of theirs stays theirs
+        self.assertEqual(cx.policy(), {"approvalsReviewer": "user", "sandbox": "danger-full-access"})   # a granular policy of theirs stays theirs
         self.assertEqual(CodexAgent(None, {"kind": "codex", "dir": "/tmp", "model": None}, research=True).policy()["sandbox"],
                          "read-only")
 
