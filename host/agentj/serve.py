@@ -36,6 +36,7 @@ from . import compose, history, inbox, menu, uploads, preferences
 from . import media as media_mod  # F21: files the Agent shows to the phone (PROTOCOL §13)
 from . import elevate  # F17: sudo + secret cards (PROTOCOL §11)
 from . import passkey  # F20: the same phone without a second pairing (PROTOCOL §12)
+from . import onboarding  # F28: seat → two required remotes → one welcome (P72)
 from .noise import IK, IKPSK2, CipherState, Handshake, NoiseError
 from .reporter import Reporter, in_daemon_thread
 from .envcompat import getenv
@@ -736,10 +737,45 @@ class Host:
         await self._pk_offer(s)                 # F20: once, right after a pairing (never on a resume)
         self.st.log("pair_approved", cid=s.cid, device=s.device, name=s.name, code_ok=True)
         self.emit("approved", device=s.device, name=s.name)
-        asyncio.create_task(self.on_ready(s, None))
+        asyncio.create_task(self._ready_then_onboard(s))   # F28: the first remote ever → the main Agent's welcome there
         res = {"ev": "approved", "device": s.device, "name": s.name}
         res.update({k: got[k] for k in ("replaced", "evicted") if got[k]})
         return res
+
+    # ------------------------------------------------------------ F28 (P72): first-use onboarding (agentj/onboarding.py)
+    def onboarding_lang(self) -> str:
+        return "en" if str(preferences.get(self.preferences, "appearance.language", "zh")).lower().startswith("en") else "zh"
+
+    def onboarding_note(self) -> str:
+        """The bracketed note for the Agent on the owner's next message (tour pace / a missing required remote), or ""."""
+        try:
+            return onboarding.turn_note(self.st, self.onboarding_lang())
+        except Exception:  # noqa: BLE001 — onboarding never costs a message
+            self.st.log("onboarding", status="note_error")
+            return ""
+
+    async def _ready_then_onboard(self, s: Session) -> None:
+        await self.on_ready(s, None)
+        await self.onboarding_paired(s)
+
+    async def onboarding_paired(self, s: Session) -> None:
+        """A remote was just approved: the first one ever gets the main Agent's welcome (written by the Agent itself, in its
+        own harness; a fixed text when no Agent runs), every later new one a single line. Persisted: never twice."""
+        try:
+            what = await asyncio.to_thread(onboarding.paired, self.st, s.device, s.name)
+            if not what:
+                return
+            lang, kind = self.onboarding_lang(), onboarding.kind_of(s.name)
+            now = await asyncio.to_thread(onboarding.status, self.st)
+            if what == "welcome" and self.agent and not self.stopped():
+                self.agent.submit(onboarding.WelcomeSend(onboarding.welcome_prompt(kind, s.name, now, lang)))
+                return
+            text = onboarding.also_text(kind, s.name, now, lang) if what == "also" else onboarding.fallback_welcome(kind, now, lang)
+            e = self._remember("notice" if what == "also" else "agent", text)
+            self._post(self._send_legacy, lambda o, e=e: self._render(e, o))
+            self.hist_add({"k": "sys" if what == "also" else "agent", "text": ""}, text, "done")
+        except Exception:  # noqa: BLE001 — a failed welcome never costs the pairing
+            self.st.log("onboarding", status="error")
 
     async def _accept_resume(self, s: Session, since) -> None:
         """A resume (or a passkey restore, §12) is accepted: `ready`, BULK, history replay."""
@@ -2584,6 +2620,7 @@ class Host:
         if not self.agent:
             return None
         send = compose.Send(s.device, sid or secrets.token_urlsafe(16), turn["id"], blobs=blobs, by=s.name or s.device)
+        send.onboarding_note = self.onboarding_note()
         files = [{"path": b.path, "mime": b.mime, "bytes": b.size, "origin": b.origin, "secs": b.secs,
                   "voice": getattr(b, "voice", "")} for b in blobs]
         voice = [f for f in files if f["origin"] == "recording" and f["mime"].startswith("audio/")]
@@ -2591,7 +2628,7 @@ class Host:
             send.ready = asyncio.get_running_loop().create_future()
             send.prep = asyncio.create_task(self._prep_say(send, text, files, voice, quote_text))
         else:
-            send.text = compose.render(text, files, self.lang, quote_text)
+            send.text = compose.render(text, files, self.lang, quote_text) + send.onboarding_note
         self.sends.add(send)
         self.turn_by = s.name or s.device
         self.agent.submit(send)
@@ -2660,7 +2697,7 @@ class Host:
                     f["asr"] = {"ok": False, "why": "timeout", "secs": f.get("secs")}
                     continue
                 f["asr"] = await self._transcribe_file(f, left, send.device)
-            send.text = compose.render(text, files, self.lang, quote_text)
+            send.text = compose.render(text, files, self.lang, quote_text) + getattr(send, "onboarding_note", "")
         finally:
             if send.ready is not None and not send.ready.done():
                 send.ready.set_result(True)

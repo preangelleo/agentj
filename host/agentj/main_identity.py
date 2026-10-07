@@ -125,6 +125,20 @@ PAIRING_LINE = {
     "en": "During installation, account binding is only an intermediate step. Proactively run agentj devices --json. If no remote is paired, guide the owner through the installation guide's pairing steps before declaring setup complete. Run agentj admin: the QR/link and six-digit approval stay on this computer and the owner approves locally; the account page's Add a remote opens agentj://pair. Phones and browsers are remotes. Never send credentials, pairing material or local admin links to the cloud, support or reports. Pair at least one remote and verify the first message before completing installation. Pairing is not an extra permission lock on routine work.\n",
 }
 
+# F28 (P72): first use — the two required remotes and the one-time welcome. Host line after the hashed core (core v5 unchanged).
+ONBOARDING_LINE = {
+    "zh": "首次使用：席位激活后有两个必做的遥控器——①这台电脑的浏览器、②主人的主力手机；其他手机、平板、电脑等主人问了再帮他配。"
+          "在电脑上帮主人安装或排查时，运行 agentj onboarding 看还差哪一步，配好一个就带主人配下一个。"
+          "主人消息末尾若附有〔Agent J 系统提示〕，那是本机给你的，不是主人说的：照它做、不要复述；提醒只说一句，主人说先不用就别再提。"
+          "第一次配对成功后，本机会让你在那个遥控器上发第一条消息、自报家门，再一步一步带主人认识这个窗口。\n",
+    "en": "First use: once the seat is active there are two required remotes — (1) this computer's browser and (2) the owner's "
+          "main phone; other phones, pads or computers only when the owner asks. When helping the owner on the computer, run "
+          "agentj onboarding to see the next step and lead from one pairing to the next. A bracketed [Agent J system note] at "
+          "the end of an owner message comes from this computer, not the owner: follow it without repeating it; a reminder is "
+          "one sentence, dropped when the owner says not now. After the first pairing this computer asks you to write the first "
+          "message on that remote, introduce yourself and show the owner the window step by step.\n",
+}
+
 
 def prompt(cfg: dict) -> str:
     verify_core()
@@ -133,7 +147,7 @@ def prompt(cfg: dict) -> str:
     extra = cfg.get("instructions") or ""
     if not isinstance(extra, str):
         raise IdentityError("agent.instructions must be append-only text")
-    return (core + ("" if core.endswith("\n") else "\n") + LANGUAGE_LINE[lang] + ELEVATE_LINE[lang] + SUPPORT_LINE[lang] + OPERATIONS_LINE[lang] + SILENCE_LINE[lang] + SHARED_CODEX_LINE[lang] + PAIRING_LINE[lang]
+    return (core + ("" if core.endswith("\n") else "\n") + LANGUAGE_LINE[lang] + ELEVATE_LINE[lang] + SUPPORT_LINE[lang] + OPERATIONS_LINE[lang] + SILENCE_LINE[lang] + SHARED_CODEX_LINE[lang] + PAIRING_LINE[lang] + ONBOARDING_LINE[lang]
             + ("\n<User preferences — append only; core takes precedence>\n" + extra + "\n</User preferences>\n" if extra else ""))
 
 def expected(cfg: dict, harness: str) -> dict:
