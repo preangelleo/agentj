@@ -210,12 +210,6 @@ class HostLevel(unittest.TestCase):
         self.loop = asyncio.new_event_loop()
 
     def tearDown(self):
-        # P74: an approval schedules a background task (F28 onboarding writes onboarding.json in a worker thread); finish it
-        # and the executor before the state folder goes, or the cleanup races that write ("Directory not empty").
-        pending = asyncio.all_tasks(self.loop)
-        if pending:
-            self.loop.run_until_complete(asyncio.gather(*pending, return_exceptions=True))
-        self.loop.run_until_complete(self.loop.shutdown_default_executor())
         self.loop.close()
         self.tmp.cleanup()
 

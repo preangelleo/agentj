@@ -451,18 +451,6 @@ def check_bound(st: State) -> dict:
     return _c("bound", WARN, "还没加到 Agent J 账号 / not in an Agent J account yet", "agentj login")
 
 
-def check_onboarding(st: State) -> dict:
-    """F28 (P72): the seat and the two required remotes (this computer's browser, the main phone). Never ✗."""
-    if not st.exists():
-        return _c("onboard", WARN, "还没初始化 / not initialised yet", "agentj init")
-    try:
-        from . import onboarding
-        status, summary, hint = onboarding.doctor_row(st)
-    except Exception as e:  # noqa: BLE001 — a doctor row, never a crash
-        return _c("onboard", WARN, f"首次引导：检查失败（{type(e).__name__}）/ first-use setup: check failed")
-    return _c("onboard", status, summary, hint)
-
-
 def check_serve(st: State) -> dict:
     if not st.exists():
         return _c("serve", WARN, "没在运行 / not running", "agentj init first")
@@ -625,7 +613,7 @@ def run(st: State | None = None, offline: bool = False) -> list[dict]:
     shared_row = check_codex_shared(st)
     if shared_row:
         out.append(shared_row)
-    out += [check_agent_cli(st, svc), check_harness(svc), check_fence(st), check_danger(st), check_passphrase(st), check_bound(st), check_onboarding(st),
+    out += [check_agent_cli(st, svc), check_harness(svc), check_fence(st), check_danger(st), check_passphrase(st), check_bound(st),
             check_serve(st), check_service(svc, service.legacy_status()), check_alias(), check_estop(st), check_tasks(st),
             check_activity(st)]
     out += check_asr(st)

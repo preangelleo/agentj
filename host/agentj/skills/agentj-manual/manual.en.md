@@ -6,27 +6,6 @@ paired yet, start with [Install](https://agentj.app/docs/install/) and [Using yo
 
 You can also just ask Agent J — "what does this colour mean?", "how do I send a file?". It reads this same guide.
 
-## First use: two remotes and the first message
-
-After the install, the agent that set things up takes you through adding this computer to your seat and then pairing two
-remotes. Both are required:
-
-1. **This computer's browser**: open m.agentj.app on this computer and pair it. It is the quickest, and the big screen
-   makes every step easy to follow.
-2. **Your main phone**: the one you carry every day. Add the page to the Home Screen first, then pair from that icon.
-
-Other phones, tablets or computers can wait: when you want one, tell Agent J "pair another one" and it walks you through.
-
-On the first remote, the first message comes from Agent J itself: it introduces itself as your chief-of-staff assistant,
-the single entry point between you and every workflow and agent, and suggests you talk to it in this window from now on.
-Then it shows you the window in a few small steps — the screen colours, the quota lines and the water level, voice and
-attachments, the approval card — and finally which remote is still missing. Reply "ok" or "next" for the next step; say
-"skip" to stop.
-
-The welcome is sent only once. Every remote you pair later just gets one line: "This … is connected too". Until both
-required remotes are paired, Agent J may mention the missing one in a sentence at the end of a reply; once both are done
-it stops. On the computer, `agentj onboarding` shows the same.
-
 ## Background colour: what the Agent is doing
 
 The colour of the whole screen tells you one thing: **the state of the main Agent on your computer**. Other agents it

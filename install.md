@@ -1,15 +1,15 @@
 ---
 document: agentj-install
-version: 0.19.8
+version: 0.19.7
 released: 2026-10-07
 status: beta (anyone can sign up; not advertised yet, pages are not indexed)
 host_package: agentj (the `agentj` command)
-host_version: 0.15.8a1
-source_tag: v0.15.8a1
-host_wheel: agentj-0.15.8a1-py3-none-any.whl
-host_wheel_sha256: 7e896ad9ff5132e146de4ef8e291c052692060e208b2cf3e19384a2523728b78
-host_sdist: agentj-0.15.8a1.tar.gz
-host_sdist_sha256: a3ad6b8862f16a95f86c96c225de9bf424853068853feb3c5d1ea6c6a6a8ea2a
+host_version: 0.15.7a1
+source_tag: v0.15.7a1
+host_wheel: agentj-0.15.7a1-py3-none-any.whl
+host_wheel_sha256: c12f8c0a31756c1f39c7f51158f376996ffa5c701df716ed9a39bb822500e68f
+host_sdist: agentj-0.15.7a1.tar.gz
+host_sdist_sha256: 4718f31f8489f4586eeb53ec000908cc5656fadff054a50bd7daffc6bdcdba7c
 canonical_url: https://agentj.app/install.md
 sha256_url: https://agentj.app/install.md.sha256
 alias: https://agentjarvis.net/install.md (the older address: the same file, kept for one more version)
@@ -263,7 +263,7 @@ Ask (kind `question`; `bug` if you think it is a bug, `report` for a docs proble
 with your file-writing tool or a heredoc, then post it with the install session from Step 2:
 ```bash
 ( umask 077; cat > ~/.agentj-install/support.json <<'JSON'
-{"kind": "question", "install_md_version": "0.19.8",
+{"kind": "question", "install_md_version": "0.19.7",
  "body": "Step 4: `uv tool install` fails with: <the exact error, redacted>. OS: Ubuntu 24.04 x86_64. Agent: claude-code. Tried: …"}
 JSON
 )
@@ -424,7 +424,7 @@ The astral installer warning that `uv` / `uvx` are shadowed is informational if 
 carry over). So start every command line from here on with `export PATH="$HOME/.local/bin:$PATH";` — or call
 `~/.local/bin/agentj` by its full path. This document writes `agentj` for short.
 
-The program is pinned to one release: the tag `v0.15.8a1` (front matter `source_tag`). The tag never moves, and its
+The program is pinned to one release: the tag `v0.15.7a1` (front matter `source_tag`). The tag never moves, and its
 `host/` folder is byte for byte the same code as the two files on our site whose SHA-256 is in this document's front matter.
 ```bash
 cd ~/.agentj-install
@@ -432,7 +432,7 @@ W=$(sed -n 's/^host_wheel: //p' install.md); WS=$(sed -n 's/^host_wheel_sha256: 
 curl -fsSLO "https://agentj.app/dl/$W"
 echo "$WS  $W" | sha256sum -c -   # macOS: shasum -a 256 -c -; mismatch → stop
 uv tool install "./$W"
-export PATH="$HOME/.local/bin:$PATH"; agentj --version     # → agentj 0.15.8a1
+export PATH="$HOME/.local/bin:$PATH"; agentj --version     # → agentj 0.15.7a1
 export PATH="$HOME/.local/bin:$PATH"; agentj doctor
 ```
 **Your human's own terminal must find `agentj` too** — they run `agentj passphrase set` and `agentj pair` themselves
@@ -460,12 +460,12 @@ echo "$WS  $W" | sha256sum -c - && echo "$SS  $S" | sha256sum -c -    # macOS: s
 uv tool install "./$W"          # the wheel; its dependencies come from PyPI or the mirror in UV_DEFAULT_INDEX
 ```
 `uv tool install "./$S"` installs from the checked source archive instead (it builds the same program).
-`https://agentj.app/dl/latest.txt` and `https://agentj.app/dl/latest-sdist.txt` name the same two files. `agentj --version` is the program's own version (`0.15.8a1`); it is
+`https://agentj.app/dl/latest.txt` and `https://agentj.app/dl/latest-sdist.txt` name the same two files. `agentj --version` is the program's own version (`0.15.7a1`); it is
 numbered separately from this document (`0.17.0`).
 
-Alternative from the matching published source tag: `uv tool install "git+https://github.com/preangelleo/agentj@v0.15.8a1#subdirectory=host"`.
+Alternative from the matching published source tag: `uv tool install "git+https://github.com/preangelleo/agentj@v0.15.7a1#subdirectory=host"`.
 
-Alternative without uv: `pipx install "git+https://github.com/preangelleo/agentj@v0.15.8a1#subdirectory=host"` (needs Python 3.11+).
+Alternative without uv: `pipx install "git+https://github.com/preangelleo/agentj@v0.15.7a1#subdirectory=host"` (needs Python 3.11+).
 `agentj doctor` lists what is ready and what is not (prerequisites, the fence, connectivity, which agents are usable).
 Continue unless it reports an error that a later step does not fix; report anything you cannot explain.
 
@@ -609,11 +609,6 @@ Wait until they say it is done. You never see the email code, the card or the pr
 
 Check (you may run these, either way): `agentj status` shows the Agent J account and how it was linked (with a setup code /
 with the 8-character code), and `agentj name` shows the Agent's name.
-
-**The seat is now active — do not stop here.** Go straight on through Steps 8–10 and then Step 11, where you lead your
-human through the **two required pairings** (this computer's browser, then their main phone) without waiting to be asked.
-After every step `agentj onboarding` (or `--json`) shows where things stand: seat ✓/·, this computer's browser ✓/·, main
-phone ✓/·, welcome sent ✓/· — and the next step in one line.
 
 ---
 
@@ -820,36 +815,6 @@ stops at once with `✗ Agent J 现在没在这台电脑上运行，所以没法
 3. It works for **5 minutes**;
 4. and **only once** — too slow or something went wrong → run `agentj pair --link` again for a new one.
 
-### 11a. Two required remotes, one after the other (host 0.15.8+)
-
-Pair **two** remotes before you call the install finished, in this order — you lead, your human should not have to ask:
-1. **This computer's browser.** Open **https://m.agentj.app** in the browser on this computer, run `agentj admin` (or
-   press 「添加遥控器（手机或浏览器）」 / "Add a remote" on the account page here) and pair it by pasting the link into that
-   browser tab. It is the quickest one: nothing leaves this computer, and your human can watch the next step happen.
-2. **Their main phone** — the one they carry every day — with the steps below (Home Screen icon → 「扫二维码」).
-
-Other phones, tablets or computers: **only when your human asks** — do not offer them now.
-
-What to say (in your human's language; keep it this short):
-- Before ①: 「席位已经激活。接下来配两个遥控器：先配这台电脑的浏览器，再配你的主力手机。我先在这台电脑上打开配对页。」 /
-  "The seat is active. Next we pair two remotes: this computer's browser first, then your main phone. I'll open the pairing
-  page here."
-- After ① (or whichever came first): 「第一个遥控器好了，看那个窗口——你的董事长助理会在那里跟你打招呼，一步一步带你认识界面。
-  看完我们再配你的主力手机。」 / "The first remote is ready — look at that window: your chief-of-staff assistant says hello
-  there and shows you around, one step at a time. Then we pair your main phone."
-- After ②: 「两个遥控器都配好了。以后直接在手机或这个浏览器窗口里跟你的董事长助理说话就行。」 / "Both remotes are paired. From
-  now on just talk to your chief-of-staff assistant on the phone or in this browser window."
-
-**What happens on the first pairing (automatic, once):** Agent J asks the main Agent (Claude Code, Codex or OpenCode — the
-one Step 9 connected) to write the **first message** in that new window: who it is (the owner's chief-of-staff
-assistant, the single entry point between them and every workflow and agent), that the first remote is paired, that from
-now on they can talk there instead of in the terminal, then a short tour — the screen colours, the quota lines, voice and
-attachments, the approval card, and which required remote is still missing — one small step per reply ("skip" ends it).
-It is sent once per computer (a restart or upgrade does not repeat it); every later remote gets one line,
-「这台也连上了」 / "This … is connected too". Until both required remotes are paired, the main Agent mentions the missing one
-in one sentence now and then (never more than every few hours) and stops for good once both are done. `agentj doctor`
-shows the same in its `onboard` row. Do not repeat the welcome in the terminal — point your human at the new window.
-
 The steps:
 
 1. ✋ On the phone, open **https://m.agentj.app**. First add it to the Home Screen and open it from the new icon, then
@@ -900,8 +865,7 @@ way; the same browser replaces its own old entry. 「这台手机的配对已被
 
 ## 12. Try it on the phone, then offer the completion feedback — stage `11-acceptance`
 
-Ask your human to do these on the phone and tell you the result (the first message there is already the main Agent's
-welcome from Step 11a — let them answer it first; its tour covers points 3 and 4 below):
+Ask your human to do these on the phone and tell you the result:
 1. Send 「list the files in this folder」 (any language) → a reply from their Claude Code (or Codex, or OpenCode) arrives.
 2. **Claude Code or OpenCode:** ask it to create a file `scratch.txt` and then delete it → the screen turns orange and a card
    with **「拒绝」 ("Deny")** and **「长按批准」 ("Hold to approve")** comes up → press and hold the approve button about a
@@ -1028,7 +992,7 @@ The daily check remains a notification, not an unattended installation; `agentj 
 In the default shared session, reinstall directly using Step 4's checked wheel (SHA-256 must match this document and
 its public GitHub copy), preserving the host's identity, paired phones, account and preferences:
 ```bash
-uv tool install --force "./agentj-0.15.8a1-py3-none-any.whl"
+uv tool install --force "./agentj-0.15.7a1-py3-none-any.whl"
 agentj --version
 agentj service install
 agentj service restart
@@ -1036,7 +1000,7 @@ agentj doctor
 ```
 The matching published tag is another source, after verifying the tag object against the upgrade email:
 ```bash
-uv tool install --force "git+https://github.com/preangelleo/agentj@v0.15.8a1#subdirectory=host"
+uv tool install --force "git+https://github.com/preangelleo/agentj@v0.15.7a1#subdirectory=host"
 ```
 **0.14 independent session** (`agent.session_mode=independent`): 0.14's fence keeps Agent J's own program read-only and
 hides the service manager, so the Agent on the phone cannot reinstall or restart from inside it (measured: the install
@@ -1062,11 +1026,11 @@ prints something and `uv tool list` (or `pipx list`) shows `agentjarvis-host`, t
 the new name, then:
 ```bash
 jarvis service uninstall      # stop the old service first (Step 10 used tmux / nohup instead? stop that process)
-uv tool uninstall agentjarvis-host && uv tool install "git+https://github.com/preangelleo/agentj@v0.15.8a1#subdirectory=host"
+uv tool uninstall agentjarvis-host && uv tool install "git+https://github.com/preangelleo/agentj@v0.15.7a1#subdirectory=host"
 agentj doctor
 agentj service install        # start it again under the new name (or the tmux / nohup fallback, Step 10)
 ```
-With pipx instead of uv: `pipx uninstall agentjarvis-host && pipx install "git+https://github.com/preangelleo/agentj@v0.15.8a1#subdirectory=host"`.
+With pipx instead of uv: `pipx uninstall agentjarvis-host && pipx install "git+https://github.com/preangelleo/agentj@v0.15.7a1#subdirectory=host"`.
 - After the move, `agentj` puts back a `jarvis` command (a link to `agentj`, only if no other `jarvis` exists) for one more
   version; it prints a notice that points here. New installs never get `jarvis`.
 - The state moves by itself on the first run of `agentj`: from `~/.local/state/agentjarvis-alpha` to `~/.local/state/agentj`.
@@ -1281,10 +1245,6 @@ or logs out Claude Code / Codex / OpenCode (nor removes a model key), and never 
   Full list and current status: https://agentj.app/security/
 
 ## Changelog
-
-- 0.19.8 (2026-10-07): host 0.15.8a1 candidate. First-use onboarding: after Step 7 the seat is active and you keep going —
-  `agentj onboarding` names the next step (this computer's browser, then the owner's main phone, Step 11a). The first
-  approved remote gets one welcome written by the main Agent and a short tour the owner can skip; upgraded hosts are not welcomed.
 
 - 0.19.7 (2026-10-07): host 0.15.7a1 candidate. Silent replies, native provider switching, Codex Desktop read-only status,
   one-email accounts, seat purchases/transfers/paid-boundary cancellation and local remote pairing.
@@ -1552,13 +1512,13 @@ While the Codex App holds a session, the phone follows its actual model from loc
 
 **账号管付钱，席位管功能。** 一个邮箱一个账号，一个账号可以买多个席位；要几份账单就用几个不同邮箱开账号。席位是付费名额，Agent 是绑定在席位上的电脑或服务器，手机或浏览器是遥控器。账号页在「Agent（席位）」标题右侧增加席位：先确认单价、优惠与 Stripe 本期补差价，再购买。空席位的安装提示词显示 ••••，点击「复制安装提示词」时签发 7 天单次码并作废旧码；不要把码写进报告、日志或 git。
 
-**绑定成功后不要停下来，也不能宣布安装完成。** 主动运行 `agentj onboarding --json`（以及 `agentj devices --json`）；继续第 11、12 步，带主人配好两个必做的遥控器——先这台电脑的浏览器，再主力手机——并验收首条消息。其他手机、平板、电脑等主人问了再配。第一次配对成功后，主 Agent 会在那个遥控器上发第一条消息自报家门，再一步一步带主人认识界面（只发一次）。运行 `agentj admin` 在本机管理页显示二维码和链接并输入六位码；在装了 Agent 的电脑上也可点账号页「添加遥控器」，由 `agentj://pair` 唤起本机管理页。安装服务会注册协议；失败时运行 `agentj protocol install` 重试。SSH 服务器按第 S 节转发 loopback 管理页或运行 `agentj pair`。配对批准始终在安装 Agent 的电脑上，Dashboard 不能批准，配对材料和本机一次性链接不发给云端或客服。
+**绑定成功后不要停下来，也不能宣布安装完成。** 主动运行 `agentj devices --json`；没有遥控器就继续第 11、12 步，带主人配好一个手机或浏览器并验收首条消息。运行 `agentj admin` 在本机管理页显示二维码和链接并输入六位码；在装了 Agent 的电脑上也可点账号页「添加遥控器」，由 `agentj://pair` 唤起本机管理页。安装服务会注册协议；失败时运行 `agentj protocol install` 重试。SSH 服务器按第 S 节转发 loopback 管理页或运行 `agentj pair`。配对批准始终在安装 Agent 的电脑上，Dashboard 不能批准，配对材料和本机一次性链接不发给云端或客服。
 
 转移到另一台电脑时，旧电脑直到新电脑绑定成功前照常工作，新电脑绑定成功后旧电脑解绑。遥控器必须重新配对；聊天记录留在旧电脑。取消席位到期后不再收费并自动解绑；更多菜单的「只解绑、保留空席位」继续计费并保留优惠，暂停续费在账单区。
 
 **Accounts pay; seats provide the features.** Each email has one account; buy multiple seats on it. Use separate email accounts for separate bills. A seat is a paid slot, an Agent is its computer or server, and a remote is a phone or browser. Confirm the unit price, existing price adjustment and Stripe's prorated charge before adding a seat. Empty cards show a masked installation prompt; copying issues a single-use seven-day code and revokes its previous unused code.
 
-**Do not finish installation at account binding.** Run `agentj onboarding --json` (and `agentj devices --json`) and proactively continue Steps 11 and 12 until both required remotes — this computer's browser and the main phone — are paired. Open `agentj admin`, or click Add a remote on this Agent's computer to launch `agentj://pair`. The service installation registers the handler; retry with `agentj protocol install` if needed. QR codes, one-use links and six-digit approval stay on that computer. Use Section S on a headless server. Pair one remote and verify the first message before declaring setup complete. Moving a seat requires new pairing and leaves history on the old computer. Cancelling ends billing and unbinds at the paid boundary; unbinding alone keeps billing and the price adjustment.
+**Do not finish installation at account binding.** Run `agentj devices --json` and proactively continue Steps 11 and 12 if no remote is paired. Open `agentj admin`, or click Add a remote on this Agent's computer to launch `agentj://pair`. The service installation registers the handler; retry with `agentj protocol install` if needed. QR codes, one-use links and six-digit approval stay on that computer. Use Section S on a headless server. Pair one remote and verify the first message before declaring setup complete. Moving a seat requires new pairing and leaves history on the old computer. Cancelling ends billing and unbinds at the paid boundary; unbinding alone keeps billing and the price adjustment.
 
 已有取消席位计划时，仍可增加席位或暂停、恢复续费。增购沿用原优惠；已取消的席位仍在原到期日移除，新增席位正常续费。暂停和恢复不会撤销取消计划。暂停期间请先恢复续费再增购。
 
