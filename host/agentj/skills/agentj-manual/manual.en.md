@@ -95,10 +95,6 @@ Replies are laid out for you:
 （Screenshot：Two messages sent offline wait above the message box — https://agentj.app/docs/manual/offline-queue.en.webp）
 - Type `/` at the start of the box to see the commands you can use.
 
-### Sharing a Codex App session
-
-While the Codex App holds a session, the phone follows its actual model from local records and shows read-only status. A native active-writer refusal leaves the message undelivered and never automatically starts another thread. Quit the Codex App completely, then resend to try continuing the same thread; switching to New chat or waiting for a reply does not guarantee release. Do not promise concurrent writes from separate clients, delete writer locks, inject the App’s private pipes or change permissions.
-
 ## Attachments: files, photos, camera
 
 （Screenshot：Attachments and a quote above the message box — https://agentj.app/docs/manual/attach.en.webp）

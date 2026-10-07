@@ -629,7 +629,6 @@ export default {
   "r.keys.eei": "已经空了（≥1 秒）：中断当前任务",
   "r.keys.ok": "知道了",
   "r.keys.s": "打开设置",
-  "r.silentTurn": "静默回合 {time}",
   "preferences.notification": "你的 Agent 已回复。",
   "preferences.error": "配置未生效：",
   "set.title": "设置",
@@ -829,9 +828,7 @@ export default {
   "asrFix.install": "一键安装",
   "asrFix.busy": "主机正在安装语音转写…",
   "asrFix.ready": "语音转写已就绪，再录一次就能用。",
-  "asrFix.failed": "安装没完成，请检查主机网络后重试。",
-  "r.shared.following": "正在跟着电脑上的 Codex 会话走；发送时会试着接上同一个会话。",
-  "r.shared.desktop_writer": "电脑上的 Codex App 正在用这个会话，手机现在只能看。把 Codex App 完全退出后重发，就能接着同一个会话。"
+  "asrFix.failed": "安装没完成，请检查主机网络后重试。"
  },
  "en": {
   "meta.title": "Agent J · Phone remote",
@@ -1462,7 +1459,6 @@ export default {
   "r.keys.eei": "Already empty (≥ 1 s): interrupt the current task",
   "r.keys.ok": "Got it",
   "r.keys.s": "Open Settings",
-  "r.silentTurn": "Silent turn {time}",
   "preferences.notification": "Your agent has replied.",
   "preferences.error": "Configuration not applied: ",
   "set.title": "Settings",
@@ -1662,8 +1658,6 @@ export default {
   "asrFix.install": "Install on host",
   "asrFix.busy": "Your host is installing voice transcription…",
   "asrFix.ready": "Voice transcription is ready. Record again to use it.",
-  "asrFix.failed": "Installation did not complete. Check the host network and try again.",
-  "r.shared.following": "Following the computer’s Codex session. Sending will try to continue this same session.",
-  "r.shared.desktop_writer": "The Codex App is using this session; the phone is read-only. Quit the App completely, then resend to continue the same session."
+  "asrFix.failed": "Installation did not complete. Check the host network and try again."
  }
 };

@@ -22,6 +22,5 @@
   "set.updatesAuto": "自动升级并告诉我",
   "set.updatesAsk": "先问我",
   "set.updatesSecurity": "紧急安全修复会立即升级，并告诉你原因。",
-  "r.om.none": "没有关联的输入",
-  "r.silentTurn": "静默回合 {time}"
+  "r.om.none": "没有关联的输入"
 }

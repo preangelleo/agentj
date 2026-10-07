@@ -1078,12 +1078,11 @@ class OpenCodeAgent(Agent):
             except (OSError, HTTPError, ValueError, AttributeError, asyncio.TimeoutError) as e:
                 self.host.st.log('agent_meter_fail', agent=self.kind, reason=type(e).__name__)
         async def quota():
+            if not selected or '/' not in selected:
+                return
             from .provider_runtime import probe
             try:
-                mid = selected or await self.quota_model()
-                if not mid or '/' not in mid:
-                    return
-                windows = await asyncio.wait_for(asyncio.to_thread(probe, mid.split('/', 1)[0]), 10)
+                windows = await asyncio.wait_for(asyncio.to_thread(probe, selected.split('/', 1)[0]), 10)
             except (OSError, ValueError, asyncio.TimeoutError):
                 windows = []
             if self.cur_model() == selected:
@@ -1191,31 +1190,8 @@ class OpenCodeAgent(Agent):
                 t.cancel()
 
     # ------------------------------------------------ slash commands (slash.py)
-    async def quota_model(self) -> str | None:
-        selected = self.cur_model()
-        if selected:
-            return selected
-        m = self._model_of(await self._last_assistant())
-        if m:
-            self._quota_model = f"{m['providerID']}/{m['modelID']}"
-        if getattr(self, "_quota_model", None):
-            return self._quota_model
-        try:
-            status, cfg = await self.client.request("GET", "/config")
-            mid = cfg.get("model") if status == 200 and isinstance(cfg, dict) else None
-            return mid if split_model(mid) else None
-        except (OSError, HTTPError, AttributeError, asyncio.TimeoutError):
-            return None
-
     async def drop_conversation(self) -> None:
-        self._quota_model = await self.quota_model()
         self.sid = None
-
-    async def cmd_clear(self, arg: str) -> Result:
-        res = await super().cmd_clear(arg)
-        if res.undo:
-            self.refresh_usage()
-        return res
 
     async def _ready(self) -> bool:
         if self.proc is None and not await self._spawn():
@@ -1252,7 +1228,7 @@ class OpenCodeAgent(Agent):
             return {}
         for m in reversed(msgs if st == 200 and isinstance(msgs, list) else []):
             info = m.get("info") if isinstance(m, dict) else None
-            if isinstance(info, dict) and info.get("role") == "assistant":
+            if isinstance(info, dict) and info.get("role") == "assistant" and isinstance(info.get("tokens"), dict):
                 return info
         return {}
 

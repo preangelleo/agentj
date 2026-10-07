@@ -452,14 +452,6 @@ def _bootstrap(n: str, path: str) -> subprocess.CompletedProcess:
 
 
 # ------------------------------------------------------------------ the service verbs
-def _register_pair_protocol(notes):
-    try:
-        from . import protocol_handler
-        protocol_handler.install()
-    except (OSError, ValueError, subprocess.SubprocessError):
-        notes.append("本机配对链接注册失败：运行 agentj protocol install 重试；仍可用 agentj admin 配对 / Pairing link registration failed: retry agentj protocol install, or use agentj admin")
-
-
 def install(st) -> dict:
     """Write + enable + start. → {"kind", "name", "path", "argv", "notes"}; raises ServiceError."""
     n, plat = name(), platform()
@@ -486,7 +478,6 @@ def install(st) -> dict:
         _systemctl("enable", f"{n}.service", check=True)
         _systemctl("restart", f"{n}.service", check=True)   # starts it, or picks up a rewritten unit (reinstall / upgrade)
         remember_binary_selection(st, n)
-        _register_pair_protocol(notes)
         if _linger() == "no" and linger_needed():
             notes.append("服务器 / 无人登录也要运行：`loginctl enable-linger $USER`（否则退出登录后 serve 会停） / "
                          "on a server run `loginctl enable-linger $USER`, or serve stops when you log out")
@@ -509,7 +500,6 @@ def install(st) -> dict:
         if r.returncode != 0:
             raise ServiceError("launchctl_failed", (r.stderr or r.stdout).strip()[:300])
         remember_binary_selection(st, n)
-        _register_pair_protocol(notes)
         return {"kind": "launchd", "name": n, "path": path, "argv": argv + SERVE_ARGS, "notes": notes}
     raise ServiceError("unsupported_os")
 

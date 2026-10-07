@@ -441,13 +441,5 @@ document.addEventListener('DOMContentLoaded', async () => {
   setupPairing();
   setupRemote();
   $('logout').addEventListener('click', logout);
-  if (await login(token)) {
-    await refresh();
-    // The protocol supplies only this non-secret local hint. Existing admission/approval stays authoritative.
-    if (token && new URLSearchParams(location.search).get('pair') === '1' && (!state?.pairing || state.pairing.phase === 'idle')) {
-      const r = await api('POST', '/api/pair/start', {});
-      if (r.status !== 200) say(errKey(r.data.error, 'pair.start_failed'), null, 'error');
-      refresh();
-    }
-  }
+  if (await login(token)) refresh();
 });

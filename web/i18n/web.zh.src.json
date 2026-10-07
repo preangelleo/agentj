@@ -791,8 +791,7 @@
       "eei": "已经空了（≥1 秒）：中断当前任务",
       "ok": "知道了",
       "s": "打开设置"
-    },
-    "silentTurn": "静默回合 {time}"
+    }
   },
   "preferences": {
     "notification": "你的 Agent 已回复。",
@@ -1025,7 +1024,5 @@
     "busy": "主机正在安装语音转写…",
     "ready": "语音转写已就绪，再录一次就能使用。",
     "failed": "安装未完成，请检查主机网络后重试。"
-  },
-  "r.shared.following": "正在跟随电脑上的 Codex 会话；发送时会尝试接续同一个会话。",
-  "r.shared.desktop_writer": "电脑上的 Codex App 正在使用这个会话，手机现在只读。完全退出 Codex App 后重发，就能接着同一个会话。"
+  }
 }

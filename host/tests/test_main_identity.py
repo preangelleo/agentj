@@ -119,9 +119,7 @@ class Native(unittest.IsolatedAsyncioTestCase):
             async def deliver(fn): return await fn()
             a.deliver=deliver
             for _ in range(2): await a.turn("task")
-            prompts=[call for call in a.client.request.call_args_list if call.args[0] == 'POST']
-            self.assertEqual(len(prompts),2)
-            for call in prompts:
+            for call in a.client.request.call_args_list:
                 method,path,body=call.args
                 self.assertEqual(path,"/session/session/prompt_async")
                 self.assertEqual("system" in body,persist)

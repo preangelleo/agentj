@@ -10,9 +10,9 @@ import uuid
 
 ORIGIN = 'https://install-assistant.agentj.app'
 
-def issue_owner(output: Path, *, opener=None, request_id=None, token=None):
+def issue_owner(output: Path, *, opener=None, request_id=None):
     from datetime import datetime, timezone
-    token = token or os.environ.get('INSTALL_ASSISTANT_OWNER_ISSUER_TOKEN')
+    token = os.environ.get('INSTALL_ASSISTANT_OWNER_ISSUER_TOKEN')
     if not token: raise ValueError('owner_issuer_not_configured')
     if output.exists() or output.is_symlink(): raise ValueError('output_exists')
     if not output.parent.is_dir() or output.parent.is_symlink(): raise ValueError('private_output_directory_required')

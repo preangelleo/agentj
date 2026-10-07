@@ -70,22 +70,3 @@ class HookTrust(unittest.IsolatedAsyncioTestCase):
   self.assertEqual([m for m,_ in seen],['hooks/list','thread/resume'])
   params=seen[1][1];self.assertEqual(params['config'],{'hooks.state':{'OWN':{'trusted_hash':'HASH'}}})
   self.assertEqual(params['sandbox'],'danger-full-access');self.assertEqual(params['approvalPolicy'],'never')
-
-class P68DesktopModel(OriginalThread):
- def test_desktop_turn_context_backfills_model_without_mirroring_duplicates(self):
-  host=Mock();a=SharedCodexAgent(host,{'kind':'codex','dir':str(self.root),'_workflow_ceo':True,'shared_session_id':SID})
-  a.meter=Mock()
-  with patch('agentj.shared_codex.selected_rollout',return_value=self.path):a.read_desktop()
-  with self.path.open('a') as f:f.write(json.dumps({'type':'turn_context','payload':{**self.ctx,'model':'gpt-6.1-sol'}})+'\n')
-  a.phone_turn=True;a.read_desktop()
-  self.assertEqual(a.cur_model(),'gpt-6.1-sol')
-  a.meter.assert_called_with(model='gpt-6.1-sol',model_name='gpt-6.1-sol')
-  host.desktop_text.assert_not_called()
-
-
-class ReadOnlyProbeHooks(unittest.TestCase):
- def test_existing_risk_hook_is_not_in_probe_argv(self):
-  a=SharedCodexAgent(Mock(),{'kind':'codex','dir':'/var/tmp','_workflow_ceo':True})
-  a.risk_channel=Mock(path=Path('/var/tmp/probe.sock'));a.read_probe=True
-  with patch('agentj.agent_codex.CodexAgent.argv',return_value=['codex','app-server']):
-   self.assertEqual(a.argv(),['codex','app-server'])

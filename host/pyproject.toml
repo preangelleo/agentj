@@ -8,7 +8,6 @@ dependencies = [
   "cryptography>=44",   # X25519 / Ed25519 / AES-GCM (OpenSSL)
   "websockets>=14",     # relay connection
   "pypinyin>=0.55,<1", # local Chinese wake-word phonemes
-  "tomlkit>=0.13,<1", # preserves native Codex configuration comments during provider switches
   "json5>=0.12,<1", # pure-data commented user configuration
   "segno>=1.6",         # terminal QR
 ]

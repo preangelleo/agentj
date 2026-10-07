@@ -1749,9 +1749,6 @@ def main(argv=None) -> None:
     from .service import load_launch_binary_env
     load_launch_binary_env()
     args = list(sys.argv[1:] if argv is None else argv)
-    if args[:2] == ["provider", "profile"]:
-        from . import provider_profiles
-        raise SystemExit(provider_profiles.command(args[2:]))
     if args and args[0] == "installer":
         from . import installer
         installer.main(args[1:])
@@ -1801,12 +1798,6 @@ def main(argv=None) -> None:
                    help="text：终端（显示消息）· jsonl：脚本 · quiet：服务模式，只有元数据、不含消息 / quiet = service mode, metadata only")
     s.add_argument("--no-stdin", action="store_true", help="不读终端输入（服务 / 后台） / do not read stdin")
     s.set_defaults(fn=cmd_serve)
-    from . import protocol_handler
-    proto = sub.add_parser("protocol", help="注册或打开本机配对链接 / register or open local pairing link")
-    protos = proto.add_subparsers(dest="mode", required=True)
-    protos.add_parser("install")
-    protos.add_parser("open").add_argument("url")
-    proto.set_defaults(fn=protocol_handler.main)
     pr = sub.add_parser("pair", help="用二维码配对一台手机（Agent J 要在运行：agentj service status）/ pair a phone (Agent J must be "
                                      "running: agentj service status)")
     pr.add_argument("--no-qr", action="store_true", help="不画二维码，改为打印配对链接")

@@ -512,7 +512,7 @@ def make_handler(admin: Admin, auth: Auth, port_ref: list):
             path = u.path
             if method == "GET":
                 self._deadline.cancel()
-                if path in ASSETS and (not u.query or (path == "/" and (_LANG_QUERY.fullmatch(u.query) or u.query in ("pair=1", "pair=1&lang=zh", "pair=1&lang=en", "lang=zh&pair=1", "lang=en&pair=1")))):
+                if path in ASSETS and (not u.query or (path == "/" and _LANG_QUERY.fullmatch(u.query))):
                     return self._asset(*ASSETS[path])    # static, no data: no session needed
                 if path == "/api/state" and not u.query and self._session():
                     return self._json(200, admin.state())

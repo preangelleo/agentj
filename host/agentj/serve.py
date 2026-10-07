@@ -96,7 +96,7 @@ P33_ONLY = ("say", "say_cancel", "blob_open", "blob_chunk", "blob_end", "blob_dr
 # F14: paired phones may change optional warnings, session mode, isolation, docker and the upgrade mode (F19); native permissions stay authoritative.
 PREF_SET_KEYS = ("updates.mode", "appearance.language", "appearance.theme", "voice.wake_enabled", "voice.speak_replies",
                  "agent.high_risk_warnings", "agent.session_mode", "agent.isolation", "agent.allow_docker")
-METER_KEYS = ("model", "model_name", "effort", "ctx", "h5", "week", "quota_windows", "shared_status")
+METER_KEYS = ("model", "model_name", "effort", "ctx", "h5", "week", "quota_windows")
 Q_CANCEL = "用户在手机上取消了这个问题，没有选择任何选项。请不要替他做选择，停下来等他直接输入文字。"
 Q_TIMEOUT = "没有人作答，请改用文字列出选项"
 ASR_WHY = {"not_installed": "not_installed", "bad_audio": "bad_audio", "timeout": "timeout", "busy": "busy",
@@ -908,21 +908,6 @@ class Host:
                                              "task_running": self.scheduler.current_id,
                                              "sessions": [{"device": s.device, "name": s.name, "state": s.state}
                                                           for s in self.sessions.values() if s.state != "new"]})
-                elif cmd == "provider_model":
-                    from . import slash as provider_slash
-                    cfg=self.st.agent_config() or {}
-                    applicable=cfg.get('kind')==req.get('kind')
-                    model=req.get('model')
-                    busy=self.eff_status() == 'waiting'
-                    valid=model is None or (isinstance(model,str) and provider_slash.MODEL_RE.fullmatch(model))
-                    if busy or not valid:
-                        await self._ctl_send(w,{'ok':False,'error':'busy' if busy else 'invalid_model'})
-                    else:
-                        previous=cfg.get('model')
-                        if req.get('write') is True and applicable:
-                            self.set_model(model)
-                            self.restart_harness('provider')
-                        await self._ctl_send(w,{'ok':True,'applicable':applicable,'model':previous})
                 elif cmd == "agent_restart":        # `agentj agent restart` (P59): the owned harness, before its next turn
                     await self._ctl_send(w, self.restart_harness("cli"))
                 elif cmd == "config_apply":
@@ -1132,7 +1117,6 @@ class Host:
             if fut is not None and not fut.done():   # a previous call still hangs: never start a second one
                 wait = SYNC_EVERY
             else:
-                link_at_send = cloud.read_cloud(self.st)
                 fut = in_daemon_thread(cloud.send_sync, self.st, list(results))
                 done, _ = await asyncio.wait({fut}, timeout=cloud.HTTP_TIMEOUT + 5)
                 try:
@@ -1148,33 +1132,11 @@ class Host:
                         if r is not None:
                             results.append((rid, r))
                     wait = SYNC_MIN_GAP if results else SYNC_EVERY  # acknowledge soon, never in a tight loop
-                elif res.kind == "unbound":
-                    await self.seat_unbound(link_at_send)
-                    wait = SYNC_IDLE
                 elif res.kind == "fail":
                     self.st.log("sync_fail", status=res.status)
                     wait = SYNC_EVERY
             with contextlib.suppress(asyncio.TimeoutError):
                 await asyncio.wait_for(self.stopping.wait(), wait)
-
-    async def seat_unbound(self, expected) -> None:
-        """A removed paid-seat binding ends that host's existing remote access. Never add/approve a device.
-
-        A stale reply cannot revoke a new link; preserve chat files and native Agent work. The local owner can
-        install/rebind normally, without a new agent-created permission lock.
-        """
-        if not expected or expected.get("via") != "seat":
-            return
-        with cloud.cloud_lock(self.st):
-            current = cloud.read_cloud(self.st)
-            if not current or any(current.get(k) != expected.get(k) for k in ("api", "host_id", "linked_at", "via")):
-                return
-            self.st.cloud_path.unlink()
-            devices = list(self.st.devices())
-        for did in devices:
-            await self.revoke(did)
-        self.st.log("seat_unbound", remotes=len(devices))
-        self.emit("agent_notice", text=("This seat was unbound; existing remotes were disconnected. Chat history stays on this computer." if self.lang == "en" else "这个席位已解绑，已有遥控器已断开；聊天记录仍在这台电脑上。"))
 
     def adopt_name(self, name: tuple) -> None:
         """A3.2 §3: the sync answer's canonical Agent name. Adopted when valid and different (logged, printed, and a report
@@ -1661,15 +1623,6 @@ class Host:
         self.status_changed()
 
     def agent_text(self, text: str) -> None:
-        from .silent import is_silent
-        if is_silent(text):
-            if self.cur_turn is not None and self.hist.get(self.cur_turn) is not None:
-                changed = self.hist_update(self.cur_turn, append=text)
-                if changed:
-                    self.cur_turn = changed[-1]["id"]
-            else:
-                self.hist_add({"k": "agent", "text": ""}, text, "done")
-            return
         self.turn_text = True
         for chunk in agents.split_text(text, wire.MAX_TEXT):
             self.emit("agent_msg", text=clean(chunk, wire.MAX_TEXT))
