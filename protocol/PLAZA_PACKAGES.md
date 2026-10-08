@@ -271,3 +271,10 @@ Everything above holds; these fill gaps or tighten it (the host and the page rel
   YAML values are JSON-escaped (valid inside double quotes, never a raw newline). Array params render as `a, b`, booleans as
   `true` / `false`. A `verified: [ … {{…}} … ]` line becomes `verified: []`, or with `--sign-as NAME` keeps its own `at:`
   placeholder and gets `human:NAME`.
+
+
+## P79 — public metadata exception (ADR-A188)
+
+The seat gate in §0 continues to cover Q&A, full package contents, downloads, installation and publishing. The only unauthenticated exception is read-only `GET|HEAD /api/v1/plaza/catalog` on the front Worker (`/v1/plaza/catalog` over the Dashboard service binding). It returns schema `agentj.public-catalog/v1`, `generated_at` (UTC epoch milliseconds), and `items`. Each item contains only name, type, track, certified, version, bilingual title/summary, tags, category, likes and installs. No author/tenant/host identity, README, manifest, parameters, command or download link is public through it. Community packages are always labelled unverified; a site badge is a catalog record, not proof of a valid bundle signature.
+
+Only visible packages whose current version is live are eligible; malformed or privacy-flagged metadata is omitted. The existing publication privacy/Jev/owner-confirmation rules are unchanged. The endpoint accepts no query parameters or writes, uses HMAC-IP rate limiting (120/minute per Cloudflare location), and advertises a300-second shared cache. The front checks age explicitly, with no expired fallback: withdrawal removes list/sitemap entries within five minutes; detail pages return410/noindex, and upstream outage returns503. Public HTML contains summaries only. Limits exceeding10,000 packages fail closed. No schema migration.

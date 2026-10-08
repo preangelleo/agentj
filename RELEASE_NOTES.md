@@ -1,6 +1,6 @@
-# Agent J 0.16.1a1 release notes
+# Agent J 0.16.2a1 release notes
 
-Host 0.16.1a1 / install 0.20.1; phone-web scope.
+Host 0.16.2a1 / install 0.20.2; phone-web scope.
 Phone parity must pass --strict. Full Android/Telegram parity is incomplete.
 Full Android/Telegram parity is incomplete.
 No APK is included in this release. Android source is for review, not a released app.
@@ -8,22 +8,15 @@ No APK is included in this release. Android source is for review, not a released
 Publication status: local preparation only. Live site verification is DEFERRED until
 the public commit and tag are pushed, the site is deployed, and cold installation passes.
 
-On publication failure, restore v0.16.0a1 and its published main, including site and phone web.
+On publication failure, restore v0.16.1a1 and its published main, including site and phone web.
 ## Changes
 
-- Sparse JSON5 configuration with transactional application, configuration history and migrations.
-- Optional configuration skill for locally installed agent harnesses; owner permission required.
-- Opt-in own-key cloud speech and local phone read-aloud.
-- Optional owner-private Telegram text input and final replies.
-
-- Silent turns live in a read-only menu panel and no longer take a chat page.
-- Water waves retain double width; reduced motion preserves a single 14-second sink.
-- Each paid unbound seat gets a separate installation code; unused revoked or expired grants can be replaced within the daily allowance.
-- Additive app migration 0022 and the installation service contract must precede the Dashboard deployment.
-- Compact pairing links are now the default; AGENTJ_PAIR_COMPACT=0 keeps the legacy link.
-- Custom-state sessions locate the elevation socket through AGENTJ_ELEVATE_SOCK.
-- Lock-screen handshake timeouts retain the pairing and reconnect; replaced clients yield to the other app.
-- Physical iPhone acceptance remains pending; browser evidence simulates visibility and timeout closes.
+- Shared Claude ingress is owner-controlled, backed up and reversible; unacknowledged input gets a bounded notice.
+- Independent Claude transitions require service login; macOS reads the owner's private 0600 service env file.
+- Doctor uses the live shared-session login and warns instead of rejecting owner document structures.
+- Shared Claude meters use only same-session status-line measurements; preserve and restore the owner's status line.
+- Native context percentages and source age survive phone reconnect; missing measurements stay unknown.
+- A then B; no Dashboard, relay or backend migration. Jarvis owns window approval, Jev and LIVE.
 
 ## Material acceptance limits
 

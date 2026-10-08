@@ -380,6 +380,8 @@ def transact(st,newraw):
     if result is not None:
         if not result.get('ok'):raise ConfigError(result.get('key','/'),result.get('error','apply rejected'),code=3)
         return result
+    from . import claude_auth
+    claude_auth.require_transition(st, effective(st), candidate)
     commit_files(st,newraw,candidate)
     return {'ok':True,'applied':False,'needs':['start serve'],'verify':{'ok':True,'detail':'validated; takes effect on next serve'}}
 

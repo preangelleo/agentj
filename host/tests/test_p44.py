@@ -122,13 +122,13 @@ class AuthorizedApply(_Env):
     def test_ok_pinned_no_terminal_marker_and_restart(self):
         _link(self.st, "http://127.0.0.1:9")
         res, calls, auths = self._run()
-        self.assertEqual((res["result"], res["reason"], res["exit"], res["service"]), ("ok", "upgraded", 0, "restarted"))
+        self.assertEqual((res["result"], res["reason"], res["exit"], res["service"]), ("ok", "upgraded", 0, "restart_scheduled"))
         self.assertEqual(auths, [(CODE, "9.9.9")])
         install = [c for c, _ in calls[:-2]]
         self.assertEqual(install, update.commands(update.install_kind(str(self.prefix)), "9.9.9"))
         self.assertIn("@v9.9.9#", install[0][-1], "pinned to the authorized tag")
         self.assertTrue(all(kw.get("stdin") == subprocess.DEVNULL for _, kw in calls), "never asks: stdin closed")
-        self.assertEqual(calls[-1][0][-2:], ["service", "install"])
+        self.assertEqual(calls[-1][0][-4:], ["service", "install", "--deferred", "9.9.9"])
         marker = json.loads((self.st.root / update.UPGRADED).read_text())
         self.assertEqual((marker["from"], marker["to"]), (__version__, "9.9.9"))
         rec = (self.st.root / update.AUTH_REC).read_text()
@@ -139,7 +139,7 @@ class AuthorizedApply(_Env):
                 self.assertNotIn(CODE.encode(), f.read_bytes(), f"the code is never stored ({f.name})")
         block = update.result_block(res)
         self.assertTrue(block.startswith("UPGRADE_RESULT ok\nreason: upgraded\n"))
-        for line in (f"from: {__version__}", "to: 9.9.9", "service: restarted", "next: agentj doctor"):
+        for line in (f"from: {__version__}", "to: 9.9.9", "service: restart_scheduled", "next: agentj doctor"):
             self.assertIn(line, block)
 
     def test_refused_before_anything_is_spent(self):

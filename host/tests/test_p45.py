@@ -23,8 +23,10 @@ class Autonomy(unittest.TestCase):
                 return subprocess.CompletedProcess(argv,0,'agentj 9.9.9' if argv[-1]=='--version' else '', '')
             with patch.object(update,'install_kind',return_value={'kind':'uv','where':tmp,'legacy':False}), patch.object(update,'new_argv',return_value=['agentj']), patch.object(update,'writable',return_value=True):
                 res=update.apply(st,'9.9.9',check_fn=lambda:{'status':'newer','latest':'9.9.9'},run=run,svc_on=True)
-            self.assertEqual((res['result'],res['service']),('ok','restarted'))
-            self.assertEqual([a[-1] for a,_ in calls][-3:],['install','restart','doctor'])
+            self.assertEqual((res['result'],res['service']),('ok','restart_scheduled'))
+            self.assertEqual(calls[-2][0],['agentj','service','install','--deferred','9.9.9'])
+            self.assertEqual(calls[-1][0],['agentj','doctor'])
+            self.assertFalse(any(a[-2:]==['service','restart'] for a,_ in calls))
             self.assertIn('@v9.9.9',calls[0][0][-1])
             self.assertEqual(update.take_marker(st)['to'],'9.9.9')
     def test_version_mismatch_does_not_restart(self):

@@ -783,7 +783,9 @@ class ClaudeAgent(Agent):
         if self.turn_proc is proc and self.turn_done and not self.turn_done.is_set():
             last = clean(self.err_tail.strip().splitlines()[-1], 200) if self.err_tail.strip() else ""
             if not quiet and not self.halting:
-                self.fail_notice(f"Claude Code 退出了（{code}）" + (f"：{last}" if last else ""))
+                from . import claude_auth
+                self.fail_notice(claude_auth.failure_notice(self.cfg.get("language", "zh")) if claude_auth.login_failure(last) else
+                                 f"Claude Code 退出了（{code}）" + (f"：{last}" if last else ""))
             self.turn_done.set()
 
     def on_event(self, ev: dict) -> None:
@@ -849,7 +851,9 @@ class ClaudeAgent(Agent):
             if (ev.get("is_error") or ev.get("subtype") not in ("success", None)) and not self.halting \
                     and self.capture is None:
                 r = ev.get("result")
-                self.fail_notice("Agent 这一轮没有正常完成" + (f"：{clean(r, 300)}" if isinstance(r, str) and r else "。"))
+                from . import claude_auth
+                self.fail_notice(claude_auth.failure_notice(self.cfg.get("language", "zh")) if claude_auth.login_failure(r) else
+                                 "Agent 这一轮没有正常完成" + (f"：{clean(r, 300)}" if isinstance(r, str) and r else "。"))
             if self.turn_done:
                 self.turn_done.set()
 

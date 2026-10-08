@@ -39,5 +39,9 @@
   "r.silent.help": "静默回合收在这里。点开一条，查看当时的原话。",
   "revoked.replacedTitle": "另一边接管了",
   "revoked.replacedLead": "请打开刚才连接的主屏幕 App 或浏览器继续使用。这边已断开，不需要再次用 Face ID 认回。",
-  "a2hs.openInstalled": "如果已经添加到主屏幕，请从主屏幕图标打开。Safari 与主屏幕 App 各自保存配对记录。"
+  "a2hs.openInstalled": "如果已经添加到主屏幕，请从主屏幕图标打开。Safari 与主屏幕 App 各自保存配对记录。",
+  "r.run.update": "升级 Agent J（发送即授权）",
+  "r.update.title": "⬆ 升级 Agent J",
+  "r.update.current": "已是最新",
+  "r.update.authorize": "点击即授权升级"
 }

@@ -44,7 +44,7 @@ class Units(unittest.TestCase):
         self.assertEqual(slash.parse("/fake-skill do it"), ("fake-skill", "do it"))
         for not_cmd in ("/srv/www/x 这个路径", "看看 /compact", "/", "/ compact", "//x", "/中文", None, 3):
             self.assertIsNone(slash.parse(not_cmd), not_cmd)
-        self.assertEqual(set(slash.WHITELIST), {"clear", "compact", "model", "context", "cost", "usage", "status", "help", "stop"})
+        self.assertEqual(set(slash.WHITELIST), {"clear", "compact", "model", "context", "cost", "usage", "status", "help", "stop", "update"})
         self.assertEqual(slash.parse("/x " + "a" * 500)[1], "a" * slash.ARG_MAX)
 
     def test_control_requests_never_widen(self):

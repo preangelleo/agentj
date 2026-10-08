@@ -242,6 +242,35 @@ def check_codex_perm(st: State) -> dict | None:
         return _c("codex_perm", WARN, f"Codex 权限：检查失败（{type(e).__name__}）/ Codex permissions: check failed")
 
 
+def check_shared_inbound(st: State) -> dict | None:
+    c = st.agent_config() if st.exists() else None
+    if not c or c.get("kind") != "claude" or c.get("session_mode") != "shared":
+        return None
+    from . import claude_inbound
+    try:
+        accepted = claude_inbound.value() == "accept"
+    except (OSError, ValueError):
+        accepted = False
+    hint = "agentj config claude-inbound on（先确认接受持本机 peer token 的进程消息；组织/项目策略仍优先）"
+    if accepted:
+        # A repository may tighten user accept; never silently override it.
+        root = pathlib.Path(c["dir"])
+        for parent in (root, *root.parents):
+            for name in ("settings.json", "settings.local.json"):
+                try:
+                    d = json.loads((parent / ".claude" / name).read_text())
+                    v = d.get("crossSessionInbound")
+                    if v is not None and v != "accept":
+                        return _c("shared_inbound", FAIL, "项目 Claude 入站策略仍拦截手机消息 / Repository inbound policy blocks phone messages",
+                                  "请主人检查项目 crossSessionInbound；Agent J 不覆盖项目/组织策略 / Review repository/managed policy")
+                except FileNotFoundError:
+                    pass
+                except (OSError, ValueError, AttributeError):
+                    return _c("shared_inbound", FAIL, "项目 Claude 设置无法核实 / Repository Claude settings could not be verified", hint)
+        return _c("shared_inbound", OK, "Claude 手机入站已开启 / Claude phone ingress enabled; managed/session overrides may still apply")
+    return _c("shared_inbound", FAIL, "Claude 可能扣住手机消息等电脑批准 / Claude may hold phone messages for desktop approval", hint)
+
+
 def check_agent_cli(st: State, svc: dict) -> dict:
     c = st.agent_config() if st.exists() else None
     kinds = [c["kind"]] if c else ["claude", "codex", "opencode"]
@@ -277,12 +306,18 @@ def check_agent_cli(st: State, svc: dict) -> dict:
     k, exe, ver, login, where = found[0]
     s = f"{AGENT_LABEL[k]} {ver} · {tilde(os.path.abspath(exe))} · {where}"
     s += " · selection: " + resolve(k, binary_env)["reason"]
-    if login == WARN and k == "claude" and os.environ.get("CLAUDECODE") == "1":
-        # run by Claude Code itself: it is logged in, but it hides CLAUDE_CODE_OAUTH_TOKEN from the commands it runs
-        return _c("agent_cli", WARN, s.replace("no login found", "no saved login file (this doctor runs inside Claude Code, "
-                  "which hides its own token from commands)"),
-                  "人类在自己的终端跑一次 `claude` 登录即可（服务要用）/ the human runs `claude` once in their own terminal "
-                  "and logs in, so the always-on service can use it")
+    if k == "claude" and c and c.get("session_mode") == "shared":
+        return _c("agent_cli", OK, s + " · 共享模式沿用电脑活会话的登录；服务无需另登录 / Shared mode uses the desktop session login; no separate service login needed")
+    if k == "claude":
+        from . import claude_auth
+        try:
+            ready = claude_auth.available(svc=svc)
+        except (OSError, service.ServiceError):
+            ready = False
+        if not ready and os.environ.get("CLAUDECODE") == "1":
+            s += " · doctor runs inside Claude Code (its token is hidden from child commands)"
+        return _c("agent_cli", OK if ready else WARN, s + " · service login " + ("available" if ready else "missing"),
+                  "" if ready else service.token_hint(svc.get("name") or service.name()))
     if k == 'opencode' and harness.opencode_v2(ver):
         s += ' · v2 (/api)'                         # P60: supported (agent_opencode2); the live check below asks the server
     if k == "opencode" and c:
@@ -308,7 +343,7 @@ def check_agent_cli(st: State, svc: dict) -> dict:
         return _c("agent_cli", WARN if not c else FAIL, s, "人类在自己的终端运行 `opencode auth login` 存好模型服务的 key "
                   "（install.md 第 3 步）/ the human runs `opencode auth login` in their own terminal")
     if login == WARN:
-        return _c("agent_cli", WARN if not c else FAIL, s, f"运行 `{k}` 登录一次 / run `{k}` once and log in")
+        return _c("agent_cli", WARN if not c or k == "claude" else FAIL, s, f"运行 `{k}` 登录一次 / run `{k}` once and log in")
     if login == "env":
         # the login is only an environment variable of this shell: the background service (systemd / launchd) does not
         # get it, so the Agent may not be able to log in there. Name only, never the value. A Linux service env file the
@@ -555,7 +590,7 @@ def check_service(svc: dict, legacy: dict | None = None) -> dict:
                   "run `agentj serve` under tmux / your own supervisor")
     n = svc.get("name")
     if not svc.get("installed"):
-        return _c("service", WARN, "没安装 / not installed", "agentj service install")
+        return _c("service", WARN, "没安装 / not installed", "agentj service start")
     try:
         mismatch = service.binary_env_mismatches(n)
     except (OSError, service.ServiceError):
@@ -566,6 +601,7 @@ def check_service(svc: dict, legacy: dict | None = None) -> dict:
     if svc.get("active") == "active":
         return _c("service", OK, f"{n} 已安装、运行中 / installed, active")
     hint = (f"journalctl --user -u {n} -n 50" if svc.get("kind") == "systemd" else "cat <state dir>/service.log")
+    hint = "agentj service start; " + hint
     return _c("service", FAIL, f"{n} 已安装但没在运行 / installed but {svc.get('active')}", hint)
 
 
@@ -689,6 +725,9 @@ def run(st: State | None = None, offline: bool = False) -> list[dict]:
     if mig:
         out.append(mig)
     out += [check_agent(st)]
+    inbound_row = check_shared_inbound(st)
+    if inbound_row:
+        out.append(inbound_row)
     shared_row = check_codex_shared(st)
     if shared_row:
         out.append(shared_row)
@@ -705,6 +744,10 @@ def run(st: State | None = None, offline: bool = False) -> list[dict]:
     lg = check_linger(svc)
     if lg:
         out.append(lg)
+    from . import service_recovery
+    rec = service_recovery.failure(st)
+    if rec:
+        out.append(_c("upgrade-restart", FAIL, service_recovery.failure_text(rec), "agentj service start; agentj doctor"))
     out.append(check_update(offline))
     return out
 
@@ -796,17 +839,21 @@ def check_main_identity(st):
                 # Migration records its location; it never forces a rewrite.
                 adopted = any((root / name).is_file() and "agentj:main-core" in (root / name).read_text()
                               for name in ("CLAUDE.md", "AGENTS.md"))
+                own_structure = False
                 try:
                     structure = json.loads((root / "documentation/STRUCTURE.json").read_text())
+                    own_structure = isinstance(structure, dict) and structure.get("main_agent") is True
                     adopted = adopted or isinstance(structure, dict) and structure.get("main_agent") is True
                 except (OSError, ValueError):
-                    pass
+                    own_structure = adopted
                 for check in wizard.doctor(root):
                     name = check.get("name", "")
                     if check.get("status") == FAIL and name.startswith(("main", "workflow", "structure")):
-                        rows.append(_c("root-" + name, FAIL if adopted else WARN,
-                                       check.get("detail", "Invalid root structure") if adopted else "Existing owner documents retained; review before adopting the Agent J root contract",
-                                       check.get("hint", "agentj wizard doctor") if adopted else "Review root entries and CEO roster; no automatic move or overwrite"))
+                        foreign_structure = name == "structure" and (root / "documentation/STRUCTURE.json").exists() and not own_structure
+                        strict = adopted and not foreign_structure
+                        rows.append(_c("root-" + name, FAIL if strict else WARN,
+                                       check.get("detail", "Invalid root structure") if strict else "沿用你自己的文档结构，Agent J 不改 / Keeping your own document structure; Agent J does not change it",
+                                       check.get("hint", "agentj wizard doctor") if strict else "Review root entries and CEO roster; no automatic move or overwrite"))
         if cfg:
             ok, reason = main_identity.latest_audit(st, cfg)
             status = OK if ok else WARN if reason.startswith("no verified main Agent launch") else FAIL

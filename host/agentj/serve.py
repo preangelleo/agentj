@@ -100,7 +100,7 @@ P33_ONLY = ("say", "say_cancel", "blob_open", "blob_chunk", "blob_end", "blob_dr
 # F14: paired phones may change optional warnings, session mode, isolation, docker and the upgrade mode (F19); native permissions stay authoritative.
 PREF_SET_KEYS = ("updates.mode", "appearance.language", "appearance.theme", "voice.wake_enabled", "voice.speak_replies",
                  "agent.high_risk_warnings", "agent.session_mode", "agent.isolation", "agent.allow_docker")
-METER_KEYS = ("model", "model_name", "effort", "ctx", "h5", "week", "quota_windows", "shared_status")
+METER_KEYS = ("model", "model_name", "effort", "ctx", "h5", "week", "quota_windows", "shared_status", "source_at")
 Q_CANCEL = "用户在手机上取消了这个问题，没有选择任何选项。请不要替他做选择，停下来等他直接输入文字。"
 Q_TIMEOUT = "没有人作答，请改用文字列出选项"
 ASR_WHY = {"not_installed": "not_installed", "bad_audio": "bad_audio", "timeout": "timeout", "busy": "busy",
@@ -642,7 +642,7 @@ class Host:
         elif t == "slash":              # a command from the phone's ≡「全部命令」 menu (or typed: the page sends it like this)
             name, arg = obj.get("cmd"), obj.get("arg", "")
             if isinstance(name, str) and isinstance(arg, str) and len(name) <= 32 and text_units(arg) <= slash.ARG_MAX:
-                await self.on_slash(s, name.lower(), arg.strip(), confirm=obj.get("confirm") is True, typed=False)
+                await self.on_slash(s, name.lower(), arg.strip(), confirm=obj.get("confirm") is True, typed=False, authorization=obj)
 
     # ------------------------------------------------------------ deadlines
     async def _handshake_timeout(self, s: Session) -> None:
@@ -1400,6 +1400,8 @@ class Host:
             old = self.preferences
             try:
                 candidate = preferences.validate(preferences.parse(raw) if isinstance(raw,str) else preferences.read()[1])
+                from . import claude_auth
+                await asyncio.to_thread(claude_auth.require_transition, self.st, old, candidate, running=True)
                 # Providers and channels with external dependencies are checked before activation.
                 from . import voice
                 voice.validate_runtime(candidate)
@@ -1422,7 +1424,7 @@ class Host:
             if lang_changed:
                 self.language_changed(preferences.get(candidate, "appearance.language"), from_account=language_at is not None)
             restart = any(preferences.get(old, key) != preferences.get(candidate, key)
-                          for key in ("agent.working_root", "agent.instructions", "agent.isolation", "agent.allow_docker"))
+                          for key in ("agent.working_root", "agent.instructions", "agent.isolation", "agent.allow_docker", "agent.session_mode"))
             # P59 (A167): proxy settings reach only harness children, read at their launch → restart the owned harness
             # before its next turn (conversation kept), not serve. A shared/attached harness keeps its own environment.
             proxied = any(preferences.get(old, "proxy." + k) != preferences.get(candidate, "proxy." + k)
@@ -1537,6 +1539,9 @@ class Host:
         async def ack(result: dict) -> None:
             await res(bool(result.get("ok")), None if result.get("ok") else
                       ("busy" if result.get("error") == "busy" else "rejected"))
+            if not result.get("ok") and key == "agent.session_mode" and str(result.get("error", "")).startswith("电脑上的服务没有 Claude 登录"):
+                from . import claude_auth
+                self.agent_notice(claude_auth.failure_notice(self.lang))
         self.st.log("pref_set", device=s.device, status=key)
         await self.set_pref(key, value, ack=ack)
 
@@ -1823,6 +1828,32 @@ class Host:
         language, with the doctor counts — "已升级到 <v>（doctor: N ✓ / M ! / K ✗）". Once per version (the marker is removed
         as it is read)."""
         try:
+            from . import phone_update, service_recovery
+            # Bounded wait for manager-owned restart verification before doctor.
+            for _ in range(180):
+                recovery = service_recovery.read(self.st)
+                if not recovery or recovery.get("status") not in ("pending", "running") or service_recovery.failure(self.st):
+                    break
+                await asyncio.sleep(.25)
+            warning = service_recovery.failure(self.st)
+            notice = self.st.root / service_recovery.NOTICE
+            if warning and (notice.exists() or service_recovery.receipt_path().exists() or warning.get("status") != "failed"):
+                self.cmd_card("update", slash.Result(service_recovery.failure_text(warning), "error"))
+                notice.unlink(missing_ok=True)
+            completed = phone_update.take(self.st)
+            if completed:
+                if completed.get("reason") in ("upgraded", "doctor_failed"):
+                    # Diagnose the newly restarted service, rather than reporting the updater's old-process checks.
+                    from . import doctor
+                    try:
+                        completed["counts"] = update.doctor_counts(await asyncio.to_thread(doctor.run, self.st))
+                        failed = bool(completed["counts"][2])
+                    except Exception:
+                        completed["counts"], failed = None, True
+                    completed["reason"] = "doctor_failed" if failed else "upgraded"
+                    completed["result"] = "failed" if failed else "ok"
+                self.cmd_card("update", slash.Result(phone_update.text(completed, self.lang), "ok" if completed.get("result") == "ok" else "error"))
+                return
             rec = update.take_marker(self.st)
         except Exception:  # noqa: BLE001
             rec = None
@@ -2466,7 +2497,7 @@ class Host:
         if self.agent_cfg is not None:
             self.agent_cfg["model"] = model
 
-    async def on_slash(self, s: Session, name: str, arg: str, confirm: bool, typed: bool) -> int:
+    async def on_slash(self, s: Session, name: str, arg: str, confirm: bool, typed: bool, authorization=None) -> int:
         """A command from a ready session of a paired device (the only place one can come from). /stop and /help at once;
         the rest after the turn in front of it (the Agent's queue). Logged: command name + result class, never text.
         Returns the id of the command's history page (§10.5)."""
@@ -2489,6 +2520,19 @@ class Host:
             self.activity("slash", cmd=name if known else "other", result=res.kind, by=by)
             self.cmd_card(name if known else "refused", res, by, turn)
             return turn
+        if name == "update":
+            from . import phone_update
+            why = "unpaired" if s.state != "ready" or not self.st.is_allowed(s.pub) else controls.check(
+                self.st, self.nonces, self.channel, s.device, authorization or {}, "update", {})
+            controls.log(self.st, action="update", device=s.device, result=why or "ok", obj={},
+                         sig=(authorization or {}).get("sig"), n=(authorization or {}).get("n"), ts=(authorization or {}).get("ts"))
+            if why or arg:
+                return done(slash.Result("请从已配对手机发送 /update / Send /update from a paired phone", "refused"))
+            if not phone_update.reserve(self.st):
+                return done(slash.Result("正在升级，请稍候 / Upgrade in progress", "info"))
+            self.cmd_card("update", slash.Result("正在查最新版并升级，服务会重启；重连后回报结果。 / Checking and upgrading; reconnect for the result.", "info"), by, turn, interim=True)
+            self.phone_upgrade_task = asyncio.create_task(self.phone_upgrade(turn, by))
+            return turn
         if not self.agent:
             return done(slash.Result(slash.HELP if name == "help" else "还没接 Agent：在电脑上运行 agentj agent claude --dir <目录>。",
                                      "info" if name == "help" else "error"))
@@ -2509,6 +2553,30 @@ class Host:
             self.cmd_card(name, slash.Result("这一轮结束后执行。", "info"), by, turn, interim=True)
         self.agent.submit(agents.Cmd(name, arg, by, turn))
         return turn
+
+    async def phone_upgrade(self, turn, by):
+        from . import phone_update
+        launched = False
+        try:
+            check = await asyncio.to_thread(update.check)
+            if check["status"] != "newer":
+                rec = {"reason": "already_current" if check["status"] == "current" else "unknown", "to": check.get("latest") or update.__version__}
+                self.cmd_card("update", slash.Result(phone_update.text(rec, self.lang), "info" if check["status"] == "current" else "error"), by, turn)
+                return
+            await asyncio.to_thread(phone_update.launch, self.st)
+            launched = True
+            for _ in range(1800):
+                await asyncio.sleep(1)
+                rec = phone_update.take(self.st)
+                if rec:
+                    self.cmd_card("update", slash.Result(phone_update.text(rec, self.lang), "ok" if rec.get("result") == "ok" else "error"), by, turn)
+                    return
+            self.cmd_card("update", slash.Result("升级超时：在电脑运行 agentj doctor / Upgrade timed out: run agentj doctor", "error"), by, turn)
+        except Exception:
+            self.cmd_card("update", slash.Result("无法启动升级：在电脑运行 agentj update apply / Could not start upgrade: run agentj update apply", "error"), by, turn)
+        finally:
+            if not launched or not phone_update.busy(self.st):
+                phone_update.release(self.st)
 
     def friend_cmd(self, name: str, arg: str = "", channel: str = "phone") -> "slash.Result":
         """P73 (ADR-A176) `/my-agent-id` · `/add-friend` (friend_cmds.py). Never adds a friend: that is the phone's signed fr_add."""
@@ -2640,7 +2708,7 @@ class Host:
             configured = preferences.get(self.preferences, "menu.items", [])
             if configured:
                 res.update(source="config", items=[{k: v for k, v in x.items() if k != "id"} for x in menu.arrange(configured)])
-            return await self.send_app(s, {"t": "menu", "r": r, **res})
+            return await self.send_app(s, {"t": "menu", "r": r, **res, "upgrade": {"current": update.__version__, "latest": update.read_rec(self.st).get("latest")}})
         if t in ("provider_get", "provider_key", "asr_install"):
             from . import provider_runtime
             r = obj.get("r")
@@ -2970,8 +3038,9 @@ class Host:
     # ------------------------------------------------------------ meters (§10.10)
     def _meter_msg(self) -> dict:
         m = dict(self.meter_state)
-        if m.get("quota_windows") is None:
-            m.pop("quota_windows", None)
+        for optional in ("quota_windows", "source_at"):
+            if m.get(optional) is None:
+                m.pop(optional, None)
         return {"t": "meter", **m, "at": int(time.time())}
 
     def meter_update(self, **kw) -> None:

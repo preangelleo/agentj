@@ -56,9 +56,10 @@ def version_of(exe: str) -> str | None:
     return (line if len(line) <= 40 else line[:39] + "…") or "?"
 
 
-def claude_login() -> tuple[str, str]:
+def claude_login(environ=None) -> tuple[str, str]:
     """(ok | env | warn, where) — existence only, never content."""
-    cfg = os.environ.get("CLAUDE_CONFIG_DIR") or os.path.expanduser("~/.claude")
+    env = os.environ if environ is None else environ
+    cfg = env.get("CLAUDE_CONFIG_DIR") or os.path.expanduser("~/.claude")
     if os.path.isfile(os.path.join(cfg, ".credentials.json")):
         return "ok", f"login {tilde(os.path.join(cfg, '.credentials.json'))}"
     if sys.platform == "darwin" and shutil.which("security"):
@@ -70,7 +71,7 @@ def claude_login() -> tuple[str, str]:
         except (OSError, subprocess.TimeoutExpired):
             pass
     for k in ("CLAUDE_CODE_OAUTH_TOKEN", "ANTHROPIC_API_KEY"):
-        if os.environ.get(k):
+        if env.get(k):
             return "env", f"env {k} (name only)"
     return "warn", "no login found"
 

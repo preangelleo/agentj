@@ -857,6 +857,8 @@ switched off) arrive as `sys` turns with `"local":true` and show relay's 「在�
   `modelContextWindow`), `account/rateLimits/read|updated` (the 300-minute window → `h5`, 10 080 → `week`), thread model /
   effort; OpenCode — the newest assistant message's tokens and the model's `limit.context`; quotas `null`.
 
+- Optional `meter.source_at`: source observation time in Unix seconds (shared Claude status line). The phone reports source age even after reconnect; receipt time never makes an old observation fresh. Shared Claude accepts only an exact matching `session_id`, otherwise all fields clear. Optional `ctx.pct` is the native reported context percentage (not derived token counts); old readers may use `used/max` when available. A compaction clears the old context until a newer observation arrives.
+
 - Optional `meter.shared_status`: `following`, `desktop_writer`, or `null`. A Codex Desktop writer conflict preserves the selected thread and leaves phone input undelivered; the phone keeps a translated read-only banner across reconnect. The displayed model is from the last native rollout turn_context, independent of resume access. Other adapters clear this field. No native permission or pairing override is introduced.
 
 ### 10.11 Model and effort pill
@@ -1513,3 +1515,8 @@ localStorage / IndexedDB / the history / the offline queue.
 **Unchanged boundaries**: Telegram (owner chat and groups), friends (§17.6 outbound gate), attachments (secret scan) and the
 relay keep refusing / never seeing these values; ordinary replies keep redacting them. The pickup card is the only way out and
 only to the owner's own paired devices.
+
+### P76 signed upgrade
+`slash {cmd:"update",n,ts,sig}` requires the paired device control signature (action `update`, object text `latest`).
+An unsigned `say /update` is refused. The host returns progress and persists completion across restart in chat history.
+`menu.upgrade` contains `current` and last checked `latest` (null if unknown). Sending or clicking authorizes F14 apply/restart/doctor.

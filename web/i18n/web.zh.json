@@ -747,7 +747,8 @@
       "usage": "用量额度",
       "status": "状态",
       "stop": "中断当前这一轮",
-      "sent": "已发送 {cmd}"
+      "sent": "已发送 {cmd}",
+      "update": "升级 Agent J（发送即授权）"
     },
     "int": {
       "sent": "已中断当前任务",
@@ -796,7 +797,12 @@
       "ok": "知道了",
       "s": "打开设置"
     },
-    "silentTurn": "静默回合 {time}"
+    "silentTurn": "静默回合 {time}",
+    "update": {
+      "title": "⬆ 升级 Agent J",
+      "current": "已是最新",
+      "authorize": "点击即授权升级"
+    }
   },
   "preferences": {
     "notification": "你的 Agent 已回复。",

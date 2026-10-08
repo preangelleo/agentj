@@ -146,6 +146,18 @@ class WorkingRoot(unittest.TestCase):
         rows = doctor.check_main_identity(self.st)
         self.assertTrue(any(x['id']=='root-structure' and x['status']=='fail' for x in rows), rows)
 
+    def test_doctor_foreign_structure_warns_even_with_main_core(self):
+        self.st.init()
+        root = self.home/'foreign-structure'; root.mkdir()
+        self.st.set_agent_config('claude', str(root))
+        (root/'AGENTS.md').write_text('<!-- agentj:main-core v1 -->')
+        (root/'documentation').mkdir()
+        (root/'documentation/STRUCTURE.json').write_text('{"my_documents": []}')
+        rows = doctor.check_main_identity(self.st)
+        row = next(x for x in rows if x['id']=='root-structure')
+        self.assertEqual(row['status'], 'warn')
+        self.assertIn('沿用你自己的文档结构', row['summary'])
+
     def test_doctor_tampered_core_fails(self):
         self.st.init()
         data = self.home/'tampered-core'; data.mkdir()

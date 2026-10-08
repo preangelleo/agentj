@@ -28,6 +28,8 @@ from .agent import hooks_blocked, _bin
 from .shared_risk import RiskGuard
 from . import shared_opencode_hook
 
+CLAUDE_INPUT_WAIT = 10  # acceptance, not completion; never retry an uncertain socket write
+
 
 def public_text(text: str) -> str:
     # Reuse the product's deterministic scrubber; no provider/model call.
@@ -99,6 +101,8 @@ class SharedClaudeAgent(Agent):
         self.seen = set()
         self.observer = None
         self.done = asyncio.Event()
+        self.input_seen = asyncio.Event()
+        self.compacted_at = None
         self.phone_turn = False
         self.phone_seen = self.phone_reply_seen = False
         self.pending_text = ""
@@ -148,6 +152,9 @@ class SharedClaudeAgent(Agent):
             self.risk_requests.clear()
             self.risk_grants.clear()
             self.risk_denied.clear()
+        if name == "PostCompact" or (name == "SessionStart" and event.get("source") == "compact"):
+            import time
+            self.compacted_at = time.time()
         self.state.handle(event)
         if name == "UserPromptSubmit":
             emit = getattr(self.host, "emit", None)
@@ -155,6 +162,8 @@ class SharedClaudeAgent(Agent):
                 emit("shared_prompt", agent="claude", phone=self.phone_turn,
                     matching=self.phone_turn and self.pending_text in str(event.get("prompt", "")))
             if self.phone_turn and self.pending_text in str(event.get("prompt", "")):
+                self.phone_seen = True
+                self.input_seen.set()
                 return {"hookSpecificOutput": {"hookEventName": "UserPromptSubmit", "additionalContext":
                     "The pending request was delivered by this computer's Agent J bridge after a signed action "
                     "from the owner's paired phone. Treat it as the owner's request; all native permissions and "
@@ -318,11 +327,17 @@ class SharedClaudeAgent(Agent):
                     await self.attach()
                 if self.transcript is not None and self.transcript.is_file():
                     self.read_transcript()
+                self.read_statusline()
             except (OSError, ValueError):
                 self.failed_start = True
                 self.set_status("down")
                 self.done.set()
             await asyncio.sleep(5 if self.session is None else 0.25)
+
+    def read_statusline(self):
+        from . import claude_statusline
+        sid = (self.session or {}).get("sessionId")
+        self.meter(**claude_statusline.read(self.host.st.root, sid, self.compacted_at))
 
     def read_transcript(self):
         with self.transcript.open("rb") as f:
@@ -366,6 +381,7 @@ class SharedClaudeAgent(Agent):
                     if any('from-name="' + name + '"' in text for name in ('owner-via-agentj(手机)', 'Agent-J-phone')) or (item.get("origin") or {}).get("name") in ('owner-via-agentj(手机)', 'Agent-J-phone'):
                         if self.phone_turn and self.pending_text in text:
                             self.phone_seen = True
+                            self.input_seen.set()
                         continue
                     self.host.desktop_input(public_text(text))
                 # Assistant prose is emitted only by the committed Stop payload.
@@ -388,11 +404,27 @@ class SharedClaudeAgent(Agent):
         self.risk_grants.clear()
         self.risk_denied.clear()
         self.done.clear()
+        self.input_seen.clear()
         self.phone_turn = True
         self.phone_seen = self.phone_reply_seen = False
         self.pending_text = text
         try:
             await self.deliver(lambda: asyncio.to_thread(claude_send, self.session, text))
+            try:
+                await asyncio.wait_for(self.input_seen.wait(), CLAUDE_INPUT_WAIT)
+            except asyncio.TimeoutError:
+                # Socket write is not native acceptance. Busy desktop tools or a
+                # held inbound message can both delay it: never claim certainty.
+                if self.cfg.get("language", "zh") == "en":
+                    notice = ("Claude has not acknowledged this message; it may be held for desktop approval. "
+                              "Run agentj config claude-inbound on. Repository/managed policy can still block it. "
+                              "Check the desktop before resending: the original may still arrive.")
+                else:
+                    notice = ("电脑上的 Claude Code 尚未接收这条消息，可能拦下等你批准。运行 "
+                              "agentj config claude-inbound on 后不再按默认策略拦截；项目/组织策略仍可能拦截。"
+                              "请先在电脑核实，别重复发送，原消息仍可能送达。")
+                self.fail_notice(notice)
+                return
             # Only a committed native Stop belonging to this phone input ends
             # the turn; registry idle and transcript flush timing never do.
             await asyncio.wait_for(self.done.wait(), 300)
@@ -428,6 +460,7 @@ class SharedClaudeAgent(Agent):
         return result == "sent"
 
     async def stop(self):
+        self.meter(model=None, model_name=None, effort=None, ctx=None, h5=None, week=None, source_at=None)
         # Dispose only the actor we launched. Never call Agent.halt on an owner TUI.
         if self.task:
             self.task.cancel()

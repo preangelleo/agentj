@@ -274,6 +274,34 @@ def load_launch_binary_env() -> None:
     path = os.environ.get("AGENTJ_SERVICE_ENV_FILE")
     if path:
         os.environ.update(binary_env(path))
+        os.environ.update(claude_env(path))
+
+
+CLAUDE_AUTH_ENV = (TOKEN_ENV, "ANTHROPIC_API_KEY")
+
+
+def claude_env(path: str) -> dict:
+    """Owner-created private env only, no shell evaluation, no logging of values."""
+    import stat
+    p = Path(path)
+    try:
+        info = p.lstat()
+    except FileNotFoundError:
+        return {}
+    if not stat.S_ISREG(info.st_mode) or stat.S_IMODE(info.st_mode) != 0o600 or info.st_uid != os.getuid():
+        raise ServiceError("bad_claude_env")
+    out = {}
+    for line in p.read_text().splitlines():
+        key, sep, value = line.strip().partition("=")
+        if sep and key in CLAUDE_AUTH_ENV:
+            try:
+                parts = shlex.split(value, comments=True, posix=True)
+            except ValueError:
+                raise ServiceError("bad_claude_env") from None
+            if len(parts) != 1 or not parts[0]:
+                raise ServiceError("bad_claude_env")
+            out[key] = parts[0]
+    return out
 
 
 # ------------------------------------------------------------------ Linux: systemd --user
@@ -301,7 +329,7 @@ def unit_text(n: str, argv: list[str], env: dict, environ: dict | None = None) -
              "[Service]", "Type=simple",
              "ExecStart=" + " ".join(_sd_quote(x) for x in argv + SERVE_ARGS),
              "Restart=on-failure", "RestartSec=5", "TimeoutStopSec=20", "StandardInput=null"]
-    lines += [f"Environment={_sd_quote(f'{k}={v}')}" for k, v in env.items() if k not in CAPTURED_ENV[1:]]
+    lines += [f"Environment={_sd_quote(f'{k}={v}')}" for k, v in env.items() if k not in (*CAPTURED_ENV[1:], *CLAUDE_AUTH_ENV)]
     lines += ["# optional, created by you (0600) — e.g. CLAUDE_CODE_OAUTH_TOKEN=… ; the leading '-' = may be absent",
               "EnvironmentFile=-" + env_file(n, environ).replace("%", "%%"), "", "[Install]", "WantedBy=default.target", ""]
     return "\n".join(lines)
@@ -401,7 +429,7 @@ def plist_path(n: str) -> str:
 
 
 def plist_bytes(n: str, argv: list[str], env: dict, log_path: str) -> bytes:
-    return plistlib.dumps({"Label": n, "ProgramArguments": argv + SERVE_ARGS, "EnvironmentVariables": {k: v for k, v in env.items() if k not in CAPTURED_ENV[1:]},
+    return plistlib.dumps({"Label": n, "ProgramArguments": argv + SERVE_ARGS, "EnvironmentVariables": {k: v for k, v in env.items() if k not in (*CAPTURED_ENV[1:], *CLAUDE_AUTH_ENV)},
                            "RunAtLoad": True, "KeepAlive": True, "ThrottleInterval": 5, "ProcessType": "Background",
                            "StandardInPath": "/dev/null", "StandardOutPath": log_path, "StandardErrorPath": log_path})
 
@@ -584,6 +612,79 @@ def restart() -> dict:
     return {"name": n}
 
 
+def needs_deferred_install(cgroup=None) -> bool:
+    """New CLI protects old apply callers that don't know --deferred yet.
+
+    PID namespaces hide the host's ancestor PID, but not Linux cgroup ownership.
+    macOS sandboxed callers cannot inspect outside ancestors: an active existing
+    LaunchAgent is always re-installed by a separate manager job.
+    """
+    if platform() == "macos":
+        return any(s.get("installed") and s.get("active") == "active"
+                   for s in (status(), legacy_status()))
+    if platform() == "linux":
+        try:
+            text = Path("/proc/self/cgroup").read_text() if cgroup is None else cgroup
+        except OSError:
+            return False
+        units = {name() + ".service"}
+        if legacy_name():
+            units.add(legacy_name() + ".service")
+        return any(units.intersection(line.split(":", 2)[-1].split("/")) for line in text.splitlines())
+    return False
+
+
+def start(st) -> dict:
+    """Start an installed unit; otherwise install it. No unload of a running job."""
+    n, plat = name(), platform()
+    current = status()
+    if not current.get("installed"):
+        result = install(st)
+        _acknowledge_recovery(st)
+        return result
+    if current.get("active") == "active":
+        _acknowledge_recovery(st)
+        return {"name": n}
+    if plat == "linux":
+        _systemctl("start", f"{n}.service", check=True)
+    elif plat == "macos":
+        if not _loaded(f"{_gui()}/{n}"):
+            if launchd_disabled(n) is True:
+                _launchctl("enable", f"{_gui()}/{n}")
+                _remember_enabled(st, n)
+            r = _launchctl("bootstrap", _gui(), plist_path(n))
+        else:
+            r = _launchctl("kickstart", f"{_gui()}/{n}")
+        if r.returncode:
+            raise ServiceError("launchctl_failed")
+    else:
+        raise ServiceError("unsupported_os")
+    _acknowledge_recovery(st)
+    return {"name": n}
+
+
+def _acknowledge_recovery(st):
+    """Manual start clears an earlier failed handoff only after new code is active."""
+    from . import __version__, service_recovery
+    rec = service_recovery.failure(st)
+    if rec and rec.get("target") == __version__ and status().get("active") == "active":
+        service_recovery.record(st, "ok", __version__)
+        (st.root / service_recovery.NOTICE).unlink(missing_ok=True)
+
+
+def stop() -> dict:
+    """Stop without deleting installation. launchd KeepAlive requires bootout."""
+    n, plat = name(), platform()
+    if plat == "linux":
+        _systemctl("stop", f"{n}.service", check=True)
+    elif plat == "macos":
+        if not _bootout_wait(n):
+            raise ServiceError("launchctl_failed")
+    else:
+        raise ServiceError("unsupported_os")
+    return {"name": n}
+
+
 def uninstall(st=None) -> dict:
     n, plat = name(), platform()
     if plat == "linux":
@@ -641,15 +742,14 @@ def status() -> dict:
 
 
 def token_hint(n: str) -> str:
-    if platform() == "linux":
-        f = env_file(n)
-        return (f"只在环境变量里有 {TOKEN_ENV}：服务看不到它（我们不会把它抄进服务文件）。二选一：① 运行 `claude` 登录一次"
-                f"（或 `claude setup-token`），登录保存在 ~/.claude；② 自己建 {tilde(f)}（chmod 600），写一行 "
-                f"{TOKEN_ENV}=<你的 token>，再 `systemctl --user restart {n}` / {TOKEN_ENV} is only in your shell: the service "
-                f"cannot see it and we never copy it. Either log in with `claude` once, or create {tilde(f)} yourself "
-                f"(chmod 600) with one line {TOKEN_ENV}=<token>, then restart the service.")
-    return (f"只在环境变量里有 {TOKEN_ENV}：LaunchAgent 看不到它。运行 `claude` 登录一次（保存在钥匙串）再重启服务 / "
-            f"{TOKEN_ENV} is only in your shell: log in with `claude` once (Keychain), then reinstall the service.")
+    f = tilde(env_file(n))
+    return ("电脑上的服务没有 Claude 登录：在电脑终端运行 `claude` 并 /login 一次（macOS 存进钥匙串），"
+            "或运行 `claude setup-token` 后自己写入服务专用 env 文件 " + f + "（chmod 600，"
+            "CLAUDE_CODE_OAUTH_TOKEN=<token>），再运行 `agentj service restart`。不要把 token 发到聊天里。 / "
+            "The computer's service has no Claude login. Run `claude` and /login in a computer terminal "
+            "(Keychain on macOS), or run `claude setup-token` and write CLAUDE_CODE_OAUTH_TOKEN=<token> "
+            "to the service env file " + f + " yourself (chmod 600), then `agentj service restart`. "
+            "Never paste the token into chat.")
 
 
 def tilde(p: str) -> str:
@@ -669,6 +769,7 @@ def _write(path: str, data: bytes, mode: int) -> None:
 
 
 MESSAGES = {
+    "bad_claude_env": "Claude 服务 env 文件须为主人所有的普通 0600 文件，且赋值格式正确 / Claude service env must be an owner-owned regular 0600 file with valid assignments",
     "bad_binary_env": "AGENTJ_*_BIN 路径格式无效：检查服务 env 文件 / invalid harness path in service environment file",
     "bad_name": "服务名不合规（AGENTJ_SERVICE_NAME） / invalid service name",
     "no_systemctl": "没有 systemctl：这台 Linux 不用 systemd，自己用 tmux / supervisord 跑 `agentj serve` / no systemd here",
@@ -679,3 +780,8 @@ MESSAGES = {
     "unsupported_os": "这个系统还不支持（Windows 请在 WSL2 里装） / unsupported OS (Windows: use WSL2)",
     "no_home": "没有 HOME / HOME is not set",
 }
+
+MESSAGES.update({
+    "recovery_launch_failed": "升级重启任务未启动：运行 agentj service start，再运行 agentj doctor / Could not launch upgrade recovery: run agentj service start, then agentj doctor",
+    "recovery_version_mismatch": "升级目标版本不一致：运行 agentj update check / Upgrade target mismatch: run agentj update check",
+})

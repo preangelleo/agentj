@@ -19,7 +19,7 @@ def _run_factory(fail_on=None):
         calls.append(list(argv))
         if argv[-1] == "--version":
             return subprocess.CompletedProcess(argv, 0, "agentj 9.9.9", "")
-        rc = 5 if fail_on and argv[-1] == fail_on else 0
+        rc = 5 if fail_on and "--deferred" in argv else 0
         return subprocess.CompletedProcess(argv, rc, "", "")
     return run, calls
 
@@ -38,13 +38,13 @@ class ApplyServiceFailed(unittest.TestCase):
         return res, calls
 
     def test_service_install_or_restart_failure_is_a_formal_result(self):
-        for verb in ("install", "restart"):
+        for verb in ("deferred",):
             res, calls = self.apply(verb)                      # 0.15.3a1: KeyError: 'service_failed', no block
             self.assertEqual((res["result"], res["reason"], res["service"], res["exit"]),
                              ("failed", "service_failed", "failed", 1), verb)
             block = update.result_block(res)
             self.assertTrue(block.startswith("UPGRADE_RESULT failed\nreason: service_failed\n"), block)
-            self.assertIn("agentj service install", block)
+            self.assertIn("agentj service start", block)
             self.assertIn("next: agentj doctor; tell your human this block", block)
             self.assertNotIn("doctor", [c[-1] for c in calls], "no doctor after a failed service step")
 

@@ -1123,6 +1123,8 @@ export async function runCases({ B, web, fake, only }) {
   await C('key-esc-esc-clear', async () => {
     await setFiles('fDoc', [files.md]);
     await chips(1);
+    // Expire a previous case's Escape gesture before starting this double-Escape.
+    await sleep(550);
     await ev(`document.getElementById('input').focus()`);
     await key(P, 'Escape', { code: 'Escape' }); await sleep(60); await key(P, 'Escape', { code: 'Escape' });
     await wait(`document.getElementById('input').value === '' && !document.querySelectorAll('#tray .chip').length`);

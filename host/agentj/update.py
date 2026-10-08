@@ -425,7 +425,7 @@ AUTH_REASONS = {
     "already_current": (0, "已经是目标版本，不用再升级", "already at the target version; nothing to do"),
     # P63: a formal failure (apply() used to hit KeyError here and print a traceback instead of UPGRADE_RESULT)
     "service_failed": (1, "程序已升级，但服务没能重新安装：运行 `agentj service install`",
-                       "upgraded, but the service was not re-installed: run `agentj service install`"),
+                       "upgraded, but service recovery failed: run `agentj service start`"),
 }
 
 
@@ -524,12 +524,12 @@ def authorized_apply(st, code: str | None, target: str | None, *, mail: dict | N
         f"{target}; restarting the service now — if this conversation stops here, the phone hears \"Upgraded to {target}\" once "
         "Agent J is back.")
     try:
-        rc = run(argv + ["service", "install"], stdin=subprocess.DEVNULL).returncode
+        rc = run(argv + ["service", "install", "--deferred", target], stdin=subprocess.DEVNULL).returncode
     except OSError:
         rc = 127
     if rc != 0:
         return {**out, "result": "failed", "reason": "service_failed", "service": "failed", "exit": 1}
-    return {**out, "result": "ok", "reason": "upgraded", "service": "restarted", "exit": 0}
+    return {**out, "result": "ok", "reason": "upgraded", "service": "restart_scheduled", "exit": 0}
 
 
 def apply(st, target=None, *, prefix=None, check_fn=None, run=None, say=None, svc_on=None):
@@ -577,11 +577,10 @@ def apply(st, target=None, *, prefix=None, check_fn=None, run=None, say=None, sv
         if st.exists():
             write_marker(st, __version__, target)
         if svc_on:
-            # install updates legacy launchers; restart explicitly uses the new launcher.
-            for action in ("install", "restart"):
-                if run(argv + ["service", action], stdin=subprocess.DEVNULL).returncode:
-                    return done("service_failed", service="failed")
-            out["service"] = "restarted"
+            # The new CLI hands off before touching the calling service tree.
+            if run(argv + ["service", "install", "--deferred", target], stdin=subprocess.DEVNULL).returncode:
+                return done("service_failed", service="failed")
+            out["service"] = "restart_scheduled"
         else:
             out["service"] = "not_installed"
         if run(argv + ["doctor"], stdin=subprocess.DEVNULL).returncode:

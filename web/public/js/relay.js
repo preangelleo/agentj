@@ -1611,7 +1611,7 @@ export function onSayState(m){
   else if (m.s === "failed"){ dequeue(m.sid); toast(t('r.say.failedLater'), 3200); }
 }
 // The whitelist commands (§8) run as commands when typed; /clear asks first. Anything else starting with / is text.
-const CMDS = ["clear", "compact", "model", "context", "cost", "usage", "status", "help", "stop"];
+const CMDS = ["clear", "compact", "model", "context", "cost", "usage", "status", "help", "stop", "update"];
 const CMD_RE = /^\/([A-Za-z][\w:.-]{0,63})(?:[ \t]+([\s\S]*))?$/;
 async function runCmd(cmd, arg = ""){
   if (cmd === "clear"){
@@ -1784,7 +1784,8 @@ function outDone(e, r, kind){
 // (menu.json in the Agent's folder — they only INSERT text, the human still sends), then the Agent's own skills.
 const MENU_LIMITS = {items: 60, cmd: 64, desc: 200, group: 32};
 const MENU_CMD_RE = /^\/[A-Za-z0-9][A-Za-z0-9_:.\-]{0,62}$/;
-const RUN = ["compact", "clear", "model", "context", "cost", "usage", "status", "stop"];
+const RUN = ["compact", "clear", "model", "context", "cost", "usage", "status", "stop", "update"];
+const runDescription = c => t('r.run.' + c);
 let hostMenu = null;          // {items:[[cmd, desc, group]], skills:[[cmd, desc]]}
 let menuItems = [];           // what the type-ahead filters: [cmd, desc, group]
 function insertSlash(cmd){
@@ -1811,7 +1812,7 @@ function menuFromHost(j){
     seen.add(cmd);
     skills.push([cmd, typeof s.desc === "string" ? s.desc.slice(0, MENU_LIMITS.desc) : "", t('r.menu.skills')]);
   }
-  return {items, skills, source: j.source === "file" ? "file" : "default"};
+  return {items, skills, upgrade: j.upgrade || {}, source: j.source === "file" ? "file" : "default"};
 }
 const IN_APP = / (?:JarvisApp|AgentJApp)\/\d/.test(navigator.userAgent);
 const CLIP_READ = !!(navigator.clipboard && navigator.clipboard.read) && !IN_APP;
@@ -1829,10 +1830,17 @@ function renderMenu(){
     return b;
   };
   group(t('r.menu.run'));
-  for (const c of RUN) item("/" + c, t('r.run.' + c), {run: c});
+  for (const c of RUN) {
+    if (c !== 'update') { item("/" + c, runDescription(c), {run: c}); continue; }
+    const u = hostMenu?.upgrade || {}, current = u.current || '–', latest = u.latest || '–';
+    const same = u.latest && u.latest === u.current;
+    const desc = t(same ? 'r.update.current' : 'r.update.authorize');
+    const b = item(t('r.update.title'), `${current} → ${latest} · ${desc}`, {run: c});
+    b.disabled = !!same;
+  }
   const stop = item("■", C.estopOn() ? t('estop.resume') : t('estop.btn'), {estop: C.estopOn() ? "resume" : "stop"});
   stop.classList.add("estopitem");
-  const host = hostMenu || {items: RUN.map(c => ["/" + c, t('r.run.' + c), ""]), skills: []};
+  const host = hostMenu || {items: RUN.map(c => ["/" + c, runDescription(c), ""]), skills: []};
   menuItems = [];
   const fromHost = hostMenu ? host.items : [];
   if (fromHost.length){
@@ -1844,7 +1852,7 @@ function renderMenu(){
     }
   }
   if (host.skills.length){ group(t('r.menu.skills')); for (const [cmd, why] of host.skills) item(cmd, why, {slash: cmd}); }
-  menuItems = RUN.map(c => ["/" + c, t('r.run.' + c), ""]).concat(fromHost, host.skills);
+  menuItems = RUN.map(c => ["/" + c, runDescription(c), ""]).concat(fromHost, host.skills);
   const k = item("?", t('r.keys.title'), {});
   k.className = "keysentry"; k.id = "keysEntry";
   if (CLIP_READ){ const c = item("📋", t('r.menu.clip'), {}); c.className = "clipentry"; c.id = "clipEntry"; }

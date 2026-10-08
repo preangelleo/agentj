@@ -30,10 +30,10 @@ TOP_KEYS = {"version", "items", "$schema", "comment"}
 
 DEFAULT_DESC = {
     "zh": {"compact": "压缩上下文", "clear": "清空对话（可撤销）", "model": "换模型", "context": "上下文用了多少",
-           "cost": "本会话花费", "usage": "套餐用量", "status": "状态", "help": "能用哪些命令", "stop": "停下这一轮"},
+           "cost": "本会话花费", "usage": "套餐用量", "status": "状态", "help": "能用哪些命令", "stop": "停下这一轮", "update": "升级 Agent J（发送即授权）"},
     "en": {"compact": "Compact the context", "clear": "Clear the conversation (undoable)", "model": "Switch model",
            "context": "How much context is used", "cost": "Cost of this session", "usage": "Plan usage", "status": "Status",
-           "help": "Which commands work here", "stop": "Stop this turn"},
+           "help": "Which commands work here", "stop": "Stop this turn", "update": "Upgrade Agent J (sending authorizes it)"},
 }
 DEFAULT_GROUP = {"zh": "命令", "en": "Commands"}
 # P73 (ADR-A176): the two friend commands the host answers itself (friend_cmds.py); inserted like every menu item —

@@ -10,7 +10,7 @@
 // the send ("offline"), so nothing meant for one session — or one computer — is ever sent on another (P33-X01 / X02).
 import { sendApp, isReady, peer, ask1, channel, textMax, gen } from './session.js';
 import { Upload, newId } from './blobs.js';
-import { approveMessage, questionMessage, b64u, deviceId } from '../proto/wire.js';
+import { approveMessage, questionMessage, controlMessage, b64u, deviceId } from '../proto/wire.js';
 import { deviceKey, signKey } from './store.js';
 import * as snap from './snap.js';
 
@@ -120,6 +120,7 @@ export async function answerQ(q, picks) {
 
 export function slash(cmd, arg = '', confirm = false) {
   if (!isReady()) return false;
+  if (cmd === 'update') return signedUpgrade();
   sendApp({ t: 'slash', cmd, ...(arg ? { arg: String(arg).slice(0, 200) } : {}), ...(confirm ? { confirm: true } : {}) }).catch(() => {});
   return true;
 }
@@ -188,4 +189,15 @@ export async function models() {
   if (!isReady()) return null;
   const m = await ask1({t:'models_get'}, 'models', 15000);
   return m.t === 'models' ? m : null;
+}
+
+async function signedUpgrade() {
+  const g = gen(), sk = await signKey();
+  if (!g || !sk) return false;
+  const n = [...crypto.getRandomValues(new Uint8Array(16))].map(x => x.toString(16).padStart(2, '0')).join(''), ts = Date.now();
+  const msg = await controlMessage(channel(), await myDeviceId(), 'update', n, ts, {});
+  const sig = b64u(new Uint8Array(await crypto.subtle.sign({name:'Ed25519'}, sk.priv, msg)));
+  if (g !== gen()) return false;
+  await sendApp({t:'slash',cmd:'update',n,ts,sig});
+  return true;
 }

@@ -295,7 +295,7 @@ def _remote_session(environ=None) -> bool:
     return bool(e.get("SSH_CONNECTION") or e.get("SSH_TTY")) and not (e.get("DISPLAY") or e.get("WAYLAND_DISPLAY"))
 
 
-SERVE_NOT_RUNNING = ("✗ Agent J 现在没在这台电脑上运行，所以没法配对手机。先运行 `agentj service install` 让它一直在后台运行"
+SERVE_NOT_RUNNING = ("✗ Agent J 现在没在这台电脑上运行，所以没法配对手机。先运行 `agentj service start` 让它一直在后台运行"
                      "（想看它在不在跑：`agentj service status`），然后再运行一次 `agentj pair`。/ Agent J is not running on this "
                      "computer, so a phone cannot be paired. Run `agentj service install` to keep it running in the background "
                      "(check with `agentj service status`), then run `agentj pair` again.")
@@ -1029,6 +1029,11 @@ def cmd_agent(a) -> None:
             print("⚠ 允许 Agent 用 docker / podman：容器能挂载这台电脑上的任何文件（包括 Agent J 的状态目录）。", flush=True)
         try:
             from . import working_root
+            if a.mode == "claude":
+                from . import claude_auth, preferences
+                if preferences.get(preferences.effective(st), "agent.session_mode") == "independent" and not claude_auth.available():
+                    from . import service
+                    sys.exit("✗ " + service.token_hint(service.name()))
             root = working_root.select(st, a.dir)
             st.set_agent_config(a.mode, str(root), a.model, fence=not a.unfenced, docker=bool(a.allow_docker and not a.unfenced))
             from . import wizard
@@ -1574,6 +1579,27 @@ def cmd_doctor(a) -> None:
 def cmd_service(a) -> None:
     from . import service
     try:
+        if getattr(a, "recovery_worker", None):
+            from . import service_recovery
+            raise SystemExit(service_recovery.run(State(), a.recovery_worker))
+        if getattr(a, "deferred", None):
+            from . import service_recovery, update
+            if a.mode != "install" or a.deferred != __version__:
+                raise service.ServiceError("recovery_version_mismatch")
+            service_recovery.schedule(State(), service.agentj_argv(), a.deferred)
+            print("✓ 服务重启已交给独立任务 / service restart scheduled independently")
+            return
+        if a.mode == "install" and service.needs_deferred_install():
+            # Old apply invokes plain service install after replacing the package.
+            # Handoff before remove_legacy or bootout can kill that old caller.
+            from . import service_recovery
+            service_recovery.schedule(State(), service.agentj_argv(), __version__)
+            print("✓ 服务重装已交给独立任务 / service re-install scheduled independently")
+            return
+        if a.mode in ("start", "stop"):
+            r = service.start(State()) if a.mode == "start" else service.stop()
+            print(f"✓ {'已启动 / started' if a.mode == 'start' else '已停止 / stopped'}: {r['name']}")
+            return
         if a.mode == "status":
             s = service.status()
             if a.json:
@@ -1758,6 +1784,12 @@ def main(argv=None) -> None:
     from .service import load_launch_binary_env
     load_launch_binary_env()
     args = list(sys.argv[1:] if argv is None else argv)
+    if args[:2] == ["config", "claude-statusline"]:
+        from . import claude_statusline
+        raise SystemExit(claude_statusline.command(args[2:]))
+    if args[:2] == ["config", "claude-inbound"]:
+        from . import claude_inbound
+        raise SystemExit(claude_inbound.command(args[2:]))
     if args[:2] == ["provider", "profile"]:
         from . import provider_profiles
         raise SystemExit(provider_profiles.command(args[2:]))
@@ -1783,10 +1815,12 @@ def main(argv=None) -> None:
     dc.add_argument("--offline", action="store_true", help="跳过网络检查 / skip the network checks")
     dc.add_argument("--isolation-only", action="store_true", help="仅隔离预检：不读用户状态、不联网 / isolation preflight only, no user state or network")
     dc.set_defaults(fn=cmd_doctor)
-    sv = sub.add_parser("service", help="开机 / 登录后自动运行 serve：install · uninstall · status / run serve as a service",
+    sv = sub.add_parser("service", help="开机 / 登录后自动运行 serve：install · start · stop · restart · status / run serve as a service",
                         description="Linux: systemd user unit · macOS: LaunchAgent. 不写任何密钥 / never writes a secret.")
-    sv.add_argument("mode", choices=["install", "uninstall", "status", "restart"], help="install 安装并启动 · uninstall 停止并删除 · status 状态")
+    sv.add_argument("mode", choices=["install", "uninstall", "status", "restart", "start", "stop"], help="install 安装 · start 启动 · stop 停止 · restart 重启 · uninstall 删除 · status 状态 / install, start, stop, restart, uninstall, status")
     sv.add_argument("--json", action="store_true", help="status 的机器可读输出 / machine-readable status")
+    sv.add_argument("--deferred", help=argparse.SUPPRESS)
+    sv.add_argument("--recovery-worker", help=argparse.SUPPRESS)
     sv.set_defaults(fn=cmd_service)
     up = sub.add_parser("update", help="check 查版本 · apply Agent 自升级（无需终端）· auto on|off",
                         description="apply needs no y/N or terminal, restarts and runs doctor. F12 authorization remains optional.")

@@ -25,7 +25,7 @@ import datetime as dt
 import re
 from dataclasses import dataclass, field
 
-WHITELIST = ("clear", "compact", "model", "context", "cost", "usage", "status", "help", "stop")
+WHITELIST = ("clear", "compact", "model", "context", "cost", "usage", "status", "help", "stop", "update")
 INTERNAL = ("undo_clear",)                      # the phone's 「撤销清空」 button (never typed)
 LABEL = {"clear": "清空", "compact": "压缩", "model": "换模型", "context": "上下文", "cost": "花费", "usage": "用量",
          "status": "状态", "help": "帮助", "stop": "停止", "undo_clear": "撤销清空", "skill": "技能", "refused": "命令"}
@@ -33,7 +33,7 @@ ARG_MAX = 200
 _CMD = re.compile(r"^/([A-Za-z][\w:.-]{0,63})(?:[ \t]+(.*))?$", re.S)
 MODEL_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:/\[\]@+-]{0,99}$")
 REFUSE = ("这个命令请在电脑上执行。手机上能用的：/clear /compact /model /context /cost /usage /status /help /stop"
-          " /my-agent-id /add-friend")
+          " /my-agent-id /add-friend /update")
 NONE = "—"
 # F24: the whole message, nothing else (「把这个文件压缩一下」 stays a message)
 SAY_COMPACT = ("压缩", "压缩一下", "压缩吧", "压缩上下文", "compact", "compact now", "compact the context")
@@ -118,5 +118,6 @@ def secs(ms) -> str:
 HELP = ("手机上能用的命令（也可以点输入框左边的 ≡「全部命令」）：\n"
         "/compact 压缩上下文 · /clear 清空对话（可撤销） · /model [名字] 换模型 · /context 上下文用了多少 · "
         "/cost 本会话花费 · /usage 套餐用量 · /status 状态 · /stop 停下这一轮 · /help 这条说明\n"
+        "/update 升级 Agent J（发送即授权安装、重启、自检）\n"
         "好友：/my-agent-id 我的 Agent ID 和分享链接 · /add-friend <ID> [附言] 加好友\n"
         "别的命令（比如改设置的）请在电脑上执行。")

@@ -35,7 +35,8 @@ Object.defineProperty(st, 'sayWhy', { configurable: true, set() {},
 
 const pending = (p) => evaluate(p, `[...document.querySelectorAll('#outbox .obi')].map(d => ({t: d.querySelector('.obt').textContent, lost: d.dataset.lost === '1', note: (d.querySelector('.obn') || {}).textContent || ''}))`);
 const line = (p) => evaluate(p, `(() => { const b = document.getElementById('outbox'), l = b.querySelector('.obl'); return b.hidden ? null : l ? l.textContent : ''; })()`);
-const rec = (p) => evaluate(p, `new Promise((res) => { const r = indexedDB.open('agentjarvis'); r.onsuccess = () => { const g = r.result.transaction('kv').objectStore('kv').get('outbox'); g.onsuccess = () => { const v = g.result; r.result.close(); res(v ? { keys: Object.keys(v).sort().join(','), ct: v.ct instanceof Uint8Array, plain: new TextDecoder('latin1').decode(v.ct).includes('m-') } : null); }; }; })`);
+const PLAIN_PROBE = `bytes => ['m-1 第一条', 'm-2 第二条', 'm-3 第三条'].some(m => new TextDecoder().decode(bytes).includes(m))`;
+const rec = (p) => evaluate(p, `new Promise((res) => { const r = indexedDB.open('agentjarvis'); r.onsuccess = () => { const g = r.result.transaction('kv').objectStore('kv').get('outbox'); g.onsuccess = () => { const v = g.result; r.result.close(); res(v ? { keys: Object.keys(v).sort().join(','), ct: v.ct instanceof Uint8Array, plain: (${PLAIN_PROBE})(v.ct) } : null); }; }; })`);
 async function send(p, text) {
   await evaluate(p, `(() => { const i = document.getElementById('input'); i.value = ${JSON.stringify(text)}; i.dispatchEvent(new Event('input')); })()`);
   assert.equal(await evaluate(p, `document.getElementById('send').disabled`), false, 'Send stays usable while not connected');
@@ -69,6 +70,7 @@ try {
   assert.equal(await evaluate(page, `document.getElementById('input').value`), '', 'the field is cleared like a normal send');
   assert.equal(await evaluate(page, `document.querySelectorAll('#outbox button').length`), 0, 'no new buttons');
   await waitFor(page, `new Promise((res) => { const r = indexedDB.open('agentjarvis'); r.onsuccess = () => { const g = r.result.transaction('kv').objectStore('kv').get('outbox'); g.onsuccess = () => { r.result.close(); res(!!g.result); }; }; })`);
+  assert.equal(await evaluate(page, `(${PLAIN_PROBE})(new TextEncoder().encode('m-1 第一条'))`), true, 'plaintext detector positive control');
   const sealed = await rec(page);
   assert.deepEqual(sealed, { keys: 'ct,iv,v', ct: true, plain: false }, 'IndexedDB holds only {v, iv, ct}');
   assert.equal(st.says.length, 0, 'nothing reached the host');

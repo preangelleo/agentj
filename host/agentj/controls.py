@@ -35,6 +35,7 @@ ACTIONS = ("mem_rm", "mem_undo", "estop", "resume", "task_on", "task_off",
            "fr_set", "pg_set", "pg_del", "fr_add", "fr_discoverable", "fr_card",
            "fr_ctx")                   # P73 (ADR-A176): a friend's 「补充设定」 — the owner's own setting, never a message
 FRIEND_ACTIONS = ACTIONS[6:]
+ACTIONS += ("update",)
 TS_SKEW_MS = 120_000
 NONCE_KEEP_S = 600
 _NONCE = re.compile(r"[0-9a-f]{32}")
@@ -56,6 +57,8 @@ def object_text(action: str, obj: dict) -> str:
     fr_ctx   : friend id \\n text (the whole new 「补充设定」; "" clears it)
     (a missing / null text field is "", as wire.js `?? ''`)
     """
+    if action == "update":
+        return "latest"
     if action == "mem_rm":
         return f"{obj['src']}\n{obj['file']}\n{obj['fsha']}\n{obj['iid']}"
     if action == "mem_undo":

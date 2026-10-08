@@ -516,7 +516,7 @@ class DoctorEnvLogin(unittest.TestCase):
         for svc in ({}, {"installed": True, "name": "aj-de-test"}):
             c = self.check(svc)
             self.assertEqual(c["status"], "warn", svc)
-            self.assertIn("background service may not be able to log in", c["summary"])
+            self.assertIn("service login missing", c["summary"])
             self.assertIn("CLAUDE_CODE_OAUTH_TOKEN", c["summary"] + c["hint"])
             self.assertIn("claude", c["hint"])
             self.assertNotIn(SECRET, json.dumps(c))
@@ -525,6 +525,9 @@ class DoctorEnvLogin(unittest.TestCase):
         f = pathlib.Path(self.home) / ".config" / "systemd" / "user" / "aj-de-test.env"
         f.parent.mkdir(parents=True)
         f.write_text("")
+        f.chmod(0o600)
+        self.assertEqual(self.check({"installed": True, "name": "aj-de-test"})["status"], "warn")
+        f.write_text("CLAUDE_CODE_OAUTH_TOKEN=" + SECRET + "\n")
         self.assertEqual(self.check({"installed": True, "name": "aj-de-test"})["status"], "ok")
 
     def test_service_install_says_run_doctor_next(self):

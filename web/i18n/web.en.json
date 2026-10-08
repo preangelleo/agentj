@@ -747,7 +747,8 @@
       "usage": "Usage limits",
       "status": "Status",
       "stop": "Interrupt the current turn",
-      "sent": "Sent {cmd}"
+      "sent": "Sent {cmd}",
+      "update": "Upgrade Agent J (sending authorizes it)"
     },
     "int": {
       "sent": "Interrupted the current task",
@@ -796,7 +797,12 @@
       "ok": "Got it",
       "s": "Open Settings"
     },
-    "silentTurn": "Silent turn {time}"
+    "silentTurn": "Silent turn {time}",
+    "update": {
+      "title": "⬆ Upgrade Agent J",
+      "current": "Already up to date",
+      "authorize": "Tap to authorize upgrade"
+    }
   },
   "preferences": {
     "notification": "Your agent has replied.",

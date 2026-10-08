@@ -210,3 +210,18 @@ The refusal now names the holder (P73, ADR-A178): an Agent J leftover `codex app
 - Friends' peer sessions are unaffected: always fenced, tool-less, read-only.
 
 With a custom AGENTJ_STATE_DIR, serve exports AGENTJ_ELEVATE_SOCK for secret request/send/result and sudo inside the fence. Keep this inherited path; do not redirect it or expose the full state directory.
+
+Claude shared ingress: explain the local peer-token trust scope, then after the owner's explicit choice run
+`agentj config claude-inbound on|off|status`. On accepts authenticated local peer messages (not only Agent J);
+off holds for desktop approval. Existing settings are backed up and other keys preserved atomically.
+Repository/managed policy still applies. Never invent a permission-mode attestation for Agent J.
+If phone delivery is unacknowledged, check the desktop before retrying; the original may still arrive.
+Independent Claude mode preflights service login and keeps shared mode when unavailable. Run `claude` and /login
+in the owner's computer terminal (macOS Keychain), or let the owner create the private 0600 service env file after
+`claude setup-token`. Linux: `~/.config/systemd/user/agentj.env`; macOS: `~/Library/LaunchAgents/net.agentj.host.env`.
+Reinstall an older Mac service to add the env-file path and restart after edits. Never read/copy/paste the token.
+
+Shared Claude model/quota/context readings: after owner confirmation, `agentj config claude-statusline on|off|status`.
+The tap preserves the existing command input/output/exit and statusLine options; off restores the exact original value.
+Only whitelisted meter data is captured locally (0600), with exact session matching and source age; never capture raw JSON,
+credentials or another session. Project/managed overrides stay owner-controlled. No automatic rewrite of later owner edits.
