@@ -383,6 +383,8 @@ def transact(st,newraw):
     from . import claude_auth
     claude_auth.require_transition(st, effective(st), candidate)
     commit_files(st,newraw,candidate)
+    from . import claude_inbound
+    claude_inbound.ensure_shared_default(st)
     return {'ok':True,'applied':False,'needs':['start serve'],'verify':{'ok':True,'detail':'validated; takes effect on next serve'}}
 
 def resolve_key(key):

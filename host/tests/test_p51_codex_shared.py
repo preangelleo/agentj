@@ -41,7 +41,7 @@ class Base(unittest.IsolatedAsyncioTestCase):
             if method=='thread/start':return {'thread':{'id':NEW},'approvalPolicy':'on-request','approvalsReviewer':'user'}
             if method=='thread/resume':
                 if self.resume_error:raise RPCError({'message':self.resume_error})
-                return {'thread':{'id':params['threadId']},'approvalPolicy':params.get('approvalPolicy','on-request'),
+                return {'thread':{'id':params['threadId']},'modelProvider':params.get('modelProvider'),'approvalPolicy':params.get('approvalPolicy','on-request'),
                         'approvalsReviewer':params.get('approvalsReviewer','user'),'activePermissionProfile':{'id':params.get('permissions')}}
             if method=='hooks/list':return {'data':[]}
             raise AssertionError(method)
@@ -294,4 +294,5 @@ class DesktopWriter(Base):
         self.rollout(SID);a=self.agent(SID,language='en');a._ready=AsyncMock(side_effect=Refusal('desktop writer active'))
         a.deliver=AsyncMock();await a.turn('hello')
         a.deliver.assert_not_awaited();self.host.turn_failed.assert_called_once()
-        self.host.local_notice.assert_called_once_with(REASONS['desktop writer active'][1])
+        from agentj.codex_procs import text
+        self.host.local_notice.assert_called_once_with(text('unknown', zh=False))

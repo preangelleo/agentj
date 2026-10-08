@@ -91,6 +91,45 @@ def update(change) -> bool:
 def set_enabled(enabled: bool) -> bool:
     return update(lambda doc: doc.update(crossSessionInbound="accept" if enabled else "hold"))
 
+
+def ensure_shared_default(st, config=None) -> bool:
+    """Only unset shared Claude ingress is migrated. Explicit hold/refuse stays native."""
+    cfg = config if config is not None else st.agent_config()
+    if not cfg or cfg.get("kind") != "claude" or cfg.get("session_mode", "shared") != "shared":
+        return False
+    def change(doc):
+        if "crossSessionInbound" not in doc:
+            doc["crossSessionInbound"] = "accept"
+    changed = update(change)
+    if changed:
+        st.write_private(st.root / "claude-inbound-notice.json", b'{"pending":true}\n')
+    return changed
+
+
+def default_notice(st, lang="zh") -> str | None:
+    p = st.root / "claude-inbound-notice.json"
+    try:
+        pending = json.loads(p.read_text()).get("pending") is True
+    except (OSError, ValueError, AttributeError):
+        return None
+    if not pending:
+        return None
+    try:
+        current = value()
+    except (OSError, SettingsError):
+        return None
+    if current != "accept":
+        notice_delivered(st)
+        return None
+    return ("Enabled: phone messages no longer need individual confirmation on the computer; "
+            "to disable, run agentj config claude-inbound off. This only affects Claude Code."
+            if lang == "en" else
+            "已开启：手机消息不用在电脑上逐条确认；想关运行 agentj config claude-inbound off。仅影响 Claude Code。")
+
+
+def notice_delivered(st) -> None:
+    st.write_private(st.root / "claude-inbound-notice.json", b'{"pending":false}\n')
+
 def command(args) -> int:
     if len(args) != 1 or args[0] not in ("on", "off", "status"):
         print("Usage: agentj config claude-inbound on|off|status")

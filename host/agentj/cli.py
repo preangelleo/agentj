@@ -1033,7 +1033,7 @@ def cmd_agent(a) -> None:
         elif a.allow_docker:
             print("⚠ 允许 Agent 用 docker / podman：容器能挂载这台电脑上的任何文件（包括 Agent J 的状态目录）。", flush=True)
         try:
-            from . import working_root
+            from . import working_root, preferences
             if a.mode == "claude":
                 from . import claude_auth, preferences
                 if preferences.get(preferences.effective(st), "agent.session_mode") == "independent" and not claude_auth.available():
@@ -1041,6 +1041,11 @@ def cmd_agent(a) -> None:
                     sys.exit("✗ " + service.token_hint(service.name()))
             root = working_root.select(st, a.dir)
             st.set_agent_config(a.mode, str(root), a.model, fence=not a.unfenced, docker=bool(a.allow_docker and not a.unfenced))
+            from . import claude_inbound
+            claude_inbound.ensure_shared_default(st)
+            notice = claude_inbound.default_notice(st, preferences.get(preferences.effective(st), "appearance.language", "zh"))
+            if notice:
+                print(notice)  # retained for the phone after serve restarts
             from . import wizard
             from . import preferences
             wizard.bootstrap_root(root, lang=preferences.get(preferences.effective(st), "appearance.language", "zh"))

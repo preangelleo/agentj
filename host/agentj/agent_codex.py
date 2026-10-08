@@ -320,7 +320,7 @@ class CodexAgent(Agent):
             from .model_limits import codex_context_metadata
             self.context_metadata = codex_context_metadata(c)
             self.human = {k: c.get(k) for k in ("approval_policy", "approvals_reviewer", "sandbox_mode", "model",
-                                                "model_reasoning_effort")}
+                                                "model_reasoning_effort", "model_provider")}
         except (RPCError, ConnectionError, OSError, asyncio.TimeoutError) as e:
             self.host.st.log("agent_prepare_fail", agent=self.kind, reason=type(e).__name__)
             await self._kill(p)

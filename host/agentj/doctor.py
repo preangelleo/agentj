@@ -253,7 +253,7 @@ def check_shared_inbound(st: State) -> dict | None:
         accepted = claude_inbound.value() == "accept"
     except (OSError, ValueError):
         accepted = False
-    hint = "agentj config claude-inbound on（先确认接受持本机 peer token 的进程消息；组织/项目策略仍优先）"
+    hint = "agentj config claude-inbound on（仅 Claude Code；明确 off 保留，组织/项目策略仍优先）"
     if accepted:
         # A repository may tighten user accept; never silently override it.
         root = pathlib.Path(c["dir"])

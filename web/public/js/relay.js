@@ -511,7 +511,7 @@ function paintPill(u){
   if (shared) {
     const state = C && C.connected() && u.shared_status;
     shared.hidden = !state;
-    shared.textContent = state ? t('r.shared.' + state) : '';
+    shared.textContent = state === 'desktop_writer' && u.shared_writer?.[lang()] ? u.shared_writer[lang()] : state ? t('r.shared.' + state) : '';
   }
   const c = swCat(), real = realPick();
   if (pill.want && samePick(pill.want, real)){ pill.want = null; pill.sentAt = 0; }

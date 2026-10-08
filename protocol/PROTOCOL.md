@@ -1526,3 +1526,7 @@ Every grant records account_passkey in approvals.log plus activity and a notice 
 `slash {cmd:"update",n,ts,sig}` requires the paired device control signature (action `update`, object text `latest`).
 An unsigned `say /update` is refused. The host returns progress and persists completion across restart in chat history.
 `menu.upgrade` contains `current` and last checked `latest` (null if unknown). Sending or clicking authorizes F14 apply/restart/doctor.
+
+
+### P80 meter extension (backwards compatible)
+`shared_writer` is optional/null or `{zh: string, en: string}`: locally generated process-holder notices (maximum600 characters per language), only used with `shared_status: desktop_writer`. Includes a verified PID when available, never argv or provider/auth settings. Clients render text only and clear it when following/normal. Older hosts fall back to their existing banner.

@@ -205,20 +205,38 @@ class SharedCodexAgent(CodexAgent):
 
     def follow_status(self, status):
         self.shared_status = status
-        self.meter(shared_status=status)
+        from . import codex_procs
+        w = self.writer or {}
+        notice = {l: codex_procs.text(w.get('kind') or 'unknown', w.get('pid'), l == 'zh')
+                  for l in ('zh', 'en')} if status == 'desktop_writer' else None
+        self.meter(shared_status=status, shared_writer=notice)
 
     def desktop_model(self, context):
         from . import slash
         model = context.get('model') if isinstance(context, dict) else None
         if isinstance(model, str) and slash.MODEL_RE.fullmatch(model):
             self.thread['model'] = model
+            if 'effort' in context:
+                self.thread['reasoningEffort'] = context['effort'] if isinstance(context['effort'], str) else None
             # A configured phone model is a next-turn choice, not the App's current model.
-            self.meter(model=model, model_name=self.model_name(model))
+            self.meter(model=model, model_name=self.model_name(model),
+                       **({'effort': self.thread.get('reasoningEffort')} if 'effort' in context else {}))
 
     def cur_model(self):
         if getattr(self, 'shared_status', None) in ('following', 'desktop_writer') and self.thread.get('model'):
             return self.thread['model']
         return super().cur_model()
+
+    def cur_effort(self):
+        if getattr(self, 'shared_status', None) in ('following', 'desktop_writer'):
+            return self.thread.get('reasoningEffort')
+        return super().cur_effort()
+
+    def phone_choice(self):
+        """Only explicit phone/host choices override a native thread; desktop choices remain native."""
+        rev = getattr(self, 'revert', None) or {}
+        return {k: v for k in ('model', 'effort')
+                if isinstance(v := self.cfg.get(k) or rev.get(k), str) and v}
 
     async def probe_writer(self):
         """A short native resume probe; no hooks/config changes, no turn and no retained writer."""
@@ -246,13 +264,11 @@ class SharedCodexAgent(CodexAgent):
             self.read_probe = False
 
     def writer_text(self):
-        """Who holds the writer, as found (ADR-A178); nothing looked up yet = the Codex App wording of P68c."""
+        """Who holds the writer (ADR-A178); unknown holders never assume an App."""
         zh = str(self.cfg.get('language', 'en')).startswith('zh')
         w = getattr(self, 'writer', None) or {}
-        if not w.get('kind'):
-            return REASONS['desktop writer active'][0 if zh else 1]
         from . import codex_procs
-        return codex_procs.text(w['kind'], w.get('pid'), zh)
+        return codex_procs.text(w.get('kind') or 'unknown', w.get('pid'), zh)
 
     async def find_writer(self, path):
         from . import codex_procs
@@ -470,6 +486,9 @@ class SharedCodexAgent(CodexAgent):
             deferred = (why.code, '已按你 Codex 自己的默认权限接着这个会话。',
                           "Continuing it with your own Codex default permissions.")
         params={'threadId':sid,'excludeTurns':True}
+        provider = self.human.get('model_provider')
+        if isinstance(provider, str) and provider:
+            params['modelProvider'] = provider
         if codex_perm.default_desktop_record(context):
             # F30 (ADR-A175): the thread only ever had Codex's built-in default permissions — nobody chose them. The owner's
             # explicit config.toml sandbox_mode applies, else Agent J's default (directly on the system). Approvals stay
@@ -494,6 +513,8 @@ class SharedCodexAgent(CodexAgent):
         hooks=await self._hook_config()
         if hooks: params['config']=hooks
         res=await self.call('thread/resume',params)
+        if isinstance(provider, str) and provider and res.get('modelProvider') != provider:
+            raise RPCError({'message': 'resume did not apply current model provider'})
         if deferred:
             self.degraded(*deferred)
         if (res.get('thread') or {}).get('id')!=sid:
@@ -574,13 +595,13 @@ class SharedCodexAgent(CodexAgent):
         self.tid=sid
         self.follow_status(None)
         self.told.discard((sid, 'desktop writer active'))
-        self.thread={k:res.get(k) for k in ('model','sandbox','approvalPolicy','approvalsReviewer','cwd','reasoningEffort')}
+        self.thread={k:res.get(k) for k in ('model','sandbox','approvalPolicy','approvalsReviewer','cwd','reasoningEffort','modelProvider')}
         if path and not self.thread.get('model'):
             _, latest, _ = scan(path)
             from . import slash
             if isinstance(latest,dict) and isinstance(latest.get('model'),str) and slash.MODEL_RE.fullmatch(latest['model']):
                 self.thread['model']=latest['model']
-        mid=self.cur_model();self.meter(model=mid,model_name=self.model_name(mid))
+        mid=self.thread.get('model');self.meter(model=mid,model_name=self.model_name(mid), effort=self.thread.get('reasoningEffort'))
         self.host.st.set_agent_session(self.kind,sid)
         return True
 
@@ -592,8 +613,14 @@ class SharedCodexAgent(CodexAgent):
             self.risk.reset()
             self.turn_done,self.turn_proc=asyncio.Event(),self.proc
             self.turn_id,self.turn_status=None,{}
+            choice = self.phone_choice()
             res=await self.deliver(lambda:self.call('turn/start',{'threadId':self.tid,
-                'input':[{'type':'text','text':text,'text_elements':[]}],**self.original}))
+                'input':[{'type':'text','text':text,'text_elements':[]}],**self.original, **choice}))
+            self.revert = None
+            if choice.get('model'): self.thread['model'] = choice['model']
+            if choice.get('effort'): self.thread['reasoningEffort'] = choice['effort']
+            self.meter(model=self.thread.get('model'), model_name=self.model_name(self.thread.get('model')),
+                       effort=self.thread.get('reasoningEffort'))
             self.turn_id=(res.get('turn') or {}).get('id')
             await self.turn_done.wait()
             self.read_desktop()
@@ -619,6 +646,8 @@ class SharedCodexAgent(CodexAgent):
             if self.proc is not None:
                 await self._kill(self.proc)
             self.phone_turn=False
+            if self.rollout is not None and self.shared_status != 'desktop_writer':
+                self.follow_status('following')
 
     def _emit(self,text):
         super()._emit(public_text(text))

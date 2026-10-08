@@ -36,6 +36,17 @@ try {
  await waitFor(p,`document.getElementById('shared-status').hidden`);
  await fake.send({t:'meter',model:'gpt-6-astra',shared_status:'unknown-state'});
  assert.equal(await evaluate(p,`document.getElementById('shared-status').hidden`),true);
+ for (const [language, text] of [['zh', '终端里的 codex（PID 123）正在使用这个会话，手机现在只读。'], ['en', 'A codex in a terminal (PID 123) is using this session; the phone is read-only.']]) {
+  await navigate(p,web.url + '?lang=' + language);await waitState(p,'ready');
+  await fake.send({t:'meter',model:'gpt-6.1-sol',effort:'high',shared_status:'desktop_writer',shared_writer:{zh:'终端里的 codex（PID 123）正在使用这个会话，手机现在只读。',en:'A codex in a terminal (PID 123) is using this session; the phone is read-only.'}});
+  await waitFor(p,`document.getElementById('shared-status').textContent.includes('123')`);
+  const banner = await evaluate(p,`document.getElementById('shared-status').textContent`);
+  assert.equal(banner, text);assert.doesNotMatch(banner, /Codex App/);
+  assert.equal(await evaluate(p,`document.getElementById('metaModel').textContent`),'gpt-6.1-sol');
+ }
+ await navigate(p,web.url);await waitState(p,'ready');
+ await waitFor(p,`document.getElementById('shared-status').textContent.includes('123')`);
+ writeFileSync(new URL('p80-terminal-banner.png',out),await shoot(p,''));
  assert.deepEqual(p.problems,[]);results['desktop-writer-banner']='pass';console.log('PASS desktop-writer-banner');
 
 } finally {await B.close();await fake.stop();await web.stop();}

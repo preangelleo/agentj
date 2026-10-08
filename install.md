@@ -1,15 +1,15 @@
 ---
 document: agentj-install
-version: 0.20.3
+version: 0.20.4
 released: 2026-10-08
 status: beta (anyone can sign up; not advertised yet, pages are not indexed)
 host_package: agentj (the `agentj` command)
-host_version: 0.16.3a1
-source_tag: v0.16.3a1
-host_wheel: agentj-0.16.3a1-py3-none-any.whl
-host_wheel_sha256: cc75ce71f9a4f1bad1bb157578bdb9ece333c9dd2dd5d0a55fd73cfa0ec0b022
-host_sdist: agentj-0.16.3a1.tar.gz
-host_sdist_sha256: 935a4a23fd41d1bf37753783b48fe7e8853cfc28dd7f5e37b452d704f22a6230
+host_version: 0.16.4a1
+source_tag: v0.16.4a1
+host_wheel: agentj-0.16.4a1-py3-none-any.whl
+host_wheel_sha256: 97cdbc8d9c03a19f380842f3c300f29fd73abadd3a66635aecf928cdb43bbd2c
+host_sdist: agentj-0.16.4a1.tar.gz
+host_sdist_sha256: e0ce6bf58f6103e31a39ca7d579ea21d63a86e1ad4c1185c5f0d6ee4e8f6ac7a
 canonical_url: https://agentj.app/install.md
 sha256_url: https://agentj.app/install.md.sha256
 alias: https://agentjarvis.net/install.md (the older address: the same file, kept for one more version)
@@ -429,7 +429,7 @@ The astral installer warning that `uv` / `uvx` are shadowed is informational if 
 carry over). So start every command line from here on with `export PATH="$HOME/.local/bin:$PATH";` — or call
 `~/.local/bin/agentj` by its full path. This document writes `agentj` for short.
 
-The program is pinned to one release: the tag `v0.16.3a1` (front matter `source_tag`). The tag never moves, and its
+The program is pinned to one release: the tag `v0.16.4a1` (front matter `source_tag`). The tag never moves, and its
 `host/` folder is byte for byte the same code as the two files on our site whose SHA-256 is in this document's front matter.
 ```bash
 cd ~/.agentj-install
@@ -440,7 +440,7 @@ uv tool install "./$W"
 
 Intel Mac: this release keeps `cryptography<49` because newer releases lack an Intel macOS wheel. If an older installer tries to compile OpenSSL (`openssl-sys` / OpenSSL not found), rerun `uv tool install --with "cryptography<49" "./$W"`. The same platform constraint applies to `agentj update apply`.
 
-export PATH="$HOME/.local/bin:$PATH"; agentj --version     # → agentj 0.16.3a1
+export PATH="$HOME/.local/bin:$PATH"; agentj --version     # → agentj 0.16.4a1
 export PATH="$HOME/.local/bin:$PATH"; agentj doctor
 ```
 **Your human's own terminal must find `agentj` too** — they may use `agentj passphrase set` and `agentj pair` as a local alternative
@@ -468,12 +468,12 @@ echo "$WS  $W" | sha256sum -c - && echo "$SS  $S" | sha256sum -c -    # macOS: s
 uv tool install "./$W"          # the wheel; its dependencies come from PyPI or the mirror in UV_DEFAULT_INDEX
 ```
 `uv tool install "./$S"` installs from the checked source archive instead (it builds the same program).
-`https://agentj.app/dl/latest.txt` and `https://agentj.app/dl/latest-sdist.txt` name the same two files. `agentj --version` is the program's own version (`0.16.3a1`); it is
-numbered separately from this document (`0.17.0`).
+`https://agentj.app/dl/latest.txt` and `https://agentj.app/dl/latest-sdist.txt` name the same two files. `agentj --version` is the program's own version (`0.16.4a1`); it is
+numbered separately from this document (`0.20.4`).
 
-Alternative from the matching published source tag: `uv tool install "git+https://github.com/preangelleo/agentj@v0.16.3a1#subdirectory=host"`.
+Alternative from the matching published source tag: `uv tool install "git+https://github.com/preangelleo/agentj@v0.16.4a1#subdirectory=host"`.
 
-Alternative without uv: `pipx install "git+https://github.com/preangelleo/agentj@v0.16.3a1#subdirectory=host"` (needs Python 3.11+).
+Alternative without uv: `pipx install "git+https://github.com/preangelleo/agentj@v0.16.4a1#subdirectory=host"` (needs Python 3.11+).
 `agentj doctor` lists what is ready and what is not (prerequisites, the fence, connectivity, which agents are usable).
 Continue unless it reports an error that a later step does not fix; report anything you cannot explain.
 
@@ -1061,7 +1061,7 @@ The daily check remains a notification, not an unattended installation; `agentj 
 In the default shared session, reinstall directly using Step 4's checked wheel (SHA-256 must match this document and
 its public GitHub copy), preserving the host's identity, paired phones, account and preferences:
 ```bash
-uv tool install --force "./agentj-0.16.3a1-py3-none-any.whl"
+uv tool install --force "./agentj-0.16.4a1-py3-none-any.whl"
 agentj --version
 agentj service install
 agentj service restart
@@ -1069,7 +1069,7 @@ agentj doctor
 ```
 The matching published tag is another source, after verifying the tag object against the upgrade email:
 ```bash
-uv tool install --force "git+https://github.com/preangelleo/agentj@v0.16.3a1#subdirectory=host"
+uv tool install --force "git+https://github.com/preangelleo/agentj@v0.16.4a1#subdirectory=host"
 ```
 **0.14 independent session** (`agent.session_mode=independent`): 0.14's fence keeps Agent J's own program read-only and
 hides the service manager, so the Agent on the phone cannot reinstall or restart from inside it (measured: the install
@@ -1095,11 +1095,11 @@ prints something and `uv tool list` (or `pipx list`) shows `agentjarvis-host`, t
 the new name, then:
 ```bash
 jarvis service uninstall      # stop the old service first (Step 10 used tmux / nohup instead? stop that process)
-uv tool uninstall agentjarvis-host && uv tool install "git+https://github.com/preangelleo/agentj@v0.16.3a1#subdirectory=host"
+uv tool uninstall agentjarvis-host && uv tool install "git+https://github.com/preangelleo/agentj@v0.16.4a1#subdirectory=host"
 agentj doctor
 agentj service install        # start it again under the new name (or the tmux / nohup fallback, Step 10)
 ```
-With pipx instead of uv: `pipx uninstall agentjarvis-host && pipx install "git+https://github.com/preangelleo/agentj@v0.16.3a1#subdirectory=host"`.
+With pipx instead of uv: `pipx uninstall agentjarvis-host && pipx install "git+https://github.com/preangelleo/agentj@v0.16.4a1#subdirectory=host"`.
 - After the move, `agentj` puts back a `jarvis` command (a link to `agentj`, only if no other `jarvis` exists) for one more
   version; it prints a notice that points here. New installs never get `jarvis`.
 - The state moves by itself on the first run of `agentj`: from `~/.local/state/agentjarvis-alpha` to `~/.local/state/agentj`.
@@ -1319,6 +1319,7 @@ or logs out Claude Code / Codex / OpenCode (nor removes a model key), and never 
 
 ## Changelog
 
+- 0.20.4 (2026-10-08): host 0.16.4a1 candidate. Shared Codex uses the phone actor’s model/effort and current native provider; read-only banners identify the actual process. Shared Claude automatically enables unset phone ingress at install/switch/upgrade, backs up settings and tells the phone once; explicit off remains unchanged.
 - 0.20.3 (2026-10-08): host 0.16.3a1 candidate. Account-page remote pairing and passkey L2 owner approval; bound-host local passphrase optional.
 - 0.20.2 (2026-10-08): host 0.16.2a1. Claude shared ingress switch, service login preflight, macOS service env, and doctor fixes.
 - 0.20.1 (2026-10-08): host 0.16.1a1. Silent records panel, continuous waves, per-seat install codes, compact pairing links, custom-state elevation sockets and lock-screen reconnect.
@@ -1511,15 +1512,18 @@ send/publish, credential access) are optional and off by default. Credential val
 stay on the computer, including in approval summaries. Native asks still apply.
 `agentj config set agent.session_mode independent` retains the separate fenced mode.
 
-**Shared Claude setup: ask the owner before enabling phone ingress.** Explain that Claude Code can hold phone
-messages for desktop approval, particularly in bypassPermissions mode. `agentj config claude-inbound on` sets
-`crossSessionInbound=accept` in the active `CLAUDE_CONFIG_DIR/settings.json` (default `~/.claude/settings.json`),
-backing up existing bytes first and preserving other keys through an atomic write. Claude restricts the socket to the same operating-system user on macOS/Linux; its auth frame is optional there.
+**Shared Claude setup: enable phone ingress automatically, without a confirmation step.** Selecting shared
+Claude runs `agentj config claude-inbound on` when the native setting is unset. It backs up existing
+`CLAUDE_CONFIG_DIR/settings.json` (default `~/.claude/settings.json`) and preserves other keys atomically.
+Tell the owner: “Enabled: phone messages no longer need individual confirmation on the computer; to disable,
+run agentj config claude-inbound off.” Upgrading to 0.16.4 also enables unset ingress on existing shared Claude
+hosts and tells the phone once. An explicit `hold` (including a previous `off`), `refuse`, or other native value
+is preserved; never override an explicit off. `status` reads the setting. This only affects Claude Code;
+Codex and OpenCode have no equivalent mechanism.
+Claude restricts the socket to the same operating-system user on macOS/Linux; its auth frame is optional there.
 Agent J always sends the local peer token authentication frame. `accept` also admits messages from other processes
-running as that user, and is not exclusive to Agent J.
-After the owner confirms, run the command and `agentj doctor --offline`. `off` sets `hold` (desktop approval),
-and `status` reads the setting. Repository/managed/session settings may still tighten it. Never claim a sender's
-permission mode: Agent J forwards the owner's words and has no Claude session permission mode to attest.
+running as that user. Repository/managed/session settings may still tighten it. Run `agentj doctor --offline`.
+Never claim a sender's permission mode: Agent J forwards the owner's words and has no Claude session permission mode.
 If no input hook or matching transcript arrives within ten seconds, the phone reports possible desktop hold;
 check the computer before resending because the original can still arrive.
 
@@ -1537,7 +1541,7 @@ these recovery instructions. Shared mode uses the already logged-in desktop sess
 
 共享 Claude 的模型与额度条：主人同意后运行 `agentj config claude-statusline on`。原状态栏命令和输出保留，设置先备份；`off` 恢复原值，主人之后的编辑不会被覆盖。手机只使用同一会话的测量值，并显示数据年龄。
 
-共享 Claude：先向主人说明并取得同意，再运行 `agentj config claude-inbound on`；接受同一操作系统用户的本机进程消息（Agent J 始终发送 peer token 认证帧；macOS/Linux 的 Claude 不强制认证帧），
+共享 Claude：选择该模式时默认自动运行 `agentj config claude-inbound on`（未设置时），备份原 settings.json，不作为确认步骤。只告知「已开启：手机消息不用在电脑上逐条确认；想关运行 agentj config claude-inbound off」。升级到 0.16.4 也自动开启未设置的共享 Claude 主机并在手机告知一次；主人明确 off/hold、refuse 或其他设置都尊重。仅影响 Claude Code，Codex/OpenCode 无此机制。接受同一操作系统用户的本机进程消息（Agent J 始终发送 peer token 认证帧；macOS/Linux 的 Claude 不强制认证帧），
 不只接受 Agent J。`off` 恢复等电脑批准；项目/组织策略仍优先。切独立会话前核实服务登录，失败保留共享模式。
 macOS 也支持主人自己创建的服务 env 文件（0600），不抄终端 token，不写入 plist，不把 token 发到对话。
 
@@ -1710,3 +1714,19 @@ An installed computer can also use an AJI installation code. Rerun the account-p
 
 
 For Codex failures, follow the phone guidance: tap the top model name to replace an account-unsupported model (temporarily disabled until an account refresh); check your proxy/VPN for ChatGPT connection failures; run `codex login` on the computer when login expires. Redacted native errors remain under Details.
+
+
+### Shared Codex model and provider (0.16.4a1)
+For a phone turn, an explicit `agent.model` / `agent.effort` or the latest phone selection is sent as `turn/start.model` / `effort`. Without an explicit phone choice, Codex keeps the thread choice. A desktop turn uses the desktop actor’s own last explicit selection; Agent J only observes it. The top bar shows the active actor’s model, not a promise that a queued phone choice is already running. Selecting Default sends the current native defaults once.
+
+Agent J reads effective native `model_provider` from Codex `config/read` and names it as `thread/resume.modelProvider` when the phone resumes an existing thread. It never copies provider keys or rewrites your Codex configuration. If a different program holds the writer, the phone stays read-only and identifies the program/PID when known. Quit that program before retrying.
+
+For older Agent J versions that keep an old model/provider, start a new Codex conversation in the same folder using your current native defaults, then let Agent J follow the new conversation (clear any explicitly selected old shared thread). Or switch Agent J to an independent session. A new conversation has separate history. Do not ask the owner to paste keys into chat.
+
+
+### 共享 Codex 的模型与服务商（0.16.4a1）
+手机发起回合时，主人配置的 `agent.model` / `agent.effort` 或手机最后一次明确选择会传给 Codex。没有手机明确选择时沿用会话自己的模型。电脑发起回合用电脑端最后一次明确选择；手机跟随实际模型，不抢改电脑的选择。顶部显示当前生效的模型；点默认后，下个手机回合使用当前 Codex 原生默认值。
+
+手机接续已有会话时，从 Codex 读取当前生效的 `model_provider`，用协议的 `modelProvider` 切到当前服务商；不复制 key，不改写 Codex 配置。其他程序占用会话时手机只读，横幅按实际进程显示 App、终端或后台进程及可确认的 PID。退出对应程序后重发。
+
+旧版一直沿用旧模型或旧服务商时，可在同一目录新开一个 Codex 会话，用当前默认模型与服务商，再让 Agent J 跟随新会话（如固定了旧会话，先取消固定）；也可切换独立会话。新会话的历史独立。不要让主人把 key 发进对话。

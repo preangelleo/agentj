@@ -315,3 +315,14 @@ This route trusts the signing control plane. Pairing material is encrypted to an
 
 
 For Codex failures, follow the phone guidance: tap the top model name to replace an account-unsupported model (temporarily disabled until an account refresh); check your proxy/VPN for ChatGPT connection failures; run `codex login` on the computer when login expires. Redacted native errors remain under Details.
+
+
+### Shared Codex model and provider (0.16.4a1)
+For a phone turn, an explicit `agent.model` / `agent.effort` or the latest phone selection is sent as `turn/start.model` / `effort`. Without an explicit phone choice, Codex keeps the thread choice. A desktop turn uses the desktop actor’s own last explicit selection; Agent J only observes it. The top bar shows the active actor’s model, not a promise that a queued phone choice is already running. Selecting Default sends the current native defaults once.
+
+Agent J reads effective native `model_provider` from Codex `config/read` and names it as `thread/resume.modelProvider` when the phone resumes an existing thread. It never copies provider keys or rewrites your Codex configuration. If a different program holds the writer, the phone stays read-only and identifies the program/PID when known. Quit that program before retrying.
+
+For older Agent J versions that keep an old model/provider, start a new Codex conversation in the same folder using your current native defaults, then let Agent J follow the new conversation (clear any explicitly selected old shared thread). Or switch Agent J to an independent session. A new conversation has separate history. Do not ask the owner to paste keys into chat.
+
+
+Shared Claude automatically enables phone messages when the native ingress setting is unset, backing up settings.json first. This also applies when upgrading to 0.16.4; the phone is told once. Explicit off/hold or refuse remains unchanged. Enabled: phone messages no longer need individual confirmation on the computer; to disable, run `agentj config claude-inbound off`. Only Claude Code is affected; Codex/OpenCode have no equivalent mechanism. Repository or organization policies may still hold messages; keep the phone warning and check the computer before resending.

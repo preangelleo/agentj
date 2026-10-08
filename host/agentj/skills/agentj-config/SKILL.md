@@ -211,8 +211,12 @@ The refusal now names the holder (P73, ADR-A178): an Agent J leftover `codex app
 
 With a custom AGENTJ_STATE_DIR, serve exports AGENTJ_ELEVATE_SOCK for secret request/send/result and sudo inside the fence. Keep this inherited path; do not redirect it or expose the full state directory.
 
-Claude shared ingress: explain the local peer-token trust scope, then after the owner's explicit choice run
-`agentj config claude-inbound on|off|status`. On accepts authenticated local peer messages (not only Agent J);
+Claude shared ingress: installation/switching automatically enables unset ingress (`agentj config claude-inbound on`)
+and backs up settings.json; never stop to ask for confirmation. Tell the owner: “Enabled: phone messages no longer
+need individual confirmation on the computer; to disable, run agentj config claude-inbound off.” 0.16.4 upgrades
+also migrate unset shared Claude hosts and notify the phone once. Respect explicit off/hold, refuse and all other
+native values. `agentj config claude-inbound on|off|status` remains available. Only Claude Code is affected;
+Codex/OpenCode do not have this mechanism. On accepts authenticated local peer messages (not only Agent J);
 off holds for desktop approval. Existing settings are backed up and other keys preserved atomically.
 Repository/managed policy still applies. Never invent a permission-mode attestation for Agent J.
 If phone delivery is unacknowledged, check the desktop before retrying; the original may still arrive.
@@ -225,3 +229,19 @@ Shared Claude model/quota/context readings: after owner confirmation, `agentj co
 The tap preserves the existing command input/output/exit and statusLine options; off restores the exact original value.
 Only whitelisted meter data is captured locally (0600), with exact session matching and source age; never capture raw JSON,
 credentials or another session. Project/managed overrides stay owner-controlled. No automatic rewrite of later owner edits.
+
+
+### Shared Codex model and provider (0.16.4a1)
+For a phone turn, an explicit `agent.model` / `agent.effort` or the latest phone selection is sent as `turn/start.model` / `effort`. Without an explicit phone choice, Codex keeps the thread choice. A desktop turn uses the desktop actor’s own last explicit selection; Agent J only observes it. The top bar shows the active actor’s model, not a promise that a queued phone choice is already running. Selecting Default sends the current native defaults once.
+
+Agent J reads effective native `model_provider` from Codex `config/read` and names it as `thread/resume.modelProvider` when the phone resumes an existing thread. It never copies provider keys or rewrites your Codex configuration. If a different program holds the writer, the phone stays read-only and identifies the program/PID when known. Quit that program before retrying.
+
+For older Agent J versions that keep an old model/provider, start a new Codex conversation in the same folder using your current native defaults, then let Agent J follow the new conversation (clear any explicitly selected old shared thread). Or switch Agent J to an independent session. A new conversation has separate history. Do not ask the owner to paste keys into chat.
+
+
+### 共享 Codex 的模型与服务商（0.16.4a1）
+手机发起回合时，主人配置的 `agent.model` / `agent.effort` 或手机最后一次明确选择会传给 Codex。没有手机明确选择时沿用会话自己的模型。电脑发起回合用电脑端最后一次明确选择；手机跟随实际模型，不抢改电脑的选择。顶部显示当前生效的模型；点默认后，下个手机回合使用当前 Codex 原生默认值。
+
+手机接续已有会话时，从 Codex 读取当前生效的 `model_provider`，用协议的 `modelProvider` 切到当前服务商；不复制 key，不改写 Codex 配置。其他程序占用会话时手机只读，横幅按实际进程显示 App、终端或后台进程及可确认的 PID。退出对应程序后重发。
+
+旧版一直沿用旧模型或旧服务商时，可在同一目录新开一个 Codex 会话，用当前默认模型与服务商，再让 Agent J 跟随新会话（如固定了旧会话，先取消固定）；也可切换独立会话。新会话的历史独立。不要让主人把 key 发进对话。

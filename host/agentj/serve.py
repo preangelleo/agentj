@@ -100,7 +100,7 @@ P33_ONLY = ("say", "say_cancel", "blob_open", "blob_chunk", "blob_end", "blob_dr
 # F14: paired phones may change optional warnings, session mode, isolation, docker and the upgrade mode (F19); native permissions stay authoritative.
 PREF_SET_KEYS = ("updates.mode", "appearance.language", "appearance.theme", "voice.wake_enabled", "voice.speak_replies",
                  "agent.high_risk_warnings", "agent.session_mode", "agent.isolation", "agent.allow_docker")
-METER_KEYS = ("model", "model_name", "effort", "ctx", "h5", "week", "quota_windows", "shared_status", "source_at")
+METER_KEYS = ("model", "model_name", "effort", "ctx", "h5", "week", "quota_windows", "shared_status", "shared_writer", "source_at")
 Q_CANCEL = "用户在手机上取消了这个问题，没有选择任何选项。请不要替他做选择，停下来等他直接输入文字。"
 Q_TIMEOUT = "没有人作答，请改用文字列出选项"
 ASR_WHY = {"not_installed": "not_installed", "bad_audio": "bad_audio", "timeout": "timeout", "busy": "busy",
@@ -1294,6 +1294,11 @@ class Host:
         permission request still waiting."""
         if self.sessions.get(s.cid) is not s:
             return
+        from . import claude_inbound
+        notice = claude_inbound.default_notice(self.st, self.lang)
+        if notice:
+            self.agent_notice(notice)  # durable history, also delivered after a reconnect
+            claude_inbound.notice_delivered(self.st)
         since = since if isinstance(since, int) and not isinstance(since, bool) and since >= 0 else 0
         if since > self.seq:            # a device that remembers a seq from before this serve started: replay it all
             since = 0
@@ -1427,6 +1432,7 @@ class Host:
                     await ack(self.config_problem)
                 await self._send_ready(lambda _: self.preferences_msg())
                 return self.config_problem
+            self.configure_claude_inbound()
             lang_changed = preferences.get(old, "appearance.language") != preferences.get(candidate, "appearance.language")
             preferences.note_language(self.st, candidate, language_at)
             if lang_changed:
@@ -1453,6 +1459,20 @@ class Host:
                 await ack(result)
             await self._send_ready(lambda _: self.preferences_msg())
             return result
+
+    def configure_claude_inbound(self) -> None:
+        from . import claude_inbound
+        try:
+            claude_inbound.ensure_shared_default(self.st)
+            if any(s.state == "ready" for s in self.sessions.values()):
+                notice = claude_inbound.default_notice(self.st, self.lang)
+                if notice:
+                    self.agent_notice(notice)
+                    claude_inbound.notice_delivered(self.st)
+        except (OSError, claude_inbound.SettingsError):
+            self.agent_notice("Could not enable Claude phone messages; check Claude settings and run agentj config claude-inbound on."
+                              if self.lang == "en" else
+                              "未能开启 Claude 手机消息；请检查 Claude 设置并运行 agentj config claude-inbound on。")
 
     def restart_harness(self, why: str) -> dict:
         """P59 (A167): restart the harness process Agent J owns before its next turn, the conversation kept (Claude Code
@@ -3315,6 +3335,7 @@ class Host:
         if ended:
             self.st.log("codex_leftover_ended", result=len(ended))
         self.post_q = asyncio.Queue()
+        self.configure_claude_inbound()
         jobs = [asyncio.create_task(self.relay_loop()), asyncio.create_task(self.reporter.run()),
                  asyncio.create_task(self.sync_loop()), asyncio.create_task(self.remote_pair.run()), asyncio.create_task(self.post_loop()),
                  asyncio.create_task(self.update_loop()), asyncio.create_task(self.preferences_loop())]

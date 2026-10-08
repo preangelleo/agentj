@@ -2,7 +2,7 @@
 
 # Agent J
 
-This 0.16.2a1 candidate tree is for review. The published installation remains 0.16.1a1 until the public mirror/tag and all release gates pass. Android is a debug review APK, with offline model provenance and physical-device acceptance still pending; it is not a store release.
+This 0.16.4a1 candidate tree is for review. The published installation remains 0.16.3a1 until the public mirror/tag and all release gates pass. Android is a debug review APK, with offline model provenance and physical-device acceptance still pending; it is not a store release.
 
 Docs (中文 / English): <https://agentj.app/docs/> · machine-readable index: <https://agentj.app/llms.txt>
 
@@ -36,7 +36,7 @@ is the same file, byte for byte; the site publishes its SHA-256 at <https://agen
 
 The host program on its own, pinned to the release tag (Python 3.11 or newer; if yours is older, uv fetches one):
 ```bash
-uv tool install "git+https://github.com/preangelleo/agentj@v0.16.3a1#subdirectory=host"
+uv tool install "git+https://github.com/preangelleo/agentj@v0.16.4a1#subdirectory=host"
 agentj --version
 ```
 
@@ -92,3 +92,7 @@ Please report vulnerabilities privately; see [SECURITY.md](SECURITY.md).
 [Apache License 2.0](LICENSE).
 
 Account-bound online hosts support Add a remote on their account seat card with owner passkey confirmation, including another computer. No terminal passphrase setup is required. `agentj remote-pair off` opts out; local/offline pairing retains a local passphrase. See install.md and docs/account for the trust boundary.
+
+Shared Codex phone turns use the owner's explicit model and reasoning effort; desktop turns keep their own selections. Resuming an existing thread applies the current native provider. Read-only banners identify the actual writer; quit that program before retrying. On older hosts, start a new Codex conversation with current defaults or use an independent Agent J session.
+
+Shared Claude enables unset phone ingress automatically (installation, switching and 0.16.4 upgrade), backing up settings.json and notifying the phone once. Explicit off/hold or refuse remains unchanged. To disable: `agentj config claude-inbound off`. Only Claude Code is affected; repository/managed policies remain in force.
