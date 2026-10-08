@@ -13,7 +13,7 @@ from pathlib import Path
 DATA = Path(__file__).with_name("identity")
 VERSION = 7   # P78: classify every request; propose skills, CLI tools and WDB workflows before building
 # v5 (P64): a workflow with a CEO is always dispatched — never run or edited by the main Agent; read-only reporting stays
-HASHES = {'en': 'bf49231361a7315f2b5c0dabb75846d521a6207f2d35c804738224a0d4939c21', 'zh': 'b665eccbdbb7f9c2d8e4c9992efd7ee8645c5c8e55fb0408b6d2e4ca3773d4bd'}
+HASHES = {'en': '56b8288f2df5f708876cc92b52dcca7738fd35842e4c43abde5a7de61e2a4df7', 'zh': '9639761a5c153b0d8a29139d5357b6e39cf01cac943fcdd06e1321f445cea890'}
 MECHANISMS = {"claude": "append-system-prompt", "codex": "developerInstructions", "opencode": "prompt_async.system"}
 
 class IdentityError(ValueError):

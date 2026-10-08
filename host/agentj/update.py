@@ -153,6 +153,20 @@ def commands(info: dict, latest: str | None = None) -> list[list[str]]:
     return [[os.path.join(info["where"], "bin", "python"), "-m", "pip", "install", "--upgrade", pinned or SPEC]]
 
 
+def verified_plan(st, info, target):
+    """Shared /update and nightly published-wheel signature/hash boundary.
+    Stage public artifacts outside host secret state so an authorized fenced
+    Agent can still upgrade its writable package without accessing host keys.
+    """
+    from pathlib import Path
+    from .state import State
+    from . import auto_update
+    root = Path(os.environ.get('XDG_CACHE_HOME') or Path.home()/'.cache') / 'agentj-upgrade'
+    root.mkdir(parents=True, exist_ok=True, mode=0o700)
+    wheel = auto_update.cached_wheel(State(root), target, require_signature=True)
+    return auto_update.install_commands(info, wheel)
+
+
 def new_argv(info: dict) -> list[str]:
     """How to start the freshly installed agentj after `commands(info)` ran. A legacy uv / pipx reinstall deleted the venv
     this process runs from, so the new `agentj` is looked up on PATH; otherwise this very venv (upgraded in place)."""
@@ -448,7 +462,7 @@ def _exit_of(reason: str) -> int:
 
 
 def authorized_apply(st, code: str | None, target: str | None, *, mail: dict | None = None, prefix: str | None = None,
-                     check_fn=None, auth_fn=None, run=None, svc_on=None, say=None) -> dict:
+                     check_fn=None, auth_fn=None, run=None, svc_on=None, say=None, plan_fn=None) -> dict:
     """Contract C3. Order: local checks (code shape, read-only, identity, account link) → check() says newer and latest ==
     target → signed upgrade-auth → only on 200: install pinned to target (no y/N, no terminal), verify the new version,
     marker for serve's phone notice, service re-install. → {"result": "ok" | "refused" | "failed", "reason", "from", "to",
@@ -505,7 +519,11 @@ def authorized_apply(st, code: str | None, target: str | None, *, mail: dict | N
                                                           "at": int(time.time())}).encode())
         st.log("upgrade_authorized", status=target)
     info = install_kind(prefix)
-    for c in commands(info, target):
+    try:
+        plan = (plan_fn or verified_plan)(st, info, target)
+    except Exception:
+        return done("artifact_refused")
+    for c in plan:
         say("$ " + shlex.join(c))
         try:
             rc = run(c, stdin=subprocess.DEVNULL).returncode
@@ -545,7 +563,7 @@ def authorized_apply(st, code: str | None, target: str | None, *, mail: dict | N
     return {**out, "result": "ok", "reason": "upgraded", "service": "restart_scheduled", "exit": 0}
 
 
-def apply(st, target=None, *, prefix=None, check_fn=None, run=None, say=None, svc_on=None):
+def apply(st, target=None, *, prefix=None, check_fn=None, run=None, say=None, svc_on=None, plan_fn=None):
     """Explicit caller-requested upgrade. No terminal or cloud grant is required.
     Native filesystem restrictions and exact published target checks still apply.
     """
@@ -574,7 +592,11 @@ def apply(st, target=None, *, prefix=None, check_fn=None, run=None, say=None, sv
             svc_on = bool(service.status().get("installed") or service.legacy_status().get("installed"))
         except Exception:  # noqa: BLE001 — no service manager: nothing to restart (as authorized_apply)
             svc_on = False
-    for cmd in commands(info, target):
+    try:
+        plan = (plan_fn or verified_plan)(st, info, target)
+    except Exception:
+        return done("artifact_refused")
+    for cmd in plan:
         say("$ " + shlex.join(cmd))
         try:
             rc = run(cmd, stdin=subprocess.DEVNULL).returncode
@@ -629,5 +651,6 @@ def result_block(res: dict) -> str:
 
 
 REASON_EXTRA = {
+    "artifact_refused": ("发布包签名或哈希校验失败，未安装；请检查正式发布工件", "published artifact signature/hash verification failed; nothing installed; check the official release artifacts"),
     "upgraded": ("已升级", "upgraded"),
 }

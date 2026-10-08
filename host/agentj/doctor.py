@@ -756,6 +756,10 @@ def run(st: State | None = None, offline: bool = False) -> list[dict]:
     rec = service_recovery.failure(st)
     if rec:
         out.append(_c("upgrade-restart", FAIL, service_recovery.failure_text(rec), "agentj service start; agentj doctor"))
+    from . import auto_update
+    ar = auto_update.read(st).get("result")
+    out.append(_c("auto-update", OK, ("on" if auto_update.enabled(st) else "off") + " · 03:00–05:00 local" +
+                  (" · " + auto_update.notice(ar) if ar else " · no previous result")))
     out.append(check_update(offline))
     return out
 
@@ -776,8 +780,31 @@ def check_asr(st: State) -> list[dict]:
     return out
 
 
-def main(as_json: bool = False, offline: bool = False, isolation_only: bool = False) -> int:
-    checks = [isolation_preflight()] if isolation_only else run(offline=offline)
+def run_upgrade(st=None):
+    """Package/service integrity only: no workflow, ASR, billing or network probes."""
+    from . import main_identity, service_recovery
+    st = st or State()
+    svc = service.status()
+    rows = [check_version(), check_python(), check_platform(), check_state(st),
+            check_serve(st), check_service(svc, service.legacy_status())]
+    try:
+        version = main_identity.verify_core()['version']
+        rows.append(_c('main-core', OK, f'Packaged main-Agent core v{version}: verified'))
+        cfg = st.agent_config() if st.exists() else None
+        if cfg:
+            ok, reason = main_identity.latest_audit(st, cfg)
+            expected_refresh = reason == 'restart main Agent: identity metadata differs' or reason.startswith('no verified main Agent launch')
+            rows.append(_c('main-inject', OK if ok else WARN if expected_refresh else FAIL,
+                           reason, 'Send a phone message; if shared Claude needs a new session, tell the owner; never force /clear'))
+    except (main_identity.IdentityError, OSError, ValueError):
+        rows.append(_c('main-core', FAIL, 'Packaged identity integrity failed', 'Reinstall the verified wheel'))
+    if service_recovery.failure(st):
+        rows.append(_c('upgrade-restart', FAIL, 'Upgrade restart failed', 'agentj service start'))
+    return rows
+
+
+def main(as_json: bool = False, offline: bool = False, isolation_only: bool = False, upgrade_only: bool = False) -> int:
+    checks = [isolation_preflight()] if isolation_only else run_upgrade() if upgrade_only else run(offline=offline)
     failed = any(c["status"] == FAIL for c in checks)
     if as_json:
         print(json.dumps({"tool": DIST, "version": __version__, "ok": not failed, "checks": checks}, ensure_ascii=False, indent=1))

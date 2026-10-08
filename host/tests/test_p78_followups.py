@@ -133,6 +133,6 @@ class UpgradeQualification(unittest.TestCase):
                     return subprocess.CompletedProcess(argv,1,json.dumps({'checks':[{'id':'root-structure','status':'fail'}]}),'')
                 return subprocess.CompletedProcess(argv,0,'','')
             with patch.object(update,'writable',return_value=True), patch.object(update,'install_kind',return_value={'kind':'uv','where':td}), patch.object(update,'new_argv',return_value=['agentj']):
-                rec = update.apply(st,'9.9.9',check_fn=lambda:{'status':'newer','latest':'9.9.9'},run=run,svc_on=False)
+                rec = update.apply(st,'9.9.9',plan_fn=lambda st, info, target:update.commands(info,target), check_fn=lambda:{'status':'newer','latest':'9.9.9'},run=run,svc_on=False)
             self.assertEqual(rec['result'],'ok')
             self.assertEqual(rec['existing_issues'],['root-structure'])

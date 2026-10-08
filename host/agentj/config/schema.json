@@ -794,6 +794,20 @@
       "apply": "restart",
       "verify": "agentj config validate --json",
       "since": "0.15"
+    },
+    "updates.auto_install": {
+      "type": "boolean",
+      "tier": "user",
+      "default": true,
+      "description": "Nightly host upgrades in the local 03:00–05:00 window; skip busy hosts / 夜间闲置自动升级",
+      "aliases": [
+        "auto-update",
+        "夜间自动升级"
+      ],
+      "needs": [],
+      "apply": "hot",
+      "verify": "agentj config auto-update status",
+      "since": "0.16.5"
     }
   }
 }

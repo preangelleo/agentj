@@ -1,0 +1,5 @@
+{
+  "version": "0.16.5a1",
+  "zh": "夜间闲置自动升级，失败自动回滚并告知主人",
+  "en": "Nightly idle upgrades with automatic rollback and owner notification"
+}

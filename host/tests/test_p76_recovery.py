@@ -23,7 +23,7 @@ class Handoff(unittest.TestCase):
                     raise SystemExit('SIGTERM after bootout: bootstrap unreachable')
                 return Mock(returncode=0, stdout='agentj 9.9.9', stderr='')
             with patch.object(update, 'commands', return_value=[['install-package']]), patch.object(update, 'writable', return_value=True):
-                res = update.apply(st, check_fn=lambda:{'status':'newer','latest':'9.9.9'}, run=run, svc_on=True)
+                res = update.apply(st, plan_fn=lambda st, info, target:update.commands(info,target), check_fn=lambda:{'status':'newer','latest':'9.9.9'}, run=run, svc_on=True)
             self.assertEqual(res['exit'], 0)
             self.assertTrue(any('--deferred' in c for c in calls))
             self.assertFalse(any(c[-2:] == ['service','restart'] for c in calls))

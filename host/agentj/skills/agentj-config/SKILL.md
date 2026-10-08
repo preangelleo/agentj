@@ -245,3 +245,5 @@ For older Agent J versions that keep an old model/provider, start a new Codex co
 手机接续已有会话时，从 Codex 读取当前生效的 `model_provider`，用协议的 `modelProvider` 切到当前服务商；不复制 key，不改写 Codex 配置。其他程序占用会话时手机只读，横幅按实际进程显示 App、终端或后台进程及可确认的 PID。退出对应程序后重发。
 
 旧版一直沿用旧模型或旧服务商时，可在同一目录新开一个 Codex 会话，用当前默认模型与服务商，再让 Agent J 跟随新会话（如固定了旧会话，先取消固定）；也可切换独立会话。新会话的历史独立。不要让主人把 key 发进对话。
+
+Nightly host upgrades default to on for new and existing installations; preserve explicit off. `agentj config auto-update on|off|status` (preference `updates.auto_install`). Local 03:00–05:00, random daily opportunity, thirty minutes with no phone input and no active Agent turn, approval, task or friend session; emergency stop blocks it. Failed eligibility defers to tomorrow. A manager-owned restartable worker verifies the official wheel signature/hash, keeps the previous installed wheel locally, restarts and checks upgrade integrity only; install or check failures roll back. `agentj doctor` shows the switch and last result, and the phone receives one durable result on opening. Do not force /clear or change unrelated owner configuration.

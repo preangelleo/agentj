@@ -192,6 +192,7 @@ function actText(r) {
   const sep = lang() === 'en' ? ', ' : '、';
   const cats = Array.isArray(r.cats) && r.cats.length ? `[${r.cats.map((c) => (CATS.includes(c) ? t('ask.cat.' + c) : c)).join(sep)}] ` : '';
   const task = r.task ? t('act.task', { task: r.task }) : '';
+  if (r.k === 'auto_update') return tx;
   if (!ACT_KINDS.includes(r.k)) return String(r.k ?? '');
   const v = {
     by, t: tx, task, cats, tool: r.tool ?? '', scope: r.scope ?? '', why: r.why ?? '', label: r.label ?? '', id: r.id ?? '',

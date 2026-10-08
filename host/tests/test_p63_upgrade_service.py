@@ -33,7 +33,7 @@ class ApplyServiceFailed(unittest.TestCase):
             with mock.patch.object(update, "install_kind", return_value={"kind": "uv", "where": tmp, "legacy": False}), \
                     mock.patch.object(update, "new_argv", return_value=["agentj"]), \
                     mock.patch.object(update, "writable", return_value=True):
-                res = update.apply(st, "9.9.9", check_fn=lambda: {"status": "newer", "latest": "9.9.9"}, run=run,
+                res = update.apply(st, "9.9.9", plan_fn=lambda st, info, target:update.commands(info,target), check_fn=lambda: {"status": "newer", "latest": "9.9.9"}, run=run,
                                    svc_on=True)
         return res, calls
 

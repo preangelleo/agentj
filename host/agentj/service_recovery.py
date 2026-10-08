@@ -58,7 +58,7 @@ def record(st, status, target, reason=None, *, external=False):
     return rec
 
 
-def launch_job(st, argv, purpose='recovery'):
+def launch_job(st, argv, purpose='recovery', *, restart=False):
     """Ask a manager to spawn; never fork the worker in the host's cgroup/job."""
     label = 'net.agentj.' + purpose + '.' + uuid.uuid4().hex
     env, _ = service.service_env()
@@ -72,6 +72,8 @@ def launch_job(st, argv, purpose='recovery'):
         env['AGENTJ_SERVICE_NAME'] = service.name()
     if service.platform() == 'linux':
         cmd = ['systemd-run', '--user', '--collect', '--quiet', '--unit=' + label]
+        if restart:
+            cmd += ['--property=Restart=on-failure', '--property=RestartSec=5']
         cmd += ['--setenv=' + k + '=' + v for k, v in env.items()]
         r = subprocess.run(cmd + argv, capture_output=True, timeout=15)
         if r.returncode:
@@ -79,11 +81,13 @@ def launch_job(st, argv, purpose='recovery'):
             # the user's D-Bus broker can authenticate the same uid correctly.
             bus = ['busctl', '--user', 'call', 'org.freedesktop.systemd1',
                    '/org/freedesktop/systemd1', 'org.freedesktop.systemd1.Manager',
-                   'StartTransientUnit', 'ssa(sv)a(sa(sv))', label + '.service', 'replace', '5',
+                   'StartTransientUnit', 'ssa(sv)a(sa(sv))', label + '.service', 'replace', str(7 if restart else 5),
                    'Description', 's', 'Agent J service recovery',
                    'Type', 's', 'exec', 'CollectMode', 's', 'inactive-or-failed',
                    'Environment', 'as', str(len(env)), *[k + '=' + v for k, v in env.items()],
                    'ExecStart', 'a(sasb)', '1', argv[0], str(len(argv)), *argv, 'false', '0']
+            if restart:
+                bus[-1:-1] = ['Restart', 's', 'on-failure', 'RestartSec', 't', '5000000']
             r = subprocess.run(bus, capture_output=True, timeout=15)
             if r.returncode:
                 raise service.ServiceError('recovery_launch_failed')
@@ -92,7 +96,7 @@ def launch_job(st, argv, purpose='recovery'):
         path.parent.mkdir(parents=True, exist_ok=True)
         env['AGENTJ_JOB_PLIST'] = str(path)
         job = {'Label': label, 'ProgramArguments': argv, 'EnvironmentVariables': env,
-               'RunAtLoad': True, 'KeepAlive': False,
+               'RunAtLoad': True, 'KeepAlive': {'SuccessfulExit': False} if restart else False,
                'StandardOutPath': str(st.root / 'service-recovery.log'),
                'StandardErrorPath': str(st.root / 'service-recovery.log')}
         st.write_private(path, plistlib.dumps(job))
@@ -109,7 +113,7 @@ def cleanup_job(st):
     # durable result is written. launchd may terminate us at this last operation.
     path = os.environ.get('AGENTJ_JOB_PLIST')
     label = os.environ.get('AGENTJ_JOB_LABEL', '')
-    if service.platform() == 'macos' and path and re.fullmatch(r'net\.agentj\.(?:recovery|update)\.[a-f0-9]{32}', label):
+    if service.platform() == 'macos' and path and re.fullmatch(r'net\.agentj\.(?:recovery|update|autoupdate)\.[a-f0-9]{32}', label):
         p = Path(service.plist_path(label))
         if str(p) == path:
             p.unlink(missing_ok=True)
@@ -133,8 +137,10 @@ def run(st, target, *, timeout=45, install=None, status=None):
             raise service.ServiceError('recovery_version_mismatch')
         # The old fenced apply may have written its marker only in a private
         # mount namespace. Write the normal marker from this manager-owned job.
-        from . import update
-        if not (st.root / update.UPGRADED).exists() and not (st.root / 'phone-update-result.json').exists():
+        from . import update, auto_update
+        auto_job = auto_update.read(st, auto_update.JOB)
+        auto_active = auto_job.get('phase') in ('installing', 'installed', 'rollback')
+        if not (st.root / update.UPGRADED).exists() and not (st.root / 'phone-update-result.json').exists() and not auto_active:
             update.write_marker(st, target, target)
         (install or service.install)(st)
         end = time.monotonic() + timeout

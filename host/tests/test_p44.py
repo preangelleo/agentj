@@ -115,7 +115,7 @@ class AuthorizedApply(_Env):
             auths.append((c, v))
             return auth or {"status": "ok", "http": "200"}
         res = update.authorized_apply(self.st, code, target, mail=mail, prefix=str(self.prefix),
-                                      check_fn=lambda: check or {"status": "newer", "latest": "9.9.9"},
+                                      plan_fn=lambda st, info, target:update.commands(info,target), check_fn=lambda: check or {"status": "newer", "latest": "9.9.9"},
                                       auth_fn=auth_fn, run=run, svc_on=svc_on)
         return res, calls, auths
 
@@ -633,7 +633,7 @@ class Server014(_Env):
             self.assertEqual((r["status"], r["http"]), ("unsupported", "http_4xx"))
             self.assertEqual(cp.upgrade_auths, [])
         res = update.authorized_apply(self.st, CODE, "9.9.9", prefix=str(self.prefix),
-                                      check_fn=lambda: {"status": "newer", "latest": "9.9.9"},
+                                      plan_fn=lambda st, info, target:update.commands(info,target), check_fn=lambda: {"status": "newer", "latest": "9.9.9"},
                                       auth_fn=lambda st, c, v: r, run=lambda *a, **k: self.fail("installed"), svc_on=True)
         self.assertEqual((res["reason"], res["exit"], res["result"]), ("unsupported", 8, "refused"))
         self.assertIn("does not support upgrade authorization yet", update.result_block(res))

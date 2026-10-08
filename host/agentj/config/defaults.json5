@@ -1,6 +1,6 @@
 // Factory defaults; put only your changes in the user override file.
 {
-  "updates": {"mode": "auto", "skill_categories": []},
+  "updates": {"auto_install": true, "mode": "auto", "skill_categories": []},
   "agent": {
     // Empty preserves existing work folder; fresh init defaults to ~/coding.
     "working_root": "",

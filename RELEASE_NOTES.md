@@ -1,6 +1,6 @@
-# Agent J 0.16.4a1 release notes
+# Agent J 0.16.5a1 release notes
 
-Host 0.16.4a1 / install 0.20.4; phone-web scope.
+Host 0.16.5a1 / install 0.20.5; phone-web scope.
 Phone parity must pass --strict. Full Android/Telegram parity is incomplete.
 Full Android/Telegram parity is incomplete.
 No APK is included in this release. Android source is for review, not a released app.
@@ -8,18 +8,19 @@ No APK is included in this release. Android source is for review, not a released
 Publication status: local preparation only. Live site verification is DEFERRED until
 the public commit and tag are pushed, the site is deployed, and cold installation passes.
 
-On publication failure, restore v0.16.3a1 and its published main, including site and phone web.
+On publication failure, restore v0.16.4a1 / public 574285c9 and its site/phone artifacts.
 ## Changes
 
-- Shared Codex phone turns honor the owner's explicit model and reasoning effort; desktop turns retain the desktop actor's own choices.
-- Resuming an existing Codex thread applies the effective current native model provider; authentication stays in the owner's native configuration.
-- Read-only banners identify the actual app, terminal or background writer, with a PID when known.
-- Shared Claude automatically enables unset phone ingress during installation, switching and0.16.4 upgrades, backs up native settings and tells the phone once; explicit off/hold/refuse and native policies remain unchanged.
-- Only Claude Code has this ingress mechanism; Codex and OpenCode are unaffected.
-- A then B; no Dashboard, relay or database migration. CORE v7 is unchanged.
+- Default-on nightly updates; an explicit owner opt-out survives. agentj config auto-update on|off|status.
+- One random local 03:00–05:00 opportunity daily, only after 30 idle phone minutes with no Agent turn, approval, task, friend session or emergency stop; otherwise tomorrow.
+- Manual and nightly updates use the same signed wheel verifier. Cache hits and installation revalidate publisher signatures; retain the previous RECORD-verified wheel locally for rollback.
+- Independent restartable recovery worker, upgrade-only self-checks, rollback on failure, durable activity and one owner notice; doctor reports the setting and last result.
+- No forced /clear of shared Claude; existing owner settings boundaries remain. Older hosts must first install 0.16.5a1 to gain the scheduler.
+- A then B; no new Dashboard, relay or database migration.
 
-- Real Codex0.159.2 was tested against two loopback fake providers, without keys or a paid native completion; request destination/model/effort were observed.
-- Native App and physical mobile/macOS acceptance remain pending; loopback/browser checks do not establish those results.
+- Final signed wheel tested on real isolated Linux user-systemd with injected local time, including a killed worker completing after manager retry; test units removed.
+- Frozen package audited on the paid QA host; real Noise/browser/model loop, temporary provider and device cleaned. Shared-issuer stages reuse authentic P80 evidence only where shared source is unchanged.
+- Physical macOS, iPhone/Android and customer native shared threads remain untested; no inference from browser fixtures.
 
 ## Material acceptance limits
 

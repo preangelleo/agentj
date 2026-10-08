@@ -588,6 +588,9 @@ class Host:
             return await self._pk_restore(s, obj)
         if not self.st.is_allowed(s.pub):  # belt and braces: a ready session whose device left the allowlist
             return await self.close_cid(s.cid, "revoked")
+        if t in ("msg", "say", "answer", "slash", "blob_open", "blob_chunk", "blob_end", "ask_answer", "estop", "resume", "task_set") or t in elevate.PHONE_TYPES or t in ("fr_answer", "fr_accept"):
+            from . import auto_update
+            auto_update.touch(self.st)
         if t == "msg":
             text = obj.get("text")
             limit = wire.MAX_TEXT_P33 if s.p33 else wire.MAX_TEXT
@@ -955,6 +958,12 @@ class Host:
                     actual = info.get('providerID', '') + '/' + info.get('modelID', '') if all(isinstance(info.get(k), str) for k in ('providerID', 'modelID')) else None
                     from .agent_opencode import split_model
                     await self._ctl_send(w, {'ok': True, 'model': selected, 'assistant_model': actual if split_model(actual) else None, 'metadata_present': found, 'context_limit': limit, 'context_used': used})
+                elif cmd == "auto_update_ready":
+                    from . import auto_update
+                    rec = auto_update.read(self.st)
+                    await self._ctl_send(w, {"ok": True, "ready": auto_update.enabled(self.st) and
+                        not self.stopped() and not auto_update.busy(self) and
+                        time.time() - rec.get("phone_at", time.time()) >= auto_update.IDLE})
                 elif cmd == "status":
                     await self._ctl_send(w, {"ok": True, "relay_up": self.relay_up, "channel": self.channel,
                                              "agent": self.agent.kind if self.agent else None, "agent_status": self.eff_status(),
@@ -1294,6 +1303,10 @@ class Host:
         permission request still waiting."""
         if self.sessions.get(s.cid) is not s:
             return
+        from . import auto_update
+        note = auto_update.take_notice(self.st, self.lang)
+        if note:
+            self.agent_notice(note)
         from . import claude_inbound
         notice = claude_inbound.default_notice(self.st, self.lang)
         if notice:
@@ -1832,13 +1845,18 @@ class Host:
         if notices.receipts(self.st): self.reporter.trigger("notice_receipt")
 
     async def update_loop(self) -> None:
-        """Once a day: is there a newer host on the public repo? Tell the phones once per version (E2E, like every message);
-        never install anything (Z4: the human runs `agentj update apply`). F12 first: after an authorized upgrade the phones
-        hear once that it happened (update.take_marker)."""
+        """Daily published-version notice plus opt-out, idle-only nightly upgrades."""
         await self.upgraded_notice()
         await asyncio.sleep(UPDATE_FIRST)
         while True:
             try:
+                from . import auto_update
+                if auto_update.due(self.st, blocked=auto_update.busy(self), stopped=self.stopped()):
+                    # Remove completed journal only when starting a later opportunity.
+                    job = auto_update.read(self.st, auto_update.JOB)
+                    if job.get("phase") == "done":
+                        (self.st.root / auto_update.JOB).unlink(missing_ok=True)
+                    auto_update.launch(self.st)
                 note = await asyncio.to_thread(update.daily, self.st)
             except Exception:  # noqa: BLE001 — a failed check costs nothing
                 note = None
@@ -1849,7 +1867,7 @@ class Host:
                 e = self._remember("notice", note)
                 self._post(self._send_legacy, lambda s, e=e: self._render(e, s))
                 self.hist_add({"k": "sys", "text": ""}, note, "done")
-            await asyncio.sleep(UPDATE_WAKE)
+            await asyncio.sleep(min(UPDATE_WAKE, 30))
 
     async def upgraded_notice(self) -> None:
         """F12 / C3: serve restarted after `agentj update apply --authorization`: one line to the phones, in the owner's

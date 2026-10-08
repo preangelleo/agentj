@@ -1590,6 +1590,8 @@ def cmd_onboarding(a) -> None:
 
 def cmd_doctor(a) -> None:
     from . import doctor
+    if getattr(a, "upgrade_only", False):
+        sys.exit(doctor.main(as_json=a.json, upgrade_only=True))
     sys.exit(doctor.main(as_json=a.json, offline=a.offline, isolation_only=a.isolation_only))
 
 
@@ -1807,6 +1809,9 @@ def main(argv=None) -> None:
     from .service import load_launch_binary_env
     load_launch_binary_env()
     args = list(sys.argv[1:] if argv is None else argv)
+    if args[:2] == ["config", "auto-update"]:
+        from . import auto_update
+        raise SystemExit(auto_update.command(args[2:]))
     if args[:2] == ["config", "claude-statusline"]:
         from . import claude_statusline
         raise SystemExit(claude_statusline.command(args[2:]))
@@ -1837,6 +1842,7 @@ def main(argv=None) -> None:
     dc.add_argument("--json", action="store_true", help="机器可读 / machine-readable (paths shown with ~)")
     dc.add_argument("--offline", action="store_true", help="跳过网络检查 / skip the network checks")
     dc.add_argument("--isolation-only", action="store_true", help="仅隔离预检：不读用户状态、不联网 / isolation preflight only, no user state or network")
+    dc.add_argument("--upgrade-only", action="store_true", help="仅升级后的包与服务完整性 / package and service integrity only")
     dc.set_defaults(fn=cmd_doctor)
     sv = sub.add_parser("service", help="开机 / 登录后自动运行 serve：install · start · stop · restart · status / run serve as a service",
                         description="Linux: systemd user unit · macOS: LaunchAgent. 不写任何密钥 / never writes a secret.")
