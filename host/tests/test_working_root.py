@@ -108,19 +108,19 @@ class WorkingRoot(unittest.TestCase):
         self.st.set_agent_config('claude', str(root))
         def rows(): return {x['id']:x for x in doctor.check_main_identity(self.st)}
         self.assertEqual(rows()['main-core']['status'], 'ok')
-        self.assertIn('core v6:', rows()['main-core']['summary'])
+        self.assertIn('core v7:', rows()['main-core']['summary'])
         self.assertEqual(rows()['main-inject']['status'], 'warn')
         cfg = self.st.agent_config(); main_identity.audit(cfg, 'claude', self.st, 'fake-session')
         self.assertEqual(rows()['main-inject']['status'], 'ok')
         # A trusted package upgrade must not accept stale v1 launch metadata.
         stale = main_identity.expected(cfg, 'claude'); stale['version'] = 1
         self.st.log('agent_identity', agent='claude', identity_session='old-v1', **stale)
-        self.assertEqual(rows()['main-inject']['status'], 'fail')
+        self.assertEqual(rows()['main-inject']['status'], 'warn')
         main_identity.audit(cfg, 'claude', self.st, 'restarted-v2')
         self.assertEqual(rows()['main-inject']['status'], 'ok')
         raw = preferences.edit(preferences.read()[0], 'agent.instructions', 'new preference')
         preferences.transact(self.st, raw)
-        self.assertEqual(rows()['main-inject']['status'], 'fail')
+        self.assertEqual(rows()['main-inject']['status'], 'warn')
 
     def test_doctor_existing_unrelated_structure_warns_modern_invalid_fails(self):
         self.st.init(); root = self.home/'coding'; root.mkdir()

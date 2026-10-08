@@ -754,10 +754,10 @@ export function renderAsk(p, ctx) {
       const sel = mk('select', 'aj-select'); sel.id = 'frAskGroup';
       const gs = f && f.groups.length ? f.groups : [{ id: 'default', name: '' }];
       for (const g of gs) { const o = mk('option', '', BUILTIN.includes(g.id) ? t('fr.g.' + g.id) : g.name || g.id); o.value = g.id; sel.append(o); }
-      sel.value = pickedGroup.get(p.id) || (gs.some((g) => g.id === 'default') ? 'default' : gs[0].id);
+      sel.value = pickedGroup.get(p.id) || (gs.some((g) => g.id === 'friend') ? 'friend' : gs[0].id);
       sel.addEventListener('change', () => pickedGroup.set(p.id, sel.value));
       row.append(sel);
-      box.append(row);
+      box.append(row, mk('p', 'small', t('fr.ask.groupHint')));
       // P73: 「同意」 may carry this friend's 「补充设定」 (optional; signed with the answer, editable later in the details)
       const more = mk('details', 'fr-askctx'); more.id = 'frAskCtxBox';
       more.append(mk('summary', '', t('fr.ask.ctx')));
@@ -785,9 +785,10 @@ export function renderAsk(p, ctx) {
     if (st === 'open' && ctx.sign) {
       const acts = mk('div', 'fr-askbtns fr-askbtns--3');
       const send = btn('aj-btn--primary', t('fr.q.send'), () => answerQuestion(p, 'allow', x, ctx), 'frQSend');
-      send.disabled = !x.draft;
+
       acts.append(send, btn('', t('fr.q.skip'), () => answerQuestion(p, 'deny', x, ctx), 'frQSkip'),
         btn('', t('fr.q.tell'), () => answerQuestion(p, 'tell', x, ctx), 'frQTell'));
+      acts.append(btn('', t('fr.q.auto'), () => answerFriend(p, true, 'colleague', ctx), 'frQAuto'));
       box.append(acts);
     }
     if (x.reason) box.append(mk('p', 'small fr-askfoot', t('fr.q.reason', { why: x.reason })));

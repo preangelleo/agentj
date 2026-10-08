@@ -46,7 +46,16 @@ function renderWords(text, pending = false){
 }
 function fill(w, tx){
   if (tx){
-    try{ w.replaceChildren(RelayMD.toDOM(RelayMD.parse(tx), document)); upgradeWords(w); return; }catch(_){}
+    try{
+      const detail = tx.match(/^([\s\S]*)\n\n(\u8be6\u60c5|Details):\n```text\n([\s\S]*)\n```$/);
+      tx = detail ? detail[1] : tx;
+      w.replaceChildren(RelayMD.toDOM(RelayMD.parse(tx), document)); upgradeWords(w);
+      if (detail){
+        const d = document.createElement("details"), label = document.createElement("summary"), raw = document.createElement("pre");
+        label.textContent = detail[2]; raw.textContent = detail[3]; d.append(label, raw); w.appendChild(d);
+      }
+      return;
+    }catch(_){}
   }
   w.replaceChildren();
   const paras = tx ? tx.split(/\n\s*\n/) : [emptyText()];
@@ -267,7 +276,9 @@ function apprText(p){
 }
 function renderPermission(card, p){
   el("askText").textContent = t('r.ask.nod');
-  if (friendAsk(p)){                                    // §17.7: friends.js draws the card into #frAsk; relay keeps the sheet
+  if (friendAsk(p)){
+    el("sheet").classList.toggle("danger", !!(p.pq && p.pq.high_risk));
+    el("sheet").classList.toggle("friend-neutral", !(p.pq && p.pq.high_risk));                                    // §17.7: friends.js draws the card into #frAsk; relay keeps the sheet
     for (const id of ["cmdBox", "why", "qs", "askCancel", "askSend", "apprBtns", "apprBatch", "askState"]) el(id).hidden = true;
     el("frAsk").hidden = false;
     renderFriendAsk(p, {open: apprState(p) === "open", sign: C.canSign(), repaint: () => { if (cur) renderCard(cur); },
@@ -276,6 +287,7 @@ function renderPermission(card, p){
     paintTags({...p, kind: "friend"});
     return;
   }
+  el("sheet").classList.remove("friend-neutral");
   el("cmdBox").hidden = false; el("qs").hidden = true;
   el("askCancel").hidden = true; el("askSend").hidden = true;
   const tool = (p && p.tool) || (card && card.tool_name) || "?";
@@ -521,8 +533,10 @@ function pillStep(half){
   const b = pill.want || realPick();
   let model = b.model || c.default.model, effort = b.effort || c.default.effort;
   if (half === "model"){
-    const i = c.models.findIndex(x => x.id === model);
-    model = c.models[(i + 1) % c.models.length].id;
+    const available = c.models.filter(x => !x.disabled);
+    if (!available.length) { C.models?.(); return; }
+    const i = available.findIndex(x => x.id === model);
+    model = available[(i + 1) % available.length].id;
     const efs = effortsOf(c, model);
     if (!efs.includes(effort)) effort = efs.length ? (efs.includes(c.default.effort) ? c.default.effort : efs[0]) : null;
   } else {
@@ -816,6 +830,7 @@ function paintCmdx(p){
     for (const x of c.models.slice(0, 40)){
       if (!x || typeof x.id !== "string") continue;
       const b = document.createElement("button"); b.type = "button"; b.className = "cmdmodel"; b.dataset.model = x.id;
+      b.disabled = x.disabled === true;
       if (x.cur) b.setAttribute("aria-current", "true");
       const n = document.createElement("b"); n.textContent = (typeof x.name === "string" && x.name ? x.name : x.id) + (x.cur ? t('cmd.current') : "");
       const d = document.createElement("span"); d.textContent = [x.id, typeof x.desc === "string" ? x.desc : ""].filter(Boolean).join(" · ");

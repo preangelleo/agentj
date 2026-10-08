@@ -157,9 +157,9 @@ class Store(Base):
     def test_auto_round_and_unread(self):
         self.assertEqual([self.s.auto_round(A) for _ in range(3)], [1, 2, 3])
         self.assertEqual(self.s.auto_round(A, reset=True), 0)
-        for _ in range(6):
+        for _ in range(12):
             self.s.auto_round(A)
-        self.assertEqual(self.s.list_view()["friends"][0]["state"], "paused")   # default group: 6 rounds
+        self.assertEqual(self.s.list_view()["friends"][0]["state"], "paused")   # new friends group: 12 rounds
         self.s.hist_add(A, {"mid": "1", "dir": "in", "text": "a", "ts": 1})
         self.s.hist_add(A, {"mid": "2", "dir": "out", "text": "b", "ts": 2})
         self.assertEqual(self.s.get(A)["unread"], 1)
@@ -248,6 +248,10 @@ class Groups(Base):
 
 
 class Ledger(Base):
+    def setUp(self):
+        super().setUp()
+        self.s.set_group(A, "default")  # these boundary tests exercise the unchanged Default policy
+
     def test_length_and_interval(self):
         self.assertEqual(self.s.precheck(A, "x" * 2001), ("length", 0))
         self.assertIsNone(self.s.precheck(A, "x" * 2000))

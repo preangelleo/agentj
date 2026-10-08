@@ -864,7 +864,7 @@ switched off) arrive as `sys` turns with `"local":true` and show relay's 「在�
 ### 10.11 Model and effort pill
 | direction | message |
 |---|---|
-| host → device | `{"t":"models","models":[{"id","name","efforts":["low",…]\|null,"cur":bool}],"effort":"<cur>"\|null,"default":{"model","effort"}}` (on ready and after a change; via `frag` when large) |
+| host → device | `{"t":"models","models":[{"id","name","efforts":["low",…]\|null,"cur":bool,"disabled"?:bool}],"effort":"<cur>"\|null,"default":{"model","effort"}}` (on ready and after a change; via `frag` when large) |
 | device → host | `{"t":"model_set","r","model":"<id>"\|null,"effort":"<level>"\|null}` (null = unchanged) · `{"t":"model_set","r","default":true}` (long press) |
 | host → device | `{"t":"model_res","r","ok":bool[,"why":"unknown_model"\|"unknown_effort"\|"busy"\|"unsupported"\|"stopped"]}`; the pill settles on the next `meter` |
 - The phone gathers taps for 1 s and sends the final target once (relay `PILL_GATHER_MS`). Applied between turns (queued
@@ -1515,6 +1515,12 @@ localStorage / IndexedDB / the history / the offline queue.
 **Unchanged boundaries**: Telegram (owner chat and groups), friends (§17.6 outbound gate), attachments (secret scan) and the
 relay keep refusing / never seeing these values; ordinary replies keep redacting them. The pickup card is the only way out and
 only to the owner's own paired devices.
+
+## 19. Account-authorized owner operations (P78, host0.16.3a1)
+
+Account seat cards can request one-use owner operations after a passkey ceremony (ten-minute server/session window). The request and encrypted return channel are specified by Dashboard API§13. The existing Noise IKpsk2 pairing handshake and phone wire format do not change. A remotely created Pairing retains the signed host/account-bound request; after its first successful hello, the host records source=account and approved without a local six-digit/passphrase entry. Locally created pending handshakes still wait until an exact device+handshake approval or local code+passphrase decision.
+
+Every grant records account_passkey in approvals.log plus activity and a notice to remotes. remote-pair off prevents subsequent account grants and cancels active remote Pairing. Preboot/stale/expired/replayed or cross-host/account requests never create control ability. A bound host need not set a local passphrase; an unbound/local-terminal owner operation keeps its original passphrase gate. Resume must match the current stop-state digest; task_on must match its current task/prompt contract digest. All command responses, including pending devices/task summaries, are encrypted to the requesting browser.
 
 ### P76 signed upgrade
 `slash {cmd:"update",n,ts,sig}` requires the paired device control signature (action `update`, object text `latest`).

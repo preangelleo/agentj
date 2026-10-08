@@ -1320,5 +1320,9 @@
   "r.silent.noSource": "来源未记录",
   "r.silent.noText": "（这一条的原话没有记录）",
   "r.silent.reply": "回复：",
-  "r.silent.help": "静默回合收在这里。点开一条，查看当时的原话。"
+  "r.silent.help": "静默回合收在这里。点开一条，查看当时的原话。",
+  "fr.q.send": "让分身自己回",
+  "fr.q.auto": "以后这位都让分身自己聊",
+  "fr.ask.groupHint": "默认：只聊寒暄和名片；好友：自动聊日常协作和技术，最多 12 轮；同事：自动聊其他话题。报价、约时间和承诺仍问你。",
+  "fr.ask.done.pq_allow": "分身已代你回复"
 }

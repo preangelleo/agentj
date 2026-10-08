@@ -1,6 +1,6 @@
-# Agent J 0.16.2a1 release notes
+# Agent J 0.16.3a1 release notes
 
-Host 0.16.2a1 / install 0.20.2; phone-web scope.
+Host 0.16.3a1 / install 0.20.3; phone-web scope.
 Phone parity must pass --strict. Full Android/Telegram parity is incomplete.
 Full Android/Telegram parity is incomplete.
 No APK is included in this release. Android source is for review, not a released app.
@@ -8,15 +8,21 @@ No APK is included in this release. Android source is for review, not a released
 Publication status: local preparation only. Live site verification is DEFERRED until
 the public commit and tag are pushed, the site is deployed, and cold installation passes.
 
-On publication failure, restore v0.16.1a1 and its published main, including site and phone web.
+On publication failure, restore v0.16.2a1 and its published main, including site and phone web.
 ## Changes
 
-- Shared Claude ingress is owner-controlled, backed up and reversible; unacknowledged input gets a bounded notice.
-- Independent Claude transitions require service login; macOS reads the owner's private 0600 service env file.
-- Doctor uses the live shared-session login and warns instead of rejecting owner document structures.
-- Shared Claude meters use only same-session status-line measurements; preserve and restore the owner's status line.
-- Native context percentages and source age survive phone reconnect; missing measurements stay unknown.
-- A then B; no Dashboard, relay or backend migration. Jarvis owns window approval, Jev and LIVE.
+- Account-page passkey approval adds remotes to another online bound host, approves exact pending devices, resumes a stopped host and enables a specific scheduled task.
+- Bound hosts may use account approval instead of a local passphrase; verified sessions last ten minutes. Signed single-use requests bind account, seat and host, expire within five minutes and obey the default-on host veto.
+- Pairing material is encrypted to the account browser. The signed control plane is trusted to grant access; its compromise can grant device access. The backend does not store plaintext pairing secrets.
+- Main Agent identity core version 7 proposes reusable skills, CLI tools or Workflow Design Bible workflows before creating them with owner consent.
+- Friends default to twelve rounds of daily collaboration and technical conversation. Owner cards can delegate a reply or move a friend to Colleagues; quotes, commitments and protected information keep their owner gates.
+- Already-installed hosts accept single-use AJI installation codes for account binding; configuration is preserved.
+- Four pinned uv platform archives, managed-Python and package-index fallbacks support GitHub-blocked installation. OpenCode requires macOS 13 or newer; Intel Mac cryptography remains below 49.
+- Native SOCKS5 and HTTP proxies work through python-socks; relay diagnostics show only proxy scheme and host. Upgrade checks distinguish identity refresh and existing workflow findings from installation failure.
+- Additive app migration 0023 and Dashboard C must precede site A and phone B. Every installation artifact receives HEAD and SHA verification under the existing A rollback boundary.
+
+- Evidence includes two local real hosts/Worker/Noise, an isolated QA installation and real-model phone flow, Linux GitHub-blocked installation and four-platform bootstrap simulation.
+- Physical macOS installation and launchd death recovery, Android and iPhone lock-screen acceptance remain pending; simulation is not physical-device acceptance.
 
 ## Material acceptance limits
 

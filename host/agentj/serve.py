@@ -32,7 +32,7 @@ from websockets.asyncio.client import connect
 from . import agent as agents
 from . import notices, activity, approvals, cloud, controls, danger, fence, gate, memory, slash, tasks, update, webpush, wire
 from . import asr as asr_mod
-from . import compose, history, inbox, menu, uploads, preferences
+from . import compose, history, inbox, menu, uploads, preferences, proxy
 from . import media as media_mod  # F21: files the Agent shows to the phone (PROTOCOL §13)
 from . import elevate  # F17: sudo + secret cards (PROTOCOL §11)
 from . import passkey  # F20: the same phone without a second pairing (PROTOCOL §12)
@@ -178,10 +178,11 @@ class Pairing:
     psk: bytes
     expires: float                # unix time, shown in the link
     deadline: float               # monotonic, enforced
-    ctl: asyncio.StreamWriter
+    ctl: asyncio.StreamWriter | None
     cid: int | None = None
     timer: asyncio.Task | None = None
     done: asyncio.Future = field(default_factory=lambda: asyncio.get_running_loop().create_future())
+    remote: dict | None = None
 
 
 def approval_summary(tool, tool_input, verdict):
@@ -202,6 +203,8 @@ class Host:
         self.telegram = None
         self.ws = None
         self.sessions: dict[int, Session] = {}
+        from .remote_pair import RemotePair
+        self.remote_pair = RemotePair(self)
         self.pairing: Pairing | None = None
         self.pk_guard = passkey.Guard()   # F20: pk_restore rate limit + nonce replay memory (in memory only)
         self.send_lock = asyncio.Lock()
@@ -401,7 +404,7 @@ class Host:
                         if isinstance(msg, bytes):
                             await self.on_frame(msg)
             except Exception as e:  # network, handshake refusal, relay auth failure → back off and retry
-                self.st.log("relay_down", reason=type(e).__name__)
+                self.st.log("relay_down", reason=proxy.relay_failure(e, url))
             finally:
                 if self.relay_up:
                     self.emit("relay", up=False)
@@ -577,6 +580,7 @@ class Host:
             self.st.log("pair_pending", cid=s.cid, device=s.device, name=s.name)
             self.reporter.trigger("pending")
             await self._ctl_send(p.ctl, self._pending_event(s))
+            await self.remote_pair.pending(p, s)
             return
         if s.state == "pending":
             return  # nothing from an unapproved device is acted on
@@ -728,9 +732,13 @@ class Host:
             await self.close_cid(s.cid, res["reason"], res)
             self.emit("denied", device=s.device, name=s.name)
             return res
+        return await self._grant_pair(s)
+
+    async def _grant_pair(self, s: Session, source: str = 'local') -> dict:
+        self._set_timer(s, None)
         try:   # 0.15.1: full → the stalest remote makes room (State.pair_device); same browser → its old record goes
             got = self.st.pair_device(s.pub, s.name, s.sign_pub or None, iid=s.iid or None, evict=True,
-                                      online=self._online() - {s.device})
+                                      online=self._online() - {s.device}, source=source)
         except DeviceLimit:   # not reachable with evict=True; kept so a future cap change fails closed
             res = {"ev": "denied", "reason": "device_limit"}
             await self.close_cid(s.cid, "device_limit", res)
@@ -744,7 +752,7 @@ class Host:
         await self.send_app(s, {"t": "approved", **self._caps(s)})
         await self._bulk(s)
         await self._pk_offer(s)                 # F20: once, right after a pairing (never on a resume)
-        self.st.log("pair_approved", cid=s.cid, device=s.device, name=s.name, code_ok=True)
+        self.st.log("pair_approved", cid=s.cid, device=s.device, name=s.name, code_ok=source == "local", source=source)
         self.emit("approved", device=s.device, name=s.name)
         asyncio.create_task(self._ready_then_onboard(s))   # F28: the first remote ever → the main Agent's welcome there
         res = {"ev": "approved", "device": s.device, "name": s.name}
@@ -1846,8 +1854,9 @@ class Host:
                     # Diagnose the newly restarted service, rather than reporting the updater's old-process checks.
                     from . import doctor
                     try:
-                        completed["counts"] = update.doctor_counts(await asyncio.to_thread(doctor.run, self.st))
-                        failed = bool(completed["counts"][2])
+                        rows = await asyncio.to_thread(doctor.run, self.st)
+                        completed["counts"] = update.doctor_counts(rows)
+                        failed, completed["existing_issues"] = update.upgrade_health(rows)
                     except Exception:
                         completed["counts"], failed = None, True
                     completed["reason"] = "doctor_failed" if failed else "upgraded"
@@ -3072,7 +3081,7 @@ class Host:
     def _models_msg(self) -> dict:
         a = self.agent
         cur_m = a.cur_model() if a else None
-        models = [{"id": m["id"], "name": m["name"], "efforts": m.get("efforts"), "cur": m["id"] == cur_m
+        models = [{"id": m["id"], "name": m["name"], "efforts": m.get("efforts"), **({"disabled": True} if m.get("disabled") else {}), "cur": m["id"] == cur_m
                    or (m.get("resolved") and m.get("resolved") == cur_m)} for m in (a.models_cache if a else [])]
         dm = getattr(a, "human", {}).get("model") if a and a.kind == "codex" else None
         de = getattr(a, "human", {}).get("model_reasoning_effort") if a and a.kind == "codex" else None
@@ -3307,7 +3316,7 @@ class Host:
             self.st.log("codex_leftover_ended", result=len(ended))
         self.post_q = asyncio.Queue()
         jobs = [asyncio.create_task(self.relay_loop()), asyncio.create_task(self.reporter.run()),
-                 asyncio.create_task(self.sync_loop()), asyncio.create_task(self.post_loop()),
+                 asyncio.create_task(self.sync_loop()), asyncio.create_task(self.remote_pair.run()), asyncio.create_task(self.post_loop()),
                  asyncio.create_task(self.update_loop()), asyncio.create_task(self.preferences_loop())]
         perm_server = None
         if self.agent_cfg:

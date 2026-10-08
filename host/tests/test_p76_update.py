@@ -11,7 +11,7 @@ sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
 import unittest
 from unittest.mock import AsyncMock, Mock, patch
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
-from agentj import controls, phone_update, update, wire
+from agentj import controls, phone_update, update, wire, __version__
 from agentj.state import State
 from agentj.serve import Host, Session
 
@@ -47,7 +47,7 @@ class Upgrade(unittest.IsolatedAsyncioTestCase):
             await self.h.phone_upgrade(1,"Owner");launch.assert_called_once_with(self.st)
         self.assertIn("install_failed",self.h.cmd_card.call_args.args[1].text)
     async def test_restarted_host_replays_result_into_history_once(self):
-        rec={"from":"0.16.1a1","to":"0.16.2a1","result":"ok","reason":"upgraded","counts":[10,2,0]}
+        rec={"from":"0.16.1a1","to":__version__,"result":"ok","reason":"upgraded","counts":[10,2,0]}
         self.st.write_private(self.st.root/phone_update.RESULT,json.dumps(rec).encode())
         with patch("agentj.doctor.run",return_value=[{"status":"ok"}]) as doctor:
             await self.h.upgraded_notice();doctor.assert_called_once_with(self.st)
@@ -61,7 +61,7 @@ class Upgrade(unittest.IsolatedAsyncioTestCase):
     def test_worker_durable_before_restart_and_apply_failure_no_restart(self):
         restart=Mock(side_effect=lambda:self.assertTrue((self.st.root/phone_update.RESULT).exists()))
         with patch("agentj.doctor.run",return_value=[{"status":"ok"}]):
-            phone_update.run(self.st,apply_fn=Mock(return_value={"from":"0.16.1a1","to":"0.16.2a1","reason":"upgraded","result":"ok"}),restart_fn=restart)
+            phone_update.run(self.st,apply_fn=Mock(return_value={"from":"0.16.1a1","to":__version__,"reason":"upgraded","result":"ok"}),restart_fn=restart)
         restart.assert_called_once();self.assertEqual(phone_update.take(self.st)["counts"],[1,0,0])
         restart.reset_mock();phone_update.run(self.st,apply_fn=Mock(return_value={"reason":"install_failed","result":"failed"}),restart_fn=restart)
         restart.assert_not_called();self.assertIn("Upgrade failed",phone_update.text(phone_update.take(self.st),"en"))
@@ -76,6 +76,6 @@ class InstalledDoctorFailure(unittest.TestCase):
         with tempfile.TemporaryDirectory() as td,patch.dict(os.environ,{"AGENTJ_STATE_DIR":td}):
             st=State();restart=Mock()
             with patch("agentj.doctor.run",return_value=[{"status":"fail"}]):
-                phone_update.run(st,apply_fn=Mock(return_value={"from":"0.16.1a1","to":"0.16.2a1","reason":"doctor_failed","result":"failed"}),restart_fn=restart)
+                phone_update.run(st,apply_fn=Mock(return_value={"from":"0.16.1a1","to":__version__,"reason":"doctor_failed","result":"failed"}),restart_fn=restart)
             restart.assert_called_once();rec=phone_update.take(st)
             self.assertIn("0✓/0!/1✗",phone_update.text(rec));self.assertIn("agentj doctor",phone_update.text(rec,"en"))

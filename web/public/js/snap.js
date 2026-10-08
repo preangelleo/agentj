@@ -111,7 +111,7 @@ function swCat() {
   const m = S.models;
   if (!m || !Array.isArray(m.models) || !m.models.length) return null;
   const models = m.models.filter((x) => x && typeof x.id === 'string').slice(0, 40)
-    .map((x) => ({ id: x.id, name: typeof x.name === 'string' && x.name ? x.name.slice(0, 64) : x.id, efforts: Array.isArray(x.efforts) ? x.efforts.filter((e) => typeof e === 'string').slice(0, 8) : null }));
+    .map((x) => ({ id: x.id, disabled: x.disabled === true, name: typeof x.name === 'string' && x.name ? x.name.slice(0, 64) : x.id, efforts: Array.isArray(x.efforts) ? x.efforts.filter((e) => typeof e === 'string').slice(0, 8) : null }));
   const d = m.default && typeof m.default === 'object' ? m.default : {};
   return { models, default: { model: typeof d.model === 'string' ? d.model : models[0].id, effort: typeof d.effort === 'string' ? d.effort : null } };
 }

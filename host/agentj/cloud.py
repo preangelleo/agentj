@@ -582,7 +582,7 @@ def seat_bind(st, api: str, token: str, name: str, *, post: Callable = post_json
     the code path and `cloud_linked kind=seat` is logged; the caller sets the local Agent name. The code is never logged,
     never put in a result and never sent anywhere else; the answer passes the same whitelist as a bound poll answer, and
     nothing in it can add or approve a device (this module never touches the allowlist)."""
-    if not seat_code_ok(token):
+    if not (seat_code_ok(token) or isinstance(token, str) and re.fullmatch(r"AJI-[a-f0-9]{32}", token)):
         return {"status": "bad_code"}
     problem = agent_name_problem(name)
     if problem:
@@ -607,7 +607,7 @@ def seat_bind(st, api: str, token: str, name: str, *, post: Callable = post_json
         return {"status": "bound", "tenant": p["tenant"], "host_id": p["host_id"], "agent_name": p["agent_name"] or name}
     kind = ("name_taken" if status == 409 and err == "name_taken" else
             "already_bound" if status == 409 and err == "already_bound" else
-            "invalid_setup" if status == 404 else
+            "invalid_setup" if status in (404, 410) else
             "payment_required" if status == 402 else
             "rate_limited" if status == 429 else
             err if status == 400 and err in ("bad_name", "name_required") else "error")

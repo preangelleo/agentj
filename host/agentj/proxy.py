@@ -80,3 +80,38 @@ def environment(base=None, preferences=None):
             else:
                 env.pop(k, None)
     return env
+
+
+def relay_summary(url: str) -> str:
+    """Native WebSocket proxy selection, without harness preferences or credentials."""
+    try:
+        from websockets.uri import parse_uri
+        from websockets.proxy import get_proxy
+        value = get_proxy(parse_uri(url))
+    except ImportError:
+        return ""
+    except (ValueError, OSError):
+        return "invalid proxy / 代理配置无效"
+    if not value:
+        return ""
+    try:
+        u = urlsplit(value)
+        if u.scheme not in ('http', 'https', 'socks4', 'socks4a', 'socks5', 'socks5h'):
+            return "invalid proxy / 代理配置无效"
+        host = u.hostname or ''
+        if not host or any(c not in 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789.:-_' for c in host):
+            return "invalid proxy / 代理配置无效"
+        return u.scheme + '://' + host
+    except ValueError:
+        return "invalid proxy / 代理配置无效"
+
+
+def relay_failure(error: Exception, url: str) -> str:
+    """Bounded metadata only: never forward an exception's message (may contain proxy auth)."""
+    kind = type(error).__name__
+    selected = relay_summary(url)
+    if isinstance(error, ImportError) and 'python_socks' in str(error).replace('-', '_'):
+        kind += ': missing python-socks / 缺少 python-socks'
+    elif 'proxy' in kind.lower():
+        kind += ': proxy connection / 代理连接失败'
+    return kind + ('; proxy / 代理 ' + selected if selected else '')

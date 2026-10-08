@@ -249,7 +249,7 @@ class Recall(unittest.TestCase):
 # ------------------------------------------------------------------ identity
 class Identity(unittest.TestCase):
     def test_core_v4_rules_and_hashes(self):
-        self.assertEqual(main_identity.verify_core()["version"], 6)
+        self.assertEqual(main_identity.verify_core()["version"], 7)
         man = json.loads((main_identity.DATA / "manifest.json").read_text())
         self.assertEqual(man, {"version": main_identity.VERSION, "hashes": main_identity.HASHES})
         zh = main_identity.prompt({"language": "zh"})
@@ -263,7 +263,7 @@ class Identity(unittest.TestCase):
             from test_l1 import _state
             rows = doctor.check_main_identity(_state(td))
         self.assertEqual((rows[0]["id"], rows[0]["status"]), ("main-core", "ok"))
-        self.assertIn("core v6:", rows[0]["summary"])
+        self.assertIn("core v7:", rows[0]["summary"])
 
     def test_bare_word_compact_is_the_command_only_when_alone(self):
         for t in ("压缩", "压缩一下", " 压缩。", "compact", "Compact"):

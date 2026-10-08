@@ -1011,7 +1011,7 @@ export default {
   "fr.ask.done.fr_timeout": "请求已过期",
   "fr.ask.done.fr_ended": "这个请求已经结束",
   "fr.ask.done.fr_stopped": "已全部停下，请求没处理",
-  "fr.ask.done.pq_allow": "已照草稿回复",
+  "fr.ask.done.pq_allow": "分身已代你回复",
   "fr.ask.done.pq_deny": "这条不回",
   "fr.ask.done.pq_timeout": "超时了，这条没回",
   "fr.ask.done.pq_ended": "这件事已经结束",
@@ -1021,7 +1021,7 @@ export default {
   "fr.q.title": "💬 {name} 问了一件要你定的事",
   "fr.q.draft": "分身拟的回复：",
   "fr.q.noDraft": "（没有拟好的回复）",
-  "fr.q.send": "照草稿回",
+  "fr.q.send": "让分身自己回",
   "fr.q.skip": "不回",
   "fr.q.tell": "我来说",
   "fr.q.reason": "原因：{why}",
@@ -1072,7 +1072,9 @@ export default {
   "r.silent.noSource": "来源未记录",
   "r.silent.noText": "（这一条的原话没有记录）",
   "r.silent.reply": "回复：",
-  "r.silent.help": "静默回合收在这里。点开一条，查看当时的原话。"
+  "r.silent.help": "静默回合收在这里。点开一条，查看当时的原话。",
+  "fr.q.auto": "以后这位都让分身自己聊",
+  "fr.ask.groupHint": "默认：只聊寒暄和名片；好友：自动聊日常协作和技术，最多 12 轮；同事：自动聊其他话题。报价、约时间和承诺仍问你。"
  },
  "en": {
   "meta.title": "Agent J · Phone remote",
@@ -2085,7 +2087,7 @@ export default {
   "fr.ask.done.fr_timeout": "The request expired",
   "fr.ask.done.fr_ended": "This request has ended",
   "fr.ask.done.fr_stopped": "Everything was stopped; the request was not handled",
-  "fr.ask.done.pq_allow": "Replied with the draft",
+  "fr.ask.done.pq_allow": "Your Agent replied for you",
   "fr.ask.done.pq_deny": "No reply to this one",
   "fr.ask.done.pq_timeout": "Timed out; no reply",
   "fr.ask.done.pq_ended": "This has ended",
@@ -2095,7 +2097,7 @@ export default {
   "fr.q.title": "💬 {name} asked something for you to decide",
   "fr.q.draft": "The draft reply:",
   "fr.q.noDraft": "(no draft)",
-  "fr.q.send": "Send the draft",
+  "fr.q.send": "Let my Agent reply",
   "fr.q.skip": "Don't reply",
   "fr.q.tell": "I'll say it",
   "fr.q.reason": "Why: {why}",
@@ -2146,6 +2148,8 @@ export default {
   "r.silent.noSource": "Source not recorded",
   "r.silent.noText": "(Original input not recorded)",
   "r.silent.reply": "Reply: ",
-  "r.silent.help": "Silent turns are kept here. Tap a row to view its original input."
+  "r.silent.help": "Silent turns are kept here. Tap a row to view its original input.",
+  "fr.q.auto": "Let my Agent chat with this friend from now on",
+  "fr.ask.groupHint": "Default: small talk and cards. Friends: everyday collaboration and technical topics, up to 12 rounds. Colleagues: other topics too. Quotes, scheduling and commitments still ask you."
  }
 };

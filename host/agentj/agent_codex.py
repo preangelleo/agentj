@@ -201,7 +201,7 @@ def question_card(qs) -> list | None:
 
 class RPCError(Exception):
     def __init__(self, err):
-        super().__init__(str(err)[:200])
+        super().__init__(json.dumps(err, ensure_ascii=False)[:4000])
         self.err = err if isinstance(err, dict) else {}
 
 
@@ -234,6 +234,18 @@ class CodexAgent(Agent):
         self.collect: list | None = None                       # run_once: texts are collected, not sent
         self.quiet = False                                     # compaction: no text to the phone
         self.tasks: set[asyncio.Task] = set()
+        self.unavailable_models: set[str] = set()  # native account rejection; survives model refresh/reconnect
+
+    def fail_notice(self, text: str) -> None:
+        kind, notice, blocked = _agentmod.codex_failure(text, self.cur_model(), getattr(self.host, "lang", "zh"))
+        if kind == "model" and blocked and slash.MODEL_RE.fullmatch(blocked):
+            self.unavailable_models.add(blocked)
+            for m in self.models_cache:
+                m["disabled"] = m["id"] in self.unavailable_models
+            fn = getattr(self.host, "models_changed", None)
+            if fn:
+                fn()
+        super().fail_notice(notice)
 
     def is_down(self) -> bool:
         return self.failed_start
@@ -409,7 +421,7 @@ class CodexAgent(Agent):
                 if isinstance(v, str) and len(v) <= 16 and v not in effs:
                     effs.append(v)
             out.append({"id": clean_line(m["id"], 100), "name": clean_line(str(m.get("displayName") or m["id"]), 60),
-                        "efforts": effs or None, "default": m.get("isDefault") is True})
+                        "efforts": effs or None, "default": m.get("isDefault") is True, "disabled": m["id"] in self.unavailable_models})
         self.models_cache = out[:40]
         fn = getattr(self.host, "models_changed", None)
         if fn:
@@ -426,6 +438,9 @@ class CodexAgent(Agent):
     async def apply_model(self, model: str | None, effort: str | None, default: bool = False) -> str | None:
         """Codex keeps a turn's model / effort for the turns after it, so "default" sends the human's own configured values
         (config/read) once with the next turn/start."""
+        target = self.human.get("model") if default else model
+        if (target or self.cur_model()) in self.unavailable_models:
+            return "unsupported"
         if default:
             self.revert = {"model": self.human.get("model"), "effort": self.human.get("model_reasoning_effort")}
         return await super().apply_model(model, effort, default)
@@ -436,7 +451,7 @@ class CodexAgent(Agent):
         try:
             return await self._thread()
         except (RPCError, ConnectionError, OSError, asyncio.TimeoutError) as e:
-            self.fail_notice(f"Codex 没能打开这段对话（{clean(str(e), 120) or type(e).__name__}）。")
+            self.fail_notice(f"Codex 没能打开这段对话（{clean(str(e), 4000) or type(e).__name__}）。")
             return False
 
     # ------------------------------------------------ the process
@@ -542,7 +557,7 @@ class CodexAgent(Agent):
             if t.get("status") == "failed" and not self.halting:
                 e = t.get("error") if isinstance(t.get("error"), dict) else {}
                 m = e.get("message")
-                self.fail_notice("Codex 这一轮没有正常完成" + (f"：{clean(m, 300)}" if isinstance(m, str) and m else "。"))
+                self.fail_notice("Codex 这一轮没有正常完成" + (f"：{clean(m, 4000)}" if isinstance(m, str) and m else "。"))
             if self.turn_done:
                 self.turn_done.set()
         elif method == "thread/tokenUsage/updated" and th == self.tid:
@@ -560,6 +575,9 @@ class CodexAgent(Agent):
             e = p.get("error") if isinstance(p.get("error"), dict) else {}
             if isinstance(e.get("message"), str):
                 self.host.st.log("agent_error", agent=self.kind)
+        elif method == "account/updated":
+            self.unavailable_models.clear()
+            self._bg(self.refresh_models())
         elif method == "serverRequest/resolved":
             f = self.pending.get(p.get("requestId"))
             if f and not f.done():
@@ -727,7 +745,7 @@ class CodexAgent(Agent):
             self.revert = None
         except (RPCError, ConnectionError, OSError, asyncio.TimeoutError) as e:
             if not self.halting:
-                self.fail_notice(f"Codex 没有接这条消息（{clean(str(e), 160) or type(e).__name__}）。")
+                self.fail_notice(f"Codex 没有接这条消息（{clean(str(e), 4000) or type(e).__name__}）。")
             return
         t = (r or {}).get("turn") if isinstance(r, dict) else None
         if isinstance(t, dict) and isinstance(t.get("id"), str):
@@ -784,7 +802,7 @@ class CodexAgent(Agent):
             await self.call("thread/compact/start", {"threadId": self.tid})
             await asyncio.wait_for(self.turn_done.wait(), 600)
         except (RPCError, ConnectionError, OSError, asyncio.TimeoutError) as e:
-            return Result(f"没有压缩：{clean(str(e), 160) or type(e).__name__}", "error")
+            return Result(f"没有压缩：{clean(str(e), 4000) or type(e).__name__}", "error")
         finally:
             self.quiet = False
             self.set_status("working")
@@ -869,7 +887,8 @@ class CodexAgent(Agent):
                 for m in (res or {}).get("data") or []:
                     if isinstance(m, dict) and isinstance(m.get("id"), str) and not m.get("hidden"):
                         models.append({"id": clean_line(m["id"], 100), "name": clean_line(str(m.get("displayName") or m["id"]), 60),
-                                       "desc": clean_line(str(m.get("description") or ""), 120)})
+                                       "desc": clean_line(str(m.get("description") or ""), 120),
+                                       "disabled": m["id"] in self.unavailable_models})
         cur = self.cfg.get("model") or self.thread.get("model") or self.human.get("model") or next(
             (x["id"] for x in getattr(self, "models_cache", []) if x.get("default") is True), None) or ""
         if not arg:
@@ -879,6 +898,8 @@ class CodexAgent(Agent):
                           "ok", models=models[:40])
         if not slash.MODEL_RE.match(arg) or (models and arg not in {m["id"] for m in models}):
             return Result(f"没有这个模型：{clean_line(arg, 100)}", "error")
+        if arg in self.unavailable_models:
+            return Result(_agentmod.codex_failure(f"The '{arg}' model is not supported when using Codex with a ChatGPT account.", arg, getattr(self.host, "lang", "zh"))[1], "error")
         self.host.set_model(arg)
         self.meter(model=arg, model_name=self.model_name(arg))
         return Result(f"已切换到 {arg}：从下一条消息起使用，写进了 config.json。")

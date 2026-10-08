@@ -155,11 +155,11 @@ KIND = {"zh": {"computer": "这台电脑的浏览器", "phone": "主力手机", 
         "en": {"computer": "this computer's browser", "phone": "the main phone", "other": "remote"}}
 
 HOW = {
-    "zh": {"computer": "在这台电脑上运行 agentj admin（或在账号页点「添加遥控器」），用这台电脑的浏览器打开 https://m.agentj.app 扫码或粘贴配对链接",
-           "phone": "手机打开 https://m.agentj.app，先添加到主屏幕，再在电脑上运行 agentj admin 显示二维码，用主屏幕图标里的「扫二维码」扫",
+    "zh": {"computer": "已绑定账号时，在账户页这台电脑的席位卡点「添加遥控器」，用通行密钥确认一次，无需设置批准口令（未绑定时运行 agentj admin），用这台电脑的浏览器打开 https://m.agentj.app 扫码或粘贴配对链接",
+           "phone": "手机打开 https://m.agentj.app，先添加到主屏幕，在账户页这台电脑的席位卡点「添加遥控器」，用通行密钥确认后显示二维码，用主屏幕图标里的「扫二维码」扫",
            "seat": "这台电脑还没加进 Agent J 账号的席位：在账号页空席位上「复制安装提示词」拿设置码，交给我用 agentj login --seat-file 激活"},
-    "en": {"computer": "run agentj admin on this computer (or Add a remote on the account page) and open https://m.agentj.app in this computer's browser to scan or paste the pairing link",
-           "phone": "open https://m.agentj.app on the phone, add it to the Home Screen, then run agentj admin on the computer and use Scan QR code inside the Home Screen icon",
+    "en": {"computer": "on a bound host, choose Add a remote on its account-page seat card and confirm with a passkey; no terminal passphrase needed (unbound: agentj admin) and open https://m.agentj.app in this computer's browser to scan or paste the pairing link",
+           "phone": "open https://m.agentj.app on the phone, add it to the Home Screen, choose Add a remote on its account-page seat card, confirm with a passkey and use Scan QR code inside the Home Screen icon",
            "seat": "this computer is not in an Agent J seat yet: copy the installation prompt on an empty seat in the account page and give me the setup code for agentj login --seat-file"},
 }
 
@@ -308,6 +308,8 @@ def doctor_row(st) -> tuple[str, str, str]:
         return "ok", summary, ""
     hint = {"seat": "agentj login --seat-file <file> --name <name>", "computer": "agentj admin  (pair this computer's browser)",
             "phone": "agentj admin  (pair the main phone)"}[s["next"]]
+    if s["seat"]:
+        hint = "账户页席位卡 → 添加遥控器 → 通行密钥确认 → 扫码 / account seat card → Add a remote → passkey → scan; no terminal passphrase"
     return "warn", summary, hint
 
 
@@ -321,6 +323,9 @@ def command(args, st) -> int:
             ("主力手机已配对 / main phone paired", s["phone"]), ("第一条欢迎已发 / welcome sent", s["welcomed"])]
     for name, ok in rows:
         print(("✓ " if ok else "· ") + name)
+    for d in st.devices().values():
+        if d.get("source") == "account":
+            print("✓ 经账户页添加 / Added from account page: " + d.get("name", ""))
     if s["next"]:
         print("下一步 / next: " + HOW["zh"][s["next"]] + "\n            " + HOW["en"][s["next"]])
     else:

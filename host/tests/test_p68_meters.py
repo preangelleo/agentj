@@ -11,7 +11,7 @@ class Models(unittest.IsolatedAsyncioTestCase):
     async def test_default_model_in_independent_and_desktop_shared(self):
         for cls in (CodexAgent, SharedCodexAgent):
             a=object.__new__(cls)
-            a.cfg={}; a.thread={}; a.human={}; a.models_cache=[]
+            a.cfg={}; a.thread={}; a.human={}; a.models_cache=[]; a.unavailable_models=set()
             a.proc=Mock(); a.host=SimpleNamespace(); a.meter=Mock()
             a.call=AsyncMock(side_effect=[{'data':[{'id':'gpt-6.1-sol','isDefault':True}]},{}])
             await a.refresh_models()

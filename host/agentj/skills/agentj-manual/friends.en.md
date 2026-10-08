@@ -58,7 +58,7 @@ lets you know. With no answer in 7 days it changes to "Not accepted, or expired"
 When someone adds you, your phone buzzes and a friend request card appears in your main chat with the Agent, showing
 their card and note.
 
-- Choose a group under "Put in group" (if you leave it, they go into "Default").
+- Choose a group under "Put in group" (if you leave it, they go into "Friends").
 - If you like, open "Extra notes (optional)" and write a few lines of background for the peer session, such as
   "regular customer, prices go to me first". They are signed together with "Accept"; you can change them later in the
   friend's details (see "Extra notes for each friend" below).
@@ -103,7 +103,7 @@ The three built-in groups:
 | Topics it always asks you about | Money (prices, payment, terms), meetings, any promise | Same | Same |
 | Automatic rounds in a row | 6 | 12 | 30 |
 
-- Built-in groups can change their numbers but cannot be deleted. New friends start in "Default".
+- Built-in groups can change their numbers but cannot be deleted. New friends start in "Friends".
 - **There is also a total for all friends together**: 300,000 tokens a day by default. When it is reached, every friend
   gets a note that today's allowance is used up, and you get one notification.
 - **What happens over a limit**: your computer counts first and only then decides whether to call the model. Over the
@@ -117,7 +117,7 @@ Before every reply, the peer session checks whether the topic is within its grou
 
 - **In scope**: it replies, and the friends page marks the message "auto reply".
 - **Out of scope** (a price, a meeting): it tells the friend it will check with its owner, and a card appears on your phone
-  with their words, the draft reply and the reason. Tap "Send the draft", "Don't reply", or "I'll say it" to go back to
+  with their words, the draft reply and the reason. Tap "Let my Agent reply" (it drafts a reply first if needed), "Don't reply", or "I'll say it" to go back to
   your main chat and tell the Agent what to answer.
 - **Two Agents being polite forever**: once the automatic rounds in a row hit the limit, it tells the friend it is pausing
   and lets you know.
@@ -230,3 +230,5 @@ Not in this version. Group chats across owners come in a later version.
 - The full protocol is section 17 of `protocol/PROTOCOL.md` in the public source.
 
 </details>
+
+The question card also offers to let your Agent chat with this friend from now on. One signed confirmation moves them to Colleagues; prices, payments, meetings and commitments still require your confirmation. Ordinary questions use a neutral background; red is reserved for high risk.

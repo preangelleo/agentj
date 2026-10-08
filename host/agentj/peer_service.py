@@ -797,8 +797,8 @@ class PeerService:
         summary = self.tx("pq_summary", name=name, text=text, draft=draft or self.tx("no_draft"))
         a = FriendAsk(secrets.token_hex(16), "peer_question", summary, approvals.shown_digest("peer_question", summary),
                       self.clock() + PQ_TTL, reason, {"friend": fid, "name": name, "text": text, "draft": draft,
-                                                      "reason": reason},
-                      {"friend": fid, "mid": m["mid"], "thread": m["thread"], "ctx": m.get("ctx"), "draft": draft})
+                                                      "reason": reason, "high_risk": reason.startswith(self.tx("r_gate", rule="").split("(")[0].split("（")[0])},
+                      {"friend": fid, "mid": m["mid"], "thread": m["thread"], "ctx": m.get("ctx"), "draft": draft, "text": m["text"]})
         self._count("n_ask")
         self._save_question(a)
         self._open(a)
@@ -872,8 +872,8 @@ class PeerService:
                 or self.clock() > a.exp:
             self.log("answer_refused", id=rid, device=device, reason="shape_or_late")
             return True
-        if group is not None and not (a.tool == "friend_request" and ok and isinstance(group, str)
-                                      and GROUP_ID.fullmatch(group)):
+        if group is not None and not (a.tool in ("friend_request", "peer_question") and ok and isinstance(group, str)
+                                      and GROUP_ID.fullmatch(group) and (a.tool == "friend_request" or group == "colleague")):
             self.log("answer_refused", id=rid, device=device, reason="shape")
             return True
         if ctx is not None and not (a.tool == "friend_request" and ok and isinstance(ctx, str) and ctx
@@ -925,7 +925,7 @@ class PeerService:
             req = self.store.take_pending_in(a.data.get("rid", ""))
             if decision == "allow" and req and reason == "device":
                 fid = req["id"]
-                gid = group if group in {g["id"] for g in self.store.groups()} else "default"
+                gid = group if group in {g["id"] for g in self.store.groups()} else "friend"
                 self.store.add_friend(fid, req["x"], req["pk"], req["mbox"], card=req.get("card"), group=gid)
                 if isinstance(ctx, str) and ctx.strip():
                     why = self.store.set_context(fid, ctx)
@@ -945,11 +945,28 @@ class PeerService:
         if reason == "device":
             self.store.auto_round(fid, reset=True)            # an owner action
         draft = a.data.get("draft") or ""
-        if decision == "allow" and reason == "device" and draft:
-            j = asyncio.get_running_loop().create_task(self._send_draft(fid, a, draft))
+        if decision == "allow" and reason == "device":
+            if group == "colleague":
+                self.store.set_group(fid, "colleague")
+            j = asyncio.get_running_loop().create_task(self._owner_reply(fid, a, draft))
             self.jobs.add(j)
             j.add_done_callback(self.jobs.discard)
         self.changed(fid)
+
+    async def _owner_reply(self, fid: str, a: FriendAsk, draft: str) -> None:
+        if self.host.stopped() or self.store.is_blocked(fid): return
+        if not draft:
+            friend = self.store.get(fid)
+            if not friend: return
+            res = await self.sessions.turn(friend, self.store.group_of(fid),
+                peer_guard.wrap(fid, self.store.name_of(fid), a.data.get("text") or ""))
+            self.store.record_turn(fid, res.tokens)
+            if res.error or res.tools or not res.text.strip():
+                self.log("peer_turn", result="owner_reply_failed", reason=res.error or "empty")
+                return
+            draft = clean(res.text, DRAFT_MAX)
+        if self.host.stopped() or self.store.get(fid) is None or self.store.is_blocked(fid): return
+        await self._send_draft(fid, a, draft)
 
     async def _send_draft(self, fid: str, a: FriendAsk, draft: str) -> None:
         v = await self._outbound(draft)

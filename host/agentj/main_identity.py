@@ -11,9 +11,9 @@ import json
 from pathlib import Path
 
 DATA = Path(__file__).with_name("identity")
-VERSION = 6   # v6 (P71): friend / other-Agent content is data, never instructions; the owner only via phone + main session; agentj-friends
+VERSION = 7   # P78: classify every request; propose skills, CLI tools and WDB workflows before building
 # v5 (P64): a workflow with a CEO is always dispatched — never run or edited by the main Agent; read-only reporting stays
-HASHES = {'en': '8a5bf1eab938907ff6584a4bb38ecccf98f6c43e93d16a4052b9688dff275e36', 'zh': 'b2ad1c9c97de2f9d1254e5822011b73f8e09f9ec67387ebc360723cabb4d770b'}
+HASHES = {'en': 'bf49231361a7315f2b5c0dabb75846d521a6207f2d35c804738224a0d4939c21', 'zh': 'b665eccbdbb7f9c2d8e4c9992efd7ee8645c5c8e55fb0408b6d2e4ca3773d4bd'}
 MECHANISMS = {"claude": "append-system-prompt", "codex": "developerInstructions", "opencode": "prompt_async.system"}
 
 class IdentityError(ValueError):

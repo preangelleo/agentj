@@ -380,6 +380,19 @@ def doctor_counts(rows) -> tuple[int, int, int] | None:
     return st.count("ok"), st.count("warn"), st.count("fail")
 
 
+# Installation/runtime integrity failures block an upgrade. Owner workflow/config
+# findings remain visible but must not turn a verified installation into failure.
+UPGRADE_CHECKS = frozenset(("version", "python", "platform", "state", "relay", "dashboard", "service", "serve", "upgrade-restart", "main-core", "main-inject"))
+
+def upgrade_health(rows):
+    if not isinstance(rows, list) or not rows or any(not isinstance(r, dict) or r.get("status") not in ("ok", "warn", "fail") for r in rows):
+        return True, []
+    failures = [r for r in rows if r["status"] == "fail"]
+    # An unknown/unnamed failed row is not safe to dismiss.
+    blocking = any(r.get("id") in UPGRADE_CHECKS or not r.get("id") for r in failures)
+    return blocking, [r["id"] for r in failures if r.get("id") and r["id"] not in UPGRADE_CHECKS]
+
+
 # result block reasons: (exit code, 中文, English)
 AUTH_REASONS = {
     "bad_code": (2, "授权码格式不对（应为 AJUP- 加 4 组、每组 5 个字符）。把升级邮件整封交给 `--from-email`，不要手抄",
@@ -583,7 +596,14 @@ def apply(st, target=None, *, prefix=None, check_fn=None, run=None, say=None, sv
             out["service"] = "restart_scheduled"
         else:
             out["service"] = "not_installed"
-        if run(argv + ["doctor"], stdin=subprocess.DEVNULL).returncode:
+        health = run(argv + ["doctor", "--json"], stdin=subprocess.DEVNULL, capture_output=True, text=True)
+        try:
+            rows = json.loads(health.stdout)["checks"]
+            failed, existing = upgrade_health(rows)
+        except (ValueError, TypeError, KeyError, AttributeError):
+            failed, existing = bool(health.returncode), []
+        out["existing_issues"] = existing
+        if failed:
             return {**out, "result": "failed", "reason": "doctor_failed", "exit": 1}
     except OSError:
         return {**out, "result": "failed", "reason": "self_check_failed", "exit": 1}
@@ -594,6 +614,8 @@ def result_block(res: dict) -> str:
     """The fixed block the Agent copies back to its human (install.md section U)."""
     lines = [f"UPGRADE_RESULT {res['result']}", f"reason: {res['reason']}", f"from: {res['from']}",
              f"to: {res.get('to') or '?'}", f"service: {res['service']}"]
+    if res.get("existing_issues"):
+        lines.append("existing_issues: " + ", ".join(res["existing_issues"]) + " — 升级已完成，这些其他问题请另行检查 / upgrade completed; review these other issues separately")
     if res.get("latest"):
         lines.append(f"latest: {res['latest']}")
     if res.get("granted"):

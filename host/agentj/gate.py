@@ -1,5 +1,7 @@
 """The approval passphrase (批准口令, L2 / G-A8): a second gate in front of every device approval that only the human has.
 
+P78: on an account-bound host, a signed one-use account request authorized by a fresh owner passkey supplies equivalent L2 proof for the exact host/operation (remote_pair.py). It never transmits or sets a passphrase. Local approvals below still require one.
+
 The 6-digit code proves *which phone* is being paired; the passphrase proves *a human at this host* is the one approving.
 The agent runs fenced (fence.py) and cannot see this state directory; even a process that reaches the control socket or
 holds an admin-page session cannot approve without the passphrase. Only an scrypt hash is stored (approver.json, 0600),

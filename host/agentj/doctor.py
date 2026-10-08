@@ -20,6 +20,7 @@ import urllib.request
 
 from . import DIST, __version__, cloud, fence, gate, harness, names, service, update, wire
 from .state import DEFAULT_RELAY, State
+from . import proxy
 
 OK, WARN, FAIL = "ok", "warn", "fail"
 MARK = {OK: "✓", WARN: "!", FAIL: "✗"}
@@ -128,7 +129,7 @@ def probe_relay(relay: str, timeout: float = NET_TIMEOUT) -> tuple[bool, str]:
         with connect(url, open_timeout=timeout, close_timeout=2, max_size=2**12) as ws:
             first = ws.recv(timeout=timeout)
     except Exception as e:  # noqa: BLE001 — any failure is "not reachable"; the kind is enough
-        return False, type(e).__name__
+        return False, proxy.relay_failure(e, url)
     try:
         m = json.loads(first)
     except (TypeError, ValueError):
@@ -140,7 +141,8 @@ def check_relay(st: State) -> dict:
     relay = _relay_url(st)
     ok, why = probe_relay(relay)
     if ok:
-        return _c("relay", OK, f"{relay} (TLS + WebSocket)")
+        selected = proxy.relay_summary(relay)
+        return _c("relay", OK, f"{relay} (TLS + WebSocket)" + (f" · proxy / 代理 {selected}" if selected else ""))
     return _c("relay", FAIL, f"{relay} 连不上 / unreachable ({why})",
               "检查网络和代理（HTTPS_PROXY）；有防火墙的话要放行 wss:// / check network, proxy, firewall (wss://)")
 
@@ -465,6 +467,10 @@ def check_passphrase(st: State) -> dict:
     if gate.is_set(st):
         left = gate.lock_left(st)
         return _c("passphrase", OK, "已设置 / set" + (f" (locked {max(1, left // 60)} min)" if left else ""))
+    from . import cloud
+    if cloud.read_cloud(st):
+        return _c("passphrase", OK, "用账户页通行密钥批准 / account-page passkey approval",
+                  "口令可选；离线批准可设 / optional for offline approval: agentj passphrase set")
     return _c("passphrase", WARN, "未设置 / not set", "agentj passphrase set   (自己在终端里输 / type it yourself, never via an agent)")
 
 
@@ -513,6 +519,8 @@ def check_onboarding(st: State) -> dict:
         status, summary, hint = onboarding.doctor_row(st)
     except Exception as e:  # noqa: BLE001 — a doctor row, never a crash
         return _c("onboard", WARN, f"首次引导：检查失败（{type(e).__name__}）/ first-use setup: check failed")
+    if any(d.get("source") == "account" for d in st.devices().values()):
+        summary += " · 经账户页添加 / Added from account page"
     return _c("onboard", status, summary, hint)
 
 
@@ -856,8 +864,13 @@ def check_main_identity(st):
                                        check.get("hint", "agentj wizard doctor") if strict else "Review root entries and CEO roster; no automatic move or overwrite"))
         if cfg:
             ok, reason = main_identity.latest_audit(st, cfg)
-            status = OK if ok else WARN if reason.startswith("no verified main Agent launch") else FAIL
-            rows.append(_c("main-inject", status, reason, "Restart serve and send a message" if not ok else ""))
+            refresh = reason == "restart main Agent: identity metadata differs"
+            status = OK if ok else WARN if reason.startswith("no verified main Agent launch") or refresh else FAIL
+            waiting = not ok and reason.startswith("no verified main Agent launch")
+            detail = "服务重启后还没收到手机消息，从手机发一句话即可完成验证 / No phone message since the service restarted; send one message from your phone to verify." if waiting else reason
+            if refresh:
+                detail = "升级后从手机发一句话即可验证新身份；共享 Claude 需新会话或 /clear 后生效 / After upgrading, send one phone message to verify the new identity; shared Claude needs a new session or /clear."
+            rows.append(_c("main-inject", status, detail, "从手机发一句话 / Send a message from your phone" if waiting else "Restart serve and send a message" if not ok else ""))
             if old and str(pathlib.Path(old).resolve()) != str(root):
                 rows.append(_c("root-migrate", WARN, "Old files were kept in the previous work folder", "Review CEO roster and paths; no automatic move"))
     except (main_identity.IdentityError, preferences.ConfigError, OSError, ValueError):

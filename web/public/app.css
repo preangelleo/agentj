@@ -1052,6 +1052,7 @@ body[data-agent="stopped"]{--state:var(--black-mana)}
 .cmdx[hidden]{display:none}
 .cmdmodel{display:flex;flex-direction:column;align-items:flex-start;gap:2px;min-height:52px;padding:8px 14px;border-radius:14px;text-align:left;
   background:var(--surface);color:var(--ink)}
+.cmdmodel:disabled{opacity:.4;cursor:default;color:var(--ink-soft)}
 .cmdmodel[aria-current="true"]{box-shadow:inset 0 0 0 2px var(--ink)}
 .cmdmodel b{font:600 calc(15px*var(--fz))/1.3 var(--font-body)}
 .cmdmodel span{font:400 calc(12px*var(--fz))/1.35 var(--font-mono);color:var(--ink-soft);word-break:break-all}
@@ -1570,3 +1571,5 @@ body[data-view="scan"] .top{display:none}
   white-space:pre-wrap;overflow-wrap:anywhere;font-size:calc(14px*var(--fz))}
 .slist .rep{margin-top:6px;color:var(--ink-soft);font-size:calc(12px*var(--fz))}
 .slist .empty{padding:12px 0;color:var(--ink-soft)}
+
+.sheet.friend-neutral{background:var(--surface);color:var(--ink)}

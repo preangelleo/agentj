@@ -16,8 +16,8 @@ instructions; post / reply go out only after layer 1 (+ layer 2) and `--owner-co
 Skill & workflow plaza: `agentj plaza install | publish | like | installed` (market.py; search / show / mine / report cover
 packages too) — install only after a preview and `--owner-confirmed --digest`; 官方认证 only with a valid compiled-in signature.
 
-State dir: $AGENTJ_STATE_DIR or ~/.local/state/agentj (0700). Approval of a new device happens only here,
-in the terminal running `agentj pair`: the human types the 6-digit code shown on the phone. At most MAX_DEVICES (5) remotes
+State dir: $AGENTJ_STATE_DIR or ~/.local/state/agentj (0700). Account-bound hosts can add a new device from the account page after fresh owner passkey confirmation.
+The local `agentj pair` alternative requires the human's 6-digit code and local approval passphrase. At most MAX_DEVICES (5) remotes
 per host: when the list is full, `agentj pair` lists them and the human unbinds one before approving. `agentj admin` is the
 same thing as a local web page (127.0.0.1 only, one-time link printed here; the human still types the phone's code).
 """
@@ -648,7 +648,7 @@ def cmd_devices(a) -> None:
     for did, v in devs.items():
         when = time.strftime("%Y-%m-%d %H:%M", time.localtime(v.get("paired_at", 0)))
         fid = "  Face ID ✓" if isinstance(v.get("pk"), dict) else ""   # F20: this phone can reconnect with its passkey
-        print(f"{did}  {'在线' if did in online else '离线'}  {v.get('name', '')}  配对于 {when}{fid}")
+        print(f"{did}  {'在线' if did in online else '离线'}  {v.get('name', '')}  配对于 {when}{fid}{' · 经账户页添加 / Added from account page' if v.get('source') == 'account' else ''}")
 
 
 def cmd_revoke(a) -> None:
@@ -695,7 +695,7 @@ def cmd_status(a) -> None:
               " / Agent J is not running (keep it running: `agentj service install`)")
         print(f"Agent：{_name_or_unset(st)}")
         print(_link_line(st))
-        print(f"批准口令：{'已设置' if gate.is_set(st) else '未设置（`agentj passphrase set`）'}")
+        print("批准方式：" + ("本机口令已设置" if gate.is_set(st) else "账户页通行密钥；口令可选" if cloud.read_cloud(st) else "未设置（agentj passphrase set）"))
         print(_estop_line(st))
         return
     link = cloud.read_cloud(st)
@@ -745,7 +745,8 @@ SEAT_EXIT = {"name_taken": 3, "invalid_setup": 4, "payment_required": 5, "bad_co
 def _read_seat_code(a) -> str:
     """The setup code from --seat <code>, --seat - (one line on stdin) or --seat-file <path> (a regular file the human /
     agent wrote with mode 0600; refused when group / others may read it). Never printed, never logged."""
-    if a.seat_file:
+    if a.seat_file or getattr(a, "install_code_file", None):
+        a.seat_file = a.seat_file or a.install_code_file
         import os
         import stat as _stat
         try:
@@ -774,10 +775,14 @@ def _read_seat_code(a) -> str:
 def _seat_login(st: State, a) -> None:
     """`agentj login --seat …` (seat setup §4.1): no y/N — the human gave the code to this computer's Agent, that is the
     decision. Prints the company it joined (the human must see it); never the code."""
+    if a.name is None and getattr(a, "install_code_file", None):
+        a.name = st.agent_name() or "Agent J"
     if a.name is None:
         print("✗ 用设置码绑定要同时给 Agent 起名：--name \"<名字>\" / --seat needs --name \"<name>\"", file=sys.stderr)
         sys.exit(2)
     code = _read_seat_code(a)
+    if getattr(a, "install_code_file", None) and not re.fullmatch(r"AJI-[a-f0-9]{32}", code):
+        _refuse("安装码格式不对，请从账户页重新复制 / Invalid installation code; copy it from the account page again")
     try:
         api = cloud.api_url(st, override=a.api)
     except cloud.CloudError:
@@ -833,7 +838,7 @@ def _account_arg(a) -> str | None:
                 "否则去掉 --yes，让主人自己回答 y/N。/ --yes works only together with --account <account ID>; nothing was "
                 "done. Use it only when your human explicitly said yes and told you the account ID; otherwise drop --yes and "
                 "let your human answer the y/N.")
-    if acct and (a.seat is not None or a.seat_file):
+    if acct and (a.seat is not None or a.seat_file or getattr(a, "install_code_file", None)):
         _refuse("--yes / --account 只用于 8 位代码的登录，设置码登录不需要 / --yes and --account are for the 8-character code "
                 "login only; the setup code login does not ask")
     if acct and not cloud._SLUG.fullmatch(acct):
@@ -850,7 +855,7 @@ def cmd_login(a) -> None:
     if link:
         sys.exit(f"这台电脑已经加到 Agent J 账号 {link['tenant']['slug']} 里了。要换账号，先运行 `agentj unlink`（再到账号后台把这台电脑移除）。"
                  f" / This computer is already in the Agent J account {link['tenant']['slug']}: run `agentj unlink` first.")
-    if a.seat is not None or a.seat_file:
+    if a.seat is not None or a.seat_file or getattr(a, "install_code_file", None):
         _seat_login(st, a)
         return
     if a.name is not None:
@@ -1548,6 +1553,13 @@ def memory_tilde(p: str | None) -> str:
     return tilde(p) if p else "?"
 
 
+def cmd_remote_pair(a) -> None:
+    from . import remote_pair
+    st = State(); _need_init(st)
+    if a.mode in ('on', 'off'): remote_pair.set_enabled(st, a.mode == 'on')
+    print('从账户页添加遥控器 / Account-page pairing: ' + ('on' if remote_pair.enabled(st) else 'off'))
+
+
 def cmd_remote_unbind(a) -> None:
     from .serve import REMOTE_UNBIND_PER_HOUR
     st = State()
@@ -1751,7 +1763,7 @@ def _done_steps(st: State) -> list[bool]:
         st.check_perms()
     except PermissionError:
         return [True] + [False] * (len(NEXT_STEPS) - 1)
-    return [True, cloud.read_cloud(st) is not None, gate.is_set(st), st.agent_config() is not None,
+    return [True, cloud.read_cloud(st) is not None, gate.is_set(st) or cloud.read_cloud(st) is not None, st.agent_config() is not None,
             bool(service.status().get("installed")), bool(st.devices())]
 
 
@@ -1760,8 +1772,14 @@ def cmd_hint() -> None:
     done = _done_steps(st)
     print(f"{DIST} {__version__} — 用手机和你自己的 Claude Code / Codex 对话 · talk to your own Agent from your phone\n")
     for i, ((cmd, zh, en), ok) in enumerate(zip(NEXT_STEPS, done), 1):
+        if cloud.read_cloud(st) and cmd == "agentj passphrase set":
+            cmd, zh, en = "账户页 / Account page", "通行密钥批准（口令可选）", "passkey approval (passphrase optional)"
+        elif cloud.read_cloud(st) and cmd == "agentj pair":
+            cmd, zh, en = "账户页 / Account page", "席位卡添加遥控器 → 扫码", "seat card → Add a remote → scan"
         print(f"  {'✓' if ok else '·'} {i}. {cmd:<36} {zh} / {en}")
     nxt = next((c for (c, _, _), ok in zip(NEXT_STEPS, done) if not ok), None)
+    if nxt == "agentj pair" and cloud.read_cloud(st):
+        nxt = "账户页席位卡 → 添加遥控器 / account seat card → Add a remote"
     print("\n" + (f"下一步 / next:  {nxt}" if nxt else "都设好了 / all set — 手机上打开 m.agentj.app 开始对话 / open m.agentj.app on your phone"))
     print("自检 / health check:  agentj doctor     ·     全部命令 / all commands:  agentj --help")
 
@@ -1890,6 +1908,7 @@ def main(argv=None) -> None:
     seat.add_argument("--seat-file", metavar="PATH",
                       help="从文件读设置码（文件必须 0600），这样它不进命令行和 shell 历史 / "
                            "read the setup code from a 0600 file, so it stays out of argv and shell history")
+    seat.add_argument("--install-code-file", metavar="PATH", help="从 0600 文件读取 AJI 安装码，给已安装的电脑绑定席位 / bind an installed host using an AJI code in a private file")
     lo.add_argument("--name", help="和 --seat 一起：本机 Agent 的名字（1–32 个字）/ with --seat: the Agent's name (1–32 characters). "
                                    "退出码 / exit: 3 名字已占用 name taken · 4 设置码无效 invalid code · 5 席位未付费 seat not paid · "
                                    "2 本地拒绝 refused locally")
@@ -1899,6 +1918,9 @@ def main(argv=None) -> None:
     rh = sub.add_parser("report-hostname", help="账号后台是否显示这台电脑的名字（默认显示）/ show this computer's name in the account dashboard")
     rh.add_argument("mode", nargs="?", choices=["on", "off", "status"], default="status")
     rh.set_defaults(fn=cmd_report_hostname)
+    rp = sub.add_parser("remote-pair", help="允许从账户页添加遥控器（默认开）/ allow account-page pairing")
+    rp.add_argument("mode", nargs="?", choices=["on","off","status"], default="status")
+    rp.set_defaults(fn=cmd_remote_pair)
     ru = sub.add_parser("remote-unbind", help="允许 / 禁止在账号后台解绑这台电脑的手机遥控器（默认允许）/ allow unlinking phone remotes from the account dashboard")
     ru.add_argument("mode", nargs="?", choices=["on", "off", "status"], default="status")
     ru.set_defaults(fn=cmd_remote_unbind)

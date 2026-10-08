@@ -36,7 +36,7 @@ is the same file, byte for byte; the site publishes its SHA-256 at <https://agen
 
 The host program on its own, pinned to the release tag (Python 3.11 or newer; if yours is older, uv fetches one):
 ```bash
-uv tool install "git+https://github.com/preangelleo/agentj@v0.16.2a1#subdirectory=host"
+uv tool install "git+https://github.com/preangelleo/agentj@v0.16.3a1#subdirectory=host"
 agentj --version
 ```
 
@@ -90,3 +90,5 @@ Please report vulnerabilities privately; see [SECURITY.md](SECURITY.md).
 ## License
 
 [Apache License 2.0](LICENSE).
+
+Account-bound online hosts support Add a remote on their account seat card with owner passkey confirmation, including another computer. No terminal passphrase setup is required. `agentj remote-pair off` opts out; local/offline pairing retains a local passphrase. See install.md and docs/account for the trust boundary.

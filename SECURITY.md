@@ -26,3 +26,5 @@ third-party agents (Claude Code, Codex) themselves.
 ## Bounty
 
 There is no bug bounty yet. This is a beta.
+
+P78 account pairing explicitly trusts the signing control plane for adding/approving a remote, resume and task enable after owner passkey confirmation. Host checks signatures, one-use nonce, five-minute TTL, account/host/channel/target and its opt-out. Pairing material returns encrypted to an ephemeral browser key; the backend does not retain plaintext. Compromise of the signer could authorize device addition; `agentj remote-pair off` disables this route. Local/unbound approvals retain their local-only passphrase hash.

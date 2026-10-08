@@ -136,6 +136,37 @@ def _signal_tree(p, sig: int) -> None:
             p.send_signal(sig)
 
 
+def codex_failure(raw, model: str | None, lang: str = "zh") -> tuple[str, str, str | None]:
+    """P78: classify native failures, retain bounded redacted details, never log the body."""
+    import re
+    from .privacy import redact
+    if isinstance(raw, dict):
+        raw = json.dumps(raw, ensure_ascii=False)
+    raw = clean(str(raw or ""), 4000)
+    low = raw.lower()
+    blocked = None
+    if "model" in low and ("not supported" in low or "unsupported model" in low):
+        match = re.search(r"['\"]([A-Za-z0-9][A-Za-z0-9._/-]{0,99})['\"] model", raw)
+        blocked = match.group(1) if match else model
+        name = clean_line(blocked or model or "?", 100)
+        text = (f"This account cannot use {name}. Tap the model name at the top to choose another."
+                if lang == "en" else f"这个账号用不了 {name}，点顶部模型名换一个。")
+        kind = "model"
+    elif re.search(r"\b401\b|unauthori[sz]ed|authentication.*(?:failed|required)|token.*expired", low):
+        text = ("Codex login has expired. Run `codex login` on this computer, then resend."
+                if lang == "en" else "Codex 登录已失效，在这台电脑上运行 `codex login` 重新登录后再发。")
+        kind = "auth"
+    elif any(x in low for x in ("workspace routing discovery failed", "network", "connection", "timed out", "timeout", "proxy", "dns", "failed to fetch")):
+        text = ("Cannot connect to ChatGPT. Check your proxy/VPN, then resend."
+                if lang == "en" else "连不上 ChatGPT，检查代理/VPN 后重发。")
+        kind = "network"
+    else:
+        text = "Codex could not finish this request. Check the details and retry." if lang == "en" else "Codex 没能完成这条请求，查看详情后重试。"
+        kind = "other"
+    detail = redact(raw).replace("```", "` ` `")
+    return kind, text + ("\n\n" + ("Details" if lang == "en" else "详情") + ":\n```text\n" + detail + "\n```" if detail else ""), blocked
+
+
 class Agent:
     """Base: a queue of user messages, one turn at a time, status reported to the host."""
     kind = "?"

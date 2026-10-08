@@ -93,22 +93,32 @@ class StartupProgress(unittest.IsolatedAsyncioTestCase):
             a=oc.OpenCodeAgent(host,{"dir":"/var/tmp","_workflow_ceo":True})
             a.launch_argv=Mock(return_value=['fake']);a._kill=AsyncMock()
             a._prepare=AsyncMock(side_effect=ValueError('stop after proven startup'))
-            async def feed():
+            # Keep the same 80ms idle / 600ms total policy, but drive an adapter-local
+            # clock and real StreamReader explicitly: CPU scheduling is not provider silence.
+            clock = [0.0]; lines = [b'loading\n'] * 4 + [b'listening on http://127.0.0.1:12345\n']
+            async def waited(tasks, timeout):
                 if progress:
-                    for _ in range(4):
-                        await asyncio.sleep(.025);proc.stdout.feed_data(b'loading\n')
-                    proc.stdout.feed_data(b'listening on http://127.0.0.1:12345\n')
-            task=asyncio.create_task(feed())
+                    clock[0] += .025
+                    proc.stdout.feed_data(lines.pop(0))
+                    await asyncio.sleep(0)  # the actual readline task consumes the real buffer
+                else:
+                    clock[0] += timeout
+                done = {t for t in tasks if t.done()}
+                return done, set(tasks) - done
+            native = SimpleNamespace(**vars(asyncio))
+            native.wait = waited
+            native.create_subprocess_exec = AsyncMock(return_value=proc)
             try:
-                with patch.object(oc,'START_WAIT',.08),patch.object(oc,'START_MAX',.6),patch.object(oc,'free_port',return_value=12345),patch.object(oc,'_bin',return_value='/fake'),patch.object(oc.asyncio,'create_subprocess_exec',AsyncMock(return_value=proc)):
+                with patch.object(oc,'START_WAIT',.08),patch.object(oc,'START_MAX',.6),patch.object(oc,'time',SimpleNamespace(monotonic=lambda:clock[0])),patch.object(oc,'asyncio',native),patch.object(oc,'free_port',return_value=12345),patch.object(oc,'_bin',return_value='/fake'):
                     self.assertFalse(await a._spawn())
                 self.assertEqual(a._prepare.await_count,1 if progress else 0)
+                self.assertGreater(clock[0], .08) if progress else self.assertEqual(clock[0], .08)
+                self.assertLess(clock[0], .6)
                 if not progress:
                     self.assertTrue(any('agentj doctor' in str(c) for c in host.agent_notice.call_args_list))
             finally:
-                task.cancel()
                 for bg in list(a.tasks):bg.cancel()
-                await asyncio.gather(task,*a.tasks,return_exceptions=True)
+                await asyncio.gather(*a.tasks,return_exceptions=True)
         await scenario(True);await scenario(False)
 
     async def test_turn_without_progress_ends_with_actionable_notice(self):

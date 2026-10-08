@@ -25,7 +25,7 @@ class Autonomy(unittest.TestCase):
                 res=update.apply(st,'9.9.9',check_fn=lambda:{'status':'newer','latest':'9.9.9'},run=run,svc_on=True)
             self.assertEqual((res['result'],res['service']),('ok','restart_scheduled'))
             self.assertEqual(calls[-2][0],['agentj','service','install','--deferred','9.9.9'])
-            self.assertEqual(calls[-1][0],['agentj','doctor'])
+            self.assertEqual(calls[-1][0],['agentj','doctor','--json'])
             self.assertFalse(any(a[-2:]==['service','restart'] for a,_ in calls))
             self.assertIn('@v9.9.9',calls[0][0][-1])
             self.assertEqual(update.take_marker(st)['to'],'9.9.9')
@@ -49,7 +49,7 @@ class Autonomy(unittest.TestCase):
     def test_defaults_and_identity(self):
         self.assertFalse(preferences.get(preferences.defaults(),'agent.high_risk_warnings'))
         self.assertEqual(preferences.get(preferences.defaults(),'agent.session_mode'),'shared')
-        self.assertEqual(main_identity.verify_core()['version'],6)
+        self.assertEqual(main_identity.verify_core()['version'],7)
         self.assertIn('without extra approvals',main_identity.prompt({'language':'en'}))
     def test_high_risk_shared_call_adds_no_decision(self):
         host=Mock();host.stopped.return_value=False

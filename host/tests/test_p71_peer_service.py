@@ -285,7 +285,7 @@ class Requests(Base):
         self.assertEqual(self.net.sent, [])
         self.assertFalse(self.svc.answer(self.did, {"t": "answer", "id": "f" * 32, "ok": True, "sig": "x"}))  # not ours
         self.assertTrue(self.svc.answer(self.did, good))                           # the honest one still works
-        self.assertEqual(self.store.get(a.id)["group"], "default")
+        self.assertEqual(self.store.get(a.id)["group"], "friend")
 
     async def test_silent_refusals(self):
         # blocked ID, blocked mailbox, not discoverable, duplicate rid, the 21st request of the day: no card, nothing sent
@@ -474,7 +474,7 @@ class Pipeline(Base):
         self.assertEqual(self.net.of("pack")[-1][1]["s"], "queued_for_owner")
         q = self.host.of("ask")[-1]
         self.assertEqual(q["pq"], {"friend": k.id, "name": "小鹿", "text": "报价多少？", "draft": "主人说 3.5 美元可以",
-                                   "reason": q["why"]})
+                                   "reason": q["why"], "high_risk": q["pq"]["high_risk"]})
         self.assertIn("报价多少？", q["summary"])
         self.store.auto_round(k.id)
         self.assertTrue(self.svc.answer(self.did, sign_answer(self.host.st, self.did, self.dsk, q, True)))

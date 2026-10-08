@@ -1320,5 +1320,9 @@
   "r.silent.noSource": "Source not recorded",
   "r.silent.noText": "(Original input not recorded)",
   "r.silent.reply": "Reply: ",
-  "r.silent.help": "Silent turns are kept here. Tap a row to view its original input."
+  "r.silent.help": "Silent turns are kept here. Tap a row to view its original input.",
+  "fr.q.send": "Let my Agent reply",
+  "fr.q.auto": "Let my Agent chat with this friend from now on",
+  "fr.ask.groupHint": "Default: small talk and cards. Friends: everyday collaboration and technical topics, up to 12 rounds. Colleagues: other topics too. Quotes, scheduling and commitments still ask you.",
+  "fr.ask.done.pq_allow": "Your Agent replied for you"
 }

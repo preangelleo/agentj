@@ -68,7 +68,7 @@ BUILTIN_GROUPS = (
                 "tok": {"min": 500000, "hour": 2000000, "day": 4000000, "month": 40000000},
                 "min_interval_s": 1, "max_len": 20000},
      "auto": {"mode": "all", "allow": [],
-              "ask": ["报价、付款、合作条款", "任何需要承诺的事"], "max_auto_rounds": 30}},
+              "ask": ["报价、付款、合作条款", "约时间", "任何需要承诺的事"], "max_auto_rounds": 30}},
 )
 BUILTIN_IDS = tuple(g["id"] for g in BUILTIN_GROUPS)
 BUILTIN_NAMES_EN = {"default": "Default", "friend": "Friends", "colleague": "Colleagues"}
@@ -213,7 +213,7 @@ class FriendStore:
         n = card.get("name")
         return n if isinstance(n, str) and n else friend_id
 
-    def add_friend(self, friend_id: str, x: str, pk: str, mbox: str, card: dict | None = None, group: str = "default",
+    def add_friend(self, friend_id: str, x: str, pk: str, mbox: str, card: dict | None = None, group: str = "friend",
                    now: float | None = None) -> dict:
         """New friend, or the keys / card of an existing one refreshed (group, counters, history kept)."""
         now = self.clock() if now is None else now

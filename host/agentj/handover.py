@@ -91,6 +91,8 @@ def _zh(f: dict) -> str:
         out.append(f"- Agent J 账号 ID：{f['account']}" if f["account"] else "- 还没加到 Agent J 账号里")
         out.append(f"- 已配对的手机：{f['phones']} 台（最多 {MAX_DEVICES} 台）")
         out.append("")
+    if f.get("account"):
+        out += ['已绑定账号：接下来在账户页这台电脑的席位卡上点「添加遥控器」，用通行密钥确认一次，扫码即可；不需要在终端设置批准口令。十分钟内免重复确认，也可在账户页批准等待中的手机、恢复「全部停下」和启用具体定时任务。下面的终端配对与口令说明是本机备选。', ""]
     out += [
         f"**手机上打开哪里**：从主屏幕上的 Agent J 图标打开（网址是 {web} ）。手机这边不用注册，也不用登录。"
         "锁屏提醒只有从主屏幕图标打开才能用。如果图标打开后显示「还没配对」，就照下面再配一次。",
@@ -158,6 +160,8 @@ def _en(f: dict) -> str:
         out.append(f"- Agent J account ID: {f['account']}" if f["account"] else "- Not in an Agent J account yet")
         out.append(f"- Phones paired: {f['phones']} (up to {MAX_DEVICES})")
         out.append("")
+    if f.get("account"):
+        out += ['Account bound: choose Add a remote on this computer’s account-page seat card, confirm once with your passkey and scan. No terminal approval passphrase is required. Confirmation is reused for ten minutes; the account page also approves waiting phones, resumes Stop everything and enables a reviewed scheduled task. The terminal pairing and passphrase instructions below are an optional local alternative.', ""]
     out += [
         f"**On your phone:** open Agent J from its Home Screen icon (the address is {web}). No account and no sign-in on "
         "the phone. Lock-screen alerts only work when you open it from that icon. If the icon shows \"Not paired yet\", "

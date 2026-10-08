@@ -205,7 +205,7 @@ class State:
         return self.pair_device(pub, name, sign_pub)["device"]
 
     def pair_device(self, pub: bytes, name: str, sign_pub: bytes | None = None, *, iid: str | None = None,
-                    evict: bool = False, online: frozenset | set = frozenset()) -> dict:
+                    evict: bool = False, online: frozenset | set = frozenset(), source: str = "local") -> dict:
         """Add (or re-pair) one device in ONE locked read-modify-write (0.15.1, P55). → {"device", "replaced": rec|None,
         "evicted": rec|None} where rec = {"id", "name", "paired_at", "online"}.
         - same key (= same device id) → its record is rewritten, nothing else changes (ADR-015's rule, here since A3.1);
@@ -226,7 +226,7 @@ class State:
                     raise DeviceLimit(len(d))
                 victim = evict_order(d, online)[0]
                 evicted = _brief(victim, d.pop(victim), online)
-            rec = {"pub": wire.b64u(pub), "name": name, "paired_at": int(time.time())}
+            rec = {"pub": wire.b64u(pub), "name": name, "paired_at": int(time.time()), "source": source}
             if sign_pub:
                 rec["sk"] = wire.b64u(sign_pub)
             if iid:

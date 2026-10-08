@@ -192,7 +192,7 @@ class DoctorAndCli(unittest.TestCase):
         self.assertIn("agentj login", r["hint"])
         _seat(self.st)
         onboarding.paired(self.st, "d1", PHONE)
-        self.assertIn("agentj admin", doctor.check_onboarding(self.st)["hint"])
+        self.assertIn("passkey", doctor.check_onboarding(self.st)["hint"])
         onboarding.paired(self.st, "d2", PC)
         r = doctor.check_onboarding(self.st)
         self.assertEqual(r["status"], "ok")

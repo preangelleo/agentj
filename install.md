@@ -1,15 +1,15 @@
 ---
 document: agentj-install
-version: 0.20.2
+version: 0.20.3
 released: 2026-10-08
 status: beta (anyone can sign up; not advertised yet, pages are not indexed)
 host_package: agentj (the `agentj` command)
-host_version: 0.16.2a1
-source_tag: v0.16.2a1
-host_wheel: agentj-0.16.2a1-py3-none-any.whl
-host_wheel_sha256: 0463c5d34392b64e2716d1a89bd5ef5b834ca14eb28bcf80f8c41102fe84432d
-host_sdist: agentj-0.16.2a1.tar.gz
-host_sdist_sha256: 94554e2c8096b98045c2979af8f7a43f8f9bb98e73f08ec4009730ac4ae443a4
+host_version: 0.16.3a1
+source_tag: v0.16.3a1
+host_wheel: agentj-0.16.3a1-py3-none-any.whl
+host_wheel_sha256: cc75ce71f9a4f1bad1bb157578bdb9ece333c9dd2dd5d0a55fd73cfa0ec0b022
+host_sdist: agentj-0.16.3a1.tar.gz
+host_sdist_sha256: 935a4a23fd41d1bf37753783b48fe7e8853cfc28dd7f5e37b452d704f22a6230
 canonical_url: https://agentj.app/install.md
 sha256_url: https://agentj.app/install.md.sha256
 alias: https://agentjarvis.net/install.md (the older address: the same file, kept for one more version)
@@ -96,10 +96,10 @@ https://agentj.app/docs/support/
    - paying on Stripe's page and typing a promo code — Step 6;
    - pressing 「复制安装提示词」 ("Copy installation prompt") on an empty seat in the account dashboard and giving you that sentence — Step 6;
    - choosing the Agent's name — Step 7;
-   - setting the approval passphrase (`agentj passphrase set`) — Step 8;
+   - optional local approval passphrase (`agentj passphrase set`) for unbound/offline use — Step 8;
    - choosing the AI coding tool when more than one is usable and choosing the work folder — Step 9;
    - pairing: opening the phone page, running `agentj pair`, scanning the QR code or moving the pairing link to the phone,
-     typing the phone's 6-digit code and then the passphrase into their own terminal — Step 11;
+     on a bound online host: Add a remote on its account seat card, confirm with a passkey and scan; the local terminal route remains optional and needs the 6-digit code and approval passphrase — Step 11;
    - trying it on the phone (sending a message, holding **长按批准**) — Step 12;
    - saying yes or no to the completion feedback (Step 12) and to the docs-first rule (Step 13; with a yes you run
      `agentj docs-rule --write` yourself);
@@ -363,6 +363,11 @@ OpenCode (open source, MIT: https://opencode.ai/docs/) is the agent; the model b
 human signs up with **themselves**. Our default recommendation for mainland China: **GLM-5.3** (Zhipu) as the main model,
 plus **DeepSeek V4.1-Flash** (`deepseek-flash`, cheaper, can read images) for simple or image tasks.
 
+Before installing on macOS, run `sw_vers -productVersion`. Official OpenCode binaries require **macOS 13+**.
+On macOS 12 or older, ask the human to upgrade macOS, use another computer, or select another usable agent.
+Known symptom: `dyld: Symbol not found: _ubrk_clone` in `/usr/lib/libicucore.A.dylib`, followed by abort.
+Do not keep retrying the same binary.
+
 Install OpenCode (pick one):
 ```bash
 npm i -g opencode-ai --registry=https://registry.npmmirror.com   # with Node.js; works in mainland China without GitHub
@@ -424,7 +429,7 @@ The astral installer warning that `uv` / `uvx` are shadowed is informational if 
 carry over). So start every command line from here on with `export PATH="$HOME/.local/bin:$PATH";` — or call
 `~/.local/bin/agentj` by its full path. This document writes `agentj` for short.
 
-The program is pinned to one release: the tag `v0.16.2a1` (front matter `source_tag`). The tag never moves, and its
+The program is pinned to one release: the tag `v0.16.3a1` (front matter `source_tag`). The tag never moves, and its
 `host/` folder is byte for byte the same code as the two files on our site whose SHA-256 is in this document's front matter.
 ```bash
 cd ~/.agentj-install
@@ -432,10 +437,13 @@ W=$(sed -n 's/^host_wheel: //p' install.md); WS=$(sed -n 's/^host_wheel_sha256: 
 curl -fsSLO "https://agentj.app/dl/$W"
 echo "$WS  $W" | sha256sum -c -   # macOS: shasum -a 256 -c -; mismatch → stop
 uv tool install "./$W"
-export PATH="$HOME/.local/bin:$PATH"; agentj --version     # → agentj 0.16.2a1
+
+Intel Mac: this release keeps `cryptography<49` because newer releases lack an Intel macOS wheel. If an older installer tries to compile OpenSSL (`openssl-sys` / OpenSSL not found), rerun `uv tool install --with "cryptography<49" "./$W"`. The same platform constraint applies to `agentj update apply`.
+
+export PATH="$HOME/.local/bin:$PATH"; agentj --version     # → agentj 0.16.3a1
 export PATH="$HOME/.local/bin:$PATH"; agentj doctor
 ```
-**Your human's own terminal must find `agentj` too** — they run `agentj passphrase set` and `agentj pair` themselves
+**Your human's own terminal must find `agentj` too** — they may use `agentj passphrase set` and `agentj pair` as a local alternative
 (Steps 8, 11). Check it the way a new terminal window starts (a clean environment, their own startup files):
 ```bash
 env -i HOME="$HOME" TERM=dumb "${SHELL:-/bin/bash}" -lic 'command -v agentj' 2>/dev/null   # prints a path → nothing to do
@@ -460,12 +468,12 @@ echo "$WS  $W" | sha256sum -c - && echo "$SS  $S" | sha256sum -c -    # macOS: s
 uv tool install "./$W"          # the wheel; its dependencies come from PyPI or the mirror in UV_DEFAULT_INDEX
 ```
 `uv tool install "./$S"` installs from the checked source archive instead (it builds the same program).
-`https://agentj.app/dl/latest.txt` and `https://agentj.app/dl/latest-sdist.txt` name the same two files. `agentj --version` is the program's own version (`0.16.2a1`); it is
+`https://agentj.app/dl/latest.txt` and `https://agentj.app/dl/latest-sdist.txt` name the same two files. `agentj --version` is the program's own version (`0.16.3a1`); it is
 numbered separately from this document (`0.17.0`).
 
-Alternative from the matching published source tag: `uv tool install "git+https://github.com/preangelleo/agentj@v0.16.2a1#subdirectory=host"`.
+Alternative from the matching published source tag: `uv tool install "git+https://github.com/preangelleo/agentj@v0.16.3a1#subdirectory=host"`.
 
-Alternative without uv: `pipx install "git+https://github.com/preangelleo/agentj@v0.16.2a1#subdirectory=host"` (needs Python 3.11+).
+Alternative without uv: `pipx install "git+https://github.com/preangelleo/agentj@v0.16.3a1#subdirectory=host"` (needs Python 3.11+).
 `agentj doctor` lists what is ready and what is not (prerequisites, the fence, connectivity, which agents are usable).
 Continue unless it reports an error that a later step does not fix; report anything you cannot explain.
 
@@ -617,14 +625,21 @@ phone ✓/·, welcome sent ✓/· — and the next step in one line.
 
 ---
 
-## 8. ✋ Human: set the approval passphrase — stage `4-human`
+## 8. ✋ Human: approve with an account passkey — stage `4-human`
+
+**After account binding, skip terminal passphrase setup.** Tell the owner: “On this computer’s account-page seat card, select Add a remote, confirm once with your passkey and scan. You do not need a terminal passphrase.” The same account page works for another installed, bound, online computer. The passkey confirmation is valid for ten minutes on this account session; pairing requests expire after five minutes and can add only one remote. Pending remotes, resume after Stop everything and scheduled-task enable also have account-page approval.
+
+`agentj remote-pair on` / `agentj remote-pair off` controls account-page additions/owner approvals (default on). Off shows an explanation; offline machines are not queued. Older hosts must upgrade with `agentj update apply` or from a paired phone. `agentj doctor` accepts a bound host with no passphrase.
+
+**Unbound hosts or optional local/offline approval:** use the following local passphrase path. `agentj pair` still requires it.
+
 
 In **their own terminal** (you must not see, choose, type or store it — if they offer to tell you, refuse):
 ```bash
 agentj passphrase set
 ```
 It must be **at least 8 characters**; there is no other rule. Suggest a short sentence they will remember that they use
-nowhere else. Every new phone needs this passphrase together with the phone's 6-digit code; `agentj resume` at the
+nowhere else. Every locally approved new phone needs this passphrase together with the phone's 6-digit code; `agentj resume` at the
 terminal asks it too (on a paired phone 「恢复」 is one tap). It is what stops an agent — you, or anything that tricks you later — from adding a phone on
 its own. **Forgetting it costs a re-pairing:** `agentj passphrase reset` (they type `RESET`) deletes it **and unpairs every
 phone**; then a new `agentj passphrase set` and Step 11 again. Check: `agentj passphrase status` → 已设置 (set).
@@ -880,7 +895,7 @@ The steps:
 3. ✋ On either iPhone or Android, tap **「扫二维码」** ("Scan QR code") inside the Home Screen app and point the camera at the QR code. Allow camera access. The app includes its own QR decoder; Safari does not need native BarcodeDetector support. Let the code fill most of the middle of the picture (since host 0.16 the code is smaller: 49 modules instead of 69). After 10 seconds without a result the scanner itself says what else works — in the Home Screen app: `agentj pair --link` and paste the link as in point 4.
 4. ✋ If camera access is denied or unavailable, paste the pairing link into the field at the top under **「或者粘贴配对链接」** ("Or paste the pairing link") and tap **「开始配对」** ("Pair"). Keep this window open; the system Camera app opens a separate browser tab instead. The page keeps the input and button above the keyboard.
 5. The phone shows **6 digits** under 「在电脑上输入这 6 位码」 ("Type this 6-digit code on your computer"); the human types
-   them into the terminal (or the admin page), then their passphrase. The phone shows 「等电脑批准」, then 「已连接」
+   them into the terminal (or the admin page), then their passphrase for the optional local route. On a bound online host, prefer the account seat card’s Add a remote → passkey → scan; no terminal code or passphrase. The phone shows 「等电脑批准」, then 「已连接」
    ("Connected") and opens the chat.
 
 **Getting the link onto an iPhone — the link is the key.** Anyone who opens it within 5 minutes can pair with this
@@ -1046,7 +1061,7 @@ The daily check remains a notification, not an unattended installation; `agentj 
 In the default shared session, reinstall directly using Step 4's checked wheel (SHA-256 must match this document and
 its public GitHub copy), preserving the host's identity, paired phones, account and preferences:
 ```bash
-uv tool install --force "./agentj-0.16.2a1-py3-none-any.whl"
+uv tool install --force "./agentj-0.16.3a1-py3-none-any.whl"
 agentj --version
 agentj service install
 agentj service restart
@@ -1054,7 +1069,7 @@ agentj doctor
 ```
 The matching published tag is another source, after verifying the tag object against the upgrade email:
 ```bash
-uv tool install --force "git+https://github.com/preangelleo/agentj@v0.16.2a1#subdirectory=host"
+uv tool install --force "git+https://github.com/preangelleo/agentj@v0.16.3a1#subdirectory=host"
 ```
 **0.14 independent session** (`agent.session_mode=independent`): 0.14's fence keeps Agent J's own program read-only and
 hides the service manager, so the Agent on the phone cannot reinstall or restart from inside it (measured: the install
@@ -1080,11 +1095,11 @@ prints something and `uv tool list` (or `pipx list`) shows `agentjarvis-host`, t
 the new name, then:
 ```bash
 jarvis service uninstall      # stop the old service first (Step 10 used tmux / nohup instead? stop that process)
-uv tool uninstall agentjarvis-host && uv tool install "git+https://github.com/preangelleo/agentj@v0.16.2a1#subdirectory=host"
+uv tool uninstall agentjarvis-host && uv tool install "git+https://github.com/preangelleo/agentj@v0.16.3a1#subdirectory=host"
 agentj doctor
 agentj service install        # start it again under the new name (or the tmux / nohup fallback, Step 10)
 ```
-With pipx instead of uv: `pipx uninstall agentjarvis-host && pipx install "git+https://github.com/preangelleo/agentj@v0.16.2a1#subdirectory=host"`.
+With pipx instead of uv: `pipx uninstall agentjarvis-host && pipx install "git+https://github.com/preangelleo/agentj@v0.16.3a1#subdirectory=host"`.
 - After the move, `agentj` puts back a `jarvis` command (a link to `agentj`, only if no other `jarvis` exists) for one more
   version; it prints a notice that points here. New installs never get `jarvis`.
 - The state moves by itself on the first run of `agentj`: from `~/.local/state/agentjarvis-alpha` to `~/.local/state/agentj`.
@@ -1304,6 +1319,7 @@ or logs out Claude Code / Codex / OpenCode (nor removes a model key), and never 
 
 ## Changelog
 
+- 0.20.3 (2026-10-08): host 0.16.3a1 candidate. Account-page remote pairing and passkey L2 owner approval; bound-host local passphrase optional.
 - 0.20.2 (2026-10-08): host 0.16.2a1. Claude shared ingress switch, service login preflight, macOS service env, and doctor fixes.
 - 0.20.1 (2026-10-08): host 0.16.1a1. Silent records panel, continuous waves, per-seat install codes, compact pairing links, custom-state elevation sockets and lock-screen reconnect.
 
@@ -1688,3 +1704,9 @@ When asked to upgrade, the bundled `agentj-update` skill runs `agentj update app
 升级后的重装与启动由独立的服务任务执行，当前会话退出也会继续。Linux 使用单独的 systemd 用户任务，macOS 使用一次性 launchd 任务。若启动失败，下次启动会提示，`agentj doctor` 会报错；在电脑运行 `agentj service start` 后再运行 `agentj doctor`。`agentj service stop` 停止后台服务并保留安装；`start` 在未安装时自动安装。
 
 Upgrade recovery runs in a separate service-manager job, so it continues after the calling session exits: a systemd user task on Linux and a one-shot launchd task on macOS. A failed recovery appears in doctor and on the phone at the next start. Run `agentj service start`, then `agentj doctor`. `agentj service stop` stops the background service while retaining its installation; `start` installs it if needed.
+
+
+An installed computer can also use an AJI installation code. Rerun the account-page installation command to preserve its configuration, upgrade and link its seat. Alternatively, keep the code in a mode-0600 file and run `agentj login --install-code-file <file> --name <name>`. AJI codes are single-use; ajt_ setup codes only link an installed computer. After linking, add a remote from the account page, confirm with your passkey and scan; no terminal passphrase is required.
+
+
+For Codex failures, follow the phone guidance: tap the top model name to replace an account-unsupported model (temporarily disabled until an account refresh); check your proxy/VPN for ChatGPT connection failures; run `codex login` on the computer when login expires. Redacted native errors remain under Details.
