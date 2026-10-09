@@ -59,11 +59,15 @@ class Manager:
         if op=='detail':
             p=None;problem=None
             try:
-                agent=self.host.agent;p=resolve(c['provider'],getattr(agent,'kind',None) or (self.host.agent_cfg or {}).get('kind'),agent.cur_model() if agent and hasattr(agent,'cur_model') else None).public()
-            except BotError as e:problem=str(e)
+                agent=self.host.agent;p=resolve(c['provider'],getattr(agent,'kind',None) or (self.host.agent_cfg or {}).get('kind'),agent.cur_model() if agent and hasattr(agent,'cur_model') else None)
+                if p.api=='native':
+                    from .native import executable
+                    executable(p.name)
+                p=p.public()
+            except BotError as e:p=None;problem=str(e)
             root=store.directory(bid)
             return {'bot':{'id':bid,**c},'knowledge':[{'name':p.name,'bytes':p.stat().st_size} for p in root.joinpath('knowledge').iterdir() if not p.name.endswith('.text') and not p.is_symlink()],
-                    'tools':ToolRegistry(store,bid).listing(),'secret_directory':str(store.secrets(bid)),'provider':p,'provider_problem':problem,'audit':{'provider':'OpenRouter','secret_name':'OPENROUTER_API_KEY','configured':(store.secrets(bid)/'OPENROUTER_API_KEY').is_file()}}
+                    'tools':ToolRegistry(store,bid).listing(),'secret_directory':str(store.secrets(bid)),'provider':p,'provider_problem':problem,'native_start_failure':next((r['outcome'] if r['outcome']!='ok' else None for r in store.db.execute("SELECT outcome FROM activity WHERE bot=? AND kind='native_start' ORDER BY rowid DESC LIMIT 1",(bid,))),None),'audit':{'provider':'OpenRouter','secret_name':'OPENROUTER_API_KEY','configured':(store.secrets(bid)/'OPENROUTER_API_KEY').is_file()}}
         if op=='statistics':return {'days':store.statistics(bid),'tools':[dict(r) for r in store.db.execute('SELECT tool,day,sum(calls) calls FROM tool_calls WHERE bot=? GROUP BY tool,day ORDER BY day DESC LIMIT 100',(bid,))]}
         if op=='handoffs':return {'handoffs':[dict(r) for r in store.db.execute("SELECT id,visitor,request,status,created FROM handoffs WHERE bot=? ORDER BY created DESC LIMIT 100",(bid,))]}
         if op=='history':

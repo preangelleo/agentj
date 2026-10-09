@@ -191,8 +191,8 @@ agentj agent --help
 ```
 
 ```text
-usage: agentj agent [-h] [--json] [--dir DIR] [--model MODEL] [--unfenced]
-                    [--allow-docker]
+usage: agentj agent [-h] [--probe] [--json] [--dir DIR] [--model MODEL]
+                    [--unfenced] [--allow-docker]
                     [{claude,codex,opencode,off,reset,restart,status,detect}]
 ```
 
@@ -200,6 +200,7 @@ usage: agentj agent [-h] [--json] [--dir DIR] [--model MODEL] [--unfenced]
 | --- | --- | --- | --- | --- |
 | `-h / --help` | `null` | false | — | `show this help message and exit` |
 | `mode` | `"status"` | false | `claude`, `codex`, `opencode`, `off`, `reset`, `restart`, `status`, `detect` | `detect = 本机有哪些可用（不需要 init；只看是否安装、登录文件是否存在）/ which agents are usable here (no init needed; checks only what is installed and whether login files exist)` |
+| `--probe` | `false` | false | — | `detect: verify one tool-free model call using existing login; no native output is returned` |
 | `--json` | `false` | false | — | `machine-readable detect output` |
 | `--dir` | `null` | false | — | `Agent 的工作目录（默认当前目录）` |
 | `--model` | `null` | false | — | `模型（默认用你自己的设置）；OpenCode 写成 服务商/模型，例如 zhipuai/glm-5.3` |
@@ -2820,6 +2821,8 @@ usage: agentj wizard templates [-h] [--dir DIR] [--json]
 
 </details>
 
+For AI tool full-access flags, configuration, short aliases and rollback, see [Full-access launch (three ways)](/docs/setup-agents/#full-access).
+
 ---
 
 ---
@@ -3015,8 +3018,8 @@ agentj agent --help
 ```
 
 ```text
-usage: agentj agent [-h] [--json] [--dir DIR] [--model MODEL] [--unfenced]
-                    [--allow-docker]
+usage: agentj agent [-h] [--probe] [--json] [--dir DIR] [--model MODEL]
+                    [--unfenced] [--allow-docker]
                     [{claude,codex,opencode,off,reset,restart,status,detect}]
 ```
 
@@ -3024,6 +3027,7 @@ usage: agentj agent [-h] [--json] [--dir DIR] [--model MODEL] [--unfenced]
 | --- | --- | --- | --- | --- |
 | `-h / --help` | `null` | false | — | `show this help message and exit` |
 | `mode` | `"status"` | false | `claude`, `codex`, `opencode`, `off`, `reset`, `restart`, `status`, `detect` | `detect = 本机有哪些可用（不需要 init；只看是否安装、登录文件是否存在）/ which agents are usable here (no init needed; checks only what is installed and whether login files exist)` |
+| `--probe` | `false` | false | — | `detect: verify one tool-free model call using existing login; no native output is returned` |
 | `--json` | `false` | false | — | `detect 的机器可读输出` |
 | `--dir` | `null` | false | — | `Agent 的工作目录（默认当前目录）` |
 | `--model` | `null` | false | — | `模型（默认用你自己的设置）；OpenCode 写成 服务商/模型，例如 zhipuai/glm-5.3` |
@@ -5643,3 +5647,5 @@ usage: agentj wizard templates [-h] [--dir DIR] [--json]
 | `--json` | `false` | false | — | `` |
 
 </details>
+
+AI 工具的全权限启动参数、配置、短别名与回退方法：[全权限启动（三种方式）](/docs/setup-agents/#full-access)。

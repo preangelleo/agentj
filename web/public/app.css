@@ -319,7 +319,7 @@ main::-webkit-scrollbar{display:none}
 .omhd svg{width:16px;height:16px;flex:none}
 .omhd .t{font-weight:400;opacity:.72;white-space:nowrap}
 .omhd b{font-weight:600;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.omhd .pg{margin-left:auto;flex:none;font:600 calc(13px*var(--fz))/1 var(--font-mono);letter-spacing:.02em}
+.omhd .pg{flex:none;font:600 calc(13px*var(--fz))/1 var(--font-mono);letter-spacing:.02em}
 .omtxt{font:400 calc(15px*var(--fz))/1.5 var(--font-body);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
   padding-right:48px;min-height:22px}
 .omtxt.none{opacity:.6}
@@ -1589,8 +1589,19 @@ body[data-view="scan"] .top{display:none}
 @media(max-width:600px){.bots-row button,#bots-main>.aj-btn{width:100%;display:block;margin:.5rem 0}}
 
 /* P87: a new visible reply never covers a page being read. */
-.new-reply{position:absolute;z-index:8;right:16px;top:8px;min-height:56px;padding:8px 16px;border-radius:28px;border:1px solid var(--ink-soft);background:var(--paper);color:var(--ink);font:500 14px var(--font-body)}
-.new-reply[hidden]{display:none}
+/* P102: both shortcuts occupy the existing 44px header, leaving body selection intact. */
+.history-corner{touch-action:manipulation;user-select:none;-webkit-user-select:none;color:inherit;font:inherit;letter-spacing:inherit;min-height:44px;min-width:44px}
+.om-first{display:flex;align-items:center;gap:8px;flex:1;min-width:44px;text-align:left;overflow:hidden}
+.om-first .t{flex:none}
+.pg-corner{position:static;flex:none;margin-left:auto;min-width:44px;height:44px}
+.pg-latest{height:44px;display:grid;place-items:center}
+/* Transparent capsule reserves identical geometry even without unread replies. */
+:root{--sage-sensation:#b7e396;--buttery:#fcbe7c}
+.pg-latest .pg{padding:2px 8px;border:1px solid transparent;border-radius:999px;background:transparent;white-space:nowrap}
+.pg-corner[data-unread="1"] .pg{animation:new-message-pulse 1.2s ease-in-out infinite;background:var(--sage-sensation);border-color:var(--sooty);color:var(--sooty)}
+@keyframes new-message-pulse{0%,100%{background-color:var(--sage-sensation)}50%{background-color:var(--buttery)}}
+@media(prefers-reduced-motion:reduce){.pg-corner[data-unread="1"] .pg{animation:none;background:var(--sage-sensation)}}
+.history-corner:focus-visible{outline:2px solid var(--noir);outline-offset:2px}
 
 @media(max-width:600px){
  .setrow:has(.seg){grid-template-columns:minmax(0,1fr)}

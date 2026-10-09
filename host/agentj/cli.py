@@ -1022,7 +1022,7 @@ def _agent_line(st: State) -> str:
 def cmd_agent(a) -> None:
     if a.mode == "detect":   # works before `agentj init`: only looks at PATH and whether login files exist
         from . import harness
-        sys.exit(harness.main(as_json=a.json))
+        sys.exit(harness.main(as_json=a.json, call_probe=getattr(a, "probe", False)))
     st = State()
     _need_init(st)
     if a.mode in ("claude", "codex", "opencode"):
@@ -1808,6 +1808,8 @@ NO_MIGRATE = ("migrate", "docs-rule", "handover", "recall", "friends", "codex-sa
 def main(argv=None) -> None:
     from .service import load_launch_binary_env
     load_launch_binary_env()
+    from . import relay_auth
+    relay_auth.load()
     args = list(sys.argv[1:] if argv is None else argv)
     if args[:2] == ["config", "auto-update"]:
         from . import auto_update
@@ -1941,6 +1943,7 @@ def main(argv=None) -> None:
     ag.add_argument("mode", nargs="?", choices=["claude", "codex", "opencode", "off", "reset", "restart", "status", "detect"], default="status",
                     help="detect = 本机有哪些可用（不需要 init；只看是否安装、登录文件是否存在）/ which agents are usable here "
                          "(no init needed; checks only what is installed and whether login files exist)")
+    ag.add_argument("--probe", action="store_true", help="detect: verify one tool-free model call using existing login; no native output is returned")
     ag.add_argument("--json", action="store_true", help="detect 的机器可读输出 / machine-readable detect output")
     ag.add_argument("--dir", help="Agent 的工作目录（默认当前目录）")
     ag.add_argument("--model", help="模型（默认用你自己的设置）；OpenCode 写成 服务商/模型，例如 zhipuai/glm-5.3")

@@ -2,7 +2,7 @@
 
 For `claude`, `codex` and `opencode`: installed = the binary is on PATH (or AGENTJ_CLAUDE_BIN / AGENTJ_CODEX_BIN /
 AGENTJ_OPENCODE_BIN, the same lookup `serve` uses) and `--version` answers; logged in = a credential file / Keychain item
-*exists* — never opened, never read (OpenCode: its own credential store `<XDG_DATA_HOME or ~/.local/share>/opencode/auth.json`,
+*exists* — native auth stores are not opened; Claude provider settings are checked for an auth hint (OpenCode: its own credential store `<XDG_DATA_HOME or ~/.local/share>/opencode/auth.json`,
 written by `opencode auth login`, or a model vendor's API-key variable set, by NAME). Decision: 0 usable → "none", exactly 1 →
 "use:<name>", ≥ 2 → "ask_owner" (the installing agent must ask its human — it never picks one itself, never the one running
 the install). OpenCode counts like the other two.
@@ -19,6 +19,7 @@ import re
 import shutil
 import subprocess
 import sys
+from pathlib import Path
 
 from .service import tilde
 from .envcompat import getenv
@@ -57,7 +58,7 @@ def version_of(exe: str) -> str | None:
 
 
 def claude_login(environ=None) -> tuple[str, str]:
-    """(ok | env | warn, where) — existence only, never content."""
+    """(ok | env | warn, where) — auth hints only; never return token content."""
     env = os.environ if environ is None else environ
     cfg = env.get("CLAUDE_CONFIG_DIR") or os.path.expanduser("~/.claude")
     if os.path.isfile(os.path.join(cfg, ".credentials.json")):
@@ -70,7 +71,19 @@ def claude_login(environ=None) -> tuple[str, str]:
                 return "ok", "login in Keychain"
         except (OSError, subprocess.TimeoutExpired):
             pass
-    for k in ("CLAUDE_CODE_OAUTH_TOKEN", "ANTHROPIC_API_KEY"):
+    # Native provider settings (including official AgentsRelay) are read as data
+    # only to detect a nonempty auth hint; no token value reaches the result.
+    try:
+        from .provider_profiles import secure_read
+        from .opencode_provider import ProviderError
+        settings = json.loads(secure_read(Path(cfg) / 'settings.json'))
+        native_env = settings.get('env', {}) if isinstance(settings, dict) else {}
+        if isinstance(native_env, dict) and any(isinstance(native_env.get(k), str) and native_env[k]
+                for k in ('ANTHROPIC_AUTH_TOKEN', 'ANTHROPIC_API_KEY')):
+            return "ok", "native provider settings (key validity unverified)"
+    except (OSError, ValueError, ProviderError):
+        pass
+    for k in ("CLAUDE_CODE_OAUTH_TOKEN", "ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN"):
         if env.get(k):
             return "env", f"env {k} (name only)"
     return "warn", "no login found"
@@ -80,7 +93,7 @@ def codex_login() -> tuple[str, str]:
     home = os.environ.get("CODEX_HOME") or os.path.expanduser("~/.codex")
     if os.path.isfile(os.path.join(home, "auth.json")):
         return "ok", f"login {tilde(os.path.join(home, 'auth.json'))}"
-    for k in ("CODEX_API_KEY", "OPENAI_API_KEY"):
+    for k in ("CODEX_API_KEY", "OPENAI_API_KEY", "AGENTSRELAY_OPENAI_KEY"):
         if os.environ.get(k):
             return "env", f"env {k} (name only)"
     return "warn", "no login found"
@@ -160,6 +173,42 @@ def detect(environ=None) -> dict:
     return {"harnesses": hs, "usable": usable, "decision": decision}
 
 
+def probe() -> dict:
+    """One tool-free call per installed supported CLI; never return native output or credentials.
+
+    Detection is advisory. Only a parsed nonempty model reply qualifies. Reuse the
+    bots' sandbox/disable-tools contract and binary resolver; never resume a thread.
+    """
+    from types import SimpleNamespace
+    from .bots import native
+    from .bots.store import BotError
+    from pathlib import Path
+    import tempfile
+    d = detect()
+    usable = []
+    for h in d["harnesses"]:
+        h["callable"] = False
+        if not h["installed"] or not h["supported"]:
+            continue
+        env = {k: v for k, v in os.environ.items()
+               if not k.startswith(("AGENTJ_", "AGENTJARVIS_", "HERDR_", "VIBE_REMOTE_", "TMUX", "SSH_"))}
+        try:
+            with tempfile.TemporaryDirectory(prefix="agentj-login-probe-") as folder:
+                root = Path(folder)
+                (root / "system.md").write_text("Reply to the supplied greeting only. No tools are available.")
+                cfg = SimpleNamespace(name=h["name"], model=None)
+                cmd = native.command(cfg, root, env, selected=h["executable"])
+                reply, _ = native.parse(h["name"], native.run(cmd, "Hello. Reply with a short greeting only.", env, root))
+                if not isinstance(reply, str) or not reply.strip():
+                    raise BotError("empty_probe_reply")
+            h["callable"] = True
+            usable.append(h["name"])
+        except (BotError, OSError, ValueError, TypeError):
+            h["probe_reason"] = "call_failed"
+    d.update(usable=usable, decision="none" if not usable else f"use:{usable[0]}" if len(usable) == 1 else "ask_owner")
+    return d
+
+
 def summary(d: dict) -> str:
     """One line for `agentj doctor`."""
     parts = []
@@ -180,8 +229,8 @@ DECISION_TEXT = {
 }
 
 
-def main(as_json: bool = False) -> int:
-    d = detect()
+def main(as_json: bool = False, call_probe: bool = False) -> int:
+    d = probe() if call_probe else detect()
     if as_json:
         def local_paths(value):
             if isinstance(value, dict): return {k: local_paths(v) for k, v in value.items()}

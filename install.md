@@ -1,15 +1,15 @@
 ---
 document: agentj-install
-version: 0.21.1
-released: 2026-10-09
+version: 0.21.3
+released: 2026-10-10
 status: beta (anyone can sign up; not advertised yet, pages are not indexed)
 host_package: agentj (the `agentj` command)
-host_version: 0.17.1a1
-source_tag: v0.17.1a1
-host_wheel: agentj-0.17.1a1-py3-none-any.whl
-host_wheel_sha256: 3f48a7a8bc02e62bef117a33c17b2328e62314f6cfefa9537f72a6c915351d57
-host_sdist: agentj-0.17.1a1.tar.gz
-host_sdist_sha256: 12da6956d7def9ca93aafd4801ee6df353f39e24290447bc383626ec7406b2f6
+host_version: 0.17.2a1
+source_tag: v0.17.2a1
+host_wheel: agentj-0.17.2a1-py3-none-any.whl
+host_wheel_sha256: f82695dc129f424e314543656dbc583beb79fec341905687e84ba51b1c5e5498
+host_sdist: agentj-0.17.2a1.tar.gz
+host_sdist_sha256: 71530b863fdec7b07fd1b769736bb435af5aacb16fffe69fcf67a8d75c365f41
 canonical_url: https://agentj.app/install.md
 sha256_url: https://agentj.app/install.md.sha256
 alias: https://agentjarvis.net/install.md (the older address: the same file, kept for one more version)
@@ -137,7 +137,7 @@ curl -fsSL --retry 3 --retry-all-errors --retry-delay 2 --retry-max-time 45 --co
 curl -fsSL --retry 3 --retry-all-errors --retry-delay 2 --retry-max-time 45 --connect-timeout 10 --max-time 20 https://raw.githubusercontent.com/preangelleo/agentj/main/install.md -o install.github.md
 if command -v sha256sum >/dev/null; then sha256sum -c install.md.sha256; else shasum -a 256 -c install.md.sha256; fi   # → "install.md: OK"
 cmp install.md install.github.md && echo "site and GitHub copies match"
-grep -m1 '^version:' install.md                                           # → version: 0.21.1
+grep -m1 '^version:' install.md                                           # → version: 0.21.3
 ```
 - For a brief connection reset, timeout or interrupted download, these GET commands retry at most three times after the initial attempt, with a 45-second retry budget and a 20-second limit per attempt. If the network keeps failing, stop retrying and use the fallback below or ask the support desk. Do not add automatic retries to setup-code redemption, payment or other POST requests. Never disable TLS checks or continue after a SHA-256/GitHub mismatch.
 - Both checks pass → continue with that `install.md` (note its `version:` for feedback). Keep the file: Step 4 reads the
@@ -452,7 +452,7 @@ The astral installer warning that `uv` / `uvx` are shadowed is informational if 
 carry over). So start every command line from here on with `export PATH="$HOME/.local/bin:$PATH";` — or call
 `~/.local/bin/agentj` by its full path. This document writes `agentj` for short.
 
-The program is pinned to one release: the tag `v0.17.1a1` (front matter `source_tag`). The tag never moves, and its
+The program is pinned to one release: the tag `v0.17.2a1` (front matter `source_tag`). The tag never moves, and its
 `host/` folder is byte for byte the same code as the two files on our site whose SHA-256 is in this document's front matter.
 ```bash
 cd ~/.agentj-install
@@ -463,7 +463,7 @@ uv tool install "./$W"
 
 Intel Mac: this release keeps `cryptography<49` because newer releases lack an Intel macOS wheel. If an older installer tries to compile OpenSSL (`openssl-sys` / OpenSSL not found), rerun `uv tool install --with "cryptography<49" "./$W"`. The same platform constraint applies to `agentj update apply`.
 
-export PATH="$HOME/.local/bin:$PATH"; agentj --version     # → agentj 0.17.1a1
+export PATH="$HOME/.local/bin:$PATH"; agentj --version     # → agentj 0.17.2a1
 export PATH="$HOME/.local/bin:$PATH"; agentj doctor
 ```
 **Your human's own terminal must find `agentj` too** — they may use `agentj passphrase set` and `agentj pair` as a local alternative
@@ -491,12 +491,12 @@ echo "$WS  $W" | sha256sum -c - && echo "$SS  $S" | sha256sum -c -    # macOS: s
 uv tool install "./$W"          # the wheel; its dependencies come from PyPI or the mirror in UV_DEFAULT_INDEX
 ```
 `uv tool install "./$S"` installs from the checked source archive instead (it builds the same program).
-`https://agentj.app/dl/latest.txt` and `https://agentj.app/dl/latest-sdist.txt` name the same two files. `agentj --version` is the program's own version (`0.17.1a1`); it is
+`https://agentj.app/dl/latest.txt` and `https://agentj.app/dl/latest-sdist.txt` name the same two files. `agentj --version` is the program's own version (`0.17.2a1`); it is
 numbered separately from this document (`0.21.1`).
 
-Alternative from the matching published source tag: `uv tool install "git+https://github.com/preangelleo/agentj@v0.17.1a1#subdirectory=host"`.
+Alternative from the matching published source tag: `uv tool install "git+https://github.com/preangelleo/agentj@v0.17.2a1#subdirectory=host"`.
 
-Alternative without uv: `pipx install "git+https://github.com/preangelleo/agentj@v0.17.1a1#subdirectory=host"` (needs Python 3.11+).
+Alternative without uv: `pipx install "git+https://github.com/preangelleo/agentj@v0.17.2a1#subdirectory=host"` (needs Python 3.11+).
 `agentj doctor` lists what is ready and what is not (prerequisites, the fence, connectivity, which agents are usable).
 Continue unless it reports an error that a later step does not fix; report anything you cannot explain.
 
@@ -1084,7 +1084,7 @@ The daily check remains a notification, not an unattended installation; `agentj 
 In the default shared session, reinstall directly using Step 4's checked wheel (SHA-256 must match this document and
 its public GitHub copy), preserving the host's identity, paired phones, account and preferences:
 ```bash
-uv tool install --force "./agentj-0.17.1a1-py3-none-any.whl"
+uv tool install --force "./agentj-0.17.2a1-py3-none-any.whl"
 agentj --version
 agentj service install
 agentj service restart
@@ -1092,7 +1092,7 @@ agentj doctor
 ```
 The matching published tag is another source, after verifying the tag object against the upgrade email:
 ```bash
-uv tool install --force "git+https://github.com/preangelleo/agentj@v0.17.1a1#subdirectory=host"
+uv tool install --force "git+https://github.com/preangelleo/agentj@v0.17.2a1#subdirectory=host"
 ```
 **0.14 independent session** (`agent.session_mode=independent`): 0.14's fence keeps Agent J's own program read-only and
 hides the service manager, so the Agent on the phone cannot reinstall or restart from inside it (measured: the install
@@ -1118,11 +1118,11 @@ prints something and `uv tool list` (or `pipx list`) shows `agentjarvis-host`, t
 the new name, then:
 ```bash
 jarvis service uninstall      # stop the old service first (Step 10 used tmux / nohup instead? stop that process)
-uv tool uninstall agentjarvis-host && uv tool install "git+https://github.com/preangelleo/agentj@v0.17.1a1#subdirectory=host"
+uv tool uninstall agentjarvis-host && uv tool install "git+https://github.com/preangelleo/agentj@v0.17.2a1#subdirectory=host"
 agentj doctor
 agentj service install        # start it again under the new name (or the tmux / nohup fallback, Step 10)
 ```
-With pipx instead of uv: `pipx uninstall agentjarvis-host && pipx install "git+https://github.com/preangelleo/agentj@v0.17.1a1#subdirectory=host"`.
+With pipx instead of uv: `pipx uninstall agentjarvis-host && pipx install "git+https://github.com/preangelleo/agentj@v0.17.2a1#subdirectory=host"`.
 - After the move, `agentj` puts back a `jarvis` command (a link to `agentj`, only if no other `jarvis` exists) for one more
   version; it prints a notice that points here. New installs never get `jarvis`.
 - The state moves by itself on the first run of `agentj`: from `~/.local/state/agentjarvis-alpha` to `~/.local/state/agentj`.
@@ -1810,3 +1810,23 @@ The pairing page offers browser and storage guidance. Use a regular Safari / Chr
 0.17.1 phone recovery: bot key cards wait up to ten minutes while other phone messages and Stop everything remain available. A pending receipt is not a completed save. After pairing, use the same Home Screen icon: scanning or opening a pairing link creates another pairing. If iPhone Face ID is unavailable, check iOS AutoFill Passwords and Passkeys (select Passwords), iCloud Passwords/Keychain, Face ID & Passcode (screen-lock passcode required), Screen Time and device-management restrictions; see /docs/phone. Provider profile probes return fixed authentication, model/endpoint, model, rate-limit, server, timeout, TLS, redirect or JSON error categories. An unusual key length is shown only as a range; do not request keys or upstream error bodies in chat.
 
 An embedded bot requires every exact HTTPS origin in its ancestor chain in the owner's allowlist. Verification and visitor storage use that same signed list. The chat remains opaque and sandboxed. Storage blocked by browser settings can prevent continuation after reload; no wildcard origin or sandbox exception is a workaround.
+
+### 0.17.2 native bot diagnostics
+
+Bots using the main plan inherit the same selected executable, even outside service PATH. The owner bot page distinguishes a missing or non-executable program and unresolved version-manager selection. A proven failure to spawn settles that model reservation to zero; started calls with unknown usage remain reserved. Historical unknown reservations have no reliable startup evidence and are not manually released. Use `agentj bots detail <id>` and statistics; never edit the private ledger.
+
+
+### 手机历史消息快捷操作 / Phone history shortcuts
+
+看历史消息时，新回复不会打断你：输入消息卡右上角显示新消息提示，点它回到最新消息。有新消息时，页码胶囊在浅绿与杏橙色之间闪烁，单击或双击均回到最新；回到最新后停止闪烁。减少动态效果时显示静态浅绿色。平时双击右上角页码回到最新，双击输入消息卡左上角回到第一条；没有新消息时，单击这两个角落不翻页。
+
+New replies keep you on the history page you are reading. Tap the new-message indicator at the top right of the input card to jump to the latest message. With unread messages, the page-number capsule pulses between sage green and buttery orange; a single or double tap jumps to latest and stops the pulse. Reduced motion shows a static sage-green capsule. Otherwise, double-tap the top-right page number to jump to the latest, or the top-left speaker and time to jump to the first message. Without new messages, single taps on these two corners do not change pages.
+
+
+### 0.17.2 configured-login reuse
+
+The official installation assistant runs `agentj agent detect --probe --json` after installing the host. This performs one tool-free call using each installed supported CLI's existing login, in a fresh scratch directory with no owner thread. A login file alone does not qualify. One callable CLI is reused directly; multiple callable CLIs ask the owner in the existing Claude Code, Codex, OpenCode order. Pair the phone, then send Hello; no new service URL/model or key card is needed. Only when none can call does the existing formal-provider and encrypted phone key-card flow run.
+
+AgentsRelay's official `~/.config/agentsrelay/env.sh` is read as data (owner-only regular file, no symlinks or shell execution); only its two official key names enter process memory. Nothing is copied into service units, chat or logs. Existing environment values win. Gemini remains a setup CLI and native bot adapter; it has no Agent J main-session adapter in this release. A Gemini-only computer sees: Agent J 主 Agent 暂不支持 Gemini，请再登录 Codex / Claude Code / OpenCode 之一或用 AgentsRelay. Gemini main-agent adaptation is future backlog, outside this release.
+
+A fresh Codex without login says “还没登录 Codex，在这台电脑上运行 codex login 后再发”. The expired-login notice requires a prior login hint and a 401 response. Installation does not prove login or chat readiness; verify the first phone reply.

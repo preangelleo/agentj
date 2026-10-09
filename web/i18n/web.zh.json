@@ -395,7 +395,11 @@
       "prev": "上一条（更早）",
       "prevTitle": "上一条（j / ←）",
       "next": "下一条（更新）",
-      "nextTitle": "下一条（k / →）"
+      "nextTitle": "下一条（k / →）",
+      "first": "跳到第一条消息",
+      "firstHint": "双击跳到第一条消息",
+      "latest": "跳到最新消息",
+      "latestHint": "双击跳到最新消息"
     },
     "bar": {
       "aria": "这条回复",
@@ -805,7 +809,7 @@
     },
     "replyPending": "已送达，等待电脑接手…",
     "replyWorking": "正在处理…",
-    "newReply": "有新回复，点此查看"
+    "newReply": "有新消息，点此跳到最新"
   },
   "preferences": {
     "notification": "你的 Agent 已回复。",

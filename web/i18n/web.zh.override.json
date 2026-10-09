@@ -47,7 +47,7 @@
   "r.noReply": "（无文字回复）",
   "r.replyPending": "已送达，等待电脑接手…",
   "r.replyWorking": "正在处理…",
-  "r.newReply": "有新回复，点此查看",
+  "r.newReply": "有新消息，点此跳到最新",
   "set.modeShared": "共享电脑会话",
   "set.modeIndependent": "使用独立会话",
   "r.shared.following.claude": "正在跟随电脑上的 Claude Code 会话。",
@@ -58,5 +58,9 @@
   "phoneEnv.setup": "设置 Face ID",
   "phoneEnv.copy": "复制网页链接",
   "phoneEnv.copied": "已复制网页链接；打开后从主屏幕配对。",
-  "phoneEnv.iosAuth": "Face ID 不可用时，请检查 iOS「设置→通用→自动填充与密码」：打开「自动填充密码和通行密钥」并勾选「密码」；检查「iCloud→密码（钥匙串）」「面容 ID 与密码」，以及「屏幕使用时间」或设备管理描述文件是否限制通行密钥。每次扫码或点配对链接都会新建配对；完成后请从同一个主屏幕图标进入。"
+  "phoneEnv.iosAuth": "Face ID 不可用时，请检查 iOS「设置→通用→自动填充与密码」：打开「自动填充密码和通行密钥」并勾选「密码」；检查「iCloud→密码（钥匙串）」「面容 ID 与密码」，以及「屏幕使用时间」或设备管理描述文件是否限制通行密钥。每次扫码或点配对链接都会新建配对；完成后请从同一个主屏幕图标进入。",
+  "r.pg.first": "跳到第一条消息",
+  "r.pg.firstHint": "双击跳到第一条消息",
+  "r.pg.latest": "跳到最新消息",
+  "r.pg.latestHint": "双击跳到最新消息"
 }

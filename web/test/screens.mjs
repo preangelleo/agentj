@@ -25,6 +25,7 @@ import { startFakeHost } from './fakehost.mjs';
 import { launch, newPage, evaluate, navigate, waitFor, waitState, shoot as shot0, sleep } from './browser.mjs';
 import { runCases, makeFiles } from './parity_cases.mjs';
 import { dictionaries } from '../build.mjs';
+import { runP102Screens } from './p102.mjs';
 import { parityRecorder } from '../../parity/lib.mjs';
 
 const SHOTS = process.env.AJ_SHOTS || '/tmp/aj-web-shots';
@@ -566,6 +567,8 @@ try {
       await p.dispose();
     }
   }
+
+  if (!ONLY && !SEC_ONLY) await runP102Screens({B,web,fake,out:join(SHOTS,'p102')});
 
   // ---------- 6. relay parity: one named case per feature id
   if (!process.env.AJ_NO_PARITY && !SEC_ONLY) {

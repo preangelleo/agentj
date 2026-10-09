@@ -11,7 +11,7 @@ import shutil
 import tomllib
 
 NAMES = ("claude", "codex", "opencode")
-ENV = {n: "AGENTJ_" + n.upper() + "_BIN" for n in NAMES}
+ENV = {n: "AGENTJ_" + n.upper() + "_BIN" for n in (*NAMES, "gemini")}
 
 
 def wrapper(path):
@@ -19,7 +19,7 @@ def wrapper(path):
         p = Path(path)
         with p.open("rb") as f:
             data = f.read(8192)
-        if data.startswith(b"#!") and re.search(rb"(?:mise|asdf)(?:[ /\\]|$)", data):
+        if data.startswith(b"#!") and re.search(rb"\b(?:mise|asdf)(?:[ /\\]|$)", data):
             return True
         return any(x in p.parts for x in ("shims",)) and any(x in p.parts for x in ("mise", "asdf"))
     except OSError:

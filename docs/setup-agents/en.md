@@ -18,7 +18,7 @@ Full access reduces repeated approval dialogs during phone control. Risk: the AI
 
 ## One-command setup
 
-First install curl in the system section below. The script detects prerequisites and asks which tools to install and whether to use AgentsRelay. It backs up and merges full-access settings by default; skip with `--no-full-access`. `--dry-run` downloads nothing and writes no files. Automatic installation supports macOS and Ubuntu/Debian/WSL2.
+First install curl below. The setup asks which tools to install, checks official service connectivity with short requests that send no user data, and recommends a route. Reachable: native login. Unreachable: AgentsRelay, which provides an alternative service endpoint. You can change the recommendation with `--relay` / `--no-relay`. Connectivity does not prove regional eligibility or account access. Full-access settings are backed up and merged; `--no-full-access` keeps approval defaults. `--dry-run` downloads nothing and writes no files. Automatic setup supports macOS and Ubuntu/Debian/WSL2.
 
 
 ```bash
@@ -46,7 +46,7 @@ shasum -a 256 setup-agents.sh
 ```
 
 
-SHA256 sh: `e34c6876fcb189321dd014960e7d8ca8a66e6eb088425a608edcd03249f9cde2`
+SHA256 sh: `d9e78093dd88c20e13a96590876ea90a6f649f01d5a6cdd51c2fa0b6d16b04e2`
 
 
 ```bash
@@ -60,7 +60,13 @@ bash setup-agents.sh
 ```
 
 
-Use `--mirror` for slow npm downloads in mainland China. The mirror changes package downloads, not model endpoints. The script installs to user directories and keeps system Node/npm intact.
+Flow: choose tools → choose native login or AgentsRelay → on Relay, register and paste keys with hidden input, pass a real model request → install dependencies/CLIs → verify native binaries and offline help → add aliases → optionally run the official Agent J installation assistant → account linking and phone pairing. The official assistant verifies existing CLI sign-in with a real model call and reuses it for immediate chat after pairing. It asks for a new formal provider key only when no supported CLI can call.
+
+npm failure or timeout automatically retries `registry.npmmirror.com`, including platform optional dependencies. No `--mirror` is needed; it selects the mirror first. Mirror root and platform-package SHA512 integrity must equal the official npmjs metadata, and downloaded tarball bytes must match. If official metadata is unavailable or hashes disagree, setup stops rather than trusting an unverified mirror. Node downloads also fall back and always verify SHA256: official SHASUMS when reachable, otherwise mirror SHASUMS (this trusts mirror HTTPS for the checksum). Mirrors change downloads, not model service access. CLI binaries are never downloaded from GitHub Releases by this script; neither Claude Code nor Codex is hosted on our site.
+
+Each installed CLI must pass `--version` and offline `--help`. Native tools additionally check platform packages, CPU architecture and glibc/musl selection, execute their binaries and bundled ripgrep where provided. Missing components produce “安装不完整：缺 …” and a repair command, never success. Gemini also checks and loads its platform-native Node terminal addon. macOS has no version-number rejection; actual runtime errors explain when system libraries need an upgrade.
+
+Successful tools get idempotent `cx` / `cc` / `oc` / `gx` aliases in bash/zsh; the Windows helper adds PowerShell functions for the verified WSL tools. Open a new terminal. `--no-aliases` disables this (`-NoAliases` in PowerShell); `--no-full-access` creates plain aliases. `cc` shadows the interactive C compiler command; use `command cc` or rename the alias to `ccx`.
 
 
 ```bash
@@ -398,7 +404,7 @@ Get-FileHash ./setup-agents.ps1 -Algorithm SHA256
 ```
 
 
-SHA256 ps1: `bab10c64042a1584178c0014586c7877d36b2859083a5c440dbb14199d277376`
+SHA256 ps1: `9cf444bef81de882a0d32ff6dfe942a27ba91fe7f6ad68409943207c7fc743e2`
 
 
 ```powershell
@@ -434,11 +440,11 @@ curl -fsSL https://agentj.app/setup-agents.sh | bash
 
 See [Microsoft’s WSL installation guide](https://learn.microsoft.com/en-us/windows/wsl/install).
 
-## dependencies
+## Dependencies {#dependencies}
 
 The system menus above cover missing curl, npm, Python and build tools. Fix network/package-manager failures at that step, then rerun; the script links back to the relevant section.
 
-## PATH
+## Command path {#path}
 
 The npm route uses a user-owned prefix. First add it and the official installers’ directories to this terminal’s PATH.
 
@@ -912,160 +918,353 @@ gemini --yolo --sandbox=false
 
 On first launch, choose Google sign-in or your own Gemini API key. The defaultApprovalMode setting does not accept yolo; keep --yolo in the launch command. Agent J currently connects to Claude/Codex/OpenCode; Gemini works on the computer but is not yet an Agent J host adapter.
 
-## full-access
+## Full-access launch (three ways) {#full-access}
 
-Configuration files may contain keys: never paste their contents into chat. Back up each file, then merge these fields in an editor instead of overwriting the file. The script handles backups, merges and 0600 permissions; JSONC or unusual TOML syntax requires a manual merge.
+Full access lets the Agent run commands and modify files without asking. Use it only on your own computer and in trusted directories. Managed policies and explicit deny rules can still apply.
 
+### 1. Command flags
 
-```bash
-mkdir -p ~/.claude
-```
+Run the line for your chosen tool in your terminal:
 
-
-
-```bash
-test ! -f ~/.claude/settings.json || cp -p ~/.claude/settings.json ~/.claude/settings.json.backup-$(date +%Y%m%d-%H%M%S)
-```
-
-
-Merge in your editor:
-
+Codex
 
 ```bash
-nano ~/.claude/settings.json
+codex --dangerously-bypass-approvals-and-sandbox
 ```
 
-
-
-```json
-{"permissions":{"defaultMode":"bypassPermissions"}}
-```
-
-
+Claude Code
 
 ```bash
-chmod 600 ~/.claude/settings.json
+claude --dangerously-skip-permissions
 ```
 
-
+OpenCode
 
 ```bash
-mkdir -p ~/.codex
+opencode --auto
 ```
 
-
+Gemini
 
 ```bash
-test ! -f ~/.codex/config.toml || cp -p ~/.codex/config.toml ~/.codex/config.toml.backup-$(date +%Y%m%d-%H%M%S)
+gemini --yolo --sandbox=false
 ```
 
+OpenCode `--auto` approves requests that would ask, while preserving explicit deny rules.
 
-Merge in your editor:
+### 2. Configuration files
 
+Paths and fields follow the tool order below. **Back up first, then merge in an editor; do not replace the whole file with an example or duplicate existing keys.** Files may contain credentials; never paste them into chat.
 
-```bash
-nano ~/.codex/config.toml
-```
+| Tool | macOS / Linux | Windows PowerShell |
+| --- | --- | --- |
+| Codex | `~/.codex/config.toml` | `$HOME\.codex\config.toml` |
+| Claude Code | `~/.claude/settings.json` | `$HOME\.claude\settings.json` |
+| OpenCode | `~/.config/opencode/opencode.json` | `$HOME\.config\opencode\opencode.json` |
+| Gemini | `~/.gemini/settings.json` | `$HOME\.gemini\settings.json` |
 
-
+Codex
 
 ```toml
 approval_policy = "never"
 sandbox_mode = "danger-full-access"
 ```
 
+Claude Code
 
-
-```bash
-chmod 600 ~/.codex/config.toml
+```json
+{"permissions":{"defaultMode":"bypassPermissions"}}
 ```
 
-
-
-```bash
-mkdir -p ~/.config/opencode
-```
-
-
-
-```bash
-test ! -f ~/.config/opencode/opencode.json || cp -p ~/.config/opencode/opencode.json ~/.config/opencode/opencode.json.backup-$(date +%Y%m%d-%H%M%S)
-```
-
-
-Merge in your editor:
-
-
-```bash
-nano ~/.config/opencode/opencode.json
-```
-
-
+OpenCode
 
 ```json
 {"permission":"allow"}
 ```
 
-
-
-```bash
-chmod 600 ~/.config/opencode/opencode.json
-```
-
-
-
-```bash
-mkdir -p ~/.gemini
-```
-
-
-
-```bash
-test ! -f ~/.gemini/settings.json || cp -p ~/.gemini/settings.json ~/.gemini/settings.json.backup-$(date +%Y%m%d-%H%M%S)
-```
-
-
-Merge in your editor:
-
-
-```bash
-nano ~/.gemini/settings.json
-```
-
-
+Gemini
 
 ```json
 {"tools":{"sandbox":false}}
 ```
 
+Codex: put both keys at the root, before any `[table]`. Claude Code: merge into `permissions` in user settings; project settings cannot enable `bypassPermissions`. OpenCode: edit existing `opencode.jsonc` if present; setting `permission: "allow"` replaces granular permissions, so choose it only when you intend to allow everything. With `XDG_CONFIG_HOME`, use `opencode/opencode.json` under that directory. Gemini: `tools.sandbox: false` only disables the sandbox; `general.defaultApprovalMode` **does not accept `yolo`**. Configuration alone cannot enable full auto-approval; use the command flag or `gx` below.
 
+#### macOS configuration {#macos-config}
 
-```bash
-chmod 600 ~/.gemini/settings.json
-```
+Back up, then manually merge the fields above in the editor. Copy only your tool’s command. In WSL2 use the Linux tab. An existing OpenCode jsonc file is preferred.
 
-
-Put Codex’s two fields at the top, before any [table]. Set Claude’s mode in user ~/.claude/settings.json; bypassPermissions in project settings does not take effect. If OpenCode uses opencode.jsonc, merge there instead of creating conflicting JSON. Gemini’s sandbox:false disables sandboxing, but YOLO remains a launch flag; use the script’s gemini-full-access helper.
-
+Codex
 
 ```bash
-gemini-full-access
+file="$HOME/.codex/config.toml"
+mkdir -p "$(dirname "$file")"
+if test -f "$file"; then cp -p "$file" "$file.backup-$(date +%Y%m%d-%H%M%S)"; fi
+nano "$file"
 ```
 
-
-Gemini launch without the setup script:
-
+Claude Code
 
 ```bash
-gemini --yolo --sandbox=false
+file="$HOME/.claude/settings.json"
+mkdir -p "$(dirname "$file")"
+if test -f "$file"; then cp -p "$file" "$file.backup-$(date +%Y%m%d-%H%M%S)"; fi
+nano "$file"
 ```
 
+OpenCode
 
-To undo, copy the matching .backup or .agentj-backup file over its original path and start a fresh session. --no-full-access skips future changes; it does not undo earlier settings.
+```bash
+file="${XDG_CONFIG_HOME:-$HOME/.config}/opencode/opencode.json"
+test ! -f "${file}c" || file="${file}c"
+mkdir -p "$(dirname "$file")"
+if test -f "$file"; then cp -p "$file" "$file.backup-$(date +%Y%m%d-%H%M%S)"; fi
+nano "$file"
+```
+
+Gemini
+
+```bash
+file="$HOME/.gemini/settings.json"
+mkdir -p "$(dirname "$file")"
+if test -f "$file"; then cp -p "$file" "$file.backup-$(date +%Y%m%d-%H%M%S)"; fi
+nano "$file"
+```
+
+#### Linux configuration {#linux-config}
+
+Back up, then manually merge the fields above in the editor. Copy only your tool’s command. In WSL2 use the Linux tab. An existing OpenCode jsonc file is preferred.
+
+Codex
+
+```bash
+file="$HOME/.codex/config.toml"
+mkdir -p "$(dirname "$file")"
+if test -f "$file"; then cp -p "$file" "$file.backup-$(date +%Y%m%d-%H%M%S)"; fi
+nano "$file"
+```
+
+Claude Code
+
+```bash
+file="$HOME/.claude/settings.json"
+mkdir -p "$(dirname "$file")"
+if test -f "$file"; then cp -p "$file" "$file.backup-$(date +%Y%m%d-%H%M%S)"; fi
+nano "$file"
+```
+
+OpenCode
+
+```bash
+file="${XDG_CONFIG_HOME:-$HOME/.config}/opencode/opencode.json"
+test ! -f "${file}c" || file="${file}c"
+mkdir -p "$(dirname "$file")"
+if test -f "$file"; then cp -p "$file" "$file.backup-$(date +%Y%m%d-%H%M%S)"; fi
+nano "$file"
+```
+
+Gemini
+
+```bash
+file="$HOME/.gemini/settings.json"
+mkdir -p "$(dirname "$file")"
+if test -f "$file"; then cp -p "$file" "$file.backup-$(date +%Y%m%d-%H%M%S)"; fi
+nano "$file"
+```
+
+#### Windows configuration {#windows-config}
+
+Back up, then manually merge the fields above in the editor. Copy only your tool’s command. In WSL2 use the Linux tab. An existing OpenCode jsonc file is preferred.
+
+Codex
+
+```powershell
+$file = "$HOME\.codex\config.toml"
+New-Item -ItemType Directory -Force (Split-Path -Parent $file) | Out-Null
+if (Test-Path -LiteralPath $file) { Copy-Item -LiteralPath $file -Destination ($file + ".backup-" + (Get-Date -Format yyyyMMdd-HHmmss)) }
+notepad $file
+```
+
+Claude Code
+
+```powershell
+$file = "$HOME\.claude\settings.json"
+New-Item -ItemType Directory -Force (Split-Path -Parent $file) | Out-Null
+if (Test-Path -LiteralPath $file) { Copy-Item -LiteralPath $file -Destination ($file + ".backup-" + (Get-Date -Format yyyyMMdd-HHmmss)) }
+notepad $file
+```
+
+OpenCode
+
+```powershell
+$file = "$HOME\.config\opencode\opencode.json"
+if ($env:XDG_CONFIG_HOME) { $file = Join-Path $env:XDG_CONFIG_HOME "opencode\opencode.json" }
+if (Test-Path -LiteralPath ($file + "c")) { $file += "c" }
+New-Item -ItemType Directory -Force (Split-Path -Parent $file) | Out-Null
+if (Test-Path -LiteralPath $file) { Copy-Item -LiteralPath $file -Destination ($file + ".backup-" + (Get-Date -Format yyyyMMdd-HHmmss)) }
+notepad $file
+```
+
+Gemini
+
+```powershell
+$file = "$HOME\.gemini\settings.json"
+New-Item -ItemType Directory -Force (Split-Path -Parent $file) | Out-Null
+if (Test-Path -LiteralPath $file) { Copy-Item -LiteralPath $file -Destination ($file + ".backup-" + (Get-Date -Format yyyyMMdd-HHmmss)) }
+notepad $file
+```
+
+Rollback: restore the matching `.backup-*` / `.agentj-backup` file. For a new file remove only the fields you added. Without a backup, use Codex `approval_policy = "on-request"` / `sandbox_mode = "workspace-write"`, Claude `defaultMode: "default"`, OpenCode `permission: "ask"`, and remove Gemini `tools.sandbox` and launch flags. Exit the Agent and start a fresh session.
+
+Checked 2026-10-09 against local Codex 0.159.2, Claude Code 2.1.289, OpenCode 1.18.32 and Gemini 0.60.0 `--help` and official documentation. Managed policy and project configuration may override user settings.
+
+[Codex configuration](https://developers.openai.com/codex/config-reference/) · [Claude Code settings](https://code.claude.com/docs/en/settings) · [OpenCode permissions](https://opencode.ai/docs/permissions/) · [Gemini configuration](https://geminicli.com/docs/reference/configuration/)
+
+### 3. Short aliases
+
+Repeating the command does not append the same line twice. Check existing aliases/functions with these names before replacing them; these definitions take over matching interactive commands. Add arguments after `cx` / `cc` / `oc` / `gx` as usual. `cc` is the system C compiler name on macOS/Linux: the alias affects interactive terminals, not ordinary build scripts. Use `ccx` instead by changing `cc` in the command if you prefer.
+
+Rollback: delete the four added lines from the rc file or `$PROFILE` and open a new terminal. In the current Bash/zsh shell run `unalias cx cc oc gx`; in PowerShell run `Remove-Item Function:cx,Function:cc,Function:oc,Function:gx`.
+
+#### macOS aliases {#macos-aliases}
+
+zsh: append to `~/.zshrc`. The final `source` applies it now, or open a new terminal.
+
+Codex (`cx`)
+
+```bash
+rc="$HOME/.zshrc"
+touch "$rc"
+line="alias cx='codex --dangerously-bypass-approvals-and-sandbox'"
+grep -Fqx -- "$line" "$rc" || printf '\n%s\n' "$line" >> "$rc"
+source "$rc"
+```
+
+Claude Code (`cc`)
+
+```bash
+rc="$HOME/.zshrc"
+touch "$rc"
+line="alias cc='claude --dangerously-skip-permissions'"
+grep -Fqx -- "$line" "$rc" || printf '\n%s\n' "$line" >> "$rc"
+source "$rc"
+```
+
+OpenCode (`oc`)
+
+```bash
+rc="$HOME/.zshrc"
+touch "$rc"
+line="alias oc='opencode --auto'"
+grep -Fqx -- "$line" "$rc" || printf '\n%s\n' "$line" >> "$rc"
+source "$rc"
+```
+
+Gemini (`gx`)
+
+```bash
+rc="$HOME/.zshrc"
+touch "$rc"
+line="alias gx='gemini --yolo --sandbox=false'"
+grep -Fqx -- "$line" "$rc" || printf '\n%s\n' "$line" >> "$rc"
+source "$rc"
+```
+
+#### Linux aliases {#linux-aliases}
+
+bash: append to `~/.bashrc`; zsh users use the macOS tab. The final `source` applies it now, or open a new terminal.
+
+Codex (`cx`)
+
+```bash
+rc="$HOME/.bashrc"
+touch "$rc"
+line="alias cx='codex --dangerously-bypass-approvals-and-sandbox'"
+grep -Fqx -- "$line" "$rc" || printf '\n%s\n' "$line" >> "$rc"
+source "$rc"
+```
+
+Claude Code (`cc`)
+
+```bash
+rc="$HOME/.bashrc"
+touch "$rc"
+line="alias cc='claude --dangerously-skip-permissions'"
+grep -Fqx -- "$line" "$rc" || printf '\n%s\n' "$line" >> "$rc"
+source "$rc"
+```
+
+OpenCode (`oc`)
+
+```bash
+rc="$HOME/.bashrc"
+touch "$rc"
+line="alias oc='opencode --auto'"
+grep -Fqx -- "$line" "$rc" || printf '\n%s\n' "$line" >> "$rc"
+source "$rc"
+```
+
+Gemini (`gx`)
+
+```bash
+rc="$HOME/.bashrc"
+touch "$rc"
+line="alias gx='gemini --yolo --sandbox=false'"
+grep -Fqx -- "$line" "$rc" || printf '\n%s\n' "$line" >> "$rc"
+source "$rc"
+```
+
+#### Windows aliases {#windows-aliases}
+
+PowerShell: append functions to the current `$PROFILE`, then load it with the final line. Or open a new terminal of the same PowerShell edition. If policy blocks profile loading, use the direct launch commands; do not change company policy.
+
+Codex (`cx`)
+
+```powershell
+$dir = Split-Path -Parent $PROFILE
+New-Item -ItemType Directory -Force $dir | Out-Null
+if (!(Test-Path -LiteralPath $PROFILE)) { New-Item -ItemType File $PROFILE | Out-Null }
+$line = 'function cx { codex --dangerously-bypass-approvals-and-sandbox @args }'
+if (@(Get-Content -LiteralPath $PROFILE) -cnotcontains $line) { Add-Content -LiteralPath $PROFILE -Value ("`n" + $line) }
+. $PROFILE
+```
+
+Claude Code (`cc`)
+
+```powershell
+$dir = Split-Path -Parent $PROFILE
+New-Item -ItemType Directory -Force $dir | Out-Null
+if (!(Test-Path -LiteralPath $PROFILE)) { New-Item -ItemType File $PROFILE | Out-Null }
+$line = 'function cc { claude --dangerously-skip-permissions @args }'
+if (@(Get-Content -LiteralPath $PROFILE) -cnotcontains $line) { Add-Content -LiteralPath $PROFILE -Value ("`n" + $line) }
+. $PROFILE
+```
+
+OpenCode (`oc`)
+
+```powershell
+$dir = Split-Path -Parent $PROFILE
+New-Item -ItemType Directory -Force $dir | Out-Null
+if (!(Test-Path -LiteralPath $PROFILE)) { New-Item -ItemType File $PROFILE | Out-Null }
+$line = 'function oc { opencode --auto @args }'
+if (@(Get-Content -LiteralPath $PROFILE) -cnotcontains $line) { Add-Content -LiteralPath $PROFILE -Value ("`n" + $line) }
+. $PROFILE
+```
+
+Gemini (`gx`)
+
+```powershell
+$dir = Split-Path -Parent $PROFILE
+New-Item -ItemType Directory -Force $dir | Out-Null
+if (!(Test-Path -LiteralPath $PROFILE)) { New-Item -ItemType File $PROFILE | Out-Null }
+$line = 'function gx { gemini --yolo --sandbox=false @args }'
+if (@(Get-Content -LiteralPath $PROFILE) -cnotcontains $line) { Add-Content -LiteralPath $PROFILE -Value ("`n" + $line) }
+. $PROFILE
+```
 
 ## AgentsRelay
 
-Optional: the existing official helper configures Claude/Codex/OpenCode. It reads hidden input, verifies keys/models, backs up and merges local credentials. Never provide keys in AI chat. Enter separate group keys when prompted. Gemini is outside this helper’s contract and keeps Google sign-in.
+Before installing any CLI, visit https://agentsrelay.net, register and buy a plan for your tools. The official helper reads group keys with hidden input and performs real model calls. A failed key can be pasted again, up to three attempts, or you can switch to native login. We issue no temporary allowance token. The helper owns model defaults; the setup script hardcodes no model name. Claude and OpenAI group keys differ: provide the groups needed by your selected tools. Gemini keeps Google sign-in. Without a terminal, Relay stops before installing tools and asks you to rerun interactively. Never send keys in AI chat.
 
 
 ```bash
@@ -1089,7 +1288,7 @@ python3 ~/.config/agentsrelay/agentsrelay-setup.py --restore
 
 [AgentsRelay official onboarding](https://agentsrelay.net/onboard/)
 
-## requirements
+## System requirements {#requirements}
 
 macOS: first run `opencode --version` (or your selected agent’s `--version`). If it works, continue installing; there is no operating-system version gate. The one-line installer probes its downloaded, pinned OpenCode binary and reports actual dyld / _ubrk_clone or execution failures. PATH changes or npm reinstalls cannot repair system libraries; upgrade macOS, use another computer, or choose another working agent with the manual installation guide. Intel Mac uses x86_64 tools and /usr/local Homebrew; Apple Silicon uses arm64 and /opt/homebrew. Gemini currently lists macOS 15+. Physical Intel Mac and Windows installation still requires verification on those machines.
 
@@ -1099,7 +1298,10 @@ command not found: revisit PATH, check the shell startup file and open a fresh t
 
 ## Agent J
 
-In signed-in Claude/Codex/OpenCode running with full access, send the existing installation instruction:
+At the end, setup asks “现在安装 Agent J 吗？[Y/n]”. Yes opens the existing official installation assistant; it needs your account-page installation code (`AJI-…`), entered locally with hidden input. `--with-agentj` selects this step; `--no-agentj` skips it. These flags choose the step; pairing and account consent still require you. Without a terminal, setup only prints the next step. If no login/key is detected, it explains: “Agent J 能装能配对，但要登录 AI 工具或填 key 后才能真正聊天”. Credential presence is not proof that a token is still valid.
+
+The formal assistant verifies a tool-free model call with installed Claude Code, Codex and OpenCode. It reuses a callable CLI; if several work, you choose. After phone pairing, send Hello. It asks for a formal service URL/model and a secure phone key card only if none can call. AgentsRelay configuration works in the background service without opening a new terminal. Gemini is installed by setup but cannot yet be selected as the main Agent in Agent J. If only Gemini is installed, the assistant asks you to sign in to Codex / Claude Code / OpenCode or use AgentsRelay.
+
 
 
 ```text

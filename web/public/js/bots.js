@@ -54,7 +54,14 @@ function draw(detail,main){const c=detail.bot;main.append(mk('h2','',text(c.titl
     const zone=field(main,copy('服务时区','Service timezone'),c.timezone),language=field(main,copy('语言（auto / zh / en）','Language (auto / zh / en)'),c.language),profile=field(main,copy('自带 key 服务商档案名称（留空复用主 Agent）','API key provider profile (blank: use main Agent)'),c.provider.source==='profile'?c.provider.id:'');
     const enabled=checkbox(main,copy('接待访客','Serve visitors'),c.enabled),terms=checkbox(main,copy('接受对外服务条款','Accept public service terms'),c.terms_accepted),risk=checkbox(main,copy('已确认个人订阅对外服务的条款和风险','I checked terms and risks of public subscription use'),c.subscription_risk_accepted);privacy(main);
     const register=mk('a','',copy('注册 OpenRouter（审核费用自付）','Register OpenRouter (you pay review costs)'));register.href='https://openrouter.ai/';register.target='_blank';register.rel='noopener noreferrer';main.append(register,mk('p','',copy('密钥仅用手机密钥卡写入电脑。每次启用均真实验证 decisions，失败则保持暂停。','The phone secret card writes the key only to your computer. Each activation verifies decisions; failure keeps the bot paused.')),button(copy('添加 / 更新 OpenRouter 审核 key','Add / update OpenRouter review key'),()=>act(async()=>{await write({op:'audit_key',id:c.id});await refresh();})));
-    if(detail.provider_problem)main.append(mk('p','',copy('请检查主 Agent 的登录，或用手机密钥卡添加自带 key。','Check your main Agent login or add your own key using the phone secret card.')));
+    const nativeProblems={
+      native_executable_missing:['找不到主 Agent 已选程序。请在电脑上检查安装路径。','The selected main Agent program was not found. Check its installation path on your computer.'],
+      native_executable_not_executable:['主 Agent 已选程序不能执行。请在电脑上检查文件权限。','The selected main Agent program cannot run. Check its file permissions on your computer.'],
+      native_executable_selection_failed:['主 Agent 程序路径无法确定。请在电脑上确认已选版本。','The main Agent program path is unresolved. Confirm the selected version on your computer.'],
+      native_spawn_failed:['客服程序未能启动，本次模型预留已释放。请检查电脑运行状态。','The bot program could not start. This model reservation was released. Check your computer.']
+    };
+    const problem=detail.provider_problem||detail.native_start_failure;
+    if(problem)main.append(mk('p','',nativeProblems[problem]?copy(...nativeProblems[problem]):copy('请检查主 Agent 的登录，或用手机密钥卡添加自带 key。','Check your main Agent login or add your own key using the phone secret card.')));
     const allDay=checkbox(main,copy('全天接待','Serve all day'),c.hours===null),start=field(main,copy('开始时间（0–23 点）','Start hour (0–23)'),String(c.hours?.start??9),'number'),end=field(main,copy('结束时间（0–23 点）','End hour (0–23)'),String(c.hours?.end??18),'number');
     const days=[];for(const [i,labels] of [['周一','Monday'],['周二','Tuesday'],['周三','Wednesday'],['周四','Thursday'],['周五','Friday'],['周六','Saturday'],['周日','Sunday']].entries())days.push(checkbox(main,copy(...labels),c.hours?.days.includes(i)??true));
     const slug=field(main,copy('公开名字（改名后旧名冻结 30 天）','Public name (old name frozen for 30 days)'),c.slug);

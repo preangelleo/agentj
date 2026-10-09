@@ -14,7 +14,7 @@ try{
  for(const language of ['zh','en']){
   const name='owner-bots-'+language;let p;
   try{
-   fake.reset();let config=null;const writes=[];
+   fake.reset();let config=null,nativeProblem=null;const writes=[];
    fake.st.onApp=async(c,m,send)=>{
     if(!['bots_read','bots_write'].includes(m.t))return false;
     if(m.t==='bots_write'){
@@ -26,7 +26,7 @@ try{
     }
     const r={t:'bots_res',r:m.r,ok:true};
     if(m.request.op==='list')Object.assign(r,{bots:config?[config]:[],host_timezone:'Asia/Tokyo'});
-    if(m.request.op==='detail')Object.assign(r,{bot:config,knowledge:[{name:'manual.md',bytes:12}],tools:[{name:'order_status',description:'Own authorized order',enabled:false,level:'write'}],provider:{provider:'fixture',model:'small'}});
+    if(m.request.op==='detail')Object.assign(r,{bot:config,knowledge:[{name:'manual.md',bytes:12}],tools:[{name:'order_status',description:'Own authorized order',enabled:false,level:'write'}],provider:{provider:'fixture',model:'small'},provider_problem:nativeProblem});
     if(m.request.op==='history')Object.assign(r,m.request.visitor?{messages:[{role:'user',text:'<img src=x onerror=alert(1)>',created:1}]}:{sessions:[{visitor:'b'.repeat(32),messages:1}]});
     if(m.request.op==='statistics')Object.assign(r,{days:[{day:'2026-10-09',calls:3,charged_tokens:12,actual_tokens:12}],tools:[{day:'2026-10-09',tool:'order_status',calls:1}]});
     await send(r);return true;
@@ -47,6 +47,17 @@ try{
    }
    const geometry=await evaluate(p,"({overflow:document.documentElement.scrollWidth>innerWidth,taps:[...document.querySelectorAll('#bots-view button')].filter(e=>e.getClientRects().length).map(e=>Math.round(e.getBoundingClientRect().height))})");
    assert.equal(geometry.overflow,false);assert.ok(geometry.taps.every(h=>h>=44),JSON.stringify(geometry));assert.deepEqual(p.problems,[]);assert.equal(p.offsite.length,0);
+   for(const [code,zh,en] of [
+    ['native_executable_missing','找不到主 Agent 已选程序','selected main Agent program was not found'],
+    ['native_executable_not_executable','主 Agent 已选程序不能执行','selected main Agent program cannot run'],
+    ['native_executable_selection_failed','主 Agent 程序路径无法确定','main Agent program path is unresolved'],
+    ['native_spawn_failed','本次模型预留已释放','model reservation was released']
+   ]){
+    nativeProblem=code;await click("document.querySelectorAll('.bots-tabs button')[0]");
+    await waitFor(p,`document.getElementById('bots-main').textContent.includes(${JSON.stringify(language==='zh'?zh:en)})`);
+    assert.ok(!(await evaluate(p,"document.getElementById('bots-main').textContent")).includes(code));
+   }
+   nativeProblem=null;
    writeFileSync(new URL(language+'.png',out),await shoot(p));rec.record(name,true);console.log(name+' PASS');
   }catch(e){failed++;rec.record(name,false);console.error(name,e.stack);}finally{await p?.dispose();}
  }

@@ -85,11 +85,15 @@
     <div class="meter" id="mWeek" role="img" data-known="0" data-i18n-attr="aria-label=r.meter.week" aria-label="本周额度"><i></i><span class="lab">weekly</span></div>
 
     <div class="stage" id="stage">
-      <button id="newReply" class="new-reply" type="button" data-i18n="r.newReply" hidden>有新回复，点此查看</button>
       <button class="pz prev" id="pgPrev" type="button" data-i18n-attr="aria-label=r.pg.prev,title=r.pg.prevTitle" aria-label="上一条（更早）" title="上一条（j / ←）">&#8249;</button>
       <div class="deck" id="deck">
         <section class="om" id="om" hidden data-src="leo" data-i18n-attr="aria-label=r.om.aria" aria-label="原话">
-          <div class="omhd"><span id="omIcon" aria-hidden="true"></span><b id="omLabel"></b><span class="t" id="omTime"></span><span class="pg" id="pg"></span></div>
+          <div class="omhd">
+            <button id="omFirst" class="history-corner om-first" type="button" data-i18n-attr="aria-label=r.pg.first,title=r.pg.firstHint" aria-label="跳到第一条消息" title="双击跳到第一条消息"><span id="omIcon" aria-hidden="true"></span><b id="omLabel"></b><span class="t" id="omTime"></span></button>
+            <div class="pg-corner" id="pgCorner">
+              <button id="pgLatest" class="history-corner pg-latest" type="button" data-i18n-attr="aria-label=r.pg.latest,title=r.pg.latestHint" aria-label="跳到最新消息" title="双击跳到最新消息"><span class="pg" id="pg"></span></button>
+            </div>
+          </div>
           <div class="omq" id="omQuote" role="link" tabindex="0" hidden data-i18n-attr="aria-label=r.quote.jump" aria-label="跳到被回复的那一条">
             <div class="qb"><div class="qh"><b id="omqWho"></b><span id="omqMeta"></span></div><div class="qt" id="omqText"></div></div>
           </div>

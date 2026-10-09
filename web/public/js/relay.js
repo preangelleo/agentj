@@ -1,3 +1,4 @@
+import { historyDoubleTap } from './history-corners.js';
 import { SharedNotice } from './shared-notice.js';
 import { quotaWindows } from './dashboard.js';
 // The chat screen = relay's phone page (pwa/index.html <script>, ADR-022 … ADR-052 there), ported section by section.
@@ -778,12 +779,14 @@ function showPage(){
   }
   if (arrived && follow && stick && !rdAt) follow = true;
   if (arrived && !follow) unreadReply = true;
-  if (follow) unreadReply = false;
-  el("newReply").hidden = !unreadReply;
   if (follow || pageAt < 0 || pageAt > ps.length - 1) {
     pageAt = ps.length - 1;
   }
   follow = pageAt === ps.length - 1;
+  if (follow) unreadReply = false;
+  el("pgLatest").setAttribute("aria-label", t(unreadReply ? "r.newReply" : "r.pg.latest"));
+  el("pgLatest").title = t(unreadReply ? "r.newReply" : "r.pg.latestHint");
+  el("pgCorner").dataset.unread = unreadReply ? "1" : "0";
   const p = ps[pageAt];
   const key = (p.id === null ? "live" : p.id) + "|" + pageAt;
   const om = el("om"), src = p.source;
@@ -2470,7 +2473,10 @@ export function init(ctx){
 
   el("omMore").addEventListener("click", () => setOm(!el("om").classList.contains("open")));
   el("pgPrev").addEventListener("click", () => goPage(-1));
-  el("newReply").addEventListener("click", toNewest);
+  const latestCorner = () => { if (pageAt !== pages().length - 1 || unreadReply) toNewest(); };
+  el("pgLatest").addEventListener("click", () => { if (unreadReply) latestCorner(); });
+  historyDoubleTap(el("pgLatest"), latestCorner);
+  historyDoubleTap(el("omFirst"), () => goEdge(false));
   el("pgNext").addEventListener("click", () => goPage(1));
   el("copyReply").addEventListener("click", copyReply);
   el("replyBtn").addEventListener("click", () => startReply(currentPage()));

@@ -236,8 +236,8 @@ try {
       const urls = await ev(p, `[...document.querySelectorAll('#words img, #mstrip img')].map((i) => i.src)`);
       await fake.addTurn({ k: 'phone', dev: null, text: '下一条' }, '没有附件的回复', 'done');
       // P87 preserves the long media page until the reader chooses the new reply.
-      await waitFor(p, `!document.getElementById('newReply').hidden`);
-      await ev(p, `document.getElementById('newReply').click()`);
+      await waitFor(p, `document.getElementById('pgCorner').dataset.unread === '1'`);
+      await ev(p, `document.getElementById('pgLatest').click()`);
       await waitFor(p, `document.getElementById('words').textContent === '没有附件的回复' && document.getElementById('mstrip').hidden`);
       const alive = await ev(p, `Promise.all(${JSON.stringify(urls)}.map((u) => new Promise((r) => { const i = new Image(); i.onload = () => r(true); i.onerror = () => r(false); i.src = u; })))`);
       assert.deepEqual(alive, urls.map(() => false), 'object URLs revoked when the page left the screen');

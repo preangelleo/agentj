@@ -101,7 +101,7 @@ export async function runCases({ B, web, fake, only }) {
   async function turns(n, mk = (i) => [{ k: 'phone', dev: 'other', text: `问题 ${i}` }, `回复 ${i}\n\n第二行 ${i}`]) {
     for (let i = 1; i <= n; i++) { const [src, reply] = mk(i); await fake.addTurn(src, reply); }
     await wait(`document.getElementById('pg').textContent.endsWith('/ ' + ${JSON.stringify(String(fake.st.turns.length))}) || document.getElementById('pg').textContent.endsWith('/ ' + ${fake.st.turns.length})`);
-    if (!(await hidden('#newReply'))) await click('#newReply');
+    if (await ev(`document.getElementById('pgCorner').dataset.unread === '1'`)) await click('#pgLatest');
   }
   const pg = async () => (await text('#pg')).trim();
   const curWords = () => text('#words');
@@ -189,9 +189,9 @@ export async function runCases({ B, web, fake, only }) {
     const before = await text('#words');
     ok(!(await pg()).startsWith((await pg()).split(' / ')[1] + ' '), 'on an older page first');
     await fake.addTurn({ k: 'agent' }, '新的一条');
-    await wait(`!document.getElementById('newReply').hidden`);
+    await wait(`document.getElementById('pgCorner').dataset.unread === '1'`);
     ok((await text('#words')) === before, 'new visible reply preserves older page');
-    await click('#newReply');
+    await click('#pgLatest');
     await wait(`document.getElementById('words').textContent === '新的一条'`);
     const [n, tot] = (await pg()).split(' / ').map(Number);
     ok(n === tot, 'new reply hint opens the newest visible page');
@@ -209,7 +209,7 @@ export async function runCases({ B, web, fake, only }) {
     await wait(`document.getElementById('words').textContent.includes(${JSON.stringify(T('r.replyPending'))})`);
     await fake.addTurn({ k: 'agent' }, '浏览器回归结束');
     await sleep(200);
-    await click('#newReply');
+    await click('#pgLatest');
   });
   await C('swipe-rubber-band', async () => {
     const before = await pg();
@@ -305,9 +305,9 @@ export async function runCases({ B, web, fake, only }) {
   await C('copy-reply', async () => {
     const reading=await text('#words');
     await fake.addTurn({ k: 'agent' }, '复制我');
-    await wait(`!document.getElementById('newReply').hidden`);
+    await wait(`document.getElementById('pgCorner').dataset.unread === '1'`);
     ok((await text('#words')) === reading, 'an unread long reply keeps focus before explicit selection');
-    await click('#newReply');
+    await click('#pgLatest');
     await wait(`document.getElementById('words').textContent === '复制我'`);
     await click('#copyReply');
     await waitToast(T('r.copy.reply'));

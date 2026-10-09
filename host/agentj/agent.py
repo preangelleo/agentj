@@ -153,8 +153,13 @@ def codex_failure(raw, model: str | None, lang: str = "zh") -> tuple[str, str, s
                 if lang == "en" else f"这个账号用不了 {name}，点顶部模型名换一个。")
         kind = "model"
     elif re.search(r"\b401\b|unauthori[sz]ed|authentication.*(?:failed|required)|token.*expired", low):
-        text = ("Codex login has expired. Run `codex login` on this computer, then resend."
-                if lang == "en" else "Codex 登录已失效，在这台电脑上运行 `codex login` 重新登录后再发。")
+        from . import harness
+        logged_before = harness.codex_login()[0] != "warn"
+        expired = logged_before and bool(re.search(r"\b401\b", low))
+        text = (("Codex login has expired. Run `codex login` on this computer, then resend."
+                 if lang == "en" else "Codex 登录已失效，在这台电脑上运行 `codex login` 重新登录后再发。") if expired else
+                ("Codex is not logged in yet. Run `codex login` on this computer, then resend."
+                 if lang == "en" else "还没登录 Codex，在这台电脑上运行 `codex login` 后再发。"))
         kind = "auth"
     elif any(x in low for x in ("workspace routing discovery failed", "network", "connection", "timed out", "timeout", "proxy", "dns", "failed to fetch")):
         text = ("Cannot connect to ChatGPT. Check your proxy/VPN, then resend."

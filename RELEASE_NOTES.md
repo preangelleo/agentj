@@ -1,6 +1,6 @@
-# Agent J 0.17.1a1 release notes
+# Agent J 0.17.2a1 release notes
 
-Host 0.17.1a1 / install 0.21.1; phone-web scope.
+Host 0.17.2a1 / install 0.21.3; phone-web scope.
 Phone parity must pass --strict. Full Android/Telegram parity is incomplete.
 Full Android/Telegram parity is incomplete.
 No APK is included in this release. Android source is for review, not a released app.
@@ -8,17 +8,18 @@ No APK is included in this release. Android source is for review, not a released
 Publication status: local preparation only. Live site verification is DEFERRED until
 the public commit and tag are pushed, the site is deployed, and cold installation passes.
 
-On publication failure, restore v0.17.0a1 and its Dashboard/front Worker/site/phone artifacts; no new schema migration.
+On publication failure, restore v0.17.1a1 host/site/phone artifacts; reuse published Dashboard C. No new D1 migration or relay change.
 ## Changes
 
-- Phone-answer-dependent bot writes run as bounded tasks after serial device/signature/nonce admission; long-operation receipts retain the600-second key-card deadline and keep other messages and emergency stop responsive.
-- Verification and visitor vault frames use the same active owner-signed exact HTTPS embed allowlist for every ancestor; strict postMessage and opaque sandbox boundaries remain enforced.
-- Opaque chat sends without native form navigation; unavailable iPhone platform-authenticator guidance and provider probe error categories are updated without exposing provider bodies or keys.
-- Deploy Dashboard app code before front Worker/site and phone web; no new D1 migration or relay implementation. COREv8 unchanged.
+- Native bots resolve the selected Claude/Codex/Gemini/OpenCode executable before environment scrub; explicit paths outside service PATH remain authoritative.
+- Trusted pre-spawn failure settles that model reservation to zero. Started calls with unknown usage remain reserved; historical unknown reservations are not manually changed.
+- Owner bot settings distinguish missing, non-executable, unresolved selection and spawn failure without exposing argv, stderr or credentials.
+- Preserve OpenCode --pure and tool/MCP/plugin/workspace isolation; stdin prompts and native authentication. Package/site A then phone B; reuse Dashboard C. COREv8 unchanged.
 
-- Real QA Noise phone/card save, cancel, concurrent read and emergency-stop checks passed; original provider/seat/devices retained and owned synthetic test keys cleaned.
-- Real local cross-site HTTPS browser coverage uses synthetic Turnstile/model fixtures, never claims production challenge acceptance. Manual production Turnstile, two questions/two answers, pre-reply Jev, daily limit and full embed refresh chain remain operator steps.
-- Unchanged shared issuer source reuses explicitly marked authentic earlier inactive-key evidence; no new native-key issuance claimed. Physical iPhone/Android/macOS acceptance remains pending.
+- Real local native bot replies with selected OpenCode and no opencode in PATH; genuine QA installed-package, Noise/card/main-Agent reply and finally cleanup are recorded separately.
+- P101 production bot/Jev conversations, daily limits and full embed refresh chain remain operator acceptance. Standalone QA SSH auth environment is not proven equivalent to the service.
+- P102 unread pager/corner navigation and P105 setup-agents are integrated and serially requalified in P106. Installer reuses genuinely callable Claude/Codex/OpenCode login; Gemini main-agent adaptation is deferred backlog.
+- Physical phone/Android/macOS remain pending; cloud installation-code redemption is a fixture, separately disclosed from real setup/installer/Noise/model acceptance.
 
 ## Material acceptance limits
 

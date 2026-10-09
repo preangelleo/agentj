@@ -1,26 +1,32 @@
 {
-  "version": "0.17.1a1",
+  "version": "0.17.2a1",
   "major": false,
   "zh": {
-    "features": [],
+    "features": [
+      "安装助手复用已验证的本机登录，配对后直接聊天。",
+      "历史页码未读闪烁与角落双击跳转。"
+    ],
     "improvements": [
-      "iPhone Face ID 不可用时显示系统设置排障指引。",
-      "服务商探测显示安全的错误类别和异常密钥长度区间。"
+      "客服程序启动失败显示具体原因。"
     ],
     "fixes": [
-      "Bot 密钥卡等待不再阻塞其他手机消息与急停。",
-      "客户网站嵌入的验证、访客存储和发送链路恢复正常。"
+      "客服 bot 继承主 Agent 已选程序路径。",
+      "确定未启动的模型调用自动释放本次预留。",
+      "已安装的 Codex 启动器不再被误认成程序管理器。"
     ]
   },
   "en": {
-    "features": [],
+    "features": [
+      "Installer reuses verified local CLI login for chat after pairing.",
+      "Unread page-number pulse and history corner double taps."
+    ],
     "improvements": [
-      "iPhone system-settings guidance when Face ID is unavailable.",
-      "Provider probes return safe error categories and unusual key-length bands."
+      "Specific diagnostics for bot startup failures."
     ],
     "fixes": [
-      "Bot key-card waits keep other phone messages and Stop everything responsive.",
-      "Restored verification, visitor storage and sending in customer-site embeds."
+      "Bots inherit the selected main Agent executable.",
+      "Model reservations are released when the process provably did not start.",
+      "Installed Codex launchers are no longer mistaken for version-manager shims."
     ]
   }
 }

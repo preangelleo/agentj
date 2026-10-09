@@ -395,7 +395,11 @@
       "prev": "Previous (older)",
       "prevTitle": "Previous (j / ←)",
       "next": "Next (newer)",
-      "nextTitle": "Next (k / →)"
+      "nextTitle": "Next (k / →)",
+      "first": "Jump to first message",
+      "firstHint": "Double-tap to jump to first message",
+      "latest": "Jump to latest message",
+      "latestHint": "Double-tap to jump to latest message"
     },
     "bar": {
       "aria": "This reply",
@@ -805,7 +809,7 @@
     },
     "replyPending": "Delivered, waiting for the computer…",
     "replyWorking": "Working…",
-    "newReply": "New reply — tap to view"
+    "newReply": "New message — jump to latest"
   },
   "preferences": {
     "notification": "Your agent has replied.",

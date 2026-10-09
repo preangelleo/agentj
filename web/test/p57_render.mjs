@@ -169,8 +169,8 @@ try {
     const vendorReqs = () => urls.filter((u) => /\/vendor\/(hljs|katex|mermaid)\//.test(u));
     const nBefore = vendorReqs().length;
     await fake.addTurn({ k: 'host', text: '再来一遍' }, REPLY + '\n\n（补一句）', 'done');          // a new page, same blocks
-    await waitFor(p, `document.getElementById('words').textContent.includes('补一句') || !document.getElementById('newReply').hidden`);
-    await evaluate(p, `if (!document.getElementById('newReply').hidden) document.getElementById('newReply').click()`);
+    await waitFor(p, `document.getElementById('words').textContent.includes('补一句') || document.getElementById('pgCorner').dataset.unread === '1'`);
+    await evaluate(p, `if (document.getElementById('pgCorner').dataset.unread === '1') document.getElementById('pgLatest').click()`);
     await waitFor(p, `document.getElementById('words').textContent.includes('补一句') && document.querySelector('#words pre[data-lang="python"] code.hljs')`, 10000);
     check(vendorReqs().length === nBefore, `${scheme}: a re-render loads nothing again`);
     // ---- what loaded, all from our own origin

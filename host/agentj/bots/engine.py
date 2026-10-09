@@ -30,8 +30,16 @@ class Engine:
         # cannot borrow the same balance and unknown usage exhausts it conservatively.
         call=self.store.reserve(bid,vid,rid,maximum,kind,remaining=(kind=='model' and p.api=='native'))
         try:r=await asyncio.to_thread(self.decision_call if kind=='jev' else self.model_call,p,messages,tools,max_output)
-        except Exception:raise BotError('model_unavailable') from None
-        self.store.settle(call,r.usage);return r
+        except Exception as e:
+            from .native import NativeNotStarted
+            if kind=='model' and p.api=='native' and isinstance(e,NativeNotStarted):
+                self.store.settle(call,0)
+                self.store.event(bid,vid,'native_start',str(e))
+                raise
+            raise BotError('model_unavailable') from None
+        self.store.settle(call,r.usage)
+        if kind=='model' and p.api=='native':self.store.event(bid,vid,'native_start','ok')
+        return r
     async def safety(self,p,bid,vid,rid,text,stage):
         if self.decision_call is invoke_jev or self.audit_resolve:
             from .audit import resolve as audit_resolve

@@ -28,7 +28,7 @@ class Section6(unittest.TestCase):
         with tempfile.TemporaryDirectory() as d:
             root=Path(d)
             for kind in ('claude','codex','gemini','opencode'):
-                env={'HOME':d,'CODEX_HOME':d};cmd=native.command(Provider('','native-model','native','',kind),root,env)
+                env={'HOME':d,'CODEX_HOME':d};cmd=native.command(Provider('','native-model','native','',kind),root,env,selected='/fixture/native')
                 self.assertNotIn('bypassPermissions',cmd);self.assertNotIn('--yolo',cmd)
                 if kind=='claude':self.assertEqual(cmd[cmd.index('--tools')+1],'');self.assertIn('--safe-mode',cmd)
                 if kind=='codex':self.assertIn('--ignore-user-config',cmd);self.assertIn('features.shell_tool=false',cmd);self.assertIn('features.view_image=false',cmd)
@@ -39,7 +39,7 @@ class Section6(unittest.TestCase):
             root=Path(d);p=Provider('', '', 'native', '', 'codex');env={'CODEX_HOME':d}
             for data in ('not valid toml !!!', 'model_provider="missing"', 'model_provider="custom"\n[model_providers.custom]\nbase_url="https://user:secret@example.com"'):
                 (root/'config.toml').write_text(data)
-                with self.assertRaises(BotError):native.command(p,root,env)
+                with self.assertRaises(BotError):native.command(p,root,env,selected='/fixture/native')
 
     def test_host_storage_migration_preserves_private_history_and_budget(self):
         import shutil
@@ -83,11 +83,11 @@ class Section6(unittest.TestCase):
         self.assertEqual(native.parse('codex',raw),('hello',7))
     def test_native_company_tool_envelope_is_data_and_strict(self):
         p=Provider('','native-model','native','','claude')
-        with patch('agentj.bots.native.run',return_value=json.dumps({'result':'{"text":"","tools":[{"name":"lookup","args":{}}]}','usage':{'input_tokens':3,'output_tokens':4}})) as run:
+        with patch('agentj.bots.native.executable',return_value='/fixture/native'), patch('agentj.bots.native.run',return_value=json.dumps({'result':'{"text":"","tools":[{"name":"lookup","args":{}}]}','usage':{'input_tokens':3,'output_tokens':4}})) as run:
             result=native.invoke_native(p,[{'role':'user','content':'look up my order'}],[{'function':{'name':'lookup'}}])
             self.assertEqual(result.tools[0]['name'],'lookup');self.assertEqual(result.usage,7)
             self.assertIn('available_company_tools',run.call_args.args[1]);self.assertNotIn('look up my order',' '.join(run.call_args.args[0]))
-        with patch('agentj.bots.native.run',return_value=json.dumps({'result':'{"text":"hello","tools":[],"shell":"whoami"}'})):
+        with patch('agentj.bots.native.executable',return_value='/fixture/native'), patch('agentj.bots.native.run',return_value=json.dumps({'result':'{"text":"hello","tools":[],"shell":"whoami"}'})):
             with self.assertRaises(BotError):native.invoke_native(p,[])
 
 class Activation(unittest.IsolatedAsyncioTestCase):

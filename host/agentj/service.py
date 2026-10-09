@@ -36,7 +36,7 @@ DEFAULT_LABEL = "net.agentj.host"
 LEGACY_UNIT = "agentjarvis"                # ≤ 0.9
 LEGACY_LABEL = "net.agentjarvis.host"
 _NAME_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,63}")
-CAPTURED_ENV = ("AGENTJ_STATE_DIR", "AGENTJ_CLAUDE_BIN", "AGENTJ_CODEX_BIN", "AGENTJ_OPENCODE_BIN")   # written with the new names; read either
+CAPTURED_ENV = ("AGENTJ_STATE_DIR", "AGENTJ_CLAUDE_BIN", "AGENTJ_CODEX_BIN", "AGENTJ_OPENCODE_BIN", "AGENTJ_GEMINI_BIN")   # written with the new names; read either
 PROXY_ENV = ("HTTPS_PROXY", "https_proxy", "HTTP_PROXY", "http_proxy", "NO_PROXY", "no_proxy", "ALL_PROXY", "all_proxy")
 TOKEN_ENV = "CLAUDE_CODE_OAUTH_TOKEN"
 
