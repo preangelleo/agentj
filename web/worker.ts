@@ -52,7 +52,7 @@ export function relaySources(env: WebEnv): string | null {
 
 /** Page routes of the single-page client (0.16, §17.7): served as index.html; app.js reads location.pathname. Exact
  *  matches only — "/friends/" would move every relative asset URL, so it stays a 404. */
-export const SPA_PATHS = ["/friends"];
+export const SPA_PATHS = ["/friends", "/bots"];
 export function assetRequest(req: Request): Request {
   const url = new URL(req.url);
   if (!SPA_PATHS.includes(url.pathname)) return req;

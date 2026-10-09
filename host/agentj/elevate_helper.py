@@ -3,8 +3,8 @@
 `agentj sudo-helper install` asks for ONE ordinary sudo card (the password typed on the phone, §11). That card's command:
 1. copies three files the host just generated into a root-owned staging folder (a snapshot the user can no longer change),
 2. checks each copy against the SHA-256 printed in the command itself (so the phone shows, and signs, exactly what goes in),
-3. installs them: the helper `/usr/local/libexec/agentj-elevate` (root, 0755, Python standard library only, run as
-   `/usr/bin/python3 -I -S`, so nothing the user owns is imported), the allowlist `/etc/agentj/elevate-keys.json` (root, 0644:
+3. installs them: the helper `/usr/local/libexec/agentj-elevate-<uid>` (root, 0755, Python standard library only, run as
+   `/usr/bin/python3 -I -S`, so nothing the user owns is imported), the allowlist `/etc/agentj/elevate-keys-<uid>.json` (root, 0644:
    this host's channel + the Ed25519 approval keys of the phones paired NOW), and a sudoers drop-in that lets this one user run
    exactly that helper command line without a password (checked with `visudo -cf` before it is moved into place).
 
@@ -32,10 +32,13 @@ import tempfile
 
 from . import wire
 
-HELPER = "/usr/local/libexec/agentj-elevate"
-KEYS = "/etc/agentj/elevate-keys.json"
-STATE = "/var/lib/agentj-elevate"
-SUDOERS = "/etc/sudoers.d/agentj-elevate"
+# Each installed seat owns its helper, allowlist, nonce ledger and sudoers entry.
+# Do not remove legacy unsuffixed files: another installed user may still use them.
+UID = os.getuid()
+HELPER = f"/usr/local/libexec/agentj-elevate-{UID}"
+KEYS = f"/etc/agentj/elevate-keys-{UID}.json"
+STATE = f"/var/lib/agentj-elevate-{UID}"
+SUDOERS = f"/etc/sudoers.d/agentj-elevate-{UID}"
 PYTHON = "/usr/bin/python3"
 HELPER_CMD = [PYTHON, "-I", "-S", HELPER]
 
@@ -176,6 +179,10 @@ if __name__ == "__main__":
 '''
 
 
+# Bind the standalone source to this installer UID; tests execute these exact bytes.
+HELPER_SOURCE = HELPER_SOURCE.replace('KEYS = "/etc/agentj/elevate-keys.json"', f'KEYS = "{KEYS}"').replace('STATE = "/var/lib/agentj-elevate"', f'STATE = "{STATE}"')
+
+
 def is_mac() -> bool:
     return platform.system() == "Darwin"
 
@@ -208,7 +215,7 @@ def install_script(src: str, hashes: dict[str, str], mac: bool | None = None, ke
     mac = is_mac() if mac is None else mac
     grp = "wheel" if mac else "root"
     check = "shasum -a 256 -c" if mac else "sha256sum -c"
-    stage = STATE + "/stage"
+    stage = STATE + "/stage-" + os.urandom(8).hex()
     q = shlex.quote
     names = ["elevate-keys.json"] if keys_only else ["agentj-elevate", "elevate-keys.json", "sudoers"]
     parts = ["set -eu", f"umask 077", f"rm -rf {stage}", f"install -d -m 0700 -o root -g {grp} {STATE} {stage}"]

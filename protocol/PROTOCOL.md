@@ -1532,4 +1532,39 @@ An unsigned `say /update` is refused. The host returns progress and persists com
 ### P80 meter extension (backwards compatible)
 `shared_writer` is optional/null or `{zh: string, en: string}`: locally generated process-holder notices (maximum600 characters per language), only used with `shared_status: desktop_writer`. Includes a verified PID when available, never argv or provider/auth settings. Clients render text only and clear it when following/normal. Older hosts fall back to their existing banner.
 
+## Visitor bot domain (P82 candidate, ADR-A192)
+
+Owner bots_read/bots_write are available only after paired Noise ready; all mutations
+use the existing signed controls digest for the exact request, with metadata-only
+approval log. The same-user0600 bots.sock permits reads and proposals, never grants
+owner authorization. Each public write-tool invocation has a separate exact digest,
+visitor/request binding, two-minute expiry and one-use owner decision.
+
+Public sockets use /b/<32hex bot>/{h,v} in a separate BotChannel. A visitor must have
+Origin:null; a host has no Origin. The existing per-IP limiter is shared across all
+relay domains; raw IP never reaches BotChannel. Dashboard signs five-minute claims
+with prefix agentjarvis/visitor-bot-v1\n and distinct domain visitor-bot-v1 or
+visitor-bot-host-v1. Claims bind host/bot/epoch; visitor claims also bind its X25519
+public key. The host proves its Ed25519 key against the relay challenge.
+
+A host-signed transcript binds admission plus fresh host ephemeral X25519 and nonce.
+HKDF-SHA256 derives separate host-to-visitor and visitor-to-host AES-GCM keys;
+monotonic96-bit counters are nonces and transcript hash is associated data. UTF-8
+JSON is prefixed by a two-byte length, zero-padded to256 bytes, maximum16KiB.
+Only say/identity/human are permitted; owner control types are always refused.
+Relay-to-host routing header [op:u8][cid:u32BE] uses0 admission metadata,1 ciphertext,
+2 disconnect; host-to-relay1 delivers cipher and2 disconnects exactly one visitor.
+Neither visitor ticket nor body grants owner approval authority.
+
+The public parent accepts only key/request metadata from its opaque chat and a
+one-use token from the exact verifier origin/window. The verifier never receives
+chat text; chat cannot read parent/sibling DOM, cookies, storage or owner imports.
+Siteverify is server-only with hostname/action/cdata/expiry and atomic consumption.
+Production configuration is intentionally missing a sitekey until Jarvis provisions
+DNS/route/sitekey. Dummy acceptance is only test evidence, never a production bypass.
+
 P87 additive implementation limits (0.16.6a1): strict PCM ASR upload cap 20,160,044 bytes (630 seconds at 16kHz mono16; recorder remains ten minutes). Container conversion cap630s, CPU limit180s. Processing allowance180s cold start +6×recording seconds, max3960s, unknown duration uses maximum; FIFO queue wait excluded. No new wire field; original audio survives failed say-time transcription.
+
+### P98 shared-follow notice identity
+
+Optional `meter.shared_follow` is null or `{agent: "claude"|"codex"|"opencode", id: string}`. The ID is the first 32 lowercase hex characters of SHA-256 of the actual selected native session ID, carried only inside Noise. It contains no path, transcript, credentials or raw session ID. It changes on native session selection, not on transport reconnect. Clients remember the latest opaque identity per host locally and show informational following as a 3500 ms fading toast without layout space. `shared_status: desktop_writer` and `shared_writer` remain actionable persistent banners; failed-send and approval paths remain unchanged. Older clients ignore the optional field, and older hosts have no session identity to deduplicate reliably.

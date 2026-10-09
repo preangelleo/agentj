@@ -1327,5 +1327,15 @@
   "fr.q.send": "Let my Agent reply",
   "fr.q.auto": "Let my Agent chat with this friend from now on",
   "fr.ask.groupHint": "Default: small talk and cards. Friends: everyday collaboration and technical topics, up to 12 rounds. Colleagues: other topics too. Quotes, scheduling and commitments still ask you.",
-  "fr.ask.done.pq_allow": "Your Agent replied for you"
+  "fr.ask.done.pq_allow": "Your Agent replied for you",
+  "r.shared.following.claude": "Following the computer’s Claude Code session.",
+  "r.shared.following.opencode": "Following the computer’s OpenCode session.",
+  "phoneEnv": {
+    "ios": "Open in Safari from the top-right menu, use a regular window, then Add to Home Screen. Pair and set up Face ID from that icon; use it every time. Allow cookies and website data.",
+    "android": "Open in Chrome from the top-right menu, use a regular window, then Add to Home Screen. Pair and set up screen unlock from that icon; use it every time. Allow cookies and website data.",
+    "desktop": "This browser may not retain pairing or support device unlock. Use a regular window in an up-to-date browser and allow cookies and website data.",
+    "setup": "Set up Face ID",
+    "copy": "Copy page link",
+    "copied": "Page link copied; pair from the Home Screen icon."
+  }
 }

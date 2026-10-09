@@ -103,7 +103,7 @@ test('QR: the share link (and longer texts up to version 10-M) decode back with 
 });
 
 test('Worker: /friends serves the page (exact path only); other paths unchanged', async () => {
-  assert.deepEqual(SPA_PATHS, ['/friends']);
+  assert.deepEqual(SPA_PATHS, ['/friends', '/bots']);
   const seen = [];
   const env = { WEB_HOST: 'm.agentj.app', RELAY_URL: 'wss://relay.agentj.app', ASSETS: { fetch: async (r) => { seen.push(new URL(r.url).pathname); return new Response(new URL(r.url).pathname === '/' ? 'page' : 'nf', { status: new URL(r.url).pathname === '/' ? 200 : 404 }); } } };
   const r = await handle(new Request('https://m.agentj.app/friends'), env);

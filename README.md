@@ -2,7 +2,7 @@
 
 # Agent J
 
-This 0.16.7a1 candidate tree is for review. The published installation remains 0.16.5a1 until the public mirror/tag and all release gates pass. Android is a debug review APK, with offline model provenance and physical-device acceptance still pending; it is not a store release.
+This 0.17.0a1 candidate tree is for review. The published installation remains 0.16.6a1 until the public mirror/tag and all release gates pass. Android is a debug review APK, with offline model provenance and physical-device acceptance still pending; it is not a store release.
 
 Docs (中文 / English): <https://agentj.app/docs/> · machine-readable index: <https://agentj.app/llms.txt>
 
@@ -22,6 +22,8 @@ from anywhere.
   talk end-to-end encrypted through a mailbox relay that forwards ciphertext only, each friend is answered by a tool-less
   stand-in, and you read every conversation on the phone.
 
+- Optional customer-service bots (0.17 candidate): free public URLs and embeds, host-local knowledge and company HTTP tools, the owner model plan and separate owner-funded OpenRouter safety reviews. Public service requires successful review setup and signed owner activation.
+
 **Zero access is the product rule:** our servers never hold a key that can read your messages, your agent's replies or
 your credentials. What we can and cannot see, and what is not done yet, is listed item by item at
 <https://agentj.app/security/>.
@@ -36,7 +38,7 @@ is the same file, byte for byte; the site publishes its SHA-256 at <https://agen
 
 The host program on its own, pinned to the release tag (Python 3.11 or newer; if yours is older, uv fetches one):
 ```bash
-uv tool install "git+https://github.com/preangelleo/agentj@v0.16.7a1#subdirectory=host"
+uv tool install "git+https://github.com/preangelleo/agentj@v0.17.0a1#subdirectory=host"
 agentj --version
 ```
 
@@ -54,7 +56,7 @@ curl -fsSLO "https://agentj.app/dl/$W" && curl -fsSLO "https://agentj.app/dl/$W.
 sha256sum -c "$W.sha256"                                  # macOS: shasum -a 256 -c "$W.sha256"   → OK
 grep "^host_wheel_sha256:" install.md                     # the same value, from this repository
 ```
-There are no publisher signatures yet.
+Published host wheels include a minisign signature, verified by the compiled trusted signer before manual or nightly upgrades.
 
 ## What is here
 

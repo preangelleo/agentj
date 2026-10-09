@@ -515,9 +515,9 @@ def install(st) -> dict:
         _systemctl("restart", f"{n}.service", check=True)   # starts it, or picks up a rewritten unit (reinstall / upgrade)
         remember_binary_selection(st, n)
         _register_pair_protocol(notes)
-        if _linger() == "no" and linger_needed():
-            notes.append("服务器 / 无人登录也要运行：`loginctl enable-linger $USER`（否则退出登录后 serve 会停） / "
-                         "on a server run `loginctl enable-linger $USER`, or serve stops when you log out")
+        if _linger() == "no":
+            notes.append("常驻（包括多用户桌面）：`loginctl enable-linger $USER`；需要管理员时用 agentj sudo 手机密码卡 / "
+                         "enable linger even on a shared desktop: otherwise logout stops this seat")
         return {"kind": "systemd", "name": n, "path": path, "argv": argv + SERVE_ARGS, "notes": notes}
     if plat == "macos":
         path = plist_path(n)
@@ -538,6 +538,7 @@ def install(st) -> dict:
             raise ServiceError("launchctl_failed", (r.stderr or r.stdout).strip()[:300])
         remember_binary_selection(st, n)
         _register_pair_protocol(notes)
+        notes.append(login_reminder())
         return {"kind": "launchd", "name": n, "path": path, "argv": argv + SERVE_ARGS, "notes": notes}
     raise ServiceError("unsupported_os")
 
@@ -785,3 +786,17 @@ MESSAGES.update({
     "recovery_launch_failed": "升级重启任务未启动：运行 agentj service start，再运行 agentj doctor / Could not launch upgrade recovery: run agentj service start, then agentj doctor",
     "recovery_version_mismatch": "升级目标版本不一致：运行 agentj update check / Upgrade target mismatch: run agentj update check",
 })
+
+
+def login_reminder(lang=None):
+    import pwd
+    user = pwd.getpwuid(os.getuid()).pw_name
+    zh = f"这台电脑重启后，请登录一次 {user}；用快速切换用户保持登录，切走后后台照跑。"
+    en = f"After this computer restarts, log in once as {user}. Use Fast User Switching to keep this user logged in; background work continues when switched out."
+    return en if lang == "en" else zh if lang == "zh" else zh + " / " + en
+
+
+def residency_hint(lang=None):
+    if platform() == "macos":
+        return login_reminder(lang)
+    return None

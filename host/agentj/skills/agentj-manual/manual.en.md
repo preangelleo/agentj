@@ -330,3 +330,10 @@ Shared Claude automatically enables phone messages when the native ingress setti
 Shared mode: Claude `/clear` and `/compact` wait for the current desktop turn and confirm native hook receipts. A successful clear archives phone pages and starts at zero, including clears typed on the desktop. Context uses only new-session/post-compaction measurements; pending readings show “—”, never the previous value. A timeout reports an unconfirmed change; check the desktop before retrying. Shared Claude has no native undo-clear button: history remains archived locally; use desktop `/resume` to restore a conversation. Independent mode retains undo. Attached Codex cannot switch the desktop thread: use desktop `/new` and select the new thread. Attached OpenCode supports `/compact`; use desktop `/new` and select the new session to clear. Agent J's own Claude PTY accepts controls directly; an existing terminal requires an exact-session Herdr input route, otherwise the phone explains the reason and native command. Shared `/context`, `/usage`, `/status` and `/model` without an argument read measured data; unavailable values show “—”.
 
 The 5h line remains visible at 1%; 0% has a start marker. “5h —” means no reported measurement. Expanding the input card reduces the reply reading area while keeping the action row and composer fixed; long inputs and replies scroll within their cards.
+
+## Shared sessions
+
+When you enter or switch to a shared Claude Code, Codex or OpenCode session, the phone shows a one-time notice that fades after 3.5 seconds. Refreshing or reconnecting to the same session does not repeat it. Read-only conflicts, failed sends and requests that need your action remain visible.
+
+
+The pairing page offers browser and storage guidance. Use a regular Safari / Chrome window, add to Home Screen and pair from that same icon. The menu retains Set up Face ID after Later; Copy page link excludes the one-use pairing secret.

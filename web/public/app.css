@@ -1579,6 +1579,15 @@ body[data-view="scan"] .top{display:none}
 
 .sheet.friend-neutral{background:var(--surface);color:var(--ink)}
 
+/* P82 owner-only bot management: same brand controls, accessible touch targets. */
+.bots-tabs{display:flex;flex-wrap:wrap;gap:.5rem;margin:1rem 0}.bots-tabs button,.bots-row button,.bots-field input{min-height:56px}
+.bots-tabs [aria-current=page]{font-weight:bold}.bots-field{display:flex;flex-direction:column;gap:.35rem;margin:1rem 0}
+.bots-field textarea{min-height:120px}.bots-field input,.bots-field textarea{font:inherit;max-width:100%;padding:.5rem}
+.bots-row{padding:1rem 0;border-bottom:1px solid currentColor}.bots-row pre,#bots-main pre{white-space:pre-wrap;overflow-wrap:anywhere;max-width:100%}
+
+/* P82 uses P87 shared aj-actions for peer buttons and tabs. */
+@media(max-width:600px){.bots-row button,#bots-main>.aj-btn{width:100%;display:block;margin:.5rem 0}}
+
 /* P87: a new visible reply never covers a page being read. */
 .new-reply{position:absolute;z-index:8;right:16px;top:8px;min-height:56px;padding:8px 16px;border-radius:28px;border:1px solid var(--ink-soft);background:var(--paper);color:var(--ink);font:500 14px var(--font-body)}
 .new-reply[hidden]{display:none}

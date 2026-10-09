@@ -5,13 +5,13 @@ export function mk(tag, cls, text) { const e = document.createElement(tag); if (
 
 // ms defaults to a glance; an upload holds its progress toast until it finishes.
 export function toast(t, ms) {
-  const n = el('toast'); n.textContent = t; n.classList.remove('act'); n.classList.add('on');
+  const n = el('toast'); delete n.dataset.sharedFollow; n.textContent = t; n.classList.remove('act'); n.classList.add('on');
   clearTimeout(n._t); n._t = setTimeout(() => n.classList.remove('on'), ms || 1800);
 }
 export function toastOff() { const n = el('toast'); clearTimeout(n._t); n.classList.remove('on', 'act'); }
 // A toast with one action button (undo, restore). Any later toast() replaces it.
 export function toastAction(t, label, fn, ms) {
-  const n = el('toast'); n.textContent = t;
+  const n = el('toast'); delete n.dataset.sharedFollow; n.textContent = t;
   const b = document.createElement('button'); b.type = 'button'; b.className = 'undo'; b.textContent = label;
   b.addEventListener('pointerdown', (e) => e.preventDefault());          // keep the field's focus
   b.addEventListener('click', () => { toastOff(); fn(); });

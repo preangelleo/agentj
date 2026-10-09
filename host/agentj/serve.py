@@ -15,6 +15,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import hmac
+import hashlib
 import json
 import os
 import re
@@ -205,6 +206,8 @@ class Host:
         self.sessions: dict[int, Session] = {}
         from .remote_pair import RemotePair
         self.remote_pair = RemotePair(self)
+        from .bots.owner import Manager as BotManager
+        self.bots = BotManager(self)
         self.pairing: Pairing | None = None
         self.pk_guard = passkey.Guard()   # F20: pk_restore rate limit + nonce replay memory (in memory only)
         self.send_lock = asyncio.Lock()
@@ -614,6 +617,8 @@ class Host:
         elif t in P33_ONLY:
             if s.p33:                          # §10 messages only from a device that announced p33 (§10.0)
                 await self.on_p33(s, t, obj)
+        elif t in ("bots_read", "bots_write"):
+            await self.bots.phone(s, obj)
         elif isinstance(t, str) and t.startswith(("fr_", "pg_")):   # P71 (§17.7): the friends page
             await self.on_friends(s, t, obj)
         elif t == "answer":
@@ -1362,6 +1367,17 @@ class Host:
             for m in self.peers.ask_msgs():
                 await self.send_app(s, m)
         await self.elevate.on_ready(s)
+        from . import service
+        if service.platform() == "macos" and not getattr(self, "_residency_noticed", False):
+            self._residency_noticed = True
+            # GUI-login reminder only: Linux linger guidance belongs in install/doctor.
+            # Resolve the username after the ready snapshot, without delaying it.
+            async def residency_notice():
+                from . import service
+                notice = await asyncio.to_thread(service.residency_hint, self.lang)
+                if notice:
+                    self.agent_notice(notice)
+            asyncio.create_task(residency_notice())
 
     # ------------------------------------------------------------ agent bridge (PROTOCOL §8)
     def eff_status(self) -> str:
@@ -3021,6 +3037,9 @@ class Host:
 
     def say_delivered(self, send: compose.Send) -> None:
         """The harness has the message (agent.Agent.deliver): the attachments belong to the Agent now."""
+        if getattr(send, 'bot_handoff_id', None):
+            self.st.log("bot_handoff_delivery", id=send.bot_handoff_id, outcome="delivered")
+            return
         if getattr(send, 'official_notice_id', None):
             notices.processed(self.st, send.official_notice_id)
             self.official_pending.pop(send.official_notice_id, None)
@@ -3033,6 +3052,9 @@ class Host:
     def say_uncertain(self, send: compose.Send) -> None:
         """The write to the harness failed part-way (P33-X08): it may have the message, so the attachments stay where they
         are (never deleted by the staged TTL, never released to the phone) and a withdraw answers already_delivered."""
+        if getattr(send, 'bot_handoff_id', None):
+            self.st.log("bot_handoff_delivery", id=send.bot_handoff_id, outcome="uncertain")
+            return
         if getattr(send, 'official_notice_id', None):
             # Native transport may have accepted it: do not replay auto-upgrade authority on an uncertain write.
             notices.processed(self.st, send.official_notice_id)
@@ -3102,15 +3124,33 @@ class Host:
         await self._send_device(device, res)
 
     # ------------------------------------------------------------ meters (§10.10)
+    def _shared_follow(self) -> dict | None:
+        """Opaque native-session identity; never the transport generation or a configured stale pin."""
+        a = getattr(self, "agent", None)
+        if not a or a.cfg.get("session_mode") != "shared":
+            return None
+        kind = a.kind
+        sid = ((getattr(a, "session", None) or {}).get("sessionId") if kind == "claude"
+               else getattr(a, "sid", None) if kind == "opencode"
+               else a.cfg.get("shared_session_id") if kind == "codex" else None)
+        if not isinstance(sid, str) or not sid:
+            return None
+        return {"agent": kind, "id": hashlib.sha256(sid.encode()).hexdigest()[:32]}
+
     def _meter_msg(self) -> dict:
         m = dict(self.meter_state)
         for optional in ("quota_windows", "source_at"):
             if m.get(optional) is None:
                 m.pop(optional, None)
+        follow = self._shared_follow()
+        if follow is not None:
+            m["shared_follow"] = follow
         return {"t": "meter", **m, "at": int(time.time())}
 
     def meter_update(self, **kw) -> None:
-        changed = False
+        follow = self._shared_follow()
+        changed = follow != getattr(self, "_last_shared_follow", None)
+        self._last_shared_follow = follow
         for k, v in kw.items():
             if k not in METER_KEYS:
                 continue
@@ -3395,6 +3435,7 @@ class Host:
             self.agent.start()
             self.sent_status = self.eff_status()
             self.st.log("agent_on", agent=self.agent.kind, isolation_requested=self.agent_cfg.get("fence", True), session_mode=self.agent_cfg.get("session_mode", "independent"), phase="configured")
+        await self.bots.start()
         await self.elevate.start()                 # F17: <state>/agentperm/elevate.sock for `agentj sudo` / `agentj secret`
         from .recall import Server as RecallServer
         self.recall = RecallServer(self)           # F22 (P57): <state>/agentperm/recall.sock for `agentj recall` (§15.4)
@@ -3422,6 +3463,7 @@ class Host:
                 if not q.fut.done():
                     q.fut.set_result(("gone", None, None, None, None))
             await self.scheduler.stop_current()
+            await self.bots.stop()
             await self.elevate.stop()
             await self.recall.stop()
             if self.peers is not None:

@@ -1327,5 +1327,15 @@
   "fr.q.send": "让分身自己回",
   "fr.q.auto": "以后这位都让分身自己聊",
   "fr.ask.groupHint": "默认：只聊寒暄和名片；好友：自动聊日常协作和技术，最多12轮；同事：自动聊其他话题。报价、约时间和承诺仍问你。",
-  "fr.ask.done.pq_allow": "分身已代你回复"
+  "fr.ask.done.pq_allow": "分身已代你回复",
+  "r.shared.following.claude": "正在跟随电脑上的 Claude Code 会话。",
+  "r.shared.following.opencode": "正在跟随电脑上的 OpenCode 会话。",
+  "phoneEnv": {
+    "ios": "请从右上角用 Safari 打开普通窗口，再「添加到主屏幕」，从图标配对、设置 Face ID，以后从图标进入。请允许 Cookie 和网站数据。",
+    "android": "请从右上角用 Chrome 打开普通窗口，再「添加到主屏幕」，从图标配对、设置手机解锁，以后从图标进入。请允许 Cookie 和网站数据。",
+    "desktop": "这个浏览器可能无法保留配对或使用设备解锁。请用最新版浏览器的普通窗口，允许 Cookie 和网站数据。",
+    "setup": "设置 Face ID",
+    "copy": "复制网页链接",
+    "copied": "已复制网页链接；打开后从主屏幕配对。"
+  }
 }

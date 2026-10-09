@@ -1,3 +1,4 @@
+import { SharedNotice } from './shared-notice.js';
 import { quotaWindows } from './dashboard.js';
 // The chat screen = relay's phone page (pwa/index.html <script>, ADR-022 … ADR-052 there), ported section by section.
 // What changed is only the transport and the wording: relay's HTTP calls (requests, the event stream, raw uploads) go through the
@@ -506,13 +507,25 @@ function realPick(){
 }
 const effortsOf = (c, id) => { const m = c && c.models.find(x => x.id === id); return m && Array.isArray(m.efforts) ? m.efforts : []; };
 const samePick = (a, b) => !!a && !!b && a.model === b.model && (a.effort || null) === (b.effort || null);
+const sharedNotice = new SharedNotice();
 function paintPill(u){
   u = u || (cur && cur.usage) || {};
   const shared = el('shared-status');
   if (shared) {
     const state = C && C.connected() && u.shared_status;
-    shared.hidden = !state;
-    shared.textContent = state === 'desktop_writer' && u.shared_writer?.[lang()] ? u.shared_writer[lang()] : state ? t('r.shared.' + state) : '';
+    // Only an actionable read-only condition owns permanent space. Informational
+    // following notices use the existing fading toast, keyed to the native session.
+    if (state === 'desktop_writer' && el('toast').dataset.sharedFollow === '1') toastOff();
+    shared.hidden = state !== 'desktop_writer';
+    shared.textContent = state === 'desktop_writer' ? u.shared_writer?.[lang()] || t('r.shared.desktop_writer') : '';
+    const follow = C.connected() && (u.shared_follow?.agent !== 'codex' || state) ? u.shared_follow : null;
+    sharedNotice.update(hostId(), follow, state, (agent) => {
+      // A result/error/action toast takes priority over this optional information.
+      if (!el('toast').classList.contains('on') || el('toast').dataset.sharedFollow === '1') {
+        toast(t(agent === 'codex' ? 'r.shared.following' : 'r.shared.following.' + agent), 3500);
+        el('toast').dataset.sharedFollow = '1';
+      }
+    });
   }
   const c = swCat(), real = realPick();
   if (pill.want && samePick(pill.want, real)){ pill.want = null; pill.sentAt = 0; }

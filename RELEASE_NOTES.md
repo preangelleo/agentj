@@ -1,6 +1,6 @@
-# Agent J 0.16.7a1 release notes
+# Agent J 0.17.0a1 release notes
 
-Host 0.16.7a1 / install 0.20.7; phone-web scope.
+Host 0.17.0a1 / install 0.21.0; phone-web scope.
 Phone parity must pass --strict. Full Android/Telegram parity is incomplete.
 Full Android/Telegram parity is incomplete.
 No APK is included in this release. Android source is for review, not a released app.
@@ -8,19 +8,19 @@ No APK is included in this release. Android source is for review, not a released
 Publication status: local preparation only. Live site verification is DEFERRED until
 the public commit and tag are pushed, the site is deployed, and cold installation passes.
 
-On publication failure, restore v0.16.6a1 including its site and installation artifacts.
+On publication failure, restore v0.16.7a1 / public 320f3acb and its site/phone artifacts; retain additive D1 metadata.
 ## Changes
 
-- Sparse JSON5 configuration with transactional application, configuration history and migrations.
-- Optional configuration skill for locally installed agent harnesses; owner permission required.
-- Opt-in own-key cloud speech and local phone read-aloud.
-- Optional owner-private Telegram text input and final replies.
+- Resident customer-service bots: free public URLs and website embeds; signed owner phone management, knowledge and allowlisted company HTTP tools.
+- Native owner model plan (subscription logins included); separate owner OpenRouter Jev decisions and mandatory activation check. Provider terms warning is persisted.
+- Host-only chat/configuration/knowledge/history and persistent quotas. Independent visitor ciphertext domain; opaque chat and dedicated cross-site verification and visitor-key storage frames.
+- Write tools require each paired-owner approval; visitor identity isolation, outbound review, metadata-only abuse reports and human handoff.
+- Includes the 0.16.7 native installation/PATH and macOS runtime checks, P98 shared-session fading notices and browser/Face ID guidance, and P94 separate OS users and UID-scoped helpers.
+- C0024 metadata migration, relay v4-bots and production verify/visitor origins must precede A/B; never use dummy production Turnstile keys.
 
-- OpenCode, Codex and Claude Code use native installers first, with explicit zsh/bash PATH recovery.
-- New users connect DeepSeek in their own terminal and paste the seat-card instructions into OpenCode.
-- macOS compatibility uses an isolated --version runtime probe and safe failure reasons, with no OS version gate.
-- Site and GitHub installation guides ship together; no Dashboard, phone-web, relay or database change.
-- Physical macOS runtime acceptance remains owner-provided; automated tests use isolated fake runtimes.
+- Real local Claude OAuth and Codex ChatGPT turns through owner OpenRouter Jev; browser/workerd security fixtures are separate from physical acceptance.
+- Cross-site browser storage can be blocked: refresh then starts a new conversation. Native output billing limits vary; unknown usage remains reserved and an upstream overrun stops service.
+- Physical iPhone/Android, company API write approvals and screen-reader acceptance remain unverified; production DNS/sitekey and publication are operator steps.
 
 ## Material acceptance limits
 

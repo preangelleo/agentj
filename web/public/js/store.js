@@ -69,7 +69,7 @@ export function markPaired(on) {
 }
 export function wasPaired() { try { return !!localStorage.getItem(PAIRED_KEY); } catch { return false; } }
 /** Ask the browser not to evict this origin's storage (no prompt in Safari / Chrome; a refusal changes nothing). */
-export function askPersist() { try { navigator.storage?.persist?.().catch(() => {}); } catch { /* not supported */ } }
+export async function askPersist() { try { return await navigator.storage?.persist?.(); } catch { return false; } }
 
 // Ed25519 approval key (PROTOCOL §8). null = this browser cannot sign → it can chat but not approve.
 let signKp;

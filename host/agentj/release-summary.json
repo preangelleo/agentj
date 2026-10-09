@@ -1,5 +1,5 @@
 {
-  "version": "0.16.7a1",
-  "zh": "免 Node 安装主路线与 shell PATH 修复；macOS 以实际运行能力判断兼容性",
-  "en": "Native agent installers and shell PATH recovery; macOS compatibility verified by an actual runtime probe"
+  "version": "0.17.0a1",
+  "zh": "常驻客服、公开网址和网页嵌入，支持知识与公司 API 工具",
+  "en": "Resident customer-service bots, public URLs, embeds, knowledge and company API tools"
 }

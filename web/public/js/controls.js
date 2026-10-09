@@ -40,9 +40,10 @@ const why = (code) => (WHY_CODES.includes(code) ? t('why.' + code) : String(code
 export const whyText = why;
 
 export function openPanel(v) {
-  if (!['chat', 'mem', 'act', 'tasks', 'friends'].includes(v)) return;
+  if (!['chat', 'mem', 'act', 'tasks', 'friends', 'bots'].includes(v)) return;
   panel = v;
   H.show(v === 'chat' ? 'chat' : v);
+  if (v === 'bots') H.bots();
   if (v === 'friends') H.friends();                   // §17.7: the friends page re-reads on every open / reconnect
   if (v === 'mem') loadMemory();
   if (v === 'act') loadActivity(true);

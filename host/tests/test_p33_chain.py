@@ -300,8 +300,13 @@ class _Chain(unittest.TestCase):
                         and c["host"].meter_state.get("week") == want_week)
         await c["wait"](lambda: c["of"]("meter") and c["of"]("meter")[-1].get("ctx") == want_ctx, 6000)
         m = c["of"]("meter")[-1]
+        follow = m.get("shared_follow")
+        if follow is not None:
+            self.assertEqual(set(follow), {"agent", "id"})
+            self.assertIn(follow["agent"], ("claude", "codex", "opencode"))
+            self.assertRegex(follow["id"], r"^[a-f0-9]{32}$")
         self.assertIsNone(m.get("shared_status"))
-        self.assertEqual(set(m) - {"t"}, {"model", "model_name", "effort", "ctx", "h5", "week", "at", "shared_status", "shared_writer"})
+        self.assertEqual(set(m) - {"t", "shared_follow"}, {"model", "model_name", "effort", "ctx", "h5", "week", "at", "shared_status", "shared_writer"})
 
 
 # ------------------------------------------------------------------ Claude Code

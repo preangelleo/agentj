@@ -440,7 +440,13 @@ class WheelInstall(unittest.TestCase):
                   "agentj/admin/brand/img/shield-64.png"):
             self.assertIn(f, names_)
         self.assertFalse([n for n in names_ if n.endswith(".src.json") or "shield-source" in n], "no copy source, no big logo source")
-        self.assertLess(pathlib.Path(self.wheel).stat().st_size, 2_250_000, "wheel stays bounded: offline bilingual keyword lexicon adds ~0.85 MB; 0.15 code (cards, support, notices) ~1.93 MB; P60 OpenCode v2 adapter + provider CLI ~0.01 MB; P71 friends (peer / friends / guards / session / service + skill) ~0.05 MB; no acoustic models ship here")
+        # Preserve the pre-bot 2.25 MB core ceiling; assign an explicit bounded 64 KiB bot increment.
+        # Includes ZIP local/central name/header overhead, not just compressed source bytes.
+        bot_entries=[i for i in zipfile.ZipFile(self.wheel).infolist() if i.filename.startswith(('agentj/bots/','agentj/skills/agentj-bots/'))]
+        bot_bytes=sum(i.compress_size+76+2*len(i.filename.encode())+2*len(i.extra)+len(i.comment) for i in bot_entries)
+        self.assertLessEqual(bot_bytes,65536,'P82 bot package allocation is bounded; no models or knowledge ship')
+        self.assertLess(pathlib.Path(self.wheel).stat().st_size-bot_bytes,2_250_000,'existing core package ceiling unchanged')
+        self.assertLess(pathlib.Path(self.wheel).stat().st_size,2_250_000+65536,'combined core and bot package ceiling')
         self.assertFalse([n for n in names_ if n.startswith("tests/") or "wiredump" in n or "fakeclaude" in n])
         ep = next(n for n in names_ if n.endswith("entry_points.txt"))
         eps = zipfile.ZipFile(self.wheel).read(ep).decode()
@@ -494,7 +500,7 @@ class WheelInstall(unittest.TestCase):
             self.assertEqual({c["id"]: c["status"] for c in d_["checks"]}["state"], "ok")
             core = next(c for c in d_["checks"] if c["id"] == "main-core")
             self.assertEqual(core["status"], "ok")
-            self.assertIn("core v7:", core["summary"])
+            self.assertIn("core v8:", core["summary"])
 
     @unittest.skipUnless((sys.platform.startswith("linux") and shutil.which("bwrap")) or
                          (sys.platform == "darwin" and os.access(fence.SANDBOX_EXEC, os.X_OK)),

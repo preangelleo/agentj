@@ -806,6 +806,7 @@ class SharedOpenCodeAgent(OpenCodeAgent):
         status, messages = await self.client.request("GET", f"/session/{self.sid}/message")
         if status != 200 or not isinstance(messages, list):
             raise HTTPError("messages unavailable")
+        self.meter()  # P98: attached native identity, even without model/quota data.
         # Existing history is not replayed as fresh phone output.
         self.desktop_messages = set()
         self.message_roles = {}

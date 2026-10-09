@@ -87,6 +87,8 @@ test('no URLs to anywhere in shipped files except links to agentj.app pages', ()
         // ADR-A177: a compact pairing link with an empty relay field means our relay (the page still only connects where
         // allowRelay + CSP connect-src allow)
         if (rel(f) === 'proto/wire.js' && m[0] === 'wss://relay.agentj.app') continue;
+        // P82 §6: owner-clicked registration link; no automated request.
+        if (rel(f) === 'js/bots.js' && m[0] === 'https://openrouter.ai/') continue;
         if (rel(f) === 'js/qr.js' && m[0] === 'http://www.w3.org/2000/svg') continue;
         assert.match(m[0], SITE_LINK, `${rel(f)} contains URL ${m[0]}`);
       }

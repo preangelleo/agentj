@@ -69,7 +69,7 @@ It may need you here:
 The AI installs `agentj`, the program on your computer, at one fixed version:
 
 ```bash
-uv tool install "git+https://github.com/preangelleo/agentj@v0.16.7a1#subdirectory=host"
+uv tool install "git+https://github.com/preangelleo/agentj@v0.17.0a1#subdirectory=host"
 agentj doctor
 ```
 
@@ -205,3 +205,7 @@ Intel Mac installations keep `cryptography<49`, including updates. If an older i
 [Set up AI command-line tools](/docs/setup-agents/) · [agentj command reference](/docs/cli/)
 
 [Keep your computer awake](/docs/keep-awake/): commands, system settings and a request to send your Agent.
+
+## A second person on this computer
+
+Give each person an OS user, a paid seat, their own installation code and phone pairing. See [sharing a computer](/docs/multi-seat/).

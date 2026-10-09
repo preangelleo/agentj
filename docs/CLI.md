@@ -128,7 +128,7 @@ agentj --help
 
 ```text
 usage: agentj [-h] [-V]
-              {doctor,service,update,init,serve,protocol,pair,devices,revoke,send,status,name,admin,login,report,unlink,report-hostname,remote-pair,remote-unbind,agent,passphrase,approvals,feedback,stop,resume,memory,activity,config,history,inbox,asr,tasks,wizard,keep-awake,sudo,secret,provider,sudo-helper,docs-rule,handover,plaza,support,recall,friends,codex-sandbox,migrate,alias,onboarding} ...
+              {doctor,service,update,init,serve,protocol,pair,devices,revoke,send,status,name,admin,login,report,unlink,report-hostname,remote-pair,remote-unbind,agent,passphrase,approvals,feedback,stop,resume,memory,activity,config,history,inbox,asr,tasks,wizard,keep-awake,sudo,secret,provider,sudo-helper,docs-rule,handover,plaza,support,recall,bots,friends,codex-sandbox,migrate,alias,onboarding} ...
 ```
 
 | Argument | Default | Required | Choices | Help |
@@ -361,6 +361,197 @@ usage: agentj asr test [-h] [wav]
 | --- | --- | --- | --- | --- |
 | `-h / --help` | `null` | false | — | `show this help message and exit` |
 | `wav` | `null` | false | — | `` |
+
+### agentj bots
+
+```text
+Manage customer-service bots through signed owner authorization / 经主人签名管理客服 bot
+```
+
+```bash
+agentj bots --help
+```
+
+```text
+usage: agentj bots [-h]
+                   {list,detail,history,statistics,handoffs,request,result,tool} ...
+```
+
+| Argument | Default | Required | Choices | Help |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+
+### agentj bots detail
+
+```text
+
+```
+
+```bash
+agentj bots detail --help
+```
+
+```text
+usage: agentj bots detail [-h] bot
+```
+
+| Argument | Default | Required | Choices | Help |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `bot` | `null` | true | — | `` |
+
+### agentj bots handoffs
+
+```text
+
+```
+
+```bash
+agentj bots handoffs --help
+```
+
+```text
+usage: agentj bots handoffs [-h] bot
+```
+
+| Argument | Default | Required | Choices | Help |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `bot` | `null` | true | — | `` |
+
+### agentj bots history
+
+```text
+
+```
+
+```bash
+agentj bots history --help
+```
+
+```text
+usage: agentj bots history [-h] [--visitor VISITOR] bot
+```
+
+| Argument | Default | Required | Choices | Help |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `bot` | `null` | true | — | `` |
+| `--visitor` | `null` | false | — | `` |
+
+### agentj bots list
+
+```text
+
+```
+
+```bash
+agentj bots list --help
+```
+
+```text
+usage: agentj bots list [-h]
+```
+
+| Argument | Default | Required | Choices | Help |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+
+### agentj bots request
+
+```text
+
+```
+
+```bash
+agentj bots request --help
+```
+
+```text
+usage: agentj bots request [-h] --file FILE
+```
+
+| Argument | Default | Required | Choices | Help |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `--file` | `null` | true | — | `` |
+
+### agentj bots result
+
+```text
+
+```
+
+```bash
+agentj bots result --help
+```
+
+```text
+usage: agentj bots result [-h] proposal
+```
+
+| Argument | Default | Required | Choices | Help |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `proposal` | `null` | true | — | `` |
+
+### agentj bots statistics
+
+```text
+
+```
+
+```bash
+agentj bots statistics --help
+```
+
+```text
+usage: agentj bots statistics [-h] bot
+```
+
+| Argument | Default | Required | Choices | Help |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `bot` | `null` | true | — | `` |
+
+### agentj bots tool
+
+```text
+
+```
+
+```bash
+agentj bots tool --help
+```
+
+```text
+usage: agentj bots tool [-h] {test} ...
+```
+
+| Argument | Default | Required | Choices | Help |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+
+### agentj bots tool test
+
+```text
+
+```
+
+```bash
+agentj bots tool test --help
+```
+
+```text
+usage: agentj bots tool test [-h] --args ARGS bot tool
+```
+
+| Argument | Default | Required | Choices | Help |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `bot` | `null` | true | — | `` |
+| `tool` | `null` | true | — | `` |
+| `--args` | `null` | true | — | `` |
 
 ### agentj channel
 
@@ -2761,7 +2952,7 @@ agentj --help
 
 ```text
 usage: agentj [-h] [-V]
-              {doctor,service,update,init,serve,protocol,pair,devices,revoke,send,status,name,admin,login,report,unlink,report-hostname,remote-pair,remote-unbind,agent,passphrase,approvals,feedback,stop,resume,memory,activity,config,history,inbox,asr,tasks,wizard,keep-awake,sudo,secret,provider,sudo-helper,docs-rule,handover,plaza,support,recall,friends,codex-sandbox,migrate,alias,onboarding} ...
+              {doctor,service,update,init,serve,protocol,pair,devices,revoke,send,status,name,admin,login,report,unlink,report-hostname,remote-pair,remote-unbind,agent,passphrase,approvals,feedback,stop,resume,memory,activity,config,history,inbox,asr,tasks,wizard,keep-awake,sudo,secret,provider,sudo-helper,docs-rule,handover,plaza,support,recall,bots,friends,codex-sandbox,migrate,alias,onboarding} ...
 ```
 
 | 参数 | 默认值 | 必填 | 可选值 | 说明 |
@@ -2994,6 +3185,197 @@ usage: agentj asr test [-h] [wav]
 | --- | --- | --- | --- | --- |
 | `-h / --help` | `null` | false | — | `show this help message and exit` |
 | `wav` | `null` | false | — | `` |
+
+### agentj bots
+
+```text
+Manage customer-service bots through signed owner authorization / 经主人签名管理客服 bot
+```
+
+```bash
+agentj bots --help
+```
+
+```text
+usage: agentj bots [-h]
+                   {list,detail,history,statistics,handoffs,request,result,tool} ...
+```
+
+| 参数 | 默认值 | 必填 | 可选值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+
+### agentj bots detail
+
+```text
+
+```
+
+```bash
+agentj bots detail --help
+```
+
+```text
+usage: agentj bots detail [-h] bot
+```
+
+| 参数 | 默认值 | 必填 | 可选值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `bot` | `null` | true | — | `` |
+
+### agentj bots handoffs
+
+```text
+
+```
+
+```bash
+agentj bots handoffs --help
+```
+
+```text
+usage: agentj bots handoffs [-h] bot
+```
+
+| 参数 | 默认值 | 必填 | 可选值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `bot` | `null` | true | — | `` |
+
+### agentj bots history
+
+```text
+
+```
+
+```bash
+agentj bots history --help
+```
+
+```text
+usage: agentj bots history [-h] [--visitor VISITOR] bot
+```
+
+| 参数 | 默认值 | 必填 | 可选值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `bot` | `null` | true | — | `` |
+| `--visitor` | `null` | false | — | `` |
+
+### agentj bots list
+
+```text
+
+```
+
+```bash
+agentj bots list --help
+```
+
+```text
+usage: agentj bots list [-h]
+```
+
+| 参数 | 默认值 | 必填 | 可选值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+
+### agentj bots request
+
+```text
+
+```
+
+```bash
+agentj bots request --help
+```
+
+```text
+usage: agentj bots request [-h] --file FILE
+```
+
+| 参数 | 默认值 | 必填 | 可选值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `--file` | `null` | true | — | `` |
+
+### agentj bots result
+
+```text
+
+```
+
+```bash
+agentj bots result --help
+```
+
+```text
+usage: agentj bots result [-h] proposal
+```
+
+| 参数 | 默认值 | 必填 | 可选值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `proposal` | `null` | true | — | `` |
+
+### agentj bots statistics
+
+```text
+
+```
+
+```bash
+agentj bots statistics --help
+```
+
+```text
+usage: agentj bots statistics [-h] bot
+```
+
+| 参数 | 默认值 | 必填 | 可选值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `bot` | `null` | true | — | `` |
+
+### agentj bots tool
+
+```text
+
+```
+
+```bash
+agentj bots tool --help
+```
+
+```text
+usage: agentj bots tool [-h] {test} ...
+```
+
+| 参数 | 默认值 | 必填 | 可选值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+
+### agentj bots tool test
+
+```text
+
+```
+
+```bash
+agentj bots tool test --help
+```
+
+```text
+usage: agentj bots tool test [-h] --args ARGS bot tool
+```
+
+| 参数 | 默认值 | 必填 | 可选值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `bot` | `null` | true | — | `` |
+| `tool` | `null` | true | — | `` |
+| `--args` | `null` | true | — | `` |
 
 ### agentj channel
 

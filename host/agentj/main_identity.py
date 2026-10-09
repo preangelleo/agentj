@@ -11,9 +11,9 @@ import json
 from pathlib import Path
 
 DATA = Path(__file__).with_name("identity")
-VERSION = 7   # P78: classify every request; propose skills, CLI tools and WDB workflows before building
+VERSION = 8   # P82: owner-authorized customer-service bot management
 # v5 (P64): a workflow with a CEO is always dispatched — never run or edited by the main Agent; read-only reporting stays
-HASHES = {'en': '56b8288f2df5f708876cc92b52dcca7738fd35842e4c43abde5a7de61e2a4df7', 'zh': '9639761a5c153b0d8a29139d5357b6e39cf01cac943fcdd06e1321f445cea890'}
+HASHES = {'en': '826f8d59e3992dafdcd8d205af644780d8c7a6cc5a33adb82cd2740b8381cfd2', 'zh': '61dd2b48fa72fa3b6d273ea7164591bd45cfe24ae40233a3c59e7dbe6cdf77ba'}
 MECHANISMS = {"claude": "append-system-prompt", "codex": "developerInstructions", "opencode": "prompt_async.system"}
 
 class IdentityError(ValueError):
@@ -150,6 +150,13 @@ ONBOARDING_LINE = {
 }
 
 
+# P94 operational guidance; core hashes remain unchanged.
+MULTI_USER_LINE = {
+    'zh': '同一台电脑多人使用时，每人一个系统用户、一个付费席位，各用自己的安装码、AI 登录与手机配对。按 https://agentj.app/docs/multi-seat/zh.md 引导，绝不复制另一人的状态目录。建议 Linux 开启 linger；macOS 重启后需登录图形界面一次。恢复整机防休眠设置前，先协调所有用户。\n',
+    'en': "Each person sharing a computer uses a separate OS user and paid Agent J seat, with their own installation code, AI login and phone pairing. Guide them using https://agentj.app/docs/multi-seat/en.md; never copy another user's state. Recommend Linux linger, and explain macOS GUI login once after each reboot. Coordinate machine-wide sleep settings with every user before restoring them.\n",
+}
+
+
 def prompt(cfg: dict) -> str:
     verify_core()
     lang = language_of(cfg)
@@ -157,7 +164,7 @@ def prompt(cfg: dict) -> str:
     extra = cfg.get("instructions") or ""
     if not isinstance(extra, str):
         raise IdentityError("agent.instructions must be append-only text")
-    return (core + ("" if core.endswith("\n") else "\n") + LANGUAGE_LINE[lang] + ELEVATE_LINE[lang] + SUPPORT_LINE[lang] + OPERATIONS_LINE[lang] + SILENCE_LINE[lang] + SHARED_CODEX_LINE[lang] + PAIRING_LINE[lang] + ONBOARDING_LINE[lang]
+    return (core + ("" if core.endswith("\n") else "\n") + LANGUAGE_LINE[lang] + ELEVATE_LINE[lang] + SUPPORT_LINE[lang] + OPERATIONS_LINE[lang] + SILENCE_LINE[lang] + SHARED_CODEX_LINE[lang] + PAIRING_LINE[lang] + ONBOARDING_LINE[lang] + MULTI_USER_LINE[lang]
             + ("\n<User preferences — append only; core takes precedence>\n" + extra + "\n</User preferences>\n" if extra else ""))
 
 def expected(cfg: dict, harness: str) -> dict:

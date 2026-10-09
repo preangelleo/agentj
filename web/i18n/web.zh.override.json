@@ -49,5 +49,13 @@
   "r.replyWorking": "正在处理…",
   "r.newReply": "有新回复，点此查看",
   "set.modeShared": "共享电脑会话",
-  "set.modeIndependent": "使用独立会话"
+  "set.modeIndependent": "使用独立会话",
+  "r.shared.following.claude": "正在跟随电脑上的 Claude Code 会话。",
+  "r.shared.following.opencode": "正在跟随电脑上的 OpenCode 会话。",
+  "phoneEnv.ios": "请从右上角用 Safari 打开普通窗口，再「添加到主屏幕」，从图标配对、设置 Face ID，以后从图标进入。请允许 Cookie 和网站数据。",
+  "phoneEnv.android": "请从右上角用 Chrome 打开普通窗口，再「添加到主屏幕」，从图标配对、设置手机解锁，以后从图标进入。请允许 Cookie 和网站数据。",
+  "phoneEnv.desktop": "这个浏览器可能无法保留配对或使用设备解锁。请用最新版浏览器的普通窗口，允许 Cookie 和网站数据。",
+  "phoneEnv.setup": "设置 Face ID",
+  "phoneEnv.copy": "复制网页链接",
+  "phoneEnv.copied": "已复制网页链接；打开后从主屏幕配对。"
 }

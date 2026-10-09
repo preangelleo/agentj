@@ -8,6 +8,7 @@
 // history is kept in memory only.
 import { parsePairing as parseLink } from './proto/wire.js';
 import VERSION from './version.js';
+import {probeEnvironment, publicPhoneLink} from './js/phone-env.js';
 import { t, lang, fillText, plain, applyStatic, onLang } from './js/t.js';
 import { el, toast, confirmSheet, closeConfirm } from './js/ui.js';
 import { dbGet, dbPut, dbDel, deviceKey, signKey, wipeLocal, markPaired, wasPaired, askPersist } from './js/store.js';
@@ -24,6 +25,7 @@ import * as settings from './js/settings.js';
 import * as elevate from './js/elevate.js';     // F17: sudo / secret cards (§11)
 import * as secretout from './js/secretout.js'; // F32: secret pickup cards (§18)
 import * as passkey from './js/faceid.js';     // F20: the same phone without a second pairing (§12)
+import * as bots from './js/bots.js';
 import * as friends from './js/friends.js';    // §17.7: /friends + the friend cards
 import { parseAgentId } from './proto/wire.js';
 import { SCAN_CONSTRAINTS, SCAN_FALLBACK, SCAN_SLOW_MS, scanFrame } from './js/scan.js';   // F29 (ADR-A177)
@@ -125,19 +127,22 @@ function setStatus(s, key, vars) {
   rerender();
 }
 let view = null;
-const VIEWS = { pair: 'pair-view', scan: 'scan-view', models: 'models-view', sas: 'sas-view', mem: 'mem-view', act: 'act-view', tasks: 'tasks-view', friends: 'friends-view', revoked: 'revoked-view', error: 'error-view' };
-const PAIRED_VIEWS = ['chat', 'mem', 'act', 'tasks', 'models', 'friends'];
+const VIEWS = { pair: 'pair-view', scan: 'scan-view', models: 'models-view', sas: 'sas-view', mem: 'mem-view', act: 'act-view', tasks: 'tasks-view', friends: 'friends-view', bots: 'bots-view', revoked: 'revoked-view', error: 'error-view' };
+const PAIRED_VIEWS = ['chat', 'mem', 'act', 'tasks', 'models', 'friends', 'bots'];
 function show(v) {
   view = v;
   document.body.dataset.view = v;
   for (const [k, id] of Object.entries(VIEWS)) $(id).hidden = k !== v;
   $('unpair').hidden = !PAIRED_VIEWS.includes(v);
   $('scan-repair').hidden = $('unpair').hidden;
-  for (const id of ['open-mem', 'open-act', 'open-tasks', 'open-models', 'open-friends']) $(id).hidden = !PAIRED_VIEWS.includes(v);
+  for (const id of ['open-mem', 'open-act', 'open-tasks', 'open-models', 'open-friends', 'open-bots']) $(id).hidden = !PAIRED_VIEWS.includes(v);
   // the address follows the friends page (m.agentj.app/friends can be bookmarked); leaving it for another paired view goes back to /
+  if (v === 'bots') history.replaceState(history.state, '', '/bots'+location.search);
+  else if (v !== 'bots' && PAIRED_VIEWS.includes(v) && location.pathname === '/bots') history.replaceState(history.state, '', '/'+location.search);
   if (v === 'friends' && location.pathname !== FRIENDS_PATH) history.replaceState(history.state, '', FRIENDS_PATH + location.search);
   else if (v !== 'friends' && PAIRED_VIEWS.includes(v) && location.pathname === FRIENDS_PATH) history.replaceState(history.state, '', '/' + location.search);
   push.renderA2hs(v);
+  renderPhoneEnvironment();
   renderLogo();
 }
 // Outside the chat screen the header logo says where pairing stands (the chat screen's logo wears the Agent's state).
@@ -220,7 +225,8 @@ session.configure({
     await forgetLocal();                              // a new pairing starts empty: nothing of the previous computer goes to it
     await dbPut('host', host);
     markPaired(true);
-    askPersist();
+    // Persistence permission is optional: never hold the pairing handshake on it.
+    askPersist().then(() => checkPhoneEnvironment(true)).catch(() => {});
     $('pair-wiped').hidden = true;
     $('pair-error').hidden = true;
     setAgentName(null, false);                        // a new pairing: its name comes with the host's first status
@@ -233,6 +239,7 @@ session.configure({
     onHostGone();
     controls.openPanel(controls.panel);
     setStatus('ready', 'st.ready');
+    if(location.pathname==='/bots') bots.open();
     openFriendsWanted();
     api.myDeviceId().then(() => rerender());
     relay.onReady();
@@ -255,7 +262,8 @@ snap.configure({
   onTurn: (p) => relay.upsertTurn(p),
 });
 api.onState((m) => relay.onSayState(m));
-controls.configure({ show, estopChanged: () => { relay.onEstop(); rerender(); }, friends: () => friends.refresh() });
+controls.configure({ show, estopChanged: () => { relay.onEstop(); rerender(); }, friends: () => friends.refresh(), bots: () => bots.refresh() });
+bots.configure({openPanel:controls.openPanel});
 friends.configure({ openPanel: controls.openPanel, agentName: () => agentName ?? DEFAULT_NAME });
 
 function onApp(m) {
@@ -265,6 +273,8 @@ function onApp(m) {
     case 'status': setAgentName(m.name); snap.setStatus(m); return;
     case 'ask': snap.addAsk(m); return;
     case 'ask_done': snap.askDone(m); return;
+    case 'bots_tool_request': bots.toolRequest(m); return;
+    case 'bots_proposal': bots.proposal(m); return;
     case 'fr_changed': friends.changed(m); return;   // §17.7: something changed on the computer → the friends page re-reads
     case 'elev': elevate.add(m); return;             // F17 (§11)
     case 'elev_done': elevate.done(m); return;
@@ -392,11 +402,31 @@ function showIdle() {
 // nothing slow runs between 「保存」 and navigator.credentials.create.
 // F32: 「设置 Face ID」 on a pickup card asks for an offer even after 「以后再说」 (pkForce, one offer).
 let pkForce = false;
-secretout.configure({ setupFaceId: async () => {
-  if (!(await passkey.supported())) { toast(t('sout.noFaceId'), 5000); return; }
+async function setupFaceId() {
+  if (!(await passkey.supported())) { await checkPhoneEnvironment(); renderPhoneEnvironment(true); toast(t('sout.noFaceId'), 5000); return; }
   pkForce = true;
   session.sendApp({ t: 'pk_offer_req' }).catch(() => { pkForce = false; toast(t('elev.fail'), 3000); });
-} });
+}
+secretout.configure({ setupFaceId });
+let phoneEnvironment = null, phoneHintAfterPair = false, phoneHintDismissed = false;
+function renderPhoneEnvironment(force = false) {
+  const e = phoneEnvironment;
+  const hint = $('phone-env');
+  hint.hidden = !(e?.warn && (view === 'pair' || view === 'error' || force || (phoneHintAfterPair && !phoneHintDismissed && state === 'ready')));
+  if (e) $('phone-env-text').textContent = t('phoneEnv.' + e.platform);
+  $('phone-env-dismiss').hidden = view === 'pair' || view === 'error';
+  $('setup-faceid').hidden = !PAIRED_VIEWS.includes(view);
+}
+async function checkPhoneEnvironment(afterPair = false) {
+  phoneEnvironment = await probeEnvironment({ua: navigator.userAgent, touch: navigator.maxTouchPoints,
+    storage: navigator.storage, supported: passkey.supported, probe: async () => {
+      const key = 'p98-storage-probe';
+      try { await dbPut(key, true); return await dbGet(key) === true; }
+      finally { await dbDel(key).catch(() => {}); }
+    }});
+  if (afterPair) { phoneHintAfterPair = true; phoneHintDismissed = false; }
+  renderPhoneEnvironment();
+}
 async function offerPasskey(m) {
   const h = await dbGet('host');
   const forced = pkForce; pkForce = false;
@@ -641,6 +671,14 @@ function wire() {
   $('badge').addEventListener('click', () => toggleBadge());
   $('badge-close').addEventListener('click', () => toggleBadge(false));
   $('badge-panel').addEventListener('click', (e) => { if (e.target === $('badge-panel')) toggleBadge(false); });
+  $('setup-faceid').addEventListener('click', () => { closeMenu(); setupFaceId().catch(() => {}); });
+  $('phone-env-dismiss').addEventListener('click', () => { phoneHintDismissed = true; renderPhoneEnvironment(); });
+  $('phone-env-copy').addEventListener('click', async () => {
+    const link = publicPhoneLink(location.href);
+    try { await navigator.clipboard.writeText(link); toast(t('phoneEnv.copied')); }
+    catch { $('phone-env-link').value = link; $('phone-env-link').hidden = false; $('phone-env-link').select(); }
+  });
+  onLang(() => renderPhoneEnvironment());
   $('menu-about').addEventListener('click', () => { closeMenu(); toggleBadge(true); });
   document.addEventListener('click', (e) => { if ($('aj-menu').open && !e.target.closest('#aj-menu')) closeMenu(); });
   document.addEventListener('keydown', (e) => {
@@ -667,6 +705,7 @@ function wire() {
   $('open-act').addEventListener('click', () => { closeMenu(); controls.openPanel('act'); });
   $('open-tasks').addEventListener('click', () => { closeMenu(); controls.openPanel('tasks'); });
   $('open-friends').addEventListener('click', () => { closeMenu(); friends.open('list'); });
+  $('open-bots').addEventListener('click', () => { closeMenu(); bots.open(); });
   friends.wire();
   for (const b of document.querySelectorAll('[data-back]')) b.addEventListener('click', () => controls.openPanel('chat'));
   $('act-more').addEventListener('click', () => controls.loadActivity(false));
@@ -721,6 +760,7 @@ async function main() {
   applyStatic();
   renderName();
   wire();
+  checkPhoneEnvironment().catch(() => {});
   if (!globalThis.crypto?.subtle || !globalThis.indexedDB || !globalThis.WebSocket) return fatal('error.missing');
   if (push.pushSupported()) push.registration().catch(() => {});
   try { await deviceKey(); } catch (e) {

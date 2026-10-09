@@ -564,7 +564,7 @@ class Helper(unittest.TestCase):
             self.assertIn("-g wheel" if mac else "-g root", sc)
             self.assertIn("shasum -a 256 -c" if mac else "sha256sum -c", sc)
         self.assertEqual(eh.sudoers_text("someone").splitlines()[-1],
-                         "someone ALL=(root) NOPASSWD: /usr/bin/python3 -I -S /usr/local/libexec/agentj-elevate")
+                         f"someone ALL=(root) NOPASSWD: /usr/bin/python3 -I -S {eh.HELPER}")
         with self.assertRaises(ValueError):
             eh.sudoers_text("a b")
         keys = json.loads(fs["elevate-keys.json"])

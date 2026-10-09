@@ -271,7 +271,8 @@ class Serve(unittest.TestCase):
             self.assertIn("这台电脑的浏览器", w.text)
             await self._pair(8, PHONE)
             self.assertEqual(len(self.submitted), 1, "no second welcome")
-            lines = [t for t in self.host.hist.page(limit=50)[0] if t["src"].get("k") == "sys"]
+            lines = [t for t in self.host.hist.page(limit=50)[0] if t["src"].get("k") == "sys"
+                     and "也连上了" in t["reply"].get("text", "")]  # unrelated OS residency reminders are covered by P94
             self.assertEqual(len(lines), 1)
             self.assertIn("也连上了", lines[0]["reply"]["text"])
             self.assertIn("都配好了", lines[0]["reply"]["text"])

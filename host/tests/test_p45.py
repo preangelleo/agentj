@@ -49,7 +49,7 @@ class Autonomy(unittest.TestCase):
     def test_defaults_and_identity(self):
         self.assertFalse(preferences.get(preferences.defaults(),'agent.high_risk_warnings'))
         self.assertEqual(preferences.get(preferences.defaults(),'agent.session_mode'),'shared')
-        self.assertEqual(main_identity.verify_core()['version'],7)
+        self.assertEqual(main_identity.verify_core()['version'],8)
         self.assertIn('without extra approvals',main_identity.prompt({'language':'en'}))
     def test_high_risk_shared_call_adds_no_decision(self):
         host=Mock();host.stopped.return_value=False

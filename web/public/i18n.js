@@ -1077,7 +1077,15 @@ export default {
   "r.silent.reply": "回复：",
   "r.silent.help": "静默回合收在这里。点开一条，查看当时的原话。",
   "fr.q.auto": "以后这位都让分身自己聊",
-  "fr.ask.groupHint": "默认：只聊寒暄和名片；好友：自动聊日常协作和技术，最多 12 轮；同事：自动聊其他话题。报价、约时间和承诺仍问你。"
+  "fr.ask.groupHint": "默认：只聊寒暄和名片；好友：自动聊日常协作和技术，最多 12 轮；同事：自动聊其他话题。报价、约时间和承诺仍问你。",
+  "r.shared.following.claude": "正在跟随电脑上的 Claude Code 会话。",
+  "r.shared.following.opencode": "正在跟随电脑上的 OpenCode 会话。",
+  "phoneEnv.ios": "请从右上角用 Safari 打开普通窗口，再「添加到主屏幕」，从图标配对、设置 Face ID，以后从图标进入。请允许 Cookie 和网站数据。",
+  "phoneEnv.android": "请从右上角用 Chrome 打开普通窗口，再「添加到主屏幕」，从图标配对、设置手机解锁，以后从图标进入。请允许 Cookie 和网站数据。",
+  "phoneEnv.desktop": "这个浏览器可能无法保留配对或使用设备解锁。请用最新版浏览器的普通窗口，允许 Cookie 和网站数据。",
+  "phoneEnv.setup": "设置 Face ID",
+  "phoneEnv.copy": "复制网页链接",
+  "phoneEnv.copied": "已复制网页链接；打开后从主屏幕配对。"
  },
  "en": {
   "meta.title": "Agent J · Phone remote",
@@ -2156,6 +2164,14 @@ export default {
   "r.silent.reply": "Reply: ",
   "r.silent.help": "Silent turns are kept here. Tap a row to view its original input.",
   "fr.q.auto": "Let my Agent chat with this friend from now on",
-  "fr.ask.groupHint": "Default: small talk and cards. Friends: everyday collaboration and technical topics, up to 12 rounds. Colleagues: other topics too. Quotes, scheduling and commitments still ask you."
+  "fr.ask.groupHint": "Default: small talk and cards. Friends: everyday collaboration and technical topics, up to 12 rounds. Colleagues: other topics too. Quotes, scheduling and commitments still ask you.",
+  "r.shared.following.claude": "Following the computer’s Claude Code session.",
+  "r.shared.following.opencode": "Following the computer’s OpenCode session.",
+  "phoneEnv.ios": "Open in Safari from the top-right menu, use a regular window, then Add to Home Screen. Pair and set up Face ID from that icon; use it every time. Allow cookies and website data.",
+  "phoneEnv.android": "Open in Chrome from the top-right menu, use a regular window, then Add to Home Screen. Pair and set up screen unlock from that icon; use it every time. Allow cookies and website data.",
+  "phoneEnv.desktop": "This browser may not retain pairing or support device unlock. Use a regular window in an up-to-date browser and allow cookies and website data.",
+  "phoneEnv.setup": "Set up Face ID",
+  "phoneEnv.copy": "Copy page link",
+  "phoneEnv.copied": "Page link copied; pair from the Home Screen icon."
  }
 };

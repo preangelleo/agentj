@@ -2011,6 +2011,8 @@ def main(argv=None) -> None:
     support.add_parser(sub)   # F18: agentj support ask | report | thread | list
     recall.add_parser(sub)    # F22 (P57): agentj recall <keywords> [--days N] [--date D] — the main Agent finds an earlier conversation
     from . import peer_service
+    from .bots.cli import add_parser as add_bots_parser
+    add_bots_parser(sub)
     peer_service.add_parser(sub)   # P71 (§17.9): agentj friends … — through <state>/agentperm/friends.sock, also inside the fence
     from . import codex_perm
     codex_perm.add_parser(sub)     # F30 (P73): agentj codex-sandbox status|set|default|fix — always the top level of config.toml

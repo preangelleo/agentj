@@ -124,9 +124,10 @@ export async function approveMessage(channel, device, id, decision, tool, summar
 export const CONTROL_CONTEXT = 'agentjarvis-control-v1';
 export const CONTROL_ACTIONS = ['mem_rm', 'mem_undo', 'estop', 'resume', 'task_on', 'task_off',
   'fr_set', 'pg_set', 'pg_del', 'fr_add', 'fr_discoverable', 'fr_card',          // §17.7 agent friends (0.16)
-  'fr_ctx', 'update'];                                                                       // P73: a friend's 「补充设定」
+  'fr_ctx', 'update', 'bots_write'];                                                                       // P73: a friend's 「补充设定」
 /** The text whose SHA-256 a control signature covers (the target, with the content hash the phone saw). */
 export function controlObject(action, o) {
+  if (action === 'bots_write') return canonicalJson(o.request);
   if (action === 'update') return 'latest';
   if (action === 'mem_rm') return `${o.src}\n${o.file}\n${o.fsha}\n${o.iid}`;
   if (action === 'mem_undo') return String(o.id);

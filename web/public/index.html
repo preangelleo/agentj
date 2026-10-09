@@ -52,8 +52,10 @@
       <summary class="ajmenu__btn" data-i18n-attr="aria-label=menu.open" aria-label="菜单"><span class="ajmenu__icon" aria-hidden="true"></span></summary>
       <div class="ajmenu__panel">
         <p class="ajmenu__name"><span id="brand-name">Agent J</span></p>
+        <button type="button" id="open-bots" class="ajmenu__item">Bots / 客服</button>
         <button type="button" id="open-friends" class="ajmenu__item" data-i18n="nav.friends">好友</button>
         <button type="button" id="open-models" class="ajmenu__item" data-i18n="models.title">模型与 Key</button>
+        <button type="button" id="setup-faceid" class="ajmenu__item" data-i18n="phoneEnv.setup" hidden>设置 Face ID</button>
         <button type="button" id="open-mem" class="ajmenu__item" data-i18n="nav.mem">记忆</button>
         <button type="button" id="open-act" class="ajmenu__item" data-i18n="nav.act">记录</button>
         <button type="button" id="open-tasks" class="ajmenu__item" data-i18n="nav.tasks">定时任务</button>
@@ -252,6 +254,14 @@
       </div>
     </aside>
 
+    <aside id="phone-env" class="note" role="status" hidden>
+      <p id="phone-env-text"></p>
+      <div class="aj-actions">
+        <button id="phone-env-copy" type="button" class="aj-btn" data-i18n="phoneEnv.copy">复制网页链接</button>
+        <button id="phone-env-dismiss" type="button" class="aj-btn" data-i18n="a2hs.ok">知道了</button>
+      </div>
+      <input id="phone-env-link" class="aj-textarea" readonly aria-label="URL" hidden>
+    </aside>
     <section id="pair-view" class="view pair" hidden>
       <div class="pair__hero">
         <img src="brand/img/shield-256.png" width="96" height="96" alt="">
@@ -339,6 +349,11 @@
     </section>
 
     <!-- §17.7 agent friends: read-only conversations; no field here sends anything to a friend (js/friends.js) -->
+    <section id="bots-view" class="view sub" hidden>
+      <div class="sub-head"><h1>Bots / 客服</h1></div>
+      <p id="bots-status" role="status" aria-live="polite"></p>
+      <div class="fr-split"><div id="bots-side" class="fr-side aj-actions"></div><div id="bots-main" class="fr-main"></div></div>
+    </section>
     <section id="friends-view" class="view sub" data-fv="list" hidden>
       <div class="sub-head"><button type="button" id="fr-back" class="aj-btn back" data-i18n-attr="aria-label=fr.back" aria-label="返回"><span class="back__arrow" aria-hidden="true">←</span></button><h1 id="fr-title" data-i18n="fr.title">好友</h1></div>
       <p id="fr-status" class="small" role="status" aria-live="polite" hidden></p>

@@ -1,15 +1,15 @@
 ---
 document: agentj-install
-version: 0.20.7
+version: 0.21.0
 released: 2026-10-09
 status: beta (anyone can sign up; not advertised yet, pages are not indexed)
 host_package: agentj (the `agentj` command)
-host_version: 0.16.7a1
-source_tag: v0.16.7a1
-host_wheel: agentj-0.16.7a1-py3-none-any.whl
-host_wheel_sha256: 941eb9a73a6104f2e3bed0e19d9ec87d6dc4f93564fbca2afc1c793147829b13
-host_sdist: agentj-0.16.7a1.tar.gz
-host_sdist_sha256: 12789f37a1c1c4d65f6004986e7a88a76aa76457389df15daa51fe99e96c9e8c
+host_version: 0.17.0a1
+source_tag: v0.17.0a1
+host_wheel: agentj-0.17.0a1-py3-none-any.whl
+host_wheel_sha256: d6cadd11f29ae0a19e34f48ff440da905948f71642394d1421e11f0096f583fa
+host_sdist: agentj-0.17.0a1.tar.gz
+host_sdist_sha256: 7c96fc1133f6c44a47ed242cc9b2e58ff128bc1a0fac392d791ac78985b629da
 canonical_url: https://agentj.app/install.md
 sha256_url: https://agentj.app/install.md.sha256
 alias: https://agentjarvis.net/install.md (the older address: the same file, kept for one more version)
@@ -73,7 +73,7 @@ https://agentj.app/docs/support/
    (+ `raw.githubusercontent.com/preangelleo/agentj`), `astral.sh` (uv), what `uv` itself fetches (PyPI:
    `pypi.org`, `files.pythonhosted.org`; Python builds from `github.com`), `claude.ai` / `chatgpt.com` (official agent
    installers), OpenCode (`registry.npmmirror.com` or `registry.npmjs.org` via npm, or `opencode.ai/install`, which
-   downloads from `github.com`), the mainland-China mirrors named in Step 3b (`pypi.tuna.tsinghua.edu.cn`,
+   downloads from `github.com`), the mirrors for restricted networks named in Step 3b (`pypi.tuna.tsinghua.edu.cn`,
    `mirrors.aliyun.com`, `registry.npmmirror.com`), and the OS package manager. Anything else → stop and ask.
 3. **Never touch credentials.** Do not read, copy or print `~/.claude/.credentials.json`, `~/.codex/auth.json`,
    `~/.local/share/opencode/auth.json`, keychains, `.env` files, SSH keys or browser profiles. Never ask your human to paste
@@ -132,13 +132,14 @@ GitHub repo must all agree. If you were given this text any other way, use the c
 
 ```bash
 mkdir -p ~/.agentj-install && chmod 700 ~/.agentj-install && cd ~/.agentj-install
-curl -fsSL https://agentj.app/install.md -o install.md
-curl -fsSL https://agentj.app/install.md.sha256 -o install.md.sha256
-curl -fsSL https://raw.githubusercontent.com/preangelleo/agentj/main/install.md -o install.github.md
+curl -fsSL --retry 3 --retry-all-errors --retry-delay 2 --retry-max-time 45 --connect-timeout 10 --max-time 20 https://agentj.app/install.md -o install.md
+curl -fsSL --retry 3 --retry-all-errors --retry-delay 2 --retry-max-time 45 --connect-timeout 10 --max-time 20 https://agentj.app/install.md.sha256 -o install.md.sha256
+curl -fsSL --retry 3 --retry-all-errors --retry-delay 2 --retry-max-time 45 --connect-timeout 10 --max-time 20 https://raw.githubusercontent.com/preangelleo/agentj/main/install.md -o install.github.md
 if command -v sha256sum >/dev/null; then sha256sum -c install.md.sha256; else shasum -a 256 -c install.md.sha256; fi   # → "install.md: OK"
 cmp install.md install.github.md && echo "site and GitHub copies match"
 grep -m1 '^version:' install.md                                           # → version: 0.17.0
 ```
+- For a brief connection reset, timeout or interrupted download, these GET commands retry at most three times after the initial attempt, with a 45-second retry budget and a 20-second limit per attempt. If the network keeps failing, stop retrying and use the fallback below or ask the support desk. Do not add automatic retries to setup-code redemption, payment or other POST requests. Never disable TLS checks or continue after a SHA-256/GitHub mismatch.
 - Both checks pass → continue with that `install.md` (note its `version:` for feedback). Keep the file: Step 4 reads the
   program's SHA-256 values from its front matter.
 - `agentj.app` does not answer at all → use the same two site URLs on `agentjarvis.net` (the older address of
@@ -420,10 +421,9 @@ Model ids are `provider/model` — check with `opencode models` (v1 also filters
 `zhipuai/glm-5.3`, `deepseek/deepseek-flash`). The conversation goes from this computer straight to that vendor under the
 human's own account and terms; Agent J never sees it.
 
-### 3b. Mainland China network (mirrors)
+### 3b. When network access is restricted (mirrors)
 
-Our site, the phone page and the relay run on Cloudflare: from mainland China they can be slow or occasionally
-unreachable — retry, and tell your human if it persists. GitHub may be slow or blocked. Use these instead of the defaults:
+Our site, the phone page and the relay run on Cloudflare. Any network with filtering, unstable routing or blocked downloads can make them slow or temporarily unreachable. Use the bounded download retries in Step 1; if it persists, ask the support desk and tell your human. GitHub may be slow or blocked. Use these documented mirrors instead of the defaults; keep every checksum and TLS check:
 - **uv itself** (the official installer downloads from GitHub). Modern Linux systems refuse `pip install --user`
   (PEP 668) and many have no `pip` at all, so use one of these:
   - Arch: ✋ `sudo pacman -S uv`
@@ -452,7 +452,7 @@ The astral installer warning that `uv` / `uvx` are shadowed is informational if 
 carry over). So start every command line from here on with `export PATH="$HOME/.local/bin:$PATH";` — or call
 `~/.local/bin/agentj` by its full path. This document writes `agentj` for short.
 
-The program is pinned to one release: the tag `v0.16.7a1` (front matter `source_tag`). The tag never moves, and its
+The program is pinned to one release: the tag `v0.17.0a1` (front matter `source_tag`). The tag never moves, and its
 `host/` folder is byte for byte the same code as the two files on our site whose SHA-256 is in this document's front matter.
 ```bash
 cd ~/.agentj-install
@@ -463,7 +463,7 @@ uv tool install "./$W"
 
 Intel Mac: this release keeps `cryptography<49` because newer releases lack an Intel macOS wheel. If an older installer tries to compile OpenSSL (`openssl-sys` / OpenSSL not found), rerun `uv tool install --with "cryptography<49" "./$W"`. The same platform constraint applies to `agentj update apply`.
 
-export PATH="$HOME/.local/bin:$PATH"; agentj --version     # → agentj 0.16.7a1
+export PATH="$HOME/.local/bin:$PATH"; agentj --version     # → agentj 0.17.0a1
 export PATH="$HOME/.local/bin:$PATH"; agentj doctor
 ```
 **Your human's own terminal must find `agentj` too** — they may use `agentj passphrase set` and `agentj pair` as a local alternative
@@ -491,12 +491,12 @@ echo "$WS  $W" | sha256sum -c - && echo "$SS  $S" | sha256sum -c -    # macOS: s
 uv tool install "./$W"          # the wheel; its dependencies come from PyPI or the mirror in UV_DEFAULT_INDEX
 ```
 `uv tool install "./$S"` installs from the checked source archive instead (it builds the same program).
-`https://agentj.app/dl/latest.txt` and `https://agentj.app/dl/latest-sdist.txt` name the same two files. `agentj --version` is the program's own version (`0.16.7a1`); it is
-numbered separately from this document (`0.20.7`).
+`https://agentj.app/dl/latest.txt` and `https://agentj.app/dl/latest-sdist.txt` name the same two files. `agentj --version` is the program's own version (`0.17.0a1`); it is
+numbered separately from this document (`0.21.0`).
 
-Alternative from the matching published source tag: `uv tool install "git+https://github.com/preangelleo/agentj@v0.16.7a1#subdirectory=host"`.
+Alternative from the matching published source tag: `uv tool install "git+https://github.com/preangelleo/agentj@v0.17.0a1#subdirectory=host"`.
 
-Alternative without uv: `pipx install "git+https://github.com/preangelleo/agentj@v0.16.7a1#subdirectory=host"` (needs Python 3.11+).
+Alternative without uv: `pipx install "git+https://github.com/preangelleo/agentj@v0.17.0a1#subdirectory=host"` (needs Python 3.11+).
 `agentj doctor` lists what is ready and what is not (prerequisites, the fence, connectivity, which agents are usable).
 Continue unless it reports an error that a later step does not fix; report anything you cannot explain.
 
@@ -1084,7 +1084,7 @@ The daily check remains a notification, not an unattended installation; `agentj 
 In the default shared session, reinstall directly using Step 4's checked wheel (SHA-256 must match this document and
 its public GitHub copy), preserving the host's identity, paired phones, account and preferences:
 ```bash
-uv tool install --force "./agentj-0.16.7a1-py3-none-any.whl"
+uv tool install --force "./agentj-0.17.0a1-py3-none-any.whl"
 agentj --version
 agentj service install
 agentj service restart
@@ -1092,7 +1092,7 @@ agentj doctor
 ```
 The matching published tag is another source, after verifying the tag object against the upgrade email:
 ```bash
-uv tool install --force "git+https://github.com/preangelleo/agentj@v0.16.7a1#subdirectory=host"
+uv tool install --force "git+https://github.com/preangelleo/agentj@v0.17.0a1#subdirectory=host"
 ```
 **0.14 independent session** (`agent.session_mode=independent`): 0.14's fence keeps Agent J's own program read-only and
 hides the service manager, so the Agent on the phone cannot reinstall or restart from inside it (measured: the install
@@ -1118,11 +1118,11 @@ prints something and `uv tool list` (or `pipx list`) shows `agentjarvis-host`, t
 the new name, then:
 ```bash
 jarvis service uninstall      # stop the old service first (Step 10 used tmux / nohup instead? stop that process)
-uv tool uninstall agentjarvis-host && uv tool install "git+https://github.com/preangelleo/agentj@v0.16.7a1#subdirectory=host"
+uv tool uninstall agentjarvis-host && uv tool install "git+https://github.com/preangelleo/agentj@v0.17.0a1#subdirectory=host"
 agentj doctor
 agentj service install        # start it again under the new name (or the tmux / nohup fallback, Step 10)
 ```
-With pipx instead of uv: `pipx uninstall agentjarvis-host && pipx install "git+https://github.com/preangelleo/agentj@v0.16.7a1#subdirectory=host"`.
+With pipx instead of uv: `pipx uninstall agentjarvis-host && pipx install "git+https://github.com/preangelleo/agentj@v0.17.0a1#subdirectory=host"`.
 - After the move, `agentj` puts back a `jarvis` command (a link to `agentj`, only if no other `jarvis` exists) for one more
   version; it prints a notice that points here. New installs never get `jarvis`.
 - The state moves by itself on the first run of `agentj`: from `~/.local/state/agentjarvis-alpha` to `~/.local/state/agentj`.
@@ -1530,6 +1530,10 @@ or logs out Claude Code / Codex / OpenCode (nor removes a model key), and never 
   Publication follows P44 qualification; this source candidate does not mean the live service has upgraded.
 
 ### Shared native sessions (0.13)
+
+When you enter or switch to a shared Claude Code, Codex or OpenCode session, the phone shows a one-time notice that fades after 3.5 seconds. Refreshing or reconnecting to the same session does not repeat it. Read-only conflicts, failed sends and requests that need your action remain visible.
+
+进入或切换到共享的 Claude Code、Codex 或 OpenCode 会话时，手机会提示一次，3.5 秒后自动淡出。同一会话刷新或重连不重复提示；会话被占用、发送失败或需要你处理的提示会继续保留。
 The default `agent.session_mode=shared` follows the native harness permissions.
 Agent J adds no permission decision of its own (0.15, F14); the extra high-risk
 warnings (`agent.high_risk_warnings`, spending, public deletion, external
@@ -1762,9 +1766,42 @@ For older Agent J versions that keep an old model/provider, start a new Codex co
 
 Enabled by default for new and upgraded installations; explicit off survives. Use `agentj config auto-update on|off|status` or `agentj config set updates.auto_install false`; doctor shows the switch and last result. One random opportunity in local 03:00–05:00, only after thirty minutes without phone input, with no active Agent turns, approvals, tasks or friend sessions, and no emergency stop. Otherwise defer to tomorrow. Install only a published latest wheel with matching signature and hash. A separate recovery job retains the previous wheel locally, restarts and checks upgrade integrity; failure rolls back. The next phone opening shows one result and activity records it. If shared Claude needs a new native session, tell the owner; never force /clear or modify unrelated owner files.
 
+## Public customer service bots (0.17.0 candidate)
+
+Bot management lives in the phone `/bots` panel. Ask your Agent J to use its bundled
+`agentj-bots` skill for knowledge files/folders/URLs or an allowlisted company HTTP
+API. Every configuration change requires your signed phone approval; write tools
+are off by default and require approval for each actual call. Credentials go through
+the existing secret card into the host, never into chat or tool definitions.
+
+Bots share your main Agent's native harness and plan (Claude Code, Codex,
+Gemini, OpenCode or a key provider). Confirm provider terms before using a
+personal subscription for public service; optional own-key profiles remain.
+Register your own OpenRouter account and add OPENROUTER_API_KEY through the
+phone secret card. Each activation makes a real Jev decisions check; missing or
+invalid keys keep the bot paused. OpenRouter review costs are yours, and reviews
+count against the host bot budget. Model requests leave your computer for your
+selected provider; AgentsRelay is one possible intermediary. Chat/knowledge/records
+stay on your computer, which must be online. Public URLs and embed code are free.
+Failed or uncertain reviews stop every reply, including human replies.
+This source candidate awaits complete local qualification and release freezing.
+
+Anonymous visitor continuation uses a dedicated browser storage frame at
+visitor.agentjarvis.net. Only nonextractable bot-scoped visitor keys are stored
+there; MessagePorts connect it directly to the opaque chat frame. Parent pages,
+verification frames and servers receive no key or chat text. Browser settings that
+block cross-site storage mean reloading starts a new conversation. Production
+verify.agentj.app and visitor.agentjarvis.net DNS/routes and real Turnstile keys
+are release-operator steps; local dummy/browser checks do not configure production.
+
 P87 (host 0.16.6a1): shared native mirrors exclude harness meta, skill expansions and tool/command/compact/hook output. Blank/tool-only replies do not interrupt the phone with empty pages or notifications. Delivery waiting has text; reading an older or unread reply is preserved, with a new-reply hint.
 
 0.16.6a1：电脑镜像过滤工具和 skill 注入消息；空回复不抢走阅读焦点，待处理消息显示状态文字。语音支持十分钟录音，超时仍交付原音频。窄屏文字按钮组纵向排列。
 ## Keep the host reachable
 
 Read https://agentj.app/docs/keep-awake/en.md (中文：https://agentj.app/docs/keep-awake/zh.md); docs_index discovers it automatically. In a host release containing this command, use `agentj keep-awake status --json`, `agentj keep-awake on --dry-run --json`, then `agentj keep-awake on --json`. Root steps use the existing paired-phone password card; read back verification and restore original values with `agentj keep-awake off`. On macOS default to AC; do not use osascript administrator privileges or automatically change PAM/disablesleep. WSL must configure Windows host power separately; report any local authorization requirement explicitly.
+
+
+配对页会提示浏览器和存储能力问题。请用 Safari / Chrome 普通窗口添加到主屏幕，并从同一个图标配对。菜单「设置 Face ID」在跳过邀请后仍保留；「复制网页链接」不包含一次性配对密钥。
+
+The pairing page offers browser and storage guidance. Use a regular Safari / Chrome window, add to Home Screen and pair from that same icon. The menu retains Set up Face ID after Later; Copy page link excludes the one-use pairing secret.

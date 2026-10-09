@@ -454,7 +454,7 @@ class DoctorRows(unittest.TestCase):
             c = doctor.check_linger(svc, {"SSH_CONNECTION": "203.0.113.5 50000 198.51.100.7 22"})
             self.assertEqual(c["status"], "warn")
             self.assertIn("enable-linger", c["hint"])
-            self.assertEqual(doctor.check_linger(svc, {"WAYLAND_DISPLAY": "wayland-1"})["status"], "ok", "a desktop session")
+            self.assertEqual(doctor.check_linger(svc, {"WAYLAND_DISPLAY": "wayland-1"})["status"], "warn", "desktop seats also need logout/boot residency")
             self.assertEqual(doctor.check_linger(svc, {})["status"], "warn", "no desktop, no SSH: a headless box")
         with mock.patch.object(service, "_linger", return_value="yes"):
             self.assertEqual(doctor.check_linger(svc, {})["status"], "ok")

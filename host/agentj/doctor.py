@@ -665,11 +665,20 @@ def check_linger(svc: dict, environ=None) -> dict | None:
         return _c("linger", OK, "已开 / on (serve keeps running after logout)")
     if lg is None:
         return None
-    if not service.linger_needed(e):
-        return _c("linger", OK, "关（桌面会话：登录期间服务照常） / off — fine on a desktop while you are logged in",
-                  "")
-    return _c("linger", WARN, "关：退出 SSH 登录后服务会停 / off: the service stops when you log out",
-              "loginctl enable-linger $USER   (服务器上必须 / needed on a server)")
+    return _c("linger", WARN, "关：退出登录或重启后本席位可能离线 / off: logout or reboot can leave this seat offline",
+              "loginctl enable-linger $USER; 需要管理员时用 agentj sudo 手机密码卡 / use agentj sudo with the paired phone password card if root is required")
+
+
+def check_login_session(svc):
+    if svc.get("kind") != "launchd":
+        return None
+    try:
+        available = service._launchctl("print", service._gui(), timeout=10).returncode == 0
+    except (OSError, subprocess.TimeoutExpired):
+        available = False
+    return _c("login-session", OK if available else WARN,
+              "图形登录会话可用 / GUI login session available" if available else "本用户尚未登录图形界面，LaunchAgent 不会运行 / no GUI login for this user; LaunchAgent cannot run",
+              service.login_reminder())
 
 
 def check_estop(st: State) -> dict:
@@ -758,6 +767,9 @@ def run(st: State | None = None, offline: bool = False) -> list[dict]:
     out += check_preferences(st)
     out += check_main_identity(st)
     out.append(check_skills())
+    login = check_login_session(svc)
+    if login:
+        out.append(login)
     lg = check_linger(svc)
     if lg:
         out.append(lg)
