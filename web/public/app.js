@@ -413,7 +413,7 @@ function renderPhoneEnvironment(force = false) {
   const e = phoneEnvironment;
   const hint = $('phone-env');
   hint.hidden = !(e?.warn && (view === 'pair' || view === 'error' || force || (phoneHintAfterPair && !phoneHintDismissed && state === 'ready')));
-  if (e) $('phone-env-text').textContent = t('phoneEnv.' + e.platform);
+  if (e) $('phone-env-text').textContent = t('phoneEnv.' + e.platform) + (e.platform === 'ios' && !e.platformAuth ? '\n\n' + t('phoneEnv.iosAuth') : '');
   $('phone-env-dismiss').hidden = view === 'pair' || view === 'error';
   $('setup-faceid').hidden = !PAIRED_VIEWS.includes(view);
 }

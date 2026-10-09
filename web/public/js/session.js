@@ -88,7 +88,16 @@ export function openSession(mode, ctx) {
 }
 
 class StaleSend extends Error {}
-function endGen(s) { if (s.gen) { s.gen.live = false; s.gen = null; } }
+function endGen(s) {
+  const g = s.gen;
+  if (!g) return;
+  g.live = false; s.gen = null;
+  // Long signed operations must not wait ten minutes or accept a reply on a later Noise generation.
+  for (const [r, answer] of pending) if (answer.generation === g) {
+    pending.delete(r);
+    try { answer({ t: 'offline' }); } catch { /* one consumer never blocks disconnect cleanup */ }
+  }
+}
 function resetCrypto(s) { s.hs = null; endGen(s); s.recv = null; s.frag = new Defrag(); }
 
 async function onFrame(s, data) {
@@ -324,7 +333,8 @@ export function randHex(bytes) { return Array.from(crypto.getRandomValues(new Ui
 export function request(obj, onMsg, g = gen()) {
   if (!isReady() || !g) return null;
   const r = randHex(8);
-  pending.set(r, onMsg);
+  const answer = (m) => onMsg(m); answer.generation = g;
+  pending.set(r, answer);
   sendApp({ ...obj, r }, g).catch(() => {
     const answer = pending.get(r);
     if (answer) { pending.delete(r); answer({t: 'offline'}); }

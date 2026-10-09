@@ -1,6 +1,6 @@
-# Agent J 0.17.0a1 release notes
+# Agent J 0.17.1a1 release notes
 
-Host 0.17.0a1 / install 0.21.0; phone-web scope.
+Host 0.17.1a1 / install 0.21.1; phone-web scope.
 Phone parity must pass --strict. Full Android/Telegram parity is incomplete.
 Full Android/Telegram parity is incomplete.
 No APK is included in this release. Android source is for review, not a released app.
@@ -8,19 +8,17 @@ No APK is included in this release. Android source is for review, not a released
 Publication status: local preparation only. Live site verification is DEFERRED until
 the public commit and tag are pushed, the site is deployed, and cold installation passes.
 
-On publication failure, restore v0.16.7a1 / public 320f3acb and its site/phone artifacts; retain additive D1 metadata.
+On publication failure, restore v0.17.0a1 and its Dashboard/front Worker/site/phone artifacts; no new schema migration.
 ## Changes
 
-- Resident customer-service bots: free public URLs and website embeds; signed owner phone management, knowledge and allowlisted company HTTP tools.
-- Native owner model plan (subscription logins included); separate owner OpenRouter Jev decisions and mandatory activation check. Provider terms warning is persisted.
-- Host-only chat/configuration/knowledge/history and persistent quotas. Independent visitor ciphertext domain; opaque chat and dedicated cross-site verification and visitor-key storage frames.
-- Write tools require each paired-owner approval; visitor identity isolation, outbound review, metadata-only abuse reports and human handoff.
-- Includes the 0.16.7 native installation/PATH and macOS runtime checks, P98 shared-session fading notices and browser/Face ID guidance, and P94 separate OS users and UID-scoped helpers.
-- C0024 metadata migration, relay v4-bots and production verify/visitor origins must precede A/B; never use dummy production Turnstile keys.
+- Phone-answer-dependent bot writes run as bounded tasks after serial device/signature/nonce admission; long-operation receipts retain the600-second key-card deadline and keep other messages and emergency stop responsive.
+- Verification and visitor vault frames use the same active owner-signed exact HTTPS embed allowlist for every ancestor; strict postMessage and opaque sandbox boundaries remain enforced.
+- Opaque chat sends without native form navigation; unavailable iPhone platform-authenticator guidance and provider probe error categories are updated without exposing provider bodies or keys.
+- Deploy Dashboard app code before front Worker/site and phone web; no new D1 migration or relay implementation. COREv8 unchanged.
 
-- Real local Claude OAuth and Codex ChatGPT turns through owner OpenRouter Jev; browser/workerd security fixtures are separate from physical acceptance.
-- Cross-site browser storage can be blocked: refresh then starts a new conversation. Native output billing limits vary; unknown usage remains reserved and an upstream overrun stops service.
-- Physical iPhone/Android, company API write approvals and screen-reader acceptance remain unverified; production DNS/sitekey and publication are operator steps.
+- Real QA Noise phone/card save, cancel, concurrent read and emergency-stop checks passed; original provider/seat/devices retained and owned synthetic test keys cleaned.
+- Real local cross-site HTTPS browser coverage uses synthetic Turnstile/model fixtures, never claims production challenge acceptance. Manual production Turnstile, two questions/two answers, pre-reply Jev, daily limit and full embed refresh chain remain operator steps.
+- Unchanged shared issuer source reuses explicitly marked authentic earlier inactive-key evidence; no new native-key issuance claimed. Physical iPhone/Android/macOS acceptance remains pending.
 
 ## Material acceptance limits
 

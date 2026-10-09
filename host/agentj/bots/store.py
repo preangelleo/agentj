@@ -75,7 +75,7 @@ def config(raw):
     for origin in origins:
         try:u=urlsplit(origin)
         except (ValueError,TypeError):raise BotError('invalid_origins') from None
-        if u.scheme!='https' or not u.hostname or u.username or u.password or u.path or u.query or u.fragment:raise BotError('invalid_origins')
+        if not isinstance(origin,str) or any(c.isspace() or c=='*' for c in origin) or u.scheme!='https' or not u.hostname or u.username or u.password or u.path or u.query or u.fragment:raise BotError('invalid_origins')
     if out['enabled'] and not out['terms_accepted']:raise BotError('accept_terms')
     return out
 

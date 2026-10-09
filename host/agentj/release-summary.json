@@ -1,5 +1,26 @@
 {
-  "version": "0.17.0a1",
-  "zh": "常驻客服、公开网址和网页嵌入，支持知识与公司 API 工具",
-  "en": "Resident customer-service bots, public URLs, embeds, knowledge and company API tools"
+  "version": "0.17.1a1",
+  "major": false,
+  "zh": {
+    "features": [],
+    "improvements": [
+      "iPhone Face ID 不可用时显示系统设置排障指引。",
+      "服务商探测显示安全的错误类别和异常密钥长度区间。"
+    ],
+    "fixes": [
+      "Bot 密钥卡等待不再阻塞其他手机消息与急停。",
+      "客户网站嵌入的验证、访客存储和发送链路恢复正常。"
+    ]
+  },
+  "en": {
+    "features": [],
+    "improvements": [
+      "iPhone system-settings guidance when Face ID is unavailable.",
+      "Provider probes return safe error categories and unusual key-length bands."
+    ],
+    "fixes": [
+      "Bot key-card waits keep other phone messages and Stop everything responsive.",
+      "Restored verification, visitor storage and sending in customer-site embeds."
+    ]
+  }
 }

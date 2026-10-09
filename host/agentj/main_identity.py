@@ -157,6 +157,11 @@ MULTI_USER_LINE = {
 }
 
 
+BOT_RECOVERY_LINE = {
+    'zh': 'Bot 密钥卡最长等十分钟；pending 回执不是保存成功。主人断线后请查询结果再重试。嵌入须允许完整祖先链的每个准确 HTTPS 来源；不要放宽 sandbox 或把来源改成通配符。平台认证器不可用时引导主人看 /docs/phone 排障，provider probe 固定错误类别与 key 长度区间都不含凭据。\n',
+    'en': 'A bot key card waits up to ten minutes; pending is not saved. After disconnection, check the result before retrying. Embeds require every exact HTTPS origin in the full ancestor chain; never relax the sandbox or use wildcard origins. For unavailable platform authenticators use /docs/phone troubleshooting. Provider probe fixed error categories and key-length bands contain no credentials.\n',
+}
+
 def prompt(cfg: dict) -> str:
     verify_core()
     lang = language_of(cfg)
@@ -164,7 +169,7 @@ def prompt(cfg: dict) -> str:
     extra = cfg.get("instructions") or ""
     if not isinstance(extra, str):
         raise IdentityError("agent.instructions must be append-only text")
-    return (core + ("" if core.endswith("\n") else "\n") + LANGUAGE_LINE[lang] + ELEVATE_LINE[lang] + SUPPORT_LINE[lang] + OPERATIONS_LINE[lang] + SILENCE_LINE[lang] + SHARED_CODEX_LINE[lang] + PAIRING_LINE[lang] + ONBOARDING_LINE[lang] + MULTI_USER_LINE[lang]
+    return (core + ("" if core.endswith("\n") else "\n") + LANGUAGE_LINE[lang] + ELEVATE_LINE[lang] + SUPPORT_LINE[lang] + OPERATIONS_LINE[lang] + SILENCE_LINE[lang] + SHARED_CODEX_LINE[lang] + PAIRING_LINE[lang] + ONBOARDING_LINE[lang] + MULTI_USER_LINE[lang] + BOT_RECOVERY_LINE[lang]
             + ("\n<User preferences — append only; core takes precedence>\n" + extra + "\n</User preferences>\n" if extra else ""))
 
 def expected(cfg: dict, harness: str) -> dict:

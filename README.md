@@ -2,7 +2,7 @@
 
 # Agent J
 
-This 0.17.0a1 candidate tree is for review. The published installation remains 0.16.6a1 until the public mirror/tag and all release gates pass. Android is a debug review APK, with offline model provenance and physical-device acceptance still pending; it is not a store release.
+This 0.17.1a1 candidate tree is for review. The published installation remains 0.17.0a1 until the public mirror/tag and all release gates pass. Android is a debug review APK, with offline model provenance and physical-device acceptance still pending; it is not a store release.
 
 Docs (中文 / English): <https://agentj.app/docs/> · machine-readable index: <https://agentj.app/llms.txt>
 
@@ -38,7 +38,7 @@ is the same file, byte for byte; the site publishes its SHA-256 at <https://agen
 
 The host program on its own, pinned to the release tag (Python 3.11 or newer; if yours is older, uv fetches one):
 ```bash
-uv tool install "git+https://github.com/preangelleo/agentj@v0.17.0a1#subdirectory=host"
+uv tool install "git+https://github.com/preangelleo/agentj@v0.17.1a1#subdirectory=host"
 agentj --version
 ```
 
@@ -100,3 +100,5 @@ Shared Codex phone turns use the owner's explicit model and reasoning effort; de
 Shared Claude enables unset phone ingress automatically (installation, switching and 0.16.4 upgrade), backing up settings.json and notifying the phone once. Explicit off/hold or refuse remains unchanged. To disable: `agentj config claude-inbound off`. Only Claude Code is affected; repository/managed policies remain in force.
 
 Nightly host upgrades are enabled by default. Use `agentj config auto-update on|off|status`. Only a signed/hash-verified latest wheel installs during the local 03:00–05:00 idle window; busy or stopped hosts defer until tomorrow. Failures restore the locally cached previous wheel; doctor and the next phone opening report the outcome. Shared native sessions are never forcibly cleared.
+
+The 0.17.1 hotfix keeps phone key-card writes responsive and applies the owner-signed website allowlist to both inner frames. Deploy Dashboard app metadata code, then front Worker/site and phone web; no new database migration or relay implementation. Production Turnstile and full bot reply/review/limit/embed acceptance remain release-operator steps.

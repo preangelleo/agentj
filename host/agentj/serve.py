@@ -349,6 +349,7 @@ class Host:
         """Synchronously forget a session (no await): from here on none of its frames is acted on and nothing is sent to
         it. If it was the pending pairing, that pairing ends too."""
         s = self.sessions.pop(cid, None)
+        if s:self.bots.detach(s)
         if s and s.timer and s.timer is not asyncio.current_task():
             s.timer.cancel()
         if s and s.state in ("pending", "ready"):
@@ -618,7 +619,7 @@ class Host:
             if s.p33:                          # §10 messages only from a device that announced p33 (§10.0)
                 await self.on_p33(s, t, obj)
         elif t in ("bots_read", "bots_write"):
-            await self.bots.phone(s, obj)
+            await self.bots.phone(s, obj, background=True)
         elif isinstance(t, str) and t.startswith(("fr_", "pg_")):   # P71 (§17.7): the friends page
             await self.on_friends(s, t, obj)
         elif t == "answer":
@@ -2326,6 +2327,7 @@ class Host:
                 q.fut.set_result(("stopped", None, None, None, None))
         for gid in list(self.grants):
             self.end_grant(gid, "estop")
+        self.bots.estop()
         self.elevate.cancel_all("stopped")            # F17: open sudo / secret cards end (a running command finishes)
         if self.peers is not None:                    # P71 §17.9: no mailbox frame leaves, every peer session ends
             await self.peers.estop(True)

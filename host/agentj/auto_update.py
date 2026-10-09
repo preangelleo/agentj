@@ -76,6 +76,7 @@ def busy(host):
     ps = getattr(host.peers, 'sessions', None)
     return bool((a and (a.status != 'idle' or (getattr(a, 'q', None) and not a.q.empty()))) or host._open_question() or any(not a.fut.done() for a in host.asks.values())
                 or host.scheduler.current_id or host.elevate.cards
+                or getattr(getattr(host, 'bots', None), 'phone_tasks', None)
                 or (ps and (ps.active or ps._procs))
                 or (host.peers and (getattr(host.peers, 'jobs', None) or getattr(host.peers, 'asks', None))))
 

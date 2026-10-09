@@ -11,6 +11,8 @@ import json
 import os
 from pathlib import Path
 import stat
+import ssl
+import socket
 import tempfile
 import time
 import urllib.error
@@ -88,8 +90,21 @@ def target(c):
     return Path(config_file())
 
 
+class ProbeError(ProviderError):
+    def __init__(self,reason,band=None):
+        super().__init__('provider_probe_'+reason)
+        self.key_length_hint=band
+
+
+def key_length_hint(key):
+    # Only clearly abnormal sizes; custom providers do not share a standard key length.
+    return '0-23' if len(key)<24 else '4097+' if len(key)>4096 else None
+
+
 def probe(c,key):
     from .provider_runtime import public_url, NoRedirect
+    band=key_length_hint(key)
+    def fail(reason):raise ProbeError(reason,band) from None
     base=public_url(c['base_url'],'models')
     if not base:raise ProviderError('provider_url_not_public_https')
     headers={'User-Agent':'AgentJ-provider-profile','Content-Type':'application/json'}
@@ -102,12 +117,32 @@ def probe(c,key):
         body={'model':c['model'],'input':'Reply OK.','max_output_tokens':32}
         endpoint=base[:-6]+'responses'
     req=urllib.request.Request(endpoint,data=json.dumps(body).encode(),headers=headers)
+    def status(code):
+        if code in (401,403):fail('auth')
+        if code==404:fail('model_or_endpoint')
+        if code==400:fail('model')
+        if code==429:fail('rate_limit')
+        if 500<=code<=599:fail('server')
+        if 300<=code<=399:fail('redirect')
+        if code!=200:fail('http')
     try:
         with urllib.request.build_opener(NoRedirect).open(req,timeout=30) as r:
-            value=json.loads(r.read(1024*1024))
-            if r.status!=200 or not isinstance(value,dict) or not (value.get('output') if c['api']=='openai' else value.get('content')):
-                raise ProviderError('provider_probe_invalid_response')
-    except (OSError, ValueError):raise ProviderError('provider_probe_failed') from None
+            status(r.status)
+            try:value=json.loads(r.read(1024*1024+1))
+            except (ValueError,UnicodeError):fail('bad_json')
+            if not isinstance(value,dict) or not (value.get('output') if c['api']=='openai' else value.get('content')):fail('invalid_response')
+    except urllib.error.HTTPError as e:
+        # Never read upstream error body, URL or exception text (may contain key/content).
+        status(e.code)
+        fail('http')
+    except (TimeoutError,socket.timeout):fail('timeout')
+    except ssl.SSLError:fail('tls')
+    except urllib.error.URLError as e:
+        if isinstance(e.reason,(TimeoutError,socket.timeout)):fail('timeout')
+        if isinstance(e.reason,ssl.SSLError):fail('tls')
+        fail('network')
+    except OSError:fail('network')
+    return {'key_length_hint':band} if band else {}
 
 
 def merge(c, key, old):
@@ -167,7 +202,7 @@ def use(pid, verify=probe):
     old=path.read_bytes() if path.exists() else b''
     merged=merge(c,key,old)
     selected=selection(c)
-    verify(c,key)                  # no files changed if the real request fails
+    probe_result=verify(c,key)     # no files changed if the real request fails
     if (path.read_bytes() if path.exists() else b'')!=old:raise ProviderError('config_changed_during_probe')
     backup=p/'backups';private_dir(backup)
     b=backup/(str(time.time_ns()));private_dir(b)
@@ -184,7 +219,7 @@ def use(pid, verify=probe):
         raise
     record['agent_model_after']=mid
     atomic(b/'record.json',json.dumps(record).encode())
-    return {'id':pid,'harness':c['harness'],'verified':True,'backup':b.name,'restart_required':True}
+    return {'id':pid,'harness':c['harness'],'verified':True,'backup':b.name,'restart_required':True,**(probe_result or {})}
 
 
 def restore(pid):
@@ -233,7 +268,7 @@ def execute(spec):
         return {'ok':True,**result}
     except Exception as e:
         reason=str(e) if isinstance(e,ProviderError) else type(e).__name__
-        return {'ok':False,'reason':reason}
+        return {'ok':False,'reason':reason,**({'key_length_hint':e.key_length_hint} if isinstance(e,ProbeError) and e.key_length_hint else {})}
 
 
 def command(args):

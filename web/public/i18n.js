@@ -1085,7 +1085,8 @@ export default {
   "phoneEnv.desktop": "这个浏览器可能无法保留配对或使用设备解锁。请用最新版浏览器的普通窗口，允许 Cookie 和网站数据。",
   "phoneEnv.setup": "设置 Face ID",
   "phoneEnv.copy": "复制网页链接",
-  "phoneEnv.copied": "已复制网页链接；打开后从主屏幕配对。"
+  "phoneEnv.copied": "已复制网页链接；打开后从主屏幕配对。",
+  "phoneEnv.iosAuth": "Face ID 不可用时，请检查 iOS「设置→通用→自动填充与密码」：打开「自动填充密码和通行密钥」并勾选「密码」；检查「iCloud→密码（钥匙串）」「面容 ID 与密码」，以及「屏幕使用时间」或设备管理描述文件是否限制通行密钥。每次扫码或点配对链接都会新建配对；完成后请从同一个主屏幕图标进入。"
  },
  "en": {
   "meta.title": "Agent J · Phone remote",
@@ -2172,6 +2173,7 @@ export default {
   "phoneEnv.desktop": "This browser may not retain pairing or support device unlock. Use a regular window in an up-to-date browser and allow cookies and website data.",
   "phoneEnv.setup": "Set up Face ID",
   "phoneEnv.copy": "Copy page link",
-  "phoneEnv.copied": "Page link copied; pair from the Home Screen icon."
+  "phoneEnv.copied": "Page link copied; pair from the Home Screen icon.",
+  "phoneEnv.iosAuth": "If Face ID is unavailable, check iOS Settings → General → AutoFill & Passwords: enable AutoFill Passwords and Passkeys and select Passwords. Check iCloud → Passwords (Keychain), Face ID & Passcode, and restrictions in Screen Time or device-management profiles. Each scan or pairing-link tap creates a new pairing; after pairing, open the same Home Screen icon."
  }
 };

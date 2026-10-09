@@ -41,6 +41,7 @@ WRITES={'create','save','delete','knowledge_add','knowledge_remove','knowledge_d
 class Manager:
     def __init__(self,host):
         self.host=host;self.store=None;self.server=None;self.proposals={};self.pending_calls={};self.runtime=None;self.runtime_task=None
+        self.phone_tasks={}
         self.socket=host.st.perm_dir/'bots.sock'
         os.environ['AGENTJ_BOTS_SOCK']=str(self.socket)
     def state(self):
@@ -70,7 +71,7 @@ class Manager:
             if vid is None:return {'sessions':[dict(r) for r in store.db.execute('SELECT visitor,max(created) last,count(*) messages FROM messages WHERE bot=? GROUP BY visitor ORDER BY last DESC LIMIT 100',(bid,))]}
             return {'messages':[dict(r) for r in store.db.execute('SELECT role,text,created FROM messages WHERE bot=? AND visitor=? ORDER BY rowid DESC LIMIT 100',(bid,ident(vid)))][::-1]}
         raise BotError('unknown_operation')
-    async def write(self,req):
+    async def write(self,req, gone=None):
         if not isinstance(req,dict) or len(canonical(req).encode())>2*1024*1024:raise BotError('invalid_request')
         store=self.state();op=req.get('op');bid=req.get('id')
         if op=='tool_approve':
@@ -91,7 +92,7 @@ class Manager:
             from .audit import NAME
             store.get(bid)
             card=elevate.norm_secret({'name':NAME,'purpose':'OpenRouter Jev reviews for your bot; billed to your OpenRouter account / Bot 安全审核，费用由你的 OpenRouter 账户承担','dest':'file:'+str(store.secrets(bid)/NAME)},self.host.st.root)
-            result=await self.host.elevate.request(card)
+            result=await self.host.elevate.request(card, gone)
             if result.get('result')!='saved':raise BotError('openrouter_required')
             return {'name':NAME,'stored':True}
         if op in ('create','save'):
@@ -139,26 +140,65 @@ class Manager:
         if op=='tool_delete':
             reg=ToolRegistry(store,bid);d=reg.load(req['name']);(reg.root/'tools'/(d['name']+'.json')).unlink();return {}
         raise BotError('unknown_operation')
-    async def phone(self,session,obj):
+    def detach(self,session):
+        # Called synchronously when Noise session is removed, including relay loss/revoke.
+        for task,(owner,gone,op,bid) in list(self.phone_tasks.items()):
+            if owner is session:
+                if op=='audit_key':gone.set_result(True) if not gone.done() else None
+                else:task.cancel()
+
+    def estop(self):
+        for task,(_,_,op,_) in list(self.phone_tasks.items()):
+            if op!='audit_key':task.cancel()
+        for item in self.pending_calls.values():
+            if not item['future'].done():item['future'].set_result(False)
+
+    async def _write_reply(self,session,obj,gone=None):
+        r=obj['r'];req=obj['request']
+        try:
+            if gone is not None and (gone.done() or self.host.sessions.get(session.cid) is not session or not self.host.st.is_allowed(session.pub)):
+                raise BotError('offline')
+            res=await asyncio.wait_for(self.write(req,gone),610) if gone is not None else await self.write(req)
+            controls.log(self.host.st,action='bots_write',device=session.device,result='ok',obj={'request':req},sig=obj.get('sig'),n=obj.get('n'),ts=obj.get('ts'))
+            digest=hashlib.sha256(canonical(req).encode()).hexdigest()
+            for item in self.proposals.values():
+                if item['digest']==digest:item.update(status='done',result=res)
+            await self.host.send_app(session,{'t':'ctl_res','r':r,'action':'bots_write','ok':True,**res})
+        except asyncio.CancelledError:
+            controls.log(self.host.st,action='bots_write',device=session.device,result='cancelled')
+            await self.host.send_app(session,{'t':'ctl_res','r':r,'action':'bots_write','ok':False,'why':'stopped' if self.host.stopped() else 'offline'})
+            raise
+        except Exception as e:
+            reason=str(e) if isinstance(e,BotError) else 'timeout' if isinstance(e,TimeoutError) else 'invalid_request'
+            controls.log(self.host.st,action='bots_write',device=session.device,result='refused:'+reason)
+            await self.host.send_app(session,{'t':'ctl_res','r':r,'action':'bots_write','ok':False,'why':reason})
+
+    async def phone(self,session,obj, *, background=False):
         r=obj.get('r');req=obj.get('request')
         if not getattr(session,'p33',False) or getattr(session,'state',None)!='ready' or not self.host.st.is_allowed(session.pub) or not isinstance(r,str) or not isinstance(req,dict):return
         try:
-            if obj['t']=='bots_read':res=self.read(req)
-            elif obj['t']=='bots_write':
-                why=controls.check(self.host.st,self.host.nonces,self.host.channel,session.device,obj,'bots_write',{'request':req})
-                if why:
-                    controls.log(self.host.st,action='bots_write',device=session.device,result='refused:'+why)
-                    raise BotError(why)
-                res=await self.write(req)
-                controls.log(self.host.st,action='bots_write',device=session.device,result='ok',obj={'request':req},sig=obj.get('sig'),n=obj.get('n'),ts=obj.get('ts'))
-                # Proposals can only be fulfilled by the exact request that was shown and signed.
-                digest=hashlib.sha256(canonical(req).encode()).hexdigest()
-                for item in self.proposals.values():
-                    if item['digest']==digest:item.update(status='done',result=res)
-            else:return
-            await self.host.send_app(session,{'t':'ctl_res' if obj['t']=='bots_write' else 'bots_res','r':r,'action':obj['t'],'ok':True,**res})
+            if obj['t']=='bots_read':
+                return await self.host.send_app(session,{'t':'bots_res','r':r,'action':'bots_read','ok':True,**self.read(req)})
+            if obj['t']!='bots_write':return
+            # Admission is serial, before the receive loop advances: signature and nonce are never deferred.
+            why=controls.check(self.host.st,self.host.nonces,self.host.channel,session.device,obj,'bots_write',{'request':req})
+            if why:raise BotError(why)
+            op=req.get('op');bid=req.get('id')
+            if any(bid==item[3] for item in self.phone_tasks.values()) and op!='tool_approve':raise BotError('busy')
+            slow=op in ('audit_key','human_reply','tool_test') or (op=='save' and isinstance(req.get('config'),dict) and req['config'].get('enabled'))
+            if background and slow:
+                if len(self.phone_tasks)>=4:raise BotError('busy')
+                gone=asyncio.get_running_loop().create_future()
+                # Bound acknowledgement extends only this authenticated request, never arbitrary controls.
+                if not await self.host.send_app(session,{'t':'ctl_pending','r':r,'action':'bots_write','timeout_ms':620000}):return
+                task=asyncio.create_task(self._write_reply(session,obj,gone))
+                self.phone_tasks[task]=(session,gone,op,bid)
+                task.add_done_callback(lambda t:self.phone_tasks.pop(t,None))
+                return
+            await self._write_reply(session,obj)
         except (BotError,ValueError,KeyError,TypeError,OSError) as e:
-            reason=str(e) if isinstance(e,BotError) else 'invalid_request'
+            reason=str(e) if isinstance(e,BotError) else 'timeout' if isinstance(e,TimeoutError) else 'invalid_request'
+            controls.log(self.host.st,action='bots_write',device=session.device,result='refused:'+reason)
             await self.host.send_app(session,{'t':'ctl_res' if obj['t']=='bots_write' else 'bots_res','r':r,'action':obj['t'],'ok':False,'why':reason})
     async def start(self):
         self.host.st.perm_dir.mkdir(mode=0o700,parents=True,exist_ok=True)
@@ -172,6 +212,9 @@ class Manager:
         self.runtime=Runtime(self)
         self.runtime_task=asyncio.create_task(self.runtime.run())
     async def stop(self):
+        tasks=list(self.phone_tasks)
+        for session,_,_,_ in list(self.phone_tasks.values()):self.detach(session)
+        if tasks:await asyncio.gather(*tasks,return_exceptions=True)
         if self.runtime_task:
             self.runtime_task.cancel();await asyncio.gather(self.runtime_task,return_exceptions=True)
         for item in self.pending_calls.values():

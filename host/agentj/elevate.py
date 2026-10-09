@@ -712,8 +712,9 @@ class Elevator:
             with contextlib.suppress(Exception):
                 await on_card(c)
         self.host.push_notify("ask")
-        await self._to_phones(lambda s: self.card_msg(c, s))
+        cancelled=False
         try:
+            await self._to_phones(lambda s: self.card_msg(c, s))
             while True:
                 waits = [c["fut"]] + ([gone] if gone is not None else [])
                 left = c["deadline"] - time.monotonic()
@@ -738,6 +739,9 @@ class Elevator:
                         await self._to_phones(lambda s: self.card_msg(c, s))
                         continue
                     break
+        except asyncio.CancelledError:
+            cancelled=True
+            res={"result":"cancelled"}
         finally:
             self.cards.pop(c["id"], None)
             c.pop("priv", None)
@@ -755,6 +759,7 @@ class Elevator:
             remember(self.st, c["id"], {"result": res["result"], "until": None,
                                         **{k: res[k] for k in ("why", "detail", "receipt") if res.get(k) is not None}})
         res["id"] = c["id"]
+        if cancelled:raise asyncio.CancelledError
         return res
 
     async def on_phone(self, s, obj: dict) -> None:

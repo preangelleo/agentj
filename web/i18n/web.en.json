@@ -1337,5 +1337,6 @@
     "setup": "Set up Face ID",
     "copy": "Copy page link",
     "copied": "Page link copied; pair from the Home Screen icon."
-  }
+  },
+  "phoneEnv.iosAuth": "If Face ID is unavailable, check iOS Settings → General → AutoFill & Passwords: enable AutoFill Passwords and Passkeys and select Passwords. Check iCloud → Passwords (Keychain), Face ID & Passcode, and restrictions in Screen Time or device-management profiles. Each scan or pairing-link tap creates a new pairing; after pairing, open the same Home Screen icon."
 }

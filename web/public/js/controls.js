@@ -23,11 +23,17 @@ async function signed(action, target, extra) {
   const sig = new Uint8Array(await crypto.subtle.sign({ name: 'Ed25519' }, sk.priv, msg));
   return { ...extra, n, ts, sig: b64u(sig), [GEN]: g };
 }
-function command(obj) {                               // one signed write → the host's ctl_res
+function command(obj) {                               // pending acknowledgement extends only this request
   return new Promise((resolve) => {
-    const r = request(obj, (m) => { if (m.t === 'ctl_res') { done(r); resolve(m); } }, obj[GEN] ?? gen());
+    let timer, extended = false;
+    const finish = (m) => { clearTimeout(timer); done(r); resolve(m); };
+    const arm = (ms) => { clearTimeout(timer); timer = setTimeout(() => finish({ ok: false, why: 'timeout' }), ms); };
+    const r = request(obj, (m) => {
+      if (m.t === 'ctl_res' || m.t === 'offline') finish(m.t === 'offline' ? { ok: false, why: 'offline' } : m);
+      else if (!extended && m.t === 'ctl_pending' && obj.t === 'bots_write' && m.action === 'bots_write' && m.timeout_ms === 620000) { extended = true; arm(620000); }
+    }, obj[GEN] ?? gen());
     if (!r) resolve({ ok: false, why: 'offline' });
-    else setTimeout(() => { done(r); resolve({ ok: false, why: 'timeout' }); }, 20000);
+    else arm(20000);
   });
 }
 /** One signed write → ctl_res, never throws (the friends page, §17.7: fr_set pg_set pg_del fr_add fr_discoverable fr_card). */
