@@ -284,3 +284,19 @@ kbd, .aj-kbd { border: 1px solid var(--border); border-bottom-width: 2px; border
 .aj-hero h1 { max-width: 16em; }
 .aj-hero .aj-subtitle { max-width: 52ch; }
 .aj-hero__actions { display: flex; flex-wrap: wrap; gap: var(--sp-3); margin-top: var(--sp-6); }
+
+/* P87: shared action-group contract; icon toolbars remain compact. */
+button, .aj-btn, [role="tab"] { white-space: nowrap; }
+.aj-actions { display:flex; flex-wrap:wrap; gap:var(--sp-2); }
+@media (max-width: 600px) {
+  :is(.aj-actions, .aj-hero__actions, .actions, .site-os-tabs, .btn-row, .li-actions,
+      .plaza-tabs, .fr-askbtns, .apprbtns, .seg) {
+    display:flex !important; flex-direction:column !important; align-items:stretch !important;
+    flex-wrap:nowrap !important; width:100%; gap:var(--sp-2);
+  }
+  :is(.aj-actions, .aj-hero__actions, .actions, .site-os-tabs, .btn-row, .li-actions,
+      .plaza-tabs, .fr-askbtns, .apprbtns, .seg) > :is(button, .aj-btn, [role="tab"]) {
+    flex:0 0 auto !important; width:100% !important; max-width:100%; min-width:0 !important;
+    box-sizing:border-box; white-space:nowrap;
+  }
+}

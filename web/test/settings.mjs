@@ -277,7 +277,7 @@ try {
       await click(p, '#setBtn');
       await waitFor(p, `document.getElementById('set-risk').getAttribute('aria-checked') === 'true'`);
       assert.equal(await ev(p, `document.getElementById('set-risk-cmd').textContent`), 'agentj config set agent.high_risk_warnings false');
-      assert.equal(await ev(p, `document.getElementById('set-mode').textContent`), '共享：手机和电脑上用的是同一个会话');
+      assert.equal(await ev(p, `document.getElementById('set-mode').textContent`), '共享电脑会话');
       assert.equal(await ev(p, `document.getElementById('set-mode-cmd').textContent`), 'agentj config set agent.session_mode independent');
       // nothing on these rows can write: no switch, no pref_set
       assert.equal(await ev(p, `document.querySelectorAll('#set-risk-cmd, #set-mode-cmd').length === 2 && !!document.querySelector('#settings [data-pref^="agent."]')`), true);
@@ -293,7 +293,7 @@ try {
       await waitFor(p, `document.getElementById('set-risk').getAttribute('aria-checked') === 'true'`);
       assert.equal(fake.st.prefSets.at(-1).key, 'agent.high_risk_warnings');
       await click(p, '#set-mode');
-      await waitFor(p, `document.getElementById('set-mode').textContent === '共享：手机和电脑上用的是同一个会话'`);
+      await waitFor(p, `document.getElementById('set-mode').textContent === '共享电脑会话'`);
       assert.equal(fake.st.prefSets.at(-1).key, 'agent.session_mode');
       // F14 (P45b): isolation (default on) and docker (default off) switch from the phone
       assert.equal(await ev(p, `document.getElementById('set-iso').getAttribute('aria-checked')`), 'true');
@@ -412,7 +412,8 @@ try {
             const box = document.querySelector('#settings .box'), main = document.getElementById('set-main');
             const bad = [...document.querySelectorAll('#settings button:not([hidden]), #settings a')].filter((b) => b.offsetParent && b.getBoundingClientRect().height < 44).map((b) => b.id || b.textContent.trim().slice(0, 20));
             const wide = [...main.querySelectorAll('*')].filter((n) => n.getBoundingClientRect().right > main.getBoundingClientRect().right + 1).map((n) => n.id || n.className || n.tagName);
-            return { overflowX: main.scrollWidth > main.clientWidth || document.documentElement.scrollWidth > innerWidth, small: bad, wide: wide.slice(0, 5), boxW: Math.round(box.getBoundingClientRect().width) };
+            const scrolls=[...main.querySelectorAll('*')].filter(n=>n.offsetParent && n.scrollWidth>n.clientWidth+1).map(n=>({id:n.id,cl:n.className,sw:n.scrollWidth,cw:n.clientWidth,space:getComputedStyle(n).whiteSpace}));
+            return { scrolls, overflowX: main.scrollWidth > main.clientWidth || document.documentElement.scrollWidth > innerWidth, small: bad, wide: wide.slice(0, 5), boxW: Math.round(box.getBoundingClientRect().width) };
           })()`);
           assert.equal(audit.overflowX, false, JSON.stringify(audit));
           assert.deepEqual(audit.wide, [], JSON.stringify(audit));

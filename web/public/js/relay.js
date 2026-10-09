@@ -35,12 +35,12 @@ let wordsSrc = null;
 // empty-history line 「已连上你的电脑…」 (relay never showed a page before its reply; Agent J shows the say's page at once)
 function renderWords(text, pending = false){
   const tx = (text || "").trim();
-  const key = pending && !tx ? "\u0000pending" : tx;
+  const key = pending && !tx ? "\u0000pending:" + cur?.status : tx;
   if (key === wordsSrc) return;
   wordsSrc = key;
   const w = el("words");
   w.className = "words" + (!tx ? " empty" : tx.length > 600 ? " l" : tx.length > 240 ? " m" : "");
-  if (pending && !tx) w.replaceChildren(); else fill(w, tx);
+  fill(w, pending && !tx ? t(cur?.status === "working" ? "r.replyWorking" : "r.replyPending") : tx);
   afterWords();
   rdFollow(tx);
 }
@@ -419,10 +419,11 @@ function paintUsage(u){
   el("meta").title = u.source ? t('r.usage.age', {s: Math.round(u.age_s || 0)}) : t('r.usage.none');
   const windows = quotaWindows(u);
   for (const [idx, id] of ['mWeek', 'm5h'].entries()) {
-    const bar = el(id), x = windows[idx];
-    bar.hidden = !x; bar.dataset.known = x ? '1' : '0';
+    const bar = el(id), x = Array.isArray(u.quota_windows) ? windows[idx] : windows.find(w => w.window === (id === 'm5h' ? '5h' : 'weekly'));
+    bar.hidden = !x && id !== 'm5h'; bar.dataset.known = x ? '1' : '0';
+    bar.dataset.zero = x && x.pct === 0 ? '1' : '0';
     bar.firstElementChild.style.width = x ? x.pct + '%' : '0';
-    bar.querySelector('.lab').textContent = x ? `${x.window} ${Math.round(x.pct)}%` : '';
+    bar.querySelector('.lab').textContent = x ? `${x.window} ${Math.round(x.pct)}%` : (id === 'm5h' ? '5h —' : '');
     const label = x ? t('r.meter.' + ({weekly:'week',daily:'daily',monthly:'monthly','5h':'h5'}[x.window])) : '';
     bar.setAttribute('aria-label', x ? t('r.meter.used', {label, pct:x.pct}) : '');
     bar.title = bar.getAttribute('aria-label');
@@ -615,25 +616,30 @@ function paintLogo(st, kind){
 
 // ---- pages: every reply with the input it answered (relay ADR-033 / 036) -----------------
 // `hist` = the loaded turns of the host's history (§10.5); pageAt = index; `follow` = on the newest page. A NEW TURN
-// takes the reader to the newest page wherever they are (ADR-036); older pages loading at the front never move them.
+// follows visible replies only while the reader is at the tail and not reading/scrolled away (P87).
 const hist = {turns: [], count: 0, firstId: 0, lastId: 0, epoch: 0, route: true, busy: false, want: 0, older: false};
-let pageAt = -1, follow = true, pagesCache = null, shownKey = null;
+let pageAt = -1, follow = true, pagesCache = null, shownKey = null, unreadReply = false;
 const noticeReads = new Set();
 const isSilent = text => typeof text === "string" && text.trim() === "\u3014\u4e0d\u56de\u7fa4\u3015";
 const tailSeen = {primed: false, id: 0, reply: "", virt: false};
 function newTurnArrived(ps){
-  const tt = ps[ps.length - 1];
+  const tt = ps.findLast(p => visibleReply(p)) || {id: null, reply: ""};
   let arrived = false;
   if (tailSeen.primed && tt.id !== null) arrived = tt.id > tailSeen.id;
   if (tt.id !== null) tailSeen.id = Math.max(tailSeen.id, tt.id);
   tailSeen.reply = tt.reply; tailSeen.virt = tt.id === null; tailSeen.primed = true;
   return arrived && !isSilent(tt.reply);
 }
-function toNewest(){ follow = true; showPage(); }
+function visibleReply(p){ return typeof p?.reply === "string" && !!p.reply.trim() && !isSilent(p.reply); }
+function visiblePage(p){
+  const src = p.source;
+  return !isSilent(p.reply) && (visibleReply(p) || !!src?.text?.trim() || !!src?.att?.length || !!p.card);
+}
+function toNewest(){ follow = true; shownKey = null; stick = true; showPage(); }
 const SRC_KINDS = ["leo", "dev", "host", "agent", "sys", "task", "cmd"];
 function pages(){
   if (pagesCache) return pagesCache;
-  const out = hist.turns.filter(t => !isSilent(t.reply));
+  const out = hist.turns.filter(visiblePage);
   if (!out.length) out.push({id: null, reply: "", source: null, ts: null});
   return (pagesCache = out);
 }
@@ -650,7 +656,7 @@ function noteHistory(s){
 }
 function resetHistory(ep){
   hist.count = 0; hist.epoch = ep; hist.turns = []; hist.lastId = 0; hist.firstId = 0; hist.want = 0;
-  pagesCache = null; follow = true; pageAt = -1; tailSeen.id = 0;
+  pagesCache = null; follow = true; pageAt = -1; shownKey = null; tailSeen.id = 0; tailSeen.primed = false; unreadReply = false;
 }
 /** A turn pushed by the host (hist_turn): new, a reply part appended, or its end. */
 export function upsertTurn(p){
@@ -664,7 +670,7 @@ export function upsertTurn(p){
     if (!hist.firstId) hist.firstId = p.id;
   } else return;
   pagesCache = null;
-  if (p.source && p.source.k === "phone" && p.source.dev === C.myDev() && p.end === "open") follow = true;
+  if (p.source && ["phone","cmd"].includes(p.source.k) && p.source.dev === C.myDev() && p.end === "open" && !previous){ follow = true; shownKey = null; }
   showPage();
 }
 export function historyReset(ep){ resetHistory(ep); showPage(); }
@@ -713,7 +719,7 @@ async function loadOlderBatch(){
       hist.turns = older.concat(hist.turns); hist.firstId = j.first_id || hist.firstId;
       if (!older.length) hist.firstId = hist.turns[0].id;
       pagesCache = null;
-      const shown = older.filter(t => !isSilent(t.reply)).length;
+      const shown = older.filter(visiblePage).length;
       if (!follow) pageAt += shown;
       hist.older = false;
       return {all: older.length, shown};
@@ -750,7 +756,17 @@ function sourceOf(src){
 function showPage(){
   if (!C) return;
   const ps = pages();
-  if (newTurnArrived(ps)) follow = true;
+  const arrived = newTurnArrived(ps);
+  const oldId = shownKey === null ? null : shownKey.split("|")[0];
+  const pinned = ps.findIndex(p => String(p.id === null ? "live" : p.id) === oldId);
+  const tail = ps[ps.length - 1];
+  if (pinned >= 0 && pinned < ps.length - 1 && (!follow || !stick || (mainEl && !atBottom()) || rdAt || !visibleReply(tail))){
+    pageAt = pinned; follow = false;
+  }
+  if (arrived && follow && stick && !rdAt) follow = true;
+  if (arrived && !follow) unreadReply = true;
+  if (follow) unreadReply = false;
+  el("newReply").hidden = !unreadReply;
   if (follow || pageAt < 0 || pageAt > ps.length - 1) {
     pageAt = ps.length - 1;
   }
@@ -805,7 +821,8 @@ function showPage(){
     setOm(false);
     if (moved) stick = true;
   }
-  renderWords(p.reply || (p.end === "open" || p.id === null ? "" : t('r.noReply')), p.end === "open" && p.id !== null);
+  renderWords((isSilent(p.reply) ? "" : p.reply?.trim()) || (p.end === "open" || p.id === null ? "" : t('r.noReply')), p.end === "open" && p.id !== null);
+  el("words").classList.toggle("empty", !visibleReply(p));
   renderMedia(el("words"), p);
   if (rdAt && rdAt.key === shownKey) renderReaderMedia(el("rdWords"), p);   // P59: the reader's slots, same Blobs
   document.body.dataset.pageOpen = p.end === "open" ? "1" : "0";
@@ -864,15 +881,15 @@ async function goPage(delta){
     ps = pages(); at = pageAt - 1;
   }
   if (at < 0 || at > ps.length - 1) return false;
-  pageAt = at; follow = at === ps.length - 1;
+  pageAt = at; follow = at === ps.length - 1; shownKey = null;
   showPage();
   return true;
 }
 async function goEdge(newest){
-  if (newest){ follow = true; showPage(); return; }
+  if (newest){ toNewest(); return; }
   follow = false; pageAt = 0;
   while (await loadOlder()) {}
-  pageAt = 0; showPage();
+  pageAt = 0; shownKey = null; showPage();
 }
 
 // Copy: y the reply, Y the input. What is copied is the stored text, not the rendering.
@@ -932,7 +949,7 @@ async function jumpToTurn(id){
   if (hist.turns.some(p => p.id === id && isSilent(p.reply))){ openSilent(id); return; }
   const i = pages().findIndex(p => p.id === id);
   if (i < 0){ toast(t('r.quote.gone'), 2200); return; }
-  pageAt = i; follow = i === pages().length - 1; showPage();
+  pageAt = i; follow = i === pages().length - 1; shownKey = null; showPage();
 }
 
 // ---- select to quote (relay ADR-046; §10.6 excerpt) ---------------------------------------
@@ -2152,7 +2169,7 @@ async function showTurn(id){
   if (rdOpen()) closeReader();
   for (let n = 0; n < 40; n++){
     const ps = pages(), i = ps.findIndex(p => p.id === id);
-    if (i >= 0){ pageAt = i; follow = i === ps.length - 1; showPage(); return true; }
+    if (i >= 0){ pageAt = i; follow = i === ps.length - 1; shownKey = null; showPage(); return true; }
     if (id > hist.lastId){ syncHistory(id); await new Promise(r => setTimeout(r, 250)); continue; }
     if (!(await loadOlder())) break;
   }
@@ -2440,6 +2457,7 @@ export function init(ctx){
 
   el("omMore").addEventListener("click", () => setOm(!el("om").classList.contains("open")));
   el("pgPrev").addEventListener("click", () => goPage(-1));
+  el("newReply").addEventListener("click", toNewest);
   el("pgNext").addEventListener("click", () => goPage(1));
   el("copyReply").addEventListener("click", copyReply);
   el("replyBtn").addEventListener("click", () => startReply(currentPage()));
@@ -2919,7 +2937,7 @@ export function applyPreferences(value){
   loadMenu();
 }
 export function announceTurn(turn,old){
-  if(isSilent(typeof turn.reply === 'string' ? turn.reply : turn.reply?.text) || !old || turn.end!=='done' || new URLSearchParams(location.search).has('watcher'))return;
+  if(!visibleReply({reply:typeof turn.reply === 'string' ? turn.reply : turn.reply?.text}) || !old || turn.end!=='done' || new URLSearchParams(location.search).has('watcher'))return;
   if(userPreferences.voice?.speak_replies)speaker?.tap(turn.id,typeof turn.reply==='string'?turn.reply:(turn.reply?.text||''));
   else if(userPreferences.voice?.speak_notifications && userPreferences.voice?.tts?.mode==='phone')speaker?.tap('notification-'+turn.id,t('preferences.notification'));
 }

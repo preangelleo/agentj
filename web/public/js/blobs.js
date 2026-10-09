@@ -11,7 +11,7 @@ import { b64u } from '../proto/wire.js';
 export const CHUNK = 45056;
 export const WINDOW = 8;
 export const MAX_BYTES = 26214400;          // 25 MiB
-export const ASR_MAX_BYTES = 3840044;        // 120 s of 16 kHz mono PCM16 + header
+export const ASR_MAX_BYTES = 20160044;       // 630 s of 16 kHz mono PCM16 + header
 export const MAX_ATT = 10;
 export const MAX_OPEN = 2;                   // ≤ 2 open uploads per device (host limit)
 const STALL_MS = 45000;

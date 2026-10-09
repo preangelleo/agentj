@@ -187,9 +187,14 @@ def norm_sudo(req: dict) -> dict:
     timeout = req.get("timeout", CMD_TIMEOUT)
     if type(timeout) is not int or not 1 <= timeout <= CMD_TIMEOUT_MAX:
         raise Refused("shape", f"timeout: 1–{CMD_TIMEOUT_MAX} s")
+    if sys.platform == "darwin" and re.search(r"with\s+administrator\s+privileges", cmd, re.I):
+        raise Refused("local_authorization", "Use agentj sudo with the direct command; osascript administrator privileges opens a local dialog.")
+    effect = _text(req.get("effect"), 300, required=False, field="effect")
+    if local_auth_risk():
+        effect = (effect[:50] + "\n" + "本机 sudo 启用了生物验证，可能弹 Touch ID；此命令将拒绝执行。请在电脑前关闭 sudo Touch ID，见 /docs/keep-awake/。 / Local sudo biometrics may open Touch ID. Command will be refused; disable sudo Touch ID locally first. See /docs/keep-awake/.").strip()
     return {"kind": "sudo", "argv": list(argv), "cmd": cmd, "cwd": cwd, "timeout": timeout,
             "why": _text(req.get("why"), 300, required=True, field="why"),
-            "effect": _text(req.get("effect"), 300, required=False, field="effect")}
+            "effect": effect}
 
 
 def parse_dest(dest: str, name: str, cwd: str | None, state_root: pathlib.Path) -> dict:
@@ -266,6 +271,42 @@ def norm_secret(req: dict, state_root: pathlib.Path) -> dict:
 
 
 # ---------------------------------------------------------------- running sudo
+LOCAL_AUTH_HINT = ("本机可能弹 Touch ID/Apple Watch 验证，远程时无法继续；请在电脑前用 sudoedit /etc/pam.d/sudo_local "
+                   "注释启用的 pam_tid.so/pam_reattach.so 行（旧配置检查 /etc/pam.d/sudo），保留密码认证；不要远程自动修改 PAM。"
+                   " / Local Touch ID/Watch authorization may block remote use. At the computer, use sudoedit to disable the "
+                   "enabled biometric PAM lines, preserving password authentication. See /docs/keep-awake/.")
+
+
+def local_auth_risk(pam_dir=None) -> list[str]:
+    """Conservative macOS preflight, active lines only; no biometric/PAM writes."""
+    if sys.platform != "darwin":
+        return []
+    root = pathlib.Path(pam_dir or "/etc/pam.d")
+    pending, seen, found = ["sudo"], set(), []
+    while pending and len(seen) < 16:
+        name = pending.pop()
+        if name in seen:
+            continue
+        seen.add(name)
+        try:
+            text = (root / name).read_text()
+        except FileNotFoundError:
+            continue
+        except OSError:
+            found.append("unreadable PAM: " + name)
+            continue
+        for line in text.splitlines():
+            line = line.split("#", 1)[0].strip()
+            if not line:
+                continue
+            if re.search(r"pam_(?:tid|reattach|watchid)\.so", line, re.I):
+                found.append(name + ": " + line)
+            m = re.match(r"auth\s+include\s+([a-zA-Z0-9_-]+)$", line)
+            if m:
+                pending.append(m[1])
+    return found
+
+
 def sudo_bin() -> str | None:
     return os.environ.get("AGENTJ_SUDO_BIN") or shutil.which("sudo") or ("/usr/bin/sudo" if os.path.exists("/usr/bin/sudo") else None)
 
@@ -278,6 +319,9 @@ def run_sudo(argv: list[str], password: bytearray, cwd: str, timeout: int, sudo:
     """`sudo -S -k -p <random marker> -- argv`, the password + newline on stdin and nothing else; → {result, code, stdout,
     stderr, truncated}. result: done (the command ran; `code` is its exit status) · bad_password · timeout · no_sudo.
     A wrong password shows as a second prompt (sudo asks again after "Sorry, try again", then gets EOF)."""
+    if local_auth_risk():
+        return {"result": "failed", "why": "local_auth_required", "code": None, "stdout": "", "stderr": "", "truncated": False,
+                "detail": LOCAL_AUTH_HINT}
     sudo = sudo or sudo_bin()
     if not sudo:
         return {"result": "no_sudo", "code": None, "stdout": "", "stderr": "", "truncated": False}
@@ -884,6 +928,17 @@ class Elevator:
                     return
             line = await asyncio.wait_for(r.readline(), 10)
             req = json.loads(line)
+            if isinstance(req, dict) and req.get("t") == "keep_awake":
+                from . import keep_awake
+                if req.get("action") not in ("status", "on", "off") or req.get("power") not in ("ac", "battery", "all") or type(req.get("dry_run")) is not bool:
+                    raise Refused("shape", "keep_awake: fixed action/power and boolean dry_run")
+                # User state is outside the Agent fence. Each root change still creates
+                # its own normal signed phone card through this same socket.
+                res = await asyncio.to_thread(keep_awake.execute, req["action"], req["power"], req["dry_run"], self.st)
+                w.write((json.dumps(res, ensure_ascii=False) + "\n").encode())
+                await w.drain()
+                w.close()
+                return
             if isinstance(req,dict) and req.get('t')=='provider_profile':
                 from . import provider_profiles
                 # Same-user Agent-facing socket; fixed native provider targets only.
@@ -978,6 +1033,7 @@ MSG = {
     "no_device": "没有能批准的已配对手机。/ No paired phone that can approve.",
     "busy": "已经有太多张卡在等手机处理。/ Too many cards are already waiting on the phone.",
     "unavailable": "Agent J 没在运行（agentj service status）。/ Agent J is not running.",
+    "local_auth_required": LOCAL_AUTH_HINT,
     "no_sudo": "这台电脑上没有 sudo。/ No sudo on this computer.",
     "failed": "没有完成：{why}。/ Not done: {why}.",
     "refused": "请求不合格：{detail}。/ Request refused: {detail}.",
@@ -1000,6 +1056,8 @@ EXIT_PENDING = 75
 
 
 def _say(res: dict, kind: str = "") -> str:
+    if res.get("why") == "local_auth_required":
+        return LOCAL_AUTH_HINT
     table = {**MSG, **SECRET_MSG} if kind in ("secret", "secret_out") else MSG
     return table.get(res.get("result"), str(res.get("result"))).format(
         secs=res.get("secs", ""), why=res.get("why", ""), detail=res.get("detail") or res.get("why") or "", id=res.get("id", ""))

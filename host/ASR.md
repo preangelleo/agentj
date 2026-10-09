@@ -80,8 +80,9 @@ otherwise invents a word ("그.", "Okay."). `<|zh|><|NEUTRAL|><|Speech|><|withit
 
 Install: 178 MB download (GitHub route), **295 MB on disk** (model 240 MB + venv 55 MB), 13–17 s end to end on a fast
 line (ModelScope route 56 s). Memory: **≈ 470 MB peak RSS** for 16 kHz takes up to 10 min at 1 or 2 threads (670 MB for a
-10-min 48 kHz stereo file), freed when the worker idles out. A slower CPU (2018 dual-core) is untested: the 60 s
-per-take timeout bounds it.
+10-min 48 kHz stereo file), freed when the worker idles out. A slower Intel Mac (2018 dual-core) remains untested.
+P87 gives each recording 180 s cold-start + 6×duration, capped at 3960 s; FIFO waiting does not consume that allowance.
+A ten-minute WAV completed on one Linux CPU in 97.62 s (P87 real-engine regression), without claiming Intel Mac qualification.
 
 ## API for serve (`agentj.asr`)
 

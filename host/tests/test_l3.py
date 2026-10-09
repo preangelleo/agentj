@@ -299,7 +299,7 @@ class ServeWithoutTerminal(unittest.TestCase):
 
 
 class Doctor(unittest.TestCase):
-    IDS = ["version", "python", "platform", "state", "relay", "dashboard", "agent", "agent_cli", "harness", "fence", "danger", "passphrase",
+    IDS = ["version", "python", "platform", "state", "keep-awake", "relay", "dashboard", "agent", "agent_cli", "harness", "fence", "danger", "passphrase",
            "bound", "onboard", "serve", "friends", "service", "alias", "estop", "tasks", "activity"]
 
     def setUp(self):

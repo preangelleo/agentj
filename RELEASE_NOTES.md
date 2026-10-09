@@ -1,26 +1,20 @@
-# Agent J 0.16.5a1 release notes
+# Agent J 0.16.6a1 release notes
 
-Host 0.16.5a1 / install 0.20.5; phone-web scope.
+Host 0.16.6a1 / install 0.20.6; phone-web scope.
 Phone parity must pass --strict. Full Android/Telegram parity is incomplete.
 Full Android/Telegram parity is incomplete.
 No APK is included in this release. Android source is for review, not a released app.
 
 Publication status: local preparation only. Live site verification is DEFERRED until
 the public commit and tag are pushed, the site is deployed, and cold installation passes.
+The operator must finish LIVE verification or restore host 0.11 / install 0.15 by 12:30 JST.
 
-On publication failure, restore v0.16.4a1 / public 574285c9 and its site/phone artifacts.
 ## Changes
 
-- Default-on nightly updates; an explicit owner opt-out survives. agentj config auto-update on|off|status.
-- One random local 03:00–05:00 opportunity daily, only after 30 idle phone minutes with no Agent turn, approval, task, friend session or emergency stop; otherwise tomorrow.
-- Manual and nightly updates use the same signed wheel verifier. Cache hits and installation revalidate publisher signatures; retain the previous RECORD-verified wheel locally for rollback.
-- Independent restartable recovery worker, upgrade-only self-checks, rollback on failure, durable activity and one owner notice; doctor reports the setting and last result.
-- No forced /clear of shared Claude; existing owner settings boundaries remain. Older hosts must first install 0.16.5a1 to gain the scheduler.
-- A then B; no new Dashboard, relay or database migration.
-
-- Final signed wheel tested on real isolated Linux user-systemd with injected local time, including a killed worker completing after manager retry; test units removed.
-- Frozen package audited on the paid QA host; real Noise/browser/model loop, temporary provider and device cleaned. Shared-issuer stages reuse authentic P80 evidence only where shared source is unchanged.
-- Physical macOS, iPhone/Android and customer native shared threads remain untested; no inference from browser fixtures.
+- Sparse JSON5 configuration with transactional application, configuration history and migrations.
+- Optional configuration skill for locally installed agent harnesses; owner permission required.
+- Opt-in own-key cloud speech and local phone read-aloud.
+- Optional owner-private Telegram text input and final replies.
 
 ## Material acceptance limits
 

@@ -23,7 +23,19 @@ EXCERPT_MAX = 2000
 SEND_TTL = 600
 MAX_SENDS = 16                  # not yet handed to the Agent, per device (the 17th is refused: too_many)
 SEEN_MAX = 1024                 # sids remembered per device (dup), independent of SEND_TTL
-SAY_ASR_BUDGET = 60.0
+SAY_ASR_BUDGET = 3960.0  # maximum per recording, including cold start on slow CPUs
+
+def asr_budget(seconds=None):
+    """180 s cold start + six times recording duration; unknown duration gets the full budget.
+
+    Queue waiting is outside this processing budget. A recording is bounded to 630 s by the WAV decoder.
+    This is a conservative allowance, not an Intel Mac performance measurement.
+    """
+    import math
+    if not isinstance(seconds, (int, float)) or isinstance(seconds, bool) or not math.isfinite(seconds) or seconds <= 0:
+        return SAY_ASR_BUDGET
+    return min(SAY_ASR_BUDGET, 180.0 + 6.0 * seconds)
+
 
 T = {
     "zh": {
@@ -36,7 +48,7 @@ T = {
         "excerpt": "（摘录）",
         "voice_only_fail": "（这条消息只有语音、没有文字，而且语音没转写出来。请简短告诉对方没听清，请他再说一遍或者打字——不要自己猜他说了什么。）",
         "who": {"phone": "你", "host": "电脑", "agent": "Agent", "sys": "系统", "task": "定时任务", "cmd": "命令"},
-        "why": {"timeout": "超过 60 秒", "no_speech": "没有听到说话", "not_installed": "电脑上还没装语音转写",
+        "why": {"timeout": "处理超时", "no_speech": "没有听到说话", "not_installed": "电脑上还没装语音转写",
                 "off": "语音转写已关闭", "broken": "转写器出错", "busy": "转写器忙", "bad_audio": "音频格式不对",
                 "format": "格式", "cancelled": "已取消"},
     },
@@ -53,7 +65,7 @@ T = {
                            "did not catch it and ask them to say it again or type it — do not guess what was said.)",
         "who": {"phone": "you", "host": "computer", "agent": "Agent", "sys": "system", "task": "scheduled task",
                 "cmd": "command"},
-        "why": {"timeout": "over 60 s", "no_speech": "no speech heard", "not_installed": "local transcription is not installed",
+        "why": {"timeout": "processing timed out", "no_speech": "no speech heard", "not_installed": "local transcription is not installed",
                 "off": "transcription is off", "broken": "the transcriber failed", "busy": "the transcriber is busy",
                 "bad_audio": "wrong audio format", "format": "format", "cancelled": "cancelled"},
     },

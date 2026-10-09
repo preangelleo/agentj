@@ -369,7 +369,7 @@
     },
     "empty": "No messages yet",
     "emptyReady": "Connected to your computer. Say something to the Agent; when it needs your OK, it asks you here.",
-    "noReply": "(no reply to this one)",
+    "noReply": "(No text reply)",
     "part": "part {k}/{n}",
     "om": {
       "aria": "Original message",
@@ -802,7 +802,10 @@
       "title": "⬆ Upgrade Agent J",
       "current": "Already up to date",
       "authorize": "Tap to authorize upgrade"
-    }
+    },
+    "replyPending": "Delivered, waiting for the computer…",
+    "replyWorking": "Working…",
+    "newReply": "New reply — tap to view"
   },
   "preferences": {
     "notification": "Your agent has replied.",
@@ -880,8 +883,8 @@
     "risk": "High-risk warnings",
     "riskNote": "Extra high-risk warnings are off by default. Change them here; AI coding tool permissions always apply.",
     "mode": "Session mode",
-    "modeShared": "Shared: the phone and the computer use the same session",
-    "modeIndependent": "Independent: the phone has a session of its own",
+    "modeShared": "Share the computer session",
+    "modeIndependent": "Use a separate session",
     "modeNote": "Tap to switch shared or independent sessions. Shared mode keeps the existing desktop session permissions.",
     "iso": "Isolation (independent sessions)",
     "isoNote": "On: an Agent in an independent session can't see Agent J's keys or pairing data. Off: it runs with the AI coding tool's own permissions. Applies the next time the Agent starts.",

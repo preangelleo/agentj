@@ -429,6 +429,33 @@ class _Prep(_Chain):
 class ClaudePrep(_Prep):
     KIND = "claude"
 
+    def test_preparation_accepts_native_interrupt_before_sleep_finishes(self):
+        """The native stand-in must consume controls during a slow preparation, like Claude does."""
+        os.environ["FAKE_PREP_SLEEP"] = "6"
+
+        async def script(c):
+            await c["say"]("你好")
+            await c["wait"](lambda: any(m["text"] == "ECHO: 你好" for m in c["msgs"]()))
+            await c["idle"]()
+            a = c["host"].agent
+            key = compactprep.session_key(a)
+            compactprep.ensure_dir(str(self.work))
+            old_done = a.turn_done
+            task = asyncio.create_task(a.turn(compactprep.PREP["zh"].format(
+                path=compactprep.handover_path(a, key))))
+            try:
+                await c["wait"](lambda: a.turn_done is not old_done)
+                await asyncio.wait_for(a.control("interrupt"), 2)
+                await asyncio.wait_for(task, 2)
+                self.assertEqual(self.handovers(), [], "interrupted preparation cannot write the handover")
+            finally:
+                if not task.done():
+                    await a.halt(clear_queue=False)
+                    task.cancel()
+                    with contextlib.suppress(asyncio.CancelledError):
+                        await task
+        self.run_chain(script)
+
     def test_prepare_then_compact(self):
         self.flow_prepare_then_compact()
 

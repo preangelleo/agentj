@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { buttonAuditSource } from '../../brand/test/button-audit.mjs';
 // Web client: screenshots + layout audit + full client flow + relay-parity cases against a local fake relay/host, in an
 // INDEPENDENT headless Chromium (test/browser.mjs: own profile, random debugging port — never the shared CDP on :9222;
 // Chromium's fake camera + microphone). public/ is served by test/serve.mjs (Worker headers, connect-src ws://127.0.0.1:*).
@@ -27,7 +28,7 @@ import { dictionaries } from '../build.mjs';
 import { parityRecorder } from '../../parity/lib.mjs';
 
 const SHOTS = process.env.AJ_SHOTS || '/tmp/aj-web-shots';
-const SIZES = [['mobile', 360, 800], ['desktop', 1440, 900]];
+const SIZES = [['mobile', 360, 800], ['phone390',390,844], ['desktop', 1440, 900]];
 const SCHEMES = ['light', 'dark'];
 const D = dictionaries();
 const ZH = D.zh, EN = D.en;
@@ -63,6 +64,7 @@ async function layoutOk(p, label) {
       .filter((e) => !e.closest('[hidden]'))
       .map((e) => ({ e, r: e.getBoundingClientRect(), h: hit(e) })).filter(({ r, h }) => (r.height < 44 && h[1] < 42) || (r.width < 44 && h[0] < 42))
       .map(({ e, r }) => (e.id || e.className || e.tagName) + ' ' + Math.round(r.width) + 'x' + Math.round(r.height));
+  small.push(...${buttonAuditSource});
     const wide = [...document.querySelectorAll('body *')].filter(vis).filter((e) => { const r = e.getBoundingClientRect(); return r.right > innerWidth + 1 && getComputedStyle(e).position !== 'fixed'; })
       .filter((e) => !e.closest('.tablewrap, .codeblock, pre, .hash, .tray, .deck, .rd, .water')).slice(0, 5).map((e) => e.id || e.className || e.tagName);
     return { sw: document.documentElement.scrollWidth, iw: innerWidth, small, wide, waves:[...document.querySelectorAll(".water .wave")].filter(vis).map(e=>({width:e.getBoundingClientRect().width,parent:e.parentElement.getBoundingClientRect().width})) };

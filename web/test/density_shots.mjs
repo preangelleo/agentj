@@ -32,6 +32,8 @@ export async function chatWithLongReplies(B, fake, BASE, w, h, extra = {}) {
   await fake.addTurn({ k: 'phone', dev: 'other', text: '帮我对一下三家供应商的报价，做个补货清单' }, LONG[0]);
   await fake.addTurn({ k: 'phone', dev: 'other', text: 'Summarise it in English too' }, LONG[1]);
   await fake.addTurn({ k: 'phone', dev: 'other', text: '做成表格，顺便看看退货' }, LONG[2]);
+  await waitFor(p, `document.getElementById('words').textContent.includes('stock.xlsx') || !document.getElementById('newReply').hidden`);
+  await evaluate(p, `!document.getElementById('newReply').hidden && document.getElementById('newReply').click()`);
   await waitFor(p, `document.getElementById('words').textContent.includes('stock.xlsx')`);
   await sleep(400);
   return p;

@@ -126,7 +126,20 @@ def p57_prepare(text):
     import re as _re
     m = _re.search(r"`([^`]*\.agentj/handover/[^`]+\.md)`", text)
     if os.environ.get("FAKE_PREP_SLEEP"):
-        time.sleep(float(os.environ["FAKE_PREP_SLEEP"]))
+        # Native Claude consumes control requests during a turn. A blocking fixture sleep
+        # made preparation timeout/restart race against an unresponsive fake process.
+        import select
+        until = time.monotonic() + float(os.environ["FAKE_PREP_SLEEP"])
+        while (remaining := until - time.monotonic()) > 0:
+            readable, _, _ = select.select([sys.stdin], [], [], remaining)
+            if not readable:
+                break
+            request = json.loads(sys.stdin.readline())
+            if request.get("type") != "control_request":
+                raise RuntimeError("unexpected user input during fixture preparation")
+            control(request)
+            if request.get("request", {}).get("subtype") == "interrupt":
+                return None                      # interrupted work cannot write a handover
     if m and os.environ.get("FAKE_NO_HANDOVER") != "1":
         with open(m.group(1), "w") as f:
             f.write("# Handover\n- goal: the user's words\n- done / in progress / next\n- decisions\n- paths\n- open questions\n")
@@ -226,7 +239,7 @@ for line in sys.stdin:
             "trigger": "manual", "pre_tokens": 21262, "post_tokens": 1344, "duration_ms": 1100}})
         synthetic(last_synth[0])                      # Claude Code re-sends the kept synthetic message: not a new reply
         out({"type": "rate_limit_event", "rate_limit_info": {"status": "allowed", "unifiedWindows": {
-            "five_hour": {"utilization": 0.45, "resetsAt": 1790946000}, "seven_day": {"utilization": 0.47, "resetsAt": 1791140400}}}})
+            "five_hour": {"utilization": 0.45, "resetsAt": int(time.time()) + 18000 if os.environ.get("FAKE_FRESH_WINDOWS") else 1790946000}, "seven_day": {"utilization": 0.47, "resetsAt": int(time.time()) + 604800 if os.environ.get("FAKE_FRESH_WINDOWS") else 1791140400}}}})
         out({"type": "result", "subtype": "success", "is_error": False, "result": "", "local_command": "compact", "session_id": sid})
         continue
     if text == "/cost":
@@ -262,7 +275,9 @@ for line in sys.stdin:
                 continue
             say(run_one(step))
     elif text.startswith("[agentj:compact-prepare]"):
-        say(p57_prepare(text))
+        prepared = p57_prepare(text)
+        if prepared is not None:
+            say(prepared)
     elif text == "SLOW":
         time.sleep(1.5)
         say("慢回复")
@@ -278,5 +293,5 @@ for line in sys.stdin:
     else:
         say(f"ECHO: {text}")
     out({"type": "rate_limit_event", "rate_limit_info": {"status": "allowed", "unifiedWindows": {
-        "five_hour": {"utilization": 0.45, "resetsAt": 1790946000}, "seven_day": {"utilization": 0.47, "resetsAt": 1791140400}}}})
+        "five_hour": {"utilization": 0.45, "resetsAt": int(time.time()) + 18000 if os.environ.get("FAKE_FRESH_WINDOWS") else 1790946000}, "seven_day": {"utilization": 0.47, "resetsAt": int(time.time()) + 604800 if os.environ.get("FAKE_FRESH_WINDOWS") else 1791140400}}}})
     out({"type": "result", "subtype": "success", "is_error": False, "result": "", "session_id": sid})

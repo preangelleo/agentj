@@ -102,6 +102,15 @@ def check_platform() -> dict:
     return _c("platform", WARN, sys.platform, "未测试的系统 / untested OS (Linux, macOS, WSL2 are supported)")
 
 
+def check_keep_awake() -> dict:
+    from . import keep_awake
+    r = keep_awake.status()
+    return _c("keep-awake", OK if r.get("awake") is True else WARN,
+              "主机自动休眠已禁用（接电源）/ Host idle sleep disabled (AC)" if r.get("awake") is True else
+              "主机可能休眠或无法确认 / Host may sleep or policy is unknown",
+              "agentj keep-awake status --json · agentj keep-awake on; " + (r.get("guidance") or keep_awake.LIMITS))
+
+
 def check_state(st: State) -> dict:
     if not st.exists():
         return _c("state", FAIL, f"没初始化 / not initialised ({tilde(str(st.root))})", "agentj init")
@@ -724,7 +733,7 @@ def check_update(offline: bool = False) -> dict:
 def run(st: State | None = None, offline: bool = False) -> list[dict]:
     st = st or State()
     svc = service.status()
-    out = [check_version(), check_python(), check_platform(), check_state(st)]
+    out = [check_version(), check_python(), check_platform(), check_state(st), check_keep_awake()]
     if offline:
         out += [_c("relay", WARN, "跳过 / skipped (--offline)"), _c("dashboard", WARN, "跳过 / skipped (--offline)")]
     else:

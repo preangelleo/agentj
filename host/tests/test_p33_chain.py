@@ -23,7 +23,7 @@ import unittest
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 from agentj import agent_opencode as oc  # noqa: E402
-from agentj import approvals, fence, serve, uploads, wire  # noqa: E402
+from agentj import approvals, compose, fence, serve, uploads, wire  # noqa: E402
 
 from test_l1 import Phone, _host, _state  # noqa: E402
 from test_p33 import b64, png, wav  # noqa: E402
@@ -425,7 +425,7 @@ class ClaudeChain(_Chain):
             self.assertEqual(c["of"]("asr_res")[-1]["why"], "not_installed")
         self.run_chain(script, asr=asr)
         self.assertEqual(len(asr.calls), 2)
-        self.assertTrue(all(t <= 60 for _, t in asr.calls))
+        self.assertTrue(all(60 < t <= compose.SAY_ASR_BUDGET for _, t in asr.calls))
 
 
 # ------------------------------------------------------------------ Codex

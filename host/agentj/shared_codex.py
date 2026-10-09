@@ -196,6 +196,14 @@ class SharedCodexAgent(CodexAgent):
             if isinstance(stored,str) and UUID.fullmatch(stored):
                 self.cfg["shared_session_id"]=stored
 
+    async def cmd_clear(self, arg):
+        from .slash import Result
+        return Result("没清成：Codex app-server 只能新建另一线程，不能替桌面切换当前线程。请在桌面 /new 后指定新线程；手机历史和水位保留。 / Not cleared: app-server cannot switch the desktop's active thread. Use desktop /new and select it; phone history and meter are unchanged.", "refused")
+
+    async def cmd_undo_clear(self, arg):
+        from .slash import Result
+        return Result("没有执行：共享 Codex 请在桌面 /resume 恢复原线程。 / Not executed: use desktop /resume for the original thread.", "refused")
+
     def start(self):
         super().start()
         self.observer = asyncio.create_task(self.observe())
@@ -341,6 +349,9 @@ class SharedCodexAgent(CodexAgent):
                 if item.get('type')=='response_item' and p.get('type')=='message':
                     role=p.get('role')
                     text='\n'.join(b.get('text','') for b in p.get('content',[]) if isinstance(b,dict) and b.get('type') in ('input_text','output_text'))
+                    from .transcript_input import human_input
+                    if role == 'user' and not human_input(p, p.get('content'), text):
+                        continue
                     if text and role in ('user','assistant'):
                         (self.host.desktop_input if role=='user' else self.host.desktop_text)(public_text(text))
                 elif item.get('type')=='event_msg' and p.get('type') in ('task_complete','turn_aborted'):

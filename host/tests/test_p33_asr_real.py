@@ -207,5 +207,25 @@ class RealEngineServe(_Chain):
         self.run_chain(script)
 
 
+    def test_p87_ten_minute_wav_on_one_cpu(self):
+        """Actual decoder/model, one CPU, 600 s speech fixture; no network or owner audio."""
+        from agentj import compose
+        pcm=(self.zh_pcm + bytes(16000))
+        pcm=(pcm*((16000*2*600)//len(pcm)+1))[:16000*2*600]
+        path=write_wav(self.clips / 'p87-ten-min.wav',pcm)
+        self.assertTrue(uploads.wav_ok(str(path)), 'host must admit the whole ten-minute WAV')
+        affinity=os.sched_getaffinity(0) if hasattr(os,'sched_getaffinity') else None
+        try:
+            if affinity: os.sched_setaffinity(0,{min(affinity)})
+            import time
+            started=time.monotonic()
+            result=asr.transcribe(str(path),timeout_s=compose.asr_budget(600),state_dir=_ENGINE['state'])
+            print(f"P87 ten-minute WAV: one_cpu={bool(affinity)}, processing_s={time.monotonic()-started:.2f}, ok={bool(result.get('ok'))}")
+            self.assertTrue(result.get('ok'),result)
+            self.assertTrue(result.get('text','').strip())
+        finally:
+            if affinity: os.sched_setaffinity(0,affinity)
+
+
 if __name__ == "__main__":
     unittest.main()

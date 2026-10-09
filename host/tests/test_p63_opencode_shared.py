@@ -237,9 +237,14 @@ class OwnerV2(_DefaultMode, p60.V2Chain):
             await c.wait(lambda: ("text", "OUT: desk-ok") in mirror)
             await asyncio.sleep(0.3)
             self.assertIs(c.host.agent.proc is not None, True)
-            # slash commands stay on the desktop
+            # P88: session/model selection remains desktop-owned; native compact
+            # now uses this exact attached session's API and refreshes its meter.
             r = await a.command("model", "opencode/chat")
             self.assertEqual(r.kind, "error")
+            r = await a.command("compact", "")
+            self.assertEqual(r.kind, "ok", r.text)
+            self.assertEqual(a.sid, self.owner_sid)
+            self.assertNotIn("SUMMARY (not a reply)", c.msgs())
             await c.say("again")
             await c.wait(lambda: "ECHO: again" in c.msgs())
             await c.idle()

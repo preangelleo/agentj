@@ -31,6 +31,9 @@ class OriginalThread(unittest.TestCase):
   with patch('agentj.shared_codex.selected_rollout',return_value=self.path):a.read_desktop()
   records=[{'type':'response_item','payload':{'type':'message','role':'user','content':[{'type':'input_text','text':'keyboard'}]}}, {'type':'response_item','payload':{'type':'message','role':'assistant','content':[{'type':'output_text','text':'reply'}]}}, {'type':'response_item','payload':{'type':'function_call_output','output':'never mirror'}}]
   with self.path.open('a') as f:f.write(''.join(json.dumps(r)+'\n' for r in records))
+  with self.path.open('a') as f:
+   for text in ('<system-reminder>hook</system-reminder>', 'Base directory for this skill: test', 'This session is being continued from a previous conversation'):
+    f.write(json.dumps({'type':'response_item','payload':{'type':'message','role':'user','content':[{'type':'input_text','text':text}]}})+'\n')
   a.read_desktop();a.read_desktop()
   host.desktop_input.assert_called_once_with('keyboard');host.desktop_text.assert_called_once_with('reply')
   a.phone_turn=True

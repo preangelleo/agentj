@@ -1,5 +1,5 @@
 {
-  "version": "0.16.5a1",
-  "zh": "夜间闲置自动升级，失败自动回滚并告知主人",
-  "en": "Nightly idle upgrades with automatic rollback and owner notification"
+  "version": "0.16.6a1",
+  "zh": "阅读焦点与十分钟语音改进；共享会话清空和压缩确认；可恢复的防休眠设置与 Mac 授权提示",
+  "en": "Reading focus and ten-minute voice improvements; confirmed shared clear/compact; reversible keep-awake settings and Mac authorization guidance"
 }

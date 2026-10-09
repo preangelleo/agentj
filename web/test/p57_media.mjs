@@ -235,7 +235,10 @@ try {
       // another page → the Blob URLs of this one are revoked
       const urls = await ev(p, `[...document.querySelectorAll('#words img, #mstrip img')].map((i) => i.src)`);
       await fake.addTurn({ k: 'phone', dev: null, text: '下一条' }, '没有附件的回复', 'done');
-      await waitFor(p, `document.getElementById('mstrip').hidden`);
+      // P87 preserves the long media page until the reader chooses the new reply.
+      await waitFor(p, `!document.getElementById('newReply').hidden`);
+      await ev(p, `document.getElementById('newReply').click()`);
+      await waitFor(p, `document.getElementById('words').textContent === '没有附件的回复' && document.getElementById('mstrip').hidden`);
       const alive = await ev(p, `Promise.all(${JSON.stringify(urls)}.map((u) => new Promise((r) => { const i = new Image(); i.onload = () => r(true); i.onerror = () => r(false); i.src = u; })))`);
       assert.deepEqual(alive, urls.map(() => false), 'object URLs revoked when the page left the screen');
       assert.deepEqual(realProblems(p).filter((x) => !/blob:/.test(x)), []);

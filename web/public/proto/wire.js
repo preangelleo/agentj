@@ -17,7 +17,7 @@ export const FRAG_MAX_N = 128;
 export const FRAG_MAX_TOTAL = 2 * 1024 * 1024;
 export const BLOB_CHUNK = 45056;         // raw bytes per blob_chunk → 60 075 base64url chars → one 60 160-byte padded frame
 export const BLOB_MAX = 25 * 1024 * 1024;
-export const ASR_MAX = 44 + 120 * 16000 * 2;   // a purpose:"asr" take: ≤ 120 s of 16 kHz mono PCM16 WAV
+export const ASR_MAX = 44 + 630 * 16000 * 2;   // a purpose:"asr" take: ten minutes + decoder safety margin, ≤ 630 s of 16 kHz mono PCM16 WAV
 export const PAIR_PROLOGUE = 'agentjarvis/v1/pair\n';
 export const RESUME_PROLOGUE = 'agentjarvis/v1/resume\n';
 

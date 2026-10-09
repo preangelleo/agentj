@@ -659,7 +659,7 @@ a revoke in the middle stops the message there (P33-X07).
   `text/markdown` `.md` · `text/csv` · `application/json` · `audio/webm` · `audio/ogg` · `audio/mpeg` `.mp3` · `audio/mp4`
   `.m4a` · `audio/aac` · `audio/wav` / `audio/x-wav` `.wav`. The host also checks the leading bytes of images, PDF and WAV
   against their type (`why:"type"` on a mismatch). `purpose:"asr"` accepts only `audio/wav` in the §10.9 shape.
-- **Limits** (both ends): `size` 1 … 26 214 400 bytes (25 MiB; `asr`: ≤ 3 840 044 = 120 s); per device ≤ 20 staged + ≤ 2 open
+- **Limits** (both ends): `size` 1 … 26 214 400 bytes (25 MiB; `asr`: ≤ 20 160 044 = 630 s); per device ≤ 20 staged + ≤ 2 open
   uploads, ≤ 200 MiB staged + partial (over either → `too_many`; blobs a queued `say` claimed count until it is delivered or withdrawn); staged TTL 30 min; host disk: the inbox ≤ 2 GiB (`quota`),
   free space ≥ twice the size + 64 MiB (`disk`). Errors (`blob_err` /
   `blob_done ok:false`): `shape` · `type` · `too_big` · `empty` · `too_many` · `quota` · `disk` · `unsafe_inbox` (§10.4) ·
@@ -802,7 +802,7 @@ switched off) arrive as `sys` turns with `"local":true` and show relay's 「在�
   Say-time transcription reads a **host-private copy** of the verified bytes in `<state>/uploads/<device>/<bid>.voice` (kept
   until the say is delivered), never the inbox file the Agent can rewrite or replace with a link (P33-C02). ffmpeg, when
   needed: the demuxer pinned from the declared MIME (`webm`→`matroska`, `ogg`, `mp3`, `mp4`→`mov`, `aac`, `wav`; no content
-  probing), `-protocol_whitelist file`, ≤ 119 s of audio, output ≤ 3 840 044 bytes (also RLIMIT_FSIZE / RLIMIT_CPU 60 s), one
+  probing), `-protocol_whitelist file`, ≤ 630 s of audio, output ≤ 20 160 044 bytes (also RLIMIT_FSIZE / RLIMIT_CPU 180 s), one
   conversion per host at a time, the child killed and reaped on timeout and on withdraw (P33-C04 / X09).
 - **Host WAV check** (strict): RIFF/WAVE, one `fmt ` PCM chunk (format 1, 1 channel, 16 000 Hz, 16 bit), one `data` chunk whose
   length matches the file; else `asr_res why:"bad_audio"`.
@@ -810,8 +810,9 @@ switched off) arrive as `sys` turns with `"local":true` and show relay's 「在�
   "ok":false,"why":"no_speech"|"not_installed"|"off"|"broken"|"busy"|"timeout"|"bad_audio"}`. The phone appends the text to the
   composer and never sends it (relay `appendText`); takes are transcribed in recording order (relay `asrQueue`). One decode at
   a time per host (FIFO), ≤ 3 takes of one device in flight (decoding or waiting; the 4th → `busy`, another device is not held
-  back), 60 s per take (`timeout`); at `say` time all audio of one message within 60 s together (relay `SAY_ASR_BUDGET_S`),
-  past it the message goes out with 「转写失败（超过 60 秒）」. A take longer than 20 s is cut in the middle of pauses ≥ 0.4 s
+  back). Each recording gets 180 s cold-start allowance + 6× its duration (cap 3960 s; unknown duration uses the cap);
+  FIFO queue waiting is outside processing time. This also applies independently to each `say` recording; processing
+  timeout still delivers the original attachment with 「转写失败（处理超时）」. A take longer than 20 s is cut in the middle of pauses ≥ 0.4 s
   (pieces ≤ 20 s; silence-only pieces and silence-only takes are not decoded — `no_speech`), because SenseVoice garbles long
   whole takes (`host/ASR.md`).
 - **Engines** (`config.json` `asr: {"engine":"auto"|"sherpa"|"voxtype"|"off","threads":2}`; default `auto` = `sherpa` once
@@ -1530,3 +1531,5 @@ An unsigned `say /update` is refused. The host returns progress and persists com
 
 ### P80 meter extension (backwards compatible)
 `shared_writer` is optional/null or `{zh: string, en: string}`: locally generated process-holder notices (maximum600 characters per language), only used with `shared_status: desktop_writer`. Includes a verified PID when available, never argv or provider/auth settings. Clients render text only and clear it when following/normal. Older hosts fall back to their existing banner.
+
+P87 additive implementation limits (0.16.6a1): strict PCM ASR upload cap 20,160,044 bytes (630 seconds at 16kHz mono16; recorder remains ten minutes). Container conversion cap630s, CPU limit180s. Processing allowance180s cold start +6×recording seconds, max3960s, unknown duration uses maximum; FIFO queue wait excluded. No new wire field; original audio survives failed say-time transcription.

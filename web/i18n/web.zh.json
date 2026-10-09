@@ -369,7 +369,7 @@
     },
     "empty": "还没有消息",
     "emptyReady": "已连上你的电脑。跟 Agent 说句话吧；需要你点头的时候，它会在这里问你。",
-    "noReply": "（这一条没有回复）",
+    "noReply": "（无文字回复）",
     "part": "第 {k}/{n} 段",
     "om": {
       "aria": "原话",
@@ -802,7 +802,10 @@
       "title": "⬆ 升级 Agent J",
       "current": "已是最新",
       "authorize": "点击即授权升级"
-    }
+    },
+    "replyPending": "已送达，等待电脑接手…",
+    "replyWorking": "正在处理…",
+    "newReply": "有新回复，点此查看"
   },
   "preferences": {
     "notification": "你的 Agent 已回复。",
@@ -880,8 +883,8 @@
     "risk": "高风险提醒",
     "riskNote": "额外高危提醒默认是关着的。你可以在这儿开关；底层工具自身的权限规则一直生效。",
     "mode": "会话模式",
-    "modeShared": "共享：手机和电脑上用的是同一个会话",
-    "modeIndependent": "独立：手机有自己单独的会话",
+    "modeShared": "共享电脑会话",
+    "modeIndependent": "使用独立会话",
     "modeNote": "点一下就能切换共享或独立会话。共享模式会沿用电脑上现有会话的权限。",
     "iso": "隔离运行（独立会话）",
     "isoNote": "开启时，独立会话里的 Agent 看不到 Agent J 的密钥和配对数据；关闭后按底层工具自身的权限运行。下次启动 Agent 时生效。",

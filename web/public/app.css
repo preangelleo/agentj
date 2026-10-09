@@ -247,7 +247,11 @@ body[data-conn=off] .orb{filter:grayscale(1);opacity:.5;animation:none}
   font:400 calc(9px*var(--fz))/1 var(--font-mono);letter-spacing:.09em;text-transform:uppercase;
   color:var(--ink-soft);opacity:.85;pointer-events:none;white-space:nowrap}
 #mWeek .lab{top:6px}
+#m5h{margin-top:8px}
 #m5h .lab{bottom:6px}
+.meter[data-known="1"] i{min-width:6px}
+.meter[data-zero="1"] i{min-width:0}
+.meter[data-zero="1"]::after{content:"";position:absolute;left:0;top:-1px;width:4px;height:5px;background:var(--ink-soft)}
 .meter i{display:block;height:100%;width:0;background:rgba(20,20,20,.52);
   transition:width .7s var(--re)}
 .meter[data-known="0"]{background:rgba(250,249,245,.12)}
@@ -299,7 +303,7 @@ main::-webkit-scrollbar{display:none}
    7 px above the source card (.om::before top:-7px). */
 .deck{flex:1;min-height:0;display:flex;flex-direction:column;padding:calc(var(--stack-top) + 19px) var(--rg) var(--card-side);
   position:relative;will-change:transform}
-.deck.open{overflow-y:auto;overscroll-behavior-y:contain;scrollbar-width:none}
+.deck.open{overflow:hidden}
 .deck.open::-webkit-scrollbar{display:none}
 .om{flex:none;position:relative;z-index:1;margin:0 12px;padding:0 16px 20px;
   border-radius:18px 18px 0 0;background:var(--src-leo);color:var(--noir)}
@@ -338,7 +342,8 @@ main::-webkit-scrollbar{display:none}
    5h rule when the keyboard takes most of the screen. */
 .rm{flex:1 1 0;min-height:min(200px,55%);position:relative;z-index:2;margin-top:-12px;display:flex;flex-direction:column;
   border-radius:22px;overflow:hidden;overflow:clip;background:var(--rm-bg);box-shadow:none}
-.deck.open .rm{flex:none;height:calc(100% - 24px);min-height:260px}
+.deck.open .rm{flex:1 1 0;min-height:100px}
+.deck.open .om{max-height:55%;min-height:0;overflow-y:auto;overscroll-behavior:contain;scrollbar-width:none}
 .rmhd{display:flex;align-items:center;gap:8px;min-height:44px;margin:-6px 0 4px}
 .rmhd .t{font:400 calc(12px*var(--fz))/1 var(--font-title);color:var(--ink-soft);letter-spacing:.04em}
 /* ---- the reply card's icon bar (ADR-037, design reports/design/reply-actions §1) ----
@@ -1573,3 +1578,13 @@ body[data-view="scan"] .top{display:none}
 .slist .empty{padding:12px 0;color:var(--ink-soft)}
 
 .sheet.friend-neutral{background:var(--surface);color:var(--ink)}
+
+/* P87: a new visible reply never covers a page being read. */
+.new-reply{position:absolute;z-index:8;right:16px;top:8px;min-height:56px;padding:8px 16px;border-radius:28px;border:1px solid var(--ink-soft);background:var(--paper);color:var(--ink);font:500 14px var(--font-body)}
+.new-reply[hidden]{display:none}
+
+@media(max-width:600px){
+ .setrow:has(.seg){grid-template-columns:minmax(0,1fr)}
+ .setrow>.seg{grid-column:1 / -1}
+ .seg button+button{border-left:0;border-top:1px solid var(--border)}
+}

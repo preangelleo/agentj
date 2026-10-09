@@ -87,7 +87,7 @@ class Nightly(unittest.TestCase):
         self.assertEqual((self.st.root/au.RECORD).stat().st_mode & 0o777,0o600)
 
 class Artifacts(Nightly):
-    def signed(self,version='0.16.6a1'):
+    def signed(self,version='99.0.0a1'):
         buf=io.BytesIO()
         with zipfile.ZipFile(buf,'w') as z:
             z.writestr(f'agentj-{version}.dist-info/METADATA',f'Name: agentj\nVersion: {version}\n')
@@ -102,31 +102,31 @@ class Artifacts(Nightly):
         body,digest,sig,keys=self.signed()
         def fetch(url,_):return (digest+'\n').encode() if url.endswith('.sha256') else sig.encode() if url.endswith('.minisig') else body
         with patch.object(au.minisign,'TRUSTED_SIGNERS',keys):
-            p=au.cached_wheel(self.st,'0.16.6a1',fetch=fetch)
+            p=au.cached_wheel(self.st,'99.0.0a1',fetch=fetch)
             p.write_bytes(b'tampered')
-            with self.assertRaises(ValueError):au.cached_wheel(self.st,'0.16.6a1',fetch=lambda url,n:b'tampered' if url.endswith('.whl') else fetch(url,n))
-        self.assertEqual(p.name,'agentj-0.16.6a1-py3-none-any.whl')
+            with self.assertRaises(ValueError):au.cached_wheel(self.st,'99.0.0a1',fetch=lambda url,n:b'tampered' if url.endswith('.whl') else fetch(url,n))
+        self.assertEqual(p.name,'agentj-99.0.0a1-py3-none-any.whl')
     def test_forged_cache_receipt_cannot_replace_signature(self):
         body,digest,sig,keys=self.signed()
         def fetch(url,_):return (digest+'\n').encode() if url.endswith('.sha256') else sig.encode() if url.endswith('.minisig') else body
         with patch.object(au.minisign,'TRUSTED_SIGNERS',keys):
-            p=au.cached_wheel(self.st,'0.16.6a1',fetch=fetch)
+            p=au.cached_wheel(self.st,'99.0.0a1',fetch=fetch)
             p.write_bytes(b'forged wheel')
             p.with_suffix('.verified.json').write_text(json.dumps({'sha256':hashlib.sha256(p.read_bytes()).hexdigest(),'signed':True}))
             calls=[]
             def restore(url,n):calls.append(url);return fetch(url,n)
-            self.assertEqual(au.cached_wheel(self.st,'0.16.6a1',fetch=restore).read_bytes(),body)
+            self.assertEqual(au.cached_wheel(self.st,'99.0.0a1',fetch=restore).read_bytes(),body)
             self.assertTrue(calls,'forged receipt must force a fresh signature verification')
-            self.assertEqual(au.cached_wheel(self.st,'0.16.6a1',fetch=lambda *a: self.fail('valid signed cache should work offline')).read_bytes(),body)
+            self.assertEqual(au.cached_wheel(self.st,'99.0.0a1',fetch=lambda *a: self.fail('valid signed cache should work offline')).read_bytes(),body)
 
     def test_wrong_signature_and_missing_signature_refused(self):
         body,digest,sig,keys=self.signed()
         def fetch(url,_):return (digest+'\n').encode() if url.endswith('.sha256') else sig.encode() if url.endswith('.minisig') else body
-        with self.assertRaises(au.minisign.MinisignError):au.cached_wheel(self.st,'0.16.6a1',fetch=fetch)
+        with self.assertRaises(au.minisign.MinisignError):au.cached_wheel(self.st,'99.0.0a1',fetch=fetch)
         def missing(url,n):
             if url.endswith('.minisig'):raise OSError('not published')
             return fetch(url,n)
-        with self.assertRaises(OSError):au.cached_wheel(self.st,'0.16.6a1',fetch=missing)
+        with self.assertRaises(OSError):au.cached_wheel(self.st,'99.0.0a1',fetch=missing)
 
 class SharedVerification(unittest.TestCase):
     def test_manual_and_phone_apply_refuse_artifact_before_install(self):
@@ -160,7 +160,7 @@ class SharedVerification(unittest.TestCase):
 class Worker(Nightly):
     def fixtures(self):
         paths={}
-        for v in (__version__,'0.16.6a1'):
+        for v in (__version__,'99.0.0a1'):
             p=self.st.root/f'agentj-{v}-py3-none-any.whl'
             body,digest,sig,keys=Artifacts.signed(self,v);self.fixture_keys=keys
             p.write_bytes(body)
@@ -168,20 +168,20 @@ class Worker(Nightly):
         return paths
     def run_worker(self, fail=False, journal=None):
         paths=self.fixtures();self.installed=[];self.restarted=[]
-        if journal:au.write(self.st, {**journal,'from':__version__,'to':'0.16.6a1','old':str(paths[__version__]),'new':str(paths['0.16.6a1']),'install':{'kind':'pip','where':self.tmp.name},'argv':['fixture-cli']},au.JOB)
+        if journal:au.write(self.st, {**journal,'from':__version__,'to':'99.0.0a1','old':str(paths[__version__]),'new':str(paths['99.0.0a1']),'install':{'kind':'pip','where':self.tmp.name},'argv':['fixture-cli']},au.JOB)
         def runner(argv):
             if '--version' in argv:return Mock(returncode=0,stdout='agentj '+(self.installed[-1] if self.installed else __version__))
             if 'doctor' in argv:return Mock(returncode=0,stdout=json.dumps({'checks':[{'id':'main-core','status':'ok'}]}))
             with zipfile.ZipFile(argv[-1]) as z:v=z.read('fixture-version').decode()
             self.installed.append(v)
-            return Mock(returncode=1 if fail and v=='0.16.6a1' else 0)
+            return Mock(returncode=1 if fail and v=='99.0.0a1' else 0)
         with patch.object(au.minisign,'TRUSTED_SIGNERS',self.fixture_keys),patch.object(update,'install_kind',return_value={'kind':'pip','where':self.tmp.name}),patch.object(update,'new_argv',return_value=['fixture-cli']):
-            return au.run(self.st,check_fn=lambda:{'status':'newer','latest':'0.16.6a1'},cache=lambda st,v,**kw:paths[v],runner=runner,restart=self.restarted.append)
+            return au.run(self.st,check_fn=lambda:{'status':'newer','latest':'99.0.0a1'},cache=lambda st,v,**kw:paths[v],runner=runner,restart=self.restarted.append)
     def test_full_install_verify_restart_and_persisted_result(self):
-        r=self.run_worker();self.assertEqual(r['result'],'ok');self.assertEqual(self.installed,['0.16.6a1']);self.assertEqual(self.restarted,['0.16.6a1'])
+        r=self.run_worker();self.assertEqual(r['result'],'ok');self.assertEqual(self.installed,['99.0.0a1']);self.assertEqual(self.restarted,['99.0.0a1'])
         self.assertEqual(au.read(self.st,au.JOB)['phase'],'done')
     def test_upgrade_failed_restores_cached_old_wheel(self):
-        r=self.run_worker(fail=True);self.assertEqual(r['result'],'rolled_back');self.assertEqual(self.installed,['0.16.6a1',__version__]);self.assertEqual(self.restarted,[__version__])
+        r=self.run_worker(fail=True);self.assertEqual(r['result'],'rolled_back');self.assertEqual(self.installed,['99.0.0a1',__version__]);self.assertEqual(self.restarted,[__version__])
         self.assertIn('已回滚',au.take_notice(self.st));self.assertIsNone(au.take_notice(self.st))
     def test_worker_killed_during_install_resumes_by_rollback(self):
         r=self.run_worker(journal={'phase':'installing'});self.assertEqual(r['result'],'rolled_back');self.assertEqual(self.installed,[__version__])

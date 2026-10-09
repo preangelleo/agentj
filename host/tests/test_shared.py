@@ -109,6 +109,20 @@ class ClaudeTransport(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.host.replies,[], 'transcript prose is not a committed reply')
         self.assertFalse(a.done.is_set(),'initial registry idle must not complete a pending phone turn')
 
+    async def test_p87_meta_inputs_do_not_open_desktop_turn(self):
+        a=shared.SharedClaudeAgent(self.host,self.cfg);await a.attach()
+        records=[{'type':'user','uuid':str(i),'message':{'content':text},**extra} for i,(text,extra) in enumerate([
+            ('skill body',{'isMeta':True}), ('Base directory for this skill: ~/.claude/skills/test\nbody',{}),
+            ('<local-command-stdout>done</local-command-stdout>',{}),
+            ('<local-command-caveat>commands</local-command-caveat>',{}),
+            ('This session is being continued from a previous conversation that ran out of context.',{}),
+            ('<system-reminder>hook</system-reminder>',{}), ('hook output',{'isMeta':True}),
+            ('child',{'isSidechain':True}), ('real keyboard input',{})])]
+        records.insert(0,{'type':'user','uuid':'tool','message':{'content':[{'type':'tool_result','content':'result'},{'type':'text','text':'tool context'}]}})
+        self.transcript.write_text(''.join(json.dumps(r)+'\n' for r in records))
+        a.read_transcript();a.read_transcript()
+        self.assertEqual(self.host.inputs,['real keyboard input'])
+
     async def test_oversized_tool_result_does_not_stall_later_desktop_input(self):
         a=shared.SharedClaudeAgent(self.host,self.cfg);await a.attach()
         records=[{'type':'user','message':{'content':[{'type':'tool_result','content':'x'*(2*1024*1024)}]}},
@@ -178,7 +192,7 @@ class OpenCodeAttachment(unittest.IsolatedAsyncioTestCase):
     async def test_desktop_and_phone_user_parts_not_duplicated(self):
         self.a.sid='sesOwner';self.a.client.request.return_value=(200,[]);await self.a._prime()
         self.a.phone_messages.add('msgPhone')
-        for mid,text in [('msgDesktop','from keyboard'),('msgPhone','from phone')]:
+        for mid,text in [('msgSynthetic','Base directory for this skill: test'),('msgReminder','<system-reminder>hook</system-reminder>'),('msgDesktop','from keyboard'),('msgPhone','from phone')]:
             self.a.on_event({'type':'message.updated','properties':{'info':{'sessionID':'sesOwner','id':mid,'role':'user'}}})
             ev={'type':'message.part.updated','properties':{'part':{'sessionID':'sesOwner','messageID':mid,'id':'prt'+mid,
                'type':'text','text':text}}}

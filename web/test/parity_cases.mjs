@@ -101,6 +101,7 @@ export async function runCases({ B, web, fake, only }) {
   async function turns(n, mk = (i) => [{ k: 'phone', dev: 'other', text: `问题 ${i}` }, `回复 ${i}\n\n第二行 ${i}`]) {
     for (let i = 1; i <= n; i++) { const [src, reply] = mk(i); await fake.addTurn(src, reply); }
     await wait(`document.getElementById('pg').textContent.endsWith('/ ' + ${JSON.stringify(String(fake.st.turns.length))}) || document.getElementById('pg').textContent.endsWith('/ ' + ${fake.st.turns.length})`);
+    if (!(await hidden('#newReply'))) await click('#newReply');
   }
   const pg = async () => (await text('#pg')).trim();
   const curWords = () => text('#words');
@@ -178,11 +179,37 @@ export async function runCases({ B, web, fake, only }) {
     ok((await pg()) === before, 'a swipe from the screen edge is left to the system back gesture');
   });
   await C('follow-newest', async () => {
+    if (fake.st.turns.length < 2){
+      await fake.addTurn({k:'agent'}, 'earlier useful reply');
+      await fake.addTurn({k:'agent'}, 'latest useful reply');
+      await wait(`document.getElementById('words').textContent === 'latest useful reply'`);
+    }
+    const nums=(await pg()).split(' / ').map(Number);
+    if (nums[0] === nums[1]) await click('#pgPrev');
+    const before = await text('#words');
     ok(!(await pg()).startsWith((await pg()).split(' / ')[1] + ' '), 'on an older page first');
     await fake.addTurn({ k: 'agent' }, '新的一条');
+    await wait(`!document.getElementById('newReply').hidden`);
+    ok((await text('#words')) === before, 'new visible reply preserves older page');
+    await click('#newReply');
     await wait(`document.getElementById('words').textContent === '新的一条'`);
     const [n, tot] = (await pg()).split(' / ').map(Number);
-    ok(n === tot, 'a new turn takes the reader to the newest page');
+    ok(n === tot, 'new reply hint opens the newest visible page');
+    await fake.addTurn({ k: 'agent' }, '');
+    await sleep(200);
+    ok((await text('#words')) === '新的一条' && (await pg()) === `${n} / ${tot}`, 'empty agent turn has no page or focus');
+    await fake.addTurn({ k: 'agent' }, '〔不回群〕');
+    await sleep(200);
+    ok((await text('#words')) === '新的一条' && (await pg()) === `${n} / ${tot}`, 'silent turn has no page or focus');
+    await fake.addTurn({ k: 'phone', dev: 'other', text: '工具工作' }, '', 'open');
+    await sleep(200);
+    ok((await text('#words')) === '新的一条', 'pending other input does not cover the reply');
+    // Explicitly page to pending input: it has words even before the agent starts.
+    await click('#pgNext');
+    await wait(`document.getElementById('words').textContent.includes(${JSON.stringify(T('r.replyPending'))})`);
+    await fake.addTurn({ k: 'agent' }, '浏览器回归结束');
+    await sleep(200);
+    await click('#newReply');
   });
   await C('swipe-rubber-band', async () => {
     const before = await pg();
@@ -276,7 +303,11 @@ export async function runCases({ B, web, fake, only }) {
     await wait(`!document.documentElement.dataset.fz`);
   });
   await C('copy-reply', async () => {
+    const reading=await text('#words');
     await fake.addTurn({ k: 'agent' }, '复制我');
+    await wait(`!document.getElementById('newReply').hidden`);
+    ok((await text('#words')) === reading, 'an unread long reply keeps focus before explicit selection');
+    await click('#newReply');
     await wait(`document.getElementById('words').textContent === '复制我'`);
     await click('#copyReply');
     await waitToast(T('r.copy.reply'));

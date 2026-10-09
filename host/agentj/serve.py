@@ -83,10 +83,10 @@ PHONE_CONTROLS = ("mem_list", "mem_rm", "mem_undo", "act_list", "task_list", "ta
 # §10 (PROMPT-33)
 Q_TTL = _ttl("AGENTJ_TEST_Q_TTL", 180)     # a question nobody answers is ended (relay's default)
 MAX_QUESTIONS = 4                           # open at once; more are answered "nobody answered" at once
-ASR_TAKE = 60.0                             # s per take (asr_res timeout)
+ASR_TAKE = compose.SAY_ASR_BUDGET                             # s per take (asr_res timeout)
 ASR_QUEUE = 3                               # takes waiting per device (more → busy)
-FF_MAX_SECS = 119                           # say-time ffmpeg: at most this much audio (≤ uploads.ASR_MAX as WAV)
-FF_CPU_SECS = 60                            # RLIMIT_CPU of one conversion
+FF_MAX_SECS = 630                           # say-time ffmpeg: at most this much audio (≤ uploads.ASR_MAX as WAV)
+FF_CPU_SECS = 180                            # RLIMIT_CPU of one conversion
 # declared MIME → the ffmpeg demuxer (pinned: no content probing, so a playlist or another format is never opened)
 FF_DEMUX = {"video/mp4": "mov", "audio/webm": "matroska", "audio/ogg": "ogg", "audio/mpeg": "mp3", "audio/mp4": "mov", "audio/aac": "aac",
             "audio/wav": "wav", "audio/x-wav": "wav"}
@@ -1758,6 +1758,8 @@ class Host:
         self.status_changed()
 
     def agent_text(self, text: str) -> None:
+        if not text or not text.strip():
+            return
         from .silent import is_silent
         if is_silent(text):
             if self.cur_turn is not None and self.hist.get(self.cur_turn) is not None:
@@ -1781,10 +1783,14 @@ class Host:
             self.media_later(self.hist_add({"k": "agent", "text": ""}, text, "done")["id"])
 
     def desktop_input(self, text: str) -> None:
+        if not text or not text.strip():
+            return
         self.desktop_end()
         self.desktop_turn = self.hist_add({"k": "host", "name": "电脑 / Desktop", "text": text}, "", "open")["id"]
 
     def desktop_text(self, text: str) -> None:
+        if not text or not text.strip():
+            return
         tid = getattr(self, "desktop_turn", None)
         if tid is None:
             self.hist_add({"k": "agent", "text": ""}, text, "done")
@@ -2505,6 +2511,19 @@ class Host:
             src.update(dev=s.device, name=(s.name or s.device)[:64])
         return self.hist_add(src, "", "open")["id"]
 
+    def shared_clear(self) -> bool:
+        """Native SessionStart(clear), including desktop-origin clears, owns reset.
+        Phone cmd_done must not reset again; shared Claude never claims native undo.
+        """
+        before = self.hist.meta()["count"]
+        archived = self.hist.reset("shared-clear")
+        self.desktop_turn = None
+        self.hist_meta_all()
+        ok = not before or bool(archived)
+        if not ok:
+            self.agent_notice("桌面已清空，但手机历史归档失败；请检查本机磁盘。 / Desktop cleared, but phone history archive failed; check local disk.")
+        return ok
+
     def cmd_done(self, cmd, res: "slash.Result") -> None:
         """Called by the Agent's queue when a command ran (agent.Cmd). /clear that cleared (and 「撤销清空」) also reset the
         history (§10.5): the command's page is closed, then archived / restored, and the result is the first page after."""
@@ -2912,12 +2931,12 @@ class Host:
             self._post(self._send_device, s.device, {"t": "say_state", "sid": sid, "s": "transcribing"})
 
     async def _prep_say(self, send: compose.Send, text: str, files: list, voice: list, quote_text: str | None) -> None:
-        """Say-time transcription (§10.9): every recording of one message within SAY_ASR_BUDGET together; past it the message
-        goes out anyway with 「转写失败（超过 60 秒）」. A withdraw cancels this task."""
-        deadline = time.monotonic() + compose.SAY_ASR_BUDGET
+        """Each recording gets its own processing allowance; failures still deliver the original audio.
+        Queue waiting does not consume a later recording's processing allowance. Withdraw cancels this task.
+        """
         try:
             for f in voice:
-                left = deadline - time.monotonic()
+                left = compose.asr_budget(f.get("secs"))
                 if left <= 0:
                     f["asr"] = {"ok": False, "why": "timeout", "secs": f.get("secs")}
                     continue
@@ -3067,7 +3086,7 @@ class Host:
             else:
                 self.asr_waiting[device] = self.asr_waiting.get(device, 0) + 1
                 try:
-                    r = await self._transcribe(str(self.uploads.part_path(b)), ASR_TAKE)
+                    r = await self._transcribe(str(self.uploads.part_path(b)), min(ASR_TAKE, compose.asr_budget(b.secs)))
                 finally:
                     self.asr_waiting[device] -= 1
                 text = wire.well_formed(r.get("text") or "") if r.get("ok") else ""

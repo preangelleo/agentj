@@ -1999,6 +1999,8 @@ def main(argv=None) -> None:
     tk.add_argument("--json", action="store_true")
     tk.set_defaults(fn=cmd_tasks)
     wizard.add_parser(sub)
+    from . import keep_awake
+    keep_awake.add_parser(sub)
     elevate.add_parser(sub)   # F17: agentj sudo · agentj secret request
     from . import opencode_provider
     opencode_provider.add_parser(sub)   # P60 / F25: agentj provider add|list|remove (OpenCode base_url + key)
@@ -2030,7 +2032,7 @@ def main(argv=None) -> None:
     ob.add_argument("--json", action="store_true")
     ob.set_defaults(fn=cmd_onboarding)
     a = p.parse_args(argv)
-    if a.cmd not in NO_MIGRATE and not (a.cmd == "doctor" and a.isolation_only):
+    if a.cmd not in NO_MIGRATE and a.cmd != "keep-awake" and not (a.cmd == "doctor" and a.isolation_only):
         from . import migrate
         try:
             if migrate.auto() == "moved":

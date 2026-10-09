@@ -20,6 +20,7 @@ permission reply / interrupt / compact / model / forms → question cards), the 
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import os
 import re
 from urllib.parse import quote
@@ -228,7 +229,14 @@ class OwnerOpenCodeV2Agent(SharedOpenCodeV2Agent):
     async def command(self, name, arg):
         await self._initial()
         from .slash import Result
-        return Result("共享模式目前仅验证文字投递与桌面同步；此控制请在电脑执行。 / Use the desktop for this control.", "error")
+        if name in ("compact", "context", "cost", "usage", "status", "help"):
+            res = await super().command(name, arg)
+            if name == 'compact' and res.kind == 'ok':
+                self.meter(ctx=None)
+                with contextlib.suppress(OSError, ValueError, HTTPError, asyncio.TimeoutError):
+                    await self.context_meter(include_quota=False)
+            return res
+        return Result("没有执行：附加 OpenCode v2 的 API 不能切换桌面会话；用桌面 /new 或 /model，再指定新 session id。 / Not executed: attached OpenCode v2 cannot switch the desktop session; use /new or /model, then select the session ID.", "error")
 
     async def apply_model(self, model, effort, default=False):
         return "unsupported"
@@ -260,6 +268,9 @@ class OwnerOpenCodeV2Agent(SharedOpenCodeV2Agent):
                     self.phone_texts.remove(text)
                     self.phone_inbox.add(iid)
                 else:
+                    from .transcript_input import human_input
+                    if not human_input(item, [], text):
+                        return
                     self.desktop_end_if_open()
                     self.desktop_turn = True
                     self.host.desktop_input(public_text(text))
@@ -283,6 +294,8 @@ class OwnerOpenCodeV2Agent(SharedOpenCodeV2Agent):
         if key in self.texts_seen or not isinstance(text, str) or not text.strip():
             return
         self.texts_seen.add(key)
+        if self.quiet:
+            return  # native compaction summaries are not owner-facing replies
         text = public_text(text)
         if not text:
             return
