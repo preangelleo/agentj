@@ -1,5 +1,5 @@
 {
-  "version": "0.16.6a1",
-  "zh": "阅读焦点与十分钟语音改进；共享会话清空和压缩确认；可恢复的防休眠设置与 Mac 授权提示",
-  "en": "Reading focus and ten-minute voice improvements; confirmed shared clear/compact; reversible keep-awake settings and Mac authorization guidance"
+  "version": "0.16.7a1",
+  "zh": "免 Node 安装主路线与 shell PATH 修复；macOS 以实际运行能力判断兼容性",
+  "en": "Native agent installers and shell PATH recovery; macOS compatibility verified by an actual runtime probe"
 }

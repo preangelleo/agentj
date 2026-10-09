@@ -1,20 +1,26 @@
-# Agent J 0.16.6a1 release notes
+# Agent J 0.16.7a1 release notes
 
-Host 0.16.6a1 / install 0.20.6; phone-web scope.
+Host 0.16.7a1 / install 0.20.7; phone-web scope.
 Phone parity must pass --strict. Full Android/Telegram parity is incomplete.
 Full Android/Telegram parity is incomplete.
 No APK is included in this release. Android source is for review, not a released app.
 
 Publication status: local preparation only. Live site verification is DEFERRED until
 the public commit and tag are pushed, the site is deployed, and cold installation passes.
-The operator must finish LIVE verification or restore host 0.11 / install 0.15 by 12:30 JST.
 
+On publication failure, restore v0.16.6a1 including its site and installation artifacts.
 ## Changes
 
 - Sparse JSON5 configuration with transactional application, configuration history and migrations.
 - Optional configuration skill for locally installed agent harnesses; owner permission required.
 - Opt-in own-key cloud speech and local phone read-aloud.
 - Optional owner-private Telegram text input and final replies.
+
+- OpenCode, Codex and Claude Code use native installers first, with explicit zsh/bash PATH recovery.
+- New users connect DeepSeek in their own terminal and paste the seat-card instructions into OpenCode.
+- macOS compatibility uses an isolated --version runtime probe and safe failure reasons, with no OS version gate.
+- Site and GitHub installation guides ship together; no Dashboard, phone-web, relay or database change.
+- Physical macOS runtime acceptance remains owner-provided; automated tests use isolated fake runtimes.
 
 ## Material acceptance limits
 

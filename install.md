@@ -1,15 +1,15 @@
 ---
 document: agentj-install
-version: 0.20.6
+version: 0.20.7
 released: 2026-10-09
 status: beta (anyone can sign up; not advertised yet, pages are not indexed)
 host_package: agentj (the `agentj` command)
-host_version: 0.16.6a1
-source_tag: v0.16.6a1
-host_wheel: agentj-0.16.6a1-py3-none-any.whl
-host_wheel_sha256: 489735d1c50ec229aee40c411ebe804a84728939529aadc4b91e6cd83bc57df9
-host_sdist: agentj-0.16.6a1.tar.gz
-host_sdist_sha256: a77c607a09aee7f2b35ea72fe3178cffae6de06da760c09ca8beea4fddcacf1f
+host_version: 0.16.7a1
+source_tag: v0.16.7a1
+host_wheel: agentj-0.16.7a1-py3-none-any.whl
+host_wheel_sha256: 941eb9a73a6104f2e3bed0e19d9ec87d6dc4f93564fbca2afc1c793147829b13
+host_sdist: agentj-0.16.7a1.tar.gz
+host_sdist_sha256: 12789f37a1c1c4d65f6004986e7a88a76aa76457389df15daa51fe99e96c9e8c
 canonical_url: https://agentj.app/install.md
 sha256_url: https://agentj.app/install.md.sha256
 alias: https://agentjarvis.net/install.md (the older address: the same file, kept for one more version)
@@ -363,18 +363,41 @@ OpenCode (open source, MIT: https://opencode.ai/docs/) is the agent; the model b
 human signs up with **themselves**. Our default recommendation for mainland China: **GLM-5.3** (Zhipu) as the main model,
 plus **DeepSeek V4.1-Flash** (`deepseek-flash`, cheaper, can read images) for simple or image tasks.
 
-Before installing on macOS, run `sw_vers -productVersion`. Official OpenCode binaries require **macOS 13+**.
-On macOS 12 or older, ask the human to upgrade macOS, use another computer, or select another usable agent.
+Before installing on macOS, run `opencode --version` (or the selected agent’s `--version`). If it runs successfully,
+continue: compatibility is determined by execution, not the macOS version number. The one-line installer probes its
+verified, pinned OpenCode binary in an isolated temporary HOME before installing the host. If the actual runtime fails
+with dyld / `_ubrk_clone`, or cannot run, explain the failure and ask the human to upgrade macOS, use another computer,
+or choose another working agent with the manual installation guide. Never include raw subprocess output that may contain secrets.
 Known symptom: `dyld: Symbol not found: _ubrk_clone` in `/usr/lib/libicucore.A.dylib`, followed by abort.
 Do not keep retrying the same binary.
 
-Install OpenCode (pick one):
+Install OpenCode with the official script first (no Node.js or npm required):
 ```bash
-npm i -g opencode-ai --registry=https://registry.npmmirror.com   # with Node.js; works in mainland China without GitHub
-npm i -g opencode-ai                                               # with Node.js, elsewhere
-curl -fsSL https://opencode.ai/install | bash                      # without Node.js; downloads from github.com (may fail in mainland China)
+curl -fsSL https://opencode.ai/install | bash
+```
+If the command is missing after installation, add its directory to your shell startup file. On macOS zsh,
+`>>` creates a missing `~/.zshrc` automatically:
+```bash
+echo 'export PATH="$HOME/.opencode/bin:$PATH"' >> ~/.zshrc
+source ~/.zshrc
 opencode --version
 ```
+For bash on Linux/WSL, use `~/.bashrc` instead:
+```bash
+echo 'export PATH="$HOME/.opencode/bin:$PATH"' >> ~/.bashrc
+source ~/.bashrc
+opencode --version
+```
+If bash has a non-interactive early return, keep the PATH export before it. Open a fresh terminal and verify again.
+The npm alternatives require Node.js first:
+```bash
+npm i -g opencode-ai
+npm i -g opencode-ai --registry=https://registry.npmmirror.com
+```
+For a new user, the fastest route is: install OpenCode, run `opencode`, use `/connect` to select DeepSeek and
+enter their own key only in their terminal's key prompt, then paste the seat-card installation instructions into
+OpenCode and let it continue installing Agent J. `opencode auth login` is the terminal alternative. Never paste a key
+into a conversation or a command line.
 
 ✋ **The model key — the human does all of this, never you:**
 1. They open an account on the vendor's own platform, verify their identity (实名认证) and top up there: Zhipu
@@ -429,7 +452,7 @@ The astral installer warning that `uv` / `uvx` are shadowed is informational if 
 carry over). So start every command line from here on with `export PATH="$HOME/.local/bin:$PATH";` — or call
 `~/.local/bin/agentj` by its full path. This document writes `agentj` for short.
 
-The program is pinned to one release: the tag `v0.16.6a1` (front matter `source_tag`). The tag never moves, and its
+The program is pinned to one release: the tag `v0.16.7a1` (front matter `source_tag`). The tag never moves, and its
 `host/` folder is byte for byte the same code as the two files on our site whose SHA-256 is in this document's front matter.
 ```bash
 cd ~/.agentj-install
@@ -440,7 +463,7 @@ uv tool install "./$W"
 
 Intel Mac: this release keeps `cryptography<49` because newer releases lack an Intel macOS wheel. If an older installer tries to compile OpenSSL (`openssl-sys` / OpenSSL not found), rerun `uv tool install --with "cryptography<49" "./$W"`. The same platform constraint applies to `agentj update apply`.
 
-export PATH="$HOME/.local/bin:$PATH"; agentj --version     # → agentj 0.16.6a1
+export PATH="$HOME/.local/bin:$PATH"; agentj --version     # → agentj 0.16.7a1
 export PATH="$HOME/.local/bin:$PATH"; agentj doctor
 ```
 **Your human's own terminal must find `agentj` too** — they may use `agentj passphrase set` and `agentj pair` as a local alternative
@@ -468,12 +491,12 @@ echo "$WS  $W" | sha256sum -c - && echo "$SS  $S" | sha256sum -c -    # macOS: s
 uv tool install "./$W"          # the wheel; its dependencies come from PyPI or the mirror in UV_DEFAULT_INDEX
 ```
 `uv tool install "./$S"` installs from the checked source archive instead (it builds the same program).
-`https://agentj.app/dl/latest.txt` and `https://agentj.app/dl/latest-sdist.txt` name the same two files. `agentj --version` is the program's own version (`0.16.6a1`); it is
-numbered separately from this document (`0.20.4`).
+`https://agentj.app/dl/latest.txt` and `https://agentj.app/dl/latest-sdist.txt` name the same two files. `agentj --version` is the program's own version (`0.16.7a1`); it is
+numbered separately from this document (`0.20.7`).
 
-Alternative from the matching published source tag: `uv tool install "git+https://github.com/preangelleo/agentj@v0.16.6a1#subdirectory=host"`.
+Alternative from the matching published source tag: `uv tool install "git+https://github.com/preangelleo/agentj@v0.16.7a1#subdirectory=host"`.
 
-Alternative without uv: `pipx install "git+https://github.com/preangelleo/agentj@v0.16.6a1#subdirectory=host"` (needs Python 3.11+).
+Alternative without uv: `pipx install "git+https://github.com/preangelleo/agentj@v0.16.7a1#subdirectory=host"` (needs Python 3.11+).
 `agentj doctor` lists what is ready and what is not (prerequisites, the fence, connectivity, which agents are usable).
 Continue unless it reports an error that a later step does not fix; report anything you cannot explain.
 
@@ -1061,7 +1084,7 @@ The daily check remains a notification, not an unattended installation; `agentj 
 In the default shared session, reinstall directly using Step 4's checked wheel (SHA-256 must match this document and
 its public GitHub copy), preserving the host's identity, paired phones, account and preferences:
 ```bash
-uv tool install --force "./agentj-0.16.6a1-py3-none-any.whl"
+uv tool install --force "./agentj-0.16.7a1-py3-none-any.whl"
 agentj --version
 agentj service install
 agentj service restart
@@ -1069,7 +1092,7 @@ agentj doctor
 ```
 The matching published tag is another source, after verifying the tag object against the upgrade email:
 ```bash
-uv tool install --force "git+https://github.com/preangelleo/agentj@v0.16.6a1#subdirectory=host"
+uv tool install --force "git+https://github.com/preangelleo/agentj@v0.16.7a1#subdirectory=host"
 ```
 **0.14 independent session** (`agent.session_mode=independent`): 0.14's fence keeps Agent J's own program read-only and
 hides the service manager, so the Agent on the phone cannot reinstall or restart from inside it (measured: the install
@@ -1095,11 +1118,11 @@ prints something and `uv tool list` (or `pipx list`) shows `agentjarvis-host`, t
 the new name, then:
 ```bash
 jarvis service uninstall      # stop the old service first (Step 10 used tmux / nohup instead? stop that process)
-uv tool uninstall agentjarvis-host && uv tool install "git+https://github.com/preangelleo/agentj@v0.16.6a1#subdirectory=host"
+uv tool uninstall agentjarvis-host && uv tool install "git+https://github.com/preangelleo/agentj@v0.16.7a1#subdirectory=host"
 agentj doctor
 agentj service install        # start it again under the new name (or the tmux / nohup fallback, Step 10)
 ```
-With pipx instead of uv: `pipx uninstall agentjarvis-host && pipx install "git+https://github.com/preangelleo/agentj@v0.16.6a1#subdirectory=host"`.
+With pipx instead of uv: `pipx uninstall agentjarvis-host && pipx install "git+https://github.com/preangelleo/agentj@v0.16.7a1#subdirectory=host"`.
 - After the move, `agentj` puts back a `jarvis` command (a link to `agentj`, only if no other `jarvis` exists) for one more
   version; it prints a notice that points here. New installs never get `jarvis`.
 - The state moves by itself on the first run of `agentj`: from `~/.local/state/agentjarvis-alpha` to `~/.local/state/agentj`.
@@ -1318,6 +1341,8 @@ or logs out Claude Code / Codex / OpenCode (nor removes a model key), and never 
   friends with whom, the cards or the messages: they live only on the two computers, end-to-end encrypted between them.
 
 ## Changelog
+
+- 0.20.7 (2026-10-09): host 0.16.7a1 candidate. Native agent installers and shell PATH recovery; macOS compatibility uses actual execution instead of an OS version gate.
 
 - 0.20.4 (2026-10-08): host 0.16.6a1 candidate. Shared Codex uses the phone actor’s model/effort and current native provider; read-only banners identify the actual process. Shared Claude automatically enables unset phone ingress at install/switch/upgrade, backs up settings and tells the phone once; explicit off remains unchanged.
 - 0.20.3 (2026-10-08): host 0.16.3a1 candidate. Account-page remote pairing and passkey L2 owner approval; bound-host local passphrase optional.
