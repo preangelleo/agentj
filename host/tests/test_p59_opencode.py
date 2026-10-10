@@ -104,7 +104,7 @@ class Classes(unittest.TestCase):
             ("APIError", {"statusCode": 400, "message": "User location is not supported for the API use."}, "region"),
             ("APIError", {"statusCode": 451}, "region"), ("APIError", {"statusCode": 403}, "access"),
             ("APIError", {"statusCode": 402}, "balance"),
-            ("APIError", {"statusCode": 429, "message": "You exceeded your current quota", "responseBody": "insufficient_quota"}, "quota_window"),
+            ("APIError", {"statusCode": 429, "message": "You exceeded your current quota", "responseBody": "insufficient_quota"}, "balance"),
             ("APIError", {"statusCode": 429}, "rate_limit"), ("ProviderModelNotFoundError", {}, "model"),
             ("APIError", {"statusCode": 404}, "model"), ("APIError", {"message": "proxy connection refused"}, "network"),
             ("APIError", {"message": "fetch failed"}, "network"), ("UnknownError", {}, "internal"),

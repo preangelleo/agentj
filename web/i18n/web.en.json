@@ -1352,17 +1352,5 @@
     "failed": "Could not receive the share. Share again with up to 10 images, 25 MB total."
   },
   "ver.new": "A newer Agent J version ({v}) is available. Your phone/web page has not been updated yet. Tap the settings icon at the top right → “Update and reload”, or use the button below.",
-  "ver.later": "Later",
-  "rt.dead": "Automatic sign-in no longer works on this phone: the computer unpaired it, or it signed in from another browser or Home Screen icon. Scan the QR code to pair again.",
-  "pk.none": "Couldn't reconnect with Face ID. It may have been cancelled, or this phone has no saved Agent J Face ID record (on iPhone, iCloud Keychain must be on to save one). Scan the QR code to pair again.",
-  "pk.notSaved": "The Face ID record wasn't saved; your pairing still works. On iPhone, turn on Settings → Apple Account → iCloud → Passwords (Keychain), then choose Set up Face ID in the menu to try again.",
-  "r.speak.err.missing_key": "The computer service has no speech key. Add the key to its service environment, then restart Agent J.",
-  "r.speak.err.provider_rejected": "The speech provider rejected the request. Check the key, credit and voice settings.",
-  "r.speak.err.provider_busy": "The speech provider is busy. Try again shortly.",
-  "r.speak.err.provider_unavailable": "The speech provider is temporarily unavailable. Try again shortly.",
-  "r.speak.err.network": "Could not reach the speech provider. Check the computer network and retry.",
-  "r.speak.err.busy": "Another reading is being generated. Try again shortly.",
-  "r.speak.err.not_ready": "Reading is not ready. Wait for the computer to connect and the reply to finish.",
-  "r.speak.err.tap_play": "Tap to play.",
-  "r.speak.voice_fallback": "Using the default local voice for this language; your previous voice is unavailable on this phone."
+  "ver.later": "Later"
 }

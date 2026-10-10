@@ -163,8 +163,8 @@ BOT_RECOVERY_LINE = {
 }
 
 UPDATE_WEB_LINE = {
- 'zh': '电脑端 Agent J 升级不会同时刷新手机/网页版。升级回报要说明电脑的新旧版本和一句话自检结论，并提醒主人点右上角设置图标→「更新并刷新」。网页发现新版只提示，不能静默刷新打断输入。/update 回执跟随当前生效的 appearance.language，运行中切换也立即跟随。\n',
- 'en': 'Upgrading Agent J on the computer does not refresh the phone/web page. Report the new and old computer versions and a plain self-check sentence, then ask the owner to tap the settings icon at the top right → "Update & refresh". A newer page only prompts; never silently reload while the owner is typing. /update receipts follow the effective appearance.language, including changes while the host is running.\n',
+ 'zh': '电脑端 Agent J 升级不会同时刷新手机/网页版。升级回报要说明电脑的新旧版本和一句话自检结论，并提醒主人点右上角设置图标→「更新并刷新」。网页发现新版只提示，不能静默刷新打断输入。\n',
+ 'en': 'Upgrading Agent J on the computer does not refresh the phone/web page. Report the new and old computer versions and a plain self-check sentence, then ask the owner to tap the settings icon at the top right → "Update & refresh". A newer page only prompts; never silently reload while the owner is typing.\n',
 }
 
 def prompt(cfg: dict) -> str:

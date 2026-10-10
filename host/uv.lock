@@ -36,7 +36,7 @@ requires-dist = [
     { name = "python-socks", extras = ["asyncio"], specifier = ">=2.5,<3" },
     { name = "segno", specifier = ">=1.6" },
     { name = "tomlkit", specifier = ">=0.13,<1" },
-    { name = "websockets", specifier = ">=14,<18" },
+    { name = "websockets", specifier = ">=14" },
 ]
 
 [package.metadata.requires-dev]

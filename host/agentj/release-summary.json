@@ -1,6 +1,6 @@
 {
-  "version": "0.17.4a1",
+  "version": "0.17.3a1",
   "major": false,
-  "zh": "iPhone 自动保持登录；修复额度提示、断线后的回复补回、升级回执语言，减少库回调噪声。电脑升级后，请在手机设置中点「更新并刷新」。",
-  "en": "iPhone stays signed in; quota guidance, reconnect history and update language fixes. After computer updates, choose Settings → Update & refresh."
+  "zh": "新增 Telegram 客服、自带模型 key 与问答模板、截图分享；统一间距与 ESC，修复访客正文和历史。电脑升级后，请在手机设置中点「更新并刷新」。",
+  "en": "Telegram Bots, own keys/templates and screenshots; spacing/Escape and visitor history fixes. After computer updates, refresh the phone in Settings."
 }

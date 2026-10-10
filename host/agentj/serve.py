@@ -17,7 +17,6 @@ import contextlib
 import hmac
 import hashlib
 import json
-import logging
 import os
 import re
 import secrets
@@ -38,7 +37,6 @@ from . import compose, history, inbox, menu, uploads, preferences, proxy
 from . import media as media_mod  # F21: files the Agent shows to the phone (PROTOCOL §13)
 from . import elevate  # F17: sudo + secret cards (PROTOCOL §11)
 from . import passkey  # F20: the same phone without a second pairing (PROTOCOL §12)
-from . import renewal  # P122: the same phone after its browser deleted the page's storage (§12.1)
 from . import onboarding  # F28: seat → two required remotes → one welcome (P72)
 from . import friend_cmds  # P73: /my-agent-id · /add-friend, answered by the host (ADR-A176)
 from . import friends as friends_mod
@@ -132,7 +130,6 @@ class Session:
     gone: str = ""                # 0.15.1: a removed device that resumed: "replaced" | "revoked" — told so after its hello
     pk_offer: tuple | None = None  # F20 (§12): (nonce, monotonic issue time) of the one open pk_offer of this session
     since: object = None          # F20: a passkey restore's hello `since`, used once the restore is accepted
-    rt_at: float = 0.0            # P122: monotonic time of this session's last renewal ticket (≤ 1 per minute on rt_req)
 
 
 @dataclass
@@ -262,7 +259,7 @@ class Host:
         self.turn_t0 = 0.0
         # relay parity (PROTOCOL §10, PROMPT-33)
         self.hist = history.History(st)
-        self.lang = preferences.get(self.preferences, "appearance.language", "zh")
+        self.lang = compose.lang_of(st)
         self.uploads = uploads.Uploads(st, self.agent_cfg["dir"] if self.agent_cfg else None,
                                        asr_off=lambda: self.asr_state() == "off")
         self.media = media_mod.Media(st, self.agent_cfg["dir"] if self.agent_cfg else None)   # F21 (§13)
@@ -331,8 +328,6 @@ class Host:
             print(f"· 有新版本 {kw['latest']}（本机 {kw['current']}）：在终端运行 `agentj update apply` 升级", flush=True)
         elif ev == "passkey":   # F20: no QR, no code — the paired phone proved itself with its passkey (§12)
             print(f"· 手机用 Face ID 连回来了（同一台，没有新增遥控器）：{kw.get('name') or ''} {kw.get('device') or ''}".rstrip(), flush=True)
-        elif ev == "ticket":    # P122: the browser lost its storage; its cookie ticket proved the same phone (§12.1)
-            print(f"· 手机自动连回来了（浏览器清过数据；同一台，没有新增遥控器）：{kw.get('name') or ''} {kw.get('device') or ''}".rstrip(), flush=True)
         elif ev in ("ready", "approved", "revoked", "denied", "closed"):
             print(f"· {ev} {kw.get('name') or ''} {kw.get('device') or ''}".rstrip(), flush=True)
 
@@ -631,8 +626,6 @@ class Host:
             await self._answer(s, obj)
         elif t in ("pk_reg", "pk_offer_req"):  # F20 (§12): register this device's passkey
             await self._pk_reg(s, t, obj)
-        elif t == "rt_req":                    # P122 (§12.1): a ready device asks for a (new) renewal ticket
-            await self._rt_issue(s)
         elif t in elevate.PHONE_TYPES:  # F17: a signed, sealed sudo password / secret for an open card (§11)
             await self.elevate.on_phone(s, obj)
         elif t == "push_sub":
@@ -768,7 +761,6 @@ class Host:
         await self.send_app(s, {"t": "approved", **self._caps(s)})
         await self._bulk(s)
         await self._pk_offer(s)                 # F20: once, right after a pairing (never on a resume)
-        await self._rt_issue(s, force=True)     # P122: the renewal ticket for this pairing (§12.1)
         self.st.log("pair_approved", cid=s.cid, device=s.device, name=s.name, code_ok=source == "local", source=source)
         self.emit("approved", device=s.device, name=s.name)
         asyncio.create_task(self._ready_then_onboard(s))   # F28: the first remote ever → the main Agent's welcome there
@@ -827,13 +819,12 @@ class Host:
     # ------------------------------------------------------------ F20 passkey (PROTOCOL §12) — proves "the same phone", nothing more
     @staticmethod
     def _pk_hello(payload: bytes) -> bool:
-        """Does a RESUME msg1 ask for a passkey (`pk:1`) or renewal-ticket (`rt:1`, P122 §12.1) restore, with an approval
-        key (the restore replaces it)?"""
+        """Does a RESUME msg1 ask for a passkey restore? `pk:1` and an approval key (the restore replaces it)."""
         try:
             info = json.loads(payload) if payload else None
         except ValueError:
             return False
-        return isinstance(info, dict) and (info.get("pk") == 1 or info.get("rt") == 1) and bool(_sign_key(info))
+        return isinstance(info, dict) and info.get("pk") == 1 and bool(_sign_key(info))
 
     async def _pk_timeout(self, s: Session) -> None:
         await asyncio.sleep(HS_TTL)
@@ -851,8 +842,6 @@ class Host:
         record that holds this passkey takes the session's key (State.passkey_restore) and the old id ends like a P55
         `replaces` (sessions, push subscription, uploads; told `replaced` if it resumes)."""
         self._set_timer(s, None)
-        if obj.get("t") == "rt_restore":
-            return await self._rt_restore(s, obj)
         old = None
         try:
             if obj.get("t") != "pk_restore":
@@ -887,62 +876,6 @@ class Host:
         self.emit("passkey", device=new, name=s.name)
         await self.send_app(s, {"t": "pk_ok"})
         await self._accept_resume(s, s.since)
-        await self._rt_issue(s, force=True)       # P122: the old context's ticket died with it (State.passkey_restore)
-
-    # ------------------------------------------------------------ P122 renewal ticket (PROTOCOL §12.1) — §12's restore, by cookie
-    async def _rt_restore(self, s: Session, obj: dict) -> None:
-        """A pk session's one message was `rt_restore`: the same checks and the same take-over as `_pk_restore`, with the
-        ticket's HMAC proof in place of the WebAuthn assertion; the used ticket is rotated in the same locked write."""
-        old = None
-        try:
-            if not self.pk_guard.attempt():
-                raise passkey.PasskeyError("bad", "rate")
-            f = renewal.restore_fields(obj)
-            if not passkey.ts_ok(f["ts"]):
-                raise passkey.PasskeyError("expired", "ts")
-            if not self.pk_guard.fresh(f["nonce"]):
-                raise passkey.PasskeyError("bad", "replay")
-            hit = self.st.ticket_of(f["i"])
-            if not hit:
-                raise passkey.PasskeyError("unknown", "ticket")
-            old, rt = hit
-            if not passkey.handle_matches(f["uh"], self.channel, self.kp.pub):
-                raise passkey.PasskeyError("bad", "user_handle")
-            renewal.verify(rt, f, renewal.restore_challenge(s.pub, s.sign_pub, f["ts"], f["nonce"]))
-            new = self.st.ticket_restore(old, f["i"], s.pub, s.sign_pub, renewal.new_ticket(), _iid(obj) or None)
-            if not new:
-                raise passkey.PasskeyError("unknown", "gone")
-        except passkey.PasskeyError as e:
-            self.st.log("rt_restore", cid=s.cid, device=old or s.device, result="fail", reason=e.detail)
-            return await self._pk_fail(s, e.why)
-        if old != new:
-            self.st.log("auto_unbind", device=old, reason="ticket")
-            await self._drop_device(old, "replaced")
-        s.device, s.mode = new, "resume"
-        s.name = self.st.devices().get(new, {}).get("name", "")
-        self.st.log("rt_restore", cid=s.cid, device=new, result="ok", id=old)
-        self.emit("ticket", device=new, name=s.name)
-        await self.send_app(s, {"t": "pk_ok"})
-        await self._accept_resume(s, s.since)
-        await self._rt_send(s)                      # the rotated ticket, now that the page is ready
-        if not self.st.passkey_of_device(new):
-            await self._pk_offer(s)                 # no passkey yet: offer it once more (the old context's 「以后再说」 is gone)
-
-    async def _rt_issue(self, s: Session, force: bool = False) -> None:
-        """A new renewal ticket for this ready, allowlisted device (replacing its old one), sent to it. On `rt_req` at most
-        once a minute per session (a page bug cannot rewrite devices.json in a loop)."""
-        if s.state != "ready" or not self.st.is_allowed(s.pub) or (not force and time.monotonic() - s.rt_at < 60):
-            return
-        if self.st.set_ticket(s.pub, renewal.new_ticket()):
-            self.st.log("rt_issue", device=s.device)
-            await self._rt_send(s)
-
-    async def _rt_send(self, s: Session) -> None:
-        """The device's current ticket (id + secret) to its own ready session — inside Noise only; never logged."""
-        rt = (self.st.devices().get(s.device) or {}).get("rt")
-        if isinstance(rt, dict) and isinstance(rt.get("i"), str) and isinstance(rt.get("k"), str):
-            s.rt_at = time.monotonic()
-            await self.send_app(s, {"t": "rt", "i": rt["i"], "k": rt["k"]})
 
     async def _pk_offer(self, s: Session) -> None:
         """Offer a passkey registration to a ready p33 device whose record has none (after a pairing, or on request)."""
@@ -1409,9 +1342,13 @@ class Host:
                             self.meter_update(quota_windows=windows)
                         asyncio.create_task(quota_initial())
             await self.send_app(s, {"t": "hist_meta", **self.hist.meta()})
-            # IDs track insertions, not revisions. A known open page may have completed
-            # offline without advancing the phone's cursor; replay the bounded current head.
-            turns, _ = self.hist.page(limit=HIST_READY)
+            h = s.hist or {}
+            if h.get("epoch") == self.hist.epoch:
+                turns, more = self.hist.page(after=h.get("last", 0), limit=HIST_READY)
+                if more:                # more than 50 missed: the newest 50; it pages back with hist_get before
+                    turns, _ = self.hist.page(limit=HIST_READY)
+            else:
+                turns, _ = self.hist.page(limit=HIST_READY)
             for t in turns:
                 await self.send_app(s, {"t": "hist_turn", "epoch": self.hist.epoch, "turn": t})
             for q in list(self.questions.values()):
@@ -1581,7 +1518,6 @@ class Host:
     def language_changed(self, lang, from_account: bool = False) -> None:
         """A1: the one language changed. The main Agent speaks it from its next turn (identity text, hot); the account
         learns a local change with the next report (soon: triggered here)."""
-        self.lang = "en" if lang == "en" else "zh"
         if self.agent_cfg is not None:
             self.agent_cfg["language"] = lang
         if self.agent is not None and getattr(self.agent, "cfg", None) is not None and not self.agent.cfg.get("_workflow_ceo"):
@@ -2677,10 +2613,10 @@ class Host:
             controls.log(self.st, action="update", device=s.device, result=why or "ok", obj={},
                          sig=(authorization or {}).get("sig"), n=(authorization or {}).get("n"), ts=(authorization or {}).get("ts"))
             if why or arg:
-                return done(slash.Result("Send /update from a paired phone" if self.lang == "en" else "请从已配对手机发送 /update", "refused"))
+                return done(slash.Result("请从已配对手机发送 /update / Send /update from a paired phone", "refused"))
             if not phone_update.reserve(self.st):
-                return done(slash.Result("Upgrade in progress" if self.lang == "en" else "正在升级，请稍候", "info"))
-            self.cmd_card("update", slash.Result("Checking and upgrading; reconnect for the result." if self.lang == "en" else "正在查最新版并升级，服务会重启；重连后回报结果。", "info"), by, turn, interim=True)
+                return done(slash.Result("正在升级，请稍候 / Upgrade in progress", "info"))
+            self.cmd_card("update", slash.Result("正在查最新版并升级，服务会重启；重连后回报结果。 / Checking and upgrading; reconnect for the result.", "info"), by, turn, interim=True)
             self.phone_upgrade_task = asyncio.create_task(self.phone_upgrade(turn, by))
             return turn
         if not self.agent:
@@ -2721,9 +2657,9 @@ class Host:
                 if rec:
                     self.cmd_card("update", slash.Result(phone_update.text(rec, self.lang), "ok" if rec.get("result") == "ok" else "error"), by, turn)
                     return
-            self.cmd_card("update", slash.Result("Upgrade timed out: run agentj doctor" if self.lang == "en" else "升级超时：在电脑运行 agentj doctor", "error"), by, turn)
+            self.cmd_card("update", slash.Result("升级超时：在电脑运行 agentj doctor / Upgrade timed out: run agentj doctor", "error"), by, turn)
         except Exception:
-            self.cmd_card("update", slash.Result("Could not start upgrade: run agentj update apply" if self.lang == "en" else "无法启动升级：在电脑运行 agentj update apply", "error"), by, turn)
+            self.cmd_card("update", slash.Result("无法启动升级：在电脑运行 agentj update apply / Could not start upgrade: run agentj update apply", "error"), by, turn)
         finally:
             if not launched or not phone_update.busy(self.st):
                 phone_update.release(self.st)
@@ -2762,52 +2698,26 @@ class Host:
                 await self._op(wire.OP_BULK, s.cid)
 
     async def on_tts(self, s, obj):
+        if self.sessions.get(s.cid) is not s or s.state != "ready" or not self.st.is_allowed(s.pub): return
         from . import voice
         import base64
-        def failed(why, exc=None):
-            error = voice.speech_error(exc) if exc is not None else None
-            self.st.log("tts_failed", why=why, exception_type=error.exception_type if error else None,
-                        http_status=error.http_status if error else None)
-        if self.sessions.get(s.cid) is not s or s.state != "ready" or not self.st.is_allowed(s.pub):
-            failed("not_ready")
-            return
         r=obj.get("r")
-        if not wire.is_id22(r):
-            failed("invalid_request")
-            return
+        if not wire.is_id22(r): return
         if getattr(self, "tts_busy", False):
-            failed("busy")
             return await self.send_app(s,{"t":"tts_end","r":r,"ok":False,"why":"busy"})
         turn=self.hist.get(obj.get("id"))
         if not turn or turn.get("end") not in ("done", "stopped", "failed"):
-            failed("not_ready")
-            return await self.send_app(s,{"t":"tts_end","r":r,"ok":False,"why":"not_ready"})
+            return await self.send_app(s,{"t":"tts_end","r":r,"ok":False,"why":"missing"})
         self.tts_busy=True
         try:
             text=turn.get("reply",{}).get("text","")
-            # One in-memory result only, bound to the exact reply and effective speech settings.
-            # Retry after an iOS playback denial must not charge the provider again.
-            import hashlib, json
-            cache_key=hashlib.sha256(json.dumps([text,self.preferences.get("voice",{})],sort_keys=True).encode()).digest()
-            cached=getattr(self,"tts_cache",None)
-            if cached and cached[0]==cache_key:
-                audio=cached[1]
-            else:
-                audio=await asyncio.to_thread(voice.synthesize,text,self.preferences)
-                self.tts_cache=(cache_key,audio)
+            audio=await asyncio.to_thread(voice.synthesize,text,self.preferences)
             for i in range(0,len(audio),24*1024):
-                if self.sessions.get(s.cid) is not s or not self.st.is_allowed(s.pub):
-                    failed("not_ready")
-                    return
-                if not await self.send_app(s,{"t":"tts_chunk","r":r,"i":i//(24*1024),"data":base64.b64encode(audio[i:i+24*1024]).decode()}):
-                    failed("network")
-                    return
-            if not await self.send_app(s,{"t":"tts_end","r":r,"ok":True,"bytes":len(audio),"mime":"audio/wav"}):
-                failed("network")
-        except Exception as exc:
-            error=voice.speech_error(exc)
-            failed(error.why, error)
-            await self.send_app(s,{"t":"tts_end","r":r,"ok":False,"why":error.why})
+                if self.sessions.get(s.cid) is not s or not self.st.is_allowed(s.pub): return
+                if not await self.send_app(s,{"t":"tts_chunk","r":r,"i":i//(24*1024),"data":base64.b64encode(audio[i:i+24*1024]).decode()}): return
+            await self.send_app(s,{"t":"tts_end","r":r,"ok":True,"bytes":len(audio),"mime":"audio/wav"})
+        except Exception:
+            await self.send_app(s,{"t":"tts_end","r":r,"ok":False,"why":"engine"})
         finally:
             self.tts_busy=False
 
@@ -3484,43 +3394,7 @@ class Host:
                     print("· 没有在线的已批准设备", flush=True)
 
     # ------------------------------------------------------------ main
-    def loop_exception_handler(self, loop, context) -> None:
-        """Only the library's pre-connection recv_messages race is quieted; all other errors keep their handler."""
-        from websockets import __version__ as ws_version
-        from websockets.asyncio.connection import Connection
-        exc = context.get("exception")
-        handle = context.get("handle")
-        callback = getattr(handle, "_callback", None)
-        # asyncio transport wrappers clear their protocol before reporting the error.
-        # The failing attribute object and library frame identify the connection reliably.
-        conn = getattr(exc, "obj", None)
-        tb = getattr(exc, "__traceback__", None)
-        while tb is not None and tb.tb_next is not None:
-            tb = tb.tb_next
-        if (isinstance(exc, AttributeError) and getattr(exc, "name", None) == "recv_messages"
-                and isinstance(conn, Connection) and callable(callback)
-                and not hasattr(conn, "recv_messages")
-                and tb is not None and tb.tb_frame.f_code is Connection.connection_lost.__code__
-                and tb.tb_frame.f_locals.get("self") is conn):
-            logging.getLogger(__name__).debug("websockets %s: connection_lost before connection_made (recv_messages)", ws_version)
-            return
-        previous = getattr(self, "_previous_exception_handler", None)
-        if previous:
-            previous(loop, context)
-        else:
-            loop.default_exception_handler(context)
-
     async def run(self) -> None:
-        loop = asyncio.get_running_loop()
-        self._previous_exception_handler = loop.get_exception_handler()
-        loop.set_exception_handler(self.loop_exception_handler)
-        try:
-            await self._run()
-        finally:
-            if loop.get_exception_handler() == self.loop_exception_handler:
-                loop.set_exception_handler(self._previous_exception_handler)
-
-    async def _run(self) -> None:
         fence.no_dump()   # same-user processes cannot read this process's memory, environment or sockets
         sock = self.st.sock_path
         if sock.exists():

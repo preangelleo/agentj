@@ -1098,19 +1098,7 @@ export default {
   "share.added": "分享内容已放进输入框，可补一句话再发送。",
   "share.failed": "未能接收分享，请重新分享。最多 10 张图片，总大小不超过 25 MB。",
   "ver.new": "Agent J 有新版本（{v}）。手机/网页还没升级，请点右上角设置图标 →「更新并刷新」，或点下方按钮。",
-  "ver.later": "稍后",
-  "rt.dead": "这台手机的自动登录已经失效：电脑那边解绑了它，或者它已经在另一个浏览器或主屏幕图标里登录。请扫码重新配对。",
-  "pk.none": "没能用 Face ID 连回电脑：可能是取消了，也可能这台手机没有保存 Agent J 的 Face ID 记录（iPhone 要在设置里打开 iCloud 钥匙串才能保存）。请扫码重新配对。",
-  "pk.notSaved": "Face ID 记录没存上，现在的配对照常能用。iPhone 要在「设置 → Apple 账户 → iCloud → 密码（钥匙串）」里打开它才能保存；打开后可以在菜单里点「设置 Face ID」再试。",
-  "r.speak.err.missing_key": "电脑服务还没有朗读密钥。请在电脑服务环境里添加 key，然后重启 Agent J。",
-  "r.speak.err.provider_rejected": "朗读供应商拒绝了请求。请核对 key、额度和音色设置。",
-  "r.speak.err.provider_busy": "朗读供应商正忙，请稍后再试。",
-  "r.speak.err.provider_unavailable": "朗读供应商暂时不可用，请稍后再试。",
-  "r.speak.err.network": "连接朗读供应商失败，请检查电脑网络后重试。",
-  "r.speak.err.busy": "正在生成另一段朗读，请稍后再试。",
-  "r.speak.err.not_ready": "朗读还未就绪，请等电脑连接和回复完成后重试。",
-  "r.speak.err.tap_play": "点一下播放",
-  "r.speak.voice_fallback": "已回落到同语言默认本地音色；原音色在这台手机上不可用。"
+  "ver.later": "稍后"
  },
  "en": {
   "meta.title": "Agent J · Phone remote",
@@ -2210,18 +2198,6 @@ export default {
   "share.added": "Shared content is in the composer. Add a note if you like, then send.",
   "share.failed": "Could not receive the share. Share again with up to 10 images, 25 MB total.",
   "ver.new": "A newer Agent J version ({v}) is available. Your phone/web page has not been updated yet. Tap the settings icon at the top right → “Update and reload”, or use the button below.",
-  "ver.later": "Later",
-  "rt.dead": "Automatic sign-in no longer works on this phone: the computer unpaired it, or it signed in from another browser or Home Screen icon. Scan the QR code to pair again.",
-  "pk.none": "Couldn't reconnect with Face ID. It may have been cancelled, or this phone has no saved Agent J Face ID record (on iPhone, iCloud Keychain must be on to save one). Scan the QR code to pair again.",
-  "pk.notSaved": "The Face ID record wasn't saved; your pairing still works. On iPhone, turn on Settings → Apple Account → iCloud → Passwords (Keychain), then choose Set up Face ID in the menu to try again.",
-  "r.speak.err.missing_key": "The computer service has no speech key. Add the key to its service environment, then restart Agent J.",
-  "r.speak.err.provider_rejected": "The speech provider rejected the request. Check the key, credit and voice settings.",
-  "r.speak.err.provider_busy": "The speech provider is busy. Try again shortly.",
-  "r.speak.err.provider_unavailable": "The speech provider is temporarily unavailable. Try again shortly.",
-  "r.speak.err.network": "Could not reach the speech provider. Check the computer network and retry.",
-  "r.speak.err.busy": "Another reading is being generated. Try again shortly.",
-  "r.speak.err.not_ready": "Reading is not ready. Wait for the computer to connect and the reply to finish.",
-  "r.speak.err.tap_play": "Tap to play.",
-  "r.speak.voice_fallback": "Using the default local voice for this language; your previous voice is unavailable on this phone."
+  "ver.later": "Later"
  }
 };

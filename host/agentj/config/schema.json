@@ -149,7 +149,7 @@
     "voice.tts.voice": {
       "type": "string",
       "default": "",
-      "description": "Host OS or cloud provider voice ID / 主机系统或云端服务商音色 ID",
+      "description": "Local OS voice ID / 本地系统音色 ID",
       "aliases": [
         "音色",
         "男声",
@@ -808,20 +808,6 @@
       "apply": "hot",
       "verify": "agentj config auto-update status",
       "since": "0.16.5"
-    },
-    "voice.tts.phone_voice": {
-      "type": "string",
-      "default": "",
-      "description": "Phone local voice name or URI; empty uses the language default / 手机本机音色名称或 URI；空值使用同语言默认音色",
-      "aliases": [
-        "voice tts phone voice",
-        "手机本地音色"
-      ],
-      "tier": "user",
-      "apply": "hot",
-      "verify": "agentj config validate --json",
-      "since": "0.17.4",
-      "maxLength": 160
     }
   }
 }

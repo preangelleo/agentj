@@ -125,10 +125,10 @@ async function onFrame(s, data) {
       await sendOn(s, g, { t: 'hello', caps: ['p33'] }, MAX_JSON);
       H.onSas(await safetyCode(h));
     } else if (s.mode === 'restore') {
-      // F20 (§12): hello, then the one pk_restore (P122 §12.1: rt_restore) — the host answers pk_ok + ready, or pk_fail + close
+      // F20 (§12): hello, then the one pk_restore — the host answers pk_ok + ready, or pk_fail + close
       s.phase = 'pk-wait';
       await sendOn(s, g, { t: 'hello', caps: ['p33'], ...H.helloExtra() }, MAX_JSON);
-      const pk = s.ctx.rt ? { t: 'rt_restore', ...s.ctx.rt } : { t: 'pk_restore', ...s.ctx.pk };
+      const pk = { t: 'pk_restore', ...s.ctx.pk };
       try { pk.iid = await installId(s.ctx.channel); } catch { /* no storage: the record simply keeps no install hash */ }
       await sendOn(s, g, pk, MAX_JSON);
     } else {
@@ -220,7 +220,7 @@ async function hostUp(s) {
     s.hs = await new Handshake({ protocol: IK, initiator: true, prologue: resumePrologue(s.ctx.channel), s: dev, rs: s.ctx.hostPub }).init();
     const sk = await signKey();                       // a device paired before L1 registers its approval key here (host keeps the first)
     const info = sk ? { v: 1, sk: b64u(sk.pub) } : { v: 1 };
-    if (s.mode === 'restore') info[s.ctx.rt ? 'rt' : 'pk'] = 1;   // F20 / P122: inside the encrypted msg1 — the relay sees a plain RESUME
+    if (s.mode === 'restore') info.pk = 1;            // F20: inside the encrypted msg1 — the relay sees a plain RESUME
     msg1 = frame(KIND.RESUME_INIT, await s.hs.writeMessage(enc.encode(JSON.stringify(info))));
     H.setStatus('connecting', 'st.resuming');
   }
@@ -230,15 +230,7 @@ async function hostUp(s) {
   s.pacer.mark();
 }
 
-// P122: a ticket restore that the network or the computer interrupted is retried like a resume (with a fresh proof);
-// only the host's own pk_fail ends it. A passkey restore needs a new Face ID tap, so it ends at once.
-function retryTicket() {
-  closeSession();
-  H.onHostDown();
-  scheduleReconnect();
-}
 function hostDown(s) {
-  if (s.mode === 'restore' && s.ctx.rt && s.phase !== 'wait-host') return retryTicket();
   if (s.mode === 'restore' && s.phase !== 'wait-host') { closeSession(); return H.onRestoreFailed?.('bad'); }
   if (s.mode === 'pair' && s.phase !== 'wait-host') {  // host restarted mid-pairing: the pairing is gone
     closeSession();
@@ -253,7 +245,6 @@ function hostDown(s) {
 function onClose(s, ev) {
   if (s !== sess) return;                             // superseded or closed by us
   sess = null; endGen(s);
-  if (s.mode === 'restore' && s.ctx.rt && !s.pkFail) { H.onHostDown(); return scheduleReconnect(); }   // P122: see retryTicket
   if (s.mode === 'restore') return H.onRestoreFailed?.(s.pkFail || 'bad');   // F20: never "removed", never a retry loop
   if (s.mode === 'pair') return H.onPairFailed();     // a pairing that ended (refused, timed out, …) never means "removed"
   if (s.removed) {

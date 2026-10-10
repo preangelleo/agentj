@@ -42,10 +42,8 @@
     {
       // Phone local voices, host OS speech, or your cloud provider / 手机本地、主机或云端; default="phone"
       "mode": "phone",
-      // Host OS or cloud provider voice ID / 主机系统或云端服务商音色 ID; default=""
+      // Local OS voice ID / 本地系统音色 ID; default=""
       "voice": "",
-      // Phone local voice; empty uses the language default / 手机本机音色，空值使用同语言默认音色
-      "phone_voice": "",
       // Speech rate / 语速; default=1.0
       "rate": 1.0,
       // Own-key provider; reply audio crosses our relay only as ciphertext / 自有密钥服务商；回复音频只以密文经过中继; default="openai"

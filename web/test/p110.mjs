@@ -9,8 +9,7 @@ import {launch,newPage,navigate,waitFor,waitState,evaluate,shoot} from './browse
 const out=new URL('../../../reports/qa/p110/browser/',import.meta.url);mkdirSync(out,{recursive:true});
 const docs=new URL('../../site/content/docs/22-share-screenshot/',import.meta.url);
 const web=await startWebServer(),fake=await startFakeHost(),B=await launch();
-// P122: the one allowed POST is the ticket cookie endpoint (/.aj/rt: same-origin JSON ≤ 512 B, worker.ts) — never share bytes
-const posts=[];web.server.on('request',r=>{if(r.method==='POST'&&r.url!=='/.aj/rt')posts.push(r.url)});
+const posts=[];web.server.on('request',r=>{if(r.method==='POST')posts.push(r.url)});
 const sender=createServer((req,res)=>res.end('<!doctype html><title>Synthetic screenshot share fixture</title><p>Local share sender</p>'));
 await new Promise(r=>sender.listen(0,'127.0.0.1',r));const senderUrl=`http://127.0.0.1:${sender.address().port}/`;
 const results={};
