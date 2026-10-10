@@ -1,6 +1,6 @@
-# Agent J 0.17.3a1 release notes
+# Agent J 0.17.4a1 release notes
 
-Host 0.17.3a1 / install 0.21.4; phone-web scope.
+Host 0.17.4a1 / install 0.21.5; phone-web scope.
 Phone parity must pass --strict. Full Android/Telegram parity is incomplete.
 Full Android/Telegram parity is incomplete.
 No APK is included in this release. Android source is for review, not a released app.
@@ -8,18 +8,16 @@ No APK is included in this release. Android source is for review, not a released
 Publication status: local preparation only. Live site verification is DEFERRED until
 the public commit and tag are pushed, the site is deployed, and cold installation passes.
 
-On publication failure, restore v0.17.2a1 host/site/phone and the recorded Dashboard static baseline. Publish Dashboard static C, front Worker/site A, then phone web/Worker B; no D1 migration or relay backend change.
+On publication failure, restore v0.17.3a1 host/site/phone and recorded Dashboard baseline. C static baseline, A front Worker/site/install/package, B phone web and web Worker including /.aj/rt Cookie routes; no new D1 migration or relay backend change.
 ## Changes
 
-- Bots support Telegram private chats, separately budgeted own model keys, companion and daily-free paid Q&A templates; payment links are not payment integration.
-- Fix original visitor text and conversation history reaching models on both web and Telegram channels. Telegram admission, model errors, empty replies and timeouts get a fixed fallback.
-- Android PWA screenshot sharing and an explicit iPhone clipboard action feed existing encrypted attachments; sending remains the user's choice.
-- Shared spacing and Escape dismissal preserve drafts and close the highest open layer.
-- Upgrade receipts distinguish the computer program from the cached phone page. Metadata-only version notices never silently refresh; choose Update & refresh.
-- P108 seat REST API and Gemini main-Agent adaptation are excluded. COREv8 unchanged.
+- iPhone automatic sign-in: wrapped device-key storage and rotating first-party HttpOnly renewal Cookie after Safari evicts page storage; revoke invalidates it.
+- The web Worker sees the renewal credential during recovery; privacy disclosure records this approved trust boundary. Existing affected phones require one pairing or Face ID recovery.
+- Correct quota-window guidance, replay revised history after reconnect, active-language update receipts and narrow websockets callback noise handling; version diagnostics and dependency cap <18.
+- Cloud read-aloud reports safe actionable failures; iOS gesture-unlocked playback and one host-memory synthesis cache avoid repeated billing after blocked playback.
+- P108 is excluded. COREv8 unchanged.
 
-- Physical iPhone/Safari and Android system sharing remain pending. The unsigned shortcut source/manual import is available; an iCloud install link is not yet provided.
-- Production web Bot conversation, upgrade receipt and cached-page notice require operator verification after publication. Local browser screenshots are not physical-phone acceptance.
+- Physical iPhone Safari/Home Screen Cookie persistence and Face ID remain pending; WebKit/Chromium evidence is not physical acceptance.
 
 ## Material acceptance limits
 

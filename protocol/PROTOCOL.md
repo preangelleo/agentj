@@ -1106,6 +1106,60 @@ msg1, everything else inside Noise transport messages.
 person). Any of them can restore the phone's record — that is, take its slot; the context that held it is told `replaced`.
 This is accepted and stated on the privacy page. Android / Google Password Manager behaves the same way for its account.
 
+## 12.1 Stay signed in: device key storage on WebKit + the renewal ticket (P122, 0.17.4)
+Leo: "pair once; unless the computer unpaired it on purpose, opening the page must just connect." Two causes, two fixes.
+
+**Device key on WebKit** (root cause of "every open asks for the QR again" on iPhone). WebKit — Safari and every iOS browser —
+cannot read a stored X25519 `CryptoKey` back from IndexedDB (WebKit bug 312279: `get()` yields null or never completes;
+Ed25519, P-256 and AES keys round-trip). Before 0.17.4 the page therefore lost its device key on every open, found its
+`host` record's `dk` ≠ the new key and deleted the pairing ("this browser cleared its data"), while the computer still listed
+the phone. Now (`web/public/js/store.js`): a key is stored directly (`device`) only where a probe in a throw-away database
+(`aj-x25519-probe`, deleted after) proves the round trip; elsewhere it is stored **wrapped** (`device2` = `{v:2, pub, iv, ct,
+kek}`: `ct` = AES-GCM `wrapKey('pkcs8')` under `kek`, a non-extractable AES-256 key with usages wrapKey/unwrapKey only) and
+`unwrapKey`-ed on load straight into a non-extractable X25519 key — the private bytes never reach page script. Bound: code
+running in this origin could unwrap it as extractable (it can only *use* a directly stored key) — the same bound as the
+§10.14 sealed records. Existing records are read as before; a page that cannot read its old record pairs once more.
+
+**Renewal ticket** (Safari's 7-day eviction of script-writable storage; a browser that cleared site data but kept cookies).
+Every device record may hold one `"rt":{"i":<16 B>,"k":<32 B>,"at"}` (b64url). Host → device (ready session, inside Noise)
+`{"t":"rt","i","k"}`: after `approved` (every pairing), after a §12 passkey restore (which drops the old `rt`), after a ticket
+restore, and in answer to `{"t":"rt_req"}` (≤ 1 per minute per session; the page asks when its `host.rtAt` is missing or
+> 30 days old, or the origin says its cookie is gone). The page never stores `k`: it POSTs
+`{"op":"set","v":"1.<user handle (§12, 50 B)>.<i>.<k>"}` to `/.aj/rt` on its own origin and records only `rtAt`. The web Worker
+(`web/worker.ts` `rtEndpoint`, stateless, no logging) answers `/.aj/rt` only to a same-origin JSON POST (`Origin` = the host
+it reached, `Sec-Fetch-Site` same-origin when sent, `Content-Type: application/json`, body ≤ 512 B; anything else → bare 404)
+and sets `__Secure-aj_rt=<v>; Path=/.aj/rt; Max-Age=34560000; Secure; HttpOnly; SameSite=Strict` — page script cannot read it,
+no other request carries it, and Safari's 7-day rule does not apply to a first-party server-set cookie. `{"op":"has"}` →
+`{"has":bool}`; `{"op":"clear"}` expires it (unpair, `removed`, a new pairing before its own ticket arrives).
+
+**Restore by ticket.** A page with no usable pairing (no `host` record, or `dk` ≠ its key) and no pairing link makes its new
+keys, computes `challenge = SHA-256("agentjarvis/rt/restore/v1\n" ‖ device_x25519_pub ‖ device_ed25519_pub ‖ ts u64 BE (ms) ‖
+nonce(16))` (§12's layout, own label) and POSTs `{"op":"prove","c":<challenge>}`. The Worker answers `{}` (no cookie) or
+`{"h":<handle>,"i":<id>,"p":HMAC-SHA256(k, "agentjarvis/rt/proof/v1\n" ‖ challenge)}` — never `k`. The page shows the chat
+screen ("connecting") and opens the §12 restore flow with msg1 `{"v":1,"sk":<approval key>,"rt":1}`, `hello`, then
+`{"t":"rt_restore","i","p","uh","ts","nonce"[,"iid"]}`. Host checks in order: the shared §12 rate limit · `|now − ts|` ≤ 5 min
+· nonce unseen · `i` is the `rt` of a listed record · `uh` = this host's handle · `p` = HMAC(stored `k`, label ‖ challenge
+recomputed from **this session's IK static key and msg1 `sk`**) (constant time). Then in ONE locked write (`State.ticket_restore`)
+the record takes the new keys exactly as in §12 (name / `paired_at` / `pk` kept, old id ends as `replaced`) **and** its `rt`
+is replaced by a new one; host → `pk_ok`, `ready`, then `rt` (the new ticket) and, when the record has no passkey, a
+`pk_offer`. Failures → `pk_fail` (`unknown` = no such ticket: revoked, evicted, unbound, or already rotated by another context;
+the page deletes its cookie and says 「这台手机的自动登录已经失效…请扫码重新配对」) — a transport drop or a host restart before
+the answer is retried like a resume with a fresh proof; `expired` (the host was offline > 5 min) is retried ≤ 3 times;
+`bad` keeps the cookie and tries the passkey. host.log: `rt_issue`, `rt_restore` (device id, result, reason) — never `i` or `k`.
+The terminal prints 「手机自动连回来了（浏览器清过数据；同一台，没有新增遥控器）」.
+
+**What a ticket is worth.** Exactly a §12 restore of that one record — never a new remote, never more rights. Dies with the record
+(revoke, eviction, `iid` replace, Dashboard unbind); single use (rotated in the restoring write); a proof is bound to one new
+key, one nonce, 5 min. Theft: needs the cookie (the phone's browser profile, or code running in our web origin, which can
+already drive the page's keys) — or **our web Worker at the moment of a restore**: it sees `k` in that request's Cookie header.
+A modified Worker could therefore take this phone's slot (the original phone is then told `replaced`; unpairing kills it). This is
+the web version's existing trust tier ("tampering would be detectable", §5 / `07-privacy`), stated on the privacy page; the
+relay sees nothing new (a RESUME and padded DATA frames). Old pages ignore `rt`; old hosts ignore `rt_req` and never issue.
+
+**Automatic passkey.** A page that knows it was paired (its `aj.paired` marker survived but its pairing did not), or whose ticket
+restore ended `bad`, calls the §12 `get()` once without waiting for a tap (iOS may require a tap: then nothing is shown and the
+「用 Face ID 连回电脑」 button stays). A tap that finds no passkey says why (cancelled, or no saved record — iCloud Keychain off).
+
 ## 13. Media out: files the Agent shows to the phone (F21, 0.15.2)
 The reverse of §10.3: pictures, audio, video, PDFs, generated HTML and files that the main Agent's reply refers to appear
 inside that reply on the phone. Only inside §3 transport messages, only to `p33` sessions; no new button. Code:

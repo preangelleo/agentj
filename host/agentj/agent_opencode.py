@@ -150,6 +150,7 @@ def config_content(user: str | None) -> str:
 
 
 _REGION = ("region", "country", "territory", "location is not supported", "not available in your", "unsupported_country")
+_QUOTA_WINDOW = ("quota", "额度")
 _QUOTA = ("quota", "insufficient", "balance", "billing", "credit", "payment")
 _NETWORK = ("fetch failed", "certificate", "enotfound", "econnrefused", "econnreset", "etimedout", "connect timeout",
             "unable to connect", "socket hang up", "proxy", "tunnel")
@@ -163,10 +164,19 @@ def provider_error_reason(name, data, connected=None, provider=None):
     serve's `connected` list at start (`connected`, `provider`) is `no_key`, never 「OpenCode 内部错误」."""
     code = data.get('statusCode')
     code = code if type(code) is int and 100 <= code <= 599 else None
-    detail = (str(data.get('message') or '') + ' ' + str(data.get('responseBody') or '')[:2000]).lower()
+    body = str(data.get('responseBody') or '')[:2000]
+    try:  # Providers can JSON-escape Chinese quota detail; decode only this bounded classification input.
+        body = json.dumps(json.loads(body), ensure_ascii=False)
+    except (ValueError, TypeError, RecursionError):
+        pass
+    detail = (str(data.get('message') or '') + ' ' + body).lower()
     lname = name.lower()
     if code == 451 or (code in (400, 403, None) and any(x in detail for x in _REGION)):
         return "region"
+    if code == 429 and (any(x in detail for x in _QUOTA_WINDOW)
+                        or re.search(r"(?:weekly|monthly|daily|usage)[ _-]+(?:usage[ _-]+)?limit", detail)
+                        or ("exceeded your" in detail and not re.search(r"rate[ _-]*limit", detail))):
+        return "quota_window"
     if code == 402 or (code in (403, 429) and any(x in detail for x in _QUOTA)):
         return "balance"
     reason = ("login" if code == 401 or "auth" in lname or "key" in lname
@@ -187,6 +197,7 @@ PROVIDER_NOTES = {
     "region": "服务商不支持你所在的地区：让电脑上的 Agent 配好代理（例如说「帮我把代理设成 http://127.0.0.1:7890」），或改用 Claude Code。 / Provider unavailable in your region: set a proxy (agentj config set proxy.https …) or use Claude Code.",
     "access": "服务商拒绝访问（403）：核实地区、代理、账户权限及模型授权；403 不一定是 key 无效。 / Provider access denied: check region, proxy and account/model permission; 403 does not prove an invalid key.",
     "balance": "模型服务余额或额度不足：在服务商后台充值或查看额度，然后再试。 / Provider balance or quota exhausted; check your provider account.",
+    "quota_window": "本周/本期额度已用完：到重置时间再试，或在服务商处升级套餐。 / Weekly/current-period quota exhausted: wait until the reset time or upgrade your plan with the provider.",
     "rate_limit": "模型服务限流：等一会儿再发；这条消息不会自动重发。 / Provider rate limit; wait and retry manually.",
     "no_key": "OpenCode 里没有「{provider}」可用的 key：只在终端里 export 的 key，后台运行的 Agent J 看不到。在电脑运行 `opencode auth login` 选 {provider} 存好 key，再发一条消息即可——Agent J 会自动重启 OpenCode 读到它。 / OpenCode has no key for {provider} (a key exported only in your shell is invisible to the Agent J service): store it with `opencode auth login`, then just send again.",
     "model": "模型名称不可用：运行 `opencode models` 核实服务商/模型 ID，再用 `agentj agent opencode --model <provider/model>` 更新。 / Run `opencode models`, then update the model ID.",

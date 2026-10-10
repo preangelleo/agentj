@@ -154,6 +154,15 @@ test('app.js + js/*.js: only WebSocket egress, non-extractable keys, no plaintex
       assert.equal((s.match(/\bfetch\s*\(/g)||[]).length,1);assert.ok(s.includes(exact));
       assert.ok(s.includes("new URL('/version.json',location.origin)"));s=s.replace(exact,'VERSION_METADATA_CHECK');
     }
+    if (r === 'js/store.js') {   // P122: the one export is the device key's PUBLIC half (wrapped mode, WebKit bug 312279)
+      const exact = "new Uint8Array(await crypto.subtle.exportKey('raw', kp.publicKey))";
+      assert.equal(s.split(exact).length, 2); s = s.replace(exact, 'PUBLIC_KEY_EXPORT');
+    }
+    if (r === 'js/renew.js') {   // P122: exactly one same-origin JSON POST to /.aj/rt (the ticket cookie), nothing else
+      const exact = "fetch(new URL(ENDPOINT, location.origin), { method: 'POST', credentials: 'same-origin', cache: 'no-store', redirect: 'error',";
+      assert.equal((s.match(/\bfetch\s*\(/g) || []).length, 1); assert.ok(s.includes(exact)); assert.match(s, /const ENDPOINT = '\/\.aj\/rt';/);
+      s = s.replace(exact, 'TICKET_COOKIE_CALL');
+    }
     for (const bad of [/\bfetch\s*\(/, /XMLHttpRequest/, /sendBeacon/, /\bEventSource\b/, /sessionStorage/, /\bconsole\./, /exportKey/, /document\.cookie/, /postMessage/,
       /\bnew Worker\b/, /importScripts/, /\bimport\s*\(/]) {
       assert.doesNotMatch(s, bad, `${r} uses ${bad}`);
@@ -182,7 +191,10 @@ test('app.js + js/*.js: only WebSocket egress, non-extractable keys, no plaintex
   // drafts and input history ONLY through putSealed (AES-GCM ciphertext {v, iv, ct})
   const puts = [...new Set(OURS_FILES.flatMap((r) => [...read(pub(r)).matchAll(/dbPut\('(\w+)'/g)].map((m) => m[1])))].sort();
   // 0.15.1 (P55): + 'iid', the random install id (the other copy of localStorage "aj.iid") — no text, no key material
-  assert.deepEqual(puts, ['device', 'host', 'iid', 'local', 'sign'], 'plain IndexedDB writes: keys + host record + install id only');
+  // P122: + 'device2', the device key wrapped under a non-extractable AES key where X25519 cannot be stored (WebKit)
+  assert.deepEqual(puts, ['device', 'device2', 'host', 'iid', 'local', 'sign'], 'plain IndexedDB writes: keys + host record + install id only');
+  assert.match(read(pub('js/store.js')), /unwrapKey\('pkcs8', d\.ct, d\.kek, WRAP\(d\.iv\), \{ name: 'X25519' \}, false, \['deriveBits'\]\)/, 'the wrapped device key unwraps non-extractable');
+  assert.match(read(pub('js/store.js')), /generateKey\(\{ name: 'AES-GCM', length: 256 \}, false, \['wrapKey', 'unwrapKey'\]\)/, 'wrapping key not extractable');
   const sealed = [...new Set(OURS_FILES.flatMap((r) => [...read(pub(r)).matchAll(/putSealed\("(\w+)"/g)].map((m) => m[1])))].sort();
   assert.deepEqual(sealed, ['draft', 'ihist', 'outbox'], 'sealed records: draft + input history + the offline queue (0.15.2)');
   const STORE = read(pub('js/store.js'));
@@ -224,7 +236,7 @@ test('worker: public (no Access since 2026-10-02) → asset with the full header
     assert.equal(await r.text(), '<html>client</html>');
     // connect-src = exactly our two relays (the legacy one: pairing links from not-yet-updated hosts), on both hosts
     assert.equal(r.headers.get('content-security-policy'),
-      "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src wss://relay.agentj.app wss://alpha-relay.agentjarvis.net " + origin + "/version.json" + "; " +
+      "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src wss://relay.agentj.app wss://alpha-relay.agentjarvis.net " + origin + "/version.json " + origin + "/.aj/rt" + "; " +
       "media-src 'self' blob:; frame-ancestors 'none'; base-uri 'none'; form-action 'none'; object-src 'none'", origin);
     assert.equal(r.headers.get('strict-transport-security'), 'max-age=31536000', `${origin}: HSTS`);
   }
@@ -269,7 +281,7 @@ test('worker: wrong host, non-GET/HEAD, malformed RELAY_URL → bare 404 without
   // without the legacy vars: only the new host, only the new relay
   const bare = { ...env(), LEGACY_WEB_HOST: undefined, LEGACY_RELAY_URL: undefined };
   assert.equal((await handle(req('https://alpha-web.agentjarvis.net/'), bare)).status, 404);
-  assert.match((await handle(req('https://m.agentj.app/'), bare)).headers.get('content-security-policy'), /connect-src wss:\/\/relay\.agentj\.app https:\/\/m\.agentj\.app\/version\.json; /);
+  assert.match((await handle(req('https://m.agentj.app/'), bare)).headers.get('content-security-policy'), /connect-src wss:\/\/relay\.agentj\.app https:\/\/m\.agentj\.app\/version\.json https:\/\/m\.agentj\.app\/\.aj\/rt; /);
   assert.equal((await handle(req('https://m.agentj.app/'), { ...env(), WEB_HOST: '' })).status, 404, 'no WEB_HOST → nothing');
 });
 

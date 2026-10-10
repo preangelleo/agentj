@@ -29,13 +29,55 @@ export const dbGet = (k) => kv('readonly', (s) => s.get(k));
 export const dbPut = (k, v) => kv('readwrite', (s) => s.put(v, k));
 export const dbDel = (k) => kv('readwrite', (s) => s.delete(k));
 
+// P122 (root cause of "every open asks for the QR again" on iPhone): WebKit — Safari and every iOS browser — cannot read a
+// stored X25519 CryptoKey back from IndexedDB (WebKit bug 312279: get() returns null or never completes; Ed25519, P-256 and
+// AES keys are fine). So the device key is stored directly only where a probe in a throw-away database proves the round trip;
+// elsewhere it is kept WRAPPED ('device2'): AES-GCM(pkcs8) under a non-extractable AES key in the same record, unwrapped on
+// load straight into a non-extractable X25519 key — the private bytes never reach page script. Trade-off (stated in
+// PROTOCOL §12.1): same-origin script could unwrap it as extractable, which it could not do with a directly stored key; the
+// same bound as the sealed records below (a casual read of the stored files learns nothing; code in this origin is trusted).
+const READ_MS = 2500;
+const within = (p, ms) => Promise.race([p, new Promise((r) => setTimeout(() => r(undefined), ms))]);
+async function x25519Persists() {
+  const name = 'aj-x25519-probe';
+  try {
+    const kp = await generateKeypair(false);
+    const db = await new Promise((res, rej) => { const r = indexedDB.open(name, 1); r.onupgradeneeded = () => r.result.createObjectStore('kv'); r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error); });
+    const io = (mode, fn) => new Promise((res, rej) => { const tx = db.transaction('kv', mode); const q = fn(tx.objectStore('kv')); tx.oncomplete = () => res(q.result); tx.onerror = tx.onabort = () => rej(tx.error); });
+    await io('readwrite', (st) => st.put({ priv: kp.priv }, 'k'));
+    const back = await within(io('readonly', (st) => st.get('k')), READ_MS);
+    db.close();
+    return !!(back && back.priv && back.priv.algorithm?.name === 'X25519');
+  } catch { return false; } finally { try { indexedDB.deleteDatabase(name); } catch { /* best effort */ } }
+}
+const WRAP = (iv) => ({ name: 'AES-GCM', iv });
+async function wrappedKeypair() {
+  const kek = await crypto.subtle.generateKey({ name: 'AES-GCM', length: 256 }, false, ['wrapKey', 'unwrapKey']);
+  const kp = await crypto.subtle.generateKey({ name: 'X25519' }, true, ['deriveBits']);   // extractable only to be wrapped
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const ct = new Uint8Array(await crypto.subtle.wrapKey('pkcs8', kp.privateKey, kek, WRAP(iv)));
+  const pub = new Uint8Array(await crypto.subtle.exportKey('raw', kp.publicKey));
+  const rec = { v: 2, pub, iv, ct, kek };
+  return { rec, kp: { priv: await unwrapDevice(rec), pub } };        // the extractable original is dropped here
+}
+const unwrapDevice = (d) => crypto.subtle.unwrapKey('pkcs8', d.ct, d.kek, WRAP(d.iv), { name: 'X25519' }, false, ['deriveBits']);
+
 let devKey = null;
 export async function deviceKey() {
   if (devKey) return devKey;
-  const d = await dbGet('device');
+  const w = await dbGet('device2');
+  if (w && w.v === 2 && w.kek && w.ct && w.iv && w.pub) {
+    try { return (devKey = { priv: await unwrapDevice(w), pub: new Uint8Array(w.pub) }); } catch { /* unusable: a new key below */ }
+  }
+  const d = await within(dbGet('device'), READ_MS).catch(() => undefined);
   if (d && d.priv && d.pub) return (devKey = { priv: d.priv, pub: new Uint8Array(d.pub) });
-  const kp = await generateKeypair(false);            // extractable: false — the private key never leaves WebCrypto
-  await dbPut('device', { priv: kp.priv, pub: kp.pub });
+  if (await x25519Persists()) {
+    const kp = await generateKeypair(false);          // extractable: false — the private key never leaves WebCrypto
+    await dbPut('device', { priv: kp.priv, pub: kp.pub });
+    return (devKey = kp);
+  }
+  const { rec, kp } = await wrappedKeypair();
+  await dbPut('device2', rec);
   return (devKey = kp);
 }
 

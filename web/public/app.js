@@ -27,6 +27,7 @@ import {initShare, onShareReady, forgetShare} from './js/share.js';
 import * as elevate from './js/elevate.js';     // F17: sudo / secret cards (§11)
 import * as secretout from './js/secretout.js'; // F32: secret pickup cards (§18)
 import * as passkey from './js/faceid.js';     // F20: the same phone without a second pairing (§12)
+import * as renew from './js/renew.js';        // P122: …and after the browser deleted this page's storage (§12.1)
 import * as bots from './js/bots.js';
 import * as friends from './js/friends.js';    // §17.7: /friends + the friend cards
 import { parseAgentId } from './proto/wire.js';
@@ -230,6 +231,7 @@ session.configure({
     await forgetLocal();                              // a new pairing starts empty: nothing of the previous computer goes to it
     await dbPut('host', host);
     markPaired(true);
+    ticketComing = true; ticketQueue(renew.clear);   // P122: the host sends this pairing's ticket right after (an old host: none)
     // Persistence permission is optional: never hold the pairing handshake on it.
     askPersist().then(() => checkPhoneEnvironment(true)).catch(() => {});
     $('pair-wiped').hidden = true;
@@ -241,6 +243,9 @@ session.configure({
   },
   onReady() {
     backfillPairing().catch(() => { /* only a hint for later */ });
+    restoreKind = null; rtRetries = 0;
+    if (!ticketComing) ticketCheck().catch(() => {});
+    ticketComing = false;
     onHostGone();
     controls.openPanel(controls.panel);
     setStatus('ready', 'st.ready');
@@ -255,7 +260,7 @@ session.configure({
   onHostDown: onHostGone,
   onRevoked: revoked,
   onPairFailed: pairFailed,
-  onRestoreFailed: pkFailed,
+  onRestoreFailed: restoreFailed,
   onProtocolFail(wasPair, e) {
     if (e && e.name === 'NotSupportedError') return fatal('error.noCrypto');
     setStatus('error', 'st.error');
@@ -290,6 +295,7 @@ function onApp(m) {
     case 'secret_out_done': secretout.done(m); return;
     case 'secret_out_err': secretout.failed(m); return;
     case 'pk_reg_res': pkSaved(m).catch(() => {}); return;
+    case 'rt': gotTicket(m); return;                  // P122 (§12.1): this phone's renewal ticket → the HttpOnly cookie
     case 'question': snap.addQuestion(m); return;
     case 'question_done': snap.questionDone(m); return;
     case 'auto': controls.showAuto(m); return;
@@ -344,6 +350,7 @@ async function revoked(why = 'revoked') {
   const h = await dbGet('host').catch(() => null);
   if (h && (h.approved || h.removed !== why)) await dbPut('host', { ...h, approved: false, removed: why }).catch(() => {});
   markPaired(false);
+  ticketQueue(renew.clear);                           // P122: a removed / replaced phone's ticket is dead on the host anyway
   const replaced = why === 'replaced';
   $('repair').hidden = replaced; // F36: continue in the other app; do not offer a takeover loop.
   setStatus('revoked', replaced ? 'st.replaced' : 'st.revoked');
@@ -371,7 +378,7 @@ function fatal(key) {
 }
 async function resume() {
   const host = await dbGet('host');
-  if (!host || !host.approved) return showIdle();
+  if (!host || !host.approved) { if (!(await tryTicket())) showIdle(); return; }
   setAgentName(host.name, false);                     // the cached name, shown before the connection is up
   show(controls.panel === 'chat' ? 'chat' : controls.panel);
   session.openSession('resume', { relay: host.relay, channel: host.channel, hostPub: new Uint8Array(host.hostPub) });
@@ -449,7 +456,8 @@ async function offerPasskey(m) {
   try { yes = await confirmSheet(t('pk.askTitle'), t('pk.askText'), t('pk.save')); } finally { no.dataset.i18n = 'sheet.cancel'; no.textContent = t('sheet.cancel'); }
   if (!yes) return;
   let reg;
-  try { reg = await passkey.register(nonce, { relayIndex: ri, channel: h.channel, hostPub: h.hostPub, name, displaySuffix: t('pk.computer') }); } catch { return; }   // cancelled / no Face ID: nothing changes
+  // cancelled / refused by the system (iPhone: no iCloud Keychain → no passkey can be saved): nothing changes; say why once
+  try { reg = await passkey.register(nonce, { relayIndex: ri, channel: h.channel, hostPub: h.hostPub, name, displaySuffix: t('pk.computer') }); } catch { toast(t('pk.notSaved'), 8000); return; }
   session.sendApp(reg, g).catch(() => toast(t('pk.saveFail')));
 }
 async function pkSaved(m) {
@@ -468,13 +476,16 @@ async function renderPk() {
   pkPrep = await passkey.prepareRestore((await deviceKey()).pub, sk.pub);
   b.hidden = view !== 'pair' || state !== 'idle';
 }
-async function pkRestore() {
+async function pkRestore(auto = false) {
   let prep = pkPrep;
   if (!prep || Date.now() - prep.ts > 4 * 60 * 1000) prep = await passkey.prepareRestore((await deviceKey()).pub, (await signKey()).pub);
   pkPrep = null;
   let a;
   try { a = await passkey.assert(prep.challenge); } catch (e) {                  // cancelled / no passkey here / not focused
     document.body.dataset.pkErr = (e && e.name) || 'error';                       // diagnostics only (tests read it)
+    // P122: a tap that found nothing says why (no passkey saved — on iPhone usually iCloud Keychain off — or cancelled);
+    // an automatic try (iOS may refuse it without a tap) stays silent: the button is still there
+    if (!auto && e && e.name === 'NotAllowedError') pairNote('pk.none');
     return renderPk();
   }
   let to;
@@ -483,11 +494,92 @@ async function pkRestore() {
     if (!allowRelay(to.relay)) throw new Error('relay');
   } catch { return pkFailed('bad'); }
   pkCred = a.id;
+  restoreKind = 'pk';
   $('pk-restore').hidden = true;
   $('pair-error').hidden = true;
   session.openSession('restore', { relay: to.relay, channel: to.channel, hostPub: to.hostPub,
     pk: { id: a.id, cd: a.cd, ad: a.ad, sig: a.sig, uh: b64u(a.uh), ts: prep.ts, nonce: b64u(prep.nonce) } });
 }
+/** One plain line under the pairing field (pair-error), by dictionary key. */
+function pairNote(key) {
+  const err = $('pair-error');
+  err.dataset.k = key;
+  err.textContent = t(key);
+  err.hidden = false;
+}
+
+// ---------------------------------------------------------------- P122 renewal ticket (PROTOCOL §12.1): stay signed in
+// The host issues one ticket per pairing / restore (and on rt_req); renew.save() turns it into the HttpOnly cookie at once.
+// A page with no pairing first asks the origin for a proof over its NEW keys and, when there is one, reconnects as the same
+// phone with no tap. Only the host's own answer ends that: unknown / revoked → the cookie goes and the screen says so.
+const RT_REFRESH_MS = 30 * 86400 * 1000;              // a ready phone renews a ticket older than this (rt_req)
+let ticketComing = false;                             // a pairing / restore: the host sends the ticket by itself
+let restoreKind = null;                               // 'rt' | 'pk': which restore the session in flight is
+let rtRetries = 0;                                    // consecutive `expired` ticket restores (the host was offline > 5 min)
+let rtChain = Promise.resolve();
+const ticketQueue = (fn) => { rtChain = rtChain.then(fn).catch(() => {}); return rtChain; };   // saves / clears in order
+async function ticketCheck() {
+  const h = await dbGet('host');
+  if (!h || !h.approved || h.channel !== session.channel() || passkey.relayIndex(h.relay) < 0) return;
+  if (typeof h.rtAt === 'number' && Date.now() - h.rtAt < RT_REFRESH_MS && (await renew.has()) !== false) return;
+  await session.sendApp({ t: 'rt_req' });
+}
+function gotTicket(m) {
+  const ch = session.channel();
+  ticketQueue(async () => {
+    const h = await dbGet('host');
+    const ri = h ? passkey.relayIndex(h.relay) : -1;
+    if (!h || !h.approved || h.channel !== ch || ri < 0) return;
+    if (!(await renew.save({ relayIndex: ri, channel: h.channel, hostPub: new Uint8Array(h.hostPub) }, m.i, m.k))) return;
+    const cur = await dbGet('host');
+    if (cur && cur.approved && cur.channel === ch) await dbPut('host', { ...cur, rtAt: Date.now() });
+  });
+}
+/** → true when a ticket restore is under way (the chat screen shows "connecting"); false = no ticket here / unreachable. */
+async function tryTicket() {
+  const sk = await signKey();
+  if (!sk) return false;
+  let pr;
+  try { await rtChain; pr = await renew.prove((await deviceKey()).pub, sk.pub); } catch { return false; }
+  if (!pr) return false;
+  let to;
+  try {
+    to = passkey.decodeHandle(pr.uh, { testRelay: new URLSearchParams(location.search).get('relay') });
+    if (!allowRelay(to.relay)) throw new Error('relay');
+  } catch { ticketQueue(renew.clear); return false; }
+  restoreKind = 'rt';
+  $('pair-wiped').hidden = true;
+  show('chat');
+  session.openSession('restore', { relay: to.relay, channel: to.channel, hostPub: to.hostPub,
+    rt: { i: pr.i, p: pr.p, uh: b64u(pr.uh), ts: pr.ts, nonce: pr.nonce } });
+  return true;
+}
+function restoreFailed(why) {
+  const kind = restoreKind; restoreKind = null;
+  if (kind !== 'rt') return pkFailed(why);
+  if (why === 'expired' && rtRetries++ < 3) {         // the proof aged while the computer was offline: a fresh one
+    tryTicket().then((ok) => { if (!ok) showIdle(); }, () => showIdle());
+    return;
+  }
+  rtRetries = 0;
+  showIdle();
+  if (why === 'unknown' || why === 'revoked') { ticketQueue(renew.clear); pairNote('rt.dead'); return; }
+  rtGaveUp = true;                                    // `bad`: keep the cookie, but no automatic retry on this page load
+  autoPasskey().catch(() => {});                      // a passkey may still get this phone back
+}
+let rtGaveUp = false;
+/** Back online / back in the foreground on the empty pairing screen (a ticket restore could not reach the origin). */
+function ticketWhenIdle() {
+  if (view !== 'pair' || state !== 'idle' || rtGaveUp || session.current()) return;
+  tryTicket().catch(() => {});
+}
+/** The phone was paired here before (the browser lost the pairing, or the ticket did not work): try its passkey once without
+ *  waiting for a tap. Chromium allows it; iOS Safari may want a tap first — then nothing shows and the button stays. */
+async function autoPasskey() {
+  if (view !== 'pair' || state !== 'idle' || !(await signKey()) || !(await passkey.supported())) return;
+  await pkRestore(true);
+}
+
 function pkFailed(why) {
   const dead = why === 'unknown' || why === 'revoked';
   if (dead && pkCred) passkey.forgetDead(pkCred);
@@ -504,6 +596,7 @@ async function forgetHost() {
   await dbDel('host');
   await wiped;
   markPaired(false);
+  ticketQueue(renew.clear);                           // P122: unpaired here = no automatic sign-in either
   $('pair-wiped').hidden = true;
   snap.synthReset(); snap.S.hist = { epoch: 0, first: 0, last: 0, count: 0 }; relay.historyReset(0);
   $('input').value = '';
@@ -756,12 +849,14 @@ function wire() {
   });
   // relay's revive: back online or back in the foreground → reconnect at once (no waiting out the backoff)
   addEventListener('online', session.reconnectNow);
+  addEventListener('online', ticketWhenIdle);         // P122: a ticket restore that could not reach the origin, again
   window.addEventListener('pageshow', (e) => { if (e.persisted) session.reconnectNow(); });
   document.addEventListener('visibilitychange', () => {
     const fg = document.visibilityState === 'visible';
     if (session.isReady()) session.sendApp({ t: 'vis', fg }).catch(() => {});   // the host pushes only while hidden
     if (fg) session.reconnectNow();
     if (fg && view === 'pair' && state === 'idle') renderPk().catch(() => {});   // a fresh challenge timestamp
+    if (fg) ticketWhenIdle();
   });
   onLang(relang);
 }
@@ -819,7 +914,9 @@ async function main() {
   }
   if (host && host.approved && !lost) { askPersist(); show('chat'); resume(); openFriendsWanted(); return; }
   if (host && !host.approved && ['replaced', 'revoked'].includes(host.removed)) return revoked(host.removed);
+  if (await tryTicket()) { openFriendsWanted(); return; }   // P122: no pairing here, but this phone's ticket cookie is
   showIdle();
+  if (lost) autoPasskey().catch(() => {});
 }
 
 main();

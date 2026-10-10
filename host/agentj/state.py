@@ -382,12 +382,59 @@ class State:
             if not isinstance(pk, dict) or pk.get("id") != cred_id or (new != old and new in d):
                 return None
             rec = dict(rec, pub=wire.b64u(pub), sk=wire.b64u(sign_pub), seen=int(time.time()), pk=dict(pk))
+            rec.pop("rt", None)           # P122: the old context's renewal ticket dies with it; serve issues a new one
             if count:
                 rec["pk"]["sc"] = count
             if iid:
                 rec["iid"] = iid
             else:
                 rec.pop("iid", None)      # the old browser's install hash must not match (and replace) this record later
+            d.pop(old)
+            d[new] = rec
+            _write_private(self.devices_path, json.dumps(d, indent=1, ensure_ascii=False).encode())
+        if new != old:
+            self.note_removed(old, "replaced")
+        self.forget_removed(new)
+        return new
+
+    # ------------------------------------------------------------ P122 renewal ticket (PROTOCOL §12.1): also INSIDE the device
+    # record (one per record), so it leaves with it exactly like the passkey above; never printed, logged or reported.
+    def ticket_of(self, tid: str) -> tuple[str, dict] | None:
+        """(device id, its rt record) for a ticket id, or None (unknown, rotated away, or its device was removed)."""
+        for did, v in self.devices().items():
+            rt = v.get("rt") if isinstance(v, dict) else None
+            if isinstance(rt, dict) and isinstance(rt.get("i"), str) and hmac.compare_digest(rt["i"], tid):
+                return did, rt
+        return None
+
+    def set_ticket(self, pub: bytes, rt: dict) -> bool:
+        """Store (or replace: one ticket per device) the renewal ticket of the device with this static key, if still listed."""
+        did = wire.device_id(pub)
+        with self.devices_lock():
+            d = self.devices()
+            rec = d.get(did)
+            if not isinstance(rec, dict) or rec.get("pub") != wire.b64u(pub):
+                return False
+            rec["rt"] = dict(rt)
+            _write_private(self.devices_path, json.dumps(d, indent=1, ensure_ascii=False).encode())
+        return True
+
+    def ticket_restore(self, old: str, tid: str, pub: bytes, sign_pub: bytes, new_rt: dict, iid: str | None = None) -> str | None:
+        """A verified ticket restore, in ONE locked write — passkey_restore's rule (the record `old`, still listed and still
+        holding ticket `tid`, takes the new X25519 + approval keys and keeps name / paired_at / pk) plus the rotation: the used
+        ticket is replaced by `new_rt` in the same write, so it can never be used twice. → the new device id, or None."""
+        new = wire.device_id(pub)
+        with self.devices_lock():
+            d = self.devices()
+            rec = d.get(old)
+            rt = rec.get("rt") if isinstance(rec, dict) else None
+            if not isinstance(rt, dict) or rt.get("i") != tid or (new != old and new in d):
+                return None
+            rec = dict(rec, pub=wire.b64u(pub), sk=wire.b64u(sign_pub), seen=int(time.time()), rt=dict(new_rt))
+            if iid:
+                rec["iid"] = iid
+            else:
+                rec.pop("iid", None)
             d.pop(old)
             d[new] = rec
             _write_private(self.devices_path, json.dumps(d, indent=1, ensure_ascii=False).encode())
@@ -588,7 +635,7 @@ class State:
 
     # ------------------------------------------------------------ metadata log (never message text)
     # report_* events (PROTOCOL §7) carry only seq / status class / trigger — never labels, codes or URLs
-    LOG_FIELDS = {"channel", "cid", "device", "name", "reason", "kind", "bytes", "code_ok", "seq", "status", "trigger",
+    LOG_FIELDS = {"why", "exception_type", "http_status", "channel", "cid", "device", "name", "reason", "kind", "bytes", "code_ok", "seq", "status", "trigger",
                   "tenant", "request", "result", "id", "tool", "agent", "decision", "locked", "fence", "change", "action",
                   "session_mode", "isolation_requested", "isolation_effective", "phase", "version", "language", "core_sha256", "prompt_sha256", "mechanism", "working_root_sha256", "identity_session"}
 
