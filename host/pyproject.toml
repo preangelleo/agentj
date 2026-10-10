@@ -7,7 +7,7 @@ license = "Apache-2.0"
 dependencies = [
   "cryptography>=44,<49; sys_platform == 'darwin' and platform_machine == 'x86_64'",
   "cryptography>=44; sys_platform != 'darwin' or platform_machine != 'x86_64'", # X25519 / Ed25519 / AES-GCM
-  "websockets>=14",     # relay connection
+  "websockets>=14,<18",     # relay connection
   "python-socks[asyncio]>=2.5,<3", # environment and macOS system SOCKS proxies
   "pypinyin>=0.55,<1", # local Chinese wake-word phonemes
   "tomlkit>=0.13,<1", # preserves native Codex configuration comments during provider switches

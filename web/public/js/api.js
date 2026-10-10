@@ -157,12 +157,13 @@ export function speechAudio(id) {
 }
 function routeSpeech(m) {
   const w=speechWait.get(m.r); if(!w)return;
-  const fail=()=>{clearTimeout(w.timer);speechWait.delete(m.r);w.reject(new Error('speech failed'));};
+  const fail=(why='engine')=>{clearTimeout(w.timer);speechWait.delete(m.r);const err=new Error('speech failed');err.why=why;w.reject(err);};
   if(w.g!==gen())return fail();
   if(m.t==='tts_chunk'){
     if(m.i!==w.parts.length || typeof m.data!=='string' || m.data.length>32768)return fail();
     try{const bytes=Uint8Array.from(atob(m.data),c=>c.charCodeAt(0));w.size+=bytes.length;if(w.size>8*1024*1024)return fail();w.parts.push(bytes);}catch{return fail();}
   }else{
+    if(m.ok===false)return fail(['missing_key','provider_rejected','provider_busy','provider_unavailable','network','busy','not_ready','missing'].includes(m.why)?m.why:'engine');
     if(!m.ok || m.bytes!==w.size || m.mime!=='audio/wav')return fail();
     clearTimeout(w.timer);speechWait.delete(m.r);w.resolve(new Blob(w.parts,{type:'audio/wav'}));
   }

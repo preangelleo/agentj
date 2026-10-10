@@ -302,12 +302,12 @@ class HostLevel(unittest.TestCase):
             self.host.pairing = p
             return await self.host.decide(p, wire.safety_code(s.h), PASS)
         self.run_(go(True))
-        self.assertEqual([o["t"] for o in self.to(7)], ["approved", "pk_offer"])
+        self.assertEqual([o["t"] for o in self.to(7)], ["approved", "pk_offer", "rt"])   # P122: + the renewal ticket
         self.sent.clear()
         self.st.remove_device(wire.device_id(pub))
         self.host.sessions.clear()
         self.run_(go(False))
-        self.assertEqual([o["t"] for o in self.to(7)], ["approved"])
+        self.assertEqual([o["t"] for o in self.to(7)], ["approved", "rt"])
 
     # -------------------------------------------------------------- restore
     def test_restore_replaces_the_same_record(self):
@@ -315,7 +315,7 @@ class HostLevel(unittest.TestCase):
         kpA, _, idA = self.paired(a)
         self.host.sessions[5] = serve.Session(cid=5, state="ready", device=idA, pub=kpA.pub, p33=True)   # A is online
         kpB, skB, got = self.restore(9, a)
-        self.assertEqual([m["t"] for m in got], ["pk_ok", "ready"])
+        self.assertEqual([m["t"] for m in got], ["pk_ok", "ready", "rt"])
         devs = self.st.devices()
         idB = wire.device_id(kpB.pub)
         self.assertEqual(list(devs), [idB], "still exactly one remote")
@@ -337,7 +337,7 @@ class HostLevel(unittest.TestCase):
         self.assertEqual(self.resume_plain(12, kpB)[0]["t"], "ready")
         # a third context C with the same Face ID credential: still one record
         kpC, _, got = self.restore(13, a)
-        self.assertEqual([m["t"] for m in got], ["pk_ok", "ready"])
+        self.assertEqual([m["t"] for m in got], ["pk_ok", "ready", "rt"])
         self.assertEqual(list(self.st.devices()), [wire.device_id(kpC.pub)])
         self.assertNotIn(12, self.host.sessions, "B's session ended when C took the slot")
 

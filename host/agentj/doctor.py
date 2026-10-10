@@ -84,6 +84,11 @@ def check_version() -> dict:
     return _c("version", OK, f"{DIST} {__version__}")
 
 
+def check_websockets() -> dict:
+    from websockets import __version__
+    return _c("websockets", OK, f"websockets {__version__}")
+
+
 def check_python() -> dict:
     v = ".".join(map(str, sys.version_info[:3]))
     where = tilde(sys.prefix)
@@ -742,7 +747,7 @@ def check_update(offline: bool = False) -> dict:
 def run(st: State | None = None, offline: bool = False) -> list[dict]:
     st = st or State()
     svc = service.status()
-    out = [check_version(), check_python(), check_platform(), check_state(st), check_keep_awake()]
+    out = [check_version(), check_python(), check_websockets(), check_platform(), check_state(st), check_keep_awake()]
     if offline:
         out += [_c("relay", WARN, "跳过 / skipped (--offline)"), _c("dashboard", WARN, "跳过 / skipped (--offline)")]
     else:
@@ -806,7 +811,7 @@ def run_upgrade(st=None):
     from . import main_identity, service_recovery
     st = st or State()
     svc = service.status()
-    rows = [check_version(), check_python(), check_platform(), check_state(st),
+    rows = [check_version(), check_python(), check_websockets(), check_platform(), check_state(st),
             check_serve(st), check_service(svc, service.legacy_status())]
     try:
         version = main_identity.verify_core()['version']

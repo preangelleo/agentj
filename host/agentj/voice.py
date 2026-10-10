@@ -19,6 +19,8 @@ import pathlib
 import shutil
 import subprocess
 import urllib.request
+import urllib.error
+from websockets.exceptions import InvalidStatus, ConnectionClosed
 import uuid
 import sys
 from . import preferences as p
@@ -29,6 +31,27 @@ ASR_OPENAI_URL='https://api.openai.com/v1/audio/transcriptions'
 TTS_ELEVEN_URL='https://api.elevenlabs.io/v1/text-to-speech/'
 TTS_REALTIME_URL='wss://api.openai.com/v1/realtime'
 MAX_AUDIO=8*1024*1024
+
+class SpeechError(p.ConfigError):
+    """Fixed reason and metadata only; never retain provider text, URLs or credentials."""
+    def __init__(self, why, exception_type="ConfigError", http_status=None):
+        self.why = why
+        self.exception_type = exception_type if re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]{0,79}", exception_type) else "Exception"
+        self.http_status = http_status if type(http_status) is int and 100 <= http_status <= 599 else None
+        super().__init__('voice.tts', 'speech failed: '+why)
+
+
+def speech_error(exc):
+    if isinstance(exc, SpeechError): return exc
+    status = exc.code if isinstance(exc, urllib.error.HTTPError) else (
+        exc.response.status_code if isinstance(exc, InvalidStatus) else None)
+    if status == 429: why = 'provider_busy'
+    elif isinstance(status, int) and 400 <= status < 500: why = 'provider_rejected'
+    elif isinstance(status, int) and 500 <= status < 600: why = 'provider_unavailable'
+    elif isinstance(exc, (urllib.error.URLError, OSError, TimeoutError, ConnectionClosed)): why = 'network'
+    else: why = 'not_ready'
+    return SpeechError(why, type(exc).__name__, status)
+
 
 class _RealtimeConnect(_ws_connect):
     def process_redirect(self, exc):
@@ -64,7 +87,7 @@ async def _realtime_audio(text,cfg,timeout):
             # Wait for the configuration ACK; never synthesize with default settings.
             for _ in range(100):
                 event=json.loads(await ws.recv())
-                if event.get('type')=='error':raise ValueError('provider error')
+                if event.get('type')=='error':raise SpeechError('provider_rejected', 'RealtimeError')
                 if event.get('type')=='session.updated':break
             else:raise ValueError('missing session acknowledgement')
             await ws.send(json.dumps({'type':'conversation.item.create','item':{
@@ -73,7 +96,7 @@ async def _realtime_audio(text,cfg,timeout):
             pcm=bytearray()
             for _ in range(10000):
                 event=json.loads(await ws.recv())
-                if event.get('type')=='error':raise ValueError('provider error')
+                if event.get('type')=='error':raise SpeechError('provider_rejected', 'RealtimeError')
                 if event.get('type')=='response.output_audio.delta':
                     chunk=base64.b64decode(event['delta'],validate=True)
                     if len(pcm)+len(chunk)>MAX_AUDIO-44:raise ValueError('audio exceeds limit')
@@ -236,7 +259,9 @@ def synthesize(text,cfg,timeout=60):
     if mode=='phone':raise p.ConfigError('voice.tts.mode','phone speech runs on phone; use its Read button')
     if mode=='host' and p.get(cfg,'voice.tts.provider')=='command':return _command_audio(text,cfg,timeout)
     if mode=='cloud':
-        validate_runtime(cfg)
+        if not has_key(p.get(cfg,'voice.tts.key_env')):raise SpeechError('missing_key')
+        try:validate_runtime(cfg)
+        except p.ConfigError as exc:raise speech_error(exc) from None
         if p.get(cfg,'voice.tts.provider')=='elevenlabs':
             model=p.get(cfg,'voice.tts.model')
             url=TTS_ELEVEN_URL+voice
@@ -245,13 +270,13 @@ def synthesize(text,cfg,timeout=60):
             try:
                 pcm=_request(url+'?output_format=pcm_16000',os.environ[p.get(cfg,'voice.tts.key_env')],body,'application/json',timeout,8*1024*1024-44,auth_header='xi-api-key')
                 return _pcm_wav(pcm,16000)
-            except Exception:raise p.ConfigError('voice.tts','provider request failed; no retry or credentials echoed') from None
+            except Exception as exc:raise speech_error(exc) from None
         if p.get(cfg,'voice.tts.model').startswith('gpt-realtime'):
             try:return asyncio.run(_realtime_audio(text,cfg,timeout))
-            except Exception:raise p.ConfigError('voice.tts','provider request failed; no retry or credentials echoed') from None
+            except Exception as exc:raise speech_error(exc) from None
         body=json.dumps({'model':p.get(cfg,'voice.tts.model'),'voice':voice,'input':text,'response_format':'wav','speed':p.get(cfg,'voice.tts.rate')}).encode()
         try:return _request(TTS_URL,os.environ[p.get(cfg,'voice.tts.key_env')],body,'application/json',timeout,8*1024*1024)
-        except Exception:raise p.ConfigError('voice.tts','provider request failed; no retry, previous settings retained') from None
+        except Exception as exc:raise speech_error(exc) from None
     import tempfile
     with tempfile.TemporaryDirectory(prefix='agentj-speech-') as tmp:
         output=pathlib.Path(tmp)/'speech.wav'

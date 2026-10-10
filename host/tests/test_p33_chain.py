@@ -323,7 +323,7 @@ class ClaudeChain(_Chain):
             await self.withdraw(c, "SLOW", self.ECHO)
             await self.slash_clear_undo(c)
         self.run_chain(script, old_phone=True)
-        # a restart: the pages are still there (and a p33 phone that knows them gets nothing twice)
+        # A restart retains pages; snapshots reuse their IDs so updates never create duplicate pages.
         sent = []
         host = _host(self.st, sent)
         self.assertGreater(host.hist.meta()["count"], 3)
@@ -339,7 +339,9 @@ class ClaudeChain(_Chain):
         asyncio.run(go())
         a = [o for c, o in sent if c == 21 and o["t"] == "hist_turn"]
         b = [o for c, o in sent if c == 22 and o["t"] == "hist_turn"]
-        self.assertEqual((len(a), len(b) > 3), (0, True))
+        self.assertGreater(len(a), 3)
+        self.assertEqual([o["turn"]["id"] for o in a], [o["turn"]["id"] for o in b])
+        self.assertEqual(len(a), len({o["turn"]["id"] for o in a}))
         self.assertTrue(any(o["t"] == "hist_meta" for c, o in sent if c == 21))
         self.assertFalse([o for _, o in sent if o["t"] == "msg"])
 

@@ -12,3 +12,6 @@ Service recovery is handed to an independent manager job before the caller can b
 中文：restart_scheduled 只表示已交给独立任务，不冒称已经启动；失败时运行 `agentj service start`，再 `agentj doctor`。
 
 Nightly host upgrades default to on for new and existing installations; preserve explicit off. `agentj config auto-update on|off|status` (preference `updates.auto_install`). Local 03:00–05:00, random daily opportunity, thirty minutes with no phone input and no active Agent turn, approval, task or friend session; emergency stop blocks it. Failed eligibility defers to tomorrow. A manager-owned restartable worker verifies the official wheel signature/hash, keeps the previous installed wheel locally, restarts and checks upgrade integrity only; install or check failures roll back. `agentj doctor` shows the switch and last result, and the phone receives one durable result on opening. Do not force /clear or change unrelated owner configuration.
+
+Phone `/update` receipts follow the effective `appearance.language`, including a language changed while the host is running.
+中文：手机 `/update` 回执使用当前生效的语言，运行中切换后也立即跟随。

@@ -34,16 +34,18 @@ let input = null, mainEl = null, deck = null, tray = null, menu = null, sug = nu
 
 // ---- the Agent's words (Markdown, DOM nodes only) -------------------------------------
 let wordsSrc = null;
+let historySync = true;   // a refreshed page must fetch the current head before claiming delivery is still pending
+let historyGeneration = 0;
 // pending: an open page whose reply has not come yet — no words at all (the thinking dots say it), never the
 // empty-history line 「已连上你的电脑…」 (relay never showed a page before its reply; Agent J shows the say's page at once)
 function renderWords(text, pending = false){
   const tx = (text || "").trim();
-  const key = pending && !tx ? "\u0000pending:" + cur?.status : tx;
+  const key = pending && !tx ? "\u0000pending:" + historySync + ":" + cur?.status : tx;
   if (key === wordsSrc) return;
   wordsSrc = key;
   const w = el("words");
   w.className = "words" + (!tx ? " empty" : tx.length > 600 ? " l" : tx.length > 240 ? " m" : "");
-  fill(w, pending && !tx ? t(cur?.status === "working" ? "r.replyWorking" : "r.replyPending") : tx);
+  fill(w, pending && !tx ? t(historySync ? "st.resuming" : cur?.status === "working" ? "r.replyWorking" : "r.replyPending") : tx);
   afterWords();
   rdFollow(tx);
 }
@@ -689,6 +691,27 @@ export function upsertTurn(p){
   showPage();
 }
 export function historyReset(ep){ resetHistory(ep); showPage(); }
+async function refreshNewest(){
+  const generation = ++historyGeneration;
+  historySync = true; wordsSrc = null; showPage();
+  const before = new Map(hist.turns.map(x => [x.id, x]));
+  try{
+    const j = await C.api.history({limit: 50});
+    if (generation !== historyGeneration || !j || j.epoch < hist.epoch) return;
+    if (j.epoch > hist.epoch) resetHistory(j.epoch);
+    const byId = new Map(hist.turns.map(x => [x.id, x]));
+    // A live update received after this request is newer than its snapshot.
+    for (const p of j.turns){
+      if (!byId.has(p.id) || byId.get(p.id) === before.get(p.id)) byId.set(p.id, p);
+    }
+    hist.turns = [...byId.values()].sort((a,b) => a.id - b.id);
+    hist.lastId = hist.turns.at(-1)?.id || 0;
+    hist.count = Math.max(j.count || 0, hist.turns.length);
+    hist.firstId = j.first_id || hist.turns[0]?.id || 0;
+    pagesCache = null; historySync = false;
+  }catch(_){ /* keep syncing wording until a successful reconnect snapshot */ }
+  finally{ if (generation === historyGeneration){ wordsSrc = null; showPage(); } }
+}
 async function syncHistory(want){
   hist.want = Math.max(hist.want, want || 0);
   if (hist.busy) return;
@@ -1199,6 +1222,7 @@ export function setConn(on, text){
   const was = document.body.dataset.conn === "on";
   document.body.dataset.conn = on ? "on" : "off";
   if (!on){
+    historyGeneration++; historySync = true;
     el("capText").textContent = text || "";
     el("capSub").textContent = "";
     const stale = el("stale");
@@ -2422,9 +2446,10 @@ export function init(ctx){
   RelayMD.LABELS.copy = t('r.md.copy'); RelayMD.LABELS.copyAria = t('r.md.copyAria'); RelayMD.LABELS.copied = t('r.md.copied'); RelayMD.LABELS.image = t('r.md.image');
   speaker = new Speaker((id, st, why) => {
     if (st === "idle") speakSt.delete(id); else speakSt.set(id, st);
-    if (st === "failed"){ toast(t('r.speak.err.' + (["novoice", "empty", "unsupported", "engine"].includes(why) ? why : "engine")), 2600); setTimeout(() => { if (speakSt.get(id) === "failed"){ speakSt.delete(id); paintSpeak(); } }, 3000); }
+    if (st === "failed"){ toast(t('r.speak.err.' + (["novoice", "empty", "unsupported", "engine", "missing_key", "provider_rejected", "provider_busy", "provider_unavailable", "network", "busy", "not_ready", "tap_play"].includes(why) ? why : "engine")), 2600); setTimeout(() => { if (speakSt.get(id) === "failed"){ speakSt.delete(id); paintSpeak(); } }, 3000); }
     paintSpeak();
-  });
+  }, why=>{if(why==='voice_fallback')toast(t('r.speak.voice_fallback'),2600);});
+  document.addEventListener('pointerdown',()=>speaker?.unlock(),{passive:true});
   mainEl.addEventListener("scroll", () => { stick = atBottom(); paintMore(); }, {passive: true});
   try{ const ro = new ResizeObserver(() => paintMore()); ro.observe(mainEl); ro.observe(el("read")); }
   catch(_){ addEventListener("resize", paintMore); }
@@ -2953,7 +2978,7 @@ export function init(ctx){
   paintTray();
 }
 /** Called when the session becomes ready again (a new host turn source, menu). */
-export function onReady(){ paintPlaceholder(); refreshSend(); loadMenu(); paintActs(); renderMenu(); }
+export function onReady(){ refreshNewest(); paintPlaceholder(); refreshSend(); loadMenu(); paintActs(); renderMenu(); }
 export function onEstop(){ paintPlaceholder(); renderMenu(); refreshSend(); }
 export function rerender(){ if (cur) render(cur); else showPage(); }
 /** For the screens test: internal state worth asserting. */

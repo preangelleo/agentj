@@ -277,6 +277,8 @@ the computer (see [Using your phone](https://agentj.app/docs/phone/)).
     this phone, tap Back and paste it into the box on the pairing screen.
 - That link is the pairing key: valid 5 minutes, works once, never send it to anyone else.
 
+**Pairing once is enough.** As long as your computer hasn't unpaired this phone, opening the page connects by itself. Safari on iPhone clears what websites store; from 0.17.4 the page then reconnects to the same computer with an automatic sign-in token kept on the phone (only your computer recognises it; it is replaced on each use) — no QR code, no Face ID. You only scan again when the computer has unpaired this phone (for example after you lost it); the pairing screen then says that automatic sign-in no longer works.
+
 After a successful pairing the phone asks once whether to remember this phone with Face ID. Save it and confirm with
 Face ID. From then on, when you open Agent J somewhere else on the same phone — from the Home Screen, in a new private
 tab, after clearing browser data — the pairing screen offers to reconnect with Face ID: **no QR code, no approval on the
@@ -346,3 +348,10 @@ See [Android sharing and the iPhone clipboard Shortcut](https://agentj.app/docs/
 ## Updating the phone page
 
 Upgrading Agent J on your computer does not refresh the phone or web page. When a newer computer or web version is detected, the page offers **Update and reload**. You can also tap the settings icon at the top right → **Update and reload**. It never refreshes while you are typing without your click. Refresh after sending or saving your draft.
+
+
+When a daily, weekly or monthly model allowance runs out, the phone tells you to wait for its reset or upgrade your plan with the model provider. A temporary rate limit still asks you to retry later. Provider error details are never displayed.
+
+If shared Claude completes a reply while your phone is disconnected, reconnecting updates its existing input page. Reloading first fetches the current computer history before claiming that a message is still waiting. `/update` receipts use the current language setting, including changes made while Agent J is running. `agentj doctor` includes the websockets version for troubleshooting.
+
+Local read-aloud uses only voices on this phone. Host/cloud voices stay in `voice.tts.voice`; choose a phone voice separately with `voice.tts.phone_voice` (empty selects the local default for the reply language). Switching modes keeps both choices. An unavailable phone voice falls back with one notice. On first opening, iPhone waits for local voices to load before reporting that no voice is available.
