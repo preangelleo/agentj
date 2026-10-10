@@ -23,10 +23,10 @@ export function toastAction(t, label, fn, ms) {
 export function confirmSheet(title, text, yes) {
   return new Promise((resolve) => {
     el('confirm-title').textContent = title; el('confirm-text').textContent = text; el('confirm-yes').textContent = yes;
-    const box = el('confirm');
+    const box = el('confirm'), opener = document.activeElement;
     box.hidden = false; box.dataset.modalOpen = '1';
     el('confirm-yes').focus();
-    const done = (v) => { box.hidden = true; delete box.dataset.modalOpen; el('confirm-yes').onclick = null; el('confirm-no').onclick = null; resolve(v); };
+    const done = (v) => { box.hidden = true; delete box.dataset.modalOpen; el('confirm-yes').onclick = null; el('confirm-no').onclick = null; if(opener?.isConnected&&!opener.closest('[hidden]')) opener.focus({preventScroll:true}); resolve(v); };
     el('confirm-yes').onclick = () => done(true);
     el('confirm-no').onclick = () => done(false);
   });

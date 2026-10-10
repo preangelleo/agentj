@@ -51,6 +51,8 @@
   /* ---- spacing (4 px base) ---- */
   --sp-1: 0.25rem; --sp-2: 0.5rem; --sp-3: 0.75rem; --sp-4: 1rem; --sp-5: 1.5rem;
   --sp-6: 2rem; --sp-7: 3rem; --sp-8: 4rem; --sp-9: 6rem;
+  /* P119 semantic rhythm: controls 12, text/actions 16, sections/cards 24px. Never shrink on phones. */
+  --space-control: var(--sp-3); --space-content: var(--sp-4); --space-section: var(--sp-5);
   --gutter: clamp(1rem, 0.6rem + 2vw, 2.5rem);
   --page-max: 1200px;
   --page-wide: 1360px;

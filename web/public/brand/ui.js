@@ -26,7 +26,7 @@
     if (e.key !== "Escape" || wide.matches) return;
     var list = menus();
     for (var i = 0; i < list.length; i++) {
-      if (list[i].open) { list[i].open = false; var s = list[i].querySelector("summary"); if (s) s.focus(); }
+      if (list[i].open) { e.preventDefault(); e.stopImmediatePropagation(); list[i].open = false; var s = list[i].querySelector("summary"); if (s) s.focus(); }
     }
   });
   doc.addEventListener("click", function (e) {

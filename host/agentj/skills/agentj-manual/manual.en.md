@@ -250,14 +250,14 @@ use most:
 
 | Key | What it does |
 |---|---|
-| `i` / `Esc` | Enter / leave the message box |
+| `i` / `Esc` | Enter the message box / close the current overlay; keep the draft when no overlay is open |
 | `j` / `k` | Previous / next page |
 | `f` or double-tap the card | Full-screen reading |
 | `y` `y` | Copy the whole reply |
 | `r` | Reply to this one |
 | `a` `p` `c` | File · photo library · camera |
 | hold `m` | Hold to talk, release for text |
-| `Esc` `Esc` | Clear the text and attachments; when already empty, interrupt the current task |
+| `Esc` `Esc` | Outside the message box: clear text and attachments; when already empty, interrupt the current task |
 | `s` | Open Settings |
 
 ## Pairing and Face ID
@@ -337,3 +337,12 @@ When you enter or switch to a shared Claude Code, Codex or OpenCode session, the
 
 
 The pairing page offers browser and storage guidance. Use a regular Safari / Chrome window, add to Home Screen and pair from that same icon. The menu retains Set up Face ID after Later; Copy page link excludes the one-use pairing secret.
+
+
+## Sharing screenshots
+
+See [Android sharing and the iPhone clipboard Shortcut](https://agentj.app/docs/share-screenshot/). Shared content enters the composer; add a note before sending.
+
+## Updating the phone page
+
+Upgrading Agent J on your computer does not refresh the phone or web page. When a newer computer or web version is detected, the page offers **Update and reload**. You can also tap the settings icon at the top right → **Update and reload**. It never refreshes while you are typing without your click. Refresh after sending or saving your draft.

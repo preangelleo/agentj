@@ -39,7 +39,7 @@ done
 has_tty() { ( : </dev/tty ) 2>/dev/null; }
 ask() { has_tty || { printf 'No terminal: use --cli and --no-relay.\n' >&2; exit 2; }; printf '%s ' "$1" >/dev/tty; IFS= read -r REPLY </dev/tty; }
 if [[ -z $SELECT ]]; then
-  if ((DRY)); then SELECT=opencode,codex,claude,gemini; elif has_tty; then ask 'Choose CLI names, comma separated [opencode,codex]:'; SELECT=${REPLY:-opencode,codex}; else SELECT=opencode,codex; fi
+  if has_tty && ! ((DRY)); then ask 'Choose CLI names, comma separated [opencode,codex]:'; SELECT=${REPLY:-opencode,codex}; else SELECT=opencode,codex; fi
 fi
 CLIS=(); IFS=, read -r -a CLIS <<< "$SELECT"
 for cli in "${CLIS[@]}"; do case "$cli" in opencode|codex|claude|gemini) ;; *) printf 'Unknown CLI name\n' >&2; exit 2 ;; esac; done
@@ -47,10 +47,10 @@ if ((DRY)); then
   printf 'PLAN: ensure curl, git, certificates, build tools, Python 3.11+, Node.js 22+ and npm; registry %s\n' "$REGISTRY"
   [[ $OS != Darwin ]] || printf 'PLAN: Homebrew shellenv in zprofile/bash_profile (Intel /usr/local, Apple Silicon /opt/homebrew)\n'
   printf 'PLAN: install missing CLIs: %s; user-owned npm prefix; PATH before bashrc early-return\n' "$SELECT"
-  printf 'PLAN: full-access=%s; back up and merge configs, 0600, refuse symlinks/JSONC; Gemini dedicated gemini-full-access launcher\n' "$FULL"
+  printf 'PLAN: full-access=%s; back up and merge configs, 0600, refuse symlinks/JSONC; Gemini launcher only when explicitly selected; personal login discontinued, paid Gemini API key required\n' "$FULL"
   printf 'PLAN: relay=%s; probe official services; official AgentsRelay --paste --only --no-launch verifies real model BEFORE CLI install, 3 attempts; Gemini unsupported\n' "$RELAY"
   printf 'PLAN: npm/Node timeout -> automatic npmmirror fallback; official/mirror SHA512 match, Node SHA256 required; platform binaries + help + ripgrep self-check\n'
-  printf 'PLAN: aliases=%s (cx/cc/oc/gx); agentj=%s; no tty -> next-step instructions, no prompt\n' "$ALIASES" "$AGENTJ"
+  printf 'PLAN: aliases=%s (selected tools only; gx requires explicit gemini selection); agentj=%s; no tty -> next-step instructions, no prompt\n' "$ALIASES" "$AGENTJ"
   exit 0
 fi
 # PATH for this run; system installations remain untouched.
@@ -99,7 +99,7 @@ if [[ $RELAY == yes ]]; then
   ONLY=
   for cli in "${CLIS[@]}"; do [[ $cli == gemini ]] || ONLY="${ONLY:+$ONLY,}$cli"; done
   [[ -n $ONLY ]] || { printf 'Gemini is unsupported by AgentsRelay; choose --no-relay.\n'; exit 2; }
-  printf 'Register at https://agentsrelay.net and buy the plan for your chosen tools. Paste group keys only into the hidden local prompt. No temporary token. Gemini keeps Google sign-in.\n'
+  printf 'Register at https://agentsrelay.net and buy the plan for your chosen tools. Paste group keys only into the hidden local prompt. No temporary token. Gemini personal Google sign-in has been discontinued; use a paid Gemini API key.\n'
   has_tty || { printf 'No terminal: key entry must happen before CLI installation. Rerun --relay in your own terminal.\n'; exit 2; }
   DIR="$HOME/.config/agentsrelay"; mkdir -p "$DIR"; chmod 700 "$DIR"
   [[ ! -L $DIR/agentj-onboard.sh ]] || { printf 'Refusing onboarding symlink.\n'; exit 2; }
@@ -370,8 +370,10 @@ if full:
         write(home/'.local/bin/gemini-full-access','#!/bin/sh\nexec gemini --yolo --sandbox=false "$@"\n',0o700)
 print('PATH and selected settings ready. Backups stay beside changed files; open a new terminal.')
 PY
-printf 'Log in in your own terminal: opencode auth login / codex login / claude / gemini.\n'
-printf 'Launch: opencode --auto; codex --dangerously-bypass-approvals-and-sandbox; claude --dangerously-skip-permissions; gemini-full-access\n'
+printf 'Log in in your own terminal: opencode auth login / codex login / claude.\n'
+if [[ ,$SELECT, == *,gemini,* ]]; then printf 'Gemini: Google has discontinued personal login; a paid Gemini API key is required. Enter it only in your own terminal.\n'; fi
+printf 'Launch your selected tool: opencode --auto; codex --dangerously-bypass-approvals-and-sandbox; claude --dangerously-skip-permissions\n'
+if [[ ,$SELECT, == *,gemini,* ]]; then printf 'Optional Gemini launch: gemini-full-access\n'; fi
 STEP=agent-j
 if ((FAILED)); then printf 'Some CLI installations are incomplete. Repair before installing Agent J.\n'; exit 1; fi
 # Do not infer that an installed CLI is authenticated. No credentials are read or printed.
@@ -383,7 +385,7 @@ def credential(p):
         d=json.loads(p.read_text()); return isinstance(d,dict) and bool(d)
     except (OSError,ValueError): return False
 # Presence is a hint, not a claim that tokens are still valid. Never print/read values into shell.
-ok=sys.argv[1]=='1' or any(os.environ.get(k) for k in ('OPENAI_API_KEY','ANTHROPIC_API_KEY','GEMINI_API_KEY')) or any(credential(h/p) for p in ('.codex/auth.json','.claude/.credentials.json','.local/share/opencode/auth.json','.gemini/oauth_creds.json'))
+ok=sys.argv[1]=='1' or any(os.environ.get(k) for k in ('OPENAI_API_KEY','ANTHROPIC_API_KEY')) or any(credential(h/p) for p in ('.codex/auth.json','.claude/.credentials.json','.local/share/opencode/auth.json'))
 sys.exit(0 if ok else 1)
 AUTH_CHECK
 then printf 'Agent J 能装能配对，但要登录 AI 工具或填 key 后才能真正聊天。 / Agent J can install and pair, but chat needs AI login or an API key.\n'; fi

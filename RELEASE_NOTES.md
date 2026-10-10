@@ -1,6 +1,6 @@
-# Agent J 0.17.2a1 release notes
+# Agent J 0.17.3a1 release notes
 
-Host 0.17.2a1 / install 0.21.3; phone-web scope.
+Host 0.17.3a1 / install 0.21.4; phone-web scope.
 Phone parity must pass --strict. Full Android/Telegram parity is incomplete.
 Full Android/Telegram parity is incomplete.
 No APK is included in this release. Android source is for review, not a released app.
@@ -8,18 +8,18 @@ No APK is included in this release. Android source is for review, not a released
 Publication status: local preparation only. Live site verification is DEFERRED until
 the public commit and tag are pushed, the site is deployed, and cold installation passes.
 
-On publication failure, restore v0.17.1a1 host/site/phone artifacts; reuse published Dashboard C. No new D1 migration or relay change.
+On publication failure, restore v0.17.2a1 host/site/phone and the recorded Dashboard static baseline. Publish Dashboard static C, front Worker/site A, then phone web/Worker B; no D1 migration or relay backend change.
 ## Changes
 
-- Native bots resolve the selected Claude/Codex/Gemini/OpenCode executable before environment scrub; explicit paths outside service PATH remain authoritative.
-- Trusted pre-spawn failure settles that model reservation to zero. Started calls with unknown usage remain reserved; historical unknown reservations are not manually changed.
-- Owner bot settings distinguish missing, non-executable, unresolved selection and spawn failure without exposing argv, stderr or credentials.
-- Preserve OpenCode --pure and tool/MCP/plugin/workspace isolation; stdin prompts and native authentication. Package/site A then phone B; reuse Dashboard C. COREv8 unchanged.
+- Bots support Telegram private chats, separately budgeted own model keys, companion and daily-free paid Q&A templates; payment links are not payment integration.
+- Fix original visitor text and conversation history reaching models on both web and Telegram channels. Telegram admission, model errors, empty replies and timeouts get a fixed fallback.
+- Android PWA screenshot sharing and an explicit iPhone clipboard action feed existing encrypted attachments; sending remains the user's choice.
+- Shared spacing and Escape dismissal preserve drafts and close the highest open layer.
+- Upgrade receipts distinguish the computer program from the cached phone page. Metadata-only version notices never silently refresh; choose Update & refresh.
+- P108 seat REST API and Gemini main-Agent adaptation are excluded. COREv8 unchanged.
 
-- Real local native bot replies with selected OpenCode and no opencode in PATH; genuine QA installed-package, Noise/card/main-Agent reply and finally cleanup are recorded separately.
-- P101 production bot/Jev conversations, daily limits and full embed refresh chain remain operator acceptance. Standalone QA SSH auth environment is not proven equivalent to the service.
-- P102 unread pager/corner navigation and P105 setup-agents are integrated and serially requalified in P106. Installer reuses genuinely callable Claude/Codex/OpenCode login; Gemini main-agent adaptation is deferred backlog.
-- Physical phone/Android/macOS remain pending; cloud installation-code redemption is a fixture, separately disclosed from real setup/installer/Noise/model acceptance.
+- Physical iPhone/Safari and Android system sharing remain pending. The unsigned shortcut source/manual import is available; an iCloud install link is not yet provided.
+- Production web Bot conversation, upgrade receipt and cached-page notice require operator verification after publication. Local browser screenshots are not physical-phone acceptance.
 
 ## Material acceptance limits
 

@@ -155,7 +155,11 @@ class SharedVerification(unittest.TestCase):
         self.assertEqual(au.minisign.verify(p.read_bytes(),signature.read_text()),f'agentj-host/v1 version={__version__} sha256={digest}')
         with zipfile.ZipFile(p) as z:
             summary=json.loads(z.read('agentj/release-summary.json'))
-        self.assertEqual(summary['version'],__version__);self.assertTrue(summary['zh']);self.assertTrue(summary['en'])
+        self.assertEqual(summary['version'],__version__)
+        for lang in ('zh','en'):
+            self.assertIsInstance(summary[lang],str)
+            self.assertTrue(0<len(summary[lang])<=160)
+            self.assertFalse(any(ord(c)<32 for c in summary[lang]))
 
 class Worker(Nightly):
     def fixtures(self):

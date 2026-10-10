@@ -18,7 +18,7 @@ from .. import controls,wire
 from .store import Store,BotError,canonical,ident,config
 from .knowledge import Knowledge
 from .tools import ToolRegistry
-from .provider import resolve
+from .provider import resolve_bot as resolve
 
 from ..compose import Send
 
@@ -36,7 +36,7 @@ class HandoffSend(Send):
         return bool(row and row['status']=='pending' and self.manager.state().now()-row['created']<600 and not self.manager.host.stopped())
 
 READS={'list','detail','history','statistics','handoffs'}
-WRITES={'create','save','delete','knowledge_add','knowledge_remove','knowledge_directory','knowledge_url','tool_save','tool_delete','tool_test','tool_approve','human_reply','audit_key'}
+WRITES={'create','save','delete','knowledge_add','knowledge_remove','knowledge_directory','knowledge_url','tool_save','tool_delete','tool_test','tool_approve','human_reply','audit_key','telegram_key','model_key'}
 
 class Manager:
     def __init__(self,host):
@@ -59,7 +59,7 @@ class Manager:
         if op=='detail':
             p=None;problem=None
             try:
-                agent=self.host.agent;p=resolve(c['provider'],getattr(agent,'kind',None) or (self.host.agent_cfg or {}).get('kind'),agent.cur_model() if agent and hasattr(agent,'cur_model') else None)
+                agent=self.host.agent;p=resolve(store,bid,getattr(agent,'kind',None) or (self.host.agent_cfg or {}).get('kind'),agent.cur_model() if agent and hasattr(agent,'cur_model') else None)
                 if p.api=='native':
                     from .native import executable
                     executable(p.name)
@@ -67,7 +67,7 @@ class Manager:
             except BotError as e:p=None;problem=str(e)
             root=store.directory(bid)
             return {'bot':{'id':bid,**c},'knowledge':[{'name':p.name,'bytes':p.stat().st_size} for p in root.joinpath('knowledge').iterdir() if not p.name.endswith('.text') and not p.is_symlink()],
-                    'tools':ToolRegistry(store,bid).listing(),'secret_directory':str(store.secrets(bid)),'provider':p,'provider_problem':problem,'native_start_failure':next((r['outcome'] if r['outcome']!='ok' else None for r in store.db.execute("SELECT outcome FROM activity WHERE bot=? AND kind='native_start' ORDER BY rowid DESC LIMIT 1",(bid,))),None),'audit':{'provider':'OpenRouter','secret_name':'OPENROUTER_API_KEY','configured':(store.secrets(bid)/'OPENROUTER_API_KEY').is_file()}}
+                    'tools':ToolRegistry(store,bid).listing(),'secret_directory':str(store.secrets(bid)),'provider':p,'provider_problem':problem,'native_start_failure':next((r['outcome'] if r['outcome']!='ok' else None for r in store.db.execute("SELECT outcome FROM activity WHERE bot=? AND kind='native_start' ORDER BY rowid DESC LIMIT 1",(bid,))),None),'telegram':{'configured':(store.secrets(bid)/'TELEGRAM_BOT_TOKEN').is_file()},'own_key_configured':(store.secrets(bid)/'BOT_MODEL_KEY').is_file(),'audit':{'provider':'OpenRouter','secret_name':'OPENROUTER_API_KEY','configured':(store.secrets(bid)/'OPENROUTER_API_KEY').is_file()}}
         if op=='statistics':return {'days':store.statistics(bid),'tools':[dict(r) for r in store.db.execute('SELECT tool,day,sum(calls) calls FROM tool_calls WHERE bot=? GROUP BY tool,day ORDER BY day DESC LIMIT 100',(bid,))]}
         if op=='handoffs':return {'handoffs':[dict(r) for r in store.db.execute("SELECT id,visitor,request,status,created FROM handoffs WHERE bot=? ORDER BY created DESC LIMIT 100",(bid,))]}
         if op=='history':
@@ -78,6 +78,7 @@ class Manager:
     async def write(self,req, gone=None):
         if not isinstance(req,dict) or len(canonical(req).encode())>2*1024*1024:raise BotError('invalid_request')
         store=self.state();op=req.get('op');bid=req.get('id')
+        if op in ('telegram_key','model_key') and set(req)!={'op','id'}:raise BotError('invalid_request')
         if op=='tool_approve':
             item=self.pending_calls.get(req.get('approval'))
             if not item or item['request']['digest']!=req.get('digest') or item['request']['expires']<=time.time() or type(req.get('allow')) is not bool:raise BotError('approval_expired')
@@ -91,6 +92,19 @@ class Manager:
             store.db.execute('INSERT INTO messages VALUES(?,?,?,?,?,?)',(row['bot'],row['visitor'],row['request'],'assistant',result['text'],store.now()))
             delivered=await self.runtime.deliver(row['bot'],row['visitor'],row['request'],result)
             return {'delivered':delivered}
+        if op in ('telegram_key','model_key'):
+            from .. import elevate
+            c=store.get(bid)
+            # Stop the old channel before token replacement; a declined card stays paused.
+            if op=='telegram_key':
+                c['telegram']={'enabled':False};store.save(bid,c)
+            elif c['provider']['source']=='own':
+                c['enabled']=False;store.save(bid,c)
+            name='TELEGRAM_BOT_TOKEN' if op=='telegram_key' else 'BOT_MODEL_KEY'
+            card=elevate.norm_secret({'name':name,'purpose':'Telegram bot token / Telegram bot 密钥' if op=='telegram_key' else 'Bot model key; separate billing / Bot 模型 key，独立计费','dest':'file:'+str(store.secrets(bid)/name)},self.host.st.root)
+            result=await self.host.elevate.request(card,gone)
+            if result.get('result')!='saved':raise BotError('key_required')
+            return {'name':name,'stored':True}
         if op=='audit_key':
             from .. import elevate
             from .audit import NAME
@@ -106,6 +120,22 @@ class Manager:
             if raw.get('enabled'):
                 if not raw.get('subscription_risk_accepted'):raise BotError('accept_subscription_risk')
                 if op=='create':raise BotError('create_paused_first')
+                if raw['provider']['source']=='own':
+                    from .provider import invoke
+                    # Verify the requested provider without touching the main Agent profile.
+                    store.save(bid,{**raw,'enabled':False})
+                    try:
+                        p=resolve(store,bid,None)
+                        call=store.reserve(bid,'','',4096,'model')
+                        result=await asyncio.to_thread(invoke,p,[{'role':'user','content':'Reply OK.'}],None,32)
+                        store.settle(call,result.usage)
+                        if not result.text:raise BotError('invalid_model_response')
+                    except BaseException:
+                        # Keep paused after a failed probe, never silently fall back.
+                        raise
+                if raw['telegram']['enabled']:
+                    from .telegram import verify
+                    await asyncio.to_thread(verify,store,bid)
                 from .audit import resolve as audit_resolve,probe
                 p=audit_resolve(store,bid)
                 call=store.reserve(bid,'','',4096,'jev_setup')
@@ -135,7 +165,7 @@ class Manager:
                 from .engine import Engine
                 agent=self.host.agent
                 engine=Engine(store,getattr(agent,'kind',None) or (self.host.agent_cfg or {}).get('kind'),agent.cur_model() if agent and hasattr(agent,'cur_model') else None)
-                p=resolve(store.get(bid)['provider'],engine.harness,engine.model)
+                p=resolve(store,bid,engine.harness,engine.model)
                 if not await engine.safety(p,bid,vid,rid,output,'tool_test'):raise BotError('safety_refused')
                 return {'result':output,'read_only':True}
             finally:
@@ -145,15 +175,16 @@ class Manager:
             reg=ToolRegistry(store,bid);d=reg.load(req['name']);(reg.root/'tools'/(d['name']+'.json')).unlink();return {}
         raise BotError('unknown_operation')
     def detach(self,session):
-        # Called synchronously when Noise session is removed, including relay loss/revoke.
+        # Key cards retain their existing disconnect semantics; stop other writes.
         for task,(owner,gone,op,bid) in list(self.phone_tasks.items()):
             if owner is session:
-                if op=='audit_key':gone.set_result(True) if not gone.done() else None
+                if op in ('audit_key','telegram_key','model_key'):
+                    if not gone.done():gone.set_result(True)
                 else:task.cancel()
 
     def estop(self):
         for task,(_,_,op,_) in list(self.phone_tasks.items()):
-            if op!='audit_key':task.cancel()
+            if op not in ('audit_key','telegram_key','model_key'):task.cancel()
         for item in self.pending_calls.values():
             if not item['future'].done():item['future'].set_result(False)
 
@@ -189,7 +220,7 @@ class Manager:
             if why:raise BotError(why)
             op=req.get('op');bid=req.get('id')
             if any(bid==item[3] for item in self.phone_tasks.values()) and op!='tool_approve':raise BotError('busy')
-            slow=op in ('audit_key','human_reply','tool_test') or (op=='save' and isinstance(req.get('config'),dict) and req['config'].get('enabled'))
+            slow=op in ('audit_key','telegram_key','model_key','human_reply','tool_test') or (op=='save' and isinstance(req.get('config'),dict) and req['config'].get('enabled'))
             if background and slow:
                 if len(self.phone_tasks)>=4:raise BotError('busy')
                 gone=asyncio.get_running_loop().create_future()
@@ -247,6 +278,7 @@ class Manager:
                 if uid!=os.getuid():return
             req=json.loads(await asyncio.wait_for(reader.readline(),10))
             op=req.get('op')
+            if op in ('telegram_key','model_key') and set(req)!={'op','id'}:raise BotError('invalid_request')
             if op in READS:res={'ok':True,**self.read(req)}
             elif op=='result':
                 item=self.proposals.get(req.get('proposal'))

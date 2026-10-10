@@ -25,6 +25,7 @@ import { startFakeHost } from './fakehost.mjs';
 import { launch, newPage, evaluate, navigate, waitFor, waitState, shoot as shot0, sleep } from './browser.mjs';
 import { runCases, makeFiles } from './parity_cases.mjs';
 import { dictionaries } from '../build.mjs';
+import { spacingAuditSource, runP119Screens } from './p119.mjs';
 import { runP102Screens } from './p102.mjs';
 import { parityRecorder } from '../../parity/lib.mjs';
 
@@ -70,6 +71,8 @@ async function layoutOk(p, label) {
       .filter((e) => !e.closest('.tablewrap, .codeblock, pre, .hash, .tray, .deck, .rd, .water')).slice(0, 5).map((e) => e.id || e.className || e.tagName);
     return { sw: document.documentElement.scrollWidth, iw: innerWidth, small, wide, waves:[...document.querySelectorAll(".water .wave")].filter(vis).map(e=>({width:e.getBoundingClientRect().width,parent:e.parentElement.getBoundingClientRect().width})) };
   })()`);
+  const spacingErrors = await evaluate(p, spacingAuditSource);
+  check(!spacingErrors.length, label + ': spacing ≥ shared token ' + JSON.stringify(spacingErrors));
   check(r.sw <= r.iw && r.wide.length === 0, `${label}: no horizontal overflow (scrollWidth ${r.sw} <= ${r.iw}${r.wide.length ? '; sticks out: ' + r.wide.join(', ') : ''})`);
   check(r.waves.every(w=>Math.abs(w.width-2*w.parent)<1), `${label}: decorative waves retain exactly two parent widths`);
   check(r.small.length === 0, `${label}: every visible tap target ≥ 44×44 px${r.small.length ? ' — ' + r.small.join(', ') : ''}`);
@@ -88,6 +91,7 @@ const reply = (p) => text(p, '#words');
 async function waitReply(p, s, ms = 6000) { try { await waitFor(p, `document.getElementById('words').textContent === ${JSON.stringify(s)}`, ms); return true; } catch { return false; } }
 
 try {
+  if (!ONLY && !SEC_ONLY) { const n=failures.length; await runP119Screens(B, fake, BASE, check, join(SHOTS, 'p119')); results['agentj-spacing-escape']=failures.length===n?'pass':'fail'; }
   // ---------- 0. security regressions (PROMPT-33 review): P33-X01 (a reset never lets an old send meet the new session's
   // keys; hello first; unsent words stay in the composer) and P33-X02 (unpair → nothing of computer A reaches computer B)
   if (!ONLY) {

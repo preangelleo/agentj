@@ -1156,7 +1156,8 @@ export async function runCases({ B, web, fake, only }) {
     await chips(1);
     // Expire a previous case's Escape gesture before starting this double-Escape.
     await sleep(550);
-    await ev(`document.getElementById('input').focus()`);
+    // P119: Escape never clears a focused draft; the inherited double-Escape clear remains outside fields.
+    await blur();
     await key(P, 'Escape', { code: 'Escape' }); await sleep(60); await key(P, 'Escape', { code: 'Escape' });
     await wait(`document.getElementById('input').value === '' && !document.querySelectorAll('#tray .chip').length`);
     await waitToast(T('r.clear.done'));

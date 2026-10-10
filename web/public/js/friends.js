@@ -107,11 +107,13 @@ function go(view, arg) {
   if (view === 'detail') loadCtx();
   el('pages').scrollTop = 0;
 }
-function back() {
+export function back() {
   if (V.view === 'list') { H.openPanel('chat'); return; }
-  if (V.view === 'detail') return go('chat', V.friend);
-  if (V.view === 'group') return go('groups');
-  go('list');
+  if (V.view === 'detail') go('chat', V.friend);
+  else if (V.view === 'group') go('groups');
+  else go('list');
+  // The inner page is rebuilt; return focus to its stable, visible back control.
+  el('fr-back').focus({preventScroll:true});
 }
 export function wire() {
   el('fr-back').addEventListener('click', back);

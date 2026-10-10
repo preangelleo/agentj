@@ -20,7 +20,7 @@ ISSUER=wire.unb64u('XwR9RvhcZ3uFFDthatG1_eDojDdyYPyDHIWwxFOeeTQ')
 
 class Runtime:
     def __init__(self,manager):
-        self.manager=manager;self.host=manager.host;self.tasks={};self.active={};self.stopping=False;self.epochs={};self.synced={};self.pruned=0
+        self.manager=manager;self.host=manager.host;self.tasks={};self.active={};self.stopping=False;self.epochs={};self.synced={};self.pruned=0;self.telegram_tasks={};self.telegram_epochs={};self.telegram_targets={}
     def engine(self):
         agent=self.host.agent
         return Engine(self.manager.state(),getattr(agent,'kind',None) or (self.host.agent_cfg or {}).get('kind'),agent.cur_model() if agent and hasattr(agent,'cur_model') else None,approve=self.manager.approve,handoff=self.manager.handoff)
@@ -35,6 +35,18 @@ class Runtime:
                 for bid in list(self.tasks):
                     if bid not in wanted or self.tasks[bid].done() or self.epochs.get(bid)!=self.manager.state().lifecycle(bid)['epoch']:
                         self.tasks[bid].cancel();await asyncio.gather(self.tasks.pop(bid),return_exceptions=True)
+                telegram_wanted={b['id'] for b in bots if b['enabled'] and b['telegram']['enabled'] and not self.manager.state().lifecycle(b['id'])['removed']} if cloud.read_cloud(self.host.st) and not self.host.stopped() else set()
+                for bid in list(self.telegram_tasks):
+                    if bid not in telegram_wanted or self.telegram_tasks[bid].done() or self.telegram_epochs.get(bid)!=self.manager.state().lifecycle(bid)['epoch']:
+                        self.telegram_tasks[bid].cancel();await asyncio.gather(self.telegram_tasks.pop(bid),return_exceptions=True)
+                        for key in list(self.telegram_targets):
+                            if key[0]==bid:self.telegram_targets.pop(key,None)
+                for bid in telegram_wanted:
+                    if bid not in self.telegram_tasks:
+                        from .telegram import Channel
+                        try:channel=Channel(self,bid)
+                        except BotError:continue
+                        self.telegram_epochs[bid]=channel.epoch;self.telegram_tasks[bid]=asyncio.create_task(channel.run())
                 if cloud.read_cloud(self.host.st):
                     for b in bots:
                         bid=b['id'];epoch=self.manager.state().lifecycle(bid)['epoch']
@@ -46,6 +58,8 @@ class Runtime:
                         self.epochs[bid]=self.manager.state().lifecycle(bid)['epoch'];self.tasks[bid]=asyncio.create_task(self.serve_bot(bid))
                 await asyncio.sleep(2)
         finally:
+            for task in self.telegram_tasks.values():task.cancel()
+            await asyncio.gather(*self.telegram_tasks.values(),return_exceptions=True);self.telegram_tasks.clear();self.telegram_targets.clear()
             for task in self.tasks.values():task.cancel()
             await asyncio.gather(*self.tasks.values(),return_exceptions=True);self.tasks.clear()
     async def register(self,bid):
@@ -119,6 +133,12 @@ class Runtime:
                 await asyncio.sleep(10)
     async def deliver(self,bid,vid,rid,result):
         target=self.active.get((bid,vid))
-        if not target:return False
+        if not target:
+            telegram=self.telegram_targets.get((bid,vid))
+            if not telegram:return False
+            channel,chat=telegram
+            if not channel.enabled():return False
+            await channel.deliver(chat,result)
+            return True
         cid,session,send=target
         await send(cid,session.cipher.seal({'t':'reply','r':rid,**result}));return True

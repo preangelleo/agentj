@@ -2,7 +2,7 @@
 
 # Agent J
 
-This 0.17.2a1 candidate tree is for review. The published installation remains 0.17.1a1 until the public mirror/tag and all release gates pass. Android is a debug review APK, with offline model provenance and physical-device acceptance still pending; it is not a store release.
+This 0.17.3a1 candidate tree is for review. The published installation remains 0.17.2a1 until the public mirror/tag and all release gates pass. Android is a debug review APK, with offline model provenance and physical-device acceptance still pending; it is not a store release.
 
 Docs (中文 / English): <https://agentj.app/docs/> · machine-readable index: <https://agentj.app/llms.txt>
 
@@ -38,7 +38,7 @@ is the same file, byte for byte; the site publishes its SHA-256 at <https://agen
 
 The host program on its own, pinned to the release tag (Python 3.11 or newer; if yours is older, uv fetches one):
 ```bash
-uv tool install "git+https://github.com/preangelleo/agentj@v0.17.2a1#subdirectory=host"
+uv tool install "git+https://github.com/preangelleo/agentj@v0.17.3a1#subdirectory=host"
 agentj --version
 ```
 
@@ -102,3 +102,5 @@ Shared Claude enables unset phone ingress automatically (installation, switching
 Nightly host upgrades are enabled by default. Use `agentj config auto-update on|off|status`. Only a signed/hash-verified latest wheel installs during the local 03:00–05:00 idle window; busy or stopped hosts defer until tomorrow. Failures restore the locally cached previous wheel; doctor and the next phone opening report the outcome. Shared native sessions are never forcibly cleared.
 
 The 0.17.1 hotfix keeps phone key-card writes responsive and applies the owner-signed website allowlist to both inner frames. Deploy Dashboard app metadata code, then front Worker/site and phone web; no new database migration or relay implementation. Production Turnstile and full bot reply/review/limit/embed acceptance remain release-operator steps.
+
+The 0.17.3 candidate adds Telegram Bots, own model keys, companion/paid Q&A templates, screenshot sharing, shared spacing and Escape dismissal. Web and Telegram models receive original visitor text and history; failed Telegram requests get a fixed fallback. Computer upgrade receipts and web version notices tell you when to choose Settings → Update & refresh; drafts are never silently interrupted. Dashboard static C → front Worker/site A → phone web/Worker B; no D1 migration or relay backend change. P108 seat REST API is excluded. The iPhone shortcut source/manual import is available; a verified iCloud install link and physical-device sharing checks remain pending.

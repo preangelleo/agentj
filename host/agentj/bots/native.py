@@ -73,7 +73,7 @@ def command(p,root,env,selected=None):
     if p.name=='gemini':
         # Admin priority defeats user allow rules. No native tool may run in headless mode.
         (root/'deny.toml').write_text('[[rule]]\ntoolName = "*"\ndecision = "deny"\npriority = 999\n')
-        (root/'gemini.json').write_text(json.dumps({'hooks':{'enabled':False},'mcpServers':{},'context':{'fileName':[]},'tools':{'exclude':['*']}}))
+        (root/'gemini.json').write_text(json.dumps({'hooksConfig':{'enabled':False},'hooks':{'enabled':False},'skills':{'enabled':False},'mcpServers':{},'context':{'fileName':[]},'tools':{'exclude':['*']}}))
         # Trust only our freshly generated scratch directory for this invocation.
         # No owner trust file or global security setting is changed; all tools stay denied.
         (root/'trusted.json').write_text(json.dumps({str(root):'TRUST_FOLDER'}))

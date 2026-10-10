@@ -1,32 +1,6 @@
 {
-  "version": "0.17.2a1",
+  "version": "0.17.3a1",
   "major": false,
-  "zh": {
-    "features": [
-      "安装助手复用已验证的本机登录，配对后直接聊天。",
-      "历史页码未读闪烁与角落双击跳转。"
-    ],
-    "improvements": [
-      "客服程序启动失败显示具体原因。"
-    ],
-    "fixes": [
-      "客服 bot 继承主 Agent 已选程序路径。",
-      "确定未启动的模型调用自动释放本次预留。",
-      "已安装的 Codex 启动器不再被误认成程序管理器。"
-    ]
-  },
-  "en": {
-    "features": [
-      "Installer reuses verified local CLI login for chat after pairing.",
-      "Unread page-number pulse and history corner double taps."
-    ],
-    "improvements": [
-      "Specific diagnostics for bot startup failures."
-    ],
-    "fixes": [
-      "Bots inherit the selected main Agent executable.",
-      "Model reservations are released when the process provably did not start.",
-      "Installed Codex launchers are no longer mistaken for version-manager shims."
-    ]
-  }
+  "zh": "新增 Telegram 客服、自带模型 key 与问答模板、截图分享；统一间距与 ESC，修复访客正文和历史。电脑升级后，请在手机设置中点「更新并刷新」。",
+  "en": "Telegram Bots, own keys/templates and screenshots; spacing/Escape and visitor history fixes. After computer updates, refresh the phone in Settings."
 }

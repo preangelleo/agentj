@@ -1,3 +1,4 @@
+import { registerLayer } from './layers.js';
 // Media out (PROTOCOL §13, F21, 0.15.2): files, pictures, audio, video, PDFs and generated HTML that the Agent's reply
 // refers to, sent by the computer inside the Noise session — the reverse of blobs.js. A finished page carries `media`
 // [{mid, name, mime, kind, bytes, sha256, ref}] and `media_skip` [{name, why}]; nothing is fetched from a path or a URL.
@@ -248,7 +249,8 @@ function show(m, c, body, acts, blob, open) {
   const url = urlOf(c, blob);
   c.dataset.state = 'ready';
   if (m.kind === 'image') {
-    const img = mk('img'); img.alt = m.name; img.src = url; img.decoding = 'async';
+    const img = mk('img'); img.alt = m.name; img.src = url; img.decoding = 'async'; img.tabIndex = 0; img.setAttribute('role','button');
+    img.addEventListener('keydown', e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();viewImage(url,m.name);}});
     img.addEventListener('click', (e) => { e.stopPropagation(); viewImage(url, m.name); });
     body.replaceChildren(img);
   } else if (m.kind === 'audio' || m.kind === 'video') {
@@ -307,19 +309,15 @@ function viewerEl() {
   v.addEventListener('click', (e) => { if (e.target === v || e.target === stage) closeViewer(); });
   document.body.appendChild(v);
   viewer = { v, x, stage, note };
+  registerLayer({element:()=>v,open:()=>!v.hidden,close:closeViewer,fallback:()=>document.getElementById(document.body.dataset.reader==='1'?'rdClose':'readBtn'),rank:70});
   return viewer;
-}
-function onKey(e) {
-  if (e.key !== 'Escape') return;
-  e.preventDefault(); e.stopImmediatePropagation();
-  closeViewer();
 }
 function openViewer(label) {
   const V = viewerEl();
   V.v.setAttribute('aria-label', label || t('media.viewer'));
   V.x.setAttribute('aria-label', t('media.close'));
   V.v.hidden = false; V.v.dataset.modalOpen = '1';
-  window.addEventListener('keydown', onKey, true);
+
   V.x.focus({ preventScroll: true });
   return V;
 }
@@ -327,7 +325,7 @@ export function closeViewer() {
   if (!viewer || viewer.v.hidden) return;
   viewer.v.hidden = true; delete viewer.v.dataset.modalOpen;
   viewer.stage.replaceChildren(); viewer.note.textContent = ''; viewer.note.hidden = true;
-  window.removeEventListener('keydown', onKey, true);
+
 }
 export const viewerOpen = () => !!viewer && !viewer.v.hidden;
 

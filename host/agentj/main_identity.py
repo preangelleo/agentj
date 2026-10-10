@@ -158,8 +158,13 @@ MULTI_USER_LINE = {
 
 
 BOT_RECOVERY_LINE = {
-    'zh': 'Bot 密钥卡最长等十分钟；pending 回执不是保存成功。主人断线后请查询结果再重试。嵌入须允许完整祖先链的每个准确 HTTPS 来源；不要放宽 sandbox 或把来源改成通配符。平台认证器不可用时引导主人看 /docs/phone 排障，provider probe 固定错误类别与 key 长度区间都不含凭据。\n',
-    'en': 'A bot key card waits up to ten minutes; pending is not saved. After disconnection, check the result before retrying. Embeds require every exact HTTPS origin in the full ancestor chain; never relax the sandbox or use wildcard origins. For unavailable platform authenticators use /docs/phone troubleshooting. Provider probe fixed error categories and key-length bands contain no credentials.\n',
+    'zh': 'Bot 支持客服、陪聊、付费问答模板；Telegram token 和独立模型 key 只用密钥卡。付费问答仅每日免费 N 问后提示主人设置的链接，不验证支付。Telegram 平台可看到此渠道消息；网页版继续端到端加密。自带模型 key 的模型预算独立，Jev 使用主人 OpenRouter。Bot 密钥卡最长等十分钟；pending 回执不是保存成功。主人断线后请查询结果再重试。嵌入须允许完整祖先链的每个准确 HTTPS 来源；不要放宽 sandbox 或把来源改成通配符。平台认证器不可用时引导主人看 /docs/phone 排障，provider probe 固定错误类别与 key 长度区间都不含凭据。\n',
+    'en': 'Bots support customer service, companion and paid Q&A templates. Telegram tokens and own model keys use secret cards only. Paid Q&A only shows the owner payment link after N daily free questions; it never verifies payment. Telegram sees channel messages; web chats remain end-to-end encrypted. Own-key model budgets are separate; Jev uses owner OpenRouter. A bot key card waits up to ten minutes; pending is not saved. After disconnection, check the result before retrying. Embeds require every exact HTTPS origin in the full ancestor chain; never relax the sandbox or use wildcard origins. For unavailable platform authenticators use /docs/phone troubleshooting. Provider probe fixed error categories and key-length bands contain no credentials.\n',
+}
+
+UPDATE_WEB_LINE = {
+ 'zh': '电脑端 Agent J 升级不会同时刷新手机/网页版。升级回报要说明电脑的新旧版本和一句话自检结论，并提醒主人点右上角设置图标→「更新并刷新」。网页发现新版只提示，不能静默刷新打断输入。\n',
+ 'en': 'Upgrading Agent J on the computer does not refresh the phone/web page. Report the new and old computer versions and a plain self-check sentence, then ask the owner to tap the settings icon at the top right → "Update & refresh". A newer page only prompts; never silently reload while the owner is typing.\n',
 }
 
 def prompt(cfg: dict) -> str:
@@ -169,7 +174,7 @@ def prompt(cfg: dict) -> str:
     extra = cfg.get("instructions") or ""
     if not isinstance(extra, str):
         raise IdentityError("agent.instructions must be append-only text")
-    return (core + ("" if core.endswith("\n") else "\n") + LANGUAGE_LINE[lang] + ELEVATE_LINE[lang] + SUPPORT_LINE[lang] + OPERATIONS_LINE[lang] + SILENCE_LINE[lang] + SHARED_CODEX_LINE[lang] + PAIRING_LINE[lang] + ONBOARDING_LINE[lang] + MULTI_USER_LINE[lang] + BOT_RECOVERY_LINE[lang]
+    return (core + ("" if core.endswith("\n") else "\n") + LANGUAGE_LINE[lang] + ELEVATE_LINE[lang] + SUPPORT_LINE[lang] + OPERATIONS_LINE[lang] + SILENCE_LINE[lang] + SHARED_CODEX_LINE[lang] + PAIRING_LINE[lang] + ONBOARDING_LINE[lang] + MULTI_USER_LINE[lang] + BOT_RECOVERY_LINE[lang] + UPDATE_WEB_LINE[lang]
             + ("\n<User preferences — append only; core takes precedence>\n" + extra + "\n</User preferences>\n" if extra else ""))
 
 def expected(cfg: dict, harness: str) -> dict:

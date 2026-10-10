@@ -28,6 +28,11 @@
 <script type="module" src="app.js"></script>
 </head>
 <body data-status="unknown" data-conn="off" data-view="pair" data-agent="none">
+  <aside id="version-notice" class="version-notice" role="status" hidden>
+    <p id="version-notice-text"></p>
+    <div><button id="version-refresh" type="button"></button><button id="version-dismiss" type="button"></button></div>
+  </aside>
+      <div id="share-notice" class="share-notice" hidden role="status" aria-live="polite"><span id="share-status"></span><button id="share-paste" type="button" hidden data-i18n="share.paste">粘贴截图</button></div>
   <div class="aura" aria-hidden="true"></div>
   <!-- The context window as a water level (relay): the screen is the tank, the surface rises as the window fills. -->
   <div class="water" id="water" data-known="0" aria-hidden="true">
@@ -266,7 +271,7 @@
       </div>
       <input id="phone-env-link" class="aj-textarea" readonly aria-label="URL" hidden>
     </aside>
-    <section id="pair-view" class="view pair" hidden>
+    <section id="pair-view" class="aj-flow view pair" hidden>
       <div class="pair__hero">
         <img src="brand/img/shield-256.png" width="96" height="96" alt="">
         <div class="aj-lang pair__lang" data-aj-lang-switch>中文 / EN</div>
@@ -310,7 +315,7 @@
       </div>
       <p id="camera-hint" class="camera-hint" role="status" data-i18n="camera.aim">把配对二维码放进画面，点「扫描」。</p>
     </section>
-    <section id="models-view" class="view" hidden>
+    <section id="models-view" class="aj-flow view" hidden>
       <h1 data-i18n="models.title">模型与 Key</h1>
       <p class="lead" data-i18n="models.note">选个模型，或者通过加密密钥卡更新服务商的 Key。</p>
       <div id="model-options" class="model-options"></div>
@@ -320,7 +325,7 @@
       <button type="button" id="models-back" class="aj-btn" data-i18n="camera.back">返回</button>
     </section>
 
-    <section id="sas-view" class="view sas-view" hidden>
+    <section id="sas-view" class="aj-flow view sas-view" hidden>
       <img class="sas-view__logo" src="brand/img/status/logo-question.png" width="72" height="72" alt="">
       <h1 data-i18n="sas.title">在电脑上输入这 6 位码</h1>
       <p id="sas" class="sas" data-i18n-attr="aria-label=sas.aria" aria-label="6 位码">------</p>
@@ -328,7 +333,7 @@
       <p class="small center" data-i18n="sas.note">这串数字只显示在手机上。电脑批准后，这里会自动进入对话。</p>
     </section>
 
-    <section id="mem-view" class="view sub" hidden>
+    <section id="mem-view" class="aj-flow view sub" hidden>
       <div class="sub-head"><button type="button" class="aj-btn back" data-back data-i18n-attr="aria-label=nav.back" aria-label="返回对话"><span class="back__arrow" aria-hidden="true">←</span></button><h1 data-i18n="mem.title">它记住了什么</h1></div>
       <p class="small" data-i18n="mem.intro">这些是 Agent 每次开工都会读的记忆，存在你的电脑上。可以逐条删除：删掉的内容先进电脑上的回收站，7 天内可以撤销。</p>
       <p id="mem-status" class="small" role="status" aria-live="polite"></p>
@@ -337,7 +342,7 @@
       <ul id="mem-trash" class="plain-list"></ul>
     </section>
 
-    <section id="act-view" class="view sub" hidden>
+    <section id="act-view" class="aj-flow view sub" hidden>
       <div class="sub-head"><button type="button" class="aj-btn back" data-back data-i18n-attr="aria-label=nav.back" aria-label="返回对话"><span class="back__arrow" aria-hidden="true">←</span></button><h1 data-i18n="act.title">操作和审批记录</h1></div>
       <p class="small" data-i18n="act.intro">这些记录存在你的电脑上，保留 30 天。</p>
       <p id="act-status" class="small" role="status" aria-live="polite"></p>
@@ -345,7 +350,7 @@
       <div class="ajrow"><button type="button" id="act-more" class="aj-btn" data-i18n="act.more" hidden>加载更早的</button></div>
     </section>
 
-    <section id="tasks-view" class="view sub" hidden>
+    <section id="tasks-view" class="aj-flow view sub" hidden>
       <div class="sub-head"><button type="button" class="aj-btn back" data-back data-i18n-attr="aria-label=nav.back" aria-label="返回对话"><span class="back__arrow" aria-hidden="true">←</span></button><h1 data-i18n="tasks.title">定时任务</h1></div>
       <p class="small" data-i18n="tasks.intro">这些是 Agent 可以按时自动做的事。启用哪个由你决定；任务改过之后，要重新启用。</p>
       <p id="tasks-status" class="small" role="status" aria-live="polite"></p>
@@ -353,21 +358,21 @@
     </section>
 
     <!-- §17.7 agent friends: read-only conversations; no field here sends anything to a friend (js/friends.js) -->
-    <section id="bots-view" class="view sub" hidden>
+    <section id="bots-view" class="aj-flow view sub" hidden>
       <div class="sub-head"><h1>Bots / 客服</h1></div>
       <p id="bots-status" role="status" aria-live="polite"></p>
-      <div class="fr-split"><div id="bots-side" class="fr-side aj-actions"></div><div id="bots-main" class="fr-main"></div></div>
+      <div class="fr-split"><div id="bots-side" class="fr-side aj-actions"></div><div id="bots-main" class="fr-main aj-flow"></div></div>
     </section>
-    <section id="friends-view" class="view sub" data-fv="list" hidden>
+    <section id="friends-view" class="aj-flow view sub" data-fv="list" hidden>
       <div class="sub-head"><button type="button" id="fr-back" class="aj-btn back" data-i18n-attr="aria-label=fr.back" aria-label="返回"><span class="back__arrow" aria-hidden="true">←</span></button><h1 id="fr-title" data-i18n="fr.title">好友</h1></div>
       <p id="fr-status" class="small" role="status" aria-live="polite" hidden></p>
       <div class="fr-split">
-        <div id="fr-side" class="fr-side"></div>
-        <div id="fr-main" class="fr-main"></div>
+        <div id="fr-side" class="fr-side aj-flow"></div>
+        <div id="fr-main" class="fr-main aj-flow"></div>
       </div>
     </section>
 
-    <section id="revoked-view" class="view state-view" hidden>
+    <section id="revoked-view" class="aj-flow view state-view" hidden>
       <img src="brand/img/status/logo-offline.png" width="72" height="72" alt="">
       <h1 id="revoked-title" data-i18n="revoked.title">这台手机已被电脑移除</h1>
       <p id="revoked-lead" class="lead" data-i18n="revoked.lead">电脑不再认这台手机。要继续用，先在电脑上运行 agentj pair，再重新配对。</p>
@@ -375,7 +380,7 @@
       <div class="ajrow"><button type="button" id="repair" class="aj-btn aj-btn--primary aj-btn--block" data-i18n="revoked.btn">重新配对</button></div>
     </section>
 
-    <section id="error-view" class="view state-view" hidden>
+    <section id="error-view" class="aj-flow view state-view" hidden>
       <img src="brand/img/status/logo-offline.png" width="72" height="72" alt="">
       <h1 data-i18n="error.title">连接断开了</h1>
       <p id="error-text" class="lead"></p>
@@ -385,7 +390,7 @@
 
   <!-- ================================================================ dialogs and overlays -->
   <section id="badge-panel" class="ajmodal" role="dialog" aria-modal="true" aria-labelledby="badge-title" hidden>
-    <div class="box">
+    <div class="aj-flow box">
       <div class="panel__head"><img src="brand/img/shield-64.png" width="32" height="32" alt=""><h2 id="badge-title" data-i18n="badge.title">这个网页版有多安全</h2></div>
       <ul>
         <li data-i18n="badge.p1">手机和电脑之间的内容是加密的，我们的服务器看不懂。</li>
@@ -401,14 +406,14 @@
   <!-- F13 · Settings: one panel for everything the owner changes often. Rows that would lower safety are read-only with the
        command to run on the computer; host-side values go through pref_set (PROTOCOL §10, C6 / Amendment A1). -->
   <section id="settings" class="ajmodal setmodal" role="dialog" aria-modal="true" aria-labelledby="set-title" hidden>
-    <div class="box setbox" tabindex="-1">
+    <div class="aj-flow box setbox" tabindex="-1">
       <div class="sethead">
         <button type="button" id="set-back" class="setx" hidden data-i18n-attr="aria-label=set.back,title=set.back" aria-label="返回设置" title="返回设置"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 5l-7 7 7 7"/></svg></button>
         <h2 id="set-title" data-i18n="set.title">设置</h2>
         <button type="button" id="set-close" class="setx" data-i18n-attr="aria-label=set.close,title=set.close" aria-label="关闭设置（Esc）" title="关闭设置（Esc）"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"/></svg></button>
       </div>
       <p id="set-status" class="setstatus" role="status" aria-live="polite"></p>
-      <div id="set-main" class="setmain">
+      <div id="set-main" class="setmain aj-flow">
         <div class="setrow" id="set-lang-row">
           <span class="setlab" data-i18n="set.lang">语言</span>
           <div class="seg" role="group" data-i18n-attr="aria-label=set.lang" aria-label="语言"><button type="button" data-set-lang="zh" aria-pressed="false">中文</button><button type="button" data-set-lang="en" aria-pressed="false">English</button></div>
@@ -525,7 +530,7 @@
     </div>
   </section>
   <div id="confirm" class="ajmodal ajconfirm" role="dialog" aria-modal="true" aria-labelledby="confirm-title" hidden>
-    <div class="box">
+    <div class="aj-flow box">
       <h2 id="confirm-title"></h2>
       <p id="confirm-text"></p>
       <div class="ajrow confirm-row">
@@ -536,7 +541,7 @@
   </div>
   <div class="toast" id="toast" role="status"></div>
   <div class="cam" id="cam" hidden role="dialog" aria-modal="true" data-i18n-attr="aria-label=r.cam.aria" aria-label="拍照">
-    <div class="box">
+    <div class="aj-flow box">
       <div class="msg" id="camMsg"></div>
       <video id="camVideo" autoplay playsinline muted hidden></video>
       <canvas id="camShot" hidden></canvas>
@@ -566,7 +571,7 @@
     </div></div>
   </div>
   <div class="keys silent" id="silent" hidden role="dialog" aria-modal="true" aria-labelledby="silentTitle">
-    <div class="box">
+    <div class="aj-flow box">
       <h2 id="silentTitle" data-i18n="r.silent.title">静默记录</h2>
       <p class="sub" data-i18n="r.silent.help">静默回合收在这里。点开一条，查看当时的原话。</p>
       <div class="slist" id="silentList"></div>
@@ -575,11 +580,11 @@
     </div>
   </div>
   <div class="keys" id="keys" hidden role="dialog" aria-modal="true" aria-labelledby="keysTitle">
-    <div class="box">
+    <div class="aj-flow box">
       <h2 id="keysTitle" data-i18n="r.keys.title">键盘快捷键</h2>
       <h3 data-i18n="r.keys.hEdit">编辑（同终端）</h3>
       <dl>
-        <dt><kbd>i</kbd> / <kbd>Esc</kbd></dt><dd data-i18n="r.keys.i">进入 / 离开输入框（有补全列表时 Esc 先收列表）</dd>
+        <dt><kbd>i</kbd> / <kbd>Esc</kbd></dt><dd data-i18n="r.keys.i">进入输入框；Esc 先关闭浮层，没有浮层时保留输入</dd>
         <dt><kbd>Ctrl</kbd>+<kbd>A</kbd> <kbd>E</kbd></dt><dd data-i18n="r.keys.ae">到行首 / 行尾</dd>
         <dt><kbd>Ctrl</kbd>+<kbd>U</kbd> <kbd>K</kbd></dt><dd data-i18n="r.keys.uk">删到行首 / 删到行尾</dd>
         <dt><kbd>Ctrl</kbd>+<kbd>W</kbd></dt><dd data-i18n="r.keys.w">删前一个词（装到桌面的网页版 App 窗口里可用；Win/Linux 普通浏览器标签页里 Chrome 可能直接关标签）</dd>
@@ -613,7 +618,7 @@
       </dl>
       <h3 data-i18n="r.keys.hClear">清空与中断</h3>
       <dl>
-        <dt><kbd>Esc</kbd> <kbd>Esc</kbd></dt><dd data-i18n="r.keys.ee">清空文字和附件</dd>
+        <dt><kbd>Esc</kbd> <kbd>Esc</kbd></dt><dd data-i18n="r.keys.ee">在输入框外清空文字和附件</dd>
         <dt><kbd>Esc</kbd> <kbd>Esc</kbd></dt><dd data-i18n="r.keys.eei">已经空了（≥1 秒）：中断当前任务</dd>
       </dl>
       <button type="button" class="close" id="keysClose" data-i18n="r.keys.ok">知道了</button>

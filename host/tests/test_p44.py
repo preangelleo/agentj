@@ -291,8 +291,8 @@ class UpgradedNotice(unittest.IsolatedAsyncioTestCase):
 
     async def test_once_in_the_owners_language(self):
         rows = [{"status": "ok"}] * 3 + [{"status": "warn"}, {"status": "fail"}]
-        for lang, want in (("zh", f"已升级到 {__version__}（doctor: 3 ✓ / 1 ! / 1 ✗）"),
-                           ("en", f"Upgraded to {__version__} (doctor: 3 ✓ / 1 ! / 1 ✗)")):
+        for lang, want in (("zh", f"电脑上的 Agent J 程序已升级到 {__version__}（原 0.14.0a1）。 自检有 1 项未通过；请在电脑运行 `agentj doctor`，按提示修复。\n\n手机/网页上的 Agent J 还没升级。请点右上角设置图标 →「更新并刷新」。"),
+                           ("en", f'Agent J on your computer has been upgraded to {__version__} (previously 0.14.0a1). Self-check found 1 failed check; run `agentj doctor` on the computer and follow its repair guidance.\n\nThe phone/web page has not been updated yet. Tap the settings icon at the top right → "Update and reload".')):
             update.write_marker(self.st, "0.14.0a1", __version__)
             host, sent = await self._host()
             host.preferences["appearance"]["language"] = lang

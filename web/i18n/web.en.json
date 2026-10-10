@@ -770,7 +770,7 @@
       "hRead": "Reading (outside the field)",
       "hAtt": "Attachments / voice",
       "hClear": "Clear and interrupt",
-      "i": "Enter / leave the field (with a suggestion list open, Esc closes it first)",
+      "i": "Enter the field; Esc closes overlays first and otherwise keeps your draft",
       "ae": "Start / end of the line",
       "uk": "Delete to the start / end of the line",
       "w": "Delete the previous word (works in the installed web app window; in a normal Chrome tab on Windows / Linux it may close the tab)",
@@ -796,7 +796,7 @@
       "dbl3": "double-tap",
       "mm": "Lock the recording, it keeps going; any key ends it, Esc cancels",
       "mic": "Lock the recording, it keeps going; tap again to finish, Esc cancels",
-      "ee": "Clear the text and attachments",
+      "ee": "Outside the field: clear the text and attachments",
       "eei": "Already empty (≥ 1 s): interrupt the current task",
       "ok": "Got it",
       "s": "Open Settings"
@@ -1342,5 +1342,15 @@
     "copy": "Copy page link",
     "copied": "Page link copied; pair from the Home Screen icon."
   },
-  "phoneEnv.iosAuth": "If Face ID is unavailable, check iOS Settings → General → AutoFill & Passwords: enable AutoFill Passwords and Passkeys and select Passwords. Check iCloud → Passwords (Keychain), Face ID & Passcode, and restrictions in Screen Time or device-management profiles. Each scan or pairing-link tap creates a new pairing; after pairing, open the same Home Screen icon."
+  "phoneEnv.iosAuth": "If Face ID is unavailable, check iOS Settings → General → AutoFill & Passwords: enable AutoFill Passwords and Passkeys and select Passwords. Check iCloud → Passwords (Keychain), Face ID & Passcode, and restrictions in Screen Time or device-management profiles. Each scan or pairing-link tap creates a new pairing; after pairing, open the same Home Screen icon.",
+  "share": {
+    "paste": "Paste screenshot",
+    "pair": "Pair in this browser first, then share your screenshot again.",
+    "clip": "Your screenshot is on the clipboard. Tap Paste screenshot, add a note if you like, then send.",
+    "wait": "Screenshot received. It will enter the composer when your computer connects.",
+    "added": "Shared content is in the composer. Add a note if you like, then send.",
+    "failed": "Could not receive the share. Share again with up to 10 images, 25 MB total."
+  },
+  "ver.new": "A newer Agent J version ({v}) is available. Your phone/web page has not been updated yet. Tap the settings icon at the top right → “Update and reload”, or use the button below.",
+  "ver.later": "Later"
 }

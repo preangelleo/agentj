@@ -205,6 +205,7 @@ export function open() {
   el('setBtn').setAttribute('aria-expanded', 'true');
   el('settings').querySelector('.setbox').focus();
 }
+export function back() { if (sub !== 'main') showSub('main'); else close(); }
 export function close() {
   const box = el('settings');
   if (box.hidden) return;
@@ -214,8 +215,8 @@ export function close() {
 }
 
 /** Update / refresh the app: ask the browser for a fresh service worker, unregister every one of ours, drop every Cache
- *  Storage entry, then reload (the page itself is `no-store`, so the reload fetches the new files). The page cannot
- *  fetch version.json (CSP connect-src = the relays only); the version line after the reload says what came in. */
+ *  Storage entry, then reload (the page itself is `no-store`, so the reload fetches the new files). The metadata-only
+ *  version notice checks version.json; this action remains an explicit owner choice. */
 export async function refreshApp() {
   say(t('set.refreshGo'));
   try {
@@ -273,13 +274,6 @@ export function configure(hooks) {
   for (const b of document.querySelectorAll('[data-copy]')) b.addEventListener('click', async () => {
     const ok = await RelayMD.copyText(el(b.dataset.copy).textContent);
     say(ok ? t('set.copied') : t('r.copy.fail'));
-  });
-  // Esc: the iOS guide → back; else close. Registered before relay's own keys (wire() runs before relay.init), so the
-  // Escape that closes the panel never reaches relay's Esc-Esc (clear / interrupt).
-  document.addEventListener('keydown', (e) => {
-    if (e.key !== 'Escape' || !isOpen() || !el('confirm').hidden) return;
-    e.preventDefault(); e.stopImmediatePropagation();
-    if (sub !== 'main') showSub('main'); else { close(); el('setBtn').focus(); }
   });
   onLang(() => { if (isOpen()) { render(); if (sub === 'ios') el('set-title').textContent = t('set.iosTitle'); } });
 }

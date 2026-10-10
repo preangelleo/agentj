@@ -184,6 +184,7 @@ try {
       writeFileSync(join(OUT, 'p59-reader-viewer-phone.png'), await shoot(p));
       await key(p, 'Escape', { code: 'Escape' });
       assert.equal(await ev(p, `document.querySelector('.mview').hidden`), true, 'the viewer closed');
+      assert.equal(await ev(p, `document.activeElement === document.querySelector('#rdWords .mslot img')`), true, 'viewer Escape restores the image trigger');
       assert.equal(await ev(p, `document.getElementById('rd').hidden`), false, 'the reader stayed');
       // close the reader: its object URLs go, the page's picture keeps working
       const rdUrl = await ev(p, `document.querySelector('#rdWords .mslot img').src`);

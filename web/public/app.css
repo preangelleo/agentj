@@ -1608,3 +1608,30 @@ body[data-view="scan"] .top{display:none}
  .setrow>.seg{grid-column:1 / -1}
  .seg button+button{border-left:0;border-top:1px solid var(--border)}
 }
+
+/* P110 share arrival: a prominent action, shown only on an explicit share launch. */
+.share-notice{position:fixed;z-index:80;left:12px;right:12px;top:calc(env(safe-area-inset-top) + 64px);padding:var(--space-control);border:1px solid currentColor;border-radius:12px;background:var(--pg);color:var(--ink);display:flex;align-items:center;gap:var(--space-control);font-size:14px}
+.share-notice[hidden],.share-notice button[hidden]{display:none}
+.share-notice button{min-height:56px;min-width:112px;border:1px solid currentColor;border-radius:10px;background:#b7e396;color:#141414;font:inherit;font-weight:700;padding:8px}
+body[data-view="chat"] .share-notice{position:static;margin:0 var(--space-control) var(--space-content)}
+
+/* P119: page/list/action rhythm inherits the brand semantic tokens, including narrow screens. */
+.ajpages :is(.ajrow,.fr-acts,.model-options,.fr-list,.fr-pending,.fr-groups,.mem-items,.task-list),
+.ajmodal .confirm-row { gap:var(--space-control); }
+.fr-split { row-gap:var(--space-section); }
+.ajpages :is(.mem-src,.task-item,.act-item) + :is(.mem-src,.task-item,.act-item) { margin-top:var(--space-section); }
+.setrow { row-gap:var(--space-control); }
+
+.ajpages :is(.fr-list,.fr-pending,.fr-groups,.mem-items,.tasks-list) { gap:var(--space-section); }
+.ajpages :is(.task-card,.mem-body,.fr-cardbox) { gap:var(--space-content); }
+.ajpages .act-item { gap:var(--space-control); }
+.ajpages .task-card .aj-btn { margin-top:0; }
+.ajpages .bots-tabs { gap:var(--space-control); }
+
+/* P120: owner-controlled, non-modal update notice. */
+.version-notice{position:relative;z-index:2;padding:var(--space-control);margin:var(--space-control);border:1px solid var(--ink);border-radius:12px;background:var(--pg);color:var(--ink);display:flex;flex-direction:column;gap:var(--space-content);flex-shrink:0}
+.version-notice[hidden]{display:none}
+.version-notice p{margin:0;line-height:1.5}
+.version-notice>div{display:flex;flex-wrap:wrap;gap:var(--space-control)}
+.version-notice button{min-height:56px;padding:var(--space-control);border:1px solid currentColor;border-radius:10px;background:transparent;color:inherit;font:inherit;cursor:pointer}
+#version-refresh{background:#b7e396;color:#141414;font-weight:700}

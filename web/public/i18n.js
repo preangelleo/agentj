@@ -608,7 +608,7 @@ export default {
   "r.keys.hRead": "阅读（输入框外）",
   "r.keys.hAtt": "附件 / 语音",
   "r.keys.hClear": "清空与中断",
-  "r.keys.i": "进入 / 离开输入框（有补全列表时 Esc 先收列表）",
+  "r.keys.i": "进入输入框；Esc 先关闭浮层，没有浮层时保留输入",
   "r.keys.ae": "到行首 / 行尾",
   "r.keys.uk": "删到行首 / 删到行尾",
   "r.keys.w": "删前一个词（装到桌面的网页版 App 窗口里可用；Win/Linux 普通浏览器标签页里 Chrome 可能直接关标签）",
@@ -634,7 +634,7 @@ export default {
   "r.keys.dbl3": "双击",
   "r.keys.mm": "锁定录音，松手继续录；任意键结束，Esc 取消",
   "r.keys.mic": "锁定录音，松手继续录；再点一下结束，Esc 取消",
-  "r.keys.ee": "清空文字和附件",
+  "r.keys.ee": "在输入框外清空文字和附件",
   "r.keys.eei": "已经空了（≥1 秒）：中断当前任务",
   "r.keys.ok": "知道了",
   "r.keys.s": "打开设置",
@@ -1090,7 +1090,15 @@ export default {
   "phoneEnv.setup": "设置 Face ID",
   "phoneEnv.copy": "复制网页链接",
   "phoneEnv.copied": "已复制网页链接；打开后从主屏幕配对。",
-  "phoneEnv.iosAuth": "Face ID 不可用时，请检查 iOS「设置→通用→自动填充与密码」：打开「自动填充密码和通行密钥」并勾选「密码」；检查「iCloud→密码（钥匙串）」「面容 ID 与密码」，以及「屏幕使用时间」或设备管理描述文件是否限制通行密钥。每次扫码或点配对链接都会新建配对；完成后请从同一个主屏幕图标进入。"
+  "phoneEnv.iosAuth": "Face ID 不可用时，请检查 iOS「设置→通用→自动填充与密码」：打开「自动填充密码和通行密钥」并勾选「密码」；检查「iCloud→密码（钥匙串）」「面容 ID 与密码」，以及「屏幕使用时间」或设备管理描述文件是否限制通行密钥。每次扫码或点配对链接都会新建配对；完成后请从同一个主屏幕图标进入。",
+  "share.paste": "粘贴截图",
+  "share.pair": "请先在这个浏览器配对，再分享一次截图。",
+  "share.clip": "截图已在剪贴板。点「粘贴截图」，可补一句话再发送。",
+  "share.wait": "截图已收到，连接电脑后会放进输入框。",
+  "share.added": "分享内容已放进输入框，可补一句话再发送。",
+  "share.failed": "未能接收分享，请重新分享。最多 10 张图片，总大小不超过 25 MB。",
+  "ver.new": "Agent J 有新版本（{v}）。手机/网页还没升级，请点右上角设置图标 →「更新并刷新」，或点下方按钮。",
+  "ver.later": "稍后"
  },
  "en": {
   "meta.title": "Agent J · Phone remote",
@@ -1700,7 +1708,7 @@ export default {
   "r.keys.hRead": "Reading (outside the field)",
   "r.keys.hAtt": "Attachments / voice",
   "r.keys.hClear": "Clear and interrupt",
-  "r.keys.i": "Enter / leave the field (with a suggestion list open, Esc closes it first)",
+  "r.keys.i": "Enter the field; Esc closes overlays first and otherwise keeps your draft",
   "r.keys.ae": "Start / end of the line",
   "r.keys.uk": "Delete to the start / end of the line",
   "r.keys.w": "Delete the previous word (works in the installed web app window; in a normal Chrome tab on Windows / Linux it may close the tab)",
@@ -1726,7 +1734,7 @@ export default {
   "r.keys.dbl3": "double-tap",
   "r.keys.mm": "Lock the recording, it keeps going; any key ends it, Esc cancels",
   "r.keys.mic": "Lock the recording, it keeps going; tap again to finish, Esc cancels",
-  "r.keys.ee": "Clear the text and attachments",
+  "r.keys.ee": "Outside the field: clear the text and attachments",
   "r.keys.eei": "Already empty (≥ 1 s): interrupt the current task",
   "r.keys.ok": "Got it",
   "r.keys.s": "Open Settings",
@@ -2182,6 +2190,14 @@ export default {
   "phoneEnv.setup": "Set up Face ID",
   "phoneEnv.copy": "Copy page link",
   "phoneEnv.copied": "Page link copied; pair from the Home Screen icon.",
-  "phoneEnv.iosAuth": "If Face ID is unavailable, check iOS Settings → General → AutoFill & Passwords: enable AutoFill Passwords and Passkeys and select Passwords. Check iCloud → Passwords (Keychain), Face ID & Passcode, and restrictions in Screen Time or device-management profiles. Each scan or pairing-link tap creates a new pairing; after pairing, open the same Home Screen icon."
+  "phoneEnv.iosAuth": "If Face ID is unavailable, check iOS Settings → General → AutoFill & Passwords: enable AutoFill Passwords and Passkeys and select Passwords. Check iCloud → Passwords (Keychain), Face ID & Passcode, and restrictions in Screen Time or device-management profiles. Each scan or pairing-link tap creates a new pairing; after pairing, open the same Home Screen icon.",
+  "share.paste": "Paste screenshot",
+  "share.pair": "Pair in this browser first, then share your screenshot again.",
+  "share.clip": "Your screenshot is on the clipboard. Tap Paste screenshot, add a note if you like, then send.",
+  "share.wait": "Screenshot received. It will enter the composer when your computer connects.",
+  "share.added": "Shared content is in the composer. Add a note if you like, then send.",
+  "share.failed": "Could not receive the share. Share again with up to 10 images, 25 MB total.",
+  "ver.new": "A newer Agent J version ({v}) is available. Your phone/web page has not been updated yet. Tap the settings icon at the top right → “Update and reload”, or use the button below.",
+  "ver.later": "Later"
  }
 };

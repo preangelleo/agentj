@@ -22,6 +22,8 @@ import * as controls from './js/controls.js';
 import * as push from './js/push.js';
 import * as relay from './js/relay.js';
 import * as settings from './js/settings.js';
+import {initVersionNotice,setHostVersion} from './js/version-notice.js';
+import {initShare, onShareReady, forgetShare} from './js/share.js';
 import * as elevate from './js/elevate.js';     // F17: sudo / secret cards (§11)
 import * as secretout from './js/secretout.js'; // F32: secret pickup cards (§18)
 import * as passkey from './js/faceid.js';     // F20: the same phone without a second pairing (§12)
@@ -29,6 +31,8 @@ import * as bots from './js/bots.js';
 import * as friends from './js/friends.js';    // §17.7: /friends + the friend cards
 import { parseAgentId } from './proto/wire.js';
 import { SCAN_CONSTRAINTS, SCAN_FALLBACK, SCAN_SLOW_MS, scanFrame } from './js/scan.js';   // F29 (ADR-A177)
+
+import { registerLayer, initLayers } from './js/layers.js';
 
 const $ = el;
 
@@ -120,6 +124,7 @@ function setStatus(s, key, vars) {
   st.dataset.state = s;
   st.textContent = plain(t(key, vars));
   const on = s === 'ready';
+  onShareReady(on);
   snap.S.conn = on;
   $('meta').hidden = !on;
   relay.setConn(on, st.textContent);
@@ -269,7 +274,7 @@ friends.configure({ openPanel: controls.openPanel, agentName: () => agentName ??
 function onApp(m) {
   if (api.route(m) || blobs.handle(m) || media.handle(m)) return;
   switch (m.t) {
-    case 'preferences': relay.applyPreferences(m.value); settings.setPrefs(m.value, m.host); if(m.problem)relay.configProblem(m.problem.error); return;
+    case 'preferences': setHostVersion(m.host?.version); relay.applyPreferences(m.value); settings.setPrefs(m.value, m.host); if(m.problem)relay.configProblem(m.problem.error); return;
     case 'status': setAgentName(m.name); snap.setStatus(m); return;
     case 'ask': snap.addAsk(m); return;
     case 'ask_done': snap.askDone(m); return;
@@ -351,6 +356,7 @@ async function revoked(why = 'revoked') {
 /** Unpair / re-pair / revoke / a new pairing (§10.14, P33-X02 / X13). In-memory first, in the same tick (no await before it):
  *  uploads, queued and in-flight sends, the tray, the quote, the field and ↑↓ history; then the sealed records and their key. */
 async function forgetLocal() {
+  forgetShare();
   relay.forgetLocal();
   friends.forget();
   blobs.forgetAll();
@@ -681,12 +687,16 @@ function wire() {
   onLang(() => renderPhoneEnvironment());
   $('menu-about').addEventListener('click', () => { closeMenu(); toggleBadge(true); });
   document.addEventListener('click', (e) => { if ($('aj-menu').open && !e.target.closest('#aj-menu')) closeMenu(); });
-  document.addEventListener('keydown', (e) => {
-    if (e.key !== 'Escape') return;
-    if ($('aj-menu').open) { closeMenu(); $('aj-menu').querySelector('summary').focus(); return; }
-    if (!$('badge-panel').hidden) { toggleBadge(false); return; }
-    closeConfirm();
-  });
+  initLayers({onEscape:relay.resetEscape});
+  const layer = (id, close, fallback, rank = 20, trap = true) => registerLayer({element: () => $(id), open: () => !$(id).hidden, close, fallback: () => $(fallback), rank, trap});
+  registerLayer({element: () => $('aj-menu'), open: () => $('aj-menu').open, close: closeMenu,
+    trigger: () => $('aj-menu').querySelector('summary'), fallback: () => $('aj-menu').querySelector('summary'), rank: 30});
+  layer('confirm', closeConfirm, 'setBtn', 60);
+  layer('badge-panel', () => toggleBadge(false), 'badge', 40);
+  layer('settings', settings.back, 'setBtn', 40);
+  registerLayer({element: () => $(VIEWS[view]), open: () => ['mem','act','tasks','models','friends','bots','scan'].includes(view),
+    close: () => { if(view === 'scan') stopScan(); else if(view === 'friends') friends.back(); else controls.openPanel('chat'); },
+    trigger: () => $('aj-menu').querySelector('summary'), fallback: () => $('aj-menu').querySelector('summary'), rank: 1, trap: false});
   for (const a of $('aj-menu').querySelectorAll('a')) a.addEventListener('click', closeMenu);
   $('a2hs-ok').addEventListener('click', () => push.dismissA2hs(view));
   $('scan').hidden = false;
@@ -715,6 +725,7 @@ function wire() {
     if (await confirmSheet(t('menu.unpairTitle'), t('menu.unpairText'), t('menu.unpairYes'))) forgetHost();
   };
   $('unpair').addEventListener('click', unpairAsk);
+  initVersionNotice(settings.refreshApp);
   settings.configure({                                // F13: the gear, before relay.init so its Esc runs first
     agentName: () => agentName ?? DEFAULT_NAME,
     paired: () => !['idle', 'pairing', 'awaiting-approval', 'revoked'].includes(state),
@@ -762,7 +773,7 @@ async function main() {
   wire();
   checkPhoneEnvironment().catch(() => {});
   if (!globalThis.crypto?.subtle || !globalThis.indexedDB || !globalThis.WebSocket) return fatal('error.missing');
-  if (push.pushSupported()) push.registration().catch(() => {});
+  if ('serviceWorker' in navigator && window.isSecureContext) push.registration().catch(() => {});
   try { await deviceKey(); } catch (e) {
     return fatal(e && e.name === 'NotSupportedError' ? 'error.noCrypto' : 'error.noStore');
   }
@@ -792,6 +803,7 @@ async function main() {
     lost = true;
   }
   if (lost) { markPaired(false); $('pair-wiped').hidden = false; }
+  await initShare(!!host?.approved && !lost);
   if (pendingLink) {
     const l = pendingLink; pendingLink = null;
     // 0.15.1: a QR link of the computer this phone is already paired with (reopened from history / a bookmark, or the

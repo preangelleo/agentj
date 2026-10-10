@@ -1,3 +1,4 @@
+import { registerLayer } from './layers.js';
 import { historyDoubleTap } from './history-corners.js';
 import { SharedNotice } from './shared-notice.js';
 import { quotaWindows } from './dashboard.js';
@@ -2270,7 +2271,7 @@ async function moreSilent(){
 const dialogOpen = () => !el("silent").hidden || !el("cam").hidden || !el("keys").hidden || !el("confirm").hidden || !el("badge-panel").hidden || !el("settings").hidden;
 function openKeys(){ closeMenu(); closeSug(); el("keys").hidden = false; el("keysClose").focus(); }
 function closeKeys(){ el("keys").hidden = true; if (document.activeElement) document.activeElement.blur(); }
-async function pasteClipImages(){
+export async function pasteClipImages(){
   let items;
   try{ items = await navigator.clipboard.read(); }
   catch(err){
@@ -2286,6 +2287,11 @@ async function pasteClipImages(){
   }
   if (!files.length){ toast(hasText ? t('r.clip.text') : t('r.clip.none'), 3000); return; }
   takeFiles(files.map((f, i) => pastedName(f, i, files.length)), 'r.verb2.paste', "paste");
+}
+// P110 external shares enter the existing tray / encrypted upload path, never auto-send.
+export function importShare({images, text}){
+  if (images.length) takeFiles(images, 'r.verb2.paste', 'paste');
+  if (text) { input.value += (input.value ? "\n" : "") + text; input.dispatchEvent(new Event('input')); }
 }
 function clearComposer(){
   if (sending){ toast(t('r.clear.sending'), 1800); return; }
@@ -2405,6 +2411,14 @@ function relang(){
 export function init(ctx){
   C = ctx;
   input = el("input"); mainEl = el("main"); deck = el("deck"); tray = el("tray"); menu = el("menu"); sug = el("sug"); mic = el("mic");
+  for(const [id,close,fallback,rank,trap] of [
+    ['rd',closeReader,'readBtn',45,true],['cam',closeCam,'tCamera',50,true],
+    ['keys',closeKeys,'keysBtn',40,true],['silent',closeSilent,'input',40,true],
+    ['menu',closeMenu,'slashBtn',30,true],['sug',()=>{sugDismissed=input.value;closeSug();},'input',25,false],
+    ['qbar',cancelReply,'input',5,false]
+  ])registerLayer({element:()=>el(id),open:()=>!el(id).hidden,close,fallback:()=>{const node=el(fallback);return node&&!node.closest('[hidden]')?node:(id==='keys'?el('setBtn'):input);},rank,trap});
+  registerLayer({element:()=>el('om'),open:()=>el('om').classList.contains('open'),close:()=>setOm(false),fallback:()=>el('omMore'),rank:4,trap:false});
+  registerLayer({element:()=>el('sheet'),open:()=>document.body.dataset.sheet==='1',close:()=>el('sheetClose').click(),fallback:()=>el('pendTag'),rank:20});
   RelayMD.LABELS.copy = t('r.md.copy'); RelayMD.LABELS.copyAria = t('r.md.copyAria'); RelayMD.LABELS.copied = t('r.md.copied'); RelayMD.LABELS.image = t('r.md.image');
   speaker = new Speaker((id, st, why) => {
     if (st === "idle") speakSt.delete(id); else speakSt.set(id, st);
@@ -2844,6 +2858,7 @@ export function init(ctx){
       if (!el("cam").hidden || !el("confirm").hidden || !el("badge-panel").hidden || !el("settings").hidden) return;
       if (!menu.hidden){ e.preventDefault(); closeMenu(); return; }
       if (replyTo){ e.preventDefault(); escAt = 0; cancelReply(); return; }
+      if (tg === input){ e.preventDefault(); input.blur(); escAt = 0; return; } // Leave the field without counting dismissal toward double-Escape clear.
       const now = performance.now();
       if (escAt && now - escAt <= ESC2_MS){
         escAt = 0; e.preventDefault();
@@ -2980,3 +2995,6 @@ window.agentjNative=Object.freeze({snapshot:()=>({
   theme:userPreferences.appearance?.theme||'system',
   tts_mode:userPreferences.voice?.tts?.mode||'phone',tts_voice:userPreferences.voice?.tts?.voice||'',tts_rate:userPreferences.voice?.tts?.rate||1,language:userPreferences.appearance?.language||'zh'
 })});
+
+// A dismissal must never become the first half of the inherited double-Escape action.
+export function resetEscape(){ escAt=0; }

@@ -4,7 +4,7 @@
 //   2. (in the monorepo) copies the shared design system (agentjarvis/brand, set "web": tokens, base, lang.js, ui.js, fonts, shield + PWA +
 //      status icons) → public/brand/… + public/favicon.ico + public/apple-touch-icon.png (same as `brand/sync.mjs --set web`)
 //   3. writes public/i18n.js from web/i18n/web.zh.json (polished by i18n/polish.py) + web/i18n/web.en.json — an ES module,
-//      because CSP connect-src only allows the relay, so the page cannot fetch() JSON
+//      because customer data uses only the relay; P120 permits a fixed metadata-only version.json GET
 //   4. rewrites the Chinese text inside every [data-i18n] / [data-i18n-attr] element of public/index.html from web.zh.json
 //      (the no-JS default stays identical to the dictionary)
 //   5. writes public/version.json (+ public/version.js, the same manifest as an ES module)

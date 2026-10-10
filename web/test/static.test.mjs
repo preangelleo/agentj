@@ -23,7 +23,7 @@ const JS = files.filter((f) => f.endsWith('.js'));
 const APP = read(pub('app.js'));
 // PROMPT-33: the page is app.js + the modules under js/ (relay's page ported). Every rule that used to look at app.js
 // alone now looks at all of them (OURS) — the same rules over more code, never fewer.
-const MODULES = ['api', 'blobs', 'boot', 'controls', 'md', 'push', 'relay', 'session', 'settings', 'snap', 'speak', 'store', 't', 'ui', 'wav', 'elevate', 'outbox', 'render', 'friends', 'qr'];
+const MODULES = ['api', 'blobs', 'boot', 'controls', 'md', 'push', 'relay', 'session', 'settings', 'snap', 'speak', 'store', 't', 'ui', 'wav', 'elevate', 'outbox', 'render', 'friends', 'qr', 'share'];
 const OURS_FILES = ['app.js', ...MODULES.map((m) => `js/${m}.js`)];
 const OURS = OURS_FILES.map((r) => read(pub(r))).join('\n');
 const HTML = read(pub('index.html'));
@@ -88,7 +88,8 @@ test('no URLs to anywhere in shipped files except links to agentj.app pages', ()
         // allowRelay + CSP connect-src allow)
         if (rel(f) === 'proto/wire.js' && m[0] === 'wss://relay.agentj.app') continue;
         // P82 §6: owner-clicked registration link; no automated request.
-        if (rel(f) === 'js/bots.js' && m[0] === 'https://openrouter.ai/') continue;
+        // P109: an editable API-address default sent inside the encrypted owner config, never fetched by the browser.
+        if (rel(f) === 'js/bots.js' && ['https://openrouter.ai/','https://openrouter.ai/api/v1'].includes(m[0])) continue;
         if (rel(f) === 'js/qr.js' && m[0] === 'http://www.w3.org/2000/svg') continue;
         assert.match(m[0], SITE_LINK, `${rel(f)} contains URL ${m[0]}`);
       }
@@ -143,7 +144,16 @@ test('index.html: CSP-compatible (no inline script/style, no on*=), noindex, zh-
 const code = (s) => s.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:\\'"])\/\/.*$/gm, '$1');
 test('app.js + js/*.js: only WebSocket egress, non-extractable keys, no plaintext at rest, no logging', () => {
   for (const r of OURS_FILES) {
-    const s = read(pub(r));
+    const raw = read(pub(r));
+    // P110: exactly one browser-local SW handle request. No customer bytes, window target or network destination.
+    const localClaim = "sw.postMessage({t:'share-take', id}, [ch.port2]);";
+    if (r === 'js/share.js') assert.equal(raw.split(localClaim).length, 2, 'one exact local claim call');
+    let s = r === 'js/share.js' ? raw.replace(localClaim, '') : raw;
+    if(r === 'js/version-notice.js'){
+      const exact="fetch(endpoint, {method:'GET',credentials:'omit',cache:'no-store',redirect:'error',referrerPolicy:'no-referrer',signal:AbortSignal.timeout(10000)})";
+      assert.equal((s.match(/\bfetch\s*\(/g)||[]).length,1);assert.ok(s.includes(exact));
+      assert.ok(s.includes("new URL('/version.json',location.origin)"));s=s.replace(exact,'VERSION_METADATA_CHECK');
+    }
     for (const bad of [/\bfetch\s*\(/, /XMLHttpRequest/, /sendBeacon/, /\bEventSource\b/, /sessionStorage/, /\bconsole\./, /exportKey/, /document\.cookie/, /postMessage/,
       /\bnew Worker\b/, /importScripts/, /\bimport\s*\(/]) {
       assert.doesNotMatch(s, bad, `${r} uses ${bad}`);
@@ -179,7 +189,7 @@ test('app.js + js/*.js: only WebSocket egress, non-extractable keys, no plaintex
   assert.match(STORE, /export async function putSealed\(name, obj\) \{\n  const w = wipes;\n  const rec = await seal\(obj\);\n  if \(w === wipes\) await dbPut\(name, rec\);\n\}/, 'putSealed writes only ciphertext, and never after a wipe');
   // §10.14 / P33-X13: revoke wipes like unpair — drafts, history, the sealing key, and everything in memory
   assert.match(APP, /async function revoked\(why = 'revoked'\) \{\n  session\.closeSession\(\);\n[^}]*await forgetLocal\(\);/, 'revoked() wipes local records');   // 0.15.1: + why
-  assert.match(APP, /async function forgetLocal\(\) \{\n  relay\.forgetLocal\(\);\n  friends\.forget\(\);\n  blobs\.forgetAll\(\);\n  elevate\.clear\(\);\n  secretout\.clear\(\);\n  await wipeLocal\(\);\n\}/);   // F17: open sudo / secret cards go too; 0.16: the friends page's data too; F32: pickup cards (+ a shown value)
+  assert.match(APP, /async function forgetLocal\(\) \{\n  forgetShare\(\);\n  relay\.forgetLocal\(\);\n  friends\.forget\(\);\n  blobs\.forgetAll\(\);\n  elevate\.clear\(\);\n  secretout\.clear\(\);\n  await wipeLocal\(\);\n\}/);   // F17: open sudo / secret cards go too; 0.16: the friends page's data too; F32: pickup cards (+ a shown value)
   assert.doesNotMatch(APP, /saveDraft/, 'revocation never saves the draft');
   assert.match(STORE, /generateKey\(\{ name: 'AES-GCM', length: 256 \}, false, \['encrypt', 'decrypt'\]\)/, 'sealing key not extractable');
   assert.match(STORE, /for \(const k of \['draft', 'ihist', 'outbox', 'local'\]\)/, 'unpair / re-pair wipes drafts, history, the offline queue and the sealing key');
@@ -214,7 +224,7 @@ test('worker: public (no Access since 2026-10-02) → asset with the full header
     assert.equal(await r.text(), '<html>client</html>');
     // connect-src = exactly our two relays (the legacy one: pairing links from not-yet-updated hosts), on both hosts
     assert.equal(r.headers.get('content-security-policy'),
-      "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src wss://relay.agentj.app wss://alpha-relay.agentjarvis.net; " +
+      "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src wss://relay.agentj.app wss://alpha-relay.agentjarvis.net " + origin + "/version.json" + "; " +
       "media-src 'self' blob:; frame-ancestors 'none'; base-uri 'none'; form-action 'none'; object-src 'none'", origin);
     assert.equal(r.headers.get('strict-transport-security'), 'max-age=31536000', `${origin}: HSTS`);
   }
@@ -259,7 +269,7 @@ test('worker: wrong host, non-GET/HEAD, malformed RELAY_URL → bare 404 without
   // without the legacy vars: only the new host, only the new relay
   const bare = { ...env(), LEGACY_WEB_HOST: undefined, LEGACY_RELAY_URL: undefined };
   assert.equal((await handle(req('https://alpha-web.agentjarvis.net/'), bare)).status, 404);
-  assert.match((await handle(req('https://m.agentj.app/'), bare)).headers.get('content-security-policy'), /connect-src wss:\/\/relay\.agentj\.app; /);
+  assert.match((await handle(req('https://m.agentj.app/'), bare)).headers.get('content-security-policy'), /connect-src wss:\/\/relay\.agentj\.app https:\/\/m\.agentj\.app\/version\.json; /);
   assert.equal((await handle(req('https://m.agentj.app/'), { ...env(), WEB_HOST: '' })).status, 404, 'no WEB_HOST → nothing');
 });
 
@@ -284,9 +294,9 @@ test('worker: self-contained (no imports, so it builds from the public tree); cs
 });
 
 // ---------------------------------------------------------------- L1: service worker + manifest (PROTOCOL §9)
-test('sw.js: push display only — no fetch handler, no cache, no network, generic text only', () => {
+test('sw.js: local share intake + generic push — no cache, no network, no persistent content', () => {
   const SW = readFileSync(join(PUBLIC_DIR, 'sw.js'), 'utf8');
-  for (const bad of [/addEventListener\(\s*['"]fetch/, /\bcaches\b/, /\bfetch\s*\(/, /importScripts/, /XMLHttpRequest/, /\bconsole\./, /indexedDB/]) {
+  for (const bad of [/\bcaches\b/, /\bfetch\s*\(/, /importScripts/, /XMLHttpRequest/, /\bconsole\./, /indexedDB/]) {
     assert.doesNotMatch(SW, bad, `sw.js uses ${bad}`);
   }
   assert.match(SW, /zh: \{ reply: '有新回复', ask: '有一个请求等你批准', security: 'Agent J 有紧急安全更新' \}/);

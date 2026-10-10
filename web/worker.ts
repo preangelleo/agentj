@@ -1,7 +1,7 @@
 // agentj web client Worker (m.agentj.app; legacy alpha-web.agentjarvis.net for one version cycle — phones paired there
 // keep their keys in that origin's storage; app.js sends a visitor with no pairing there on to m.agentj.app). Serves
 // public/ — public since 2026-10-02 (Cloudflare Access removed), never indexed (X-Robots-Tag noindex + robots.txt
-// Disallow all). CSP connect-src = our two relay hosts only (relay.agentj.app + the legacy alpha-relay.agentjarvis.net that
+// Disallow all). CSP connect-src = our two relay hosts and exact version.json metadata only (relay.agentj.app + the legacy alpha-relay.agentjarvis.net that
 // old pairing links carry), and the client pins the same two itself. Wrong host, any method other than GET/HEAD, or a
 // malformed relay URL → bare 404.
 // Self-contained (no imports): the same file builds from the public source tree. No logging of anything (PR1).
@@ -24,14 +24,14 @@ export function notFound(): Response {
  *  style-src 'unsafe-inline' (0.15.2, P57): mermaid lays a diagram out in the live page — a <style> element and style=""
  *  attributes — before render.js turns it into an <img>. Scripts stay 'self' only (no inline script, no eval), and the page
  *  never parses Agent text as HTML, so no Agent text can become a style; img / font / connect stay 'self' / the relays. */
-export function csp(relay: string): string {
+export function csp(relay: string, versionSource = ""): string {
   return "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; " +
-    `connect-src ${relay}; media-src 'self' blob:; frame-ancestors 'none'; base-uri 'none'; form-action 'none'; object-src 'none'`;
+    `connect-src ${relay}${versionSource ? " " + versionSource : ""}; media-src 'self' blob:; frame-ancestors 'none'; base-uri 'none'; form-action 'none'; object-src 'none'`;
 }
 
-export function webHeaders(relay: string): Record<string, string> {
+export function webHeaders(relay: string, versionSource = ""): Record<string, string> {
   return {
-    "content-security-policy": csp(relay),
+    "content-security-policy": csp(relay, versionSource),
     "permissions-policy": "camera=(self), microphone=(self), geolocation=()",
     "x-robots-tag": "noindex, nofollow, noarchive",
     "referrer-policy": "no-referrer",
@@ -68,7 +68,7 @@ export async function handle(req: Request, env: WebEnv): Promise<Response> {
   if (!relays) return notFound();
   const res = await env.ASSETS.fetch(assetRequest(req));
   const out = new Response(res.body, res);
-  for (const [k, v] of Object.entries(webHeaders(relays))) out.headers.set(k, v);
+  for (const [k, v] of Object.entries(webHeaders(relays, new URL("/version.json", req.url).href))) out.headers.set(k, v);
   return out;
 }
 

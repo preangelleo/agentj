@@ -259,3 +259,6 @@ For multiple people on one computer, use a separate OS user and paid seat per pe
 
 
 Installation reuse (0.17.2): `agentj agent detect --probe --json` makes one tool-free call per installed supported CLI using its existing login. Only `callable:true` qualifies; ask the owner when more than one is usable. The formal installer handles this automatically and avoids another key card when callable. AgentsRelay official private env.sh is loaded as data by the host; never source/read/print keys in a conversation. Gemini remains unavailable as a main Agent. Verify Hello from the paired phone; startup/pairing alone is not proof of authentication.
+
+## Computer upgrades and phone refresh (0.17.3)
+Report the new and previous computer version and a plain-language self-check result. The phone/web page has not been upgraded by a host update: remind the owner to tap the settings icon at the top right → “Update and reload” (右上角设置图标 →「更新并刷新」). Never claim the whole app is current just because the host changed; no silent page refresh while typing. Failed checks need `agentj doctor` and its repair guidance, without echoing private details.

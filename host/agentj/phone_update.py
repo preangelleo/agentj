@@ -44,13 +44,7 @@ def take(st):
 
 def text(rec, lang="zh"):
     if rec.get("reason") in ("upgraded", "doctor_failed"):
-        counts = rec.get("counts")
-        doc = f"doctor {counts[0]}✓/{counts[1]}!/{counts[2]}✗" if counts else "doctor ?"
-        suffix = ("; run `agentj doctor` to fix the failed checks" if lang == "en" else "；运行 `agentj doctor` 修复未通过项") if rec.get("reason") == "doctor_failed" else ""
-        if rec.get("existing_issues") and rec.get("reason") != "doctor_failed":
-            suffix = "; upgrade succeeded; other existing issues need `agentj doctor`" if lang == "en" else "；升级成功，另有已有问题，请用 `agentj doctor` 检查"
-        return (f"Upgraded from {rec['from']} to {rec['to']}; {doc}" if lang == "en" else
-                f"已从 {rec['from']} 升到 {rec['to']}，{doc}") + suffix
+        return update.completion_text(rec, rec.get("counts"), lang, rec.get("checks"))
     if rec.get("reason") == "already_current":
         return f"Already up to date: {rec['to']}" if lang == "en" else f"已是最新 {rec['to']}"
     reason = str(rec.get("reason", "unknown"))
@@ -66,7 +60,9 @@ def run(st, apply_fn=None, restart_fn=None):
     try:
         rec = (apply_fn or update.apply)(st, svc_on=False, run=quiet)
         if rec.get("reason") in ("upgraded", "doctor_failed"):
-            rec["counts"] = update.doctor_counts(doctor.run(st))
+            rows = doctor.run(st)
+            rec["counts"] = update.doctor_counts(rows)
+            rec["checks"] = [{"id": r.get("id"), "status": r.get("status")} for r in rows]
         st.write_private(st.root / RESULT, json.dumps(rec).encode())
         # The durable result, not the generic marker, owns this phone request.
         (st.root / update.UPGRADED).unlink(missing_ok=True)

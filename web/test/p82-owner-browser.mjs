@@ -58,6 +58,28 @@ try{
     assert.ok(!(await evaluate(p,"document.getElementById('bots-main').textContent")).includes(code));
    }
    nativeProblem=null;
+   // P109: the rendered phone sends public config, and opens key cards without values.
+   await click("document.querySelectorAll('.bots-tabs button')[0]");
+   await waitFor(p,"document.querySelector('#bots-status').textContent==='' && document.querySelector('#bots-main select')");
+   await evaluate(p,"const s=document.querySelector('#bots-main select');s.value='own';s.dispatchEvent(new Event('change'));const inputs=[...document.querySelectorAll('#bots-main input')];inputs.find(e=>e.getAttribute('aria-label')?.includes('API')).value='https://openrouter.ai/api/v1';inputs.find(e=>e.getAttribute('aria-label')==='Model name'||e.getAttribute('aria-label')==='模型名称').value='openai/gpt-4.1-mini';");
+   await evaluate(p,`[...document.querySelectorAll('#bots-main button')].find(e=>e.textContent===${JSON.stringify(language==='zh'?'保存':'Save')}).click()`);
+   await waitFor(p,"document.querySelector('#bots-status').textContent==='' && document.querySelector('#bots-main select')?.value==='own'");
+   assert.equal(writes.at(-1).config.provider.source,'own');assert.equal(writes.at(-1).config.own_model.model,'openai/gpt-4.1-mini');assert.equal(writes.at(-1).config.telegram.enabled,false);
+   for(const [label,op] of [[language==='zh'?'添加 / 更新自带模型 key':'Add / update own model key','model_key'],[language==='zh'?'添加 / 更换 Telegram token':'Add / replace Telegram token','telegram_key']]){
+    await evaluate(p,`[...document.querySelectorAll('#bots-main button')].find(e=>e.textContent===${JSON.stringify(label)}).click()`);
+    await waitFor(p,"document.querySelector('#bots-status').textContent===''");
+    assert.deepEqual(Object.keys(writes.at(-1)).sort(),['id','op']);assert.equal(writes.at(-1).op,op);
+   }
+   for(const [index,template] of [[1,'companion'],[2,'paid_qa']]){
+    await click("document.querySelector('#bots-side button:nth-child(2)')");
+    await click(`document.querySelectorAll('#bots-main button')[${index}]`);
+    await evaluate(p,`document.querySelectorAll('#bots-main input')[0].value=${JSON.stringify(template)};document.querySelectorAll('#bots-main input')[1].value=${JSON.stringify('p109-'+template.replace('_','-'))}`);
+    await click("document.querySelector('#bots-main button')");
+    await evaluate(p,"document.querySelectorAll('#bots-main input[type=checkbox]').forEach(e=>e.checked=true)");
+    await click("document.querySelector('#bots-main button')");
+    await waitFor(p,"document.querySelectorAll('.bots-tabs button').length===7");
+    assert.equal(writes.at(-1).config.template,template);assert.equal(writes.at(-1).config.enabled,false);
+   }
    writeFileSync(new URL(language+'.png',out),await shoot(p));rec.record(name,true);console.log(name+' PASS');
   }catch(e){failed++;rec.record(name,false);console.error(name,e.stack);}finally{await p?.dispose();}
  }

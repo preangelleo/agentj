@@ -46,7 +46,7 @@ shasum -a 256 setup-agents.sh
 ```
 
 
-SHA256 sh: `d9e78093dd88c20e13a96590876ea90a6f649f01d5a6cdd51c2fa0b6d16b04e2`
+SHA256 sh: `971a371c49a9fe07364fcbcf072849d3973cbc7f5cc3554223be517c196994d4`
 
 
 ```bash
@@ -404,7 +404,7 @@ Get-FileHash ./setup-agents.ps1 -Algorithm SHA256
 ```
 
 
-SHA256 ps1: `9cf444bef81de882a0d32ff6dfe942a27ba91fe7f6ad68409943207c7fc743e2`
+SHA256 ps1: `0ef880556453c6a9853fc6f3e71228debec980f072b76688281c3cff58b12ab1`
 
 
 ```powershell
@@ -916,7 +916,7 @@ gemini --yolo --sandbox=false
 
 [Gemini CLI official guide](https://geminicli.com/docs/get-started/installation/)
 
-On first launch, choose Google sign-in or your own Gemini API key. The defaultApprovalMode setting does not accept yolo; keep --yolo in the launch command. Agent J currently connects to Claude/Codex/OpenCode; Gemini works on the computer but is not yet an Agent J host adapter.
+Google has discontinued personal Gemini CLI login. Use a paid Gemini API key, entered only in your own terminal. Gemini is optional: select it explicitly; setup does not recommend it by default. The defaultApprovalMode setting does not accept yolo; keep --yolo in the launch command. Agent J currently connects to Claude/Codex/OpenCode; Gemini works on the computer but is not yet an Agent J host adapter.
 
 ## Full-access launch (three ways) {#full-access}
 
@@ -1122,6 +1122,8 @@ Checked 2026-10-09 against local Codex 0.159.2, Claude Code 2.1.289, OpenCode 1.
 
 ### 3. Short aliases
 
+Add `gx` only if you explicitly choose Gemini and have a paid Gemini API key.
+
 Repeating the command does not append the same line twice. Check existing aliases/functions with these names before replacing them; these definitions take over matching interactive commands. Add arguments after `cx` / `cc` / `oc` / `gx` as usual. `cc` is the system C compiler name on macOS/Linux: the alias affects interactive terminals, not ordinary build scripts. Use `ccx` instead by changing `cc` in the command if you prefer.
 
 Rollback: delete the four added lines from the rc file or `$PROFILE` and open a new terminal. In the current Bash/zsh shell run `unalias cx cc oc gx`; in PowerShell run `Remove-Item Function:cx,Function:cc,Function:oc,Function:gx`.
@@ -1264,7 +1266,7 @@ if (@(Get-Content -LiteralPath $PROFILE) -cnotcontains $line) { Add-Content -Lit
 
 ## AgentsRelay
 
-Before installing any CLI, visit https://agentsrelay.net, register and buy a plan for your tools. The official helper reads group keys with hidden input and performs real model calls. A failed key can be pasted again, up to three attempts, or you can switch to native login. We issue no temporary allowance token. The helper owns model defaults; the setup script hardcodes no model name. Claude and OpenAI group keys differ: provide the groups needed by your selected tools. Gemini keeps Google sign-in. Without a terminal, Relay stops before installing tools and asks you to rerun interactively. Never send keys in AI chat.
+Before installing any CLI, visit https://agentsrelay.net, register and buy a plan for your tools. The official helper reads group keys with hidden input and performs real model calls. A failed key can be pasted again, up to three attempts, or you can switch to native login. We issue no temporary allowance token. The helper owns model defaults; the setup script hardcodes no model name. Claude and OpenAI group keys differ: provide the groups needed by your selected tools. Gemini requires a paid Gemini API key; personal Google login has been discontinued. Without a terminal, Relay stops before installing tools and asks you to rerun interactively. Never send keys in AI chat.
 
 
 ```bash
@@ -1300,7 +1302,7 @@ command not found: revisit PATH, check the shell startup file and open a fresh t
 
 At the end, setup asks “现在安装 Agent J 吗？[Y/n]”. Yes opens the existing official installation assistant; it needs your account-page installation code (`AJI-…`), entered locally with hidden input. `--with-agentj` selects this step; `--no-agentj` skips it. These flags choose the step; pairing and account consent still require you. Without a terminal, setup only prints the next step. If no login/key is detected, it explains: “Agent J 能装能配对，但要登录 AI 工具或填 key 后才能真正聊天”. Credential presence is not proof that a token is still valid.
 
-The formal assistant verifies a tool-free model call with installed Claude Code, Codex and OpenCode. It reuses a callable CLI; if several work, you choose. After phone pairing, send Hello. It asks for a formal service URL/model and a secure phone key card only if none can call. AgentsRelay configuration works in the background service without opening a new terminal. Gemini is installed by setup but cannot yet be selected as the main Agent in Agent J. If only Gemini is installed, the assistant asks you to sign in to Codex / Claude Code / OpenCode or use AgentsRelay.
+The formal assistant verifies a tool-free model call with installed Claude Code, Codex and OpenCode. It reuses a callable CLI; if several work, you choose. After phone pairing, send Hello. It asks for a formal service URL/model and a secure phone key card only if none can call. AgentsRelay configuration works in the background service without opening a new terminal. Gemini is installed only when explicitly selected and cannot be selected as the main Agent in Agent J. If only Gemini is installed, the assistant asks you to sign in to Codex / Claude Code / OpenCode or use AgentsRelay.
 
 
 

@@ -46,7 +46,7 @@ shasum -a 256 setup-agents.sh
 ```
 
 
-SHA256 sh: `d9e78093dd88c20e13a96590876ea90a6f649f01d5a6cdd51c2fa0b6d16b04e2`
+SHA256 sh: `971a371c49a9fe07364fcbcf072849d3973cbc7f5cc3554223be517c196994d4`
 
 
 ```bash
@@ -404,7 +404,7 @@ Get-FileHash ./setup-agents.ps1 -Algorithm SHA256
 ```
 
 
-SHA256 ps1: `9cf444bef81de882a0d32ff6dfe942a27ba91fe7f6ad68409943207c7fc743e2`
+SHA256 ps1: `0ef880556453c6a9853fc6f3e71228debec980f072b76688281c3cff58b12ab1`
 
 
 ```powershell
@@ -848,6 +848,8 @@ claude --dangerously-skip-permissions
 
 ## 安装 Gemini CLI {#gemini-cli}
 
+Google 已停用 Gemini CLI 个人登录，只能使用付费 Gemini API key。默认不推荐安装，只有明确选择 Gemini 时才安装并添加 `gx` 别名。
+
 检查是否已有：
 
 
@@ -916,7 +918,7 @@ gemini --yolo --sandbox=false
 
 [Gemini CLI 官方指南](https://geminicli.com/docs/get-started/installation/)
 
-首次运行选择 Google 登录或自己的 Gemini API key；当前 Gemini 默认审批设置不能填 yolo，必须在启动命令里带 --yolo。Agent J 当前可接 Claude/Codex/OpenCode；Gemini 可在电脑上使用，但尚不能作为 Agent J 主 Agent。
+Google 已停用 Gemini CLI 个人登录，只能使用付费 Gemini API key；当前 Gemini 默认审批设置不能填 yolo，必须在启动命令里带 --yolo。Agent J 当前可接 Claude/Codex/OpenCode；Gemini 可在电脑上使用，但尚不能作为 Agent J 主 Agent。
 
 ## 全权限启动（三种方式） {#full-access}
 
@@ -1264,7 +1266,7 @@ if (@(Get-Content -LiteralPath $PROFILE) -cnotcontains $line) { Add-Content -Lit
 
 ## 配置 AgentsRelay {#agentsrelay}
 
-任何 CLI 安装之前，先到 https://agentsrelay.net 注册并购买对应工具的套餐。官方引导脚本隐藏输入分组 key，实际调用模型确认可用。失败可以重贴，最多三次，也可改走原生登录。我们不发临时额度 token；默认模型由官方脚本选择，我们不写死模型名。Claude 和 OpenAI 分组 key 不同，要提供所选工具需要的分组。Gemini 仍用 Google 登录。无终端时 Relay 路线会在安装 CLI 前停下，提示回自己的终端重跑。key 不要发进 AI 对话。
+任何 CLI 安装之前，先到 https://agentsrelay.net 注册并购买对应工具的套餐。官方引导脚本隐藏输入分组 key，实际调用模型确认可用。失败可以重贴，最多三次，也可改走原生登录。我们不发临时额度 token；默认模型由官方脚本选择，我们不写死模型名。Claude 和 OpenAI 分组 key 不同，要提供所选工具需要的分组。Gemini 只能使用付费 API key，Google 个人登录已停用。无终端时 Relay 路线会在安装 CLI 前停下，提示回自己的终端重跑。key 不要发进 AI 对话。
 
 
 ```bash

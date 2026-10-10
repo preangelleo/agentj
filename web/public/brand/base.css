@@ -43,7 +43,7 @@ hr { border: 0; border-top: 1px solid var(--border); margin: var(--sp-6) 0; }
 .aj-prose { max-width: var(--measure); }
 .aj-prose > * + * { margin-top: var(--sp-4); }
 .aj-prose > :is(h2, h3) { margin-top: var(--sp-7); }
-.aj-prose > :is(h2, h3) + * { margin-top: var(--sp-3); }
+.aj-prose > :is(h2, h3) + * { margin-top: var(--space-content); }
 .aj-prose :is(ul, ol) { padding-left: 1.4em; }
 .aj-prose li + li { margin-top: var(--sp-2); }
 .aj-visually-hidden { position: absolute !important; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0);
@@ -194,7 +194,7 @@ html[data-theme="dark"] .aj-btn--primary:hover { background: var(--c-salt); bord
 .aj-card { background: var(--surface-1); border: 1px solid var(--border); border-radius: var(--r-lg);
   padding: clamp(1.125rem, 0.9rem + 1vw, 1.75rem); min-width: 0; }
 .aj-card--2 { background: var(--surface-2); border-color: transparent; }
-.aj-card > * + * { margin-top: var(--sp-3); }
+.aj-card > * + * { margin-top: var(--space-content); }
 .aj-card__title { font-family: var(--font-title); font-weight: 700; font-size: var(--fs-lg); line-height: var(--lh-tight); }
 .aj-card__icon { width: 40px; height: 40px; border-radius: var(--r-md); background: var(--surface-2);
   display: inline-grid; place-items: center; font-size: 1.25rem; }
@@ -287,12 +287,12 @@ kbd, .aj-kbd { border: 1px solid var(--border); border-bottom-width: 2px; border
 
 /* P87: shared action-group contract; icon toolbars remain compact. */
 button, .aj-btn, [role="tab"] { white-space: nowrap; }
-.aj-actions { display:flex; flex-wrap:wrap; gap:var(--sp-2); }
+.aj-actions { display:flex; flex-wrap:wrap; gap:var(--space-control); }
 @media (max-width: 600px) {
   :is(.aj-actions, .aj-hero__actions, .actions, .site-os-tabs, .btn-row, .li-actions,
       .plaza-tabs, .fr-askbtns, .apprbtns, .seg) {
     display:flex !important; flex-direction:column !important; align-items:stretch !important;
-    flex-wrap:nowrap !important; width:100%; gap:var(--sp-2);
+    flex-wrap:nowrap !important; width:100%; gap:var(--space-control);
   }
   :is(.aj-actions, .aj-hero__actions, .actions, .site-os-tabs, .btn-row, .li-actions,
       .plaza-tabs, .fr-askbtns, .apprbtns, .seg) > :is(button, .aj-btn, [role="tab"]) {
@@ -300,3 +300,12 @@ button, .aj-btn, [role="tab"] { white-space: nowrap; }
     box-sizing:border-box; white-space:nowrap;
   }
 }
+
+/* P119 shared vertical rhythm. aj-flow applies to content containers, never icon internals,
+   segmented controls or the chat pager. Hidden siblings do not consume a slot. */
+.aj-flow.aj-flow > :not([hidden]) ~ :not([hidden]) { margin-block-start:var(--space-content); }
+.aj-flow.aj-flow > :is(button,.aj-btn) + :is(button,.aj-btn) { margin-block-start:var(--space-control); }
+.aj-flow.aj-flow > :is(h2,h3,h4,.aj-actions) { margin-block-start:var(--space-section); }
+.aj-flow.aj-flow > :is(h1,h2,h3,h4) + :not([hidden]) { margin-block-start:var(--space-content); }
+:is(.aj-actions,.aj-row,.aj-hero__actions,.confirm-row,.fr-acts,.ajrow,.model-options) { gap:var(--space-control); }
+.aj-card + .aj-card { margin-block-start:var(--space-section); }

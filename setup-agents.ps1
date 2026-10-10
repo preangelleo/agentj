@@ -16,7 +16,7 @@ if ($NoFullAccess) { $setupArgs += '--no-full-access' }
 if ($Mirror) { $setupArgs += '--mirror' }
 if ($DryRun) {
     Write-Output 'PLAN: check Windows build, administrator rights and WSL2; enable WSL, install Ubuntu, reboot if required; run setup-agents.sh in Ubuntu.'
-    Write-Output ('PLAN: Ubuntu setup ' + ($setupArgs -join ' ') + '; automatic npm/Node mirror fallback + SHA checks; verified WSL tools get cx/cc/oc/gx PowerShell functions; Agent J uses official assistant.')
+    Write-Output ('PLAN: Ubuntu setup ' + ($setupArgs -join ' ') + '; automatic npm/Node mirror fallback + SHA checks; selected verified WSL tools get PowerShell functions; gx only with explicit gemini; personal Google login discontinued, paid Gemini API key required; Agent J uses official assistant.')
     return
 }
 try {

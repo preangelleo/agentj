@@ -42,12 +42,17 @@ def canonical(value):
 
 def config(raw):
     if not isinstance(raw,dict):raise BotError('invalid_config')
-    allowed={'slug','title','description','prompt','background','language','timezone','hours','enabled','terms_accepted','subscription_risk_accepted','limits','provider','outbound_domains','embed_origins'}
+    allowed={'slug','title','description','prompt','background','language','timezone','hours','enabled','terms_accepted','subscription_risk_accepted','limits','provider','outbound_domains','embed_origins','template','paid_qa','telegram','own_model'}
     if set(raw)-allowed:raise BotError('invalid_config')
+    from .templates import TEMPLATES
+    template=raw.get('template','customer_service')
+    if not isinstance(template,str) or template not in TEMPLATES:raise BotError('invalid_template')
     out={'slug':slug(raw.get('slug')), 'title':'Customer service / 客服','description':'AI customer service / AI 客服',
          'prompt':'Answer only questions within the owner-provided business knowledge. If unsure, offer a human.',
          'background':'', 'language':'auto','timezone':'UTC','hours':None,'enabled':False,'terms_accepted':False,'subscription_risk_accepted':False,
          'limits':dict(LIMITS),'provider':{'source':'main'},'outbound_domains':[],'embed_origins':[]}
+    out.update(TEMPLATES[template])
+    out.update(template=template,paid_qa={'free_questions':3,'payment_url':''},telegram={'enabled':False},own_model=None)
     out.update(raw)
     for k,limit in [('title',80),('description',300),('prompt',6000),('background',6000)]:
         if not isinstance(out[k],str) or len(out[k])>limit or any(ord(c)<32 and c not in '\n\t' for c in out[k]):raise BotError('invalid_config')
@@ -65,8 +70,29 @@ def config(raw):
     if hours is not None and (not isinstance(hours,dict) or set(hours)!={'start','end','days'} or
         any(type(hours.get(k)) is not int or not 0<=hours[k]<24 for k in ('start','end')) or
         not isinstance(hours.get('days'),list) or not hours['days'] or any(type(d) is not int or not 0<=d<7 for d in hours['days'])):raise BotError('invalid_hours')
+    paid=out['paid_qa']
+    if not isinstance(paid,dict) or set(paid)!={'free_questions','payment_url'} or type(paid['free_questions']) is not int or not 0<=paid['free_questions']<=20:raise BotError('invalid_paid_qa')
+    from urllib.parse import urlsplit
+    link=paid['payment_url']
+    if not isinstance(link,str) or len(link)>1000:raise BotError('invalid_payment_url')
+    if link:
+        try:u=urlsplit(link)
+        except ValueError:raise BotError('invalid_payment_url') from None
+        if u.scheme!='https' or not u.hostname or u.username or u.password or u.fragment or any(c.isspace() for c in link):raise BotError('invalid_payment_url')
+        if any(pattern.search(link) for _,pattern,_ in privacy._SECRETS):raise BotError('config_contains_secret')
+    tg=out['telegram']
+    if not isinstance(tg,dict) or set(tg)!={'enabled'} or type(tg['enabled']) is not bool:raise BotError('invalid_telegram')
+    own=out['own_model']
+    if own is not None:
+        if not isinstance(own,dict) or not {'base_url','model','daily_tokens'}<=set(own) or set(own)-{'base_url','model','daily_tokens','api'}:raise BotError('invalid_own_model')
+        if own.get('api','chat') not in ('chat','responses'):raise BotError('invalid_own_model')
+        from .provider import _valid
+        _valid(own['base_url'],own['model'],'chat','validation','own')
+        if any(pattern.search(own[k]) for k in ('base_url','model') for _,pattern,_ in privacy._SECRETS):raise BotError('config_contains_secret')
+        if type(own['daily_tokens']) is not int or not 1<=own['daily_tokens']<=100000:raise BotError('invalid_own_model')
     p=out['provider']
-    if not isinstance(p,dict) or p.get('source') not in ('main','profile') or set(p)-{'source','id'} or p['source']=='profile' and not re.fullmatch(r'[a-z0-9][a-z0-9_-]{0,39}',p.get('id','')):raise BotError('invalid_provider')
+    if not isinstance(p,dict) or p.get('source') not in ('main','profile','own') or set(p)-{'source','id'} or p['source']=='profile' and not re.fullmatch(r'[a-z0-9][a-z0-9_-]{0,39}',p.get('id','')):raise BotError('invalid_provider')
+    if p['source']=='own' and (p!={'source':'own'} or own is None):raise BotError('invalid_provider')
     domains=out['outbound_domains']
     if not isinstance(domains,list) or len(domains)>20 or any(not isinstance(x,str) or not re.fullmatch(r'[a-z0-9](?:[a-z0-9.-]{0,251}[a-z0-9])?',x) or '.' not in x for x in domains):raise BotError('invalid_domains')
     from urllib.parse import urlsplit
@@ -95,6 +121,7 @@ class Store:
         self.db.executescript('''
         PRAGMA foreign_keys=ON;
         CREATE TABLE IF NOT EXISTS bots(id TEXT PRIMARY KEY, config TEXT NOT NULL);
+        CREATE TABLE IF NOT EXISTS telegram_cursors(bot TEXT PRIMARY KEY, token_hash TEXT, offset INTEGER NOT NULL);
         CREATE TABLE IF NOT EXISTS bot_lifecycle(bot TEXT PRIMARY KEY, epoch INTEGER NOT NULL, removed INTEGER NOT NULL DEFAULT 0);
         CREATE TABLE IF NOT EXISTS visitors(bot TEXT, id TEXT, capability TEXT NOT NULL, identity TEXT NOT NULL DEFAULT '{}', PRIMARY KEY(bot,id));
         CREATE TABLE IF NOT EXISTS visitor_seen(bot TEXT, visitor TEXT, seen INTEGER, PRIMARY KEY(bot,visitor));
@@ -129,13 +156,13 @@ class Store:
     def get(self,bid):
         row=self.db.execute('SELECT config FROM bots WHERE id=?',(ident(bid),)).fetchone()
         if not row:raise BotError('unknown_bot')
-        return json.loads(row[0])
+        return config(json.loads(row[0]))
     def lifecycle(self,bid):
         self.get(bid)
         row=self.db.execute('SELECT epoch,removed FROM bot_lifecycle WHERE bot=?',(bid,)).fetchone()
         return dict(row) if row else {'epoch':1,'removed':0}
     def listing(self,include_removed=False):
-        return [{'id':r['id'],**json.loads(r['config'])} for r in self.db.execute('SELECT * FROM bots ORDER BY id') if include_removed or not self.lifecycle(r['id'])['removed']]
+        return [{'id':r['id'],**config(json.loads(r['config']))} for r in self.db.execute('SELECT * FROM bots ORDER BY id') if include_removed or not self.lifecycle(r['id'])['removed']]
     def remove(self,bid):
         c=self.get(bid);c['enabled']=False;self.save(bid,c)
         self.db.execute('UPDATE bot_lifecycle SET removed=1 WHERE bot=?',(bid,));self.event(bid,'','config','removed')
@@ -208,13 +235,23 @@ class Store:
             self.touch(bid,vid)
             self.db.execute('INSERT INTO turns VALUES(?,?,?,?,?,?,?)',(bid,vid,rid,day,'running',None,self.now()))
             self.db.execute('INSERT INTO messages VALUES(?,?,?,?,?,?)',(bid,vid,rid,'user',text,self.now()))
+        if c['template']=='paid_qa':
+            used=self.db.execute("SELECT count(*) FROM turns WHERE bot=? AND visitor=? AND day=? AND status!='payment_required'",(bid,vid,day)).fetchone()[0]-1
+            if used>=c['paid_qa']['free_questions']:return {'payment_required':True}
         return None
     def reserve(self,bid,vid,rid,maximum,kind,remaining=False):
         if type(maximum) is not int or maximum<1:raise BotError('invalid_reservation')
         day=self.day();call=secrets.token_hex(16)
         with self.transaction():
-            used=self.db.execute('SELECT coalesce(sum(coalesce(actual,reserved)),0) FROM calls WHERE day=?',(day,)).fetchone()[0]
-            ceiling=self.get(bid)['limits']['host_tokens']
+            c=self.get(bid)
+            own=kind=='model' and c['provider']['source']=='own'
+            if own:
+                kind='own_model'
+                used=self.db.execute("SELECT coalesce(sum(coalesce(actual,reserved)),0) FROM calls WHERE day=? AND bot=? AND kind='own_model'",(day,bid)).fetchone()[0]
+                ceiling=c['own_model']['daily_tokens']
+            else:
+                used=self.db.execute("SELECT coalesce(sum(coalesce(actual,reserved)),0) FROM calls WHERE day=? AND kind!='own_model'",(day,)).fetchone()[0]
+                ceiling=c['limits']['host_tokens']
             if remaining:
                 if ceiling-used<maximum:raise BotError('token_limit')
                 maximum=ceiling-used
@@ -233,7 +270,7 @@ class Store:
             if answer:self.db.execute('INSERT INTO messages VALUES(?,?,?,?,?,?)',(bid,vid,rid,'assistant',answer,self.now()))
         self.event(bid,vid,'turn',status)
     def history(self,bid,vid):
-        return [dict(r) for r in self.db.execute('SELECT role,text FROM messages WHERE bot=? AND visitor=? AND created>? ORDER BY rowid DESC LIMIT 40',(bid,vid,self.now()-86400))][::-1]
+        return [dict(r) for r in self.db.execute('SELECT role,text AS content FROM messages WHERE bot=? AND visitor=? AND created>? ORDER BY rowid DESC LIMIT 40',(bid,vid,self.now()-86400))][::-1]
     def recover(self):
         # No model is retried; its reservation remains. Call once at service startup.
         self.db.execute("UPDATE turns SET status='interrupted' WHERE status='running'")

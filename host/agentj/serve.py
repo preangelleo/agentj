@@ -1917,6 +1917,7 @@ class Host:
                     try:
                         rows = await asyncio.to_thread(doctor.run, self.st)
                         completed["counts"] = update.doctor_counts(rows)
+                        completed["checks"] = [{"id": r.get("id"), "status": r.get("status")} for r in rows]
                         failed, completed["existing_issues"] = update.upgrade_health(rows)
                     except Exception:
                         completed["counts"], failed = None, True
@@ -1931,10 +1932,11 @@ class Host:
             return
         try:
             from . import doctor
-            counts = update.doctor_counts(await asyncio.to_thread(doctor.run, self.st))
+            rows = await asyncio.to_thread(doctor.run, self.st)
+            counts = update.doctor_counts(rows)
         except Exception:  # noqa: BLE001 — the line still goes out, with "doctor: ?"
-            counts = None
-        note = update.upgraded_text(rec, counts, preferences.get(self.preferences, "appearance.language", "zh"))
+            counts, rows = None, None
+        note = update.upgraded_text(rec, counts, preferences.get(self.preferences, "appearance.language", "zh"), rows)
         self.st.log("upgrade_notice", status=str(rec.get("to"))[:32])
         e = self._remember("notice", note)
         self._post(self._send_legacy, lambda s, e=e: self._render(e, s))

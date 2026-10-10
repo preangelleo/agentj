@@ -375,15 +375,64 @@ def take_marker(st, now: float | None = None) -> dict | None:
     return d
 
 
-def upgraded_text(rec: dict, counts: tuple[int, int, int] | None, lang: str = "zh") -> str:
-    """The one phone line after an authorized upgrade (C3), in the owner's language (`appearance.language`)."""
-    doc = f"doctor: {counts[0]} ✓ / {counts[1]} ! / {counts[2]} ✗" if counts else "doctor: ?"
-    if rec["to"] == __version__:
-        return f"Upgraded to {rec['to']} ({doc})" if lang == "en" else f"已升级到 {rec['to']}（{doc}）"
+def web_refresh_text(lang="zh") -> str:
     if lang == "en":
-        return (f"The upgrade to {rec['to']} did not take effect: this computer runs {__version__} ({doc}). Run "
-                "`agentj doctor` on it.")
-    return f"升级到 {rec['to']} 没有生效：这台电脑现在运行的是 {__version__}（{doc}）。在电脑上运行 `agentj doctor`。"
+        return 'The phone/web page has not been updated yet. Tap the settings icon at the top right → "Update and reload".'
+    return '手机/网页上的 Agent J 还没升级。请点右上角设置图标 →「更新并刷新」。'
+
+
+def health_text(counts, lang="zh", rows=None) -> str:
+    if not counts:
+        return ("Self-check could not finish; run `agentj doctor` on the computer." if lang == "en" else
+                "自检未能完成，请在电脑运行 `agentj doctor`。")
+    if counts[2]:
+        # Only known row IDs get user-facing labels; arbitrary detail can contain private data.
+        labels = {"version": ("程序版本", "program version"), "python": ("运行环境", "runtime"),
+                  "service": ("后台服务", "background service"), "serve": ("后台连接", "host connection"),
+                  "relay": ("中继连接", "relay connection"), "main-core": ("Agent 身份", "Agent identity"),
+                  "main-inject": ("Agent 身份加载", "Agent identity loading"), "state": ("本机数据目录", "local data folder"),
+                  "upgrade-restart": ("升级重启", "upgrade restart"), "dashboard": ("账户连接", "account connection"),
+                  "platform": ("操作系统", "operating system"), "config": ("程序配置", "configuration"),
+                  "agent": ("Agent 设置", "Agent settings"), "agent_cli": ("Agent 程序", "Agent executable"),
+                  "alias": ("命令入口", "command shortcuts"), "asr": ("语音识别", "speech recognition"),
+                  "auto-update": ("自动升级", "automatic upgrades"), "bound": ("席位绑定", "seat binding"),
+                  "codex_perm": ("Codex 权限", "Codex permissions"), "codex_shared": ("Codex 共享会话", "shared Codex session"),
+                  "danger": ("Agent 权限设置", "Agent permissions"), "estop": ("暂停状态", "pause state"),
+                  "fence": ("Agent 隔离", "Agent isolation"), "friends": ("Agent 好友", "Agent friends"),
+                  "hardware": ("电脑硬件", "computer hardware"), "harness": ("Agent 接入", "Agent connection"),
+                  "keep-awake": ("防休眠", "keep-awake"), "linger": ("后台常驻", "background persistence"),
+                  "login-session": ("电脑登录会话", "computer login session"), "migrate": ("本机数据迁移", "local data migration"),
+                  "onboard": ("安装初始化", "installation setup"), "passphrase": ("配对口令", "pairing passphrase"),
+                  "root-migrate": ("工作目录迁移", "working-folder migration"), "shared_inbound": ("手机消息接入", "phone message delivery"),
+                  "skills": ("内置技能", "built-in skills"), "tasks": ("定时任务", "scheduled tasks"),
+                  "update": ("升级检查", "upgrade check"), "voice-command": ("语音命令", "voice commands"),
+                  "voice-migration": ("语音设置迁移", "voice settings migration"), "voice-model": ("语音模型", "voice model"),
+                  "work-root": ("工作目录", "working folder"), "activity": ("操作记录", "activity records")}
+        names = [labels[r.get("id")][lang == "en"] for r in rows or []
+                 if isinstance(r, dict) and r.get("status") == "fail" and r.get("id") in labels]
+        detail = "、".join(dict.fromkeys(names)) if lang != "en" else ", ".join(dict.fromkeys(names))
+        if lang == "en":
+            return f"Self-check found {counts[2]} failed check{'s' if counts[2] != 1 else ''}{': ' + detail if detail else ''}; run `agentj doctor` on the computer and follow its repair guidance."
+        return f"自检有 {counts[2]} 项未通过{'：' + detail if detail else ''}；请在电脑运行 `agentj doctor`，按提示修复。"
+    if lang == "en":
+        return f"Self-check passed ({counts[1]} reminder{'s' if counts[1] != 1 else ''}, no failed checks)." if counts[1] else "All self-checks passed."
+    return f"自检通过（有 {counts[1]} 项提醒，没有未通过项）。" if counts[1] else "自检全部通过。"
+
+
+def completion_text(rec, counts, lang="zh", rows=None) -> str:
+    if lang == "en":
+        head = f"Agent J on your computer has been upgraded to {rec['to']} (previously {rec.get('from', '—')})."
+    else:
+        head = f"电脑上的 Agent J 程序已升级到 {rec['to']}（原 {rec.get('from', '—')}）。"
+    return head + " " + health_text(counts, lang, rows) + "\n\n" + web_refresh_text(lang)
+
+
+def upgraded_text(rec: dict, counts: tuple[int, int, int] | None, lang: str = "zh", rows=None) -> str:
+    if rec["to"] == __version__:
+        return completion_text(rec, counts, lang, rows)
+    if lang == "en":
+        return f"The upgrade to {rec['to']} did not take effect: this computer still runs {__version__}. " + health_text(counts, lang, rows)
+    return f"升级到 {rec['to']} 没有生效：这台电脑仍运行 {__version__}。" + health_text(counts, lang, rows)
 
 
 def doctor_counts(rows) -> tuple[int, int, int] | None:
