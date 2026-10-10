@@ -74,6 +74,7 @@ CMD_TIMEOUT, CMD_TIMEOUT_MAX = 600, 3600
 SOCK_NAME = "elevate.sock"
 ENV = "AGENTJ_ELEVATE_SOCK"
 PHONE_TYPES = ("elev_answer", "secret_out_open", "secret_out_decline")   # the last two: F32 (secret_out.py)
+PHONE_TYPES += ("login_qr_check", "login_qr_cancel", "login_qr_tg", "login_qr_refresh")   # P114: browser_login.py
 RESULTS_NAME = "secret-results.json"
 RESULTS_KEEP = 100
 NAME_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]{0,127}")
@@ -596,6 +597,8 @@ class Elevator:
         self.helper_cmd = None       # tests: a stand-in for the installed helper command line
         from .secret_out import Outbox
         self.out = Outbox(self)      # F32: outbound pickup cards (`agentj secret send`)
+        from .browser_login import LoginCards
+        self.login = LoginCards(self)  # P114: login QR cards (`agentj browser login`)
 
     @property
     def sock_path(self) -> pathlib.Path:
@@ -623,6 +626,7 @@ class Elevator:
             os.environ.pop(ENV, None)
         self.cancel_all("gone")
         self.out.end_all("gone")
+        self.login.end_all("gone")
         if self.server:
             self.server.close()
             with contextlib.suppress(FileNotFoundError):
@@ -673,6 +677,7 @@ class Elevator:
             if not c["fut"].done() and not c.get("busy"):
                 await self.host.send_app(s, self.card_msg(c, s))
         await self.out.on_ready(s)
+        await self.login.on_ready(s)
 
     def _finish(self, c: dict, result: dict) -> None:
         if not c["fut"].done():
@@ -684,6 +689,7 @@ class Elevator:
                 self._finish(c, {"result": result})
         if result == "stopped":                    # Stop everything also voids pickup cards (and wipes their values)
             self.out.end_all(result)
+            self.login.end_all(result)
 
     async def request(self, card: dict, gone: asyncio.Future | None = None, on_card=None) -> dict:
         """Show a card, wait for a decision, act; → the result for the Agent (never the value). `on_card(c)` (async) runs
@@ -691,6 +697,10 @@ class Elevator:
         state and outcome go to secret-results.json (`remember`)."""
         if self.host.stopped():
             return {"result": "stopped"}
+        from . import provenance
+        if provenance.untrusted_turn(getattr(self.host, "agent", None)):
+            audit(self.st, None, kind=card.get("kind"), result="group_source", reason="group_source")
+            return {"result": "group_source"}      # B1 (P117): a group member's turn never reaches the owner's card
         if len([c for c in self.cards.values() if not c["fut"].done()]) >= MAX_OPEN:
             return {"result": "busy"}
         if card["kind"] == "sudo" and (left := locked_for(self.st)):
@@ -765,6 +775,11 @@ class Elevator:
     async def on_phone(self, s, obj: dict) -> None:
         if obj.get("t") in ("secret_out_open", "secret_out_decline"):   # F32
             return await self.out.on_phone(s, obj)
+        if isinstance(obj.get("t"), str) and obj["t"].startswith("login_qr_"):   # P114: may wait on the browser (≤ 15 s) —
+            task = asyncio.create_task(self.login.on_phone(s, obj))          # never hold the relay receive loop (P99 B1)
+            self.login.bg.add(task)
+            task.add_done_callback(self.login.bg.discard)
+            return
         rid = obj.get("id")
         c = self.cards.get(rid) if isinstance(rid, str) and _ID.fullmatch(rid) else None
         if c is None or c["fut"].done() or c.get("busy"):
@@ -921,6 +936,36 @@ class Elevator:
                 return out
             await asyncio.sleep(0.5)
 
+    async def _p115(self, req: dict) -> dict:
+        if req["t"] == "google":
+            from . import google
+            if req.get("op") not in google.OPS:
+                return {"ok": False, "why": "shape", "detail": "op: " + " | ".join(google.OPS)}
+            try:
+                res = await asyncio.to_thread(google.execute, req["op"], self.st)
+            except google.GoogleError as e:
+                return {"ok": False, "why": e.reason, "detail": e.detail}
+            self.st.log("google_cli", result=req["op"])
+            return res
+        from . import first_run
+        op, item = req.get("op"), req.get("item")
+        if op not in ("status", "resume", "check") or (item is not None and item not in first_run.BY_ID):
+            return {"ok": False, "why": "shape", "detail": "op: status | resume | check; item: a checklist id"}
+        serve = self.host.setup_serve() if hasattr(self.host, "setup_serve") else None
+        try:
+            if op == "status":
+                res = await asyncio.to_thread(first_run.status_, self.st)
+            elif op == "resume":
+                res = await asyncio.to_thread(first_run.resume, self.st, serve)
+            else:
+                res = await asyncio.to_thread(first_run.check, self.st, [item] if item else None, serve)
+        except first_run.SetupError as e:
+            return {"ok": False, "why": e.reason}
+        if op == "resume" and res.get("ok") and hasattr(self.host, "push_setup"):
+            self.host.push_setup(res, show=True)
+            res = {**res, "card": "sent"}
+        return res
+
     # ---------------------------------------------------------- the Agent's socket
     async def on_client(self, r: asyncio.StreamReader, w: asyncio.StreamWriter) -> None:
         gone = asyncio.get_running_loop().create_future()
@@ -944,6 +989,22 @@ class Elevator:
                 await w.drain()
                 w.close()
                 return
+            if isinstance(req, dict) and req.get("t") == "browser":
+                from . import browser
+                # P114: the browser's state lives outside the Agent fence; fixed actions with structured arguments only.
+                res = await asyncio.to_thread(browser.execute, req, self.st)
+                w.write((json.dumps(res, ensure_ascii=False) + "\n").encode())
+                await w.drain()
+                w.close()
+                return
+            if isinstance(req, dict) and req.get("t") in ("google", "setup"):
+                # P115: Google tools (google.py) and the first-run checklist (first_run.py) keep their state outside the
+                # Agent fence; the Agent asks here. Fixed operations only; the checklist cannot mark choices from here.
+                res = await self._p115(req)
+                w.write((json.dumps(res, ensure_ascii=False) + "\n").encode())
+                await w.drain()
+                w.close()
+                return
             if isinstance(req,dict) and req.get('t')=='provider_profile':
                 from . import provider_profiles
                 # Same-user Agent-facing socket; fixed native provider targets only.
@@ -954,6 +1015,10 @@ class Elevator:
                 return
             if isinstance(req, dict) and req.get("t") == "secret_out":          # F32: a pickup card; answers at once
                 res = await self.out.send(req)
+            elif isinstance(req, dict) and req.get("t") == "browser_login":     # P114: a login QR card; answers at once
+                res = await self.login.request(req)
+            elif isinstance(req, dict) and req.get("t") == "browser_login_result":
+                res = self.login.result(req)
             elif isinstance(req, dict) and req.get("t") == "secret_result":     # P73: the outcome of an earlier card
                 res = await self.result_of(req)
             else:
@@ -1037,6 +1102,7 @@ MSG = {
     "bad_password": "管理员密码错了 3 次，这张卡已结束。/ Wrong password three times; this card ended.",
     "no_device": "没有能批准的已配对手机。/ No paired phone that can approve.",
     "busy": "已经有太多张卡在等手机处理。/ Too many cards are already waiting on the phone.",
+    "group_source": "这一轮来自 Telegram 群成员，不是主人本人，不能向主人要批准，没有发卡片。/ This turn came from a Telegram group member, not the owner; no card was sent.",
     "unavailable": "Agent J 没在运行（agentj service status）。/ Agent J is not running.",
     "local_auth_required": LOCAL_AUTH_HINT,
     "no_sudo": "这台电脑上没有 sudo。/ No sudo on this computer.",

@@ -1,0 +1,35 @@
+{
+ "schema_version": 1,
+ "task_id": "competitor-brief",
+ "brief_revision": 1,
+ "brief_digest": "<sha256 of brief.json bytes: agentj capability digest>",
+ "status": "ok",
+ "acceptance": [
+  {
+   "id": "coverage",
+   "status": "pass",
+   "evidence_refs": [
+    "reports/evidence.json"
+   ]
+  },
+  {
+   "id": "delivery",
+   "status": "pass",
+   "evidence_refs": [
+    "reports/weekly.md"
+   ]
+  }
+ ],
+ "artifacts": [
+  "reports/weekly.md",
+  "reports/evidence.json"
+ ],
+ "unprocessed": [],
+ "blockers": [],
+ "assumptions": [
+  "只用公开页面"
+ ],
+ "recoveries": [],
+ "approval_refs": [],
+ "next_step": "等下周一计划运行"
+}

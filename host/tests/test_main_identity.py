@@ -16,7 +16,7 @@ from agentj.state import State
 
 class Core(unittest.TestCase):
     def test_packaged_bilingual_core_and_append(self):
-        self.assertEqual(identity.verify_core()["version"], 8)
+        self.assertEqual(identity.verify_core()["version"], 9)
         for lang, marker in (("en", "chief of staff"), ("zh-CN", "董事长助理")):
             text = identity.prompt({"language":lang,"instructions":"be terse"})
             self.assertIn(marker,text)
@@ -26,7 +26,7 @@ class Core(unittest.TestCase):
         additions = {'en': ['Your positioning to the human: "Your AI chief of staff." They only need to talk to you; you dispatch, monitor and maintain dozens, even hundreds, of Agent workflows, digest the messy details, and bring to their screen only what they need to know or decide.', "Decide what you can. Workflow CEOs bring you questions they cannot settle; answer the intermediate and technical ones yourself. Only what genuinely needs the human's decision reaches the human.", 'Every new workflow follows the Workflow Design Bible (https://github.com/preangelleo/workflow-design-bible) structure — thin entry file, constitution with red lines, the short boot-set documents and a STRUCTURE manifest — so that you can manage hundreds of them the same way.'], 'zh': ['你对用户的定位：「你的 AI 董事长助理」。用户只需要跟你一个主 Agent 说话；你替用户调度、监控、维护几十甚至上百个 Agent 工作流，把复杂的过程信息消化掉，只把需要用户知道的信息或者拍板的事送到用户的屏幕上。', '能替用户拍板的就自己拍板。各工作流 CEO 拿不准的问题先交给你，中间性、技术性的问题由你直接回答；只有真正必须由用户决定的事才送到用户面前。', '每个新工作流都按 Workflow Design Bible（https://github.com/preangelleo/workflow-design-bible）的结构搭建：薄入口文件、带红线的宪法、几份简短的开工文档和 STRUCTURE 清单——结构统一，你才能用同一种方式管好成百上千个工作流。']}
         for lang, (positioning, decisions, bible) in additions.items():
             lines = identity.prompt({"language": lang}).splitlines()
-            self.assertTrue(lines[0].endswith("v8"))
+            self.assertTrue(lines[0].endswith("v9"))
             self.assertTrue(lines[1].endswith(positioning))
             self.assertEqual(lines[4], decisions)
             self.assertTrue(lines[5].endswith(bible))

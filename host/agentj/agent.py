@@ -455,6 +455,7 @@ class Agent:
 
     # ------------------------------------------------ A1 (P44): the injected main identity changed (the owner's language)
     identity_stale = False
+    _private_key = None
 
     def identity_changed(self) -> None:
         """serve: the text main_identity.prompt(self.cfg) yields changed. Applied before the next turn (hot, never mid-turn)."""
@@ -469,6 +470,16 @@ class Agent:
                 self.host.st.log("agent_restart", agent=self.kind, reason=self.restart_why)
                 await self._end_proc()        # the next spawn resumes the same conversation with the new environment
                 self.halting = False
+        # P116 (B11): the owner edited the private instructions file → reload like a language change (between turns only)
+        if not self.cfg.get("_workflow_ceo") and (self.cfg.get("private_instructions_file") or self._private_key is not None):
+            from .private_instructions import load, generation
+            got = load(self.cfg.get("private_instructions_file") or "")
+            key = got["digest"] if got["ok"] else got["reason"]
+            if self._private_key is not None and key != self._private_key:
+                self.identity_stale = True
+            if self._private_key != key:
+                generation(self.host.st, got)     # metadata-only log; never fails the turn
+            self._private_key = key
         if self.identity_stale:
             self.identity_stale = False
             await self.reload_identity()

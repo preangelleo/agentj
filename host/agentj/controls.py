@@ -35,7 +35,7 @@ ACTIONS = ("mem_rm", "mem_undo", "estop", "resume", "task_on", "task_off",
            "fr_set", "pg_set", "pg_del", "fr_add", "fr_discoverable", "fr_card",
            "fr_ctx")                   # P73 (ADR-A176): a friend's 「补充设定」 — the owner's own setting, never a message
 FRIEND_ACTIONS = ACTIONS[6:]
-ACTIONS += ("update", "bots_write")
+ACTIONS += ("update", "bots_write", "setup_mark")   # P115: the first-run checklist card (first_run.py)
 TS_SKEW_MS = 120_000
 NONCE_KEEP_S = 600
 _NONCE = re.compile(r"[0-9a-f]{32}")
@@ -59,6 +59,8 @@ def object_text(action: str, obj: dict) -> str:
     """
     if action == "bots_write":
         return json.dumps(obj["request"], sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+    if action == "setup_mark":       # item id \n choice (selected | unused | later | start_exit) \n checklist revision
+        return f"{obj['item']}\n{obj['choice']}\n{int(obj['rev'])}"
     if action == "update":
         return "latest"
     if action == "mem_rm":

@@ -69,7 +69,7 @@ Ubuntu 24.04 还会检查 AppArmor 对用户命名空间的限制，并实际试
 AI 安装电脑端程序 `agentj`，装的是固定的一个版本：
 
 ```bash
-uv tool install "git+https://github.com/preangelleo/agentj@v0.17.4a1#subdirectory=host"
+uv tool install "git+https://github.com/preangelleo/agentj@v0.18.0a1#subdirectory=host"
 agentj doctor
 ```
 
@@ -210,3 +210,7 @@ Intel Mac 安装和升级都会限制 `cryptography<49`。如果旧安装器报 
 ## 同一台电脑给第二个人安装
 
 每人一个系统用户，各用自己的付费席位、安装码与手机。完整步骤见[同机多席位](/docs/multi-seat/)。
+
+## 离开电脑前
+
+两端配好后，趁你还在电脑前，让 Agent 把以后远程工作要你本人帮忙的事一次做完并验证，见[离开电脑前，先把这些事一次做好](/docs/first-run/)。Google 邮件、日历、YouTube 的接口授权见[连接 Google](/docs/google/)。

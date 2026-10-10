@@ -124,11 +124,12 @@ export async function approveMessage(channel, device, id, decision, tool, summar
 export const CONTROL_CONTEXT = 'agentjarvis-control-v1';
 export const CONTROL_ACTIONS = ['mem_rm', 'mem_undo', 'estop', 'resume', 'task_on', 'task_off',
   'fr_set', 'pg_set', 'pg_del', 'fr_add', 'fr_discoverable', 'fr_card',          // §17.7 agent friends (0.16)
-  'fr_ctx', 'update', 'bots_write'];                                                                       // P73: a friend's 「补充设定」
+  'fr_ctx', 'update', 'bots_write', 'setup_mark'];                                                         // P115: first-run checklist card                                                                       // P73: a friend's 「补充设定」
 /** The text whose SHA-256 a control signature covers (the target, with the content hash the phone saw). */
 export function controlObject(action, o) {
   if (action === 'bots_write') return canonicalJson(o.request);
   if (action === 'update') return 'latest';
+  if (action === 'setup_mark') return `${o.item}\n${o.choice}\n${o.rev}`;
   if (action === 'mem_rm') return `${o.src}\n${o.file}\n${o.fsha}\n${o.iid}`;
   if (action === 'mem_undo') return String(o.id);
   if (action === 'estop' || action === 'resume') return 'all';
@@ -394,3 +395,19 @@ export async function mboxOfId(id) {
 /** The share link (fragment only: never reaches a server). */
 export const FRIEND_LINK_BASE = 'https://m.agentj.app/friends#add=';
 export const friendLink = (id) => FRIEND_LINK_BASE + parseAgentId(id);
+
+// ---------------------------------------------------------------- long tasks (0.18, ADR-A193). Mirrors host/agentj/capability.py.
+export const PREFLIGHT_DOMAIN = 'agentj.preflight.v1';
+export const BRIEF_DOMAIN = 'agentj.brief.v1';
+/** The bytes a device signs to answer an opening card (submit / cancel): canonical JSON of every bound field. */
+export function preflightBytes(channel, device, card, action, picks) {
+  return enc.encode(canonicalJson({ domain: PREFLIGHT_DOMAIN, channel, device, card_id: card.card_id, task_id: card.task_id,
+    revision: card.revision, brief_digest: card.brief_digest, registry_revision: card.registry_revision, nonce: card.nonce,
+    expires_at: card.expires_at, action, picks: action === 'submit' ? (picks || {}) : {} }));
+}
+/** The bytes a device signs to confirm a task brief (a new workflow / a schedule): scope digest + the card's binding. */
+export function briefBytes(channel, device, card, scopeDigest, action) {
+  return enc.encode(canonicalJson({ domain: BRIEF_DOMAIN, channel, device, card_id: card.card_id, task_id: card.task_id,
+    revision: card.revision, brief_digest: card.brief_digest, scope_digest: scopeDigest, nonce: card.nonce,
+    expires_at: card.expires_at, action }));
+}

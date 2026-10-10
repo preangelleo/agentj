@@ -299,7 +299,7 @@ class ServeWithoutTerminal(unittest.TestCase):
 
 
 class Doctor(unittest.TestCase):
-    IDS = ["version", "python", "websockets", "platform", "state", "keep-awake", "relay", "dashboard", "agent", "agent_cli", "harness", "fence", "danger", "passphrase",
+    IDS = ["version", "python", "websockets", "platform", "state", "keep-awake", "browser", "relay", "dashboard", "agent", "agent_cli", "harness", "fence", "danger", "passphrase",
            "bound", "onboard", "serve", "friends", "service", "alias", "estop", "tasks", "activity"]
 
     def setUp(self):
@@ -315,7 +315,7 @@ class Doctor(unittest.TestCase):
         self.assertEqual(r.returncode, 1, "not initialised = ✗")
         d = json.loads(r.stdout)
         ids = [c["id"] for c in d["checks"]]
-        self.assertEqual([i for i in ids if i != "linger"], self.IDS + ["asr", "config", "hardware", "main-core", "work-root", "skills", "auto-update", "update"], "linger only where systemd reports it")
+        self.assertEqual([i for i in ids if i != "linger"], self.IDS + ["asr", "config", "hardware", "main-core", "work-root", "skills", "google", "first-run", "auto-update", "update"], "linger only where systemd reports it")
         self.assertEqual(d["version"], agentj.__version__)
         by = {c["id"]: c for c in d["checks"]}
         self.assertEqual((by["state"]["status"], by["state"]["hint"]), ("fail", "agentj init"))
@@ -440,13 +440,36 @@ class WheelInstall(unittest.TestCase):
                   "agentj/admin/brand/img/shield-64.png"):
             self.assertIn(f, names_)
         self.assertFalse([n for n in names_ if n.endswith(".src.json") or "shield-source" in n], "no copy source, no big logo source")
-        # Preserve the pre-bot 2.25 MB core ceiling; assign an explicit bounded 64 KiB bot increment.
+        # Preserve bounded allocations: P118 core ceiling 2.26 MB approved by Jarvis; bots retain their 64 KiB increment.
         # Includes ZIP local/central name/header overhead, not just compressed source bytes.
         bot_entries=[i for i in zipfile.ZipFile(self.wheel).infolist() if i.filename.startswith(('agentj/bots/','agentj/skills/agentj-bots/'))]
         bot_bytes=sum(i.compress_size+76+2*len(i.filename.encode())+2*len(i.extra)+len(i.comment) for i in bot_entries)
         self.assertLessEqual(bot_bytes,65536,'P82 bot package allocation is bounded; no models or knowledge ship')
-        self.assertLess(pathlib.Path(self.wheel).stat().st_size-bot_bytes,2_250_000,'existing core package ceiling unchanged')
-        self.assertLess(pathlib.Path(self.wheel).stat().st_size,2_250_000+65536,'combined core and bot package ceiling')
+        # P113 (0.18, ADR-A194): an explicit bounded 40 KiB increment for long tasks (registry, schemas, skill); same accounting.
+        lt_entries=[i for i in zipfile.ZipFile(self.wheel).infolist() if i.filename in ('agentj/capability.py','agentj/ltschema.py')
+                    or i.filename.startswith(('agentj/longtask_schemas/','agentj/skills/agentj-capability/'))]
+        lt_bytes=sum(i.compress_size+76+2*len(i.filename.encode())+2*len(i.extra)+len(i.comment) for i in lt_entries)
+        self.assertLessEqual(lt_bytes,40960,'P113 long-task allocation is bounded; no models, data or templates ship')
+        # P114: Agent J's own browser (runtime, sign-in checks, login card, two skills) gets its own bounded 48 KiB, like the bots.
+        # The browser itself is downloaded at setup against the signed manifest; nothing of it ships in the wheel.
+        browser_entries=[i for i in zipfile.ZipFile(self.wheel).infolist() if i.filename.startswith(('agentj/browser','agentj/skills/agentj-browser/','agentj/skills/agentj-good-morning/'))]
+        browser_bytes=sum(i.compress_size+76+2*len(i.filename.encode())+2*len(i.extra)+len(i.comment) for i in browser_entries)
+        self.assertLessEqual(browser_bytes,49152,'P114 browser package allocation is bounded; no browser binary ships')
+        # P115 (0.18.0): an explicit bounded 32 KiB allocation for the first-run checklist and the Google tools module + their
+        # two skills; the gog binary itself is downloaded (pinned SHA-256), never shipped in the wheel.
+        p115=[i for i in zipfile.ZipFile(self.wheel).infolist() if i.filename.startswith(('agentj/first_run.py','agentj/google.py',
+              'agentj/skills/agentj-first-run/','agentj/skills/agentj-google/'))]
+        p115_bytes=sum(i.compress_size+76+2*len(i.filename.encode())+2*len(i.extra)+len(i.comment) for i in p115)
+        self.assertLessEqual(p115_bytes,32768,'P115 first-run + Google allocation is bounded; no gog binary in the wheel')
+        self.assertFalse([n for n in names_ if n.endswith('/gog') or 'gogcli' in n])
+        # P117: the two relay→Agent J cut-over modules (B1 provenance, B3 Telegram cursor) get their
+        # own explicit 12 KiB allocation, measured the same way; the core ceiling stays separately bounded.
+        cut_entries=[i for i in zipfile.ZipFile(self.wheel).infolist() if i.filename in ('agentj/provenance.py','agentj/tg_cursor.py')]
+        cut_bytes=sum(i.compress_size+76+2*len(i.filename.encode())+2*len(i.extra)+len(i.comment) for i in cut_entries)
+        self.assertEqual(len(cut_entries),2)
+        self.assertLessEqual(cut_bytes,12288,'P117 cut-over allocation is bounded')
+        self.assertLess(pathlib.Path(self.wheel).stat().st_size-bot_bytes-lt_bytes-browser_bytes-p115_bytes-cut_bytes,2_260_000,'P118 approved bounded core ceiling')
+        self.assertLess(pathlib.Path(self.wheel).stat().st_size,2_260_000+65536+40960+49152+32768+12288,'combined bounded allocations')
         self.assertFalse([n for n in names_ if n.startswith("tests/") or "wiredump" in n or "fakeclaude" in n])
         ep = next(n for n in names_ if n.endswith("entry_points.txt"))
         eps = zipfile.ZipFile(self.wheel).read(ep).decode()
@@ -496,11 +519,11 @@ class WheelInstall(unittest.TestCase):
             self.assertEqual(subprocess.run([self.venv + "/bin/agentj", "init"], env=env, capture_output=True, cwd="/").returncode, 0)
             r = subprocess.run([self.venv + "/bin/agentj", "doctor", "--json", "--offline"], env=env, capture_output=True, text=True, cwd="/")
             d_ = json.loads(r.stdout)
-            self.assertEqual([c["id"] for c in d_["checks"] if c["id"] != "linger"], Doctor.IDS + ["asr", "config", "hardware", "main-core", "work-root", "skills", "auto-update", "update"])
+            self.assertEqual([c["id"] for c in d_["checks"] if c["id"] != "linger"], Doctor.IDS + ["asr", "config", "hardware", "main-core", "work-root", "skills", "google", "first-run", "auto-update", "update"])
             self.assertEqual({c["id"]: c["status"] for c in d_["checks"]}["state"], "ok")
             core = next(c for c in d_["checks"] if c["id"] == "main-core")
             self.assertEqual(core["status"], "ok")
-            self.assertIn("core v8:", core["summary"])
+            self.assertIn("core v9:", core["summary"])
 
     @unittest.skipUnless((sys.platform.startswith("linux") and shutil.which("bwrap")) or
                          (sys.platform == "darwin" and os.access(fence.SANDBOX_EXEC, os.X_OK)),

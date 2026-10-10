@@ -23,7 +23,8 @@ import struct
 import sys
 
 EVENTS = ('SessionStart', 'UserPromptSubmit', 'PreToolUse', 'PostToolUse', 'PostToolUseFailure',
-          'SubagentStart', 'SubagentStop', 'Stop', 'PreCompact', 'PostCompact', 'SessionEnd', 'PermissionRequest')
+          'SubagentStart', 'SubagentStop', 'Stop', 'PreCompact', 'PostCompact', 'SessionEnd', 'PermissionRequest',
+          'Notification')   # P116 (B5): the state machine's waiting signal (permission_prompt / idle_prompt)
 MAX_FRAME = 2 * 1024 * 1024
 # Host-generated channel names; the fallback derives the harness from the
 # channel argument already baked into every installed hook command.
@@ -87,6 +88,40 @@ def install(directory, path, family="claude"):
             f.write(data)
         os.replace(tmp, dest)
     return dest
+
+
+def _matches(matcher, tool):
+    import re
+    if not matcher or matcher == '*':
+        return True
+    try:
+        return re.fullmatch(matcher, tool) is not None
+    except re.error:
+        return matcher == tool
+
+
+def foreign_answerers(directory, tool):
+    """P116 (B5): settings layers (user / project / local) holding another PermissionRequest hook that matches `tool`.
+    Claude Code runs every matching hook; two answerers would mean two decisions for one request, so Agent J yields
+    (no decision: the other handler or the native dialog decides) until the owner removes the other one. Read-only."""
+    import json as _json
+    root = Path(os.environ.get('CLAUDE_CONFIG_DIR') or Path.home() / '.claude')
+    d = Path(directory) / '.claude'
+    found = []
+    for name, p in (('user', root / 'settings.json'), ('project', d / 'settings.json'), ('local', d / 'settings.local.json')):
+        try:
+            doc = _json.loads(p.read_text())
+        except (OSError, ValueError):
+            continue
+        entries = ((doc.get('hooks') or {}) if isinstance(doc, dict) else {}).get('PermissionRequest') or []
+        for entry in entries if isinstance(entries, list) else []:
+            if not isinstance(entry, dict) or not _matches(entry.get('matcher'), tool):
+                continue
+            if any(isinstance(h, dict) and '/agentj/shared_hook.py ' not in str(h.get('command', ''))
+                   for h in entry.get('hooks') or []):
+                found.append(name)
+                break
+    return found
 
 
 class Channel:

@@ -364,6 +364,9 @@
         "stopped": "已全部停下",
         "offline": "没连上电脑",
         "timeout": "电脑没有回应",
+        "unconfirmed": "电脑状态栏没确认切换，以实际读数为准",
+        "blocked": "电脑上有待处理的对话框",
+        "failed": "电脑的模型列表里没找到这一项",
         "other": "出错了"
       }
     },
@@ -1353,6 +1356,190 @@
   },
   "ver.new": "Agent J 有新版本（{v}）。手机/网页还没升级，请点右上角设置图标 →「更新并刷新」，或点下方按钮。",
   "ver.later": "稍后",
+  "lt": {
+    "kicker": "开工前确认",
+    "what": "这次要做什么",
+    "deliver": {
+      "owner": "交付到你的手机和电脑：{path}",
+      "local": "保存在电脑上：{path}"
+    },
+    "plan": {
+      "weekly": "每周自动运行：{when}（{tz}）",
+      "once": "只做这一次"
+    },
+    "choose": "需要你选（{n} 项）",
+    "setup": "还要配置的",
+    "setupNote": "这些不在这张卡里填：Agent 会自动检查，要密钥时会另外弹出专用密钥卡。",
+    "optional": "可选项（{n}）——没有也能完成",
+    "confirms": "点「确认并开始」等于同意",
+    "clause": {
+      "brief": "按这份任务书新建并交给工作流「{wf}」",
+      "enable": "启用定时：{when}（{tz}），以后不用再问你，随时可在定时任务里关掉",
+      "choices": "上面的选择以后每次沿用",
+      "safe": "这不是付款、删除、对外发送、改密钥或改价的批准——那些仍会逐条问你"
+    },
+    "fullBrief": "完整任务书",
+    "full": {
+      "accept": "验收：{text}",
+      "red": "红线：{text}"
+    },
+    "go": "确认并开始",
+    "goShort": "确认",
+    "back": "返回修改",
+    "left": "约 {m} 分钟内有效",
+    "timeUp": "已过期，请让 Agent 重新发卡",
+    "incomplete": "还有选项没选",
+    "sent": "已发出，电脑正在检查",
+    "sentBack": "已退回：在聊天里说要改什么就行",
+    "reuse": "复用：{text}",
+    "st": {
+      "ready": "已就绪",
+      "missing": "缺少",
+      "unverified": "待检查",
+      "verifying": "检查中",
+      "failed": "没通过",
+      "stale": "需复验",
+      "setup": "需配置"
+    },
+    "act": {
+      "login": "登录一次",
+      "secret": "密钥卡",
+      "verify": "自动检查",
+      "choose": "你来选"
+    },
+    "done": {
+      "ready": "准备好了，已开工",
+      "enabled": "准备好了：已开工，定时也已启用",
+      "needs": "还缺一点配置，Agent 会告诉你下一步",
+      "cancelled": "已取消，没有开工",
+      "blocked": "暂时开不了工，Agent 会说明原因",
+      "expired": "这张卡过期了，没有开工"
+    },
+    "why": {
+      "expired": "这张卡过期了，请让 Agent 重新发",
+      "replay": "这张卡已经答过了",
+      "changed": "任务书在你确认前改过了，请让 Agent 重新发卡",
+      "bad_signature": "签名没通过，没有开工",
+      "no_key": "这台手机不能签名确认，请用配对时设好批准的手机",
+      "picks": "选项不完整或无效",
+      "secret": "选项里像是密钥：密钥请用专用密钥卡，不要填在这里",
+      "unknown": "这张卡已经结束了",
+      "other": "电脑没有接受，没有开工"
+    },
+    "caps": {
+      "title": "我的 Agent 会什么",
+      "sum": "{ready} 项已就绪，{setup} 项需要配置或复验（会自动复验）",
+      "f": {
+        "all": "全部",
+        "ready": "已就绪",
+        "setup": "需配置"
+      },
+      "kind": {
+        "skill": "技能",
+        "cli": "电脑上的工具",
+        "mcp": "连接器",
+        "browser": "网页",
+        "credential": "已存的服务凭据（只有名字）",
+        "ceo": "工作流"
+      },
+      "verified": "上次检查 {at}，有效到 {until}",
+      "reuse": "配一次，同类任务自动复用",
+      "how": "需要时跟 Agent 说一句，它会带你配好",
+      "close": "知道了"
+    },
+    "cron": {
+      "daily": "每天 {hm}",
+      "weekly": "每{day} {hm}",
+      "d0": "周日",
+      "d1": "周一",
+      "d2": "周二",
+      "d3": "周三",
+      "d4": "周四",
+      "d5": "周五",
+      "d6": "周六"
+    }
+  },
+  "lqr": {
+    "kicker": "在电脑的 Agent J 浏览器里登录",
+    "title": "登录{site}",
+    "alt": "{site}登录二维码",
+    "note": "用对应的 App 扫一扫。同一台手机扫不了自己的屏幕：可以用另一台设备显示这张卡，或长按保存到相册，再在 App 里识别（不是每个 App 都支持）。扫完后电脑会自己确认。",
+    "check": "我扫好了，帮我确认",
+    "later": "先不登录",
+    "refresh": "刷新二维码",
+    "close": "关闭",
+    "left": "{m}:{s} 内有效",
+    "expired": "二维码已过期",
+    "expiredNote": "还没扫码，二维码就过期了。需要时点「刷新二维码」，或稍后跟 Agent 说「早上好」。",
+    "waiting": "电脑还没看到登录成功。扫完后等几秒，它会自己确认。",
+    "signedIn": "{site}已登录，电脑已确认。",
+    "tgOn": "以后二维码也发到 {channel}",
+    "tgOff": "不再把二维码发到 {channel}",
+    "tgTextNote": "现在 {channel} 只收到文字提醒。打开后二维码图片也会发到你的 {channel} 私聊——{channel} 能看到这张图。",
+    "tgOnNote": "二维码图片也会发到你的 {channel} 私聊（{channel} 能看到）。随时可以关掉。",
+    "err": {
+      "failed": "没能生成新的二维码，请稍后再试。",
+      "no_qr": "登录页上没找到二维码，请在电脑前登录。",
+      "no_browser": "电脑上的 Agent J 浏览器没在运行。",
+      "no_device": "没有已配对的手机。",
+      "busy": "登录卡太多了，先处理已有的。",
+      "disabled": "浏览器已关闭。",
+      "stopped": "已全部停下。",
+      "host_login": "这个网站要在电脑前登录，登录页已经在电脑上打开。",
+      "host_login_unavailable": "这台电脑没有屏幕，这个网站也不支持扫码。",
+      "already": "已经是登录状态。"
+    }
+  },
+  "setup": {
+    "kicker": "首次准备 · 第 {g}/{n} 组",
+    "kickerReady": "首次准备 · 已就绪",
+    "titleStart": "趁你还在电脑前",
+    "titleReady": "可以离开电脑了",
+    "counts": "已验证 {v} · 我不用 {u} · 待办 {t}（我来处理 {a}）· 待定 {d}",
+    "where": {
+      "auto": "我来处理",
+      "local": "需要你在电脑前",
+      "phone": "手机上就能做"
+    },
+    "st": {
+      "verified": "已验证",
+      "pending": "待处理",
+      "waiting_local": "等你操作",
+      "attention": "检查未通过",
+      "deferred": "稍后",
+      "unsupported": "当前版本还不支持",
+      "not_applicable": "不适用",
+      "stale": "需要重新检查",
+      "unused": "我不用",
+      "undecided": "待定"
+    },
+    "use": "要用",
+    "unused": "我不用",
+    "later": "稍后",
+    "continue": "现在继续",
+    "check": "我做完了，检查",
+    "exitStart": "开始离机检查",
+    "exitSent": "我发了，检查",
+    "all": "全部 {n} 项",
+    "hide": "收起",
+    "close": "关闭",
+    "exitNote": "现在：让电脑屏幕熄灭，手机关掉 Wi-Fi 用蜂窝网络，在聊天里随便发一句话。收到回复就完成。",
+    "attention": "这一项没通过，只会暂停依赖它的事，其他照常。",
+    "nothing": "没有需要你现在处理的事项。",
+    "readyNote": "已选并验证的事项可以在手机上继续。断电、重启后解锁、新的系统权限或账号安全检查仍可能需要你回到电脑。",
+    "notEnabled": "未启用：{list}",
+    "notSaved": "没有保存：{why}",
+    "offline": "电脑未连接",
+    "unreachable": "没有连上电脑，稍后再试",
+    "needsSetup": "还没开始首次准备：请让 Agent 开始。",
+    "offlineAt": "电脑离线 · 最后同步 {at}"
+  },
+  "r.tg.idle": "转发给我自己",
+  "r.tg.sending": "正在转发给你…",
+  "r.tg.sent": "已转发到你的私聊",
+  "r.tg.failed": "没转发出去，点一下重试",
+  "r.tg.limited": "转发得太频繁了，过几分钟再试",
+  "r.tg.again": "这条刚转发过了",
   "rt.dead": "这台手机的自动登录已经失效：电脑那边解绑了它，或者它已经在另一个浏览器或主屏幕图标里登录。请扫码重新配对。",
   "pk.none": "没能用 Face ID 连回电脑：可能是取消了，也可能这台手机没有保存 Agent J 的 Face ID 记录（iPhone 要在设置里打开 iCloud 钥匙串才能保存）。请扫码重新配对。",
   "pk.notSaved": "Face ID 记录没存上，现在的配对照常能用。iPhone 要在「设置 → Apple 账户 → iCloud → 密码（钥匙串）」里打开它才能保存；打开后可以在菜单里点「设置 Face ID」再试。",

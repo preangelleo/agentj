@@ -11,9 +11,10 @@ import json
 from pathlib import Path
 
 DATA = Path(__file__).with_name("identity")
-VERSION = 8   # P82: owner-authorized customer-service bot management
+VERSION = 9   # P113 (0.18, ADR-A193): long tasks — preflight card, brief, CEO routing, report read-back
+# v8 (P82): owner-authorized customer-service bot management
 # v5 (P64): a workflow with a CEO is always dispatched — never run or edited by the main Agent; read-only reporting stays
-HASHES = {'en': '826f8d59e3992dafdcd8d205af644780d8c7a6cc5a33adb82cd2740b8381cfd2', 'zh': '61dd2b48fa72fa3b6d273ea7164591bd45cfe24ae40233a3c59e7dbe6cdf77ba'}
+HASHES = {'en': '651543e58b86d4eb93d92957d4d11509992d237954f84738067600f97661f008', 'zh': '5dd884f304179bb01ac5c879747c62a9af6bc4ad9dcebf7b8d674b5e97478ec4'}
 MECHANISMS = {"claude": "append-system-prompt", "codex": "developerInstructions", "opencode": "prompt_async.system"}
 
 class IdentityError(ValueError):
@@ -167,6 +168,42 @@ UPDATE_WEB_LINE = {
  'en': 'Upgrading Agent J on the computer does not refresh the phone/web page. Report the new and old computer versions and a plain self-check sentence, then ask the owner to tap the settings icon at the top right → "Update & refresh". A newer page only prompts; never silently reload while the owner is typing. /update receipts follow the effective appearance.language, including changes while the host is running.\n',
 }
 
+# P114 (ADR-A194): Agent J's own browser, sign-ins and good morning. Host line after the hashed core (core v8 unchanged).
+BROWSER_LINE = {
+    "zh": "Agent J 自带专用浏览器（本机私有资料夹，调试端口只开在 127.0.0.1）。要登录网站、自动化网页，或主人说「早上好」时，先读 "
+          "agentj-browser / agentj-good-morning 技能，用 `agentj browser …` 命令。网站是否登录只认 `agentj browser check` 的结果，你不能自己判定；"
+          "二维码只走手机登录卡，不要放进聊天，也不要索要密码、验证码或截图；不要读取或导出 cookie；调试地址只在本机用。登录不等于授权："
+          "发信、发布、付款、删除照旧走手机审批。安装完成、主人还没配网站时，用一句话提议先配 Gmail 或常用平台；主人说不用就别再提。\n",
+    "en": "Agent J has its own browser (a private profile on this computer; the debugging port is on 127.0.0.1 only). To sign in "
+          "to websites, automate the web, or when the owner says good morning, read the agentj-browser / agentj-good-morning skills "
+          "and use `agentj browser …`. Whether a site is signed in is decided only by `agentj browser check`, never by you. QR codes "
+          "go only to the phone sign-in card, never into chat; never ask for passwords, codes or screenshots; never read or export "
+          "cookies; the debugging endpoint stays on this computer. Being signed in is not permission: sending, publishing, paying and "
+          "deleting keep their phone approvals. Right after installation, when no site is set up yet, suggest Gmail or a platform the "
+          "owner uses in one sentence; drop it if they say not now.\n",
+}
+
+# P115 (P92 ADR-A196 + P91 ADR-A195, 0.18.0): first-run checklist and Google tools. Host line; core hashes unchanged.
+FIRST_RUN_LINE = {
+    "zh": "首次准备：主人第一次装好、两端配好后，主动提议「趁你在电脑前，把以后远程要用的事一次准备好」；主人同意才运行 "
+          "agentj setup checklist --resume --json（读 agentj-first-run skill），清单卡片会同时出现在手机和电脑网页上。只读用 "
+          "agentj setup checklist --json；主人说「我做完了」只运行 --check。要用/我不用/稍后只能由主人在卡片上点，你不能替主人标记或写就绪；"
+          "失败只暂停相关项，其他照常。只有清单显示已就绪才说「可以离开电脑」，并列出未启用的事项和仍可能要回电脑的情况。"
+          "Google：本版预装固定版本 gog，`agentj google status` 只读；Gmail 网页登录和 Google API 授权分开，API 一键授权在 0.18.1（读 agentj-google skill）。"
+          "绝不索要或转述 token、授权码、回调网址、client JSON 或密码，不替主人点 Google 未验证应用的风险继续，也不点 Submit for verification。\n",
+    "en": "First run: after the first install with both remotes paired, offer to prepare everything for remote use while the "
+          "owner is at the computer; only with their go-ahead run agentj setup checklist --resume --json (read the "
+          "agentj-first-run skill). The checklist card shows on the phone and the computer's browser. Read-only: agentj setup "
+          "checklist --json; when the owner says they are done, run --check only. Use / I won't use this / Later are the "
+          "owner's taps on the card: never mark choices or readiness yourself. A failure pauses only its dependants. Say they "
+          "can leave the computer only when the checklist is ready, and list unused items and reasons they may need to return. "
+          "Google: this version pre-installs a pinned gog; `agentj google status` is read-only; Gmail website sign-in and Google "
+          "API authorization are separate, and the guided API authorization arrives in 0.18.1 (read the agentj-google skill). "
+          "Never ask for or repeat tokens, authorization codes, callback URLs, client JSON or passwords; never click through "
+          "Google's unverified-app warning for the owner, and never Submit for verification.\n",
+}
+
+
 def prompt(cfg: dict) -> str:
     verify_core()
     lang = language_of(cfg)
@@ -174,14 +211,28 @@ def prompt(cfg: dict) -> str:
     extra = cfg.get("instructions") or ""
     if not isinstance(extra, str):
         raise IdentityError("agent.instructions must be append-only text")
-    return (core + ("" if core.endswith("\n") else "\n") + LANGUAGE_LINE[lang] + ELEVATE_LINE[lang] + SUPPORT_LINE[lang] + OPERATIONS_LINE[lang] + SILENCE_LINE[lang] + SHARED_CODEX_LINE[lang] + PAIRING_LINE[lang] + ONBOARDING_LINE[lang] + MULTI_USER_LINE[lang] + BOT_RECOVERY_LINE[lang] + UPDATE_WEB_LINE[lang]
-            + ("\n<User preferences — append only; core takes precedence>\n" + extra + "\n</User preferences>\n" if extra else ""))
+    return (core + ("" if core.endswith("\n") else "\n") + LANGUAGE_LINE[lang] + ELEVATE_LINE[lang] + SUPPORT_LINE[lang] + OPERATIONS_LINE[lang] + SILENCE_LINE[lang] + SHARED_CODEX_LINE[lang] + PAIRING_LINE[lang] + ONBOARDING_LINE[lang] + MULTI_USER_LINE[lang] + BOT_RECOVERY_LINE[lang] + UPDATE_WEB_LINE[lang] + BROWSER_LINE[lang] + FIRST_RUN_LINE[lang]
+            + ("\n<User preferences — append only; core takes precedence>\n" + extra + "\n</User preferences>\n" if extra else "")
+            + private_block(cfg))
+
+
+def private_block(cfg: dict) -> str:
+    """P116 (B11): the owner's private instructions file, appended last (below the core and every harness rule)."""
+    from .private_instructions import block
+    return block(cfg)
+
+def mechanism(cfg: dict, harness: str) -> str:
+    # P116 (B11): a shared Claude session is the owner's process; it reads the identity through native hook context.
+    if harness == "claude" and cfg.get("session_mode") == "shared":
+        return "hook.additionalContext"
+    return MECHANISMS[harness]
+
 
 def expected(cfg: dict, harness: str) -> dict:
     text = prompt(cfg)
     lang = language_of(cfg)
     return {"version": VERSION, "language": lang, "core_sha256": HASHES[lang],
-            "prompt_sha256": hashlib.sha256(text.encode()).hexdigest(), "mechanism": MECHANISMS[harness],
+            "prompt_sha256": hashlib.sha256(text.encode()).hexdigest(), "mechanism": mechanism(cfg, harness),
             "working_root_sha256": hashlib.sha256(str(working_root(cfg)).encode()).hexdigest()}
 
 def audit(cfg: dict, harness: str, st, session_id=None) -> None:

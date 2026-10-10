@@ -104,6 +104,8 @@ def _zh(f: dict) -> str:
         "",
         "**平时怎么用**",
         "- 直接打字告诉它要做什么。",
+        "- 长期要做的事（比如「每周一做一份竞品简报」）说一次就行：它先自查会什么，只发一张开工卡给你确认，之后按时自己跑、自己交付；"
+        "问一句「你会什么」，手机上会弹出能力页。",
         "- 需要你点头时，手机上会弹出来问你：按住「长按批准」才算批准（点一下不算），点「拒绝」就拒绝；2 分钟不按就当拒绝。"
         "花钱、删除、对外发送、改密码或密钥、改价格，这五类事每一次都要你单独「长按批准这一条」。",
         "- 红色的「全部停下」：马上让它停手，定时任务也停。要继续，在手机上点「恢复」，或者在电脑上运行 `agentj resume`"
@@ -176,6 +178,8 @@ def _en(f: dict) -> str:
         "",
         "**Every day**",
         "- Just type what you want done.",
+        "- Recurring work (say, \"a competitor brief every Monday\") is one sentence: it checks what it can do, sends you one "
+        "start card to confirm, then runs and delivers on schedule. Ask \"what can you do\" to see its capability page.",
         "- Whenever it needs your OK, your phone asks you: press and hold \"Hold to approve\" to approve (a tap is not "
         "enough), or tap \"Deny\". No answer within 2 minutes counts as deny. Spending money, deleting, sending anything "
         "out, changing passwords or keys, and changing prices always need your OK one at a time (\"Hold to approve this "

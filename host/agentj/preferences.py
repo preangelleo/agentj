@@ -86,10 +86,13 @@ def validate(doc,raw=''):
         if 'enum' in m and v not in m['enum']: raise ConfigError(k,'allowed: '+', '.join(m['enum']),line)
         if isinstance(v,str):
             if any(ord(c)<32 and not (k=='agent.instructions' and c in '\n\t') for c in v) or len(v)>m.get('maxLength',1000): raise ConfigError(k,'invalid characters or length',line)
-            if m.get('pattern') and not re.fullmatch(m['pattern'],v): raise ConfigError(k,'expected environment variable NAME, never a secret',line)
+            if m.get('pattern') and not re.fullmatch(m['pattern'],v): raise ConfigError(k,'expected '+m['patternHint'] if m.get('patternHint') else 'expected environment variable NAME, never a secret',line)
         if typ in ('integer','number') and not m.get('minimum',-math.inf)<=v<=m.get('maximum',math.inf): raise ConfigError(k,f"allowed range: {m.get('minimum')}..{m.get('maximum')}",line)
     cats = get(doc, 'updates.skill_categories', [])
     if len(cats)>4 or any(c not in ('content','app','commerce','general') for c in cats): raise ConfigError('updates.skill_categories','allowed: content, app, commerce, general')
+    pif = get(doc, 'agent.private_instructions_file', '')
+    if pif and not (pif.startswith('/') or pif.startswith('~/')):
+        raise ConfigError('agent.private_instructions_file', 'use an absolute path or ~/path (a local file, never a URL)')
     root = get(doc, 'agent.working_root', '')
     if root and not (os.path.isabs(root) or root == '~' or root.startswith('~/')):
         raise ConfigError('agent.working_root', 'use an absolute path or ~/path')
@@ -134,7 +137,7 @@ def validate(doc,raw=''):
     ids = set()
     if len(groups) > 20: raise ConfigError('telegram.groups', 'maximum 20 groups')
     for row in groups:
-        if (not isinstance(row, dict) or set(row) - {'id','members','profile','label'}
+        if (not isinstance(row, dict) or set(row) - {'id','members','profile','label','names'}
                 or not isinstance(row.get('id'), str) or not re.fullmatch(r'-[1-9][0-9]{0,18}', row['id'])
                 or row['id'] in ids):
             raise ConfigError('telegram.groups', 'unique negative chat id string required')
@@ -148,6 +151,18 @@ def validate(doc,raw=''):
         label = row.get('label','Telegram group')
         if not isinstance(label,str) or len(label)>64 or any(ord(c)<32 for c in label):
             raise ConfigError('telegram.groups', 'plain label up to 64 characters required')
+        names = row.get('names', {})   # P118 (B2): how each allowlisted sender is called; only listed numeric IDs
+        if (not isinstance(names, dict) or len(names) > 100
+                or any(not re.fullmatch(r'[1-9][0-9]{0,18}', k) or int(k) not in members for k in names)
+                or any(not isinstance(v, str) or not v.strip() or len(v) > 32 or any(ord(c) < 32 for c in v) for v in names.values())):
+            raise ConfigError('telegram.groups', 'names: {"<allowlisted numeric sender id>": "plain name up to 32 characters"}')
+    domains = get(out, 'telegram.private_domains', [])
+    if len(domains) > 50 or any(not isinstance(d, str) or len(d) > 253
+                                or not re.fullmatch(r'(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z][a-z0-9-]{0,62}', d) for d in domains):
+        raise ConfigError('telegram.private_domains', 'up to 50 lowercase domain names like example.com')
+    from .tg_owner_cmds import problem as owner_cmd_problem
+    why = owner_cmd_problem(get(out, 'telegram.owner_commands', []))
+    if why: raise ConfigError('telegram.owner_commands', why)
     from .proxy import url_problem, bypass_problem   # P59: direct proxy values; never echo the value (it may hold a password)
     for field in ('https','http'):
         why=url_problem(field,get(out,'proxy.'+field,''))

@@ -1,0 +1,77 @@
+{
+  "schema_version": 1,
+  "task_id": "brief-demo",
+  "revision": 1,
+  "goal": "每周一09:00生成三家竞品的公开资料简报；本机保存并在主人手机呈现。",
+  "owner_request_ref": "requests/demo.json",
+  "workflow_id": "competitor-brief",
+  "context_refs": [
+    "inputs/competitors.json"
+  ],
+  "acceptance": [
+    {
+      "id": "coverage",
+      "criterion": "三家竞品各有至少两条可追溯来源；不确定事项明确标出",
+      "evidence_expected": "报告链接与本机核查记录"
+    },
+    {
+      "id": "delivery",
+      "criterion": "初始配置后无新主人输入，周一09:00时区明确；本机Markdown和主人手机可读",
+      "evidence_expected": "运行记录、手机读回与审计"
+    }
+  ],
+  "capabilities": [
+    {
+      "id": "public-research",
+      "registry_revision": 1,
+      "required": true
+    },
+    {
+      "id": "brief-cli",
+      "registry_revision": 1,
+      "required": true
+    }
+  ],
+  "red_lines": [
+    "不付费、不删除、不外发、不改凭据、不改价；任何此类操作逐条申请。",
+    "只读公开资料，不读取私人账户内容。"
+  ],
+  "deliverables": [
+    {
+      "path": "reports/weekly.md",
+      "format": "markdown",
+      "audience": "owner"
+    }
+  ],
+  "reporting": [
+    {
+      "when": "milestone",
+      "message": "资料已核查，正在整理"
+    },
+    {
+      "when": "delivery",
+      "message": "简报已交付"
+    },
+    {
+      "when": "blocked",
+      "message": "说明缺口与安全替代"
+    }
+  ],
+  "plan": {
+    "kind": "weekly",
+    "schedule_task_ref": "competitor-brief/task.json",
+    "timezone": "Asia/Tokyo",
+    "human_enable_required": true
+  },
+  "failure_policy": {
+    "safe_fallback": "资料不足标 attention；不用可选付费服务；重试2次后仅冻结受影响分支",
+    "retry_limit": 2,
+    "pause_dependent_only": true
+  },
+  "confirmation": {
+    "mode": "signed",
+    "request_id": "demo-confirm",
+    "receipt_ref": "receipts/demo.json",
+    "scope_digest": "0000000000000000000000000000000000000000000000000000000000000000"
+  }
+}

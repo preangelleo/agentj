@@ -20,3 +20,6 @@ if not os.environ.get("XDG_CONFIG_HOME"):
 # P57: `serve` links the bundled skills into ~/.claude/skills etc. (personalize.ensure) — never into the developer's real home
 # from a test (the tests run serve with the real HOME); test_p57_agent tests ensure() itself with a patched home.
 os.environ.setdefault("AGENTJ_SKILL_LINK", "off")
+
+# P115: serve never pre-installs the Google CLI from a test (google.ensure_background).
+os.environ.setdefault("AGENTJ_GOOGLE_PREINSTALL", "off")

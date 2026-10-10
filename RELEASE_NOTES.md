@@ -1,6 +1,6 @@
-# Agent J 0.17.4a1 release notes
+# Agent J 0.18.0a1 release notes
 
-Host 0.17.4a1 / install 0.21.5; phone-web scope.
+Host 0.18.0a1 / install 0.21.6; phone-web scope.
 Phone parity must pass --strict. Full Android/Telegram parity is incomplete.
 Full Android/Telegram parity is incomplete.
 No APK is included in this release. Android source is for review, not a released app.
@@ -8,16 +8,18 @@ No APK is included in this release. Android source is for review, not a released
 Publication status: local preparation only. Live site verification is DEFERRED until
 the public commit and tag are pushed, the site is deployed, and cold installation passes.
 
-On publication failure, restore v0.17.3a1 host/site/phone and recorded Dashboard baseline. C static baseline, A front Worker/site/install/package, B phone web and web Worker including /.aj/rt Cookie routes; no new D1 migration or relay backend change.
+On publication failure, restore v0.17.4a1 host/site/phone and the recorded Dashboard baseline. Revalidate C static Dashboard baseline; publish A front Worker/site/signed downloads/install guide, then B phone web and web Worker including /.aj/rt Cookie routes. No new D1 migration or relay backend change.
 ## Changes
 
-- iPhone automatic sign-in: wrapped device-key storage and rotating first-party HttpOnly renewal Cookie after Safari evicts page storage; revoke invalidates it.
-- The web Worker sees the renewal credential during recovery; privacy disclosure records this approved trust boundary. Existing affected phones require one pairing or Face ID recovery.
-- Correct quota-window guidance, replay revised history after reconnect, active-language update receipts and narrow websockets callback noise handling; version diagnostics and dependency cap <18.
-- Cloud read-aloud reports safe actionable failures; iOS gesture-unlocked playback and one host-memory synthesis cache avoid repeated billing after blocked playback.
-- P108 is excluded. COREv8 unchanged.
+- Long tasks: persistent plan/approval/checkpoints, bounded capabilities and truthful browser/Google evidence; identity COREv9.
+- Browser automation, opt-in awake controls, login checks/QR approval and good-morning; first-run checklist and pinned isolated Google CLI. Full Google OAuth remains 0.18.1.
+- Shared Claude private instruction files and native controls; Telegram provenance, owner/family/proxy ordering, albums, forward-only cursor and one-poller cutover. Owner-command executables remain private and their output stays outside model/history/logs.
+- Repair non-accept writable shared Claude inbound layers with private backups, respecting repository-root local settings and legacy cwd layers. Managed policy is read-only; older sessions require a new session or owner-initiated /clear.
+- Retain all P124 sign-in, quota, read-aloud and WebKit fixes; P108 excluded.
+- 中文：整合长程任务、浏览器/保活/早安、首装清单与Google工具、共享原生会话及Telegram切换；修可写入站策略并提示新会话生效，managed只读。完整Google OAuth留0.18.1。
 
-- Physical iPhone Safari/Home Screen Cookie persistence and Face ID remain pending; WebKit/Chromium evidence is not physical acceptance.
+- No live founder/Claude/Telegram cutover is claimed. Preserve the Herdr diagnostic route and qualify a new native session before switching the same bot with drain fencing and monotonic cursor import.
+- Physical iPhone/Android/macOS acceptance remains pending. Local WebKit/Chromium and cloud/service-manager fixtures do not establish physical or founder cutover readiness.
 
 ## Material acceptance limits
 

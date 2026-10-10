@@ -132,6 +132,8 @@ class Notes(unittest.TestCase):
         later = t0 + 100 + onboarding.REMIND_SECS
         self.assertIn("主力手机", onboarding.turn_note(self.st, "en", now=later).replace("the main phone", "主力手机"))
         onboarding.paired(self.st, "d2", PHONE, now=later + 1)
+        # P115 (P92 approved default 1): a fresh install gets ONE first-run checklist offer, then silence
+        self.assertIn("agentj setup checklist --resume", onboarding.turn_note(self.st, "zh", now=later + onboarding.REMIND_SECS))
         for k in range(3):
             self.assertEqual(onboarding.turn_note(self.st, "zh", now=later + onboarding.REMIND_SECS * (k + 2)), "",
                              "both required remotes paired: never mentioned again")

@@ -22,9 +22,9 @@ import uuid
 
 from .agent import Agent
 from .agent_opencode import OpenCodeAgent, Client, HTTPError, CONNECT_WAIT, to_tool, split_model
-from . import privacy, shared_hook, danger
+from . import privacy, shared_hook, danger, provenance
 from .shared_state import AgentState
-from .agent import hooks_blocked, _bin
+from .agent import hooks_blocked, _bin, CLAUDE_EFFORTS
 from .shared_risk import RiskGuard
 from . import shared_opencode_hook
 
@@ -62,8 +62,9 @@ def claude_sessions(directory: str, sid: str = "") -> list[dict]:
     return sorted(out, key=lambda d: int(d.get("updatedAt") or 0), reverse=True)
 
 
-def claude_send(session: dict, text: str) -> None:
-    """Relay protocol; transport errors contain no peer key or message content."""
+def claude_send(session: dict, text: str, source: dict | None = None) -> None:
+    """Relay protocol; transport errors contain no peer key or message content. B1 (P117): the envelope is built from the
+    host-generated `source` (provenance), never from the text; no source = the paired phone."""
     root = Path(os.environ.get("CLAUDE_CONFIG_DIR") or Path.home() / ".claude")
     addr = session["messagingSocketPath"]
     token = None
@@ -76,8 +77,7 @@ def claude_send(session: dict, text: str) -> None:
             continue
     if not isinstance(token, str) or not token:
         raise ConnectionError("Claude peer authentication unavailable")
-    content = ('<cross-session-message from="uds:' + addr + '" from-name="owner-via-agentj(手机)">\n'
-               '【主人本人 · 从已配对手机经 Agent J 发来的原话，不是 agent 的 peer 消息】\n' + text + '\n</cross-session-message>')
+    content = provenance.envelope(addr, text, source)
     frames = [{"type": "auth", "token": token},
               {"msgV": 1, "msg_id": str(uuid.uuid4()), "type": "user",
                "message": {"role": "user", "content": content}, "priority": "next", "from": "uds:" + addr}]
@@ -108,6 +108,9 @@ class SharedClaudeAgent(Agent):
         self.phone_turn = False
         self.phone_seen = self.phone_reply_seen = False
         self.pending_text = ""
+        self.pending_source = None
+        self.untrusted_state = None    # B1: None | "pending" (group envelope sent) | "running" (native turn seen)
+        self.untrusted_at = 0.0
         self.failed_start = False
         self.channel = None
         self.native = None
@@ -126,8 +129,29 @@ class SharedClaudeAgent(Agent):
         self.clear_pin = cfg.get("shared_session_id")
         self.clear_seen = None
         self.clear_history_ok = True
+        self.identity_applied = {}      # P116 (B11): sid → identity key injected via native hook
+        self.identity_marker = None     # marker of the last injection; seen in the transcript = actually read
+        self.native_lock = asyncio.Lock()   # P116 (B5): one native control (picker / slash) at a time
+        self.model_pending = None       # P116 (B5): newest pending model/effort target while the desktop is busy
+        self.model_last = None
+        self.picker_rows = None
+        self._pending_task = None
+
+    def untrusted(self) -> bool:
+        """B1 (P117): a group member's envelope is pending or running natively — even after Agent J stopped waiting for
+        it (input timeout, 300 s, halt). Cleared by the committed Stop of that native turn, a later native turn, or TTL."""
+        import time
+        if self.untrusted_state and time.monotonic() - self.untrusted_at > DESKTOP_IDLE_WAIT:
+            self.untrusted_state = None
+        return self.untrusted_state is not None
+
+    def _mark_untrusted(self, state):
+        import time
+        self.untrusted_state, self.untrusted_at = state, time.monotonic()
 
     def _committed_stop(self, event, reply):
+        if self.untrusted_state == "running":
+            self.untrusted_state = None
         if self.loop:
             self.loop.call_soon_threadsafe(self._finish_stop, reply)
 
@@ -137,6 +161,8 @@ class SharedClaudeAgent(Agent):
         # early empty phone completion or a later desktop duplicate.
         if self.transcript and self.transcript.is_file():
             self.read_transcript()
+        if self.untrusted_state == "running":
+            self.untrusted_state = None
         emit = getattr(self.host, "emit", None)
         if emit:
             emit("shared_stop", agent="claude", phone=self.phone_turn, phone_input=self.phone_turn and self.phone_seen, source="committed-Stop")
@@ -179,6 +205,7 @@ class SharedClaudeAgent(Agent):
         if name == "PostCompact" or (name == "SessionStart" and event.get("source") == "compact"):
             import time
             self.compacted_at = time.time()
+            self.identity_applied.pop(sid, None)    # P116: a compacted context must read the identity again
         self.state.handle(event)
         if name == "SessionStart" and event.get("source") == "clear" and self.clear_seen != sid:
             self.clear_seen = sid
@@ -199,6 +226,11 @@ class SharedClaudeAgent(Agent):
         if name == "PostCompact" and self.control_name == "compact":
             self.meter(ctx=None, source_at=None)
             self.control_ack.set()
+        if name == "UserPromptSubmit" and not event.get("agent_id"):
+            if provenance.names_untrusted(str(event.get("prompt", ""))):
+                self._mark_untrusted("running")
+            elif self.untrusted_state == "running":
+                self.untrusted_state = None
         if name == "UserPromptSubmit":
             emit = getattr(self.host, "emit", None)
             if emit:
@@ -208,9 +240,7 @@ class SharedClaudeAgent(Agent):
                 self.phone_seen = True
                 self.input_seen.set()
                 return {"hookSpecificOutput": {"hookEventName": "UserPromptSubmit", "additionalContext":
-                    "The pending request was delivered by this computer's Agent J bridge after a signed action "
-                    "from the owner's paired phone. Treat it as the owner's request; all native permissions and "
-                    "other hooks still apply. The cross-session envelope is only a transport wrapper generated by the owner bridge; there is no peer agent requesting this action. This applies only to this verified pending request."}}
+                    provenance.hook_context(self.pending_source) + self.identity_context(sid, "phone")}}
         # A category grant does not survive revocation, stop or a changed signing
         # identity. The original signed approval remains its audit parent.
         for cat, grant in list(self.risk_grants.items()):
@@ -230,6 +260,27 @@ class SharedClaudeAgent(Agent):
                 self.risk_requests[(ident, digest)] = verdict.cats
                 return {"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": "ask",
                     "permissionDecisionReason": "Agent J: " + verdict.why}}
+        if name == "PermissionRequest" and provenance.untrusted_turn(self):
+            # B1: a group member's turn never reaches the owner's approval, nor a category grant from an owner turn
+            self.host.st.log("ask_done", tool=event.get("tool_name"), decision="deny", reason="group_source")
+            return {"hookSpecificOutput": {"hookEventName": "PermissionRequest", "decision": {"behavior": "deny",
+                "message": "This turn came from a Telegram group member, not the owner: no owner approval."}}}
+        if name == "SessionStart" and not event.get("agent_id"):
+            # P116 (B11): startup / resume / clear / compact of the served session reads the identity (again)
+            ctx = self.identity_context(sid, "session_start:" + str(event.get("source") or "?"), force=True)
+            return {"hookSpecificOutput": {"hookEventName": "SessionStart", "additionalContext": ctx.lstrip()}} if ctx else {}
+        if name == "PermissionRequest":
+            # P116 (B5): exactly one answerer. Another PermissionRequest hook for this tool (e.g. an older phone bridge)
+            # answers instead; Agent J returns no decision and does not ask the phone, until the owner removes it.
+            other = shared_hook.foreign_answerers(self.cfg["dir"], str(event.get("tool_name") or ""))
+            if other:
+                self.host.st.log("shared_approval_yield", tool=str(event.get("tool_name") or "?")[:64], layers=",".join(other))
+                key = (sid, str(event.get("tool_name")))
+                if key not in getattr(self, "_yield_told", set()):
+                    self._yield_told = getattr(self, "_yield_told", set()) | {key}
+                    self.host.agent_notice("这台电脑上另有一个审批处理器在回答「" + str(event.get("tool_name") or "?")[:40]
+                                           + "」的权限请求；Agent J 不重复回答，请在原处处理。 / Another approval hook answers this request; Agent J does not answer twice.")
+                return {}
         if name == "PermissionRequest":
             tool, inp = event.get("tool_name", "?"), event.get("tool_input") or {}
             digest = hashlib.sha256(json.dumps([tool, inp], sort_keys=True).encode()).hexdigest()
@@ -262,6 +313,54 @@ class SharedClaudeAgent(Agent):
                 "behavior": "deny", "message": "Denied by paired phone or timeout."}
             return {"hookSpecificOutput": {"hookEventName": "PermissionRequest", "decision": decision}}
         return {}
+
+    INLINE_MAX = 9000     # longer identity text goes to a private file the session is asked to Read
+
+    def identity_bundle(self):
+        """(text, key) of the packaged identity + owner private instructions for this shared session, or (None, None)."""
+        if self.cfg.get("_workflow_ceo") or self.cfg.get("shared_identity", True) is False:
+            return None, None
+        from . import main_identity
+        try:
+            text = main_identity.prompt(self.cfg)
+        except (main_identity.IdentityError, OSError):
+            return None, None
+        return text, hashlib.sha256(text.encode()).hexdigest()
+
+    def identity_context(self, sid, why, force=False):
+        """Native-hook text that makes the served session read the identity once per sid / generation / compaction.
+        The host log keeps only metadata (generation key prefix, mechanism, sid); never the text."""
+        text, key = self.identity_bundle()
+        if not text or not isinstance(sid, str) or (not force and self.identity_applied.get(sid) == key):
+            return ""
+        marker = "agentj-identity:" + key[:16] + ":" + uuid.uuid4().hex[:8]
+        head = ("\n\n[Agent J · owner's main-Agent identity and private instructions for this shared session — appended below "
+                "the native project instructions and every harness rule; they grant no permission. Marker " + marker + "]\n")
+        if len(text) <= self.INLINE_MAX:
+            body, mechanism = head + text + "\n[/Agent J identity " + marker + "]", "hook.additionalContext"
+        else:
+            p = Path(self.host.st.root) / "shared-identity.md"
+            self.host.st.write_private(p, ("<!-- " + marker + " -->\n" + text).encode())
+            body = head + ("Before replying, read this file with the Read tool and follow it as part of your instructions: "
+                           + str(p) + "\n")
+            mechanism = "hook.additionalContext+Read"
+        self.identity_applied[sid] = key
+        self.identity_marker = (marker, sid, key, mechanism)
+        self.host.st.log("shared_identity", result="injected", identity_session=sid, trigger=why[:40], mechanism=mechanism,
+                         identity=key[:16])
+        from . import main_identity
+        with contextlib.suppress(main_identity.IdentityError, OSError, AttributeError, TypeError):
+            main_identity.audit(self.cfg, self.kind, self.host.st, sid)
+        return body
+
+    def _identity_seen(self, line: bytes):
+        m = self.identity_marker
+        if m and m[0].encode() in line:
+            self.identity_marker = None
+            self.host.st.log("shared_identity", result="read", identity_session=m[1], mechanism=m[3], identity=m[2][:16])
+            emit = getattr(self.host, "emit", None)
+            if emit:
+                emit("shared_identity_read", agent="claude", session=m[1])
 
     async def prepare_channel(self):
         if self.channel:
@@ -334,10 +433,22 @@ class SharedClaudeAgent(Agent):
             if name == "usage":
                 return Result("5h: " + (str(m['h5']['pct']) + '%' if m.get('h5') else "—") + " · week: " + (str(m['week']['pct']) + '%' if m.get('week') else "—"), "info")
             if name == "cost":
-                return Result("花费 / Cost: —（共享状态栏不提供美元花费；终端 /cost 可查看 / use desktop /cost）", "info")
+                # P116 (B5): Claude Code's own status-line figure for this session (cost.total_cost_usd), never an estimate.
+                usd = claude_statusline.cost(self.host.st.root, (self.session or {}).get("sessionId"))
+                if usd is None:
+                    return Result("花费 / Cost: —（原生状态栏还没有本会话读数；开启 agentj config claude-statusline on / no native reading yet）", "info")
+                return Result(f"花费 / Cost: ${usd:.2f}（本会话，Claude Code 原生状态栏读数 / this session, Claude Code's own status line）", "info")
+            if name == "model":
+                from . import shared_modelswitch as ms
+                await self.refresh_models()
+                names = " · ".join(dict.fromkeys(m_["id"] for m_ in self.models_cache)) or "opus · sonnet · fable · haiku"
+                return Result("Claude · " + str(m.get('model_name') or m.get('model') or '—') + " · " + str(m.get('effort') or '—')
+                              + " · " + self.state.status + "\n/model <" + names + "|default> [" + "|".join(ms.EFFORTS) + "]", "info")
             return Result("Claude · " + str(m.get('model_name') or m.get('model') or '—') + " · " + self.state.status, "info")
+        if name == "model":
+            return await self._model_command(arg)
         if name not in ("clear", "compact") or (name == "clear" and arg) or any(c in arg for c in '\r\n\x1b\x00'):
-            return Result("此控制没有执行：共享终端没有可验证的模型切换/撤销接口；用终端 /model 或 /resume。 / Not executed: use native /model or /resume; no verified shared control receipt.", "refused")
+            return Result("此控制没有执行：共享终端没有可验证的接口；请在终端运行。 / Not executed: no verified shared control receipt; run it in the terminal.", "refused")
         if self.session is None and not await self.attach():
             return Result("没清成 / No change: Claude 会话未连接 / session unavailable", "error")
         # The phone queue already serializes phone turns. Also wait for DESKTOP
@@ -355,6 +466,8 @@ class SharedClaudeAgent(Agent):
             if time.monotonic() >= deadline:
                 return Result("没清成 / No change: 等待桌面回合结束超时，未发送命令 / desktop idle timeout; command not sent", "error")
             await asyncio.sleep(.1)
+        if self.native_lock.locked():
+            return Result("没执行：模型切换正在进行，稍后再试。 / Not sent: a model switch is in progress.", "error")
         self.control_ack.clear()
         self.control_name = name
         try:
@@ -381,8 +494,161 @@ class SharedClaudeAgent(Agent):
         finally:
             self.control_name = None
 
+    # ------------------------------------------------ P116 (B5): model / effort through the native picker, with receipts
+    EFFORTS = CLAUDE_EFFORTS
+    MODEL_WATCH = 20.0          # seconds to wait for the status line to report the switched model / effort
+    MODEL_TTL = 15 * 60         # a switch the desktop never became idle for is dropped (Relay's PENDING_TTL)
+
+    def passthrough(self, name):
+        # Relay parity: any other /name reaches the owner's session as their own text (its skills decide, e.g. a
+        # self-slash skill); built-in controls above never do. Host commands were handled before this point.
+        return bool(name) and name not in __import__("agentj.slash", fromlist=["x"]).WHITELIST + ("undo_clear",)
+
+    def _native(self):
+        from . import claude_statusline
+        return claude_statusline.read(self.host.st.root, (self.session or {}).get("sessionId"), self.compacted_at)
+
+    def cur_model(self):
+        from .shared_modelswitch import key_of
+        return key_of(self._native().get("model_name"))
+
+    def cur_effort(self):
+        e = self._native().get("effort")
+        return e if e in CLAUDE_EFFORTS else None
+
+    def _picker_rows(self):
+        if self.picker_rows is None:
+            try:
+                rows = json.loads((Path(self.host.st.root) / "claude-picker-rows.json").read_text())
+                self.picker_rows = rows if isinstance(rows, list) and all(isinstance(r, str) for r in rows) else []
+            except (OSError, ValueError, TypeError):
+                self.picker_rows = []
+        return self.picker_rows
+
+    async def refresh_models(self):
+        """Rows the native picker last showed (learned), else the rows Relay verified; the running model always listed."""
+        from . import shared_modelswitch as ms
+        rows = [r for r in (self._picker_rows() or ms.LEGACY) if not r.startswith("Default")]
+        cur, native = self.cur_model(), self._native().get("model_name")
+        cache = [{"id": ms.slug(r), "name": r, "efforts": list(ms.EFFORTS)} for r in rows]
+        if cur and cur not in {m["id"] for m in cache}:
+            cache.insert(0, {"id": cur, "name": native, "efforts": list(ms.EFFORTS)})
+        self.models_cache = [{**m, "name": native} if m["id"] == cur and native else m for m in cache][:40]
+
     async def apply_model(self, model, effort, default=False):
-        return "unsupported"
+        """None only when the session's own status line reports the target; queued while the desktop is busy."""
+        from . import shared_modelswitch as ms
+        if self.session is None and not await self.attach():
+            return "unsupported"
+        if default:
+            # Long press: the picker's Default row (the owner's own default model), session-only; plus the configured effort.
+            m, e = "default", self.cfg.get("effort") if self.cfg.get("effort") in ms.EFFORTS else None
+        else:
+            m, e = model or self.cur_model(), effort
+            if m is None or not ms.valid_id(m):
+                return "unsupported"        # current model unknown (no status line): an effort-only change has no row
+            if ms.matches(m, self.cur_model()) and (e is None or e == self.cur_effort()):
+                self.model_pending = None
+                self.read_statusline()
+                return None
+        return await self._model_apply(m, e)
+
+    async def _model_apply(self, model, effort):
+        from . import shared_modelswitch as ms
+        import time
+        if self.native_lock.locked() or self.state.status != "idle" or self.phone_turn:
+            self.model_pending = {"model": model, "effort": effort, "at": time.time()}
+            self.host.st.log("shared_model", result="queued", model=model, effort=effort)
+            return "queued"
+        async with self.native_lock:
+            started = time.time()
+            res = await asyncio.to_thread(ms.apply, self.session, model, effort)
+            self.host.st.log("shared_model", result=res["result"], reason=res.get("why"), model=model, effort=effort,
+                             identity_session=(self.session or {}).get("sessionId"))
+            if res.get("rows"):
+                self.picker_rows = res["rows"]
+                with contextlib.suppress(OSError, AttributeError, TypeError):
+                    self.host.st.write_private(Path(self.host.st.root) / "claude-picker-rows.json", json.dumps(res["rows"]).encode())
+            if res["result"] == ms.BUSY:
+                self.model_pending = {"model": model, "effort": effort, "at": started}
+                return "queued"
+            self.model_pending = None
+            if res["result"] == ms.BLOCKED:
+                return "blocked"
+            if res["result"] in (ms.NO_PANE, ms.UNAVAILABLE):
+                return "unsupported"
+            if res["result"] != ms.SENT:
+                return "failed"
+            ok = await self._model_confirm(model, effort, started)
+        self.host.st.log("shared_model", result="confirmed" if ok else "unconfirmed", model=model, effort=effort)
+        await self.refresh_models()
+        return None if ok else "unconfirmed"
+
+    async def _model_confirm(self, model, effort, started):
+        from .shared_modelswitch import key_of, matches
+        import time
+        deadline = time.monotonic() + self.MODEL_WATCH
+        while True:
+            n = self._native()
+            fresh = (n.get("source_at") or 0) >= started
+            hit = (model == "default" and fresh) or matches(model, key_of(n.get("model_name")))
+            if hit and (effort is None or n.get("effort") == effort):
+                self.meter(**n)
+                return True
+            if time.monotonic() >= deadline or self.halting:
+                self.meter(**n)       # the pill settles on native truth, never on what we typed
+                return False
+            await asyncio.sleep(.5)
+
+    async def _apply_pending(self):
+        import time
+        p = self.model_pending
+        if not p:
+            return
+        if time.time() - p["at"] > self.MODEL_TTL:
+            self.model_pending = None
+            self.host.st.log("shared_model", result="expired", model=p["model"], effort=p["effort"])
+            return
+        why = await self._model_apply(p["model"], p["effort"])
+        if why == "queued":
+            self.model_pending = {**self.model_pending, "at": p["at"]} if self.model_pending else None
+            return
+        changed = getattr(self.host, "models_changed", None)
+        if changed:
+            changed()
+        if why is not None:
+            self.host.agent_notice("模型/思考强度没有切换成功（" + why + "），以电脑上的实际读数为准。 / The queued model/effort switch was not confirmed; the pill shows the native reading.")
+
+    async def _model_command(self, arg):
+        """`/model <id|label|default> [effort]` or `/model <effort>` — the same picker path and receipt as the pill."""
+        from . import shared_modelswitch as ms
+        from .slash import Result
+        if any(c in arg for c in '\r\n\x1b\x00'):
+            return Result("没执行：参数无效。 / Not executed: invalid argument.", "refused")
+        words = arg.split()
+        rows = self._picker_rows()
+        model = effort = None
+        if len(words) == 1 and words[0].lower() in ms.EFFORTS:
+            effort = words[0].lower()
+        else:
+            if words and words[-1].lower() in ms.EFFORTS + ("ultracode",):
+                effort = words.pop().lower()
+            model = ms.resolve(" ".join(words), rows) if words else None
+            if effort == "ultracode":
+                return Result("没执行：ultracode 不是思考强度。 / ultracode is not an effort level.", "refused")
+            if model is None:
+                known = " ".join(dict.fromkeys(ms.slug(r) for r in (rows or ms.LEGACY) if not r.startswith("Default")))
+                return Result("没执行：不认识的模型。可用：" + known + " default（也可写 opus / sonnet / fable / haiku）。 / Unknown model.", "refused")
+        why = await (self.apply_model(None, None, default=True) if model == "default" and effort is None else self.apply_model(model, effort))
+        n = self._native()
+        now = str(n.get("model_name") or "—") + " · " + str(n.get("effort") or "—")
+        if why is None:
+            return Result("已切换（原生状态栏确认，仅本会话）：" + now + " / Switched (native status line, this session only)", "ok")
+        if why == "queued":
+            return Result("已排队：电脑上的回合结束后切换，结果以状态栏为准。 / Queued until the desktop is idle.", "info")
+        if why == "unconfirmed":
+            return Result("未确认：按键已发，但状态栏没报告目标，当前实际：" + now + "。 / Not confirmed by the native status line.", "error")
+        return Result("没切换（" + why + "）：当前实际 " + now + "。 / Not switched.", "error")
 
     async def attach(self):
         async with self.attach_lock:
@@ -431,6 +697,9 @@ class SharedClaudeAgent(Agent):
                 if self.transcript is not None and self.transcript.is_file():
                     self.read_transcript()
                 self.read_statusline()
+                if self.model_pending and self.state.status == "idle" and not self.phone_turn and not self.native_lock.locked() \
+                        and (self._pending_task is None or self._pending_task.done()):
+                    self._pending_task = asyncio.create_task(self._apply_pending())
             except (OSError, ValueError):
                 self.failed_start = True
                 self.set_status("down")
@@ -462,6 +731,7 @@ class SharedClaudeAgent(Agent):
                 if not line.endswith(b"\n"):
                     break
                 self.offset = f.tell()
+                self._identity_seen(line)
                 try:
                     item = json.loads(line)
                 except ValueError:
@@ -484,7 +754,9 @@ class SharedClaudeAgent(Agent):
                     from .transcript_input import human_input
                     if not human_input(item, blocks, text):
                         continue
-                    if any('from-name="' + name + '"' in text for name in ('owner-via-agentj(手机)', 'Agent-J-phone')) or (item.get("origin") or {}).get("name") in ('owner-via-agentj(手机)', 'Agent-J-phone'):
+                    if self.untrusted_state == "pending" and provenance.names_untrusted(text):
+                        self._mark_untrusted("running")   # a native version that runs it without UserPromptSubmit
+                    if any('from-name="' + name + '"' in text for name in provenance.FROM_NAMES) or (item.get("origin") or {}).get("name") in provenance.FROM_NAMES:
                         if self.phone_turn and self.pending_text in text:
                             self.phone_seen = True
                             self.input_seen.set()
@@ -513,22 +785,29 @@ class SharedClaudeAgent(Agent):
         self.input_seen.clear()
         self.phone_turn = True
         self.phone_seen = self.phone_reply_seen = False
-        self.pending_text = text
+        source = getattr(getattr(self, "cur_send", None), "source", None)
+        self.pending_source = source
+        self.pending_text = provenance.body(text, source)   # what the transcript / prompt will show
+        if not provenance.is_owner(source):
+            self._mark_untrusted("pending")
         try:
-            await self.deliver(lambda: asyncio.to_thread(claude_send, self.session, text))
+            await self.deliver(lambda: asyncio.to_thread(claude_send, self.session, text, source))
             try:
                 await asyncio.wait_for(self.input_seen.wait(), CLAUDE_INPUT_WAIT)
             except asyncio.TimeoutError:
                 # Socket write is not native acceptance. Busy desktop tools or a
                 # held inbound message can both delay it: never claim certainty.
-                if self.cfg.get("language", "zh") == "en":
-                    notice = ("Claude has not acknowledged this message; it may be held for desktop approval. "
-                              "Run agentj config claude-inbound on. Repository/managed policy can still block it. "
-                              "Check the desktop before resending: the original may still arrive.")
-                else:
-                    notice = ("电脑上的 Claude Code 尚未接收这条消息，可能拦下等你批准。运行 "
-                              "agentj config claude-inbound on 后不再按默认策略拦截；项目/组织策略仍可能拦截。"
-                              "请先在电脑核实，别重复发送，原消息仍可能送达。")
+                from . import claude_inbound
+                lang = self.cfg.get("language", "zh")
+                try:
+                    reason = claude_inbound.diagnostic(self.host.st, lang, self.cfg)
+                except (OSError, ValueError):
+                    reason = ("Claude settings could not be verified; run agentj doctor." if lang == "en"
+                              else "Claude 设置无法核实；请运行 agentj doctor。")
+                notice = (("Claude has not acknowledged this message. " if lang == "en" else
+                           "电脑上的 Claude Code 尚未接收这条消息。") + reason +
+                          (" Check the desktop before resending: it may be busy and the original may still arrive."
+                           if lang == "en" else "请先在电脑核实：会话也可能正忙，别重复发送，原消息仍可能送达。"))
                 self.fail_notice(notice)
                 return
             # Only a committed native Stop belonging to this phone input ends

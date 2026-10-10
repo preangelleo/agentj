@@ -67,7 +67,7 @@ def input_digest(tool_input) -> str:
 def record(st, *, rid: str, agent: str, tool: str, input_sha256: str, shown_sha256: str, decision: str, reason: str,
            device: str | None = None, sign_pub: bytes | None = None, sig: bytes | None = None, cats: list | None = None,
            scope: str | None = None, grant: str | None = None) -> dict:
-    """Append one decision to approvals.log (0600). reason: device | batch | timeout | no_device | serve_stop | agent_gone |
+    """Append one decision to approvals.log (0600). reason: device | batch | brief (0.18: inside a confirmed brief) | host (0.18: `agentj capability`, host-gated) | timeout | no_device | serve_stop | agent_gone |
     too_many | estop | policy (beyond the harness's own sandbox, never asked: ADR-A73). cats = danger categories ([] = low risk); scope = the signed batch scope (allow_batch); grant = for an
     automatic approval, the id of the signed allow_batch it relied on."""
     rec = {"ts": int(time.time()), "id": rid, "channel": st.config()["channel"], "agent": agent, "tool": tool,

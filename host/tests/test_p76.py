@@ -44,12 +44,12 @@ class Settings(unittest.TestCase):
         with self.assertRaises(inbound.SettingsError): inbound.set_enabled(True)
         self.assertEqual(target.read_text(),"{}")
     def test_doctor_three_states(self):
-        st=Mock(); st.exists.return_value=True; st.agent_config.return_value={"kind":"claude","session_mode":"independent","dir":str(self.home)}
+        st=Mock(); st.root=self.home/"st"; st.exists.return_value=True; st.agent_config.return_value={"kind":"claude","session_mode":"independent","dir":str(self.home)}
         self.assertIsNone(doctor.check_shared_inbound(st))
         st.agent_config.return_value["session_mode"]="shared"
-        self.assertEqual(doctor.check_shared_inbound(st)["status"],"fail")
+        self.assertEqual(doctor.check_shared_inbound(st)["status"],"ok")
         inbound.set_enabled(True);self.assertEqual(doctor.check_shared_inbound(st)["status"],"ok")
-        inbound.set_enabled(False);self.assertEqual(doctor.check_shared_inbound(st)["status"],"fail")
+        inbound.set_enabled(False);self.assertEqual(doctor.check_shared_inbound(st)["status"],"ok")
     def test_cli_shared_auth_ok_independent_warn(self):
         st=Mock();st.exists.return_value=True;st.agent_config.return_value={"kind":"claude","session_mode":"shared"}
         with patch.object(doctor,"_agent_bin",return_value="/bin/claude"),patch.object(doctor,"_version_of",return_value="2.1"),patch.object(doctor,"_login",return_value=("warn","no login found")),patch.object(claude_auth,"available",return_value=False):
@@ -134,7 +134,7 @@ class Runtime(unittest.IsolatedAsyncioTestCase):
                     self.assertEqual(len(frames),2);self.assertNotIn("senderMode",frames[1])
                     if accepted:host.turn_failed.assert_not_called()
                     else:
-                        host.turn_failed.assert_called_once();self.assertIn("claude-inbound on",host.agent_notice.call_args.args[0])
+                        host.turn_failed.assert_called_once();self.assertIn("agentj doctor",host.agent_notice.call_args.args[0]);self.assertIn("user",host.agent_notice.call_args.args[0])
                 finally:
                     sock.close();thread.join(3)
 

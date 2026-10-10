@@ -1,0 +1,51 @@
+{
+  "schema_version": 1,
+  "card_id": "preflight-demo",
+  "task_id": "brief-demo",
+  "revision": 1,
+  "brief_digest": "0000000000000000000000000000000000000000000000000000000000000000",
+  "registry_revision": 1,
+  "nonce": "fictional-nonce-0001",
+  "expires_at": "2026-10-09T02:00:00Z",
+  "status": "ready",
+  "required": [
+    {
+      "id": "source-choice",
+      "capability_id": "public-research",
+      "why": {
+        "zh": "确认要关注的竞品",
+        "en": "Choose competitors to cover"
+      },
+      "how": {
+        "zh": "填写竞品名称",
+        "en": "Enter competitor names"
+      },
+      "reuse": {
+        "zh": "后续每周沿用",
+        "en": "Reused every week"
+      },
+      "status": "ready",
+      "action_kind": "choose"
+    }
+  ],
+  "optional": [
+    {
+      "id": "optional-key",
+      "capability_id": "research-key",
+      "why": {
+        "zh": "丰富资料，公开网页也能完成",
+        "en": "Richer sources; public pages are enough"
+      },
+      "how": {
+        "zh": "专用密钥卡",
+        "en": "Dedicated secret card"
+      },
+      "reuse": {
+        "zh": "同服务任务可复用",
+        "en": "Reusable for this service"
+      },
+      "status": "missing",
+      "action_kind": "secret_card"
+    }
+  ]
+}

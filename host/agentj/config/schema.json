@@ -549,6 +549,34 @@
       "since": "0.13",
       "maxLength": 6000
     },
+    "agent.private_instructions_file": {
+      "type": "string",
+      "default": "",
+      "description": "Local owner instructions file appended after the core; read-only text, grants no permission / 主人本机私有指令文件，追加在核心之后；只读文字，不授予任何权限",
+      "aliases": [
+        "agent.private_instructions_file",
+        "私有指令文件",
+        "private instructions file"
+      ],
+      "tier": "user",
+      "apply": "hot",
+      "verify": "agentj config private-instructions status",
+      "since": "0.17",
+      "maxLength": 4096
+    },
+    "agent.shared_identity": {
+      "type": "boolean",
+      "default": true,
+      "description": "Shared Claude reads the packaged identity and private instructions via native hooks / 共享 Claude 经原生 hook 读入随包身份与私有指令",
+      "aliases": [
+        "共享会话身份",
+        "shared identity"
+      ],
+      "tier": "user",
+      "apply": "hot",
+      "verify": "agentj doctor --offline --json",
+      "since": "0.17"
+    },
     "agent.session_mode": {
       "type": "string",
       "default": "shared",
@@ -650,6 +678,45 @@
       "apply": "hot",
       "verify": "agentj config validate --json",
       "since": "0.15"
+    },
+    "telegram.private_domains": {
+      "type": "array",
+      "default": [],
+      "description": "Your domains, hidden from Telegram group replies (e-mails always are) / 发往群的回复隐去这些域名（邮箱一律隐去）",
+      "aliases": [
+        "telegram.private_domains",
+        "Telegram 私有域名"
+      ],
+      "tier": "user",
+      "apply": "hot",
+      "verify": "agentj config validate --json",
+      "since": "0.17"
+    },
+    "telegram.forward": {
+      "type": "boolean",
+      "default": true,
+      "description": "Share button forwards to your Telegram private chat / 分享按钮一点转发到你的 Telegram 私聊",
+      "aliases": [
+        "telegram.forward",
+        "一点转发到 Telegram"
+      ],
+      "tier": "user",
+      "apply": "hot",
+      "verify": "agentj config validate --json",
+      "since": "0.17"
+    },
+    "telegram.owner_commands": {
+      "type": "array",
+      "default": [],
+      "description": "Private-chat commands answered by your local program, never the model / 私聊命令由你本机程序回答，不经模型",
+      "aliases": [
+        "telegram.owner_commands",
+        "Telegram 主人命令"
+      ],
+      "tier": "user",
+      "apply": "hot",
+      "verify": "agentj config validate --json",
+      "since": "0.17"
     },
     "proxy.https_env": {
       "type": "string",
@@ -808,6 +875,73 @@
       "apply": "hot",
       "verify": "agentj config auto-update status",
       "since": "0.16.5"
+    },
+    "browser.enabled": {
+      "type": "boolean",
+      "default": true,
+      "description": "Agent J's own browser for sign-ins and web automation; off keeps the profile / Agent J 专用浏览器（登录与网页自动化）；关闭会保留登录资料",
+      "aliases": [
+        "浏览器",
+        "browser",
+        "专用浏览器",
+        "browser automation",
+        "浏览器自动化"
+      ],
+      "tier": "user",
+      "apply": "hot",
+      "verify": "agentj browser status --json",
+      "since": "0.18"
+    },
+    "browser.download_source": {
+      "type": "string",
+      "default": "auto",
+      "description": "Where the browser is downloaded: official first, then a same-bytes mirror / 浏览器下载源：先官方，再同字节镜像",
+      "aliases": [
+        "浏览器下载源",
+        "browser download source",
+        "browser mirror source"
+      ],
+      "tier": "user",
+      "apply": "hot",
+      "verify": "agentj browser status --json",
+      "since": "0.18",
+      "enum": [
+        "auto",
+        "official",
+        "approved-mirror"
+      ]
+    },
+    "browser.mirror": {
+      "type": "string",
+      "default": "",
+      "description": "Your own HTTPS mirror base; bytes must match the signed manifest / 自有 HTTPS 镜像地址；文件须与签名清单逐字节一致",
+      "aliases": [
+        "浏览器镜像",
+        "browser mirror"
+      ],
+      "tier": "user",
+      "apply": "hot",
+      "verify": "agentj browser status --json",
+      "since": "0.18",
+      "maxLength": 300,
+      "pattern": "(https://[^\\s]{1,290})?",
+      "patternHint": "an https:// mirror base URL, or empty"
+    },
+    "browser.check_time": {
+      "type": "string",
+      "default": "08:00",
+      "description": "Daily read-only sign-in check, local time; never sends QR codes / 每日只读登录体检时间（本地时间），不会推送二维码",
+      "aliases": [
+        "登录体检时间",
+        "sign-in check time",
+        "browser check time"
+      ],
+      "tier": "user",
+      "apply": "hot",
+      "verify": "agentj browser status --json",
+      "since": "0.18",
+      "pattern": "([01][0-9]|2[0-3]):[0-5][0-9]",
+      "patternHint": "HH:MM (24-hour, local time)"
     },
     "voice.tts.phone_voice": {
       "type": "string",

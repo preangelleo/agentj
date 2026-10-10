@@ -524,6 +524,8 @@ class State:
         directory = os.path.realpath(os.path.expanduser(root)) if root else a["dir"]
         return {"kind": a["kind"], "dir": directory, "working_root": directory,
                 "instructions": preferences.get(prefs, "agent.instructions", ""),
+                "private_instructions_file": preferences.get(prefs, "agent.private_instructions_file", ""),
+                "shared_identity": preferences.get(prefs, "agent.shared_identity", True) is not False,
                 "language": preferences.get(prefs, "appearance.language", "zh"),
                 "model": m if isinstance(m, str) and m else None,
                 "effort": e if isinstance(e, str) and e.isalpha() and len(e) <= 16 else None,
@@ -637,7 +639,8 @@ class State:
     # report_* events (PROTOCOL §7) carry only seq / status class / trigger — never labels, codes or URLs
     LOG_FIELDS = {"why", "exception_type", "http_status", "channel", "cid", "device", "name", "reason", "kind", "bytes", "code_ok", "seq", "status", "trigger",
                   "tenant", "request", "result", "id", "tool", "agent", "decision", "locked", "fence", "change", "action",
-                  "session_mode", "isolation_requested", "isolation_effective", "phase", "version", "language", "core_sha256", "prompt_sha256", "mechanism", "working_root_sha256", "identity_session"}
+                  "session_mode", "isolation_requested", "isolation_effective", "phase", "version", "language", "core_sha256", "prompt_sha256", "mechanism", "working_root_sha256", "identity_session",
+                  "generation", "model", "effort", "layers", "identity"}   # P116: metadata only (no text, path or digest)
 
     def log(self, ev: str, **kw) -> None:
         rec = {"ts": int(time.time()), "ev": ev, **{k: v for k, v in kw.items() if k in self.LOG_FIELDS}}

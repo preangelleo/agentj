@@ -111,6 +111,25 @@ starts by reading them; the 待定 items they may answer any time. For templates
   sign with this computer's key, which you cannot see (by design).
 Then re-run Step 6 after any later change to the documents.
 
+## Goal mode (a long task from the main Agent, 0.18)
+
+Used by the agentj-capability skill when the owner asked for a goal (「做每周竞品简报」) and no workflow CEO covers it.
+**No interview**: the 20 questions above are for designing a whole company handbook, not for one goal.
+1. Step 0 as usual (look, never ask). The root documents already exist; you only add one workflow.
+2. From what the owner already said, stage ONE new child folder `<id>/` (lowercase-hyphen): `CLAUDE.md` / `AGENTS.md`
+   (thin entry, pointing to its own short constitution with red lines), `RUN.md`, `DRYRUN.md`, `task.json`
+   (`"enabled": false`, `"mode": "normal"` so the CEO can write its deliverables and report, a cron for a weekly plan),
+   `brief.json` (see the agentj-capability skill), and a ROLES.md /
+   STRUCTURE.json update for the root (the new CEO, `workflows: [{id, ceo_entry, execution, reports}]`).
+   RUN.md tells the CEO to use its web fetch and write / edit tools only (no shell: an unattended run must not need taps)
+   and to finish with `reports/report.json` (agentj-capability's `report.example.json`) and a VERDICT line.
+3. Every question that is genuinely the owner's (≤ 5: e.g. which competitors, day and time, who receives it) is NOT asked
+   here one by one: the agentj-capability skill puts them on the one opening card. Unknowns stay 「待定」 in the files
+   until the card's answer arrives in `<id>/inputs/owner-choices.json`.
+4. `agentj wizard apply --dir . --json` then `agentj wizard doctor --dir . --json` (it also checks every brief.json).
+   Never overwrite what the owner edited; a `kept` file that matters for the goal goes on the same card as a choice.
+5. The schedule stays dormant: only the owner's tap on the opening card enables it.
+
 ## When to run again
 
 The human can say 「重新设计工作流」 at any time: same flow, re-run mode (Step 0). `apply` never overwrites what they edited.

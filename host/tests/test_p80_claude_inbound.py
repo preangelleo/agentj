@@ -38,13 +38,13 @@ class Defaults(unittest.TestCase):
         self.assertIsNone(inbound.default_notice(State()))
         self.assertEqual(len(list(p.parent.glob('settings.json.agentj-backup-*'))),1)
     def test_explicit_values_preserved_including_previous_off(self):
-        for val in ('hold','refuse','accept','invalid',None):
+        for val in ('hold','refuse','invalid',None):
             p=inbound.path();p.parent.mkdir(exist_ok=True);p.write_text(json.dumps({'crossSessionInbound':val}))
-            self.assertFalse(inbound.ensure_shared_default(self.st))
-            self.assertEqual(inbound.read()['crossSessionInbound'],val)
-            self.assertIsNone(inbound.default_notice(self.st))
-        inbound.set_enabled(False); self.assertFalse(inbound.ensure_shared_default(self.st))
-        self.assertEqual(inbound.value(),'hold')
+            self.assertTrue(inbound.ensure_shared_default(self.st))
+            self.assertEqual(inbound.read()['crossSessionInbound'],'accept')
+            self.assertIn('/clear',inbound.default_notice(self.st))
+        self.assertFalse(inbound.ensure_shared_default(self.st))
+        inbound.set_enabled(False);self.assertTrue(inbound.ensure_shared_default(self.st))
     def test_only_shared_claude_touches_settings(self):
         for cfg in ({'kind':'codex','session_mode':'shared'}, {'kind':'opencode','session_mode':'shared'},
                     {'kind':'claude','session_mode':'independent'},None):
@@ -60,8 +60,7 @@ class Defaults(unittest.TestCase):
         self.assertEqual(target.read_text(),'{}')
     def test_off_after_migration_suppresses_stale_enabled_notice(self):
         inbound.ensure_shared_default(self.st);inbound.set_enabled(False)
-        self.assertIsNone(inbound.default_notice(self.st))
-        self.assertFalse(json.loads((self.st.root/'claude-inbound-notice.json').read_text())['pending'])
+        self.assertIn('hold',inbound.default_notice(self.st))
     def test_cli_selection_initializes_unset_without_prompt(self):
         args=SimpleNamespace(mode='claude',dir=str(self.home),model=None,unfenced=False,allow_docker=False)
         with patch('agentj.wizard.bootstrap_root'),patch('agentj.fence.problem',return_value=None),patch('builtins.print'):
@@ -104,7 +103,7 @@ class Runtime(unittest.IsolatedAsyncioTestCase):
             shared=preferences.edit(independent,'agent.session_mode','shared')
             self.assertTrue((await h.apply_preferences(shared))['ok'])
         self.assertEqual(inbound.value(),'accept')
-        inbound.set_enabled(False);h.configure_claude_inbound();self.assertEqual(inbound.value(),'hold')
+        inbound.set_enabled(False);h.configure_claude_inbound();self.assertEqual(inbound.value(),'accept')
     async def test_unreadable_settings_emit_safe_fallback(self):
         p=inbound.path();p.parent.mkdir(exist_ok=True);p.write_text('private invalid contents')
         h=Host(self.st,events='quiet');h.agent_notice=Mock();h.configure_claude_inbound()

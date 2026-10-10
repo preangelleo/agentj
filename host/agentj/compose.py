@@ -155,6 +155,7 @@ class Send:
     ready: asyncio.Future | None = None       # resolved when the text is complete (say-time transcription)
     prep: asyncio.Task | None = None
     by: str | None = None
+    source: dict | None = None     # B1 (P117): host-generated provenance (agentj.provenance); None = the paired phone
 
     async def wait_ready(self) -> bool:
         if self.ready is not None:

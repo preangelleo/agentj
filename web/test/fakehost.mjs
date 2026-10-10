@@ -160,7 +160,7 @@ export async function startFakeHost() {
       if(c.removed){await sendApp(c,{t:'removed',why:'revoked'});return c.close(4010);}
       c.p33 = st.p33 && Array.isArray(m.caps) && m.caps.includes('p33');
       c.hello = m;
-      await sendApp(c, st.p33 ? { t: 'ready', caps: ['p33', ...(st.heartbeat ? ['heartbeat'] : [])], asr: st.asr, hist: 'on' } : { t: 'ready' });
+      await sendApp(c, st.p33 ? { t: 'ready', caps: ['p33', ...(st.heartbeat ? ['heartbeat'] : []), ...(st.tgfwd ? ['tgfwd'] : [])], asr: st.asr, hist: 'on' } : { t: 'ready' });
       c.isReady = true;
       return afterReady(c);
     }
@@ -185,6 +185,11 @@ export async function startFakeHost() {
       ts = Number.isInteger(m.after) ? ts.slice(0, lim) : ts.slice(-lim);
       const mm = meta();
       return sendApp(c, { t: 'hist_page', r: m.r, epoch: st.epoch, first: mm.first, last: mm.last, count: mm.count, turns: ts, more });
+    }
+    if (m.t === 'tg_fwd') {          // P118 (B10): the owner's one-tap Telegram forward; st.tgfwdWhy = a one-shot refusal
+      (st.tgFwds = st.tgFwds || []).push(m);
+      const why = st.tgfwdWhy; st.tgfwdWhy = null;
+      return sendApp(c, why ? { t: 'tg_fwd_res', r: m.r, ok: false, why } : { t: 'tg_fwd_res', r: m.r, ok: true, parts: 1 });
     }
     if (m.t === 'menu_get') return sendApp(c, { t: 'menu', r: m.r, ...(st.menu || { source: 'default', items: [], skills: [], cmds: ['clear', 'compact', 'model', 'context', 'cost', 'usage', 'status', 'help', 'stop'] }) });
     if (m.t === 'model_set') {
@@ -448,7 +453,7 @@ export async function startFakeHost() {
       for (const c of conns) if (c.awaiting) {
         c.awaiting = false; c.mode = 'resume'; allow.set(b64u(c.devPub), { sk: c.sk });
         c.p33 = st.p33 && Array.isArray(c.helloCaps) && c.helloCaps.includes('p33');
-        await sendApp(c, st.p33 ? { t: 'approved', caps: ['p33', ...(st.heartbeat ? ['heartbeat'] : [])], asr: st.asr, hist: 'on' } : { t: 'approved' });
+        await sendApp(c, st.p33 ? { t: 'approved', caps: ['p33', ...(st.heartbeat ? ['heartbeat'] : []), ...(st.tgfwd ? ['tgfwd'] : [])], asr: st.asr, hist: 'on' } : { t: 'approved' });
         c.isReady = true; c.hello = null;
         await afterReady(c);
       }
@@ -487,7 +492,7 @@ export async function startFakeHost() {
         autoReply: true, replyFor: null, epoch: st.epoch + 1, turns: [], blobs: new Map(), staged: new Set(), queued: new Map(), opens: [], cancels: [],
         answers: [], qAnswers: [], chunks: 0, wavs: [], menu: null, models: null, meter: null, sigOk: [], says: [], modelSets: [], slashes: [],
         stallAfter: 0, blobErr: null, sayWhy: null, estop: false, rate: true, firsts: [], errors: [], lastError: undefined,
-        prefs: null, prefSet: true, prefSets: [], version: null, friends: null });
+        prefs: null, prefSet: true, prefSets: [], version: null, friends: null, tgfwd: false, tgfwdWhy: null, tgFwds: [] });
       st.asksOpen = new Map();
       log.length = 0;
     },

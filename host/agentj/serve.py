@@ -34,7 +34,7 @@ from websockets.asyncio.client import connect
 from . import agent as agents
 from . import notices, activity, approvals, cloud, controls, danger, fence, gate, memory, slash, tasks, update, webpush, wire
 from . import asr as asr_mod
-from . import compose, history, inbox, menu, uploads, preferences, proxy
+from . import compose, history, inbox, menu, uploads, preferences, proxy, provenance
 from . import media as media_mod  # F21: files the Agent shows to the phone (PROTOCOL §13)
 from . import elevate  # F17: sudo + secret cards (PROTOCOL §11)
 from . import passkey  # F20: the same phone without a second pairing (PROTOCOL §12)
@@ -99,7 +99,8 @@ HIST_READY = 50                             # turns a p33 device gets on ready (
 SWEEP_EVERY = 60
 RETAIN_EVERY = 86_400
 P33_ONLY = ("say", "say_cancel", "blob_open", "blob_chunk", "blob_end", "blob_drop", "hist_get", "menu_get", "model_set",
-            "q_answer", "tts_get", "pref_set", "notice_read", "media_get", "provider_get", "provider_key", "asr_install", "models_get", "ping")
+            "q_answer", "tts_get", "pref_set", "notice_read", "media_get", "provider_get", "provider_key", "asr_install", "models_get", "ping",
+            "tg_fwd")
 # F14: paired phones may change optional warnings, session mode, isolation, docker and the upgrade mode (F19); native permissions stay authoritative.
 PREF_SET_KEYS = ("updates.mode", "appearance.language", "appearance.theme", "voice.wake_enabled", "voice.speak_replies",
                  "agent.high_risk_warnings", "agent.session_mode", "agent.isolation", "agent.allow_docker")
@@ -127,6 +128,7 @@ class Session:
     sign_pub: bytes = b""         # the device's Ed25519 approval key from the pairing msg1 (PROTOCOL §8)
     fg: bool = True               # the page is visible (device "vis"); no push while a visible session is ready
     p33: bool = False             # the device announced capability "p33" in its hello (PROTOCOL §10.0)
+    lt1: bool = False             # 0.18 (ADR-A193): the page renders long-task cards (lt_card / lt_caps)
     hist: dict | None = None      # its hello's {"epoch", "last"}: where its history pages stop (§10.5)
     iid: str = ""                 # 0.15.1: the browser install's per-host id from the pairing msg1 (same browser → replace)
     gone: str = ""                # 0.15.1: a removed device that resumed: "replaced" | "revoked" — told so after its hello
@@ -281,6 +283,8 @@ class Host:
         self.asr_waiting: dict[str, int] = {}
         self.model_sets = 0
         self.elevate = elevate.Elevator(self)   # F17: admin password / secret cards (PROTOCOL §11)
+        from .capability import Capabilities
+        self.capabilities = Capabilities(self)  # 0.18 (ADR-A193): capability.sock, opening cards, dispatch
         self.peers = None                       # P71: Agent friends (peer_service.PeerService, PROTOCOL §17), set in run()
 
     # ------------------------------------------------------------ output
@@ -567,6 +571,7 @@ class Host:
                 return await self.close_cid(s.cid, "unknown_device")
             caps = obj.get("caps")
             s.p33 = isinstance(caps, list) and wire.CAP_P33 in caps[:16]
+            s.lt1 = isinstance(caps, list) and wire.CAP_LT1 in caps[:16]
             h = obj.get("hist")
             if s.p33 and isinstance(h, dict) and type(h.get("epoch")) is int and type(h.get("last")) is int:
                 s.hist = {"epoch": h["epoch"], "last": h["last"]}
@@ -597,7 +602,7 @@ class Host:
             return await self._pk_restore(s, obj)
         if not self.st.is_allowed(s.pub):  # belt and braces: a ready session whose device left the allowlist
             return await self.close_cid(s.cid, "revoked")
-        if t in ("msg", "say", "answer", "slash", "blob_open", "blob_chunk", "blob_end", "ask_answer", "estop", "resume", "task_set") or t in elevate.PHONE_TYPES or t in ("fr_answer", "fr_accept"):
+        if t in ("msg", "say", "answer", "slash", "blob_open", "blob_chunk", "blob_end", "ask_answer", "estop", "resume", "task_set", "lt_answer") or t in elevate.PHONE_TYPES or t in ("fr_answer", "fr_accept"):
             from . import auto_update
             auto_update.touch(self.st)
         if t == "msg":
@@ -635,6 +640,8 @@ class Host:
             await self._rt_issue(s)
         elif t in elevate.PHONE_TYPES:  # F17: a signed, sealed sudo password / secret for an open card (§11)
             await self.elevate.on_phone(s, obj)
+        elif t == "lt_answer":          # 0.18 (ADR-A193): the signed answer to an opening card (preflight + brief + enable)
+            await self.capabilities.on_phone(s, obj)
         elif t == "push_sub":
             sub = webpush.parse_sub(obj)
             if sub is None:
@@ -657,6 +664,8 @@ class Host:
             for g in list(self.grants.values()):
                 if gid is None or g.rid == gid:
                     self.end_grant(g.rid, "revoked", by=s.device)
+        elif t in ("setup_get", "setup_mark"):   # P115: the first-run checklist card (first_run.py)
+            await self.on_setup(s, t, obj)
         elif t in PHONE_CONTROLS:
             await self.on_control(s, t, obj)
         elif t == "slash":              # a command from the phone's ≡「全部命令」 menu (or typed: the page sends it like this)
@@ -1043,6 +1052,7 @@ class Host:
                                              "asks": len(self.asks), "estop": self.estop,
                                              "task_running": self.scheduler.current_id,
                                              "friends": self.peers.status_view() if self.peers is not None else None,
+                                             "telegram": self.telegram.status_view() if self.telegram is not None else None,
                                              "sessions": [{"device": s.device, "name": s.name, "state": s.state}
                                                           for s in self.sessions.values() if s.state != "new"]})
                 elif cmd == "provider_model":
@@ -1431,6 +1441,12 @@ class Host:
             for m in self.peers.ask_msgs():
                 await self.send_app(s, m)
         await self.elevate.on_ready(s)
+        await self.capabilities.on_ready(s)
+        with contextlib.suppress(Exception):      # P115: a checklist resumed in the last 6 h comes back on reconnect
+            from . import first_run
+            rec = await asyncio.to_thread(first_run.read, self.st)
+            if first_run.active(rec):
+                await self.send_app(s, {"t": "setup_card", "show": True, **first_run.snapshot(rec)})
         from . import service
         if service.platform() == "macos" and not getattr(self, "_residency_noticed", False):
             self._residency_noticed = True
@@ -1541,6 +1557,14 @@ class Host:
                 raw = self.st.config().get("agent") or {}
                 self.agent_cfg["fence"] = raw.get("fence") is not False and preferences.get(candidate, "agent.isolation", True) is not False
                 self.agent_cfg["docker"] = raw.get("docker") is True or preferences.get(candidate, "agent.allow_docker", False) is True
+            # P116 (B11): the private instructions file and shared identity are hot — the next turn reloads (never mid-turn)
+            for key, ck in (("agent.private_instructions_file", "private_instructions_file"), ("agent.shared_identity", "shared_identity")):
+                if preferences.get(old, key) != preferences.get(candidate, key):
+                    for c in (self.agent_cfg, getattr(self.agent, "cfg", None) if self.agent is not None else None):
+                        if c is not None:
+                            c[ck] = preferences.get(candidate, key)
+                    if self.agent is not None and not self.agent.cfg.get("_workflow_ceo"):
+                        self.agent.identity_changed()
             result = {"ok": True, "applied": not restart,
                       "verify": {"ok": True, "detail": "stored; restart serve for Agent instructions or proxy variables" if restart else "host configuration activated; voice needs a listening test"},
                       "needs": ["restart serve"] if restart else []}
@@ -2165,6 +2189,30 @@ class Host:
             self.st.log("ask_done", id=rid, tool=tool, decision="deny", reason="estop")
             self.activity("decision", id=rid, tool=tool, result="deny", reason="estop", cats=v.cats, summary=summary)
             return {"behavior": "deny", "message": "已急停（全部停下）：什么都不执行，等人恢复。"}
+        if provenance.untrusted_turn(self.agent):
+            # B1 (P117): a Telegram group member's turn never obtains the owner's approval — not asked, not batch-granted
+            approvals.record(self.st, **base, decision="deny", reason="group_source")
+            self.st.log("ask_done", id=rid, tool=tool, decision="deny", reason="group_source")
+            self.activity("decision", id=rid, tool=tool, result="deny", reason="group_source", cats=v.cats, summary=summary)
+            self.emit("ask_done", id=rid, result="deny", reason="group_source")
+            return {"behavior": "deny", "message": "这一轮来自 Telegram 群成员，不是主人本人：不能请求主人批准，已拒绝。"
+                                                   " / A group member's turn cannot obtain the owner's approval."}
+        from .capability import host_mediated, staging_write
+        main_root = (self.agent_cfg or {}).get("dir") if self.task_label is None else None
+        if batch and not v.danger and (host_mediated(tool, tool_input) or staging_write(main_root, tool, tool_input)):
+            # ADR-A194: host-gated long-task CLI / inert wizard staging — no card
+            approvals.record(self.st, **base, decision="allow", reason="host")
+            self.st.log("ask_done", id=rid, tool=tool, decision="allow", reason="host")
+            self.activity("auto", id=rid, tool=tool, summary=summary, by="host", task=self.task_label)
+            return {"behavior": "allow", "updatedInput": tool_input}
+        scope = getattr(self, "brief_scope", None)
+        if scope is not None and batch:
+            from .capability import brief_allows
+            if brief_allows(scope, tool, tool_input, bool(v.danger)):   # ADR-A194: inside the confirmed brief, no card
+                approvals.record(self.st, **base, decision="allow", reason="brief")
+                self.st.log("ask_done", id=rid, tool=tool, decision="allow", reason="brief")
+                self.activity("auto", id=rid, tool=tool, summary=summary, by="brief", task=self.task_label)
+                return {"behavior": "allow", "updatedInput": tool_input}
         g = None if v.danger else self._grant_for(tool, sc[:2] if sc else None)
         if g is not None:                 # inside a live batch approval: allowed at once, logged, one quiet line on the phone
             g.left -= 1
@@ -2443,8 +2491,13 @@ class Host:
         e = self._remember("notice", clean(text, wire.MAX_TEXT))
         self._post(self._send_legacy, lambda s, e=e: self._render(e, s))
         # §10.5: a task run is its own page (src.k task): the title, the verdict sentence
-        self.hist_add({"k": "task", "name": clean(str(title), 64), "text": ""}, clean(text, wire.MAX_TEXT_P33),
-                      "stopped" if res.get("stopped") else "done")
+        page = text
+        if res.get("deliver") and not res.get("stopped"):   # 0.18: the brief's owner deliverables, offered as files (§13)
+            page += "\n\n" + "\n".join(f"[{os.path.basename(p)}]({p})" for p in res["deliver"][:5])
+        t = self.hist_add({"k": "task", "name": clean(str(title), 64), "text": ""}, clean(page, wire.MAX_TEXT_P33),
+                          "stopped" if res.get("stopped") else "done")
+        if res.get("deliver") and isinstance(t, dict):
+            self.media_later(t.get("id"))
         self.push_notify("reply")
 
     async def _send_chunks(self, s: Session, head: dict, key: str, items: list, tail: dict | None = None) -> None:
@@ -2532,6 +2585,74 @@ class Host:
         controls.log(self.st, action=action, device=s.device, result=result, obj=target, sig=sig, n=obj.get("n"),
                      ts=obj.get("ts"))
         await self._ctl_res(s, r, action, result == "ok", **({} if result == "ok" else {"why": result}), **extra)
+
+    # ------------------------------------------------------------ P115: first-run checklist (first_run.py, ADR-A196)
+    def setup_serve(self) -> dict:
+        """What the checklist probes need from this running serve (the CLI asks the control socket for the same)."""
+        return {"relay_up": self.relay_up, "agent": self.agent.kind if self.agent else None}
+
+    def push_setup(self, snap: dict, show: bool = True) -> None:
+        """The checklist card to every ready remote (phone and this computer's browser show the same revision)."""
+        msg = {"t": "setup_card", "show": show, **{k: snap[k] for k in snap if k not in ("ok", "result", "r")}}
+        self._post(self._send_ready, lambda s: msg)
+
+    async def on_setup(self, s: Session, t: str, obj: dict) -> None:
+        from . import first_run
+        r = obj.get("r")
+        if not isinstance(r, str) or not _RID.fullmatch(r):
+            return
+        net = obj.get("net")
+        if net in ("cellular", "wifi", "unknown"):
+            s.setup_net = net
+        if t == "setup_get":                  # read (and, with check, a live read-only re-probe); never changes a choice
+            perm = obj.get("perm") if isinstance(obj.get("perm"), dict) else None
+            report = {"mic": perm.get("mic")} if perm and perm.get("mic") in ("granted", "denied", "prompt") else None
+            item = obj.get("item") if isinstance(obj.get("item"), str) and obj.get("item") in first_run.BY_ID else None
+            try:
+                if obj.get("check") is True:
+                    res = await asyncio.to_thread(first_run.check, self.st, [item] if item else None, self.setup_serve(), report)
+                else:
+                    res = await asyncio.to_thread(first_run.status_, self.st)
+            except (first_run.SetupError, OSError) as e:
+                res = {"ok": False, "why": getattr(e, "reason", "io")}
+            return await self.send_app(s, {"t": "setup_card", "r": r, "show": False, **{k: v for k, v in res.items() if k != "r"}})
+        target = {"item": obj.get("item"), "choice": obj.get("choice"), "rev": obj.get("rev")}
+        if not (isinstance(target["item"], str) and target["item"] in first_run.BY_ID and target["choice"] in first_run.MARKS
+                and type(target["rev"]) is int and target["rev"] > 0):
+            return await self._ctl_res(s, r, "setup_mark", False, why="shape")
+        why = controls.check(self.st, self.nonces, self.channel, s.device, obj, "setup_mark", target)
+        if why:
+            self.st.log("control_refused", device=s.device, action="setup_mark", reason=why)
+            controls.log(self.st, action="setup_mark", device=s.device, result="refused:" + why)
+            return await self._ctl_res(s, r, "setup_mark", False, why=why)
+        result, snap = "ok", None
+        try:
+            snap = await asyncio.to_thread(first_run.mark, self.st, target["item"], target["choice"], target["rev"],
+                                           obj["n"], self.setup_serve())
+        except first_run.SetupError as e:
+            result = e.reason
+        except OSError:
+            result = "io"
+        self.st.log("control", device=s.device, action="setup_mark", result=result)
+        controls.log(self.st, action="setup_mark", device=s.device, result=result, obj=target, sig=obj.get("sig"),
+                     n=obj.get("n"), ts=obj.get("ts"))
+        self.activity("setup_mark", by=s.name or s.device, id=target["item"], text=target["choice"])
+        await self._ctl_res(s, r, "setup_mark", result == "ok", **({} if result == "ok" else {"why": result}))
+        if snap:
+            self.push_setup(snap, show=True)
+
+    async def _setup_round_trip(self, s: Session) -> None:
+        """The leave-the-computer check: a message from a phone while the check is armed is its evidence."""
+        from . import first_run, onboarding
+        if getattr(s, "source_kind", None) == "telegram":
+            return
+        try:
+            snap = await asyncio.to_thread(first_run.phone_round_trip, self.st, onboarding.kind_of(s.name or ""),
+                                           getattr(s, "setup_net", None), self.setup_serve())
+        except (first_run.SetupError, OSError):
+            return
+        if snap:
+            self.push_setup(snap, show=True)
 
     async def send_memory(self, s: Session, r: str) -> None:
         c = self.agent_cfg
@@ -2752,7 +2873,10 @@ class Host:
         announced p33 itself (an older one gets exactly §3's message)."""
         if s is not None and not s.p33:
             return {}
-        return {"caps": [wire.CAP_P33, "heartbeat"], "asr": self.asr_state(), "hist": "on" if self.hist.on else "off"}
+        caps = [wire.CAP_P33, "heartbeat", wire.CAP_LT1]
+        if getattr(self, "telegram", None) is not None and self.telegram.can_forward():   # P118 B10: share → the owner's Telegram
+            caps.append("tgfwd")
+        return {"caps": caps, "asr": self.asr_state(), "hist": "on" if self.hist.on else "off"}
 
     async def _bulk(self, s: Session) -> None:
         """§10.13: a ready, allowlisted p33 device may upload faster — tell the relay (it answers the device {"t":"rate"});
@@ -2811,6 +2935,11 @@ class Host:
         finally:
             self.tts_busy=False
 
+    async def on_tg_fwd(self, s: Session, r: str, turn_id) -> None:
+        res = await self.telegram.forward(turn_id, s.device) if self.telegram is not None else {"ok": False, "why": "not_configured"}
+        if self.sessions.get(s.cid) is s and s.state == "ready" and self.st.is_allowed(s.pub):
+            await self.send_app(s, {"t": "tg_fwd_res", "r": r, **{k: v for k, v in res.items() if k in ("ok", "why", "parts")}})
+
     async def on_p33(self, s: Session, t: str, obj: dict) -> None:
         if t == "ping":
             r = obj.get("r")
@@ -2827,6 +2956,12 @@ class Host:
             return await self.on_pref_set(s, obj)
         if t == "tts_get":
             asyncio.create_task(self.on_tts(s, obj))
+            return
+        if t == "tg_fwd":                  # P118 (B10): one tap → this reply to the owner's own Telegram private chat
+            r = obj.get("r")
+            if not wire.is_rid(r):
+                return
+            asyncio.create_task(self.on_tg_fwd(s, r, obj.get("id")))   # Telegram may take seconds: never hold the reader
             return
         if t == "say":
             return await self.on_say(s, obj)
@@ -2951,6 +3086,7 @@ class Host:
         """A message for the Agent from a ready session: its page (src.k phone), the §8 entry for older phones, and the
         queued Send (withdrawable until delivered). Returns the Send (None without an Agent)."""
         blobs = blobs or []
+        await self._setup_round_trip(s)
         self.emit("msg", device=s.device, name=s.name, text=clean(text, wire.MAX_TEXT_P33))
         self.st.log("msg_in", cid=s.cid, device=s.device)
         entry = self._remember("device", text, device=s.device, name=s.name)
@@ -2969,6 +3105,7 @@ class Host:
             return None
         send = compose.Send(s.device, sid or secrets.token_urlsafe(16), turn["id"], blobs=blobs, by=s.name or s.device)
         send.onboarding_note = self.onboarding_note()
+        send.source = getattr(s, "provenance", None)      # B1: set only by host code (telegram.incoming), never from text
         files = [{"path": b.path, "mime": b.mime, "bytes": b.size, "origin": b.origin, "secs": b.secs,
                   "voice": getattr(b, "voice", "")} for b in blobs]
         voice = [f for f in files if f["origin"] == "recording" and f["mime"].startswith("audio/")]
@@ -3318,9 +3455,10 @@ class Host:
         self.model_sets = max(0, self.model_sets - 1)
         d = cmd.data or {}
         s = self.sessions.get(d.get("cid"))
-        self.activity("slash", cmd="model", result="ok" if why is None else "error", by=cmd.by)
+        self.activity("slash", cmd="model", result="ok" if why in (None, "queued") else "error", by=cmd.by)
         if s is not None and s.state == "ready":
-            m = {"t": "model_res", "r": d.get("r"), "ok": why is None, **({"why": why} if why else {})}
+            # P116 (B5): "queued" = accepted, applied when the desktop turn ends; the pill settles on the native meter
+            m = {"t": "model_res", "r": d.get("r"), "ok": why in (None, "queued"), **({"why": why} if why else {})}
             self._post(self.send_app, s, m)
         self.models_changed()
 
@@ -3561,12 +3699,22 @@ class Host:
             os.chmod(psock, 0o600)
             from . import personalize                # P57: bundled skills linked where free, before the harness starts
             self.st.log("skills_linked", **personalize.ensure())
+            # the Agent's sockets are bound just below; their (fixed) paths go into the environment BEFORE the harness can
+            # spawn, so a first command never misses one (0.18: seen as "Agent J is not running" from a fenced `agentj …`)
+            from . import capability as _cap, peer_service as _peer, recall as _recall
+            for env, name in ((elevate.ENV, elevate.SOCK_NAME), (_cap.ENV, _cap.SOCK_NAME), (_recall.ENV, _recall.SOCK_NAME),
+                              (_peer.ENV, getattr(_peer, "SOCK_NAME", "friends.sock"))):
+                os.environ[env] = str(self.st.perm_dir / name)
             self.agent = agents.make(self, self.agent_cfg)
             self.agent.start()
             self.sent_status = self.eff_status()
             self.st.log("agent_on", agent=self.agent.kind, isolation_requested=self.agent_cfg.get("fence", True), session_mode=self.agent_cfg.get("session_mode", "independent"), phase="configured")
         await self.bots.start()
         await self.elevate.start()                 # F17: <state>/agentperm/elevate.sock for `agentj sudo` / `agentj secret`
+        await self.capabilities.start()            # 0.18: <state>/agentperm/capability.sock for `agentj capability`
+        with contextlib.suppress(Exception):       # P115: pinned Google CLI pre-install, quiet, never blocks serve
+            from . import google
+            google.ensure_background(self.st)
         from .recall import Server as RecallServer
         self.recall = RecallServer(self)           # F22 (P57): <state>/agentperm/recall.sock for `agentj recall` (§15.4)
         await self.recall.start()
@@ -3581,6 +3729,8 @@ class Host:
         jobs.append(asyncio.create_task(self.telegram.run()))
         jobs.append(asyncio.create_task(self.scheduler.loop()))
         jobs.append(asyncio.create_task(self.sweep_loop()))
+        from .browser_login import daily_loop     # P114: the daily read-only sign-in check (status only, never a QR)
+        jobs.append(asyncio.create_task(daily_loop(self)))
         if self.read_stdin:
             jobs.append(asyncio.create_task(self.stdin_loop()))
         try:
@@ -3595,6 +3745,7 @@ class Host:
             await self.scheduler.stop_current()
             await self.bots.stop()
             await self.elevate.stop()
+            await self.capabilities.stop()
             await self.recall.stop()
             if self.peers is not None:
                 with contextlib.suppress(Exception):

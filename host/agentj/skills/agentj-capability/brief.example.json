@@ -1,0 +1,78 @@
+{
+ "schema_version": 1,
+ "task_id": "competitor-brief",
+ "revision": 1,
+ "goal": "每周一 09:00（Asia/Tokyo）生成三家竞品的公开资料简报，存本机并推到主人手机。",
+ "owner_request_ref": "requests/2026-10-10.md",
+ "workflow_id": "competitor-brief",
+ "context_refs": [
+  "inputs/owner-choices.json"
+ ],
+ "acceptance": [
+  {
+   "id": "coverage",
+   "criterion": "每家至少两条带官方来源 URL 的要点；不确定写明",
+   "evidence_expected": "reports/evidence.json"
+  },
+  {
+   "id": "delivery",
+   "criterion": "reports/weekly.md 可读（主机推到主人手机）",
+   "evidence_expected": "reports/weekly.md"
+  }
+ ],
+ "capabilities": [
+  {
+   "id": "web-public",
+   "registry_revision": 1,
+   "required": true
+  },
+  {
+   "id": "local-files",
+   "registry_revision": 1,
+   "required": true
+  },
+  {
+   "id": "phone-delivery",
+   "registry_revision": 1,
+   "required": true
+  }
+ ],
+ "red_lines": [
+  "不付费、不删除、不外发、不改凭据、不改价；任何此类操作逐条在手机上申请。",
+  "只读公开页面，不登录。"
+ ],
+ "deliverables": [
+  {
+   "path": "reports/weekly.md",
+   "format": "markdown",
+   "audience": "owner"
+  }
+ ],
+ "reporting": [
+  {
+   "when": "delivery",
+   "message": "简报已交付"
+  },
+  {
+   "when": "blocked",
+   "message": "说明缺口与安全替代"
+  }
+ ],
+ "plan": {
+  "kind": "weekly",
+  "schedule_task_ref": "competitor-brief/task.json",
+  "timezone": "Asia/Tokyo",
+  "human_enable_required": true
+ },
+ "failure_policy": {
+  "safe_fallback": "资料不足标 attention；不用付费服务",
+  "retry_limit": 2,
+  "pause_dependent_only": true
+ },
+ "confirmation": {
+  "mode": "signed",
+  "request_id": "competitor-brief-1",
+  "receipt_ref": "receipts/competitor-brief-1.json",
+  "scope_digest": "00c3e9f7447744a67859b3ed3c8e1eb3277fb691b1a71c4d4f41945aea539daa"
+ }
+}

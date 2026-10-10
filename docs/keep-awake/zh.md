@@ -238,3 +238,5 @@ powercfg /change hibernate-timeout-ac 60
 ![Windows 电源和电池示意图，非真实截图](windows.zh.svg)
 
 这是示意图，不是真实截图，仍需补一台 Windows 真机截图。
+
+防休眠是[离开电脑前清单](/docs/first-run/)里的一项；Agent 会在清单里检查它是否真的生效。

@@ -219,6 +219,14 @@ Agent ("send me the SS link"). Ordinary replies hide passwords, so the Agent sen
 - If this phone hasn't set up Face ID yet, tap "Set up Face ID" on the card first.
 - The card goes only to your own paired phones. Telegram, groups and friends still can't get these secrets.
 
+### Start card (long tasks)
+
+When you ask for something that keeps running — "set up a weekly competitor brief" — your Agent checks what it can do and
+puts everything that is yours to decide on **one start card**: what it will do, where it delivers, how often it runs and at
+most five choices. Confirm and start confirms the brief and, when needed, turns the schedule on; Change something starts
+nothing. No keys go on this card, and confirming never approves paying, deleting or sending outside — those still ask you
+one by one. See [Long tasks](https://agentj.app/docs/long-tasks/).
+
 More in [Admin rights and keys from your phone](https://agentj.app/docs/phone-admin/).
 
 ## Stop everything
@@ -305,6 +313,10 @@ Agent J is the only Agent you deal with, so most things are a sentence, not a bu
 - On long jobs it sends you a one-line progress note now and then.
 
 
+- "Set up a weekly competitor brief" and other recurring work: it checks its capabilities and sends one start card for
+  you to confirm, see [Long tasks](https://agentj.app/docs/long-tasks/).
+- "What can you do": a capability page opens on your phone — what is ready and what needs setup.
+
 Silent turns do not take up chat pages. Open ≡ → View silent history to read them. Esc or the backdrop closes the read-only panel; /clear clears it too.
 
 ## Add a remote for another computer
@@ -327,7 +339,7 @@ Agent J reads effective native `model_provider` from Codex `config/read` and nam
 For older Agent J versions that keep an old model/provider, start a new Codex conversation in the same folder using your current native defaults, then let Agent J follow the new conversation (clear any explicitly selected old shared thread). Or switch Agent J to an independent session. A new conversation has separate history. Do not ask the owner to paste keys into chat.
 
 
-Shared Claude automatically enables phone messages when the native ingress setting is unset, backing up settings.json first. This also applies when upgrading to 0.16.4; the phone is told once. Explicit off/hold or refuse remains unchanged. Enabled: phone messages no longer need individual confirmation on the computer; to disable, run `agentj config claude-inbound off`. Only Claude Code is affected; Codex/OpenCode have no equivalent mechanism. Repository or organization policies may still hold messages; keep the phone warning and check the computer before resending.
+Shared Claude startup and doctor resolve managed, private local, project and user ingress settings. They back up and repair writable hold/refuse/unset to accept (project policy is overridden in private local settings). Managed policy is read-only and its blocking layer/value is shown on the phone. Settings changed after a session starts need a new session or /clear on the computer to take effect; session/CLI and remote-managed overrides cannot be verified from these files. `agentj config claude-inbound off` is temporary in shared mode: the next shared startup or doctor restores accept. Check the desktop before resending an unacknowledged message.
 
 Shared mode: Claude `/clear` and `/compact` wait for the current desktop turn and confirm native hook receipts. A successful clear archives phone pages and starts at zero, including clears typed on the desktop. Context uses only new-session/post-compaction measurements; pending readings show “—”, never the previous value. A timeout reports an unconfirmed change; check the desktop before retrying. Shared Claude has no native undo-clear button: history remains archived locally; use desktop `/resume` to restore a conversation. Independent mode retains undo. Attached Codex cannot switch the desktop thread: use desktop `/new` and select the new thread. Attached OpenCode supports `/compact`; use desktop `/new` and select the new session to clear. Agent J's own Claude PTY accepts controls directly; an existing terminal requires an exact-session Herdr input route, otherwise the phone explains the reason and native command. Shared `/context`, `/usage`, `/status` and `/model` without an argument read measured data; unavailable values show “—”.
 
@@ -355,3 +367,6 @@ When a daily, weekly or monthly model allowance runs out, the phone tells you to
 If shared Claude completes a reply while your phone is disconnected, reconnecting updates its existing input page. Reloading first fetches the current computer history before claiming that a message is still waiting. `/update` receipts use the current language setting, including changes made while Agent J is running. `agentj doctor` includes the websockets version for troubleshooting.
 
 Local read-aloud uses only voices on this phone. Host/cloud voices stay in `voice.tts.voice`; choose a phone voice separately with `voice.tts.phone_voice` (empty selects the local default for the reply language). Switching modes keeps both choices. An unavailable phone voice falls back with one notice. On first opening, iPhone waits for local voices to load before reporting that no voice is available.
+
+
+Shared Claude ingress: startup and doctor repair the effective writable layer to accept; managed policies are read-only. Sessions started before the change need a new session or /clear on the computer. Shared startup re-enables ingress; check the desktop before resending unacknowledged messages.

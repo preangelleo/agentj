@@ -340,6 +340,27 @@ export async function runCases({ B, web, fake, only }) {
     await click('#fwdBtn');
     await waitToast(T('r.share.copied'));
   });
+  await C('forward-telegram', async () => {   // P118 (B10): with the host's `tgfwd`, one tap → the owner's own Telegram
+    fake.st.tgfwd = true; fake.st.tgFwds = [];
+    fake.kick(1001); await waitState(P, 'connecting', 3000).catch(() => {}); await waitState(P, 'ready', 8000);
+    await sleep(300);
+    await ev(`window.__shared = null; Object.defineProperty(navigator, 'share', { value: (d) => { window.__shared = d; return Promise.resolve(); }, configurable: true, writable: true })`);
+    await click('#fwdBtn');
+    await waitToast(T('r.tg.sent'));
+    ok(fake.st.tgFwds.length === 1 && Number.isInteger(fake.st.tgFwds[0].id) && !('text' in fake.st.tgFwds[0]), 'one tg_fwd with the turn id, never the words: ' + JSON.stringify(fake.st.tgFwds));
+    ok(await ev(`window.__shared === null && document.getElementById('fwdBtn').dataset.tg === '1'`), 'no share sheet; the button says Telegram');
+    await sleep(2100);
+    fake.st.tgfwdWhy = 'rate_limited';
+    await click('#fwdBtn');
+    await waitToast(T('r.tg.limited'));
+    ok(await ev(`window.__shared === null`), 'a refusal never falls through to the share sheet');
+    fake.st.tgfwdWhy = 'not_configured';   // Telegram switched off since ready → the share sheet from now on
+    await click('#fwdBtn');
+    await wait(`window.__shared && window.__shared.text === '复制我'`);
+    ok(fake.st.tgFwds.length === 3, 'three asks reached the host');
+    fake.st.tgfwd = false;
+    fake.kick(1001); await waitState(P, 'connecting', 3000).catch(() => {}); await waitState(P, 'ready', 8000);
+  });
   await C('thinking-dots', async () => {
     await fake.send({ t: 'status', s: 'working', agent: 'claude', name: 'Wren' });
     await wait(`getComputedStyle(document.querySelector('.thinking')).display === 'flex'`);

@@ -128,7 +128,7 @@ agentj --help
 
 ```text
 usage: agentj [-h] [-V]
-              {doctor,service,update,init,serve,protocol,pair,devices,revoke,send,status,name,admin,login,report,unlink,report-hostname,remote-pair,remote-unbind,agent,passphrase,approvals,feedback,stop,resume,memory,activity,config,history,inbox,asr,tasks,wizard,keep-awake,sudo,secret,provider,sudo-helper,docs-rule,handover,plaza,support,recall,bots,friends,codex-sandbox,migrate,alias,onboarding} ...
+              {doctor,service,update,init,serve,protocol,pair,devices,revoke,send,status,name,admin,login,report,unlink,report-hostname,remote-pair,remote-unbind,agent,passphrase,approvals,feedback,stop,resume,memory,activity,config,history,inbox,asr,tasks,wizard,keep-awake,browser,setup,google,sudo,secret,provider,sudo-helper,docs-rule,handover,telegram-cursor,plaza,support,capability,recall,bots,friends,codex-sandbox,migrate,alias,onboarding} ...
 ```
 
 | Argument | Default | Required | Choices | Help |
@@ -554,6 +554,529 @@ usage: agentj bots tool test [-h] --args ARGS bot tool
 | `tool` | `null` | true | — | `` |
 | `--args` | `null` | true | — | `` |
 
+### agentj browser
+
+```text
+Agent J's own browser
+```
+
+```bash
+agentj browser --help
+```
+
+```text
+usage: agentj browser [-h] [--json]
+                      {setup,status,enable,disable,endpoint,sandbox-fix,run,open,check,login,telegram-qr,sites} ...
+```
+
+| Argument | Default | Required | Choices | Help |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `--json` | `false` | false | — | `` |
+
+### agentj browser check
+
+```text
+read-only sign-in check
+```
+
+```bash
+agentj browser check --help
+```
+
+```text
+usage: agentj browser check [-h] [--site SITE] [--if-stale] [--json]
+```
+
+| Argument | Default | Required | Choices | Help |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `--site` | `null` | false | — | `repeatable; default all` |
+| `--if-stale` | `false` | false | — | `only sites not confirmed in the last 15 minutes` |
+| `--json` | `false` | false | — | `` |
+
+### agentj browser disable
+
+```text
+turn off, keep sign-ins
+```
+
+```bash
+agentj browser disable --help
+```
+
+```text
+usage: agentj browser disable [-h] [--json]
+```
+
+| Argument | Default | Required | Choices | Help |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `--json` | `false` | false | — | `` |
+
+### agentj browser enable
+
+```text
+turn on
+```
+
+```bash
+agentj browser enable --help
+```
+
+```text
+usage: agentj browser enable [-h] [--json]
+```
+
+| Argument | Default | Required | Choices | Help |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `--json` | `false` | false | — | `` |
+
+### agentj browser endpoint
+
+```text
+本机 CDP 地址（只在本机用）/ local CDP endpoint (this computer only)
+```
+
+```bash
+agentj browser endpoint --help
+```
+
+```text
+usage: agentj browser endpoint [-h] [--json]
+```
+
+| Argument | Default | Required | Choices | Help |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `--json` | `false` | false | — | `` |
+
+### agentj browser login
+
+```text
+sign-in card on the phone
+```
+
+```bash
+agentj browser login --help
+```
+
+```text
+usage: agentj browser login [-h] [--wait] [--json] site
+```
+
+| Argument | Default | Required | Choices | Help |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `site` | `null` | true | — | `` |
+| `--wait` | `false` | false | — | `wait up to 150 s for the result` |
+| `--json` | `false` | false | — | `` |
+
+### agentj browser open
+
+```text
+在本机浏览器打开网页（主人在电脑前登录用）/ open a page on this computer
+```
+
+```bash
+agentj browser open --help
+```
+
+```text
+usage: agentj browser open [-h] [--json] url
+```
+
+| Argument | Default | Required | Choices | Help |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `url` | `null` | true | — | `` |
+| `--json` | `false` | false | — | `` |
+
+### agentj browser run
+
+```text
+（服务内部用）常驻浏览器 / (service) keep the browser running
+```
+
+```bash
+agentj browser run --help
+```
+
+```text
+usage: agentj browser run [-h] [--json]
+```
+
+| Argument | Default | Required | Choices | Help |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `--json` | `false` | false | — | `` |
+
+### agentj browser sandbox-fix
+
+```text
+AppArmor profile via the phone card
+```
+
+```bash
+agentj browser sandbox-fix --help
+```
+
+```text
+usage: agentj browser sandbox-fix [-h] [--json]
+```
+
+| Argument | Default | Required | Choices | Help |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `--json` | `false` | false | — | `` |
+
+### agentj browser setup
+
+```text
+下载校验并启动（幂等）/ download, verify, start (idempotent)
+```
+
+```bash
+agentj browser setup --help
+```
+
+```text
+usage: agentj browser setup [-h] [--json]
+```
+
+| Argument | Default | Required | Choices | Help |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `--json` | `false` | false | — | `` |
+
+### agentj browser sites
+
+```text
+add <site> / remove <site>
+```
+
+```bash
+agentj browser sites --help
+```
+
+```text
+usage: agentj browser sites [-h] {list,add,remove} ...
+```
+
+| Argument | Default | Required | Choices | Help |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+
+### agentj browser sites add
+
+```text
+
+```
+
+```bash
+agentj browser sites add --help
+```
+
+```text
+usage: agentj browser sites add [-h] [--origin ORIGIN] [--url URL]
+                                [--title TITLE] [--json]
+                                site
+```
+
+| Argument | Default | Required | Choices | Help |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `site` | `null` | true | — | `google · gmail · youtube-studio · bilibili · douyin-creator · mp-weixin · channels-weixin · custom` |
+| `--origin` | `null` | false | — | `custom: https://example.com` |
+| `--url` | `null` | false | — | `custom: a page on the origin that needs sign-in` |
+| `--title` | `null` | false | — | `` |
+| `--json` | `false` | false | — | `` |
+
+### agentj browser sites list
+
+```text
+
+```
+
+```bash
+agentj browser sites list --help
+```
+
+```text
+usage: agentj browser sites list [-h] [--json]
+```
+
+| Argument | Default | Required | Choices | Help |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `--json` | `false` | false | — | `` |
+
+### agentj browser sites remove
+
+```text
+
+```
+
+```bash
+agentj browser sites remove --help
+```
+
+```text
+usage: agentj browser sites remove [-h] [--json] site
+```
+
+| Argument | Default | Required | Choices | Help |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `site` | `null` | true | — | `` |
+| `--json` | `false` | false | — | `` |
+
+### agentj browser status
+
+```text
+browser and site sign-in status
+```
+
+```bash
+agentj browser status --help
+```
+
+```text
+usage: agentj browser status [-h] [--json] [--registry]
+```
+
+| Argument | Default | Required | Choices | Help |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `--json` | `false` | false | — | `` |
+| `--registry` | `false` | false | — | `also print the P86 capability entries` |
+
+### agentj browser telegram-qr
+
+```text
+off（打开只能由主人在手机卡片上点）
+```
+
+```bash
+agentj browser telegram-qr --help
+```
+
+```text
+usage: agentj browser telegram-qr [-h] [--json] [{status,off}]
+```
+
+| Argument | Default | Required | Choices | Help |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `value` | `"status"` | false | `status`, `off` | `` |
+| `--json` | `false` | false | — | `` |
+
+### agentj capability
+
+```text
+long tasks: capability inventory, opening card, dispatch
+```
+
+```bash
+agentj capability --help
+```
+
+```text
+usage: agentj capability [-h]
+                         {list,sync,check,show,prepare,result,dispatch,digest,report-check} ...
+```
+
+| Argument | Default | Required | Choices | Help |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+
+### agentj capability check
+
+```text
+re-check entries
+```
+
+```bash
+agentj capability check --help
+```
+
+```text
+usage: agentj capability check [-h] [--id ID] [--json]
+```
+
+| Argument | Default | Required | Choices | Help |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `--id` | `null` | false | — | `能力 id（可多次）` |
+| `--json` | `false` | false | — | `` |
+
+### agentj capability digest
+
+```text
+brief digests
+```
+
+```bash
+agentj capability digest --help
+```
+
+```text
+usage: agentj capability digest [-h] [--workflow WORKFLOW] [--dir DIR]
+                                [--json]
+```
+
+| Argument | Default | Required | Choices | Help |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `--workflow` | `null` | false | — | `工作流文件夹名（相对 --dir）` |
+| `--dir` | `null` | false | — | `工作根目录或工作流目录（默认当前目录）` |
+| `--json` | `false` | false | — | `` |
+
+### agentj capability dispatch
+
+```text
+hand the brief to its CEO
+```
+
+```bash
+agentj capability dispatch --help
+```
+
+```text
+usage: agentj capability dispatch [-h] --workflow WORKFLOW [--json]
+```
+
+| Argument | Default | Required | Choices | Help |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `--workflow` | `null` | true | — | `` |
+| `--json` | `false` | false | — | `` |
+
+### agentj capability list
+
+```text
+能力清单（不重新检查）/ the inventory
+```
+
+```bash
+agentj capability list --help
+```
+
+```text
+usage: agentj capability list [-h] [--json]
+```
+
+| Argument | Default | Required | Choices | Help |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `--json` | `false` | false | — | `` |
+
+### agentj capability prepare
+
+```text
+one opening card on the phone
+```
+
+```bash
+agentj capability prepare --help
+```
+
+```text
+usage: agentj capability prepare [-h] --workflow WORKFLOW [--asks ASKS]
+                                 [--json]
+```
+
+| Argument | Default | Required | Choices | Help |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `--workflow` | `null` | true | — | `` |
+| `--asks` | `null` | false | — | `主人需要做的选择（JSON 文件，≤5 项）/ the owner's choices, a JSON file` |
+| `--json` | `false` | false | — | `` |
+
+### agentj capability report-check
+
+```text
+check reports/report.json
+```
+
+```bash
+agentj capability report-check --help
+```
+
+```text
+usage: agentj capability report-check [-h] [--workflow WORKFLOW] [--dir DIR]
+                                      [--verdict {ok,attention,fail}] [--json]
+```
+
+| Argument | Default | Required | Choices | Help |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `--workflow` | `null` | false | — | `工作流文件夹名（相对 --dir）` |
+| `--dir` | `null` | false | — | `工作根目录或工作流目录（默认当前目录）` |
+| `--verdict` | `null` | false | `ok`, `attention`, `fail` | `` |
+| `--json` | `false` | false | — | `` |
+
+### agentj capability result
+
+```text
+the card's outcome
+```
+
+```bash
+agentj capability result --help
+```
+
+```text
+usage: agentj capability result [-h] [--wait] [--json] card
+```
+
+| Argument | Default | Required | Choices | Help |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `card` | `null` | true | — | `` |
+| `--wait` | `false` | false | — | `` |
+| `--json` | `false` | false | — | `` |
+
+### agentj capability show
+
+```text
+show it on the phone
+```
+
+```bash
+agentj capability show --help
+```
+
+```text
+usage: agentj capability show [-h] [--json]
+```
+
+| Argument | Default | Required | Choices | Help |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `--json` | `false` | false | — | `` |
+
+### agentj capability sync
+
+```text
+discover and re-check
+```
+
+```bash
+agentj capability sync --help
+```
+
+```text
+usage: agentj capability sync [-h] [--force] [--json]
+```
+
+| Argument | Default | Required | Choices | Help |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `--force` | `false` | false | — | `` |
+| `--json` | `false` | false | — | `` |
+
 ### agentj channel
 
 ```text
@@ -705,6 +1228,25 @@ usage: agentj config claude-statusline [-h] {on,off,status}
 | --- | --- | --- | --- | --- |
 | `-h / --help` | `null` | false | — | `show this help message and exit` |
 | `mode` | `null` | true | `on`, `off`, `status` | `` |
+
+### agentj config private-instructions
+
+```text
+
+```
+
+```bash
+agentj config private-instructions --help
+```
+
+```text
+usage: agentj config private-instructions [-h] {status}
+```
+
+| Argument | Default | Required | Choices | Help |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `mode` | `null` | true | `status` | `` |
 
 ### agentj devices
 
@@ -1220,6 +1762,30 @@ usage: agentj friends usage [-h] [--json] [friend]
 | `-h / --help` | `null` | false | — | `show this help message and exit` |
 | `--json` | `false` | false | — | `machine-readable output` |
 | `friend` | `null` | false | — | `` |
+
+### agentj google
+
+```text
+Google tools: pinned gog, read-only status, purpose plan
+```
+
+```bash
+agentj google --help
+```
+
+```text
+usage: agentj google [-h]
+                     [--purpose {calendar-read,calendar-write,drive-file,gmail-read,gmail-send,search-console-read,youtube-publish}]
+                     [--json]
+                     [{status,check,install,plan,on,off,registry}]
+```
+
+| Argument | Default | Required | Choices | Help |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `action` | `"status"` | false | `status`, `check`, `install`, `plan`, `on`, `off`, `registry` | `status read-only · check probes gog · install pre-installs · plan shows a setup plan · on/off use it or not` |
+| `--purpose` | `null` | false | `calendar-read`, `calendar-write`, `drive-file`, `gmail-read`, `gmail-send`, `search-console-read`, `youtube-publish` | `plan: purpose, repeatable` |
+| `--json` | `false` | false | — | `` |
 
 ### agentj handover
 
@@ -2265,6 +2831,48 @@ usage: agentj service [-h] [--json]
 | `--deferred` | `null` | false | — | `internal option (hidden from --help)` |
 | `--recovery-worker` | `null` | false | — | `internal option (hidden from --help)` |
 
+### agentj setup
+
+```text
+first-run checklist while you are at the computer
+```
+
+```bash
+agentj setup --help
+```
+
+```text
+usage: agentj setup [-h] {checklist} ...
+```
+
+| Argument | Default | Required | Choices | Help |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+
+### agentj setup checklist
+
+```text
+the checklist: read-only, or --resume to start
+```
+
+```bash
+agentj setup checklist --help
+```
+
+```text
+usage: agentj setup checklist [-h] [--resume | --check |
+                              --item {seat,harness,desktop,phone,passkey,admin,phonepermissions,sudo,awake,service,updates,network,browser,gmail,youtube,bili,douyin,wechat,sites,google,keyring,files,fda,accessibility,automation,screen,hardware,tg,botkey,exit}]
+                              [--json]
+```
+
+| Argument | Default | Required | Choices | Help |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `--resume` | `false` | false | — | `start or continue and show the card` |
+| `--check` | `false` | false | — | `live read-only re-check` |
+| `--item` | `null` | false | `seat`, `harness`, `desktop`, `phone`, `passkey`, `admin`, `phonepermissions`, `sudo`, `awake`, `service`, `updates`, `network`, `browser`, `gmail`, `youtube`, `bili`, `douyin`, `wechat`, `sites`, `google`, `keyring`, `files`, `fda`, `accessibility`, `automation`, `screen`, `hardware`, `tg`, `botkey`, `exit` | `re-check one item` |
+| `--json` | `false` | false | — | `` |
+
 ### agentj skill
 
 ```text
@@ -2512,6 +3120,104 @@ usage: agentj tasks [-h] [--dry-run] [--json]
 | `id` | `null` | false | — | `` |
 | `--dry-run` | `false` | false | — | `show the plan only` |
 | `--json` | `false` | false | — | `` |
+
+### agentj telegram-cursor
+
+```text
+Telegram cursor for a Relay⇄Agent J switch
+```
+
+```bash
+agentj telegram-cursor --help
+```
+
+```text
+usage: agentj telegram-cursor [-h] {status,fence,import,export} ...
+```
+
+| Argument | Default | Required | Choices | Help |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+
+### agentj telegram-cursor export
+
+```text
+Agent J → Relay（回滚）：把已消费的位置写回 Relay（只前进不后退）
+```
+
+```bash
+agentj telegram-cursor export --help
+```
+
+```text
+usage: agentj telegram-cursor export [-h] --relay-offset RELAY_OFFSET
+                                     [--force]
+```
+
+| Argument | Default | Required | Choices | Help |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `--relay-offset` | `null` | true | — | `` |
+| `--force` | `false` | false | — | `Agent J stopped with replies still owed: export anyway, list those turns as uncertain` |
+
+### agentj telegram-cursor fence
+
+```text
+
+```
+
+```bash
+agentj telegram-cursor fence --help
+```
+
+```text
+usage: agentj telegram-cursor fence [-h] [--wait WAIT] {drain,off}
+```
+
+| Argument | Default | Required | Choices | Help |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `state` | `null` | true | `drain`, `off` | `` |
+| `--wait` | `0` | false | — | `seconds to wait until every owed reply is sent` |
+
+### agentj telegram-cursor import
+
+```text
+Relay → Agent J：从 Relay 的 offset 文件接续（取较大值）
+```
+
+```bash
+agentj telegram-cursor import --help
+```
+
+```text
+usage: agentj telegram-cursor import [-h] --relay-offset RELAY_OFFSET
+                                     [--bot-id BOT_ID]
+```
+
+| Argument | Default | Required | Choices | Help |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `--relay-offset` | `null` | true | — | `` |
+| `--bot-id` | `null` | false | — | `` |
+
+### agentj telegram-cursor status
+
+```text
+
+```
+
+```bash
+agentj telegram-cursor status --help
+```
+
+```text
+usage: agentj telegram-cursor status [-h]
+```
+
+| Argument | Default | Required | Choices | Help |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
 
 ### agentj theme
 
@@ -2955,7 +3661,7 @@ agentj --help
 
 ```text
 usage: agentj [-h] [-V]
-              {doctor,service,update,init,serve,protocol,pair,devices,revoke,send,status,name,admin,login,report,unlink,report-hostname,remote-pair,remote-unbind,agent,passphrase,approvals,feedback,stop,resume,memory,activity,config,history,inbox,asr,tasks,wizard,keep-awake,sudo,secret,provider,sudo-helper,docs-rule,handover,plaza,support,recall,bots,friends,codex-sandbox,migrate,alias,onboarding} ...
+              {doctor,service,update,init,serve,protocol,pair,devices,revoke,send,status,name,admin,login,report,unlink,report-hostname,remote-pair,remote-unbind,agent,passphrase,approvals,feedback,stop,resume,memory,activity,config,history,inbox,asr,tasks,wizard,keep-awake,browser,setup,google,sudo,secret,provider,sudo-helper,docs-rule,handover,telegram-cursor,plaza,support,capability,recall,bots,friends,codex-sandbox,migrate,alias,onboarding} ...
 ```
 
 | 参数 | 默认值 | 必填 | 可选值 | 说明 |
@@ -3381,6 +4087,529 @@ usage: agentj bots tool test [-h] --args ARGS bot tool
 | `tool` | `null` | true | — | `` |
 | `--args` | `null` | true | — | `` |
 
+### agentj browser
+
+```text
+Agent J 专用浏览器：setup/status/check/login/sites…
+```
+
+```bash
+agentj browser --help
+```
+
+```text
+usage: agentj browser [-h] [--json]
+                      {setup,status,enable,disable,endpoint,sandbox-fix,run,open,check,login,telegram-qr,sites} ...
+```
+
+| 参数 | 默认值 | 必填 | 可选值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `--json` | `false` | false | — | `` |
+
+### agentj browser check
+
+```text
+只读登录体检
+```
+
+```bash
+agentj browser check --help
+```
+
+```text
+usage: agentj browser check [-h] [--site SITE] [--if-stale] [--json]
+```
+
+| 参数 | 默认值 | 必填 | 可选值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `--site` | `null` | false | — | `repeatable; default all` |
+| `--if-stale` | `false` | false | — | `only sites not confirmed in the last 15 minutes` |
+| `--json` | `false` | false | — | `` |
+
+### agentj browser disable
+
+```text
+关闭，保留登录资料
+```
+
+```bash
+agentj browser disable --help
+```
+
+```text
+usage: agentj browser disable [-h] [--json]
+```
+
+| 参数 | 默认值 | 必填 | 可选值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `--json` | `false` | false | — | `` |
+
+### agentj browser enable
+
+```text
+打开并启动
+```
+
+```bash
+agentj browser enable --help
+```
+
+```text
+usage: agentj browser enable [-h] [--json]
+```
+
+| 参数 | 默认值 | 必填 | 可选值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `--json` | `false` | false | — | `` |
+
+### agentj browser endpoint
+
+```text
+本机 CDP 地址（只在本机用）/ local CDP endpoint (this computer only)
+```
+
+```bash
+agentj browser endpoint --help
+```
+
+```text
+usage: agentj browser endpoint [-h] [--json]
+```
+
+| 参数 | 默认值 | 必填 | 可选值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `--json` | `false` | false | — | `` |
+
+### agentj browser login
+
+```text
+给主人的手机发登录二维码卡，或在本机打开登录页
+```
+
+```bash
+agentj browser login --help
+```
+
+```text
+usage: agentj browser login [-h] [--wait] [--json] site
+```
+
+| 参数 | 默认值 | 必填 | 可选值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `site` | `null` | true | — | `` |
+| `--wait` | `false` | false | — | `wait up to 150 s for the result` |
+| `--json` | `false` | false | — | `` |
+
+### agentj browser open
+
+```text
+在本机浏览器打开网页（主人在电脑前登录用）/ open a page on this computer
+```
+
+```bash
+agentj browser open --help
+```
+
+```text
+usage: agentj browser open [-h] [--json] url
+```
+
+| 参数 | 默认值 | 必填 | 可选值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `url` | `null` | true | — | `` |
+| `--json` | `false` | false | — | `` |
+
+### agentj browser run
+
+```text
+（服务内部用）常驻浏览器 / (service) keep the browser running
+```
+
+```bash
+agentj browser run --help
+```
+
+```text
+usage: agentj browser run [-h] [--json]
+```
+
+| 参数 | 默认值 | 必填 | 可选值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `--json` | `false` | false | — | `` |
+
+### agentj browser sandbox-fix
+
+```text
+Ubuntu 23.10+ 沙箱受限时，经手机密码卡安装 AppArmor 规则
+```
+
+```bash
+agentj browser sandbox-fix --help
+```
+
+```text
+usage: agentj browser sandbox-fix [-h] [--json]
+```
+
+| 参数 | 默认值 | 必填 | 可选值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `--json` | `false` | false | — | `` |
+
+### agentj browser setup
+
+```text
+下载校验并启动（幂等）/ download, verify, start (idempotent)
+```
+
+```bash
+agentj browser setup --help
+```
+
+```text
+usage: agentj browser setup [-h] [--json]
+```
+
+| 参数 | 默认值 | 必填 | 可选值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `--json` | `false` | false | — | `` |
+
+### agentj browser sites
+
+```text
+list
+```
+
+```bash
+agentj browser sites --help
+```
+
+```text
+usage: agentj browser sites [-h] {list,add,remove} ...
+```
+
+| 参数 | 默认值 | 必填 | 可选值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+
+### agentj browser sites add
+
+```text
+
+```
+
+```bash
+agentj browser sites add --help
+```
+
+```text
+usage: agentj browser sites add [-h] [--origin ORIGIN] [--url URL]
+                                [--title TITLE] [--json]
+                                site
+```
+
+| 参数 | 默认值 | 必填 | 可选值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `site` | `null` | true | — | `google · gmail · youtube-studio · bilibili · douyin-creator · mp-weixin · channels-weixin · custom` |
+| `--origin` | `null` | false | — | `custom: https://example.com` |
+| `--url` | `null` | false | — | `custom: a page on the origin that needs sign-in` |
+| `--title` | `null` | false | — | `` |
+| `--json` | `false` | false | — | `` |
+
+### agentj browser sites list
+
+```text
+
+```
+
+```bash
+agentj browser sites list --help
+```
+
+```text
+usage: agentj browser sites list [-h] [--json]
+```
+
+| 参数 | 默认值 | 必填 | 可选值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `--json` | `false` | false | — | `` |
+
+### agentj browser sites remove
+
+```text
+
+```
+
+```bash
+agentj browser sites remove --help
+```
+
+```text
+usage: agentj browser sites remove [-h] [--json] site
+```
+
+| 参数 | 默认值 | 必填 | 可选值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `site` | `null` | true | — | `` |
+| `--json` | `false` | false | — | `` |
+
+### agentj browser status
+
+```text
+浏览器与各网站登录状态
+```
+
+```bash
+agentj browser status --help
+```
+
+```text
+usage: agentj browser status [-h] [--json] [--registry]
+```
+
+| 参数 | 默认值 | 必填 | 可选值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `--json` | `false` | false | — | `` |
+| `--registry` | `false` | false | — | `also print the P86 capability entries` |
+
+### agentj browser telegram-qr
+
+```text
+登录二维码是否也发 Telegram：status
+```
+
+```bash
+agentj browser telegram-qr --help
+```
+
+```text
+usage: agentj browser telegram-qr [-h] [--json] [{status,off}]
+```
+
+| 参数 | 默认值 | 必填 | 可选值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `value` | `"status"` | false | `status`, `off` | `` |
+| `--json` | `false` | false | — | `` |
+
+### agentj capability
+
+```text
+长程任务：能力清单 list · sync · check · show，开工卡 prepare · result，派单 dispatch，digest · report-check
+```
+
+```bash
+agentj capability --help
+```
+
+```text
+usage: agentj capability [-h]
+                         {list,sync,check,show,prepare,result,dispatch,digest,report-check} ...
+```
+
+| 参数 | 默认值 | 必填 | 可选值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+
+### agentj capability check
+
+```text
+重新检查指定能力
+```
+
+```bash
+agentj capability check --help
+```
+
+```text
+usage: agentj capability check [-h] [--id ID] [--json]
+```
+
+| 参数 | 默认值 | 必填 | 可选值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `--id` | `null` | false | — | `能力 id（可多次）` |
+| `--json` | `false` | false | — | `` |
+
+### agentj capability digest
+
+```text
+任务书摘要
+```
+
+```bash
+agentj capability digest --help
+```
+
+```text
+usage: agentj capability digest [-h] [--workflow WORKFLOW] [--dir DIR]
+                                [--json]
+```
+
+| 参数 | 默认值 | 必填 | 可选值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `--workflow` | `null` | false | — | `工作流文件夹名（相对 --dir）` |
+| `--dir` | `null` | false | — | `工作根目录或工作流目录（默认当前目录）` |
+| `--json` | `false` | false | — | `` |
+
+### agentj capability dispatch
+
+```text
+把任务书派给工作流 CEO
+```
+
+```bash
+agentj capability dispatch --help
+```
+
+```text
+usage: agentj capability dispatch [-h] --workflow WORKFLOW [--json]
+```
+
+| 参数 | 默认值 | 必填 | 可选值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `--workflow` | `null` | true | — | `` |
+| `--json` | `false` | false | — | `` |
+
+### agentj capability list
+
+```text
+能力清单（不重新检查）/ the inventory
+```
+
+```bash
+agentj capability list --help
+```
+
+```text
+usage: agentj capability list [-h] [--json]
+```
+
+| 参数 | 默认值 | 必填 | 可选值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `--json` | `false` | false | — | `` |
+
+### agentj capability prepare
+
+```text
+开工卡：预检任务书并在手机上集中确认
+```
+
+```bash
+agentj capability prepare --help
+```
+
+```text
+usage: agentj capability prepare [-h] --workflow WORKFLOW [--asks ASKS]
+                                 [--json]
+```
+
+| 参数 | 默认值 | 必填 | 可选值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `--workflow` | `null` | true | — | `` |
+| `--asks` | `null` | false | — | `主人需要做的选择（JSON 文件，≤5 项）/ the owner's choices, a JSON file` |
+| `--json` | `false` | false | — | `` |
+
+### agentj capability report-check
+
+```text
+检查 CEO 报告
+```
+
+```bash
+agentj capability report-check --help
+```
+
+```text
+usage: agentj capability report-check [-h] [--workflow WORKFLOW] [--dir DIR]
+                                      [--verdict {ok,attention,fail}] [--json]
+```
+
+| 参数 | 默认值 | 必填 | 可选值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `--workflow` | `null` | false | — | `工作流文件夹名（相对 --dir）` |
+| `--dir` | `null` | false | — | `工作根目录或工作流目录（默认当前目录）` |
+| `--verdict` | `null` | false | `ok`, `attention`, `fail` | `` |
+| `--json` | `false` | false | — | `` |
+
+### agentj capability result
+
+```text
+开工卡结果
+```
+
+```bash
+agentj capability result --help
+```
+
+```text
+usage: agentj capability result [-h] [--wait] [--json] card
+```
+
+| 参数 | 默认值 | 必填 | 可选值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `card` | `null` | true | — | `` |
+| `--wait` | `false` | false | — | `` |
+| `--json` | `false` | false | — | `` |
+
+### agentj capability show
+
+```text
+把能力页发到主人手机
+```
+
+```bash
+agentj capability show --help
+```
+
+```text
+usage: agentj capability show [-h] [--json]
+```
+
+| 参数 | 默认值 | 必填 | 可选值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `--json` | `false` | false | — | `` |
+
+### agentj capability sync
+
+```text
+发现并检查到期的能力
+```
+
+```bash
+agentj capability sync --help
+```
+
+```text
+usage: agentj capability sync [-h] [--force] [--json]
+```
+
+| 参数 | 默认值 | 必填 | 可选值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `--force` | `false` | false | — | `` |
+| `--json` | `false` | false | — | `` |
+
 ### agentj channel
 
 ```text
@@ -3532,6 +4761,25 @@ usage: agentj config claude-statusline [-h] {on,off,status}
 | --- | --- | --- | --- | --- |
 | `-h / --help` | `null` | false | — | `show this help message and exit` |
 | `mode` | `null` | true | `on`, `off`, `status` | `` |
+
+### agentj config private-instructions
+
+```text
+
+```
+
+```bash
+agentj config private-instructions --help
+```
+
+```text
+usage: agentj config private-instructions [-h] {status}
+```
+
+| 参数 | 默认值 | 必填 | 可选值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `mode` | `null` | true | `status` | `` |
 
 ### agentj devices
 
@@ -4047,6 +5295,30 @@ usage: agentj friends usage [-h] [--json] [friend]
 | `-h / --help` | `null` | false | — | `show this help message and exit` |
 | `--json` | `false` | false | — | `机器可读输出` |
 | `friend` | `null` | false | — | `` |
+
+### agentj google
+
+```text
+Google 工具：预装 gog、只读状态、用途与权限计划
+```
+
+```bash
+agentj google --help
+```
+
+```text
+usage: agentj google [-h]
+                     [--purpose {calendar-read,calendar-write,drive-file,gmail-read,gmail-send,search-console-read,youtube-publish}]
+                     [--json]
+                     [{status,check,install,plan,on,off,registry}]
+```
+
+| 参数 | 默认值 | 必填 | 可选值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `action` | `"status"` | false | `status`, `check`, `install`, `plan`, `on`, `off`, `registry` | `status 只读 · check 实测 gog · install 预装 · plan 某些用途的建置计划 · on/off 用不用` |
+| `--purpose` | `null` | false | `calendar-read`, `calendar-write`, `drive-file`, `gmail-read`, `gmail-send`, `search-console-read`, `youtube-publish` | `plan：用途，可重复` |
+| `--json` | `false` | false | — | `` |
 
 ### agentj handover
 
@@ -5092,6 +6364,48 @@ usage: agentj service [-h] [--json]
 | `--deferred` | `null` | false | — | `内部参数（--help 隐藏）` |
 | `--recovery-worker` | `null` | false | — | `内部参数（--help 隐藏）` |
 
+### agentj setup
+
+```text
+首次准备：电脑前一次做完
+```
+
+```bash
+agentj setup --help
+```
+
+```text
+usage: agentj setup [-h] {checklist} ...
+```
+
+| 参数 | 默认值 | 必填 | 可选值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+
+### agentj setup checklist
+
+```text
+首次准备清单：只读，或 --resume 开始/继续
+```
+
+```bash
+agentj setup checklist --help
+```
+
+```text
+usage: agentj setup checklist [-h] [--resume | --check |
+                              --item {seat,harness,desktop,phone,passkey,admin,phonepermissions,sudo,awake,service,updates,network,browser,gmail,youtube,bili,douyin,wechat,sites,google,keyring,files,fda,accessibility,automation,screen,hardware,tg,botkey,exit}]
+                              [--json]
+```
+
+| 参数 | 默认值 | 必填 | 可选值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `--resume` | `false` | false | — | `开始或继续，并把卡片发到手机` |
+| `--check` | `false` | false | — | `实时只读复查` |
+| `--item` | `null` | false | `seat`, `harness`, `desktop`, `phone`, `passkey`, `admin`, `phonepermissions`, `sudo`, `awake`, `service`, `updates`, `network`, `browser`, `gmail`, `youtube`, `bili`, `douyin`, `wechat`, `sites`, `google`, `keyring`, `files`, `fda`, `accessibility`, `automation`, `screen`, `hardware`, `tg`, `botkey`, `exit` | `只复查这一项` |
+| `--json` | `false` | false | — | `` |
+
 ### agentj skill
 
 ```text
@@ -5339,6 +6653,104 @@ usage: agentj tasks [-h] [--dry-run] [--json]
 | `id` | `null` | false | — | `` |
 | `--dry-run` | `false` | false | — | `run：只显示会怎么跑，不运行` |
 | `--json` | `false` | false | — | `` |
+
+### agentj telegram-cursor
+
+```text
+Telegram 接管 / 回滚的 cursor：status · fence drain\|off · import · export（只有编号，不存消息）
+```
+
+```bash
+agentj telegram-cursor --help
+```
+
+```text
+usage: agentj telegram-cursor [-h] {status,fence,import,export} ...
+```
+
+| 参数 | 默认值 | 必填 | 可选值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+
+### agentj telegram-cursor export
+
+```text
+Agent J → Relay（回滚）：把已消费的位置写回 Relay（只前进不后退）
+```
+
+```bash
+agentj telegram-cursor export --help
+```
+
+```text
+usage: agentj telegram-cursor export [-h] --relay-offset RELAY_OFFSET
+                                     [--force]
+```
+
+| 参数 | 默认值 | 必填 | 可选值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `--relay-offset` | `null` | true | — | `` |
+| `--force` | `false` | false | — | `Agent J stopped with replies still owed: export anyway, list those turns as uncertain` |
+
+### agentj telegram-cursor fence
+
+```text
+
+```
+
+```bash
+agentj telegram-cursor fence --help
+```
+
+```text
+usage: agentj telegram-cursor fence [-h] [--wait WAIT] {drain,off}
+```
+
+| 参数 | 默认值 | 必填 | 可选值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `state` | `null` | true | `drain`, `off` | `` |
+| `--wait` | `0` | false | — | `seconds to wait until every owed reply is sent` |
+
+### agentj telegram-cursor import
+
+```text
+Relay → Agent J：从 Relay 的 offset 文件接续（取较大值）
+```
+
+```bash
+agentj telegram-cursor import --help
+```
+
+```text
+usage: agentj telegram-cursor import [-h] --relay-offset RELAY_OFFSET
+                                     [--bot-id BOT_ID]
+```
+
+| 参数 | 默认值 | 必填 | 可选值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `--relay-offset` | `null` | true | — | `` |
+| `--bot-id` | `null` | false | — | `` |
+
+### agentj telegram-cursor status
+
+```text
+
+```
+
+```bash
+agentj telegram-cursor status --help
+```
+
+```text
+usage: agentj telegram-cursor status [-h]
+```
+
+| 参数 | 默认值 | 必填 | 可选值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
 
 ### agentj theme
 

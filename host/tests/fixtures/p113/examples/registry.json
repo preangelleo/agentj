@@ -1,0 +1,158 @@
+{
+  "schema_version": 1,
+  "host_id": "demo-local",
+  "revision": 1,
+  "generated_at": "2026-10-09T01:30:00Z",
+  "entries": [
+    {
+      "id": "public-research",
+      "kind": "skill",
+      "title": {
+        "zh": "公开资料调研",
+        "en": "Public research"
+      },
+      "source_ref": "skills/public-research/SKILL.md",
+      "scope": [
+        "public.read"
+      ],
+      "provides": [
+        "research.public"
+      ],
+      "depends_on": [],
+      "status": "ready",
+      "credential_name": null,
+      "check": {
+        "status": "ok",
+        "adapter_id": "skill-safe",
+        "last_verified_at": "2026-10-09T01:30:00Z",
+        "expires_at": "2026-10-10T01:30:00Z",
+        "source_digest": "0000000000000000000000000000000000000000000000000000000000000000"
+      }
+    },
+    {
+      "id": "browser-research",
+      "kind": "browser",
+      "title": {
+        "zh": "浏览器资料读取",
+        "en": "Browser research"
+      },
+      "source_ref": "browser/profiles/research",
+      "scope": [
+        "public.read"
+      ],
+      "provides": [
+        "browser.read"
+      ],
+      "depends_on": [],
+      "status": "ready",
+      "credential_name": null,
+      "check": {
+        "status": "ok",
+        "adapter_id": "browser-safe",
+        "last_verified_at": "2026-10-09T01:30:00Z",
+        "expires_at": "2026-10-10T01:30:00Z",
+        "source_digest": null
+      }
+    },
+    {
+      "id": "brief-cli",
+      "kind": "cli",
+      "title": {
+        "zh": "本机简报工具",
+        "en": "Local brief tool"
+      },
+      "source_ref": "tools/brief",
+      "scope": [
+        "public.read"
+      ],
+      "provides": [
+        "brief.write"
+      ],
+      "depends_on": [],
+      "status": "ready",
+      "credential_name": null,
+      "check": {
+        "status": "ok",
+        "adapter_id": "cli-safe",
+        "last_verified_at": "2026-10-09T01:30:00Z",
+        "expires_at": "2026-10-10T01:30:00Z",
+        "source_digest": "0000000000000000000000000000000000000000000000000000000000000000"
+      }
+    },
+    {
+      "id": "sources-mcp",
+      "kind": "mcp",
+      "title": {
+        "zh": "资料连接器",
+        "en": "Sources connector"
+      },
+      "source_ref": "mcp/sources",
+      "scope": [
+        "public.read"
+      ],
+      "provides": [
+        "sources.read"
+      ],
+      "depends_on": [],
+      "status": "ready",
+      "credential_name": null,
+      "check": {
+        "status": "ok",
+        "adapter_id": "mcp-safe",
+        "last_verified_at": "2026-10-09T01:30:00Z",
+        "expires_at": "2026-10-10T01:30:00Z",
+        "source_digest": "0000000000000000000000000000000000000000000000000000000000000000"
+      }
+    },
+    {
+      "id": "competitor-ceo",
+      "kind": "ceo",
+      "title": {
+        "zh": "竞品简报工作流",
+        "en": "Competitive brief workflow"
+      },
+      "source_ref": "structure/workflows/competitor-brief",
+      "scope": [
+        "public.read"
+      ],
+      "provides": [
+        "brief.weekly"
+      ],
+      "depends_on": [],
+      "status": "ready",
+      "credential_name": null,
+      "check": {
+        "status": "ok",
+        "adapter_id": "ceo-safe",
+        "last_verified_at": "2026-10-09T01:30:00Z",
+        "expires_at": "2026-10-10T01:30:00Z",
+        "source_digest": null
+      }
+    },
+    {
+      "id": "research-key",
+      "kind": "credential",
+      "title": {
+        "zh": "可选调研服务",
+        "en": "Optional research service"
+      },
+      "source_ref": "credentials/RESEARCH_API_KEY",
+      "scope": [
+        "public.read"
+      ],
+      "provides": [
+        "research.enriched"
+      ],
+      "depends_on": [],
+      "status": "missing",
+      "credential_name": "RESEARCH_API_KEY",
+      "check": {
+        "status": "not_found",
+        "adapter_id": "credential-safe",
+        "last_verified_at": null,
+        "expires_at": null,
+        "source_digest": null
+      }
+    }
+  ]
+}

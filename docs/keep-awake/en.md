@@ -238,3 +238,5 @@ powercfg /change hibernate-timeout-ac 60
 ![Windows Power and battery: labeled illustration, not a screenshot](windows.en.svg)
 
 Illustration, not a real screenshot. A physical Windows screenshot is still needed.
+
+Keeping the computer awake is one item of the [first-run checklist](/docs/first-run/); your Agent checks there that it actually took effect.

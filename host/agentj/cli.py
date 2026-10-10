@@ -1802,7 +1802,7 @@ def main_jarvis(argv=None) -> None:
 
 # `migrate status` reports, `migrate rollback` undoes, `docs-rule` prints (or, with --write and the human's y, appends to the
 # AI's own memory file), `handover` only reads: none may move the state directory first
-NO_MIGRATE = ("migrate", "docs-rule", "handover", "recall", "friends", "codex-sandbox")   # recall / friends / codex-sandbox: usually inside the fence
+NO_MIGRATE = ("migrate", "docs-rule", "handover", "recall", "friends", "codex-sandbox", "capability", "google", "setup")   # recall / friends / codex-sandbox / capability: usually inside the fence
 
 
 def main(argv=None) -> None:
@@ -1814,6 +1814,9 @@ def main(argv=None) -> None:
     if args[:2] == ["config", "auto-update"]:
         from . import auto_update
         raise SystemExit(auto_update.command(args[2:]))
+    if args[:2] == ["config", "private-instructions"]:
+        from . import private_instructions
+        raise SystemExit(private_instructions.command(args[2:]))
     if args[:2] == ["config", "claude-statusline"]:
         from . import claude_statusline
         raise SystemExit(claude_statusline.command(args[2:]))
@@ -2004,14 +2007,23 @@ def main(argv=None) -> None:
     wizard.add_parser(sub)
     from . import keep_awake
     keep_awake.add_parser(sub)
+    from . import browser
+    browser.add_parser(sub)   # P114: agentj browser setup|status|check|login|sites|open|endpoint|enable|disable
+    from . import first_run, google
+    first_run.add_parser(sub)   # P115 / P92: agentj setup checklist
+    google.add_parser(sub)      # P115 / P91: agentj google status|check|install|plan|on|off
     elevate.add_parser(sub)   # F17: agentj sudo · agentj secret request
     from . import opencode_provider
     opencode_provider.add_parser(sub)   # P60 / F25: agentj provider add|list|remove (OpenCode base_url + key)
     elevate_helper.add_parser(sub)   # F17: agentj sudo-helper install · sync · uninstall · status
     docsrule.add_parser(sub)
     handover.add_parser(sub)
+    from . import tg_cursor
+    tg_cursor.add_parser(sub)   # B3 (P117): agentj telegram-cursor status · fence · import · export (ids only)
     plaza.add_parser(sub)
     support.add_parser(sub)   # F18: agentj support ask | report | thread | list
+    from . import capability
+    capability.add_parser(sub)   # 0.18 (ADR-A193): agentj capability list|sync|check|show|prepare|result|dispatch|digest|report-check
     recall.add_parser(sub)    # F22 (P57): agentj recall <keywords> [--days N] [--date D] — the main Agent finds an earlier conversation
     from . import peer_service
     from .bots.cli import add_parser as add_bots_parser
@@ -2037,7 +2049,7 @@ def main(argv=None) -> None:
     ob.add_argument("--json", action="store_true")
     ob.set_defaults(fn=cmd_onboarding)
     a = p.parse_args(argv)
-    if a.cmd not in NO_MIGRATE and a.cmd != "keep-awake" and not (a.cmd == "doctor" and a.isolation_only):
+    if a.cmd not in NO_MIGRATE and a.cmd not in ("keep-awake", "browser") and not (a.cmd == "doctor" and a.isolation_only):
         from . import migrate
         try:
             if migrate.auto() == "moved":

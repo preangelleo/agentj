@@ -1,0 +1,234 @@
+{
+  "schema_version": 1,
+  "comment": "P114 (ADR-A194 §4): signed site templates. A probe classifies only the final URL of a fixed page (signed in / sign-in page / unknown); it never reads page content, cookies or storage. in_url and out_url are regular expressions on the URL; out_dom lists selectors whose mere presence means a sign-in form is on screen (a site that keeps the app URL while showing it); only presence is read, never text. Anything else is unknown, never a guess.",
+  "adapter_version": 1,
+  "templates": {
+    "google": {
+      "title": {
+        "zh": "Google 账号",
+        "en": "Google account"
+      },
+      "kind": "google",
+      "origins": [
+        "https://myaccount.google.com",
+        "https://accounts.google.com",
+        "https://www.google.com"
+      ],
+      "login_url": "https://accounts.google.com/ServiceLogin?continue=https%3A%2F%2Fmyaccount.google.com%2F",
+      "check_url": "https://myaccount.google.com/",
+      "in_url": [
+        "^https://myaccount\\.google\\.com/(?!intro)"
+      ],
+      "out_url": [
+        "^https://accounts\\.google\\.com/",
+        "^https://myaccount\\.google\\.com/intro",
+        "^https://www\\.google\\.com/account/about"
+      ],
+      "login_method": "host",
+      "note": {
+        "zh": "先登录 Google 能简化其他「用 Google 登录」的网站，但每个网站可能仍要单独授权或再次验证。",
+        "en": "Signing in to Google first makes other “Sign in with Google” sites easier; each site may still ask for its own consent or verification."
+      }
+    },
+    "gmail": {
+      "title": {
+        "zh": "Gmail",
+        "en": "Gmail"
+      },
+      "kind": "google",
+      "origins": [
+        "https://mail.google.com",
+        "https://accounts.google.com",
+        "https://workspace.google.com",
+        "https://www.google.com"
+      ],
+      "login_url": "https://accounts.google.com/ServiceLogin?service=mail&continue=https%3A%2F%2Fmail.google.com%2Fmail%2F",
+      "check_url": "https://mail.google.com/mail/u/0/",
+      "in_url": [
+        "^https://mail\\.google\\.com/mail/"
+      ],
+      "out_url": [
+        "^https://accounts\\.google\\.com/",
+        "^https://workspace\\.google\\.com/",
+        "^https://www\\.google\\.com/gmail"
+      ],
+      "login_method": "host",
+      "note": {
+        "zh": "只确认邮箱是否登录，不读邮件内容。",
+        "en": "Checks the signed-in state only; never reads mail."
+      }
+    },
+    "youtube-studio": {
+      "title": {
+        "zh": "YouTube 工作室",
+        "en": "YouTube Studio"
+      },
+      "kind": "google",
+      "origins": [
+        "https://studio.youtube.com",
+        "https://accounts.google.com",
+        "https://www.youtube.com"
+      ],
+      "login_url": "https://accounts.google.com/ServiceLogin?service=youtube&continue=https%3A%2F%2Fstudio.youtube.com%2F",
+      "check_url": "https://studio.youtube.com/",
+      "in_url": [
+        "^https://studio\\.youtube\\.com/channel/"
+      ],
+      "out_url": [
+        "^https://accounts\\.google\\.com/"
+      ],
+      "login_method": "host",
+      "note": {
+        "zh": "Google 登录可复用，但频道权限要单独确认；没有频道时显示「尚未确认」。",
+        "en": "Reuses the Google sign-in; channel access is confirmed separately (no channel shows as not verified)."
+      }
+    },
+    "bilibili": {
+      "title": {
+        "zh": "B站创作中心",
+        "en": "Bilibili creator center"
+      },
+      "kind": "cn",
+      "origins": [
+        "https://member.bilibili.com",
+        "https://passport.bilibili.com",
+        "https://www.bilibili.com"
+      ],
+      "login_url": "https://passport.bilibili.com/login",
+      "check_url": "https://member.bilibili.com/platform/home",
+      "in_url": [
+        "^https://member\\.bilibili\\.com/(platform|york)/"
+      ],
+      "out_url": [
+        "^https://passport\\.bilibili\\.com/"
+      ],
+      "login_method": "qr",
+      "qr": {
+        "selectors": [
+          ".login-scan-box img",
+          ".login-scan__qrcode img",
+          ".login-scan-box canvas",
+          "img[src*='qr']",
+          "canvas"
+        ],
+        "ttl": 120
+      },
+      "note": {
+        "zh": "通常能保持较久，但平台随时可能要求重新登录；以体检结果为准。",
+        "en": "Often stays signed in for a long time, but the site may ask again at any time; the check decides."
+      }
+    },
+    "douyin-creator": {
+      "title": {
+        "zh": "抖音创作者中心",
+        "en": "Douyin creator center"
+      },
+      "kind": "cn",
+      "origins": [
+        "https://creator.douyin.com",
+        "https://www.douyin.com",
+        "https://sso.douyin.com"
+      ],
+      "login_url": "https://creator.douyin.com/",
+      "check_url": "https://creator.douyin.com/creator-micro/home",
+      "in_url": [
+        "^https://creator\\.douyin\\.com/creator-micro/"
+      ],
+      "out_url": [
+        "^https://creator\\.douyin\\.com/?(\\?.*)?$",
+        "^https://creator\\.douyin\\.com/login"
+      ],
+      "login_method": "qr",
+      "qr": {
+        "selectors": [
+          "[class*='login-card'] [class*='content'] img:not([class*='bg'])",
+          "[class*='login-card'] img:not([class*='bg'])",
+          "img[class*='qrcode']",
+          "[class*='qrcode'] img",
+          "[class*='qrcode'] canvas"
+        ],
+        "ttl": 120
+      },
+      "note": {
+        "zh": "通常能保持较久；同一账号在多台电脑登录可能互相挤下线。",
+        "en": "Usually stays signed in; the same account on several computers may sign each other out."
+      },
+      "out_dom": [
+        "[class*='login-card']",
+        "[class*='scan-login']",
+        "[class*='qrcode-login']"
+      ]
+    },
+    "mp-weixin": {
+      "title": {
+        "zh": "微信公众号",
+        "en": "WeChat Official Account"
+      },
+      "kind": "cn",
+      "origins": [
+        "https://mp.weixin.qq.com"
+      ],
+      "login_url": "https://mp.weixin.qq.com/",
+      "check_url": "https://mp.weixin.qq.com/",
+      "in_url": [
+        "^https://mp\\.weixin\\.qq\\.com/cgi-bin/(home|frame|appmsg)"
+      ],
+      "out_url": [
+        "^https://mp\\.weixin\\.qq\\.com/?(\\?.*)?(#.*)?$",
+        "^https://mp\\.weixin\\.qq\\.com/cgi-bin/loginpage"
+      ],
+      "login_method": "qr",
+      "qr": {
+        "selectors": [
+          "img.login__type__container__scan__qrcode",
+          ".login__type__container__scan__qrcode",
+          "img[src*='scanloginqrcode']",
+          "img[src*='qrcode']"
+        ],
+        "ttl": 120
+      },
+      "note": {
+        "zh": "部分账号可能每天都要重新扫码；只有真的掉线才会提醒你。",
+        "en": "Some accounts need a fresh scan every day; you are only asked when it really signed out."
+      }
+    },
+    "channels-weixin": {
+      "title": {
+        "zh": "微信视频号助手",
+        "en": "WeChat Channels assistant"
+      },
+      "kind": "cn",
+      "origins": [
+        "https://channels.weixin.qq.com"
+      ],
+      "login_url": "https://channels.weixin.qq.com/login.html",
+      "check_url": "https://channels.weixin.qq.com/platform",
+      "in_url": [
+        "^https://channels\\.weixin\\.qq\\.com/platform(?!/login)"
+      ],
+      "out_url": [
+        "^https://channels\\.weixin\\.qq\\.com/login"
+      ],
+      "login_method": "qr",
+      "qr": {
+        "selectors": [
+          ".qrcode img",
+          "img.qrcode",
+          "img[src*='qrcode']",
+          "[class*='qrcode'] img",
+          "canvas"
+        ],
+        "ttl": 120
+      },
+      "note": {
+        "zh": "部分账号可能每天都要重新扫码；同账号多台电脑可能互踢。",
+        "en": "Some accounts need a fresh scan every day; one account on several computers may sign each other out."
+      },
+      "out_dom": [
+        ".login-view",
+        "[class*='login-qrcode']",
+        "iframe[src*='qrconnect']"
+      ]
+    }
+  }
+}

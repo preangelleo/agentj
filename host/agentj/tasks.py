@@ -116,9 +116,14 @@ def _discover_legacy(workdir: str | None, direct: bool = False) -> list[dict]:
             if prompt is None:
                 probs = [f"{task['prompt_file']} is missing, not a regular file or larger than 100 KiB"]
         ent["task"] = task if isinstance(task, dict) else None
+        extra = b""
+        if not probs:                          # 0.18 (ADR-A193): a brief.json joins the contract with its scope digest
+            from .capability import contract_part
+            extra, bprobs = contract_part(d)
+            probs = bprobs
         ent["problems"] = probs
         if not probs:
-            ent["tsha"] = contract_sha(raw, prompt)
+            ent["tsha"] = contract_sha(raw, prompt, extra)
         out.append(ent)
     return out
 
@@ -136,8 +141,9 @@ def discover(workdir: str | None) -> list[dict]:
     return rows
 
 
-def contract_sha(task_json: bytes, prompt: bytes) -> str:
-    return hashlib.sha256(task_json + b"\0" + prompt).hexdigest()
+def contract_sha(task_json: bytes, prompt: bytes, brief: bytes = b"") -> str:
+    """task.json + its prompt (+ a brief's scope digest, capability.contract_part; b"" without a brief keeps old hashes)."""
+    return hashlib.sha256(task_json + b"\0" + prompt + brief).hexdigest()
 
 
 def find(workdir: str | None, tid: str) -> dict:
@@ -303,7 +309,13 @@ def prompt_for(e: dict, research: bool) -> str:
                  "writes, changes or sends is refused; put everything in your answer.")
     tail = ("\n\n---\n回答的最后一行必须是 `VERDICT: ok|attention|fail — 一句话`。/ End your answer with exactly one line "
             "`VERDICT: ok|attention|fail — <one sentence>`.")
-    return head + "\n\n" + body.rstrip() + tail + "\n"
+    return head + "\n\n" + body.rstrip() + brief_block(e) + tail + "\n"
+
+
+
+def brief_block(e: dict) -> str:
+    from .capability import brief_block as bb      # 0.18 (ADR-A194): the brief's contract text lives with the feature
+    return bb(e)
 
 
 # ------------------------------------------------------------------ the runner inside serve
@@ -420,6 +432,7 @@ class Scheduler:
         host.activity("task_run", id=tid, title=title, trigger=trigger, mode=e["task"]["mode"])
         host.st.log("task_run", id=tid, kind=trigger)
         t0 = time.monotonic()
+        run_started = time.time()
         lock = host.turn_lock
         try:
             async with lock:                         # waits for the chat turn to end; nothing else uses the Agent meanwhile
@@ -429,10 +442,13 @@ class Scheduler:
                 if host.agent:
                     await host.agent.halt(clear_queue=False)   # the idle chat process steps aside (resumes on the next message)
                 host.task_label = title
+                from .capability import brief_scope_for
+                host.brief_scope = None if research else brief_scope_for(host.st, e)   # 0.18: confirmed brief, no card for its own outputs
                 try:
                     out, code = await asyncio.wait_for(self._exec(kind, e, research), RUN_TIMEOUT)
                 finally:
                     host.task_label = None
+                    host.brief_scope = None
                     await self._kill()
             v = parse_verdict(out)
             if v:
@@ -440,6 +456,7 @@ class Scheduler:
             else:
                 res["line"] = "回答里没有 VERDICT 行（按失败处理）" if out.strip() else f"没有回答（{code}）"
             res["report"] = self._save(e, out, research)
+            self._check_report(e, res, run_started)
         except asyncio.TimeoutError:
             res["line"] = f"超过 {int(RUN_TIMEOUT // 60) or 1} 分钟，已中断"
             await self._kill()
@@ -453,14 +470,23 @@ class Scheduler:
         self._finish(e, res)
         return res
 
+    @staticmethod
+    def _check_report(e: dict, res: dict, since: float) -> None:
+        from .capability import check_run_report      # 0.18: report.json vs brief, deliverables (capability.py)
+        check_run_report(e, res, since)
+
     def _finish(self, e: dict, res: dict) -> None:
         with contextlib.suppress(Exception):
             with self.st.config_lock():
                 d = load(self.st)
                 d["last"][e["id"]] = {"at": int(time.time()), "verdict": res["verdict"], "line": res["line"][:300],
                                       "readonly": res.get("readonly", False), "secs": res.get("secs", 0),
-                                      "report": res.get("report"), "trigger": res["trigger"]}
+                                      "report": res.get("report"), "trigger": res["trigger"],
+                                      **({"report_check": res["report_check"]} if res.get("report_check") else {})}
                 save(self.st, d)
+        caps = getattr(self.host, "capabilities", None)
+        if caps is not None and res.get("trigger") == "dispatch":
+            caps.run_finished(e["id"], res)
         self.host.task_finished(res)
 
     def _save(self, e: dict, out: str, research: bool) -> str | None:

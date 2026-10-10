@@ -16,7 +16,7 @@ import { Upload, TYPES as DROP_TYPES, MAX_BYTES as UPLOAD_MAX, MAX_ATT, ASR_MAX_
 import { renderPage as renderMedia, forgetAll as forgetMedia, renderReader as renderReaderMedia, clearReader as clearReaderMedia } from './media.js';   // F21: files the reply shows (§13); P59: in the reader too
 import { toWav } from './wav.js';
 import { Speaker, configureSpeech } from './speak.js';
-import { isReady, sendApp, hostId } from './session.js';
+import { isReady, sendApp, hostId, peer } from './session.js';
 import { getSealed, putSealed, dbDel } from './store.js';
 import { Outbox, paint as paintOutbox, MAX as OUT_MAX } from './outbox.js';
 import { askKind as friendAsk, renderAsk as renderFriendAsk, addFriendCmd, openFromCmd } from './friends.js';   // §17.7: friend request / friend's question cards
@@ -581,11 +581,11 @@ async function pillSend(){
   const r = await C.api.model(want.isDefault ? {default: true} : {model: want.model, effort: want.effort});
   if (pill.want !== want) return;
   if (!r.ok){
-    toast(t('r.pill.fail', {why: t('r.pill.why.' + (["unknown_model", "unknown_effort", "busy", "unsupported", "stopped", "offline", "timeout"].includes(r.why) ? r.why : "other"))}), 2600);
+    toast(t('r.pill.fail', {why: t('r.pill.why.' + (["unknown_model", "unknown_effort", "busy", "unsupported", "stopped", "offline", "timeout", "unconfirmed", "blocked", "failed"].includes(r.why) ? r.why : "other"))}), 2600);
     pill.want = null; paintPill(); return;
   }
   pill.sentAt = Date.now();
-  if (cur && cur.status !== "idle") toast(t('r.pill.queued'), 2000);
+  if (r.queued || (cur && cur.status !== "idle")) toast(t('r.pill.queued'), 2000);
   paintPill();
 }
 // One press handler for both hidden controls: a tap (released before HOLD_MS, finger still) or a hold.
@@ -1066,7 +1066,8 @@ function speakTap(){
   speaker.tap(p.id, p.reply || "");
 }
 
-// ---- 分享: the phone's share sheet, else copy (§10.14; relay forwarded to its owner's own bot) -----------
+// ---- 分享 / 转发: with the host's `tgfwd` one tap → the owner's own Telegram (relay /forward, P118 B10); else the phone's
+//      share sheet, else copy (§10.14) -----------
 const fwdSt = new Map(), fwdTimers = new Map();
 function setFwd(id, st, ms){
   clearTimeout(fwdTimers.get(id));
@@ -1078,7 +1079,9 @@ function paintFwd(){
   const b = el("fwdBtn"), p = currentPage(), id = p.id, st = id === null ? "idle" : (fwdSt.get(id) || "idle");
   b.disabled = id === null || st === "sending" || !(p.reply || "").trim();
   b.dataset.state = st;
-  b.setAttribute("aria-label", t('r.share.' + st)); b.title = t('r.share.' + st);
+  const k = (peer.tgfwd ? 'r.tg.' : 'r.share.') + st;
+  b.dataset.tg = peer.tgfwd ? "1" : "";
+  b.setAttribute("aria-label", t(k)); b.title = t(k);
 }
 async function forwardTap(){
   const p = currentPage(), id = p.id;
@@ -1087,6 +1090,15 @@ async function forwardTap(){
   const text = (p.reply || "").trim();
   if (!text) return;
   setFwd(id, "sending");
+  if (peer.tgfwd){
+    const r = await C.api.tgForward(id);
+    if (r.ok){ setFwd(id, "sent", 2000); toast(t('r.tg.sent'), 2000); return; }
+    if (r.why === "rate_limited" || r.why === "recently_sent" || r.why === "in_flight"){
+      setFwd(id, "idle"); toast(t(r.why === "rate_limited" ? 'r.tg.limited' : 'r.tg.again'), 2600); return;
+    }
+    if (r.why !== "not_configured"){ setFwd(id, "failed", 3000); toast(t('r.tg.failed'), 2600); return; }
+    peer.tgfwd = false;                 // Telegram was switched off since `ready`: the share sheet from now on
+  }
   if (navigator.share){
     try{ await navigator.share({text}); setFwd(id, "sent", 2000); return; }
     catch(e){ if (e && e.name === "AbortError"){ setFwd(id, "idle"); return; } }

@@ -1,6 +1,6 @@
 {
-  "version": "0.17.4a1",
+  "version": "0.18.0a1",
   "major": false,
-  "zh": "iPhone 自动保持登录；修复额度提示、断线后的回复补回、升级回执语言，减少库回调噪声。电脑升级后，请在手机设置中点「更新并刷新」。",
-  "en": "iPhone stays signed in; quota guidance, reconnect history and update language fixes. After computer updates, choose Settings → Update & refresh."
+  "zh": "长程任务、专用浏览器与早安、首装清单与 Google、私有身份与共享控制、Telegram 可靠切换；保留 iPhone 续登与朗读修复。共享入站修正后需新会话或 /clear 生效。电脑升级后请在手机设置点「更新并刷新」。",
+  "en": "Long tasks, browser, first-run, Google, private identity, shared controls and Telegram. Ingress changes need new session or /clear. Settings → Update & refresh."
 }

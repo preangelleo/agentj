@@ -116,6 +116,26 @@ def check_keep_awake() -> dict:
               "agentj keep-awake status --json · agentj keep-awake on; " + (r.get("guidance") or keep_awake.LIMITS))
 
 
+def check_browser(st: State) -> dict:
+    """P114: Agent J's own browser. Never FAIL — a missing browser only pauses browser work (ADR-A194 §1)."""
+    from . import browser, browser_sites
+    try:
+        r = browser.status(st)
+        sites = browser_sites.summary(st)
+    except Exception as e:  # noqa: BLE001 — a doctor row must not crash the doctor
+        return _c("browser", WARN, f"无法读取 / unreadable ({type(e).__name__})", "agentj browser status --json")
+    if r["state"] == "disabled":
+        return _c("browser", OK, "已关闭（主人设置）/ turned off by the owner", "agentj browser enable")
+    need = [x["site"] for x in sites if x["status"] == "auth_required"]
+    if r["state"] == "ready":
+        return _c("browser", WARN if need else OK,
+                  f"运行中，{len(sites)} 个网站" + (f"，待登录：{', '.join(need)}" if need else "") + f" / running, {len(sites)} site(s)"
+                  + (f", sign-in needed: {', '.join(need)}" if need else ""),
+                  "说「早上好」或 agentj browser login <site> / say good morning" if need else "")
+    return _c("browser", WARN, "需要处理 / attention: " + ", ".join(r.get("attention") or ["unknown"]),
+              "; ".join(r.get("hints") or []) or "agentj browser setup")
+
+
 def check_state(st: State) -> dict:
     if not st.exists():
         return _c("state", FAIL, f"没初始化 / not initialised ({tilde(str(st.root))})", "agentj init")
@@ -264,27 +284,15 @@ def check_shared_inbound(st: State) -> dict | None:
         return None
     from . import claude_inbound
     try:
-        accepted = claude_inbound.value() == "accept"
+        claude_inbound.ensure_shared_default(st, c)
+        layer, _, current = claude_inbound.effective(c.get("dir"))
+        hint = "需新会话或 /clear 生效 / Start a new session or run /clear on the computer"
+        return _c("shared_inbound", OK if current == "accept" else FAIL,
+                  claude_inbound.diagnostic(st), hint)
     except (OSError, ValueError):
-        accepted = False
-    hint = "agentj config claude-inbound on（仅 Claude Code；明确 off 保留，组织/项目策略仍优先）"
-    if accepted:
-        # A repository may tighten user accept; never silently override it.
-        root = pathlib.Path(c["dir"])
-        for parent in (root, *root.parents):
-            for name in ("settings.json", "settings.local.json"):
-                try:
-                    d = json.loads((parent / ".claude" / name).read_text())
-                    v = d.get("crossSessionInbound")
-                    if v is not None and v != "accept":
-                        return _c("shared_inbound", FAIL, "项目 Claude 入站策略仍拦截手机消息 / Repository inbound policy blocks phone messages",
-                                  "请主人检查项目 crossSessionInbound；Agent J 不覆盖项目/组织策略 / Review repository/managed policy")
-                except FileNotFoundError:
-                    pass
-                except (OSError, ValueError, AttributeError):
-                    return _c("shared_inbound", FAIL, "项目 Claude 设置无法核实 / Repository Claude settings could not be verified", hint)
-        return _c("shared_inbound", OK, "Claude 手机入站已开启 / Claude phone ingress enabled; managed/session overrides may still apply")
-    return _c("shared_inbound", FAIL, "Claude 可能扣住手机消息等电脑批准 / Claude may hold phone messages for desktop approval", hint)
+        return _c("shared_inbound", FAIL,
+                  "Claude 设置无法安全核实或修正 / Cannot safely verify or repair Claude settings",
+                  "检查 JSON、权限、符号链接或并发编辑；修好后需新会话或 /clear 生效 / Check JSON, permissions, symlinks and concurrent edits; then start a new session or /clear")
 
 
 def check_agent_cli(st: State, svc: dict) -> dict:
@@ -747,7 +755,7 @@ def check_update(offline: bool = False) -> dict:
 def run(st: State | None = None, offline: bool = False) -> list[dict]:
     st = st or State()
     svc = service.status()
-    out = [check_version(), check_python(), check_websockets(), check_platform(), check_state(st), check_keep_awake()]
+    out = [check_version(), check_python(), check_websockets(), check_platform(), check_state(st), check_keep_awake(), check_browser(st)]
     if offline:
         out += [_c("relay", WARN, "跳过 / skipped (--offline)"), _c("dashboard", WARN, "跳过 / skipped (--offline)")]
     else:
@@ -772,6 +780,7 @@ def run(st: State | None = None, offline: bool = False) -> list[dict]:
     out += check_preferences(st)
     out += check_main_identity(st)
     out.append(check_skills())
+    out += [check_google(st), check_first_run(st)]
     login = check_login_session(svc)
     if login:
         out.append(login)
@@ -788,6 +797,26 @@ def run(st: State | None = None, offline: bool = False) -> list[dict]:
                   (" · " + auto_update.notice(ar) if ar else " · no previous result")))
     out.append(check_update(offline))
     return out
+
+
+def check_google(st: State) -> dict:
+    """P115 / P91: the pinned Google CLI (optional: warn at most, never ✗)."""
+    try:
+        from . import google
+        status, summary, hint = google.doctor_row(st)
+    except Exception as e:  # noqa: BLE001
+        return _c("google", WARN, f"Google 工具：检查失败（{type(e).__name__}）/ Google tools: check failed")
+    return _c("google", status, summary, hint)
+
+
+def check_first_run(st: State) -> dict:
+    """P115 / P92: the first-run checklist (never ✗: not starting it is the owner's choice)."""
+    try:
+        from . import first_run
+        status, summary, hint = first_run.doctor_row(st)
+    except Exception as e:  # noqa: BLE001
+        return _c("first-run", WARN, f"首次准备：检查失败（{type(e).__name__}）/ first-run checklist: check failed")
+    return _c("first-run", status, summary, hint)
 
 
 def check_asr(st: State) -> list[dict]:
@@ -915,6 +944,13 @@ def check_main_identity(st):
                         rows.append(_c("root-" + name, FAIL if strict else WARN,
                                        check.get("detail", "Invalid root structure") if strict else "沿用你自己的文档结构，Agent J 不改 / Keeping your own document structure; Agent J does not change it",
                                        check.get("hint", "agentj wizard doctor") if strict else "Review root entries and CEO roster; no automatic move or overwrite"))
+        pif = preferences.get(preferences.effective(st), "agent.private_instructions_file", "")
+        if pif:   # P116 (B11): ok/reason only — never the text, path or a digest
+            from . import private_instructions
+            got = private_instructions.load(pif)
+            rows.append(_c("private-instructions", OK if got["ok"] else WARN,
+                           "Owner private instructions file: " + ("loaded" if got["ok"] else "not loaded (" + got["reason"] + ")") + "; text only, no permission change",
+                           "" if got["ok"] else "agentj config private-instructions status"))
         if cfg:
             ok, reason = main_identity.latest_audit(st, cfg)
             refresh = reason == "restart main Agent: identity metadata differs"

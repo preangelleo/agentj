@@ -13,6 +13,7 @@ MAX_JSON = 16 * 1024
 MAX_TEXT = 4000  # UTF-16 code units (what a browser counts); see serve.text_units
 # §10.0 (PROMPT-33): once BOTH ends announced capability "p33" the limits are these (a peer without it keeps the two above)
 CAP_P33 = "p33"
+CAP_LT1 = "lt1"         # 0.18 (ADR-A193): long-task cards (lt_card · lt_caps · lt_done · lt_res / lt_answer)
 MAX_JSON_P33 = 60 * 1024          # padded plaintext ≤ 61 696, ciphertext ≤ 61 712, relay payload ≤ 61 713 < 65 536
 MAX_TEXT_P33 = 20_000             # UTF-16 code units per message (relay's limit)
 FRAG_MAX_N = 128                  # §10.1: at most this many slices per message …

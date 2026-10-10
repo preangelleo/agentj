@@ -6,6 +6,10 @@
     "working_root": "",
     // Personal additions only; packaged main-Agent constitution always takes priority.
     "instructions": "",
+    // P116: owner's local private instructions/skills file; text only, grants nothing
+    "private_instructions_file": "",
+    // P116: shared Claude reads the packaged identity + private file through native hooks
+    "shared_identity": true,
     // P40b: explicit attachment only until all three runtime/security gates pass.
     "session_mode": "shared",
     "shared_session_id": "",
@@ -96,7 +100,19 @@
     "report_hostname": "",
     "fence": "",
   },
-  "telegram": {"groups": []},
+  "telegram": {"groups": [], "private_domains": [], "forward": true, "owner_commands": []},
+  // P114: Agent J's own browser (private profile, CDP on 127.0.0.1 only). Off stops it and keeps the sign-ins.
+  "browser":
+  {
+    // Agent J's own browser for sign-ins and web automation; off keeps the profile / Agent J 专用浏览器（登录与网页自动化）；关闭会保留登录资料; default=true
+    "enabled": true,
+    // Where the browser is downloaded: official first, then a same-bytes mirror / 浏览器下载源：先官方，再同字节镜像; default="auto"
+    "download_source": "auto",
+    // Your own HTTPS mirror base; bytes must match the signed manifest / 自有 HTTPS 镜像地址；文件须与签名清单逐字节一致; default=""
+    "mirror": "",
+    // Daily read-only sign-in check, local time; never sends QR codes / 每日只读登录体检时间（本地时间），不会推送二维码; default="08:00"
+    "check_time": "08:00",
+  },
   // Harness child processes only. Direct values (no user:password@) or variable NAMES; a value wins over a name.
   "proxy": {"https": "", "http": "", "no_proxy": "", "https_env": "", "http_env": "", "no_proxy_env": ""},
 }

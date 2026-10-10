@@ -364,6 +364,9 @@
         "stopped": "everything is stopped",
         "offline": "not connected to the computer",
         "timeout": "the computer did not answer",
+        "unconfirmed": "the computer's status line did not confirm it; showing the actual reading",
+        "blocked": "a dialog is waiting on the computer",
+        "failed": "the computer's model list does not show this one",
         "other": "something went wrong"
       }
     },
@@ -1353,6 +1356,190 @@
   },
   "ver.new": "A newer Agent J version ({v}) is available. Your phone/web page has not been updated yet. Tap the settings icon at the top right → “Update and reload”, or use the button below.",
   "ver.later": "Later",
+  "lt": {
+    "kicker": "Before we start",
+    "what": "What this does",
+    "deliver": {
+      "owner": "Delivered to your phone and computer: {path}",
+      "local": "Saved on the computer: {path}"
+    },
+    "plan": {
+      "weekly": "Runs every week: {when} ({tz})",
+      "once": "Just this once"
+    },
+    "choose": "Your choices ({n})",
+    "setup": "Still to set up",
+    "setupNote": "Nothing to type here: your Agent checks these itself, and a key opens the dedicated secret card.",
+    "optional": "Optional ({n}) — works without them",
+    "confirms": "Tapping Confirm and start means",
+    "clause": {
+      "brief": "Create the workflow “{wf}” from this brief",
+      "enable": "Turn on the schedule: {when} ({tz}); no more questions, turn it off any time in Scheduled tasks",
+      "choices": "Your choices above are reused every time",
+      "safe": "This does not approve paying, deleting, sending outside, key changes or price changes — those still ask you one by one"
+    },
+    "fullBrief": "Full brief",
+    "full": {
+      "accept": "Done when: {text}",
+      "red": "Never: {text}"
+    },
+    "go": "Confirm and start",
+    "goShort": "Confirm",
+    "back": "Change something",
+    "left": "Valid for about {m} min",
+    "timeUp": "Expired — ask your Agent for a new card",
+    "incomplete": "Some choices are still empty",
+    "sent": "Sent — the computer is checking",
+    "sentBack": "Sent back — just say in chat what to change",
+    "reuse": "Reuse: {text}",
+    "st": {
+      "ready": "Ready",
+      "missing": "Missing",
+      "unverified": "To check",
+      "verifying": "Checking",
+      "failed": "Failed",
+      "stale": "Re-check",
+      "setup": "Needs setup"
+    },
+    "act": {
+      "login": "Sign in once",
+      "secret": "Secret card",
+      "verify": "Checked for you",
+      "choose": "Your pick"
+    },
+    "done": {
+      "ready": "All set — started",
+      "enabled": "All set — started, and the schedule is on",
+      "needs": "A bit of setup is missing — your Agent will tell you the next step",
+      "cancelled": "Cancelled — nothing started",
+      "blocked": "Can't start yet — your Agent will explain",
+      "expired": "This card expired — nothing started"
+    },
+    "why": {
+      "expired": "This card expired — ask your Agent for a new one",
+      "replay": "This card was already answered",
+      "changed": "The brief changed before you confirmed — ask your Agent for a new card",
+      "bad_signature": "The signature was not accepted — nothing started",
+      "no_key": "This phone can't sign confirmations — use the phone you paired with approvals",
+      "picks": "Some choices are missing or invalid",
+      "secret": "That looks like a key — use the dedicated secret card, not this field",
+      "unknown": "This card has already ended",
+      "other": "The computer did not accept it — nothing started"
+    },
+    "caps": {
+      "title": "What my Agent can do",
+      "sum": "{ready} ready, {setup} need setup or a re-check (re-checked automatically)",
+      "f": {
+        "all": "All",
+        "ready": "Ready",
+        "setup": "Needs setup"
+      },
+      "kind": {
+        "skill": "Skill",
+        "cli": "Tool on the computer",
+        "mcp": "Connector",
+        "browser": "Web",
+        "credential": "Saved service credential (name only)",
+        "ceo": "Workflow"
+      },
+      "verified": "Last checked {at}, valid until {until}",
+      "reuse": "Set up once, reused by similar tasks",
+      "how": "Just tell your Agent when you need it — it walks you through",
+      "close": "Got it"
+    },
+    "cron": {
+      "daily": "Every day {hm}",
+      "weekly": "{day} {hm}",
+      "d0": "Sundays",
+      "d1": "Mondays",
+      "d2": "Tuesdays",
+      "d3": "Wednesdays",
+      "d4": "Thursdays",
+      "d5": "Fridays",
+      "d6": "Saturdays"
+    }
+  },
+  "lqr": {
+    "kicker": "Sign in on your computer's Agent J browser",
+    "title": "Sign in to {site}",
+    "alt": "{site} sign-in QR code",
+    "note": "Scan it with the site's app. A phone can't scan its own screen: show this card on another device, or long-press to save it and open it from your photos in the app (not every app supports that). The computer confirms the sign-in by itself.",
+    "check": "I scanned it — check now",
+    "later": "Not now",
+    "refresh": "New QR code",
+    "close": "Close",
+    "left": "Valid for {m}:{s}",
+    "expired": "The QR code expired",
+    "expiredNote": "It expired before a scan. Tap New QR code when you're ready, or say “good morning” to your Agent later.",
+    "waiting": "The computer doesn't see a sign-in yet. After scanning, give it a few seconds.",
+    "signedIn": "{site} is signed in — confirmed by the computer.",
+    "tgOn": "Also send QR codes to {channel}",
+    "tgOff": "Stop sending QR codes to {channel}",
+    "tgTextNote": "{channel} gets text reminders only. Turn this on to also send the QR image to your {channel} private chat — {channel} can see it.",
+    "tgOnNote": "QR images also go to your {channel} private chat ({channel} can see them). You can turn this off any time.",
+    "err": {
+      "failed": "Couldn't make a new QR code. Try again shortly.",
+      "no_qr": "No QR code on the sign-in page; sign in at the computer.",
+      "no_browser": "The Agent J browser on your computer isn't running.",
+      "no_device": "No paired phone.",
+      "busy": "Too many sign-in cards; finish the open ones first.",
+      "disabled": "The browser is turned off.",
+      "stopped": "Everything is stopped.",
+      "host_login": "This site needs a sign-in at the computer; the page is open there.",
+      "host_login_unavailable": "This computer has no screen and the site has no QR sign-in.",
+      "already": "Already signed in."
+    }
+  },
+  "setup": {
+    "kicker": "First run · group {g} of {n}",
+    "kickerReady": "First run · ready",
+    "titleStart": "While you are at your computer",
+    "titleReady": "You can leave the computer",
+    "counts": "{v} verified · {u} unused · {t} to do ({a} by me) · {d} undecided",
+    "where": {
+      "auto": "I handle it",
+      "local": "Needs you at the computer",
+      "phone": "Can be done on the phone"
+    },
+    "st": {
+      "verified": "Verified",
+      "pending": "To do",
+      "waiting_local": "Waiting for you",
+      "attention": "Check failed",
+      "deferred": "Later",
+      "unsupported": "Not in this version yet",
+      "not_applicable": "Not applicable",
+      "stale": "Needs a fresh check",
+      "unused": "Won't use",
+      "undecided": "Undecided"
+    },
+    "use": "Use it",
+    "unused": "I won't use this",
+    "later": "Later",
+    "continue": "Continue now",
+    "check": "I'm done, check",
+    "exitStart": "Start the leaving check",
+    "exitSent": "I've sent it, check",
+    "all": "All {n} items",
+    "hide": "Hide the list",
+    "close": "Close",
+    "exitNote": "Now: let the computer screen turn off, switch the phone to mobile data, and send any chat message. A reply completes it.",
+    "attention": "This one did not pass; only what depends on it waits.",
+    "nothing": "Nothing needs you right now.",
+    "readyNote": "The selected, verified tasks continue from your phone. Power loss, a restart that needs unlocking, a new system permission or an account security check may still need you at the computer.",
+    "notEnabled": "Not enabled: {list}",
+    "notSaved": "Not saved: {why}",
+    "offline": "Computer is disconnected",
+    "unreachable": "Could not reach the computer; try again",
+    "needsSetup": "First-run setup has not started: ask your Agent.",
+    "offlineAt": "Computer offline · last synced {at}"
+  },
+  "r.tg.idle": "Forward to myself",
+  "r.tg.sending": "Forwarding to you…",
+  "r.tg.sent": "Forwarded to your private chat",
+  "r.tg.failed": "Not forwarded; tap to retry",
+  "r.tg.limited": "Too many forwards; try again in a few minutes",
+  "r.tg.again": "This one was just forwarded",
   "rt.dead": "Automatic sign-in no longer works on this phone: the computer unpaired it, or it signed in from another browser or Home Screen icon. Scan the QR code to pair again.",
   "pk.none": "Couldn't reconnect with Face ID. It may have been cancelled, or this phone has no saved Agent J Face ID record (on iPhone, iCloud Keychain must be on to save one). Scan the QR code to pair again.",
   "pk.notSaved": "The Face ID record wasn't saved; your pairing still works. On iPhone, turn on Settings → Apple Account → iCloud → Passwords (Keychain), then choose Set up Face ID in the menu to try again.",

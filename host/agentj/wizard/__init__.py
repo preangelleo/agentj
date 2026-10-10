@@ -76,6 +76,7 @@ _PLACEHOLDER = re.compile(r"\{\{[^{}\n]{0,80}\}\}")
 VERDICT_RE = re.compile(r"^[ \t>*`_#-]*VERDICT[*`_]*[ \t]*[:：][ \t*`_]*(ok|attention|fail)[*`_]*[ \t]*[—–-]+[ \t]*(.+?)[ \t*`_]*$",
                         re.M | re.I)
 REQUIRED_TEMPLATE_FILES = ("TEMPLATE.md", "RUN.md", "DRYRUN.md", "task.json")
+GOAL_FILES = ("RUN.md", "DRYRUN.md", "CONSTITUTION.md", "task.json", "brief.json")   # 0.18 goal mode, one workflow folder
 
 
 class WizardError(Exception):
@@ -449,11 +450,17 @@ def _staged(staging: Path) -> dict[str, bytes]:
             raise WizardError(f"refused: {rel} is a symlink")
         if p.is_dir():
             continue
+        parts = p.relative_to(staging).parts
+        wf_dir = len(parts) >= 2 and re.fullmatch(r"[a-z][a-z0-9]*(?:-[a-z0-9]+)*", parts[0]) and parts[0] != "documentation"
         ok = (rel in ENTRY_FILES or (rel.startswith("documentation/") and rel.endswith((".md", ".json")))
-              or (len(p.relative_to(staging).parts) == 2 and re.fullmatch(r"[a-z][a-z0-9]*(?:-[a-z0-9]+)*", rel.split("/")[0])
-                  and p.name in ENTRY_FILES))
+              or (wf_dir and len(parts) == 2 and p.name in ENTRY_FILES)
+              # 0.18 goal mode (ADR-A194): one workflow's own contract files, checked below (dormant task, valid brief)
+              or (wf_dir and len(parts) == 2 and p.name in GOAL_FILES)
+              or (wf_dir and len(parts) == 3 and parts[1] == "requests" and re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,63}\.md", p.name)))
         if not ok:
-            raise WizardError(f"refused: {rel} — the wizard writes only root entries, documentation/*.md|json and one-level workflow CEO entries")
+            raise WizardError(f"refused: {rel} — the wizard writes only root entries, documentation/*.md|json, one-level workflow "
+                              "CEO entries and (goal mode) a workflow's RUN.md / DRYRUN.md / CONSTITUTION.md / task.json / "
+                              "brief.json / requests/*.md")
         data = p.read_bytes()
         if len(data) > MAX_FILE:
             raise WizardError(f"refused: {rel} is larger than {MAX_FILE // 1024} KiB")
@@ -465,6 +472,28 @@ def _staged(staging: Path) -> dict[str, bytes]:
         except UnicodeDecodeError:
             raise WizardError(f"refused: {rel} is not UTF-8 text")
         _check_rel(rel)
+        if wf_dir and p.name == "task.json":
+            try:
+                t = json.loads(data)
+            except ValueError:
+                raise WizardError(f"refused: {rel} is not JSON") from None
+            probs = taskspec.problems(t, parts[0])
+            if probs:
+                raise WizardError(f"refused: {rel}: {probs[0]}")
+            if t.get("enabled") is not False:
+                raise WizardError(f"refused: {rel}: the wizard writes a dormant task (\"enabled\": false); only the owner enables it")
+            if t.get("mode") == "research" and (staging / parts[0] / "brief.json").exists():
+                raise WizardError(f"refused: {rel}: a workflow with a brief writes its deliverables and reports/report.json — "
+                                  "mode research is read-only; use mode normal")
+        if wf_dir and p.name == "brief.json":
+            from .. import capability
+            try:
+                b = json.loads(data)
+            except ValueError:
+                raise WizardError(f"refused: {rel} is not JSON") from None
+            probs = capability.brief_problems(b, parts[0])
+            if probs:
+                raise WizardError(f"refused: {rel}: {probs[0]} (agentj capability digest prints the scope digest)")
         files[rel] = data
     if not files:
         raise WizardError("nothing to apply: the staging folder is empty")
@@ -686,6 +715,19 @@ def doctor(root: Path, today: str | None = None) -> list[dict]:
         add("tasks", "fail", "; ".join(tprobs[:6]))
     else:
         add("tasks", "ok", f"{n} workflow(s), {on} enabled by a human, {n - on} dormant" if n else "no templates installed")
+
+    # 0.18 (ADR-A193): a workflow's brief.json (the dispatch contract) must be valid when present; a weekly plan stays dormant
+    from .. import capability
+    bprobs, nb = [], 0
+    for d in _workflow_dirs(root):
+        if not os.path.lexists(d / "brief.json"):
+            continue
+        nb += 1
+        b, pr = capability.load_brief(d)
+        if pr:
+            bprobs.append(f"{d.name}: {pr[0]}")
+    if nb:
+        add("briefs", "fail" if bprobs else "ok", "; ".join(bprobs[:6]) if bprobs else f"{nb} brief(s) valid")
 
     pend = pending(root)
     add("pending", "warn" if pend else "ok",

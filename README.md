@@ -2,7 +2,7 @@
 
 # Agent J
 
-This 0.17.4a1 candidate tree is for review. The published installation remains 0.17.3a1 until the public mirror/tag and all release gates pass. Android is a debug review APK, with offline model provenance and physical-device acceptance still pending; it is not a store release.
+This 0.18.0a1 candidate tree is for review. The published installation remains 0.17.4a1 until the public mirror/tag and all release gates pass. Android is a debug review APK, with offline model provenance and physical-device acceptance still pending; it is not a store release.
 
 Docs (中文 / English): <https://agentj.app/docs/> · machine-readable index: <https://agentj.app/llms.txt>
 
@@ -38,7 +38,7 @@ is the same file, byte for byte; the site publishes its SHA-256 at <https://agen
 
 The host program on its own, pinned to the release tag (Python 3.11 or newer; if yours is older, uv fetches one):
 ```bash
-uv tool install "git+https://github.com/preangelleo/agentj@v0.17.4a1#subdirectory=host"
+uv tool install "git+https://github.com/preangelleo/agentj@v0.18.0a1#subdirectory=host"
 agentj --version
 ```
 
@@ -106,3 +106,6 @@ The 0.17.1 hotfix keeps phone key-card writes responsive and applies the owner-s
 The 0.17.3 candidate adds Telegram Bots, own model keys, companion/paid Q&A templates, screenshot sharing, shared spacing and Escape dismissal. Web and Telegram models receive original visitor text and history; failed Telegram requests get a fixed fallback. Computer upgrade receipts and web version notices tell you when to choose Settings → Update & refresh; drafts are never silently interrupted. Dashboard static C → front Worker/site A → phone web/Worker B; no D1 migration or relay backend change. P108 seat REST API is excluded. The iPhone shortcut source/manual import is available; a verified iCloud install link and physical-device sharing checks remain pending.
 
 0.17.4 adds iPhone automatic sign-in and quota/reconnect/update-language fixes. Renewal uses a rotating HttpOnly Cookie, visible to the web Worker during recovery; device revocation invalidates it. Existing affected phones need one pairing or Face ID recovery after upgrading. Physical iPhone Safari/Home Screen acceptance is pending. B includes the web Worker /.aj/rt Cookie routes. P108 is excluded.
+
+
+The 0.18.0 candidate integrates long tasks, a dedicated browser with private sign-in cards, first-run readiness checks and Google tools (guided API authorization is planned for 0.18.1), private identity loading and shared Claude controls, and Telegram provenance/cursor safeguards. Shared ingress repairs writable non-accept settings, reports managed policy read-only, and asks for a new session or /clear on the computer. Owner adapters and founder files remain private.

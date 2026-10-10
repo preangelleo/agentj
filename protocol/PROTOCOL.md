@@ -867,7 +867,7 @@ switched off) arrive as `sys` turns with `"local":true` and show relay's 「在�
 |---|---|
 | host → device | `{"t":"models","models":[{"id","name","efforts":["low",…]\|null,"cur":bool,"disabled"?:bool}],"effort":"<cur>"\|null,"default":{"model","effort"}}` (on ready and after a change; via `frag` when large) |
 | device → host | `{"t":"model_set","r","model":"<id>"\|null,"effort":"<level>"\|null}` (null = unchanged) · `{"t":"model_set","r","default":true}` (long press) |
-| host → device | `{"t":"model_res","r","ok":bool[,"why":"unknown_model"\|"unknown_effort"\|"busy"\|"unsupported"\|"stopped"]}`; the pill settles on the next `meter` |
+| host → device | `{"t":"model_res","r","ok":bool[,"why":"unknown_model"\|"unknown_effort"\|"busy"\|"unsupported"\|"stopped"\|"queued"\|"unconfirmed"\|"blocked"\|"failed"]}`; the pill settles on the next `meter`. P116: a shared Claude session answers `ok:true,"why":"queued"` while the desktop is busy (applied when it is idle) and `ok:true` only when the session's own status line reports the target; `unconfirmed` = keys sent, no native receipt |
 - The phone gathers taps for 1 s and sends the final target once (relay `PILL_GATHER_MS`). Applied between turns (queued
   behind a running one, like `/model`); stored as `config.json` `agent.model` / `agent.effort` (default = both cleared).
 - Claude Code: model by the `set_model` control request (already in `CONTROL_SUBTYPES`); effort has no allowed control request
@@ -906,8 +906,14 @@ switched off) arrive as `sys` turns with `"local":true` and show relay's 「在�
   25 MiB ≈ 582 chunks ≈ 27 s at the boosted rate (≈ 120 s unboosted). The relay still stores nothing and holds no key.
 
 ### 10.14 Phone-only substitutes (no wire)
-- **Forward to Telegram** (relay `/forward`, Leo's own bot) → the phone's share sheet: `navigator.share({text})` of the page's
-  reply, fallback copy to the clipboard + toast. Nothing leaves the phone except where the human sends it.
+- **Forward to Telegram** (relay `/forward`, the owner's own bot) → when the host announced cap `tgfwd` (Telegram enrolled,
+  channel on, `telegram.forward` true), one tap sends `{"t":"tg_fwd","r":<rid>,"id":<completed turn>}` (p33, ready, allowlisted
+  only) and the host sends that reply's text to the enrolled owner's private chat through the owner's bot — secrets masked
+  like every Telegram reply, ≤ 8 parts, one send per turn at a time, a repeat within 10 s refused, ≤ 10 per device per 10
+  minutes; never to a group, never media. Answer `{"t":"tg_fwd_res","r","ok","why?":"not_configured|not_found|in_flight|
+  recently_sent|rate_limited|send_failed","parts?"}`; the log has counts, never words. Without `tgfwd`, or on
+  `not_configured`, the phone's share sheet: `navigator.share({text})` of the page's reply, fallback copy to the clipboard +
+  toast — nothing leaves the phone except where the human sends it. (P118, B10)
 - **Read aloud** (relay `/speak`: a Claude rewrite + Leo's cloned voice through a paid cloud API) → `speechSynthesis` with
   the phone's own voices (language from the text), Markdown stripped to plain text, play / pause / stop on the same button.
   Nothing leaves the phone. (A host-side TTS could come later as its own section; not part of parity.)
@@ -944,7 +950,7 @@ Only authenticated paired p33 sessions receive `preferences {value,problem}`. Va
 
 `tts_get {r:<id22>,id:<completed turn>}` accepts only completed reply text, no arbitrary input/provider URL. Host uses its configured local engine or own-key fixed cloud provider. Response `tts_chunk {r,i,data:<base64>}` is ordered 24KiB chunks, capped at 8MiB total; `tts_end {r,ok,bytes,mime:"audio/wav"}` finalizes, or a redacted why fails. All travel inside Noise, with per-chunk session/allowlist checks. Client binds synthesis to session generation and discards out-of-order, oversized or stale audio. Revoke stops further delivery. Synthesized plaintext stays at endpoints/provider; ciphertext can cross the blind relay.
 
-Telegram is a separate opt-in vendor-readable channel, not a Noise approval session. Owner-private text has src.k=telegram; no Telegram sender can sign an approval or become a paired device. Enrollment is human-only and keys remain local. Group/media parity is pending.
+Telegram is a separate opt-in vendor-readable channel, not a Noise approval session. Owner-private text has src.k=telegram; no Telegram sender can sign an approval or become a paired device. Enrollment is human-only and keys remain local. Groups, media, albums (one turn per media_group_id), owner → family → proxy order, supergroup migration, the owner's / family command menus and owner-only local commands (`telegram.owner_commands`, answered by the owner's own program, never the model) are in place (P49, P59, P118).
 
 ### 10.16 Settings from the phone — `pref_set` / `pref_res` (C6 / A1, 0.15)
 
@@ -1628,3 +1634,61 @@ Optional `meter.shared_follow` is null or `{agent: "claude"|"codex"|"opencode", 
 After serial Noise decryption, current-device authentication, Ed25519 signature and one-use nonce checks, phone-answer-dependent bot writes run in a bounded host task. The encrypted requesting session receives `{"t":"ctl_pending","r":request_id,"action":"bots_write","timeout_ms":620000}` before work begins; only the matching signed bot write may extend its ordinary20-second receipt timeout once. The secret card retains its600-second deadline; the host task is bounded to610 seconds and the terminal result remains `ctl_res`. Per-bot exclusion and a maximum of four pending writes limit concurrency. Disconnect invalidates the requesting session and cancels its card; emergency stop and shutdown close pending work. Answers still require the original paired device, signature, nonce, passkey/sealed-key checks and existing audit trail. No pending handle grants additional authority.
 
 Verification and visitor vault CSP use the same live bot manifest signed by its owner. Dashboard returns only active, valid, unexpired metadata; Worker verifies the owner signature again and admits only exact HTTPS origins from that allowlist plus the fixed public origin. Every ancestor must be allowed. Parent postMessage still targets the exact public origin and the chat remains opaque/sandboxed.
+
+## 20. Long tasks: the opening card and the capability sheet (0.18, P113, ADR-A193)
+
+Everything is inside the Noise session (§3): the relay and the account dashboard see ciphertext only, and nothing of a goal,
+brief, pick, capability name or CEO speciality is stored outside the host (PR1). Capability `lt1` is announced by both ends
+in `hello` / `ready` (§10.0); a host never sends `lt_card` / `lt_caps` to a session without it — an older page gets one
+plain `msg` line saying a start card is waiting and that it should reload (never a silent confirmation).
+
+Host → device:
+- `{"t":"lt_card","kind":"capability_preflight","id":<32 hex = card.card_id>,"card":<preflight v1>,"asks":{<item id>:
+  {"type":"text"|"single"|"multi","options":[…≤8],"default"?}},"brief":{goal, acceptance[], red_lines[], deliverables[],
+  plan, workflow, title{zh,en}, schedule, tz, scope_digest, confirm},"enable":{"id","tsha"}|null,"ttl":s}` — `card` is the
+  closed preflight contract (`host/agentj/longtask_schemas/preflight.schema.json`): ≤ 5 `required`, `optional` never
+  blocks, TTL 30 min, a fresh 32-hex nonce. `confirm` = the brief needs the owner's signature (a new workflow, a schedule,
+  a changed scope); `enable` = the schedule to turn on (`tsha` = tasks.contract_sha including the brief's scope digest).
+  Re-sent to every `lt1` session on `ready` while open. No secret field ever: keys use the §11 secret card.
+- `{"t":"lt_caps","kind":"capability_snapshot","revision":n,"items":[{id, kind, title{zh,en}, status, provides[],
+  verified, expires, credential}]}` — read-only (「我的 Agent 会什么」); only the main Agent opens it (`agentj capability show`).
+- `{"t":"lt_done","id","status":"ready"|"needs_input"|"cancelled"|"blocked"|"expired","missing"?:[…],"enabled"?:bool}` to
+  every session; `{"t":"lt_res","id","ok":bool,"status"?,"enabled"?,"why"?}` to the answering session only
+  (`why`: shape | replay | expired | no_key | picks | secret | bad_signature | changed | unknown).
+
+Device → host: `{"t":"lt_answer","id","action":"submit"|"cancel","n":<card nonce>,"sig","picks"?,"bsig"?,"en"?}`
+- `sig` = Ed25519 (device approval key) over canonical JSON (sorted keys, no spaces, UTF-8; `wire.js preflightBytes`):
+  `{"domain":"agentj.preflight.v1", channel, device, card_id, task_id, revision, brief_digest, registry_revision, nonce,
+  expires_at, action, picks}` — `picks` = `{}` for cancel, else exactly one value per `choose` item (text ≤ 500, one of the
+  options, or a non-empty subset of them).
+- `bsig` (submit, when `brief.confirm`) over `{"domain":"agentj.brief.v1", channel, device, card_id, task_id, revision,
+  brief_digest, scope_digest, nonce, expires_at, action:"submit"}` (`wire.js briefBytes`).
+- `en` (submit, when `enable`) = an ordinary §8 control `{n, ts, sig}` for `task_on` over `id\ntsha` (controls.py).
+The host accepts an answer once (nonce), only from a paired device with an approval key, before `expires_at`, while the
+brief on disk still has the signed digest. Then: picks → `<workflow>/inputs/owner-choices.json` (0600, local); a brief
+receipt (state directory, never written by the Agent); status *verifying* → re-check every required capability → *ready*
+or *needs_input*; the schedule is enabled only when the brief and `task_on` signatures both verified and nothing is
+missing. `capabilities/audit.log` keeps ids, hashes and results only. None of this is an approval of the five dangerous
+categories (spend / delete / send / credentials / price): those keep their own per-action cards (§8, §11).
+## 21. First-run checklist card and Google tools (P115, host 0.18.0a1, ADR-A196 / ADR-A195)
+
+**Checklist (`first_run.py`).** The host owns `<state>/setup/checklist.json` (0700/0600, revision CAS). Device → host over the
+paired Noise session:
+
+| message | signed | effect |
+|---|---|---|
+| `{"t":"setup_get","r","check"?:bool,"item"?,"net"?:"cellular"\|"wifi"\|"unknown","perm"?:{"mic":"granted"\|"denied"\|"prompt"}}` | no | read; with `check` a live, read-only re-probe (owner "done" = a request to check). Answer `{"t":"setup_card","r","show":false,…snapshot}` or `{"result":"needs_setup"}` (never creates the journal) |
+| `{"t":"setup_mark","r","item","choice","rev","n","ts","sig"}` | §8 control-v1, action `setup_mark`, object `item \n choice \n rev` | the owner's choice: `selected` · `unused` (optional items only; required → `invalid`) · `later` (deferred, never unused) · `start_exit` (arm the leaving check, item `exit`). A revision other than the current one → `changed`. Answer `ctl_res`; then every ready remote gets the new snapshot |
+
+Host → device: `{"t":"setup_card","show":bool,"revision","items":[{"id","group","need","where","depends_on","title":{zh,en},"hint":{zh,en},"choice","state","reason","checked_at"}],"current","counts","group","groups","remote_ready","blocking","exit_armed","updated_at","closed"}` —
+after `agentj setup checklist --resume` (show), after a signed mark (show), on reconnect while a checklist resumed in the last
+6 hours is not ready (show). No device ids, paths, e-mail, tokens, QR or links. States: pending · waiting_local · verified ·
+attention · deferred · unsupported · not_applicable (+ `stale` for a verified result past its TTL: browser 15 min, others 24 h).
+`remote_ready` = every selected applicable item verified and fresh, including `exit`: a message from a phone-kind device within
+15 min of `start_exit` (evidence `{at, via:"relay", device:"phone", net}`), good for 2 h.
+
+The Agent's socket (`elevate.sock`): `{"t":"setup","op":"status"|"resume"|"check","item"?}` — no op can mark a choice.
+`{"t":"google","op":"status"|"check"|"install"|"on"|"off"|"registry"}` — the pinned gog (v0.43.0, SHA-256 per platform) in
+`<state>/google/` with its own GOG_HOME; presence-only detection of the owner's gog/gcloud/gws; purposes with minimum scopes;
+`registry` = P86-shaped entries (`google-cli` + one `credential` row per purpose, never `ready` before the 0.18.1 authorization
+adapter). No token, code, callback URL, client JSON or e-mail crosses this socket or any frame.

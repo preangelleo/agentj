@@ -52,7 +52,7 @@ const HEARTBEAT_MS = 20000, HEARTBEAT_TIMEOUT_MS = 10000;
 // a handshake past the host timeout. Only an authenticated `removed` can revoke it;
 // confirm a revoked record once with the same device key before clearing local data.
 let refusals = 0, removalProbe = false;
-export const peer = { heartbeat: false, p33: false, asr: 'off', hist: 'off' };
+export const peer = { heartbeat: false, p33: false, asr: 'off', hist: 'off', tgfwd: false };
 export function configure(hooks) { H = hooks; }
 export const current = () => sess;
 export const isReady = () => !!sess && sess.phase === 'ready';
@@ -122,19 +122,19 @@ async function onFrame(s, data) {
     // hello is the first thing on the new generation's chain: nothing else can be queued on it before this line
     if (s.mode === 'pair') {
       s.phase = 'approval';
-      await sendOn(s, g, { t: 'hello', caps: ['p33'] }, MAX_JSON);
+      await sendOn(s, g, { t: 'hello', caps: ['p33', 'lt1'] }, MAX_JSON);
       H.onSas(await safetyCode(h));
     } else if (s.mode === 'restore') {
       // F20 (§12): hello, then the one pk_restore (P122 §12.1: rt_restore) — the host answers pk_ok + ready, or pk_fail + close
       s.phase = 'pk-wait';
-      await sendOn(s, g, { t: 'hello', caps: ['p33'], ...H.helloExtra() }, MAX_JSON);
+      await sendOn(s, g, { t: 'hello', caps: ['p33', 'lt1'], ...H.helloExtra() }, MAX_JSON);
       const pk = s.ctx.rt ? { t: 'rt_restore', ...s.ctx.rt } : { t: 'pk_restore', ...s.ctx.pk };
       try { pk.iid = await installId(s.ctx.channel); } catch { /* no storage: the record simply keeps no install hash */ }
       await sendOn(s, g, pk, MAX_JSON);
     } else {
       s.phase = 'ready-wait';
       // the host replays what this page has not seen: §8 since (old hosts), §10.5 hist (p33 hosts)
-      await sendOn(s, g, { t: 'hello', caps: ['p33'], ...H.helloExtra() }, MAX_JSON);
+      await sendOn(s, g, { t: 'hello', caps: ['p33', 'lt1'], ...H.helloExtra() }, MAX_JSON);
     }
     return;
   }
@@ -151,6 +151,7 @@ async function onFrame(s, data) {
 function readCaps(m) {
   peer.heartbeat = Array.isArray(m.caps) && m.caps.includes('heartbeat');
   peer.p33 = Array.isArray(m.caps) && m.caps.includes('p33');
+  peer.tgfwd = peer.p33 && Array.isArray(m.caps) && m.caps.includes('tgfwd');   // P118 (B10): share → the owner's own Telegram
   peer.asr = ['ready', 'not_installed', 'off', 'broken'].includes(m.asr) ? m.asr : (peer.p33 ? 'not_installed' : 'off');
   peer.hist = m.hist === 'on' ? 'on' : 'off';
 }

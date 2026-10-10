@@ -1,0 +1,700 @@
+{
+ "revision": 2,
+ "items": [
+  {
+   "id": "seat",
+   "group": "core",
+   "need": "required",
+   "where": "local",
+   "depends_on": [],
+   "title": {
+    "zh": "账号与席位绑定",
+    "en": "Account and seat"
+   },
+   "hint": {
+    "zh": "用设置码把这台电脑加入你的 Agent J 账号。",
+    "en": "Join this computer to your Agent J account with the setup code."
+   },
+   "choice": "selected",
+   "state": "verified",
+   "reason": null,
+   "checked_at": 1791590585
+  },
+  {
+   "id": "harness",
+   "group": "core",
+   "need": "required",
+   "where": "local",
+   "depends_on": [
+    "seat"
+   ],
+   "title": {
+    "zh": "主 AI 登录与权限",
+    "en": "Main AI login and access"
+   },
+   "hint": {
+    "zh": "在电脑上登录你选的 AI 工具（Claude Code / Codex / OpenCode）。",
+    "en": "Sign in to your chosen AI tool on this computer."
+   },
+   "choice": "selected",
+   "state": "verified",
+   "reason": null,
+   "checked_at": 1791590585
+  },
+  {
+   "id": "desktop",
+   "group": "core",
+   "need": "required",
+   "where": "local",
+   "depends_on": [
+    "harness"
+   ],
+   "title": {
+    "zh": "电脑浏览器配对",
+    "en": "Pair this computer's browser"
+   },
+   "hint": {
+    "zh": "在这台电脑的浏览器里打开配对页并批准。",
+    "en": "Open the pairing page in this computer's browser and approve it."
+   },
+   "choice": "selected",
+   "state": "verified",
+   "reason": null,
+   "checked_at": 1791590585
+  },
+  {
+   "id": "phone",
+   "group": "core",
+   "need": "required",
+   "where": "local",
+   "depends_on": [
+    "desktop"
+   ],
+   "title": {
+    "zh": "主力手机配对",
+    "en": "Pair your main phone"
+   },
+   "hint": {
+    "zh": "用手机扫码配对，并发一条消息试试。",
+    "en": "Scan the pairing code with your phone and send a message."
+   },
+   "choice": "selected",
+   "state": "verified",
+   "reason": null,
+   "checked_at": 1791590585
+  },
+  {
+   "id": "passkey",
+   "group": "core",
+   "need": "required",
+   "where": "phone",
+   "depends_on": [
+    "phone"
+   ],
+   "title": {
+    "zh": "手机通行密钥",
+    "en": "Phone passkey"
+   },
+   "hint": {
+    "zh": "在手机上设置 Face ID / 指纹通行密钥，用于批准与恢复。",
+    "en": "Set up a Face ID / fingerprint passkey on the phone for approvals and recovery."
+   },
+   "choice": "selected",
+   "state": "verified",
+   "reason": null,
+   "checked_at": 1791590585
+  },
+  {
+   "id": "admin",
+   "group": "core",
+   "need": "required",
+   "where": "phone",
+   "depends_on": [
+    "phone"
+   ],
+   "title": {
+    "zh": "手机批准钥匙",
+    "en": "Phone approval key"
+   },
+   "hint": {
+    "zh": "手机已配对后自动具备；用于密码卡、密钥卡和审批。",
+    "en": "Comes with pairing; used for password, key and approval cards."
+   },
+   "choice": "selected",
+   "state": "verified",
+   "reason": null,
+   "checked_at": 1791590585
+  },
+  {
+   "id": "phonepermissions",
+   "group": "core",
+   "need": "optional",
+   "where": "phone",
+   "depends_on": [
+    "phone"
+   ],
+   "title": {
+    "zh": "手机麦克风与相机",
+    "en": "Phone microphone and camera"
+   },
+   "hint": {
+    "zh": "语音和拍照要用时在手机上允许，不必回电脑。",
+    "en": "Allow them on the phone when you want voice or photos; no computer needed."
+   },
+   "choice": "undecided",
+   "state": "pending",
+   "reason": "ask_on_phone",
+   "checked_at": 1791590585
+  },
+  {
+   "id": "sudo",
+   "group": "machine",
+   "need": "conditional",
+   "where": "local",
+   "depends_on": [
+    "admin"
+   ],
+   "title": {
+    "zh": "Mac 本机 Touch ID 诊断",
+    "en": "Mac local Touch ID check"
+   },
+   "hint": {
+    "zh": "若 sudo 要求本机 Touch ID，远程会卡住；我只诊断并告诉你怎么在电脑上处理。",
+    "en": "If sudo asks for local Touch ID, remote work stalls; I only diagnose and tell you what to do at the computer."
+   },
+   "choice": "undecided",
+   "state": "not_applicable",
+   "reason": "not_macos",
+   "checked_at": 1791590585
+  },
+  {
+   "id": "awake",
+   "group": "machine",
+   "need": "required",
+   "where": "auto",
+   "depends_on": [
+    "admin"
+   ],
+   "title": {
+    "zh": "接电源、不睡眠",
+    "en": "Plugged in, no sleep"
+   },
+   "hint": {
+    "zh": "插上电源，我来关闭自动睡眠（屏幕可以关）；改系统设置会发手机密码卡。",
+    "en": "Plug in; I turn off idle sleep (the screen may turn off). System changes come as a phone password card."
+   },
+   "choice": "selected",
+   "state": "waiting_local",
+   "reason": "sleep_enabled",
+   "checked_at": 1791590585
+  },
+  {
+   "id": "service",
+   "group": "machine",
+   "need": "required",
+   "where": "auto",
+   "depends_on": [
+    "harness"
+   ],
+   "title": {
+    "zh": "后台服务",
+    "en": "Background service"
+   },
+   "hint": {
+    "zh": "让 Agent J 随电脑登录自动运行。",
+    "en": "Keep Agent J running whenever you are logged in."
+   },
+   "choice": "selected",
+   "state": "verified",
+   "reason": null,
+   "checked_at": 1791590585
+  },
+  {
+   "id": "updates",
+   "group": "machine",
+   "need": "required",
+   "where": "phone",
+   "depends_on": [
+    "phone"
+   ],
+   "title": {
+    "zh": "夜间自动升级策略",
+    "en": "Night-time automatic updates"
+   },
+   "hint": {
+    "zh": "默认开启，可以说「关掉自动升级」。",
+    "en": "On by default; say \"turn off automatic updates\" to stop them."
+   },
+   "choice": "selected",
+   "state": "verified",
+   "reason": null,
+   "checked_at": 1791590585
+  },
+  {
+   "id": "network",
+   "group": "machine",
+   "need": "required",
+   "where": "auto",
+   "depends_on": [
+    "service"
+   ],
+   "title": {
+    "zh": "网络连通",
+    "en": "Network connection"
+   },
+   "hint": {
+    "zh": "电脑能连上中转；不需要你操作。",
+    "en": "The computer reaches the relay; nothing to do."
+   },
+   "choice": "selected",
+   "state": "verified",
+   "reason": null,
+   "checked_at": 1791590585
+  },
+  {
+   "id": "browser",
+   "group": "browser",
+   "need": "optional",
+   "where": "auto",
+   "depends_on": [
+    "service"
+   ],
+   "title": {
+    "zh": "专用浏览器",
+    "en": "Agent browser"
+   },
+   "hint": {
+    "zh": "给 Agent 用的浏览器，用来登录你常用的网站。",
+    "en": "A browser for the Agent, used for your sites."
+   },
+   "choice": "undecided",
+   "state": "unsupported",
+   "reason": "browser_check_pending",
+   "checked_at": 1791590585
+  },
+  {
+   "id": "gmail",
+   "group": "browser",
+   "need": "optional",
+   "where": "local",
+   "depends_on": [
+    "browser"
+   ],
+   "title": {
+    "zh": "Gmail 网页登录",
+    "en": "Gmail website sign-in"
+   },
+   "hint": {
+    "zh": "推荐第一个：在电脑的正式登录页登录 Google。",
+    "en": "Recommended first: sign in to Google on the real sign-in page on this computer."
+   },
+   "choice": "undecided",
+   "state": "unsupported",
+   "reason": "browser_check_pending",
+   "checked_at": 1791590585
+  },
+  {
+   "id": "youtube",
+   "group": "browser",
+   "need": "optional",
+   "where": "local",
+   "depends_on": [
+    "gmail"
+   ],
+   "title": {
+    "zh": "YouTube Studio 网页",
+    "en": "YouTube Studio website"
+   },
+   "hint": {
+    "zh": "要发布视频时再登录。",
+    "en": "Sign in when you publish videos."
+   },
+   "choice": "undecided",
+   "state": "unsupported",
+   "reason": "browser_check_pending",
+   "checked_at": 1791590585
+  },
+  {
+   "id": "bili",
+   "group": "browser",
+   "need": "optional",
+   "where": "local",
+   "depends_on": [
+    "browser"
+   ],
+   "title": {
+    "zh": "B站",
+    "en": "Bilibili"
+   },
+   "hint": {
+    "zh": "需要时登录。",
+    "en": "Sign in if you use it."
+   },
+   "choice": "undecided",
+   "state": "unsupported",
+   "reason": "browser_check_pending",
+   "checked_at": 1791590585
+  },
+  {
+   "id": "douyin",
+   "group": "browser",
+   "need": "optional",
+   "where": "local",
+   "depends_on": [
+    "browser"
+   ],
+   "title": {
+    "zh": "抖音",
+    "en": "Douyin"
+   },
+   "hint": {
+    "zh": "需要时登录。",
+    "en": "Sign in if you use it."
+   },
+   "choice": "undecided",
+   "state": "unsupported",
+   "reason": "browser_check_pending",
+   "checked_at": 1791590585
+  },
+  {
+   "id": "wechat",
+   "group": "browser",
+   "need": "optional",
+   "where": "local",
+   "depends_on": [
+    "browser"
+   ],
+   "title": {
+    "zh": "公众号 / 视频号",
+    "en": "WeChat Official Accounts / Channels"
+   },
+   "hint": {
+    "zh": "需要时登录（按站点分别验证）。",
+    "en": "Sign in if you use them (checked per site)."
+   },
+   "choice": "undecided",
+   "state": "unsupported",
+   "reason": "browser_check_pending",
+   "checked_at": 1791590585
+  },
+  {
+   "id": "sites",
+   "group": "browser",
+   "need": "optional",
+   "where": "local",
+   "depends_on": [
+    "browser"
+   ],
+   "title": {
+    "zh": "其他网站",
+    "en": "Other websites"
+   },
+   "hint": {
+    "zh": "需要时登录。",
+    "en": "Sign in if you use them."
+   },
+   "choice": "undecided",
+   "state": "unsupported",
+   "reason": "browser_check_pending",
+   "checked_at": 1791590585
+  },
+  {
+   "id": "google",
+   "group": "google",
+   "need": "optional",
+   "where": "local",
+   "depends_on": [
+    "keyring"
+   ],
+   "title": {
+    "zh": "Google API（邮件/日历/YouTube）",
+    "en": "Google API (mail, calendar, YouTube)"
+   },
+   "hint": {
+    "zh": "选好用途后，在你自己的 Google 项目里授权；完整一键接入在 0.18.1。",
+    "en": "Choose the uses, then authorize your own Google project; the full guided connection arrives in 0.18.1."
+   },
+   "choice": "undecided",
+   "state": "unsupported",
+   "reason": "api_in_0.18.1",
+   "checked_at": 1791590585
+  },
+  {
+   "id": "keyring",
+   "group": "google",
+   "need": "conditional",
+   "where": "auto",
+   "depends_on": [
+    "service"
+   ],
+   "title": {
+    "zh": "本机钥匙串",
+    "en": "Local keychain"
+   },
+   "hint": {
+    "zh": "授权凭据保存在电脑的系统钥匙串里。",
+    "en": "Authorization is stored in the computer's system keychain."
+   },
+   "choice": "undecided",
+   "state": "verified",
+   "reason": "secret_service",
+   "checked_at": 1791590585
+  },
+  {
+   "id": "files",
+   "group": "privacy",
+   "need": "conditional",
+   "where": "auto",
+   "depends_on": [
+    "harness"
+   ],
+   "title": {
+    "zh": "工作文件夹",
+    "en": "Work folder"
+   },
+   "hint": {
+    "zh": "Agent 能读写的工作文件夹。",
+    "en": "The folder the Agent works in."
+   },
+   "choice": "undecided",
+   "state": "verified",
+   "reason": null,
+   "checked_at": 1791590585
+  },
+  {
+   "id": "fda",
+   "group": "privacy",
+   "need": "optional",
+   "where": "local",
+   "depends_on": [
+    "files"
+   ],
+   "title": {
+    "zh": "Mac 完全磁盘访问",
+    "en": "Mac Full Disk Access"
+   },
+   "hint": {
+    "zh": "只有确实需要受保护文件时才开。",
+    "en": "Only when a task truly needs protected files."
+   },
+   "choice": "undecided",
+   "state": "not_applicable",
+   "reason": "not_macos",
+   "checked_at": 1791590585
+  },
+  {
+   "id": "accessibility",
+   "group": "privacy",
+   "need": "optional",
+   "where": "local",
+   "depends_on": [
+    "harness"
+   ],
+   "title": {
+    "zh": "Mac 辅助功能（桌面控制）",
+    "en": "Mac Accessibility (desktop control)"
+   },
+   "hint": {
+    "zh": "只有要控制桌面程序时才开。",
+    "en": "Only for desktop control."
+   },
+   "choice": "undecided",
+   "state": "not_applicable",
+   "reason": "not_macos",
+   "checked_at": 1791590585
+  },
+  {
+   "id": "automation",
+   "group": "privacy",
+   "need": "optional",
+   "where": "local",
+   "depends_on": [
+    "harness"
+   ],
+   "title": {
+    "zh": "Mac 自动化（Apple Events）",
+    "en": "Mac Automation (Apple Events)"
+   },
+   "hint": {
+    "zh": "只有要控制其他 Mac 应用时才开。",
+    "en": "Only for controlling other Mac apps."
+   },
+   "choice": "undecided",
+   "state": "not_applicable",
+   "reason": "not_macos",
+   "checked_at": 1791590585
+  },
+  {
+   "id": "screen",
+   "group": "privacy",
+   "need": "optional",
+   "where": "local",
+   "depends_on": [
+    "harness"
+   ],
+   "title": {
+    "zh": "屏幕录制",
+    "en": "Screen recording"
+   },
+   "hint": {
+    "zh": "只有要截屏或以后远程查看时才开。",
+    "en": "Only for screen capture or a future remote view."
+   },
+   "choice": "undecided",
+   "state": "not_applicable",
+   "reason": "not_macos",
+   "checked_at": 1791590585
+  },
+  {
+   "id": "hardware",
+   "group": "privacy",
+   "need": "optional",
+   "where": "local",
+   "depends_on": [
+    "harness"
+   ],
+   "title": {
+    "zh": "电脑摄像头 / 麦克风",
+    "en": "Computer camera / microphone"
+   },
+   "hint": {
+    "zh": "只有任务要用电脑硬件时才开。",
+    "en": "Only when a task uses the computer's hardware."
+   },
+   "choice": "undecided",
+   "state": "not_applicable",
+   "reason": "not_macos",
+   "checked_at": 1791590585
+  },
+  {
+   "id": "tg",
+   "group": "optional",
+   "need": "optional",
+   "where": "phone",
+   "depends_on": [
+    "phone"
+   ],
+   "title": {
+    "zh": "Telegram 提醒",
+    "en": "Telegram notifications"
+   },
+   "hint": {
+    "zh": "可选；不用就说「我不用」。",
+    "en": "Optional; say \"I won't use this\" if not needed."
+   },
+   "choice": "undecided",
+   "state": "pending",
+   "reason": "not_configured",
+   "checked_at": 1791590585
+  },
+  {
+   "id": "botkey",
+   "group": "optional",
+   "need": "optional",
+   "where": "phone",
+   "depends_on": [
+    "admin"
+   ],
+   "title": {
+    "zh": "客服 Bot 模型服务",
+    "en": "Customer-service bot model"
+   },
+   "hint": {
+    "zh": "可选；要做网站客服时再用手机密钥卡配置。",
+    "en": "Optional; configure it with a phone key card when you run a website bot."
+   },
+   "choice": "undecided",
+   "state": "pending",
+   "reason": "not_configured",
+   "checked_at": 1791590585
+  },
+  {
+   "id": "exit",
+   "group": "core",
+   "need": "required",
+   "where": "phone",
+   "depends_on": [
+    "desktop",
+    "phone",
+    "service",
+    "awake",
+    "network"
+   ],
+   "title": {
+    "zh": "离机前手机检查",
+    "en": "Phone check before leaving"
+   },
+   "hint": {
+    "zh": "让电脑屏幕熄灭，手机关掉 Wi-Fi 用蜂窝网络发一句话，收到回复就完成。",
+    "en": "Let the computer's screen turn off, switch the phone to mobile data and send a message; a reply completes it."
+   },
+   "choice": "selected",
+   "state": "pending",
+   "reason": "start_check",
+   "checked_at": 1791590585
+  }
+ ],
+ "current": "phonepermissions",
+ "counts": {
+  "verified": 11,
+  "unused": 0,
+  "todo": 2,
+  "auto": 1,
+  "unsupported": 0,
+  "undecided": 11,
+  "not_applicable": 6
+ },
+ "group": 1,
+ "groups": [
+  {
+   "id": "core",
+   "title": {
+    "zh": "基本连接",
+    "en": "Your connection"
+   }
+  },
+  {
+   "id": "machine",
+   "title": {
+    "zh": "电源与服务",
+    "en": "Power and services"
+   }
+  },
+  {
+   "id": "browser",
+   "title": {
+    "zh": "常用网站",
+    "en": "Your websites"
+   }
+  },
+  {
+   "id": "google",
+   "title": {
+    "zh": "Google 工具",
+    "en": "Google tools"
+   }
+  },
+  {
+   "id": "privacy",
+   "title": {
+    "zh": "按需系统权限",
+    "en": "Permissions you need"
+   }
+  },
+  {
+   "id": "optional",
+   "title": {
+    "zh": "可选通道",
+    "en": "Optional connections"
+   }
+  }
+ ],
+ "remote_ready": false,
+ "blocking": [
+  "awake",
+  "exit"
+ ],
+ "exit_armed": false,
+ "updated_at": 1791590585,
+ "closed": false
+}

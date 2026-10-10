@@ -26,10 +26,13 @@ import {initVersionNotice,setHostVersion} from './js/version-notice.js';
 import {initShare, onShareReady, forgetShare} from './js/share.js';
 import * as elevate from './js/elevate.js';     // F17: sudo / secret cards (§11)
 import * as secretout from './js/secretout.js'; // F32: secret pickup cards (§18)
+import * as longtask from './js/longtask.js';   // 0.18: opening card + 「我的 Agent 会什么」 (§20)
+import * as logincard from './js/logincard.js'; // P114: sign-in QR cards (ADR-A194)
 import * as passkey from './js/faceid.js';     // F20: the same phone without a second pairing (§12)
 import * as renew from './js/renew.js';        // P122: …and after the browser deleted this page's storage (§12.1)
 import * as bots from './js/bots.js';
 import * as friends from './js/friends.js';    // §17.7: /friends + the friend cards
+import * as setupcard from './js/setup.js';   // P115: the first-run checklist card
 import { parseAgentId } from './proto/wire.js';
 import { SCAN_CONSTRAINTS, SCAN_FALLBACK, SCAN_SLOW_MS, scanFrame } from './js/scan.js';   // F29 (ADR-A177)
 
@@ -213,6 +216,8 @@ function onHostGone() {
   controls.clearGrants();
   elevate.clear();                                    // F17: the host re-sends open sudo / secret cards after ready
   secretout.clear({ keepOpened: true });              // F32: and open pickup cards (a value on screen stays)
+  longtask.clear();                                   // 0.18: the host re-sends open opening cards after ready
+  logincard.clear();                                  // P114: the host re-sends open sign-in cards after ready
 }
 session.configure({
   setStatus,
@@ -290,11 +295,20 @@ function onApp(m) {
     case 'elev_done': elevate.done(m); return;
     case 'elev_refused': elevate.refused(m); return;   // ADR-A163: Face ID not accepted, the card stays open
     case 'pk_offer': offerPasskey(m).catch(() => {}); return;    // F20 (§12)
+    case 'setup_card': setupcard.card(m); return;     // P115: the first-run checklist (host snapshot)
     case 'secret_out': secretout.add(m); return;       // F32 (§18): a pickup card (no value)
     case 'secret_out_val': secretout.value(m); return; // the value, after Face ID, to this session only
     case 'secret_out_done': secretout.done(m); return;
     case 'secret_out_err': secretout.failed(m); return;
+    case 'login_qr': logincard.add(m); return;          // P114: a sign-in QR card (only the QR, never chat history)
+    case 'login_qr_done': logincard.done(m); return;
+    case 'login_qr_state': logincard.state(m); return;
+    case 'login_qr_err': logincard.failed(m); return;
     case 'pk_reg_res': pkSaved(m).catch(() => {}); return;
+    case 'lt_card': longtask.add(m); return;          // 0.18 (§20): the one opening card
+    case 'lt_done': longtask.done(m); return;
+    case 'lt_res': longtask.res(m); return;
+    case 'lt_caps': longtask.showCaps(m); return;      // 「我的 Agent 会什么」
     case 'rt': gotTicket(m); return;                  // P122 (§12.1): this phone's renewal ticket → the HttpOnly cookie
     case 'question': snap.addQuestion(m); return;
     case 'question_done': snap.questionDone(m); return;
@@ -369,6 +383,9 @@ async function forgetLocal() {
   blobs.forgetAll();
   elevate.clear();
   secretout.clear();
+  longtask.clear();
+  logincard.clear();
+  setupcard.clear();
   await wipeLocal();
 }
 function fatal(key) {

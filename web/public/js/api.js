@@ -129,7 +129,15 @@ export async function model(want) {
   if (!isReady()) return { ok: false, why: 'offline' };
   if (!peer.p33) return { ok: false, why: 'unsupported' };
   const m = await ask1(want.default ? { t: 'model_set', default: true } : { t: 'model_set', model: want.model ?? null, effort: want.effort ?? null }, 'model_res', 15000);
-  if (m.t === 'model_res') return m.ok === true ? { ok: true } : { ok: false, why: m.why || 'other' };
+  if (m.t === 'model_res') return m.ok === true ? { ok: true, queued: m.why === 'queued' } : { ok: false, why: m.why || 'other' };
+  return { ok: false, why: m.t };
+}
+
+/** P118 (B10): this reply → the owner's own Telegram private chat (host cap `tgfwd`). → {ok, why?} */
+export async function tgForward(id) {
+  if (!isReady() || !peer.p33 || !peer.tgfwd) return { ok: false, why: 'not_configured' };
+  const m = await ask1({ t: 'tg_fwd', id }, 'tg_fwd_res', 30000);
+  if (m.t === 'tg_fwd_res') return m.ok === true ? { ok: true } : { ok: false, why: m.why || 'send_failed' };
   return { ok: false, why: m.t };
 }
 

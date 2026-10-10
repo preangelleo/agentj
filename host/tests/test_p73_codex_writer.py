@@ -31,8 +31,16 @@ def _st(root):
 def _orphan(tmp, tag="app-server"):
     """A detached `… app-server` process (its own session, parent = not us): what a killed serve leaves behind."""
     out = pathlib.Path(tmp) / "pid"
-    subprocess.run(["sh", "-c", f"setsid {sys.executable} -c 'import time; time.sleep(120)' {tag} >/dev/null 2>&1 & echo $! > {out}"],
-                   check=True)
+    # Write the PID from the actual detached child after setsid, rather than
+    # shell $!: setsid may fork again when that launcher is a process-group leader.
+    child = ("import os,time,pathlib; "
+             "pid=os.fork(); "
+             "os._exit(0) if pid else None; "
+             "os.setsid(); "
+             f"pathlib.Path({str(out)!r}).write_text(str(os.getpid())); "
+             "time.sleep(120)")
+    subprocess.run([sys.executable, "-c", child, tag], check=True,
+                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     for _ in range(100):
         if out.exists() and out.read_text().strip():
             break

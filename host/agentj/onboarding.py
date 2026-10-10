@@ -66,7 +66,7 @@ def _lock(st):
 
 def _blank() -> dict:
     return {"v": 1, "welcomed": None, "computer": None, "phone": None, "announced": [], "tour_left": 0, "tour_until": 0,
-            "remind_at": 0}
+            "remind_at": 0, "firstrun_offered": 0}
 
 
 def _seed(st) -> dict:
@@ -201,7 +201,9 @@ def welcome_prompt(kind: str, label: str, s: dict, lang: str) -> str:
             "2 minutes = denied; offer to try one now (create a scratch file and delete it). (5) Close: " + missing_text(s, "en")
             + " For a missing one say how, in one sentence: " + "; ".join(HOW["en"][x] for x in ("computer", "phone") if not s[x])
             + (". " if not (s["computer"] and s["phone"]) else " ")
-            + "Then give the full guide " + MANUAL["en"] + " and say they can simply ask you anything about the screen.\n"
+            + "Then give the full guide " + MANUAL["en"] + " and say they can simply ask you anything about the screen. Finally "
+            "offer, in one sentence, to prepare everything for remote use while they are still at the computer (a first-run "
+            "checklist); only if they agree, run `agentj setup checklist --resume --json`.\n"
             "Other phones, pads or computers: only when the owner asks.")
     return (
         "〔Agent J 系统消息，不是主人说的话〕主人刚配好第一个遥控器（" + KIND["zh"][k] + ("，" + label if label else "")
@@ -219,7 +221,8 @@ def welcome_prompt(kind: str, label: str, s: dict, lang: str) -> str:
         "点「拒绝」就拒绝，2 分钟没处理算拒绝；可以提议现在试一次（建个临时文件再删掉）。⑤ 收尾：" + missing_text(s, "zh")
         + ("没配的那个，用一句话说怎么配：" + "；".join(HOW["zh"][x] for x in ("computer", "phone") if not s[x]) + "。"
            if not (s["computer"] and s["phone"]) else "")
-        + "最后给完整使用说明 " + MANUAL["zh"] + " ，并告诉主人屏幕上有什么不懂直接问你。\n"
+        + "最后给完整使用说明 " + MANUAL["zh"] + " ，并告诉主人屏幕上有什么不懂直接问你；再用一句话提议「趁你在电脑前，"
+        "我把以后远程要用的事一次准备好」，主人同意才运行 agentj setup checklist --resume --json。\n"
         "其他手机、平板、电脑：主人问的时候再帮他配。")
 
 
@@ -263,13 +266,24 @@ def turn_note(st, lang: str, now: float | None = None) -> str:
         # F28 arrived (legacy), or one not paired at all yet (the installing Agent leads that, install.md Step 11), is not
         fresh = isinstance(rec["welcomed"], dict) and rec["welcomed"].get("kind") != "legacy"
         pending = fresh and (not (s["computer"] and s["phone"]) or not seat)
+        offer = False
         if tour:
             rec["tour_left"] -= 1
         elif pending and now - int(rec.get("remind_at") or 0) >= REMIND_SECS:
             rec["remind_at"] = now
+        elif fresh and not pending and not rec.get("firstrun_offered") and _firstrun_unstarted(st):
+            rec["firstrun_offered"] = now      # P115 (P92): offered once after a fresh install, also when the tour was skipped
+            offer = True
         else:
             return ""
         _write(st, rec)
+    if offer:
+        if lang == "en":
+            return ("\n\n[Agent J system note, not from the owner; do not repeat it] Setup is complete. After answering the owner, "
+                    "unless you already offered it in this conversation, offer once, in one sentence, to prepare everything for remote use while they are at the computer; only if "
+                    "they agree, run `agentj setup checklist --resume --json`. If they say not now, drop it.")
+        return ("\n\n〔Agent J 系统提示，不是主人说的话，不要复述〕安装已完成。先回答主人；这段对话里还没提过的话，再用一句话提议「趁你在电脑前，把以后远程要用的事一次准备好」，"
+                "主人同意才运行 agentj setup checklist --resume --json。主人说先不用就别再提。")
     nxt = "seat" if not seat else "computer" if not s["computer"] else "phone" if not s["phone"] else None
     if tour:
         if lang == "en":
@@ -285,6 +299,14 @@ def turn_note(st, lang: str, now: float | None = None) -> str:
                 "says not now, drop it.")
     return ("\n\n〔Agent J 系统提示，不是主人说的话，不要复述〕安装还差一步：" + what + "。先回答主人；合适的话在末尾用一句话温和提醒怎么做（"
             + HOW["zh"][nxt] + "）。主人说先不用就别再提。")
+
+
+def _firstrun_unstarted(st) -> bool:
+    try:
+        from . import first_run
+        return first_run.read(st) is None
+    except Exception:   # noqa: BLE001
+        return False
 
 
 class WelcomeSend(Send):

@@ -1,0 +1,38 @@
+{
+  "schema_version": 1,
+  "comment": "P114 (ADR-A194): the dedicated browser Agent J downloads. Ships inside the signed host package, so the package signature covers every URL, size and SHA-256 here. A mirror may serve the same bytes only; it can never change this file.",
+  "product": "Chrome for Testing",
+  "version": "156.0.8078.4",
+  "builds": {
+    "linux-x64": {
+      "url": "https://cdn.playwright.dev/builds/cft/156.0.8078.4/linux64/chrome-linux64.zip",
+      "path": "linux64/chrome-linux64.zip",
+      "size": 200345244,
+      "sha256": "43fd31766c7533a02dda2ded5ad50c2f861cd5400be7509c0abad71129f79d79",
+      "executable": ["chrome-linux64", "chrome"]
+    },
+    "linux-arm64": {
+      "url": "https://cdn.playwright.dev/builds/cft/156.0.8078.4/linux-arm64/chrome-linux-arm64.zip",
+      "path": "linux-arm64/chrome-linux-arm64.zip",
+      "size": 199750508,
+      "sha256": "910a12fff6170202195f72ef3d353801c7063d301ab80b1f51b77d791fda60ce",
+      "executable": ["chrome-linux-arm64", "chrome"]
+    },
+    "mac-arm64": {
+      "url": "https://cdn.playwright.dev/builds/cft/156.0.8078.4/mac-arm64/chrome-mac-arm64.zip",
+      "path": "mac-arm64/chrome-mac-arm64.zip",
+      "size": 194831853,
+      "sha256": "987d2f8499c87d21676f78178550cfcbfb1bb53786821e2cff46c5a7e99b58be",
+      "executable": ["chrome-mac-arm64", "Google Chrome for Testing.app", "Contents", "MacOS", "Google Chrome for Testing"]
+    },
+    "mac-x64": {
+      "url": "https://cdn.playwright.dev/builds/cft/156.0.8078.4/mac-x64/chrome-mac-x64.zip",
+      "path": "mac-x64/chrome-mac-x64.zip",
+      "size": 205332100,
+      "sha256": "4e75da96830224185ddddc80012ad3732d6a29a4f92bac728c84c8e8ebd66c34",
+      "executable": ["chrome-mac-x64", "Google Chrome for Testing.app", "Contents", "MacOS", "Google Chrome for Testing"]
+    }
+  },
+  "approved_mirrors": [],
+  "min_free_bytes": 1500000000
+}

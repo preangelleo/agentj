@@ -1635,3 +1635,63 @@ body[data-view="chat"] .share-notice{position:static;margin:0 var(--space-contro
 .version-notice>div{display:flex;flex-wrap:wrap;gap:var(--space-control)}
 .version-notice button{min-height:56px;padding:var(--space-control);border:1px solid currentColor;border-radius:10px;background:transparent;color:inherit;font:inherit;cursor:pointer}
 #version-refresh{background:#b7e396;color:#141414;font-weight:700}
+/* 0.18 (ADR-A193): the one opening card and 「我的 Agent 会什么」 — touch targets ≥ 56px, no horizontal overflow at 360px */
+.ajmodal.lt{z-index:58}
+.lt .box{overflow-x:hidden}
+.lt .lt-kicker{margin:0 0 var(--sp-1);font:500 calc(12px*var(--fz))/1.2 var(--font-title);letter-spacing:.06em;color:var(--accent,var(--text-muted))}
+.lt .lt-title{overflow-wrap:anywhere}
+.lt .lt-sec{margin-top:var(--sp-4)}
+.lt .lt-h{margin:0 0 var(--sp-2);font:600 calc(14px*var(--fz))/1.3 var(--font-title)}
+.lt .lt-goal{margin:0;overflow-wrap:anywhere;line-height:1.5}
+.lt .lt-list{margin:var(--sp-2) 0 0;padding-left:1.2em;overflow-wrap:anywhere}
+.lt .lt-item{padding:var(--sp-3) 0;border-top:1px solid var(--border)}
+.lt .lt-why{margin:0;font-weight:500;overflow-wrap:anywhere}
+.lt .lt-meta,.lt .lt-reuse,.lt .lt-note,.lt .lt-left{margin:var(--sp-1) 0 0;font-size:calc(13px*var(--fz));line-height:1.5;color:var(--text-muted);overflow-wrap:anywhere}
+.lt .lt-badge{display:inline-block;padding:1px 8px;border-radius:999px;font-size:calc(12px*var(--fz));border:1px solid var(--border)}
+.lt .lt-badge--ready{color:var(--c-ok,#2e7d32);border-color:currentColor}
+.lt .lt-badge--choose{color:var(--accent,var(--text));border-color:currentColor}
+.lt .lt-badge--missing,.lt .lt-badge--failed{color:var(--c-danger,#c0392b);border-color:currentColor}
+.lt .lt-input{display:flex;flex-wrap:wrap;gap:var(--sp-2);margin-top:var(--sp-2)}
+.lt .lt-opt,.lt .lt-filter .lt-opt{min-height:56px;min-width:56px;padding:0 var(--sp-4);border-radius:16px;border:1px solid var(--border);
+  background:var(--bg);color:var(--text);font:500 calc(15px*var(--fz))/1.2 var(--font-body,inherit);max-width:100%;overflow-wrap:anywhere}
+.lt .lt-opt[aria-pressed="true"]{border-color:var(--accent,var(--text));box-shadow:inset 0 0 0 1px var(--accent,var(--text));font-weight:600}
+.lt .lt-text{display:block;width:100%;min-height:56px;padding:12px 14px;border-radius:14px;border:1px solid var(--border);background:var(--bg);
+  color:var(--text);font:400 16px/1.4 inherit;resize:vertical}
+.lt details>summary{min-height:56px;display:flex;align-items:center;gap:var(--sp-2);cursor:pointer;overflow-wrap:anywhere}
+.lt .lt-clauses .lt-safe{color:var(--text-muted)}
+.lt .aj-btn{min-height:56px}
+.lt .lt-go{display:block;width:100%;margin-top:var(--sp-4)}
+.lt .lt-back{display:block;margin:var(--sp-3) auto 0;min-height:56px;width:auto;padding:0 var(--sp-4);color:var(--text-muted);font-weight:400;
+  text-decoration:underline;text-underline-offset:3px}
+.lt .lt-filter{display:flex;flex-wrap:wrap;gap:var(--sp-2);margin-top:var(--sp-3)}
+.lt .lt-caps-list{margin-top:var(--sp-3)}
+.lt .lt-cap{border-top:1px solid var(--border)}
+/* P114 (ADR-A194 §5): the sign-in QR card — only the QR on white, the time left, then full-width actions (P87: one per line,
+   nowrap, ≥ 56 px). Never stored; the image leaves the page when the card ends. */
+.ajmodal.lqr{z-index:43}
+.lqr .elev-kicker{margin:0 0 var(--sp-1);font:500 calc(12px*var(--fz))/1.2 var(--font-title);letter-spacing:.06em;color:var(--accent,var(--text-muted))}
+.lqr .lqr-frame{margin:var(--sp-3) auto 0;padding:12px;width:min(260px,100%);aspect-ratio:1;border-radius:16px;background:#fff;
+  border:1px solid var(--border);display:grid;place-items:center}
+.lqr .lqr-img{display:block;width:100%;height:100%;object-fit:contain;image-rendering:pixelated;-webkit-touch-callout:default}
+.lqr .elev-note,.lqr .elev-left{margin:var(--sp-2) 0 0;font-size:calc(13px*var(--fz));line-height:1.5;color:var(--text-muted)}
+.lqr .elev-left{text-align:center;font-weight:500;color:var(--text)}
+.lqr .lqr-acts{display:flex;flex-direction:column;gap:var(--sp-2);margin-top:var(--sp-3)}
+.lqr .lqr-acts .aj-btn{width:100%;min-height:56px;margin-top:0;white-space:nowrap}
+.lqr .lqr-tg,.lqr .lqr-later{display:block;margin:var(--sp-3) auto 0;min-height:44px;width:auto;padding:0 var(--sp-4);white-space:nowrap;
+  color:var(--text-muted);font-weight:400;text-decoration:underline;text-underline-offset:3px}
+.lqr [hidden]{display:none}
+/* P115: first-run checklist card (setup.js) — same dialog on the phone and this computer's browser; touch targets ≥ 56px */
+.ajmodal.setupcard{z-index:43}
+.setupcard .box{width:min(34rem,100%)}
+.setup-kicker{margin:0 0 var(--sp-2);font-size:var(--fs-sm);letter-spacing:.04em;color:var(--text-muted)}
+.setup-counts,.setup-where{margin:var(--sp-2) 0 0;color:var(--text-muted);font-size:var(--fs-sm)}
+.setup-hint{margin:var(--sp-3) 0 0}
+.setup-note{margin:var(--sp-3) 0 0;white-space:pre-wrap}
+.setup-actions,.setup-more{display:flex;flex-wrap:wrap;gap:var(--sp-2);margin-top:var(--sp-3)}
+.setup-actions .aj-btn,.setup-more .aj-btn{flex:1 1 9rem;min-height:56px;margin-top:0;white-space:normal}
+.setup-group{font-size:var(--fs-md);margin:var(--sp-4) 0 var(--sp-1)}
+.setupcard .setup-list{list-style:none;padding:0;margin:0}
+.setupcard .setup-row{margin:0;display:flex;justify-content:space-between;gap:var(--sp-3);padding:var(--sp-2) 0;border-bottom:1px solid var(--border, rgba(127,127,127,.25))}
+.setup-row .setup-st{color:var(--text-muted);font-size:var(--fs-sm);text-align:right;flex:0 0 auto;max-width:50%}
+.setup-row[data-state="verified"] .setup-st{color:var(--ok, inherit)}
+.setup-row[data-state="attention"] .setup-st{color:var(--danger, inherit)}
