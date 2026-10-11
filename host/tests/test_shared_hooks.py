@@ -1,5 +1,6 @@
 """Product shared hooks: native authority, committed Stop and local channel."""
 import _hermetic
+import re
 import asyncio
 import json
 import os
@@ -41,7 +42,11 @@ class SharedRisk(unittest.TestCase):
         v=danger.classify_shared('Write',inp)
         summary=approval_summary('Write',inp,v)
         self.assertNotIn(inp['content'],summary)
-        self.assertIn('credentials',summary.lower())
+        self.assertIn('改密码或密钥',summary)                       # P128: one language, the change label
+        en=approval_summary('Write',inp,v,'en')
+        self.assertNotIn(inp['content'],en)
+        self.assertIn('Changes passwords or keys',en)
+        self.assertIsNone(re.search('[\u4e00-\u9fff]',en))
 
     def test_routine_zero_and_four_true_risks(self):
         for command in ['git commit -m test','npm install','python verify.py','rm local.txt','git branch -D scratch']:

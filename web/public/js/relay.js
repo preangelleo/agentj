@@ -18,7 +18,7 @@ import { toWav } from './wav.js';
 import { Speaker, configureSpeech } from './speak.js';
 import { isReady, sendApp, hostId, peer } from './session.js';
 import { getSealed, putSealed, dbDel } from './store.js';
-import { Outbox, paint as paintOutbox, MAX as OUT_MAX } from './outbox.js';
+import { Outbox, paint as paintOutbox, MAX as OUT_MAX, isEcho } from './outbox.js';
 import { askKind as friendAsk, renderAsk as renderFriendAsk, addFriendCmd, openFromCmd } from './friends.js';   // §17.7: friend request / friend's question cards
 
 let C = null;                        // ctx from app.js: api, myDev(), estopOn(), canSign(), panels …
@@ -38,14 +38,17 @@ let historySync = true;   // a refreshed page must fetch the current head before
 let historyGeneration = 0;
 // pending: an open page whose reply has not come yet — no words at all (the thinking dots say it), never the
 // empty-history line 「已连上你的电脑…」 (relay never showed a page before its reply; Agent J shows the say's page at once)
-function renderWords(text, pending = false){
+function renderWords(text, pending = false, label = ""){
   const tx = (text || "").trim();
-  const key = pending && !tx ? "\u0000pending:" + historySync + ":" + cur?.status : tx;
+  // P127: a compaction in flight (any mode: PreCompact on a shared Claude, system/status on our own) says so at once;
+  // a page-specific label (queued behind a busy session) wins over the session-wide wait words
+  const wait = historySync ? "st.resuming" : cur?.compacting === true ? "r.replyCompacting" : cur?.status === "working" ? "r.replyWorking" : "r.replyPending";
+  const key = pending && !tx ? "\u0000pending:" + (label || wait) : tx;
   if (key === wordsSrc) return;
   wordsSrc = key;
   const w = el("words");
   w.className = "words" + (!tx ? " empty" : tx.length > 600 ? " l" : tx.length > 240 ? " m" : "");
-  fill(w, pending && !tx ? t(historySync ? "st.resuming" : cur?.status === "working" ? "r.replyWorking" : "r.replyPending") : tx);
+  fill(w, pending && !tx ? (label || t(wait)) : tx);
   afterWords();
   rdFollow(tx);
 }
@@ -198,10 +201,13 @@ function renderQuestion(card, a){
 
 // Agent J's extras inside relay's sheet: danger chips (or 低风险), the scheduled task it comes from, how long is left,
 // and how many more requests wait behind this one.
+// P128: a credential that is only SHOWN is labelled 查看密码或密钥, a change 改密码或密钥; the reason in the phone's language.
+const catKey = (c, item) => (c === 'credentials' && item && item.cred === 'read' ? 'credentials_read' : c);
+const askWhy = (p) => (lang() === 'en' && p.why_en ? p.why_en : p.why);
 function paintTags(item){
   const box = el("askTags"); box.replaceChildren();
   if (item && item.kind === "permission"){
-    if (item.cats && item.cats.length) for (const c of item.cats){ const s = document.createElement("span"); s.className = "atag danger"; s.dataset.cat = c; s.textContent = t('ask.cat.' + c); box.appendChild(s); }
+    if (item.cats && item.cats.length) for (const c of item.cats){ const s = document.createElement("span"); s.className = "atag danger"; s.dataset.cat = c; s.textContent = t('ask.cat.' + catKey(c, item)); box.appendChild(s); }
     else { const s = document.createElement("span"); s.className = "atag low"; s.textContent = t('ask.low'); box.appendChild(s); }
   }
   if (item && item.task){ const s = document.createElement("span"); s.className = "atag task"; s.textContent = t('ask.task', {task: item.task}); box.appendChild(s); }
@@ -302,7 +308,7 @@ function renderPermission(card, p){
   el("tool").textContent = tool;
   const {main} = summarize(p ? p.summary : card.summary);
   el("cmd").textContent = main;
-  const why = p && p.why ? t('ask.why', {why: p.why}) : "";
+  const why = p && p.why ? t('ask.why', {why: askWhy(p)}) : "";
   el("why").textContent = why; el("why").hidden = !why;
   const st = apprState(p), open = st === "open";
   const sign = C.canSign();
@@ -650,6 +656,9 @@ function newTurnArrived(ps){
 function visibleReply(p){ return typeof p?.reply === "string" && !!p.reply.trim() && !isSilent(p.reply); }
 function visiblePage(p){
   const src = p.source;
+  // P127 (追加6): a withdrawn send never reached the Agent and its words are back in the field — as if never sent, so its
+  // page leaves the history instead of standing there with 「（无文字回复）」 (and a second copy once it is sent again).
+  if (p.card && p.card.withdrawn === true) return false;
   return !isSilent(p.reply) && (visibleReply(p) || !!src?.text?.trim() || !!src?.att?.length || !!p.card);
 }
 function toNewest(){ follow = true; shownKey = null; stick = true; showPage(); }
@@ -861,7 +870,9 @@ function showPage(){
     setOm(false);
     if (moved) stick = true;
   }
-  renderWords((isSilent(p.reply) ? "" : p.reply?.trim()) || (p.end === "open" || p.id === null ? "" : t('r.noReply')), p.end === "open" && p.id !== null);
+  const qd = p.end === "open" && queuedTurn(p.id);     // P127: accepted, waiting behind the running turn — say so
+  document.body.dataset.pageQueued = qd ? "1" : "0";
+  renderWords((isSilent(p.reply) ? "" : p.reply?.trim()) || (p.end === "open" || p.id === null ? "" : t('r.noReply')), p.end === "open" && p.id !== null, qd ? t('r.queue.card') : "");
   el("words").classList.toggle("empty", !visibleReply(p));
   renderMedia(el("words"), p);
   if (rdAt && rdAt.key === shownKey) renderReaderMedia(el("rdWords"), p);   // P59: the reader's slots, same Blobs
@@ -1228,6 +1239,8 @@ function swipeEnd(){
 }
 
 // ---- connection (relay's transport section, now the Noise session's state) ------------------------
+/** P129: the session dropped but the screen stays quiet for a moment (app.js QUIET_MS): stop an in-flight send now. */
+export function connLost(){ outbox.lost(); }
 /** on: a ready session with the host up. text: what the screen reader says while off. */
 export function setConn(on, text){
   if (!C) return;
@@ -1251,19 +1264,24 @@ export function setConn(on, text){
 
 // ---- drafts (§10.14: sealed in IndexedDB, 24 h, deleted on unpair / re-pair) -------------------------
 const DRAFT_TTL_MS = 24 * 3600 * 1000;
-let draftTimer = 0;
-export async function saveDraft(){
+let draftTimer = 0, draftQ = Promise.resolve();
+// P127 (追加7): one write at a time, each the field as it is at its turn. A put still sealing (async crypto) could otherwise
+// land after the delete that followed a send, and the next page load would restore the words already sent.
+export function saveDraft(){
   clearTimeout(draftTimer);
-  const tx = input ? input.value : "";
-  try{
-    if (!tx.trim()) await dbDel("draft");
-    else await putSealed("draft", {t: tx, at: Date.now()});
-  }catch(_){}
+  return (draftQ = draftQ.then(async () => {
+    const tx = input ? input.value : "";
+    try{
+      if (!tx.trim()) await dbDel("draft");
+      else await putSealed("draft", {t: tx, at: Date.now()});
+    }catch(_){}
+  }));
 }
 function draftSoon(){ clearTimeout(draftTimer); draftTimer = setTimeout(saveDraft, 600); }
-async function restoreDraft(){
+export async function restoreDraft(){
   const d = await getSealed("draft");
   if (!d || typeof d.t !== "string" || Date.now() - (+d.at || 0) > DRAFT_TTL_MS || input.value) return;
+  if (lastSent && isEcho(d.t, lastSent.text)){ saveDraft(); return; }     // P127: the words just sent are not a draft
   input.value = d.t.slice(0, MAX_TEXT());
   input.dispatchEvent(new Event("input"));
   toast(t('r.draft.restored'), 2600);
@@ -1314,6 +1332,22 @@ function capField(){
   return true;
 }
 let composing = false;
+// P127 (追加7): the words just sent. A Mac dictation 「。」 or an IME re-commit of the same sentence can land after Send
+// (while say_res is on its way, or after the field was cleared): within ECHO_MS such an echo is dropped, never re-typed.
+const ECHO_MS = 3000;
+let lastSent = null;      // {text, until}
+function settleField(text){
+  lastSent = {text, until: Date.now() + ECHO_MS};
+  if (input.value === text || isEcho(input.value, text)) input.value = "";
+}
+// Only a real keyboard / dictation input (isTrusted) or an IME's compositionend (the page never dispatches one; Chromium's
+// own may arrive untrusted) is checked: the page's own writes (↑ history, a withdraw putting the words back, a transcript)
+// dispatch synthetic input events and are never dropped.
+function dropEcho(e, ime = false){
+  if (!e || !(ime || e.isTrusted) || !lastSent || composing || !input.value || Date.now() > lastSent.until || !isEcho(input.value, lastSent.text)) return false;
+  input.value = ""; autosize(); saveDraft();
+  return true;
+}
 let twin = null;
 function twinHeight(text){
   twin.style.width = input.clientWidth + "px";
@@ -1642,11 +1676,24 @@ function launchLoop(){
 }
 // The send in flight (one at a time) and the ones accepted but still queued behind a running turn (withdrawable).
 let inflight = null;      // {phase, sid, cancelled, delivered, cancelling, wake, batch}
-const queued = [];        // {sid, text, atts, rt} accepted with state "queued", not yet delivered
+const queued = [];        // {sid, text, atts, rt, turn, at} accepted with state "queued", not yet delivered
+// P127 (追加6): the host answers every say `queued` first; an idle Agent takes it within milliseconds (say_state delivered).
+// Only one still waiting after QUEUE_QUIET_MS (the shared session is busy) is shown as queued — its page says
+// 「排队中，电脑忙完就接手」 and the composer keeps it as a pending line saying 「取消」 takes it back — so a quick hand-over
+// never flickers.
+const QUEUE_QUIET_MS = 700;
+let queueTimer = 0;
+const queuedShown = () => { const now = Date.now(); return queued.filter(q => now - (q.at || 0) >= QUEUE_QUIET_MS); };
+function queuedTurn(id){ return Number.isInteger(id) && queuedShown().some(q => q.turn === id); }
 function paintQueued(){
   const show = !!inflight && document.body.dataset.sending === "1" || (!inflight && queued.length > 0);
   el("sayCancel").hidden = !show;
   el("sayCancel").dataset.mode = inflight ? "send" : "queued";
+  clearTimeout(queueTimer);
+  const young = queued.filter(q => Date.now() - (q.at || 0) < QUEUE_QUIET_MS);
+  if (young.length) queueTimer = setTimeout(paintQueued, Math.max(20, ...young.map(q => QUEUE_QUIET_MS - (Date.now() - q.at) + 20)));
+  paintOut();
+  if (hist.turns.length) showPage();
 }
 async function cancelSay(){
   const S = inflight;
@@ -1681,6 +1728,8 @@ function dequeue(sid){ const i = queued.findIndex(x => x.sid === sid); if (i >= 
 // A queued message taken back: its words return to the field (if empty) and its files to the tray (still staged on the
 // host under the same ids, §10.2).
 function withdrawn(q){
+  if (q.gone) return;                 // say_state cancelled and say_cancel_res both say so: once
+  q.gone = true;
   dequeue(q.sid);
   if (!input.value){ input.value = q.text; input.dispatchEvent(new Event("input")); }
   for (const a of q.atts) if (atts.length < MAX_ATT && !atts.includes(a)){ a.node = null; a.st = "ready"; atts.push(a); paintChip(a); }
@@ -1712,7 +1761,7 @@ async function say(){
   // it works while stopped (a request is not an Agent action) and opens the prefilled form when offline.
   const fa = /^[/\uff0f]add[-_]friend(?:[ \t]+([\s\S]*))?$/i.exec(text.trim());
   if (fa && !atts.length && !replyTo){
-    if (await addFriendCmd((fa[1] || "").trim())){ pushHist(text); input.value = ""; autosize(); saveDraft(); }
+    if (await addFriendCmd((fa[1] || "").trim())){ pushHist(text); settleField(text); autosize(); saveDraft(); }
     return;
   }
   if (C.estopOn()){ toast(t('r.say.stopped'), 3200); return; }
@@ -1721,7 +1770,7 @@ async function say(){
   const c = CMD_RE.exec(text.trim());
   if (c && CMDS.includes(c[1].toLowerCase()) && !atts.length && !replyTo){
     if (!await runCmd(c[1].toLowerCase(), (c[2] || "").trim())) return;
-    pushHist(text); input.value = ""; autosize(); saveDraft(); toNewest(); launchRocket();
+    pushHist(text); settleField(text); autosize(); saveDraft(); toNewest(); launchRocket();
     return;
   }
   sending = true; refreshSend();
@@ -1761,8 +1810,8 @@ async function say(){
       landed = true;
       pushHist(text);
       if (rt && replyTo === rt) cancelReply();
-      if (input.value === text) input.value = "";
-      if (r.state === "queued") queued.push({sid: S.sid, text, atts: live.slice(), rt});
+      settleField(text);     // P127: also when a dictation 「。」 / IME commit landed while say_res was on its way
+      if (r.state === "queued") queued.push({sid: S.sid, text, atts: live.slice(), rt, turn: r.turn, at: Date.now()});
       for (const a of live) removeAtt(a, false);
       saveDraft();
       if (!C.p33()) C.saidOld(text);
@@ -1797,7 +1846,8 @@ const outbox = new Outbox({}, {
 });
 function paintOut(){
   if (!C) return;
-  paintOutbox(el("outbox"), outbox.items, {line: t('offline.line'), lostNote: t('offline.attLost'),
+  const waiting = queuedShown().map(q => ({sid: q.sid, text: q.text, att: q.atts.length ? q.atts.map(a => ({name: a.name, kind: a.kind})) : null, queued: true}));
+  paintOutbox(el("outbox"), outbox.items.concat(waiting), {line: t('offline.line'), lostNote: t('offline.attLost'), queuedNote: t('r.queue.note'),
     isLost: e => !!(e.att && e.att.length && !held.has(e.sid)), showLine: !C.connected() && (outbox.items.length > 0 || navigator.onLine === false)});
 }
 function drainOut(){ if (outbox.items.length) outbox.drain(); }
@@ -1819,7 +1869,7 @@ function sayLater(text){
   }
   pushHist(text);
   if (rt && replyTo === rt) cancelReply();
-  if (input.value === text) input.value = "";
+  settleField(text);
   autosize(); saveDraft(); toNewest();
   if (C.connected()) drainOut();
 }
@@ -1844,7 +1894,7 @@ function outDone(e, r, kind){
   const list = held.get(e.sid) || [];
   held.delete(e.sid);
   if (kind === "sent"){
-    if (r.ok && r.state === "queued") queued.push({sid: e.sid, text: e.text, atts: list.slice(), rt: null});
+    if (r.ok && r.state === "queued") queued.push({sid: e.sid, text: e.text, atts: list.slice(), rt: null, turn: r.turn, at: Date.now()});
     for (const a of list) if (a.url){ URL.revokeObjectURL(a.url); a.url = null; }
     if (r.ok && !C.p33()) C.saidOld(e.text);
     paintQueued();
@@ -2415,7 +2465,7 @@ let localEpoch = 0;
 export function forgetLocal(){
   localEpoch++;
   histMem = []; histAt = -1;
-  clearTimeout(draftTimer);
+  clearTimeout(draftTimer); lastSent = null;
   if (inflight){ inflight.cancelled = true; inflight.forgotten = true; if (inflight.wake) inflight.wake(); }
   queued.length = 0;
   outbox.wipe();
@@ -2629,8 +2679,8 @@ export function init(ctx){
 
   // composer
   input.addEventListener("compositionstart", () => { composing = true; });
-  input.addEventListener("compositionend", () => { composing = false; capField(); autosize(); draftSoon(); });
-  input.addEventListener("input", () => { if (!composing) capField(); autosize(); draftSoon(); });
+  input.addEventListener("compositionend", e => { composing = false; if (dropEcho(e, true)) return; capField(); autosize(); draftSoon(); });
+  input.addEventListener("input", e => { if (!composing && dropEcho(e)) return; if (!composing) capField(); autosize(); draftSoon(); });
   if (window.IntersectionObserver) new IntersectionObserver(es => { if (es.some(e => e.isIntersecting)) autosize(); }).observe(input);
   twin = document.createElement("textarea");
   twin.setAttribute("aria-hidden", "true"); twin.tabIndex = -1; twin.rows = 1;

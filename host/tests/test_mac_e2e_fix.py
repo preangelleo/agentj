@@ -96,7 +96,8 @@ class Handover(unittest.TestCase):
         r = _cli(self.home, "handover")
         self.assertIn("Agent J is not set up on this computer yet", r.stdout, "default language = en")
 
-    def test_unmigrated_old_state_is_read_and_not_moved(self):
+    def test_unmigrated_old_state_is_not_adopted_and_not_moved(self):
+        # P127: an old (≤ 0.9) identity nobody chose to adopt is never used silently — not even read for the note
         old = pathlib.Path(self.home) / ".local" / "state" / "agentjarvis-alpha"
         st = State(old)
         st.init(relay="ws://127.0.0.1:1")
@@ -104,9 +105,8 @@ class Handover(unittest.TestCase):
         before = _tree(self.home)
         r = _cli(self.home, "handover", "--lang", "zh")
         self.assertEqual(r.returncode, 0, r.stderr)
-        self.assertIn("「助理一号」", r.stdout)
-        self.assertIn("还没加到 Agent J 账号里", r.stdout)
-        self.assertIn("已配对的手机：0 台", r.stdout)
+        self.assertNotIn("「助理一号」", r.stdout)
+        self.assertIn("agentj init", r.stdout)
         self.check_common(r.stdout, "zh")
         self.assertTrue(old.is_dir() and not old.is_symlink(), "no migration")
         self.assertFalse((pathlib.Path(self.home) / ".local" / "state" / "agentj").exists())

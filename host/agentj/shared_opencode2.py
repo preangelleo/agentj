@@ -25,11 +25,16 @@ import os
 import re
 from urllib.parse import quote
 
+from .text import pick
 from .agent_opencode import CONNECT_WAIT, HTTPError, session_rules, split_model
 from .agent_opencode2 import AGENT_TRIES, END, OpenCodeV2Agent, _data, rules_from_v2, rules_to_v2
-from .privacy import redact as public_text
+from .privacy import redact
 
 TITLE = "Agent J shared"
+
+
+def public_text(text: str) -> str:
+    return redact(text, paths=True)   # owner channel, same as shared.public_text (P127)
 
 
 def switch_shared(agent, version) -> bool:
@@ -196,7 +201,7 @@ class OwnerOpenCodeV2Agent(SharedOpenCodeV2Agent):
         except (OSError, ValueError, HTTPError, asyncio.TimeoutError):
             self.proc = None
             self.failed_start = True
-            self.fail_notice("不能附着电脑 OpenCode server/session。 / Cannot attach the desktop OpenCode server/session.")
+            self.fail_notice(pick(getattr(self.host, "lang", "zh"), "不能附着电脑 OpenCode server/session。", "Cannot attach the desktop OpenCode server/session."))
             return False
         self.failed_start = False
         self.host.st.log("agent_attach", agent=self.kind, protocol="v2", owner=True)
@@ -238,7 +243,7 @@ class OwnerOpenCodeV2Agent(SharedOpenCodeV2Agent):
                 with contextlib.suppress(OSError, ValueError, HTTPError, asyncio.TimeoutError):
                     await self.context_meter(include_quota=False)
             return res
-        return Result("没有执行：附加 OpenCode v2 的 API 不能切换桌面会话；用桌面 /new 或 /model，再指定新 session id。 / Not executed: attached OpenCode v2 cannot switch the desktop session; use /new or /model, then select the session ID.", "error")
+        return Result(pick(getattr(self.host, "lang", "zh"), "没有执行：附加 OpenCode v2 的 API 不能切换桌面会话；用桌面 /new 或 /model，再指定新 session id。", "Not executed: attached OpenCode v2 cannot switch the desktop session; use /new or /model, then select the session ID."), "error")
 
     async def apply_model(self, model, effort, default=False):
         return "unsupported"

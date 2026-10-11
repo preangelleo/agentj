@@ -25,7 +25,7 @@ import time
 import urllib.parse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-from . import cloud, gate, names
+from . import cloud, gate, names, pairprep
 from .state import MAX_DEVICES
 from .text import clean_label, machine_name
 
@@ -289,10 +289,12 @@ class Admin:
         with self.lock:
             pairing = self.pairing.view() if self.pairing else None
         return {"agent_name": self.st.agent_name(), "machine": machine_name(), "channel": self.st.config()["channel"],
-                "version": cloud.VERSION, "serve": {"running": status is not None, "relay_up": bool(status and status.get("relay_up"))},
+                "version": cloud.VERSION, "serve": {"running": status is not None, "relay_up": bool(status and status.get("relay_up")),
+                          "relay_state": status.get("relay_state") if status and status.get("relay_state") in ("up", "connecting", "reconnecting") else None},
                 "dashboard": {"linked": link is not None, "tenant": link["tenant"] if link else None},
                 "remote_unbind": self.st.remote_unbind(), "limit": MAX_DEVICES, "devices": devs, "pairing": pairing,
-                "passphrase_set": gate.is_set(self.st)}
+                "passphrase_set": gate.is_set(self.st),
+                "pair_check": pairprep.precheck(self.st, bool(status and status.get("relay_up")) if status is not None else None)}
 
     def rename(self, body: dict) -> tuple[int, dict]:
         res = names.rename(self.st, body.get("name"))
@@ -303,6 +305,11 @@ class Admin:
                       "suggestions": res["suggestions"]}
 
     def pair_start(self) -> tuple[int, dict]:
+        # P127: the shared pre-check runs before any QR exists — never let the human reach the last step and only then learn
+        # the approval passphrase is missing (bound + online hosts pass: the account page approves with a passkey)
+        status = self.serve_status()
+        if status is not None and pairprep.precheck(self.st, bool(status.get("relay_up")))["route"] == "set_passphrase":
+            return 409, {"ok": False, "error": "passphrase_not_set"}
         with self.lock:
             if self.pairing:
                 self.pairing.close()

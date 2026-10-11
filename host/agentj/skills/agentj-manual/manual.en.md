@@ -184,6 +184,8 @@ When the Agent wants to do something that needs your yes, the screen turns orang
 wants to do. Tap deny to refuse; to approve, **press and hold** the approve button for about a second, until it fills.
 No answer within 2 minutes counts as a no. You can tuck the card away; a small tag at the top keeps reminding you.
 
+In a shared session a card marked "Shows passwords or keys" would print a credential on the screen, and one marked "Changes passwords or keys" would change it; a program reading `.env` by name, or a note that mentions `.env`, no longer asks. For the stricter old rule run `agentj config approvals strict` on the computer (`agentj config approvals standard` switches back). Cards use only your language setting.
+
 （Screenshot：Tucked away: a small tag stays at the top — https://agentj.app/docs/manual/approval-later.en.webp）
 ### Question card (purple)
 
@@ -339,7 +341,7 @@ Agent J reads effective native `model_provider` from Codex `config/read` and nam
 For older Agent J versions that keep an old model/provider, start a new Codex conversation in the same folder using your current native defaults, then let Agent J follow the new conversation (clear any explicitly selected old shared thread). Or switch Agent J to an independent session. A new conversation has separate history. Do not ask the owner to paste keys into chat.
 
 
-Shared Claude startup and doctor resolve managed, private local, project and user ingress settings. They back up and repair writable hold/refuse/unset to accept (project policy is overridden in private local settings). Managed policy is read-only and its blocking layer/value is shown on the phone. Settings changed after a session starts need a new session or /clear on the computer to take effect; session/CLI and remote-managed overrides cannot be verified from these files. `agentj config claude-inbound off` is temporary in shared mode: the next shared startup or doctor restores accept. Check the desktop before resending an unacknowledged message.
+Shared Claude makes the phone-message setting Claude Code really uses in the work folder accept (organization policy > the folder's private `.claude/settings.local.json` > its `.claude/settings.json` > `~/.claude/settings.json`), at selection, startup and upgrade, backing up the file first; the phone is told once. A hold in user or private local settings is changed where it is; a hold in the shared project file is overridden from the private local layer. Organization policy, `refuse` and an explicit `agentj config claude-inbound off` are only reported. Enabled: phone messages no longer need individual confirmation on the computer; to disable, run `agentj config claude-inbound off`. A session started before the change needs /clear or a new session. Only Claude Code is affected; Codex/OpenCode have no equivalent mechanism. When a message is not acknowledged, the phone names the reason (organization policy, project settings, turned off, needs /clear, computer busy); check the computer before resending. The phone's model/quota bars (`agentj config claude-statusline`) are turned on at the same moment unless the owner turned them off, chained at the status-line layer in effect; `agentj doctor` reports a layer that hides them.
 
 Shared mode: Claude `/clear` and `/compact` wait for the current desktop turn and confirm native hook receipts. A successful clear archives phone pages and starts at zero, including clears typed on the desktop. Context uses only new-session/post-compaction measurements; pending readings show “—”, never the previous value. A timeout reports an unconfirmed change; check the desktop before retrying. Shared Claude has no native undo-clear button: history remains archived locally; use desktop `/resume` to restore a conversation. Independent mode retains undo. Attached Codex cannot switch the desktop thread: use desktop `/new` and select the new thread. Attached OpenCode supports `/compact`; use desktop `/new` and select the new session to clear. Agent J's own Claude PTY accepts controls directly; an existing terminal requires an exact-session Herdr input route, otherwise the phone explains the reason and native command. Shared `/context`, `/usage`, `/status` and `/model` without an argument read measured data; unavailable values show “—”.
 
@@ -348,6 +350,8 @@ The 5h line remains visible at 1%; 0% has a start marker. “5h —” means no 
 ## Shared sessions
 
 When you enter or switch to a shared Claude Code, Codex or OpenCode session, the phone shows a one-time notice that fades after 3.5 seconds. Refreshing or reconnecting to the same session does not repeat it. Read-only conflicts, failed sends and requests that need your action remain visible.
+
+Which session the phone talks to: by default the Claude Code session open in your work folder. If several are open there, run `agentj agent claude` on the computer: it lists them with their names and first messages and lets you pick one. Nothing changes on the phone.
 
 
 The pairing page offers browser and storage guidance. Use a regular Safari / Chrome window, add to Home Screen and pair from that same icon. The menu retains Set up Face ID after Later; Copy page link excludes the one-use pairing secret.
@@ -366,7 +370,12 @@ When a daily, weekly or monthly model allowance runs out, the phone tells you to
 
 If shared Claude completes a reply while your phone is disconnected, reconnecting updates its existing input page. Reloading first fetches the current computer history before claiming that a message is still waiting. `/update` receipts use the current language setting, including changes made while Agent J is running. `agentj doctor` includes the websockets version for troubleshooting.
 
+Short network blips are repaired quietly: when the phone's connection drops it is usually back within a second, and the page only turns grey with "Connection lost. Retrying in N s…" if reconnecting takes longer than about 6 seconds. A busy computer that answers late is not treated as a disconnect. If your Telegram channel can't reach Telegram three times in a row (or for two minutes), one line under the chat says so and disappears by itself once Telegram works again. For the first minute after Agent J starts, `agentj doctor` shows the relay as "connecting" rather than a problem.
+
 Local read-aloud uses only voices on this phone. Host/cloud voices stay in `voice.tts.voice`; choose a phone voice separately with `voice.tts.phone_voice` (empty selects the local default for the reply language). Switching modes keeps both choices. An unavailable phone voice falls back with one notice. On first opening, iPhone waits for local voices to load before reporting that no voice is available.
 
 
 Shared Claude ingress: startup and doctor repair the effective writable layer to accept; managed policies are read-only. Sessions started before the change need a new session or /clear on the computer. Shared startup re-enables ingress; check the desktop before resending unacknowledged messages.
+
+
+0.18.1: Valid older Telegram enrollment continues with its local bot environment name. Huawei HarmonyOS devices have accurate names; account owners can rename a remote with a passkey while its host is online.

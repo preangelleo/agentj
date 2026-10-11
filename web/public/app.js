@@ -1,3 +1,4 @@
+import { describeDevice } from './js/device-label.js';
 // agentj web client. Spec: agentjarvis/protocol/PROTOCOL.md §2–§4, §8–§10; design agentjarvis/parity/DESIGN.md (PROMPT-33).
 // The chat screen is relay's phone page (js/relay.js) on Agent J's end-to-end session; this module boots the page and owns
 // Agent J's own screens: pairing (QR / link + 6-digit code typed on the computer), resume, removed / error, the Agent's
@@ -121,9 +122,26 @@ document.addEventListener('click', (e) => {
 let state = 'idle';
 Object.defineProperty(window, '__ajState', { get: () => state, enumerable: false, configurable: false });
 let statusKey = ['st.idle'];
+// P129: a drop from a ready session is first retried silently. For up to QUIET_MS the screen keeps looking connected (no
+// grey page, no 「正在恢复连接…」, no stale line) while the session reconnects underneath; sends already go to the offline
+// queue (connected() reads `state`, which is updated at once). Only a reconnect that takes longer is shown.
+const QUIET_MS = 6000;
+let quietTimer = 0, painted = 'idle';
 function setStatus(s, key, vars) {
   state = s;
   statusKey = [key, vars];
+  // The relay saying the computer itself is offline (st.hostDown) on a steady session is news: shown at once. Right after
+  // our own drop it is not (a relay deploy or restart drops both ends; the computer is back a second after the page).
+  if ((s === 'connecting' || (s === 'waiting-host' && (key !== 'st.hostDown' || quietTimer))) && (painted === 'ready' || quietTimer)) {
+    if (!quietTimer) { quietTimer = setTimeout(() => { quietTimer = 0; paintStatus(); }, QUIET_MS); relay.connLost(); }
+    return;
+  }
+  clearTimeout(quietTimer); quietTimer = 0;
+  paintStatus();
+}
+function paintStatus() {
+  const s = state, key = statusKey[0], vars = statusKey[1];
+  painted = s;
   const st = $('status');
   st.dataset.state = s;
   st.textContent = plain(t(key, vars));
@@ -173,13 +191,7 @@ function rerender() {
 }
 
 function deviceLabel() {
-  const ua = navigator.userAgent;
-  const os = /Android/.test(ua) ? 'Android' : /iPhone|iPad|iPod/.test(ua) ? 'iOS' : /Mac OS X/.test(ua) ? 'macOS'
-    : /Windows/.test(ua) ? 'Windows' : /Linux|CrOS/.test(ua) ? 'Linux' : '';
-  // 0.15.1: the Home Screen app and a Safari tab keep separate storage (= separate remotes): say which one it is
-  const br = push.standalone() ? '主屏幕' : /Edg\//.test(ua) ? 'Edge' : /Firefox\/|FxiOS/.test(ua) ? 'Firefox' : /CriOS|Chrome\//.test(ua) ? 'Chrome'
-    : /Safari\//.test(ua) ? 'Safari' : '浏览器';   // the device label is data for the host's device list, not UI text
-  return ('网页 · ' + [os, br].filter(Boolean).join(' ')).slice(0, 64);
+  return describeDevice(navigator.userAgent, push.standalone());
 }
 
 // The client only ever talks to our relay: relay.agentj.app, or the legacy alpha-relay.agentjarvis.net that pairing links
@@ -285,7 +297,7 @@ function onApp(m) {
   if (api.route(m) || blobs.handle(m) || media.handle(m)) return;
   switch (m.t) {
     case 'preferences': setHostVersion(m.host?.version); relay.applyPreferences(m.value); settings.setPrefs(m.value, m.host); if(m.problem)relay.configProblem(m.problem.error); return;
-    case 'status': setAgentName(m.name); snap.setStatus(m); return;
+    case 'status': setAgentName(m.name); snap.setStatus(m); renderTg(); return;
     case 'ask': snap.addAsk(m); return;
     case 'ask_done': snap.askDone(m); return;
     case 'bots_tool_request': bots.toolRequest(m); return;
@@ -718,8 +730,17 @@ document.addEventListener('focusout', () => setTimeout(fitPairViewport, 300));
 fitPairViewport();
 
 // ---------------------------------------------------------------- language switch: re-render everything that is ours
+// P129: the host's Telegram channel is really down (≥3 failures / ≥2 min): one line in the chat's status area, in the page's
+// language; it disappears with the next status that does not say so.
+function renderTg() {
+  const n = $('tgdown');
+  if (!n) return;
+  n.hidden = !snap.S.tg;
+  n.textContent = snap.S.tg ? t('r.channelDown', { name: 'Telegram' }) : '';   // the channel's name is data, not dictionary copy
+}
 function relang() {
   applyStatic();
+  renderTg();
   renderName();
   setStatus(state, statusKey[0], statusKey[1]);
   push.pushUi();

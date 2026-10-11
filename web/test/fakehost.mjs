@@ -172,7 +172,13 @@ export async function startFakeHost() {
     if (m.t === 'say_cancel') {
       st.cancels.push(m);
       const q = st.queued.get(m.sid);
-      if (q) { st.queued.delete(m.sid); for (const b of q.att || []) st.staged.add(b); return sendApp(c, { t: 'say_cancel_res', sid: m.sid, r: 'cancelled' }); }
+      if (q) {
+        // like serve's say_cancel: files staged again, the page ends stopped + card.withdrawn, say_state cancelled, then the answer
+        st.queued.delete(m.sid); for (const b of q.att || []) st.staged.add(b);
+        if (q.turn) await updateTurn(q.turn, { end: 'stopped', card: { withdrawn: true } });
+        await sendApp(c, { t: 'say_state', sid: m.sid, s: 'cancelled' });
+        return sendApp(c, { t: 'say_cancel_res', sid: m.sid, r: 'cancelled' });
+      }
       return sendApp(c, { t: 'say_cancel_res', sid: m.sid, r: st.says.some((x) => x.sid === m.sid) ? 'already_delivered' : 'not_found' });
     }
     if (m.t === 'blob_open' || m.t === 'blob_chunk' || m.t === 'blob_end' || m.t === 'blob_drop') return onBlob(c, m);
@@ -325,8 +331,10 @@ export async function startFakeHost() {
       src.quote = { id: q.id, who: 'Agent', ts: q.ts, text: m.excerpt || q.reply.text.slice(0, 300), ex: !!m.excerpt };
     }
     if (st.sayMode === 'queued') {
-      st.queued.set(m.sid, { m, att, src, c });
-      return sendApp(c, { t: 'say_res', sid: m.sid, ok: true, state: 'queued', turn: 0 });
+      // like serve.on_say: the page first (open, no reply), then say_res queued naming it
+      const turn = await addTurn(src, '', 'open');
+      st.queued.set(m.sid, { m, att, src, c, turn: turn.id });
+      return sendApp(c, { t: 'say_res', sid: m.sid, ok: true, state: 'queued', turn: turn.id });
     }
     if (st.sayDelay) await new Promise((r) => setTimeout(r, st.sayDelay));
     return deliver(c, m, src);
@@ -464,7 +472,13 @@ export async function startFakeHost() {
       for (const c of ready()) if (!c.p33) await sendApp(c, { t: 'msg', id: randomBytes(8).toString('hex'), text, ts: Date.now(), from, seq: ++st.seq });
     },
     addTurn, updateTurn,
-    async deliverQueued() { for (const [sid, q] of st.queued) { st.queued.delete(sid); st.says.push({ sid }); await sendApp(q.c, { t: 'say_state', sid, s: 'delivered' }); const turn = await addTurn(q.src, 'echo: ' + q.m.text, 'done'); void turn; } },
+    async deliverQueued(reply = true) {
+      for (const [sid, q] of st.queued) {
+        st.queued.delete(sid); st.says.push({ sid });
+        await sendApp(q.c, { t: 'say_state', sid, s: 'delivered' });
+        if (reply && q.turn) setTimeout(() => updateTurn(q.turn, { reply: { text: 'echo: ' + q.m.text }, end: 'done' }), 60);
+      }
+    },
     async clearHistory() { st.epoch++; st.turns = []; await broadcast(meta()); },
     async ask(m) { st.asksOpen.set(m.id, m); await broadcast({ t: 'ask', ...m }); },
     /** §17.7: turn the friends responder on with a state (sampleFriends()) — st.friends.writes / .refused record what came in */

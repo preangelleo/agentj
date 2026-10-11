@@ -58,7 +58,9 @@ def state_dir() -> pathlib.Path:
         return pathlib.Path(d)
     new, old = default_state(), legacy_state()
     if not os.path.lexists(new) and old.is_dir() and not old.is_symlink():
-        return old
+        from .migrate import serve_running    # P127: only a serve still running on it keeps the old one in use —
+        if serve_running(old):                # an old directory nobody chose to adopt is never used silently
+            return old
     return new
 
 
@@ -199,6 +201,18 @@ class State:
             yield
         finally:
             os.close(fd)
+
+    def rename_device(self, device: str, name: str) -> bool:
+        """Owner metadata only, under the same allowlist lock as pairing/revocation."""
+        if not isinstance(name, str) or not 1 <= len(name.strip()) <= 64 or any(ord(c) < 32 or ord(c) == 127 for c in name):
+            raise ValueError("invalid device name")
+        with self.devices_lock():
+            devices = self.devices()
+            if device not in devices:
+                return False
+            devices[device]["name"] = name.strip()
+            self.write_private(self.devices_path, json.dumps(devices).encode())
+        return True
 
     def add_device(self, pub: bytes, name: str, sign_pub: bytes | None = None) -> str:
         """sign_pub = the device's Ed25519 approval key (PROTOCOL §8), sent inside the encrypted pairing msg1."""
@@ -534,7 +548,8 @@ class State:
                 "session_mode": preferences.get(prefs, "agent.session_mode", "shared"),
                 "shared_session_id": preferences.get(prefs, "agent.shared_session_id", ""),
                 "shared_opencode_port": preferences.get(prefs, "agent.shared_opencode_port", 0),
-                "high_risk_warnings": preferences.get(prefs, "agent.high_risk_warnings", False)}
+                "high_risk_warnings": preferences.get(prefs, "agent.high_risk_warnings", False),
+                "approvals": "strict" if preferences.get(prefs, "agent.approvals", "standard") == "strict" else "standard"}
 
     def set_agent_config(self, kind: str | None, directory: str | None = None, model: str | None = None,
                          fence: bool = True, docker: bool = False) -> None:
@@ -638,9 +653,10 @@ class State:
     # ------------------------------------------------------------ metadata log (never message text)
     # report_* events (PROTOCOL §7) carry only seq / status class / trigger — never labels, codes or URLs
     LOG_FIELDS = {"why", "exception_type", "http_status", "channel", "cid", "device", "name", "reason", "kind", "bytes", "code_ok", "seq", "status", "trigger",
-                  "tenant", "request", "result", "id", "tool", "agent", "decision", "locked", "fence", "change", "action",
+                  "tenant", "request", "result", "ms", "id", "tool", "agent", "decision", "locked", "fence", "change", "action",
                   "session_mode", "isolation_requested", "isolation_effective", "phase", "version", "language", "core_sha256", "prompt_sha256", "mechanism", "working_root_sha256", "identity_session",
-                  "generation", "model", "effort", "layers", "identity"}   # P116: metadata only (no text, path or digest)
+                  "generation", "model", "effort", "layers", "identity",
+                  "ms", "code", "count"}   # P129: timings (ms), close codes, failure counts — numbers only. P116: metadata only (no text, path or digest)
 
     def log(self, ev: str, **kw) -> None:
         rec = {"ts": int(time.time()), "ev": ev, **{k: v for k, v in kw.items() if k in self.LOG_FIELDS}}

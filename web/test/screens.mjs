@@ -572,6 +572,41 @@ try {
     }
   }
 
+  // ---------- P127: a Telegram page has its own fill (both schemes) and shows the owner's words without the Agent's source
+  // line (also an old page stored with it); a compaction in flight says so on the open page and the water sinks at once
+  if (!ONLY && !SEC_ONLY) {
+    for (const [lang, L] of [['zh', ZH], ['en', EN]]) for (const scheme of SCHEMES) {
+      const tag = `P127 ${lang}-${scheme}`;
+      fake.reset();
+      const p = await newPage(B, 390, 844, scheme, { allow: ALLOW });
+      await navigate(p, fake.newPairing(BASE + (lang === 'en' ? '?lang=en' : '')));
+      await waitState(p, 'awaiting-approval');
+      await fake.approve();
+      await waitState(p, 'ready');
+      await fake.send({ t: 'status', s: 'idle', agent: 'claude', name: 'Wren' });
+      await fake.addTurn({ k: 'telegram', dev: 'telegram:1:1', name: 'Telegram owner', text: 'Telegram owner private chat.\n帮我看看明天的会' }, '', 'open');
+      try { await waitFor(p, `document.getElementById('om').dataset.src === 'tg'`, 6000); } catch {}
+      const om = await evaluate(p, `(() => { const o = document.getElementById('om'), s = getComputedStyle(o); return { src: o.dataset.src, bg: s.backgroundColor,
+        text: document.getElementById('omText').textContent, label: document.getElementById('omLabel').textContent, icon: !!document.querySelector('#omIcon svg') }; })()`);
+      check(om.src === 'tg' && om.label === 'Telegram' && om.icon, `${tag}: Telegram source card with its label and icon (${JSON.stringify(om)})`);
+      check(!['rgba(0, 0, 0, 0)', 'transparent', 'rgb(255, 226, 146)', 'rgb(193, 225, 240)'].includes(om.bg), `${tag}: its own opaque fill, not the phone's yellow / another device's blue (${om.bg})`);
+      check(om.text === '帮我看看明天的会', `${tag}: the words without 「Telegram owner private chat.」 (got 「${om.text}」)`);
+      check((await text(p, '#words')) === plain(L['r.replyPending']), `${tag}: before the compaction the open page waits for the computer`);
+      await fake.send({ t: 'status', s: 'compacting', agent: 'claude', name: 'Wren' });
+      let sank = false;
+      try { await waitFor(p, `document.getElementById('water').dataset.compacting === '1'`, 4000); sank = true; } catch {}
+      check(sank, `${tag}: the water starts sinking as soon as the compaction starts`);
+      check((await text(p, '#words')) === plain(L['r.replyCompacting']), `${tag}: the open page reads 「${plain(L['r.replyCompacting'])}」 (got 「${await text(p, '#words')}」)`);
+      await fake.send({ t: 'status', s: 'idle', agent: 'claude', name: 'Wren' });
+      let ended = false;
+      try { await waitFor(p, `document.getElementById('water').dataset.compacting === '0'`, 4000); ended = true; } catch {}
+      check(ended && (await text(p, '#words')) === plain(L['r.replyPending']), `${tag}: the end of the compaction ends the effect and the words`);
+      if (lang === 'zh') await shoot(p, `p127-telegram-${scheme}`);
+      noProblems(p, tag);
+      await p.dispose();
+    }
+  }
+
   if (!ONLY && !SEC_ONLY) await runP102Screens({B,web,fake,out:join(SHOTS,'p102')});
 
   // ---------- 6. relay parity: one named case per feature id

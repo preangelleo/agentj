@@ -18,6 +18,9 @@
   /* source-card fills: who spoke (never the state) */
   --src-leo:var(--banana-republic); --src-dev:var(--cotton-clouds); --src-host:var(--peek-a-blue);
   --src-agent:var(--dust-of-the-moon); --src-sys:var(--white-truffle); --src-task:var(--white-truffle); --src-cmd:var(--white-truffle);
+  /* P127: the owner's Telegram — the shield's eye mint: unlike every other source and every state colour (light and dark:
+     the chat screen's fills do not switch with the scheme, the page under them is the state colour in both) */
+  --src-tg:var(--c-shield-soft);
 
   /* relay's own geometry (renamed where the design system already uses the name: --tap 44 → --rtap 56, --gutter → --rg,
      --ease → --re, --bg → --pg) */
@@ -531,6 +534,7 @@ body[data-sheet="1"] .deck{filter:blur(1.5px);opacity:.55}
 @keyframes breathe{0%,100%{opacity:.25;transform:translateY(0)}50%{opacity:1;transform:translateY(-3px)}}
 body[data-status=working] .thinking{display:flex}
 .stale{display:none;margin-top:24px;font-size:calc(14px*var(--fz));color:var(--ink-soft)}
+.tgdown{margin-top:16px;font-size:calc(13px*var(--fz));color:var(--ink-soft)}
 
 /* ---- 3. composer ---------------------------------------------------------- */
 /* No border on top: the 5-hour rule right above is the divider (owner, 2026-09-24). */
@@ -1376,6 +1380,10 @@ p.setval{grid-column:1 / -1;text-align:left;margin:0}
 .outbox .obt{font:400 calc(14px*var(--fz))/1.35 var(--font-body);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .outbox .obn{font:500 calc(12px*var(--fz))/1.3 var(--font-body);color:var(--ink)}
 .outbox .obl{font:500 calc(12px*var(--fz))/1.3 var(--font-body);color:var(--ink-soft);letter-spacing:.02em;padding:0 4px}
+/* P127: a message the computer accepted but holds behind a running turn waits here too, with how 「取消」 takes it back;
+   its page says 「排队中…」 instead of the working dots (the running turn is someone else's). */
+.outbox .obq{color:var(--ink-soft)}
+body[data-page-queued="1"] .thinking{display:none}
 
 /* ---- 0.15.2 P57 render.js: highlighted code, typeset math, diagrams (lazy; md.js marks, render.js upgrades) ----------
    The reply sits on the state colour with lotion ink, code on a Sooty veil — in both themes — so the token colours are

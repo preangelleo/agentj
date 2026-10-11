@@ -20,6 +20,7 @@ import os
 from pathlib import Path
 import re
 
+from .text import pick
 from .agent_codex import CodexAgent, RPCError
 from .shared import public_text
 from . import shared_hook
@@ -198,11 +199,11 @@ class SharedCodexAgent(CodexAgent):
 
     async def cmd_clear(self, arg):
         from .slash import Result
-        return Result("没清成：Codex app-server 只能新建另一线程，不能替桌面切换当前线程。请在桌面 /new 后指定新线程；手机历史和水位保留。 / Not cleared: app-server cannot switch the desktop's active thread. Use desktop /new and select it; phone history and meter are unchanged.", "refused")
+        return Result(pick(getattr(self.host, "lang", "zh"), "没清成：Codex app-server 只能新建另一线程，不能替桌面切换当前线程。请在桌面 /new 后指定新线程；手机历史和水位保留。", "Not cleared: app-server cannot switch the desktop's active thread. Use desktop /new and select it; phone history and meter are unchanged."), "refused")
 
     async def cmd_undo_clear(self, arg):
         from .slash import Result
-        return Result("没有执行：共享 Codex 请在桌面 /resume 恢复原线程。 / Not executed: use desktop /resume for the original thread.", "refused")
+        return Result(pick(getattr(self.host, "lang", "zh"), "没有执行：共享 Codex 请在桌面 /resume 恢复原线程。", "Not executed: use desktop /resume for the original thread."), "refused")
 
     def start(self):
         super().start()
@@ -647,7 +648,7 @@ class SharedCodexAgent(CodexAgent):
                 self.local_fail(f'Codex 没收到这条消息：{zh}在电脑上处理后重发；看原因跑 `agentj activity`。 / '
                                 f'Not delivered to Codex: {en} Fix it on the computer and resend; `agentj activity` shows why.')
             elif isinstance(error, RPCError):
-                self.local_fail(f'Codex 拒绝了这条消息：{reason}。 / Codex refused this message: {reason}.')
+                self.local_fail(pick(getattr(self.host, "lang", "zh"), f'Codex 拒绝了这条消息：{reason}。', f'Codex refused this message: {reason}.'))
             else:
                 self.local_fail(f'Codex 没收到这条消息（{reason}）。跑 `agentj doctor` 看看。 / '
                                 f'Not delivered to Codex ({reason}). Run `agentj doctor`.')

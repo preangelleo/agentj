@@ -71,5 +71,20 @@
         "problem": "第 8 步：配对二维码扫不出来。这台电脑是王建国家里的，地址是上海市浦东新区张江路 88 弄 3 号 1202 室，他说明天让他女儿王小雨用她的手机再试一次。",
         "resolved": false, "owner_informed": true}
     }
-  ]
+    ],
+  "layer1": {
+    "about": "P127: deterministic layer-1 cases for the path-aware high-entropy rule (privacy.redact(..., paths=True), the owner channel: shared.public_text). A path is judged segment by segment, so a session UUID or a capitalised file name never swallows the whole path; a key-shaped segment, or a slash-bearing base64 secret that is not a path, is still redacted. Strict mode (feedback / plaza, mirrors worker/src/scan.ts) is unchanged. keep = substrings that must survive; gone = substrings that must not.",
+    "cases": [
+      {"id": "claude-scratchpad-path", "text": "Compact 后第一件事：读 /tmp/claude-1000/-home-sample-workspace/7ec0779a-aaef-439e-9073-78dd8e730755/scratchpad/COMPACT_HANDOFF.md",
+       "keep": ["/tmp/claude-1000/-home-sample-workspace/7ec0779a-aaef-439e-9073-78dd8e730755/scratchpad/COMPACT_HANDOFF.md"], "gone": []},
+      {"id": "mixed-case-relative-path", "text": "see reports/qa/P127Candidate/Evidence2026Final/screenShot01.png",
+       "keep": ["reports/qa/P127Candidate/Evidence2026Final/screenShot01.png"], "gone": []},
+      {"id": "path-with-key-segment", "text": "cat /srv/keys/{{fake:keyseg}}/id.txt",
+       "keep": ["/srv/keys/", "/id.txt"], "gone": ["{{fake:keyseg}}"]},
+      {"id": "aws-secret-40", "text": "aws secret {{fake:awssecret}} in the log",
+       "keep": ["aws secret ", " in the log"], "gone": ["{{fake:awssecret}}"]},
+      {"id": "base64-with-slashes", "text": "blob {{fake:slashkey}} end",
+       "keep": ["blob ", " end"], "gone": ["{{fake:slashkey}}"]}
+    ]
+  }
 }

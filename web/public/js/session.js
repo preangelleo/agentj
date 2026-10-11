@@ -45,9 +45,24 @@ export class Pacer {
 let H = null;                                   // hooks from app.js
 let sess = null;
 let reconnectTimer = null;
-let backoff = 1000;
-let heartbeatTimer = null, heartbeatRun = 0;
-const HEARTBEAT_MS = 20000, HEARTBEAT_TIMEOUT_MS = 10000;
+// P129: the first retry after a drop is almost immediate (a relay or network blink is over in well under a second), then
+// the ladder doubles to 30 s. A missed pong is not proof of a dead socket: the host may be busy streaming to this page, or
+// this page busy decrypting — any frame heard during the wait counts as alive, and only HEARTBEAT_MISSES misses in a row
+// with nothing heard close the session (the probe after the page comes back to the foreground still fails fast).
+const BACKOFF_FIRST = 250;
+let backoff = BACKOFF_FIRST;
+let heartbeatTimer = null, heartbeatRun = 0, heartbeatMisses = 0;
+const HEARTBEAT_MS = 20000, HEARTBEAT_TIMEOUT_MS = 10000, HEARTBEAT_RETRY_MS = 3000, HEARTBEAT_MISSES = 2;
+// P129: why the previous session ended — sent (diagnostics only) in the next resume's hello as rc, logged by the host.
+let lastDrop = { why: 'load', code: null, at: 0 };
+function dropped(why, code = null) { if (!lastDrop) lastDrop = { why, code: Number.isInteger(code) ? code : null, at: Date.now() }; }
+export function reconnectReason() {
+  if (!lastDrop) return null;
+  const rc = { why: lastDrop.why };
+  if (lastDrop.code !== null && lastDrop.code >= 1000 && lastDrop.code <= 4999) rc.code = lastDrop.code;
+  if (lastDrop.at) rc.down = Math.max(0, Math.min(Date.now() - lastDrop.at, 7 * 86400 * 1000));
+  return rc;
+}
 // P75/F36: transport closes are never proof that a pairing was removed. iOS can freeze
 // a handshake past the host timeout. Only an authenticated `removed` can revoke it;
 // confirm a revoked record once with the same device key before clearing local data.
@@ -76,12 +91,12 @@ export function openSession(mode, ctx) {
   const ws = new WebSocket(ctx.relay + '/v1/dev/' + ctx.channel);
   ws.binaryType = 'arraybuffer';
   const s = { ws, mode, ctx, phase: 'wait-host', hs: null, gen: null, recv: null, chain: Promise.resolve(),
-    closedByUs: false, frag: new Defrag(), pacer: new Pacer(), removed: null, foreground: globalThis.document?.visibilityState !== 'hidden' };
+    closedByUs: false, frag: new Defrag(), pacer: new Pacer(), removed: null, rxAt: 0, foreground: globalThis.document?.visibilityState !== 'hidden' };
   if (mode === 'pair') { refusals = 0; removalProbe = false; }
   sess = s;
   H.setStatus('connecting', 'st.connecting');
   ws.onopen = () => { if (sess === s && s.phase === 'wait-host') H.setStatus('waiting-host', 'st.waitingHost'); };
-  ws.onmessage = (ev) => { s.chain = s.chain.then(() => onFrame(s, ev.data)).catch((e) => protocolFail(s, e)); };
+  ws.onmessage = (ev) => { s.rxAt = performance.now(); s.chain = s.chain.then(() => onFrame(s, ev.data)).catch((e) => protocolFail(s, e)); };
   ws.onclose = (ev) => { s.chain = s.chain.then(() => onClose(s, ev)); };
   ws.onerror = () => { /* a close event always follows */ };
   return s;
@@ -127,14 +142,14 @@ async function onFrame(s, data) {
     } else if (s.mode === 'restore') {
       // F20 (§12): hello, then the one pk_restore (P122 §12.1: rt_restore) — the host answers pk_ok + ready, or pk_fail + close
       s.phase = 'pk-wait';
-      await sendOn(s, g, { t: 'hello', caps: ['p33', 'lt1'], ...H.helloExtra() }, MAX_JSON);
+      await sendOn(s, g, { t: 'hello', caps: ['p33', 'lt1'], ...H.helloExtra(), ...rcField() }, MAX_JSON);
       const pk = s.ctx.rt ? { t: 'rt_restore', ...s.ctx.rt } : { t: 'pk_restore', ...s.ctx.pk };
       try { pk.iid = await installId(s.ctx.channel); } catch { /* no storage: the record simply keeps no install hash */ }
       await sendOn(s, g, pk, MAX_JSON);
     } else {
       s.phase = 'ready-wait';
       // the host replays what this page has not seen: §8 since (old hosts), §10.5 hist (p33 hosts)
-      await sendOn(s, g, { t: 'hello', caps: ['p33', 'lt1'], ...H.helloExtra() }, MAX_JSON);
+      await sendOn(s, g, { t: 'hello', caps: ['p33', 'lt1'], ...H.helloExtra(), ...rcField() }, MAX_JSON);
     }
     return;
   }
@@ -147,6 +162,8 @@ async function onFrame(s, data) {
   }
   throw new ProtocolError('bad kind');
 }
+
+function rcField() { const rc = reconnectReason(); return rc ? { rc } : {}; }
 
 function readCaps(m) {
   peer.heartbeat = Array.isArray(m.caps) && m.caps.includes('heartbeat');
@@ -197,7 +214,8 @@ async function onApp(s, m) {
 
 function enterReady(s) {
   s.phase = 'ready';
-  backoff = 1000;
+  backoff = BACKOFF_FIRST;
+  lastDrop = null; heartbeatMisses = 0;
   refusals = 0; removalProbe = false;
   H.onReady();
   armHeartbeat();
@@ -234,6 +252,7 @@ async function hostUp(s) {
 // P122: a ticket restore that the network or the computer interrupted is retried like a resume (with a fresh proof);
 // only the host's own pk_fail ends it. A passkey restore needs a new Face ID tap, so it ends at once.
 function retryTicket() {
+  dropped('ticket');
   closeSession();
   H.onHostDown();
   scheduleReconnect();
@@ -245,6 +264,7 @@ function hostDown(s) {
     closeSession();
     return H.onPairFailed();
   }
+  dropped('host');
   resetCrypto(s);                                     // the host lost all session state; redo RESUME on its next "up"
   s.phase = 'wait-host';
   H.onHostDown();
@@ -254,6 +274,7 @@ function hostDown(s) {
 function onClose(s, ev) {
   if (s !== sess) return;                             // superseded or closed by us
   sess = null; endGen(s);
+  dropped('close', ev && ev.code);
   if (s.mode === 'restore' && s.ctx.rt && !s.pkFail) { H.onHostDown(); return scheduleReconnect(); }   // P122: see retryTicket
   if (s.mode === 'restore') return H.onRestoreFailed?.(s.pkFail || 'bad');   // F20: never "removed", never a retry loop
   if (s.mode === 'pair') return H.onPairFailed();     // a pairing that ended (refused, timed out, …) never means "removed"
@@ -274,6 +295,7 @@ function onClose(s, ev) {
 
 function protocolFail(s, e) {
   if (s !== sess) return;
+  dropped('error');
   const wasPair = s.mode === 'pair';
   closeSession();
   if (s.mode === 'restore') return H.onRestoreFailed?.('bad');
@@ -284,30 +306,38 @@ export function scheduleReconnect() {
   clearTimeout(reconnectTimer);
   const wait = backoff;
   backoff = Math.min(backoff * 2, 30000);
-  H.setStatus('connecting', 'st.retryIn', { n: Math.round(wait / 1000) });
+  H.setStatus('connecting', 'st.retryIn', { n: Math.max(1, Math.round(wait / 1000)) });
   reconnectTimer = setTimeout(() => { reconnectTimer = null; H.resume(); }, wait);
 }
-function armHeartbeat() {
+function armHeartbeat(ms = HEARTBEAT_MS) {
   clearTimeout(heartbeatTimer);
-  heartbeatTimer = peer.heartbeat && isReady() ? setTimeout(checkConnection, HEARTBEAT_MS) : null;
+  heartbeatTimer = peer.heartbeat && isReady() ? setTimeout(checkConnection, ms) : null;
 }
-/** Detect an open socket whose peer stopped answering; no message is declared received by this probe. */
-export async function checkConnection() {
+/** Detect an open socket whose peer stopped answering; no message is declared received by this probe.
+ *  fast = the probe right after the page comes back to the foreground (a socket that slept is often half-open): one miss
+ *  with nothing heard ends it. Otherwise a miss is retried after HEARTBEAT_RETRY_MS, and anything heard resets the count. */
+export async function checkConnection(fast = false) {
   const s = sess, g = gen(), run = ++heartbeatRun;
   if (!s || !g || !peer.heartbeat || document.visibilityState !== 'visible') return;
+  const askedAt = performance.now();
   const answer = await ask1({t: 'ping'}, 'pong', HEARTBEAT_TIMEOUT_MS);
   if (sess !== s || gen() !== g || run !== heartbeatRun || document.visibilityState !== 'visible') return;
-  if (answer.t !== 'pong') {
-    closeSession();
-    H.onHostDown();
-    scheduleReconnect();
+  if (answer.t === 'pong') { heartbeatMisses = 0; armHeartbeat(); return; }
+  const heard = answer.t === 'timeout' && s.rxAt > askedAt && s.ws.readyState === WebSocket.OPEN;
+  if (heard) { heartbeatMisses = 0; armHeartbeat(HEARTBEAT_RETRY_MS); return; }   // busy, not dead
+  if (answer.t === 'timeout' && !fast && ++heartbeatMisses < HEARTBEAT_MISSES && s.ws.readyState === WebSocket.OPEN) {
+    armHeartbeat(HEARTBEAT_RETRY_MS);
     return;
   }
-  armHeartbeat();
+  heartbeatMisses = 0;
+  dropped('hb');
+  closeSession();
+  H.onHostDown();
+  scheduleReconnect();
 }
 export function reconnectNow() {
-  if (isReady()) checkConnection();
-  if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; backoff = 1000; H.resume(); }
+  if (isReady()) checkConnection(true);
+  if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; backoff = BACKOFF_FIRST; H.resume(); }
 }
 
 /** Send one app message on the ready session; resolves when it is on the socket. `g` pins a generation (gen()): when the

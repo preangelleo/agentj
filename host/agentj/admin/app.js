@@ -13,7 +13,7 @@ const DICT = { zh: {}, en: {} };
 const DENY = new Set(['code_mismatch', 'denied', 'timeout', 'abandoned', 'bad_handshake', 'hs_timeout', 'device_limit',
   'no_pending_device', 'gone', 'replaced', 'serve_gone', 'relay_down', 'cancelled', 'pass_locked', 'pass_not_set']);
 const ERRS = new Set(['serve_not_running', 'serve_busy', 'pair_failed', 'relay_down', 'unbind_first', 'no_pending_device',
-  'unknown_device', 'serve_gone', 'passphrase_required', 'bad_code']);
+  'unknown_device', 'serve_gone', 'passphrase_required', 'bad_code', 'passphrase_not_set']);
 const NAME_ERRS = new Set(['name_required', 'bad_name', 'name_taken', 'unreachable', 'not_bound', 'rate_limited', 'failed']);
 
 const SESSION_KEY = 'aj_admin_session';
@@ -213,7 +213,12 @@ function renderPairing(s) {
     wrong.hidden = typeof p.pass_wrong !== 'number';
     if (typeof p.pass_wrong === 'number') rich(wrong, t('pair.pass_wrong', { n: p.pass_wrong }));
     else wrong.replaceChildren();
-    show('pair-pass-unset', s.passphrase_set === false);
+    // P127: a bound + online host without a passphrase is approved on the account page (passkey): no code / passphrase here
+    const viaAccount = passkeyOnly(s);
+    show('pair-pending-account', viaAccount);
+    show('pair-local-approve', !viaAccount);
+    show('pair-approve', !viaAccount);
+    show('pair-pass-unset', s.passphrase_set === false && !viaAccount);
     renderRoom($('pair-room'), p.makes_room);
   } else {
     $('pair-code').value = '';
@@ -226,6 +231,31 @@ function renderPairing(s) {
     $('pair-full-list').replaceChildren(...s.devices.map((d) => deviceRow(d, 'pair.full_unbind', unbindForPairing)));
   }
   return phase === 'waiting' || phase === 'pending' || phase === 'full';
+}
+
+/** P127: the shared pre-check (agentj/pairprep.py → /api/state `pair_check`) decides the route before any QR exists. */
+function passkeyOnly(s) {
+  const c = s.pair_check;
+  return !!(c && c.route === 'account' && !c.passphrase_set);
+}
+const PRE_SET = { offline: 'pair.pre_set_offline', off: 'pair.pre_set_off' };
+/** → true when pairing may start from this page. Says why not (and what to do) before the human clicks anything. */
+function renderPrecheck(s, running) {
+  const c = s.pair_check;
+  const box = $('pair-precheck');
+  const coding = !!(s.pairing && ['waiting', 'pending', 'full'].includes(s.pairing.phase));
+  if (!c || !running || coding) { box.hidden = true; return true; }
+  let key = null;
+  if (c.route === 'set_passphrase') key = (c.bound && PRE_SET[c.why]) || 'pair.pre_set';
+  else if (c.route === 'account') key = c.passphrase_set ? 'pair.pre_account_pass' : 'pair.pre_account';
+  if (!key) { box.hidden = true; return true; }
+  rich($('pair-precheck-text'), t(key));
+  const url = c.route === 'account' && typeof c.account_url === 'string' && /^https:\/\/[^\s"'<>]+$/.test(c.account_url) ? c.account_url : null;
+  if (url) $('pair-precheck-open').href = url;
+  show('pair-precheck-actions', !!url);
+  box.className = c.route === 'set_passphrase' ? 'aj-callout aj-callout--warm adm-stack' : 'aj-callout aj-callout--note adm-stack';
+  box.hidden = false;
+  return c.route !== 'set_passphrase';
 }
 
 function roomVars(d) {
@@ -264,7 +294,8 @@ function render(s) {
   const relayUp = running && !!s.serve.relay_up;
   $('serve-state').textContent = t(running ? 'conn.program_on' : 'conn.program_off');
   $('serve-dot').className = running ? 'aj-dot' : 'aj-dot aj-dot--off';
-  $('relay-state').textContent = t(!running ? 'conn.relay_na' : (relayUp ? 'conn.relay_on' : 'conn.relay_off'));
+  const relayConnecting = running && !relayUp && s.serve.relay_state === 'connecting';   // P129: just started, not a fault
+  $('relay-state').textContent = t(!running ? 'conn.relay_na' : (relayUp ? 'conn.relay_on' : relayConnecting ? 'conn.relay_connecting' : 'conn.relay_off'));
   $('relay-dot').className = relayUp ? 'aj-dot' : (running ? 'aj-dot aj-dot--warn' : 'aj-dot aj-dot--off');
   const tenant = s.dashboard && s.dashboard.tenant;
   $('dash-state').textContent = !s.dashboard.linked ? t('conn.company_none')
@@ -272,7 +303,8 @@ function render(s) {
   show('serve-hint', !running);
   renderDevices(s);
   const active = renderPairing(s);
-  $('pair-start').disabled = !running;
+  const canStart = renderPrecheck(s, running);
+  $('pair-start').disabled = !running || !canStart;
   show('pair-need-program', !running);
   const ru = $('remote-unbind');
   if (document.activeElement !== ru) ru.checked = !!s.remote_unbind;
@@ -444,7 +476,8 @@ document.addEventListener('DOMContentLoaded', async () => {
   if (await login(token)) {
     await refresh();
     // The protocol supplies only this non-secret local hint. Existing admission/approval stays authoritative.
-    if (token && new URLSearchParams(location.search).get('pair') === '1' && (!state?.pairing || state.pairing.phase === 'idle')) {
+    if (token && new URLSearchParams(location.search).get('pair') === '1' && (!state?.pairing || state.pairing.phase === 'idle')
+        && state?.pair_check?.route !== 'set_passphrase') {   // P127: the pre-check box already says what to do first
       const r = await api('POST', '/api/pair/start', {});
       if (r.status !== 200) say(errKey(r.data.error, 'pair.start_failed'), null, 'error');
       refresh();
