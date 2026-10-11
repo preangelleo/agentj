@@ -25,7 +25,7 @@ import uuid
 from .text import pick
 from .agent import Agent
 from .agent_opencode import OpenCodeAgent, Client, HTTPError, CONNECT_WAIT, to_tool, split_model
-from . import privacy, shared_hook, danger, provenance
+from . import privacy, shared_hook, danger, provenance, handoff
 from .shared_state import AgentState
 from .agent import hooks_blocked, _bin, CLAUDE_EFFORTS
 from .shared_risk import RiskGuard
@@ -33,8 +33,11 @@ from . import shared_opencode_hook
 
 CONTROL_WAIT = 600
 DESKTOP_IDLE_WAIT = 1800
+CONTROL_WARN_S = 30
 OBSERVE_RETRIES = 5     # P142 (B17): consecutive failed observe passes before the shared session is down
+FRESH_MS = 30 * 60 * 1000   # P147: a registered session this young may not have written its transcript yet
 CLAUDE_INPUT_WAIT = 10  # acceptance, not completion; never retry an uncertain socket write
+TURN_END_GRACE = 1.0    # P151: a turn end the transcript records (turn_duration) waits this long for its native Stop
 
 
 def public_text(text: str) -> str:
@@ -42,7 +45,37 @@ def public_text(text: str) -> str:
     return privacy.redact(text, paths=True)
 
 
-def claude_sessions(directory: str, sid: str = "") -> list[dict]:
+def _same_process(d: dict) -> bool:
+    """P147: the registry's pid is this very process — same pid namespace (`pidDomain`) and, on Linux, the same start
+    time (`procStart`, /proc/<pid>/stat field 22). After a reboot a dead session's pid may belong to anything; a file
+    left by a container or sandbox names a pid of another namespace. Fields absent (older Claude Code) → trusted."""
+    dom = d.get("pidDomain")
+    if isinstance(dom, str) and ":pid:" in dom:
+        try:
+            if dom.rsplit(":pid:", 1)[1] != os.readlink("/proc/self/ns/pid").split(":", 1)[1]:
+                return False
+        except (OSError, IndexError):
+            pass
+    start = d.get("procStart")
+    if isinstance(start, str) and start.isdigit():
+        try:
+            stat = Path(f"/proc/{d['pid']}/stat").read_text()
+        except OSError:
+            return True       # no procfs (macOS): kill(pid, 0) is all there is
+        fields = stat[stat.rfind(")") + 2:].split()
+        if len(fields) > 19 and fields[19] != start:
+            return False
+    return True
+
+
+def owner_session(d: dict) -> bool:
+    """P147: a session the owner works in — not a headless `claude -p` (registered as kind=interactive with an SDK
+    entrypoint, e.g. "sdk-cli") nor a background job (kind=bg, already excluded by claude_sessions)."""
+    ep = d.get("entrypoint")
+    return not (isinstance(ep, str) and ep.startswith("sdk"))
+
+
+def claude_sessions(directory: str, sid: str = "", owner_only: bool = False) -> list[dict]:
     out = []
     registry = Path(os.environ.get("CLAUDE_CONFIG_DIR") or Path.home() / ".claude") / "sessions"
     for p in registry.glob("*.json"):
@@ -57,6 +90,8 @@ def claude_sessions(directory: str, sid: str = "") -> list[dict]:
             if d.get("kind") not in (None, "interactive") or type(d.get("pid")) is not int or d["pid"] <= 0:
                 continue
             os.kill(d["pid"], 0)
+            if not _same_process(d) or (owner_only and not owner_session(d)):
+                continue
             sock = d.get("messagingSocketPath")
             if not isinstance(sock, str) or not Path(sock).is_socket():
                 continue
@@ -123,7 +158,8 @@ class SharedClaudeAgent(Agent):
         self.channel = None
         self.native = None
         self.master = None
-        self.state = AgentState(on_turn=self._committed_stop)
+        self.state = AgentState(on_turn=self._committed_stop,
+                                warn=lambda msg: self.host.st.log("shared_state_warning", detail=msg))
         self.loop = None
         self.permissions = set()
         self.risk_requests = {}
@@ -148,6 +184,25 @@ class SharedClaudeAgent(Agent):
         self.hook_token_pid = None
         self.hook_watch = None
         self.open_cards = {}            # P139: input digest → futures withdrawing phone cards answered elsewhere
+        self.heal_seen = {}             # P147: sid → monotonic time of its SessionStart(startup/resume) hook in this folder
+        self.heal_choices = []          # P147: live owner sessions when Agent J could not tell which one to serve
+        self.heal_told = None
+        self.healed = None              # P147: (old sid, new sid, how) to announce once the new session is attached
+        self.lost_started = 0           # P147: startedAt (ms) of the served session that went away
+        # P151: a turn that ends on a tool call (ScheduleWakeup, Monitor, …) gets no native Stop; the transcript still
+        # records its end (system/turn_duration). Its reply = the last assistant text since the turn (or phone input) began.
+        self.turn_texts = []
+        self.turn_thinking = None       # (message id, text) of the last non-empty thinking block
+        self.turn_last_msg = None       # message id of the last assistant record
+        self.stop_since_end = False     # a committed native Stop arrived since the last recorded turn end
+        self.end_claimed = None         # (public reply, monotonic) a turn end without Stop already delivered
+        # P151 (追加 1/2): compaction / clear handoff — the host's own recovery message when no new turn comes
+        self.turn_began_at = None       # wall clock of the current turn's start (UserPromptSubmit / harness turn)
+        self.recover_at = 0.0           # wall clock of the last scheduled recovery (PostCompact + SessionStart = one)
+        self.compact_handoff = None     # True/False: a fresh handoff existed at PreCompact; None = no PreCompact seen
+        self.recover_task = None
+        self.system_done = asyncio.Event()   # the end of a turn the host itself started (handoff prep)
+        self.ctx_reminded = -1          # compaction epoch the 「上下文过半」 handoff reminder went out in
 
     def untrusted(self) -> bool:
         """B1 (P117): a group member's envelope is pending or running natively — even after Agent J stopped waiting for
@@ -177,17 +232,22 @@ class SharedClaudeAgent(Agent):
         if self.loop:
             self.loop.call_soon_threadsafe(self._finish_stop, reply)
 
-    def _finish_stop(self, reply):
+    def _finish_stop(self, reply, source="committed-Stop"):
         # Native Stop can precede the final transcript flush. Its committed reply
         # is authoritative, exactly as in relay; never turn that race into an
         # early empty phone completion or a later desktop duplicate.
+        import time
+        if source == "committed-Stop":
+            claimed, self.end_claimed = self.end_claimed, None
+            if claimed and claimed[0] == public_text(reply) and time.monotonic() - claimed[1] < 60:
+                return                  # P151: a Stop later than its turn end; that reply was already delivered
         if self.transcript and self.transcript.is_file():
             self.read_transcript()
         if self.untrusted_state == "running":
             self.untrusted_state = None
         emit = getattr(self.host, "emit", None)
         if emit:
-            emit("shared_stop", agent="claude", phone=self.phone_turn, phone_input=self.phone_turn and self.phone_seen, source="committed-Stop")
+            emit("shared_stop", agent="claude", phone=self.phone_turn, phone_input=self.phone_turn and self.phone_seen, source=source)
         self.native_turn = False
         if self.phone_turn and (self.phone_seen or self.phone_claim):
             self.phone_reply_seen = True
@@ -198,6 +258,7 @@ class SharedClaudeAgent(Agent):
         else:
             self.host.desktop_text(public_text(reply))
             self.host.desktop_end()
+            self.system_done.set()
 
     def authentic(self, event) -> bool:
         """A14 (P139): an event for the served session (its session id, or a /clear of it) must carry the served session's
@@ -320,10 +381,29 @@ class SharedClaudeAgent(Agent):
 
     async def hook_event(self, event):
         gone = event.pop("_agentj_gone", None) if isinstance(event, dict) else None
-        if not isinstance(event, dict) or not self.session:
+        if not isinstance(event, dict):
             return {}
         name = event.get("hook_event_name")
         sid = event.get("session_id")
+        if name == "SessionStart" and event.get("source") in ("startup", "resume") and isinstance(sid, str) \
+                and not event.get("agent_id"):
+            # P147: a new Claude Code session opened in this folder. If the served one is gone, this is the moment to
+            # follow it — before its first prompt, so it also gets the identity below.
+            import time
+            now = time.monotonic()
+            self.heal_seen = {k: t for k, t in self.heal_seen.items() if now - t < 3600}
+            self.heal_seen[sid] = now
+            if self.session is not None and sid != self.session.get("sessionId") and not self._alive(self.session):
+                self._lost()
+            if self.session is None:
+                for _ in range(20):        # Claude Code writes its registry entry around this hook
+                    if await self.attach(allow_start=False):
+                        break
+                    await asyncio.sleep(.05)
+                if self.session is None:
+                    return self._unattached_hint(sid)
+        if not self.session:
+            return {}
         if name == "SessionStart" and event.get("source") == "clear" and sid != self.session["sessionId"]:
             # /clear changes UUID, but never which desktop process we serve.
             for _ in range(20):
@@ -342,6 +422,23 @@ class SharedClaudeAgent(Agent):
             return {}
         name = event.get("hook_event_name")
         self._withdraw_answered(name, event)
+        if not event.get("agent_id"):
+            if name == "Stop":
+                self.stop_since_end = True      # P151: this turn has its native end; turn_duration adds nothing
+            elif name == "UserPromptSubmit":
+                self.stop_since_end = False
+                self.turn_began_at = handoff.now()
+            elif name == "PreCompact":
+                self.compact_handoff = handoff.fresh(self.turn_began_at)
+                self.host.st.log("shared_precompact", handoff=self.compact_handoff,
+                                 trigger=str(event.get("trigger") or "?")[:16])
+            if name == "PostCompact" or (name == "SessionStart" and event.get("source") == "compact"):
+                if handoff.now() - self.recover_at > 10:
+                    has = self.compact_handoff if self.compact_handoff is not None else handoff.fresh(self.turn_began_at)
+                    self.compact_handoff = None
+                    self._schedule_recover("compact", has)
+            elif name == "SessionStart" and event.get("source") == "clear" and handoff.mtime(handoff.CLEAR) is not None:
+                self._schedule_recover("clear", True)
         if (name == "UserPromptSubmit" or (name == "SessionStart" and event.get("source") == "clear")) and not event.get("agent_id"):
             self.risk_epoch += 1
             self.permissions.clear()
@@ -353,6 +450,10 @@ class SharedClaudeAgent(Agent):
             self.compacted_at = time.time()
             self.identity_applied.pop(sid, None)    # P116: a compacted context must read the identity again
         self.state.handle(event)
+        busy = getattr(self.host, "busy", None)
+        if busy is not None:                        # P150: the phone's 「在办事项」 dots (busy.py)
+            with contextlib.suppress(Exception):
+                busy.hook_event(event, scope="shared-" + str(self.kind))
         self.sync_compacting()
         if name == "SessionStart" and event.get("source") == "clear" and self.clear_seen != sid:
             self.clear_seen = sid
@@ -422,6 +523,7 @@ class SharedClaudeAgent(Agent):
         if name == "SessionStart" and not event.get("agent_id"):
             # P116 (B11): startup / resume / clear / compact of the served session reads the identity (again)
             ctx = self.identity_context(sid, "session_start:" + str(event.get("source") or "?"), force=True)
+            ctx += self._handoff_context(event.get("source"))
             return {"hookSpecificOutput": {"hookEventName": "SessionStart", "additionalContext": ctx.lstrip()}} if ctx else {}
         if name == "PermissionRequest":
             # P139: never yield to another PermissionRequest hook — the phone card races it, first answer wins (an answer
@@ -625,20 +727,39 @@ class SharedClaudeAgent(Agent):
         # The phone queue already serializes phone turns. Also wait for DESKTOP
         # turns, which do not occupy that queue. No Esc, no approval answers.
         import time
-        deadline = time.monotonic() + DESKTOP_IDLE_WAIT
+        started = time.monotonic()
+        deadline = started + DESKTOP_IDLE_WAIT
+        warned = noted = False
+        prepped = False
         while True:
-            if self.halting or self.host.stopped() is True:
+            if self.halting or self.host.stopped() is True or getattr(self.cur_cmd, "cancelled", False):
                 return Result(pick(getattr(self.host, "lang", "zh"), "已取消，未发送控制。", "Cancelled; control not sent."), "error")
             live = claude_sessions(self.cfg['dir'], self.session['sessionId'])
             if not live or live[0]['pid'] != self.session['pid']:
                 return Result(pick(getattr(self.host, "lang", "zh"), "没清成：所选桌面会话已离线", "No change: selected desktop session offline"), "error")
+            self.validate_session(live[0].get('status'))
             if self.state.status == 'idle' and live[0].get('status') in ('idle', 'done'):
+                if name == "compact" and not prepped and not handoff.fresh(self.turn_began_at):
+                    prepped = True          # P151: the handoff first (agentj-handoff), then wait for idle again
+                    await self._handoff_prep()
+                    continue
                 break
+            if not noted:
+                self.host.cmd_waiting(self.cur_cmd)
+                noted = True
+            if not warned and time.monotonic() - started >= CONTROL_WARN_S:
+                self.host.st.log("shared_control_wait_warning", cmd=name, seconds=30, level="warning")
+                warned = True
             if time.monotonic() >= deadline:
                 return Result(pick(getattr(self.host, "lang", "zh"), "没清成：等待桌面回合结束超时，未发送命令", "No change: desktop idle timeout; command not sent"), "error")
             await asyncio.sleep(.1)
         if self.native_lock.locked():
             return Result("没执行：模型切换正在进行，稍后再试。 / Not sent: a model switch is in progress.", "error")
+        if getattr(self.cur_cmd, "cancelled", False):
+            return Result(pick(getattr(self.host, "lang", "zh"), "已取消，未发送控制。", "Cancelled; control not sent."), "error")
+        if self.cur_cmd is not None:
+            self.cur_cmd.native_started = True
+            self.host.hist_update(self.cur_cmd.turn, card={})
         self.control_ack.clear()
         self.control_name = name
         try:
@@ -830,19 +951,125 @@ class SharedClaudeAgent(Agent):
             return Result("未确认：按键已发，但状态栏没报告目标，当前实际：" + now + "。 / Not confirmed by the native status line.", "error")
         return Result("没切换（" + why + "）：当前实际 " + now + "。 / Not switched.", "error")
 
-    async def attach(self):
+    async def attach(self, allow_start=True):
         async with self.attach_lock:
-            return await self._attach_selected()
+            return await self._attach_selected(allow_start)
 
-    async def _attach_selected(self):
+    # ------------------------------------------------------------ P147: follow the owner to a new session
+    def _alive(self, session) -> bool:
+        return any(d["pid"] == session.get("pid") for d in claude_sessions(self.cfg["dir"]))
+
+    def _lost(self):
+        """The served session is gone (window closed, reboot, crash). Remember when it started; the next attach heals."""
+        if self.session is not None:
+            self.lost_started = int(self.session.get("startedAt") or 0)
+            self.host.st.log("shared_lost", agent="claude", session=str(self.session.get("sessionId", ""))[:8])
+        self.session = None
+
+    def _repin(self, old, new, how):
+        sid = new["sessionId"]
+        self.cfg["shared_session_id"] = sid
+        self.healed = (old or "", sid, how)
+        self.heal_choices = []
+        self.host.st.log("shared_reconnect", agent="claude", old=(old or "")[:8], new=sid[:8], how=how)
+        # The owner's pin follows (status, doctor, the next serve start); the config write is the same path as
+        # `agentj config set`. A test host / older host without it keeps the in-memory pin only.
+        setp = getattr(self.host, "set_pref", None)
+        if old and setp:
+            with contextlib.suppress(RuntimeError):
+                task = asyncio.get_running_loop().create_task(setp("agent.shared_session_id", sid))
+                self._pin_write = task          # keep a reference until it is done
+
+    def _heal(self, dead):
+        """The pinned session `dead` is not open. Pick its successor: the one live owner session in this folder; else the
+        one that announced itself (SessionStart) since; else the one started after the lost session. Never a headless
+        `claude -p` or a background job. Two or more equally likely → none (the owner chooses; see heal_notice)."""
+        rows = [d for d in claude_sessions(self.cfg["dir"], "", True) if d.get("sessionId") != dead]
+        choice, how = None, ""
+        if len(rows) == 1:
+            choice, how = rows[0], "only"
+        elif rows:
+            told = [d for d in rows if d.get("sessionId") in self.heal_seen]
+            newer = [d for d in rows if int(d.get("startedAt") or 0) > self.lost_started]
+            if len(told) == 1:
+                choice, how = told[0], "announced"
+            elif self.lost_started and len(newer) == 1:
+                choice, how = newer[0], "newer"
+        if choice is None:
+            self.heal_choices = [d["sessionId"] for d in rows]
+            return []
+        self._repin(dead, choice, how)
+        return [choice]
+
+    def heal_notice(self) -> str:
+        lang = getattr(self.host, "lang", "zh")
+        ids = "、".join(c[:8] for c in self.heal_choices) if lang != "en" else ", ".join(c[:8] for c in self.heal_choices)
+        return pick(lang, f"电脑上这个目录开着 {len(self.heal_choices)} 个 Claude Code 会话（{ids}），之前那个已经关了，Agent J 不确定接哪个。"
+                          "在你要用的那个会话里说一句「接上手机」，或在电脑上运行 agentj doctor --reconnect。",
+                    f"{len(self.heal_choices)} Claude Code sessions are open in this folder ({ids}) and the previous one is gone; "
+                    "Agent J cannot tell which one to follow. In the one you want, say \"connect my phone\", or run "
+                    "agentj doctor --reconnect on the computer.")
+
+    def _unattached_hint(self, sid):
+        """SessionStart of an owner session Agent J does not serve while it serves none: tell that session how to attach
+        (it never receives the identity until attached)."""
+        if not any(d.get("sessionId") == sid for d in claude_sessions(self.cfg["dir"], "", True)):
+            return {}
+        ctx = ("[Agent J] The owner's phone (Agent J) is not attached to any Claude Code session in this folder right now. "
+               "If the owner asks to connect the phone, or says the phone/web page shows grey or disconnected, run "
+               "`agentj doctor --reconnect` here (it attaches the session that runs it) and tell the owner its one-line result.")
+        return {"hookSpecificOutput": {"hookEventName": "SessionStart", "additionalContext": ctx}}
+
+    async def reconnect(self, choice=None) -> dict:
+        """`agentj doctor --reconnect` (ctl agent_reconnect): re-check now; `choice` = a session id (or its first 8+
+        characters) the owner / the calling session named. Never starts a Claude Code process."""
+        async with self.attach_lock:
+            if choice:
+                rows = [d for d in claude_sessions(self.cfg["dir"])
+                        if isinstance(d.get("sessionId"), str) and len(choice) >= 8 and d["sessionId"].startswith(choice)]
+                if len(rows) != 1:
+                    return {"ok": False, "why": "not_found"}
+                if self.session is not None and self.session.get("sessionId") == rows[0]["sessionId"]:
+                    return {"ok": True, "changed": False, "session": rows[0]["sessionId"][:8]}
+                if self.session is not None:
+                    self._lost()
+                self._repin(self.cfg.get("shared_session_id", ""), rows[0], "choice")
+            elif self.session is not None:
+                if self._alive(self.session):
+                    if self.status == "down":
+                        self.set_status("idle")
+                    return {"ok": True, "changed": False, "session": self.session["sessionId"][:8]}
+                self._lost()
+            self.heal_told = None
+            ok = await self._attach_selected(False)
+            if ok:
+                return {"ok": True, "changed": True, "session": self.session["sessionId"][:8]}
+            if not self.heal_choices:
+                self.heal_choices = [d["sessionId"] for d in claude_sessions(self.cfg["dir"], "", True)]
+            return {"ok": False, "why": "ambiguous" if len(self.heal_choices) > 1 else "none",
+                    "choices": [c[:8] for c in self.heal_choices]}
+
+    async def _attach_selected(self, allow_start=True):
         pinned = self.cfg.get("shared_session_id", "")
         if pinned and pinned == self.host.st.agent_session(self.kind + ".clear_from"):
             self.cfg["shared_session_id"] = self.host.st.agent_session(self.kind) or pinned
-        sessions = claude_sessions(self.cfg["dir"], self.cfg.get("shared_session_id", ""))
-        if not sessions and not self.cfg.get("shared_session_id") and self.native is None:
+        pinned = self.cfg.get("shared_session_id", "")
+        self.heal_choices = []
+        sessions = claude_sessions(self.cfg["dir"], pinned, not pinned)
+        if not sessions and pinned and not (self.native and self.native.returncode is None):
+            sessions = self._heal(pinned)       # P147: the pinned session is gone → follow the owner to the new one
+        if not sessions and not self.cfg.get("shared_session_id") and self.native is None and allow_start:
             await self.ordinary_start()
             sessions = claude_sessions(self.cfg["dir"])
+        if len(sessions) > 1 and not pinned:
+            self.heal_choices = [d["sessionId"] for d in sessions]
         if len(sessions) != 1:
+            if self.heal_choices and len(self.heal_choices) > 1:
+                if self.heal_told != tuple(self.heal_choices):
+                    self.heal_told = tuple(self.heal_choices)
+                    self.local_fail(self.heal_notice())
+                self.failed_start = True
+                return False
             if not self.failed_start:
                 self.local_fail(pick(getattr(self.host, "lang", "zh"), "共享 Claude 会话不存在或有多个匹配：在电脑指定 session id。", "Choose one live Claude session ID."))
             self.failed_start = True
@@ -857,7 +1084,9 @@ class SharedClaudeAgent(Agent):
         root = Path(os.environ.get("CLAUDE_CONFIG_DIR") or Path.home() / ".claude")
         slug = re.sub(r"[^A-Za-z0-9]", "-", self.cfg["dir"])
         self.transcript = root / "projects" / slug / (sid + ".jsonl")
-        if not self.transcript.is_file() and not (self.native and self.native.pid == self.session["pid"]):
+        # P147: a window opened a moment ago has no transcript until its first message — that is not "unreadable".
+        fresh = not self.transcript.exists() and __import__("time").time() * 1000 - int(self.session.get("startedAt") or 0) < FRESH_MS
+        if not self.transcript.is_file() and not fresh and not (self.native and self.native.pid == self.session["pid"]):
             if not self.failed_start:
                 self.local_fail(pick(getattr(self.host, "lang", "zh"), "Claude 会话的 transcript 不可读，未投递。", "Claude transcript unavailable."))
             self.failed_start = True
@@ -865,6 +1094,13 @@ class SharedClaudeAgent(Agent):
         self.offset = self.transcript.stat().st_size if self.transcript.exists() else 0
         self.host.st.set_agent_session(self.kind, sid)
         self.failed_start = False
+        self.heal_told = None
+        if self.status == "down":
+            self.set_status("idle")
+        if self.healed and self.healed[1] == sid:
+            self.healed = None
+            self.host.agent_notice(pick(getattr(self.host, "lang", "zh"), f"已接上新会话 {sid[:8]}。",
+                                        f"Reconnected to the new session {sid[:8]}."))
         # P142: the phone's model label has a catalogue from the start (it used to say "not supported" until /model ran)
         with contextlib.suppress(Exception):
             await self.refresh_models()
@@ -882,8 +1118,12 @@ class SharedClaudeAgent(Agent):
             try:
                 if self.session is None:
                     await self.attach()
-                if self.transcript is not None and self.transcript.is_file():
-                    self.read_transcript()
+                if self.session is not None and self.transcript is not None and self.transcript.is_file():
+                    self.read_transcript()      # P147: never after the session went away (it would kill this loop)
+                if self.session is not None:
+                    live = claude_sessions(self.cfg["dir"], self.session["sessionId"])
+                    exact = live and live[0].get("pid") == self.session.get("pid")
+                    self.validate_session(live[0].get("status") if exact else None)
                 self.read_statusline()
                 self.sync_compacting()
                 if self.model_pending and self.state.status == "idle" and not self.phone_turn and not self.native_lock.locked() \
@@ -909,6 +1149,12 @@ class SharedClaudeAgent(Agent):
                 elif self._observe_errors < OBSERVE_RETRIES:
                     self.host.st.log("shared_observe_retry", exception_type=type(e).__name__, count=self._observe_errors)
             await asyncio.sleep(5 if self.session is None else 0.25 if not self._observe_errors else min(5, 0.25 * 2 ** self._observe_errors))
+
+    def validate_session(self, status):
+        if self.state.validate_against(status):
+            self.native_turn = False
+            if not self.phone_turn and self.status == "working":
+                self.set_status("idle")
 
     def read_statusline(self):
         from . import claude_statusline
@@ -948,12 +1194,23 @@ class SharedClaudeAgent(Agent):
                 if ident:
                     self.seen.add(ident)
                 msg = item.get("message") or {}
+                if not isinstance(msg, dict):
+                    msg = {}
                 role = item.get("type")
+                if item.get("isSidechain"):
+                    continue
+                if role == "system" and item.get("subtype") == "turn_duration":
+                    self._turn_recorded_end()
+                    continue
+                if role == "attachment":
+                    self._phone_anchor((item.get("attachment") or {}).get("prompt") if isinstance(item.get("attachment"), dict) else None)
+                    continue
                 blocks = msg.get("content", "")
                 text = blocks if isinstance(blocks, str) else "\n".join(
                     b.get("text", "") for b in blocks if isinstance(b, dict) and b.get("type") == "text")
                 if role == "assistant":
                     self.native_turn = True       # P135: a native turn is producing; its Stop clears this
+                    self._turn_output(msg, blocks)
                 if not text or role not in ("user", "assistant"):
                     continue
                 if role == "user":
@@ -961,30 +1218,198 @@ class SharedClaudeAgent(Agent):
                     via = proactive_origin(item, text)
                     if via:
                         self.native_turn = True
+                        self.stop_since_end = False   # P151: a harness-started turn begins (loop tick, task notification)
+                        self.turn_began_at = handoff.now()
+                        self.turn_texts, self.turn_thinking = [], None
                         mark = getattr(self.host, "proactive_turn", None)   # P132: the next agent-only page says where it came from
                         if mark:
                             mark(via)
                         continue
                     if not human_input(item, blocks, text):
                         continue
+                    self.stop_since_end = False   # P151: a new turn begins
+                    self.turn_texts, self.turn_thinking = [], None
                     if self.untrusted_state == "pending" and provenance.names_untrusted(text):
                         self._mark_untrusted("running")   # a native version that runs it without UserPromptSubmit
                     if any('from-name="' + name + '"' in text for name in provenance.FROM_NAMES) or (item.get("origin") or {}).get("name") in provenance.FROM_NAMES:
                         if self.phone_turn and self.pending_text in text:
                             self.phone_seen = True
                             self.input_seen.set()
+                            self._phone_anchor(text)
                         continue
                     if self._control_echo(text):
                         continue
                     self.host.desktop_input(public_text(text))
                 # Assistant prose is emitted only by the committed Stop payload.
                 # Transcript timing is not a completion/ownership signal.
+        if self.session is None:
+            return
         live = claude_sessions(self.cfg["dir"], self.session["sessionId"])
         if not live and not any(d['pid'] == self.session['pid'] for d in claude_sessions(self.cfg['dir'])):
             self.failed_start = True
             self.set_status("down")
             self.done.set()
-            self.session = None
+            self._lost()
+
+    def _phone_anchor(self, text):
+        """P151: the phone input shows up in the transcript (a user record, or a queued_command attachment when it was
+        taken inside a running turn): its reply is what the session writes after this point."""
+        if self.phone_turn and self.pending_text and isinstance(text, str) and self.pending_text in text:
+            self.turn_texts, self.turn_thinking = [], None
+
+    def _turn_output(self, msg, blocks):
+        if not isinstance(blocks, list):
+            blocks = [{"type": "text", "text": blocks}] if isinstance(blocks, str) else []
+        self.turn_last_msg = msg.get("id")
+        for b in blocks:
+            if not isinstance(b, dict):
+                continue
+            if b.get("type") == "text" and str(b.get("text") or "").strip():
+                self.turn_texts.append(b["text"])
+            elif b.get("type") == "thinking" and str(b.get("thinking") or "").strip():
+                self.turn_thinking = (msg.get("id"), b["thinking"])
+
+    def _turn_reply(self):
+        """The last assistant text of the turn. Owner turns only: when the session put its answer solely in a visible
+        thinking block of the turn's final message (owner report 2026-10-12, before ScheduleWakeup), that block."""
+        if self.turn_texts:
+            return self.turn_texts[-1].strip()
+        if self.phone_turn and provenance.is_owner(self.pending_source) and self.turn_thinking \
+                and self.turn_thinking[0] == self.turn_last_msg:
+            return self.turn_thinking[1].strip()
+        return ""
+
+    def _turn_recorded_end(self):
+        """P151: Claude Code wrote this turn's end. A turn ending on a tool call (ScheduleWakeup, Monitor, …) sends no Stop
+        hook; after TURN_END_GRACE without one the recorded end commits the turn with its last text."""
+        if self.stop_since_end:
+            self.stop_since_end = False
+            self.turn_texts, self.turn_thinking = [], None
+            return
+        reply = self._turn_reply()
+        self.turn_texts, self.turn_thinking = [], None
+        loop = self.loop
+        if loop is None:
+            with contextlib.suppress(RuntimeError):
+                loop = asyncio.get_running_loop()
+        if loop is None:
+            return
+        loop.call_later(TURN_END_GRACE, self._end_without_stop, reply)
+
+    def _end_without_stop(self, reply):
+        import time
+        if self.stop_since_end:         # the native Stop came after all (later than the transcript's end record)
+            self.stop_since_end = False
+            return
+        phone = self.phone_turn and (self.phone_seen or self.phone_claim)
+        self.host.st.log("shared_turn_end_no_stop", phone=phone, reply=bool(reply))
+        self._withdraw_answered("Stop", {})
+        end = getattr(self.state, "end_without_stop", None)
+        if end:
+            end(reply or None)
+        if reply:
+            self.end_claimed = (public_text(reply), time.monotonic())
+            self._finish_stop(reply, source="turn-end")
+            return
+        if self.untrusted_state == "running":
+            self.untrusted_state = None
+        self.native_turn = False
+        emit = getattr(self.host, "emit", None)
+        if emit:
+            emit("shared_stop", agent="claude", phone=self.phone_turn, phone_input=phone, source="turn-end-empty")
+        if phone:
+            if self.phone_claim:
+                self.host.turn_queued_note(False)
+            self.phone_reply_seen = True
+            self.host.agent_notice(pick(getattr(self.host, "lang", "zh"), "共享 Claude 这一回合已结束，但没有写文字回复。",
+                                        "The shared Claude turn ended without a text reply."))
+            self.done.set()
+        else:
+            self.host.desktop_end()
+            self.system_done.set()
+
+    # ------------------------------------------------ P151 (追加 1/2): compaction / clear handoff
+    def _handoff_context(self, source) -> str:
+        """SessionStart(compact|clear) context: where the handoff is (also covers an owner message that beats the host's
+        recovery message)."""
+        lang = getattr(self.host, "lang", "zh")
+        if source == "compact" and handoff.mtime(handoff.COMPACT) is not None:
+            return "\n\n" + handoff.recover_text(lang, "compact", True)
+        if source == "clear" and handoff.mtime(handoff.CLEAR) is not None:
+            return "\n\n" + handoff.recover_text(lang, "clear", True, handoff.path(handoff.CLEAR))
+        return ""
+
+    def _schedule_recover(self, kind, has):
+        loop = self.loop
+        if loop is None:
+            with contextlib.suppress(RuntimeError):
+                loop = asyncio.get_running_loop()
+        if loop is None:
+            return
+        self.recover_at = handoff.now()
+        if self.recover_task and not self.recover_task.done():
+            self.recover_task.cancel()
+        self.recover_task = loop.create_task(self._recover(kind, has, self.turn_began_at))
+
+    async def _recover(self, kind, has, began):
+        """After RECOVER_DELAY with no new turn and the session idle, the host sends its recovery message itself."""
+        await asyncio.sleep(handoff.RECOVER_DELAY)
+        why = None
+        for _ in range(20):
+            if self.turn_began_at != began or self.phone_turn:
+                why = "new_turn"
+            elif self.session is None or self.host.stopped() is True:
+                why = "offline"
+            elif self.native_turn or self.state.status not in ("idle", "none"):
+                why = "busy"            # Claude Code's automatic compaction inside a turn: the turn goes on by itself
+            elif not await asyncio.to_thread(self._registry_idle):
+                why = "busy"
+            else:
+                why = None
+                break
+            if why != "busy":
+                break
+            await asyncio.sleep(0.25)
+        if why:
+            self.host.st.log("shared_handoff_recover", kind=kind, result=why, handoff=bool(has))
+            return
+        lang = getattr(self.host, "lang", "zh")
+        where = None
+        if kind == "clear":
+            where = handoff.take_clear()
+            if where is None:
+                return
+        text = handoff.recover_text(lang, kind, bool(has), where)
+        try:
+            await asyncio.to_thread(claude_send, self.session, text, provenance.system())
+        except (OSError, ConnectionError, KeyError, TypeError):
+            self.host.st.log("shared_handoff_recover", kind=kind, result="send_failed", handoff=bool(has))
+            return
+        self.host.st.log("shared_handoff_recover", kind=kind, result="sent", handoff=bool(has))
+        self.host.agent_notice(handoff.phone_line(lang, kind))
+
+    async def _handoff_prep(self) -> bool:
+        """Phone /compact: the handoff is missing or older than this turn → one host turn asking for it first. True when
+        the file is fresh afterwards."""
+        lang = getattr(self.host, "lang", "zh")
+        handoff.ensure()
+        before = handoff.mtime(handoff.COMPACT)
+        self.system_done.clear()
+        try:
+            await asyncio.to_thread(claude_send, self.session, handoff.prep_text(lang), provenance.system())
+        except (OSError, ConnectionError, KeyError, TypeError):
+            self.host.st.log("shared_handoff_prep", result="send_failed")
+            return False
+        with contextlib.suppress(asyncio.TimeoutError):
+            await asyncio.wait_for(self.system_done.wait(), handoff.PREP_WAIT)
+        after = handoff.mtime(handoff.COMPACT)
+        ok = after is not None and after != before
+        self.host.st.log("shared_handoff_prep", result="ok" if ok else "missing")
+        return ok
+
+    def _registry_idle(self) -> bool:
+        live = claude_sessions(self.cfg["dir"], (self.session or {}).get("sessionId", "")) if self.session else []
+        return bool(live) and live[0].get("status") == "idle"
 
     async def turn(self, text):
         if self.session is None and not await self.attach():
@@ -1017,10 +1442,17 @@ class SharedClaudeAgent(Agent):
                     notice = claude_inbound.turn_notice(self.cfg.get("dir"), self.cfg.get("language", "zh")) + " " + claude_inbound.diagnostic(self.host.st, self.cfg.get("language", "zh"), self.cfg)
                     self.fail_notice(notice)
                     return
-            # Only a committed native Stop belonging to this phone input ends
-            # the turn; registry idle and transcript flush timing never do.
+            # A committed native Stop belonging to this phone input ends the turn; so does the turn end the transcript
+            # records when no Stop comes (P151, _turn_recorded_end). Registry idle and flush timing alone never do.
             await asyncio.wait_for(self.done.wait(), 300)
         except asyncio.TimeoutError:
+            reply = self._turn_reply() if self.phone_seen or self.phone_claim else ""
+            if reply and await asyncio.to_thread(self._registry_idle):
+                # P151: no Stop and no recorded turn end (an older native version), but the session answered and is idle
+                self.host.st.log("shared_turn_end_no_stop", phone=True, reply=True, via="registry-idle")
+                self.turn_texts, self.turn_thinking = [], None
+                self._end_without_stop(reply)
+                return
             self.fail_notice(pick(getattr(self.host, "lang", "zh"), "共享 Claude 未确认回合完成，请在电脑核实。", "Turn completion unconfirmed; check the desktop."))
         finally:
             self.phone_turn = self.phone_claim = False

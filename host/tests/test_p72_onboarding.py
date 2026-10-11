@@ -179,6 +179,19 @@ class Notes(unittest.TestCase):
         self.assertTrue(onboarding.also_text("other", "", both, "en").startswith("This remote is connected too."))
         self.assertIn("董事长助理", onboarding.fallback_welcome("computer", s, "zh"))
 
+    def test_welcome_explains_the_hierarchy_and_remembered_delegation(self):
+        # P152 (P149 UX item 3): the first-run welcome says once who does the work and that "no need to ask me" is remembered
+        s = {"computer": True, "phone": False, "seat": True}
+        for lang, hier, mem, appr in (("zh", "董事长 → 你这个董事长助理 → 各工作流的 CEO → CEO 手下的员工", "这类事不用问我", "危险操作照样要主人批准"),
+                                      ("en", "Chairman → you, the chief of staff → each workflow's CEO → its staff", "you don't need to ask me", "dangerous operations still need their approval")):
+            w = onboarding.welcome_prompt("computer", PC, s, lang)
+            for needle in (hier, mem, appr):
+                self.assertIn(needle, w)
+            self.assertLess(w.index(hier), w.index("跳过" if lang == "zh" else "skip"))   # in step 1, before the tour
+        self.assertIn("董事长 → 我 → 各工作流的 CEO → 员工", onboarding.fallback_welcome("computer", s, "zh"))
+        self.assertIn("Chairman → me → each workflow's CEO → its staff", onboarding.fallback_welcome("phone", s, "en"))
+        self.assertIn("这类事不用问我", onboarding.fallback_welcome("computer", s, "zh"))
+
 
 class DoctorAndCli(unittest.TestCase):
     def setUp(self):

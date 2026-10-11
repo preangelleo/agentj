@@ -451,9 +451,18 @@ class Scheduler:
                 host.task_label = title
                 from .capability import brief_scope_for
                 host.brief_scope = None if research else brief_scope_for(host.st, e)   # 0.18: confirmed brief, no card for its own outputs
+                busy = getattr(host, "busy", None)   # P150: the workflow's CEO is one of the phone's 「在办事项」 dots
+                tt = (e["task"] or {}).get("title")
+                ceo = (tt.get("en") if getattr(host, "lang", "zh") == "en" else None) or title if isinstance(tt, dict) else title
+                if busy is not None:
+                    with contextlib.suppress(Exception):
+                        busy.start("wf:" + tid, ceo, "ceo", "", lk="dispatch" if trigger == "dispatch" else "schedule")
                 try:
                     out, code = await asyncio.wait_for(self._exec(kind, e, research), RUN_TIMEOUT)
                 finally:
+                    if busy is not None:
+                        with contextlib.suppress(Exception):
+                            busy.stop("wf:" + tid)
                     host.task_label = None
                     host.brief_scope = None
                     await self._kill()

@@ -1,6 +1,6 @@
-# Agent J 0.18.3a1 release notes
+# Agent J 0.18.4a1 release notes
 
-Host 0.18.3a1 / install 0.21.9; phone-web scope.
+Host 0.18.4a1 / install 0.21.10; phone-web scope.
 Phone parity must pass --strict. Full Android/Telegram parity is incomplete.
 Full Android/Telegram parity is incomplete.
 No APK is included in this release. Android source is for review, not a released app.
@@ -8,18 +8,18 @@ No APK is included in this release. Android source is for review, not a released
 Publication status: local preparation only. Live site verification is DEFERRED until
 the public commit and tag are pushed, the site is deployed, and cold installation passes.
 
-On publication failure, restore v0.18.2a1 host/site/phone and the captured relay Worker version. relay Worker first (pending-slot limit); A front Worker/site/signed downloads/install guide; B phone web. No Dashboard or D1 migration change.
+On publication failure, restore v0.18.3a1 host/site/phone. A front Worker/site/signed downloads/install guide; B phone web. No Dashboard code, D1 migration or relay Worker change (the P145 Dashboard stylesheet is an optional static redeploy).
 ## Changes
 
-- Every approval reaches the phone: shared Claude cards are no longer withdrawn in favour of another approval hook; missing hooks are restored; control-socket resume/config/send/revoke need an owner claim.
-- Dangerous-command checks add an `opaque` category (encoded, spliced or shell-piped commands) and flag credential exfiltration; key-name-only greps stay quiet.
-- An independent session whose sandbox cannot start refuses to launch unless the owner allows one launch with a passkey; tasks and native bots no longer inherit the host service's secret environment.
-- Telegram forwards and group text are external data; group attachments are checked and budgeted before download.
-- The relay caps pending (unauthenticated) slots per source; the installer verifies the minisign signature before writing the wheel; the front Worker forwards the bots admin route and caps feedback streams.
-- Host disk writes leave the event loop; update apply rolls back on failure and restarts when idle; iPhone lock-screen resume keeps the layout; OpenCode shared replies follow the configured language.
-- 中文：审批一定能在手机上处理；危险命令识别更严并新增「看不清要做什么」；沙箱起不来不会悄悄裸跑；定时任务与客服 bot 拿不到主机密钥；群消息与转发更安全；一键安装验签；中继防占槽；iPhone 锁屏回来布局正常；网页更不容易卡。
+- Shared Claude follows a dead pinned session to the one live owner session in the folder (never a headless or background one; ambiguous cases ask); `agentj doctor --reconnect` repairs service, relay and Agent in turn; `agentj status --json` adds a hint.
+- Main-Agent core v10: Chairman address and hierarchy, CEO / sub-Agent delegation with a hand-off line first, remembered delegation rules in MEMORY.md that never lift dangerous-operation approvals, and the agentj-handoff skill.
+- Work-in-progress dots on the reply card (owned stream-json, shared Claude hooks, workflow runs, `agentj busy`), a global centred dialog that also carries the upgrade notice, keyboard ← → ↑ ↓ card navigation; Esc no longer interrupts.
+- A shared Claude turn that ends on a tool call (ScheduleWakeup, Monitor) commits from the transcript's turn end with its last text; compaction / clear recover through a host system note asking for the handoff first.
+- macOS launchd env loads configured `key_env` names safely; Telegram replies render Markdown as HTML with a plain fallback; shared Claude corrects a missed Stop after continuous quiet idle.
+- Busy-session queue card: received + position; first-run welcome explains the hierarchy; agentj.app spacing contract and plaza screens.
+- 中文：手机变灰自动接回（不行就 agentj doctor --reconnect）；董事长助理身份 v10 派活给 CEO / 小助理；回复卡彩色圆点显示后台在办；以工具收尾的回合也能把回复送到手机；压缩/清空后先读交接；官网间距统一。
 
-- Physical iPhone/Android/macOS and founder/native Claude/Telegram cutover remain pending; local browser and cloud/service-manager fixtures do not prove them.
+- Physical iPhone/Android/macOS, a real /compact on Claude Code and founder/native Claude/Telegram cutover remain pending; local browser, replayed transcripts and cloud/service-manager fixtures do not prove them.
 - Account-page pairing still trusts the signed control plane, and the Linux fence mounts the whole filesystem (`--dev-bind / /`) with the session bus bound back; both are documented, not closed.
 
 ## Material acceptance limits

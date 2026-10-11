@@ -6,7 +6,7 @@ prepared yet, the host first runs one ordinary turn with a host-built instructio
 compaction runs exactly as before (Claude Code `/compact`, Codex `thread/compact/start`, OpenCode `summarize`). Same code for
 all three harnesses: the preparation is `agent.turn(text)` — the adapter's own normal turn.
 
-Where the handover lives: `<working root>/.agentj/handover/<session key>.md`, NOT the state directory. The fenced Agent
+Where the handover lives: `<working root>/.agentj/handover/compact.md` (P151: no session id in the name), NOT the state directory. The fenced Agent
 cannot see the state directory (an empty tmpfs, fence.py), while `.agentj/` in its own folder is already ours: 0700 with a
 `.gitignore` of `*` (inbox.py, PROTOCOL §10.4), so a handover never enters the customer's git. The host only stats and hashes
 the file through the same O_NOFOLLOW dir-fd chain the inbox uses — it never follows a link the Agent planted.
@@ -48,6 +48,7 @@ import time
 from . import inbox, main_identity
 
 DIR = "handover"
+FILE = "compact"            # P151: `<working root>/.agentj/handover/compact.md` (agentj-handoff skill)
 PREP_TIMEOUT = 300.0        # s: the preparation turn (an approval card for the write may be in it)
 FRESH = 900.0               # s: a handover older than this is not "prepared" (the Agent updates it instead)
 REMIND_AT = 0.5             # ctx used / max above this → the reminder line (once per epoch)
@@ -117,8 +118,10 @@ def session_key(agent) -> str | None:
     return (agent.kind + "-" + _KEY.sub("_", sid).strip("._-"))[:96]
 
 
-def handover_path(agent, key: str) -> str:
-    return os.path.join(agent.cfg["dir"], inbox.DOT, DIR, key + ".md")
+def handover_path(agent, key: str | None = None) -> str:
+    """P151: one human-readable name per working root (no session id: the phone shows this path and an id-like string in it
+    would be masked or hard to copy). The session key still separates the compaction records in STATE_FILE."""
+    return os.path.join(agent.cfg["dir"], inbox.DOT, DIR, FILE + ".md")
 
 
 # ------------------------------------------------------------------ the handover file (never through a link)
@@ -192,7 +195,7 @@ def _log(agent, ev: str, **kw) -> None:
 def prepared(agent, key: str, r: dict, now: float | None = None) -> bool:
     """Prepared since the last compaction: the handover was written after it and is still fresh (FRESH)."""
     now = time.time() if now is None else now
-    p = probe(agent.cfg["dir"], key)
+    p = probe(agent.cfg["dir"], FILE)
     return bool(p) and p[0] > (r.get("at") or 0) and now - p[0] <= FRESH
 
 
@@ -224,7 +227,7 @@ async def compact(agent, fn, arg):
     res = await fn(arg)
     if getattr(res, "kind", None) == "ok":
         await compacted(agent, prev_at=prev_at)
-        p = probe(agent.cfg["dir"], key)
+        p = probe(agent.cfg["dir"], FILE)
         res.text += "\n" + (FAILED[L] if failed or not p else DONE[L].format(path=path))
     elif failed:
         res.text += "\n" + FAILED[L]
@@ -237,7 +240,7 @@ async def _prepare(agent, key: str, path: str, L: str, text: dict | None = None)
     text = text or PREP
     host = agent.host
     ensure_dir(agent.cfg["dir"])
-    before = probe(agent.cfg["dir"], key)
+    before = probe(agent.cfg["dir"], FILE)
     cmd = getattr(agent, "cur_cmd", None)
     turn = getattr(cmd, "turn", None)
     upd = getattr(host, "hist_update", None)
@@ -271,7 +274,7 @@ async def _prepare(agent, key: str, path: str, L: str, text: dict | None = None)
     if agent.halting or (callable(stopper) and stopper()):
         agent.halting = False
         return "stopped"
-    after = probe(agent.cfg["dir"], key)
+    after = probe(agent.cfg["dir"], FILE)
     ok = result is None and after is not None and after != before
     _log(agent, "compact_prep", result="ok" if ok else (result or ("missing" if after is None else "unchanged")))
     return ok
@@ -296,7 +299,7 @@ async def compacted(agent, prev_at: float | None = None, auto: bool = False) -> 
             await agent.context_meter()
     d, r = record(st, key)
     prev = (r.get("at") or 0) if prev_at is None else prev_at
-    p = probe(agent.cfg["dir"], key)
+    p = probe(agent.cfg["dir"], FILE)
     r["n"] += 1
     r["at"] = time.time()
     r["note"] = handover_path(agent, key) if p and p[0] > prev else None
@@ -351,6 +354,15 @@ def cleared(agent, key: str | None) -> None:
     d = load(agent.host.st)
     if d.pop(key, None) is not None:
         save(agent.host.st, d)
+    # P151: one file per working root — the conversation put aside keeps its handover as previous.md, so the new
+    # conversation is never "prepared" by an old handover
+    with contextlib.suppress(OSError, inbox.Unsafe):
+        with inbox.dot_dir(agent.cfg["dir"], create=False) as dd:
+            hd = inbox._open_dir(DIR, dd, False)
+            try:
+                os.rename(FILE + ".md", "previous.md", src_dir_fd=hd, dst_dir_fd=hd)
+            finally:
+                os.close(hd)
 
 
 # ------------------------------------------------------------------ the next user message
@@ -381,7 +393,7 @@ def decorate(agent, send) -> str:
     head = tail = ""
     changed = False
     if r.get("note"):
-        if probe(agent.cfg["dir"], key):
+        if probe(agent.cfg["dir"], FILE):
             head = NOTE[L].format(path=r["note"]) + "\n"
         r["note"] = None
         changed = True

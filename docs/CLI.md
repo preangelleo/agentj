@@ -134,7 +134,7 @@ agentj --help
 
 ```text
 usage: agentj [-h] [-V] [--migrate-legacy] [--fresh]
-              {doctor,service,update,init,serve,protocol,pair,devices,revoke,send,status,name,admin,login,report,unlink,report-hostname,remote-pair,remote-unbind,agent,passphrase,approvals,feedback,stop,resume,memory,activity,config,history,inbox,asr,tasks,wizard,keep-awake,browser,setup,google,sudo,secret,provider,sudo-helper,docs-rule,handover,telegram-cursor,plaza,support,capability,recall,bots,friends,codex-sandbox,migrate,alias,onboarding} ...
+              {doctor,service,update,init,serve,protocol,pair,devices,revoke,send,status,name,admin,login,report,unlink,report-hostname,remote-pair,remote-unbind,agent,passphrase,approvals,feedback,stop,resume,memory,activity,config,history,inbox,asr,tasks,wizard,keep-awake,browser,setup,google,sudo,secret,provider,sudo-helper,docs-rule,handover,telegram-cursor,plaza,support,capability,busy,recall,bots,friends,codex-sandbox,migrate,alias,onboarding} ...
 ```
 
 | Argument | Default | Required | Choices | Help |
@@ -907,6 +907,110 @@ usage: agentj browser telegram-qr [-h] [--json] [{status,off}]
 | `value` | `"status"` | false | `status`, `off` | `` |
 | `--json` | `false` | false | — | `` |
 
+### agentj busy
+
+```text
+who is working in the background (the dots on the phone)
+```
+
+```bash
+agentj busy --help
+```
+
+```text
+usage: agentj busy [-h] {list,start,run,stop} ...
+```
+
+| Argument | Default | Required | Choices | Help |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+
+### agentj busy list
+
+```text
+who is working now
+```
+
+```bash
+agentj busy list --help
+```
+
+```text
+usage: agentj busy list [-h] [--json] [--no-units]
+```
+
+| Argument | Default | Required | Choices | Help |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `--json` | `false` | false | — | `` |
+| `--no-units` | `false` | false | — | `skip systemd units` |
+
+### agentj busy run
+
+```text
+add, run a command, remove
+```
+
+```bash
+agentj busy run --help
+```
+
+```text
+usage: agentj busy run [-h] [--who WHO] [--label LABEL] [--kind {ceo,temp}]
+                       ...
+```
+
+| Argument | Default | Required | Choices | Help |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `--who` | `""` | false | — | `谁（CEO 名字；空 = 临时助理）/ who (empty = a helper)` |
+| `--label` | `""` | false | — | `在干什么（自动压成 ≤5 个汉字 / ≤10 个字母）/ what (squeezed)` |
+| `--kind` | `"ceo"` | false | `ceo`, `temp` | `` |
+| `command` | `null` | false | — | `` |
+
+### agentj busy start
+
+```text
+add an item
+```
+
+```bash
+agentj busy start --help
+```
+
+```text
+usage: agentj busy start [-h] [--who WHO] [--label LABEL] [--kind {ceo,temp}]
+                         [--key KEY] [--pid PID]
+```
+
+| Argument | Default | Required | Choices | Help |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `--who` | `""` | false | — | `谁（CEO 名字；空 = 临时助理）/ who (empty = a helper)` |
+| `--label` | `""` | false | — | `在干什么（自动压成 ≤5 个汉字 / ≤10 个字母）/ what (squeezed)` |
+| `--kind` | `"ceo"` | false | `ceo`, `temp` | `` |
+| `--key` | `""` | false | — | `the name to stop it with` |
+| `--pid` | `null` | false | — | `removed when this pid ends` |
+
+### agentj busy stop
+
+```text
+remove an item
+```
+
+```bash
+agentj busy stop --help
+```
+
+```text
+usage: agentj busy stop [-h] key
+```
+
+| Argument | Default | Required | Choices | Help |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `key` | `null` | true | — | `` |
+
 ### agentj capability
 
 ```text
@@ -1355,7 +1459,7 @@ agentj doctor --help
 
 ```text
 usage: agentj doctor [-h] [--json] [--offline] [--isolation-only]
-                     [--upgrade-only]
+                     [--upgrade-only] [--reconnect] [--session SESSION]
 ```
 
 | Argument | Default | Required | Choices | Help |
@@ -1365,6 +1469,8 @@ usage: agentj doctor [-h] [--json] [--offline] [--isolation-only]
 | `--offline` | `false` | false | — | `skip the network checks` |
 | `--isolation-only` | `false` | false | — | `isolation preflight only, no user state or network` |
 | `--upgrade-only` | `false` | false | — | `package and service integrity only` |
+| `--reconnect` | `false` | false | — | `phone grey or disconnected: check service, relay and Agent, repair the broken one` |
+| `--session` | `null` | false | — | `with --reconnect: attach this session ID` |
 
 ### agentj feedback
 
@@ -2976,12 +3082,13 @@ agentj status --help
 ```
 
 ```text
-usage: agentj status [-h]
+usage: agentj status [-h] [--json]
 ```
 
 | Argument | Default | Required | Choices | Help |
 | --- | --- | --- | --- | --- |
 | `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `--json` | `false` | false | — | `JSON only (P147)` |
 
 ### agentj stop
 
@@ -3725,7 +3832,7 @@ agentj --help
 
 ```text
 usage: agentj [-h] [-V] [--migrate-legacy] [--fresh]
-              {doctor,service,update,init,serve,protocol,pair,devices,revoke,send,status,name,admin,login,report,unlink,report-hostname,remote-pair,remote-unbind,agent,passphrase,approvals,feedback,stop,resume,memory,activity,config,history,inbox,asr,tasks,wizard,keep-awake,browser,setup,google,sudo,secret,provider,sudo-helper,docs-rule,handover,telegram-cursor,plaza,support,capability,recall,bots,friends,codex-sandbox,migrate,alias,onboarding} ...
+              {doctor,service,update,init,serve,protocol,pair,devices,revoke,send,status,name,admin,login,report,unlink,report-hostname,remote-pair,remote-unbind,agent,passphrase,approvals,feedback,stop,resume,memory,activity,config,history,inbox,asr,tasks,wizard,keep-awake,browser,setup,google,sudo,secret,provider,sudo-helper,docs-rule,handover,telegram-cursor,plaza,support,capability,busy,recall,bots,friends,codex-sandbox,migrate,alias,onboarding} ...
 ```
 
 | 参数 | 默认值 | 必填 | 可选值 | 说明 |
@@ -4498,6 +4605,110 @@ usage: agentj browser telegram-qr [-h] [--json] [{status,off}]
 | `value` | `"status"` | false | `status`, `off` | `` |
 | `--json` | `false` | false | — | `` |
 
+### agentj busy
+
+```text
+在办事项（手机回复卡右上角的彩色圆点）：list · start · stop · run
+```
+
+```bash
+agentj busy --help
+```
+
+```text
+usage: agentj busy [-h] {list,start,run,stop} ...
+```
+
+| 参数 | 默认值 | 必填 | 可选值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+
+### agentj busy list
+
+```text
+现在谁在干活
+```
+
+```bash
+agentj busy list --help
+```
+
+```text
+usage: agentj busy list [-h] [--json] [--no-units]
+```
+
+| 参数 | 默认值 | 必填 | 可选值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `--json` | `false` | false | — | `` |
+| `--no-units` | `false` | false | — | `不看 systemd 的 agentj-p* 单元` |
+
+### agentj busy run
+
+```text
+登记、运行命令、结束时撤下
+```
+
+```bash
+agentj busy run --help
+```
+
+```text
+usage: agentj busy run [-h] [--who WHO] [--label LABEL] [--kind {ceo,temp}]
+                       ...
+```
+
+| 参数 | 默认值 | 必填 | 可选值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `--who` | `""` | false | — | `谁（CEO 名字；空 = 临时助理）/ who (empty = a helper)` |
+| `--label` | `""` | false | — | `在干什么（自动压成 ≤5 个汉字 / ≤10 个字母）/ what (squeezed)` |
+| `--kind` | `"ceo"` | false | `ceo`, `temp` | `` |
+| `command` | `null` | false | — | `` |
+
+### agentj busy start
+
+```text
+登记一件在办事项
+```
+
+```bash
+agentj busy start --help
+```
+
+```text
+usage: agentj busy start [-h] [--who WHO] [--label LABEL] [--kind {ceo,temp}]
+                         [--key KEY] [--pid PID]
+```
+
+| 参数 | 默认值 | 必填 | 可选值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `--who` | `""` | false | — | `谁（CEO 名字；空 = 临时助理）/ who (empty = a helper)` |
+| `--label` | `""` | false | — | `在干什么（自动压成 ≤5 个汉字 / ≤10 个字母）/ what (squeezed)` |
+| `--kind` | `"ceo"` | false | `ceo`, `temp` | `` |
+| `--key` | `""` | false | — | `稍后 stop 用的名字` |
+| `--pid` | `null` | false | — | `这个进程结束就自动撤下` |
+
+### agentj busy stop
+
+```text
+撤下一件
+```
+
+```bash
+agentj busy stop --help
+```
+
+```text
+usage: agentj busy stop [-h] key
+```
+
+| 参数 | 默认值 | 必填 | 可选值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `key` | `null` | true | — | `` |
+
 ### agentj capability
 
 ```text
@@ -4946,7 +5157,7 @@ agentj doctor --help
 
 ```text
 usage: agentj doctor [-h] [--json] [--offline] [--isolation-only]
-                     [--upgrade-only]
+                     [--upgrade-only] [--reconnect] [--session SESSION]
 ```
 
 | 参数 | 默认值 | 必填 | 可选值 | 说明 |
@@ -4956,6 +5167,8 @@ usage: agentj doctor [-h] [--json] [--offline] [--isolation-only]
 | `--offline` | `false` | false | — | `跳过网络检查` |
 | `--isolation-only` | `false` | false | — | `仅隔离预检：不读用户状态、不联网` |
 | `--upgrade-only` | `false` | false | — | `仅升级后的包与服务完整性` |
+| `--reconnect` | `false` | false | — | `手机灰了/断开：自检 服务·中继·Agent 三段，哪段断了修哪段` |
+| `--session` | `null` | false | — | `和 --reconnect 一起：接上这个会话 ID` |
 
 ### agentj feedback
 
@@ -6567,12 +6780,13 @@ agentj status --help
 ```
 
 ```text
-usage: agentj status [-h]
+usage: agentj status [-h] [--json]
 ```
 
 | 参数 | 默认值 | 必填 | 可选值 | 说明 |
 | --- | --- | --- | --- | --- |
 | `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `--json` | `false` | false | — | `只输出 JSON` |
 
 ### agentj stop
 

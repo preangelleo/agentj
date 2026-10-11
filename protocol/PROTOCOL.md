@@ -717,6 +717,12 @@ a revoke in the middle stops the message there (P33-X07).
   command: `src.text` = `/compact`, `card` = §8's result fields `{cmd, ok, kind, models?, undo?, sep?}`). The reply of one
   turn = every finished reply text of that turn, joined by a blank line — results only, never tool calls. A reply over
   200 000 code units continues on the next page(s) (`part`); nothing is truncated.
+- **Waiting shared Claude controls (P144)**: an open clear/compact page may carry `card:{cmd,cancel_wait:true}` and
+  "Waiting for the computer to become idle". The originating ready, allowlisted p33 device may send
+  `{"t":"cmd_cancel","turn":<integer>}`. The host binds it to that open page's `src.dev` and the live queued/current
+  command, before any native write; success updates the same page to `end:"stopped"`, `card:{}`. No terminal interrupt,
+  history reset or other queue deletion occurs. The flag disappears before native send; later cancellation is refused.
+  No extra signature is needed for withdrawing one's own unsent command (same boundary as `say_cancel`).
 - **Wire** (reads; answered to the asking session only):
 
 | direction | message |
@@ -1282,8 +1288,8 @@ scheduled run (§10 tasks). Code: `agentj/compactprep.py`, `agentj/recall.py`.
 - Trigger: `/compact` from the menu (`slash`), typed (`msg` / `say` text), or a message that is **only** 「压缩」「压缩一下」
   「压缩吧」「压缩上下文」 or `compact` (trailing 。.!！ ignored; `slash.SAY_COMPACT`) — the word the reminder (§15.3) teaches.
   The command's page opens as before (§10.5 `src.k: cmd`, `text: "/compact"`).
-- Handover file: `<working root>/.agentj/handover/<session key>.md`, session key = `<harness>-<conversation id>` (file-name
-  safe). In the Agent's folder because the fence hides the state directory; `.agentj/` is 0700 with `.gitignore` = `*`
+- Handover file: `<working root>/.agentj/handover/compact.md` (P151: one human-readable name, no conversation id — the phone
+  shows the path; `/clear` renames it `previous.md`; records stay per session key `<harness>-<conversation id>`). In the Agent's folder because the fence hides the state directory; `.agentj/` is 0700 with `.gitignore` = `*`
   (§10.4); `handover/` is created 0700 through the same O_NOFOLLOW chain; the host only stats / hashes the file through
   that chain (a link is never followed; blank = no handover).
 - **Prepared** = the file was written after this conversation's last compaction and ≤ 15 min ago (by our preparation, or by
@@ -1730,3 +1736,38 @@ adapter). No token, code, callback URL, client JSON or e-mail crosses this socke
   code 4003); a link that has not come up is retried after 1 s three times before the 1 → 30 s ladder; `relay_down` logs
   `phase` (connect | auth | up), `code` (close code) and `ms`. Control `status` adds `relay_state`
   (`up` | `connecting` = never up within 60 s of start | `reconnecting`).
+
+## 22. 「在办事项」: who works in the background (P150, host 0.18.4a1)
+
+Host → device, display only (nothing starts, stops or approves work; no signature, no answer):
+`{"t":"busy","by":<Agent name|null>,"tasks":[{"id","who":<string|null>,"kind":"ceo"|"temp","label","lk"?:"schedule"|"dispatch","since","c":0..8}]}`
+— right after `status` on every ready, then once per real change (≤ 2 s for outside sources). An empty list hides the dots.
+`who` null = an unnamed helper (the page says 临时助理 / Helper); `label` ≤ 5 Chinese characters or ≤ 10 characters of whole
+words, squeezed on the host without a model (empty + `lk` = a workflow run: 按时运行 / 派单任务). `c` = one of Leo's 9 Heavy /
+Light colour pairs; a named worker keeps its index across runs (`<state>/busy/colors.json`), neighbours never share one, the
+first 9 on screen never share one. At most 12 items. A host without §22 sends nothing; a page without it ignores the message.
+
+Sources (`agentj/busy.py`): the owned Claude session's stream-json (an `Agent`/`Task` tool_use opens an item with its
+description, its tool_result closes it; a background launch stays until `task_notification`; the process ending clears the
+session); shared Claude sessions' hooks (PreToolUse(Agent|Task) description → SubagentStart opens, SubagentStop closes;
+SessionEnd and `Stop.background_tasks` reconcile); a workflow run (its CEO = the workflow title, for the run's length); item
+files in `<state>/busy/` (0600; `agentj busy start|stop|run`; a dead pid or > 12 h prunes) and active systemd user units
+`agentj-p<digits>…` (Description "who · what" / "who: what"). A lost close expires after 3 h. Codex / OpenCode sub-agents
+have no hook yet (planned P150c); their outside dispatches use `agentj busy run`.
+
+The page (`web/public/js/busy.js`): one dot per item (≤ 6, then "+n") at the right of the reply card's header (≤ 2/3 of its
+width, never over the Agent's name); each dot blinks Heavy ⇄ Light; a tap opens the global centred dialog「有 N 个 Agent 在后台
+干活 · <Agent 名> 正在替你监控」 with who · what. ESC / a tap outside / 知道了 close it; the list going empty closes it. Host
+text only through textContent. The same centred dialog (`.gdlg`) carries the §P120 version notice (「服务器已升级」+ 刷新),
+which still never takes focus.
+
+### P151 — shared Claude: turn end without Stop; compaction / clear handoff
+- A shared Claude turn whose last block is a tool call (ScheduleWakeup, Monitor) sends no Stop hook; the transcript's
+  `system/turn_duration` with no Stop within 1 s commits it with the last assistant text since the phone input (owner turn:
+  the final message's visible thinking when there is no text); no text → 「已结束，但没有写文字回复」. A committed Stop wins.
+- Handoff paths (shared session): `<state>/handoff/compact.md`, `<state>/handoff/clear.md` (default
+  `~/.local/state/agentj/handoff/`). After PostCompact / SessionStart(compact), or SessionStart(clear) with `clear.md`, and
+  1.5 s without a new turn while idle, the host sends one envelope with `from-name="agentj-host-system(系统提示)"`
+  `source-kind="system" source-role="owner"`, body 〔Agent J 系统提示〕…; the phone gets `agent_notice`
+  「压缩完成，Agent 正在恢复上下文」. `clear.md` → `clear-used.md` on delivery. Phone `/compact` with a missing or stale
+  handoff first sends the same envelope asking for it (agentj-handoff skill) and waits ≤ 300 s for that turn's end.

@@ -128,6 +128,19 @@ body{
 }
 html{background:var(--pg)}
 html[data-sbar=black]{background:#000}
+/* P150 (owner, 2026-10-12): the scrollbars that are still drawn (a long Bash command in an approval,
+   an overlong field, lists) belong to the page — thin and round, the thumb a lighter shade of the
+   current state colour (green / blue / orange), the track a faint state-tinted veil. Both syntaxes:
+   scrollbar-color for Firefox / new Chromium, ::-webkit-scrollbar* for Safari and older Chromium.
+   Scrollers that hide their bar (main, the card, the tray) keep scrollbar-width:none. */
+*{scrollbar-width:thin;
+  scrollbar-color:color-mix(in oklab,var(--state) 55%,var(--lotion)) color-mix(in oklab,var(--state) 30%,transparent)}
+::-webkit-scrollbar{width:8px;height:8px}
+::-webkit-scrollbar-track{background:color-mix(in oklab,var(--state) 30%,transparent);border-radius:8px}
+::-webkit-scrollbar-thumb{background:color-mix(in oklab,var(--state) 55%,var(--lotion));border-radius:8px;
+  border:2px solid transparent;background-clip:padding-box}
+::-webkit-scrollbar-thumb:hover{background-color:color-mix(in oklab,var(--state) 40%,var(--lotion))}
+::-webkit-scrollbar-corner{background:transparent}
 /* The page itself (html, body) switches colour instantly: the status bar is
    repainted from theme-color in one step, so a fading page would disagree with
    it for 0.8 s after every state change (owner, 2026-09-24: "有时候统一有时候不统一").
@@ -1606,7 +1619,8 @@ body[data-view="scan"] .top{display:none}
 /* Transparent capsule reserves identical geometry even without unread replies. */
 :root{--sage-sensation:#b7e396;--buttery:#fcbe7c}
 .pg-latest .pg{padding:2px 8px;border:1px solid transparent;border-radius:999px;background:transparent;white-space:nowrap}
-.pg-corner[data-unread="1"] .pg{animation:new-message-pulse 1.2s ease-in-out infinite;background:var(--sage-sensation);border-color:var(--sooty);color:var(--sooty)}
+/* P150: the ring is a Lotion veil (the quota track family), not near-black (Leo 2026-10-12: 很突兀). */
+.pg-corner[data-unread="1"] .pg{animation:new-message-pulse 1.2s ease-in-out infinite;background:var(--sage-sensation);border-color:rgba(250,249,245,.45);color:var(--sooty)}
 @keyframes new-message-pulse{0%,100%{background-color:var(--sage-sensation)}50%{background-color:var(--buttery)}}
 @media(prefers-reduced-motion:reduce){.pg-corner[data-unread="1"] .pg{animation:none;background:var(--sage-sensation)}}
 .history-corner:focus-visible{outline:2px solid var(--noir);outline-offset:2px}
@@ -1636,13 +1650,7 @@ body[data-view="chat"] .share-notice{position:static;margin:0 var(--space-contro
 .ajpages .task-card .aj-btn { margin-top:0; }
 .ajpages .bots-tabs { gap:var(--space-control); }
 
-/* P120: owner-controlled, non-modal update notice. */
-.version-notice{position:relative;z-index:2;padding:var(--space-control);margin:var(--space-control);border:1px solid var(--ink);border-radius:12px;background:var(--pg);color:var(--ink);display:flex;flex-direction:column;gap:var(--space-content);flex-shrink:0}
-.version-notice[hidden]{display:none}
-.version-notice p{margin:0;line-height:1.5}
-.version-notice>div{display:flex;flex-wrap:wrap;gap:var(--space-control)}
-.version-notice button{min-height:56px;padding:var(--space-control);border:1px solid currentColor;border-radius:10px;background:transparent;color:inherit;font:inherit;cursor:pointer}
-#version-refresh{background:#b7e396;color:#141414;font-weight:700}
+/* P120: owner-controlled, non-modal update notice — since P150 the global centred dialog (.gdlg, end of file). */
 /* 0.18 (ADR-A193): the one opening card and 「我的 Agent 会什么」 — touch targets ≥ 56px, no horizontal overflow at 360px */
 .ajmodal.lt{z-index:58}
 .lt .box{overflow-x:hidden}
@@ -1731,3 +1739,66 @@ body[data-view="chat"] .share-notice{position:static;margin:0 var(--space-contro
 .elev.interpreter #elev-title,.elev.interpreter #elev-note,.elev.interpreter .mono{color:var(--danger,#c62828)}
 
 #cmd.sandbox{font-family:var(--font-body,sans-serif);white-space:pre-wrap;word-break:normal;overflow-wrap:break-word}
+
+/* ---- P150 「在办事项」 (PROTOCOL §22) ------------------------------------------------------------------------
+   The reply card's header is taller and the Agent's name sits lower; its right half (up to 2/3 of the width) holds one dot
+   per Agent working in the background, like a window's corner dots. Colours: only Leo's Heavy (dot) / Light (its blink)
+   pairs, in his order — the deeper ones first, the pale yellow / green / cyan last; the host fixes one pair per worker. */
+:root{
+  --busy-h0:#71bbde;--busy-l0:#c1e1f0; --busy-h1:#d1a7e8;--busy-l1:#ebd8f5; --busy-h2:#f7827e;--busy-l2:#fbc8c6;
+  --busy-h3:#dbb293;--busy-l3:#efddcf; --busy-h4:#f0aad4;--busy-l4:#f8daec; --busy-h5:#fcbe7c;--busy-l5:#fee2c5;
+  --busy-h6:#f7e17c;--busy-l6:#fbf2c5; --busy-h7:#b7e396;--busy-l7:#dff3d1; --busy-h8:#78dedc;--busy-l8:#c4f0f0;
+}
+[data-c="0"]{--h:var(--busy-h0);--l:var(--busy-l0)} [data-c="1"]{--h:var(--busy-h1);--l:var(--busy-l1)}
+[data-c="2"]{--h:var(--busy-h2);--l:var(--busy-l2)} [data-c="3"]{--h:var(--busy-h3);--l:var(--busy-l3)}
+[data-c="4"]{--h:var(--busy-h4);--l:var(--busy-l4)} [data-c="5"]{--h:var(--busy-h5);--l:var(--busy-l5)}
+[data-c="6"]{--h:var(--busy-h6);--l:var(--busy-l6)} [data-c="7"]{--h:var(--busy-h7);--l:var(--busy-l7)}
+[data-c="8"]{--h:var(--busy-h8);--l:var(--busy-l8)}
+.read>.rmhd{min-height:52px;margin:0 0 4px;padding-top:6px}
+.read>.rmhd .speaker,.read>.rmhd .t{flex:none;white-space:nowrap}
+.read>.rmhd .speaker{cursor:help;overflow:hidden;text-overflow:ellipsis;max-width:50%}
+.busy-dots{-webkit-appearance:none;appearance:none;margin:0 0 0 auto;border:0;background:none;color:inherit;font:inherit;cursor:pointer;
+  min-width:44px;max-width:66%;height:44px;padding:0 2px;display:flex;align-items:center;justify-content:flex-end;gap:9px;flex:0 1 auto}
+.busy-dots[hidden],body[data-conn=off] .busy-dots{display:none}
+.busy-dots i,.busy-big i,.busy-list i{display:block;flex:none;border-radius:50%;background:var(--h);
+  box-shadow:0 0 0 1px rgba(20,20,20,.08);animation:busy-blink 2.4s ease-in-out infinite}
+.busy-dots i{width:12px;height:12px}
+.busy-dots b{font:500 calc(12px*var(--fz))/1 var(--font-title);color:var(--ink-soft);letter-spacing:.02em}
+.busy-dots:focus-visible{outline:2px solid var(--noir);outline-offset:2px;border-radius:999px}
+@keyframes busy-blink{0%,100%{background:var(--h)}50%{background:var(--l)}}
+.busy-list i.still{animation:none;width:10px;height:10px}
+@media(prefers-reduced-motion:reduce){.busy-dots i,.busy-big i{animation:none}}
+
+/* ---- P150 Global Design: the centred rounded-square dialog (gdlg) ----------------------------------------------
+   One shell for 「在办事项」 and 「服务器已升级」 (and later others): a soft blur over the page, a square in the middle, Lotion
+   in light, deep Noir in dark. ESC / a tap outside closes it (agentj-ui-spacing-and-esc, layers.js). */
+.gdlg{position:fixed;inset:0;z-index:100;display:grid;place-items:center;padding:var(--space-content);
+  background:rgba(20,20,20,.42);-webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px);--dbg:var(--c-lotion,#faf9f5);--dfg:#141414}
+.gdlg[hidden]{display:none}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]) .gdlg{--dbg:#1f1e1b;--dfg:#faf9f5}}
+:root[data-theme="dark"] .gdlg{--dbg:#1f1e1b;--dfg:#faf9f5}
+.gdlg .sq{width:min(80vw,312px);min-height:min(80vw,312px);max-height:calc(100% - 2 * var(--space-content));border-radius:36px;
+  background:var(--dbg);color:var(--dfg);box-shadow:0 18px 50px rgba(20,20,20,.28);display:flex;flex-direction:column;align-items:center;
+  text-align:center;padding:26px 22px 18px;overflow:auto;scrollbar-width:none;animation:gdlg-in .18s var(--re) both}
+@keyframes gdlg-in{from{opacity:0;transform:scale(.94)}to{opacity:1;transform:none}}
+@media(prefers-reduced-motion:reduce){.gdlg .sq{animation:none}}
+.gdlg h2{margin:0;font:600 calc(17px*var(--fz))/1.3 var(--font-title)}
+.gdlg p{margin:var(--space-control) 0 0;font:400 calc(14px*var(--fz))/1.5 var(--font-body);opacity:.75}
+.gdlg .gdlg-sub{margin:4px 0 var(--space-control);font-size:calc(13px*var(--fz));opacity:.62}
+.gdlg-icon{width:64px;height:64px;flex:none;border-radius:50%;display:grid;place-items:center;background:var(--c-idle);color:#faf9f5;margin:6px 0 var(--space-content)}
+.gdlg-icon svg{width:30px;height:30px}
+.gdlg-row{display:flex;gap:var(--space-control);width:100%;margin-top:auto;padding-top:var(--space-content)}
+.gdlg-row button{flex:1;min-height:48px;padding:0 var(--space-control);border-radius:999px;border:1.5px solid currentColor;background:none;
+  color:inherit;font:600 calc(15px*var(--fz))/1 var(--font-body);cursor:pointer}
+.gdlg-row button.go{background:var(--dfg);color:var(--dbg);border-color:var(--dfg)}
+.gdlg-row button:focus-visible{outline:2px solid var(--dfg);outline-offset:3px}
+.busy-big{display:flex;gap:9px;margin:2px 0 var(--space-control)}
+.busy-big i{width:14px;height:14px}
+.busy-list{list-style:none;margin:0;padding:0;align-self:center;display:flex;flex-direction:column;gap:7px;text-align:left;min-width:0;max-width:100%}
+.busy-list li{display:flex;align-items:center;gap:10px;font:400 calc(14px*var(--fz))/1.25 var(--font-body);min-width:0}
+.busy-list b{font-weight:600;min-width:4.6em;white-space:nowrap}
+.busy-list span{opacity:.72;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.gdlg .sq[data-n="4"] .busy-big,.gdlg .sq[data-n="5"] .busy-big,.gdlg .sq[data-n="6"] .busy-big,.gdlg .sq[data-n="7"] .busy-big,
+.gdlg .sq[data-n="8"] .busy-big,.gdlg .sq[data-n="9"] .busy-big{display:none}
+.gdlg .sq[data-n="4"] .busy-list,.gdlg .sq[data-n="5"] .busy-list,.gdlg .sq[data-n="6"] .busy-list,.gdlg .sq[data-n="7"] .busy-list,
+.gdlg .sq[data-n="8"] .busy-list,.gdlg .sq[data-n="9"] .busy-list{gap:5px}

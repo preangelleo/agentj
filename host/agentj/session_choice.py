@@ -180,7 +180,7 @@ def candidates(directory: str) -> list[dict]:
     root = Path(os.environ.get("CLAUDE_CONFIG_DIR") or Path.home() / ".claude")
     slug = re.sub(r"[^A-Za-z0-9]", "-", os.path.realpath(directory))
     rows = []
-    for d in claude_sessions(directory):
+    for d in claude_sessions(directory, "", True):     # P147: never a headless `claude -p` / background job
         sid = d.get("sessionId")
         if not isinstance(sid, str) or not re.fullmatch(r"[0-9A-Za-z-]{8,64}", sid):
             continue

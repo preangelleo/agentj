@@ -44,6 +44,11 @@ UNAVAILABLE = 'Agent J phone not connected — confirm on this computer.'
 TOKEN_DIR = 'shared-hook'        # <state>/shared-hook/<claude pid>.token (0600): the served session's hook token (A14)
 SPOOL = 'shared-missed.jsonl'     # requests that stayed with the native dialog while the host was unreachable
 RECONNECT_S = 150                 # PermissionRequest: keep trying a host that is restarting (< the 180 s hook timeout)
+# P147: a new / resumed / cleared / compacted Claude Code session whose Agent J is not answering learns how to reconnect.
+RECONNECT = ("[Agent J] The owner's phone link (Agent J) is not answering on this computer, so the phone/web page may show "
+             "grey or disconnected. Run `agentj status --json`; if agent_status is not idle or working, run "
+             "`agentj doctor --reconnect` here (it repairs the service, the relay and attaches the session that runs it) and "
+             "tell the owner its one-line result. If it still fails, follow the agentj-manual support steps.")
 BLOCKED = 'Agent J phone not connected; high-risk action blocked (this harness cannot hand it to a native prompt).'
 
 
@@ -332,8 +337,11 @@ def fallback(name, family, event, valid_execution):
 
     None means "no decision": native rules and the native dialog decide. P139 (A5): Claude's high-risk / hook-file
     PreToolUse is never silently handed back to native rules (which may auto-allow it) — it returns ask, so a person
-    confirms it at this computer. Codex/OpenCode cannot ask from PreToolUse: native rules, as before.
+    confirms it at this computer. Codex/OpenCode cannot ask from PreToolUse: native rules, as before. P147: SessionStart of a Claude session only
+    adds context (how to reconnect) — never a decision.
     """
+    if name == 'SessionStart' and family == 'claude' and not event.get('agent_id'):
+        return {'additionalContext': RECONNECT}
     if family == 'claude' and name == 'PreToolUse' and valid_execution:
         try:
             why = _risk(event)
@@ -341,6 +349,8 @@ def fallback(name, family, event, valid_execution):
             why = 'Agent J could not check this call'
         if why:
             return {'permissionDecision': 'ask', 'permissionDecisionReason': 'Agent J offline: ' + str(why)[:200]}
+    # F14: no Agent J decision. Native hooks/rules and dialogs remain authoritative.
+    # Crucially this is neither allow nor an amendment to the session's permissions.
     return None
 
 

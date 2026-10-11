@@ -268,40 +268,98 @@ def binary_env_mismatches(n: str) -> list[str]:
     return [key for key, value in installed.items() if key in saved and value != saved[key]]
 
 
-def load_launch_binary_env() -> None:
-    # Launchd has no EnvironmentFile directive. Only our service sets this path;
-    # loading binary assignments here avoids baking them into the plist.
-    path = os.environ.get("AGENTJ_SERVICE_ENV_FILE")
-    if path:
-        os.environ.update(binary_env(path))
-        os.environ.update(claude_env(path))
-
-
 CLAUDE_AUTH_ENV = (TOKEN_ENV, "ANTHROPIC_API_KEY")
+KNOWN_KEY_ENV = frozenset((*CLAUDE_AUTH_ENV, "ANTHROPIC_AUTH_TOKEN", "CODEX_API_KEY",
+    "OPENAI_API_KEY", "OPENROUTER_API_KEY", "ELEVENLABS_API_KEY", "GEMINI_API_KEY",
+    "GOOGLE_API_KEY", "AGENTJ_TELEGRAM_BOT_TOKEN", "TELEGRAM_BOT_TOKEN"))
+KEY_ENV_RE = re.compile(r"[A-Z][A-Z0-9_]{0,79}")
+
+
+def referenced_key_env(value) -> set[str]:
+    """Walk configuration data only; names never imply copying values into configuration."""
+    names = set()
+    if isinstance(value, dict):
+        for key, item in value.items():
+            if isinstance(key, str) and key.endswith("key_env") and isinstance(item, str) and KEY_ENV_RE.fullmatch(item):
+                names.add(item)
+            names.update(referenced_key_env(item))
+    elif isinstance(value, list):
+        for item in value:
+            names.update(referenced_key_env(item))
+    return names
+
+
+def private_env(path: str, allowed, reason="bad_service_env") -> dict:
+    """Open without following a symlink; validate the opened inode before reading any bytes.
+    No shell execution, partial environment updates, raw parser errors or value diagnostics.
+    """
+    import stat
+    try:
+        fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+    except FileNotFoundError:
+        return {}
+    except OSError:
+        raise ServiceError(reason, MESSAGES[reason]) from None
+    try:
+        with os.fdopen(fd, "r") as stream:
+            info = os.fstat(stream.fileno())
+            if not stat.S_ISREG(info.st_mode) or stat.S_IMODE(info.st_mode) != 0o600 or info.st_uid != os.getuid():
+                raise ServiceError(reason, MESSAGES[reason])
+            out = {}
+            for line in stream:
+                key, sep, value = line.strip().partition("=")
+                if not sep or key not in allowed:
+                    continue
+                try:
+                    parts = shlex.split(value, comments=True, posix=True)
+                except ValueError:
+                    raise ServiceError(reason, MESSAGES[reason]) from None
+                if len(parts) != 1 or not parts[0] or "\0" in parts[0]:
+                    raise ServiceError(reason, MESSAGES[reason])
+                out[key] = parts[0]
+            return out
+    except (OSError, UnicodeError):
+        raise ServiceError(reason, MESSAGES[reason]) from None
+
+
+def load_launch_binary_env(cfg=None) -> None:
+    # Launchd has no EnvironmentFile. The plist contains only the private file's path.
+    path = os.environ.get("AGENTJ_SERVICE_ENV_FILE")
+    if not path:
+        return
+    from . import preferences, telegram, harness, relay_auth
+    from .state import State
+    st = State()
+    names = set(KNOWN_KEY_ENV) | set(CAPTURED_ENV[1:]) | set(harness.OPENCODE_KEY_ENV) | set(relay_auth.NAMES)
+    if st.exists():
+        names.update(referenced_key_env(st.config()))
+        names.update(referenced_key_env(telegram.enrollment(st)))
+    if cfg is None:
+        try:
+            cfg = preferences.read()[1]
+        except preferences.ConfigError:
+            cfg = {}  # The configuration validator owns its error; never load arbitrary names.
+    names.update(referenced_key_env(cfg))
+    os.environ.update(private_env(path, names))
 
 
 def claude_env(path: str) -> dict:
-    """Owner-created private env only, no shell evaluation, no logging of values."""
-    import stat
-    p = Path(path)
-    try:
-        info = p.lstat()
-    except FileNotFoundError:
-        return {}
-    if not stat.S_ISREG(info.st_mode) or stat.S_IMODE(info.st_mode) != 0o600 or info.st_uid != os.getuid():
-        raise ServiceError("bad_claude_env")
-    out = {}
-    for line in p.read_text().splitlines():
-        key, sep, value = line.strip().partition("=")
-        if sep and key in CLAUDE_AUTH_ENV:
-            try:
-                parts = shlex.split(value, comments=True, posix=True)
-            except ValueError:
-                raise ServiceError("bad_claude_env") from None
-            if len(parts) != 1 or not parts[0]:
-                raise ServiceError("bad_claude_env")
-            out[key] = parts[0]
-    return out
+    return private_env(path, CLAUDE_AUTH_ENV, "bad_claude_env")
+
+
+def missing_key_message(key_name: str, environment="CLI") -> str:
+    # Names are validated configuration fields; values never enter this message.
+    if not isinstance(key_name, str) or not KEY_ENV_RE.fullmatch(key_name):
+        key_name = "configured key"
+    if environment == "service":
+        if platform() == "macos":
+            fix = ("write it locally to " + tilde(env_file(name())) +
+                   " (owner-owned regular file, chmod 600; no symlink), then run agentj service restart")
+        else:
+            fix = "set it in the service environment file, then run agentj service restart"
+    else:
+        fix = "set it in this terminal's environment, then retry the command"
+    return f"{key_name} is absent from the {environment} environment; {fix}; never paste the value in chat"
 
 
 # ------------------------------------------------------------------ Linux: systemd --user
@@ -770,6 +828,7 @@ def _write(path: str, data: bytes, mode: int) -> None:
 
 
 MESSAGES = {
+    "bad_service_env": "Service env must be an owner-owned regular 0600 file with valid assignments; no symlinks. Fix ~/Library/LaunchAgents/net.agentj.host.env locally (chmod 600), then run agentj service restart; never paste values in chat",
     "bad_claude_env": "Claude 服务 env 文件须为主人所有的普通 0600 文件，且赋值格式正确 / Claude service env must be an owner-owned regular 0600 file with valid assignments",
     "bad_binary_env": "AGENTJ_*_BIN 路径格式无效：检查服务 env 文件 / invalid harness path in service environment file",
     "bad_name": "服务名不合规（AGENTJ_SERVICE_NAME） / invalid service name",

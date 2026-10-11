@@ -69,7 +69,7 @@ Ubuntu 24.04 还会检查 AppArmor 对用户命名空间的限制，并实际试
 AI 安装电脑端程序 `agentj`，装的是固定的一个版本：
 
 ```bash
-uv tool install "git+https://github.com/preangelleo/agentj@v0.18.3a1#subdirectory=host"
+uv tool install "git+https://github.com/preangelleo/agentj@v0.18.4a1#subdirectory=host"
 agentj doctor
 ```
 
@@ -214,3 +214,6 @@ Intel Mac 安装和升级都会限制 `cryptography<49`。如果旧安装器报 
 ## 离开电脑前
 
 两端配好后，趁你还在电脑前，让 Agent 把以后远程工作要你本人帮忙的事一次做完并验证，见[离开电脑前，先把这些事一次做好](/docs/first-run/)。Google 邮件、日历、YouTube 的接口授权见[连接 Google](/docs/google/)。
+
+
+macOS 后台服务的 Telegram 和服务商密钥写在 `~/Library/LaunchAgents/net.agentj.host.env`，使用配置里 `key_env` 指定的变量名；文件必须由你本人拥有、权限为 0600，不能是软链。保存后运行 `agentj service restart`。不要把密钥写进 plist、聊天或命令参数。

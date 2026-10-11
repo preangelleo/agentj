@@ -69,7 +69,7 @@ It may need you here:
 The AI installs `agentj`, the program on your computer, at one fixed version:
 
 ```bash
-uv tool install "git+https://github.com/preangelleo/agentj@v0.18.3a1#subdirectory=host"
+uv tool install "git+https://github.com/preangelleo/agentj@v0.18.4a1#subdirectory=host"
 agentj doctor
 ```
 
@@ -213,3 +213,6 @@ Give each person an OS user, a paid seat, their own installation code and phone 
 ## Before you leave the computer
 
 With both remotes paired, let your Agent finish and verify everything remote work will need from you while you are still at the computer. See [Before you leave your computer](/docs/first-run/). For Gmail, Calendar and YouTube API access, see [Connect Google](/docs/google/).
+
+
+On macOS, put Telegram and provider keys in `~/Library/LaunchAgents/net.agentj.host.env`, using the variable name specified by `key_env`. The file must be owned by your user, mode 0600, and not a symlink. After saving it, run `agentj service restart`. Keep keys out of the plist, chat and command arguments.

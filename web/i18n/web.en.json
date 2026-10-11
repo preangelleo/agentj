@@ -781,7 +781,7 @@
       "hPage": "Paging (outside the field)",
       "hRead": "Reading (outside the field)",
       "hAtt": "Attachments / voice",
-      "hClear": "Clear and interrupt",
+      "hClear": "Clear",
       "i": "Enter the field; Esc closes overlays first and otherwise keeps your draft",
       "ae": "Start / end of the line",
       "uk": "Delete to the start / end of the line",
@@ -791,8 +791,8 @@
       "j": "Previous (older)",
       "k": "Next (newer)",
       "g": "Newest / oldest",
-      "o": "Expand / collapse the message",
-      "scroll": "Scroll up / down inside the reply",
+      "o": "Expand / collapse the message (`↑` expands, `↓` folds)",
+      "scroll": "Scroll up / down inside the reply (once the message is already open / folded)",
       "space": "Space",
       "spaceDd": "Down one screen (`Shift`+`Space` up)",
       "dbl": "double-tap the card",
@@ -809,9 +809,10 @@
       "mm": "Lock the recording, it keeps going; any key ends it, Esc cancels",
       "mic": "Lock the recording, it keeps going; tap again to finish, Esc cancels",
       "ee": "Outside the field: clear the text and attachments",
-      "eei": "Already empty (≥ 1 s): interrupt the current task",
+      "eei": "Esc never interrupts the Agent — to stop the current task, use the stop button or send /stop",
       "ok": "Got it",
-      "s": "Open Settings"
+      "s": "Open Settings",
+      "lr": "In the field: `←` `→` turn the card when it is empty or the cursor is already at that end"
     },
     "silentTurn": "Silent turn {time}",
     "update": {
@@ -826,7 +827,8 @@
     "replyCompacting": "Compacting the context…",
     "newReply": "New message — jump to latest",
     "queue": {
-      "card": "Queued — the computer picks it up when it is free",
+      "card": "Received — the assistant is finishing the previous task and takes this next",
+      "ahead": "{n} ahead",
       "note": "Not given to the Agent yet; tap Cancel to take it back"
     }
   },
@@ -1374,6 +1376,18 @@
   },
   "ver.new": "A newer Agent J version ({v}) is available. Your phone/web page has not been updated yet. Tap the settings icon at the top right → “Update and reload”, or use the button below.",
   "ver.later": "Later",
+  "ver.title": "Server upgraded",
+  "ver.body": "Agent J is now {v}. Refresh the page to use the new version.",
+  "ver.refresh": "Refresh",
+  "busy.temp": "Helper",
+  "busy.aria": "{n} agents at work in the background — tap to see who",
+  "busy.title": "{n} agents at work in the background",
+  "busy.title1": "1 agent at work in the background",
+  "busy.sub": "{a} is watching them for you",
+  "busy.close": "Got it",
+  "busy.lk.schedule": "Scheduled",
+  "busy.lk.dispatch": "Dispatched",
+  "r.agent.tip": "Your Agent's name — change it with agentj name on your computer",
   "lt": {
     "kicker": "Before we start",
     "what": "What this does",

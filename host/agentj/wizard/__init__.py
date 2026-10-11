@@ -332,6 +332,16 @@ def core_reference(lang: str | None = None) -> str:
     return CORE_REF + "\n" + text + "\n<!-- /agentj:main-core -->\n"
 
 
+# P149 (core v10): the main Agent records the owner's delegation boundary here, one line per decision type.
+DELEGATION_SECTION = {
+    "zh": "\n## 放权规则\n\n董事长说「这种不用问我」「这类你定」「以后不用报」或「这种要先问我」时，按决策类型记一条："
+          "决策类型 · 直接定 / 先请示 · 董事长原话 · 日期。不解除危险操作审批。\n",
+    "en": "\n## Delegation rules\n\nWhen the Chairman says \"don't ask me about this\", \"you decide this kind\", \"no need to report this\" "
+          "or \"ask me first about this\", add one line per decision type: decision type · decide / ask first · the Chairman's words · date. "
+          "Never lifts dangerous-operation approvals.\n",
+}
+
+
 def bootstrap_root(root: Path, harnesses: list[str] | None = None, lang: str | None = None) -> list[dict]:
     """Seed root routing docs before the interview; never replace any pre-existing file.
 
@@ -355,7 +365,7 @@ def bootstrap_root(root: Path, harnesses: list[str] | None = None, lang: str | N
                         "Brief time: TBD. Keep workflow/global skills and registry consistent; owners repair business work.\n"),
         "ROLES.md": "# CEO roster\n\n| Workflow | CEO entry | Execution | Report location | Status |\n|---|---|---|---|---|\n\nNo workflows registered yet. Run the wizard; every workflow owns its CEO folder and VERDICT report.\n",
         "NEXT_SESSION.md": "Working root recorded; files were not moved. Next: workflow wizard and CEO roster.\n",
-        "MEMORY.md": "Working root: this folder. New workflows are direct lowercase-hyphen children. Existing locations remain unchanged.\nNever store credentials here.\n",
+        "MEMORY.md": "Working root: this folder. New workflows are direct lowercase-hyphen children. Existing locations remain unchanged.\nNever store credentials here.\n" + DELEGATION_SECTION["en"],
     }
     if zh:
         body = core_reference(lang) + "\n" + intro + "\n\n新会话先读：" + "、".join("documentation/" + x for x in BOOT_SET) + "。\n"
@@ -367,7 +377,7 @@ def bootstrap_root(root: Path, harnesses: list[str] | None = None, lang: str | N
             "WORKFLOW.md": "查 ROLES，把业务交对应 CEO（子会话、headless 或定时任务）；没有负责人就提议建工作流。\n读实际报告及 VERDICT: ok|attention|fail；退出码不能证明成功，缺失或跳过仍是未完成。\n故障证据派给所属 CEO 修复并重跑，读新报告再关闭。\n晨报：读全部夜间报告，只报做了什么、需要人决定什么；跳过不能算正常。晨报时间待定。\n维护全部工作流与 global skills、花名册；业务修理归对应 CEO。\n",
             "ROLES.md": "# CEO 花名册\n\n| 工作流 | CEO 入口 | 执行方式 | 报告位置 | 状态 |\n|---|---|---|---|---|\n\n尚未注册工作流。运行向导；每个工作流拥有自己的 CEO 子目录和 VERDICT 报告。\n",
             "NEXT_SESSION.md": "工作根目录已记录，已有文件未搬动。下一步：工作流向导与 CEO 花名册。\n",
-            "MEMORY.md": "本目录是工作根目录。新工作流建一层小写、连字符子目录。已有位置不变。不存凭据。\n",
+            "MEMORY.md": "本目录是工作根目录。新工作流建一层小写、连字符子目录。已有位置不变。不存凭据。\n" + DELEGATION_SECTION["zh"],
         }
     files = {ENTRY[h]: body.encode() for h in harnesses}
     for name, content in contents.items():

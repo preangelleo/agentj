@@ -14,6 +14,14 @@ list. Never change native permission settings to suppress phone cards.
 Claude uses the production relay's authenticated local socket transport and its
 foreground/background-aware committed Stop state machine. Registry idle cannot
 complete a turn; Stop's final payload owns completion even before transcript flush.
+A turn that ends on a tool call (ScheduleWakeup, Monitor, …) sends no Stop hook; Claude
+Code still records its end (`system/turn_duration`). With no Stop within 1 s that recorded
+end commits the turn with its last assistant text (P151); owner turns whose answer sits only
+in the final message's visible thinking use that. No text at all → an honest 「已结束，但没有
+写文字回复」, not 「未确认」. A Stop later than the recorded end is not delivered twice.
+After a compaction (or a /clear with `~/.local/state/agentj/handoff/clear.md`) and 1.5 s with no new turn, Agent J sends
+one 〔Agent J 系统提示〕 message itself — read the handoff (`…/handoff/compact.md`), then carry on — and the phone shows
+「压缩完成，Agent 正在恢复上下文」. A phone /compact first asks for the handoff when it is missing or stale (P151).
 New desktop input and final reply mirror to encrypted phone history. Native
 PermissionRequest decisions come from signed paired-phone approval and are logged.
 Project hooks merge with existing hooks and permission settings. Hook-disabled

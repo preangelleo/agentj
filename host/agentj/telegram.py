@@ -46,24 +46,31 @@ def configuration(st=None):
 
 IN_SERVE=False   # P142 (B14): set by serve itself — its own os.environ is the service environment
 
-def key_present(st,key_env):
+def key_status(st,key_env):
     """P142 (B14): is the bot key NAME set where the bot actually runs? While serve is running its service environment
     decides (asked over the control socket; only a yes/no comes back, never the value); a terminal's environment counts only
     when serve is not running. Raises names.ServeBusy when serve is there but does not answer."""
     if not IN_SERVE and st is not None and st.exists():
         from .names import ctl_call
         res=ctl_call(st,{'cmd':'env_present','name':key_env},5)
-        if res is not None and res.get('ok') is True:return res.get('present') is True
-    return bool(os.environ.get(key_env))
+        if res is not None:
+            if res.get('ok') is True:return res.get('present') is True, 'service'
+            from .service import ServiceError
+            raise ServiceError('bad_service_env', res.get('error', 'service key check failed'))
+    return bool(os.environ.get(key_env)), 'service' if IN_SERVE else 'CLI'
+
+def key_present(st,key_env):
+    return key_status(st,key_env)[0]
 
 def configured(st=None):
     """configuration() as the running serve sees it (doctor / setup checklist / enroll from a terminal). ServeBusy → False."""
     from .names import ServeBusy
+    from .service import ServiceError
     st=st or State()
     cfg=enrollment(st)
     if not cfg:return None
     try:return cfg if key_present(st,cfg['key_env']) else None
-    except ServeBusy:return None
+    except (ServeBusy, ServiceError):return None
 
 NOTICE='Telegram Bot API is not end-to-end encrypted: Telegram reads channel text/media. Your private chat and explicitly allowlisted groups can deliver content; approvals stay on the paired phone.'
 
@@ -73,9 +80,13 @@ def enroll(owner,key_env,confirm=None):
     if type(owner) is not int or owner<=0 or not re.fullmatch(r'[A-Z][A-Z0-9_]{0,79}',key_env):return {'ok':False,'error':'positive numeric owner ID and environment variable NAME required'}
     st=State()
     from .names import ServeBusy
-    try:present=key_present(st,key_env)   # P142 (B14): the running serve's environment, not this terminal's
+    from .service import ServiceError
+    try:present,environment=key_status(st,key_env)   # P142 (B14): the running serve's environment, not this terminal's
     except ServeBusy:return {'ok':False,'error':'Agent J is busy; try again in a moment'}
-    if not present:return {'ok':False,'error':'local bot key is absent from the Agent J service environment; never paste it in chat'}
+    except ServiceError as e:return {'ok':False,'error':e.detail or e.reason}
+    if not present:
+        from .service import missing_key_message
+        return {'ok':False,'error':missing_key_message(key_env,environment)}
     with st.config_lock():
         cfg=st.config();cfg['telegram']={'owner_id':owner,'key_env':key_env,'generation':uuid.uuid4().hex,'at':int(__import__('time').time())};st.write_private(st.config_path,json.dumps(cfg).encode())
     return {'ok':True,'notice':NOTICE}
@@ -116,9 +127,27 @@ def api(cfg,method,values,timeout=15):   # P136: every Bot API call is bounded (
             data=r.read(1024*1024+1)
             if len(data)>1024*1024:raise ValueError()
         result=json.loads(data)
-        if not result.get('ok'):raise TelegramError('not_ok')
+        if not result.get('ok'):
+            kind = 'parse_entities' if result.get('error_code') == 400 and "can't parse entities" in str(result.get('description', '')).lower() else 'not_ok'
+            raise TelegramError(kind)
         return result.get('result')
+    except urllib.error.HTTPError as e:
+        kind = failure_kind(e)
+        try:
+            if e.code == 400:
+                answer = json.loads(e.read(16384))
+                if "can't parse entities" in str(answer.get('description', '')).lower():kind = 'parse_entities'
+        except Exception:pass
+        finally:e.close()
+        raise TelegramError(kind) from None
     except Exception as e:raise TelegramError(failure_kind(e)) from None
+
+async def send_formatted(cfg, dest, rendered, plain):
+    try:
+        await asyncio.to_thread(api,cfg,'sendMessage',{'chat_id':dest,'text':rendered,'parse_mode':'HTML'})
+    except TelegramError as e:
+        if e.kind != 'parse_entities':raise
+        await asyncio.to_thread(api,cfg,'sendMessage',{'chat_id':dest,'text':plain})
 
 def upload(cfg,method,fields,field,name,mime,data,timeout=120):
     """P59 (F21 over Telegram): one multipart/form-data upload (sendPhoto / sendAudio / sendVideo / sendDocument). Fixed
@@ -662,10 +691,11 @@ class Telegram:
                 text=group_filter(text['text'],self.group(dest,uid_out).get('profile','proxy'),self.private_domains())
             if tid is not None:tg_cursor.outbox_set(self.root,tid,'sending')
             try:
-                for part in chunks(text):
+                from .tg_format import parts
+                for rendered, plain in parts(text):
                     if configuration(self.host.st)!=cfg or not self.enabled():break
                     if dest!=cfg['owner_id'] and not self.group(dest,uid_out):break
-                    await asyncio.to_thread(api,cfg,'sendMessage',{'chat_id':dest,'text':part})
+                    await send_formatted(cfg,dest,rendered,plain)
             except Exception:
                 if tid is not None:
                     self.host.st.log('telegram_uncertain',id=tid,reason='send_failed');tg_cursor.outbox_set(self.root,tid,None)

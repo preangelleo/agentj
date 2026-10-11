@@ -158,12 +158,17 @@ def _command_audio(text,cfg,timeout):
 
 def has_key(name): return bool(os.environ.get(name))
 
-def validate_runtime(cfg, *, telegram_enrolled=None):
+def validate_runtime(cfg, *, telegram_enrolled=None, environment="CLI"):
     """telegram_enrolled: what the running serve reported (P142 B14: it decides); None = no serve → this process's env."""
     if any(x.get("type")=="telegram" for x in p.get(cfg,"channels.items",[])):
-        from .telegram import configuration
+        from .telegram import configuration, enrollment
+        from .service import missing_key_message
         ok=bool(configuration()) if telegram_enrolled is None else telegram_enrolled is True
-        if not ok:raise p.ConfigError("channels.items","Telegram needs owner enrollment and a local bot key; run agentj channel add telegram in your terminal",code=2)
+        if not ok:
+            enrolled = enrollment()
+            if enrolled:
+                raise p.ConfigError("channels.items", missing_key_message(enrolled['key_env'], "service" if telegram_enrolled is not None else environment), code=2)
+            raise p.ConfigError("channels.items","Telegram needs owner enrollment; run agentj channel add telegram in your terminal",code=2)
     if p.get(cfg,"voice.wake_enabled"):
         from . import wake
         from .state import State
@@ -190,7 +195,8 @@ def validate_runtime(cfg, *, telegram_enrolled=None):
             known={'OPENAI_API_KEY':'openai','OPENROUTER_API_KEY':'openrouter','ELEVENLABS_API_KEY':'elevenlabs'}
             if env in known and known[env]!=provider:raise p.ConfigError(f'voice.{kind}.key_env','named key belongs to a different provider; choose your local key variable explicitly')
         if p.get(cfg,f'voice.{kind}.mode')=='cloud' and not has_key(p.get(cfg,f'voice.{kind}.key_env')):
-            raise p.ConfigError(f'voice.{kind}.key_env','selected cloud provider key is absent; set it locally, never in conversation')
+            from .service import missing_key_message
+            raise p.ConfigError(f'voice.{kind}.key_env',missing_key_message(p.get(cfg,f'voice.{kind}.key_env'),environment))
     if p.get(cfg,'voice.tts.mode')=='host' and not command_selected and not (shutil.which('say') or shutil.which('espeak-ng')):
         raise p.ConfigError('voice.tts.mode','host speech engine not installed; choose phone or install OS speech')
 

@@ -186,7 +186,10 @@ def welcome_prompt(kind: str, label: str, s: dict, lang: str) -> str:
             "owner sees there. Write it now, in English, short and warm, no tables, and do not mention this note:\n"
             "1. Introduce yourself: you are the owner's chief-of-staff assistant (Agent J's main Agent), the single entry point "
             "between the owner and every workflow and agent; you are online now and the first remote is paired. State only facts: "
-            "never invent how many workflows or agents there are.\n"
+            "never invent how many workflows or agents there are. Add two sentences on how work flows: Chairman → you, the chief "
+            "of staff → each workflow's CEO → its staff, so you hand work out and report back instead of doing it all yourself; "
+            "and when the owner says \"you don't need to ask me about this kind of thing\", you remember it and just do it next "
+            "time (dangerous operations still need their approval).\n"
             "2. Suggest that from now on the two of you talk in this window, not in the main Agent's terminal on the computer.\n"
             "3. Say you will show the window in a few small steps, one per reply: the owner answers (\"ok\", \"next\") and you "
             "give the next; \"skip\" ends the tour at once.\n"
@@ -210,7 +213,9 @@ def welcome_prompt(kind: str, label: str, s: dict, lang: str) -> str:
         + "）。你这条回复会直接显示在那个遥控器的聊天窗口里，是主人在那里看到的第一条消息。现在就写，用中文，口语、简短、亲切，"
         "不用表格，不要提这条系统消息：\n"
         "1. 自报家门：你是主人的董事长助理（Agent J 的主 Agent），是主人和所有工作流、所有 Agent 之间唯一的入口；你现在上线了，"
-        "第一个遥控器也配好了。只说真实情况，不要编造工作流或 Agent 的数量。\n"
+        "第一个遥控器也配好了。只说真实情况，不要编造工作流或 Agent 的数量。再加两句讲清怎么干活：董事长 → 你这个董事长助理 → "
+        "各工作流的 CEO → CEO 手下的员工，所以活由你派出去、你盯着、你汇报，不是你一个人全扛；主人说「这类事不用问我」，"
+        "你会记住，下次直接办（危险操作照样要主人批准）。\n"
         "2. 建议以后你们俩的对话都在这个窗口里进行，不用再回电脑上的主 Agent 那边打字。\n"
         "3. 说接下来分几小步带主人认识这个窗口，每次只讲一步：主人回一句（「好」「下一步」）再讲下一步；主人说「跳过」就马上结束。\n"
         "4. 这一条只讲第 1 步：屏幕颜色就是你的状态——绿色在等主人说话，蓝色在干活（这时也能发，消息会排队），"
@@ -232,10 +237,14 @@ def fallback_welcome(kind: str, s: dict, lang: str) -> str:
     if lang == "en":
         return ("I'm your chief-of-staff assistant, the main Agent of Agent J — the one entry point between you and every "
                 "workflow and agent. The first remote (" + KIND["en"][k] + ") is paired. From now on we can talk right here "
-                "instead of the terminal. " + missing_text(s, "en") + " Once the Agent is running, say \"hi\" and I'll show "
+                "instead of the terminal. It works as Chairman → me → each workflow's CEO → its staff: I hand work out and "
+                "report back. Tell me \"no need to ask me about this kind of thing\" and I'll remember it (dangerous operations "
+                "still need your approval). " + missing_text(s, "en") + " Once the Agent is running, say \"hi\" and I'll show "
                 "you this window step by step. Guide: " + MANUAL["en"])
     return ("我是你的董事长助理，Agent J 的主 Agent——你和所有工作流、所有 Agent 之间唯一的入口。第一个遥控器（" + KIND["zh"][k]
-            + "）已经配好了，以后咱们就在这个窗口里说话，不用回终端。" + missing_text(s, "zh")
+            + "）已经配好了，以后咱们就在这个窗口里说话，不用回终端。分工是：董事长 → 我 → 各工作流的 CEO → 员工，"
+            "活由我派出去、我盯着、我汇报。你说「这类事不用问我」，我会记住，下次直接办（危险操作照样要你批准）。"
+            + missing_text(s, "zh")
             + "Agent 启动后跟我说一声「你好」，我一步一步带你认识这个窗口。使用说明：" + MANUAL["zh"])
 
 

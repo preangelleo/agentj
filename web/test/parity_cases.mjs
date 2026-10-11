@@ -694,6 +694,13 @@ export async function runCases({ B, web, fake, only }) {
     await sendText('被接手的话');
     await wait(`document.getElementById('words').textContent.includes(${JSON.stringify(T('r.queue.card'))})`, 3000);
     ok(await ev(`!document.getElementById('sayCancel').hidden && !document.getElementById('outbox').hidden && document.getElementById('input').value === ''`), 'queued: × + pending line, field empty');
+    // P152 (P149 plan B): a second queued message's page says how many wait ahead of it; withdrawn again (× takes the latest)
+    await sendText('第二条排队的话');
+    await wait(`document.getElementById('words').textContent.includes(${JSON.stringify(T('r.queue.card') + ' · ' + T('r.queue.ahead', { n: 1 }))})`, 3000);
+    await click('#sayCancel');
+    await waitToast(T('r.say.withdrawn'));
+    await clearField();
+    await wait(`document.getElementById('words').textContent.includes(${JSON.stringify(T('r.queue.card'))}) && !document.getElementById('words').textContent.includes(${JSON.stringify(T('r.queue.ahead', { n: 1 }))})`, 3000);
     await fake.send({ t: 'status', s: 'idle', agent: 'claude', name: 'Wren' });
     await fake.deliverQueued();
     await wait(`document.getElementById('sayCancel').hidden && document.getElementById('outbox').hidden`);
@@ -1009,10 +1016,13 @@ export async function runCases({ B, web, fake, only }) {
     await wait(`document.body.dataset.status === 'working'`);
     await clearField(); await clearTray();
     await ev(`document.activeElement && document.activeElement.blur()`);
-    await sleep(1100);
-    await key(P, 'Escape', { code: 'Escape' }); await sleep(80); await key(P, 'Escape', { code: 'Escape' });
+    // P150 追加 12: Esc never interrupts; the explicit ≡ → /stop entry does.
+    const n = (fake.st.slashes || []).length;
+    await click('#slashBtn');
+    await wait(`!!document.querySelector('#menu [data-run="stop"]')`);
+    await click('#menu [data-run="stop"]');
     await sleep(400);
-    ok(fake.st.slashes.some((s) => s.cmd === 'stop'), 'Esc Esc on an empty composer → /stop');
+    ok(fake.st.slashes.slice(n).some((s) => s.cmd === 'stop'), '≡ → /stop interrupts the turn');
   });
   await C('aj-estop', async () => {
     fake.answer('estop', () => [{ t: 'ctl_res', ok: true }, { t: 'estop_state', on: true, by: 'Pixel' }]);
@@ -1200,12 +1210,34 @@ export async function runCases({ B, web, fake, only }) {
   await C('keys-panel', async () => {
     await click('#keysBtn');
     await wait(`!document.getElementById('keys').hidden`);
-    ok((await ev(`document.querySelectorAll('#keys dt').length`)) === 24 && (await ev(`document.querySelectorAll('#keys dd').length`)) === 24, 'all relay shortcuts listed + F13 s · Ctrl+, (Settings)');
+    ok((await ev(`document.querySelectorAll('#keys dt').length`)) === 25 && (await ev(`document.querySelectorAll('#keys dd').length`)) === 25, 'all relay shortcuts listed + F13 s · Ctrl+, (Settings) + P150 ← → in the field');
     await click('#keysClose');
   });
   await C('key-j-older', async () => { await blur(); await key(P, 'j', { code: 'KeyJ' }); await wait(`document.getElementById('pg').textContent === '3 / 4'`); });
   await C('key-k-newer', async () => { await key(P, 'k', { code: 'KeyK' }); await wait(`document.getElementById('pg').textContent === '4 / 4'`); await key(P, 'ArrowLeft', { code: 'ArrowLeft' }); await wait(`document.getElementById('pg').textContent === '3 / 4'`); await key(P, 'ArrowRight', { code: 'ArrowRight' }); await wait(`document.getElementById('pg').textContent === '4 / 4'`); });
   await C('key-o-origin', async () => { await key(P, 'o', { code: 'KeyO' }); await wait(`document.getElementById('om').classList.contains('open')`); await key(P, 'o', { code: 'KeyO' }); await wait(`!document.getElementById('om').classList.contains('open')`); });
+  // P150 追加 11: outside the field ↑ expands the message card (= o) and ↓ folds it.
+  await C('key-updown-origin', async () => {
+    await blur();
+    await key(P, 'ArrowUp', { code: 'ArrowUp' }); await wait(`document.getElementById('om').classList.contains('open')`);
+    await key(P, 'ArrowDown', { code: 'ArrowDown' }); await wait(`!document.getElementById('om').classList.contains('open')`);
+  });
+  // P150 追加 10: in the field ← / → turn the card when the caret has nowhere to go; otherwise they move the caret.
+  await C('key-lr-field-edge', async () => {
+    const pgIs = (s) => wait(`document.getElementById('pg').textContent === '${s}'`);
+    await ev(`(() => { const i = document.getElementById('input'); i.focus(); i.value = ''; i.dispatchEvent(new Event('input')); })()`);
+    await key(P, 'ArrowLeft', { code: 'ArrowLeft' }); await pgIs('3 / 4');
+    await key(P, 'ArrowRight', { code: 'ArrowRight' }); await pgIs('4 / 4');
+    await ev(`(() => { const i = document.getElementById('input'); i.value = 'ab'; i.dispatchEvent(new Event('input')); i.setSelectionRange(1, 1); })()`);
+    await key(P, 'ArrowLeft', { code: 'ArrowLeft' }); await sleep(150);
+    ok((await ev(`document.getElementById('input').selectionStart`)) === 0 && (await ev(`document.getElementById('pg').textContent`)) === '4 / 4', 'with text, ← moves the caret first');
+    await key(P, 'ArrowLeft', { code: 'ArrowLeft' }); await pgIs('3 / 4');
+    await ev(`document.getElementById('input').setSelectionRange(2, 2)`);
+    await key(P, 'ArrowRight', { code: 'ArrowRight' }); await pgIs('4 / 4');
+    await key(P, 'ArrowLeft', { code: 'ArrowLeft', shift: true }); await sleep(150);
+    ok((await ev(`document.getElementById('pg').textContent`)) === '4 / 4' && (await ev(`document.getElementById('input').value`)) === 'ab', 'Shift+← is never taken; the draft is kept');
+    await ev(`(() => { const i = document.getElementById('input'); i.value = ''; i.dispatchEvent(new Event('input')); i.blur(); })()`);
+  });
   await C('key-space-page', async () => { await ev(`document.getElementById('main').scrollTop = 0`); await key(P, ' ', { code: 'Space', text: ' ' }); await wait(`document.getElementById('main').scrollTop > 200`); await key(P, ' ', { code: 'Space', shift: true, text: ' ' }); await wait(`document.getElementById('main').scrollTop < 50`); });
   await C('key-f-reader', async () => { await key(P, 'f', { code: 'KeyF' }); await wait(`!document.getElementById('rd').hidden`); });
   await C('key-reader-plusminus', async () => {
@@ -1255,15 +1287,17 @@ export async function runCases({ B, web, fake, only }) {
     await wait(`document.getElementById('input').value === '' && !document.querySelectorAll('#tray .chip').length`);
     await waitToast(T('r.clear.done'));
   });
-  await C('key-esc-esc-interrupt', async () => {
+  // P150 追加 12: Esc never interrupts the Agent — not on an empty field, not after waiting, not pressed many times.
+  await C('key-esc-never-interrupts', async () => {
     await fake.send({ t: 'status', s: 'working', agent: 'claude', name: 'Wren' });
     await wait(`document.body.dataset.status === 'working'`);
     await sleep(1100);
     await blur();
     const n = (fake.st.slashes || []).length;
-    await key(P, 'Escape', { code: 'Escape' }); await sleep(60); await key(P, 'Escape', { code: 'Escape' });
-    await waitToast(T('r.int.sent'));
-    ok(fake.st.slashes.length === n + 1 && fake.st.slashes[n].cmd === 'stop', 'slash stop');
+    for (let i = 0; i < 6; i++) { await key(P, 'Escape', { code: 'Escape' }); await sleep(60); }
+    await sleep(400);
+    ok((fake.st.slashes || []).length === n, 'no slash stop from Escape');
+    ok((await ev(`document.body.dataset.status`)) === 'working', 'the turn keeps running');
   });
   await C('key-a-p-c', async () => {
     await P.send('Page.setInterceptFileChooserDialog', { enabled: true });

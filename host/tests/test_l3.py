@@ -468,13 +468,26 @@ class WheelInstall(unittest.TestCase):
         cut_bytes=sum(i.compress_size+76+2*len(i.filename.encode())+2*len(i.extra)+len(i.comment) for i in cut_entries)
         self.assertEqual(len(cut_entries),2)
         self.assertLessEqual(cut_bytes,12288,'P117 cut-over allocation is bounded')
+        # P147 (0.18.4): the reconnect command and its skill get their own explicit 8 KiB allocation, same accounting; flagged
+        # to Jarvis. The self-heal itself (shared.py, the identity line, CLI flags) stays inside the core ceiling.
+        p147=[i for i in zipfile.ZipFile(self.wheel).infolist() if i.filename=='agentj/reconnect.py' or i.filename.startswith('agentj/skills/agentj-reconnect/')]
+        p147_bytes=sum(i.compress_size+76+2*len(i.filename.encode())+2*len(i.extra)+len(i.comment) for i in p147)
+        self.assertEqual(len(p147),2)
+        self.assertLessEqual(p147_bytes,8192,'P147 reconnect allocation is bounded')
         # P135 (0.18.2 integration of P131–P134 + the shared-turn reply fix): an explicit 8 KiB core increment, flagged to Jarvis.
         # P139 (0.18.3 shared-mode trust boundary: ctl_auth, hook token/watch, never-yield): another explicit 8 KiB, flagged to Jarvis.
         # P142 (0.18.3 host reliability: diskq, _bg, B14/A12/B15/B17/B19): a further explicit 8 KiB, flagged to Jarvis (P143 integration keeps both).
         # P143 (0.18.3 integration: P137 opaque classifier, P138 fence refuse + passkey launch, P140 channel provenance, P141 installer
         # verify / bots route): the merged security code needs a further explicit 12 KiB (measured +10.6 KiB), flagged to Jarvis.
-        self.assertLess(pathlib.Path(self.wheel).stat().st_size-bot_bytes-lt_bytes-browser_bytes-p115_bytes-cut_bytes,2_260_000+8192+8192+8192+12288,'P118 approved bounded core ceiling + P135 + P139 + P142 + P143 increments')
-        self.assertLess(pathlib.Path(self.wheel).stat().st_size,2_260_000+8192+8192+8192+12288+65536+40960+49152+32768+12288,'combined bounded allocations')
+        # P149 (0.18.4 main-Agent core v10, zh+en delegate-first paragraphs + seeded MEMORY.md section): an explicit 4 KiB, flagged to Jarvis.
+        # P150 (0.18.4 「在办事项」: busy.py board + hooks, the manual's new paragraph): a further explicit 8 KiB (measured +6.7 KiB),
+        # flagged to Jarvis.
+        # P151 (0.18.4 turn end without Stop + compaction/clear handoff, agentj-handoff skill): a further explicit 8 KiB, ratified by Jarvis.
+        # P152 (0.18.4 integration: P144 launchd key_env + Telegram Markdown→HTML + missed-Stop recovery had no allocation of its
+        # own, plus the merged overlap of P147/P149/P150/P151): measured +9.0 KiB over the sum above → a further explicit 12 KiB,
+        # flagged to Jarvis.
+        self.assertLess(pathlib.Path(self.wheel).stat().st_size-bot_bytes-lt_bytes-browser_bytes-p115_bytes-cut_bytes-p147_bytes,2_260_000+8192+8192+8192+12288+4096+8192+8192+12288,'P118 approved bounded core ceiling + P135 + P139 + P142 + P143 + P149 + P150 + P151 + P152 increments')
+        self.assertLess(pathlib.Path(self.wheel).stat().st_size,2_260_000+8192+8192+8192+12288+4096+8192+8192+12288+65536+40960+49152+32768+12288+8192,'combined bounded allocations')
         self.assertFalse([n for n in names_ if n.startswith("tests/") or "wiredump" in n or "fakeclaude" in n])
         ep = next(n for n in names_ if n.endswith("entry_points.txt"))
         eps = zipfile.ZipFile(self.wheel).read(ep).decode()
@@ -528,7 +541,7 @@ class WheelInstall(unittest.TestCase):
             self.assertEqual({c["id"]: c["status"] for c in d_["checks"]}["state"], "ok")
             core = next(c for c in d_["checks"] if c["id"] == "main-core")
             self.assertEqual(core["status"], "ok")
-            self.assertIn("core v9:", core["summary"])
+            self.assertIn("core v10:", core["summary"])
 
     @unittest.skipUnless((sys.platform.startswith("linux") and shutil.which("bwrap")) or
                          (sys.platform == "darwin" and os.access(fence.SANDBOX_EXEC, os.X_OK)),

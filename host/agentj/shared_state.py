@@ -1,29 +1,7 @@
-"""The single owner of the agent's three-state model.
-
-States (PRODUCT_SPEC §4.1 status bar):
-    working  — 蓝：agent 在干活
-    idle     — 绿：空闲，等你说话
-    waiting  — 红：等你（两种 kind：permission / question）
-
-Everything here is derived from hook events only. `~/.claude/sessions/<pid>.json`
-is a *validation* source, never the primary one — reports/M0-validation.md §5.6(c)
-proved the session json sits at `busy` for the whole time a blocking PreToolUse
-hook holds the turn, so it cannot see "等审批" at all.
-
-The non-obvious part is sub-agents (ADR-006). A main-session `Stop` is only a
-fake idle while a *foreground* sub-agent is still running (§1.4); while only
-*background* sub-agents run, the main turn really ended and the phone must go
-green with the turn's `last_assistant_message`. Classification, from real
-2.1.280 hook logs (bridge/tests/fixtures/):
-  * PostToolUse(Agent|Task).tool_response = {isAsync: true, status: "async_launched",
-    agentId} → background, known ~0 ms after SubagentStart;
-    {status: "completed", agentId} → that agent is finished (second close signal);
-  * Stop.background_tasks[] lists every still-running background sub-agent by id →
-    authoritative reconciliation: a background agent absent from it is gone even if
-    its SubagentStop never reached us (the leak that kept the phone "working").
-An open sub-agent we cannot classify is treated as foreground (conservative: no
-false green), and a watchdog commits a deferred Stop after SUBAGENT_STALE_S of
-total silence so a lost close can never pin the phone at "working" forever.
+"""Hook-owned shared Claude states: working/idle/waiting.
+Quiet registry idle may repair a lost Stop after ten seconds, excluding approvals
+and compaction. Foreground agents defer Stops; background agents do not. Only
+real Stops commit replies. See ADR-P144 in Agent J's architecture.
 """
 import collections
 import os
@@ -43,7 +21,8 @@ KIND_PERMISSION, KIND_QUESTION = "permission", "question"
 
 DROP_WARN_S = 60.0       # at most one "dropped foreign events" line per this long
 MISMATCH_WARN_S = 60.0   # a persisting session-json mismatch is re-reported this often
-TARGET_TTL_S = 2.0       # how long the gate trusts its last read of the target's json
+LOST_STOP_IDLE_S = 10.0
+TARGET_TTL_S = 2.0       # maximum gap between registry idle observations
 
 
 class _Scheduler:
@@ -92,6 +71,9 @@ class AgentState:
         self._stale_timer = None
         self._deferred_stop: dict | None = None   # a Stop held back by a foreground agent
         self._main_active = False       # main turn running: UserPromptSubmit → committed Stop
+        self._json_idle_since = None
+        self._json_checked_at = None
+        self._quiet_now = scheduler.now if scheduler is not None else time.monotonic
         self._mismatch = None           # (key, since, last_warned, checks) — see validate_against
         # Context compaction (G11): PreCompact → working until it ends. None, or
         # {"saw_busy": bool} while a compaction is in flight.
@@ -123,6 +105,7 @@ class AgentState:
         """Feed one hook event. Thread-safe; called from the ingest thread."""
         name = event.get("hook_event_name")
         with self._lock:
+            self._json_idle_since = None  # any accepted hook restarts the silence window
             self.session_id = event.get("session_id") or self.session_id
             self.cwd = event.get("cwd") or self.cwd
             if event.get("prompt_id"):
@@ -219,7 +202,29 @@ class AgentState:
                 self._set(IDLE)
 
     def validate_against(self, session_status: str | None):
-        """Compare with ~/.claude/sessions/<pid>.json. Hook wins; mismatch warns."""
+        """Hook authority, except a lost Stop proved by continuous idle + hook silence."""
+        with self._lock:
+            now = self._quiet_now()
+            eligible = (session_status == "idle" and self.status == WORKING
+                        and self._compacting is None and not (self.card or self.ask or self.approval))
+            if not eligible or self._json_checked_at is None or now - self._json_checked_at > TARGET_TTL_S:
+                self._json_idle_since = None
+            self._json_checked_at = now
+            if eligible:
+                if self._json_idle_since is None:
+                    self._json_idle_since = now
+                elif now - self._json_idle_since >= LOST_STOP_IDLE_S:
+                    self._warn("lost Stop reconciled: session json idle and no hook traffic for 10s; going idle")
+                    self._main_active = False
+                    self._agents = {a: bg for a, bg in self._agents.items() if bg}
+                    self._subagent_depth = 0
+                    self._deferred_stop = None
+                    self._cancel_stale()
+                    self._cancel_idle()
+                    self._mismatch = None
+                    self._json_idle_since = None
+                    self._set(IDLE)   # no invented Stop, reply or history receipt
+                    return True
         if not session_status:
             return
         expected = {"busy": WORKING, "idle": IDLE, "waiting": WAITING, "shell": WORKING}
@@ -311,6 +316,17 @@ class AgentState:
                 self.card = None
                 if self.status == WAITING:
                     self._set(WORKING if self._main_active else IDLE)
+
+    def end_without_stop(self, text: str | None = None):
+        """P151: the transcript recorded the end of a turn that sent no Stop hook (it ended on a tool call such as
+        ScheduleWakeup). Same as a committed Stop for the status; the caller delivers the reply."""
+        with self._lock:
+            if text:
+                self.last_message = redact.scrub_message(text)
+            self._main_active = False
+            self._deferred_stop = None
+            self._cancel_stale()
+            self._schedule_idle()
 
     def note_assistant_message(self, text: str | None):
         if not text:

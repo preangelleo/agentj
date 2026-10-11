@@ -33,6 +33,7 @@ from websockets.asyncio.client import connect
 
 from .text import one, pick
 from . import agent as agents
+from .shared import SharedClaudeAgent
 from . import notices, activity, approvals, cloud, controls, danger, fence, gate, memory, slash, tasks, update, webpush, wire
 from . import asr as asr_mod
 from . import compose, history, inbox, menu, uploads, preferences, proxy, provenance
@@ -133,7 +134,7 @@ METER_GAP = 2.0                             # ≤ 1 meter message per 2 s
 HIST_READY = 50                             # turns a p33 device gets on ready (it pages for more)
 SWEEP_EVERY = 60
 RETAIN_EVERY = 86_400
-P33_ONLY = ("say", "say_cancel", "blob_open", "blob_chunk", "blob_end", "blob_drop", "hist_get", "menu_get", "model_set",
+P33_ONLY = ("say", "say_cancel", "cmd_cancel", "blob_open", "blob_chunk", "blob_end", "blob_drop", "hist_get", "menu_get", "model_set",
             "q_answer", "tts_get", "pref_set", "notice_read", "media_get", "provider_get", "provider_key", "asr_install", "models_get", "ping",
             "tg_fwd")
 # F14: paired phones may change optional warnings, session mode, isolation, docker and the upgrade mode (F19); native permissions stay authoritative.
@@ -283,7 +284,7 @@ class Host:
         try:
             self.preferences = preferences.validate(preferences.read()[1])
             from . import voice
-            voice.validate_runtime(self.preferences)
+            voice.validate_runtime(self.preferences, environment="service")
             self.config_problem = None
         except (preferences.ConfigError,OSError) as e:
             try:
@@ -344,6 +345,9 @@ class Host:
         from .capability import Capabilities
         self.capabilities = Capabilities(self)  # 0.18 (ADR-A193): capability.sock, opening cards, dispatch
         self.peers = None                       # P71: Agent friends (peer_service.PeerService, PROTOCOL §17), set in run()
+        from . import busy as busy_mod
+        self.busy = busy_mod.Board(st.root, on_change=self.busy_changed)   # P150 (§22): who works in the background
+        self.busy_sent: str | None = None
 
     # ------------------------------------------------------------ output
     def emit(self, ev: str, **kw) -> None:
@@ -1258,7 +1262,13 @@ class Host:
                 elif cmd == "env_present":          # P142 (B14): is a key NAME set in serve's environment? yes/no only
                     name = req.get("name")
                     if isinstance(name, str) and re.fullmatch(r"[A-Z][A-Z0-9_]{0,79}", name):
-                        await self._ctl_send(w, {"ok": True, "present": bool(os.environ.get(name))})
+                        from . import service
+                        try:
+                            service.load_launch_binary_env({"key_env": name})
+                        except service.ServiceError as e:
+                            await self._ctl_send(w, {"ok": False, "error": e.detail or e.reason})
+                        else:
+                            await self._ctl_send(w, {"ok": True, "present": bool(os.environ.get(name))})
                     else:
                         await self._ctl_send(w, {"ok": False, "error": "bad_name"})
                 elif cmd == "upgrade_ready":        # P142 (A12): the recovery worker restarts only an idle serve
@@ -1294,6 +1304,8 @@ class Host:
                             self.set_model(model)
                             self.restart_harness('provider')
                         await self._ctl_send(w,{'ok':True,'applicable':applicable,'model':previous})
+                elif cmd == "agent_reconnect":      # P147 `agentj doctor --reconnect`: re-attach the shared session now
+                    await self._ctl_send(w, await self.agent_reconnect(req.get("session")))
                 elif cmd == "agent_restart":        # `agentj agent restart` (P59): the owned harness, before its next turn
                     await self._ctl_send(w, self.restart_harness("cli"))
                 elif cmd == "config_apply":
@@ -1657,6 +1669,8 @@ class Host:
             for e in list(self.backlog):
                 if e["seq"] > since:
                     await self.send_app(s, self._render(e, s))
+        if s.p33:                       # P150 (§22): an empty list too (a reconnected phone drops stale dots); §8-only phones never had it
+            await self.send_app(s, self.busy_msg())
         for a in list(self.asks.values()):
             if not a.fut.done():
                 await self.send_app(s, self._ask_msg(a, s))
@@ -1760,7 +1774,12 @@ class Host:
                 await asyncio.to_thread(claude_auth.require_transition, self.st, old, candidate, running=True)
                 # Providers and channels with external dependencies are checked before activation.
                 from . import voice
-                voice.validate_runtime(candidate)
+                from . import service
+                try:
+                    service.load_launch_binary_env(candidate)
+                except service.ServiceError as e:
+                    raise preferences.ConfigError("/", e.detail or e.reason) from None
+                voice.validate_runtime(candidate, environment="service")
                 if isinstance(raw,str):
                     preferences.commit_files(self.st,raw,candidate)
                 else:
@@ -1838,6 +1857,23 @@ class Host:
             return False
         except (OSError, claude_inbound.SettingsError):
             return True
+
+    async def agent_reconnect(self, session=None) -> dict:
+        """P147: the shared Claude adapter re-checks its session (heal / the named one); others report their status."""
+        a = self.agent
+        if a is None:
+            return {"ok": False, "why": "no_agent", "agent_status": self.eff_status()}
+        fn = getattr(a, "reconnect", None)
+        if fn is None:
+            return {"ok": a.status != "down", "why": "unsupported", "agent": a.kind, "agent_status": self.eff_status()}
+        sid = session if isinstance(session, str) and re.fullmatch(r"[0-9A-Fa-f-]{8,64}", session) else None
+        try:
+            res = await asyncio.wait_for(fn(sid), 15)
+        except asyncio.TimeoutError:
+            res = {"ok": False, "why": "timeout"}
+        res.update(agent=a.kind, agent_status=self.eff_status())
+        self.st.log("agent_reconnect", result="ok" if res.get("ok") else str(res.get("why"))[:16])
+        return res
 
     def restart_harness(self, why: str) -> dict:
         """P59 (A167): restart the harness process Agent J owns before its next turn, the conversation kept (Claude Code
@@ -1960,6 +1996,33 @@ class Host:
             except OSError:
                 self.config_problem = {"ok": False, "key": "/", "error": "configuration unreadable"}
             await asyncio.sleep(0.5)
+
+    def busy_msg(self) -> dict:
+        """PROTOCOL §22: `{"t":"busy","tasks":[{id, who, kind, label, lk?, since, c}],"by":<Agent name>}` — display only."""
+        return self.busy.msg(self.st.agent_name())
+
+    def busy_changed(self) -> None:
+        """P150: the 「在办事项」 list changed (or may have: TTL) → every ready phone, once per real change."""
+        msg = self.busy_msg()
+        key = json.dumps([msg["tasks"], msg["by"]], ensure_ascii=False, sort_keys=True)
+        if key == self.busy_sent:
+            return
+        self.busy_sent = key
+        self._post(self._send_p33, lambda s: msg)
+
+    async def busy_loop(self) -> None:
+        """P150: item files every 2 s, systemd `agentj-p*` units every 10 s (both off the event loop); colours saved."""
+        from . import busy as busy_mod
+        n = 0
+        while True:
+            with contextlib.suppress(Exception):
+                await asyncio.to_thread(self.busy.refresh_outside, n % 5 == 0)
+                self.busy_changed()
+                colors = self.busy.take_colors()
+                if colors is not None:
+                    await asyncio.to_thread(busy_mod.save_colors, self.st.root, colors)
+            n += 1
+            await asyncio.sleep(2)
 
     def name_changed(self) -> None:
         """The Agent name changed (`agentj name`, the admin page, a Dashboard rename adopted in sync): every ready phone gets
@@ -3064,6 +3127,27 @@ class Host:
         if self.telegram and turn is not None and not interim:      # P59: the owner's Telegram /compact gets its result line
             self.telegram.cmd_result(turn, res.text)
 
+    def cmd_waiting(self, cmd) -> None:
+        if not isinstance(cmd, agents.Cmd) or cmd.cancelled or cmd.native_started:
+            return
+        text = pick(self.lang, "等电脑空下来再执行", "Waiting for the computer to become idle")
+        self.hist_update(cmd.turn, text=text, end="open", card={"cmd": cmd.name, "cancel_wait": True})
+
+    def cancel_waiting_cmd(self, s, turn) -> bool:
+        page = self.hist.get(turn) if type(turn) is int else None
+        if not page or page.get("end") != "open" or page.get("src", {}).get("dev") != s.device:
+            return False
+        if not isinstance(self.agent, SharedClaudeAgent):
+            return False
+        items = [self.agent.cur_cmd, *list(self.agent.q._queue)]
+        for cmd in items:
+            if isinstance(cmd, agents.Cmd) and cmd.turn == turn and cmd.name in ("clear", "compact") and not cmd.native_started and not cmd.cancelled:
+                cmd.cancelled = True
+                self.hist_update(turn, text=pick(self.lang, "已取消，未发送控制。", "Cancelled; control not sent."), end="stopped", card={})
+                self.st.log("shared_control_cancel", cmd=cmd.name, device=s.device)
+                return True
+        return False
+
     def cmd_turn(self, s: Session | None, name: str, arg: str = "") -> int:
         """The page of a command, opened when it is asked for (its result fills it in)."""
         src = {"k": "cmd", "text": ("/" + name + (" " + arg if arg else ""))[:200]}
@@ -3087,6 +3171,8 @@ class Host:
     def cmd_done(self, cmd, res: "slash.Result") -> None:
         """Called by the Agent's queue when a command ran (agent.Cmd). /clear that cleared (and 「撤销清空」) also reset the
         history (§10.5): the command's page is closed, then archived / restored, and the result is the first page after."""
+        if getattr(cmd, "cancelled", False):
+            return
         self.st.log("slash", cmd=cmd.name, result=res.kind)
         self.activity("slash", cmd=cmd.name, result=res.kind, by=cmd.by)
         if cmd.name == "clear" and res.undo:
@@ -3177,7 +3263,10 @@ class Host:
             return done(slash.Result("清空要在手机上确认：点输入框左边的 ≡「全部命令」→「清空对话（可撤销）」。", "info"))
         if self.agent.status in ("working", "compacting") or not self.agent.q.empty():
             self.cmd_card(name, slash.Result("这一轮结束后执行。", "info"), by, turn, interim=True)
-        self.agent.submit(agents.Cmd(name, arg, by, turn))
+        cmd = agents.Cmd(name, arg, by, turn)
+        self.agent.submit(cmd)
+        if isinstance(self.agent, SharedClaudeAgent) and name in ("clear", "compact"):
+            self.cmd_waiting(cmd)
         return turn
 
     async def phone_upgrade(self, turn, by):
@@ -3320,6 +3409,10 @@ class Host:
             return
         if t == "say":
             return await self.on_say(s, obj)
+        if t == "cmd_cancel":
+            # Already authenticated, ready and allowlisted by _app; bound to the originating device/page.
+            self.cancel_waiting_cmd(s, obj.get("turn"))
+            return
         if t == "say_cancel":
             sid = obj.get("sid")
             if not wire.is_id22(sid):
@@ -4041,7 +4134,8 @@ class Host:
         self.configure_claude_inbound(await asyncio.to_thread(self._claude_inbound_files))   # P142: owner files, off the loop
         jobs = [asyncio.create_task(self.relay_loop()), asyncio.create_task(self.loop_watch()), asyncio.create_task(self.reporter.run()),
                  asyncio.create_task(self.sync_loop()), asyncio.create_task(self.remote_pair.run()), asyncio.create_task(self.post_loop()),
-                 asyncio.create_task(self.update_loop()), asyncio.create_task(self.preferences_loop())]
+                 asyncio.create_task(self.update_loop()), asyncio.create_task(self.preferences_loop()),
+                 asyncio.create_task(self.busy_loop())]
         perm_server = None
         if self.agent_cfg:
             psock = self.st.perm_sock_path

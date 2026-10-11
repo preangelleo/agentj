@@ -723,7 +723,11 @@ def cmd_status(a) -> None:
         res = names.ctl_call(st, {"cmd": "status"}, 10)
     except names.ServeBusy:
         sys.exit("agentj serve 在运行但没有响应")
+    if res is None and getattr(a, "json", False):
+        print(json.dumps({"ok": False, "running": False, "agent_status": "down", "hint": RECONNECT_HINT}, ensure_ascii=False))
+        return
     if res is None:
+        print("要让手机重新连上：agentj doctor --reconnect / to bring the phone back: agentj doctor --reconnect")
         print(f"Agent J 现在没在运行（要让它一直在后台运行：`agentj service install`）· 状态目录 {st.root} · 通道 {st.config()['channel']}"
               " / Agent J is not running (keep it running: `agentj service install`)")
         print(f"Agent：{_name_or_unset(st)}")
@@ -736,7 +740,12 @@ def cmd_status(a) -> None:
     res["linked_via"] = link["via"] if link else None   # "seat" (seat setup code) | "code" (8-character agentj login)
     res["agent_name"] = st.agent_name()
     res["passphrase"] = gate.is_set(st)
+    if res.get("agent_status") == "down" or res.get("relay_state") == "reconnecting":
+        res["hint"] = RECONNECT_HINT          # P147: grey phone → one command
     print(json.dumps(res, ensure_ascii=False, indent=1))
+
+
+RECONNECT_HINT = "agentj doctor --reconnect"
 
 
 def _link_line(st: State) -> str:
@@ -1670,6 +1679,11 @@ def cmd_onboarding(a) -> None:
 
 def cmd_doctor(a) -> None:
     from . import doctor
+    if getattr(a, "reconnect", False):         # P147: repair whichever of serve / relay / agent is broken
+        from . import reconnect
+        st = State()
+        _need_init(st)
+        sys.exit(reconnect.run(st, _lang(st), session=a.session, as_json=a.json))
     if getattr(a, "upgrade_only", False):
         sys.exit(doctor.main(as_json=a.json, upgrade_only=True))
     sys.exit(doctor.main(as_json=a.json, offline=a.offline, isolation_only=a.isolation_only))
@@ -1882,7 +1896,7 @@ def main_jarvis(argv=None) -> None:
 
 # `migrate status` reports, `migrate rollback` undoes, `docs-rule` prints (or, with --write and the human's y, appends to the
 # AI's own memory file), `handover` only reads: none may move the state directory first
-NO_MIGRATE = ("migrate", "docs-rule", "handover", "recall", "friends", "codex-sandbox", "capability", "google", "setup")   # recall / friends / codex-sandbox / capability: usually inside the fence
+NO_MIGRATE = ("migrate", "docs-rule", "handover", "recall", "friends", "codex-sandbox", "capability", "google", "setup", "busy")   # recall / friends / codex-sandbox / capability: usually inside the fence
 
 
 APPROVALS_HELP = {
@@ -1914,8 +1928,11 @@ def config_approvals(rest: list) -> int:
 
 
 def main(argv=None) -> None:
-    from .service import load_launch_binary_env
-    load_launch_binary_env()
+    from .service import load_launch_binary_env, ServiceError
+    try:
+        load_launch_binary_env()
+    except ServiceError as e:
+        sys.exit(e.detail or e.reason)
     from . import relay_auth
     relay_auth.load()
     args = list(sys.argv[1:] if argv is None else argv)
@@ -1980,6 +1997,9 @@ def main(argv=None) -> None:
     dc.add_argument("--offline", action="store_true", help="跳过网络检查 / skip the network checks")
     dc.add_argument("--isolation-only", action="store_true", help="仅隔离预检：不读用户状态、不联网 / isolation preflight only, no user state or network")
     dc.add_argument("--upgrade-only", action="store_true", help="仅升级后的包与服务完整性 / package and service integrity only")
+    dc.add_argument("--reconnect", action="store_true", help="手机灰了/断开：自检 服务·中继·Agent 三段，哪段断了修哪段 / phone grey or "
+                    "disconnected: check service, relay and Agent, repair the broken one")
+    dc.add_argument("--session", help="和 --reconnect 一起：接上这个会话 ID / with --reconnect: attach this session ID")
     dc.set_defaults(fn=cmd_doctor)
     sv = sub.add_parser("service", help="开机 / 登录后自动运行 serve：install · start · stop · restart · status / run serve as a service",
                         description="Linux: systemd user unit · macOS: LaunchAgent. 不写任何密钥 / never writes a secret.")
@@ -2033,7 +2053,9 @@ def main(argv=None) -> None:
     se = sub.add_parser("send", help="给所有在线的已批准设备发一条文字")
     se.add_argument("text")
     se.set_defaults(fn=cmd_send)
-    sub.add_parser("status", help="serve 的状态").set_defaults(fn=cmd_status)
+    ss = sub.add_parser("status", help="serve 的状态")
+    ss.add_argument("--json", action="store_true", help="只输出 JSON / JSON only (P147)")
+    ss.set_defaults(fn=cmd_status)
     nm = sub.add_parser("name", help="查看 / 修改这台电脑上 Agent 的名字（加入了 Agent J 账号的话，先在账号后台改，改好了才改这台电脑上的）")
     nm.add_argument("name", nargs="?", help="新名字（1–32 个字）；不填 = 查看")
     nm.set_defaults(fn=cmd_name)
@@ -2164,6 +2186,8 @@ def main(argv=None) -> None:
     support.add_parser(sub)   # F18: agentj support ask | report | thread | list
     from . import capability
     capability.add_parser(sub)   # 0.18 (ADR-A193): agentj capability list|sync|check|show|prepare|result|dispatch|digest|report-check
+    from . import busy
+    busy.add_parser(sub)         # P150 (§22): agentj busy list|start|stop|run — the phone's 「在办事项」 dots
     recall.add_parser(sub)    # F22 (P57): agentj recall <keywords> [--days N] [--date D] — the main Agent finds an earlier conversation
     from . import peer_service
     from .bots.cli import add_parser as add_bots_parser

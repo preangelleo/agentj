@@ -73,6 +73,11 @@ once at the end of a reply (once per conversation).
 If the handover could not be written (say the Agent was stuck), the compaction still happens and the phone tells you in
 one line.
 
+The handoff path is fixed and copyable from the phone: `~/.local/state/agentj/handoff/compact.md` in shared mode,
+`<work folder>/.agentj/handover/compact.md` for Agent J's own main conversation. If you send nothing after a compaction,
+Agent J itself reminds the Agent to read the handoff and carry on, and the phone shows one line about it. See the
+compaction and handoff page.
+
 `/clear` wipes the whole conversation and starts fresh; it asks first and can be undone. To keep your progress, use
 `/compact`, not `/clear`.
 
@@ -92,6 +97,8 @@ The buttons under a reply, left to right:
 | Curved arrow | Reply to this one; the quote appears above the message box |
 
 Select some text in a reply to quote just that part.
+
+The name at the top left of the reply card is the name you gave your Agent (change it with `agentj name` on your computer). Sometimes a few coloured dots appear at the top right, slowly blinking: each one is an Agent working for you in the background — a workflow CEO, or a helper the main Agent sent out. One dot per worker; a dot goes away when its work is done. Tap the dots and a square opens in the middle of the screen: how many Agents are at work, who is watching them for you, and who each dot is and what it is doing. ESC or a tap outside closes it.
 
 Replies are laid out for you:
 
@@ -261,13 +268,14 @@ use most:
 | Key | What it does |
 |---|---|
 | `i` / `Esc` | Enter the message box / close the current overlay; keep the draft when no overlay is open |
-| `j` / `k` | Previous / next page |
+| `j` / `k` · `←` `→` | Previous / next page; in the message box `←` `→` turn the page too when it is empty or the cursor is already at that end |
+| `↑` / `↓` | Outside the message box: expand / fold the message (same as `o`); inside it they still bring back what you sent before |
 | `f` or double-tap the card | Full-screen reading |
 | `y` `y` | Copy the whole reply |
 | `r` | Reply to this one |
 | `a` `p` `c` | File · photo library · camera |
 | hold `m` | Hold to talk, release for text |
-| `Esc` `Esc` | Outside the message box: clear text and attachments; when already empty, interrupt the current task |
+| `Esc` `Esc` | Outside the message box: clear text and attachments. Esc never interrupts the Agent — to stop the current task, use the stop button or send `/stop` |
 | `s` | Open Settings |
 
 ## Pairing and Face ID
@@ -363,7 +371,7 @@ See [Android sharing and the iPhone clipboard Shortcut](https://agentj.app/docs/
 
 ## Updating the phone page
 
-Upgrading Agent J on your computer does not refresh the phone or web page. When a newer computer or web version is detected, the page offers **Update and reload**. You can also tap the settings icon at the top right → **Update and reload**. It never refreshes while you are typing without your click. Refresh after sending or saving your draft.
+Upgrading Agent J on your computer does not refresh the phone or web page. When a newer computer or web version is detected, a square opens in the middle of the screen: **Server upgraded**. Tap **Refresh** to use the new version; **Later**, ESC or a tap outside closes it, and you can still tap the settings icon at the top right → **Update and reload** later. It never interrupts what you are typing and never refreshes without your click. Refresh after sending or saving your draft.
 
 
 When a daily, weekly or monthly model allowance runs out, the phone tells you to wait for its reset or upgrade your plan with the model provider. A temporary rate limit still asks you to retry later. Provider error details are never displayed.

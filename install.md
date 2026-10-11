@@ -1,15 +1,15 @@
 ---
 document: agentj-install
-version: 0.21.9
-released: 2026-10-11
+version: 0.21.10
+released: 2026-10-12
 status: beta (anyone can sign up; not advertised yet, pages are not indexed)
 host_package: agentj (the `agentj` command)
-host_version: 0.18.3a1
-source_tag: v0.18.3a1
-host_wheel: agentj-0.18.3a1-py3-none-any.whl
-host_wheel_sha256: a2eb727bdecba756522f0cd5dbfee42d3a70ac3abacf2cda0cca39899e3c59be
-host_sdist: agentj-0.18.3a1.tar.gz
-host_sdist_sha256: 95336aca30aa1c83446ded413f13ac46263fe8b47986a93e17c27a19cc2b835a
+host_version: 0.18.4a1
+source_tag: v0.18.4a1
+host_wheel: agentj-0.18.4a1-py3-none-any.whl
+host_wheel_sha256: d420a9cd4921dbc0ae50f86cd7902057da9f5700c0fa3739d381b6198a7ea892
+host_sdist: agentj-0.18.4a1.tar.gz
+host_sdist_sha256: bb885bf9b7650bd830f23e057b3351b6728caa97187dc5c5b516e5d104878d43
 canonical_url: https://agentj.app/install.md
 sha256_url: https://agentj.app/install.md.sha256
 alias: https://agentjarvis.net/install.md (the older address: the same file, kept for one more version)
@@ -137,7 +137,7 @@ curl -fsSL --retry 3 --retry-all-errors --retry-delay 2 --retry-max-time 45 --co
 curl -fsSL --retry 3 --retry-all-errors --retry-delay 2 --retry-max-time 45 --connect-timeout 10 --max-time 20 https://raw.githubusercontent.com/preangelleo/agentj/main/install.md -o install.github.md
 if command -v sha256sum >/dev/null; then sha256sum -c install.md.sha256; else shasum -a 256 -c install.md.sha256; fi   # → "install.md: OK"
 cmp install.md install.github.md && echo "site and GitHub copies match"
-grep -m1 '^version:' install.md                                           # → version: 0.21.9
+grep -m1 '^version:' install.md                                           # → version: 0.21.10
 ```
 - For a brief connection reset, timeout or interrupted download, these GET commands retry at most three times after the initial attempt, with a 45-second retry budget and a 20-second limit per attempt. If the network keeps failing, stop retrying and use the fallback below or ask the support desk. Do not add automatic retries to setup-code redemption, payment or other POST requests. Never disable TLS checks or continue after a SHA-256/GitHub mismatch.
 - Both checks pass → continue with that `install.md` (note its `version:` for feedback). Keep the file: Step 4 reads the
@@ -452,7 +452,7 @@ The astral installer warning that `uv` / `uvx` are shadowed is informational if 
 carry over). So start every command line from here on with `export PATH="$HOME/.local/bin:$PATH";` — or call
 `~/.local/bin/agentj` by its full path. This document writes `agentj` for short.
 
-The program is pinned to one release: the tag `v0.18.3a1` (front matter `source_tag`). The tag never moves, and its
+The program is pinned to one release: the tag `v0.18.4a1` (front matter `source_tag`). The tag never moves, and its
 `host/` folder is byte for byte the same code as the two files on our site whose SHA-256 is in this document's front matter.
 ```bash
 cd ~/.agentj-install
@@ -463,7 +463,7 @@ uv tool install "./$W"
 
 Intel Mac: this release keeps `cryptography<49` because newer releases lack an Intel macOS wheel. If an older installer tries to compile OpenSSL (`openssl-sys` / OpenSSL not found), rerun `uv tool install --with "cryptography<49" "./$W"`. The same platform constraint applies to `agentj update apply`.
 
-export PATH="$HOME/.local/bin:$PATH"; agentj --version     # → agentj 0.18.3a1
+export PATH="$HOME/.local/bin:$PATH"; agentj --version     # → agentj 0.18.4a1
 export PATH="$HOME/.local/bin:$PATH"; agentj doctor
 ```
 **Your human's own terminal must find `agentj` too** — they may use `agentj passphrase set` and `agentj pair` as a local alternative
@@ -491,12 +491,12 @@ echo "$WS  $W" | sha256sum -c - && echo "$SS  $S" | sha256sum -c -    # macOS: s
 uv tool install "./$W"          # the wheel; its dependencies come from PyPI or the mirror in UV_DEFAULT_INDEX
 ```
 `uv tool install "./$S"` installs from the checked source archive instead (it builds the same program).
-`https://agentj.app/dl/latest.txt` and `https://agentj.app/dl/latest-sdist.txt` name the same two files. `agentj --version` is the program's own version (`0.18.3a1`); it is
+`https://agentj.app/dl/latest.txt` and `https://agentj.app/dl/latest-sdist.txt` name the same two files. `agentj --version` is the program's own version (`0.18.4a1`); it is
 numbered separately from this document (`0.21.1`).
 
-Alternative from the matching published source tag: `uv tool install "git+https://github.com/preangelleo/agentj@v0.18.3a1#subdirectory=host"`.
+Alternative from the matching published source tag: `uv tool install "git+https://github.com/preangelleo/agentj@v0.18.4a1#subdirectory=host"`.
 
-Alternative without uv: `pipx install "git+https://github.com/preangelleo/agentj@v0.18.3a1#subdirectory=host"` (needs Python 3.11+).
+Alternative without uv: `pipx install "git+https://github.com/preangelleo/agentj@v0.18.4a1#subdirectory=host"` (needs Python 3.11+).
 `agentj doctor` lists what is ready and what is not (prerequisites, the fence, connectivity, which agents are usable).
 Continue unless it reports an error that a later step does not fix; report anything you cannot explain.
 
@@ -1154,7 +1154,7 @@ Nightly automatic installation is enabled by default and verifies the official w
 In the default shared session, reinstall directly using Step 4's checked wheel (SHA-256 must match this document and
 its public GitHub copy), preserving the host's identity, paired phones, account and preferences:
 ```bash
-uv tool install --force "./agentj-0.18.3a1-py3-none-any.whl"
+uv tool install --force "./agentj-0.18.4a1-py3-none-any.whl"
 agentj --version
 agentj service install
 agentj service restart
@@ -1162,7 +1162,7 @@ agentj doctor
 ```
 The matching published tag is another source, after verifying the tag object against the upgrade email:
 ```bash
-uv tool install --force "git+https://github.com/preangelleo/agentj@v0.18.3a1#subdirectory=host"
+uv tool install --force "git+https://github.com/preangelleo/agentj@v0.18.4a1#subdirectory=host"
 ```
 **0.14 independent session** (`agent.session_mode=independent`): 0.14's fence keeps Agent J's own program read-only and
 hides the service manager, so the Agent on the phone cannot reinstall or restart from inside it (measured: the install
@@ -1188,11 +1188,11 @@ prints something and `uv tool list` (or `pipx list`) shows `agentjarvis-host`, t
 the new name, then:
 ```bash
 jarvis service uninstall      # stop the old service first (Step 10 used tmux / nohup instead? stop that process)
-uv tool uninstall agentjarvis-host && uv tool install "git+https://github.com/preangelleo/agentj@v0.18.3a1#subdirectory=host"
+uv tool uninstall agentjarvis-host && uv tool install "git+https://github.com/preangelleo/agentj@v0.18.4a1#subdirectory=host"
 agentj doctor
 agentj service install        # start it again under the new name (or the tmux / nohup fallback, Step 10)
 ```
-With pipx instead of uv: `pipx uninstall agentjarvis-host && pipx install "git+https://github.com/preangelleo/agentj@v0.18.3a1#subdirectory=host"`.
+With pipx instead of uv: `pipx uninstall agentjarvis-host && pipx install "git+https://github.com/preangelleo/agentj@v0.18.4a1#subdirectory=host"`.
 - After the move, `agentj` puts back a `jarvis` command (a link to `agentj`, only if no other `jarvis` exists) for one more
   version; it prints a notice that points here. New installs never get `jarvis`.
 - The state moves from `~/.local/state/agentjarvis-alpha` to `~/.local/state/agentj` on the first run of `agentj` **after your
@@ -1963,6 +1963,10 @@ Pair once; later opens automatically reconnect while the computer keeps this dev
 ### Shared Claude ingress (0.18.1a1)
 Shared-mode startup and `agentj doctor` read managed, private local, project and user settings in native file precedence. If the effective writable value is not `accept`, they back it up and set accept (project policy uses a private local override; the shared project file stays intact). Managed settings are read-only and the phone names the blocking layer/value. **Start a new session or run /clear on the computer for the change to take effect**; a session started earlier may still hold phone messages. Session/CLI or remote managed overrides cannot be verified from these files. `agentj config claude-inbound off` is temporary while shared mode is selected: its next startup/doctor restores accept. Do not resend an unacknowledged message before checking the desktop.
 
+### 0.18.4a1 reconnect, chief of staff, work in progress
+A grey phone after a reboot or a new session on the computer reconnects by itself: shared Claude follows the one live owner session in the working folder and the phone says it reconnected; if it cannot tell or still fails, run `agentj doctor --reconnect` in the session the owner uses (see "Phone grey or disconnected" above). The main Agent's packaged identity is core v10: it calls the human "Chairman", hands work with a workflow CEO to that CEO and other self-contained work to a sub-Agent, says "handed to X" first, and records "no need to ask me" rules in the working root's MEMORY.md (dangerous-operation approvals are never lifted). The reply card shows one coloured dot per background Agent; a tap opens a centred dialog (the "server upgraded" notice uses the same dialog). A message sent while the Agent is busy says it was received and how many wait ahead of it. A shared Claude turn that ends on a tool call (ScheduleWakeup, Monitor) now delivers its last text to the phone; after a compaction or clear the host asks the Agent to read `~/.local/state/agentj/handoff/compact.md` (or `clear.md`) first. Keyboard: ← / → turn cards when the field is empty, ↑ / ↓ open or close the current one, Esc never interrupts. macOS: the background service reads keys from `net.agentj.host.env` under the configured `key_env` names; Telegram replies render Markdown.
+中文：手机变灰会自己接回来，不行就运行 `agentj doctor --reconnect`；主 Agent 当董事长助理，活派给 CEO 和小助理，「这类事不用问我」会被记住；回复卡上的彩色圆点显示谁在后台干活；忙时消息写明已收到、前面还有几条；以工具收尾的回合手机也能收到回复，压缩/清空后先读交接；Esc 不再打断 Agent。
+
 ### 0.18.3a1 security hardening
 Every approval can be answered on the phone: a shared Claude card is sent even when another approval hook is installed (it is withdrawn once the call is answered elsewhere), and the host and `agentj doctor` put back hooks that went missing. Dangerous-command recognition is stricter: commands that are encoded, spliced or piped into a shell or interpreter (`base64 -d | sh`, `X=rm; $X`, `$'\x72m'`) get a new card category 「看不清要做什么」 / "Can't tell what this does" that shows the part Agent J can decode; reading a credential and sending it out (`/dev/tcp`, `curl … $(cat ~/.ssh/id_rsa)`) is flagged; printing only key names (`grep -oE "^[A-Z_]+" .env`) stays quiet. An independent session whose sandbox cannot start does not start (no silent unfenced run); the owner can allow one launch with a passkey. Scheduled tasks and native support bots no longer inherit the host service's API keys or tokens. Forwarded Telegram messages and group text are treated as external data, group attachments are checked and budgeted before download. The one-line installer verifies the release signature before writing the package. The relay limits how many unauthenticated connections one source can hold, so pending slots cannot be exhausted. On iPhone, returning from the lock screen keeps the layout; the host writes to disk off its event loop, so the web app is less likely to stall. `agentj update apply` rolls back on failure and restarts only when the host is idle. The OpenCode shared session follows the configured reply language.
 中文：审批一定能在手机上处理；危险命令识别更严，并新增「看不清要做什么」一类；沙箱起不来不会悄悄裸跑；定时任务与客服 bot 拿不到主机密钥；群消息与转发更安全；一键安装先验签；中继防占槽；iPhone 锁屏回来布局正常；网页更不容易卡。
@@ -2076,3 +2080,19 @@ Forwarded messages in the owner’s Telegram private chat are external data, not
 Group text and captions are checked before attachments are downloaded. Proxy groups do not download attachments; family attachments are refused when the rules match. Each group sender has a 40 MiB download budget per UTC hour across groups, preserved across restarts. Unknown sizes reserve the per-file maximum. Paused group messages cannot start Agent tools. Friend cards allow up to 64 characters for the name, 32 for the owner and 140 for the introduction. A credential-shaped value in supplementary context rejects the whole edit; use ordinary background information.
 
 Support bots process Telegram private chats independently, preserving order within each chat. Text over 2000 characters gets a fixed request to shorten it without a model call. Customer text and model suggestions in support reports are data for summarising and diagnosis, never owner instructions.
+
+macOS 后台服务的 Telegram 和服务商密钥写在 `~/Library/LaunchAgents/net.agentj.host.env`，使用配置里 `key_env` 指定的变量名；文件必须由你本人拥有、权限为 0600，不能是软链。保存后运行 `agentj service restart`。不要把密钥写进 plist、聊天或命令参数。
+
+On macOS, put Telegram and provider keys in `~/Library/LaunchAgents/net.agentj.host.env`, using the variable name specified by `key_env`. The file must be owned by your user, mode 0600, and not a symlink. After saving it, run `agentj service restart`. Keep keys out of the plist, chat and command arguments.
+
+### Phone grey or disconnected — self-healing session (0.18.4) / 手机灰了：会话自动重连
+A grey phone usually means the computer opened a new session (reboot, new terminal, `/clear`, an upgrade), not that the
+relay broke. In shared Claude Code mode the host now follows the owner by itself: when the followed session is gone it
+attaches the one live owner session in the working folder (never a headless `claude -p` or a background job), or the one
+that just started; two equally likely sessions are listed on the phone instead of guessed. The phone shows
+「已接上新会话 …」. If it stays grey, run `agentj doctor --reconnect` **inside the session the owner uses**: it checks the
+service, the relay and the Agent in turn, repairs only the broken link, attaches the session that runs it, and prints one
+sentence to relay to your human verbatim. `--session <ID>` names a session; `agentj status --json` adds
+`"hint": "agentj doctor --reconnect"` when the Agent is down. The main Agent's identity line and the bundled skill
+`agentj-reconnect` make every new session run this self-check on its first turn. Guide: https://agentj.app/docs/reconnect/
+手机变灰多半是电脑换了新会话，不是中继坏了；0.18.4 起自动接上新会话，接不上就在主人用的会话里运行 `agentj doctor --reconnect`，把最后一句原话告诉主人。

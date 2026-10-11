@@ -27,8 +27,9 @@ function render(){
  const box=document.getElementById('version-notice');if(!box)return;
  const latest=newerVersion(VERSION.version,hostVersion,webVersion);
  box.hidden=!latest||latest===dismissed;
- document.getElementById('version-notice-text').textContent=t('ver.new',{v:latest||''});
- document.getElementById('version-refresh').textContent=t('set.refresh');
+ // P150: the global centred dialog 「服务器已升级」 + 刷新 (it used to be a card pressed down from the top).
+ document.getElementById('version-notice-text').textContent=t('ver.body',{v:latest||''});
+ document.getElementById('version-refresh').textContent=t('ver.refresh');
  document.getElementById('version-dismiss').textContent=t('ver.later');
 }
 export function setHostVersion(v){hostVersion=v;render();}
@@ -36,6 +37,7 @@ export function initVersionNotice(refreshApp){
  refresh=refreshApp;
  document.getElementById('version-refresh').addEventListener('click',()=>refresh());
  document.getElementById('version-dismiss').addEventListener('click',close);
+ document.getElementById('version-notice').addEventListener('click',e=>{if(e.target===e.currentTarget)close();});   // outside the square = later
  registerLayer({element:()=>document.getElementById('version-notice'),open:()=>!document.getElementById('version-notice').hidden,close,fallback:()=>document.getElementById('setBtn'),trap:false,rank:-10});
  onLang(render);render();
  const check=async()=>{try{webVersion=await readWebVersion();render();}catch{/* Offline/old metadata: no false update warning. */}};

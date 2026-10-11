@@ -34,6 +34,7 @@ import * as renew from './js/renew.js';        // P122: …and after the browser
 import * as bots from './js/bots.js';
 import * as friends from './js/friends.js';    // §17.7: /friends + the friend cards
 import * as setupcard from './js/setup.js';   // P115: the first-run checklist card
+import * as busy from './js/busy.js';         // P150 (§22): 「在办事项」 dots + the centred dialog
 import { parseAgentId } from './proto/wire.js';
 import { SCAN_CONSTRAINTS, SCAN_FALLBACK, SCAN_SLOW_MS, scanFrame } from './js/scan.js';   // F29 (ADR-A177)
 
@@ -300,6 +301,7 @@ function onApp(m) {
   switch (m.t) {
     case 'preferences': setHostVersion(m.host?.version); relay.applyPreferences(m.value); settings.setPrefs(m.value, m.host); if(m.problem)relay.configProblem(m.problem.error); return;
     case 'status': setAgentName(m.name); snap.setStatus(m); renderTg(); return;
+    case 'busy': busy.setBusy(m); return;            // P150 (§22): who works in the background (display only)
     case 'ask': snap.addAsk(m); return;
     case 'ask_done': snap.askDone(m); return;
     case 'bots_tool_request': bots.toolRequest(m); return;
@@ -852,6 +854,7 @@ function wire() {
   };
   $('unpair').addEventListener('click', unpairAsk);
   initVersionNotice(settings.refreshApp);
+  busy.init({ name: () => agentName ?? DEFAULT_NAME });
   settings.configure({                                // F13: the gear, before relay.init so its Esc runs first
     agentName: () => agentName ?? DEFAULT_NAME,
     paired: () => !['idle', 'pairing', 'awaiting-approval', 'revoked'].includes(state),

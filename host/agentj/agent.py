@@ -58,6 +58,8 @@ class Cmd:
     by: str | None = None
     turn: int | None = None          # its history page (PROTOCOL §10.5 `cmd` turn), filled in when it ran
     data: dict | None = None         # model_set (§10.11): {"r", "model", "effort", "default", "device"}
+    cancelled: bool = False
+    native_started: bool = False
 
 
 UNCERTAIN = object()        # Agent.deliver: fn's answer "maybe delivered" (e.g. a 5xx after the request was sent, P33-X08)
@@ -313,7 +315,15 @@ class Agent:
                         self.set_status("down" if self.is_down() else "idle")
                 continue
             if isinstance(text, Cmd):
+                if text.cancelled:
+                    if self.q.empty() and self.status == "working":
+                        self.set_status("down" if self.is_down() else "idle")
+                    continue
                 async with getattr(self.host, "turn_lock", None) or contextlib.nullcontext():
+                    if text.cancelled:
+                        if self.q.empty() and self.status == "working":
+                            self.set_status("down" if self.is_down() else "idle")
+                        continue
                     self.halting = False
                     if text.name == "model_set":            # the phone's pill (§10.11): no card, a model_res + meter
                         try:
@@ -831,10 +841,12 @@ class ClaudeAgent(Agent):
                 except ValueError:
                     continue
                 if isinstance(ev, dict):
+                    self._busy(ev)
                     self.on_event(ev)
         except Exception:  # noqa: BLE001
             pass
         code = await proc.wait()
+        self._busy(None)
         self.host.st.log("agent_exit", agent=self.kind, status=code)
         if self.proc is proc:
             self.proc = None
@@ -852,6 +864,15 @@ class ClaudeAgent(Agent):
                 self.fail_notice(claude_auth.failure_notice(self.cfg.get("language", "zh")) if claude_auth.login_failure(last) else
                                  f"Claude Code 退出了（{code}）" + (f"：{last}" if last else ""))
             self.turn_done.set()
+
+    def _busy(self, ev) -> None:
+        """P150: the chat session's sub-agents → the phone's 「在办事项」 dots (busy.py). A workflow CEO run is one item
+        of its own (tasks.py); None = the process ended, so nothing of it is running any more."""
+        b = getattr(self.host, "busy", None)
+        if b is None or self.cfg.get("_workflow_ceo"):
+            return
+        with contextlib.suppress(Exception):
+            b.session_gone("own") if ev is None else b.stream_event(ev, "own")
 
     def on_event(self, ev: dict) -> None:
         t = ev.get("type")

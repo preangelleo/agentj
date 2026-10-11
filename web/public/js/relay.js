@@ -921,7 +921,8 @@ function showPage(){
   }
   const qd = p.end === "open" && queuedTurn(p.id);     // P127: accepted, waiting behind the running turn — say so
   document.body.dataset.pageQueued = qd ? "1" : "0";
-  renderWords((isSilent(p.reply) ? "" : p.reply?.trim()) || (p.end === "open" || p.id === null ? "" : t('r.noReply')), p.end === "open" && p.id !== null, qd ? t('r.queue.card') : "");
+  const ahead = qd ? queuedAhead(p.id) : 0;              // P152 (P149 plan B): 「前面还有 N 条」 when this device queued more than one
+  renderWords((isSilent(p.reply) ? "" : p.reply?.trim()) || (p.end === "open" || p.id === null ? "" : t('r.noReply')), p.end === "open" && p.id !== null, qd ? t('r.queue.card') + (ahead ? " · " + t('r.queue.ahead', {n: ahead}) : "") : "");
   el("words").classList.toggle("empty", !visibleReply(p));
   renderMedia(el("words"), p);
   if (rdAt && rdAt.key === shownKey) renderReaderMedia(el("rdWords"), p);   // P59: the reader's slots, same Blobs
@@ -934,9 +935,16 @@ function paintCmdx(p){
   const box = el("cmdx"), c = p.card;
   box.replaceChildren();
   const isCmd = !!c && p.source && p.source.k === "cmd";
+  const cancelWait = isCmd && c.cancel_wait === true && p.end === "open" && p.source.dev === C.myDev();
   const openBtn = isCmd && typeof c.open === "string" && /^fr_(card|add)(:[A-Z0-9-]{1,40})?$/.test(c.open);   // P73
-  box.hidden = !isCmd || !((Array.isArray(c.models) && c.models.length) || c.undo === true || openBtn);
+  box.hidden = !isCmd || !((Array.isArray(c.models) && c.models.length) || c.undo === true || openBtn || cancelWait);
   if (box.hidden) return;
+  if (cancelWait){
+    const b = document.createElement("button"); b.type = "button"; b.className = "cmdundo";
+    b.textContent = t('sheet.cancel'); b.dataset.cmdCancel = String(p.id);
+    b.addEventListener("click", () => { b.disabled = true; sendApp({t: 'cmd_cancel', turn: p.id}).catch(() => { b.disabled = false; }); });
+    box.appendChild(b);
+  }
   if (openBtn){
     const o = document.createElement("button"); o.type = "button"; o.className = "cmdopen"; o.dataset.open = c.open;
     o.textContent = t(c.open === "fr_card" ? 'cmd.openCard' : 'cmd.openAdd');
@@ -1350,7 +1358,6 @@ function hasSayable(){ return !!input.value.trim() || atts.some(a => a.st !== "f
 function refreshSend(){
   el("send").disabled = sending || asrBusy > 0 || !hasSayable() || !(C.connected() || outbox.host !== null);   // offline: it queues (null = not paired)
   const c = el("clr"); if (c) c.hidden = !input.value;
-  noteEmpty();
 }
 function fieldMaxH(){ return innerHeight * 0.3; }
 function autosize(){
@@ -1480,7 +1487,6 @@ function paintChip(a){
 function paintTray(){
   tray.hidden = !atts.length;
   tray.setAttribute("aria-label", t('r.tray.count', {n: atts.length, max: MAX_ATT}));
-  noteEmpty();
   if (C) refreshSend();                                             // F27: a file alone can make Send live
 }
 function stage(a){
@@ -1724,12 +1730,13 @@ let inflight = null;      // {phase, sid, cancelled, delivered, cancelling, wake
 const queued = [];        // {sid, text, atts, rt, turn, at} accepted with state "queued", not yet delivered
 // P127 (追加6): the host answers every say `queued` first; an idle Agent takes it within milliseconds (say_state delivered).
 // Only one still waiting after QUEUE_QUIET_MS (the shared session is busy) is shown as queued — its page says
-// 「排队中，电脑忙完就接手」 and the composer keeps it as a pending line saying 「取消」 takes it back — so a quick hand-over
+// 「已收到，助理正在收尾上一件，马上接手」 (P152: + 「前面还有 N 条」) and the composer keeps it as a pending line saying 「取消」 takes it back — so a quick hand-over
 // never flickers.
 const QUEUE_QUIET_MS = 700;
 let queueTimer = 0;
 const queuedShown = () => { const now = Date.now(); return queued.filter(q => now - (q.at || 0) >= QUEUE_QUIET_MS); };
 function queuedTurn(id){ return Number.isInteger(id) && queuedShown().some(q => q.turn === id); }
+function queuedAhead(id){ const i = queued.findIndex(q => q.turn === id); return i > 0 ? i : 0; }
 function paintQueued(){
   const show = !!inflight && document.body.dataset.sending === "1" || (!inflight && queued.length > 0);
   el("sayCancel").hidden = !show;
@@ -2325,15 +2332,18 @@ async function showTurn(id){
 }
 
 // ---- keyboard shortcuts (relay ADR-032 / 052) -------------------------------------------------------
-const ESC2_MS = 500, EMPTY_GUARD_MS = 1000;
-var escAt = 0, escArmedInterrupt = false, emptySince = null, mKey = false, mCode = "";
+const ESC2_MS = 500;
+var escAt = 0, mKey = false, mCode = "";
+const omCan = () => !el("om").hidden, omOpen = () => el("om").classList.contains("open");
+function edgeArrow(e){
+  if ((e.key !== "ArrowLeft" && e.key !== "ArrowRight") || e.ctrlKey || e.metaKey || e.altKey || e.shiftKey || e.defaultPrevented || e.repeat || dialogOpen()) return false;
+  const v = input.value;
+  if (!v) return true;
+  if (input.selectionStart !== input.selectionEnd) return false;
+  return e.key === "ArrowLeft" ? input.selectionStart === 0 : input.selectionEnd === v.length;
+}
 const isM = e => !e.shiftKey && (e.key === "m" || e.key === "M" || (e.code === "KeyM" && e.key.length !== 1));
 function composerEmpty(){ return !input.value && !atts.length; }
-function noteEmpty(){
-  if (!input) return;
-  if (!composerEmpty()) emptySince = null;
-  else if (emptySince === null || emptySince === undefined) emptySince = performance.now();
-}
 const typingIn = tg => !!tg && (tg.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(tg.tagName));
 var silentKey = "", silentBusy = false;
 function silentWhen(ts){
@@ -2432,15 +2442,7 @@ function clearComposer(){
   input.value = "";
   input.dispatchEvent(new Event("input"));
   for (const a of atts.slice()) removeAtt(a);
-  emptySince = performance.now();
   toast(t('r.clear.done'), 1400);
-}
-async function interruptAgent(){
-  if (!C.connected()){ toast(t('r.int.offline'), 2200); return; }
-  if (lastStatus === "idle"){ toast(t('r.int.idle'), 1800); return; }
-  if (lastStatus === "waiting"){ toast(t('r.int.waiting'), 2400); return; }
-  const ok = await C.api.slash("stop");
-  toast(ok ? t('r.int.sent') : t('r.int.fail'), 2200);
 }
 // readline editing in the composer
 var killBuf = "";
@@ -2991,16 +2993,14 @@ export function init(ctx){
       if (!menu.hidden){ e.preventDefault(); closeMenu(); return; }
       if (replyTo){ e.preventDefault(); escAt = 0; cancelReply(); return; }
       if (tg === input){ e.preventDefault(); input.blur(); escAt = 0; return; } // Leave the field without counting dismissal toward double-Escape clear.
+      // P150: Esc never interrupts the Agent (owner, 2026-10-12) — the stop button / /stop / e-stop are the only ways.
       const now = performance.now();
       if (escAt && now - escAt <= ESC2_MS){
         escAt = 0; e.preventDefault();
-        if (escArmedInterrupt) interruptAgent();
-        else if (!composerEmpty()) clearComposer();
+        if (!composerEmpty()) clearComposer();
         return;
       }
       escAt = now;
-      escArmedInterrupt = composerEmpty() && emptySince !== null && now - emptySince >= EMPTY_GUARD_MS;
-      if (tg === input){ e.preventDefault(); input.blur(); }
       return;
     }
     // F13: ⌘, (mac) / Ctrl+, opens Settings from anywhere on the chat screen, the field and the reader included.
@@ -3022,6 +3022,8 @@ export function init(ctx){
       if (e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey && READLINE[k]){ e.preventDefault(); READLINE[k](); return; }
       if ((e.key === "ArrowUp" || e.key === "ArrowDown") && !e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey
           && !e.defaultPrevented && sug.hidden && histKey(e.key === "ArrowUp")){ e.preventDefault(); return; }
+      // P150: ← / → turn the card when the caret has nowhere to go (empty field, or already at that end); never on a held key with text.
+      if (edgeArrow(e)){ e.preventDefault(); goPage(e.key === "ArrowLeft" ? -1 : 1); return; }
     }
     if (e.ctrlKey || e.metaKey || e.altKey || typingIn(tg) || typingIn(document.activeElement) || dialogOpen()) return;
     if (e.key === "?"){ e.preventDefault(); openKeys(); return; }
@@ -3043,7 +3045,9 @@ export function init(ctx){
     const screen = Math.max(40, Math.round(mainEl.clientHeight * 0.9));
     const nav = {j: () => goPage(-1), ArrowLeft: () => goPage(-1), k: () => goPage(1), ArrowRight: () => goPage(1),
                  g: () => goEdge(true), G: () => goEdge(false),
-                 ArrowUp: () => mainEl.scrollBy(0, -step), ArrowDown: () => mainEl.scrollBy(0, step),
+                 // P150: ↑ expands the message card (= o), ↓ folds it; with nothing to toggle they scroll as before.
+                 ArrowUp: () => { if (omCan() && !omOpen()) setOm(true); else mainEl.scrollBy(0, -step); },
+                 ArrowDown: () => { if (omCan() && omOpen()) setOm(false); else mainEl.scrollBy(0, step); },
                  " ": () => mainEl.scrollBy(0, e.shiftKey ? -screen : screen),
                  o: () => { if (!el("om").hidden) setOm(!el("om").classList.contains("open")); },
                  y: copyReply, Y: copySource, r: () => startReply(currentPage()), f: openReader}[e.key];
