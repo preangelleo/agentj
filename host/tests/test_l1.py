@@ -426,7 +426,7 @@ class Chain(unittest.TestCase):
         (self.work / "victim.txt").write_text("keep me")
 
         def msgs():
-            return [o for _, o in sent if (o["t"] == "msg" and o.get("from") in ("agent", "notice")) or o["t"] == "agent_notice"]
+            return [o for _, o in sent if o["t"] == "msg" and o.get("from") in ("agent", "notice")]
 
         def statuses():
             return [o["s"] for _, o in sent if o["t"] == "status"]
@@ -477,8 +477,7 @@ class Chain(unittest.TestCase):
             await wait(lambda: sum(len(m["text"]) for m in msgs() if set(m["text"]) == {"长"}) == 9000)
             # 6. the agent process dies mid-turn → notice; the next message resumes the same session
             await host._app(s, {"t": "msg", "id": "f" * 16, "text": "CRASH", "ts": 0})
-            # The permission socket can close before the process watcher sees its exit; both are actionable crash notices.
-            await wait(lambda: any("退出了" in m["text"] or "批准通道断了" in m["text"] for m in msgs()))
+            await wait(lambda: any("退出了" in m["text"] for m in msgs()))
             await host._app(s, {"t": "msg", "id": "g" * 16, "text": "还在吗", "ts": 0})
             await wait(lambda: any(m["text"] == "ECHO: 还在吗" for m in msgs()))
             host.stopping.set()

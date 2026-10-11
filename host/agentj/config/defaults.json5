@@ -15,8 +15,6 @@
     "shared_session_id": "",
     "shared_opencode_port": 0,
     "high_risk_warnings": false,
-    // P128 shared-mode approvals: standard = ask when a credential is changed or shown; strict = also when only read / mentioned
-    "approvals": "standard",
     // F14: the fence hides Agent J's data in independent sessions; off = harness permissions only
     "isolation": true,
     "allow_docker": false,

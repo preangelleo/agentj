@@ -25,10 +25,6 @@ class Defaults(unittest.TestCase):
         preferences.ensure()
         # Root bootstrap installs hooks; start these ingress cases with no native setting.
         if inbound.path().exists(): inbound.path().unlink()
-        # P127: setup may already apply the shared defaults (status-line tap); start without Agent J records too.
-        from agentj import claude_statusline
-        for p in (inbound.meta_path(), claude_statusline.meta_path(), *inbound.path().parent.glob('settings.json.agentj-backup-*')):
-            if p.exists(): p.unlink()
     def test_default_backup_once_and_pending_notice_survives_restart(self):
         p = inbound.path(); p.parent.mkdir(exist_ok=True); raw = b'{"other":1}\n'; p.write_bytes(raw)
         self.assertTrue(inbound.ensure_shared_default(self.st)); self.assertEqual(inbound.value(),'accept')
@@ -42,13 +38,13 @@ class Defaults(unittest.TestCase):
         self.assertIsNone(inbound.default_notice(State()))
         self.assertEqual(len(list(p.parent.glob('settings.json.agentj-backup-*'))),1)
     def test_explicit_values_preserved_including_previous_off(self):
-        # P127: a plain user-layer `hold` is now repaired (test_p127_host); refuse/unknown stay native.
-        for val in ('refuse','accept','invalid',None):
+        for val in ('hold','refuse','invalid',None):
             p=inbound.path();p.parent.mkdir(exist_ok=True);p.write_text(json.dumps({'crossSessionInbound':val}))
-            self.assertEqual(inbound.ensure_shared_default(self.st), val is None)
-            self.assertEqual(inbound.read()['crossSessionInbound'], 'accept' if val is None else val)
+            self.assertTrue(inbound.ensure_shared_default(self.st))
+            self.assertEqual(inbound.read()['crossSessionInbound'],'accept')
+            self.assertIn('/clear',inbound.default_notice(self.st))
         self.assertFalse(inbound.ensure_shared_default(self.st))
-        inbound.set_enabled(False);self.assertFalse(inbound.ensure_shared_default(self.st))
+        inbound.set_enabled(False);self.assertTrue(inbound.ensure_shared_default(self.st))
     def test_only_shared_claude_touches_settings(self):
         for cfg in ({'kind':'codex','session_mode':'shared'}, {'kind':'opencode','session_mode':'shared'},
                     {'kind':'claude','session_mode':'independent'},None):
@@ -65,7 +61,6 @@ class Defaults(unittest.TestCase):
     def test_off_after_migration_suppresses_stale_enabled_notice(self):
         inbound.ensure_shared_default(self.st);inbound.set_enabled(False)
         self.assertIn('hold',inbound.default_notice(self.st))
-        self.assertNotIn('已开启',inbound.diagnostic(self.st))
     def test_cli_selection_initializes_unset_without_prompt(self):
         args=SimpleNamespace(mode='claude',dir=str(self.home),model=None,unfenced=False,allow_docker=False)
         with patch('agentj.wizard.bootstrap_root'),patch('agentj.fence.problem',return_value=None),patch('builtins.print'):
@@ -108,7 +103,7 @@ class Runtime(unittest.IsolatedAsyncioTestCase):
             shared=preferences.edit(independent,'agent.session_mode','shared')
             self.assertTrue((await h.apply_preferences(shared))['ok'])
         self.assertEqual(inbound.value(),'accept')
-        inbound.set_enabled(False);h.configure_claude_inbound();self.assertEqual(inbound.value(),'hold')
+        inbound.set_enabled(False);h.configure_claude_inbound();self.assertEqual(inbound.value(),'accept')
     async def test_unreadable_settings_emit_safe_fallback(self):
         p=inbound.path();p.parent.mkdir(exist_ok=True);p.write_text('private invalid contents')
         h=Host(self.st,events='quiet');h.agent_notice=Mock();h.configure_claude_inbound()

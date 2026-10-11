@@ -20,7 +20,6 @@ import signal
 import sys
 import uuid
 
-from .text import pick
 from .agent import Agent
 from .agent_opencode import OpenCodeAgent, Client, HTTPError, CONNECT_WAIT, to_tool, split_model
 from . import privacy, shared_hook, danger, provenance
@@ -35,8 +34,8 @@ CLAUDE_INPUT_WAIT = 10  # acceptance, not completion; never retry an uncertain s
 
 
 def public_text(text: str) -> str:
-    # Reuse the product's deterministic scrubber; no provider/model call. Owner channel: paths stay readable (P127).
-    return privacy.redact(text, paths=True)
+    # Reuse the product's deterministic scrubber; no provider/model call.
+    return privacy.redact(text)
 
 
 def claude_sessions(directory: str, sid: str = "") -> list[dict]:
@@ -150,16 +149,6 @@ class SharedClaudeAgent(Agent):
         import time
         self.untrusted_state, self.untrusted_at = state, time.monotonic()
 
-    def sync_compacting(self):
-        """P127: the native compaction (PreCompact → SessionStart(compact) / PostCompact, or AgentState's stale end) is
-        the phone's `compacting` status, at once — its water sinks and its page says so — then the status from before."""
-        on = self.state.snapshot().get("compacting") is True
-        if on and self.status not in ("compacting", "down"):
-            self._pre_compact = self.status
-            self.set_status("compacting")
-        elif not on and self.status == "compacting":
-            self.set_status(getattr(self, "_pre_compact", None) or "idle")
-
     def _committed_stop(self, event, reply):
         if self.untrusted_state == "running":
             self.untrusted_state = None
@@ -218,7 +207,6 @@ class SharedClaudeAgent(Agent):
             self.compacted_at = time.time()
             self.identity_applied.pop(sid, None)    # P116: a compacted context must read the identity again
         self.state.handle(event)
-        self.sync_compacting()
         if name == "SessionStart" and event.get("source") == "clear" and self.clear_seen != sid:
             self.clear_seen = sid
             self.host.st.set_agent_session(self.kind, sid)
@@ -260,20 +248,18 @@ class SharedClaudeAgent(Agent):
                 self.permissions.discard(cat)
                 self.risk_grants.pop(cat, None)
         if name == "PreToolUse" and self.cfg.get("high_risk_warnings", False):
-            verdict = danger.classify_shared(event.get("tool_name"), event.get("tool_input"), self.cfg.get("danger_extra"),
-                                             self.cfg.get("approvals", "standard"))
-            keys = danger.grant_keys(verdict)
-            if keys and set(keys) <= self.permissions:
-                for cat in keys:
+            verdict = danger.classify_shared(event.get("tool_name"), event.get("tool_input"), self.cfg.get("danger_extra"))
+            if verdict.cats and set(verdict.cats) <= self.permissions:
+                for cat in verdict.cats:
                     self.host.st.log("shared_risk_batch", category=cat, grant=self.risk_grants[cat]["rid"],
                         session=self.session["sessionId"], input_sha256=hashlib.sha256(
                             json.dumps(event.get("tool_input"), sort_keys=True).encode()).hexdigest())
-            if set(keys) - self.permissions:
+            if set(verdict.cats) - self.permissions:
                 ident = event.get("tool_use_id")
                 digest = hashlib.sha256(json.dumps([event.get("tool_name"), event.get("tool_input")], sort_keys=True).encode()).hexdigest()
-                self.risk_requests[(ident, digest)] = keys
+                self.risk_requests[(ident, digest)] = verdict.cats
                 return {"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": "ask",
-                    "permissionDecisionReason": "Agent J: " + danger.card_why(verdict, getattr(self.host, "lang", "zh"))}}
+                    "permissionDecisionReason": "Agent J: " + verdict.why}}
         if name == "PermissionRequest" and provenance.untrusted_turn(self):
             # B1: a group member's turn never reaches the owner's approval, nor a category grant from an owner turn
             self.host.st.log("ask_done", tool=event.get("tool_name"), decision="deny", reason="group_source")
@@ -295,7 +281,6 @@ class SharedClaudeAgent(Agent):
                     self.host.agent_notice("这台电脑上另有一个审批处理器在回答「" + str(event.get("tool_name") or "?")[:40]
                                            + "」的权限请求；Agent J 不重复回答，请在原处处理。 / Another approval hook answers this request; Agent J does not answer twice.")
                 return {}
-
         if name == "PermissionRequest":
             tool, inp = event.get("tool_name", "?"), event.get("tool_input") or {}
             digest = hashlib.sha256(json.dumps([tool, inp], sort_keys=True).encode()).hexdigest()
@@ -437,14 +422,14 @@ class SharedClaudeAgent(Agent):
     async def command(self, name, arg):
         from .slash import Result, HELP
         if name == "help":
-            return Result(HELP + pick(getattr(self.host, "lang", "zh"), "\n共享 Claude：clear/compact 等当前回合结束后执行；成功以原生回执确认。", "\nShared Claude waits for the desktop turn and confirms native receipts."), "info")
+            return Result(HELP + "\n共享 Claude：clear/compact 等当前回合结束后执行；成功以原生回执确认。 / Shared Claude waits for the desktop turn and confirms native receipts.", "info")
         if name in ("context", "usage", "status", "cost", "model") and not arg:
             from . import claude_statusline
             m = claude_statusline.read(self.host.st.root, (self.session or {}).get("sessionId"), self.compacted_at)
             self.meter(**m)
             if name == "context":
                 c = m.get("ctx") or {}
-                return Result((pick(getattr(self.host, "lang", "zh"), "上下文：", "Context: ") + (str(c['pct']) + '%' if c.get('pct') is not None else pick(getattr(self.host, "lang", "zh"), "—（等待原生读数）", "— (awaiting native measurement)"))), "info")
+                return Result("上下文 / Context: " + (str(c['pct']) + '%' if c.get('pct') is not None else "—（等待原生读数 / awaiting native measurement）"), "info")
             if name == "usage":
                 return Result("5h: " + (str(m['h5']['pct']) + '%' if m.get('h5') else "—") + " · week: " + (str(m['week']['pct']) + '%' if m.get('week') else "—"), "info")
             if name == "cost":
@@ -465,21 +450,21 @@ class SharedClaudeAgent(Agent):
         if name not in ("clear", "compact") or (name == "clear" and arg) or any(c in arg for c in '\r\n\x1b\x00'):
             return Result("此控制没有执行：共享终端没有可验证的接口；请在终端运行。 / Not executed: no verified shared control receipt; run it in the terminal.", "refused")
         if self.session is None and not await self.attach():
-            return Result(pick(getattr(self.host, "lang", "zh"), "没清成：Claude 会话未连接", "No change: Claude session unavailable"), "error")
+            return Result("没清成 / No change: Claude 会话未连接 / session unavailable", "error")
         # The phone queue already serializes phone turns. Also wait for DESKTOP
         # turns, which do not occupy that queue. No Esc, no approval answers.
         import time
         deadline = time.monotonic() + DESKTOP_IDLE_WAIT
         while True:
             if self.halting or self.host.stopped() is True:
-                return Result(pick(getattr(self.host, "lang", "zh"), "已取消，未发送控制。", "Cancelled; control not sent."), "error")
+                return Result("已取消，未发送控制。 / Cancelled; control not sent.", "error")
             live = claude_sessions(self.cfg['dir'], self.session['sessionId'])
             if not live or live[0]['pid'] != self.session['pid']:
-                return Result(pick(getattr(self.host, "lang", "zh"), "没清成：所选桌面会话已离线", "No change: selected desktop session offline"), "error")
+                return Result("没清成 / No change: 所选桌面会话已离线 / selected desktop session offline", "error")
             if self.state.status == 'idle' and live[0].get('status') in ('idle', 'done'):
                 break
             if time.monotonic() >= deadline:
-                return Result(pick(getattr(self.host, "lang", "zh"), "没清成：等待桌面回合结束超时，未发送命令", "No change: desktop idle timeout; command not sent"), "error")
+                return Result("没清成 / No change: 等待桌面回合结束超时，未发送命令 / desktop idle timeout; command not sent", "error")
             await asyncio.sleep(.1)
         if self.native_lock.locked():
             return Result("没执行：模型切换正在进行，稍后再试。 / Not sent: a model switch is in progress.", "error")
@@ -495,17 +480,17 @@ class SharedClaudeAgent(Agent):
                 from .shared_controls import send
                 why = await asyncio.to_thread(send, self.session, text)
                 if why != 'sent':
-                    return Result(pick(getattr(self.host, "lang", "zh"), "没清成：桌面终端未提供安全输入通道（" + why + "）；请在所选终端运行 /" + name + "。", "No change: the desktop terminal has no safe input channel (" + why + "); run /" + name + " in the selected terminal."), "error")
+                    return Result("没清成 / No change: 桌面终端未提供安全输入通道（" + why + "）；请在所选终端运行 /" + name + "。 / Run the command in the selected terminal.", "error")
             try:
                 await asyncio.wait_for(self.control_ack.wait(), CONTROL_WAIT)
             except asyncio.TimeoutError:
-                return Result(pick(getattr(self.host, "lang", "zh"), "没清成：未收到原生回执，结果未确认；请核实桌面，勿重复发送。", "No confirmed change: native receipt timeout; check desktop before retrying."), "error")
+                return Result("没清成：未收到原生回执，结果未确认；请核实桌面，勿重复发送。 / No confirmed change: native receipt timeout; check desktop before retrying.", "error")
             if self.halting or self.host.stopped() is True:
-                return Result(pick(getattr(self.host, "lang", "zh"), "控制结果尚未确认，已停止等待；请核实电脑。", "Control unconfirmed; waiting stopped, check the desktop."), "error")
+                return Result("控制结果尚未确认，已停止等待；请核实电脑。 / Control unconfirmed; waiting stopped, check the desktop.", "error")
             self.read_statusline()
             if name == 'clear' and not self.clear_history_ok:
-                return Result(pick(getattr(self.host, "lang", "zh"), "桌面已清空，但手机历史归档失败，旧页仍保留；请检查本机磁盘。", "Desktop cleared, but phone history archive failed; check local disk."), "error")
-            return Result(pick(getattr(self.host, "lang", "zh"), "已清空，旧历史已归档；水位等待新会话实际读数。", "Cleared; history archived, awaiting the new session measurement.") if name == 'clear' else pick(getattr(self.host, "lang", "zh"), "已压缩；水位等待压缩后实际读数。", "Compacted; awaiting the post-compaction measurement."), sep=name == 'clear')
+                return Result("桌面已清空，但手机历史归档失败，旧页仍保留；请检查本机磁盘。 / Desktop cleared, but phone history archive failed; check local disk.", "error")
+            return Result("已清空，旧历史已归档；水位等待新会话实际读数。 / Cleared; history archived, awaiting the new session measurement." if name == 'clear' else "已压缩；水位等待压缩后实际读数。 / Compacted; awaiting the post-compaction measurement.", sep=name == 'clear')
         finally:
             self.control_name = None
 
@@ -679,7 +664,7 @@ class SharedClaudeAgent(Agent):
             sessions = claude_sessions(self.cfg["dir"])
         if len(sessions) != 1:
             if not self.failed_start:
-                self.local_fail(pick(getattr(self.host, "lang", "zh"), "共享 Claude 会话不存在或有多个匹配：在电脑指定 session id。", "Choose one live Claude session ID."))
+                self.local_fail("共享 Claude 会话不存在或有多个匹配：在电脑指定 session id。 / Choose one live Claude session ID.")
             self.failed_start = True
             return False
         self.session = sessions[0]
@@ -692,7 +677,7 @@ class SharedClaudeAgent(Agent):
         self.transcript = root / "projects" / slug / (sid + ".jsonl")
         if not self.transcript.is_file() and not (self.native and self.native.pid == self.session["pid"]):
             if not self.failed_start:
-                self.local_fail(pick(getattr(self.host, "lang", "zh"), "Claude 会话的 transcript 不可读，未投递。", "Claude transcript unavailable."))
+                self.local_fail("Claude 会话的 transcript 不可读，未投递。 / Claude transcript unavailable.")
             self.failed_start = True
             return False
         self.offset = self.transcript.stat().st_size if self.transcript.exists() else 0
@@ -712,7 +697,6 @@ class SharedClaudeAgent(Agent):
                 if self.transcript is not None and self.transcript.is_file():
                     self.read_transcript()
                 self.read_statusline()
-                self.sync_compacting()
                 if self.model_pending and self.state.status == "idle" and not self.phone_turn and not self.native_lock.locked() \
                         and (self._pending_task is None or self._pending_task.done()):
                     self._pending_task = asyncio.create_task(self._apply_pending())
@@ -811,17 +795,26 @@ class SharedClaudeAgent(Agent):
             try:
                 await asyncio.wait_for(self.input_seen.wait(), CLAUDE_INPUT_WAIT)
             except asyncio.TimeoutError:
-                # Socket write is not native acceptance. Name the concrete reason (P127): managed policy, project /
-                # local / user setting, owner off, a session started before the change, or simply busy.
+                # Socket write is not native acceptance. Busy desktop tools or a
+                # held inbound message can both delay it: never claim certainty.
                 from . import claude_inbound
-                notice = claude_inbound.turn_notice(self.cfg.get("dir"), self.cfg.get("language", "zh")) + " " + claude_inbound.diagnostic(self.host.st, self.cfg.get("language", "zh"), self.cfg)
+                lang = self.cfg.get("language", "zh")
+                try:
+                    reason = claude_inbound.diagnostic(self.host.st, lang, self.cfg)
+                except (OSError, ValueError):
+                    reason = ("Claude settings could not be verified; run agentj doctor." if lang == "en"
+                              else "Claude 设置无法核实；请运行 agentj doctor。")
+                notice = (("Claude has not acknowledged this message. " if lang == "en" else
+                           "电脑上的 Claude Code 尚未接收这条消息。") + reason +
+                          (" Check the desktop before resending: it may be busy and the original may still arrive."
+                           if lang == "en" else "请先在电脑核实：会话也可能正忙，别重复发送，原消息仍可能送达。"))
                 self.fail_notice(notice)
                 return
             # Only a committed native Stop belonging to this phone input ends
             # the turn; registry idle and transcript flush timing never do.
             await asyncio.wait_for(self.done.wait(), 300)
         except asyncio.TimeoutError:
-            self.fail_notice(pick(getattr(self.host, "lang", "zh"), "共享 Claude 未确认回合完成，请在电脑核实。", "Turn completion unconfirmed; check the desktop."))
+            self.fail_notice("共享 Claude 未确认回合完成，请在电脑核实。 / Turn completion unconfirmed; check the desktop.")
         finally:
             self.phone_turn = False
 
@@ -837,7 +830,7 @@ class SharedClaudeAgent(Agent):
                     self.host.queue_dropped(item)
         # Esc must never answer a native approval dialog.
         if self.state.status == "waiting":
-            self.host.agent_notice(pick(getattr(self.host, "lang", "zh"), "请先处理审批卡片。", "Resolve the approval card first."))
+            self.host.agent_notice("请先处理审批卡片。 / Resolve the approval card first.")
             return False
         if not busy or not self.session:
             return busy
@@ -851,7 +844,7 @@ class SharedClaudeAgent(Agent):
         if result == "sent":
             self.done.set()
         else:
-            self.host.agent_notice(pick(getattr(self.host, "lang", "zh"), "此电脑终端未提供安全中断通道。", "Desktop interrupt unavailable."))
+            self.host.agent_notice("此电脑终端未提供安全中断通道。 / Desktop interrupt unavailable.")
         return result == "sent"
 
     async def stop(self):
@@ -948,7 +941,7 @@ class SharedOpenCodeAgent(OpenCodeAgent):
                 with contextlib.suppress(OSError, ValueError, HTTPError, asyncio.TimeoutError):
                     await self.context_meter(include_quota=False)
             return res
-        return Result(pick(getattr(self.host, "lang", "zh"), "没有执行：附加的 OpenCode 服务器不提供切换桌面会话的接口；用桌面 /new 新建、/model 换模型，再指定新 session id。", "Not executed: attached server cannot switch the desktop session; use /new or /model there, then select its session ID."), "error")
+        return Result("没有执行：附加的 OpenCode 服务器不提供切换桌面会话的接口；用桌面 /new 新建、/model 换模型，再指定新 session id。 / Not executed: attached server cannot switch the desktop session; use /new or /model there, then select its session ID.", "error")
 
     async def apply_model(self, model, effort, default=False):
         if self.owned_server:
@@ -1014,7 +1007,7 @@ class SharedOpenCodeAgent(OpenCodeAgent):
                 await self.prepare_risk()
             return await super()._spawn()
         if type(port) is not int or not 1 <= port <= 65535:
-            self.local_fail(pick(getattr(self.host, "lang", "zh"), "指定电脑 OpenCode server 的 loopback 端口。", "Set the existing OpenCode loopback port."))
+            self.local_fail("指定电脑 OpenCode server 的 loopback 端口。 / Set the existing OpenCode loopback port.")
             return False
         # Owner's server password is read from its native environment, never config
         # or phone input. Empty supports a native unauthenticated loopback server.
@@ -1056,7 +1049,7 @@ class SharedOpenCodeAgent(OpenCodeAgent):
         except (OSError, ValueError, HTTPError, asyncio.TimeoutError):
             self.proc = None
             self.failed_start = True
-            self.fail_notice(pick(getattr(self.host, "lang", "zh"), "不能附着电脑 OpenCode server/session。", "Cannot attach the desktop OpenCode server/session."))
+            self.fail_notice("不能附着电脑 OpenCode server/session。 / Cannot attach the desktop OpenCode server/session.")
             return False
         return True
 
@@ -1280,4 +1273,4 @@ class UnavailableSharedAgent(Agent):
         super().__init__(host, cfg)
         self.kind = cfg["kind"]
     async def turn(self, text):
-        self.local_fail(pick(getattr(self.host, "lang", "zh"), "共享模式的高危执行前拦截尚未验证，未投递；Codex 接续也尚未完成。", "Shared pre-execution guard and Codex continuation are not ready."))
+        self.local_fail("共享模式的高危执行前拦截尚未验证，未投递；Codex 接续也尚未完成。 / Shared pre-execution guard and Codex continuation are not ready.")

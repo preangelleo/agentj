@@ -146,18 +146,3 @@ def ask_yes(question: str, read=None) -> bool:
     except EOFError:
         ans = ""
     return ans.strip().lower() in ("y", "yes")
-
-
-def pick(lang, zh: str, en: str) -> str:
-    """P128: one language per message (appearance.language) instead of a "中文 / English" concatenation."""
-    return en if str(lang or "").lower().startswith("en") else zh
-
-
-def one(lang, text: str) -> str:
-    """A legacy "中文 / English" string → the half in `lang`; anything else unchanged (P128)."""
-    import re
-    parts = str(text).split(" / ")
-    if len(parts) == 2 and re.search(r"[一-鿿]", parts[0]) and not re.search(r"[一-鿿]", parts[1]) \
-            and parts[1][:1].isascii() and parts[1][:1].isalpha():
-        return pick(lang, parts[0], parts[1])
-    return text

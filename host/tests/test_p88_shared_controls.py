@@ -61,31 +61,6 @@ class Controls(unittest.IsolatedAsyncioTestCase):
             self.assertFalse(task.done())
         await self.a.hook_event({'hook_event_name':'PostCompact','session_id':OLD})
         self.assertEqual((await task).kind,'ok');self.host.shared_clear.assert_not_called()
-    async def test_p127_precompact_is_compacting_on_the_phone_at_once(self):
-        # P127: shared mode used to keep the phone's /compact page at 「已送达，等待电脑接手…」 and the water still for the
-        # whole compaction — PreCompact only reached AgentState. It is the phone's `compacting` status now, until the end.
-        task=asyncio.create_task(self.a.command('compact','')); await asyncio.sleep(.15); self.read()
-        self.assertEqual(self.a.status,'idle')
-        await self.a.hook_event({'hook_event_name':'PreCompact','trigger':'manual','session_id':OLD})
-        self.assertEqual(self.a.status,'compacting'); self.host.agent_status.assert_called_with('compacting')
-        await self.a.hook_event({'hook_event_name':'SessionStart','source':'compact','session_id':OLD})
-        self.assertEqual(self.a.status,'idle')
-        await self.a.hook_event({'hook_event_name':'PostCompact','session_id':OLD})
-        self.assertEqual((await task).kind,'ok'); self.assertEqual(self.a.status,'idle')
-        self.host.meter_update.assert_any_call(ctx=None,source_at=None)   # the real reading comes back afterwards
-    async def test_p127_desktop_and_auto_compaction_restore_the_previous_status(self):
-        await self.a.hook_event({'hook_event_name':'PreCompact','trigger':'manual','session_id':OLD})   # typed on the desktop
-        self.assertEqual(self.a.status,'compacting')
-        await self.a.hook_event({'hook_event_name':'PostCompact','session_id':OLD})
-        self.assertEqual(self.a.status,'idle')
-        self.a.status='working'                                   # auto-compaction inside a phone turn
-        await self.a.hook_event({'hook_event_name':'PreCompact','trigger':'auto','session_id':OLD})
-        self.assertEqual(self.a.status,'compacting')
-        self.a.state._end_compact()                               # the stale timer / statusline json ends it, no hook
-        self.a.sync_compacting()
-        self.assertEqual(self.a.status,'working')
-        await self.a.hook_event({'hook_event_name':'PreCompact','session_id':'33333333-3333-3333-3333-333333333333'})
-        self.assertEqual(self.a.status,'working', 'a foreign session never moves this status')
     async def test_busy_desktop_queues_without_esc(self):
         self.a.state.status='working'; self.a.session['status']='busy'
         task=asyncio.create_task(self.a.command('clear',''));await asyncio.sleep(.15)

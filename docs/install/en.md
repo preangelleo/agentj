@@ -69,7 +69,7 @@ It may need you here:
 The AI installs `agentj`, the program on your computer, at one fixed version:
 
 ```bash
-uv tool install "git+https://github.com/preangelleo/agentj@v0.18.1a1#subdirectory=host"
+uv tool install "git+https://github.com/preangelleo/agentj@v0.18.0a1#subdirectory=host"
 agentj doctor
 ```
 
@@ -109,7 +109,7 @@ If setup instructions fail, copy the installation prompt from the same empty sea
 
 After this computer is bound, open its seat card on the account page and select Add a remote. Confirm once with your passkey and scan. No terminal approval passphrase is required. The same account page can add a phone to another bound, online computer.
 
-A local approval passphrase is optional for offline or unbound use. Set it yourself with `agentj passphrase set`; the Agent must never choose or enter it. Not sure which route works right now? `agentj pair --check` says it before any QR code: on a bound, online computer `agentj pair` and `agentj admin` need no passphrase either (approve the waiting phone on the seat card); on an unbound one they still require it.
+A local approval passphrase is optional for offline or unbound use. Set it yourself with `agentj passphrase set`; the Agent must never choose or enter it. The local `agentj pair` alternative still requires it.
 
 ### Step 9: Connect the AI coding tool
 
@@ -148,7 +148,7 @@ Agent J has to be running on the computer first (Step 10).
 3. On the phone, tap Scan QR code and scan the code shown on the account page. If needed, use Copy pairing link and paste it into the Home Screen app under Or paste the pairing link. Do not paste it into an AI chat.
 4. This account-approved pairing needs no terminal code or approval passphrase. Wait for the phone to connect.
 
-For an offline or unbound computer (`agentj pair --check` tells you), the local alternative remains `agentj pair` (or `agentj pair --link`): enter the phone’s six-digit code and your local approval passphrase on that computer.
+For an offline or unbound computer, the local alternative remains `agentj pair` (or `agentj pair --link`): enter the phone’s six-digit code and your local approval passphrase on that computer.
 The link is the pairing key: it works once, for 5 minutes. Never send it through WeChat, a group chat or email, and never to any AI.
 
 ### Step 12: Try it on the phone, then offer the completion feedback

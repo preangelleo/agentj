@@ -158,10 +158,10 @@ def _command_audio(text,cfg,timeout):
 
 def has_key(name): return bool(os.environ.get(name))
 
-def validate_runtime(cfg, *, telegram_enrolled=False):
+def validate_runtime(cfg):
     if any(x.get("type")=="telegram" for x in p.get(cfg,"channels.items",[])):
         from .telegram import configuration
-        if not configuration() and telegram_enrolled is not True:raise p.ConfigError("channels.items","Telegram needs owner enrollment and a local bot key; run agentj channel add telegram in your terminal",code=2)
+        if not configuration():raise p.ConfigError("channels.items","Telegram needs owner enrollment and a local bot key; run agentj channel add telegram in your terminal",code=2)
     if p.get(cfg,"voice.wake_enabled"):
         from . import wake
         from .state import State

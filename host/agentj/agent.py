@@ -726,9 +726,6 @@ class ClaudeAgent(Agent):
         if src:   # a source checkout (launcher + PYTHONPATH): the tool must import this same package
             env["PYTHONPATH"] = src + (os.pathsep + env["PYTHONPATH"] if env.get("PYTHONPATH") else "")
         env["MCP_TOOL_TIMEOUT"] = str(int((self.host.ask_ttl + 60) * 1000))   # never cut a pending approval short
-        from . import fence
-        if self.cfg.get("fence", True):
-            env = fence.launch_environment(env, self.cfg.get("docker", False), self.kind)
         sid = self.host.st.agent_session(self.kind)
         self.proc = await asyncio.create_subprocess_exec(*argv, cwd=self.cfg["dir"], env=env,
                                                          stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE,

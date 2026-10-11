@@ -147,8 +147,7 @@ class StateMove(unittest.TestCase):
 
     def test_upgrade_keeps_everything(self):
         before = _old_state(self.home)
-        # P127: the owner's answer (a terminal asks y/N; without one the move needs --migrate-legacy, see test_p127_setup)
-        r = _cli(self.home, "--migrate-legacy", "devices", "--json")
+        r = _cli(self.home, "devices", "--json")
         self.assertEqual(r.returncode, 0, r.stderr)
         self.assertEqual(sorted(json.loads(r.stdout)), sorted(before["devices"]), "stdout is pure JSON (notices go to stderr)")
         self.assertIn("~/.local/state/agentj", r.stderr)
@@ -180,7 +179,7 @@ class StateMove(unittest.TestCase):
 
     def test_custom_urls_are_left_alone(self):
         _old_state(self.home, relay="ws://127.0.0.1:9", web="https://web.example", api="https://api.example")
-        self.assertEqual(_cli(self.home, "--migrate-legacy", "status").returncode, 0)
+        self.assertEqual(_cli(self.home, "status").returncode, 0)
         st = State(self.new)
         self.assertEqual((st.config()["relay"], st.config()["web"]), ("ws://127.0.0.1:9", "https://web.example"))
         self.assertEqual(json.loads(st.cloud_path.read_text())["api"], "https://api.example")
@@ -201,13 +200,13 @@ class StateMove(unittest.TestCase):
             self.assertEqual(d["pending"], "serve_running")
         finally:
             lis.close()
-        r = _cli(self.home, "--migrate-legacy", "status")
+        r = _cli(self.home, "status")
         self.assertTrue(self.old.is_symlink())
         self.assertIn(before["channel"], r.stdout)
 
     def test_rollback_round_trip(self):
         before = _old_state(self.home)
-        _cli(self.home, "--migrate-legacy", "status")
+        _cli(self.home, "status")
         lis = _Listener(self.new)
         try:
             r = _cli(self.home, "migrate", "rollback")
@@ -226,7 +225,7 @@ class StateMove(unittest.TestCase):
         self.assertFalse(st.migrated_path.exists())
         self.assertEqual((st.devices(), st.config()["channel"]), (before["devices"], before["channel"]))
         self.assertNotEqual(_cli(self.home, "migrate", "rollback").returncode, 0, "nothing left to roll back")
-        _cli(self.home, "--migrate-legacy", "status")       # moved again on the owner's answer
+        _cli(self.home, "status")       # the next agentj command moves it again
         self.assertTrue(self.old.is_symlink())
         self.assertEqual(State(self.new).devices(), before["devices"])
 

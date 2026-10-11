@@ -73,8 +73,8 @@ packaged identity and this file through native hooks at start, resume, compactio
 
 Shared Claude model/effort/cost (P116): the phone pill and `/model <name> [effort]` use Claude Code's own `/model` picker on
 the exact desktop pane, session-only; success only when the session's status line reports it, otherwise say "not
-confirmed" and quote the native reading. Busy desktop = queued. `/cost` is Claude Code's own figure. Status-line data is on by
-default for shared Claude; if `status`/doctor says shadowed, run `agentj config claude-statusline on` to re-chain it at the effective layer. If
+confirmed" and quote the native reading. Busy desktop = queued. `/cost` is Claude Code's own figure. Status-line data needs
+`agentj config claude-statusline on`; if `status` says shadowed, run off then on to chain it at the effective layer. If
 another PermissionRequest hook answers the same tool, Agent J yields; tell the owner to keep exactly one answerer.
 
 Credential troubleshooting safety: check only storage existence (v1 `auth.json`, v2 `opencode.db`) and, if the owner needs identification, a masked suffix of at most four characters. Never dump `auth.json`, SQLite rows, tokens, environment files or database contents to chat/logs. Existence does not prove a valid provider key. After `opencode auth login` changes a key, Agent J restarts the `opencode serve` it started itself before the next message (same conversation; see "Proxy values and harness restart"); an attached owner OpenCode server must be restarted by the owner when idle. Keep `AGENTJ_OPENCODE_BIN` in the service env file: existing saved overrides win on upgrade, units/plists contain no binary override. Without an override, first PATH executable wins; a mise/asdf shim resolves only to its configured version or one unambiguous installation. Doctor reports the selected path and why; selection changes are printed by service install.
@@ -221,7 +221,7 @@ The refusal now names the holder (P73, ADR-A178): an Agent J leftover `codex app
 
 ## Codex sandbox / Codex 沙箱 (F30, P73)
 
-- Default: with no **top-level** `sandbox_mode` in `$CODEX_HOME/config.toml` (default `~/.codex/config.toml`), Agent J runs the main Codex Agent directly on the system — `danger-full-access`, like the owner's terminal: network, home directory, installs. The danger list, high-risk warnings and phone approval cards still apply. Shared-mode approval strength (P128): `agentj config approvals standard|strict|status` (`agent.approvals`, default `standard` = ask only when a credential is changed or shown on screen; `strict` = any credential path asks). Changing it is the owner's choice — never switch to `standard` on your own to avoid a card. Codex's own default (workspace-write without network) is not inherited: the owner never chose it.
+- Default: with no **top-level** `sandbox_mode` in `$CODEX_HOME/config.toml` (default `~/.codex/config.toml`), Agent J runs the main Codex Agent directly on the system — `danger-full-access`, like the owner's terminal: network, home directory, installs. The danger list, high-risk warnings and phone approval cards still apply. Codex's own default (workspace-write without network) is not inherited: the owner never chose it.
 - An explicit owner setting is kept (F14): `sandbox_mode = "workspace-write"` / `"read-only"` → commands beyond it are refused without a card (ADR-A73), with the way out in the notice.
 - Change it **only** with the packaged command, which always writes the top level (before the first `[table]`), keeps comments, backs up the old file (0600) and refuses a write Codex would read differently:
   - `agentj codex-sandbox` — where the permissions come from now, and a `sandbox_mode` written inside a table;
@@ -235,29 +235,12 @@ The refusal now names the holder (P73, ADR-A178): an Agent J leftover `codex app
 
 With a custom AGENTJ_STATE_DIR, serve exports AGENTJ_ELEVATE_SOCK for secret request/send/result and sudo inside the fence. Keep this inherited path; do not redirect it or expose the full state directory.
 
-Claude shared ingress: installation/switching/startup/doctor check the value Claude Code really uses in the working
-folder (managed > folder settings.local.json > folder settings.json > user settings.json) and make it accept: unset or
-user hold in the user file, local hold in place, project hold overridden in the private local file (never edit the
-shared project file). Back up first; never stop to ask for confirmation. Tell the owner: “Enabled: phone messages no
-longer need individual confirmation on the computer; to disable, run agentj config claude-inbound off.” Only report
-managed policy, refuse/unknown values and the owner's explicit off. A session started before the change needs /clear
-or a new session. `agentj config claude-inbound on|off|status` acts on/reads the effective layer. Only Claude Code is affected;
-Codex/OpenCode do not have this mechanism. On accepts authenticated local peer messages (not only Agent J);
-off holds for desktop approval. Existing settings are backed up and other keys preserved atomically.
-Repository/managed policy still applies. Never invent a permission-mode attestation for Agent J.
-If phone delivery is unacknowledged the phone names the reason (managed policy, project settings, owner off, needs
-/clear, busy); check the desktop before retrying; the original may still arrive.
-Independent Claude mode preflights service login and keeps shared mode when unavailable. Run `claude` and /login
-in the owner's computer terminal (macOS Keychain), or let the owner create the private 0600 service env file after
-`claude setup-token`. Linux: `~/.config/systemd/user/agentj.env`; macOS: `~/Library/LaunchAgents/net.agentj.host.env`.
-Reinstall an older Mac service to add the env-file path and restart after edits. Never read/copy/paste the token.
+Shared Claude startup and doctor resolve managed, private local, project and user ingress settings. They back up and repair writable hold/refuse/unset to accept (project policy is overridden in private local settings). Managed policy is read-only and its blocking layer/value is shown on the phone. Settings changed after a session starts need a new session or /clear on the computer to take effect; session/CLI and remote-managed overrides cannot be verified from these files. `agentj config claude-inbound off` is temporary in shared mode: the next shared startup or doctor restores accept. Check the desktop before resending an unacknowledged message.
 
-Shared Claude model/quota/context readings: on by default when shared Claude is selected (same moment as ingress, phone
-told once); `agentj config claude-statusline off` is remembered and never auto-reverted; `on|off|status` remain.
-The tap is chained at the effective layer (project line from the private local file), preserves the existing command
-input/output/exit and statusLine options; off restores the exact original value. Only whitelisted meter data is captured
-locally (0600), with exact session matching and source age; never capture raw JSON, credentials or another session.
-Managed status lines are never changed (doctor reports). No automatic rewrite of later owner edits.
+Shared Claude model/quota/context readings: after owner confirmation, `agentj config claude-statusline on|off|status`.
+The tap preserves the existing command input/output/exit and statusLine options; off restores the exact original value.
+Only whitelisted meter data is captured locally (0600), with exact session matching and source age; never capture raw JSON,
+credentials or another session. Project/managed overrides stay owner-controlled. No automatic rewrite of later owner edits.
 
 
 ### Shared Codex model and provider (0.16.4a1)
@@ -288,12 +271,6 @@ For multiple people on one computer, use a separate OS user and paid seat per pe
 
 
 Installation reuse (0.17.2): `agentj agent detect --probe --json` makes one tool-free call per installed supported CLI using its existing login. Only `callable:true` qualifies; ask the owner when more than one is usable. The formal installer handles this automatically and avoids another key card when callable. AgentsRelay official private env.sh is loaded as data by the host; never source/read/print keys in a conversation. Gemini remains unavailable as a main Agent. Verify Hello from the paired phone; startup/pairing alone is not proof of authentication.
-
-## Session mode, the shared Claude session and an old identity (P127)
-
-`agent.session_mode` defaults to `shared` for Claude Code, Codex and OpenCode. `agentj agent <kind> --shared` (default) or `--independent` is the owner's choice and is recorded; so is `agentj config set|unset agent.session_mode` and the phone's Settings. An `independent` in config.json5 with no such record (an older version or a test left it) is never flipped by Agent J: `agentj agent` and `agentj doctor` (`! session`) say so — ask the owner which one and run the printed command. Shared Claude with several live sessions in the work root: `agentj agent claude` lists them (ID, name, last activity, first message); in a terminal the owner picks, otherwise show the list and run `agentj config set agent.shared_session_id <ID>` for the one the owner names. One live session needs no pin. The phone gets no new control for this. An old `~/.local/state/agentjarvis-alpha` with no `~/.local/state/agentj` is never adopted silently: without a terminal the command exits 2 with what it holds (no keys) — ask the owner, then `agentj --migrate-legacy <command>` or `agentj --fresh <command>`. Right after a service start, `agentj doctor` waits up to 20 s for the first relay connection; `relay connecting` in the first minute is normal.
-
-会话模式默认「共享」（三种 Agent 都是）。`--shared` / `--independent`、`agentj config set|unset agent.session_mode`、手机「设置」都算主人的选择并留记录；没有记录的 `independent`（旧版本或测试留下的）Agent J 不会自己改，`agentj agent` 和 doctor 的 `! session` 会提示，问主人后执行给出的命令。共享 Claude 在工作目录里开着多个会话时，`agentj agent claude` 列出候选（ID、名字、最近活跃、首条消息），终端里主人直接选，否则把列表给主人看，按主人选的执行 `agentj config set agent.shared_session_id <ID>`；只有一个就不用指定。手机端不新增按钮。旧的 `~/.local/state/agentjarvis-alpha` 在新状态目录不存在时绝不静默迁移：无终端时命令以 2 退出并列出旧身份（不含密钥），问主人后用 `agentj --migrate-legacy <命令>` 或 `agentj --fresh <命令>`。服务刚启动时 doctor 最多等 20 秒首次连上中继，第一分钟内显示「正在连接」属正常。
 
 ## Computer upgrades and phone refresh (0.17.3)
 Report the new and previous computer version and a plain-language self-check result. The phone/web page has not been upgraded by a host update: remind the owner to tap the settings icon at the top right → “Update and reload” (右上角设置图标 →「更新并刷新」). Never claim the whole app is current just because the host changed; no silent page refresh while typing. Failed checks need `agentj doctor` and its repair guidance, without echoing private details.

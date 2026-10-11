@@ -197,12 +197,12 @@ function actText(r) {
   const by = r.by ? t('act.by', { by: r.by }) : '';
   const tx = String(r.text ?? r.summary ?? '').replace(/\s+/g, ' ').slice(0, 200);
   const sep = lang() === 'en' ? ', ' : '、';
-  const cats = Array.isArray(r.cats) && r.cats.length ? `[${r.cats.map((c) => (CATS.includes(c) ? t('ask.cat.' + (c === 'credentials' && r.cred === 'read' ? 'credentials_read' : c)) : c)).join(sep)}] ` : '';
+  const cats = Array.isArray(r.cats) && r.cats.length ? `[${r.cats.map((c) => (CATS.includes(c) ? t('ask.cat.' + c) : c)).join(sep)}] ` : '';
   const task = r.task ? t('act.task', { task: r.task }) : '';
   if (r.k === 'auto_update') return tx;
   if (!ACT_KINDS.includes(r.k)) return String(r.k ?? '');
   const v = {
-    by, t: tx, task, cats, tool: r.tool ?? '', scope: r.scope ?? '', why: (lang() === 'en' && r.why_en ? r.why_en : r.why) ?? '', label: r.label ?? '', id: r.id ?? '',
+    by, t: tx, task, cats, tool: r.tool ?? '', scope: r.scope ?? '', why: r.why ?? '', label: r.label ?? '', id: r.id ?? '',
     title: r.title ?? r.id ?? '', verdict: r.verdict ?? '', line: r.line ?? '', action: r.action ?? '', cmd: r.cmd ?? '',
     ro: r.readonly ? t('act.k.readonly') : '',
     stopped: r.result === 'stopped' ? t('act.k.turn_end_stopped') : '',

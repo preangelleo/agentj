@@ -49,8 +49,7 @@ class Settings(unittest.TestCase):
         st.agent_config.return_value["session_mode"]="shared"
         self.assertEqual(doctor.check_shared_inbound(st)["status"],"ok")
         inbound.set_enabled(True);self.assertEqual(doctor.check_shared_inbound(st)["status"],"ok")
-        inbound.set_enabled(False);self.assertEqual(doctor.check_shared_inbound(st)["status"],"fail")
-        self.assertEqual(inbound.value(),"hold", "P127: doctor must respect explicit owner off")
+        inbound.set_enabled(False);self.assertEqual(doctor.check_shared_inbound(st)["status"],"ok")
     def test_cli_shared_auth_ok_independent_warn(self):
         st=Mock();st.exists.return_value=True;st.agent_config.return_value={"kind":"claude","session_mode":"shared"}
         with patch.object(doctor,"_agent_bin",return_value="/bin/claude"),patch.object(doctor,"_version_of",return_value="2.1"),patch.object(doctor,"_login",return_value=("warn","no login found")),patch.object(claude_auth,"available",return_value=False):

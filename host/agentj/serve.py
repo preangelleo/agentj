@@ -31,7 +31,6 @@ from dataclasses import dataclass, field
 
 from websockets.asyncio.client import connect
 
-from .text import one, pick
 from . import agent as agents
 from . import notices, activity, approvals, cloud, controls, danger, fence, gate, memory, slash, tasks, update, webpush, wire
 from . import asr as asr_mod
@@ -58,44 +57,12 @@ def _ttl(env: str, default: int) -> float:
         return default
 
 
-def _ms(t0: float) -> int:
-    return int((time.monotonic() - t0) * 1000)
-
-
-def _close_code(e: Exception) -> int | None:
-    """The WebSocket close code a relay link ended with (4003 = relay auth deadline / refusal, 4001 = replaced), or None."""
-    for attr in ("rcvd", "sent"):
-        frame = getattr(e, attr, None)
-        code = getattr(frame, "code", None)
-        if type(code) is int:
-            return code
-    return None
-
-
-RC_WHY = ("load", "close", "hb", "host", "error", "ticket")   # P129: a page's reason for its (re)connect, see session.js
-
-
-def _reconnect_reason(rc) -> tuple:
-    """P129: the hello's optional {"why", "code", "down"} — what ended the page's previous session (diagnostics only, never
-    acted on). Anything off-shape is dropped; numbers are bounded."""
-    if not isinstance(rc, dict) or rc.get("why") not in RC_WHY:
-        return ()
-    code = rc.get("code") if type(rc.get("code")) is int and 1000 <= rc["code"] <= 4999 else None
-    down = rc.get("down") if type(rc.get("down")) is int and 0 <= rc["down"] <= 7 * 86400 * 1000 else None
-    return (rc["why"], code, down)
-
-
 UPDATE_FIRST = 300      # s after start before the first daily update check (update.daily keeps 24 h between checks)
 UPDATE_WAKE = 3600      # s between looks at the 24 h clock
 PAIR_TTL = _ttl("AGENTJ_TEST_PAIR_TTL", 300)        # QR / pairing code lifetime (s)
 HS_TTL = _ttl("AGENTJ_TEST_HS_TTL", 30)             # a connection must finish its handshake + hello within this (s)
 APPROVE_TTL = _ttl("AGENTJ_TEST_APPROVE_TTL", 120)  # time the human has to type the safety code (s)
-AUTH_TIMEOUT = 8       # the relay gives an unauthenticated host socket 10 s from accept (relay AUTH_DEADLINE_MS): waiting longer is moot
-RELAY_OPEN_TIMEOUT = 10   # TCP + TLS + upgrade (the relay takes a per-IP lease before it answers 101)
-FAST_RETRIES = 3       # P129: a relay link that did not come up is retried after FAST_RETRY s this many times before backing off
-FAST_RETRY = 1
-RELAY_GRACE = 60       # s after serve start in which a relay link that never came up reads "connecting", not "reconnecting"
-LOOP_STALL = 3.0       # P129: the event loop answering this late (s) is logged as `loop_stall` (it delays every phone's pong)
+AUTH_TIMEOUT = 10
 _NONCE = re.compile(r"[A-Za-z0-9_-]{43}")   # relay auth challenge n = b64url(32 random bytes) (PROTOCOL §1)
 CLOSE_TIMEOUT = 2      # a close notice to the relay is best-effort; never let a slow relay hold up a revoke
 MAX_SESSIONS = 64      # the relay caps a channel at 32 device sockets; this bounds a misbehaving relay too
@@ -164,8 +131,6 @@ class Session:
     lt1: bool = False             # 0.18 (ADR-A193): the page renders long-task cards (lt_card / lt_caps)
     hist: dict | None = None      # its hello's {"epoch", "last"}: where its history pages stop (§10.5)
     iid: str = ""                 # 0.15.1: the browser install's per-host id from the pairing msg1 (same browser → replace)
-    ready_at: float = 0.0         # P129: monotonic time the session became ready (dev_gone logs how long it lived)
-    rc: tuple = ()                # P129: the page's own account of its previous drop (why, close code, ms offline), logged
     gone: str = ""                # 0.15.1: a removed device that resumed: "replaced" | "revoked" — told so after its hello
     pk_offer: tuple | None = None  # F20 (§12): (nonce, monotonic issue time) of the one open pk_offer of this session
     since: object = None          # F20: a passkey restore's hello `since`, used once the restore is accepted
@@ -196,8 +161,6 @@ class Ask:
     fut: asyncio.Future
     cats: list = field(default_factory=list)   # danger categories ([] = low risk), danger.classify
     why: str = ""
-    why_en: str = ""
-    cred: str = ""                 # P128: "read" | "change" when cats has credentials
     scope: tuple | None = None     # (kind, key) for a low-risk request that may be batch-approved
     scope_text: str | None = None  # what the phone shows for that scope; an allow_batch signature covers it
     task: str | None = None        # the scheduled task this request comes from (display only)
@@ -228,25 +191,9 @@ class Pairing:
     remote: dict | None = None
 
 
-# P128: approval card text in ONE language (appearance.language, the same value the phone UI uses); what the phone signs
-# is exactly this text, so the host picks the language, not the phone.
-CARD_TEXT = {
-    "zh": {"change": "{tool} · 改密码或密钥。\n具体内容只在电脑上看，凭据不会发到手机。",
-           "read": "{tool} · 查看密码或密钥（内容会显示在电脑屏幕上）。\n具体内容只在电脑上看，凭据不会发到手机。",
-           "risk_scope": "\n本回合内同类高危动作一并批准。"},
-    "en": {"change": "{tool} · Changes passwords or keys.\nCheck the exact details on the computer; credentials never go to the phone.",
-           "read": "{tool} · Shows passwords or keys (on the computer's screen).\nCheck the exact details on the computer; credentials never go to the phone.",
-           "risk_scope": "\nAlso approves this kind of high-risk action for the rest of this turn."}}
-
-
-def card_lang(lang) -> str:
-    return "en" if str(lang or "").lower().startswith("en") else "zh"
-
-
-def approval_summary(tool, tool_input, verdict, lang="zh"):
+def approval_summary(tool, tool_input, verdict):
     if 'credentials' in verdict.cats:
-        kind = "read" if getattr(verdict, "cred", "") == "read" else "change"
-        return CARD_TEXT[card_lang(lang)][kind].format(tool=tool)
+        return f"{tool} · 读取或修改凭据 / Read or change credentials.\n具体内容仅在电脑查看，不发送凭据到手机。 / Inspect exact details on the computer."
     return agents.summarize(tool, tool_input)
 
 
@@ -271,8 +218,6 @@ class Host:
         self.send_lock = asyncio.Lock()
         self.stopping = asyncio.Event()
         self.relay_up = False
-        self.relay_ever_up = False         # P129: since this serve started (doctor / admin: connecting vs reconnecting)
-        self.started_at = time.monotonic()
         self.name_refused = False   # one agent_name_refused line per refused streak, not one per sync
         self.official_pending = {}
         self.reporter = Reporter(st, self.report_view, on_account=self.account_language, on_notices=self.official_notices)  # Dashboard metadata reports (§7); no-op unless linked
@@ -458,25 +403,21 @@ class Host:
             return True
 
     async def relay_loop(self) -> None:
-        backoff, fails = 1, 0
+        backoff = 1
         url = f"{self.cfg['relay'].rstrip('/')}/v1/host/{self.channel}"
         while not self.stopping.is_set():
-            phase, t0 = "connect", time.monotonic()
             try:
-                async with connect(url, max_size=2**17, ping_interval=20, ping_timeout=20, open_timeout=RELAY_OPEN_TIMEOUT) as ws:
-                    phase = "auth"
+                async with connect(url, max_size=2**17, ping_interval=20, ping_timeout=20, open_timeout=15) as ws:
                     await self._auth(ws)
-                    phase = "up"
-                    self.ws, self.relay_up, self.relay_ever_up, backoff, fails = ws, True, True, 1, 0
-                    self.st.log("relay_up", channel=self.channel, ms=_ms(t0))
+                    self.ws, self.relay_up, backoff = ws, True, 1
+                    self.st.log("relay_up", channel=self.channel)
                     self.emit("relay", up=True)
                     async for msg in ws:
                         self._tap("in", msg)
                         if isinstance(msg, bytes):
                             await self.on_frame(msg)
             except Exception as e:  # network, handshake refusal, relay auth failure → back off and retry
-                # P129: where it failed (connect / auth / up), the relay's close code and how long it took — no message text
-                self.st.log("relay_down", reason=proxy.relay_failure(e, url), phase=phase, code=_close_code(e), ms=_ms(t0))
+                self.st.log("relay_down", reason=proxy.relay_failure(e, url))
             finally:
                 if self.relay_up:
                     self.emit("relay", up=False)
@@ -484,33 +425,9 @@ class Host:
                 await self._drop_all("relay_down")
             if self.stopping.is_set():
                 break
-            # P129: a link that was up and dropped, or one that has not come up yet (first tries), is retried at once:
-            # a slow first answer (cold relay, a busy start) must not cost the doubling ladder. Only repeated failures back off.
-            fails = 0 if phase == "up" else fails + 1
-            wait = FAST_RETRY if fails <= FAST_RETRIES else backoff
             with contextlib.suppress(asyncio.TimeoutError):
-                await asyncio.wait_for(self.stopping.wait(), wait)
-            if fails > FAST_RETRIES:
-                backoff = min(backoff * 2, 30)
-
-    def relay_state(self) -> str:
-        """P129: "up" · "connecting" (never up since start, within RELAY_GRACE) · "reconnecting" (down after being up, or
-        still not up after the grace)."""
-        if self.relay_up:
-            return "up"
-        if not self.relay_ever_up and time.monotonic() - self.started_at < RELAY_GRACE:
-            return "connecting"
-        return "reconnecting"
-
-    async def loop_watch(self) -> None:
-        """P129: the relay link and every phone's heartbeat share this event loop; a start-up step or handler that blocks it
-        delays every pong (a phone gives up after its probe deadline) and the relay's auth answer (10 s deadline). Log it."""
-        while not self.stopping.is_set():
-            t = time.monotonic()
-            await asyncio.sleep(1)
-            late = time.monotonic() - t - 1
-            if late >= LOOP_STALL:
-                self.st.log("loop_stall", ms=int(late * 1000))
+                await asyncio.wait_for(self.stopping.wait(), backoff)
+            backoff = min(backoff * 2, 30)
 
     async def _auth(self, ws) -> None:
         msg = json.loads(await asyncio.wait_for(ws.recv(), AUTH_TIMEOUT))
@@ -550,9 +467,7 @@ class Host:
             if not self._new_session(cid):
                 await self.close_cid(cid, "too_many_sessions")
         elif op == wire.OP_GONE:
-            s = self._detach(cid, {"ev": "gone"})
-            if s and s.state == "ready":       # P129: a phone's socket ended at the relay (network, sleep, the page's own close)
-                self.st.log("dev_gone", cid=cid, device=s.device, ms=int((time.monotonic() - s.ready_at) * 1000))
+            self._detach(cid, {"ev": "gone"})
         elif op == wire.OP_DATA:
             s = self._new_session(cid)  # data from a cid we never saw 0x11 for = a new connection (PROTOCOL §3)
             if not s:
@@ -657,7 +572,6 @@ class Host:
             caps = obj.get("caps")
             s.p33 = isinstance(caps, list) and wire.CAP_P33 in caps[:16]
             s.lt1 = isinstance(caps, list) and wire.CAP_LT1 in caps[:16]
-            s.rc = _reconnect_reason(obj.get("rc"))
             h = obj.get("hist")
             if s.p33 and isinstance(h, dict) and type(h.get("epoch")) is int and type(h.get("last")) is int:
                 s.hist = {"epoch": h["epoch"], "last": h["last"]}
@@ -858,7 +772,7 @@ class Host:
             if got[kind]:
                 self.st.log("auto_unbind", device=got[kind]["id"], reason="same_browser" if kind == "replaced" else "full")
                 await self._drop_device(got[kind]["id"], "replaced")
-        s.state, s.ready_at = "ready", time.monotonic()
+        s.state = "ready"
         self.reporter.trigger("approve")
         await self.send_app(s, {"t": "approved", **self._caps(s)})
         await self._bulk(s)
@@ -912,9 +826,7 @@ class Host:
         self._set_timer(s, None)
         await self.send_app(s, {"t": "ready", **self._caps(s)})
         await self._bulk(s)
-        s.ready_at = time.monotonic()
-        why, code, down = s.rc or (None, None, None)
-        self.st.log("resume_ok", cid=s.cid, device=s.device, why=why, code=code, ms=down)
+        self.st.log("resume_ok", cid=s.cid, device=s.device)
         with contextlib.suppress(OSError):
             self.st.touch_seen(s.device)
         self.emit("ready", device=s.device, name=s.name)
@@ -1135,7 +1047,7 @@ class Host:
                         not self.stopped() and not auto_update.busy(self) and
                         time.time() - rec.get("phone_at", time.time()) >= auto_update.IDLE})
                 elif cmd == "status":
-                    await self._ctl_send(w, {"ok": True, "relay_up": self.relay_up, "relay_state": self.relay_state(), "channel": self.channel,
+                    await self._ctl_send(w, {"ok": True, "relay_up": self.relay_up, "channel": self.channel,
                                              "agent": self.agent.kind if self.agent else None, "agent_status": self.eff_status(),
                                              "asks": len(self.asks), "estop": self.estop,
                                              "task_running": self.scheduler.current_id,
@@ -1439,8 +1351,6 @@ class Host:
     async def broadcast(self, text: str, frm: str = "host") -> int:
         """Callers check text_units(text) <= MAX_TEXT first. Kept in the in-memory backlog for devices that reconnect; a page
         `src.k: host` for p33 devices (what the human at the computer said to the phones)."""
-        if frm == "notice":
-            text = one(self.lang, text)
         entry = self._remember(frm, text)
         turn = self.hist.add({"k": "host", "text": wire.well_formed(text)}, end="done")
         n = 0
@@ -1569,15 +1479,7 @@ class Host:
              "name": self.st.agent_name()}
         if m["s"] == "waiting" and self._open_question():
             m["kind"] = "question"
-        if self.telegram is not None and self.telegram.error:   # P129: the phone's status area says it; gone on recovery
-            m["tg"] = "down"
         return m
-
-    def telegram_changed(self) -> None:
-        """P129: the Telegram channel went down for real (≥3 failures / ≥2 min) or came back: every ready phone gets a fresh
-        status (its status area shows / hides the line)."""
-        msg = self._status_msg()
-        self._post(self._send_ready, lambda s: msg)
 
     def preferences_msg(self):
         # Preferences contain only pure data; no environment values or sensitive State fields.
@@ -1676,8 +1578,7 @@ class Host:
             return result
 
     def configure_claude_inbound(self) -> None:
-        from . import claude_inbound, claude_statusline
-        claude_statusline.ensure_default(self.st)   # P127: status-line tap default (never raises; doctor reports)
+        from . import claude_inbound
         try:
             claude_inbound.ensure_shared_default(self.st)
             if any(s.state == "ready" for s in self.sessions.values()):
@@ -1990,7 +1891,7 @@ class Host:
         if not text or not text.strip():
             return
         self.desktop_end()
-        self.desktop_turn = self.hist_add({"k": "host", "name": pick(self.lang, "电脑", "Desktop"), "text": text}, "", "open")["id"]
+        self.desktop_turn = self.hist_add({"k": "host", "name": "电脑 / Desktop", "text": text}, "", "open")["id"]
 
     def desktop_text(self, text: str) -> None:
         if not text or not text.strip():
@@ -2011,7 +1912,6 @@ class Host:
         self.desktop_turn = None
 
     def agent_notice(self, text: str) -> None:
-        text = one(self.lang, text)       # P128: a legacy "中文 / English" notice reaches the phone in one language
         local, self.notice_local = getattr(self, "notice_local", False), False
         self.emit("agent_notice", text=text)
         e = self._remember("notice", text)
@@ -2039,7 +1939,7 @@ class Host:
                 notices.processed(self.st, n['id'])
                 continue
             if notices.presented(self.st, n['id']):
-                text = pick(self.lang, "Agent J 官方", "Agent J official") + " · " + n['title_' + self.lang] + "\n" + n['body_' + self.lang]
+                text = "Agent J 官方 / Agent J official · " + n['title_' + self.lang] + "\n" + n['body_' + self.lang]
                 entry = self._remember("notice", text)
                 self._post(self._send_legacy, lambda s, e=entry: self._render(e, s))
                 self.hist_add({"k": "sys", "text": "", "notice_id": n['id']}, text, "done")
@@ -2160,10 +2060,6 @@ class Host:
     def _ask_msg(self, a: Ask) -> dict:
         m = {"t": "ask", "id": a.rid, "tool": a.tool, "summary": a.summary, "ttl": max(0, int(a.deadline - time.monotonic())),
              "cat": list(a.cats), "why": a.why}
-        if a.why_en:
-            m["why_en"] = a.why_en        # P128: the phone shows why or why_en by its language (never both)
-        if a.cred:
-            m["cred"] = a.cred            # "read" → 查看密码或密钥, "change" → 改密码或密钥
         if a.scope_text:
             m["batch"] = a.scope_text
             m["batch_max"], m["batch_secs"] = BATCH_MAX, BATCH_SECS
@@ -2278,10 +2174,11 @@ class Host:
         if tool == "AskUserQuestion" and self.agent and self.agent.kind == "claude" and isinstance(tool_input, dict):
             return await self._ask_user_question(tool_input, gone)       # §10.7: a question card, not an approval card
         kind = self.agent.kind if self.agent else "?"
-        v = self._classify(tool, tool_input)
-        summary = approval_summary(tool, tool_input, v, self.lang)
+        classifier = danger.classify_shared if (self.agent_cfg or {}).get("session_mode") == "shared" else danger.classify
+        v = classifier(tool, tool_input, self.danger_extra)
+        summary = approval_summary(tool, tool_input, v)
         if risk_scope:
-            summary += CARD_TEXT[card_lang(self.lang)]["risk_scope"]
+            summary += "\n本回合同类高危动作合并批准。 / Applies to this risk category for this turn."
         digest, isha = approvals.shown_digest(tool, summary), approvals.input_digest(tool_input)
         rid = secrets.token_hex(16)
         workdir = (self.agent_cfg or {}).get("dir")
@@ -2340,11 +2237,10 @@ class Host:
             approvals.record(self.st, **base, decision="deny", reason="too_many")
             return {"behavior": "deny", "message": "同时等待批准的请求太多：默认拒绝。"}
         a = Ask(rid, tool, summary, digest, tool_input, isha, time.monotonic() + self.ask_ttl,
-                asyncio.get_running_loop().create_future(), cats=v.cats, why=v.why, why_en=v.why_en, cred=v.cred,
+                asyncio.get_running_loop().create_future(), cats=v.cats, why=v.why,
                 scope=sc[:2] if sc else None, scope_text=sc[2] if sc else None, task=self.task_label)
         self.asks[rid] = a
-        self.activity("ask", id=rid, tool=tool, cats=v.cats, why=v.why or None, why_en=v.why_en or None, cred=v.cred or None,
-                      summary=summary, task=self.task_label)
+        self.activity("ask", id=rid, tool=tool, cats=v.cats, why=v.why or None, summary=summary, task=self.task_label)
         self.st.log("ask", id=rid, tool=tool, agent=kind, kind="danger" if v.danger else "low")
         self.emit("ask", id=rid, tool=tool, summary=summary)
         self._post(self._send_ready, lambda s: self._ask_msg(a))   # same queue as the Agent's text: order is kept
@@ -2389,18 +2285,13 @@ class Host:
                "serve_stop": "agentj serve 已停止：默认拒绝。", "estop": "已急停（全部停下）：默认拒绝。"}.get(reason, "已拒绝。")
         return {"behavior": "deny", "message": msg}
 
-    def _classify(self, tool, tool_input):
-        cfg = self.agent_cfg or {}
-        if cfg.get("session_mode") == "shared":
-            return danger.classify_shared(tool, tool_input, self.danger_extra, cfg.get("approvals", "standard"))
-        return danger.classify(tool, tool_input, self.danger_extra)
-
     def policy_refused(self, tool: str, tool_input: dict, why: str, notice: str) -> None:
         """A request the harness asked that would give it more than the human's own configuration allows (Codex beyond its own
         sandbox, ADR-A73): refused without a card — approvals.log (reason `policy`), host.log, activity, one notice."""
         rid = secrets.token_hex(16)
-        v = self._classify(tool, tool_input)
-        summary = approval_summary(tool, tool_input, v, self.lang)
+        classifier = danger.classify_shared if (self.agent_cfg or {}).get("session_mode") == "shared" else danger.classify
+        v = classifier(tool, tool_input, self.danger_extra)
+        summary = approval_summary(tool, tool_input, v)
         approvals.record(self.st, rid=rid, agent=self.agent.kind if self.agent else "?", tool=tool,
                          input_sha256=approvals.input_digest(tool_input), shown_sha256=approvals.shown_digest(tool, summary),
                          cats=v.cats, decision="deny", reason="policy")
@@ -2835,7 +2726,7 @@ class Host:
         self.hist_meta_all()
         ok = not before or bool(archived)
         if not ok:
-            self.agent_notice(pick(self.lang, "桌面已清空，但手机历史归档失败；请检查本机磁盘。", "Desktop cleared, but phone history archive failed; check local disk."))
+            self.agent_notice("桌面已清空，但手机历史归档失败；请检查本机磁盘。 / Desktop cleared, but phone history archive failed; check local disk.")
         return ok
 
     def cmd_done(self, cmd, res: "slash.Result") -> None:
@@ -3205,9 +3096,6 @@ class Host:
         src = {"k": "phone", "dev": s.device, "name": (s.name or s.device)[:64], "text": text}
         if getattr(s,"source_kind",None)=="telegram":
             src["k"]="telegram"
-            # P127: the Agent's source line is not the owner's words; the page's label already says Telegram
-            from .telegram import OWNER_PRIVATE
-            src["text"]=text.removeprefix(OWNER_PRIVATE)
         if quote:
             src["quote"] = quote
         if blobs:
@@ -3793,7 +3681,7 @@ class Host:
             self.st.log("codex_leftover_ended", result=len(ended))
         self.post_q = asyncio.Queue()
         self.configure_claude_inbound()
-        jobs = [asyncio.create_task(self.relay_loop()), asyncio.create_task(self.loop_watch()), asyncio.create_task(self.reporter.run()),
+        jobs = [asyncio.create_task(self.relay_loop()), asyncio.create_task(self.reporter.run()),
                  asyncio.create_task(self.sync_loop()), asyncio.create_task(self.remote_pair.run()), asyncio.create_task(self.post_loop()),
                  asyncio.create_task(self.update_loop()), asyncio.create_task(self.preferences_loop())]
         perm_server = None

@@ -139,7 +139,6 @@
       "delete": "Deletes",
       "send": "Sends out",
       "credentials": "Changes passwords or keys",
-      "credentials_read": "Shows passwords or keys",
       "price": "Changes prices"
     },
     "task": "Scheduled task \"{task}\"",
@@ -334,7 +333,6 @@
     },
     "waited": "· waiting {n} min",
     "stale": "Last synced at {hm}; it refreshes when the connection is back.",
-    "channelDown": "{name} can't be reached right now; this page keeps working.",
     "meter": {
       "week": "Weekly quota",
       "h5": "5-hour quota",
@@ -814,12 +812,7 @@
     },
     "replyPending": "Delivered, waiting for the computer…",
     "replyWorking": "Working…",
-    "replyCompacting": "Compacting the context…",
-    "newReply": "New message — jump to latest",
-    "queue": {
-      "card": "Queued — the computer picks it up when it is free",
-      "note": "Not given to the Agent yet; tap Cancel to take it back"
-    }
+    "newReply": "New message — jump to latest"
   },
   "preferences": {
     "notification": "Your agent has replied.",

@@ -464,7 +464,7 @@ App messages (all inside §3 transport messages):
 |---|---|---|
 | host → device | `{"t":"msg","id","text","ts","seq":n,"from":"agent"\|"host"\|"you"\|"device"\|"notice"[,"name"]}` | chat; `seq` increases per serve run; `you` = this device said it, `device` = another paired device (`name` = its label), `notice` = a host-side note (agent missing / exited / turn failed) |
 | host → device | `{"t":"status","s":"none"\|"idle"\|"working"\|"compacting"\|"waiting"\|"down"\|"stopped","agent":"claude"\|"codex"\|"opencode"\|null,"name":"<Agent name>"\|null}` | 未接 / 空闲 / 干活中 / 压缩中 / 等你批准 / 没在运行 / 已急停 (phone controls); sent on ready and on every change. `name` (0.10, additive): the Agent's display name (null = unnamed → show "Agent J"); sent again whenever it changes (`agentj name`, admin page, Dashboard rename) — older phones ignore it |
-| host → device | `{"t":"ask","id":"<32 hex>","tool":"<≤ 64>","summary":"<≤ 2000>","ttl":<s left>,"cat":[…],"why":"<≤ 200>"[,"why_en":"<≤ 200>"][,"cred":"read"\|"change"][,"batch":"<scope>","batch_max":20,"batch_secs":600][,"task":"<≤ 80>"]}` | a permission request; `summary` = what the phone shows (command / path / compact JSON), in ONE language — the host's `appearance.language` (P128; it is what the phone signs); `cat` = danger categories (`[]` = low risk), `why` = the rule that fired (Chinese), `why_en` its English twin (the phone shows one of them by its language), `cred` = whether a `credentials` card only shows one (`read` → 查看密码或密钥) or changes one (`change` → 改密码或密钥); `batch` (low risk only) = the scope a batch approval would cover; `task` = the scheduled task it comes from (display only, not signed) |
+| host → device | `{"t":"ask","id":"<32 hex>","tool":"<≤ 64>","summary":"<≤ 2000>","ttl":<s left>,"cat":[…],"why":"<≤ 200>"[,"batch":"<scope>","batch_max":20,"batch_secs":600][,"task":"<≤ 80>"]}` | a permission request; `summary` = what the phone shows (command / path / compact JSON); `cat` = danger categories (`[]` = low risk), `why` = the rule that fired; `batch` (low risk only) = the scope a batch approval would cover; `task` = the scheduled task it comes from (display only, not signed) |
 | host → device | `{"t":"ask_done","id","result":"allow"\|"deny"\|"timeout"\|"gone"\|"stopped"}` | decided (by any phone, the timeout, the agent withdrawing / serve stopping, or 全部停下) |
 | device → host | `{"t":"answer","id","ok":bool,"sig":"<b64url 64 B>"[,"batch":true]}` | the human's decision, signed; `batch:true` (with `ok:true`) = `allow_batch`: this one and the rest of this turn's calls of that scope |
 | host → device | `{"t":"auto","id","tool","summary":"<first line ≤ 200>","grant":"<id>"}` | a call approved by a batch grant (shown as one line 「已按你的授权自动批准：…」; no card, no push) |
@@ -1581,7 +1581,7 @@ only to the owner's own paired devices.
 
 Account seat cards can request one-use owner operations after a passkey ceremony (ten-minute server/session window). The request and encrypted return channel are specified by Dashboard API§13. The existing Noise IKpsk2 pairing handshake and phone wire format do not change. A remotely created Pairing retains the signed host/account-bound request; after its first successful hello, the host records source=account and approved without a local six-digit/passphrase entry. Locally created pending handshakes still wait until an exact device+handshake approval or local code+passphrase decision.
 
-Every grant records account_passkey in approvals.log plus activity and a notice to remotes. remote-pair off prevents subsequent account grants and cancels active remote Pairing. Preboot/stale/expired/replayed or cross-host/account requests never create control ability. A bound host need not set a local passphrase; an unbound/local-terminal owner operation keeps its original passphrase gate. Resume must match the current stop-state digest; task_on must match its current task/prompt contract digest. P130 device_name uses the same signed owner control, with exactly target={device,name}; device is a paired device id and the trimmed name is 1–64 characters without C0/DEL. The host only changes that record’s name and refreshes its report, leaving device keys and renewal tickets unchanged. It requires the existing online/remote-pair-on/passkey proof, host/account binding, expiry and replay checks; an absent device returns gone. No new D1 table or relay message is introduced. All command responses, including pending devices/task summaries, are encrypted to the requesting browser.
+Every grant records account_passkey in approvals.log plus activity and a notice to remotes. remote-pair off prevents subsequent account grants and cancels active remote Pairing. Preboot/stale/expired/replayed or cross-host/account requests never create control ability. A bound host need not set a local passphrase; an unbound/local-terminal owner operation keeps its original passphrase gate. Resume must match the current stop-state digest; task_on must match its current task/prompt contract digest. All command responses, including pending devices/task summaries, are encrypted to the requesting browser.
 
 ### P76 signed upgrade
 `slash {cmd:"update",n,ts,sig}` requires the paired device control signature (action `update`, object text `latest`).
@@ -1692,20 +1692,3 @@ The Agent's socket (`elevate.sock`): `{"t":"setup","op":"status"|"resume"|"check
 `<state>/google/` with its own GOG_HOME; presence-only detection of the owner's gog/gcloud/gws; purposes with minimum scopes;
 `registry` = P86-shaped entries (`google-cli` + one `credential` row per purpose, never `ready` before the 0.18.1 authorization
 adapter). No token, code, callback URL, client JSON or e-mail crosses this socket or any frame.
-### P129 reconnect diagnostics, quiet phone reconnect, Telegram status line (additive)
-
-- **Resume hello `rc`** (device → host, optional, diagnostics only): `{"why":"load"|"close"|"hb"|"host"|"error"|"ticket",
-  "code":<1000–4999>?,"down":<ms offline, ≤ 7 days>?}` — what ended the page's previous session (`close` + the socket close code,
-  `hb` = heartbeat gave up, `host` = relay said the computer went down). The host keeps only these bounded values and logs them on
-  `resume_ok` (`why`, `code`, `ms`); anything off-shape is dropped; never acted on. Hosts without P129 ignore the field.
-- **Heartbeat** (`ping`/`pong`, unchanged messages): the page waits 10 s per probe; a probe that times out while any frame
-  arrived on the socket counts as alive; two misses in a row with nothing heard close the session (the probe right after the
-  page returns to the foreground still gives up after one miss). First reconnect after a drop: 250 ms, then doubling to 30 s.
-- **Quiet reconnect** (page only): for 6 s after a ready session drops the screen keeps its connected look while the session
-  reconnects; sends go to the offline queue at once. The relay's `{"t":"host","up":false}` on a steady session is shown at once.
-- **`status.tg`** (host → device, optional): `"down"` while the computer's Telegram channel has failed ≥ 3 polls in a row or
-  for ≥ 2 min; absent otherwise. The page shows one line in its own language; no history page is written.
-- **Host relay link**: `open_timeout` 10 s, auth answers 8 s (the relay closes an unauthenticated host socket after 10 s,
-  code 4003); a link that has not come up is retried after 1 s three times before the 1 → 30 s ladder; `relay_down` logs
-  `phase` (connect | auth | up), `code` (close code) and `ms`. Control `status` adds `relay_state`
-  (`up` | `connecting` = never up within 60 s of start | `reconnecting`).

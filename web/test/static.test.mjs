@@ -23,7 +23,7 @@ const JS = files.filter((f) => f.endsWith('.js'));
 const APP = read(pub('app.js'));
 // PROMPT-33: the page is app.js + the modules under js/ (relay's page ported). Every rule that used to look at app.js
 // alone now looks at all of them (OURS) — the same rules over more code, never fewer.
-const MODULES = ['api', 'blobs', 'boot', 'controls', 'md', 'push', 'relay', 'session', 'settings', 'snap', 'speak', 'store', 't', 'ui', 'wav', 'elevate', 'outbox', 'render', 'friends', 'qr', 'share', 'device-label'];
+const MODULES = ['api', 'blobs', 'boot', 'controls', 'md', 'push', 'relay', 'session', 'settings', 'snap', 'speak', 'store', 't', 'ui', 'wav', 'elevate', 'outbox', 'render', 'friends', 'qr', 'share'];
 const OURS_FILES = ['app.js', ...MODULES.map((m) => `js/${m}.js`)];
 const OURS = OURS_FILES.map((r) => read(pub(r))).join('\n');
 const HTML = read(pub('index.html'));
@@ -382,10 +382,10 @@ test('i18n: no internal terms or banned words in either dictionary, the page tex
   }
   // every user-visible Chinese string lives in the dictionary: app.js code has no Chinese except the device label sent to
   // the host ("网页 · Chrome" is data for the computer's device list; 0.15.1: "网页 · iOS 主屏幕" for the Home Screen app) and comments
-  const appCode = (APP + read(pub('js/device-label.js'))).replace(/\/\/.*$/gm, '').replace(/\/\*[\s\S]*?\*\//g, '');
+  const appCode = APP.replace(/\/\/.*$/gm, '').replace(/\/\*[\s\S]*?\*\//g, '');
   const cjk = [...new Set(appCode.match(/[㐀-鿿]+/g) || [])];
-  assert.ok(cjk.includes('网页') && cjk.every((w) => ['浏览器', '网页', '主屏幕', '华为手机', '华为平板'].includes(w)), `app.js has UI Chinese outside the dictionary: ${cjk.join(' ')}`);
-  for (const r of OURS_FILES.filter((x) => x !== 'app.js' && x !== 'js/device-label.js')) {             // the modules: no Chinese in code at all
+  assert.ok(cjk.includes('网页') && cjk.every((w) => ['浏览器', '网页', '主屏幕'].includes(w)), `app.js has UI Chinese outside the dictionary: ${cjk.join(' ')}`);
+  for (const r of OURS_FILES.filter((x) => x !== 'app.js')) {             // the modules: no Chinese in code at all
     const c = read(pub(r)).replace(/\/\/.*$/gm, '').replace(/\/\*[\s\S]*?\*\//g, '');
     assert.deepEqual(c.match(/[㐀-鿿]+/g) || [], [], `${r} has UI Chinese outside the dictionary`);
   }

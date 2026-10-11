@@ -15,14 +15,11 @@ class SharedPolicy(Defaults):
         self.assertTrue(inbound.ensure_shared_default(self.st))
         self.assertEqual(p.read_bytes(),before)
         self.assertEqual(inbound.effective(str(self.home))[::2],('local','accept'))
-        self.assertIn('需新会话',inbound.diagnostic(self.st))
-        self.assertIn('/clear',inbound.diagnostic(self.st,'en'))
+        self.assertIn('需新会话',inbound.default_notice(self.st))
+        self.assertIn('/clear',inbound.default_notice(self.st,'en'))
     def test_local_refuse_repaired_only_owned_key_and_backup_once(self):
-        # P130 retains the original parity id: P127 respects refuse until the owner explicitly enables it.
         p=self.home/'.claude/settings.local.json';p.parent.mkdir();p.write_text('{"crossSessionInbound":"refuse","other":7}')
-        self.assertFalse(inbound.ensure_shared_default(self.st))
-        self.assertEqual(json.loads(p.read_text()),{'crossSessionInbound':'refuse','other':7})
-        self.assertTrue(inbound.set_enabled(True,str(self.home)))
+        self.assertTrue(inbound.ensure_shared_default(self.st))
         self.assertEqual(json.loads(p.read_text()),{'crossSessionInbound':'accept','other':7})
         self.assertFalse(inbound.ensure_shared_default(self.st))
         self.assertEqual(len(list(p.parent.glob('settings.local.json.agentj-backup-*'))),1)
@@ -33,18 +30,17 @@ class SharedPolicy(Defaults):
         self.assertEqual(p.read_bytes(),before)
         self.assertFalse(inbound.path().exists())
         self.assertEqual(doctor.check_shared_inbound(self.st)['status'],'fail')
-        self.assertIn('managed',inbound.diagnostic(self.st))
-        self.assertIn('refuse',inbound.diagnostic(self.st,'en'))
+        self.assertIn('managed',inbound.default_notice(self.st))
+        self.assertIn('refuse',inbound.default_notice(self.st,'en'))
     def test_doctor_repairs_hold_and_exposes_session_cache_limit(self):
-        inbound.path().parent.mkdir(exist_ok=True)
-        inbound.path().write_text('{"crossSessionInbound":"hold"}')
+        inbound.set_enabled(False)
         row=doctor.check_shared_inbound(self.st)
         self.assertEqual(row['status'],'ok');self.assertEqual(inbound.value(),'accept')
         self.assertIn('/clear',str(row));self.assertIn('CLI',str(row))
     def test_managed_accept_no_writable_override(self):
         (self.home/'managed.json').write_text('{"crossSessionInbound":"accept"}')
         inbound.set_enabled(False)
-        self.assertFalse(inbound.ensure_shared_default(self.st));self.assertEqual(inbound.effective(str(self.home))[2],'accept')
+        self.assertFalse(inbound.ensure_shared_default(self.st));self.assertEqual(inbound.value(),'hold')
         self.assertEqual(inbound.effective(str(self.home))[::2],('managed','accept'))
     def test_invalid_local_json_not_overwritten_by_doctor(self):
         p=self.home/'.claude/settings.local.json';p.parent.mkdir();p.write_text('bad-private-body')
@@ -59,7 +55,7 @@ class SharedPolicy(Defaults):
         (cwd/'.claude/settings.local.json').write_text('{"crossSessionInbound":"refuse"}')
         (cwd/'.claude/settings.json').write_text('{"crossSessionInbound":"hold"}')
         cfg={'kind':'claude','session_mode':'shared','dir':str(cwd)}
-        self.assertTrue(inbound.set_enabled(True,cfg['dir']))
+        self.assertTrue(inbound.ensure_shared_default(self.st,cfg))
         self.assertEqual(inbound.effective(cwd)[::2],('local','accept'))
         self.assertEqual(json.loads((repo/'.claude/settings.local.json').read_text())['crossSessionInbound'],'accept')
         self.assertEqual(json.loads((cwd/'.claude/settings.local.json').read_text())['crossSessionInbound'],'refuse')
@@ -72,5 +68,5 @@ class SharedPolicy(Defaults):
         (wt/'.claude').mkdir();old=wt/'.claude/settings.local.json';old.write_text('{"crossSessionInbound":"accept"}')
         self.assertEqual(inbound.effective(wt)[::2],('local','hold'))
         cfg={'kind':'claude','session_mode':'shared','dir':str(wt)}
-        self.assertTrue(inbound.set_enabled(True,cfg['dir']));self.assertEqual(inbound.effective(wt)[::2],('local','accept'))
+        self.assertTrue(inbound.ensure_shared_default(self.st,cfg));self.assertEqual(inbound.effective(wt)[::2],('local','accept'))
         self.assertEqual(old.read_text(),'{"crossSessionInbound":"accept"}')

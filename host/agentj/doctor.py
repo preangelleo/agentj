@@ -15,7 +15,6 @@ import platform as _pf
 import shutil
 import sys
 import tempfile
-import time
 import urllib.error
 import urllib.request
 
@@ -26,7 +25,6 @@ from . import proxy
 OK, WARN, FAIL = "ok", "warn", "fail"
 MARK = {OK: "✓", WARN: "!", FAIL: "✗"}
 NET_TIMEOUT = 6
-DOCTOR_RELAY_WAIT = 20     # s doctor waits for a just-started serve's first relay connection (P127)
 
 
 def _c(cid: str, status: str, summary: str, hint: str = "") -> dict:
@@ -280,68 +278,21 @@ def check_codex_perm(st: State) -> dict | None:
         return _c("codex_perm", WARN, f"Codex 权限：检查失败（{type(e).__name__}）/ Codex permissions: check failed")
 
 
-def check_session_mode(st: State) -> dict | None:
-    """P127: "independent" in the owner's config with no record of the owner choosing it (an older install, a test, a file
-    left behind) — shown, never flipped. None when the default (shared) or a recorded choice is in effect."""
-    c = st.agent_config() if st.exists() else None
-    if not c:
-        return None
-    from . import session_choice
-    try:
-        if not session_choice.unconfirmed_independent(st):
-            return None
-    except Exception:  # noqa: BLE001 — a row, never a crash
-        return None
-    k = c["kind"]
-    return _c("session", WARN, "会话模式是「独立」，但没有你选过它的记录（默认是共享）/ session mode is independent, but you never "
-              "chose it here (the default is shared)",
-              f"agentj agent {k} --shared   (默认 / the default)  ·  agentj agent {k} --independent   (确定要独立 / keep it on purpose)")
-
-
 def check_shared_inbound(st: State) -> dict | None:
-    """P127: the crossSessionInbound value Claude Code really uses in the shared folder (managed > local > project > user)."""
     c = st.agent_config() if st.exists() else None
-    if not c or c.get("kind") != "claude" or c.get("session_mode", "shared") != "shared":
+    if not c or c.get("kind") != "claude" or c.get("session_mode") != "shared":
         return None
     from . import claude_inbound
-    directory = c.get("dir")
     try:
         claude_inbound.ensure_shared_default(st, c)
+        layer, _, current = claude_inbound.effective(c.get("dir"))
+        hint = "需新会话或 /clear 生效 / Start a new session or run /clear on the computer"
+        return _c("shared_inbound", OK if current == "accept" else FAIL,
+                  claude_inbound.diagnostic(st), hint)
     except (OSError, ValueError):
-        return _c("shared_inbound", FAIL, "Claude settings could not be safely verified", "agentj config claude-inbound status")
-    reason = claude_inbound.hold_reason(directory)
-    if reason is None:
-        layer = claude_inbound.effective(directory)[0]
-        return _c("shared_inbound", OK, claude_inbound.diagnostic(st))
-    text = claude_inbound.reason_text(reason, "zh") + " / " + claude_inbound.reason_text(reason, "en")
-    if reason == "stale":
-        return _c("shared_inbound", WARN, text, "在电脑上对该 Claude Code 会话执行 /clear 或新开会话 / Run /clear or start a new session")
-    if reason == "managed":
-        return _c("shared_inbound", FAIL, text, "Agent J 不改组织策略 / Agent J never changes managed policy")
-    return _c("shared_inbound", FAIL, text, "agentj config claude-inbound on")
-
-
-def check_shared_statusline(st: State) -> dict | None:
-    """P127: is the phone meter tap in the status line Claude Code really uses for the shared folder?"""
-    c = st.agent_config() if st.exists() else None
-    if not c or c.get("kind") != "claude" or c.get("session_mode", "shared") != "shared":
-        return None
-    from . import claude_statusline
-    try:
-        why = claude_statusline.shadow(c.get("dir"))
-        explicit = claude_statusline.load_meta().get("explicit")
-    except (OSError, ValueError):
-        return _c("shared_statusline", WARN, "Claude 状态栏设置无法核实 / Claude status-line settings could not be verified",
-                  "agentj config claude-statusline status")
-    if why is None:
-        return _c("shared_statusline", OK, "手机额度条/水位已接上 Claude 状态栏 / Phone usage meter tapped from Claude's status line")
-    if why == "off" and explicit == "off":
-        return _c("shared_statusline", OK, "手机额度条/水位已由主人关闭 / Phone usage meter turned off by the owner",
-                  "agentj config claude-statusline on")
-    zh, en = claude_statusline.SHADOW_TEXT[why]
-    if why == "managed":
-        return _c("shared_statusline", WARN, zh + " / " + en, "Agent J 不改组织策略 / Agent J never changes managed policy")
-    return _c("shared_statusline", WARN, zh + " / " + en, "agentj config claude-statusline on")
+        return _c("shared_inbound", FAIL,
+                  "Claude 设置无法安全核实或修正 / Cannot safely verify or repair Claude settings",
+                  "检查 JSON、权限、符号链接或并发编辑；修好后需新会话或 /clear 生效 / Check JSON, permissions, symlinks and concurrent edits; then start a new session or /clear")
 
 
 def check_agent_cli(st: State, svc: dict) -> dict:
@@ -604,40 +555,9 @@ def check_serve(st: State) -> dict:
         return _c("serve", FAIL, "在运行但不响应 / running but not answering", "systemctl --user restart agentj  (or restart `agentj serve`)")
     if res is None:
         return _c("serve", WARN, "没在运行 / not running", "agentj service install   (or `agentj serve` in a terminal)")
-    if not res.get("relay_up") and res.get("relay_state", res.get("relay")) == "connecting":
-        res = _wait_relay(st, res)          # P127: right after a start, give the first connection a moment
     up = res.get("relay_up")
-    if not up and res.get("relay_state", res.get("relay")) == "connecting":   # P129: just started, first link not up yet — not a fault
-        return _c("serve", OK, "在运行 / running · 正在连接中继 / relay connecting", "")
     return _c("serve", OK if up else WARN, "在运行 / running · relay " + ("connected" if up else "reconnecting"),
               "" if up else "检查网络 / check the network")
-
-
-def _wait_relay(st: State, res: dict) -> dict:
-    """Poll the running serve while its first relay connection is still within its start-up grace (bounded)."""
-    try:
-        budget = min(float(os.environ.get("AGENTJ_TEST_DOCTOR_RELAY_WAIT", DOCTOR_RELAY_WAIT)), DOCTOR_RELAY_WAIT)
-    except ValueError:
-        budget = DOCTOR_RELAY_WAIT
-    end = time.monotonic() + budget
-    try:
-        if budget >= 2 and sys.stderr.isatty():   # P127: say why the doctor pauses (stderr: --json stays clean)
-            print(f"… 服务刚启动，正在等它第一次连上中继（最多 {int(budget)} 秒）/ the service just started; waiting for its first "
-                  f"relay connection (up to {int(budget)} s)", file=sys.stderr, flush=True)
-    except (AttributeError, ValueError):
-        pass
-    while time.monotonic() < end:
-        time.sleep(1)
-        try:
-            nxt = names.ctl_call(st, {"cmd": "status"}, 5)
-        except names.ServeBusy:
-            return res
-        if nxt is None:
-            return res
-        res = nxt
-        if res.get("relay_up") or res.get("relay_state", res.get("relay")) != "connecting":
-            return res
-    return res
 
 
 TOKEN_HARNESS = ("claude", "codex", "opencode")   # each reports its own usage per turn (peer_session.py); others: 「—」
@@ -844,15 +764,9 @@ def run(st: State | None = None, offline: bool = False) -> list[dict]:
     if mig:
         out.append(mig)
     out += [check_agent(st)]
-    mode_row = check_session_mode(st)
-    if mode_row:
-        out.append(mode_row)
     inbound_row = check_shared_inbound(st)
     if inbound_row:
         out.append(inbound_row)
-    statusline_row = check_shared_statusline(st)
-    if statusline_row:
-        out.append(statusline_row)
     shared_row = check_codex_shared(st)
     if shared_row:
         out.append(shared_row)
@@ -975,16 +889,7 @@ def check_preferences(st):
             rows.append(_c("voice-model",WARN,
                            "selected speech model retained; OpenAI shutdown 2027-01-06" if old else "custom speech model retained; check provider availability",
                            "agentj config set voice.tts.model "+factory))
-        telegram_enrolled = False
-        if any(x.get("type") == "telegram" for x in preferences.get(cfg, "channels.items", [])):
-            from . import telegram
-            if telegram.enrollment(st) and not telegram.configuration(st):
-                # A terminal doctor need not inherit the running service's bot key.
-                # Existing private control health proves presence; no key value is read.
-                live = _serve_status(st)
-                tg = live.get("telegram") if isinstance(live, dict) and live.get("ok") is True else None
-                telegram_enrolled = isinstance(tg, dict) and tg.get("enrolled") is True
-        voice.validate_runtime(cfg, telegram_enrolled=telegram_enrolled)
+        voice.validate_runtime(cfg)
         rows.append(_c("config",OK,"JSON5 valid: "+tilde(str(preferences.path()))))
         if preferences.get(cfg,'voice.tts.mode')=='host' and provider=='command':
             rows.append(_c("voice-command",OK,"local speech command is available; stdout/stderr stay private"))

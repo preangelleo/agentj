@@ -145,20 +145,9 @@ export class Outbox {
   }
 }
 
-// P127 (追加7): trailing spaces / punctuation a dictation or an IME may add (or drop) when it commits.
-const ECHO_TAIL = /[\s\u3000。．.，,！!？?、；;：:…~～·]+$/u;
-/** Is the field's `value` only the message just `sent` again (± trailing punctuation / spaces), or a lone punctuation
- *  commit? A late IME composition / Mac dictation that lands after the field was cleared → the composer drops it. */
-export function isEcho(value, sent) {
-  if (typeof value !== 'string' || typeof sent !== 'string' || !value) return false;
-  const v = value.trim().replace(ECHO_TAIL, ''), s = sent.trim().replace(ECHO_TAIL, '');
-  return !v || v === s;
-}
-
 /** The pending bubbles above the field: each queued message on one line (textContent only), a note on one whose files
- *  were lost in a reload, and the one line 「网络恢复后自动发送」 while not connected. P127: a message the computer accepted
- *  but holds behind a running turn (`queued: true`) shows here too, with the note that 「取消」 takes it back. */
-export function paint(box, items, { line, lostNote, isLost, showLine, queuedNote = '' }) {
+ *  were lost in a reload, and the one line 「网络恢复后自动发送」 while not connected. */
+export function paint(box, items, { line, lostNote, isLost, showLine }) {
   if (!box) return;
   const out = [];
   for (const e of items) {
@@ -169,12 +158,7 @@ export function paint(box, items, { line, lostNote, isLost, showLine, queuedNote
     s.textContent = e.text.replace(/\s+/g, ' ').trim() || (e.att || []).map((a) => a.name).join(', ');
     d.append(s);
     if (e.att && e.att.length) d.dataset.att = String(e.att.length);
-    if (e.queued) {
-      d.dataset.queued = '1';
-      const n = document.createElement('span');
-      n.className = 'obn obq'; n.textContent = queuedNote;
-      d.append(n);
-    } else if (isLost(e)) {
+    if (isLost(e)) {
       d.dataset.lost = '1';
       const n = document.createElement('span');
       n.className = 'obn'; n.textContent = lostNote;

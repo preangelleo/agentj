@@ -669,7 +669,7 @@ class Page(unittest.TestCase):
         st = json.loads(body)
         self.assertEqual(st["agent_name"], "Wren")
         self.assertEqual(set(st), {"agent_name", "machine", "channel", "version", "serve", "dashboard", "remote_unbind", "limit",
-                                   "devices", "pairing", "passphrase_set", "pair_check"})
+                                   "devices", "pairing", "passphrase_set"})
         self.assertEqual((st["limit"], st["version"], st["serve"]["running"]), (5, __version__, False))
         for bad in (auth.replace("Bearer ", "bearer "), auth + "x", "Basic " + auth[7:], auth[7:]):
             self.assertEqual(self.state_status(bad), 404, bad)

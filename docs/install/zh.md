@@ -69,7 +69,7 @@ Ubuntu 24.04 还会检查 AppArmor 对用户命名空间的限制，并实际试
 AI 安装电脑端程序 `agentj`，装的是固定的一个版本：
 
 ```bash
-uv tool install "git+https://github.com/preangelleo/agentj@v0.18.1a1#subdirectory=host"
+uv tool install "git+https://github.com/preangelleo/agentj@v0.18.0a1#subdirectory=host"
 agentj doctor
 ```
 
@@ -109,7 +109,7 @@ AI 先问你：这个 Agent 叫什么名字？1 到 32 个字，比如「小助�
 
 电脑绑定完成后，在账户页这台电脑的席位卡上点「添加遥控器」，用通行密钥确认一次，扫码即可；不需要在终端设置批准口令。同一账户页也能给另一台已绑定、在线的电脑添加手机。
 
-离线或未绑定账号时，可自己在本机设置批准口令：`agentj passphrase set`。Agent 不能替你选择或输入。不确定现在走哪条路？`agentj pair --check` 会在出二维码之前告诉你：已绑定且在线的电脑，终端 `agentj pair` 和 `agentj admin` 也不需要口令（到席位卡批准等待中的手机）；未绑定的电脑仍需口令。
+离线或未绑定账号时，可自己在本机设置批准口令：`agentj passphrase set`。Agent 不能替你选择或输入。终端 `agentj pair` 仍需口令。
 
 
 ### 第 9 步：接上 AI 编程工具
@@ -149,7 +149,7 @@ agentj service install
 3. 手机上点「扫二维码」，扫账户页显示的二维码。需要时可点「复制配对链接」，在主屏幕图标里粘贴到「或者粘贴配对链接」下面的框里，再点「开始配对」。别把链接发给 AI。
 4. 经账户页批准的配对不需要终端六位码或批准口令，等手机连上即可。
 
-离线或未绑定账号的电脑（`agentj pair --check` 会告诉你）仍可用本机备选：运行 `agentj pair`（或 `agentj pair --link`），在那台电脑上输入手机六位码和本机批准口令。
+离线或未绑定账号的电脑仍可用本机备选：运行 `agentj pair`（或 `agentj pair --link`），在那台电脑上输入手机六位码和本机批准口令。
 这个链接就是配对用的钥匙：5 分钟内有效，只能用一次。别发到微信、群里、邮件里，也别发给任何 AI。
 
 ### 第 12 步：在手机上试一试

@@ -330,14 +330,8 @@ def doctor_row(st) -> tuple[str, str, str]:
         return "ok", summary, ""
     hint = {"seat": "agentj login --seat-file <file> --name <name>", "computer": "agentj admin  (pair this computer's browser)",
             "phone": "agentj admin  (pair the main phone)"}[s["next"]]
-    from . import gate, pairprep   # P127: the same pairing pre-check as `agentj pair --check` / the admin page
     if s["seat"]:
-        chk = pairprep.precheck(st)
-        hint = ("账户页席位卡 → 添加遥控器 → 通行密钥确认 → 扫码 / account seat card → Add a remote → passkey → scan; no terminal passphrase"
-                if chk["route"] == "account" else pairprep.both(chk).replace("\n", " / "))
-    elif not gate.is_set(st):
-        hint += ("  (绑定后配对不需要批准口令；不绑定只在本机配对，要先自己运行 `agentj passphrase set` / after binding no passphrase is "
-                 "needed; unbound local pairing needs `agentj passphrase set` first)")
+        hint = "账户页席位卡 → 添加遥控器 → 通行密钥确认 → 扫码 / account seat card → Add a remote → passkey → scan; no terminal passphrase"
     return "warn", summary, hint
 
 
@@ -356,11 +350,6 @@ def command(args, st) -> int:
             print("✓ 经账户页添加 / Added from account page: " + d.get("name", ""))
     if s["next"]:
         print("下一步 / next: " + HOW["zh"][s["next"]] + "\n            " + HOW["en"][s["next"]])
-        if s["next"] in ("computer", "phone"):
-            from . import pairprep
-            chk = pairprep.precheck(st)
-            if chk["route"] != "account":    # P127: say before the pairing step why the account page can't approve yet
-                print("配对前检查 / pre-check: " + pairprep.both(chk).replace("\n", "\n                         "))
     else:
         print("✓ 必做的都完成了；其他设备主人问的时候再配 / required steps done; other devices only when the owner asks")
     return 0

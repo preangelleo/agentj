@@ -297,11 +297,7 @@ class CodexAgent(Agent):
             self.failed_start = True
             return False
         from .proxy import environment
-        from . import fence
-        env = environment(os.environ, self.host.preferences)
-        if self.cfg.get("fence", True):
-            env = fence.launch_environment(env, self.cfg.get("docker", False), self.kind)
-        self.proc = p = await asyncio.create_subprocess_exec(*argv, cwd=self.cfg["dir"], env=env,
+        self.proc = p = await asyncio.create_subprocess_exec(*argv, cwd=self.cfg["dir"], env=environment(os.environ, self.host.preferences),
                                                              stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE,
                                                              stderr=asyncio.subprocess.PIPE, limit=LINE_LIMIT,
                                                              start_new_session=True)

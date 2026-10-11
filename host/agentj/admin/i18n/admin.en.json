@@ -20,7 +20,6 @@
   "conn.relay": "Relay server",
   "conn.relay_on": "Connected",
   "conn.relay_off": "Disconnected, reconnecting",
-  "conn.relay_connecting": "Connecting…",
   "conn.relay_na": "Waits until the agentj program runs",
   "conn.company": "Agent J account",
   "conn.company_none": "Not in an Agent J account. Changes stay on this computer",
@@ -151,13 +150,5 @@
   "footer.version": "agentj program {version}",
   "footer.channel": "Update channel: {channel}",
   "footer.small": "We can't see your data.",
-  "footer.theme_label": "Appearance",
-  "pair.pre_set": "No approval passphrase yet, so pairing can't start. Run `agentj passphrase set` in a terminal on this computer yourself (not through an agent); this page updates once it's set.",
-  "pair.pre_set_offline": "This computer is bound to your account but isn't connected to the relay yet, so the account page can't approve right now. Wait until it connects, or set an approval passphrase with `agentj passphrase set`.",
-  "pair.pre_set_off": "This computer is bound to your account, but adding remotes from the account page is off. Turn it on with `agentj remote-pair on`, or set an approval passphrase with `agentj passphrase set`.",
-  "pair.pre_account": "This computer is bound to your account: on the account page, choose Add a remote on this computer's seat card, confirm once with your passkey and scan. No approval passphrase needed. You can also scan here, then approve the waiting phone on the same seat card.",
-  "pair.pre_account_pass": "This computer is bound to your account: approve with your passkey from Add a remote on the account page's seat card, or scan here and type the 6-digit code and your approval passphrase.",
-  "pair.pre_account_open": "Open the account page",
-  "pair.pending_account": "Approve this phone on this computer's seat card on the account page (confirm with your passkey); this page updates once it's approved. Don't want it? Click Deny.",
-  "err.passphrase_not_set": "No approval passphrase yet: run `agentj passphrase set` in a terminal on this computer, or bind an account and add the remote from the account page."
+  "footer.theme_label": "Appearance"
 }

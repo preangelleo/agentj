@@ -139,7 +139,6 @@
       "delete": "删除",
       "send": "对外发送",
       "credentials": "改密码或密钥",
-      "credentials_read": "查看密码或密钥",
       "price": "改价格"
     },
     "task": "定时任务「{task}」",
@@ -334,7 +333,6 @@
     },
     "waited": "· 已等 {n} 分钟",
     "stale": "最后同步于 {hm}，连上后自动刷新。",
-    "channelDown": "{name} 暂时连不上，这个页面照常可用。",
     "meter": {
       "week": "本周额度",
       "h5": "5 小时额度",
@@ -814,12 +812,7 @@
     },
     "replyPending": "已送达，等待电脑接手…",
     "replyWorking": "正在处理…",
-    "replyCompacting": "正在压缩上下文…",
-    "newReply": "有新消息，点此跳到最新",
-    "queue": {
-      "card": "排队中，电脑忙完就接手",
-      "note": "还没交给 Agent，点「取消」可以撤回"
-    }
+    "newReply": "有新消息，点此跳到最新"
   },
   "preferences": {
     "notification": "你的 Agent 已回复。",

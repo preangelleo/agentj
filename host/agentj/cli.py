@@ -304,43 +304,25 @@ SERVE_BUSY = ("✗ Agent J 在运行，但没有响应。运行 `agentj service 
               "then pair again.")
 
 
-def _serve_or_exit(st: State) -> dict:
-    """S-10: pairing goes through the running serve. Fail fast, before any prompt, with what to do. → serve's status."""
+def _serve_or_exit(st: State) -> None:
+    """S-10: pairing goes through the running serve. Fail fast, before any prompt, with what to do."""
     try:
         up = names.ctl_call(st, {"cmd": "status"}, 5)
     except names.ServeBusy:
         sys.exit(SERVE_BUSY)
     if up is None:
         sys.exit(SERVE_NOT_RUNNING)
-    return up
-
-
-def _pair_check(st: State, status: dict | None) -> dict:
-    from . import pairprep
-    return pairprep.precheck(st, (status.get("relay_up") is True) if isinstance(status, dict) else None)
 
 
 def cmd_pair(a) -> None:
-    from . import pairprep
     st = State()
     _need_init(st)
-    if getattr(a, "check", False):   # P127: the shared pre-check only (install helper, agentj-pair skill) — no pairing starts
-        try:
-            status = names.ctl_call(st, {"cmd": "status"}, 3)
-        except names.ServeBusy:
-            status = None
-        chk = _pair_check(st, status)
-        print(json.dumps({**chk, "serve": status is not None}) if getattr(a, "json", False) else pairprep.both(chk))
-        return
-    chk = _pair_check(st, _serve_or_exit(st))
-    if chk["route"] == "set_passphrase":
+    _serve_or_exit(st)
+    if not gate.is_set(st):
         if not sys.stdin.isatty():
-            sys.exit("✗ " + pairprep.both(chk))
-        print(pairprep.message(chk, "zh") + "\n" + "配对前先设置批准口令（每次批准新遥控器都要输入，只在这台电脑上）。", flush=True)
+            sys.exit("✗ " + gate.MESSAGES["not_set"])
+        print("配对前先设置批准口令（每次批准新遥控器都要输入，只在这台电脑上）。", flush=True)
         _set_passphrase_interactive(st, change=False)
-    elif chk["route"] == "account":
-        print(pairprep.both(chk) + "\n", flush=True)
-    passkey_only = chk["route"] == "account" and not chk["passphrase_set"]
 
     async def main():
         c = await _ctl(st)
@@ -405,16 +387,7 @@ def cmd_pair(a) -> None:
                 elif isinstance(ev.get("evict"), dict):
                     print(f"已满 {ev.get('limit', MAX_DEVICES)} 台：批准后会自动解绑最早的遥控器「{_dev_line(ev['evict'])}」。"
                           "不想让它走，就直接回车拒绝，先用 `agentj revoke <设备>` 解绑别的。", flush=True)
-                if passkey_only:   # P127: no passphrase on this bound host — the owner approves on the account page
-                    url = chk.get("account_url") or cloud.DEFAULT_APP
-                    print(f"到账户页 {url} 这台电脑的席位卡上批准这台等待中的手机（通行密钥确认）；这里会自动显示结果。"
-                          f"不想批准就按 Ctrl-C。\nApprove this waiting phone on this computer's seat card at {url} (passkey); "
-                          "the result shows here. Ctrl-C to refuse.", flush=True)
-                    ev = await take()
-                    continue
                 print("安全码只显示在手机屏幕上——这个终端永远不会显示它。", flush=True)
-                if chk["route"] == "account":
-                    print("（也可以直接到账户页批准，用通行密钥。/ Or approve on the account page with your passkey.）", flush=True)
                 code = await race("看着手机，输入手机上的 6 位安全码并回车（120 秒内；直接回车 = 拒绝）：")
                 if code is None:
                     ev = await take()
@@ -1034,39 +1007,15 @@ def cmd_unlink(a) -> None:
 AGENT_LABEL = {"claude": "Claude Code", "codex": "Codex", "opencode": "OpenCode"}
 
 
-def _lang(st: State) -> str:
-    try:
-        from . import preferences
-        return "en" if preferences.get(preferences.effective(st), "appearance.language", "zh") == "en" else "zh"
-    except Exception:  # noqa: BLE001 — a display language, never a failure
-        return "zh"
-
-
-def _agent_line(st: State, lang: str | None = None) -> str:
-    """`agentj agent` and the serve start-up log: the copy follows the session mode in effect (P127) — a shared session is
-    the owner's own harness process, never described as fenced."""
-    lang = lang or _lang(st)
-    en = lang == "en"
+def _agent_line(st: State) -> str:
     c = st.agent_config()
     if not c:
-        return ("Agent: none (phone messages only show in this terminal; `agentj agent claude --dir <folder>` connects Claude Code)"
-                if en else "接的 Agent：无（手机消息只显示在这个终端；`agentj agent claude --dir <目录>` 接上 Claude Code）")
-    label = AGENT_LABEL[c["kind"]]
-    extra = ("; anything that needs your OK pops up on the phone" if en else "；需要你点头的环节，它会在手机上弹窗问你") if c["kind"] in AGENT_LABEL else ""
-    if c.get("session_mode") == "shared":
-        fz = (f" · shared session (your own {label} on this computer, with its own permissions; outside Agent J's fence)" if en
-              else f" · 共享会话（接你电脑上自己的 {label}，按它自己的权限运行，不在 Agent J 的隔离里）")
-        if c.get("shared_session_id"):
-            fz += (" · pinned " if en else " · 指定会话 ") + str(c["shared_session_id"])
-    elif c.get("fence", True):
-        fz = " · independent session · fenced" if en else " · 独立会话 · 隔离运行"
-        if c.get("docker"):
-            fz += " · ⚠ docker allowed (--allow-docker)" if en else " · ⚠ 允许用 docker（--allow-docker）"
-    else:
-        fz = " · independent session · ⚠ not fenced (--unfenced)" if en else " · 独立会话 · ⚠ 不隔离运行（--unfenced）"
-    if en:
-        return f"Agent: {label} · folder {c['dir']}" + (f" · model {c['model']}" if c["model"] else "") + fz + extra
-    return (f"接的 Agent：{label} · 目录 {c['dir']}" + (f" · 模型 {c['model']}" if c["model"] else "")
+        return "接的 Agent：无（手机消息只显示在这个终端；`agentj agent claude --dir <目录>` 接上 Claude Code）"
+    extra = "；需要你点头的环节，它会在手机上弹窗问你" if c["kind"] in AGENT_LABEL else ""
+    fz = " · 隔离运行" if c.get("fence", True) else " · ⚠ 不隔离运行（--unfenced）"
+    if c.get("fence", True) and c.get("docker"):
+        fz += " · ⚠ 允许用 docker（--allow-docker）"
+    return (f"接的 Agent：{AGENT_LABEL[c['kind']]} · 目录 {c['dir']}" + (f" · 模型 {c['model']}" if c["model"] else "")
             + fz + extra)
 
 
@@ -1084,19 +1033,15 @@ def cmd_agent(a) -> None:
         elif a.allow_docker:
             print("⚠ 允许 Agent 用 docker / podman：容器能挂载这台电脑上的任何文件（包括 Agent J 的状态目录）。", flush=True)
         try:
-            from . import working_root, preferences, session_choice
-            lang = _lang(st)
-            # P127: --shared / --independent, or settle an "independent" the owner never chose (asks in a terminal)
-            mode = session_choice.resolve(st, a.mode, getattr(a, "session_mode", None), lang)
+            from . import working_root, preferences
             if a.mode == "claude":
                 from . import claude_auth, preferences
-                if mode == "independent" and not claude_auth.available():
+                if preferences.get(preferences.effective(st), "agent.session_mode") == "independent" and not claude_auth.available():
                     from . import service
                     sys.exit("✗ " + service.token_hint(service.name()))
             root = working_root.select(st, a.dir)
             st.set_agent_config(a.mode, str(root), a.model, fence=not a.unfenced, docker=bool(a.allow_docker and not a.unfenced))
-            from . import claude_inbound, claude_statusline
-            claude_statusline.ensure_default(st)        # P127: same moment as the inbound default; never raises
+            from . import claude_inbound
             claude_inbound.ensure_shared_default(st)
             notice = claude_inbound.default_notice(st, preferences.get(preferences.effective(st), "appearance.language", "zh"))
             if notice:
@@ -1104,15 +1049,11 @@ def cmd_agent(a) -> None:
             from . import wizard
             from . import preferences
             wizard.bootstrap_root(root, lang=preferences.get(preferences.effective(st), "appearance.language", "zh"))
-            if a.mode == "claude" and mode == "shared":
-                session_choice.pick(st, str(root), lang)      # P127: which live Claude Code session the phone attaches to
-        except preferences.ConfigError as e:
-            sys.exit("✗ " + str(e.detail))
         except ValueError as e:
             sys.exit({"bad_dir": "目录不存在",
                       "protected_dir": "这个目录是 Agent J 自己的（状态目录或程序目录），不能给 Agent 用：换一个工作目录"}.get(str(e), str(e)))
         st.log("agent_config", agent=a.mode, fence=not a.unfenced, change="docker" if a.allow_docker else None)
-        if not a.unfenced and (st.agent_config() or {}).get("session_mode") != "shared":   # the fence is independent mode's
+        if not a.unfenced:
             from . import fence
             why = fence.problem(st, st.agent_config()["dir"])
             if why:
@@ -1144,9 +1085,7 @@ def cmd_agent(a) -> None:
         print("已忘掉之前的对话：下一条手机消息开一段新对话。")
     print(_agent_line(st))
     if a.mode in ("claude", "codex", "opencode", "off"):
-        print("Takes effect after restarting `agentj serve`. The Agent runs as you, with your own login and permission settings; "
-              "Agent J gives it no extra permission." if _lang(st) == "en" else
-              "重启 `agentj serve` 后生效。Agent 以你自己的身份、登录和权限设置运行，本程序不会给它更多权限。")
+        print("重启 `agentj serve` 后生效。Agent 以你自己的身份、登录和权限设置运行，本程序不会给它更多权限。")
 
 
 def cmd_approvals(a) -> None:
@@ -1708,7 +1647,7 @@ def cmd_service(a) -> None:
         if old:
             print(f"✓ 旧服务 {old['name']} 已停止并删除 / the old service {old['name']} was stopped and removed", flush=True)
             from . import migrate
-            migrate.auto(decision="migrate")    # P127: an old service was running here = a real install upgrading, keep it
+            migrate.auto()
         st = State()
         _need_init(st)
         cur = service.status()
@@ -1866,57 +1805,12 @@ def main_jarvis(argv=None) -> None:
 NO_MIGRATE = ("migrate", "docs-rule", "handover", "recall", "friends", "codex-sandbox", "capability", "google", "setup")   # recall / friends / codex-sandbox / capability: usually inside the fence
 
 
-APPROVALS_HELP = {
-    "standard": ("standard（默认）：共享会话里，只有改凭据、把凭据显示到屏幕、花钱、对外发送、公开删除才需要手机点头；"
-                 "程序按名字读取 .env 等不再弹窗。",
-                 "standard (default): in a shared session the phone is asked only when a credential is changed or shown on "
-                 "screen, or for spending, sending out and public deletion; a program reading .env by name no longer asks."),
-    "strict": ("strict：只要命令里出现凭据文件（哪怕只是读取或提到）就要手机点头，即旧规则。",
-               "strict: any credential file anywhere in a call asks the phone, even a read or a mention (the old rule)."),
-}
-
-
-def config_approvals(rest: list) -> int:
-    """`agentj config approvals standard|strict|status` (P128): shared-mode approval strength; independent mode unchanged."""
-    from . import preferences
-    p = argparse.ArgumentParser(prog="agentj config approvals",
-                                description="共享模式审批强度 / shared-mode approval strength (standard = default, strict = old rule)")
-    p.add_argument("level", nargs="?", default="status", choices=("standard", "strict", "status"))
-    a = p.parse_args(rest)
-    lang = "en" if str(preferences.get(preferences.effective(State()), "appearance.language", "zh")).startswith("en") else "zh"
-    if a.level == "status":
-        cur = preferences.get(preferences.effective(State()), "agent.approvals", "standard")
-        print(APPROVALS_HELP[cur if cur in APPROVALS_HELP else "standard"][lang == "en"])
-        return 0
-    code = preferences.command(["set", "agent.approvals", a.level])
-    if not code:
-        print(APPROVALS_HELP[a.level][lang == "en"])
-    return code or 0
-
-
 def main(argv=None) -> None:
     from .service import load_launch_binary_env
     load_launch_binary_env()
     from . import relay_auth
     relay_auth.load()
     args = list(sys.argv[1:] if argv is None else argv)
-    # P127: the owner's answer about an old (≤ 0.9) identity, for runs without a terminal (migrate.auto)
-    legacy = None
-    for flag, d in (("--migrate-legacy", "migrate"), ("--fresh", "fresh")):
-        if flag in args:
-            if legacy and legacy != d:
-                sys.exit("✗ --migrate-legacy 和 --fresh 只能选一个 / choose one of --migrate-legacy and --fresh")
-            legacy = d
-            args = [x for x in args if x != flag]
-    if legacy:
-        argv = args
-    if args and args[0] in ("config", "provider", "installer", "voice", "theme", "menu", "key", "channel", "skill"):
-        from . import migrate        # these answer before argparse: settle an old identity first, never adopt it silently
-        try:
-            if migrate.pending() == "ready" and migrate.auto(decision=legacy) == "undecided":
-                sys.exit(2)
-        except OSError:
-            pass
     if args[:2] == ["config", "auto-update"]:
         from . import auto_update
         raise SystemExit(auto_update.command(args[2:]))
@@ -1929,8 +1823,6 @@ def main(argv=None) -> None:
     if args[:2] == ["config", "claude-inbound"]:
         from . import claude_inbound
         raise SystemExit(claude_inbound.command(args[2:]))
-    if args[:2] == ["config", "approvals"]:
-        raise SystemExit(config_approvals(args[2:]))
     if args[:2] == ["provider", "profile"]:
         from . import provider_profiles
         raise SystemExit(provider_profiles.command(args[2:]))
@@ -1949,11 +1841,6 @@ def main(argv=None) -> None:
     p = argparse.ArgumentParser(prog="agentj", description="Agent J 主机端（alpha）：用手机和你自己的 Agent 对话 / Agent J host "
                                                            "(alpha): talk to your own Agent from your phone")
     p.add_argument("-V", "--version", action="version", version=f"{DIST} {__version__}")
-    # P127: read (and removed) before parsing, above; declared here for --help and the docs check
-    p.add_argument("--migrate-legacy", action="store_true", help="把旧身份搬过来继续用 / keep "
-                                                                "using an older identity found on this computer")
-    p.add_argument("--fresh", action="store_true", help="不用旧身份，开一个全新的（旧目录原样保留）/ ignore an older identity and "
-                                                       "start fresh (the old folder stays as it is)")
     sub = p.add_subparsers(dest="cmd")
     dc = sub.add_parser("doctor", help="自检：一项一行 ✓/!/✗ + 修法 / health check, one line per check",
                         description="自检 / health check: ✓ ok · ! warning · ✗ must fix. Exit 0 unless a ✗. Never prints secrets.")
@@ -2001,9 +1888,6 @@ def main(argv=None) -> None:
                                      "running: agentj service status)")
     pr.add_argument("--no-qr", action="store_true", help="不画二维码，改为打印配对链接")
     pr.add_argument("--link", action="store_true", help="二维码之外也打印配对链接（它就是配对密钥）")
-    pr.add_argument("--check", action="store_true", help="只做配对前检查：该走账户页通行密钥还是本机批准口令（不开始配对）/ "
-                                                        "pre-check only: account passkey or local passphrase route")
-    pr.add_argument("--json", action="store_true", help="与 --check 一起：输出 JSON")
     pr.set_defaults(fn=cmd_pair)
     d = sub.add_parser("devices", help="列出已批准的设备")
     d.add_argument("--json", action="store_true")
@@ -2070,11 +1954,6 @@ def main(argv=None) -> None:
                     help="不隔离运行 Agent（按底层 harness 自己的权限）。默认 Agent 在 bubblewrap 里运行，看不到 Agent J 的状态")
     ag.add_argument("--allow-docker", action="store_true",
                     help="隔离里也让 Agent 用 docker / podman（默认不开；主人要求时可直接打开）。默认容器引擎的 socket 对 Agent 隐藏")
-    smx = ag.add_mutually_exclusive_group()
-    smx.add_argument("--shared", dest="session_mode", action="store_const", const="shared",
-                     help="共享会话（默认）：手机接你电脑上正开着的会话 / shared session (the default): attach to your own open session")
-    smx.add_argument("--independent", dest="session_mode", action="store_const", const="independent",
-                     help="独立会话：Agent J 自己开一个、在隔离里运行 / independent session: Agent J's own, fenced")
     ag.set_defaults(fn=cmd_agent)
     pp = sub.add_parser("passphrase", help="批准口令：set 设置 · change 修改 · reset 忘了（会吊销全部遥控器）· status")
     pp.add_argument("mode", nargs="?", choices=["set", "change", "reset", "status"], default="status")
@@ -2173,16 +2052,8 @@ def main(argv=None) -> None:
     if a.cmd not in NO_MIGRATE and a.cmd not in ("keep-awake", "browser") and not (a.cmd == "doctor" and a.isolation_only):
         from . import migrate
         try:
-            # P127: `serve` without a terminal is the owner's own service restarting (auto-update / reboot): a 0.9 install
-            # that never ran a newer command keeps its identity and phones instead of stopping with exit 2 (offline phone).
-            # Commands a person or the install assistant runs still ask / stop, so a leftover is never adopted silently.
-            if legacy is None and a.cmd == "serve" and not migrate._interactive():
-                legacy = "migrate"
-            r = migrate.auto(decision=legacy)
-            if r == "moved":
+            if migrate.auto() == "moved":
                 _alias_auto(sys.stderr, with_compat=True)
-            elif r == "undecided":
-                sys.exit(2)
         except OSError as e:      # never block a command: the old directory simply stays in use
             print(f"Agent J：状态目录检查失败（{type(e).__name__}），照常继续 / state check failed, continuing", file=sys.stderr)
     if a.cmd is None:

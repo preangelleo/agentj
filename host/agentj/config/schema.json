@@ -636,24 +636,6 @@
       "verify": "agentj config validate --json",
       "since": "0.13"
     },
-    "agent.approvals": {
-      "type": "string",
-      "default": "standard",
-      "description": "Shared-mode approvals: standard asks when a credential is changed or shown on screen; strict also asks when one is only read or mentioned / 共享模式审批：standard 只在改凭据或把凭据显示到屏幕时弹；strict 只要读到或提到凭据也弹",
-      "aliases": [
-        "审批",
-        "审批强度",
-        "approvals"
-      ],
-      "tier": "user",
-      "apply": "restart",
-      "verify": "agentj config validate --json",
-      "since": "0.18",
-      "enum": [
-        "standard",
-        "strict"
-      ]
-    },
     "updates.mode": {
       "type": "string",
       "tier": "user",

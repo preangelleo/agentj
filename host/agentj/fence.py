@@ -133,47 +133,6 @@ def hide_env(environ=None, allow_docker: bool = False) -> list[str]:
     return out
 
 
-_MAIN_ENV = frozenset({
-    "PYTHONPATH", "PYTHONDONTWRITEBYTECODE", "PYTHONNOUSERSITE", "MCP_TOOL_TIMEOUT", "TERM", "COLORTERM",
-    # Existing one-time permission-tool claim in serve.new_perm_env (unchanged).
-    "AGENTJ_PERM_SOCK", "AGENTJ_PERM_TOKEN", "AGENTJ_PERM_WAIT",
-    # Already exported by serve.start BEFORE every harness spawn; socket mounts unchanged.
-    "AGENTJ_ELEVATE_SOCK", "AGENTJ_CAPABILITY_SOCK", "AGENTJ_RECALL_SOCK", "AGENTJ_FRIENDS_SOCK", "AGENTJ_RECALL_INDEX",
-    # Existing per-launch local OpenCode server authentication in opencode_env (unchanged).
-    "OPENCODE_SERVER_PASSWORD", "OPENCODE_SERVER_USERNAME", "OPENCODE_CONFIG_CONTENT", "OPENCODE_CONFIG", "OPENCODE_CONFIG_DIR",
-    "FAKE_CLAUDE_LOG", "FAKE_CLAUDE_SCRIPT", "FAKE_CLAUDE_USER_SETTINGS", "FAKE_PREP_SLEEP", "FAKE_NO_HANDOVER",
-    "FAKE_CTX_USED", "FAKE_FRESH_WINDOWS", "FAKE_CX_LOG", "FAKE_CX_SANDBOX", "FAKE_CX_POLICY", "FAKE_CX_THREADS",
-    "FAKE_CX_THREAD_SANDBOX", "FAKE_OC_LOG", "FAKE_OC_AGENT_RULES", "FAKE_OC_STORE", "FAKE_OC_ENV_LOG", "FAKE_OC_SESSIONS",
-})
-
-
-def launch_environment(base=None, allow_docker: bool = False, kind: str = "codex") -> dict:
-    """Strict subset of the existing child environment; adds no values or authority.
-
-    Reuse the established harness whitelist and the main-session tool claim names.
-    Filtering occurs before bwrap exec, not just before its child starts.
-    """
-    from .peer_session import clean_env, codex_user_model, SECRETISH
-    env = dict(os.environ if base is None else base)
-    keep = set(_MAIN_ENV | (frozenset(_CONTAINER_ENV) if allow_docker else frozenset()))
-    if kind == "opencode":
-        # Main-session configuration is constructed before this boundary. Peer
-        # sessions build their own configuration after clean_env; their narrower
-        # OPENCODE_DISABLE_* carry rule must not erase the main session's config.
-        # Preserve original bytes only, never arbitrary secret-looking settings.
-        keep.update(name for name in env if name.startswith("OPENCODE_") and not SECRETISH.search(name))
-    if kind == "codex":
-        # Same owner-selected native provider reference used by peer_session.
-        # Only its env_key NAME is added; values still come from the original input.
-        import re
-        name = (codex_user_model(env).get("provider_table") or {}).get("env_key")
-        if isinstance(name, str) and re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]{0,127}", name):
-            keep.add(name)
-    clean = clean_env(kind, env, extra_keep=keep)
-    hidden = set(hide_env(env, allow_docker))
-    return {name: env[name] for name in clean if name in env and name not in hidden}
-
-
 def _env_dirs(env) -> list[str]:
     """Socket directories named by the environment (a herdr / screen / tmux / Jupyter started with a custom location)."""
     out = []
@@ -287,7 +246,7 @@ def bwrap_argv(st, workdir: str, home: str | None = None, runtime: str | None = 
     root, perm, work = _real(str(st.root)), _real(str(st.perm_dir)), _real(workdir)
     from .preferences import path as preferences_path
     prefs = _real(str(preferences_path().parent))
-    a = [shutil.which("bwrap") or "bwrap", "--dev-bind", "/", "/", "--unshare-pid", "--as-pid-1", "--proc", "/proc",
+    a = [shutil.which("bwrap") or "bwrap", "--dev-bind", "/", "/", "--unshare-pid", "--proc", "/proc",
          "--die-with-parent", "--new-session"]
     hidden = [d for d in ("/tmp", "/var/tmp") if os.path.isdir(d)]
     for rt in (runtime, f"/run/user/{os.getuid()}"):    # also when XDG_RUNTIME_DIR is not set (a bare service / ssh)
@@ -473,7 +432,7 @@ def problem(st, workdir: str) -> str | None:
                 r = subprocess.run(sandbox_argv(st, workdir) + probe, capture_output=True, timeout=10, cwd=workdir)
                 _probe_cache[key] = None if r.returncode == 0 else "sandbox_failed"
             else:
-                r = subprocess.run(bwrap_argv(st, workdir) + ["/bin/sh", "-c", "exit 0"], capture_output=True, timeout=10, env=launch_environment())
+                r = subprocess.run(bwrap_argv(st, workdir) + ["/bin/sh", "-c", "exit 0"], capture_output=True, timeout=10)
                 _probe_cache[key] = None if r.returncode == 0 else ("apparmor_userns" if apparmor_userns_restricted() else "bwrap_failed")
         except (OSError, subprocess.TimeoutExpired):
             _probe_cache[key] = "sandbox_failed" if sys.platform == "darwin" else "bwrap_failed"

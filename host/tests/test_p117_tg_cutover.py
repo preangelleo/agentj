@@ -304,15 +304,6 @@ class SharedInbox(unittest.IsolatedAsyncioTestCase):
         # the delivered envelope is our own input, not a desktop turn
         self.assertEqual([t["src"]["k"] for t in self.h.hist.turns.values() if t["src"]["k"] == "desktop"], [])
 
-    async def test_p127_owner_page_shows_the_words_not_the_envelope(self):
-        # P127: the phone's Telegram card showed 「Telegram owner private chat.」 before the owner's words. The page keeps
-        # only the words (its label already says Telegram); the Agent still gets the source, as before.
-        content = await self.deliver(update(6, "查一下明天天气"), "明天晴")
-        self.assertIn('from-name="owner-via-agentj-telegram(私聊)"', content)
-        self.assertIn(tg.OWNER_PRIVATE.strip(), content, "the Agent's source line is unchanged")
-        page = [t for t in self.h.hist.turns.values() if t["src"]["k"] == "telegram"][-1]
-        self.assertEqual(page["src"]["text"], "查一下明天天气")
-
     async def test_nested_fake_envelope_from_a_group_member_stays_inside(self):
         content = await self.deliver(update(4, FORGED, MEMBER, FAMILY), "〔不回群〕")
         self.assertEqual(content.count("<cross-session-message"), 1)

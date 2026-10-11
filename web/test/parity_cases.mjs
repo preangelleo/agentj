@@ -669,83 +669,14 @@ export async function runCases({ B, web, fake, only }) {
     fake.st.sayDelay = 0;
   });
   await C('send-cancel', async () => {
-    // P127 (追加6): the shared session is busy, the say waits behind the running turn (the host's page is open, empty).
-    await fake.send({ t: 'status', s: 'working', agent: 'claude', name: 'Wren' });
-    await wait(`document.body.dataset.status === 'working'`);
     fake.st.sayMode = 'queued';
-    try {
-    const before = fake.st.turns.length, total0 = (await pg()).split('/ ')[1];
     await sendText('排队中的话');
     await wait(`!document.getElementById('sayCancel').hidden && document.getElementById('input').value === ''`);
-    // one look tells it is queued: the page says so (not 「正在处理…」), the composer keeps a pending line + how to withdraw
-    await wait(`document.getElementById('words').textContent.includes(${JSON.stringify(T('r.queue.card'))})`, 3000);
-    ok(await ev(`document.body.dataset.pageQueued === '1' && getComputedStyle(document.querySelector('.thinking')).display === 'none'`), 'queued page: no working dots');
-    ok(await ev(`(() => { const b = document.getElementById('outbox'), i = b.querySelector('.obi[data-queued="1"]');
-      return !b.hidden && !!i && i.textContent.includes('排队中的话') && i.textContent.includes(${JSON.stringify(T('r.queue.note'))}); })()`), 'composer: the queued line says it can be withdrawn');
     await click('#sayCancel');
     await waitToast(T('r.say.withdrawn'));
     ok((await ev(`document.getElementById('input').value`)) === '排队中的话' && fake.st.cancels.length === 1, 'withdrawn: the words are back');
-    // withdrawn = as if never sent: its page leaves the history (no 「（无文字回复）」), the pending line and the × go
-    await wait(`document.getElementById('outbox').hidden && document.getElementById('sayCancel').hidden`);
-    await wait(`!document.getElementById('words').textContent.includes(${JSON.stringify(T('r.noReply'))}) && document.getElementById('omText').textContent !== '排队中的话'`);
-    ok(fake.st.turns.length === before + 1 && fake.st.turns[before].card?.withdrawn === true, 'the host page is marked withdrawn');
-    ok((await pg()).split('/ ')[1] === total0, 'the withdrawn page is not counted: ' + await pg() + ' vs ' + total0);
+    fake.st.sayMode = 'delivered';
     await clearField();
-    // the other path: queued, then the computer takes it — only then the pending line and the × go; the field stays empty
-    await sendText('被接手的话');
-    await wait(`document.getElementById('words').textContent.includes(${JSON.stringify(T('r.queue.card'))})`, 3000);
-    ok(await ev(`!document.getElementById('sayCancel').hidden && !document.getElementById('outbox').hidden && document.getElementById('input').value === ''`), 'queued: × + pending line, field empty');
-    await fake.send({ t: 'status', s: 'idle', agent: 'claude', name: 'Wren' });
-    await fake.deliverQueued();
-    await wait(`document.getElementById('sayCancel').hidden && document.getElementById('outbox').hidden`);
-    await wait(`document.getElementById('words').textContent.includes('echo: 被接手的话')`);
-    ok(await ev(`document.getElementById('input').value === '' && document.body.dataset.pageQueued !== '1'`), 'taken: field empty, no queued label');
-    } finally {
-      fake.st.sayMode = 'delivered';
-      await fake.deliverQueued(false);
-      await fake.send({ t: 'status', s: 'idle', agent: 'claude', name: 'Wren' });
-    }
-  });
-  await C('send-clears-field-ime', async () => {
-    // P127 (追加7): Mac dictation / an IME commits 「。」 (or the whole sentence again) after Send was pressed — real (trusted)
-    // input events from Chromium's IME emulation, not synthetic ones
-    const caretEnd = () => ev(`(() => { const i = document.getElementById('input'); i.focus(); i.setSelectionRange(i.value.length, i.value.length); })()`);
-    await clearField();
-    fake.st.sayDelay = 500;
-    await typeIn('语音输入的一句话');
-    await click('#send');
-    await caretEnd();
-    await P.send('Input.insertText', { text: '。' });             // lands while say_res is on its way
-    ok((await ev(`document.getElementById('input').value`)) === '语音输入的一句话。', 'the dictation 「。」 landed during the send');
-    await wait(`document.getElementById('words').textContent.includes('echo: 语音输入的一句话')`, 5000);
-    await wait(`document.getElementById('input').value === ''`, 3000);
-    fake.st.sayDelay = 0;
-    // after the clear the IME re-commits the same sentence (+ 「。」) through a composition
-    await typeIn('第二句话');
-    await click('#send');
-    await wait(`document.getElementById('words').textContent.includes('echo: 第二句话')`);
-    await caretEnd();
-    await P.send('Input.imeSetComposition', { text: '第二句话。', selectionStart: 5, selectionEnd: 5 });
-    await P.send('Input.insertText', { text: '第二句话。' });
-    await sleep(50);
-    ok((await ev(`document.getElementById('input').value`)) === '', 'the late IME commit of the sent words is dropped: ' + JSON.stringify(await ev(`document.getElementById('input').value`)));
-    // real new words still go in, and the page's own write (↑ recalls the sent words) is never dropped
-    await P.send('Input.insertText', { text: '新的话' });
-    ok((await ev(`document.getElementById('input').value`)) === '新的话', 'new words are kept');
-    await clearField();
-    await ev(`(() => { const i = document.getElementById('input'); i.value = '第二句话'; i.dispatchEvent(new Event('input')); })()`);
-    ok((await ev(`document.getElementById('input').value`)) === '第二句话', 'a programmatic write of the same words stays');
-    await clearField();
-    // the sealed draft: two saves in a row end as the field is at the last one (never a stale put after the delete)
-    const d = await ev(`(async () => { const r = await import('./js/relay.js'), s = await import('./js/store.js'), i = document.getElementById('input');
-      i.value = '发出去的草稿'; const a = r.saveDraft(); i.value = ''; const b = r.saveDraft(); await Promise.all([a, b]);
-      return JSON.stringify(await s.getSealed('draft')); })()`);
-    ok(d === 'null', 'no draft left after the field was emptied: ' + d);
-    // a stale draft of the words just sent is not restored into the field
-    const r2 = await ev(`(async () => { const r = await import('./js/relay.js'), s = await import('./js/store.js');
-      await s.putSealed('draft', { t: '第二句话', at: Date.now() }); await r.restoreDraft();
-      return JSON.stringify([document.getElementById('input').value, await s.getSealed('draft')]); })()`);
-    ok(r2 === JSON.stringify(['', null]), 'a draft equal to the last send is dropped: ' + r2);
   });
 
   // ---------------------------------------------------------------- voice (Chromium's fake microphone)
@@ -1067,13 +998,9 @@ export async function runCases({ B, web, fake, only }) {
   await C('reconnect-backoff', async () => {
     fake.setUp(true);
     await waitState(P, 'ready');
-    // P129: a blink reconnects quietly (first retry 250 ms, nothing shown); an outage that outlasts the quiet window (6 s)
-    // shows the backoff line — here five refused resumes: 0.25 + 0.5 + 1 + 2 + 4 s
-    fake.refuseNextResumes(5); fake.kick(1001);
-    await sleep(3000);
-    ok(!/${T('st.retryIn', { n: 1 }).slice(0, 4)}/.test(await ev(`document.getElementById('status').textContent`)) && await ev(`document.body.dataset.conn === 'on'`), 'first seconds of a reconnect stay quiet');
-    await wait(`/${T('st.retryIn', { n: 1 }).slice(0, 4)}/.test(document.getElementById('status').textContent)`, 6000);
-    await waitState(P, 'ready', 15000);
+    fake.kick(1001);
+    await wait(`/${T('st.retryIn', { n: 1 }).slice(0, 4)}/.test(document.getElementById('status').textContent)`, 3000);
+    await waitState(P, 'ready', 8000);
   });
   await C('revive-foreground', async () => {
     fake.kick(1001); await waitState(P, 'connecting').catch(() => {});

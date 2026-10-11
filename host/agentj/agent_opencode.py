@@ -523,11 +523,7 @@ class OpenCodeAgent(Agent):
         from .proxy import environment
         from .provider_runtime import fresh_environment
         self.auth_fp = auth_fingerprint()        # P59: what the credentials looked like when this serve started
-        from . import fence
-        env = opencode_env(environment(fresh_environment(os.environ), self.host.preferences), password)
-        if self.cfg.get("fence", True):
-            env = fence.launch_environment(env, self.cfg.get("docker", False), self.kind)
-        proc = await asyncio.create_subprocess_exec(*argv, cwd=self.cfg["dir"], env=env,
+        proc = await asyncio.create_subprocess_exec(*argv, cwd=self.cfg["dir"], env=opencode_env(environment(fresh_environment(os.environ), self.host.preferences), password),
                                                     stdin=asyncio.subprocess.DEVNULL, stdout=asyncio.subprocess.PIPE,
                                                     stderr=asyncio.subprocess.PIPE, limit=LINE_LIMIT, start_new_session=True)
         self.proc, self.err_tail, self.quiet_exit, self.failed_start = proc, "", False, False

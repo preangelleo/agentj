@@ -10,7 +10,6 @@ import time
 from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey, X25519PublicKey
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from cryptography.hazmat.primitives import serialization
-from .text import pick
 from . import cloud, notices, wire, approvals, activity, controls, tasks
 
 CONTEXT = 'agentj-remote-pair-v1'
@@ -39,7 +38,7 @@ def open_request(env, st, now=None, keys=None):
     # Newly delivered requests must be fresh, not queued across a power-off. Authorization expires absolutely.
     if not now-15000<=q['created_at']<=now+5000 or not now<q['expires_at']<=q['created_at']+300000: return None
     if not isinstance(q['id'],str) or not cloud._UNBIND_ID.fullmatch(q['id']): return None
-    if q['op'] not in ('start','inspect','approve','owner_status','resume','task_on','device_name'): return None
+    if q['op'] not in ('start','inspect','approve','owner_status','resume','task_on'): return None
     try:
         if len(wire.unb64u(q['browser']))!=32: return None
         X25519PublicKey.from_public_bytes(wire.unb64u(q['browser']))
@@ -52,10 +51,6 @@ def open_request(env, st, now=None, keys=None):
         if not isinstance(target,dict) or set(target)!={'sha'} or not isinstance(target['sha'],str) or len(target['sha'])!=64: return None
     elif q['op']=='task_on':
         if not isinstance(target,dict) or set(target)!={'id','tsha'} or not isinstance(target['id'],str) or not 1<=len(target['id'])<=64 or not isinstance(target['tsha'],str) or len(target['tsha'])!=64: return None
-    elif q['op']=='device_name':
-        if not isinstance(target,dict) or set(target)!={'device','name'} or not isinstance(target['device'],str) or not cloud._DEVICE_ID.fullmatch(target['device']): return None
-        name=target['name']
-        if not isinstance(name,str) or not 1<=len(name.strip())<=64 or any(ord(c)<32 or ord(c)==127 for c in name): return None
     elif target is not None: return None
     return q
 
@@ -112,17 +107,11 @@ class RemotePair:
             self.reply(q,{'status':'owner_status','stopped':h.stopped(),'sha':stop_sha(h.st),
                           'tasks':[{'id':t['id'],'title':t['title'],'enabled':t['enabled'],'tsha':t['tsha'],'problems':t['problems']} for t in rows]})
             return
-        if q['op'] in ('resume','task_on','device_name'):
+        if q['op'] in ('resume','task_on'):
             target=q['target']; result='ok'
             if q['op']=='resume':
                 if target['sha']!=stop_sha(h.st): result='changed'
-                else: await h.do_resume('account:'+q['id'],pick(getattr(h,'lang','zh'),'账户页','Account page'))
-            elif q['op']=='device_name':
-                result='ok' if h.st.rename_device(target['device'],target['name']) else 'gone'
-                if result=='ok':
-                    for session in h.sessions.values():
-                        if session.device==target['device']: session.name=target['name'].strip()
-                    h.reporter.trigger('online')
+                else: await h.do_resume('account:'+q['id'],'账户页 / Account page')
             else:
                 try:
                     wd=h.agent_cfg['dir'] if h.agent_cfg else None
@@ -169,9 +158,9 @@ class RemotePair:
         if result.get('ev')!='approved': return
         digest=hashlib.sha256((q['id']+'\n'+s.device+'\n'+handshake(s)).encode()).hexdigest()
         approvals.record(self.host.st,rid=q['id'],agent='account',tool='pair',input_sha256=digest,shown_sha256=digest,decision='allow',reason='account_passkey',device=s.device)
-        activity.record(self.host.st,'decision',device=s.device,summary=pick(getattr(self.host,'lang','zh'),'经账户页添加','Added from account page'),request=q['id'])
+        activity.record(self.host.st,'decision',device=s.device,summary='经账户页添加 / Added from account page',request=q['id'])
         when=time.strftime('%Y-%m-%d %H:%M')
-        await self.host.broadcast(pick(getattr(self.host,'lang','zh'),f"经账户页添加遥控器（{q['account']}）：{s.name} · {when} · {s.device}",f"Remote added from account page ({q['account']}): {s.name} · {when} · {s.device}"),frm='notice')
+        await self.host.broadcast(f"经账户页添加遥控器 / Remote added from account page ({q['account']}): {s.name} · {when} · {s.device}",frm='notice')
         self.host.push_notify('security')
 
     def poll(self,link,results):

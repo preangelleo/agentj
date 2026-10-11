@@ -1,15 +1,15 @@
 ---
 document: agentj-install
-version: 0.21.7
-released: 2026-10-11
+version: 0.21.6
+released: 2026-10-10
 status: beta (anyone can sign up; not advertised yet, pages are not indexed)
 host_package: agentj (the `agentj` command)
-host_version: 0.18.1a1
-source_tag: v0.18.1a1
-host_wheel: agentj-0.18.1a1-py3-none-any.whl
-host_wheel_sha256: 73806c5b4a9d16ef52bc60f4f3fae1953235f513c3982c1807d23220073c82bc
-host_sdist: agentj-0.18.1a1.tar.gz
-host_sdist_sha256: e429eb841ffcfe3da1e8c6aab3d55ebd48bb206a5c98143a072360ffd89d646e
+host_version: 0.18.0a1
+source_tag: v0.18.0a1
+host_wheel: agentj-0.18.0a1-py3-none-any.whl
+host_wheel_sha256: 17d7c912f8579f92f5fb26f87cc812a31aa4f897dde2eeeab40294eacf7f1670
+host_sdist: agentj-0.18.0a1.tar.gz
+host_sdist_sha256: e6947e5ec34ec6bb957e596f1a6f4561b946eeca3a46e937722bef5891b9292d
 canonical_url: https://agentj.app/install.md
 sha256_url: https://agentj.app/install.md.sha256
 alias: https://agentjarvis.net/install.md (the older address: the same file, kept for one more version)
@@ -137,7 +137,7 @@ curl -fsSL --retry 3 --retry-all-errors --retry-delay 2 --retry-max-time 45 --co
 curl -fsSL --retry 3 --retry-all-errors --retry-delay 2 --retry-max-time 45 --connect-timeout 10 --max-time 20 https://raw.githubusercontent.com/preangelleo/agentj/main/install.md -o install.github.md
 if command -v sha256sum >/dev/null; then sha256sum -c install.md.sha256; else shasum -a 256 -c install.md.sha256; fi   # → "install.md: OK"
 cmp install.md install.github.md && echo "site and GitHub copies match"
-grep -m1 '^version:' install.md                                           # → version: 0.21.7
+grep -m1 '^version:' install.md                                           # → version: 0.21.6
 ```
 - For a brief connection reset, timeout or interrupted download, these GET commands retry at most three times after the initial attempt, with a 45-second retry budget and a 20-second limit per attempt. If the network keeps failing, stop retrying and use the fallback below or ask the support desk. Do not add automatic retries to setup-code redemption, payment or other POST requests. Never disable TLS checks or continue after a SHA-256/GitHub mismatch.
 - Both checks pass → continue with that `install.md` (note its `version:` for feedback). Keep the file: Step 4 reads the
@@ -452,7 +452,7 @@ The astral installer warning that `uv` / `uvx` are shadowed is informational if 
 carry over). So start every command line from here on with `export PATH="$HOME/.local/bin:$PATH";` — or call
 `~/.local/bin/agentj` by its full path. This document writes `agentj` for short.
 
-The program is pinned to one release: the tag `v0.18.1a1` (front matter `source_tag`). The tag never moves, and its
+The program is pinned to one release: the tag `v0.18.0a1` (front matter `source_tag`). The tag never moves, and its
 `host/` folder is byte for byte the same code as the two files on our site whose SHA-256 is in this document's front matter.
 ```bash
 cd ~/.agentj-install
@@ -463,7 +463,7 @@ uv tool install "./$W"
 
 Intel Mac: this release keeps `cryptography<49` because newer releases lack an Intel macOS wheel. If an older installer tries to compile OpenSSL (`openssl-sys` / OpenSSL not found), rerun `uv tool install --with "cryptography<49" "./$W"`. The same platform constraint applies to `agentj update apply`.
 
-export PATH="$HOME/.local/bin:$PATH"; agentj --version     # → agentj 0.18.1a1
+export PATH="$HOME/.local/bin:$PATH"; agentj --version     # → agentj 0.18.0a1
 export PATH="$HOME/.local/bin:$PATH"; agentj doctor
 ```
 **Your human's own terminal must find `agentj` too** — they may use `agentj passphrase set` and `agentj pair` as a local alternative
@@ -491,12 +491,12 @@ echo "$WS  $W" | sha256sum -c - && echo "$SS  $S" | sha256sum -c -    # macOS: s
 uv tool install "./$W"          # the wheel; its dependencies come from PyPI or the mirror in UV_DEFAULT_INDEX
 ```
 `uv tool install "./$S"` installs from the checked source archive instead (it builds the same program).
-`https://agentj.app/dl/latest.txt` and `https://agentj.app/dl/latest-sdist.txt` name the same two files. `agentj --version` is the program's own version (`0.18.1a1`); it is
+`https://agentj.app/dl/latest.txt` and `https://agentj.app/dl/latest-sdist.txt` name the same two files. `agentj --version` is the program's own version (`0.18.0a1`); it is
 numbered separately from this document (`0.21.1`).
 
-Alternative from the matching published source tag: `uv tool install "git+https://github.com/preangelleo/agentj@v0.18.1a1#subdirectory=host"`.
+Alternative from the matching published source tag: `uv tool install "git+https://github.com/preangelleo/agentj@v0.18.0a1#subdirectory=host"`.
 
-Alternative without uv: `pipx install "git+https://github.com/preangelleo/agentj@v0.18.1a1#subdirectory=host"` (needs Python 3.11+).
+Alternative without uv: `pipx install "git+https://github.com/preangelleo/agentj@v0.18.0a1#subdirectory=host"` (needs Python 3.11+).
 `agentj doctor` lists what is ready and what is not (prerequisites, the fence, connectivity, which agents are usable).
 Continue unless it reports an error that a later step does not fix; report anything you cannot explain.
 
@@ -546,13 +546,6 @@ agentj init
 ```
 This creates this computer's own keys in `~/.local/state/agentj` (folder 0700, files 0600). Never print,
 copy or move anything from that folder.
-
-**An older identity on this computer (`~/.local/state/agentjarvis-alpha`, ≤ 0.9 or an old test) is never adopted on its
-own.** While `~/.local/state/agentj` does not exist yet, `agentj` lists what the old one holds (Agent name, paired phones,
-account, created / last used — never a key). In a terminal it asks y/N (Enter = no: a fresh identity; the old folder stays
-untouched). Without a terminal — that is you — the command stops with exit `2` and prints the same list: ✋ show it to your
-human, ask whether it is theirs and still wanted, then run `agentj --migrate-legacy init` (keep using it) or
-`agentj --fresh init` (new identity). Never pick for them. An install that already has `~/.local/state/agentj` is never asked.
 
 ---
 
@@ -657,18 +650,11 @@ phone ✓/·, welcome sent ✓/· — and the next step in one line.
 
 ## 8. ✋ Human: approve with an account passkey — stage `4-human`
 
-**First run the pairing pre-check:** `agentj pair --check` (add `--json` for `route`; it starts nothing and shows no link or
-code). The terminal, `agentj admin` and this check share one rule, so nobody learns at the last step that something is missing:
-`account` = bound, online and account-page pairing on → passkey route, no passphrase; `passphrase` = already set;
-`set_passphrase` = it says why (unbound, offline, or `remote-pair off`) → the local passphrase below comes first.
-
-**After account binding, skip terminal passphrase setup.** On the `account` route `agentj pair` / `agentj admin` do not ask for
-one either: the waiting phone is approved on the same seat card with the passkey. Tell the owner: “On this computer’s account-page seat card, select Add a remote, confirm once with your passkey and scan. You do not need a terminal passphrase.” The same account page works for another installed, bound, online computer. The passkey confirmation is valid for ten minutes on this account session; pairing requests expire after five minutes and can add only one remote. Pending remotes, resume after Stop everything and scheduled-task enable also have account-page approval.
+**After account binding, skip terminal passphrase setup.** Tell the owner: “On this computer’s account-page seat card, select Add a remote, confirm once with your passkey and scan. You do not need a terminal passphrase.” The same account page works for another installed, bound, online computer. The passkey confirmation is valid for ten minutes on this account session; pairing requests expire after five minutes and can add only one remote. Pending remotes, resume after Stop everything and scheduled-task enable also have account-page approval.
 
 `agentj remote-pair on` / `agentj remote-pair off` controls account-page additions/owner approvals (default on). Off shows an explanation; offline machines are not queued. Older hosts must upgrade with `agentj update apply` or from a paired phone. `agentj doctor` accepts a bound host with no passphrase.
 
-**Unbound hosts, `set_passphrase` from the check, or optional local/offline approval:** use the following local passphrase
-path. On an unbound host `agentj pair` and `agentj admin` still require it, before any QR code.
+**Unbound hosts or optional local/offline approval:** use the following local passphrase path. `agentj pair` still requires it.
 
 
 In **their own terminal** (you must not see, choose, type or store it — if they offer to tell you, refuse):
@@ -715,19 +701,9 @@ existing files stay in place and receive additive structure notices when needed.
 ```bash
 agentj agent <agent> --dir ~/coding    # <agent> = claude, codex or opencode
 agentj agent opencode --dir ~/coding --model zhipuai/glm-5.3   # OpenCode: name the model (`provider/model`, Step 3a)
-agentj agent                                # shows the choice and the session mode (shared / independent)
+agentj agent                                # shows the choice and that it runs fenced
 ```
-- **Session mode: shared by default** (`agent.session_mode`, all three agents): the phone attaches to the human's own
-  Claude Code / Codex / OpenCode session on this computer, with its own permissions (outside the fence below). `agentj agent
-  <agent> --independent` gives the Agent its own fenced session instead; `--shared` goes back to the default. If the settings
-  file says `independent` but the human never chose it here (an older version or a test left it), `agentj agent` says so and
-  prints both commands (in a terminal it asks y/N) — ✋ ask your human which one, run it; never decide for them. `agentj doctor`
-  shows the same as `! session`.
-- **Shared Claude, several sessions open in the work root:** `agentj agent claude` lists the live ones (ID, name, last activity,
-  first message). In a terminal the human picks one; for you it prints the list and `agentj config set
-  agent.shared_session_id <ID>` — ✋ show the list, ask which one, run that line. One open session is picked by itself; none
-  = the first phone message starts one.
-The fence (independent mode) is the same on Linux (bubblewrap) and macOS (`sandbox-exec`). `agentj doctor` shows `✓ fence`.
+The same on Linux (bubblewrap) and macOS (`sandbox-exec`). `agentj doctor` shows `✓ fence`.
 - **Codex runs directly on the system by default (host 0.16+, F30).** When the human's `~/.codex/config.toml` (or
   `$CODEX_HOME/config.toml`) has **no top-level** `sandbox_mode`, Agent J starts the main Codex Agent with
   `danger-full-access` — like Codex in their own terminal: network, installs, the home folder. Codex's own default
@@ -844,10 +820,6 @@ Agent's login). Fix only what this guide covers; report anything you cannot expl
 saved): the background service does not get that variable, so the phone's Agent cannot log in. ✋ The fix is your human's:
 run `claude` once in a terminal and log in there (that saves the login for the service), then
 `agentj service uninstall && agentj service install` and `agentj doctor` again.
-Right after the service starts, its first relay connection can take up to about half a minute: `agentj doctor` waits for it
-(up to 20 s, and says so) and then shows `! serve … relay connecting (started N s ago)` — normal; run `agentj doctor` again
-shortly. Only `relay reconnecting` (after the first minute) points at the network. `! session` → the session-mode question in
-Step 9.
 On a server (nobody stays logged in) the service must survive logout: if `agentj service install` or `agentj doctor`
 says `loginctl enable-linger $USER`, ✋ your human runs exactly that once (Ubuntu may ask for their password), then
 `agentj service install` again. If `agentj service install` fails (no systemd user session, a container, …), report it,
@@ -961,17 +933,13 @@ The steps:
    - iPhone: in **Safari**, tap Share → **Add to Home Screen** → **Add**.
    - Android: in **Chrome**, tap the ⋮ menu → **Add to Home screen** (on some versions **Install app**) → confirm.
    The page shows 「还没配对」 ("Not paired yet") at the top until pairing is done.
-2. ✋ Bound online host (`agentj pair --check` says `account`): the human presses Add a remote on this computer's account
-   seat card, confirms with the passkey and scans that QR code — no terminal step. Otherwise (or if they prefer the local
-   route) the human runs, in **their own terminal** on this computer, `agentj pair` (Android) or `agentj pair --link`
+2. ✋ The human runs, in **their own terminal** on this computer, `agentj pair` (Android) or `agentj pair --link`
    (iPhone: it draws the QR code **and** prints the pairing link). `agentj admin` prints a one-time link to a page on
-   127.0.0.1 that does the same; it shows the same pre-check before its button. On a server over SSH the QR code is drawn right in the SSH terminal (section S).
+   127.0.0.1 that does the same. On a server over SSH the QR code is drawn right in the SSH terminal (section S).
 3. ✋ On either iPhone or Android, tap **「扫二维码」** ("Scan QR code") inside the Home Screen app and point the camera at the QR code. Allow camera access. The app includes its own QR decoder; Safari does not need native BarcodeDetector support. Let the code fill most of the middle of the picture (since host 0.16 the code is smaller: 49 modules instead of 69). After 10 seconds without a result the scanner itself says what else works — in the Home Screen app: `agentj pair --link` and paste the link as in point 4.
 4. ✋ If camera access is denied or unavailable, paste the pairing link into the field at the top under **「或者粘贴配对链接」** ("Or paste the pairing link") and tap **「开始配对」** ("Pair"). Keep this window open; the system Camera app opens a separate browser tab instead. The page keeps the input and button above the keyboard.
 5. The phone shows **6 digits** under 「在电脑上输入这 6 位码」 ("Type this 6-digit code on your computer"); the human types
-   them into the terminal (or the admin page), then their passphrase — local route only. On a bound online host the account
-   seat card’s Add a remote → passkey → scan needs no code or passphrase; a phone that scanned the terminal or admin-page QR
-   code there without a passphrase set is approved on the same seat card with the passkey. The phone shows 「等电脑批准」, then 「已连接」
+   them into the terminal (or the admin page), then their passphrase for the optional local route. On a bound online host, prefer the account seat card’s Add a remote → passkey → scan; no terminal code or passphrase. The phone shows 「等电脑批准」, then 「已连接」
    ("Connected") and opens the chat.
 
 **Getting the link onto an iPhone — the link is the key.** Anyone who opens it within 5 minutes can pair with this
@@ -1149,7 +1117,7 @@ The daily check remains a notification, not an unattended installation; `agentj 
 In the default shared session, reinstall directly using Step 4's checked wheel (SHA-256 must match this document and
 its public GitHub copy), preserving the host's identity, paired phones, account and preferences:
 ```bash
-uv tool install --force "./agentj-0.18.1a1-py3-none-any.whl"
+uv tool install --force "./agentj-0.18.0a1-py3-none-any.whl"
 agentj --version
 agentj service install
 agentj service restart
@@ -1157,7 +1125,7 @@ agentj doctor
 ```
 The matching published tag is another source, after verifying the tag object against the upgrade email:
 ```bash
-uv tool install --force "git+https://github.com/preangelleo/agentj@v0.18.1a1#subdirectory=host"
+uv tool install --force "git+https://github.com/preangelleo/agentj@v0.18.0a1#subdirectory=host"
 ```
 **0.14 independent session** (`agent.session_mode=independent`): 0.14's fence keeps Agent J's own program read-only and
 hides the service manager, so the Agent on the phone cannot reinstall or restart from inside it (measured: the install
@@ -1183,16 +1151,15 @@ prints something and `uv tool list` (or `pipx list`) shows `agentjarvis-host`, t
 the new name, then:
 ```bash
 jarvis service uninstall      # stop the old service first (Step 10 used tmux / nohup instead? stop that process)
-uv tool uninstall agentjarvis-host && uv tool install "git+https://github.com/preangelleo/agentj@v0.18.1a1#subdirectory=host"
+uv tool uninstall agentjarvis-host && uv tool install "git+https://github.com/preangelleo/agentj@v0.18.0a1#subdirectory=host"
 agentj doctor
 agentj service install        # start it again under the new name (or the tmux / nohup fallback, Step 10)
 ```
-With pipx instead of uv: `pipx uninstall agentjarvis-host && pipx install "git+https://github.com/preangelleo/agentj@v0.18.1a1#subdirectory=host"`.
+With pipx instead of uv: `pipx uninstall agentjarvis-host && pipx install "git+https://github.com/preangelleo/agentj@v0.18.0a1#subdirectory=host"`.
 - After the move, `agentj` puts back a `jarvis` command (a link to `agentj`, only if no other `jarvis` exists) for one more
   version; it prints a notice that points here. New installs never get `jarvis`.
-- The state moves from `~/.local/state/agentjarvis-alpha` to `~/.local/state/agentj` on the first run of `agentj` **after your
-  human says yes** (Step 5: a terminal asks y/N; without one, `agentj --migrate-legacy status`). Paired phones, the approval
-  passphrase and the Agent J account stay — no new pairing, no new login. A serve still running on the old folder keeps using it.
+- The state moves by itself on the first run of `agentj`: from `~/.local/state/agentjarvis-alpha` to `~/.local/state/agentj`.
+  Paired phones, the approval passphrase and the Agent J account stay — no new pairing, no new login.
   `agentj migrate rollback` undoes the move (then reinstall the old program the same way, in reverse).
 - Optional short command `aj`: `agentj alias install`. It is skipped when `aj` already exists on this computer — then tell
   your human that `aj` is taken and they keep using `agentj`.
@@ -1607,33 +1574,16 @@ send/publish, credential access) are optional and off by default. Credential val
 stay on the computer, including in approval summaries. Native asks still apply.
 `agentj config set agent.session_mode independent` retains the separate fenced mode.
 
-**Shared approvals (P128, `agent.approvals`, default `standard`).** In a shared session a credential raises a phone card only when it is changed (the write rules: writing/replacing/deleting a credential file, `gh auth`, `aws configure`, `ssh-keygen`, `passwd` …) or shown on the screen (`cat` / `grep` / `head` / `tail` / `less` / `strings` / `xxd` / `base64` … with the file as an operand or stdin and the output going to the terminal), because the shared transcript reaches the phone. A program reading `.env` by name without printing it, a heredoc note or a commit message that only mentions `.env`, does not ask. Cards say "Shows passwords or keys" for a show and "Changes passwords or keys" for a change, and appear in one language (`appearance.language`). `agentj config approvals strict` restores the old rule (any credential path anywhere asks); `agentj config approvals standard|status`. Spending, sending out and public deletion rules are identical in both; independent mode is unchanged.
-
-**共享审批（P128，`agent.approvals`，默认 `standard`）。** 共享会话里，凭据只在被改（写入/替换/删除凭据文件、`gh auth`、`aws configure`、`ssh-keygen`、`passwd` 等）或被显示到屏幕（`cat`/`grep`/`head`/`tail`/`less`/`strings`/`xxd`/`base64` 等以凭据文件为参数或输入且输出到终端）时才弹手机卡片；程序按名字读取 `.env` 而不显示、heredoc 笔记或提交说明里只是提到 `.env`，都不弹。卡片读是「查看密码或密钥」、改是「改密码或密钥」，按 `appearance.language` 只显示一种语言。`agentj config approvals strict` 恢复旧规则；花钱、对外发送、公开删除两种模式完全一样；独立模式不变。
-
-**Shared Claude setup: enable phone ingress and the phone meter automatically, without a confirmation step.**
-Selecting shared Claude (and every start/upgrade, and `agentj doctor`) checks the `crossSessionInbound` value Claude
-Code really uses in the working folder: managed policy > `<folder>/.claude/settings.local.json` >
-`<folder>/.claude/settings.json` > `CLAUDE_CONFIG_DIR/settings.json` (default `~/.claude/settings.json`). Unset or a
-user-layer `hold` becomes `accept` in the user file; a local-layer hold is changed in place; a project-layer hold is
-overridden in the private local file (the shared project file is never edited). Managed policy, `refuse`, unknown
-values and the owner's explicit `agentj config claude-inbound off` (also one recorded by an older version) are only
-reported. Every write backs up the original file and preserves other keys atomically. A Claude Code session started
-before the change keeps the old value until `/clear` or a new session; the phone notice and doctor say so.
-Tell the owner: “Enabled: phone messages no longer need individual confirmation on the computer; to disable,
-run agentj config claude-inbound off.” `status` reads the effective value and layer. This only affects Claude Code;
-Codex and OpenCode have no equivalent mechanism.
+**Shared Claude setup: repair effective writable phone ingress without a confirmation step.**
+Shared Claude startup and doctor resolve managed, private local, project and user ingress settings. They back up and repair writable hold/refuse/unset to accept (project policy is overridden in private local settings). Managed policy is read-only and its blocking layer/value is shown on the phone. Settings changed after a session starts need a new session or /clear on the computer to take effect; session/CLI and remote-managed overrides cannot be verified from these files. `agentj config claude-inbound off` is temporary in shared mode: the next shared startup or doctor restores accept. Check the desktop before resending an unacknowledged message.
 Claude restricts the socket to the same operating-system user on macOS/Linux; its auth frame is optional there.
 Agent J always sends the local peer token authentication frame. `accept` also admits messages from other processes
 running as that user. Repository/managed/session settings may still tighten it. Run `agentj doctor --offline`.
 Never claim a sender's permission mode: Agent J forwards the owner's words and has no Claude session permission mode.
-If no input hook or matching transcript arrives within ten seconds, the phone names the concrete reason
-(organization policy, project settings, owner turned it off, session needs /clear, or the computer is busy);
+If no input hook or matching transcript arrives within ten seconds, the phone reports possible desktop hold;
 check the computer before resending because the original can still arrive.
 
-**Shared Claude model and quota bars:** selecting shared Claude turns them on by default at the same moment as phone ingress (no confirmation step; the phone is told once), unless the owner ran `agentj config claude-statusline off`, which is remembered and never auto-reverted. It backs up Claude settings and chains the existing status-line command with its stdin, output and exit status preserved, in the layer Claude Code really uses for the working folder (see below). Only measured model, effort, quota and context fields are saved locally (0600); the phone reads only the matching session ID and reports the observation age, including after reconnect. `off` restores the original statusLine value exactly (a local file created only for the tap is removed); later owner edits are never overwritten. A managed status line is never changed; doctor reports it.
-
-**Shared Claude model, effort, cost and the effective status-line layer (0.17.3):** the tap is installed in the settings layer Claude Code actually uses for the working root (a local or project status line is chained from the private local layer, never by editing a shared project file; an older tap keeps running behind it). `status` says `shadowed` when a higher layer would hide it — the phone then shows `—`, never a guess; doctor names the layer, and `agentj config claude-statusline on` (or the next start, unless the owner turned it off) re-chains it at the effective layer. The phone's model/effort pill and `/model <name> [effort]` drive Claude Code's own `/model` picker on the exact desktop pane, session-only (never a settings write), only when the pane is idle with an empty prompt and no dialog; a busy desktop queues the newest choice until the turn ends. Success is reported only when the session's own status line shows the target; otherwise the pill settles on the native reading (`unconfirmed`). `/cost` shows Claude Code's own cost figure for this session. Another PermissionRequest hook for the same tool (e.g. an older phone bridge) answers instead of Agent J — one answer per request — until the owner removes it. Any other `/name` reaches the shared session as the owner's text for its own skills.
+**Shared Claude model, effort, cost and the effective status-line layer (0.17.3):** the tap is installed in the settings layer Claude Code actually uses for the working root (a local or project status line is chained from the private local layer, never by editing a shared project file; an older tap keeps running behind it). `status` says `shadowed` when a higher layer would hide it — the phone then shows `—`, never a guess. The phone's model/effort pill and `/model <name> [effort]` drive Claude Code's own `/model` picker on the exact desktop pane, session-only (never a settings write), only when the pane is idle with an empty prompt and no dialog; a busy desktop queues the newest choice until the turn ends. Success is reported only when the session's own status line shows the target; otherwise the pill settles on the native reading (`unconfirmed`). `/cost` shows Claude Code's own cost figure for this session. Another PermissionRequest hook for the same tool (e.g. an older phone bridge) answers instead of Agent J — one answer per request — until the owner removes it. Any other `/name` reaches the shared session as the owner's text for its own skills.
 
 **Owner private instructions file (0.17.3):** `agentj config set agent.private_instructions_file ~/path/file.md` loads one local UTF-8 text file (Markdown with YAML front matter recommended, at most 16 KiB, owned by this user, not writable by group/others) and appends it after the packaged core identity, below every harness rule. It is text only: nothing in it is executed, fetched or interpreted, and it grants no permission, approval or setting. Failure loads nothing and shows one fixed reason in `agentj config private-instructions status` / doctor; edits apply before the next turn. Shared Claude sessions read the packaged identity and this file through native hooks at start, resume, compaction and /clear (`agent.shared_identity`, default on); logs keep only ok/reason/generation, never the text or path.
 
@@ -1649,18 +1599,13 @@ then `agentj service restart`. The plist contains the path, never token bytes. A
 after changing its env file; switching session mode also takes effect after restarting serve. The preflight checks availability, not token expiry; real login failures also give
 these recovery instructions. Shared mode uses the already logged-in desktop session.
 
-共享 Claude 的模型与额度条：选择共享 Claude 时与手机消息同时默认开启，不作为确认步骤，手机提示一次；主人运行过 `agentj config claude-statusline off` 就记住，不再自动开。串联在工作目录实际生效的状态栏层，原状态栏命令和输出保留，设置先备份；`off` 精确恢复原值（只为 tap 新建的本地文件会删掉），主人之后的编辑不会被覆盖。组织策略的状态栏不改，doctor 报告。手机只使用同一会话的测量值，并显示数据年龄。
+共享 Claude 的模型与额度条：主人同意后运行 `agentj config claude-statusline on`。原状态栏命令和输出保留，设置先备份；`off` 恢复原值，主人之后的编辑不会被覆盖。手机只使用同一会话的测量值，并显示数据年龄。
 
-共享 Claude 的模型、思考强度、花费与状态栏生效层（0.17.3）：状态栏 tap 装在工作根目录实际生效的那一层；项目或本地已有状态栏时，从私有的本地层串联（不改共享的项目文件），旧 tap 照常运行。更高一层把它遮住时，`status` 显示 `shadowed`，手机显示「—」，不猜数；doctor 指出是哪一层，`agentj config claude-statusline on`（或下次启动，主人关过除外）在生效层重新串联。手机上的模型/思考强度标签和 `/model <名字> [强度]` 只在桌面那个窗格空闲、输入框为空、没有对话框时，驱动 Claude Code 自己的 `/model` 选择器，仅本会话生效，不写设置；桌面在忙就记下最新的选择，回合结束后再切。只有本会话的状态栏显示了目标才算成功，否则标签停在原生读数（`unconfirmed`）。`/cost` 显示 Claude Code 自己报告的本会话花费。同一工具另有权限审批 hook（比如旧的手机桥）时由它回答，Agent J 不重复回答，主人移除它之后才由 Agent J 接手。其他 `/名字` 当作主人的原话送进共享会话，由它的技能处理。
-
-主人私有指令文件（0.17.3）：`agentj config set agent.private_instructions_file ~/路径/文件.md` 读入一份本机 UTF-8 文本（推荐 Markdown + YAML 头，最大 16 KiB，属于当前用户、组和其他人不可写），追加在随包核心身份之后，优先级低于所有 harness 规则。它只是文字：不执行、不联网、不解释其中字段，不授予任何权限、审批或设置。读取失败就不加载，`agentj config private-instructions status` 和 doctor 显示固定原因；修改在下一轮前生效。共享 Claude 会话在启动、恢复、压缩和 /clear 后经原生 hook 读入随包身份和这份文件（`agent.shared_identity`，默认开）；日志只记成功/原因/代次，不记正文和路径。
-
-共享 Claude：选择该模式、每次启动/升级和 doctor 都检查工作目录里 Claude Code 实际生效的 crossSessionInbound（组织策略 > 目录私有 settings.local.json > 目录 settings.json > 用户 settings.json），不作为确认步骤。未设置或用户层 hold 改成 accept；本地层就地改；项目层不改共享文件，在私有本地层覆盖；改前备份。组织策略、refuse、未知值和主人明确的 `agentj config claude-inbound off` 只报告。改设置前就启动的会话需 /clear 或新会话。只告知「已开启：手机消息不用在电脑上逐条确认；想关运行 agentj config claude-inbound off」。仅影响 Claude Code，Codex/OpenCode 无此机制。接受同一操作系统用户的本机进程消息（Agent J 始终发送 peer token 认证帧；macOS/Linux 的 Claude 不强制认证帧），
-不只接受 Agent J。`off` 恢复等电脑批准；项目/组织策略仍优先。切独立会话前核实服务登录，失败保留共享模式。
+共享 Claude：启动与 doctor 会读取实际文件生效层；可写 hold/refuse 或未设置会先备份再修为 accept，项目策略通过私有 local 覆盖，managed 只读报告。手机告知具体层与原因。设置前启动的会话仍可能扣住消息，需新会话或在电脑 /clear 生效；会话/CLI 和远程 managed 覆盖不能仅凭文件核实。仅影响 Claude Code，Codex/OpenCode 无此机制。接受同一操作系统用户的本机进程消息（Agent J 始终发送 peer token 认证帧；macOS/Linux 的 Claude 不强制认证帧），不只接受 Agent J。`off` 临时恢复等电脑批准，共享模式下次启动会恢复开启；managed 阻断需管理员处理。切独立会话前核实服务登录，失败保留共享模式。
 macOS 也支持主人自己创建的服务 env 文件（0600），不抄终端 token，不写入 plist，不把 token 发到对话。
 
 Claude attaches to the live session in the exact working directory. Multiple sessions
-require `agent.shared_session_id`; `agentj agent claude` lists them and lets the owner pick one. Without a live session it starts ordinary Claude;
+require `agent.shared_session_id`. Without a live session it starts ordinary Claude;
 workspace trust remains a native owner choice, and `claude --resume` can continue its
 saved ID. Existing terminal interruption requires an exact Herdr route; an owned
 ordinary session uses one Esc. Permission dialogs are never answered with Esc.
@@ -1936,7 +1881,7 @@ Use https://agentj.app/docs/bots/en.md or /zh.md for Telegram, own-key billing, 
 After pairing your phone, share to the installed Android PWA or use the clipboard-only iPhone Shortcut and tap "Paste screenshot" before sending. Safari and the Home Screen app have separate pairings. See https://agentj.app/docs/share-screenshot/ for steps and the Shortcut signing status.
 
 
-### Web keyboard and spacing — 0.18.1a1 candidate (P119)
+### Web keyboard and spacing — 0.18.0a1 candidate (P119)
 
 Escape closes the current menu, settings, model picker, preview, reader or confirmation; confirmations are cancelled.
 From Bots, friends, memory, activity, tasks or models/keys it returns one level toward the conversation. Focus returns
@@ -1952,13 +1897,13 @@ Computer upgrades report the new and previous program versions plus a plain-lang
 
 Pair once; later opens automatically reconnect while the computer keeps this device paired. A first-party HttpOnly renewal cookie restores the same device after Safari clears page storage, rotates on use and expires when the device is unpaired. Existing affected phones need one pairing or Face ID recovery after upgrading. The web Worker sees this credential during recovery; see the public privacy disclosure. Physical iPhone/Home Screen acceptance remains pending.
 
-- 0.18.1a1 read-aloud: Local read-aloud uses only voices on this phone. Host/cloud voices stay in `voice.tts.voice`; choose a phone voice separately with `voice.tts.phone_voice` (empty selects the local default for the reply language). Switching modes keeps both choices. An unavailable phone voice falls back with one notice. On first opening, iPhone waits for local voices to load before reporting that no voice is available.
+- 0.18.0a1 read-aloud: Local read-aloud uses only voices on this phone. Host/cloud voices stay in `voice.tts.voice`; choose a phone voice separately with `voice.tts.phone_voice` (empty selects the local default for the reply language). Switching modes keeps both choices. An unavailable phone voice falls back with one notice. On first opening, iPhone waits for local voices to load before reporting that no voice is available.
 
 
-### Shared Claude ingress (0.18.1a1)
+### Shared Claude ingress (0.18.0a1)
 Shared-mode startup and `agentj doctor` read managed, private local, project and user settings in native file precedence. If the effective writable value is not `accept`, they back it up and set accept (project policy uses a private local override; the shared project file stays intact). Managed settings are read-only and the phone names the blocking layer/value. **Start a new session or run /clear on the computer for the change to take effect**; a session started earlier may still hold phone messages. Session/CLI or remote managed overrides cannot be verified from these files. `agentj config claude-inbound off` is temporary while shared mode is selected: its next startup/doctor restores accept. Do not resend an unacknowledged message before checking the desktop.
 
-### 0.18.1a1 integrated capabilities
+### 0.18.0a1 integrated capabilities
 Long tasks use durable checkpoints and owner-approved opening cards; browser sign-ins stay in Agent J's own profile and QR cards. The first-run checklist verifies real sign-in evidence; Google website login and API authorization remain separate (guided API authorization is planned for 0.18.1). Shared sessions load the optional private identity as text below the packaged core. Telegram owner/family/delegate messages carry trusted host source envelopes, ordered cursor state and single-poller protection; cutover/rollback require a drain fence and never silently replay uncertain updates. Owner-adapter scripts and founder files remain private and are not distributed in the public package.
 
 
@@ -1996,7 +1941,7 @@ The phone's share button sends a reply to the owner's own Telegram private chat 
 (`telegram.forward`, default on), otherwise the phone's share sheet.
 
 
-## Long tasks (host 0.18.1a1 candidate)
+## Long tasks (host 0.18.0a1 candidate)
 
 Your human never configures long tasks by hand: they say a goal once ("set up a weekly competitor brief", 「做每周竞品简报」)
 and the main Agent's built-in `agentj-capability` skill does the rest. It reads the capability inventory
@@ -2026,10 +1971,3 @@ passwords never leave the computer; the endpoint stays on 127.0.0.1. Guide: http
 
 
 Native shared Claude CLI (>=2.1.211): local settings use an owned repository root, or main checkout for a worktree, ahead of a legacy local file in the starting directory. Shared project settings stay in the session’s primary working directory. Agent J resolves these local paths for ingress repair and status-line chaining. See https://code.claude.com/docs/en/settings#where-claude-code-keeps-the-local-file-in-a-git-repository . Managed/session overrides still need native /status and an actual message receipt.
-
-
-### 0.18.1 repair update / 0.18.1 修复更新
-
-Shared approval cards now use one language and ask more precisely. Short phone disconnects recover silently; compaction says it is compacting, queued messages can be withdrawn, and sending clears the input. Telegram replies use readable cards and brief network failures no longer fill the conversation. Pairing explains its approval requirement before showing a QR code; shared Claude turns the usage status line on by default (an explicit off is remembered). Valid 0.17 Telegram enrollment continues with the default environment variable name, without copying its bot key. Huawei HarmonyOS phones and tablets are identified by name. In the account page, use “Rename remote” beside the device; confirm with your account passkey. It requires the host online and account remote control enabled.
-
-共享审批卡片只显示一种语言，少弹且更准确。手机短暂断线会静默恢复；压缩时显示「正在压缩上下文…」，排队消息可以撤回，发送后输入框清空。Telegram 回复卡片更清楚，短暂网络抖动不再刷满对话。配对前提前说明批准方式；共享 Claude 默认开启额度状态栏，记住主人明确关闭的选择。0.17 已有效登记的 Telegram 可继续使用默认环境变量名，不复制 bot 密钥。鸿蒙华为手机和平板会正确显示设备名称。账户页点设备旁的「遥控器改名」，用账户通行密钥确认；需要电脑在线并开启账户遥控。

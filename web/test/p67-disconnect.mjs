@@ -33,9 +33,9 @@ try{
  ok(fake.log.slice(foregroundStart).some(m=>m.t==='ping'),'foreground starts a fresh authenticated health check');
  silent=true;
  await evaluate(p,`document.getElementById('input').value='保留这条未确认消息';document.getElementById('input').dispatchEvent(new Event('input',{bubbles:true}));document.getElementById('send').click();window.p67Health=import('./js/session.js').then(m=>m.checkConnection())`);
- await waitFor(p,`window.__ajState!=='ready'`,26000);   // P129: two misses in a row (10 s + 3 s + 10 s); a quick resume stays quiet
+ await waitFor(p,`document.body.dataset.conn!=='on'`,14000);
  ok(await evaluate(p,`document.getElementById('input').value==='保留这条未确认消息'`),'half-open connection retains unacknowledged message text');
- ok(await evaluate(p,`window.__ajState!=='ready'`),'missing pongs end the session without waiting for socket close');
+ ok(await evaluate(p,`window.__ajState!=='ready'`),'missing pong produces visible disconnected state without waiting for socket close');
  silent=false;await waitState(p,'ready');
  ok(await evaluate(p,`document.getElementById('input').value==='保留这条未确认消息'`),'automatic resume keeps paired device and unsent draft');
  await evaluate(p,`document.getElementById('input').value='';document.getElementById('input').dispatchEvent(new Event('input',{bubbles:true}))`);

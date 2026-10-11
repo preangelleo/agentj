@@ -33,7 +33,6 @@ export function addAsk(m) {
   const cats = Array.isArray(m.cat) ? m.cat.filter((c) => CATS.includes(c)) : [];
   const scope = !cats.length && typeof m.batch === 'string' && m.batch.length > 0 && m.batch.length <= 400 ? m.batch : null;
   S.asks.set(m.id, { id: m.id, kind: 'permission', tool: m.tool.slice(0, 64), summary: m.summary, cats, why: typeof m.why === 'string' ? m.why.slice(0, 200) : '',
-    why_en: typeof m.why_en === 'string' ? m.why_en.slice(0, 200) : '', cred: m.cred === 'read' ? 'read' : '',   // P128: one language; 查看 vs 改
     scope, batch_max: Number.isInteger(m.batch_max) ? m.batch_max : 20, batch_secs: Number.isInteger(m.batch_secs) ? m.batch_secs : 600,
     task: typeof m.task === 'string' ? m.task.slice(0, 80) : '', at: nowS(), deadline: Date.now() + ttl * 1000, state: 'open', final_at: null,
     ...(m.tool === 'friend_request' && m.fr && typeof m.fr === 'object' ? { fr: m.fr } : {}),     // display-only copies (friends.js)
@@ -90,7 +89,6 @@ export function setStatus(m) {
   S.status = ok.includes(m.s) ? m.s : 'none';
   S.agent = ['claude', 'codex', 'opencode'].includes(m.agent) ? m.agent : null;
   S.kind = m.kind === 'question' ? 'question' : null;
-  S.tg = m.tg === 'down';                 // P129: the host's Telegram channel is down (status area line, app.js renderTg)
   if (!peer.p33 && S.status === 'idle') endSynth();
   onChange();
 }
@@ -138,9 +136,6 @@ export function snapshot() {
 }
 
 // ---------------------------------------------------------------- history (§10.5)
-// P127: the Agent's source line before an owner's Telegram words (host telegram.OWNER_PRIVATE). Older pages stored it in
-// the page's text; the card's label already says Telegram, so the page shows only the words.
-const TG_SOURCE_LINE = /^Telegram owner private chat\.\n/;
 /** Agent J turn (wire) → the page's turn {id, ts (s), source, reply, end, card, part}. */
 export function toPage(t) {
   if (!t || !Number.isInteger(t.id) || t.id < 0) return null;
@@ -155,7 +150,7 @@ export function toPage(t) {
   return {
     id: t.id, ts: typeof t.ts === 'number' ? t.ts / 1000 : null,
     source: { k, dev: typeof src.dev === 'string' ? src.dev : null, name: typeof src.name === 'string' ? src.name.slice(0, 64) : '',
-      text: typeof src.text !== 'string' ? '' : k === 'telegram' ? src.text.replace(TG_SOURCE_LINE, '') : src.text, quote: q, att, local: src.local === true, ...(k === 'sys' && typeof src.notice_id === 'string' && /^[A-Za-z0-9_-]{22}$/.test(src.notice_id) ? {notice_id:src.notice_id} : {}) },
+      text: typeof src.text === 'string' ? src.text : '', quote: q, att, local: src.local === true, ...(k === 'sys' && typeof src.notice_id === 'string' && /^[A-Za-z0-9_-]{22}$/.test(src.notice_id) ? {notice_id:src.notice_id} : {}) },
     reply: typeof reply.text === 'string' ? reply.text : '',
     part: Array.isArray(reply.part) && reply.part.length === 2 ? reply.part.map(Number) : null,
     end: ['open', 'done', 'stopped', 'failed'].includes(t.end) ? t.end : 'done',

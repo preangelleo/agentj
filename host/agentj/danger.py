@@ -38,36 +38,6 @@ CATEGORIES = ("spend", "delete", "send", "credentials", "price")
 LABEL = {"spend": "花钱 · Spend", "delete": "删除 · Delete", "send": "对外发送 · Send", "credentials": "改凭据 · Credentials",
          "price": "改价 · Price"}
 LOW_LABEL = "低风险 · Low risk"
-# P128: card text in ONE language (the owner's appearance.language); the phone picks why / why_en by its language
-CAT_TEXT = {"zh": {"spend": "花钱", "delete": "删除", "send": "对外发送", "credentials": "改密码或密钥", "price": "改价",
-                   "credentials_read": "查看密码或密钥"},
-            "en": {"spend": "Spends money", "delete": "Deletes", "send": "Sends out", "credentials": "Changes passwords or keys",
-                   "price": "Changes prices", "credentials_read": "Shows passwords or keys"}}
-_EN_CAT = {"spend": "Spends money", "delete": "Deletes something", "send": "Sends something out of this computer",
-           "credentials": "Changes a password, key or sign-in", "price": "Changes a price, discount or budget"}
-_EN_RULE = {
-    "send.git_push": "git push: pushes commits to a remote", "delete.git_push": "Force push / remote branch delete loses remote history",
-    "send.http": "Sends data to an outside server", "send.url": "Calls a messaging / posting / email API",
-    "spend.url": "Calls a payment / order / trading API", "price.url": "Calls a price / product / budget API",
-    "send.gh": "Publishes on GitHub", "send.gh_api": "gh api write: changes content on GitHub", "send.publish": "Publishes a package",
-    "send.deploy": "Deploys to production", "send.mail": "Sends mail or a message", "send.upload": "Uploads files elsewhere",
-    "send.code": "Code that sends a request / mail / message", "delete.gh_api": "gh api DELETE", "delete.s3": "Deletes S3 objects / buckets",
-    "cred.path": "Writes a credential file", "cred.gh_auth": "Changes the GitHub sign-in", "cred.aws": "Changes AWS credentials / permissions",
-    "cred.sql": "Changes database users / passwords / grants", "cred.mcp": "Changes credentials / permissions",
-    "shared.credential_show": "Shows credential contents on screen", "shared.credential_access": "Reads credentials",
-    "too_long": "Command too long to check fully"}
-
-
-def why_en(rules: list, cats: list) -> str:
-    """English twin of Verdict.why (the zh sentences stay the source of truth for independent mode)."""
-    out = []
-    for r in rules:
-        c = r.split(".", 1)[0]
-        c = {"cred": "credentials", "shared": "credentials", "extra": r.split(".", 1)[-1]}.get(c, c)
-        out.append(_EN_RULE.get(r) or _EN_CAT.get(c) or "High-risk action")
-    if not out:
-        out = [_EN_CAT[c] for c in cats if c in _EN_CAT]
-    return "; ".join(dict.fromkeys(out))[:200]
 MAX_EXTRA = 64
 MAX_DEPTH = 6
 MAX_CMD = 64 * 1024          # longer commands are judged on the first 64 KB plus "too long" → dangerous
@@ -78,9 +48,6 @@ class Verdict:
     cats: list = field(default_factory=list)    # sorted categories, [] = low risk
     rules: list = field(default_factory=list)   # rule ids that fired, in order
     why: str = ""                               # one sentence for the phone (Chinese)
-    why_en: str = ""                            # the same in English (P128)
-    cred: str = ""                              # "change" | "read" when cats has credentials (P128 card label)
-    items: list = field(default_factory=list)   # (category, rule, zh why) behind cats / rules / why
 
     @property
     def danger(self) -> bool:
@@ -88,9 +55,8 @@ class Verdict:
 
 
 class _Hits:
-    def __init__(self, no_in: bool = False):
+    def __init__(self):
         self.items: list[tuple[str, str, str]] = []   # (category, rule id, why)
-        self.no_in = no_in                            # P128 shared standard: `< file` is a read, not a write target
 
     def add(self, cat: str, rule: str, why: str) -> None:
         if not any(r == rule for _, r, _ in self.items):
@@ -100,8 +66,7 @@ class _Hits:
         cats = sorted({c for c, _, _ in self.items}, key=CATEGORIES.index)
         rules = [r for _, r, _ in self.items]
         why = "；".join(dict.fromkeys(w for _, _, w in self.items))
-        cred = "change" if "credentials" in cats else ""
-        return Verdict(cats, rules, why[:200], why_en(rules, cats), cred, list(self.items))
+        return Verdict(cats, rules, why[:200])
 
 
 # ================================================================ shell lexing
@@ -112,9 +77,6 @@ class Cmd:
     heredoc: bool = False                        # fed by << / <<<
     piped: bool = False                          # right side of a pipe
     subst: bool = False                          # came from $( ) / backticks / <( ) (or contains one)
-    outs: list = field(default_factory=list)     # stdout redirection targets (> >> &> 1>) — P128 "shown on screen?"
-    ins: list = field(default_factory=list)      # stdin redirection targets (< 0<)
-    owner: object = None                         # the command a $( ) / backtick came from (None = top level)
 
 
 def _match_paren(s: str, i: int) -> int:
@@ -152,12 +114,11 @@ def lex(s: str, depth: int = 0) -> list[Cmd]:
     cur = Cmd([])
     word: list[str] | None = None
     redir_next = heredoc_next = False
-    redir_kind = ""
     pipe_next = False
     i, n = 0, len(s)
 
     def end_word():
-        nonlocal word, redir_next, heredoc_next, redir_kind
+        nonlocal word, redir_next, heredoc_next
         if word is None:
             return
         w = "".join(word)
@@ -166,10 +127,6 @@ def lex(s: str, depth: int = 0) -> list[Cmd]:
             heredoc_next = False                     # the delimiter: not a word, not a target
         elif redir_next:
             cur.redirs.append(w)
-            if redir_kind == "out":
-                cur.outs.append(w)
-            elif redir_kind == "in":
-                cur.ins.append(w)
             redir_next = False
         else:
             cur.words.append(w)
@@ -186,8 +143,6 @@ def lex(s: str, depth: int = 0) -> list[Cmd]:
     def sub(inner: str):
         for c in lex(inner, depth + 1):
             c.subst = True
-            if c.owner is None:
-                c.owner = cur
             out.append(c)
         cur.subst = True
 
@@ -266,9 +221,7 @@ def lex(s: str, depth: int = 0) -> list[Cmd]:
             continue
         if c in "<>":
             # an fd number right before (2>, 1>>) belongs to the operator, not to a word
-            fd = ""
             if word is not None and "".join(word).isdigit():
-                fd = "".join(word)
                 word = None
             elif word is not None and "".join(word) == "&":
                 word = None
@@ -294,13 +247,11 @@ def lex(s: str, depth: int = 0) -> list[Cmd]:
                     i = k
                     continue
             redir_next = True
-            redir_kind = ("out" if fd in ("", "1") else "") if c == ">" else ("in" if fd in ("", "0") and
-                                                                              s[i:j] == "<" else "")
             i = j
             continue
         if c == "&" and s.startswith("&>", i):
             end_word()
-            redir_next, redir_kind = True, "out"
+            redir_next = True
             i += 3 if s.startswith("&>>", i) else 2
             continue
         two = s[i:i + 2]
@@ -373,7 +324,6 @@ class Simple:
     raw: list            # the words from the name on (as typed)
     redirs: list
     flags: set           # "shell_c", "eval", "inline", "heredoc", "piped_shell", "subst", "wrapped", "remote"
-    ins: list = field(default_factory=list)   # stdin redirection targets (P128)
 
 
 def unwrap(cmd: Cmd, depth: int = 0) -> list[Simple]:
@@ -482,7 +432,7 @@ def unwrap(cmd: Cmd, depth: int = 0) -> list[Simple]:
                     k = j + 1
                     continue
                 k += 1
-        out.append(Simple(name, words[1:], words, list(cmd.redirs), flags, list(cmd.ins)))
+        out.append(Simple(name, words[1:], words, list(cmd.redirs), flags))
         return out
     return out
 
@@ -1072,7 +1022,7 @@ def _simple(sc: Simple, hits: _Hits, depth: int, text: str) -> None:
                                                                             " ".join(low[:2])):
         hits.add("credentials", "cred.cloud", f"{name}：改账号凭据 / 密钥")
     # ---- credential paths written by a command (redirect targets and writer arguments)
-    targets = [r for r in sc.redirs if not (hits.no_in and r in sc.ins)]
+    targets = list(sc.redirs)
     if name in _WRITERS:
         if name in ("sed", "perl") and not any(a.startswith("-i") or a == "--in-place" for a in args):
             pass
@@ -1133,7 +1083,7 @@ def _simple(sc: Simple, hits: _Hits, depth: int, text: str) -> None:
             sc.flags.add("inline")
 
 
-def _bash(cmd: str, hits: _Hits, depth: int = 0, collect: list | None = None, lines: bool = True) -> None:
+def _bash(cmd: str, hits: _Hits, depth: int = 0, collect: list | None = None) -> None:
     if depth > MAX_DEPTH:
         return
     text = cmd[:MAX_CMD]
@@ -1141,7 +1091,7 @@ def _bash(cmd: str, hits: _Hits, depth: int = 0, collect: list | None = None, li
         hits.add("delete", "too_long", "命令太长，无法完整检查")
     _text_rules(text, hits)
     seen: set[tuple] = set()
-    chunks = [text] + ([ln for ln in text.splitlines() if ln.strip()] if "\n" in text and lines else [])
+    chunks = [text] + ([ln for ln in text.splitlines() if ln.strip()] if "\n" in text else [])
     for ch in chunks:
         for c in lex(ch):
             for sc in unwrap(c, depth):
@@ -1563,140 +1513,12 @@ _SHARED_PUBLIC_DELETE = frozenset({
 })
 
 
-APPROVAL_MODES = ("standard", "strict")
-# P128: commands that put a file's contents on the screen (the shared transcript reaches the phone)
-_SHOW_CMDS = frozenset({"cat", "less", "more", "most", "pg", "view", "head", "tail", "grep", "egrep", "fgrep", "rg", "ag", "ack",
-                        "strings", "bat", "batcat", "xxd", "hexdump", "od", "base64", "base32", "basenc", "nl", "tac", "rev",
-                        "sed", "awk", "gawk", "cut", "sort", "uniq", "jq", "yq", "diff", "colordiff", "column", "fold", "paste",
-                        "tee", "zcat", "zless", "bzcat", "xzcat", "gpg", "openssl", "curl", "wget"})
-_QUIET = frozenset({"wc", "md5sum", "sha1sum", "sha256sum", "sha512sum", "shasum", "b2sum", "cksum", "true", ":"})
-_NOT_SHOWN = frozenset({"/dev/null"})
-_HEREDOC = re.compile(r"(?<![<\\])<<(-?)[ \t]*(?:'([^'\n]+)'|\"([^\"\n]+)\"|\\?([A-Za-z_][\w.-]*))")
-_SQL = frozenset({"sqlite3", "psql", "mysql", "mariadb", "mongosh", "mongo", "redis-cli", "duckdb", "clickhouse-client", "cqlsh",
-                  "influx", "sqlcmd", "bq", "snowsql"})
+def classify_shared(tool: str, tool_input, extra=None) -> Verdict:
+    """Only spending, public deletion, external delivery and credential access.
 
-
-def _substs(body: str) -> list[str]:
-    """Commands an UNQUOTED heredoc body runs while it is expanded ($( ) and backticks)."""
-    out, i = [], 0
-    while i < len(body):
-        if body.startswith("$(", i):
-            k = _match_paren(body, i + 2)
-            out.append(body[i + 2:k - 1])
-            i = k
-        elif body[i] == "`":
-            k = body.find("`", i + 1)
-            k = len(body) if k < 0 else k
-            out.append(body[i + 1:k])
-            i = k + 1
-        else:
-            i += 1
-    return [x for x in out if x.strip()]
-
-
-def code_text(cmd: str) -> str:
-    """The command with heredoc bodies that are DATA (cat >> notes <<EOF, git commit -F - <<EOF …) or a program for an
-    interpreter (python - <<EOF: not judged, G-A57) taken out; a body read by a shell (bash <<EOF, cat <<EOF | sh) stays.
-    Commands an unquoted body runs while expanding ($( ) / backticks) are kept as lines of their own."""
-    lines, out, k = cmd.split("\n"), [], 0
-    while k < len(lines):
-        ln = lines[k]
-        out.append(ln)
-        k += 1
-        docs = [(m.group(1) == "-", m.group(2) or m.group(3) or m.group(4), m.group(4) is not None and
-                 not m.group(0).rstrip().endswith("\\" + (m.group(4) or "")))
-                for m in _HEREDOC.finditer(ln) if not ln[:m.start()].count("'") % 2]
-        if not docs:
-            continue
-        shell = False
-        for c in lex(ln):
-            for sc in unwrap(c):
-                if sc.name in _SHELLS and "shell_c" not in sc.flags and (
-                        "piped_shell" in sc.flags or not _positionals(sc.args) or _positionals(sc.args)[:1] in (["-"], ["-s"])):
-                    shell = True                     # a shell reading its program from stdin (bash <<EOF, cat <<EOF | sh)
-                if sc.name in ("ssh", "mosh", "su", "eval", "xargs", "source", "."):
-                    shell = True
-        for strip_tabs, delim, expands in docs:
-            body = []
-            while k < len(lines) and (lines[k].lstrip("\t") if strip_tabs else lines[k]) != delim:
-                body.append(lines[k])
-                k += 1
-            k += 1                                   # the delimiter line
-            if shell:
-                out += body
-            elif expands:
-                out += _substs("\n".join(body))
-    return "\n".join(out)
-
-
-def _shown_creds(text: str) -> list[str]:
-    """Credential files a command prints to the screen: a show command (cat / grep / head …) with the file as an operand or
-    stdin, whose output is not redirected to a file, not captured by an assignment and not reduced to a count."""
-    cmds = lex(text)
-    out = []
-    for idx, c in enumerate(cmds):
-        for sc in unwrap(c):
-            if sc.name not in _SHOW_CMDS:
-                continue
-            args = sc.args
-            files = [a for a in _positionals(args, {"-e", "-f", "-m", "-A", "-B", "-C", "-n", "-c", "-d", "-F", "-o",
-                                                    "--output", "-s", "-t", "-w", "-g"}) if cred_path(a)]
-            files += [a.split("=", 1)[1] for a in args if a.startswith(("--file=", "-in=", "--in=")) and cred_path(a.split("=", 1)[1])]
-            files += [args[j + 1] for j, a in enumerate(args[:-1]) if a in ("-in", "-f", "--file", "-T", "--upload-file",
-                                                                              "-d", "--data", "--data-binary", "-F")
-                      and cred_path(args[j + 1].lstrip("@").split("=")[-1].lstrip("@"))]
-            files += [r for r in c.ins if cred_path(r)]
-            if not files:
-                continue
-            if sc.name in ("curl", "wget"):          # sending a credential file is "send" (kept); only its echo is "show"
-                continue
-            if sc.name in ("grep", "egrep", "fgrep", "rg", "ag", "ack") and any(
-                    a in ("-q", "--quiet", "--silent", "-c", "--count", "-l", "-L", "--files-with-matches",
-                          "--files-without-match") or (a.startswith("-") and not a.startswith("--") and set(a[1:]) & set("qclL"))
-                    for a in args):
-                continue
-            if sc.name == "sed" and any(a.startswith("-i") or a == "--in-place" for a in args):
-                continue                             # a write (cred.path), not a show
-            if sc.name == "openssl" and ("-noout" in args and "-text" not in args or any(a in ("-out",) for a in args)):
-                continue
-            if sc.name == "gpg" and not any(a in ("-d", "--decrypt") for a in args):
-                continue
-            outs = [o for o in c.outs if o not in ("/dev/stdout", "/dev/stderr", "/dev/tty")]
-            if outs:
-                continue
-            # the rest of this pipeline (same owner, consecutive piped commands)
-            rest, shown = cmds[idx + 1:], True
-            for d in rest:
-                if d.owner is not c.owner:
-                    continue
-                if not d.piped:
-                    break
-                names = {x.name for x in unwrap(d)}
-                if names & _QUIET or [o for o in d.outs if o not in ("/dev/stdout", "/dev/stderr", "/dev/tty")]:
-                    shown = False
-                    break
-                if names & {"grep", "egrep", "fgrep", "rg"} and any(a in ("-q", "-c", "--quiet", "--count") for a in d.words):
-                    shown = False
-                    break
-            if shown and c.owner is not None:        # VAR=$(grep KEY .env) / export VAR=$(…): captured, not printed
-                ow = c.owner.words
-                lead = ow[1:] if ow[:1] and ow[0] in ("export", "local", "declare", "readonly", "typeset") else ow
-                if ow and all(_ASSIGN.match(w) or w.startswith("-") for w in lead):
-                    shown = False
-            if shown:
-                out += files
-    return out
-
-
-def classify_shared(tool: str, tool_input, extra=None, mode: str = "standard") -> Verdict:
-    """Only spending, public deletion, external delivery and credentials.
-
-    Uses the independent classifier/lexer/path rules; local file deletion and price edits are not a new shared-mode approval
-    policy. P128 `mode`: "standard" (default) asks for a credential only when it CHANGES or is SHOWN on screen — a program
-    reading .env by name, or a note / commit message that merely mentions it, does not ask; "strict" = the P40 rule (any
-    credential path anywhere in the call asks). Spend / send / public delete rules are the same in both modes.
+    Uses the independent classifier/lexer/path rules; local file deletion and
+    price edits are not a new shared-mode approval policy.
     """
-    strict = mode == "strict"
     if tool in ('exec_command', 'shell_command'):
         inp = tool_input if isinstance(tool_input, dict) else {}
         tool, tool_input = 'Bash', {'command': inp.get('cmd', inp.get('command', ''))}
@@ -1707,72 +1529,21 @@ def classify_shared(tool: str, tool_input, extra=None, mode: str = "standard") -
         if credential:
             tool, tool_input = 'Edit', {'file_path': credential}
     v = classify(tool, tool_input, extra)
-    inp = tool_input if isinstance(tool_input, dict) else {}
-    command = inp.get('command') if tool == 'Bash' and isinstance(inp.get('command'), str) else None
-    items = list(v.items)
-    if command is not None and not strict:
-        # credentials: the write / change rules on the real commands only (heredoc data and quoted text are not commands)
-        hits = _Hits(no_in=True)
-        _bash(code_text(command[:MAX_CMD]), hits, lines=False)
-        real = [x for x in hits.items if x[1].startswith("cred.")]
-        items = [x for x in items if not x[1].startswith("cred.") or x[1] == "cred.sql" or x[1] in {r for _, r, _ in real}]
-        items += [x for x in real if x[1] not in {r for _, r, _ in items}]
-    rules = [r for _, r, _ in items]
-    cred_rules = [r for r in rules if r.startswith("cred.") or r == "extra.credentials"]
-    cats = [c for c in v.cats if c in ('spend', 'send') or
+    cats = [c for c in v.cats if c in ('spend', 'send', 'credentials') or
             (c == 'delete' and any(r in _SHARED_PUBLIC_DELETE or
-             r.startswith(('delete.gh_', 'delete.npm', 'delete.pypi', 'delete.cargo')) for r in rules))]
-    if cred_rules:
+             r.startswith(('delete.gh_', 'delete.npm', 'delete.pypi', 'delete.cargo')) for r in v.rules))]
+    inp = tool_input if isinstance(tool_input, dict) else {}
+    paths = [inp.get(k) for k in ('file_path', 'path', 'notebook_path', 'target', 'destination')]
+    if tool == 'Bash' and isinstance(inp.get('command'), str):
+        for cmd in lex(inp['command']):
+            paths.extend(cmd.words)
+            paths.extend(cmd.redirs)
+    credential_read = any(isinstance(p, str) and cred_path(p) for p in paths)
+    # Read-only secret-manager/MCP calls also reveal credentials.
+    credential_read |= tool.startswith('mcp__') and bool(re.search(
+        r'(?:secret|credential|password|private_key|api_key|vault)', tool, re.I))
+    if credential_read and 'credentials' not in cats:
         cats.append('credentials')
-    keep = set(cats) | {"credentials"}
-    rules = [r for c, r, _ in items if c in keep and (c != "delete" or r in _SHARED_PUBLIC_DELETE or
-                                                       r.startswith(('delete.gh_', 'delete.npm', 'delete.pypi', 'delete.cargo')))
-             and (c != "credentials" or r in cred_rules)]
-    why_zh = [w for c, r, w in items if r in rules]
-    kind = "change" if cred_rules else ""
-    read_rule = None
-    if not cred_rules:
-        if tool in ('Read', 'Grep', 'Glob', 'LS', 'NotebookRead'):
-            p = inp.get('file_path') or inp.get('notebook_path') or inp.get('path')
-            if isinstance(p, str) and cred_path(p):
-                read_rule = ('shared.credential_show', f"显示{cred_path(p)} 的内容")
-        elif command is not None:
-            if strict:
-                words = [w for c in lex(command) for w in c.words + c.redirs]
-                hit = next((w for w in words if cred_path(w)), None)
-                if hit:
-                    read_rule = ('shared.credential_access', f"读取{cred_path(hit)}")
-            else:
-                shown = _shown_creds(code_text(command[:MAX_CMD]))
-                if shown:
-                    read_rule = ('shared.credential_show', f"把{cred_path(shown[0])} 的内容显示到屏幕上")
-        else:
-            p = next((inp.get(k) for k in ('file_path', 'path', 'notebook_path', 'target', 'destination')
-                      if isinstance(inp.get(k), str) and cred_path(inp.get(k))), None)
-            if p:
-                read_rule = ('shared.credential_access', f"读取{cred_path(p)}")
-        # Read-only secret-manager/MCP calls also reveal credentials.
-        if read_rule is None and tool.startswith('mcp__') and re.search(
-                r'(?:secret|credential|password|private_key|api_key|vault)', tool, re.I):
-            read_rule = ('shared.credential_show', "从密钥库 / 凭据工具读取机密")
-        if read_rule:
-            cats.append('credentials')
-            rules.append(read_rule[0])
-            why_zh.append(read_rule[1])
-            kind = "read"
-    cats = sorted(set(cats), key=CATEGORIES.index)
-    if not cats:
-        return Verdict([], [], "", "", "")
-    why = "；".join(dict.fromkeys(why_zh))[:200] or v.why
-    return Verdict(cats, rules, why, why_en(rules, cats), kind if 'credentials' in cats else "")
-
-
-
-def grant_keys(v: Verdict) -> list:
-    """What a shared-mode "same kind for this turn" grant is keyed on (P128): showing a credential and changing one are two
-    kinds, so approving a `cat .env` never pre-approves a write to ~/.aws/credentials."""
-    return ["credentials:read" if c == "credentials" and v.cred == "read" else c for c in v.cats]
-
-
-def card_why(v: Verdict, lang: str) -> str:
-    return (v.why_en or v.why) if str(lang or "").startswith("en") else v.why
+        v.rules.append('shared.credential_access')
+    cats.sort(key=CATEGORIES.index)
+    return Verdict(cats, v.rules if cats else [], v.why or ('读取凭据 / Read credentials' if credential_read else ''))

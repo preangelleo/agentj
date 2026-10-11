@@ -86,12 +86,6 @@ Pause automatic upgrades
 agentj config auto-update off
 ```
 
-Stricter shared approvals: ask the phone even when a credential is only read
-
-```bash
-agentj config approvals strict
-```
-
 List paired devices
 
 ```bash
@@ -133,7 +127,7 @@ agentj --help
 ```
 
 ```text
-usage: agentj [-h] [-V] [--migrate-legacy] [--fresh]
+usage: agentj [-h] [-V]
               {doctor,service,update,init,serve,protocol,pair,devices,revoke,send,status,name,admin,login,report,unlink,report-hostname,remote-pair,remote-unbind,agent,passphrase,approvals,feedback,stop,resume,memory,activity,config,history,inbox,asr,tasks,wizard,keep-awake,browser,setup,google,sudo,secret,provider,sudo-helper,docs-rule,handover,telegram-cursor,plaza,support,capability,recall,bots,friends,codex-sandbox,migrate,alias,onboarding} ...
 ```
 
@@ -141,8 +135,6 @@ usage: agentj [-h] [-V] [--migrate-legacy] [--fresh]
 | --- | --- | --- | --- | --- |
 | `-h / --help` | `null` | false | — | `show this help message and exit` |
 | `-V / --version` | `null` | false | — | `show program's version number and exit` |
-| `--migrate-legacy` | `false` | false | — | `keep using an older identity found on this computer` |
-| `--fresh` | `false` | false | — | `不用旧身份，开一个全新的（旧目录原样保留）/ ignore an older identity and start fresh (the old folder stays as it is)` |
 
 ### agentj activity
 
@@ -200,7 +192,7 @@ agentj agent --help
 
 ```text
 usage: agentj agent [-h] [--probe] [--json] [--dir DIR] [--model MODEL]
-                    [--unfenced] [--allow-docker] [--shared | --independent]
+                    [--unfenced] [--allow-docker]
                     [{claude,codex,opencode,off,reset,restart,status,detect}]
 ```
 
@@ -214,8 +206,6 @@ usage: agentj agent [-h] [--probe] [--json] [--dir DIR] [--model MODEL]
 | `--model` | `null` | false | — | `模型（默认用你自己的设置）；OpenCode 写成 服务商/模型，例如 zhipuai/glm-5.3` |
 | `--unfenced` | `false` | false | — | `不隔离运行 Agent（按底层 harness 自己的权限）。默认 Agent 在 bubblewrap 里运行，看不到 Agent J 的状态` |
 | `--allow-docker` | `false` | false | — | `podman（默认不开；主人要求时可直接打开）。默认容器引擎的 socket 对 Agent 隐藏` |
-| `--shared` | `null` | false | — | `shared session (the default): attach to your own open session` |
-| `--independent` | `null` | false | — | `independent session: Agent J's own, fenced` |
 
 ### agentj alias
 
@@ -1182,25 +1172,6 @@ usage: agentj config [-h] [--json] [--json-value] [--dry-run]
 | `--yes` | `false` | false | — | `` |
 | `--pending` | `false` | false | — | `` |
 
-### agentj config approvals
-
-```text
-shared-mode approval strength (standard = default, strict = old rule)
-```
-
-```bash
-agentj config approvals --help
-```
-
-```text
-usage: agentj config approvals [-h] [{standard,strict,status}]
-```
-
-| Argument | Default | Required | Choices | Help |
-| --- | --- | --- | --- | --- |
-| `-h / --help` | `null` | false | — | `show this help message and exit` |
-| `level` | `"status"` | false | `standard`, `strict`, `status` | `` |
-
 ### agentj config auto-update
 
 ```text
@@ -2133,7 +2104,7 @@ agentj pair --help
 ```
 
 ```text
-usage: agentj pair [-h] [--no-qr] [--link] [--check] [--json]
+usage: agentj pair [-h] [--no-qr] [--link]
 ```
 
 | Argument | Default | Required | Choices | Help |
@@ -2141,8 +2112,6 @@ usage: agentj pair [-h] [--no-qr] [--link] [--check] [--json]
 | `-h / --help` | `null` | false | — | `show this help message and exit` |
 | `--no-qr` | `false` | false | — | `不画二维码，改为打印配对链接` |
 | `--link` | `false` | false | — | `二维码之外也打印配对链接（它就是配对密钥）` |
-| `--check` | `false` | false | — | `只做配对前检查：该走账户页通行密钥还是本机批准口令（不开始配对）/ pre-check only: account passkey or local passphrase route` |
-| `--json` | `false` | false | — | `与 --check 一起：输出 JSON` |
 
 ### agentj passphrase
 
@@ -3650,12 +3619,6 @@ agentj config auto-update on
 agentj config auto-update off
 ```
 
-共享会话审批更严：读到凭据也要手机点头
-
-```bash
-agentj config approvals strict
-```
-
 查看配对设备
 
 ```bash
@@ -3697,7 +3660,7 @@ agentj --help
 ```
 
 ```text
-usage: agentj [-h] [-V] [--migrate-legacy] [--fresh]
+usage: agentj [-h] [-V]
               {doctor,service,update,init,serve,protocol,pair,devices,revoke,send,status,name,admin,login,report,unlink,report-hostname,remote-pair,remote-unbind,agent,passphrase,approvals,feedback,stop,resume,memory,activity,config,history,inbox,asr,tasks,wizard,keep-awake,browser,setup,google,sudo,secret,provider,sudo-helper,docs-rule,handover,telegram-cursor,plaza,support,capability,recall,bots,friends,codex-sandbox,migrate,alias,onboarding} ...
 ```
 
@@ -3705,8 +3668,6 @@ usage: agentj [-h] [-V] [--migrate-legacy] [--fresh]
 | --- | --- | --- | --- | --- |
 | `-h / --help` | `null` | false | — | `show this help message and exit` |
 | `-V / --version` | `null` | false | — | `show program's version number and exit` |
-| `--migrate-legacy` | `false` | false | — | `把旧身份搬过来继续用` |
-| `--fresh` | `false` | false | — | `不用旧身份，开一个全新的（旧目录原样保留）/ ignore an older identity and start fresh (the old folder stays as it is)` |
 
 ### agentj activity
 
@@ -3764,7 +3725,7 @@ agentj agent --help
 
 ```text
 usage: agentj agent [-h] [--probe] [--json] [--dir DIR] [--model MODEL]
-                    [--unfenced] [--allow-docker] [--shared | --independent]
+                    [--unfenced] [--allow-docker]
                     [{claude,codex,opencode,off,reset,restart,status,detect}]
 ```
 
@@ -3778,8 +3739,6 @@ usage: agentj agent [-h] [--probe] [--json] [--dir DIR] [--model MODEL]
 | `--model` | `null` | false | — | `模型（默认用你自己的设置）；OpenCode 写成 服务商/模型，例如 zhipuai/glm-5.3` |
 | `--unfenced` | `false` | false | — | `不隔离运行 Agent（按底层 harness 自己的权限）。默认 Agent 在 bubblewrap 里运行，看不到 Agent J 的状态` |
 | `--allow-docker` | `false` | false | — | `隔离里也让 Agent 用 docker` |
-| `--shared` | `null` | false | — | `共享会话（默认）：手机接你电脑上正开着的会话` |
-| `--independent` | `null` | false | — | `独立会话：Agent J 自己开一个、在隔离里运行` |
 
 ### agentj alias
 
@@ -4746,25 +4705,6 @@ usage: agentj config [-h] [--json] [--json-value] [--dry-run]
 | `--yes` | `false` | false | — | `` |
 | `--pending` | `false` | false | — | `` |
 
-### agentj config approvals
-
-```text
-共享模式审批强度
-```
-
-```bash
-agentj config approvals --help
-```
-
-```text
-usage: agentj config approvals [-h] [{standard,strict,status}]
-```
-
-| 参数 | 默认值 | 必填 | 可选值 | 说明 |
-| --- | --- | --- | --- | --- |
-| `-h / --help` | `null` | false | — | `show this help message and exit` |
-| `level` | `"status"` | false | `standard`, `strict`, `status` | `` |
-
 ### agentj config auto-update
 
 ```text
@@ -5697,7 +5637,7 @@ agentj pair --help
 ```
 
 ```text
-usage: agentj pair [-h] [--no-qr] [--link] [--check] [--json]
+usage: agentj pair [-h] [--no-qr] [--link]
 ```
 
 | 参数 | 默认值 | 必填 | 可选值 | 说明 |
@@ -5705,8 +5645,6 @@ usage: agentj pair [-h] [--no-qr] [--link] [--check] [--json]
 | `-h / --help` | `null` | false | — | `show this help message and exit` |
 | `--no-qr` | `false` | false | — | `不画二维码，改为打印配对链接` |
 | `--link` | `false` | false | — | `二维码之外也打印配对链接（它就是配对密钥）` |
-| `--check` | `false` | false | — | `只做配对前检查：该走账户页通行密钥还是本机批准口令（不开始配对）/ pre-check only: account passkey or local passphrase route` |
-| `--json` | `false` | false | — | `与 --check 一起：输出 JSON` |
 
 ### agentj passphrase
 

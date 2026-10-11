@@ -29,18 +29,17 @@ class RiskGuard:
         a=self.adapter
         if not a.cfg.get('high_risk_warnings',True):
             return True
-        verdict=danger.classify_shared(tool,inp,a.cfg.get('danger_extra'),a.cfg.get('approvals','standard'))
+        verdict=danger.classify_shared(tool,inp,a.cfg.get('danger_extra'))
         if not verdict.danger:
             return True
-        keys=danger.grant_keys(verdict)
         async with self.lock:
-            if set(keys) & self.denied:
+            if set(verdict.cats) & self.denied:
                 return False
             for cat,grant in list(self.grants.items()):
                 if a.host.stopped() or a.host.st.sign_key(grant['device']) != grant['sign_pub']:
                     self.grants.pop(cat,None)
-            if set(keys) <= self.grants.keys():
-                for cat in keys:
+            if set(verdict.cats) <= self.grants.keys():
+                for cat in verdict.cats:
                     a.host.st.log('shared_risk_batch',category=cat,grant=self.grants[cat]['rid'],
                         turn=self.turn_id,input_sha256=hashlib.sha256(json.dumps(inp,sort_keys=True).encode()).hexdigest())
                 return True
@@ -48,13 +47,13 @@ class RiskGuard:
             answer=await a.host.ask(tool,inp,batch=False,risk_scope=True)
             if answer.get('behavior') != 'allow':
                 if self.epoch == epoch:
-                    self.denied.update(keys)
+                    self.denied.update(verdict.cats)
                 return False
             grant=answer.get('risk_grant')
             if a.host.stopped() or (grant and a.host.st.sign_key(grant['device']) != grant['sign_pub']):
                 return False
             if grant and self.epoch == epoch:
-                self.grants.update({cat:grant for cat in keys})
+                self.grants.update({cat:grant for cat in verdict.cats})
             return True
 
     async def hook_event(self, event):

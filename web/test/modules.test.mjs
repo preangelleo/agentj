@@ -242,12 +242,3 @@ test('P55: a close is "removed" only when the host said so; unexplained closes k
     globalThis.WebSocket = saved;
   }
 });
-
-test('P127: a Telegram page shows the owner words, not the Agent source line (old pages too)', async () => {
-  const { toPage } = await import('../public/js/snap.js');
-  const tg = toPage({ id: 3, ts: 1, src: { k: 'telegram', name: 'Telegram owner', text: 'Telegram owner private chat.\n帮我看看明天的会' }, reply: { text: '' }, end: 'open' });
-  assert.equal(tg.source.k, 'telegram');
-  assert.equal(tg.source.text, '帮我看看明天的会');
-  assert.equal(toPage({ id: 4, src: { k: 'telegram', text: '帮我看看' } }).source.text, '帮我看看', 'a new page is already clean');
-  assert.equal(toPage({ id: 5, src: { k: 'phone', text: 'Telegram owner private chat.\nx' } }).source.text, 'Telegram owner private chat.\nx', 'only Telegram pages');
-});

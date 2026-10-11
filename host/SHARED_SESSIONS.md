@@ -46,12 +46,10 @@ thread-scoped trust. Other owner hooks retain their own trust and enabled state.
 
 With `agent.high_risk_warnings=true` (default), four classes trigger an additional
 signed phone card: spending, deleting public content, sending/publishing externally,
-and changing credentials or showing them on screen (P128 `agent.approvals=standard`; a program reading `.env` by name
-or a note that only mentions it does not ask; `strict` = any credential path asks, the 0.13 rule). Local file work, scripts, dependency installation
+and reading/writing credentials. Local file work, scripts, dependency installation
 and git commit use native permissions with no extra card. Same-category grants
 expire at the next turn, revocation, signing-key change or emergency stop; audit
-entries bind later inputs to the original signed approval; a "show" grant never covers a "change". Cards are in one language
-(`appearance.language`): 查看密码或密钥 / Shows passwords or keys vs 改密码或密钥 / Changes passwords or keys. Credential cards omit
+entries bind later inputs to the original signed approval. Credential cards omit
 values and executable input; exact operation details stay on the computer. Native
 asks remain separate: a risk grant never permits a different native ask.
 

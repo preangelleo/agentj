@@ -466,7 +466,7 @@ class StatusLineLayers(Tmp):
         self.assertIn("claude_statusline.py", local["statusLine"]["command"])
         self.assertEqual(claude_statusline.load_meta()["original"]["command"], "team-line")
         claude_statusline.set_enabled(False, self.st, self.work)
-        self.assertFalse((self.work / ".claude/settings.local.json").exists())   # P127: the file we created is removed again
+        self.assertNotIn("statusLine", json.loads((self.work / ".claude/settings.local.json").read_text()))
 
     def test_user_install_reports_shadowed_when_local_layer_wins(self):
         claude_statusline.set_enabled(True, self.st, self.work)

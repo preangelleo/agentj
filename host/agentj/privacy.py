@@ -126,24 +126,6 @@ def _entropic(tok: str) -> bool:
     return _entropy(tok) >= 4.3
 
 
-# P127 owner channel (`paths=True`): a file path is judged segment by segment, so a session UUID next to a capitalised
-# file name never turns the whole path into one "high-entropy token". Path = slash-bearing, no base64 `+` / `=`, and either
-# absolute (first segment a plain lower-case word: /tmp, /srv …), after `~` / `.`, or ending in a file extension. A
-# slash-bearing secret (AWS secret, base64) has none of these shapes and is still judged whole.
-_PATH_HEAD = re.compile(r"[A-Za-z0-9][a-z0-9._-]*")
-_PATH_EXT = re.compile(r"\.[A-Za-z0-9]{1,8}(?![A-Za-z0-9])")
-SEGMENT_MIN = 24
-
-
-def _pathlike(m: re.Match) -> bool:
-    tok, s = m.group(0), m.string
-    if "/" not in tok or "+" in tok or "=" in tok or len([x for x in tok.split("/") if x]) < 2:
-        return False
-    if tok.startswith("/"):
-        return bool(_PATH_HEAD.fullmatch(tok.split("/")[1]))
-    return (m.start() > 0 and s[m.start() - 1] in "~.") or bool(_PATH_EXT.match(s, m.end()))
-
-
 def _names(name: str | None) -> list[str]:
     """Full name first, then the short host name; generic or < 3 chars never."""
     if not name:
@@ -156,22 +138,20 @@ def _names(name: str | None) -> list[str]:
     return out
 
 
-def redact_with_report(text: str, host: str | None = None, user: str | None = None,
-                       paths: bool = False) -> tuple[str, collections.Counter]:
+def redact_with_report(text: str, host: str | None = None, user: str | None = None) -> tuple[str, collections.Counter]:
     """Layer 1. Pure: same input → same output; redact(redact(x)) == redact(x). Returns (text, Counter(kind → count)).
     One pass can open a boundary for an earlier rule ("10.0.0.1myhost" → "<private-ip>myhost"), so passes repeat until
-    nothing changes; every replacement makes the text shorter in secrets, so this stops after a few passes.
-    `paths=True` (owner channel only): high-entropy is judged per path segment; strict (feedback / plaza) is the default."""
+    nothing changes; every replacement makes the text shorter in secrets, so this stops after a few passes."""
     hits: collections.Counter = collections.Counter()
     for _ in range(8):
-        new = _one_pass(text, host, user, hits, paths)
+        new = _one_pass(text, host, user, hits)
         if new == text:
             break
         text = new
     return text, hits
 
 
-def _one_pass(text: str, host: str | None, user: str | None, hits: collections.Counter, paths: bool = False) -> str:
+def _one_pass(text: str, host: str | None, user: str | None, hits: collections.Counter) -> str:
     def sub(kind, pat, repl, s):
         out, n = pat.subn(repl, s)
         if n:
@@ -200,10 +180,6 @@ def _one_pass(text: str, host: str | None, user: str | None, hits: collections.C
     text = sub("private_ip", _PRIVATE_IP, "<private-ip>", text)
 
     def entropic(m):
-        if paths and _pathlike(m):
-            segs = [R if len(x) >= SEGMENT_MIN and _entropic(x) else x for x in m.group(0).split("/")]
-            hits["high_entropy"] += segs.count(R)
-            return "/".join(segs)
         if not _entropic(m.group(0)):
             return m.group(0)
         hits["high_entropy"] += 1
@@ -211,8 +187,8 @@ def _one_pass(text: str, host: str | None, user: str | None, hits: collections.C
     return _ENTROPIC.sub(entropic, text)
 
 
-def redact(text: str, host: str | None = None, user: str | None = None, paths: bool = False) -> str:
-    return redact_with_report(text, host, user, paths)[0]
+def redact(text: str, host: str | None = None, user: str | None = None) -> str:
+    return redact_with_report(text, host, user)[0]
 
 
 def redact_draft(obj, host: str | None = None, user: str | None = None, hits: collections.Counter | None = None):
@@ -325,20 +301,12 @@ def kind_text(kind: str | None, criteria: dict | None = None, gate: str = "feedb
 # file holds a secret-shaped literal (repo hygiene scan, public-export denylist).
 FAKE_SECRETS = {
     "openrouter": "sk-" + "or-v1-" + "0123456789abcdef" * 2,
-    "machome": "/Us" + "ers/",
-    # P127 layer-1 cases (privacy_cases.json "layer1")
-    "keyseg": "".join(('Zq8xV2', 'mK9pL4', 'rT7wY1', 'nB6cD3', 'fG5hJ0', 'sAeU')),
-    "awssecret": "".join(('wJalrX', 'UtnFEM', 'I/K7MD', 'ENG/bP', 'xRfiCY', 'zQ8Lm3', 'Nq2W')),
-    "slashkey": "".join(('aB3+dE', '5/fG7h', 'J9kL1m', 'N2pQ4r', 'S6tU8v', 'W0xY+z', 'A1bC/d', 'E3fG==')),   # not a secret: a macOS home prefix, kept out of tracked text for the export denylist
+    "machome": "/Us" + "ers/",   # not a secret: a macOS home prefix, kept out of tracked text for the export denylist
 }
 
 
 def _expand_fakes(text: str) -> str:
     return re.sub(r"\{\{fake:([a-z]+)\}\}", lambda m: FAKE_SECRETS[m.group(1)], text)
-
-
-def load_layer1_cases(path: pathlib.Path = CASES_PATH) -> list[dict]:
-    return json.loads(_expand_fakes(path.read_text(encoding="utf-8")))["layer1"]["cases"]
 
 
 def load_cases(path: pathlib.Path = CASES_PATH) -> list[dict]:
