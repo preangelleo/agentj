@@ -53,6 +53,21 @@ def parse(text) -> tuple[str, str] | None:
     return m.group(1).lower(), (m.group(2) or "").strip()[:ARG_MAX]
 
 
+DONE = {"compact": ("✓ 压缩完成，可以继续说话", "✓ Compacted, keep talking"), "clear": ("✓ 已开新对话", "✓ New conversation")}   # P133
+
+
+def done_line(name, lang="zh") -> str:
+    return DONE[name][lang == "en"] if name in DONE else ""
+
+
+def with_done(name, text, lang="zh") -> str:
+    line = done_line(name, lang)
+    if not line or "✓" in (text or ""):
+        return text
+    head, _, rest = (text or "").strip().partition("\n")
+    return "\n".join(x for x in (head, line, rest) if x)
+
+
 @dataclass
 class Result:
     """What the phone's command card shows. kind: ok | error | refused | info."""

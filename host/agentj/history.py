@@ -8,7 +8,7 @@ lines — and `<state>/history/meta.json` {epoch, next_id, undo}. `history off` 
 
 A turn: {"id", "ts" (ms), "src": Src, "reply": {"text", "part"?: [k, N]}, "end": open|done|stopped|failed, "card"?,
 "media"?, "media_skip"? (F21, PROTOCOL §13: files the finished reply shows — media.py)}.
-Src = {"k": phone|host|agent|sys|task|cmd|telegram, "dev"?, "name"?, "text", "quote"?, "att"?, "local"?}. The reply of a turn = every
+Src = {"k": phone|host|agent|sys|task|cmd|telegram, "dev"?, "name"?, "text", "quote"?, "att"?, "local"?, "via"? (agent only, P132: loop|task)}. The reply of a turn = every
 finished reply text of that Agent turn joined by a blank line — results only, never tool calls; a reply over PART_MAX UTF-16
 units continues on the next page (`part`), nothing is truncated.
 

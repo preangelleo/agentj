@@ -382,18 +382,22 @@
       "collapse": "收起原话（o）",
       "collapseShort": "收起 ▴",
       "none": "没有关联的输入",
-      "attOnly": "（只有附件）"
+      "attOnly": "（只有附件）",
+      "noInput": "这一页没有你的输入"
     },
     "src": {
       "you": "你",
       "otherDevice": "另一台设备",
-      "host": "电脑",
+      "host": "电脑上的输入",
       "agent": "{name} 自己",
       "sys": "提示",
       "local": "在电脑上处理",
       "task": "定时任务",
       "taskNamed": "定时任务 · {name}",
-      "cmd": "命令"
+      "cmd": "命令",
+      "loop": "定时检查",
+      "bgTask": "后台任务完成",
+      "agentReport": "{name} 主动汇报"
     },
     "local": "这件事要在电脑上处理",
     "pg": {
@@ -814,6 +818,8 @@
     },
     "replyPending": "已送达，等待电脑接手…",
     "replyWorking": "正在处理…",
+    "replyNoEcho": "电脑没有回音 · 点此刷新",
+    "replyStopped": "已停下，未处理",
     "replyCompacting": "正在压缩上下文…",
     "newReply": "有新消息，点此跳到最新",
     "queue": {
@@ -1504,9 +1510,10 @@
     "titleReady": "可以离开电脑了",
     "counts": "已验证 {v} · 我不用 {u} · 待办 {t}（我来处理 {a}）· 待定 {d}",
     "where": {
-      "auto": "我来处理",
-      "local": "需要你在电脑前",
-      "phone": "手机上就能做"
+      "auto": "我来做",
+      "local": "在电脑上做",
+      "phone": "在手机上点",
+      "unsupported": "本版还不支持"
     },
     "st": {
       "verified": "已验证",
@@ -1524,14 +1531,10 @@
     "unused": "我不用",
     "later": "稍后",
     "continue": "现在继续",
-    "check": "我做完了，检查",
+    "check": "检查",
     "exitStart": "开始离机检查",
     "exitSent": "我发了，检查",
-    "all": "全部 {n} 项",
-    "hide": "收起",
-    "close": "关闭",
     "exitNote": "现在：让电脑屏幕熄灭，手机关掉 Wi-Fi 用蜂窝网络，在聊天里随便发一句话。收到回复就完成。",
-    "attention": "这一项没通过，只会暂停依赖它的事，其他照常。",
     "nothing": "没有需要你现在处理的事项。",
     "readyNote": "已选并验证的事项可以在手机上继续。断电、重启后解锁、新的系统权限或账号安全检查仍可能需要你回到电脑。",
     "notEnabled": "未启用：{list}",
@@ -1539,7 +1542,45 @@
     "offline": "电脑未连接",
     "unreachable": "没有连上电脑，稍后再试",
     "needsSetup": "还没开始首次准备：请让 Agent 开始。",
-    "offlineAt": "电脑离线 · 最后同步 {at}"
+    "offlineAt": "电脑离线 · 最后同步 {at}",
+    "menu": "首次准备清单",
+    "page": "首次准备清单",
+    "closeList": "✕ 收起清单",
+    "sticky": "这些步骤在电脑上做；手机上看进度。卡住了直接在聊天里告诉我。",
+    "banner": "首次准备 {d}/{n} · 继续",
+    "bannerReady": "首次准备已完成 · 查看",
+    "bannerClose": "收起首次准备，不再自动弹出",
+    "src": {
+      "adopted": "用的是：你已有的浏览器（端口 {port}）",
+      "adoptedOff": "用的是：你已有的浏览器（端口 {port}）· 现在没在运行",
+      "own": "用的是：Agent J 专用浏览器",
+      "offer": "发现你已有一个浏览器（端口 {port}），还没决定用不用",
+      "none": "还没有给 Agent J 用的浏览器"
+    },
+    "next": {
+      "install_browser": "在电脑上安装专用浏览器",
+      "adopt_browser": "用我已有的浏览器",
+      "open_login": "在电脑上打开并登录"
+    },
+    "act": {
+      "running": {
+        "install_browser": "正在电脑上安装专用浏览器（约 200 MB，要几分钟）……",
+        "adopt_browser": "正在改用你已有的浏览器……",
+        "open_login": "正在电脑上打开登录页……",
+        "check": "正在检查……"
+      },
+      "done": {
+        "install_browser": "专用浏览器已在电脑上装好并启动。",
+        "adopt_browser": "已改用你已有的浏览器（端口 {port}），里面的登录都能用。",
+        "open_login": "已在电脑上打开登录页。",
+        "check": "检查完了。"
+      },
+      "failed": "没做成（原因：{why}）。在聊天里告诉我，我来查。",
+      "opened": "已在电脑上打开登录页，并把 Agent J 专用浏览器弹到了最前面。请在刚弹到前面的 Agent J 浏览器里登录，登好后点「检查」。",
+      "openedNoRaise": "已在电脑上的 Agent J 专用浏览器里打开登录页，但没能把它弹到最前面：请在电脑上找标题为「Agent J 专用浏览器」的窗口，在那里登录，登好后点「检查」。",
+      "openedAdopted": "已在你登记的浏览器（端口 {port}）里打开登录页，并把它弹到了最前面。请在那里登录，登好后点「检查」。",
+      "openedAdoptedNoRaise": "已在你登记的浏览器（端口 {port}）里打开登录页，但没能把它弹到最前面：请在电脑上切到那个浏览器登录，登好后点「检查」。"
+    }
   },
   "r.tg.idle": "转发给我自己",
   "r.tg.sending": "正在转发给你…",

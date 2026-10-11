@@ -23,3 +23,5 @@ os.environ.setdefault("AGENTJ_SKILL_LINK", "off")
 
 # P115: serve never pre-installs the Google CLI from a test (google.ensure_background).
 os.environ.setdefault("AGENTJ_GOOGLE_PREINSTALL", "off")
+# P131: never probe the developer's own CDP browsers (e.g. a Chromium on 127.0.0.1:9222) from a test; adopt tests use fakes.
+os.environ.setdefault("AGENTJ_BROWSER_DETECT", "off")

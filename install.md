@@ -1,15 +1,15 @@
 ---
 document: agentj-install
-version: 0.21.7
+version: 0.21.8
 released: 2026-10-11
 status: beta (anyone can sign up; not advertised yet, pages are not indexed)
 host_package: agentj (the `agentj` command)
-host_version: 0.18.1a1
-source_tag: v0.18.1a1
-host_wheel: agentj-0.18.1a1-py3-none-any.whl
-host_wheel_sha256: 73806c5b4a9d16ef52bc60f4f3fae1953235f513c3982c1807d23220073c82bc
-host_sdist: agentj-0.18.1a1.tar.gz
-host_sdist_sha256: e429eb841ffcfe3da1e8c6aab3d55ebd48bb206a5c98143a072360ffd89d646e
+host_version: 0.18.2a1
+source_tag: v0.18.2a1
+host_wheel: agentj-0.18.2a1-py3-none-any.whl
+host_wheel_sha256: 96b5eee6a9f54cf2addcb91cb13b9635a08dc48cc813983de764ff7a4db56529
+host_sdist: agentj-0.18.2a1.tar.gz
+host_sdist_sha256: 652c5dce0144c15a88a44c3b076f83cc4235797a2d678a41f150f3e51a9b95d8
 canonical_url: https://agentj.app/install.md
 sha256_url: https://agentj.app/install.md.sha256
 alias: https://agentjarvis.net/install.md (the older address: the same file, kept for one more version)
@@ -137,7 +137,7 @@ curl -fsSL --retry 3 --retry-all-errors --retry-delay 2 --retry-max-time 45 --co
 curl -fsSL --retry 3 --retry-all-errors --retry-delay 2 --retry-max-time 45 --connect-timeout 10 --max-time 20 https://raw.githubusercontent.com/preangelleo/agentj/main/install.md -o install.github.md
 if command -v sha256sum >/dev/null; then sha256sum -c install.md.sha256; else shasum -a 256 -c install.md.sha256; fi   # → "install.md: OK"
 cmp install.md install.github.md && echo "site and GitHub copies match"
-grep -m1 '^version:' install.md                                           # → version: 0.21.7
+grep -m1 '^version:' install.md                                           # → version: 0.21.8
 ```
 - For a brief connection reset, timeout or interrupted download, these GET commands retry at most three times after the initial attempt, with a 45-second retry budget and a 20-second limit per attempt. If the network keeps failing, stop retrying and use the fallback below or ask the support desk. Do not add automatic retries to setup-code redemption, payment or other POST requests. Never disable TLS checks or continue after a SHA-256/GitHub mismatch.
 - Both checks pass → continue with that `install.md` (note its `version:` for feedback). Keep the file: Step 4 reads the
@@ -452,7 +452,7 @@ The astral installer warning that `uv` / `uvx` are shadowed is informational if 
 carry over). So start every command line from here on with `export PATH="$HOME/.local/bin:$PATH";` — or call
 `~/.local/bin/agentj` by its full path. This document writes `agentj` for short.
 
-The program is pinned to one release: the tag `v0.18.1a1` (front matter `source_tag`). The tag never moves, and its
+The program is pinned to one release: the tag `v0.18.2a1` (front matter `source_tag`). The tag never moves, and its
 `host/` folder is byte for byte the same code as the two files on our site whose SHA-256 is in this document's front matter.
 ```bash
 cd ~/.agentj-install
@@ -463,7 +463,7 @@ uv tool install "./$W"
 
 Intel Mac: this release keeps `cryptography<49` because newer releases lack an Intel macOS wheel. If an older installer tries to compile OpenSSL (`openssl-sys` / OpenSSL not found), rerun `uv tool install --with "cryptography<49" "./$W"`. The same platform constraint applies to `agentj update apply`.
 
-export PATH="$HOME/.local/bin:$PATH"; agentj --version     # → agentj 0.18.1a1
+export PATH="$HOME/.local/bin:$PATH"; agentj --version     # → agentj 0.18.2a1
 export PATH="$HOME/.local/bin:$PATH"; agentj doctor
 ```
 **Your human's own terminal must find `agentj` too** — they may use `agentj passphrase set` and `agentj pair` as a local alternative
@@ -491,12 +491,12 @@ echo "$WS  $W" | sha256sum -c - && echo "$SS  $S" | sha256sum -c -    # macOS: s
 uv tool install "./$W"          # the wheel; its dependencies come from PyPI or the mirror in UV_DEFAULT_INDEX
 ```
 `uv tool install "./$S"` installs from the checked source archive instead (it builds the same program).
-`https://agentj.app/dl/latest.txt` and `https://agentj.app/dl/latest-sdist.txt` name the same two files. `agentj --version` is the program's own version (`0.18.1a1`); it is
+`https://agentj.app/dl/latest.txt` and `https://agentj.app/dl/latest-sdist.txt` name the same two files. `agentj --version` is the program's own version (`0.18.2a1`); it is
 numbered separately from this document (`0.21.1`).
 
-Alternative from the matching published source tag: `uv tool install "git+https://github.com/preangelleo/agentj@v0.18.1a1#subdirectory=host"`.
+Alternative from the matching published source tag: `uv tool install "git+https://github.com/preangelleo/agentj@v0.18.2a1#subdirectory=host"`.
 
-Alternative without uv: `pipx install "git+https://github.com/preangelleo/agentj@v0.18.1a1#subdirectory=host"` (needs Python 3.11+).
+Alternative without uv: `pipx install "git+https://github.com/preangelleo/agentj@v0.18.2a1#subdirectory=host"` (needs Python 3.11+).
 `agentj doctor` lists what is ready and what is not (prerequisites, the fence, connectivity, which agents are usable).
 Continue unless it reports an error that a later step does not fix; report anything you cannot explain.
 
@@ -1149,7 +1149,7 @@ The daily check remains a notification, not an unattended installation; `agentj 
 In the default shared session, reinstall directly using Step 4's checked wheel (SHA-256 must match this document and
 its public GitHub copy), preserving the host's identity, paired phones, account and preferences:
 ```bash
-uv tool install --force "./agentj-0.18.1a1-py3-none-any.whl"
+uv tool install --force "./agentj-0.18.2a1-py3-none-any.whl"
 agentj --version
 agentj service install
 agentj service restart
@@ -1157,7 +1157,7 @@ agentj doctor
 ```
 The matching published tag is another source, after verifying the tag object against the upgrade email:
 ```bash
-uv tool install --force "git+https://github.com/preangelleo/agentj@v0.18.1a1#subdirectory=host"
+uv tool install --force "git+https://github.com/preangelleo/agentj@v0.18.2a1#subdirectory=host"
 ```
 **0.14 independent session** (`agent.session_mode=independent`): 0.14's fence keeps Agent J's own program read-only and
 hides the service manager, so the Agent on the phone cannot reinstall or restart from inside it (measured: the install
@@ -1183,11 +1183,11 @@ prints something and `uv tool list` (or `pipx list`) shows `agentjarvis-host`, t
 the new name, then:
 ```bash
 jarvis service uninstall      # stop the old service first (Step 10 used tmux / nohup instead? stop that process)
-uv tool uninstall agentjarvis-host && uv tool install "git+https://github.com/preangelleo/agentj@v0.18.1a1#subdirectory=host"
+uv tool uninstall agentjarvis-host && uv tool install "git+https://github.com/preangelleo/agentj@v0.18.2a1#subdirectory=host"
 agentj doctor
 agentj service install        # start it again under the new name (or the tmux / nohup fallback, Step 10)
 ```
-With pipx instead of uv: `pipx uninstall agentjarvis-host && pipx install "git+https://github.com/preangelleo/agentj@v0.18.1a1#subdirectory=host"`.
+With pipx instead of uv: `pipx uninstall agentjarvis-host && pipx install "git+https://github.com/preangelleo/agentj@v0.18.2a1#subdirectory=host"`.
 - After the move, `agentj` puts back a `jarvis` command (a link to `agentj`, only if no other `jarvis` exists) for one more
   version; it prints a notice that points here. New installs never get `jarvis`.
 - The state moves from `~/.local/state/agentjarvis-alpha` to `~/.local/state/agentj` on the first run of `agentj` **after your
@@ -1957,6 +1957,9 @@ Pair once; later opens automatically reconnect while the computer keeps this dev
 
 ### Shared Claude ingress (0.18.1a1)
 Shared-mode startup and `agentj doctor` read managed, private local, project and user settings in native file precedence. If the effective writable value is not `accept`, they back it up and set accept (project policy uses a private local override; the shared project file stays intact). Managed settings are read-only and the phone names the blocking layer/value. **Start a new session or run /clear on the computer for the change to take effect**; a session started earlier may still hold phone messages. Session/CLI or remote managed overrides cannot be verified from these files. `agentj config claude-inbound off` is temporary while shared mode is selected: its next startup/doctor restores accept. Do not resend an unacknowledged message before checking the desktop.
+
+### 0.18.2a1 fixes
+The first-run checklist never blocks the chat: a thin banner above it, ✕ closes it for good, and the menu reopens it; each item says where to do it, what was found and what to tap next, and Agent J can adopt a browser already signed in on this computer (loopback CDP) after one confirmation from your human. Pages without your human's input (agent reports, scheduled checks, finished background tasks) get a page header, a page number and a new-message cue. A finished /compact or /clear says 「✓ 压缩完成，可以继续说话」 / "✓ Compacted, keep talking". The web app reconnects within seconds and keeps the unsent draft. In the shared Claude session, a phone message sent while the computer is already in a turn shows 「电脑正忙，消息已排队」 / "The computer is busy; your message is queued" and that turn's reply answers it on the phone (several such messages: the reply goes to the last page, earlier ones say merged). An open page whose computer stays idle for 30 s offers a tap to refresh. `agentj config set` validates in the running service's environment, so no manual environment loading is needed.
 
 ### 0.18.1a1 integrated capabilities
 Long tasks use durable checkpoints and owner-approved opening cards; browser sign-ins stay in Agent J's own profile and QR cards. The first-run checklist verifies real sign-in evidence; Google website login and API authorization remain separate (guided API authorization is planned for 0.18.1). Shared sessions load the optional private identity as text below the packaged core. Telegram owner/family/delegate messages carry trusted host source envelopes, ordered cursor state and single-poller protection; cutover/rollback require a drain fence and never silently replay uncertain updates. Owner-adapter scripts and founder files remain private and are not distributed in the public package.

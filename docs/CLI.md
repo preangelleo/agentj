@@ -576,12 +576,36 @@ agentj browser --help
 
 ```text
 usage: agentj browser [-h] [--json]
-                      {setup,status,enable,disable,endpoint,sandbox-fix,run,open,check,login,telegram-qr,sites} ...
+                      {setup,status,enable,disable,endpoint,sandbox-fix,run,adopt,open,check,login,telegram-qr,sites} ...
 ```
 
 | Argument | Default | Required | Choices | Help |
 | --- | --- | --- | --- | --- |
 | `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `--json` | `false` | false | — | `` |
+
+### agentj browser adopt
+
+```text
+登记你已有的本机 CDP 浏览器（只限 127.0.0.1，主人在手机确认）/ use a browser you already run
+```
+
+```bash
+agentj browser adopt --help
+```
+
+```text
+usage: agentj browser adopt [-h] [--endpoint ENDPOINT] [--dry-run]
+                            [--site SITE] [--forget] [--json]
+```
+
+| Argument | Default | Required | Choices | Help |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `--endpoint` | `null` | false | — | `http://127.0.0.1:<port>` |
+| `--dry-run` | `false` | false | — | `probe only, register nothing` |
+| `--site` | `null` | false | — | `with --dry-run: read-only sign-in check of a template site (repeatable)` |
+| `--forget` | `false` | false | — | `不再用登记的浏览器（它继续运行）/ stop using it (it keeps running)` |
 | `--json` | `false` | false | — | `` |
 
 ### agentj browser check
@@ -752,13 +776,14 @@ agentj browser setup --help
 ```
 
 ```text
-usage: agentj browser setup [-h] [--json]
+usage: agentj browser setup [-h] [--json] [--own]
 ```
 
 | Argument | Default | Required | Choices | Help |
 | --- | --- | --- | --- | --- |
 | `-h / --help` | `null` | false | — | `show this help message and exit` |
 | `--json` | `false` | false | — | `` |
+| `--own` | `false` | false | — | `install Agent J's own even when one is already running here` |
 
 ### agentj browser sites
 
@@ -2892,8 +2917,8 @@ agentj setup checklist --help
 
 ```text
 usage: agentj setup checklist [-h] [--resume | --check |
-                              --item {seat,harness,desktop,phone,passkey,admin,phonepermissions,sudo,awake,service,updates,network,browser,gmail,youtube,bili,douyin,wechat,sites,google,keyring,files,fda,accessibility,automation,screen,hardware,tg,botkey,exit}]
-                              [--json]
+                              --item {seat,harness,desktop,phone,passkey,admin,phonepermissions,sudo,awake,service,updates,network,browser,gmail,youtube,bili,douyin,wechat,sites,google,keyring,files,fda,accessibility,automation,screen,hardware,tg,botkey,exit} |
+                              --open | --close] [--json]
 ```
 
 | Argument | Default | Required | Choices | Help |
@@ -2901,7 +2926,9 @@ usage: agentj setup checklist [-h] [--resume | --check |
 | `-h / --help` | `null` | false | — | `show this help message and exit` |
 | `--resume` | `false` | false | — | `start or continue and show the card` |
 | `--check` | `false` | false | — | `live read-only re-check` |
-| `--item` | `null` | false | `seat`, `harness`, `desktop`, `phone`, `passkey`, `admin`, `phonepermissions`, `sudo`, `awake`, `service`, `updates`, `network`, `browser`, `gmail`, `youtube`, `bili`, `douyin`, `wechat`, `sites`, `google`, `keyring`, `files`, `fda`, `accessibility`, `automation`, `screen`, `hardware`, `tg`, `botkey`, `exit` | `re-check one item` |
+| `--item` | `null` | false | `seat`, `harness`, `desktop`, `phone`, `passkey`, `admin`, `phonepermissions`, `sudo`, `awake`, `service`, `updates`, `network`, `browser`, `gmail`, `youtube`, `bili`, `douyin`, `wechat`, `sites`, `google`, `keyring`, `files`, `fda`, `accessibility`, `automation`, `screen`, `hardware`, `tg`, `botkey`, `exit` | `只复查这一项（网站项会真去查一次登录）/ re-check one item` |
+| `--open` | `false` | false | — | `reopen a closed checklist (only when the owner asks)` |
+| `--close / --pause` | `false` | false | — | `close it now; reopen from the menu` |
 | `--json` | `false` | false | — | `` |
 
 ### agentj skill
@@ -4140,12 +4167,36 @@ agentj browser --help
 
 ```text
 usage: agentj browser [-h] [--json]
-                      {setup,status,enable,disable,endpoint,sandbox-fix,run,open,check,login,telegram-qr,sites} ...
+                      {setup,status,enable,disable,endpoint,sandbox-fix,run,adopt,open,check,login,telegram-qr,sites} ...
 ```
 
 | 参数 | 默认值 | 必填 | 可选值 | 说明 |
 | --- | --- | --- | --- | --- |
 | `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `--json` | `false` | false | — | `` |
+
+### agentj browser adopt
+
+```text
+登记你已有的本机 CDP 浏览器（只限 127.0.0.1，主人在手机确认）/ use a browser you already run
+```
+
+```bash
+agentj browser adopt --help
+```
+
+```text
+usage: agentj browser adopt [-h] [--endpoint ENDPOINT] [--dry-run]
+                            [--site SITE] [--forget] [--json]
+```
+
+| 参数 | 默认值 | 必填 | 可选值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `--endpoint` | `null` | false | — | `http://127.0.0.1:<port>` |
+| `--dry-run` | `false` | false | — | `只读：探测并（加 --site）只读查登录，不登记` |
+| `--site` | `null` | false | — | `with --dry-run: read-only sign-in check of a template site (repeatable)` |
+| `--forget` | `false` | false | — | `不再用登记的浏览器（它继续运行）/ stop using it (it keeps running)` |
 | `--json` | `false` | false | — | `` |
 
 ### agentj browser check
@@ -4316,13 +4367,14 @@ agentj browser setup --help
 ```
 
 ```text
-usage: agentj browser setup [-h] [--json]
+usage: agentj browser setup [-h] [--json] [--own]
 ```
 
 | 参数 | 默认值 | 必填 | 可选值 | 说明 |
 | --- | --- | --- | --- | --- |
 | `-h / --help` | `null` | false | — | `show this help message and exit` |
 | `--json` | `false` | false | — | `` |
+| `--own` | `false` | false | — | `已有本机浏览器时仍另装专用的` |
 
 ### agentj browser sites
 
@@ -6456,8 +6508,8 @@ agentj setup checklist --help
 
 ```text
 usage: agentj setup checklist [-h] [--resume | --check |
-                              --item {seat,harness,desktop,phone,passkey,admin,phonepermissions,sudo,awake,service,updates,network,browser,gmail,youtube,bili,douyin,wechat,sites,google,keyring,files,fda,accessibility,automation,screen,hardware,tg,botkey,exit}]
-                              [--json]
+                              --item {seat,harness,desktop,phone,passkey,admin,phonepermissions,sudo,awake,service,updates,network,browser,gmail,youtube,bili,douyin,wechat,sites,google,keyring,files,fda,accessibility,automation,screen,hardware,tg,botkey,exit} |
+                              --open | --close] [--json]
 ```
 
 | 参数 | 默认值 | 必填 | 可选值 | 说明 |
@@ -6465,7 +6517,9 @@ usage: agentj setup checklist [-h] [--resume | --check |
 | `-h / --help` | `null` | false | — | `show this help message and exit` |
 | `--resume` | `false` | false | — | `开始或继续，并把卡片发到手机` |
 | `--check` | `false` | false | — | `实时只读复查` |
-| `--item` | `null` | false | `seat`, `harness`, `desktop`, `phone`, `passkey`, `admin`, `phonepermissions`, `sudo`, `awake`, `service`, `updates`, `network`, `browser`, `gmail`, `youtube`, `bili`, `douyin`, `wechat`, `sites`, `google`, `keyring`, `files`, `fda`, `accessibility`, `automation`, `screen`, `hardware`, `tg`, `botkey`, `exit` | `只复查这一项` |
+| `--item` | `null` | false | `seat`, `harness`, `desktop`, `phone`, `passkey`, `admin`, `phonepermissions`, `sudo`, `awake`, `service`, `updates`, `network`, `browser`, `gmail`, `youtube`, `bili`, `douyin`, `wechat`, `sites`, `google`, `keyring`, `files`, `fda`, `accessibility`, `automation`, `screen`, `hardware`, `tg`, `botkey`, `exit` | `只复查这一项（网站项会真去查一次登录）/ re-check one item` |
+| `--open` | `false` | false | — | `主人说要重开时：重新显示已收起的清单` |
+| `--close / --pause` | `false` | false | — | `收起清单：手机/电脑网页立即收起，不再自动弹出；菜单里可重开` |
 | `--json` | `false` | false | — | `` |
 
 ### agentj skill

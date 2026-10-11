@@ -1,6 +1,6 @@
 {
-  "version": "0.18.1a1",
+  "version": "0.18.2a1",
   "major": false,
-  "zh": "审批更少更准且单语；手机断线静默恢复；压缩、排队、发送与 Telegram 显示修复；旧 Telegram 登记兼容、围栏环境保护、华为设备识别与账户改名。配对口令提前提示，状态栏默认开启。电脑升级后请在手机设置点「更新并刷新」。",
-  "en": "Fewer, clearer approvals; quiet reconnect; compaction, queue and Telegram fixes; legacy Telegram, fence and Huawei repairs. Settings → Update & refresh."
+  "zh": "首装清单不再挡聊天、关了不再弹，可接管已登录的浏览器；无输入页有页码与新消息提示；压缩完成提示；网页断线快速恢复并保留草稿；电脑忙时消息排队且回复照常送到手机。电脑升级后请在手机设置点「更新并刷新」。",
+  "en": "Checklist never blocks chat; adopt your browser; page headers; compaction notice; fast reconnect keeps drafts; busy turns still reply. Settings → Update."
 }

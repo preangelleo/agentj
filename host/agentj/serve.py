@@ -72,7 +72,7 @@ def _close_code(e: Exception) -> int | None:
     return None
 
 
-RC_WHY = ("load", "close", "hb", "host", "error", "ticket")   # P129: a page's reason for its (re)connect, see session.js
+RC_WHY = ("load", "close", "hb", "host", "error", "ticket", "visibility", "offline", "stall")   # P129/P133: see session.js
 
 
 def _reconnect_reason(rc) -> tuple:
@@ -750,7 +750,7 @@ class Host:
             for g in list(self.grants.values()):
                 if gid is None or g.rid == gid:
                     self.end_grant(g.rid, "revoked", by=s.device)
-        elif t in ("setup_get", "setup_mark"):   # P115: the first-run checklist card (first_run.py)
+        elif t in ("setup_get", "setup_mark", "setup_close"):   # P115 / P131: the first-run checklist (first_run.py)
             await self.on_setup(s, t, obj)
         elif t in PHONE_CONTROLS:
             await self.on_control(s, t, obj)
@@ -1984,7 +1984,16 @@ class Host:
             if changed:
                 self.cur_turn = changed[-1]["id"]
         else:                          # the Agent spoke outside a turn of ours (e.g. a background task finished)
-            self.media_later(self.hist_add({"k": "agent", "text": ""}, text, "done")["id"])
+            self.media_later(self.hist_add(self._agent_src(), text, "done")["id"])
+
+    def proactive_turn(self, via: str) -> None:
+        """P132: the harness started a turn itself (via = 'loop' | 'task'); its reply page names that source."""
+        self.desktop_end()
+        self.proactive_via = via if via in ("loop", "task") else None
+
+    def _agent_src(self) -> dict:
+        via = getattr(self, "proactive_via", None)
+        return {"k": "agent", "text": "", **({"via": via} if via else {})}
 
     def desktop_input(self, text: str) -> None:
         if not text or not text.strip():
@@ -1992,18 +2001,43 @@ class Host:
         self.desktop_end()
         self.desktop_turn = self.hist_add({"k": "host", "name": pick(self.lang, "电脑", "Desktop"), "text": text}, "", "open")["id"]
 
+    BUSY_NOTE = ("电脑正忙，消息已排队，忙完就接手。", "The computer is busy; your message is queued.")
+
+    def turn_queued_note(self, on: bool) -> None:     # P133: busy shared session, message in its queue
+        tid, note = self.cur_turn, pick(self.lang, *self.BUSY_NOTE)
+        page = self.hist.get(tid) if tid is not None else None
+        if page and page["end"] == "open" and page["reply"]["text"] == ("" if on else note):
+            self.hist_update(tid, text=note if on else "")
+
+    MERGED_NOTE = ("已合并到下一条回复。", "Merged into the next reply.")
+
+    def turn_merged(self) -> None:      # P135: a later phone message joined the same native turn; the reply goes there
+        tid = self.cur_turn
+        page = self.hist.get(tid) if tid is not None else None
+        if page and page["end"] == "open":
+            self.hist_update(tid, text=pick(self.lang, *self.MERGED_NOTE), end="done")
+        self.cur_turn, self.cur_failed = None, False
+
+    def desktop_cmd_done(self, name: str) -> None:    # P133: a desktop-typed /compact has no Stop
+        tid = self.desktop_turn
+        page = self.hist.get(tid) if tid is not None else None
+        if page and page["src"].get("text", "").strip() == "/" + name and not page["reply"]["text"]:
+            self.hist_update(tid, append=slash.done_line(name, self.lang))
+            self.desktop_end()
+
     def desktop_text(self, text: str) -> None:
         if not text or not text.strip():
             return
         tid = getattr(self, "desktop_turn", None)
         if tid is None:
-            self.hist_add({"k": "agent", "text": ""}, text, "done")
+            self.hist_add(self._agent_src(), text, "done")
         else:
             changed = self.hist_update(tid, append=text)
             if changed:
                 self.desktop_turn = changed[-1]["id"]
 
     def desktop_end(self) -> None:
+        self.proactive_via = None
         tid = getattr(self, "desktop_turn", None)
         if tid is not None:
             self.hist_update(tid, end="done")
@@ -2702,6 +2736,7 @@ class Host:
 
     def push_setup(self, snap: dict, show: bool = True) -> None:
         """The checklist card to every ready remote (phone and this computer's browser show the same revision)."""
+        show = show and not snap.get("closed")      # P131 追加2: a closed checklist never shows itself again (older pages too)
         msg = {"t": "setup_card", "show": show, **{k: snap[k] for k in snap if k not in ("ok", "result", "r")}}
         self._post(self._send_ready, lambda s: msg)
 
@@ -2713,13 +2748,27 @@ class Host:
         net = obj.get("net")
         if net in ("cellular", "wifi", "unknown"):
             s.setup_net = net
+        if t == "setup_close":                # P131: the banner's ✕ — no signature (it only hides; nothing is approved)
+            try:
+                res = await asyncio.to_thread(first_run.close, self.st)
+            except (first_run.SetupError, OSError) as e:
+                return await self.send_app(s, {"t": "setup_card", "r": r, "ok": False, "why": getattr(e, "reason", "io")})
+            self.st.log("setup_close", device=s.device)
+            self.activity("setup_close", by=s.name or s.device, id="checklist", text="close")
+            await self.send_app(s, {"t": "setup_card", "r": r, "show": False, **{k: v for k, v in res.items() if k != "r"}})
+            if res.get("revision"):
+                self.push_setup(res, show=False)       # every other open page hides its banner too
+            return
         if t == "setup_get":                  # read (and, with check, a live read-only re-probe); never changes a choice
             perm = obj.get("perm") if isinstance(obj.get("perm"), dict) else None
             report = {"mic": perm.get("mic")} if perm and perm.get("mic") in ("granted", "denied", "prompt") else None
             item = obj.get("item") if isinstance(obj.get("item"), str) and obj.get("item") in first_run.BY_ID else None
             try:
                 if obj.get("check") is True:
-                    res = await asyncio.to_thread(first_run.check, self.st, [item] if item else None, self.setup_serve(), report)
+                    res = await asyncio.to_thread(first_run.check, self.st, [item] if item else None, self.setup_serve(), report,
+                                                  bool(item))
+                elif obj.get("open") is True:     # P131: the menu's 「首次准备清单」 reopens a closed checklist
+                    res = await asyncio.to_thread(first_run.reopen, self.st)
                 else:
                     res = await asyncio.to_thread(first_run.status_, self.st)
             except (first_run.SetupError, OSError) as e:
@@ -2749,6 +2798,16 @@ class Host:
         await self._ctl_res(s, r, "setup_mark", result == "ok", **({} if result == "ok" else {"why": result}))
         if snap:
             self.push_setup(snap, show=True)
+        if result == "ok" and target["choice"] in first_run.ACTIONS:   # P131: install / adopt / open-and-sign-in
+            self.setup_act = asyncio.ensure_future(self._setup_act(target["item"], target["choice"], obj["n"]))
+
+    async def _setup_act(self, item: str, choice: str, ref: str) -> None:
+        from . import first_run
+        try:
+            snap = await asyncio.to_thread(first_run.act, self.st, item, choice, ref, self.setup_serve())
+        except (first_run.SetupError, OSError):
+            return
+        self.push_setup(snap, show=True)
 
     async def _setup_round_trip(self, s: Session) -> None:
         """The leave-the-computer check: a message from a phone while the check is armed is its evidence."""
@@ -2806,6 +2865,8 @@ class Host:
             x["open"] = res.open[:64]
         if by:
             x["by"] = by[:64]
+        if not interim and res.kind == "ok":     # P133
+            res.text = slash.with_done(name, res.text, self.lang)
         text = res.text if text_units(res.text) <= wire.MAX_TEXT else res.text[:3900] + " …"
         self.emit("agent_notice", text=f"/{name}：{text}")
         e = self._remember("cmd", text, x=x)

@@ -708,7 +708,7 @@ a revoke in the middle stops the message there (P33-X07).
   newest one always), in memory too — P33-C06; `meta.json` also keeps the archive `undo` restores.)
 - **Turn** = one page: `{"id":n,"ts":<ms>,"src":Src,"reply":{"text":"…","part":[k,N]?},"end":"open"|"done"|"stopped"|"failed",
   "card":Card?}`. `Src = {"k":"phone"|"host"|"agent"|"sys"|"task"|"cmd","dev":"<device id>"?,"name":"<label ≤ 64>"?,
-  "text":"≤ 20 000","quote":{"id","who","ts","text ≤ 300","ex":bool}?,"att":[{"name","mime","bytes","kind"}]?,"local":bool?}`.
+  "text":"≤ 20 000","quote":{"id","who","ts","text ≤ 300","ex":bool}?,"att":[{"name","mime","bytes","kind"}]?,"local":bool?,"via":"loop"|"task"?}` (`via`, P132: an `agent` turn a /loop or wake-up check, or a finished background task, started).
   Who: `phone` (a paired device; the page shows 「你」 when `dev` is its own id, else the label = 「另一台设备」), `host`
   (`agentj send` on the computer), `agent` (a turn the Agent started itself — e.g. Claude Code's background `task-notification`),
   `sys` (a host notice; `local:true` = 「在电脑上处理」, §10.8), `task` (a scheduled task's run and VERDICT), `cmd` (a slash
@@ -1687,7 +1687,22 @@ attention · deferred · unsupported · not_applicable (+ `stale` for a verified
 `remote_ready` = every selected applicable item verified and fresh, including `exit`: a message from a phone-kind device within
 15 min of `start_exit` (evidence `{at, via:"relay", device:"phone", net}`), good for 2 h.
 
-The Agent's socket (`elevate.sock`): `{"t":"setup","op":"status"|"resume"|"check","item"?}` — no op can mark a choice.
+The Agent's socket (`elevate.sock`): `{"t":"setup","op":"status"|"resume"|"check"|"close","item"?}` — no op can mark a choice.
+
+**P131 (0.18.2): never blocks the chat.** `show` no longer opens anything: the page draws a thin banner above the chat (from
+`progress {done,total}`) and the checklist is its own page, opened only by the owner (banner / menu). Added:
+
+| message | signed | effect |
+|---|---|---|
+| `{"t":"setup_close","r"}` | no (it only hides; approves nothing) | `closed:true` (revision +1): the answer plus a `show:false` push to every ready remote hide the banner at once; no re-show on reconnect until reopened. Logged (`setup_close`) |
+| `setup_get` + `"open":true` | no | the menu's reopen: `closed:false`, `resumed_at` now (answers the snapshot) |
+| `setup_mark` choices `install_browser` · `adopt_browser` (item `browser`) · `open_login` (website items) | §8, same object | owner actions: the mark records `action {item, choice, state:"running"}` and sets the choice `selected`; the host then performs it (install Agent J's browser with `own`; adopt the browser already running on 127.0.0.1; open the sign-in page in a foreground tab and raise the window) and pushes the snapshot with `action.state` `done`/`failed` (+ `raised`, `adopted`, `port`, `reason`) |
+
+Snapshot additions: per item `explain {fact{zh,en}, effect{zh,en}, next[]}` (`next` ⊂ install_browser · adopt_browser ·
+open_login · check; null when done/unused/n.a./later), top-level `progress`, `browser_source {kind: own|adopted|offer|none,
+port?, running?}` (never a path), `action`. `setup_get` with `check` + `item` (a website row) first runs the real read-only
+sign-in check of its sites in the browser Agent J uses (own tabs, closed). elevate.sock `{"t":"browser","action":"adopt",
+"endpoint","dry_run"?,"sites"?,"forget"?}` only proposes (loopback only); a proposal re-probes the browser rows and pushes.
 `{"t":"google","op":"status"|"check"|"install"|"on"|"off"|"registry"}` — the pinned gog (v0.43.0, SHA-256 per platform) in
 `<state>/google/` with its own GOG_HOME; presence-only detection of the owner's gog/gcloud/gws; purposes with minimum scopes;
 `registry` = P86-shaped entries (`google-cli` + one `credential` row per purpose, never `ready` before the 0.18.1 authorization
@@ -1698,6 +1713,10 @@ adapter). No token, code, callback URL, client JSON or e-mail crosses this socke
   "code":<1000–4999>?,"down":<ms offline, ≤ 7 days>?}` — what ended the page's previous session (`close` + the socket close code,
   `hb` = heartbeat gave up, `host` = relay said the computer went down). The host keeps only these bounded values and logs them on
   `resume_ok` (`why`, `code`, `ms`); anything off-shape is dropped; never acted on. Hosts without P129 ignore the field.
+- **P133 (additive)**: `rc.why` may also be `"visibility"` (the probe right after the page came back to the foreground failed),
+  `"offline"` (the browser reported the network gone) or `"stall"` (a resume that did not reach `ready` within 15 s was abandoned
+  and retried). The page's reconnect ladder stops at 5 s, and the page retries at once on `visibilitychange` → visible and on
+  the browser's `online` event. Hosts before P133 drop these values (the whole `rc`) as off-shape.
 - **Heartbeat** (`ping`/`pong`, unchanged messages): the page waits 10 s per probe; a probe that times out while any frame
   arrived on the socket counts as alive; two misses in a row with nothing heard close the session (the probe right after the
   page returns to the foreground still gives up after one miss). First reconnect after a drop: 250 ms, then doubling to 30 s.

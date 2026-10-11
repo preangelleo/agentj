@@ -75,8 +75,11 @@ class Capabilities(unittest.TestCase):
             d['sites']['gmail'].update(status='auth_required', checked_at=self.now)
             sites._save(self.st, d)
             self.assertEqual(first_run.probe(self.st, 'gmail', {'system': 'linux'}), ('waiting_local', 'site_signin_required'))
-        with patch.object(browser, 'runtime', return_value=None):
-            self.assertEqual(first_run.probe(self.st, 'browser', {'system': 'linux'}), ('attention', 'browser_not_running'))
+        with patch.object(browser, 'runtime', return_value=None):   # P131: says which — not installed vs installed but stopped
+            self.assertEqual(first_run.probe(self.st, 'browser', {'system': 'linux'}), ('waiting_local', 'browser_not_installed'))
+            self.assertEqual(first_run.probe(self.st, 'gmail', {'system': 'linux'}), ('pending', 'needs_browser'))
+            with patch.object(browser, 'installed', return_value={'version': 't', 'path': '/x'}):
+                self.assertEqual(first_run.probe(self.st, 'browser', {'system': 'linux'}), ('attention', 'browser_not_running'))
 
     def test_wechat_requires_both_independent_sites(self):
         sites.add(self.st,'mp-weixin')

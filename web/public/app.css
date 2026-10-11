@@ -1688,18 +1688,41 @@ body[data-view="chat"] .share-notice{position:static;margin:0 var(--space-contro
 .lqr .lqr-tg,.lqr .lqr-later{display:block;margin:var(--sp-3) auto 0;min-height:44px;width:auto;padding:0 var(--sp-4);white-space:nowrap;
   color:var(--text-muted);font-weight:400;text-decoration:underline;text-underline-offset:3px}
 .lqr [hidden]{display:none}
-/* P115: first-run checklist card (setup.js) — same dialog on the phone and this computer's browser; touch targets ≥ 56px */
-.ajmodal.setupcard{z-index:43}
-.setupcard .box{width:min(34rem,100%)}
-.setup-kicker{margin:0 0 var(--sp-2);font-size:var(--fs-sm);letter-spacing:.04em;color:var(--text-muted)}
-.setup-counts,.setup-where{margin:var(--sp-2) 0 0;color:var(--text-muted);font-size:var(--fs-sm)}
+/* P115 + P131: first-run checklist (setup.js) — its own page (never a dialog over the chat) + a thin closable banner above the
+   chat; the input stays usable. Touch targets ≥ 56px on the page, ≥ 44px on the banner. */
+.setup-banner{position:relative;z-index:3;flex-shrink:0;display:flex;align-items:stretch;gap:0;margin:0;background:var(--surface);
+  border-bottom:1px solid var(--line)}
+.setup-banner[hidden]{display:none}
+.setup-banner__open{flex:1;min-width:0;min-height:44px;padding:0 18px;text-align:left;font:600 calc(14px*var(--fz))/1.3 var(--font-body);
+  color:var(--ink);background:none;border:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:pointer}
+.setup-banner__x{flex:none;min-width:48px;min-height:44px;font-size:18px;line-height:1;color:var(--text-muted);background:none;border:0;
+  border-left:1px solid var(--line);cursor:pointer}
+.setup-banner__open:focus-visible,.setup-banner__x:focus-visible{outline:2px solid var(--focus, currentColor);outline-offset:-3px}
+#setup-view .sub-head h1{flex:1;min-width:0}
+.setup-x{flex:none;min-height:44px;margin-top:0;white-space:nowrap}
+.setup-sticky{position:sticky;top:0;z-index:2;margin:var(--sp-3) 0 0;padding:var(--sp-2) var(--sp-3);border-radius:12px;
+  background:var(--surface);border:1px solid var(--line);font-weight:600}
+.setup-main{max-width:40rem}
+.setup-kicker{margin:var(--sp-4) 0 var(--sp-2);font-size:var(--fs-sm);letter-spacing:.04em;color:var(--text-muted)}
+.setup-main h2{margin:0}
+.setup-counts,.setup-where,.setup-src{margin:var(--sp-2) 0 0;color:var(--text-muted);font-size:var(--fs-sm)}
+.setup-where{font-weight:600;color:var(--ink)}
 .setup-hint{margin:var(--sp-3) 0 0}
+.setup-fact{margin:var(--sp-3) 0 0;font-weight:600}
+.setup-effect{margin:var(--sp-1) 0 0;color:var(--text-muted)}
+.setup-act{margin:var(--sp-3) 0 0;padding:var(--sp-2) var(--sp-3);border-left:3px solid var(--magic-carpet, currentColor)}
 .setup-note{margin:var(--sp-3) 0 0;white-space:pre-wrap}
-.setup-actions,.setup-more{display:flex;flex-wrap:wrap;gap:var(--sp-2);margin-top:var(--sp-3)}
-.setup-actions .aj-btn,.setup-more .aj-btn{flex:1 1 9rem;min-height:56px;margin-top:0;white-space:normal}
+.setup-actions{display:flex;flex-wrap:wrap;gap:var(--sp-2);margin-top:var(--sp-3)}
+.setup-actions .aj-btn{flex:1 1 9rem;min-height:56px;margin-top:0;white-space:normal}
 .setup-group{font-size:var(--fs-md);margin:var(--sp-4) 0 var(--sp-1)}
-.setupcard .setup-list{list-style:none;padding:0;margin:0}
-.setupcard .setup-row{margin:0;display:flex;justify-content:space-between;gap:var(--sp-3);padding:var(--sp-2) 0;border-bottom:1px solid var(--border, rgba(127,127,127,.25))}
+.setup-main .setup-list{list-style:none;padding:0;margin:0}
+.setup-main .setup-row{margin:0;display:flex;justify-content:space-between;gap:var(--sp-3);padding:var(--sp-2) 0;border-bottom:1px solid var(--border, rgba(127,127,127,.25))}
+.setup-name{min-width:0}
+.setup-tag{display:inline-block;margin-left:var(--sp-2);padding:0 6px;border-radius:var(--r-pill, 999px);font-size:var(--fs-xs);
+  color:var(--text-muted);border:1px solid var(--line)}
 .setup-row .setup-st{color:var(--text-muted);font-size:var(--fs-sm);text-align:right;flex:0 0 auto;max-width:50%}
 .setup-row[data-state="verified"] .setup-st{color:var(--ok, inherit)}
 .setup-row[data-state="attention"] .setup-st{color:var(--danger, inherit)}
+/* P132: a page without the owner's input keeps this card as its header (same place and size: label, page capsule, corner
+   gestures, new-message flash); there is no input to expand. */
+.om[data-header="1"] .ommore{visibility:hidden;pointer-events:none}

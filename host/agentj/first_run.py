@@ -15,6 +15,12 @@ revision gets `changed` and re-reads (never last-writer-wins).
 Who decides what: the host's adapters decide `verified` (a probe that reads the real state back). The owner decides choices,
 only through the signed phone/desktop card (`setup_mark`, controls.py); the CLI and the Agent cannot mark anything ready, unused
 or skipped. "I'm done" from the owner only triggers a check. A failed item pauses its dependants only, never the main Agent.
+
+P131 (Leo, 10-11): the checklist never blocks the chat — the phone / desktop page shows it as its own screen behind a thin,
+closable banner; "close" (`--close`, the banner's ✕) stops it coming back by itself until it is reopened. Every row says where
+it is done (computer / phone / me / not in this version), and a failed row states the fact, what it affects and the next step
+(`explain`), naming WHICH browser was checked. Owner actions from the card: install Agent J's browser, use the browser already
+running here (adopt), open the sign-in page in Agent J's browser and bring it to the front — each a signed `setup_mark`.
 """
 from __future__ import annotations
 
@@ -42,7 +48,9 @@ GROUP_TITLE = {"core": ("基本连接", "Your connection"), "machine": ("电源�
 CHOICES = ("selected", "unused", "undecided")
 STATES = ("pending", "waiting_local", "verified", "attention", "deferred", "unsupported", "not_applicable")
 # What the card's buttons may ask for (setup_mark, signed). "later" = deferred (kept as unfinished), "unused" = "I won't use this".
-MARKS = ("selected", "unused", "later", "start_exit")
+MARKS = ("selected", "unused", "later", "start_exit",
+         "install_browser", "adopt_browser", "open_login")     # P131: owner actions (the host performs them after the mark)
+ACTIONS = MARKS[4:]
 
 # The 30 items (P92 INVENTORY.md / inventory.json). need: required | conditional | optional. where: auto | local | phone.
 # Titles and the one-line "what you do" are the card's text; the Agent explains more in chat.
@@ -164,7 +172,7 @@ def _blank(st) -> dict:
             "items": {i[0]: {"choice": "selected" if i[2] == "required" else "undecided", "state": "pending", "reason": None,
                              "checked_at": None, "expires_at": None, "attempt_id": None, "owner_decision_ref": None}
                       for i in ITEMS},
-            "exit": {"armed_at": None, "evidence": None}}
+            "exit": {"armed_at": None, "evidence": None}, "action": None, "browser_source": None}
 
 
 def read(st) -> dict | None:
@@ -191,6 +199,10 @@ def read(st) -> dict | None:
             row["state"] = "pending"
     if not isinstance(base.get("exit"), dict):
         base["exit"] = {"armed_at": None, "evidence": None}
+    if not isinstance(base.get("action"), dict):
+        base["action"] = None
+    if not isinstance(base.get("browser_source"), dict):
+        base["browser_source"] = None
     return base
 
 
@@ -383,6 +395,8 @@ def run_checks(st, rec: dict, only: list[str] | None = None, serve: dict | None 
         if exp and ev:                                # the round trip itself is only good for EXIT_FRESH
             exp = min(exp, int(ev.get("at", 0)) + EXIT_FRESH)
         row.update(state=state, reason=reason, checked_at=now, expires_at=exp)
+    if isinstance(ctx.get("browser_source"), dict):
+        rec["browser_source"] = {k: ctx["browser_source"][k] for k in ("kind", "port", "running") if k in ctx["browser_source"]}
     return rec
 
 
@@ -441,6 +455,98 @@ def counts(rec: dict) -> dict:
     return c
 
 
+# ------------------------------------------------------------------ P131: what failed, what it affects, what to do next
+SITE_ITEMS = ("gmail", "youtube", "bili", "douyin", "wechat")
+# reason → (zh, en) fact. {title} = this item, {browser} = which browser was checked, {port} = the adopted / found port.
+FACT = {
+    "browser_not_installed": ("没通过：Agent J 的专用浏览器还没安装。", "Not passed: Agent J's own browser is not installed yet."),
+    "existing_browser_found": ("你电脑上已经有一个浏览器在运行（端口 {port}）。可以直接用它——你在里面的登录都能用，不用再装一个。",
+                               "A browser is already running on your computer (port {port}). You can use it — your sign-ins there "
+                               "work and nothing else gets installed."),
+    "adopted_not_running": ("没通过：你登记的浏览器（端口 {port}）现在没在运行。请在电脑上把它打开，再点「检查」；Agent J 不会替你启动或关闭它。",
+                            "Not passed: the browser you registered (port {port}) is not running. Start it on your computer, "
+                            "then tap Check; Agent J never starts or stops it."),
+    "browser_not_running": ("没通过：Agent J 的专用浏览器装好了，但现在没在运行。", "Not passed: Agent J's browser is installed but not running."),
+    "browser_off": ("你关闭了 Agent J 的浏览器（browser.enabled=false）。要用网站时在聊天里说「打开浏览器」。",
+                    "You turned Agent J's browser off (browser.enabled=false). Say \"turn the browser on\" in chat when you need it."),
+    "needs_browser": ("还不能查：要先准备好浏览器（上面的「专用浏览器」一项）。", "Can't check yet: the browser (the item above) comes first."),
+    "site_not_added": ("还没确认：Agent J 还没在{browser}里查过 {title} 是否已登录。",
+                       "Not confirmed yet: Agent J has not checked {title} in {browser}."),
+    "site_signin_required": ("没通过：{browser}里还没登录 {title}{other}。", "Not passed: {title} is not signed in in {browser}{other}."),
+    "site_check_stale": ("还没确认：{title} 上次检查已超过 15 分钟。", "Not confirmed: the last {title} check is older than 15 minutes."),
+    "site_check_needed": ("还没确认：上次检查 {title} 没得出结果（网络或页面原因，不代表没登录）。",
+                          "Not confirmed: the last {title} check had no result (network or page — not the same as signed out)."),
+    "not_bound": ("还没完成：这台电脑还没加入你的 Agent J 账号。", "Not done: this computer has not joined your Agent J account."),
+    "no_agent": ("还没完成：还没选主 AI。", "Not done: no main AI chosen yet."),
+    "agent_not_running": ("没通过：主 AI 现在没在运行。", "Not passed: the main AI is not running."),
+    "not_paired": ("还没完成：还没配对。", "Not done: not paired yet."),
+    "no_passkey": ("还没完成：手机上还没设通行密钥（Face ID / 指纹）。", "Not done: no passkey (Face ID / fingerprint) on the phone yet."),
+    "sleep_enabled": ("没通过：这台电脑还会自动睡眠，睡着时手机就找不到它。", "Not passed: this computer still sleeps when idle; the phone can't reach it then."),
+    "not_active": ("没通过：后台服务装了但没在运行。", "Not passed: the background service is installed but not running."),
+    "serve_not_running": ("没通过：Agent J 现在没在运行。", "Not passed: Agent J is not running."),
+    "relay_down": ("没通过：电脑现在连不上中转。", "Not passed: the computer can't reach the relay right now."),
+    "no_secret_service": ("没通过：这台 Linux 没有系统钥匙串服务。", "Not passed: this Linux has no system keychain service."),
+    "local_touch_id": ("没通过：sudo 要求本机 Touch ID，远程操作会卡住。", "Not passed: sudo asks for local Touch ID, so remote work stalls."),
+}
+# reason → the next steps the card offers (besides "I won't use this" / "Later", which the card adds by itself)
+NEXT = {"browser_not_installed": ["install_browser"], "existing_browser_found": ["adopt_browser", "install_browser"],
+        "browser_not_running": ["install_browser"], "adopted_not_running": ["check"],
+        "site_not_added": ["check", "open_login"], "site_signin_required": ["open_login", "check"],
+        "site_check_stale": ["check"], "site_check_needed": ["check", "open_login"]}
+
+
+def _dependants(iid: str) -> list[str]:
+    return [i[0] for i in ITEMS if iid in i[4]]
+
+
+def explain(rec: dict, iid: str) -> dict | None:
+    """{fact, effect, next} for a row that is not done — plain facts, never "if this fails …"."""
+    row = rec["items"][iid]
+    if row["choice"] == "unused" or fresh(row) or row["state"] in ("not_applicable", "deferred"):
+        return None
+    src = rec.get("browser_source") or {}
+    port = src.get("port") or ""
+    _, group, _, _, _, zh, en, _, _ = BY_ID[iid]
+    adopted = src.get("kind") == "adopted"
+    fill = {"zh": {"title": zh, "port": port, "browser": f"你登记的浏览器（端口 {port}）" if adopted else "Agent J 的专用浏览器",
+                   "other": "" if adopted else "（你平时用的浏览器不算）"},
+            "en": {"title": en, "port": port, "browser": f"the browser you registered (port {port})" if adopted else "Agent J's own browser",
+                   "other": "" if adopted else " (your everyday browser does not count)"}}
+    reason = row["reason"] or ""
+    if reason in FACT:
+        fact = {lang: FACT[reason][k].format(**fill[lang]) for k, lang in enumerate(("zh", "en"))}
+    elif row["state"] == "waiting_local":
+        fact = {"zh": "等你在电脑上完成这一步。", "en": "Waiting for you to do this on the computer."}
+    elif row["state"] == "attention":
+        fact = {"zh": f"没通过（原因代码：{reason or '未知'}）。", "en": f"Not passed (reason code: {reason or 'unknown'})."}
+    elif row["state"] == "unsupported":
+        fact = {"zh": "这一版还不支持，先跳过。", "en": "Not supported in this version yet; skip it for now."}
+    elif row["state"] == "stale":
+        fact = {"zh": "上次检查已过期，需要再查一次。", "en": "The last check expired; check again."}
+    else:
+        return None
+    if group == "browser" and iid != "browser":
+        effect = {"zh": f"只影响要用 {zh} 的事，其他照常。", "en": f"Only tasks that use {en} wait; everything else works."}
+    elif iid == "browser":
+        effect = {"zh": "只影响要用网站的事（Gmail、YouTube 等），聊天和其他事照常。",
+                  "en": "Only website tasks (Gmail, YouTube…) wait; chat and everything else work."}
+    else:
+        deps = [BY_ID[d] for d in _dependants(iid)]
+        effect = ({"zh": "会暂停：" + "、".join(d[5] for d in deps) + "。其他照常。",
+                   "en": "On hold until then: " + ", ".join(d[6] for d in deps) + ". Everything else works."} if deps else
+                  {"zh": "不影响其他项。", "en": "Nothing else depends on it."})
+    nxt = list(NEXT.get(reason, []))
+    if reason == "existing_browser_found" and not port:
+        nxt = ["install_browser"]
+    return {"fact": fact, "effect": effect, "next": nxt}
+
+
+def progress(rec: dict) -> dict:
+    """「首次准备 3/12」: verified selected items out of the selected, applicable ones."""
+    sel = [r for r in rec["items"].values() if r["choice"] == "selected" and r["state"] != "not_applicable"]
+    return {"done": sum(1 for r in sel if fresh(r)), "total": len(sel)}
+
+
 def snapshot(rec: dict) -> dict:
     """What the card and `--json` show: no secrets, no paths, no device ids — titles, choices, states and reason words."""
     ready, block = remote_ready(rec)
@@ -451,13 +557,16 @@ def snapshot(rec: dict) -> dict:
         items.append({"id": iid, "group": group, "need": need, "where": where, "depends_on": deps,
                       "title": {"zh": zh, "en": en}, "hint": {"zh": hzh, "en": hen}, "choice": row["choice"],
                       "state": "verified" if fresh(row) else ("stale" if row["state"] == "verified" else row["state"]),
-                      "reason": row["reason"], "checked_at": row["checked_at"]})
+                      "reason": row["reason"], "checked_at": row["checked_at"], "explain": explain(rec, iid)})
     gi = GROUPS.index(BY_ID[cur][1]) + 1 if cur else len(GROUPS)
+    src = rec.get("browser_source")
     return {"revision": rec["revision"], "items": items, "current": cur, "counts": counts(rec), "group": gi,
             "groups": [{"id": g, "title": {"zh": GROUP_TITLE[g][0], "en": GROUP_TITLE[g][1]}} for g in GROUPS],
             "remote_ready": ready, "blocking": block, "exit_armed": bool(rec["exit"].get("armed_at")) and
             _now() - int(rec["exit"]["armed_at"]) <= EXIT_WINDOW, "updated_at": rec["updated_at"],
-            "closed": rec.get("closed", False)}
+            "closed": rec.get("closed", False), "progress": progress(rec),
+            "browser_source": {k: src[k] for k in ("kind", "port", "running") if k in src} if isinstance(src, dict) else None,
+            "action": rec.get("action")}
 
 
 def active(rec: dict | None) -> bool:
@@ -476,21 +585,39 @@ def status_(st) -> dict:
 
 
 def resume(st, serve: dict | None = None) -> dict:
-    """Explicit start / continue: create the journal if needed, probe everything, return the card snapshot."""
+    """Explicit start / continue: create the journal if needed, probe everything, return the card snapshot.
+    P131 追加2: a checklist the owner closed stays closed — only the owner reopens it (menu, or `--open` when they ask)."""
     with _lock(st):
         rec = read(st) or _blank(st)
         rec["resumed_at"] = _now()
-        rec["closed"] = False
         run_checks(st, rec, serve=serve)
         rec["revision"] += 1
         _save(st, rec)
     return {"ok": True, "result": "ready" if remote_ready(rec)[0] else "in_progress", **snapshot(rec)}
 
 
-def check(st, only: list[str] | None = None, serve: dict | None = None, phone_report: dict | None = None) -> dict:
-    """Live read-only probes; refreshes the result metadata (revision unchanged: no owner choice changed)."""
+def live_sites(st, items) -> None:
+    """P131: before probing a website row the owner asked to check, run the real read-only sign-in check for its sites in
+    whichever browser Agent J uses (own or adopted): tabs it opens and closes itself. Never logs in. Best effort."""
+    from . import browser, browser_sites as bs
+    want = [i for i in items if i in SITE_ITEMS]
+    if not want or not browser.runtime(st):
+        return
+    for iid in want:
+        with contextlib.suppress(Exception):     # noqa: BLE001 — a failed check is the row's attention, never a crash
+            bs.check(st, bs.ensure_item_sites(st, iid), reason="first_run")
+
+
+def check(st, only: list[str] | None = None, serve: dict | None = None, phone_report: dict | None = None,
+          live: bool = False) -> dict:
+    """Live read-only probes; refreshes the result metadata (revision unchanged: no owner choice changed). live (one row the
+    owner / CLI named): website rows run a real read-only sign-in check first."""
     if only and any(i not in BY_ID for i in only):
         raise SetupError("unknown_item")
+    if live and only:
+        rec0 = read(st)
+        if rec0 is not None:
+            live_sites(st, [i for i in only if rec0["items"][i]["choice"] != "unused"])
     with _lock(st):
         rec = read(st)
         if rec is None:
@@ -526,9 +653,57 @@ def mark(st, item: str, choice: str, revision: int, decision_ref: str, serve: di
             if item != "exit":
                 raise SetupError("invalid")
             rec["exit"] = {"armed_at": _now(), "evidence": None}
+        elif choice in ACTIONS:                    # the owner asked the host to do something; act() does it next
+            if (choice in ("install_browser", "adopt_browser") and item != "browser") or \
+                    (choice == "open_login" and item not in SITE_ITEMS):
+                raise SetupError("invalid")
+            row["choice"] = "selected"
+            if row["state"] == "deferred":
+                row["state"] = "pending"
+            rec["action"] = {"item": item, "choice": choice, "state": "running", "at": _now()}
         row["owner_decision_ref"] = decision_ref[:64]
-        if choice != "later":
+        if choice not in ("later",) + ACTIONS:
             run_checks(st, rec, [item], serve=serve)
+        rec["revision"] += 1
+        _save(st, rec)
+    return {"ok": True, **snapshot(rec)}
+
+
+def act(st, item: str, choice: str, decision_ref: str = "", serve: dict | None = None) -> dict:
+    """Carry out an owner action recorded by mark() (outside the journal lock: an install can take minutes), record the
+    outcome in the journal's `action`, re-probe the browser rows and return the new snapshot."""
+    from . import browser, browser_sites as bs
+    out: dict = {"item": item, "choice": choice, "at": _now()}
+    try:
+        if choice == "install_browser":
+            res = browser.setup(st, own=True)
+            out.update(state="done" if res.get("ok") else "failed", result=res.get("result") or res.get("reason"),
+                       reason=res.get("reason"))
+        elif choice == "adopt_browser":
+            res = browser.confirm_adopt(st, decision_ref)
+            out.update(state="done" if res.get("ok") else "failed", result=res.get("result"), reason=res.get("reason"),
+                       port=res.get("port"))
+            if res.get("ok"):
+                rec0 = read(st) or {"items": {}}
+                live_sites(st, [i for i in SITE_ITEMS if rec0["items"].get(i, {}).get("choice") == "selected"])
+        elif choice == "open_login":
+            res = bs.open_login(st, item)
+            raised = res.get("raised") or {}
+            out.update(state="done" if res.get("ok") else "failed", result=res.get("result"), reason=res.get("reason"),
+                       raised=bool(raised.get("ok")) if res.get("ok") else None, adopted=res.get("adopted"))
+        else:
+            raise SetupError("shape")
+    except SetupError:
+        raise
+    except Exception:  # noqa: BLE001 — an action failure is reported on the card, never a crash
+        out.update(state="failed", reason="error")
+    st.log("setup_action", item=item, choice=choice, state=out.get("state"), reason=out.get("reason"))
+    with _lock(st):
+        rec = read(st)
+        if rec is None:
+            raise SetupError("not_found")
+        rec["action"] = {k: v for k, v in out.items() if v is not None}
+        run_checks(st, rec, [i for i in _order() if BY_ID[i][1] == "browser"], serve=serve)
         rec["revision"] += 1
         _save(st, rec)
     return {"ok": True, **snapshot(rec)}
@@ -551,14 +726,32 @@ def phone_round_trip(st, device_kind: str, net: str | None = None, serve: dict |
     return snapshot(rec)
 
 
-def close(st) -> None:
-    with contextlib.suppress(SetupError, OSError):
-        with _lock(st):
-            rec = read(st)
-            if rec:
-                rec["closed"] = True
-                rec["revision"] += 1
-                _save(st, rec)
+def close(st) -> dict:
+    """The banner's ✕ / `--close`: the checklist stops coming back by itself (reconnects, resumes by the Agent's offer) until
+    the owner reopens it from the menu or says "continue first-run setup". Nothing else changes; works offline."""
+    with _lock(st):
+        rec = read(st)
+        if rec is None:
+            return {"ok": True, "result": "needs_setup", "closed": True}
+        if not rec.get("closed"):
+            rec["closed"] = True
+            rec["revision"] += 1
+            _save(st, rec)
+    return {"ok": True, "result": "closed", **snapshot(rec)}
+
+
+def reopen(st) -> dict:
+    """The menu's 「首次准备清单」: show it again (and let it come back on reconnect for the next 6 h)."""
+    with _lock(st):
+        rec = read(st)
+        if rec is None:
+            return {"ok": True, "result": "needs_setup", "next": "agentj setup checklist --resume --json"}
+        if rec.get("closed"):
+            rec["closed"] = False
+            rec["resumed_at"] = _now()
+            rec["revision"] += 1
+            _save(st, rec)
+    return {"ok": True, "result": "ready" if remote_ready(rec)[0] else "in_progress", **snapshot(rec)}
 
 
 def doctor_row(st) -> tuple[str, str, str]:
@@ -604,11 +797,17 @@ def execute(op: str, st, item: str | None = None) -> dict:
     if op == "resume":
         return resume(st, serve)
     if op == "check":
-        return check(st, [item] if item else None, serve)
+        return check(st, [item] if item else None, serve, live=bool(item))
+    if op == "close":
+        return close(st)
+    if op == "open":
+        return reopen(st)
     raise SetupError("shape")
 
 
 def _text(res: dict, lang: str = "zh") -> str:
+    if res.get("result") == "closed":
+        return "首次准备清单已收起：不会再自动弹出；主人可在手机菜单「首次准备清单」重开，或说「打开首次准备清单」（agentj setup checklist --open）。/ Closed; reopen from the menu."
     if res.get("result") == "needs_setup":
         return "还没开始首次准备。主人同意后运行：agentj setup checklist --resume / Not started; with the owner's go-ahead run: agentj setup checklist --resume"
     c = res["counts"]
@@ -629,7 +828,7 @@ def cmd(a) -> int:
     from . import elevate
     from .state import State
     st = State()
-    op = "resume" if a.resume else "check" if (a.check or a.item) else "status"
+    op = "resume" if a.resume else "close" if a.close else "open" if a.reopen else "check" if (a.check or a.item) else "status"
     res = elevate.client_request(st, {"t": "setup", "op": op, **({"item": a.item} if a.item else {})}, timeout=120)
     if res.get("result") == "unavailable":         # serve not running: the CLI reads / writes the journal itself
         try:
@@ -652,6 +851,10 @@ def add_parser(sub) -> None:
     g = c.add_mutually_exclusive_group()
     g.add_argument("--resume", action="store_true", help="开始或继续，并把卡片发到手机 / start or continue and show the card")
     g.add_argument("--check", action="store_true", help="实时只读复查 / live read-only re-check")
-    g.add_argument("--item", choices=[i[0] for i in ITEMS], help="只复查这一项 / re-check one item")
+    g.add_argument("--item", choices=[i[0] for i in ITEMS], help="只复查这一项（网站项会真去查一次登录）/ re-check one item")
+    g.add_argument("--open", dest="reopen", action="store_true",
+                   help="主人说要重开时：重新显示已收起的清单 / reopen a closed checklist (only when the owner asks)")
+    g.add_argument("--close", "--pause", dest="close", action="store_true",
+                   help="收起清单：手机/电脑网页立即收起，不再自动弹出；菜单里可重开 / close it now; reopen from the menu")
     c.add_argument("--json", action="store_true")
     c.set_defaults(fn=lambda a: sys.exit(cmd(a)))

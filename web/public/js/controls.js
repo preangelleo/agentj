@@ -46,7 +46,7 @@ const why = (code) => (WHY_CODES.includes(code) ? t('why.' + code) : String(code
 export const whyText = why;
 
 export function openPanel(v) {
-  if (!['chat', 'mem', 'act', 'tasks', 'friends', 'bots'].includes(v)) return;
+  if (!['chat', 'mem', 'act', 'tasks', 'friends', 'bots', 'setup'].includes(v)) return;
   panel = v;
   H.show(v === 'chat' ? 'chat' : v);
   if (v === 'bots') H.bots();

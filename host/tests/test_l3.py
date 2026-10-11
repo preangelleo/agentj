@@ -468,8 +468,9 @@ class WheelInstall(unittest.TestCase):
         cut_bytes=sum(i.compress_size+76+2*len(i.filename.encode())+2*len(i.extra)+len(i.comment) for i in cut_entries)
         self.assertEqual(len(cut_entries),2)
         self.assertLessEqual(cut_bytes,12288,'P117 cut-over allocation is bounded')
-        self.assertLess(pathlib.Path(self.wheel).stat().st_size-bot_bytes-lt_bytes-browser_bytes-p115_bytes-cut_bytes,2_260_000,'P118 approved bounded core ceiling')
-        self.assertLess(pathlib.Path(self.wheel).stat().st_size,2_260_000+65536+40960+49152+32768+12288,'combined bounded allocations')
+        # P135 (0.18.2 integration of P131–P134 + the shared-turn reply fix): an explicit 8 KiB core increment, flagged to Jarvis.
+        self.assertLess(pathlib.Path(self.wheel).stat().st_size-bot_bytes-lt_bytes-browser_bytes-p115_bytes-cut_bytes,2_260_000+8192,'P118 approved bounded core ceiling + P135 increment')
+        self.assertLess(pathlib.Path(self.wheel).stat().st_size,2_260_000+8192+65536+40960+49152+32768+12288,'combined bounded allocations')
         self.assertFalse([n for n in names_ if n.startswith("tests/") or "wiredump" in n or "fakeclaude" in n])
         ep = next(n for n in names_ if n.endswith("entry_points.txt"))
         eps = zipfile.ZipFile(self.wheel).read(ep).decode()

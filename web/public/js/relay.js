@@ -36,13 +36,32 @@ let input = null, mainEl = null, deck = null, tray = null, menu = null, sug = nu
 let wordsSrc = null;
 let historySync = true;   // a refreshed page must fetch the current head before claiming delivery is still pending
 let historyGeneration = 0;
+// P135: an open page the computer stays quiet about (idle / stopped / down for NO_ECHO_MS) says so and offers a refresh;
+// stopped says so at once. The timer redraws at the mark; leaving the page or a new state clears it.
+const NO_ECHO_MS = 30000, QUIET = ["idle", "stopped", "down"];
+const NO_ECHO_SRC = "\u0000pending:r.replyNoEcho";
+let quiet = null;        // {k: page|hostStatus, at, timer}
+function waitKey(s, syncing, quietMs){
+  if (syncing) return "st.resuming";
+  if (s?.compacting === true) return "r.replyCompacting";
+  if (s?.status === "working") return "r.replyWorking";
+  if (s?.hostStatus === "stopped") return "r.replyStopped";
+  if (QUIET.includes(s?.hostStatus) && quietMs >= NO_ECHO_MS) return "r.replyNoEcho";
+  return "r.replyPending";
+}
+function noteQuiet(k){
+  if (k === (quiet && quiet.k)) return;
+  if (quiet) clearTimeout(quiet.timer);
+  quiet = k ? {k, at: Date.now(), timer: setTimeout(() => { wordsSrc = null; showPage(); }, NO_ECHO_MS)} : null;
+}
 // pending: an open page whose reply has not come yet — no words at all (the thinking dots say it), never the
 // empty-history line 「已连上你的电脑…」 (relay never showed a page before its reply; Agent J shows the say's page at once)
 function renderWords(text, pending = false, label = ""){
   const tx = (text || "").trim();
   // P127: a compaction in flight (any mode: PreCompact on a shared Claude, system/status on our own) says so at once;
   // a page-specific label (queued behind a busy session) wins over the session-wide wait words
-  const wait = historySync ? "st.resuming" : cur?.compacting === true ? "r.replyCompacting" : cur?.status === "working" ? "r.replyWorking" : "r.replyPending";
+  noteQuiet(pending && !tx && !label && QUIET.includes(cur?.hostStatus) ? shownKey + "|" + cur.hostStatus : null);
+  const wait = waitKey(cur, historySync, quiet ? Date.now() - quiet.at : 0);
   const key = pending && !tx ? "\u0000pending:" + (label || wait) : tx;
   if (key === wordsSrc) return;
   wordsSrc = key;
@@ -638,10 +657,13 @@ function paintLogo(st, kind){
 }
 
 // ---- pages: every reply with the input it answered (relay ADR-033 / 036) -----------------
-// `hist` = the loaded turns of the host's history (§10.5); pageAt = index; `follow` = on the newest page. A NEW TURN
-// follows visible replies only while the reader is at the tail and not reading/scrolled away (P87).
+// `hist` = the loaded turns of the host's history (§10.5); pageAt = index; `follow` = on the newest page. P132 (Leo,
+// 2026-10-11): on the newest page a new page takes the owner to it — however far he scrolled the reply he was reading;
+// paging history (or the full-screen reader) is never interrupted, the page capsule flashes instead. `tailWait` = he is on
+// the newest page whose turn has no visible reply yet (a pending input stays behind the reply he reads, P87) — the intent
+// survives, so that reply, when it lands, still takes him there.
 const hist = {turns: [], count: 0, firstId: 0, lastId: 0, epoch: 0, route: true, busy: false, want: 0, older: false};
-let pageAt = -1, follow = true, pagesCache = null, shownKey = null, unreadReply = false;
+let pageAt = -1, follow = true, tailWait = false, pagesCache = null, shownKey = null, unreadReply = false;
 const noticeReads = new Set();
 const isSilent = text => typeof text === "string" && text.trim() === "\u3014\u4e0d\u56de\u7fa4\u3015";
 const tailSeen = {primed: false, id: 0, reply: "", virt: false};
@@ -661,7 +683,7 @@ function visiblePage(p){
   if (p.card && p.card.withdrawn === true) return false;
   return !isSilent(p.reply) && (visibleReply(p) || !!src?.text?.trim() || !!src?.att?.length || !!p.card);
 }
-function toNewest(){ follow = true; shownKey = null; stick = true; showPage(); }
+function toNewest(){ follow = true; tailWait = false; shownKey = null; stick = true; showPage(); }
 const SRC_KINDS = ["leo", "dev", "host", "agent", "sys", "task", "cmd"];
 function pages(){
   if (pagesCache) return pagesCache;
@@ -682,7 +704,7 @@ function noteHistory(s){
 }
 function resetHistory(ep){
   hist.count = 0; hist.epoch = ep; hist.turns = []; hist.lastId = 0; hist.firstId = 0; hist.want = 0;
-  pagesCache = null; follow = true; pageAt = -1; shownKey = null; tailSeen.id = 0; tailSeen.primed = false; unreadReply = false;
+  pagesCache = null; follow = true; tailWait = false; pageAt = -1; shownKey = null; tailSeen.id = 0; tailSeen.primed = false; unreadReply = false;
 }
 /** A turn pushed by the host (hist_turn): new, a reply part appended, or its end. */
 export function upsertTurn(p){
@@ -700,13 +722,20 @@ export function upsertTurn(p){
   showPage();
 }
 export function historyReset(ep){ resetHistory(ep); showPage(); }
-async function refreshNewest(){
+// P135: a head fetch that fails or times out retries after 5 s, doubling to 60 s, one at a time; success or a newer
+// generation (a reconnect, a fresh refresh) ends it — otherwise the page would say 「正在恢复…」 forever.
+const RETRY_MS = 5000, RETRY_MAX_MS = 60000;
+let historyRetry = null, historyDelay = 0;
+async function refreshNewest(retry = false){
+  if (historyRetry){ clearTimeout(historyRetry); historyRetry = null; }
+  if (!retry) historyDelay = 0;
   const generation = ++historyGeneration;
   historySync = true; wordsSrc = null; showPage();
   const before = new Map(hist.turns.map(x => [x.id, x]));
   try{
     const j = await C.api.history({limit: 50});
-    if (generation !== historyGeneration || !j || j.epoch < hist.epoch) return;
+    if (generation !== historyGeneration) return;
+    if (!j || j.epoch < hist.epoch) throw new Error("stale head");
     if (j.epoch > hist.epoch) resetHistory(j.epoch);
     const byId = new Map(hist.turns.map(x => [x.id, x]));
     // A live update received after this request is newer than its snapshot.
@@ -717,8 +746,13 @@ async function refreshNewest(){
     hist.lastId = hist.turns.at(-1)?.id || 0;
     hist.count = Math.max(j.count || 0, hist.turns.length);
     hist.firstId = j.first_id || hist.turns[0]?.id || 0;
-    pagesCache = null; historySync = false;
-  }catch(_){ /* keep syncing wording until a successful reconnect snapshot */ }
+    pagesCache = null; historySync = false; historyDelay = 0;
+  }catch(_){
+    if (generation === historyGeneration){   // keep the syncing wording and try again later
+      historyDelay = Math.min(historyDelay ? historyDelay * 2 : RETRY_MS, RETRY_MAX_MS);
+      historyRetry = setTimeout(() => { historyRetry = null; if (generation === historyGeneration) refreshNewest(true); }, historyDelay);
+    }
+  }
   finally{ if (generation === historyGeneration){ wordsSrc = null; showPage(); } }
 }
 async function syncHistory(want){
@@ -795,7 +829,9 @@ function sourceOf(src){
   if (src.k === "phone") return src.dev && src.dev === C.myDev() ? {kind: "leo", label: t('r.src.you')} : {kind: "dev", label: src.name || t('r.src.otherDevice')};
   if (src.k === "telegram") return {kind:"tg",label:"Telegram"};
   if (src.k === "host") return {kind: "host", label: t('r.src.host')};
-  if (src.k === "agent") return {kind: "agent", label: t('r.src.agent', {name: C.agentName()})};
+  // P132: a page the Agent started itself says why — a /loop or wake-up check, a background task, or just reporting in
+  if (src.k === "agent") return {kind: "agent", label: src.via === "loop" ? t('r.src.loop') : src.via === "task" ? t('r.src.bgTask')
+    : t(src.text?.trim() ? 'r.src.agent' : 'r.src.agentReport', {name: C.agentName()})};
   if (src.k === "task") return {kind: "task", label: src.name ? t('r.src.taskNamed', {name: src.name}) : t('r.src.task')};
   if (src.k === "cmd") return {kind: "cmd", label: t('r.src.cmd')};
   return {kind: "sys", label: src.local ? t('r.src.local') : t('r.src.sys')};
@@ -807,16 +843,18 @@ function showPage(){
   const oldId = shownKey === null ? null : shownKey.split("|")[0];
   const pinned = ps.findIndex(p => String(p.id === null ? "live" : p.id) === oldId);
   const tail = ps[ps.length - 1];
-  if (pinned >= 0 && pinned < ps.length - 1 && (!follow || !stick || (mainEl && !atBottom()) || rdAt || !visibleReply(tail))){
-    pageAt = pinned; follow = false;
+  if (pinned >= 0 && pinned < ps.length - 1){
+    const onNewest = (follow || tailWait) && !rdAt;
+    if (!onNewest){ pageAt = pinned; follow = false; tailWait = false; }               // paging history / reading full-screen
+    else if (!visibleReply(tail)){ pageAt = pinned; follow = false; tailWait = true; }  // its reply is not here yet
+    else { follow = true; tailWait = false; }                                           // P132: newest page → go to the new one
   }
-  if (arrived && follow && stick && !rdAt) follow = true;
   if (arrived && !follow) unreadReply = true;
   if (follow || pageAt < 0 || pageAt > ps.length - 1) {
     pageAt = ps.length - 1;
   }
   follow = pageAt === ps.length - 1;
-  if (follow) unreadReply = false;
+  if (follow){ unreadReply = false; tailWait = false; }
   el("pgLatest").setAttribute("aria-label", t(unreadReply ? "r.newReply" : "r.pg.latest"));
   el("pgLatest").title = t(unreadReply ? "r.newReply" : "r.pg.latestHint");
   el("pgCorner").dataset.unread = unreadReply ? "1" : "0";
@@ -842,7 +880,11 @@ function showPage(){
   const ot = el("omText");
   ot.textContent = tx || (src && src.att && src.att.length ? t('r.om.attOnly') : t('r.om.none'));
   ot.classList.toggle("none", !tx);
-  if (!tx && !src?.att?.length && !src?.quote) om.hidden = true;
+  // P132: no input of the owner's (the Agent reported in, a check or a background task) → the same card as a page header:
+  // same place and size, the source label, the page capsule, both corner gestures and the new-message flash.
+  const header = !tx && !src?.att?.length && !src?.quote;
+  om.dataset.header = header ? "1" : "0";
+  if (header) ot.textContent = t('r.om.noInput');
   const att = el("omAtt");
   att.replaceChildren();
   if (src && src.att && src.att.length){
@@ -932,13 +974,13 @@ async function goPage(delta){
     ps = pages(); at = pageAt - 1;
   }
   if (at < 0 || at > ps.length - 1) return false;
-  pageAt = at; follow = at === ps.length - 1; shownKey = null;
+  pageAt = at; follow = at === ps.length - 1; tailWait = false; shownKey = null;
   showPage();
   return true;
 }
 async function goEdge(newest){
   if (newest){ toNewest(); return; }
-  follow = false; pageAt = 0;
+  follow = false; tailWait = false; pageAt = 0;
   while (await loadOlder()) {}
   pageAt = 0; shownKey = null; showPage();
 }
@@ -1000,7 +1042,7 @@ async function jumpToTurn(id){
   if (hist.turns.some(p => p.id === id && isSilent(p.reply))){ openSilent(id); return; }
   const i = pages().findIndex(p => p.id === id);
   if (i < 0){ toast(t('r.quote.gone'), 2200); return; }
-  pageAt = i; follow = i === pages().length - 1; shownKey = null; showPage();
+  pageAt = i; follow = i === pages().length - 1; tailWait = false; shownKey = null; showPage();
 }
 
 // ---- select to quote (relay ADR-046; §10.6 excerpt) ---------------------------------------
@@ -2272,7 +2314,7 @@ async function showTurn(id){
   if (rdOpen()) closeReader();
   for (let n = 0; n < 40; n++){
     const ps = pages(), i = ps.findIndex(p => p.id === id);
-    if (i >= 0){ pageAt = i; follow = i === ps.length - 1; shownKey = null; showPage(); return true; }
+    if (i >= 0){ pageAt = i; follow = i === ps.length - 1; tailWait = false; shownKey = null; showPage(); return true; }
     if (id > hist.lastId){ syncHistory(id); await new Promise(r => setTimeout(r, 250)); continue; }
     if (!(await loadOlder())) break;
   }
@@ -2516,6 +2558,7 @@ export function init(ctx){
   try{ const ro = new ResizeObserver(() => paintMore()); ro.observe(mainEl); ro.observe(el("read")); }
   catch(_){ addEventListener("resize", paintMore); }
   el("words").addEventListener("click", copyCodeClick);
+  el("words").addEventListener("click", () => { if (wordsSrc === NO_ECHO_SRC) refreshNewest(); });   // P135: 「点此刷新」
   el("rdWords").addEventListener("click", copyCodeClick);
 
   // sheet

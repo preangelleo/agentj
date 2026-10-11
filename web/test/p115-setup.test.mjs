@@ -21,14 +21,16 @@ test('setup card renders host snapshot and signs owner choices', async () => {
   assert.equal(hex(m).length > 0, true);
   // the card only reads the snapshot and sends setup_get / signed setup_mark
   const code = SRC.split('\n').filter((l) => !/^\s*\/\//.test(l)).join('\n');
-  for (const bad of ['localStorage', 'indexedDB', 'sessionStorage', "from './store.js'", 'innerHTML', 'fetch(']) assert.ok(!code.includes(bad), bad);
+  // P131 追加2: localStorage holds only the owner's ✕ flag (pinned in p131-setup.test.mjs); never the snapshot
+  assert.ok(!/localStorage\.setItem\((?!HIDE_KEY)/.test(code), 'only the ✕ flag is stored');
+  for (const bad of ['indexedDB', 'sessionStorage', "from './store.js'", 'innerHTML', 'fetch(']) assert.ok(!code.includes(bad), bad);
   assert.match(SRC, /signedWrite\('setup_mark', \{ item, choice, rev: S\.revision \}/);
   assert.match(SRC, /t: 'setup_get', check: !!check/);
   assert.ok(APP.includes("case 'setup_card': setupcard.card(m); return;"));
   assert.ok(APP.includes('setupcard.clear();'), 'forgotten with the pairing');
   // required items have no "I won't use this"; "Later" is never the same as unused
   assert.match(SRC, /const optional = i\.need !== 'required';/);
-  assert.equal((SRC.match(/if \(optional\) unused\(\);/g) || []).length, 3);
+  assert.equal((SRC.match(/if \(optional\) unused\(\);/g) || []).length, 4);
   assert.match(SRC, /const unused = \(\) => row\.append\(btn\('', t\('setup\.unused'\)/);
   // every string the card shows is in both dictionaries with the same placeholders
   const zh = JSON.parse(readFileSync(new URL('../i18n/web.zh.json', import.meta.url), 'utf8'));
@@ -37,13 +39,16 @@ test('setup card renders host snapshot and signs owner choices', async () => {
   const ph = (s) => [...String(s).matchAll(/\{(\w+)\}/g)].map((m) => m[1]).sort().join(',');
   const keys = [...SRC.matchAll(/t\('(setup\.[\w.]+)'/g)].map((m) => m[1]).filter((k) => !k.endsWith('.'));
   for (const s of ['verified', 'pending', 'waiting_local', 'attention', 'deferred', 'unsupported', 'not_applicable', 'stale']) keys.push('setup.st.' + s);
-  for (const w of ['auto', 'local', 'phone']) keys.push('setup.where.' + w);
+  for (const w of ['auto', 'local', 'phone', 'unsupported']) keys.push('setup.where.' + w);
+  // P131: keys built at run time (owner actions and their outcome notes)
+  for (const a of ['install_browser', 'adopt_browser', 'open_login']) keys.push('setup.next.' + a, 'setup.act.running.' + a, 'setup.act.done.' + a);
+  for (const k of ['adopted', 'adoptedOff', 'own', 'offer', 'none']) keys.push('setup.src.' + k);
   assert.ok(keys.length > 30);
   for (const k of keys) { assert.equal(typeof get(zh, k), 'string', 'zh ' + k); assert.equal(typeof get(en, k), 'string', 'en ' + k); assert.equal(ph(get(zh, k)), ph(get(en, k)), k); }
   assert.ok(!/copy\(/.test(SRC), 'no inline strings');
   assert.match(SRC, /mark\(i\.id, 'later'\)/);
   // touch targets
-  assert.match(CSS, /\.setup-actions \.aj-btn,\.setup-more \.aj-btn\{[^}]*min-height:56px/);
+  assert.match(CSS, /\.setup-actions \.aj-btn\{[^}]*min-height:56px/);
   // the fixture is a real host snapshot: 30 items, six groups, titles in both languages, no ids of devices or paths
   assert.equal(FIX.items.length, 30);
   assert.deepEqual(FIX.groups.map((g) => g.id), ['core', 'machine', 'browser', 'google', 'privacy', 'optional']);

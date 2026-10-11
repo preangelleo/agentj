@@ -21,6 +21,7 @@ class Host:
     def desktop_input(self, text): self.inputs.append(text)
     def desktop_text(self, text): self.replies.append(text)
     def desktop_end(self): pass
+    def proactive_turn(self, via): self.inputs.append('<via:'+via+'>')   # P132
     def agent_text(self, text): self.phone_replies.append(text)
     def agent_notice(self, text): self.notices.append(text)
     def agent_status(self, status): pass
@@ -122,6 +123,16 @@ class ClaudeTransport(unittest.IsolatedAsyncioTestCase):
         self.transcript.write_text(''.join(json.dumps(r)+'\n' for r in records))
         a.read_transcript();a.read_transcript()
         self.assertEqual(self.host.inputs,['real keyboard input'])
+
+    async def test_p132_loop_and_task_records_mark_the_turn_not_the_desktop(self):
+        a=shared.SharedClaudeAgent(self.host,self.cfg);await a.attach()
+        records=[{'type':'user','uuid':'l','isMeta':True,'turnOrigin':'scheduled','scheduledTaskId':'s','message':{'content':'# Autonomous loop check'}},
+                 {'type':'user','uuid':'t','turnOrigin':'task_notification','origin':{'kind':'task-notification'},
+                  'message':{'content':'<task-notification> <task-id>b</task-id></task-notification>'}},
+                 {'type':'user','uuid':'h','turnOrigin':'human','origin':{'kind':'human'},'message':{'content':'real keyboard input'}}]
+        self.transcript.write_text(''.join(json.dumps(r)+'\n' for r in records))
+        a.read_transcript();a.read_transcript()
+        self.assertEqual(self.host.inputs,['<via:loop>','<via:task>','real keyboard input'])
 
     async def test_oversized_tool_result_does_not_stall_later_desktop_input(self):
         a=shared.SharedClaudeAgent(self.host,self.cfg);await a.attach()

@@ -289,6 +289,73 @@ def open_url(st: State, url) -> dict:
                     "no screen here (headless): use a QR sign-in from the phone, or a computer with a screen"}
 
 
+def dry_check(ws: str, sites, _cdp=None) -> dict:
+    """`adopt --dry-run --site …`: read-only sign-in check of template sites against a not-yet-adopted endpoint, in tabs it
+    opens and closes itself. Writes nothing (no sites.json, no audit)."""
+    tpl = templates()
+    out = {}
+    cdp = _cdp or CDP(ws)
+    try:
+        for s in sites or []:
+            rule = tpl.get(s) if isinstance(s, str) else None
+            if rule is None:
+                out[str(s)[:40]] = {"status": "unknown", "reason": "unknown_site"}
+                continue
+            got = ("unknown", "error")
+            for _ in range(RETRIES + 1):
+                try:
+                    got = probe(cdp, rule, rule["check_url"])
+                except CDPError:
+                    got = ("unknown", "error")
+                if got[0] in ("logged_in", "auth_required"):
+                    break
+            out[s] = {"status": got[0], "reason": got[1]}
+    finally:
+        if _cdp is None:
+            cdp.close()
+    return out
+
+
+def ensure_item_sites(st: State, item: str) -> list[str]:
+    """The owner chose this checklist item: make sure its template sites are in the daily check (never enables a task)."""
+    ids = list(ITEM_SITES.get(item, ()))
+    have = load(st)["sites"]
+    for sid in ids:
+        if sid not in have:
+            add(st, sid)
+    return ids
+
+
+def open_login(st: State, item: str, _cdp=None) -> dict:
+    """The owner's tap "open on the computer and sign in": the first not-signed-in site of the item opens in a FOREGROUND tab
+    of Agent J's browser (own or adopted) and the window is brought to the front where the desktop allows it. The tab stays
+    open for the owner; nothing is typed, clicked or read."""
+    ids = ensure_item_sites(st, item)
+    if not ids:
+        return {"ok": False, "reason": "shape"}
+    rt = browser.runtime(st) if _cdp is None else {"ws": "fake", "pid": None, "headless": False}
+    if not rt:
+        return {"ok": False, "reason": "not_running"}
+    if rt.get("headless"):
+        return {"ok": False, "reason": "headless"}
+    d = load(st)["sites"]
+    sid = next((s for s in ids if d.get(s, {}).get("status") != "logged_in"), ids[0])
+    url = templates()[sid]["login_url"]
+    cdp = _cdp or CDP(rt["ws"])
+    try:
+        target = cdp.new_tab(url, background=False)
+        with contextlib.suppress(CDPError):
+            session = cdp.attach(target)
+            cdp.call("Page.bringToFront", session=session, timeout=5)
+            cdp.detach(session)
+    finally:
+        if _cdp is None:
+            cdp.close()
+    raised = browser.raise_window(rt.get("pid"), None if rt.get("adopted") else browser.WINDOW_NAME)
+    st.log("browser_open_login", site=sid, raised=raised["ok"], method=raised["method"])
+    return {"ok": True, "result": "opened", "site": sid, "raised": raised, "adopted": bool(rt.get("adopted"))}
+
+
 # ---------------------------------------------------------------- P86 capability registry projection (§6)
 def _digest(rec: dict) -> str:
     t = templates().get(rec.get("template")) or {"custom": rec.get("check_url")}
@@ -341,16 +408,32 @@ def registry(st: State, *, now: float | None = None) -> list[dict]:
     return entries
 
 
+# first-run checklist item → the template sites it stands for
+ITEM_SITES = {"gmail": ("gmail",), "youtube": ("youtube-studio",), "bili": ("bilibili",), "douyin": ("douyin-creator",),
+              "wechat": ("mp-weixin", "channels-weixin")}
+
+
 def first_run_probe(st: State, item: str, ctx: dict) -> tuple[str, str | None]:
-    """Trusted first-run adapter: existing local evidence only; never download, log in or start a site check."""
+    """Trusted first-run adapter: existing local evidence only; never download, log in or start a site check.
+    P131: says WHICH browser is missing — an adopted one that is off, one already running here that could be adopted, or
+    Agent J's own not installed / not running; a site item waits (pending) while the browser itself is the problem."""
     if "browser_evidence" not in ctx:ctx["browser_evidence"] = {e["id"]: e for e in registry(st)}
-    entries = ctx["browser_evidence"]
+    if "browser_source" not in ctx:ctx["browser_source"] = browser.source(st)
+    entries, src = ctx["browser_evidence"], ctx["browser_source"]
     if entries["browser-runtime"]["status"] != "ready":
-        return "attention", "browser_off" if not browser.settings(st)["enabled"] else "browser_not_running"
+        if not browser.settings(st)["enabled"]:
+            return "attention", "browser_off"
+        if item != "browser":
+            return "pending", "needs_browser"
+        if src["kind"] == "adopted":
+            return "attention", "adopted_not_running"
+        if src["kind"] == "offer":
+            return "waiting_local", "existing_browser_found"
+        if src["kind"] == "none":
+            return "waiting_local", "browser_not_installed"
+        return "attention", "browser_not_running"
     if item == "browser":return "verified", None
-    mapping = {"gmail": ("gmail",), "youtube": ("youtube-studio",), "bili": ("bilibili",),
-               "douyin": ("douyin-creator",), "wechat": ("mp-weixin", "channels-weixin")}
-    ids = mapping.get(item)
+    ids = ITEM_SITES.get(item)
     if item == "sites":ids = tuple(s for s in load(st)["sites"] if s.startswith("custom-"))
     rows = [entries.get("browser-" + sid) for sid in ids or ()]
     if not rows or any(e is None for e in rows):return "waiting_local", "site_not_added"

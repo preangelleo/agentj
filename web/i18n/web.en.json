@@ -382,18 +382,22 @@
       "collapse": "Collapse the message (o)",
       "collapseShort": "Less ▴",
       "none": "No linked input",
-      "attOnly": "(attachments only)"
+      "attOnly": "(attachments only)",
+      "noInput": "No message from you on this page"
     },
     "src": {
       "you": "You",
       "otherDevice": "Another device",
-      "host": "Computer",
+      "host": "Typed on the computer",
       "agent": "{name} itself",
       "sys": "Notice",
       "local": "Handle it on the computer",
       "task": "Scheduled task",
       "taskNamed": "Scheduled task · {name}",
-      "cmd": "Command"
+      "cmd": "Command",
+      "loop": "Scheduled check",
+      "bgTask": "Background task finished",
+      "agentReport": "{name} reporting in"
     },
     "local": "This has to be handled on the computer",
     "pg": {
@@ -814,6 +818,8 @@
     },
     "replyPending": "Delivered, waiting for the computer…",
     "replyWorking": "Working…",
+    "replyNoEcho": "No answer from the computer · tap to refresh",
+    "replyStopped": "Stopped, not handled",
     "replyCompacting": "Compacting the context…",
     "newReply": "New message — jump to latest",
     "queue": {
@@ -1504,9 +1510,10 @@
     "titleReady": "You can leave the computer",
     "counts": "{v} verified · {u} unused · {t} to do ({a} by me) · {d} undecided",
     "where": {
-      "auto": "I handle it",
-      "local": "Needs you at the computer",
-      "phone": "Can be done on the phone"
+      "auto": "I do it",
+      "local": "On the computer",
+      "phone": "Tap on the phone",
+      "unsupported": "Not in this version"
     },
     "st": {
       "verified": "Verified",
@@ -1524,14 +1531,10 @@
     "unused": "I won't use this",
     "later": "Later",
     "continue": "Continue now",
-    "check": "I'm done, check",
+    "check": "Check",
     "exitStart": "Start the leaving check",
     "exitSent": "I've sent it, check",
-    "all": "All {n} items",
-    "hide": "Hide the list",
-    "close": "Close",
     "exitNote": "Now: let the computer screen turn off, switch the phone to mobile data, and send any chat message. A reply completes it.",
-    "attention": "This one did not pass; only what depends on it waits.",
     "nothing": "Nothing needs you right now.",
     "readyNote": "The selected, verified tasks continue from your phone. Power loss, a restart that needs unlocking, a new system permission or an account security check may still need you at the computer.",
     "notEnabled": "Not enabled: {list}",
@@ -1539,7 +1542,45 @@
     "offline": "Computer is disconnected",
     "unreachable": "Could not reach the computer; try again",
     "needsSetup": "First-run setup has not started: ask your Agent.",
-    "offlineAt": "Computer offline · last synced {at}"
+    "offlineAt": "Computer offline · last synced {at}",
+    "menu": "First-run checklist",
+    "page": "First-run checklist",
+    "closeList": "✕ Close checklist",
+    "sticky": "Do these steps on the computer; watch progress on the phone. Stuck? Just tell me in the chat.",
+    "banner": "First-run setup {d}/{n} · Continue",
+    "bannerReady": "First-run setup done · View",
+    "bannerClose": "Close first-run setup; it won't pop up again",
+    "src": {
+      "adopted": "Using: your own browser (port {port})",
+      "adoptedOff": "Using: your own browser (port {port}) · not running now",
+      "own": "Using: Agent J's own browser",
+      "offer": "Found a browser you already run (port {port}); not decided yet",
+      "none": "No browser for Agent J yet"
+    },
+    "next": {
+      "install_browser": "Install Agent J's browser on the computer",
+      "adopt_browser": "Use my existing browser",
+      "open_login": "Open it on the computer and sign in"
+    },
+    "act": {
+      "running": {
+        "install_browser": "Installing Agent J's browser on the computer (about 200 MB, a few minutes)…",
+        "adopt_browser": "Switching to your existing browser…",
+        "open_login": "Opening the sign-in page on the computer…",
+        "check": "Checking…"
+      },
+      "done": {
+        "install_browser": "Agent J's browser is installed and running on the computer.",
+        "adopt_browser": "Now using your existing browser (port {port}); your sign-ins there work.",
+        "open_login": "The sign-in page is open on the computer.",
+        "check": "Checked."
+      },
+      "failed": "That didn't work (reason: {why}). Tell me in the chat and I'll look into it.",
+      "opened": "The sign-in page is open on the computer and Agent J's browser is in front. Sign in in the Agent J browser that just came to the front, then tap Check.",
+      "openedNoRaise": "The sign-in page is open in Agent J's browser on the computer, but it could not be brought to the front: find the window titled \"Agent J browser\", sign in there, then tap Check.",
+      "openedAdopted": "The sign-in page is open in the browser you registered (port {port}) and it is in front. Sign in there, then tap Check.",
+      "openedAdoptedNoRaise": "The sign-in page is open in the browser you registered (port {port}), but it could not be brought to the front: switch to that browser on the computer, sign in, then tap Check."
+    }
   },
   "r.tg.idle": "Forward to myself",
   "r.tg.sending": "Forwarding to you…",

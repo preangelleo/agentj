@@ -108,6 +108,8 @@ class SharedClaudeAgent(Agent):
         self.compacted_at = None
         self.phone_turn = False
         self.phone_seen = self.phone_reply_seen = False
+        self.phone_claim = False       # P135: a phone message taken inside a native turn already running → its next Stop
+        self.native_turn = False       # P135: the transcript shows a native turn in progress (no UserPromptSubmit came)
         self.pending_text = ""
         self.pending_source = None
         self.untrusted_state = None    # B1: None | "pending" (group envelope sent) | "running" (native turn seen)
@@ -177,8 +179,11 @@ class SharedClaudeAgent(Agent):
         emit = getattr(self.host, "emit", None)
         if emit:
             emit("shared_stop", agent="claude", phone=self.phone_turn, phone_input=self.phone_turn and self.phone_seen, source="committed-Stop")
-        if self.phone_turn and self.phone_seen:
+        self.native_turn = False
+        if self.phone_turn and (self.phone_seen or self.phone_claim):
             self.phone_reply_seen = True
+            if self.phone_claim:
+                self.host.turn_queued_note(False)   # the reply replaces 「电脑正忙，消息已排队」, never follows it
             self.host.agent_text(public_text(reply))
             self.done.set()
         else:
@@ -238,6 +243,8 @@ class SharedClaudeAgent(Agent):
         if name == "PostCompact" and self.control_name == "compact":
             self.meter(ctx=None, source_at=None)
             self.control_ack.set()
+        elif (name == "PostCompact" or (name == "SessionStart" and event.get("source") == "compact")) and self.control_name != "compact":
+            self.host.desktop_cmd_done("compact")
         if name == "UserPromptSubmit" and not event.get("agent_id"):
             if provenance.names_untrusted(str(event.get("prompt", ""))):
                 self._mark_untrusted("running")
@@ -487,6 +494,7 @@ class SharedClaudeAgent(Agent):
         self.control_name = name
         try:
             text = '/' + name + (' ' + arg if arg else '')
+            self._control_sent = (text, time.monotonic())
             if self.native and self.native.pid == self.session['pid'] and self.master is not None:
                 os.write(self.master, text.encode())
                 await asyncio.sleep(.1)
@@ -505,9 +513,17 @@ class SharedClaudeAgent(Agent):
             self.read_statusline()
             if name == 'clear' and not self.clear_history_ok:
                 return Result(pick(getattr(self.host, "lang", "zh"), "桌面已清空，但手机历史归档失败，旧页仍保留；请检查本机磁盘。", "Desktop cleared, but phone history archive failed; check local disk."), "error")
-            return Result(pick(getattr(self.host, "lang", "zh"), "已清空，旧历史已归档；水位等待新会话实际读数。", "Cleared; history archived, awaiting the new session measurement.") if name == 'clear' else pick(getattr(self.host, "lang", "zh"), "已压缩；水位等待压缩后实际读数。", "Compacted; awaiting the post-compaction measurement."), sep=name == 'clear')
+            return Result("", sep=name == 'clear')   # P133: cmd_card adds 「✓ …」
         finally:
             self.control_name = None
+
+    def _control_echo(self, text) -> bool:
+        # P133: the transcript's echo of our native slash is no desktop turn
+        import time
+        sent = getattr(self, "_control_sent", None)
+        if sent and time.monotonic() - sent[1] < CONTROL_WAIT and text.strip() == sent[0]:
+            self._control_sent = None
+            return True
 
     # ------------------------------------------------ P116 (B5): model / effort through the native picker, with receipts
     EFFORTS = CLAUDE_EFFORTS
@@ -764,10 +780,19 @@ class SharedClaudeAgent(Agent):
                 blocks = msg.get("content", "")
                 text = blocks if isinstance(blocks, str) else "\n".join(
                     b.get("text", "") for b in blocks if isinstance(b, dict) and b.get("type") == "text")
+                if role == "assistant":
+                    self.native_turn = True       # P135: a native turn is producing; its Stop clears this
                 if not text or role not in ("user", "assistant"):
                     continue
                 if role == "user":
-                    from .transcript_input import human_input
+                    from .transcript_input import human_input, proactive_origin
+                    via = proactive_origin(item, text)
+                    if via:
+                        self.native_turn = True
+                        mark = getattr(self.host, "proactive_turn", None)   # P132: the next agent-only page says where it came from
+                        if mark:
+                            mark(via)
+                        continue
                     if not human_input(item, blocks, text):
                         continue
                     if self.untrusted_state == "pending" and provenance.names_untrusted(text):
@@ -776,6 +801,8 @@ class SharedClaudeAgent(Agent):
                         if self.phone_turn and self.pending_text in text:
                             self.phone_seen = True
                             self.input_seen.set()
+                        continue
+                    if self._control_echo(text):
                         continue
                     self.host.desktop_input(public_text(text))
                 # Assistant prose is emitted only by the committed Stop payload.
@@ -800,7 +827,7 @@ class SharedClaudeAgent(Agent):
         self.done.clear()
         self.input_seen.clear()
         self.phone_turn = True
-        self.phone_seen = self.phone_reply_seen = False
+        self.phone_seen = self.phone_reply_seen = self.phone_claim = False
         source = getattr(getattr(self, "cur_send", None), "source", None)
         self.pending_source = source
         self.pending_text = provenance.body(text, source)   # what the transcript / prompt will show
@@ -814,16 +841,70 @@ class SharedClaudeAgent(Agent):
                 # Socket write is not native acceptance. Name the concrete reason (P127): managed policy, project /
                 # local / user setting, owner off, a session started before the change, or simply busy.
                 from . import claude_inbound
-                notice = claude_inbound.turn_notice(self.cfg.get("dir"), self.cfg.get("language", "zh")) + " " + claude_inbound.diagnostic(self.host.st, self.cfg.get("language", "zh"), self.cfg)
-                self.fail_notice(notice)
-                return
+                if not await self._wait_busy_input(claude_inbound):
+                    notice = claude_inbound.turn_notice(self.cfg.get("dir"), self.cfg.get("language", "zh")) + " " + claude_inbound.diagnostic(self.host.st, self.cfg.get("language", "zh"), self.cfg)
+                    self.fail_notice(notice)
+                    return
             # Only a committed native Stop belonging to this phone input ends
             # the turn; registry idle and transcript flush timing never do.
             await asyncio.wait_for(self.done.wait(), 300)
         except asyncio.TimeoutError:
             self.fail_notice(pick(getattr(self.host, "lang", "zh"), "共享 Claude 未确认回合完成，请在电脑核实。", "Turn completion unconfirmed; check the desktop."))
         finally:
-            self.phone_turn = False
+            self.phone_turn = self.phone_claim = False
+
+    def native_busy(self) -> bool:
+        return (self.state.status == "working" or self.native_turn or self.state.snapshot().get("compacting") is True
+                or self.status == "compacting")
+
+    async def _wait_busy_input(self, claude_inbound) -> bool:
+        # P133: busy, not held → 「电脑正忙，消息已排队」 and keep waiting.
+        # P135: a message injected into a native turn already running (a background-task notification, a desktop turn)
+        # gets no UserPromptSubmit: the next committed Stop — whichever turn it ends — answers this page (phone_claim).
+        # More phone messages meanwhile go in too; the reply lands on the last page, earlier ones say 「已合并到下一条回复」.
+        if not self.native_busy() or claude_inbound.hold_reason(self.cfg.get("dir")):
+            return False
+        self.phone_claim = True
+        self.host.turn_queued_note(True)
+        deadline = asyncio.get_running_loop().time() + DESKTOP_IDLE_WAIT
+        try:
+            while not (self.input_seen.is_set() or self.done.is_set()):
+                left = deadline - asyncio.get_running_loop().time()
+                if left <= 0:
+                    return False
+                await self._merge_queued()
+                waits = [asyncio.ensure_future(self.input_seen.wait()), asyncio.ensure_future(self.done.wait())]
+                try:
+                    await asyncio.wait(waits, timeout=min(left, .25), return_when=asyncio.FIRST_COMPLETED)
+                finally:
+                    for w in waits:
+                        w.cancel()
+            return True
+        finally:
+            self.host.turn_queued_note(False)
+
+    async def _merge_queued(self) -> None:
+        """P135: the next queued phone message joins the native turn this page waits on."""
+        q = getattr(self.q, "_queue", None)
+        nxt = q[0] if q else None
+        if getattr(nxt, "sid", None) is None or self.halting or not self.session:
+            return
+        self.q.get_nowait()
+        if not await nxt.wait_ready() or nxt.state == "cancelled":
+            return
+        merged = getattr(self.host, "turn_merged", None)
+        if merged:
+            merged()
+        self.cur_send = nxt
+        self.host.agent_turn_start(nxt.text, nxt)
+        from . import compactprep
+        text = compactprep.decorate(self, nxt)
+        source = getattr(nxt, "source", None)
+        self.pending_source, self.pending_text = source, provenance.body(text, source)
+        if not provenance.is_owner(source):
+            self._mark_untrusted("pending")
+        self.host.turn_queued_note(True)
+        await self.deliver(lambda: asyncio.to_thread(claude_send, self.session, text, source))
 
     async def halt(self, clear_queue=True):
         self.halting = True

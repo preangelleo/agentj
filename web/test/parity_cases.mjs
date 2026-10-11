@@ -303,12 +303,10 @@ export async function runCases({ B, web, fake, only }) {
     await wait(`!document.documentElement.dataset.fz`);
   });
   await C('copy-reply', async () => {
-    const reading=await text('#words');
+    // P132 (Leo, 2026-10-11) replaces P87's "an unread long reply keeps focus": on the newest page a new page is shown,
+    // however far the reply before it was read; only paging history keeps the page (follow-newest / p132.mjs).
     await fake.addTurn({ k: 'agent' }, '复制我');
-    await wait(`document.getElementById('pgCorner').dataset.unread === '1'`);
-    ok((await text('#words')) === reading, 'an unread long reply keeps focus before explicit selection');
-    await click('#pgLatest');
-    await wait(`document.getElementById('words').textContent === '复制我'`);
+    await wait(`document.getElementById('words').textContent === '复制我' && document.getElementById('pgCorner').dataset.unread === '0'`);
     await click('#copyReply');
     await waitToast(T('r.copy.reply'));
     ok((await clipboard()) === '复制我', 'the stored reply is on the clipboard');

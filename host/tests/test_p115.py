@@ -332,8 +332,9 @@ class Checklist(unittest.TestCase):
     def test_adapter_registry_and_unsupported_rows(self):
         res = first_run.resume(self.st)
         rows = {i["id"]: i for i in res["items"]}
-        self.assertEqual(rows["gmail"]["state"], "attention")
-        self.assertEqual(rows["gmail"]["reason"], "browser_not_running")
+        self.assertEqual((rows["browser"]["state"], rows["browser"]["reason"]), ("waiting_local", "browser_not_installed"))
+        self.assertEqual((rows["gmail"]["state"], rows["gmail"]["reason"]), ("pending", "needs_browser"),
+                         "P131: a site row waits on the browser row instead of failing on its own")
         self.assertEqual(rows["google"]["state"], "unsupported")
         self.assertEqual(rows["google"]["reason"], "api_in_0.18.1")
         first_run.register_adapter("gmail", lambda st, ctx: ("verified", None))

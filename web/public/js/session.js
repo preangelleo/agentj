@@ -50,6 +50,10 @@ let reconnectTimer = null;
 // this page busy decrypting — any frame heard during the wait counts as alive, and only HEARTBEAT_MISSES misses in a row
 // with nothing heard close the session (the probe after the page comes back to the foreground still fails fast).
 const BACKOFF_FIRST = 250;
+// P133: the ladder stops at 5 s (a grey page waiting 30 s for its next try reads as broken); coming back to the foreground
+// or the network coming back retries at once. A resume that opened but did not get to ready within RESUME_STALL_MS is
+// abandoned and retried (the relay or the computer dropped it silently) — never a pairing or a computer that is down.
+const BACKOFF_MAX = 5000, RESUME_STALL_MS = 15000;
 let backoff = BACKOFF_FIRST;
 let heartbeatTimer = null, heartbeatRun = 0, heartbeatMisses = 0;
 const HEARTBEAT_MS = 20000, HEARTBEAT_TIMEOUT_MS = 10000, HEARTBEAT_RETRY_MS = 3000, HEARTBEAT_MISSES = 2;
@@ -94,6 +98,7 @@ export function openSession(mode, ctx) {
     closedByUs: false, frag: new Defrag(), pacer: new Pacer(), removed: null, rxAt: 0, foreground: globalThis.document?.visibilityState !== 'hidden' };
   if (mode === 'pair') { refusals = 0; removalProbe = false; }
   sess = s;
+  if (mode === 'resume') armStall(s);
   H.setStatus('connecting', 'st.connecting');
   ws.onopen = () => { if (sess === s && s.phase === 'wait-host') H.setStatus('waiting-host', 'st.waitingHost'); };
   ws.onmessage = (ev) => { s.rxAt = performance.now(); s.chain = s.chain.then(() => onFrame(s, ev.data)).catch((e) => protocolFail(s, e)); };
@@ -302,10 +307,21 @@ function protocolFail(s, e) {
   H.onProtocolFail(wasPair, e);
 }
 
+function armStall(s) {
+  setTimeout(() => {
+    if (s !== sess || s.phase === 'ready') return;
+    if (s.phase === 'wait-host' && s.ws.readyState === WebSocket.OPEN) return armStall(s);   // the relay says the computer is down
+    lastDrop = lastDrop ? { ...lastDrop, why: 'stall' } : { why: 'stall', code: null, at: Date.now() };   // keeps the first close code
+    closeSession();
+    H.onHostDown();
+    scheduleReconnect();
+  }, RESUME_STALL_MS);
+}
+
 export function scheduleReconnect() {
   clearTimeout(reconnectTimer);
   const wait = backoff;
-  backoff = Math.min(backoff * 2, 30000);
+  backoff = Math.min(backoff * 2, BACKOFF_MAX);
   H.setStatus('connecting', 'st.retryIn', { n: Math.max(1, Math.round(wait / 1000)) });
   reconnectTimer = setTimeout(() => { reconnectTimer = null; H.resume(); }, wait);
 }
@@ -316,7 +332,7 @@ function armHeartbeat(ms = HEARTBEAT_MS) {
 /** Detect an open socket whose peer stopped answering; no message is declared received by this probe.
  *  fast = the probe right after the page comes back to the foreground (a socket that slept is often half-open): one miss
  *  with nothing heard ends it. Otherwise a miss is retried after HEARTBEAT_RETRY_MS, and anything heard resets the count. */
-export async function checkConnection(fast = false) {
+export async function checkConnection(fast = false, why = 'hb') {
   const s = sess, g = gen(), run = ++heartbeatRun;
   if (!s || !g || !peer.heartbeat || document.visibilityState !== 'visible') return;
   const askedAt = performance.now();
@@ -330,13 +346,13 @@ export async function checkConnection(fast = false) {
     return;
   }
   heartbeatMisses = 0;
-  dropped('hb');
+  dropped(fast ? why : 'hb');
   closeSession();
   H.onHostDown();
   scheduleReconnect();
 }
-export function reconnectNow() {
-  if (isReady()) checkConnection(true);
+export function reconnectNow(why = 'visibility') {
+  if (isReady()) checkConnection(true, why);
   if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; backoff = BACKOFF_FIRST; H.resume(); }
 }
 
@@ -398,3 +414,6 @@ globalThis.document?.addEventListener?.('visibilitychange', () => {
   if (document.visibilityState === 'hidden' && sess) sess.foreground = false;
   if (document.visibilityState === 'visible') { refusals = 0; reconnectNow(); }
 });
+// P133: the network coming back retries at once; going away is the reason the next resume reports.
+globalThis.addEventListener?.('online', () => reconnectNow('offline'));
+globalThis.addEventListener?.('offline', () => dropped('offline'));

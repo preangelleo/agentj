@@ -61,6 +61,7 @@
         <button type="button" id="open-friends" class="ajmenu__item" data-i18n="nav.friends">好友</button>
         <button type="button" id="open-models" class="ajmenu__item" data-i18n="models.title">模型与 Key</button>
         <button type="button" id="setup-faceid" class="ajmenu__item" data-i18n="phoneEnv.setup" hidden>设置 Face ID</button>
+        <button type="button" id="open-setup" class="ajmenu__item" data-i18n="setup.menu">首次准备清单</button>
         <button type="button" id="open-mem" class="ajmenu__item" data-i18n="nav.mem">记忆</button>
         <button type="button" id="open-act" class="ajmenu__item" data-i18n="nav.act">记录</button>
         <button type="button" id="open-tasks" class="ajmenu__item" data-i18n="nav.tasks">定时任务</button>
@@ -86,6 +87,11 @@
   <!-- ================================================================ chat (relay's page) -->
   <div class="chatv" id="chat-view">
     <p id="shared-status" class="shared-status" role="status" hidden></p>
+    <!-- P131: the first-run checklist is its own page; the chat only carries this thin, closable banner (never covers the input) -->
+    <div id="setup-banner" class="setup-banner" role="status" hidden>
+      <button type="button" id="setup-banner-open" class="setup-banner__open"></button>
+      <button type="button" id="setup-banner-x" class="setup-banner__x" data-i18n-attr="aria-label=setup.bannerClose,title=setup.bannerClose" aria-label="收起首次准备，不再自动弹出" title="收起首次准备，不再自动弹出">✕</button>
+    </div>
     <!-- The rule under the header is the weekly quota; the one above the composer is the 5-hour window. -->
     <div class="meter" id="mWeek" role="img" data-known="0" data-i18n-attr="aria-label=r.meter.week" aria-label="本周额度"><i></i><span class="lab">weekly</span></div>
 
@@ -333,6 +339,14 @@
       <p id="sas" class="sas" data-i18n-attr="aria-label=sas.aria" aria-label="6 位码">------</p>
       <p class="lead center" data-i18n="sas.lead">在电脑上输入这 6 位数字，回车，再输入你的批准口令。</p>
       <p class="small center" data-i18n="sas.note">这串数字只显示在手机上。电脑批准后，这里会自动进入对话。</p>
+    </section>
+
+    <!-- P131: the first-run checklist page (js/setup.js) — opened from the chat banner or the menu, never by itself -->
+    <section id="setup-view" class="aj-flow view sub" hidden>
+      <div class="sub-head"><button type="button" class="aj-btn back" data-back data-i18n-attr="aria-label=nav.back" aria-label="返回对话"><span class="back__arrow" aria-hidden="true">←</span></button><h1 data-i18n="setup.page">首次准备清单</h1>
+        <button type="button" id="setup-close" class="aj-btn setup-x" data-i18n="setup.closeList">✕ 收起清单</button></div>
+      <p id="setup-sticky" class="setup-sticky" data-i18n="setup.sticky">这些步骤在电脑上做；手机上看进度。卡住了直接在聊天里告诉我。</p>
+      <div id="setup-main" class="setup-main" aria-live="polite"></div>
     </section>
 
     <section id="mem-view" class="aj-flow view sub" hidden>

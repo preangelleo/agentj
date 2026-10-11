@@ -13,6 +13,14 @@
   and read the profile — the profile isolates data, it is not a sandbox. The endpoint never leaves this computer: no
   tunnel, no forwarding, never on the relay. Cookies, storage, passwords and auth headers are never read into logs or chat.
 - `enabled=false` stops the service and the checks; the profile stays (deleting it is the owner's explicit delete).
+- P131 adopt: an owner who already runs a CDP browser on this computer (e.g. a long-lived Chromium on 127.0.0.1:9222 with
+  every site signed in) can register it instead — `agentj browser adopt --endpoint http://127.0.0.1:<port>` only proposes it
+  (loopback only, verified to listen on loopback only); the owner confirms once on the paired phone's checklist (signed
+  `setup_mark adopt_browser`). Adopted, it is Agent J's browser for status / check / sign-in, but Agent J never installs a
+  second one, never starts / kills / restarts it, never touches its profile or reads its cookies: it only opens and closes its
+  own tabs. Not answering = "the browser you registered is not running". `setup` that finds such a browser asks first.
+- P131 recognisable: Agent J's own window carries the title "Agent J 专用浏览器", its own start page and a brand-colour
+  theme, and the checklist's "open and sign in" brings it to the front (Hyprland / X11 / macOS; elsewhere it says so).
 """
 from __future__ import annotations
 
@@ -446,7 +454,14 @@ def loopback_only(addrs: set[str]) -> bool:
 
 def runtime(st: State) -> dict | None:
     """runtime.json, verified: the recorded pid is alive, the same process (start time), the endpoint answers and listens on
-    loopback only. None = not running (or not ours)."""
+    loopback only. None = not running (or not ours). With an adopted browser (P131): that endpoint, re-verified each time."""
+    ad = adopted(st)
+    if ad:
+        info = _probe_adopted(ad["port"])
+        if not info:
+            return None
+        return {"pid": info.get("pid"), "port": ad["port"], "ws": info["ws"], "product": info["product"], "headless": False,
+                "source": "adopted", "adopted": True, "version": "adopted", "started_at": ad.get("adopted_at")}
     rec = _read_json(runtime_path(st))
     if not isinstance(rec, dict) or type(rec.get("pid")) is not int or type(rec.get("port")) is not int:
         return None
@@ -463,15 +478,56 @@ def runtime(st: State) -> dict | None:
     return {**rec, "ws": ws, "product": info.get("Browser", "")}
 
 
-def _launch_args(exe: str, profile: pathlib.Path, headless: bool) -> list[str]:
+WINDOW_NAME = "Agent J 专用浏览器 · Agent J browser"
+WINDOW_CLASS = "AgentJBrowser"
+BRAND_ARGB = 0xFF827DBD                     # brand "magic carpet" (#827dbd): the window's theme colour
+START_HTML = """<!doctype html><html lang="zh"><head><meta charset="utf-8"><title>Agent J 专用浏览器 · Agent J browser</title>
+<style>html{background:#827dbd;color:#fff;font:18px/1.5 system-ui,sans-serif}main{max-width:40em;margin:12vh auto;padding:0 1em}
+h1{font-size:2em;margin:0 0 .4em}p{margin:.4em 0}</style></head><body><main><h1>Agent J 专用浏览器</h1>
+<p>这是 Agent J 自己的浏览器，和你平时用的浏览器分开。Agent J 要用的网站（Gmail、YouTube…）请在这个窗口里登录。</p>
+<h1>Agent J browser</h1><p>This is Agent J's own browser, separate from your everyday one. Sign in to the sites Agent J needs
+(Gmail, YouTube…) in this window.</p></main></body></html>
+"""
+
+
+def start_page(st: State) -> str:
+    """A local page that says, in both languages, which browser this is (its tab title is the window's identity)."""
+    ensure_dir(st)
+    f = bdir(st) / "start.html"
+    if not f.exists() or f.read_text() != START_HTML:
+        st.write_private(f, START_HTML.encode())
+    return f.as_uri()
+
+
+def brand_profile(profile: pathlib.Path) -> None:
+    """Agent J's OWN profile only (never an adopted one): the brand theme colour, before the browser starts. Best effort."""
+    pref = profile / "Default" / "Preferences"
+    try:
+        data = json.loads(pref.read_text()) if pref.exists() else {}
+        if not isinstance(data, dict):
+            return
+        theme = data.setdefault("browser", {}).setdefault("theme", {})
+        if theme.get("user_color") == BRAND_ARGB - (1 << 32):
+            return
+        theme["user_color"] = BRAND_ARGB - (1 << 32)          # Chrome stores the ARGB as a signed 32-bit int
+        theme.setdefault("color_variant", 1)
+        pref.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+        tmp = pref.with_name("Preferences.agentj-tmp")
+        tmp.write_text(json.dumps(data))
+        os.replace(tmp, pref)
+    except (OSError, ValueError):
+        pass
+
+
+def _launch_args(exe: str, profile: pathlib.Path, headless: bool, start: str = "about:blank") -> list[str]:
     args = [exe, f"--user-data-dir={profile}", "--remote-debugging-port=0", f"--remote-debugging-address={LOOPBACK}",
             "--no-first-run", "--no-default-browser-check", "--disable-background-networking-for-update-checks",
-            f"--window-size={HEADLESS_SIZE}"]
+            f"--window-size={HEADLESS_SIZE}", f"--window-name={WINDOW_NAME}", f"--class={WINDOW_CLASS}"]
     if headless:
         args += ["--headless=new"]
     if system() in ("linux", "wsl2") and os.environ.get("WAYLAND_DISPLAY") and not os.environ.get("DISPLAY"):
         args += ["--ozone-platform=wayland"]
-    return args + ["about:blank"]
+    return args + [start]
 
 
 def _wait_port(profile: pathlib.Path, proc: subprocess.Popen, wait: float) -> tuple[int, str]:
@@ -500,9 +556,10 @@ def start_browser(st: State, headless: bool | None = None) -> tuple[subprocess.P
     if headless is None:
         headless = not display_env()
     exe, source = choose_executable(st, have)
+    brand_profile(prof)
     log = open(bdir(st) / "browser.log", "ab", buffering=0)
     os.chmod(bdir(st) / "browser.log", 0o600)
-    proc = subprocess.Popen(_launch_args(exe, prof, headless), stdin=subprocess.DEVNULL, stdout=log, stderr=log,
+    proc = subprocess.Popen(_launch_args(exe, prof, headless, start_page(st)), stdin=subprocess.DEVNULL, stdout=log, stderr=log,
                             start_new_session=True)
     log.close()
     try:
@@ -560,7 +617,7 @@ def run(st: State | None = None) -> int:
     """The service's main process: keep one browser alive on the private profile. Exit 0 when disabled (the service
     manager then leaves it stopped); a crash exits non-zero so systemd / launchd restart it with their back-off."""
     st = st or State()
-    if not settings(st).get("enabled"):
+    if not settings(st).get("enabled") or adopted(st):
         return 0
     ensure_dir(st)
     stopping = {"now": False}
@@ -732,12 +789,266 @@ def wait_running(st: State, wait: float = 30.0) -> dict | None:
     return None
 
 
+
+# ---------------------------------------------------------------- P131: adopt the owner's existing local CDP browser
+ADOPT_PORTS = (9222, 9223, 9229, 9333)          # the usual --remote-debugging-port values people pick
+_LOOPBACK_HOSTS = ("127.0.0.1", "localhost")
+
+
+def adopted_path(st: State) -> pathlib.Path:
+    return bdir(st) / "adopted.json"
+
+
+def offer_path(st: State) -> pathlib.Path:
+    return bdir(st) / "adopt-offer.json"
+
+
+def parse_endpoint(url) -> int:
+    """http://127.0.0.1:<port> (or localhost) → port. Anything that is not this computer's loopback is refused."""
+    from urllib.parse import urlsplit
+    if not isinstance(url, str) or len(url) > 200:
+        raise BrowserError("shape", "--endpoint http://127.0.0.1:<port>")
+    u = urlsplit(url if "://" in url else "http://" + url)
+    if u.scheme not in ("http", "ws") or (u.hostname or "") not in _LOOPBACK_HOSTS or u.username or u.password:
+        raise BrowserError("not_loopback", "only http://127.0.0.1:<port> on this computer can be adopted")
+    try:
+        port = u.port
+    except ValueError:
+        port = None
+    if not port or not 1 <= port <= 65535:
+        raise BrowserError("shape", "--endpoint http://127.0.0.1:<port>")
+    return port
+
+
+def _pid_of_port(port: int) -> int | None:
+    """The process (of this OS user) listening on 127.0.0.1:<port> — Linux /proc only; used to raise its window."""
+    if not sys.platform.startswith("linux"):
+        return None
+    inodes = set()
+    for name in ("tcp", "tcp6"):
+        with contextlib.suppress(OSError):
+            for row in pathlib.Path(f"/proc/net/{name}").read_text().splitlines()[1:]:
+                f = row.split()
+                if len(f) > 9 and f[3] == "0A" and int(f[1].split(":")[1], 16) == port:
+                    inodes.add(f"socket:[{f[9]}]")
+    if not inodes:
+        return None
+    uid = os.getuid()
+    for d in pathlib.Path("/proc").iterdir():
+        if not d.name.isdigit():
+            continue
+        with contextlib.suppress(OSError):
+            if d.stat().st_uid != uid:
+                continue
+            for fd in (d / "fd").iterdir():
+                with contextlib.suppress(OSError):
+                    if os.readlink(fd) in inodes:
+                        return int(d.name)
+    return None
+
+
+def probe_endpoint(port: int, timeout: float = 2.0) -> dict | None:
+    """Read-only: is a CDP browser answering on 127.0.0.1:<port>, listening on loopback only? Reads /json/version, nothing
+    else (no tabs, no cookies, no pages). → {port, ws, product, pid} or None."""
+    try:
+        with _LOCAL.open(f"http://{LOOPBACK}:{int(port)}/json/version", timeout=timeout) as r:
+            info = json.loads(r.read(65536))
+    except (OSError, ValueError):
+        return None
+    ws = info.get("webSocketDebuggerUrl") if isinstance(info, dict) else None
+    if not (isinstance(ws, str) and ws.startswith(f"ws://{LOOPBACK}:{int(port)}/devtools/browser/")):
+        return None
+    addrs = listen_addresses(int(port))
+    if addrs and not loopback_only(addrs):
+        return None                                 # also on the network: never adopt it
+    return {"port": int(port), "ws": ws, "product": str(info.get("Browser", ""))[:80], "pid": _pid_of_port(int(port))}
+
+
+def _probe_adopted(port: int) -> dict | None:
+    """The registered browser: one slow /json/version (it is busy with someone else's work) is not "not running" — read twice."""
+    return probe_endpoint(port) or (time.sleep(0.5), probe_endpoint(port, timeout=3.0))[1]
+
+
+def detect_existing(st: State, ports=None) -> list[dict]:
+    """CDP browsers already running on this computer's usual debugging ports (not Agent J's own). Read-only (/json/version).
+    AGENTJ_BROWSER_DETECT=off turns detection off (tests; an owner who never wants the question)."""
+    if os.environ.get("AGENTJ_BROWSER_DETECT") == "off":
+        return []
+    own = _read_json(runtime_path(st))
+    own_port = own.get("port") if isinstance(own, dict) else None
+    out = []
+    for port in ADOPT_PORTS if ports is None else ports:
+        if port == own_port:
+            continue
+        info = probe_endpoint(port, timeout=1.0)
+        if info:
+            out.append({k: info[k] for k in ("port", "product")})
+    return out
+
+
+def adopted(st: State) -> dict | None:
+    rec = _read_json(adopted_path(st))
+    if isinstance(rec, dict) and type(rec.get("port")) is int and 1 <= rec["port"] <= 65535:
+        return rec
+    return None
+
+
+def offer(st: State) -> dict | None:
+    """A proposed (not yet confirmed) adoption: from `adopt` or from `setup` finding a browser. declined = the owner said no."""
+    rec = _read_json(offer_path(st))
+    if isinstance(rec, dict) and type(rec.get("port")) is int:
+        return rec
+    return None
+
+
+def _set_offer(st: State, port: int, product: str, by: str) -> dict:
+    rec = {"port": port, "product": product, "by": by, "at": int(time.time()), "declined": False}
+    _write_json(st, offer_path(st), rec)
+    return rec
+
+
+def adopt(st: State, endpoint, dry_run: bool = False, sites=None, _cdp=None) -> dict:
+    """Propose an existing loopback CDP browser. dry_run: probe only (optionally a read-only sign-in check of template sites
+    in tabs it opens and closes), write nothing. Otherwise a pending offer the owner confirms once on the phone."""
+    try:
+        port = parse_endpoint(endpoint)
+    except BrowserError as e:
+        return {"ok": False, "reason": e.reason, "detail": e.detail}
+    info = probe_endpoint(port)
+    if not info:
+        return {"ok": False, "reason": "adopt_not_running", "port": port, "hint": HINTS["adopt_not_running"]}
+    out = {"ok": True, "port": port, "product": info["product"], "loopback_only": True}
+    if dry_run:
+        out["result"] = "would_adopt"
+        if sites:
+            from . import browser_sites as bs
+            out["sites"] = bs.dry_check(info["ws"], sites, _cdp=_cdp)
+        return out
+    cur = adopted(st)
+    if cur and cur["port"] == port:
+        return {**out, "result": "already"}
+    _set_offer(st, port, info["product"], "cli")
+    st.log("browser_adopt_offer", port=port)
+    return {**out, "result": "confirm_on_phone",
+            "note": "主人在手机的首次准备清单里点「用它」后生效 / takes effect when the owner taps \"Use it\" in the phone checklist"}
+
+
+def confirm_adopt(st: State, decision_ref: str) -> dict:
+    """The owner's signed "use it" (setup_mark adopt_browser). Re-probes, then Agent J's own browser service (if any) stops —
+    the profile stays. The adopted browser itself is never started, stopped, killed or changed."""
+    o = offer(st)
+    if not o or o.get("declined"):
+        found = detect_existing(st)
+        if not found:
+            return {"ok": False, "reason": "no_offer"}
+        o = _set_offer(st, found[0]["port"], found[0]["product"], "checklist")
+    info = probe_endpoint(o["port"])
+    if not info:
+        return {"ok": False, "reason": "adopt_not_running", "port": o["port"]}
+    if installed(st) or service_status().get("installed"):
+        with contextlib.suppress(Exception):
+            service_stop(st)
+    _write_json(st, adopted_path(st), {"port": o["port"], "product": info["product"], "adopted_at": int(time.time()),
+                                       "decision_ref": str(decision_ref)[:64]})
+    with contextlib.suppress(FileNotFoundError):
+        offer_path(st).unlink()
+    with contextlib.suppress(FileNotFoundError):
+        (bdir(st) / "last-error.json").unlink()
+    st.log("browser_adopted", port=o["port"])
+    return {"ok": True, "result": "adopted", "port": o["port"]}
+
+
+def decline_offer(st: State) -> None:
+    o = offer(st)
+    if o:
+        _write_json(st, offer_path(st), {**o, "declined": True})
+
+
+def forget_adopted(st: State) -> dict:
+    """Stop using the adopted browser (it keeps running; nothing in it is touched)."""
+    rec = adopted(st)
+    with contextlib.suppress(FileNotFoundError):
+        adopted_path(st).unlink()
+    if rec:
+        st.log("browser_adopt_forget", port=rec["port"])
+    return {"ok": True, "result": "forgotten" if rec else "not_adopted"}
+
+
+def source(st: State) -> dict:
+    """What the checklist shows: whose browser Agent J uses. kind: adopted | own | offer | none."""
+    ad = adopted(st)
+    if ad:
+        return {"kind": "adopted", "port": ad["port"], "running": bool(_probe_adopted(ad["port"]))}
+    o = offer(st)
+    if installed(st):
+        return {"kind": "own"}
+    if o and not o.get("declined"):
+        return {"kind": "offer", "port": o["port"]}
+    if not o:                                    # nothing installed, never asked: is one already running here?
+        found = detect_existing(st)
+        if found:
+            return {"kind": "offer", "port": found[0]["port"]}
+    return {"kind": "none"}
+
+
+# ---------------------------------------------------------------- P131: bring the window to the front
+def raise_window(pid: int | None, title: str | None = WINDOW_NAME) -> dict:
+    """Best effort per desktop: Hyprland (hyprctl), X11 (xdotool / wmctrl), macOS (System Events). Other Wayland desktops,
+    WSL and Windows cannot be forced from here — the answer says so ({"ok": False, "method": "unsupported"})."""
+    s = system()
+
+    def run_(argv):
+        try:
+            return subprocess.run(argv, capture_output=True, text=True, timeout=5, stdin=subprocess.DEVNULL).returncode == 0
+        except (OSError, subprocess.SubprocessError):
+            return False
+    if s == "macos":
+        if pid and run_(["osascript", "-e", f'tell application "System Events" to set frontmost of (first process whose unix id is {int(pid)}) to true']):
+            return {"ok": True, "method": "macos"}
+        return {"ok": False, "method": "macos"}
+    if s != "linux":
+        return {"ok": False, "method": "unsupported"}
+    if os.environ.get("HYPRLAND_INSTANCE_SIGNATURE") and shutil.which("hyprctl"):
+        for sel in ([f"pid:{int(pid)}"] if pid else []) + ([f"class:^{WINDOW_CLASS}$"] if title == WINDOW_NAME else []):
+            # Hyprland ≥ 0.55 (Lua config): hl.dsp.focus({window=…}); older: the `focuswindow` dispatcher
+            for argv in (["hyprctl", "dispatch", f'hl.dsp.focus({{ window = "{sel}" }})'], ["hyprctl", "dispatch", "focuswindow", sel]):
+                try:
+                    p = subprocess.run(argv, capture_output=True, text=True, timeout=5, stdin=subprocess.DEVNULL)
+                except (OSError, subprocess.SubprocessError):
+                    continue
+                if p.returncode == 0 and (p.stdout or "").strip().lower() == "ok":
+                    return {"ok": True, "method": "hyprland"}
+        return {"ok": False, "method": "hyprland"}
+    if os.environ.get("DISPLAY") and not os.environ.get("WAYLAND_DISPLAY"):
+        if pid and shutil.which("xdotool") and run_(["xdotool", "search", "--onlyvisible", "--pid", str(int(pid)), "windowactivate"]):
+            return {"ok": True, "method": "xdotool"}
+        if title and shutil.which("wmctrl") and run_(["wmctrl", "-a", title]):
+            return {"ok": True, "method": "wmctrl"}
+        return {"ok": False, "method": "x11"}
+    return {"ok": False, "method": "unsupported"}
+
+
 # ---------------------------------------------------------------- the commands' logic (shared by CLI and serve)
-def setup(st: State, opener=None, start_service: bool = True) -> dict:
-    """Idempotent: respect a disabled browser, download/verify once, (re)write the service, wait for a verified start."""
+def setup(st: State, opener=None, start_service: bool = True, own: bool = False) -> dict:
+    """Idempotent: respect a disabled browser, download/verify once, (re)write the service, wait for a verified start.
+    P131: an adopted browser is never doubled; a CDP browser already running here is offered first (own=True: install anyway)."""
     cfg = settings(st)
     if not cfg["enabled"]:
         return {"ok": True, "result": "disabled", "note": "browser.enabled=false — `agentj browser enable` turns it back on"}
+    ad = adopted(st)
+    if ad:
+        running = bool(probe_endpoint(ad["port"]))
+        return {"ok": running, "result": "adopted", "port": ad["port"], **({} if running else {
+            "reason": "adopt_not_running", "hint": HINTS["adopt_not_running"]})}
+    if own:
+        decline_offer(st)
+    elif not installed(st):
+        o = offer(st)
+        found = [] if o and o.get("declined") else detect_existing(st)
+        if found:
+            _set_offer(st, found[0]["port"], found[0]["product"], "setup")
+            return {"ok": False, "result": "existing_found", "port": found[0]["port"], "product": found[0]["product"],
+                    "hint": HINTS["existing_found"].format(port=found[0]["port"])}
     out = {"ok": False, "result": "attention"}
     try:
         out["install"] = install(st, opener)
@@ -786,10 +1097,14 @@ def status(st: State) -> dict:
             attention.append(err.get("reason") if isinstance(err, dict) and err.get("reason") else "not_installed")
         elif not rt:
             attention.append(err.get("reason") if isinstance(err, dict) and err.get("reason") else "not_running")
+    ad = adopted(st)
+    if ad and cfg["enabled"]:
+        attention = [] if rt else ["adopt_not_running"]
     state = "disabled" if not cfg["enabled"] else "ready" if rt else "attention"
     out = {"ok": state != "attention", "state": state, "enabled": cfg["enabled"], "system": system(),
            "platform": platform_key(), "installed": {"version": have["version"], "platform": have["platform"]} if have else None,
-           "service": svc, "attention": attention, "hints": [HINTS[a] for a in attention if a in HINTS]}
+           "service": svc, "attention": attention, "hints": [HINTS[a] for a in attention if a in HINTS],
+           "source": source(st)}
     if rt:
         out["runtime"] = {"pid": rt["pid"], "headless": rt.get("headless"), "loopback_only": True, "source": rt.get("source", "bundled"),
                           "version": rt.get("version"), "started_at": rt.get("started_at"), "host_login": not rt.get("headless")}
@@ -851,6 +1166,10 @@ HINTS = {
     "start_failed": "浏览器启动失败：看 agentj browser status 和 agentj doctor / the browser did not start",
     "sandbox_blocked": "这台 Linux（Ubuntu 23.10+ 等）限制了浏览器沙箱：运行 agentj browser sandbox-fix，主人在手机密码卡上批准后只为本用户的 Agent J 浏览器开启；绝不用 --no-sandbox / this Linux blocks the browser sandbox: agentj browser sandbox-fix (phone password card)",
     "not_loopback": "调试端口不只监听本机，已停止（安全）/ the debugging port was not loopback-only and was stopped",
+    "adopt_not_running": "你登记的浏览器没在运行：请在电脑上把它打开（Agent J 不会替你启动它）/ the browser you registered is not running; start it on the computer",
+    "existing_found": "发现你已有一个浏览器（端口 {port}），要直接用它吗？主人在手机清单里点「用它」；要另装专用的：agentj browser setup --own / "
+                      "found a browser you already run (port {port}); use it from the phone checklist, or install a separate one with agentj browser setup --own",
+    "shape": "用法：agentj browser adopt --endpoint http://127.0.0.1:<端口> / usage: --endpoint http://127.0.0.1:<port>",
 }
 
 
@@ -866,7 +1185,12 @@ def execute(req: dict, st: State | None = None) -> dict:
             out["registry"] = bs.registry(st)
         return out
     if a == "setup":
-        return setup(st)
+        return setup(st, own=req.get("own") is True)
+    if a == "adopt":
+        if req.get("forget") is True:
+            return forget_adopted(st)
+        sites = req.get("sites") if isinstance(req.get("sites"), list) else None
+        return adopt(st, req.get("endpoint"), dry_run=req.get("dry_run") is True, sites=sites)
     if a == "enable":
         return set_enabled(st, True)
     if a == "disable":
@@ -955,6 +1279,13 @@ def cmd(a) -> int:
         req = {"action": "open", "url": a.url}
     elif act == "telegram-qr":
         req = {"action": "telegram_qr", "value": a.value}
+    elif act == "adopt":
+        if not a.forget and not a.endpoint:
+            print(json.dumps({"ok": False, "reason": "shape", "hint": HINTS["shape"]}, ensure_ascii=False))
+            return 2
+        req = {"action": "adopt", "endpoint": a.endpoint, "dry_run": a.dry_run, "forget": a.forget, "sites": a.site or None}
+    elif act == "setup":
+        req = {"action": "setup", "own": a.own}
     else:
         req = {"action": act.replace("-", "_"), "registry": getattr(a, "registry", False)}
     res = _ask(req)
@@ -979,6 +1310,15 @@ def add_parser(sub) -> None:
         sp.add_argument("--json", action="store_true")
         if name == "status":
             sp.add_argument("--registry", action="store_true", help="also print the P86 capability entries")
+        if name == "setup":
+            sp.add_argument("--own", action="store_true",
+                            help="已有本机浏览器时仍另装专用的 / install Agent J's own even when one is already running here")
+    sp = b.add_parser("adopt", help="登记你已有的本机 CDP 浏览器（只限 127.0.0.1，主人在手机确认）/ use a browser you already run")
+    sp.add_argument("--endpoint", help="http://127.0.0.1:<port>")
+    sp.add_argument("--dry-run", action="store_true", help="只读：探测并（加 --site）只读查登录，不登记 / probe only, register nothing")
+    sp.add_argument("--site", action="append", help="with --dry-run: read-only sign-in check of a template site (repeatable)")
+    sp.add_argument("--forget", action="store_true", help="不再用登记的浏览器（它继续运行）/ stop using it (it keeps running)")
+    sp.add_argument("--json", action="store_true")
     sp = b.add_parser("open", help="在本机浏览器打开网页（主人在电脑前登录用）/ open a page on this computer")
     sp.add_argument("url")
     sp.add_argument("--json", action="store_true")

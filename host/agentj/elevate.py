@@ -949,22 +949,41 @@ class Elevator:
             return res
         from . import first_run
         op, item = req.get("op"), req.get("item")
-        if op not in ("status", "resume", "check") or (item is not None and item not in first_run.BY_ID):
-            return {"ok": False, "why": "shape", "detail": "op: status | resume | check; item: a checklist id"}
+        if op not in ("status", "resume", "check", "close", "open") or (item is not None and item not in first_run.BY_ID):
+            return {"ok": False, "why": "shape", "detail": "op: status | resume | check | close | open; item: a checklist id"}
         serve = self.host.setup_serve() if hasattr(self.host, "setup_serve") else None
         try:
             if op == "status":
                 res = await asyncio.to_thread(first_run.status_, self.st)
             elif op == "resume":
                 res = await asyncio.to_thread(first_run.resume, self.st, serve)
+            elif op == "close":          # P131: the owner said "close it" in chat — the pages hide it at once
+                res = await asyncio.to_thread(first_run.close, self.st)
+            elif op == "open":           # P131 追加2: only the owner's own ask reopens a closed checklist
+                res = await asyncio.to_thread(first_run.reopen, self.st)
             else:
-                res = await asyncio.to_thread(first_run.check, self.st, [item] if item else None, serve)
+                res = await asyncio.to_thread(first_run.check, self.st, [item] if item else None, serve, None, bool(item))
         except first_run.SetupError as e:
             return {"ok": False, "why": e.reason}
-        if op == "resume" and res.get("ok") and hasattr(self.host, "push_setup"):
+        if op in ("resume", "open") and res.get("ok") and res.get("revision") and hasattr(self.host, "push_setup"):
             self.host.push_setup(res, show=True)
             res = {**res, "card": "sent"}
+        if op == "close" and res.get("revision") and hasattr(self.host, "push_setup"):
+            self.host.push_setup(res, show=False)
         return res
+
+    async def _p131_offer(self) -> None:
+        """P131: a browser already running here was proposed — refresh the checklist's browser rows and show it."""
+        from . import first_run
+        if not hasattr(self.host, "push_setup"):
+            return
+        try:
+            if await asyncio.to_thread(first_run.read, self.st) is None:
+                return
+            res = await asyncio.to_thread(first_run.check, self.st, ["browser"], self.host.setup_serve())
+        except (first_run.SetupError, OSError):
+            return
+        self.host.push_setup(res, show=True)
 
     # ---------------------------------------------------------- the Agent's socket
     async def on_client(self, r: asyncio.StreamReader, w: asyncio.StreamWriter) -> None:
@@ -993,6 +1012,8 @@ class Elevator:
                 from . import browser
                 # P114: the browser's state lives outside the Agent fence; fixed actions with structured arguments only.
                 res = await asyncio.to_thread(browser.execute, req, self.st)
+                if res.get("result") in ("confirm_on_phone", "existing_found"):
+                    await self._p131_offer()      # the owner answers on the checklist page ("use it" / "install another")
                 w.write((json.dumps(res, ensure_ascii=False) + "\n").encode())
                 await w.drain()
                 w.close()

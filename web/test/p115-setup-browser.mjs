@@ -61,26 +61,27 @@ async function run() {
         await evaluate(p, `if(${$('a2hs')} && !${$('a2hs')}.hidden)${$('a2hs-ok')}.click()`);
         await fake.send({ t: 'status', s: 'idle', agent: 'claude', name: 'Agent J' });
         await fake.send({ t: 'setup_card', show: true, ...snap });
-        await waitFor(p, `${$('setupcard')} && !${$('setupcard')}.hidden`);
+        await waitFor(p, `${$('setup-banner')} && !${$('setup-banner')}.hidden`);     // P131: a banner, then the page
+        await evaluate(p, `${$('setup-banner-open')}.click()`);
+        await waitFor(p, `!${$('setup-view')}.hidden && !!${$('setup-title')}`);
         const title = await evaluate(p, `${$('setup-title')}.textContent`);
         assert.equal(title, lang === 'zh' ? '手机麦克风与相机' : 'Phone microphone and camera', tag);
         const geo = async (ids) => evaluate(p, `(${JSON.stringify(ids)}).map(id=>{const n=document.getElementById(id);if(!n)return [id,null];const r=n.getBoundingClientRect();return [id,{w:r.width,h:r.height}]})`);
-        for (const [id, r] of await geo(['setup-use', 'setup-unused', 'setup-later', 'setup-expand', 'setup-close'])) {
+        for (const [id, r] of await geo(['setup-use', 'setup-unused', 'setup-later'])) {
           assert.ok(r && r.h >= 56 && r.w >= 44, `${tag} ${id} ${JSON.stringify(r)}`);
         }
         assert.equal(await evaluate(p, 'document.documentElement.scrollWidth > innerWidth'), false, tag + ' overflow');
         writeFileSync(resolve(OUT, `step-${tag}.png`), await shoot(p, ''));
         // "I won't use this" → a signed setup_mark the fake host verifies → the next (required) item, without that button
         await evaluate(p, `${$('setup-unused')}.click()`);
-        await waitFor(p, `${$('setupcard')}.dataset.revision === '${FIX.revision + 1}'`);
+        await waitFor(p, `${$('setup-main')}.dataset.revision === '${FIX.revision + 1}'`);
         assert.deepEqual(marks, [{ item: 'phonepermissions', choice: 'unused', rev: FIX.revision, ok: true }], tag);
         assert.equal(await evaluate(p, `${$('setup-title')}.textContent`), lang === 'zh' ? '接电源、不睡眠' : 'Plugged in, no sleep');
         assert.equal(await evaluate(p, `!!${$('setup-unused')}`), false, tag + ' required item has no "I won\'t use this"');
         assert.equal(await evaluate(p, `!!${$('setup-check')} && !!${$('setup-later')}`), true, tag);
         writeFileSync(resolve(OUT, `required-${tag}.png`), await shoot(p, ''));
-        await evaluate(p, `${$('setup-expand')}.click()`);
-        await waitFor(p, `document.querySelectorAll('#setupcard .setup-row').length === 30`);
-        assert.equal(await evaluate(p, `document.querySelector('#setupcard .setup-row[data-state="unused"]') !== null`), true);
+        await waitFor(p, `document.querySelectorAll('#setup-main .setup-row').length === 30`);   // P131: always listed
+        assert.equal(await evaluate(p, `document.querySelector('#setup-main .setup-row[data-state="unused"]') !== null`), true);
         writeFileSync(resolve(OUT, `overview-${tag}.png`), await shoot(p, ''));
         // "I'm done, check" asks the host to re-probe (read-only), never marks anything itself
         await evaluate(p, `${$('setup-check')}.click()`);

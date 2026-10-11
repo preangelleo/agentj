@@ -408,6 +408,7 @@ export async function startFakeHost() {
       c.hs = await new Handshake({ protocol: IK, initiator: false, prologue: Uint8Array.from(resumePrologue(channel)), s: hostKp }).init();
       const info = JSON.parse(dec.decode(await c.hs.readMessage(b.subarray(1))));
       if (st.refuseResumes > 0) { st.refuseResumes--; return c.close(4010); }
+      if (st.muteResumes > 0) { st.muteResumes--; return; }      // P133: a resume the computer never answers (the socket stays open)
       c.removed = !allow.has(b64u(c.hs.rs));   // modern host explicitly authenticates removal
       const a = allow.get(b64u(c.hs.rs)); if (a && !a.sk && info.sk) a.sk = info.sk;
       c.mode = 'resume';
@@ -499,6 +500,7 @@ export async function startFakeHost() {
     async revokeAll() { allow.clear(); for (const c of conns) { if(c.isReady)await sendApp(c,{t:'removed',why:'revoked'}); c.close(4010); } },
     /** drop every device socket like a network failure (not a revoke) */
     refuseNextResumes(n) { st.refuseResumes = n; },
+    muteNextResumes(n) { st.muteResumes = n; },
     kick(code = 1001) { for (const c of conns) c.close(code); },
     /** back to an empty host between test blocks (pairings and allowlist stay) */
     reset() {

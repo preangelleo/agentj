@@ -380,8 +380,6 @@ def set_language(st, lang, at):
 
 def transact(st,newraw):
     candidate=validate(parse(newraw))
-    from .voice import validate_runtime
-    validate_runtime(candidate)
     from .names import ctl_call, ServeBusy
     try:
         result=ctl_call(st,{'cmd':'config_apply','raw':newraw},10) if st.exists() else None
@@ -397,6 +395,10 @@ def transact(st,newraw):
     if result is not None:
         if not result.get('ok'):raise ConfigError(result.get('key','/'),result.get('error','apply rejected'),code=3)
         return result
+    # The running host owns provider/channel dependencies in its service environment.
+    # Only an offline write is validated against this CLI process's environment.
+    from .voice import validate_runtime
+    validate_runtime(candidate)
     from . import claude_auth
     claude_auth.require_transition(st, effective(st), candidate)
     commit_files(st,newraw,candidate)

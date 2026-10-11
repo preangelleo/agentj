@@ -1,6 +1,6 @@
-# Agent J 0.18.1a1 release notes
+# Agent J 0.18.2a1 release notes
 
-Host 0.18.1a1 / install 0.21.7; phone-web scope.
+Host 0.18.2a1 / install 0.21.8; phone-web scope.
 Phone parity must pass --strict. Full Android/Telegram parity is incomplete.
 Full Android/Telegram parity is incomplete.
 No APK is included in this release. Android source is for review, not a released app.
@@ -8,15 +8,15 @@ No APK is included in this release. Android source is for review, not a released
 Publication status: local preparation only. Live site verification is DEFERRED until
 the public commit and tag are pushed, the site is deployed, and cold installation passes.
 
-On publication failure, restore v0.18.0a1 host/site/phone and the captured Dashboard version. C deploys signed account device rename; A front Worker/site/signed downloads/install guide; B phone web and web Worker. No D1 migration or relay Worker change. P126 seat API is excluded.
+On publication failure, restore v0.18.1a1 host/site/phone. A front Worker/site/signed downloads/install guide; B phone web and web Worker. No Dashboard, D1 migration or relay Worker change.
 ## Changes
 
-- Fewer, precise approval cards in the selected language; standard/strict remains an owner preference, not an Agent lock.
-- Quiet automatic phone reconnect, compaction status/waterline, clear queue/withdrawal and cleared sent input; readable Telegram cards and quiet transient network errors.
-- Valid legacy Telegram enrollment uses the default local key name; no key copied. Fenced environments are whitelisted before exec and Linux agents run as PID1.
-- Huawei HarmonyOS devices are identified before Linux; account device rename reuses owner passkey and signed host controls.
-- Earlier pairing guidance and default-on shared status line respect explicit owner off. P129 owns first-connect behavior; all source parity references retained.
-- 中文：审批更少更准且单语，手机断线静默恢复，压缩/队列/发送/TG显示修复，旧TG登记兼容，围栏环境保护，华为识别及账户改名。
+- The first-run checklist never blocks the chat: a closable banner and its own page; a closed checklist stays closed until the owner reopens it. Agent J can adopt an existing loopback CDP browser after one owner confirmation.
+- Pages without owner input get a page header with page number and new-message cue; the newest page follows new pages, history only flashes.
+- Slash commands end in a done state (compaction / new conversation); a busy shared session says the message is queued instead of held.
+- The web app reconnects within seconds (5 s backoff cap, resume watchdog) and keeps the unsent draft.
+- config set validates in the running host's service environment; release smoke ASR cache moves to a persistent, self-rebuilding path.
+- 中文：首装清单不挡聊天、可关且关了不再弹、可接管已有浏览器；无输入页有页码与新消息提示；压缩完成提示；网页断线快速恢复并保留草稿；「电脑正忙，消息已排队」；config set 不再需要手动加载服务环境。
 
 - Physical iPhone/Android/macOS and founder/native Claude/Telegram cutover remain pending; local browser and cloud/service-manager fixtures do not prove them.
 - Original P82 key security and 60s recovery evidence is explicitly reused only while the shared issuer source hash is unchanged; current package/Noise/card/model checks use new hash-bound evidence.

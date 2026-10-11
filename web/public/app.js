@@ -154,15 +154,15 @@ function paintStatus() {
   rerender();
 }
 let view = null;
-const VIEWS = { pair: 'pair-view', scan: 'scan-view', models: 'models-view', sas: 'sas-view', mem: 'mem-view', act: 'act-view', tasks: 'tasks-view', friends: 'friends-view', bots: 'bots-view', revoked: 'revoked-view', error: 'error-view' };
-const PAIRED_VIEWS = ['chat', 'mem', 'act', 'tasks', 'models', 'friends', 'bots'];
+const VIEWS = { pair: 'pair-view', scan: 'scan-view', models: 'models-view', sas: 'sas-view', mem: 'mem-view', act: 'act-view', tasks: 'tasks-view', friends: 'friends-view', bots: 'bots-view', setup: 'setup-view', revoked: 'revoked-view', error: 'error-view' };
+const PAIRED_VIEWS = ['chat', 'mem', 'act', 'tasks', 'models', 'friends', 'bots', 'setup'];
 function show(v) {
   view = v;
   document.body.dataset.view = v;
   for (const [k, id] of Object.entries(VIEWS)) $(id).hidden = k !== v;
   $('unpair').hidden = !PAIRED_VIEWS.includes(v);
   $('scan-repair').hidden = $('unpair').hidden;
-  for (const id of ['open-mem', 'open-act', 'open-tasks', 'open-models', 'open-friends', 'open-bots']) $(id).hidden = !PAIRED_VIEWS.includes(v);
+  for (const id of ['open-mem', 'open-act', 'open-tasks', 'open-models', 'open-friends', 'open-bots', 'open-setup']) $(id).hidden = !PAIRED_VIEWS.includes(v);
   // the address follows the friends page (m.agentj.app/friends can be bookmarked); leaving it for another paired view goes back to /
   if (v === 'bots') history.replaceState(history.state, '', '/bots'+location.search);
   else if (v !== 'bots' && PAIRED_VIEWS.includes(v) && location.pathname === '/bots') history.replaceState(history.state, '', '/'+location.search);
@@ -291,6 +291,7 @@ snap.configure({
 api.onState((m) => relay.onSayState(m));
 controls.configure({ show, estopChanged: () => { relay.onEstop(); rerender(); }, friends: () => friends.refresh(), bots: () => bots.refresh() });
 bots.configure({openPanel:controls.openPanel});
+setupcard.configure({ openPanel: controls.openPanel, view: () => view });   // P131: the checklist page + chat banner
 friends.configure({ openPanel: controls.openPanel, agentName: () => agentName ?? DEFAULT_NAME });
 
 function onApp(m) {
@@ -825,7 +826,7 @@ function wire() {
   layer('confirm', closeConfirm, 'setBtn', 60);
   layer('badge-panel', () => toggleBadge(false), 'badge', 40);
   layer('settings', settings.back, 'setBtn', 40);
-  registerLayer({element: () => $(VIEWS[view]), open: () => ['mem','act','tasks','models','friends','bots','scan'].includes(view),
+  registerLayer({element: () => $(VIEWS[view]), open: () => ['mem','act','tasks','models','friends','bots','setup','scan'].includes(view),
     close: () => { if(view === 'scan') stopScan(); else if(view === 'friends') friends.back(); else controls.openPanel('chat'); },
     trigger: () => $('aj-menu').querySelector('summary'), fallback: () => $('aj-menu').querySelector('summary'), rank: 1, trap: false});
   for (const a of $('aj-menu').querySelectorAll('a')) a.addEventListener('click', closeMenu);
@@ -847,6 +848,7 @@ function wire() {
   $('open-tasks').addEventListener('click', () => { closeMenu(); controls.openPanel('tasks'); });
   $('open-friends').addEventListener('click', () => { closeMenu(); friends.open('list'); });
   $('open-bots').addEventListener('click', () => { closeMenu(); bots.open(); });
+  $('open-setup').addEventListener('click', () => { closeMenu(); setupcard.open(true); });
   friends.wire();
   for (const b of document.querySelectorAll('[data-back]')) b.addEventListener('click', () => controls.openPanel('chat'));
   $('act-more').addEventListener('click', () => controls.loadActivity(false));

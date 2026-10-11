@@ -19,6 +19,17 @@ work from the phone, sites without QR need a computer with a screen.
 - Mainland China and the download fails: `agentj config set browser.mirror https://<same-bytes mirror base>` (bytes must match
   the manifest or they are discarded), then setup. Never disable TLS checks or use unknown mirrors.
 
+## The owner already runs a browser (adopt)
+If the owner already has a CDP browser on this computer (e.g. a Chromium started with `--remote-debugging-port=9222`, already
+signed in everywhere), do not install a second one. `agentj browser setup` detects it and answers `existing_found` instead of
+downloading. Propose it with `agentj browser adopt --endpoint http://127.0.0.1:<port> --json` (loopback only; anything else is
+refused); `--dry-run [--site gmail]` only reads (a read-only sign-in check in a tab it opens and closes) and registers nothing.
+It takes effect only when the owner taps 「用我已有的浏览器」 on the first-run checklist page. Adopted, `status` / `check` /
+`login` / `endpoint` use that browser; Agent J never starts, stops, kills or restarts it, never changes its profile, never reads
+or exports its cookies — only opens and closes its own tabs. If it is not running: "the browser you registered is not running —
+start it on the computer". `agentj browser adopt --forget` stops using it (it keeps running). `agentj browser setup --own`
+installs Agent J's own browser anyway (the owner said no to the existing one).
+
 ## Sites and sign-in
 - Templates: `agentj browser sites list --json` (google, gmail, youtube-studio, bilibili, douyin-creator, mp-weixin,
   channels-weixin; or `sites add custom --origin https://x --url https://x/page`). Adding a site only adds it to the daily
