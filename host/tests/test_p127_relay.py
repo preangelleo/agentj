@@ -142,7 +142,7 @@ class FirstConnect(unittest.TestCase):
                 asyncio.run(main())
             ev = _events(st, "loop_stall")
             self.assertTrue(ev and ev[0]["ms"] >= 500)
-            self.assertEqual(set(ev[0]), {"ts", "ev", "ms"})
+            self.assertLessEqual({"ts", "ev", "ms"}, set(ev[0]))   # P136 adds where/task/pstate/majflt
 
 
 if __name__ == "__main__":

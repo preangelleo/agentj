@@ -189,7 +189,7 @@ async function undoMemory(id) {
 
 // ---- 操作与审批记录 (activity)
 let actNext = null;
-const CATS = ['spend', 'delete', 'send', 'credentials', 'price'];
+const CATS = ['spend', 'delete', 'send', 'credentials', 'price', 'opaque'];
 const ACT_RESULTS = ['allow', 'deny', 'allow_batch', 'timeout', 'no_device', 'estop', 'serve_stop', 'agent_gone', 'too_many', 'policy'];
 const ACT_KINDS = ['turn_start', 'turn_end', 'ask', 'decision', 'auto', 'grant', 'grant_end', 'estop', 'resume', 'message_refused', 'mem_rm',
   'mem_undo', 'task_on', 'task_off', 'task_run', 'task_done', 'control_refused', 'slash', 'truncated'];

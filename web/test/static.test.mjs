@@ -127,7 +127,7 @@ test('index.html: CSP-compatible (no inline script/style, no on*=), noindex, zh-
   assert.match(HTML, /<html lang="zh-CN">/);
   assert.match(HTML, /data-i18n="badge.label"[^>]*>网页版</);
   assert.match(HTML, /<script src="brand\/lang\.js"><\/script>/, 'lang.js runs synchronously in <head> (sets <html lang> before paint)');
-  assert.match(HTML, /以后的手机 App/);                          // A2 review M-4: nothing promised in the present tense (PROMPT-29 wording)
+  assert.doesNotMatch(HTML, /badge\.p2|以后的手机 App/);           // P143 (Leo 10-11): the "page could be altered / future app" line is gone from the sheet
   assert.doesNotMatch(HTML, /在公开源码上运行[^<]*结果应与上面一致/);   // the source is not public yet
   assert.match(APP, /parseLink\(input, undefined, allowRelay\)/); // A2 review L-2: the relay is pinned
   // PROMPT-33: the chat ids are relay's (the old #messages / #msg-input list is gone by design — the deck replaced it)

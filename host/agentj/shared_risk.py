@@ -27,12 +27,14 @@ class RiskGuard:
 
     async def check(self, tool, inp):
         a=self.adapter
-        if not a.cfg.get('high_risk_warnings',True):
-            return True
         verdict=danger.classify_shared(tool,inp,a.cfg.get('danger_extra'),a.cfg.get('approvals','standard'))
         if not verdict.danger:
             return True
         keys=danger.grant_keys(verdict)
+        if not a.cfg.get('high_risk_warnings',True):
+            keys=[k for k in keys if k in danger.ALWAYS_CARD]   # A5 (P139): hook-file writes ask even with warnings off
+            if not keys:
+                return True
         async with self.lock:
             if set(keys) & self.denied:
                 return False
@@ -54,10 +56,12 @@ class RiskGuard:
             if a.host.stopped() or (grant and a.host.st.sign_key(grant['device']) != grant['sign_pub']):
                 return False
             if grant and self.epoch == epoch:
-                self.grants.update({cat:grant for cat in keys})
+                self.grants.update({cat:grant for cat in keys if cat not in danger.ALWAYS_CARD})
             return True
 
     async def hook_event(self, event):
+        if isinstance(event,dict):
+            event.pop('_agentj_gone',None)
         a=self.adapter
         if isinstance(event,dict) and event.get('hook_event_name') == 'SharedGuardReady':
             import os

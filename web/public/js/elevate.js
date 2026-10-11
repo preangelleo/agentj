@@ -8,6 +8,7 @@ import { signKey } from './store.js';
 import { myDeviceId, myIdSync } from './api.js';
 import { t, onLang } from './t.js';
 import { mk, toast } from './ui.js';
+import { registerLayer } from './layers.js';
 import { elevateChallenge, canAssert, approve } from './faceid.js';
 
 const cards = new Map();           // id → card (in arrival order)
@@ -18,6 +19,9 @@ function build() {
   if (root) return root;
   root = mk('div', 'ajmodal elev');
   root.id = 'elev';
+  // P142 (A16): a layer — ESC = the card's deny / 「不提供」 (a secret card's first press only arms it, as the button does)
+  registerLayer({ element: () => root, open: () => !!root && !root.hidden, rank: 55, fallback: () => document.getElementById('input') || document.getElementById('setBtn'),
+    close: () => document.getElementById('elev-deny')?.click() });
   root.hidden = true;
   root.setAttribute('role', 'dialog');
   root.setAttribute('aria-modal', 'true');
@@ -71,6 +75,7 @@ export function add(m) {
   if (m.kind === 'sudo') {
     c.cmd = str(m.cmd, 2000); c.why = str(m.why, 300); c.effect = str(m.effect ?? '', 300);
     if (c.cmd === null || c.why === null || c.effect === null) return;
+    c.interpreter = m.interpreter === true;
     c.helper = Array.isArray(m.helper) ? m.helper.filter((x) => typeof x === 'string' && x.length <= 64).slice(0, 64) : [];
   } else {
     c.name = str(m.name, 128); c.purpose = str(m.purpose, 300); c.dest = str(m.dest, 1100); c.verify = str(m.verify ?? '', 800);
@@ -143,6 +148,7 @@ function render() {
     const sudo = c.kind === 'sudo';
     const nopw = viaHelper(c);
     root.classList.toggle('nopw', nopw);
+    root.classList.toggle('interpreter', !!c.interpreter);
     $('elev-label').hidden = nopw; $('elev-input').hidden = nopw;
     root.classList.toggle('secret', !sudo);
     $('elev-kicker').textContent = t(sudo ? 'elev.sudo.kicker' : 'elev.secret.kicker');
@@ -150,8 +156,8 @@ function render() {
     const dl = $('elev-rows'); dl.replaceChildren();
     if (sudo) {
       row(dl, t('elev.sudo.cmd'), c.cmd, 'mono');
-      row(dl, t('elev.sudo.why'), c.why);
-      row(dl, t('elev.sudo.effect'), c.effect);
+      row(dl, t('elev.sudo.why') + ' · ' + t('elev.agentClaim'), c.why);
+      row(dl, t('elev.sudo.effect') + ' · ' + t('elev.agentClaim'), c.effect);
     } else {
       row(dl, t('elev.secret.name'), c.name, 'mono');
       row(dl, t('elev.secret.purpose'), c.purpose);
@@ -160,7 +166,7 @@ function render() {
     }
     $('elev-label').textContent = t(sudo ? 'elev.sudo.label' : 'elev.secret.label', { name: c.name || '' });
     $('elev-input').setAttribute('aria-label', $('elev-label').textContent);
-    $('elev-note').textContent = t(nopw ? 'elev.sudo.noteHelper' : sudo ? 'elev.sudo.note' : 'elev.secret.note');
+    $('elev-note').textContent = (c.interpreter ? t('elev.interpreter') + ' ' : '') + t(nopw ? 'elev.sudo.noteHelper' : sudo ? 'elev.sudo.note' : 'elev.secret.note');
     denyArmed = 0;
     $('elev-empty').hidden = true;
     $('elev-deny').textContent = t(sudo ? 'elev.deny' : 'elev.secret.cancel');
@@ -175,7 +181,7 @@ function render() {
   paintLeft(c);
 }
 /** The computer's admin helper accepts this phone's signature: 同意 alone, no password (elevate_helper on the host). */
-const viaHelper = (c) => c.kind === 'sudo' && !c.bad && c.helper && c.helper.length > 0 && c.helper.includes(myIdSync());
+const viaHelper = (c) => c.kind === 'sudo' && !c.interpreter && !c.bad && c.helper && c.helper.length > 0 && c.helper.includes(myIdSync());
 function paintButtons() {
   if (!root) return;
   const c = cards.get(shownId);

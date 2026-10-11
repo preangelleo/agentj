@@ -1726,3 +1726,8 @@ body[data-view="chat"] .share-notice{position:static;margin:0 var(--space-contro
 /* P132: a page without the owner's input keeps this card as its header (same place and size: label, page capsule, corner
    gestures, new-message flash); there is no input to expand. */
 .om[data-header="1"] .ommore{visibility:hidden;pointer-events:none}
+
+/* P138: interpreter commands require a password even with the admin helper. */
+.elev.interpreter #elev-title,.elev.interpreter #elev-note,.elev.interpreter .mono{color:var(--danger,#c62828)}
+
+#cmd.sandbox{font-family:var(--font-body,sans-serif);white-space:pre-wrap;word-break:normal;overflow-wrap:break-word}

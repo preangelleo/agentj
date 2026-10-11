@@ -67,6 +67,18 @@ def latest_url() -> str | None:
     return None
 
 
+class SecureRedirect(urllib.request.HTTPRedirectHandler):
+    """Never follow an HTTPS response to an unencrypted endpoint (before any request)."""
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        if urllib.parse.urlparse(req.full_url).scheme == "https" and urllib.parse.urlparse(newurl).scheme != "https":
+            raise ValueError("insecure_update_redirect")
+        return super().redirect_request(req, fp, code, msg, headers, newurl)
+
+
+def open_download(req, *, timeout):
+    return urllib.request.build_opener(SecureRedirect()).open(req, timeout=timeout)
+
+
 def fetch_latest(timeout: float = TIMEOUT) -> tuple[str | None, str]:
     """(version, "ok") or (None, why): "off" · "network" · "http_<code>" · "unparsable"."""
     url = latest_url()
@@ -74,7 +86,7 @@ def fetch_latest(timeout: float = TIMEOUT) -> tuple[str | None, str]:
         return None, "off"
     req = urllib.request.Request(url, headers={"user-agent": f"{DIST}/{__version__} (update check)"})
     try:
-        with urllib.request.urlopen(req, timeout=timeout) as r:
+        with open_download(req, timeout=timeout) as r:
             body = r.read(MAX_BYTES + 1)
     except urllib.error.HTTPError as e:
         e.close()
@@ -354,6 +366,60 @@ def write_marker(st, frm: str, to: str, now: float | None = None) -> None:
     st.write_private(st.root / UPGRADED, json.dumps({"from": frm, "to": to, "at": int(time.time() if now is None else now)}).encode())
 
 
+PENDING = "upgrade-pending.json"   # P142 (A12/B15): apply → recovery worker: from/to + the cached old wheel for rollback
+
+
+def write_pending(st, frm: str, to: str, info: dict | None, old_wheel) -> None:
+    """The recovery worker writes the phones' marker from this right before the restart (the marker is the last claim
+    made), and rolls back to `old` when the new service does not come up. Paths and versions only."""
+    st.write_private(st.root / PENDING, json.dumps({"from": frm, "to": to, "at": int(time.time()), "install": info,
+                                                    "old": str(old_wheel) if old_wheel else None}).encode())
+
+
+def read_pending(st, target: str) -> dict | None:
+    try:
+        rec = json.loads((st.root / PENDING).read_text())
+    except (OSError, ValueError):
+        return None
+    if not isinstance(rec, dict) or rec.get("to") != target or time.time() - rec.get("at", 0) > DAY:
+        return None
+    return rec
+
+
+def rollback_wheel(st):
+    """The running version's wheel, verified and cached (auto_update's: published bytes or the RECORD-verified installed
+    files). None when it cannot be prepared (a source checkout, an editable install): the upgrade then has no rollback."""
+    try:
+        from . import auto_update
+        return auto_update.cached_wheel(st, __version__, require_signature=False)
+    except Exception:  # noqa: BLE001 — best effort: never blocks the upgrade itself
+        return None
+
+
+def roll_back(st, info: dict, wheel, frm: str, run) -> bool:
+    """Reinstall the cached old wheel (auto_update.install_commands, hash re-checked) and confirm `--version`. The marker
+    and the pending record go: nothing may announce the failed version."""
+    try:
+        (st.root / UPGRADED).unlink(missing_ok=True)
+        (st.root / PENDING).unlink(missing_ok=True)
+        if not wheel:
+            return False
+        import hashlib
+        from pathlib import Path
+        from . import auto_update
+        p = Path(wheel)
+        rec = json.loads(p.with_suffix(".verified.json").read_text())
+        if hashlib.sha256(p.read_bytes()).hexdigest() != rec["sha256"]:
+            return False
+        for cmd in auto_update.install_commands(info, p):
+            if run(cmd, stdin=subprocess.DEVNULL, capture_output=True, text=True).returncode:
+                return False
+        v = run(new_argv(info) + ["--version"], stdin=subprocess.DEVNULL, capture_output=True, text=True)
+        return not v.returncode and frm in ((v.stdout or "") + " " + (v.stderr or "")).split()
+    except Exception:  # noqa: BLE001 — a failed rollback is reported, never raised
+        return False
+
+
 def take_marker(st, now: float | None = None) -> dict | None:
     """The authorized-upgrade marker, removed as it is read (so the phones hear it once). None when absent, malformed or
     older than 14 days."""
@@ -590,7 +656,6 @@ def authorized_apply(st, code: str | None, target: str | None, *, mail: dict | N
     if target not in now_v:
         st.log("upgrade_failed", status="version")
         return done("not_upgraded")
-    write_marker(st, __version__, target)
     st.log("upgrade_done", status=target)
     if svc_on is None:
         from . import service
@@ -599,7 +664,9 @@ def authorized_apply(st, code: str | None, target: str | None, *, mail: dict | N
         except Exception:  # noqa: BLE001 — no service manager: nothing to restart
             svc_on = False
     if not svc_on:
+        write_marker(st, __version__, target)
         return {**out, "result": "ok", "reason": "upgraded", "service": "not_installed", "exit": 0}
+    write_pending(st, __version__, target, info, None)   # P142: the recovery worker writes the marker right before restart
     say(f"✓ 已安装 {target}，正在重启服务。如果这段对话在这里中断，Agent J 回来后会在手机上说「已升级到 {target}」。/ installed "
         f"{target}; restarting the service now — if this conversation stops here, the phone hears \"Upgraded to {target}\" once "
         "Agent J is back.")
@@ -612,9 +679,12 @@ def authorized_apply(st, code: str | None, target: str | None, *, mail: dict | N
     return {**out, "result": "ok", "reason": "upgraded", "service": "restart_scheduled", "exit": 0}
 
 
-def apply(st, target=None, *, prefix=None, check_fn=None, run=None, say=None, svc_on=None, plan_fn=None):
+def apply(st, target=None, *, prefix=None, check_fn=None, run=None, say=None, svc_on=None, plan_fn=None, rollback_fn=None):
     """Explicit caller-requested upgrade. No terminal or cloud grant is required.
     Native filesystem restrictions and exact published target checks still apply.
+    P142 (A12/B15): the old version's wheel is cached first; a failed version check or service hand-off rolls back to it
+    here, and the recovery worker (a manager job) waits until serve is idle (no sudo/secret card, no turn, ≤ 10 min),
+    writes the marker last and rolls back itself when the new service does not come up.
     """
     run, say = run or subprocess.run, say or (lambda line: None)
     r = (check_fn or check)()
@@ -645,6 +715,13 @@ def apply(st, target=None, *, prefix=None, check_fn=None, run=None, say=None, sv
         plan = (plan_fn or verified_plan)(st, info, target)
     except Exception:
         return done("artifact_refused")
+    old = (rollback_fn or rollback_wheel)(st) if st.exists() else None
+    def back(reason, **kw):
+        ok = roll_back(st, info, old, __version__, run) if st.exists() else False
+        rb = "ok" if ok else "failed" if old else "unavailable"
+        if st.exists():
+            st.log("upgrade_rollback", status=rb, reason=reason)
+        return done(reason, rollback=rb, **kw)
     for cmd in plan:
         say("$ " + shlex.join(cmd))
         try:
@@ -652,20 +729,22 @@ def apply(st, target=None, *, prefix=None, check_fn=None, run=None, say=None, sv
         except OSError:
             rc = 127
         if rc:
-            return done("install_failed")
+            return back("install_failed")
     argv = new_argv(info)
     try:
         v = run(argv + ["--version"], stdin=subprocess.DEVNULL, capture_output=True, text=True)
         if v.returncode or target not in ((v.stdout or "") + " " + (v.stderr or "")).split():
-            return done("not_upgraded")
-        if st.exists():
-            write_marker(st, __version__, target)
+            return back("not_upgraded")
         if svc_on:
+            if st.exists():
+                write_pending(st, __version__, target, info, old)
             # The new CLI hands off before touching the calling service tree.
             if run(argv + ["service", "install", "--deferred", target], stdin=subprocess.DEVNULL).returncode:
-                return done("service_failed", service="failed")
+                return back("service_failed", service="failed")
             out["service"] = "restart_scheduled"
         else:
+            if st.exists():
+                write_marker(st, __version__, target)
             out["service"] = "not_installed"
         health = run(argv + ["doctor", "--json"], stdin=subprocess.DEVNULL, capture_output=True, text=True)
         try:
@@ -685,6 +764,8 @@ def result_block(res: dict) -> str:
     """The fixed block the Agent copies back to its human (install.md section U)."""
     lines = [f"UPGRADE_RESULT {res['result']}", f"reason: {res['reason']}", f"from: {res['from']}",
              f"to: {res.get('to') or '?'}", f"service: {res['service']}"]
+    if res.get("rollback"):
+        lines.append(f"rollback: {res['rollback']}" + (f" (back on {res['from']})" if res["rollback"] == "ok" else ""))
     if res.get("existing_issues"):
         lines.append("existing_issues: " + ", ".join(res["existing_issues"]) + " — 升级已完成，这些其他问题请另行检查 / upgrade completed; review these other issues separately")
     if res.get("latest"):

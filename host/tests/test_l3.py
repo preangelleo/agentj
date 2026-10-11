@@ -469,8 +469,12 @@ class WheelInstall(unittest.TestCase):
         self.assertEqual(len(cut_entries),2)
         self.assertLessEqual(cut_bytes,12288,'P117 cut-over allocation is bounded')
         # P135 (0.18.2 integration of P131–P134 + the shared-turn reply fix): an explicit 8 KiB core increment, flagged to Jarvis.
-        self.assertLess(pathlib.Path(self.wheel).stat().st_size-bot_bytes-lt_bytes-browser_bytes-p115_bytes-cut_bytes,2_260_000+8192,'P118 approved bounded core ceiling + P135 increment')
-        self.assertLess(pathlib.Path(self.wheel).stat().st_size,2_260_000+8192+65536+40960+49152+32768+12288,'combined bounded allocations')
+        # P139 (0.18.3 shared-mode trust boundary: ctl_auth, hook token/watch, never-yield): another explicit 8 KiB, flagged to Jarvis.
+        # P142 (0.18.3 host reliability: diskq, _bg, B14/A12/B15/B17/B19): a further explicit 8 KiB, flagged to Jarvis (P143 integration keeps both).
+        # P143 (0.18.3 integration: P137 opaque classifier, P138 fence refuse + passkey launch, P140 channel provenance, P141 installer
+        # verify / bots route): the merged security code needs a further explicit 12 KiB (measured +10.6 KiB), flagged to Jarvis.
+        self.assertLess(pathlib.Path(self.wheel).stat().st_size-bot_bytes-lt_bytes-browser_bytes-p115_bytes-cut_bytes,2_260_000+8192+8192+8192+12288,'P118 approved bounded core ceiling + P135 + P139 + P142 + P143 increments')
+        self.assertLess(pathlib.Path(self.wheel).stat().st_size,2_260_000+8192+8192+8192+12288+65536+40960+49152+32768+12288,'combined bounded allocations')
         self.assertFalse([n for n in names_ if n.startswith("tests/") or "wiredump" in n or "fakeclaude" in n])
         ep = next(n for n in names_ if n.endswith("entry_points.txt"))
         eps = zipfile.ZipFile(self.wheel).read(ep).decode()

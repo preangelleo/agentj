@@ -379,3 +379,17 @@ Shared Claude ingress: startup and doctor repair the effective writable layer to
 
 
 0.18.1: Valid older Telegram enrollment continues with its local bot environment name. Huawei HarmonyOS devices have accurate names; account owners can rename a remote with a passkey while its host is online.
+
+## Sandbox failures and admin commands
+
+If an independent session's sandbox cannot start, the Agent stays stopped. The phone card explains the cause (such as missing bubblewrap) and repair. Tap **Run this launch without isolation** and verify with the owner's passkey to allow this launch only; the next launch checks isolation again. This launch may access local files and credentials. Set up a passkey in the phone menu if needed. Denial or timeout never starts the Agent.
+
+The sudo card labels the reason and effect as **Agent claim**. Shell or interpreter commands are marked red and require an admin password even with the passwordless helper installed. Secret cards support URL verification; `--verify-cmd` is disabled and runs no command outside the sandbox. Scheduled tasks and native customer-service bots authenticate from native storage and do not inherit host-service API keys or tokens.
+
+### Telegram and friend safety boundaries
+
+Forwarded messages in the owner’s Telegram private chat are external data, not the owner’s instructions. Forwarded commands do not execute. Approval commands in groups remain silent; use the paired phone to approve. When the family safety check is unavailable, that message pauses: the owner can send the request directly from the paired phone. Only a leading `/notification` or `/notify` command counts as a reminder request; the word notification inside other text does not.
+
+Group text and captions are checked before attachments are downloaded. Proxy groups do not download attachments; family attachments are refused when the rules match. Each group sender has a 40 MiB download budget per UTC hour across groups, preserved across restarts. Unknown sizes reserve the per-file maximum. Paused group messages cannot start Agent tools. Friend cards allow up to 64 characters for the name, 32 for the owner and 140 for the introduction. A credential-shaped value in supplementary context rejects the whole edit; use ordinary background information.
+
+Support bots process Telegram private chats independently, preserving order within each chat. Text over 2000 characters gets a fixed request to shorten it without a model call. Customer text and model suggestions in support reports are data for summarising and diagnosis, never owner instructions.

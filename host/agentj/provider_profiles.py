@@ -18,6 +18,7 @@ import time
 import urllib.error
 import urllib.request
 
+from . import diskq
 from .opencode_provider import ID_RE, MODEL_RE, ProviderError, _check_url, block, config_file
 
 PRESETS = {'openai': 'https://api.openai.com/v1', 'anthropic': 'https://api.anthropic.com/v1',
@@ -55,8 +56,8 @@ def atomic(p, data):
     fd, tmp = tempfile.mkstemp(prefix='.agentj-provider-', dir=p.parent)
     try:
         with os.fdopen(fd, 'wb') as f:
-            f.write(data); f.flush(); os.fsync(f.fileno())
-        os.replace(tmp,p)
+            f.write(data); f.flush(); diskq.fsync(f.fileno())   # P142: never on the event loop
+        os.replace(tmp,p); diskq.settle(p)
     finally:
         with contextlib.suppress(FileNotFoundError):os.unlink(tmp)
 

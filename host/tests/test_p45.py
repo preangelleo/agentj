@@ -28,7 +28,9 @@ class Autonomy(unittest.TestCase):
             self.assertEqual(calls[-1][0],['agentj','doctor','--json'])
             self.assertFalse(any(a[-2:]==['service','restart'] for a,_ in calls))
             self.assertIn('@v9.9.9',calls[0][0][-1])
-            self.assertEqual(update.take_marker(st)['to'],'9.9.9')
+            # P142 (A12): with a service the recovery worker writes the marker right before the restart, from this record
+            self.assertIsNone(update.take_marker(st))
+            self.assertEqual(update.read_pending(st,'9.9.9')['to'],'9.9.9')
     def test_version_mismatch_does_not_restart(self):
         run=Mock(return_value=subprocess.CompletedProcess([],0,'agentj 1.0.0',''))
         with patch.object(update,'writable',return_value=True),patch.object(update,'install_kind',return_value={'kind':'uv','where':'/fake','legacy':False}),patch.object(update,'new_argv',return_value=['agentj']):

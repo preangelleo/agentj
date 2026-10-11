@@ -232,3 +232,6 @@ Not in this version. Group chats across owners come in a later version.
 </details>
 
 The question card also offers to let your Agent chat with this friend from now on. One signed confirmation moves them to Colleagues; prices, payments, meetings and commitments still require your confirmation. Ordinary questions use a neutral background; red is reserved for high risk.
+
+
+Cards accept up to 64 characters for the name, 32 for the owner and 140 for the introduction. Supplementary context containing a credential-shaped value rejects the entire edit and preserves the previous text. Use ordinary background information; keys still belong only in secret cards.

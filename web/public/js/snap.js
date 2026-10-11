@@ -21,7 +21,7 @@ let onChange = () => {};
 let onTurn = () => {};
 export function configure(h) { onChange = h.onChange; onTurn = h.onTurn; }
 const nowS = () => Date.now() / 1000;
-const CATS = ['spend', 'delete', 'send', 'credentials', 'price'];
+const CATS = ['spend', 'delete', 'send', 'credentials', 'price', 'opaque'];
 
 // ---------------------------------------------------------------- requests that need a human
 export function addAsk(m) {
@@ -34,6 +34,7 @@ export function addAsk(m) {
   const scope = !cats.length && typeof m.batch === 'string' && m.batch.length > 0 && m.batch.length <= 400 ? m.batch : null;
   S.asks.set(m.id, { id: m.id, kind: 'permission', tool: m.tool.slice(0, 64), summary: m.summary, cats, why: typeof m.why === 'string' ? m.why.slice(0, 200) : '',
     why_en: typeof m.why_en === 'string' ? m.why_en.slice(0, 200) : '', cred: m.cred === 'read' ? 'read' : '',   // P128: one language; 查看 vs 改
+    passkey_required: m.passkey_required === true, fa: typeof m.fa === 'string' ? m.fa : '', fa_ch: typeof m.fa_ch === 'string' ? m.fa_ch : '',
     scope, batch_max: Number.isInteger(m.batch_max) ? m.batch_max : 20, batch_secs: Number.isInteger(m.batch_secs) ? m.batch_secs : 600,
     task: typeof m.task === 'string' ? m.task.slice(0, 80) : '', at: nowS(), deadline: Date.now() + ttl * 1000, state: 'open', final_at: null,
     ...(m.tool === 'friend_request' && m.fr && typeof m.fr === 'object' ? { fr: m.fr } : {}),     // display-only copies (friends.js)

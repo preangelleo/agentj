@@ -547,6 +547,8 @@ def cmd_passphrase(a) -> None:
                 res = names.ctl_call(st, {"cmd": "revoke", "device": did}, 10)
             except names.ServeBusy:
                 sys.exit("agentj serve 在运行但没有响应，没有重置")
+            if res is not None and res.get("error") in ("claim_required", "claim_refused"):
+                sys.exit("✗ " + _ctl_refused_msg(res) + "（没有重置 / nothing reset）")
             if res is None:
                 st.remove_device(did)
         gate.reset(st)
@@ -685,6 +687,8 @@ def cmd_revoke(a) -> None:
         res = names.ctl_call(st, {"cmd": "revoke", "device": a.device}, 10)
     except names.ServeBusy:
         sys.exit("agentj serve 在运行但没有响应：没有吊销（不会绕过它直接改准许名单）。稍后再试，或先停掉 serve。")
+    if res is not None and res.get("error") in ("claim_required", "claim_refused"):
+        sys.exit("✗ " + _ctl_refused_msg(res))
     if res is None:  # serve certainly not running (no socket / refused): edit the allowlist directly, under its lock
         ok = st.remove_device(a.device)
         if ok:
@@ -705,6 +709,8 @@ def cmd_send(a) -> None:
         sys.exit("agentj serve 没有响应，没有发送")
     if res is None:
         sys.exit("Agent J 现在没在运行，没有发送（`agentj service status` 看看）/ Agent J is not running: nothing sent")
+    if res.get("error") in ("claim_required", "claim_refused"):
+        sys.exit("✗ " + _ctl_refused_msg(res))
     if not res.get("ok"):
         sys.exit("太长了（上限 4000 字），没有发送" if res.get("error") == "too_long" else f"发送失败：{res}")
     print(f"已发给 {res.get('delivered', 0)} 台设备")
@@ -1212,6 +1218,14 @@ def cmd_stop(a) -> None:
     print("⛔ 已急停：Agent 停下、待批准的全部拒绝、批量授权收回、定时任务暂停；serve 重启后仍是急停。恢复：已配对手机上点「恢复」，或终端 `agentj resume`")
 
 
+def _ctl_refused_msg(res: dict) -> str:
+    """A4 (P139): serve refused a safety command over its control socket."""
+    if res.get("error") == "passphrase":
+        return "批准口令不对（或已锁定），没有恢复 / wrong or locked approval passphrase"
+    return ("这个操作只能由主人在自己的终端里做，Agent 和脚本做不了（可以在已配对手机上操作）。 / Only the owner, in their "
+            "own terminal (or on a paired phone), can do this — not an Agent or a script.")
+
+
 def cmd_resume(a) -> None:
     from . import activity, controls
     st = State()
@@ -1221,17 +1235,22 @@ def cmd_resume(a) -> None:
         return
     # F14: a stop is the owner's emergency switch — one tap on a paired phone lifts it (signed, no passphrase). At the
     # terminal the owner proves presence with the passphrase or, without one, a keyboard: the Agent cannot lift its own stop.
+    req = {"cmd": "resume"}
     if gate.is_set(st):
         try:
-            gate.verify(st, _secret("输入批准口令恢复（或在已配对手机上点「恢复」）："))
+            pw = _secret("输入批准口令恢复（或在已配对手机上点「恢复」）：")
+            gate.verify(st, pw)
         except gate.GateError as e:
             sys.exit("✗ " + _gate_msg(e))
+        req["pass"] = pw                     # A4 (P139): serve verifies it again — a bare socket write cannot resume
     elif not sys.stdin.isatty():
         sys.exit("✗ 急停只能由主人解除：在已配对手机上点「恢复」，或主人在自己的终端运行 `agentj resume`。")
     try:
-        res = names.ctl_call(st, {"cmd": "resume"}, 15)
+        res = names.ctl_call(st, req, 15)
     except names.ServeBusy:
         sys.exit("agentj serve 在运行但没有响应：没有恢复")
+    if res is not None and not res.get("ok", True):
+        sys.exit("✗ " + _ctl_refused_msg(res))
     if res is None:
         controls.set_estop(st, False, "terminal")
         st.log("estop", status="off")

@@ -114,7 +114,7 @@ def _due(st, *, now=None, blocked=False, stopped=False, rand=secrets.randbelow):
 
 def download(url, limit):
     req = urllib.request.Request(url, headers={'User-Agent': 'agentj-upgrade/1'})
-    with urllib.request.urlopen(req, timeout=30) as r:
+    with update.open_download(req, timeout=30) as r:
         data = r.read(limit + 1)
     if len(data) > limit:
         raise ValueError('artifact_too_large')
@@ -312,7 +312,7 @@ def run(st, *, check_fn=update.check, cache=cached_wheel, runner=quiet, restart=
             r = runner(argv + ['service', 'install', '--deferred', version])
             if r.returncode:
                 raise ValueError('restart_failed')
-            end = time.monotonic() + 90
+            end = time.monotonic() + 90 + service_recovery.READY_LIMIT   # P142: the worker may wait for an idle serve
             while True:
                 rec = service_recovery.read(st) or {}
                 if rec.get('target') == version and rec.get('status') == 'ok':

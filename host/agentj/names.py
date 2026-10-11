@@ -22,9 +22,25 @@ class ServeBusy(Exception):
 
 def ctl_call(st, req: dict, timeout: float | None = None) -> dict | None:
     """One request/answer on serve's control socket. None only when serve is certainly not running (no socket file, or
-    connection refused); raises ServeBusy when it is there but does not answer in time."""
+    connection refused); raises ServeBusy when it is there but does not answer in time. A4 (P139): a command that changes
+    safety state (ctl_auth.SENSITIVE) first asks for a one-time claim on the same connection; serve refuses it to an Agent."""
+    from .ctl_auth import SENSITIVE
     s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
     s.settimeout(CTL_TIMEOUT if timeout is None else timeout)
+    buf = [b""]
+
+    def line() -> dict:
+        while b"\n" not in buf[0] and len(buf[0]) < 64 * 1024:
+            chunk = s.recv(4096)
+            if not chunk:
+                break
+            buf[0] += chunk
+        one, _, buf[0] = buf[0].partition(b"\n")
+        obj = json.loads(one)
+        if not isinstance(obj, dict):
+            raise ValueError("bad_answer")
+        return obj
+
     try:
         try:
             s.connect(str(st.sock_path))
@@ -33,18 +49,15 @@ def ctl_call(st, req: dict, timeout: float | None = None) -> dict | None:
         except OSError as e:
             raise ServeBusy(type(e).__name__) from None
         try:
+            if req.get("cmd") in SENSITIVE and "claim" not in req:
+                s.sendall(b'{"cmd": "claim"}\n')
+                claim = line()
+                if claim.get("ok") and isinstance(claim.get("claim"), str):
+                    req = {**req, "claim": claim["claim"]}
             s.sendall((json.dumps(req) + "\n").encode())
-            buf = b""
-            while not buf.endswith(b"\n") and len(buf) < 64 * 1024:
-                chunk = s.recv(4096)
-                if not chunk:
-                    break
-                buf += chunk
-            obj = json.loads(buf)
+            obj = line()
         except (OSError, ValueError) as e:
             raise ServeBusy(type(e).__name__) from None
-        if not isinstance(obj, dict):
-            raise ServeBusy("bad_answer")
         return obj
     finally:
         s.close()

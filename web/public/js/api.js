@@ -13,6 +13,8 @@ import { Upload, newId } from './blobs.js';
 import { approveMessage, questionMessage, controlMessage, b64u, deviceId } from '../proto/wire.js';
 import { deviceKey, signKey } from './store.js';
 import * as snap from './snap.js';
+import { approve as passkeyApprove, canAssert } from './faceid.js';
+import { unb64u } from '../proto/wire.js';
 
 let myId = null;
 export async function myDeviceId() { return myId ?? (myId = await deviceId((await deviceKey()).pub)); }
@@ -90,6 +92,12 @@ export const history = (q) => snap.history(q);
 export async function approve(p, action) {
   const g = gen();
   if (!g) return { ok: false, why: 'offline' };
+  let fa = null;
+  if (action !== 'deny' && p.passkey_required) {
+    if (action === 'batch' || !p.fa || !p.fa_ch || !canAssert()) return { ok: false, why: 'passkey_required' };
+    try { fa = await passkeyApprove(unb64u(p.fa_ch), p.fa); } catch { return { ok: false, why: 'passkey_required' }; }
+    if (!fa) return { ok: false, why: 'passkey_required' };
+  }
   const sk = await signKey();
   if (!sk) return { ok: false, why: 'no_key' };
   try {
@@ -98,7 +106,7 @@ export async function approve(p, action) {
     const decision = batch ? 'allow_batch' : action === 'allow' ? 'allow' : 'deny';
     const msg = await approveMessage(channel(), await myDeviceId(), p.id, decision, p.tool, p.summary, batch ? p.scope : undefined);
     const sig = new Uint8Array(await crypto.subtle.sign({ name: 'Ed25519' }, sk.priv, msg));
-    await sendApp(batch ? { t: 'answer', id: p.id, ok: true, batch: true, sig: b64u(sig) } : { t: 'answer', id: p.id, ok: decision === 'allow', sig: b64u(sig) }, g);
+    await sendApp(batch ? { t: 'answer', id: p.id, ok: true, batch: true, sig: b64u(sig) } : { t: 'answer', id: p.id, ok: decision === 'allow', sig: b64u(sig), ...(fa ? { fa } : {}) }, g);
     return { ok: true };
   } catch { return { ok: false, why: 'offline' }; }
 }

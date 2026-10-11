@@ -1,4 +1,4 @@
-"""F17 advanced (P46): the admin helper — type the password once, afterwards a sudo card only needs 「同意」 on a paired phone.
+"""F17 advanced (P46): the admin helper — type the password once; direct commands then need 「同意」, while shells/interpreters still require a password.
 
 `agentj sudo-helper install` asks for ONE ordinary sudo card (the password typed on the phone, §11). That card's command:
 1. copies three files the host just generated into a root-owned staging folder (a snapshot the user can no longer change),
@@ -46,7 +46,7 @@ HELPER_CMD = [PYTHON, "-I", "-S", HELPER]
 HELPER_SOURCE = r'''#!/usr/bin/python3 -I -S
 """Agent J admin helper (F17). Runs ONE command as root when a paired phone signed it. Installed by `agentj sudo-helper`.
 stdin: {"channel","device","id","n","ts","argv","why","effect","cwd","sig"} → the command's stdout / stderr / exit status."""
-import fcntl, hashlib, json, os, shlex, subprocess, sys, time
+import fcntl, hashlib, json, os, re, shlex, subprocess, sys, time
 
 KEYS = "/etc/agentj/elevate-keys.json"
 STATE = "/var/lib/agentj-elevate"
@@ -134,6 +134,9 @@ def main():
         argv, why, effect = req["argv"], req["why"], req.get("effect") or ""
         if not (isinstance(argv, list) and argv and all(isinstance(x, str) and x and "\x00" not in x for x in argv)):
             fail("argv")
+        if any(re.fullmatch(r"(?:sh|bash|dash|zsh|ksh|fish|python[^/]*|node(?:js)?|perl(?:[0-9.]+)?)", name)
+               for name in (os.path.basename(argv[0]), os.path.basename(os.path.realpath(argv[0])))):
+            fail("password_required")
         if req["channel"] != keys["channel"]:
             fail("channel")
         pub = unb64u(keys["devices"][req["device"]])

@@ -27,8 +27,8 @@ the Agent's own sandbox, no Apple Events, no LaunchServices, no tmux / ssh-agent
 / emacs / nvim / Jupyter / VS Code / kitty sockets and (unless allowed) no container engine sockets; launchd jobs and
 ~/Library/LaunchAgents are the Agent's own to manage (F14). macOS has no PID or mount namespace: the Agent still sees the
 process list's *argv* via sysctl, shares /tmp and $TMPDIR, and shares the network (as on Linux). Elsewhere, or when the
-fence cannot start, the legacy independent Agent.launch_argv path runs unfenced with the harness's own permissions
-(F14: degraded, one notice on the phone). P67's Agent J-owned shared OpenCode path instead refuses startup when requested
+fence cannot start, independent Agent.launch_argv refuses startup. The phone can authorize one launch without
+isolation only after owner passkey verification; this never persists an unfenced setting. P67's Agent J-owned shared OpenCode path instead refuses startup when requested
 isolation cannot start (provider_runtime.shared_launch); it never silently degrades. An explicitly selected unfenced mode
 remains unfenced. A server the owner started is attached as owner-managed; Agent J cannot rewrap that existing process.
 """
@@ -136,7 +136,7 @@ def hide_env(environ=None, allow_docker: bool = False) -> list[str]:
 _MAIN_ENV = frozenset({
     "PYTHONPATH", "PYTHONDONTWRITEBYTECODE", "PYTHONNOUSERSITE", "MCP_TOOL_TIMEOUT", "TERM", "COLORTERM",
     # Existing one-time permission-tool claim in serve.new_perm_env (unchanged).
-    "AGENTJ_PERM_SOCK", "AGENTJ_PERM_TOKEN", "AGENTJ_PERM_WAIT",
+    "AGENTJ_PERM_SOCK", "AGENTJ_PERM_TOKEN", "AGENTJ_PERM_WAIT", "AGENTJ_PERM_CLAIM",
     # Already exported by serve.start BEFORE every harness spawn; socket mounts unchanged.
     "AGENTJ_ELEVATE_SOCK", "AGENTJ_CAPABILITY_SOCK", "AGENTJ_RECALL_SOCK", "AGENTJ_FRIENDS_SOCK", "AGENTJ_RECALL_INDEX",
     # Existing per-launch local OpenCode server authentication in opencode_env (unchanged).
@@ -172,6 +172,22 @@ def launch_environment(base=None, allow_docker: bool = False, kind: str = "codex
     clean = clean_env(kind, env, extra_keep=keep)
     hidden = set(hide_env(env, allow_docker))
     return {name: env[name] for name in clean if name in env and name not in hidden}
+
+
+def auxiliary_environment(base=None, kind: str = "claude", extra_keep=()) -> dict:
+    """Tasks/bots authenticate from native storage, never serve's secret environment.
+
+    The permission socket claim is generated per task, not inherited host authority.
+    """
+    from .peer_session import clean_env
+    env = dict(os.environ if base is None else base)
+    extra_keep = set(extra_keep) | {k for k in _MAIN_ENV if k.startswith("FAKE_")}
+    clean = clean_env(kind, env, extra_keep=extra_keep)
+    hidden = set(hide_env(env))
+    return {k: v for k, v in clean.items() if k not in hidden
+            and not k.startswith("AGENTSRELAY_")
+            and not (k.endswith(("_TOKEN", "_API_KEY")) or k == "CLAUDE_CODE_OAUTH_TOKEN")
+            and (k in extra_keep or not k.endswith("_KEY"))}
 
 
 def _env_dirs(env) -> list[str]:

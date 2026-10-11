@@ -1,6 +1,6 @@
-# Agent J 0.18.2a1 release notes
+# Agent J 0.18.3a1 release notes
 
-Host 0.18.2a1 / install 0.21.8; phone-web scope.
+Host 0.18.3a1 / install 0.21.9; phone-web scope.
 Phone parity must pass --strict. Full Android/Telegram parity is incomplete.
 Full Android/Telegram parity is incomplete.
 No APK is included in this release. Android source is for review, not a released app.
@@ -8,18 +8,19 @@ No APK is included in this release. Android source is for review, not a released
 Publication status: local preparation only. Live site verification is DEFERRED until
 the public commit and tag are pushed, the site is deployed, and cold installation passes.
 
-On publication failure, restore v0.18.1a1 host/site/phone. A front Worker/site/signed downloads/install guide; B phone web and web Worker. No Dashboard, D1 migration or relay Worker change.
+On publication failure, restore v0.18.2a1 host/site/phone and the captured relay Worker version. relay Worker first (pending-slot limit); A front Worker/site/signed downloads/install guide; B phone web. No Dashboard or D1 migration change.
 ## Changes
 
-- The first-run checklist never blocks the chat: a closable banner and its own page; a closed checklist stays closed until the owner reopens it. Agent J can adopt an existing loopback CDP browser after one owner confirmation.
-- Pages without owner input get a page header with page number and new-message cue; the newest page follows new pages, history only flashes.
-- Slash commands end in a done state (compaction / new conversation); a busy shared session says the message is queued instead of held.
-- The web app reconnects within seconds (5 s backoff cap, resume watchdog) and keeps the unsent draft.
-- config set validates in the running host's service environment; release smoke ASR cache moves to a persistent, self-rebuilding path.
-- 中文：首装清单不挡聊天、可关且关了不再弹、可接管已有浏览器；无输入页有页码与新消息提示；压缩完成提示；网页断线快速恢复并保留草稿；「电脑正忙，消息已排队」；config set 不再需要手动加载服务环境。
+- Every approval reaches the phone: shared Claude cards are no longer withdrawn in favour of another approval hook; missing hooks are restored; control-socket resume/config/send/revoke need an owner claim.
+- Dangerous-command checks add an `opaque` category (encoded, spliced or shell-piped commands) and flag credential exfiltration; key-name-only greps stay quiet.
+- An independent session whose sandbox cannot start refuses to launch unless the owner allows one launch with a passkey; tasks and native bots no longer inherit the host service's secret environment.
+- Telegram forwards and group text are external data; group attachments are checked and budgeted before download.
+- The relay caps pending (unauthenticated) slots per source; the installer verifies the minisign signature before writing the wheel; the front Worker forwards the bots admin route and caps feedback streams.
+- Host disk writes leave the event loop; update apply rolls back on failure and restarts when idle; iPhone lock-screen resume keeps the layout; OpenCode shared replies follow the configured language.
+- 中文：审批一定能在手机上处理；危险命令识别更严并新增「看不清要做什么」；沙箱起不来不会悄悄裸跑；定时任务与客服 bot 拿不到主机密钥；群消息与转发更安全；一键安装验签；中继防占槽；iPhone 锁屏回来布局正常；网页更不容易卡。
 
 - Physical iPhone/Android/macOS and founder/native Claude/Telegram cutover remain pending; local browser and cloud/service-manager fixtures do not prove them.
-- Original P82 key security and 60s recovery evidence is explicitly reused only while the shared issuer source hash is unchanged; current package/Noise/card/model checks use new hash-bound evidence.
+- Account-page pairing still trusts the signed control plane, and the Linux fence mounts the whole filesystem (`--dev-bind / /`) with the session bus bound back; both are documented, not closed.
 
 ## Material acceptance limits
 

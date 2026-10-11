@@ -558,7 +558,8 @@ export async function runCases({ B, web, fake, only }) {
     await P.send('Emulation.setDeviceMetricsOverride', { width: 390, height: 500, deviceScaleFactor: 1, mobile: true });
     await sleep(300);
     await ev(`visualViewport.dispatchEvent(new Event('resize'))`);
-    ok((await ev(`document.documentElement.style.getPropertyValue('--vvh')`)) === '500px', 'the page follows the visual viewport');
+    // P142: a shrunk layout viewport (no keyboard: innerHeight shrank with it) is followed by 100dvh, not a pinned --vvh
+    ok(Math.abs((await ev(`document.body.getBoundingClientRect().height`)) - (await ev(`visualViewport.height`))) <= 1, 'the page follows the visual viewport');
     await P.send('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
     await sleep(300);
     await ev(`visualViewport.dispatchEvent(new Event('resize'))`);

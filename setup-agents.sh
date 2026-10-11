@@ -400,7 +400,12 @@ if [[ $AGENTJ == yes ]]; then
     IFS= read -r -s INSTALL_CODE </dev/tty; printf '\n' >/dev/tty
     [[ $INSTALL_CODE == AJI-* ]] || { printf 'Installation code required. See %s#agent-j\n' "$PAGE"; exit 2; }
     AJTMP=$(mktemp -d); trap 'rm -rf "$AJTMP"' EXIT
-    curl --connect-timeout 10 --max-time 90 -fsSL https://agentj.app/install-assistant.sh -o "$AJTMP/install-assistant.sh"
+    curl --proto '=https' --proto-redir '=https' --connect-timeout 10 --max-time 90 -fsSL https://agentj.app/install-assistant.sh -o "$AJTMP/install-assistant.sh"
+    python3 - "$AJTMP/install-assistant.sh" <<'VERIFY_INSTALLER'
+import hashlib,pathlib,sys
+if hashlib.sha256(pathlib.Path(sys.argv[1]).read_bytes()).hexdigest() != '04106669ad1396e9010d6205a7603f7a6d52721cd782bd0fc437343eae70cb8e':
+    sys.exit('Installer integrity check failed')
+VERIFY_INSTALLER
     sh "$AJTMP/install-assistant.sh" "$INSTALL_CODE" </dev/tty
     unset INSTALL_CODE
   else printf 'No terminal: Agent J requires an installation code and local confirmation. Open a terminal and rerun with --with-agentj.\n'; fi

@@ -36,6 +36,8 @@ from . import agent as agents
 from . import notices, activity, approvals, cloud, controls, danger, fence, gate, memory, slash, tasks, update, webpush, wire
 from . import asr as asr_mod
 from . import compose, history, inbox, menu, uploads, preferences, proxy, provenance
+from . import diskq  # P142: fsync'ed state writes off the loop (one ordered writer)
+from . import loopwatch  # P136: what was running when the loop stalled
 from . import media as media_mod  # F21: files the Agent shows to the phone (PROTOCOL §13)
 from . import elevate  # F17: sudo + secret cards (PROTOCOL §11)
 from . import passkey  # F20: the same phone without a second pairing (PROTOCOL §12)
@@ -201,6 +203,7 @@ class Ask:
     scope: tuple | None = None     # (kind, key) for a low-risk request that may be batch-approved
     scope_text: str | None = None  # what the phone shows for that scope; an allow_batch signature covers it
     task: str | None = None        # the scheduled task this request comes from (display only)
+    require_passkey: bool = False
 
 
 @dataclass
@@ -505,12 +508,20 @@ class Host:
     async def loop_watch(self) -> None:
         """P129: the relay link and every phone's heartbeat share this event loop; a start-up step or handler that blocks it
         delays every pong (a phone gives up after its probe deadline) and the relay's auth answer (10 s deadline). Log it."""
-        while not self.stopping.is_set():
-            t = time.monotonic()
-            await asyncio.sleep(1)
-            late = time.monotonic() - t - 1
-            if late >= LOOP_STALL:
-                self.st.log("loop_stall", ms=int(late * 1000))
+        probe = loopwatch.StallProbe(asyncio.get_running_loop(), LOOP_STALL)   # P136: and what was running when it stuck
+        probe.start()
+        try:
+            while not self.stopping.is_set():
+                t = time.monotonic()
+                probe.beat()
+                await asyncio.sleep(1)
+                late = time.monotonic() - t - 1
+                if late >= LOOP_STALL:
+                    self.st.log("loop_stall", ms=int(late * 1000), **probe.take())
+                else:
+                    probe.take()
+        finally:
+            probe.stop.set()
 
     async def _auth(self, ws) -> None:
         msg = json.loads(await asyncio.wait_for(ws.recv(), AUTH_TIMEOUT))
@@ -866,7 +877,7 @@ class Host:
         await self._rt_issue(s, force=True)     # P122: the renewal ticket for this pairing (§12.1)
         self.st.log("pair_approved", cid=s.cid, device=s.device, name=s.name, code_ok=source == "local", source=source)
         self.emit("approved", device=s.device, name=s.name)
-        asyncio.create_task(self._ready_then_onboard(s))   # F28: the first remote ever → the main Agent's welcome there
+        self._bg(self._ready_then_onboard(s), "onboard")   # F28: the first remote ever → the main Agent's welcome there
         res = {"ev": "approved", "device": s.device, "name": s.name}
         res.update({k: got[k] for k in ("replaced", "evicted") if got[k]})
         return res
@@ -1068,17 +1079,133 @@ class Host:
         await self.send_app(s, {"t": "pk_reg_res", "ok": True})
         await self.elevate.out.on_ready(s)        # F32: open pickup cards now carry this device's Face ID (`fa`)
 
+    def _bg(self, coro, what: str = "bg") -> asyncio.Task:
+        """P142 (B13): a fire-and-forget task held by reference (the loop keeps only a weak one — an unreferenced task can be
+        collected mid-flight) whose failure lands in host.log as `bg_task_failed` instead of vanishing."""
+        tasks = self.__dict__.setdefault("_bg_tasks", set())
+        task = asyncio.get_running_loop().create_task(coro)
+        tasks.add(task)
+
+        def done(t: asyncio.Task) -> None:
+            tasks.discard(t)
+            if not t.cancelled() and t.exception() is not None:
+                self.st.log("bg_task_failed", why=what, exception_type=type(t.exception()).__name__)
+        task.add_done_callback(done)
+        return task
+
     # ------------------------------------------------------------ control socket (local, 0600)
     async def _ctl_send(self, w: asyncio.StreamWriter, obj: dict) -> None:
         with contextlib.suppress(Exception):
             w.write((json.dumps(obj, ensure_ascii=False) + "\n").encode())
             await w.drain()
 
+    def _agent_pids(self) -> set:
+        """A4: processes whose descendants are the Agent (the shared session; an owned harness is serve's child anyway)."""
+        out = set()
+        a = self.agent
+        sess = getattr(a, "session", None)
+        if isinstance(sess, dict) and isinstance(sess.get("pid"), int):
+            out.add(sess["pid"])
+        for attr in ("proc", "native"):
+            pid = getattr(getattr(a, attr, None), "pid", None)
+            if isinstance(pid, int):
+                out.add(pid)
+        return out
+
+    async def _ctl_gate(self, w: asyncio.StreamWriter, req: dict, pid) -> bool:
+        """A4 (P139, ctl_auth): True = run the sensitive command now. Otherwise the answer has been sent."""
+        from . import ctl_auth
+        cmd = req.get("cmd")
+        tok = req.get("claim")
+        claims = getattr(self, "ctl_claims", {})
+        rec = claims.pop(tok, None) if isinstance(tok, str) else None
+        claimed = bool(rec and rec[0] == pid and time.monotonic() < rec[1])
+        if claimed and cmd == "resume":
+            if gate.is_set(self.st):
+                pw = req.get("pass")
+                try:
+                    if not isinstance(pw, str):
+                        raise gate.GateError("wrong")
+                    await asyncio.to_thread(gate.verify, self.st, pw)
+                except gate.GateError as e:
+                    self.st.log("ctl_refused", cmd=cmd, reason="passphrase_" + e.reason)
+                    await self._ctl_send(w, {"ok": False, "error": "passphrase", "reason": e.reason})
+                    return False
+            elif not ctl_auth.has_tty(pid):
+                self.st.log("ctl_refused", cmd=cmd, reason="no_terminal")
+                await self._ctl_send(w, {"ok": False, "error": "claim_required", "why": "terminal"})
+                return False
+        if claimed:
+            return True
+        if cmd == "config_apply":
+            await self._ctl_config_from_agent(w, req.get("raw"))
+            return False
+        self.st.log("ctl_refused", cmd=cmd, reason="no_claim")
+        self.emit("ctl_refused", cmd=cmd)
+        await self._ctl_send(w, {"ok": False, "error": "claim_required"})
+        return False
+
+    async def _ctl_config_from_agent(self, w: asyncio.StreamWriter, raw) -> None:
+        """A4: `agentj config set` from inside an Agent. Ordinary keys apply at once; a security key needs the owner's signed
+        approval on the phone (a card now; applied when allowed, unless the configuration changed meanwhile)."""
+        from . import ctl_auth
+        try:
+            candidate = preferences.validate(preferences.parse(raw) if isinstance(raw, str) else preferences.read()[1])
+        except preferences.ConfigError as e:
+            return await self._ctl_send(w, e.result())
+        old = self.preferences
+        keys = ctl_auth.security_changes(old, candidate)
+        if not keys:
+            return await self._ctl_send(w, await self.apply_preferences(raw))
+        self.st.log("ctl_config_card", keys=",".join(keys)[:200])
+        await self._ctl_send(w, {"ok": False, "key": keys[0], "code": "owner_approval",
+                                 "error": "a security setting changed from inside an Agent needs the owner's approval: a card "
+                                          "was sent to the paired phone; nothing changed yet (applied when the owner allows) / "
+                                          "安全设置需要主人在手机上批准，已发卡片，批准后生效"})
+        flat = ctl_auth._flat(candidate)
+
+        async def card():
+            ans = await self.ask("agentj config", {"changes": {k: flat.get(k) for k in keys}}, batch=False)
+            if ans.get("behavior") != "allow":
+                self.st.log("ctl_config_card_done", result="deny")
+                return
+            if self.preferences != old:
+                self.st.log("ctl_config_card_done", result="stale")
+                self.agent_notice("配置在等待批准期间已被改过，这次批准没有生效，请重新发起。 / The configuration changed while "
+                                  "waiting; this approval was not applied.")
+                return
+            res = await self.apply_preferences(raw)
+            self.st.log("ctl_config_card_done", result="applied" if res.get("ok") else "failed")
+        task = asyncio.ensure_future(card())
+        self._ctl_bg = getattr(self, "_ctl_bg", set())
+        self._ctl_bg.add(task)
+        task.add_done_callback(self._ctl_bg.discard)
+
     async def on_ctl(self, r: asyncio.StreamReader, w: asyncio.StreamWriter) -> None:
+        from . import ctl_auth
+        from .shared_hook import peer_pid
+        info = getattr(w, "get_extra_info", None)
+        pid, _ = peer_pid(info("socket")) if info else (None, None)
         try:
             while line := await r.readline():
                 req = json.loads(line)
+                if not isinstance(req, dict):
+                    break
                 cmd = req.get("cmd")
+                if cmd == "claim":               # A4: one-time claim for a sensitive command on this connection
+                    why = ctl_auth.refusal(pid, os.getpid(), self._agent_pids())
+                    if why:
+                        self.st.log("ctl_refused", cmd="claim", reason=why)
+                        self.emit("ctl_refused", cmd="claim", reason=why)
+                        await self._ctl_send(w, {"ok": False, "error": "claim_refused", "why": why})
+                        continue
+                    self.ctl_claims = {t: v for t, v in getattr(self, "ctl_claims", {}).items() if v[1] > time.monotonic()}
+                    tok = secrets.token_urlsafe(24)
+                    self.ctl_claims[tok] = (pid, time.monotonic() + ctl_auth.CLAIM_TTL)
+                    await self._ctl_send(w, {"ok": True, "claim": tok})
+                    continue
+                if cmd in ctl_auth.SENSITIVE and not await self._ctl_gate(w, req, pid):
+                    continue
                 if cmd == "opencode_auth":
                     agent = self.agent
                     result = await agent.authentication() if agent and hasattr(agent, "authentication") else {"known": False}
@@ -1128,6 +1255,15 @@ class Host:
                     actual = info.get('providerID', '') + '/' + info.get('modelID', '') if all(isinstance(info.get(k), str) for k in ('providerID', 'modelID')) else None
                     from .agent_opencode import split_model
                     await self._ctl_send(w, {'ok': True, 'model': selected, 'assistant_model': actual if split_model(actual) else None, 'metadata_present': found, 'context_limit': limit, 'context_used': used})
+                elif cmd == "env_present":          # P142 (B14): is a key NAME set in serve's environment? yes/no only
+                    name = req.get("name")
+                    if isinstance(name, str) and re.fullmatch(r"[A-Z][A-Z0-9_]{0,79}", name):
+                        await self._ctl_send(w, {"ok": True, "present": bool(os.environ.get(name))})
+                    else:
+                        await self._ctl_send(w, {"ok": False, "error": "bad_name"})
+                elif cmd == "upgrade_ready":        # P142 (A12): the recovery worker restarts only an idle serve
+                    from . import auto_update
+                    await self._ctl_send(w, {"ok": True, "ready": not auto_update.busy(self)})
                 elif cmd == "auto_update_ready":
                     from . import auto_update
                     rec = auto_update.read(self.st)
@@ -1503,11 +1639,11 @@ class Host:
                         provider = selected.split('/', 1)[0]
                         name = provider_runtime.key_name(provider)
                         if name and not provider_runtime.fresh_environment(os.environ).get(name):
-                            asyncio.create_task(provider_runtime.request_key(self, provider))
+                            self._bg(provider_runtime.request_key(self, provider), "request_key")
                         async def quota_initial(pid=provider):
                             windows = await asyncio.to_thread(provider_runtime.probe, pid)
                             self.meter_update(quota_windows=windows)
-                        asyncio.create_task(quota_initial())
+                        self._bg(quota_initial(), "quota_initial")
             await self.send_app(s, {"t": "hist_meta", **self.hist.meta()})
             # IDs track insertions, not revisions. A known open page may have completed
             # offline without advancing the phone's cursor; replay the bounded current head.
@@ -1523,7 +1659,7 @@ class Host:
                     await self.send_app(s, self._render(e, s))
         for a in list(self.asks.values()):
             if not a.fut.done():
-                await self.send_app(s, self._ask_msg(a))
+                await self.send_app(s, self._ask_msg(a, s))
         for g in list(self.grants.values()):
             if self._grant_live(g):
                 await self.send_app(s, self._grant_msg(g))
@@ -1547,7 +1683,7 @@ class Host:
                 notice = await asyncio.to_thread(service.residency_hint, self.lang)
                 if notice:
                     self.agent_notice(notice)
-            asyncio.create_task(residency_notice())
+            self._bg(residency_notice(), "residency_notice")
 
     # ------------------------------------------------------------ agent bridge (PROTOCOL §8)
     def eff_status(self) -> str:
@@ -1639,7 +1775,6 @@ class Host:
                     await ack(self.config_problem)
                 await self._send_ready(lambda _: self.preferences_msg())
                 return self.config_problem
-            self.configure_claude_inbound()
             lang_changed = preferences.get(old, "appearance.language") != preferences.get(candidate, "appearance.language")
             preferences.note_language(self.st, candidate, language_at)
             if lang_changed:
@@ -1673,13 +1808,17 @@ class Host:
             if ack:
                 await ack(result)
             await self._send_ready(lambda _: self.preferences_msg())
+            # P142: the owner's Claude settings (flock + backup + fsync + rename) in a thread, after the answer
+            self.configure_claude_inbound(await asyncio.to_thread(self._claude_inbound_files))
             return result
 
-    def configure_claude_inbound(self) -> None:
-        from . import claude_inbound, claude_statusline
-        claude_statusline.ensure_default(self.st)   # P127: status-line tap default (never raises; doctor reports)
+    def configure_claude_inbound(self, failed: bool | None = None) -> None:
+        from . import claude_inbound
+        if failed is None:
+            failed = self._claude_inbound_files()
         try:
-            claude_inbound.ensure_shared_default(self.st)
+            if failed:
+                raise claude_inbound.SettingsError("files")
             if any(s.state == "ready" for s in self.sessions.values()):
                 notice = claude_inbound.default_notice(self.st, self.lang)
                 if notice:
@@ -1689,6 +1828,16 @@ class Host:
             self.agent_notice("Could not enable Claude phone messages; check Claude settings and run agentj config claude-inbound on."
                               if self.lang == "en" else
                               "未能开启 Claude 手机消息；请检查 Claude 设置并运行 agentj config claude-inbound on。")
+
+    def _claude_inbound_files(self) -> bool:
+        """The owner's Claude settings writes (backup + fsync + rename): True = failed. P142: the loop runs it in a thread."""
+        from . import claude_inbound, claude_statusline
+        claude_statusline.ensure_default(self.st)   # P127: status-line tap default (never raises; doctor reports)
+        try:
+            claude_inbound.ensure_shared_default(self.st)
+            return False
+        except (OSError, claude_inbound.SettingsError):
+            return True
 
     def restart_harness(self, why: str) -> dict:
         """P59 (A167): restart the harness process Agent J owns before its next turn, the conversation kept (Claude Code
@@ -1753,8 +1902,7 @@ class Host:
             preferences.note_language(self.st, self.preferences, account["language_at"])
             return
         self.st.log("language_synced", status=account["language"])
-        asyncio.get_running_loop().create_task(
-            self.set_pref("appearance.language", account["language"], language_at=account["language_at"]))
+        self._bg(self.set_pref("appearance.language", account["language"], language_at=account["language_at"]), "language_sync")
 
     async def on_pref_set(self, s: Session, obj: dict) -> None:
         """C6 `pref_set {r, key, value}` from a ready, paired p33 session (E2E). Whitelist PREF_SET_KEYS only; the value
@@ -1825,7 +1973,7 @@ class Host:
         if self.post_q is not None:
             self.post_q.put_nowait((coro_fn, args))
         else:                               # not inside run() (unit tests): send right away
-            asyncio.get_running_loop().create_task(coro_fn(*args))
+            self._bg(coro_fn(*args), "post_now")
 
     async def post_loop(self) -> None:
         while True:
@@ -2191,13 +2339,19 @@ class Host:
             self.turn_text = False
             self.push_notify("reply")
 
-    def _ask_msg(self, a: Ask) -> dict:
+    def _ask_msg(self, a: Ask, s=None) -> dict:
         m = {"t": "ask", "id": a.rid, "tool": a.tool, "summary": a.summary, "ttl": max(0, int(a.deadline - time.monotonic())),
              "cat": list(a.cats), "why": a.why}
         if a.why_en:
             m["why_en"] = a.why_en        # P128: the phone shows why or why_en by its language (never both)
         if a.cred:
             m["cred"] = a.cred            # "read" → 查看密码或密钥, "change" → 改密码或密钥
+        if a.require_passkey:
+            pk = self.st.passkey_of_device(s.device) if s is not None else None
+            m["passkey_required"] = True
+            if pk:
+                m["fa"] = pk["id"]
+                m["fa_ch"] = wire.b64u(passkey.elevate_challenge(self.channel, s.device, a.rid, "sandbox", a.rid, a.digest))
         if a.scope_text:
             m["batch"] = a.scope_text
             m["batch_max"], m["batch_secs"] = BATCH_MAX, BATCH_SECS
@@ -2280,7 +2434,7 @@ class Host:
                     gone[m["id"]].set_result(True)
                 elif m.get("t") == "ask" and m["id"] not in gone:
                     gone[m["id"]] = asyncio.get_running_loop().create_future()
-                    asyncio.create_task(self._perm_ask(w, m, gone))
+                    self._bg(self._perm_ask(w, m, gone), "perm_ask")
         except (ValueError, ConnectionError, asyncio.LimitOverrunError):
             pass
         finally:
@@ -2307,13 +2461,30 @@ class Host:
             if self.perm_w is w:
                 await self._perm_send(w, {"t": "answer", "id": rid, **ans})
 
-    async def ask(self, tool: str, tool_input: dict, gone: asyncio.Future | None = None, batch: bool = True, risk_scope: bool = False) -> dict:
+    async def ask(self, tool: str, tool_input: dict, gone: asyncio.Future | None = None, batch: bool = True, risk_scope: bool = False, require_passkey: bool = False) -> dict:
         """batch=False: never offered for (or approved by) a batch grant (a Codex sandbox / network escalation)."""
         if tool == "AskUserQuestion" and self.agent and self.agent.kind == "claude" and isinstance(tool_input, dict):
             return await self._ask_user_question(tool_input, gone)       # §10.7: a question card, not an approval card
         kind = self.agent.kind if self.agent else "?"
         v = self._classify(tool, tool_input)
         summary = approval_summary(tool, tool_input, v, self.lang)
+        if require_passkey:
+            from . import fence
+            batch = False
+            if card_lang(self.lang) == "en":
+                why = {"no_bwrap": "bubblewrap (bwrap) is missing; install bubblewrap",
+                       "bwrap_failed": "bubblewrap failed; check user namespaces and container policy",
+                       "apparmor_userns": "AppArmor blocks user namespaces; ask for agentj doctor repair guidance",
+                       "no_sandbox_exec": "macOS sandbox-exec is missing",
+                       "sandbox_failed": "macOS sandbox-exec failed; check whether Agent J is already sandboxed",
+                       "unsupported_os": "isolation is supported on Linux and macOS; use WSL2 on Windows"}.get(tool_input.get("reason"), "isolation check failed")
+                summary = ("Sandbox unavailable; Agent has not started: " + why + ".\nRepair the isolation tool and retry; "
+                           "installation/admin approval can be completed on the phone.\nRun this launch without isolation: "
+                           "it may access local files and credentials. Owner passkey required; this launch only.")
+            else:
+                why = fence.REASONS.get(tool_input.get("reason"), "隔离检查失败")
+                summary = ("沙箱不可用，Agent 尚未启动：" + why + "。\n修复隔离工具后重试；"
+                           "需要安装或管理员权限时，可在手机上批准。\n本次不隔离运行：批准后会在沙箱外运行，可能访问本机文件和凭据。仅本次启动有效，需主人通行密钥批准。")
         if risk_scope:
             summary += CARD_TEXT[card_lang(self.lang)]["risk_scope"]
         digest, isha = approvals.shown_digest(tool, summary), approvals.input_digest(tool_input)
@@ -2350,7 +2521,7 @@ class Host:
                 self.st.log("ask_done", id=rid, tool=tool, decision="allow", reason="brief")
                 self.activity("auto", id=rid, tool=tool, summary=summary, by="brief", task=self.task_label)
                 return {"behavior": "allow", "updatedInput": tool_input}
-        g = None if v.danger else self._grant_for(tool, sc[:2] if sc else None)
+        g = None if v.danger or require_passkey else self._grant_for(tool, sc[:2] if sc else None)
         if g is not None:                 # inside a live batch approval: allowed at once, logged, one quiet line on the phone
             g.left -= 1
             approvals.record(self.st, **base, decision="allow", reason="batch", device=g.device, grant=g.rid)
@@ -2375,13 +2546,13 @@ class Host:
             return {"behavior": "deny", "message": "同时等待批准的请求太多：默认拒绝。"}
         a = Ask(rid, tool, summary, digest, tool_input, isha, time.monotonic() + self.ask_ttl,
                 asyncio.get_running_loop().create_future(), cats=v.cats, why=v.why, why_en=v.why_en, cred=v.cred,
-                scope=sc[:2] if sc else None, scope_text=sc[2] if sc else None, task=self.task_label)
+                scope=sc[:2] if sc else None, scope_text=sc[2] if sc else None, task=self.task_label, require_passkey=require_passkey)
         self.asks[rid] = a
         self.activity("ask", id=rid, tool=tool, cats=v.cats, why=v.why or None, why_en=v.why_en or None, cred=v.cred or None,
                       summary=summary, task=self.task_label)
         self.st.log("ask", id=rid, tool=tool, agent=kind, kind="danger" if v.danger else "low")
         self.emit("ask", id=rid, tool=tool, summary=summary)
-        self._post(self._send_ready, lambda s: self._ask_msg(a))   # same queue as the Agent's text: order is kept
+        self._post(self._send_ready, lambda s: self._ask_msg(a, s))   # same queue as the Agent's text: order is kept
         self.status_changed()
         self.push_notify("ask")
         try:
@@ -2481,6 +2652,20 @@ class Host:
         if not sk or not approvals.verify(sk, sigb, self.channel, s.device, rid, decision, a.digest, scope):
             self.st.log("answer_refused", id=rid, device=s.device, reason="no_key" if not sk else "bad_signature")
             return
+        if ok and a.require_passkey:
+            pk = self.st.passkey_of_device(s.device)
+            try:
+                if not pk:
+                    raise passkey.PasskeyError("bad", "no_passkey")
+                f = passkey.approval_fields(obj.get("fa"))
+                if f["id"] != pk["id"]:
+                    raise passkey.PasskeyError("bad", "credential")
+                challenge = passkey.elevate_challenge(self.channel, s.device, rid, "sandbox", rid, a.digest)
+                count = passkey.verify_assertion(pk, f, challenge)
+                self.st.passkey_count(s.device, pk["id"], count)
+            except (passkey.PasskeyError, ValueError):
+                self.st.log("answer_refused", id=rid, device=s.device, reason="passkey_required")
+                return
         a.fut.set_result((decision, s.device, sk, sigb))
 
     # ------------------------------------------------------------ Agent friends (P71, PROTOCOL §17.7)
@@ -3125,13 +3310,13 @@ class Host:
         if t == "pref_set":
             return await self.on_pref_set(s, obj)
         if t == "tts_get":
-            asyncio.create_task(self.on_tts(s, obj))
+            self._bg(self.on_tts(s, obj), "tts")
             return
         if t == "tg_fwd":                  # P118 (B10): one tap → this reply to the owner's own Telegram private chat
             r = obj.get("r")
             if not wire.is_rid(r):
                 return
-            asyncio.create_task(self.on_tg_fwd(s, r, obj.get("id")))   # Telegram may take seconds: never hold the reader
+            self._bg(self.on_tg_fwd(s, r, obj.get("id")), "tg_fwd")   # Telegram may take seconds: never hold the reader
             return
         if t == "say":
             return await self.on_say(s, obj)
@@ -3160,7 +3345,7 @@ class Host:
             for m in out:
                 await self.send_app(s, m)
             if take is not None:
-                asyncio.create_task(self._asr_take(s.device, take))
+                self._bg(self._asr_take(s.device, take), "asr_take")
             return
         if t == "blob_drop":
             for m in self.uploads.drop(s.device, obj.get("bid")):
@@ -3204,7 +3389,7 @@ class Host:
                 ok = isinstance(pid, str) and bool(provider_runtime.key_name(pid))
                 await self.send_app(s, {"t": "provider_res", "r": r, "ok": ok, **({} if ok else {"why": "unsupported"})})
                 if ok:
-                    asyncio.create_task(provider_runtime.request_key(self, pid))
+                    self._bg(provider_runtime.request_key(self, pid), "request_key")
                 return
             if getattr(self, "_asr_installing", False):
                 return await self.send_app(s, {"t": "asr_install_res", "r": r, "ok": False, "why": "busy"})
@@ -3223,7 +3408,7 @@ class Host:
                     await self.send_app(s, {"t": "asr_install_res", "r": r, "ok": False, "why": "failed"})
                 finally:
                     self._asr_installing = False
-            asyncio.create_task(install_asr())
+            self._bg(install_asr(), "install_asr")
             return
         if t == "models_get":
             r = obj.get('r')
@@ -3853,7 +4038,7 @@ class Host:
         if ended:
             self.st.log("codex_leftover_ended", result=len(ended))
         self.post_q = asyncio.Queue()
-        self.configure_claude_inbound()
+        self.configure_claude_inbound(await asyncio.to_thread(self._claude_inbound_files))   # P142: owner files, off the loop
         jobs = [asyncio.create_task(self.relay_loop()), asyncio.create_task(self.loop_watch()), asyncio.create_task(self.reporter.run()),
                  asyncio.create_task(self.sync_loop()), asyncio.create_task(self.remote_pair.run()), asyncio.create_task(self.post_loop()),
                  asyncio.create_task(self.update_loop()), asyncio.create_task(self.preferences_loop())]
@@ -3897,7 +4082,9 @@ class Host:
             await self.peers.start()
         except Exception as e:  # noqa: BLE001 — friends never keep serve from running
             self.st.log("peer_start_failed", reason=type(e).__name__)
+        from . import telegram as telegram_mod
         from .telegram import Telegram
+        telegram_mod.IN_SERVE = True              # P142 (B14): key checks in this process read serve's own environment
         self.telegram=Telegram(self)
         jobs.append(asyncio.create_task(self.telegram.run()))
         jobs.append(asyncio.create_task(self.scheduler.loop()))
@@ -3938,6 +4125,9 @@ class Host:
             with contextlib.suppress(FileNotFoundError):
                 sock.unlink()
             self.st.log("serve_stop")
+            from . import telegram as telegram_mod
+            telegram_mod.IN_SERVE = False
+            await diskq.aflush()                         # P142: queued state writes and log lines reach the disk
 
 
 _IID = re.compile(r"[A-Za-z0-9_-]{22}")

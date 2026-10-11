@@ -1,7 +1,7 @@
 // Own headless Chromium for the web client's browser tests (never the shared CDP on :9222): random debugging port, temp
 // profile, one isolated browser context per page. Fake camera + microphone (Chromium's test devices), so hold-to-talk,
 // MediaRecorder, the in-page camera and the WAV encoder run for real; no permission prompts.
-import { spawn } from 'node:child_process';
+import { guardedSpawn, stopGroup } from '../../tests/lib/reap.mjs';   // P142: own process group + PDEATHSIG; reaped on any exit
 import { mkdtempSync, readFileSync, existsSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -33,7 +33,7 @@ export function cdp(wsUrl) {
 export async function launch({ allowOrigins = [], args = [] } = {}) {
   // args: extra Chromium switches, e.g. --use-file-for-fake-audio-capture=<wav> (the real-host parity e2e feeds a speech WAV)
   const profile = mkdtempSync(join(tmpdir(), 'aj-web-chrome-'));
-  const chrome = spawn(CHROMIUM, ['--headless=new', `--user-data-dir=${profile}`, '--remote-debugging-port=0', '--remote-debugging-address=127.0.0.1',
+  const chrome = guardedSpawn(CHROMIUM, ['--headless=new', `--user-data-dir=${profile}`, '--remote-debugging-port=0', '--remote-debugging-address=127.0.0.1',
     '--no-first-run', '--no-default-browser-check', '--disable-gpu', '--hide-scrollbars', '--disable-background-networking',
     '--disable-component-update', '--disable-sync', '--disable-extensions', '--mute-audio', '--autoplay-policy=no-user-gesture-required',
     '--use-fake-ui-for-media-stream', '--use-fake-device-for-media-stream', ...(process.env.AJ_MEDIA_DIAGNOSTICS === '1' ? ['--enable-logging=stderr', '--vmodule=audio*=2,media_stream*=2,user_media*=2'] : []), ...args, 'about:blank'], { stdio: ['ignore', 'ignore', 'pipe'] });
@@ -46,14 +46,14 @@ export async function launch({ allowOrigins = [], args = [] } = {}) {
   const version = await (await fetch(`http://127.0.0.1:${port}/json/version`)).json();
   const browser = cdp(version.webSocketDebuggerUrl); await browser.ready;
   return {
-    port, browser, allowOrigins,
+    port, browser, allowOrigins, profile,   // P142: profile = the marker leftovers() looks for
     async mediaDiagnostics() {
       const processes=await browser.send('SystemInfo.getProcessInfo').catch(()=>({processInfo:[]}));
       const histograms=await browser.send('Browser.getHistograms',{query:'Media.Audio',delta:false}).catch(()=>({histograms:[]}));
       return {processes:processes.processInfo, histograms:histograms.histograms, errors:{outputHostDown:(err.match(/PcmOpen:.*Host is down/g)||[]).length, outputAuthorizationTimeout:(err.match(/Output device authorization timed out/g)||[]).length},
         native:err.split('\n').filter(s=>/audio|media_stream|user_media|service_process_host|Out of memory|crash/i.test(s)).slice(-40)};
     },
-    async close() { if (process.env.AJ_MEDIA_DIAGNOSTICS === '1') console.error('native-media-final', JSON.stringify(await this.mediaDiagnostics().catch(e => ({error:String(e)})))); try { browser.close(); } catch { /* gone */ } chrome.kill('SIGTERM'); await sleep(300); try { rmSync(profile, { recursive: true, force: true }); } catch { /* ignore */ } },
+    async close() { if (process.env.AJ_MEDIA_DIAGNOSTICS === '1') console.error('native-media-final', JSON.stringify(await this.mediaDiagnostics().catch(e => ({error:String(e)})))); try { browser.close(); } catch { /* gone */ } await stopGroup(chrome); try { rmSync(profile, { recursive: true, force: true }); } catch { /* ignore */ } },
   };
 }
 

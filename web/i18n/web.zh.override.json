@@ -210,6 +210,7 @@
   "r.speak.err.tap_play": "点一下播放",
   "r.speak.voice_fallback": "已回落到同语言默认本地音色；原音色在这台手机上不可用。",
   "ask.cat.credentials_read": "查看密码或密钥",
+  "ask.cat.opaque": "看不清要做什么",
   "setup.where.unsupported": "本版还不支持",
   "setup.menu": "首次准备清单",
   "setup.page": "首次准备清单",
@@ -243,5 +244,10 @@
   "r.src.loop": "定时检查",
   "r.src.bgTask": "后台任务完成",
   "r.src.agentReport": "{name} 主动汇报",
-  "r.om.noInput": "这一页没有你的输入"
+  "r.om.noInput": "这一页没有你的输入",
+  "ask.sandboxOnce": "本次不隔离运行",
+  "ask.passkeyRequired": "需要主人通行密钥；请先在手机菜单中设置通行密钥，再重试。",
+  "elev.agentClaim": "Agent 自述",
+  "elev.interpreter": "此命令运行 shell 或解释器，风险较高，必须输入管理员密码。",
+  "ask.sandboxTitle": "沙箱不可用"
 }

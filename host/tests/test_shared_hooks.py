@@ -125,6 +125,7 @@ class ClaudeHooks(unittest.IsolatedAsyncioTestCase):
         owner={'permissions':{'deny':['Bash(curl:*)']},'hooks':{'Stop':[{'hooks':[{'type':'command','command':'owner-hook'}]}]}}
         target.write_text(json.dumps(owner))
         chan=shared_hook.Channel(self.a,self.root/'cc.sock');await chan.start()
+        self.a.session['pid']=os.getpid();self.a.issue_hook_token()      # A14: the served session's token
         try:
             shared_hook.install(project,chan.path);shared_hook.install(project,chan.path)
             result=json.loads(target.read_text())
@@ -132,7 +133,7 @@ class ClaudeHooks(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(result['hooks']['Stop'][0],owner['hooks']['Stop'][0])
             self.assertEqual(len(result['hooks']['Stop']),2)
             reader,writer=await asyncio.open_unix_connection(str(chan.path))
-            writer.write(json.dumps({'hook_event_name':'PermissionRequest','session_id':'owner','tool_name':'Read','tool_input':{'file_path':'demo'}}).encode()+b'\n');await writer.drain()
+            writer.write(json.dumps({'hook_event_name':'PermissionRequest','session_id':'owner','tool_name':'Read','tool_input':{'file_path':'demo'},'agentj_token':self.a.hook_token}).encode()+b'\n');await writer.drain()
             reply=json.loads(await reader.readline())
             self.assertEqual(reply['hookSpecificOutput']['decision']['behavior'],'allow')
             writer.close();await writer.wait_closed()
@@ -202,7 +203,8 @@ class DisconnectedHooks(unittest.TestCase):
         channel=str(shared_hook.channel_path(self.root,family)) if family else str(self.root/'absent-agentj-channel')
         argv=[sys.executable,shared_hook.__file__,channel]+([event] if event else [])
         r=subprocess.run(argv,input=payload if isinstance(payload,str) else json.dumps(payload),
-                         text=True,capture_output=True,check=True,timeout=60)
+                         text=True,capture_output=True,check=True,timeout=60,
+                         env={**os.environ,'AGENTJ_HOOK_RECONNECT_S':'0'})
         return json.loads(r.stdout)['hookSpecificOutput'] if r.stdout.strip() else None
 
     @staticmethod
@@ -210,11 +212,18 @@ class DisconnectedHooks(unittest.TestCase):
         return None if out is None else out.get('permissionDecision',(out.get('decision') or {}).get('behavior'))
 
     def test_disconnected_bridge_keeps_native_authority_for_every_family(self):
+        # P139 (A5): Claude's high-risk PreToolUse is never silently handed back to native rules — it asks (a person at
+        # this computer confirms); everything else keeps native authority (no decision), and nothing ever allows.
         for family in ('claude', 'codex', 'opencode', None):
             for name in ('PreToolUse', 'PermissionRequest'):
                 for tool, inp in self.DANGER + self.ROUTINE:
                     with self.subTest(family=family, name=name, tool=tool):
-                        self.assertIsNone(self.run_hook(family, {'hook_event_name':name, 'tool_name':tool, 'tool_input':inp}, None if family=='opencode' else name))
+                        out = self.run_hook(family, {'hook_event_name':name, 'tool_name':tool, 'tool_input':inp}, None if family=='opencode' else name)
+                        if family == 'claude' and name == 'PreToolUse' and (tool, inp) in self.DANGER:
+                            self.assertEqual(self.decision(out), 'ask')
+                            self.assertIn('Agent J offline', out['permissionDecisionReason'])
+                        else:
+                            self.assertIsNone(out)
         for payload in self.MALFORMED:
             self.assertIsNone(self.run_hook('claude', payload, 'PreToolUse'))
 
@@ -253,7 +262,7 @@ class ConnectedPhoneDenyUnchanged(unittest.IsolatedAsyncioTestCase):
         root=Path(tmp.name);host=Mock();host.st.root=root;host.stopped.return_value=False
         host.ask=AsyncMock(return_value={'behavior':'deny'})
         a=shared.SharedClaudeAgent(host,{'kind':'claude','dir':str(root),'_workflow_ceo':True,'high_risk_warnings':True})
-        a.session={'sessionId':'owner'}
+        a.session={'sessionId':'owner','pid':os.getpid()};a.issue_hook_token()   # the hook script finds it by ancestry
         chan=shared_hook.Channel(a,shared_hook.channel_path(root,'claude'));await chan.start()
         try:
             async def hook(name):

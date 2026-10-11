@@ -24,7 +24,7 @@ import threading
 import urllib.error
 import urllib.request
 
-from . import privacy
+from . import diskq, privacy
 from .envcompat import getenv
 from .text import clean, clean_line
 
@@ -70,10 +70,11 @@ def _write_private(path: pathlib.Path, data: bytes) -> None:
     fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
     try:
         os.write(fd, data)
-        os.fsync(fd)
+        diskq.fsync(fd)   # P142: never on the event loop
     finally:
         os.close(fd)
     os.replace(tmp, path)
+    diskq.settle(path)
 
 
 def checked_path(draft: pathlib.Path) -> pathlib.Path:

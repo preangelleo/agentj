@@ -12,6 +12,8 @@ import os
 import pathlib
 import time
 
+from . import diskq
+
 OFFSET = "telegram-offset.json"
 OUTBOX = "telegram-outbox.json"
 FENCE = "telegram-fence.json"
@@ -38,14 +40,8 @@ def _read(path: pathlib.Path):
 
 
 def _write(path: pathlib.Path, obj) -> None:
-    tmp = path.with_name(f"{path.name}.{os.getpid()}.tmp")
-    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC | os.O_NOFOLLOW, 0o600)
-    try:
-        os.write(fd, json.dumps(obj, ensure_ascii=False).encode())
-        os.fsync(fd)
-    finally:
-        os.close(fd)
-    os.replace(tmp, path)
+    # P142: tmp → fsync → rename; on serve's event loop the fsync goes to the ordered disk writer (diskq)
+    diskq.write(path, json.dumps(obj, ensure_ascii=False).encode(), flags=os.O_NOFOLLOW)
 
 
 @contextlib.contextmanager

@@ -2818,7 +2818,7 @@ usage: agentj secret [-h] [--name NAME] [--purpose PURPOSE] [--dest DEST]
 | `--dest` | `null` | false | — | `存到哪：env:<文件>[#KEY]（.env 一行）或 file:<路径>（整个文件）` |
 | `--verify-url` | `null` | false | — | `只读校验：GET 这个 https 地址，2xx = 有效` |
 | `--verify-header` | `null` | false | — | `校验请求头模板，默认 'Authorization: Bearer {value}'` |
-| `--verify-cmd` | `null` | false | — | `只读校验命令（值在环境变量 $NAME 里；手机上会显示这条命令）` |
+| `--verify-cmd` | `null` | false | — | `已禁用；请使用 --verify-url（不运行沙箱外命令）` |
 | `--file` | `null` | false | — | `send：把这个文件（≤ 256 KiB）交给主人，手机上可下载` |
 | `--value-from` | `null` | false | — | `send：一段文本，从 env:<变量名> 或 file:<路径> 读（不要写在命令行上）` |
 | `--ttl` | `null` | false | — | `send：多少秒内可领（30–600，默认 600）` |
@@ -6409,7 +6409,7 @@ usage: agentj secret [-h] [--name NAME] [--purpose PURPOSE] [--dest DEST]
 | `--dest` | `null` | false | — | `存到哪：env:<文件>[#KEY]（.env 一行）或 file:<路径>（整个文件）` |
 | `--verify-url` | `null` | false | — | `只读校验：GET 这个 https 地址，2xx = 有效` |
 | `--verify-header` | `null` | false | — | `校验请求头模板，默认 'Authorization: Bearer {value}'` |
-| `--verify-cmd` | `null` | false | — | `只读校验命令（值在环境变量 $NAME 里；手机上会显示这条命令）` |
+| `--verify-cmd` | `null` | false | — | `已禁用；请使用 --verify-url（不运行沙箱外命令）` |
 | `--file` | `null` | false | — | `send：把这个文件（≤ 256 KiB）交给主人，手机上可下载` |
 | `--value-from` | `null` | false | — | `send：一段文本，从 env:<变量名> 或 file:<路径> 读（不要写在命令行上）` |
 | `--ttl` | `null` | false | — | `send：多少秒内可领（30–600，默认 600）` |

@@ -162,6 +162,9 @@ def verify_card(card, ed_pub: bytes, x_pub: bytes | None = None) -> bool:
     """The signature by `ed_pub`; with `x_pub` also `card["id"] == agent_id(x_pub, ed_pub)`."""
     if not isinstance(card, dict) or not isinstance(card.get("sig"), str):
         return False
+    for field,limit in (("name",64),("owner",32),("intro",140)):
+        value = card.get(field, "")
+        if not isinstance(value,str) or len(value)>limit:return False
     if x_pub is not None and card.get("id") != agent_id(x_pub, ed_pub):
         return False
     try:

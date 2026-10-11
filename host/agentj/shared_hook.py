@@ -3,13 +3,23 @@
 PermissionRequest is the only allow-returning boundary: it answers a native
 request through Host.ask. PreToolUse may only return ask, never allow.
 
-Unavailable approval channel (host gone, socket error/timeout, ADR-A146): the
-fallback never allows. Claude high-risk/unclassifiable PreToolUse returns ask
-(the native dialog reaches the person at this computer) and PermissionRequest
-returns nothing (native dialog). Codex 0.159 treats PreToolUse ask as an
-unsupported output and runs the tool, and its native policies auto-run some
-high-risk commands, so Codex keeps deny; OpenCode's tool.execute.before cannot
-ask, so it keeps deny too. Unknown channels fail closed (deny).
+P139 (0.18.3) — the phone always has a card:
+- Another PermissionRequest hook no longer makes Agent J yield. Known observers
+  (relay_hook.py taps) never answer; known/unknown answerers race the phone card
+  — first answer wins, and when Claude drops our hook process the card is
+  withdrawn (EOF on this channel → `gone`).
+- Every hook event carries the served session's one-time token (A14), found
+  through the hook's own process ancestry (`<state>/shared-hook/<pid>.token`).
+  The host also checks, by SO_PEERCRED, that the sender descends from the served
+  Claude process; a forged session_id from anywhere else is refused.
+- Unavailable approval channel (host gone, socket error/timeout): the fallback
+  never allows. Claude: a high-risk or hook-file PreToolUse returns ask (it is
+  never silently handed back to native rules), and PermissionRequest keeps
+  re-trying the host for RECONNECT_S while the native dialog is on screen, so a
+  recovered host still puts the card on the phone; whatever stayed native is
+  spooled (tool name only) and reported to the phone when the host is back.
+  Codex treats PreToolUse ask as unsupported output and OpenCode cannot ask, so
+  their unavailable path keeps native rules (no decision).
 """
 from __future__ import annotations
 import asyncio
@@ -17,6 +27,7 @@ import contextlib
 import json
 import os
 from pathlib import Path
+import re
 import shlex
 import socket
 import struct
@@ -30,6 +41,9 @@ MAX_FRAME = 2 * 1024 * 1024
 # channel argument already baked into every installed hook command.
 CHANNELS = {'claude': 'shared-claude.sock', 'codex': 'shared-codex.sock', 'opencode': 'shared-opencode.sock'}
 UNAVAILABLE = 'Agent J phone not connected — confirm on this computer.'
+TOKEN_DIR = 'shared-hook'        # <state>/shared-hook/<claude pid>.token (0600): the served session's hook token (A14)
+SPOOL = 'shared-missed.jsonl'     # requests that stayed with the native dialog while the host was unreachable
+RECONNECT_S = 150                 # PermissionRequest: keep trying a host that is restarting (< the 180 s hook timeout)
 BLOCKED = 'Agent J phone not connected; high-risk action blocked (this harness cannot hand it to a native prompt).'
 
 
@@ -100,28 +114,130 @@ def _matches(matcher, tool):
         return matcher == tool
 
 
+def hook_role(command, tool):
+    """P139: what another PermissionRequest hook command does for `tool`.
+    None = ours or a known observer (never prints a decision): relay_hook.py taps. "answerer" = a known answerer for this
+    tool (relay_hook.py ask → AskUserQuestion, approve → every other tool). "unknown" = anything else (may answer)."""
+    command = str(command or '')
+    if '/agentj/shared_hook.py ' in command:
+        return None
+    try:
+        words = shlex.split(command)
+    except ValueError:
+        words = command.split()
+    at = next((i for i, w in enumerate(words) if Path(w).name == 'relay_hook.py'), None)
+    if at is None:
+        return 'unknown'
+    mode = words[at + 1] if at + 1 < len(words) else ''
+    if mode == 'ask':
+        return 'answerer' if tool == 'AskUserQuestion' else None
+    if mode == 'approve':
+        return 'answerer' if tool != 'AskUserQuestion' else None
+    if mode.startswith('-') or mode in ('', 'selftest'):
+        return None
+    return None if re.fullmatch(r'[A-Za-z]+', mode) else 'unknown'
+
+
 def foreign_answerers(directory, tool):
-    """P116 (B5): settings layers (user / project / local) holding another PermissionRequest hook that matches `tool`.
-    Claude Code runs every matching hook; two answerers would mean two decisions for one request, so Agent J yields
-    (no decision: the other handler or the native dialog decides) until the owner removes the other one. Read-only."""
-    import json as _json
+    """Settings layers (user / project / local) holding another PermissionRequest hook that may answer `tool`.
+    P139: diagnostic only — Agent J never yields to them any more (the phone card races them, first answer wins).
+    Known observers (relay_hook.py taps) are not answerers. Read-only."""
     root = Path(os.environ.get('CLAUDE_CONFIG_DIR') or Path.home() / '.claude')
     d = Path(directory) / '.claude'
     found = []
     for name, p in (('user', root / 'settings.json'), ('project', d / 'settings.json'), ('local', d / 'settings.local.json')):
         try:
-            doc = _json.loads(p.read_text())
+            doc = json.loads(p.read_text())
         except (OSError, ValueError):
             continue
         entries = ((doc.get('hooks') or {}) if isinstance(doc, dict) else {}).get('PermissionRequest') or []
         for entry in entries if isinstance(entries, list) else []:
             if not isinstance(entry, dict) or not _matches(entry.get('matcher'), tool):
                 continue
-            if any(isinstance(h, dict) and '/agentj/shared_hook.py ' not in str(h.get('command', ''))
-                   for h in entry.get('hooks') or []):
+            if any(isinstance(h, dict) and hook_role(h.get('command'), tool) for h in entry.get('hooks') or []):
                 found.append(name)
                 break
     return found
+
+
+def missing(directory, path, family='claude'):
+    """A5 (P139): events whose Agent J hook entry (pointing at this channel) is not in the settings file install() writes.
+    [] = all in place. Read-only; an unreadable / invalid file counts as all missing."""
+    dest = Path(directory) / ('.claude' if family == 'claude' else '.codex') / ('settings.local.json' if family == 'claude' else 'hooks.json')
+    want = settings(path, EVENTS if family == 'claude' else ('UserPromptSubmit', 'PreToolUse'))['hooks']
+    try:
+        doc = json.loads(dest.read_text()) if not dest.is_symlink() else None
+    except (OSError, ValueError):
+        doc = None
+    hooks = doc.get('hooks') if isinstance(doc, dict) else None
+    out = []
+    for event, entries in want.items():
+        cmd = entries[0]['hooks'][0]['command']
+        have = hooks.get(event) if isinstance(hooks, dict) else None
+        if not any(isinstance(e, dict) and any(isinstance(h, dict) and h.get('command') == cmd for h in e.get('hooks') or [])
+                   for e in (have if isinstance(have, list) else [])):
+            out.append(event)
+    return out
+
+
+def token_path(root, pid):
+    return Path(root) / TOKEN_DIR / f'{int(pid)}.token'
+
+
+def write_token(root, pid, token):
+    d = Path(root) / TOKEN_DIR
+    d.mkdir(mode=0o700, parents=True, exist_ok=True)
+    p = token_path(root, pid)
+    tmp = p.with_name(p.name + '.tmp')
+    tmp.unlink(missing_ok=True)
+    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    with os.fdopen(fd, 'w') as f:
+        f.write(token)
+    os.replace(tmp, p)
+    return p
+
+
+def _ppid(pid):
+    try:
+        with open(f'/proc/{pid}/stat') as f:
+            return int(f.read().rsplit(')', 1)[1].split()[1])
+    except (OSError, ValueError, IndexError):
+        pass
+    try:
+        import subprocess
+        out = subprocess.run(['ps', '-o', 'ppid=', '-p', str(pid)], capture_output=True, text=True, timeout=2).stdout
+        return int(out.strip())
+    except (OSError, ValueError, subprocess.SubprocessError):
+        return None
+
+
+def ancestors(pid, depth=32):
+    """pid, its parent, … (bounded). Linux /proc; elsewhere `ps`."""
+    out = []
+    while isinstance(pid, int) and pid > 1 and len(out) < depth:
+        out.append(pid)
+        pid = _ppid(pid)
+    return out
+
+
+def find_token(root):
+    """The hook's own ancestry decides which served session's token it may present (A14)."""
+    for pid in ancestors(os.getppid()):
+        try:
+            return token_path(root, pid).read_text().strip()
+        except OSError:
+            continue
+    return None
+
+
+def peer_pid(sock):
+    with contextlib.suppress(OSError, AttributeError, struct.error):
+        if hasattr(socket, 'SO_PEERCRED'):
+            pid, uid, _ = struct.unpack('3i', sock.getsockopt(socket.SOL_SOCKET, socket.SO_PEERCRED, 12))
+            return pid, uid
+    with contextlib.suppress(OSError, AttributeError, struct.error):
+        return struct.unpack('i', sock.getsockopt(0, 2, 4))[0], None     # macOS SOL_LOCAL / LOCAL_PEERPID
+    return None, None
 
 
 class Channel:
@@ -146,17 +262,44 @@ class Channel:
 
     async def receive(self, reader, writer):
         self.clients.add(writer)
+        task = None
         try:
             sock = writer.get_extra_info('socket')
-            if hasattr(socket, 'SO_PEERCRED'):
-                _, uid, _ = struct.unpack('3i', sock.getsockopt(socket.SOL_SOCKET, socket.SO_PEERCRED, 12))
-                if uid != os.getuid():
-                    return
+            pid, uid = peer_pid(sock)
+            if uid is not None and uid != os.getuid():
+                return
             line = await asyncio.wait_for(reader.readline(), 5)
             if len(line) > MAX_FRAME:
                 return
             event = json.loads(line)
-            answer = await self.adapter.hook_event(event)
+            if not isinstance(event, dict):
+                return
+            for k in [k for k in event if str(k).startswith('_agentj')]:
+                event.pop(k)                      # host-only keys are never taken from the wire
+            event['_agentj_peer'] = pid
+            event['_agentj_token'] = event.pop('agentj_token', None)
+            check = getattr(self.adapter, 'authentic', None)
+            if check and not check(event):
+                writer.write(b'{}\n')
+                await writer.drain()
+                return
+            for k in ('_agentj_peer', '_agentj_token'):
+                event.pop(k, None)
+            # P139: the hook process going away (Claude took another answer / the dialog) withdraws the phone card
+            gone = asyncio.get_running_loop().create_future()
+            event['_agentj_gone'] = gone
+            task = asyncio.ensure_future(self.adapter.hook_event(event))
+            eof = asyncio.ensure_future(reader.read(1))
+            try:
+                done, _ = await asyncio.wait({task, eof}, return_when=asyncio.FIRST_COMPLETED)
+                if task not in done:
+                    if not gone.done():
+                        gone.set_result(True)
+                    answer = await task
+                    return                         # nobody left to read it
+            finally:
+                eof.cancel()
+            answer = task.result()
             writer.write((json.dumps(answer) + '\n').encode())
             await writer.drain()
         except (ValueError, OSError, ConnectionError, asyncio.TimeoutError):
@@ -176,14 +319,52 @@ class Channel:
             self.path.unlink(missing_ok=True)
 
 
+def _risk(event):
+    """Local classification for the unavailable path: (why, verdict) when the call is high-risk or rewrites hooks."""
+    sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+    from agentj import danger
+    v = danger.classify_shared(event.get('tool_name'), event.get('tool_input'))
+    return v.why if v.cats else None
+
+
 def fallback(name, family, event, valid_execution):
     """Decision when the approval channel is unavailable. Never returns allow.
 
-    None means "no decision": native rules and the native dialog decide.
+    None means "no decision": native rules and the native dialog decide. P139 (A5): Claude's high-risk / hook-file
+    PreToolUse is never silently handed back to native rules (which may auto-allow it) — it returns ask, so a person
+    confirms it at this computer. Codex/OpenCode cannot ask from PreToolUse: native rules, as before.
     """
-    # F14: no Agent J decision. Native hooks/rules and dialogs remain authoritative.
-    # Crucially this is neither allow nor an amendment to the session's permissions.
+    if family == 'claude' and name == 'PreToolUse' and valid_execution:
+        try:
+            why = _risk(event)
+        except Exception:
+            why = 'Agent J could not check this call'
+        if why:
+            return {'permissionDecision': 'ask', 'permissionDecisionReason': 'Agent J offline: ' + str(why)[:200]}
     return None
+
+
+def _spool(channel, name, event):
+    """Tool name + time only: what stayed with the native dialog while the host was unreachable (reported on recovery)."""
+    with contextlib.suppress(Exception):
+        p = Path(channel).parent / SPOOL
+        fd = os.open(p, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600)
+        with os.fdopen(fd, 'a') as f:
+            import time
+            f.write(json.dumps({'at': int(time.time()), 'event': name,
+                                'tool': str(event.get('tool_name') or '?')[:64]}) + '\n')
+
+
+def _exchange(channel, event, timeout):
+    with socket.socket(socket.AF_UNIX) as s:
+        s.settimeout(timeout)
+        s.connect(channel)
+        s.sendall(json.dumps(event).encode() + b'\n')
+        with s.makefile('rb') as f:
+            line = f.readline(MAX_FRAME)
+    if not line:
+        raise ConnectionError('host closed')
+    return json.loads(line)
 
 
 def main():
@@ -202,20 +383,31 @@ def main():
             if not isinstance(event.get('tool_name'),str) or not isinstance(event.get('tool_input'),dict):
                 raise ValueError('invalid execution payload')
             valid_execution = True
-        with socket.socket(socket.AF_UNIX) as s:
-            s.settimeout(170 if event.get('hook_event_name') in ('PermissionRequest', 'PreToolUse') else 10)
-            s.connect(sys.argv[1])
-            s.sendall(json.dumps(event).encode() + b'\n')
-            with s.makefile('rb') as f:
-                answer = json.loads(f.readline(MAX_FRAME))
+        token = find_token(Path(sys.argv[1]).parent)
+        wire = dict(event, agentj_token=token) if token else event
+        blocking = event.get('hook_event_name') in ('PermissionRequest', 'PreToolUse')
+        if event.get('hook_event_name') == 'PermissionRequest' and family_of(sys.argv[1]) == 'claude':
+            # P139: a restarting host (update, crash) still gets this request onto the phone; the native dialog is on
+            # screen meanwhile, so the person at the computer is never blocked by the wait.
+            import time
+            wait = float(os.environ.get('AGENTJ_HOOK_RECONNECT_S', RECONNECT_S))
+            deadline = time.monotonic() + wait
+            while True:
+                try:
+                    answer = _exchange(sys.argv[1], wire, 170)
+                    break
+                except (OSError, ValueError):
+                    if time.monotonic() + 1 > deadline:
+                        _spool(sys.argv[1], 'PermissionRequest', event)
+                        raise
+                    time.sleep(1)
+        else:
+            answer = _exchange(sys.argv[1], wire, 170 if blocking else 10)
         if answer:
             print(json.dumps(answer))
         return 0
     except Exception:
-        # Host gone / socket error / timeout / bad event (ADR-A146). A detached
-        # phone must not disable desktop work: routine operations keep native
-        # rules; high-risk ones go to the native ask where that provably reaches
-        # a person (Claude), otherwise deny. Never return an allow decision.
+        # Host gone / socket error / timeout / bad event. Never return an allow decision (see fallback()).
         expected = sys.argv[2] if len(sys.argv) > 2 and sys.argv[2] in EVENTS else None
         name = expected or (event.get('hook_event_name') if isinstance(event, dict) else None) or 'PreToolUse'
         family = family_of(sys.argv[1]) if len(sys.argv) > 1 else None

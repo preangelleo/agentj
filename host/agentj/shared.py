@@ -11,10 +11,12 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import hashlib
+import hmac
 import json
 import os
 from pathlib import Path
 import re
+import secrets
 import socket
 import signal
 import sys
@@ -31,6 +33,7 @@ from . import shared_opencode_hook
 
 CONTROL_WAIT = 600
 DESKTOP_IDLE_WAIT = 1800
+OBSERVE_RETRIES = 5     # P142 (B17): consecutive failed observe passes before the shared session is down
 CLAUDE_INPUT_WAIT = 10  # acceptance, not completion; never retry an uncertain socket write
 
 
@@ -115,6 +118,8 @@ class SharedClaudeAgent(Agent):
         self.untrusted_state = None    # B1: None | "pending" (group envelope sent) | "running" (native turn seen)
         self.untrusted_at = 0.0
         self.failed_start = False
+        self._observe_errors = 0       # P142 (B17): consecutive failed observe passes
+        self._observe_down = False
         self.channel = None
         self.native = None
         self.master = None
@@ -139,6 +144,10 @@ class SharedClaudeAgent(Agent):
         self.model_last = None
         self.picker_rows = None
         self._pending_task = None
+        self.hook_token = None          # A14 (P139): this served session's hook token (see authentic())
+        self.hook_token_pid = None
+        self.hook_watch = None
+        self.open_cards = {}            # P139: input digest → futures withdrawing phone cards answered elsewhere
 
     def untrusted(self) -> bool:
         """B1 (P117): a group member's envelope is pending or running natively — even after Agent J stopped waiting for
@@ -190,7 +199,127 @@ class SharedClaudeAgent(Agent):
             self.host.desktop_text(public_text(reply))
             self.host.desktop_end()
 
+    def authentic(self, event) -> bool:
+        """A14 (P139): an event for the served session (its session id, or a /clear of it) must carry the served session's
+        hook token and — where the kernel names the sender — come from a process descending from the served Claude
+        process. Events of other sessions pass through (they are ignored below anyway)."""
+        if not isinstance(event, dict) or not self.session:
+            return True
+        sid = event.get("session_id")
+        served = sid == self.session.get("sessionId") or (
+            event.get("hook_event_name") == "SessionStart" and event.get("source") == "clear")
+        if not served:
+            return True
+        why = None
+        tok = event.get("_agentj_token")
+        import time
+        prev = getattr(self, "hook_token_prev", None)
+        ok = isinstance(tok, str) and (bool(self.hook_token) and hmac.compare_digest(tok, self.hook_token) or bool(
+            prev and time.monotonic() < prev[1] and hmac.compare_digest(tok, prev[0])))    # hooks already in flight at /clear
+        if not ok:
+            why = "token"
+        else:
+            pid, served_pid = event.get("_agentj_peer"), self.session.get("pid")
+            if isinstance(pid, int) and isinstance(served_pid, int) and served_pid not in shared_hook.ancestors(pid):
+                why = "process"
+        if why:
+            self.host.st.log("shared_hook_refused", event=str(event.get("hook_event_name") or "?")[:32], reason=why)
+            emit = getattr(self.host, "emit", None)
+            if emit:
+                emit("shared_hook_refused", reason=why, hook=str(event.get("hook_event_name") or "?")[:32])
+        return why is None
+
+    def issue_hook_token(self):
+        """A14: a fresh token per served session generation (attach, /clear); the old one is spent."""
+        pid = (self.session or {}).get("pid")
+        if not isinstance(pid, int):
+            return
+        old = getattr(self, "hook_token_pid", None)
+        if old is not None and old != pid:
+            with contextlib.suppress(OSError, TypeError):
+                shared_hook.token_path(self.host.st.root, old).unlink(missing_ok=True)
+        import time
+        self.hook_token_prev = (self.hook_token, time.monotonic() + 10) if self.hook_token and old == pid else None
+        self.hook_token = secrets.token_urlsafe(32)
+        self.hook_token_pid = pid
+        with contextlib.suppress(OSError, TypeError):
+            shared_hook.write_token(self.host.st.root, pid, self.hook_token)
+
+    async def watch_hooks(self, every: float = 20.0):
+        """A5 (P139): the session can edit its own hook file. Every `every` s compare; a missing Agent J entry is put back
+        and the phone is told (the session may be trying to approve itself)."""
+        while True:
+            await asyncio.sleep(every)
+            with contextlib.suppress(Exception):
+                self.ensure_hooks()
+
+    def ensure_hooks(self) -> list:
+        if not self.channel:
+            return []
+        if self.hook_token and self.hook_token_pid is not None:
+            tp = shared_hook.token_path(self.host.st.root, self.hook_token_pid)
+            try:
+                same = tp.read_text().strip() == self.hook_token
+            except OSError:
+                same = False
+            if not same:
+                shared_hook.write_token(self.host.st.root, self.hook_token_pid, self.hook_token)
+                self.host.st.log("shared_hook_restored", events="token")
+        gone = shared_hook.missing(self.cfg["dir"], self.channel.path)
+        if gone:
+            shared_hook.install(self.cfg["dir"], self.channel.path)
+            self.host.st.log("shared_hook_restored", events=",".join(gone)[:200])
+            self.host.agent_notice("电脑上的 Claude 会话的 Agent J 审批钩子被改掉了（" + ", ".join(gone)[:80] + "），已自动恢复。"
+                                   "如果不是你本人改的，请留意这个会话在做什么。 / Agent J's approval hooks were removed from the "
+                                   "shared Claude session's settings; restored automatically.")
+            push = getattr(self.host, "push_notify", None)
+            if push:
+                push("ask")
+        return gone
+
+    def report_missed(self):
+        """Requests that went to the native dialog while this host was unreachable (spooled by the hook): tell the phone."""
+        try:
+            p = Path(self.host.st.root) / shared_hook.SPOOL
+            lines = p.read_text().splitlines()
+            p.unlink()
+        except (OSError, TypeError):
+            return 0
+        tools = []
+        for ln in lines:
+            with contextlib.suppress(ValueError, AttributeError):
+                tools.append(str(json.loads(ln).get("tool") or "?")[:40])
+        if tools:
+            self.host.st.log("shared_missed", count=len(tools))
+            self.host.agent_notice(f"Agent J 刚才不在线时，电脑上有 {len(tools)} 个审批请求（" + "、".join(dict.fromkeys(tools))[:120]
+                                   + "）只能在电脑上的原生对话框里处理。之后的审批会照常发到手机。 / "
+                                   f"{len(tools)} approval request(s) went to the computer's own dialog while Agent J was offline; "
+                                   "new ones reach the phone again.")
+        return len(tools)
+
+    def _withdraw_answered(self, name, event):
+        """P139: Claude Code acts on the first answer (another hook, the desktop dialog) and lets our hook run on (probed with
+        a live CLI: the losing hook is only killed when the session ends). The session moving on is the signal: a finished
+        call with the same input withdraws its card; the turn's committed end (Stop) or /clear withdraws every open card."""
+        if name in ("PostToolUse", "PostToolUseFailure"):
+            digest = hashlib.sha256(json.dumps([event.get("tool_name"), event.get("tool_input")], sort_keys=True).encode()).hexdigest()
+            futs = self.open_cards.pop(digest, [])
+        elif name == "Stop" or (name == "SessionStart" and event.get("source") == "clear"):   # not UserPromptSubmit: a
+            # queued phone message can be submitted while a dialog is still open
+            if event.get("agent_id"):
+                return
+            futs = [f for fs in self.open_cards.values() for f in fs]
+            self.open_cards.clear()
+        else:
+            return
+        for f in futs:
+            if not f.done():
+                f.set_result(True)
+        if futs:
+            self.host.st.log("shared_card_withdrawn", event=name, count=len(futs))
+
     async def hook_event(self, event):
+        gone = event.pop("_agentj_gone", None) if isinstance(event, dict) else None
         if not isinstance(event, dict) or not self.session:
             return {}
         name = event.get("hook_event_name")
@@ -212,6 +341,7 @@ class SharedClaudeAgent(Agent):
             # Foreign sessions in the same project retain native permissions.
             return {}
         name = event.get("hook_event_name")
+        self._withdraw_answered(name, event)
         if (name == "UserPromptSubmit" or (name == "SessionStart" and event.get("source") == "clear")) and not event.get("agent_id"):
             self.risk_epoch += 1
             self.permissions.clear()
@@ -226,6 +356,7 @@ class SharedClaudeAgent(Agent):
         self.sync_compacting()
         if name == "SessionStart" and event.get("source") == "clear" and self.clear_seen != sid:
             self.clear_seen = sid
+            self.issue_hook_token()                 # A14: a new session generation, a new token
             self.host.st.set_agent_session(self.kind, sid)
             root = Path(os.environ.get("CLAUDE_CONFIG_DIR") or Path.home() / ".claude")
             slug = re.sub(r"[^A-Za-z0-9]", "-", self.cfg["dir"])
@@ -266,10 +397,12 @@ class SharedClaudeAgent(Agent):
             if self.host.stopped() or self.host.st.sign_key(grant["device"]) != grant["sign_pub"]:
                 self.permissions.discard(cat)
                 self.risk_grants.pop(cat, None)
-        if name == "PreToolUse" and self.cfg.get("high_risk_warnings", False):
+        if name == "PreToolUse":
             verdict = danger.classify_shared(event.get("tool_name"), event.get("tool_input"), self.cfg.get("danger_extra"),
                                              self.cfg.get("approvals", "standard"))
             keys = danger.grant_keys(verdict)
+            if not self.cfg.get("high_risk_warnings", False):
+                keys = [k for k in keys if k in danger.ALWAYS_CARD]     # A5: hook-file writes ask even with warnings off
             if keys and set(keys) <= self.permissions:
                 for cat in keys:
                     self.host.st.log("shared_risk_batch", category=cat, grant=self.risk_grants[cat]["rid"],
@@ -291,17 +424,11 @@ class SharedClaudeAgent(Agent):
             ctx = self.identity_context(sid, "session_start:" + str(event.get("source") or "?"), force=True)
             return {"hookSpecificOutput": {"hookEventName": "SessionStart", "additionalContext": ctx.lstrip()}} if ctx else {}
         if name == "PermissionRequest":
-            # P116 (B5): exactly one answerer. Another PermissionRequest hook for this tool (e.g. an older phone bridge)
-            # answers instead; Agent J returns no decision and does not ask the phone, until the owner removes it.
+            # P139: never yield to another PermissionRequest hook — the phone card races it, first answer wins (an answer
+            # elsewhere withdraws the card, see _withdraw_answered). Known observers (relay_hook.py taps) never answer.
             other = shared_hook.foreign_answerers(self.cfg["dir"], str(event.get("tool_name") or ""))
             if other:
-                self.host.st.log("shared_approval_yield", tool=str(event.get("tool_name") or "?")[:64], layers=",".join(other))
-                key = (sid, str(event.get("tool_name")))
-                if key not in getattr(self, "_yield_told", set()):
-                    self._yield_told = getattr(self, "_yield_told", set()) | {key}
-                    self.host.agent_notice("这台电脑上另有一个审批处理器在回答「" + str(event.get("tool_name") or "?")[:40]
-                                           + "」的权限请求；Agent J 不重复回答，请在原处处理。 / Another approval hook answers this request; Agent J does not answer twice.")
-                return {}
+                self.host.st.log("shared_approval_race", tool=str(event.get("tool_name") or "?")[:64], layers=",".join(other))
 
         if name == "PermissionRequest":
             tool, inp = event.get("tool_name", "?"), event.get("tool_input") or {}
@@ -321,14 +448,27 @@ class SharedClaudeAgent(Agent):
                 elif cats and set(cats) <= self.permissions:
                     answer = {"behavior": "allow"}
                 else:
-                    answer = await self.host.ask(tool, inp, batch=False, risk_scope=bool(cats))
+                    withdraw = asyncio.get_running_loop().create_future()
+                    self.open_cards.setdefault(digest, []).append(withdraw)
+                    if gone is not None:
+                        gone.add_done_callback(lambda _f, w=withdraw: w.done() or w.set_result(True))
+                    try:
+                        answer = await self.host.ask(tool, inp, batch=False, risk_scope=bool(cats), gone=withdraw)
+                    finally:
+                        if withdraw in self.open_cards.get(digest, []):
+                            self.open_cards[digest].remove(withdraw)
+                            if not self.open_cards[digest]:
+                                self.open_cards.pop(digest)
+                    if withdraw.done():
+                        return {}                   # answered elsewhere first: no late decision from us
                     if cats and answer.get("behavior") == "allow":
                         grant = answer.get("risk_grant")
+                        keep = [c for c in cats if c not in danger.ALWAYS_CARD]   # A5: hook-file writes ask every time
                         if self.host.stopped() or (grant and self.host.st.sign_key(grant['device']) != grant['sign_pub']):
                             answer = {'behavior': 'deny'}
                         elif grant and self.risk_epoch == epoch:
-                            self.permissions.update(cats)
-                            self.risk_grants.update({c: grant for c in cats})
+                            self.permissions.update(keep)
+                            self.risk_grants.update({c: grant for c in keep})
                     elif cats and self.risk_epoch == epoch:
                         self.risk_denied.update(cats)
             decision = {"behavior": "allow"} if answer.get("behavior") == "allow" else {
@@ -393,6 +533,8 @@ class SharedClaudeAgent(Agent):
         self.channel = shared_hook.Channel(self, shared_hook.channel_path(self.host.st.root, "claude"))
         await self.channel.start()
         shared_hook.install(self.cfg["dir"], self.channel.path)
+        self.hook_watch = asyncio.ensure_future(self.watch_hooks())
+        self.report_missed()
 
     async def ordinary_start(self):
         import pty
@@ -464,8 +606,15 @@ class SharedClaudeAgent(Agent):
                 from . import shared_modelswitch as ms
                 await self.refresh_models()
                 names = " · ".join(dict.fromkeys(m_["id"] for m_ in self.models_cache)) or "opus · sonnet · fable · haiku"
+                # P142: the phone's model label sends this — one button per picker row (+ the owner's default), each the
+                # same `/model <id>` self-slash path and receipt as typing it
+                cur = self.cur_model()
+                rows = [{"id": m_["id"], "name": m_.get("name") or m_["id"], "cur": m_["id"] == cur} for m_ in self.models_cache]
+                rows.append({"id": "default", "name": pick(getattr(self.host, "lang", "zh"), "默认（你自己的默认模型）", "Default (your own default model)"),
+                             "cur": False})
                 return Result("Claude · " + str(m.get('model_name') or m.get('model') or '—') + " · " + str(m.get('effort') or '—')
-                              + " · " + self.state.status + "\n/model <" + names + "|default> [" + "|".join(ms.EFFORTS) + "]", "info")
+                              + " · " + self.state.status + "\n/model <" + names + "|default> [" + "|".join(ms.EFFORTS) + "]", "info",
+                              models=rows[:40])
             return Result("Claude · " + str(m.get('model_name') or m.get('model') or '—') + " · " + self.state.status, "info")
         if name == "model":
             return await self._model_command(arg)
@@ -699,6 +848,8 @@ class SharedClaudeAgent(Agent):
             self.failed_start = True
             return False
         self.session = sessions[0]
+        if self.session.get("pid") != self.hook_token_pid:
+            self.issue_hook_token()
         await self.prepare_channel()
         sid = self.session.get("sessionId")
         if not isinstance(sid, str) or not re.fullmatch(r"[0-9a-fA-F-]{8,64}", sid):
@@ -714,6 +865,12 @@ class SharedClaudeAgent(Agent):
         self.offset = self.transcript.stat().st_size if self.transcript.exists() else 0
         self.host.st.set_agent_session(self.kind, sid)
         self.failed_start = False
+        # P142: the phone's model label has a catalogue from the start (it used to say "not supported" until /model ran)
+        with contextlib.suppress(Exception):
+            await self.refresh_models()
+            changed = getattr(self.host, "models_changed", None)
+            if callable(changed):
+                changed()
         return True
 
     def start(self):
@@ -732,11 +889,26 @@ class SharedClaudeAgent(Agent):
                 if self.model_pending and self.state.status == "idle" and not self.phone_turn and not self.native_lock.locked() \
                         and (self._pending_task is None or self._pending_task.done()):
                     self._pending_task = asyncio.create_task(self._apply_pending())
-            except (OSError, ValueError):
-                self.failed_start = True
-                self.set_status("down")
-                self.done.set()
-            await asyncio.sleep(5 if self.session is None else 0.25)
+                if self._observe_errors:
+                    self._observe_errors = 0
+                    if self._observe_down and self.status == "down":   # P142 (B17): the transient error passed
+                        self._observe_down = False
+                        self.failed_start = False
+                        self.set_status("idle")
+                        self.host.st.log("shared_observe_recovered")
+            except (OSError, ValueError) as e:
+                # P142 (B17): one EIO / a transcript caught mid-rotation used to mark the shared session down for good.
+                # Counted and retried; down only after OBSERVE_RETRIES in a row — and back up once a pass succeeds.
+                self._observe_errors += 1
+                if self._observe_errors == OBSERVE_RETRIES:
+                    self.host.st.log("shared_observe_down", exception_type=type(e).__name__, count=self._observe_errors)
+                    self._observe_down = True
+                    self.failed_start = True
+                    self.set_status("down")
+                    self.done.set()
+                elif self._observe_errors < OBSERVE_RETRIES:
+                    self.host.st.log("shared_observe_retry", exception_type=type(e).__name__, count=self._observe_errors)
+            await asyncio.sleep(5 if self.session is None else 0.25 if not self._observe_errors else min(5, 0.25 * 2 ** self._observe_errors))
 
     def read_statusline(self):
         from . import claude_statusline
@@ -946,6 +1118,15 @@ class SharedClaudeAgent(Agent):
             self.observer.cancel()
             with contextlib.suppress(asyncio.CancelledError):
                 await self.observer
+        if self.hook_watch:
+            self.hook_watch.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await self.hook_watch
+            self.hook_watch = None
+        if self.hook_token_pid is not None:
+            with contextlib.suppress(OSError, TypeError):
+                shared_hook.token_path(self.host.st.root, self.hook_token_pid).unlink(missing_ok=True)
+            self.hook_token = self.hook_token_pid = None
         if self.channel:
             await self.channel.stop()
         if self.native and self.native.returncode is None:
@@ -1277,12 +1458,12 @@ class SharedOpenCodeAgent(OpenCodeAgent):
         mid = "msg" + uuid.uuid4().hex
         self.phone_messages.add(mid)
         self.turn_proc = self.proc
-        body = {"messageID": mid, "parts": [{"type": "text", "text": text}]}
         from . import main_identity
+        from .agent_opencode import turn_body
         main = self.owned_server and self.persist and not self.cfg.get('_workflow_ceo')
         # Owned main gets its full constitution; an attached owner keeps native
-        # identity and receives only this phone turn's language instruction.
-        body['system'] = main_identity.prompt(self.cfg) if main else main_identity.LANGUAGE_LINE[main_identity.language_of(self.cfg)]
+        # identity and receives only this phone turn's language instruction (+ P142's hidden language reminder).
+        body = {"messageID": mid, **turn_body(text, self.cfg, main)}
         m = split_model(self.cfg.get("model")) if self.owned_server else None
         if m:                       # P63: the owner's `agentj agent opencode --model` / phone /model on our own server
             body["model"] = m

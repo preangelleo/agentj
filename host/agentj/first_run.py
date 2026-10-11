@@ -338,7 +338,7 @@ def probe(st, iid: str, ctx: dict) -> tuple[str, str | None]:
         return ("unsupported", "tcc_check_pending") if mac else ("not_applicable", "not_macos")
     if iid == "tg":
         from . import telegram
-        return ("verified", None) if telegram.configuration(st) else ("pending", "not_configured")
+        return ("verified", None) if telegram.configured(st) else ("pending", "not_configured")   # P142 (B14): serve's env
     if iid == "botkey":
         from . import provider_profiles
         try:

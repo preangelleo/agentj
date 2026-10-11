@@ -321,6 +321,32 @@ def check_shared_inbound(st: State) -> dict | None:
     return _c("shared_inbound", FAIL, text, "agentj config claude-inbound on")
 
 
+def check_shared_hooks(st: State) -> dict | None:
+    """A5 (P139): Agent J's approval hooks still in the shared session's settings file (the session can edit it). Missing
+    entries are put back here too (serve also checks every 20 s and tells the phone)."""
+    c = st.agent_config() if st.exists() else None
+    if not c or c.get("kind") not in ("claude", "codex") or c.get("session_mode", "shared") != "shared":
+        return None
+    from . import shared_hook
+    family = c["kind"]
+    chan = shared_hook.channel_path(st.root, family)
+    if not chan.exists():
+        return None                                  # serve has not attached the shared session yet: nothing installed
+    try:
+        gone = shared_hook.missing(c.get("dir"), chan, family)
+        if gone:
+            shared_hook.install(c.get("dir"), chan, family)
+    except (OSError, ValueError):
+        return _c("shared_hooks", FAIL, "手机审批钩子不在位且无法恢复 / Agent J's approval hooks are missing and could not be "
+                  "restored", "agentj service restart")
+    if gone:
+        st.log("shared_hook_restored", events=",".join(gone)[:200], by="doctor")
+        return _c("shared_hooks", WARN, "手机审批钩子被改掉了（" + ", ".join(gone)[:60] + "），已恢复 / Agent J's approval hooks "
+                  "were removed from the shared session's settings; restored", "如果不是你改的，留意这个会话在做什么 / if you did "
+                  "not do this, check what that session is doing")
+    return _c("shared_hooks", OK, "手机审批钩子在位 / Agent J's approval hooks are in place")
+
+
 def check_shared_statusline(st: State) -> dict | None:
     """P127: is the phone meter tap in the status line Claude Code really uses for the shared folder?"""
     c = st.agent_config() if st.exists() else None
@@ -489,10 +515,10 @@ def check_fence(st: State, *, required: bool = False) -> dict:
     if not mac and not sys.platform.startswith("linux"):
         return _fence_row(FAIL if required or c else WARN, "不支持 / unsupported", "Linux / macOS / WSL2")
     owned_shared = bool(c and c.get("kind") == "opencode" and c.get("session_mode") == "shared" and not c.get("shared_opencode_port"))
-    bad = FAIL if required or owned_shared else WARN   # Owned shared OpenCode fails closed; legacy harnesses may degrade.
+    bad = FAIL if required or owned_shared else WARN   # A missing optional fence remains a warning; independent startup still refuses it.
     if mac and not os.access(fence.SANDBOX_EXEC, os.X_OK):
         return _fence_row(bad, "没有 /usr/bin/sandbox-exec / sandbox-exec missing",
-                  "这台 Mac 缺系统自带的 sandbox-exec：请反馈 / report it (feedback); the Agent runs unfenced meanwhile")
+                  "这台 Mac 缺系统自带的 sandbox-exec：请反馈 / report it (feedback); startup is refused unless the owner approves one launch with a passkey")
     if not mac and not shutil.which("bwrap"):
         return {**_fence_row(bad, "没有 bubblewrap（bwrap） / bubblewrap missing",
                      _bwrap_hint() + ("\n" + fence.apparmor_hint() if fence.apparmor_userns_restricted() else "")), "reason": "no_bwrap"}
@@ -853,6 +879,9 @@ def run(st: State | None = None, offline: bool = False) -> list[dict]:
     statusline_row = check_shared_statusline(st)
     if statusline_row:
         out.append(statusline_row)
+    hooks_row = check_shared_hooks(st)
+    if hooks_row:
+        out.append(hooks_row)
     shared_row = check_codex_shared(st)
     if shared_row:
         out.append(shared_row)
@@ -975,15 +1004,15 @@ def check_preferences(st):
             rows.append(_c("voice-model",WARN,
                            "selected speech model retained; OpenAI shutdown 2027-01-06" if old else "custom speech model retained; check provider availability",
                            "agentj config set voice.tts.model "+factory))
-        telegram_enrolled = False
+        telegram_enrolled = None
         if any(x.get("type") == "telegram" for x in preferences.get(cfg, "channels.items", [])):
             from . import telegram
-            if telegram.enrollment(st) and not telegram.configuration(st):
-                # A terminal doctor need not inherit the running service's bot key.
-                # Existing private control health proves presence; no key value is read.
+            # P142 (B14): while serve runs, its service environment decides (its status row: enrolled = owner ledger + key
+            # NAME set there; no value is read); this terminal's environment counts only when serve is not running.
+            if telegram.enrollment(st):
                 live = _serve_status(st)
-                tg = live.get("telegram") if isinstance(live, dict) and live.get("ok") is True else None
-                telegram_enrolled = isinstance(tg, dict) and tg.get("enrolled") is True
+                if isinstance(live, dict) and live.get("ok") is True and isinstance(live.get("telegram"), dict):
+                    telegram_enrolled = live["telegram"].get("enrolled") is True
         voice.validate_runtime(cfg, telegram_enrolled=telegram_enrolled)
         rows.append(_c("config",OK,"JSON5 valid: "+tilde(str(preferences.path()))))
         if preferences.get(cfg,'voice.tts.mode')=='host' and provider=='command':

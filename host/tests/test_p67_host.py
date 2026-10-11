@@ -197,6 +197,7 @@ class AsyncRuntime(unittest.IsolatedAsyncioTestCase):
         from agentj.serve import Host
         for state in ('off', 'broken'):
             host = SimpleNamespace(asr=SimpleNamespace(install=mock.Mock(return_value=0)), st=SimpleNamespace(root=Path('/tmp/p67-asr-state'), log=mock.Mock()), send_app=mock.AsyncMock(), asr_state=lambda:state)
+            host._bg = lambda coro, what='', h=host: Host._bg(h, coro, what)   # P142 (B13): held background task
             await Host.on_p33(host, SimpleNamespace(device='paired-test-device'), 'asr_install', {'r':'asr-test-1'})
             for _ in range(50):
                 if host.send_app.called: break
@@ -208,6 +209,7 @@ class AsyncRuntime(unittest.IsolatedAsyncioTestCase):
         from agentj.serve import Host
         # on_p33 is reached only after the paired Noise session is ready (on_frame).
         host = SimpleNamespace(asr=SimpleNamespace(install=mock.Mock(return_value=0)), st=SimpleNamespace(root=Path('/tmp/p67-asr-state'), log=mock.Mock()), send_app=mock.AsyncMock(), asr_state=lambda:'ready')
+        host._bg = lambda coro, what='': Host._bg(host, coro, what)   # P142 (B13): held background task
         session = SimpleNamespace(device='paired-test-device')
         await Host.on_p33(host, session, 'asr_install', {'r':'asr-test-1'})
         for _ in range(50):

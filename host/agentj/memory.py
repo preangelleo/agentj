@@ -31,6 +31,8 @@ import secrets
 import stat
 import time
 
+from . import diskq
+
 MAX_FILE = 256 * 1024
 MAX_TOTAL = 2 * 1024 * 1024
 MAX_DIR_FILES = 200
@@ -179,7 +181,7 @@ def _write_atomic(path: str, data: bytes, expect_sha: str | None) -> None:
     fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0), 0o600)
     try:
         os.write(fd, data)
-        os.fsync(fd)
+        diskq.fsync(fd)   # P142: never on the event loop
         os.fchmod(fd, mode)
     finally:
         os.close(fd)
@@ -187,6 +189,7 @@ def _write_atomic(path: str, data: bytes, expect_sha: str | None) -> None:
         if expect_sha is not None and sha(read_file(path)) != expect_sha:
             raise MemoryError_("changed")
         os.replace(tmp, path)
+        diskq.settle(path)
     except BaseException:
         try:
             os.unlink(tmp)

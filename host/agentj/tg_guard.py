@@ -1,4 +1,4 @@
-"""Relay group gate port: rules then own-key Jev; outage delivers explicitly marked text.
+"""Relay group gate port: rules then own-key Jev; family outage warns and intake pauses.
 Only scrubbed text goes directly to the classifier, never media or vendor infrastructure.
 """
 import json
@@ -8,7 +8,7 @@ import threading
 import urllib.error
 import urllib.request
 
-GUARD_VERSION = "2026-09-25.1"
+GUARD_VERSION = "2026-10-11.1"
 
 # ------------------------------------------------------------------ layer 1
 
@@ -82,22 +82,14 @@ FAMILY_RULES = {
 }
 PROFILE_RULES = {"proxy": RULES, "family": {**RULES, **FAMILY_RULES}}
 
-# /notification (family group): the command, or 「提醒 主人 看微信」 in other words.
+# Family classifier downgrade is only for a leading slash command.
 NOTIFY_CMD = re.compile(r"(?i)^\s*/(?:notification|notify)(?:@\w+)?(?=\s|$)")
 NOTIFY_ONLY = re.compile(r"(?i)^\s*/(?:notification|notify)(?:@\w+)?\s*$")
-_WHO = r"(?:leo|老公|老王|他|孩子他爸|爸爸)?"
-NOTIFY_WORDS = re.compile(
-    r"(?i)(?:提醒|叫|喊|让|通知|告诉|催)(?:一下)?\s*" + _WHO + r"\s*(?:一下|赶紧|快|去)?\s*"
-    r"(?:看|回|查看|回复|打开|瞧)(?:一下|一眼|下)?\s*(?:他的|我的)?\s*(?:微信|wechat|消息)"
-    r"|(?:播放?|放一下|响一下)(?:那段|那个)?(?:提醒|通知)(?:语音|声音|铃声)?"
-    r"|(?<![A-Za-z])notification(?![A-Za-z])")
 
 
 def notify_intent(text: str) -> bool:
     """Is this a request to ring the /notification reminder at home?"""
-    spaced, squeezed = rule_forms(text)
-    return bool(NOTIFY_CMD.search(text or "") or NOTIFY_WORDS.search(spaced)
-                or NOTIFY_WORDS.search(squeezed))
+    return bool(NOTIFY_CMD.match(text or ""))
 
 
 def rule_hit(text: str, profile: str = "proxy") -> str | None:
@@ -211,7 +203,7 @@ class Verdict:
     def header(self) -> str:
         """Line prepended to a delivered group envelope, or ''."""
         if self.action == "warn":
-            return f"⚠ Jev 可疑 p={self.p:.2f}（闸门 {GUARD_VERSION}）\n"
+            return f"⚠ Jev 可疑 p={self.score}（闸门 {GUARD_VERSION}）\n"
         if self.layer == "jev-error":
             return f"Jev 未判（闸门 {GUARD_VERSION}）\n"
         return ""
@@ -224,8 +216,8 @@ class Verdict:
 
 def evaluate(texts, jev=None, timeout: float | None = None, profile: str = "proxy") -> Verdict:
     """Run both layers over the member's words (text, captions, transcripts).
-    `jev(text) -> p` is injectable; it may raise anything, or hang — both are
-    fail-open. The wall-clock budget is enforced here, not trusted to the judge.
+    `jev(text) -> p` is injectable. On failure/hang, family warns and intake pauses;
+    proxy keeps the explicit outage marker. The wall-clock budget is enforced here.
     The default judge is the real Jev asked with this profile's question."""
     text = "\n".join(t for t in texts if t)
     notify = profile == "family" and notify_intent(text)
@@ -245,22 +237,22 @@ def evaluate(texts, jev=None, timeout: float | None = None, profile: str = "prox
     def _ask():
         try:
             box["p"] = float(jev(text))
-        except BaseException as e:                    # noqa: BLE001 — fail-open by design
+        except BaseException as e:                    # noqa: BLE001 — classifier failure
             box["e"] = e
     t = threading.Thread(target=_ask, daemon=True)
     t.start()
     t.join(budget)
     if t.is_alive():
-        return Verdict("jev-error", "pass", error="timeout", notify=notify)
+        return Verdict("jev-error", "warn" if profile == "family" else "pass", error="timeout", notify=notify)
     if "e" in box:
         e = box["e"]
         detail = str(e)[:60] if isinstance(e, JevUnavailable) else ""
         name = type(e).__name__
-        return Verdict("jev-error", "pass", error=(f"{name}: {detail}" if detail else name),
+        return Verdict("jev-error", "warn" if profile == "family" else "pass", error=(f"{name}: {detail}" if detail else name),
                        notify=notify)
     p = box.get("p")
     if p is None or not 0.0 <= p <= 1.0:
-        return Verdict("jev-error", "pass", error="bad probability", notify=notify)
+        return Verdict("jev-error", "warn" if profile == "family" else "pass", error="bad probability", notify=notify)
     if p >= DROP_AT:
         # A notification ask is never dropped by the classifier alone: delivered
         # flagged, Agent J rings the reminder and ignores the rest.

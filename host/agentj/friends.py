@@ -211,7 +211,8 @@ class FriendStore:
         f = self.get(friend_id) or {}
         card = f.get("card") if isinstance(f.get("card"), dict) else {}
         n = card.get("name")
-        return n if isinstance(n, str) and n else friend_id
+        from .plaza import display_name
+        return display_name(n) or friend_id
 
     def add_friend(self, friend_id: str, x: str, pk: str, mbox: str, card: dict | None = None, group: str = "friend",
                    now: float | None = None) -> dict:
@@ -752,6 +753,8 @@ class FriendStore:
                 text = (old.rstrip("\n") + "\n" + text) if old.strip() and text.strip() else (text if text.strip() else old)
             if len(text) > MAX_CONTEXT:
                 return "too_long"
+            from .peer_guard import credential_shape
+            if credential_shape(text):return "contains_secret"
             if not text.strip():
                 with contextlib.suppress(OSError):
                     path.unlink()

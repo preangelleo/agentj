@@ -292,13 +292,15 @@ class CodexAgent(Agent):
             self.failed_start = True
             self.fail_notice("这台电脑上没找到 Codex（codex 命令）。装好并登录后再试。")
             return False
-        argv = self.launch_argv(self.argv())
+        argv = await self.authorized_launch_argv(self.argv())
         if argv is None:
             self.failed_start = True
             return False
         from .proxy import environment
         from . import fence
         env = environment(os.environ, self.host.preferences)
+        if self.cfg.get("_workflow_ceo"):
+            env = fence.auxiliary_environment(env, self.kind, extra_keep=("AGENTJ_PERM_SOCK", "AGENTJ_PERM_CLAIM", "AGENTJ_PERM_WAIT", "OPENCODE_SERVER_PASSWORD", "OPENCODE_SERVER_USERNAME", "OPENCODE_CONFIG_CONTENT"))
         if self.cfg.get("fence", True):
             env = fence.launch_environment(env, self.cfg.get("docker", False), self.kind)
         self.proc = p = await asyncio.create_subprocess_exec(*argv, cwd=self.cfg["dir"], env=env,

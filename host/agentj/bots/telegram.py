@@ -14,6 +14,8 @@ from .engine import UNAVAILABLE
 
 NAME='TELEGRAM_BOT_TOKEN'
 TURN_TIMEOUT=120
+MAX_PENDING=20
+TOO_LONG="Message too long (maximum 2000 characters). Please send a shorter message. 消息太长（最多 2000 字），请缩短后再发。"
 
 def token(store,bid):
     try:value=secure_read(store.secrets(bid)/NAME,256).decode().strip()
@@ -59,7 +61,9 @@ class Channel:
         # Group members and public usernames are not authentication identities.
         if chat.get('type')!='private' or type(chat.get('id')) is not int or type(user.get('id')) is not int or user.get('is_bot') or chat['id']!=user['id']:return
         text=message.get('text')
-        if not isinstance(text,str) or not text or len(text)>2000:return
+        if not isinstance(text,str) or not text:return
+        if len(text)>2000:
+            await self.deliver(chat['id'],{'text':TOO_LONG});return
         if not self.enabled():return
         try:
             # Admission can fail before Engine.reply, and an upstream call can stall.
@@ -80,18 +84,45 @@ class Channel:
         if not self.enabled():return
         await self.deliver(chat['id'],result)
     async def run(self):
-        while self.enabled():
-            try:
-                updates=await asyncio.to_thread(self.request,self.secret,'getUpdates',{'offset':self.offset(),'timeout':20,'limit':10,'allowed_updates':['message']})
-                if not isinstance(updates,list) or len(updates)>10:raise BotError('telegram_unavailable')
-                for update in updates:
-                    if not isinstance(update,dict) or type(update.get('update_id')) is not int:raise BotError('telegram_unavailable')
-                    if update['update_id']<self.offset():continue
-                    if not self.enabled():return
-                    await self.handle(update)
-                    self.advance(update['update_id']+1)
-                if not updates:await asyncio.sleep(.1)
+        # Bounded pending work; one chain per chat preserves order while other chats progress.
+        pending=set();tails={}
+        async def after(previous,update):
+            if previous is not None:
+                with contextlib.suppress(Exception):await previous
+            if not self.enabled():return
+            try:await self.handle(update)
             except asyncio.CancelledError:raise
-            except Exception:
-                self.store.event(self.bid,'','telegram','unavailable')
-                await asyncio.sleep(5)
+            except Exception:self.store.event(self.bid,'','telegram','unavailable')
+        def finished(task,chat):
+            pending.discard(task)
+            if tails.get(chat) is task:tails.pop(chat,None)
+        try:
+            while self.enabled():
+                try:
+                    updates=await asyncio.to_thread(self.request,self.secret,'getUpdates',{'offset':self.offset(),'timeout':20,'limit':10,'allowed_updates':['message']})
+                    if not isinstance(updates,list) or len(updates)>10:raise BotError('telegram_unavailable')
+                    for update in updates:
+                        if not isinstance(update,dict) or type(update.get('update_id')) is not int:raise BotError('telegram_unavailable')
+                        if update['update_id']<self.offset():continue
+                        if not self.enabled():return
+                        if len(pending)>=MAX_PENDING:
+                            await asyncio.wait(pending,return_when=asyncio.FIRST_COMPLETED)
+                        message=update.get('message',{})
+                        chat=message.get('chat',{}) if isinstance(message,dict) else {}
+                        cid=chat.get('id') if isinstance(chat,dict) else None
+                        cid=cid if type(cid) is int else None
+                        task=asyncio.create_task(after(tails.get(cid),update))
+                        pending.add(task);tails[cid]=task
+                        task.add_done_callback(lambda t,c=cid:finished(t,c))
+                        # At-most-once intake (unchanged): scheduled work is not replayed after a crash.
+                        self.advance(update['update_id']+1)
+                    await asyncio.sleep(.1 if not updates else 0)
+                except asyncio.CancelledError:raise
+                except Exception:
+                    self.store.event(self.bid,'','telegram','unavailable')
+                    await asyncio.sleep(5)
+        finally:
+            tasks=list(pending)
+            for task in tasks:task.cancel()
+            await asyncio.gather(*tasks,return_exceptions=True)
+            pending.clear();tails.clear()

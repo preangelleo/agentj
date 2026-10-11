@@ -149,6 +149,17 @@ def config_content(user: str | None) -> str:
     return json.dumps(cfg, separators=(",", ":"))
 
 
+def turn_body(text: str, cfg: dict, main: bool) -> dict:
+    """The prompt body of one phone turn (v1 API, owned and shared): `main` = Agent J's full constitution as `system`, else
+    only the language line (an attached owner keeps their own identity). P142: the owner's language also rides as a hidden
+    (synthetic) last part, so OpenCode's own agent prompt cannot outweigh it (GAP-0182-opencode-language)."""
+    from . import main_identity
+    lang = main_identity.language_of(cfg)
+    return {"parts": [{"type": "text", "text": text},
+                      {"type": "text", "text": main_identity.LANGUAGE_REMINDER[lang], "synthetic": True}],
+            "system": main_identity.prompt(cfg) if main else main_identity.LANGUAGE_LINE[lang]}
+
+
 _REGION = ("region", "country", "territory", "location is not supported", "not available in your", "unsupported_country")
 _QUOTA_WINDOW = ("quota", "额度")
 _QUOTA = ("quota", "insufficient", "balance", "billing", "credit", "payment")
@@ -516,7 +527,7 @@ class OpenCodeAgent(Agent):
                                    "`agentj agent opencode --dir … --model zhipuai/glm-5.3`。")
             return False
         port, password = free_port(), secrets.token_urlsafe(32)
-        argv = self.launch_argv(self.argv(port))
+        argv = await self.authorized_launch_argv(self.argv(port))
         if argv is None:
             self.failed_start = True
             return False
@@ -525,6 +536,8 @@ class OpenCodeAgent(Agent):
         self.auth_fp = auth_fingerprint()        # P59: what the credentials looked like when this serve started
         from . import fence
         env = opencode_env(environment(fresh_environment(os.environ), self.host.preferences), password)
+        if self.cfg.get("_workflow_ceo"):
+            env = fence.auxiliary_environment(env, self.kind, extra_keep=("AGENTJ_PERM_SOCK", "AGENTJ_PERM_CLAIM", "AGENTJ_PERM_WAIT", "OPENCODE_SERVER_PASSWORD", "OPENCODE_SERVER_USERNAME", "OPENCODE_CONFIG_CONTENT"))
         if self.cfg.get("fence", True):
             env = fence.launch_environment(env, self.cfg.get("docker", False), self.kind)
         proc = await asyncio.create_subprocess_exec(*argv, cwd=self.cfg["dir"], env=env,
@@ -1006,10 +1019,9 @@ class OpenCodeAgent(Agent):
             self.turn_progress = time.monotonic()
             self.provider_fail_noted = self.restart_after_turn = False
             self.retry_noted = self.saw_busy = False
-            body = {"parts": [{"type": "text", "text": text}]}
-            if self.persist and not self.cfg.get("_workflow_ceo"):
-                from . import main_identity
-                body["system"] = main_identity.prompt(self.cfg)
+            from . import main_identity
+            body = turn_body(text, self.cfg, True) if self.persist and not self.cfg.get("_workflow_ceo") else \
+                {"parts": [{"type": "text", "text": text}]}
             m = split_model(self.cfg.get("model"))
             if m:
                 body["model"] = m

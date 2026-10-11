@@ -466,13 +466,10 @@ class Flows(unittest.TestCase):
         cmd_req = {"t": "secret", "name": "TOK", "purpose": "p", "dest": "file:tok.txt", "cwd": str(work),
                    "verify_cmd": 'test "$TOK" = "' + KEY + '"'}
 
-        async def script3(host, s, ph):
-            c = await self.wait_card()
-            self.assertIn("$TOK", c["verify"])
-            await host._app(s, answer(ph, c, True, KEY))
-        res, _, _ = self.run_flow(cmd_req, script3)
-        self.assertEqual((res["receipt"]["verify"], res["receipt"]["detail"]), ("ok", "exit 0"))
-        self.assertEqual((work / "tok.txt").read_text(), KEY)
+        with self.assertRaises(elevate.Refused) as err:
+            elevate.norm_secret(cmd_req, self.st.root)
+        self.assertEqual(err.exception.why, "verify_cmd_disabled")
+        self.assertFalse((work / "tok.txt").exists())
 
     def test_secret_refusals(self):
         for req in ({"t": "secret", "name": "1X", "purpose": "p", "dest": "/tmp/x"},
@@ -595,11 +592,11 @@ class Helper(unittest.TestCase):
         ph = Phone(self.st)
         cmd = sandbox_helper(self.d, eh.keys_doc(self.st))
         run = lambda req: subprocess.run(cmd, input=json.dumps(req).encode(), capture_output=True, timeout=60)  # noqa: E731
-        req = self.helper_req(ph, ["sh", "-c", "echo as-root"])
+        req = self.helper_req(ph, ["/usr/bin/printf", "as-root\n"])
         r = run(req)
         self.assertEqual((r.returncode, r.stdout), (0, b"as-root\n"), r.stderr)
         self.assertIn(b"replay", run(req).stderr)
-        bad = dict(self.helper_req(ph, ["sh", "-c", "echo as-root"]), argv=["sh", "-c", "echo other"])
+        bad = dict(self.helper_req(ph, ["/usr/bin/printf", "as-root\n"]), argv=["/usr/bin/printf", "other\n"])
         self.assertIn(b"signature", run(bad).stderr)                         # another command than the phone signed
         self.assertIn(b"stale", run(self.helper_req(ph, ["true"], ts=int(time.time() * 1000) - 600_000)).stderr)
         from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
@@ -626,7 +623,7 @@ class Helper(unittest.TestCase):
             await host.elevate.start()
             try:
                 t = asyncio.create_task(asyncio.to_thread(elevate.client_request, self.st,
-                                                          {"t": "sudo", "argv": ["sh", "-c", "echo helper-ok"], "why": "w"}, 30))
+                                                          {"t": "sudo", "argv": ["/usr/bin/printf", "helper-ok\n"], "why": "w"}, 30))
                 for _ in range(500):
                     cards = [o for _, o in self.sent if o["t"] == "elev"]
                     if cards:

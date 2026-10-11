@@ -24,7 +24,7 @@ HERE = pathlib.Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE.parent))
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey  # noqa: E402
 
-from agentj import approvals, cloud, controls, doctor, peer, peer_guard, peer_service, serve, wire  # noqa: E402
+from agentj import approvals, cloud, controls, diskq, doctor, peer, peer_guard, peer_service, serve, wire  # noqa: E402
 from agentj.friends import FriendStore  # noqa: E402
 from agentj.noise import Keypair  # noqa: E402
 from agentj.peer import PeerKeys  # noqa: E402
@@ -675,6 +675,7 @@ class Pipeline(Base):
         await settle()
         self.svc.on_status("connected")
         self.assertTrue(self.svc.mbox_up)
+        await diskq.aflush()                     # P143: under disk pressure P142 hands host.log lines to the writer thread
         log = self.host.st.log_path.read_text()
         self.assertNotIn("ABC", log)
         self.assertNotIn("XYZ", log)

@@ -1,21 +1,21 @@
 ---
 document: agentj-install
-version: 0.21.8
+version: 0.21.9
 released: 2026-10-11
 status: beta (anyone can sign up; not advertised yet, pages are not indexed)
 host_package: agentj (the `agentj` command)
-host_version: 0.18.2a1
-source_tag: v0.18.2a1
-host_wheel: agentj-0.18.2a1-py3-none-any.whl
-host_wheel_sha256: 96b5eee6a9f54cf2addcb91cb13b9635a08dc48cc813983de764ff7a4db56529
-host_sdist: agentj-0.18.2a1.tar.gz
-host_sdist_sha256: 652c5dce0144c15a88a44c3b076f83cc4235797a2d678a41f150f3e51a9b95d8
+host_version: 0.18.3a1
+source_tag: v0.18.3a1
+host_wheel: agentj-0.18.3a1-py3-none-any.whl
+host_wheel_sha256: a2eb727bdecba756522f0cd5dbfee42d3a70ac3abacf2cda0cca39899e3c59be
+host_sdist: agentj-0.18.3a1.tar.gz
+host_sdist_sha256: 95336aca30aa1c83446ded413f13ac46263fe8b47986a93e17c27a19cc2b835a
 canonical_url: https://agentj.app/install.md
 sha256_url: https://agentj.app/install.md.sha256
 alias: https://agentjarvis.net/install.md (the older address: the same file, kept for one more version)
 docs_index: https://agentj.app/llms.txt (also https://agentj.app/docs/index.json; every page as raw Markdown at https://agentj.app/docs/<slug>/en.md and /zh.md)
 mirror_url: https://github.com/preangelleo/agentj/blob/main/install.md
-signature: none yet — integrity = the SHA-256 published on the site must match the GitHub copy (Step 1); the program's own files are pinned by source_tag and the two host_*_sha256 values above (Step 4)
+signature: minisign B79F925B0585F9D4
 language: en (talk to your human in their language)
 ---
 
@@ -137,7 +137,7 @@ curl -fsSL --retry 3 --retry-all-errors --retry-delay 2 --retry-max-time 45 --co
 curl -fsSL --retry 3 --retry-all-errors --retry-delay 2 --retry-max-time 45 --connect-timeout 10 --max-time 20 https://raw.githubusercontent.com/preangelleo/agentj/main/install.md -o install.github.md
 if command -v sha256sum >/dev/null; then sha256sum -c install.md.sha256; else shasum -a 256 -c install.md.sha256; fi   # → "install.md: OK"
 cmp install.md install.github.md && echo "site and GitHub copies match"
-grep -m1 '^version:' install.md                                           # → version: 0.21.8
+grep -m1 '^version:' install.md                                           # → version: 0.21.9
 ```
 - For a brief connection reset, timeout or interrupted download, these GET commands retry at most three times after the initial attempt, with a 45-second retry budget and a 20-second limit per attempt. If the network keeps failing, stop retrying and use the fallback below or ask the support desk. Do not add automatic retries to setup-code redemption, payment or other POST requests. Never disable TLS checks or continue after a SHA-256/GitHub mismatch.
 - Both checks pass → continue with that `install.md` (note its `version:` for feedback). Keep the file: Step 4 reads the
@@ -452,7 +452,7 @@ The astral installer warning that `uv` / `uvx` are shadowed is informational if 
 carry over). So start every command line from here on with `export PATH="$HOME/.local/bin:$PATH";` — or call
 `~/.local/bin/agentj` by its full path. This document writes `agentj` for short.
 
-The program is pinned to one release: the tag `v0.18.2a1` (front matter `source_tag`). The tag never moves, and its
+The program is pinned to one release: the tag `v0.18.3a1` (front matter `source_tag`). The tag never moves, and its
 `host/` folder is byte for byte the same code as the two files on our site whose SHA-256 is in this document's front matter.
 ```bash
 cd ~/.agentj-install
@@ -463,7 +463,7 @@ uv tool install "./$W"
 
 Intel Mac: this release keeps `cryptography<49` because newer releases lack an Intel macOS wheel. If an older installer tries to compile OpenSSL (`openssl-sys` / OpenSSL not found), rerun `uv tool install --with "cryptography<49" "./$W"`. The same platform constraint applies to `agentj update apply`.
 
-export PATH="$HOME/.local/bin:$PATH"; agentj --version     # → agentj 0.18.2a1
+export PATH="$HOME/.local/bin:$PATH"; agentj --version     # → agentj 0.18.3a1
 export PATH="$HOME/.local/bin:$PATH"; agentj doctor
 ```
 **Your human's own terminal must find `agentj` too** — they may use `agentj passphrase set` and `agentj pair` as a local alternative
@@ -491,12 +491,12 @@ echo "$WS  $W" | sha256sum -c - && echo "$SS  $S" | sha256sum -c -    # macOS: s
 uv tool install "./$W"          # the wheel; its dependencies come from PyPI or the mirror in UV_DEFAULT_INDEX
 ```
 `uv tool install "./$S"` installs from the checked source archive instead (it builds the same program).
-`https://agentj.app/dl/latest.txt` and `https://agentj.app/dl/latest-sdist.txt` name the same two files. `agentj --version` is the program's own version (`0.18.2a1`); it is
+`https://agentj.app/dl/latest.txt` and `https://agentj.app/dl/latest-sdist.txt` name the same two files. `agentj --version` is the program's own version (`0.18.3a1`); it is
 numbered separately from this document (`0.21.1`).
 
-Alternative from the matching published source tag: `uv tool install "git+https://github.com/preangelleo/agentj@v0.18.2a1#subdirectory=host"`.
+Alternative from the matching published source tag: `uv tool install "git+https://github.com/preangelleo/agentj@v0.18.3a1#subdirectory=host"`.
 
-Alternative without uv: `pipx install "git+https://github.com/preangelleo/agentj@v0.18.2a1#subdirectory=host"` (needs Python 3.11+).
+Alternative without uv: `pipx install "git+https://github.com/preangelleo/agentj@v0.18.3a1#subdirectory=host"` (needs Python 3.11+).
 `agentj doctor` lists what is ready and what is not (prerequisites, the fence, connectivity, which agents are usable).
 Continue unless it reports an error that a later step does not fix; report anything you cannot explain.
 
@@ -665,7 +665,7 @@ code). The terminal, `agentj admin` and this check share one rule, so nobody lea
 **After account binding, skip terminal passphrase setup.** On the `account` route `agentj pair` / `agentj admin` do not ask for
 one either: the waiting phone is approved on the same seat card with the passkey. Tell the owner: “On this computer’s account-page seat card, select Add a remote, confirm once with your passkey and scan. You do not need a terminal passphrase.” The same account page works for another installed, bound, online computer. The passkey confirmation is valid for ten minutes on this account session; pairing requests expire after five minutes and can add only one remote. Pending remotes, resume after Stop everything and scheduled-task enable also have account-page approval.
 
-`agentj remote-pair on` / `agentj remote-pair off` controls account-page additions/owner approvals (default on). Off shows an explanation; offline machines are not queued. Older hosts must upgrade with `agentj update apply` or from a paired phone. `agentj doctor` accepts a bound host with no passphrase.
+`agentj remote-pair on` / `agentj remote-pair off` controls account-page additions/owner approvals (default on). The host trusts the control plane's signature for these requests (the passkey is checked by the account service, not by the host): a compromised signing service could add a phone, lift Stop everything or enable a task without confirmation on the computer; `off` refuses the route. Off shows an explanation; offline machines are not queued. Older hosts must upgrade with `agentj update apply` or from a paired phone. `agentj doctor` accepts a bound host with no passphrase.
 
 **Unbound hosts, `set_passphrase` from the check, or optional local/offline approval:** use the following local passphrase
 path. On an unbound host `agentj pair` and `agentj admin` still require it, before any QR code.
@@ -1142,14 +1142,19 @@ agentj doctor
 Apply uses closed stdin, installs the published target, checks its version, reinstalls/restarts an existing service and
 runs doctor. Return the `UPGRADE_RESULT` block and a short doctor summary, with credentials removed. Unknown latest,
 installation failure, version mismatch or failed restart/self-check is a failure; diagnose and repair it yourself first.
+0.18.3 and later: apply keeps the current wheel first. A failed install, version check or service hand-off rolls back on the spot
+(`rollback: ok|failed|unavailable` in the result block). With a service, the restart waits until the host is idle (no open
+card, approval, question, turn, task or friend chat; at most 10 minutes) and writes the upgrade notice last; if the new
+service does not come up, the old version is reinstalled and the phone reads "rolled back to the previous version".
+中文：0.18.3 起，升级先留住当前版本；安装、版本核对或服务交接失败当场回滚。有服务时等电脑空闲（最多 10 分钟）再重启，新服务起不来就自动装回原版本。
 Check status: `! newer ·` means an update is published; `✓ current ·` and `✓ ahead ·` are not failures; `? unknown ·` needs diagnosis. Not an error, nothing to do when current.
-The daily check remains a notification, not an unattended installation; `agentj update auto off` or `agentj update auto on` controls it.
+Nightly automatic installation is enabled by default and verifies the official wheel signature and hash; `agentj config auto-update off|on|status` controls it. The separate daily version notification uses `agentj update auto off` / `agentj update auto on`. 中文：夜间自动升级默认开启，安装前核验官方签名与哈希；每日版本通知是独立开关。
 
 **0.14 → 0.15:** 0.14 refuses `update apply` without a terminal and has no `--authorization` or `--from-email`.
 In the default shared session, reinstall directly using Step 4's checked wheel (SHA-256 must match this document and
 its public GitHub copy), preserving the host's identity, paired phones, account and preferences:
 ```bash
-uv tool install --force "./agentj-0.18.2a1-py3-none-any.whl"
+uv tool install --force "./agentj-0.18.3a1-py3-none-any.whl"
 agentj --version
 agentj service install
 agentj service restart
@@ -1157,7 +1162,7 @@ agentj doctor
 ```
 The matching published tag is another source, after verifying the tag object against the upgrade email:
 ```bash
-uv tool install --force "git+https://github.com/preangelleo/agentj@v0.18.2a1#subdirectory=host"
+uv tool install --force "git+https://github.com/preangelleo/agentj@v0.18.3a1#subdirectory=host"
 ```
 **0.14 independent session** (`agent.session_mode=independent`): 0.14's fence keeps Agent J's own program read-only and
 hides the service manager, so the Agent on the phone cannot reinstall or restart from inside it (measured: the install
@@ -1183,11 +1188,11 @@ prints something and `uv tool list` (or `pipx list`) shows `agentjarvis-host`, t
 the new name, then:
 ```bash
 jarvis service uninstall      # stop the old service first (Step 10 used tmux / nohup instead? stop that process)
-uv tool uninstall agentjarvis-host && uv tool install "git+https://github.com/preangelleo/agentj@v0.18.2a1#subdirectory=host"
+uv tool uninstall agentjarvis-host && uv tool install "git+https://github.com/preangelleo/agentj@v0.18.3a1#subdirectory=host"
 agentj doctor
 agentj service install        # start it again under the new name (or the tmux / nohup fallback, Step 10)
 ```
-With pipx instead of uv: `pipx uninstall agentjarvis-host && pipx install "git+https://github.com/preangelleo/agentj@v0.18.2a1#subdirectory=host"`.
+With pipx instead of uv: `pipx uninstall agentjarvis-host && pipx install "git+https://github.com/preangelleo/agentj@v0.18.3a1#subdirectory=host"`.
 - After the move, `agentj` puts back a `jarvis` command (a link to `agentj`, only if no other `jarvis` exists) for one more
   version; it prints a notice that points here. New installs never get `jarvis`.
 - The state moves from `~/.local/state/agentjarvis-alpha` to `~/.local/state/agentj` on the first run of `agentj` **after your
@@ -1633,7 +1638,7 @@ check the computer before resending because the original can still arrive.
 
 **Shared Claude model and quota bars:** selecting shared Claude turns them on by default at the same moment as phone ingress (no confirmation step; the phone is told once), unless the owner ran `agentj config claude-statusline off`, which is remembered and never auto-reverted. It backs up Claude settings and chains the existing status-line command with its stdin, output and exit status preserved, in the layer Claude Code really uses for the working folder (see below). Only measured model, effort, quota and context fields are saved locally (0600); the phone reads only the matching session ID and reports the observation age, including after reconnect. `off` restores the original statusLine value exactly (a local file created only for the tap is removed); later owner edits are never overwritten. A managed status line is never changed; doctor reports it.
 
-**Shared Claude model, effort, cost and the effective status-line layer (0.17.3):** the tap is installed in the settings layer Claude Code actually uses for the working root (a local or project status line is chained from the private local layer, never by editing a shared project file; an older tap keeps running behind it). `status` says `shadowed` when a higher layer would hide it — the phone then shows `—`, never a guess; doctor names the layer, and `agentj config claude-statusline on` (or the next start, unless the owner turned it off) re-chains it at the effective layer. The phone's model/effort pill and `/model <name> [effort]` drive Claude Code's own `/model` picker on the exact desktop pane, session-only (never a settings write), only when the pane is idle with an empty prompt and no dialog; a busy desktop queues the newest choice until the turn ends. Success is reported only when the session's own status line shows the target; otherwise the pill settles on the native reading (`unconfirmed`). `/cost` shows Claude Code's own cost figure for this session. Another PermissionRequest hook for the same tool (e.g. an older phone bridge) answers instead of Agent J — one answer per request — until the owner removes it. Any other `/name` reaches the shared session as the owner's text for its own skills.
+**Shared Claude model, effort, cost and the effective status-line layer (0.17.3):** the tap is installed in the settings layer Claude Code actually uses for the working root (a local or project status line is chained from the private local layer, never by editing a shared project file; an older tap keeps running behind it). `status` says `shadowed` when a higher layer would hide it — the phone then shows `—`, never a guess; doctor names the layer, and `agentj config claude-statusline on` (or the next start, unless the owner turned it off) re-chains it at the effective layer. The phone's model/effort pill and `/model <name> [effort]` drive Claude Code's own `/model` picker on the exact desktop pane, session-only (never a settings write), only when the pane is idle with an empty prompt and no dialog; a busy desktop queues the newest choice until the turn ends. Success is reported only when the session's own status line shows the target; otherwise the pill settles on the native reading (`unconfirmed`). `/cost` shows Claude Code's own cost figure for this session. Another PermissionRequest hook for the same tool (e.g. an older phone bridge) no longer silences Agent J (0.18.3): an observer that only records is ignored, and any hook that may answer races the phone card — the first answer wins, and the card is withdrawn when Claude Code takes another answer — so every approval and every AskUserQuestion is answerable from the phone. Shared-mode trust boundary (0.18.3): writing `.claude/settings*.json`, `~/.claude/settings.json` or `.codex/hooks.json` always asks on the phone (never covered by a same-kind approval); serve re-checks Agent J's hooks every 20 s and `agentj doctor` on demand, puts missing ones back and tells the phone; while serve is unreachable a high-risk Claude call asks at the computer instead of following native rules, and a pending approval reaches the phone as soon as serve is back (anything the computer's own dialog handled meanwhile is reported). Hook events for the shared session carry a per-session token and must come from that session's own processes. From inside an Agent, `agentj resume`, `agentj send` and `agentj revoke` are refused (they need the owner's terminal — `resume` also re-checks the approval passphrase in serve — or the phone), and `agentj config set` applies ordinary keys at once but a security key (isolation, approvals, channels, Telegram, proxy, updates, devices…) only after the owner allows a card on the phone. Any other `/name` reaches the shared session as the owner's text for its own skills.
 
 **Owner private instructions file (0.17.3):** `agentj config set agent.private_instructions_file ~/path/file.md` loads one local UTF-8 text file (Markdown with YAML front matter recommended, at most 16 KiB, owned by this user, not writable by group/others) and appends it after the packaged core identity, below every harness rule. It is text only: nothing in it is executed, fetched or interpreted, and it grants no permission, approval or setting. Failure loads nothing and shows one fixed reason in `agentj config private-instructions status` / doctor; edits apply before the next turn. Shared Claude sessions read the packaged identity and this file through native hooks at start, resume, compaction and /clear (`agent.shared_identity`, default on); logs keep only ok/reason/generation, never the text or path.
 
@@ -1749,7 +1754,7 @@ Owner-only code/promo commands require the private owner adapter configured thro
 The one-line installer (`curl -fsSL https://agentj.app/install-assistant.sh | sh -s -- AJI-…`, from the account page of a
 paid seat that is still empty, or from `/installcode`) always installs the current release: it reads `/dl/latest.txt` and
 accepts that wheel only when this file's `host_wheel` / `host_wheel_sha256` (this file's bytes checked against
-`install.md.sha256`) and the `/dl/<wheel>.sha256` sidecar agree, then checks the downloaded bytes. When it stops it prints
+`install.md.sha256`) and the `/dl/<wheel>.sha256` sidecar agree, then verifies the downloaded bytes and `.minisig` with its embedded release public key (`B79F925B0585F9D4`). Both minisign signatures and the signed host version / SHA-256 must match before installation. When it stops it prints
 the exact reason. An installation code is redeemed once: if a run fails after redeeming and before the installation was
 saved, ask the issuer to revoke it before requesting another code; a saved installation resumes with the same
 command and needs no new code.
@@ -1958,6 +1963,10 @@ Pair once; later opens automatically reconnect while the computer keeps this dev
 ### Shared Claude ingress (0.18.1a1)
 Shared-mode startup and `agentj doctor` read managed, private local, project and user settings in native file precedence. If the effective writable value is not `accept`, they back it up and set accept (project policy uses a private local override; the shared project file stays intact). Managed settings are read-only and the phone names the blocking layer/value. **Start a new session or run /clear on the computer for the change to take effect**; a session started earlier may still hold phone messages. Session/CLI or remote managed overrides cannot be verified from these files. `agentj config claude-inbound off` is temporary while shared mode is selected: its next startup/doctor restores accept. Do not resend an unacknowledged message before checking the desktop.
 
+### 0.18.3a1 security hardening
+Every approval can be answered on the phone: a shared Claude card is sent even when another approval hook is installed (it is withdrawn once the call is answered elsewhere), and the host and `agentj doctor` put back hooks that went missing. Dangerous-command recognition is stricter: commands that are encoded, spliced or piped into a shell or interpreter (`base64 -d | sh`, `X=rm; $X`, `$'\x72m'`) get a new card category 「看不清要做什么」 / "Can't tell what this does" that shows the part Agent J can decode; reading a credential and sending it out (`/dev/tcp`, `curl … $(cat ~/.ssh/id_rsa)`) is flagged; printing only key names (`grep -oE "^[A-Z_]+" .env`) stays quiet. An independent session whose sandbox cannot start does not start (no silent unfenced run); the owner can allow one launch with a passkey. Scheduled tasks and native support bots no longer inherit the host service's API keys or tokens. Forwarded Telegram messages and group text are treated as external data, group attachments are checked and budgeted before download. The one-line installer verifies the release signature before writing the package. The relay limits how many unauthenticated connections one source can hold, so pending slots cannot be exhausted. On iPhone, returning from the lock screen keeps the layout; the host writes to disk off its event loop, so the web app is less likely to stall. `agentj update apply` rolls back on failure and restarts only when the host is idle. The OpenCode shared session follows the configured reply language.
+中文：审批一定能在手机上处理；危险命令识别更严，并新增「看不清要做什么」一类；沙箱起不来不会悄悄裸跑；定时任务与客服 bot 拿不到主机密钥；群消息与转发更安全；一键安装先验签；中继防占槽；iPhone 锁屏回来布局正常；网页更不容易卡。
+
 ### 0.18.2a1 fixes
 The first-run checklist never blocks the chat: a thin banner above it, ✕ closes it for good, and the menu reopens it; each item says where to do it, what was found and what to tap next, and Agent J can adopt a browser already signed in on this computer (loopback CDP) after one confirmation from your human. Pages without your human's input (agent reports, scheduled checks, finished background tasks) get a page header, a page number and a new-message cue. A finished /compact or /clear says 「✓ 压缩完成，可以继续说话」 / "✓ Compacted, keep talking". The web app reconnects within seconds and keeps the unsent draft. In the shared Claude session, a phone message sent while the computer is already in a turn shows 「电脑正忙，消息已排队」 / "The computer is busy; your message is queued" and that turn's reply answers it on the phone (several such messages: the reply goes to the last page, earlier ones say merged). An open page whose computer stays idle for 30 s offers a tap to refresh. `agentj config set` validates in the running service's environment, so no manual environment loading is needed.
 
@@ -2036,3 +2045,34 @@ Native shared Claude CLI (>=2.1.211): local settings use an owned repository roo
 Shared approval cards now use one language and ask more precisely. Short phone disconnects recover silently; compaction says it is compacting, queued messages can be withdrawn, and sending clears the input. Telegram replies use readable cards and brief network failures no longer fill the conversation. Pairing explains its approval requirement before showing a QR code; shared Claude turns the usage status line on by default (an explicit off is remembered). Valid 0.17 Telegram enrollment continues with the default environment variable name, without copying its bot key. Huawei HarmonyOS phones and tablets are identified by name. In the account page, use “Rename remote” beside the device; confirm with your account passkey. It requires the host online and account remote control enabled.
 
 共享审批卡片只显示一种语言，少弹且更准确。手机短暂断线会静默恢复；压缩时显示「正在压缩上下文…」，排队消息可以撤回，发送后输入框清空。Telegram 回复卡片更清楚，短暂网络抖动不再刷满对话。配对前提前说明批准方式；共享 Claude 默认开启额度状态栏，记住主人明确关闭的选择。0.17 已有效登记的 Telegram 可继续使用默认环境变量名，不复制 bot 密钥。鸿蒙华为手机和平板会正确显示设备名称。账户页点设备旁的「遥控器改名」，用账户通行密钥确认；需要电脑在线并开启账户遥控。
+
+### P138 isolation and secret environment repairs
+
+## 沙箱失败与管理员命令
+
+独立会话的沙箱起不来时，Agent 不会启动。手机卡片会说明原因（例如缺少 bubblewrap）和修复方法。点「本次不隔离运行」，再用主人的通行密钥验证，可只放行这次启动；下一次仍会检查沙箱。这次运行可能访问本机文件和凭据。没有设置通行密钥时，先在手机菜单中设置，未批准或超时都不会启动。
+
+sudo 卡上的「为什么」和「会改动什么」标为「Agent 自述」。运行 shell 或解释器的命令会标红，必须输入管理员密码，即使已安装免密 helper。密钥卡只支持 URL 校验；`--verify-cmd` 已禁用，不会在沙箱外运行命令。定时任务和客服 bot 从原生登录存储认证，不继承主机服务的密钥环境。
+
+## Sandbox failures and admin commands
+
+If an independent session's sandbox cannot start, the Agent stays stopped. The phone card explains the cause (such as missing bubblewrap) and repair. Tap **Run this launch without isolation** and verify with the owner's passkey to allow this launch only; the next launch checks isolation again. This launch may access local files and credentials. Set up a passkey in the phone menu if needed. Denial or timeout never starts the Agent.
+
+The sudo card labels the reason and effect as **Agent claim**. Shell or interpreter commands are marked red and require an admin password even with the passwordless helper installed. Secret cards support URL verification; `--verify-cmd` is disabled and runs no command outside the sandbox. Scheduled tasks and native customer-service bots authenticate from native storage and do not inherit host-service API keys or tokens.
+
+### Telegram 与好友的安全边界
+
+Telegram 私聊中转发的消息属于外部数据，不会作为主人的原话执行；转发里的命令也不会执行。群里的审批命令保持静默，批准请用已配对手机。家庭群安全检查暂不可用时，这条消息会暂停，请主人直接从已配对手机发送。只有以 `/notification` 或 `/notify` 开头的命令会按提醒请求处理，正文里的 notification 一词不算。
+
+群附件先检查文字和说明；报障群不下载附件，家庭群命中拦截规则也不下载。每位群发送者每小时最多下载 40 MiB，跨群累计，重启不清零；无法确认大小的附件按单件上限预留额度。被暂停的群消息不会触发 Agent 工具。好友名片名字最多 64 字、主人名最多 32 字、简介最多 140 字；补充设定里检测到密钥形状时整次修改不会保存，请用普通背景说明。
+
+客服 Bot 的 Telegram 私聊按聊天分别处理；同一聊天保留顺序。超过 2000 字会提示缩短，不调用模型。客服报告里的客户原文和模型建议只供摘要与诊断，不能视为主人指令。
+
+
+### Telegram and friend safety boundaries
+
+Forwarded messages in the owner’s Telegram private chat are external data, not the owner’s instructions. Forwarded commands are ignored. Approval commands in groups remain silent; use the paired phone to approve. When the family safety check is unavailable, that message pauses: the owner can send the request directly from the paired phone. Only a leading `/notification` or `/notify` command counts as a reminder request; the word notification inside other text does not.
+
+Group text and captions are checked before attachments are downloaded. Proxy groups do not download attachments; family attachments are refused when the rules match. Each group sender has a 40 MiB download budget per UTC hour across groups, preserved across restarts. Unknown sizes reserve the per-file maximum. Paused group messages cannot start Agent tools. Friend cards allow up to 64 characters for the name, 32 for the owner and 140 for the introduction. A credential-shaped value in supplementary context rejects the whole edit; use ordinary background information.
+
+Support bots process Telegram private chats independently, preserving order within each chat. Text over 2000 characters gets a fixed request to shorten it without a model call. Customer text and model suggestions in support reports are data for summarising and diagnosis, never owner instructions.

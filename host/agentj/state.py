@@ -13,7 +13,7 @@ import time
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
-from . import wire
+from . import diskq, wire
 from .envcompat import getenv
 from .noise import Keypair
 from .text import agent_name_problem, normalise_agent_name
@@ -73,14 +73,7 @@ def legacy_state(home: str | None = None) -> pathlib.Path:
 
 
 def _write_private(path: pathlib.Path, data: bytes) -> None:
-    tmp = path.with_name(f"{path.name}.{os.getpid()}.{threading.get_ident()}.tmp")  # serve and the CLI may both write
-    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-    try:
-        os.write(fd, data)
-        os.fsync(fd)
-    finally:
-        os.close(fd)
-    os.replace(tmp, path)
+    diskq.write(path, data)   # P142: atomic + fsync; on the event loop the fsync goes to the ordered disk writer
 
 
 class State:
@@ -485,6 +478,17 @@ class State:
             _write_private(self.config_path, json.dumps(cfg, indent=1, ensure_ascii=False).encode())
 
     @contextlib.contextmanager
+    def file_lock(self, name: str):
+        """P142 (B19): flock `<state>/<name>.lock` — one read-modify-write of one state file at a time, across threads and
+        processes (serve's scheduler, the phone's card, the account page and the terminal all edit tasks.json)."""
+        fd = os.open(self.root / f"{name}.lock", os.O_RDWR | os.O_CREAT | getattr(os, "O_NOFOLLOW", 0), 0o600)
+        try:
+            fcntl.flock(fd, fcntl.LOCK_EX)
+            yield
+        finally:
+            os.close(fd)
+
+    @contextlib.contextmanager
     def config_lock(self):
         """Exclusive lock around every config.json read-modify-write, across threads and processes (`serve` adopting a
         synced name, `agentj name`, `agentj admin`, `agentj remote-unbind` never interleave)."""
@@ -656,12 +660,10 @@ class State:
                   "tenant", "request", "result", "ms", "id", "tool", "agent", "decision", "locked", "fence", "change", "action",
                   "session_mode", "isolation_requested", "isolation_effective", "phase", "version", "language", "core_sha256", "prompt_sha256", "mechanism", "working_root_sha256", "identity_session",
                   "generation", "model", "effort", "layers", "identity",
-                  "ms", "code", "count"}   # P129: timings (ms), close codes, failure counts — numbers only. P116: metadata only (no text, path or digest)
+                  "ms", "code", "count",   # P129: timings (ms), close codes, failure counts — numbers only. P116: metadata only (no text, path or digest)
+                  "cmd", "keys", "events", "event",   # P139: control command / config key / hook event NAMES only
+                  "where", "task", "pstate", "majflt"}   # P142: loop-stall diagnostics (site/task names, process state, fault counts)
 
     def log(self, ev: str, **kw) -> None:
         rec = {"ts": int(time.time()), "ev": ev, **{k: v for k, v in kw.items() if k in self.LOG_FIELDS}}
-        fd = os.open(self.log_path, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600)
-        try:
-            os.write(fd, (json.dumps(rec, ensure_ascii=False) + "\n").encode())
-        finally:
-            os.close(fd)
+        diskq.append(self.log_path, (json.dumps(rec, ensure_ascii=False) + "\n").encode())   # P142: buffered on the loop

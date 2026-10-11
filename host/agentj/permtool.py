@@ -10,13 +10,15 @@ environment is already spent; a second connection is refused and logged. The too
 processes of the same user cannot read its memory or borrow its socket.
 
 Standard library only; started as `python -m agentj.permtool` with AGENTJ_PERM_SOCK / AGENTJ_PERM_TOKEN
-inherited from the agent process (never on a command line).
+inherited from the agent process (never on a command line). Scheduled tasks use AGENTJ_PERM_CLAIM instead:
+a private 0600 file consumed before the model runs, removed on task shutdown if never claimed.
 """
 from __future__ import annotations
 
 import json
 import os
 import socket
+import stat
 import sys
 import threading
 
@@ -25,6 +27,27 @@ from .envcompat import getenv
 TOOL = "approve"
 MAX_LINE = 8 * 1024 * 1024
 DENY_NO_SERVE = "agentj serve 没在运行或没有回应：默认拒绝。"
+
+
+def claim_value(path: str) -> str:
+    """A task's private one-time claim, next to its permission socket; no symlinks."""
+    claim = getenv("AGENTJ_PERM_CLAIM", "")
+    if not claim:
+        return getenv("AGENTJ_PERM_TOKEN", "")
+    if os.path.dirname(claim) != os.path.dirname(path) or not os.path.basename(claim).startswith("task-claim-"):
+        raise ValueError("claim path")
+    fd = os.open(claim, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
+    try:
+        info = os.fstat(fd)
+        if not stat.S_ISREG(info.st_mode) or info.st_uid != os.getuid() or stat.S_IMODE(info.st_mode) != 0o600:
+            raise ValueError("claim mode")
+        token = os.read(fd, 256).decode("ascii")
+        if not 1 <= len(token) <= 128:
+            raise ValueError("claim size")
+        os.unlink(claim)
+        return token
+    finally:
+        os.close(fd)
 
 
 class Link:
@@ -38,8 +61,9 @@ class Link:
         self.dead = False
 
     def claim(self) -> bool:
-        path, token = getenv("AGENTJ_PERM_SOCK", ""), getenv("AGENTJ_PERM_TOKEN", "")
+        path = getenv("AGENTJ_PERM_SOCK", "")
         try:
+            token = claim_value(path)
             s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
             s.settimeout(10)
             s.connect(path)
@@ -169,7 +193,7 @@ def main() -> None:
     from .fence import no_dump
     no_dump()
     LINK.claim()                          # first thing, before Claude Code sends anything (and before the model runs)
-    for k in ("AGENTJ_PERM_TOKEN", "AGENTJARVIS_PERM_TOKEN"):
+    for k in ("AGENTJ_PERM_TOKEN", "AGENTJARVIS_PERM_TOKEN", "AGENTJ_PERM_CLAIM"):
         os.environ.pop(k, None)
     for line in sys.stdin:
         try:

@@ -29,6 +29,7 @@ import re
 import signal
 import stat
 import time
+import tempfile
 
 from . import taskspec
 from .envcompat import getenv
@@ -171,6 +172,16 @@ def save(st, d: dict) -> None:
                                                ensure_ascii=False).encode())
 
 
+def update(st, change) -> dict:
+    """P142 (B19): the one read-modify-write of tasks.json — under its own flock (`tasks.lock`), so the scheduler, a phone card,
+    the account page and the terminal never lose each other's change. `change(d)` mutates the loaded dict."""
+    with st.file_lock("tasks"):
+        d = load(st)
+        change(d)
+        save(st, d)
+        return d
+
+
 def set_enabled(st, workdir: str | None, tid: str, on: bool, by: str, tsha: str | None = None) -> dict:
     """Enable (bound to the current contract hash) or disable. `tsha` (from a phone) must equal the current hash."""
     e = find(workdir, tid)
@@ -179,13 +190,12 @@ def set_enabled(st, workdir: str | None, tid: str, on: bool, by: str, tsha: str 
             raise TaskError("invalid", e["problems"][0])
         if tsha is not None and tsha != e["tsha"]:
             raise TaskError("changed")
-    with st.config_lock():
-        d = load(st)
+    def change(d):
         if on:
             d["on"][tid] = {"tsha": e["tsha"], "at": int(time.time()), "by": by[:80]}
         else:
             d["on"].pop(tid, None)
-        save(st, d)
+    update(st, change)
     return e
 
 
@@ -382,10 +392,7 @@ class Scheduler:
             changed = True
             self.request(r["id"], "schedule")
         if changed:
-            with self.st.config_lock():
-                cur = load(self.st)
-                cur["ran"].update(d["ran"])
-                save(self.st, cur)
+            update(self.st, lambda cur: cur["ran"].update(d["ran"]))
 
     async def stop_running(self) -> bool:
         """/stop: end the run in progress (if any); the queue and the schedule stay."""
@@ -477,13 +484,11 @@ class Scheduler:
 
     def _finish(self, e: dict, res: dict) -> None:
         with contextlib.suppress(Exception):
-            with self.st.config_lock():
-                d = load(self.st)
-                d["last"][e["id"]] = {"at": int(time.time()), "verdict": res["verdict"], "line": res["line"][:300],
-                                      "readonly": res.get("readonly", False), "secs": res.get("secs", 0),
-                                      "report": res.get("report"), "trigger": res["trigger"],
-                                      **({"report_check": res["report_check"]} if res.get("report_check") else {})}
-                save(self.st, d)
+            last = {"at": int(time.time()), "verdict": res["verdict"], "line": res["line"][:300],
+                    "readonly": res.get("readonly", False), "secs": res.get("secs", 0),
+                    "report": res.get("report"), "trigger": res["trigger"],
+                    **({"report_check": res["report_check"]} if res.get("report_check") else {})}
+            update(self.st, lambda d: d["last"].__setitem__(e["id"], last))
         caps = getattr(self.host, "capabilities", None)
         if caps is not None and res.get("trigger") == "dispatch":
             caps.run_finished(e["id"], res)
@@ -507,6 +512,10 @@ class Scheduler:
             return None
 
     async def _kill(self) -> None:
+        claim, self.perm_claim_file = getattr(self, "perm_claim_file", None), None
+        if claim:
+            with contextlib.suppress(OSError):
+                os.unlink(claim)
         r = self.runner
         if r is not None:
             with contextlib.suppress(Exception):
@@ -533,8 +542,16 @@ class Scheduler:
         if kind == "claude":
             a = agents.ClaudeAgent(host, cfg)
             argv = a.argv(None, research=research)
-            env = dict(os.environ)
-            env.update(host.new_perm_env())
+            env = fence.auxiliary_environment(os.environ, "claude", extra_keep=tuple(k for k in fence._MAIN_ENV if k.startswith("FAKE_")))
+            claim_env = host.new_perm_env()
+            token = claim_env.pop("AGENTJ_PERM_TOKEN")
+            # The task harness receives only a path. The permission tool consumes
+            # this 0600 one-time claim before the model gets its first prompt.
+            fd, self.perm_claim_file = tempfile.mkstemp(prefix="task-claim-", dir=host.st.perm_dir)
+            with os.fdopen(fd, "w") as f:
+                f.write(token)
+            claim_env["AGENTJ_PERM_CLAIM"] = self.perm_claim_file
+            env.update(claim_env)
             src = agents.source_root()
             if src:
                 env["PYTHONPATH"] = src + (os.pathsep + env["PYTHONPATH"] if env.get("PYTHONPATH") else "")
@@ -566,6 +583,7 @@ class Scheduler:
             if why:
                 raise TaskError("unsupported", fence.REASONS.get(why, why))
             argv = fence.wrap(host.st, argv, wd, allow_docker=cfg.get("docker", False))
+        env = fence.launch_environment(env, cfg.get("docker", False), "claude")
         self.proc = p = await asyncio.create_subprocess_exec(*argv, cwd=wd, env=env, stdin=asyncio.subprocess.PIPE,
                                                              stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL,
                                                              limit=agents.LINE_LIMIT, start_new_session=True)

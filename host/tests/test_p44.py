@@ -129,7 +129,9 @@ class AuthorizedApply(_Env):
         self.assertIn("@v9.9.9#", install[0][-1], "pinned to the authorized tag")
         self.assertTrue(all(kw.get("stdin") == subprocess.DEVNULL for _, kw in calls), "never asks: stdin closed")
         self.assertEqual(calls[-1][0][-4:], ["service", "install", "--deferred", "9.9.9"])
-        marker = json.loads((self.st.root / update.UPGRADED).read_text())
+        # P142 (A12): the recovery worker writes the marker right before the restart, from the pending record
+        self.assertFalse((self.st.root / update.UPGRADED).exists())
+        marker = update.read_pending(self.st, "9.9.9")
         self.assertEqual((marker["from"], marker["to"]), (__version__, "9.9.9"))
         rec = (self.st.root / update.AUTH_REC).read_text()
         self.assertNotIn(CODE, rec)

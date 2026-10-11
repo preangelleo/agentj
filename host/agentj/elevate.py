@@ -56,7 +56,7 @@ from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey, X
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 
-from . import passkey, wire
+from . import diskq, passkey, wire
 
 SIG_CONTEXT = "agentjarvis-elevate-v1"
 SEAL_CONTEXT = "agentjarvis-seal-v1"
@@ -174,6 +174,12 @@ def _text(v, limit: int, *, required: bool, field: str) -> str:
     return v
 
 
+def interpreter_command(argv: list[str]) -> bool:
+    """Executable identity, including a symlink, never an Agent-supplied risk flag."""
+    return any(re.fullmatch(r"(?:sh|bash|dash|zsh|ksh|fish|python[^/]*|node(?:js)?|perl(?:[0-9.]+)?)", name)
+               for name in (os.path.basename(argv[0]), os.path.basename(os.path.realpath(argv[0]))))
+
+
 def norm_sudo(req: dict) -> dict:
     argv = req.get("argv")
     if not isinstance(argv, list) or not 1 <= len(argv) <= 256 or \
@@ -195,7 +201,7 @@ def norm_sudo(req: dict) -> dict:
         effect = (effect[:50] + "\n" + "本机 sudo 启用了生物验证，可能弹 Touch ID；此命令将拒绝执行。请在电脑前关闭 sudo Touch ID，见 /docs/keep-awake/。 / Local sudo biometrics may open Touch ID. Command will be refused; disable sudo Touch ID locally first. See /docs/keep-awake/.").strip()
     return {"kind": "sudo", "argv": list(argv), "cmd": cmd, "cwd": cwd, "timeout": timeout,
             "why": _text(req.get("why"), 300, required=True, field="why"),
-            "effect": effect}
+            "effect": effect, "interpreter": interpreter_command(argv)}
 
 
 def parse_dest(dest: str, name: str, cwd: str | None, state_root: pathlib.Path) -> dict:
@@ -264,9 +270,7 @@ def norm_secret(req: dict, state_root: pathlib.Path) -> dict:
             raise Refused("shape", "verify-header: 'Name: …{value}…'")
         verify = f"GET {vu}  ({vh})"
     elif vc:
-        if not isinstance(vc, str) or len(vc) > 500 or wire.text_problem(vc, 500):
-            raise Refused("shape", "verify-cmd: one line up to 500 characters")
-        verify = f"$ {vc}  (${name})"
+        raise Refused("verify_cmd_disabled", "Command verification is disabled; use --verify-url instead.")
     return {"kind": "secret", "name": name, "purpose": purpose, "dest": d["show"], "dest_spec": d, "cwd": cwd or "/",
             "verify": verify, "verify_url": vu or "", "verify_header": vh if vu else "", "verify_cmd": vc or ""}
 
@@ -419,9 +423,10 @@ def write_secret(spec: dict, value: bytearray) -> None:
         with os.fdopen(fd, "wb") as f:
             f.write(data)
             f.flush()
-            os.fsync(f.fileno())
+            diskq.fsync(f.fileno())   # P142: never on the event loop
         os.chmod(tmp, 0o600)
         os.replace(tmp, path)
+        diskq.settle(path)
     except BaseException:
         with contextlib.suppress(OSError):
             os.unlink(tmp)
@@ -459,16 +464,8 @@ def verify_secret(card: dict, value: bytearray) -> dict:
                 return {"verify": "fail", "detail": "network"}
             return {"verify": "ok" if 200 <= code < 300 else "fail", "detail": f"HTTP {code}"}
         if card.get("verify_cmd"):
-            env = dict(os.environ)
-            env[card["name"]] = sval
-            try:
-                r = subprocess.run(["/bin/sh", "-c", card["verify_cmd"]], cwd=card.get("cwd") or "/", env=env,
-                                   stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=30)
-            except subprocess.TimeoutExpired:
-                return {"verify": "fail", "detail": "timeout"}
-            except OSError:
-                return {"verify": "fail", "detail": "error"}
-            return {"verify": "ok" if r.returncode == 0 else "fail", "detail": f"exit {r.returncode}"}
+            # Defense in depth: even an old or internal card cannot run a command.
+            return {"verify": "fail", "detail": "command_disabled"}
         return {"verify": "skipped", "detail": ""}
     finally:
         sval = None  # noqa: F841
@@ -650,7 +647,7 @@ class Elevator:
         if c["fails"]:
             m["bad"] = c["fails"]
         if c["kind"] == "sudo":
-            m.update(cmd=c["cmd"], why=c["why"], effect=c.get("effect") or "")
+            m.update(cmd=c["cmd"], why=c["why"], effect=c.get("effect") or "", interpreter=interpreter_command(c["argv"]))
             if c.get("helper"):
                 m["helper"] = list(c["helper"])       # these phones may approve without a password (elevate_helper)
         else:
@@ -710,7 +707,7 @@ class Elevator:
             return {"result": "no_device"}
         c = dict(card, id=secrets.token_hex(16), fails=0, fut=asyncio.get_running_loop().create_future())
         if c["kind"] == "sudo":
-            c["helper"] = self.helper_devices()
+            c["helper"] = [] if interpreter_command(c["argv"]) else self.helper_devices()
         c["digest"] = shown_digest(c["kind"], shown_fields(c))
         self._arm(c)
         self.cards[c["id"]] = c
@@ -852,7 +849,7 @@ class Elevator:
                 or type(ts) is not int:
             return "shape"
         if ok and "ct" not in obj and "epk" not in obj:
-            if c["kind"] != "sudo" or s.device not in (c.get("helper") or []):
+            if c["kind"] != "sudo" or interpreter_command(c["argv"]) or s.device not in (c.get("helper") or []):
                 return "shape"                      # approve-only exists only for a phone the admin helper accepts
         elif ok and (not isinstance(obj.get("epk"), str) or not isinstance(obj.get("ct"), str) or len(obj["ct"]) > 12000):
             return "shape"
@@ -1276,7 +1273,7 @@ def add_parser(sub) -> None:
     sc.add_argument("--dest", help="存到哪：env:<文件>[#KEY]（.env 一行）或 file:<路径>（整个文件）")
     sc.add_argument("--verify-url", dest="verify_url", help="只读校验：GET 这个 https 地址，2xx = 有效")
     sc.add_argument("--verify-header", dest="verify_header", help="校验请求头模板，默认 'Authorization: Bearer {value}'")
-    sc.add_argument("--verify-cmd", dest="verify_cmd", help="只读校验命令（值在环境变量 $NAME 里；手机上会显示这条命令）")
+    sc.add_argument("--verify-cmd", dest="verify_cmd", help="已禁用；请使用 --verify-url（不运行沙箱外命令）")
     sc.add_argument("--file", help="send：把这个文件（≤ 256 KiB）交给主人，手机上可下载")
     sc.add_argument("--value-from", dest="value_from", help="send：一段文本，从 env:<变量名> 或 file:<路径> 读（不要写在命令行上）")
     sc.add_argument("--ttl", type=int, default=None, help="send：多少秒内可领（30–600，默认 600）")

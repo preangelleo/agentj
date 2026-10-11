@@ -257,7 +257,7 @@ class FaceId(unittest.TestCase):
         self.give_passkey(ph)
         s = _ready(host, ph)
         card = {"kind": "sudo", "id": "a" * 32, "n": "b" * 32, "cmd": "true", "why": "w", "effect": ""}
-        c = {**card, "nonce": card["n"], "deadline": time.monotonic() + 60, "helper": [ph.did],
+        c = {**card, "argv": ["true"], "nonce": card["n"], "deadline": time.monotonic() + 60, "helper": [ph.did],
              "digest": elevate.shown_digest("sudo", elevate.shown_fields(card))}
         m = f17.approve_only(ph, card)
         self.assertEqual(host.elevate._check(s, c, m), "passkey_missing")

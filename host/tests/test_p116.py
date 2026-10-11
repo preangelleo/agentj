@@ -482,21 +482,24 @@ class StatusLineLayers(Tmp):
 
 
 class SingleAnswerer(Tmp):
-    def test_foreign_permission_hook_makes_agent_j_yield(self):
+    def test_foreign_permission_hook_no_longer_makes_agent_j_yield(self):
+        """P139 supersedes B5's single answerer: another answerer races the phone card (first answer wins); the phone
+        always gets an actionable card and never the old 「请在原处处理」 notice."""
         work = self.root / "w"; (work / ".claude").mkdir(parents=True)
         home = self.root / "h"; (home / ".claude").mkdir(parents=True)
         with patch.dict(os.environ, {"CLAUDE_CONFIG_DIR": str(home / ".claude")}):
             (work / ".claude/settings.local.json").write_text(json.dumps({"hooks": {"PermissionRequest": [
-                {"matcher": "AskUserQuestion", "hooks": [{"type": "command", "command": "python3 relay_hook.py"}]}]}}))
+                {"matcher": "AskUserQuestion", "hooks": [{"type": "command", "command": "python3 relay_hook.py ask"}]}]}}))
             host = Mock(); host.st.root = self.root; host.stopped.return_value = False
             host.ask = AsyncMock(return_value={"behavior": "allow"})
             a = shared.SharedClaudeAgent(host, {"kind": "claude", "dir": str(work), "_workflow_ceo": True})
             a.session = {"sessionId": "owner"}
             ev = lambda tool: asyncio.run(a.hook_event({"hook_event_name": "PermissionRequest", "session_id": "owner",
                                                          "tool_name": tool, "tool_input": {"x": 1}}))
-            self.assertEqual(ev("AskUserQuestion"), {})                   # the other handler answers, not both
-            host.ask.assert_not_awaited(); host.agent_notice.assert_called_once()
-            self.assertEqual(ev("Bash")["hookSpecificOutput"]["decision"]["behavior"], "allow")   # unmatched tools: ours
+            self.assertEqual(ev("AskUserQuestion")["hookSpecificOutput"]["decision"]["behavior"], "allow")
+            self.assertEqual(ev("Bash")["hookSpecificOutput"]["decision"]["behavior"], "allow")
+            self.assertEqual(host.ask.await_count, 2)
+            host.agent_notice.assert_not_called()
             self.assertEqual(shared_hook.foreign_answerers(work, "Bash"), [])
             shared_hook.install(work, self.root / "c.sock")                # our own entry is never "foreign"
             self.assertEqual(shared_hook.foreign_answerers(work, "Bash"), [])

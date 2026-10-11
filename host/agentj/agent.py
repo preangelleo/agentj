@@ -17,7 +17,8 @@ allow them; it never answers "allow" (only ever stricter). `disableAllHooks: fal
 Agent writes later from switching it off; a human who disabled hooks in their own settings gets a notice instead of a start.
 
 L2 / L3: the agent runs inside the fence (fence.py: bubblewrap on Linux, sandbox-exec on macOS) unless the owner chose `--unfenced`; if the fence cannot start, the agent
-runs unfenced with the harness's own permissions (F14) and the phone is told once. Claude Code gets its first message only after our permission tool has claimed serve's socket.
+refuses startup. The owner can approve one launch without isolation on the phone with a passkey; no grant is persisted.
+Claude Code gets its first message only after our permission tool has claimed serve's socket.
 """
 from __future__ import annotations
 
@@ -35,7 +36,7 @@ from dataclasses import dataclass
 from . import compactprep, danger, fence, slash, main_identity
 from .slash import Result
 from .envcompat import getenv
-from .text import clean, clean_line, text_units
+from .text import clean, clean_line, text_units, pick
 
 MAX_TEXT = 4000               # = wire.MAX_TEXT (UTF-16 units per app message)
 LINE_LIMIT = 64 * 1024 * 1024  # stream-json lines can carry whole tool results
@@ -396,8 +397,8 @@ class Agent:
         """The permission tool's connection to serve dropped (ClaudeAgent restarts; others have none)."""
 
     def launch_argv(self, argv: list[str]) -> list[str] | None:
-        """argv inside the fence; as is when the owner chose --unfenced, or (F14) when the fence cannot start — degraded to
-        the harness's own permissions with one notice per serve. None only when the identity check fails."""
+        """Fail closed. Only an explicit owner --unfenced choice skips isolation."""
+        self._fence_failure = None
         if not self.cfg.get("_workflow_ceo"):
             try:
                 main_identity.verify_core()
@@ -411,16 +412,28 @@ class Agent:
             return argv
         why = fence.problem(self.host.st, self.cfg["dir"])
         if why:
-            # F14: no fence → run with the harness's own permissions (what a shared session has), told once per serve
-            self.host.st.log("agent_fence_fail", agent=self.kind, reason=why, status="degraded")
-            if not getattr(self.host, "fence_degraded_told", False):
-                self.host.fence_degraded_told = True
-                self.host.agent_notice(f"沙箱不可用，按普通模式运行（{fence.REASONS.get(why, why)}）。"
-                                       "Sandbox unavailable: running in normal mode with the harness's own permissions.")
-            return argv
+            self._fence_failure = why
+            self.host.st.log("agent_fence_fail", agent=self.kind, reason=why, status="refused")
+            return None
         wrapped = fence.wrap(self.host.st, argv, self.cfg["dir"], allow_docker=self.cfg.get("docker", False))
         self.isolation_effective = True
         return wrapped
+
+    async def authorized_launch_argv(self, argv: list[str]) -> list[str] | None:
+        wrapped = self.launch_argv(argv)
+        why = getattr(self, "_fence_failure", None)
+        if wrapped is not None or not why or self.cfg.get("_workflow_ceo"):
+            return wrapped
+        # Keep the phone available when the harness is down. This grant is consumed
+        # by THIS spawn only: no configuration write and no remembered permission.
+        answer = await self.host.ask("SandboxOnce", {"reason": why}, batch=False, require_passkey=True)
+        if answer.get("behavior") == "allow":
+            self.host.st.log("agent_unfenced_once", agent=self.kind, reason=why)
+            return argv
+        self.fail_notice(pick(getattr(self.host, "lang", "zh"),
+                              "沙箱不可用，未启动。修复隔离后再试，或在手机上用通行密钥批准本次不隔离运行。",
+                              "Sandbox unavailable; not started. Repair isolation or approve one launch on the phone with a passkey."))
+        return None
 
     async def turn(self, text: str) -> None:
         raise NotImplementedError
@@ -715,7 +728,7 @@ class ClaudeAgent(Agent):
             self.local_fail(f"{why}。危险动作（花钱、删除、对外发送、改凭据、改价）必须经手机逐条批准，这要靠一个 hook，"
                                    "所以 Agent 没有启动。去掉 disableAllHooks 这一项后再发一条消息。")
             return False
-        argv = self.launch_argv(self.argv(self.host.st.agent_session(self.kind)))
+        argv = await self.authorized_launch_argv(self.argv(self.host.st.agent_session(self.kind)))
         if argv is None:
             self.failed_start = True
             return False
@@ -727,6 +740,8 @@ class ClaudeAgent(Agent):
             env["PYTHONPATH"] = src + (os.pathsep + env["PYTHONPATH"] if env.get("PYTHONPATH") else "")
         env["MCP_TOOL_TIMEOUT"] = str(int((self.host.ask_ttl + 60) * 1000))   # never cut a pending approval short
         from . import fence
+        if self.cfg.get("_workflow_ceo"):
+            env = fence.auxiliary_environment(env, self.kind, extra_keep=("AGENTJ_PERM_SOCK", "AGENTJ_PERM_CLAIM", "AGENTJ_PERM_WAIT", "OPENCODE_SERVER_PASSWORD", "OPENCODE_SERVER_USERNAME", "OPENCODE_CONFIG_CONTENT"))
         if self.cfg.get("fence", True):
             env = fence.launch_environment(env, self.cfg.get("docker", False), self.kind)
         sid = self.host.st.agent_session(self.kind)

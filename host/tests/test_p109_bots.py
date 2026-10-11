@@ -155,7 +155,7 @@ class Bots(unittest.IsolatedAsyncioTestCase):
         bid=self.bot(enabled=True,terms_accepted=True,telegram={'enabled':True});ch=self.channel(bid)
         await ch.handle(self.update(kind='group'));await ch.handle(self.update(text='x'*2001))
         u=self.update();u['message']['from']['is_bot']=True;await ch.handle(u)
-        self.assertFalse(self.sent);self.assertFalse(self.models)
+        self.assertEqual(len(self.sent),1);self.assertIn('2000',self.sent[0][2]['text']);self.assertFalse(self.models)
     async def test_telegram_pause_and_epoch_block_delivery(self):
         bid=self.bot(enabled=True,terms_accepted=True,telegram={'enabled':True});ch=self.channel(bid)
         c=self.s.get(bid);c['telegram']['enabled']=False;self.s.save(bid,c)

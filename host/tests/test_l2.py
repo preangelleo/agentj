@@ -639,28 +639,17 @@ class FenceConfig(unittest.TestCase):
         self.assertEqual(row["status"], doctor.WARN)
         self.assertIn("--allow-docker", row["summary"])
 
-    def test_fence_unavailable_degrades_to_the_harness_permissions_with_one_notice(self):
-        """F14: no fence → the Agent starts unwrapped (the harness's own permissions), the phone is told once per serve."""
+    def test_fence_unavailable_refuses_launch(self):
         work = pathlib.Path(self.tmp.name) / "w"
         work.mkdir()
         self.st.set_agent_config("codex", str(work))
-        sent, notices = [], []
-        host = _host(self.st, sent)
-        host.agent_notice = notices.append
+        host = _host(self.st, [])
         from agentj import agent as agents
         ag = agents.make(host, {**self.st.agent_config(), "session_mode": "independent"})
-        gone = (mock.patch.object(fence, "SANDBOX_EXEC", "/nonexistent/sandbox-exec") if sys.platform == "darwin"
-                else mock.patch.object(fence.shutil, "which", return_value=None))
-        with gone:
-            fence._probe_cache.clear()
-            self.assertEqual(ag.launch_argv(["/usr/bin/true", "x"]), ["/usr/bin/true", "x"], "started, unwrapped")
-            self.assertEqual(ag.launch_argv(["/usr/bin/true", "y"]), ["/usr/bin/true", "y"])
-        fence._probe_cache.clear()
-        told = [n for n in notices if "沙箱不可用" in n]
-        self.assertEqual(len(told), 1, notices)
-        self.assertIn("sandbox-exec" if sys.platform == "darwin" else "bubblewrap", told[0])
-        self.assertNotIn("--unfenced", told[0])
-        self.assertIn('"ev": "agent_fence_fail"', self.st.log_path.read_text())
+        with mock.patch.object(fence, "problem", return_value="no_bwrap"):
+            self.assertIsNone(ag.launch_argv(["/usr/bin/true", "x"]))
+            self.assertIsNone(ag.launch_argv(["/usr/bin/true", "y"]))
+        self.assertIn('"status": "refused"', self.st.log_path.read_text())
 
     def test_bwrap_argv_hides_state_and_puts_back_only_the_permission_folder(self):
         a = fence.bwrap_argv(self.st, "/srv/work", home="/home/u", runtime="")

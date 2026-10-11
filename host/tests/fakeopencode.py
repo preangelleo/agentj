@@ -356,7 +356,9 @@ class H(BaseHTTPRequestHandler):
         elif len(parts) == 3 and parts[0] == "session" and parts[2] == "prompt_async":
             if parts[1] not in SESSIONS:
                 return self._send(404, {"name": "NotFoundError"})
-            text = "".join(x.get("text", "") for x in (body or {}).get("parts", []) if isinstance(x, dict))
+            # P142: the hidden (synthetic) language reminder reaches the model in real OpenCode; this fake model echoes only
+            # what the owner typed
+            text = "".join(x.get("text", "") for x in (body or {}).get("parts", []) if isinstance(x, dict) and not x.get("synthetic"))
             threading.Thread(target=run_prompt, args=(parts[1], text), daemon=True).start()
             self._send(204)
         elif len(parts) == 3 and parts[0] == "permission" and parts[2] == "reply":

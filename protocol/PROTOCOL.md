@@ -426,7 +426,9 @@ interfaces only:
 - **Danger list (PROMPT-26 item 2)**: `--settings` = `{"hooks":{"PreToolUse":[{"matcher":"*","hooks":[{"type":"command",
   "command":"<venv python> -P -m agentj.danger hook <b64url JSON of config danger_extra, or -> || exit 2","timeout":30}]}]},
   "disableAllHooks":false}` and nothing else. For a call in one of five fixed categories — `spend` (花钱), `delete` (删除),
-  `send` (对外发送), `credentials` (改凭据), `price` (改价); `agentj/danger.py` — the hook prints
+  `send` (对外发送), `credentials` (改凭据), `price` (改价), or `opaque` (看不清要做什么 — a command whose real intent is hidden
+behind encoding / assembly: a pipe into a shell or interpreter, a base64 / ANSI-C / variable / substitution command name,
+`eval` nested past the depth limit, `python -c "$(…)"`; P137); `agentj/danger.py` — the hook prints
   `{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"ask","permissionDecisionReason":…}}`, which Claude Code
   routes to the permission tool even when the human's own rules allow the call; for any other call it prints nothing; it never
   answers allow. Hook failure = exit 2 = the call is blocked. If the human's user / project / local settings say
@@ -464,7 +466,7 @@ App messages (all inside §3 transport messages):
 |---|---|---|
 | host → device | `{"t":"msg","id","text","ts","seq":n,"from":"agent"\|"host"\|"you"\|"device"\|"notice"[,"name"]}` | chat; `seq` increases per serve run; `you` = this device said it, `device` = another paired device (`name` = its label), `notice` = a host-side note (agent missing / exited / turn failed) |
 | host → device | `{"t":"status","s":"none"\|"idle"\|"working"\|"compacting"\|"waiting"\|"down"\|"stopped","agent":"claude"\|"codex"\|"opencode"\|null,"name":"<Agent name>"\|null}` | 未接 / 空闲 / 干活中 / 压缩中 / 等你批准 / 没在运行 / 已急停 (phone controls); sent on ready and on every change. `name` (0.10, additive): the Agent's display name (null = unnamed → show "Agent J"); sent again whenever it changes (`agentj name`, admin page, Dashboard rename) — older phones ignore it |
-| host → device | `{"t":"ask","id":"<32 hex>","tool":"<≤ 64>","summary":"<≤ 2000>","ttl":<s left>,"cat":[…],"why":"<≤ 200>"[,"why_en":"<≤ 200>"][,"cred":"read"\|"change"][,"batch":"<scope>","batch_max":20,"batch_secs":600][,"task":"<≤ 80>"]}` | a permission request; `summary` = what the phone shows (command / path / compact JSON), in ONE language — the host's `appearance.language` (P128; it is what the phone signs); `cat` = danger categories (`[]` = low risk), `why` = the rule that fired (Chinese), `why_en` its English twin (the phone shows one of them by its language), `cred` = whether a `credentials` card only shows one (`read` → 查看密码或密钥) or changes one (`change` → 改密码或密钥); `batch` (low risk only) = the scope a batch approval would cover; `task` = the scheduled task it comes from (display only, not signed) |
+| host → device | `{"t":"ask","id":"<32 hex>","tool":"<≤ 64>","summary":"<≤ 2000>","ttl":<s left>,"cat":[…],"why":"<≤ 200>"[,"why_en":"<≤ 200>"][,"cred":"read"\|"change"][,"batch":"<scope>","batch_max":20,"batch_secs":600][,"task":"<≤ 80>"]}` | a permission request; `summary` = what the phone shows (command / path / compact JSON), in ONE language — the host's `appearance.language` (P128; it is what the phone signs); `cat` = danger categories (`[]` = low risk; `opaque` = Agent J can't tell what the command does, P137), `why` = the rule that fired (Chinese; an `opaque` card also shows the decoded / expanded part it could read), `why_en` its English twin (the phone shows one of them by its language), `cred` = whether a `credentials` card only shows one (`read` → 查看密码或密钥) or changes one (`change` → 改密码或密钥); `batch` (low risk only) = the scope a batch approval would cover; `task` = the scheduled task it comes from (display only, not signed) |
 | host → device | `{"t":"ask_done","id","result":"allow"\|"deny"\|"timeout"\|"gone"\|"stopped"}` | decided (by any phone, the timeout, the agent withdrawing / serve stopping, or 全部停下) |
 | device → host | `{"t":"answer","id","ok":bool,"sig":"<b64url 64 B>"[,"batch":true]}` | the human's decision, signed; `batch:true` (with `ok:true`) = `allow_batch`: this one and the rest of this turn's calls of that scope |
 | host → device | `{"t":"auto","id","tool","summary":"<first line ≤ 200>","grant":"<id>"}` | a call approved by a batch grant (shown as one line 「已按你的授权自动批准：…」; no card, no push) |
@@ -1669,7 +1671,7 @@ brief on disk still has the signed digest. Then: picks → `<workflow>/inputs/ow
 receipt (state directory, never written by the Agent); status *verifying* → re-check every required capability → *ready*
 or *needs_input*; the schedule is enabled only when the brief and `task_on` signatures both verified and nothing is
 missing. `capabilities/audit.log` keeps ids, hashes and results only. None of this is an approval of the five dangerous
-categories (spend / delete / send / credentials / price): those keep their own per-action cards (§8, §11).
+categories (spend / delete / send / credentials / price / opaque): those keep their own per-action cards (§8, §11).
 ## 21. First-run checklist card and Google tools (P115, host 0.18.0a1, ADR-A196 / ADR-A195)
 
 **Checklist (`first_run.py`).** The host owns `<state>/setup/checklist.json` (0700/0600, revision CAS). Device → host over the

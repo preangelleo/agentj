@@ -129,25 +129,71 @@ def schedule(st, argv, target):
         raise
 
 
-def run(st, target, *, timeout=45, install=None, status=None):
+READY_LIMIT = 600     # s (P142 A12): longest the restart waits for an idle serve; then it restarts anyway
+READY_POLL = 2.0
+
+
+def wait_ready(st, *, limit=READY_LIMIT, poll=READY_POLL, ctl=None, sleep=time.sleep):
+    """P142 (A12): before restarting, wait until the running serve has no sudo/secret card, no open approval or question,
+    no turn in flight (owned or shared) and no task — `upgrade_ready` over the control socket; an older serve without it
+    answers from `status`. Returns idle | not_running | timeout."""
+    from .names import ServeBusy, ctl_call
+    ctl = ctl or ctl_call
+    end = time.monotonic() + limit
+    while True:
+        try:
+            r = ctl(st, {'cmd': 'upgrade_ready'}, 10)
+            if r is not None and r.get('ok') is not True:
+                s = ctl(st, {'cmd': 'status'}, 10)
+                r = None if s is None else {'ok': True, 'ready': s.get('ok') is True and s.get('agent_status') in ('idle', None)
+                                                              and not s.get('asks') and not s.get('task_running')}
+        except ServeBusy:
+            r = {'ok': True, 'ready': False}
+        if r is None:
+            return 'not_running'
+        if r.get('ready') is True:
+            return 'idle'
+        if time.monotonic() >= end:
+            return 'timeout'
+        sleep(poll)
+
+
+def run(st, target, *, timeout=45, install=None, status=None, ready=None, runner=None):
     from . import __version__
     record(st, 'running', target)
+    pending = None
     try:
         if __version__ != target:
             raise service.ServiceError('recovery_version_mismatch')
-        # The old fenced apply may have written its marker only in a private
-        # mount namespace. Write the normal marker from this manager-owned job.
         from . import update, auto_update
         auto_job = auto_update.read(st, auto_update.JOB)
         auto_active = auto_job.get('phase') in ('installing', 'installed', 'rollback')
+        pending = None if auto_active else update.read_pending(st, target)
+        record(st, 'waiting', target)
+        waited = (ready or wait_ready)(st)
+        st.log('upgrade_wait', status=waited)
+        record(st, 'running', target)
+        # The marker is the last claim before the restart (P142). The old fenced apply may have written its marker only in a
+        # private mount namespace: write the normal marker from this manager-owned job.
         if not (st.root / update.UPGRADED).exists() and not (st.root / 'phone-update-result.json').exists() and not auto_active:
-            update.write_marker(st, target, target)
-        (install or service.install)(st)
-        end = time.monotonic() + timeout
-        while (status or service.status)().get('active') != 'active':
-            if time.monotonic() >= end:
-                raise service.ServiceError('recovery_inactive')
-            time.sleep(.25)
+            update.write_marker(st, pending['from'] if pending else target, target)
+        try:
+            (install or service.install)(st)
+            end = time.monotonic() + timeout
+            while (status or service.status)().get('active') != 'active':
+                if time.monotonic() >= end:
+                    raise service.ServiceError('recovery_inactive')
+                time.sleep(.25)
+        except Exception:
+            # P142 (B15): the new service did not come up — auto_update's cached-wheel rollback, then the old service.
+            if pending and pending.get('old') and isinstance(pending.get('install'), dict):
+                ok = update.roll_back(st, pending['install'], pending['old'], pending['from'], runner or subprocess.run)
+                st.log('upgrade_rollback', status='ok' if ok else 'failed', reason='recovery_inactive')
+                if ok:
+                    (install or service.install)(st)
+                    raise service.ServiceError('rolled_back')
+            raise
+        (st.root / update.PENDING).unlink(missing_ok=True)
         record(st, 'ok', target)
         (st.root / NOTICE).unlink(missing_ok=True)
         return 0
@@ -167,5 +213,9 @@ def failure(st):
 
 
 def failure_text(rec):
+    if rec and rec.get('reason') == 'rolled_back':   # P142 (B15)
+        return ('新版本的服务没能启动，已自动回滚到原来的版本，一切照旧。运行 `agentj doctor` 可查看详情。 / '
+                'The new version\'s service did not start, so Agent J rolled back to the previous version; everything works as '
+                'before. Run `agentj doctor` for details.')
     return ('升级后的服务启动未完成。运行 `agentj service start`，再运行 `agentj doctor`。 / '
             'The upgraded service did not finish starting. Run `agentj service start`, then `agentj doctor`.')

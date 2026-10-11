@@ -167,7 +167,8 @@ def link_of(aid: str) -> str:
 def card_view(card) -> dict:
     """A friend's card for display: short, one-line, no control characters."""
     c = card if isinstance(card, dict) else {}
-    return {"name": clean_line(str(c.get("name") or ""), 64), "owner": clean_line(str(c.get("owner") or ""), 32),
+    from .plaza import display_name
+    return {"name": display_name(c.get("name")), "owner": clean_line(str(c.get("owner") or ""), 32),
             "intro": clean_line(str(c.get("intro") or ""), 140)}
 
 

@@ -376,6 +376,8 @@ class Admin:
             if ok:
                 self.st.log("revoked", device=did)
             res = {"ok": ok}
+        if res.get("error") in ("claim_required", "claim_refused"):     # A4 (P139): started from inside an Agent
+            return 403, {"ok": False, "error": "owner_only"}
         return (200, {"ok": True}) if res.get("ok") else (409, {"ok": False, "error": "unknown_device"})
 
     def remote_unbind(self, body: dict) -> tuple[int, dict]:

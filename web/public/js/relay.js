@@ -1,4 +1,5 @@
 import { registerLayer } from './layers.js';
+import { applyViewport, watchViewport } from './viewport.js';
 import { historyDoubleTap } from './history-corners.js';
 import { SharedNotice } from './shared-notice.js';
 import { quotaWindows } from './dashboard.js';
@@ -226,7 +227,8 @@ const askWhy = (p) => (lang() === 'en' && p.why_en ? p.why_en : p.why);
 function paintTags(item){
   const box = el("askTags"); box.replaceChildren();
   if (item && item.kind === "permission"){
-    if (item.cats && item.cats.length) for (const c of item.cats){ const s = document.createElement("span"); s.className = "atag danger"; s.dataset.cat = c; s.textContent = t('ask.cat.' + catKey(c, item)); box.appendChild(s); }
+    if (item.passkey_required) { const s = document.createElement("span"); s.className = "atag danger"; s.textContent = t("ask.sandboxOnce"); box.appendChild(s); }
+    else if (item.cats && item.cats.length) for (const c of item.cats){ const s = document.createElement("span"); s.className = "atag danger"; s.dataset.cat = c; s.textContent = t('ask.cat.' + catKey(c, item)); box.appendChild(s); }
     else { const s = document.createElement("span"); s.className = "atag low"; s.textContent = t('ask.low'); box.appendChild(s); }
   }
   if (item && item.task){ const s = document.createElement("span"); s.className = "atag task"; s.textContent = t('ask.task', {task: item.task}); box.appendChild(s); }
@@ -321,12 +323,13 @@ function renderPermission(card, p){
   el("cmdBox").hidden = false; el("qs").hidden = true;
   el("askCancel").hidden = true; el("askSend").hidden = true;
   const tool = (p && p.tool) || (card && card.tool_name) || "?";
-  const danger = !!(p && p.cats && p.cats.length);
+  const danger = !!(p && (p.passkey_required || (p.cats && p.cats.length)));
   el("sheet").classList.toggle("danger", danger);
-  el("sheetTitle").textContent = danger ? t('r.verb.danger', {verb: verb(tool)}) : verb(tool);
-  el("tool").textContent = tool;
+  el("sheetTitle").textContent = p && p.passkey_required ? t("ask.sandboxTitle") : danger ? t('r.verb.danger', {verb: verb(tool)}) : verb(tool);
+  el("tool").textContent = p && p.passkey_required ? "Agent J" : tool;
   const {main} = summarize(p ? p.summary : card.summary);
-  el("cmd").textContent = main;
+  el("cmd").classList.toggle("sandbox", !!(p && p.passkey_required));
+  el("cmd").textContent = p && p.passkey_required ? p.summary : main;
   const why = p && p.why ? t('ask.why', {why: askWhy(p)}) : "";
   el("why").textContent = why; el("why").hidden = !why;
   const st = apprState(p), open = st === "open";
@@ -335,7 +338,7 @@ function renderPermission(card, p){
   el("apprDeny").disabled = apprBusy;
   el("apprAllow").hidden = !p || p.local_only;
   el("apprAllow").disabled = apprBusy;
-  el("apprAllowLbl").textContent = danger ? t('r.appr.holdOne') : t('r.appr.hold');
+  el("apprAllowLbl").textContent = p && p.passkey_required ? t('ask.sandboxOnce') : danger ? t('r.appr.holdOne') : t('r.appr.hold');
   const batch = open && sign && p && p.scope && !danger;
   el("apprBatch").hidden = !batch;
   if (batch){
@@ -354,7 +357,7 @@ async function apprPost(p, action){
   const r = await C.api.approve(p, action);
   apprBusy = false;
   if (r.ok){ apprSent = {id: p.id, state: action === "batch" ? "batch_sent" : action === "allow" ? "allow_sent" : "deny_sent"}; }
-  else toast(r.why === "offline" ? t('r.appr.net') : t('r.appr.fail'), 3000);
+  else toast(r.why === 'passkey_required' ? t('ask.passkeyRequired') : r.why === "offline" ? t('r.appr.net') : t('r.appr.fail'), 3000);
   if (cur) renderCard(cur);
 }
 function apprLive(){
@@ -374,6 +377,7 @@ function holdToApprove(btn, action){
     const p = apprLive();
     if (!p || p.local_only || apprHold || e.button > 0) return;
     e.preventDefault();
+    if (p.passkey_required && action === "allow") { apprPost(p, action); return; }
     btn.classList.add("holding");
     apprHold = {id: p.id, btn, t0: Date.now(), timer: setTimeout(() => {
       const q = apprLive(), id = apprHold && apprHold.id;
@@ -560,7 +564,7 @@ function paintPill(u){
   if (pill.want && samePick(pill.want, real)){ pill.want = null; pill.sentAt = 0; }
   if (pill.want && pill.sentAt && Date.now() - pill.sentAt > PILL_SETTLE_MS){ pill.want = null; pill.sentAt = 0; }
   const show = pill.want || null;
-  const name = show ? ((c && c.models.find(x => x.id === show.model)) || {}).name || "—" : (u.model || "—");
+  const name = show ? ((c && c.models.find(x => x.id === show.model)) || {}).name || (show.isDefault ? u.model : "") || "—" : (u.model || "—");
   const effort = show ? show.effort : (u.model ? u.effort : null);
   el("metaModel").textContent = name;
   el("metaSep").textContent = effort ? " · " : "";
@@ -570,9 +574,12 @@ function paintPill(u){
   if (show) m.dataset.sw = pill.sentAt && cur && cur.status !== "idle" ? "queued" : "pending";
   else delete m.dataset.sw;
 }
+// P142: no catalogue (shared Claude before its picker is known, an older host): the tap asks the host for `/model` — the
+// same self-slash path as typing it; its card lists the models as buttons. Only an offline page still says "unsupported".
+function pillList(){ if (!C.api.slash("model")) toast(t('r.pill.unsupported'), 2200); }
 function pillStep(half){
   const c = swCat();
-  if (!c){ toast(t('r.pill.unsupported'), 2200); return; }
+  if (!c){ pillList(); return; }
   const b = pill.want || realPick();
   let model = b.model || c.default.model, effort = b.effort || c.default.effort;
   if (half === "model"){
@@ -594,7 +601,7 @@ function pillStep(half){
 }
 function pillDefault(){
   const c = swCat();
-  if (!c){ toast(t('r.pill.unsupported'), 2200); return; }
+  if (!c){ clearTimeout(pill.timer); pill.want = {isDefault: true}; pill.sentAt = 0; pillSend(); return; }   // P142: hold = default, catalogue or not
   clearTimeout(pill.timer);
   pill.want = {...c.default, isDefault: true}; pill.sentAt = 0;
   paintPill();
@@ -1331,11 +1338,7 @@ export async function restoreDraft(){
 
 // ---- keyboard / visual viewport ---------------------------------------------------------
 function fitViewport(){
-  const vv = window.visualViewport; if (!vv) return;
-  const st = document.documentElement.style;
-  st.setProperty("--vvh", vv.height + "px");
-  st.setProperty("--vvtop", vv.offsetTop + "px");
-  document.body.dataset.kb = (window.innerHeight - vv.height > 120) ? "1" : "0";
+  applyViewport();          // P142: follows visualViewport only while the keyboard is up; else full height (iOS resume)
   paintChrome();
 }
 
@@ -2396,7 +2399,10 @@ async function moreSilent(){
   showPage(); renderSilent();
 }
 
-const dialogOpen = () => !el("silent").hidden || !el("cam").hidden || !el("keys").hidden || !el("confirm").hidden || !el("badge-panel").hidden || !el("settings").hidden;
+// P142 (A16): the sign-in QR / secret pickup / sudo-secret cards and the setup page also hold the keyboard (no shortcut leaks)
+const shownById = (id) => { const n = el(id); return !!n && !n.hidden; };
+const dialogOpen = () => !el("silent").hidden || !el("cam").hidden || !el("keys").hidden || !el("confirm").hidden || !el("badge-panel").hidden || !el("settings").hidden
+  || shownById("lqr") || shownById("sout") || shownById("elev") || shownById("setup-view");
 function openKeys(){ closeMenu(); closeSug(); el("keys").hidden = false; el("keysClose").focus(); }
 function closeKeys(){ el("keys").hidden = true; if (document.activeElement) document.activeElement.blur(); }
 export async function pasteClipImages(){
@@ -2712,11 +2718,7 @@ export function init(ctx){
   deck.addEventListener("touchcancel", () => { if (sw && sw.mode === "page"){ sw.dx = 0; sw.edge = true; } swipeEnd(); });
 
   // viewport
-  if (window.visualViewport){
-    visualViewport.addEventListener("resize", fitViewport);
-    visualViewport.addEventListener("scroll", fitViewport);
-    fitViewport();
-  }
+  watchViewport(fitViewport);   // P142: + pageshow / visibility / focus / resize, now + next frame + 300 ms
   input.addEventListener("focus", () => setTimeout(fitViewport, 300));
   input.addEventListener("blur", () => setTimeout(fitViewport, 300));
 

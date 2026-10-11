@@ -38,6 +38,7 @@ import { parseAgentId } from './proto/wire.js';
 import { SCAN_CONSTRAINTS, SCAN_FALLBACK, SCAN_SLOW_MS, scanFrame } from './js/scan.js';   // F29 (ADR-A177)
 
 import { registerLayer, initLayers } from './js/layers.js';
+import { applyViewport, watchViewport } from './js/viewport.js';
 
 const $ = el;
 
@@ -715,20 +716,12 @@ document.addEventListener('visibilitychange', () => { if (document.hidden) stopS
 window.addEventListener('pagehide', () => stopScan());
 window.addEventListener('popstate', () => { if(view === 'scan') stopScan(); });
 function fitPairViewport() {
-  const vv = window.visualViewport;
-  if (vv) {
-    document.documentElement.style.setProperty('--vvh', vv.height + 'px');
-    document.documentElement.style.setProperty('--vvtop', vv.offsetTop + 'px');
-  }
-  document.body.dataset.kb = vv && window.innerHeight - vv.height > 120 ? '1' : '0';
+  applyViewport();          // P142: the same rule as the chat (keyboard up → visual viewport, else full height)
   if (document.activeElement === $('pair-link')) $('pair-controls').scrollIntoView({ block: 'start' });
 }
-window.visualViewport?.addEventListener('resize', fitPairViewport);
-window.visualViewport?.addEventListener('scroll', fitPairViewport);
-window.addEventListener('resize', fitPairViewport);
 document.addEventListener('focusin', () => { fitPairViewport(); setTimeout(fitPairViewport, 300); });
 document.addEventListener('focusout', () => setTimeout(fitPairViewport, 300));
-fitPairViewport();
+watchViewport(fitPairViewport);
 
 // ---------------------------------------------------------------- language switch: re-render everything that is ours
 // P129: the host's Telegram channel is really down (≥3 failures / ≥2 min): one line in the chat's status area, in the page's

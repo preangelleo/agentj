@@ -9,6 +9,7 @@ import { sendApp, gen, channel } from './session.js';
 import { myDeviceId } from './api.js';
 import { t, onLang } from './t.js';
 import { mk, toast, human } from './ui.js';
+import { registerLayer } from './layers.js';
 import { elevateChallenge, canAssert, approve, SECRET_OUT_CTX, SECRET_OUT_KIND, secretOutFields, secretOutDigest } from './faceid.js';
 
 export const CTX = SECRET_OUT_CTX;
@@ -27,6 +28,9 @@ function build() {
   if (root) return root;
   root = mk('div', 'ajmodal sout');
   root.id = 'sout'; root.hidden = true;
+  // P142 (A16): a layer — ESC = 「完成」 once opened (the value is wiped), else the card's 「不需要了」; shortcuts stay off
+  registerLayer({ element: () => root, open: () => !!root && !root.hidden, rank: 55, fallback: () => document.getElementById('input') || document.getElementById('setBtn'),
+    close: () => { const d = $('sout-done'); (d && !d.hidden ? d : $('sout-decline'))?.click(); } });
   root.setAttribute('role', 'dialog'); root.setAttribute('aria-modal', 'true'); root.setAttribute('aria-labelledby', 'sout-title');
   const box = mk('div', 'box');
   const node = (tag, id, cls) => { const n = mk(tag, cls); n.id = id; return n; };

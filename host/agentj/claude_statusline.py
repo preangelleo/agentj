@@ -359,8 +359,8 @@ def tap(meta_file):
     except (OSError, ValueError, KeyError, TypeError, AttributeError): pass
     original = meta.get('original')
     if isinstance(original, dict) and isinstance(original.get('command'), str):
-        try: return subprocess.run(original['command'], shell=True, input=raw).returncode
-        except OSError: return 1
+        try: return subprocess.run(original['command'], shell=True, input=raw, timeout=5).returncode
+        except (OSError, subprocess.TimeoutExpired): return 1
     return 0
 
 
