@@ -220,7 +220,8 @@ class Flow(unittest.TestCase):
         self.assertIsNone(p.poll())
         for rec in self.log():
             self.assertLessEqual(set(rec), {"ts", "ev", "channel", "cid", "device", "name", "reason", "kind", "bytes",
-                                            "code_ok", "seq", "status", "trigger", "tenant"})
+                                            "code_ok", "seq", "status", "trigger", "tenant",
+                                            "phase", "code", "ms"})   # P129: relay_down/up — fixed phase word, close code, ms
             if rec["ev"].startswith("report_"):
                 self.assertNotIn("name", rec)
         p.send_signal(signal.SIGTERM)

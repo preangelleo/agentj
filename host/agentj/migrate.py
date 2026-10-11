@@ -16,6 +16,12 @@ key, a paired device, the approval passphrase or a log):
     The old values go into migrated.json, so `agentj migrate rollback` puts them back. devices.json is never touched:
     paired phones keep working because the relay answers on both host names.
 `agentj migrate rollback` (no serve running): URLs restored, symlink removed, directory renamed back.
+P127 (Leo 10-10: a 10-02 test leftover was adopted silently by a brand-new install): the move is never silent. With the
+new path absent, the old one present and no serve running on it, the owner decides: a terminal lists what the old state
+holds (Agent name, paired phones, account, last used — never a key) and asks y/N (Enter = no = a fresh identity; the old
+directory stays where it is, untouched); without a terminal (install assistant, headless, service) nothing moves and nothing
+is created: the command stops with exit 2 and names `--migrate-legacy` / `--fresh` (or AGENTJ_LEGACY_STATE=migrate|fresh).
+A real upgrade that already has the new state never gets here; a serve still running on the old directory keeps using it.
 Every message goes to stderr: stdout stays the command's own (`--json` output is never mixed with a notice).
 """
 from __future__ import annotations
@@ -176,14 +182,92 @@ def pending(home: str | None = None) -> str | None:
     return "serve_running" if serve_running(old) else "ready"
 
 
-def auto(out=None) -> str:
-    """Called before any command opens state. → "moved" · "refused" · "failed" · "none" (nothing to do / env override).
-    Also replaces the old default URLs inside whichever state directory is in use."""
+LEGACY_ENV = "AGENTJ_LEGACY_STATE"     # migrate | fresh: the owner's answer for a run without a terminal
+
+
+def legacy_summary(old) -> dict:
+    """What the old state holds, for the owner to recognise it — names and counts only, never a key or a token."""
+    st = State(old)
+    out = {"path": tilde(old), "agent_name": None, "phones": [], "account": None, "created": None, "last_used": None}
+    try:
+        cfg = st.config()
+        out["agent_name"] = cfg.get("agent_name") if isinstance(cfg.get("agent_name"), str) else None
+        out["created"] = int(cfg["created"]) if isinstance(cfg.get("created"), (int, float)) else None
+    except (OSError, ValueError):
+        pass
+    try:
+        out["phones"] = [str((v or {}).get("name") or "?")[:40] for v in st.devices().values()]
+    except (OSError, ValueError, AttributeError):
+        pass
+    c = _read_json(st.cloud_path)
+    if c and isinstance(c.get("tenant"), dict) and isinstance(c["tenant"].get("slug"), str):
+        out["account"] = c["tenant"]["slug"]
+    times = []
+    for p in (st.log_path, st.config_path, st.devices_path):
+        try:
+            times.append(int(p.stat().st_mtime))
+        except OSError:
+            pass
+    out["last_used"] = max(times) if times else None
+    return out
+
+
+def _day(t) -> str:
+    return time.strftime("%Y-%m-%d %H:%M", time.localtime(t)) if t else "?"
+
+
+def legacy_text(s: dict) -> str:
+    phones = "、".join(s["phones"]) if s["phones"] else "无 / none"
+    return ("Agent J：发现一份旧的身份（≤ 0.9 的状态目录）/ found an older Agent J identity:\n"
+            f"  位置 / where: {s['path']}\n"
+            f"  Agent 名字 / name: {s['agent_name'] or '（未设置 / not set）'}\n"
+            f"  已配对手机 / paired phones: {len(s['phones'])}（{phones}）\n"
+            f"  Agent J 账号 / account: {s['account'] or '（未加入 / none）'}\n"
+            f"  创建 / created: {_day(s['created'])} · 最近使用 / last used: {_day(s['last_used'])}")
+
+
+def _interactive() -> bool:
+    try:
+        return sys.stdin.isatty() and sys.stderr.isatty()
+    except (AttributeError, ValueError):
+        return False
+
+
+def _decision(decision):
+    d = decision or (getenv(LEGACY_ENV) or "").strip().lower() or None
+    return d if d in ("migrate", "fresh") else None
+
+
+def auto(out=None, decision: str | None = None, interactive: bool | None = None) -> str:
+    """Called before any command opens state. → "moved" · "refused" · "failed" · "fresh" · "undecided" (no terminal and
+    no answer: the caller stops) · "none" (nothing to do / env override). Also replaces the old default URLs inside
+    whichever state directory is in use."""
     result = "none"
     if not bool(getenv("AGENTJ_STATE_DIR")):
         new, old = default_state(), legacy_state()
         if old.is_dir() and not old.is_symlink() and not os.path.lexists(new):
-            result = _move(old, new, out)
+            d = _decision(decision)
+            if serve_running(old) or d == "migrate":
+                result = _move(old, new, out)      # a live serve on the old directory: keep using it (refused)
+            else:
+                if d is None and (_interactive() if interactive is None else interactive):
+                    _say(legacy_text(legacy_summary(old)), out)
+                    try:
+                        ans = input("把这份旧身份搬过来继续用？/ Move it here and keep using it? [y/N] ").strip().lower()
+                    except EOFError:
+                        ans = ""
+                    d = "migrate" if ans in ("y", "yes", "是") else "fresh"
+                    if d == "migrate":
+                        result = _move(old, new, out)
+                if d == "fresh":
+                    result = _fresh(old, new, out)
+                elif d is None:
+                    _say(legacy_text(legacy_summary(old)) + "\n"
+                         "没有终端可以问你，所以什么都没动 / no terminal to ask you, so nothing was changed. 请主人决定后重跑："
+                         "\n  搬过来继续用 / keep using it:  agentj --migrate-legacy <命令 / command>"
+                         "\n  不要它，用全新身份 / start fresh:  agentj --fresh <命令 / command>（旧目录原样保留 / the old "
+                         "directory stays as it is）\n  （或环境变量 / or env AGENTJ_LEGACY_STATE=migrate|fresh）", out, "undecided")
+                    return "undecided"
     st = State(state_dir())
     if st.config_path.exists():
         try:
@@ -220,6 +304,20 @@ def _move(old, new, out=None) -> str:
     _say(f"Agent J：状态目录已搬到 {tilde(new)}（密钥、已配对的手机、批准口令、记录都在；旧路径 {tilde(old)} 留了一个指向它的链接）。"
          f"撤销：agentj migrate rollback / the state directory moved to {tilde(new)}; the old path is a link to it", out)
     return "moved"
+
+
+def _fresh(old, new, out=None) -> str:
+    """The owner chose a new identity: create the empty new state directory (so this is never asked again) and leave
+    the old one exactly where it is."""
+    try:
+        os.mkdir(new, 0o700)
+    except FileExistsError:
+        return "fresh"
+    os.chmod(new, 0o700)
+    _write_record(State(new), {"v": 1, "legacy_left": str(old), "at": int(time.time()), "version": __version__})
+    _say(f"Agent J：用全新身份；旧目录 {tilde(old)} 原样留着，没动（不再问）。不要了可以自己删掉。/ starting fresh; the old "
+         f"directory {tilde(old)} is left untouched (you will not be asked again)", out)
+    return "fresh"
 
 
 def status() -> dict:

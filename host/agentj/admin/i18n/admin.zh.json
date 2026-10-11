@@ -20,6 +20,7 @@
   "conn.relay": "转发服务器",
   "conn.relay_on": "已连上",
   "conn.relay_off": "没连上，正在重连",
+  "conn.relay_connecting": "正在连接…",
   "conn.relay_na": "等电脑端程序跑起来再连",
   "conn.company": "Agent J 账号",
   "conn.company_none": "还没加入 Agent J 账号，改动只在这台电脑上生效",
@@ -150,5 +151,13 @@
   "footer.version": "电脑端程序 agentj {version}",
   "footer.channel": "更新通道：{channel}",
   "footer.small": "我们看不到你的数据。",
-  "footer.theme_label": "外观"
+  "footer.theme_label": "外观",
+  "pair.pre_set": "还没设置批准口令，现在还不能配对。请在这台电脑的终端运行 `agentj passphrase set`（别让 Agent 代劳），设好后这里会自动更新。",
+  "pair.pre_set_offline": "这台电脑绑定了账号，但还没连上转发服务器，所以账户页暂时批不了。等它连上，或者自己在终端运行 `agentj passphrase set` 设批准口令。",
+  "pair.pre_set_off": "这台电脑已绑定账号，但账户页添加遥控器已关闭。在终端运行 `agentj remote-pair on` 打开，或者自己运行 `agentj passphrase set` 设批准口令。",
+  "pair.pre_account": "这台电脑已绑定账号：推荐到账户页这台电脑的席位卡点「添加遥控器」，用通行密钥确认一次再扫码，不需要批准口令。也可以在这里扫码，然后到同一张席位卡上批准等待中的手机。",
+  "pair.pre_account_pass": "这台电脑已绑定账号：可以到账户页席位卡点「添加遥控器」用通行密钥批准，也可以在这里扫码后输入 6 位码和批准口令。",
+  "pair.pre_account_open": "打开账户页",
+  "pair.pending_account": "到账户页这台电脑的席位卡上批准这台手机（用通行密钥确认），批准后这里会自动更新。不想要它就点拒绝。",
+  "err.passphrase_not_set": "还没设置批准口令：先在这台电脑的终端运行 `agentj passphrase set`，或者绑定账号后用账户页添加遥控器。"
 }

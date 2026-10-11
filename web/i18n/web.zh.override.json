@@ -197,6 +197,8 @@
   "r.tg.failed": "没转发出去，点一下重试",
   "r.tg.limited": "转发得太频繁了，过几分钟再试",
   "r.tg.again": "这条刚转发过了",
+  "r.queue.card": "排队中，电脑忙完就接手",
+  "r.queue.note": "还没交给 Agent，点「取消」可以撤回",
   "rt.dead": "这台手机的自动登录已经失效：电脑那边解绑了它，或者它已经在另一个浏览器或主屏幕图标里登录。请扫码重新配对。",
   "pk.none": "没能用 Face ID 连回电脑：可能是取消了，也可能这台手机没有保存 Agent J 的 Face ID 记录（iPhone 要在设置里打开 iCloud 钥匙串才能保存）。请扫码重新配对。",
   "pk.notSaved": "Face ID 记录没存上，现在的配对照常能用。iPhone 要在「设置 → Apple 账户 → iCloud → 密码（钥匙串）」里打开它才能保存；打开后可以在菜单里点「设置 Face ID」再试。",
@@ -208,5 +210,6 @@
   "r.speak.err.busy": "正在生成另一段朗读，请稍后再试。",
   "r.speak.err.not_ready": "朗读还未就绪，请等电脑连接和回复完成后重试。",
   "r.speak.err.tap_play": "点一下播放",
-  "r.speak.voice_fallback": "已回落到同语言默认本地音色；原音色在这台手机上不可用。"
+  "r.speak.voice_fallback": "已回落到同语言默认本地音色；原音色在这台手机上不可用。",
+  "ask.cat.credentials_read": "查看密码或密钥"
 }

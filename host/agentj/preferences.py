@@ -291,6 +291,8 @@ def commit_files(st,newraw,candidate):
         try:previous.unlink()
         except OSError:st.log("config_history_cleanup_failed")
     note_language(st,candidate)
+    from . import session_choice  # P127: a committed session-mode change is the owner's recorded choice
+    session_choice.note_commit(st,old.decode(),newraw,candidate)
 
 
 # ------------------------------------------------------------------ A1 (P44): the one language value and when it was set
@@ -398,7 +400,8 @@ def transact(st,newraw):
     from . import claude_auth
     claude_auth.require_transition(st, effective(st), candidate)
     commit_files(st,newraw,candidate)
-    from . import claude_inbound
+    from . import claude_inbound, claude_statusline
+    claude_statusline.ensure_default(st)            # P127: same moment as the inbound default; never raises
     claude_inbound.ensure_shared_default(st)
     return {'ok':True,'applied':False,'needs':['start serve'],'verify':{'ok':True,'detail':'validated; takes effect on next serve'}}
 
