@@ -66,7 +66,7 @@ class Handover(unittest.TestCase):
 
     def check_common(self, text: str, lang: str):
         for must in ("m.agentj.app", "agentj passphrase reset", "agentj revoke", "agentj devices", "agentj update check",
-                     "agentj update apply", "https://agentj.app/account", "https://agentj.app/docs/", "founder@agentj.app",
+                     "agentj update apply", "https://agentj.app/account", "https://agentj.app/docs/", "founder@agentj.app", "feedback@agentj.app",
                      "agentj pair --link", "agentj resume", "agentj service uninstall"):
             self.assertIn(must, text, must)
         self.assertNotIn("unlink", text.replace('"Unlink"', ""), "never `agentj unlink` (the dashboard's button label only)")
@@ -127,7 +127,7 @@ class Handover(unittest.TestCase):
         r = _cli(self.home, "handover", "--lang", "en", env=env)
         self.check_common(r.stdout, "en")
         self.assertIn("Not in an Agent J account yet", r.stdout)
-        self.assertIn("Phones paired: 2 (up to 5)", r.stdout)
+        self.assertIn("Phones paired: 2 (up to 10)", r.stdout)   # P171: 10 remotes per seat
         self.assertIn('Agent name: "Assistant One"', r.stdout)
         self.assertIn('Claude Code on this computer; it works in the folder "~/agentj-work"', r.stdout)
         self.assertNotIn('"Unlink"', r.stdout, "the dashboard route only for a computer in an account")

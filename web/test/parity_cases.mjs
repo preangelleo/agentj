@@ -2,7 +2,7 @@
 // artifact "pwa", plus the Agent J extras "agentj-only"), each driving the real page in headless Chromium against the fake
 // relay + host (test/fakehost.mjs) and asserting what is visible. Case name = the feature id. Used by test/screens.mjs,
 // which reports them in the parity gate format (parity/lib.mjs parityRecorder; tests/e2e_parity.mjs collects them).
-import { writeFileSync, mkdtempSync } from 'node:fs';
+import { writeFileSync, mkdtempSync, truncateSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { newPage, evaluate, navigate, waitFor, waitState, key, tap, rect, swipe, sleep } from './browser.mjs';
@@ -25,7 +25,7 @@ export function makeFiles() {
     txt: f('notes.txt', 'hello from the phone\n'.repeat(20)),
     md: f('plan.md', '# plan\n- a\n- b\n'),
     big: f('big.txt', Buffer.alloc(2 * 1024 * 1024, 65)),
-    huge: f('huge.txt', Buffer.alloc(26 * 1024 * 1024, 66)),
+    huge: (() => { const p = f('huge.txt', ''); truncateSync(p, 200 * 1024 * 1024 + 1); return p; })(),   // P166: sparse, never read
     png1: f('a.png', png), png2: f('b.png', png),
     many: Array.from({ length: 11 }, (_, i) => f(`n${i}.txt`, `file ${i}\n`)),
   };
@@ -312,7 +312,8 @@ export async function runCases({ B, web, fake, only }) {
     ok((await clipboard()) === '复制我', 'the stored reply is on the clipboard');
   });
   await C('action-bar', async () => {
-    const r = await ev(`[...document.querySelectorAll('#rmbar .act')].map((b) => b.id + ':' + b.disabled).join(',')`);
+    // P189: 转发到邮箱 (#mailBtn) only shows with the host's `contacts` cap — this host has none, so relay's five remain
+    const r = await ev(`[...document.querySelectorAll('#rmbar .act')].filter((b) => !b.hidden).map((b) => b.id + ':' + b.disabled).join(',')`);
     ok(r === 'readBtn:false,speakBtn:false,fwdBtn:false,copyReply:false,replyBtn:false', 'five actions, all live on a committed page: ' + r);
   });
   await C('tts-read-aloud', async () => {
@@ -601,7 +602,7 @@ export async function runCases({ B, web, fake, only }) {
     await clearTray();
     await setFiles('fDoc', [files.huge]);
     await waitToast(T('r.up.too_big'));
-    ok(!(await ev(`document.querySelectorAll('#tray .chip').length`)), 'a file over 25 MB is not added');
+    ok(!(await ev(`document.querySelectorAll('#tray .chip').length`)), 'a file over 200 MB is not added');
   });
   await C('upload-progress', async () => {
     fake.st.stallAfter = 5;
@@ -803,7 +804,7 @@ export async function runCases({ B, web, fake, only }) {
     await sleep(500);
     await dblTap('#mic');
     await wait(`document.getElementById('mic').classList.contains('lock')`, 3000);
-    await ev(`(() => { const real = performance.now.bind(performance); const t0 = real(); performance.now = () => real() + 9.5 * 60 * 1000; window.__restoreNow = () => { performance.now = real; }; })()`);
+    await ev(`(() => { const real = performance.now.bind(performance); const t0 = real(); performance.now = () => real() + 199.5 * 60 * 1000;   /* P182: 10 × 20-minute parts */ window.__restoreNow = () => { performance.now = real; }; })()`);
     await wait(`document.getElementById('pttHint').textContent.startsWith(${JSON.stringify(T('r.ptt.left', { s: 'X', stop: '' }).split('X')[0])})`, 3000);
     await ev(`window.__restoreNow()`);
     await key(P, 'Escape', { code: 'Escape' });
@@ -865,7 +866,7 @@ export async function runCases({ B, web, fake, only }) {
     await ev(`document.activeElement && document.activeElement.blur()`);
     await click('#slashBtn');
     await wait(`[...document.querySelectorAll('#menu [data-slash]')].some((b) => b.dataset.slash === '/daily-report')`);
-    ok(await ev(`[...document.querySelectorAll('#menu .menugroup')].map((g) => g.textContent).join('|')`) === [T('r.menu.run'), '日常', T('r.menu.skills')].join('|'), 'groups: run now, the host menu, skills');
+    ok(await ev(`[...document.querySelectorAll('#menu .menugroup')].map((g) => g.textContent).join('|')`) === [T('r.menu.run'), T('r.menu.tools'), '日常', T('r.menu.skills')].join('|'), 'groups: run now, Agent J tools (P182), the host menu, skills');
   });
   await C('menu-insert-text', async () => {
     await ev(`[...document.querySelectorAll('#menu [data-slash]')].find((b) => b.dataset.slash === '/daily-report').click()`);
@@ -1042,27 +1043,27 @@ export async function runCases({ B, web, fake, only }) {
   });
   await C('aj-web-push', async () => {
     await fake.send({ t: 'push_key', k: Buffer.from(Uint8Array.of(4, ...crypto.getRandomValues(new Uint8Array(64)))).toString('base64url') });
-    await ev(`document.getElementById('aj-menu').open = true`);
-    await wait(`!document.getElementById('push-row').hidden`);
-    await ev(`document.getElementById('aj-menu').open = false`);
+    await ev(`(document.getElementById('settings').hidden && document.getElementById('setBtn').click())`);
+    await wait(`!document.getElementById('settings').hidden && !['', ${JSON.stringify(D.zh['set.pushStateWait'])}, ${JSON.stringify(D.zh['set.pushStateNo'])}].includes(document.getElementById('set-push-text').textContent)`);
+    await ev(`(!document.getElementById('settings').hidden && document.getElementById('set-close').click())`);
   });
   await C('aj-memory-page', async () => {
     fake.answer('mem_list', () => [{ t: 'mem_sources', harness: 'codex', sources: [{ id: 'p', label: 'AGENTS.md', path: '~/x/AGENTS.md', n: 1 }], trash: [] },
       { t: 'mem_items', items: [{ src: 'p', file: 'AGENTS.md', fsha: 'a', iid: '1', kind: 'line', text: '- 回答用中文' }], more: false }]);
-    await ev(`document.getElementById('aj-menu').open = true`); await click('#open-mem');
+    await ev(`(document.getElementById('settings').hidden && document.getElementById('setBtn').click())`); await click('#open-mem');
     await wait(`document.body.dataset.view === 'mem' && document.querySelectorAll('#mem-list .mem-item').length === 1`);
   });
   await C('aj-multi-harness', async () => { ok((await text('#mem-status')).includes('Codex'), 'Codex named on the memory page'); });
   await C('aj-activity-page', async () => {
     fake.answer('act_list', () => ({ t: 'act_page', more: false, items: [{ k: 'decision', ts: Date.now(), result: 'allow', by: 'Pixel', tool: 'Bash', text: 'ls' }] }));
     await click('#mem-view [data-back]');
-    await ev(`document.getElementById('aj-menu').open = true`); await click('#open-act');
+    await ev(`(document.getElementById('settings').hidden && document.getElementById('setBtn').click())`); await click('#open-act');
     await wait(`document.body.dataset.view === 'act' && document.querySelectorAll('#act-list li').length === 1`);
   });
   await C('aj-tasks-page', async () => {
     fake.answer('task_list', () => ({ t: 'tasks', more: false, agent: 'claude', items: [{ id: 'd', title: { zh: '日报', en: 'Daily' }, schedule: '0 9 * * *', tz: 'local', mode: 'research', enabled: true, tsha: 'x' }] }));
     await click('#act-view [data-back]');
-    await ev(`document.getElementById('aj-menu').open = true`); await click('#open-tasks');
+    await ev(`(document.getElementById('settings').hidden && document.getElementById('setBtn').click())`); await click('#open-tasks');
     await wait(`document.body.dataset.view === 'tasks' && document.querySelectorAll('#tasks-list li').length === 1`);
     await click('#tasks-view [data-back]');
     await wait(`document.body.dataset.view === 'chat'`);
@@ -1112,23 +1113,23 @@ export async function runCases({ B, web, fake, only }) {
     await p2.dispose();
   });
   await C('aj-security-badge', async () => {
-    await click('#badge');
+    await click('#menu-about');   // P190: the 网页版 tag moved from the header into Settings → 这个网页版有多安全
     await wait(`!document.getElementById('badge-panel').hidden && /^[0-9a-f]{64}$/.test(document.getElementById('version-hash').textContent)`);
     await click('#badge-close');
   });
   await C('aj-theme', async () => {
     const light = await ev(`getComputedStyle(document.getElementById('chromeProbe')).backgroundColor`).then(rgb);
-    await ev(`document.getElementById('aj-menu').open = true; document.querySelector('[data-aj-theme-switch]').click(); document.querySelector('[data-aj-theme-switch]').click()`);
+    await ev(`(document.getElementById('settings').hidden && document.getElementById('setBtn').click()); document.querySelector('[data-set-theme="dark"]').click()`);
     await wait(`document.documentElement.dataset.theme === 'dark'`);
     const dark = await ev(`getComputedStyle(document.getElementById('chromeProbe')).backgroundColor`).then(rgb);
     ok(dark !== light, `dark theme deepens the state colour (${light} → ${dark})`);
-    await ev(`document.querySelector('[data-aj-theme-switch]').click(); document.getElementById('aj-menu').open = false`);
+    await ev(`document.querySelector('[data-set-theme="system"]').click(); (!document.getElementById('settings').hidden && document.getElementById('set-close').click())`);
   });
   await C('aj-i18n', async () => {
-    await ev(`document.getElementById('aj-menu').open = true; document.querySelector('#aj-menu [data-aj-lang="en"]').click()`);
+    await ev(`(document.getElementById('settings').hidden && document.getElementById('setBtn').click()); document.querySelector('[data-set-lang="en"]').click()`);
     await wait(`document.documentElement.lang === 'en'`);
     ok((await ev(`document.getElementById('send').getAttribute('aria-label')`)) === D.en['r.say.send'] && (await ev(`document.getElementById('input').placeholder`)).startsWith('Say something'), 'English everywhere');
-    await ev(`document.querySelector('#aj-menu [data-aj-lang="zh"]').click(); document.getElementById('aj-menu').open = false`);
+    await ev(`document.querySelector('[data-set-lang="zh"]').click(); (!document.getElementById('settings').hidden && document.getElementById('set-close').click())`);
     await wait(`document.documentElement.lang === 'zh-CN'`);
   });
   // relay keeps the draft across a lost login; Agent J keeps it (sealed) across every disconnect (draft-save), but a
@@ -1210,7 +1211,7 @@ export async function runCases({ B, web, fake, only }) {
   await C('keys-panel', async () => {
     await click('#keysBtn');
     await wait(`!document.getElementById('keys').hidden`);
-    ok((await ev(`document.querySelectorAll('#keys dt').length`)) === 25 && (await ev(`document.querySelectorAll('#keys dd').length`)) === 25, 'all relay shortcuts listed + F13 s · Ctrl+, (Settings) + P150 ← → in the field');
+    ok((await ev(`document.querySelectorAll('#keys dt').length`)) === 29 && (await ev(`document.querySelectorAll('#keys dd').length`)) === 29, 'all relay shortcuts listed + F13 s · Ctrl+, (Settings) + P150 ← → in the field + P154 approval ⌘/Ctrl+Enter · Esc + P154 追加 8 / + P188 ⌘K / Ctrl+K search');
     await click('#keysClose');
   });
   await C('key-j-older', async () => { await blur(); await key(P, 'j', { code: 'KeyJ' }); await wait(`document.getElementById('pg').textContent === '3 / 4'`); });

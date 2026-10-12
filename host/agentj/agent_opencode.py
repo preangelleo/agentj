@@ -41,7 +41,7 @@ import socket
 import tempfile
 import time
 
-from . import slash
+from . import bg, slash
 from .agent import LINE_LIMIT, UNCERTAIN, Agent, _bin, _signal_tree
 from .slash import Result
 from .envcompat import getenv
@@ -151,12 +151,13 @@ def config_content(user: str | None) -> str:
 
 def turn_body(text: str, cfg: dict, main: bool) -> dict:
     """The prompt body of one phone turn (v1 API, owned and shared): `main` = Agent J's full constitution as `system`, else
-    only the language line (an attached owner keeps their own identity). P142: the owner's language also rides as a hidden
-    (synthetic) last part, so OpenCode's own agent prompt cannot outweigh it (GAP-0182-opencode-language)."""
+    only the language line (an attached owner keeps their own identity). P142/P159: a hidden (synthetic) last part carries
+    the per-turn reminder — the main Agent's address, delegate triage and language (main_identity.IDENTITY_REMINDER), or
+    only the language for an attached owner — so OpenCode's own long agent prompt cannot outweigh them."""
     from . import main_identity
     lang = main_identity.language_of(cfg)
     return {"parts": [{"type": "text", "text": text},
-                      {"type": "text", "text": main_identity.LANGUAGE_REMINDER[lang], "synthetic": True}],
+                      {"type": "text", "text": main_identity.turn_reminder(cfg, main), "synthetic": True}],
             "system": main_identity.prompt(cfg) if main else main_identity.LANGUAGE_LINE[lang]}
 
 
@@ -500,6 +501,8 @@ class OpenCodeAgent(Agent):
         t = asyncio.create_task(coro)
         self.tasks.add(t)
         t.add_done_callback(self.tasks.discard)
+        t.add_done_callback(lambda t: t.cancelled() or t.exception() is None or         # P192 (B13): failures land in host.log
+                            bg.swallowed(bg.host_log(self.host), "bg_task_failed", t.exception(), why="opencode", every=0))
         return t
 
     def argv(self, port: int) -> list[str]:
@@ -678,6 +681,8 @@ class OpenCodeAgent(Agent):
 
     async def _watch(self, proc) -> None:
         code = await proc.wait()
+        if self.proc is proc or self.proc is None:        # P160: its sub-agents ended with it (not a newer serve's)
+            self._busy(None)
         self.host.st.log("agent_exit", agent=self.kind, status=code)
         if self.proc is proc:
             self.proc = None
@@ -709,6 +714,23 @@ class OpenCodeAgent(Agent):
             _signal_tree(p, signal.SIGKILL)
 
     # ------------------------------------------------ the event stream
+    def busy_scope(self) -> str:
+        return ("shared-" if self.__class__.__name__.startswith(("Shared", "Owner")) else "") + "opencode"
+
+    def _busy(self, ev) -> None:
+        """P160 (§22): this session's sub-agents (v1 `task` tool parts; v2 child sessions) → the phone's robots
+        (busy.py), like Claude's. A scheduled run is the workflow's own item (tasks.py); None = serve ended."""
+        b = getattr(self.host, "busy", None)
+        if b is None or self.cfg.get("_workflow_ceo") or getattr(self, "research", False):
+            return
+        with contextlib.suppress(Exception):
+            if ev is None:
+                b.session_gone(self.busy_scope())
+            elif self.EVENT_PATH == "/event":
+                b.opencode_event(ev, self.sid, self.busy_scope())
+            else:
+                b.opencode2_event(ev, self.sid, self.busy_scope())
+
     async def _events(self, proc) -> None:
         delay = 0.5
         first = True
@@ -723,6 +745,7 @@ class OpenCodeAgent(Agent):
                         self.host.st.log("agent_events", agent=self.kind, status="reconnected")
                         await self._resync()
                     delay = 0.5
+                    self._busy(ev)
                     self.on_event(ev)
             except HTTPError as e:
                 self.host.st.log("agent_events", agent=self.kind, status="refused", reason=str(e)[:40])

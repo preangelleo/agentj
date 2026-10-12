@@ -388,7 +388,7 @@ class Detect(unittest.TestCase):
         os.chmod(p, 0o000)   # unreadable: an existence check works, any attempt to read it would fail
 
     def env(self, **extra):
-        return {"PATH": self.bin, "HOME": self.home, **extra}
+        return {"PATH": self.bin, "HOME": self.home, "AGENTJ_REACH_PROBE": "off", **extra}   # P175: no api.openai.com from a test
 
     def run_detect(self, **extra) -> dict:
         with mock.patch.dict(os.environ, self.env(**extra), clear=True):

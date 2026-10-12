@@ -85,7 +85,7 @@ class TelegramParity(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(blob.origin,'file','already transcribed locally; phone cloud path must not run')
         self.assertFalse(any(self.st.root.glob('tg-*')))
     async def test_size_type_and_reenrollment_during_media(self):
-        self.assertFalse(await self.t.incoming(self.msg('',document={'file_id':'bad','mime_type':'application/x-executable'}),self.cfg))
+        self.assertFalse(await self.t.incoming(self.msg('',document={'file_id':'bad','mime_type':'Not A Mime'}),self.cfg))
         with patch('agentj.telegram.download') as download:
             self.assertFalse(await self.t.incoming(self.msg('',voice={'file_id':'big','file_size':tg.MAX_DOWNLOAD+1}),self.cfg));download.assert_not_called()
         def revoked(cfg,media,path):Path(path).write_bytes(b'plain');self.host.preferences['channels']['items']=[];return path
@@ -101,7 +101,7 @@ class TelegramParity(unittest.IsolatedAsyncioTestCase):
             def read(self,n):out=self.data[:n];self.data=self.data[n:];return out
         opener=Mock();opener.open.return_value=Response(b'not a png')
         with patch.dict(os.environ,{'AJ_TEST_TG_KEY':'test-placeholder'}),patch('agentj.telegram.api',return_value={'file_path':'photos/a.png'}),patch('urllib.request.build_opener',return_value=opener):
-            with self.assertRaisesRegex(ValueError,'^Telegram download failed$'):tg.download(cfg,media,str(self.root/'file'))
+            with self.assertRaisesRegex(ValueError,'^type$'):tg.download(cfg,media,str(self.root/'file'))   # P166: a reason code only
         with patch('agentj.telegram.api',return_value={'file_path':'../escape'}),patch('urllib.request.build_opener') as build:
             with self.assertRaises(ValueError):tg.download(cfg,media,str(self.root/'other'))
             build.assert_not_called()

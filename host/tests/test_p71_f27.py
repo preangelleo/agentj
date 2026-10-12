@@ -252,7 +252,7 @@ class TelegramNoCaption(_Bot, unittest.IsolatedAsyncioTestCase):
         m = self.nocap(voice={"file_id": "v2", "duration": 4, "mime_type": "audio/ogg", "file_size": 68})
         self.assertTrue(await self.t.incoming(m, self.cfg))
         text = self.host._accept.call_args.args[1]
-        self.assertIn("transcription unavailable", text)
+        self.assertIn("没能在本地转写（电脑上还没装语音转写）", text)     # P166: says why, in the owner's language
         self.assertEqual(len(self.host._accept.call_args.kwargs["blobs"]), 1)
 
 

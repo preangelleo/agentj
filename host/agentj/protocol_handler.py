@@ -23,6 +23,16 @@ def validate_url(url: str, channel: str) -> None:
         raise ValueError('wrong_computer')
 
 
+def installed() -> bool:
+    """Is this user's agentj:// handler already registered (by any instance)?"""
+    if sys.platform.startswith('linux'):
+        root = Path(os.environ.get('XDG_DATA_HOME', str(Path.home() / '.local/share')))
+        return (root / 'applications/agentj-pair.desktop').exists()
+    if sys.platform == 'darwin':
+        return (Path.home() / 'Applications/Agent J Pair.app').exists()
+    return False
+
+
 def install() -> dict:
     """Register for this user; only known owned files are written. No privilege or key is involved."""
     executable = str(Path(sys.executable).resolve())
@@ -60,6 +70,20 @@ def _wrong_computer(opener):
     opener('data:text/html;charset=utf-8,' + urllib.parse.quote(html))
 
 
+def _instance_for(url: str):
+    """The State of the local instance whose channel the pairing link names, else None (only a channel selects; never a key)."""
+    from . import instance
+    from .state import State
+    for n in instance.numbers():
+        st = State(instance.state_root(n))
+        try:
+            validate_url(url, st.config()['channel'])
+        except (ValueError, OSError, KeyError):
+            continue
+        return st
+    return None
+
+
 def open_pair(url: str, *, stop=None, opener=webbrowser.open, lifetime=600) -> None:
     from .state import State
     from .admin import AdminServer
@@ -73,8 +97,10 @@ def open_pair(url: str, *, stop=None, opener=webbrowser.open, lifetime=600) -> N
     except ValueError as e:
         if str(e) != 'wrong_computer':
             raise
-        _wrong_computer(opener)
-        return
+        st = _instance_for(url)     # P180: the link names another instance's channel on this computer
+        if st is None:
+            _wrong_computer(opener)
+            return
     # No protocol input reaches the admin URL. The one-use fragment is minted on this host only.
     server = AdminServer(st, port=0).start()
     try:

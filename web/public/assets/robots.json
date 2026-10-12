@@ -1,0 +1,23 @@
+{
+  "about": "P154 追加 11: the background-robot library. One robot = one Agent working in the background. Every colour is a token of Leo's palette (leo-palette.json); body = Heavy, face = Light, feet / accent = a dark tone; eyes are always Sooty. Shape parts: antenna std|none|dark|accent, eyes dots|visor, chest light|accent. Robots 0–8 wear the nine P150 colour pairs in their order, so a CEO's host colour c is its robot. Sprite sheets (robots-12.png / robots-18.png, one row per robot, 13 frames: 12 dance steps + the bow) are generated from this file by .jarvis/assets/robots/make_robots.py.",
+  "frames": 12,
+  "bow": 12,
+  "robots": [
+    {"id": "r00", "zh": "小蓝", "en": "Bluey",   "body": "Milky Waves",              "face": "Cotton Clouds",   "feet": "Windstorm",       "antenna": "std",    "eyes": "dots",  "chest": "light"},
+    {"id": "r01", "zh": "紫藤", "en": "Wisteria", "body": "Somewhere in a Fairytale", "face": "Scented Spring",  "feet": "Magic Carpet",    "antenna": "none",   "eyes": "dots",  "chest": "light"},
+    {"id": "r02", "zh": "莓莓", "en": "Berry",   "body": "Strawberry Field",         "face": "Channel",         "feet": "Peachy Feeling",  "antenna": "dark",   "eyes": "dots",  "chest": "light"},
+    {"id": "r03", "zh": "拿铁", "en": "Latte",   "body": "Lama",                     "face": "White Truffle",   "feet": "Peachy Feeling",  "antenna": "accent", "eyes": "dots",  "chest": "light"},
+    {"id": "r04", "zh": "棉糖", "en": "Candy",   "body": "Elastic Pink",             "face": "Grape Taffy",     "feet": "Magic Carpet",    "antenna": "std",    "eyes": "visor", "chest": "light"},
+    {"id": "r05", "zh": "杏子", "en": "Apricot", "body": "Buttery",                  "face": "Bisque",          "feet": "Peachy Feeling",  "antenna": "none",   "eyes": "visor", "chest": "light"},
+    {"id": "r06", "zh": "柠檬", "en": "Lemon",   "body": "Pasta Luego",              "face": "Bullet Hell",     "feet": "Peachy Feeling",  "antenna": "dark",   "eyes": "visor", "chest": "light"},
+    {"id": "r07", "zh": "青芽", "en": "Sprout",  "body": "Sage Sensation",           "face": "Snowy Mint",      "feet": "Emerald Oasis",   "antenna": "accent", "eyes": "visor", "chest": "light"},
+    {"id": "r08", "zh": "冰川", "en": "Glacier", "body": "Cold Blue",                "face": "Gentle Cold",     "feet": "Emerald Oasis",   "antenna": "std",    "eyes": "dots",  "chest": "accent"},
+    {"id": "r09", "zh": "风暴", "en": "Storm",   "body": "Windstorm",                "face": "Peek-a-Blue",     "feet": "Noir",            "antenna": "none",   "eyes": "dots",  "chest": "accent"},
+    {"id": "r10", "zh": "飞毯", "en": "Carpet",  "body": "Magic Carpet",             "face": "Dust of the Moon","feet": "Noir",            "antenna": "dark",   "eyes": "dots",  "chest": "accent"},
+    {"id": "r11", "zh": "翡翠", "en": "Jade",    "body": "Emerald Oasis",            "face": "Snowy Mint",      "feet": "Noir",            "antenna": "accent", "eyes": "dots",  "chest": "accent"},
+    {"id": "r12", "zh": "蜜桃", "en": "Peach",   "body": "Peachy Feeling",           "face": "Mellow Marrow",   "feet": "Noir",            "antenna": "std",    "eyes": "visor", "chest": "accent"},
+    {"id": "r13", "zh": "香蕉", "en": "Banana",  "body": "Banana Republic",          "face": "Lotion",          "feet": "Peachy Feeling",  "antenna": "none",   "eyes": "visor", "chest": "accent"},
+    {"id": "r14", "zh": "银河", "en": "Silver",  "body": "Elephant in the Room",     "face": "Anti-Flash White","feet": "Noir",            "antenna": "dark",   "eyes": "visor", "chest": "accent"},
+    {"id": "r15", "zh": "晚霞", "en": "Sunset",  "body": "Strawberry Field",         "face": "Bullet Hell",     "feet": "Magic Carpet",    "antenna": "accent", "eyes": "visor", "chest": "accent"}
+  ]
+}

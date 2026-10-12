@@ -196,7 +196,7 @@ def set_enabled(enabled: bool, directory=None) -> bool:
 
 def _shared_dir(st, config=None):
     cfg = config if config is not None else st.agent_config()
-    if not cfg or cfg.get("kind") != "claude" or cfg.get("session_mode", "shared") != "shared":
+    if not cfg or cfg.get("kind") != "claude" or cfg.get("session_mode", "independent") != "shared":
         return None
     return cfg.get("dir") or None
 
@@ -233,7 +233,7 @@ def ensure_shared_default(st, config=None) -> bool:
     a local hold in place and a project hold from the private local layer. Managed policy, refuse/unknown values and the
     owner's explicit `claude-inbound off` are only reported (hold_reason / doctor / phone)."""
     cfg = config if config is not None else st.agent_config()
-    if not cfg or cfg.get("kind") != "claude" or cfg.get("session_mode", "shared") != "shared":
+    if not cfg or cfg.get("kind") != "claude" or cfg.get("session_mode", "independent") != "shared":
         return False
     directory = cfg.get("dir") or None
     layer, _, current = effective(directory)
@@ -349,7 +349,7 @@ def turn_notice(directory, lang: str = "zh") -> str:
 def default_notice(st, lang="zh") -> str | None:
     """One-time phone notice for what the shared-Claude defaults just switched on (inbound, status line)."""
     cfg = st.agent_config() or {}
-    if cfg.get("kind") != "claude" or cfg.get("session_mode", "shared") != "shared": return None
+    if cfg.get("kind") != "claude" or cfg.get("session_mode", "independent") != "shared": return None
     texts = []
     p = st.root / "claude-inbound-notice.json"
     try:

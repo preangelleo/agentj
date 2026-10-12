@@ -295,6 +295,12 @@ def cmd(a) -> int:
     from .elevate import client_request, EXIT_CARD, _say
     from .state import State
     st = State()
+    from .instance import current
+    if a.action in ("install", "sync") and current() > 1:
+        # P180: one helper per OS user, bound to one channel; a seat instance would take it from instance 1
+        print("管理员小助手每个系统用户只有一个，归实例 1；第 2 个及以后的席位不能装 / the admin helper belongs to instance 1",
+              file=sys.stderr)
+        return 2
     if a.action == "status":
         s = status()
         print(json.dumps(s) if a.json else (f"已安装 / installed · {len(s['devices'])} 台手机 / phones" if s["installed"]

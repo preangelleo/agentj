@@ -33,6 +33,8 @@ class _Home(unittest.TestCase):
         self.work = self.home / "work"; self.work.mkdir()
         self.st = State(); self.st.init(); self.st.set_agent_config("claude", str(self.work))
         preferences.ensure()
+        # P174: shared is the owner's opt-in now (independent is the factory default)
+        preferences.path().write_text(preferences.edit(preferences.path().read_text(), "agent.session_mode", "shared"))
         # Start from no native setting and no Agent J record (setup itself may already apply the shared defaults).
         for p in (inbound.path(), inbound.meta_path(), tap.meta_path(), self.st.root / "claude-inbound-notice.json",
                   self.st.root / "claude-statusline-notice.json"):

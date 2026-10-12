@@ -41,7 +41,7 @@
         {
           "name": "images",
           "accept": [
-            "image/*"
+            "*/*"
           ]
         }
       ]

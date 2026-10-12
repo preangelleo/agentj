@@ -130,6 +130,13 @@ class Auth:
         with self.lock:
             self.sessions = {k: v for k, v in self.sessions.items() if not hmac.compare_digest(sid, k)}
 
+    def in_use(self) -> bool:
+        """P163 (`agentj admin --open`): a link still waiting to be opened, or a page still logged in."""
+        with self.lock:
+            now = time.monotonic()
+            self._prune(now)
+            return bool(self.sessions) or bool(self.token and now <= self.token[1])
+
 
 # ------------------------------------------------------------------ one pairing conversation with serve (= `agentj pair`)
 class PairError(Exception):
@@ -300,7 +307,7 @@ class Admin:
         res = names.rename(self.st, body.get("name"))
         if res["ok"]:
             return 200, {"ok": True, "name": res["name"]}
-        code = {"name_required": 400, "bad_name": 400, "name_taken": 409, "not_bound": 409, "rate_limited": 429}.get(res["error"], 502)
+        code = {"name_required": 400, "bad_name": 400, "name_too_long": 400, "name_taken": 409, "not_bound": 409, "rate_limited": 429}.get(res["error"], 502)
         return code, {"ok": False, "error": res["error"], "message": names.RENAME_MESSAGES.get(res["error"], ""),
                       "suggestions": res["suggestions"]}
 
@@ -308,7 +315,10 @@ class Admin:
         # P127: the shared pre-check runs before any QR exists — never let the human reach the last step and only then learn
         # the approval passphrase is missing (bound + online hosts pass: the account page approves with a passkey)
         status = self.serve_status()
-        if status is not None and pairprep.precheck(self.st, bool(status.get("relay_up")))["route"] == "set_passphrase":
+        chk = pairprep.precheck(self.st, bool(status.get("relay_up"))) if status is not None else None
+        if chk is not None and chk["route"] == "seat":     # P185: no usable seat → no QR
+            return 402, {"ok": False, "error": "seat_required", "message": pairprep.both(chk)}
+        if chk is not None and chk["route"] == "set_passphrase":
             return 409, {"ok": False, "error": "passphrase_not_set"}
         with self.lock:
             if self.pairing:
@@ -603,6 +613,9 @@ class AdminServer:
     def new_link(self) -> str:
         """A fresh one-time link (fragment: the token never appears in a request line); revokes every open session."""
         return f"http://127.0.0.1:{self.port}/#t={self.auth.new_token()}"
+
+    def in_use(self) -> bool:
+        return self.auth.in_use()
 
     def stop(self) -> None:
         self.admin.close()

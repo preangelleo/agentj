@@ -18,6 +18,7 @@ import VERSION from '../public/version.js';
 
 const OUT = fileURLToPath(new URL('../../../reports/qa/release-0.15/', import.meta.url));
 mkdirSync(OUT, { recursive: true });
+const OUT_P156 = fileURLToPath(new URL('../../../reports/qa/p156/', import.meta.url));
 const ONLY = (process.env.AJ_SETTINGS_ONLY || '').split(',').filter(Boolean);
 const rec = parityRecorder('web/test/settings.mjs');
 const web = await startWebServer({ port: 0, relayCsp: 'ws://127.0.0.1:*' });
@@ -108,11 +109,14 @@ try {
       await waitFor(p, `!document.getElementById('keys').hidden`);
       assert.match(await ev(p, `document.getElementById('keys').textContent`), /打开设置/);
       await key(p, 'Escape', { code: 'Escape' });
-      // the second-level item in Settings opens the same sheet and closes the panel
+      // the second-level item in Settings opens the same page ABOVE Settings (P187): its back icon returns there
       await click(p, '#setBtn'); await click(p, '#keysBtn');
       await waitFor(p, `!document.getElementById('keys').hidden`);
-      assert.equal(await isOpen(p), false);
+      assert.equal(await isOpen(p), true);
       await click(p, '#keysClose');
+      assert.equal(await ev(p, `document.getElementById('keys').hidden`), true);
+      assert.equal(await isOpen(p), true, 'back from the shortcuts = Settings');
+      await click(p, '#set-close');
       noProblems(p);
     } finally { await p.dispose(); }
   });
@@ -295,6 +299,11 @@ try {
       await click(p, '#set-mode');
       await waitFor(p, `document.getElementById('set-mode').textContent === '共享电脑会话'`);
       assert.equal(fake.st.prefSets.at(-1).key, 'agent.session_mode');
+      // P174: a host that sends no session_mode shows the factory default (independent) and offers shared
+      fake.st.prefs = { ...PREFS, agent: { high_risk_warnings: false } };
+      await fake.send(fake.prefsMsg(fake.st.prefs));
+      await waitFor(p, `document.getElementById('set-mode').textContent === '使用独立会话'`);
+      assert.equal(await ev(p, `document.getElementById('set-mode-cmd').textContent`), 'agentj config set agent.session_mode shared');
       // F14 (P45b): isolation (default on) and docker (default off) switch from the phone
       assert.equal(await ev(p, `document.getElementById('set-iso').getAttribute('aria-checked')`), 'true');
       assert.equal(await ev(p, `document.getElementById('set-iso-cmd').textContent`), 'agentj config set agent.isolation false');
@@ -305,9 +314,9 @@ try {
       await click(p, '#set-docker');
       await waitFor(p, `document.getElementById('set-docker').getAttribute('aria-checked') === 'true'`);
       assert.deepEqual([fake.st.prefSets.at(-1).key, fake.st.prefSets.at(-1).value], ['agent.allow_docker', true]);
-      // account / help: the dashboard and the founder's address, new tab
+      // account / help: the dashboard and the feedback mailbox (P168), new tab
       assert.equal(await ev(p, `document.getElementById('set-account').href`), 'https://agentj.app/account/');
-      assert.ok(await ev(p, `!!document.querySelector('#settings a[href="mailto:founder@agentj.app"]')`));
+      assert.ok(await ev(p, `!!document.querySelector('#settings a[href="mailto:feedback@agentj.app"]')`));
       noProblems(p);
     } finally { await p.dispose(); }
   });
@@ -336,6 +345,36 @@ try {
     } finally { await p.dispose(); }
   });
 
+  await C('settings-heartbeat', async () => {           // P156: switch + idle interval + cost note
+    const p = await paired({ before: (st) => { st.prefs = { ...structuredClone(PREFS), heartbeat: { enabled: true, interval_minutes: 60 } }; } });
+    try {
+      await click(p, '#setBtn');
+      await waitFor(p, `!document.getElementById('set-hb-row').hidden`);
+      assert.equal(await ev(p, `document.getElementById('set-hb').getAttribute('aria-checked')`), 'true');
+      assert.equal(await ev(p, `document.getElementById('set-hb-every').textContent`), '空闲 1 小时后');
+      assert.match(await ev(p, `document.querySelector('#set-hb-row .setnote').textContent`), /每次心跳都会用掉一次模型调用/);
+      await ev(p, `document.getElementById('set-hb-row').scrollIntoView({block:'center'})`);
+      mkdirSync(OUT_P156, { recursive: true });
+      writeFileSync(OUT_P156 + 'settings-heartbeat-zh.png', await shoot(p));
+      await click(p, '#set-hb-every');
+      await waitFor(p, `document.getElementById('set-hb-every').textContent === '空闲 2 小时后'`);
+      assert.deepEqual([fake.st.prefSets.at(-1).key, fake.st.prefSets.at(-1).value], ['heartbeat.interval_minutes', 120]);
+      await click(p, '#set-hb');
+      await waitFor(p, `document.getElementById('set-hb').getAttribute('aria-checked') === 'false'`);
+      assert.deepEqual([fake.st.prefSets.at(-1).key, fake.st.prefSets.at(-1).value], ['heartbeat.enabled', false]);
+      assert.equal(await ev(p, `document.getElementById('set-hb-every').disabled`), true, 'off: no interval to pick');
+      const r = await ev(p, `JSON.stringify(document.getElementById('set-hb').getBoundingClientRect())`);
+      assert.ok(JSON.parse(r).height >= 24, 'the switch is visible');
+      noProblems(p);
+    } finally { await p.dispose(); }
+    const old = await paired({ before: (st) => { st.prefs = structuredClone(PREFS); st.prefSet = false; } });
+    try {                                                  // an older host cannot set it: no row
+      await click(old, '#setBtn');
+      await sleep(200);
+      assert.equal(await ev(old, `document.getElementById('set-hb-row').hidden`), true);
+    } finally { await old.dispose(); }
+  });
+
   await C('settings-versions', async () => {
     const p = await paired({ before: (st) => { st.prefs = structuredClone(PREFS); st.version = '0.15.0a1'; } });
     try {
@@ -343,10 +382,12 @@ try {
       assert.equal(await ev(p, `document.getElementById('set-webver').textContent`), `网页版：${VERSION.version}`);
       assert.equal(await ev(p, `document.getElementById('set-hostver').textContent`), '电脑端程序：0.15.0a1');
       assert.match(await ev(p, `document.getElementById('set-computer').textContent`), /Agent J · 已连上/);
-      // the phones this computer paired (host metadata), this one marked
-      await waitFor(p, `document.querySelectorAll('#set-phones li').length === 1`);
-      assert.match(await ev(p, `document.getElementById('set-phones-h').textContent`), /配对的手机（1）/);
-      assert.match(await ev(p, `document.querySelector('#set-phones li small').textContent`), /就是这台 · 在线/);
+      // the phones this computer paired (host metadata), this one marked — P171: on the 遥控器管理 page; a host without §24
+      // (this fake answers no dev_list) → the same list from the preferences host block, read-only
+      await click(p, '#set-remotes-open');
+      await waitFor(p, `document.querySelectorAll('#rm-list .rmitem').length === 1 && !document.getElementById('rm-legacy').hidden`, 9000);
+      assert.equal(await ev(p, `document.querySelector('#rm-list .rmtag').textContent`), '这台');
+      assert.match(await ev(p, `document.querySelector('#rm-list .rmmeta').textContent`), /^在线/);
     } finally { await p.dispose(); }
     const q = await paired({ before: (st) => { st.prefs = structuredClone(PREFS); st.prefSet = false; } });   // a host before 0.15: preferences without the host block
     try {
@@ -360,12 +401,12 @@ try {
     const p = await paired();
     try {
       await click(p, '#setBtn');
-      await click(p, '#set-unpair');
+      await click(p, '#unpair');
       await waitFor(p, `!document.getElementById('confirm').hidden`);
       assert.equal(await isOpen(p), false);
       await click(p, '#confirm-no');
       assert.equal(await ev(p, `window.__ajState`), 'ready', 'cancelled: still paired');
-      await click(p, '#setBtn'); await click(p, '#set-unpair'); await click(p, '#confirm-yes');
+      await click(p, '#setBtn'); await click(p, '#unpair'); await click(p, '#confirm-yes');
       await waitFor(p, `document.body.dataset.view === 'pair'`);
       noProblems(p);
     } finally { await p.dispose(); }
@@ -396,6 +437,55 @@ try {
         assert.ok(g.top.h <= 60, `header ${g.top.h} px`);
         noProblems(p);
       } finally { await p.dispose(); }
+    }
+  });
+
+  // P170: Settings → 邮件通道 — preset by domain, save, app password card request, allowlist add / remove, test, layout
+  await C('settings-mail', async () => {
+    for (const lang of ['zh', 'en']) {
+      for (const [dev, w, h] of [['desktop', 1440, 900], ['phone', 390, 844]]) {
+        const p = await paired({ w, h, touch: dev === 'phone', lang, before: (st) => { st.prefs = structuredClone({ ...PREFS, appearance: { language: lang, theme: 'system' } }); st.mail = null; st.mailMsgs = []; } });
+        try {
+          await click(p, '#setBtn');
+          await click(p, '#set-mail-nav');
+          await waitFor(p, `document.getElementById('mail-preset').options.length === 3`);
+          assert.equal(await ev(p, `document.getElementById('set-main').hidden && !document.getElementById('set-mail').hidden`), true);
+          await ev(p, `(() => { const a = document.getElementById('mail-addr'); a.value = 'agent@163.com'; a.dispatchEvent(new Event('change')); })()`);
+          assert.equal(await ev(p, `document.getElementById('mail-preset').value`), '163', 'the provider follows the address');
+          await click(p, '#mail-save');
+          await waitFor(p, `document.getElementById('mail-status').textContent.includes('agent@163.com')`);
+          const set = fake.st.mailMsgs.find((x) => x.t === 'mail_set');
+          assert.equal(set.cfg.preset, '163'); assert.equal(set.cfg.address, 'agent@163.com');
+          assert.equal(JSON.stringify(fake.st.mailMsgs).includes('password'), false, 'no password field ever travels in mail_* messages');
+          await ev(p, `document.getElementById('mail-add-addr').value = 'me@qq.com'`);
+          await click(p, '#mail-add');
+          await waitFor(p, `document.querySelectorAll('#mail-allow li').length === 1`);
+          await click(p, '#mail-blocked li button');      // one tap allowlists a refused sender
+          await waitFor(p, `document.querySelectorAll('#mail-allow li').length === 2`);
+          await click(p, '#mail-key');
+          await waitFor(p, `document.getElementById('mail-status').textContent.length > 0 && ${JSON.stringify(lang === 'en' ? 'saved' : '已保存')} && document.getElementById('mail-msg').textContent.length > 0`);
+          await click(p, '#mail-test');
+          await waitFor(p, `document.getElementById('mail-sample').textContent.includes('mx.qq.com')`);
+          await ev(p, `document.getElementById('mail-auth').value = 'off'; document.getElementById('mail-auth').dispatchEvent(new Event('change'))`);
+          assert.equal(await ev(p, `document.getElementById('mail-auth-off').hidden`), false, 'turning the check off warns');
+          const audit = await ev(p, `(() => {
+            const box = document.getElementById('set-mail');
+            const bad = [...box.querySelectorAll('button:not([hidden]), a, select, input, summary')].filter((b) => b.offsetParent && b.getBoundingClientRect().height < 44).map((b) => b.id || b.textContent.trim().slice(0, 20));
+            const wide = [...box.querySelectorAll('*')].filter((n) => n.offsetParent && n.getBoundingClientRect().right > box.getBoundingClientRect().right + 1).map((n) => n.id || n.className || n.tagName);
+            return { overflowX: box.scrollWidth > box.clientWidth || document.documentElement.scrollWidth > innerWidth, small: bad, wide: wide.slice(0, 5) };
+          })()`);
+          assert.equal(audit.overflowX, false, JSON.stringify(audit));
+          assert.deepEqual(audit.wide, [], JSON.stringify(audit));
+          assert.deepEqual(audit.small, [], `taps < 44 px: ${audit.small}`);
+          writeFileSync(OUT + `settings-mail-${lang}-${dev}.png`, await shoot(p, 'unused'));
+          await blur(p);
+          await key(p, 'Escape', { code: 'Escape' });
+          assert.equal(await ev(p, `!document.getElementById('set-main').hidden`), true, 'Esc goes back to the main settings');
+          await key(p, 'Escape', { code: 'Escape' });
+          assert.equal(await isOpen(p), false, 'a second Esc closes');
+          noProblems(p);
+        } finally { await p.dispose(); }
+      }
     }
   });
 

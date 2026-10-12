@@ -8,6 +8,7 @@ owner commands (tg_owner_cmds), one-tap forward.
 """
 import asyncio
 import collections
+import contextlib
 import concurrent.futures
 import hashlib
 import html
@@ -320,6 +321,46 @@ class Telegram:
             return {'ok':False,'why':'send_failed'}
         finally:self.fwd_inflight.discard(turn_id)
 
+    async def forward_media(self,mid,device):
+        """P183: one file a reply showed (its media id, §13) → the owner's private chat. Same gate, dedupe and per-device
+        rate as forward(); the record is re-opened and re-hashed right before the upload (tg_media.read_checked) — a file
+        changed or gone since the page is `not_found`. Over Telegram's bot limit: `too_big`. Logs counts only."""
+        cfg=configuration(self.host.st)
+        if not p.get(self.host.preferences,'telegram.forward',True) or not self.enabled() or not cfg:return {'ok':False,'why':'not_configured'}
+        media=getattr(self.host,'media',None)
+        rec=media.get(mid) if media is not None and isinstance(mid,str) else None
+        if not rec:return {'ok':False,'why':'not_found'}
+        from . import tg_media
+        from .media import Gone
+        if rec['bytes']>tg_media.UPLOAD_MAX:return {'ok':False,'why':'too_big'}
+        key=('m',mid);now=time.monotonic()
+        if key in self.fwd_inflight:return {'ok':False,'why':'in_flight'}
+        if now-self.fwd_sent.get(key,-1e9)<FWD_REPEAT:return {'ok':False,'why':'recently_sent'}
+        q=self.fwd_rate[device]
+        while q and now-q[0]>=FWD_WINDOW:q.popleft()
+        if len(q)>=FWD_PER_DEVICE:
+            self.host.st.log('telegram_forward',device=device,kind='file',result='rate_limited');return {'ok':False,'why':'rate_limited'}
+        q.append(now);self.fwd_inflight.add(key)
+        try:
+            try:data=await asyncio.to_thread(tg_media.read_checked,rec)
+            except (Gone,OSError):
+                self.host.st.log('telegram_forward',device=device,kind='file',result='not_found');return {'ok':False,'why':'not_found'}
+            if configuration(self.host.st)!=cfg or not self.enabled():return {'ok':False,'why':'not_configured'}
+            method,field=tg_media.method_of(rec)
+            fields={'chat_id':cfg['owner_id']}
+            if method!='sendDocument':fields['caption']=rec['name'][:1024]
+            try:await asyncio.to_thread(upload,cfg,method,fields,field,rec['name'],rec['mime'],data)
+            except ValueError:
+                if method=='sendDocument':raise
+                await asyncio.to_thread(upload,cfg,'sendDocument',{'chat_id':cfg['owner_id']},'document',rec['name'],rec['mime'],data)
+            self.fwd_sent={k:v for k,v in self.fwd_sent.items() if now-v<FWD_REPEAT};self.fwd_sent[key]=time.monotonic()
+            self.host.st.log('telegram_forward',device=device,kind='file',result='ok',bytes=rec['bytes'])
+            return {'ok':True}
+        except ValueError:
+            self.host.st.log('telegram_forward',device=device,kind='file',result='send_failed')
+            return {'ok':False,'why':'send_failed'}
+        finally:self.fwd_inflight.discard(key)
+
     async def owner_command(self,cfg,chat_id,mid,row,choice):
         t0=time.monotonic()
         ok,h,plain,cls=await self.owner_cmds.run(row,choice)
@@ -527,6 +568,13 @@ class Telegram:
             has_media=any(media_present(x) for x in msgs)
             if not has_media:return await self.compact(cfg,chat_id,uid)
         if not self.host.agent or self.host.stopped():return False
+        refusal=getattr(self.host,'seat_refusal',lambda:None)()
+        if refusal:     # P185: no usable Agent J seat — nothing reaches the Agent; the owner (private chat only) hears why
+            self.host.st.log('telegram_refused',reason='seat')
+            if owner and not forwarded:
+                try:await asyncio.to_thread(api,cfg,'sendMessage',{'chat_id':chat_id,'text':refusal})
+                except ValueError:self.host.st.log('telegram_refusal',result='failed')
+            return False
         from .text import clean
         from .privacy import redact
         from . import tg_guard, inbox, provenance
@@ -536,9 +584,10 @@ class Telegram:
         if group:source['owner_name'] = FriendStore(self.host.st).owner
         device = 'telegram:'+str(chat_id)+':'+str(uid)
         # A private scratch copy is the transcription source; the agent-visible inbox cannot replace it.
-        blobs=[];paths=[];texts=[redact(clean(raw,20000))]
+        blobs=[];paths=[];texts=[redact(clean(raw,20000))];asr_failed=[];stage='local'
         try:
-            media_items = [x for one in msgs for x in media_of(one)]
+            # P166: the owner's own chat takes any file; group members keep the original allowlist
+            media_items = [x for one in msgs for x in media_of(one, any_type=private_owner)]
             if group and media_items:
                 profile = group.get('profile','proxy')
                 hit = tg_guard.rule_hit(raw, profile)
@@ -547,25 +596,42 @@ class Telegram:
                     if profile == 'family':
                         await asyncio.to_thread(api,cfg,'sendMessage',{'chat_id':chat_id,'text':FAMILY_REFUSAL['zh' if self.host.lang!='en' else 'en']})
                     return False
-                if len(media_items)>ALBUM_MAX:raise ValueError('size')
+                if len(media_items)>ALBUM_MAX:raise ValueError('count')
+                if any((x.get('file_size') or 0)>MAX_DOWNLOAD for x in media_items):raise ValueError('size')
                 if not await asyncio.to_thread(self.reserve_group_media,uid,media_items):raise ValueError('rate')
             for media in media_items[:ALBUM_MAX]:
                 if (media.get('file_size') or 0)>MAX_DOWNLOAD:raise ValueError('size')
                 with tempfile.TemporaryDirectory(prefix='tg-',dir=self.host.st.root) as d:
+                    stage='download'
                     path=await asyncio.to_thread(download,cfg,media,str(Path(d)/'media'))
+                    stage='local'
                     mime=media['mime'];name=media['name']
                     if media['asr']:
-                        result=await self.host._transcribe_file({'voice':path,'mime':mime,'secs':media.get('duration')},120,device,local_only=True)
-                        texts.append(redact(result.get('text','')) if result.get('ok') else '[Local voice transcription unavailable; original attached]')
+                        from .compose import asr_budget
+                        stage='asr'
+                        result=await self.host._transcribe_file({'voice':path,'mime':mime,'secs':media.get('duration')},asr_budget(media.get('duration')),device,local_only=True)
+                        stage='local'
+                        if result.get('ok'):texts.append(redact(result.get('text','')))
+                        elif not (mime.startswith('video/') and result.get('why') in ('format','no_speech')):
+                            texts.append(media_note('asr_fail',getattr(self.host,'lang','zh'),result.get('why')))
+                            asr_failed.append(result.get('why') or 'broken')
                     if inbox.usage(self.host.agent_cfg['dir']) + Path(path).stat().st_size > inbox.QUOTA:raise ValueError('quota')
                     placed = inbox.place(self.host.agent_cfg['dir'],path,name,mime,uuid.uuid4().hex)
                     paths.append(placed)
                     blobs.append(SimpleNamespace(device=device,bid=uuid.uuid4().hex,name=name,mime=mime,size=Path(path).stat().st_size,kind=inbox.kind_of(mime),
                                                  path=placed,origin='file',secs=media.get('duration'),voice=''))
-        except Exception:
+        except Exception as e:
             for path in paths:inbox.unlink_placed(path)
-            await asyncio.to_thread(api,cfg,'sendMessage',{'chat_id':chat_id,'text':'Attachment unavailable (type, size, or local processing); use the paired phone.'})
+            # P166 追加 1: say which one it was, in the owner's language; the log keeps only the reason code
+            why=media_why(e,stage)
+            self.host.st.log('telegram_media_refused',reason=why)
+            await asyncio.to_thread(api,cfg,'sendMessage',{'chat_id':chat_id,'text':media_note(why,getattr(self.host,'lang','zh'),owner=private_owner)})
             return False
+        if asr_failed:
+            self.host.st.log('telegram_media_asr',reason=asr_failed[0])
+            if private_owner:
+                with contextlib.suppress(Exception):
+                    await asyncio.to_thread(api,cfg,'sendMessage',{'chat_id':chat_id,'text':media_note('asr_notice',getattr(self.host,'lang','zh'),asr_failed[0])})
         text='\n\n'.join(x for x in texts if x)
         if not text and not blobs:return False
         if group:
@@ -827,7 +893,54 @@ UNCERTAIN_NOTE=('Agent J 重启前有 {n} 条 Telegram 消息或回复没确认�
 STALE_NOTE=('{n} 条接入 Telegram 之前的旧消息没有投递（没有可接续的 cursor）。 / {n} Telegram message(s) older than this enrollment were not delivered.')
 
 
-MAX_DOWNLOAD=20*1024*1024
+MAX_DOWNLOAD=20*1024*1024      # the Bot API's own getFile limit (cloud Bot API): larger files cannot be fetched at all
+MEDIA_WHY=('size','type','count','rate','quota','download','local')
+MEDIA_NOTE={
+    'zh':{'size':'这个附件超过 20 MB，没有收到：Telegram 机器人最多只能下载 20 MB（Telegram 官方限制）。',
+          'size_owner':'这个附件超过 20 MB，没有收到：Telegram 机器人最多只能下载 20 MB（Telegram 官方限制）。'
+                       '请改用 Agent J 网页（m.agentj.app）输入框旁的「文件」按钮发送，单个文件最大 200 MB，1 小时录音也能发；'
+                       'iPhone 也可以装「发给 Agent J」快捷指令，从分享菜单直接发。',
+          'type':'这种附件类型在群里不支持（群里只收图片、PDF、文本、音频和 MP4），没有收到。',
+          'type_owner':'这个附件的类型无法识别，没有收到。请改用 Agent J 网页的「文件」按钮发送。',
+          'count':'一次最多 10 个附件，没有收到，请分开发。',
+          'rate':'群成员每小时可发的附件总量已用完，没有收到，请稍后再发。',
+          'quota':'电脑上的附件收件箱已满（2 GB），没有收到。请先清理旧附件再发。',
+          'download':'从 Telegram 下载附件失败，没有收到。请再发一次；还不行就改用 Agent J 网页的「文件」按钮。',
+          'local':'电脑在本地处理这个附件时出错（保存或转写），没有收到。请再发一次，或改用 Agent J 网页的「文件」按钮。',
+          'asr_fail':'[语音没能在本地转写（{why}），原件已附上]',
+          'asr_notice':'语音没能在本地转写（{why}），原件已交给 Agent。',
+          'asr_why':{'timeout':'处理超时','not_installed':'电脑上还没装语音转写','off':'语音转写已关闭','format':'音频格式无法解码',
+                     'bad_audio':'音频格式不对','busy':'转写器忙','no_speech':'没有听到说话','broken':'转写器出错'}},
+    'en':{'size':'Not received: this attachment is over 20 MB, the most a Telegram bot can download (a Telegram limit).',
+          'size_owner':'Not received: this attachment is over 20 MB, the most a Telegram bot can download (a Telegram limit). '
+                       'Send it with the File button next to the composer in the Agent J web app (m.agentj.app) — up to 200 MB '
+                       'per file, an hour of audio fits — or, on iPhone, with the "Send to Agent J" shortcut from the share sheet.',
+          'type':'Not received: groups take only images, PDF, text, audio and MP4.',
+          'type_owner':'Not received: the attachment type could not be read. Send it with the File button in the Agent J web app.',
+          'count':'Not received: at most 10 attachments at once; send them in parts.',
+          'rate':"Not received: this member's hourly attachment allowance is used up; try again later.",
+          'quota':"Not received: the computer's attachment inbox is full (2 GB). Clear old attachments first.",
+          'download':'Not received: downloading it from Telegram failed. Send it again, or use the File button in the Agent J web app.',
+          'local':'Not received: the computer could not process it locally (saving or transcribing). Send it again, or use the File button in the Agent J web app.',
+          'asr_fail':'[Local voice transcription failed ({why}); original attached]',
+          'asr_notice':'The voice could not be transcribed locally ({why}); the original went to the Agent.',
+          'asr_why':{'timeout':'timed out','not_installed':'transcription is not installed','off':'transcription is off',
+                     'format':'the audio could not be decoded','bad_audio':'wrong audio format','busy':'the transcriber is busy',
+                     'no_speech':'no speech heard','broken':'the transcriber failed'}},
+}
+
+
+def media_why(e, stage='local'):
+    """An attachment failure → one reason code (MEDIA_WHY); never the message or the file's content."""
+    w=e.args[0] if isinstance(e,ValueError) and e.args else ''
+    if w in MEDIA_WHY:return w
+    return 'download' if stage=='download' or w=='Telegram download failed' else 'local'
+
+
+def media_note(why, lang='zh', detail=None, owner=False):
+    t=MEDIA_NOTE['en' if lang=='en' else 'zh']
+    if why in ('asr_fail','asr_notice'):return t[why].format(why=t['asr_why'].get(detail,t['asr_why']['broken']))
+    return t.get(why+'_owner') if owner and why+'_owner' in t else t.get(why,t['local'])
 GROUP_MEDIA_HOURLY = 40 * 1024 * 1024
 ALBUM_MAX=10                 # Telegram albums hold at most 10 items
 FWD_REPEAT,FWD_PER_DEVICE,FWD_WINDOW,FWD_MAX_PARTS=10,10,600,8   # B10: s · per device per window(s) · parts
@@ -874,8 +987,9 @@ def map_command(text,items):
     return text
 
 
-def media_of(message):
-    from .inbox import ALLOWED
+def media_of(message, any_type=False):
+    """any_type (P166): the owner's private chat takes every well-formed MIME; groups keep inbox.ALLOWED."""
+    from .inbox import ALLOWED, accepts, media_kind
     out=[]
     photos=message.get('photo')
     if isinstance(photos,list) and photos:
@@ -885,9 +999,9 @@ def media_of(message):
         obj=message.get(kind)
         if not isinstance(obj,dict):continue
         mime=obj.get('mime_type') or {'voice':'audio/ogg','video':'video/mp4','video_note':'video/mp4'}.get(kind,'application/octet-stream')
-        if mime not in ALLOWED:raise ValueError('unsupported media')
+        if not (accepts(mime) if any_type else mime in ALLOWED):raise ValueError('type')
         name=str(obj.get('file_name') or kind)[:128]
-        out.append({**obj,'mime':mime,'name':name,'asr':kind in ('voice','audio','video','video_note')})
+        out.append({**obj,'mime':mime,'name':name,'asr':kind in ('voice','audio','video','video_note') or media_kind(mime)})
     return out
 
 
@@ -898,7 +1012,8 @@ def download(cfg,media,path):
         remote=info.get('file_path','')
         if (not isinstance(remote,str) or not re.fullmatch(r'[A-Za-z0-9_./-]+',remote)
                 or remote.startswith('/') or any(x in ('','..','.') for x in remote.split('/'))
-                or (info.get('file_size') or 0)>MAX_DOWNLOAD):raise ValueError()
+                ):raise ValueError()
+        if (info.get('file_size') or 0)>MAX_DOWNLOAD:raise ValueError('size')
         key=os.environ[cfg['key_env']]
         class NoRedirect(urllib.request.HTTPRedirectHandler):
             def redirect_request(self,*args):return None
@@ -909,12 +1024,16 @@ def download(cfg,media,path):
             with os.fdopen(fd,'wb') as f:
                 while chunk:=r.read(65536):
                     total+=len(chunk)
-                    if total>min(MAX_DOWNLOAD,media.get('_download_limit',MAX_DOWNLOAD)):raise ValueError()
+                    if total>min(MAX_DOWNLOAD,media.get('_download_limit',MAX_DOWNLOAD)):raise ValueError('size')
                     if not head:head=chunk[:32]
                     f.write(chunk)
         from .uploads import magic_ok
-        if not total or not magic_ok(media['mime'],head):raise ValueError()
+        if not total:raise ValueError()
+        if not magic_ok(media['mime'],head):raise ValueError('type')
         return path
+    except ValueError as e:
+        if e.args and e.args[0] in ('size','type'):raise ValueError(e.args[0]) from None   # P166: a reason code, nothing else
+        raise ValueError('Telegram download failed') from None
     except Exception:raise ValueError('Telegram download failed') from None
 
 

@@ -64,7 +64,7 @@ export async function runP150({ anim = false } = {}) {
 
         await step('a', async () => {
           check(await evaluate(p, `${$('busyDots')}.hidden`), 'no worker, no dots ' + lang);
-          const hd = await box(p, '.read>.rmhd');
+          const hd = await box(p, '.rmtop>.rmhd');
           check(hd.h >= 51, `header taller (${hd.h}) ` + lang);
           const nm = await box(p, '#agent');
           check(nm.t - hd.t >= 10, `name lower (${nm.t - hd.t}) ` + lang);
@@ -74,26 +74,27 @@ export async function runP150({ anim = false } = {}) {
             if (st === 'idle') { await fake.send({ t: 'busy', by: NAME, tasks: [] }); await sleep(150); await save(`${color}-0`); }
             for (const n of [1, 3]) {
               await fake.send(busyMsg(lang, n));
-              await waitFor(p, `${$('busyDots')}.querySelectorAll('i').length===${n} && !${$('busyDots')}.hidden`);
-              const dots = await box(p, '#busyDots'), name = await box(p, '#agent'), card = await box(p, '.read>.rmhd');
+              await waitFor(p, `${$('busyDots')}.querySelectorAll('i.rb:not(.bye)').length===${n} && !${$('busyDots')}.hidden`);
+              const dots = await box(p, '#busyDots'), name = await box(p, '#agent'), card = await box(p, '.rmtop>.rmhd');
               check(dots.l >= name.r, `dots right of the name ${lang}/${st}/${n}`);
               check(dots.r <= card.r + 1 && dots.w <= card.w * 0.67, `dots inside the right 2/3 ${lang}/${st}/${n}`);
-              const cs = await evaluate(p, `[...${$('busyDots')}.querySelectorAll('i')].map(i=>getComputedStyle(i).getPropertyValue('--h').trim())`);
+              const cs = await evaluate(p, `[...${$('busyDots')}.querySelectorAll('i.rb:not(.bye)')].map(i=>getComputedStyle(i).getPropertyValue('--h').trim())`);
               check(new Set(cs).size === n, `distinct colours ${cs}`);
-              check(await evaluate(p, `getComputedStyle(${$('busyDots')}.querySelector('i')).animationName`) === 'busy-blink', 'blinks');
+              await waitFor(p, `!${$('busyDots')}.querySelector('i.rb.in')`, 2000);   // a new robot pops in first, then dances
+              check(await evaluate(p, `getComputedStyle(${$('busyDots')}.querySelector('i.rb')).animationName`) === 'rb-dance-18', 'dances (P154 追加 10: robots)');
               check(/[0-9]/.test(await evaluate(p, `${$('busyDots')}.getAttribute('aria-label')`)), 'dots are labelled');
               await freeze(n === 1 ? 0 : 600); await save(`${color}-${n}`); await play();
             }
           }
           await fake.send({ t: 'status', s: 'working', agent: 'claude', name: NAME }); await waitFor(p, `document.body.dataset.status==='working'`);
           await fake.send({ ...busyMsg(lang, 3), tasks: busyMsg(lang, 3).tasks.slice(1) });
-          await waitFor(p, `${$('busyDots')}.querySelectorAll('i').length===2`);
+          await waitFor(p, `${$('busyDots')}.querySelectorAll('i.rb').length===2`, 4000);
           check(true, 'one finished → one fewer dot');
           if (anim && lang === 'zh' && theme === 'light') await blinkLoop(p, B);
         });
 
         await step('b', async () => {
-          await fake.send(busyMsg(lang, 3)); await waitFor(p, `${$('busyDots')}.querySelectorAll('i').length===3`);
+          await fake.send(busyMsg(lang, 3)); await waitFor(p, `${$('busyDots')}.querySelectorAll('i.rb:not(.bye)').length===3`);
           await evaluate(p, `${$('input')}.value='draft canary'`);
           await tapEl(p, '#busyDots');
           await waitFor(p, `!${$('busyDlg')}.hidden`);
@@ -114,7 +115,7 @@ export async function runP150({ anim = false } = {}) {
           await tapEl(p, '#busyClose'); await waitFor(p, `${$('busyDlg')}.hidden`); check(true, 'button closes');
           await tapEl(p, '#busyDots'); await waitFor(p, `!${$('busyDlg')}.hidden`);
           await fake.send({ t: 'busy', by: NAME, tasks: [] });
-          await waitFor(p, `${$('busyDlg')}.hidden && ${$('busyDots')}.hidden`); check(true, 'empty list closes and hides');
+          await waitFor(p, `${$('busyDlg')}.hidden && ${$('busyDots')}.hidden`, 4000); check(true, 'empty list closes and hides');
         });
 
         await step('c', async () => {

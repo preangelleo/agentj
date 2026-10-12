@@ -1,0 +1,563 @@
+{
+ "note": "P188 chat search vectors (PROTOCOL §28): protocol/search.js and host/agentj/hsearch.py must agree on fold, terms and score. A Telegram page is scored without its source line (snap.js / hsearch.fields_of). Silent and withdrawn pages are never hits.",
+ "fold": [
+  {
+   "s": "ＡＢＣ１２３",
+   "f": "abc123"
+  },
+  {
+   "s": "Hello World",
+   "f": "hello world"
+  },
+  {
+   "s": "說話這個們",
+   "f": "说话这个们"
+  },
+  {
+   "s": "搜尋記錄",
+   "f": "搜寻记录"
+  },
+  {
+   "s": "ＡｇｅｎｔＪ　設定",
+   "f": "agentj 设定"
+  },
+  {
+   "s": "ﬁle",
+   "f": "file"
+  },
+  {
+   "s": "Straße",
+   "f": "straße"
+  },
+  {
+   "s": "ΑΣ",
+   "f": "ας"
+  },
+  {
+   "s": "妳好，世界！",
+   "f": "妳好,世界!"
+  },
+  {
+   "s": "ｶﾀｶﾅ",
+   "f": "カタカナ"
+  }
+ ],
+ "terms": [
+  {
+   "q": "  說話 ABC　ＡＢＣ abc ",
+   "t": [
+    "说话",
+    "abc"
+   ]
+  },
+  {
+   "q": "deploy",
+   "t": [
+    "deploy"
+   ]
+  },
+  {
+   "q": "部署  上线",
+   "t": [
+    "部署",
+    "上线"
+   ]
+  },
+  {
+   "q": "a b c d e f g h i j",
+   "t": [
+    "a",
+    "b",
+    "c",
+    "d",
+    "e",
+    "f",
+    "g",
+    "h"
+   ]
+  },
+  {
+   "q": "",
+   "t": []
+  },
+  {
+   "q": "   ",
+   "t": []
+  },
+  {
+   "q": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+   "t": [
+    "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+   ]
+  },
+  {
+   "q": "設定 设定",
+   "t": [
+    "设定"
+   ]
+  }
+ ],
+ "turns": [
+  {
+   "id": 1,
+   "ts": 1000,
+   "src": {
+    "k": "phone",
+    "dev": "d1",
+    "text": "帮我部署一下网站"
+   },
+   "reply": {
+    "text": "好的，已经部署上线。"
+   },
+   "end": "done"
+  },
+  {
+   "id": 2,
+   "ts": 2000,
+   "src": {
+    "k": "phone",
+    "dev": "d1",
+    "text": "Deploy the site",
+    "att": [
+     {
+      "name": "deploy-log.txt",
+      "mime": "text/plain",
+      "bytes": 10,
+      "kind": "file"
+     }
+    ]
+   },
+   "reply": {
+    "text": "Deployed. deploy deploy"
+   },
+   "end": "done"
+  },
+  {
+   "id": 3,
+   "ts": 3000,
+   "src": {
+    "k": "agent",
+    "text": ""
+   },
+   "reply": {
+    "text": "部署失败，回滚了。上线推迟。"
+   },
+   "end": "done"
+  },
+  {
+   "id": 4,
+   "ts": 4000,
+   "src": {
+    "k": "phone",
+    "dev": "d2",
+    "name": "iPad",
+    "text": "部署 上线",
+    "quote": {
+     "id": 1,
+     "text": "已经部署上线"
+    }
+   },
+   "reply": {
+    "text": "收到"
+   },
+   "end": "done"
+  },
+  {
+   "id": 5,
+   "ts": 5000,
+   "src": {
+    "k": "phone",
+    "text": "部署"
+   },
+   "reply": {
+    "text": "〔不回群〕"
+   },
+   "end": "done"
+  },
+  {
+   "id": 6,
+   "ts": 6000,
+   "src": {
+    "k": "phone",
+    "text": "部署上线"
+   },
+   "reply": {
+    "text": ""
+   },
+   "card": {
+    "withdrawn": true
+   },
+   "end": "done"
+  },
+  {
+   "id": 7,
+   "ts": 7000,
+   "src": {
+    "k": "telegram",
+    "text": "Telegram owner private chat.\n說話 測試"
+   },
+   "reply": {
+    "text": "ok"
+   },
+   "end": "done"
+  }
+ ],
+ "scores": [
+  {
+   "q": "部署",
+   "terms": [
+    "部署"
+   ],
+   "turns": [
+    {
+     "id": 1,
+     "r": {
+      "score": 8,
+      "where": [
+       "in",
+       "reply"
+      ]
+     }
+    },
+    {
+     "id": 2,
+     "r": null
+    },
+    {
+     "id": 3,
+     "r": {
+      "score": 3,
+      "where": [
+       "reply"
+      ]
+     }
+    },
+    {
+     "id": 4,
+     "r": {
+      "score": 10,
+      "where": [
+       "in",
+       "quote"
+      ]
+     }
+    },
+    {
+     "id": 5,
+     "r": {
+      "score": 21,
+      "where": [
+       "in"
+      ]
+     }
+    },
+    {
+     "id": 6,
+     "r": {
+      "score": 9,
+      "where": [
+       "in"
+      ]
+     }
+    },
+    {
+     "id": 7,
+     "r": null
+    }
+   ]
+  },
+  {
+   "q": "部署 上线",
+   "terms": [
+    "部署",
+    "上线"
+   ],
+   "turns": [
+    {
+     "id": 1,
+     "r": {
+      "score": 10,
+      "where": [
+       "in",
+       "reply"
+      ]
+     }
+    },
+    {
+     "id": 2,
+     "r": null
+    },
+    {
+     "id": 3,
+     "r": {
+      "score": 5,
+      "where": [
+       "reply"
+      ]
+     }
+    },
+    {
+     "id": 4,
+     "r": {
+      "score": 37,
+      "where": [
+       "in",
+       "quote"
+      ]
+     }
+    },
+    {
+     "id": 5,
+     "r": null
+    },
+    {
+     "id": 6,
+     "r": {
+      "score": 15,
+      "where": [
+       "in"
+      ]
+     }
+    },
+    {
+     "id": 7,
+     "r": null
+    }
+   ]
+  },
+  {
+   "q": "deploy",
+   "terms": [
+    "deploy"
+   ],
+   "turns": [
+    {
+     "id": 1,
+     "r": null
+    },
+    {
+     "id": 2,
+     "r": {
+      "score": 16,
+      "where": [
+       "in",
+       "att",
+       "reply"
+      ]
+     }
+    },
+    {
+     "id": 3,
+     "r": null
+    },
+    {
+     "id": 4,
+     "r": null
+    },
+    {
+     "id": 5,
+     "r": null
+    },
+    {
+     "id": 6,
+     "r": null
+    },
+    {
+     "id": 7,
+     "r": null
+    }
+   ]
+  },
+  {
+   "q": "DEPLOY.",
+   "terms": [
+    "deploy."
+   ],
+   "turns": [
+    {
+     "id": 1,
+     "r": null
+    },
+    {
+     "id": 2,
+     "r": null
+    },
+    {
+     "id": 3,
+     "r": null
+    },
+    {
+     "id": 4,
+     "r": null
+    },
+    {
+     "id": 5,
+     "r": null
+    },
+    {
+     "id": 6,
+     "r": null
+    },
+    {
+     "id": 7,
+     "r": null
+    }
+   ]
+  },
+  {
+   "q": "說話",
+   "terms": [
+    "说话"
+   ],
+   "turns": [
+    {
+     "id": 1,
+     "r": null
+    },
+    {
+     "id": 2,
+     "r": null
+    },
+    {
+     "id": 3,
+     "r": null
+    },
+    {
+     "id": 4,
+     "r": null
+    },
+    {
+     "id": 5,
+     "r": null
+    },
+    {
+     "id": 6,
+     "r": null
+    },
+    {
+     "id": 7,
+     "r": {
+      "score": 9,
+      "where": [
+       "in"
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "q": "telegram",
+   "terms": [
+    "telegram"
+   ],
+   "turns": [
+    {
+     "id": 1,
+     "r": null
+    },
+    {
+     "id": 2,
+     "r": null
+    },
+    {
+     "id": 3,
+     "r": null
+    },
+    {
+     "id": 4,
+     "r": null
+    },
+    {
+     "id": 5,
+     "r": null
+    },
+    {
+     "id": 6,
+     "r": null
+    },
+    {
+     "id": 7,
+     "r": null
+    }
+   ]
+  },
+  {
+   "q": "nothing-here",
+   "terms": [
+    "nothing-here"
+   ],
+   "turns": [
+    {
+     "id": 1,
+     "r": null
+    },
+    {
+     "id": 2,
+     "r": null
+    },
+    {
+     "id": 3,
+     "r": null
+    },
+    {
+     "id": 4,
+     "r": null
+    },
+    {
+     "id": 5,
+     "r": null
+    },
+    {
+     "id": 6,
+     "r": null
+    },
+    {
+     "id": 7,
+     "r": null
+    }
+   ]
+  },
+  {
+   "q": "部署 回滚",
+   "terms": [
+    "部署",
+    "回滚"
+   ],
+   "turns": [
+    {
+     "id": 1,
+     "r": null
+    },
+    {
+     "id": 2,
+     "r": null
+    },
+    {
+     "id": 3,
+     "r": {
+      "score": 5,
+      "where": [
+       "reply"
+      ]
+     }
+    },
+    {
+     "id": 4,
+     "r": null
+    },
+    {
+     "id": 5,
+     "r": null
+    },
+    {
+     "id": 6,
+     "r": null
+    },
+    {
+     "id": 7,
+     "r": null
+    }
+   ]
+  }
+ ]
+}

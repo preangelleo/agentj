@@ -39,7 +39,7 @@ def open_request(env, st, now=None, keys=None):
     # Newly delivered requests must be fresh, not queued across a power-off. Authorization expires absolutely.
     if not now-15000<=q['created_at']<=now+5000 or not now<q['expires_at']<=q['created_at']+300000: return None
     if not isinstance(q['id'],str) or not cloud._UNBIND_ID.fullmatch(q['id']): return None
-    if q['op'] not in ('start','inspect','approve','owner_status','resume','task_on','device_name'): return None
+    if q['op'] not in ('start','inspect','approve','owner_status','resume','task_on','device_name','cancel'): return None
     try:
         if len(wire.unb64u(q['browser']))!=32: return None
         X25519PublicKey.from_public_bytes(wire.unb64u(q['browser']))
@@ -118,11 +118,8 @@ class RemotePair:
                 if target['sha']!=stop_sha(h.st): result='changed'
                 else: await h.do_resume('account:'+q['id'],pick(getattr(h,'lang','zh'),'账户页','Account page'))
             elif q['op']=='device_name':
-                result='ok' if h.st.rename_device(target['device'],target['name']) else 'gone'
-                if result=='ok':
-                    for session in h.sessions.values():
-                        if session.device==target['device']: session.name=target['name'].strip()
-                    h.reporter.trigger('online')
+                result='ok' if h.st.rename_device(target['device'],target['name'],via='account') else 'gone'
+                if result=='ok': h.device_renamed(target['device'])   # P179: owner_name; sessions, report, phones follow
             else:
                 try:
                     wd=h.agent_cfg['dir'] if h.agent_cfg else None
@@ -144,16 +141,33 @@ class RemotePair:
             if not s or s.state!='pending' or s.device!=q['device'] or handshake(s)!=q['handshake'] or time.monotonic()>=s.deadline:
                 self.reply(q,{'status':'gone'}); return
             await self.grant(q,p,s); return
-        if h.pairing:
-            self.reply(q,{'status':'busy'}); return
+        p=h.pairing
+        if q['op']=='cancel':
+            # P177: the owner (account passkey) ends a pairing slot nobody has connected to yet — an earlier account-page QR
+            # or a forgotten `agentj pair` (it is told "cancelled on the account page"). A phone mid-pairing is never cut off.
+            if p and p.cid is not None: self.reply(q,self.busy(p)); return
+            if p: h._pair_finish(p,{'ev':'denied','reason':'account_cancelled'})
+            h.st.log('remote_pair_cancel',request=q['id'],held='remote' if p and p.remote else 'local' if p else 'none')
+            self.reply(q,{'status':'cancelled'}); return
+        if p:
+            # P177: a newer account-page start takes over an earlier account-page QR nobody scanned (the same owner after a
+            # reload or an error); a terminal `agentj pair` or a phone mid-pairing is never replaced silently.
+            if not (p.remote and p.cid is None): self.reply(q,self.busy(p)); return
+            h._pair_finish(p,{'ev':'replaced'}); h.st.log('remote_pair_takeover',request=q['id'])
         from .serve import Pairing
         ttl=min(300,(q['expires_at']-time.time()*1000)/1000)
         p=Pairing(secrets.token_bytes(16),secrets.token_bytes(32),time.time()+ttl,time.monotonic()+ttl,None,remote=q)
-        h.pairing=p; p.timer=asyncio.create_task(h._expire_pairing(p))
+        # Link and QR first: a failure here must not leave the slot held for five minutes (P177).
         link=wire.pairing_link(h.cfg['web'],h.cfg['relay'],h.channel,h.kp.pub,p.pid,p.psk,int(p.expires))
         svg=wire.pairing_qr(link).png_data_uri(scale=6,border=2,dark='#141414',light='#faf9f5')
-        self.reply(q,{'status':'link','link':link,'qr':svg,'expires':int(p.expires)})
+        h.pairing=p; p.timer=asyncio.create_task(h._expire_pairing(p))
+        self.reply(q,{'status':'link','link':link,'qr':svg,'expires':int(p.expires),'cancel':True})
         h.st.log('remote_pair_begin',request=q['id'])
+
+    @staticmethod
+    def busy(p):
+        # P177: who holds the slot and until when, so the account page can say it; `cancel` = this host accepts op cancel.
+        return {'status':'busy','by':'remote' if p.remote else 'local','phone':p.cid is not None,'until':int(p.expires),'cancel':p.cid is None}
 
     async def pending(self,p,s):
         if not p.remote: return

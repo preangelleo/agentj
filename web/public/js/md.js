@@ -6,7 +6,7 @@
 // after 20 000 (the rest becomes one text node), so rendering cost stays linear in the input; P33-C08: links are https:,
 // http: or mailto: only, open with rel="noopener noreferrer", and a link whose words are not its address shows the real
 // host after them (small, .lhost): a link whose words say bank.com but which goes to evil.example reads "bank.com (evil.example)".
-const MOD = { LABELS: { copy: "Copy", copyAria: "Copy code", copied: "Copied", image: "image" } };
+const MOD = { LABELS: { copy: "Copy", copyAria: "Copy code", copied: "Copied", image: "image", tapCopy: "Click to copy" } };
 // md.js — a small, safe Markdown subset for the agent's words (M1.5-pwa-md-ptt).
 //
 // The agent's text is untrusted input: it quotes web pages, files and tool
@@ -672,6 +672,8 @@ const MOD = { LABELS: { copy: "Copy", copyAria: "Copy code", copied: "Copied", i
         if (ok) el.setAttribute(k, ok);
       }
       if (tag === "a") { el.setAttribute("target", "_blank"); el.setAttribute("rel", "noopener noreferrer"); }
+      // P154: inline `code` (a code block's <code> is made in codeBlock) — one click copies it (relay.js copyCodeClick).
+      if (tag === "code") { el.className = "icode"; el.setAttribute("title", LABELS.tapCopy); }
       if (n.tag === "table") {
         const scroll = doc.createElement("div");
         scroll.className = "tablewrap";

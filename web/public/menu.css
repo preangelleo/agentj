@@ -1,0 +1,320 @@
+/* P187 · the menu design system (owner, 2026-10-12: 「整个页面有一套共同的 CSS，然后关于菜单，再有第二套 CSS，有些就继承 global，
+   有些就继承菜单级别的 CSS」). Loaded after app.css. Two layers of tokens, nothing else defines a menu's look:
+
+   1. --ui-*   GLOBAL — the whole page: type steps, spacing rhythm, radii, button / icon geometry, focus ring, motion.
+               Every value is an alias of brand/palette.css (the closed Leo palette + the 4 px scale), never a new number.
+   2. --menu-* MENU   — inherits layer 1 and adds what a menu is: a full-screen dark page (Sooty canvas, Noir panels,
+               Lotion text, Milky Waves accent), the header bar, level 1 / 2 / 3 titles and row heights, dividers, the
+               icon + text row, switches / segmented pickers, the danger colour. A theme may set five of them
+               (theme.js ← colors.menu: background, panel, text, accent, line); the rest derive from those.
+
+   Menu surfaces (all full screen, no popover, no nested dialog): Settings and its sub-pages (遥控器管理, iPhone steps),
+   the command list (≡), keyboard shortcuts, silent history, 「这个网页版有多安全」, and the pages a Settings row opens
+   (models, memory, records, tasks, friends, bots, first-run checklist). Inside a menu the global semantic tokens
+   (--bg --text --surface-* --border --primary-* --quiet-* --danger* --accent --focus …) are re-bound to the menu layer,
+   so every shared component (.aj-btn, .seg, .tgl, .setrow …) turns into its menu form without a second rule set.
+   Confirmations and danger questions stay the ONE global centred card (#confirm = the P150 gdlg shell). */
+
+:root{
+  /* ---- layer 1 · global ---------------------------------------------------------------------------------------- */
+  --ui-fs-caption:var(--fs-xs);        /* 13 — group labels, meta */
+  --ui-fs-small:var(--fs-sm);          /* 15 — notes, secondary lines */
+  --ui-fs-body:var(--fs-md);           /* 16 — rows, buttons */
+  --ui-fs-title-3:var(--fs-md);        /* level-3 page title */
+  --ui-fs-title-2:var(--fs-lg);        /* level-2 page title */
+  --ui-fs-title-1:var(--fs-xl);        /* level-1 page title */
+  --ui-space-control:var(--space-control);   /* 12 — between controls */
+  --ui-space-content:var(--space-content);   /* 16 — text ↔ actions, panel padding on a phone */
+  --ui-space-section:var(--space-section);   /* 24 — between panels, panel padding on a wide screen */
+  --ui-radius-control:12px;            /* icon buttons, inputs — the reply card's icon buttons (.rmbar .act) */
+  --ui-radius-panel:var(--r-lg);       /* 16 — panels / cards */
+  --ui-radius-pill:var(--r-pill);      /* buttons, segmented pickers */
+  --ui-tap:var(--tap);                 /* 44 — the smallest thing a finger may press */
+  --ui-btn-h:var(--tap);               /* 44 — every button */
+  --ui-btn-px:var(--sp-5);             /* 24 — button side padding (P145) */
+  --ui-icon:22px;                      /* every UI icon (24-unit grid, stroke 1.9 — the reply card's five icons) */
+  --ui-icon-btn:var(--tap);            /* 44 × 44 icon button */
+  --ui-focus-w:2px;
+  --ui-focus-gap:2px;
+  --ui-dur:var(--dur);
+  --ui-ease:var(--ease);
+  /* palette entries this page uses that brand/palette.css does not carry (leo-palette.json names, same hex) */
+  --milky-waves:#71bbde;               /* Heavy blue — the accent (the retired Assassin's successor) */
+  --strawberry-field:#f7827e;          /* Heavy red — danger on a dark surface */
+
+  /* ---- layer 2 · menu (inherits layer 1) ------------------------------------------------------------------------ */
+  --menu-bg:var(--c-sooty);            /* canvas */
+  --menu-panel:var(--c-noir);          /* panels / groups */
+  --menu-text:var(--c-lotion);         /* body text, icons */
+  --menu-accent:var(--milky-waves);    /* selection, switches on, focus ring, links */
+  --menu-line:color-mix(in srgb,var(--menu-text) 16%,transparent);         /* dividers, outlines */
+  --menu-muted:color-mix(in srgb,var(--menu-text) 72%,transparent);        /* notes (≥ 7:1 on Sooty and Noir) */
+  --menu-chip:color-mix(in srgb,var(--menu-text) 9%,transparent);          /* filled icon buttons, code, hover */
+  --menu-press:color-mix(in srgb,var(--menu-text) 14%,transparent);
+  --menu-danger:var(--strawberry-field);
+  --menu-on-accent:var(--c-sooty);     /* text / knob on an accent fill */
+  --menu-head-h:64px;                  /* header bar (56 on a phone) */
+  --menu-row-1:64px;                   /* level-1 entry: icon + title + one-line note (Settings rows) */
+  --menu-row-2:56px;                   /* level-2 row: a command, a device, a switch / picker row */
+  --menu-row-3:44px;                   /* level-3 row: dense reference lines (shortcuts, records) */
+  --menu-title-1:var(--ui-fs-title-1);
+  --menu-title-2:var(--ui-fs-title-2);
+  --menu-title-3:var(--ui-fs-title-3);
+  --menu-pad:var(--ui-space-section);  /* panel padding / page gutter (16 on a phone) */
+  --menu-gap:var(--ui-space-section);  /* between panels */
+  --menu-max:var(--page-wide);         /* content width on a wide screen */
+  --menu-narrow:46rem;                 /* single-column pages (lists, the security page) */
+}
+@media (max-width:599px){ :root{ --menu-head-h:56px; --menu-pad:var(--ui-space-content); --menu-gap:var(--ui-space-content); } }
+/* 「这个网页版有多安全」 is locked (theme.schema.json x-agentj-locked): the factory menu colours whatever a theme says */
+#badge-panel{--menu-bg:var(--c-sooty);--menu-panel:var(--c-noir);--menu-text:var(--c-lotion);--menu-accent:var(--milky-waves);
+  --menu-line:color-mix(in srgb,var(--menu-text) 16%,transparent);--menu-muted:color-mix(in srgb,var(--menu-text) 72%,transparent);
+  --menu-chip:color-mix(in srgb,var(--menu-text) 9%,transparent);--menu-press:color-mix(in srgb,var(--menu-text) 14%,transparent)}
+
+/* ---- the menu scope: global tokens re-bound to the menu layer ------------------------------------------------------ */
+.menupage,#settings,#sug,
+body:is([data-view="mem"],[data-view="act"],[data-view="tasks"],[data-view="models"],[data-view="friends"],[data-view="bots"],[data-view="setup"]){
+  color-scheme:dark;
+  --bg:var(--menu-bg); --surface-1:var(--menu-panel); --surface-2:var(--menu-chip);
+  --text:var(--menu-text); --text-muted:var(--menu-muted); --text-subtitle:var(--menu-muted);
+  --border:var(--menu-line); --border-soft:var(--menu-line); --seam:var(--menu-line); --link:var(--menu-accent);
+  --primary-bg:var(--menu-text); --primary-fg:var(--menu-bg);
+  --quiet-bg:transparent; --quiet-fg:var(--menu-text); --quiet-border:color-mix(in srgb,var(--menu-text) 42%,transparent);
+  --danger:var(--menu-danger); --danger-bg:transparent;
+  --accent:var(--menu-accent); --focus:var(--menu-accent); --code-bg:var(--menu-chip);
+  --callout-info:color-mix(in srgb,var(--menu-accent) 18%,var(--menu-bg)); --callout-note:color-mix(in srgb,var(--c-banana-republic) 16%,var(--menu-bg));
+  --callout-warm:color-mix(in srgb,var(--c-peachy-feeling) 18%,var(--menu-bg)); --callout-fg:var(--menu-text);
+  /* relay's chat roles, for the parts of a menu that came from relay (command list, shortcuts, silent history) */
+  --pg:var(--menu-bg); --ink:var(--menu-text); --ink-soft:var(--menu-muted); --surface:var(--menu-chip); --raised:var(--menu-panel);
+  --line:var(--menu-line); --btn-strong-bg:var(--menu-text); --btn-strong-ink:var(--menu-bg);
+  color:var(--menu-text);
+}
+body:is([data-view="mem"],[data-view="act"],[data-view="tasks"],[data-view="models"],[data-view="friends"],[data-view="bots"],[data-view="setup"]),
+body:is([data-view="mem"],[data-view="act"],[data-view="tasks"],[data-view="models"],[data-view="friends"],[data-view="bots"],[data-view="setup"]) .ajpages{background:var(--menu-bg)}
+
+/* ---- the page shell: full screen over everything, follows the visual viewport (keyboard) ---------------------------- */
+.menupage{position:fixed;left:0;right:0;top:var(--vvtop,0px);height:var(--vvh,100dvh);z-index:46;display:flex;flex-direction:column;
+  padding:env(safe-area-inset-top) 0 0;background:var(--menu-bg);color:var(--menu-text);font:400 var(--ui-fs-small)/1.5 var(--font-body);
+  overflow:hidden;backdrop-filter:none;-webkit-backdrop-filter:none;animation:menu-in var(--ui-dur) var(--ui-ease) both}
+.menupage[hidden]{display:none}
+@keyframes menu-in{from{opacity:0}to{opacity:1}}
+@media (prefers-reduced-motion:reduce){.menupage{animation:none}}
+#badge-panel.menupage{z-index:47}          /* opened from Settings (45): above it; the confirm card (48) above all */
+.cmdmenu.menupage{z-index:44}              /* the command list; shortcuts / silent history (46) open above it */
+.composer:has(.cmdmenu:not([hidden])){z-index:44}
+.menubody{flex:1;min-height:0;overflow-y:auto;overscroll-behavior:contain;scrollbar-width:none;
+  padding:var(--menu-gap) max(var(--menu-pad), calc((100% - var(--menu-max)) / 2)) calc(var(--menu-gap) + env(safe-area-inset-bottom))}
+.menubody::-webkit-scrollbar{display:none}
+.menunarrow{max-width:var(--menu-narrow);margin:0 auto;display:flex;flex-direction:column;gap:var(--menu-gap)}
+.menucols{columns:2 26rem;column-gap:var(--menu-gap)}
+.menucols>.menucard{break-inside:avoid;margin:0 0 var(--menu-gap)}
+.menunote{margin:0;color:var(--menu-muted);font-size:var(--ui-fs-small)}
+
+/* ---- the header bar: [back] title [Esc] [close] — one for every level --------------------------------------------- */
+.menuhead{flex:none;display:flex;align-items:center;gap:var(--ui-space-control);min-height:var(--menu-head-h);
+  padding:var(--sp-2) max(var(--menu-pad), calc((100% - var(--menu-max)) / 2));border-bottom:1.5px dashed var(--menu-line)}
+.menuhead>:is(h1,h2){flex:1;min-width:0;margin:0;font:700 var(--menu-title-2)/1.25 var(--font-title);color:var(--menu-text);
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#settings .menuhead>h2,.cmdmenu .menuhead>h2{font-size:var(--menu-title-1)}          /* level 1 */
+.menuhead>.menuicon:first-child{margin-left:calc(-1 * var(--sp-2))}
+.menuhead>.menuicon:last-child{margin-right:calc(-1 * var(--sp-2))}
+.menuhead .setesc{flex:none}
+/* the pages under the app header (models, memory …): the header bar is the page's first row, no extra seam */
+.ajpages .sub-head.menuhead{min-height:var(--menu-head-h);margin:0 calc(-1 * var(--rg)) var(--ui-space-content);padding:0 var(--rg);gap:var(--ui-space-control)}
+.ajpages .sub-head.menuhead h1{font-size:var(--menu-title-2);margin:0}
+.ajpages .sub-head.menuhead .setup-x{margin-left:auto}
+
+/* ---- icons: one size, one stroke; icon buttons 44 × 44 ------------------------------------------------------------- */
+.menuicon{flex:none;width:var(--ui-icon-btn);height:var(--ui-icon-btn);min-height:0;padding:0;border:0;border-radius:var(--ui-radius-control);
+  display:grid;place-items:center;background:none;color:var(--menu-text);cursor:pointer;
+  transition:background-color var(--ui-dur) var(--ui-ease)}
+.menuicon[hidden]{display:none}
+.menuicon:hover{background:var(--menu-chip)}
+.menuicon:active{background:var(--menu-press)}
+.menuicon svg,.menupage .mi,#settings .mi,#settings .chev,.cmdmenu .mi svg{width:var(--ui-icon);height:var(--ui-icon);flex:none}
+:is(.menupage,#settings,.ajpages) :is(.menuicon,.aj-btn,.seg button,.setnav,.setside button,.tgl,.setswitch,.setcopy,.setlink,.fontstep>button,.sfxvol>button,.menulist button,summary):focus-visible{
+  outline:var(--ui-focus-w) solid var(--menu-accent);outline-offset:var(--ui-focus-gap)}
+kbd.setesc{background:var(--menu-chip);border-color:var(--menu-line);color:var(--menu-muted)}
+
+/* ---- panels and group labels ------------------------------------------------------------------------------------- */
+.menucard,#settings .setcard{padding:var(--menu-pad);border:1px solid var(--menu-line);border-radius:var(--ui-radius-panel);background:var(--menu-panel);color:var(--menu-text)}
+.menucard>.setg,.menucard>h3.setg{margin:0 0 var(--sp-2)}
+#settings .setg,.menupage .setg{color:var(--menu-muted);font:600 var(--ui-fs-caption)/1.4 var(--font-body);letter-spacing:.06em;text-transform:uppercase}
+
+/* ---- rows: icon + text, one height per level ----------------------------------------------------------------------- */
+#settings .setnav{min-height:var(--menu-row-1);gap:var(--ui-space-control);border-bottom-color:var(--menu-line)}
+#settings .setnav>.mi{color:var(--menu-text);opacity:.9}
+#settings .setnav b{font:600 var(--ui-fs-body)/1.3 var(--font-body)}
+#settings .setnav small{color:var(--menu-muted);font-size:var(--ui-fs-small)}
+#settings .setnav .chev{width:18px;height:18px;color:var(--menu-muted)}
+#settings .setnav:hover{background:linear-gradient(var(--menu-chip),var(--menu-chip)) no-repeat;background-size:calc(100% + 2 * var(--sp-2)) 100%;background-position:center}
+#settings .setrow{min-height:var(--menu-row-2);border-bottom-color:var(--menu-line)}
+@media (min-width:900px){
+  #settings .setside button{display:flex;align-items:center;gap:var(--ui-space-control);min-height:var(--menu-row-3);color:var(--menu-text)}
+  #settings .setside button .mi{color:var(--menu-muted)}
+  #settings .setside button:hover{background:var(--menu-chip)}
+  #settings .setside button[aria-current="true"]{background:var(--menu-chip);box-shadow:inset 3px 0 0 var(--menu-accent)}
+  #settings .setside button[aria-current="true"] .mi{color:var(--menu-accent)}
+}
+@media (max-width:899px){ #settings .setside .mi{display:none} }
+
+/* ---- buttons: ONE shape (pill, 44 px, 24 px sides); primary = Lotion fill, secondary = outline, danger = red outline -- */
+:is(.menupage,#settings,.ajpages) .aj-btn{min-height:var(--ui-btn-h);padding:0 var(--ui-btn-px);border-radius:var(--ui-radius-pill);font:500 var(--ui-fs-body)/1.2 var(--font-body)}
+:is(.menupage,#settings,.ajpages) .aj-btn--sm{padding:0 var(--sp-4);font-size:var(--ui-fs-small)}
+:is(.menupage,#settings,.ajpages) .aj-btn:not(.aj-btn--primary):not(.aj-btn--danger):not(.aj-btn--quiet):hover{background:var(--menu-chip);border-color:var(--menu-text)}
+:is(.menupage,#settings,.ajpages) .aj-btn--primary:hover{background:var(--c-salt);border-color:var(--c-salt);color:var(--menu-bg)}
+:is(.menupage,#settings,.ajpages) .aj-btn--danger{background:transparent;color:var(--menu-danger);border-color:var(--menu-danger)}
+:is(.menupage,#settings,.ajpages) .aj-btn--danger:hover{background:var(--menu-danger);color:var(--menu-on-accent)}
+#settings .setcopy,#settings button.setval.setwide{min-height:var(--ui-btn-h);border-radius:var(--ui-radius-pill);background:transparent;
+  border:1px solid var(--quiet-border);color:var(--menu-text)}
+#settings .setcopy:hover,#settings button.setval.setwide:hover{background:var(--menu-chip);border-color:var(--menu-text)}
+#settings .setlinks a,#settings .setlink{color:var(--menu-text)}
+/* filled icon buttons inside rows (text size −/+, mute): the header's icon button with the chip fill */
+#settings .fontstep>button:not(.setlink),#settings .sfxvol>button:not(.setlink){width:var(--ui-icon-btn);height:var(--ui-icon-btn);
+  border-radius:var(--ui-radius-control);background:var(--menu-chip);color:var(--menu-text)}
+#settings .fontstep svg,#settings .sfxvol svg{width:var(--ui-icon);height:var(--ui-icon)}
+
+/* ---- pickers and switches ------------------------------------------------------------------------------------------ */
+#settings .seg{border-color:var(--quiet-border);background:transparent}
+#settings .seg button{color:var(--menu-text)}
+#settings .seg button+button{border-left-color:var(--quiet-border)}
+#settings .seg button[aria-pressed="true"]{background:var(--menu-text);color:var(--menu-bg)}
+#settings .tgl i,#settings .setswitch::before{background:var(--c-black-mana)}
+#settings .tgl i::after,#settings .setswitch::after{background:var(--menu-text);box-shadow:none}
+#settings .tgl[aria-checked="true"] i,#settings .setswitch[aria-checked="true"]::before{background:var(--menu-accent)}
+#settings .tgl[aria-checked="true"] i::after,#settings .setswitch[aria-checked="true"]::after{background:var(--menu-on-accent)}
+#settings .sfxvol input[type=range]{accent-color:var(--menu-accent)}
+#settings .rmmeter{background:var(--menu-chip)}
+#settings .rmmeter i{background:var(--menu-accent)}
+#settings .rmmeter[data-full="true"] i{background:var(--menu-danger)}
+#settings .rmtag{background:color-mix(in srgb,var(--menu-accent) 22%,transparent);color:var(--menu-text)}
+#settings .rmdot[data-on="true"]{background:var(--menu-accent)}
+#settings :is(.rmcode,.rmrename input){background:var(--menu-bg);border-color:var(--menu-line);color:var(--menu-text)}
+#settings .setsample{background:var(--menu-chip)}
+#settings .iosico{background:var(--menu-bg);border-color:var(--menu-line);color:var(--menu-accent)}
+#settings .setstatus{background:var(--callout-info);color:var(--menu-text)}
+
+/* ---- level 1 · the command list (≡) -------------------------------------------------------------------------------- */
+.menulist{display:flex;flex-direction:column;border:1px solid var(--menu-line);border-radius:var(--ui-radius-panel);background:var(--menu-panel);overflow:hidden}
+.menulist .menugroup{padding:var(--ui-space-content) var(--menu-pad) var(--sp-1);border-top:1px solid var(--menu-line);
+  color:var(--menu-muted);font:600 var(--ui-fs-caption)/1.4 var(--font-body);letter-spacing:.06em;text-transform:uppercase}
+.menulist .menugroup:first-child{border-top:0}
+.menulist button{display:flex;flex-direction:column;justify-content:center;align-items:flex-start;gap:2px;width:100%;min-height:var(--menu-row-2);
+  padding:var(--sp-2) var(--menu-pad);border:0;border-top:1px solid var(--menu-line);background:none;color:var(--menu-text);text-align:left;cursor:pointer}
+.menulist .menugroup+button{border-top:0}
+.menulist button:hover{background:var(--menu-chip)}
+.menulist button:active{background:var(--menu-press)}
+.menulist button:disabled{opacity:.5;cursor:default}
+.menulist button>b{font:500 var(--ui-fs-body)/1.3 var(--font-mono);color:var(--menu-text);max-width:100%;overflow-wrap:anywhere}
+.menulist button>span{font:400 var(--ui-fs-small)/1.4 var(--font-body);color:var(--menu-muted);max-width:100%;overflow-wrap:anywhere}   /* P165: long command descriptions (/goal …) wrap instead of sticking out */
+.menulist button.iconrow{display:grid;grid-template-columns:var(--ui-icon) minmax(0,1fr);align-items:center;column-gap:var(--ui-space-control)}
+.menulist button.iconrow>b.mi{display:grid;place-items:center}
+.menulist button.iconrow>span{font:500 var(--ui-fs-body)/1.3 var(--font-body);color:var(--menu-text)}
+.menulist .estopitem,.menulist .estopitem>span{color:var(--menu-danger)}
+.menulist .keysentry,.menulist .clipentry{display:none}
+@media (any-hover:hover){ .menulist .keysentry{display:grid} }
+@media (any-pointer:coarse){ .menulist .clipentry{display:grid} }
+
+/* the type-ahead under the field stays attached to it (it filters what is being typed), in the menu colours */
+#sug.slashmenu{background:var(--menu-panel);border-color:var(--menu-line);box-shadow:0 12px 32px rgb(20 20 20 / .36);backdrop-filter:none;-webkit-backdrop-filter:none}
+#sug.slashmenu button{min-height:var(--menu-row-3);color:var(--menu-text)}
+#sug.slashmenu button+button{border-top-color:var(--menu-line)}
+#sug.slashmenu button span{color:var(--menu-muted)}
+#sug.slashmenu button[aria-selected="true"]{background:var(--menu-chip);box-shadow:inset 3px 0 0 var(--menu-accent)}
+
+/* ---- level 2 · keyboard shortcuts: one panel per group, rows at the level-3 height --------------------------------- */
+.keydl{display:grid;grid-template-columns:auto minmax(0,1fr);gap:0 var(--ui-space-content);margin:0}
+.keydl dt,.keydl dd{min-height:var(--menu-row-3);padding:calc((var(--menu-row-3) - 1.5em) / 2) 0;border-top:1px solid var(--menu-line)}
+.keydl dt{display:flex;align-items:center;flex-wrap:wrap;gap:4px}
+.keydl dt:first-of-type,.keydl dd:first-of-type{border-top:0}
+.keydl dt{font:500 var(--ui-fs-small)/1.5 var(--font-mono);white-space:nowrap;color:var(--menu-text)}
+.keydl dd{margin:0;color:var(--menu-muted);font-size:var(--ui-fs-small);line-height:1.5}
+.menupage kbd,.keydl kbd{display:inline-block;min-width:1.7em;padding:0 6px;border:1px solid var(--menu-line);border-bottom-width:2px;border-radius:6px;
+  background:var(--menu-chip);color:var(--menu-text);font:500 .92em/1.6 var(--font-mono);text-align:center}
+.keydl dd code{background:var(--menu-chip);color:var(--menu-text)}
+
+/* ---- level 2 · silent history ---------------------------------------------------------------------------------------- */
+.silent .slist details{border-top:1px solid var(--menu-line)}
+.silent .slist details:first-child{border-top:0;padding-top:0}
+.silent .slist summary{min-height:var(--menu-row-2)}
+.silent .slist .full{background:var(--menu-chip);color:var(--menu-text)}
+.silent .slist :is(.t,.s,.rep,.empty){color:var(--menu-muted)}
+
+/* ---- level 2 · 「这个网页版有多安全」 ---------------------------------------------------------------------------------- */
+#badge-panel .menucard ul{margin:0;padding-left:1.2em}
+#badge-panel .menucard li+li{margin-top:var(--sp-2)}
+#badge-panel .panel__head img{width:40px;height:40px}
+#badge-panel .hash{background:var(--menu-chip);color:var(--menu-text)}
+
+/* ---- the pages a Settings row opens (under the app header) --------------------------------------------------------- */
+body:is([data-view="mem"],[data-view="act"],[data-view="tasks"],[data-view="models"],[data-view="friends"],[data-view="bots"],[data-view="setup"]) .top{background:var(--menu-bg);border-bottom-color:var(--menu-line)}
+.ajpages :is(.mem-src,.task-card){background:var(--menu-panel);border-color:var(--menu-line)}
+.ajpages .mem-item{background:var(--menu-chip)}
+.ajpages .act-item{border-bottom-color:var(--menu-line)}
+.ajpages .tag{background:var(--menu-chip);color:var(--menu-text);border-color:var(--menu-line)}
+.ajpages :is(.tag-low,.tag-on){background:var(--c-shield-soft);color:var(--c-sooty)}
+
+/* ---- the ONE global centred card for confirmations / danger questions (P150 gdlg shell) ---------------------------- */
+.ajconfirm{--dbg:var(--c-lotion);--dfg:var(--c-sooty);background:rgb(20 20 20 / .42);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]) .ajconfirm{--dbg:var(--c-noir);--dfg:var(--c-lotion)}}
+:root[data-theme="dark"] .ajconfirm{--dbg:var(--c-noir);--dfg:var(--c-lotion)}
+.ajconfirm .box{width:min(88vw,360px);padding:26px 22px 18px;border-radius:36px;background:var(--dbg);color:var(--dfg);text-align:center;
+  box-shadow:0 18px 50px rgb(20 20 20 / .28);animation:menu-in .18s var(--re) both}   /* fade only: no scale, the geometry is final at once */
+.ajconfirm h2{font:600 calc(17px*var(--fz))/1.3 var(--font-title)}
+.ajconfirm p{color:inherit;opacity:.8}
+.ajconfirm .confirm-row .aj-btn{min-height:48px;border-radius:var(--ui-radius-pill);border:1.5px solid currentColor;background:none;color:inherit}
+.ajconfirm .confirm-row .aj-btn--primary{background:var(--dfg);color:var(--dbg);border-color:var(--dfg)}
+.ajconfirm .confirm-row .aj-btn--danger{background:var(--strawberry-field);color:var(--c-sooty);border-color:var(--strawberry-field)}
+.ajconfirm .confirm-row .aj-btn:focus-visible{outline:2px solid var(--dfg);outline-offset:3px}
+
+/* ---- P188 · 搜索聊天记录: a dark centred card over the chat (owner: 「在中间黑色的弹窗里显示……像 Google 一样的搜索窗口」) -------
+   The one menu surface that is NOT full screen: the chat stays visible around it, so the jump back to a page reads as one motion.
+   Menu colours (Sooty card, Lotion text, Milky Waves accent); rows = level-2 height; icon buttons = the header's. */
+.top .srchbtn svg{width:var(--ui-icon);height:var(--ui-icon)}
+.top .srchbtn[aria-expanded="true"],body[data-srch="1"] .top .srchbtn{background:var(--surface)}
+.srch{position:fixed;left:0;right:0;top:var(--vvtop,0px);height:var(--vvh,100dvh);z-index:46;display:grid;place-items:start center;
+  padding:max(var(--ui-space-section),env(safe-area-inset-top)) var(--ui-space-content) var(--ui-space-content);
+  background:rgb(20 20 20 / .46);backdrop-filter:blur(4px);-webkit-backdrop-filter:blur(4px);animation:menu-in var(--ui-dur) var(--ui-ease) both}
+.srch[hidden]{display:none}
+.srcard{color-scheme:dark;width:min(100%,40rem);max-height:100%;min-height:0;display:flex;flex-direction:column;
+  border:1px solid var(--menu-line);border-radius:var(--ui-radius-panel);background:var(--menu-bg);color:var(--menu-text);
+  box-shadow:0 24px 64px rgb(20 20 20 / .45);overflow:hidden;font:400 var(--ui-fs-small)/1.5 var(--font-body);touch-action:pan-y}
+@media (min-width:600px){ .srch{padding-top:12vh} .srcard{max-height:76vh} }
+.srhead{flex:none;display:flex;align-items:center;gap:var(--sp-1);min-height:var(--menu-head-h);padding:var(--sp-1) var(--sp-2);border-bottom:1px solid var(--menu-line)}
+.srhead h2{flex:1;min-width:0;margin:0;text-align:center;font:600 var(--ui-fs-body)/1.3 var(--font-title);color:var(--menu-text);
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.srhead .menuicon:disabled{opacity:.32;cursor:default;background:none}
+.srbox{flex:none;display:flex;align-items:center;gap:var(--ui-space-control);margin:var(--ui-space-content) var(--ui-space-content) 0;
+  min-height:var(--menu-row-2);padding:0 var(--ui-space-content);border:1px solid color-mix(in srgb,var(--menu-text) 42%,transparent);
+  border-radius:var(--ui-radius-pill);background:var(--menu-panel);color:var(--menu-muted)}
+.srbox:focus-within{border-color:var(--menu-accent);box-shadow:0 0 0 1px var(--menu-accent)}
+.srbox svg{width:var(--ui-icon);height:var(--ui-icon);flex:none}
+.srbox input{flex:1;min-width:0;min-height:var(--ui-tap);border:0;outline:0;background:none;color:var(--menu-text);font:400 var(--ui-fs-body)/1.3 var(--font-body)}
+.srbox input::placeholder{color:var(--menu-muted)}
+.srbox input::-webkit-search-cancel-button{filter:invert(1)}
+.srbar{flex:none;display:flex;align-items:center;flex-wrap:wrap;gap:var(--sp-2) var(--ui-space-control);padding:var(--ui-space-control) var(--ui-space-content) var(--sp-2)}
+.srsort{display:inline-flex;border:1px solid color-mix(in srgb,var(--menu-text) 42%,transparent);border-radius:var(--ui-radius-pill);overflow:hidden}
+.srsort button{min-height:var(--ui-tap);min-width:var(--ui-tap);padding:0 var(--ui-space-content);border:0;background:none;color:var(--menu-text);font:500 var(--ui-fs-small)/1 var(--font-body);cursor:pointer}
+.srsort button+button{border-left:1px solid color-mix(in srgb,var(--menu-text) 42%,transparent)}
+.srsort button[aria-pressed="true"]{background:var(--menu-text);color:var(--menu-bg)}
+.srstatus{flex:1;min-width:10rem;color:var(--menu-muted);font-size:var(--ui-fs-caption)}
+.srlist{flex:1;min-height:0;overflow-y:auto;overscroll-behavior:contain;padding:0 var(--sp-2) var(--sp-2);outline:0}
+.srempty{margin:var(--ui-space-content) var(--sp-2);color:var(--menu-muted)}
+.srhit{display:flex;flex-direction:column;align-items:stretch;gap:4px;width:100%;min-height:var(--menu-row-2);padding:var(--sp-2) var(--sp-2);
+  border:0;border-top:1px solid var(--menu-line);border-radius:0;background:none;color:var(--menu-text);text-align:left;cursor:pointer;font:inherit}
+.srhit:first-child{border-top:0}
+.srhit:hover,.srhit[aria-selected="true"]{background:var(--menu-chip);border-radius:var(--ui-radius-control)}
+.srhit:hover+.srhit,.srhit[aria-selected="true"]+.srhit{border-top-color:transparent}
+.srhit:active{background:var(--menu-press)}
+.srhit:focus-visible{outline:var(--ui-focus-w) solid var(--menu-accent);outline-offset:calc(-1 * var(--ui-focus-w));border-radius:var(--ui-radius-control)}
+.srmeta{color:var(--menu-muted);font-size:var(--ui-fs-caption);line-height:1.4}
+.srsnip{display:flex;gap:var(--sp-2);align-items:baseline;min-width:0;line-height:1.5}
+.srsnip>b{flex:none;padding:0 6px;border-radius:6px;background:var(--menu-chip);color:var(--menu-muted);font:600 var(--ui-fs-caption)/1.6 var(--font-body)}
+.srsnip[data-f="in"]>b{color:var(--menu-text)}
+.srsnip>span{min-width:0;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;overflow-wrap:anywhere}
+.srsnip mark,.srmark{background:color-mix(in srgb,var(--menu-accent) 34%,transparent);color:inherit;border-radius:3px;padding:0 1px}
+.srsnip mark{color:var(--menu-text);font-weight:600}
+/* the page a hit opened flashes once (the deck's two cards) */
+.srflash{animation:sr-flash 1.6s var(--ui-ease) both}
+@keyframes sr-flash{0%,60%{box-shadow:0 0 0 3px var(--menu-accent),0 0 24px color-mix(in srgb,var(--menu-accent) 60%,transparent)}100%{box-shadow:0 0 0 0 transparent}}
+@media (prefers-reduced-motion:reduce){.srch{animation:none}.srflash{animation:none;box-shadow:0 0 0 3px var(--menu-accent)}}

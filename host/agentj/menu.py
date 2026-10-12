@@ -44,6 +44,23 @@ FRIEND_DESC = {
     "en": {"add-friend": "Add a friend: /add-friend AJ-XXXX-XXXX-XXXX-XXXX [note]", "my-agent-id": "My Agent ID and share link"},
 }
 FRIEND_GROUP = {"zh": "好友", "en": "Friends"}
+# P155: /switch-harness goes to the main Agent (inserted like every menu item; the owner may add words before sending).
+# Also appended to an owner's own menu.json that lacks it, so the item never disappears.
+AGENT_DESC = {
+    "zh": {"switch-harness": "换底层 harness（Claude Code / Codex / OpenCode）：交给主 Agent，先检查、能用才切"},
+    "en": {"switch-harness": "Switch the harness (Claude Code / Codex / OpenCode): your main Agent checks first, switches only if it works"},
+}
+AGENT_GROUP = {"zh": "主 Agent", "en": "Main Agent"}
+
+
+def agent_items(lang: str = "zh") -> list[dict]:
+    d = AGENT_DESC.get(lang, AGENT_DESC["zh"])
+    return [{"cmd": "/" + c, "desc": d[c], "group": AGENT_GROUP.get(lang, "主 Agent")} for c in slash.AGENT_CMDS]
+# P158: `/goal` — inserted (it needs the goal after it); status / stop are answered by the host, the rest goes to the Agent.
+# Also added to an owner's own menu.json that lacks it, so goal mode is always one tap away.
+GOAL_ITEM = {"zh": {"cmd": "/goal", "desc": "目标模式：/goal <要做成什么，可含截止时间> · /goal status · /goal stop", "group": "命令"},
+             "en": {"cmd": "/goal", "desc": "Goal mode: /goal <what to finish, maybe by when> · /goal status · /goal stop",
+                    "group": "Commands"}}
 
 
 def _bad_text(s: str) -> bool:
@@ -107,7 +124,9 @@ def defaults(lang: str = "zh") -> list[dict]:
     d = DEFAULT_DESC.get(lang, DEFAULT_DESC["zh"])
     fd = FRIEND_DESC.get(lang, FRIEND_DESC["zh"])
     return ([{"cmd": "/" + c, "desc": d[c], "group": DEFAULT_GROUP.get(lang, "命令")} for c in slash.WHITELIST]
-            + [{"cmd": "/" + c, "desc": fd[c], "group": FRIEND_GROUP.get(lang, "好友")} for c in FRIEND_CMDS])
+            + [dict(GOAL_ITEM.get(lang, GOAL_ITEM["zh"]))]
+            + [{"cmd": "/" + c, "desc": fd[c], "group": FRIEND_GROUP.get(lang, "好友")} for c in FRIEND_CMDS]
+            + agent_items(lang))
 
 
 def read(workdir: str | None) -> tuple[dict | None, list[str]]:
@@ -138,7 +157,7 @@ def served(workdir: str | None, skills: list | None, lang: str = "zh") -> dict:
     doc, errs = read(workdir)
     sk = []
     for s in skills or []:
-        if isinstance(s, str) and CMD_RE.match("/" + s) and s not in slash.WHITELIST and s not in FRIEND_CMDS:
+        if isinstance(s, str) and CMD_RE.match("/" + s) and s not in slash.WHITELIST + FRIEND_CMDS + slash.AGENT_CMDS and s != "goal":
             sk.append({"cmd": "/" + s, "desc": ""})
     out = {"skills": sk[:200], "cmds": list(slash.WHITELIST)}
     if doc is None:
@@ -146,5 +165,9 @@ def served(workdir: str | None, skills: list | None, lang: str = "zh") -> dict:
         if errs:
             out["problems"] = [e[:200] for e in errs[:10]]
     else:
-        out.update(source="file", items=[{k: it[k] for k in ("cmd", "desc", "group") if k in it} for it in arrange(doc["items"])])
+        items = [{k: it[k] for k in ("cmd", "desc", "group") if k in it} for it in arrange(doc["items"])]
+        if not any(it.get("cmd") == "/goal" for it in items) and len(items) < MAX_ITEMS:
+            items.append(dict(GOAL_ITEM.get(lang, GOAL_ITEM["zh"])))
+        have = {it["cmd"] for it in items}
+        out.update(source="file", items=items + [it for it in agent_items(lang) if it["cmd"] not in have])
     return out

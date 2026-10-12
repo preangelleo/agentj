@@ -91,7 +91,8 @@ class FirstConnect(unittest.TestCase):
         down = _events(st, "relay_down")
         self.assertEqual(down[0]["phase"], "auth")
         self.assertLess(down[0]["ms"], 2000)                 # was: open 15 s + auth 10 s before anything happened
-        self.assertLess(accepts[1] - accepts[0], 0.6 + 1.2)  # challenge timeout + fast retry, no 1 s → 2 s back-off
+        # challenge timeout + fast retry (P193 B12: jittered ±25 % around 1 s), no 1 s → 2 s back-off (that would be ≥ 2.6 s)
+        self.assertLess(accepts[1] - accepts[0], 0.6 + 1.25 + 0.35)
         self.assertEqual(len(_events(st, "relay_up")), 1)
 
     def test_auth_deadline_close_logs_the_code_and_retries_fast(self):

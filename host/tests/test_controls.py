@@ -418,6 +418,9 @@ class Cli(unittest.TestCase):
                 if ok:
                     self.assertEqual(r.returncode, 0, (a, r.stdout, r.stderr))
                 return r
+            # P174: the default independent session needs a Claude login the service can use (placeholder, presence only)
+            (d / "cfg").mkdir()
+            (d / "cfg/.credentials.json").write_text("{}")
             run("init", "--relay", "ws://127.0.0.1:1")
             run("passphrase", "set", inp="pass-phrase-1\npass-phrase-1\n")
             run("agent", "claude", "--dir", str(work))

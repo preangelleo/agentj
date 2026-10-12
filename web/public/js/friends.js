@@ -108,7 +108,7 @@ function go(view, arg) {
   el('pages').scrollTop = 0;
 }
 export function back() {
-  if (V.view === 'list') { H.openPanel('chat'); return; }
+  if (V.view === 'list') { if (H.leave) H.leave(); else H.openPanel('chat'); return; }   // P187: up one level (Settings when opened there)
   if (V.view === 'detail') go('chat', V.friend);
   else if (V.view === 'group') go('groups');
   else go('list');

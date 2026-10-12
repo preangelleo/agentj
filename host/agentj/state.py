@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import contextlib
 import fcntl
+import hashlib
 import hmac
 import json
 import os
@@ -14,6 +15,7 @@ from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
 from . import diskq, wire
+from .devnames import device_label, device_names, platform_of  # noqa: F401  (P179; re-exported)
 from .envcompat import getenv
 from .noise import Keypair
 from .text import agent_name_problem, normalise_agent_name
@@ -24,7 +26,8 @@ OLD_DEFAULT_RELAY = "wss://alpha-relay.agentjarvis.net"   # ≤ 0.9 defaults: re
 OLD_DEFAULT_WEB = "https://alpha-web.agentjarvis.net"
 DEFAULT_STATE = "~/.local/state/agentj"
 LEGACY_STATE = "~/.local/state/agentjarvis-alpha"   # ≤ 0.9; after the move (migrate.py) a symlink to DEFAULT_STATE
-MAX_DEVICES = 5   # remotes per host = per seat (Q32, 2026-10-02); enforced here, in the one writer of the allowlist
+MAX_DEVICES = 10  # remotes per host = per seat (Q32 2026-10-02: 5; P171 2026-10-12 Leo: 10 — four colleagues × phone + computer
+#                   = 8, plus room); enforced here, in the one writer of the allowlist
 
 
 class DeviceLimit(Exception):
@@ -195,17 +198,59 @@ class State:
         finally:
             os.close(fd)
 
-    def rename_device(self, device: str, name: str) -> bool:
-        """Owner metadata only, under the same allowlist lock as pairing/revocation."""
+    def rename_device(self, device: str, name: str, via: str = "account") -> bool:
+        """Owner metadata only, under the same allowlist lock as pairing/revocation. P179: the new name is the owner's
+        (`owner_name` + when + through which entry: "account" = account page passkey, "phone" = that remote itself);
+        the device's own pairing label stays in `self_name`."""
         if not isinstance(name, str) or not 1 <= len(name.strip()) <= 64 or any(ord(c) < 32 or ord(c) == 127 for c in name):
             raise ValueError("invalid device name")
         with self.devices_lock():
             devices = self.devices()
             if device not in devices:
                 return False
-            devices[device]["name"] = name.strip()
+            rec = devices[device]
+            n = device_names(rec)
+            if n["self_name"] is not None:
+                rec["self_name"] = n["self_name"]
+            rec["name"] = rec["owner_name"] = name.strip()
+            rec["owner_named_at"] = int(time.time())
+            rec["owner_named_via"] = via if via in ("account", "phone") else "account"
             self.write_private(self.devices_path, json.dumps(devices).encode())
         return True
+
+    def migrate_device_names(self) -> int:
+        """P179, once per record: a pre-P179 allowlist entry has only `name`. If the audit log shows the owner set exactly
+        that name (an allowed account-page `device_name` decision for this device and this name), it is the owner's name
+        and the device's own label is unknown; otherwise it is the device's own label. Returns how many records changed."""
+        def legacy(v):
+            return isinstance(v, dict) and "self_name" not in v and "owner_name" not in v
+        if not any(legacy(v) for v in self.devices().values()):
+            return 0
+        approved = set()
+        with contextlib.suppress(OSError):
+            for line in self.approvals_path.read_text(encoding="utf-8", errors="replace").splitlines():
+                try:
+                    r = json.loads(line)
+                except ValueError:
+                    continue
+                if isinstance(r, dict) and r.get("tool") == "device_name" and r.get("decision") == "allow":
+                    approved.add(r.get("input_sha256"))
+        changed = 0
+        with self.devices_lock():
+            d = self.devices()
+            for did, v in d.items():
+                if not legacy(v):
+                    continue
+                name = str(v.get("name", ""))
+                digest = hashlib.sha256(json.dumps({"device": did, "name": name}, sort_keys=True).encode()).hexdigest()
+                if name.strip() and digest in approved:
+                    v["owner_name"], v["owner_named_at"], v["owner_named_via"], v["self_name"] = name, 0, "account", None
+                else:
+                    v["self_name"] = name
+                changed += 1
+            if changed:
+                _write_private(self.devices_path, json.dumps(d, indent=1, ensure_ascii=False).encode())
+        return changed
 
     def add_device(self, pub: bytes, name: str, sign_pub: bytes | None = None) -> str:
         """sign_pub = the device's Ed25519 approval key (PROTOCOL §8), sent inside the encrypted pairing msg1."""
@@ -224,16 +269,23 @@ class State:
         replaced = evicted = None
         with self.devices_lock():
             d = self.devices()
+            earlier = d.get(did)        # P179: the same device / browser pairing again keeps the name its owner gave it
             if did not in d and iid:
                 twin = next((k for k, v in d.items() if isinstance(v, dict) and v.get("iid") == iid), None)
                 if twin:
-                    replaced = _brief(twin, d.pop(twin), online)
+                    earlier = d.pop(twin)
+                    replaced = _brief(twin, earlier, online)
             if did not in d and len(d) >= MAX_DEVICES:
                 if not evict:
                     raise DeviceLimit(len(d))
                 victim = evict_order(d, online)[0]
                 evicted = _brief(victim, d.pop(victim), online)
-            rec = {"pub": wire.b64u(pub), "name": name, "paired_at": int(time.time()), "source": source}
+            rec = {"pub": wire.b64u(pub), "name": name, "self_name": name, "paired_at": int(time.time()), "source": source}
+            kept = device_names(earlier) if isinstance(earlier, dict) else None
+            if kept and kept["named_by"] == "owner":
+                rec["name"] = rec["owner_name"] = kept["owner_name"]
+                rec["owner_named_at"] = kept["owner_named_at"]
+                rec["owner_named_via"] = earlier.get("owner_named_via", "account")
             if sign_pub:
                 rec["sk"] = wire.b64u(sign_pub)
             if iid:
@@ -536,7 +588,7 @@ class State:
         # fence (L2): on unless `--unfenced` or (F14) the preference agent.isolation=false (CLI or a paired phone)
         # docker (G-A56): the container engines stay hidden unless `--allow-docker` or agent.allow_docker=true
         # effort (PROMPT-33 §10.11): the phone's pill; a short word the harness validates, or None (its default)
-        from . import preferences
+        from . import preferences, session_choice
         prefs = preferences.effective(self)
         root = preferences.get(prefs, "agent.working_root")
         directory = os.path.realpath(os.path.expanduser(root)) if root else a["dir"]
@@ -549,7 +601,7 @@ class State:
                 "effort": e if isinstance(e, str) and e.isalpha() and len(e) <= 16 else None,
                 "fence": a.get("fence") is not False and preferences.get(prefs, "agent.isolation", True) is not False,
                 "docker": a.get("docker") is True or preferences.get(prefs, "agent.allow_docker", False) is True,
-                "session_mode": preferences.get(prefs, "agent.session_mode", "shared"),
+                "session_mode": session_choice.mode_in(self, prefs),
                 "shared_session_id": preferences.get(prefs, "agent.shared_session_id", ""),
                 "shared_opencode_port": preferences.get(prefs, "agent.shared_opencode_port", 0),
                 "high_risk_warnings": preferences.get(prefs, "agent.high_risk_warnings", False),

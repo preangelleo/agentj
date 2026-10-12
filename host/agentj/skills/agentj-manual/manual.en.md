@@ -17,6 +17,8 @@ remotes. Both are required:
 
 Other phones, tablets or computers can wait: when you want one, tell Agent J "pair another one" and it walks you through.
 
+Every remote is connected to the same Agent and shows the same conversation: start on your phone, carry on in the browser on your computer. Remotes are for one person's devices; a colleague who wants in gets a seat of their own, the way everyone in an office gets their own desk. See [Seat, Agent and host](https://agentj.app/docs/what/#desk).
+
 On the first remote, the first message comes from Agent J itself: it introduces itself as your chief-of-staff assistant,
 the single entry point between you and every workflow and agent, and suggests you talk to it in this window from now on.
 Then it shows you the window in a few small steps — the screen colours, the quota lines and the water level, voice and
@@ -46,7 +48,9 @@ runs in the background, and scheduled tasks, never change it.
 （Screenshot：Purple: a question for you — https://agentj.app/docs/manual/question.en.webp）
 （Screenshot：Grey: the computer is offline — https://agentj.app/docs/manual/offline.en.webp）
 - The icon in the top-left corner follows the state too. Tap it to change the text size (medium → large → medium →
-  small); hold it to reset.
+  small); hold it to reset. The size is remembered on this phone and survives a reload.
+- With the message box empty, press and hold the grey Send button: a send-sound volume slider grows up out of it. Slide
+  up for louder, down for quieter, and let go to keep it.
 - The small line at the top says the same state in words.
 - The phone gives a short buzz whenever the state changes.
 
@@ -81,10 +85,20 @@ compaction and handoff page.
 `/clear` wipes the whole conversation and starts fresh; it asks first and can be undone. To keep your progress, use
 `/compact`, not `/clear`.
 
+## Heartbeat: the Agent checks in by itself
+
+After a quiet spell (default 60 minutes) Agent J wakes the Agent on your computer to look at background work and your
+to-dos. All fine → nothing reaches the phone. Something to tell you → a short page labelled **Heartbeat check**. Say
+"check every 30 minutes" or "stop waking up on a timer" to change it, or use Settings → Heartbeat. Every heartbeat costs
+one model call. See the Heartbeat page in the docs.
+
 ## One message per page — swipe through them
 
 Each page shows what you said at the top and the Agent's reply below. Swipe right for older pages, left for newer ones;
-1 / 1 in the corner is the page number and total.
+1 / 1 in the corner is the page number and total. A page turn is a quick flick that starts the moment your finger lands;
+hold still for a third of a second and then drag, and you are selecting text instead — that never turns the page, nor does
+dragging a selection's handles. While a long reply scrolls, the name, the load line and the robots stay pinned at the top of
+the card.
 
 The buttons under a reply, left to right:
 
@@ -98,21 +112,48 @@ The buttons under a reply, left to right:
 
 Select some text in a reply to quote just that part.
 
-The name at the top left of the reply card is the name you gave your Agent (change it with `agentj name` on your computer). Sometimes a few coloured dots appear at the top right, slowly blinking: each one is an Agent working for you in the background — a workflow CEO, or a helper the main Agent sent out. One dot per worker; a dot goes away when its work is done. Tap the dots and a square opens in the middle of the screen: how many Agents are at work, who is watching them for you, and who each dot is and what it is doing. ESC or a tap outside closes it.
+The name at the top left of the reply card is the name you gave your Agent. Press and hold it to rename the Agent — the same as `agentj name` on your computer; the new name shows on the phone and the computer. Sometimes a few little pixel robots dance at the top right: each one is an Agent working for you in the background — a workflow CEO, or a helper the main Agent sent out. New work brings a new robot; a robot whose work is done takes a bow and floats away. A phone shows up to 6 side by side, then +N. Tap the robots and a square opens in the middle of the screen: how many Agents are at work, who is watching them for you, and all of them listed — each row its robot, who, and what it is doing (the whole task title, with an ellipsis if it is too long). Tap a row to open that Agent's own card: where it runs, how long it has been working, its latest step, and for a background dispatch the report path and the report's first line; the card is only for looking, and Back returns to the list. Sub-agents sent out by Claude Code, Codex and OpenCode all show up this way. At its bottom, "Change the look" sends the Agent a message from you asking to customize the look, and it asks how you want the robots, colours, logo or send button to change, then validates the theme before applying it. Pressing and holding the robots does the same. ESC or a tap outside closes it. The robot gallery and the display rules: [Background robots](https://agentj.app/docs/robots/).
+
+The thin grey line under the name is the load line: a darker patch glides along it, and the faster it glides, the busier your computer is — if it is racing and your message can wait, wait a little. Tap the line and a square in the middle of the screen explains it: the overall load right now, then five rows — CPU, memory, GPU, disk and network: disk is how busy reads and writes are plus the space left, network is what goes in and out per second. Without a graphics card, or when it cannot be read, the row says "— (not detected)". The five are measured every 2–3 s only while the square is open and stop when it closes, so they cost your computer nothing otherwise. Last, how fast idle, normal and busy look (about 6 s, 3 s and 1 s a sweep). It stands still while the phone is disconnected.
 
 Replies are laid out for you:
 
-- **Code** is syntax-highlighted and scrolls sideways when wide.
+- **Code** is syntax-highlighted and scrolls sideways when wide; a code block has a copy button at its top right. A short
+  shaded command inside the text (inline code) copies with one tap ("Copied"), ready to paste into a terminal.
 - **Maths** (LaTeX) shows as formulas.
 - **Diagrams** (mermaid) are drawn as pictures.
 - **Images, audio, video, PDFs, web pages and other files the Agent mentions** show up right in the reply, as long as
-  they are inside its working folder: tap an image to enlarge it, play audio and video in place, open PDFs, preview web
-  pages in a safe frame (no scripts run there), and download or share other files to Files.
+  they are inside its working folder: tap an image to enlarge it, play audio and video in place, preview web pages in a
+  safe frame (no scripts run there). Under every file card is one row of icons: preview, download, share, forward by email,
+  forward to Telegram. Small files load by themselves once they are on screen; big ones load on a tap (the button shows the
+  size), and nothing loads by itself on data saver or a cellular connection. Preview opens full screen: PDFs, Word (docx),
+  Excel (xlsx), CSV tables, Markdown, code and text show right there; kinds it can't show yet, such as PowerPoint, offer the
+  download. On a computer, select a card and press Space to preview; Space or Esc closes it.
 - Files that are too large, outside the working folder, or that may hold secrets (such as `.env` or `.pem`) are never
   sent to the phone — the reply gets one line saying why. Image links to the web are never opened automatically.
 
 （Screenshot：A picture, a formula and highlighted code in a reply — https://agentj.app/docs/manual/rich.en.webp）
 （Screenshot：Further down: a diagram, a file to download and a line about a file that was not sent — https://agentj.app/docs/manual/rich-more.en.webp）
+### Search the chat
+
+The magnifier left of Settings at the top right (`⌘K` / `Ctrl+K` on a computer) opens the search: type words into the dark
+card in the middle of the screen and it searches what you sent, quotes, attachment names and the Agent's replies at once.
+Separate words with spaces; a page matches when all of them appear. Case, full-width / half-width and Traditional /
+Simplified Chinese do not matter.
+
+Results come in best-match order — more hits, hits in what you sent, at the start or in the first line, the whole phrase or
+an exact match rank higher, and recent pages a little higher — or switch to "Newest". Each result shows who sent it, when,
+and the matching snippet with the words marked. Pages already on the phone show at once; older pages that are only on the
+computer are added a moment later.
+
+Tap a result: the card closes and the chat turns to that page, which flashes once. Tap the magnifier again to get back to
+the same results at the same scroll position. Every search is kept as a page (up to 20): swipe sideways in the card (`←`
+`→` or the `‹` `›` buttons on a computer) to go back to earlier searches; the top line says "Search N of M: words". These
+searches stay on this phone, encrypted like your drafts, and are cleared with the conversation (`/clear`) or when you
+unpair.
+
+On the computer: `agentj history search <words>`.
+
 ## Sending messages
 
 - Type and tap send, or press Enter. Until the Agent has it, you can cancel the send.
@@ -142,14 +183,15 @@ With Codex, as long as you never wrote `sandbox_mode` at the top of `~/.codex/co
 （Screenshot：Attachments and a quote above the message box — https://agentj.app/docs/manual/attach.en.webp）
 - Three buttons above the message box: file, photo library, camera. You can also paste an image, or drag files in on a
   computer browser.
-- Up to 10 attachments at a time, 25 MB each. Very long pasted text becomes an attachment automatically.
+- Hold "File" to paste the clipboard's text at the cursor; longer than 2,000 characters, it becomes a .txt attachment. Hold "Photos" to add the clipboard's image as an attachment. An iPhone may first show its own small paste bubble — tap it.
+- Up to 10 attachments at a time, 200 MB each, of any file type. Recordings and videos are transcribed on your computer and the Agent gets the original too. Very long pasted text becomes an attachment automatically.
 - Attachments travel encrypted straight to your computer, into the Agent's working folder, and are removed after 30 days.
 
 ## Voice: hold to talk, release for text
 
 （Screenshot：Hold to talk: recording — https://agentj.app/docs/manual/voice.en.webp）
-- Hold the microphone and speak; release and the words appear in the message box for you to check. Slide up to cancel.
-- For a long take, double-tap the microphone to lock it; tap once more to finish.
+- Hold the microphone and speak; release and the words appear in the message box for you to check. To cancel, slide clearly off the button (about 80 px away, or up by more than a button's height) and let go there; a shaky hand or a small move does not cancel, and sliding back keeps recording.
+- For a long take, double-tap the microphone to lock it; tap once more to finish. A quick or a slower double tap (within half a second) both count.
 - Speech is turned into text **on your own computer**, never by us. If the computer has no speech model yet, your phone
   keyboard's dictation works too.
 - To have every reply read aloud, turn on auto-read in Settings.
@@ -178,6 +220,9 @@ The two commands in the "Friends" group are put into the message box when tapped
 | `/my-agent-id` | Your computer answers with your Agent ID (tap the code block to copy it), the share link and an "Open my card" button; never goes to the AI, costs no tokens |
 | `/add-friend ID [note]` | Add a friend: signed by this phone like "Add friend" on the friends page; a mistyped character is caught at once; without an ID it opens "Add friend" |
 
+The "Main Agent" group has the command to switch the AI coding tool (`/switch-harness`); it is also put into the message box: send it as it is, or add "switch to Codex" first. It does not switch at once; it goes to your main Agent, which says which kind of tool it means, scans which ones this computer has, tries each one's sign-in with a quick headless call and tells you which ones you can switch to. It switches only after you confirm. The phone disconnects for a few seconds and reconnects by itself, then the new tool introduces itself; if it does not come up, Agent J switches back by itself and tells you why. See [Switch AI coding tool](https://agentj.app/docs/switch-harness/).
+Want commands of your own? Tap `/customize` in the list, or press and hold ≡: it sends the Agent a message from you asking to customize your slash commands; it lists the current ones, asks what to add, remove or change, and only switches the change on after it validates.
+
 The menu also has "Stop everything" and the Agent's own skills. Other commands, such as changing settings, are for the
 computer. See [Agent friends](https://agentj.app/docs/friends/).
 
@@ -188,10 +233,18 @@ The model and effort at the top: tap to switch to the next one, hold to go back 
 ### Approval card (orange)
 
 When the Agent wants to do something that needs your yes, the screen turns orange and a card slides up saying what it
-wants to do. Tap deny to refuse; to approve, **press and hold** the approve button for about a second, until it fills.
+wants to do. To approve, **press and hold** the approve button for about a second, until it fills; it comes first (on top on a phone,
+on the left on a computer). Tap deny to refuse. The card goes away as soon as you answer, and comes back to explain if
+the answer did not arrive or the request had timed out. A long command shows two lines: "Show all" opens it, and the
+copy button at the right of the title copies the whole command. On a computer, `⌘↩` (Mac) or `Ctrl↩`
+(Windows / Linux) approves, the same as the hold; `Esc` tucks the card away.
 No answer within 2 minutes counts as a no. You can tuck the card away; a small tag at the top keeps reminding you.
 
 In a shared session a card marked "Shows passwords or keys" would print a credential on the screen, and one marked "Changes passwords or keys" would change it; a program reading `.env` by name, or a note that mentions `.env`, no longer asks. For the stricter old rule run `agentj config approvals strict` on the computer (`agentj config approvals standard` switches back). Cards use only your language setting.
+
+Only real danger asks: the five kinds ask on a clear match (`git push`, a deploy, a payment or messaging API, deleting cloud data, writing a credential file); writing an ordinary note (words like deploy or key inside a heredoc don't count), `--dry-run`, `list`, `status`, `systemctl --user` for your own background jobs and `sleep` wait loops don't. A command Agent J can't read clearly (the program is a variable like `$PY`) is first checked by Jev when it is set up (`OPENROUTER_API_KEY` on the computer): at or above "Jev threshold" in Settings (default 0.70, 0.50–0.95) it runs without a card and is logged in Activity. The threshold never affects the five clear dangers — they always ask. Too many cards? Tell the Agent; it explains and runs `agentj config set approval.jev_threshold 0.6` (one confirmation card on the phone).
+
+Goal mode (`/goal`): tap `/goal` in the ≡ menu and add what to finish and by when. The Agent first sends one opening card with the goal, how you'll know it's done, the deadline and the dangerous actions it needs (by kind, with limits, e.g. "push to repository X", "spend: one domain only"); approve it once and those actions stop asking for the rest of the goal, each one logged in Activity. Outside the grant, a step the computer can undo shows a 10-second countdown card that counts as yes if you don't tap; anything that can't be undone or looks like an attack waits for you and is listed in the result card at the end. `/goal status` shows progress, `/goal stop` withdraws the grant at once; a goal ends after 8 hours by default. For a company or team, switch off "Goal mode: approve in 10 s" under Settings → Safety.
 
 （Screenshot：Tucked away: a small tag stays at the top — https://agentj.app/docs/manual/approval-later.en.webp）
 ### Question card (purple)
@@ -247,17 +300,24 @@ approvals are withdrawn and scheduled tasks pause. The screen turns grey with a 
 ## Settings
 
 （Screenshot：Settings — https://agentj.app/docs/manual/settings.en.webp）
-The gear in the top-right corner opens Settings (on a computer browser: `s`, or `⌘,` / `Ctrl+,`): language, reply text
-size, auto-read, wake word, appearance, lock-screen alerts, how updates happen; safety options (high-risk warnings,
-session mode, isolation, Docker); the versions, the paired computer and phones, and unpairing. The phone must be
-connected to the computer to change settings.
+The gear in the top-right corner opens Settings, full screen (on a computer browser: `s`, or `⌘,` / `Ctrl+,`; Esc
+closes it). It is the only menu: Agent & remotes (the Agent's name, Remotes, Face ID, unpairing); Agent tools (Models & Key,
+Memory — rules the Agent keeps, you can delete them —, Activity — what it did recently and who approved what —, Schedules,
+Friends, Bots, the first-run checklist); language and appearance; reply text size, send sound volume, auto-read, wake word;
+lock-screen alerts; safety options (high-risk warnings, session mode, isolation, Docker); the web app (how updates happen,
+versions, update and reload, Add to Home Screen, keyboard shortcuts); account, help, and the security, privacy and terms
+pages. The phone must be connected to the computer to change settings.
 
-## Menu (top right)
+Every menu — Settings and the pages it opens, ≡ All commands, keyboard shortcuts, silent history, "How safe is this web app?" — is a full-screen dark page with the same header, icons and buttons. The back arrow at the top left does what Esc does: one level up, so a page opened from Settings returns to Settings. Confirmations and risky actions still ask in a centred card.
 
-（Screenshot：Menu — https://agentj.app/docs/manual/menu.en.webp）
-The three lines in the top-right corner open the menu: Memory (rules the Agent keeps; you can delete them), Activity (what
-it did recently and who approved what), Scheduled tasks, lock-screen alerts, language, appearance, and the security,
-privacy and terms pages.
+## Remotes
+
+（Screenshot：Remotes — https://agentj.app/docs/manual/remotes.en.webp）
+Settings → Remotes is its own page: how many of the 10 remotes are in use, every paired phone or browser (online or not,
+when paired and last used, how it was added; this one marked "This one"), Rename and Unbind on each row, and "Add a remote":
+a one-time QR / link for 5 minutes; the new device shows a 6-digit code, you type it here and tap Approve (one try).
+
+The scan icon at the top right (or holding the camera button) reads QR codes: a new device's pairing code adds it as a remote (both screens show the same 6 digits; tap "They match — add it" only if they do); any other code goes into the message field as text, never opened or sent by itself. A new device needs no computer: open m.agentj.app and the code at the top is for a paired phone to scan. The "Web app" tag now lives in Settings → "How safe is this web app?".
 
 ## Keyboard shortcuts
 
@@ -268,15 +328,17 @@ use most:
 | Key | What it does |
 |---|---|
 | `i` / `Esc` | Enter the message box / close the current overlay; keep the draft when no overlay is open |
+| `/` | Outside the message box: jump into it with `/` already typed, which opens the command menu; not while a dialog or Settings is open |
 | `j` / `k` · `←` `→` | Previous / next page; in the message box `←` `→` turn the page too when it is empty or the cursor is already at that end |
-| `↑` / `↓` | Outside the message box: expand / fold the message (same as `o`); inside it they still bring back what you sent before |
-| `f` or double-tap the card | Full-screen reading |
+| `↑` / `↓` | Outside the message box: expand / fold the message (same as `o`, and as double-tapping the message card above); inside it they still bring back what you sent before |
+| `f` or double-tap the reply | Full-screen reading |
 | `y` `y` | Copy the whole reply |
 | `r` | Reply to this one |
 | `a` `p` `c` | File · photo library · camera |
 | hold `m` | Hold to talk, release for text |
 | `Esc` `Esc` | Outside the message box: clear text and attachments. Esc never interrupts the Agent — to stop the current task, use the stop button or send `/stop` |
 | `s` | Open Settings |
+| `⌘↩` / `Ctrl↩` | With an approval card open: approve, the same as holding the approve button (the card wins over the message box) |
 
 ## Pairing and Face ID
 
@@ -318,6 +380,7 @@ Agent J is the only Agent you deal with, so most things are a sentence, not a bu
 - "Redo that", "Say it differently": it redoes the last answer another way.
 - "Open the xx project": it finds that project in your work folder.
 - "Compact": handover first, then compaction.
+- "Switch to Codex", "back to Claude Code": switches the AI coding tool — checked first, switched only if it works. See [Switch AI coding tool](https://agentj.app/docs/switch-harness/).
 - "I want to report a problem": it shows you what would be sent and sends only with your OK.
 - "Send my card to Kai", "What did Kai say lately?": it manages your Agent friends, see [Agent friends](https://agentj.app/docs/friends/).
 - On long jobs it sends you a one-line progress note now and then.
@@ -357,6 +420,8 @@ The 5h line remains visible at 1%; 0% has a start marker. “5h —” means no 
 
 ## Shared sessions
 
+New installs use an independent session: Agent J starts its own and leaves your terminal tools alone. Sharing the session you already have open on the computer is optional — Settings → Session mode, or `agentj config set agent.session_mode shared` (back: `… independent`).
+
 When you enter or switch to a shared Claude Code, Codex or OpenCode session, the phone shows a one-time notice that fades after 3.5 seconds. Refreshing or reconnecting to the same session does not repeat it. Read-only conflicts, failed sends and requests that need your action remain visible.
 
 Which session the phone talks to: by default the Claude Code session open in your work folder. If several are open there, run `agentj agent claude` on the computer: it lists them with their names and first messages and lets you pick one. Nothing changes on the phone.
@@ -388,6 +453,8 @@ Shared Claude ingress: startup and doctor repair the effective writable layer to
 
 0.18.1: Valid older Telegram enrollment continues with its local bot environment name. Huawei HarmonyOS devices have accurate names; account owners can rename a remote with a passkey while its host is online.
 
+Renaming a remote: press and hold the source at the top left of the input card (half a second) to rename the remote in your hand; other remotes and the account page show the new name right away. Only the owner can rename other remotes, on the account page. A remote the owner renamed shows that name and its device type as the message source (for example "Alex (boss) · iOS Safari"), marked "(name set by the owner)"; a tap shows the name the device gave itself. Remotes nobody renamed are marked "(name set by the device)". The Agent uses the owner's name to tell who is speaking, but the name is only a label, not proof of identity. A double tap at the top left still goes to the first message.
+
 ## Sandbox failures and admin commands
 
 If an independent session's sandbox cannot start, the Agent stays stopped. The phone card explains the cause (such as missing bubblewrap) and repair. Tap **Run this launch without isolation** and verify with the owner's passkey to allow this launch only; the next launch checks isolation again. This launch may access local files and credentials. Set up a passkey in the phone menu if needed. Denial or timeout never starts the Agent.
@@ -401,3 +468,8 @@ Forwarded messages in the owner’s Telegram private chat are external data, not
 Group text and captions are checked before attachments are downloaded. Proxy groups do not download attachments; family attachments are refused when the rules match. Each group sender has a 40 MiB download budget per UTC hour across groups, preserved across restarts. Unknown sizes reserve the per-file maximum. Paused group messages cannot start Agent tools. Friend cards allow up to 64 characters for the name, 32 for the owner and 140 for the introduction. A credential-shaped value in supplementary context rejects the whole edit; use ordinary background information.
 
 Support bots process Telegram private chats independently, preserving order within each chat. Text over 2000 characters gets a fixed request to shorten it without a model call. Customer text and model suggestions in support reports are data for summarising and diagnosis, never owner instructions.
+
+## Getting help
+
+- When your Agent can report the problem itself, have it use `agentj support` to ask our support desk; you don't have to find a person. See [Getting help from the support desk](https://agentj.app/docs/support/).
+- If it can't connect at all (offline, the install failed, it can't reach our servers), or agentj.app won't open (for example in mainland China), email feedback@agentj.app — email gets through from anywhere. Include your account ID, what happened and when, and a screenshot.

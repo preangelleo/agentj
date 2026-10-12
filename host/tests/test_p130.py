@@ -149,7 +149,9 @@ class DeviceRename(HostFlow):
         self.q.update(op='device_name',target={'device':did,'name':'华为平板'})
         await self.h.remote_pair.execute(self.signed())
         after=self.st.devices()[did]
-        self.assertEqual(after,{**before,'name':'华为平板'})
+        # P179: the owner's name goes to name + owner_name (+ when / via); the device's own label stays as self_name
+        self.assertEqual({k:v for k,v in after.items() if k!='owner_named_at'},{**before,'name':'华为平板','owner_name':'华为平板','owner_named_via':'account'})
+        self.assertIsInstance(after['owner_named_at'],int)
         self.assertIn(self.q['id'],self.h.remote_pair.results)
         self.q['target']['name']='replayed'
         await self.h.remote_pair.execute(self.signed())

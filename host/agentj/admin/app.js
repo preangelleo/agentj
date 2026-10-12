@@ -14,7 +14,7 @@ const DENY = new Set(['code_mismatch', 'denied', 'timeout', 'abandoned', 'bad_ha
   'no_pending_device', 'gone', 'replaced', 'serve_gone', 'relay_down', 'cancelled', 'pass_locked', 'pass_not_set']);
 const ERRS = new Set(['serve_not_running', 'serve_busy', 'pair_failed', 'relay_down', 'unbind_first', 'no_pending_device',
   'unknown_device', 'serve_gone', 'passphrase_required', 'bad_code', 'passphrase_not_set']);
-const NAME_ERRS = new Set(['name_required', 'bad_name', 'name_taken', 'unreachable', 'not_bound', 'rate_limited', 'failed']);
+const NAME_ERRS = new Set(['name_required', 'bad_name', 'name_too_long', 'name_taken', 'unreachable', 'not_bound', 'rate_limited', 'failed']);
 
 const SESSION_KEY = 'aj_admin_session';
 let session = null;
@@ -216,6 +216,7 @@ function renderPairing(s) {
     // P127: a bound + online host without a passphrase is approved on the account page (passkey): no code / passphrase here
     const viaAccount = passkeyOnly(s);
     show('pair-pending-account', viaAccount);
+    show('pair-remote-confirm', s.devices.length > 0);   // P153: the card also pops up on every paired remote
     show('pair-local-approve', !viaAccount);
     show('pair-approve', !viaAccount);
     show('pair-pass-unset', s.passphrase_set === false && !viaAccount);

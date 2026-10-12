@@ -11,8 +11,8 @@ leading bytes against the declared type, then:
     a voice recording also keeps its verified bytes as `<bid>.voice` here, which say-time transcription reads (P33-C02);
   * `asr`: leaves the WAV in the uploads dir for the transcriber (serve) and deletes it after.
 Every table is keyed by (device id, bid): another device can neither guess nor touch an id. Limits (both ends): size 1 …
-25 MiB (asr ≤ 630 s of 16 kHz mono PCM16), ≤ 20 staged + ≤ 2 open per device, ≤ 200 MiB staged + partial per device, the
-inbox ≤ 2 GiB. No signature (§10.15): an upload changes nothing the Agent sees until a `say` of the same device names it.
+200 MiB (P166: a one-hour recording fits; asr ≤ 630 s of 16 kHz mono PCM16), any well-formed MIME (inbox.accepts), ≤ 20
+staged + ≤ 2 open per device, ≤ 600 MiB staged + partial per device, the inbox ≤ 2 GiB. No signature (§10.15): an upload changes nothing the Agent sees until a `say` of the same device names it.
 """
 from __future__ import annotations
 
@@ -28,13 +28,13 @@ from dataclasses import dataclass, field
 
 from . import inbox, wire
 
-MAX_SIZE = 25 * 1024 * 1024
+MAX_SIZE = 200 * 1024 * 1024           # P166: ≥ one hour of phone audio (m4a ≈ 30–120 MiB/h); the relay paces ≈ 1 MB/s
 ASR_MAX = 44 + 630 * 16_000 * 2          # 20 160 044: 630 s of 16 kHz mono PCM16 + the 44-byte header
 CHUNK = 45_056                           # raw bytes per chunk → 60 075 base64url chars → one 60 160-byte padded frame
 ACK_EVERY = 4
 MAX_STAGED = 20
 MAX_OPEN = 2
-DEVICE_BYTES = 200 * 1024 * 1024
+DEVICE_BYTES = 600 * 1024 * 1024
 STAGED_TTL = 30 * 60
 PARTIAL_TTL = 30 * 60
 NAME_MAX = 128
@@ -160,7 +160,8 @@ class Uploads:
 
     @staticmethod
     def is_recording(b: Blob) -> bool:
-        return b.purpose == "att" and b.origin == "recording" and b.mime.startswith("audio/")
+        """Audio or video the say transcribes (P166: any origin — a picked m4a as well as a recording)."""
+        return b.purpose == "att" and inbox.media_kind(b.mime)
 
     def _save(self, b: Blob) -> None:
         self._dir(b.device)
@@ -283,7 +284,7 @@ class Uploads:
                 self._forget(old)                                     # any field differs → start again from 0
             else:
                 return [self._err(bid, "shape")]
-        if mime not in inbox.ALLOWED or (purpose == "asr" and mime not in WAV_MIMES):
+        if not inbox.accepts(mime) or (purpose == "asr" and mime not in WAV_MIMES):
             return [self._err(bid, "type")]
         if size < 1:
             return [self._err(bid, "empty")]

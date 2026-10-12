@@ -227,6 +227,12 @@ class H(BaseHTTPRequestHandler):
                                                 "item": {"type": "user", "payload": {"text": body["text"]}, "delivery": "steer"}})
                 threading.Thread(target=work, args=(sid, body["text"]), daemon=True).start()
                 return self._send(200, {"data": {"id": iid, "sessionID": sid, "type": "user"}})
+            if rest == ["synthetic"] and method == "POST":     # P159 (2.0.27): hidden input, admitted without a run on resume false
+                if not isinstance((body or {}).get("text"), str):
+                    return self._send(400, {"_tag": "InvalidRequestError", "message": "text"})
+                iid = nid("msg")
+                s["messages"].insert(0, {"id": iid, "type": "synthetic", "text": body["text"], "time": {"created": int(time.time() * 1000)}})
+                return self._send(200, {"data": {"id": iid, "sessionID": sid, "type": "synthetic"}})
             if rest == ["interrupt"] and method == "POST":
                 s["interrupt"] = True
                 return self._send(200, {"interrupted": True})

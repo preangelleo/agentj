@@ -34,7 +34,7 @@ TITLE = "Agent J shared"
 
 
 def public_text(text: str) -> str:
-    return redact(text, paths=True)   # owner channel, same as shared.public_text (P127)
+    return redact(text, owner=True)   # owner channel, same as shared.public_text (P127 / P167)
 
 
 def switch_shared(agent, version) -> bool:
@@ -61,6 +61,9 @@ class SharedOpenCodeV2Agent(OpenCodeV2Agent):
     def launch_argv(self, argv):
         from .provider_runtime import shared_launch
         return shared_launch(self, argv)
+
+    def _reminder_main(self) -> bool:
+        return bool(self.owned_server)    # P159: the owner's own server keeps its own identity → only the language reminder
 
     async def _identity(self) -> None:
         if self.owned_server:

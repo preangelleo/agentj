@@ -23,7 +23,7 @@ import secrets
 import threading
 import time
 
-from . import browser, browser_sites as bs
+from . import bg, browser, browser_sites as bs
 from .browser_cdp import CDP, CDPError, capture_qr, present
 
 CTX = "agentj.login.v1"
@@ -318,7 +318,7 @@ class LoginCards:
         self.st.log("login_qr_done", id=c["id"], site=c["site"], result=result)
         done = {"t": "login_qr_done", "id": c["id"], "site": c["site"], "result": result}
         with contextlib.suppress(RuntimeError):
-            asyncio.get_running_loop().create_task(self.host._send_ready(lambda s: done))
+            bg.spawn(self.host._send_ready(lambda s: done), "login_qr_done", bg.host_log(self.host))   # P192 (B13)
 
     def end_all(self, result: str) -> None:
         for c in list(self.cards.values()):

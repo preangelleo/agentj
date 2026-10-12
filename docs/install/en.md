@@ -54,7 +54,7 @@ The AI opens a feedback channel first, so it can tell us if a later step goes wr
 
 ### Step 3: Check the prerequisites
 
-The AI checks your system, `curl`, `git`, `uv` and, on Linux, bubblewrap (a Mac has what it needs built in). It also looks at which AI coding tools are installed and signed in, and asks whether you use an iPhone or an Android phone.
+The AI checks your system, `curl`, `git`, `uv` and, on Linux, bubblewrap (a Mac has what it needs built in). It also looks at which AI coding tools are installed and signed in. Whether you use an iPhone or an Android phone it asks only at Step 11, where the answer matters.
 
 On Ubuntu 24.04 the check also reads the AppArmor user-namespace restriction and starts a real isolation probe. A restriction value of `1` is compatible with a working bubblewrap profile. You may need to approve installing bubblewrap; if the probe is still blocked, the diagnostic gives the exact `/etc/apparmor.d/bwrap-agentj` profile for `/usr/bin/bwrap` only. It does not replace an existing profile or disable the system-wide restriction. The installation assistant checks before starting the background service, pauses on failure and keeps its resume record. Fix the policy and rerun the original command. The cloud-server section of the [installation guide](https://agentj.app/install.md) has the commands.
 
@@ -69,7 +69,7 @@ It may need you here:
 The AI installs `agentj`, the program on your computer, at one fixed version:
 
 ```bash
-uv tool install "git+https://github.com/preangelleo/agentj@v0.18.4a1#subdirectory=host"
+uv tool install "git+https://github.com/preangelleo/agentj@v0.20.0a1#subdirectory=host"
 agentj doctor
 ```
 
@@ -113,9 +113,10 @@ A local approval passphrase is optional for offline or unbound use. Set it yours
 
 ### Step 9: Connect the AI coding tool
 
-The AI runs `agentj agent detect --json` to see which AI coding tools are usable. If there is exactly one, it uses that. If there are more, it asks you which one — it never picks for you.
+The AI first finds out what it can by itself, then asks you once, in one short message, only what you have to decide. Each line carries its recommendation: reply "OK" to take them all.
 
-It also asks which folder the Agent should work in. For a first try a new, empty folder such as `~/agentj-work` is best. Then:
+- **Which AI coding tool.** `agentj agent detect --json` shows which ones are usable. Exactly one → it uses that and doesn't ask. More than one → it lists them and you choose; this is the one question without a recommendation, because it never picks for you.
+- **Which folder the Agent works in.** It looks for a folder you already use for your projects (such as `~/coding`) and recommends it; with none, it recommends creating `~/coding`. For a first try a new, empty folder such as `~/agentj-work` is fine too. Then:
 
 ```bash
 agentj agent claude --dir ~/agentj-work
@@ -127,7 +128,11 @@ For Codex replace `claude` with `codex`. OpenCode also needs the model:
 agentj agent opencode --dir ~/agentj-work --model zhipuai/glm-5.3
 ```
 
-The Agent runs in a fenced-off space: it keeps your own sign-in and settings, but it cannot reach the keys and settings of `agentj` itself. The AI also looks for local services on your computer that already trust you (a browser's debugging port, for example) and tells you in one sentence what the fence can't stop. It installs the workflow design wizard too; once your phone is paired, say "帮我设计工作流" (help me design my workflows) on the phone to start it.
+The Agent runs in a fenced-off space: it keeps your own sign-in and settings, but it cannot reach the keys and settings of `agentj` itself. The AI also looks for local services on your computer that already trust you (a browser's debugging port, for example) and tells you in one sentence what the fence can't stop.
+
+It doesn't ask whether your browsers are signed in to email, shops or your bank. Here is why that matters and why it needn't ask: the phone's Agent works as you, so if a browser on this computer has a debugging port open, the Agent can drive it and use every site signed in there. But paying, placing an order or moving money on any website always stops and asks you on the phone first, whatever you are signed in to — so the answer would change nothing. If such a port is open, the AI names it.
+
+It installs the workflow design wizard too; once your phone is paired, say "帮我设计工作流" (help me design my workflows) on the phone to start it.
 
 Two things in this step the AI always does, never skips: it asks you which folder the Agent works in, and it tells you, in a message of its own, what the fence can't stop. It goes on once you've read it.
 
@@ -156,7 +161,7 @@ The link is the pairing key: it works once, for 5 minutes. Never send it through
 The AI asks you to:
 
 1. send "list the files in this folder" from the phone and check that a reply comes back;
-2. ask it to create a test file and delete it. A card pops up on the phone: press and hold "Hold to approve" for about a second, until the button fills up. Deleting always needs your own OK, so that card's button is "Hold to approve this one". With Codex, the AI tells you what to expect;
+2. ask it to create a test file and delete it. A card pops up on the phone: press and hold "Hold to approve" for about a second, until the button fills up. Deleting always needs your own OK, so that card is marked ⚠; the button is still "Hold to approve". With Codex, the AI tells you what to expect;
 3. tap "Turn on lock-screen alerts" if you want them.
 
 Then the AI asks whether it may send us a short "finished" report — how long it took and what was awkward. You see the text first; say no, and it isn't sent.

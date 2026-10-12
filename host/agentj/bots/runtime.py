@@ -17,6 +17,11 @@ from .visitor import VisitorSession,public
 from .engine import Engine,UNAVAILABLE
 
 ISSUER=wire.unb64u('XwR9RvhcZ3uFFDthatG1_eDojDdyYPyDHIWwxFOeeTQ')
+# P193 (B7): a relay that advertises `renew` keeps the host socket on a fresh ticket every RENEW_EVERY seconds and keeps
+# visitors who spoke within VISITOR_IDLE; an older relay still gets the legacy reconnect before the 300 s ticket ends.
+RENEW_EVERY=60
+VISITOR_IDLE=1800
+LEGACY_RECONNECT=240
 
 class Runtime:
     def __init__(self,manager):
@@ -77,17 +82,33 @@ class Runtime:
                 ticket,epoch=await self.register(bid)
                 url=self.host.cfg['relay'].rstrip('/')+'/b/'+bid+'/h'
                 async with connect(url,max_size=16405,ping_interval=20,open_timeout=15) as ws:
-                    challenge=json.loads(await asyncio.wait_for(ws.recv(),10))['challenge']
+                    hello=json.loads(await asyncio.wait_for(ws.recv(),10));challenge=hello['challenge'];renewable=hello.get('renew')==1
                     if not isinstance(challenge,str) or len(challenge)>64:raise BotError('relay_challenge')
                     proof=wire.b64u(self.host.sk.sign(('agentjarvis/bot-relay-host-v1\n'+bid+'\n'+challenge).encode()))
                     await ws.send(json.dumps({'ticket':ticket,'proof':proof}))
-                    sessions={};jobs=set();send_lock=asyncio.Lock()
+                    sessions={};seen={};jobs=set();send_lock=asyncio.Lock()
                     async def send(cid,data):
                         async with send_lock:await ws.send(bytes([1])+struct.pack('>I',cid)+data)
                     async def disconnect(cid):
                         async with send_lock:await ws.send(bytes([2])+struct.pack('>I',cid))
                     async def refresh_lease():
-                        while True:await asyncio.sleep(60);await self.register(bid)
+                        while True:
+                            await asyncio.sleep(RENEW_EVERY)
+                            # A failed registration is retried next round; the relay closes the socket at expiry and we reconnect.
+                            try:fresh,current=await self.register(bid)
+                            except Exception:continue
+                            if current!=epoch:await ws.close();return
+                            if not renewable:continue
+                            now=time.monotonic()
+                            for c in [c for c in seen if c not in sessions]:seen.pop(c,None)
+                            claim=fresh.get('claim') if isinstance(fresh,dict) else None
+                            until=claim.get('expires') if isinstance(claim,dict) else None
+                            async with send_lock:
+                                await ws.send(json.dumps({'renew':fresh}))
+                                for cid in [c for c in sessions if now-seen.get(c,0)<=VISITOR_IDLE]:
+                                    # The visitor's own session follows the same renewed admission as its relay socket.
+                                    if type(until) is int:sessions[cid][0].expires=max(sessions[cid][0].expires,until)
+                                    await ws.send(bytes([3])+struct.pack('>I',cid))
                     lease=asyncio.create_task(refresh_lease())
                     async def handle(cid,session,cap,obj):
                         try:
@@ -98,8 +119,8 @@ class Runtime:
                         except Exception:result={'status':'refused','text':UNAVAILABLE}
                         with contextlib.suppress(Exception):await send(cid,session.cipher.seal({'t':'reply','r':obj.get('r','') if 'obj' in locals() else '',**result}))
                     try:
-                        # Host relay ticket has finite TTL. Reconnect uses a new proof and clears session keys.
-                        async with asyncio.timeout(240):
+                        # Host relay ticket has finite TTL: renewed in place when the relay supports it, else reconnect (new proof, session keys cleared).
+                        async with asyncio.timeout(None if renewable else LEGACY_RECONNECT):
                             async for raw in ws:
                                 if not isinstance(raw,bytes) or len(raw)<5:raise BotError('relay_frame')
                                 op,cid=raw[0],struct.unpack('>I',raw[1:5])[0]
@@ -109,13 +130,14 @@ class Runtime:
                                     try:answer=session.accept(json.loads(raw[5:]))
                                     except Exception:await disconnect(cid);continue
                                     vid,cap=self.manager.state().admit_visitor(bid,session.visitor);session.visitor=vid
-                                    sessions[cid]=(session,cap);self.active[(bid,vid)]=(cid,session,send)
+                                    sessions[cid]=(session,cap);seen[cid]=time.monotonic();self.active[(bid,vid)]=(cid,session,send)
                                     await send(cid,canonical(answer).encode())
                                 elif op==1 and cid in sessions:
                                     session,cap=sessions[cid]
                                     try:obj=session.decode(raw[5:])
                                     except BotError:
                                         self.active.pop((bid,session.visitor),None);sessions.pop(cid,None);await disconnect(cid);continue
+                                    seen[cid]=time.monotonic()
                                     if len(jobs)>=20:
                                         await send(cid,session.cipher.seal({'t':'reply','r':obj['r'],'status':'refused','text':UNAVAILABLE}));continue
                                     task=asyncio.create_task(handle(cid,session,cap,obj));jobs.add(task);task.add_done_callback(jobs.discard)

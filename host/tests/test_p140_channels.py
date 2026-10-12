@@ -126,7 +126,7 @@ class Intake(_Base):
         with tempfile.TemporaryDirectory() as d, patch('agentj.telegram.api',return_value={'file_path':'photos/file.png'}), \
                 patch('urllib.request.build_opener') as opener,patch.dict(os.environ,{'P140_FAKE_TOKEN':'not-a-live-key'}):
             opener.return_value.open.return_value=Response(b'x'*9)
-            with self.assertRaisesRegex(ValueError,'Telegram download failed'):
+            with self.assertRaisesRegex(ValueError,'^size$'):     # P166: the reason code (never the URL)
                 tg.download({'key_env':'P140_FAKE_TOKEN'},media,str(pathlib.Path(d)/'file'))
             opener.return_value.open.return_value=Response(b'x'*8)
             with patch('agentj.uploads.magic_ok',return_value=True):

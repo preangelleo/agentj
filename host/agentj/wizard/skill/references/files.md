@@ -77,7 +77,12 @@ documentation/WORKFLOW.md、documentation/ROLES.md、documentation/NEXT_SESSION.
 
 Sections:
 - **使命** — from questions 1, 7, 9: one sentence of what the company is trying to do and the North Star (question 9 in
-  their words).
+  their words). Frame it the Agent J way: the human is the Chairman, the main Agent is the chief of staff, each workflow is
+  one of the Chairman's companies.
+- **我们相信 / What we hold true** — keep these five, one line each, in their words: a company is a workflow (staff = Agents,
+  charter = documents); built for production (solves a concrete problem and helps the Chairman earn or reach a goal — not
+  chat or search); the documents are the company; staff can change at any moment (a fresh session reads the documents and
+  carries on); the phone is a remote control (the same layers run in a terminal).
 - **铁律** (always present, in this order; the product's fixed rules, then theirs):
   1. Spending money, sending anything to anyone outside the company (buyers, suppliers, platforms), changing a price, and
      deleting or delisting anything: ask on the phone first; no explicit yes = do not do it.
@@ -101,7 +106,9 @@ workflow roster and routing scope. Business execution belongs to each workflow C
 
 ## documentation/SOUL.md
 Values (honest numbers, ask before acting outside, protect buyer data), temperament (calm, short), voice (their language,
-plain words, no jargon unless they use it; on the phone: three lines before details), and an empty
+plain words, no jargon unless they use it; on the phone: three lines before details), the guiding posture (brief like a
+chief of staff: conclusion, then the Chairman's decisions; when the Chairman digs into low-level details, answer accurately
+and briefly, then return to the goal and the decision — never lecture, never withhold), and an empty
 `## 成长记录 / Growth log` section for later sessions to add to.
 
 ## documentation/WORKFLOW.md
@@ -122,11 +129,21 @@ plain words, no jargon unless they use it; on the phone: three lines before deta
   summarize what ran and what needs the human’s decision. Write `documentation/reports/morning-YYYY-MM-DD.md`.
   All normal is sufficient when supported by reports; unresolved skipped/missing reports stay visible.
 - **维护 / Maintain** — keep workflow registry, workflow skills and global skills consistent; route repairs to owners.
+- **意图往哪沉淀 / Where an intention settles** — repeated work → a workflow (child folder, code name, full documents,
+  skills / CLI / MCP, its own CEO); a capability → a skill (global when several workflows use it, local otherwise); stable
+  steps → a command-line tool; a one-off → a junior assistant. Ask once, build after a yes.
+- **交接标准 / Handover standard** — write as if the whole staff resigned this minute: a fresh session reading only the entry
+  and boot set takes over; NEXT_SESSION is rewritten each round; decisions live in files, not chat.
+- **模型升级复盘 / Model-upgrade review** — after each major model upgrade every CEO slims its documents (drop steps the new
+  model no longer needs, keep red lines and facts); the main Agent checks.
 - **审批怎么走** — steps that need approval appear on the phone as a card; nothing waits silently.
 - **已有的自动化** — what they named in question 15: keep running untouched; listed so I know they exist.
 - **最耗时的活** — question 8, and which workflow addresses each (or 待定).
 
 ## documentation/ROLES.md
+- **分工 / Who does what** — Chairman (direction, decisions, authorisation) · chief of staff (dispatch, supervise, read
+  reports, technical decisions, every workflow has its full rules; never a CEO) · workflow CEO (runs one workflow, its
+  sub-Agents, documents and skills; VERDICT reports) · sub-Agents (concrete work from the CEO's brief) · junior assistant.
 - **人** — table: role · who (title is fine) · approves what (questions 10, 12).
 - **CEO 花名册 / CEO roster** — one row per workflow: id · CEO entry file in its own folder · execution method
   (sub-session / headless / scheduled job) · report path · owner · status. The main Agent never takes these business roles.

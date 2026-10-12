@@ -8,6 +8,7 @@ import { createServer } from 'node:http';
 import { createHash, randomBytes, webcrypto } from 'node:crypto';
 import { Handshake, IK, IKPSK2, generateKeypair } from '../../protocol/noise.js';
 import * as wire from '../../protocol/wire.js';
+import * as S from '../../protocol/search.js';   // P188: hist_find
 
 const { KIND, b64u, unb64u, frame, pairPrologue, resumePrologue, safetyCode, channelId, deviceId } = wire;
 const EMPTY = new Uint8Array(0);
@@ -95,11 +96,12 @@ export async function startFakeHost() {
   const fixtures = {};              // fixtures[t] = (req) => answer | [answers] (memory / activity / tasks / estop)
   const st = {
     p33: true, asr: 'ready', asrText: '这是转写出来的文字', asrWhy: null, sayMode: 'delivered', autoReply: true, replyFor: null,
-    asrTexts: [], asrDelays: [], sayDelay: 0, stallAfter: 0, blobErr: null, slashes: [],
+    asrTexts: [], asrDelays: [], sayDelay: 0, stallAfter: 0, blobErr: null, slashes: [], resWatch: [], res: null, renames: [], renameWhy: null,
     epoch: 1, nextId: 1, turns: [], blobs: new Map(), staged: new Set(), queued: new Map(), opens: [], cancels: [], answers: [],
     qAnswers: [], chunks: 0, wavs: [], menu: null, models: null, meter: null, sigOk: [], says: [], modelSets: [], rate: true,
     firsts: [], errors: [],
     prefs: null, prefSet: true, prefSets: [], version: null,
+    hfind: true, finds: [], findMute: false, findDelay: 0, olderDelay: 0,   // P188: the host answers hist_find (false = an older host)
   };
 
   // one ordered send queue per connection: CipherState nonces must hit the socket in the order they were taken
@@ -160,13 +162,25 @@ export async function startFakeHost() {
       if(c.removed){await sendApp(c,{t:'removed',why:'revoked'});return c.close(4010);}
       c.p33 = st.p33 && Array.isArray(m.caps) && m.caps.includes('p33');
       c.hello = m;
-      await sendApp(c, st.p33 ? { t: 'ready', caps: ['p33', ...(st.heartbeat ? ['heartbeat'] : []), ...(st.tgfwd ? ['tgfwd'] : [])], asr: st.asr, hist: 'on' } : { t: 'ready' });
+      await sendApp(c, st.p33 ? { t: 'ready', caps: ['p33', ...(st.heartbeat ? ['heartbeat'] : []), ...(st.tgfwd ? ['tgfwd'] : []), ...(st.busyget ? ['busyget'] : []), ...(st.hfind ? ['hfind'] : []), ...(st.caps || []), ...(st.extraCaps || [])], asr: st.asr, hist: 'on' } : { t: 'ready' });
       c.isReady = true;
       return afterReady(c);
     }
     if (!c.isReady) return;
     if (st.onApp && await st.onApp(c, m, (o) => sendApp(c, o))) return;   // a test's own handler (P57 media: media_get)
     if (st.friends && /^(fr_|pg_)/.test(m.t)) return onFriends(c, m);     // §17.7 (0.16): the friends page
+    if (st.remotes && /^dev_/.test(m.t)) return onRemotes(c, m);            // P171 §24: 遥控器管理
+    if (m.t === 'res_watch') { st.resWatch.push(m.on); if (m.on && st.res) await sendApp(c, { t: 'res', ...st.res }); return; }   // P181 §22.1
+    if (m.t === 'agent_name') {                                              // P181 §22.2: signed like the real host
+      const ok = await verifyControl(c, 'agent_name', m, { name: m.name });
+      st.renames.push({ name: m.name, sigOk: ok });
+      if (!ok) return sendApp(c, { t: 'ctl_res', r: m.r, action: 'agent_name', ok: false, why: 'bad_signature' });
+      if (st.renameWhy) { const why = st.renameWhy; st.renameWhy = null; return sendApp(c, { t: 'ctl_res', r: m.r, action: 'agent_name', ok: false, why, suggestions: ['小J', '阿J'] }); }
+      const name = m.name.trim();
+      await sendApp(c, { t: 'ctl_res', r: m.r, action: 'agent_name', ok: true, name });
+      for (const x of ready()) await sendApp(x, { t: 'status', s: 'idle', agent: 'claude', name });
+      return;
+    }
     if (m.t === 'msg') { st.says.push(m); if (st.autoReply) await sendApp(c, { t: 'msg', id: randomBytes(8).toString('hex'), text: 'echo: ' + m.text, ts: Date.now(), from: 'agent', seq: ++st.seq }); return; }
     if (m.t === 'say') return onSay(c, m);
     if (m.t === 'say_cancel') {
@@ -183,6 +197,8 @@ export async function startFakeHost() {
     }
     if (m.t === 'blob_open' || m.t === 'blob_chunk' || m.t === 'blob_end' || m.t === 'blob_drop') return onBlob(c, m);
     if (m.t === 'hist_get') {
+      // P188: a slow page-back that does not hold up the messages behind it (a real host answers reads independently)
+      if (st.olderDelay && Number.isInteger(m.before) && !m.delayed) { setTimeout(() => onData(c, { ...m, delayed: true }).catch(() => {}), st.olderDelay); return; }
       let ts = st.turns.slice();
       if (Number.isInteger(m.before)) ts = ts.filter((x) => x.id < m.before);
       if (Number.isInteger(m.after)) ts = ts.filter((x) => x.id > m.after);
@@ -191,6 +207,20 @@ export async function startFakeHost() {
       ts = Number.isInteger(m.after) ? ts.slice(0, lim) : ts.slice(-lim);
       const mm = meta();
       return sendApp(c, { t: 'hist_page', r: m.r, epoch: st.epoch, first: mm.first, last: mm.last, count: mm.count, turns: ts, more });
+    }
+    if (m.t === 'hist_find') {       // P188 (§28): the host's search, with protocol/search.js (the Python host mirrors it)
+      (st.finds = st.finds || []).push(m);
+      if (st.findMute) return;
+      const ts = S.terms(typeof m.q === 'string' ? m.q : '');
+      if (!ts.length || !['score', 'time'].includes(m.sort || 'score')) return sendApp(c, { t: 'hist_found', r: m.r, error: 'shape' });
+      const silent = (t) => (t.reply && t.reply.text || '').trim() === '\u3014\u4e0d\u56de\u7fa4\u3015' || (t.card && t.card.withdrawn === true);
+      const found = st.turns.filter((t) => !silent(t)).map((t) => { const f = S.fieldsOf(t.src, t.reply); return { t, f, r: S.scoreFields(f, ts) }; }).filter((x) => x.r);
+      found.sort((a, b) => (m.sort === 'time' ? 0 : b.r.score - a.r.score) || b.t.id - a.t.id);
+      const lim = Math.min(50, m.limit || 50);
+      const hits = found.slice(0, lim).map(({ t, f, r }) => ({ id: t.id, ts: t.ts, src: Object.fromEntries(Object.entries(t.src).filter(([k]) => ['k', 'dev', 'name', 'via', 'local'].includes(k))),
+        score: r.score, where: r.where, snip: Object.fromEntries(r.where.map((w) => [w, S.snippet(f[w], ts)])) }));
+      if (st.findDelay) await new Promise((res) => setTimeout(res, st.findDelay));
+      return sendApp(c, { t: 'hist_found', r: m.r, epoch: st.epoch, sort: m.sort || 'score', hits, n: found.length, more: found.length > hits.length });
     }
     if (m.t === 'tg_fwd') {          // P118 (B10): the owner's one-tap Telegram forward; st.tgfwdWhy = a one-shot refusal
       (st.tgFwds = st.tgFwds || []).push(m);
@@ -209,12 +239,32 @@ export async function startFakeHost() {
       st.answers.push(m);
       const ok = await verifyAnswer(c, m);
       st.sigOk.push(ok);
+      if (st.holdAnswers) return;                                  // P154: a slow host — the test sends ask_done itself
       if (ok) { st.asksOpen.delete(m.id); await broadcast({ t: 'ask_done', id: m.id, result: m.ok ? 'allow' : 'deny' }); }
       return;
     }
     if (m.t === 'q_answer') {
       st.qAnswers.push(m);
       return broadcast({ t: 'question_done', id: m.id, result: m.cancel ? 'cancelled' : 'answered' });
+    }
+    if (typeof m.t === 'string' && m.t.startsWith('mail_')) {   // P170: Settings → 邮件通道 (a host-shaped view; never a real mailbox)
+      (st.mailMsgs = st.mailMsgs || []).push(m);
+      const v = st.mail = st.mail || { config: { enabled: false, preset: '', address: '', username: '', imap: { host: '', port: 993, security: 'ssl' },
+        smtp: { host: '', port: 465, security: 'ssl' }, poll_minutes: 5, auth: 'standard', auth_servid: '', allow: [], reply_per_hour: 20 },
+      has_password: false, last_check: null, last_ok: null, error: null, today: {}, blocked: [{ addr: 'stranger@else.example', why: 'not_allowed', at: 1 }],
+      auth_sample: null, presets: [
+        { id: 'qq', name: 'QQ 邮箱', imap: { host: 'imap.qq.com', port: 993, security: 'ssl' }, smtp: { host: 'smtp.qq.com', port: 465, security: 'ssl' }, domains: ['qq.com'], note: '网页版 QQ 邮箱 → 设置 → 账号 → 开启 IMAP/SMTP 服务 → 生成授权码。' },
+        { id: '163', name: '网易 163 邮箱', imap: { host: 'imap.163.com', port: 993, security: 'ssl' }, smtp: { host: 'smtp.163.com', port: 465, security: 'ssl' }, domains: ['163.com'], note: '设置 → POP3/SMTP/IMAP → 新增授权密码。' },
+        { id: 'custom', name: '其他邮箱（手动填写）', imap: { host: '', port: 993, security: 'ssl' }, smtp: { host: '', port: 465, security: 'ssl' }, domains: [], note: '向邮箱服务商查服务器。' }] };
+      if (m.t === 'mail_set') {
+        const c = { ...v.config, ...m.cfg };
+        const p = v.presets.find((x) => x.id === c.preset);
+        if (m.cfg.preset && p && p.id !== 'custom') Object.assign(c, { imap: p.imap, smtp: p.smtp, username: c.address });
+        v.config = c;
+      }
+      if (m.t === 'mail_key') v.has_password = true;
+      if (m.t === 'mail_test') v.auth_sample = { checked: 5, with_results: 5, servid: 'mx.qq.com' };
+      return sendApp(c, { t: 'mail_res', r: m.r, ok: true, view: v, ...(m.t === 'mail_test' ? { test: { imap: 'ok', smtp: 'ok', auth_sample: v.auth_sample } } : {}) });
     }
     if (m.t === 'pref_set') {                       // F13 · C6 / Amendment A1: user-tier whitelist only; older hosts (prefSet:false) ignore it
       st.prefSets.push(m);
@@ -296,6 +346,42 @@ export async function startFakeHost() {
     await broadcast({ t: 'fr_changed', friend: m.friend ?? null });
   }
 
+  // ---- P171 §24 遥控器管理: dev_list answered from st.remotes ({limit, items, can_add, qr, link, code, why}); the four writes are
+  // verified like the real host (§8 control signature), applied and answered ctl_res; every write is recorded in .writes.
+  function remotesSnap(c) {
+    const R = st.remotes;
+    return { t: 'devs', limit: R.limit ?? 10, can_add: R.can_add !== false, busy: !!R.busy,
+      items: R.items.map((d) => ({ ...d, me: d.id === c.devId || d.me === true && !R.items.some((x) => x.id === c.devId) })) };
+  }
+  async function onRemotes(c, m) {
+    const R = st.remotes;
+    const reply = (o) => sendApp(c, { ...o, r: m.r });
+    if (m.t === 'dev_list') { if (R.silent) return; return reply(remotesSnap(c)); }
+    if (m.t === 'dev_cancel') { R.cancels = (R.cancels || 0) + 1; R.adding = false; return reply({ t: 'ctl_res', action: 'dev_cancel', ok: true }); }
+    const TARGET = { dev_name: () => ({ device: m.device, name: m.name }), dev_unbind: () => ({ device: m.device }), dev_add: () => ({}),
+      dev_confirm: () => ({ device: m.device, code: m.code }) };
+    if (!TARGET[m.t]) return;
+    const ok = await verifyControl(c, m.t, m, TARGET[m.t]());
+    (R.writes ||= []).push({ ...m, sigOk: ok });
+    if (!ok) return reply({ t: 'ctl_res', action: m.t, ok: false, why: 'bad_signature' });
+    if (R.why) { const why = R.why; R.why = null; return reply({ t: 'ctl_res', action: m.t, ok: false, why }); }
+    const d = R.items.find((x) => x.id === m.device);
+    if (m.t === 'dev_name') { if (!d) return reply({ t: 'ctl_res', action: m.t, ok: false, why: 'gone' }); d.name = m.name.trim(); }
+    if (m.t === 'dev_unbind') { if (!d) return reply({ t: 'ctl_res', action: m.t, ok: false, why: 'gone' }); R.items = R.items.filter((x) => x !== d); }
+    if (m.t === 'dev_add') { R.adding = true; return reply({ t: 'ctl_res', action: m.t, ok: true, link: R.link, qr: R.qr, expires: Math.floor(Date.now() / 1000) + 300, ttl: 300 }); }
+    if (m.t === 'dev_confirm') {
+      if (!R.pending || R.pending.device !== m.device) return reply({ t: 'ctl_res', action: m.t, ok: false, why: 'gone' });
+      if (m.code !== R.code) { R.pending = null; R.adding = false; return reply({ t: 'ctl_res', action: m.t, ok: false, why: 'code_mismatch' }); }
+      R.items.push({ id: R.pending.device, name: R.pending.name, paired_at: Math.floor(Date.now() / 1000), seen: 0, online: true, source: 'phone' });
+      const p = R.pending; R.pending = null; R.adding = false;
+      await reply({ t: 'ctl_res', action: m.t, ok: true, device: p.device, name: p.name });
+      for (const x of ready()) await sendApp(x, remotesSnap(x));
+      return;
+    }
+    await reply({ t: 'ctl_res', action: m.t, ok: true });
+    for (const x of ready()) await sendApp(x, remotesSnap(x));
+  }
+
   // the `preferences` message; a 0.15 host adds its `host` block (version, phone-settable keys, paired phones — metadata)
   function prefsMsg(value = st.prefs) {
     const m = { t: 'preferences', value, problem: null };
@@ -351,9 +437,10 @@ export async function startFakeHost() {
     if (m.t === 'blob_open') {
       const old = st.blobs.get(m.bid);
       if (!old || old.size !== m.size || old.sha !== m.sha256 || old.mime !== m.mime) {
-        if (!TYPES.includes(m.mime)) return sendApp(c, { t: 'blob_err', bid: m.bid, why: 'type' });
+        // P166 (= host inbox.accepts): any well-formed MIME; st.legacyTypes = a host before P166 (its allowlist, 25 MiB)
+        if (st.legacyTypes ? !TYPES.includes(m.mime) : !ANY_MIME.test(m.mime)) return sendApp(c, { t: 'blob_err', bid: m.bid, why: 'type' });
         if (st.blobErr) { const why = st.blobErr; st.blobErr = null; return sendApp(c, { t: 'blob_err', bid: m.bid, why }); }
-        if (m.size > 26214400) return sendApp(c, { t: 'blob_err', bid: m.bid, why: 'too_big' });
+        if (m.size > (st.legacyTypes ? 26214400 : 209715200)) return sendApp(c, { t: 'blob_err', bid: m.bid, why: 'too_big' });
         st.blobs.set(m.bid, { size: m.size, sha: m.sha256, mime: m.mime, name: m.name, purpose: m.purpose, origin: m.origin, secs: m.secs, parts: [], got: 0, n: 0,
           kind: /^image\//.test(m.mime) ? 'image' : /^audio\//.test(m.mime) ? 'audio' : 'file' });
       }
@@ -462,7 +549,7 @@ export async function startFakeHost() {
       for (const c of conns) if (c.awaiting) {
         c.awaiting = false; c.mode = 'resume'; allow.set(b64u(c.devPub), { sk: c.sk });
         c.p33 = st.p33 && Array.isArray(c.helloCaps) && c.helloCaps.includes('p33');
-        await sendApp(c, st.p33 ? { t: 'approved', caps: ['p33', ...(st.heartbeat ? ['heartbeat'] : []), ...(st.tgfwd ? ['tgfwd'] : [])], asr: st.asr, hist: 'on' } : { t: 'approved' });
+        await sendApp(c, st.p33 ? { t: 'approved', caps: ['p33', ...(st.heartbeat ? ['heartbeat'] : []), ...(st.tgfwd ? ['tgfwd'] : []), ...(st.busyget ? ['busyget'] : []), ...(st.hfind ? ['hfind'] : []), ...(st.caps || []), ...(st.extraCaps || [])], asr: st.asr, hist: 'on' } : { t: 'approved' });
         c.isReady = true; c.hello = null;
         await afterReady(c);
       }
@@ -484,6 +571,9 @@ export async function startFakeHost() {
     async ask(m) { st.asksOpen.set(m.id, m); await broadcast({ t: 'ask', ...m }); },
     /** §17.7: turn the friends responder on with a state (sampleFriends()) — st.friends.writes / .refused record what came in */
     friends(state) { st.friends = state; return state; },
+    /** P171 §24: turn the 遥控器管理 responder on (st.remotes); remotePending() = a new device reached its safety code */
+    remotes(state) { st.remotes = state; return state; },
+    async remotePending(device, name, extra = {}) { st.remotes.pending = { device, name }; await broadcast({ t: 'dev_pending', device, name, deadline_in: 120, limit: st.remotes.limit ?? 10, ...extra }); },
     async askDone(id, result) { st.asksOpen.delete(id); await broadcast({ t: 'ask_done', id, result }); },
     setUp(v) {
       up = v;
@@ -504,11 +594,13 @@ export async function startFakeHost() {
     kick(code = 1001) { for (const c of conns) c.close(code); },
     /** back to an empty host between test blocks (pairings and allowlist stay) */
     reset() {
-      Object.assign(st, { p33: true, asr: 'ready', asrText: '这是转写出来的文字', asrWhy: null, asrTexts: [], asrDelays: [], sayMode: 'delivered', sayDelay: 0,
+      Object.assign(st, { extraCaps: [], p33: true, asr: 'ready', asrText: '这是转写出来的文字', asrWhy: null, asrTexts: [], asrDelays: [], sayMode: 'delivered', sayDelay: 0,
         autoReply: true, replyFor: null, epoch: st.epoch + 1, turns: [], blobs: new Map(), staged: new Set(), queued: new Map(), opens: [], cancels: [],
         answers: [], qAnswers: [], chunks: 0, wavs: [], menu: null, models: null, meter: null, sigOk: [], says: [], modelSets: [], slashes: [],
         stallAfter: 0, blobErr: null, sayWhy: null, estop: false, rate: true, firsts: [], errors: [], lastError: undefined,
-        prefs: null, prefSet: true, prefSets: [], version: null, friends: null, tgfwd: false, tgfwdWhy: null, tgFwds: [] });
+        prefs: null, prefSet: true, prefSets: [], version: null, friends: null, remotes: null, tgfwd: false, tgfwdWhy: null, tgFwds: [], holdAnswers: false,
+        resWatch: [], res: null, renames: [], renameWhy: null, busyget: false,
+        hfind: true, finds: [], findMute: false, findDelay: 0, olderDelay: 0 });
       st.asksOpen = new Map();
       log.length = 0;
     },
@@ -518,7 +610,9 @@ export async function startFakeHost() {
   };
 }
 // the phone-settable keys (contract C6 / Amendment A1) and their values; everything else → not_allowed
-const PREF_ENUM = { 'updates.mode': ['auto', 'ask'], 'appearance.language': ['zh', 'en'], 'appearance.theme': ['system', 'light', 'dark'], 'voice.speak_replies': [true, false], 'voice.wake_enabled': [true, false], 'agent.high_risk_warnings': [true, false], 'agent.session_mode': ['shared', 'independent'], 'agent.isolation': [true, false], 'agent.allow_docker': [true, false] };
+const PREF_ENUM = { 'updates.mode': ['auto', 'ask'], 'appearance.language': ['zh', 'en'], 'appearance.theme': ['system', 'light', 'dark'], 'voice.speak_replies': [true, false], 'voice.wake_enabled': [true, false], 'agent.high_risk_warnings': [true, false], 'agent.session_mode': ['shared', 'independent'], 'agent.isolation': [true, false], 'agent.allow_docker': [true, false],
+  'heartbeat.enabled': [true, false], 'heartbeat.interval_minutes': [15, 30, 60, 120, 240, 480, 1440] };   // P156
+const ANY_MIME = /^[a-z0-9][a-z0-9!#$&^_.+-]{0,63}\/[a-z0-9][a-z0-9!#$&^_.+-]{0,126}$/;
 const TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/gif', 'image/heic', 'image/heif', 'application/pdf', 'text/plain', 'text/markdown', 'text/csv',
   'application/json', 'audio/webm', 'audio/ogg', 'audio/mpeg', 'audio/mp4', 'audio/aac', 'audio/wav', 'audio/x-wav'];
 

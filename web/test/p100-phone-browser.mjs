@@ -24,7 +24,7 @@ try{
   await navigate(p,'about:blank');
   console.log(language,'noise-pair');
   await navigate(p,fake.newPairing(web.url+'?lang='+language));await waitState(p,'awaiting-approval');await fake.approve();await waitState(p,'ready');
-  await evaluate(p,"document.getElementById('phone-env-dismiss').click();document.getElementById('aj-menu').open=true;document.getElementById('setup-faceid').click()");await waitFor(p,"!document.getElementById('phone-env').hidden");await check();
+  await evaluate(p,"document.getElementById('phone-env-dismiss').click();(document.getElementById('settings').hidden && document.getElementById('setBtn').click());document.getElementById('setup-faceid').click()");await waitFor(p,"!document.getElementById('phone-env').hidden");await check();
   writeFileSync(new URL(language+'-settings.png',out),await shoot(p,''));
   // Scale only the two control deadlines, preserving the protocol's exact values and callback order.
   await evaluate(p,"window.__timer=setTimeout;window.setTimeout=(fn,ms,...args)=>__timer(fn,ms===20000?150:ms===620000?1500:ms,...args)");

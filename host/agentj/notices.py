@@ -22,7 +22,7 @@ MAX_STORED = 1000
 
 def official_keys():
     # Existing compiled-in official signer; no network / env / config public-key replacement.
-    return [minisign.parse_pubkey(p)[1] for p in minisign.TRUSTED_SIGNERS.values()]
+    return [minisign.parse_pubkey(p)[1] for p in minisign.keyring('control').values()]
 
 
 def opened(env, context, keys=None):

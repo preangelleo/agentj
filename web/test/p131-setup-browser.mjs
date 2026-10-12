@@ -138,7 +138,7 @@ async function run() {
         assert.equal(await evaluate(p, `localStorage.getItem('aj.setup.hidden')`), '1', tag + ' remembered on this device');
         writeFileSync(resolve(OUT, `closed-${tag}.png`), await shoot(p, ''));
         // 5. the menu reopens it (setup_get open:true) — as the page, and the banner is back in the chat
-        await evaluate(p, `${$('aj-menu')}.open = true`);
+        await evaluate(p, `${$('setBtn')}.click()`);   // P171: the ≡ menu's rows live in Settings
         await waitFor(p, visible('open-setup'));
         await evaluate(p, `${$('open-setup')}.click()`);
         await waitFor(p, `${visible('setup-view')} && ${$('setup-main')}.dataset.revision === '${snap.revision}'`);

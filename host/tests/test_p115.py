@@ -232,7 +232,7 @@ class Checklist(unittest.TestCase):
         self.tmp.cleanup()
 
     def test_catalog_is_the_designed_thirty_items_without_cycles(self):
-        self.assertEqual(len(first_run.ITEMS), 30)
+        self.assertEqual(len(first_run.ITEMS), 31)   # P170 added the optional e-mail channel row
         inv = DESIGN / "p92/inventory.json"
         if inv.exists():
             self.assertEqual({i[0] for i in first_run.ITEMS}, {i["id"] for i in json.loads(inv.read_text())["items"]})
