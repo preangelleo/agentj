@@ -237,7 +237,7 @@ class OpenCodeOrdinaryStartup(unittest.IsolatedAsyncioTestCase):
 
 class SafetyDefaults(unittest.TestCase):
     def test_default_shared_keeps_warning_layer_on(self):
-        self.assertEqual(preferences.defaults()['agent']['session_mode'],'independent')  # P174: shared is the owner's opt-in
+        self.assertEqual(preferences.defaults()['agent']['session_mode'],'shared')
         cfg={'kind':'claude','dir':'/var/tmp','_workflow_ceo':True,'session_mode':'shared'}
         self.assertIsInstance(shared.make_shared(Host(),cfg),shared.SharedClaudeAgent)
         cfg['high_risk_warnings']=False

@@ -157,26 +157,21 @@ def _names(name: str | None) -> list[str]:
 
 
 def redact_with_report(text: str, host: str | None = None, user: str | None = None,
-                       paths: bool = False, owner: bool = False) -> tuple[str, collections.Counter]:
+                       paths: bool = False) -> tuple[str, collections.Counter]:
     """Layer 1. Pure: same input → same output; redact(redact(x)) == redact(x). Returns (text, Counter(kind → count)).
     One pass can open a boundary for an earlier rule ("10.0.0.1myhost" → "<private-ip>myhost"), so passes repeat until
     nothing changes; every replacement makes the text shorter in secrets, so this stops after a few passes.
-    `paths=True` (owner channel only): high-entropy is judged per path segment; strict (feedback / plaza) is the default.
-    `owner=True` (P167, the owner's own end-to-end channel — implies `paths`): contact details (e-mail, phone numbers) stay
-    as written, so the owner can copy them; every secret shape (keys, tokens, private keys, passwords, high-entropy) is
-    still redacted. Never for anything that leaves the owner: feedback, plaza, support, friends, bots, Telegram."""
+    `paths=True` (owner channel only): high-entropy is judged per path segment; strict (feedback / plaza) is the default."""
     hits: collections.Counter = collections.Counter()
-    paths = paths or owner
     for _ in range(8):
-        new = _one_pass(text, host, user, hits, paths, owner)
+        new = _one_pass(text, host, user, hits, paths)
         if new == text:
             break
         text = new
     return text, hits
 
 
-def _one_pass(text: str, host: str | None, user: str | None, hits: collections.Counter, paths: bool = False,
-              owner: bool = False) -> str:
+def _one_pass(text: str, host: str | None, user: str | None, hits: collections.Counter, paths: bool = False) -> str:
     def sub(kind, pat, repl, s):
         out, n = pat.subn(repl, s)
         if n:
@@ -191,8 +186,7 @@ def _one_pass(text: str, host: str | None, user: str | None, hits: collections.C
             return m.group(0)
         hits["email"] += 1
         return "<email>"
-    if not owner:
-        text = _EMAIL.sub(email, text)
+    text = _EMAIL.sub(email, text)
 
     for pat in _HOME_PATHS:
         text = sub("home_path", pat, lambda m: "~/" if m.group(1) else "~", text)
@@ -201,7 +195,7 @@ def _one_pass(text: str, host: str | None, user: str | None, hits: collections.C
         for n in _names(name):
             text = sub(kind, re.compile(r"(?<![A-Za-z0-9_-])" + re.escape(n) + r"(?![A-Za-z0-9_-])", re.I), ph, text)
 
-    for pat in () if owner else _PHONES:
+    for pat in _PHONES:
         text = sub("phone", pat, "<phone>", text)
     text = sub("private_ip", _PRIVATE_IP, "<private-ip>", text)
 
@@ -217,13 +211,8 @@ def _one_pass(text: str, host: str | None, user: str | None, hits: collections.C
     return _ENTROPIC.sub(entropic, text)
 
 
-def redact(text: str, host: str | None = None, user: str | None = None, paths: bool = False, owner: bool = False) -> str:
-    return redact_with_report(text, host, user, paths, owner)[0]
-
-
-def owner_text(text: str) -> str:
-    """P167: what the owner's own paired phone / web page (E2E) shows — secrets redacted, contacts and paths readable."""
-    return redact(text, owner=True)
+def redact(text: str, host: str | None = None, user: str | None = None, paths: bool = False) -> str:
+    return redact_with_report(text, host, user, paths)[0]
 
 
 def redact_draft(obj, host: str | None = None, user: str | None = None, hits: collections.Counter | None = None):

@@ -44,14 +44,6 @@ Suites: **`Noise_IKpsk2_25519_AESGCM_SHA256`** (first pairing) and **`Noise_IK_2
   without refresh, and an idle bucket's storage is wiped.
 - The relay **stores no frame content** (no logs, observability off; the only storage is the per-IP counters above). It cannot
   decrypt anything: it holds no keys.
-- **Seat certificate** (P185, ADR-A198): the host auth frame may carry `"cert"` — `b64url(P) "." b64url(Ed25519(k, "agentj-relay-cert-v1\n" ‖ P))`,
-  `P = {"v":1,"ch":<channel>,"exp":<unix s>}` (key order fixed, no spaces), issued for 72 h by `POST /v1/host/relay/cert` (§7,
-  DASHBOARD_API §14) to a bound host with a usable seat; `k` = the `PEER_CERT_KEY` whose public halves are `PEER_CERT_PUB`
-  (rotation, as §17.3; a different domain prefix than the friends certificate). With `SEAT_CERT = "required"`: no valid
-  certificate for this channel → close **4002** reason `seat` (before any existing host socket is replaced); an authenticated
-  host is closed 4002 when its certificate expires (devices get `{"t":"host","up":false}`); host text `{"t":"cert","cert":…}`
-  after auth with a newer valid certificate extends it (no answer; anything else is ignored). Unset → the field is ignored.
-  The host renews at ≥ 6 h age and keeps using a valid cached certificate while the Dashboard is unreachable.
 
 ## 3. End-to-end layer (device ↔ host, inside relay payloads)
 First byte = message kind (visible to the relay — see §5):
@@ -126,7 +118,7 @@ First byte = message kind (visible to the relay — see §5):
    step before any network I/O (nothing it sends afterwards is acted on, nothing more is sent to it), then closed via op `0x02`
    (best effort, 2 s each); its next RESUME_INIT is rejected. Ready sessions also re-check the allowlist on every message.
 8. The host keeps at most 64 sessions (the relay allows 32 device sockets per channel; the cap also bounds a misbehaving relay).
-9. **At most 10 remotes (5 until P171); a new one makes room (0.15.1, P55).** Approving a NEW device on a full allowlist no longer fails
+9. **At most 5 remotes; a new one makes room (0.15.1, P55).** Approving a NEW device on a full allowlist no longer fails
    `device_limit`: in the same locked write that adds it, the host removes the stalest remote — offline before online, then the
    longest unseen (`seen` = last accepted resume, ≤ 1 write a minute; else `paired_at`), then the earliest paired. The human who
    typed the code and the passphrase for the new device consented; the `pending` event already names the one that will go
@@ -137,36 +129,6 @@ First byte = message kind (visible to the relay — see §5):
    A new key whose `iid` matches a listed device replaces that record (`replaces` in the pending event, `replaced` in the
    result) instead of taking another slot. Per-host hash: two computers cannot match their values; nothing about the phone is in it.
 
-10. **Add a remote from a remote; approve on any remote (P153).** No relay change; everything below is inside the Noise
-   sessions of already-paired devices. Both ends announce capability `"pair1"` in `hello` / `approved` / `ready` (§10.0);
-   without it on either side nothing below is sent.
-   - **Open:** a ready `pair1` device sends `{"t":"pair_new","r","n","ts","sig"}` — a signed phone control (§8 controls,
-     action `pair_new`, object text `"start"`). The host opens THE pairing (the same single one `agentj pair` and the account
-     page use: one at a time; another source's pairing in progress → `busy`, this device's own → replaced) and answers that
-     session only `{"t":"pair_link","r","ok":true,"link","qr":"data:image/png;base64,…","ttl"}` or `{"ok":false,"why":
-     bad_signature|stale|replay|no_key|shape|busy|estop}`. The link and QR (PSK inside) exist only in that session's
-     ciphertext and in that page's memory. `{"t":"pair_stop"}` from the same device ends it (a waiting device is refused).
-     The opening device hears `{"t":"pair_ev","ev":"pending","name"}` when a device waits, then once
-     `{"t":"pair_ev","ev":"approved"|"denied"|"expired"|"replaced"[,"name"|"why"]}`.
-   - **Card:** when a device reaches `hello` on any pairing that is not an account-page grant (step 4 path included), and at
-     least one listed remote has an approval key, the host raises the device's approval deadline to **300 s** and puts ONE
-     §8 `ask` card on every ready `pair1` session: `tool:"pair_device"`, `summary` = host-language text (device label, kind,
-     time, the 6-digit SAS of step 4 as 「对照码 123 456」, and the remote a full list would unbind), `cat:[]`, no batch. The
-     waiting device gets `{"t":"pair_wait","ttl"}` and shows 「已申请，请在任意一台已绑定的遥控器上确认」 with the SAS as the
-     code to compare — nothing is typed. A session without `pair1` never gets the card and its answer is refused (`no_pair1`).
-   - **Answer:** the normal §8 signed `answer` (`approvals.signed_message` over `pair_device` + the summary digest). If the
-     answering device has a passkey (§12), `passkey_required`/`fa`/`fa_ch` are set on its copy of the card and an allow must
-     carry `fa` — a WebAuthn assertion over `elevate_challenge(channel, device, card id, "pair", card id, digest)`; a device
-     without a passkey signs only. First valid answer wins: allow → step 5 (source `remote`), deny → the device is closed
-     (`denied_remote`). Every ready session gets `ask_done` (`allow`|`deny`|`timeout`|`gone`|`stopped`) and folds the card.
-     The card also ends `gone` when step 4 (terminal / admin page) or the account page decides first, the device leaves, or the
-     pairing is cancelled; 全部停下 ends it `stopped` and refuses the device. `approvals.log` keeps tool `pair_device`, the
-     input digest of {device, handshake id = b64url(SHA-256("agentjarvis-pair-card-v1" ‖ h)[0:16])}, the shown digest, the
-     approving device, its key and signature — never the SAS.
-   - **Why the SAS stays:** it is still the only thing that binds the human's decision to THIS handshake. A copied QR whose
-     holder wins the race produces a card whose code the owner's new device does not show (that device's own attempt fails
-     `pair_unknown_or_used`); comparing two screens keeps that check while removing the typing.
-
 ## 5. What the relay (and Cloudflare) can see
 Channel id, connection times and IPs, message kind byte, pairing id (once, one-time), frame sizes (padded to 256 B),
 frame timing, the host's Ed25519 public key, the browser `Origin` of web-client connections. Never: keys, text, device labels,
@@ -174,8 +136,6 @@ device ids, safety codes. **§10 (PROMPT-33)** adds to what sizes and timing rev
 equal ~60 KiB frames (so its size is visible to ± one chunk, 44 KiB, and a voice take's length roughly), a history page or a
 long reply as a run of `frag` frames, and a BULK op (§10.13) tells the relay that this socket belongs to a device the host
 accepted. Never: file names, file types, file or audio content, transcripts, history text.
-
-**§2 seat certificate (P185)**: per channel, whether it holds a valid seat certificate and until when (no host id, no account).
 
 **§17 (0.16)**: mailbox ids (never Agent IDs), which two mailboxes exchanged frames and when, padded sizes, the §17.2 kind byte; it stores none of it. Never: cards, friendships, message text.
 
@@ -411,10 +371,10 @@ Any endpoint may answer 500 `{"error":"internal"}` (no detail); the host treats 
   could rename the Agent in the Dashboard anyway.
   **A name from the control plane is display-only on the host**: it is never interpolated into a shell command, a file path,
   an agent prompt or HTML, and it cannot add or approve a device, route, or run code (invariant 8).
-- **Remote limit** (Q32, 2026-10-02; P171 2026-10-12: 10): the allowlist holds at most **10** devices (`state.MAX_DEVICES`, enforced in
+- **Remote limit** (Q32, 2026-10-02): the allowlist holds at most **5** devices (`state.MAX_DEVICES`, enforced in
   `add_device`, the one writer). When it is full, `serve` refuses an approval with `device_limit` even if the code is right; the
   pending event `agentj pair` receives then carries `full`, `limit` and the current devices (id, label, paired_at, online), and
-  `agentj pair` shows 「已达 10 台上限，需先解绑一台遥控器才能添加新的」, lists them, and on the human's number + y sends
+  `agentj pair` shows 「已达 5 台上限，需先解绑一台遥控器才能添加新的」, lists them, and on the human's number + y sends
   `{"cmd":"unbind","device"}` over the local control socket (= `agentj revoke`) before asking for the code.
 - **Unbind requests (sync, A3.1)**: `serve` syncs every 20 s while linked (60 s otherwise), off the event loop. For each
   request it decides itself: switch off (`agentj remote-unbind off`, config `remote_unbind: false`) → `disabled`; device not on
@@ -556,9 +516,7 @@ App messages (all inside §3 transport messages):
 - **Slash commands** (PROMPT-26 7a; ARCHITECTURE ADR-A70 – A72; `host/agentj/slash.py`): only from a ready session of a
   paired device. Whitelist `/clear` `/compact` `/model [name]` `/context` `/cost` `/usage` `/status` `/help` `/stop` (+
   `undo_clear` from the clear card). P73: `/my-agent-id` and `/add-friend` (§17.7) are answered by the host before any of
-  this (no Agent needed, also while stopped, never the model). P155: `/switch-harness [words]` (`slash.AGENT_CMDS`) is never
-  run by the host: it goes to the current Agent of every harness as an ordinary message, rewritten by
-  `switch_harness.agent_text` so it never starts with `/` (the page keeps the owner's own text). A message `/name …` whose name is not on the list: Claude Code's own skill (init `skills`) →
+  this (no Agent needed, also while stopped, never the model). A message `/name …` whose name is not on the list: Claude Code's own skill (init `skills`) →
   sent as an ordinary message; anything else → a `refused` card 「这个命令请在电脑上执行。…」 and nothing reaches the Agent. `/stop`
   and `/help` run at once; the others queue behind the running turn (a 「这一轮结束后执行。」 card first) and take the turn lock;
   while stopped only `/help`. How (measured): Claude Code — `/compact` `/cost` sent as text (Claude Code executes them;
@@ -703,13 +661,8 @@ a revoke in the middle stops the message there (P33-X07).
   `text/markdown` `.md` · `text/csv` · `application/json` · `audio/webm` · `audio/ogg` · `audio/mpeg` `.mp3` · `audio/mp4`
   `.m4a` · `audio/aac` · `audio/wav` / `audio/x-wav` `.wav`. The host also checks the leading bytes of images, PDF and WAV
   against their type (`why:"type"` on a mismatch). `purpose:"asr"` accepts only `audio/wav` in the §10.9 shape.
-  **P166 (0.20.0 host):** `att` takes any well-formed lower-case MIME (`type/subtype`, RFC 6838 characters); common types keep a
-  fixed extension (`inbox.MORE`: m4a / flac / mov / docx / xlsx / pptx / zip …), any other keeps the `name`'s extension scrubbed to
-  1–10 letters and digits, else `.bin` — still never a path. Every audio / video `att` (any `origin`) is transcribed at say time
-  from its host-private copy, in 600 s segments up to 2 h; the original is always attached. An older host answers `type` /
-  `too_big` as before.
-- **Limits** (both ends): `size` 1 … 209 715 200 bytes (200 MiB since P166, 25 MiB before; `asr`: ≤ 20 160 044 = 630 s); per
-  device ≤ 20 staged + ≤ 2 open uploads, ≤ 600 MiB (P166; 200 MiB before) staged + partial (over either → `too_many`; blobs a queued `say` claimed count until it is delivered or withdrawn); staged TTL 30 min; host disk: the inbox ≤ 2 GiB (`quota`),
+- **Limits** (both ends): `size` 1 … 26 214 400 bytes (25 MiB; `asr`: ≤ 20 160 044 = 630 s); per device ≤ 20 staged + ≤ 2 open
+  uploads, ≤ 200 MiB staged + partial (over either → `too_many`; blobs a queued `say` claimed count until it is delivered or withdrawn); staged TTL 30 min; host disk: the inbox ≤ 2 GiB (`quota`),
   free space ≥ twice the size + 64 MiB (`disk`). Errors (`blob_err` /
   `blob_done ok:false`): `shape` · `type` · `too_big` · `empty` · `too_many` · `quota` · `disk` · `unsafe_inbox` (§10.4) ·
   `sha_mismatch` · `size_mismatch` · `expired` · `dropped` · `asr_off`.
@@ -947,8 +900,6 @@ switched off) arrive as `sys` turns with `"local":true` and show relay's 「在�
   one-tap command buttons, which keep executing directly). `/` completion matches all three; picking one inserts it.
 - Default items when no file: the whitelist commands with Chinese / English descriptions (never Leo's private skills), then
   (P73) `/add-friend` and `/my-agent-id` in a 「好友」 / "Friends" group — inserted like every item, never in `cmds`.
-  (P155) `/switch-harness` in a 「主 Agent」 / "Main Agent" group, inserted like every item, never in `cmds`; also appended to an
-  owner's own `menu.json` items when the file lacks it.
 
 ### 10.13 Relay change — BULK
 - Host → relay op `0x03` (`[0x03][cid u32 BE]`, empty payload) after the device on `cid` is ready and allowlisted (never for a
@@ -959,8 +910,8 @@ switched off) arrive as `sys` turns with `"local":true` and show relay's 「在�
   (P33-X11); it is a fixed 10 s window, so an unaligned 10 s span can see ≤ 2 × 600. Unboosted sockets, the payload cap, per-IP and per-channel socket limits:
   unchanged. A relay without BULK ignores op `0x03` (§2 drops unknown ops) and the device stays at ≤ 50 / 10 s.
 - DoS bound: a stranger's socket never gets BULK (only the host grants it, after the Noise handshake and the allowlist), so the
-  unauthenticated cost per IP is exactly L2's. A paired device's socket costs ≤ 240 × 64 KiB / 10 s ≈ 1.5 MiB/s; ≤ 10 devices.
-  25 MiB ≈ 582 chunks ≈ 27 s at the boosted rate (≈ 120 s unboosted); P166's 200 MiB ≈ 4 655 chunks ≈ 3.6 min boosted. The relay still stores nothing and holds no key.
+  unauthenticated cost per IP is exactly L2's. A paired device's socket costs ≤ 240 × 64 KiB / 10 s ≈ 1.5 MiB/s; ≤ 5 devices.
+  25 MiB ≈ 582 chunks ≈ 27 s at the boosted rate (≈ 120 s unboosted). The relay still stores nothing and holds no key.
 
 ### 10.14 Phone-only substitutes (no wire)
 - **Forward to Telegram** (relay `/forward`, the owner's own bot) → when the host announced cap `tgfwd` (Telegram enrolled,
@@ -971,12 +922,6 @@ switched off) arrive as `sys` turns with `"local":true` and show relay's 「在�
   recently_sent|rate_limited|send_failed","parts?"}`; the log has counts, never words. Without `tgfwd`, or on
   `not_configured`, the phone's share sheet: `navigator.share({text})` of the page's reply, fallback copy to the clipboard +
   toast — nothing leaves the phone except where the human sends it. (P118, B10)
-  P183: a host that can forward files announces cap `tgfile` (whenever its Telegram channel exists, linked or not); a file
-  card's 转发到 Telegram sends `{"t":"tg_fwd","r":<rid>,"mid":<22 b64url, a §13 media id>}` — no bytes go up. The host looks
-  the id up in its media table (≤ 24 h), re-opens and re-hashes the file (`tg_media.read_checked`; changed or gone →
-  `not_found`), refuses > 50 MB (`too_big`), and uploads it to the owner's private chat (sendPhoto / sendAudio / sendVideo,
-  falling back to sendDocument) under the same gate, dedupe (per mid) and per-device rate as the reply forward. Same
-  `tg_fwd_res`; the log has counts only. Without `tgfwd` the phone says where to link Telegram and sends nothing.
 - **Read aloud** (relay `/speak`: a Claude rewrite + Leo's cloned voice through a paid cloud API) → `speechSynthesis` with
   the phone's own voices (language from the text), Markdown stripped to plain text, play / pause / stop on the same button.
   Nothing leaves the phone. (A host-side TTS could come later as its own section; not part of parity.)
@@ -1002,10 +947,9 @@ switched off) arrive as `sys` turns with `"local":true` and show relay's 「在�
 | `mem_rm` `mem_undo` `estop` `resume` `task_set` (§8) | **yes** (`agentjarvis-control-v1`) | they change the customer's files or the stop switch |
 | `say`, `msg`, `blob_*`, `asr` blobs | no | chat input: the Noise session proves the approved device; nothing runs until the Agent decides, and every tool call it makes still needs §8's approval |
 | `say_cancel`, `grant_off` | no | they only withdraw / narrow, and only for that device's own items |
-| `hist_get`, `hist_find` (§28), `menu_get`, `mem_list`, `act_list`, `task_list` | no | reads, answered to the asking session only |
+| `hist_get`, `menu_get`, `mem_list`, `act_list`, `task_list` | no | reads, answered to the asking session only |
 | `model_set`, `slash` | no | the human's own everyday settings, no permission change, reversible (`/clear` confirmed on the phone and undoable) |
 | `pref_set` (§10.16) | no | four everyday display / voice settings only (language, theme, hands-free, read replies aloud); nothing that lowers safety |
-| `dev_rename` (§10.16a) | no | the sending remote's own label only (no target field); audited like the account page's rename, no permission change |
 
 
 ### 10.15 Preferences and optional synthesized speech (0.12)
@@ -1020,7 +964,7 @@ Telegram is a separate opt-in vendor-readable channel, not a Noise approval sess
 
 Device → host (p33 sessions only, ready and allowlisted, inside Noise like every §10 message): `{"t":"pref_set","r":<rid
 ≤ 32>,"key","value"}`. Whitelist, exactly: `appearance.language` (`zh`|`en`, the one language value of A1),
-`appearance.theme` (`system`|`light`|`dark`), `voice.wake_enabled` (boolean), `voice.speak_replies` (boolean), `agent.high_risk_warnings` (boolean, default false), `agent.session_mode` (`independent`|`shared`, default independent since P174 / 0.20), `agent.isolation` (boolean,
+`appearance.theme` (`system`|`light`|`dark`), `voice.wake_enabled` (boolean), `voice.speak_replies` (boolean), `agent.high_risk_warnings` (boolean, default false), `agent.session_mode` (`shared`|`independent`), `agent.isolation` (boolean,
 default true: an independent session runs fenced) and `agent.allow_docker` (boolean, default false) — F14 (P45b). The value is
 checked against the schema type / enum before anything is written. Anything that could lower safety —
 every `human.*` / `security.*` key, approval timeouts — is **not**
@@ -1036,48 +980,9 @@ the account soon.
 `preferences` (§10.15) gains `host` — read-only facts for the settings panel: `{"version": <agentj version>,
 "language_at": <ms, 0 = never set here>, "settable": [the keys above], "devices": [{"id","name","paired_at","online"}]}`
 (the paired phones as metadata, never keys). The safety switches the panel shows read-only are already in
-`value.agent.high_risk_warnings` / `value.agent.session_mode` / `value.agent.isolation` / `value.agent.allow_docker` (F14: all phone-settable; warnings default off; native permissions unchanged). Isolation / docker apply from the next Agent start. Renaming, unbinding and adding remotes from a
-phone is §24 (P171: signed controls; an add still needs the new device's safety code); `host` also carries `"limit"` (the
-allowlist cap, 10). The phone's own "forget this computer" (解除配对) stays local to that phone. A remote may also rename itself from the chat page (`dev_rename`, §10.16a, P179).
-
-### 10.20 The e-mail channel's settings — `mail_get` · `mail_set` · `mail_key` · `mail_test` · `mail_check` (P170, host 0.20)
-
-Device → host (p33 sessions only, ready and allowlisted, inside Noise): `{"t":"mail_get"|"mail_set"|"mail_key"|"mail_test"|
-"mail_check","r":<rid>}`; `mail_set` adds `"cfg"`: a partial configuration (`enabled`, `preset`, `address`, `username`,
-`imap`/`smtp` `{host,port,security: ssl|starttls}`, `poll_minutes` 1–60, `auth` strict|standard|off, `auth_servid`,
-`allow` `[{addr, role: owner|guest, name?}]` ≤ 50, `reply_per_hour` 0–100; JSON ≤ 8000 bytes; `generation` is host-only).
-Every answer is one `{"t":"mail_res","r","ok","why"?,"view"}` on the asking session; `view` = the host's settings
-(never the app password), `has_password`, last check / error word, today's counts, the last refused senders (address and
-reason only, never content), the latest Authentication-Results sample and the presets. `mail_test` adds `test`
-`{imap, smtp, auth_sample}`; `mail_check` adds `check` (counts). **The app password never travels in these messages:**
-`mail_key` makes the host open a §11 secret card (`name` `AGENTJ_MAIL_PASSWORD`, sealed and signed like every secret card);
-the host signs in to IMAP and SMTP with the value, stores it AES-256-GCM under a key derived from its own identity key
-(`<state>/mail/secret.bin`, 0600), wipes it, and answers `mail_res` once when the card ends (≤ its 600 s). A paired phone
-may widen the allowlist directly; the same change from inside an Agent (`agentj mail …` over the control socket without
-an owner claim) becomes an approval card (`agentj mail`, the changes listed) and applies only when allowed.
-
-### 10.16a A remote renames itself — `dev_rename` / `dev_rename_res` (P179)
-
-A remote has two names on the host: `self_name` (what the device said about itself when it paired — its browser / OS
-label, untrusted) and `owner_name` (set later by the owner: the account page's passkey-confirmed `device_name` (§19), or
-the remote itself with this message). The allowlist's `name` stays the effective label (`owner_name` when set). Pairing the
-same device or browser install again keeps `owner_name`. Pre-P179 records migrate once: a name that an allowed
-`device_name` decision in `approvals.log` set exactly (same device, same name) is the owner's; otherwise it is the device's.
-
-Device → host (p33 sessions, ready and allowlisted): `{"t":"dev_rename","r":<rid ≤ 32>,"name":<1–64 characters, no control
-characters>}`. There is **no device field**: the host renames only the sending session's device; the owner renames other
-remotes on the account page. The host writes `owner_name` (+ `owner_named_at`, `owner_named_via: "phone"`), records an
-`approvals.log` line (`agent:"phone"`, `tool:"device_name"`, `reason:"own_device"`, input/shown = SHA-256 of
-`{"device","name"}` — the account page's digest), answers `{"t":"dev_rename_res","r","ok":true,"name"}` or
-`{"ok":false,"why":"bad_name"|"gone"}`, reports to the account and broadcasts `preferences` to every ready session.
-Older hosts ignore the message (the page times out and says it is not connected).
-
-`preferences.host.devices[]` gains `named_by` (`"owner"` | `"device"`), `self_name` (the device's own label; `""` when not
-kept) and `label` — what pages show as a message's source: `<owner_name> · <browser / OS part of self_name>` for an
-owner-named remote (「张伟（老板） · iOS Safari」), else the device's own label. A page shows another remote's **current**
-label from this list (falling back to the `src.name` the turn was stamped with), so a rename relabels open pages at once.
-New turns stamp `src.name` with that label. For the Agent, a message from an owner-named remote ends with one bracketed line
-naming it — the owner's label, explicitly not proof of identity; device-named remotes add nothing (as before).
+`value.agent.high_risk_warnings` / `value.agent.session_mode` / `value.agent.isolation` / `value.agent.allow_docker` (F14: all phone-settable; warnings default off; native permissions unchanged). Isolation / docker apply from the next Agent start. There is no wire message to rename or unpair a phone from
+another phone: pairing changes stay with the human at the computer (`agentj devices …`) or the account Dashboard's
+host-checked unbind (§7 sync); the phone's own "forget this computer" is local to that phone.
 
 ## 11. Admin password and secret cards (F17, P46) — `agentj sudo` · `agentj secret request`
 The two human-only steps the Agent cannot do itself go through a paired phone, never through chat or a terminal. Code:
@@ -1345,14 +1250,6 @@ and `srcdoc` is not a fetch (`frame-src` does not apply).
   slots from the same Blobs; an item placed at a slot is not repeated under the words, a `media_skip` whose name matches a
   slot shows its note there. Matching uses `ref` as above.
 - Telegram (§10.15) is unchanged: it still sends the reply text only.
-- P183 (0.20.0): the card is a dashed outline with one row of icons (预览 · 下载 · 分享 · 转发到邮箱 · 转发到 Telegram). Loading:
-  an item loads by itself when its card scrolls into view if it is small (image / pdf ≤ 5 MiB, every other kind ≤ 2 MiB) and
-  the phone is not on data saver / cellular / 2G (`navigator.connection`); otherwise a tap, the button showing the size.
-  预览 = a full-screen view built from the same verified Blob: pictures zoom, players play, pdf via pdf.js (vendored, from
-  'self', `isEvalSupported:false`, no font / cMap / wasm fetches), Markdown via md.js, csv / tsv and xlsx / xls / ods
-  (SheetJS) as tables of plain text, json / yaml / xml / toml highlighted, other text as text, docx via mammoth → HTML shown
-  only in the same empty-sandbox frame as html; pptx / odt / epub / zip / gz: "can't preview" + download. Space / Enter on a
-  focused card opens it, Space / Esc closes. Wire addition: `tg_fwd` may carry `"mid"` instead of `"id"` (§10.14).
 
 ## 14. Offline queue on the phone (0.15.2)
 No wire change: this section states the `say` / `dup` contract (§10.2) that the phone's offline queue relies on.
@@ -1694,8 +1591,6 @@ Account seat cards can request one-use owner operations after a passkey ceremony
 
 Every grant records account_passkey in approvals.log plus activity and a notice to remotes. remote-pair off prevents subsequent account grants and cancels active remote Pairing. Preboot/stale/expired/replayed or cross-host/account requests never create control ability. A bound host need not set a local passphrase; an unbound/local-terminal owner operation keeps its original passphrase gate. Resume must match the current stop-state digest; task_on must match its current task/prompt contract digest. P130 device_name uses the same signed owner control, with exactly target={device,name}; device is a paired device id and the trimmed name is 1–64 characters without C0/DEL. The host only changes that record’s name and refreshes its report, leaving device keys and renewal tickets unchanged. It requires the existing online/remote-pair-on/passkey proof, host/account binding, expiry and replay checks; an absent device returns gone. No new D1 table or relay message is introduced. All command responses, including pending devices/task summaries, are encrypted to the requesting browser.
 
-P177: `start` while the one pairing slot holds an account-page QR nobody connected to replaces it (`remote_pair_takeover`); a terminal `agentj pair` or a phone mid-pairing is never replaced and the reply is `{status:'busy',by:'remote'|'local',phone,until,cancel}` (`until` = the slot's expiry, unix s; `cancel` = this host accepts op cancel and nobody has connected). Op `cancel` (no device/handshake/target) ends such a slot — a terminal pairing is told `{ev:'denied',reason:'account_cancelled'}` — and answers `{status:'cancelled'}`, or the busy reply when a phone is mid-pairing. The QR/link are built before the slot is taken, so a failure never holds it. The start `link` reply carries `cancel:true` on these hosts.
-
 ### P76 signed upgrade
 `slash {cmd:"update",n,ts,sig}` requires the paired device control signature (action `update`, object text `latest`).
 An unsigned `say /update` is refused. The host returns progress and persists completion across restart in chat history.
@@ -1845,62 +1740,24 @@ adapter). No token, code, callback URL, client JSON or e-mail crosses this socke
 ## 22. 「在办事项」: who works in the background (P150, host 0.18.4a1)
 
 Host → device, display only (nothing starts, stops or approves work; no signature, no answer):
-`{"t":"busy","by":<Agent name|null>,"tasks":[{"id","who":<string|null>,"kind":"ceo"|"temp","label","lk"?:"schedule"|"dispatch","since","c":0..8}],"load"?:0..1,"cap"?:1..64}`
+`{"t":"busy","by":<Agent name|null>,"tasks":[{"id","who":<string|null>,"kind":"ceo"|"temp","label","lk"?:"schedule"|"dispatch","since","c":0..8}]}`
 — right after `status` on every ready, then once per real change (≤ 2 s for outside sources). An empty list hides the dots.
-`who` null = an unnamed helper (the page says 临时助理 / Helper); `label` = the whole task title on one line, ≤ 120
-characters (P154; was ≤ 5 Chinese characters / 10 letters — a 0.18.4 page cuts at 40), no model; the page gives each row
-a fixed width and ellipsises it (empty + `lk` = a workflow run: 按时运行 / 派单任务). P154 追加 10/11: each item is drawn as an
-original pixel robot (library `web/public/assets/robots.json`, 16 robots; robots 0–8 wear the 9 colour pairs, so robot = `c`
-unless that one is already on screen, then a free one of 9–15; one task keeps its robot for its whole life); reduced motion =
-still. `load` (P154 追加 4) = the 1-minute load average ÷ cores, 0..1, sampled every 5 s and sent only when it moved > 0.05
-(absent where the system has none) — the speed of the line under the reply card's header. `cap` (追加 11) = what runs now +
-how many more the computer can take (P156 `agentj busy capacity`); absent → the page shows ≤ 6 robots, else ≤ min(cap, 12)
-on a screen wider than 600 px (a phone stays at 6), then "+n". `c` = one of Leo's 9 Heavy /
+`who` null = an unnamed helper (the page says 临时助理 / Helper); `label` ≤ 5 Chinese characters or ≤ 10 characters of whole
+words, squeezed on the host without a model (empty + `lk` = a workflow run: 按时运行 / 派单任务). `c` = one of Leo's 9 Heavy /
 Light colour pairs; a named worker keeps its index across runs (`<state>/busy/colors.json`), neighbours never share one, the
-first 9 on screen never share one. At most 32 items (P154; was 12). A host without §22 sends nothing; a page without it ignores the message.
+first 9 on screen never share one. At most 12 items. A host without §22 sends nothing; a page without it ignores the message.
 
 Sources (`agentj/busy.py`): the owned Claude session's stream-json (an `Agent`/`Task` tool_use opens an item with its
 description, its tool_result closes it; a background launch stays until `task_notification`; the process ending clears the
 session); shared Claude sessions' hooks (PreToolUse(Agent|Task) description → SubagentStart opens, SubagentStop closes;
 SessionEnd and `Stop.background_tasks` reconcile); a workflow run (its CEO = the workflow title, for the run's length); item
 files in `<state>/busy/` (0600; `agentj busy start|stop|run`; a dead pid or > 12 h prunes) and active systemd user units
-`agentj-p<digits>…` (Description "who · what" / "who: what"). A lost close expires after 3 h — the same for all three harnesses.
+`agentj-p<digits>…` (Description "who · what" / "who: what"). A lost close expires after 3 h. Codex / OpenCode sub-agents
+have no hook yet (planned P150c); their outside dispatches use `agentj busy run`.
 
-P160 — Codex and OpenCode sub-agents are items like Claude's (owned and shared sessions; `kind:"temp"`, drawn as the same robots):
-- **Codex** (app-server notifications, measured on 0.159.2 — `host/tests/fixtures/p160_codex_0159_subagent.jsonl`): a
-  `subAgentActivity` item `kind:"started"` opens one item per `agentThreadId`, label = the last segment of `agentPath`
-  (`/root/file_count` → `file count`); the child thread's own `turn/started` re-opens it (more work via send_input, same
-  robot, same label) and `turn/completed` closes it; `subAgentActivity` `completed` / `interrupted`, a
-  `collabAgentToolCall` whose `agentsStates[tid].status` is final (`completed`, `errored`, `shutdown`, `interrupted`,
-  `notFound`) or a completed `closeAgent` close it. Older / newer servers that send `collabAgentToolCall` `spawnAgent`
-  open it from the call (label = its `prompt`) and move it onto the receiver thread; `thread/started` with a
-  `thread_spawn` source names it (`agent_role`; built-in roles worker / explorer / default stay 临时助理). The app-server
-  exiting clears the session.
-- **OpenCode v1** (`/event`, measured on 1.18.34 — `host/tests/fixtures/p160_opencode_1_18_task.jsonl`): the parent
-  session's `task` tool part — `pending`/`running` opens (`input.description`, `input.subagent_type` = who unless
-  generic), `completed`/`error` closes; the child session (`state.metadata.sessionId`, else the `session.created` whose
-  `parentID` is ours) feeds the detail. **OpenCode v2** (`/api/event`, not measured — no 2.x on the test machine): a
-  `session.created` whose `parentID` is ours opens (title "<description> (@<agent> subagent)" → label / who), its
-  `session.execution.succeeded / failed / interrupted` closes, `session.execution.started` re-opens; serve exiting clears.
-- Desktop new threads are **not followed** for Codex / OpenCode (only shared Claude follows a new session, P147): the
-  phone stays on the pinned thread; `agentj config set agent.shared_session_id <id>` + `agentj service restart` moves it.
-
-**P160 — one row's detail** (read-only, p33 devices; host cap `busyget` in `approved` / `ready`):
-device → host `{"t":"busy_get","r","id"}` (`id` = a §22 task id, ≤ 40 characters) → host → device
-`{"t":"busy_info","r","id","item":null|{"id","who","kind","label","lk"?,"since","src","last"?:{"text","at"},"report"?:{"path","head":string|null,"at":int|null}}}`.
-`item` null = no longer running. `src` ∈ claude · codex · opencode · unit · file · workflow. `last` = the sub-agent's
-most recent tool call on one line (≤ 160 characters: the tool's own description, else its command / file / pattern;
-Claude stream `parent_tool_use_id`, shared hooks PreToolUse with `agent_id`, Codex child-thread items, OpenCode child
-tool parts) — kept in memory only, never on the list, so it causes no `busy` message. `report` = for a systemd unit
-`agentj-p<N>…`: Environment `AGENTJ_REPORT=<path>`, else `REPORT-<N>.md` next to the script it runs or in its
-WorkingDirectory (`./`, `.jarvis/`, `reports/`), the first that exists, else the first candidate (`head` null); for an item
-file: its `report` (`agentj busy start|run --report <path>`). `head` = the first non-empty line (markdown marks off,
-≤ 240 characters) of a regular file read with lstat (no symlink, ≤ 16 KiB read). Every text passes privacy.redact (secrets,
-home → `~`). Nothing is started, stopped or changed; no signature. CLI twin: `agentj busy show <id> [--json]`.
-
-The page (`web/public/js/busy.js`): one robot per item (18 px; ≤ 6 or as above, then "+n") at the right of the reply card's header (≤ 2/3 of its
-width, never over the Agent's name); robots dance (12 steps / 2.4 s), pop in when new, bow and float away when done; a tap
-opens the global centred dialog「有 N 个 Agent 在后台干活 · <Agent 名> 正在替你监控」 listing every item: its robot (24 px) · who · what. ESC / a tap outside / 知道了 close it; the list going empty closes it. P160: every row is a button (Enter / Space too) — it turns the dialog into that task's card: its robot (24 px) above who (the title), the whole task title, 「<where> · 已经干了 N 分钟」, 最近一步 (`last`) and, for a dispatch, 报告 (path + first line, or 还没写出来); `busy_get` again every 4 s while the card is open; 返回 → the list (closed when nothing runs); a task that ends while its card is open → 「已经做完了」 (the dialog stays until 返回 / 知道了). A host without `busyget` → the card shows what the list knows + 「电脑上的 Agent J 版本较旧」 and asks nothing. Host
+The page (`web/public/js/busy.js`): one dot per item (≤ 6, then "+n") at the right of the reply card's header (≤ 2/3 of its
+width, never over the Agent's name); each dot blinks Heavy ⇄ Light; a tap opens the global centred dialog「有 N 个 Agent 在后台
+干活 · <Agent 名> 正在替你监控」 with who · what. ESC / a tap outside / 知道了 close it; the list going empty closes it. Host
 text only through textContent. The same centred dialog (`.gdlg`) carries the §P120 version notice (「服务器已升级」+ 刷新),
 which still never takes focus.
 
@@ -1914,183 +1771,3 @@ which still never takes focus.
   `source-kind="system" source-role="owner"`, body 〔Agent J 系统提示〕…; the phone gets `agent_notice`
   「压缩完成，Agent 正在恢复上下文」. `clear.md` → `clear-used.md` on delivery. Phone `/compact` with a missing or stale
   handoff first sends the same envelope asking for it (agentj-handoff skill) and waits ≤ 300 s for that turn's end.
-
-## 23. Phone theme (P169, 0.20.0)
-
-Host → device, display only (no signature, no answer, never part of an approval):
-`{"t":"theme","v":1,"id","rev","factory":"robots"|"dots"|null,"name"?:{zh,en},"colors"?:{"state"?:{idle,working,waiting,question,offline},"card"?:{owner,agent,computer,developer,system},"menu"?:{background,panel,text,accent,line}},"logo"?:{"png":<base64>,"disc":bool},"send"?:{"png":<base64>},"busy"?:{"style":"robots","n","names":[{zh,en}],"s12":<base64>,"s18":<base64>}|{"style":"dots","colors":[[heavy,light]],"blink":bool}|{"style":…}}`
-— on every ready right after §22 `busy`, then whenever `<state>/agentperm/theme/current.json` changed (serve looks every
-2 s; `rev` = a hash of theme.json + files, unchanged rev = no send). A factory theme carries only `id`/`factory`/`rev`
-(the page has its files); `broken:true` = the active custom theme failed serve's re-check and the factory robots are used.
-Custom themes are written by `agentj theme apply|reset|restore` after `agentj theme validate` (schema
-`host/agentj/themes/theme.schema.json` = https://agentj.app/schema/agentj-theme-1.json + file rules: PNG sizes, 13 frames,
-hard pixel edges, ≤ 8 colours per robot, contrast — P187: menu text and its 72 % notes ≥ 4.5:1 on the menu background and
-panel, the menu accent ≥ 3:1 on the background); ≤ 512 KiB of files, so ≤ 2 MiB after base64 = within §10.1 frag.
-The page (`web/public/js/theme.js`) re-checks every field (hex `#rrggbb`, PNG signature + IHDR size, the same pixel
-sizes) and drops anything else; images become `blob:` URLs (CSP `img-src blob:`). It repaints at once: state, card and (P187) menu
-colours as CSS variables (`--menu-bg --menu-panel --menu-text --menu-accent --menu-line`), the chat page's top-left logo (`#orb`), the Send glyph mask (and the flying rocket), robots or
-dots (busy.js). Locked whatever a theme says: pairing / safety code / security (P187: its menu page keeps the factory menu colours) /
-offline / removed screens, the 网页版 badge, the menu's shield line, the home-screen icon, fonts, every agentj.app page. A host without §23 sends nothing (the
-page keeps the factory robots); a page without §23 ignores the message.
-
-## 24. 遥控器管理 from a paired remote (P171, 0.20.0, ADR-P171)
-
-Device → host, p33 sessions only (ready, allowlisted; anything else is ignored). Reads and the cancel are plain requests;
-the four writes are phone controls (§8): `n`, `ts`, `sig` over `controls.object_text`, checked by `controls.check`, one
-`controls.log` line each, refusals answered `ctl_res {ok:false, why: shape|stale|replay|no_key|bad_signature}`.
-
-| message | signed object text | host does | answer |
-|---|---|---|---|
-| `{"t":"dev_list","r"}` | — | — | `{"t":"devs","r","limit":10,"items":[{"id","name","paired_at","seen","online","me","source":"local"\|"account"\|"phone"}],"can_add","busy"}` |
-| `{"t":"dev_name","r","device","name"}` | `device \n name` | `State.rename_device` (1–64 chars, no C0/DEL, `clean_label`); live sessions take the name | `ctl_res` (`bad_name` · `gone`) |
-| `{"t":"dev_unbind","r","device"}` | `device` | exactly `agentj revoke` (`serve.revoke`); the asking remote may unbind itself — its `ctl_res` is sent before it is detached | `ctl_res` (`gone`) |
-| `{"t":"dev_add","r"[,"rv"]}` | `new` (§25: `rv\n<channel>`) | a pairing like `agentj pair` (§4: 5 min, one-time, compact link), `Pairing.phone` = the asking device | `ctl_res` + `link`, `qr` (`data:image/png;base64,…`, segno), `expires`, `ttl`, `full` (· `disabled` = `agentj remote-pair off` · `offline` = relay down · `busy` = another pairing in progress) |
-| `{"t":"dev_confirm","r","device","code"}` | `device \n code` | only from the device that asked, only for its pending device: `code` = the new device's §4 safety code → approve (`source: "phone:<device>"`, a full list makes room exactly as §4 step 9); a wrong code ends the pairing (one try) | `ctl_res` + `device`, `name`, `evicted`?/`replaced`? (· `code_mismatch` · `gone` · `timeout`) |
-| `{"t":"dev_cancel","r"}` | — | ends this remote's own pending pairing (narrows only) | `ctl_res` |
-
-Host → the asking remote only: `{"t":"dev_pending","device","name","deadline_in","limit","evict"?:{id,name},"replaces"?:{id,name}}`
-when the new device reached `hello` (the same facts `agentj pair` shows), and `{"t":"dev_pair_end","ev","reason"?}` when that
-pairing ended any other way (expired, denied, replaced by `agentj pair`). Host → every ready p33 remote: `devs` (no `r`)
-after any accepted change, plus the normal `preferences` (its `host.devices` / `host.limit`).
-Every accepted add / unbind is also an approvals.log line (`agent: "phone"`, hashes only), an activity `decision`, a notice
-to every remote and a `security` push. The pairing link carries the pairing secret: it travels only inside the asking
-remote's Noise session and is never logged. A host without §24 never answers `dev_list`: the page waits 6 s, then shows the
-`preferences` list read-only with the `agentj pair` / `devices` / `revoke` commands.
-
-## 25. Address book, contact card, 「转发到邮箱」 (P184, host 0.20, ADR-P184)
-
-Host cap `contacts` in `approved` / `ready` (any p33 host that has `contacts_serve.py`). The address book is
-`<state>/contacts/contacts.json` (0600 in a 0700 folder, flock `contacts.lock`), never in the cloud or the relay; fields
-follow vCard 4.0 + Google / Outlook CSV: `{id: "c"+12 hex, name, nicks[], emails[{v,label}], phones[{v,label}],
-addresses[{v,label}], org, title, bday, note, source: owner|phone|agent|import|mail, created, updated, last_sent_at,
-send_count}`. Phone → host messages are routed with the elevate types (an approved device: `st.sign_key(device)`), each
-handled in a task (SMTP may take seconds; the relay reader is never held):
-
-| Phone → host | Host → phone | Meaning |
-|---|---|---|
-| `ct_list {r, sort?: recent\|frequent\|name, q?, limit?}` | `ct_res {r, ok, contacts[], count, me[], mail:{ready, why?}}` | the book (sorted) or a search (`q`, scored); `me` = the e-mail channel's allowlist rows with role owner; `mail.ready` = an address, an SMTP server and the stored app password (`why`: `mail_not_configured` · `no_password`) |
-| `ct_save {r, contact, id?}` | `ct_res {r, ok, result: added\|merged\|same\|updated, contact}` · `{ok:false, why}` | 「新增」 in the dialog (source `phone`; same e-mail / phone merges) or an edit |
-| `mail_fwd {r, to:[{addr, name?}] (1–10), turn?, mid?}` | `mail_fwd_res {r, ok, sent?, files?, why?}` | `turn` = a finished page: its reply text (redacted) is the body, its §13 files (re-checked: inode / size / mtime / SHA-256) are attachments ≤ 20 MiB; `mid` = that one file. Sent from the owner's P170 mailbox to exactly `to`, header `X-AgentJ: forward`; then each address is remembered / counted (`record_sent`, source `phone`). `why`: `to` · `address` · `what` · `not_found` · `mail_not_configured` · `no_password` · `rate_limited` (30 / device / hour) · `send_failed` |
-| — | `ct_card {id (32 hex), n, mode: new\|update, contact, base?, why, ttl}` | the Agent's contact card (re-sent after `ready`), ≤ 4 open, 600 s |
-| `ct_card_answer {id, n, ok, contact?}` | `ct_card_err {id, why}` · broadcast `ct_card_done {id, result}` | `ok:true` saves (new → add with merge, source `owner`; update → replace the given fields of `base.id`); ≥ one e-mail or phone, else `ct_card_err why=no_contact` and the card stays; a wrong `n` / unknown id → `why=gone`; `ok:false` → `cancelled`, nothing saved |
-
-Agent side, on `elevate.sock` (visible inside the fence): `{t:"contacts", op: ping|list|find|get|add|edit|rm|import|export}`
-(`agentj contacts …`; serve not running → the CLI edits the file itself), `{t:"contacts", op:"card", id?, contact, why,
-early?}` → `{t:"card", id, kind:"contact"}` first, then `{ok, id, result: saved|merged|same|cancelled|timeout|gone|stopped|
-group_source|not_found|busy}`; `{t:"mail_send", to:[name|address], subject, body, files:[path]}` (`agentj mail send`) →
-names resolved in the book (no single clear match with an address → `{ok:false, why:"not_found", who:[…]}`), files through
-`media.check` (inside the Agent's folder, no secret-shaped content), then `serve.ask("agentj mail send", {summary})`
-(batch=false; a group / guest turn never reaches it) → sent only on allow (`X-AgentJ: agent`), recipients remembered with
-source `agent` → `{ok, sent[], files[], new_contacts[]}` · `why`: `denied` · `file` · `too_big` · `mail_not_configured` ·
-`no_password` · `send_failed` · `group_source`. Logs: counts and reason words only (`contacts_*`, `mail_fwd`, `mail_send`,
-`contact_card*`), never an address, a name or a body.
-
-Entry for other cards (P183): `js/contacts.js` `openForward({turn?, mid?, name?, whole?})` / `forwardAvailable()`, also
-`window.AgentJMailForward`, or any element with `data-mailfwd` + `data-turn` / `data-mid` / `data-name`.
-
-**P189 (0.20.0) — the reply card's 「转发到邮箱」** (`#mailBtn`, right after 转发; shown only with cap `contacts`) opens the
-same dialog with `whole: true`; a `turn` forward then mails the whole exchange. `mail_fwd` gains `input?: bool` (default
-true; `false` = 「不带我的提问」 — the page's `src` is left out of the subject, text and HTML) and `mail_fwd_res` gains
-`skipped?: n` (files not attached). The mail (`host/agentj/mail_template.py`): `multipart/mixed` → `multipart/alternative`
-(text/plain + text/html) + attachments; subject `[Agent J] <src.text, whitespace collapsed, first 40 characters>…` (the
-reply's first line without the input); body = 「你问」 (src.name, page ts, src.quote, src.att names) above 「<Agent> 答」
-(the reply's Markdown rendered to inline-styled HTML; every text escaped, links only http(s) / mailto). Attachments in page
-order while their sum stays ≤ 20 MiB; a file over the rest is not read and is listed 「文件太大未附上」, a file gone or
-changed since the page 「文件已不在，未附上」. Input, quote and reply are redacted (privacy.redact) first. P183's file cards
-reach the dialog through `js/mailfwd.js` `registerMailForward`, registered on `ready` only when cap `contacts` is on.
-
-## 26. Heartbeat (P156, host 0.20.0; numbered 26 at the 0.20.0 merge — §23 is the phone theme)
-
-- No new wire message. A heartbeat is a host-generated history page: `src = {"k":"agent","via":"heartbeat","text":""}`
-  (the prompt itself never reaches the phone). Its reply is an ordinary reply; a reply of exactly 〔不回群〕 makes the page
-  silent (no page, no push, it shows only in 「查看静默记录」), like any silent turn.
-- Phones label `via:"heartbeat"` 「心跳检查」/ "Heartbeat check" (an older phone falls back to the Agent-report label).
-- `preferences` gains `heartbeat.enabled` (bool, default true) and `heartbeat.interval_minutes` (int 5–1440, default 60);
-  both are in `host.settable`, so `pref_set` may change them. A phone hides the Settings row when the host does not list
-  `heartbeat.enabled` (host < 0.20).
-- Host → Agent: one queued message per beat, provenance `system` (shared Claude: from-name `agentj-host-system(系统提示)`),
-  text `〔Agent J 心跳〕 提示 <sha8> · ~/.config/agentj/heartbeat.md · …` (en `[Agent J heartbeat] prompt <sha8> …`); the full
-  prompt is attached the first time in a serve process, when sha8 changed, and after a compaction / clear.
-- Agent → host: `<state>/agentperm/heartbeat.sock` (0600, env `AGENTJ_HEARTBEAT_SOCK`), one JSON line each way:
-  `{"op":"status"|"prompt_show"|"now"|"on"|"off"|"set","interval":"30m"|"prompt_set","text":…|"reset":true}`. Changes are
-  refused (`untrusted_turn`) while a non-owner message is being handled; `prompt_set` refuses secrets, links, > 16 KiB.
-
-## 27. Reverse pairing: the new device shows a code, a paired remote scans it (P190, 0.20.0, ADR-P190)
-
-**The code** (unpaired page only, `web/public/js/rvpair.js`): `https://m.agentj.app/#j=` + b64url(`0x01` ‖ channel (16 B) ‖
-x25519 pub (32) ‖ nonce (16) ‖ expiry u32 BE ‖ relay) — relay as in §4's compact link ("" = ours). `channel` =
-`channelId(ed)` of a fresh, non-extractable Ed25519 key: the page opens `/v1/host/<channel>` and answers the §2 challenge like
-a host (a *rendezvous* channel; no computer behind it). Lifetime 5 min (`RV_TTL`), redrawn when it ends, on 「换一个码」, and
-after 8 offers that do not open. Nothing in it is secret (it is on the screen). A remote rejects: expiry passed, expiry more
-than 600 s ahead, version ≠ 1, a malformed body, a relay `allowRelay` refuses, and a nonce it has already handled (kept until
-the code's expiry, `localStorage aj.rvUsed`).
-
-**Hand-off** (relay frames on the rendezvous channel; both directions padded JSON inside AES-256-GCM):
-| frame | bytes | meaning |
-|---|---|---|
-| remote → page | `0x10` ‖ e_pub (32) ‖ iv (12) ‖ ct | `{"t":"rv","v":1,"n":<nonce b64u>,"l":<pairing link>}` |
-| page → remote | `0x11` ‖ iv (12) ‖ ct | `{"t":"rv_ok","ok":true}` · `{"t":"rv_ok","ok":false,"why":"taken"}` |
-key = HKDF-SHA256(ikm = X25519(e, code key), salt = nonce, info = `"agentjarvis/rv/v1\n" + channel`); AAD =
-`"agentjarvis/rv/offer\n" + channel` / `"agentjarvis/rv/answer\n" + channel`. An offer that does not open is answered with
-op `0x02` (close that device) and nothing else. The first offer that opens is taken (`ok:true`), the page pairs with its link
-exactly as §4 (PAIR_INIT, `hello`, the page shows its safety code); later offers get `taken`; the page keeps the rendezvous
-socket 2 minutes for that.
-
-**Remote → its computer** (§24, additive): `dev_add` may carry `"rv":"<the code's channel>"` (22 b64url chars, else `shape`);
-signed object text `rv\n<channel>` (a host without §27 checks `new` → `bad_signature`; the page says to update). The answer has
-`"rv":true` and no QR. The remote opens the rendezvous as a device (`/v1/dev/<channel>`, waits for `{"t":"host","up":true}`,
-8 s) **before** `dev_add`, so a vanished page costs no pairing slot; then seals the link, sends it and waits ≤ 10 s for the
-answer; `taken` / no answer → `dev_cancel`. `dev_pending` for such a pairing adds `"rv":<channel>` and `"sas":"<6 digits>"`
-(the §4 code of the new session); `dev_pair_end` adds `"rv"` too — a remote ignores events of another code. The card shows the
-device's own name (unverified) and the digits; the owner compares them with the page and confirms → `dev_confirm` with those
-digits (signed, one try, as §24). Cap 10 + eviction, approvals.log / controls.log / activity / notice / push = §24 (the notice
-and activity say 扫码). host.log: `phone_pair_begin kind:"rv" id:<sha256(channel)[:16]>` — never the link.
-
-**What the relay sees in addition**: one more channel per code (a host socket from a browser, its IP), two padded frames.
-Never: the link, the device label, the digits.
-
-**Residual risk** (stated to the owner on the card: 只扫你自己眼前那台设备上的码): someone who sees the code while it is shown can
-race a pairing link of their own computer to the page; the page then pairs with that computer. The owner's remote is told
-`taken` (「那台设备已经收到了另一份配对」) and its own computer adds nothing; the page's digits were never confirmed on the owner's
-phone. Phishing (a code shown by someone else) is the same: the card's first line says not to scan codes others send.
-
-**Scanned text** (paired scan icon / camera hold): a §27 code → this flow; a §4 pairing link → a hint (never the chat);
-a §17.1 friend link → 加好友; anything else → inserted into the message field as text (never fetched, opened or sent).
-
-## 28. 搜索聊天记录 — chat search (P188, 0.20.0, ADR-P188; numbered 28 at the 0.20.0 merge — §25 is the address book)
-
-The phone's 🔍 (header, left of the rightmost gear; ⌘K anywhere / Ctrl+K outside the message box) searches every page of the
-**current epoch**: the owner's input (`src.text`, a Telegram page without its source line), the quote (`src.quote.text`),
-attachment names (`src.att[].name`) and the reply (`reply.text`). Silent (〔不回群〕) and withdrawn pages are never hits. Archives
-(before a `/clear`) are not searched.
-
-**One algorithm, two ends** — `protocol/search.js` (phone) and `host/agentj/hsearch.py` (computer), vectors
-`protocol/vectors/p188-search.json` checked by both:
-- `fold(s)` = NFKC → lower case → Traditional → Simplified (one character to one; OpenCC `TSCharacters`, Apache-2.0, BMP only,
-  chains resolved; the table is byte-identical in both files).
-- `terms(q)` = `fold(q)` split on ASCII whitespace, distinct, ≤ 8 terms of ≤ 64 code points; a page matches when **every** term
-  occurs in at least one field (AND). `q` ≤ 200 UTF-16 units.
-- base score = Σ terms Σ fields weight × min(non-overlapping occurrences, 20), weights input 3 · attachment names 2 · quote 1 ·
-  reply 1; + 6 when the input (leading whitespace dropped) starts with the term, else + 3 when its first line has it; + 2 when
-  the reply starts with it, else + 1 when its first line has it; + 8 when two or more terms occur, in order and space-joined,
-  in one field; + 12 when the input (trimmed) **is** the query.
-- the phone adds recency `1.5 × 0.5^(age_days / 7)` (never sent); order = score desc, then id desc. 「按时间」 = id desc.
-
-| direction | message |
-|---|---|
-| device → host | `{"t":"hist_find","r","q","sort":"score"\|"time","limit":1–50}` (p33, ready, allowlisted; unsigned like `hist_get`) |
-| host → device | `{"t":"hist_found","r","epoch","sort","hits":[{"id","ts","src":{"k","dev"?,"name"?,"via"?,"local"?},"score","where":["in"\|"quote"\|"att"\|"reply"…],"snip":{"<field>":"…"}}],"n","more"}` · `{"t":"hist_found","r","error":"shape"}` |
-
-- `src` is who, never the text; `snip` = one line (whitespace collapsed) of ≤ 160 code points around the first hit of a field
-  that matched, `…` at a cut end. `n` = every match, `hits` = the best `limit` in that order, `more` = `n > len(hits)`.
-- A host that answers announces capability `hfind` in `ready` / `approved` `caps`; the phone asks only such a host and only
-  while older pages of this epoch are not yet on the phone (it pages them in on its own after `ready`, §10.5). host.log keeps
-  `hist_find` with the device and the match count — never the query or the words.
-- The phone shows its own hits at once, merges the computer's (its own copy wins for a page it has), and says which came from
-  the computer; no answer in 15 s / an older host = its own hits plus a line saying so. A hit opens that page (`hist_get
-  before` until it is on the phone) and flashes it.
-- **Result pages (phone only).** Every search is one page `{q, sort, hits, scroll}`: ≤ 20 pages and ≤ 2 MB (JSON × 2), the
-  least recently used goes first; the same words again replace the older page. Sealed in IndexedDB like the drafts (`putSealed
-  "srch"`, AES-GCM, key `local`), bound to this computer (`hostId`) and epoch; a new epoch (`/clear`), unpair, re-pair and a
-  revocation empty it (`wipeLocal`).
-- CLI: `agentj history search <words…> [--time] [--json]` runs the same search on the computer.

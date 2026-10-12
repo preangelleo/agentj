@@ -110,8 +110,7 @@ export function done(m) {
     if (c.kind === 'secret' && m.result === 'done') text = t('elev.r.saved');
     if (m.verify === 'ok') text += ' ' + t('elev.r.verifyOk');
     if (m.verify === 'fail') text += ' ' + t('elev.r.verifyFail');
-    if (c.kind === 'secret' && m.key_hint === 'short') text += ' ' + t('elev.r.keyShort');   // P163: from the length only
-    toast(text, m.key_hint === 'short' ? 8000 : 3600);
+    toast(text, 3600);
   }
   render();
 }

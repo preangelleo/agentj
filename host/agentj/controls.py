@@ -36,9 +36,6 @@ ACTIONS = ("mem_rm", "mem_undo", "estop", "resume", "task_on", "task_off",
            "fr_ctx")                   # P73 (ADR-A176): a friend's 「补充设定」 — the owner's own setting, never a message
 FRIEND_ACTIONS = ACTIONS[6:]
 ACTIONS += ("update", "bots_write", "setup_mark")   # P115: the first-run checklist card (first_run.py)
-ACTIONS += ("pair_new",)                             # P153: a paired remote opens a pairing for another one (§3.3)
-ACTIONS += ("dev_name", "dev_unbind", "dev_add", "dev_confirm")   # P171 (§24): the phone's 遥控器管理 page (remotes.py)
-ACTIONS += ("agent_name",)          # P181 (§22.2): long-press the Agent's name in the reply card header → rename (names.py)
 TS_SKEW_MS = 120_000
 NONCE_KEEP_S = 600
 _NONCE = re.compile(r"[0-9a-f]{32}")
@@ -58,11 +55,6 @@ def object_text(action: str, obj: dict) -> str:
     fr_discoverable : "on" | "off"
     fr_card  : owner \\n intro
     fr_ctx   : friend id \\n text (the whole new 「补充设定」; "" clears it)
-    dev_name : device id \\n new name          (P171, §24)
-    dev_unbind : device id
-    dev_add  : "new" · P190 (§27) a reverse pairing: "rv" \n the scanned code's rendezvous channel
-    dev_confirm : device id \\n the 6-digit code the new device shows
-    agent_name : the new Agent name as typed (P181, §22.2)
     (a missing / null text field is "", as wire.js `?? ''`)
     """
     if action == "bots_write":
@@ -71,18 +63,6 @@ def object_text(action: str, obj: dict) -> str:
         return f"{obj['item']}\n{obj['choice']}\n{int(obj['rev'])}"
     if action == "update":
         return "latest"
-    if action == "pair_new":
-        return "start"
-    if action == "dev_name":         # P171: device id \n new name
-        return f"{obj['device']}\n{obj['name']}"
-    if action == "dev_unbind":
-        return str(obj["device"])
-    if action == "agent_name":       # P181: the new name exactly as sent (the host normalises after the check)
-        return str(obj["name"])
-    if action == "dev_add":
-        return f"rv\n{obj['rv']}" if obj.get("rv") else "new"
-    if action == "dev_confirm":      # the new device's id \n the 6-digit code its screen shows
-        return f"{obj['device']}\n{obj['code']}"
     if action == "mem_rm":
         return f"{obj['src']}\n{obj['file']}\n{obj['fsha']}\n{obj['iid']}"
     if action == "mem_undo":

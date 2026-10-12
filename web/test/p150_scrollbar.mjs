@@ -9,7 +9,6 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { randomBytes } from 'node:crypto';
-import { inflateSync } from 'node:zlib';
 import { parityRecorder } from '../../parity/lib.mjs';
 import { startWebServer } from './serve.mjs';
 import { startFakeHost } from './fakehost.mjs';
@@ -22,15 +21,7 @@ const CMD = Array.from({ length: 40 }, (_, i) => `echo "step ${i}: rebuild the i
 const FIND = `(() => { for (const n of [...document.querySelectorAll('body *')].reverse()) { const cs = getComputedStyle(n);
   if (/(auto|scroll)/.test(cs.overflowY) && n.scrollHeight > n.clientHeight + 20 && n.clientHeight > 40 && n.offsetParent && n.textContent.includes('step 39')) {
     n.dataset.p150sb = '1'; const r = n.getBoundingClientRect();
-    return { color: cs.scrollbarColor, width: cs.scrollbarWidth, x: r.left, y: r.top, w: r.width, h: r.height,
-      thumb: [n.scrollTop / n.scrollHeight * r.height, n.clientHeight / n.scrollHeight * r.height] }; } } return null; })()`;
-// One device pixel of the page → [r, g, b] (1×1 PNG: one filter byte + RGBA after the IDAT inflate).
-async function px(p, x, y) {
-  const b = Buffer.from((await p.send('Page.captureScreenshot', { format: 'png', clip: { x, y, width: 1, height: 1, scale: 1 } })).data, 'base64');
-  const idat = []; for (let o = 8; o < b.length;) { const n = b.readUInt32BE(o), t = b.toString('ascii', o + 4, o + 8); if (t === 'IDAT') idat.push(b.subarray(o + 8, o + 8 + n)); o += 12 + n; }
-  const raw = inflateSync(Buffer.concat(idat)); return [raw[1], raw[2], raw[3]];
-}
-const grey = ([r, g, b]) => Math.max(r, g, b) - Math.min(r, g, b) < 12;
+    return { color: cs.scrollbarColor, width: cs.scrollbarWidth, x: r.left, y: r.top, w: r.width, h: r.height }; } } return null; })()`;
 
 export async function runScrollbar() {
   mkdirSync(OUT, { recursive: true });
@@ -47,29 +38,22 @@ export async function runScrollbar() {
     await fake.send({ t: 'status', s: 'waiting', agent: 'claude', name: 'AgentJ-Father' });
     await fake.ask({ id: randomBytes(16).toString('hex'), tool: 'Bash', summary: CMD, ttl: 120, cat: ['delete'], why: 'rm -rf' });
     await waitFor(p, `document.body.textContent.includes('step 39')`, 8000);
-    // P154: a long command now folds to 2 lines; unfold it (展开全部) — the opened command is what scrolls.
-    await evaluate(p, `document.getElementById('cmdMore').click()`); await sleep(200);
     const seen = {};
     for (const s of ['idle', 'working', 'waiting']) {
       // An open approval keeps the page orange; the green / blue shots paint the same sheet on those states' colours.
       await evaluate(p, `document.body.dataset.status = '${s}'`); await sleep(500);
       const r = await evaluate(p, FIND);
       assert.ok(r, `${s}: the long command scrolls inside the approval`);
-      // P154 追加 7: Chromium draws the ::-webkit-scrollbar bar (no scrollbar-color → no little arrows); Firefox alone gets
-      // scrollbar-color. So the colours are checked on the pixels: a state-tinted thumb, and the track reaching the very top.
-      assert.equal(r.color, 'auto', `${s}: Chromium keeps the webkit bar (scrollbar-color would add the arrows)`);
+      assert.equal(r.width, 'thin', `${s}: thin bar`);
+      const cols = r.color.match(/(?:rgba?|color|oklab)\([^)]*\)/g) || [];
+      assert.equal(cols.length, 2, `${s}: scrollbar-color sets thumb + track (${r.color})`);
+      assert.ok(!/^auto$/.test(r.color), `${s}: not the browser default`);
+      seen[s] = r.color;
       await evaluate(p, `(() => { const n = document.querySelector('[data-p150sb]'); n.scrollTop = n.scrollHeight / 3; })()`);
       await sleep(150);
-      const q = await evaluate(p, FIND);
-      const bx = Math.round(q.x + q.w - 4);
-      const thumb = await px(p, bx, Math.round(q.y + q.thumb[0] + q.thumb[1] / 2));
-      const top = await px(p, bx, Math.round(q.y + 3)), track = await px(p, bx, Math.round(q.y + q.thumb[0] + q.thumb[1] + 8));
-      assert.ok(!grey(thumb), `${s}: the thumb is tinted by the state, not the browser grey (${thumb})`);
-      assert.ok(top.every((v, i) => Math.abs(v - track[i]) < 8), `${s}: no arrow button at the top — the track runs to the edge (${top} vs ${track})`);
-      seen[s] = thumb.join(',');
       const full = await p.send('Page.captureScreenshot', { format: 'png' });
       writeFileSync(join(OUT, `${s}.png`), Buffer.from(full.data, 'base64'));
-      const crop = await p.send('Page.captureScreenshot', { format: 'png', clip: { x: Math.max(0, q.x + q.w - 120), y: q.y, width: 120, height: Math.min(q.h, 300), scale: 3 } });
+      const crop = await p.send('Page.captureScreenshot', { format: 'png', clip: { x: Math.max(0, r.x + r.w - 120), y: r.y, width: 120, height: Math.min(r.h, 300), scale: 3 } });
       writeFileSync(join(OUT, `${s}-bar.png`), Buffer.from(crop.data, 'base64'));
     }
     assert.ok(new Set(Object.values(seen)).size === 3, 'the bar follows the state colour: ' + JSON.stringify(seen));

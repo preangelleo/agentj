@@ -55,10 +55,6 @@ const BACKOFF_FIRST = 250;
 // abandoned and retried (the relay or the computer dropped it silently) — never a pairing or a computer that is down.
 const BACKOFF_MAX = 5000, RESUME_STALL_MS = 15000;
 let backoff = BACKOFF_FIRST;
-// P168: what the offline card may say about the automatic reconnect — real numbers only (no invented progress):
-// attempts = scheduled retries since the last ready session, nextAt = when the pending one fires (null = none pending).
-let retries = 0, nextAt = null;
-export const retryInfo = () => ({ attempts: retries, nextAt });
 let heartbeatTimer = null, heartbeatRun = 0, heartbeatMisses = 0;
 const HEARTBEAT_MS = 20000, HEARTBEAT_TIMEOUT_MS = 10000, HEARTBEAT_RETRY_MS = 3000, HEARTBEAT_MISSES = 2;
 // P129: why the previous session ended — sent (diagnostics only) in the next resume's hello as rc, logged by the host.
@@ -75,7 +71,7 @@ export function reconnectReason() {
 // a handshake past the host timeout. Only an authenticated `removed` can revoke it;
 // confirm a revoked record once with the same device key before clearing local data.
 let refusals = 0, removalProbe = false;
-export const peer = { heartbeat: false, p33: false, asr: 'off', hist: 'off', tgfwd: false, pair1: false, tgfile: false, busyget: false, contacts: false, hfind: false };
+export const peer = { heartbeat: false, p33: false, asr: 'off', hist: 'off', tgfwd: false };
 export function configure(hooks) { H = hooks; }
 export const current = () => sess;
 export const isReady = () => !!sess && sess.phase === 'ready';
@@ -89,7 +85,7 @@ export const textMax = () => (peer.p33 ? P33_TEXT : OLD_TEXT);
 
 export function closeSession() {
   clearTimeout(heartbeatTimer); heartbeatTimer = null; heartbeatRun++;
-  clearTimeout(reconnectTimer); reconnectTimer = null; nextAt = null;
+  clearTimeout(reconnectTimer); reconnectTimer = null;
   const s = sess; sess = null;
   if (s) { endGen(s); s.closedByUs = true; try { s.ws.close(1000); } catch { /* already closed */ } }
 }
@@ -146,19 +142,19 @@ async function onFrame(s, data) {
     // hello is the first thing on the new generation's chain: nothing else can be queued on it before this line
     if (s.mode === 'pair') {
       s.phase = 'approval';
-      await sendOn(s, g, { t: 'hello', caps: ['p33', 'lt1', 'pair1'] }, MAX_JSON);
+      await sendOn(s, g, { t: 'hello', caps: ['p33', 'lt1'] }, MAX_JSON);
       H.onSas(await safetyCode(h));
     } else if (s.mode === 'restore') {
       // F20 (§12): hello, then the one pk_restore (P122 §12.1: rt_restore) — the host answers pk_ok + ready, or pk_fail + close
       s.phase = 'pk-wait';
-      await sendOn(s, g, { t: 'hello', caps: ['p33', 'lt1', 'pair1'], ...H.helloExtra(), ...rcField() }, MAX_JSON);
+      await sendOn(s, g, { t: 'hello', caps: ['p33', 'lt1'], ...H.helloExtra(), ...rcField() }, MAX_JSON);
       const pk = s.ctx.rt ? { t: 'rt_restore', ...s.ctx.rt } : { t: 'pk_restore', ...s.ctx.pk };
       try { pk.iid = await installId(s.ctx.channel); } catch { /* no storage: the record simply keeps no install hash */ }
       await sendOn(s, g, pk, MAX_JSON);
     } else {
       s.phase = 'ready-wait';
       // the host replays what this page has not seen: §8 since (old hosts), §10.5 hist (p33 hosts)
-      await sendOn(s, g, { t: 'hello', caps: ['p33', 'lt1', 'pair1'], ...H.helloExtra(), ...rcField() }, MAX_JSON);
+      await sendOn(s, g, { t: 'hello', caps: ['p33', 'lt1'], ...H.helloExtra(), ...rcField() }, MAX_JSON);
     }
     return;
   }
@@ -178,13 +174,8 @@ function readCaps(m) {
   peer.heartbeat = Array.isArray(m.caps) && m.caps.includes('heartbeat');
   peer.p33 = Array.isArray(m.caps) && m.caps.includes('p33');
   peer.tgfwd = peer.p33 && Array.isArray(m.caps) && m.caps.includes('tgfwd');   // P118 (B10): share → the owner's own Telegram
-  peer.tgfile = peer.p33 && Array.isArray(m.caps) && m.caps.includes('tgfile'); // P183: a reply's file → the owner's Telegram
-  peer.busyget = peer.p33 && Array.isArray(m.caps) && m.caps.includes('busyget'); // P160 (§22): one 「在办」 row's detail
-  peer.contacts = peer.p33 && Array.isArray(m.caps) && m.caps.includes('contacts');   // P184 (§25): address book + 转发到邮箱
-  peer.hfind = peer.p33 && Array.isArray(m.caps) && m.caps.includes('hfind');   // P188 (§28): the computer answers hist_find
   peer.asr = ['ready', 'not_installed', 'off', 'broken'].includes(m.asr) ? m.asr : (peer.p33 ? 'not_installed' : 'off');
   peer.hist = m.hist === 'on' ? 'on' : 'off';
-  peer.pair1 = peer.p33 && Array.isArray(m.caps) && m.caps.includes('pair1');   // P153: add a remote from here (§3.3)
 }
 
 async function onApp(s, m) {
@@ -200,10 +191,6 @@ async function onApp(s, m) {
   }
   if (m.t === 'removed' && s.mode === 'resume') {     // §3: the host says why it will close this device (then closes)
     s.removed = m.why === 'replaced' ? 'replaced' : 'revoked';
-    return;
-  }
-  if (m.t === 'pair_wait') {                          // P153 (§3.3): a card is on the paired remotes; nothing to type here
-    if (s.mode === 'pair' && s.phase === 'approval') H.onPairWait?.(m);
     return;
   }
   if (m.t === 'approved') {
@@ -232,7 +219,7 @@ async function onApp(s, m) {
 
 function enterReady(s) {
   s.phase = 'ready';
-  backoff = BACKOFF_FIRST; retries = 0; nextAt = null;
+  backoff = BACKOFF_FIRST;
   lastDrop = null; heartbeatMisses = 0;
   refusals = 0; removalProbe = false;
   H.onReady();
@@ -333,13 +320,10 @@ function armStall(s) {
 
 export function scheduleReconnect() {
   clearTimeout(reconnectTimer);
-  // P193 (B12): after the near-immediate first try, each wait is jittered into [½, 1] × the ladder step, so a relay
-  // deploy that drops every phone at once does not bring them all back in the same instant. Never above BACKOFF_MAX.
-  const wait = backoff === BACKOFF_FIRST ? backoff : Math.round(backoff * (0.5 + Math.random() / 2));
+  const wait = backoff;
   backoff = Math.min(backoff * 2, BACKOFF_MAX);
-  retries++; nextAt = Date.now() + wait;
   H.setStatus('connecting', 'st.retryIn', { n: Math.max(1, Math.round(wait / 1000)) });
-  reconnectTimer = setTimeout(() => { reconnectTimer = null; nextAt = null; H.resume(); }, wait);
+  reconnectTimer = setTimeout(() => { reconnectTimer = null; H.resume(); }, wait);
 }
 function armHeartbeat(ms = HEARTBEAT_MS) {
   clearTimeout(heartbeatTimer);
@@ -369,7 +353,7 @@ export async function checkConnection(fast = false, why = 'hb') {
 }
 export function reconnectNow(why = 'visibility') {
   if (isReady()) checkConnection(true, why);
-  if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; nextAt = null; backoff = BACKOFF_FIRST; H.resume(); }
+  if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; backoff = BACKOFF_FIRST; H.resume(); }
 }
 
 /** Send one app message on the ready session; resolves when it is on the socket. `g` pins a generation (gen()): when the

@@ -339,13 +339,14 @@ def doctor_row(st) -> tuple[str, str, str]:
         return "ok", summary, ""
     hint = {"seat": "agentj login --seat-file <file> --name <name>", "computer": "agentj admin  (pair this computer's browser)",
             "phone": "agentj admin  (pair the main phone)"}[s["next"]]
-    from . import pairprep   # P127: the same pairing pre-check as `agentj pair --check` / the admin page
+    from . import gate, pairprep   # P127: the same pairing pre-check as `agentj pair --check` / the admin page
     if s["seat"]:
         chk = pairprep.precheck(st)
         hint = ("账户页席位卡 → 添加遥控器 → 通行密钥确认 → 扫码 / account seat card → Add a remote → passkey → scan; no terminal passphrase"
                 if chk["route"] == "account" else pairprep.both(chk).replace("\n", " / "))
-    else:       # P185: an unbound host cannot pair at all — binding the seat comes first
-        hint += "  (先绑定席位才能配对遥控器；绑定后不需要批准口令 / bind the seat before pairing; no passphrase is needed after binding)"
+    elif not gate.is_set(st):
+        hint += ("  (绑定后配对不需要批准口令；不绑定只在本机配对，要先自己运行 `agentj passphrase set` / after binding no passphrase is "
+                 "needed; unbound local pairing needs `agentj passphrase set` first)")
     return "warn", summary, hint
 
 

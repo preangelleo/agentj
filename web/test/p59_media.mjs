@@ -146,14 +146,14 @@ try {
         skips: [...document.querySelectorAll('#mstrip .mskip')].map((x) => x.textContent) })`);
       assert.deepEqual(strip, { cards: ['audio:voice.wav'], skips: ['.env 可能含密钥，没有发。'] }, 'the strip: only what the reply did not place');
       assert.equal(await ev(p, `document.querySelectorAll('[data-mid="${id('D')}"]').length`), 2, 'the PDF once (slot + its card), not again in the strip');
-      // the inline PDF card works like the strip's (P183: loads on screen; icons 预览 / 下载)
-      await ev(p, `document.querySelector('#words .mslot[data-link]').scrollIntoView({ block: 'center' })`);
-      await waitFor(p, `!!document.querySelector('#words .mslot[data-link] .mcard[data-state=ready]')`, 10000);
-      const acts = await ev(p, `[...document.querySelectorAll('#words .mslot[data-link] .macts .mact')].filter((b) => !b.hidden).map((b) => b.getAttribute('aria-label'))`);
-      assert.deepEqual(acts, ['预览（空格）', '下载']);
+      // the inline PDF card works like the strip's: tap → open / download
+      await ev(p, `document.querySelector('#words .mslot[data-link] .mtap').click()`);
+      await waitFor(p, `document.querySelectorAll('#words .mslot[data-link] .macts a').length >= 2`, 10000);
+      const acts = await ev(p, `[...document.querySelectorAll('#words .mslot[data-link] .macts a')].map((a) => [a.textContent, a.href.slice(0, 5), a.target || a.getAttribute('download')])`);
+      assert.deepEqual(acts, [['打开', 'blob:', '_blank'], ['下载', 'blob:', 'report.pdf']]);
       await ev(p, `document.querySelector('#words .mslot[data-link]').scrollIntoView({ block: 'center' })`);
       writeFileSync(join(OUT, 'p59-page-phone.png'), await shoot(p));
-      assert.ok(gets.filter((g) => g.mid === id('B')).length <= 1, 'audio fetched at most once (P183: by itself only when on screen)');
+      assert.ok(!gets.some((g) => g.mid === id('B')), 'audio still waits for a tap');
       assert.deepEqual(p.offsite, [], 'nothing left the phone but the session (the remote picture was not fetched)');
       assert.deepEqual(p.problems, []);
     } finally { await p.dispose(); }
@@ -176,8 +176,8 @@ try {
       assert.equal(gets.filter((g) => g.mid === id('A')).length, before, 'the reader used the cached Blob: no second media_get');
       writeFileSync(join(OUT, 'p59-reader-phone.png'), await shoot(p));
       // the inline PDF card in the reader works too (the bytes come from the LRU after the first fetch)
-      await ev(p, `document.querySelector('#rdWords .mslot[data-link]').scrollIntoView({ block: 'center' })`);
-      await waitFor(p, `!!document.querySelector('#rdWords .mslot[data-link] .mcard[data-state=ready]')`, 10000);
+      await ev(p, `document.querySelector('#rdWords .mslot[data-link] .mtap').click()`);
+      await waitFor(p, `document.querySelectorAll('#rdWords .mslot[data-link] .macts a').length >= 2`, 10000);
       // tap the picture → the viewer above the reader; Esc closes the viewer only
       await ev(p, `document.querySelector('#rdWords .mslot img').click()`);
       await waitFor(p, `!document.querySelector('.mview').hidden && !!document.querySelector('.mview img.mzoom')`);

@@ -250,7 +250,7 @@ class SharedIdentity(Tmp):
     def test_session_start_injects_core_and_private_once_per_generation(self):
         p = self.file("FOUNDER-MAP-1")
         a, host = self.agent(private_instructions_file=str(p))
-        a.INLINE_MAX = a.HOOK_MAX = 20000   # the inline path (+ private file + reminder over Claude's real 10000 cap; the file path is covered by the next-but-one test)
+        a.INLINE_MAX = 20000   # the inline path (core v10 zh alone is ~8.9k; the file path is covered by the next-but-one test)
         out = self.run_(a.hook_event({"hook_event_name": "SessionStart", "source": "resume", "session_id": "owner"}))
         ctx = out["hookSpecificOutput"]["additionalContext"]
         self.assertIn("FOUNDER-MAP-1", ctx); self.assertIn("Agent J 主 Agent 宪法", ctx)

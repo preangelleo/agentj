@@ -110,7 +110,6 @@ class SpeechTransportTest(unittest.IsolatedAsyncioTestCase):
         from agentj.serve import Host,Session
         from agentj.noise import CipherState,Keypair
         self.st=State();self.st.init();p.ensure();self.host=Host(self.st,read_stdin=False)
-        self.host.seat_refusal=lambda:None   # P185: speech transport here; the seat door is test_p185_seat's
         peer=Keypair.generate();did=self.st.add_device(peer.pub,'test phone');key=b'k'*32
         self.s=Session(cid=1,state='ready',device=did,pub=peer.pub,p33=True,send=CipherState(key));self.recv=CipherState(key)
         self.host.sessions={1:self.s};self.frames=[]

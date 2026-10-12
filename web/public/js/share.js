@@ -2,15 +2,14 @@
 import {el} from './ui.js';
 import {t, onLang} from './t.js';
 import {importShare, pasteClipImages} from './relay.js';
-// P166: `?from=share&via=file` = the iPhone shortcut saved the file into the Files app; the button opens the file picker.
-let pending = null, paired = false, ready = false, enabled = false, key = null, via = '';
+let pending = null, paired = false, ready = false, enabled = false, key = null;
 function render(){
   const box = el('share-notice'); box.hidden = !key;
   if (document.body.dataset.view === 'chat') document.querySelector('.composer').prepend(box);
   else document.body.append(box);
   el('share-status').textContent = key ? t(key) : '';
   const button = el('share-paste'); button.hidden = !enabled || !paired;
-  button.disabled = !ready; button.textContent = t(via === 'file' ? 'share.pick' : 'share.paste');
+  button.disabled = !ready; button.textContent = t('share.paste');
 }
 function note(k){ key = k; render(); }
 function consume(id){
@@ -27,11 +26,8 @@ export async function initShare(approved){
   paired = approved;
   const u = new URL(location.href), id = u.searchParams.get('share');
   enabled = u.searchParams.get('from') === 'share';
-  via = enabled && u.searchParams.get('via') === 'file' ? 'file' : '';
   el('share-paste').addEventListener('click', () => {
     if (!paired || !ready) return;
-    // The picker needs this same click (user activation); the file then takes the 「文件」 button's path.
-    if (via === 'file') { el('fDoc').click(); return; }
     // Call clipboard.read directly inside this click, preserving Safari user activation.
     pasteClipImages();
   });
@@ -46,7 +42,7 @@ export async function initShare(approved){
     finally {
       u.searchParams.delete('share'); history.replaceState(history.state, '', u.pathname + u.search + u.hash);
     }
-  } else if (enabled) note(paired ? (via === 'file' ? 'share.file' : 'share.clip') : 'share.pair');
+  } else if (enabled) note(paired ? 'share.clip' : 'share.pair');
 }
 export function onShareReady(on = true){
   ready = on;

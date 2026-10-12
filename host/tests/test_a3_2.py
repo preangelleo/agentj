@@ -24,7 +24,7 @@ HOST = HERE.parent
 sys.path.insert(0, str(HOST))
 sys.path.insert(0, str(HERE))
 from agentj import __version__, gate, admin, cloud, names, serve, text, wire  # noqa: E402
-from agentj.state import MAX_DEVICES, State  # noqa: E402
+from agentj.state import State  # noqa: E402
 from fakecp import FakeCP  # noqa: E402
 from fakerelay import FakeRelay, PyDevice  # noqa: E402
 
@@ -670,7 +670,7 @@ class Page(unittest.TestCase):
         self.assertEqual(st["agent_name"], "Wren")
         self.assertEqual(set(st), {"agent_name", "machine", "channel", "version", "serve", "dashboard", "remote_unbind", "limit",
                                    "devices", "pairing", "passphrase_set", "pair_check"})
-        self.assertEqual((st["limit"], st["version"], st["serve"]["running"]), (10, __version__, False))
+        self.assertEqual((st["limit"], st["version"], st["serve"]["running"]), (5, __version__, False))
         for bad in (auth.replace("Bearer ", "bearer "), auth + "x", "Basic " + auth[7:], auth[7:]):
             self.assertEqual(self.state_status(bad), 404, bad)
         r, _ = self.req("GET", "/api/state", headers={"Cookie": f"aj_admin_{self.port}={auth[7:]}"})
@@ -875,11 +875,9 @@ class Page(unittest.TestCase):
     def test_rename_and_local_revoke_without_serve(self):
         auth = self.login()
         did = self.st.add_device(os.urandom(32), "手机\x1b[2J")
-        r, data = self.post("/api/name", {"name": "  内容制作部  Agent "}, auth)   # P154: 5 CJK + 6 others = 14 units > 13
-        self.assertEqual((r.status, json.loads(data)["error"]), (400, "name_too_long"))
-        r, data = self.post("/api/name", {"name": "  内容部  Agent "}, auth)
-        self.assertEqual((r.status, json.loads(data)), (200, {"ok": True, "name": "内容部 Agent"}))
-        self.assertEqual(self.st.agent_name(), "内容部 Agent")
+        r, data = self.post("/api/name", {"name": "  内容制作部  Agent "}, auth)
+        self.assertEqual((r.status, json.loads(data)), (200, {"ok": True, "name": "内容制作部 Agent"}))
+        self.assertEqual(self.st.agent_name(), "内容制作部 Agent")
         r, data = self.post("/api/name", {"name": "a\u202eb"}, auth)
         self.assertEqual(r.status, 400)
         self.assertEqual(json.loads(data)["error"], "bad_name")
@@ -1108,23 +1106,23 @@ class PagePairing(unittest.TestCase):
 
     def test_full_list_approve_unbinds_the_oldest(self):
         """0.15.1 (P55): a full host shows which remote approving will unbind, and the right code approves."""
-        old = [self.st.add_device(os.urandom(32), f"旧遥控器{i}") for i in range(MAX_DEVICES)]
+        old = [self.st.add_device(os.urandom(32), f"旧遥控器{i}") for i in range(5)]
         d = self.st.devices()
         for i, did in enumerate(old):
             d[did]["paired_at"] = 1_790_000_000 + i
         self.st.write_private(self.st.devices_path, json.dumps(d).encode())
-        dev, code, st = self.start_and_pair("新的一台")
+        dev, code, st = self.start_and_pair("第六台")
         p = st["pairing"]
         self.assertEqual(p["phase"], "pending")
         self.assertEqual(p["makes_room"]["kind"], "evict")
         self.assertEqual((p["makes_room"]["device"]["id"], p["makes_room"]["device"]["name"]), (old[0], "旧遥控器0"))
-        self.assertEqual(len(st["devices"]), MAX_DEVICES)
+        self.assertEqual(len(st["devices"]), 5)
         s, d = self.post("/api/pair/code", {"code": code, "passphrase": PASS})
         self.assertEqual(d["pairing"]["phase"], "approved")
         self.assertEqual(d["pairing"]["makes_room"]["kind"], "evicted")
         self.assertEqual(d["pairing"]["makes_room"]["device"]["id"], old[0])
         self.assertEqual(dev.app(), {"t": "approved"})
-        self.assertEqual(len(self.st.devices()), MAX_DEVICES)
+        self.assertEqual(len(self.st.devices()), 5)
         self.assertIn(dev.id, self.st.devices())
         self.assertNotIn(old[0], self.st.devices())
 

@@ -94,9 +94,8 @@ def run(st, lang="zh", session=None, ask=None, out=None, ctl=None, service=None,
                 service.restart()
                 restarted = True
                 steps.append(_say(lang, "中继连不上 → 已重启后台服务", "relay not connected → background service restarted"))
-            except Exception as e:  # noqa: BLE001 — P192 (B18): the step list says the restart did not happen
-                steps.append(_say(lang, f"中继连不上 → 重启后台服务失败（{type(e).__name__}）",
-                                  f"relay not connected → restarting the background service failed ({type(e).__name__})"))
+            except Exception:  # noqa: BLE001
+                pass
             res = _wait(st, ctl, sleep, 30, lambda r: up(r) and r.get("relay_state") == "up")
         if not up(res) or res.get("relay_state") != "up":
             return finish(False, "电脑连不上 Agent J 中继（网络或账户问题），手机暂时联系不到它：检查网络后运行 agentj doctor。",

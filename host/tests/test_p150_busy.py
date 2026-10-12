@@ -1,6 +1,6 @@
 """P150 (PROTOCOL §22): the phone's 「在办事项」 dots — who works in the background under the Agent's watch.
 
-- labels are the whole description on one line, capped at LABEL_MAX (P154; no more 5-character squeeze);
+- labels are squeezed without a model: Chinese ≤ 5 characters, otherwise ≤ 10 characters of whole words;
 - the owned Claude session (stream-json): an Agent/Task tool_use opens an item, its tool_result closes it, a background
   launch stays until its task_notification; the process ending clears everything of it;
 - shared Claude sessions (hooks): PreToolUse(Agent) gives the description, SubagentStart/Stop open/close, SessionEnd and
@@ -37,18 +37,17 @@ def tool_result(tid, text):
 
 class Labels(unittest.TestCase):
     def test_short(self):
-        # P154: the whole description, one line, capped at LABEL_MAX (no more 5-character squeeze)
-        self.assertEqual(busy.short("转录视频，然后发给我"), "转录视频，然后发给我")
-        self.assertEqual(busy.short("Transcribe the video for Leo"), "Transcribe the video for Leo")
-        self.assertEqual(busy.short("  部署 relay\n热修  到生产\t"), "部署 relay 热修 到生产")
+        self.assertEqual(busy.short("转录视频，然后发给我"), "转录视频")
+        self.assertEqual(busy.short("发布收尾并合并 main"), "发布收尾并")
+        self.assertEqual(busy.short("Transcribe the video for Leo"), "Transcribe")
+        self.assertEqual(busy.short("Back up logs"), "Back up")
+        self.assertEqual(busy.short("supercalifragilistic"), "supercalif")
         self.assertEqual(busy.short(""), "")
         self.assertEqual(busy.short(None), "")
         self.assertEqual(busy.short("\x1b[31m巡检\x00代理"), "巡检代理")
-        long = "很长的标题" * 40
-        out = busy.short(long)
-        self.assertEqual(len(out), busy.LABEL_MAX)
-        self.assertTrue(out.endswith("…"))
-        self.assertEqual(busy.short("x" * busy.LABEL_MAX), "x" * busy.LABEL_MAX)
+        for s in ("一二三四五六七", "abc defgh ijklmnop"):
+            out = busy.short(s)
+            self.assertLessEqual(len(out), 10)
 
     def test_who(self):
         self.assertIsNone(busy.who_of("general-purpose"))
@@ -67,7 +66,7 @@ class OwnedStream(unittest.TestCase):
     def test_foreground_open_close(self):
         self.b.stream_event(tool_use("tu1", "转录视频，再总结"))
         it = self.b.items()
-        self.assertEqual([(x["who"], x["kind"], x["label"]) for x in it], [(None, "temp", "转录视频，再总结")])
+        self.assertEqual([(x["who"], x["kind"], x["label"]) for x in it], [(None, "temp", "转录视频")])
         self.b.stream_event(tool_result("tu1", "done: the summary"))
         self.assertEqual(self.b.items(), [])
         self.assertEqual(self.n, 2)
@@ -109,7 +108,7 @@ class SharedHooks(unittest.TestCase):
     def test_lifecycle(self):
         self.b.hook_event(self.ev("PreToolUse", tool_name="Agent", tool_input={"description": "备份日志到 NAS", "subagent_type": "general-purpose"}))
         self.b.hook_event(self.ev("SubagentStart", agent_id="A1", agent_type="general-purpose"))
-        self.assertEqual([(x["who"], x["label"]) for x in self.b.items()], [(None, "备份日志到 NAS")])
+        self.assertEqual([(x["who"], x["label"]) for x in self.b.items()], [(None, "备份日志到")])
         self.b.hook_event(self.ev("SubagentStop", agent_id="A1", agent_type="general-purpose"))
         self.assertEqual(self.b.items(), [])
 
@@ -188,7 +187,7 @@ class Outside(unittest.TestCase):
                "agentj-serve.service loaded active running Agent J\n")
         run = lambda *a, **k: SimpleNamespace(stdout=out)   # noqa: E731
         got = busy.scan_units(run)
-        self.assertEqual([(x["who"], x["label"]) for x in got], [("掌枢", "发布收尾"), ("P151", "Review the P151 candidate")])
+        self.assertEqual([(x["who"], x["label"]) for x in got], [("掌枢", "发布收尾"), ("P151", "Review")])
         self.assertEqual(busy.scan_units(lambda *a, **k: (_ for _ in ()).throw(OSError())), [])
 
     def test_cli_run_registers_while_running(self):

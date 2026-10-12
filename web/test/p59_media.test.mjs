@@ -101,7 +101,7 @@ test('placeSlots: a refused file shows its note where it was written (and not ag
 test('media.js: the reader shares the LRU and owns its own object URLs; no markup APIs', () => {
   assert.match(MEDIA_SRC, /export function renderReader\(words, p\)/);
   assert.match(MEDIA_SRC, /export function clearReader\(\)/);
-  assert.match(MEDIA_SRC, /flight = fetchMedia\(m\)\.then\(/, 'every card goes through fetchMedia (cache + one flight per mid)');
+  assert.match(MEDIA_SRC, /const blob = await fetchMedia\(m\)/, 'every card goes through fetchMedia (cache + one flight per mid)');
   assert.match(MEDIA_SRC, /c\._sc\.urls\.push\(c\._url\)/, 'object URLs belong to the scope that made them');
   const code = MEDIA_SRC.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:\\'"])\/\/.*$/gm, '$1');
   assert.doesNotMatch(code, /innerHTML|outerHTML|insertAdjacentHTML|DOMParser|\bfetch\s*\(/);

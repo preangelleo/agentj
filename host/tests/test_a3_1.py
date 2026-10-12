@@ -1,4 +1,4 @@
-"""A3.1: at most 10 remotes per host (Q32, 2026-10-02: 5; P171 2026-10-12: 10), enforced by the host; the full-list prompt's unbind; and the
+"""A3.1: at most 5 remotes per host (Q32, 2026-10-02), enforced by the host; the full-list prompt's unbind; and the
 Dashboard's unbind requests, which the host executes only after its own checks (allowlist, switch, hourly cap)."""
 import _hermetic  # noqa: F401,I001  (never the real ~/.local/state; see _hermetic.py)
 import asyncio
@@ -40,20 +40,20 @@ class Cap(unittest.TestCase):
     def tearDown(self):
         self.tmp.cleanup()
 
-    def test_allowlist_holds_at_most_ten(self):
-        self.assertEqual(MAX_DEVICES, 10)
+    def test_allowlist_holds_at_most_five(self):
+        self.assertEqual(MAX_DEVICES, 5)
         ids = _fill(self.st)
         self.assertTrue(self.st.device_full())
         before = self.st.devices_path.read_bytes()
         with self.assertRaises(DeviceLimit):
-            self.st.add_device(os.urandom(32), "第十一台")
-        self.assertEqual(self.st.devices_path.read_bytes(), before, "a refused eleventh device writes nothing")
+            self.st.add_device(os.urandom(32), "第六台")
+        self.assertEqual(self.st.devices_path.read_bytes(), before, "a refused sixth device writes nothing")
         # re-approving an already listed device is not a new one
         pub = wire.unb64u(self.st.devices()[ids[0]]["pub"])
         self.assertEqual(self.st.add_device(pub, "改名"), ids[0])
         self.assertTrue(self.st.remove_device(ids[1]))
         self.st.add_device(os.urandom(32), "腾出位置后")
-        self.assertEqual(len(self.st.devices()), MAX_DEVICES)
+        self.assertEqual(len(self.st.devices()), 5)
 
     def _pending(self, host):
         s = serve.Session(cid=7, state="pending", device="NEWNEWNEWNEWNEWN", name="新手机", pub=os.urandom(32), h=os.urandom(32))
@@ -77,13 +77,13 @@ class Cap(unittest.TestCase):
             host.pairing = p
             ev = host._pending_event(s)
             self.assertNotIn("full", ev)
-            self.assertEqual(ev["limit"], 10)
+            self.assertEqual(ev["limit"], 5)
             self.assertEqual(set(ev["evict"]), {"id", "name", "paired_at", "online"})
             return await host.decide(p, wire.safety_code(s.h), PASS)   # the right code
         res = asyncio.run(go())
         self.assertEqual(res["ev"], "approved")
         self.assertIn(res["evicted"]["id"], ids)
-        self.assertEqual(len(self.st.devices()), MAX_DEVICES)
+        self.assertEqual(len(self.st.devices()), 5)
         self.assertIn('"ev": "auto_unbind"', self.st.log_path.read_text())
 
     def test_re_pairing_a_listed_device_is_not_a_new_one(self):
@@ -104,7 +104,7 @@ class Cap(unittest.TestCase):
             self.assertNotIn("evict", host._pending_event(s))
             return await host.decide(p, wire.safety_code(s.h), PASS)
         self.assertEqual(asyncio.run(go())["ev"], "approved")
-        self.assertEqual(len(self.st.devices()), MAX_DEVICES)
+        self.assertEqual(len(self.st.devices()), 5)
 
     def test_unbind_from_the_prompt_makes_room_then_the_code_approves(self):
         ids = _fill(self.st)
@@ -128,7 +128,7 @@ class Cap(unittest.TestCase):
         self.assertEqual(res["ev"], "approved")
         self.assertEqual(sent[0], {"t": "approved"})        # L1: then the Agent status + push key (on_ready)
         self.assertEqual([m["t"] for m in sent[1:]], ["status", "estop_state", "push_key"])
-        self.assertEqual(len(self.st.devices()), MAX_DEVICES)
+        self.assertEqual(len(self.st.devices()), 5)
         self.assertNotIn(ids[2], self.st.devices())
 
 
@@ -153,7 +153,7 @@ class RemoteUnbind(unittest.TestCase):
             return out
         self.assertEqual(asyncio.run(go()), ["unknown_device", "disabled", "revoked", "revoked"])
         self.assertNotIn(self.ids[0], self.st.devices())
-        self.assertEqual(len(self.st.devices()), MAX_DEVICES - 1)
+        self.assertEqual(len(self.st.devices()), 4)
         log = [json.loads(x) for x in self.st.log_path.read_text().splitlines() if '"remote_unbind"' in x]
         self.assertEqual([x["result"] for x in log], ["unknown_device", "disabled", "revoked"])
         self.assertTrue(all(set(x) <= {"ts", "ev", "request", "device", "result"} for x in log))
@@ -167,7 +167,7 @@ class RemoteUnbind(unittest.TestCase):
         # a restart (new Host on the same state) neither resets the cap nor forgets a decided request (review A31-02)
         again = serve.Host(self.st, events="jsonl", read_stdin=False)
         self.assertEqual(asyncio.run(go(again, [(RID[5], self.ids[4]), (RID[0], self.ids[0])])), ["rate_limited", "revoked"])
-        self.assertEqual(len(self.st.devices()), MAX_DEVICES - 3)
+        self.assertEqual(len(self.st.devices()), 2)
         self.assertEqual(os.stat(self.st.unbind_path).st_mode & 0o777, 0o600)
         self.st.check_perms()
         rec = json.loads(self.st.unbind_path.read_text())

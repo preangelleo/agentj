@@ -233,7 +233,7 @@ class SayVoice(unittest.TestCase):
                 return first
         first = asyncio.run(go())
         a = first["argv"]
-        for flag, val in (("-protocol_whitelist", "file"), ("-f", "matroska"), ("-t", str(serve.FF_SEG_SECS)),
+        for flag, val in (("-protocol_whitelist", "file"), ("-f", "matroska"), ("-t", str(serve.FF_MAX_SECS)),
                           ("-fs", str(uploads.ASR_MAX))):
             self.assertIn(flag, a)
             self.assertEqual(a[a.index(flag) + 1], val, flag)

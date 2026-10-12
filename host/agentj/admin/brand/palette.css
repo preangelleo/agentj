@@ -17,14 +17,14 @@
   --c-last-straw: #e3dacc;
   --c-black-mana: #858585;
   --c-argent: #888888;
-  --c-milky-waves: #71bbde;     /* link underline / strong blue (replaces the retired Assassin navy) */
+  --c-assassin: #2d4f83;
   --c-windstorm: #6a9bcc;
   --c-peachy-feeling: #d97757;
   --c-mellow-marrow: #ebc9b7;
   --c-peek-a-blue: #c7dedc;
   --c-banana-republic: #ffe292;
   --c-dust-of-the-moon: #cacadb;
-  --c-shield: #629887;          /* the logo green — accent ONLY (logo, focus ring, status dot, tiny highlights) */
+  --c-shield: #639887;          /* the logo green — accent ONLY (logo, focus ring, status dot, tiny highlights) */
   --c-shield-soft: #dbf5ec;     /* the shield's eye colour */
   --c-danger: #a23b2a;          /* text-safe red for destructive actions (on lotion ≥ 6:1) */
   --c-danger-soft: #f6dcd5;
@@ -76,8 +76,7 @@
   --border: var(--c-last-straw);
   --border-soft: var(--c-last-straw); /* row dividers inside tables/lists */
   --seam: var(--c-salt);              /* dashed header↔body whisper seam */
-  --link: var(--c-sooty);             /* links = sooty text + blue underline (palette blues are too pale as text on lotion) */
-  --link-underline: var(--c-windstorm);
+  --link: var(--c-assassin);
   --primary-bg: var(--c-sooty);       /* PRIMARY = near-black, not green */
   --primary-fg: var(--c-lotion);
   --quiet-bg: var(--c-salt);
@@ -112,7 +111,6 @@
     --border-soft: #3d3c37;
     --seam: var(--c-noir);
     --link: #9fc2e6;
-    --link-underline: var(--c-milky-waves);
     --primary-bg: var(--c-lotion);
     --primary-fg: var(--c-sooty);
     --quiet-bg: var(--c-noir);
@@ -142,7 +140,6 @@ html[data-theme="dark"] {
   --border-soft: #3d3c37;
   --seam: var(--c-noir);
   --link: #9fc2e6;
-  --link-underline: var(--c-milky-waves);
   --primary-bg: var(--c-lotion);
   --primary-fg: var(--c-sooty);
   --quiet-bg: var(--c-noir);

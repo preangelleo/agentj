@@ -18,11 +18,9 @@ from .state import DEFAULT_WEB, MAX_DEVICES, State, state_dir
 
 LANGS = ("zh", "en")
 DOCS_URL = "https://agentj.app/docs/"
-PHILOSOPHY_URL = "https://agentj.app/docs/philosophy/"   # P186
 MANUAL_URL = "https://agentj.app/docs/manual/"   # F23 (0.15.2): the illustrated user guide (= the Agent's agentj-manual skill)
 REFUND_DAYS = 7
 CONTACT = "founder@agentj.app"   # refunds and billing (site pricing / refund policy)
-FEEDBACK = "feedback@agentj.app"  # P168: the human fallback mailbox when the Agent cannot report (offline, agentj.app unreachable)
 AGENT_LABEL = {"claude": "Claude Code", "codex": "Codex", "opencode": "OpenCode"}
 
 
@@ -105,12 +103,11 @@ def _zh(f: dict) -> str:
         "这个链接就是钥匙：5 分钟内有效，只能用一次，别发到微信、群里、邮件里，也别发给任何 AI。",
         "",
         "**平时怎么用**",
-        "- 直接打字告诉它要做什么。它是你的董事长助理：你说清要什么、什么时候要、做到什么样算好，细节交给它；"
-        f"会反复做的事，它会提议建一个工作流长期替你跑。这套想法见 {PHILOSOPHY_URL} 。",
+        "- 直接打字告诉它要做什么。",
         "- 长期要做的事（比如「每周一做一份竞品简报」）说一次就行：它先自查会什么，只发一张开工卡给你确认，之后按时自己跑、自己交付；"
         "问一句「你会什么」，手机上会弹出能力页。",
         "- 需要你点头时，手机上会弹出来问你：按住「长按批准」才算批准（点一下不算），点「拒绝」就拒绝；2 分钟不按就当拒绝。"
-        "花钱、删除、对外发送、改密码或密钥、改价格，这五类事每一次都要你单独点头（卡片标着 ⚠）。",
+        "花钱、删除、对外发送、改密码或密钥、改价格，这五类事每一次都要你单独「长按批准这一条」。",
         "- 红色的「全部停下」：马上让它停手，定时任务也停。要继续，在手机上点「恢复」，或者在电脑上运行 `agentj resume`"
         "（要输批准口令）。",
         "- 「记忆」看它记住了什么，「记录」看它最近做了什么，「定时任务」看它按时做的事（只有你能打开），"
@@ -139,12 +136,10 @@ def _zh(f: dict) -> str:
         "没用完的天数不退钱。",
         "",
         "**不想用了**：先在账号后台的「管理账单」里取消订阅——卸载不会停止扣费。然后在电脑上运行 `agentj service uninstall` "
-        "和 `uv tool uninstall agentj`。你工作文件夹里的工作流、文档和技能都留在电脑上，归你。",
+        "和 `uv tool uninstall agentj`。",
         "",
         f"**使用说明**（手机上每种颜色、每条线、每个按钮是什么意思，带截图）：{MANUAL_URL} 。也可以直接在手机上问 Agent J「这个颜色是什么意思」。",
         f"**说明文档**：{DOCS_URL} 。有问题就问这台电脑上帮你装 Agent J 的 AI，它会先去说明文档里查，查不到再帮你问 Agent J 的团队。",
-        f"**连不上的时候**：Agent 自己能报问题时，让它用 `agentj support`；它完全连不上（离线、打不开 agentj.app），就写信到 {FEEDBACK}，"
-        "写上你的账号 ID、发生了什么、什么时候，再附一张截图。邮件在哪里都能发到。",
     ]
     return "\n".join(out) + "\n"
 
@@ -182,8 +177,7 @@ def _en(f: dict) -> str:
         "for 5 minutes. Never send it through WeChat, a group chat, email or to any AI.",
         "",
         "**Every day**",
-        "- Just type what you want done. It is your chief of staff: say what you want, by when and what good looks like, "
-        f"and leave the details to it; work that repeats, it offers to turn into a workflow that runs for you. The idea: {PHILOSOPHY_URL}",
+        "- Just type what you want done.",
         "- Recurring work (say, \"a competitor brief every Monday\") is one sentence: it checks what it can do, sends you one "
         "start card to confirm, then runs and delivers on schedule. Ask \"what can you do\" to see its capability page.",
         "- Whenever it needs your OK, your phone asks you: press and hold \"Hold to approve\" to approve (a tap is not "
@@ -227,15 +221,12 @@ def _en(f: dict) -> str:
         "",
         "**Stopping for good:** first cancel the subscription under \"Manage billing\" in the account dashboard: "
         "uninstalling does not stop the billing. Then run `agentj service uninstall` and `uv tool uninstall agentj` on "
-        "the computer. The workflows, documents and skills in your work folder stay on your computer; they are yours.",
+        "the computer.",
         "",
         f"**User guide** (what every colour, line and button on the phone means, with screenshots): {MANUAL_URL}. You can also "
         "just ask Agent J on the phone \"what does this colour mean?\".",
         f"**Help pages:** {DOCS_URL}. Questions? Ask the AI that set up Agent J on this computer: it looks things up in the "
         "help pages first and asks the Agent J team if they don't answer it.",
-        f"**When nothing connects:** when your Agent can report the problem itself, have it use `agentj support`. If it can't "
-        f"connect at all (offline, agentj.app won't open), email {FEEDBACK} with your account ID, what happened and when, and a "
-        "screenshot. Email gets through from anywhere.",
     ]
     return "\n".join(out) + "\n"
 

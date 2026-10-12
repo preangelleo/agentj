@@ -10,37 +10,19 @@ import { b64u } from '../proto/wire.js';
 
 export const CHUNK = 45056;
 export const WINDOW = 8;
-export const MAX_BYTES = 209715200;         // 200 MiB (P166: an hour of phone audio; the relay paces ≈ 1 MB/s)
+export const MAX_BYTES = 26214400;          // 25 MiB
 export const ASR_MAX_BYTES = 20160044;       // 630 s of 16 kHz mono PCM16 + header
 export const MAX_ATT = 10;
 export const MAX_OPEN = 2;                   // ≤ 2 open uploads per device (host limit)
 const STALL_MS = 45000;
 
-/** MIME ↔ extension for the common types (relay inbox.ALLOWED + P166's inbox.MORE). P166: any other file is sent too, as
- *  its own well-formed MIME or application/octet-stream (anyMime); the host keeps a scrubbed extension, never a path. */
+/** MIME allowlist (= relay inbox.ALLOWED; the host stores the extension from the MIME, never from the name). */
 export const TYPES = {
   'image/jpeg': '.jpg .jpeg', 'image/png': '.png', 'image/webp': '.webp', 'image/gif': '.gif',
   'image/heic': '.heic', 'image/heif': '.heif', 'application/pdf': '.pdf', 'text/plain': '.txt',
   'text/markdown': '.md .markdown', 'text/csv': '.csv', 'application/json': '.json',
   'audio/webm': '.webm', 'audio/ogg': '.ogg', 'audio/mpeg': '.mp3', 'audio/mp4': '.m4a',
-  'audio/aac': '.aac', 'audio/wav': '.wav', 'audio/x-wav': '.wav',
-  'audio/x-m4a': '.m4a', 'audio/flac': '.flac', 'audio/opus': '.opus', 'audio/amr': '.amr', 'audio/x-caf': '.caf',
-  'audio/aiff': '.aiff .aif', 'video/mp4': '.mp4', 'video/quicktime': '.mov', 'video/webm': '.webm', 'video/x-m4v': '.m4v',
-  'video/3gpp': '.3gp', 'video/x-matroska': '.mkv', 'application/zip': '.zip',
-  'application/msword': '.doc', 'application/vnd.ms-excel': '.xls', 'application/vnd.ms-powerpoint': '.ppt',
-  'application/vnd.openxmlformats-officedocument.wordprocessingml.document': '.docx',
-  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': '.xlsx',
-  'application/vnd.openxmlformats-officedocument.presentationml.presentation': '.pptx',
-  'application/vnd.apple.pages': '.pages', 'application/vnd.apple.numbers': '.numbers', 'application/vnd.apple.keynote': '.key',
-  'application/rtf': '.rtf', 'application/epub+zip': '.epub', 'text/html': '.html .htm', 'application/xml': '.xml',
-  'image/svg+xml': '.svg', 'image/tiff': '.tif .tiff', 'image/bmp': '.bmp', 'image/avif': '.avif',
-  // P184: contacts / calendar / mail exports (agentj contacts import, invitations, saved mails)
-  'text/vcard': '.vcf .vcard', 'text/x-vcard': '.vcf', 'text/calendar': '.ics', 'message/rfc822': '.eml', 'application/mbox': '.mbox' };
-/** The MIME a file goes out as when neither its type nor its extension is in TYPES (= host inbox.accepts). */
-export function anyMime(type) {
-  const t = String(type || '').split(';')[0].trim().toLowerCase();
-  return /^[a-z0-9][a-z0-9!#$&^_.+-]{0,63}\/[a-z0-9][a-z0-9!#$&^_.+-]{0,126}$/.test(t) ? t : 'application/octet-stream';
-}
+  'audio/aac': '.aac', 'audio/wav': '.wav', 'audio/x-wav': '.wav' };
 
 export function newId() {
   return b64u(crypto.getRandomValues(new Uint8Array(16)));          // 128 bits → 22 base64url characters
@@ -54,7 +36,7 @@ export class Upload {
   /** opts: {purpose:'att'|'asr', origin, name, mime, secs, onProgress(frac)} */
   constructor(file, opts) {
     this.file = file; this.opts = opts;
-    this.bid = typeof opts.bid === 'string' && /^[A-Za-z0-9_-]{22}$/.test(opts.bid) ? opts.bid : newId();   // P182: resume a stored take
+    this.bid = newId();
     this.size = file.size; this.mime = opts.mime || file.type || 'application/octet-stream';
     this.name = String(opts.name || file.name || 'upload').slice(0, 128);
     this.state = 'idle';                     // idle | queued | open | sending | ending | done | failed | held | dropped
@@ -76,7 +58,7 @@ export class Upload {
   }
   finish(r) {
     this.result = r; clearTimeout(this.stall);
-    if (r.ok) { this.state = 'done'; if (this.file) this.buf = null; }   // P166: the File stays; the copy of up to 200 MiB goes
+    if (r.ok) this.state = 'done';
     else if (this.state !== 'held' && this.state !== 'dropped') this.state = 'failed';
     live.delete(this.bid);
     const ws = this.waiters; this.waiters = [];

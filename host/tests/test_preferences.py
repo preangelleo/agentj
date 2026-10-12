@@ -25,15 +25,11 @@ class PreferencesTest(unittest.TestCase):
             self.assertEqual(p.command(['reset','unknown.section']),1)
         self.assertEqual(p.get(p.effective(self.st),'appearance.theme'),'dark')
 
-    def test_012_upgrade_defaults_shared_without_repairing_device(self):   # name kept: parity shared-desktop-session
-        # P174: a state that never ran config migrations (≤0.11) had the independent default and keeps it; one that did
-        # (0.12+, shared default 0.13–0.19) stays shared — see test_p174.py for the migration itself.
+    def test_012_upgrade_defaults_shared_without_repairing_device(self):
         self.st.set_agent_config('claude',str(self.home))
         self.st.add_device(bytes(range(32)),'existing phone',bytes(range(32)))
         paths=[self.st.x25519_path,self.st.ed25519_path,self.st.devices_path]
         before={p:p.read_bytes() for p in paths}
-        self.assertEqual(self.st.agent_config()['session_mode'],'independent')
-        (self.st.root/'config-migrations').mkdir(exist_ok=True)
         self.assertEqual(self.st.agent_config()['session_mode'],'shared')
         self.assertFalse(self.st.agent_config()['high_risk_warnings'])
         self.assertEqual({p:p.read_bytes() for p in paths},before)
@@ -119,8 +115,8 @@ class PreferencesTest(unittest.TestCase):
     def test_timestamp_migrations_preserve_bytes_and_are_idempotent(self):
         from agentj import config_migrations as m
         p.ensure(); raw="// owner comment\n{appearance:{theme:'dark'}}\n";p.path().write_text(raw)
-        self.assertEqual(m.run(self.st,pending=True)['pending'],['202610040001','202610050047','202610120174'])
-        self.assertEqual(m.run(self.st)['applied'],['202610040001','202610050047','202610120174'])
+        self.assertEqual(m.run(self.st,pending=True)['pending'],['202610040001','202610050047'])
+        self.assertEqual(m.run(self.st)['applied'],['202610040001','202610050047'])
         self.assertEqual(m.run(self.st)['applied'],[]);self.assertEqual(p.path().read_text(),raw)
     def test_migration_marker_failure_restores_both_files_and_retries(self):
         from agentj import config_migrations as m

@@ -17,17 +17,17 @@ class CoreV10(unittest.TestCase):
         self.en = main_identity.prompt({"language": "en"})
 
     def test_version(self):
-        self.assertGreaterEqual(main_identity.VERSION, 10)      # P156 raised it to v11; the P149 rules below must stay
-        self.assertEqual(main_identity.verify_core()["version"], main_identity.VERSION)
-        self.assertTrue(self.zh.splitlines()[0].endswith("v" + str(main_identity.VERSION)))
-        self.assertTrue(self.en.splitlines()[0].endswith("v" + str(main_identity.VERSION)))
+        self.assertEqual(main_identity.VERSION, 10)
+        self.assertEqual(main_identity.verify_core()["version"], 10)
+        self.assertTrue(self.zh.splitlines()[0].endswith("v10"))
+        self.assertTrue(self.en.splitlines()[0].endswith("v10"))
 
     def test_triage_sits_right_after_dispatch(self):
         for text, dispatch, triage in ((self.zh, "你绝不是某个工作流的 CEO", "每条请求先判三类"),
                                        (self.en, "You are never the CEO", "Sort every request into one of three kinds")):
             lines = text.splitlines()
-            self.assertTrue(lines[3].startswith(dispatch))   # P186: line 2 is the chairman philosophy
-            self.assertIn(triage, lines[4])
+            self.assertTrue(lines[2].startswith(dispatch))
+            self.assertIn(triage, lines[3])
 
     def test_three_way_triage_and_harness_tools(self):
         for needle in ("一定派 CEO", "派子 Agent", "Agent/Task 工具", "OpenCode 用 task 子 Agent", "headless 子会话", "`codex exec`",

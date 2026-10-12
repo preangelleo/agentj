@@ -54,8 +54,8 @@ await waitState(p,'awaiting-approval');await fake.approve();await waitState(p,'r
  ok(await evaluate(p,`document.getElementById('mWeek').querySelector('.lab').textContent==='weekly 21%' && document.getElementById('m5h').querySelector('.lab').textContent==='daily 7%'`),'weekly/daily quota labels follow provider measurements');
  ok(await evaluate(p,`document.getElementById('water').dataset.lvl==='25' && document.getElementById('water').title==='32000 / 128000'`),'context reports exact used/limit and 25% waterline');
  await fake.send({t:'status',v:'idle',name:'QA-J'});
- await evaluate(p,`document.getElementById('setBtn').click()`);
- ok(await evaluate(p,`(()=>{const e=document.getElementById('brand-name');return e.textContent==='QA-J' && e.getBoundingClientRect().height>=20 && e.scrollWidth<=e.clientWidth+1})()`),'Settings shows the Agent name whole (P171: the ≡ menu moved here)');
+ await evaluate(p,`document.getElementById('aj-menu').open=true`);
+ ok(await evaluate(p,`(()=>{const e=document.querySelector('.ajmenu__name');return e.clientHeight>=44 && getComputedStyle(e).flexShrink==='0'})()`),'menu agent name has non-shrinking full-height row');
  await shoot(p,'').then(x=>writeFileSync(new URL('menu.png',out),x));
  await evaluate(p,`document.getElementById('open-models').click()`);
  await waitFor(p,`document.getElementById('provider-options').children.length===1`);
@@ -66,8 +66,7 @@ await waitState(p,'awaiting-approval');await fake.approve();await waitState(p,'r
  await evaluate(p,`document.getElementById('provider-options').children[0].click()`);
  await waitFor(p,`document.getElementById('provider-status').textContent.includes('密钥卡')`);
  ok(fake.log.some(m=>m.t==='provider_key'&&m.provider==='p67'),'provider Key entry requests existing encrypted key card without key values');
- // P187: back from a page opened in Settings returns to Settings; close it to reach the chat
- await evaluate(p,`document.getElementById('models-back').click();document.getElementById('set-close').click();document.getElementById('mic').dispatchEvent(new PointerEvent('pointerdown',{pointerId:1,clientY:700,bubbles:true,isPrimary:true,button:0}))`);
+ await evaluate(p,`document.getElementById('models-back').click();document.getElementById('mic').dispatchEvent(new PointerEvent('pointerdown',{pointerId:1,clientY:700,bubbles:true,isPrimary:true,button:0}))`);
  await waitFor(p,`!document.getElementById('confirm').hidden`);
  await shoot(p,'').then(x=>writeFileSync(new URL('asr-install.png',out),x));
  await evaluate(p,`document.getElementById('confirm-yes').click()`);await sleep(200);

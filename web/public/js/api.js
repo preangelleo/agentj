@@ -87,8 +87,6 @@ export async function transcribe(blob, secs) {
 }
 
 export const history = (q) => snap.history(q);
-export const findHistory = (q, sort) => snap.findHistory(q, sort);   // P188 (§28)
-export const canFind = () => peer.p33 && peer.hfind;
 
 /** action: allow | deny | batch. Signed over exactly what the sheet shows (§8). */
 export async function approve(p, action) {
@@ -151,24 +149,6 @@ export async function tgForward(id) {
   return { ok: false, why: m.t };
 }
 
-/** P183: one file a reply shows → the owner's own Telegram private chat (host cap `tgfile`; the computer re-checks and
- *  re-reads the file itself — no bytes go up from the phone). → {ok, why?} (why: not_configured | not_found | too_big | …) */
-export async function tgForwardFile(mid) {
-  if (!isReady() || !peer.p33 || !peer.tgfile) return { ok: false, why: 'unsupported' };
-  if (!peer.tgfwd) return { ok: false, why: 'not_configured' };
-  const m = await ask1({ t: 'tg_fwd', mid }, 'tg_fwd_res', 120000);
-  if (m.t === 'tg_fwd_res') return m.ok === true ? { ok: true } : { ok: false, why: m.why || 'send_failed' };
-  return { ok: false, why: m.t };
-}
-
-/** P160 (§22 busy_get): one background task's read-only detail → {ok, item|null} | {ok:false, why}. */
-export async function busyDetail(id) {
-  if (!isReady() || !peer.p33 || !peer.busyget) return { ok: false, why: 'unsupported' };
-  const m = await ask1({ t: 'busy_get', id: String(id).slice(0, 40) }, 'busy_info', 8000);
-  if (m.t === 'busy_info') return { ok: true, item: m.item && typeof m.item === 'object' ? m.item : null };
-  return { ok: false, why: m.t };
-}
-
 export async function menu() {
   if (!isReady() || !peer.p33) return null;
   const m = await ask1({ t: 'menu_get' }, 'menu', 15000);
@@ -227,29 +207,6 @@ export async function models() {
   const m = await ask1({t:'models_get'}, 'models', 15000);
   return m.t === 'models' ? m : null;
 }
-
-/** P153 (§3.3): a QR + link that adds another remote, signed like every phone control. The host answers this session only.
- *  → {ok:true, link, qr (PNG data URI), ttl} | {ok:false, why}. */
-export async function pairNew() {
-  if (!peer.pair1) return { ok: false, why: 'old_host' };
-  const g = gen(), sk = await signKey();
-  if (!g || !sk) return { ok: false, why: sk ? 'offline' : 'no_key' };
-  const n = [...crypto.getRandomValues(new Uint8Array(16))].map(x => x.toString(16).padStart(2, '0')).join(''), ts = Date.now();
-  const msg = await controlMessage(channel(), await myDeviceId(), 'pair_new', n, ts, {});
-  const sig = b64u(new Uint8Array(await crypto.subtle.sign({name:'Ed25519'}, sk.priv, msg)));
-  if (g !== gen()) return { ok: false, why: 'offline' };
-  const m = await ask1({ t: 'pair_new', n, ts, sig }, 'pair_link', 15000);
-  if (m.t !== 'pair_link') return { ok: false, why: m.t === 'timeout' ? 'timeout' : 'offline' };
-  if (!m.ok) return { ok: false, why: typeof m.why === 'string' ? m.why.slice(0, 32) : 'failed' };
-  let u = null;
-  try { u = new URL(m.link); } catch { /* checked below */ }
-  const loop = u && ['127.0.0.1', 'localhost'].includes(u.hostname);       // test pages only
-  if (typeof m.qr !== 'string' || !m.qr.startsWith('data:image/png;base64,') || m.qr.length > 40000 || !u
-      || !(u.protocol === 'https:' || loop)) return { ok: false, why: 'failed' };
-  return { ok: true, link: m.link, qr: m.qr, ttl: Number.isInteger(m.ttl) && m.ttl > 0 && m.ttl <= 600 ? m.ttl : 300 };
-}
-/** The QR sheet closed before a device was added: the host ends that pairing. */
-export function pairStop() { if (isReady()) sendApp({ t: 'pair_stop' }).catch(() => {}); }
 
 async function signedUpgrade() {
   const g = gen(), sk = await signKey();

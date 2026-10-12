@@ -406,17 +406,12 @@ class HookFiles(Tmp):
         self.assertEqual(shared_hook.token_path(self.root, os.getpid()).read_text(), a.hook_token)
 
     def test_doctor_reports_and_restores_missing_hooks(self):
-        # P174: shared is the owner's opt-in — write it into a private settings file (never the real ~/.config)
-        from agentj import preferences
-        env = patch.dict(os.environ, {"XDG_CONFIG_HOME": str(self.root / ".config")})
-        env.start()
-        self.addCleanup(env.stop)
-        preferences.ensure()
-        preferences.path().write_text(preferences.edit(preferences.path().read_text(), "agent.session_mode", "shared"))
         st = State(self.root / "state")
         st.init()
         st.set_agent_config("claude", str(self.work))
-        self.assertEqual(st.agent_config()["session_mode"], "shared")
+        c = st.agent_config()
+        if c.get("session_mode", "shared") != "shared":
+            self.skipTest("agent config is not shared here")
         self.assertIsNone(doctor.check_shared_hooks(st))                    # not attached yet: nothing installed
         chan = shared_hook.channel_path(st.root, "claude")
         chan.write_text("")

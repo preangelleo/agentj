@@ -315,11 +315,6 @@ def handle(m):
     if method == "account/rateLimits/read":
         return {"rateLimits": {"limitId": "codex", "primary": {"usedPercent": 20, "windowDurationMins": 10080, "resetsAt": 1791046812},
                                "secondary": {"usedPercent": 7, "windowDurationMins": 300, "resetsAt": 1790950000}}}
-    if method == "thread/inject_items":              # P159 (0.159.2): raw model-visible items; never a thread/read item
-        if p.get("threadId") not in THREADS:
-            return {"__error": {"code": -32600, "message": "thread not loaded"}}
-        THREADS[p["threadId"]].setdefault("injected", []).extend(p.get("items") or [])
-        return {}
     if method == "thread/delete":
         THREADS.pop(p.get("threadId"), None)
         return {}

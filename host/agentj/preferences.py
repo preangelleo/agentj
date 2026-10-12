@@ -27,9 +27,7 @@ class ConfigError(ValueError):
         return {'ok':False,'key':self.key,'line':self.line,'error':self.detail,'needs':['human'] if self.code==2 else []}
 
 def path():
-    from .instance import current   # P180: instance N ≥ 2 keeps its own preferences in agentj-N/
-    n = current()
-    return Path(os.environ.get('XDG_CONFIG_HOME') or Path.home()/'.config')/('agentj' if n == 1 else f'agentj-{n}')/'config.json5'
+    return Path(os.environ.get('XDG_CONFIG_HOME') or Path.home()/'.config')/'agentj/config.json5'
 
 def get(doc, key, default=None):
     for p in key.split('.'):
@@ -90,7 +88,6 @@ def validate(doc,raw=''):
             if any(ord(c)<32 and not (k=='agent.instructions' and c in '\n\t') for c in v) or len(v)>m.get('maxLength',1000): raise ConfigError(k,'invalid characters or length',line)
             if m.get('pattern') and not re.fullmatch(m['pattern'],v): raise ConfigError(k,'expected '+m['patternHint'] if m.get('patternHint') else 'expected environment variable NAME, never a secret',line)
         if typ in ('integer','number') and not m.get('minimum',-math.inf)<=v<=m.get('maximum',math.inf): raise ConfigError(k,f"allowed range: {m.get('minimum')}..{m.get('maximum')}",line)
-        if typ=='number' and m.get('multipleOf') and abs(v/m['multipleOf']-round(v/m['multipleOf']))>1e-6: raise ConfigError(k,f"steps of {m['multipleOf']}",line)
     cats = get(doc, 'updates.skill_categories', [])
     if len(cats)>4 or any(c not in ('content','app','commerce','general') for c in cats): raise ConfigError('updates.skill_categories','allowed: content, app, commerce, general')
     pif = get(doc, 'agent.private_instructions_file', '')
@@ -482,9 +479,6 @@ def command(args):
                 candidate=parse(newraw)
                 result={'ok':True,'applied':False,'verify':{'ok':True,'detail':'dry run'},'effective':validate(candidate)} if a.dry_run else transact(st,newraw)
                 if key in SCHEMA:result.update(key=key,old=get(validate(doc),key),new=get(validate(candidate),key),needs=result.get('needs',[]))
-                if key=='agent.session_mode' and result['old']!=result['new']:
-                    from . import session_choice  # P174: what the switch means and the one line that undoes it
-                    result['notice']=session_choice.explain(result['new'],result['old'],get(validate(candidate),'appearance.language','zh'))
             finally: os.close(fd)
         print(json.dumps(result,ensure_ascii=False)); return 0
     except ConfigError as e: print(json.dumps(e.result(),ensure_ascii=False)); return e.code

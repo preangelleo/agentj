@@ -32,28 +32,3 @@ export function historyDoubleTap(node, jump, now = () => performance.now()) {
   });
   node.addEventListener('blur', clear);
 }
-
-// P179: a long press on the source label (touch hold / mouse button held) renames this remote (dev-rename.js).
-export const HOLD_MS = 500;
-/** A hold of `ms` without moving away calls fn(event). The click that ends a hold does nothing else; double taps are
- *  untouched (history-corners.js ignores taps longer than 300 ms). */
-export function longPress(node, fn, ms = HOLD_MS, now = () => performance.now()) {
-  let down = null, timer = null, fired = 0;
-  const clear = () => { clearTimeout(timer); timer = null; down = null; };
-  node.addEventListener('pointerdown', (e) => {
-    if (!e.isPrimary || (e.pointerType === 'mouse' && e.button !== 0)) { clear(); return; }
-    clear();
-    down = { id: e.pointerId, x: e.clientX, y: e.clientY };
-    timer = setTimeout(() => { timer = null; down = null; fired = now(); fn(e); }, ms);
-  });
-  node.addEventListener('pointermove', (e) => {
-    if (down && e.pointerId === down.id && Math.hypot(e.clientX - down.x, e.clientY - down.y) > 12) clear();
-  });
-  for (const ev of ['pointerup', 'pointercancel', 'pointerleave', 'blur']) node.addEventListener(ev, clear);
-  // the phone's own long-press menu (copy / callout) must not cover the dialog
-  node.addEventListener('contextmenu', (e) => { if (down || now() - fired < 1000) e.preventDefault(); });
-  node.addEventListener('click', (e) => { if (now() - fired < 700) { e.preventDefault(); e.stopImmediatePropagation(); } }, true);
-  // after a touch hold, no compatibility mouse events / click: they would move focus off the dialog's field
-  node.addEventListener('touchend', (e) => { if (now() - fired < 700 && e.cancelable) e.preventDefault(); }, { passive: false });
-}
-

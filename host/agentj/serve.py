@@ -18,7 +18,6 @@ import hmac
 import hashlib
 import json
 import logging
-import math
 import os
 import re
 import secrets
@@ -37,26 +36,20 @@ from . import agent as agents
 from .shared import SharedClaudeAgent
 from . import notices, activity, approvals, cloud, controls, danger, fence, gate, memory, slash, tasks, update, webpush, wire
 from . import asr as asr_mod
-from . import compose, history, hsearch, inbox, menu, uploads, preferences, proxy, provenance
-from . import meeting  # P182: /会议总结 → minutes, recipients only from the owner's words
+from . import compose, history, inbox, menu, uploads, preferences, proxy, provenance
 from . import diskq  # P142: fsync'ed state writes off the loop (one ordered writer)
-from . import approval_jev  # P157: layer 2 of the approval card (Jev may only make fewer cards)
-from . import goal as goal_mod  # P158: /goal — one signed grant, reversible steps pass after a 10 s card
-from . import bg  # P192 (B18): swallowed errors on connection / approval paths leave a (rate-limited) line
 from . import loopwatch  # P136: what was running when the loop stalled
 from . import media as media_mod  # F21: files the Agent shows to the phone (PROTOCOL §13)
 from . import elevate  # F17: sudo + secret cards (PROTOCOL §11)
-from . import pair_card  # P153: add a remote from a remote (PROTOCOL §3.3)
 from . import passkey  # F20: the same phone without a second pairing (PROTOCOL §12)
 from . import renewal  # P122: the same phone after its browser deleted the page's storage (§12.1)
 from . import onboarding  # F28: seat → two required remotes → one welcome (P72)
 from . import friend_cmds  # P73: /my-agent-id · /add-friend, answered by the host (ADR-A176)
 from . import friends as friends_mod
-from .remotes import TYPES as REMOTES_TYPES  # P171 (§24): the phone's 遥控器管理 page
 from .noise import IK, IKPSK2, CipherState, Handshake, NoiseError
 from .reporter import Reporter, in_daemon_thread
 from .envcompat import getenv
-from .state import MAX_DEVICES, DeviceLimit, State, device_label, device_names
+from .state import MAX_DEVICES, DeviceLimit, State
 from .text import LABEL_DIGITS, LABEL_MAX, clean, clean_label, clean_line, text_units  # noqa: F401  (re-exported)
 
 
@@ -100,16 +93,11 @@ UPDATE_WAKE = 3600      # s between looks at the 24 h clock
 PAIR_TTL = _ttl("AGENTJ_TEST_PAIR_TTL", 300)        # QR / pairing code lifetime (s)
 HS_TTL = _ttl("AGENTJ_TEST_HS_TTL", 30)             # a connection must finish its handshake + hello within this (s)
 APPROVE_TTL = _ttl("AGENTJ_TEST_APPROVE_TTL", 120)  # time the human has to type the safety code (s)
-CODE_TRIES = 3                                      # P176: safety-code attempts from `agentj pair` per waiting device
 AUTH_TIMEOUT = 8       # the relay gives an unauthenticated host socket 10 s from accept (relay AUTH_DEADLINE_MS): waiting longer is moot
 RELAY_OPEN_TIMEOUT = 10   # TCP + TLS + upgrade (the relay takes a per-IP lease before it answers 101)
 FAST_RETRIES = 3       # P129: a relay link that did not come up is retried after FAST_RETRY s this many times before backing off
 FAST_RETRY = 1
 RELAY_GRACE = 60       # s after serve start in which a relay link that never came up reads "connecting", not "reconnecting"
-CLOSE_SEAT = 4002      # P185: the relay refused / closed this host for lack of a valid seat certificate (PROTOCOL §2 seat certificate)
-SEAT_RETRY = 20        # s before the relay is tried again after a seat refusal (a renewed certificate retries at once)
-SEAT_TICK = 30         # s between seat_loop looks (local file reads; the Dashboard is asked only when seatcert says due)
-SEAT_NOTE = 600        # s between two "no seat" notices to the phones
 LOOP_STALL = 3.0       # P129: the event loop answering this late (s) is logged as `loop_stall` (it delays every phone's pong)
 _NONCE = re.compile(r"[A-Za-z0-9_-]{43}")   # relay auth challenge n = b64url(32 random bytes) (PROTOCOL §1)
 CLOSE_TIMEOUT = 2      # a close notice to the relay is best-effort; never let a slow relay hold up a revoke
@@ -137,18 +125,10 @@ MAX_QUESTIONS = 4                           # open at once; more are answered "n
 ASR_TAKE = compose.SAY_ASR_BUDGET                             # s per take (asr_res timeout)
 ASR_QUEUE = 3                               # takes waiting per device (more → busy)
 FF_MAX_SECS = 630                           # say-time ffmpeg: at most this much audio (≤ uploads.ASR_MAX as WAV)
-FF_SEG_SECS = 600                           # P166: a longer file is transcribed in 10-minute segments …
-FF_MAX_SEGS = 12                            # … at most two hours; the rest is said to be cut, the original stays attached
 FF_CPU_SECS = 180                            # RLIMIT_CPU of one conversion
 # declared MIME → the ffmpeg demuxer (pinned: no content probing, so a playlist or another format is never opened)
 FF_DEMUX = {"video/mp4": "mov", "audio/webm": "matroska", "audio/ogg": "ogg", "audio/mpeg": "mp3", "audio/mp4": "mov", "audio/aac": "aac",
-            "audio/wav": "wav", "audio/x-wav": "wav",
-            # P166: what phones and Telegram call the same containers, plus the other common ones
-            "audio/x-m4a": "mov", "audio/m4a": "mov", "audio/x-mp4": "mov", "audio/mp3": "mp3", "audio/x-aac": "aac",
-            "audio/flac": "flac", "audio/x-flac": "flac", "audio/opus": "ogg", "audio/amr": "amr", "audio/3gpp": "mov",
-            "audio/x-caf": "caf", "audio/aiff": "aiff", "audio/x-aiff": "aiff", "audio/wave": "wav", "audio/vnd.wave": "wav",
-            "video/quicktime": "mov", "video/x-m4v": "mov", "video/3gpp": "mov", "video/webm": "matroska",
-            "video/x-matroska": "matroska", "video/mpeg": "mpeg", "video/x-msvideo": "avi"}
+            "audio/wav": "wav", "audio/x-wav": "wav"}
 MODEL_REFRESH_TIMEOUT = 8.0                # Background catalogue work never stalls the relay reader.
 METER_GAP = 2.0                             # ≤ 1 meter message per 2 s
 HIST_READY = 50                             # turns a p33 device gets on ready (it pages for more)
@@ -156,16 +136,10 @@ SWEEP_EVERY = 60
 RETAIN_EVERY = 86_400
 P33_ONLY = ("say", "say_cancel", "cmd_cancel", "blob_open", "blob_chunk", "blob_end", "blob_drop", "hist_get", "menu_get", "model_set",
             "q_answer", "tts_get", "pref_set", "notice_read", "media_get", "provider_get", "provider_key", "asr_install", "models_get", "ping",
-            "tg_fwd", "turn_wait", "res_watch", "busy_get",   # P181 (§22.1) load card resources; P160 (§22) one 「在办」 row's detail
-            "mail_get", "mail_set", "mail_key", "mail_test", "mail_check",   # P170 (§10.20)
-            "dev_rename",    # P179 (§10.16a): a remote renames itself
-            "hist_find")     # P188 (§28): chat search, a read like hist_get
+            "tg_fwd")
 # F14: paired phones may change optional warnings, session mode, isolation, docker and the upgrade mode (F19); native permissions stay authoritative.
 PREF_SET_KEYS = ("updates.mode", "appearance.language", "appearance.theme", "voice.wake_enabled", "voice.speak_replies",
                  "agent.high_risk_warnings", "agent.session_mode", "agent.isolation", "agent.allow_docker")
-PREF_SET_KEYS += ("heartbeat.enabled", "heartbeat.interval_minutes")    # P156: the settings panel's heartbeat switch
-PREF_SET_KEYS += ("approval.jev_threshold",)     # P157: the phone's Jev threshold stepper (number, schema range and step)
-PREF_SET_KEYS += ("approval.goal_auto",)         # P158: the phone's goal-mode countdown switch (enterprise: off)
 METER_KEYS = ("model", "model_name", "effort", "ctx", "h5", "week", "quota_windows", "shared_status", "shared_writer", "source_at")
 Q_CANCEL = "用户在手机上取消了这个问题，没有选择任何选项。请不要替他做选择，停下来等他直接输入文字。"
 Q_TIMEOUT = "没有人作答，请改用文字列出选项"
@@ -199,8 +173,6 @@ class Session:
     pk_offer: tuple | None = None  # F20 (§12): (nonce, monotonic issue time) of the one open pk_offer of this session
     since: object = None          # F20: a passkey restore's hello `since`, used once the restore is accepted
     rt_at: float = 0.0            # P122: monotonic time of this session's last renewal ticket (≤ 1 per minute on rt_req)
-    pair1: bool = False           # P153: the page announced "pair1" (adds remotes, renders pair_device cards)
-    card: str = ""                # P153: while pending, the id of its pair_device card on the paired remotes
 
 
 @dataclass
@@ -233,10 +205,6 @@ class Ask:
     scope_text: str | None = None  # what the phone shows for that scope; an allow_batch signature covers it
     task: str | None = None        # the scheduled task this request comes from (display only)
     require_passkey: bool = False
-    pk_if_any: bool = False        # P153: a passkey assertion is required from an approving remote that has a passkey
-    pk_kind: str = "sandbox"       # passkey.elevate_challenge kind
-    goal: str = ""                 # P158: "auto" (10 s countdown, no answer = allowed) | "hold" | "attack" | "" (no goal)
-    goal_why: str = ""             # P158: goal.WHY key shown on the card
 
 
 @dataclass
@@ -262,9 +230,6 @@ class Pairing:
     timer: asyncio.Task | None = None
     done: asyncio.Future = field(default_factory=lambda: asyncio.get_running_loop().create_future())
     remote: dict | None = None
-    phone: str | None = None      # P153 pair_new / P171 (§24) 遥控器管理: the paired remote that opened this pairing (it shows the QR and hears the outcome)
-    code_fails: int = 0           # P176: wrong safety codes typed at `agentj pair` for the waiting device (< CODE_TRIES)
-    rv: str | None = None         # P190 (§27): the reverse code's rendezvous channel (the asking remote compares codes)
 
 
 # P128: approval card text in ONE language (appearance.language, the same value the phone UI uses); what the phone signs
@@ -276,13 +241,6 @@ CARD_TEXT = {
     "en": {"change": "{tool} · Changes passwords or keys.\nCheck the exact details on the computer; credentials never go to the phone.",
            "read": "{tool} · Shows passwords or keys (on the computer's screen).\nCheck the exact details on the computer; credentials never go to the phone.",
            "risk_scope": "\nAlso approves this kind of high-risk action for the rest of this turn."}}
-
-
-def _hb_touch(host) -> None:
-    """P156: any turn, phone message or desktop input moves the next heartbeat back (tolerates partial test hosts)."""
-    hb = getattr(host, "heartbeat", None)
-    if hb is not None:
-        hb.touch()
 
 
 def card_lang(lang) -> str:
@@ -299,27 +257,17 @@ def approval_summary(tool, tool_input, verdict, lang="zh"):
 class Host:
     def __init__(self, st: State, events: str = "text", read_stdin: bool = True):
         self.st = st
-        with contextlib.suppress(OSError, ValueError):   # P179: pre-P179 remotes → self_name / owner_name (audit-based)
-            st.migrate_device_names()
         self.cfg = st.config()
         self.channel = self.cfg["channel"]
-        from . import seatcert                     # P185: the relay seat certificate (renewed by seat_loop)
-        self.seat = seatcert.SeatCert(st, self.cfg.get("relay") or "")
-        self.seat_noted = 0.0                      # when the last "no seat" notice reached the phones (≤ 1 per SEAT_NOTE)
-        self.relay_seat_refused = False            # the relay's last answer was 4002 "seat"
-        self.seat_sent = None                      # the certificate the last relay auth carried
         self.kp = st.host_keypair()
         self.sk = st.signing_key()
         self.events = events
         self.read_stdin = read_stdin
         self.telegram = None
-        self.mail = None                  # P170: the e-mail channel (mail.py), started with serve
         self.ws = None
         self.sessions: dict[int, Session] = {}
         from .remote_pair import RemotePair
         self.remote_pair = RemotePair(self)
-        from .remotes import Remotes
-        self.remotes = Remotes(self)                   # P171 (§24): the phone's 遥控器管理 page
         from .bots.owner import Manager as BotManager
         self.bots = BotManager(self)
         self.pairing: Pairing | None = None
@@ -385,7 +333,6 @@ class Host:
         self.questions: dict[str, Question] = {}
         self.cur_turn: int | None = None        # the history page the running Agent turn answers
         self.cur_failed = False
-        self.wait_note = None                    # P151b: (text, final, stall) of the running phone turn's wait line
         self.meter_state = {k: None for k in METER_KEYS}
         self.meter_at = 0.0
         self.meter_task: asyncio.Task | None = None
@@ -397,16 +344,10 @@ class Host:
         self.elevate = elevate.Elevator(self)   # F17: admin password / secret cards (PROTOCOL §11)
         from .capability import Capabilities
         self.capabilities = Capabilities(self)  # 0.18 (ADR-A193): capability.sock, opening cards, dispatch
-        self.goals = goal_mod.Goals(self)       # P158: <state>/goal.json, `agentj goal …` over capability.sock
         self.peers = None                       # P71: Agent friends (peer_service.PeerService, PROTOCOL §17), set in run()
         from . import busy as busy_mod
         self.busy = busy_mod.Board(st.root, on_change=self.busy_changed)   # P150 (§22): who works in the background
         self.busy_sent: str | None = None
-        from .heartbeat import Heartbeat
-        self.heartbeat = Heartbeat(self)        # P156: wakes the main Agent after an idle spell (heartbeat.py)
-        self.res_watch: dict[int, float] = {}    # P181 (§22.1): cid → monotonic expiry of its load-card watch
-        self.res_task: asyncio.Task | None = None
-        self.theme_stamp = self.theme_cached = None   # P169 (§23): the phone's look, re-read when current.json changes
 
     # ------------------------------------------------------------ output
     def emit(self, ev: str, **kw) -> None:
@@ -484,18 +425,14 @@ class Host:
             s.timer.cancel()
         if s and s.state in ("pending", "ready"):
             self.reporter.trigger("pair_end" if s.state == "pending" else "gone")
-        if s and s.card:
-            self._pair_card_end(s)
         p = self.pairing
         if p and p.cid == cid:
             self._pair_finish(p, pair_result or {"ev": "denied", "reason": "bad_handshake"})
         return s
 
     async def _notify_close(self, cid: int) -> None:
-        try:
+        with contextlib.suppress(Exception):
             await asyncio.wait_for(self._op(wire.OP_CLOSE, cid), CLOSE_TIMEOUT)
-        except Exception as e:  # noqa: BLE001 — P192 (B18): the relay may keep the channel open; say so
-            bg.swallowed(self.st.log, "relay_close_failed", e)
 
     async def close_cid(self, cid: int, reason: str, pair_result: dict | None = None) -> None:
         s = self._detach(cid, pair_result)
@@ -538,7 +475,6 @@ class Host:
                     await self._auth(ws)
                     phase = "up"
                     self.ws, self.relay_up, self.relay_ever_up, backoff, fails = ws, True, True, 1, 0
-                    self.relay_seat_refused = False
                     self.st.log("relay_up", channel=self.channel, ms=_ms(t0))
                     self.emit("relay", up=True)
                     async for msg in ws:
@@ -547,10 +483,7 @@ class Host:
                             await self.on_frame(msg)
             except Exception as e:  # network, handshake refusal, relay auth failure → back off and retry
                 # P129: where it failed (connect / auth / up), the relay's close code and how long it took — no message text
-                code = _close_code(e)
-                self.relay_seat_refused = code == CLOSE_SEAT
-                self.st.log("relay_down", reason="seat" if code == CLOSE_SEAT else proxy.relay_failure(e, url), phase=phase, code=code,
-                            ms=_ms(t0))
+                self.st.log("relay_down", reason=proxy.relay_failure(e, url), phase=phase, code=_close_code(e), ms=_ms(t0))
             finally:
                 if self.relay_up:
                     self.emit("relay", up=False)
@@ -561,60 +494,17 @@ class Host:
             # P129: a link that was up and dropped, or one that has not come up yet (first tries), is retried at once:
             # a slow first answer (cold relay, a busy start) must not cost the doubling ladder. Only repeated failures back off.
             fails = 0 if phase == "up" else fails + 1
-            # P193 (B12): jittered, so a relay deploy that drops every host does not bring them all back at once — the fast
-            # retries ±25 % around FAST_RETRY, the ladder +0…50 % (never shorter than its step)
-            fast, spread = fails <= FAST_RETRIES, secrets.randbelow(501) / 1000
-            wait = FAST_RETRY * (0.75 + spread) if fast else backoff * (1 + spread)
-            if self.relay_seat_refused:         # P185: no seat — asking again every second changes nothing
-                cert = self.seat.cert()
-                wait = wait if cert and cert != self.seat_sent else SEAT_RETRY
+            wait = FAST_RETRY if fails <= FAST_RETRIES else backoff
             with contextlib.suppress(asyncio.TimeoutError):
                 await asyncio.wait_for(self.stopping.wait(), wait)
             if fails > FAST_RETRIES:
                 backoff = min(backoff * 2, 30)
-
-    async def seat_loop(self) -> None:
-        """P185: keep the relay seat certificate fresh (seatcert decides when to ask the Dashboard — never when exempt or
-        unbound); a renewal goes to the open relay link as {"t":"cert"}, so the link never drops for a renewal."""
-        while not self.stopping.is_set():
-            try:
-                if self.seat.due():
-                    before = self.seat.cert()
-                    await asyncio.to_thread(self.seat.refresh)
-                    cert = self.seat.cert()
-                    if cert and cert != before and self.relay_up:
-                        with contextlib.suppress(Exception):
-                            await self._ws_send(json.dumps({"t": "cert", "cert": cert}))
-            except Exception as e:  # noqa: BLE001 — the renewal never takes serve down
-                self.st.log("seat_cert_failed", reason=type(e).__name__)
-            with contextlib.suppress(asyncio.TimeoutError):
-                await asyncio.wait_for(self.stopping.wait(), SEAT_TICK)
-
-    def seat_refusal(self) -> str | None:
-        """P185: None while this host may serve (seat ok / bootstrap grace / exempt), else the one-language reason with where
-        to fix it. Shown to the phones as a 「在电脑上处理」 notice at most every SEAT_NOTE seconds."""
-        seat = getattr(self, "seat", None)
-        if seat is None:
-            return None
-        from . import seatcert, cloud as _cloud
-        v = seat.verdict()
-        if v in seatcert.ALLOWED:
-            return None
-        return seatcert.message(v, getattr(self, "lang", "zh"), _cloud.app_url(self.st))
-
-    def seat_note(self, text: str) -> None:
-        now = time.time()
-        if now - self.seat_noted >= SEAT_NOTE:
-            self.seat_noted = now
-            self.local_notice(text)
 
     def relay_state(self) -> str:
         """P129: "up" · "connecting" (never up since start, within RELAY_GRACE) · "reconnecting" (down after being up, or
         still not up after the grace)."""
         if self.relay_up:
             return "up"
-        if self.relay_seat_refused:
-            return "seat"
         if not self.relay_ever_up and time.monotonic() - self.started_at < RELAY_GRACE:
             return "connecting"
         return "reconnecting"
@@ -643,11 +533,7 @@ class Host:
         if msg.get("t") != "challenge" or not isinstance(msg.get("n"), str) or not _NONCE.fullmatch(msg["n"]):
             raise ValueError("bad challenge")
         sig = self.sk.sign(f"agentjarvis-relay-auth-v1\n{self.channel}\n{msg['n']}".encode())
-        auth = {"t": "auth", "pk": wire.b64u(self.st.signing_pub()), "sig": wire.b64u(sig)}
-        cert = self.seat_sent = self.seat.cert()   # P185 (§2 seat certificate): the relay seat certificate, when this host has one
-        if cert:
-            auth["cert"] = cert
-        await ws.send(json.dumps(auth))
+        await ws.send(json.dumps({"t": "auth", "pk": wire.b64u(self.st.signing_pub()), "sig": wire.b64u(sig)}))
         ok = json.loads(await asyncio.wait_for(ws.recv(), AUTH_TIMEOUT))
         if ok.get("t") != "ok":
             raise ValueError("relay refused auth")
@@ -679,12 +565,9 @@ class Host:
             if not self._new_session(cid):
                 await self.close_cid(cid, "too_many_sessions")
         elif op == wire.OP_GONE:
-            pairing = bool(self.pairing and self.pairing.cid == cid)
             s = self._detach(cid, {"ev": "gone"})
             if s and s.state == "ready":       # P129: a phone's socket ended at the relay (network, sleep, the page's own close)
                 self.st.log("dev_gone", cid=cid, device=s.device, ms=int((time.monotonic() - s.ready_at) * 1000))
-            elif s and pairing:                # P153: the device being paired left — `agentj pair` says 「手机断开了」 (10-12: 4029)
-                self.st.log("pair_gone", cid=cid, device=s.device, phase=s.state)
         elif op == wire.OP_DATA:
             s = self._new_session(cid)  # data from a cid we never saw 0x11 for = a new connection (PROTOCOL §3)
             if not s:
@@ -775,7 +658,7 @@ class Host:
         msg2 = hs.write_message(b"")
         s.send, s.recv, s.h = hs.split()
         s.pub, s.device, s.mode, s.state = hs.rs, wire.device_id(hs.rs), "resume", "hello"
-        s.name = self._dev_label(s.device)
+        s.name = self.st.devices().get(s.device, {}).get("name", "")
         await self._op(wire.OP_DATA, s.cid, bytes([wire.HS_RESP]) + msg2)
 
     async def _app(self, s: Session, obj: dict) -> None:
@@ -789,7 +672,6 @@ class Host:
             caps = obj.get("caps")
             s.p33 = isinstance(caps, list) and wire.CAP_P33 in caps[:16]
             s.lt1 = isinstance(caps, list) and wire.CAP_LT1 in caps[:16]
-            s.pair1 = s.p33 and isinstance(caps, list) and pair_card.CAP in caps[:16]
             s.rc = _reconnect_reason(obj.get("rc"))
             h = obj.get("hist")
             if s.p33 and isinstance(h, dict) and type(h.get("epoch")) is int and type(h.get("last")) is int:
@@ -812,15 +694,8 @@ class Host:
             self._set_timer(s, self._approve_timeout(s))
             self.st.log("pair_pending", cid=s.cid, device=s.device, name=s.name)
             self.reporter.trigger("pending")
-            if not p.remote:                       # P153: every paired remote gets the card (an account QR grants at once)
-                self._pair_card_open(p, s)
             await self._ctl_send(p.ctl, self._pending_event(s))
-            if p.phone:
-                await self._send_device(p.phone, {"t": "pair_ev", "ev": "pending", "name": s.name})
-            if s.card:
-                await self.send_app(s, {"t": "pair_wait", "ttl": max(0, int(s.deadline - time.monotonic()))})
             await self.remote_pair.pending(p, s)
-            await self.remotes.pending(p, s)
             return
         if s.state == "pending":
             return  # nothing from an unapproved device is acted on
@@ -839,8 +714,6 @@ class Host:
             hc = slash.parse(text)
             if hc and friend_cmds.name_of(hc[0]):                   # P73: the host's own answer
                 return await self.on_slash(s, hc[0], hc[1], confirm=False, typed=True)
-            if hc and hc[0] == "goal" and goal_mod.host_cmd(hc[1]):  # P158: /goal status · /goal stop
-                return await self.on_slash(s, "goal", hc[1], confirm=False, typed=True)
             if self.stopped() and self.agent:      # stopped: nothing is queued to run later behind the human's back
                 self.st.log("msg_refused", cid=s.cid, device=s.device, reason="estop")
                 self.activity("message_refused", by=s.name or s.device, text=text[:120])
@@ -850,7 +723,7 @@ class Host:
                                             "text": "已急停：这条没有交给 Agent，也不会排队。恢复后再发。"})
                 return
             cmd = slash.parse(text)
-            if cmd and cmd[0] != "goal" and self.agent and cmd[0] not in slash.AGENT_CMDS and not self.agent.passthrough(cmd[0]):
+            if cmd and self.agent and not self.agent.passthrough(cmd[0]):
                 return await self.on_slash(s, cmd[0], cmd[1], confirm=False, typed=True)
             await self._accept(s, text, sid=None)
         elif t in P33_ONLY:
@@ -864,10 +737,6 @@ class Host:
             await self._answer(s, obj)
         elif t in ("pk_reg", "pk_offer_req"):  # F20 (§12): register this device's passkey
             await self._pk_reg(s, t, obj)
-        elif t == "pair_new":                  # P153 (§3.3): this remote adds another one
-            await self._pair_new(s, obj)
-        elif t == "pair_stop":
-            await self._pair_stop(s)
         elif t == "rt_req":                    # P122 (§12.1): a ready device asks for a (new) renewal ticket
             await self._rt_issue(s)
         elif t in elevate.PHONE_TYPES:  # F17: a signed, sealed sudo password / secret for an open card (§11)
@@ -900,12 +769,6 @@ class Host:
             await self.on_setup(s, t, obj)
         elif t in PHONE_CONTROLS:
             await self.on_control(s, t, obj)
-        elif t in REMOTES_TYPES:        # P171 (§24): list / rename / unbind / add remotes from a paired remote
-            if s.p33:
-                await self.remotes.on_phone(s, t, obj)
-        elif t == "agent_name":         # P181 (§22.2): long-press the Agent's name → rename, signed like every phone write
-            if s.p33:
-                await self.on_agent_name(s, obj)
         elif t == "slash":              # a command from the phone's ≡「全部命令」 menu (or typed: the page sends it like this)
             name, arg = obj.get("cmd"), obj.get("arg", "")
             if isinstance(name, str) and isinstance(arg, str) and len(name) <= 32 and text_units(arg) <= slash.ARG_MAX:
@@ -938,8 +801,6 @@ class Host:
             p.timer.cancel()
         if not p.done.done():
             p.done.set_result(result)
-        if p.phone:
-            self.remotes.finished(p, result)
 
     def _online(self) -> set:
         return {x.device for x in self.sessions.values() if x.state == "ready"}
@@ -961,22 +822,10 @@ class Host:
                 ev["evict"] = cand
         return ev
 
-    def terminal_code_ok(self, pid) -> bool | None:
-        """P176: on an account-bound host without an approval passphrase, `agentj pair` may approve with the 6-digit code
-        alone — when its peer is a human's terminal (the same test `resume` uses without a passphrase, ctl_auth): not an
-        Agent's process tree or harness, stdin a terminal. The code proves which phone; the terminal proves a person here.
-        None = not this host's case (a passphrase is set, or not the account route: the passphrase rules apply)."""
-        from . import ctl_auth, pairprep
-        if gate.is_set(self.st) or pairprep.precheck(self.st, self.relay_up)["route"] != "account":
-            return None
-        return ctl_auth.refusal(pid, os.getpid(), self._agent_pids()) is None and ctl_auth.has_tty(pid)
-
-    async def decide(self, p: Pairing, code: str, passphrase: str | None = None, terminal: bool = False,
-                     retry: bool = False) -> dict:
+    async def decide(self, p: Pairing, code: str, passphrase: str | None = None) -> dict:
         """The human's answer for the pending device. A non-empty code also needs the approval passphrase (L2, gate.py),
         checked before the code; a wrong one keeps the device waiting (`pass_wrong`, the code is not used up) until the
-        gate locks. P176: `terminal` (serve checked terminal_code_ok) stands in for the passphrase when none is set;
-        `retry` lets a wrong code keep the device waiting (`code_wrong`) until CODE_TRIES are used."""
+        gate locks."""
         s = self.sessions.get(p.cid) if p.cid is not None else None
         if not s or s.state != "pending":
             return {"ev": "denied", "reason": "no_pending_device"}
@@ -984,9 +833,7 @@ class Host:
             res = {"ev": "denied", "reason": "timeout"}
             await self.close_cid(s.cid, "approve_timeout", res)
             return res
-        if code.strip() and terminal and not gate.is_set(self.st):
-            pass                                            # P176: the human's terminal on a bound host, no passphrase
-        elif code.strip():
+        if code.strip():
             if not passphrase and gate.is_set(self.st):     # nothing typed: ask again, no try used
                 return {"ev": "pass_wrong", "left": gate.tries_left(self.st)}
             try:
@@ -1004,10 +851,6 @@ class Host:
             if self.sessions.get(s.cid) is not s or s.state != "pending" or time.monotonic() > s.deadline:
                 return {"ev": "denied", "reason": "timeout" if self.sessions.get(s.cid) is s else "gone"}
         ok = hmac.compare_digest(code.strip().encode(), wire.safety_code(s.h).encode())
-        if not ok and retry and code.strip() and p.code_fails + 1 < CODE_TRIES:
-            p.code_fails += 1
-            self.st.log("pair_code_wrong", cid=s.cid, device=s.device, left=CODE_TRIES - p.code_fails)
-            return {"ev": "code_wrong", "left": CODE_TRIES - p.code_fails}
         self._set_timer(s, None)
         if not ok:
             res = {"ev": "denied", "reason": "code_mismatch" if code.strip() else "denied"}
@@ -1015,14 +858,10 @@ class Host:
             await self.close_cid(s.cid, res["reason"], res)
             self.emit("denied", device=s.device, name=s.name)
             return res
-        if terminal and not passphrase:
-            self.st.log("pair_terminal_code", cid=s.cid, device=s.device)
         return await self._grant_pair(s)
 
     async def _grant_pair(self, s: Session, source: str = 'local') -> dict:
         self._set_timer(s, None)
-        if s.card:                    # P153: approved here (terminal / admin page / account page): the remotes' card folds
-            self._pair_card_end(s)
         try:   # 0.15.1: full → the stalest remote makes room (State.pair_device); same browser → its old record goes
             got = self.st.pair_device(s.pub, s.name, s.sign_pub or None, iid=s.iid or None, evict=True,
                                       online=self._online() - {s.device}, source=source)
@@ -1034,7 +873,6 @@ class Host:
             if got[kind]:
                 self.st.log("auto_unbind", device=got[kind]["id"], reason="same_browser" if kind == "replaced" else "full")
                 await self._drop_device(got[kind]["id"], "replaced")
-        s.name = self._dev_label(s.device) or s.name   # P179: a remote the owner named before keeps that name
         s.state, s.ready_at = "ready", time.monotonic()
         self.reporter.trigger("approve")
         await self.send_app(s, {"t": "approved", **self._caps(s)})
@@ -1048,155 +886,9 @@ class Host:
         res.update({k: got[k] for k in ("replaced", "evicted") if got[k]})
         return res
 
-    # ------------------------------------------------------------ P153: add a remote from a remote (PROTOCOL §3.3)
-    async def _send_pair1(self, obj_fn) -> None:
-        for x in list(self.sessions.values()):
-            if x.state == "ready" and x.pair1 and self.st.is_allowed(x.pub):
-                await self.send_app(x, obj_fn(x))
-
-    async def _pair_new(self, s: Session, obj: dict) -> None:
-        """A paired remote asks for a QR to add another one (signed control `pair_new`). The link goes back to that remote
-        only, inside its own Noise session; the pairing is the same single one `agentj pair` / the account page use, so a
-        pairing already in progress elsewhere answers `busy` (this remote's own earlier one is replaced)."""
-        r = obj.get("r")
-        if not s.pair1 or not isinstance(r, str) or not _RID.fullmatch(r):
-            return
-        why = controls.check(self.st, self.nonces, self.channel, s.device, obj, "pair_new", {})
-        if why:
-            self.st.log("control_refused", device=s.device, action="pair_new", reason=why)
-            controls.log(self.st, action="pair_new", device=s.device, result="refused:" + why)
-            return await self.send_app(s, {"t": "pair_link", "r": r, "ok": False, "why": why})
-        old = self.pairing
-        if old and old.phone != s.device:
-            return await self.send_app(s, {"t": "pair_link", "r": r, "ok": False, "why": "busy"})
-        if self.stopped():
-            return await self.send_app(s, {"t": "pair_link", "r": r, "ok": False, "why": "estop"})
-        if old:
-            self._pair_finish(old, {"ev": "replaced"})
-            if old.cid is not None:
-                await self.close_cid(old.cid, "pair_replaced")
-        p = Pairing(secrets.token_bytes(16), secrets.token_bytes(32), time.time() + PAIR_TTL, time.monotonic() + PAIR_TTL,
-                    None, phone=s.device)
-        self.pairing = p
-        p.timer = asyncio.create_task(self._expire_pairing(p))
-        link = wire.pairing_link(self.cfg["web"], self.cfg["relay"], self.channel, self.kp.pub, p.pid, p.psk, int(p.expires))
-        qr = wire.pairing_qr(link).png_data_uri(scale=6, border=2, dark="#141414", light="#faf9f5")
-        self.st.log("pair_begin", via="remote", device=s.device)
-        controls.log(self.st, action="pair_new", device=s.device, result="ok", obj={}, sig=obj.get("sig"), n=obj.get("n"),
-                     ts=obj.get("ts"))
-        self.activity("pair_begin", by=self._dname(s.device))
-        await self.send_app(s, {"t": "pair_link", "r": r, "ok": True, "link": link, "qr": qr,
-                                "ttl": max(0, int(p.deadline - time.monotonic()))})
-        self._bg(self._pair_outcome(p), "pair_outcome")
-
-    async def _pair_outcome(self, p: Pairing) -> None:
-        """The remote that opened the pairing hears how it ended (its QR sheet closes or says why)."""
-        with contextlib.suppress(asyncio.CancelledError):
-            res = await asyncio.shield(p.done)
-            ev = res.get("ev") if isinstance(res, dict) else None
-            out = {"t": "pair_ev", "ev": ev if ev in ("approved", "denied", "expired", "replaced") else "denied"}
-            if ev == "approved":
-                out["name"] = res.get("name", "")
-            elif ev == "denied":
-                out["why"] = str(res.get("reason", ""))[:32]
-            await self._send_device(p.phone, out)
-
-    async def _pair_stop(self, s: Session) -> None:
-        """The opening remote closed its QR sheet: the pairing ends (a device already waiting is refused)."""
-        p = self.pairing
-        if not p or p.phone != s.device:
-            return
-        cid = p.cid
-        self._pair_finish(p, {"ev": "denied", "reason": "cancelled"})
-        if cid is not None and cid in self.sessions:
-            await self.close_cid(cid, "pair_cancelled")
-        self.st.log("pair_cancelled", device=s.device)
-
-    def _pair_card_open(self, p: Pairing, s: Session) -> None:
-        """A device waits: ONE pair_device card on every paired remote that renders it (pair1). Its answer is a §8 signed
-        answer (+ the remote's passkey when it has one); the 6-digit code is shown on both screens, never typed. No remote
-        with an approval key → no card (the terminal / account routes only, as before)."""
-        if not self._approvers():
-            return
-        s.deadline = max(s.deadline, s.pending_since + pair_card.CARD_TTL)
-        self._set_timer(s, self._approve_timeout(s))
-        text = pair_card.summary(self.lang, s.name, wire.safety_code(s.h), self._pending_event(s))
-        target = {"device": s.device, "handshake": pair_card.handshake_id(s.h)}
-        rid = secrets.token_hex(16)
-        a = Ask(rid, pair_card.TOOL, text, approvals.shown_digest(pair_card.TOOL, text), target, approvals.input_digest(target),
-                s.deadline, asyncio.get_running_loop().create_future(), pk_if_any=True, pk_kind=pair_card.PK_KIND)
-        self.asks[rid] = a
-        s.card = rid
-        self.st.log("ask", id=rid, tool=pair_card.TOOL, agent="host", kind="pair")
-        self.activity("ask", id=rid, tool=pair_card.TOOL, summary=text.split("\n", 1)[0])
-        self.emit("ask", id=rid, tool=pair_card.TOOL, summary=text)
-        self._post(self._send_pair1, lambda x: self._ask_msg(a, x))
-        self.status_changed()
-        self.push_notify("ask")
-        self._bg(self._pair_card_wait(p, s, a), "pair_card")
-
-    def _pair_card_end(self, s: Session) -> None:
-        a = self.asks.get(s.card)
-        s.card = ""
-        if a is not None and not a.fut.done():
-            a.fut.set_result(("end", None, None, None))
-
-    async def _pair_card_wait(self, p: Pairing, s: Session, a: Ask) -> None:
-        try:
-            await asyncio.wait({a.fut}, timeout=max(0.0, a.deadline - time.monotonic()))
-            if not a.fut.done():
-                a.fut.set_result(("timeout", None, None, None))
-            decision, did, sk, sig = a.fut.result()
-        finally:
-            self.asks.pop(a.rid, None)
-        live = self.sessions.get(s.cid) is s and s.state == "pending" and s.card == a.rid
-        if did and live:
-            s.card = ""
-            if decision == "allow":
-                res = await self._grant_pair(s, source="remote")
-                self._pair_finish(p, res)
-                result = "allow" if res.get("ev") == "approved" else "gone"
-            else:
-                res = {"ev": "denied", "reason": "denied_remote"}
-                self.st.log("pair_denied", cid=s.cid, device=s.device, reason="denied_remote", by=did)
-                await self.close_cid(s.cid, "denied_remote", res)
-                self.emit("denied", device=s.device, name=s.name)
-                result = "deny"
-        elif decision == "deny" and self.stopped():
-            result = "stopped"
-            if live:
-                await self.close_cid(s.cid, "estop", {"ev": "denied", "reason": "estop"})
-        else:
-            result = "timeout" if decision == "timeout" else "gone"
-        reason = "device" if did and result in ("allow", "deny") else result
-        approvals.record(self.st, rid=a.rid, agent="host", tool=pair_card.TOOL, input_sha256=a.input_sha,
-                         shown_sha256=a.digest, decision="allow" if result == "allow" else "deny", reason=reason,
-                         device=did if reason == "device" else None, sign_pub=sk, sig=sig)
-        self.st.log("ask_done", id=a.rid, tool=pair_card.TOOL, decision="allow" if result == "allow" else "deny",
-                    reason=reason, device=did)
-        self.activity("decision", id=a.rid, tool=pair_card.TOOL, result=result, reason=reason,
-                      by=self._dname(did) if did else None, summary=a.summary.split("\n", 1)[0])
-        self.emit("ask_done", id=a.rid, result=result, reason=reason, device=did)
-        self._post(self._send_ready, lambda x: {"t": "ask_done", "id": a.rid, "result": result})
-        self.status_changed()
-        if reason == "device" and result == "allow":   # the chat line is onboarding's 「…也连上了」 (one per new remote)
-            self.push_notify("security")
-
     # ------------------------------------------------------------ F28 (P72): first-use onboarding (agentj/onboarding.py)
     def onboarding_lang(self) -> str:
         return "en" if str(preferences.get(self.preferences, "appearance.language", "zh")).lower().startswith("en") else "zh"
-
-    def speaker_note(self, s: Session) -> str:
-        """P179: which remote is speaking, for the Agent — only once the owner named it (a device's own label says nothing
-        about the person). Marked as the owner's label, not identity proof. "" when the remote is not owner-named."""
-        n = device_names(self.st.devices().get(s.device))
-        if n["named_by"] != "owner":
-            return ""
-        label = self._dev_label(s.device)
-        if self.onboarding_lang() == "en":
-            return (f"\n\n〔Sent from the remote the owner named “{label}”. Use it to tell who is speaking; it is a label the "
-                    "owner set, not proof of identity.〕")
-        return f"\n\n〔发言的遥控器：「{label}」——这是主人给这台遥控器起的名字，用来分辨是谁在说话；只是标签，不是身份证明。〕"
 
     def onboarding_note(self) -> str:
         """The bracketed note for the Agent on the owner's next message (tour pace / a missing required remote), or ""."""
@@ -1302,7 +994,7 @@ class Host:
             self.st.log("auto_unbind", device=old, reason="passkey")
             await self._drop_device(old, "replaced")
         s.device, s.mode = new, "resume"
-        s.name = self._dev_label(new)
+        s.name = self.st.devices().get(new, {}).get("name", "")
         self.st.log("pk_restore", cid=s.cid, device=new, result="ok", id=old)
         self.emit("passkey", device=new, name=s.name)
         await self.send_app(s, {"t": "pk_ok"})
@@ -1339,7 +1031,7 @@ class Host:
             self.st.log("auto_unbind", device=old, reason="ticket")
             await self._drop_device(old, "replaced")
         s.device, s.mode = new, "resume"
-        s.name = self._dev_label(new)
+        s.name = self.st.devices().get(new, {}).get("name", "")
         self.st.log("rt_restore", cid=s.cid, device=new, result="ok", id=old)
         self.emit("ticket", device=new, name=s.name)
         await self.send_app(s, {"t": "pk_ok"})
@@ -1390,14 +1082,6 @@ class Host:
         self.st.log("pk_reg", cid=s.cid, device=s.device, result="ok")
         await self.send_app(s, {"t": "pk_reg_res", "ok": True})
         await self.elevate.out.on_ready(s)        # F32: open pickup cards now carry this device's Face ID (`fa`)
-
-    def _observe_view(self) -> dict | None:
-        """P192 (B17): the shared session's observe loop for `agentj doctor` — consecutive errors, down, last error type."""
-        a = self.agent
-        if a is None or not hasattr(a, "_observe_errors"):
-            return None
-        return {"errors": a._observe_errors, "down": bool(getattr(a, "_observe_down", False)),
-                "error": getattr(a, "_observe_error", None)}
 
     def _bg(self, coro, what: str = "bg") -> asyncio.Task:
         """P142 (B13): a fire-and-forget task held by reference (the loop keeps only a weak one — an unreferenced task can be
@@ -1459,9 +1143,6 @@ class Host:
             return True
         if cmd == "config_apply":
             await self._ctl_config_from_agent(w, req.get("raw"))
-            return False
-        if cmd == "mail_cfg":                 # P170: widening mail changes from an Agent → the owner's card
-            await self._ctl_mail(w, req, claimed=False)
             return False
         self.st.log("ctl_refused", cmd=cmd, reason="no_claim")
         self.emit("ctl_refused", cmd=cmd)
@@ -1602,14 +1283,10 @@ class Host:
                 elif cmd == "status":
                     await self._ctl_send(w, {"ok": True, "relay_up": self.relay_up, "relay_state": self.relay_state(), "channel": self.channel,
                                              "agent": self.agent.kind if self.agent else None, "agent_status": self.eff_status(),
-                                             "agent_said_at": getattr(self, "agent_said_at", 0),
                                              "asks": len(self.asks), "estop": self.estop,
                                              "task_running": self.scheduler.current_id,
                                              "friends": self.peers.status_view() if self.peers is not None else None,
                                              "telegram": self.telegram.status_view() if self.telegram is not None else None,
-                                             "mail": self.mail.status_view() if self.mail is not None else None,
-                                             "seat": self.seat.view(),
-                                             "agent_observe": self._observe_view(),
                                              "sessions": [{"device": s.device, "name": s.name, "state": s.state}
                                                           for s in self.sessions.values() if s.state != "new"]})
                 elif cmd == "provider_model":
@@ -1629,23 +1306,10 @@ class Host:
                         await self._ctl_send(w,{'ok':True,'applicable':applicable,'model':previous})
                 elif cmd == "agent_reconnect":      # P147 `agentj doctor --reconnect`: re-attach the shared session now
                     await self._ctl_send(w, await self.agent_reconnect(req.get("session")))
-                elif cmd == "harness_hello":        # P155: after a harness switch / roll-back — a fixed host turn, no free text
-                    await self._ctl_send(w, self.harness_hello(req))
                 elif cmd == "agent_restart":        # `agentj agent restart` (P59): the owned harness, before its next turn
                     await self._ctl_send(w, self.restart_harness("cli"))
                 elif cmd == "config_apply":
                     await self._ctl_send(w, await self.apply_preferences(req.get("raw")))
-                elif cmd == "mail_cfg":             # P170: the owner's terminal (claimed) — applies at once
-                    await self._ctl_mail(w, req, claimed=True)
-                elif cmd == "mail_status":
-                    await self._ctl_send(w, {"ok": True, **(self.mail.view() if self.mail else {})})
-                elif cmd == "mail_check":
-                    await self._ctl_send(w, await self.mail.check() if self.mail else {"ok": False, "why": "not_running"})
-                elif cmd == "mail_notes":           # P182: recipients are checked against the owner's own words (meeting.py)
-                    await self._ctl_send(w, await self.mail.send_notes(req.get("to") or [], req.get("subject") or "", req.get("body"),
-                                                                     bool(req.get("to_owner"))) if self.mail else {"ok": False, "why": "not_running"})
-                elif cmd == "mail_key":
-                    await self._ctl_send(w, await self.mail.secret_card() if self.mail else {"result": "refused", "why": "not_running"})
                 elif cmd == "config_revision":
                     import hashlib
                     revision=hashlib.sha256(json.dumps(self.preferences,sort_keys=True).encode()).hexdigest()
@@ -1654,7 +1318,7 @@ class Host:
                     online, pending = self.report_view()
                     await self._ctl_send(w, {"ok": True, "online": sorted(online), "pending": pending})
                 elif cmd == "pair":
-                    await self._ctl_pair(r, w, pid)
+                    await self._ctl_pair(r, w)
                     return
                 elif cmd == "revoke":
                     removed, closed = await self.revoke(str(req.get("device", "")))
@@ -1751,9 +1415,7 @@ class Host:
             self.st.log("close", cid=c, device=did, reason=why)
         return len(victims)
 
-    async def _ctl_pair(self, r: asyncio.StreamReader, w: asyncio.StreamWriter, pid=None) -> None:
-        if self.seat_refusal():                 # P185: no usable seat → no new remote (checked before relay_down: it is the cause)
-            return await self._ctl_send(w, {"ev": "error", "reason": "seat_required"})
+    async def _ctl_pair(self, r: asyncio.StreamReader, w: asyncio.StreamWriter) -> None:
         if not self.relay_up:
             return await self._ctl_send(w, {"ev": "error", "reason": "relay_down"})
         old = self.pairing
@@ -1796,18 +1458,8 @@ class Host:
                     continue
                 if req.get("cmd") == "code":
                     pw = req.get("pass")
-                    code = str(req.get("code", ""))
-                    terminal = None   # P176: only `agentj pair` asks for this (the admin page keeps its passphrase rule)
-                    if code.strip() and not isinstance(pw, str) and req.get("terminal") is True:
-                        terminal = await asyncio.to_thread(self.terminal_code_ok, pid)   # macOS: has_tty runs ps
-                        if terminal is False:   # not a human's terminal: keep waiting (the account page can still approve)
-                            self.st.log("pair_terminal_refused", device=getattr(self.sessions.get(p.cid), "device", ""))
-                            await self._ctl_send(w, {"ev": "code_refused", "why": "terminal"})
-                            reader = asyncio.create_task(r.readline())
-                            continue
-                    res = await self.decide(p, code, pw if isinstance(pw, str) else None, terminal=terminal is True,
-                                            retry=req.get("retry") is True)
-                    if res.get("ev") in ("pass_wrong", "code_wrong"):   # the device keeps waiting; the human may type again
+                    res = await self.decide(p, str(req.get("code", "")), pw if isinstance(pw, str) else None)
+                    if res.get("ev") == "pass_wrong":     # the device keeps waiting; the human may type the passphrase again
                         await self._ctl_send(w, res)
                         reader = asyncio.create_task(r.readline())
                         continue
@@ -2010,31 +1662,17 @@ class Host:
             turns, _ = self.hist.page(limit=HIST_READY)
             for t in turns:
                 await self.send_app(s, {"t": "hist_turn", "epoch": self.hist.epoch, "turn": t})
-            known = getattr(s, "hist", None)
-            known = known if isinstance(known, dict) and known.get("epoch") == self.hist.epoch else None
-            missed = sum(1 for t in turns if t["id"] > known["last"]) if known else 0
             for q in list(self.questions.values()):
                 if not q.fut.done():
                     await self.send_app(s, self._question_msg(q))
         else:
-            missed = 0
             for e in list(self.backlog):
                 if e["seq"] > since:
                     await self.send_app(s, self._render(e, s))
-                    missed += since > 0
-        # P193 (B9): how many turns a device got back on resume that it had not seen (counts only, never content). The relay
-        # is at-most-once: this is the path that makes up for a reply sent while the phone or this host was off the relay.
-        if missed:
-            self.st.log("backfill", cid=s.cid, device=s.device, n=missed)
-            self.emit("backfill", device=s.device, n=missed)
         if s.p33:                       # P150 (§22): an empty list too (a reconnected phone drops stale dots); §8-only phones never had it
             await self.send_app(s, self.busy_msg())
-        if s.p33:                       # P169 (§23): the theme (factory = a few bytes; custom = colours + its PNGs)
-            if self.theme_cached is None:
-                await asyncio.to_thread(self.theme_refresh)
-            await self.send_app(s, self.theme_cached)
         for a in list(self.asks.values()):
-            if not a.fut.done() and (a.tool != pair_card.TOOL or s.pair1):
+            if not a.fut.done():
                 await self.send_app(s, self._ask_msg(a, s))
         for g in list(self.grants.values()):
             if self._grant_live(g):
@@ -2062,20 +1700,6 @@ class Host:
             self._bg(residency_notice(), "residency_notice")
 
     # ------------------------------------------------------------ agent bridge (PROTOCOL §8)
-    def harness_hello(self, req: dict) -> dict:
-        """P155 (ADR-P155): the 「自报家门」 (or 「切回来了」) turn the harness-switch job asks for. The text is the host's own
-        (switch_harness.hello_prompt from kinds + a fixed code); `at` lets the job see the answer (status.agent_said_at)."""
-        from . import switch_harness
-        if not self.agent or self.stopped():
-            return {"ok": False, "error": "no_agent"}
-        text = switch_harness.hello_prompt(self.agent.kind, req, self.lang)
-        if text is None:
-            return {"ok": False, "error": "bad_request"}
-        at = time.time()
-        self.agent.submit(switch_harness.HelloSend(text))
-        self.st.log("harness_hello", agent=self.agent.kind, outcome=req.get("outcome"))
-        return {"ok": True, "at": at}
-
     def eff_status(self) -> str:
         if self.stopped():
             return "stopped"
@@ -2134,12 +1758,9 @@ class Host:
         for did, v in sorted(self.st.devices().items(), key=lambda kv: (kv[1] or {}).get("paired_at", 0) if isinstance(kv[1], dict) else 0):
             if isinstance(did, str) and isinstance(v, dict):
                 pa = v.get("paired_at")
-                n = device_names(v)   # P179: who named it — the device itself (pairing) or the owner (+ the device's own label)
-                devs.append({"id": did, "name": clean_label(n["name"]), "online": did in online,
-                             "paired_at": int(pa) if isinstance(pa, (int, float)) and not isinstance(pa, bool) else 0,
-                             "named_by": n["named_by"], "self_name": clean_label(n["self_name"] or ""), "label": clean_label(device_label(v))})
-        return {"version": update.__version__, "language_at": at, "settable": list(PREF_SET_KEYS), "devices": devs,
-                "limit": MAX_DEVICES}   # P171: 「已用 N / 10」
+                devs.append({"id": did, "name": clean_label(str(v.get("name", ""))), "online": did in online,
+                             "paired_at": int(pa) if isinstance(pa, (int, float)) and not isinstance(pa, bool) else 0})
+        return {"version": update.__version__, "language_at": at, "settable": list(PREF_SET_KEYS), "devices": devs}
 
     async def apply_preferences(self, raw=None, ack=None, language_at=None):
         """Activate a configuration (raw = new file text to commit; None = the file as it is now). ack(result) is awaited
@@ -2338,11 +1959,8 @@ class Host:
             self.st.log("pref_set_refused", device=s.device)
             return await res(False, "not_allowed")
         meta = preferences.SCHEMA[key]
-        typ_ok = {"boolean": type(value) is bool, "string": isinstance(value, str),
-                  "number": type(value) in (int, float) and math.isfinite(value)}.get(meta["type"], False)
-        if not typ_ok or ("enum" in meta and value not in meta["enum"]) or (meta["type"] == "number" and not (
-                meta.get("minimum", -math.inf) <= value <= meta.get("maximum", math.inf) and (not meta.get("multipleOf") or abs(
-                    value / meta["multipleOf"] - round(value / meta["multipleOf"])) < 1e-6))):
+        typ_ok = {"boolean": type(value) is bool, "string": isinstance(value, str)}.get(meta["type"], False)
+        if not typ_ok or ("enum" in meta and value not in meta["enum"]):
             return await res(False, "bad_value")
         if preferences.get(self.preferences, key) == value:
             return await res(True)
@@ -2355,37 +1973,6 @@ class Host:
                 self.agent_notice(claude_auth.failure_notice(self.lang))
         self.st.log("pref_set", device=s.device, status=key)
         await self.set_pref(key, value, ack=ack)
-
-    async def on_dev_rename(self, s: Session, obj: dict) -> None:
-        """P179 `dev_rename {r, name}` (§10.16a): a paired remote renames ITSELF from its message card (long-press on the
-        source label). Only its own record — there is no target field; other remotes are renamed on the account page.
-        Same writer, audit and owner_name field as the account page's device_name. → `dev_rename_res {r, ok, name?, why?}`."""
-        r, name = obj.get("r"), obj.get("name")
-        if not wire.is_rid(r):
-            return
-
-        async def res(ok: bool, **kw) -> None:
-            if self.sessions.get(s.cid) is s and s.state == "ready" and self.st.is_allowed(s.pub):
-                await self.send_app(s, {"t": "dev_rename_res", "r": r, "ok": ok, **kw})
-        # the same rules as the account page (1–64, no control characters), then the host's label cleaning
-        if not isinstance(name, str) or not 1 <= len(name.strip()) <= 64 or any(ord(c) < 32 or ord(c) == 127 for c in name):
-            return await res(False, why="bad_name")
-        name = clean_label(name.strip()).strip()
-        if not name:
-            return await res(False, why="bad_name")
-        try:
-            ok = self.st.rename_device(s.device, name, via="phone")
-        except ValueError:
-            return await res(False, why="bad_name")
-        if not ok:
-            return await res(False, why="gone")
-        digest = hashlib.sha256(json.dumps({"device": s.device, "name": name}, sort_keys=True).encode()).hexdigest()
-        approvals.record(self.st, rid=r, agent="phone", tool="device_name", input_sha256=digest, shown_sha256=digest,
-                         decision="allow", reason="own_device", device=s.device)
-        self.activity("decision", device=s.device, summary="device_name / own device: ok", request=r)
-        self.st.log("device_renamed", device=s.device, via="phone")
-        self.device_renamed(s.device)
-        await res(True, name=name)
 
     async def preferences_loop(self):
         while not self.stopping.is_set():
@@ -2411,115 +1998,31 @@ class Host:
             await asyncio.sleep(0.5)
 
     def busy_msg(self) -> dict:
-        """PROTOCOL §22: `{"t":"busy","tasks":[{id, who, kind, label, lk?, since, c}],"by":<Agent name>,"load"?:0..1,"cap"?:n}`
-        — display only (load: P154, the line under the reply card's header; cap: 追加 11, how many robots fit)."""
+        """PROTOCOL §22: `{"t":"busy","tasks":[{id, who, kind, label, lk?, since, c}],"by":<Agent name>}` — display only."""
         return self.busy.msg(self.st.agent_name())
 
     def busy_changed(self) -> None:
         """P150: the 「在办事项」 list changed (or may have: TTL) → every ready phone, once per real change."""
         msg = self.busy_msg()
-        key = json.dumps([msg["tasks"], msg["by"], msg.get("load"), msg.get("cap")], ensure_ascii=False, sort_keys=True)
+        key = json.dumps([msg["tasks"], msg["by"]], ensure_ascii=False, sort_keys=True)
         if key == self.busy_sent:
             return
         self.busy_sent = key
         self._post(self._send_p33, lambda s: msg)
 
     async def busy_loop(self) -> None:
-        """P150: item files every 2 s, systemd `agentj-p*` units every 10 s (both off the event loop); colours saved.
-        P154: the load is sampled every busy.LOAD_EVERY s and sent only when it moved by more than busy.LOAD_STEP."""
+        """P150: item files every 2 s, systemd `agentj-p*` units every 10 s (both off the event loop); colours saved."""
         from . import busy as busy_mod
         n = 0
         while True:
             with contextlib.suppress(Exception):
                 await asyncio.to_thread(self.busy.refresh_outside, n % 5 == 0)
-                self.busy.sample_load()
                 self.busy_changed()
                 colors = self.busy.take_colors()
                 if colors is not None:
                     await asyncio.to_thread(busy_mod.save_colors, self.st.root, colors)
-            with contextlib.suppress(Exception):
-                if await asyncio.to_thread(self.theme_refresh):
-                    msg = self.theme_cached
-                    self._post(self._send_p33, lambda s: msg)
             n += 1
             await asyncio.sleep(2)
-
-    # ------------------------------------------------------------ P181 (§22.1 / §22.2): the load card, the header rename
-    def on_res_watch(self, s: Session, obj: dict) -> None:
-        """The page's load card is open (`on: true`, renewed every resources.RENEW s) or closed. Sampling runs only while at
-        least one ready session watches, and stops by itself when the last watch ends or expires (resources.WATCH_TTL)."""
-        from . import resources
-        if obj.get("on") is True:
-            self.res_watch[s.cid] = time.monotonic() + resources.WATCH_TTL
-            if self.res_task is None or self.res_task.done():
-                self.res_task = self._bg(self.res_loop(), "res")
-        else:
-            self.res_watch.pop(s.cid, None)
-
-    def _res_watchers(self) -> list:
-        now = time.monotonic()
-        for cid in [c for c, exp in self.res_watch.items() if exp < now or c not in self.sessions]:
-            self.res_watch.pop(cid, None)
-        return [s for c in self.res_watch if (s := self.sessions.get(c)) is not None and s.state == "ready" and s.p33
-                and self.st.is_allowed(s.pub)]
-
-    async def res_loop(self) -> None:
-        """Sample (off the event loop) → `{"t":"res",…}` to the watching sessions only; a fresh Sampler per run, so nothing is
-        kept between two openings of the card."""
-        from . import resources
-        sampler = await asyncio.to_thread(resources.Sampler)
-        await asyncio.to_thread(sampler.sample)             # the baseline for the rates
-        await asyncio.sleep(resources.FIRST)
-        while True:
-            watchers = self._res_watchers()
-            if not watchers:
-                return
-            msg = resources.message(await asyncio.to_thread(sampler.sample), self.busy.load)
-            for s in watchers:
-                await self.send_app(s, msg)
-            await asyncio.sleep(resources.EVERY)
-
-    async def on_agent_name(self, s: Session, obj: dict) -> None:
-        """A signed `agent_name` (controls action, object = the name as typed) → names.rename, the same path as `agentj name`
-        (linked: the Dashboard first; the short-name rule). Any ready paired remote is the owner's (friends never get one)."""
-        from . import names
-        r = obj.get("r")
-        if not wire.is_rid(r):
-            return
-        name = obj.get("name")
-        if not isinstance(name, str) or len(name) > 200:
-            return await self._ctl_res(s, r, "agent_name", False, why="shape")
-        target = {"name": name}
-        why = controls.check(self.st, self.nonces, self.channel, s.device, obj, "agent_name", target)
-        if why:
-            self.st.log("control_refused", device=s.device, action="agent_name", reason=why)
-            controls.log(self.st, action="agent_name", device=s.device, result="refused:" + why)
-            return await self._ctl_res(s, r, "agent_name", False, why=why)
-        try:
-            res = await asyncio.to_thread(names.rename, self.st, name, notify=False)
-        except OSError:
-            res = {"ok": False, "error": "failed", "suggestions": []}
-        controls.log(self.st, action="agent_name", device=s.device, result="ok" if res["ok"] else res["error"], obj=target,
-                     sig=obj.get("sig"), n=obj.get("n"), ts=obj.get("ts"))
-        if not res["ok"]:
-            return await self._ctl_res(s, r, "agent_name", False, why=res["error"],
-                                       suggestions=[x for x in res.get("suggestions", []) if isinstance(x, str)][:5])
-        self.activity("decision", by=s.name or s.device, result="allow", tool=pick(self.lang, "Agent 改名", "Agent renamed"),
-                      text=res["name"])
-        self.reporter.trigger("agent_name")
-        self.name_changed()
-        await self._ctl_res(s, r, "agent_name", True, name=res["name"])
-
-    def theme_refresh(self) -> bool:
-        """P169: re-read the theme when <state>/agentperm/theme/current.json changed (`agentj theme apply|reset|restore`,
-        also from inside the Agent's fence) → True when the phones need the new one. Off the event loop (PNG checks)."""
-        from . import theme
-        st = theme.stamp(self.st.root)
-        if self.theme_cached is not None and st == self.theme_stamp:
-            return False
-        old = self.theme_cached
-        self.theme_stamp, self.theme_cached = st, theme.phone_message(self.st.root)
-        return old is not None and old.get("rev") != self.theme_cached.get("rev")
 
     def name_changed(self) -> None:
         """The Agent name changed (`agentj name`, the admin page, a Dashboard rename adopted in sync): every ready phone gets
@@ -2540,8 +2043,8 @@ class Host:
             fn, args = await self.post_q.get()
             try:
                 await fn(*args)
-            except Exception as e:  # noqa: BLE001 — a send to a vanished session costs nothing else (P192: but is logged)
-                bg.swallowed(self.st.log, "post_failed", e, why=getattr(fn, "__name__", "post"))
+            except Exception:  # noqa: BLE001 — a send to a vanished session costs nothing else
+                pass
 
     async def _send_ready(self, obj_fn) -> None:
         for s in list(self.sessions.values()):
@@ -2672,8 +2175,6 @@ class Host:
     def agent_text(self, text: str) -> None:
         if not text or not text.strip():
             return
-        _hb_touch(self)
-        self.jev_plan = (getattr(self, "jev_plan", "") + "\n" + text)[-approval_jev.MAX_TEXT:]
         from .silent import is_silent
         if is_silent(text):
             if self.cur_turn is not None and self.hist.get(self.cur_turn) is not None:
@@ -2684,9 +2185,6 @@ class Host:
                 self.hist_add({"k": "agent", "text": ""}, text, "done")
             return
         self.turn_text = True
-        if getattr(self, "wait_note", None):
-            self.turn_wait_note(None)       # P151b: the reply replaces the wait line, never follows it
-        self.agent_said_at = time.time()          # P155: the harness-switch job's proof that the new Agent answered
         for chunk in agents.split_text(text, wire.MAX_TEXT):
             self.emit("agent_msg", text=clean(chunk, wire.MAX_TEXT))
             e = self._remember("agent", chunk)
@@ -2701,7 +2199,6 @@ class Host:
 
     def proactive_turn(self, via: str) -> None:
         """P132: the harness started a turn itself (via = 'loop' | 'task'); its reply page names that source."""
-        _hb_touch(self)
         self.desktop_end()
         self.proactive_via = via if via in ("loop", "task") else None
 
@@ -2712,7 +2209,6 @@ class Host:
     def desktop_input(self, text: str) -> None:
         if not text or not text.strip():
             return
-        _hb_touch(self)
         self.desktop_end()
         self.desktop_turn = self.hist_add({"k": "host", "name": pick(self.lang, "电脑", "Desktop"), "text": text}, "", "open")["id"]
 
@@ -2723,28 +2219,6 @@ class Host:
         page = self.hist.get(tid) if tid is not None else None
         if page and page["end"] == "open" and page["reply"]["text"] == ("" if on else note):
             self.hist_update(tid, text=note if on else "")
-
-    def turn_wait_note(self, text: str | None, stall: bool = False, final: bool = False) -> None:
-        """P151b (追加 4): what the host sees of a phone turn still running — 「正在等待 Bash：…（已 3 分钟）」 — on that page's
-        reply line (card.wait; card.stall = the 「继续等 / 中断」 buttons). final = the turn's closing line (no reply came),
-        kept; None = the reply arrived or the wait ended: a non-final line is withdrawn. Never overwrites a real reply."""
-        tid = self.cur_turn
-        page = self.hist.get(tid) if tid is not None else None
-        prev = getattr(self, "wait_note", None)
-        if text is None:
-            if page and prev and not prev[1] and page["reply"]["text"] == prev[0]:
-                self.hist_update(tid, text="", card={})
-            self.wait_note = None
-            return
-        if not page or page["end"] != "open":
-            return
-        cur = page["reply"]["text"]
-        if cur and cur != (prev[0] if prev else None) and cur != pick(self.lang, *self.BUSY_NOTE):
-            return
-        if prev and prev[0] == text and prev[2] == stall and cur == text:
-            return
-        self.wait_note = (text, final, stall)
-        self.hist_update(tid, text=text, card={"wait": True, **({"stall": True} if stall else {})})
 
     MERGED_NOTE = ("已合并到下一条回复。", "Merged into the next reply.")
 
@@ -2775,7 +2249,6 @@ class Host:
 
     def desktop_end(self) -> None:
         self.proactive_via = None
-        _hb_touch(self)
         tid = getattr(self, "desktop_turn", None)
         if tid is not None:
             self.hist_update(tid, end="done")
@@ -2904,8 +2377,6 @@ class Host:
 
     def agent_turn_start(self, text: str, send=None) -> None:
         self.turn_t0 = time.monotonic()
-        _hb_touch(self)
-        self.jev_owner, self.jev_plan = text or "", ""      # P157: layer 2's view of this turn
         by = send.by if send is not None and send.by else self.turn_by
         self.activity("turn_start", by=by, text=text[:120])
         self.turn_by = None
@@ -2913,7 +2384,6 @@ class Host:
 
     def agent_turn_end(self) -> None:
         self.st.log("turn_end", agent=self.agent.kind if self.agent else None)
-        _hb_touch(self)
         halted = bool(self.agent and self.agent.halting)
         self.activity("turn_end", secs=round(time.monotonic() - self.turn_t0, 1) if self.turn_t0 else None,
                       result="stopped" if halted else "done")
@@ -2922,9 +2392,6 @@ class Host:
             self.media_later(self.cur_turn)
         if self.telegram and self.cur_turn is not None:
             self.telegram.completed(self.hist.get(self.cur_turn))
-        if self.mail and self.cur_turn is not None:      # P170: the reply goes back by e-mail, same thread
-            with contextlib.suppress(Exception):
-                self.mail.completed(self.hist.get(self.cur_turn))
         send = getattr(self.agent, 'cur_send', None)
         if getattr(send, 'official_notice_id', None):
             self.official_pending.pop(send.official_notice_id, None)
@@ -2942,22 +2409,17 @@ class Host:
             m["why_en"] = a.why_en        # P128: the phone shows why or why_en by its language (never both)
         if a.cred:
             m["cred"] = a.cred            # "read" → 查看密码或密钥, "change" → 改密码或密钥
-        pk = self.st.passkey_of_device(s.device) if s is not None and (a.require_passkey or a.pk_if_any) else None
-        if a.require_passkey or (a.pk_if_any and pk):
+        if a.require_passkey:
+            pk = self.st.passkey_of_device(s.device) if s is not None else None
             m["passkey_required"] = True
             if pk:
                 m["fa"] = pk["id"]
-                m["fa_ch"] = wire.b64u(passkey.elevate_challenge(self.channel, s.device, a.rid, a.pk_kind, a.rid, a.digest))
+                m["fa_ch"] = wire.b64u(passkey.elevate_challenge(self.channel, s.device, a.rid, "sandbox", a.rid, a.digest))
         if a.scope_text:
             m["batch"] = a.scope_text
             m["batch_max"], m["batch_secs"] = BATCH_MAX, BATCH_SECS
         if a.task:
             m["task"] = a.task[:80]
-        if a.goal:                        # P158: the countdown / "waits for you" / red attack tag
-            m["goal"] = a.goal
-            m["goal_why"] = goal_mod.why_text(a.goal_why, card_lang(self.lang))
-        elif a.tool == goal_mod.TOOL:      # P158: the opening card (one signature for the whole goal)
-            m["goal"] = "grant"
         return m
 
     # ------------------------------------------------------------ batch approval (ADR-A48)
@@ -3005,11 +2467,9 @@ class Host:
                 "AGENTJ_PERM_WAIT": str(int(self.ask_ttl + 30))}
 
     async def _perm_send(self, w: asyncio.StreamWriter, obj: dict) -> None:
-        try:
+        with contextlib.suppress(Exception):
             w.write((json.dumps(obj, ensure_ascii=False) + "\n").encode())
             await w.drain()
-        except Exception as e:  # noqa: BLE001 — P192 (B18): an approval answer that never reached the permission tool
-            bg.swallowed(self.st.log, "perm_send_failed", e, every=0)
 
     async def on_perm(self, r: asyncio.StreamReader, w: asyncio.StreamWriter) -> None:
         """The agent's permission tool (permtool.py) claims this socket once per agent start, then sends every permission
@@ -3064,12 +2524,8 @@ class Host:
             if self.perm_w is w:
                 await self._perm_send(w, {"t": "answer", "id": rid, **ans})
 
-    async def ask(self, tool: str, tool_input: dict, gone: asyncio.Future | None = None, batch: bool = True, risk_scope: bool = False, require_passkey: bool = False, context: dict | None = None,
-                  ttl: float | None = None, grant_info: bool = False, origin: str | None = None) -> dict:
-        """batch=False: never offered for (or approved by) a batch grant (a Codex sandbox / network escalation).
-        context (P157): {"owner", "plan"} for layer 2 (approval_jev); None = what this host saw of the current turn.
-        ttl (P158): this card's own wait (the goal card); grant_info: an allow carries {rid, device, sign_pub}.
-        origin (P172): who is asking when it is not the main thread (「来自子 Agent：general-purpose · 写报告」), the card's last line."""
+    async def ask(self, tool: str, tool_input: dict, gone: asyncio.Future | None = None, batch: bool = True, risk_scope: bool = False, require_passkey: bool = False) -> dict:
+        """batch=False: never offered for (or approved by) a batch grant (a Codex sandbox / network escalation)."""
         if tool == "AskUserQuestion" and self.agent and self.agent.kind == "claude" and isinstance(tool_input, dict):
             return await self._ask_user_question(tool_input, gone)       # §10.7: a question card, not an approval card
         kind = self.agent.kind if self.agent else "?"
@@ -3094,10 +2550,6 @@ class Host:
                            "需要安装或管理员权限时，可在手机上批准。\n本次不隔离运行：批准后会在沙箱外运行，可能访问本机文件和凭据。仅本次启动有效，需主人通行密钥批准。")
         if risk_scope:
             summary += CARD_TEXT[card_lang(self.lang)]["risk_scope"]
-        if tool == goal_mod.TOOL and isinstance(tool_input.get("card"), str):
-            summary = tool_input["card"]            # P158: the goal card shows (and the phone signs) exactly this text
-        if origin:
-            summary += "\n" + str(origin)[:120]     # last line: the first stays the command (notices, push)
         digest, isha = approvals.shown_digest(tool, summary), approvals.input_digest(tool_input)
         rid = secrets.token_hex(16)
         workdir = (self.agent_cfg or {}).get("dir")
@@ -3146,47 +2598,6 @@ class Host:
             else:
                 self._post(self._send_ready, lambda s: self._grant_msg(g))
             return {"behavior": "allow", "updatedInput": tool_input}
-        gt, gwhy, gd = None, None, None
-        if not require_passkey and self.task_label is None and tool not in goal_mod.SOFT_EXEMPT:
-            gd = self.goals.current()
-            if gd is not None:                  # P158: the host sorts the request; the Agent's own words decide nothing
-                gt, gwhy = goal_mod.tier(gd, tool, tool_input, v, (self.agent_cfg or {}).get("dir"), self._classify)
-        if gt in ("low", "granted"):
-            picks = gwhy if gt == "granted" else None
-            self.goals.count(gt, picks)
-            approvals.record(self.st, **base, decision="allow", reason="goal", grant=gd["grant"].get("rid"), auto="goal")
-            self.st.log("ask_done", id=rid, tool=tool, decision="allow", reason="goal", tier=gt)
-            self.activity("goal_auto", id=rid, tool=tool, summary=summary[:200], cats=v.cats, tier=gt,
-                          grant=[gd["grants"][i]["what"] for i in picks] if picks else None)
-            if gt == "granted":                 # a dangerous step under the grant: one quiet line; low risk stays silent
-                self.emit("auto", id=rid, tool=tool, grant=None)
-                line = summary.split("\n", 1)[0][:200]
-                self._post(self._send_ready, lambda s: {"t": "auto", "id": rid, "tool": tool, "summary": line, "by": "goal"})
-            return {"behavior": "allow", "updatedInput": tool_input}
-        if gt == "reversible" and not preferences.get(self.preferences, "approval.goal_auto", True):
-            gt, gwhy = "hold", gwhy             # the owner (enterprise) switched the countdown off: an ordinary card
-        if gt == "attack":
-            pass                                # P158: a suspected attack never goes to Jev — the red card
-        elif not require_passkey and approval_jev.gray(v) and approval_jev.available():
-            # P157 layer 2: only a "can't tell" verdict, never a clear danger; any failure falls through to the card
-            ctx = context if context is not None else {"owner": getattr(self, "jev_owner", ""), "plan": getattr(self, "jev_plan", "")}
-            thr = approval_jev.threshold(self.preferences)
-            try:
-                res = await asyncio.wait_for(asyncio.to_thread(approval_jev.judge, tool, tool_input, ctx, threshold=thr),
-                                             approval_jev.TIMEOUT_S + 0.5)
-            except (asyncio.TimeoutError, Exception):  # noqa: BLE001 — fail closed: the card
-                res = approval_jev.Result("unavailable", reason="timeout")
-            self.st.log("jev_layer2", id=rid, tool=tool, status=res.status, p=None if res.p is None else round(res.p, 2),
-                        threshold=thr)
-            if res.status == "allow" and not self.stopped():
-                approvals.record(self.st, **base, decision="allow", reason="jev")
-                self.st.log("ask_done", id=rid, tool=tool, decision="allow", reason="jev")
-                self.activity("jev", id=rid, tool=tool, summary=summary, why=res.reason, cats=v.cats, task=self.task_label)
-                self.emit("auto", id=rid, tool=tool, grant=None)
-                line = summary.split("\n", 1)[0][:200]
-                self._post(self._send_ready, lambda s: {"t": "auto", "id": rid, "tool": tool, "summary": line, "by": "jev",
-                                                        "why": res.reason})
-                return {"behavior": "allow", "updatedInput": tool_input}
         if not self._approvers():
             approvals.record(self.st, **base, decision="deny", reason="no_device")
             self.st.log("ask_done", id=rid, tool=tool, decision="deny", reason="no_device")
@@ -3196,11 +2607,9 @@ class Host:
         if sum(1 for a in self.asks.values() if not a.fut.done()) >= MAX_ASKS:
             approvals.record(self.st, **base, decision="deny", reason="too_many")
             return {"behavior": "deny", "message": "同时等待批准的请求太多：默认拒绝。"}
-        wait = goal_mod.auto_secs() if gt == "reversible" else (ttl if ttl else self.ask_ttl)
-        a = Ask(rid, tool, summary, digest, tool_input, isha, time.monotonic() + wait,
+        a = Ask(rid, tool, summary, digest, tool_input, isha, time.monotonic() + self.ask_ttl,
                 asyncio.get_running_loop().create_future(), cats=v.cats, why=v.why, why_en=v.why_en, cred=v.cred,
-                scope=sc[:2] if sc else None, scope_text=sc[2] if sc else None, task=self.task_label, require_passkey=require_passkey,
-                goal={"reversible": "auto", "hold": "hold", "attack": "attack"}.get(gt or "", ""), goal_why=str(gwhy or ""))
+                scope=sc[:2] if sc else None, scope_text=sc[2] if sc else None, task=self.task_label, require_passkey=require_passkey)
         self.asks[rid] = a
         self.activity("ask", id=rid, tool=tool, cats=v.cats, why=v.why or None, why_en=v.why_en or None, cred=v.cred or None,
                       summary=summary, task=self.task_label)
@@ -3222,26 +2631,17 @@ class Host:
             else:
                 decision, did, sk, sig = "deny", None, None, None
                 reason = "agent_gone" if gone in done else ("serve_stop" if self.stopping.is_set() else "timeout")
-                if reason == "timeout" and a.goal == "auto" and not self.stopped() and self.goals.current() is not None:
-                    decision, reason = "allow", "goal_auto"     # P158: reversible step, nobody answered in 10 s
                 if not a.fut.done():
                     a.fut.set_result((decision, None, None, None))
         finally:
             self.asks.pop(rid, None)
-        gd = self.goals.current() if a.goal else None
         approvals.record(self.st, **base, decision=decision, reason=reason, device=did, sign_pub=sk, sig=sig,
-                         scope=a.scope_text if decision == "allow_batch" else None,
-                         **({"grant": gd["grant"].get("rid"), "auto": "goal"} if reason == "goal_auto" and gd else {}))
-        if gd is not None:
-            if reason == "goal_auto":
-                self.goals.count("auto")
-            elif decision != "allow" and a.goal in ("hold", "attack") and reason in ("device", "timeout"):
-                self.goals.block(summary, a.goal_why or a.goal)
+                         scope=a.scope_text if decision == "allow_batch" else None)
         raw = decision
         if decision == "allow_batch" and reason == "device":
             self._open_grant(a, did)
         decision = "allow" if decision == "allow_batch" else decision
-        result = decision if reason in ("device", "goal_auto") else {"timeout": "timeout", "estop": "stopped"}.get(reason, "gone")
+        result = decision if reason == "device" else {"timeout": "timeout", "estop": "stopped"}.get(reason, "gone")
         self.st.log("ask_done", id=rid, tool=tool, decision=decision, reason=reason, device=did)
         self.activity("decision", id=rid, tool=tool, result=raw if reason == "device" else reason, reason=reason,
                       by=self._dname(did) if did else None, cats=a.cats, task=a.task, summary=summary[:200])
@@ -3250,13 +2650,9 @@ class Host:
         self.status_changed()
         if decision == "allow":
             answer = {"behavior": "allow", "updatedInput": tool_input}
-            if risk_scope and reason == "device":       # P158: a goal countdown never becomes a turn-wide category grant
+            if risk_scope:
                 answer["risk_grant"] = {"rid": rid, "device": did, "sign_pub": sk}
-            if grant_info and reason == "device":
-                answer["grant_info"] = {"rid": rid, "device": did, "sign_pub": sk}
             return answer
-        if a.goal in ("hold", "attack") and reason in ("device", "timeout"):
-            return {"behavior": "deny", "message": goal_mod.hold_message(a.goal_why or a.goal, card_lang(self.lang))}
         msg = {"device": "用户在手机上拒绝了这个操作。", "timeout": f"手机上 {int(self.ask_ttl)} 秒内没有批准：默认拒绝。",
                "serve_stop": "agentj serve 已停止：默认拒绝。", "estop": "已急停（全部停下）：默认拒绝。"}.get(reason, "已拒绝。")
         return {"behavior": "deny", "message": msg}
@@ -3319,18 +2715,15 @@ class Host:
         if not sk or not approvals.verify(sk, sigb, self.channel, s.device, rid, decision, a.digest, scope):
             self.st.log("answer_refused", id=rid, device=s.device, reason="no_key" if not sk else "bad_signature")
             return
-        if a.tool == pair_card.TOOL and not s.pair1:
-            self.st.log("answer_refused", id=rid, device=s.device, reason="no_pair1")   # only a page that showed the card
-            return
-        pk = self.st.passkey_of_device(s.device) if ok and (a.require_passkey or a.pk_if_any) else None
-        if ok and (a.require_passkey or (a.pk_if_any and pk)):
+        if ok and a.require_passkey:
+            pk = self.st.passkey_of_device(s.device)
             try:
                 if not pk:
                     raise passkey.PasskeyError("bad", "no_passkey")
                 f = passkey.approval_fields(obj.get("fa"))
                 if f["id"] != pk["id"]:
                     raise passkey.PasskeyError("bad", "credential")
-                challenge = passkey.elevate_challenge(self.channel, s.device, rid, a.pk_kind, rid, a.digest)
+                challenge = passkey.elevate_challenge(self.channel, s.device, rid, "sandbox", rid, a.digest)
                 count = passkey.verify_assertion(pk, f, challenge)
                 self.st.passkey_count(s.device, pk["id"], count)
             except (passkey.PasskeyError, ValueError):
@@ -3416,23 +2809,7 @@ class Host:
     def _dname(self, did: str | None) -> str | None:
         if not did:
             return None
-        return self._dev_label(did) or did
-
-    def _dev_label(self, did: str | None) -> str:
-        """P179: how a remote is named on pages, in the activity log and to the Agent — 「张伟（老板）· iOS Safari」 once
-        the owner named it, else its own pairing label (as before)."""
-        rec = self.st.devices().get(did) if did else None
-        return clean_label(device_label(rec)) if isinstance(rec, dict) else ""
-
-    def device_renamed(self, did: str) -> None:
-        """P179: after any rename (account page or the remote itself) — live sessions of that remote speak under the new
-        label, the account page gets a report, and every phone gets the new names (settings list + source labels)."""
-        label = self._dev_label(did)
-        for x in self.sessions.values():
-            if x.device == did and label:
-                x.name = label
-        self.reporter.trigger("online")
-        self._post(self._send_ready, lambda _s: self.preferences_msg())
+        return self.st.devices().get(did, {}).get("name") or did
 
     def _estop_msg(self) -> dict:
         by = self.estop.get("by", "")
@@ -3455,8 +2832,6 @@ class Host:
                 q.fut.set_result(("stopped", None, None, None, None))
         for gid in list(self.grants):
             self.end_grant(gid, "estop")
-        with contextlib.suppress(Exception):           # P158: the goal's one-time grant ends with everything else
-            self.goals.end("estop", by="estop")
         self.bots.estop()
         self.elevate.cancel_all("stopped")            # F17: open sudo / secret cards end (a running command finishes)
         if self.peers is not None:                    # P71 §17.9: no mailbox frame leaves, every peer session ends
@@ -3800,10 +3175,6 @@ class Host:
             return
         self.st.log("slash", cmd=cmd.name, result=res.kind)
         self.activity("slash", cmd=cmd.name, result=res.kind, by=cmd.by)
-        if cmd.name in ("compact", "clear", "new", "reset") and res.kind == "ok":
-            hb = getattr(self, "heartbeat", None)  # P156
-            if hb is not None:
-                hb.forget(cmd.name)                #: the next beat carries the full heartbeat prompt again
         if cmd.name == "clear" and res.undo:
             self.hist_update(cmd.turn, text=wire.well_formed(res.text), end="done")
             if self.hist.reset("clear"):
@@ -3819,10 +3190,6 @@ class Host:
     def queue_dropped(self, item) -> None:
         """The stop switch dropped something still queued (agent.halt): a say is withdrawn (its attachments staged again,
         its page ends `stopped`), a command's page ends `stopped`."""
-        if getattr(item, "heartbeat_key", None):
-            item.state = "cancelled"
-            self.hist_update(item.turn, end="stopped")
-            return
         if getattr(item, "sid", None) is not None:
             item.state = "cancelled"
             self.uploads.release(item.blobs)
@@ -3855,14 +3222,6 @@ class Host:
             self.st.log("slash", cmd=hc, result=res.kind)
             self.activity("slash", cmd=hc, result=res.kind, by=by)
             self.cmd_card(hc, res, by, turn)
-            return turn
-        if name == "goal" and goal_mod.host_cmd(arg):   # P158: answered here, also while stopped / without an Agent
-            self.st.log("slash_in", cid=s.cid, device=s.device, cmd="goal")
-            turn = self.cmd_turn(s, "goal", arg)
-            res = self.goal_cmd(goal_mod.host_cmd(arg), "phone:" + s.device)
-            self.st.log("slash", cmd="goal", result=res.kind)
-            self.activity("slash", cmd="goal", result=res.kind, by=by)
-            self.cmd_card("goal", res, by, turn)
             return turn
         known = name in slash.WHITELIST + slash.INTERNAL
         self.st.log("slash_in", cid=s.cid, device=s.device, cmd=name if known else "other")
@@ -3934,22 +3293,6 @@ class Host:
             if not launched or not phone_update.busy(self.st):
                 phone_update.release(self.st)
 
-    def goal_cmd(self, what: str, by: str) -> "slash.Result":
-        """P158 `/goal status` · `/goal stop` (stop only takes power away: no signature needed, like `agentj stop`)."""
-        lang = card_lang(self.lang)
-        if what == "stop":
-            for a in list(self.asks.values()):          # a goal card still open on the phone is withdrawn too
-                if a.tool == goal_mod.TOOL and not a.fut.done():
-                    a.fut.set_result(("deny", None, None, None))
-            d = self.goals.end("stopped", by=by[:16])
-            if d is None:
-                return slash.Result("No goal is running." if lang == "en" else "现在没有进行中的目标。", "info")
-            return slash.Result("Goal mode ended; its one-time grant is withdrawn. Approvals ask as usual again."
-                                if lang == "en" else "目标模式已结束，一次性授权已撤销；之后的审批照常弹卡。")
-        self.goals.check()
-        d = goal_mod.load(self.st)
-        return slash.Result(goal_mod.status_text(self.st, d if d and d.get("state") in ("active", "proposed") else None, lang), "info")
-
     def friend_cmd(self, name: str, arg: str = "", channel: str = "phone") -> "slash.Result":
         """P73 (ADR-A176) `/my-agent-id` · `/add-friend` (friend_cmds.py). Never adds a friend: that is the phone's signed fr_add."""
         lang = "en" if self.lang == "en" else "zh"
@@ -3974,14 +3317,9 @@ class Host:
         announced p33 itself (an older one gets exactly §3's message)."""
         if s is not None and not s.p33:
             return {}
-        caps = [wire.CAP_P33, "heartbeat", wire.CAP_LT1, pair_card.CAP]
+        caps = [wire.CAP_P33, "heartbeat", wire.CAP_LT1]
         if getattr(self, "telegram", None) is not None and self.telegram.can_forward():   # P118 B10: share → the owner's Telegram
             caps.append("tgfwd")
-        if getattr(self, "telegram", None) is not None:   # P183: this host forwards a reply's file too (tg_fwd {mid}); the phone
-            caps.append("tgfile")                          # shows the icon and, while Telegram is not linked, says where to link it
-        caps.append("busyget")                 # P160 (§22): a tap on one 「在办」 row asks for its detail
-        caps.append("contacts")          # P184 (§25): address book, contact cards, 「转发到邮箱」 (mail ready or not: the dialog says)
-        caps.append(hsearch.CAP)                               # P188 (§28): this computer answers hist_find
         return {"caps": caps, "asr": self.asr_state(), "hist": "on" if self.hist.on else "off"}
 
     async def _bulk(self, s: Session) -> None:
@@ -4041,124 +3379,10 @@ class Host:
         finally:
             self.tts_busy=False
 
-    async def on_mail(self, s: Session, t: str, obj: dict) -> None:
-        """P170 (PROTOCOL §10.20): the paired phone's e-mail settings. The app password never comes this way — 「设置授权码」
-        opens the sealed secret card (elevate.py), the host logs in with it, then stores it encrypted."""
-        from . import mail as mail_mod
-        r = obj.get("r")
-        if not wire.is_rid(r) or self.mail is None:
-            return
-
-        async def answer(ok: bool, why: str | None = None, **extra) -> None:
-            if self.sessions.get(s.cid) is s and s.state == "ready" and self.st.is_allowed(s.pub):
-                await self.send_app(s, {"t": "mail_res", "r": r, "ok": ok, **({"why": why} if why else {}), **extra,
-                                        "view": await asyncio.to_thread(self.mail.view)})
-        if t == "mail_get":
-            return await answer(True)
-        if t == "mail_set":
-            raw = obj.get("cfg")
-            if not isinstance(raw, dict) or len(json.dumps(raw)) > 8000:
-                return await answer(False, "shape")
-            try:
-                old = mail_mod.read_config(self.st)
-                new = {**old, **{k: v for k, v in raw.items() if k != "generation"}}
-                if raw.get("preset") and raw.get("address"):
-                    if "username" not in raw:
-                        new["username"] = ""          # the preset's sign-in name = the (new) address
-                    new = mail_mod.apply_preset(new, raw["preset"], raw["address"])
-                    if raw.get("preset") == "custom":
-                        new.update({k: raw[k] for k in ("imap", "smtp") if k in raw})
-                cfg = self.mail.set_config(new)
-            except mail_mod.MailError as e:
-                return await answer(False, e.why)
-            self.st.log("mail_set", device=s.device, allow=len(cfg["allow"]), enabled=cfg["enabled"])
-            return await answer(True)
-        if t == "mail_key":                 # one answer, when the card ends (the page waits up to the card's 10 minutes)
-            async def card():
-                res = await self.mail.secret_card()
-                await answer(res.get("result") == "saved", None if res.get("result") == "saved" else
-                             (res.get("detail") or res.get("why") or res.get("result")), card=res.get("result"))
-            self._bg(card(), "mail_key")
-            return
-        if t == "mail_test":
-            async def test():
-                cfg = mail_mod.read_config(self.st)
-                pw = mail_mod.load_secret(self.st, cfg["address"]) if cfg["address"] else None
-                if not pw:
-                    return await answer(False, "no_password")
-                res = await asyncio.to_thread(mail_mod.test_connection, cfg, pw)
-                st2 = mail_mod.read_state(self.st)
-                st2["auth_seen"] = res.get("auth_sample")
-                mail_mod.save_state(self.st, st2)
-                self.st.log("mail_test", imap=res["imap"], smtp=res["smtp"])
-                await answer(res["ok"], None if res["ok"] else (res["imap"] if res["imap"] != "ok" else res["smtp"]),
-                             test={k: res[k] for k in ("imap", "smtp", "auth_sample")})
-            self._bg(test(), "mail_test")
-            return
-        if t == "mail_check":
-            async def check():
-                res = await self.mail.check()
-                await answer(bool(res.get("ok")), res.get("why"), check={k: v for k, v in res.items() if k != "why"})
-            self._bg(check(), "mail_check")
-
-    async def _ctl_mail(self, w: asyncio.StreamWriter, req: dict, claimed: bool) -> None:
-        """P170 `agentj mail set|allow|deny|on|off`: from the owner's terminal it applies at once; from inside an Agent a change
-        that widens who reaches the Agent (a new allowlisted address, weaker sender checks, turning it on, another server)
-        becomes an approval card on the phone, applied only when the owner allows and nothing changed meanwhile."""
-        from . import mail as mail_mod
-        if self.mail is None:
-            return await self._ctl_send(w, {"ok": False, "error": "not_running"})
-        old = mail_mod.read_config(self.st)
-        try:
-            new = mail_mod.validate({**old, **{k: v for k, v in (req.get("cfg") or {}).items() if k != "generation"}})
-        except mail_mod.MailError as e:
-            return await self._ctl_send(w, {"ok": False, "error": e.why})
-        keys = [] if claimed else mail_mod.widening(old, new)
-        if not keys:
-            cfg = self.mail.set_config(new)
-            self.st.log("mail_set", device="terminal" if claimed else "agent", allow=len(cfg["allow"]), enabled=cfg["enabled"])
-            return await self._ctl_send(w, {"ok": True, "applied": True})
-        self.st.log("mail_card", keys=",".join(keys)[:200])
-        await self._ctl_send(w, {"ok": False, "code": "owner_approval", "keys": keys,
-                                 "error": "a change that lets more mail reach the Agent needs the owner's approval: a card was sent "
-                                          "to the paired phone; nothing changed yet / 让更多邮件进来的改动需要主人在手机上批准，已发卡片，批准后生效"})
-
-        async def card():
-            ans = await self.ask("agentj mail", {"changes": keys}, batch=False)
-            if ans.get("behavior") != "allow":
-                self.st.log("mail_card_done", result="deny")
-                return
-            if mail_mod.read_config(self.st) != old:
-                self.st.log("mail_card_done", result="stale")
-                self.agent_notice("邮件设置在等待批准期间被改过，这次批准没有生效，请重新发起。 / The mail settings changed while "
-                                  "waiting; this approval was not applied.")
-                return
-            self.mail.set_config(new)
-            self.st.log("mail_card_done", result="applied")
-        task = asyncio.ensure_future(card())
-        self._ctl_bg = getattr(self, "_ctl_bg", set())
-        self._ctl_bg.add(task)
-        task.add_done_callback(self._ctl_bg.discard)
-
-    async def on_tg_fwd(self, s: Session, r: str, turn_id, mid=None) -> None:
-        if self.telegram is None:
-            res = {"ok": False, "why": "not_configured"}
-        elif mid is not None:      # P183: one file a reply showed (its §13 media id) instead of the reply's words
-            res = await self.telegram.forward_media(mid, s.device) if wire.is_id22(mid) else {"ok": False, "why": "not_found"}
-        else:
-            res = await self.telegram.forward(turn_id, s.device)
+    async def on_tg_fwd(self, s: Session, r: str, turn_id) -> None:
+        res = await self.telegram.forward(turn_id, s.device) if self.telegram is not None else {"ok": False, "why": "not_configured"}
         if self.sessions.get(s.cid) is s and s.state == "ready" and self.st.is_allowed(s.pub):
             await self.send_app(s, {"t": "tg_fwd_res", "r": r, **{k: v for k, v in res.items() if k in ("ok", "why", "parts")}})
-
-    async def on_busy_get(self, s: Session, r: str, wid: str) -> None:
-        from . import busy as busy_mod
-        f = self.busy.find(wid)                          # copies, here on the loop (the Board changes only here)
-        try:
-            d = await asyncio.to_thread(busy_mod.detail_of, *f) if f else None
-        except Exception:  # noqa: BLE001 — display only
-            d = None
-        if self.sessions.get(s.cid) is s and s.state == "ready" and self.st.is_allowed(s.pub):
-            await self.send_app(s, {"t": "busy_info", "r": r, "id": wid, "item": d})
 
     async def on_p33(self, s: Session, t: str, obj: dict) -> None:
         if t == "ping":
@@ -4174,38 +3398,20 @@ class Host:
             return
         if t == "pref_set":
             return await self.on_pref_set(s, obj)
-        if t == "res_watch":               # P181 (§22.1): the load card opened (renewed) / closed on this session
-            return self.on_res_watch(s, obj)
-        if t == "dev_rename":
-            return await self.on_dev_rename(s, obj)
         if t == "tts_get":
             self._bg(self.on_tts(s, obj), "tts")
             return
-        if t.startswith("mail_"):          # P170: the e-mail channel's settings page
-            return await self.on_mail(s, t, obj)
         if t == "tg_fwd":                  # P118 (B10): one tap → this reply to the owner's own Telegram private chat
             r = obj.get("r")
             if not wire.is_rid(r):
                 return
-            self._bg(self.on_tg_fwd(s, r, obj.get("id"), obj.get("mid")), "tg_fwd")   # Telegram may take seconds: never hold the reader
-            return
-        if t == "busy_get":                # P160 (§22): one row's detail — read-only, never starts / stops anything
-            r, wid = obj.get("r"), obj.get("id")
-            if wire.is_rid(r) and isinstance(wid, str) and 0 < len(wid) <= 40:
-                self._bg(self.on_busy_get(s, r, wid), "busy_get")   # systemctl / a file read: never hold the reader
+            self._bg(self.on_tg_fwd(s, r, obj.get("id")), "tg_fwd")   # Telegram may take seconds: never hold the reader
             return
         if t == "say":
             return await self.on_say(s, obj)
         if t == "cmd_cancel":
             # Already authenticated, ready and allowlisted by _app; bound to the originating device/page.
             self.cancel_waiting_cmd(s, obj.get("turn"))
-            return
-        if t == "turn_wait":
-            # P151b (追加 4): the stall card's 「继续等」 — the running phone turn waits another round; 「中断」 is /stop.
-            more = getattr(self.agent, "wait_more", None)
-            if type(obj.get("turn")) is int and obj.get("turn") == self.cur_turn and more is not None:
-                more.set()
-                self.st.log("turn_wait_more", device=s.device)
             return
         if t == "say_cancel":
             sid = obj.get("sid")
@@ -4249,18 +3455,6 @@ class Host:
             b, a = obj.get("before"), obj.get("after")
             turns, more = self.hist.page(before=b if type(b) is int else None, after=a if type(a) is int else None, limit=lim)
             return await self.send_app(s, {"t": "hist_page", "r": r, **self.hist.meta(), "turns": turns, "more": more})
-        if t == "hist_find":                   # P188 (§28): search the current epoch; answered to the asking session only
-            r, q, sort, lim = obj.get("r"), obj.get("q"), obj.get("sort", "score"), obj.get("limit", hsearch.HITS_MAX)
-            if not wire.is_rid(r):
-                return
-            if not isinstance(q, str) or not q.strip() or text_units(q) > hsearch.Q_MAX or sort not in hsearch.SORTS \
-                    or type(lim) is not int or not 1 <= lim <= hsearch.HITS_MAX:
-                return await self.send_app(s, {"t": "hist_found", "r": r, "error": "shape"})
-            turns = list(self.hist.turns.values())
-            hits, n = await asyncio.to_thread(hsearch.search, turns, q, sort, lim)
-            self.st.log("hist_find", device=s.device, count=n)          # never the query or the words
-            return await self.send_app(s, {"t": "hist_found", "r": r, "epoch": self.hist.epoch, "sort": sort, "hits": hits,
-                                           "n": n, "more": n > len(hits)})
         if t == "menu_get":
             r = obj.get("r")
             if not wire.is_rid(r):
@@ -4340,7 +3534,6 @@ class Host:
         """A message for the Agent from a ready session: its page (src.k phone), the §8 entry for older phones, and the
         queued Send (withdrawable until delivered). Returns the Send (None without an Agent)."""
         blobs = blobs or []
-        _hb_touch(self)                     # P156: a phone conversation pushes the heartbeat back
         await self._setup_round_trip(s)
         self.emit("msg", device=s.device, name=s.name, text=clean(text, wire.MAX_TEXT_P33))
         self.st.log("msg_in", cid=s.cid, device=s.device)
@@ -4354,9 +3547,6 @@ class Host:
             # P127: the Agent's source line is not the owner's words; the page's label already says Telegram
             from .telegram import OWNER_PRIVATE
             src["text"]=text.removeprefix(OWNER_PRIVATE)
-        elif getattr(s,"source_kind",None)=="email":     # P170: the page shows 「邮件」 and the mail's own words
-            src["k"]="email"
-            src["text"]=text.split("\n",2)[-1] if text.startswith("【") else text
         if quote:
             src["quote"] = quote
         if blobs:
@@ -4365,16 +3555,11 @@ class Host:
         if not self.agent:
             return None
         send = compose.Send(s.device, sid or secrets.token_urlsafe(16), turn["id"], blobs=blobs, by=s.name or s.device)
-        send.onboarding_note = (self.speaker_note(s) if getattr(s, "source_kind", None) != "telegram" else "") + self.onboarding_note()
-        gc = slash.parse(text) if not blobs else None
-        if gc and gc[0] == "goal" and gc[1] and not goal_mod.host_cmd(gc[1]):   # P158: `/goal <what>` → the Agent proposes
-            send.onboarding_note += goal_mod.start_note(gc[1], card_lang(self.lang))
+        send.onboarding_note = self.onboarding_note()
         send.source = getattr(s, "provenance", None)      # B1: set only by host code (telegram.incoming), never from text
         files = [{"path": b.path, "mime": b.mime, "bytes": b.size, "origin": b.origin, "secs": b.secs,
                   "voice": getattr(b, "voice", "")} for b in blobs]
-        # P166: every audio / video attachment with its private copy (a picked m4a too); Telegram transcribes its own first
-        voice = [f for f in files if f["voice"] or (f["origin"] == "recording" and f["mime"].startswith("audio/"))]
-        text = self._meeting_text(s, text, bool(voice))
+        voice = [f for f in files if f["origin"] == "recording" and f["mime"].startswith("audio/")]
         if voice:
             send.ready = asyncio.get_running_loop().create_future()
             send.prep = asyncio.create_task(self._prep_say(send, text, files, voice, quote_text))
@@ -4384,26 +3569,6 @@ class Host:
         self.turn_by = s.name or s.device
         self.agent.submit(send)
         return send
-
-    def _meeting_text(self, s: Session, text: str, has_audio: bool) -> str:
-        """P182: what the Agent reads for `/会议总结` — the owner's words become one instruction (meeting.instruction); the
-        addresses in them (and, within meeting.FOLLOW_S, in the owner's next phone messages) become the only recipients
-        `agentj mail notes` will send to. Only a paired phone's own words count (not Telegram groups, e-mail or friends)."""
-        if getattr(s, "source_kind", None):
-            return text
-        words = meeting.parse(text)
-        try:
-            if words is None:
-                meeting.follow_up(self.st, text)
-                return text
-            meeting.grant(self.st, meeting.addresses(words), command=True)
-            from . import mail as mail_mod
-            cfg = mail_mod.read_config(self.st)
-            ready = bool(cfg.get("address")) and mail_mod.has_secret(self.st, cfg["address"])
-            self.st.log("meeting_cmd", device=s.device, audio=has_audio, to=len(meeting.addresses(words)))
-            return meeting.instruction(self.lang, words, has_audio, None if has_audio else meeting.last_group(self.st), ready)
-        except Exception:   # noqa: BLE001 — a broken grants file must never lose the owner's message
-            return text
 
     async def on_say(self, s: Session, obj: dict) -> None:
         sid = obj.get("sid")
@@ -4428,10 +3593,8 @@ class Host:
             return await res(ok=False, why="dup")
         if self.sends.full(s.device):       # 16 of this device's sends still wait: refuse, never evict one (P33-C03)
             return await res(ok=False, why="too_many")
-        is_meeting = meeting.parse(text) is not None      # P182: /会议总结 · /meeting-notes is a message for the Agent, never refused
-        hc = slash.parse(text) if not att and reply_to is None and not is_meeting else None
-        if hc and (friend_cmds.name_of(hc[0]) or hc[0] == "goal" and goal_mod.host_cmd(hc[1])):
-            # P73: /my-agent-id · /add-friend; P158: /goal status · /goal stop — the host's own answer, also stopped / no Agent
+        hc = slash.parse(text) if not att and reply_to is None else None
+        if hc and friend_cmds.name_of(hc[0]):   # P73: /my-agent-id · /add-friend — the host's own answer, also stopped / no Agent
             self.sends.add(compose.Send(s.device, sid, 0, state="delivered"))
             turn = await self.on_slash(s, hc[0], hc[1], confirm=False, typed=True)
             self._post(self.send_app, s, {"t": "say_res", "sid": sid, "ok": True, "state": "delivered", "turn": turn})
@@ -4440,15 +3603,10 @@ class Host:
             self.st.log("msg_refused", cid=s.cid, device=s.device, reason="estop")
             self.activity("message_refused", by=s.name or s.device, text=text[:120])
             return await res(ok=False, why="stopped")
-        refusal = self.seat_refusal()           # P185: no usable seat → nothing reaches the Agent; the phone hears why
-        if refusal:
-            self.st.log("msg_refused", cid=s.cid, device=s.device, reason="seat")
-            self.seat_note(refusal)
-            return await res(ok=False, why="seat")
         if not self.agent:
             return await res(ok=False, why="no_agent")
-        cmd = slash.parse(text) if not att and reply_to is None and not is_meeting else None
-        if cmd and cmd[0] != "goal" and cmd[0] not in slash.AGENT_CMDS and not self.agent.passthrough(cmd[0]):   # P155 /switch-harness, P158 `/goal <what>` → the Agent
+        cmd = slash.parse(text) if not att and reply_to is None else None
+        if cmd and not self.agent.passthrough(cmd[0]):
             self.sends.add(compose.Send(s.device, sid, 0, state="delivered"))
             turn = await self.on_slash(s, cmd[0], cmd[1], confirm=False, typed=True)
             self._post(self.send_app, s, {"t": "say_res", "sid": sid, "ok": True, "state": "delivered", "turn": turn})
@@ -4484,15 +3642,7 @@ class Host:
                     f["asr"] = await self._transcribe_file(f, left, send.device)
                 except Exception:  # noqa: BLE001 — F27: a transcriber bug still sends the message (「转写失败」), never ""
                     f["asr"] = {"ok": False, "why": "broken", "secs": f.get("secs")}
-                if f["mime"].startswith("video/") and not f["asr"].get("ok") and f["asr"].get("why") in ("format", "no_speech"):
-                    f.pop("asr")            # P166: a silent / soundless video is just a file, not a failed transcript
-                elif f["asr"].get("ok") and len(f["asr"].get("text") or "") > compose.ASR_INLINE:
-                    f["asr"]["file"] = await asyncio.to_thread(self._transcript_file, send.device, f)
-                    if f["asr"]["file"]:
-                        f["asr"]["text"] = f["asr"]["text"][:compose.ASR_INLINE]
             send.text = compose.render(text, files, self.lang, quote_text) + getattr(send, "onboarding_note", "")
-            with contextlib.suppress(Exception):           # P182: the latest recording group, for a later /会议总结 without files
-                meeting.remember(self.st, files)
         finally:
             if send.ready is not None and not send.ready.done():
                 send.ready.set_result(True)
@@ -4503,82 +3653,34 @@ class Host:
             return {"ok": False, "why": ASR_WHY.get(state, "broken"), "secs": f.get("secs")}
         # P33-C02: only the host-private copy in the state dir (uploads.Blob.voice) — never the inbox file, which the Agent
         # can rewrite or replace with a link between upload and say
-        path = f.get("voice") or ""
+        path, tmp = f.get("voice") or "", None
         if not path or not os.path.isfile(path) or os.path.islink(path):
             return {"ok": False, "why": "bad_audio", "secs": f.get("secs")}
-        if f["mime"] in uploads.WAV_MIMES and uploads.wav_ok(path):
+        try:
+            if f["mime"] not in uploads.WAV_MIMES or not uploads.wav_ok(path):
+                demux = FF_DEMUX.get(f["mime"])
+                ff = shutil.which("ffmpeg")
+                if not ff or not demux:
+                    return {"ok": False, "why": "format", "secs": f.get("secs")}
+                d = self.uploads.root / device
+                d.mkdir(mode=0o700, parents=True, exist_ok=True)
+                tmp = str(d / f"conv-{secrets.token_hex(6)}.wav")
+                done = await self._ffmpeg(ff, demux, path, tmp, max(1.0, budget / 2))
+                if done != "ok":
+                    return {"ok": False, "why": "timeout" if done == "timeout" else "format", "secs": f.get("secs")}
+                if not uploads.wav_ok(tmp):
+                    return {"ok": False, "why": "format", "secs": f.get("secs")}
+                path = tmp
             r = await self._transcribe(path, min(ASR_TAKE, budget), local_only=local_only)
-            return self._asr_result(r, f.get("secs"))
-        demux = FF_DEMUX.get(f["mime"])
-        ff = shutil.which("ffmpeg")
-        if not ff or not demux:
-            return {"ok": False, "why": "format", "secs": f.get("secs")}
-        # P166: segment by segment (FF_SEG_SECS each, ≤ FF_MAX_SEGS) so a 1-hour recording is transcribed whole; each WAV
-        # stays within the decoder's 630 s and is deleted at once. A failed later segment keeps what came before.
-        deadline = time.monotonic() + budget
-        d = self.uploads.root / device
-        d.mkdir(mode=0o700, parents=True, exist_ok=True)
-        texts, why, cut = [], None, False
-        for k in range(FF_MAX_SEGS + 1):
-            left = deadline - time.monotonic()
-            if k == FF_MAX_SEGS:
-                cut = True
-                break
-            if left <= 1:
-                why = "timeout"
-                break
-            tmp = str(d / f"conv-{secrets.token_hex(6)}.wav")
-            try:
-                done = await self._ffmpeg(ff, demux, path, tmp, max(1.0, min(left / 2, FF_CPU_SECS)),
-                                          start=k * FF_SEG_SECS, secs=FF_SEG_SECS)
-                size = os.path.getsize(tmp) if done == "ok" and os.path.isfile(tmp) else 0
-                if k and done == "ok" and size <= 44 + 32_000:     # past the end (< 1 s left)
-                    break
-                if done != "ok" or not uploads.wav_ok(tmp) or size <= 44:
-                    why = "timeout" if done == "timeout" else "format"
-                    break
-                r = await self._transcribe(tmp, min(ASR_TAKE, max(1.0, deadline - time.monotonic())), local_only=local_only)
-            finally:
+        finally:
+            if tmp:
                 with contextlib.suppress(OSError):
                     os.unlink(tmp)
-            res = self._asr_result(r, None)
-            if res["ok"]:
-                texts.append(res["text"])
-            elif res["why"] != "no_speech":
-                why = res["why"]
-                break
-            if size < 44 + FF_SEG_SECS * 32_000 - 64_000:          # shorter than a full segment: that was the last one
-                break
-        if texts:
-            out = {"ok": True, "text": "\n".join(texts), "secs": f.get("secs")}
-            if why or cut:
-                out["partial"] = "cut" if cut else why
-            return out
-        return {"ok": False, "why": why or "no_speech", "secs": f.get("secs")}
-
-    def _transcript_file(self, device: str, f: dict) -> str:
-        """P166: a long transcript as `<name>-transcript.txt` next to the audio in the inbox; "" when it cannot be placed."""
-        d = self.uploads.root / device
-        tmp = d / f"tr-{secrets.token_hex(6)}.txt"
-        try:
-            d.mkdir(mode=0o700, parents=True, exist_ok=True)
-            self.st.write_private(tmp, f["asr"]["text"].encode())
-            name = os.path.splitext(os.path.basename(f["path"]))[0][14:] or "audio"
-            return inbox.place(self.uploads.workdir, str(tmp), name + "-transcript", "text/plain", secrets.token_urlsafe(16))
-        except (OSError, inbox.Unsafe, TypeError):
-            return ""
-        finally:
-            with contextlib.suppress(OSError):
-                tmp.unlink()
-
-    @staticmethod
-    def _asr_result(r: dict, secs) -> dict:
         if r.get("ok") and (r.get("text") or "").strip():
-            return {"ok": True, "text": wire.well_formed(r["text"]), "secs": secs}
-        return {"ok": False, "why": "no_speech" if r.get("ok") else ASR_WHY.get(r.get("reason"), "broken"), "secs": secs}
+            return {"ok": True, "text": wire.well_formed(r["text"]), "secs": f.get("secs")}
+        return {"ok": False, "why": "no_speech" if r.get("ok") else ASR_WHY.get(r.get("reason"), "broken"), "secs": f.get("secs")}
 
-    async def _ffmpeg(self, ff: str, demux: str, src: str, dst: str, timeout: float, start: float = 0,
-                      secs: float = FF_MAX_SECS) -> str:
+    async def _ffmpeg(self, ff: str, demux: str, src: str, dst: str, timeout: float) -> str:
         """One container → 16 kHz mono PCM16 WAV conversion (P33-C04 / X09): the demuxer pinned from the declared MIME (no
         content probing: an HLS playlist is not opened as one), local files only (`-protocol_whitelist file`), at most
         FF_MAX_SECS of audio and uploads.ASR_MAX output bytes (also RLIMIT_FSIZE / RLIMIT_CPU in the child), one conversion
@@ -4586,10 +3688,9 @@ class Host:
         → "ok" | "timeout" | "fail"."""
         if self.ff_lock is None:
             self.ff_lock = asyncio.Lock()
-        secs = min(secs, FF_MAX_SECS)
         argv = [ff, "-nostdin", "-hide_banner", "-loglevel", "error", "-protocol_whitelist", "file", "-f", demux,
-                *(["-ss", str(start)] if start else []), "-t", str(secs), "-i", "file:" + src, "-map", "0:a:0", "-vn", "-sn", "-dn", "-map_metadata", "-1",
-                "-bitexact", "-ac", "1", "-ar", "16000", "-sample_fmt", "s16", "-t", str(secs),
+                "-t", str(FF_MAX_SECS), "-i", "file:" + src, "-map", "0:a:0", "-vn", "-sn", "-dn", "-map_metadata", "-1",
+                "-bitexact", "-ac", "1", "-ar", "16000", "-sample_fmt", "s16", "-t", str(FF_MAX_SECS),
                 "-fs", str(uploads.ASR_MAX), "-f", "wav", "-y", "file:" + dst]
 
         def limits():                                   # in the child, before exec
@@ -4618,9 +3719,6 @@ class Host:
 
     def say_delivered(self, send: compose.Send) -> None:
         """The harness has the message (agent.Agent.deliver): the attachments belong to the Agent now."""
-        if getattr(send, 'heartbeat_key', None):
-            self.st.log("heartbeat_delivery", outcome="delivered")
-            return
         if getattr(send, 'bot_handoff_id', None):
             self.st.log("bot_handoff_delivery", id=send.bot_handoff_id, outcome="delivered")
             return
@@ -4638,9 +3736,6 @@ class Host:
         are (never deleted by the staged TTL, never released to the phone) and a withdraw answers already_delivered."""
         if getattr(send, 'bot_handoff_id', None):
             self.st.log("bot_handoff_delivery", id=send.bot_handoff_id, outcome="uncertain")
-            return
-        if getattr(send, 'heartbeat_key', None):
-            self.st.log("heartbeat_delivery", outcome="uncertain")
             return
         if getattr(send, 'official_notice_id', None):
             # Native transport may have accepted it: do not replay auto-upgrade authority on an uncertain write.
@@ -5040,7 +4135,7 @@ class Host:
         jobs = [asyncio.create_task(self.relay_loop()), asyncio.create_task(self.loop_watch()), asyncio.create_task(self.reporter.run()),
                  asyncio.create_task(self.sync_loop()), asyncio.create_task(self.remote_pair.run()), asyncio.create_task(self.post_loop()),
                  asyncio.create_task(self.update_loop()), asyncio.create_task(self.preferences_loop()),
-                 asyncio.create_task(self.busy_loop()), asyncio.create_task(self.seat_loop())]
+                 asyncio.create_task(self.busy_loop())]
         perm_server = None
         if self.agent_cfg:
             psock = self.st.perm_sock_path
@@ -5056,14 +4151,10 @@ class Host:
             os.chmod(psock, 0o600)
             from . import personalize                # P57: bundled skills linked where free, before the harness starts
             self.st.log("skills_linked", **personalize.ensure())
-            from .service import ensure_agentj_on_path   # P155: the skills' `agentj …` must run in the Agent's shell
-            if ensure_agentj_on_path():
-                self.st.log("agentj_path_added")
             # the Agent's sockets are bound just below; their (fixed) paths go into the environment BEFORE the harness can
             # spawn, so a first command never misses one (0.18: seen as "Agent J is not running" from a fenced `agentj …`)
-            from . import capability as _cap, heartbeat as _hb, peer_service as _peer, recall as _recall
+            from . import capability as _cap, peer_service as _peer, recall as _recall
             for env, name in ((elevate.ENV, elevate.SOCK_NAME), (_cap.ENV, _cap.SOCK_NAME), (_recall.ENV, _recall.SOCK_NAME),
-                              (_hb.ENV, _hb.SOCK_NAME),
                               (_peer.ENV, getattr(_peer, "SOCK_NAME", "friends.sock"))):
                 os.environ[env] = str(self.st.perm_dir / name)
             self.agent = agents.make(self, self.agent_cfg)
@@ -5073,12 +4164,6 @@ class Host:
         await self.bots.start()
         await self.elevate.start()                 # F17: <state>/agentperm/elevate.sock for `agentj sudo` / `agentj secret`
         await self.capabilities.start()            # 0.18: <state>/agentperm/capability.sock for `agentj capability`
-        try:                                       # P156: heartbeat.sock + the default heartbeat.md; never blocks serve
-            from .heartbeat import ensure_prompt
-            ensure_prompt(self.lang)
-            await self.heartbeat.start()
-        except Exception as e:  # noqa: BLE001
-            self.st.log("heartbeat_start_failed", reason=type(e).__name__)
         with contextlib.suppress(Exception):       # P115: pinned Google CLI pre-install, quiet, never blocks serve
             from . import google
             google.ensure_background(self.st)
@@ -5096,12 +4181,7 @@ class Host:
         telegram_mod.IN_SERVE = True              # P142 (B14): key checks in this process read serve's own environment
         self.telegram=Telegram(self)
         jobs.append(asyncio.create_task(self.telegram.run()))
-        from .mail import Mail                    # P170: the e-mail channel (allowlist + sender check before any model)
-        self.mail = Mail(self)
-        jobs.append(asyncio.create_task(self.mail.run()))
         jobs.append(asyncio.create_task(self.scheduler.loop()))
-        jobs.append(asyncio.create_task(self.heartbeat.loop()))
-        jobs.append(asyncio.create_task(self.goals.loop()))     # P158: deadline / unpaired phone ends the goal
         jobs.append(asyncio.create_task(self.sweep_loop()))
         from .browser_login import daily_loop     # P114: the daily read-only sign-in check (status only, never a QR)
         jobs.append(asyncio.create_task(daily_loop(self)))
@@ -5120,8 +4200,6 @@ class Host:
             await self.bots.stop()
             await self.elevate.stop()
             await self.capabilities.stop()
-            with contextlib.suppress(Exception):
-                await self.heartbeat.stop()
             await self.recall.stop()
             if self.peers is not None:
                 with contextlib.suppress(Exception):

@@ -389,11 +389,8 @@ class Blobs(unittest.TestCase):
 
     def test_refusals(self):
         data = png(1000)
-        b, m, r = self.open(data, mime="Application/X SH")
-        self.assertEqual(r[0]["why"], "type", "P166: any well-formed MIME, a malformed one is still refused")
         b, m, r = self.open(data, mime="application/x-sh")
-        self.assertEqual(r[0]["t"], "blob_ack", "P166: any file the owner picks")
-        self.up.drop(self.dev, b)
+        self.assertEqual(r[0]["why"], "type")
         b, m, r = self.open(data, mime="image/png", purpose="asr")
         self.assertEqual(r[0]["why"], "type", "asr takes only WAV")
         b, m, r = self.open(b"")
@@ -508,8 +505,7 @@ class Menu(unittest.TestCase):
             self.assertEqual(r["source"], "default")
             self.assertEqual([i["cmd"] for i in r["items"]], ["/" + c for c in ("clear", "compact", "model", "context", "cost",
                                                                               "usage", "status", "help", "stop", "update",
-                                                                              "goal", "add-friend", "my-agent-id",   # + P158 goal, P73 friends
-                                                                              "switch-harness")])              # + P155
+                                                                              "add-friend", "my-agent-id")])   # + P73 friends
             self.assertEqual(r["skills"], [{"cmd": "/fake-skill", "desc": ""}])
             self.assertIn("compact", r["cmds"])
             (w / ".agentj").mkdir()
@@ -517,7 +513,7 @@ class Menu(unittest.TestCase):
                                            {"cmd": "/a", "desc": "A", "group": "g1", "order": 1}, {"cmd": "/c", "desc": "C", "group": "g2"}]}
             (w / ".agentj" / "menu.json").write_text(json.dumps(doc))
             r = menu.served(str(w), [], "en")
-            self.assertEqual((r["source"], [i["cmd"] for i in r["items"]]), ("file", ["/a", "/b", "/c", "/goal", "/switch-harness"]))   # P158 /goal, P155 always there
+            self.assertEqual((r["source"], [i["cmd"] for i in r["items"]]), ("file", ["/a", "/b", "/c"]))
             (w / ".agentj" / "menu.json").write_text(json.dumps({"version": 1, "items": [{"cmd": "rm -rf", "desc": ""}]}))
             r = menu.served(str(w), [], "zh")
             self.assertEqual(r["source"], "default")
@@ -560,7 +556,7 @@ class SendApp(unittest.TestCase):
             self.assertEqual(got[-1], big)
             self.assertEqual([(o, c) for o, c, _ in frames if o == wire.OP_BULK], [(wire.OP_BULK, 5)],
                              "BULK only for the ready p33 session")
-            self.assertEqual(host._caps()["caps"], ["p33", "heartbeat", "lt1", "pair1", "busyget", "contacts", "hfind"])   # 0.18: long-task cards (§20); P153: pair cards (§4 step 10); P160 busy_get (§22); P184 §25; P188 §28
+            self.assertEqual(host._caps()["caps"], ["p33", "heartbeat", "lt1"])   # 0.18: long-task cards (PROTOCOL §20)
             self.assertIn(host._caps()["asr"], ("ready", "not_installed", "off", "broken"))
 
 

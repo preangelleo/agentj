@@ -32,16 +32,12 @@ HERE = pathlib.Path(__file__).resolve().parent
 
 
 def _default_mode_host(extra=None):
-    """test_l1._host forces the independent mode; put back the owner's shared choice (P174: shared is opt-in, written to the
-    settings file the way `agentj config set agent.session_mode shared` does), plus `extra`."""
+    """test_l1._host forces the independent mode; put back what a fresh install has (the default), plus `extra`."""
     def make(st, sent):
-        from agentj import preferences
-        preferences.ensure()
-        preferences.path().write_text(preferences.edit(preferences.path().read_text(),"agent.session_mode","shared"))
         host = ORIG_HOST(st, sent)
-        mode = st.agent_config()["session_mode"]
-        assert mode == "shared", mode
-        host.agent_cfg["session_mode"] = mode
+        default = st.agent_config()["session_mode"]
+        assert default == "shared", default
+        host.agent_cfg["session_mode"] = default
         host.agent_cfg.update(extra or {})
         return host
     return make

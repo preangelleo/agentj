@@ -111,9 +111,6 @@ ITEMS = [
      "只有任务要用电脑硬件时才开。", "Only when a task uses the computer's hardware."),
     ("tg", "optional", "optional", "phone", ["phone"], "Telegram 提醒", "Telegram notifications",
      "可选；不用就说「我不用」。", "Optional; say \"I won't use this\" if not needed."),
-    ("mail", "optional", "optional", "phone", ["admin"], "邮件通道（QQ / 163 / 企业邮箱等）", "E-mail channel (any IMAP/SMTP mailbox)",
-     "可选；用邮件给 Agent 派活。在手机「设置 → 邮件」填邮箱、白名单和授权码；不用就说「我不用」。",
-     "Optional; send the Agent tasks by e-mail. On the phone: Settings → Email (mailbox, allowlist, app password). Say \"I won't use this\" if not needed."),
     ("botkey", "optional", "optional", "phone", ["admin"], "客服 Bot 模型服务", "Customer-service bot model",
      "可选；要做网站客服时再用手机密钥卡配置。", "Optional; configure it with a phone key card when you run a website bot."),
     ("exit", "core", "required", "phone", ["desktop", "phone", "service", "awake", "network"], "离机前手机检查", "Phone check before leaving",
@@ -342,9 +339,6 @@ def probe(st, iid: str, ctx: dict) -> tuple[str, str | None]:
     if iid == "tg":
         from . import telegram
         return ("verified", None) if telegram.configured(st) else ("pending", "not_configured")   # P142 (B14): serve's env
-    if iid == "mail":
-        from . import mail
-        return mail.first_run_probe(st, ctx)
     if iid == "botkey":
         from . import provider_profiles
         try:

@@ -19,18 +19,17 @@ const files = walk(PUBLIC_DIR);
 const rel = (p) => relative(PUBLIC_DIR, p).split(sep).join('/');
 const read = (p) => readFileSync(p, 'utf8');
 const pub = (r) => join(PUBLIC_DIR, r);
-const JS = files.filter((f) => f.endsWith('.js') || f.endsWith('.mjs'));
+const JS = files.filter((f) => f.endsWith('.js'));
 const APP = read(pub('app.js'));
 // PROMPT-33: the page is app.js + the modules under js/ (relay's page ported). Every rule that used to look at app.js
 // alone now looks at all of them (OURS) — the same rules over more code, never fewer.
-const MODULES = ['api', 'blobs', 'boot', 'controls', 'md', 'push', 'relay', 'session', 'settings', 'snap', 'speak', 'store', 't', 'ui', 'wav', 'elevate', 'outbox', 'render', 'friends', 'qr', 'share', 'device-label', 'sfx', 'shotclip', 'sendvol',
-  'media', 'mediawire', 'preview', 'mailfwd', 'icons', 'search'];   // P183: the file cards, the preview views and the mail-dialog door
+const MODULES = ['api', 'blobs', 'boot', 'controls', 'md', 'push', 'relay', 'session', 'settings', 'snap', 'speak', 'store', 't', 'ui', 'wav', 'elevate', 'outbox', 'render', 'friends', 'qr', 'share', 'device-label'];
 const OURS_FILES = ['app.js', ...MODULES.map((m) => `js/${m}.js`)];
 const OURS = OURS_FILES.map((r) => read(pub(r))).join('\n');
 const HTML = read(pub('index.html'));
 
 test('expected files ship, robots.txt disallows all', () => {
-  for (const r of ['index.html', 'app.js', 'app.css', 'i18n.js', 'sw.js', 'manifest.webmanifest', 'proto/noise.js', 'proto/wire.js', 'proto/search.js', 'version.json', 'version.js',
+  for (const r of ['index.html', 'app.js', 'app.css', 'i18n.js', 'sw.js', 'manifest.webmanifest', 'proto/noise.js', 'proto/wire.js', 'version.json', 'version.js',
     'robots.txt', 'favicon.ico', 'apple-touch-icon.png', 'brand/palette.css', 'brand/base.css', 'brand/lang.js', 'brand/ui.js', 'brand/img/icon-192.png',
     'brand/img/icon-512.png', 'brand/img/icon-512-maskable.png', 'brand/img/logo-mark.png', 'brand/img/status/logo-working.png',
     'brand/img/status/logo-waiting.png', 'brand/img/status/logo-question.png', 'brand/img/status/logo-offline.png',
@@ -58,11 +57,10 @@ test('version.json / version.js match the shipped files', () => {
 // legacy host sends an unpaired visitor to. The relay URLs live only in the Worker CSP config (app.js pins relay HOSTS).
 // (F1: the menu's 「邀请与积分」 opens the account page at its invite block — the one link with a fragment)
 const SITE_LINK = /^https:\/\/agentj\.app\/(?:[a-z]+\/)*(?:#invite)?$/;
-const MAIL_LINK = /^mailto:feedback@agentj\.app$/;   // F13 / P168: Settings → 帮助和反馈, the error / removed pages, the disconnected card (the human fallback mailbox)
+const MAIL_LINK = /^mailto:founder@agentj\.app$/;   // F13: Settings → 帮助和反馈 (the one address the site footer shows too)
 const NEW_WEB_ORIGIN = 'https://m.agentj.app';
 const LICENCE_TEXT = new Set(['brand/fonts/UFL-1.0-ubuntu.txt', 'brand/fonts/OFL-1.1-lexend.txt', 'brand/fonts/README.md',
-  'vendor/VERSIONS.md', 'vendor/hljs/LICENSE.txt', 'vendor/katex/LICENSE.txt', 'vendor/mermaid/LICENSE.txt',
-  'vendor/pdfjs/LICENSE.txt', 'vendor/mammoth/LICENSE.txt', 'vendor/xlsx/LICENSE.txt']);   // licence texts cite their sources
+  'vendor/VERSIONS.md', 'vendor/hljs/LICENSE.txt', 'vendor/katex/LICENSE.txt', 'vendor/mermaid/LICENSE.txt']);   // licence texts cite their sources
 // Upstream bytes, pinned: any change must be reviewed again (P57 adds highlight.js / KaTeX / mermaid, loaded lazily by
 // js/render.js; every file + its source is in vendor/VERSIONS.md, re-checked by p57_render.test.mjs).
 const VENDORED = {
@@ -72,15 +70,7 @@ const VENDORED = {
   'vendor/katex/katex.min.js': '103a53763cc033bba8d175bf3f0ba597c3505c9b6747dd3f2c7bc2a6bfcc8ae7',
   'vendor/katex/katex.min.css': 'd4ab5b8ee16989b070cdb0ea24bd6ad48fc8df1b787f280f29d3ae4f959f2c00',
   'vendor/mermaid/mermaid.min.js': '6484afc32872a3aa16cac9a76ba1816a1ed4cc870a6593cc2e17757750f518b2',
-  // P183: the full-screen preview's document views (js/preview.js, loaded on first 预览 of that kind)
-  'vendor/pdfjs/pdf.min.mjs': 'bccc24ea711db8e44503629519904a5292d73b9daaa214bbe7cdcc282b0f4259',
-  'vendor/pdfjs/pdf.worker.min.mjs': '145d2dd3ab0c86151011dba95acfa2d5336e2accd59388ea43dbee0efddaaec6',
-  'vendor/mammoth/mammoth.browser.min.js': '92914a3708cfdf1e62cb553d1856a7fedab21da83d8ee82845de2f897b368cab',
-  'vendor/xlsx/xlsx.core.min.js': '197255b0c278588117e45c14c1b25398562864cd9ffa9752c4b4d29f6d9bfd27',
 };
-// P183: mammoth bundles underscore, whose _.template builds a `new Function` — mammoth's convertToHtml never calls it, and
-// CSP script-src 'self' (no 'unsafe-eval') would refuse it anyway. Exactly this many, nowhere else.
-const UPSTREAM_NEW_FUNCTION = { 'vendor/mammoth/mammoth.browser.min.js': 1 };
 test('no URLs to anywhere in shipped files except links to agentj.app pages', () => {
   for (const f of files) {
     const s = read(f);
@@ -97,15 +87,10 @@ test('no URLs to anywhere in shipped files except links to agentj.app pages', ()
         // ADR-A177: a compact pairing link with an empty relay field means our relay (the page still only connects where
         // allowRelay + CSP connect-src allow)
         if (rel(f) === 'proto/wire.js' && m[0] === 'wss://relay.agentj.app') continue;
-        // P190 (§27): a reverse pairing code is text a new page shows as a QR; the page never requests it
-        if (rel(f) === 'proto/wire.js' && m[0] === 'https://m.agentj.app/#j=') continue;
         // P82 §6: owner-clicked registration link; no automated request.
         // P109: an editable API-address default sent inside the encrypted owner config, never fetched by the browser.
         if (rel(f) === 'js/bots.js' && ['https://openrouter.ai/','https://openrouter.ai/api/v1'].includes(m[0])) continue;
         if (rel(f) === 'js/qr.js' && m[0] === 'http://www.w3.org/2000/svg') continue;
-        if (rel(f) === 'js/sendvol.js' && m[0] === 'http://www.w3.org/2000/svg') continue;   // P154: the slider's speaker icon
-        if (rel(f) === 'js/icons.js' && m[0] === 'http://www.w3.org/2000/svg') continue;     // P183: the file card's icons
-        if (rel(f) === 'js/contacts.js' && m[0] === 'http://www.w3.org/2000/svg') continue;  // P184: the dialog icons
         assert.match(m[0], SITE_LINK, `${rel(f)} contains URL ${m[0]}`);
       }
     }
@@ -129,10 +114,6 @@ test('no innerHTML / eval / new Function / string timers / document.write anywhe
     const upstream = !!VENDORED[rel(f)];
     for (const bad of [/\binnerHTML\b/, /\bouterHTML\b/, /insertAdjacentHTML/, /\beval\s*\(/, /new\s+Function\b/, /document\.write/, /setTimeout\(\s*['"`]/, /setInterval\(\s*['"`]/]) {
       if (upstream && /HTML|write/.test(bad.source)) continue;
-      if (UPSTREAM_NEW_FUNCTION[rel(f)] && bad.source === 'new\\s+Function\\b') {
-        assert.equal((s.match(/new\s+Function\b/g) || []).length, UPSTREAM_NEW_FUNCTION[rel(f)], `${rel(f)}: new Function count changed`);
-        continue;
-      }
       assert.doesNotMatch(s, bad, `${rel(f)} uses ${bad}`);
     }
   }
@@ -152,8 +133,8 @@ test('index.html: CSP-compatible (no inline script/style, no on*=), noindex, zh-
   // PROMPT-33: the chat ids are relay's (the old #messages / #msg-input list is gone by design — the deck replaced it)
   for (const id of ['status', 'pair-link', 'pair-go', 'scan', 'sas', 'send', 'badge', 'badge-panel', 'version-hash', 'repair', 'retry',
     'input', 'deck', 'om', 'rm', 'words', 'rmbar', 'sheet', 'pendTag', 'tray', 'mic', 'menu', 'sug', 'keys', 'rd', 'qbar', 'meta', 'water',
-    'mWeek', 'm5h', 'brand-name', 'estop-banner', 'grant-bar', 'set-push', 'confirm', 'unpair', 'mem-view', 'act-view', 'tasks-view',
-    'setBtn', 'settings', 'keysBtn', 'set-remotes', 'set-remotes-open', 'rm-add', 'rm-list', 'rm-code', 'set-font-plus', 'set-refresh', 'set-a2hs', 'set-risk-cmd', 'set-mode-cmd', 'set-iso-cmd', 'set-docker-cmd']) {
+    'mWeek', 'm5h', 'brand-name', 'aj-menu', 'estop-banner', 'grant-bar', 'push-row', 'confirm', 'unpair', 'mem-view', 'act-view', 'tasks-view',
+    'setBtn', 'settings', 'keysBtn', 'set-font-plus', 'set-refresh', 'set-a2hs', 'set-risk-cmd', 'set-mode-cmd', 'set-iso-cmd', 'set-docker-cmd']) {
     assert.match(HTML, new RegExp(`id="${id}"`), `missing #${id}`);
   }
   const ids = [...HTML.matchAll(/\sid="([^"]+)"/g)].map((m) => m[1]);
@@ -193,17 +174,9 @@ test('app.js + js/*.js: only WebSocket egress, non-extractable keys, no plaintex
   // F13: + the reply text size from Settings (FONT_KEY = "aj.fontScale", a number 0.8 … 1.6).
   // 0.15.1 (P55): + the install id (IID_KEY = "aj.iid", 16 random bytes, b64url) and the paired marker (PAIRED_KEY =
   // "aj.paired", a unix time) — no key, no channel, nothing about the computer.
-  assert.deepEqual(ls.sort(), ['getItem("aj.chrome")', 'getItem("aj.test.segMs")', 'getItem(A2HS_KEY)', 'getItem(RD_KEY)', 'getItem(FONT_KEY)', 'setItem("aj.chrome")', 'setItem(A2HS_KEY)', 'setItem(RD_KEY)', 'setItem(FONT_KEY)',
-    'getItem(IID_KEY)', 'setItem(IID_KEY)', 'getItem(PAIRED_KEY)', 'setItem(PAIRED_KEY)', 'removeItem(PAIRED_KEY)', "getItem('aj.homeInstalled')", "setItem('aj.homeInstalled')",
-    // P154: the Send-sound volume (VOLUME_KEY = "aj.sfxVolume", 0 … 100) and the screenshot switch (SHOT_KEY = "aj.shotClip", "1"/"0")
-    'getItem(VOLUME_KEY)', 'setItem(VOLUME_KEY)', 'getItem(SHOT_KEY)', 'setItem(SHOT_KEY)',
-    // P154 追加 13: the logo's page text size step (FZ_KEY = "aj.pageFz", "l"/"s"; removed at 中)
-    'getItem(FZ_KEY)', 'setItem(FZ_KEY)', 'removeItem(FZ_KEY)',
-    // P171: Settings writes the theme itself (the ≡ menu's brand switch is gone) — the same "aj.theme" brand/lang.js reads
-    "setItem('aj.theme')", "removeItem('aj.theme')"].sort());
-  assert.match(OURS, /const VOLUME_KEY = 'aj\.sfxVolume';/); assert.match(OURS, /const SHOT_KEY = 'aj\.shotClip';/);
-  assert.match(OURS, /const FZ_KEY = "aj\.pageFz";/);
-  assert.equal(OURS_FILES.reduce((n, r) => n + (code(read(pub(r))).match(/localStorage/g) || []).length, 0), 25, 'localStorage appears only in these calls (P171: + the two aj.theme writes; P182: aj.test.segMs only shortens a recording part, tests only) (homeInstalled is a boolean, never pairing data)');
+  assert.deepEqual(ls.sort(), ['getItem("aj.chrome")', 'getItem(A2HS_KEY)', 'getItem(RD_KEY)', 'getItem(FONT_KEY)', 'setItem("aj.chrome")', 'setItem(A2HS_KEY)', 'setItem(RD_KEY)', 'setItem(FONT_KEY)',
+    'getItem(IID_KEY)', 'setItem(IID_KEY)', 'getItem(PAIRED_KEY)', 'setItem(PAIRED_KEY)', 'removeItem(PAIRED_KEY)', "getItem('aj.homeInstalled')", "setItem('aj.homeInstalled')"].sort());
+  assert.equal(OURS_FILES.reduce((n, r) => n + (code(read(pub(r))).match(/localStorage/g) || []).length, 0), 15, 'localStorage appears only in these calls (homeInstalled is a boolean, never pairing data)');
   assert.match(OURS, /const IID_KEY = 'aj\.iid';/);
   assert.match(OURS, /const PAIRED_KEY = 'aj\.paired';/);
   assert.match(OURS, /const FONT_KEY = 'aj\.fontScale';/);
@@ -223,16 +196,15 @@ test('app.js + js/*.js: only WebSocket egress, non-extractable keys, no plaintex
   assert.match(read(pub('js/store.js')), /unwrapKey\('pkcs8', d\.ct, d\.kek, WRAP\(d\.iv\), \{ name: 'X25519' \}, false, \['deriveBits'\]\)/, 'the wrapped device key unwraps non-extractable');
   assert.match(read(pub('js/store.js')), /generateKey\(\{ name: 'AES-GCM', length: 256 \}, false, \['wrapKey', 'unwrapKey'\]\)/, 'wrapping key not extractable');
   const sealed = [...new Set(OURS_FILES.flatMap((r) => [...read(pub(r)).matchAll(/putSealed\("(\w+)"/g)].map((m) => m[1])))].sort();
-  // P188: + 'srch', the search pages of this computer and session (search.js) — AES-GCM like the drafts, gone with /clear and unpair
-  assert.deepEqual(sealed, ['draft', 'ihist', 'outbox', 'srch'], 'sealed records: draft + input history + the offline queue (0.15.2) + search pages (P188)');
+  assert.deepEqual(sealed, ['draft', 'ihist', 'outbox'], 'sealed records: draft + input history + the offline queue (0.15.2)');
   const STORE = read(pub('js/store.js'));
   assert.match(STORE, /export async function putSealed\(name, obj\) \{\n  const w = wipes;\n  const rec = await seal\(obj\);\n  if \(w === wipes\) await dbPut\(name, rec\);\n\}/, 'putSealed writes only ciphertext, and never after a wipe');
   // §10.14 / P33-X13: revoke wipes like unpair — drafts, history, the sealing key, and everything in memory
   assert.match(APP, /async function revoked\(why = 'revoked'\) \{\n  session\.closeSession\(\);\n[^}]*await forgetLocal\(\);/, 'revoked() wipes local records');   // 0.15.1: + why
-  assert.match(APP, /async function forgetLocal\(\) \{\n  forgetShare\(\);\n  relay\.forgetLocal\(\);\n  friends\.forget\(\);\n  blobs\.forgetAll\(\);\n  elevate\.clear\(\);\n  contacts\.clear\(\);\n  secretout\.clear\(\);\n  longtask\.clear\(\);\n  logincard\.clear\(\);\n  setupcard\.clear\(\);\n  await wipeLocal\(\);\n\}/);   // F17: open sudo / secret cards go too; 0.16: the friends page's data too; F32: pickup cards (+ a shown value); 0.18: opening cards; P184: contact cards + the forward dialog
+  assert.match(APP, /async function forgetLocal\(\) \{\n  forgetShare\(\);\n  relay\.forgetLocal\(\);\n  friends\.forget\(\);\n  blobs\.forgetAll\(\);\n  elevate\.clear\(\);\n  secretout\.clear\(\);\n  longtask\.clear\(\);\n  logincard\.clear\(\);\n  setupcard\.clear\(\);\n  await wipeLocal\(\);\n\}/);   // F17: open sudo / secret cards go too; 0.16: the friends page's data too; F32: pickup cards (+ a shown value); 0.18: opening cards
   assert.doesNotMatch(APP, /saveDraft/, 'revocation never saves the draft');
   assert.match(STORE, /generateKey\(\{ name: 'AES-GCM', length: 256 \}, false, \['encrypt', 'decrypt'\]\)/, 'sealing key not extractable');
-  assert.match(STORE, /for \(const k of \['draft', 'ihist', 'outbox', 'srch', 'local'\]\)/, 'unpair / re-pair wipes drafts, history, the offline queue, the search pages and the sealing key');
+  assert.match(STORE, /for \(const k of \['draft', 'ihist', 'outbox', 'local'\]\)/, 'unpair / re-pair wipes drafts, history, the offline queue and the sealing key');
   assert.match(STORE, /indexedDB\.open\('agentjarvis', 1\)/, 'the IndexedDB name stays "agentjarvis" (paired phones keep their keys)');
   assert.match(OURS, /generateSigningKeypair\(\)/);
   const WIRE = readFileSync(new URL('../../protocol/wire.js', import.meta.url), 'utf8');
@@ -247,7 +219,7 @@ test('app.js + js/*.js: only WebSocket egress, non-extractable keys, no plaintex
   // read aloud never uses a network voice; share goes to the phone's own sheet; whoosh from our own origin
   assert.match(read(pub('js/speak.js')), /filter\(\(v\) => v\.localService === true\)/);
   assert.match(read(pub('js/relay.js')), /navigator\.share\(\{text\}\)/);
-  assert.match(read(pub('js/sfx.js')), /const SRC = 'assets\/rocket-whoosh\.mp3';[\s\S]*new Audio\(SRC\)/);   // P154: js/sfx.js
+  assert.match(read(pub('js/relay.js')), /new Audio\("assets\/rocket-whoosh\.mp3"\)/);
 });
 
 // ---------------------------------------------------------------- Worker
@@ -441,21 +413,20 @@ test('app.js pins exactly our two relay hosts; the legacy host sends a visitor w
 // cleanName() lifted out of app.js and run here on hostile input (the screens test drives the same through the page)
 const CLEAN_SRC = APP.match(/const NAME_MAX = \d+;[\s\S]*?\nfunction cleanName\(v\) \{[\s\S]*?\n\}/)[0];
 const cleanName = new Function(`${CLEAN_SRC}; return cleanName;`)();
-test('F1 · P171: Settings offers 「邀请与积分」, a plain new-tab link to the account page\'s invite block (no script, no token in the URL)', () => {
+test('F1: the menu offers 「邀请与积分」, a plain new-tab link to the account page\'s invite block (no script, no token in the URL)', () => {
   const a = HTML.match(/<a [^>]*data-i18n="menu\.invite"[^>]*>([^<]*)<\/a>/);
   assert.ok(a, 'menu invite entry present');
   const tag = a[0];
   assert.match(tag, /\bhref="https:\/\/agentj\.app\/account\/#invite"/);
   assert.match(tag, /\btarget="_blank"/);
   assert.match(tag, /\brel="noopener"/);
+  assert.match(tag, /class="ajmenu__item"/);
   const d = dictionaries();
   assert.equal(d.zh['menu.invite'], '邀请与积分');
   assert.equal(d.en['menu.invite'], 'Invites and points');
   assert.equal(a[1], d.zh['menu.invite'], 'zh fallback text in the page = the dictionary');
-  // the entry sits inside Settings (the ≡ menu is gone, P171), in 账号和帮助 before the data / terms links
-  assert.ok(HTML.indexOf('id="set-s-help"') < HTML.indexOf('data-i18n="menu.invite"'));
-  assert.ok(HTML.indexOf('data-i18n="menu.invite"') < HTML.indexOf('data-i18n="menu.terms"', HTML.indexOf('id="set-s-help"')));
-  assert.doesNotMatch(HTML, /id="aj-menu"|class="ajmenu/, 'P171: no ≡ menu');
+  // the entry sits inside the ≡ menu, before the help links
+  assert.ok(HTML.indexOf('data-i18n="menu.invite"') < HTML.indexOf('data-i18n="menu.help"'));
 });
 test('Agent name from the host: text only, control / format chars dropped, ≤ 32 code points, null → default', () => {
   assert.equal(cleanName('Leo 的助手'), 'Leo 的助手');
@@ -492,7 +463,7 @@ test('F13 Settings: the gear replaced the bulb; s / ⌘, / Ctrl+, / ? wired; pre
   const top = HTML.slice(HTML.indexOf('<header class="top">'), HTML.indexOf('</header>'));
   assert.match(top, /id="setBtn"[^>]*aria-controls="settings"/, 'the header has the Settings gear');
   assert.doesNotMatch(top, /id="keysBtn"/, 'the lightbulb left the header');
-  const panel = HTML.slice(HTML.indexOf('<section id="settings"'), HTML.indexOf('<div id="confirm"'));   // P171: sections inside
+  const panel = HTML.slice(HTML.indexOf('<section id="settings"'), HTML.indexOf('</section>', HTML.indexOf('<section id="settings"')));
   assert.match(panel, /id="keysBtn"/, 'the shortcut sheet is a second-level item in Settings');
   assert.match(HTML, /<dt><kbd>s<\/kbd> · <kbd>Ctrl<\/kbd>\+<kbd>,<\/kbd><\/dt><dd data-i18n="r\.keys\.s">/, 'the shortcut sheet lists s · Ctrl+,');
   assert.match(RELAY, /\(e\.ctrlKey \|\| e\.metaKey\) && !e\.altKey && !e\.shiftKey && \(e\.key === "," \|\| e\.code === "Comma"\)/);

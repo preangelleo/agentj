@@ -210,7 +210,6 @@ class SharedInbox(unittest.IsolatedAsyncioTestCase):
         judge = patch('agentj.tg_guard.jev_call', return_value=0.0)
         judge.start(); self.addCleanup(judge.stop)
         self.h = Host(self.st)
-        self.h.seat_refusal = lambda: None    # P185: Telegram transport here; the seat door is test_p185_seat's
         self.h._send_ready = AsyncMock()
         self.h.preferences["channels"]["items"] = [{"id": "tg", "type": "telegram"}]
         self.h.preferences["telegram"]["groups"] = [{"id": str(FAMILY), "members": [MEMBER], "profile": "family"},

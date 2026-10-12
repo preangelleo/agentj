@@ -3,7 +3,7 @@
 // kind ("reply" | "ask" | "security"), encrypted by the host to this browser's subscription keys.
 // SW_VERSION changes with every redesign of the shell: a changed sw.js is what makes phones install the new worker
 // (skipWaiting + clients.claim take over at once, so notification text / icons follow the new shell without a second visit).
-const SW_VERSION = 'aj-web-2026-10-12-p166-any-file';
+const SW_VERSION = 'aj-web-2026-10-10-p110-share';
 // The notification text follows the page language: the page registers sw.js?lang=en when English is chosen (the worker
 // cannot read the page's localStorage). Still only these three fixed sentences per language — never any content.
 const BODY = {
@@ -32,7 +32,7 @@ self.addEventListener('notificationclick', (e) => {
 
 // PR1: this is a browser-local navigation, never a network upload. No content storage or logs.
 // Worker termination / five minutes loses the intake: ask the owner to share again, never fall back to a server.
-const SHARE_MAX = 209715200; // total, 200 MiB (P166: any file; each attachment has this same bound)
+const SHARE_MAX = 26214400; // total images, 25 MiB (each existing attachment has this same bound)
 const SHARE_FORM_MAX = SHARE_MAX + 1048576;
 const SHARE_COUNT = 10;
 const SHARE_TTL = 300000;
@@ -54,8 +54,7 @@ async function receiveShare(req) {
     }
     const form = await new Response(new Blob(chunks), {headers: {'content-type': req.headers.get('content-type')}}).formData();
     const images = form.getAll('images');
-    // P166: any file type (the form field keeps its P110 name `images` so installed apps need no new manifest to work)
-    if (images.length > SHARE_COUNT || images.some(f => !(f instanceof File) || !f.size) || images.reduce((n, f) => n + f.size, 0) > SHARE_MAX) throw 0;
+    if (images.length > SHARE_COUNT || images.some(f => !(f instanceof File) || !/^image\//.test(f.type) || !f.size) || images.reduce((n, f) => n + f.size, 0) > SHARE_MAX) throw 0;
     const text = ['title', 'text', 'url'].map(k => form.get(k) || '');
     if (text.some(v => typeof v !== 'string') || text.join('\n').length > 16000 || (!images.length && !text.some(Boolean))) throw 0;
     // Bound concurrent intakes as well as each form; reject rather than evict another pending screenshot.

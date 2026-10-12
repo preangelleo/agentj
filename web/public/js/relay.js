@@ -1,8 +1,6 @@
 import { registerLayer } from './layers.js';
 import { applyViewport, watchViewport } from './viewport.js';
-import { historyDoubleTap, longPress as cornerLongPress } from './history-corners.js';   // P179 (P165: renamed — P181's longpress.js owns longPress)
-import { open as openRename } from './dev-rename.js';
-import { deviceInfo } from './settings.js';
+import { historyDoubleTap } from './history-corners.js';
 import { SharedNotice } from './shared-notice.js';
 import { quotaWindows } from './dashboard.js';
 // The chat screen = relay's phone page (pwa/index.html <script>, ADR-022 … ADR-052 there), ported section by section.
@@ -15,20 +13,13 @@ import { RelayMD } from './md.js';
 import { upgrade as upgradeWords, forget as forgetRendered } from './render.js';   // P57: lazy code / math / diagrams
 import { t, lang, onLang, fillText } from './t.js';
 import { el, toast, toastOff, toastAction, human, stamp, mmss, confirmSheet } from './ui.js';
-import * as sfx from './sfx.js';
-import * as sendvol from './sendvol.js';   // P154 追加 12: hold the grey Send → the send-sound slider
-import * as shotclip from './shotclip.js';
-import { Upload, TYPES as DROP_TYPES, MAX_BYTES as UPLOAD_MAX, MAX_ATT, ASR_MAX_BYTES, anyMime } from './blobs.js';
+import { Upload, TYPES as DROP_TYPES, MAX_BYTES as UPLOAD_MAX, MAX_ATT, ASR_MAX_BYTES } from './blobs.js';
 import { renderPage as renderMedia, forgetAll as forgetMedia, renderReader as renderReaderMedia, clearReader as clearReaderMedia } from './media.js';   // F21: files the reply shows (§13); P59: in the reader too
 import { toWav } from './wav.js';
-import * as LR from './longrec.js';   // P182: long takes kept on the phone until the computer has them
 import { Speaker, configureSpeech } from './speak.js';
 import { isReady, sendApp, hostId, peer } from './session.js';
 import { getSealed, putSealed, dbDel } from './store.js';
 import { Outbox, paint as paintOutbox, MAX as OUT_MAX, isEcho } from './outbox.js';
-import { themeLogo } from './theme.js';   // P169 (§23)
-import { longPress } from './longpress.js';   // P181: long-press shortcuts on the composer buttons
-import * as search from './search.js';   // P188 (§28): 搜索聊天记录
 import { askKind as friendAsk, renderAsk as renderFriendAsk, addFriendCmd, openFromCmd } from './friends.js';   // §17.7: friend request / friend's question cards
 
 let C = null;                        // ctx from app.js: api, myDev(), estopOn(), canSign(), panels …
@@ -40,7 +31,7 @@ let lastStatus = null;
 let cur = null;          // last rendered snapshot
 const skew = 0;          // host clock = phone clock for display (turn ts come from the host, ms)
 let lastSync = null;     // phone-local time of the last frame we actually received
-let input = null, mainEl = null, deck = null, tray = null, menu = null, menuList = null, sug = null, mic = null;
+let input = null, mainEl = null, deck = null, tray = null, menu = null, sug = null, mic = null;
 
 // ---- the Agent's words (Markdown, DOM nodes only) -------------------------------------
 let wordsSrc = null;
@@ -64,8 +55,6 @@ function noteQuiet(k){
   if (quiet) clearTimeout(quiet.timer);
   quiet = k ? {k, at: Date.now(), timer: setTimeout(() => { wordsSrc = null; showPage(); }, NO_ECHO_MS)} : null;
 }
-const STREAM_MS = 150;   // P193 (B10): an open page's growing reply is redrawn at most this often
-let wordsAt = 0, wordsTimer = null;
 // pending: an open page whose reply has not come yet — no words at all (the thinking dots say it), never the
 // empty-history line 「已连上你的电脑…」 (relay never showed a page before its reply; Agent J shows the say's page at once)
 function renderWords(text, pending = false, label = ""){
@@ -76,15 +65,6 @@ function renderWords(text, pending = false, label = ""){
   const wait = waitKey(cur, historySync, quiet ? Date.now() - quiet.at : 0);
   const key = pending && !tx ? "\u0000pending:" + (label || wait) : tx;
   if (key === wordsSrc) return;
-  // P193 (B10): a streaming reply grows chunk by chunk and every redraw re-parses the whole Markdown (O(n²) over a long
-  // answer). While the open page only grows, redraw at most every STREAM_MS; the trailing timer draws the latest text.
-  const now = Date.now();
-  if (pending && tx && wordsSrc && !wordsSrc.startsWith("\u0000") && tx.startsWith(wordsSrc) && now - wordsAt < STREAM_MS){
-    if (!wordsTimer) wordsTimer = setTimeout(() => { wordsTimer = null; showPage(); }, STREAM_MS - (now - wordsAt));
-    return;
-  }
-  if (wordsTimer){ clearTimeout(wordsTimer); wordsTimer = null; }
-  wordsAt = now;
   wordsSrc = key;
   const w = el("words");
   w.className = "words" + (!tx ? " empty" : tx.length > 600 ? " l" : tx.length > 240 ? " m" : "");
@@ -121,23 +101,8 @@ function afterWords(){
 }
 function paintMore(){
   el("rm").classList.toggle("more", mainEl.scrollHeight - mainEl.scrollTop - mainEl.clientHeight > 1);
-  el("rm").classList.toggle("under", mainEl.scrollTop > 1);   // P181 追加 2: words under the pinned header → its soft edge
 }
 function copyCodeClick(e){
-  // P154 追加: inline `code` — one click (a tap on a phone) copies it; no icon, the shade flashes and a ≤ 1 s note.
-  // A press that selected text (long-press / drag → 引用) is not a click to copy; a code inside a link stays a link.
-  const ic = e.target.closest && e.target.closest("code.icode");
-  if (ic && !ic.closest("a")){
-    const sel = getSelection && getSelection();
-    if (sel && !sel.isCollapsed && String(sel).trim()) return;
-    RelayMD.copyText(ic.textContent).then(ok => {
-      if (!ok){ toast(t('r.copy.fail'), 2200); return; }
-      ic.classList.remove("copied"); void ic.offsetWidth; ic.classList.add("copied");
-      clearTimeout(ic._t); ic._t = setTimeout(() => ic.classList.remove("copied"), 900);
-      toast(t('r.md.inlineCopied'), 900);
-    });
-    return;
-  }
   const b = e.target.closest && e.target.closest(".copy");
   if (!b) return;
   const code = b.closest(".codeblock").querySelector("pre > code");
@@ -262,16 +227,11 @@ const askWhy = (p) => (lang() === 'en' && p.why_en ? p.why_en : p.why);
 function paintTags(item){
   const box = el("askTags"); box.replaceChildren();
   if (item && item.kind === "permission"){
-    if (item.tool === "pair_device") { const s = document.createElement("span"); s.className = "atag danger"; s.textContent = t(item.passkey_required ? "pair.card.tagFace" : "pair.card.tag"); box.appendChild(s); }   // P153
-    else if (item.passkey_required) { const s = document.createElement("span"); s.className = "atag danger"; s.textContent = t("ask.sandboxOnce"); box.appendChild(s); }
+    if (item.passkey_required) { const s = document.createElement("span"); s.className = "atag danger"; s.textContent = t("ask.sandboxOnce"); box.appendChild(s); }
     else if (item.cats && item.cats.length) for (const c of item.cats){ const s = document.createElement("span"); s.className = "atag danger"; s.dataset.cat = c; s.textContent = t('ask.cat.' + catKey(c, item)); box.appendChild(s); }
-    else if (item.goal !== "grant") { const s = document.createElement("span"); s.className = "atag low"; s.textContent = t('ask.low'); box.appendChild(s); }
+    else { const s = document.createElement("span"); s.className = "atag low"; s.textContent = t('ask.low'); box.appendChild(s); }
   }
   if (item && item.task){ const s = document.createElement("span"); s.className = "atag task"; s.textContent = t('ask.task', {task: item.task}); box.appendChild(s); }
-  if (item && item.goal){   // P158 goal mode: countdown (no answer = approved) · waits for you · possible attack (red)
-    const s = document.createElement("span"); s.className = "atag goal " + (item.goal === "attack" ? "danger" : item.goal === "auto" ? "low" : "task");
-    s.dataset.goal = item.goal; s.textContent = t('ask.goal.' + item.goal) + (item.goal_why ? " · " + item.goal_why : ""); box.appendChild(s);
-  }
   box.hidden = !box.childElementCount;
   const more = C.openCount() - 1;
   el("askMore").textContent = item && item.state === "open" && more > 0 ? t('r.ask.more', {n: more}) : "";
@@ -284,7 +244,7 @@ function paintLeft(item){
   if (!item || item.state !== "open" || !item.deadline || friendAsk(item)){ p.hidden = true; return; }   // friend cards say their own validity
   const left = Math.max(0, Math.ceil((item.deadline - Date.now()) / 1000));
   p.hidden = false;
-  p.textContent = item.goal === "auto" ? (left > 0 ? t('ask.goalLeft', {n: left}) : t('ask.goalUp')) : left > 0 ? t('ask.left', {n: left}) : t('ask.timeUp');
+  p.textContent = left > 0 ? t('ask.left', {n: left}) : t('ask.timeUp');
   if (left > 0) leftTimer = setTimeout(() => paintLeft(item), 1000);
 }
 
@@ -300,24 +260,18 @@ function renderCard(s){
   const pfin = !!p && APPR_FINAL.includes(p.state);
   const page = pfin && p.final_at ? Date.now() / 1000 - skew - p.final_at : Infinity;
   if (pfin && page < ASK_RESULT_S && apprToasted !== p.id){ apprToasted = p.id; toast(apprText(p), 2600); }
-  if (apprOpt && p && apprOpt.id === p.id && pfin){
-    // P154: the host's verdict on a card this remote put away at once. The one we sent → done, quietly. Anything else
-    // (timed out, ended, stopped first) → the result card comes back once to say so.
-    if (p.state !== (apprOpt.action === "deny" ? "denied" : "approved")) apprDismissed = null;
-    apprOpt = null;
-  }
   const presult = pfin && page < ASK_RESULT_S && !pending && !result && apprDismissed !== p.id;
   clearTimeout(askResultTimer);
   const left = result ? ASK_RESULT_S - age : presult ? ASK_RESULT_S - page : 0;
   if (left > 0) askResultTimer = setTimeout(() => { if (cur) renderCard(cur); }, left * 1000 + 50);
   document.body.dataset.sheet = (pending && !folded) || result || presult ? "1" : "0";
-  el("pendTag").hidden = !folded || (!!apprOpt && apprOpt.key === foldedCard);   // P154: a card answered here leaves no tag
+  el("pendTag").hidden = !folded;
   el("apprBtns").hidden = true; el("apprBatch").hidden = true;
   el("sheet").classList.remove("danger");
   el("frAsk").hidden = true;
   if (result){
     el("askText").textContent = t('r.ask.answer');
-    el("cmdBox").hidden = true; el("qs").hidden = false; el("why").hidden = true; el("cmdCopy").hidden = true;
+    el("cmdBox").hidden = true; el("qs").hidden = false; el("why").hidden = true;
     renderQuestion(null, a);
     return;
   }
@@ -326,7 +280,7 @@ function renderCard(s){
   el("pendText").textContent = card.kind === "question" ? t('r.pend.question') : t('r.pend.permission');
   const q = card.kind === "question";
   el("askText").textContent = q ? t('r.ask.answer') : t('r.ask.nod');
-  el("cmdBox").hidden = q; el("qs").hidden = !q; el("cmdCopy").hidden = true;
+  el("cmdBox").hidden = q; el("qs").hidden = !q;
   if (q){
     renderQuestion(card, a && !ASK_FINAL.includes(a.state) ? a : null);
     el("why").hidden = true;
@@ -339,9 +293,6 @@ function renderCard(s){
 const APPR_FINAL = ["approved", "denied", "terminal", "timeout", "ended", "stopped"];
 const APPR_HOLD_MS = 1200;
 let apprSent = {id: null, state: null}, apprBusy = false, apprToasted = null, apprDismissed = null;
-// P154 追加: the remote that sends the answer puts the card away at once (other remotes close when the host says so).
-// apprOpt = {id, key, action} while the host has not confirmed; apprFail = the reason the card came back (shown on it).
-let apprOpt = null, apprFail = null;
 let apprHold = null;
 
 function apprState(p){
@@ -360,7 +311,7 @@ function renderPermission(card, p){
   if (friendAsk(p)){
     el("sheet").classList.toggle("danger", !!(p.pq && p.pq.high_risk));
     el("sheet").classList.toggle("friend-neutral", !(p.pq && p.pq.high_risk));                                    // §17.7: friends.js draws the card into #frAsk; relay keeps the sheet
-    for (const id of ["cmdBox", "cmdCopy", "why", "qs", "askCancel", "askSend", "apprBtns", "apprBatch", "askState"]) el(id).hidden = true;
+    for (const id of ["cmdBox", "why", "qs", "askCancel", "askSend", "apprBtns", "apprBatch", "askState"]) el(id).hidden = true;
     el("frAsk").hidden = false;
     renderFriendAsk(p, {open: apprState(p) === "open", sign: C.canSign(), repaint: () => { if (cur) renderCard(cur); },
       dismiss: () => { apprDismissed = p.id; if (cur && cur.card) foldedCard = cardKey(cur.card); if (cur) renderCard(cur); }});
@@ -372,14 +323,13 @@ function renderPermission(card, p){
   el("cmdBox").hidden = false; el("qs").hidden = true;
   el("askCancel").hidden = true; el("askSend").hidden = true;
   const tool = (p && p.tool) || (card && card.tool_name) || "?";
-  const pairAsk = !!(p && p.tool === "pair_device");   // P153 (§3.3): a new remote waits; the host wrote the card text
-  const danger = !!(p && (p.passkey_required || pairAsk || (p.cats && p.cats.length) || p.goal === "attack"));
+  const danger = !!(p && (p.passkey_required || (p.cats && p.cats.length)));
   el("sheet").classList.toggle("danger", danger);
-  el("sheetTitle").textContent = pairAsk ? t("pair.card.title") : p && p.passkey_required ? t("ask.sandboxTitle") : danger ? t('r.verb.danger', {verb: verb(tool)}) : verb(tool);
-  el("tool").textContent = pairAsk || (p && p.passkey_required) ? "Agent J" : tool;
+  el("sheetTitle").textContent = p && p.passkey_required ? t("ask.sandboxTitle") : danger ? t('r.verb.danger', {verb: verb(tool)}) : verb(tool);
+  el("tool").textContent = p && p.passkey_required ? "Agent J" : tool;
   const {main} = summarize(p ? p.summary : card.summary);
-  el("cmd").classList.toggle("sandbox", !!(p && (p.passkey_required || pairAsk)));
-  paintCmd(p && (p.passkey_required || pairAsk) ? p.summary : main, !(p && (p.passkey_required || pairAsk)), cardKey(card), tool);
+  el("cmd").classList.toggle("sandbox", !!(p && p.passkey_required));
+  el("cmd").textContent = p && p.passkey_required ? p.summary : main;
   const why = p && p.why ? t('ask.why', {why: askWhy(p)}) : "";
   el("why").textContent = why; el("why").hidden = !why;
   const st = apprState(p), open = st === "open";
@@ -388,11 +338,7 @@ function renderPermission(card, p){
   el("apprDeny").disabled = apprBusy;
   el("apprAllow").hidden = !p || p.local_only;
   el("apprAllow").disabled = apprBusy;
-  el("apprAllowLbl").textContent = pairAsk ? t(p.passkey_required ? 'pair.card.allowFace' : 'pair.card.allow') : p && p.passkey_required ? t('ask.sandboxOnce') : t('r.appr.hold');   // P154 追加 9: 「长按批准」 on every card, ⚠ cards too — the room goes to the ⌘↩ hint
-  el("apprDeny").firstElementChild.textContent = pairAsk ? t('pair.card.deny') : t('r.appr.deny');
-  const kbd = apprKbd();                                       // P154 追加 2: ⌘↩ / Ctrl↩ on a computer only
-  el("apprKbd").textContent = kbd; el("apprKbd").hidden = !kbd;
-  if (kbd) el("apprAllow").setAttribute("aria-keyshortcuts", IS_MAC ? "Meta+Enter" : "Control+Enter");
+  el("apprAllowLbl").textContent = p && p.passkey_required ? t('ask.sandboxOnce') : danger ? t('r.appr.holdOne') : t('r.appr.hold');
   const batch = open && sign && p && p.scope && !danger;
   el("apprBatch").hidden = !batch;
   if (batch){
@@ -400,83 +346,19 @@ function renderPermission(card, p){
     el("apprBatchScope").textContent = t('ask.batchScope', {scope: p.scope, max: p.batch_max, mins: Math.round(p.batch_secs / 60)});
   }
   if (!open || apprBusy) apprCancelHold();
-  const text = p ? (open && !sign ? t('ask.noSign') : open && apprFail && apprFail.id === p.id ? apprFail.text : apprText(p)) : "";
+  const text = p ? (open && !sign ? t('ask.noSign') : apprText(p)) : "";
   el("askState").hidden = !text;
   el("askState").textContent = text;
-  el("elsewhereText").textContent = pairAsk && open ? t('pair.card.where') : !p ? t('r.appr.elsewhere') : p.local_only ? t('r.appr.st.localOnlyShort') : open ? t('r.appr.elsewhereLive') : t('r.appr.elsewhere');
+  el("elsewhereText").textContent = !p ? t('r.appr.elsewhere') : p.local_only ? t('r.appr.st.localOnlyShort') : open ? t('r.appr.elsewhereLive') : t('r.appr.elsewhere');
   paintTags(p || null);
 }
-// P154: a long command used to push 长按批准 below the fold. It now shows 2 lines (the sandbox explanation stays whole);
-// 展开全部 / 收起 (beside the tool tag) appears only when there is more, and the copy icon (the reply bar's, at the right of
-// the title 「运行一条命令」) copies the whole command — to read it, paste it elsewhere.
-let cmdOpenKey = null, cmdFull = "";
-function paintCmd(text, fold, key, tool){
-  const pre = el("cmd");
-  // A Bash summary is "<command>\n— <description>" (host agent.summarize): the description is the line people can read,
-  // so it stands above the folded command; the copy icon takes the command alone.
-  let body = String(text || ""), desc = "";
-  const cut = fold && tool === "Bash" ? body.lastIndexOf("\n— ") : -1;
-  if (cut > 0){ desc = body.slice(cut + 3).trim(); body = body.slice(0, cut); }
-  el("cmdDesc").textContent = desc; el("cmdDesc").hidden = !desc;
-  cmdFull = body;
-  if (pre.textContent !== cmdFull) pre.textContent = cmdFull;
-  if (cmdOpenKey !== null && cmdOpenKey !== key) cmdOpenKey = null;
-  const open = !fold || cmdOpenKey === key;
-  pre.classList.toggle("fold", !open);
-  pre.dataset.key = key || "";
-  el("cmdCopy").hidden = !cmdFull;
-  measureCmd();
-}
-function measureCmd(){
-  const pre = el("cmd"), more = el("cmdMore");
-  const folded = pre.classList.contains("fold");
-  const longer = folded ? pre.scrollHeight > pre.clientHeight + 2 : cmdOpenKey !== null;
-  more.hidden = !longer;
-  pre.classList.toggle("clip", folded && longer);
-  more.setAttribute("aria-expanded", String(!folded));
-  el("cmdMoreLbl").textContent = t(folded ? 'r.appr.cmdMore' : 'r.appr.cmdLess');
-}
-function toggleCmd(){
-  const pre = el("cmd");
-  cmdOpenKey = pre.classList.contains("fold") ? pre.dataset.key : null;
-  pre.classList.toggle("fold", cmdOpenKey === null);
-  pre.classList.remove("clip");
-  measureCmd();
-}
 async function apprPost(p, action){
-  // A passkey approval waits for the passkey sheet, so only that one stays up until it is signed.
-  const now = !(p.passkey_required && action !== "deny") && cur && cur.card;
-  apprFail = null;
-  if (now){ apprOpt = {id: p.id, key: cardKey(cur.card), action}; foldedCard = apprOpt.key; apprDismissed = p.id; }
   apprBusy = true; if (cur) renderCard(cur);
   const r = await C.api.approve(p, action);
   apprBusy = false;
   if (r.ok){ apprSent = {id: p.id, state: action === "batch" ? "batch_sent" : action === "allow" ? "allow_sent" : "deny_sent"}; }
-  else {
-    const why = r.why === 'passkey_required' ? t('ask.passkeyRequired') : r.why === "offline" ? t('r.appr.net') : t('r.appr.fail');
-    if (apprOpt && apprOpt.id === p.id){                        // it did not leave this phone: the card comes back, saying why
-      if (foldedCard === apprOpt.key) foldedCard = null;
-      apprOpt = null; apprDismissed = null; apprFail = {id: p.id, text: why};
-    }
-    toast(why, 3000);
-  }
+  else toast(r.why === 'passkey_required' ? t('ask.passkeyRequired') : r.why === "offline" ? t('r.appr.net') : t('r.appr.fail'), 3000);
   if (cur) renderCard(cur);
-}
-// P154 追加 2 (owner, 2026-10-12): on a computer ⌘+Enter (Mac) / Ctrl+Enter = 长按批准 finished — the same apprPost, so the
-// same device signature and passkey check; never a way around them. Only while the card is up; it wins over the text
-// box's Enter-to-send. Esc puts the card away (layers.js). Phones (no fine pointer) show no hint.
-const IS_MAC = /Mac|iPhone|iPad|iPod/.test((navigator.userAgentData && navigator.userAgentData.platform) || navigator.platform || "");
-function apprKbd(){
-  return isDesktop() ? (IS_MAC ? "⌘↩" : "Ctrl↩") : "";
-}
-function apprHotkey(e){
-  if (e.key !== "Enter" || !(e.metaKey || e.ctrlKey) || e.altKey || e.shiftKey || e.isComposing || e.repeat) return;
-  if (document.body.dataset.sheet !== "1" || el("apprBtns").hidden || el("apprAllow").hidden || el("apprAllow").disabled || dialogOpen()) return;
-  const p = apprLive();
-  if (!p || p.local_only || friendAsk(p)) return;
-  e.preventDefault(); e.stopImmediatePropagation();
-  apprCancelHold();
-  apprPost(p, "allow");
 }
 function apprLive(){
   const p = cur && cur.approval;
@@ -761,25 +643,13 @@ function pillHalf(e){
   return e.clientX < cut ? "model" : "effort";
 }
 
-// ---- the logo steps the page's type size: 中 → 大 → 中 → 小 → 中; hold = 中 ------------------------
-// P154 追加 13 (Leo, 2026-10-12: 「每次刷新以后就回到了初始默认值」): the step is phone-local and remembered in
-// localStorage beside the other look settings (aj.fontScale, aj.sfxVolume) — a reload, a reopen or the iPhone
-// home-screen app comes back at the same size. Applied at load, before the first paint of the chat screen.
-// Not the same state as Settings' 「回复字号」 (--rs, reply text only); the two multiply and stay independent.
-export const FZ_KEY = "aj.pageFz";
+// ---- the logo steps the page's type size: 中 → 大 → 中 → 小 → 中; hold = 中 (not stored) ----------
 const FZ_STEPS = ["m", "l", "m", "s"];
 let fzAt = 0;
-function paintFz(){
-  const v = FZ_STEPS[fzAt], root = document.documentElement;
-  if (v === "m") delete root.dataset.fz; else root.dataset.fz = v;
-}
-try { const v = localStorage.getItem(FZ_KEY); const i = v && v !== "m" ? FZ_STEPS.indexOf(v) : -1; if (i > 0) fzAt = i; } catch (_) { /* blocked storage: default */ }
-paintFz();
 function setFz(i, say){
   fzAt = i;
-  const v = FZ_STEPS[i];
-  paintFz();
-  try { if (v === "m") localStorage.removeItem(FZ_KEY); else localStorage.setItem(FZ_KEY, v); } catch (_) { /* blocked storage: this visit only */ }
+  const v = FZ_STEPS[i], root = document.documentElement;
+  if (v === "m") delete root.dataset.fz; else root.dataset.fz = v;
   paintPlaceholder();
   if (say) toast(t('r.fz.' + v), 1000);
 }
@@ -789,8 +659,7 @@ function paintLogo(st, kind){
   if (document.body.dataset.view !== "chat") return;
   const key = st === "waiting" && kind === "question" ? "question" : (BRAND_LOGO[st] ? st : "unknown");
   const o = el("orb");
-  const src = themeLogo() || BRAND_LOGO[key];      // P169: a theme's logo stands for every state (the orb still beats / greys)
-  if (o.getAttribute("src") !== src) o.setAttribute("src", src);
+  if (o.getAttribute("src") !== BRAND_LOGO[key]) o.setAttribute("src", BRAND_LOGO[key]);
   o.dataset.v = key;
 }
 
@@ -841,7 +710,6 @@ function noteHistory(s){
   showPage();
 }
 function resetHistory(ep){
-  search.onEpoch(ep);                                // P188: a /clear empties the search cache
   hist.count = 0; hist.epoch = ep; hist.turns = []; hist.lastId = 0; hist.firstId = 0; hist.want = 0;
   pagesCache = null; follow = true; tailWait = false; pageAt = -1; shownKey = null; tailSeen.id = 0; tailSeen.primed = false; unreadReply = false;
 }
@@ -922,12 +790,9 @@ async function syncHistory(want){
   }catch(_){}
   hist.busy = false;
   showPage();
-  // P193 (B10): not the whole epoch — only until the newest page and the one before it are real (silent-only batches are
-  // skipped); everything older loads on demand (goPage / goEdge / showTurn / the silent panel's 「更早」).
-  while (olderLeft() && pages().filter(p => p.id !== null).length < PREFETCH_PAGES){ const b = await loadOlderBatch(); if (!b || !b.all) break; }
+  while (olderLeft()){ const b = await loadOlderBatch(); if (!b || !b.all) break; }
   showPage();
 }
-const PREFETCH_PAGES = 2;
 function olderLeft(){ return hist.turns.length > 0 && hist.turns[0].id > hist.firstId; }
 // One batch just older than the oldest loaded turn → {all, shown} (shown = how many
 // of them are pages), or null when there is nothing more / it failed.
@@ -968,15 +833,11 @@ function currentPage(){ const ps = pages(); return ps[Math.min(ps.length - 1, Ma
 /** Who spoke, as the source card says it: the colour key and the label. */
 function sourceOf(src){
   if (!src) return {kind: "leo", label: t('r.src.you')};
-  // P179: another remote's label is its current one (the owner may have renamed it since), else the name the page was stamped with
-  if (src.k === "phone") return src.dev && src.dev === C.myDev() ? {kind: "leo", label: t('r.src.you')}
-    : {kind: "dev", label: (src.dev && deviceInfo(src.dev)?.label) || src.name || t('r.src.otherDevice')};
+  if (src.k === "phone") return src.dev && src.dev === C.myDev() ? {kind: "leo", label: t('r.src.you')} : {kind: "dev", label: src.name || t('r.src.otherDevice')};
   if (src.k === "telegram") return {kind:"tg",label:"Telegram"};
-  if (src.k === "email") return {kind:"tg",label:t('r.src.email', {name: src.name || ''})};   // P170: same quiet colour as Telegram
   if (src.k === "host") return {kind: "host", label: t('r.src.host')};
   // P132: a page the Agent started itself says why — a /loop or wake-up check, a background task, or just reporting in
-  // P156: the host's own heartbeat check (its prompt is not shown — a folded label; a quiet beat has no page at all)
-  if (src.k === "agent") return {kind: "agent", label: src.via === "heartbeat" ? t('r.src.heartbeat') : src.via === "loop" ? t('r.src.loop') : src.via === "task" ? t('r.src.bgTask')
+  if (src.k === "agent") return {kind: "agent", label: src.via === "loop" ? t('r.src.loop') : src.via === "task" ? t('r.src.bgTask')
     : t(src.text?.trim() ? 'r.src.agent' : 'r.src.agentReport', {name: C.agentName()})};
   if (src.k === "task") return {kind: "task", label: src.name ? t('r.src.taskNamed', {name: src.name}) : t('r.src.task')};
   if (src.k === "cmd") return {kind: "cmd", label: t('r.src.cmd')};
@@ -1076,19 +937,6 @@ function paintCmdx(p){
   const isCmd = !!c && p.source && p.source.k === "cmd";
   const cancelWait = isCmd && c.cancel_wait === true && p.end === "open" && p.source.dev === C.myDev();
   const openBtn = isCmd && typeof c.open === "string" && /^fr_(card|add)(:[A-Z0-9-]{1,40})?$/.test(c.open);   // P73
-  // P151b: a phone turn the shared Claude has not ended after 5 min — 「继续等」 (another round) or 「中断」 (/stop)
-  const stall = !isCmd && !!c && c.wait === true && c.stall === true && p.end === "open" && p.id !== null;
-  if (stall){
-    box.hidden = false;
-    const more = document.createElement("button"); more.type = "button"; more.className = "cmdundo"; more.dataset.waitMore = String(p.id);
-    more.textContent = t('r.wait.more');
-    more.addEventListener("click", () => { more.disabled = true; sendApp({t: 'turn_wait', turn: p.id}).catch(() => { more.disabled = false; }); });
-    const stop = document.createElement("button"); stop.type = "button"; stop.className = "cmdundo"; stop.dataset.waitStop = String(p.id);
-    stop.textContent = t('r.wait.stop');
-    stop.addEventListener("click", () => { stop.disabled = more.disabled = true; C.api.slash('stop'); });
-    box.append(more, stop);
-    return;
-  }
   box.hidden = !isCmd || !((Array.isArray(c.models) && c.models.length) || c.undo === true || openBtn || cancelWait);
   if (box.hidden) return;
   if (cancelWait){
@@ -1169,7 +1017,7 @@ function paintActs(){
   el("replyBtn").disabled = id === null || !C.connected();
   el("replyBtn").classList.toggle("on", !!replyTo && replyTo.id === id);
   el("copyReply").disabled = !(p.reply || "").trim();
-  paintSpeak(); paintFwd(); paintMail();
+  paintSpeak(); paintFwd();
 }
 function plainLine(md){
   for (let ln of String(md || "").split("\n")){
@@ -1328,19 +1176,6 @@ async function forwardTap(){
   toast(ok ? t('r.share.copied') : t('r.copy.fail'), 2200);
 }
 
-// ---- 转发到邮箱 (P189): the whole turn — the owner's message, this reply, its files — through P184's dialog (contacts.js,
-//      host cap `contacts`): 发给我自己 by default, or people from the address book; the dialog can leave the message out.
-function paintMail(){
-  const b = el("mailBtn"), p = currentPage(), fw = window.AgentJMailForward;
-  b.hidden = !(fw && fw.available());
-  b.disabled = p.id === null || !(p.reply || "").trim() || !C.connected();
-}
-function mailTap(){
-  const p = currentPage(), fw = window.AgentJMailForward;
-  if (p.id === null || !fw) return;
-  fw.open({ turn: p.id, whole: true });
-}
-
 // ---- the full-screen reader (relay ADR-049) ----------------------------------------------
 var RD_SIZES = [14, 16, 18, 20, 24, 28, 32], RD_MIN = 14, RD_MAX = 32, RD_DEFAULT = 20, RD_KEY = "aj.readerFs";
 var RD_DTAP_MS = 300, RD_TAP_MS = 350, RD_TAP_PX = 10, RD_PAIR_PX = 32;
@@ -1433,23 +1268,7 @@ const rdDist = ts => Math.hypot(ts[0].clientX - ts[1].clientX, ts[0].clientY - t
 
 // ---- swipe to page: within 30° of horizontal = a page turn; past 25 % or a fling commits ----------
 const SWIPE_DEG = 30, SWIPE_FRAC = 0.25, SWIPE_FLING = 0.5, SWIPE_EDGE = 16, SWIPE_MIN_MOVE = 4;
-// P181 追加 3: a page turn is a quick flick. The finger has to start moving within SWIPE_HOLD_MS of touching down;
-// a press held longer is a long press (text selection), and a touch that starts on / grows a selection never turns pages.
-const SWIPE_HOLD_MS = 300, SWIPE_SEL_PAD = 44;
 let sw = null;
-function nearSelection(x, y){
-  const s = document.getSelection ? document.getSelection() : null;
-  if (!s || !s.rangeCount || s.isCollapsed || !wordsSelection()) return false;
-  for (const r of s.getRangeAt(0).getClientRects())
-    if (x > r.left - SWIPE_SEL_PAD && x < r.right + SWIPE_SEL_PAD && y > r.top - SWIPE_SEL_PAD && y < r.bottom + SWIPE_SEL_PAD) return true;
-  return false;
-}
-/** A selection appeared mid-touch: this touch is selecting text, not turning pages — put the deck back. */
-function swipeVeto(){
-  if (!sw) return;
-  if (sw.mode === "page"){ deck.style.transition = "transform .22s var(--re)"; deck.style.transform = ""; deck.dataset.rubber = "0"; }
-  sw.mode = "hold"; deck.dataset.swipe = "hold";
-}
 function hScrollable(tg){
   for (let n = tg; n && n !== deck; n = n.parentElement)
     if (n.scrollWidth > n.clientWidth + 1 && /(auto|scroll)/.test(getComputedStyle(n).overflowX)) return true;
@@ -1672,8 +1491,7 @@ function paintTray(){
 }
 function stage(a){
   a.st = "up"; a.pct = 0; a.err = "";
-  if (!a.up) a.up = new Upload(a.file, {purpose: "att", origin: a.origin, name: a.name, mime: a.file.type, secs: a.dur, bid: a.bid, onProgress: p => { a.pct = p; paintChip(a); }});
-  a.bid = null;                                                     // P182: a stored take's upload id is reused once (resume)
+  if (!a.up) a.up = new Upload(a.file, {purpose: "att", origin: a.origin, name: a.name, mime: a.file.type, secs: a.dur, onProgress: p => { a.pct = p; paintChip(a); }});
   paintChip(a);
   a.promise = a.up.start().then(r => {
     if (!atts.includes(a) && !a.out) return;                        // a.out: held whole with an offline-queued message
@@ -1693,8 +1511,7 @@ function uploadsResume(){ for (const a of atts) if (a.retry && a.st === "up"){ a
 // origin: file | photo | camera | paste | drop | recording (§10.3)
 // dur: a recording's length in seconds — set BEFORE stage() so blob_open carries `secs` (§10.3; the host's transcript
 // heading 「语音转写（N 秒，…）」 comes from it)
-// bid: P182 — the upload id a recovered recording segment had before the reload (the host resumes its partial)
-function addFiles(list, origin = "file", dur, bid){
+function addFiles(list, origin = "file", dur){
   let dropped = 0;
   const added = [];
   for (const f of list){
@@ -1703,7 +1520,6 @@ function addFiles(list, origin = "file", dur, bid){
     if (atts.length >= MAX_ATT){ dropped++; continue; }
     const a = {file: f, name: f.name || "upload", kind: kindOf(f), origin};
     if (dur > 0) a.dur = dur;
-    if (typeof bid === "string") a.bid = bid;
     atts.push(a); added.push(a);
     stage(a);
   }
@@ -1716,7 +1532,6 @@ function removeAtt(a, drop = true){
   if (i < 0) return;
   atts.splice(i, 1);
   if (drop && a.up) a.up.drop();
-  if (a.rec){ LR.dropSeg(a.rec.take, a.rec.seg); a.rec = null; }      // P182: sent (accepted) or removed → off the phone
   if (a.node) a.node.remove();
   if (a.url){ URL.revokeObjectURL(a.url); a.url = null; }
   paintTray();
@@ -1731,13 +1546,11 @@ function holdAtt(a){
 // ---- desktop drag-and-drop: the whole page is the drop target -----------------------------
 const DROP_EXT = {};
 for (const [m, exts] of Object.entries(DROP_TYPES)) for (const x of exts.split(" ")) DROP_EXT[x] ??= m;
-// P166: every file goes — a known type as itself, a known extension as its type, anything else as its own well-formed
-// MIME or application/octet-stream (the host keeps a scrubbed extension). Only a File that cannot be re-wrapped is skipped.
 function droppable(f){
   const ty = (f.type || "").split(";")[0].trim().toLowerCase();
   if (DROP_TYPES[ty]) return ty === f.type ? f : new File([f], f.name, {type: ty, lastModified: f.lastModified});
-  const m = /\.[^.]+$/.exec((f.name || "").toLowerCase()), mime = (m && DROP_EXT[m[0]]) || anyMime(ty);
-  if (mime === f.type) return f;
+  const m = /\.[^.]+$/.exec((f.name || "").toLowerCase()), mime = m && DROP_EXT[m[0]];
+  if (!mime) return null;
   try{ return new File([f], f.name, {type: mime, lastModified: f.lastModified}); }catch(_){ return null; }
 }
 function modalOpen(){
@@ -1817,7 +1630,7 @@ async function openCam(){
 }
 
 // ---- send ---------------------------------------------------------------------------------
-const SAY_ERR = ["shape", "too_long", "stopped", "att_gone", "att_open", "too_many_att", "reply_unknown", "dup", "too_many", "no_agent", "offline", "timeout", "seat"];
+const SAY_ERR = ["shape", "too_long", "stopped", "att_gone", "att_open", "too_many_att", "reply_unknown", "dup", "too_many", "no_agent", "offline", "timeout"];
 // ---- the launch: a sent message flies into the logo (relay) -----------------------------------
 const ROCKET_MS = 800;
 function pulseLogo(){
@@ -1858,9 +1671,25 @@ function launchRocket(){
   flyRocket(true);
   playWhoosh();
 }
-// The launch sound: only the landing rocket makes it; never stacks, never touches the send. Volume and the player are
-// js/sfx.js (P154: a Settings slider, default 15 %, routed through a gain node because iPhone ignores <audio>.volume).
-const unlockWhoosh = sfx.unlock, playWhoosh = sfx.play;
+// The launch sound: only the landing rocket makes it; quiet (0.35), never stacks, never touches the send. Played from a
+// same-origin <audio> (CSP media-src 'self'); relay's AudioContext path needed an HTTP fetch, which CSP forbids here.
+const WHOOSH_VOLUME = 0.35;
+let whooshEl = null;
+function unlockWhoosh(){
+  try{
+    if (whooshEl) return;
+    whooshEl = new Audio("assets/rocket-whoosh.mp3");
+    whooshEl.preload = "auto"; whooshEl.volume = WHOOSH_VOLUME;
+  }catch(_){ whooshEl = null; }
+}
+function playWhoosh(){
+  try{
+    if (!whooshEl || document.visibilityState !== "visible") return;
+    whooshEl.currentTime = 0;
+    const p = whooshEl.play(); if (p && p.catch) p.catch(() => {});
+    document.body.dataset.whoosh = String((+document.body.dataset.whoosh || 0) + 1);
+  }catch(_){}
+}
 // While a send is in flight: rockets keep launching (after 400 ms), × takes it back.
 const LOOP_AFTER_MS = 400, LOOP_EVERY_MS = 750, LOOP_MAX_AIR = 3;
 function launchLoop(){
@@ -1977,25 +1806,6 @@ async function runCmd(cmd, arg = ""){
   }
   return C.api.slash(cmd, arg);
 }
-// P181: one tap / hold sends a ready-made message AS THE OWNER to the main Agent, which then asks what to change and follows
-// the bundled skill (theme → agentj-theme: validate before apply; cmds → agentj-commands). The field and its draft stay
-// untouched; the message shows on the page like anything the owner sent. Not while stopped / offline (nothing queues).
-export const PRESETS = ["theme", "cmds"];
-export async function sayPreset(kind){
-  if (!PRESETS.includes(kind)) return false;
-  const text = t('p181.prompt.' + kind);
-  if (C.estopOn()){ toast(t('r.say.stopped'), 3200); return false; }
-  if (!C.connected()){ toast(t('p181.offline'), 3000); return false; }
-  toNewest();
-  let r;
-  try{ r = await C.api.say({sid: C.api.newSid(), text, att: [], reply_to: null, excerpt: null}); }
-  catch(_){ r = {ok: false, why: "other"}; }
-  if (!r.ok){ toast(r.why === "stopped" ? t('r.say.stopped') : t('r.say.err.' + (SAY_ERR.includes(r.why) ? r.why : "other")), 3000); return false; }
-  if (!C.p33()) C.saidOld(text);
-  launchRocket();
-  toast(t('p181.sent.' + kind), 2200);
-  return true;
-}
 async function say(){
   const text = input.value;
   if (!hasSayable() || sending || asrBusy) return;                 // F27: files alone (no words) go too
@@ -2004,11 +1814,6 @@ async function say(){
   const fa = /^[/\uff0f]add[-_]friend(?:[ \t]+([\s\S]*))?$/i.exec(text.trim());
   if (fa && !atts.length && !replyTo){
     if (await addFriendCmd((fa[1] || "").trim())){ pushHist(text); settleField(text); autosize(); saveDraft(); }
-    return;
-  }
-  // P181: /customize (中文「定制命令」) sends the same preset message as a long press on the ≡ button
-  if (/^[/\uff0f]customize$/i.test(text.trim()) && !atts.length && !replyTo){
-    if (await sayPreset("cmds")){ pushHist(text); settleField(text); autosize(); saveDraft(); }
     return;
   }
   if (C.estopOn()){ toast(t('r.say.stopped'), 3200); return; }
@@ -2143,7 +1948,6 @@ function outDone(e, r, kind){
   if (kind === "sent"){
     if (r.ok && r.state === "queued") queued.push({sid: e.sid, text: e.text, atts: list.slice(), rt: null, turn: r.turn, at: Date.now()});
     for (const a of list) if (a.url){ URL.revokeObjectURL(a.url); a.url = null; }
-    for (const a of list) if (a.rec){ LR.dropSeg(a.rec.take, a.rec.seg); a.rec = null; }   // P182
     if (r.ok && !C.p33()) C.saidOld(e.text);
     paintQueued();
     return;
@@ -2170,14 +1974,6 @@ const MENU_CMD_RE = /^\/[A-Za-z0-9][A-Za-z0-9_:.\-]{0,62}$/;
 const RUN = ["compact", "clear", "model", "context", "cost", "usage", "status", "stop", "update"];
 const runDescription = c => t('r.run.' + c);
 let hostMenu = null;          // {items:[[cmd, desc, group]], skills:[[cmd, desc]]}
-// P182: the meeting-notes command (its zh name is in the dictionary; en /meeting-notes): audio in the tray (or the latest recording) → transcript → minutes; addresses written
-// after it get the minutes by e-mail (the host only sends to addresses the owner typed). `all`: the other language's name
-// too, for the type-ahead.
-function toolItems(all){
-  const cmd = t('r.meet.cmd'), out = [[cmd, t('r.meet.desc'), ""]];
-  if (all && cmd !== "/meeting-notes") out.push(["/meeting-notes", t('r.meet.desc'), ""]);
-  return out;
-}
 let menuItems = [];           // what the type-ahead filters: [cmd, desc, group]
 function insertSlash(cmd){
   const v = input.value;
@@ -2229,12 +2025,8 @@ function renderMenu(){
     const b = item(t('r.update.title'), `${current} → ${latest} · ${desc}`, {run: c});
     b.disabled = !!same;
   }
-  item("/customize", t('p181.customize'), {prompt: "cmds"});   // P181: 定制命令 → the preset message (≡ hold does the same)
   const stop = item("■", C.estopOn() ? t('estop.resume') : t('estop.btn'), {estop: C.estopOn() ? "resume" : "stop"});
   stop.classList.add("estopitem");
-  // P182: Agent J's own tools — inserted like a menu item (the human adds files / addresses and sends)
-  group(t('r.menu.tools'));
-  for (const [cmd, why] of toolItems()) item(cmd, why, {slash: cmd});
   const host = hostMenu || {items: RUN.map(c => ["/" + c, runDescription(c), ""]), skills: []};
   menuItems = [];
   const fromHost = hostMenu ? host.items : [];
@@ -2247,24 +2039,14 @@ function renderMenu(){
     }
   }
   if (host.skills.length){ group(t('r.menu.skills')); for (const [cmd, why] of host.skills) item(cmd, why, {slash: cmd}); }
-  menuItems = RUN.map(c => ["/" + c, runDescription(c), ""]).concat([["/customize", t('p181.customize'), ""]], toolItems(true), fromHost, host.skills);
+  menuItems = RUN.map(c => ["/" + c, runDescription(c), ""]).concat(fromHost, host.skills);
   const k = item("?", t('r.keys.title'), {});
   k.className = "keysentry"; k.id = "keysEntry";
   if (CLIP_READ){ const c = item("📋", t('r.menu.clip'), {}); c.className = "clipentry"; c.id = "clipEntry"; }
   const modelsEntry = item('◉', t('models.title'), {}); modelsEntry.id = 'modelsEntry';
   if (IN_APP){ const a = item("⚙", t('r.menu.app'), {}); a.id = "appEntry"; }
   const sl = item("🔕", t("r.silent.menu"), {}); sl.id = "silentEntry";
-  // P187: the list's own entries wear the menu icon set (index.html #menuIcons) instead of a glyph
-  const kinds = {keysEntry: "keys", clipEntry: "clip", modelsEntry: "models", appEntry: "app", silentEntry: "silent"};
-  for (const b of nodes) if (kinds[b.id]) menuIcon(b, kinds[b.id]);
-  menuIcon(stop, "stop");
-  menuList.replaceChildren(...nodes);
-}
-function menuIcon(b, kind){
-  const svg = el("menuIcons").content.querySelector(`[data-kind="${kind}"]`);
-  if (!svg) return;
-  const ic = document.createElement("b"); ic.className = "mi"; ic.append(svg.cloneNode(true));
-  b.firstChild.replaceWith(ic); b.classList.add("iconrow");
+  menu.replaceChildren(...nodes);
 }
 async function loadMenu(){
   const j = await C.api.menu();
@@ -2339,67 +2121,33 @@ function pickSug(i){
 }
 
 // ---- voice: hold to talk (relay ADR-048 / 052; §10.9) ------------------------------------------------
-// Hold = record, slide clearly away = cancel (cancelZone), double tap = lock (P182: up to 200 min in 20-min parts), m / m m on a keyboard. A clean
+// Hold = record, slide up past PTT_CANCEL_PX = cancel, double tap = lock (≤ 10 min), m / m m on a keyboard. A clean
 // release never sends: the take is turned into 16 kHz WAV here, transcribed on the customer's own computer, and the words
 // are APPENDED to the field. A take longer than the field's threshold travels as an audio attachment instead.
-// P181 (owner: 「手抖动就不应该取消」): a take is cancelled only when the pointer ends up clearly outside the button —
-// ≥ PTT_OUT_PX (mouse) / PTT_OUT_TOUCH_PX (finger) from its edge, or above it after sliding up at least one button height
-// + PTT_UP_EXTRA_PX — and is released there; coming back within PTT_BACK_PX of that line un-cancels (no flicker).
-const PTT_MIN_MS = 500, PTT_OUT_PX = 80, PTT_OUT_TOUCH_PX = 96, PTT_UP_EXTRA_PX = 24, PTT_UP_EXTRA_TOUCH_PX = 32, PTT_BACK_PX = 24;
-// P181 (owner: iPhone 双击锁定「经常抓不到」): the second tap may come up to DTAP_MS after the first lifts (iOS UIKit allows
-// ~350 ms; 300 ms was too tight), and the first tap's end is accepted from pointerup, lostpointercapture, pointercancel or
-// touchend — whichever WebKit delivers — so a cancelled / blurred first tap still pairs with the second (lastTapUp).
-const DTAP_MS = 450, LOCK_WARN_MS = 60 * 1000, LOCK_REARM_MS = 400;
+const PTT_MIN_MS = 500, PTT_CANCEL_PX = 64;
+const DTAP_MS = 300, LOCK_MAX_MS = 10 * 60 * 1000, LOCK_WARN_MS = 60 * 1000, LOCK_REARM_MS = 400;
 let ptt = null;
-let lockEndAt = -1e9, lastTapUp = -1e9, lockCount = 0;
-/** P181: is (x, y) in the cancel zone of the mic button? `was` = currently cancelled (hysteresis). Exported for the tests. */
-export function cancelZone(r, x0, y0, x, y, touch, was = false){
-  const back = was ? PTT_BACK_PX : 0;
-  const dx = Math.max(r.left - x, 0, x - r.right), dy = Math.max(r.top - y, 0, y - r.bottom);
-  const out = Math.hypot(dx, dy);
-  if (out >= (touch ? PTT_OUT_TOUCH_PX : PTT_OUT_PX) - back) return true;
-  const up = y0 - y;
-  return y < r.top && up >= r.height + (touch ? PTT_UP_EXTRA_TOUCH_PX : PTT_UP_EXTRA_PX) - back;
-}
-// P182: a take is cut every SEG_MS into segments that each become one ordered audio attachment while the recording goes on;
-// at most REC_SEGS of them (200 minutes), fewer when the tray already holds files. Each recorder chunk (REC_SLICE_MS) is
-// sealed into IndexedDB (longrec.js) first, so a reload, a crash or a lost connection loses a few seconds at most.
-// REC_BPS: speech-grade compressed audio (Opus in WebM on Chromium / Firefox, AAC in MP4 on Safari) — ≈ 7 MB per segment.
-// Test hook: localStorage["aj.test.segMs"] shortens the segment (only honoured below one minute, so it cannot lengthen one).
-const SEG_MS_REAL = 20 * 60 * 1000, REC_SEGS = 10, REC_SLICE_MS = 4000, REC_BPS = 48000, WAV_MAX_S = 600, MUTE_MS = 3000;
-const segMs = () => { const v = +(localStorage.getItem("aj.test.segMs") || 0); return v >= 1000 && v < 60000 ? v : SEG_MS_REAL; };
-const REC_TYPES = ["audio/webm;codecs=opus", "audio/mp4;codecs=mp4a.40.2", "audio/mp4", "audio/ogg;codecs=opus", "audio/webm"];
-const recTotalMs = p => p.recT0 ? (p.recT1 || performance.now()) - p.recT0 : 0;
-const capMs = p => p.maxSegs * p.segMs;
+let lockEndAt = -1e9;
 function pttUI(p){
   if (p) speaker?.stop();
   const b = el("mic"), box = el("ptt");
   b.classList.toggle("rec", !!p && !p.cancel);
   b.classList.toggle("cancel", !!p && p.cancel);
   b.classList.toggle("lock", !!p && p.locked);
-  if (!p){ box.hidden = true; box.classList.remove("lock"); el("pttSeg").hidden = true; el("micLabel").textContent = asrBusy ? t('r.asr.tag') : t('r.mic.hold'); return; }
+  if (!p){ box.hidden = true; box.classList.remove("lock"); el("micLabel").textContent = asrBusy ? t('r.asr.tag') : t('r.mic.hold'); return; }
   box.hidden = false;
   box.classList.toggle("cancel", p.cancel);
   box.classList.toggle("lock", p.locked);
   el("pttTime").dataset.lock = t('r.ptt.locked');
-  const s = p.rec ? Math.floor(recTotalMs(p) / 1000) : 0;
+  const s = p.rec ? Math.floor((performance.now() - p.recT0) / 1000) : 0;
   el("pttTime").textContent = p.rec ? Math.floor(s / 60) + ":" + String(s % 60).padStart(2, "0") : "…";
-  // P182: the segment line — which part, the ceiling, and (on a phone) keep the screen on
-  const seg = el("pttSeg");
-  seg.hidden = !p.rec || (!p.locked && !p.seg);
-  if (!seg.hidden){
-    const parts = [t('r.ptt.seg', {n: p.seg + 1, max: p.maxSegs, m: Math.round(capMs(p) / 60000)})];
-    if (p.seg) parts.push(t('r.ptt.segUp', {n: p.seg}));
-    if (matchMedia("(pointer:coarse)").matches) parts.push(p.wlFail ? t('r.ptt.awakeNoLock') : t('r.ptt.awake'));
-    seg.textContent = parts.join(" · ");
-  }
   if (p.rec && p.T == null) p.T = voiceThresholdS();
-  const long = p.rec && recTotalMs(p) / 1000 > p.T;
-  const left = capMs(p) - recTotalMs(p);
+  const long = p.rec && (performance.now() - p.recT0) / 1000 > p.T;
   if (p.locked){
+    const left = LOCK_MAX_MS - (performance.now() - p.lockT0);
     const stop = p.viaM ? t('r.ptt.anyKey') : t('r.ptt.tapEnd');
     el("pttHint").textContent = p.cancel ? t('r.ptt.releaseCancel')
-      : p.rec && left <= LOCK_WARN_MS ? t('r.ptt.left', {s: Math.max(0, Math.ceil(left / 1000)), stop})
+      : left <= LOCK_WARN_MS ? t('r.ptt.left', {s: Math.max(0, Math.ceil(left / 1000)), stop})
       : !p.rec ? t('r.ptt.opening') : p.viaM ? t('r.ptt.anyKeyEsc')
       : matchMedia("(pointer:coarse)").matches ? t('r.ptt.tapEndSlide') : t('r.ptt.tapEndEsc');
     el("micLabel").textContent = p.cancel ? t('r.mic.releaseCancel') : stop;
@@ -2415,20 +2163,16 @@ function pttTap(p){
   pttUI(p);
 }
 function pttLock(p){
-  clearTimeout(p.pend); p.pend = 0; p.tUp = 0; lastTapUp = -1e9; lockCount++;
+  clearTimeout(p.pend); p.pend = 0; p.tUp = 0;
   p.locked = true; p.id = null; p.cancel = false; p.lockT0 = performance.now();
-  if (p.rec) wakeOn(p);
+  p.cap = setTimeout(() => {
+    if (ptt !== p) return;
+    toast(t('r.ptt.capped', {m: LOCK_MAX_MS / 60000}), 3200);
+    pttEnd(p, "release", true);
+  }, LOCK_MAX_MS);
   try{ if (navigator.vibrate) navigator.vibrate([15, 60, 15]); }catch(_){}
   pttUI(p);
 }
-// P182: Screen Wake Lock keeps the phone from locking itself while a take runs (a lock cuts the microphone on iOS and on
-// Android Chrome); taken again when the page comes back, released when the take ends. Unsupported / refused → the hint says so.
-function wakeOn(p){
-  if (p.wl && !p.wl.released) return;
-  if (!navigator.wakeLock || !navigator.wakeLock.request){ p.wlFail = true; return; }
-  navigator.wakeLock.request("screen").then(w => { if (p.over) w.release().catch(() => {}); else { p.wl = w; p.wlFail = false; } }, () => { p.wlFail = true; });
-}
-function wakeOff(p){ if (p.wl){ p.wl.release().catch(() => {}); p.wl = null; } }
 const MIC_OPEN_MAX_MS = 15000;
 function pttStart(id, y){
   if (ptt) return;
@@ -2436,12 +2180,10 @@ function pttStart(id, y){
   if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia || !window.MediaRecorder){
     toast(t('r.ptt.noRec'), 3000); return;
   }
-  const p = ptt = {id, x0: 0, y0: y, t0: performance.now(), cancel: false, over: false, touch: false,
+  const p = ptt = {id, y0: y, t0: performance.now(), cancel: false, over: false,
                    send: false, stream: null, rec: null, recT0: 0, recT1: 0, chunks: [],
-                   pend: 0, tUp: 0, locked: false, lockT0: 0, cap: 0, viaM: false,
-                   seg: 0, segMs: segMs(), maxSegs: Math.max(1, Math.min(REC_SEGS, MAX_ATT - atts.length)),
-                   takeP: null, take: null, stampS: stamp(), lastData: 0, mutedAt: 0, wl: null, wlFail: false, interrupted: false};
-  p.timer = setInterval(() => { pttWatch(p); pttUI(p); }, 250);
+                   pend: 0, tUp: 0, locked: false, lockT0: 0, cap: 0, viaM: false};
+  p.timer = setInterval(() => pttUI(p), 250);
   pttUI(p);
   // Native permission/device acquisition may never settle. Do not leave a
   // locked take waiting forever, and do not retain a stream arriving after cancel.
@@ -2458,15 +2200,14 @@ function pttStart(id, y){
       return;
     }
     p.stream = stream;
-    for (const tr of stream.getAudioTracks()){
-      tr.addEventListener("ended", () => pttInterrupted(p));
-      tr.addEventListener("mute", () => { p.mutedAt = Date.now(); });
-      tr.addEventListener("unmute", () => { p.mutedAt = 0; });
-    }
-    if (!segStart(p)){ toast(t('r.ptt.noRec'), 3000); pttEnd(p, "cancel", true); return; }
+    let rec;
+    try{ rec = new MediaRecorder(stream); }
+    catch(_){ toast(t('r.ptt.noRec'), 3000); pttEnd(p, "cancel", true); return; }
+    p.rec = rec;
+    rec.ondataavailable = e => { if (e.data && e.data.size) p.chunks.push(e.data); };
+    rec.onstop = () => pttFinish(p);
     p.recT0 = performance.now();
-    p.takeP = LR.startTake(p.rec.mimeType || "").then(v => (p.take = v), () => null);
-    if (p.locked) wakeOn(p);
+    rec.start();
     try{ if (navigator.vibrate) navigator.vibrate(20); }catch(_){}
     pttUI(p);
   }, () => {
@@ -2476,95 +2217,20 @@ function pttStart(id, y){
     toast(t('r.ptt.noMic'), 3000);
   });
 }
-function recOptions(){
-  const o = {audioBitsPerSecond: REC_BPS};
-  const ok = MediaRecorder.isTypeSupported ? REC_TYPES.find(m => { try{ return MediaRecorder.isTypeSupported(m); }catch(_){ return false; } }) : null;
-  if (ok) o.mimeType = ok;
-  return o;
-}
-// One recorder per segment, all on the same stream: every segment is a complete file of its own. The next recorder starts
-// before the previous one stops, so the cut loses nothing.
-function segStart(p){
-  let rec;
-  try{ rec = new MediaRecorder(p.stream, recOptions()); }
-  catch(_){ try{ rec = new MediaRecorder(p.stream); }catch(_){ return false; } }
-  const n = p.seg, chunks = [], t0 = performance.now();
-  let i = 0, last = t0;
-  p.rec = rec; p.chunks = chunks;
-  rec.ondataavailable = e => {
-    if (!e.data || !e.data.size) return;
-    chunks.push(e.data);
-    const now = performance.now(), ms = now - last, k = i++;
-    last = now; p.lastData = Date.now();
-    p.takeP?.then(id => id && LR.addChunk(id, n, k, e.data, ms));
-  };
-  rec.onerror = () => pttInterrupted(p);
-  rec.onstop = () => segStop(p, n, chunks, rec, t0);
-  try{ rec.start(REC_SLICE_MS); }catch(_){ return false; }
-  clearTimeout(p.cap);
-  p.cap = setTimeout(() => segRoll(p), p.segMs);
-  p.lastData = Date.now();
-  return true;
-}
-function segRoll(p){
-  if (ptt !== p || p.over) return;
-  if (p.seg + 1 >= p.maxSegs){                                     // the ceiling: the take ends, nothing is lost
-    toast(t('r.ptt.capped', {m: Math.round(capMs(p) / 60000)}), 4200);
-    pttEnd(p, "release", true);
-    return;
-  }
-  const old = p.rec;
-  old.closing = true;
-  p.seg++;
-  if (!segStart(p)){ p.seg--; p.rec = old; pttEnd(p, "release", true); return; }
-  try{ old.stop(); }catch(_){}
-  toast(t('r.ptt.segDone', {n: p.seg}), 2600);
-  pttUI(p);
-}
-function segStop(p, n, chunks, rec, t0){
-  const end = rec.closing || !p.over ? performance.now() : (p.recT1 || performance.now());
-  const secs = Math.max(0, (end - t0) / 1000);
-  const type = (rec.mimeType || "audio/webm").split(";")[0];
-  if (rec !== p.rec || rec.closing && !rec.final){               // an earlier segment, cut while the take goes on
-    if (chunks.length) segAttach(p, n, new Blob(chunks, {type}), secs);
-    return;
-  }
-  pttFinish(p, n, chunks.length ? new Blob(chunks, {type}) : null, secs);
-}
-// The watch, every 250 ms while a take runs (and when the page comes back): a microphone the system took away (screen
-// locked, another app, a call) ends the take as an interruption — what was recorded stays and goes to the tray.
-function pttWatch(p){
-  if (p.over || !p.rec || document.visibilityState !== "visible") return;
-  const tr = p.stream && p.stream.getAudioTracks()[0];
-  const now = Date.now();                                           // wall clock: the stall watch ignores a shifted timeline
-  if (tr && tr.readyState === "ended") return pttInterrupted(p);
-  if (p.mutedAt && now - p.mutedAt > MUTE_MS) return pttInterrupted(p);
-  if (p.rec.state === "inactive" && !p.rec.closing) return pttInterrupted(p);
-  if (p.lastData && now - p.lastData > REC_SLICE_MS * 3 + 2000) return pttInterrupted(p);
-}
-function pttInterrupted(p){
-  if (p.over || p.interrupted) return;
-  p.interrupted = true;
-  toast(t('r.ptt.interrupted', {d: mmss(recTotalMs(p) / 1000)}), 7000);
-  pttEnd(p, "release", true);
-}
 function pttEnd(p, reason, quiet){
   if (!p || p.over) return;
   p.over = true;
   clearInterval(p.timer); clearTimeout(p.pend); clearTimeout(p.cap); clearTimeout(p.openTimer);
-  wakeOff(p);
   if (ptt === p) ptt = null;
   if (p.locked) lockEndAt = performance.now();
   const held = (p.tUp || performance.now()) - p.t0;
   p.recT1 = p.tUp || performance.now();
-  p.send = reason === "release" && !p.cancel && !!p.rec && (p.locked || p.interrupted || p.seg > 0 || held >= PTT_MIN_MS);
+  p.send = reason === "release" && !p.cancel && !!p.rec && (p.locked || held >= PTT_MIN_MS);
   if (!quiet){
-    if (reason === "release" && !p.cancel && !p.locked && !p.seg && held < PTT_MIN_MS) toast(t('r.ptt.short'), 1600);
-    else if (!p.send && p.rec) toast(p.seg ? t('r.ptt.cancelledLast', {n: p.seg}) : t('r.ptt.cancelled'), p.seg ? 4200 : 1400);
+    if (reason === "release" && !p.cancel && !p.locked && held < PTT_MIN_MS) toast(t('r.ptt.short'), 1600);
+    else if (!p.send && p.rec) toast(t('r.ptt.cancelled'), 1400);
   }
-  if (p.rec){ p.rec.final = true; p.rec.closing = false; }
-  if (p.rec && p.rec.state !== "inactive"){ try{ p.rec.stop(); }catch(_){ pttFinish(p, p.seg, null, 0); } }
-  else if (p.rec) pttFinish(p, p.seg, p.chunks.length ? new Blob(p.chunks, {type: (p.rec.mimeType || "audio/webm").split(";")[0]}) : null, recTotalMs(p) / 1000);
+  if (p.rec && p.rec.state !== "inactive") p.rec.stop();
   else if (p.stream) p.stream.getTracks().forEach(tr => tr.stop());
   pttUI(ptt);
 }
@@ -2576,30 +2242,15 @@ function audioExt(type){
   const ty = (type || "").split(";")[0];
   return {"audio/webm": "webm", "audio/ogg": "ogg", "audio/mp4": "m4a", "audio/aac": "aac", "audio/mpeg": "mp3", "audio/wav": "wav", "audio/x-wav": "wav"}[ty] || "webm";
 }
-// A segment of a long take → the tray at once (its upload starts while the recording goes on), in recording order.
-function segAttach(p, n, blob, secs, quiet){
-  const name = `${t('r.file.voice')}-${p.stampS}-${n + 1}.${audioExt(blob.type)}`;
-  const f = new File([blob], name, {type: blob.type || "audio/webm"});
-  if (f.size > UPLOAD_MAX){ toast(uploadError("too_big"), 3000); return null; }
-  const [a] = addFiles([f], "recording", secs, p.bids && p.bids[n]);
-  if (!a){ if (!quiet) toast(t('r.voice.trayFull', {max: MAX_ATT}), 3200); return null; }
-  a.label = t('r.tray.part', {n: n + 1, d: mmss(secs)});
-  paintChip(a);
-  p.takeP?.then(id => { if (!id) return; a.rec = {take: id, seg: n}; LR.closeSeg(id, n, Math.round(secs * 1000)); if (a.up) LR.setBid(id, n, a.up.bid); });
-  return a;
-}
-function pttFinish(p, n, blob, secs){
+async function pttFinish(p){
   if (p.stream) p.stream.getTracks().forEach(tr => tr.stop());
-  const dropTake = () => p.takeP?.then(id => id && LR.dropSeg(id, n));
-  if (!p.send || !blob){ dropTake(); return; }
-  if (n > 0 || secs > WAV_MAX_S){ segAttach(p, n, blob, secs); return; }     // long: the compressed original, as it was recorded
-  takeFinished(blob, secs, p);
+  if (!p.send || !p.chunks.length) return;
+  const blob = new Blob(p.chunks, {type: (p.rec.mimeType || "audio/webm").split(";")[0]});
+  takeFinished(blob, (p.recT1 - p.recT0) / 1000);
 }
 // A finished take, from the mic or from a native shell (relayNative.take): words into the field, or a long one into the tray.
-// P182: `p` (a mic take) carries its stored copy — dropped once the words are in the field, kept with the attachment.
 let asrQueue = Promise.resolve();
-async function takeFinished(blob, dur, p){
-  const forget = () => p?.takeP?.then(id => id && LR.dropTake(id));
+async function takeFinished(blob, dur){
   if (dur > voiceThresholdS()){
     if (atts.length < MAX_ATT){
       const w = blob.type === "audio/wav" ? {blob, secs: dur} : await toWav(blob);
@@ -2607,10 +2258,7 @@ async function takeFinished(blob, dur, p){
       const f = new File([b], `${t('r.file.voice')}-${stamp()}.${audioExt(b.type)}`, {type: b.type || "audio/webm"});
       if (f.size > UPLOAD_MAX){ toast(uploadError("too_big"), 3000); return; }
       const [a] = addFiles([f], "recording", dur);
-      if (a){
-        a.label = t('r.tray.voice', {d: mmss(dur)}); paintChip(a);
-        p?.takeP?.then(id => { if (id){ a.rec = {take: id, seg: 0}; LR.closeSeg(id, 0, Math.round(dur * 1000)); } });
-      }
+      if (a){ a.label = t('r.tray.voice', {d: mmss(dur)}); paintChip(a); }
       toast(C.asr() === "ready" ? t('r.voice.asAtt') : t('r.voice.asAttNoAsr'), 3200);
       return;
     }
@@ -2624,39 +2272,10 @@ async function takeFinished(blob, dur, p){
     asrBusy--;
     if (ep !== localEpoch){ asrUI(); return; }           // unpaired / removed meanwhile: the words belong to no one now
     const tx = r.ok && typeof r.text === "string" ? r.text.trim() : "";
-    if (tx){ appendText(tx); forget(); }
+    if (tx) appendText(tx);
     else toast(asrError(r), 3400);
     asrUI(); autosize();
   });
-}
-// P182: takes still on this phone after a reload / crash / closed tab (not yet accepted by the computer) are offered back,
-// once per page load: 「放回附件栏」 puts every segment into the tray in order (same upload id: the computer resumes a partial),
-// 「丢弃」 deletes them here.
-let recOffered = false;
-async function recRecover(){
-  if (recOffered || !window.indexedDB) return;
-  recOffered = true;
-  let list;
-  try{ list = await LR.pending([...atts.map(a => a.rec && a.rec.take), ptt && ptt.take].filter(Boolean)); }catch(_){ return; }
-  if (!list.length) return;
-  const segs = list.reduce((n, k) => n + k.segs.length, 0), ms = list.reduce((n, k) => n + k.segs.reduce((m, s) => m + s.ms, 0), 0);
-  if (!await confirmSheet(t('r.rec.backTitle'), t('r.rec.backText', {n: segs, d: mmss(ms / 1000)}), t('r.rec.backYes'), false, t('r.rec.backNo'))){
-    for (const k of list) LR.dropTake(k.id);
-    toast(t('r.rec.dropped'), 2400);
-    return;
-  }
-  let put = 0;
-  for (const k of list){
-    const d = new Date(k.t0), st = [d.getHours(), d.getMinutes(), d.getSeconds()].map(x => String(x).padStart(2, "0")).join("");
-    const q = {stampS: st, takeP: Promise.resolve(k.id), bids: Object.fromEntries(k.segs.map(s => [s.n, s.bid]))};
-    for (const s of k.segs){
-      if (atts.length >= MAX_ATT){ toast(t('r.voice.trayFull', {max: MAX_ATT}), 3200); return; }
-      const blob = await LR.segBlob(k.id, s.n, (k.mime || "audio/webm").split(";")[0]);
-      if (!blob){ LR.dropSeg(k.id, s.n); continue; }
-      if (segAttach(q, s.n, blob, s.ms / 1000, true)) put++;
-    }
-  }
-  if (put) toast(t('r.rec.back', {n: put}), 3200);
 }
 async function transcribe(blob, secs){
   const w = blob.type === "audio/wav" ? {blob, secs} : await toWav(blob);
@@ -2771,7 +2390,7 @@ function renderSilent(focusId){
   }
 }
 function openSilent(id){
-  closeSug();                                   // P187: above the command list — back (Esc) returns to it
+  closeMenu(); closeSug();
   el("silent").hidden = false;
   if (typeof id !== "number") el("silentList").scrollTop = 0;
   renderSilent(id);
@@ -2792,9 +2411,9 @@ async function moreSilent(){
 
 // P142 (A16): the sign-in QR / secret pickup / sudo-secret cards and the setup page also hold the keyboard (no shortcut leaks)
 const shownById = (id) => { const n = el(id); return !!n && !n.hidden; };
-const dialogOpen = () => search.isOpen() || !el("silent").hidden || !el("cam").hidden || !el("keys").hidden || !el("confirm").hidden || !el("badge-panel").hidden || !el("settings").hidden
+const dialogOpen = () => !el("silent").hidden || !el("cam").hidden || !el("keys").hidden || !el("confirm").hidden || !el("badge-panel").hidden || !el("settings").hidden
   || shownById("lqr") || shownById("sout") || shownById("elev") || shownById("setup-view");
-function openKeys(){ closeSug(); el("keys").hidden = false; el("keysClose").focus(); }   // P187: above the list / Settings
+function openKeys(){ closeMenu(); closeSug(); el("keys").hidden = false; el("keysClose").focus(); }
 function closeKeys(){ el("keys").hidden = true; if (document.activeElement) document.activeElement.blur(); }
 export async function pasteClipImages(){
   let items;
@@ -2811,53 +2430,9 @@ export async function pasteClipImages(){
     try{ const b = await it.getType(ty); files.push(new File([b], "image", {type: b.type || ty})); }catch(_){}
   }
   if (!files.length){ toast(hasText ? t('r.clip.text') : t('r.clip.none'), 3000); return; }
-  files.forEach(f => shotclip.seen(f));        // P154: what the owner pasted is not a new screenshot
   takeFiles(files.map((f, i) => pastedName(f, i, files.length)), 'r.verb2.paste', "paste");
 }
-// P181: hold the file button → the clipboard's text: up to CLIP_TEXT_MAX characters at the cursor in the field, longer
-// ones as a .txt attachment. Hold the photo button → the clipboard's image(s) as attachments, a light hint when there is
-// none. Both run on the release (the browser's user gesture): iOS Safari shows its own 「粘贴」 bubble first.
-export const CLIP_TEXT_MAX = 2000;
-export async function pasteClipText(){
-  if (!navigator.clipboard || !navigator.clipboard.readText){ toast(t('p181.clip.unsupported'), 3200); return; }
-  let text;
-  try{ text = await navigator.clipboard.readText(); }
-  catch(err){ toast(err && err.name === "NotAllowedError" ? t('r.clip.denied') : t('r.clip.fail'), 3200); return; }
-  if (!text){ toast(t('p181.clip.noText'), 2400); return; }
-  if ([...text].length > CLIP_TEXT_MAX){
-    if (atts.length >= MAX_ATT){ toast(t('r.take.tooMany', {max: MAX_ATT, have: atts.length, verb: t('r.verb2.paste'), n: 1}), 3600); return; }
-    addFiles([new File([text], `${t('r.file.paste')}-${stamp()}.txt`, {type: "text/plain"})], "paste");
-    toast(t('p181.clip.asFile', {n: CLIP_TEXT_MAX}), 2600);
-    return;
-  }
-  const v = input.value, a = input.selectionStart ?? v.length, b = input.selectionEnd ?? v.length;
-  input.value = v.slice(0, a) + text + v.slice(b);
-  input.focus();
-  input.setSelectionRange(a + text.length, a + text.length);
-  input.dispatchEvent(new Event("input"));
-  toast(t('p181.clip.inserted'), 1600);
-}
-export async function pasteClipImage(){
-  if (!navigator.clipboard || !navigator.clipboard.read){ toast(t('p181.clip.unsupported'), 3200); return; }
-  return pasteClipImages();
-}
-// P154 截图自动进附件 (js/shotclip.js): a new clipboard image after a screenshot round trip → the tray, like paste
-// (MAX_ATT and its message included); never sent by itself.
-export function attachShot(file){
-  const before = atts.length;
-  takeFiles([pastedName(file, 0, 1)], 'r.verb2.shot', "paste");
-  if (atts.length > before) toast(t('r.shot.added', {n: atts.length, max: MAX_ATT}), 2600);
-}
 // P110 external shares enter the existing tray / encrypted upload path, never auto-send.
-/** P190: text from the scanner goes into the field at the caret (never sent by itself). */
-export function insertText(text){
-  const at = document.activeElement === input ? input.selectionStart : input.value.length;
-  const end = document.activeElement === input ? input.selectionEnd : at;
-  const pre = at > 0 && !/\s$/.test(input.value.slice(0, at)) ? " " : "";
-  input.setRangeText(pre + text, at, end, "end");
-  input.dispatchEvent(new Event("input"));
-  try { input.focus({preventScroll: true}); } catch { /* */ }
-}
 export function importShare({images, text}){
   if (images.length) takeFiles(images, 'r.verb2.paste', 'paste');
   if (text) { input.value += (input.value ? "\n" : "") + text; input.dispatchEvent(new Event('input')); }
@@ -2947,11 +2522,8 @@ export function forgetLocal(){
   for (const l of held.values()) for (const a of l) if (a.url){ URL.revokeObjectURL(a.url); a.url = null; }
   held.clear();
   forgetMedia();                                     // F21: fetched files and their object URLs (§13)
-  search.clearAll(false);                            // P188: the search pages (their sealed copy goes with wipeLocal)
   forgetRendered();                                  // P57: rendered copies of the Agent's words (code / math / diagrams)
   for (const a of atts.slice()) removeAtt(a, false);
-  if (ptt) pttEnd(ptt, "cancel", true);
-  LR.wipe();                                         // P182: stored recordings go with the pairing
   if (replyTo) cancelReply();
   if (input){ input.value = ""; autosize(); }
   paintQueued();
@@ -2963,7 +2535,7 @@ const swallow = e => { e.preventDefault(); e.stopImmediatePropagation(); };
 
 // ---- language switch: everything this module wrote --------------------------------------------------
 function relang(){
-  RelayMD.LABELS.copy = t('r.md.copy'); RelayMD.LABELS.copyAria = t('r.md.copyAria'); RelayMD.LABELS.copied = t('r.md.copied'); RelayMD.LABELS.image = t('r.md.image'); RelayMD.LABELS.tapCopy = t('r.md.tapCopy');
+  RelayMD.LABELS.copy = t('r.md.copy'); RelayMD.LABELS.copyAria = t('r.md.copyAria'); RelayMD.LABELS.copied = t('r.md.copied'); RelayMD.LABELS.image = t('r.md.image');
   wordsSrc = null; qsKey = null;
   renderMenu();
   pttUI(ptt); paintTray(); for (const a of atts) paintChip(a);
@@ -2972,10 +2544,9 @@ function relang(){
 }
 
 // ---------------------------------------------------------------- wiring
-const CAM_HOLD_MS = 500;
 export function init(ctx){
   C = ctx;
-  input = el("input"); mainEl = el("main"); deck = el("deck"); tray = el("tray"); menu = el("menu"); menuList = el("menuList"); sug = el("sug"); mic = el("mic");
+  input = el("input"); mainEl = el("main"); deck = el("deck"); tray = el("tray"); menu = el("menu"); sug = el("sug"); mic = el("mic");
   for(const [id,close,fallback,rank,trap] of [
     ['rd',closeReader,'readBtn',45,true],['cam',closeCam,'tCamera',50,true],
     ['keys',closeKeys,'keysBtn',40,true],['silent',closeSilent,'input',40,true],
@@ -2983,23 +2554,8 @@ export function init(ctx){
     ['qbar',cancelReply,'input',5,false]
   ])registerLayer({element:()=>el(id),open:()=>!el(id).hidden,close,fallback:()=>{const node=el(fallback);return node&&!node.closest('[hidden]')?node:(id==='keys'?el('setBtn'):input);},rank,trap});
   registerLayer({element:()=>el('om'),open:()=>el('om').classList.contains('open'),close:()=>setOm(false),fallback:()=>el('omMore'),rank:4,trap:false});
-  // P188: 搜索聊天记录 — above the command list and the shortcuts; Esc / × close it, the 🔍 gets the focus back
-  registerLayer({element:()=>el('srch'),open:search.isOpen,close:search.close,fallback:()=>el('srchBtn'),rank:42,trap:true});
-  search.init({
-    pages: () => pages(), olderLeft, epoch: () => hist.epoch, hostId, sourceOf, agentName: () => C.agentName(),
-    canFind: () => !!(C.api.canFind && C.api.canFind()), find: (q, sort) => C.api.findHistory(q, sort),
-    beforeOpen: () => { closeMenu(); closeSug(); if (rdOpen()) closeReader(); },
-    show: async (id) => {                            // a page-back already on its way (the background catch-up) first lands
-      for (let n = 0; n < 60; n++){ if (await showTurn(id)) return true; if (!hist.older) return false; await new Promise(r => setTimeout(r, 250)); }
-      return false;
-    },
-    flash: (id, ts, where) => {
-      if (where.includes("in") && !where.includes("reply") && omCan() && !omOpen()) setOm(true);
-      search.flashCards(ts, where);
-    },
-  });
   registerLayer({element:()=>el('sheet'),open:()=>document.body.dataset.sheet==='1',close:()=>el('sheetClose').click(),fallback:()=>el('pendTag'),rank:20});
-  RelayMD.LABELS.copy = t('r.md.copy'); RelayMD.LABELS.copyAria = t('r.md.copyAria'); RelayMD.LABELS.copied = t('r.md.copied'); RelayMD.LABELS.image = t('r.md.image'); RelayMD.LABELS.tapCopy = t('r.md.tapCopy');
+  RelayMD.LABELS.copy = t('r.md.copy'); RelayMD.LABELS.copyAria = t('r.md.copyAria'); RelayMD.LABELS.copied = t('r.md.copied'); RelayMD.LABELS.image = t('r.md.image');
   speaker = new Speaker((id, st, why) => {
     if (st === "idle") speakSt.delete(id); else speakSt.set(id, st);
     if (st === "failed"){ toast(t('r.speak.err.' + (["novoice", "empty", "unsupported", "engine", "missing_key", "provider_rejected", "provider_busy", "provider_unavailable", "network", "busy", "not_ready", "tap_play"].includes(why) ? why : "engine")), 2600); setTimeout(() => { if (speakSt.get(id) === "failed"){ speakSt.delete(id); paintSpeak(); } }, 3000); }
@@ -3015,10 +2571,7 @@ export function init(ctx){
 
   // sheet
   el("apprDeny").addEventListener("click", () => { const p = apprLive(); if (p) apprPost(p, "deny"); });
-  el("cmdMore").addEventListener("click", toggleCmd);
-  el("cmdCopy").addEventListener("click", () => copyOut(cmdFull, t('r.appr.cmdCopied')));
   holdToApprove(el("apprAllow"), "allow");
-  document.addEventListener("keydown", apprHotkey, true);     // capture: before the text box's Enter-to-send
   holdToApprove(el("apprBatch"), "batch");
   el("qs").addEventListener("click", e => {
     const b = e.target.closest && e.target.closest(".opt");
@@ -3071,15 +2624,11 @@ export function init(ctx){
   pressable(el("orb"), () => setFz((fzAt + 1) % FZ_STEPS.length, true), () => setFz(0, true));
 
   el("omMore").addEventListener("click", () => setOm(!el("om").classList.contains("open")));
-  // P181: a double tap / double click on the source card's words = 「…」 / O (open ⇄ close here, never the full-screen reader);
-  // a long press still selects text, and a double click no longer selects a word first.
-  dblTap(el("omText"), rdTarget, () => setOm(!el("om").classList.contains("open")));
   el("pgPrev").addEventListener("click", () => goPage(-1));
   const latestCorner = () => { if (pageAt !== pages().length - 1 || unreadReply) toNewest(); };
   el("pgLatest").addEventListener("click", () => { if (unreadReply) latestCorner(); });
   historyDoubleTap(el("pgLatest"), latestCorner);
   historyDoubleTap(el("omFirst"), () => goEdge(false));
-  cornerLongPress(el("omFirst"), () => { const p = currentPage(); if (p && p.source && p.source.k === "phone") openRename(p.source); });   // P179
   el("pgNext").addEventListener("click", () => goPage(1));
   el("copyReply").addEventListener("click", copyReply);
   el("replyBtn").addEventListener("click", () => startReply(currentPage()));
@@ -3113,7 +2662,6 @@ export function init(ctx){
 
   el("speakBtn").addEventListener("click", speakTap);
   el("fwdBtn").addEventListener("click", forwardTap);
-  el("mailBtn").addEventListener("click", mailTap);
 
   // reader
   addEventListener("popstate", () => {
@@ -3147,16 +2695,13 @@ export function init(ctx){
     const tt = e.touches[0];
     if (tt.clientX < SWIPE_EDGE || tt.clientX > innerWidth - SWIPE_EDGE || hScrollable(e.target)){ sw = null; return; }
     sw = {x: tt.clientX, y: tt.clientY, t: performance.now(), mode: null, dx: 0, lx: tt.clientX, lt: performance.now(), v: 0};
-    if (nearSelection(tt.clientX, tt.clientY)){ sw.mode = "hold"; deck.dataset.swipe = "hold"; }   // dragging a selection handle
   }, {passive: true});
-  document.addEventListener("selectionchange", () => { if (sw && wordsSelection()) swipeVeto(); });
   deck.addEventListener("touchmove", e => {
     if (!sw || e.touches.length !== 1) return;
     const tt = e.touches[0], dx = tt.clientX - sw.x, dy = tt.clientY - sw.y;
     if (sw.mode === null){
       if (Math.abs(dx) + Math.abs(dy) < SWIPE_MIN_MOVE) return;
-      sw.mode = performance.now() - sw.t > SWIPE_HOLD_MS ? "hold"
-        : Math.abs(dy) <= Math.abs(dx) * Math.tan(SWIPE_DEG * Math.PI / 180) ? "page" : "scroll";
+      sw.mode = Math.abs(dy) <= Math.abs(dx) * Math.tan(SWIPE_DEG * Math.PI / 180) ? "page" : "scroll";
       deck.dataset.swipe = sw.mode;
     }
     if (sw.mode !== "page") return;
@@ -3203,7 +2748,6 @@ export function init(ctx){
     const files = clipFiles(cd);
     if (files.length){
       if (!text) e.preventDefault();
-      files.forEach(f => shotclip.seen(f));
       takeFiles(files.map((f, i) => pastedName(f, i, files.length)), 'r.verb2.paste', "paste");
     }
     if (!text) return;
@@ -3247,32 +2791,11 @@ export function init(ctx){
   // pickers + camera
   const PICKERS = {tDoc: "fDoc", tPhoto: "fPhoto", tCamera: "fCamera"};
   for (const [btn, inp] of Object.entries(PICKERS)){
-    el(btn).addEventListener("click", e => {
-      if (btn === "tCamera" && camHeld) { camHeld = false; e.preventDefault(); return; }   // P190: that was a hold (= scan)
+    el(btn).addEventListener("click", () => {
       if (btn === "tCamera" && isDesktop()) return openCam();
       el(inp).click();
     });
   }
-  // P190: the camera button held = scan a QR code (tap = photo, as before). Runs on release (a user gesture); a move off the
-  // button cancels. No fifth button in the tool row.
-  let camHold = 0, camHeld = false;
-  const camBtn = el("tCamera");
-  camBtn.addEventListener("pointerdown", e => {
-    if (e.button !== 0) return;
-    camHeld = false; clearTimeout(camHold);
-    camHold = setTimeout(() => { camHold = 0; camHeld = true; camBtn.dataset.held = "1"; try { navigator.vibrate?.(12); } catch { /* */ } }, CAM_HOLD_MS);
-  });
-  const camEnd = (fire) => () => {
-    clearTimeout(camHold); camHold = 0;
-    const was = camBtn.dataset.held === "1";
-    delete camBtn.dataset.held;
-    if (was && fire && C?.scan) C.scan();
-    if (!fire) camHeld = false;
-  };
-  camBtn.addEventListener("pointerup", camEnd(true));
-  camBtn.addEventListener("pointercancel", camEnd(false));
-  camBtn.addEventListener("pointerleave", camEnd(false));
-  camBtn.addEventListener("contextmenu", e => e.preventDefault());
   el("camSnap").addEventListener("click", () => {
     const v = el("camVideo"), c = el("camShot");
     c.width = v.videoWidth || 1280; c.height = v.videoHeight || 720;
@@ -3307,23 +2830,17 @@ export function init(ctx){
     e.stopPropagation(); menu.hidden = !menu.hidden;
     if (!menu.hidden){ closeSug(); renderMenu(); loadMenu(); }
   });
-  document.addEventListener("click", e => { if (!menu.hidden && !(e.target.closest && e.target.closest("#menu, #keys, #silent"))) closeMenu(); });
-  // P181 long presses: ≡ → 「定制命令」, file → clipboard text, photo → clipboard image (camera: nothing for now)
-  longPress(el("slashBtn"), () => { closeMenu(); sayPreset("cmds"); });
-  longPress(el("tDoc"), pasteClipText, {at: "release"});
-  longPress(el("tPhoto"), pasteClipImage, {at: "release"});
+  document.addEventListener("click", e => { if (!menu.hidden && !(e.target.closest && e.target.closest("#menu"))) closeMenu(); });
   menu.addEventListener("click", async e => {
     const b = e.target.closest && e.target.closest("button");
     if (!b) return;
     e.stopPropagation();
-    if (b.id === "menuClose"){ closeMenu(); return; }
     if (b.id === "modelsEntry"){ closeMenu(); C.models?.(); return; }
     if (b.id === "silentEntry"){ openSilent(); return; }
     if (b.id === "keysEntry"){ openKeys(); return; }
     if (b.id === "appEntry"){ closeMenu(); location.href = / AgentJApp\//.test(navigator.userAgent) ? "agentj-app://status" : "jarvis-app://status"; return; }
     if (b.id === "clipEntry"){ closeMenu(); pasteClipImages(); return; }
     if (b.dataset.run){ closeMenu(); if (await runCmd(b.dataset.run)) { toNewest(); toast(t('r.run.sent', {cmd: "/" + b.dataset.run}), 1600); } return; }
-    if (b.dataset.prompt){ closeMenu(); sayPreset(b.dataset.prompt); return; }
     if (b.dataset.estop){ closeMenu(); C.estop(b.dataset.estop === "stop"); return; }
     if (b.dataset.slash){ closeMenu(); insertSlash(b.dataset.slash); }
   });
@@ -3363,42 +2880,29 @@ export function init(ctx){
     if (ptt && ptt.pend){ pttLock(ptt); return; }
     if (ptt && ptt.locked && ptt.id === null){
       try{ mic.setPointerCapture(e.pointerId); }catch(_){}
-      ptt.id = e.pointerId; ptt.x0 = e.clientX; ptt.y0 = e.clientY; ptt.touch = e.pointerType !== "mouse"; return;
+      ptt.id = e.pointerId; ptt.y0 = e.clientY; return;
     }
     if (ptt || performance.now() - lockEndAt < LOCK_REARM_MS) return;
     try{ mic.setPointerCapture(e.pointerId); }catch(_){}
-    const second = performance.now() - lastTapUp <= DTAP_MS;   // the first tap's take already ended (blur, a failed mic): lock anyway
     pttStart(e.pointerId, e.clientY);
-    if (ptt){ ptt.x0 = e.clientX; ptt.touch = e.pointerType !== "mouse"; if (second) pttLock(ptt); }
   });
   mic.addEventListener("pointermove", e => {
     if (!ptt || e.pointerId !== ptt.id) return;
-    const c = cancelZone(mic.getBoundingClientRect(), ptt.x0, ptt.y0, e.clientX, e.clientY, ptt.touch, ptt.cancel);
+    const c = ptt.y0 - e.clientY > PTT_CANCEL_PX;
     if (c !== ptt.cancel){ ptt.cancel = c; pttUI(ptt); try{ if (navigator.vibrate) navigator.vibrate(12); }catch(_){} }
   });
-  // The end of a press, from whichever event WebKit / Chromium delivers first; the rest find ptt.id already cleared.
-  const shortTap = p => !p.locked && !p.cancel && typeof p.id === "number" && performance.now() - p.t0 < PTT_MIN_MS;
-  const pressEnd = (how, e) => {
-    if (!ptt) return;
-    if (how === "touchend" ? typeof ptt.id !== "number" || e.touches.length : e.pointerId !== ptt.id) return;
-    if (shortTap(ptt)){ lastTapUp = performance.now(); pttTap(ptt); return; }
-    if (ptt.locked){
-      if (how === "pointerup" || how === "touchend") pttEnd(ptt, "release");
-      else { ptt.id = null; ptt.cancel = false; pttUI(ptt); }
-      return;
-    }
-    pttEnd(ptt, how === "pointerup" || how === "touchend" ? "release" : "cancel");
-  };
-  mic.addEventListener("pointerup", e => pressEnd("pointerup", e));
-  mic.addEventListener("pointercancel", e => pressEnd("pointercancel", e));
-  // a capture lost before its pointerup (WebKit may order them so): give the pointerup 80 ms to arrive before ending the take
-  mic.addEventListener("lostpointercapture", e => {
-    const p = ptt, id = e.pointerId;
-    if (!p || id !== p.id) return;
-    if (shortTap(p)){ pressEnd("lostpointercapture", e); return; }
-    setTimeout(() => { if (ptt === p && p.id === id) pressEnd("lostpointercapture", e); }, 80);
+  mic.addEventListener("pointerup", e => {
+    if (!ptt || e.pointerId !== ptt.id) return;
+    if (!ptt.locked && !ptt.cancel && typeof ptt.id === "number" && performance.now() - ptt.t0 < PTT_MIN_MS) pttTap(ptt);
+    else pttEnd(ptt, "release");
   });
-  mic.addEventListener("touchend", e => pressEnd("touchend", e));
+  for (const ev of ["pointercancel", "lostpointercapture"]){
+    mic.addEventListener(ev, e => {
+      if (!ptt || e.pointerId !== ptt.id) return;
+      if (ptt.locked){ ptt.id = null; ptt.cancel = false; pttUI(ptt); return; }
+      pttEnd(ptt, "cancel");
+    });
+  }
   mic.addEventListener("contextmenu", e => e.preventDefault());
   mic.addEventListener("selectstart", e => e.preventDefault());
   mic.addEventListener("dblclick", e => e.preventDefault());
@@ -3412,21 +2916,11 @@ export function init(ctx){
     if ((e.key === " " || e.key === "Enter") && ptt && ptt.id === "key"){ e.preventDefault(); pttEnd(ptt, "release"); }
   });
   mic.addEventListener("blur", () => { if (ptt && ptt.id === "key") pttEnd(ptt, "cancel"); });
-  // P182: a locked take keeps going when the page is hidden (another tab / app; a desktop screen lock) — where the system
-  // takes the microphone away (iOS, a locked phone) the watch ends it as an interruption on return, what was recorded kept.
-  // Going hidden flushes the newest chunk to the phone's store; going away for good (pagehide) ends it the same way.
   document.addEventListener("visibilitychange", () => {
-    if (!ptt) return;
-    if (document.visibilityState !== "visible"){
-      if (!ptt.locked && !ptt.seg) pttEnd(ptt, "cancel");
-      else try{ if (ptt.rec && ptt.rec.state === "recording") ptt.rec.requestData(); }catch(_){}
-      return;
-    }
-    if (ptt.locked) wakeOn(ptt);
-    pttWatch(ptt);
+    if (document.visibilityState !== "visible" && ptt) pttEnd(ptt, ptt.locked ? "release" : "cancel");
   });
-  window.addEventListener("blur", () => { if (ptt && !ptt.locked && !ptt.pend && !ptt.seg) pttEnd(ptt, "cancel"); });   // P181: not between the two taps; P182: not mid-take
-  window.addEventListener("pagehide", () => { if (ptt) pttEnd(ptt, ptt.locked || ptt.seg ? "release" : "cancel", true); });
+  window.addEventListener("blur", () => { if (ptt && !ptt.locked) pttEnd(ptt, "cancel"); });
+  window.addEventListener("pagehide", () => { if (ptt) pttEnd(ptt, "cancel"); });
 
   // native shell hooks (relay's window.relayNative, same four methods)
   window.relayNative = Object.freeze({
@@ -3456,7 +2950,6 @@ export function init(ctx){
 
   // send, clear, keys
   el("send").addEventListener("click", () => { unlockWhoosh(); say(); });
-  sendvol.attach(el("send"), input);
   el("sayCancel").addEventListener("click", e => { e.stopPropagation(); cancelSay(); });
   const clr = el("clr");
   for (const ev of ["pointerdown", "mousedown"]) clr.addEventListener(ev, e => {
@@ -3509,11 +3002,6 @@ export function init(ctx){
       }
       escAt = now;
       return;
-    }
-    // P188: ⌘K anywhere / Ctrl+K outside the field (in the field Ctrl+K stays readline's 删到行尾) opens 搜索聊天记录; again = close.
-    if ((e.metaKey || (e.ctrlKey && tg !== input)) && !e.altKey && !e.shiftKey && (e.key === "k" || e.key === "K" || e.code === "KeyK")){
-      if (dialogOpen() && !search.isOpen()) return;
-      e.preventDefault(); search.toggle(); return;
     }
     // F13: ⌘, (mac) / Ctrl+, opens Settings from anywhere on the chat screen, the field and the reader included.
     if ((e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey && (e.key === "," || e.code === "Comma")){
@@ -3568,17 +3056,6 @@ export function init(ctx){
       e.preventDefault(); closeMenu();
       input.focus();
       input.setSelectionRange(input.value.length, input.value.length);
-      return;
-    }
-    // P154 追加 8: "/" outside the field = into the field with the "/" typed at the end of the draft — the same input event
-    // as typing it there, so an empty draft opens the slash-command menu. Not while a dialog / Settings is open, not from
-    // another field (both returned above), never on a held key.
-    if (e.key === "/" && !e.repeat && !e.isComposing){
-      e.preventDefault(); closeMenu();
-      input.focus();
-      const n = input.value.length;
-      input.setRangeText("/", n, n, "end");
-      input.dispatchEvent(new InputEvent("input", {inputType: "insertText", data: "/", bubbles: true}));
     }
   });
   document.addEventListener("keyup", e => {
@@ -3612,11 +3089,11 @@ export function init(ctx){
   paintTray();
 }
 /** Called when the session becomes ready again (a new host turn source, menu). */
-export function onReady(){ refreshNewest(); paintPlaceholder(); refreshSend(); loadMenu(); paintActs(); renderMenu(); setTimeout(() => recRecover().catch(() => {}), 800); }
+export function onReady(){ refreshNewest(); paintPlaceholder(); refreshSend(); loadMenu(); paintActs(); renderMenu(); }
 export function onEstop(){ paintPlaceholder(); renderMenu(); refreshSend(); }
 export function rerender(){ if (cur) render(cur); else showPage(); }
 /** For the screens test: internal state worth asserting. */
-export function debug(){ return {search: search.debug(), pageAt, follow, pages: pages().length, total: totalPages(), atts: atts.map(a => ({st: a.st, name: a.name, id: a.id || null, origin: a.origin})), queued: queued.length, asrBusy, hist: hist.turns.map(x => x.id), menuItems: menuItems.map(x => x[0]), ptt: ptt ? {locked: ptt.locked, cancel: ptt.cancel} : null, lockCount, histMem: histMem.slice(), killBuf}; }
+export function debug(){ return {pageAt, follow, pages: pages().length, total: totalPages(), atts: atts.map(a => ({st: a.st, name: a.name, id: a.id || null, origin: a.origin})), queued: queued.length, asrBusy, hist: hist.turns.map(x => x.id), menuItems: menuItems.map(x => x[0]), ptt: ptt ? {locked: ptt.locked, cancel: ptt.cancel} : null, histMem: histMem.slice(), killBuf}; }
 
 
 let userPreferences={};

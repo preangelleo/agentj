@@ -51,7 +51,7 @@ function wizard(){selected=null;const main=el('bots-main');main.replaceChildren(
   };render();
 }
 function ownFields(main,c){
-  const choice=mk('select','aj-select');choice.setAttribute('aria-label',copy('模型计费通道','Model billing channel'));
+  const choice=mk('select');choice.setAttribute('aria-label',copy('模型计费通道','Model billing channel'));
   for(const [v,zh,en] of [['main','用主 Agent 套餐','Use main Agent plan'],['own','主人自带模型 key','Owner’s model key'],['profile','已有服务商档案','Existing provider profile']]){const o=mk('option','',copy(zh,en));o.value=v;choice.append(o);}choice.value=c.provider.source;main.append(choice);
   const profile=field(main,copy('已有档案名称','Existing profile name'),c.provider.id||''),url=field(main,copy('模型 API 地址（OpenAI 兼容 / OpenRouter）','Model API URL (OpenAI compatible / OpenRouter)'),c.own_model?.base_url||'https://openrouter.ai/api/v1'),model=field(main,copy('模型名称','Model name'),c.own_model?.model||''),limit=field(main,copy('自带 key 每日模型 token 限额','Own-key daily model token limit'),String(c.own_model?.daily_tokens??100000),'number');
   const update=()=>{profile.parentElement.hidden=choice.value!=='profile';for(const f of [url,model,limit])f.parentElement.hidden=choice.value!=='own';};choice.addEventListener('change',update);update();

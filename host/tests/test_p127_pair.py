@@ -3,7 +3,6 @@
 Leo 10-10: a bound seat still had `agentj pair --link` force an approval passphrase, and the admin page only said
 "passphrase not set" at the very last step. Now: account-bound + online → the account-page passkey route, passphrase optional;
 unbound → the passphrase is still required, and every surface says so before any QR exists.
-P185 (0.20.0): an unbound host (production relay) cannot pair at all — route `seat`, said before any QR exists.
 """
 import _hermetic  # noqa: F401,I001
 import argparse
@@ -46,16 +45,15 @@ class Base(unittest.TestCase):
 
 
 class Precheck(Base):
-    def test_unbound_is_refused_until_bound(self):
+    def test_unbound_without_passphrase_must_set_it(self):
         c = pairprep.precheck(self.st, relay_up=True)
-        self.assertEqual((c["route"], c["bound"], c["account"], c["passphrase_set"], c["seat"]), ("seat", False, False, False, "unbound"))
-        self.assertIn("席位", pairprep.message(c, "zh"))
-        self.assertIn("seat", pairprep.message(c, "en"))
-        self.assertIn(cloud.DEFAULT_APP, pairprep.message(c, "en"))
+        self.assertEqual((c["route"], c["bound"], c["account"], c["passphrase_set"]), ("set_passphrase", False, False, False))
+        self.assertIn("agentj passphrase set", pairprep.message(c, "zh"))
+        self.assertIn("agentj passphrase set", pairprep.message(c, "en"))
 
-    def test_unbound_with_passphrase_is_still_refused(self):
+    def test_unbound_with_passphrase_is_local(self):
         gate.set_passphrase(self.st, PASS)
-        self.assertEqual(pairprep.precheck(self.st, relay_up=True)["route"], "seat", "P185: a passphrase is no seat")
+        self.assertEqual(pairprep.precheck(self.st, relay_up=True)["route"], "passphrase")
 
     def test_bound_online_is_account_route_and_passphrase_optional(self):
         self.bind()
@@ -110,7 +108,7 @@ class FakeServe:
             f.flush()
         elif req.get("cmd") == "pair":
             for ev in ({"ev": "link", "link": "https://m.agentj.app/#p=TEST", "expires": int(time.time()) + 300},
-                       {"ev": "pending", "name": "Phone", "device": "d" * 16, "limit": 10, "deadline_in": 120}):
+                       {"ev": "pending", "name": "Phone", "device": "d" * 16, "limit": 5, "deadline_in": 120}):
                 f.write(json.dumps(ev).encode() + b"\n")
                 f.flush()
             c.settimeout(0.6)
@@ -161,14 +159,14 @@ class Terminal(Base):
         self.assertIn("✓ 已批准", out)
         self.assertEqual(fs.sent, [], "with no passphrase the terminal never asks for / sends a code: the account page approves")
 
-    def test_unbound_is_refused_before_any_link(self):
+    def test_unbound_still_needs_the_passphrase_before_any_link(self):
         fs = FakeServe(self.st)
         try:
             code, out, err = self.run_pair()
         finally:
             fs.close()
         self.assertNotIn(code, (0, None))
-        self.assertIn("席位", str(code) + err)
+        self.assertIn("agentj passphrase set", str(code) + err)
         self.assertNotIn("#p=", out, "no link before the pre-check passes")
 
     def test_check_flag_prints_the_route_without_starting_a_pairing(self):
@@ -195,7 +193,7 @@ class Page(Base):
 
     def test_state_carries_the_precheck(self):
         s = self.admin().state()
-        self.assertEqual(s["pair_check"]["route"], "seat")
+        self.assertEqual(s["pair_check"]["route"], "set_passphrase")
         self.bind()
         s = self.admin().state()
         self.assertEqual((s["pair_check"]["route"], s["pair_check"]["account_url"]), ("account", cloud.app_url(self.st)))
@@ -203,11 +201,6 @@ class Page(Base):
     def test_start_refuses_before_a_qr_when_the_passphrase_is_missing(self):
         with patch.object(admin, "Pairing", side_effect=AssertionError("no pairing may start")):
             code, body = self.admin().pair_start()
-        self.assertEqual((code, body["error"]), (402, "seat_required"), "P185: unbound → no QR")
-        self.assertIn("席位", body["message"])
-        self.bind()
-        with patch.object(admin, "Pairing", side_effect=AssertionError("no pairing may start")):
-            code, body = self.admin(relay_up=False).pair_start()
         self.assertEqual((code, body["error"]), (409, "passphrase_not_set"))
 
     def test_start_is_allowed_on_a_bound_online_host_without_a_passphrase(self):
@@ -241,7 +234,7 @@ class Page(Base):
 class Guides(Base):
     def test_onboarding_hint_follows_the_precheck(self):
         st, _, hint = onboarding.doctor_row(self.st)
-        self.assertIn("先绑定席位", hint, "P185 unbound: say the seat comes first")
+        self.assertIn("agentj passphrase set", hint, "unbound: say the passphrase comes first")
         self.bind()
         _, _, hint = onboarding.doctor_row(self.st)
         self.assertIn("添加遥控器", hint)

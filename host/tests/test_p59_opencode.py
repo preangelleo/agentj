@@ -71,8 +71,7 @@ class ProxyValues(unittest.TestCase):
     def test_only_harness_launches_read_the_proxy(self):
         users = sorted(p.name for p in AGENTJ.glob("*.py")
                        if p.name != "proxy.py" and re.search(r"from \.proxy import environment", p.read_text()))
-        # P71: friend turns · P175: doctor's OpenAI reach probe goes through the proxy the Codex launch would use
-        self.assertEqual(users, ["agent.py", "agent_codex.py", "agent_opencode.py", "doctor.py", "peer_session.py", "shared.py"])
+        self.assertEqual(users, ["agent.py", "agent_codex.py", "agent_opencode.py", "peer_session.py", "shared.py"])  # P71: friend turns
         for name in ("asr.py", "asr_worker.py", "voice.py", "update.py", "service.py"):
             self.assertNotIn("proxy.https", (AGENTJ / name).read_text(), name)
 

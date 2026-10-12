@@ -57,26 +57,20 @@ def compare(a: str, b: str) -> int | None:
     return (pa > pb) - (pa < pb)
 
 
-LOOPBACK = ("127.0.0.1", "localhost")
-
-
 def latest_url() -> str | None:
     u = getenv(URL_ENV) or LATEST_URL
     if u == "off":
         return None
     p = urllib.parse.urlparse(u)
-    if p.scheme == "https" or (p.scheme == "http" and p.hostname in LOOPBACK):
+    if p.scheme == "https" or (p.scheme == "http" and p.hostname in ("127.0.0.1", "localhost")):
         return u
     return None
 
 
 class SecureRedirect(urllib.request.HTTPRedirectHandler):
-    """Never follow a redirect to an unencrypted endpoint (refused before any request). Only HTTPS targets are followed;
-    the one exception is the local development origin (http://localhost → http://localhost, see latest_url)."""
+    """Never follow an HTTPS response to an unencrypted endpoint (before any request)."""
     def redirect_request(self, req, fp, code, msg, headers, newurl):
-        old, new = urllib.parse.urlparse(req.full_url), urllib.parse.urlparse(newurl)
-        local = old.scheme == new.scheme == "http" and old.hostname in LOOPBACK and new.hostname in LOOPBACK
-        if new.scheme != "https" and not local:
+        if urllib.parse.urlparse(req.full_url).scheme == "https" and urllib.parse.urlparse(newurl).scheme != "https":
             raise ValueError("insecure_update_redirect")
         return super().redirect_request(req, fp, code, msg, headers, newurl)
 
@@ -392,23 +386,13 @@ def read_pending(st, target: str) -> dict | None:
     return rec
 
 
-def _logged(st, ev, e) -> None:
-    """P192 (B18): an upgrade-path error that is swallowed still leaves its type in host.log (never the message)."""
-    try:
-        if st.exists():
-            st.log(ev, exception_type=type(e).__name__)
-    except Exception:  # noqa: BLE001 — logging never breaks the upgrade
-        pass
-
-
 def rollback_wheel(st):
     """The running version's wheel, verified and cached (auto_update's: published bytes or the RECORD-verified installed
     files). None when it cannot be prepared (a source checkout, an editable install): the upgrade then has no rollback."""
     try:
         from . import auto_update
         return auto_update.cached_wheel(st, __version__, require_signature=False)
-    except Exception as e:  # noqa: BLE001 — best effort: never blocks the upgrade itself (P192: but says why: rollback unavailable)
-        _logged(st, "rollback_wheel_failed", e)
+    except Exception:  # noqa: BLE001 — best effort: never blocks the upgrade itself
         return None
 
 
@@ -432,8 +416,7 @@ def roll_back(st, info: dict, wheel, frm: str, run) -> bool:
                 return False
         v = run(new_argv(info) + ["--version"], stdin=subprocess.DEVNULL, capture_output=True, text=True)
         return not v.returncode and frm in ((v.stdout or "") + " " + (v.stderr or "")).split()
-    except Exception as e:  # noqa: BLE001 — a failed rollback is reported, never raised
-        _logged(st, "rollback_failed", e)
+    except Exception:  # noqa: BLE001 — a failed rollback is reported, never raised
         return False
 
 
@@ -594,7 +577,7 @@ def _exit_of(reason: str) -> int:
 
 
 def authorized_apply(st, code: str | None, target: str | None, *, mail: dict | None = None, prefix: str | None = None,
-                     check_fn=None, auth_fn=None, run=None, svc_on=None, say=None, plan_fn=None, rollback_fn=None) -> dict:
+                     check_fn=None, auth_fn=None, run=None, svc_on=None, say=None, plan_fn=None) -> dict:
     """Contract C3. Order: local checks (code shape, read-only, identity, account link) → check() says newer and latest ==
     target → signed upgrade-auth → only on 200: install pinned to target (no y/N, no terminal), verify the new version,
     marker for serve's phone notice, service re-install. → {"result": "ok" | "refused" | "failed", "reason", "from", "to",
@@ -655,13 +638,6 @@ def authorized_apply(st, code: str | None, target: str | None, *, mail: dict | N
         plan = (plan_fn or verified_plan)(st, info, target)
     except Exception:
         return done("artifact_refused")
-    # P192 (B15): the same cached-wheel rollback as `apply` — this path used to leave a half-installed version behind
-    old = (rollback_fn or rollback_wheel)(st)
-    def back(reason, **kw):
-        ok = roll_back(st, info, old, __version__, run)
-        rb = "ok" if ok else "failed" if old else "unavailable"
-        st.log("upgrade_rollback", status=rb, reason=reason)
-        return done(reason, rollback=rb, **kw)
     for c in plan:
         say("$ " + shlex.join(c))
         try:
@@ -670,7 +646,7 @@ def authorized_apply(st, code: str | None, target: str | None, *, mail: dict | N
             rc = 127
         if rc != 0:
             st.log("upgrade_failed", status=str(rc))
-            return back("install_failed")
+            return done("install_failed")
     argv = new_argv(info)
     try:
         v = run(argv + ["--version"], stdin=subprocess.DEVNULL, capture_output=True, text=True)
@@ -679,7 +655,7 @@ def authorized_apply(st, code: str | None, target: str | None, *, mail: dict | N
         now_v = []
     if target not in now_v:
         st.log("upgrade_failed", status="version")
-        return back("not_upgraded")
+        return done("not_upgraded")
     st.log("upgrade_done", status=target)
     if svc_on is None:
         from . import service
@@ -690,8 +666,7 @@ def authorized_apply(st, code: str | None, target: str | None, *, mail: dict | N
     if not svc_on:
         write_marker(st, __version__, target)
         return {**out, "result": "ok", "reason": "upgraded", "service": "not_installed", "exit": 0}
-    write_pending(st, __version__, target, info, old)    # P142: the recovery worker writes the marker right before restart
-    #                                                       (P192: and has the old wheel to roll back to, as after `apply`)
+    write_pending(st, __version__, target, info, None)   # P142: the recovery worker writes the marker right before restart
     say(f"✓ 已安装 {target}，正在重启服务。如果这段对话在这里中断，Agent J 回来后会在手机上说「已升级到 {target}」。/ installed "
         f"{target}; restarting the service now — if this conversation stops here, the phone hears \"Upgraded to {target}\" once "
         "Agent J is back.")
@@ -700,7 +675,7 @@ def authorized_apply(st, code: str | None, target: str | None, *, mail: dict | N
     except OSError:
         rc = 127
     if rc != 0:
-        return back("service_failed", service="failed")
+        return {**out, "result": "failed", "reason": "service_failed", "service": "failed", "exit": 1}
     return {**out, "result": "ok", "reason": "upgraded", "service": "restart_scheduled", "exit": 0}
 
 
@@ -756,7 +731,6 @@ def apply(st, target=None, *, prefix=None, check_fn=None, run=None, say=None, sv
         if rc:
             return back("install_failed")
     argv = new_argv(info)
-    handed = False      # P192 (B15): until the service hand-off / marker, any failure rolls back (an OSError included)
     try:
         v = run(argv + ["--version"], stdin=subprocess.DEVNULL, capture_output=True, text=True)
         if v.returncode or target not in ((v.stdout or "") + " " + (v.stderr or "")).split():
@@ -772,7 +746,6 @@ def apply(st, target=None, *, prefix=None, check_fn=None, run=None, say=None, sv
             if st.exists():
                 write_marker(st, __version__, target)
             out["service"] = "not_installed"
-        handed = True
         health = run(argv + ["doctor", "--json"], stdin=subprocess.DEVNULL, capture_output=True, text=True)
         try:
             rows = json.loads(health.stdout)["checks"]
@@ -783,8 +756,6 @@ def apply(st, target=None, *, prefix=None, check_fn=None, run=None, say=None, sv
         if failed:
             return {**out, "result": "failed", "reason": "doctor_failed", "exit": 1}
     except OSError:
-        if not handed:
-            return back("self_check_failed", **({"service": "failed"} if svc_on else {}))
         return {**out, "result": "failed", "reason": "self_check_failed", "exit": 1}
     return {**out, "result": "ok", "reason": "upgraded", "exit": 0}
 

@@ -15,21 +15,7 @@ from .engine import UNAVAILABLE
 NAME='TELEGRAM_BOT_TOKEN'
 TURN_TIMEOUT=120
 MAX_PENDING=20
-SEGMENT=4096     # Telegram's sendMessage limit; a longer reply goes out in order, split at line breaks where possible
-MAX_SEGMENTS=8
 TOO_LONG="Message too long (maximum 2000 characters). Please send a shorter message. 消息太长（最多 2000 字），请缩短后再发。"
-
-def segments(text,size=SEGMENT,most=MAX_SEGMENTS):
-    """P193 (B11): never cut a reply silently. Split at the last paragraph / line / space break inside each window."""
-    out=[]
-    while text and len(out)<most:
-        if len(text)<=size:out.append(text);break
-        # the first kind of break (paragraph, line, word) found in the second half of the window wins
-        cut=next((c for c in (text.rfind(b,0,size) for b in ('\n\n','\n',' ')) if c>=size//2),size)
-        out.append(text[:cut].rstrip());text=text[cut:].lstrip()
-    else:
-        if text and out:out[-1]=out[-1][:size-1]+'…'   # past MAX_SEGMENTS the end is marked, never dropped unseen
-    return [x for x in out if x]
 
 def token(store,bid):
     try:value=secure_read(store.secrets(bid)/NAME,256).decode().strip()
@@ -66,9 +52,7 @@ class Channel:
         self.store.db.execute('INSERT INTO telegram_cursors VALUES(?,?,?) ON CONFLICT(bot) DO UPDATE SET token_hash=excluded.token_hash,offset=excluded.offset',(self.bid,self.digest,n))
     async def deliver(self,chat,result):
         if not self.enabled():return
-        for part in segments(result['text']):
-            if not self.enabled():return
-            await asyncio.to_thread(self.request,self.secret,'sendMessage',{'chat_id':chat,'text':part,'link_preview_options':{'is_disabled':True}})
+        await asyncio.to_thread(self.request,self.secret,'sendMessage',{'chat_id':chat,'text':result['text'][:4096],'link_preview_options':{'is_disabled':True}})
     async def handle(self,update):
         message=update.get('message',{})
         if not isinstance(message,dict):return

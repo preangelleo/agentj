@@ -101,7 +101,7 @@ class Artifacts(Nightly):
     def test_signature_and_hash_cache_tampering_rejected(self):
         body,digest,sig,keys=self.signed()
         def fetch(url,_):return (digest+'\n').encode() if url.endswith('.sha256') else sig.encode() if url.endswith('.minisig') else body
-        with patch.object(au.minisign,'keyring',lambda role,_k=keys:_k):
+        with patch.object(au.minisign,'TRUSTED_SIGNERS',keys):
             p=au.cached_wheel(self.st,'99.0.0a1',fetch=fetch)
             p.write_bytes(b'tampered')
             with self.assertRaises(ValueError):au.cached_wheel(self.st,'99.0.0a1',fetch=lambda url,n:b'tampered' if url.endswith('.whl') else fetch(url,n))
@@ -109,7 +109,7 @@ class Artifacts(Nightly):
     def test_forged_cache_receipt_cannot_replace_signature(self):
         body,digest,sig,keys=self.signed()
         def fetch(url,_):return (digest+'\n').encode() if url.endswith('.sha256') else sig.encode() if url.endswith('.minisig') else body
-        with patch.object(au.minisign,'keyring',lambda role,_k=keys:_k):
+        with patch.object(au.minisign,'TRUSTED_SIGNERS',keys):
             p=au.cached_wheel(self.st,'99.0.0a1',fetch=fetch)
             p.write_bytes(b'forged wheel')
             p.with_suffix('.verified.json').write_text(json.dumps({'sha256':hashlib.sha256(p.read_bytes()).hexdigest(),'signed':True}))
@@ -179,7 +179,7 @@ class Worker(Nightly):
             with zipfile.ZipFile(argv[-1]) as z:v=z.read('fixture-version').decode()
             self.installed.append(v)
             return Mock(returncode=1 if fail and v=='99.0.0a1' else 0)
-        with patch.object(au.minisign,'keyring',lambda role,_k=self.fixture_keys:_k),patch.object(update,'install_kind',return_value={'kind':'pip','where':self.tmp.name}),patch.object(update,'new_argv',return_value=['fixture-cli']):
+        with patch.object(au.minisign,'TRUSTED_SIGNERS',self.fixture_keys),patch.object(update,'install_kind',return_value={'kind':'pip','where':self.tmp.name}),patch.object(update,'new_argv',return_value=['fixture-cli']):
             return au.run(self.st,check_fn=lambda:{'status':'newer','latest':'99.0.0a1'},cache=lambda st,v,**kw:paths[v],runner=runner,restart=self.restarted.append)
     def test_full_install_verify_restart_and_persisted_result(self):
         r=self.run_worker();self.assertEqual(r['result'],'ok');self.assertEqual(self.installed,['99.0.0a1']);self.assertEqual(self.restarted,['99.0.0a1'])

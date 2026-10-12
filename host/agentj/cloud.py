@@ -43,7 +43,6 @@ CTX_SEAT_BIND = "agentjarvis-host-seat-bind-v1"   # seat setup §4: bind this ho
 CTX_SEAT_LEAVE = "agentjarvis-host-seat-leave-v1"   # review SS-02: take this seat-bound host out of its company
 CTX_UPGRADE_AUTH = "agentjarvis-host-upgrade-auth-v1"   # F12 / contract C2: spend an upgrade authorization code (update.py)
 CTX_PEER_CERT = "agentjarvis-host-peer-cert-v1"   # P71 (PROTOCOL §17.3): the Agent friends seat certificate for one mailbox
-CTX_RELAY_CERT = "agentjarvis-host-relay-cert-v1"   # P185 (PROTOCOL §2 seat certificate): the relay seat certificate for this host's channel
 # Agent plaza P2 (PROTOCOL §7 plaza routes; agentj/plaza.py): one context per route, so no signature is valid on two
 PLAZA_KINDS = ("search", "get", "mine", "post", "reply", "resolve", "report")
 CTX_PLAZA = {k: f"agentjarvis-host-plaza-{k}-v1" for k in PLAZA_KINDS}   # wire strings: never renamed
@@ -368,36 +367,15 @@ def report_devices(st, online) -> list[dict]:
     return devs[-MAX_DEVICES:]
 
 
-def _names_field(st, devs: list[dict]) -> dict:
-    """P179: `device_names` only when some remote is owner-named — older reports (and the vector) stay byte-identical."""
-    names = report_device_names(st, devs)
-    return {"device_names": names} if names else {}
-
-
-def report_device_names(st, devices: list[dict]) -> list[dict]:
-    """P179: which reported remotes the owner named — [{"id", "self"}], `self` = the device's own label (cleaned) or None.
-    Device-named remotes are not listed (their `name` already is the device's own label). Same ≤ 64 devices as `devices`."""
-    from .devnames import device_names
-    recs = st.devices()
-    out = []
-    for d in devices:
-        n = device_names(recs.get(d["id"]))
-        if n["named_by"] == "owner":
-            own = clean_label(n["self_name"]) if n["self_name"] else ""
-            out.append({"id": d["id"], "self": own or None})
-    return out
-
-
 def build_report(st, online, pending, *, seq: int, ts: int) -> dict:
     """Inner report body, key order as in §7 / the vector; A3.2 appends agent_name (§1 or null) and machine (≤ 64 or null);
     A1 (0.15) appends the owner's one language value and when it was last set on this host (ms; 0 = never set here)."""
     from . import preferences, notices
     lang, at = preferences.language_state(st)
-    devs = report_devices(st, online)
     return {"v": 1, "t": "report", "channel": channel_of(st), "ts": int(ts), "seq": int(seq), "agent": AGENT,
-            "devices": devs, "pending": norm_pending(pending), "agent_name": _clean_or_none(st.agent_name()),
+            "devices": report_devices(st, online), "pending": norm_pending(pending), "agent_name": _clean_or_none(st.agent_name()),
             "machine": machine_name() if st.report_machine() else None, "language": lang, "language_at": int(at), "harness": (st.agent_config() or {}).get("kind", "unknown"),
-            "notices_v": 1, "notice_receipts": notices.receipts(st), **_names_field(st, devs)}
+            "notices_v": 1, "notice_receipts": notices.receipts(st)}
 
 
 def parse_account_language(obj) -> dict | None:
@@ -421,11 +399,6 @@ def _report_envelope(st, inner: dict) -> dict:
     env = envelope(CTX_REPORT, inner, sk)
     while len(json.dumps(env, separators=(",", ":"))) > MAX_ENVELOPE and inner["devices"]:
         inner["devices"] = inner["devices"][1:]  # drop the oldest pairing until it fits
-        if "device_names" in inner:            # P179: names only for devices still in the report
-            kept = {d["id"] for d in inner["devices"]}
-            inner["device_names"] = [x for x in inner["device_names"] if x["id"] in kept]
-            if not inner["device_names"]:
-                del inner["device_names"]
         env = envelope(CTX_REPORT, inner, sk)
     return env
 
@@ -459,18 +432,13 @@ def report_post_json(url, payload):
     return post_json(url, payload, max_response=128 * 1024)
 
 
-_NO_NAMES: dict[str, float] = {}   # P179: API base → when a server refused `device_names` (this process; re-probed after a day)
-
-
 def send_report(st, online, pending, *, post: Callable = report_post_json, now: Callable = time.time) -> ReportResult:
     """One signed report (blocking; serve runs it off the event loop). A 409 replay is retried once with a bigger seq.
     F19 back-compat first retries without notice capability/receipts/harness, preserving F13 language.
     A1 back-compat: a ≤ 0.14 server refuses unknown inner keys with 400 bad_request (before its seq gate, so the seq is not
     spent there); a report carrying `language` / `language_at` that gets that answer is retried once at once without them
     (fresh, bigger seq). If that one is accepted, cloud.json remembers it (`no_language`) and later reports leave the keys out
-    until the marker is a day old, agentj's version changes or the API URL changes (a relink writes a fresh file).
-    P179: a server older than `device_names` refuses that key the same way: the report is retried at once without it
-    (before any other back-compat step), and this process leaves it out for that server for a day."""
+    until the marker is a day old, agentj's version changes or the API URL changes (a relink writes a fresh file)."""
     cloud = read_cloud(st)
     if not cloud:
         return ReportResult("unlinked")
@@ -483,16 +451,12 @@ def send_report(st, online, pending, *, post: Callable = report_post_json, now: 
     strip = _skip_language(cloud, base, int(now() * 1000))
     strip_notices = _skip_notices(cloud, base, int(now()*1000))
     replay_retry = probe_retry = False
-    strip_names = now() - _NO_NAMES.get(base, -1e18) < 86400
     notice_retry = False
     seq = None
     while True:
         t = now()
         seq = next_seq(last, t)
         inner = build_report(st, online, pending, seq=seq, ts=int(t))
-        names_sent = "device_names" in inner and not strip_names
-        if strip_names:
-            inner.pop("device_names", None)
         if strip_notices:
             for k in NOTICE_KEYS:
                 inner.pop(k, None)
@@ -525,12 +489,6 @@ def send_report(st, online, pending, *, post: Callable = report_post_json, now: 
         if status == 409 and err == "replay" and not replay_retry:
             replay_retry = True
             last = seq  # self-heal: next try uses max(last_seq + 1, now_ms)
-            continue
-        if status == 400 and err == "bad_request" and names_sent:
-            strip_names = True
-            _NO_NAMES[base] = now()
-            st.log("report_device_names", result="server_without_device_names")
-            last = seq
             continue
         if status == 400 and err == "bad_request" and not strip_notices:
             strip_notices = notice_retry = True
@@ -919,53 +877,6 @@ def peer_cert(st, mbox: str, *, post: Callable = post_json, now: Callable = time
     if status == 429:
         return PeerCertResult("rate_limited", status=status_class(status))
     if status >= 500:
-        return PeerCertResult("unreachable", status=status_class(status))
-    return PeerCertResult("fail", status=status_class(status) if err is None else err)
-
-
-def parse_relay_cert(obj: dict, channel: str, now: float) -> tuple[str, int] | None:
-    """A 200 answer {"cert","exp"}: the payload must name this channel and the same future expiry (the relay checks the
-    signature; the host does not hold the cloud's public key)."""
-    cert, exp = obj.get("cert"), _int(obj.get("exp"), 0, MAX_SEQ)
-    if not isinstance(cert, str) or not _CERT.fullmatch(cert) or exp is None or exp <= now:
-        return None
-    try:
-        p = json.loads(wire.unb64u(cert.split(".", 1)[0]))
-    except (ValueError, UnicodeDecodeError):
-        return None
-    if not isinstance(p, dict) or p.get("v") != 1 or p.get("ch") != channel or _int(p.get("exp"), 0, MAX_SEQ) != exp:
-        return None
-    return cert, exp
-
-
-def relay_cert(st, *, post: Callable = post_json, now: Callable = time.time) -> PeerCertResult:
-    """P185: one signed `/v1/host/relay/cert` (blocking) — a 72-hour relay seat certificate for this host's channel, or why
-    not: unlinked (no cloud.json) · not_bound (403) · payment_required (402 agent_suspended) · rate_limited · unreachable · fail."""
-    cloud = read_cloud(st)
-    if not cloud:
-        return PeerCertResult("unlinked")
-    try:
-        url = api_url(st, cloud) + "/v1/host/relay/cert"
-    except CloudError as e:
-        return PeerCertResult("fail", status=e.kind)
-    t = now()
-    channel = channel_of(st)
-    inner = {"v": 1, "t": "relay_cert", "channel": channel, "ts": int(t)}
-    try:
-        status, obj = post(url, envelope(CTX_RELAY_CERT, inner, st.signing_key()))
-    except CloudError as e:
-        return PeerCertResult("unreachable", status=e.kind)
-    err = parse_error(obj)
-    if status == 200:
-        got = parse_relay_cert(obj, channel, t)
-        return PeerCertResult("ok", got[0], got[1], "200") if got else PeerCertResult("fail", status="bad_response")
-    if status == 403 and err == "not_bound":
-        return PeerCertResult("not_bound", status=status_class(status))
-    if status == 402:
-        return PeerCertResult("payment_required", status=status_class(status))
-    if status == 429:
-        return PeerCertResult("rate_limited", status=status_class(status))
-    if status >= 500 or status == 404:      # 404: a Dashboard older than this route — not a verdict about the seat
         return PeerCertResult("unreachable", status=status_class(status))
     return PeerCertResult("fail", status=status_class(status) if err is None else err)
 

@@ -75,7 +75,6 @@ SOCK_NAME = "elevate.sock"
 ENV = "AGENTJ_ELEVATE_SOCK"
 PHONE_TYPES = ("elev_answer", "secret_out_open", "secret_out_decline")   # the last two: F32 (secret_out.py)
 PHONE_TYPES += ("login_qr_check", "login_qr_cancel", "login_qr_tg", "login_qr_refresh")   # P114: browser_login.py
-PHONE_TYPES += ("ct_list", "ct_save", "ct_card_answer", "mail_fwd")   # P184: contacts_serve.py (address book, forward to e-mail)
 RESULTS_NAME = "secret-results.json"
 RESULTS_KEEP = 100
 NAME_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]{0,127}")
@@ -441,15 +440,6 @@ def fingerprint(value: bytearray) -> str:
     return "sha256:" + hashlib.sha256(value).hexdigest()[:8]
 
 
-def _key_hint(card: dict, value: bytearray) -> dict:
-    """P163: a key whose check failed and that is clearly shorter than its provider issues → {"key_hint": "short"}
-    ("may be incomplete"). Only for a card with a live check (an API key), from the length alone."""
-    from . import keyhint
-    if card.get("verify_url") and keyhint.looks_short(len(value), card.get("name"), card.get("verify_url"), value):
-        return {"key_hint": "short"}
-    return {}
-
-
 class _NoRedirect(urllib.request.HTTPRedirectHandler):
     def redirect_request(self, *a, **k):  # the key must not follow a redirect to another host
         return None
@@ -606,8 +596,6 @@ class Elevator:
         self.out = Outbox(self)      # F32: outbound pickup cards (`agentj secret send`)
         from .browser_login import LoginCards
         self.login = LoginCards(self)  # P114: login QR cards (`agentj browser login`)
-        from .contacts_serve import ContactService
-        self.contacts = ContactService(self)  # P184: address book, contact cards, 「转发到邮箱」, `agentj mail send`
 
     @property
     def sock_path(self) -> pathlib.Path:
@@ -636,7 +624,6 @@ class Elevator:
         self.cancel_all("gone")
         self.out.end_all("gone")
         self.login.end_all("gone")
-        self.contacts.end_all("gone")
         if self.server:
             self.server.close()
             with contextlib.suppress(FileNotFoundError):
@@ -688,7 +675,6 @@ class Elevator:
                 await self.host.send_app(s, self.card_msg(c, s))
         await self.out.on_ready(s)
         await self.login.on_ready(s)
-        await self.contacts.on_ready(s)
 
     def _finish(self, c: dict, result: dict) -> None:
         if not c["fut"].done():
@@ -701,7 +687,6 @@ class Elevator:
         if result == "stopped":                    # Stop everything also voids pickup cards (and wipes their values)
             self.out.end_all(result)
             self.login.end_all(result)
-            self.contacts.end_all(result)
 
     async def request(self, card: dict, gone: asyncio.Future | None = None, on_card=None) -> dict:
         """Show a card, wait for a decision, act; → the result for the Agent (never the value). `on_card(c)` (async) runs
@@ -731,11 +716,8 @@ class Elevator:
             remember(self.st, c["id"], {"kind": "secret", "name": c["name"], "result": "pending",
                                         "until": int(time.time() + TTL["secret"])})
         if on_card is not None:
-            try:
+            with contextlib.suppress(Exception):
                 await on_card(c)
-            except Exception as e:  # noqa: BLE001 — P192 (B18): the card stays; its delivery hook failing is logged
-                from . import bg
-                bg.swallowed(self.st.log, "elev_card_hook_failed", e, why=c["kind"], every=0)
         self.host.push_notify("ask")
         cancelled=False
         try:
@@ -778,18 +760,14 @@ class Elevator:
             done_msg["code"] = res["code"]
         if c["kind"] == "secret" and res.get("receipt"):
             done_msg["verify"] = res["receipt"]["verify"]
-        if c["kind"] == "secret" and (res.get("key_hint") or (res.get("receipt") or {}).get("key_hint")):
-            done_msg["key_hint"] = "short"          # P163: one word from the length, never the key
         await self._to_phones(lambda s: done_msg)
         self.st.log("elev_done", id=c["id"], kind=c["kind"], result=res["result"])
         if c["kind"] == "secret":
             remember(self.st, c["id"], {"result": res["result"], "until": None,
-                                        **{k: res[k] for k in ("why", "detail", "receipt", "key_hint") if res.get(k) is not None}})
+                                        **{k: res[k] for k in ("why", "detail", "receipt") if res.get(k) is not None}})
         res["id"] = c["id"]
         if cancelled:raise asyncio.CancelledError
         return res
-
-    contacts_types = ("ct_list", "ct_save", "ct_card_answer", "mail_fwd")
 
     async def on_phone(self, s, obj: dict) -> None:
         if obj.get("t") in ("secret_out_open", "secret_out_decline"):   # F32
@@ -798,11 +776,6 @@ class Elevator:
             task = asyncio.create_task(self.login.on_phone(s, obj))          # never hold the relay receive loop (P99 B1)
             self.login.bg.add(task)
             task.add_done_callback(self.login.bg.discard)
-            return
-        if obj.get("t") in self.contacts_types:                              # P184: SMTP / file reads take seconds
-            task = asyncio.create_task(self.contacts.on_phone(s, obj))
-            self.contacts.bg.add(task)
-            task.add_done_callback(self.contacts.bg.discard)
             return
         rid = obj.get("id")
         c = self.cards.get(rid) if isinstance(rid, str) and _ID.fullmatch(rid) else None
@@ -921,30 +894,14 @@ class Elevator:
         self.st.passkey_count(s.device, pk["id"], count)
         return None
 
-    def _admin_open(self) -> dict:
-        from .cli import spawn_admin_open
-        old = getattr(self, "_admin_page", None)
-        if old is not None and old.poll() is None:
-            old.terminate()
-            with contextlib.suppress(Exception):
-                old.wait(5)
-        ev, self._admin_page = spawn_admin_open(0)
-        self.st.log("admin_open", trigger="agent", result=ev["ev"])
-        return {"ev": ev["ev"], "port": ev.get("port")}
-
     def _save(self, c: dict, value: bytearray) -> dict:
         if len(value) > MAX_VALUE:
             return {"result": "failed", "why": "value"}
-        if callable(c.get("sink")):     # P170: a host-internal card (the mail password) — the host checks and stores it itself
-            try:
-                return c["sink"](value)
-            except Exception:   # noqa: BLE001 — a fixed word only, never the value or a server reply
-                return {"result": "failed", "why": "io"}
         verified = None
         if c.get('verify_before_write'):
             verified = verify_secret(c, value)
             if verified.get('verify') != 'ok':
-                return {'result': 'failed', 'why': 'verify', 'detail': verified.get('detail', ''), **_key_hint(c, value)}
+                return {'result': 'failed', 'why': 'verify', 'detail': verified.get('detail', '')}
         try:
             write_secret(c["dest_spec"], value)
         except Refused as e:
@@ -953,8 +910,6 @@ class Elevator:
             return {"result": "failed", "why": "io"}
         receipt = {"name": c["name"], "dest": c["dest"], "length": len(value), "fingerprint": fingerprint(value)}
         receipt.update(verified or verify_secret(c, value))
-        if receipt.get("verify") == "fail":
-            receipt.update(_key_hint(c, value))
         return {"result": "saved", "receipt": receipt}
 
     async def result_of(self, req: dict) -> dict:
@@ -1068,15 +1023,6 @@ class Elevator:
                 await w.drain()
                 w.close()
                 return
-            if isinstance(req, dict) and req.get("t") == "admin_open":
-                # P163: `agentj admin --open` from inside the Agent fence (state hidden, own pid namespace): serve opens
-                # the local admin page in the owner's default browser. The one-time link stays in the page process;
-                # only {"ev","port"} comes back. One page at a time: a new one replaces the previous one.
-                res = await asyncio.to_thread(self._admin_open)
-                w.write((json.dumps(res, ensure_ascii=False) + "\n").encode())
-                await w.drain()
-                w.close()
-                return
             if isinstance(req,dict) and req.get('t')=='provider_profile':
                 from . import provider_profiles
                 # Same-user Agent-facing socket; fixed native provider targets only.
@@ -1085,19 +1031,7 @@ class Elevator:
                 self.st.log('provider_profile',result='ok' if result.get('ok') else 'failed')
                 w.write((json.dumps(result)+'\n').encode());await w.drain();w.close()
                 return
-            if isinstance(req, dict) and req.get("t") in ("contacts", "mail_send"):
-                # P184: the address book lives outside the Agent fence; fixed operations. A contact card waits for the owner
-                # (early: the CLI prints CONTACT_CARD: <id> first); `mail_send` waits for the owner's approval card.
-                async def early(c):
-                    w.write((json.dumps({"t": "card", "id": c["id"], "kind": "contact", "ttl": 600}) + "\n").encode())
-                    await w.drain()
-                if req["t"] == "mail_send":
-                    res = await self.contacts.agent_send(req)
-                elif req.get("op") == "card":
-                    res = await self.contacts.card(req, early if req.get("early") is True else None)
-                else:
-                    res = await self.contacts.agent(req)
-            elif isinstance(req, dict) and req.get("t") == "secret_out":          # F32: a pickup card; answers at once
+            if isinstance(req, dict) and req.get("t") == "secret_out":          # F32: a pickup card; answers at once
                 res = await self.out.send(req)
             elif isinstance(req, dict) and req.get("t") == "browser_login":     # P114: a login QR card; answers at once
                 res = await self.login.request(req)
@@ -1256,9 +1190,6 @@ def _secret_report(res: dict, as_json: bool) -> int:
         print(f"SECRET_SAVED: {r['name']} → {r['dest']} · {r['length']} chars · {r['fingerprint']} · {v}")
     else:
         print(f"SECRET_RESULT: {res.get('result')} — {_say(res, 'secret')}", file=sys.stderr)
-    if not as_json and (res.get("key_hint") or (res.get("receipt") or {}).get("key_hint")) == "short":
-        from .keyhint import HINT
-        print(f"KEY_HINT: {HINT['zh']} / {HINT['en']}", file=sys.stderr)
     if res.get("result") == "pending":
         return EXIT_PENDING
     if res.get("result") != "saved":

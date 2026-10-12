@@ -58,12 +58,11 @@ def record(st, status, target, reason=None, *, external=False):
     return rec
 
 
-def launch_job(st, argv, purpose='recovery', *, restart=False, extra_env=None):
+def launch_job(st, argv, purpose='recovery', *, restart=False):
     """Ask a manager to spawn; never fork the worker in the host's cgroup/job."""
     label = 'net.agentj.' + purpose + '.' + uuid.uuid4().hex
     env, _ = service.service_env()
     env['AGENTJ_STATE_DIR'] = str(st.root)
-    env.update(extra_env or {})
     env['HOME'] = os.path.expanduser('~')
     env['AGENTJ_JOB_LABEL'] = label
     for key in ('XDG_CONFIG_HOME', 'XDG_DATA_HOME', 'XDG_STATE_HOME', 'XDG_CACHE_HOME', 'XDG_RUNTIME_DIR'):
@@ -75,17 +74,12 @@ def launch_job(st, argv, purpose='recovery', *, restart=False, extra_env=None):
         cmd = ['systemd-run', '--user', '--collect', '--quiet', '--unit=' + label]
         if restart:
             cmd += ['--property=Restart=on-failure', '--property=RestartSec=5']
-        # P191 B26: names only on the command line (`--setenv=NAME` copies the value from systemd-run's own environment,
-        # systemd-run(1)); values never appear in /proc/<pid>/cmdline or ps. They are non-secret anyway (paths, label,
-        # credential-free proxies: service.service_env), and the busctl fallback below must still pass them as arguments.
-        cmd += ['--setenv=' + k for k in env]
-        r = subprocess.run(cmd + argv, capture_output=True, timeout=15, env={**os.environ, **env})
+        cmd += ['--setenv=' + k + '=' + v for k, v in env.items()]
+        r = subprocess.run(cmd + argv, capture_output=True, timeout=15)
         if r.returncode:
             # F14's PID namespace cannot authenticate on systemd's private socket;
             # the user's D-Bus broker can authenticate the same uid correctly.
-            # `--` ends busctl's own options: the job's argv (`--recovery-worker`, `--worker --job …`) follows as plain
-            # arguments; without it busctl took them for its own flags and refused (P155, found in a real fence on QA-J)
-            bus = ['busctl', '--user', '--', 'call', 'org.freedesktop.systemd1',
+            bus = ['busctl', '--user', 'call', 'org.freedesktop.systemd1',
                    '/org/freedesktop/systemd1', 'org.freedesktop.systemd1.Manager',
                    'StartTransientUnit', 'ssa(sv)a(sa(sv))', label + '.service', 'replace', str(7 if restart else 5),
                    'Description', 's', 'Agent J service recovery',
@@ -202,54 +196,12 @@ def run(st, target, *, timeout=45, install=None, status=None, ready=None, runner
         (st.root / update.PENDING).unlink(missing_ok=True)
         record(st, 'ok', target)
         (st.root / NOTICE).unlink(missing_ok=True)
-        restart_siblings(st, target)
         return 0
     except Exception as e:
         record(st, 'failed', target, e.reason if isinstance(e, service.ServiceError) else type(e).__name__)
         return 1
     finally:
         cleanup_job(st)
-
-
-SIBLING_ENV = 'AGENTJ_RECOVERY_SIBLING'
-
-
-def restart_siblings(st, target, *, launch=None, active=None):
-    """P180: every instance runs the same installed program, so after one instance's service is back on `target` the other
-    instances' running services restart on it too — each through its own recovery job (it waits for its own idle serve).
-    A job started for a sibling does not fan out again. → the instance numbers a job was launched for."""
-    from . import instance
-    if os.environ.get(SIBLING_ENV):
-        return []
-    me, out = instance.current(), []
-    for n in instance.numbers():
-        if n == me:
-            continue
-        try:
-            env = dict(os.environ)
-            instance.apply(n, env)
-            if not (active or _sibling_active)(n, env):
-                continue
-            from .state import State
-            (launch or launch_job)(State(instance.state_root(n)),
-                                   service.agentj_argv() + ['--instance', str(n), 'service', 'install', '--recovery-worker', target],
-                                   extra_env={SIBLING_ENV: '1'})
-            out.append(n)
-        except Exception:  # noqa: BLE001 — one sibling's failure never fails this instance's upgrade
-            st.log('sibling_restart', status='failed', id=str(n))
-    if out:
-        st.log('sibling_restart', status='launched', count=len(out))
-    return out
-
-
-def _sibling_active(n, env):
-    old = dict(os.environ)
-    try:
-        os.environ.clear(); os.environ.update(env)
-        s = service.status()
-    finally:
-        os.environ.clear(); os.environ.update(old)
-    return s.get('installed') and s.get('active') == 'active'
 
 
 def failure(st):

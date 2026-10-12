@@ -296,27 +296,6 @@ try {
       } finally { await p.dispose(); }
     });
   }
-  // P163: a key whose live check failed and that is clearly shorter than its provider issues → the toast adds "may be
-  // incomplete" (the host sends one word, key_hint: "short"; never the key). Without the hint the toast stays as before.
-  for (const lang of ['zh', 'en']) {
-    await C(`p163-key-short-${lang}`, async () => {
-      const p = await paired(lang);
-      try {
-        for (const hint of [true, false]) {
-          const card = await hostCard('secret', { name: 'OPENAI_API_KEY', purpose: 'p', dest: '/tmp/k', verify: 'GET https://api.openai.com/v1/models' });
-          await fake.send(card.m);
-          await waitFor(p, `!!document.getElementById('elev') && !document.getElementById('elev').hidden`);
-          await fake.send({ t: 'elev_done', id: card.m.id, result: 'failed', ...(hint ? { key_hint: 'short' } : {}) });
-          await waitFor(p, `document.getElementById('elev').hidden && document.getElementById('toast').classList.contains('on')`);
-          const text = await ev(p, `document.getElementById('toast').textContent`);
-          const re = lang === 'zh' ? /可能没复制完整/ : /may not have been copied completely/;
-          if (hint) assert.match(text, re); else assert.doesNotMatch(text, re);
-          await ev(p, `document.getElementById('toast').classList.remove('on')`);
-        }
-        assert.equal(p.problems.length, 0, p.problems.join('\n'));
-      } finally { await p.dispose(); }
-    });
-  }
 } finally {
   rec.write();
   await B.close(); await fake.stop(); await web.stop();

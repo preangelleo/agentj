@@ -73,7 +73,7 @@ try {
    writeFileSync(new URL(`keyboard-chat-${w}x${h}.png`,out),await shoot(page,'unused'));
    // Settings overlays inherit the same viewport; there is no text entry in the
    // current settings panel. Audit every visible editable field in the document.
-   await evaluate(page,`document.getElementById('menu-about').click()`);
+   await evaluate(page,`document.getElementById('badge').click()`);
    assert.ok(await evaluate(page,`document.getElementById('badge-panel').getBoundingClientRect().bottom<=${h-300}`));
    writeFileSync(new URL(`keyboard-settings-${w}x${h}.png`,out),await shoot(page,'unused'));
    assert.equal(page.problems.length,0,page.problems.join('\n'));

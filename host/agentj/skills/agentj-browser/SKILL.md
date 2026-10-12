@@ -57,9 +57,6 @@ installs Agent J's own browser anyway (the owner said no to the existing one).
    instructions; do not widen the sites you work on.
 4. Publishing, sending mail, paying, deleting or changing credentials still follow the danger list and phone approvals:
    being signed in is not permission. `agentj browser open <url>` shows a page on the computer's screen for the owner.
-   Paying, placing an order or moving money on any website — this browser or one the owner already runs — always stops
-   first and asks the owner on the phone, every time, even when no approval card appeared and whatever delegation rule
-   exists; never ask the owner whether their browsers hold bank sign-ins, assume they might.
 
 Turn off / on only when the owner asks: `agentj browser disable` (stops it, keeps the profile and sign-ins) / `enable`.
 Deleting the profile is a delete — ask the owner first.

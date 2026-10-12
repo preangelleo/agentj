@@ -156,25 +156,14 @@ export async function unseal(rec) {
     return JSON.parse(dec.decode(await crypto.subtle.decrypt({ name: 'AES-GCM', iv: rec.iv }, key, rec.ct)));
   } catch { return null; }
 }
-/** P182: bytes (a recording chunk) under the same key → {v:1, iv, ct}; null back when the key is gone (unpaired). */
-export async function sealBytes(u8) {
-  const key = await sealKey();
-  const iv = crypto.getRandomValues(new Uint8Array(12));
-  return { v: 1, iv, ct: new Uint8Array(await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, u8)) };
-}
-export async function unsealBytes(rec) {
-  if (!rec || rec.v !== 1 || !rec.iv || !rec.ct) return null;
-  try { return new Uint8Array(await crypto.subtle.decrypt({ name: 'AES-GCM', iv: rec.iv }, await sealKey(), rec.ct)); }
-  catch { return null; }
-}
 export async function putSealed(name, obj) {
   const w = wipes;
   const rec = await seal(obj);
   if (w === wipes) await dbPut(name, rec);
 }
 export async function getSealed(name) { try { return await unseal(await dbGet(name)); } catch { return null; } }
-/** Unpair / revoke: the drafts, the input history, the offline queue (0.15.2, outbox.js), the search pages (P188, search.js) and the key that sealed them go. */
+/** Unpair / revoke: the drafts, the input history, the offline queue (0.15.2, outbox.js) and the key that sealed them go. */
 export async function wipeLocal() {
   localKey = null; wipes++;
-  for (const k of ['draft', 'ihist', 'outbox', 'srch', 'local']) { try { await dbDel(k); } catch { /* nothing stored */ } }
+  for (const k of ['draft', 'ihist', 'outbox', 'local']) { try { await dbDel(k); } catch { /* nothing stored */ } }
 }

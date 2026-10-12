@@ -10,7 +10,7 @@ import json
 import socket
 
 from . import cloud
-from .text import new_agent_name_problem, normalise_agent_name
+from .text import agent_name_problem, normalise_agent_name
 
 CTL_TIMEOUT = 5
 
@@ -80,12 +80,10 @@ def announce(st) -> None:
             st.log("report_fail", status=res.status, trigger="agent_name")
 
 
-def rename(st, raw, *, post=None, notify=True) -> dict:
+def rename(st, raw, *, post=None) -> dict:
     """→ {"ok": True, "name", "linked"} or {"ok": False, "error", "suggestions": [...]}.
-    error ∈ name_required · bad_name · name_too_long · name_taken · unreachable · not_bound · rate_limited · failed.
-    P154: a new name is held to the short-name rule (text.new_agent_name_problem); the stored one is never re-checked.
-    P181: serve itself (a rename from the phone) passes notify=False and tells the Dashboard / phones directly."""
-    err = new_agent_name_problem(raw)
+    error ∈ name_required · bad_name · name_taken · unreachable · not_bound · rate_limited · failed."""
+    err = agent_name_problem(raw)
     if err:
         return {"ok": False, "error": err, "suggestions": []}
     name = normalise_agent_name(raw)
@@ -102,15 +100,13 @@ def rename(st, raw, *, post=None, notify=True) -> dict:
             name = res.name
     name = st.set_agent_name(name)
     st.log("agent_name_set", kind="dashboard" if linked else "local")
-    if notify:
-        announce(st)
+    announce(st)
     return {"ok": True, "name": name, "linked": linked}
 
 
 RENAME_MESSAGES = {
     "name_required": "名字不能是空的",
     "bad_name": "名字不合规：1–32 个字，不能有控制字符、不可见字符或换行（首尾空格会去掉，连续空格合成一个）",
-    "name_too_long": "名字太长：中文最多 8 个字，英文 / 数字 / 横杠最多 13 个；混着写时中文每个算 1.6、其他算 1，合计不超过 13",
     "name_taken": "这个账号里已经有叫这个名字的 Agent 了",
     "unreachable": "连不上账号后台，名字没改",
     "not_bound": "账号后台那边已经把这台电脑移除了，名字没改（运行 `agentj unlink` 清掉这台电脑上的账号记录后，可以只改这台电脑上的名字）",

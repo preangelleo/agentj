@@ -9,12 +9,12 @@ const { sanitize, who, what, MAX_DOTS } = await import('../public/js/busy.js');
 test('P150 busy: sanitize bounds, strips control characters, fixes colours and neighbours', () => {
   assert.deepEqual(sanitize(null), []);
   assert.deepEqual(sanitize({ tasks: 'x' }), []);
-  const many = { tasks: Array.from({ length: 40 }, (_, i) => ({ id: 'k' + i, who: 'W' + i, kind: 'ceo', label: 'x', c: 3 })) };
+  const many = { tasks: Array.from({ length: 20 }, (_, i) => ({ id: 'k' + i, who: 'W' + i, kind: 'ceo', label: 'x', c: 3 })) };
   const s = sanitize(many);
-  assert.equal(s.length, 32);   // P154 追加 11: 32 on the wire (was 12)
+  assert.equal(s.length, 12);
   for (let i = 1; i < s.length; i++) assert.notEqual(s[i].c, s[i - 1].c);
   const [a, b, c] = sanitize({ tasks: [{ who: '掌\u0007枢'.repeat(20), label: 'L'.repeat(99), c: 99, kind: 'evil' }, { who: '', label: '', lk: 'schedule', c: 2 }, 7] });
-  assert.equal(a.who.length, 24); assert.ok(!/\u0007/.test(a.who)); assert.equal(a.label.length, 99);   // P154: whole titles (≤ LABEL_MAX)
+  assert.equal(a.who.length, 24); assert.ok(!/\u0007/.test(a.who)); assert.equal(a.label.length, 40);
   assert.equal(a.kind, 'temp'); assert.ok(a.c >= 0 && a.c < 9);
   assert.equal(b.who, null); assert.equal(b.lk, 'schedule'); assert.equal(c, undefined);
   assert.ok(who(b).length > 0 && who(a) === a.who, 'a nameless helper still has a name');

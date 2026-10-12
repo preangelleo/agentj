@@ -53,7 +53,7 @@ AGENT_NAME_MAX = 32          # code points, after normalising
 AGENT_KEY_MAX = 128          # code points of the uniqueness key
 AGENT_INPUT_MAX = 512        # UTF-16 code units of raw input (JS: v.length > 512 → refused)
 MACHINE_MAX = 64
-STARTER_NAMES = ("助理一号", "Wren", "市场部 Agent", "内容部 Agent")   # P154: each within NEW_NAME_UNITS
+STARTER_NAMES = ("助理一号", "Wren", "市场部 Agent", "内容制作部 Agent")
 # The trim set, spelled out exactly as agentname.js does (Unicode White_Space): U+0009–U+000D, U+0020, U+0085, U+00A0,
 # U+1680, U+2000–U+200A, U+2028, U+2029, U+202F, U+205F, U+3000. Not str.strip() (which also strips U+001C–U+001F) and not
 # JS trim() (which strips U+FEFF): anything else at the ends is refused, not stripped.
@@ -108,28 +108,6 @@ def agent_name_problem(text) -> str | None:
     if len(agent_name_key(n)) > AGENT_KEY_MAX:
         return "bad_name"
     return None
-
-
-# P154 追加 6: a NEW name (agentj name / agentj admin / login --seat --name) must fit the reply header on one line — the
-# name is local, not unique across the internet, so keep it short. Wide (CJK, East Asian W/F) characters count 1.6 units,
-# everything else 1; at most 13 units: 8 CJK characters (12.8), or 13 Latin letters / digits / hyphens / spaces. Integer
-# form: 8 × wide + 5 × other ≤ 65. Names already stored, synced or bound are NOT re-checked (no forced rename on upgrade).
-NEW_NAME_UNITS = 13
-
-
-def agent_name_units(text: str) -> float:
-    """Display units of a name: 1.6 per wide (W/F) character, 1 per any other."""
-    return sum(1.6 if unicodedata.east_asian_width(ch) in ("W", "F") else 1 for ch in text)
-
-
-def new_agent_name_problem(text) -> str | None:
-    """agent_name_problem, plus "name_too_long" when the normalised name is over NEW_NAME_UNITS units."""
-    err = agent_name_problem(text)
-    if err:
-        return err
-    n = normalise_agent_name(text)
-    wide = sum(1 for ch in n if unicodedata.east_asian_width(ch) in ("W", "F"))
-    return "name_too_long" if 8 * wide + 5 * (len(n) - wide) > 5 * NEW_NAME_UNITS else None
 
 
 def is_clean_agent_name(text) -> bool:

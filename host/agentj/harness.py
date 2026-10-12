@@ -173,17 +173,11 @@ def detect(environ=None) -> dict:
     return {"harnesses": hs, "usable": usable, "decision": decision}
 
 
-PROBE_TIMEOUT = 60   # s per harness (P155: the switch gate's bound)
-
-
-def probe(only: tuple | list | None = None, model: str | None = None, timeout: float = PROBE_TIMEOUT) -> dict:
+def probe() -> dict:
     """One tool-free call per installed supported CLI; never return native output or credentials.
 
     Detection is advisory. Only a parsed nonempty model reply qualifies. Reuse the
     bots' sandbox/disable-tools contract and binary resolver; never resume a thread.
-    P155: `only` limits the calls to those harnesses (the others keep their detect fields, callable False, probe_reason
-    "not_probed"); `model` is passed to the single harness probed; each call is bounded by `timeout` seconds and a failure
-    carries a fixed code in probe_reason (never native output).
     """
     from types import SimpleNamespace
     from .bots import native
@@ -194,11 +188,7 @@ def probe(only: tuple | list | None = None, model: str | None = None, timeout: f
     usable = []
     for h in d["harnesses"]:
         h["callable"] = False
-        if only is not None and h["name"] not in only:
-            h["probe_reason"] = "not_probed"
-            continue
         if not h["installed"] or not h["supported"]:
-            h["probe_reason"] = "not_installed" if not h["installed"] else "not_supported"
             continue
         env = {k: v for k, v in os.environ.items()
                if not k.startswith(("AGENTJ_", "AGENTJARVIS_", "HERDR_", "VIBE_REMOTE_", "TMUX", "SSH_"))}
@@ -206,18 +196,14 @@ def probe(only: tuple | list | None = None, model: str | None = None, timeout: f
             with tempfile.TemporaryDirectory(prefix="agentj-login-probe-") as folder:
                 root = Path(folder)
                 (root / "system.md").write_text("Reply to the supplied greeting only. No tools are available.")
-                cfg = SimpleNamespace(name=h["name"], model=model if only is not None and len(only) == 1 else None)
+                cfg = SimpleNamespace(name=h["name"], model=None)
                 cmd = native.command(cfg, root, env, selected=h["executable"])
-                reply, _ = native.parse(h["name"], native.run(cmd, "Hello. Reply with a short greeting only.", env, root,
-                                                              timeout=timeout))
+                reply, _ = native.parse(h["name"], native.run(cmd, "Hello. Reply with a short greeting only.", env, root))
                 if not isinstance(reply, str) or not reply.strip():
                     raise BotError("empty_probe_reply")
             h["callable"] = True
             usable.append(h["name"])
-        except BotError as e:
-            code = str(e.args[0]) if e.args else ""
-            h["probe_reason"] = code if re.fullmatch(r"[a-z_]{1,40}", code) else "call_failed"
-        except (OSError, ValueError, TypeError):
+        except (BotError, OSError, ValueError, TypeError):
             h["probe_reason"] = "call_failed"
     d.update(usable=usable, decision="none" if not usable else f"use:{usable[0]}" if len(usable) == 1 else "ask_owner")
     return d
@@ -243,21 +229,8 @@ DECISION_TEXT = {
 }
 
 
-def reach(d: dict) -> dict:
-    """P175: Codex installed → is OpenAI reachable from here (advice only; `decision` is unchanged)."""
-    if any(h["name"] == "codex" and h["installed"] for h in d["harnesses"]):
-        from . import chatgpt_reach
-        r = chatgpt_reach.probe()
-        if r == "skipped":
-            return d
-        d["chatgpt"] = r
-        if r in chatgpt_reach.ADVICE:
-            d["advice"] = chatgpt_reach.ADVICE[r]
-    return d
-
-
 def main(as_json: bool = False, call_probe: bool = False) -> int:
-    d = reach(probe() if call_probe else detect())
+    d = probe() if call_probe else detect()
     if as_json:
         def local_paths(value):
             if isinstance(value, dict): return {k: local_paths(v) for k, v in value.items()}
@@ -277,6 +250,4 @@ def main(as_json: bool = False, call_probe: bool = False) -> int:
     d_ = d["decision"]
     print("→ " + (DECISION_TEXT[d_] if d_ in DECISION_TEXT else
                   f"只有 {LABEL[d_[4:]]} 可用 / only {LABEL[d_[4:]]} is usable: agentj agent {d_[4:]} --dir <folder>"))
-    if d.get("advice"):
-        print("⚠ Codex: " + d["advice"])
     return 0

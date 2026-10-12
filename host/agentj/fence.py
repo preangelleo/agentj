@@ -103,8 +103,6 @@ def other_states(st, home: str | None = None) -> list[str]:
         r = _real(str(p))
         if os.path.isdir(r) and not _under(r, root) and not _under(root, r) and r not in out:
             out.append(r)
-    from .instance import foreign_paths   # P180: the other instances' state / preferences, the other seats' workspaces
-    out += [p for p in foreign_paths(st, home) if p not in out]
     return out
 
 
@@ -139,8 +137,6 @@ _MAIN_ENV = frozenset({
     "PYTHONPATH", "PYTHONDONTWRITEBYTECODE", "PYTHONNOUSERSITE", "MCP_TOOL_TIMEOUT", "TERM", "COLORTERM",
     # Existing one-time permission-tool claim in serve.new_perm_env (unchanged).
     "AGENTJ_PERM_SOCK", "AGENTJ_PERM_TOKEN", "AGENTJ_PERM_WAIT", "AGENTJ_PERM_CLAIM",
-    # P180: which instance the Agent's own `agentj …` calls belong to (a number; its state stays hidden all the same)
-    "AGENTJ_INSTANCE",
     # Already exported by serve.start BEFORE every harness spawn; socket mounts unchanged.
     "AGENTJ_ELEVATE_SOCK", "AGENTJ_CAPABILITY_SOCK", "AGENTJ_RECALL_SOCK", "AGENTJ_FRIENDS_SOCK", "AGENTJ_RECALL_INDEX",
     # Existing per-launch local OpenCode server authentication in opencode_env (unchanged).
@@ -185,7 +181,7 @@ def auxiliary_environment(base=None, kind: str = "claude", extra_keep=()) -> dic
     """
     from .peer_session import clean_env
     env = dict(os.environ if base is None else base)
-    extra_keep = set(extra_keep) | {k for k in _MAIN_ENV if k.startswith("FAKE_")} | {"AGENTJ_INSTANCE"}
+    extra_keep = set(extra_keep) | {k for k in _MAIN_ENV if k.startswith("FAKE_")}
     clean = clean_env(kind, env, extra_keep=extra_keep)
     hidden = set(hide_env(env))
     return {k: v for k, v in clean.items() if k not in hidden

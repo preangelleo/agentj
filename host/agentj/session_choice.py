@@ -1,14 +1,11 @@
-"""P127 / P174: the session mode and the shared Claude session are chosen, not remembered.
+"""P127 (Leo's 10-10 switch-over): the session mode and the shared Claude session are chosen, not remembered.
 
-P174 (Leo 10-12): `agent.session_mode` defaults to "independent" (defaults.json5 / schema) — Agent J's own fenced session,
-which needs no change to the owner's terminal tools and cannot get stuck on a desktop setting. "shared" (attach to the
-owner's own open Claude Code / Codex / OpenCode session) is the advanced choice the owner turns on: `agentj agent <kind>
---shared`, `agentj config set agent.session_mode shared` or the phone's Settings. Every committed change of the key is
-recorded in `session-mode-choice.json` (0600, written by preferences.commit_files and by the flags below).
-
-Installs from before P174 ran shared as the factory default. They are never switched silently: config migration
-`202610120174` writes an explicit "shared" into their config file, and until it has run `factory_default()` keeps such an
-install on "shared" (`legacy_shared()`), so a failed or pending migration cannot move a running owner either.
+`agent.session_mode` defaults to "shared" (defaults.json5 / schema). A user override "independent" is honoured when the
+owner chose it — on this state that is recorded in `session-mode-choice.json` (0600, written by preferences.commit_files on
+every committed change of the key: `agentj config set|unset|reset|rollback`, the phone's Settings, and by the flags below).
+An override with no such record (an older install, a test, a config file left behind by an earlier state) is never flipped
+silently: `agentj agent <kind>` asks in a terminal (y switches back to the shared default, Enter keeps it and asks again
+next time) and otherwise prints the two commands (`--shared` / `--independent`); doctor shows the same row.
 
 Shared Claude: `candidates()` lists the live Claude Code sessions in the work folder from Claude Code's own registry
 (`$CLAUDE_CONFIG_DIR/sessions/*.json`, the same reader as shared.claude_sessions) with name, last activity and the first
@@ -59,57 +56,8 @@ def user_value() -> str | None:
     return v if v in ("shared", "independent") else None
 
 
-LEGACY_MIGRATION = "202610120174"
-
-
-def logged_mode(st) -> str | None:
-    """The session mode the last Agent start ran with (host.log `agent_on` / `agent_start`, metadata only), or None."""
-    try:
-        with open(st.log_path, "rb") as f:
-            f.seek(0, os.SEEK_END)
-            f.seek(max(0, f.tell() - (1 << 20)))
-            tail = f.read().decode("utf-8", "replace")
-    except OSError:
-        return None
-    found = re.findall(r'"ev": "agent_(?:on|start)"[^\n]*?"session_mode": "(shared|independent)"', tail)
-    return found[-1] if found else None
-
-
-def legacy_shared(st) -> bool:
-    """An install from before P174 that was on the shared factory default and whose keep-shared migration has not run.
-    Evidence, strongest first: the owner's recorded choice; the mode the last Agent start actually ran with (host.log);
-    otherwise a configured Agent on a state that already ran config migrations (0.12+; shared was the default 0.13–0.19)."""
-    try:
-        if (st.root / "config-migrations" / (LEGACY_MIGRATION + ".json")).exists() or not st.exists():
-            return False
-        if user_value() is not None or recorded(st) == "independent" or not st.config().get("agent"):
-            return False
-        last = logged_mode(st)
-        if last is not None:
-            return last == "shared"
-        return (st.root / "config-migrations").is_dir()
-    except (OSError, ValueError):
-        return False
-
-
-def factory_default(st=None) -> str:
-    return "shared" if st is not None and legacy_shared(st) else "independent"
-
-
-def mode_of(st) -> str:
-    """The mode in effect: the owner's value, else the factory default (shared only for a not-yet-migrated old install)."""
-    v = user_value()
-    if v in ("shared", "independent"):
-        return v
-    return factory_default(st)
-
-
-def mode_in(st, doc: dict) -> str:
-    """The mode in effect for an effective preferences document (state.agent_config, serve): P174 legacy guard included."""
-    v = preferences.get(doc, KEY, "independent")
-    if v != "shared" and legacy_shared(st):
-        return "shared"
-    return v if v in ("shared", "independent") else "independent"
+def unconfirmed_independent(st) -> bool:
+    return user_value() == "independent" and recorded(st) != "independent"
 
 
 def note_commit(st, old_raw: str, new_raw: str, candidate: dict) -> None:
@@ -120,31 +68,7 @@ def note_commit(st, old_raw: str, new_raw: str, candidate: dict) -> None:
     except (preferences.ConfigError, ValueError):
         return
     if before != after:
-        record(st, preferences.get(candidate, KEY, "independent"), "config")
-
-
-def explain(new: str, old: str | None = None, lang: str = "zh") -> dict:
-    """P174: what a session-mode switch means and how to undo it (`agentj config set|unset`, `agentj agent --shared|...`)."""
-    back = "independent" if new == "shared" else "shared"
-    rollback = f"agentj config set {KEY} {back}" if old in ("shared", "independent") and old != new else ""
-    if new == "shared":
-        zh = ("共享会话（高级）：手机接入你在这台电脑上正开着的 Claude Code / Codex / OpenCode 会话，按那个工具自己的权限运行，"
-              "不在 Agent J 的隔离里；Claude Code 会被设置成接收手机消息（先备份设置）。电脑上没开会话时，手机第一条消息会新开一个。"
-              "重启服务后生效：agentj service restart。")
-        en = ("Shared session (advanced): the phone attaches to the Claude Code / Codex / OpenCode session you have open on this "
-              "computer, with that tool's own permissions, outside Agent J's fence; Claude Code is set to accept phone messages "
-              "(settings backed up first). With no open session the first phone message starts one. Takes effect after "
-              "agentj service restart.")
-    else:
-        zh = ("独立会话（默认）：Agent J 自己开一个会话、在隔离里运行，不改你终端里工具的设置，出问题也不会卡住你正在用的会话。"
-              "重启服务后生效：agentj service restart。")
-        en = ("Independent session (the default): Agent J runs its own fenced session and changes nothing in your terminal tools' "
-              "settings, so a problem there cannot block the session you are using. Takes effect after agentj service restart.")
-    if rollback:
-        zh += f"想改回去：{rollback}"
-        en += f" To undo: {rollback}"
-    return {"mode": new, "text": en if lang == "en" else zh, "text_zh": zh, "text_en": en, "rollback": rollback,
-            "restart": "agentj service restart"}
+        record(st, preferences.get(candidate, KEY, "shared"), "config")
 
 
 def _lock(st):
@@ -155,12 +79,11 @@ def _lock(st):
 
 
 def set_mode(st, mode: str, via: str = "agent") -> None:
-    """P174: write the owner's choice explicitly (also "independent", so it can never be read as an old install's shared
-    default). Same path as `agentj config set`."""
+    """shared = remove the override (follow the default); independent = write it. Same path as `agentj config set`."""
     fd = _lock(st)
     try:
         raw, _ = preferences.read()
-        new = preferences.edit(raw, KEY, mode)
+        new = preferences.edit(raw, KEY, None, remove=True) if mode == "shared" else preferences.edit(raw, KEY, "independent")
         if new != raw:
             preferences.transact(st, new)
     finally:
@@ -186,13 +109,40 @@ def interactive() -> bool:
         return False
 
 
+def stale_text(kind: str, lang: str, ask: bool) -> str:
+    cmd = f"agentj agent {kind}"
+    if lang == "en":
+        head = ("Session mode: your settings file (" + preferences.path().name + ") says \"independent\", but there is no "
+                "record of you choosing it on this computer — probably left by an older version or a test. The default is "
+                f"\"shared\": the phone attaches to the {LABEL.get(kind, kind)} session you already have open on this computer.")
+        return head + (" Switch back to shared? [y/N] (Enter keeps independent and asks again next time; to keep it for good: "
+                       f"{cmd} --independent) " if ask else
+                       f" To use the default: {cmd} --shared · to keep independent on purpose: {cmd} --independent")
+    head = ("会话模式：你的设置文件（" + preferences.path().name + "）里写着「独立」（independent），但这台电脑上没有你选过它的记录"
+            f"——多半是旧版本或测试留下的。默认是「共享」：手机接上你电脑上正开着的 {LABEL.get(kind, kind)} 会话。")
+    return head + ("改回共享？[y/N]（回车 = 先保持独立，下次还会问；确定要独立就运行 " + cmd + " --independent）" if ask else
+                   f"用默认的共享：{cmd} --shared · 确定要独立：{cmd} --independent")
+
+
 def resolve(st, kind: str, flag: str | None, lang: str = "zh", ask=None, out=None) -> str:
-    """`agentj agent <kind>`: apply --shared / --independent. → the mode in effect. P174: nothing is asked; an unset value is
-    the factory default (independent), an explicit value is the owner's."""
+    """`agentj agent <kind>`: apply --shared / --independent, or settle an unconfirmed "independent". → the mode in effect."""
+    out = out or sys.stdout
     if flag in ("shared", "independent"):
         set_mode(st, flag, "flag")
         return flag
-    return mode_of(st)
+    if not unconfirmed_independent(st):
+        return preferences.get(preferences.effective(st), KEY, "shared")
+    ask = interactive() if ask is None else ask
+    if not ask:
+        print("! " + stale_text(kind, lang, False), file=out, flush=True)
+        return "independent"
+    answer = input(stale_text(kind, lang, True)).strip().lower()
+    if answer in ("y", "yes", "是", "好"):
+        set_mode(st, "shared", "prompt")
+        return "shared"
+    if answer in ("n", "no", "否"):
+        record(st, "independent", "prompt")
+    return "independent"
 
 
 # ------------------------------------------------------------------ shared Claude: which live session
@@ -220,7 +170,7 @@ def _first_owner_message(path: Path) -> str:
 
 def _short(text: str, n: int = 48) -> str:
     from . import privacy
-    t = re.sub(r"\s+", " ", privacy.owner_text(text)).strip()
+    t = re.sub(r"\s+", " ", privacy.redact(text, paths=True)).strip()
     return t if len(t) <= n else t[: n - 1] + "…"
 
 

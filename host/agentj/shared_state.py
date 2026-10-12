@@ -11,7 +11,7 @@ import time
 from types import SimpleNamespace
 from . import privacy
 config = SimpleNamespace(IDLE_DEBOUNCE_S=1.2, SUBAGENT_STALE_S=600.0, COMPACT_STALE_S=600.0)
-redact = SimpleNamespace(scrub_message=privacy.owner_text)   # P167: the owner channel (shared.public_text), not strict
+redact = SimpleNamespace(scrub_message=privacy.redact)
 # Product approval UI is owned by Host.ask, not the relay snapshot.
 def build_card(event):
     return {"tool_name": event.get("tool_name"), "summary": "", "options": []}

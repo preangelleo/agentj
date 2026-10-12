@@ -22,16 +22,6 @@ Used twice, with the same verdict:
   else prints nothing, so the human's own rules decide (only ever stricter, Invariant 11);
 - by serve, to label the card and to keep dangerous calls out of batch approval.
 
-P157 (owner decision 2026-10-12, 「只有真正危险的动作才弹卡」): a card is for the five categories above on a CLEAR hit — "can't read it" or
-"it is long" is not danger. A heredoc body is not a command line: the shell lexer finds it (quotes respected) and what reads
-it decides how it is judged (heredocs()): a shell → commands; an interpreter / database client → the raw-text URL and SQL rules;
-anything else (`cat >> notes.md <<'EOF'`) → data: only WHERE it is written counts (a credential path / hook file asks), the
-words in it never do — unless a later command of the same call runs that file. MAX_CMD measures the command lines, not the
-bodies. `systemctl --user` / `systemd-run --user`, wait loops, `--dry-run` of a CLI that documents it, `git push -n`,
-read-only subcommands, `nc -z` and Telegram `get*` methods are not danger. What stays "can't tell" (a `$VAR` program name,
-too deep, too long) may be cleared by layer 2 (approval_jev.py: Jev, the owner's own key, p ≥ approval.jev_threshold); a
-clear hit never reaches Jev, and encoded / piped-into-a-shell forms are never "can't tell"-only.
-
 Standard library only (the hook starts once per tool call).
 """
 from __future__ import annotations
@@ -152,8 +142,6 @@ class Cmd:
     ins: list = field(default_factory=list)      # stdin redirection targets (< 0<)
     owner: object = None                         # the command a $( ) / backtick came from (None = top level)
     ansi: set = field(default_factory=set)       # P137: words that held a decoded $'…' (ANSI-C) part
-    docs: list = field(default_factory=list)     # P157: heredoc bodies fed to this command, (delimiter, quoted, body, start, end)
-    #                                              start / end: the body's span in the lexed text, delimiter line excluded
 
 
 _DEEP = "\x00too_deep"                           # P137: stands for a nesting past MAX_DEPTH (never a real command name)
@@ -223,27 +211,22 @@ def lex(s: str, depth: int = 0) -> list[Cmd]:
     cur = Cmd([])
     word: list[str] | None = None
     word_ansi = False
-    word_q = False                                   # P157: the word had a quote / backslash (a quoted heredoc delimiter)
     redir_next = heredoc_next = False
     redir_kind = ""
     pipe_next = False
-    pending: list = []                               # P157: heredocs declared on this line, bodies start after its newline
-    dash = False
     i, n = 0, len(s)
 
     def end_word():
-        nonlocal word, redir_next, heredoc_next, redir_kind, word_ansi, word_q
+        nonlocal word, redir_next, heredoc_next, redir_kind, word_ansi
         if word is None:
             return
         w = "".join(word)
         word = None
-        quoted, word_q = word_q, False
         if word_ansi:
             cur.ansi.add(w)
             word_ansi = False
         if heredoc_next:
             heredoc_next = False                     # the delimiter: not a word, not a target
-            pending.append((cur, w, dash, quoted))
         elif redir_next:
             cur.redirs.append(w)
             if redir_kind == "out":
@@ -278,11 +261,9 @@ def lex(s: str, depth: int = 0) -> list[Cmd]:
                 i += 2
                 continue
             (word := word if word is not None else []).append(s[i + 1] if i + 1 < n else "")
-            word_q = True
             i += 2
             continue
         if c == "'":
-            word_q = True
             j = s.find("'", i + 1)
             j = n if j < 0 else j
             (word := word if word is not None else []).append(s[i + 1:j])
@@ -300,7 +281,6 @@ def lex(s: str, depth: int = 0) -> list[Cmd]:
             i = j + 1
             continue
         if c == '"':
-            word_q = True
             j, buf = i + 1, []
             while j < n and s[j] != '"':
                 if s[j] == "\\" and j + 1 < n:
@@ -368,8 +348,7 @@ def lex(s: str, depth: int = 0) -> list[Cmd]:
             if s.startswith("<<", i):
                 cur.heredoc, heredoc_next = True, True
                 i += 2
-                dash = i < n and s[i] == "-"
-                if dash:
+                if i < n and s[i] == "-":
                     i += 1
                 continue
             j = i + 1
@@ -400,21 +379,6 @@ def lex(s: str, depth: int = 0) -> list[Cmd]:
         if c in ";&|\n(){}" and (c not in "{}" or (word is None and (i + 1 >= n or s[i + 1] in " \t\n;"))):
             end_cmd(c)
             i += 1
-            if c == "\n" and pending:                # P157: the heredoc bodies of this line are data, not commands
-                for owner, delim, strip_tabs, quoted in pending:
-                    start = i
-                    while i < n:
-                        e = s.find("\n", i)
-                        e = n if e < 0 else e
-                        ln = s[i:e]
-                        if (ln.lstrip("\t") if strip_tabs else ln) == delim:
-                            owner.docs.append((delim, quoted, s[start:i], start, i))   # the delimiter line stays outside
-                            i = e + 1
-                            break
-                        i = e + 1
-                    else:                                  # P165 (P172): never closed → the old, stricter reading:
-                        i = start                          # the body is lexed as command lines
-                pending.clear()
             continue
         (word := word if word is not None else []).append(c)
         i += 1
@@ -497,10 +461,6 @@ def unwrap(cmd: Cmd, depth: int = 0) -> list[Simple]:
     guard = 0
     while words and guard < 16:
         guard += 1
-        while len(words) > 1 and _ASSIGN.match(words[0]):   # P157: `do s=$(…) …`, `then X=1 cmd`: the assignment is not a name
-            words.pop(0)
-        if _ASSIGN.match(words[0]):
-            return out                           # an assignment alone (`do s=$(…)`): its substitution is judged on its own
         name = _base(words[0])
         if len(words) > 1 and (name, words[1]) in _RUNNERS:   # pnpm dlx / uv run / poetry run / bundle exec …
             flags.add("wrapped")
@@ -732,30 +692,22 @@ _CODE_SHELL = re.compile(r"(os\.system|subprocess|os\.popen|child_process|execSy
 _STR_LIT = re.compile(r"'((?:[^'\\]|\\.)*)'|\"((?:[^\"\\]|\\.)*)\"|`([^`]*)`")
 
 
-# P157: backticks run a shell command only in these languages (in Python they are text, in JavaScript a template literal)
-_BACKTICK_SHELL = {"perl", "ruby", "php", "osascript", ""}
-
-
-def _code(text: str, hits: _Hits, depth: int, lang: str = "") -> None:
+def _code(text: str, hits: _Hits, depth: int) -> None:
     if _CODE_DELETE.search(text):
         hits.add("delete", "delete.code", "代码里删除文件")
     if _CODE_SEND.search(text):
         hits.add("send", "send.code", "代码里对外发送请求 / 邮件 / 消息")
     _text_rules(text, hits)
-    shell = _CODE_SHELL.search(text if lang in _BACKTICK_SHELL else re.sub(r"`[^`]*`", "", text))
-    if shell and depth < MAX_DEPTH:
+    if _CODE_SHELL.search(text) and depth < MAX_DEPTH:
         for m in _STR_LIT.finditer(text):
             lit = next(g for g in m.groups() if g is not None)
             if lit.strip():
                 _bash(lit, hits, depth + 1)
 
 
-_TG_READ = re.compile(r"api\.telegram\.org/bot[^/\s'\"]*/get[A-Z]\w*", re.I)
-
-
 def _text_rules(text: str, hits: _Hits, write: bool = True) -> None:
     """Raw-text rules that apply wherever the text appears (a whole command, inline code, MCP input)."""
-    if _SEND_URL.search(_TG_READ.sub("", text)):   # P157: getMe / getUpdates / getChat … only read
+    if _SEND_URL.search(text):
         hits.add("send", "send.url", "调用了发消息 / 发帖 / 发邮件的接口")
     if _SPEND_URL.search(text):
         hits.add("spend", "spend.url", "调用了付款 / 下单 / 交易的接口")
@@ -835,9 +787,7 @@ def _git(args: list, hits: _Hits) -> None:
     if not rest:
         return
     sub, a = rest[0], rest[1:]
-    if sub == "push" and ("--dry-run" in a or "-n" in a):
-        pass                                     # P157: a dry run contacts the remote but changes nothing there
-    elif sub == "push":
+    if sub == "push":
         hits.add("send", "send.git_push", "git push：把提交推到远端")
         if any(x in ("-f", "--force", "--force-with-lease", "--mirror", "--prune", "-d", "--delete") or x.startswith(
                 ("--force", "+")) or (x.startswith(":") and len(x) > 1) for x in a):
@@ -1053,8 +1003,6 @@ _DEPLOY = {("vercel", None), ("netlify", "deploy"), ("wrangler", "deploy"), ("wr
            ("railway", "up"), ("render", "deploy"), ("now", None), ("gh-pages", None), ("kamal", "deploy"),
            ("caprover", "deploy"), ("dokku", None), ("supabase", "deploy"), ("supabase", "functions"), ("deployctl", None),
            ("cf", "push"), ("appcenter", None)}
-# P157: CLIs whose --dry-run is documented to build / validate without uploading anything
-_DRY_RUN_OK = {"wrangler", "npm", "pnpm", "bun", "cargo", "poetry", "uv", "jsr", "deno"}
 _MAIL = {"mail", "mailx", "sendmail", "mutt", "neomutt", "msmtp", "ssmtp", "swaks", "s-nail", "nail", "aerc", "himalaya",
          "telegram-send", "signal-cli", "twilio", "slack", "slackcat", "ntfy", "apprise", "notify-send-remote", "wacli",
          "imessage", "toot", "bsky", "tweet", "twurl", "gmail", "mailgun", "sendgrid"}
@@ -1214,21 +1162,15 @@ def _simple(sc: Simple, hits: _Hits, depth: int, text: str) -> None:
         hits.add("send", "send.upload", "上传到 S3")
     if name in ("b2", "mc", "azcopy") and re.search(r"\b(upload|cp|mirror|sync|put|copy)\b", " ".join(low[:3])):
         hits.add("send", "send.upload", f"{name}：上传到云存储")
-    if name in ("nc", "ncat", "netcat", "socat") and not (name != "socat" and any(
-            re.fullmatch(r"-[a-zA-Z0-9]*z[a-zA-Z0-9]*", a) for a in args)) and (sc.flags & {"subst"} or any("<" in r for r in sc.redirs) or
+    if name in ("nc", "ncat", "netcat", "socat") and (sc.flags & {"subst"} or any("<" in r for r in sc.redirs) or
                                                        " | " in text or re.search(r"\|\s*(nc|ncat|netcat|socat)\b", text)):
         hits.add("send", "send.netcat", f"{name}：把数据发到网络")
     sub1 = _positionals(args)[:1]
-    dry = name in _DRY_RUN_OK and any(a in ("--dry-run", "--dryrun") for a in args)   # P157: builds / checks, sends nothing
     for (tool, verb) in _PUBLISH:
-        if dry:
-            break
         if name == tool and sub1 == [verb]:
             hits.add("send", "send.publish", f"{name} {verb}：发布到公开仓库")
             break
     for (tool, verb) in _DEPLOY:
-        if dry:
-            break
         if name == tool and (verb is None or sub1 == [verb] or (verb == "pages" and low[:2] == ["pages", "deploy"])):
             if tool == "vercel" and sub1 and sub1[0] in ("env", "login", "logout", "whoami", "ls", "list", "inspect", "logs",
                                                            "pull", "dev", "link", "domains", "dns", "certs", "project", "teams",
@@ -1236,10 +1178,6 @@ def _simple(sc: Simple, hits: _Hits, depth: int, text: str) -> None:
                 continue
             if tool == "wrangler" and verb == "pages" and low[:2] != ["pages", "deploy"]:
                 continue
-            if tool == "wrangler" and verb == "versions" and _positionals(args)[1:2] not in (["upload"], ["deploy"]):
-                continue                         # P157: `wrangler versions list / view` only reads
-            if tool == "supabase" and verb == "functions" and _positionals(args)[1:2] != ["deploy"]:
-                continue                         # P157: `supabase functions list / serve / new` is local or read-only
             hits.add("send", "send.deploy", f"{name} {verb or ''}：部署上线".replace("  ", " "))
             break
     if name == "twilio" or (name in ("aws",) and low[:1] in (["ses"], ["sesv2"], ["sns"])):
@@ -1350,16 +1288,16 @@ def _simple(sc: Simple, hits: _Hits, depth: int, text: str) -> None:
         for k, a in enumerate(args):
             if (a in _INLINE_FLAGS or re.fullmatch(r"-[a-zA-Z]*[ce]", a)) and k + 1 < len(args):
                 sc.flags.add("inline")
-                _code(args[k + 1], hits, depth, name)
+                _code(args[k + 1], hits, depth)
                 break
             if name == "osascript" and a == "-e" and k + 1 < len(args):
                 sc.flags.add("inline")
-                _code(args[k + 1], hits, depth, name)
+                _code(args[k + 1], hits, depth)
         if name in ("awk", "gawk") and args:
             p = _positionals(args, {"-f", "-v", "-F"})
             if p and re.search(r"\bsystem\s*\(|\|\s*\"|print\s*>\s*\"", p[0]):
                 sc.flags.add("inline")
-                _code(p[0], hits, depth, name)
+                _code(p[0], hits, depth)
     if name in ("sqlite3", "psql", "mysql", "mariadb", "mongosh", "mongo", "redis-cli", "duckdb", "clickhouse-client",
                 "cqlsh", "influx", "sqlcmd", "bq", "snowsql", "d1") or (name == "wrangler" and "d1" in low[:2]):
         _text_rules(" ".join(args), hits)
@@ -1411,127 +1349,21 @@ def reveal(text: str) -> list[str]:
     return [x[:2000] for x in dict.fromkeys(out)]
 
 
-# P157: what reads a heredoc body decides how the body is judged (the body is never lexed as command lines of its own)
-_STDIN_SHELLS = _SHELLS | {"ssh", "mosh", "su", "eval", "xargs", "parallel", "source", "at", "batch", "crontab"}
-MAX_SPLIT = 1024 * 1024      # P157: heredoc bodies are cut out first; only the command lines count towards MAX_CMD
-
-
-def _same_path(a: str, b: str) -> bool:
-    norm = lambda p: posixpath.normpath(p.strip("'\"")) if p.strip("'\"") else ""
-    return bool(norm(a)) and norm(a) == norm(b)
-
-
-def _run_later(line: list, rest: list) -> str:
-    """P157: a data body written to a file (cat > x.sh <<EOF, tee x.py <<EOF) that a later command of the same call runs
-    (bash x.sh, ./x.sh, source x.sh, python3 x.py) is visible here — judged as the program it becomes."""
-    targets = [o for d in line for o in d.outs]
-    for d in line:
-        for sc in unwrap(d):
-            if sc.name == "tee":
-                targets += _positionals(sc.args)
-    if not targets:
-        return "data"
-    for c in rest:
-        for sc in unwrap(c):
-            pos = _positionals(sc.args)
-            if any(_same_path(sc.raw[0], t) for t in targets if sc.raw):
-                return "shell"                       # ./x.sh, $S/x.sh, nohup x.sh
-            if pos and any(_same_path(pos[0], t) for t in targets):
-                if sc.name in _SHELLS or sc.name in ("source", "."):
-                    return "shell"
-                if sc.name in _INTERP:
-                    return "code:" + sc.name
-            # P165 (P172 case): `sqlite3 app.db < x.sql` / `python3 < x.py` / `sh < x.sh` reads the written file on stdin
-            if any(_same_path(i, t) for i in getattr(c, "ins", []) for t in targets):
-                if sc.name in _SHELLS:
-                    return "shell"
-                if sc.name in _SQL or sc.name == "d1" or (sc.name == "wrangler" and "d1" in sc.args[:2]):
-                    return "sql"
-                if sc.name in _INTERP:
-                    return "code:" + sc.name
-            if sc.name in _SQL and any(_same_path(a.split("=", 1)[-1], t) for a in sc.args for t in targets):
-                return "sql"                         # psql -f x.sql, sqlite3 db ".read x.sql" stays raw-text below
-    return "data"
-
-
-def heredocs(text: str) -> tuple[str, list]:
-    """P157: (the command lines with every top-level heredoc body cut out, [(kind, body, expands)]). The delimiter lines stay,
-    so lexing the result again finds each heredoc empty and never swallows the command lines after it.
-
-    kind — "shell": a shell / ssh / su / eval / xargs / at / crontab reads it (bash <<EOF, cat <<EOF | sh): judged as commands;
-    "code:<interpreter>": an interpreter reads its program from stdin (python3 - <<EOF, node <<EOF) and "sql": a database
-    client reads it (psql <<EOF): the raw-text rules only (messaging / payment / price URLs, SQL DROP / GRANT …), as before; "data": anything else (cat > notes.md <<EOF,
-    git commit -F - <<EOF, python3 tool.py <<EOF): the text is not a command — only WHERE it is written counts (the
-    redirect / tee target stays on the command line), plus what an unquoted body runs while expanding ($( ) / backticks).
-    A body written to a file that a later command of the same call runs (cat > x.sh <<EOF … ; bash x.sh) is that program."""
-    cmds = lex(text)
-    cuts, out = [], []
-    for idx, c in enumerate(cmds):
-        if c.owner is not None or not c.docs:
-            continue
-        line = [c]
-        for d in cmds[idx + 1:]:
-            if d.owner is not None:
-                continue
-            if not d.piped:
-                break
-            line.append(d)
-        names, words = set(), set()
-        stdin_code, sql, lang = False, False, ""
-        for d in line:
-            words |= {_base(w) for w in d.words}
-            real = unwrap(d)
-            if d.words and _base(d.words[0]) in ("sudo", "doas", "run0", "pkexec") and (
-                    not real or {"-s", "-i", "--shell", "--login"} & set(d.words)):
-                names.add("sh")                      # `sudo -s <<EOF`, `sudo <<EOF`: a root shell reads the body
-            for sc in real:
-                names.add(sc.name)
-                if sc.name in _INTERP and sc.name not in ("awk", "gawk") and not any(
-                        a in _STDIN_PROGRAM_SKIP or re.fullmatch(r"-[a-zA-Z]*[ce]", a) for a in sc.args):
-                    pos = _positionals(sc.args)
-                    if not pos or pos[0] == "-":
-                        stdin_code, lang = True, lang or sc.name
-                sql = sql or sc.name in _SQL or sc.name == "d1" or (sc.name == "wrangler" and "d1" in sc.args[:2])
-        if (names | words) & _STDIN_SHELLS or "." in names:
-            kind = "shell"
-        elif stdin_code:
-            kind = "code:" + lang
-        elif sql:
-            kind = "sql"
-        else:
-            kind = _run_later(line, cmds[idx + 1:])
-        for _delim, quoted, body, start, end in c.docs:
-            cuts.append((start, end))
-            out.append((kind, body, not quoted))
-    if not cuts:
-        return text, out
-    parts, k = [], 0
-    for start, end in sorted(cuts):
-        parts.append(text[k:start])
-        k = max(k, end)
-    parts.append(text[k:])
-    return "".join(parts), out
-
-
 def _bash(cmd: str, hits: _Hits, depth: int = 0, collect: list | None = None, lines: bool = True) -> None:
     if depth > MAX_DEPTH:
         hits.opaque("opaque.too_deep")
         return
-    src = cmd[:MAX_SPLIT]
-    text, docs = heredocs(src)
-    if len(cmd) > MAX_SPLIT or len(text) > MAX_CMD:
+    text = cmd[:MAX_CMD]
+    if len(cmd) > MAX_CMD:
         hits.add("delete", "too_long", "命令太长，无法完整检查")
-    text = text[:MAX_CMD]
     _text_rules(text, hits)
     if re.search(r"/dev/(tcp|udp)/", text):
         hits.add("send", "send.dev_net", "写入网络连接（/dev/tcp、/dev/udp）：把数据发到别处")
-    raw = cmd[:MAX_CMD]                      # A5 (P139) unchanged: the hook rule reads the whole text, heredoc bodies too
-    m = _HOOK_TEXT.search(raw)
-    if m and _HOOK_CODE.search(raw) and _HOOK_WRITE.search(raw):
+    m = _HOOK_TEXT.search(text)
+    if m and _HOOK_CODE.search(text) and _HOOK_WRITE.search(text):
         hits.add("credentials", "cred.hooks", "用脚本改写 Agent 的钩子 / 审批设置 " + m.group(0))
     seen: set[tuple] = set()
-    code = _quoted_data_out(text)        # P172: a quoted heredoc body that only feeds data (cat > f <<'EOF') is not lexed
-    chunks = [code] + ([ln for ln in code.splitlines() if ln.strip()] if "\n" in code and lines else [])
+    chunks = [text] + ([ln for ln in text.splitlines() if ln.strip()] if "\n" in text and lines else [])
     opaque_before = any(c == "opaque" for c, _, _ in hits.items)
     for ch in chunks:
         for c in lex(ch):
@@ -1544,18 +1376,6 @@ def _bash(cmd: str, hits: _Hits, depth: int = 0, collect: list | None = None, li
                 _simple(sc, hits, depth, text)
                 if collect is not None:
                     collect.append(sc)
-    for kind, body, expands in docs:
-        if len(body) > MAX_CMD and kind != "data":
-            hits.add("delete", "too_long", "命令太长，无法完整检查")
-        if kind == "shell":
-            _bash(body, hits, depth + 1, collect)
-            continue
-        if kind.startswith("code:") or kind == "sql":
-            # the URL / SQL rules only, as they always read this text (a program's library calls are not judged, G-A57)
-            _text_rules(body[:MAX_CMD], hits)
-        if expands:
-            for x in _substs(body):
-                _bash(x, hits, depth + 1, collect)
     if not opaque_before and any(c == "opaque" for c, _, _ in hits.items) and depth < MAX_DEPTH:
         for shown in reveal(text):           # decoded / expanded: shown on the card and judged too
             if shown not in hits.seen:
@@ -1919,63 +1739,6 @@ def _ro_flag_write(name: str, args: list) -> str | None:
 
 
 # ---------------------------------------------------------------- the hook
-_HEREDOC = re.compile(r"(?<![<\\])<<(-?)[ \t]*(?:'([^'\n]+)'|\"([^\"\n]+)\"|\\?([A-Za-z_][\w.-]*))")
-# P172: commands that may run what a heredoc (or a file it just wrote) holds — with one of them anywhere in the command,
-# quoted heredoc bodies stay lexed line by line as before (bash <<'EOF', cat > x.sh <<'EOF' … && ./x.sh, docker exec -i c sh)
-_EXECS = _SHELLS | _INTERP | {"source", ".", "eval", "exec", "xargs", "ssh", "mosh", "su", "sudo", "doas", "pkexec", "env",
-                              "docker", "podman", "kubectl", "nsenter", "chroot", "script", "expect", "tmux", "screen",
-                              "parallel", "watch", "nohup", "setsid", "at", "batch", "crontab", "systemd-run", "make", "just",
-                              "npx", "pnpx", "bunx", "uvx", "uv", "pipx"}
-_DELIM_END = re.compile(r"[ \t;|&<>)]|$")
-
-
-def _quoted_data_out(cmd: str) -> str:
-    """P172: the command with the bodies of QUOTED heredocs (<<'EOF' / <<"EOF" / <<\\EOF) taken out when nothing in the
-    command could run them. Such a body is not expanded: no $( ), no backticks, no variables — it is data (a Markdown report
-    with `code`, [links](https://…), | tables |), so reading its lines as commands only finds things that never run
-    (opaque.dynamic_name on `ossutil`). Unquoted bodies (whose $( ) / backticks DO run) and anything fed to a shell, an
-    interpreter, ssh, xargs, docker exec … keep the old line-by-line reading; so does a command that also runs a program by
-    path (a script it may just have written). The raw-text rules (_text_rules) still see the whole command."""
-    if "<<" not in cmd:
-        return cmd
-    lines, out, k, cut = cmd.split("\n"), [], 0, False
-    while k < len(lines):
-        ln = lines[k]
-        out.append(ln)
-        k += 1
-        docs = []
-        for m in _HEREDOC.finditer(ln):
-            if ln[:m.start()].count("'") % 2:
-                continue
-            quoted = m.group(4) is None or m.group(0).rstrip().endswith("\\" + m.group(4))
-            docs.append((m.group(1) == "-", m.group(2) or m.group(3) or m.group(4),
-                         quoted and bool(_DELIM_END.match(ln, m.end()))))
-        if not docs:
-            continue
-        for strip_tabs, delim, data in docs:
-            j = k
-            while j < len(lines) and (lines[j].lstrip("\t") if strip_tabs else lines[j]) != delim:
-                j += 1
-            if not data or j >= len(lines):     # unquoted, an odd delimiter, or never closed: keep as is
-                out += lines[k:j + 1]
-            else:
-                out.append(lines[j])             # the delimiter line stays (lex reads it as a harmless word)
-                cut = True
-            k = j + 1
-    if not cut:
-        return cmd
-    code = "\n".join(out)
-    try:
-        for c in lex(code):
-            for sc in unwrap(c):
-                if sc.name in _EXECS or "/" in (sc.raw[0] if sc.raw else sc.name) or _dyn(sc.name) or sc.name == _DEEP or \
-                        any(a in _SHELLS or _base(a) in _SHELLS for a in sc.args):
-                    return cmd
-    except Exception:  # noqa: BLE001 — anything odd: the old, stricter reading
-        return cmd
-    return code
-
-
 def hook_main(argv: list[str]) -> int:
     """Claude Code PreToolUse hook. Prints {"hookSpecificOutput": {"permissionDecision": "ask"}} for a dangerous call,
     nothing otherwise. Any failure → exit 2 (Claude Code treats that as a blocking error: the call does not run).
@@ -2014,6 +1777,9 @@ def main() -> None:
     sys.exit("usage: python -m agentj.danger hook [extras] | check <command>")
 
 
+if __name__ == "__main__":
+    main()
+
 # Shared-mode projection of the same classifier (ADR-A145). The independent
 # danger list and its five categories remain unchanged.
 _SHARED_PUBLIC_DELETE = frozenset({
@@ -2031,6 +1797,7 @@ _SHOW_CMDS = frozenset({"cat", "less", "more", "most", "pg", "view", "head", "ta
                         "tee", "zcat", "zless", "bzcat", "xzcat", "gpg", "openssl", "curl", "wget"})
 _QUIET = frozenset({"wc", "md5sum", "sha1sum", "sha256sum", "sha512sum", "shasum", "b2sum", "cksum", "true", ":"})
 _NOT_SHOWN = frozenset({"/dev/null"})
+_HEREDOC = re.compile(r"(?<![<\\])<<(-?)[ \t]*(?:'([^'\n]+)'|\"([^\"\n]+)\"|\\?([A-Za-z_][\w.-]*))")
 _SQL = frozenset({"sqlite3", "psql", "mysql", "mariadb", "mongosh", "mongo", "redis-cli", "duckdb", "clickhouse-client", "cqlsh",
                   "influx", "sqlcmd", "bq", "snowsql"})
 
@@ -2039,18 +1806,13 @@ def _substs(body: str) -> list[str]:
     """Commands an UNQUOTED heredoc body runs while it is expanded ($( ) and backticks)."""
     out, i = [], 0
     while i < len(body):
-        if body[i] == "\\":
-            i += 2                                   # P157: \` \$ \\ are literal in an unquoted heredoc body
-            continue
         if body.startswith("$(", i):
             k = _match_paren(body, i + 2)
             out.append(body[i + 2:k - 1])
             i = k
         elif body[i] == "`":
-            k = i + 1
-            while k < len(body) and body[k] != "`":
-                k += 2 if body[k] == "\\" else 1
-            k = min(k, len(body))
+            k = body.find("`", i + 1)
+            k = len(body) if k < 0 else k
             out.append(body[i + 1:k])
             i = k + 1
         else:
@@ -2061,15 +1823,35 @@ def _substs(body: str) -> list[str]:
 def code_text(cmd: str) -> str:
     """The command with heredoc bodies that are DATA (cat >> notes <<EOF, git commit -F - <<EOF …) or a program for an
     interpreter (python - <<EOF: not judged, G-A57) taken out; a body read by a shell (bash <<EOF, cat <<EOF | sh) stays.
-    Commands an unquoted body runs while expanding ($( ) / backticks) are kept as lines of their own. P157: the bodies are
-    found by the shell lexer (quotes respected), see heredocs()."""
-    text, docs = heredocs(cmd)
-    out = [text]
-    for kind, body, expands in docs:
-        if kind == "shell":
-            out.append(code_text(body))
-        elif expands:
-            out += _substs(body)
+    Commands an unquoted body runs while expanding ($( ) / backticks) are kept as lines of their own."""
+    lines, out, k = cmd.split("\n"), [], 0
+    while k < len(lines):
+        ln = lines[k]
+        out.append(ln)
+        k += 1
+        docs = [(m.group(1) == "-", m.group(2) or m.group(3) or m.group(4), m.group(4) is not None and
+                 not m.group(0).rstrip().endswith("\\" + (m.group(4) or "")))
+                for m in _HEREDOC.finditer(ln) if not ln[:m.start()].count("'") % 2]
+        if not docs:
+            continue
+        shell = False
+        for c in lex(ln):
+            for sc in unwrap(c):
+                if sc.name in _SHELLS and "shell_c" not in sc.flags and (
+                        "piped_shell" in sc.flags or not _positionals(sc.args) or _positionals(sc.args)[:1] in (["-"], ["-s"])):
+                    shell = True                     # a shell reading its program from stdin (bash <<EOF, cat <<EOF | sh)
+                if sc.name in ("ssh", "mosh", "su", "eval", "xargs", "source", "."):
+                    shell = True
+        for strip_tabs, delim, expands in docs:
+            body = []
+            while k < len(lines) and (lines[k].lstrip("\t") if strip_tabs else lines[k]) != delim:
+                body.append(lines[k])
+                k += 1
+            k += 1                                   # the delimiter line
+            if shell:
+                out += body
+            elif expands:
+                out += _substs("\n".join(body))
     return "\n".join(out)
 
 
@@ -2087,10 +1869,7 @@ def _names_only(args: list) -> bool:
     if not pats:
         pos = [a for a in args if not a.startswith("-")]
         pats = pos[:1]
-    if len(pats) != 1:
-        return False
-    alts = re.split(r"\\\||\|", pats[0].strip("'\""))            # P157: `^VOLC[A-Z_]*\|^VOLCENGINE[A-Z_]*`, -E `^A|^B`
-    return all(_NAME_PATTERN.fullmatch(a) for a in alts)
+    return len(pats) == 1 and bool(_NAME_PATTERN.fullmatch(pats[0].strip("'\"")))
 
 
 # ---- P137 (audit A3): shared-mode credential-show through glob / variable / substitution / a non-whitelist reader
@@ -2276,8 +2055,6 @@ def classify_shared(tool: str, tool_input, extra=None, mode: str = "standard") -
         elif command is not None:
             if strict:
                 words = [w for c in lex(command) for w in c.words + c.redirs]
-                words += [w for _k, body, _e in heredocs(command[:MAX_SPLIT])[1]     # P157: the P40 rule — anywhere in the call
-                          for w in re.split(r"[\s'\"`()\[\]{}=,;:]+", body) if w]
                 hit = next((w for w in words if cred_path(w)), None)
                 if hit:
                     read_rule = ('shared.credential_access', f"读取{cred_path(hit)}")
@@ -2324,8 +2101,3 @@ def grant_keys(v: Verdict) -> list:
 
 def card_why(v: Verdict, lang: str) -> str:
     return (v.why_en or v.why) if str(lang or "").startswith("en") else v.why
-
-
-# P165: last, so `python -m agentj.danger hook` sees every module name (P157 heredocs() reads _SQL, defined below main()).
-if __name__ == "__main__":
-    main()

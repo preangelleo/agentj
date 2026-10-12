@@ -25,7 +25,7 @@ try {
    await waitFor(p,`!document.getElementById('phone-env').hidden && !document.getElementById('setup-faceid').hidden`);
    await evaluate(p,`document.getElementById('phone-env-dismiss').click()`);
    assert.equal(await evaluate(p,`document.getElementById('phone-env').hidden`),true);
-   await evaluate(p,`(document.getElementById('settings').hidden && document.getElementById('setBtn').click())`);
+   await evaluate(p,`document.getElementById('aj-menu').open=true`);
    writeFileSync(new URL(platform+'-'+language+'-menu.png',out),await shoot(p,''));
    // Supported platform authenticator: Later can be reversed via the menu's forced offer request.
    await evaluate(p,`PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable=async()=>true`);

@@ -124,20 +124,12 @@ export async function approveMessage(channel, device, id, decision, tool, summar
 export const CONTROL_CONTEXT = 'agentjarvis-control-v1';
 export const CONTROL_ACTIONS = ['mem_rm', 'mem_undo', 'estop', 'resume', 'task_on', 'task_off',
   'fr_set', 'pg_set', 'pg_del', 'fr_add', 'fr_discoverable', 'fr_card',          // §17.7 agent friends (0.16)
-  'fr_ctx', 'update', 'bots_write', 'setup_mark', 'pair_new',               // P153: pair_new = a paired remote opens a pairing (§3.3)
-  'dev_name', 'dev_unbind', 'dev_add', 'dev_confirm',                     // P171 (§24): the phone's 遥控器管理 page                                                         // P115: first-run checklist card                                                                       // P73: a friend's 「补充设定」
-  'agent_name'];                                                            // P181 (§22.2): rename the Agent from the header
+  'fr_ctx', 'update', 'bots_write', 'setup_mark'];                                                         // P115: first-run checklist card                                                                       // P73: a friend's 「补充设定」
 /** The text whose SHA-256 a control signature covers (the target, with the content hash the phone saw). */
 export function controlObject(action, o) {
   if (action === 'bots_write') return canonicalJson(o.request);
   if (action === 'update') return 'latest';
-  if (action === 'pair_new') return 'start';
   if (action === 'setup_mark') return `${o.item}\n${o.choice}\n${o.rev}`;
-  if (action === 'dev_name') return `${o.device}\n${o.name}`;
-  if (action === 'agent_name') return String(o.name);
-  if (action === 'dev_unbind') return String(o.device);
-  if (action === 'dev_add') return o.rv ? `rv\n${o.rv}` : 'new';   // P190 (§27): a reverse pairing names the scanned code's channel
-  if (action === 'dev_confirm') return `${o.device}\n${o.code}`;
   if (action === 'mem_rm') return `${o.src}\n${o.file}\n${o.fsha}\n${o.iid}`;
   if (action === 'mem_undo') return String(o.id);
   if (action === 'estop' || action === 'resume') return 'all';
@@ -419,101 +411,3 @@ export function briefBytes(channel, device, card, scopeDigest, action) {
     revision: card.revision, brief_digest: card.brief_digest, scope_digest: scopeDigest, nonce: card.nonce,
     expires_at: card.expires_at, action }));
 }
-
-// ---------------------------------------------------------------- P190 reverse pairing (PROTOCOL §27). The web client only.
-// A new, unpaired browser shows `https://m.agentj.app/#j=` + b64url(0x01 ‖ channel(16) ‖ x25519 pub(32) ‖ nonce(16) ‖
-// expiry u32 BE ‖ relay) — relay = "" for the default relay, else the relay URL without its scheme (a local ws test relay
-// whole), as in the compact pairing link. `channel` is a throw-away rendezvous channel (channelId of a fresh Ed25519 key the page authenticates to the relay
-// with, exactly like a host), not a computer. A paired remote that scans it gets a pairing link from its own computer (§24
-// dev_add with `rv`) and hands it to that browser sealed to the code's x25519 key: only the browser that drew the code can
-// open it. The relay sees one more channel and two frames of padded ciphertext.
-export const RV_PREFIX = '#j=';
-export const RV_LINK_BASE = 'https://m.agentj.app/#j=';
-export const RV_TTL = 300;                     // seconds a code is shown before it is redrawn
-export const RV_MAX_AHEAD = 600;               // a code claiming to live longer than this is forged
-export const RV_OFFER = 0x10;                  // remote → new browser: 0x10 ‖ e_pub(32) ‖ iv(12) ‖ AES-GCM
-export const RV_ANSWER = 0x11;                 // new browser → remote: 0x11 ‖ iv(12) ‖ AES-GCM
-export const RV_MAX_FRAME = 2048;
-const RV_FIXED = 1 + 16 + 32 + 16 + 4;
-const RV_INFO = 'agentjarvis/rv/v1\n';
-
-/** The code's link. relay: the wss / test ws URL the page waits on. */
-export function reverseLink(channel, pub, nonce, expires, relay = PAIR_DEFAULT_RELAY, base = RV_LINK_BASE) {
-  const ch = unb64u(channel);
-  if (ch.length !== 16 || pub.length !== 32 || nonce.length !== 16) throw new Error('bad sizes');
-  const WSS = PAIR_DEFAULT_RELAY.slice(0, 6);
-  const r = relay === PAIR_DEFAULT_RELAY ? '' : relay.startsWith(WSS) ? relay.slice(6) : relay;
-  const x = new Uint8Array(4);
-  new DataView(x.buffer).setUint32(0, expires, false);
-  return base + b64u(concat(Uint8Array.of(1), ch, pub, nonce, x, enc.encode(r)));
-}
-/** Parse a scanned / opened reverse code. Throws on anything malformed, expired or too far in the future (a forged code). */
-export function parseReverse(input, nowSec = Math.floor(Date.now() / 1000), allowRelay = null) {
-  const s = String(input).trim();
-  const i = s.indexOf(RV_PREFIX);
-  const body = i >= 0 ? s.slice(i + RV_PREFIX.length) : s;
-  if (!/^[A-Za-z0-9_-]{92,200}$/.test(body)) throw new Error('bad reverse code');
-  const b = unb64u(body);
-  if (b.length < RV_FIXED || b[0] !== 1) throw new Error('unsupported version');
-  const rest = dec.decode(b.slice(RV_FIXED));
-  const relay = rest === '' ? PAIR_DEFAULT_RELAY : rest.startsWith('ws:') ? rest : PAIR_DEFAULT_RELAY.slice(0, 6) + rest;
-  if (!/^wss:\/\/[a-z0-9.-]+(:\d+)?$/.test(relay) && !/^ws:\/\/127\.0\.0\.1:\d+$/.test(relay)) throw new Error('bad relay url');
-  if (allowRelay && !allowRelay(relay)) throw new Error('relay not allowed');
-  const expires = new DataView(b.buffer, b.byteOffset + 65, 4).getUint32(0, false);
-  if (expires < nowSec) throw new Error('code expired');
-  if (expires > nowSec + RV_MAX_AHEAD) throw new Error('bad expiry');
-  return { channel: b64u(b.slice(1, 17)), pub: b.slice(17, 49), nonce: b.slice(49, 65), expires, relay };
-}
-/** What a scanned text is: 'reverse' (§27) · 'pair' (a computer's §4 link) · 'friend' (§17.1 share link) · 'data'. */
-export function classifyScan(text) {
-  const s = String(text ?? '');
-  if (/^https:\/\/m\.agentj\.app\/(?:\?[^#]*)?#j=/.test(s) || /^https?:\/\/(127\.0\.0\.1|localhost)(:\d+)?\/(?:\?[^#]*)?#j=/.test(s)) return 'reverse';
-  if (/^https:\/\/m\.agentj\.app\/(?:\?[^#]*)?#p=/.test(s) || /^https?:\/\/(127\.0\.0\.1|localhost)(:\d+)?\/(?:\?[^#]*)?#p=/.test(s)) return 'pair';
-  if (s.startsWith(FRIEND_LINK_BASE)) return 'friend';
-  return 'data';
-}
-async function rvKey(priv, peerPub, channel, nonce) {
-  const k = await crypto.subtle.importKey('raw', peerPub, { name: 'X25519' }, false, []);
-  const ikm = await crypto.subtle.deriveBits({ name: 'X25519', public: k }, priv, 256);
-  const base = await crypto.subtle.importKey('raw', ikm, 'HKDF', false, ['deriveKey']);
-  return crypto.subtle.deriveKey({ name: 'HKDF', hash: 'SHA-256', salt: nonce, info: enc.encode(RV_INFO + channel) }, base,
-    { name: 'AES-GCM', length: 256 }, false, ['encrypt', 'decrypt']);
-}
-const rvAad = (what, channel) => enc.encode(`agentjarvis/rv/${what}\n${channel}`);
-/** The scanning remote: seal the pairing link to the code's key. → { frame, key } (key opens the answer). */
-export async function rvOffer(code, link) {
-  const e = await crypto.subtle.generateKey({ name: 'X25519' }, false, ['deriveBits']);
-  const ePub = new Uint8Array(await crypto.subtle.exportKey('raw', e.publicKey));
-  const key = await rvKey(e.privateKey, code.pub, code.channel, code.nonce);
-  const iv = crypto.getRandomValues(new Uint8Array(12));
-  const pt = padJson({ t: 'rv', v: 1, n: b64u(code.nonce), l: link }, 1536);
-  const ct = new Uint8Array(await crypto.subtle.encrypt({ name: 'AES-GCM', iv, additionalData: rvAad('offer', code.channel) }, key, pt));
-  return { frame: concat(Uint8Array.of(RV_OFFER), ePub, iv, ct), key };
-}
-/** The new browser: open an offer with its code's private key. → { link, key } or throws (not for this code). */
-export async function rvOpenOffer(frameBytes, priv, channel, nonce) {
-  if (frameBytes.length > RV_MAX_FRAME || frameBytes.length < 1 + 32 + 12 + 16 || frameBytes[0] !== RV_OFFER) throw new Error('bad offer');
-  const key = await rvKey(priv, frameBytes.slice(1, 33), channel, nonce);
-  const pt = new Uint8Array(await crypto.subtle.decrypt({ name: 'AES-GCM', iv: frameBytes.slice(33, 45), additionalData: rvAad('offer', channel) },
-    key, frameBytes.slice(45)));
-  const m = unpadJson(pt, 1536);
-  if (m.t !== 'rv' || m.v !== 1 || m.n !== b64u(nonce) || typeof m.l !== 'string' || m.l.length > 1200) throw new Error('bad offer');
-  return { link: m.l, key };
-}
-/** Either side: the new browser's answer ({ok:true} | {ok:false, why}). */
-export async function rvAnswer(key, channel, obj) {
-  const iv = crypto.getRandomValues(new Uint8Array(12));
-  const ct = new Uint8Array(await crypto.subtle.encrypt({ name: 'AES-GCM', iv, additionalData: rvAad('answer', channel) }, key,
-    padJson({ t: 'rv_ok', ok: obj.ok === true, ...(obj.why ? { why: String(obj.why).slice(0, 16) } : {}) }, 256)));
-  return concat(Uint8Array.of(RV_ANSWER), iv, ct);
-}
-export async function rvOpenAnswer(frameBytes, key, channel) {
-  if (frameBytes.length > RV_MAX_FRAME || frameBytes.length < 1 + 12 + 16 || frameBytes[0] !== RV_ANSWER) throw new Error('bad answer');
-  const pt = new Uint8Array(await crypto.subtle.decrypt({ name: 'AES-GCM', iv: frameBytes.slice(1, 13), additionalData: rvAad('answer', channel) },
-    key, frameBytes.slice(13)));
-  const m = unpadJson(pt, 256);
-  if (m.t !== 'rv_ok') throw new Error('bad answer');
-  return { ok: m.ok === true, why: typeof m.why === 'string' ? m.why : null };
-}
-/** Relay host auth (§2) for the rendezvous channel: the bytes the page's throw-away Ed25519 key signs. */
-export const relayAuthMessage = (channel, n) => enc.encode(`agentjarvis-relay-auth-v1\n${channel}\n${n}`);

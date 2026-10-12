@@ -117,10 +117,6 @@ class Cli(unittest.TestCase):
         self.work.mkdir()
         self.env = {**os.environ, "HOME": str(d / "home"), "XDG_CONFIG_HOME": str(d / "home/.config"),
                     "AGENTJ_STATE_DIR": str(d / "state"), "CLAUDE_CONFIG_DIR": str(d / "cfg")}
-        # P174: a new install runs an independent session, which needs a Claude login the service can use (a placeholder
-        # file here: only its presence is checked; no credential)
-        (d / "cfg").mkdir()
-        (d / "cfg/.credentials.json").write_text("{}")
         self.run_("init", "--relay", "ws://127.0.0.1:1")
 
     def run_(self, *a, inp="", ok=True):
