@@ -30,7 +30,7 @@ import shlex
 import signal
 import time
 
-from . import compactprep, danger, slash
+from . import bg, compactprep, danger, slash
 from . import agent as _agentmod
 from .agent import LINE_LIMIT, Agent, _signal_tree
 from .slash import Result
@@ -257,6 +257,8 @@ class CodexAgent(Agent):
         t = asyncio.create_task(coro)
         self.tasks.add(t)
         t.add_done_callback(self.tasks.discard)
+        t.add_done_callback(lambda t: t.cancelled() or t.exception() is None or         # P192 (B13): failures land in host.log
+                            bg.swallowed(bg.host_log(self.host), "bg_task_failed", t.exception(), why="codex", every=0))
 
     # ------------------------------------------------ JSON-RPC
     def _send(self, obj: dict) -> None:
@@ -487,10 +489,13 @@ class CodexAgent(Agent):
                     if f and not f.done():
                         f.set_result(m)
                 elif isinstance(m.get("method"), str):
+                    self._busy(m["method"], m.get("params") if isinstance(m.get("params"), dict) else {})
                     self._on_note(m["method"], m.get("params") if isinstance(m.get("params"), dict) else {})
-        except Exception:  # noqa: BLE001
-            pass
+        except Exception as e:  # noqa: BLE001 — P192 (B18): the app-server link ends here; say so in host.log
+            bg.swallowed(bg.host_log(self.host), "agent_read_failed", e, why="codex")
         code = await p.wait()
+        if self.proc is p or self.proc is None:           # P160: its sub-agents ended with it (not a newer app-server's)
+            self._busy(None, None)
         from . import codex_procs
         codex_procs.forget(self.host.st, p.pid)
         self.host.st.log("agent_exit", agent=self.kind, status=code)
@@ -525,6 +530,18 @@ class CodexAgent(Agent):
         codex_procs.forget(self.host.st, p.pid)
 
     # ------------------------------------------------ notifications
+    def busy_scope(self) -> str:
+        return ("shared-" if self.__class__.__name__.startswith("Shared") else "") + self.kind
+
+    def _busy(self, method, p) -> None:
+        """P160 (§22): this thread's sub-agents (collab spawnAgent → child threads) → the phone's robots (busy.py), like
+        Claude's. A scheduled / research run is the workflow's own item (tasks.py); None = the app-server ended."""
+        b = getattr(self.host, "busy", None)
+        if b is None or self.cfg.get("_workflow_ceo") or self.research:
+            return
+        with contextlib.suppress(Exception):
+            b.session_gone(self.busy_scope()) if method is None else b.codex_event(method, p, self.busy_scope())
+
     def _emit(self, text: str) -> None:
         if self.collect is not None:
             self.collect.append(text)
@@ -563,7 +580,14 @@ class CodexAgent(Agent):
             if t.get("status") == "failed" and not self.halting:
                 e = t.get("error") if isinstance(t.get("error"), dict) else {}
                 m = e.get("message")
-                self.fail_notice("Codex 这一轮没有正常完成" + (f"：{clean(m, 4000)}" if isinstance(m, str) and m else "。"))
+                # P175: app-server's machine-readable class (`codexErrorInfo`, e.g. "usageLimitExceeded" or
+                # {"httpConnectionFailed": {"httpStatusCode": 403}}) and its extra text ride along, so the class is not lost
+                # when the message alone is vague.
+                info = e.get("codexErrorInfo")
+                more = e.get("additionalDetails")
+                tail = ("\n" + json.dumps(info, ensure_ascii=False)[:500] if isinstance(info, (str, dict)) and info else "") + \
+                       ("\n" + clean(more, 1000) if isinstance(more, str) and more.strip() else "")
+                self.fail_notice("Codex 这一轮没有正常完成" + (f"：{clean(m, 4000)}" if isinstance(m, str) and m else "。") + tail)
             if self.turn_done:
                 self.turn_done.set()
         elif method == "thread/tokenUsage/updated" and th == self.tid:
@@ -731,9 +755,24 @@ class CodexAgent(Agent):
                 self._answer(rid, ans)
 
     # ------------------------------------------------ turns
+    async def remind(self, main: bool) -> None:
+        """P159: the hidden per-turn line (main_identity.turn_reminder) as one developer item appended to the thread's
+        model-visible history (`thread/inject_items`, app-server 0.159.2), right before turn/start. Measured: the model
+        follows it; thread/read and the desktop mirror (user/assistant roles only) never show it. A Codex without the
+        method only logs; the turn still goes."""
+        from . import main_identity
+        item = {"type": "message", "role": "developer",
+                "content": [{"type": "input_text", "text": main_identity.turn_reminder(self.cfg, main)}]}
+        try:
+            await self.call("thread/inject_items", {"threadId": self.tid, "items": [item]})
+        except (RPCError, ConnectionError, OSError, asyncio.TimeoutError) as e:
+            self.host.st.log("agent_reminder_fail", agent=self.kind, error=type(e).__name__)
+
     async def turn(self, text: str) -> None:
         if not await self._ready():
             return
+        if self.persist and not self.cfg.get("_workflow_ceo"):
+            await self.remind(True)
         self.turn_done, self.turn_proc = asyncio.Event(), self.proc
         self.turn_id, self.turn_status = None, {}
         params = {"threadId": self.tid, "input": [{"type": "text", "text": text, "text_elements": []}]}

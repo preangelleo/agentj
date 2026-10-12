@@ -97,14 +97,24 @@ class ProbeError(ProviderError):
         self.key_length_hint=band
 
 
-def key_length_hint(key):
-    # Only clearly abnormal sizes; custom providers do not share a standard key length.
-    return '0-23' if len(key)<24 else '4097+' if len(key)>4096 else None
+def key_length_hint(key, url=None):
+    # Only clearly abnormal sizes; custom providers do not share a standard key length. P163: a key well below what a
+    # known provider (address or public key prefix) issues → 'short_for_provider' (length only, never content).
+    if len(key)<24:return '0-23'
+    if len(key)>4096:return '4097+'
+    from .keyhint import looks_short
+    return 'short_for_provider' if looks_short(len(key),url=url,value=key) else None
+
+
+def key_hint_text(band):
+    """P163: the sentence the Agent shows on a failed check ("may be incomplete"), both languages."""
+    from .keyhint import HINT
+    return {'key_hint':HINT} if band in ('0-23','short_for_provider') else {}
 
 
 def probe(c,key):
     from .provider_runtime import public_url, NoRedirect
-    band=key_length_hint(key)
+    band=key_length_hint(key,c.get('base_url'))
     def fail(reason):raise ProbeError(reason,band) from None
     base=public_url(c['base_url'],'models')
     if not base:raise ProviderError('provider_url_not_public_https')
@@ -143,7 +153,7 @@ def probe(c,key):
         if isinstance(e.reason,ssl.SSLError):fail('tls')
         fail('network')
     except OSError:fail('network')
-    return {'key_length_hint':band} if band else {}
+    return {'key_length_hint':band} if band and band!='short_for_provider' else {}   # it worked: no "incomplete" hint
 
 
 def merge(c, key, old):
@@ -269,7 +279,8 @@ def execute(spec):
         return {'ok':True,**result}
     except Exception as e:
         reason=str(e) if isinstance(e,ProviderError) else type(e).__name__
-        return {'ok':False,'reason':reason,**({'key_length_hint':e.key_length_hint} if isinstance(e,ProbeError) and e.key_length_hint else {})}
+        band=e.key_length_hint if isinstance(e,ProbeError) else None
+        return {'ok':False,'reason':reason,**({'key_length_hint':band,**key_hint_text(band)} if band else {})}
 
 
 def command(args):

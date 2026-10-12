@@ -36,7 +36,9 @@ export function addAsk(m) {
     why_en: typeof m.why_en === 'string' ? m.why_en.slice(0, 200) : '', cred: m.cred === 'read' ? 'read' : '',   // P128: one language; 查看 vs 改
     passkey_required: m.passkey_required === true, fa: typeof m.fa === 'string' ? m.fa : '', fa_ch: typeof m.fa_ch === 'string' ? m.fa_ch : '',
     scope, batch_max: Number.isInteger(m.batch_max) ? m.batch_max : 20, batch_secs: Number.isInteger(m.batch_secs) ? m.batch_secs : 600,
-    task: typeof m.task === 'string' ? m.task.slice(0, 80) : '', at: nowS(), deadline: Date.now() + ttl * 1000, state: 'open', final_at: null,
+    task: typeof m.task === 'string' ? m.task.slice(0, 80) : '',
+    goal: ['auto', 'hold', 'attack', 'grant'].includes(m.goal) ? m.goal : '', goal_why: typeof m.goal_why === 'string' ? m.goal_why.slice(0, 120) : '',   // P158
+    at: nowS(), deadline: Date.now() + ttl * 1000, state: 'open', final_at: null,
     ...(m.tool === 'friend_request' && m.fr && typeof m.fr === 'object' ? { fr: m.fr } : {}),     // display-only copies (friends.js)
     ...(m.tool === 'peer_question' && m.pq && typeof m.pq === 'object' ? { pq: m.pq } : {}) });
   S.order.push(m.id);
@@ -146,7 +148,7 @@ const TG_SOURCE_LINE = /^Telegram owner private chat\.\n/;
 export function toPage(t) {
   if (!t || !Number.isInteger(t.id) || t.id < 0) return null;
   const src = t.src && typeof t.src === 'object' ? t.src : {};
-  const k = ['phone', 'host', 'agent', 'sys', 'task', 'cmd', 'telegram'].includes(src.k) ? src.k : 'sys';
+  const k = ['phone', 'host', 'agent', 'sys', 'task', 'cmd', 'telegram', 'email'].includes(src.k) ? src.k : 'sys';
   const q = src.quote && typeof src.quote === 'object' && Number.isInteger(src.quote.id) ? {
     id: src.quote.id, who: typeof src.quote.who === 'string' ? src.quote.who.slice(0, 64) : '', ts: Number(src.quote.ts) || null,
     text: typeof src.quote.text === 'string' ? src.quote.text.slice(0, 2000) : '', excerpt: src.quote.ex === true } : null;
@@ -199,6 +201,33 @@ export function history(q = {}) {
     });
     if (!r) { resolve(null); return; }
     setTimeout(() => { reqDone(r); resolve(null); }, 20000);
+  });
+}
+
+/** P188 (§28): the computer's search of the whole current epoch → {epoch, hits, n, more} | {error} | null (offline / no answer
+ *  in 15 s / a host without `hfind`). A hit = {id, ts (s), src {k, dev, name, via, local}, score, where, snip}. */
+export function findHistory(q, sort = 'score') {
+  if (!peer.p33 || !peer.hfind) return Promise.resolve(null);
+  return new Promise((resolve) => {
+    const r = request({ t: 'hist_find', q, sort, limit: 50 }, (m) => {
+      if (m.t !== 'hist_found' && m.t !== 'offline') return;
+      reqDone(r);
+      if (m.t === 'offline') { resolve(null); return; }
+      if (m.error) { resolve({ error: String(m.error) }); return; }
+      const str = (x, n) => (typeof x === 'string' ? x.slice(0, n) : '');
+      const hits = (Array.isArray(m.hits) ? m.hits : []).filter((h) => h && Number.isInteger(h.id)).slice(0, 50).map((h) => {
+        const src = h.src && typeof h.src === 'object' ? h.src : {};
+        const snip = {};
+        for (const f of ['in', 'quote', 'att', 'reply']) if (h.snip && typeof h.snip[f] === 'string') snip[f] = h.snip[f].slice(0, 400);
+        return { id: h.id, ts: typeof h.ts === 'number' ? h.ts / 1000 : null, score: Number(h.score) || 0,
+          where: Array.isArray(h.where) ? h.where.filter((f) => f in snip) : Object.keys(snip), snip,
+          src: { k: str(src.k, 16) || 'sys', dev: str(src.dev, 64) || null, name: str(src.name, 64), local: src.local === true,
+            ...(src.k === 'agent' && ['loop', 'task'].includes(src.via) ? { via: src.via } : {}) } };
+      });
+      resolve({ epoch: Number(m.epoch) || 0, hits, n: Number(m.n) || hits.length, more: m.more === true });
+    });
+    if (!r) { resolve(null); return; }
+    setTimeout(() => { reqDone(r); resolve(null); }, 15000);
   });
 }
 

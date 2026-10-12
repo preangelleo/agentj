@@ -626,6 +626,7 @@ class SharedCodexAgent(CodexAgent):
             self.turn_done,self.turn_proc=asyncio.Event(),self.proc
             self.turn_id,self.turn_status=None,{}
             choice = self.phone_choice()
+            await self.remind(False)    # P159: the owner's own thread keeps its identity; only the language rides hidden
             res=await self.deliver(lambda:self.call('turn/start',{'threadId':self.tid,
                 'input':[{'type':'text','text':text,'text_elements':[]}],**self.original, **choice}))
             self.revert = None

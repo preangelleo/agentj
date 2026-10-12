@@ -142,7 +142,7 @@ try {
       await evaluate(p, `document.getElementById('input').focus()`);
       await p.send('Input.insertText', { text: 'A 的草稿' });
       await sleep(900);                                    // the draft is sealed
-      await evaluate(p, `document.getElementById('aj-menu').open = true; document.getElementById('unpair').click()`);
+      await evaluate(p, `(document.getElementById('settings').hidden && document.getElementById('setBtn').click()); document.getElementById('unpair').click()`);
       await waitFor(p, `!document.getElementById('confirm').hidden`);
       await evaluate(p, `document.getElementById('confirm-yes').click()`);
       await waitState(p, 'idle');
@@ -174,10 +174,11 @@ try {
       await navigate(p, BASE);
       await waitState(p, 'idle');
       check(!(await evaluate(p, `document.getElementById('pair-view').hidden`)), `${tag}: idle shows the pairing input`);
-      check((await text(p, '#badge')) === '网页版', `${tag}: badge visible`);
+      check((await text(p, '#badge')) === '网页版' && await evaluate(p, `!!document.getElementById('badge').closest('#settings')`), `${tag}: 网页版 tag lives in Settings (P190)`);
+      check(await evaluate(p, `(() => { const r = document.getElementById('scanBtn').getBoundingClientRect(); return r.width >= 44 && r.height >= 44 && !document.querySelector('.top #badge'); })()`), `${tag}: the header has the scan icon, not the 网页版 tag (P190)`);
       check((await evaluate(p, `document.documentElement.lang`)) === 'zh-CN', `${tag}: <html lang=zh-CN> by default`);
       await layoutOk(p, `idle ${tag}`);
-      await evaluate(p, `document.getElementById('badge').click()`);
+      await evaluate(p, `document.getElementById('menu-about').click()`);
       const want = JSON.parse(readFileSync(new URL('../public/version.json', import.meta.url), 'utf8')).combined;
       check((await text(p, '#version-hash')) === want, `${tag}: badge panel shows the combined hash`);
       await layoutOk(p, `badge ${tag}`);
@@ -370,7 +371,7 @@ try {
       if (sz === 'mobile') check(!(await evaluate(p, `document.getElementById('a2hs').hidden`)), `${tag}: Add-to-Home-Screen hint in a phone browser`);
       else check(await evaluate(p, `document.getElementById('a2hs').hidden`), `${tag}: no Add-to-Home-Screen hint on a desktop browser`);
       await shot('01-login', { full: true });
-      await evaluate(p, `document.getElementById('aj-menu').open = true`);
+      await evaluate(p, `(document.getElementById('settings').hidden && document.getElementById('setBtn').click())`);
       await shot('02-menu');
       await evaluate(p, `document.getElementById('menu-about').click()`);
       await shot('03-security-panel');
@@ -453,17 +454,17 @@ try {
         await p.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: r.x, y: r.y - 120 }] });
         await p.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
       }
-      await evaluate(p, `document.getElementById('aj-menu').open = true; document.getElementById('open-mem').click()`);
+      await evaluate(p, `(document.getElementById('settings').hidden && document.getElementById('setBtn').click()); document.getElementById('open-mem').click()`);
       await waitFor(p, `document.querySelectorAll('#mem-list .mem-item').length === 3`);
       await shot('16-memory', { full: true });
       await evaluate(p, `document.querySelector('#mem-list .mem-del').click()`);
       await waitFor(p, `!document.getElementById('confirm').hidden`);
       await shot('17-memory-delete-confirm');
       await evaluate(p, `document.getElementById('confirm-no').click(); document.querySelector('#mem-view [data-back]').click()`);
-      await evaluate(p, `document.getElementById('aj-menu').open = true; document.getElementById('open-act').click()`);
+      await evaluate(p, `(document.getElementById('settings').hidden && document.getElementById('setBtn').click()); document.getElementById('open-act').click()`);
       await waitFor(p, `document.querySelectorAll('#act-list li').length === 3`);
       await shot('18-activity');
-      await evaluate(p, `document.querySelector('#act-view [data-back]').click(); document.getElementById('aj-menu').open = true; document.getElementById('open-tasks').click()`);
+      await evaluate(p, `document.querySelector('#act-view [data-back]').click(); (document.getElementById('settings').hidden && document.getElementById('setBtn').click()); document.getElementById('open-tasks').click()`);
       await waitFor(p, `document.querySelectorAll('#tasks-list li').length === 2`);
       await shot('19-scheduled-tasks');
       await evaluate(p, `document.querySelector('#tasks-view [data-back]').click()`);
@@ -515,7 +516,7 @@ try {
       await navigate(p, BASE);
       await waitState(p, 'idle');
       check((await evaluate(p, `document.documentElement.lang + '|' + localStorage.getItem('aj.lang')`)) === 'en|en', 'lang: English survives a reload (localStorage aj.lang)');
-      await evaluate(p, `document.getElementById('aj-menu').open = true; document.querySelector('#aj-menu [data-aj-lang="zh"]').click()`);
+      await evaluate(p, `(document.getElementById('settings').hidden && document.getElementById('setBtn').click()); document.querySelector('[data-set-lang="zh"]').click()`);
       check((await evaluate(p, `document.documentElement.lang + '|' + localStorage.getItem('aj.lang')`)) === 'zh-CN|zh', 'lang: the switch in the menu goes back to 中文 and saves it');
       await navigate(p, BASE + '?lang=en');
       await waitState(p, 'idle');

@@ -9,7 +9,8 @@ The Agent can write in its folder, so it could plant a symlink where we are abou
 opened relative to the previous one with O_NOFOLLOW | O_DIRECTORY, must be a directory owned by this user, and the file is
 created with O_CREAT | O_EXCL | O_NOFOLLOW (0600) as `.part-<bid>` and renamed inside the same directory fd. Anything else →
 `unsafe_inbox`, nothing written. `.agentj/` is 0700 and holds `.gitignore` = `*`, so uploads never enter the customer's git.
-The client's file name never chooses a path: the slug is a scrubbed display fragment, the extension comes from the MIME.
+The client's file name never chooses a path: the slug is a scrubbed display fragment, the extension comes from the MIME
+(P166: an unlisted MIME keeps the name's extension scrubbed to letters and digits, else `.bin`).
 
 Retention: day folders older than RETAIN_DAYS go at serve start and daily; over QUOTA the oldest day goes first, never today's.
 Cleanup walks and deletes through the same O_NOFOLLOW dir-fd chain as the write (P33-C01): agentj runs unfenced, so a link
@@ -43,6 +44,45 @@ ALLOWED = {
     "application/json": ".json", "audio/webm": ".webm", "audio/ogg": ".ogg", "audio/mpeg": ".mp3", "audio/mp4": ".m4a",
     "video/mp4": ".mp4", "audio/aac": ".aac", "audio/wav": ".wav", "audio/x-wav": ".wav",
 }
+# P166: any file from the owner. Common types get a fixed extension; any other well-formed MIME keeps a scrubbed extension
+# of the client's name (letters and digits only, ≤ 10 — a display hint, never a path) or `.bin`. Group members on Telegram
+# stay on ALLOWED (telegram.media_of).
+MORE = {
+    "audio/x-m4a": ".m4a", "audio/m4a": ".m4a", "audio/x-mp4": ".m4a", "audio/mp3": ".mp3", "audio/x-aac": ".aac",
+    "audio/flac": ".flac", "audio/x-flac": ".flac", "audio/opus": ".opus", "audio/amr": ".amr", "audio/3gpp": ".3gp",
+    "audio/x-caf": ".caf", "audio/aiff": ".aiff", "audio/x-aiff": ".aiff", "audio/vnd.wave": ".wav", "audio/wave": ".wav",
+    "video/quicktime": ".mov", "video/webm": ".webm", "video/x-matroska": ".mkv", "video/3gpp": ".3gp", "video/x-m4v": ".m4v",
+    "video/mpeg": ".mpeg", "video/x-msvideo": ".avi",
+    "application/zip": ".zip", "application/x-zip-compressed": ".zip", "application/gzip": ".gz", "application/x-tar": ".tar",
+    "application/x-7z-compressed": ".7z", "application/vnd.rar": ".rar", "application/x-rar-compressed": ".rar",
+    "application/msword": ".doc", "application/vnd.ms-excel": ".xls", "application/vnd.ms-powerpoint": ".ppt",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document": ".docx",
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": ".xlsx",
+    "application/vnd.openxmlformats-officedocument.presentationml.presentation": ".pptx",
+    "application/vnd.apple.pages": ".pages", "application/vnd.apple.numbers": ".numbers", "application/vnd.apple.keynote": ".key",
+    "application/rtf": ".rtf", "text/rtf": ".rtf", "application/epub+zip": ".epub", "text/html": ".html", "text/xml": ".xml",
+    "application/xml": ".xml", "application/x-yaml": ".yaml", "text/yaml": ".yaml", "text/tab-separated-values": ".tsv",
+    "image/svg+xml": ".svg", "image/tiff": ".tiff", "image/bmp": ".bmp", "image/avif": ".avif",
+}
+_MIME = re.compile(r"[a-z0-9][a-z0-9!#$&^_.+-]{0,63}/[a-z0-9][a-z0-9!#$&^_.+-]{0,126}")
+_EXT = re.compile(r"\.([A-Za-z0-9]{1,10})$")
+
+
+def accepts(mime) -> bool:
+    """Any well-formed, lower-case MIME (P166: every file the owner picks). Images, PDF, WAV, MP4 keep their magic check."""
+    return isinstance(mime, str) and bool(_MIME.fullmatch(mime))
+
+
+def ext_for(mime: str, name) -> str:
+    if mime in ALLOWED:
+        return ALLOWED[mime]
+    if mime in MORE:
+        return MORE[mime]
+    m = _EXT.search(unicodedata.normalize("NFKC", str(name or "")).replace("\x00", ""))
+    return "." + m.group(1).lower() if m else ".bin"
+# P184: contacts / calendar / mail exports the owner hands the Agent (`agentj contacts import`, reading an invitation or a mail).
+ALLOWED.update({"text/vcard": ".vcf", "text/x-vcard": ".vcf", "text/directory": ".vcf", "text/calendar": ".ics",
+                "message/rfc822": ".eml", "application/mbox": ".mbox"})
 
 
 class Unsafe(Exception):
@@ -51,6 +91,11 @@ class Unsafe(Exception):
 
 def kind_of(mime: str) -> str:
     return "image" if mime.startswith("image/") else "audio" if mime.startswith("audio/") else "file"
+
+
+def media_kind(mime: str) -> bool:
+    """Audio or video: transcribed at say time (P166), the original stays attached."""
+    return mime.startswith(("audio/", "video/"))
 
 
 def slugify(name) -> str:
@@ -145,7 +190,7 @@ def read_file(workdir: str, name: str, limit: int) -> bytes | None:
 def place(workdir: str, src_path: str, name: str, mime: str, bid: str, now: float | None = None) -> str:
     """Copy the finished upload at src_path into the inbox; returns the absolute path the Agent is told. Raises Unsafe /
     OSError; on any failure nothing is left behind but the temporary `.part-<bid>` (removed)."""
-    ext = ALLOWED[mime]
+    ext = ext_for(mime, name)
     t = time.localtime(now if now is not None else time.time())
     day = time.strftime("%Y-%m-%d", t)
     final = f"{time.strftime('%H%M%S', t)}-{secrets.token_hex(3)}-{slugify(name)}{ext}"

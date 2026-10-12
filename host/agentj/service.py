@@ -129,6 +129,21 @@ def agentj_argv() -> list[str]:
 SERVE_ARGS = ["serve", "--events", "quiet", "--no-stdin"]
 
 
+def ensure_agentj_on_path(environ: dict | None = None, exe: str | None = None) -> str | None:
+    """P155: every bundled skill has the Agent run `agentj …` in its own shell, which inherits serve's PATH. A service PATH
+    captured without the install's bin directory (QA-J 10-12: ~/.local/bin missing → 「找不到 agentj 命令」) gets the running
+    package's own bin directory APPENDED (never shadows anything). Returns the directory added, else None."""
+    e = os.environ if environ is None else environ
+    if shutil.which("agentj", path=e.get("PATH", "")):
+        return None
+    d = os.path.dirname(os.path.abspath(exe or sys.executable))
+    launcher = os.path.join(d, "agentj")
+    if not (os.path.isfile(launcher) and os.access(launcher, os.X_OK)):
+        return None
+    e["PATH"] = (e["PATH"] + os.pathsep if e.get("PATH") else "") + d
+    return d
+
+
 def service_env(environ: dict | None = None) -> tuple[dict, list[str]]:
     """(variables written into the unit, notes for the human). Values are paths only; proxies only without credentials."""
     e = os.environ if environ is None else environ
@@ -141,6 +156,9 @@ def service_env(environ: dict | None = None) -> tuple[dict, list[str]]:
     for k in CAPTURED_ENV[1:]:
         if getenv(k, None, e):
             out[k] = getenv(k, None, e)
+    from .instance import ENV as INSTANCE_ENV, current
+    if current(e) > 1:   # P180: the unit / job re-selects its instance (state dir, preferences, unit name) from this
+        out[INSTANCE_ENV] = str(current(e))
     notes = []
     from .binaries import resolve, ENV
     for kind, key in ENV.items():
@@ -541,6 +559,9 @@ def _bootstrap(n: str, path: str) -> subprocess.CompletedProcess:
 def _register_pair_protocol(notes):
     try:
         from . import protocol_handler
+        from .instance import current
+        if current() > 1 and protocol_handler.installed():
+            return      # P180: one handler per computer; it finds the instance by the link's channel
         protocol_handler.install()
     except (OSError, ValueError, subprocess.SubprocessError):
         notes.append("本机配对链接注册失败：运行 agentj protocol install 重试；仍可用 agentj admin 配对 / Pairing link registration failed: retry agentj protocol install, or use agentj admin")

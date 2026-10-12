@@ -25,6 +25,8 @@ os.environ.setdefault("AGENTJ_SKILL_LINK", "off")
 os.environ.setdefault("AGENTJ_GOOGLE_PREINSTALL", "off")
 # P131: never probe the developer's own CDP browsers (e.g. a Chromium on 127.0.0.1:9222) from a test; adopt tests use fakes.
 os.environ.setdefault("AGENTJ_BROWSER_DETECT", "off")
+# P175: `agentj agent detect` / doctor never probe api.openai.com from a test (test_p175 patches the opener instead).
+os.environ.setdefault("AGENTJ_REACH_PROBE", "off")
 
 # P143: P142's diskq hands host.log lines to its writer thread for BUFFER_FOR s after one slow append. On a loaded test machine
 # an in-process test that then reads host.log directly found no file yet — or a partial log, where "secret not in the log"

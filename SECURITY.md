@@ -2,7 +2,7 @@
 
 ## Reporting a vulnerability
 
-Email **me@agentj.app** with "security" in the subject. Please do not open a public issue for a vulnerability.
+Email **feedback@agentj.app** with "security" in the subject. Please do not open a public issue for a vulnerability.
 Include what you found, how to reproduce it, and what an attacker could do with it. We answer within a few days and
 tell you what we will fix and when; we credit you when the fix ships, unless you prefer not to be named.
 

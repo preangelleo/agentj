@@ -1,7 +1,8 @@
 """P114 (P90 design, ADR-A194): Agent J's own browser — installed by default, a private profile, loopback-only CDP.
 
 - `setup` downloads the Chrome for Testing build named in `browser_manifest.json` (it ships inside the signed host package,
-  so the package signature covers every URL, size and SHA-256). Official CDN first; a mirror only serves the same bytes
+  so the package signature covers every URL, size and SHA-256). Playwright's Chrome-for-Testing CDN (cdn.playwright.dev,
+  `official` below) first; a mirror only serves the same bytes
   (`browser.download_source` auto | official | approved-mirror, `browser.mirror` for an owner's own mirror). Two retries,
   a five-minute budget, ≥ 1.5 GB free. A failure never fails the Agent J install: the browser is `attention` and only the
   work that needs it waits.
@@ -674,8 +675,9 @@ def unit_text(argv: list[str], environ: dict | None = None) -> str:
     path = os.pathsep.join(p for p in (e.get("PATH") or "").split(os.pathsep) if p.startswith("/"))
     if path:
         env["PATH"] = path
-    if e.get("AGENTJ_STATE_DIR"):
-        env["AGENTJ_STATE_DIR"] = e["AGENTJ_STATE_DIR"]
+    for k in ("AGENTJ_STATE_DIR", "AGENTJ_INSTANCE"):   # P180: the instance's own preferences too
+        if e.get(k):
+            env[k] = e[k]
     q = service._sd_quote
     lines = ["# Agent J browser — written by `agentj browser setup`. Loopback-only; no secrets here, by design.",
              "[Unit]", "Description=Agent J browser (agentj browser run): private profile, CDP on 127.0.0.1 only",
@@ -689,7 +691,7 @@ def unit_text(argv: list[str], environ: dict | None = None) -> str:
 
 def plist_bytes(label: str, argv: list[str], log_path: str, environ: dict | None = None) -> bytes:
     e = os.environ if environ is None else environ
-    env = {k: e[k] for k in ("AGENTJ_STATE_DIR",) if e.get(k)}
+    env = {k: e[k] for k in ("AGENTJ_STATE_DIR", "AGENTJ_INSTANCE") if e.get(k)}
     return plistlib.dumps({"Label": label, "ProgramArguments": argv + ["browser", "run"], "EnvironmentVariables": env,
                            "RunAtLoad": True, "KeepAlive": {"SuccessfulExit": False}, "ThrottleInterval": 10,
                            "LimitLoadToSessionType": "Aqua", "ProcessType": "Interactive",

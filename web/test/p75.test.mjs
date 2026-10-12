@@ -4,7 +4,7 @@ import {readFileSync} from 'node:fs';
 import vm from 'node:vm';
 const src=readFileSync(new URL('../public/js/relay.js',import.meta.url),'utf8');
 function fixture(batches){
- const ctx=vm.createContext({C:{api:{history:async()=>batches.shift()??null}},showPage(){},renderSilent(){},announceTurn(){},el:()=>({hidden:true})});
+ const ctx=vm.createContext({C:{api:{history:async()=>batches.shift()??null}},showPage(){},renderSilent(){},announceTurn(){},el:()=>({hidden:true}),search:{onEpoch(){}}});   // P188: resetHistory empties the search cache
  vm.runInContext(src.slice(src.indexOf('const hist ='),src.indexOf('function hhmm')).replace('export function','function').replace('export function','function'),ctx);
  const run=x=>vm.runInContext(x,ctx);
  run(`hist.turns=[{id:101,reply:'last'}];hist.firstId=1;hist.count=101;hist.lastId=101;hist.epoch=0;pageAt=0;follow=false`);

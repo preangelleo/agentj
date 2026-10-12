@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // agentj web client — build step (zero npm deps, deterministic, no timestamps).
-//   1. copies protocol/{noise,wire}.js → public/proto/ byte-for-byte (the client must not carry its own crypto)
+//   1. copies protocol/{noise,wire,search}.js → public/proto/ byte-for-byte (the client must not carry its own crypto)
 //   2. (in the monorepo) copies the shared design system (agentjarvis/brand, set "web": tokens, base, lang.js, ui.js, fonts, shield + PWA +
 //      status icons) → public/brand/… + public/favicon.ico + public/apple-touch-icon.png (same as `brand/sync.mjs --set web`)
 //   3. writes public/i18n.js from web/i18n/web.zh.json (polished by i18n/polish.py) + web/i18n/web.en.json — an ES module,
@@ -29,7 +29,7 @@ export const WEB_DIR = fileURLToPath(new URL('./', import.meta.url));
 export const PUBLIC_DIR = join(WEB_DIR, 'public');
 export const I18N_DIR = join(WEB_DIR, 'i18n');
 export const PROTOCOL_DIR = fileURLToPath(new URL('../protocol/', import.meta.url));
-export const PROTO_FILES = ['noise.js', 'wire.js'];
+export const PROTO_FILES = ['noise.js', 'wire.js', 'search.js'];   // P188: search.js = the chat search shared with the host's mirror
 export const MANIFEST_FILES = new Set(['version.json', 'version.js']);
 export const LANGS = ['zh', 'en'];
 

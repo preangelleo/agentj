@@ -21,7 +21,7 @@ async function post(w,req){let response;w.listeners.get('fetch')({request:req,re
 function claim(w,id,url='https://m.agentj.app/?share='+id){let payload;w.listeners.get('message')({data:{t:'share-take',id},source:{url},ports:[{postMessage:p=>payload=p}]});return payload;}
 test('manifest registers POST multipart images and basic share fields',()=>{
  const m=JSON.parse(readFileSync(new URL('manifest.webmanifest',publicDir)));
- assert.deepEqual(m.share_target,{action:'./share-target',method:'POST',enctype:'multipart/form-data',params:{title:'title',text:'text',url:'url',files:[{name:'images',accept:['image/*']}]}});
+ assert.deepEqual(m.share_target,{action:'./share-target',method:'POST',enctype:'multipart/form-data',params:{title:'title',text:'text',url:'url',files:[{name:'images',accept:['*/*']}]}});   // P166: any file
 });
 test('SW local multipart intake: files/text never in URL, claim once by landing page',async()=>{
  const w=worker(),r=await post(w,form([new File(['one'],'a.png',{type:'image/png'}),new File(['two'],'b.jpg',{type:'image/jpeg'})]));
@@ -35,9 +35,14 @@ test('TTL, concurrent bound and rejected types/size/count/malformed forms fail c
  const w=worker();const a=await post(w,form()),b=await post(w,form());assert.ok(!b.headers.get('location').endsWith('failed'));
  assert.ok((await post(w,form())).headers.get('location').endsWith('failed'));
  w.advance(300000); assert.equal(claim(w,new URL(a.headers.get('location')).searchParams.get('share')).error,'expired');
- for(const request of [form([new File(['x'],'a.txt',{type:'text/plain'})]),form(Array.from({length:11},()=>new File(['x'],'a.png',{type:'image/png'}))),form([new File([new Uint8Array(26214401)],'large.png',{type:'image/png'})]),form([], 'x'.repeat(16001)),new Request('https://m.agentj.app/share-target',{method:'POST',body:'not multipart'})]){
+ for(const request of [form(Array.from({length:11},()=>new File(['x'],'a.png',{type:'image/png'}))),form([new File([new Uint8Array(209715201)],'large.m4a',{type:'audio/x-m4a'})]),form([], 'x'.repeat(16001)),new Request('https://m.agentj.app/share-target',{method:'POST',body:'not multipart'})]){
   assert.ok((await post(w,request)).headers.get('location').endsWith('failed'));
  }
+});
+test('P166: any file type is taken locally (audio, documents, unknown), still bounded',async()=>{
+ const w=worker();const r=await post(w,form([new File(['memo'],'新录音.m4a',{type:'audio/x-m4a'}),new File(['doc'],'a.docx',{type:''})],''));
+ const id=new URL(r.headers.get('location')).searchParams.get('share');assert.match(id,/^[a-f0-9-]{36}$/);
+ const v=claim(w,id);assert.deepEqual(v.images.map(f=>f.name),['新录音.m4a','a.docx']);
 });
 test('only the exact share POST is handled; network Worker still rejects all POST without reading body',async()=>{
  const w=worker(); for(const req of [new Request('https://m.agentj.app/share-target'),new Request('https://m.agentj.app/other',{method:'POST'}),new Request('https://evil.invalid/share-target',{method:'POST'})])assert.equal(await post(w,req),undefined);

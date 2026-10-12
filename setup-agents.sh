@@ -43,13 +43,18 @@ if [[ -z $SELECT ]]; then
 fi
 CLIS=(); IFS=, read -r -a CLIS <<< "$SELECT"
 for cli in "${CLIS[@]}"; do case "$cli" in opencode|codex|claude|gemini) ;; *) printf 'Unknown CLI name\n' >&2; exit 2 ;; esac; done
+if ((FULL)); then
+  # P191 B24: full access stays the documented default (phone remote control needs tools that keep working without prompts),
+  # but it is never silent.
+  printf 'WARNING: full access is ON by default: selected tools run without approval prompts (Claude bypassPermissions, Codex danger-full-access, OpenCode allow, Gemini no sandbox) and can change files and run commands as you. Configs are backed up. Use --no-full-access to keep approval prompts. See %s#full-access\n' "$PAGE" >&2
+fi
 if ((DRY)); then
   printf 'PLAN: ensure curl, git, certificates, build tools, Python 3.11+, Node.js 22+ and npm; registry %s\n' "$REGISTRY"
   [[ $OS != Darwin ]] || printf 'PLAN: Homebrew shellenv in zprofile/bash_profile (Intel /usr/local, Apple Silicon /opt/homebrew)\n'
   printf 'PLAN: install missing CLIs: %s; user-owned npm prefix; PATH before bashrc early-return\n' "$SELECT"
   printf 'PLAN: full-access=%s; back up and merge configs, 0600, refuse symlinks/JSONC; Gemini launcher only when explicitly selected; personal login discontinued, paid Gemini API key required\n' "$FULL"
   printf 'PLAN: relay=%s; probe official services; official AgentsRelay --paste --only --no-launch verifies real model BEFORE CLI install, 3 attempts; Gemini unsupported\n' "$RELAY"
-  printf 'PLAN: npm/Node timeout -> automatic npmmirror fallback; official/mirror SHA512 match, Node SHA256 required; platform binaries + help + ripgrep self-check\n'
+  printf 'PLAN: npm/Node timeout -> automatic npmmirror fallback; official/mirror SHA512 match, Node SHA256 from official nodejs.org required (mirror sums never trusted); platform binaries + help + ripgrep self-check\n'
   printf 'PLAN: aliases=%s (selected tools only; gx requires explicit gemini selection); agentj=%s; no tty -> next-step instructions, no prompt\n' "$ALIASES" "$AGENTJ"
   exit 0
 fi
@@ -134,23 +139,29 @@ if ! command -v node >/dev/null 2>&1 || ! command -v npm >/dev/null 2>&1 || ! no
   case "$OS" in Darwin) NODEOS=darwin; EXT=tar.gz ;; *) NODEOS=linux; EXT=tar.xz ;; esac
   NODEBASE=https://nodejs.org/dist/latest-v22.x
   NODEMIRROR=https://registry.npmmirror.com/-/binary/node/latest-v22.x
+  NODECURL=(curl --proto '=https' --proto-redir '=https' --tlsv1.2 --connect-timeout 10 -fsSL)
   TMP=$(mktemp -d); trap 'rm -rf "$TMP"' EXIT
-  if ! curl --connect-timeout 10 --max-time 45 -fsSL "$NODEBASE/SHASUMS256.txt" -o "$TMP/SHASUMS256.txt"; then
-    printf 'Node: official sums unavailable; using mirror sums (trust mirror HTTPS).\n'
-    NODEBASE=$NODEMIRROR
-    curl --connect-timeout 10 --max-time 45 -fsSL "$NODEBASE/SHASUMS256.txt" -o "$TMP/SHASUMS256.txt"
+  # The checksum list always comes from the official nodejs.org (small file, 3 tries); a mirror may only supply the tarball.
+  SUMS_OK=0
+  for attempt in 1 2 3; do
+    if "${NODECURL[@]}" --max-time 45 "$NODEBASE/SHASUMS256.txt" -o "$TMP/SHASUMS256.txt"; then SUMS_OK=1; break; fi
+  done
+  if ((SUMS_OK == 0)); then
+    printf 'Node: official checksums (nodejs.org SHASUMS256.txt) unavailable; refusing an unverified download. Install Node.js 22+ yourself and rerun. See %s#dependencies\n' "$PAGE" >&2
+    exit 1
   fi
   FILE=$(awk -v target="-$NODEOS-$NODEARCH.$EXT" 'index($2,target)>0 && index($2,target)==length($2)-length(target)+1 {print $2}' "$TMP/SHASUMS256.txt")
   [[ -n $FILE && $FILE != *$'\n'* && $FILE != */* ]] || { printf 'Node artifact selection failed. See %s#dependencies\n' "$PAGE" >&2; exit 1; }
-  if ! curl --connect-timeout 10 --max-time 120 -fsSL "$NODEBASE/$FILE" -o "$TMP/$FILE"; then
-    printf 'Node: automatic npmmirror download fallback; retaining selected SHA256.\n'
-    curl --connect-timeout 10 --max-time 120 -fsSL "$NODEMIRROR/$FILE" -o "$TMP/$FILE"
+  if ! "${NODECURL[@]}" --max-time 120 "$NODEBASE/$FILE" -o "$TMP/$FILE"; then
+    printf 'Node: automatic npmmirror download fallback; verified against the official SHA256.\n'
+    rm -f "$TMP/$FILE"
+    "${NODECURL[@]}" --max-time 120 "$NODEMIRROR/$FILE" -o "$TMP/$FILE"
   fi
-  python3 - "$TMP" "$FILE" <<'PY'
+  python3 - "$TMP" "$FILE" <<'PY' || { printf 'Node checksum mismatch: download refused (expected the official nodejs.org SHA256). See %s#dependencies\n' "$PAGE" >&2; exit 1; }
 import hashlib, pathlib, sys
 p=pathlib.Path(sys.argv[1]); name=sys.argv[2]
-expected=[r.split()[0] for r in (p/'SHASUMS256.txt').read_text().splitlines() if r.split()[1]==name][0]
-assert hashlib.sha256((p/name).read_bytes()).hexdigest()==expected, 'Node checksum mismatch'
+expected=[r.split()[0] for r in (p/'SHASUMS256.txt').read_text().splitlines() if len(r.split())==2 and r.split()[1]==name]
+sys.exit(0 if len(expected)==1 and hashlib.sha256((p/name).read_bytes()).hexdigest()==expected[0] else 1)
 PY
   mkdir -p "$PREFIX/node"
   tar -xf "$TMP/$FILE" -C "$PREFIX/node" --strip-components=1

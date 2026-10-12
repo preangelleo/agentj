@@ -66,8 +66,8 @@ def input_digest(tool_input) -> str:
 
 def record(st, *, rid: str, agent: str, tool: str, input_sha256: str, shown_sha256: str, decision: str, reason: str,
            device: str | None = None, sign_pub: bytes | None = None, sig: bytes | None = None, cats: list | None = None,
-           scope: str | None = None, grant: str | None = None) -> dict:
-    """Append one decision to approvals.log (0600). reason: device | batch | brief (0.18: inside a confirmed brief) | host (0.18: `agentj capability`, host-gated) | timeout | no_device | serve_stop | agent_gone |
+           scope: str | None = None, grant: str | None = None, auto: str = "batch") -> dict:
+    """Append one decision to approvals.log (0600). reason: device | batch | goal | goal_auto (P158) | brief (0.18: inside a confirmed brief) | host (0.18: `agentj capability`, host-gated) | timeout | no_device | serve_stop | agent_gone |
     too_many | estop | policy (beyond the harness's own sandbox, never asked: ADR-A73). cats = danger categories ([] = low risk); scope = the signed batch scope (allow_batch); grant = for an
     automatic approval, the id of the signed allow_batch it relied on."""
     rec = {"ts": int(time.time()), "id": rid, "channel": st.config()["channel"], "agent": agent, "tool": tool,
@@ -78,7 +78,7 @@ def record(st, *, rid: str, agent: str, tool: str, input_sha256: str, shown_sha2
     if scope is not None:
         rec["scope_sha256"] = scope_digest(scope)
     if grant is not None:
-        rec["auto"], rec["grant"] = "batch", grant
+        rec["auto"], rec["grant"] = auto, grant   # P158: auto "goal" = under the signed goal card (reason goal | goal_auto)
     st.append_private(st.approvals_path, json.dumps(rec, ensure_ascii=False))
     return rec
 
@@ -231,6 +231,12 @@ def check_record(st, r: dict, index: dict | None = None) -> str:
             return "bad"
         cur = st.sign_key(str(r.get("device")))
         return "ok_removed" if cur is None else ("ok" if cur == sk else "bad")
+    if r.get("reason") in ("goal", "goal_auto"):
+        # P158: allowed under a goal — the signed `agentj goal` allow it names must verify
+        g = (index or {}).get(str(r.get("grant")))
+        if not g or g.get("decision") != "allow" or g.get("tool") != "agentj goal" or g.get("reason") != "device":
+            return "bad"
+        return "auto" if check_record(st, g) in ("ok", "ok_removed") else "bad"
     if r.get("reason") == "batch":
         g = (index or {}).get(str(r.get("grant")))
         if not g or g.get("decision") != "allow_batch" or g.get("tool") != r.get("tool") or g.get("device") != r.get("device"):

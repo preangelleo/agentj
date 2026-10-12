@@ -19,7 +19,10 @@ try{
     const o=window.setTimeout;window.setTimeout=(f,ms,...a)=>{seen.push(ms);return o(f,ms,...a)};
     try{m.closeSession();for(let i=0;i<10;i++)m.scheduleReconnect();}finally{window.setTimeout=o}return seen;})`);
   const ladder=waits.filter(x=>x!==6000);   // 6000 = P129's quiet window, not a retry
-  ok(ladder.length===10&&ladder[0]===250&&Math.max(...ladder)===5000&&ladder.slice(-4).every(x=>x===5000),`retry waits ${JSON.stringify(waits)}: first 250 ms, capped at 5 s (was 30 s)`);
+  // P193 (B12): every later step is jittered into [½, 1] × 250·2ⁿ (capped at 5 s)
+  const step=i=>Math.min(250*2**i,5000);
+  ok(ladder.length===10&&ladder[0]===250&&Math.max(...ladder)<=5000&&ladder.every((x,i)=>x>=step(i)/2&&x<=step(i))&&ladder.slice(-4).every(x=>x>=2500),`retry waits ${JSON.stringify(waits)}: first 250 ms, then jittered, capped at 5 s (was 30 s)`);
+  ok(new Set(ladder.slice(-4)).size>1,`capped waits are jittered, not all equal: ${JSON.stringify(ladder.slice(-4))}`);
 
   // 2. the network coming back retries at once (no waiting out the 5 s timer); the hello says rc why=offline
   let n0=fake.log.length,t0=Date.now();

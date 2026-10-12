@@ -359,6 +359,40 @@
       "minimum": 10,
       "maximum": 120
     },
+    "approval.jev_threshold": {
+      "type": "number",
+      "default": 0.7,
+      "minimum": 0.5,
+      "maximum": 0.95,
+      "multipleOf": 0.05,
+      "description": "Jev layer 2: allow a can't-tell command without a card when Jev's p ≥ this (only with OPENROUTER_API_KEY; the five danger categories always ask) / Jev 第二层：看不清的命令 Jev 概率 ≥ 此值时免弹卡（需 OPENROUTER_API_KEY；五类明确危险一律弹卡）",
+      "aliases": [
+        "jev threshold",
+        "审批阈值",
+        "弹窗阈值",
+        "jev 阈值",
+        "approval jev threshold"
+      ],
+      "tier": "user",
+      "apply": "hot",
+      "verify": "agentj config validate --json",
+      "since": "0.20"
+    },
+    "approval.goal_auto": {
+      "type": "boolean",
+      "default": true,
+      "description": "Goal mode (/goal): outside the signed grant, an action the computer can undo (git-tracked, trash, a push to a known remote) asks with a 10-second countdown and is approved when nobody answers; off = an ordinary card that never approves by itself / 目标模式：授权范围外、电脑能撤回的动作弹 10 秒倒计时卡，无人点即批准；关掉 = 普通卡，不会自动批准",
+      "aliases": [
+        "goal auto approve",
+        "目标模式自动批准",
+        "10 秒自动批准",
+        "goal countdown"
+      ],
+      "tier": "user",
+      "apply": "hot",
+      "verify": "agentj config validate --json",
+      "since": "0.20"
+    },
     "security.e2e": {
       "type": "boolean",
       "default": true,
@@ -579,8 +613,8 @@
     },
     "agent.session_mode": {
       "type": "string",
-      "default": "shared",
-      "description": "Attach to native owner sessions; independent remains available / 默认共享机主会话，独立模式仍可选择",
+      "default": "independent",
+      "description": "independent = Agent J's own fenced session (default); shared = attach to the session you have open in your terminal (advanced) / 默认独立会话；shared = 接入你正在用的终端会话（高级）",
       "aliases": [
         "会话模式",
         "session mode"
@@ -974,6 +1008,36 @@
       "verify": "agentj config validate --json",
       "since": "0.17.4",
       "maxLength": 160
+    },
+    "heartbeat.enabled": {
+      "type": "boolean",
+      "default": true,
+      "tier": "user",
+      "description": "Wake the main Agent after an idle spell to check background work and to-dos (one model call each) / 空闲一段时间后自动醒来检查后台和待办（每次消耗一次模型调用）",
+      "aliases": [
+        "heartbeat",
+        "心跳"
+      ],
+      "needs": [],
+      "apply": "hot",
+      "verify": "agentj heartbeat status",
+      "since": "0.20.0"
+    },
+    "heartbeat.interval_minutes": {
+      "type": "integer",
+      "default": 60,
+      "tier": "user",
+      "minimum": 5,
+      "maximum": 1440,
+      "description": "Idle minutes before a heartbeat, 5–1440 (agentj heartbeat set 30m) / 空闲多少分钟心跳一次，5–1440",
+      "aliases": [
+        "heartbeat interval",
+        "心跳间隔"
+      ],
+      "needs": [],
+      "apply": "hot",
+      "verify": "agentj heartbeat status",
+      "since": "0.20.0"
     }
   }
 }

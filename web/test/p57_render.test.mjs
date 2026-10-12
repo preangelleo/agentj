@@ -164,8 +164,9 @@ test('P57 vendor/: every file pinned in VERSIONS.md (sha256), each library with 
     .filter((r) => !r.startsWith('jsQR') && r !== 'VERSIONS.md').sort();
   assert.deepEqual([...listed.keys()].sort(), files, 'VERSIONS.md lists exactly the shipped vendor files');
   for (const [r, h] of listed) assert.equal(createHash('sha256').update(readFileSync(join(PUB, 'vendor', r))).digest('hex'), h, r);
-  for (const lib of ['hljs', 'katex', 'mermaid']) assert.ok(listed.has(`${lib}/LICENSE.txt`), `${lib} LICENSE`);
+  for (const lib of ['hljs', 'katex', 'mermaid', 'pdfjs', 'mammoth', 'xlsx']) assert.ok(listed.has(`${lib}/LICENSE.txt`), `${lib} LICENSE`);
   assert.match(V, /\| 11\.12\.0 \|/); assert.match(V, /\| 0\.19\.0 \|/); assert.match(V, /\| 12\.1\.0 \|/);
+  assert.match(V, /\| 6\.4\.299 \|/); assert.match(V, /\| 1\.13\.0 \|/); assert.match(V, /\| 0\.20\.3 \|/);   // P183
   // KaTeX: only the woff2 faces ship; the CSS lists woff2 first, so a browser never asks for the missing woff / ttf
   assert.ok([...listed.keys()].filter((r) => r.startsWith('katex/fonts/')).every((r) => r.endsWith('.woff2')));
   const css = read('vendor/katex/katex.min.css');

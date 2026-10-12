@@ -18,7 +18,7 @@ Full access reduces repeated approval dialogs during phone control. Risk: the AI
 
 ## One-command setup
 
-First install curl below. The setup asks which tools to install, checks official service connectivity with short requests that send no user data, and recommends a route. Reachable: native login. Unreachable: AgentsRelay, which provides an alternative service endpoint. You can change the recommendation with `--relay` / `--no-relay`. Connectivity does not prove regional eligibility or account access. Full-access settings are backed up and merged; `--no-full-access` keeps approval defaults. `--dry-run` downloads nothing and writes no files. Automatic setup supports macOS and Ubuntu/Debian/WSL2.
+First install curl below. The setup asks which tools to install, checks official service connectivity with short requests that send no user data, and recommends a route. Reachable: native login. Unreachable: AgentsRelay, which provides an alternative service endpoint. You can change the recommendation with `--relay` / `--no-relay`. Connectivity does not prove regional eligibility or account access. Full-access settings are backed up and merged, and the script prints a warning while full access is on; `--no-full-access` keeps approval defaults. `--dry-run` downloads nothing and writes no files. Automatic setup supports macOS and Ubuntu/Debian/WSL2.
 
 
 ```bash
@@ -46,7 +46,7 @@ shasum -a 256 setup-agents.sh
 ```
 
 
-SHA256 sh: `4f1da9493ab2b178631a81dac1c79314c76f2cb20f73de4ab32d67dfe729c7e5`
+SHA256 sh: `0da9634e566bdc1d8222988dae48159b43887a8b4791efbd4e65f6785a1a023b`
 
 
 ```bash
@@ -62,7 +62,7 @@ bash setup-agents.sh
 
 Flow: choose tools → choose native login or AgentsRelay → on Relay, register and paste keys with hidden input, pass a real model request → install dependencies/CLIs → verify native binaries and offline help → add aliases → optionally run the official Agent J installation assistant → account linking and phone pairing. The official assistant verifies existing CLI sign-in with a real model call and reuses it for immediate chat after pairing. It asks for a new formal provider key only when no supported CLI can call.
 
-npm failure or timeout automatically retries `registry.npmmirror.com`, including platform optional dependencies. No `--mirror` is needed; it selects the mirror first. Mirror root and platform-package SHA512 integrity must equal the official npmjs metadata, and downloaded tarball bytes must match. If official metadata is unavailable or hashes disagree, setup stops rather than trusting an unverified mirror. Node downloads also fall back and always verify SHA256: official SHASUMS when reachable, otherwise mirror SHASUMS (this trusts mirror HTTPS for the checksum). Mirrors change downloads, not model service access. CLI binaries are never downloaded from GitHub Releases by this script; neither Claude Code nor Codex is hosted on our site.
+npm failure or timeout automatically retries `registry.npmmirror.com`, including platform optional dependencies. No `--mirror` is needed; it selects the mirror first. Mirror root and platform-package SHA512 integrity must equal the official npmjs metadata, and downloaded tarball bytes must match. If official metadata is unavailable or hashes disagree, setup stops rather than trusting an unverified mirror. Node tarballs may also come from the mirror, but the SHA256 always comes from the official nodejs.org SHASUMS256.txt (HTTPS only, TLS 1.2+); if that list is unreachable or the bytes differ, setup stops and asks you to install Node.js 22+ yourself. Mirrors change downloads, not model service access. CLI binaries are never downloaded from GitHub Releases by this script; neither Claude Code nor Codex is hosted on our site.
 
 Each installed CLI must pass `--version` and offline `--help`. Native tools additionally check platform packages, CPU architecture and glibc/musl selection, execute their binaries and bundled ripgrep where provided. Missing components produce “安装不完整：缺 …” and a repair command, never success. Gemini also checks and loads its platform-native Node terminal addon. macOS has no version-number rejection; actual runtime errors explain when system libraries need an upgrade.
 

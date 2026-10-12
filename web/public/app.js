@@ -26,6 +26,8 @@ import * as settings from './js/settings.js';
 import {initVersionNotice,setHostVersion} from './js/version-notice.js';
 import {initShare, onShareReady, forgetShare} from './js/share.js';
 import * as elevate from './js/elevate.js';     // F17: sudo / secret cards (§11)
+import { registerMailForward } from './js/mailfwd.js';   // P189: file card → the dialog below
+import * as contacts from './js/contacts.js';   // P184 (§25): contact cards + 「转发到邮箱」
 import * as secretout from './js/secretout.js'; // F32: secret pickup cards (§18)
 import * as longtask from './js/longtask.js';   // 0.18: opening card + 「我的 Agent 会什么」 (§20)
 import * as logincard from './js/logincard.js'; // P114: sign-in QR cards (ADR-A194)
@@ -34,9 +36,16 @@ import * as renew from './js/renew.js';        // P122: …and after the browser
 import * as bots from './js/bots.js';
 import * as friends from './js/friends.js';    // §17.7: /friends + the friend cards
 import * as setupcard from './js/setup.js';   // P115: the first-run checklist card
+import * as devRename from './js/dev-rename.js';   // P179: long-press the source label → rename this remote
 import * as busy from './js/busy.js';         // P150 (§22): 「在办事项」 dots + the centred dialog
+import * as agentname from './js/agentname.js';   // P181 (§22.2): long-press the header name → rename
+import { applyTheme } from './js/theme.js';  // P169 (§23): the owner's theme (colours, logo, Send glyph, robots / dots)
+import * as shotclip from './js/shotclip.js'; // P154: a screenshot copied on a computer → the attachment tray
+import * as offline from './js/offline-card.js'; // P168: the disconnected card (blur + gdlg square, feedback@ after 30 min)
 import { parseAgentId } from './proto/wire.js';
 import { SCAN_CONSTRAINTS, SCAN_FALLBACK, SCAN_SLOW_MS, scanFrame } from './js/scan.js';   // F29 (ADR-A177)
+import { classifyScan, RV_PREFIX } from './proto/wire.js';
+import * as rvpair from './js/rvpair.js';   // P190 (§27): be scanned on the pairing screen; scan a new device from a paired one
 
 import { registerLayer, initLayers } from './js/layers.js';
 import { applyViewport, watchViewport } from './js/viewport.js';
@@ -97,6 +106,15 @@ function takeAddHash() {
   return true;
 }
 if (takeAddHash()) wantFriends = true;
+// P190 (§27): a new device's code opened by the system camera (`#j=…`): this page approves it once it is paired and ready.
+let pendingRv = null;
+function takeRvHash() {
+  if (!location.hash.startsWith(RV_PREFIX)) return false;
+  pendingRv = location.origin + '/' + location.hash;
+  history.replaceState(null, '', location.pathname + location.search);
+  return true;
+}
+takeRvHash();
 function openFriendsWanted() {
   if (!wantFriends) return false;
   wantFriends = false;
@@ -135,7 +153,7 @@ function setStatus(s, key, vars) {
   // The relay saying the computer itself is offline (st.hostDown) on a steady session is news: shown at once. Right after
   // our own drop it is not (a relay deploy or restart drops both ends; the computer is back a second after the page).
   if ((s === 'connecting' || (s === 'waiting-host' && (key !== 'st.hostDown' || quietTimer))) && (painted === 'ready' || quietTimer)) {
-    if (!quietTimer) { quietTimer = setTimeout(() => { quietTimer = 0; paintStatus(); }, QUIET_MS); relay.connLost(); }
+    if (!quietTimer) { quietTimer = setTimeout(() => { quietTimer = 0; paintStatus(); }, QUIET_MS); relay.connLost(); offline.dropped(); }
     return;
   }
   clearTimeout(quietTimer); quietTimer = 0;
@@ -154,12 +172,24 @@ function paintStatus() {
   relay.setConn(on, st.textContent);
   renderLogo();
   rerender();
+  const m = offMode();
+  if (m) offline.update(m, key);
+}
+// P168: what the disconnected card should do for the painted state + view (offline-card.js update()).
+function offMode() {
+  if (quietTimer || (painted === 'idle' && PAIRED_VIEWS.includes(view))) return null;   // quiet window / boot: no news yet
+  if (painted === 'ready') return 'ready';
+  if (['idle', 'pairing', 'awaiting-approval', 'revoked'].includes(painted)) return 'gone';
+  return (painted === 'connecting' || painted === 'waiting-host') && PAIRED_VIEWS.includes(view) ? 'down' : 'other';
 }
 let view = null;
+let backToSettings = false;   // P187: see leavePage()
 const VIEWS = { pair: 'pair-view', scan: 'scan-view', models: 'models-view', sas: 'sas-view', mem: 'mem-view', act: 'act-view', tasks: 'tasks-view', friends: 'friends-view', bots: 'bots-view', setup: 'setup-view', revoked: 'revoked-view', error: 'error-view' };
 const PAIRED_VIEWS = ['chat', 'mem', 'act', 'tasks', 'models', 'friends', 'bots', 'setup'];
 function show(v) {
   view = v;
+  if (v !== 'pair') rvpair.stopCode();
+  if (v === 'chat') backToSettings = false;
   document.body.dataset.view = v;
   for (const [k, id] of Object.entries(VIEWS)) $(id).hidden = k !== v;
   $('unpair').hidden = !PAIRED_VIEWS.includes(v);
@@ -173,6 +203,8 @@ function show(v) {
   push.renderA2hs(v);
   renderPhoneEnvironment();
   renderLogo();
+  const m = offMode();
+  if (m) offline.update(m, statusKey[0]);
 }
 // Outside the chat screen the header logo says where pairing stands (the chat screen's logo wears the Agent's state).
 const LOGO = { mark: 'brand/img/logo-mark.png', question: 'brand/img/status/logo-question.png', offline: 'brand/img/status/logo-offline.png' };
@@ -229,6 +261,7 @@ function onHostGone() {
   snap.S.asks.clear(); snap.S.qs.clear(); snap.S.order = [];   // the host re-sends every request still open after ready
   controls.clearGrants();
   elevate.clear();                                    // F17: the host re-sends open sudo / secret cards after ready
+  contacts.clear({ keepForward: true });              // P184: open contact cards come again after ready
   secretout.clear({ keepOpened: true });              // F32: and open pickup cards (a value on screen stays)
   longtask.clear();                                   // 0.18: the host re-sends open opening cards after ready
   logincard.clear();                                  // P114: the host re-sends open sign-in cards after ready
@@ -242,7 +275,9 @@ session.configure({
     if (snap.S.hist.last) x.hist = { epoch: snap.S.hist.epoch, last: snap.S.hist.last };
     return x;
   },
-  onSas: (code) => { $('sas').textContent = code; show('sas'); setStatus('awaiting-approval', 'st.awaiting'); },
+  onSas: (code) => { $('sas').textContent = code; delete $('sas-view').dataset.mode; sasWords(reversePairing); show('sas'); setStatus('awaiting-approval', 'st.awaiting'); },
+  // P153 (§3.3): the host put a card on the paired remotes — nothing to type; the code stays as the one to compare
+  onPairWait: () => { $('sas-view').dataset.mode = 'card'; setStatus('awaiting-approval', 'st.awaitingRemote'); },
   async onApproved(ctx) {
     // dk = this browser's device public key: a later page that finds the pairing but another device key knows the browser
     // lost the key (0.15.1) instead of failing the resume and calling it "removed"
@@ -270,8 +305,12 @@ session.configure({
     setStatus('ready', 'st.ready');
     if(location.pathname==='/bots') bots.open();
     openFriendsWanted();
+    reversePairing = false;
+    if (pendingRv) { const c = pendingRv; pendingRv = null; rvpair.approve(c).catch(() => {}); }
     api.myDeviceId().then(() => rerender());
     relay.onReady();
+    // P189: the file cards' 「转发到邮箱」 icon (P183, mailfwd.js) opens P184's dialog — only on a host with `contacts`
+    registerMailForward(contacts.forwardAvailable() ? (req) => contacts.openForward({ mid: req.mid, name: req.name }) : null);
     blobs.onReconnect([]);
   },
   onApp,
@@ -294,24 +333,37 @@ api.onState((m) => relay.onSayState(m));
 controls.configure({ show, estopChanged: () => { relay.onEstop(); rerender(); }, friends: () => friends.refresh(), bots: () => bots.refresh() });
 bots.configure({openPanel:controls.openPanel});
 setupcard.configure({ openPanel: controls.openPanel, view: () => view });   // P131: the checklist page + chat banner
-friends.configure({ openPanel: controls.openPanel, agentName: () => agentName ?? DEFAULT_NAME });
+friends.configure({ openPanel: controls.openPanel, leave: () => leavePage(), agentName: () => agentName ?? DEFAULT_NAME });
+contacts.configure({ openSettingsMail: () => settings.openMail() });   // P184: no mailbox yet → Settings → 邮件通道
 
 function onApp(m) {
   if (api.route(m) || blobs.handle(m) || media.handle(m)) return;
   switch (m.t) {
-    case 'preferences': setHostVersion(m.host?.version); relay.applyPreferences(m.value); settings.setPrefs(m.value, m.host); if(m.problem)relay.configProblem(m.problem.error); return;
+    case 'preferences': setHostVersion(m.host?.version); relay.applyPreferences(m.value); settings.setPrefs(m.value, m.host); rerender(); if(m.problem)relay.configProblem(m.problem.error); return;
     case 'status': setAgentName(m.name); snap.setStatus(m); renderTg(); return;
     case 'busy': busy.setBusy(m); return;            // P150 (§22): who works in the background (display only)
-    case 'ask': snap.addAsk(m); return;
+    case 'res': busy.setRes(m); return;              // P181 (§22.1): the load card's five resources (only while it is open)
+    case 'theme': applyTheme(m); rerender(); relay.paintChrome(); return;   // P169 (§23): repaint now (logo, status bar)
+    case 'ask':
+      snap.addAsk(m);
+      // P165: a new remote asks to pair (P153 card) while this remote's own 遥控器管理 is open — step aside so the card
+      // (hold to confirm, no typing) is in front; the page's code field stays one tap away.
+      if (m && m.tool === 'pair_device' && settings.isOpen()) { settings.onPairCard(); settings.close(); }
+      return;
     case 'ask_done': snap.askDone(m); return;
+    case 'pair_ev': settings.onPairEv(m); return;    // P153 (§3.3): how the pairing this remote opened went
     case 'bots_tool_request': bots.toolRequest(m); return;
     case 'bots_proposal': bots.proposal(m); return;
     case 'fr_changed': friends.changed(m); return;   // §17.7: something changed on the computer → the friends page re-reads
     case 'elev': elevate.add(m); return;             // F17 (§11)
     case 'elev_done': elevate.done(m); return;
     case 'elev_refused': elevate.refused(m); return;   // ADR-A163: Face ID not accepted, the card stays open
+    case 'ct_card': contacts.card(m); return;         // P184 (§25): save / complete a contact (the owner's tap)
+    case 'ct_card_done': contacts.cardDone(m); return;
+    case 'ct_card_err': contacts.cardErr(m); return;
     case 'pk_offer': offerPasskey(m).catch(() => {}); return;    // F20 (§12)
     case 'setup_card': setupcard.card(m); return;     // P115: the first-run checklist (host snapshot)
+    case 'devs': case 'dev_pending': case 'dev_pair_end': if (!rvpair.onRemotes(m)) settings.onRemotes(m); return;   // P171 (§24) · P190 (§27)
     case 'secret_out': secretout.add(m); return;       // F32 (§18): a pickup card (no value)
     case 'secret_out_val': secretout.value(m); return; // the value, after Face ID, to this session only
     case 'secret_out_done': secretout.done(m); return;
@@ -398,6 +450,7 @@ async function forgetLocal() {
   friends.forget();
   blobs.forgetAll();
   elevate.clear();
+  contacts.clear();
   secretout.clear();
   longtask.clear();
   logincard.clear();
@@ -430,14 +483,32 @@ function startPairing(input) {
   }
   $('pair-link').value = '';                          // the link carries the one-time PSK
   $('pair-error').hidden = true;
+  rvpair.stopCode();
   show('pair');
   session.openSession('pair', p);
+}
+// P190 (§27): this page was scanned by a paired remote, which handed it the pairing link: same pairing, other words on the
+// code screen (compare the 6 digits with the remote's card instead of typing them on the computer).
+let reversePairing = false;
+function sasWords(rv) {
+  for (const [id, k] of [['sas-title', 'title'], ['sas-lead', 'lead'], ['sas-note', 'note']]) {
+    const n = $(id);
+    n.dataset.i18n = (rv ? 'sas.rv' : 'sas.') + (rv ? k[0].toUpperCase() + k.slice(1) : k);
+    fillText(n, t(n.dataset.i18n));
+  }
+}
+function pairFromRemote(link) {
+  reversePairing = true;
+  startPairing(link);
 }
 function showIdle() {
   session.closeSession();
   setAgentName(null, false);
   show('pair');
   setStatus('idle', 'st.idle');
+  reversePairing = false;
+  rvpair.showCode().catch(() => {});
+  $('pair-rv').hidden = !pendingRv;
   $('pair-friends').hidden = !wantFriends;
   renderPk().catch(() => { $('pk-restore').hidden = true; });
 }
@@ -637,17 +708,27 @@ async function forgetHost() {
 }
 
 // In-app scanner keeps the pairing keys in this standalone app's own storage.
+// P190: three modes. 'pair' = the unpaired page scans a computer's code (as before: tap 「扫描」). 'any' = a paired page's scan
+// icon / the camera button held: scanning starts at once; a new device's code → the add-remote card, a friend's link → 加好友,
+// a computer's pairing link → a hint (it carries a secret: never into the chat), anything else → the message field as text
+// (never opened, never sent). 'rv' = 遥控器管理's 「扫码添加遥控器」: only a new device's code counts.
 let scanStream = null;
 let scanGeneration = 0;
 let scanActive = false;
-async function startScan() {
+let scanMode = 'pair';
+let scanBack = null;          // where a paired scan returns: 'chat' | 'remotes'
+async function startScan(mode = 'pair') {
   if (view === "scan" && scanStream) return;
   stopScan(false);
+  scanMode = mode;
   const generation = scanGeneration;
+  if (mode !== 'pair') { scanBack = settings.isOpen() ? 'remotes' : (scanBack || 'chat'); settings.close(); }
   show("scan");
+  document.body.dataset.scan = mode;
   if (!history.state?.ajScan) history.pushState({ajScan:true}, "");
   const hint = $('camera-hint');
-  fillText(hint, t('camera.aim')); hint.hidden = false;
+  fillText(hint, t(mode === 'pair' ? 'camera.aim' : mode === 'rv' ? 'scan.aimRv' : 'scan.aim')); hint.hidden = false;
+  if (mode !== 'pair') { scanActive = true; $('scan-trigger').textContent = t('camera.pause'); }
   let det = null;
   try {
     if (window.BarcodeDetector && (await window.BarcodeDetector.getSupportedFormats()).includes('qr_code'))
@@ -689,11 +770,15 @@ async function startScan() {
     try {
       if (det) {
         const hits = await det.detect(video);
-        link = hits.find(c => typeof c.rawValue === 'string' && c.rawValue.includes('#p='))?.rawValue;
+        const want = scanMode === 'pair' ? (c) => c.rawValue.includes('#p=') : () => true;
+        link = hits.find(c => typeof c.rawValue === 'string' && c.rawValue && want(c))?.rawValue;
+        if (!link && scanMode === 'pair' && hits.some(c => classifyScan(c.rawValue) === 'reverse')) fillText(hint, t('rv.scanUnpaired'));
       } else if (video.readyState >= 2 && video.videoWidth) {
         link = scanFrame(ctx, video, video.videoWidth, video.videoHeight, attempt++, window.jsQR);
       }
       if (scanStream !== stream) return;
+      if (link && scanMode !== 'pair') { stopScan(); scanned(link, generation); return; }
+      if (link && scanMode === 'pair' && classifyScan(link) === 'reverse') { fillText(hint, t('rv.scanUnpaired')); link = null; }
       if (link) { parseLink(link); stopScan(); await startPairing(link); return; }
     } catch { /* an unreadable frame or unrelated QR: keep scanning */ }
     if (scanStream === stream) setTimeout(tick, 250);
@@ -708,11 +793,37 @@ function stopScan(leave = true) {
   $('scan-box').hidden = true;
   scanActive = false;
   $('scan-trigger').textContent = t('camera.scan');
+  delete document.body.dataset.scan;
   if (leave) {
-    if (view === 'scan') show('pair');
+    if (view === 'scan') {
+      if (scanMode === 'pair') show('pair');
+      else { const back = scanBack; scanBack = null; controls.openPanel('chat'); if (back === 'remotes') settings.open('remotes'); }
+    }
     // Avoid a queued popstate overriding a successful QR pairing approval page.
     if (history.state?.ajScan) history.replaceState(null, '');
   }
+}
+/** P190: what a paired scan found. Scanned text is data: shown or inserted, never opened, never sent by itself. */
+function scanned(text, generation) {
+  const kind = classifyScan(text);
+  if (kind === 'reverse') { rvpair.approve(text).catch(() => {}); return; }
+  if (scanMode === 'rv') { toast(t(kind === 'pair' ? 'scan.pairLink' : 'rv.notCode'), 5000); return; }
+  if (kind === 'pair') { toast(t('scan.pairLink'), 6000); return; }
+  if (kind === 'friend') {
+    let raw = text.slice(text.indexOf('#add=') + 5);
+    try { raw = decodeURIComponent(raw); } catch { /* keep */ }
+    friends.open('add', parseAgentId(raw) || raw.slice(0, 40));
+    return;
+  }
+  const clean = String(text).replace(/\r\n?/g, '\n').replace(/[\u0000-\u0008\u000B-\u001F\u007F]/g, '').slice(0, 4000);
+  if (!clean.trim()) return;
+  relay.insertText(clean);
+  toast(t('scan.inserted'), 3500);
+}
+/** The header scan icon: paired → scan anything; on the pairing screen → a computer's code. */
+function scanIcon() {
+  if (state === 'ready' || PAIRED_VIEWS.includes(view)) { scanBack = null; startScan('any'); }
+  else startScan('pair');
 }
 document.addEventListener('visibilitychange', () => { if (document.hidden) stopScan(); });
 window.addEventListener('pagehide', () => stopScan());
@@ -791,17 +902,29 @@ async function installAsr() {
 }
 
 // ---------------------------------------------------------------- wiring
-function closeMenu() { $('aj-menu').open = false; }
+// P171: the ≡ menu is gone — its rows live in the full-screen Settings page; leaving it for a sub-view closes it first.
+// P187: a page opened from a Settings row is its second level — its back icon and Esc return to Settings, not the chat.
+const closeMenu = () => settings.close();
+let backFocus = null;
+const fromSettings = (fn) => (e) => { backToSettings = settings.isOpen(); backFocus = e?.currentTarget?.id || null; settings.close(); fn(); };
+function leavePage() {
+  const again = backToSettings;
+  backToSettings = false;
+  controls.openPanel('chat');
+  if (!again) return;
+  settings.open();
+  const row = backFocus && $(backFocus);
+  if (row && !row.closest('[hidden]')) row.focus();         // back on the row that opened the page
+}
 function toggleBadge(open) {
   const p = $('badge-panel');
   p.hidden = !(open ?? p.hidden);
   if (p.hidden) delete p.dataset.modalOpen; else p.dataset.modalOpen = '1';
-  $('badge').setAttribute('aria-expanded', String(!p.hidden));
+  $('menu-about').setAttribute('aria-expanded', String(!p.hidden));
   if (!p.hidden) $('badge-close').focus();
 }
 function wire() {
   $('version-hash').textContent = VERSION.combined;
-  $('badge').addEventListener('click', () => toggleBadge());
   $('badge-close').addEventListener('click', () => toggleBadge(false));
   $('badge-panel').addEventListener('click', (e) => { if (e.target === $('badge-panel')) toggleBadge(false); });
   $('setup-faceid').addEventListener('click', () => { closeMenu(); setupFaceId().catch(() => {}); });
@@ -812,49 +935,63 @@ function wire() {
     catch { $('phone-env-link').value = link; $('phone-env-link').hidden = false; $('phone-env-link').select(); }
   });
   onLang(() => renderPhoneEnvironment());
-  $('menu-about').addEventListener('click', () => { closeMenu(); toggleBadge(true); });
-  document.addEventListener('click', (e) => { if ($('aj-menu').open && !e.target.closest('#aj-menu')) closeMenu(); });
+  $('menu-about').addEventListener('click', () => toggleBadge(true));   // above Settings; closing it returns there
   initLayers({onEscape:relay.resetEscape});
   const layer = (id, close, fallback, rank = 20, trap = true) => registerLayer({element: () => $(id), open: () => !$(id).hidden, close, fallback: () => $(fallback), rank, trap});
-  registerLayer({element: () => $('aj-menu'), open: () => $('aj-menu').open, close: closeMenu,
-    trigger: () => $('aj-menu').querySelector('summary'), fallback: () => $('aj-menu').querySelector('summary'), rank: 30});
   layer('confirm', closeConfirm, 'setBtn', 60);
-  layer('badge-panel', () => toggleBadge(false), 'badge', 40);
+  layer('badge-panel', () => toggleBadge(false), 'menu-about', 40);
   layer('settings', settings.back, 'setBtn', 40);
   registerLayer({element: () => $(VIEWS[view]), open: () => ['mem','act','tasks','models','friends','bots','setup','scan'].includes(view),
-    close: () => { if(view === 'scan') stopScan(); else if(view === 'friends') friends.back(); else controls.openPanel('chat'); },
-    trigger: () => $('aj-menu').querySelector('summary'), fallback: () => $('aj-menu').querySelector('summary'), rank: 1, trap: false});
-  for (const a of $('aj-menu').querySelectorAll('a')) a.addEventListener('click', closeMenu);
+    close: () => { if(view === 'scan') stopScan(); else if(view === 'friends') friends.back(); else leavePage(); },
+    trigger: () => $('setBtn'), fallback: () => $('setBtn'), rank: 1, trap: false});
   $('a2hs-ok').addEventListener('click', () => push.dismissA2hs(view));
   $('scan').hidden = false;
   $('pair-link').addEventListener('focus', () => { stopScan(); fitPairViewport(); setTimeout(fitPairViewport, 300); });
   $('pair-go').addEventListener('click', () => startPairing($('pair-link').value));
   $('scan').addEventListener('click', () => { startScan(); });
+  $('scanBtn').addEventListener('click', () => { closeMenu(); scanIcon(); });
+  $('rm-scan').addEventListener('click', () => startScan('rv'));
   $('pk-restore').addEventListener('click', () => { stopScan(); pkRestore().catch(() => pkFailed('bad')); });
   $('scan-stop').addEventListener('click', () => stopScan());
   $('scan-back').addEventListener('click', () => stopScan());
   $('scan-trigger').addEventListener('click', () => { if (!scanStream) { startScan(); return; } scanActive = !scanActive; $('scan-trigger').textContent = t(scanActive ? 'camera.pause' : 'camera.scan'); });
-  $('open-models').addEventListener('click', openModels);
-  $('models-back').addEventListener('click', () => show('chat'));
-  $('push-on').addEventListener('click', push.enablePush);
+  $('open-models').addEventListener('click', fromSettings(openModels));
+  $('models-back').addEventListener('click', leavePage);
   $('grant-off').addEventListener('click', controls.revokeGrants);
-  $('open-mem').addEventListener('click', () => { closeMenu(); controls.openPanel('mem'); });
-  $('open-act').addEventListener('click', () => { closeMenu(); controls.openPanel('act'); });
-  $('open-tasks').addEventListener('click', () => { closeMenu(); controls.openPanel('tasks'); });
-  $('open-friends').addEventListener('click', () => { closeMenu(); friends.open('list'); });
-  $('open-bots').addEventListener('click', () => { closeMenu(); bots.open(); });
-  $('open-setup').addEventListener('click', () => { closeMenu(); setupcard.open(true); });
+  $('open-mem').addEventListener('click', fromSettings(() => controls.openPanel('mem')));
+  $('open-act').addEventListener('click', fromSettings(() => controls.openPanel('act')));
+  $('open-tasks').addEventListener('click', fromSettings(() => controls.openPanel('tasks')));
+  $('open-friends').addEventListener('click', fromSettings(() => friends.open('list')));
+  $('open-bots').addEventListener('click', fromSettings(() => bots.open()));
+  $('open-setup').addEventListener('click', fromSettings(() => setupcard.open(true)));
   friends.wire();
-  for (const b of document.querySelectorAll('[data-back]')) b.addEventListener('click', () => controls.openPanel('chat'));
+  for (const b of document.querySelectorAll('[data-back]')) b.addEventListener('click', leavePage);
   $('act-more').addEventListener('click', () => controls.loadActivity(false));
   $('resume').addEventListener('click', controls.onResume);
   const unpairAsk = async () => {
     closeMenu();
-    if (await confirmSheet(t('menu.unpairTitle'), t('menu.unpairText'), t('menu.unpairYes'))) forgetHost();
+    if (await confirmSheet(t('menu.unpairTitle'), t('menu.unpairText'), t('menu.unpairYes'), true)) forgetHost();
   };
   $('unpair').addEventListener('click', unpairAsk);
   initVersionNotice(settings.refreshApp);
-  busy.init({ name: () => agentName ?? DEFAULT_NAME });
+  busy.init({ name: () => agentName ?? DEFAULT_NAME, prompt: (k) => relay.sayPreset(k), detail: api.busyDetail });   // P160: a row → its read-only card
+  agentname.init({ name: () => agentName ?? DEFAULT_NAME, canRename: () => session.isReady() });
+  shotclip.init({ attach: relay.attachShot, say: () => toast(t('set.shotDenied'), 4000) });
+  offline.configure({
+    retry: () => { if (session.retryInfo().nextAt) session.reconnectNow('manual'); else resume().catch(() => {}); },
+    retryInfo: session.retryInfo,
+    version: VERSION.version,
+    device: deviceLabel,
+    // the outage start survives a reload in the host record (a number, nothing else); written in order with the ticket
+    persist: (at) => ticketQueue(async () => {
+      const h = await dbGet('host');
+      if (!h || !h.approved) return;
+      if (at === null) { if (h.downAt === undefined) return; const { downAt, ...rest } = h; await dbPut('host', rest); }
+      else if (h.downAt !== at) await dbPut('host', { ...h, downAt: at });
+    }),
+  });
+  offline.init();
+  devRename.init({ myDev: api.myIdSync });
   settings.configure({                                // F13: the gear, before relay.init so its Esc runs first
     agentName: () => agentName ?? DEFAULT_NAME,
     paired: () => !['idle', 'pairing', 'awaiting-approval', 'revoked'].includes(state),
@@ -862,10 +999,12 @@ function wire() {
     myId: api.myIdSync,
     unpair: unpairAsk,
     reload: () => location.reload(),
+    view: () => view,
+    forget: forgetHost,                               // P171: this remote unbound itself from 遥控器管理
   });
   $('scan-repair').addEventListener('click', async () => {
     closeMenu();
-    if (await confirmSheet(t('menu.unpairTitle'), t('menu.unpairText'), t('menu.unpairYes'))) { await forgetHost(); await startScan(); }
+    if (await confirmSheet(t('menu.unpairTitle'), t('menu.unpairText'), t('menu.unpairYes'), true)) { await forgetHost(); await startScan(); }
   });
   $('repair').addEventListener('click', forgetHost);   // keeps the device key
   $('retry').addEventListener('click', () => {
@@ -876,6 +1015,11 @@ function wire() {
     if (takeAddHash()) {                              // a friend's link opened while the page is open
       wantFriends = true;
       if (state === 'ready') openFriendsWanted(); else if (view === 'pair') $('pair-friends').hidden = false;
+      return;
+    }
+    if (takeRvHash()) {                               // P190: a new device's code opened while this page is open
+      if (state === 'ready') { const c = pendingRv; pendingRv = null; rvpair.approve(c).catch(() => {}); }
+      else if (view === 'pair') $('pair-rv').hidden = false;
       return;
     }
     if (!location.hash.startsWith('#p=')) return;
@@ -909,7 +1053,10 @@ async function main() {
     return fatal(e && e.name === 'NotSupportedError' ? 'error.noCrypto' : 'error.noStore');
   }
   await api.initSign();
+  rvpair.configure({ allowRelay, pair: pairFromRemote,
+    testRelay: () => (['127.0.0.1', 'localhost'].includes(location.hostname) ? new URLSearchParams(location.search).get('relay') : null) });
   relay.init({
+    scan: () => { scanBack = null; startScan('any'); },
     api,
     myDev: api.myIdSync,
     agentName: () => agentName ?? DEFAULT_NAME,
@@ -948,7 +1095,7 @@ async function main() {
     if (!same) return startPairing(l);
     toast(t('pair.already'));
   }
-  if (host && host.approved && !lost) { askPersist(); show('chat'); resume(); openFriendsWanted(); return; }
+  if (host && host.approved && !lost) { offline.restore(host.downAt); askPersist(); show('chat'); resume(); openFriendsWanted(); return; }
   if (host && !host.approved && ['replaced', 'revoked'].includes(host.removed)) return revoked(host.removed);
   if (await tryTicket()) { openFriendsWanted(); return; }   // P122: no pairing here, but this phone's ticket cookie is
   showIdle();

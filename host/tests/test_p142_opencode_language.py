@@ -16,7 +16,8 @@ class TurnBody(unittest.TestCase):
         cfg = {"language": "zh", "kind": "opencode", "dir": "/tmp"}
         b = agent_opencode.turn_body("Hello. Please greet me briefly.", cfg, True)
         self.assertEqual(b["parts"][0], {"type": "text", "text": "Hello. Please greet me briefly."})
-        self.assertEqual(b["parts"][-1], {"type": "text", "text": main_identity.LANGUAGE_REMINDER["zh"], "synthetic": True})
+        # P159: the main Agent's hidden last part is the identity reminder (address, delegate triage, language)
+        self.assertEqual(b["parts"][-1], {"type": "text", "text": main_identity.IDENTITY_REMINDER["zh"], "synthetic": True})
         self.assertIn("中文", b["parts"][-1]["text"])
         self.assertEqual(b["system"], main_identity.prompt(cfg))
         self.assertIn(main_identity.LANGUAGE_LINE["zh"].strip(), b["system"])
@@ -31,6 +32,7 @@ class TurnBody(unittest.TestCase):
     def test_reminder_is_not_in_the_hashed_prompt(self):
         cfg = {"language": "zh", "kind": "opencode", "dir": "/tmp"}
         self.assertNotIn(main_identity.LANGUAGE_REMINDER["zh"], main_identity.prompt(cfg))
+        self.assertNotIn(main_identity.IDENTITY_REMINDER["zh"], main_identity.prompt(cfg))
 
     def test_both_v1_turn_paths_use_turn_body(self):
         for mod in ("agent_opencode.py", "shared.py"):

@@ -33,7 +33,7 @@ import sys
 import time
 from dataclasses import dataclass
 
-from . import compactprep, danger, fence, slash, main_identity
+from . import bg, compactprep, danger, fence, slash, main_identity
 from .slash import Result
 from .envcompat import getenv
 from .text import clean, clean_line, text_units, pick
@@ -112,6 +112,8 @@ def summarize(tool: str, tool_input) -> str:
         s = "删除 " + inp["file_path"] + (("\n" + inp["detail"]) if isinstance(inp.get("detail"), str) else "")
     elif tool == "CodexPermissions" and isinstance(inp.get("permissions"), str):   # Codex asks for more than its sandbox
         s = "Codex 要求本轮放宽沙箱：" + inp["permissions"] + (f"\n— {inp['reason']}" if isinstance(inp.get("reason"), str) else "")
+    elif tool == "agentj mail send" and isinstance(inp.get("summary"), str):   # P184: recipients, subject, files, body
+        s = inp["summary"]
     if s is None:
         s = json.dumps(inp, ensure_ascii=False, separators=(", ", ": "))
     s = clean(s, 4000)
@@ -139,40 +141,185 @@ def _signal_tree(p, sig: int) -> None:
             p.send_signal(sig)
 
 
+# P175: Codex 0.162 failure wording (codex-rs error Display strings and app-server `codexErrorInfo`, read from the 0.162.1
+# binary; samples in tests/test_p175_codex_errors.py). Order matters: the most specific class wins, `other` is the fallback.
+_CODEX_REGION = ("unsupported_country", "country, region, or territory", "not available in your country",
+                 "not available in your region", "region is not supported", "location is not supported")
+_CODEX_USAGE = ("usage limit", "usage_limit_reached", "usagelimitexceeded", "rate limit", "rate_limit_exceeded",
+                "too many requests", "workspace_owner_rate_limit")
+_CODEX_QUOTA = ("quota exceeded", "insufficient_quota", "check your plan and billing", "credits_depleted", "quotaexceeded",
+                "out of credits")
+_CODEX_PLAN = ("usage not included", "usage_not_included", "usagenotincluded", "to use codex with your chatgpt plan",
+               "plan does not include")
+_CODEX_WORKSPACE = ("not enabled for your workspace", "login is restricted to workspace", "workspace administrator",
+                    "must use one of workspace", "lack a workspace identifier", "account has been deactivated",
+                    "account_deactivated")
+_CODEX_CONTEXT = ("context window", "context_length_exceeded", "contextwindowexceeded", "ran out of room",
+                  "maximum context length", "prompt is too long")
+_CODEX_POLICY = ("cyberpolicy", "flagged for possible", "content_filter", "misalignment policy")
+_CODEX_SERVER = ("at capacity", "server overloaded", "serveroverloaded", "server_overloaded", "internalservererror",
+                 "internal server error", "bad gateway", "service unavailable", "gateway timeout")
+_CODEX_SANDBOX = ("sandbox denied", "sandboxerror", "landlock", "seccomp", "bwrap", "bubblewrap",
+                  "sandbox helper failed")
+_CODEX_NETWORK = ("workspace routing discovery failed", "network", "connection", "timed out", "timeout", "proxy", "dns",
+                  "failed to fetch", "stream disconnected", "httpconnectionfailed", "responsestreamconnectionfailed",
+                  "responsestreamdisconnected", "certificate", "tls handshake", "error sending request")
+CODEX_FEEDBACK = "me@agentj.app"   # the site's one feedback mailbox (site tests: founder@ / me@ / noreply@ only)
+
+
+def _codex_retry_at(raw: str) -> str | None:
+    """`… or try again at 3:05 PM.` / `try again in 2 days 3 hours` → the time, as Codex wrote it (never invented)."""
+    import re
+    m = re.search(r"try again (at|in) ([^.\n()]{1,60}?)\s*(?:[.\n(]|$)", raw, re.I)
+    return clean_line(m.group(2), 60) if m else None
+
+
+def _codex_exit(raw: str) -> str | None:
+    """Our own wording for a Codex process that died ("Codex 退出了（137）…" / "没有启动") → the exit code, or "start"."""
+    import re
+    m = re.search(r"Codex 退出了（(-?\d+)）", raw)
+    if m:
+        return m.group(1)
+    return "start" if "Codex（app-server）没有启动" in raw else None
+
+
 def codex_failure(raw, model: str | None, lang: str = "zh") -> tuple[str, str, str | None]:
-    """P78: classify native failures, retain bounded redacted details, never log the body."""
+    """P78/P175: classify native failures into a line the owner can act on, retain bounded redacted details, never log
+    the body. Kinds: model · region · usage · quota · plan · workspace · auth · context · policy · server · sandbox ·
+    access · network · crash · missing · other."""
     import re
     from .privacy import redact
     if isinstance(raw, dict):
         raw = json.dumps(raw, ensure_ascii=False)
     raw = clean(str(raw or ""), 4000)
     low = raw.lower()
+    en = lang == "en"
     blocked = None
+    has = lambda words: any(w in low for w in words)  # noqa: E731
+    status = re.search(r"\b(?:status|statusCode|http_status_code|httpStatusCode)\W{0,3}(\d{3})\b|\b(\d{3}) (?:Forbidden|Too Many|Unauthori|Internal|Bad Gateway|Service Unavailable)", raw, re.I)
+    code = int(status.group(1) or status.group(2)) if status else None
+    exit_code = _codex_exit(raw)
     if "model" in low and ("not supported" in low or "unsupported model" in low):
         match = re.search(r"['\"]([A-Za-z0-9][A-Za-z0-9._/-]{0,99})['\"] model", raw)
         blocked = match.group(1) if match else model
         name = clean_line(blocked or model or "?", 100)
         text = (f"This account cannot use {name}. Tap the model name at the top to choose another."
-                if lang == "en" else f"这个账号用不了 {name}，点顶部模型名换一个。")
+                if en else f"这个账号用不了 {name}，点顶部模型名换一个。")
         kind = "model"
-    elif re.search(r"\b401\b|unauthori[sz]ed|authentication.*(?:failed|required)|token.*expired", low):
+    elif has(_CODEX_REGION) or code == 451:
+        text = ("ChatGPT is not available from where you are (OpenAI does not serve this region). Codex needs a working "
+                "proxy/VPN: on this computer run `agentj config set proxy.https http://127.0.0.1:7890` (your own proxy "
+                "address), then resend. Or switch to Claude Code, or OpenCode with a model that works here: "
+                "`agentj agent opencode --dir <folder> --model zhipuai/glm-5.3` (install guide Step 3a)."
+                if en else
+                "你所在地区连不上 ChatGPT（OpenAI 不支持这个地区）。Codex 需要可用的代理/VPN：在电脑上运行 "
+                "`agentj config set proxy.https http://127.0.0.1:7890`（换成你自己的代理地址）后重发。"
+                "或者改用 Claude Code，或 OpenCode + 国内模型：`agentj agent opencode --dir <文件夹> --model zhipuai/glm-5.3`"
+                "（安装说明第 3a 步）。")
+        kind = "region"
+    elif has(_CODEX_QUOTA):
+        text = ("The OpenAI account behind Codex is out of quota/credits. Top up or check billing at "
+                "https://platform.openai.com/settings/organization/billing (API key) or ChatGPT → Settings → Usage, then resend."
+                if en else
+                "Codex 背后的 OpenAI 账户额度/余额用完了。到 https://platform.openai.com/settings/organization/billing（API key）"
+                "或 ChatGPT 设置 → 用量 里充值或查看，再重发。")
+        kind = "quota"
+    elif has(_CODEX_USAGE) or code == 429:
+        when = _codex_retry_at(raw)
+        text = ((f"Codex usage limit reached — it resets {'at' if re.search(r'try again at', raw, re.I) else 'in'} {when}. "
+                 if when else "Codex usage limit reached (Codex did not say when it resets; ChatGPT → Settings → Usage shows it). ")
+                + "Until then: tap the model name at the top for a lighter model, or switch to Claude Code / OpenCode on this "
+                  "computer (`agentj agent claude` / `agentj agent opencode`)."
+                if en else
+                (f"Codex 用量到上限了，恢复时间：{when}（Codex 给的时间）。" if when else
+                 "Codex 用量到上限了（原文没给恢复时间，可在 ChatGPT 设置 → 用量 里看）。")
+                + "等不及的话：点顶部模型名换个更省的模型，或在电脑上改用 Claude Code / OpenCode"
+                  "（`agentj agent claude` / `agentj agent opencode`）。")
+        kind = "usage"
+    elif has(_CODEX_PLAN):
+        text = ("This ChatGPT account's plan does not include Codex (free plan, or Plus has expired). Renew/upgrade at "
+                "https://chatgpt.com/explore/plus, then on this computer run `codex login` again and resend."
+                if en else
+                "这个 ChatGPT 账号的套餐不含 Codex（免费版，或 Plus 已过期）。到 https://chatgpt.com/explore/plus 续费/升级，"
+                "再在电脑上运行 `codex login` 重新登录后重发。")
+        kind = "plan"
+    elif has(_CODEX_WORKSPACE):
+        text = ("Your ChatGPT workspace/organisation does not allow this login to use Codex. Ask your workspace admin to "
+                "enable Codex, or run `codex login` on this computer with a personal account, then resend."
+                if en else
+                "你的 ChatGPT 工作区/组织不允许这个登录使用 Codex。请工作区管理员开通 Codex，"
+                "或在电脑上运行 `codex login` 换成个人账号登录后重发。")
+        kind = "workspace"
+    elif re.search(r"\b401\b|unauthori[sz]ed|authentication.*(?:failed|required)|token.*(?:expired|rejected)|"
+                   r"refresh token|sign in again|log ?in again", low):
         from . import harness
         logged_before = harness.codex_login()[0] != "warn"
-        expired = logged_before and bool(re.search(r"\b401\b", low))
+        expired = logged_before and bool(re.search(r"\b401\b|refresh token|token.*(?:expired|rejected)", low))
         text = (("Codex login has expired. Run `codex login` on this computer, then resend."
-                 if lang == "en" else "Codex 登录已失效，在这台电脑上运行 `codex login` 重新登录后再发。") if expired else
+                 if en else "Codex 登录已失效，在这台电脑上运行 `codex login` 重新登录后再发。") if expired else
                 ("Codex is not logged in yet. Run `codex login` on this computer, then resend."
-                 if lang == "en" else "还没登录 Codex，在这台电脑上运行 `codex login` 后再发。"))
+                 if en else "还没登录 Codex，在这台电脑上运行 `codex login` 后再发。"))
         kind = "auth"
-    elif any(x in low for x in ("workspace routing discovery failed", "network", "connection", "timed out", "timeout", "proxy", "dns", "failed to fetch")):
-        text = ("Cannot connect to ChatGPT. Check your proxy/VPN, then resend."
-                if lang == "en" else "连不上 ChatGPT，检查代理/VPN 后重发。")
+    elif has(_CODEX_CONTEXT):
+        text = ("This conversation is too long for the model. Send /compact to shrink it (or /clear to start fresh), then resend."
+                if en else "这段对话太长，模型装不下了。发 /compact 压缩（或 /clear 重新开始）后再发。")
+        kind = "context"
+    elif has(_CODEX_POLICY):
+        text = ("OpenAI's safety filter stopped this request. Rephrase it and resend, or switch to Claude Code for this task."
+                if en else "OpenAI 的安全策略拦下了这条请求。换个说法重发，或这件事改用 Claude Code。")
+        kind = "policy"
+    elif has(_CODEX_SERVER) or (code is not None and code >= 500):
+        text = ("OpenAI's servers are busy or failing right now (not your setup). Wait a few minutes and resend, or tap the "
+                "model name at the top to pick another model."
+                if en else "OpenAI 服务器这会儿繁忙或出错（不是你这边的问题）。等几分钟再发，或点顶部模型名换个模型。")
+        kind = "server"
+    elif has(_CODEX_SANDBOX):
+        text = ("The sandbox blocked a step Codex tried (a safety fence, not a fault). Ask the Agent to do it another way, "
+                "or approve the wider permission when the card asks; `agentj doctor` on this computer shows the fence state."
+                if en else
+                "沙箱拦下了 Codex 的某一步（这是安全隔离，不是故障）。让 Agent 换个做法，或在卡片弹出时批准放宽权限；"
+                "电脑上运行 `agentj doctor` 可看隔离状态。")
+        kind = "sandbox"
+    elif code == 403 or re.search(r"\b403\b|forbidden", low):
+        text = ("ChatGPT refused access (403). Most often this region is not served or the proxy node is blocked: switch "
+                "proxy/VPN node and resend. If it persists, your account/workspace may not have Codex — run `codex login` again."
+                if en else
+                "ChatGPT 拒绝了访问（403）。最常见是所在地区不受支持或代理节点被封：换个代理/VPN 节点后重发；"
+                "一直这样的话，可能是账号/工作区没开通 Codex，在电脑上重新运行 `codex login`。")
+        kind = "access"
+    elif any(w in re.sub(r"（[a-z]*error）", "", low) for w in _CODEX_NETWORK):   # not our own "（TimeoutError）" start wrapper
+        text = ("Cannot connect to ChatGPT. Check your proxy/VPN, then resend (the proxy Agent J uses: "
+                "`agentj config get proxy.https` on this computer)."
+                if en else "连不上 ChatGPT，检查代理/VPN 后重发（Agent J 用的代理：电脑上运行 `agentj config get proxy.https`）。")
         kind = "network"
+    elif exit_code is not None:
+        sig = {"-9": "SIGKILL", "137": "SIGKILL", "-15": "SIGTERM", "143": "SIGTERM", "-11": "SIGSEGV", "139": "SIGSEGV"}.get(exit_code)
+        if exit_code == "start":
+            text = ("Codex did not start. On this computer run `codex --version` and `agentj doctor`, then `agentj agent restart`."
+                    if en else "Codex 没能启动。在电脑上运行 `codex --version` 和 `agentj doctor`，再运行 `agentj agent restart`。")
+        else:
+            why = (" — killed by the system, often out of memory" if en else "，被系统强制结束，常见是内存不足") if sig == "SIGKILL" else ""
+            text = (f"Codex stopped unexpectedly (exit {exit_code}{why}). Just resend once; if it happens again, run "
+                    "`agentj doctor` then `agentj agent restart` on this computer."
+                    if en else
+                    f"Codex 进程意外退出（退出码 {exit_code}{why}）。先直接重发一次；再出现就在电脑上运行 `agentj doctor`，"
+                    "再运行 `agentj agent restart`。")
+        kind = "crash"
+    elif "没找到 Codex" in raw or "codex: command not found" in low:
+        text = ("Codex is not installed on this computer (or not on the service's PATH). Install it, run `codex login`, then "
+                "`agentj service install`, and resend."
+                if en else "这台电脑上找不到 Codex（或后台服务的 PATH 里没有）。装好并运行 `codex login`，再运行 "
+                           "`agentj service install` 后重发。")
+        kind = "missing"
     else:
-        text = "Codex could not finish this request. Check the details and retry." if lang == "en" else "Codex 没能完成这条请求，查看详情后重试。"
+        text = ("Codex could not finish this request and the reason was not recognised. Resend once; if it fails again, "
+                f"screenshot the Details below and send it to this Agent J's owner or {CODEX_FEEDBACK}."
+                if en else
+                "Codex 没能完成这条请求，原因没认出来。先直接重发一次；还不行，把下面的「详情」截图，"
+                f"发给这台 Agent J 的主人或客服 {CODEX_FEEDBACK}。")
         kind = "other"
     detail = redact(raw).replace("```", "` ` `")
-    return kind, text + ("\n\n" + ("Details" if lang == "en" else "详情") + ":\n```text\n" + detail + "\n```" if detail else ""), blocked
+    return kind, text + ("\n\n" + ("Details" if en else "详情") + ":\n```text\n" + detail + "\n```" if detail else ""), blocked
 
 
 class Agent:
@@ -649,6 +796,21 @@ def hook_settings(extra: list | None = None, research: bool = False) -> dict:
             "disableAllHooks": False}
 
 
+def with_reminder(settings: dict, cfg: dict) -> dict:
+    """P159: the main Agent's hidden per-turn line (main_identity.turn_reminder) as a UserPromptSubmit hook in the same
+    `--settings`: a fixed `printf` of the hook answer (ASCII-escaped JSON, no interpreter start per turn). Claude Code
+    keeps it as a hook_additional_context attachment — not a user message, not shown in its view, not in phone history.
+    Adds no permission and never re-enables hooks the human switched off (no disableAllHooks key here)."""
+    if cfg.get("_workflow_ceo"):
+        return settings
+    from . import main_identity
+    answer = json.dumps({"hookSpecificOutput": {"hookEventName": "UserPromptSubmit",
+                                                "additionalContext": main_identity.turn_reminder(cfg)}})
+    hooks = dict(settings.get("hooks") or {})
+    hooks["UserPromptSubmit"] = [{"hooks": [{"type": "command", "command": "printf '%s\\n' " + shlex.quote(answer), "timeout": 10}]}]
+    return {**settings, "hooks": hooks}
+
+
 _MANAGED = ("/etc/claude-code/managed-settings.json", "/Library/Application Support/ClaudeCode/managed-settings.json")
 
 
@@ -714,7 +876,7 @@ class ClaudeAgent(Agent):
         a = [_bin("AGENTJ_CLAUDE_BIN", "claude") or "claude", "-p", "--input-format", "stream-json",
              "--output-format", "stream-json", "--verbose", "--permission-prompt-tool", PERM_TOOL,
              "--disallowedTools", PERM_TOOL, "--mcp-config", json.dumps(mcp),
-             "--settings", json.dumps(hook_settings(self.cfg.get("danger_extra"), research) if research or self.cfg.get("high_risk_warnings", False) else {}, separators=(",", ":"))]
+             "--settings", json.dumps(with_reminder(hook_settings(self.cfg.get("danger_extra"), research) if research or self.cfg.get("high_risk_warnings", False) else {}, self.cfg), separators=(",", ":"))]
         if not self.cfg.get("_workflow_ceo"):
             a += ["--append-system-prompt", main_identity.prompt(self.cfg)]
         if self.cfg.get("model"):
@@ -761,7 +923,7 @@ class ClaudeAgent(Agent):
                                                          start_new_session=True)
         self.got_init, self.failed_start, self.err_tail = False, False, ""
         self.reader = asyncio.create_task(self._read(self.proc, resumed=bool(sid)))
-        asyncio.create_task(self._drain_err(self.proc))
+        bg.spawn(self._drain_err(self.proc), "agent_drain_err", self.host.st.log)   # P192 (B13): held, failure logged
         self.host.st.log("agent_start", agent=self.kind, fence=self.cfg.get("fence", True))
         # no message before the permission tool holds serve's socket: by then the one-time token is spent (L2)
         proc = self.proc
@@ -816,7 +978,7 @@ class ClaudeAgent(Agent):
         p = self.proc
         if p and p.returncode is None:
             self.host.agent_notice("Claude Code 的批准通道断了：为了安全，已重启 Claude Code。")
-            asyncio.create_task(self._kill(p))
+            bg.spawn(self._kill(p), "agent_perm_lost_kill", self.host.st.log)
 
     async def _kill(self, p) -> None:
         if self.proc is p:
@@ -843,8 +1005,8 @@ class ClaudeAgent(Agent):
                 if isinstance(ev, dict):
                     self._busy(ev)
                     self.on_event(ev)
-        except Exception:  # noqa: BLE001
-            pass
+        except Exception as e:  # noqa: BLE001 — P192 (B18): the harness link ends here; say so in host.log
+            bg.swallowed(bg.host_log(self.host), "agent_read_failed", e, why=self.kind)
         code = await proc.wait()
         self._busy(None)
         self.host.st.log("agent_exit", agent=self.kind, status=code)
@@ -900,7 +1062,7 @@ class ClaudeAgent(Agent):
                 self.host.agent_notice(f"Claude Code 自动压缩了上下文：{slash.tokens(meta.get('pre_tokens'))} → "
                                        f"{slash.tokens(meta.get('post_tokens'))} tokens")
                 with contextlib.suppress(RuntimeError):      # F24: a new epoch (handover note / reminder) all the same
-                    asyncio.get_running_loop().create_task(compactprep.compacted(self, auto=True))
+                    bg.spawn(compactprep.compacted(self, auto=True), "compacted", self.host.st.log)
         elif t == "control_response":
             r = ev.get("response") if isinstance(ev.get("response"), dict) else {}
             f = self.ctl.get(r.get("request_id"))

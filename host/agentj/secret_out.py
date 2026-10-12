@@ -31,7 +31,7 @@ import secrets
 import sys
 import time
 
-from . import elevate, passkey, wire
+from . import bg, elevate, passkey, wire
 
 CTX = "agentjarvis-secret-out-v1"
 KIND = "secret_out"
@@ -241,7 +241,7 @@ class Outbox:
         self.st.log("sout_done", id=c["id"], result=result, device=device)
         done = {"t": "secret_out_done", "id": c["id"], "result": result, "at": at * 1000}
         try:
-            asyncio.get_running_loop().create_task(self.host._send_ready(lambda s: done))
+            bg.spawn(self.host._send_ready(lambda s: done), "secret_out_done", bg.host_log(self.host))   # P192 (B13)
         except RuntimeError:                         # no loop (a test calling end_all directly): nobody to tell
             pass
         if result == "picked":

@@ -10,14 +10,16 @@ Routes:
   The local approval passphrase is optional.
 - ``passphrase``: local approval with the 6-digit code + the approval passphrase (already set).
 - ``set_passphrase``: neither works yet — the owner sets the approval passphrase themselves first (`agentj passphrase set`,
-  at a terminal, never through an agent). Unbound hosts always need it: nothing here relaxes that.
+  at a terminal, never through an agent).
+- ``seat`` (P185): this host has no usable Agent J seat (unbound, suspended, or unconfirmed for > 72 h — `seatcert`). No route
+  pairs a remote until it is bound / renewed; the message says where. Checked first.
 Read-only; never shows a link, QR, code or passphrase.
 """
 from __future__ import annotations
 
-from . import cloud, gate, remote_pair
+from . import cloud, gate, remote_pair, seatcert
 
-ROUTES = ("account", "passphrase", "set_passphrase")
+ROUTES = ("seat", "account", "passphrase", "set_passphrase")
 
 TEXT = {
     "zh": {
@@ -62,14 +64,23 @@ def precheck(st, relay_up: bool | None = None) -> dict:
     account = bool(on and relay_up is not False)
     route = "account" if account else ("passphrase" if pp else "set_passphrase")
     why = None if account or not bound else ("off" if not on else "offline")
+    try:
+        relay = st.config().get("relay") or ""
+    except (OSError, ValueError):
+        relay = ""
+    seat = seatcert.SeatCert(st, relay).verdict()
+    if seat not in seatcert.ALLOWED:
+        route, account = "seat", False
     return {"route": route, "passphrase_set": pp, "bound": bound, "account": account,
-            "account_url": cloud.app_url(st) if bound else None, "why": why}
+            "account_url": cloud.app_url(st) if bound else None, "why": why, "seat": seat}
 
 
 def message(chk: dict, lang: str = "zh") -> str:
     """The one sentence every surface shows for this pre-check (terminal, skill via --check, onboarding)."""
     t = TEXT["en" if lang == "en" else "zh"]
     url = chk.get("account_url") or cloud.DEFAULT_APP
+    if chk["route"] == "seat":
+        return seatcert.message("pair", lang, url) + seatcert.message(chk.get("seat") or "unbound", lang, url)
     if chk["route"] == "account":
         return t["account_with_pass" if chk["passphrase_set"] else "account"].format(url=url)
     if chk["route"] == "passphrase":

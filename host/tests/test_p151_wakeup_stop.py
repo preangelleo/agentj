@@ -239,11 +239,7 @@ class WakeupStop(unittest.IsolatedAsyncioTestCase):
         self.write(rec("user", message={"role": "user", "content": phone_msg("old")}),
                    asst("m12", {"type": "text", "text": "old-version reply"}), asst("m12", tool_use("ScheduleWakeup")))
         self.a.read_transcript()
-        real_wait = asyncio.wait_for
-
-        async def short(aw, timeout):
-            return await real_wait(aw, 0.2 if timeout == 300 else timeout)
-        with patch.object(shared.asyncio, "wait_for", short):
+        with patch.object(shared, "TURN_WAIT", 0.2):
             await asyncio.wait_for(task, 3)
         self.assertEqual(self.host.phone, ["old-version reply"])
         self.assertFalse(self.host.failed)
@@ -251,14 +247,10 @@ class WakeupStop(unittest.IsolatedAsyncioTestCase):
     async def test_timeout_without_text_still_unconfirmed(self):
         task = await self.phone_turn("silent")
         await self.submit("silent")
-        real_wait = asyncio.wait_for
-
-        async def short(aw, timeout):
-            return await real_wait(aw, 0.2 if timeout == 300 else timeout)
-        with patch.object(shared.asyncio, "wait_for", short):
+        with patch.object(shared, "TURN_WAIT", 0.2):    # P151b: stall card at TURN_WAIT, the reason at 2 × TURN_WAIT
             await asyncio.wait_for(task, 3)
         self.assertTrue(self.host.failed)
-        self.assertIn("未确认回合完成", self.host.notices[0])
+        self.assertIn("没有确认这一回合结束", self.host.notices[0])
 
 
 class StateEndWithoutStop(unittest.TestCase):

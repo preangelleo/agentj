@@ -30,8 +30,8 @@ h4, h5, h6 { font-family: var(--font-subtitle); font-weight: 500; font-size: var
 p { text-wrap: pretty; }
 /* Chinese headings: break at punctuation/spaces, not inside words (overflow-wrap still rescues long runs) */
 html[lang="zh-CN"] :is(h1, h2, h3, .aj-h1, .aj-h2, .aj-h3) { word-break: keep-all; overflow-wrap: anywhere; }
-a { color: var(--link); text-decoration-thickness: 1px; text-underline-offset: 0.2em; }
-a:hover { text-decoration-thickness: 2px; }
+a { color: var(--link); text-decoration-color: var(--link-underline); text-decoration-thickness: 2px; text-underline-offset: 0.2em; }
+a:hover { text-decoration-thickness: 3px; }
 strong, b { font-weight: 700; }
 small, .aj-small { font-size: var(--fs-sm); }
 hr { border: 0; border-top: 1px solid var(--border); margin: var(--sp-6) 0; }
@@ -253,6 +253,18 @@ kbd, .aj-kbd { border: 1px solid var(--border); border-bottom-width: 2px; border
 .aj-textarea { min-height: 7rem; resize: vertical; line-height: 1.5; }
 .aj-input::placeholder, .aj-textarea::placeholder { color: var(--text-muted); opacity: 1; }
 .aj-input:focus-visible, .aj-select:focus-visible, .aj-textarea:focus-visible { outline-offset: 0; border-color: var(--focus); }
+/* One look for every <select> on every surface (P145 site/dashboard → P163 here, so the phone web app and `agentj admin`
+   follow): the native arrow becomes a token-coloured chevron drawn with two gradients (no image, CSP-safe, follows light/dark).
+   Arrow 16 px from the right border, text keeps 44 px clear (brand/SPACING.md). */
+:root { --select-arrow-inset: 16px; --select-pad-end: 44px; }
+select:not([multiple]):not([size]), .aj-select {
+  appearance: none; -webkit-appearance: none;
+  padding-inline-end: var(--select-pad-end) !important;
+  background-image: linear-gradient(45deg, transparent 50%, var(--text-muted) 50%), linear-gradient(135deg, var(--text-muted) 50%, transparent 50%);
+  background-position: calc(100% - var(--select-arrow-inset) - 6px) 50%, calc(100% - var(--select-arrow-inset)) 50%;
+  background-size: 6px 6px, 6px 6px; background-repeat: no-repeat;
+  text-overflow: ellipsis; cursor: pointer; }
+select:not([multiple]):not([size]):hover, .aj-select:hover { border-color: var(--text-muted); }
 .aj-input[aria-invalid="true"] { border-color: var(--danger); }
 .aj-check { display: inline-flex; align-items: center; gap: var(--sp-2); min-height: var(--tap); cursor: pointer; }
 .aj-check input { width: 20px; height: 20px; accent-color: var(--primary-bg); }

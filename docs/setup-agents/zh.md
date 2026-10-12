@@ -18,7 +18,7 @@ order: 17
 
 ## 一键安装
 
-先在下面对应系统中装好 curl。脚本询问装哪些工具，再用短超时探测官方服务连通性，不发送用户数据。能连通默认原生登录；连不通推荐 AgentsRelay，使用另一条服务入口。你可以改选，也可用 `--relay` / `--no-relay` 指定。连通不代表所在地区或账号一定可用。默认备份并合并全权限配置；`--no-full-access` 保留默认审批。`--dry-run` 不下载、不写文件。macOS 和 Ubuntu/Debian/WSL2 支持自动安装。
+先在下面对应系统中装好 curl。脚本询问装哪些工具，再用短超时探测官方服务连通性，不发送用户数据。能连通默认原生登录；连不通推荐 AgentsRelay，使用另一条服务入口。你可以改选，也可用 `--relay` / `--no-relay` 指定。连通不代表所在地区或账号一定可用。默认备份并合并全权限配置，开着全权限时脚本会打印警告；`--no-full-access` 保留默认审批。`--dry-run` 不下载、不写文件。macOS 和 Ubuntu/Debian/WSL2 支持自动安装。
 
 
 ```bash
@@ -46,7 +46,7 @@ shasum -a 256 setup-agents.sh
 ```
 
 
-SHA256 sh: `4f1da9493ab2b178631a81dac1c79314c76f2cb20f73de4ab32d67dfe729c7e5`
+SHA256 sh: `0da9634e566bdc1d8222988dae48159b43887a8b4791efbd4e65f6785a1a023b`
 
 
 ```bash
@@ -62,7 +62,7 @@ bash setup-agents.sh
 
 流程：选工具 → 选原生登录或 AgentsRelay → Relay 路线先注册、隐藏输入 key 并通过真实模型请求 → 装依赖和 CLI → 检查原生二进制并试跑离线帮助 → 添加别名 → 可选启动 Agent J 正式安装助手 → 绑定账号、配对手机。正式助手会通过真实模型调用验证并复用已有 CLI 登录，配对后直接聊天；没有可调用的受支持 CLI 时才要求新服务 key。
 
-npm 安装失败或超时会自动重试 `registry.npmmirror.com`，连同平台可选依赖一起下载，不必加 `--mirror`；该开关仅表示优先镜像。根包与平台包的 SHA512 必须和 npmjs 官方元数据一致，下载到的压缩包也要校验。官方元数据不可用或哈希不一致就停下，不把未核实的镜像当成功。Node 也有回退，每次都校验 SHA256：能取到官方 SHASUMS 就用官方值，否则用镜像 SHASUMS（此时信任镜像 HTTPS 提供的校验值）。镜像只解决下载，不改变模型服务的地区限制。脚本不从 GitHub Releases 下载 CLI 二进制；本站也不托管 Claude Code 或 Codex。
+npm 安装失败或超时会自动重试 `registry.npmmirror.com`，连同平台可选依赖一起下载，不必加 `--mirror`；该开关仅表示优先镜像。根包与平台包的 SHA512 必须和 npmjs 官方元数据一致，下载到的压缩包也要校验。官方元数据不可用或哈希不一致就停下，不把未核实的镜像当成功。Node 压缩包也可从镜像下载，但 SHA256 只认 nodejs.org 官方 SHASUMS256.txt（仅 HTTPS、TLS 1.2 以上）；官方清单取不到或字节对不上就停下，请自行安装 Node.js 22+ 后重跑。镜像只解决下载，不改变模型服务的地区限制。脚本不从 GitHub Releases 下载 CLI 二进制；本站也不托管 Claude Code 或 Codex。
 
 每个 CLI 都要通过 `--version` 和离线 `--help`。原生工具还会检查平台包、CPU 架构、glibc/musl 选择，试跑二进制和随包提供的 ripgrep。缺组件会报`安装不完整：缺 …`并给修复命令，不报成功。Gemini 还会检查并加载它的平台原生 Node 终端组件。macOS 不再按版本号拒绝，实际运行失败才说明是否需要升级系统库。
 

@@ -83,11 +83,19 @@ KINDS = {
     ".odt": ("file", "application/vnd.oasis.opendocument.text"),
     ".ods": ("file", "application/vnd.oasis.opendocument.spreadsheet"),
     ".epub": ("file", "application/epub+zip"),
+    # P184: what the Agent produces and the owner may want on the phone / by e-mail — contacts, calendars, mail, legacy
+    # Office, OpenDocument slides, RTF, archives. Text kinds go through the same secret scan (TEXTY).
+    ".vcf": ("file", "text/vcard"), ".vcard": ("file", "text/vcard"), ".ics": ("file", "text/calendar"),
+    ".eml": ("file", "message/rfc822"), ".mbox": ("file", "application/mbox"), ".rtf": ("file", "application/rtf"),
+    ".doc": ("file", "application/msword"), ".xls": ("file", "application/vnd.ms-excel"),
+    ".ppt": ("file", "application/vnd.ms-powerpoint"), ".odp": ("file", "application/vnd.oasis.opendocument.presentation"),
+    ".tar": ("file", "application/x-tar"), ".7z": ("file", "application/x-7z-compressed"),
 }
-ZIPS = (".zip", ".docx", ".xlsx", ".pptx", ".odt", ".ods", ".epub")
-DELIVERABLE = {*ZIPS, ".gz", ".tgz", ".csv", ".tsv"}       # "file" types an implicit reference may offer
+ZIPS = (".zip", ".docx", ".xlsx", ".pptx", ".odt", ".ods", ".odp", ".epub")
+OLE = (".doc", ".xls", ".ppt")
+DELIVERABLE = {*ZIPS, *OLE, ".gz", ".tgz", ".tar", ".7z", ".csv", ".tsv", ".vcf", ".vcard", ".ics", ".eml", ".rtf"}   # implicit refs
 TEXTY = {"image/svg+xml", "text/html"} | {m for k, m in KINDS.values() if k == "file" and not m.startswith(("application/zip",
-         "application/gzip", "application/vnd", "application/epub"))}
+         "application/gzip", "application/vnd", "application/epub", "application/msword", "application/x-tar", "application/x-7z"))}
 
 DENY_DIRS = {".agentj", ".git", "credentials", ".ssh", ".aws", ".gnupg"}
 DENY_FILES = {".env", ".netrc", ".npmrc", ".pypirc"}
@@ -255,6 +263,14 @@ def _sniff(mime: str, ext: str, head: bytes) -> bool:
         return head[:4] in (b"PK\x03\x04", b"PK\x05\x06")
     if ext in (".gz", ".tgz"):
         return head[:2] == b"\x1f\x8b"
+    if ext in OLE:
+        return head[:8] == b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1"
+    if ext == ".7z":
+        return head[:6] == b"7z\xbc\xaf\x27\x1c"
+    if ext == ".tar":
+        return head[257:262] == b"ustar"
+    if ext == ".rtf":
+        return head[:5] == b"{\\rtf"
     return b"\x00" not in head                                   # text: html, txt, md, csv, json …
 
 
@@ -445,6 +461,14 @@ class Media:
             return out
         finally:
             os.close(fd)
+
+    def get(self, mid: str) -> dict | None:
+        """P183: a live record (a copy) for the file-card → Telegram forward; None when unknown or past KEEP_SECS."""
+        with self.lock:
+            rec = self.table.get(mid)
+            if rec is None or self.clock() - rec.get("ts", 0) >= KEEP_SECS:
+                return None
+            return dict(rec)
 
     def known(self, mid: str) -> bool:
         with self.lock:

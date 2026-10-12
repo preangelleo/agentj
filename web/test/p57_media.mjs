@@ -135,10 +135,13 @@ try {
       assert.deepEqual(strip, ['audio:voice.wav', ...(VIDEO ? ['video:clip.mp4'] : []), 'pdf:report.pdf', 'html:report.html', 'file:data.csv', 'image:bad.png']);
       const skips = await ev(p, `[...document.querySelectorAll('#mstrip .mskip')].map((x) => x.textContent)`);
       assert.deepEqual(skips, ['huge.mp4 太大（60.0 MB），没有发到手机。', '.env 可能含密钥，没有发。']);
+      // P183: small files load by themselves once their card is on screen — not before
+      const below = await ev(p, `document.getElementById('mstrip').getBoundingClientRect().top > innerHeight`);
+      if (below) assert.ok(!gets.some((g) => g.mid === id('B') || g.mid === id('D')), 'cards below the fold wait until they are on screen');
+      await ev(p, `document.querySelector('[data-mid="${id('G')}"]').scrollIntoView({ block: 'center' })`);
       await waitFor(p, `document.querySelector('[data-mid="${id('G')}"]').dataset.state === 'error'`, 10000);
       assert.equal(await ev(p, `document.querySelector('[data-mid="${id('G')}"] .mtap').textContent`), '文件对不上，没有显示');
       assert.equal(await ev(p, `!!document.querySelector('[data-mid="${id('G')}"] img')`), false, 'a wrong SHA-256 never shows the picture');
-      assert.ok(!gets.some((g) => g.mid === id('B') || g.mid === id('D')), 'audio / pdf wait for a tap');
       writeFileSync(join(OUT, 'media-page-phone.png'), await shoot(p));
       await ev(p, `document.getElementById('mstrip').scrollIntoView()`);
       writeFileSync(join(OUT, 'media-strip-phone.png'), await shoot(p));
@@ -152,25 +155,33 @@ try {
       assert.equal(await ev(p, `document.querySelector('.mview').hidden`), true);
       assert.equal(await ev(p, `document.getElementById('input').value`), 'keep me', 'Esc closed the viewer only');
 
-      // audio: tap → <audio controls> from a Blob URL, metadata loads under the page's CSP
-      await ev(p, `document.querySelector('[data-mid="${id('B')}"] .mtap').click()`);
+      // audio (small: loads by itself on screen) → <audio controls> from a Blob URL, metadata loads under the page's CSP
+      await ev(p, `document.querySelector('[data-mid="${id('B')}"]').scrollIntoView({ block: 'center' })`);
       await waitFor(p, `(() => { const a = document.querySelector('[data-mid="${id('B')}"] audio'); return a && a.src.startsWith('blob:') && a.readyState >= 1 && a.duration > 0.9; })()`, 10000);
       if (VIDEO) {
-        await ev(p, `document.querySelector('[data-mid="${id('C')}"] .mtap').click()`);
+        await ev(p, `document.querySelector('[data-mid="${id('C')}"]').scrollIntoView({ block: 'center' })`);
+        await ev(p, `document.querySelector('[data-mid="${id('C')}"] .mtap')?.click()`);
         await waitFor(p, `(() => { const v = document.querySelector('[data-mid="${id('C')}"] video'); return v && v.hasAttribute('playsinline') && v.controls && v.src.startsWith('blob:'); })()`, 10000);
         const vw = await ev(p, `new Promise((r) => { const v = document.querySelector('[data-mid="${id('C')}"] video'); const f = () => r({ w: v.videoWidth, err: v.error && v.error.code }); if (v.readyState >= 1) f(); else { v.onloadedmetadata = f; v.onerror = f; setTimeout(f, 5000); } })`);
         if (vw.err) console.log(`    (note: this Chromium cannot decode H.264: error ${vw.err} — the card and Blob URL are still checked)`);
         else assert.equal(vw.w, 320);
       }
-      // pdf: tap → open (new tab, the phone's PDF viewer) + download, both Blob URLs; nothing opened here
-      await ev(p, `document.querySelector('[data-mid="${id('D')}"] .mtap').click()`);
-      await waitFor(p, `document.querySelectorAll('[data-mid="${id('D')}"] .macts a').length >= 2`);
-      const pdf = await ev(p, `[...document.querySelectorAll('[data-mid="${id('D')}"] .macts a')].map((a) => [a.textContent, a.href.slice(0, 5), a.target || a.getAttribute('download'), a.rel])`);
-      assert.deepEqual(pdf, [['打开', 'blob:', '_blank', 'noopener noreferrer'], ['下载', 'blob:', 'report.pdf', 'noopener']]);
-      // file: tap → a download link with the file's name
-      await ev(p, `document.querySelector('[data-mid="${id('F')}"] .mtap').click()`);
-      await waitFor(p, `!!document.querySelector('[data-mid="${id('F')}"] .macts a[download]')`);
-      assert.equal(await ev(p, `document.querySelector('[data-mid="${id('F')}"] .macts a[download]').getAttribute('download')`), 'data.csv');
+      // pdf (P183): 预览 → the full-screen pdf.js view; 下载 → a Blob URL saved under the file's name
+      await ev(p, `document.querySelector('[data-mid="${id('D')}"]').scrollIntoView({ block: 'center' })`);
+      await waitFor(p, `document.querySelector('[data-mid="${id('D')}"]').dataset.state === 'ready'`);
+      await ev(p, `document.querySelector('[data-mid="${id('D')}"] .mact.pv').click()`);
+      await waitFor(p, `!document.querySelector('.mview').hidden && document.querySelectorAll('.mdoc .mpage').length === 1`, 15000);
+      await key(p, 'Escape', { code: 'Escape' });
+      const dl = await ev(p, `new Promise((r) => { const c = document.querySelector('[data-mid="${id('D')}"]'); const o = HTMLAnchorElement.prototype.click;
+        HTMLAnchorElement.prototype.click = function () { r([this.download, this.href.slice(0, 5), this.rel]); HTMLAnchorElement.prototype.click = o; };
+        c.querySelector('.mact.dl').click(); })`);
+      assert.deepEqual(dl, ['report.pdf', 'blob:', 'noopener']);
+      // file: on screen → loads; 预览 = the table view
+      await ev(p, `document.querySelector('[data-mid="${id('F')}"]').scrollIntoView({ block: 'center' })`);
+      await waitFor(p, `document.querySelector('[data-mid="${id('F')}"]').dataset.state === 'ready'`);
+      await ev(p, `document.querySelector('[data-mid="${id('F')}"] .mact.pv').click()`);
+      await waitFor(p, `!!document.querySelector('.mdoc table')`);
+      await key(p, 'Escape', { code: 'Escape' });
       await ev(p, `document.getElementById('mstrip').scrollIntoView()`);
       writeFileSync(join(OUT, 'media-cards-loaded-phone.png'), await shoot(p));
       assert.deepEqual(realProblems(p), []);
@@ -184,9 +195,9 @@ try {
       const turn = await fake.addTurn({ k: 'phone', dev: null, text: '网页' }, '报告网页：[report.html](out/report.html)', 'done');
       await fake.updateTurn(turn.id, { media: ITEMS.filter((x) => x.kind === 'html') });
       // P59 (ADR-A164): the reply links the file, so its card sits at the link in the words (no longer in the strip)
-      await waitFor(p, `!!document.querySelector('#words .mslot[data-link] .mcard[data-kind=html] .mtap') && document.getElementById('mstrip').hidden`);
+      await waitFor(p, `!!document.querySelector('#words .mslot[data-link] .mcard[data-kind=html][data-state=ready]') && document.getElementById('mstrip').hidden`);
       const title0 = await ev(p, 'document.title');
-      await ev(p, `document.querySelector('#words .mcard[data-kind=html] .mtap').click()`);
+      await ev(p, `document.querySelector('#words .mcard[data-kind=html] .mact.pv').click()`);
       await waitFor(p, `!!document.querySelector('.mview iframe.mframe')`, 10000);
       const fr = await ev(p, `(() => { const f = document.querySelector('.mview iframe'); return { sandbox: f.getAttribute('sandbox'), csp: f.getAttribute('csp'),
         ref: f.getAttribute('referrerpolicy'), src: f.getAttribute('src'), srcdoc: f.srcdoc.includes('季度报告'), doc: f.contentDocument === null, note: document.querySelector('.mview .mnote').textContent }; })()`);
@@ -229,7 +240,9 @@ try {
       const turn = await fake.addTurn({ k: 'phone', dev: null, text: '图' }, REPLY, 'done');
       const gone = { ...ITEMS[0], mid: id('X'), name: 'old.png', ref: '' };
       await fake.updateTurn(turn.id, { media: [ITEMS[0], ITEMS[1], ITEMS.find((x) => x.kind === 'pdf'), gone], media_skip: SKIP.slice(0, 1) });
-      await waitFor(p, `!!document.querySelector('#words .mslot img') && document.querySelector('[data-mid="${id('X')}"]').dataset.state === 'error'`, 15000);
+      await waitFor(p, `!!document.querySelector('#words .mslot img')`, 15000);
+      await ev(p, `document.querySelector('[data-mid="${id('X')}"]').scrollIntoView({ block: 'center' })`);
+      await waitFor(p, `document.querySelector('[data-mid="${id('X')}"]').dataset.state === 'error'`, 15000);
       assert.equal(await ev(p, `document.querySelector('[data-mid="${id('X')}"] .mtap').textContent`), '已过期');
       writeFileSync(join(OUT, 'media-page-desktop-dark.png'), await shoot(p));
       // another page → the Blob URLs of this one are revoked

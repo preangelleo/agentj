@@ -23,6 +23,7 @@ EXCERPT_MAX = 2000
 SEND_TTL = 600
 MAX_SENDS = 16                  # not yet handed to the Agent, per device (the 17th is refused: too_many)
 SEEN_MAX = 1024                 # sids remembered per device (dup), independent of SEND_TTL
+ASR_INLINE = 30_000       # P166: a longer transcript goes into the inbox as a .txt; the message keeps its beginning
 SAY_ASR_BUDGET = 3960.0  # maximum per recording, including cold start on slow CPUs
 
 def asr_budget(seconds=None):
@@ -44,13 +45,15 @@ T = {
         "asr_head": "语音转写（{secs}{name}）：",
         "asr_secs": "{s} 秒，",
         "asr_fail": "转写失败（{why}）——音频仍在上面的路径。",
+        "asr_partial": "（转写不完整：{why}，后面的部分没有转出来——完整音频仍在上面的路径。）",
+        "asr_more": "（转写较长，上面只是开头；全文在 {path}）",
         "quote_head": "【回复 #{id} · {who} · {hhmm}】",
         "excerpt": "（摘录）",
         "voice_only_fail": "（这条消息只有语音、没有文字，而且语音没转写出来。请简短告诉对方没听清，请他再说一遍或者打字——不要自己猜他说了什么。）",
         "who": {"phone": "你", "host": "电脑", "agent": "Agent", "sys": "系统", "task": "定时任务", "cmd": "命令"},
         "why": {"timeout": "处理超时", "no_speech": "没有听到说话", "not_installed": "电脑上还没装语音转写",
                 "off": "语音转写已关闭", "broken": "转写器出错", "busy": "转写器忙", "bad_audio": "音频格式不对",
-                "format": "格式", "cancelled": "已取消"},
+                "format": "格式", "cancelled": "已取消", "cut": "超过 2 小时的部分没有转写"},
     },
     "en": {
         "att_head": "{n} attachment(s) (already in your working folder; their content did not travel through the chat — read "
@@ -59,6 +62,8 @@ T = {
         "asr_head": "Voice transcript ({secs}{name}):",
         "asr_secs": "{s} s, ",
         "asr_fail": "Transcription failed ({why}) — the audio is still at the path above.",
+        "asr_partial": "(Transcript incomplete: {why}; the rest was not transcribed — the full audio is still at the path above.)",
+        "asr_more": "(Long transcript: only the beginning is above; the full text is at {path})",
         "quote_head": "[Reply to #{id} · {who} · {hhmm}]",
         "excerpt": "(excerpt)",
         "voice_only_fail": "(This message is a voice note only, with no text, and it could not be transcribed. Briefly tell them you "
@@ -67,7 +72,8 @@ T = {
                 "cmd": "command"},
         "why": {"timeout": "processing timed out", "no_speech": "no speech heard", "not_installed": "local transcription is not installed",
                 "off": "transcription is off", "broken": "the transcriber failed", "busy": "the transcriber is busy",
-                "bad_audio": "wrong audio format", "format": "format", "cancelled": "cancelled"},
+                "bad_audio": "wrong audio format", "format": "format", "cancelled": "cancelled",
+                "cut": "audio past 2 hours was not transcribed"},
     },
 }
 
@@ -118,6 +124,9 @@ def render(text: str, files: list[dict], lang: str = "zh", quote: str | None = N
     parts = []
     if quote:
         parts.append(quote)
+    if not files and not quote:      # P155: the phone menu's /switch-harness goes to the main Agent, rewritten (never "/…")
+        from .switch_harness import agent_text
+        text = agent_text(text, lang) or text
     if text and text.strip():
         parts.append(text)
     if files:
@@ -132,6 +141,10 @@ def render(text: str, files: list[dict], lang: str = "zh", quote: str | None = N
         head = t["asr_head"].format(secs=secs, name=os.path.basename(f["path"]))
         if a.get("ok") and (a.get("text") or "").strip():
             parts.append(head + "\n" + a["text"])
+            if a.get("file"):
+                parts.append(t["asr_more"].format(path=a["file"]))
+            if a.get("partial"):
+                parts.append(t["asr_partial"].format(why=t["why"].get(a["partial"], a["partial"])))
         else:
             parts.append(head + "\n" + t["asr_fail"].format(why=t["why"].get(a.get("why"), a.get("why") or "?")))
     if files and not (text and text.strip()) and all(f.get("asr") and not (f["asr"].get("ok") and (f["asr"].get("text") or "").strip())

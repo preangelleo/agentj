@@ -155,7 +155,8 @@ def _guard_loop() -> None:
             await aflush()
     g = guard()
     _guards[id(loop)] = g
-    loop.create_task(g.__anext__())
+    from . import bg
+    bg.spawn(g.__anext__(), "diskq_guard")          # P192 (B13): held (the loop keeps only a weak reference)
 
 
 def _submit(job) -> None:

@@ -144,7 +144,9 @@ def parse(kind,raw):
             if t in ('error','turn.failed'):raise BotError('native_failed')
             if t=='item.completed':
                 if item.get('type')=='agent_message':text.append(item.get('text',''))
-                elif item.get('type')=='error' and not started and ('unrecognized configuration' in item.get('message','').lower() or 'deprecated' in item.get('message','').lower()):continue
+                # pre-turn notices, never a tool: config / deprecation warnings, and (P155, codex 0.159+) "Model metadata for `<model>`
+                # not found. Defaulting to fallback metadata" for a provider's model Codex has no metadata for
+                elif item.get('type')=='error' and not started and any(w in item.get('message','').lower() for w in ('unrecognized configuration','deprecated','fallback metadata')):continue
                 elif item.get('type') not in ('reasoning',):raise BotError('native_tool_refused')
             if t=='turn.completed':usage=_usage(obj)
         else:

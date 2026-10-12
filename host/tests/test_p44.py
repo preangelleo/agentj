@@ -513,7 +513,8 @@ class PrefSet(_AsyncEnv):
         self.assertEqual(m["host"]["version"], __version__)
         self.assertEqual(m["host"]["settable"], list(serve.PREF_SET_KEYS))
         self.assertEqual([(d["name"], d["online"]) for d in m["host"]["devices"]], [("我的手机", True)])
-        self.assertEqual(set(m["host"]["devices"][0]), {"id", "name", "paired_at", "online"}, "metadata only, no keys")
+        self.assertEqual(set(m["host"]["devices"][0]), {"id", "name", "paired_at", "online", "named_by", "self_name", "label"},
+                         "metadata only, no keys (P179: + who named it, the device's own label, the page label)")
         self.assertIs(type(m["host"]["language_at"]), int)
         self.assertIn("high_risk_warnings", m["value"]["agent"], "the safety switches stay visible (read-only)")
         self.assertIn("session_mode", m["value"]["agent"])

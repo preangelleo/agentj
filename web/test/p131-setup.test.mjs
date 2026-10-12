@@ -28,7 +28,7 @@ test('checklist is a page behind a closable banner, never a dialog over the chat
   assert.match(HTML, /id="setup-banner"[^>]*hidden/);
   assert.match(HTML, /id="setup-view" class="aj-flow view sub" hidden/);
   assert.match(HTML, /id="open-setup"/);
-  assert.ok(APP.includes("setup: 'setup-view'") && APP.includes("$('open-setup').addEventListener('click', () => { closeMenu(); setupcard.open(true); });"));
+  assert.ok(APP.includes("setup: 'setup-view'") && APP.includes("$('open-setup').addEventListener('click', fromSettings(() => setupcard.open(true)));"));
   assert.match(CSS, /\.setup-banner__x\{[^}]*min-height:44px/);
   assert.match(CSS, /\.setup-sticky\{position:sticky/);
 });

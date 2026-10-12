@@ -16,6 +16,7 @@ import { makeFiles } from './parity_cases.mjs';
 const OUT = fileURLToPath(new URL('../../site/content/docs/14-manual/', import.meta.url));
 mkdirSync(OUT, { recursive: true });
 const LANGS = process.argv.slice(2).filter((a) => ['zh', 'en'].includes(a));
+const ONLY = (process.env.AJ_MANUAL_ONLY || '').split(',').filter(Boolean);
 const UA = 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1';
 const hex = (n) => Array.from(webcrypto.getRandomValues(new Uint8Array(n)), (b) => b.toString(16).padStart(2, '0')).join('');
 const b64u = (u8) => Buffer.from(u8).toString('base64url');
@@ -55,6 +56,7 @@ async function shot(p, name, lang) {
   const { cssLayoutViewport: v } = await p.send('Page.getLayoutMetrics');
   const { data } = await p.send('Page.captureScreenshot', { format: 'webp', quality: 78, clip: { x: 0, y: v.pageY, width: v.clientWidth, height: v.clientHeight, scale: 1 } });
   const f = join(OUT, `${name}.${lang}.webp`);
+  if (ONLY.length && !ONLY.includes(name)) return;          // AJ_MANUAL_ONLY=settings,remotes: re-shoot just these
   writeFileSync(f, Buffer.from(data, 'base64'));
   made.push(f);
   console.log('shot', f);
@@ -134,9 +136,11 @@ async function run(lang) {
   await shot(p, 'rich-more', lang);
   await click(p, '#slashBtn');
   await waitFor(p, `!document.getElementById('menu').hidden`);
+  await sleep(250);                                   // P187: menu pages fade in (160 ms)
   await shot(p, 'commands', lang);
   await evaluate(p, `document.body.click()`);
   await click(p, '#keysBtn');
+  await sleep(250);
   await shot(p, 'keys', lang);
   await click(p, '#keysClose');
   await click(p, '#setBtn');
@@ -144,9 +148,18 @@ async function run(lang) {
   await shot(p, 'settings', lang);
   await evaluate(p, `document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))`);
   await waitFor(p, `document.getElementById('settings').hidden`);
-  await evaluate(p, `document.getElementById('aj-menu').open = true`);
-  await shot(p, 'menu', lang);
-  await evaluate(p, `document.getElementById('aj-menu').open = false`);
+  // P171: the ≡ menu merged into Settings; its own second-level page 遥控器管理 is the second shot
+  const now = Math.floor(Date.now() / 1000);
+  fake.remotes({ limit: 10, link: '', qr: '', code: '', items: [
+    { id: 'ME', me: true, name: 'iPhone', paired_at: now - 86400 * 12, seen: now, online: true, source: 'local' },
+    { id: 'Kx3pQ9wLm2Vb7Tz1', name: en ? 'MacBook · Chrome' : 'MacBook · Chrome', paired_at: now - 86400 * 30, seen: now - 3600, online: true, source: 'account' },
+    { id: 'Rf8sN2cHq5Yd4Jk6', name: en ? 'Pixel 9' : '华为 Pura', paired_at: now - 86400 * 5, seen: now - 86400 * 2, online: false, source: 'phone' }] });
+  await evaluate(p, `(document.getElementById('settings').hidden && document.getElementById('setBtn').click())`);
+  await click(p, '#set-remotes-open');
+  await waitFor(p, `document.querySelectorAll('#rm-list .rmitem').length === 3`);
+  await shot(p, 'remotes', lang);
+  fake.st.remotes = null;
+  await evaluate(p, `(!document.getElementById('settings').hidden && document.getElementById('set-close').click())`);
   const { root } = await p.send('DOM.getDocument', { depth: -1 });
   const { nodeId } = await p.send('DOM.querySelector', { nodeId: root.nodeId, selector: '#fPhoto' });
   await p.send('DOM.setFileInputFiles', { nodeId, files: [files.png1, files.txt] });

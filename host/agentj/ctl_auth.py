@@ -18,8 +18,10 @@ Same-uid code can always reach the owner's own terminal by other means; this clo
 from __future__ import annotations
 
 import os
+import subprocess
+import sys
 
-SENSITIVE = frozenset({"resume", "config_apply", "send", "revoke"})
+SENSITIVE = frozenset({"resume", "config_apply", "send", "revoke", "mail_cfg"})   # P170: mail_cfg widening → the owner's card
 CLAIM_TTL = 30
 AGENT_ENV = ("CLAUDECODE", "CLAUDE_CODE_ENTRYPOINT", "CODEX_SANDBOX", "CODEX_SANDBOX_NETWORK_DISABLED",
              "OPENCODE", "AGENTJ_PERM_TOKEN", "AGENTJ_PERM_SOCK", "AGENTJ_FENCED")
@@ -59,10 +61,18 @@ def refusal(pid, serve_pid: int, agent_pids) -> str | None:
 
 
 def has_tty(pid) -> bool:
+    """The peer's stdin is a terminal (Linux /proc). P176: macOS has no /proc — there the peer's controlling terminal (`ps`)."""
     try:
         return os.readlink(f"/proc/{pid}/fd/0").startswith(("/dev/pts/", "/dev/tty"))
     except (OSError, TypeError):
+        pass
+    if sys.platform != "darwin" or not isinstance(pid, int) or isinstance(pid, bool) or pid <= 0:
         return False
+    try:
+        tty = subprocess.run(["/bin/ps", "-o", "tty=", "-p", str(pid)], capture_output=True, text=True, timeout=3).stdout.strip()
+    except (OSError, subprocess.SubprocessError):
+        return False
+    return bool(tty) and tty not in ("?", "??", "-")
 
 
 def _flat(d, prefix=""):

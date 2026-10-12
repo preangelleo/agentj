@@ -17,7 +17,7 @@ Skill & workflow plaza: `agentj plaza install | publish | like | installed` (mar
 packages too) — install only after a preview and `--owner-confirmed --digest`; 官方认证 only with a valid compiled-in signature.
 
 State dir: $AGENTJ_STATE_DIR or ~/.local/state/agentj (0700). Account-bound hosts can add a new device from the account page after fresh owner passkey confirmation.
-The local `agentj pair` alternative requires the human's 6-digit code and local approval passphrase. At most MAX_DEVICES (5) remotes
+The local `agentj pair` alternative requires the human's 6-digit code and local approval passphrase. At most MAX_DEVICES (10) remotes
 per host: when the list is full, `agentj pair` lists them and the human unbinds one before approving. `agentj admin` is the
 same thing as a local web page (127.0.0.1 only, one-time link printed here; the human still types the phone's code).
 """
@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import contextlib
 import json
 import os
 import re
@@ -36,7 +37,7 @@ import time
 from . import DIST, __version__, cloud, gate, names
 from . import docsrule, feedback, handover, plaza, recall, support, wizard
 from . import elevate, elevate_helper
-from .state import DEFAULT_RELAY, DEFAULT_WEB, MAX_DEVICES, State
+from .state import DEFAULT_RELAY, DEFAULT_WEB, MAX_DEVICES, State, device_names
 from .envcompat import getenv
 from .text import STARTER_NAMES, ask_yes, clean, clean_label
 
@@ -320,6 +321,16 @@ def _pair_check(st: State, status: dict | None) -> dict:
     return pairprep.precheck(st, (status.get("relay_up") is True) if isinstance(status, dict) else None)
 
 
+CODE_PROMPT = "输入手机上显示的 6 位安全码并回车（120 秒内；直接回车 = 拒绝）/ Type the 6-digit code shown on the phone, Enter: "
+PAIR_AGAIN = ("重来：再运行一次 `agentj pair`（SSH 里用 `agentj pair --link`），在手机上打开新的链接。/ To retry, run `agentj pair` "
+              "again (over SSH: `agentj pair --link`) and open the new link on the phone.")
+PAIR_NO_TTY = ("（这里不是交互终端，没法输安全码。想在终端里批准，请在真正的终端里运行 `agentj pair`。/ Not an interactive terminal, so "
+               "the safety code cannot be typed here; run `agentj pair` in a real terminal to approve from it.）")
+PAIR_NOT_TERMINAL = ("✗ 这个终端不能直接批准：它不是交互终端，或者是在 Agent 里运行的。设备还在等——到账户页用通行密钥批准，或者自己"
+                     "在真正的终端里重新运行 `agentj pair`。/ This terminal cannot approve (not interactive, or run from an Agent); "
+                     "the phone keeps waiting — approve it on the account page.")
+
+
 def cmd_pair(a) -> None:
     from . import pairprep
     st = State()
@@ -333,6 +344,8 @@ def cmd_pair(a) -> None:
         print(json.dumps({**chk, "serve": status is not None}) if getattr(a, "json", False) else pairprep.both(chk))
         return
     chk = _pair_check(st, _serve_or_exit(st))
+    if chk["route"] == "seat":          # P185: no usable seat → no pairing; say where to bind / renew
+        sys.exit("✗ " + pairprep.both(chk))
     if chk["route"] == "set_passphrase":
         if not sys.stdin.isatty():
             sys.exit("✗ " + pairprep.both(chk))
@@ -395,6 +408,49 @@ def cmd_pair(a) -> None:
             w.write((json.dumps(obj) + "\n").encode())
             await w.drain()
 
+        async def answer(code_only: bool) -> dict:
+            """P176: ask for the phone's 6-digit code (and the passphrase when one is set) until serve answers; serve may
+            speak first at any prompt (account-page approval, timeout, phone gone) — then that event is returned."""
+            pw = None
+            while True:
+                code = await race(CODE_PROMPT)
+                if code is None:
+                    return await take()
+                code = code.strip()
+                if not code:
+                    await send({"cmd": "code", "code": ""})
+                    return await take()
+                if not (len(code) == 6 and code.isdigit()):
+                    print("✗ 安全码是手机上显示的 6 位数字，请再输一次（这次不算错）。/ The safety code is the 6 digits on the "
+                          "phone; type it again (this did not count).", flush=True)
+                    continue
+                if code_only:
+                    await send({"cmd": "code", "code": code, "terminal": True, "retry": True})
+                    ev = await take()
+                else:
+                    while True:
+                        if pw is None:
+                            ask, f = _secret_async("批准口令 / approval passphrase："), next_line()
+                            done, _ = await asyncio.wait({ask, f}, return_when=asyncio.FIRST_COMPLETED)
+                            if f in done:
+                                print()
+                                return await take()
+                            pw = ask.result()
+                        await send({"cmd": "code", "code": code, "pass": pw, "retry": True})
+                        ev = await take()
+                        if ev.get("ev") != "pass_wrong":
+                            break
+                        pw = None
+                        print(f"✗ 批准口令不对（再错 {ev.get('left', 0)} 次会锁定）。设备还在等，请再输一次。", flush=True)
+                if ev.get("ev") == "code_wrong":
+                    print(f"✗ 安全码不对，还能再试 {ev.get('left', 0)} 次：看清手机上的 6 位数字再输。/ Wrong safety code, "
+                          f"{ev.get('left', 0)} tries left: check the 6 digits on the phone.", flush=True)
+                    continue
+                if ev.get("ev") == "code_refused":
+                    print(PAIR_NOT_TERMINAL, flush=True)
+                    return await take()
+                return ev
+
         ev = await take()
         while True:
             kind = ev.get("ev")
@@ -405,37 +461,27 @@ def cmd_pair(a) -> None:
                 elif isinstance(ev.get("evict"), dict):
                     print(f"已满 {ev.get('limit', MAX_DEVICES)} 台：批准后会自动解绑最早的遥控器「{_dev_line(ev['evict'])}」。"
                           "不想让它走，就直接回车拒绝，先用 `agentj revoke <设备>` 解绑别的。", flush=True)
-                if passkey_only:   # P127: no passphrase on this bound host — the owner approves on the account page
-                    url = chk.get("account_url") or cloud.DEFAULT_APP
+                if st.devices():   # P161: the P153 request card also pops up on every paired remote
+                    print("也可以在任一已配对的遥控器上确认（那边会弹出申请卡片）。/ "
+                          "You can also confirm on any paired remote (a request card pops up there).", flush=True)
+                url = chk.get("account_url") or cloud.DEFAULT_APP
+                if passkey_only and not sys.stdin.isatty():   # P127 as before: no terminal to type into → the account page
                     print(f"到账户页 {url} 这台电脑的席位卡上批准这台等待中的手机（通行密钥确认）；这里会自动显示结果。"
                           f"不想批准就按 Ctrl-C。\nApprove this waiting phone on this computer's seat card at {url} (passkey); "
                           "the result shows here. Ctrl-C to refuse.", flush=True)
+                    print(PAIR_NO_TTY, flush=True)
                     ev = await take()
                     continue
-                print("安全码只显示在手机屏幕上——这个终端永远不会显示它。", flush=True)
-                if chk["route"] == "account":
-                    print("（也可以直接到账户页批准，用通行密钥。/ Or approve on the account page with your passkey.）", flush=True)
-                code = await race("看着手机，输入手机上的 6 位安全码并回车（120 秒内；直接回车 = 拒绝）：")
-                if code is None:
-                    ev = await take()
-                    continue
-                if not code.strip():
-                    await send({"cmd": "code", "code": ""})
-                    ev = await take()
-                    continue
-                while True:
-                    ask, f = _secret_async("批准口令："), next_line()
-                    done, _ = await asyncio.wait({ask, f}, return_when=asyncio.FIRST_COMPLETED)
-                    if f in done:
-                        print()
-                        break
-                    await send({"cmd": "code", "code": code, "pass": ask.result()})
-                    ev = await take()
-                    if ev.get("ev") != "pass_wrong":
-                        break
-                    print(f"✗ 批准口令不对（再错 {ev.get('left', 0)} 次会锁定）。设备还在等，请再输一次。", flush=True)
-                if f in done:
-                    ev = await take()
+                if passkey_only:   # P176: both ways at once — the account page's passkey, or the phone's code typed here
+                    print(f"两条路任选其一，先完成的算数：① 到账户页 {url} 这台电脑的席位卡上批准（通行密钥）；"
+                          f"② 直接在这里输入手机上显示的 6 位安全码。\nEither way, whichever comes first: approve on this "
+                          f"computer's seat card at {url} (passkey), or type the 6-digit safety code shown on the phone here.",
+                          flush=True)
+                else:
+                    print("安全码只显示在手机屏幕上——这个终端永远不会显示它。", flush=True)
+                    if chk["route"] == "account":
+                        print("（也可以直接到账户页批准，用通行密钥。/ Or approve on the account page with your passkey.）", flush=True)
+                ev = await answer(passkey_only)
                 continue
             if kind == "unbound":
                 ev = await take()
@@ -447,15 +493,19 @@ def cmd_pair(a) -> None:
                     print(f"已自动解绑最早的遥控器：{_dev_line(ev['evicted'])}", flush=True)
                 print(f"✓ 已批准：{ev['name']}（设备 {ev['device']}）。在 serve 终端里打字就能发给它。")
                 return
-            reasons = {"code_mismatch": "安全码不一致，已拒绝", "denied": "已拒绝", "timeout": "120 秒未确认，已拒绝",
-                       "abandoned": "已取消", "bad_handshake": "握手失败", "hs_timeout": "手机没有完成握手，已拒绝",
+            reasons = {"code_mismatch": "安全码不一致，已拒绝。" + PAIR_AGAIN, "denied": "已拒绝",
+                       "timeout": "120 秒内没有批准，已拒绝。" + PAIR_AGAIN,
+                       "abandoned": "已取消", "bad_handshake": "握手失败", "gone": "手机断开了", "hs_timeout": "手机没有完成握手，已拒绝",
                        "device_limit": f"已达 {MAX_DEVICES} 台上限，没有批准：先解绑一台（`agentj revoke <设备>`）再配对",
-                       "pass_locked": gate.MESSAGES["locked"], "pass_not_set": gate.MESSAGES["not_set"]}
+                       "pass_locked": gate.MESSAGES["locked"], "pass_not_set": gate.MESSAGES["not_set"],
+                       "account_cancelled": "已在账户页取消（可以重新运行 agentj pair）"}
             msg = {"expired": "二维码已过期（5 分钟），请重新运行 agentj pair", "gone": "手机断开了",
                    "replaced": "已被新的 agentj pair 取代"}.get(kind, reasons.get(ev.get("reason"), str(ev)))
+            if kind == "gone" or ev.get("reason") in ("gone", "hs_timeout"):
+                msg += "。这次配对已结束，链接作废，请重新运行 agentj pair / the device left: this link is spent, run agentj pair again"
             sys.exit(f"✗ {msg}")
 
-    asyncio.run(main())
+    _run_prompting(main())
 
 
 def _dev_line(d: dict) -> str:
@@ -465,8 +515,52 @@ def _dev_line(d: dict) -> str:
     return f"{clean_label(str(d.get('name') or '')) or '（没有名字）'} 配对于 {when}" + ("（在线）" if d.get("online") is True else "")
 
 
+_PROMPTS: list[threading.Thread] = []   # keyboard prompts started by _ask_async / _secret_async
+
+
+def _prompt_thread(run) -> None:
+    t = threading.Thread(target=run, daemon=True)
+    _PROMPTS.append(t)
+    t.start()
+
+
+def _run_prompting(coro) -> None:
+    """asyncio.run for a command that races keyboard prompts against serve (P153). A daemon thread still blocked in
+    input() / getpass on a terminal keeps Python from finishing its exit: `agentj pair` printed 「✗ 手机断开了」 and then
+    hung until Ctrl-C. When a prompt is still waiting at the end: put the terminal back (getpass turns echo off), flush,
+    and leave with os._exit and the same status sys.exit would have given."""
+    saved = None
+    try:
+        import termios
+        saved = termios.tcgetattr(sys.stdin.fileno())
+    except Exception:
+        termios = None
+    code: object = 0
+    try:
+        asyncio.run(coro)
+    except (SystemExit, KeyboardInterrupt) as e:
+        if not any(t.is_alive() for t in _PROMPTS):
+            raise
+        code = e.code if isinstance(e, SystemExit) else 130
+    else:
+        if not any(t.is_alive() for t in _PROMPTS):
+            return
+    if isinstance(code, str):
+        print(code, file=sys.stderr)
+        code = 1
+    elif not isinstance(code, int):
+        code = 0 if code is None else 1
+    if saved is not None:
+        with contextlib.suppress(Exception):
+            termios.tcsetattr(sys.stdin.fileno(), termios.TCSANOW, saved)
+    with contextlib.suppress(Exception):
+        sys.stdout.flush()
+        sys.stderr.flush()
+    os._exit(code)
+
+
 def _ask_async(prompt: str) -> asyncio.Future:
-    """input() on a daemon thread, so an unanswered prompt never blocks exit."""
+    """input() on a daemon thread, so an unanswered prompt never blocks exit (with _run_prompting)."""
     loop = asyncio.get_running_loop()
     fut = loop.create_future()
 
@@ -477,7 +571,7 @@ def _ask_async(prompt: str) -> asyncio.Future:
             v = ""
         loop.call_soon_threadsafe(lambda: fut.done() or fut.set_result(v))
 
-    threading.Thread(target=run, daemon=True).start()
+    _prompt_thread(run)
     return fut
 
 
@@ -501,7 +595,7 @@ def _secret_async(prompt: str) -> asyncio.Future:
         v = _secret(prompt)
         loop.call_soon_threadsafe(lambda: fut.done() or fut.set_result(v))
 
-    threading.Thread(target=run, daemon=True).start()
+    _prompt_thread(run)
     return fut
 
 
@@ -601,7 +695,148 @@ def ssh_tunnel_hint(port: int, environ=None) -> str | None:
             f"再在那台电脑的浏览器里打开上面的链接。/ Over SSH: run the line above on your own computer, then open the link there.")
 
 
+def _desktop_env(environ=None) -> dict | None:
+    """`--open` needs a desktop browser on THIS computer → the environment to open it with, or None. Never over SSH without
+    a desktop. On Linux/BSD the Agent usually runs under the background service, whose environment may lack the display:
+    find the owner's own Wayland socket / X display (without one Python's webbrowser falls back to a console browser,
+    which would hang a detached process)."""
+    e = dict(os.environ if environ is None else environ)
+    if _remote_session(e):
+        return None
+    if not sys.platform.startswith(("linux", "freebsd", "openbsd", "netbsd")) or e.get("DISPLAY") or e.get("WAYLAND_DISPLAY"):
+        return e
+    import glob
+    import stat
+    run = e.get("XDG_RUNTIME_DIR") or f"/run/user/{os.getuid()}"
+    for sock in sorted(glob.glob(os.path.join(run, "wayland-[0-9]*"))):
+        try:
+            st = os.stat(sock)
+        except OSError:
+            continue
+        if stat.S_ISSOCK(st.st_mode) and st.st_uid == os.getuid():
+            return {**e, "XDG_RUNTIME_DIR": run, "WAYLAND_DISPLAY": os.path.basename(sock)}
+    xs = sorted(glob.glob("/tmp/.X11-unix/X[0-9]*"))
+    if xs:
+        return {**e, "DISPLAY": ":" + os.path.basename(xs[0])[1:]}
+    return None
+
+
+ADMIN_OPEN_POLL = 5.0   # s between "is the opened page still in use?" checks
+
+
+def admin_open_serve(srv, report, opener=None, stop=None, poll=ADMIN_OPEN_POLL) -> bool:
+    """P163 `agentj admin --open`, the detached half: open one fresh link in the default browser (the link never reaches
+    stdout, so it never lands in an Agent transcript), `report` one event dict, then keep the page up while it is
+    in use — the link not yet opened (≤ 10 min) or a logged-in page (30 min idle / 8 h max, admin.py). → opened?"""
+    import webbrowser
+    try:
+        opened = bool((opener or webbrowser.open)(srv.new_link()))
+    except Exception:
+        opened = False
+    report({"ev": "opened" if opened else "no_browser", "port": srv.port, "pid": os.getpid()})
+    if opened:
+        stop = stop or threading.Event()
+        while not stop.wait(poll) and srv.in_use():
+            pass
+    return opened
+
+
+ADMIN_OPEN_MSG = {
+    "opened": "已在这台电脑的默认浏览器打开 Agent 管理页（只在 127.0.0.1:{port}；链接只用一次，页面 30 分钟不用会自动关闭，"
+              "要再开就再运行 agentj admin --open）/ Opened the Agent admin page in this computer's default browser "
+              "(127.0.0.1:{port} only; one-time link, closes after 30 minutes unused — run agentj admin --open again to reopen)",
+    "no_browser": "这里没法自动打开浏览器（SSH 登录、没有桌面或浏览器打不开）：请主人在自己的终端运行 agentj admin，把它打印的链接"
+                  "粘到这台电脑的浏览器里 / Cannot open a browser here (SSH, no desktop or no browser): the owner runs "
+                  "agentj admin in their own terminal and pastes the printed link into this computer's browser",
+}
+
+
+def spawn_admin_open(port: int = 0, environ=None):
+    """Start the detached `agentj admin --open-child` and wait for its one line → (event dict, Popen | None).
+    Used by the CLI on the owner's own computer and by serve for a fenced Agent (elevate.py `admin_open`)."""
+    import subprocess
+    env = _desktop_env(environ)
+    if env is None:
+        return {"ev": "no_browser", "port": None}, None
+    cmd = [os.path.abspath(sys.executable), "-P", "-m", "agentj.cli", "admin", "--open-child", "--port", str(int(port))]
+    try:
+        p = subprocess.Popen(cmd, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+                             start_new_session=True, close_fds=True, text=True, env=env)
+    except OSError:
+        return {"ev": "no_browser", "port": None}, None
+    box: list = []
+    t = threading.Thread(target=lambda: box.append(p.stdout.readline()), daemon=True)
+    t.start()
+    t.join(60)
+    try:
+        ev = json.loads(box[0]) if box and box[0] else {}
+    except ValueError:
+        ev = {}
+    if ev.get("ev") != "opened":
+        if p.poll() is None:
+            p.terminate()
+        return {"ev": "no_browser", "port": None}, None
+    return {k: ev[k] for k in ("ev", "port", "pid") if k in ev}, p
+
+
+def _admin_open(a) -> None:
+    """`agentj admin --open`: returns at once (an Agent's shell call must not block); the page runs in a detached child.
+    Inside the Agent's fence (state hidden, own pid namespace) the host opens it instead, through the Agent socket."""
+    st = State()
+    if not st.exists():
+        from . import elevate
+        import pathlib
+        if pathlib.Path(os.environ.get(elevate.ENV) or st.perm_dir / elevate.SOCK_NAME).exists():
+            res = elevate.client_request(st, {"t": "admin_open"}, timeout=90)
+            ev = res if isinstance(res, dict) and res.get("ev") in ("opened", "no_browser") else {"ev": "no_browser", "port": None}
+            _admin_open_report(a, ev)
+            sys.exit(0 if ev["ev"] == "opened" else 1)
+    _need_init(st)
+    ev, _ = spawn_admin_open(a.port)
+    _admin_open_report(a, ev)
+    if ev["ev"] != "opened":
+        sys.exit(1)
+
+
+def _admin_open_report(a, ev: dict) -> None:
+    if a.events == "jsonl":
+        print(json.dumps(ev), flush=True)
+    else:
+        print(ADMIN_OPEN_MSG[ev["ev"]].format(port=ev.get("port")), file=sys.stdout if ev["ev"] == "opened" else sys.stderr,
+              flush=True)
+
+
+def _admin_open_child(a) -> None:
+    from .admin import AdminServer
+    st = State()
+    _need_init(st)
+
+    def report(ev: dict) -> None:   # the parent reads exactly one line; afterwards stdout goes nowhere (its pipe closes)
+        print(json.dumps(ev), flush=True)
+        devnull = os.open(os.devnull, os.O_WRONLY)
+        os.dup2(devnull, 1)
+        os.close(devnull)
+    try:
+        srv = AdminServer(st, port=a.port).start()
+    except OSError:
+        report({"ev": "no_browser", "port": None})
+        return
+    stop = threading.Event()
+    for sig in (signal.SIGINT, signal.SIGTERM):
+        signal.signal(sig, lambda *_: stop.set())
+    try:
+        admin_open_serve(srv, report, stop=stop)
+    finally:
+        srv.stop()
+
+
 def cmd_admin(a) -> None:
+    if getattr(a, "open_child", False):
+        return _admin_open_child(a)
+    if getattr(a, "open", False):
+        if a.url_file:
+            _refuse("--open 和 --url-file 只能选一个 / --open and --url-file cannot be combined")
+        return _admin_open(a)
     from .admin import AdminServer
     st = State()
     _need_init(st)
@@ -663,11 +898,16 @@ def cmd_admin(a) -> None:
 def cmd_devices(a) -> None:
     st = State()
     _need_init(st)
+    try:   # P179: pre-P179 records → self_name / owner_name (same audit-based rule as serve's start)
+        st.migrate_device_names()
+    except (OSError, ValueError):
+        pass
     devs = st.devices()
     status = _ctl_quiet(st, {"cmd": "status"}) or {}
     online = {s["device"] for s in status.get("sessions", []) if s.get("state") == "ready"}
     if a.json:
-        print(json.dumps({d: {**v, "online": d in online} for d, v in devs.items()}, ensure_ascii=False, indent=1))
+        print(json.dumps({d: {**v, "online": d in online, "named_by": device_names(v)["named_by"]} for d, v in devs.items()},
+                         ensure_ascii=False, indent=1))
         return
     print(f"Agent：{_name_or_unset(st)}")
     print(_link_line(st))
@@ -677,7 +917,16 @@ def cmd_devices(a) -> None:
     for did, v in devs.items():
         when = time.strftime("%Y-%m-%d %H:%M", time.localtime(v.get("paired_at", 0)))
         fid = "  Face ID ✓" if isinstance(v.get("pk"), dict) else ""   # F20: this phone can reconnect with its passkey
-        print(f"{did}  {'在线' if did in online else '离线'}  {v.get('name', '')}  配对于 {when}{fid}{' · 经账户页添加 / Added from account page' if v.get('source') == 'account' else ''}")
+        print(f"{did}  {'在线' if did in online else '离线'}  {v.get('name', '')}{_name_note(v)}  配对于 {when}{fid}{' · 经账户页添加 / Added from account page' if v.get('source') == 'account' else ''}")
+
+
+def _name_note(v) -> str:
+    """P179: who gave a remote its name, the same words as the account page and the phone's settings."""
+    n = device_names(v)
+    if n["named_by"] != "owner":
+        return "（名字是设备自己填的 / name set by the device）"
+    own = f"；设备自己填的原名：{n['self_name']}" if n["self_name"] else ""
+    return f"（主人改的名字 / name set by the owner{own}）"
 
 
 def cmd_revoke(a) -> None:
@@ -817,8 +1066,14 @@ def _read_seat_code(a) -> str:
 def _seat_login(st: State, a) -> None:
     """`agentj login --seat …` (seat setup §4.1): no y/N — the human gave the code to this computer's Agent, that is the
     decision. Prints the company it joined (the human must see it); never the code."""
+    given = a.name is not None
     if a.name is None and getattr(a, "install_code_file", None):
         a.name = st.agent_name() or "Agent J"
+    if given:
+        from .text import new_agent_name_problem
+        if new_agent_name_problem(a.name) == "name_too_long":   # P154: a new name must be short; the kept one is not re-checked
+            _refuse(names.RENAME_MESSAGES["name_too_long"] + " / Name too long: up to 8 CJK characters or 13 others "
+                    "(mixed: CJK counts 1.6, others 1, at most 13)")
     if a.name is None:
         print("✗ 用设置码绑定要同时给 Agent 起名：--name \"<名字>\" / --seat needs --name \"<name>\"", file=sys.stderr)
         sys.exit(2)
@@ -1089,6 +1344,10 @@ def cmd_agent(a) -> None:
     if a.mode == "detect":   # works before `agentj init`: only looks at PATH and whether login files exist
         from . import harness
         sys.exit(harness.main(as_json=a.json, call_probe=getattr(a, "probe", False)))
+    if a.mode == "switch":   # P155: gate (headless probe) → a job outside the service switches, verifies, rolls back
+        from . import switch_harness
+        st = State()
+        sys.exit(switch_harness.cli(a, st, _lang(st)))
     st = State()
     _need_init(st)
     if a.mode in ("claude", "codex", "opencode"):
@@ -1101,8 +1360,19 @@ def cmd_agent(a) -> None:
         try:
             from . import working_root, preferences, session_choice
             lang = _lang(st)
-            # P127: --shared / --independent, or settle an "independent" the owner never chose (asks in a terminal)
-            mode = session_choice.resolve(st, a.mode, getattr(a, "session_mode", None), lang)
+            # P127 / P174: --shared / --independent is the owner's choice; without a flag the mode stays as it is
+            # (factory default independent; an install from before P174 keeps shared)
+            from . import instance
+            if instance.current() > 1:   # P180: a second seat on this computer never attaches to the owner's desktop session
+                if getattr(a, "session_mode", None) == "shared":
+                    sys.exit("✗ 同一台电脑上的第 2 个及以后的席位只能用独立会话（--independent）/ "
+                             "instances 2–10 run independent sessions only")
+                a.session_mode = "independent"
+            flag = getattr(a, "session_mode", None)
+            before = session_choice.mode_of(st)
+            mode = session_choice.resolve(st, a.mode, flag, lang)
+            if flag and flag != before:
+                print(session_choice.explain(mode, before, lang)["text"], flush=True)
             if a.mode == "claude":
                 from . import claude_auth, preferences
                 if mode == "independent" and not claude_auth.available():
@@ -1170,7 +1440,8 @@ def cmd_approvals(a) -> None:
     _need_init(st)
     every = approvals.read_log(st)
     recs = every[-a.last:] if a.last else every
-    index = {str(r.get("id")): r for r in every if r.get("decision") == "allow_batch"}
+    index = {str(r.get("id")): r for r in every if r.get("decision") == "allow_batch"
+             or (r.get("tool") == "agentj goal" and r.get("decision") == "allow")}
     bad = 0
     for r in recs:
         v = approvals.check_record(st, r, index) if a.verify else ""
@@ -1185,6 +1456,9 @@ def cmd_approvals(a) -> None:
                                                                        "policy": "超出 Agent 自己的沙箱，自动拒绝"}.get(r.get("reason"), r.get("reason"))
             if r.get("reason") == "batch":
                 who = f"按手机 {r.get('device')} 的批量授权自动批准（{str(r.get('grant'))[:8]}…）"
+            elif r.get("reason") in ("goal", "goal_auto"):    # P158
+                who = ("目标模式：10 秒无人点，自动批准" if r.get("reason") == "goal_auto" else "目标模式：按目标授权自动批准") + \
+                    f"（{str(r.get('grant'))[:8]}…）"
             mark = {"ok": " ✓签名有效", "ok_removed": " ✓签名有效（设备已移除）", "bad": " ✗签名无效", "unsigned": "",
                     "auto": " ✓授权签名有效"}.get(v, "")
             cats = ("  [" + "、".join(r["cats"]) + "]") if r.get("cats") else ""
@@ -1442,7 +1716,7 @@ def _history_line(st: State) -> str:
 
 
 def cmd_history(a) -> None:
-    """`agentj history [show <id>|clear|off|on]` (PROTOCOL §10.5): the pages the phone shows, on this computer only."""
+    """`agentj history [show <id>|search <words…>|clear|off|on]` (PROTOCOL §10.5, §28): the pages the phone shows, on this computer only."""
     from . import history
     st = State()
     _need_init(st)
@@ -1474,9 +1748,25 @@ def cmd_history(a) -> None:
               if res.get("archived") else "没有可清空的记录 / nothing to clear")
         return
     h = history.History(st)
+    if a.mode == "search":                                # P188 (§28): the same search the phone's 🔍 runs on this computer
+        from . import hsearch
+        q = " ".join(a.id or [])
+        if not hsearch.terms(q):
+            sys.exit("用法：agentj history search <关键词…> [--time] [--json] / usage: agentj history search <words…>")
+        hits, n = hsearch.search(list(h.turns.values()), q, "time" if a.time else "score", hsearch.HITS_MAX)
+        if a.json:
+            print(json.dumps({"epoch": h.epoch, "n": n, "hits": hits}, ensure_ascii=False))
+            return
+        print(f"找到 {n} 页（当前会话，{'按时间' if a.time else '按相关度'}；只显示前 {len(hits)} 页）/ {n} page(s) found")
+        for x in hits:
+            when = time.strftime("%m-%d %H:%M", time.localtime((x["ts"] or 0) / 1000))
+            print(f"#{x['id']} {when} · {x['src'].get('k')}{(' · ' + x['src']['name']) if x['src'].get('name') else ''} · {x['score']}")
+            for f in x["where"]:
+                print(f"   {f}: {clean(x['snip'][f], 400)}")
+        return
     if a.mode == "show":
         try:
-            t = h.get(int(a.id))
+            t = h.get(int((a.id or [None])[0]))
         except (TypeError, ValueError):
             sys.exit("用法：agentj history show <页码> / usage: agentj history show <id>")
         if t is None:
@@ -1651,7 +1941,7 @@ def cmd_remote_pair(a) -> None:
     from . import remote_pair
     st = State(); _need_init(st)
     if a.mode in ('on', 'off'): remote_pair.set_enabled(st, a.mode == 'on')
-    print('从账户页添加遥控器 / Account-page pairing: ' + ('on' if remote_pair.enabled(st) else 'off'))
+    print('从账户页或遥控器添加遥控器 / Pairing from the account page or a remote: ' + ('on' if remote_pair.enabled(st) else 'off'))
 
 
 def cmd_remote_unbind(a) -> None:
@@ -1896,7 +2186,7 @@ def main_jarvis(argv=None) -> None:
 
 # `migrate status` reports, `migrate rollback` undoes, `docs-rule` prints (or, with --write and the human's y, appends to the
 # AI's own memory file), `handover` only reads: none may move the state directory first
-NO_MIGRATE = ("migrate", "docs-rule", "handover", "recall", "friends", "codex-sandbox", "capability", "google", "setup", "busy")   # recall / friends / codex-sandbox / capability: usually inside the fence
+NO_MIGRATE = ("migrate", "docs-rule", "handover", "recall", "friends", "codex-sandbox", "capability", "google", "setup", "busy", "mail", "contacts")   # recall / friends / codex-sandbox / capability: usually inside the fence
 
 
 APPROVALS_HELP = {
@@ -1927,7 +2217,60 @@ def config_approvals(rest: list) -> int:
     return code or 0
 
 
+def cmd_instances(a) -> None:
+    """P180 (internal): the instances on this computer; `remove N` deletes instance N ≥ 2 (its workspace stays)."""
+    from . import instance
+    if a.action == "remove":
+        if not a.number:
+            sys.exit("✗ 用法 / usage: agentj instances remove <N>")
+        try:
+            r = instance.remove(instance._num(a.number))
+        except instance.InstanceError as e:
+            sys.exit("✗ " + str(e))
+        print(f"✓ 实例 {r['instance']} 已删除 / removed；工作目录保留 / workspace kept: {r['workspace']}")
+        return
+    rows = [instance.describe(n) for n in instance.numbers()]
+    if a.json:
+        print(json.dumps(rows, ensure_ascii=False))
+        return
+    if not rows:
+        print("这台电脑上还没有 Agent J 实例 / no instance here")
+        return
+    for r in rows:
+        on = "在线 online" if r["online"] else ("运行中 running" if r["running"] else "离线 offline")
+        name = r["label"] or r["agent_name"] or "-"
+        print(f"{r['instance']:>2}  {name}  · {on} · 遥控器 remotes {r['remotes']}"
+              + (f"（在线 {r['remotes_online']}）" if r["remotes_online"] else "")
+              + f" · 席位 seat {r['seat'] or '未绑定 unbound'} · {r['service']} {r['service_active']}"
+              + f"\n    {r['agent'] or '-'} → {r['workspace'] or '-'}")
+
+
+def cmd_label(a) -> None:
+    from . import instance
+    n = instance.current()
+    try:
+        if a.text:
+            print("✓ " + (instance.set_label(n, " ".join(a.text)) or "（已清空 / cleared）"))
+        else:
+            print(instance.label(n) or "-")
+    except instance.InstanceError as e:
+        sys.exit("✗ " + str(e))
+
+
 def main(argv=None) -> None:
+    from . import instance
+    try:   # P180: `--instance N` / AGENTJ_INSTANCE first — everything below reads the state dir / preferences / unit name
+        inst, rest = instance.split_argv(list(sys.argv[1:] if argv is None else argv))
+        inst = instance.apply(inst)
+    except instance.InstanceError as e:
+        sys.exit("✗ " + str(e))
+    if rest != list(sys.argv[1:] if argv is None else argv):
+        argv = rest
+    if inst > 1 and not instance.exists(inst) and rest and rest[0] in instance.AUTO_CREATE:
+        try:
+            instance.create(inst)
+        except instance.InstanceError as e:
+            sys.exit("✗ " + str(e))
     from .service import load_launch_binary_env, ServiceError
     try:
         load_launch_binary_env()
@@ -1974,7 +2317,10 @@ def main(argv=None) -> None:
         from . import installer
         installer.main(args[1:])
         return
-    if args and args[0] in ("voice", "theme", "menu", "key", "channel", "skill"):
+    if args and args[0] == "theme":      # P169 (§23): list|show|validate|apply|reset|restore|export|schema; light|dark|system as before
+        from . import theme
+        raise SystemExit(theme.command(args[1:]))
+    if args and args[0] in ("voice", "menu", "key", "channel", "skill"):
         from . import personalize
         raise SystemExit(personalize.command(args))
     if args and args[0] == "config" and not (len(args) >= 3 and args[1] in ("activity", "history") and args[2] in ("on", "off", "status")):
@@ -2037,7 +2383,12 @@ def main(argv=None) -> None:
     protos.add_parser("open").add_argument("url")
     proto.set_defaults(fn=protocol_handler.main)
     pr = sub.add_parser("pair", help="用二维码配对一台手机（Agent J 要在运行：agentj service status）/ pair a phone (Agent J must be "
-                                     "running: agentj service status)")
+                                     "running: agentj service status)",
+                        description="配对一台手机。已绑定账号的电脑：手机连上后，在这个终端输入手机上显示的 6 位安全码即可批准（输错可再试，共 3 次），"
+                                    "也可以到账户页席位卡用通行密钥批准，先完成的算数；设了批准口令就还要输口令。远程 SSH：`agentj pair --link`，"
+                                    "在同一个终端里完成。/ Pair a phone. On an account-bound computer, type the 6-digit code the phone shows "
+                                    "into this terminal (3 tries) or approve on the account page with your passkey — whichever comes first; "
+                                    "a set passphrase is asked for too. Over SSH: `agentj pair --link` and finish in the same terminal.")
     pr.add_argument("--no-qr", action="store_true", help="不画二维码，改为打印配对链接")
     pr.add_argument("--link", action="store_true", help="二维码之外也打印配对链接（它就是配对密钥）")
     pr.add_argument("--check", action="store_true", help="只做配对前检查：该走账户页通行密钥还是本机批准口令（不开始配对）/ "
@@ -2057,7 +2408,7 @@ def main(argv=None) -> None:
     ss.add_argument("--json", action="store_true", help="只输出 JSON / JSON only (P147)")
     ss.set_defaults(fn=cmd_status)
     nm = sub.add_parser("name", help="查看 / 修改这台电脑上 Agent 的名字（加入了 Agent J 账号的话，先在账号后台改，改好了才改这台电脑上的）")
-    nm.add_argument("name", nargs="?", help="新名字（1–32 个字）；不填 = 查看")
+    nm.add_argument("name", nargs="?", help="新名字（中文最多 8 个字，英文 / 数字 / 横杠最多 13 个；混写时中文算 1.6、合计 ≤ 13）；不填 = 查看")
     nm.set_defaults(fn=cmd_name)
     ad = sub.add_parser("admin", help="打开本机的 Agent 管理页（只在 127.0.0.1；配对、遥控器、改名）")
     ad.add_argument("--port", type=int, default=0, help="端口（默认随机）。地址永远是 127.0.0.1，不能改")
@@ -2067,6 +2418,10 @@ def main(argv=None) -> None:
     ad.add_argument("--url-file", metavar="PATH",
                     help="把链接（同样的 jsonl 行）写进这个新建的文件（0600，必须还不存在），stdout 不再出现链接")
     ad.add_argument("--no-stdin", action="store_true", help="不读终端输入（后台运行时用）")
+    ad.add_argument("--open", action="store_true",
+                    help="用这台电脑的默认浏览器直接打开管理页（链接不打印、只用一次；命令立刻返回，页面 30 分钟不用自动关闭）/ "
+                         "open the admin page in this computer's default browser (link never printed; returns at once)")
+    ad.add_argument("--open-child", action="store_true", help=argparse.SUPPRESS)
     ad.set_defaults(fn=cmd_admin)
     lo = sub.add_parser("login", help="把这台电脑加到你的 Agent J 账号（占 1 个席位）/ add this computer to your Agent J account (uses 1 seat)")
     lo.add_argument("--api", help=f"服务器地址（默认 $AGENTJ_API_URL 或 {cloud.DEFAULT_API}）")
@@ -2091,7 +2446,7 @@ def main(argv=None) -> None:
     rh = sub.add_parser("report-hostname", help="账号后台是否显示这台电脑的名字（默认显示）/ show this computer's name in the account dashboard")
     rh.add_argument("mode", nargs="?", choices=["on", "off", "status"], default="status")
     rh.set_defaults(fn=cmd_report_hostname)
-    rp = sub.add_parser("remote-pair", help="允许从账户页添加遥控器（默认开）/ allow account-page pairing")
+    rp = sub.add_parser("remote-pair", help="允许从账户页或已配对的遥控器添加遥控器（默认开）/ allow pairing from the account page or a paired remote")
     rp.add_argument("mode", nargs="?", choices=["on","off","status"], default="status")
     rp.set_defaults(fn=cmd_remote_pair)
     ru = sub.add_parser("remote-unbind", help="允许 / 禁止在账号后台解绑这台电脑的手机遥控器（默认允许）/ allow unlinking phone remotes from the account dashboard")
@@ -2099,11 +2454,19 @@ def main(argv=None) -> None:
     ru.set_defaults(fn=cmd_remote_unbind)
     ag = sub.add_parser("agent", help="接哪个 Agent：claude / codex / opencode / off；reset = 开一段新对话（重启 serve 生效）；"
                                       "restart = 下一条消息前重启 Agent 进程、对话不变（换了 key 或代理后）；"
-                                      "detect = 本机有哪些可用 / which agents are usable here")
-    ag.add_argument("mode", nargs="?", choices=["claude", "codex", "opencode", "off", "reset", "restart", "status", "detect"], default="status",
+                                      "detect = 本机有哪些可用 / which agents are usable here；"
+                                      "switch <claude|codex|opencode> = 先无头探测、能用才切，失败自动切回 / probe first, switch only if it works, switch back on failure")
+    ag.add_argument("mode", nargs="?", choices=["claude", "codex", "opencode", "off", "reset", "restart", "status", "detect", "switch"], default="status",
                     help="detect = 本机有哪些可用（不需要 init；只看是否安装、登录文件是否存在）/ which agents are usable here "
                          "(no init needed; checks only what is installed and whether login files exist)")
-    ag.add_argument("--probe", action="store_true", help="detect: verify one tool-free model call using existing login; no native output is returned")
+    ag.add_argument("target", nargs="?", choices=["claude", "codex", "opencode"],
+                    help="switch：要切到的 harness / the harness to switch to")
+    ag.add_argument("--probe", action="store_true", help="detect: verify one tool-free model call using existing login (≤ 60 s each); no native output is returned")
+    ag.add_argument("--dry-run", action="store_true", help="switch：只检查能不能切，不切 / only check whether it can switch")
+    ag.add_argument("--result", action="store_true", help="switch：上一次切换的结果 / the last switch's outcome")
+    ag.add_argument("--scan", action="store_true", help="switch：用服务的环境逐个无头探测三个，列出现在能切到哪些 / probe all three in the service's environment")
+    ag.add_argument("--worker", action="store_true", help=argparse.SUPPRESS)
+    ag.add_argument("--job", help=argparse.SUPPRESS)
     ag.add_argument("--json", action="store_true", help="detect 的机器可读输出 / machine-readable detect output")
     ag.add_argument("--dir", help="Agent 的工作目录（默认当前目录）")
     ag.add_argument("--model", help="模型（默认用你自己的设置）；OpenCode 写成 服务商/模型，例如 zhipuai/glm-5.3")
@@ -2113,9 +2476,9 @@ def main(argv=None) -> None:
                     help="隔离里也让 Agent 用 docker / podman（默认不开；主人要求时可直接打开）。默认容器引擎的 socket 对 Agent 隐藏")
     smx = ag.add_mutually_exclusive_group()
     smx.add_argument("--shared", dest="session_mode", action="store_const", const="shared",
-                     help="共享会话（默认）：手机接你电脑上正开着的会话 / shared session (the default): attach to your own open session")
+                     help="共享会话（高级）：手机接你电脑上正开着的会话 / shared session (advanced): attach to your own open session")
     smx.add_argument("--independent", dest="session_mode", action="store_const", const="independent",
-                     help="独立会话：Agent J 自己开一个、在隔离里运行 / independent session: Agent J's own, fenced")
+                     help="独立会话（默认）：Agent J 自己开一个、在隔离里运行 / independent session (the default): Agent J's own, fenced")
     ag.set_defaults(fn=cmd_agent)
     pp = sub.add_parser("passphrase", help="批准口令：set 设置 · change 修改 · reset 忘了（会吊销全部遥控器）· status")
     pp.add_argument("mode", nargs="?", choices=["set", "change", "reset", "status"], default="status")
@@ -2145,10 +2508,11 @@ def main(argv=None) -> None:
     cf.add_argument("key", choices=["activity", "history"])
     cf.add_argument("value", nargs="?", choices=["on", "off", "status"], default="status")
     cf.set_defaults(fn=cmd_config)
-    hi = sub.add_parser("history", help="聊天记录（手机翻页看到的，存在这台电脑上）：status · show <页> · clear · on · off / "
+    hi = sub.add_parser("history", help="聊天记录（手机翻页看到的，存在这台电脑上）：status · show <页> · search <关键词> · clear · on · off / "
                                         "the phone's pages, kept on this computer")
-    hi.add_argument("mode", nargs="?", choices=["status", "show", "clear", "on", "off"], default="status")
-    hi.add_argument("id", nargs="?")
+    hi.add_argument("mode", nargs="?", choices=["status", "show", "search", "clear", "on", "off"], default="status")
+    hi.add_argument("id", nargs="*", help="show 的页码，或 search 的关键词（可多个，全部出现才算）/ the page for show, or the words for search (all must appear)")
+    hi.add_argument("--time", action="store_true", help="search 按时间排，最新的在前（默认按相关度）/ search: newest first (default: best match)")
     hi.add_argument("--json", action="store_true")
     hi.add_argument("--all", action="store_true", help="clear：连同全部归档立即删除（不能撤销）/ with clear: delete current + every archive")
     hi.set_defaults(fn=cmd_history)
@@ -2174,6 +2538,10 @@ def main(argv=None) -> None:
     from . import first_run, google
     first_run.add_parser(sub)   # P115 / P92: agentj setup checklist
     google.add_parser(sub)      # P115 / P91: agentj google status|check|install|plan|on|off
+    from . import mail
+    mail.add_parser(sub)        # P170: agentj mail setup|allow|deny|password|test|check|on|off|status|presets
+    from . import contacts
+    contacts.add_parser(sub)    # P184: agentj contacts list|find|add|edit|rm|import|export|card
     elevate.add_parser(sub)   # F17: agentj sudo · agentj secret request
     from . import opencode_provider
     opencode_provider.add_parser(sub)   # P60 / F25: agentj provider add|list|remove (OpenCode base_url + key)
@@ -2185,8 +2553,12 @@ def main(argv=None) -> None:
     plaza.add_parser(sub)
     support.add_parser(sub)   # F18: agentj support ask | report | thread | list
     from . import capability
-    capability.add_parser(sub)   # 0.18 (ADR-A193): agentj capability list|sync|check|show|prepare|result|dispatch|digest|report-check
+    capability.add_parser(sub)
+    from . import goal as goal_cli
+    goal_cli.add_parser(sub)     # P158: agentj goal propose|status|progress|done|stop   # 0.18 (ADR-A193): agentj capability list|sync|check|show|prepare|result|dispatch|digest|report-check
     from . import busy
+    from . import heartbeat as heartbeat_mod
+    heartbeat_mod.add_parser(sub)   # P156: agentj heartbeat status|on|off|set|now|prompt show|edit|set|reset
     busy.add_parser(sub)         # P150 (§22): agentj busy list|start|stop|run — the phone's 「在办事项」 dots
     recall.add_parser(sub)    # F22 (P57): agentj recall <keywords> [--days N] [--date D] — the main Agent finds an earlier conversation
     from . import peer_service
@@ -2208,6 +2580,14 @@ def main(argv=None) -> None:
     al.add_argument("mode", nargs="?", choices=["status", "install", "remove"], default="status")
     al.add_argument("--json", action="store_true")
     al.set_defaults(fn=cmd_alias)
+    ins = sub.add_parser("instances", help=argparse.SUPPRESS)   # P180: internal multi-seat (one instance per seat), not public
+    ins.add_argument("action", nargs="?", choices=["list", "remove"], default="list")
+    ins.add_argument("number", nargs="?", type=int)
+    ins.add_argument("--json", action="store_true")
+    ins.set_defaults(fn=cmd_instances)
+    lb = sub.add_parser("label", help=argparse.SUPPRESS)          # P180: `agentj --instance N label <note>` (local only)
+    lb.add_argument("text", nargs="*")
+    lb.set_defaults(fn=cmd_label)
     ob = sub.add_parser("onboarding", help="首次使用进度：席位、这台电脑的浏览器、主力手机、欢迎消息 / first-use progress: seat, "
                                            "this computer's browser, main phone, welcome")
     ob.add_argument("--json", action="store_true")

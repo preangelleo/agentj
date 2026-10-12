@@ -10,8 +10,8 @@
     "private_instructions_file": "",
     // P116: shared Claude reads the packaged identity + private file through native hooks
     "shared_identity": true,
-    // P40b: explicit attachment only until all three runtime/security gates pass.
-    "session_mode": "shared",
+    // P174: independent (Agent J's own fenced session) for new installs; "shared" attaches to the owner's open session (advanced).
+    "session_mode": "independent",
     "shared_session_id": "",
     "shared_opencode_port": 0,
     "high_risk_warnings": false,
@@ -95,6 +95,10 @@
   {
     // May only shorten approval lifetime / 只可缩短审批有效期; default=120
     "timeout": 120,
+    // P157 Jev layer 2: a can't-tell command runs without a card when Jev's p ≥ this (0.50–0.95, step 0.05; needs OPENROUTER_API_KEY; the five danger categories always ask) / Jev 判断阈值; default=0.7
+    "jev_threshold": 0.7,
+    // P158 goal mode: outside the goal's grant, a step the computer can undo asks with a 10-second countdown and no answer = approved; off = an ordinary card (enterprise) / 目标模式：可撤回的动作 10 秒无人点就自动批准; default=true
+    "goal_auto": true,
   },
   // Legacy pointers (no effect; F14 user tier)
   "human": {
@@ -114,6 +118,14 @@
     "mirror": "",
     // Daily read-only sign-in check, local time; never sends QR codes / 每日只读登录体检时间（本地时间），不会推送二维码; default="08:00"
     "check_time": "08:00",
+  },
+  // P156: the main Agent wakes after an idle spell (checks background work and to-dos); every beat is one model call.
+  "heartbeat":
+  {
+    // Heartbeat on/off / 心跳开关; default=true
+    "enabled": true,
+    // Idle minutes before a beat, 5–1440 / 空闲多少分钟心跳一次; default=60
+    "interval_minutes": 60,
   },
   // Harness child processes only. Direct values (no user:password@) or variable NAMES; a value wins over a name.
   "proxy": {"https": "", "http": "", "no_proxy": "", "https_env": "", "http_env": "", "no_proxy_env": ""},

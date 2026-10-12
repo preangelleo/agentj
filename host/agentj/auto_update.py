@@ -81,6 +81,11 @@ def busy(host):
                 or (host.peers and (getattr(host.peers, 'jobs', None) or getattr(host.peers, 'asks', None))))
 
 
+def _primary_present():
+    from . import instance
+    return instance.exists(1)
+
+
 def due(st, *, now=None, blocked=False, stopped=False, rand=secrets.randbelow):
     with st.config_lock():
         return _due(st, now=now, blocked=blocked, stopped=stopped, rand=rand)
@@ -91,6 +96,9 @@ def _due(st, *, now=None, blocked=False, stopped=False, rand=secrets.randbelow):
     now = time.time() if now is None else now
     if not enabled(st):
         return False
+    from .instance import current
+    if current() > 1 and _primary_present():
+        return False    # P180: one shared program — instance 1 upgrades it and restarts every instance (service_recovery)
     local = time.localtime(now)
     day = time.strftime('%Y-%m-%d', local)
     rec = read(st)
@@ -135,7 +143,7 @@ def cached_wheel(st, version, *, fetch=download, require_signature=True):
         rec = json.loads(receipt.read_text())
         data = path.read_bytes()
         digest = hashlib.sha256(data).hexdigest()
-        signature_ok = not require_signature or minisign.verify(data, rec.get('signature', '')) == f'agentj-host/v1 version={version} sha256={digest}'
+        signature_ok = not require_signature or minisign.verify(data, rec.get('signature', ''), minisign.keyring('release')) == f'agentj-host/v1 version={version} sha256={digest}'
         if rec['sha256'] == digest and signature_ok:
             return path
     except (OSError, ValueError, KeyError):
@@ -152,7 +160,7 @@ def cached_wheel(st, version, *, fetch=download, require_signature=True):
     signed = False
     if require_signature:
         signature = fetch(ORIGIN + filename + '.minisig', minisign.MAX_SIG).decode()
-        comment = minisign.verify(data, signature)
+        comment = minisign.verify(data, signature, minisign.keyring('release'))
         if comment != f'agentj-host/v1 version={version} sha256={digest}':
             raise ValueError('artifact_signature_mismatch')
         signed = True
@@ -296,7 +304,7 @@ def run(st, *, check_fn=update.check, cache=cached_wheel, runner=quiet, restart=
         digest = hashlib.sha256(data).hexdigest()
         if digest != rec['sha256']:
             raise ValueError('artifact_hash_mismatch')
-        if str(p) == job.get('new') and minisign.verify(data, rec.get('signature', '')) != f"agentj-host/v1 version={job['to']} sha256={digest}":
+        if str(p) == job.get('new') and minisign.verify(data, rec.get('signature', ''), minisign.keyring('release')) != f"agentj-host/v1 version={job['to']} sha256={digest}":
             raise ValueError('artifact_signature_mismatch')
         for argv in install_commands(job['install'], wheel):
             if runner(argv).returncode:

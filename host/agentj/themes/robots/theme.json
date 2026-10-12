@@ -1,0 +1,100 @@
+{
+  "$schema": "https://agentj.app/schema/agentj-theme-1.json",
+  "schema": 1,
+  "id": "robots",
+  "name": {
+    "zh": "跳舞机器人",
+    "en": "Dancing robots"
+  },
+  "description": "Factory default: 16 original pixel robots dance at the top right of the reply card, one per Agent working in the background.",
+  "author": "Agent J",
+  "colors": {
+    "state": {
+      "idle": "#629887",
+      "working": "#6a9bcc",
+      "waiting": "#d97757",
+      "question": "#827dbd",
+      "offline": "#858585"
+    },
+    "card": {
+      "owner": "#ffe292",
+      "agent": "#cacadb",
+      "computer": "#c7dedc",
+      "developer": "#c1e1f0",
+      "system": "#efddcf"
+    }
+  },
+  "busy": {
+    "style": "robots",
+    "robots": {
+      "sheet_12": "robots-12.png",
+      "sheet_18": "robots-18.png",
+      "names": [
+        {
+          "zh": "小蓝",
+          "en": "Bluey"
+        },
+        {
+          "zh": "紫藤",
+          "en": "Wisteria"
+        },
+        {
+          "zh": "莓莓",
+          "en": "Berry"
+        },
+        {
+          "zh": "拿铁",
+          "en": "Latte"
+        },
+        {
+          "zh": "棉糖",
+          "en": "Candy"
+        },
+        {
+          "zh": "杏子",
+          "en": "Apricot"
+        },
+        {
+          "zh": "柠檬",
+          "en": "Lemon"
+        },
+        {
+          "zh": "青芽",
+          "en": "Sprout"
+        },
+        {
+          "zh": "冰川",
+          "en": "Glacier"
+        },
+        {
+          "zh": "风暴",
+          "en": "Storm"
+        },
+        {
+          "zh": "飞毯",
+          "en": "Carpet"
+        },
+        {
+          "zh": "翡翠",
+          "en": "Jade"
+        },
+        {
+          "zh": "蜜桃",
+          "en": "Peach"
+        },
+        {
+          "zh": "香蕉",
+          "en": "Banana"
+        },
+        {
+          "zh": "银河",
+          "en": "Silver"
+        },
+        {
+          "zh": "晚霞",
+          "en": "Sunset"
+        }
+      ]
+    }
+  }
+}

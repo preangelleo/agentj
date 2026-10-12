@@ -73,6 +73,7 @@ class Settings(unittest.TestCase):
         with self.assertRaises(service.ServiceError):service.claude_env(str(f))
     def test_offline_transition_no_commit_on_failure(self):
         st=State(); st.init();st.set_agent_config("claude",str(self.home));preferences.ensure()
+        preferences.path().write_text(preferences.edit(preferences.path().read_text(),"agent.session_mode","shared"))  # P174: from shared
         before=preferences.path().read_bytes();raw=preferences.edit(before.decode(),"agent.session_mode","independent")
         with patch("agentj.names.ctl_call",return_value=None),patch.object(claude_auth,"available",return_value=False):
             with self.assertRaises(preferences.ConfigError):preferences.transact(st,raw)
@@ -90,7 +91,7 @@ class Settings(unittest.TestCase):
 class Runtime(unittest.IsolatedAsyncioTestCase):
     async def test_phone_transition_failed_stays_shared_success_commits(self):
         with tempfile.TemporaryDirectory() as td,patch.dict(os.environ,{"HOME":td,"CLAUDE_CONFIG_DIR":td+"/cc","XDG_CONFIG_HOME":td+"/config","AGENTJ_STATE_DIR":td+"/st"}):
-            st=State();st.init();st.set_agent_config("claude",td);preferences.ensure();h=Host(st)
+            st=State();st.init();st.set_agent_config("claude",td);preferences.ensure();preferences.path().write_text(preferences.edit(preferences.path().read_text(),"agent.session_mode","shared"));h=Host(st)
             h._send_ready=AsyncMock();h.host_info=Mock(return_value={})
             raw=preferences.edit(preferences.read()[0],"agent.session_mode","independent")
             before=preferences.path().read_bytes()
@@ -101,7 +102,7 @@ class Runtime(unittest.IsolatedAsyncioTestCase):
             self.assertTrue(res["ok"]);self.assertEqual(st.agent_config()["session_mode"],"independent")
     async def test_phone_rejection_emits_actionable_notice(self):
         with tempfile.TemporaryDirectory() as td,patch.dict(os.environ,{"HOME":td,"XDG_CONFIG_HOME":td+"/config","AGENTJ_STATE_DIR":td+"/st"}):
-            st=State();st.init();st.set_agent_config("claude",td);preferences.ensure();h=Host(st)
+            st=State();st.init();st.set_agent_config("claude",td);preferences.ensure();preferences.path().write_text(preferences.edit(preferences.path().read_text(),"agent.session_mode","shared"));h=Host(st)
             h._send_ready=AsyncMock();h.send_app=AsyncMock();h.agent_notice=Mock();h.host_info=Mock(return_value={})
             session=Session(1,state="ready",device="fixture",pub=b"fixture");h.sessions[1]=session
             with patch.object(st,"is_allowed",return_value=True),patch.object(claude_auth,"available",return_value=False):

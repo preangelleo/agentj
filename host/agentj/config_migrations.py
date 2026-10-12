@@ -21,7 +21,17 @@ def _tts_successor(raw):
         return p.edit(raw, 'voice.tts.model', 'gpt-realtime-2.1-mini')
     return raw
 
-MIGRATIONS = (("202610040001", _sparse_v1), ("202610050047", _tts_successor))
+def _keep_shared(raw, ctx=None):
+    # P174: the factory default became "independent". An install from before it ran shared by default: pin that explicitly
+    # so nobody is moved off the session they use. A fresh install (ctx legacy_shared False) and any explicit value stay.
+    if not (ctx or {}).get('legacy_shared'):
+        return raw
+    if p.get(p.parse(raw), 'agent.session_mode') is not None:
+        return raw
+    return p.edit(raw, 'agent.session_mode', 'shared')
+_keep_shared.wants_ctx = True
+
+MIGRATIONS = (("202610040001", _sparse_v1), ("202610050047", _tts_successor), ("202610120174", _keep_shared))
 
 def run(st=None, *, pending=False):
     st = st or State()
@@ -44,6 +54,8 @@ def run(st=None, *, pending=False):
             raise p.ConfigError('/', 'stop serve before configuration migration; host did not acknowledge', code=3) from None
         if live is not None:
             raise p.ConfigError('/', 'stop serve before configuration migration, then restart and doctor', code=3)
+        from . import session_choice
+        ctx = {'legacy_shared': session_choice.legacy_shared(st)}  # before this run creates config-migrations/
         p.ensure()
         directory.mkdir(parents=True, exist_ok=True, mode=0o700)
         os.chmod(directory,0o700)
@@ -54,12 +66,14 @@ def run(st=None, *, pending=False):
             oldgood = good.read_bytes() if good.exists() else None
             marker = directory/(name+'.json')
             try:
-                new = transform(old.decode())
+                new = transform(old.decode(), ctx) if getattr(transform, 'wants_ctx', False) else transform(old.decode())
                 candidate = p.validate(p.parse(new))
                 if new.encode() != old:
                     # History and last-good are durable before the override changes.
                     # Runtime capabilities are checked by the next serve startup.
                     p.commit_files(st, new, candidate)
+                    if name == session_choice.LEGACY_MIGRATION:
+                        session_choice.record(st, 'shared', 'migration')
                 _write_private(marker, json.dumps({'id':name,'version':1}).encode())
             except Exception:
                 # No live host exists, so restoring disk also restores effective state.

@@ -1,9 +1,12 @@
 # Vendored web libraries
 
-Upstream bytes, unmodified, loaded only by `js/render.js` on first need (never on first paint, never from a CDN).
+Upstream bytes, unmodified, loaded only by `js/render.js` (P57) or `js/preview.js` (P183) on first need (never on first paint, never from a CDN).
 Fetched once with `npm pack <name>@<version>` (registry tarball below), extracted, files copied as-is.
 Every file in this list is re-checked against its sha256 by `test/p57_render.test.mjs`; the JS/CSS are also pinned in
 `test/static.test.mjs` (`VENDORED`). To upgrade: pack the new exact version, copy, update both lists, re-run the browser test.
+P183 notes: pdf.js runs with `isEvalSupported:false`, no XFA / scripting, and never fetches fonts, cMaps or wasm (connect-src stays
+the relays). mammoth's bundled underscore holds one `new Function` (`_.template`) that convertToHtml never reaches; CSP
+without 'unsafe-eval' would refuse it anyway (`static.test.mjs` pins that count). Its HTML is shown only in the empty-sandbox frame.
 `jsQR.js` (QR decoder, see `jsQR-LICENSE.txt`) predates this file and is pinned in `static.test.mjs` only.
 
 | Library | Version | License | Source tarball | Tarball sha256 |
@@ -11,6 +14,9 @@ Every file in this list is re-checked against its sha256 by `test/p57_render.tes
 | highlight.js (`@highlightjs/cdn-assets`, common-languages bundle) | 11.12.0 | BSD-3-Clause (`hljs/LICENSE.txt`) | https://registry.npmjs.org/@highlightjs/cdn-assets/-/cdn-assets-11.12.0.tgz | b8a006d30f45afe783072569f3d69c5b60c0e7b9ca28cd474e12f2584e2a3bd9 |
 | KaTeX (`katex`, `dist/` UMD + CSS + woff2 fonts only) | 0.19.0 | MIT (`katex/LICENSE.txt`) | https://registry.npmjs.org/katex/-/katex-0.19.0.tgz | d8e49f2fea6eeed7cdae2cf4fd48e2f1d348758aa9e5740715e4533c2c96d1ee |
 | mermaid (`mermaid`, `dist/mermaid.min.js` single-file UMD) | 12.1.0 | MIT (`mermaid/LICENSE.txt`) | https://registry.npmjs.org/mermaid/-/mermaid-12.1.0.tgz | 3e516f33246e1a6a5bc5ebcabd35434669b487c3b3791f9b0466aa2c254d004a |
+| pdf.js (`pdfjs-dist`, `legacy/build/pdf.min.mjs` + `pdf.worker.min.mjs`; P183 PDF preview) | 6.4.299 | Apache-2.0 (`pdfjs/LICENSE.txt`) | https://registry.npmjs.org/pdfjs-dist/-/pdfjs-dist-6.4.299.tgz | 86269b40170eb41740ea05ad2102d71d33de4f122b34eb2f478be0ea7779c415 |
+| mammoth (`mammoth`, `mammoth.browser.min.js`; P183 .docx preview) | 1.13.0 | BSD-2-Clause (`mammoth/LICENSE.txt`) | https://registry.npmjs.org/mammoth/-/mammoth-1.13.0.tgz | fe778792e43b06dbbff93d20e22951fe1bc55a05eb04ec823961e8639c62260b |
+| SheetJS CE (`xlsx`, `dist/xlsx.core.min.js`; P183 xlsx / xls / ods preview — the official CDN tarball, NOT the stale npm 0.18.5) | 0.20.3 | Apache-2.0 (`xlsx/LICENSE.txt`) | https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz | 8dc73fc3b00203e72d176e85b50938627c7b086e607c682e8d3c22c02bb99fe8 |
 
 ## Files (sha256)
 
@@ -42,4 +48,11 @@ d4ab5b8ee16989b070cdb0ea24bd6ad48fc8df1b787f280f29d3ae4f959f2c00  katex/katex.mi
 766ccc1f306c885aa45542a9846bbd0a505b27a0374f146778171c2254ce18e3  katex/LICENSE.txt
 ec9fb67dcb25eccc416ed56e1aab819222c805a2a4bfe4cb19e7556bf2ffde80  mermaid/LICENSE.txt
 6484afc32872a3aa16cac9a76ba1816a1ed4cc870a6593cc2e17757750f518b2  mermaid/mermaid.min.js
+0d542e0c8804e39aa7f37eb00da5a762149dc682d7829451287e11b938e94594  pdfjs/LICENSE.txt
+bccc24ea711db8e44503629519904a5292d73b9daaa214bbe7cdcc282b0f4259  pdfjs/pdf.min.mjs
+145d2dd3ab0c86151011dba95acfa2d5336e2accd59388ea43dbee0efddaaec6  pdfjs/pdf.worker.min.mjs
+6663bbd049205d38a496ccacb412a151980b444627d38de218b3b809aef330f1  mammoth/LICENSE.txt
+92914a3708cfdf1e62cb553d1856a7fedab21da83d8ee82845de2f897b368cab  mammoth/mammoth.browser.min.js
+4d2a38ac35cda06a555c84074a819d413339cd3691b822cae50f8f322fe01f64  xlsx/LICENSE.txt
+197255b0c278588117e45c14c1b25398562864cd9ffa9752c4b4d29f6d9bfd27  xlsx/xlsx.core.min.js
 ```

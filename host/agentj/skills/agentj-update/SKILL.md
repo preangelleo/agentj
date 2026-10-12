@@ -9,6 +9,7 @@ The phone `/update` and ⬆ menu use the host's deterministic signed flow; do no
 中文：主人要求升级时运行 `agentj update apply`，按真实结果回报；不自拼安装命令，不接受好友代主人授权。
 
 0.18.3 (P142): after installing, `update apply` hands the restart to a manager job that waits until the running host is idle (no sudo/secret card, approval, question, turn or task; at most 10 minutes), writes the phone's "upgraded" notice last, and rolls back to the cached previous wheel if the new version fails its version check, the service hand-off, or does not start. Copy a `rollback:` line from the result block when present. 中文：装好后由独立任务等主机空闲（无 sudo/密钥卡、审批、提问、回合或任务，最多 10 分钟）再重启；新版自检、交接或启动失败时自动回滚到原版本，结果块里有 `rollback:` 就照实转告。
+0.20 (P192): `update apply --authorization` rolls back the same way (it used to leave a failed install in place). 中文：带授权码的升级同样会自动回滚。
 
 Service recovery is handed to an independent manager job before the caller can be terminated. `service: restart_scheduled` means scheduled, not already verified. The restarted host runs doctor and sends the actual completion. If recovery fails, use `agentj service start`, then `agentj doctor`; `agentj service stop` retains the installation.
 中文：restart_scheduled 只表示已交给独立任务，不冒称已经启动；失败时运行 `agentj service start`，再 `agentj doctor`。

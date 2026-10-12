@@ -9,7 +9,7 @@ A `.minisig` file is four lines:
 
 Only the prehashed algorithm `ED` (minisign's default since 0.8) is accepted; the legacy `Ed` (signature over the raw
 message) is refused. The key id must be in the keyring (`TRUSTED_SIGNERS`, compiled in: the plaza key; tests inject their own)
-and equal the id inside that public key. For a plaza package the trusted comment must be exactly
+and equal the id inside that public key (P191: keyrings are per purpose, `keyring(role)`; `REVOKED` ids always fail). For a plaza package the trusted comment must be exactly
 `agentjarvis-plaza/v1 name=<name> version=<version> type=<type> sha256=<bundle sha256 hex>` and every field must equal the
 bundle's manifest and the bundle bytes (`verify_package`). Nothing else makes the host call a package 官方认证 / certified.
 """
@@ -24,7 +24,26 @@ from cryptography.exceptions import InvalidSignature
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
 
 # key id (hex as `minisign` prints it) → public key (the base64 line of the .pub file)
-TRUSTED_SIGNERS = {"B79F925B0585F9D4": "RWTU+YUFW5KftwwG/MQxB1V0OEpzftjDN8udv1Id9oYK9+OUanc2uyb5"}
+LEGACY_KEY_ID = "B79F925B0585F9D4"
+SIGNERS = {LEGACY_KEY_ID: "RWTU+YUFW5KftwwG/MQxB1V0OEpzftjDN8udv1Id9oYK9+OUanc2uyb5"}
+# P191 (audit B2): one signer per purpose. Until the split ships every role trusts only the legacy key, so behaviour is
+# unchanged; a new key is added to SIGNERS and to its one role (release = /dl wheels and installers, plaza = official
+# packages, control = cloud-signed notices / remote pairing / snapshots). Adding a backup key id here is how a rotation
+# is pre-announced: hosts trust it before it ever signs anything. Key ids in REVOKED are refused for every role and for
+# injected keyrings too. Compiled in only: no network, env or config can add or remove a key.
+ROLES = {"release": (LEGACY_KEY_ID,), "plaza": (LEGACY_KEY_ID,), "control": (LEGACY_KEY_ID,)}
+REVOKED: frozenset = frozenset()
+
+
+def keyring(role: str) -> dict:
+    """Compiled-in keyring for one purpose (`release`, `plaza`, `control`); revoked ids are left out."""
+    return {kid: SIGNERS[kid] for kid in ROLES[role] if kid not in REVOKED}
+
+
+_role_keyring = keyring  # verify_package's `keyring` parameter shadows the function
+
+# Back-compatible name: every key any role trusts (callers that know their purpose pass keyring(role)).
+TRUSTED_SIGNERS = {kid: SIGNERS[kid] for ids in ROLES.values() for kid in ids if kid not in REVOKED}
 MAX_SIG = 1024
 TRUSTED_PREFIX = "agentjarvis-plaza/v1"
 _TC = re.compile(r"agentjarvis-plaza/v1 name=([a-z0-9][a-z0-9-]{1,39}) version=(\S{5,60}) type=(skill|workflow) "
@@ -78,6 +97,8 @@ def verify(message: bytes, sig_text: str, keyring: dict | None = None) -> str:
     if s["alg"] != b"ED":
         raise MinisignError("signature: only prehashed (ED) signatures are accepted")
     pub_line = keyring.get(s["key_id"])
+    if s["key_id"] in REVOKED:
+        raise MinisignError(f"signature: key {s['key_id']} has been revoked")
     if not pub_line:
         raise MinisignError(f"signature: key {s['key_id']} is not trusted")
     kid, pk = parse_pubkey(pub_line)
@@ -108,7 +129,7 @@ def parse_trusted(tc: str) -> dict | None:
 def verify_package(bundle_bytes: bytes, sig_text: str, manifest: dict, keyring: dict | None = None) -> dict:
     """Signature valid, key trusted, trusted comment = name / version / type of the manifest + SHA-256 of these bytes.
     Returns the parsed trusted comment; raises MinisignError."""
-    tc = verify(bundle_bytes, sig_text, keyring)
+    tc = verify(bundle_bytes, sig_text, _role_keyring("plaza") if keyring is None else keyring)
     want = trusted_comment(manifest.get("name"), manifest.get("version"), manifest.get("type"),
                            hashlib.sha256(bytes(bundle_bytes)).hexdigest())
     if tc != want:

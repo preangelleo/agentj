@@ -104,7 +104,7 @@ export async function revokeGrants() {
 }
 export function showAuto(m) {
   if (typeof m.tool !== 'string' || typeof m.summary !== 'string') return;
-  toast(t('ask.auto', { tool: m.tool, summary: m.summary.slice(0, 120) }), 2600);
+  toast(t(m.by === 'jev' ? 'ask.autoJev' : m.by === 'goal' ? 'ask.autoGoal' : 'ask.auto', { tool: m.tool, summary: m.summary.slice(0, 120) }), 2600);
 }
 
 // ---- 它记住了什么
@@ -190,9 +190,10 @@ async function undoMemory(id) {
 // ---- 操作与审批记录 (activity)
 let actNext = null;
 const CATS = ['spend', 'delete', 'send', 'credentials', 'price', 'opaque'];
-const ACT_RESULTS = ['allow', 'deny', 'allow_batch', 'timeout', 'no_device', 'estop', 'serve_stop', 'agent_gone', 'too_many', 'policy'];
+const ACT_RESULTS = ['allow', 'deny', 'allow_batch', 'timeout', 'no_device', 'estop', 'serve_stop', 'agent_gone', 'too_many', 'policy', 'goal_auto'];
 const ACT_KINDS = ['turn_start', 'turn_end', 'ask', 'decision', 'auto', 'grant', 'grant_end', 'estop', 'resume', 'message_refused', 'mem_rm',
-  'mem_undo', 'task_on', 'task_off', 'task_run', 'task_done', 'control_refused', 'slash', 'truncated'];
+  'mem_undo', 'task_on', 'task_off', 'task_run', 'task_done', 'control_refused', 'slash', 'truncated', 'jev',
+  'goal_propose', 'goal_start', 'goal_declined', 'goal_auto', 'goal_progress', 'goal_end'];   // P158
 function actText(r) {
   const by = r.by ? t('act.by', { by: r.by }) : '';
   const tx = String(r.text ?? r.summary ?? '').replace(/\s+/g, ' ').slice(0, 200);
@@ -203,6 +204,7 @@ function actText(r) {
   if (!ACT_KINDS.includes(r.k)) return String(r.k ?? '');
   const v = {
     by, t: tx, task, cats, tool: r.tool ?? '', scope: r.scope ?? '', why: (lang() === 'en' && r.why_en ? r.why_en : r.why) ?? '', label: r.label ?? '', id: r.id ?? '',
+    how: r.how ?? '', tier: r.tier ?? '',
     title: r.title ?? r.id ?? '', verdict: r.verdict ?? '', line: r.line ?? '', action: r.action ?? '', cmd: r.cmd ?? '',
     ro: r.readonly ? t('act.k.readonly') : '',
     stopped: r.result === 'stopped' ? t('act.k.turn_end_stopped') : '',

@@ -1,6 +1,6 @@
-# Agent J 0.18.4a1 release notes
+# Agent J 0.20.0a1 release notes
 
-Host 0.18.4a1 / install 0.21.10; phone-web scope.
+Host 0.20.0a1 / install 0.22.0; phone-web scope.
 Phone parity must pass --strict. Full Android/Telegram parity is incomplete.
 Full Android/Telegram parity is incomplete.
 No APK is included in this release. Android source is for review, not a released app.
@@ -8,20 +8,19 @@ No APK is included in this release. Android source is for review, not a released
 Publication status: local preparation only. Live site verification is DEFERRED until
 the public commit and tag are pushed, the site is deployed, and cold installation passes.
 
-On publication failure, restore v0.18.3a1 host/site/phone. A front Worker/site/signed downloads/install guide; B phone web. No Dashboard code, D1 migration or relay Worker change (the P145 Dashboard stylesheet is an optional static redeploy).
+On publication failure, restore v0.18.4a1 host/site/phone, the captured Dashboard and relay Worker versions (D1 0025 is additive and stays). C Dashboard (app migration 0025_device_names, seat certificate endpoint, account pairing fixes) first, then the relay Worker (seat check present, enforcement off), A front Worker/site/signed downloads/install guide, B phone web.
 ## Changes
 
-- Shared Claude follows a dead pinned session to the one live owner session in the folder (never a headless or background one; ambiguous cases ask); `agentj doctor --reconnect` repairs service, relay and Agent in turn; `agentj status --json` adds a hint.
-- Main-Agent core v10: Chairman address and hierarchy, CEO / sub-Agent delegation with a hand-off line first, remembered delegation rules in MEMORY.md that never lift dangerous-operation approvals, and the agentj-handoff skill.
-- Work-in-progress dots on the reply card (owned stream-json, shared Claude hooks, workflow runs, `agentj busy`), a global centred dialog that also carries the upgrade notice, keyboard ← → ↑ ↓ card navigation; Esc no longer interrupts.
-- A shared Claude turn that ends on a tool call (ScheduleWakeup, Monitor) commits from the transcript's turn end with its last text; compaction / clear recover through a host system note asking for the handoff first.
-- macOS launchd env loads configured `key_env` names safely; Telegram replies render Markdown as HTML with a plain fallback; shared Claude corrects a missed Stop after continuous quiet idle.
-- Busy-session queue card: received + position; first-run welcome explains the hierarchy; agentj.app spacing contract and plaza screens.
-- 中文：手机变灰自动接回（不行就 agentj doctor --reconnect）；董事长助理身份 v10 派活给 CEO / 小助理；回复卡彩色圆点显示后台在办；以工具收尾的回合也能把回复送到手机；压缩/清空后先读交接；官网间距统一。
+- /goal goal mode: one signed opening card covers the dangerous actions a goal needs by kind and limit; undoable steps outside it get a 10 s countdown card, irreversible / suspicious ones wait for the owner; the heartbeat and new sessions continue a running goal.
+- Platform heartbeat on every harness (default 60 min, silent unless something needs the owner); `agentj busy capacity` decides how many background jobs to start.
+- E-mail channel (allowlist + sender authentication before the model, reply in the same thread), address book, contact cards and 「转发到邮箱」; any file up to 200 MB; long recordings in 20-minute parts with the screen kept awake; meeting notes.
+- One full-screen Settings page (the ≡ menu folded in) with 遥控器管理: list, rename, unbind and add remotes (up to 10, signed controls); a pairing card on every paired remote; terminal-only pairing on an account-bound computer; owner / device names for remotes.
+- Phone themes (colours, logo, Send icon, pixel robots or dots) with validate → apply; a menu design system; background robots with per-task cards for Claude Code, Codex and OpenCode sub-agents.
+- Fewer false approvals: heredoc bodies are data, Jev may clear what Agent J cannot read (owner threshold), sub-agent cards name their origin; Codex error classes; independent sessions by default; seat enforcement (an unbound host cannot pair).
+- Main-Agent core v11 (chairman philosophy, compressed rules); /switch-harness with a guarded switch-back.
+- 中文：/goal 目标模式；心跳；邮件通道、通讯录与「转发到邮箱」；任意文件与长录音；设置合成全屏页并能在手机上管理遥控器；主题换肤；误报更少；默认独立会话；席位强制；身份 v11。
 
-- Physical iPhone/Android/macOS, a real /compact on Claude Code and founder/native Claude/Telegram cutover remain pending; local browser, replayed transcripts and cloud/service-manager fixtures do not prove them.
-- Account-page pairing still trusts the signed control plane, and the Linux fence mounts the whole filesystem (`--dev-bind / /`) with the session bus bound back; both are documented, not closed.
-
+- Physical iPhone/Android lock-screen recording, iPhone file sharing, real mailbox providers beyond the tested ones and the relay seat-certificate enforcement (left off) remain pending; local browsers and fixtures do not prove them.
 ## Material acceptance limits
 
 - Android arbitrary-name wake recognition, false-accept/false-reject rates, background operation,

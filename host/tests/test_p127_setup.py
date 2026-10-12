@@ -1,6 +1,7 @@
 """P127 setup at Leo's 10-10 switch-over (0.17.4a1 fresh install on a Linux workstation):
-① agent.session_mode: shared by default for all three harnesses; an "independent" the owner never chose is never flipped
-  silently (terminal: y/N; otherwise a notice and doctor row), a chosen one is kept; --shared / --independent.
+① agent.session_mode (P174 supersedes P127 here): independent by default for all three harnesses on a new install; shared
+  is the owner's opt-in (--shared / config / phone); an explicit value is kept silently and never asked about. Old installs:
+  test_p174.py.
 ② `agentj agent` / serve start-up line follows the session mode (shared is never described as fenced), zh + en.
 ③ an old ~/.local/state/agentjarvis-alpha is never adopted silently: terminal y/N with what it holds (no key), otherwise
   exit 2 naming --migrate-legacy / --fresh; a serve still running on it keeps using it.
@@ -76,77 +77,69 @@ class _Env(unittest.TestCase):
 
 
 class SessionModeDefault(_Env):
-    def test_factory_default_is_shared_for_every_harness(self):
-        self.assertEqual(preferences.defaults()["agent"]["session_mode"], "shared")
-        self.assertEqual(preferences.SCHEMA["agent.session_mode"]["default"], "shared")
+    def test_factory_default_is_independent_for_every_harness(self):
+        self.assertEqual(preferences.defaults()["agent"]["session_mode"], "independent")
+        self.assertEqual(preferences.SCHEMA["agent.session_mode"]["default"], "independent")
         for kind in ("claude", "codex", "opencode"):
             args = [kind, "--dir", str(self.work)] + (["--model", "zhipuai/glm-5.3"] if kind == "opencode" else [])
             code, text, _ = self.agent(*args)
             self.assertEqual(code, 0, text)
-            self.assertEqual(self.st.agent_config()["session_mode"], "shared", kind)
+            self.assertEqual(self.st.agent_config()["session_mode"], "independent", kind)
             self.assertNotIn("会话模式：", text, "nothing to settle with the default")
         self.assertIsNone(session_choice.user_value(), "the default is never written into the owner's file")
-
-    def test_unchosen_independent_without_terminal_is_kept_and_named(self):
-        self.user_config('{version: 1, agent: {session_mode: "independent"}}\n')
-        code, text, _ = self.agent("claude", "--dir", str(self.work))
-        self.assertEqual(code, 0, text)
-        self.assertEqual(self.mode(), "independent", "never flipped silently")
-        self.assertIn("agentj agent claude --shared", text)
-        self.assertIn("agentj agent claude --independent", text)
-        rows = [r for r in doctor.run(offline=True) if r["id"] == "session"]
-        self.assertEqual(len(rows), 1)
-        self.assertEqual(rows[0]["status"], doctor.WARN)
-        self.assertIn("--shared", rows[0]["hint"])
-
-    def test_terminal_yes_switches_to_the_shared_default(self):
-        self.user_config('{version: 1, agent: {session_mode: "independent"}}\n')
-        code, text, calls = self.agent("claude", "--dir", str(self.work), answers=["y"], tty=True)
-        self.assertEqual(code, 0, text)
-        self.assertEqual(len(calls), 1)
-        self.assertIn("[y/N]", calls[0])
-        self.assertEqual(self.mode(), "shared")
-        self.assertIsNone(session_choice.user_value(), "back to the default: the override is removed")
-        self.assertEqual(session_choice.recorded(self.st), "shared")
         self.assertFalse([r for r in doctor.run(offline=True) if r["id"] == "session"])
 
-    def test_terminal_enter_keeps_it_and_asks_again(self):
+    def test_explicit_independent_is_kept_and_never_asked(self):
         self.user_config('{version: 1, agent: {session_mode: "independent"}}\n')
-        self.agent("claude", "--dir", str(self.work), answers=[""], tty=True)
-        self.assertEqual(self.mode(), "independent")
-        self.assertIsNone(session_choice.recorded(self.st))
-        _, _, calls = self.agent("claude", "--dir", str(self.work), answers=["n"], tty=True)
-        self.assertEqual(len(calls), 1, "asked again")
-        self.assertEqual(session_choice.recorded(self.st), "independent", "an explicit no is the owner's choice")
-        _, text, _ = self.agent("claude", "--dir", str(self.work), tty=True)   # answers=None: must not ask
-        self.assertEqual(self.mode(), "independent")
-
-    def test_an_owner_choice_through_config_is_kept_silently(self):
-        with contextlib.redirect_stdout(io.StringIO()):
-            self.assertEqual(preferences.command(["set", "agent.session_mode", "independent"]), 0)
-        self.assertEqual(session_choice.recorded(self.st), "independent")
-        code, text, _ = self.agent("claude", "--dir", str(self.work), tty=True)
+        code, text, _ = self.agent("claude", "--dir", str(self.work), tty=True)   # answers=None: must not ask
         self.assertEqual(code, 0, text)
         self.assertEqual(self.mode(), "independent")
-        self.assertNotIn("会话模式：", text)
-        with contextlib.redirect_stdout(io.StringIO()):
-            preferences.command(["unset", "agent.session_mode"])
+        self.assertNotIn("--shared", text)
+        self.assertFalse([r for r in doctor.run(offline=True) if r["id"] == "session"])
+
+    def test_explicit_shared_is_kept_and_never_asked(self):
+        self.user_config('{version: 1, agent: {session_mode: "shared"}}\n')
+        code, text, _ = self.agent("claude", "--dir", str(self.work), tty=True)
+        self.assertEqual(code, 0, text)
+        self.assertEqual(self.st.agent_config()["session_mode"], "shared")
+        self.assertFalse([r for r in doctor.run(offline=True) if r["id"] == "session"])
+
+    def test_an_owner_choice_through_config_is_kept_silently(self):
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            self.assertEqual(preferences.command(["set", "agent.session_mode", "shared"]), 0)
+        res = json.loads(out.getvalue())
         self.assertEqual(session_choice.recorded(self.st), "shared")
+        self.assertEqual((res["old"], res["new"]), ("independent", "shared"))
+        self.assertEqual(res["notice"]["rollback"], "agentj config set agent.session_mode independent", "the one line that undoes it")
+        self.assertIn("高级", res["notice"]["text_zh"])
+        self.assertIn("agentj service restart", res["notice"]["text_en"])
+        code, text, _ = self.agent("claude", "--dir", str(self.work), tty=True)
+        self.assertEqual(code, 0, text)
+        self.assertEqual(self.mode(), "shared")
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out), mock.patch("agentj.claude_auth.available", return_value=True):
+            preferences.command(["unset", "agent.session_mode"])
+        self.assertEqual(session_choice.recorded(self.st), "independent")
+        self.assertEqual(json.loads(out.getvalue())["notice"]["rollback"], "agentj config set agent.session_mode shared")
+        self.assertEqual(self.st.agent_config()["session_mode"], "independent", "back to the default")
 
     def test_flags(self):
-        self.user_config('{version: 1, agent: {session_mode: "independent"}}\n')
         code, text, _ = self.agent("claude", "--dir", str(self.work), "--shared")
         self.assertEqual((code, self.mode()), (0, "shared"), text)
+        self.assertIn("agentj config set agent.session_mode independent", text, "a switch names its undo")
         code, text, _ = self.agent("claude", "--dir", str(self.work), "--independent")
         self.assertEqual((code, self.mode()), (0, "independent"), text)
+        self.assertEqual(session_choice.user_value(), "independent", "an owner's independent is written down")
         self.assertEqual(session_choice.recorded(self.st), "independent")
+        self.assertEqual(self.st.agent_config()["session_mode"], "independent")
         with contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit):
             cli.main(["agent", "claude", "--shared", "--independent"])
 
 
 class AgentLine(_Env):
     def test_shared_is_not_described_as_fenced(self):
-        self.agent("claude", "--dir", str(self.work))
+        self.agent("claude", "--dir", str(self.work), "--shared")
         zh, en = cli._agent_line(self.st, "zh"), cli._agent_line(self.st, "en")
         self.assertNotIn("隔离运行", zh)
         self.assertIn("共享会话", zh)
@@ -318,7 +311,7 @@ class SharedSessionPick(_Env):
         self.assertEqual(rows[0]["first"], "fix the invoice export", "the meta/command entry is skipped")
 
     def test_terminal_picks_one(self):
-        code, text, calls = self.agent("claude", "--dir", str(self.work), answers=["2"], tty=True)
+        code, text, calls = self.agent("claude", "--dir", str(self.work), "--shared", answers=["2"], tty=True)
         self.assertEqual(code, 0, text)
         self.assertIn("billing fix", text)
         self.assertIn("write the weekly report", text)
@@ -327,7 +320,7 @@ class SharedSessionPick(_Env):
         self.assertIn("bbbbbbbb", cli._agent_line(self.st, "zh"))
 
     def test_no_terminal_prints_the_list_and_the_command(self):
-        code, text, _ = self.agent("claude", "--dir", str(self.work))
+        code, text, _ = self.agent("claude", "--dir", str(self.work), "--shared")
         self.assertEqual(code, 0, text)
         self.assertIn("aaaaaaaa-1111-2222-3333-444444444444", text)
         self.assertIn("agentj config set agent.shared_session_id", text)
@@ -336,7 +329,7 @@ class SharedSessionPick(_Env):
     def test_one_session_is_picked_by_attach_without_a_pin(self):
         self.socks[1].close()
         os.unlink(json.loads(next((self.cc / "sessions").glob("bbbbbb.json")).read_text())["messagingSocketPath"])
-        code, text, _ = self.agent("claude", "--dir", str(self.work), tty=True)   # must not ask
+        code, text, _ = self.agent("claude", "--dir", str(self.work), "--shared", tty=True)   # must not ask
         self.assertEqual(code, 0, text)
         self.assertIn("billing fix", text)
         self.assertEqual(preferences.get(preferences.effective(self.st), "agent.shared_session_id"), "")

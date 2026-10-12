@@ -38,10 +38,6 @@ export function onChange(fn) { watchers.push(fn); }
 export function pushUi(stateName = pushState) {
   pushState = stateName;
   for (const f of watchers) { try { f(stateName); } catch { /* a view's problem, not the push state's */ } }
-  const row = el('push-row'), btn = el('push-on'), txt = el('push-text');
-  row.hidden = stateName === 'none';
-  btn.hidden = stateName !== 'offer';
-  txt.textContent = ['offer', 'on', 'ios', 'denied', 'failed'].includes(stateName) ? t('push.' + stateName) : '';
 }
 export async function gotPushKey(k) {
   let key;
@@ -72,7 +68,6 @@ export async function enablePush() {
     pushUi('on');
   } catch {
     pushUi('failed');
-    el('push-on').hidden = false;
   }
 }
 

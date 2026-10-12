@@ -367,6 +367,23 @@ class OpenCodeV2Agent(OpenCodeAgent):
             else:
                 self.host.st.log("agent_identity_fail", agent=self.kind, status=st)
 
+    def _reminder_main(self) -> bool:
+        return True                                   # shared v2 on an owner's own server: language only (shared_opencode2)
+
+    async def _reminder(self) -> None:
+        """P159: the hidden per-turn line (main_identity.turn_reminder) as a v2 synthetic input admitted without starting a
+        run (`resume: false`, measured 2.0.27: stored as type "synthetic", the model reads it, the prompt that follows
+        starts the turn). A v2 without the route only logs; the turn still goes."""
+        if self.cfg.get("_workflow_ceo") or not self.persist:
+            return
+        from . import main_identity
+        text = main_identity.turn_reminder(self.cfg, self._reminder_main())
+        with contextlib.suppress(OSError, HTTPError, asyncio.TimeoutError):
+            st, _ = await self.client.request("POST", f"/api/session/{quote(self.sid)}/synthetic",
+                                              {"text": text, "resume": False})
+            if st != 200:
+                self.host.st.log("agent_reminder_fail", agent=self.kind, status=st)
+
     async def _model(self) -> None:
         m = split_model(self.cfg.get("model"))
         cur = self.session_model or {}
@@ -398,6 +415,7 @@ class OpenCodeV2Agent(OpenCodeAgent):
             try:
                 await self._identity()
                 await self._model()
+                await self._reminder()
             except (OSError, HTTPError, AttributeError, asyncio.TimeoutError):
                 pass
 

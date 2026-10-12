@@ -300,7 +300,7 @@ class ServeWithoutTerminal(unittest.TestCase):
 
 class Doctor(unittest.TestCase):
     IDS = ["version", "python", "websockets", "platform", "state", "keep-awake", "browser", "relay", "dashboard", "agent", "agent_cli", "harness", "fence", "danger", "passphrase",
-           "bound", "onboard", "serve", "friends", "service", "alias", "estop", "tasks", "activity"]
+           "bound", "seat", "onboard", "serve", "friends", "service", "alias", "estop", "tasks", "activity"]
 
     def setUp(self):
         self.dir = tempfile.mkdtemp(prefix="aj-doc-", dir="/tmp")
@@ -474,6 +474,59 @@ class WheelInstall(unittest.TestCase):
         p147_bytes=sum(i.compress_size+76+2*len(i.filename.encode())+2*len(i.extra)+len(i.comment) for i in p147)
         self.assertEqual(len(p147),2)
         self.assertLessEqual(p147_bytes,8192,'P147 reconnect allocation is bounded')
+        # P155 (0.18.6 candidate): the guarded harness switch (switch_harness.py) and its skill get their own explicit 16 KiB (measured 14.3 KiB),
+        # same accounting; flagged to Jarvis. The menu item, serve hooks, CLI flags and identity line stay in the core ceiling.
+        p155=[i for i in zipfile.ZipFile(self.wheel).infolist() if i.filename=='agentj/switch_harness.py' or i.filename.startswith('agentj/skills/agentj-switch-harness/')]
+        p155_bytes=sum(i.compress_size+76+2*len(i.filename.encode())+2*len(i.extra)+len(i.comment) for i in p155)
+        self.assertEqual(len(p155),2)
+        self.assertLessEqual(p155_bytes,16384,'P155 harness-switch allocation is bounded')
+        # P169 (0.20.0 phone themes): the theme module, its schema + the two factory presets (the robots preset carries the two
+        # 16-robot sprite sheets, the same bytes as the web page's) and the agentj-theme skill get their own explicit 48 KiB.
+        p169=[i for i in zipfile.ZipFile(self.wheel).infolist() if i.filename=='agentj/theme.py' or i.filename.startswith(('agentj/themes/','agentj/skills/agentj-theme/'))]
+        p169_bytes=sum(i.compress_size+76+2*len(i.filename.encode())+2*len(i.extra)+len(i.comment) for i in p169)
+        self.assertEqual(len(p169),7)
+        self.assertLessEqual(p169_bytes,49152,'P169 theme allocation is bounded')
+        # P181 (0.20.0 load card five resources + the agentj-commands skill): resources.py and the new bundled skill get their
+        # own explicit 12 KiB; the serve / controls / names hooks ride in a +4 KiB core increment (flagged to Jarvis).
+        p181=[i for i in zipfile.ZipFile(self.wheel).infolist() if i.filename=='agentj/resources.py' or i.filename.startswith('agentj/skills/agentj-commands/')]
+        p181_bytes=sum(i.compress_size+76+2*len(i.filename.encode())+2*len(i.extra)+len(i.comment) for i in p181)
+        self.assertEqual(len(p181),2)
+        self.assertLessEqual(p181_bytes,12288,'P181 resources + commands skill allocation is bounded')
+        # P171 (0.20.0 遥控器管理 from a paired remote, PROTOCOL §24): remotes.py gets its own explicit 8 KiB, flagged to Jarvis.
+        p171=[i for i in zipfile.ZipFile(self.wheel).infolist() if i.filename=='agentj/remotes.py']
+        p171_bytes=sum(i.compress_size+76+2*len(i.filename.encode())+2*len(i.extra)+len(i.comment) for i in p171)
+        self.assertEqual(len(p171),1)
+        self.assertLessEqual(p171_bytes,8192,'P171 remotes allocation is bounded')
+        # P170 (0.20.0 e-mail channel: mail.py — IMAP/SMTP, allowlist + sender-authentication gate, presets, CLI): its own explicit
+        # 24 KiB allocation (measured 21.1 KiB compressed), same accounting; flagged to Jarvis. The serve / provenance / identity
+        # wiring (serve messages, provenance, identity line, skill section) takes a further explicit 4 KiB core increment
+        # (measured +0.5 KiB over the P152 sum), flagged to Jarvis.
+        p170=[i for i in zipfile.ZipFile(self.wheel).infolist() if i.filename=='agentj/mail.py']
+        p170_bytes=sum(i.compress_size+76+2*len(i.filename.encode())+2*len(i.extra)+len(i.comment) for i in p170)
+        self.assertEqual(len(p170),1)
+        self.assertLessEqual(p170_bytes,24576,'P170 e-mail channel allocation is bounded')
+        # P184 (0.20.0 address book: contacts.py store / pinyin search / vCard·CSV import-export / CLI, contacts_serve.py the
+        # phone + Agent side, skill agentj-contacts): its own explicit 28 KiB allocation (measured ≈ 25 KiB), same accounting;
+        # flagged to Jarvis. The wiring (elevate routing, serve cap, mail send CLI, media / inbox types, identity sentence) takes a
+        # further explicit 4 KiB core increment, flagged to Jarvis.
+        p184=[i for i in zipfile.ZipFile(self.wheel).infolist() if i.filename in ('agentj/contacts.py','agentj/contacts_serve.py')
+              or i.filename.startswith('agentj/skills/agentj-contacts/')]
+        p184_bytes=sum(i.compress_size+76+2*len(i.filename.encode())+2*len(i.extra)+len(i.comment) for i in p184)
+        self.assertEqual(len(p184),3)
+        self.assertLessEqual(p184_bytes,28672,'P184 address book allocation is bounded')
+        # P188 (0.20.0 搜索聊天记录, PROTOCOL §28): hsearch.py carries the 2 956-pair Traditional→Simplified table (OpenCC, the same
+        # bytes as protocol/search.js), measured 16.4 KiB in the wheel → its own explicit 20 KiB, flagged to Jarvis.
+        p188=[i for i in zipfile.ZipFile(self.wheel).infolist() if i.filename=='agentj/hsearch.py']
+        p188_bytes=sum(i.compress_size+76+2*len(i.filename.encode())+2*len(i.extra)+len(i.comment) for i in p188)
+        self.assertEqual(len(p188),1)
+        self.assertLessEqual(p188_bytes,20480,'P188 search allocation is bounded')
+        # P189 (0.20.0 「转发到邮箱」 from the reply card: mail_template.py — the conversation mail in HTML + plain text, its
+        # Markdown → mail-HTML renderer): its own explicit 8 KiB allocation (measured ≈ 7 KiB), same accounting; flagged to Jarvis.
+        # The wiring in contacts_serve.py stays inside P184's core increment.
+        p189=[i for i in zipfile.ZipFile(self.wheel).infolist() if i.filename=='agentj/mail_template.py']
+        p189_bytes=sum(i.compress_size+76+2*len(i.filename.encode())+2*len(i.extra)+len(i.comment) for i in p189)
+        self.assertEqual(len(p189),1)
+        self.assertLessEqual(p189_bytes,8192,'P189 mail template allocation is bounded')
         # P135 (0.18.2 integration of P131–P134 + the shared-turn reply fix): an explicit 8 KiB core increment, flagged to Jarvis.
         # P139 (0.18.3 shared-mode trust boundary: ctl_auth, hook token/watch, never-yield): another explicit 8 KiB, flagged to Jarvis.
         # P142 (0.18.3 host reliability: diskq, _bg, B14/A12/B15/B17/B19): a further explicit 8 KiB, flagged to Jarvis (P143 integration keeps both).
@@ -485,9 +538,36 @@ class WheelInstall(unittest.TestCase):
         # P151 (0.18.4 turn end without Stop + compaction/clear handoff, agentj-handoff skill): a further explicit 8 KiB, ratified by Jarvis.
         # P152 (0.18.4 integration: P144 launchd key_env + Telegram Markdown→HTML + missed-Stop recovery had no allocation of its
         # own, plus the merged overlap of P147/P149/P150/P151): measured +9.0 KiB over the sum above → a further explicit 12 KiB,
+        # P155 (0.18.6 candidate: menu item, serve/CLI hooks, identity line, manual paragraph, and the launch_job / PATH / Codex
+        # notice / estop fixes found on QA-J): measured +0.2 KiB over the sum above → a further explicit 4 KiB, flagged to Jarvis.
+        # P156 (0.20.0 platform heartbeat: heartbeat.py + heartbeat.sock CLI, agentj-heartbeat skill, core v11, busy capacity, the
+        # manual's heartbeat paragraph): measured +14.2 KiB → a further explicit 16 KiB, flagged to Jarvis.
+        # P157 (0.20.0 approval noise: heredoc-aware danger lexer, approval_jev.py layer 2, Jev threshold key + manual / skill
+        # lines): measured +6.8 KiB over the sum above → a further explicit 8 KiB, flagged to Jarvis.
+        # P158 (0.20.0 /goal goal mode): goal.py + the agentj-goal skill get their own explicit 20 KiB allocation (measured 18.6 KiB), same accounting;
+        # the serve / approvals / menu / identity-line wiring stays in the core ceiling with a further explicit 4 KiB. Flagged to Jarvis.
+        p158=[i for i in zipfile.ZipFile(self.wheel).infolist() if i.filename=='agentj/goal.py' or i.filename.startswith('agentj/skills/agentj-goal/')]
+        p158_bytes=sum(i.compress_size+76+2*len(i.filename.encode())+2*len(i.extra)+len(i.comment) for i in p158)
+        self.assertEqual(len(p158),2)
+        self.assertLessEqual(p158_bytes,20480,'P158 goal-mode allocation is bounded')
+        # P166 (0.20.0 any-file attachments: inbox MIME map, segmented say-time transcription, Telegram reason codes + bilingual
+        # notes, the manual's file-sharing page): measured +3.8 KiB over the sum above → a further explicit 8 KiB, flagged to Jarvis.
+        # P182 (0.20.0 long recordings + /会议总结: meeting.py, `agentj mail notes`, the agentj-meeting-notes skill): measured +2.2 KiB
+        # over the sum above → a further explicit 4 KiB, flagged to Jarvis.
+        # P163 (0.20.0 small items: `agentj admin --open`, keyhint.py "key may be incomplete", identity/skill lines): measured
+        # +2.3 KiB → a further explicit 4 KiB, flagged to Jarvis for the P165 integration.
+        # P165 (0.20.0 integration of P151b P153 P154 P155 P156 P157 P158 P159 P160 P161 P163 P166–P187): each line declared its own core
+        # increment (P151b 4 · P153 4 · P154 4 · P155 4 · P156 16 · P157 8 · P158 4 · P160 8 · P163 4 · P166 8 · P170 4 · P175 8 · P180 8 ·
+        # P181 4 · P182 4 · P184 4 · P185 8 · P186 8 · P188 4 · P191 4 · P192 4 KiB = 124 KiB; P189 / P190 / P193 declared none); merged and measured, the core grew +126.4 KiB over the 0.18.4 wheel
+        # (overlap + P165's own fixes) → ONE explicit +136 KiB core increment on the 0.18.4 ceiling (P188's +4 KiB included), plus the new
+        # bounded allocations above (P155 16 · P158 20 · P169 48 · P170 24 · P171 8 · P181 12 · P184 28 · P188 20 · P189 8 KiB). Flagged to Jarvis for ratification.
+        allocs=bot_bytes+lt_bytes+browser_bytes+p115_bytes+cut_bytes+p147_bytes+p155_bytes+p158_bytes+p169_bytes+p170_bytes+p171_bytes+p181_bytes+p184_bytes+p188_bytes+p189_bytes
+        core_0184=2_260_000+8192+8192+8192+12288+4096+8192+8192+12288      # P118 + P135 P139 P142 P143 P149 P150 P151 P152
+        core_0200=core_0184+139264                                          # + P165 (0.20.0)
+        self.assertLess(pathlib.Path(self.wheel).stat().st_size-allocs,core_0200,'P118 approved bounded core ceiling + 0.18.x increments + P165 (0.20.0)')
+        self.assertLess(pathlib.Path(self.wheel).stat().st_size,core_0200+65536+40960+49152+32768+12288+8192+16384+20480+49152+24576+8192+12288+28672+20480+8192,
+                        'combined bounded allocations')
         # flagged to Jarvis.
-        self.assertLess(pathlib.Path(self.wheel).stat().st_size-bot_bytes-lt_bytes-browser_bytes-p115_bytes-cut_bytes-p147_bytes,2_260_000+8192+8192+8192+12288+4096+8192+8192+12288,'P118 approved bounded core ceiling + P135 + P139 + P142 + P143 + P149 + P150 + P151 + P152 increments')
-        self.assertLess(pathlib.Path(self.wheel).stat().st_size,2_260_000+8192+8192+8192+12288+4096+8192+8192+12288+65536+40960+49152+32768+12288+8192,'combined bounded allocations')
         self.assertFalse([n for n in names_ if n.startswith("tests/") or "wiredump" in n or "fakeclaude" in n])
         ep = next(n for n in names_ if n.endswith("entry_points.txt"))
         eps = zipfile.ZipFile(self.wheel).read(ep).decode()
@@ -541,7 +621,7 @@ class WheelInstall(unittest.TestCase):
             self.assertEqual({c["id"]: c["status"] for c in d_["checks"]}["state"], "ok")
             core = next(c for c in d_["checks"] if c["id"] == "main-core")
             self.assertEqual(core["status"], "ok")
-            self.assertIn("core v10:", core["summary"])
+            self.assertIn("core v11:", core["summary"])
 
     @unittest.skipUnless((sys.platform.startswith("linux") and shutil.which("bwrap")) or
                          (sys.platform == "darwin" and os.access(fence.SANDBOX_EXEC, os.X_OK)),

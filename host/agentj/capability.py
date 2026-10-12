@@ -771,7 +771,8 @@ def plan_card(st, cfg: dict | None, wf: str, asks: list[dict], *, adapters: dict
     try:
         e = tasks.find(str(root), wf)
     except tasks.TaskError:
-        raise CapError("unknown", f"no workflow {wf}") from None
+        # P165 (support 20261012-220807): say where the host looked, so an Agent working in another folder sees the mismatch
+        raise CapError("unknown", f"no workflow {wf} in Agent J's working root {root}") from None
     raw = brief_raw(e["dir"])
     b, probs = load_brief(e["dir"])
     if b is None or probs:
@@ -961,6 +962,12 @@ _WIZARD_READ = re.compile(r"(?:cd [A-Za-z0-9_./~-]{1,300} ?(?:;|&&) ?)?agentj wi
                           r"(?: 2>&1)?(?: \| grep -v [^\s|;&$`'\"<>()\\]{1,40})?")
 
 
+# P158: `agentj goal …` — every effect is host-gated (propose = a card the owner signs; status reads; progress / done / stop
+# only post a line or take the goal's power away). Single-quoted text is literal in the shell.
+_GOAL_CMD = re.compile(r"(?:cd [A-Za-z0-9_./~-]{1,300} ?(?:;|&&) ?)?agentj goal (?:propose|status|progress|done|stop)"
+                       r"(?: (?:[A-Za-z0-9_./=:@-]{1,200}|'[^'\n]{1,500}'|[^\s'\"`$\\|;&<>(){}*?\[\]#!~]{1,120})){0,10}(?: 2>&1)?")
+
+
 def staging_write(root: str | None, tool: str, tool_input) -> bool:
     """A main-Agent write into `<root>/.agentj/wizard-staging/` is inert (nothing reads it until `agentj wizard apply`, which
     validates every file and never overwrites what the owner changed): no card for it."""
@@ -981,7 +988,8 @@ def host_mediated(tool: str, tool_input) -> bool:
     if tool != "Bash" or not isinstance(tool_input, dict):
         return False
     cmd = tool_input.get("command")
-    return isinstance(cmd, str) and bool(_HOST_MEDIATED.fullmatch(cmd.strip()) or _WIZARD_READ.fullmatch(cmd.strip()))
+    return isinstance(cmd, str) and bool(_HOST_MEDIATED.fullmatch(cmd.strip()) or _WIZARD_READ.fullmatch(cmd.strip())
+                                         or _GOAL_CMD.fullmatch(cmd.strip()))
 
 
 # ------------------------------------------------------------------ serve side
@@ -1358,6 +1366,8 @@ class Capabilities:
 
     async def handle(self, req: dict) -> dict:
         t = req.get("t")
+        if isinstance(t, str) and t.startswith("goal_") and getattr(self.host, "goals", None) is not None:
+            return await self.host.goals.handle(req)     # P158: `agentj goal …` shares this socket (reachable in the fence)
         if t == "list":
             reg = await asyncio.to_thread(sync, self.st, self.cfg(), probe=False)
             return {"result": "list", "revision": reg["revision"], "items": summary(reg)}
@@ -1516,6 +1526,8 @@ def cmd_capability(a) -> int:
                 return _print({"result": "refused", "why": "shape", "detail": "--asks: a JSON file"}, a.json)
         res = client({"t": "prepare", "workflow": a.workflow, "asks": asks}, timeout=120) or \
             {"result": "refused", "why": "no_serve", "detail": "Agent J is not running"}
+        if res.get("why") == "unknown" and isinstance(a.workflow, str) and _ID.fullmatch(a.workflow):
+            res = {**res, **_elsewhere_hint(a.workflow)}
         return _print(res, a.json)
     if sub == "result":
         res = client({"t": "result", "card": a.card, "wait": a.wait}) or \
@@ -1526,6 +1538,19 @@ def cmd_capability(a) -> int:
             {"result": "refused", "why": "no_serve", "detail": "Agent J is not running"}
         return _print(res, a.json)
     return 2
+
+
+def _elsewhere_hint(wf: str) -> dict:
+    """P165: `prepare` / `dispatch` only know workflows that are direct children of Agent J's working root (agent.working_root).
+    When the caller's own folder holds this workflow instead (e.g. `agentj wizard apply --dir <another folder>`), say so."""
+    cwd = pathlib.Path.cwd()
+    for d in (cwd / wf, cwd):
+        if d.name == wf and d.is_dir() and any((d / n).is_file() for n in ("brief.json", "CLAUDE.md", "AGENTS.md")):
+            return {"hint": (f"「{wf}」在 {d.parent}，不在 Agent J 的工作根目录里：开工卡和派单只认工作根目录的直接子文件夹。"
+                             "用 `agentj wizard apply` 不带 --dir（默认就是工作根目录）重新落盘，或请主人把工作根目录设成这里。"
+                             f" / {wf} is in {d.parent}, not in Agent J's working root: run `agentj wizard apply` without --dir "
+                             "(it defaults to the working root), or ask the owner to set the working root here.")}
+    return {}
 
 
 def add_parser(sub) -> None:

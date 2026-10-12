@@ -224,7 +224,7 @@ def ensure_default(st, config=None):
     from . import claude_inbound
     try:
         cfg = config if config is not None else st.agent_config()
-        if not cfg or cfg.get('kind') != 'claude' or cfg.get('session_mode', 'shared') != 'shared':
+        if not cfg or cfg.get('kind') != 'claude' or cfg.get('session_mode', 'independent') != 'shared':
             return False
         directory = cfg.get('dir') or None
         meta = load_meta()

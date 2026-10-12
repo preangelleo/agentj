@@ -23,6 +23,8 @@ class Defaults(unittest.TestCase):
         env.start(); self.addCleanup(env.stop)
         self.st = State(); self.st.init(); self.st.set_agent_config('claude', str(self.home))
         preferences.ensure()
+        # P174: shared is the owner's opt-in (independent is the factory default); these are shared-mode cases
+        preferences.path().write_text(preferences.edit(preferences.path().read_text(),"agent.session_mode","shared"))
         # Root bootstrap installs hooks; start these ingress cases with no native setting.
         if inbound.path().exists(): inbound.path().unlink()
         # P127: setup may already apply the shared defaults (status-line tap); start without Agent J records too.

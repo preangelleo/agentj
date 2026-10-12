@@ -36,6 +36,21 @@ def _c(cid: str, status: str, summary: str, hint: str = "") -> dict:
 tilde = service.tilde
 
 
+def _why(e: BaseException) -> str:
+    """P192 (B18): a failed check keeps its exception message, not only the class — redacted first (keys, high-entropy
+    strings, e-mail, home paths, private IPs via privacy.redact; every URL cut to scheme + host, since a path or query
+    can carry a token) and cut to 160 characters. Falls back to the class name alone."""
+    msg = " ".join(str(e).split())
+    if msg:
+        msg = re.sub(r"(\b[a-z][a-z0-9+.-]*://[^\s/?#]+)\S*", r"\1/…", msg, flags=re.I)
+        try:
+            from . import privacy
+            msg = privacy.redact(msg, paths=True)
+        except Exception:  # noqa: BLE001 — no message rather than an unredacted one
+            msg = ""
+    return f"{type(e).__name__}: {_short(msg, 160)}" if msg else type(e).__name__
+
+
 def _short(s: str, n: int = 60) -> str:
     s = " ".join((s or "").split())
     return s if len(s) <= n else s[: n - 1] + "…"
@@ -125,7 +140,7 @@ def check_browser(st: State) -> dict:
         r = browser.status(st)
         sites = browser_sites.summary(st)
     except Exception as e:  # noqa: BLE001 — a doctor row must not crash the doctor
-        return _c("browser", WARN, f"无法读取 / unreadable ({type(e).__name__})", "agentj browser status --json")
+        return _c("browser", WARN, f"无法读取 / unreadable ({_why(e)})", "agentj browser status --json")
     if r["state"] == "disabled":
         return _c("browser", OK, "已关闭（主人设置）/ turned off by the owner", "agentj browser enable")
     need = [x["site"] for x in sites if x["status"] == "auth_required"]
@@ -204,14 +219,14 @@ def check_dashboard(st: State) -> dict:
     try:
         code = _http(api.rstrip("/") + "/v1/host/poll", b"{}", NET_TIMEOUT)
     except Exception as e:  # noqa: BLE001
-        return _c("dashboard", FAIL, f"{api} 连不上 / unreachable ({type(e).__name__})", "检查网络 / 代理 / check network, proxy")
+        return _c("dashboard", FAIL, f"{api} 连不上 / unreachable ({_why(e)})", "检查网络 / 代理 / check network, proxy")
     if code != 400:
         return _c("dashboard", FAIL, f"{api} 答复异常 / unexpected answer (HTTP {code})",
                   "Agent J 服务器暂时不可用，稍后再试 / the Agent J server is unavailable, retry later")
     try:
         app_code = _http(app, None, NET_TIMEOUT)
     except Exception as e:  # noqa: BLE001
-        return _c("dashboard", WARN, f"服务器 ok · 账号后台 {app} 连不上 / account dashboard unreachable ({type(e).__name__})", "")
+        return _c("dashboard", WARN, f"服务器 ok · 账号后台 {app} 连不上 / account dashboard unreachable ({_why(e)})", "")
     if app_code >= 500:
         return _c("dashboard", WARN, f"服务器 ok · 账号后台 / account dashboard {app} HTTP {app_code}", "")
     return _c("dashboard", OK, f"服务器 / server {api} · 账号后台 / account dashboard {app}")
@@ -277,31 +292,31 @@ def check_codex_perm(st: State) -> dict | None:
     try:
         return codex_perm.doctor_row(st)
     except Exception as e:  # noqa: BLE001 — a row, never a crash
-        return _c("codex_perm", WARN, f"Codex 权限：检查失败（{type(e).__name__}）/ Codex permissions: check failed")
+        return _c("codex_perm", WARN, f"Codex 权限：检查失败（{_why(e)}）/ Codex permissions: check failed")
 
 
 def check_session_mode(st: State) -> dict | None:
-    """P127: "independent" in the owner's config with no record of the owner choosing it (an older install, a test, a file
-    left behind) — shown, never flipped. None when the default (shared) or a recorded choice is in effect."""
+    """P174: an install from before the independent default whose keep-shared migration has not run yet — it stays on
+    shared (never moved silently) until `agentj config migrate` or the next serve start writes it down. None otherwise."""
     c = st.agent_config() if st.exists() else None
     if not c:
         return None
     from . import session_choice
     try:
-        if not session_choice.unconfirmed_independent(st):
+        if not session_choice.legacy_shared(st):
             return None
     except Exception:  # noqa: BLE001 — a row, never a crash
         return None
-    k = c["kind"]
-    return _c("session", WARN, "会话模式是「独立」，但没有你选过它的记录（默认是共享）/ session mode is independent, but you never "
-              "chose it here (the default is shared)",
-              f"agentj agent {k} --shared   (默认 / the default)  ·  agentj agent {k} --independent   (确定要独立 / keep it on purpose)")
+    return _c("session", WARN, "会话模式保持「共享」（升级前的默认），还没写进设置文件 / session mode stays shared (the default "
+              "before this version); not written to your settings yet",
+              "agentj service restart（或 agentj config migrate）· 想改成独立会话：agentj config set agent.session_mode "
+              "independent / to switch to an independent session: agentj config set agent.session_mode independent")
 
 
 def check_shared_inbound(st: State) -> dict | None:
     """P127: the crossSessionInbound value Claude Code really uses in the shared folder (managed > local > project > user)."""
     c = st.agent_config() if st.exists() else None
-    if not c or c.get("kind") != "claude" or c.get("session_mode", "shared") != "shared":
+    if not c or c.get("kind") != "claude" or c.get("session_mode", "independent") != "shared":
         return None
     from . import claude_inbound
     directory = c.get("dir")
@@ -325,7 +340,7 @@ def check_shared_hooks(st: State) -> dict | None:
     """A5 (P139): Agent J's approval hooks still in the shared session's settings file (the session can edit it). Missing
     entries are put back here too (serve also checks every 20 s and tells the phone)."""
     c = st.agent_config() if st.exists() else None
-    if not c or c.get("kind") not in ("claude", "codex") or c.get("session_mode", "shared") != "shared":
+    if not c or c.get("kind") not in ("claude", "codex") or c.get("session_mode", "independent") != "shared":
         return None
     from . import shared_hook
     family = c["kind"]
@@ -350,7 +365,7 @@ def check_shared_hooks(st: State) -> dict | None:
 def check_shared_statusline(st: State) -> dict | None:
     """P127: is the phone meter tap in the status line Claude Code really uses for the shared folder?"""
     c = st.agent_config() if st.exists() else None
-    if not c or c.get("kind") != "claude" or c.get("session_mode", "shared") != "shared":
+    if not c or c.get("kind") != "claude" or c.get("session_mode", "independent") != "shared":
         return None
     from . import claude_statusline
     try:
@@ -598,6 +613,25 @@ def check_bound(st: State) -> dict:
     return _c("bound", WARN, "还没加到 Agent J 账号 / not in an Agent J account yet", "agentj login")
 
 
+def check_seat(st: State) -> dict:
+    """P185: whether this host may serve its phones (relay seat certificate, seatcert). Never ✗: installing comes first."""
+    from . import seatcert
+    if not st.exists():
+        return _c("seat", WARN, "还没初始化 / not initialised", "agentj setup")
+    try:
+        relay = st.config().get("relay") or ""
+    except (OSError, ValueError):
+        relay = ""
+    v = seatcert.SeatCert(st, relay).view()
+    if v["verdict"] in seatcert.ALLOWED:
+        exp = time.strftime("%Y-%m-%d %H:%M", time.localtime(v["exp"])) if v["exp"] else "—"
+        what = {"ok": f"有效，到 {exp} / valid until {exp}", "grace": "已绑定，正在确认 / bound, confirming",
+                "exempt": "本机中继，不检查 / local relay, not checked"}[v["verdict"]]
+        return _c("seat", OK, "席位证书 / seat certificate: " + what)
+    return _c("seat", WARN, "席位 / seat: " + v["verdict"], seatcert.message(v["verdict"], "zh", v["url"]) + " / "
+              + seatcert.message(v["verdict"], "en", v["url"]))
+
+
 def _serve_status(st: State) -> dict | None:
     if not st.exists():
         return None
@@ -615,7 +649,7 @@ def check_onboarding(st: State) -> dict:
         from . import onboarding
         status, summary, hint = onboarding.doctor_row(st)
     except Exception as e:  # noqa: BLE001 — a doctor row, never a crash
-        return _c("onboard", WARN, f"首次引导：检查失败（{type(e).__name__}）/ first-use setup: check failed")
+        return _c("onboard", WARN, f"首次引导：检查失败（{_why(e)}）/ first-use setup: check failed")
     if any(d.get("source") == "account" for d in st.devices().values()):
         summary += " · 经账户页添加 / Added from account page"
     return _c("onboard", status, summary, hint)
@@ -633,9 +667,16 @@ def check_serve(st: State) -> dict:
     if not res.get("relay_up") and res.get("relay_state", res.get("relay")) == "connecting":
         res = _wait_relay(st, res)          # P127: right after a start, give the first connection a moment
     up = res.get("relay_up")
+    obs = res.get("agent_observe") if isinstance(res.get("agent_observe"), dict) else {}
+    if obs.get("down") is True:     # P192 (B17): the shared session's observe loop gave up after repeated errors
+        return _c("serve", WARN, "在运行 / running · 共享会话读取连续出错，已标记断开 / shared session reads kept failing, "
+                  f"marked down ({_short(str(obs.get('error') or '?'), 40)} ×{obs.get('errors', '?')})",
+                  "agentj doctor --reconnect")
+    note = (f" · 共享会话读取重试中 / shared session read retrying ×{obs['errors']}"
+            if isinstance(obs.get("errors"), int) and obs["errors"] > 0 else "")
     if not up and res.get("relay_state", res.get("relay")) == "connecting":   # P129: just started, first link not up yet — not a fault
-        return _c("serve", OK, "在运行 / running · 正在连接中继 / relay connecting", "")
-    return _c("serve", OK if up else WARN, "在运行 / running · relay " + ("connected" if up else "reconnecting"),
+        return _c("serve", OK, "在运行 / running · 正在连接中继 / relay connecting" + note, "")
+    return _c("serve", OK if up else WARN, "在运行 / running · relay " + ("connected" if up else "reconnecting") + note,
               "" if up else "检查网络 / check the network")
 
 
@@ -888,7 +929,10 @@ def run(st: State | None = None, offline: bool = False) -> list[dict]:
     perm_row = check_codex_perm(st)
     if perm_row:
         out.append(perm_row)
-    out += [check_agent_cli(st, svc), check_harness(svc), check_fence(st), check_danger(st), check_passphrase(st), check_bound(st), check_onboarding(st),
+    reach_row = check_chatgpt(st, offline)
+    if reach_row:
+        out.append(reach_row)
+    out += [check_agent_cli(st, svc), check_harness(svc), check_fence(st), check_danger(st), check_passphrase(st), check_bound(st), check_seat(st), check_onboarding(st),
             check_serve(st), check_friends(st, _serve_status(st)), check_service(svc, service.legacy_status()), check_alias(),
             check_estop(st), check_tasks(st), check_activity(st)]
     out += check_asr(st)
@@ -914,13 +958,37 @@ def run(st: State | None = None, offline: bool = False) -> list[dict]:
     return out
 
 
+def check_chatgpt(st: State, offline: bool = False) -> dict | None:
+    """P175: the Agent is Codex (or none is chosen yet and Codex is installed) → can this computer reach OpenAI through the
+    proxy the service uses? Warn at most; a mainland-China install is pointed at OpenCode + a local model before the first
+    turn fails, not after."""
+    c = st.agent_config() if st.exists() else None
+    if c and c.get("kind") != "codex":
+        return None
+    if not c and not _agent_bin("codex"):
+        return None
+    if offline:
+        return None                       # a network check only: --offline leaves no row
+    from . import chatgpt_reach, preferences
+    from .proxy import environment
+    try:
+        env = environment(os.environ, preferences.effective(st))
+    except Exception:  # noqa: BLE001
+        env = dict(os.environ)
+    row = chatgpt_reach.doctor_row(env)
+    if row is None:
+        return None
+    status, summary, hint = row
+    return _c("chatgpt", OK if status == "ok" else WARN, summary, hint)
+
+
 def check_google(st: State) -> dict:
     """P115 / P91: the pinned Google CLI (optional: warn at most, never ✗)."""
     try:
         from . import google
         status, summary, hint = google.doctor_row(st)
     except Exception as e:  # noqa: BLE001
-        return _c("google", WARN, f"Google 工具：检查失败（{type(e).__name__}）/ Google tools: check failed")
+        return _c("google", WARN, f"Google 工具：检查失败（{_why(e)}）/ Google tools: check failed")
     return _c("google", status, summary, hint)
 
 
@@ -930,7 +998,7 @@ def check_first_run(st: State) -> dict:
         from . import first_run
         status, summary, hint = first_run.doctor_row(st)
     except Exception as e:  # noqa: BLE001
-        return _c("first-run", WARN, f"首次准备：检查失败（{type(e).__name__}）/ first-run checklist: check failed")
+        return _c("first-run", WARN, f"首次准备：检查失败（{_why(e)}）/ first-run checklist: check failed")
     return _c("first-run", status, summary, hint)
 
 
@@ -942,7 +1010,7 @@ def check_asr(st: State) -> list[dict]:
         from . import preferences
         rows = asr.doctor_rows(st.root,engine_override=preferences.get(preferences.effective(st),"voice.asr.engine"))
     except Exception as e:  # noqa: BLE001
-        return [_c("asr", WARN, f"本地语音转写：检查失败（{type(e).__name__}）/ local transcription: check failed")]
+        return [_c("asr", WARN, f"本地语音转写：检查失败（{_why(e)}）/ local transcription: check failed")]
     out = []
     for r in rows if isinstance(rows, list) else []:
         if isinstance(r, dict) and isinstance(r.get("id"), str) and r.get("status") in MARK and isinstance(r.get("summary"), str):
