@@ -6,10 +6,11 @@ import unittest
 from unittest.mock import patch
 from agentj import preferences as p
 from agentj.state import State
+from _testtmp import TEST_TMP  # noqa: E402  P202: fixtures on tmpfs, not the system disk
 
 class PreferencesTest(unittest.TestCase):
     def setUp(self):
-        self.tmp=tempfile.TemporaryDirectory(prefix='aj-config-',dir='/var/tmp'); self.addCleanup(self.tmp.cleanup)
+        self.tmp=tempfile.TemporaryDirectory(prefix='aj-config-',dir=TEST_TMP); self.addCleanup(self.tmp.cleanup)
         self.home=Path(self.tmp.name); self.env=patch.dict(os.environ,{'HOME':str(self.home),'XDG_CONFIG_HOME':str(self.home/'.config'),'AGENTJ_STATE_DIR':str(self.home/'state'),'PATH':'/usr/bin:/bin'})
         self.env.start(); self.addCleanup(self.env.stop)
         self.st=State(); self.st.init()
@@ -151,7 +152,7 @@ class PreferencesTest(unittest.TestCase):
 
 class HostPreferencesTest(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
-        self.tmp=tempfile.TemporaryDirectory(prefix='aj-hot-',dir='/var/tmp');self.addCleanup(self.tmp.cleanup)
+        self.tmp=tempfile.TemporaryDirectory(prefix='aj-hot-',dir=TEST_TMP);self.addCleanup(self.tmp.cleanup)
         root=Path(self.tmp.name); self.env=patch.dict(os.environ,{'HOME':str(root),'XDG_CONFIG_HOME':str(root/'.config'),'AGENTJ_STATE_DIR':str(root/'state'),'PATH':'/usr/bin:/bin'})
         self.env.start();self.addCleanup(self.env.stop)
         self.st=State();self.st.init();p.ensure()

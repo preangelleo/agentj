@@ -3,6 +3,7 @@ chat. Host cap `tgfile` (with the Telegram channel present, linked or not); `tg_
 re-opened and re-hashed right before the upload (changed / gone → not_found); over the bot upload limit → too_big; same
 dedupe and per-device rate as the reply forward; the log holds counts only (no names, no paths)."""
 import _hermetic  # noqa: F401,I001
+from _testtmp import TEST_TMP  # noqa: E402  P202: fixtures on tmpfs, not the system disk
 import asyncio
 import os
 import pathlib
@@ -81,7 +82,7 @@ class FileForward(_Base):
 class HostWire(unittest.IsolatedAsyncioTestCase):
     async def test_cap_and_mid_routing(self):
         from test_l1 import _host, _state, Phone, _ready
-        with tempfile.TemporaryDirectory(prefix='p183h-', dir='/var/tmp') as d:
+        with tempfile.TemporaryDirectory(prefix='p183h-', dir=TEST_TMP) as d:
             st = _state(d); sent = []; host = _host(st, sent)
             phone = Phone(st); s = _ready(host, phone); s.p33 = True
             self.assertNotIn('tgfile', host._caps(s)['caps'])

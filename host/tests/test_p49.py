@@ -1,5 +1,6 @@
 """P49: Telegram parity and OpenCode connection/proxy diagnostics, no real bots or keys."""
 import _hermetic
+from _testtmp import TEST_TMP  # noqa: E402  P202: fixtures on tmpfs, not the system disk
 import asyncio
 import json
 import os
@@ -15,7 +16,7 @@ from agentj.serve import Host
 
 class TelegramParity(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
-        self.tmp=tempfile.TemporaryDirectory(prefix='p49-',dir='/var/tmp');self.addCleanup(self.tmp.cleanup)
+        self.tmp=tempfile.TemporaryDirectory(prefix='p49-',dir=TEST_TMP);self.addCleanup(self.tmp.cleanup)
         self.root=Path(self.tmp.name);self.st=State(self.root/'state');self.st.init()
         self.cfg={'owner_id':123,'key_env':'AJ_TEST_TG_KEY','generation':'test'}
         self.group={'id':'-100','members':[456,123],'profile':'proxy'}

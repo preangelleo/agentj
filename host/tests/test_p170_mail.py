@@ -8,6 +8,7 @@ file / the Agent's text; the secret card's sink logs in before saving. Serve: a 
 and `agent_turn_end` sends the reply; an Agent's widening `agentj mail` change becomes a phone card.
 """
 import _hermetic  # noqa: F401,I001
+from _testtmp import TEST_TMP  # noqa: E402  P202: fixtures on tmpfs, not the system disk
 import asyncio
 import email
 import email.policy
@@ -154,7 +155,7 @@ class _Base(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
         self.imap, self.smtp = FakeIMAP(AGENT, CODE), FakeSMTP(AGENT, CODE)
         self.addCleanup(self.imap.close); self.addCleanup(self.smtp.close)
-        self.tmp = tempfile.TemporaryDirectory(prefix="p170-", dir="/var/tmp"); self.addCleanup(self.tmp.cleanup)
+        self.tmp = tempfile.TemporaryDirectory(prefix="p170-", dir=TEST_TMP); self.addCleanup(self.tmp.cleanup)
         self.root = pathlib.Path(self.tmp.name)
         self.st = State(self.root / "state"); self.st.init()
         self.work = self.root / "work"; self.work.mkdir()
@@ -397,7 +398,7 @@ class RealHost(unittest.IsolatedAsyncioTestCase):
         from test_l1 import _host, _state
         imap, smtp = FakeIMAP(AGENT, CODE), FakeSMTP(AGENT, CODE)
         self.addCleanup(imap.close); self.addCleanup(smtp.close)
-        with tempfile.TemporaryDirectory(prefix="p170r-", dir="/var/tmp") as d:
+        with tempfile.TemporaryDirectory(prefix="p170r-", dir=TEST_TMP) as d:
             st = _state(d); host = _host(st, [])
             host.agent_cfg = {"dir": d}
             host.agent = SimpleNamespace(kind="claude", status="idle", halting=False, submit=Mock())
@@ -427,7 +428,7 @@ class RealHost(unittest.IsolatedAsyncioTestCase):
 
     async def test_agent_widening_change_becomes_a_phone_card(self):
         from test_l1 import _host, _state
-        with tempfile.TemporaryDirectory(prefix="p170c-", dir="/var/tmp") as d:
+        with tempfile.TemporaryDirectory(prefix="p170c-", dir=TEST_TMP) as d:
             st = _state(d); host = _host(st, [])
             host.mail = M.Mail(host)
             base = M.blank_config(); base.update(address=AGENT, allow=[{"addr": BOSS, "role": "owner"}])

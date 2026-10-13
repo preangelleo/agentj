@@ -9,6 +9,7 @@
 - The zh identity stays inline in a shared Claude session: prompt ≤ INLINE_MAX and the whole hook answer (provenance +
   identity + reminder) ≤ HOOK_MAX (Claude Code 2.1.296 swaps a longer additionalContext for a 2 KB preview + a path)."""
 import _hermetic  # noqa: F401,I001
+from _testtmp import TEST_TMP  # noqa: E402  P202: fixtures on tmpfs, not the system disk
 import asyncio
 import json
 import os
@@ -67,7 +68,7 @@ class Core(unittest.TestCase):
 
 class SharedClaude(unittest.TestCase):
     def setUp(self):
-        self.t = tempfile.TemporaryDirectory(prefix="p159-", dir="/var/tmp"); self.addCleanup(self.t.cleanup)
+        self.t = tempfile.TemporaryDirectory(prefix="p159-", dir=TEST_TMP); self.addCleanup(self.t.cleanup)
         self.root = Path(self.t.name); os.chmod(self.root, 0o700)
 
     def agent(self, **cfg):

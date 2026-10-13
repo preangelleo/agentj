@@ -9,13 +9,19 @@ Phone (approved devices only, inside the Noise session; routed through elevate.P
   mail_template HTML + plain text; its files attached within FILES_MAX, the rest listed 「文件太大未附上」) or one file of it, mailed through the owner's SMTP to exactly the addresses the owner picked in the dialog. Then every
   address is remembered (new ones as contacts, source `phone`) and counted (last_sent_at, send_count).
 - `ct_card_answer {id, n, ok, contact?}` — the owner's answer to a contact card.
+- P207 `ct_rm {r, id}` → `ct_res {r, ok, result?, contact?, why?}` — delete one contact (slot 0 / the owner: why `owner`).
+- P207 `ct_export {r, fmt}` (vcf | csv, default vcf) → `ct_res {r, ok, fmt, text, count}`; a whole answer past the §10.1
+  frag ceiling (2 MiB) → why `too_big`.
+- P207 `ct_import {r, name, text, fmt?}` (UTF-8 text ≤ IMPORT_TEXT_MAX, fmt auto | vcf | csv | json; name = the file name
+  for sniffing) → `ct_res {r, ok, format, total, added, merged, same, skipped, skipped_rows, why?}` (source `phone`).
 
 Agent (elevate.sock, visible inside the fence, `agentj contacts` / `agentj mail send`):
 - `{t: contacts, op: list|find|get|add|edit|rm|import|export|ping}` → contacts.local (the file is outside the fence);
 - `{t: contacts, op: card, id?, contact, why}` → a contact card on the paired phones (new, pre-filled with what the owner
   said; or completing an existing contact). The owner edits and saves (≥ one e-mail or phone) or cancels. → saved | merged |
   cancelled | timeout | gone. Nothing is saved without the owner's tap;
-- `{t: mail_send, to, subject, body, files}` → names are looked up in the address book (no unique match → `not_found`, the
+- `{t: mail_send, to, to_owner?, subject, body, files}` → `to_owner: true` adds the owner's own addresses (slot 0 + the
+  「我本人」 allowlist rows; none → `no_owner_address`) to `to` (union, deduped, ≤ 10 in all); names are looked up in the address book (no unique match → `not_found`, the
   Agent says so and offers a card); files must be the Agent's own (media.check: inside its folder, no secrets); then an
   approval card shows recipients, subject and attachments — mail goes out only when the owner allows. A group member's /
   guest's turn never reaches that card (serve.ask). Sent addresses are remembered with source `agent`.
@@ -41,6 +47,10 @@ FWD_PER_HOUR = 30                     # mails per device per hour from the forwa
 FILES_MAX = 20 * 1024 * 1024          # attachments of one mail (most providers stop at 20–25 MB)
 _ID = re.compile(r"[0-9a-f]{32}")
 PHONE_TYPES = ("ct_list", "ct_save", "ct_card_answer", "mail_fwd")
+PHONE_TYPES += ("ct_rm", "ct_export", "ct_import")   # P207: delete one contact, export the book, import a file's text
+IMPORT_TEXT_MAX = 1024 * 1024         # P207: ct_import text, UTF-8 bytes
+EXPORT_FMTS = ("vcf", "csv")
+IMPORT_FMTS = ("auto", "vcf", "csv", "json")
 T = {
     "zh": {"file_body": "{agent} 转来一个文件：{name}", "file_subj": "{agent} 转来文件：{name}",
            "why_new": "存成新联系人", "why_update": "补全联系人",
@@ -141,6 +151,27 @@ class ContactService:
             res = await asyncio.to_thread(C.local, self.st, req)
             self.st.log("contacts_save", device=s.device, result=res.get("result") or res.get("why"))
             return await self.host.send_app(s, {"t": "ct_res", "r": r, **res})
+        if t == "ct_rm":                              # P207
+            cid = obj.get("id")
+            if not isinstance(cid, str) or not cid or len(cid) > 64:
+                res = {"ok": False, "why": "shape"}
+            elif cid == C.OWNER_ID:
+                res = {"ok": False, "why": "owner"}
+            else:
+                res = await asyncio.to_thread(C.local, self.st, {"op": "rm", "id": cid})
+            self.st.log("contacts_rm", device=s.device, result=res.get("result") or res.get("why"))
+            return await self.host.send_app(s, {"t": "ct_res", "r": r, **res})
+        if t == "ct_export":                          # P207
+            fmt = obj.get("fmt") if obj.get("fmt") is not None else "vcf"
+            res = await asyncio.to_thread(self._export, fmt)
+            self.st.log("contacts_export", device=s.device, result="ok" if res.get("ok") else res.get("why"),
+                        count=res.get("count", 0))
+            return await self.host.send_app(s, {"t": "ct_res", "r": r, **res})
+        if t == "ct_import":                          # P207
+            res = await asyncio.to_thread(self._import, obj)
+            self.st.log("contacts_import", device=s.device, result="ok" if res.get("ok") else res.get("why"),
+                        added=res.get("added", 0), merged=res.get("merged", 0), skipped=res.get("skipped", 0))
+            return await self.host.send_app(s, {"t": "ct_res", "r": r, **res})
         if t == "mail_fwd":
             res = await self.forward(s, obj)
             self.st.log("mail_fwd", device=s.device, result="ok" if res.get("ok") else res.get("why"), to=res.get("sent", 0),
@@ -158,6 +189,34 @@ class ContactService:
         res["mail"] = {"ready": why is None, **({"why": why} if why else {})}
         res["count"] = res.get("count", len(res.get("contacts") or []))
         return res
+
+    def _export(self, fmt) -> dict:
+        """P207 ct_export: the whole book as vCard 3.0 or CSV text; too big for one (fragmented) answer → too_big."""
+        if fmt not in EXPORT_FMTS:
+            return {"ok": False, "why": "fmt"}
+        book = C.read(self.st)
+        text = C.export_text(book, fmt)
+        res = {"ok": True, "fmt": fmt, "text": text, "count": len(book.get("contacts") or [])}
+        from . import wire
+        if len(wire.dumps({"t": "ct_res", "r": "x" * 32, **res})) > wire.FRAG_MAX_TOTAL - 1024:
+            return {"ok": False, "why": "too_big", "count": res["count"]}
+        return res
+
+    def _import(self, obj: dict) -> dict:
+        """P207 ct_import: a picked file's text → contacts.import_data (dedupe / merge), source `phone`."""
+        text, name = obj.get("text"), obj.get("name")
+        fmt = obj.get("fmt") if obj.get("fmt") is not None else "auto"
+        if not isinstance(text, str) or not text.strip():
+            return {"ok": False, "why": "empty"}
+        if fmt not in IMPORT_FMTS or (name is not None and not isinstance(name, str)):
+            return {"ok": False, "why": "shape"}
+        data = text.encode("utf-8", "surrogatepass")
+        if len(data) > IMPORT_TEXT_MAX:
+            return {"ok": False, "why": "too_big"}
+        try:
+            return {"ok": True, **C.import_data(self.st, data, (name or "")[:128], fmt, source="phone")}
+        except C.ContactError as e:
+            return {"ok": False, "why": e.why}
 
     async def forward(self, s, obj: dict) -> dict:
         to_raw = obj.get("to")
@@ -189,6 +248,8 @@ class ContactService:
         content = await asyncio.to_thread(self._content, turn, mid, obj.get("input") is not False, mine)
         if content is None:
             return {"ok": False, "why": "not_found"}
+        if content == "secret":       # P211: a file checked for the owner's page, refused by the strict rules for others
+            return {"ok": False, "why": "secret"}
         subject, body, files, html, skipped = content
         msg = self.build(cfg, [r["addr"] for r in recips], subject, body, files, html=html)
         q.append(now)
@@ -220,14 +281,16 @@ class ContactService:
                 rec = dict(table.get(m) or {})
             if not rec:
                 return None
+            if not mine and media.strict(rec):   # P211: page files were checked for the owner; others get the strict scan
+                return "secret"
             try:
                 return rec["name"], rec["mime"], tg_media.read_checked(rec)
             except Exception:   # noqa: BLE001 — vanished / changed since the page: `gone`
                 return None
         if isinstance(mid, str):
             one = read(mid)
-            if one is None:
-                return None
+            if one is None or one == "secret":
+                return one
             return L["file_subj"].format(agent=agent, name=one[0]), L["file_body"].format(agent=agent, name=one[0]), [one], None, 0
         hist = getattr(self.host, "hist", None)
         page = hist.get(turn) if hist is not None else None
@@ -245,7 +308,7 @@ class ContactService:
                 skipped.append((name, size, "too_big"))
                 continue
             got = read(item["mid"])
-            if got is None:
+            if got is None or got == "secret":       # an outsider's mail never says why a file stayed home
                 skipped.append((name, size, "gone"))
                 continue
             total += len(got[2])
@@ -295,9 +358,21 @@ class ContactService:
         from . import media as media_mod
         from . import provenance, tg_media
         to_raw = req.get("to")
+        if to_raw is None:
+            to_raw = []
         if isinstance(to_raw, str):
             to_raw = [to_raw]
-        if not isinstance(to_raw, list) or not 1 <= len(to_raw) <= MAX_TO or not all(isinstance(x, str) for x in to_raw):
+        if not isinstance(to_raw, list) or len(to_raw) > MAX_TO or not all(isinstance(x, str) for x in to_raw):
+            return {"ok": False, "why": "to", "detail": f"1–{MAX_TO} recipients"}
+        if req.get("to_owner") is True:      # P205: `--to-owner` = the owner's own addresses, added to any --to (union, deduped)
+            owners = await asyncio.to_thread(C.owner_emails, self.st)
+            if not owners:
+                return {"ok": False, "why": "no_owner_address",
+                        "detail": "还没有主人本人的邮箱：请主人在手机「设置 → 通讯录」填 0 号位（我本人）的邮箱，或用 agentj mail allow <地址> "
+                                  "把自己的地址加进白名单 / no owner address yet: ask the owner to fill slot 0 (me) of the address "
+                                  "book on the phone, or add their address with `agentj mail allow <address>`"}
+            to_raw = to_raw + [a for a in owners if a not in to_raw]
+        if not to_raw:
             return {"ok": False, "why": "to", "detail": f"1–{MAX_TO} recipients"}
         subject = C._s(req.get("subject"), 200)
         body = str(req.get("body") or "")[:100_000]
@@ -315,16 +390,24 @@ class ContactService:
                 missing.append(who[:60])
             elif addr not in [r["addr"] for r in recips]:
                 recips.append({"addr": addr, "name": (c or {}).get("name", ""), "who": who})
+        if len(recips) > MAX_TO:
+            return {"ok": False, "why": "to", "detail": f"1–{MAX_TO} recipients"}
         if missing:
             return {"ok": False, "why": "not_found", "who": missing,
                     "detail": "没找到这些人，请告诉主人「没找到叫 X 的人」，并用 agentj contacts card 请主人保存 / "
                               "not in the address book: tell the owner and offer `agentj contacts card`"}
+        from . import owner_route, privacy
+        mine = await asyncio.to_thread(owner_route.all_owner, self.st, [r["addr"] for r in recips])
         files, names, total = [], [], 0
         m = media_mod.Media(self.st, (getattr(self.host, "agent_cfg", None) or {}).get("dir"))
         for p in req.get("files") or []:
             if not isinstance(p, str):
                 return {"ok": False, "why": "file"}
-            rec, fwhy = await asyncio.to_thread(m.check, media_mod.Ref(p, p, True))
+            # P211: to the owner's own address only the deterministic floor (credential files); to anyone else the full scan
+            rec, fwhy = await asyncio.to_thread(m.check, media_mod.Ref(p, p, True), mine)
+            if fwhy in ("key_file", "key_content"):
+                return {"ok": False, "why": "file", "detail": f"{p}: {fwhy} — a credential file never goes as a mail "
+                        "attachment; send it with `agentj secret send --file` (a pickup card on the owner's phone)"}
             if rec is None or fwhy:
                 return {"ok": False, "why": "file", "detail": f"{p}: {fwhy or 'gone'} (only files in the Agent's folder, no secrets)"}
             try:
@@ -337,8 +420,6 @@ class ContactService:
             files.append((rec["name"], rec["mime"], data))
             names.append(rec["name"])
         zh = self.lang() == "zh"
-        from . import owner_route, privacy
-        mine = await asyncio.to_thread(owner_route.all_owner, self.st, [r["addr"] for r in recips])
         keys = len(privacy.credentials(body)) if mine else 0
         lines = [("发邮件给：" if zh else "Mail to: ") + "、".join(
                     f"{r['name']} <{r['addr']}>" if r["name"] else r["addr"] for r in recips),
@@ -380,10 +461,12 @@ class ContactService:
         return {"t": "ct_card", "id": c["id"], "n": c["nonce"], "mode": c["mode"], "contact": c["contact"], "base": c.get("base"),
                 "why": c["why"], "ttl": max(0, int(c["deadline"] - time.monotonic()))}
 
+    def open_msgs(self, s) -> list[dict]:
+        return [self.card_msg(c) for c in list(self.cards.values()) if not c["fut"].done()]   # P203: shared with cards_get
+
     async def on_ready(self, s) -> None:
-        for c in list(self.cards.values()):
-            if not c["fut"].done():
-                await self.host.send_app(s, self.card_msg(c))
+        for m in self.open_msgs(s):
+            await self.host.send_app(s, m)
 
     def end_all(self, result: str) -> None:
         for c in list(self.cards.values()):

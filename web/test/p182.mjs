@@ -13,8 +13,8 @@ const out = new URL('../../../reports/qa/p182/browser/', import.meta.url); mkdir
 const web = await startWebServer(), fake = await startFakeHost(), B = await launch();
 const results = {};
 const T = {
-  zh: {part: '录音第', seg: '第 3/10 段', back: '有没发出去的录音', backYes: '放回附件栏', interrupted: '录音被系统打断', cmd: '/会议总结', awake: '请保持屏幕常亮'},
-  en: {part: 'Recording part', seg: 'Part 3/10', back: 'Unsent recordings', backYes: 'Put them back', interrupted: 'The system interrupted', cmd: '/meeting-notes', awake: 'Keep the screen on'},
+  zh: {part: '录音第', seg: '第 3/10 段', back: '有没发出去的录音', backYes: '放回附件栏', interrupted: '录音被系统打断', cmd: '/会议总结', awake: '请别按电源键锁屏'},
+  en: {part: 'Recording part', seg: 'Part 3/10', back: 'Unsent recordings', backYes: 'Put them back', interrupted: 'The system interrupted', cmd: '/meeting-notes', awake: "Please don't press the power button"},
 };
 const idbCount = (store) => `new Promise(res => { const r = indexedDB.open('agentj-rec', 1); r.onupgradeneeded = () => { r.result.createObjectStore('takes', {keyPath: 'id'}); r.result.createObjectStore('chunks', {keyPath: ['take','seg','i']}); };
   r.onsuccess = () => { const d = r.result, q = d.transaction(${JSON.stringify(store)}).objectStore(${JSON.stringify(store)}).count(); q.onsuccess = () => { d.close(); res(q.result); }; }; r.onerror = () => res(-1); })`;
@@ -41,7 +41,8 @@ try {
     await waitFor(p, `document.querySelectorAll('#tray .chip').length >= 2`, 12000);
     assert.ok(await evaluate(p, `!document.getElementById('ptt').hidden && document.getElementById('mic').classList.contains('lock')`), 'still recording');
     const segLine = await evaluate(p, `document.getElementById('pttSeg').textContent`);
-    assert.ok(segLine.includes(L.seg) && segLine.includes(L.awake), segLine);
+    const note = await evaluate(p, `document.getElementById('pttNote').textContent`);   // P205: the screen advice sits under the circle
+    assert.ok(segLine.includes(L.seg) && note.includes(L.awake), segLine + ' / ' + note);
     assert.equal(await evaluate(p, 'window.__wl.req'), 1, 'Screen Wake Lock requested at lock');
     assert.ok(await evaluate(p, idbCount('chunks')) >= 2, 'chunks sealed into IndexedDB while recording');
     writeFileSync(new URL(`recording-${language}.png`, out), await shoot(p, ''));

@@ -30,7 +30,7 @@ class Checked(HTMLParser):
 class Formatting(unittest.TestCase):
     def test_bold_heading_lists_and_styles(self):
         rendered = fmt.markdown('# Title\n**bold** *italic* ++underline++ ~~strike~~\n- one\n1. two\n> quote\n')
-        for token in ('<b>Title</b>', '<b>bold</b>', '<i>italic</i>', '<u>underline</u>', '<s>strike</s>', '• one', '• two', '<blockquote>quote</blockquote>'):
+        for token in ('<b>Title</b>', '<b>bold</b>', '<i>italic</i>', '<u>underline</u>', '<s>strike</s>', '• one', '1. two', '<blockquote>quote</blockquote>'):
             self.assertIn(token, rendered)
 
     def test_intraword_underscores_in_paths_and_identifiers_stay_literal(self):
@@ -46,7 +46,7 @@ class Formatting(unittest.TestCase):
         self.assertIn('<code>**literal** &lt;x&gt;</code>', rendered)
         self.assertIn('href="https://example.org/?a=1&amp;b=2"', rendered)
         self.assertNotIn('javascript:', rendered)
-        self.assertIn('<pre>&lt;x&gt;&amp; **code**\n</pre>', rendered)
+        self.assertIn('<pre><code class="language-python">&lt;x&gt;&amp; **code**</code></pre>', rendered)   # P201: language kept
         self.assertIn('&lt;b&gt;raw&lt;/b&gt;', rendered)
         self.assertNotIn('<b>raw</b>', rendered)
 

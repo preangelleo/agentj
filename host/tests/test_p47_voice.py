@@ -14,6 +14,7 @@ import wave
 from unittest.mock import patch
 from agentj import preferences as p, config_migrations as migration, voice, doctor
 from agentj.state import State
+from _testtmp import TEST_TMP  # noqa: E402  P202: fixtures on tmpfs, not the system disk
 
 
 class FakeRealtime:
@@ -33,7 +34,7 @@ class FakeRealtime:
 
 class P47Voice(unittest.TestCase):
     def setUp(self):
-        self.tmp = tempfile.TemporaryDirectory(prefix='aj-p47-', dir='/var/tmp')
+        self.tmp = tempfile.TemporaryDirectory(prefix='aj-p47-', dir=TEST_TMP)
         self.addCleanup(self.tmp.cleanup)
         self.root = Path(self.tmp.name)
         self.env = patch.dict(os.environ, {

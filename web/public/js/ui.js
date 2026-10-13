@@ -3,6 +3,20 @@
 export const el = (id) => document.getElementById(id);
 export function mk(tag, cls, text) { const e = document.createElement(tag); if (cls) e.className = cls; if (text !== undefined) e.textContent = text; return e; }
 
+// P200 追加 2 (Leo, 2026-10-13): a tapped / clicked button or icon never keeps a ring. Chromium also matches
+// :focus-visible when focus moves by script after the last input was a key — typing in the field and then closing a
+// dialog put a black ring on the header robots, "random" to the owner. So the page decides itself: <html data-kbd> only
+// after a navigation key from a real keyboard (Tab, arrows / Enter / Space / Esc outside a text field); any pointer
+// (mouse, touch, pen) clears it. app.css draws rings only under html[data-kbd] — keyboard users still get one.
+const NAV_KEYS = new Set(['Tab', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Enter', ' ', 'Escape', 'Home', 'End', 'PageUp', 'PageDown']);
+const typing = (t) => !!t && (t.isContentEditable || t.tagName === 'TEXTAREA' || (t.tagName === 'INPUT' && !/^(button|checkbox|radio|range|submit|reset|color|file)$/.test(t.type)));
+export function kbdKey(e) { return e.key === 'Tab' || (NAV_KEYS.has(e.key) && !e.isComposing && !typing(e.target) && !e.ctrlKey && !e.metaKey && !e.altKey); }
+if (typeof document !== 'undefined') {
+  const root = document.documentElement;
+  addEventListener('keydown', (e) => { if (e.isTrusted && kbdKey(e)) root.dataset.kbd = '1'; }, true);
+  addEventListener('pointerdown', () => { delete root.dataset.kbd; }, true);
+}
+
 // ms defaults to a glance; an upload holds its progress toast until it finishes.
 export function toast(t, ms) {
   const n = el('toast'); delete n.dataset.sharedFollow; n.textContent = t; n.classList.remove('act'); n.classList.add('on');

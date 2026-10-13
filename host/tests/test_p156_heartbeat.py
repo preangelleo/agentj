@@ -46,7 +46,7 @@ class Pure(unittest.TestCase):
 
     def test_schema_defaults_and_settable(self):
         d = preferences.defaults()
-        self.assertEqual(d["heartbeat"], {"enabled": True, "interval_minutes": 60})
+        self.assertEqual(d["heartbeat"], {"enabled": True, "interval_minutes": 60, "daily_at": ""})   # + P207 daily_at
         m = preferences.SCHEMA["heartbeat.interval_minutes"]
         self.assertEqual((m["minimum"], m["maximum"], m["tier"]), (5, 1440, "user"))
         self.assertIn("heartbeat.enabled", serve.PREF_SET_KEYS)

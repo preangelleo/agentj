@@ -433,6 +433,9 @@ export function cardErr(m) {
   if (m.why === 'gone') { K.cards.delete(m.id); showNext(); toast(t('ct.gone'), 2400); return; }
   K.err = m.why === 'no_contact' ? t('ct.needOne') : t('ct.saveFail'); renderCard(true);
 }
+const HOST_ID = /^[0-9a-f]{32}$/;                    // P203: only the computer's cards (never the local 0-slot card)
+export const ids = () => [...K.cards.keys()].filter((id) => HOST_ID.test(id));
+export function prune(gone) { for (const id of ids()) if (gone(id)) cardDone({ id, result: 'gone' }); }
 export function clear({ keepForward = false } = {}) { K.cards.clear(); K.shown = null; if (K.root) K.root.d.hidden = true; if (!keepForward) fwdClose(); }
 
 export const _debug = () => ({ F: { noInput: F.noInput, mode: F.mode, picked: [...F.picked.keys()], sort: F.sort, list: F.list.length, mail: F.mail, me: F.me },

@@ -123,6 +123,7 @@ function up(e) {
 }
 
 /** Wire once: the Send button and the message box. */
+// @ix compose.volume (hold the Send button; V outside the field)
 export function attach(sendBtn, field) {
   send = sendBtn; input = field;
   document.addEventListener('pointerdown', down, true);

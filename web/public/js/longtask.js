@@ -21,7 +21,7 @@ const loc = (o) => (o && typeof o === 'object' ? (lang() === 'en' ? o.en : o.zh)
 
 function build() {
   if (root) return root;
-  root = mk('div', 'ajmodal lt');
+  root = mk('div', 'ajmodal dlgcard lt');
   root.id = 'lt';
   root.hidden = true;
   root.setAttribute('role', 'dialog');
@@ -73,6 +73,8 @@ export function res(m) {
   if (why === 'expired' || why === 'unknown' || why === 'changed') { cards.delete(m.id); shownId = null; }
   render();
 }
+export const ids = () => [...cards.keys()];                                                          // P203 (§29.1)
+export function prune(gone) { const now = Date.now(); for (const c of [...cards.values()]) if (gone(c.id)) done({ id: c.id, status: c.deadline <= now ? 'expired' : 'gone' }); }
 export function clear() {
   cards.clear(); picks.clear(); shownId = null; busy = false; capsMsg = null;
   if (root) root.hidden = true;
@@ -278,7 +280,7 @@ async function decide(action) {
 // ---------------------------------------------------------------- 「我的 Agent 会什么」 (lt_caps, read-only)
 function buildCaps() {
   if (caps) return caps;
-  caps = mk('div', 'ajmodal lt lt-caps');
+  caps = mk('div', 'ajmodal dlgcard lt lt-caps');
   caps.id = 'lt-caps';
   caps.hidden = true;
   caps.setAttribute('role', 'dialog');

@@ -28,7 +28,31 @@ export function wavBytes(samples, rate = RATE) {
   return out;
 }
 
-/** A recorded Blob → {blob: audio/wav Blob, secs} or null when this browser cannot decode it (the caller then sends the
+// P205: digital silence — a run of samples within ±SILENT_MAX (≈ -78 dBFS) for at least GAP_MIN_MS. A live microphone with the
+// browser's noise suppression off never reads that quiet (its own noise floor is far above), so such a run means the system
+// fed the page zeros (Android's "background app" microphone, a muted track). With suppression on, ordinary pauses look the
+// same, so the caller only trusts this when the track reported noiseSuppression === false. The first GAP_SKIP_MS (a
+// microphone warming up) are ignored. Returns [{a, b}] in ms from the start of the take.
+export const GAP_MIN_MS = 2500, GAP_SKIP_MS = 1500, SILENT_MAX = 4 / 32768;
+export function silentRuns(samples, rate = RATE, minMs = GAP_MIN_MS, skipMs = GAP_SKIP_MS) {
+  const win = Math.max(1, Math.round(rate / 20)), out = [];   // 50 ms windows
+  let run = -1;
+  const close = (end) => {
+    if (run < 0) return;
+    const a = run * 1000 / rate, b = end * 1000 / rate;
+    if (b - a >= minMs && a >= skipMs) out.push({a: Math.round(a), b: Math.round(b)});
+    run = -1;
+  };
+  for (let i = 0; i < samples.length; i += win) {
+    let quiet = true;
+    for (let j = i, e = Math.min(samples.length, i + win); j < e; j++) if (samples[j] > SILENT_MAX || samples[j] < -SILENT_MAX) { quiet = false; break; }
+    if (quiet) { if (run < 0) run = i; } else close(i);
+  }
+  close(samples.length);
+  return out;
+}
+
+/** A recorded Blob → {blob: audio/wav Blob, secs, gaps (P205: silentRuns)} or null when this browser cannot decode it (the caller then sends the
  *  original container as an attachment, PROTOCOL §10.9). */
 export async function toWav(blob) {
   const OAC = window.OfflineAudioContext || window.webkitOfflineAudioContext;
@@ -52,6 +76,7 @@ export async function toWav(blob) {
     src.connect(off.destination);
     src.start(0);
     const rendered = await off.startRendering();
-    return { blob: new Blob([wavBytes(rendered.getChannelData(0))], { type: 'audio/wav' }), secs };
+    const pcm = rendered.getChannelData(0);
+    return { blob: new Blob([wavBytes(pcm)], { type: 'audio/wav' }), secs, gaps: silentRuns(pcm) };
   } catch (error) { return failed(phase, error, blob); }
 }

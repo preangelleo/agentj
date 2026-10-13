@@ -583,6 +583,13 @@ AUTH_REASONS = {
     "not_upgraded": (1, "命令跑完了，但程序版本没有变成目标版本", "the commands ran but the program is not at the target version"),
     "already_current": (0, "已经是目标版本，不用再升级", "already at the target version; nothing to do"),
     # P63: a formal failure (apply() used to hit KeyError here and print a traceback instead of UPGRADE_RESULT)
+    # P203: a restart now would interrupt something — nothing was installed; the owner decides
+    "confirm_on_phone": (10, "现在升级会打断上面列出的事：手机上出了一张升级确认卡，主人点「现在升级」后电脑自己升级并回报。不要再运行这条命令，"
+                             "也不要加 --yes 绕过（除非主人明确说不管这些、直接升级）",
+                         "upgrading now would interrupt the items above: an upgrade confirmation card is on the phone; when your human taps "
+                         "Upgrade now the computer upgrades and reports. Do not run this command again or bypass it with --yes (unless your "
+                         "human explicitly says to upgrade anyway)"),
+    "not_confirmed": (10, "没有确认，没有升级", "not confirmed; nothing was installed"),
     "service_failed": (1, "程序已升级，但服务没能重新安装：运行 `agentj service install`",
                        "upgraded, but service recovery failed: run `agentj service start`"),
 }
@@ -655,6 +662,7 @@ def authorized_apply(st, code: str | None, target: str | None, *, mail: dict | N
         plan = (plan_fn or verified_plan)(st, info, target)
     except Exception:
         return done("artifact_refused")
+    _pre_snapshot(st)
     # P192 (B15): the same cached-wheel rollback as `apply` — this path used to leave a half-installed version behind
     old = (rollback_fn or rollback_wheel)(st)
     def back(reason, **kw):
@@ -704,14 +712,56 @@ def authorized_apply(st, code: str | None, target: str | None, *, mail: dict | N
     return {**out, "result": "ok", "reason": "upgraded", "service": "restart_scheduled", "exit": 0}
 
 
-def apply(st, target=None, *, prefix=None, check_fn=None, run=None, say=None, svc_on=None, plan_fn=None, rollback_fn=None):
+# P205: `update apply` run by the Agent inside the fence (independent mode). The host's state directory is an empty mount
+# there: no cached old wheel, no pending record / marker for the recovery worker, and doctor cannot see `state` / `serve`.
+# The host (serve, outside the fence, same version as the caller) does those parts over `<state>/agentperm/elevate.sock`
+# `{"t": "upgrade", "op": ping | prepare | pending | marker | clear | rollback | health}` (host_op below). An older serve
+# answers `refused` → the fenced apply still installs, says `handoff: not_recorded` and returns `unverifiable_in_fence`
+# (result ok, exit 0) when nothing else failed: the owner confirms on the phone / runs doctor outside the fence.
+HOST_WHEEL = "host"          # apply's `old` when the host holds the cached old wheel (fenced path)
+HEALTH_TIMEOUT = 300
+
+
+def _host(st, op: str, timeout: float = 60, **kw) -> dict | None:
+    """One upgrade op on the host over elevate.sock; None when the host cannot do it (no serve, an older serve, an error)."""
+    try:
+        from .elevate import client_request
+        res = client_request(st, {"t": "upgrade", "op": op, **kw}, timeout)
+    except Exception as e:  # noqa: BLE001 — the channel is optional; the fenced apply reports what it could not do
+        _logged(st, "upgrade_host_failed", e)
+        return None
+    return res if isinstance(res, dict) and res.get("ok") is True else None
+
+
+def host_channel(st) -> bool:
+    """The host answers upgrade ops and runs this very version (from = the host's version, its wheel is the rollback)."""
+    r = _host(st, "ping", 10)
+    return bool(r) and r.get("version") == __version__
+
+
+def _pre_snapshot(st) -> None:
+    """P207: the owner's files (friends, card, remote names, address book, theme, preferences) are copied before anything
+    is installed; a failure here never blocks the upgrade (serve's start snapshot and self-heal are the second net)."""
+    try:
+        from . import userdata
+        userdata.snapshot(st, "pre-upgrade-v" + __version__)
+    except Exception:  # noqa: BLE001
+        pass
+
+
+def apply(st, target=None, *, prefix=None, check_fn=None, run=None, say=None, svc_on=None, plan_fn=None, rollback_fn=None,
+          fenced=None):
     """Explicit caller-requested upgrade. No terminal or cloud grant is required.
     Native filesystem restrictions and exact published target checks still apply.
     P142 (A12/B15): the old version's wheel is cached first; a failed version check or service hand-off rolls back to it
     here, and the recovery worker (a manager job) waits until serve is idle (no sudo/secret card, no turn, ≤ 10 min),
     writes the marker last and rolls back itself when the new service does not come up.
+    P205: inside the Agent fence the host does the state-directory parts and the health check (see host_op).
     """
     run, say = run or subprocess.run, say or (lambda line: None)
+    if fenced is None:
+        from . import fence
+        fenced = fence.inside()
     r = (check_fn or check)()
     target = target or r.get("latest")
     out = {"from": __version__, "to": target, "service": "unchanged"}
@@ -740,8 +790,21 @@ def apply(st, target=None, *, prefix=None, check_fn=None, run=None, say=None, sv
         plan = (plan_fn or verified_plan)(st, info, target)
     except Exception:
         return done("artifact_refused")
-    old = (rollback_fn or rollback_wheel)(st) if st.exists() else None
+    if not fenced:
+        _pre_snapshot(st)          # P207 (inside the fence the state directory is an empty mount; serve snapshots at start)
+    chan = fenced and host_channel(st)
+    if fenced:
+        out["health"] = "host" if chan else "unverifiable"
+        prep = _host(st, "prepare", 600, to=target) if chan else None
+        old = HOST_WHEEL if prep and prep.get("rollback") else None
+    else:
+        old = (rollback_fn or rollback_wheel)(st) if st.exists() else None
     def back(reason, **kw):
+        if fenced:
+            res = _host(st, "rollback", 900, to=target) if chan else None
+            rb = res["rollback"] if res and res.get("rollback") in ("ok", "failed", "unavailable") else (
+                "failed" if old else "unavailable")
+            return done(reason, rollback=rb, **kw)
         ok = roll_back(st, info, old, __version__, run) if st.exists() else False
         rb = "ok" if ok else "failed" if old else "unavailable"
         if st.exists():
@@ -757,28 +820,46 @@ def apply(st, target=None, *, prefix=None, check_fn=None, run=None, say=None, sv
             return back("install_failed")
     argv = new_argv(info)
     handed = False      # P192 (B15): until the service hand-off / marker, any failure rolls back (an OSError included)
+
+    def record(kind: str) -> None:
+        """pending (with a service) or marker (without): in the state directory, or by the host when fenced (P205)."""
+        if fenced:
+            if not (chan and _host(st, kind, 30, to=target)):
+                out["handoff"] = "not_recorded"
+        elif st.exists():
+            if kind == "pending":
+                write_pending(st, __version__, target, info, old)
+            else:
+                write_marker(st, __version__, target)
     try:
         v = run(argv + ["--version"], stdin=subprocess.DEVNULL, capture_output=True, text=True)
         if v.returncode or target not in ((v.stdout or "") + " " + (v.stderr or "")).split():
             return back("not_upgraded")
         if svc_on:
-            if st.exists():
-                write_pending(st, __version__, target, info, old)
+            record("pending")
             # The new CLI hands off before touching the calling service tree.
             if run(argv + ["service", "install", "--deferred", target], stdin=subprocess.DEVNULL).returncode:
                 return back("service_failed", service="failed")
             out["service"] = "restart_scheduled"
         else:
-            if st.exists():
-                write_marker(st, __version__, target)
+            record("marker")
             out["service"] = "not_installed"
         handed = True
-        health = run(argv + ["doctor", "--json"], stdin=subprocess.DEVNULL, capture_output=True, text=True)
-        try:
-            rows = json.loads(health.stdout)["checks"]
+        rows = None
+        if chan:
+            h = _host(st, "health", HEALTH_TIMEOUT + 30)
+            rows = h.get("checks") if h and isinstance(h.get("checks"), list) else None
+            if rows is None:
+                out["health"] = "unverifiable"
+        if rows is not None:
             failed, existing = upgrade_health(rows)
-        except (ValueError, TypeError, KeyError, AttributeError):
-            failed, existing = bool(health.returncode), []
+        else:
+            health = run(argv + ["doctor", "--json"], stdin=subprocess.DEVNULL, capture_output=True, text=True)
+            try:
+                rows = json.loads(health.stdout)["checks"]
+                failed, existing = upgrade_health(rows)
+            except (ValueError, TypeError, KeyError, AttributeError):
+                failed, existing = bool(health.returncode), []
         out["existing_issues"] = existing
         if failed:
             return {**out, "result": "failed", "reason": "doctor_failed", "exit": 1}
@@ -786,7 +867,59 @@ def apply(st, target=None, *, prefix=None, check_fn=None, run=None, say=None, sv
         if not handed:
             return back("self_check_failed", **({"service": "failed"} if svc_on else {}))
         return {**out, "result": "failed", "reason": "self_check_failed", "exit": 1}
+    if out.get("health") == "unverifiable":
+        return {**out, "result": "ok", "reason": "unverifiable_in_fence", "exit": 0}
     return {**out, "result": "ok", "reason": "upgraded", "exit": 0}
+
+
+def host_op(st, req: dict, mem: dict, run=None) -> dict:
+    """Serve's side of the fenced apply (elevate.sock `{"t": "upgrade", "op": …}`; serve runs outside the fence). Only what
+    the unfenced apply would do itself: cache this version's wheel, write the pending record / marker naming this version as
+    `from`, roll back to that wheel, run the new `agentj doctor --json`. The target must be a version newer than this host;
+    the install kind and the wheel are the host's own (nothing path-like is taken from the request). Logs: op + result."""
+    run = run or subprocess.run
+    op, to = req.get("op"), req.get("to")
+    if op == "ping":
+        return {"ok": True, "version": __version__}
+    if op == "clear":
+        (st.root / UPGRADED).unlink(missing_ok=True)
+        (st.root / PENDING).unlink(missing_ok=True)
+        return {"ok": True}
+    if op == "health":
+        info = install_kind()
+        try:
+            h = run(new_argv(info) + ["doctor", "--json"], stdin=subprocess.DEVNULL, capture_output=True, text=True,
+                    timeout=HEALTH_TIMEOUT)
+            rows = json.loads(h.stdout)["checks"]
+        except (OSError, ValueError, TypeError, KeyError, subprocess.TimeoutExpired) as e:
+            _logged(st, "upgrade_host_health_failed", e)
+            return {"ok": False, "why": "doctor"}
+        if not isinstance(rows, list):
+            return {"ok": False, "why": "doctor"}
+        keep = ("id", "status", "summary", "hint", "unverifiable")
+        st.log("upgrade_host", op=op, result="ok")
+        return {"ok": True, "checks": [{k: r[k] for k in keep if k in r} for r in rows if isinstance(r, dict)]}
+    if op not in ("prepare", "pending", "marker", "rollback"):
+        return {"ok": False, "why": "op"}
+    if not isinstance(to, str) or parse(to) is None or compare(__version__, to) != -1:
+        return {"ok": False, "why": "version"}
+    if op == "prepare":
+        old = rollback_wheel(st)
+        mem["old"] = (to, str(old) if old else None)
+        st.log("upgrade_host", op=op, result="ok" if old else "no_wheel")
+        return {"ok": True, "rollback": bool(old)}
+    old = mem.get("old", (None, None))[1] if mem.get("old", (None,))[0] == to else None
+    if op == "pending":
+        write_pending(st, __version__, to, install_kind(), old)
+    elif op == "marker":
+        write_marker(st, __version__, to)
+    else:
+        ok = roll_back(st, install_kind(), old, __version__, run)
+        rb = "ok" if ok else "failed" if old else "unavailable"
+        st.log("upgrade_rollback", status=rb, reason="fenced_apply")
+        return {"ok": True, "rollback": rb}
+    st.log("upgrade_host", op=op, result="ok")
+    return {"ok": True}
 
 
 def result_block(res: dict) -> str:
@@ -795,21 +928,35 @@ def result_block(res: dict) -> str:
              f"to: {res.get('to') or '?'}", f"service: {res['service']}"]
     if res.get("rollback"):
         lines.append(f"rollback: {res['rollback']}" + (f" (back on {res['from']})" if res["rollback"] == "ok" else ""))
+    if res.get("health"):
+        lines.append("health: " + res["health"] + {"host": " (checked by the host outside the Agent fence)",
+                                                   "unverifiable": " (cannot be checked inside the Agent fence)"}.get(res["health"], ""))
+    if res.get("handoff"):
+        lines.append("handoff: " + res["handoff"] + " — 升级记录没能交给主机（隔离环境里看不到主机数据），重启后手机上的「已升级」通知可能不准、"
+                     "没有自动回滚 / the upgrade record could not reach the host (its data is hidden inside the fence): the phone's "
+                     "\"upgraded\" notice may be off and there is no automatic rollback")
     if res.get("existing_issues"):
         lines.append("existing_issues: " + ", ".join(res["existing_issues"]) + " — 升级已完成，这些其他问题请另行检查 / upgrade completed; review these other issues separately")
     if res.get("latest"):
         lines.append(f"latest: {res['latest']}")
+    for line in res.get("interrupts") or []:           # P203: what a restart now would interrupt
+        lines.append(f"interrupts: {line}")
     if res.get("granted"):
         lines.append(f"authorized_version: {res['granted']}")
     zh, en = AUTH_REASONS[res["reason"]][1:] if res["reason"] in AUTH_REASONS else REASON_EXTRA.get(res["reason"], ("", ""))
     if zh:
         lines.append(f"why: {zh} / {en}")
-    lines.append("next: " + ("agentj doctor" if res["result"] == "ok" else
+    lines.append("next: " + (UNVERIFIABLE_NEXT if res["reason"] == "unverifiable_in_fence" else "agentj doctor" if res["result"] == "ok" else
                              "agentj doctor; tell your human this block" if res["result"] == "failed" else "tell your human this block"))
     return "\n".join(lines)
 
 
+UNVERIFIABLE_NEXT = ("tell your human: the program is upgraded; please confirm the version on the phone (Settings), or run "
+                     "`agentj doctor` in a terminal outside the Agent fence / 请主人在手机「设置」里确认版本，或在电脑终端（隔离外）运行 agentj doctor")
 REASON_EXTRA = {
+    "unverifiable_in_fence": ("程序已升级并通过版本核对；但在 Agent 的隔离环境里看不到主机状态，后台服务和本机数据这两项无法在这里核对，"
+                              "也没有失败项", "upgraded and the version verified; inside the Agent fence the host's state is hidden, "
+                              "so the service connection and local data could not be checked here — nothing failed"),
     "artifact_refused": ("发布包签名或哈希校验失败，未安装；请检查正式发布工件", "published artifact signature/hash verification failed; nothing installed; check the official release artifacts"),
     "upgraded": ("已升级", "upgraded"),
 }

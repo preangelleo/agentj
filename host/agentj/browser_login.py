@@ -192,9 +192,12 @@ class LoginCards:
             return "none"
         return "qr" if bs.tg_consent(self.st) else "text"
 
+    def open_msgs(self, s) -> list[dict]:
+        return [self.card_msg(c) for c in list(self.cards.values())]       # P203: the cards_get snapshot shares it
+
     async def on_ready(self, s) -> None:
-        for c in list(self.cards.values()):
-            await self.host.send_app(s, self.card_msg(c))
+        for m in self.open_msgs(s):
+            await self.host.send_app(s, m)
 
     # ---------------------------------------------------------- watching the login tab
     def _signed_in(self, c: dict) -> bool:

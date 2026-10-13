@@ -131,3 +131,58 @@ async def divert(host, text: str, via: str, lang: str, label: str) -> tuple[str,
         with contextlib.suppress(Exception):
             host.st.log("owner_divert", via=via, **rep)
     return _assemble(text, found, opened, via, lang), rep
+
+
+# ---------------------------------------------------------------- P211: files toward the owner
+CARD_REPEAT = 600.0               # s: the same file (by SHA-256) named again — by the page AND by Telegram — opens one card
+
+
+async def offer_files(host, keys: list, lang: str) -> int:
+    """P211: credential files an owner-bound reply linked (media.check → `key_file` / `key_content`, with the record) → one
+    secret pickup card each (`secret_out`, kind file, Face ID to open) instead of the file going as an attachment. Each skip
+    whose card opened (or is already open for that file) becomes `key_card`; the rest keep their why, whose note tells the
+    owner how to ask for one. → how many skips became `key_card`. Never raises; never logs a name or a value."""
+    if not keys:
+        return 0
+    import base64
+    import time
+    from . import media as media_mod
+    from . import tg_media
+    lang = _lang(lang)
+    box = getattr(getattr(host, "elevate", None), "out", None)
+    if box is None or not can_card(host):
+        return 0
+    seen = getattr(host, "_p211_cards", None)
+    if not isinstance(seen, dict):
+        seen = {}
+        with contextlib.suppress(Exception):
+            host._p211_cards = seen
+    now = time.monotonic()
+    for k in [k for k, t in seen.items() if now - t >= CARD_REPEAT]:
+        seen.pop(k, None)
+    done = 0
+    for skip, rec in keys[:MAX_CARDS]:
+        if rec.get("sha256") in seen:
+            skip["why"] = "key_card"
+            done += 1
+            continue
+        try:
+            data = tg_media.read_checked(rec)
+        except (media_mod.Gone, OSError):
+            continue
+        name = str(rec.get("name") or "file").replace("\n", " ")
+        purpose = ("凭据文件不随消息发出，改在这里领取" if lang == "zh" else "credential files never go as attachments; pick it up here")
+        try:
+            res = await box.send({"name": name[:80], "purpose": purpose, "kind": "file", "filename": name[:128],
+                                  "data": base64.b64encode(data).decode()})
+        except Exception:   # noqa: BLE001 — a failed card leaves the note that says how to ask for one
+            continue
+        finally:
+            data = b""
+        if res.get("result") == "sent":
+            seen[rec["sha256"]] = now
+            skip["why"] = "key_card"
+            done += 1
+    with contextlib.suppress(Exception):
+        host.st.log("owner_key_files", found=len(keys), cards=done)
+    return done

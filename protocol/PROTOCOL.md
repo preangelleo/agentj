@@ -517,8 +517,10 @@ App messages (all inside §3 transport messages):
 | device → host | `{"t":"mem_list","r"}` → `{"t":"mem_sources","r","harness","sources":[{id,label,path,kind,n,problem?,bad}],"trash":[{id,ts,label,text}]}` + `{"t":"mem_items","r","items":[{src,file,fsha,iid,kind,text,cut?,title?,desc?}],"more":bool}`… | 「它记住了什么」 (read) |
 | device → host | `{"t":"act_list","r","before":"<cursor>"\|null}` → `{"t":"act_page","r","items":[…],"more":bool[,"next","on"]}`… | 「记录」: ≤ 50 entries per page, newest first (read) |
 | device → host | `{"t":"task_list","r"}` → `{"t":"tasks","r","items":[{id,title,schedule,tz,mode,suggested,enabled,stale,problems,tsha,last,next?,running}],"more":bool[,"paused","agent"]}`… | 「定时任务」 (read) |
+| device → host | `{"t":"systask_list","r"}` → `{"t":"systasks","r","items":[{src,id,name,when:[{k,v}],state,next?,last?,next_s?,last_s?}],"more":bool[,"max"]}` (P207 §2; only to a host announcing cap `systasks`; `src` systemd·cron·launchd·schtasks, `state` active·waiting·failed·disabled, `when.k` cron·every·boot·cal·raw; ≤ 200 rows, never a command line or argument — a cron row's `id` is the basename of its first command word) | 「定时任务」 → 「这台电脑上的其它定时任务」 (read-only) |
 | device → host | `{"t":"slash","cmd":"clear"\|"compact"\|"model"\|"context"\|"cost"\|"usage"\|"status"\|"help"\|"stop"\|"undo_clear","arg":"<≤ 200>"?,"confirm":true?}` | a slash command (buttons, or typed; a `msg` whose text is `/name [args]` is treated the same, except that `/clear` needs `confirm` and `undo_clear` cannot be typed) |
 | host → device | `{"t":"msg",…,"from":"cmd","cmd":"<name>"\|"refused","ok":bool,"kind":"ok"\|"info"\|"error"\|"refused"[,"models":[{"id","name","desc","cur"}]][,"undo":true][,"sep":true][,"by":"<≤ 64>"]}` | its result card (a chat entry: backlog, replay, every phone); `models` = buttons that send `/model <id>`; `undo` = 「撤销清空」; `sep` = a divider |
+| device → host | P207: `{"t":"mail_allow","r","addr","role":"owner"\|"guest",SIG}` → `ctl_res` (object `addr\nrole`; §25) | add an address to the e-mail allowlist |
 | device → host | `{"t":"mem_rm","r","src","file","fsha","iid",SIG}` · `{"t":"mem_undo","r","id",SIG}` · `{"t":"estop","r",SIG}` · `{"t":"resume","r",SIG}` · `{"t":"task_set","r","id","on":bool,"tsha",SIG}` with SIG = `"n":"<32 hex>","ts":<ms>,"sig":"<b64url 64 B>"` → `{"t":"ctl_res","r","action","ok":bool[,"why"][,"undo","label"]}` | signed writes (below) |
 
 - **Phone controls (PROMPT-26 item 3; ARCHITECTURE ADR-A50 – A54)**. Reads (`mem_list`, `act_list`, `task_list`) are
@@ -1003,7 +1005,7 @@ switched off) arrive as `sys` turns with `"local":true` and show relay's 「在�
 | `mem_rm` `mem_undo` `estop` `resume` `task_set` (§8) | **yes** (`agentjarvis-control-v1`) | they change the customer's files or the stop switch |
 | `say`, `msg`, `blob_*`, `asr` blobs | no | chat input: the Noise session proves the approved device; nothing runs until the Agent decides, and every tool call it makes still needs §8's approval |
 | `say_cancel`, `grant_off` | no | they only withdraw / narrow, and only for that device's own items |
-| `hist_get`, `hist_find` (§28), `menu_get`, `mem_list`, `act_list`, `task_list` | no | reads, answered to the asking session only |
+| `hist_get`, `hist_find` (§28), `menu_get`, `mem_list`, `act_list`, `task_list`, `systask_list` | no | reads, answered to the asking session only |
 | `model_set`, `slash` | no | the human's own everyday settings, no permission change, reversible (`/clear` confirmed on the phone and undoable) |
 | `pref_set` (§10.16) | no | four everyday display / voice settings only (language, theme, hands-free, read replies aloud); nothing that lowers safety |
 | `dev_rename` (§10.16a) | no | the sending remote's own label only (no target field); audited like the account page's rename, no permission change |
@@ -1011,7 +1013,7 @@ switched off) arrive as `sys` turns with `"local":true` and show relay's 「在�
 
 ### 10.15 Preferences and optional synthesized speech (0.12)
 
-Only authenticated paired p33 sessions receive `preferences {value,problem}`. Value is bounded pure-data schema configuration plus generated wake phonemes; never named environment values, owner Telegram IDs, approval/device state or credentials. `problem` preserves runtime last-good and is visible. Default wake phrase derives from current Agent name; an explicit phrase overrides it. Older clients ignore this message.
+Only authenticated paired p33 sessions receive `preferences {value,problem}`. Value is bounded pure-data schema configuration plus generated wake phonemes; never named environment values, owner Telegram IDs, approval/device state or credentials. `problem` preserves runtime last-good and is visible. Default wake phrase derives from current Agent name; an explicit phrase overrides it. Older clients ignore this message. `owner.address` (P205; string ≤ 16, "" = 董事长 / Chairman) is how the owner is addressed: the phone shows it in the working line 「<address>，您的最新指示已经收到…」 as plain text; older phones ignore it.
 
 `tts_get {r:<id22>,id:<completed turn>}` accepts only completed reply text, no arbitrary input/provider URL. Host uses its configured local engine or own-key fixed cloud provider. Response `tts_chunk {r,i,data:<base64>}` is ordered 24KiB chunks, capped at 8MiB total; `tts_end {r,ok,bytes,mime:"audio/wav"}` finalizes, or a redacted why fails. All travel inside Noise, with per-chunk session/allowlist checks. Client binds synthesis to session generation and discards out-of-order, oversized or stale audio. Revoke stops further delivery. Synthesized plaintext stays at endpoints/provider; ciphertext can cross the blind relay.
 
@@ -1296,6 +1298,15 @@ is relative to the Agent's folder (`agentj agent … --dir`, = the session cwd);
 - Text content (svg, html, file text types) runs through the host's secret-fragment detector (`taskspec.secret_like` =
   `privacy.py` layer 1, secret kinds only) before it is offered (`secret`); `data:` payloads in html / svg are left out of
   that scan (pictures, not keys).
+- P211 — the page is the owner's own (P194 owner-directed): the secret GUESS and the `.agentj` / `.git` folder rule do not
+  apply to it. What stays is deterministic: a credential file by name / folder (`.env*`, `*.pem` `*.key` `*.p12` `*.pfx`,
+  `id_rsa*` `id_ed25519*`, `.netrc` `.npmrc` `.pypirc`, `credentials/` `.ssh/` `.aws/` `.gnupg/`) → `key_file`; a text file
+  holding a real key shape (privacy layer 1 secret kinds minus `high_entropy`) → `key_content`. An explicit link to either
+  (≤ 256 KiB) opens an F32 secret pickup card with the file on the owner's paired devices (§18) and is listed `key_card`;
+  an implicit mention of a credential file is silent. agentj's state folder → `private`. Audio / video / pictures are typed
+  by their leading bytes and never read as text, whatever the file name. The owner bot's private chat and mail to the
+  owner's own address use the same rules (tg_media.collect); mail to anyone else re-checks every file with the strict rules
+  (secret guess on text, `.agentj` / `.git` → `private`).
 - Implicit references offer only media kinds and deliverables (zip, gz, office files, epub, csv, tsv) and are silent when
   the file is missing, outside the folder, of another user or of an unknown type; explicit references offer every allowed
   type and every refusal is listed. A refused file's content never leaves the computer — only its base name.
@@ -1303,10 +1314,10 @@ is relative to the Agent's folder (`agentj agent … --dir`, = the session cwd);
 **Page fields** (`hist_turn` / `hist_page`, §10.5; written to history like any change of the page):
 `"media":[{"mid":"<22 b64url>","name":"<base name ≤ 128>","mime","kind":"image"|"audio"|"video"|"pdf"|"html"|"file","bytes":n,
 "sha256":"<64 hex>","ref":"<the reference as written in the reply ≤ 512>"}]` and
-`"media_skip":[{"name","why":"too_big"|"outside"|"secret"|"type"|"gone"|"masked"|"too_many"[,"bytes"]}]` (`gone` = an explicit
+`"media_skip":[{"name","why":"too_big"|"outside"|"secret"|"type"|"gone"|"masked"|"too_many"|"private"|"key_file"|"key_content"|"key_card"[,"bytes"]}]` (`gone` = an explicit
 reference to a file that is not there; P194 `masked` = the reference holds a privacy placeholder such as `<redacted>` — the
 reply text was masked before the scan, so the file was never looked up and is NOT reported `gone`; `too_many` = past the
-per-page cap; ≤ 48 entries; an older phone drops the two new reasons). `ref` (an addition to the brief) lets the phone put an item where the reply wrote `![](ref)`; it repeats
+per-page cap; ≤ 48 entries; an older phone drops the two new reasons; P211 `private` / `key_*` above — an older phone drops them like any unknown reason). `ref` (an addition to the brief) lets the phone put an item where the reply wrote `![](ref)`; it repeats
 text the reply already holds. A host without F21 sends neither field; an older phone ignores them.
 
 **Wire** (device → host; `p33` only, ready and allowlisted, unsigned like `hist_get` — a read of the shared history, §10.15;
@@ -1332,7 +1343,8 @@ the name with 「已过期」. The phone checks the SHA-256 of what it assembled
 
 **Phone.** md.js turns `![a](local path)` into `<span class="mslot" data-ref>` holding the source text; media.js fills it
 with the matching item (same `ref`, else the only item of that file name) and lists the rest under the words, then one line
-per `media_skip` (「<name> 太大（<x> MB），没有发到手机。」 · 「<name> 不在工作目录里，没有发。」 · 「<name> 可能含密钥，没有发。」 ·
+per `media_skip` (「<name> 太大（<x> MB），没有发到手机。」 · 「<name> 不在工作目录里，没有发。」 · 「<name> 的文件名或内容像密钥，所以没发；去掉密钥或改个名后让 Agent 再发。」 · P211 「<name> 是凭据文件（.env、私钥这类），不直接发；…」 ·
+「<name> 含密钥，没有直接发：已弹出密钥领取卡，验证 Face ID 后领取。」 ·
 「<name> 这种文件发不了。」 · 「<name> 找不到了，没有发。」). Pictures ≤ 1 MiB load with the page, bigger ones when they scroll into
 view, the rest on a tap. image → `<img>` (tap: a full-screen viewer, pinch / double-tap zoom, Esc / × closes); audio →
 `<audio controls>`; video → `<video controls playsinline>` (QuickTime as `video/mp4`); pdf → open in a new tab (the phone's
@@ -1890,7 +1902,7 @@ P160 — Codex and OpenCode sub-agents are items like Claude's (owned and shared
 
 **P160 — one row's detail** (read-only, p33 devices; host cap `busyget` in `approved` / `ready`):
 device → host `{"t":"busy_get","r","id"}` (`id` = a §22 task id, ≤ 40 characters) → host → device
-`{"t":"busy_info","r","id","item":null|{"id","who","kind","label","lk"?,"since","src","last"?:{"text","at"},"report"?:{"path","head":string|null,"at":int|null}}}`.
+`{"t":"busy_info","r","id","item":null|{"id","who","kind","label","lk"?,"since","src","last"?:{"text","at"},"report"?:{"path","head":string|null,"at":int|null},"cmd"?}}`.
 `item` null = no longer running. `src` ∈ claude · codex · opencode · unit · file · workflow. `last` = the sub-agent's
 most recent tool call on one line (≤ 160 characters: the tool's own description, else its command / file / pattern;
 Claude stream `parent_tool_use_id`, shared hooks PreToolUse with `agent_id`, Codex child-thread items, OpenCode child
@@ -1900,6 +1912,12 @@ WorkingDirectory (`./`, `.jarvis/`, `reports/`), the first that exists, else the
 file: its `report` (`agentj busy start|run --report <path>`). `head` = the first non-empty line (markdown marks off,
 ≤ 240 characters) of a regular file read with lstat (no symlink, ≤ 16 KiB read). Every text passes privacy.redact (secrets,
 home → `~`). Nothing is started, stopped or changed; no signature. CLI twin: `agentj busy show <id> [--json]`.
+P200 — unit names: a Description that is systemd-run's default (`[systemd-run] <command line>`, or on systemd < 256 the bare
+command line starting with `/`) is not a title. The label is then the first `# ` heading (outside ``` fences, lstat regular
+file, ≤ 16 KiB) of the PROMPT file of a known launcher on that command line (`run-<name>.sh|bash|py`: `PROMPT-<arg>.md` for
+its first arguments, `PROMPT-<name>.md`, `PROMPT-<unit number>.md`, next to the script), else the unit name; any label
+that starts with who again ("P165 — …" under P165) loses that prefix. The command line goes only into `cmd` (≤ 400,
+redacted) of `busy_info` — the page shows it as 启动命令 in the task's card, never on the list. `list-units --full`.
 
 The page (`web/public/js/busy.js`): one robot per item (18 px; ≤ 6 or as above, then "+n") at the right of the reply card's header (≤ 2/3 of its
 width, never over the Agent's name); robots dance (12 steps / 2.4 s), pop in when new, bow and float away when done; a tap
@@ -2002,6 +2020,23 @@ order while their sum stays ≤ 20 MiB; a file over the rest is not read and is 
 changed since the page 「文件已不在，未附上」. Input, quote and reply are redacted (privacy.redact) first. P183's file cards
 reach the dialog through `js/mailfwd.js` `registerMailForward`, registered on `ready` only when cap `contacts` is on.
 
+**P207 — the address-book page's own operations** (same routing and gate as `ct_list` / `ct_save`: elevate types, an
+approved device only — anything else is ignored; logs carry result words and counts only):
+
+| Phone → host | Host → phone | Meaning |
+|---|---|---|
+| `ct_rm {r, id}` | `ct_res {r, ok, result:"removed", contact:{id, name}}` · `{ok:false, why}` | delete one contact (contacts.local `rm`). `why`: `owner` (slot 0, `c000000000000`, is never deleted from the phone) · `not_found` · `shape` |
+| `ct_export {r, fmt?: vcf\|csv}` (default `vcf`) | `ct_res {r, ok, fmt, text, count}` · `{ok:false, why}` | the whole book as vCard 3.0 or CSV (UTF-8 BOM) text, sent via `frag`; `why`: `fmt` · `too_big` (the whole answer would pass §10.1's 2 MiB) |
+| `ct_import {r, name, text, fmt?: auto\|vcf\|csv\|json}` (default `auto`; `name` = the picked file's name, for sniffing) | `ct_res {r, ok, format, total, added, merged, same, skipped, skipped_rows[{row, why}]}` · `{ok:false, why}` | the file's text (≤ 1 MiB UTF-8) through `contacts.import_data` (dedupe / merge, source `phone`). `why`: `empty` · `shape` · `too_big` · `parse`. NB device → host messages stay within one frame (§10.0, 60 KiB JSON), so a larger file needs a page-side split into several `ct_import` calls (each merges into the book) |
+
+`mail_allow {r, addr, role: owner|guest, n, ts, sig}` (p33 sessions only) is a **signed phone control** (§8, action
+`mail_allow`, object text `addr + "\n" + role`, `addr` exactly as sent): the address (mail.norm_addr) joins the P170 e-mail
+channel's allowlist with that role through `Mail.set_config` (the same writer as `mail_set`, so the page's 「白名单已更改」
+line and the poller's wake follow). Works before the mailbox is set up — the allowlist is only configuration, the channel
+stays off. Already listed (case-insensitive) → nothing changes, `already: true`. → `ctl_res {r, action:"mail_allow", ok,
+already?, why?}`; `why`: `shape` · `stale` · `replay` · `no_key` · `bad_signature` · `address` · `allow` (50 rows) · `no_mail`
+(serve has no mail channel). controls.log (object as SHA-256) + an activity line with the role; never the address.
+
 ## 26. Heartbeat (P156, host 0.20.0; numbered 26 at the 0.20.0 merge — §23 is the phone theme)
 
 - No new wire message. A heartbeat is a host-generated history page: `src = {"k":"agent","via":"heartbeat","text":""}`
@@ -2017,6 +2052,13 @@ reach the dialog through `js/mailfwd.js` `registerMailForward`, registered on `r
 - Agent → host: `<state>/agentperm/heartbeat.sock` (0600, env `AGENTJ_HEARTBEAT_SOCK`), one JSON line each way:
   `{"op":"status"|"prompt_show"|"now"|"on"|"off"|"set","interval":"30m"|"prompt_set","text":…|"reset":true}`. Changes are
   refused (`untrusted_turn`) while a non-owner message is being handled; `prompt_set` refuses secrets, links, > 16 KiB.
+- **P207** `heartbeat.daily_at` (string, `"HH:MM"` 24-hour local time or `""` = off, default `""`; in `host.settable`; a
+  `pref_set` value outside `^(([01]\d|2[0-3]):[0-5]\d)?$` answers `bad_value` — string prefs now obey the schema's
+  `pattern` / `maxLength` there): besides the idle beat, one beat a day once the clock passes HH:MM, with the same waits.
+  Due when today's HH:MM has passed, `heartbeat.json` has no `daily` entry for today, and serve was running at HH:MM or
+  started ≤ 60 min after it (missed by more → skipped until tomorrow); a late beat still goes the same day, never the next.
+  Any timer beat at / after HH:MM counts as the day's beat. heartbeat.sock gains `{"op":"daily","at":"07:30"|"off"}`
+  (`agentj heartbeat daily 07:30|off`); `status` gains `daily_at`, `daily_last`.
 
 ## 27. Reverse pairing: the new device shows a code, a paired remote scans it (P190, 0.20.0, ADR-P190)
 
@@ -2097,3 +2139,49 @@ attachment names (`src.att[].name`) and the reply (`reply.text`). Silent (〔不
   "srch"`, AES-GCM, key `local`), bound to this computer (`hostId`) and epoch; a new epoch (`/clear`), unpair, re-pair and a
   revocation empty it (`wipeLocal`).
 - CLI: `agentj history search <words…> [--time] [--json]` runs the same search on the computer.
+
+## 29. Open-cards snapshot and the upgrade confirmation card (P203, host 0.20.2, ADR-P203)
+
+The relay delivers a frame at most once. A card sent while the page was frozen in the background (iOS suspends it with the
+socket still open) or an `*_done` that never arrived used to stay wrong until the card timed out on the computer. A host that
+announces `cards1` answers a snapshot; one that announces `upg1` answers the upgrade impact and shows the upgrade card.
+
+### 29.1 `cards_get` — every card still waiting for a human
+
+| direction | message | notes |
+|---|---|---|
+| device → host | `{"t":"cards_get","r","have":[id…≤256],"n","ts","sig"}` | p33 only. **Signed** like a phone control (§8, control-v1, action `cards_get`, object `"cards"`): only an approved remote with an approval key gets an answer; a read, it changes nothing. Refused → `{"t":"cards","r","ok":false,"why"}` (`shape` · `stale` · `no_key` · `bad_signature` · `replay`) and one `controls.log` line |
+| host → device | the open cards whose id is not in `have`, each exactly as on reconnect (`ask` — the pair card only to a `pair1` remote, Face ID fields for this device's passkey —, `grant`, `question`, friend `ask`, `elev`, `secret_out`, `login_qr`, `ct_card`, `lt_card` to an `lt1` remote, `upg_card`) | queued behind earlier broadcasts, so an `ask_done` sent before is delivered before |
+| host → device | `{"t":"cards","r","ok":true,"open":[id…≤256]}` | every id open at the moment of the answer |
+
+The page asks when it becomes ready, when it comes back to the front on a live session (`visibilitychange`), and on reopen
+(= ready). A card it showed when it asked and that `open` does not list ends on the page: past its deadline → 「已过期」
+(approval `expired`, question `expired`, sudo / secret `timeout`, pickup / sign-in / opening card `expired`), otherwise
+quietly (answered on another remote). A card that arrived after the request is never dropped by that answer. Older hosts
+(no `cards1`) are not asked. The host logs `cards_snap` (counts only).
+
+### 29.2 Upgrade impact and the upgrade confirmation card
+
+Items are `{"k","n"}` (counts and kinds only, never text): `turn` · `shared_turn` (a turn in progress; not listed when the
+Agent itself runs `agentj update apply` — its turn ends before the restart) · `queue` (queued messages) · `ask` · `question` ·
+`secret` (sudo / secret cards) · `card` (pickup, sign-in, contact, opening cards) · `friend_card` · `friend` (friend sessions)
+· `task` (a scheduled task running) · `task_queue` · `bots` (bot operations) · `bg` (the 「在办事项」 background list) ·
+`task_soon` (enabled scheduled tasks due within 15 minutes). `[]` = nothing would be interrupted.
+
+| direction | message | notes |
+|---|---|---|
+| device → host | `{"t":"upg_check","r"}` | p33; ≡ /update and Settings 「升级电脑上的 Agent J」 ask first |
+| host → device | `{"t":"upg_impact","r","items","current","latest","newer"}` | `latest` from the daily check (no network); `[]` → the page sends the signed `/update` (§8 `update`) at once; otherwise it shows the card |
+| host → devices | `{"t":"upg_card","id","items","from","to","ttl":≤600}` | the Agent (or a script without `--yes`) ran `agentj update apply` with items: nothing installed, one card on every p33 remote, re-sent on reconnect, in the snapshot. A newer card replaces it (`replaced`) |
+| device → host | `{"t":"upg_card_off","id"}` | 「先不升」: closes it on every remote (narrows only; any ready paired remote) |
+| host → devices | `{"t":"upg_card_done","id","result"}` | `started` (a remote's signed /update) · `cancelled` · `expired` · `replaced` |
+
+The card's 「现在升级」 is that phone's own signed `/update` — the owner's decision on a paired device, never the Agent's.
+Control socket: `{"cmd":"upgrade_impact","caller"?:"agent"}` → `{"ok","items"}`; `{"cmd":"upgrade_card","caller"?}` → `{"ok","id",
+"phones","items"}` (not a safety change: it only shows a card). CLI `agentj update apply`: items and no `--yes` → at a terminal
+a y/N (no → `reason: not_confirmed`), otherwise the card and `UPGRADE_RESULT refused` / `reason: confirm_on_phone` / one
+`interrupts:` line per item, exit 10. No serve, or no answer in 10 s → the old path.
+
+**Idle auto-update** (`updates.auto_install`, the phone's 「空闲时自动更新」 together with `updates.mode`): besides the nightly
+opportunity, a version the daily check already recorded installs the first time the items list is empty and no phone input
+came for 30 minutes — once a local day, never while stopped. The result notice says 「电脑空闲时已自动升级到 …」.

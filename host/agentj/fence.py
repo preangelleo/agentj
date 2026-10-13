@@ -67,6 +67,50 @@ _RO_FILES = (".ssh/authorized_keys", ".ssh/authorized_keys2", ".Xauthority")
 _RUNTIME_BACK = ("systemd", "bus")
 
 
+# P205: set inside every fence this version starts (bwrap --setenv / sandbox-exec's env). The fenced `agentj` reads it to know
+# that the host's state directory it sees is the empty mount, not a missing installation (doctor: `unverifiable`, update
+# apply: host checks over elevate.sock). Only ever narrows what a process may claim; never a permission.
+FENCED_ENV = "AGENTJ_FENCED"
+_SOCK_ENV = ("AGENTJ_ELEVATE_SOCK", "AGENTJ_PERM_SOCK", "AGENTJ_CAPABILITY_SOCK", "AGENTJ_RECALL_SOCK")
+MOUNTINFO = "/proc/self/mountinfo"
+
+
+def inside(environ=None) -> bool:
+    """True when this process runs inside an Agent fence, so the host's state directory is hidden from it (P205).
+
+    1. the explicit marker `AGENTJ_FENCED=1` (fences started by a serve with P205);
+    2. a fence started by an older serve has no marker: serve exports the Agent's socket paths (`<state>/agentperm/*.sock`)
+       before the harness starts; that state directory being an empty tmpfs mount point (Linux) or unreadable (macOS
+       sandbox) is the fence itself. A visible state directory (shared / unfenced session) → False."""
+    env = os.environ if environ is None else environ
+    if env.get(FENCED_ENV) == "1":
+        return True
+    for k in _SOCK_ENV:
+        sock = env.get(k) or ""
+        if os.path.basename(os.path.dirname(sock)) == "agentperm":
+            root = os.path.dirname(os.path.dirname(sock))
+            break
+    else:
+        return False
+    if sys.platform == "darwin":
+        try:
+            os.listdir(root)
+        except PermissionError:
+            return True
+        return False
+    real = os.path.realpath(root)
+    try:
+        with open(MOUNTINFO, encoding="utf-8", errors="replace") as f:
+            for line in f:
+                head, _, tail = line.partition(" - ")
+                parts = head.split()
+                if len(parts) > 4 and parts[4].replace("\\040", " ") == real and tail.split()[:1] == ["tmpfs"]:
+                    return True
+    except OSError:
+        pass
+    return False
+
+
 def _real(p: str) -> str:
     return os.path.realpath(os.path.expanduser(p))
 
@@ -349,7 +393,7 @@ def bwrap_argv(st, workdir: str, home: str | None = None, runtime: str | None = 
     a += ["--tmpfs", root, "--bind", perm, perm]
     for k in hide_env(env, allow_docker):
         a += ["--unsetenv", k]
-    a += ["--chdir", work, "--"]
+    a += ["--setenv", FENCED_ENV, "1", "--chdir", work, "--"]
     return a
 
 
@@ -432,7 +476,7 @@ def sandbox_argv(st, workdir: str, home: str | None = None, allow_docker: bool =
     a.append("/usr/bin/env")
     for k in hide_env(environ, allow_docker):
         a += ["-u", k]
-    return a
+    return a + [f"{FENCED_ENV}=1"]
 
 
 def fence_argv(st, workdir: str, allow_docker: bool = False) -> list[str]:

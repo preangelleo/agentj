@@ -1,6 +1,7 @@
 """P51: a Codex shared continuation that cannot be established degrades (new thread / wait / owner defaults);
 only Codex's own refusal reaches the phone, with the concrete reason."""
 import _hermetic
+from _testtmp import TEST_TMP  # noqa: E402  P202: fixtures on tmpfs, not the system disk
 import asyncio,json,os,sys,tempfile,unittest
 from pathlib import Path
 from unittest.mock import AsyncMock,Mock,patch
@@ -16,7 +17,7 @@ WW_PROFILE={'type':'managed','file_system':{'type':'restricted','entries':[]},'n
 
 class Base(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
-        self.tmp=tempfile.TemporaryDirectory(dir='/var/tmp');self.addCleanup(self.tmp.cleanup)
+        self.tmp=tempfile.TemporaryDirectory(dir=TEST_TMP);self.addCleanup(self.tmp.cleanup)
         self.home=Path(self.tmp.name)/'codex';self.proj=Path(self.tmp.name)/'proj';self.proj.mkdir()
         env=patch.dict(os.environ,{'CODEX_HOME':str(self.home)});env.start();self.addCleanup(env.stop)
         self.host=Mock();self.host.st.agent_session.return_value=None

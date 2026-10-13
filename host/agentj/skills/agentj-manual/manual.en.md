@@ -17,7 +17,7 @@ remotes. Both are required:
 
 Other phones, tablets or computers can wait: when you want one, tell Agent J "pair another one" and it walks you through.
 
-Every remote is connected to the same Agent and shows the same conversation: start on your phone, carry on in the browser on your computer. Remotes are for one person's devices; a colleague who wants in gets a seat of their own, the way everyone in an office gets their own desk. See [Seat, Agent and host](https://agentj.app/docs/what/#desk).
+Every remote is connected to the same Agent and shows the same conversation: start on your phone, carry on in the browser on your computer. Remotes are for one person's devices; a colleague who wants in gets a seat of their own, the way everyone in an office gets their own desk. See [Seat, Agent and host](https://agentj.app/docs/what/#desk). Several people can share one computer too, one seat each: see [One computer, several people](https://agentj.app/docs/multi-seat/).
 
 On the first remote, the first message comes from Agent J itself: it introduces itself as your chief-of-staff assistant,
 the single entry point between you and every workflow and agent, and suggests you talk to it in this window from now on.
@@ -48,7 +48,7 @@ runs in the background, and scheduled tasks, never change it.
 （Screenshot：Purple: a question for you — https://agentj.app/docs/manual/question.en.webp）
 （Screenshot：Grey: the computer is offline — https://agentj.app/docs/manual/offline.en.webp）
 - The icon in the top-left corner follows the state too. Tap it to change the text size (medium → large → medium →
-  small); hold it to reset. The size is remembered on this phone and survives a reload.
+  small); hold it to jump to the first unread reply ("No unread" when there is none). The size is remembered on this phone and survives a reload.
 - With the message box empty, press and hold the grey Send button: a send-sound volume slider grows up out of it. Slide
   up for louder, down for quieter, and let go to keep it.
 - The small line at the top says the same state in words.
@@ -61,7 +61,9 @@ runs in the background, and scheduled tasks, never change it.
 - **The rising water with waves in the background**: how much of the context — what the Agent can keep in mind at
   once — this conversation uses. Higher water = closer to full. After a compaction the water drops to the bottom.
 
-Tap either line to see the exact numbers, for example week 58 %, 5 hours 34 %, context 64 %.
+Tap either line (or the number next to it) and the "Usage" box opens in the middle of the screen with the exact numbers,
+for example week 58 %, 5 hours 34 %, context 64 %, and how long ago they were reported. "Got it", a tap outside or Esc
+closes it.
 
 （Screenshot：Water past half: the level in the background is above the middle — https://agentj.app/docs/manual/water-high.en.webp）
 ### The water is past half — what now?
@@ -89,7 +91,9 @@ compaction and handoff page.
 
 After a quiet spell (default 60 minutes) Agent J wakes the Agent on your computer to look at background work and your
 to-dos. All fine → nothing reaches the phone. Something to tell you → a short page labelled **Heartbeat check**. Say
-"check every 30 minutes" or "stop waking up on a timer" to change it, or use Settings → Heartbeat. Every heartbeat costs
+"check every 30 minutes", "wake up every morning at 7:30" or "stop waking up on a timer" to change it, or use Settings →
+Heartbeat: pick the idle time from a drop-down (30 minutes to 24 hours, or custom) and turn on "Also wake up every day
+at". Every heartbeat costs
 one model call. See the Heartbeat page in the docs.
 
 ## One message per page — swipe through them
@@ -99,6 +103,8 @@ Each page shows what you said at the top and the Agent's reply below. Swipe righ
 hold still for a third of a second and then drag, and you are selecting text instead — that never turns the page, nor does
 dragging a selection's handles. While a long reply scrolls, the name, the load line and the robots stay pinned at the top of
 the card.
+
+The header is split into three equal parts: double-tap the left third to go to the first (oldest) message, double-tap the right third (the page number) for the latest; the middle third is for unread replies. When replies arrived after this remote last looked, a small pulsing round badge in the middle of the header shows how many; tap it to jump to the first unread reply and page forward from there — the badge goes away once you reach the latest. With nothing unread there is no badge and a tap in the middle does nothing. Holding the logo at the top left, or pressing `u` on a computer, also jumps to the first unread reply. Each remote keeps its own unread count; silent turns do not count.
 
 The buttons under a reply, left to right:
 
@@ -111,6 +117,8 @@ The buttons under a reply, left to right:
 | Curved arrow | Reply to this one; the quote appears above the message box |
 
 Select some text in a reply to quote just that part.
+
+On its own at the bottom left of the reply card is a white round button (a ring with a gap and an arrow leaving it): Share as a web report — it turns what you worked out in the chat into a good-looking web page you can send to others. Tap it and the message box gets `/web-page-report` with the cursor after it; nothing is sent. Add a line if you like — "only the pricing part, for people at my company, open for a week" — or send it as it is and the Agent asks first: the whole conversation, a few topics or just this reply; who may open it (anyone with the link, an access code, only your company's e-mail domain, any e-mail sign-in); how long it stays up; whether to hide names and numbers. Once you have said it, it does not ask again. Tap it on an older reply and that reply goes along as a quote, so the Agent knows where to start. If the web report skill is not on your computer yet, the Agent asks whether to install it from the plaza first.
 
 The name at the top left of the reply card is the name you gave your Agent. Press and hold it to rename the Agent — the same as `agentj name` on your computer; the new name shows on the phone and the computer. Sometimes a few little pixel robots dance at the top right: each one is an Agent working for you in the background — a workflow CEO, or a helper the main Agent sent out. New work brings a new robot; a robot whose work is done takes a bow and floats away. A phone shows up to 6 side by side, then +N. Tap the robots and a square opens in the middle of the screen: how many Agents are at work, who is watching them for you, and all of them listed — each row its robot, who, and what it is doing (the whole task title, with an ellipsis if it is too long). Tap a row to open that Agent's own card: where it runs, how long it has been working, its latest step, and for a background dispatch the report path and the report's first line; the card is only for looking, and Back returns to the list. Sub-agents sent out by Claude Code, Codex and OpenCode all show up this way. At its bottom, "Change the look" sends the Agent a message from you asking to customize the look, and it asks how you want the robots, colours, logo or send button to change, then validates the theme before applying it. Pressing and holding the robots does the same. ESC or a tap outside closes it. The robot gallery and the display rules: [Background robots](https://agentj.app/docs/robots/).
 
@@ -128,9 +136,12 @@ Replies are laid out for you:
   forward to Telegram. Small files load by themselves once they are on screen; big ones load on a tap (the button shows the
   size), and nothing loads by itself on data saver or a cellular connection. Preview opens full screen: PDFs, Word (docx),
   Excel (xlsx), CSV tables, Markdown, code and text show right there; kinds it can't show yet, such as PowerPoint, offer the
-  download. On a computer, select a card and press Space to preview; Space or Esc closes it. While a preview is open, the left and right arrow keys (a sideways swipe on the phone) move to the previous or next file of the same reply, and the top bar shows which one of how many; on a zoomed picture one finger moves the picture instead.
-- Files that are too large, outside the working folder, or that may hold secrets (such as `.env` or `.pem`) are never
-  sent to the phone — the reply gets one line saying why. Image links to the web are never opened automatically.
+  download. On a computer, select a card and press Space to preview; Space or Esc closes it. While a preview is open, the left and right arrow keys (a sideways swipe on the phone) move to the previous or next file of the same reply, and the top bar shows which one of how many; on a zoomed picture one finger moves the picture instead. Download saves the file under its own name (Chinese, spaces and emoji included) and a short note confirms it went to the browser's downloads; in the iPhone Home Screen app it opens the share sheet — choose Save to Files.
+- Files that are too large or outside the working folder are not sent to the phone — the reply gets one line saying why.
+  Audio, video and pictures always go, whatever their names (Chinese, underscores, long names are fine). Credential files
+  (such as `.env`, `.pem`, private keys) and text files holding a real key are not sent as ordinary files: a secret pickup
+  card opens on the phone instead (Face ID to open); when no card opens, the line says why and how to get the file. Image
+  links to the web are never opened automatically.
 
 （Screenshot：A picture, a formula and highlighted code in a reply — https://agentj.app/docs/manual/rich.en.webp）
 （Screenshot：Further down: a diagram, a file to download and a line about a file that was not sent — https://agentj.app/docs/manual/rich-more.en.webp）
@@ -304,7 +315,7 @@ The gear in the top-right corner opens Settings, full screen (on a computer brow
 closes it). It is the only menu: Agent & remotes (the Agent's name, Remotes, Face ID, unpairing); Agent tools (Models & Key,
 Memory — rules the Agent keeps, you can delete them —, Activity — what it did recently and who approved what —, Schedules,
 Friends, Bots, the first-run checklist); language and appearance; reply text size, send sound volume, auto-read, wake word;
-lock-screen alerts; safety options (high-risk warnings, session mode, isolation, Docker); the web app (how updates happen,
+lock-screen alerts; Channels (Email, Contacts — your friends' e-mails and phones, one tap onto the e-mail allowlist — and My contact details); safety options (high-risk warnings, session mode, isolation, Docker); the web app (how updates happen, upgrade Agent J on the computer,
 versions, update and reload, Add to Home Screen, keyboard shortcuts); account, help, and the security, privacy and terms
 pages. The phone must be connected to the computer to change settings.
 
@@ -322,23 +333,29 @@ The scan icon at the top right (or holding the camera button) reads QR codes: a 
 ## Keyboard shortcuts
 
 （Screenshot：Keyboard shortcuts — https://agentj.app/docs/manual/keys.en.webp）
-On a computer browser or a tablet with a keyboard, press `?` for the full list (it is in Settings too). The ones you will
-use most:
+On a computer browser or a tablet with a keyboard, press `?` for the full list (it is in Settings too). Every tap, hold and swipe with its key: [Keyboard shortcuts and gestures](https://agentj.app/docs/shortcuts/). The ones you will use most:
 
 | Key | What it does |
 |---|---|
-| `i` / `Esc` | Enter the message box / close the current overlay; keep the draft when no overlay is open |
-| `/` | Outside the message box: jump into it with `/` already typed, which opens the command menu; not while a dialog or Settings is open |
-| `j` / `k` · `←` `→` | Previous / next page; in the message box `←` `→` turn the page too when it is empty or the cursor is already at that end |
-| `↑` / `↓` | Outside the message box: expand / fold the message (same as `o`, and as double-tapping the message card above); inside it they still bring back what you sent before |
-| `f` or double-tap the reply | Full-screen reading |
-| `y` `y` | Copy the whole reply |
-| `r` | Reply to this one |
-| `a` `p` `c` | File · photo library · camera |
-| hold `m` | Hold to talk, release for text |
-| `Esc` `Esc` | Outside the message box: clear text and attachments. Esc never interrupts the Agent — to stop the current task, use the stop button or send `/stop` |
-| `s` | Open Settings |
-| `⌘↩` / `Ctrl↩` | With an approval card open: approve, the same as holding the approve button (the card wins over the message box) |
+| `j` · `←` | Previous page (older) |
+| `k` · `→` | Next page (newer) |
+| `g` | Jump to the newest page |
+| `G` | Jump to the earliest page (older ones are fetched from the computer) |
+| `u` | Jump to the first unread reply (arrived after this device last saw the page), then page forward |
+| `o` · `↑` · `↓` | Expand / fold the message (↑ expands, ↓ folds; with nothing to toggle ↑ ↓ scroll the page) |
+| `f` | Read this reply full screen |
+| `y` | Copy the whole reply |
+| `r` | Reply to this one (the quote shows above the message box; Esc cancels) |
+| `s` · `⌘+,` / `Ctrl+,` | Open Settings |
+| `⌘+K` / `Ctrl+K` | Search the chat (inside the message box Ctrl+K still deletes to the end); press again to close |
+| `i` · `Esc` | Into the message box; Esc in it leaves (the draft stays) |
+| `/` | Commands: / outside the message box jumps in with / typed and the command menu open; not while a dialog or Settings is open |
+| `a` | Pick a file for the Agent |
+| `p` | Pick pictures from the photo library |
+| `c` | Take a photo |
+| hold `m` | Hold to talk, release for text (slide up while holding to cancel) |
+| `Esc` `Esc` | Esc twice outside the message box clears text and attachments (✕ clears the text only, with undo). Esc never interrupts the Agent; to stop the current task, use the stop button or send /stop |
+| `⌘+Enter` / `Ctrl+Enter` | Approve, the same as holding the approve button (identity checks as usual); the card wins over the message box |
 
 ## Pairing and Face ID
 
@@ -394,7 +411,7 @@ Silent turns do not take up chat pages. Open ≡ → View silent history to read
 
 ## Add a remote for another computer
 
-Once the target computer is installed, account-bound and online, find its seat card on your account page and choose Add a remote. Confirm with your passkey and scan with the phone. No target-computer terminal, passphrase setup or six-digit entry is needed. Confirmation is reused for ten minutes on the same session; the QR expires after five minutes and can add one remote. Review and approve pending remotes on that card too. Resume / enable scheduled tasks supplies owner approval for lifting Stop everything and enabling a specific task.
+Once the target computer is installed, account-bound and online, find its seat card on your account page and choose Add a remote. Confirm with your passkey and scan with the phone. No target-computer terminal, passphrase setup or six-digit entry is needed. Confirmation is reused for ten minutes on the same session; the QR expires after five minutes and can add one remote. Review and approve pending remotes on that card too. Under More on the seat card, See what the computer is waiting on you for is only for two cases: resuming after Stop everything, or enabling a scheduled task the Agent created. It has nothing to do with seats or billing; an unpaid bill never stops the tasks on your computer.
 
 Account-page pairing is on by default. The target computer’s owner can disable it with `agentj remote-pair off`. Offline hosts are never queued; turn them on and try again. Older hosts must run `agentj update apply` or update from a paired phone. Devices record “Added from account page” and other remotes receive a notice.
 

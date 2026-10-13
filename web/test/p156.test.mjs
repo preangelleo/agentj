@@ -9,14 +9,11 @@ const read = (p) => readFileSync(new URL(p, import.meta.url), 'utf8');
 test('P156 settings: heartbeat keys are phone-settable, interval steps wrap, the cost is stated in both languages', () => {
   const src = read('../public/js/settings.js');
   assert.match(src, /PREF_KEYS\.push\('updates\.mode', 'heartbeat\.enabled', 'heartbeat\.interval_minutes'[,)]/);
-  // the stepping rule, evaluated on its own (the module needs a DOM)
+  // P207 §3: the ⇄ stepper became a dropdown (30 min … 24 h) + a custom number 5–1440 + a daily wake-up time
   const steps = JSON.parse(src.match(/HB_STEPS = (\[[^\]]+\])/)[1]);
-  const body = src.match(/export function hbNext\(n\) \{ (return [^}]+) \}/)[1];
-  const hbNext = new Function('HB_STEPS', 'n', body).bind(null, steps);
-  assert.equal(hbNext(60), 120);
-  assert.equal(hbNext(45), 60, 'a value set from the computer steps to the next preset');
-  assert.equal(hbNext(1440), 15, 'wraps');
+  assert.deepEqual(steps, [30, 60, 120, 180, 240, 360, 480, 720, 1440]);
   assert.ok(steps.every((n) => n >= 5 && n <= 1440));
+  assert.match(src, /PREF_KEYS\.push\('heartbeat\.daily_at'\)/);
   const html = read('../public/index.html');
   for (const id of ['set-hb-row', 'set-hb', 'set-hb-every']) assert.equal(html.split(`id="${id}"`).length, 2, id);
   const i18n = read('../public/i18n.js');

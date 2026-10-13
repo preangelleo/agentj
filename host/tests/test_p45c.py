@@ -1,6 +1,7 @@
 """F14 (P45b): the remaining self-imposed locks are gone; the data-safety floor stays. All I/O hermetic (temporary HOME and
 state, the CLI on a pipe — never a terminal)."""
 import _hermetic  # noqa: F401
+from _testtmp import TEST_TMP  # noqa: E402  P202: fixtures on tmpfs, not the system disk
 import io
 import json
 import os
@@ -19,7 +20,7 @@ AGENTJ = str(HERE.parent / "bin" / "agentj")
 
 class Fence(unittest.TestCase):
     def setUp(self):
-        self.tmp = tempfile.TemporaryDirectory(prefix="aj-p45c-", dir="/var/tmp")
+        self.tmp = tempfile.TemporaryDirectory(prefix="aj-p45c-", dir=TEST_TMP)
         self.addCleanup(self.tmp.cleanup)
         d = pathlib.Path(self.tmp.name)
         self.home, self.rt = d / "home", d / "run"
@@ -110,7 +111,7 @@ class ServiceOverBus(unittest.TestCase):
 class Cli(unittest.TestCase):
     """Every command on a pipe, the way an Agent runs it."""
     def setUp(self):
-        self.tmp = tempfile.TemporaryDirectory(prefix="aj-p45c-cli-", dir="/var/tmp")
+        self.tmp = tempfile.TemporaryDirectory(prefix="aj-p45c-cli-", dir=TEST_TMP)
         self.addCleanup(self.tmp.cleanup)
         d = self.d = pathlib.Path(self.tmp.name)
         self.work = d / "work"
@@ -203,7 +204,7 @@ class Cli(unittest.TestCase):
 
 class Telegram(unittest.TestCase):
     def test_enroll_without_a_terminal_only_the_owner_id(self):
-        with tempfile.TemporaryDirectory(prefix="aj-p45c-tg-", dir="/var/tmp") as d, \
+        with tempfile.TemporaryDirectory(prefix="aj-p45c-tg-", dir=TEST_TMP) as d, \
                 patch.dict(os.environ, {"AGENTJ_STATE_DIR": d + "/state", "AJ_TEST_BOT": "x"}), \
                 patch("os.isatty", return_value=False), patch("builtins.input", side_effect=AssertionError("no question")):
             State().init()

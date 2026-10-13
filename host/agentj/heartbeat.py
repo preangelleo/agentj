@@ -19,6 +19,12 @@ How it works (all on this computer, never through the relay — a cloud push can
   first start; the owner or the main Agent maintains it (`agentj heartbeat prompt …`).
 - The reply page is marked `via: heartbeat` (folded label on the phone); a reply of exactly 〔不回群〕 stays silent — no
   page, no push, no unread. Each conversation (own / shared, per harness and session id) keeps its own clock.
+- P207 `heartbeat.daily_at` ("HH:MM" local, "" = off): besides the idle beat, one beat a day once the clock passes HH:MM
+  (it still waits for the same conditions). Rule: due when today's HH:MM has passed, no daily beat is recorded for today
+  in heartbeat.json (`daily`: "YYYY-MM-DD", so a restart never fires twice), and serve was already running at HH:MM or
+  started at most DAILY_GRACE (60 min) after it — a time missed by more than that is skipped until tomorrow. A late beat
+  (Agent busy, night window) still goes the same day; never on the next day. Any timer beat at or after HH:MM counts as
+  the day's beat (no two beats back to back). A daily beat resets the idle clock like every turn.
 - The fenced own Agent cannot see `~/.config/agentj` or the state directory: `agentj heartbeat …` talks to serve over
   `<state>/agentperm/heartbeat.sock` (like recall.sock); without serve the CLI edits the files directly.
 """
@@ -47,6 +53,8 @@ STATE_FILE = "heartbeat.json"
 SOCK_NAME = "heartbeat.sock"
 ENV = "AGENTJ_HEARTBEAT_SOCK"
 REQ_MAX = 64 * 1024
+DAILY_GRACE = 60 * 60           # s: a daily HH:MM passed before serve started more than this ago is skipped today (P207)
+DAILY_RE = re.compile(r"([01]\d|2[0-3]):[0-5]\d")
 NIGHT = (3, 5)                  # local hours of the nightly upgrade window (auto_update)
 TAG = {"zh": "〔Agent J 心跳〕", "en": "[Agent J heartbeat]"}
 SILENT = "〔不回群〕"
@@ -119,11 +127,43 @@ def parse_interval(raw) -> int:
     return n
 
 
+def parse_daily(raw) -> str:
+    """P207: '07:30' → '07:30'; '7:30' → '07:30'; 'off' / '' / '关' → ''; ValueError otherwise."""
+    s = str(raw if raw is not None else "").strip().lower()
+    if s in ("", "off", "none", "关", "关闭"):
+        return ""
+    m = re.fullmatch(r"(\d{1,2})[:：](\d{2})", s)
+    v = f"{int(m.group(1)):02d}:{m.group(2)}" if m else s
+    if not DAILY_RE.fullmatch(v):
+        raise ValueError("daily: HH:MM (00:00–23:59) or off")
+    return v
+
+
 def fmt_interval(n: int, lang: str = "zh") -> str:
     h, m = divmod(int(n), 60)
     if lang == "en":
         return (f"{h}h" if h else "") + (f"{m}m" if m or not h else "")
     return (f"{h} 小时" if h else "") + (f"{m} 分钟" if m or not h else "")
+
+
+def daily_target(now: float, hhmm: str) -> float | None:
+    """P207: the epoch of today's (local) HH:MM; None when hhmm is not a valid "HH:MM"."""
+    if not isinstance(hhmm, str) or not DAILY_RE.fullmatch(hhmm):
+        return None
+    lt = time.localtime(now)
+    return time.mktime((lt.tm_year, lt.tm_mon, lt.tm_mday, int(hhmm[:2]), int(hhmm[3:]), 0, 0, 0, -1))
+
+
+def day_of(t: float) -> str:
+    return time.strftime("%Y-%m-%d", time.localtime(t))
+
+
+def daily_due(now: float, hhmm: str, last_day: str | None, started: float, grace: float = DAILY_GRACE) -> bool:
+    """P207 pure rule: today's HH:MM has passed, today has no daily beat yet, and serve started before HH:MM + grace."""
+    t = daily_target(now, hhmm)
+    if t is None or now < t or last_day == day_of(now):
+        return False
+    return started <= t + grace
 
 
 def sha8(text: str) -> str:
@@ -286,6 +326,16 @@ class Heartbeat:
         n = n if type(n) is int and MIN_MINUTES <= n <= MAX_MINUTES else DEFAULT_MINUTES
         return on, n
 
+    def daily_at(self) -> str:
+        """P207: "HH:MM" or "" (off; also for anything malformed)."""
+        from . import preferences
+        v = preferences.get(getattr(self.host, "preferences", None) or {}, "heartbeat.daily_at", "")
+        return v if isinstance(v, str) and DAILY_RE.fullmatch(v) else ""
+
+    def daily_is_due(self, now: float) -> bool:
+        last = self._load().get("daily")
+        return daily_due(now, self.daily_at(), last if isinstance(last, str) else None, self.started)
+
     def lang(self) -> str:
         return "en" if getattr(self.host, "lang", "zh") == "en" else "zh"
 
@@ -382,7 +432,8 @@ class Heartbeat:
         if not on:
             return None
         now = time.time() if now is None else now
-        if now < self.next_due():
+        daily = self.daily_is_due(now)                 # P207: the once-a-day beat at heartbeat.daily_at
+        if now < self.next_due() and not daily:
             return None
         why = self.wait_reason(now)
         if why:
@@ -390,7 +441,7 @@ class Heartbeat:
                 self.last_wait = why
                 self.host.st.log("heartbeat_wait", reason=why)
             return {"ok": False, "why": why}
-        return self.fire(now)
+        return self.fire(now, by="daily" if daily and now < self.next_due() else "timer")
 
     def fire(self, now: float | None = None, by: str = "timer") -> dict:
         """Queue one beat now (the caller checked wait_reason, or this is `agentj heartbeat now`)."""
@@ -419,9 +470,13 @@ class Heartbeat:
         self.seen[key] = digest
         d = self._load()
         d.setdefault("beats", {})[key] = {"at": now, "sha": digest}
+        t = daily_target(now, self.daily_at())
+        if by in ("timer", "daily") and t is not None and now >= t:
+            d["daily"] = day_of(now)                   # P207: today's daily beat is done (survives a restart)
         d["last"] = {"at": now, "key": key, "sha": digest, "full": full, "by": by}
         self._save(d)
         self.last_wait = None
+        self.last_activity = max(self.last_activity, now)   # P207: a beat resets the idle clock like any turn
         h.st.log("heartbeat_sent", key=key[:80], sha=digest, full=full, by=by)
         a.submit(send)
         return {"ok": True, "key": key, "sha": digest, "full": full, "page": page["id"]}
@@ -435,7 +490,8 @@ class Heartbeat:
         return {"ok": True, "enabled": on, "interval_minutes": n, "prompt": shown(prompt_path()),
                 "sha": got[1] if got else None, "key": key, "last": d.get("last"),
                 "next_due": round(self.next_due(key)) if on else None, "waiting": self.wait_reason() if on else None,
-                "seen_full": self.seen.get(key)}
+                "seen_full": self.seen.get(key), "daily_at": self.daily_at(),
+                "daily_last": d.get("daily") if isinstance(d.get("daily"), str) else None}
 
     # ---- heartbeat.sock (the fenced Agent's way in)
     @property
@@ -504,6 +560,13 @@ class Heartbeat:
                 return {"ok": False, "why": str(e)}
             res = await self.host.set_pref("heartbeat.interval_minutes", n)
             return {"ok": bool(res.get("ok")), "interval_minutes": n, **({} if res.get("ok") else {"why": res.get("error", "rejected")})}
+        if op == "daily":                              # P207: "HH:MM" or "" / "off"
+            try:
+                v = parse_daily(req.get("at"))
+            except ValueError as e:
+                return {"ok": False, "why": str(e)}
+            res = await self.host.set_pref("heartbeat.daily_at", v)
+            return {"ok": bool(res.get("ok")), "daily_at": v, **({} if res.get("ok") else {"why": res.get("error", "rejected")})}
         if op == "prompt_set":
             text = req.get("text")
             if req.get("reset"):
@@ -563,11 +626,18 @@ def _offline(req: dict) -> dict:
                     "serve": False}
         return {"ok": True, "enabled": preferences.get(p, "heartbeat.enabled", True) is not False,
                 "interval_minutes": preferences.get(p, "heartbeat.interval_minutes", DEFAULT_MINUTES),
+                "daily_at": preferences.get(p, "heartbeat.daily_at", "") or "",
                 "prompt": shown(prompt_path()), "sha": got[1] if got else None, "serve": False}
     if op == "now":
         return {"ok": False, "why": "serve_not_running"}
-    if op in ("on", "off", "set"):
-        if op == "set":
+    if op in ("on", "off", "set", "daily"):
+        if op == "daily":
+            try:
+                v = parse_daily(req.get("at"))
+            except ValueError as e:
+                return {"ok": False, "why": str(e)}
+            args = ["set", "heartbeat.daily_at", v]
+        elif op == "set":
             try:
                 n = parse_interval(req.get("interval"))
             except ValueError as e:
@@ -584,7 +654,7 @@ def _offline(req: dict) -> dict:
         except (ValueError, IndexError):
             res = {"ok": code == 0}
         return {"ok": bool(res.get("ok")), "serve": False, **({} if res.get("ok") else {"why": res.get("error", "rejected")}),
-                **({"interval_minutes": n} if op == "set" else {})}
+                **({"interval_minutes": n} if op == "set" else {}), **({"daily_at": v} if op == "daily" else {})}
     if op == "prompt_set":
         text = TEMPLATE["zh"] if req.get("reset") else req.get("text")
         try:
@@ -600,7 +670,7 @@ def call(req: dict) -> dict:
 
 
 def add_parser(sub) -> None:
-    p = sub.add_parser("heartbeat", help="心跳：Agent 空闲一段时间后自动醒来检查后台和待办 · status · on · off · set <30m> · "
+    p = sub.add_parser("heartbeat", help="心跳：Agent 空闲一段时间后自动醒来检查后台和待办 · status · on · off · set <30m> · daily <07:30|off> · "
                                          "prompt show|edit|set|reset · now / the main Agent's heartbeat")
     ps = p.add_subparsers(dest="hb_cmd")
     ps.add_parser("status", help="开关、间隔、提示文件、上次心跳 / switch, interval, prompt, last beat").add_argument("--json", action="store_true")
@@ -608,6 +678,8 @@ def add_parser(sub) -> None:
     ps.add_parser("off", help="关闭 / turn off")
     x = ps.add_parser("set", help="间隔，5m–24h，例如 30m、2h / interval, 5m–24h, e.g. 30m, 2h")
     x.add_argument("interval")
+    x = ps.add_parser("daily", help="每天固定时间唤醒，本地时间 HH:MM；off 关闭 / a daily wake-up at HH:MM local, off to stop")
+    x.add_argument("at")
     x = ps.add_parser("now", help="马上心跳一次（测试用）/ one beat now")
     x.add_argument("--queue", action="store_true", help="Agent 正忙时排在当前回合后面 / queue behind a busy turn")
     pr = ps.add_parser("prompt", help="心跳提示 ~/.config/agentj/heartbeat.md：show · edit · set · reset / the heartbeat prompt")
@@ -657,6 +729,9 @@ def cmd_heartbeat(a) -> None:
         if isinstance(last.get("at"), (int, float)):
             print("上次心跳 / last beat: " + time.strftime("%Y-%m-%d %H:%M", time.localtime(last["at"]))
                   + (" · 附全文" if last.get("full") else ""))
+        if res.get("daily_at"):
+            print(f"每天 {res['daily_at']} 定时唤醒一次 / daily at {res['daily_at']}"
+                  + (" · 今天已醒过 / done today" if res.get("daily_last") == day_of(time.time()) else ""))
         if res.get("next_due"):
             print("最早下次 / next at the earliest: " + time.strftime("%Y-%m-%d %H:%M", time.localtime(res["next_due"]))
                   + (f" · 现在要等：{res['waiting']}" if res.get("waiting") else ""))
@@ -671,6 +746,12 @@ def cmd_heartbeat(a) -> None:
         res = call({"op": "set", "interval": a.interval})
         n = res.get("interval_minutes")
         _say(res, f"记下了：空闲满 {fmt_interval(n or 0)} 心跳一次", f"heartbeat every {fmt_interval(n or 0, 'en')} of idle time")
+        return
+    if c == "daily":
+        res = call({"op": "daily", "at": a.at})
+        v = res.get("daily_at")
+        _say(res, f"记下了：每天 {v} 定时唤醒" if v else "已关闭每天定时唤醒",
+             f"daily wake-up at {v}" if v else "daily wake-up off")
         return
     if c == "now":
         res = call({"op": "now", "queue": a.queue})

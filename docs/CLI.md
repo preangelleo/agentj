@@ -133,7 +133,7 @@ agentj --help
 ```
 
 ```text
-usage: agentj [-h] [-V] [--migrate-legacy] [--fresh]
+usage: agentj [-h] [-V] [--migrate-legacy] [--instance N] [--fresh]
               {doctor,service,update,init,serve,protocol,pair,devices,revoke,send,status,name,admin,login,report,unlink,report-hostname,remote-pair,remote-unbind,agent,passphrase,approvals,feedback,stop,resume,memory,activity,config,history,inbox,asr,tasks,wizard,keep-awake,browser,setup,google,mail,contacts,sudo,secret,provider,sudo-helper,docs-rule,handover,telegram-cursor,plaza,support,capability,goal,heartbeat,busy,recall,bots,friends,codex-sandbox,migrate,alias,instances,label,onboarding} ...
 ```
 
@@ -142,6 +142,7 @@ usage: agentj [-h] [-V] [--migrate-legacy] [--fresh]
 | `-h / --help` | `null` | false | — | `show this help message and exit` |
 | `-V / --version` | `null` | false | — | `show program's version number and exit` |
 | `--migrate-legacy` | `false` | false | — | `keep using an older identity found on this computer` |
+| `--instance` | `null` | false | — | `instance N on this OS user (1–10; 1 = the original): one seat and one folder per instance — see agentj instances` |
 | `--fresh` | `false` | false | — | `不用旧身份，开一个全新的（旧目录原样保留）/ ignore an older identity and start fresh (the old folder stays as it is)` |
 
 ### agentj activity
@@ -2198,12 +2199,31 @@ agentj heartbeat --help
 ```
 
 ```text
-usage: agentj heartbeat [-h] {status,on,off,set,now,prompt} ...
+usage: agentj heartbeat [-h] {status,on,off,set,daily,now,prompt} ...
 ```
 
 | Argument | Default | Required | Choices | Help |
 | --- | --- | --- | --- | --- |
 | `-h / --help` | `null` | false | — | `show this help message and exit` |
+
+### agentj heartbeat daily
+
+```text
+a daily wake-up at HH:MM local, off to stop
+```
+
+```bash
+agentj heartbeat daily --help
+```
+
+```text
+usage: agentj heartbeat daily [-h] at
+```
+
+| Argument | Default | Required | Choices | Help |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `at` | `null` | true | — | `` |
 
 ### agentj heartbeat now
 
@@ -2481,7 +2501,7 @@ usage: agentj installer [-h] --output OUTPUT [--request-id REQUEST_ID]
 ### agentj instances
 
 ```text
-==SUPPRESS==
+本机的 Agent J 实例（同一系统用户多人用）：list 查看 · remove N 删除第 N 个（工作目录保留）/ the Agent J instances on this OS user: list · remove N (its folder stays)
 ```
 
 ```bash
@@ -2559,7 +2579,7 @@ usage: agentj key [-h] [--owner-id OWNER_ID] [--key-env KEY_ENV] [--tts TTS]
 ### agentj label
 
 ```text
-==SUPPRESS==
+本实例的本机备注（只在 agentj instances 里显示）/ this instance's local note (shown only by agentj instances)
 ```
 
 ```bash
@@ -2587,7 +2607,8 @@ agentj login --help
 
 ```text
 usage: agentj login [-h] [--api API] [--account ACCOUNT_ID] [--seat CODE |
-                    --seat-file PATH | --install-code-file PATH] [--name NAME]
+                    --seat-file PATH | --paste | --install-code-file PATH]
+                    [--name NAME]
 ```
 
 | Argument | Default | Required | Choices | Help |
@@ -2596,8 +2617,9 @@ usage: agentj login [-h] [--api API] [--account ACCOUNT_ID] [--seat CODE |
 | `--api` | `null` | false | — | `服务器地址（默认 $AGENTJ_API_URL 或 https://agentj.app/api）` |
 | `--yes` | `false` | false | — | `internal option (hidden from --help)` |
 | `--account` | `null` | false | — | `你的 Agent J 账号 ID：账号后台报回来的账号不是它就拒绝，什么都不写（退出码 2）/ your Agent J account ID: if the account dashboard reports another account, nothing is written (exit 2)` |
-| `--seat` | `null` | false | — | `join with a setup code from the account dashboard (no 8-character code, no y/N); '-' reads stdin` |
+| `--seat` | `null` | false | — | `join with a setup code from the account dashboard (no computer binding code, no y/N); '-' reads stdin` |
 | `--seat-file` | `null` | false | — | `read the setup code from a 0600 file, so it stays out of argv and shell history` |
+| `--paste` | `false` | false | — | `paste a setup or installation code at the prompt (hidden, out of argv; a whole prompt works). Plain 'agentj login' at a terminal asks first too` |
 | `--install-code-file` | `null` | false | — | `bind an installed host using an AJI code in a private file` |
 | `--name` | `null` | false | — | `exit: 3 名字已占用 name taken · 4 设置码无效 invalid code · 5 席位未付费 seat not paid · 2 本地拒绝 refused locally` |
 
@@ -2622,15 +2644,17 @@ usage: agentj mail [-h] [--address ADDRESS_OPT]
                    [--auth {strict,standard,off}] [--servid SERVID] [--guest]
                    [--name NAME] [--to TO] [--to-owner] [--subject SUBJECT]
                    [--body BODY] [--body-file BODY_FILE] [--attach ATTACH]
-                   [--en] [--json]
-                   {status,presets,setup,allow,deny,password,test,check,on,off,send,notes}
+                   [--from EXPECT_FROM] [--subject-has SUBJECT_HAS]
+                   [--within WITHIN] [--lookback LOOKBACK] [--wait WAIT]
+                   [--id ID] [--en] [--json]
+                   {status,presets,setup,allow,deny,password,test,check,on,off,send,notes,expect}
                    [address]
 ```
 
 | Argument | Default | Required | Choices | Help |
 | --- | --- | --- | --- | --- |
 | `-h / --help` | `null` | false | — | `show this help message and exit` |
-| `action` | `null` | true | `status`, `presets`, `setup`, `allow`, `deny`, `password`, `test`, `check`, `on`, `off`, `send`, `notes` | `` |
+| `action` | `null` | true | `status`, `presets`, `setup`, `allow`, `deny`, `password`, `test`, `check`, `on`, `off`, `send`, `notes`, `expect` | `` |
 | `address` | `null` | false | — | `deny：发件地址 / the sender address` |
 | `--address` | `null` | false | — | `the mailbox address` |
 | `--preset` | `null` | false | `126`, `163`, `aliyun`, `aliyun_biz`, `custom`, `exmail`, `gmail`, `icloud`, `netease_biz`, `outlook`, `qq` | `setup：邮箱预设（默认按域名猜）/ preset (guessed from the domain)` |
@@ -2647,11 +2671,17 @@ usage: agentj mail [-h] [--address ADDRESS_OPT]
 | `--guest` | `false` | false | — | `allow：访客（不是主人本人，不能批准）/ a guest, not the owner` |
 | `--name` | `null` | false | — | `a label` |
 | `--to` | `null` | false | — | `notes：收件人——邮箱，或通讯录里的名字 / 昵称 / 拼音（可多次；notes 只能是主人写过的地址）/ recipient: address or an address-book name (repeatable; notes: only addresses the owner named)` |
-| `--to-owner` | `false` | false | — | `notes：发给主人本人（白名单里的 owner 地址）/ the owner's own address` |
+| `--to-owner` | `false` | false | — | `send 和 notes：发给主人本人（通讯录 0 号位 + 白名单里的「我本人」地址）；和 --to 同时给就两边都发（去重，合计最多 10 个）/ the owner's own addresses (slot 0 + the owner allowlist rows); with --to: both (deduped, 10 at most)` |
 | `--subject` | `null` | false | — | `notes：标题 / subject` |
 | `--body` | `null` | false | — | `body` |
 | `--body-file` | `null` | false | — | `send：正文文件（- = 标准输入）；notes：纪要文件（不给就读标准输入）/ body or notes file (notes default: stdin)` |
 | `--attach` | `null` | false | — | `send：附件（Agent 文件夹里的文件，可多次）/ attachment in the Agent's folder` |
+| `--from` | `null` | false | — | `expect：等哪个发件人——完整地址或域名（公共邮箱域名要写完整地址）/ the sender to wait for: an address or a domain` |
+| `--subject-has` | `null` | false | — | `the subject must contain this` |
+| `--within` | `null` | false | — | `expect：窗口多长（30s–60m，默认 15m）/ window length` |
+| `--lookback` | `null` | false | — | `expect：也看开窗前多久到的信（≤ 10m，默认 2m）/ also mail that arrived this long before` |
+| `--wait` | `null` | false | — | `expect：这次调用最多等多久（≤ 9m，默认 9m；没等到就返回 waiting + id）/ how long this call blocks` |
+| `--id` | `null` | false | — | `keep waiting on an open window` |
 | `--en` | `false` | false | — | `English messages` |
 | `--json` | `false` | false | — | `` |
 
@@ -4139,7 +4169,7 @@ usage: agentj update [-h] [--yes] [--json] [--authorization AJUP-…]
 | Argument | Default | Required | Choices | Help |
 | --- | --- | --- | --- | --- |
 | `-h / --help` | `null` | false | — | `show this help message and exit` |
-| `--yes` | `false` | false | — | `compatibility; apply already needs no confirmation` |
+| `--yes` | `false` | false | — | `skip the check of what a restart now would interrupt` |
 | `mode` | `null` | true | `check`, `apply`, `auto` | `` |
 | `switch` | `"status"` | false | `on`, `off`, `status` | `for auto` |
 | `--json` | `false` | false | — | `machine-readable check` |
@@ -4515,7 +4545,7 @@ agentj --help
 ```
 
 ```text
-usage: agentj [-h] [-V] [--migrate-legacy] [--fresh]
+usage: agentj [-h] [-V] [--migrate-legacy] [--instance N] [--fresh]
               {doctor,service,update,init,serve,protocol,pair,devices,revoke,send,status,name,admin,login,report,unlink,report-hostname,remote-pair,remote-unbind,agent,passphrase,approvals,feedback,stop,resume,memory,activity,config,history,inbox,asr,tasks,wizard,keep-awake,browser,setup,google,mail,contacts,sudo,secret,provider,sudo-helper,docs-rule,handover,telegram-cursor,plaza,support,capability,goal,heartbeat,busy,recall,bots,friends,codex-sandbox,migrate,alias,instances,label,onboarding} ...
 ```
 
@@ -4524,6 +4554,7 @@ usage: agentj [-h] [-V] [--migrate-legacy] [--fresh]
 | `-h / --help` | `null` | false | — | `show this help message and exit` |
 | `-V / --version` | `null` | false | — | `show program's version number and exit` |
 | `--migrate-legacy` | `false` | false | — | `把旧身份搬过来继续用` |
+| `--instance` | `null` | false | — | `同一系统用户下的第 N 个实例（1–10，1 = 原来那套）：一个实例一个席位、一个工作目录` |
 | `--fresh` | `false` | false | — | `不用旧身份，开一个全新的（旧目录原样保留）/ ignore an older identity and start fresh (the old folder stays as it is)` |
 
 ### agentj activity
@@ -6572,7 +6603,7 @@ usage: agentj handover [-h] [--lang {zh,en}]
 ### agentj heartbeat
 
 ```text
-心跳：Agent 空闲一段时间后自动醒来检查后台和待办 · status · on · off · set <30m> · prompt show\|edit\|set\|reset · now
+心跳：Agent 空闲一段时间后自动醒来检查后台和待办 · status · on · off · set <30m> · daily <07:30\|off> · prompt show\|edit\|set\|reset · now
 ```
 
 ```bash
@@ -6580,12 +6611,31 @@ agentj heartbeat --help
 ```
 
 ```text
-usage: agentj heartbeat [-h] {status,on,off,set,now,prompt} ...
+usage: agentj heartbeat [-h] {status,on,off,set,daily,now,prompt} ...
 ```
 
 | 参数 | 默认值 | 必填 | 可选值 | 说明 |
 | --- | --- | --- | --- | --- |
 | `-h / --help` | `null` | false | — | `show this help message and exit` |
+
+### agentj heartbeat daily
+
+```text
+每天固定时间唤醒，本地时间 HH:MM；off 关闭
+```
+
+```bash
+agentj heartbeat daily --help
+```
+
+```text
+usage: agentj heartbeat daily [-h] at
+```
+
+| 参数 | 默认值 | 必填 | 可选值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `at` | `null` | true | — | `` |
 
 ### agentj heartbeat now
 
@@ -6863,7 +6913,7 @@ usage: agentj installer [-h] --output OUTPUT [--request-id REQUEST_ID]
 ### agentj instances
 
 ```text
-==SUPPRESS==
+本机的 Agent J 实例（同一系统用户多人用）：list 查看 · remove N 删除第 N 个（工作目录保留）/ the Agent J instances on this OS user: list · remove N (its folder stays)
 ```
 
 ```bash
@@ -6941,7 +6991,7 @@ usage: agentj key [-h] [--owner-id OWNER_ID] [--key-env KEY_ENV] [--tts TTS]
 ### agentj label
 
 ```text
-==SUPPRESS==
+本实例的本机备注（只在 agentj instances 里显示）/ this instance's local note (shown only by agentj instances)
 ```
 
 ```bash
@@ -6969,7 +7019,8 @@ agentj login --help
 
 ```text
 usage: agentj login [-h] [--api API] [--account ACCOUNT_ID] [--seat CODE |
-                    --seat-file PATH | --install-code-file PATH] [--name NAME]
+                    --seat-file PATH | --paste | --install-code-file PATH]
+                    [--name NAME]
 ```
 
 | 参数 | 默认值 | 必填 | 可选值 | 说明 |
@@ -6978,15 +7029,16 @@ usage: agentj login [-h] [--api API] [--account ACCOUNT_ID] [--seat CODE |
 | `--api` | `null` | false | — | `服务器地址（默认 $AGENTJ_API_URL 或 https://agentj.app/api）` |
 | `--yes` | `false` | false | — | `内部参数（--help 隐藏）` |
 | `--account` | `null` | false | — | `你的 Agent J 账号 ID：账号后台报回来的账号不是它就拒绝，什么都不写（退出码 2）/ your Agent J account ID: if the account dashboard reports another account, nothing is written (exit 2)` |
-| `--seat` | `null` | false | — | `用账号后台给的设置码（ajt_…）直接加入，不用 8 位代码、不问 y/N；'-' = 从标准输入读一行` |
+| `--seat` | `null` | false | — | `用账号后台给的设置码（ajt_…）直接加入，不用电脑绑定码、不问 y/N；'-' = 从标准输入读一行` |
 | `--seat-file` | `null` | false | — | `从文件读设置码（文件必须 0600），这样它不进命令行和 shell 历史` |
+| `--paste` | `false` | false | — | `在终端里粘贴设置码或安装码（不显示、不进命令行；整段提示词也行）。在终端里直接运行 agentj login 也会先问` |
 | `--install-code-file` | `null` | false | — | `从 0600 文件读取 AJI 安装码，给已安装的电脑绑定席位` |
-| `--name` | `null` | false | — | `和 --seat 一起：本机 Agent 的名字（1–32 个字）/ with --seat: the Agent's name (1–32 characters). 退出码` |
+| `--name` | `null` | false | — | `和 --seat 一起：本机 Agent 的名字（1–32 个字；不给就在终端里问，回车或非交互时用主机名，重名自动加序号）/ with --seat: the Agent's name (1–32 characters; if omitted it is asked, Enter or no terminal = the host name, numbered on a clash). 退出码` |
 
 ### agentj mail
 
 ```text
-邮件通道：setup · allow · deny · password · test · check · on · off · status · presets · send · notes
+邮件通道：setup · allow · deny · password · test · check · on · off · status · presets · send · notes · expect
 ```
 
 ```bash
@@ -7004,15 +7056,17 @@ usage: agentj mail [-h] [--address ADDRESS_OPT]
                    [--auth {strict,standard,off}] [--servid SERVID] [--guest]
                    [--name NAME] [--to TO] [--to-owner] [--subject SUBJECT]
                    [--body BODY] [--body-file BODY_FILE] [--attach ATTACH]
-                   [--en] [--json]
-                   {status,presets,setup,allow,deny,password,test,check,on,off,send,notes}
+                   [--from EXPECT_FROM] [--subject-has SUBJECT_HAS]
+                   [--within WITHIN] [--lookback LOOKBACK] [--wait WAIT]
+                   [--id ID] [--en] [--json]
+                   {status,presets,setup,allow,deny,password,test,check,on,off,send,notes,expect}
                    [address]
 ```
 
 | 参数 | 默认值 | 必填 | 可选值 | 说明 |
 | --- | --- | --- | --- | --- |
 | `-h / --help` | `null` | false | — | `show this help message and exit` |
-| `action` | `null` | true | `status`, `presets`, `setup`, `allow`, `deny`, `password`, `test`, `check`, `on`, `off`, `send`, `notes` | `` |
+| `action` | `null` | true | `status`, `presets`, `setup`, `allow`, `deny`, `password`, `test`, `check`, `on`, `off`, `send`, `notes`, `expect` | `` |
 | `address` | `null` | false | — | `allow` |
 | `--address` | `null` | false | — | `setup：Agent 用的邮箱地址` |
 | `--preset` | `null` | false | `126`, `163`, `aliyun`, `aliyun_biz`, `custom`, `exmail`, `gmail`, `icloud`, `netease_biz`, `outlook`, `qq` | `setup：邮箱预设（默认按域名猜）/ preset (guessed from the domain)` |
@@ -7029,11 +7083,17 @@ usage: agentj mail [-h] [--address ADDRESS_OPT]
 | `--guest` | `false` | false | — | `allow：访客（不是主人本人，不能批准）/ a guest, not the owner` |
 | `--name` | `null` | false | — | `allow：备注名` |
 | `--to` | `null` | false | — | `send` |
-| `--to-owner` | `false` | false | — | `notes：发给主人本人（白名单里的 owner 地址）/ the owner's own address` |
+| `--to-owner` | `false` | false | — | `send 和 notes：发给主人本人（通讯录 0 号位 + 白名单里的「我本人」地址）；和 --to 同时给就两边都发（去重，合计最多 10 个）/ the owner's own addresses (slot 0 + the owner allowlist rows); with --to: both (deduped, 10 at most)` |
 | `--subject` | `null` | false | — | `send` |
 | `--body` | `null` | false | — | `send：正文` |
 | `--body-file` | `null` | false | — | `send：正文文件（- = 标准输入）；notes：纪要文件（不给就读标准输入）/ body or notes file (notes default: stdin)` |
 | `--attach` | `null` | false | — | `send：附件（Agent 文件夹里的文件，可多次）/ attachment in the Agent's folder` |
+| `--from` | `null` | false | — | `expect：等哪个发件人——完整地址或域名（公共邮箱域名要写完整地址）/ the sender to wait for: an address or a domain` |
+| `--subject-has` | `null` | false | — | `expect：标题里要有这个词` |
+| `--within` | `null` | false | — | `expect：窗口多长（30s–60m，默认 15m）/ window length` |
+| `--lookback` | `null` | false | — | `expect：也看开窗前多久到的信（≤ 10m，默认 2m）/ also mail that arrived this long before` |
+| `--wait` | `null` | false | — | `expect：这次调用最多等多久（≤ 9m，默认 9m；没等到就返回 waiting + id）/ how long this call blocks` |
+| `--id` | `null` | false | — | `expect：接着等之前开的窗口` |
 | `--en` | `false` | false | — | `English messages` |
 | `--json` | `false` | false | — | `` |
 
@@ -8521,7 +8581,7 @@ usage: agentj update [-h] [--yes] [--json] [--authorization AJUP-…]
 | 参数 | 默认值 | 必填 | 可选值 | 说明 |
 | --- | --- | --- | --- | --- |
 | `-h / --help` | `null` | false | — | `show this help message and exit` |
-| `--yes` | `false` | false | — | `兼容脚本；默认已不询问` |
+| `--yes` | `false` | false | — | `跳过升级前确认：现在会打断的事照样打断` |
 | `mode` | `null` | true | `check`, `apply`, `auto` | `` |
 | `switch` | `"status"` | false | `on`, `off`, `status` | `auto 的开关` |
 | `--json` | `false` | false | — | `check 的机器可读输出` |

@@ -2,6 +2,7 @@
 browser, so the disclosure cannot drift from the code. No behaviour change in P191: the session bus and the systemd user
 manager stay bound back in (F14), the browser's debugging port stays random and loopback-only. All I/O hermetic."""
 import _hermetic  # noqa: F401
+from _testtmp import TEST_TMP  # noqa: E402  P202: fixtures on tmpfs, not the system disk
 import os
 import pathlib
 import re
@@ -17,7 +18,7 @@ DOCS = HOST.parent / "site" / "content" / "docs" / "07-privacy"
 
 class Fixture(unittest.TestCase):
     def setUp(self):
-        self.tmp = tempfile.TemporaryDirectory(prefix="aj-p191-", dir="/var/tmp")
+        self.tmp = tempfile.TemporaryDirectory(prefix="aj-p191-", dir=TEST_TMP)
         self.addCleanup(self.tmp.cleanup)
         d = pathlib.Path(self.tmp.name)
         self.home, self.rt = d / "home", d / "run"

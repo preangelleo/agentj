@@ -10,9 +10,9 @@ export const GLYPH = {
   ok: [['path', { d: 'm5 12.5 4.5 4.5L19 7.5' }]],
   file: [['path', { d: 'M14 3.5H7.5a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2h9a2 2 0 0 0 2-2V8z' }], ['path', { d: 'M14 3.5V8h4.5' }]],
 };
-// The Telegram mark (circle + paper plane), one colour, transparent: telegram.org/tour/screenshots lets apps use the logo for
-// "forward to Telegram" buttons; the path is Simple Icons' (CC0).
-export const TG_PATH = 'M11.944 0A12 12 0 0 0 0 12a12 12 0 0 0 12 12 12 12 0 0 0 12-12A12 12 0 0 0 12 0a12 12 0 0 0-.056 0zm4.962 7.224c.1-.002.321.023.465.14a.506.506 0 0 1 .171.325c.016.093.036.306.02.472-.18 1.898-.962 6.502-1.36 8.627-.168.9-.499 1.201-.82 1.23-.696.065-1.225-.46-1.9-.902-1.056-.693-1.653-1.124-2.678-1.8-1.185-.78-.417-1.21.258-1.91.177-.184 3.247-2.977 3.307-3.23.007-.032.014-.15-.056-.212s-.174-.041-.249-.024c-.106.024-1.793 1.14-5.061 3.345-.48.33-.913.49-1.302.48-.428-.008-1.252-.241-1.865-.44-.752-.245-1.349-.374-1.297-.789.027-.216.325-.437.893-.663 3.498-1.524 5.83-2.529 6.998-3.014 3.332-1.386 4.025-1.627 4.476-1.635z';
+// P201: 转发到 Telegram is a solid paper plane (Leo's pick, re-drawn here as a plain path from measured vertices — no third-party
+// artwork), one colour = currentColor, so it takes the same theme colour as the stroked glyphs above.
+export const TG_PATH = 'M20.69 3.91Q20.79 3.14 20.1 3.49L3.69 11.93Q3 12.28 3.71 12.59L8.03 14.5L18.12 5.85L10.31 15.27L18.22 17.6Q18.89 17.8 18.98 17.1zM9.59 16.43Q9.57 16.22 9.77 16.29L12.4 17.18Q12.56 17.24 12.45 17.37L10.26 19.87Q9.89 20.3 9.85 19.74z';
 /** One 24-unit glyph as DOM (createElementNS from the constants above). */
 export function glyph(name, cls = 'g g0') {
   const s = document.createElementNS(SVG, 'svg');

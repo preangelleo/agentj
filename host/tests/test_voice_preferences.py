@@ -8,6 +8,7 @@ from unittest.mock import patch,AsyncMock
 from types import SimpleNamespace
 from agentj import voice,wake,preferences as p,telegram
 from agentj.state import State
+from _testtmp import TEST_TMP  # noqa: E402  P202: fixtures on tmpfs, not the system disk
 
 class VoicePreferencesTest(unittest.TestCase):
     def test_macos_capacity_uses_native_memory_query(self):
@@ -17,7 +18,7 @@ class VoicePreferencesTest(unittest.TestCase):
             self.assertEqual(voice.hardware()['memory_mib'],8192)
 
     def setUp(self):
-        self.tmp=tempfile.TemporaryDirectory(prefix='aj-voice-',dir='/var/tmp');self.addCleanup(self.tmp.cleanup)
+        self.tmp=tempfile.TemporaryDirectory(prefix='aj-voice-',dir=TEST_TMP);self.addCleanup(self.tmp.cleanup)
         self.home=Path(self.tmp.name);self.env=patch.dict(os.environ,{'HOME':str(self.home),'XDG_CONFIG_HOME':str(self.home/'.config'),'AGENTJ_STATE_DIR':str(self.home/'state'),'PATH':'/usr/bin:/bin'})
         self.env.start();self.addCleanup(self.env.stop);self.st=State();self.st.init()
     def test_wake_bilingual_mixed_and_unknown_pronunciation(self):
@@ -76,7 +77,7 @@ class TelegramPreferencesTest(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(all(len(x.encode('utf-16-le'))//2<=4000 for x in parts))
 
     async def test_reenrollment_rejects_stale_poll_and_old_reply(self):
-        with tempfile.TemporaryDirectory(prefix='aj-tg-race-',dir='/var/tmp') as d:
+        with tempfile.TemporaryDirectory(prefix='aj-tg-race-',dir=TEST_TMP) as d:
             st=State(Path(d)/'state');st.init()
             old={'owner_id':123,'key_env':'AJ_TEST_TG_KEY','generation':'old'}
             new={'owner_id':456,'key_env':'AJ_TEST_TG_KEY','generation':'new'}
@@ -88,7 +89,7 @@ class TelegramPreferencesTest(unittest.IsolatedAsyncioTestCase):
                 tg.completed({'id':1,'src':{'k':'telegram'},'reply':{'text':'Private old reply'}})
             host._accept.assert_not_called();self.assertTrue(tg.out.empty())
     async def test_allowlist_private_owner_and_no_approval(self):
-        with tempfile.TemporaryDirectory(prefix='aj-tg-',dir='/var/tmp') as d:
+        with tempfile.TemporaryDirectory(prefix='aj-tg-',dir=TEST_TMP) as d:
             st=State(Path(d)/'state');st.init()
             host=SimpleNamespace(st=st,preferences={'channels':{'items':[{'id':'telegram','type':'telegram'}]}},agent=object(),stopped=lambda:False,_accept=AsyncMock(),stop_turn=AsyncMock())
             tg=telegram.Telegram(host);cfg={'owner_id':123,'key_env':'AJ_TEST_TG_KEY'}
@@ -104,7 +105,7 @@ if __name__=='__main__':unittest.main()
 
 class SpeechTransportTest(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
-        self.tmp=tempfile.TemporaryDirectory(prefix='aj-tts-noise-',dir='/var/tmp');self.addCleanup(self.tmp.cleanup)
+        self.tmp=tempfile.TemporaryDirectory(prefix='aj-tts-noise-',dir=TEST_TMP);self.addCleanup(self.tmp.cleanup)
         root=Path(self.tmp.name);self.env=patch.dict(os.environ,{'HOME':str(root),'AGENTJ_STATE_DIR':str(root/'state'),'XDG_CONFIG_HOME':str(root/'.config'),'PATH':'/usr/bin:/bin'})
         self.env.start();self.addCleanup(self.env.stop)
         from agentj.serve import Host,Session

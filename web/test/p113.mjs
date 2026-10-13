@@ -68,7 +68,9 @@ async function verify(sig, bytes) {
   return subtle.verify({ name: 'Ed25519' }, key, unb64u(sig), bytes);
 }
 async function layout(p) {
-  return ev(p, `(() => { const box = document.querySelector('#lt-box') || document.querySelector('#lt-caps-box');
+  // P207 追加 1: the card now scales in like every centred dialog (.18 s, scale .94 → 1); measure once that has finished
+  return ev(p, `(async () => { const box = document.querySelector('#lt-box') || document.querySelector('#lt-caps-box');
+    await Promise.all(document.getAnimations().filter((a) => a.effect?.target?.closest?.('.lt') && a.effect.getTiming().iterations !== Infinity).map((a) => a.finished.catch(() => {})));
     const small = [...document.querySelectorAll('.lt:not([hidden]) button, .lt:not([hidden]) summary')].filter((b) => b.offsetParent && b.getBoundingClientRect().height < 56).map((b) => b.className + ':' + b.textContent);
     return { overflow: box.scrollWidth > box.clientWidth + 1 || document.documentElement.scrollWidth > innerWidth + 1, small,
       pw: document.querySelectorAll('.lt input[type=password]').length }; })()`);

@@ -20,7 +20,7 @@ class ServeBusy(Exception):
     "serve not running": callers must refuse, never fall back to editing state directly (review A32-02)."""
 
 
-def ctl_call(st, req: dict, timeout: float | None = None) -> dict | None:
+def ctl_call(st, req: dict, timeout: float | None = None, max_bytes: int = 64 * 1024) -> dict | None:
     """One request/answer on serve's control socket. None only when serve is certainly not running (no socket file, or
     connection refused); raises ServeBusy when it is there but does not answer in time. A4 (P139): a command that changes
     safety state (ctl_auth.SENSITIVE) first asks for a one-time claim on the same connection; serve refuses it to an Agent."""
@@ -30,7 +30,7 @@ def ctl_call(st, req: dict, timeout: float | None = None) -> dict | None:
     buf = [b""]
 
     def line() -> dict:
-        while b"\n" not in buf[0] and len(buf[0]) < 64 * 1024:
+        while b"\n" not in buf[0] and len(buf[0]) < max_bytes:
             chunk = s.recv(4096)
             if not chunk:
                 break

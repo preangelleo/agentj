@@ -299,8 +299,22 @@ try {
       // the reply card's forward button: the Telegram mark instead of the arrow
       const bar = await ev(p, `(() => { const b = document.getElementById('fwdBtn'); return [b.dataset.tg, getComputedStyle(b.querySelector('.gtg')).display, getComputedStyle(b.querySelector('.g0')).display]; })()`);
       assert.deepEqual(bar, ['1', 'block', 'none']);
+      // P201: both places draw the same paper plane, same box and the same colour as the glyphs next to them
+      assert.deepEqual(await ev(p, `(() => { const b = document.getElementById('fwdBtn').querySelector('.gtg'), f = ${tg}.querySelector('svg');
+        const near = document.getElementById('copyReply').querySelector('svg'), fn = ${card(id('P'))}.querySelector('.mact.dl svg') || f;
+        const box = (s) => getComputedStyle(s).width + 'x' + getComputedStyle(s).height;   // computed: a sent card shows its tick
+        return [b.querySelector('path').getAttribute('d') === f.querySelector('path').getAttribute('d'), b.querySelector('path').getAttribute('d').startsWith('M20.69 3.91'),
+          box(b) === box(near), box(f) === box(fn), getComputedStyle(b).fill === getComputedStyle(near).stroke, getComputedStyle(f).fill === getComputedStyle(fn).stroke]; })()`),
+        [true, true, true, true, true, true], 'paper plane: one path, sibling size, sibling colour');
       await ev(p, `document.getElementById('rmbar').scrollIntoView({ block: 'end' })`);
       writeFileSync(join(OUT, 'p183-telegram-phone-light.png'), await shoot(p));
+      assert.deepEqual(p.problems, []);
+    } finally { await p.dispose(); }
+    p = await paired(1440, 900, 'dark', { caps: ['tgfile'], tgfwd: true });   // P201: the paper plane on a computer, dark
+    try {
+      await page(p);
+      await ev(p, `document.getElementById('rmbar').scrollIntoView({ block: 'end' })`);
+      writeFileSync(join(OUT, 'p183-telegram-desktop-dark.png'), await shoot(p));
       assert.deepEqual(p.problems, []);
     } finally { await p.dispose(); }
     p = await paired(390, 844, 'light', { caps: ['tgfile'], tgfwd: false });

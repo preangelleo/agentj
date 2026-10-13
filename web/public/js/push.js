@@ -107,8 +107,9 @@ export function renderA2hs(view) {
   box.classList.toggle('hint--stage', view === 'chat');
   if (!box.hidden) fillText(el('a2hs-text'), t(kind === 'ios' && (installedHome || a2hsDismissed) ? 'a2hs.openInstalled' : 'a2hs.' + kind));
   el('pair-iphone').hidden = !(isIOS() && !standalone());
-  fillText(el('pair-step1'), t(isIOS() ? 'pair.step1ios' : 'pair.step1'));   // iPhone Safari cannot scan inside the page:
-  fillText(el('pair-step2'), t(isIOS() ? 'pair.step2ios' : 'pair.step2'));   // pair with the link, from the Home Screen app
+  fillText(el('pair-step1'), t(isIOS() ? 'pair.m2.s1ios' : 'pair.m2.s1'));   // iPhone Safari cannot scan inside the page:
+  fillText(el('pair-step2'), t(isIOS() ? 'pair.m2.s2ios' : 'pair.m2.s2'));   // pair with the link, from the Home Screen app
+  el('pm-cmd').textContent = isIOS() ? 'agentj pair --link' : 'agentj pair';    // P210: the command block says the same
 }
 export function dismissA2hs(view) {
   a2hsDismissed = true;

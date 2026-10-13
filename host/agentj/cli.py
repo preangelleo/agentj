@@ -88,6 +88,7 @@ def cmd_init(a) -> None:
     working_root.record(st, root)
     from . import wizard
     wizard.bootstrap_root(root, lang=preferences.get(preferences.effective(st), "appearance.language", "zh"))
+    _refresh_root(st, root)
     print(f"工作根目录 / Working root: {root}; existing files were kept; new workflows use direct child folders.")
     old_dir = cfg.get("agent", {}).get("dir")
     if old_dir and os.path.realpath(old_dir) != str(root):
@@ -95,6 +96,18 @@ def cmd_init(a) -> None:
     from .config_migrations import run
     run(st)
     _alias_auto(sys.stdout)
+
+
+def _refresh_root(st, root) -> None:
+    """P215: the shipped Workflow Design Bible skill + the boot-doc core upgrade in the working root (wizard.refresh_root).
+    Best effort: a problem here never stops init / agent set."""
+    from . import wizard
+    try:
+        cfg = st.agent_config() if st.exists() else None
+        kind = (cfg or {}).get("kind")
+        wizard.refresh_root(root, [kind] if kind in wizard.HARNESSES else None)
+    except Exception:  # noqa: BLE001 — never block installation on the documents
+        pass
 
 
 def _alias_auto(out, with_compat: bool = False) -> None:
@@ -1001,7 +1014,7 @@ def _link_line(st: State) -> str:
     link = cloud.read_cloud(st)
     if not link:
         return "Agent J 账号：还没加入（`agentj login`）/ not in an Agent J account yet"
-    via = "用设置码加入 / joined with a setup code" if link["via"] == "seat" else "用 8 位代码加入 / joined with the 8-character code"
+    via = "用设置码加入 / joined with a setup code" if link["via"] == "seat" else "用电脑绑定码加入 / joined with a computer binding code"
     return f"Agent J 账号：{link['tenant']['slug']}（{link['tenant']['name']}）· {via}"
 
 
@@ -1060,7 +1073,72 @@ def _read_seat_code(a) -> str:
         text = sys.stdin.readline(SEAT_FILE_MAX + 1)
     else:
         text = a.seat
-    return text.strip()
+    return _pasted_code(text)
+
+
+# P214: what reaches `--seat` / `--install-code-file` is often the whole prompt or install command, with a CRLF or a
+# full-width hyphen. Keep only the first AJI installation code (else the first ajt_ setup code) of it; never print it.
+_DASHES = {ord(c): "-" for c in "\u2010\u2011\u2012\u2013\u2014\u2015\u2212\ufe58\ufe63\uff0d\u30fc"}
+
+
+def _pasted_code(text: str) -> str:
+    import unicodedata
+    s = unicodedata.normalize("NFKC", text or "").translate(_DASHES)
+    for t in (s, re.sub(r"\s+", "", s)):
+        m = re.search(r"AJI-([0-9a-f]{32})(?![0-9a-f])", t, re.I)
+        if m:
+            return "AJI-" + m.group(1).lower()
+    m = re.search(r"(?<![A-Za-z0-9_-])ajt_[A-Za-z0-9_-]{43}(?![A-Za-z0-9_-])", s)
+    return m.group(0) if m else s.strip()
+
+
+def _read_paste(prompt: str) -> str:
+    """P214 (Leo 10-13): `agentj login` at a terminal asks for the code first. Hidden input; a pasted prompt spans lines, so
+    take everything that arrives within a moment (else the rest would answer the next question). Never echoed or logged."""
+    import select
+    print(prompt, end="", flush=True)
+    fd, old = sys.stdin.fileno(), None
+    try:
+        import termios
+        old = termios.tcgetattr(fd)
+        new = termios.tcgetattr(fd)
+        new[3] &= ~termios.ECHO
+        termios.tcsetattr(fd, termios.TCSADRAIN, new)
+    except (ImportError, OSError, ValueError):
+        old = None
+    try:
+        text = sys.stdin.readline(SEAT_FILE_MAX * 16)
+        while select.select([sys.stdin], [], [], 0.5)[0]:
+            more = sys.stdin.readline(SEAT_FILE_MAX * 16)
+            if not more:
+                break
+            text += more
+    finally:
+        if old is not None:
+            termios.tcsetattr(fd, termios.TCSADRAIN, old)
+        print(flush=True)
+    return text
+
+
+PASTE_PROMPT = ("有账户页给的设置码（ajt_…）或安装码（AJI-…）就粘贴在这里回车（不显示；整段提示词也行，会自动取出码）；\n"
+                "没有就直接回车，改用电脑绑定码。 / Paste a setup code (ajt_…) or installation code (AJI-…) and press Enter "
+                "(hidden; a whole prompt is fine). No code? Just press Enter to use a computer binding code instead.\n> ")
+
+
+def _paste_login(st: State, a, forced: bool) -> bool:
+    """Interactive `agentj login`: a pasted code → the seat login (no --seat-file to write); Enter → False (binding code)."""
+    text = _read_paste(PASTE_PROMPT)
+    if not text.strip() and not forced:
+        return False
+    code = _pasted_code(text)
+    if not re.fullmatch(r"AJI-[a-f0-9]{32}|ajt_[A-Za-z0-9_-]{43}", code):
+        _refuse("没找到设置码或安装码：请在账户页点「复制设置码」或「复制安装码」，再粘贴 / No setup code or installation code "
+                "found: on the account page choose Copy setup code or Copy installation code, then paste it")
+    if a.name is None and code.startswith("AJI-"):
+        a.name = st.agent_name() or "Agent J"
+    a.seat = code
+    _seat_login(st, a)
+    return True
 
 
 def _seat_login(st: State, a) -> None:
@@ -1074,20 +1152,28 @@ def _seat_login(st: State, a) -> None:
         if new_agent_name_problem(a.name) == "name_too_long":   # P154: a new name must be short; the kept one is not re-checked
             _refuse(names.RENAME_MESSAGES["name_too_long"] + " / Name too long: up to 8 CJK characters or 13 others "
                     "(mixed: CJK counts 1.6, others 1, at most 13)")
-    if a.name is None:
-        print("✗ 用设置码绑定要同时给 Agent 起名：--name \"<名字>\" / --seat needs --name \"<name>\"", file=sys.stderr)
-        sys.exit(2)
+    # P214 (Leo 10-13): no --name is no longer an error — the code is read first (it may be the stdin of `--seat -`), then the
+    # name: asked at a terminal (Enter = the kept name, else this computer's host name), the default otherwise.
     code = _read_seat_code(a)
+    auto = _choose_name(st, a, ask=getattr(a, "paste", False) or sys.stdin.isatty())
     if getattr(a, "install_code_file", None) and not re.fullmatch(r"AJI-[a-f0-9]{32}", code):
-        _refuse("安装码格式不对，请从账户页重新复制 / Invalid installation code; copy it from the account page again")
+        _refuse("没找到安装码：请只粘贴 AJI- 开头的那串码，在账户页点「复制安装码」 / No installation code found: paste only the "
+                "code that starts with AJI- (account page → Copy installation code)")
     try:
         api = cloud.api_url(st, override=a.api)
     except cloud.CloudError:
         sys.exit("拒绝：API 地址必须是 https://（http:// 只允许 127.0.0.1 / localhost）")
-    try:
-        res = cloud.seat_bind(st, api, code, a.name)
-    except cloud.CloudError as e:
-        sys.exit(f"连不上 Agent J 服务器（{e.kind}）：{api} / cannot reach the Agent J server")
+    base = a.name
+    for n in range(2, 11):
+        try:
+            res = cloud.seat_bind(st, api, code, a.name)
+        except cloud.CloudError as e:
+            sys.exit(f"连不上 Agent J 服务器（{e.kind}）：{api} / cannot reach the Agent J server")
+        if res["status"] != "name_taken" or not auto:
+            break
+        # a name nobody typed: take the next free one the server offers, else number it — never stop to ask
+        offered = [x for x in res.get("suggestions") or [] if isinstance(x, str) and x != a.name]
+        a.name = offered[0] if offered else _numbered(base, n)
     s = res["status"]
     if s == "bound":
         t, name = res["tenant"], res["agent_name"]
@@ -1100,6 +1186,8 @@ def _seat_login(st: State, a) -> None:
         r = _report_now(st)
         print("首次上报：成功 / first report: ok" if r.kind == "ok"
               else f"首次上报失败（{r.status}），serve 启动后会自动重试 / first report failed, serve retries")
+        if not getattr(a, "install_code_file", None):      # the installer starts the service and pairs on its own
+            _after_bind(st)
         return
     msgs = {
         "bad_code": "设置码格式不对（应是 ajt_ 加 43 个字符）：从那句话里原样复制 / not a setup code (ajt_ + 43 characters): copy it exactly",
@@ -1120,6 +1208,71 @@ def _seat_login(st: State, a) -> None:
     sys.exit(SEAT_EXIT.get(s, 1))
 
 
+def _default_name(st: State) -> str:
+    """The kept Agent name, else this computer's host name cut to the new-name length, else 「Agent J」."""
+    kept = st.agent_name()
+    if kept:
+        return kept
+    from .text import machine_name, new_agent_name_problem
+    m = (machine_name() or "").strip()
+    while m and new_agent_name_problem(m):
+        m = m[:-1].rstrip(" -_.")
+    return m or "Agent J"
+
+
+def _numbered(base: str, n: int) -> str:
+    from .text import new_agent_name_problem
+    stem = base
+    while stem and new_agent_name_problem(f"{stem} {n}"):
+        stem = stem[:-1].rstrip(" -_.")
+    return f"{stem or 'Agent'} {n}"
+
+
+def _choose_name(st: State, a, *, ask: bool) -> bool:
+    """Fill a.name when --name was not given. True = a default nobody typed (a clash gets numbered, not refused)."""
+    if a.name is not None:
+        return False
+    d = _default_name(st)
+    if ask:
+        try:
+            typed = input(f"给这台电脑上的 Agent 起个名字（直接回车用「{d}」）/ Name this Agent (Enter = \"{d}\"): ").strip()
+        except EOFError:
+            typed = ""
+        if typed:
+            a.name = typed
+            return False
+    a.name = d
+    return True
+
+
+def _after_bind(st: State) -> None:
+    """P214 (Leo 10-13): right after a seat bind, bring the Agent online (the account page's 「添加遥控器」 needs a running
+    serve) and say the one next step. Only for this computer's own install: a custom state directory without its own
+    service name (tests, a second instance) never touches the service."""
+    from . import service
+    url = "https://agentj.app/account/"
+    try:
+        url = cloud.app_url(st).rstrip("/") + "/"
+    except Exception:
+        pass
+    own = not os.environ.get("AGENTJ_STATE_DIR") or os.environ.get("AGENTJ_SERVICE_NAME")
+    started = False
+    if own:
+        try:
+            s = service.status()
+            if s["kind"] != "none":
+                service.restart() if s.get("installed") and s.get("active") == "active" else service.start(st)
+                started = True
+                print("✓ 后台服务已启动，这台电脑上线了 / the background service is running: this computer is online")
+        except Exception as e:      # ServiceError, a missing user manager …: say the command, never fail the bind
+            print(f"后台服务没能自动启动（{getattr(e, 'args', [''])[0] or type(e).__name__}）：运行 agentj service install"
+                  " / could not start the background service: run agentj service install")
+    if own and not started:
+        print("让它上线：运行 agentj service install（或 agentj serve）/ bring it online: agentj service install (or agentj serve)")
+    print(f"下一步：添加遥控器——在账户页 {url} 这台电脑的席位卡点「添加遥控器」，或在这台电脑运行 agentj pair 扫二维码。")
+    print(f"Next: add a remote — on {url} choose Add a remote on this computer's seat card, or run agentj pair here and scan.")
+
+
 def _refuse(msg: str) -> None:
     """Refused locally: nothing sent, nothing written — exit 2."""
     print("✗ " + msg, file=sys.stderr)
@@ -1136,7 +1289,7 @@ def _account_arg(a) -> str | None:
                 "done. Use it only when your human explicitly said yes and told you the account ID; otherwise drop --yes and "
                 "let your human answer the y/N.")
     if acct and (a.seat is not None or a.seat_file or getattr(a, "install_code_file", None)):
-        _refuse("--yes / --account 只用于 8 位代码的登录，设置码登录不需要 / --yes and --account are for the 8-character code "
+        _refuse("--yes / --account 只用于电脑绑定码的登录，设置码登录不需要 / --yes and --account are for the computer binding code "
                 "login only; the setup code login does not ask")
     if acct and not cloud._SLUG.fullmatch(acct):
         _refuse(f"「{acct}」不是一个账号 ID（3–30 位小写字母、数字和连字符），什么都没做 / not an account ID (3–30 lowercase "
@@ -1155,8 +1308,11 @@ def cmd_login(a) -> None:
     if a.seat is not None or a.seat_file or getattr(a, "install_code_file", None):
         _seat_login(st, a)
         return
+    # P214: at a terminal (or with --paste) ask for a pasted code first — no device code needed when the owner has one
+    if not acct and (a.paste or (sys.stdin.isatty() and sys.stdout.isatty())) and _paste_login(st, a, a.paste):
+        return
     if a.name is not None:
-        sys.exit("--name 只和 --seat / --seat-file 一起用（用 8 位代码的话，名字在账号后台里起）/ --name goes with --seat only")
+        sys.exit("--name 只和 --seat / --seat-file 一起用（用电脑绑定码的话，名字在账户页里起）/ --name goes with --seat only")
     try:
         api = cloud.api_url(st, override=a.api)
         app = cloud.app_url(st)
@@ -1167,10 +1323,15 @@ def cmd_login(a) -> None:
         mins = max(1, lg["expires_in"] // 60)
         print(f"这台电脑的通道号：{cloud.channel_of(st)}（账号后台里显示的应该一样）", flush=True)
         print(_hostname_notice(st), flush=True)
-        # F7: the configured Dashboard; the server's verification_uri only when it is on that same origin
-        print(f"在已登录的账号后台里打开 {cloud.dashboard_uri(app, lg['verification_uri'])}", flush=True)
-        print(f"输入这个代码：{lg['user_code']}（{mins} 分钟内有效，只能用一次）", flush=True)
-        print("看一下账号后台显示的通道号和上面一样，再点添加。等待中……（Ctrl-C 取消）", flush=True)
+        # F7: the configured Dashboard; the server's verification_uri only when it is on that same origin.
+        # P214 (Leo 10-13): name the code and the exact place — an owner put it into the passkey box (「通行密钥转移码」).
+        page = cloud.dashboard_uri(app, lg["verification_uri"])
+        page = page if "#" in page else page.rstrip("/") + "/#add-agent"
+        print(f"电脑绑定码：{lg['user_code']}（{mins} 分钟内有效，只能用一次） / Computer binding code", flush=True)
+        print(f"到账户页「Agent（席位）→ 添加 Agent」填这个电脑绑定码：{page}", flush=True)
+        print("  / On the account page open Agent (seats) → Add an Agent and enter it there."
+              " 它不是通行密钥转移码，不要填到「登录与安全」里 / It is not a passkey transfer code.", flush=True)
+        print("看一下账户页显示的通道号和上面一样，再点添加。等待中……（Ctrl-C 取消）", flush=True)
 
     def on_poll(kind: str) -> None:
         print(f"· {_POLL_NOTES.get(kind, kind)}", flush=True)
@@ -1389,6 +1550,7 @@ def cmd_agent(a) -> None:
             from . import wizard
             from . import preferences
             wizard.bootstrap_root(root, lang=preferences.get(preferences.effective(st), "appearance.language", "zh"))
+            _refresh_root(st, root)
             if a.mode == "claude" and mode == "shared":
                 session_choice.pick(st, str(root), lang)      # P127: which live Claude Code session the phone attaches to
         except preferences.ConfigError as e:
@@ -2130,9 +2292,50 @@ def cmd_update(a) -> None:
         if r["status"] == "newer":
             print(f"  （agentj update apply 会运行 / it runs:  {r['command']}）")
         return
+    if r.get("status") == "newer" and not a.yes:
+        held = _upgrade_gate(r)
+        if held:
+            print(update.result_block(held))
+            raise SystemExit(update._exit_of(held["reason"]))
     res = update.apply(State(), a.version, check_fn=lambda: r, say=print)
     print(update.result_block(res))
     raise SystemExit(res["exit"])
+
+
+def _upgrade_gate(r: dict) -> dict | None:
+    """P203: before a manual upgrade, ask the running serve what a restart now would interrupt (running turn — not the
+    caller's own when an Agent runs this —, queued messages, open cards, scheduled / background tasks, friend sessions).
+    Nothing → None (go on, one step). Something → the owner decides: at a terminal a y/N here; from an Agent or a script
+    a confirmation card on the phone (its 「现在升级」 is the phone's own signed /update) and a result block, nothing
+    installed. No serve / no answer → None, as before (the restart waits for an idle serve anyway). --yes skips this."""
+    from . import auto_update, ctl_auth, update
+    from .names import ctl_call
+    st = State()
+    caller = "agent" if set(os.environ) & set(ctl_auth.AGENT_ENV) else None
+    try:
+        ans = ctl_call(st, {"cmd": "upgrade_impact", "caller": caller}, 10)
+    except Exception:  # noqa: BLE001 — serve busy or gone: the old behaviour
+        return None
+    items = (ans or {}).get("items") if isinstance(ans, dict) and ans.get("ok") else None
+    if not items:
+        return None
+    lang = _lang(st)
+    lines = auto_update.impact_text(items, lang)
+    base = {"result": "refused", "from": update.__version__, "to": r.get("latest"), "service": "unchanged", "interrupts": lines}
+    if caller is None and sys.stdin.isatty() and sys.stdout.isatty():
+        print("现在升级会打断：" if lang == "zh" else "Upgrading now would interrupt:")
+        for line in lines:
+            print("  · " + line)
+        try:
+            ok = input("仍然现在升级？[y/N] " if lang == "zh" else "Upgrade now anyway? [y/N] ").strip().lower() in ("y", "yes", "是")
+        except EOFError:
+            ok = False
+        return None if ok else {**base, "reason": "not_confirmed"}
+    try:
+        ctl_call(st, {"cmd": "upgrade_card", "caller": caller}, 10)
+    except Exception:  # noqa: BLE001 — the block still says why nothing was installed
+        pass
+    return {**base, "reason": "confirm_on_phone"}
 
 
 def _update_authorized(a) -> None:
@@ -2260,7 +2463,7 @@ def config_approvals(rest: list) -> int:
 
 
 def cmd_instances(a) -> None:
-    """P180 (internal): the instances on this computer; `remove N` deletes instance N ≥ 2 (its workspace stays)."""
+    """P180 / P217: the instances on this computer; `remove N` deletes instance N ≥ 2 (its workspace stays)."""
     from . import instance
     if a.action == "remove":
         if not a.number:
@@ -2376,6 +2579,10 @@ def main(argv=None) -> None:
     # P127: read (and removed) before parsing, above; declared here for --help and the docs check
     p.add_argument("--migrate-legacy", action="store_true", help="把旧身份搬过来继续用 / keep "
                                                                 "using an older identity found on this computer")
+    # P217: `--instance N` is read (and removed) before parsing, like the two above; declared here for --help and the docs check
+    p.add_argument("--instance", metavar="N", help="同一系统用户下的第 N 个实例（1–10，1 = 原来那套）：一个实例一个席位、"
+                                                  "一个工作目录 / instance N on this OS user (1–10; 1 = the original): one seat "
+                                                  "and one folder per instance — see agentj instances")
     p.add_argument("--fresh", action="store_true", help="不用旧身份，开一个全新的（旧目录原样保留）/ ignore an older identity and "
                                                        "start fresh (the old folder stays as it is)")
     sub = p.add_subparsers(dest="cmd")
@@ -2399,7 +2606,7 @@ def main(argv=None) -> None:
     sv.set_defaults(fn=cmd_service)
     up = sub.add_parser("update", help="check 查版本 · apply Agent 自升级（无需终端）· auto on|off",
                         description="apply needs no y/N or terminal, restarts and runs doctor. F12 authorization remains optional.")
-    up.add_argument("--yes", action="store_true", help="兼容脚本；默认已不询问 / compatibility; apply already needs no confirmation")
+    up.add_argument("--yes", action="store_true", help="跳过升级前确认：现在会打断的事照样打断 / skip the check of what a restart now would interrupt")
     up.add_argument("mode", choices=["check", "apply", "auto"])
     up.add_argument("switch", nargs="?", choices=["on", "off", "status"], default="status", help="auto 的开关 / for auto")
     up.add_argument("--json", action="store_true", help="check 的机器可读输出 / machine-readable check")
@@ -2474,13 +2681,19 @@ def main(argv=None) -> None:
                          "if the account dashboard reports another account, nothing is written (exit 2)")
     seat = lo.add_mutually_exclusive_group()
     seat.add_argument("--seat", metavar="CODE",
-                      help="用账号后台给的设置码（ajt_…）直接加入，不用 8 位代码、不问 y/N；`-` = 从标准输入读一行 / "
-                           "join with a setup code from the account dashboard (no 8-character code, no y/N); `-` reads stdin")
+                      help="用账号后台给的设置码（ajt_…）直接加入，不用电脑绑定码、不问 y/N；`-` = 从标准输入读一行 / "
+                           "join with a setup code from the account dashboard (no computer binding code, no y/N); `-` reads stdin")
     seat.add_argument("--seat-file", metavar="PATH",
                       help="从文件读设置码（文件必须 0600），这样它不进命令行和 shell 历史 / "
                            "read the setup code from a 0600 file, so it stays out of argv and shell history")
+    seat.add_argument("--paste", action="store_true",
+                      help="在终端里粘贴设置码或安装码（不显示、不进命令行；整段提示词也行）。在终端里直接运行 agentj login 也会先问 / "
+                           "paste a setup or installation code at the prompt (hidden, out of argv; a whole prompt works). "
+                           "Plain `agentj login` at a terminal asks first too")
     seat.add_argument("--install-code-file", metavar="PATH", help="从 0600 文件读取 AJI 安装码，给已安装的电脑绑定席位 / bind an installed host using an AJI code in a private file")
-    lo.add_argument("--name", help="和 --seat 一起：本机 Agent 的名字（1–32 个字）/ with --seat: the Agent's name (1–32 characters). "
+    lo.add_argument("--name", help="和 --seat 一起：本机 Agent 的名字（1–32 个字；不给就在终端里问，回车或非交互时用主机名，重名自动加序号）/ "
+                                   "with --seat: the Agent's name (1–32 characters; if omitted it is asked, Enter or no terminal = "
+                                   "the host name, numbered on a clash). "
                                    "退出码 / exit: 3 名字已占用 name taken · 4 设置码无效 invalid code · 5 席位未付费 seat not paid · "
                                    "2 本地拒绝 refused locally")
     lo.set_defaults(fn=cmd_login)
@@ -2623,12 +2836,14 @@ def main(argv=None) -> None:
     al.add_argument("mode", nargs="?", choices=["status", "install", "remove"], default="status")
     al.add_argument("--json", action="store_true")
     al.set_defaults(fn=cmd_alias)
-    ins = sub.add_parser("instances", help=argparse.SUPPRESS)   # P180: internal multi-seat (one instance per seat), not public
+    ins = sub.add_parser("instances", help="本机的 Agent J 实例（同一系统用户多人用）：list 查看 · remove N 删除第 N 个（工作目录保留）/ "
+                                             "the Agent J instances on this OS user: list · remove N (its folder stays)")   # P180 / P217
     ins.add_argument("action", nargs="?", choices=["list", "remove"], default="list")
     ins.add_argument("number", nargs="?", type=int)
     ins.add_argument("--json", action="store_true")
     ins.set_defaults(fn=cmd_instances)
-    lb = sub.add_parser("label", help=argparse.SUPPRESS)          # P180: `agentj --instance N label <note>` (local only)
+    lb = sub.add_parser("label", help="本实例的本机备注（只在 agentj instances 里显示）/ this instance's local note "
+                                       "(shown only by agentj instances)")   # P180: `agentj --instance N label <note>`
     lb.add_argument("text", nargs="*")
     lb.set_defaults(fn=cmd_label)
     ob = sub.add_parser("onboarding", help="首次使用进度：席位、这台电脑的浏览器、主力手机、欢迎消息 / first-use progress: seat, "

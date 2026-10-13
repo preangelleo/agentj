@@ -1,6 +1,6 @@
-# Agent J 0.20.1a1 release notes
+# Agent J 0.20.2a1 release notes
 
-Host 0.20.1a1 / install 0.22.1; phone-web scope.
+Host 0.20.2a1 / install 0.22.2; phone-web scope.
 Phone parity must pass --strict. Full Android/Telegram parity is incomplete.
 Full Android/Telegram parity is incomplete.
 No APK is included in this release. Android source is for review, not a released app.
@@ -8,14 +8,15 @@ No APK is included in this release. Android source is for review, not a released
 Publication status: local preparation only. Live site verification is DEFERRED until
 the public commit and tag are pushed, the site is deployed, and cold installation passes.
 
-On publication failure, restore v0.20.0a1 host/site/phone. A front Worker/site/signed downloads/install guide; B phone web. No relay Worker change and no D1 migration in this publication (the P195 partner overrides and further Dashboard checks ship later as a Dashboard-only batch C with app migration 0026).
+On publication failure, restore v0.20.1a1 host/site/phone. A front Worker/site/signed downloads/install guide/install assistant; B phone web. No relay Worker change and no D1 migration in this publication (the account page in the closed palette and the P195 partner overrides ship later as a Dashboard-only batch C with app migration 0026).
 ## Changes
 
-- Address-book slot 0 is the owner (name, main e-mail, optional phone), set only by the owner; messages whose destination is the owner's own paired remote, owner bot chat or own addresses go unmasked.
-- Full-screen preview: ← / → and swipes page through the files of the same reply; a zoomed image pans instead; background shortcuts never leak.
-- `agentj plaza partners` and partner lines in `agentj plaza show`, each with its disclosure.
-- Upgrades from older releases with a first-run journal gain the new checklist rows (no `KeyError: 'mail'`).
-- 中文：通讯录 0 号位是主人；发给主人本人的消息不打码；全屏预览左右切换同一条回复的文件；优先推荐伙伴带披露；旧版升级的首次准备不再报错。
+- Approval / question / secret cards are rebuilt from a signed snapshot whenever the phone comes back; cards handled elsewhere close, expired ones say so.
+- An upgrade first lists what it would interrupt and asks on the phone; Settings has the upgrade method (automatic when idle / ask first) and an upgrade button.
+- Owner-bound files (audio in .agentj/outbox, files sent with --to-owner) are no longer held back as possible secrets; `agentj mail send --to-owner`; `agentj mail expect` waits for one mail from a named sender.
+- Phone web: no stray composer scrollbar or focus ring, Telegram forwards keep Markdown, a share-as-web-report button, a centred recording card with lock / dim / cancel, the usage dialog, unread jump, contacts manager, read-only list of the computer's own scheduled tasks, one global centred dialog.
+- Owner data (friends, card, remote names, contacts) is snapshotted before every upgrade and healed at start; multi-instance on one computer is public (`agentj --instance N`); fresh installs get the chairman core documents.
+- 中文：审批卡快照重建；升级前先列出会打断的事并在手机确认；发给主人的文件不再拦；mail --to-owner / mail expect；输入框滚动条与焦点框、转发 TG 富文本、分享成网页报告、录音卡、用量弹窗、未读跳转、通讯录管理、本机定时任务只读列表；升级前快照与自愈；同机多实例公开；新装文档带董事长核心思想。
 
 ## Material acceptance limits
 

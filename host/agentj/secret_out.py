@@ -165,9 +165,12 @@ class Outbox:
             m["fa"] = pk["id"]        # this device's own credential id only
         return m
 
+    def open_msgs(self, s) -> list[dict]:
+        return [self.card_msg(c, s) for c in list(self.cards.values())]   # P203: the cards_get snapshot shares it
+
     async def on_ready(self, s) -> None:
-        for c in list(self.cards.values()):
-            await self.host.send_app(s, self.card_msg(c, s))
+        for m in self.open_msgs(s):
+            await self.host.send_app(s, m)
 
     # ---------------------------------------------------------- the phone answers
     async def on_phone(self, s, obj: dict) -> None:

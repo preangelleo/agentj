@@ -34,7 +34,7 @@ a { color: var(--link); text-decoration-color: var(--link-underline); text-decor
 a:hover { text-decoration-thickness: 3px; }
 strong, b { font-weight: 700; }
 small, .aj-small { font-size: var(--fs-sm); }
-hr { border: 0; border-top: 1px solid var(--border); margin: var(--sp-6) 0; }
+hr { border: 0; border-top: 1px solid var(--border); margin: var(--sp-6) 0; color: var(--border); }
 ::selection { background: var(--c-peek-a-blue); color: var(--c-sooty); }
 .aj-subtitle { font-family: var(--font-subtitle); font-size: var(--fs-lg); color: var(--text-subtitle); font-weight: 400; }
 .aj-muted { color: var(--text-muted); }
@@ -184,7 +184,7 @@ html[data-theme="dark"] .aj-btn--primary:hover { background: var(--c-salt); bord
 @media (prefers-color-scheme: dark) { html:not([data-theme="light"]) .aj-btn--primary:hover { background: var(--c-salt); border-color: var(--c-salt); } }
 .aj-btn--quiet { background: transparent; border-color: transparent; color: var(--text); }
 .aj-btn--quiet:hover { background: var(--surface-2); border-color: var(--surface-2); }
-.aj-btn--danger { background: var(--danger-bg); color: var(--danger); border-color: var(--danger); }
+.aj-btn--danger { background: var(--danger-bg); color: var(--danger); border-color: var(--danger-line, var(--danger)); }
 .aj-btn--danger:hover { background: var(--danger); color: var(--bg); }
 .aj-btn--sm { padding: 0 var(--sp-4); font-size: var(--fs-sm); }
 .aj-btn--block { display: flex; width: 100%; }
@@ -201,15 +201,20 @@ html[data-theme="dark"] .aj-btn--primary:hover { background: var(--c-salt); bord
 a.aj-card { display: block; color: inherit; text-decoration: none; transition: border-color var(--dur) var(--ease); }
 a.aj-card:hover { border-color: var(--text-muted); }
 
-/* ===== callouts (level-3 light accents; sooty text) ===== */
-.aj-callout { border-radius: var(--r-md); padding: var(--sp-4) var(--sp-5); background: var(--callout-info);
-  color: var(--callout-fg); }
+/* ===== callouts — P214 scheme A, ONE look for every notice (note / info / warm / danger alike) =====
+   Solid palette fill + a 4 px bar on the left (palette.css --callout-*); the title is Milky Waves in dark. A warning or an
+   error never changes the fill: it only puts a small Peachy Feeling dot before its title (or first line). */
+.aj-callout { border-radius: var(--r-md); padding: var(--sp-4) var(--sp-5) var(--sp-4) calc(var(--sp-5) + 4px);
+  background: var(--callout-bg); color: var(--callout-fg); box-shadow: inset 4px 0 0 var(--callout-bar); }
 .aj-callout > * + * { margin-top: var(--sp-2); }
-.aj-callout__title { font-weight: 700; }
-.aj-callout--warm { background: var(--callout-warm); }
-.aj-callout--note { background: var(--callout-note); }
-.aj-callout--danger { background: var(--danger-bg); color: var(--text); box-shadow: inset 3px 0 0 var(--danger); }
+.aj-callout__title, .aj-callout > :is(h2, h3, h4), .aj-callout > p:first-child > strong:first-child { font-weight: 700; color: var(--callout-title); }
+.aj-callout--warm, .aj-callout--note, .aj-callout--info, .aj-callout--danger { background: var(--callout-bg); color: var(--callout-fg); }
+:is(.aj-callout--warm, .aj-callout--danger):is(p, span)::before,
+:is(.aj-callout--warm, .aj-callout--danger) > :first-child::before { content: ""; display: inline-block; width: 8px; height: 8px;
+  border-radius: 50%; background: var(--callout-dot); margin-inline-end: 0.5em; vertical-align: 0.1em; }
 .aj-callout a { color: inherit; }
+/* on a level-2 surface (Salt / Noir) the box steps to the page canvas (Lotion / Sooty): same bar, never fill-on-fill */
+.aj-card--2 { --callout-bg: var(--bg); }
 
 /* ===== badges + status dot ===== */
 .aj-badge { display: inline-flex; align-items: center; gap: 4px; padding: 1px 8px; border-radius: var(--r-pill);
@@ -219,7 +224,7 @@ a.aj-card:hover { border-color: var(--text-muted); }
 .aj-badge--beta::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: var(--accent); }
 .aj-badge--warm { background: var(--c-mellow-marrow); border-color: transparent; color: var(--c-sooty); }
 .aj-badge--info { background: var(--c-peek-a-blue); border-color: transparent; color: var(--c-sooty); }
-.aj-badge--note { background: var(--c-banana-republic); border-color: transparent; color: var(--c-sooty); }
+.aj-badge--note { background: var(--c-salt); border-color: transparent; color: var(--c-sooty); }
 .aj-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--accent); vertical-align: middle; }
 .aj-dot--off { background: var(--c-argent); }
 .aj-dot--warn { background: var(--c-peachy-feeling); }
@@ -265,7 +270,7 @@ select:not([multiple]):not([size]), .aj-select {
   background-size: 6px 6px, 6px 6px; background-repeat: no-repeat;
   text-overflow: ellipsis; cursor: pointer; }
 select:not([multiple]):not([size]):hover, .aj-select:hover { border-color: var(--text-muted); }
-.aj-input[aria-invalid="true"] { border-color: var(--danger); }
+.aj-input[aria-invalid="true"] { border-color: var(--danger-line, var(--danger)); }
 .aj-check { display: inline-flex; align-items: center; gap: var(--sp-2); min-height: var(--tap); cursor: pointer; }
 .aj-check input { width: 20px; height: 20px; accent-color: var(--primary-bg); }
 
@@ -301,8 +306,9 @@ select:not([multiple]):not([size]):hover, .aj-select:hover { border-color: var(-
 button, .aj-btn, [role="tab"] { white-space: nowrap; }
 .aj-actions { display:flex; flex-wrap:wrap; gap:var(--space-control); }
 @media (max-width: 600px) {
+  /* P203: :not([hidden]) — the !important used to show a finished card's hidden 批准 / 拒绝 row on phones */
   :is(.aj-actions, .aj-hero__actions, .actions, .site-os-tabs, .btn-row, .li-actions,
-      .plaza-tabs, .fr-askbtns, .apprbtns, .seg) {
+      .plaza-tabs, .fr-askbtns, .apprbtns, .seg):not([hidden]) {
     display:flex !important; flex-direction:column !important; align-items:stretch !important;
     flex-wrap:nowrap !important; width:100%; gap:var(--space-control);
   }

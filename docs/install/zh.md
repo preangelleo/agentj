@@ -69,7 +69,7 @@ Ubuntu 24.04 还会检查 AppArmor 对用户命名空间的限制，并实际试
 AI 安装电脑端程序 `agentj`，装的是固定的一个版本：
 
 ```bash
-uv tool install "git+https://github.com/preangelleo/agentj@v0.20.1a1#subdirectory=host"
+uv tool install "git+https://github.com/preangelleo/agentj@v0.20.2a1#subdirectory=host"
 agentj doctor
 ```
 
@@ -191,7 +191,7 @@ uv tool uninstall agentj
 
 ## 从另一台电脑给席位添加遥控器
 
-目标电脑安装完成、绑定账号且在线后，在账户页找到它的席位卡，点「添加遥控器」。用通行密钥确认一次，手机扫码即可；无需去目标电脑终端设置批准口令或输入六位码。同一会话十分钟内免重复确认，二维码五分钟内只可添加一台设备。待批准设备也可在席位卡查看、批准；「恢复 / 启用定时任务」提供全部停下恢复与任务启用的主人批准。
+目标电脑安装完成、绑定账号且在线后，在账户页找到它的席位卡，点「添加遥控器」。用通行密钥确认一次，手机扫码即可；无需去目标电脑终端设置批准口令或输入六位码。同一会话十分钟内免重复确认，二维码五分钟内只可添加一台设备。待批准设备也可在席位卡查看、批准；席位卡「更多」里的「查看电脑上等你处理的事」只在两种时候用：电脑被「全部停下」后要恢复，或 Agent 新建的定时任务等你启用；它跟席位和付费无关，欠费也不会停掉电脑上的任务。
 
 默认允许账户页添加；目标电脑的主人可用 `agentj remote-pair off` 关闭。离线时不排队，开机后重试；旧版本按提示运行 `agentj update apply` 或从已有手机升级。新设备来源显示「经账户页添加」，其他遥控器收到通知。
 
@@ -205,6 +205,8 @@ uv tool uninstall agentj
 
 已安装 Agent J 的电脑也能使用 AJI 安装码：重新运行账户页的一键安装命令，会保留配置，只升级并绑定席位。也可把码放在权限为 0600 的文件中，运行 `agentj login --install-code-file <文件> --name <名字>`。AJI 码只能用一次；ajt_ 设置码只用于绑定已安装的电脑。绑定后到账户页添加遥控器，用通行密钥确认并扫码，无需在终端设置批准口令。
 
+手动安装时，如果提示要填 `Installation code (AJI-…)`，去账号后台点「复制安装码」，只粘贴这串 AJI- 开头的码。
+
 Intel Mac 安装和升级都会限制 `cryptography<49`。如果旧安装器报 `openssl-sys` 或找不到 OpenSSL，在 `uv tool install` 后加 `--with "cryptography<49"` 再试。
 
 
@@ -214,7 +216,7 @@ Intel Mac 安装和升级都会限制 `cryptography<49`。如果旧安装器报 
 
 ## 同一台电脑给第二个人安装
 
-每人一个系统用户，各用自己的付费席位、安装码与手机。完整步骤见[同机多席位](/docs/multi-seat/)。
+每人各用自己的付费席位、安装码与手机：同一个系统用户里多开实例（`agentj --instance 2`，简单），或每人一个系统用户（隔离更强）。完整步骤见[一台电脑多人使用](/docs/multi-seat/)。
 
 ## 离开电脑前
 

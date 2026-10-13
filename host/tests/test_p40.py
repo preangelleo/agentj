@@ -1,5 +1,6 @@
 """P40: a shim trap must never be executed, including in fake HOME."""
 import _hermetic
+from _testtmp import TEST_TMP  # noqa: E402  P202: fixtures on tmpfs, not the system disk
 import os
 from pathlib import Path
 import tempfile
@@ -11,7 +12,7 @@ from agentj import binaries, harness, agent, service
 
 class BinaryResolution(unittest.TestCase):
     def setUp(self):
-        self.tmp = tempfile.TemporaryDirectory(prefix="p40-", dir="/var/tmp")
+        self.tmp = tempfile.TemporaryDirectory(prefix="p40-", dir=TEST_TMP)
         self.addCleanup(self.tmp.cleanup)
         self.home = Path(self.tmp.name)
         self.env = {"HOME":str(self.home),"PATH":str(self.home/".local/bin")}

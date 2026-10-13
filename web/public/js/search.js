@@ -333,9 +333,9 @@ export function flashCards(ts, where) {
 export function init(ctx) {
   X = ctx;
   const input = el('srchInput'), list = el('srchList');
-  el('srchBtn').addEventListener('click', toggle);
-  el('srchClose').addEventListener('click', close);
-  el('srchPrev').addEventListener('click', () => step(-1));
+  el('srchBtn').addEventListener('click', toggle);   // @ix app.search
+  el('srchClose').addEventListener('click', close);   // @ix search.close
+  el('srchPrev').addEventListener('click', () => step(-1));   // @ix search.history (+ ← → and the swipe below)
   el('srchNext').addEventListener('click', () => step(1));
   box().addEventListener('click', (e) => { if (e.target === box()) close(); });
   input.addEventListener('input', onType);
@@ -345,7 +345,8 @@ export function init(ctx) {
     if (e.key === 'ArrowDown') { e.preventDefault(); focusRow(0); }
   });
   for (const b of el('srchSort').querySelectorAll('button')) b.addEventListener('click', () => setSort(b.dataset.sort));
-  list.addEventListener('click', (e) => { const b = e.target.closest && e.target.closest('.srhit'); if (b) pick(+b.dataset.id); });
+  list.addEventListener('click', (e) => {   // @ix search.results (+ ↑ ↓ Enter)
+    const b = e.target.closest && e.target.closest('.srhit'); if (b) pick(+b.dataset.id); });
   list.addEventListener('scroll', () => { const p = current(); if (p) p.scroll = list.scrollTop; }, { passive: true });
   box().addEventListener('keydown', (e) => {
     if (e.target === input || e.isComposing || e.ctrlKey || e.metaKey || e.altKey) return;

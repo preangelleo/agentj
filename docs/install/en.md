@@ -69,7 +69,7 @@ It may need you here:
 The AI installs `agentj`, the program on your computer, at one fixed version:
 
 ```bash
-uv tool install "git+https://github.com/preangelleo/agentj@v0.20.1a1#subdirectory=host"
+uv tool install "git+https://github.com/preangelleo/agentj@v0.20.2a1#subdirectory=host"
 agentj doctor
 ```
 
@@ -190,7 +190,7 @@ Every paid, unbound seat has its own one-line installation code. Two empty paid 
 
 ## Add a remote for another computer
 
-Once the target computer is installed, account-bound and online, find its seat card on your account page and choose Add a remote. Confirm with your passkey and scan with the phone. No target-computer terminal, passphrase setup or six-digit entry is needed. Confirmation is reused for ten minutes on the same session; the QR expires after five minutes and can add one remote. Review and approve pending remotes on that card too. Resume / enable scheduled tasks supplies owner approval for lifting Stop everything and enabling a specific task.
+Once the target computer is installed, account-bound and online, find its seat card on your account page and choose Add a remote. Confirm with your passkey and scan with the phone. No target-computer terminal, passphrase setup or six-digit entry is needed. Confirmation is reused for ten minutes on the same session; the QR expires after five minutes and can add one remote. Review and approve pending remotes on that card too. Under More on the seat card, See what the computer is waiting on you for is only for two cases: resuming after Stop everything, or enabling a scheduled task the Agent created. It has nothing to do with seats or billing; an unpaid bill never stops the tasks on your computer.
 
 Account-page pairing is on by default. The target computer’s owner can disable it with `agentj remote-pair off`. Offline hosts are never queued; turn them on and try again. Older hosts must run `agentj update apply` or update from a paired phone. Devices record “Added from account page” and other remotes receive a notice.
 
@@ -204,6 +204,8 @@ First run `opencode --version` (or your selected agent’s `--version`). If it w
 
 An installed computer can also use an AJI installation code. Rerun the account-page installation command to preserve its configuration, upgrade and link its seat. Alternatively, keep the code in a mode-0600 file and run `agentj login --install-code-file <file> --name <name>`. AJI codes are single-use; ajt_ setup codes only link an installed computer. After linking, add a remote from the account page, confirm with your passkey and scan; no terminal passphrase is required.
 
+If a manual installation asks for `Installation code (AJI-…)`, choose "Copy installation code" on the account page and paste only that AJI- code.
+
 Intel Mac installations keep `cryptography<49`, including updates. If an older installer fails while compiling OpenSSL (`openssl-sys`), add `--with "cryptography<49"` to `uv tool install`.
 
 
@@ -213,7 +215,7 @@ Intel Mac installations keep `cryptography<49`, including updates. If an older i
 
 ## A second person on this computer
 
-Give each person an OS user, a paid seat, their own installation code and phone pairing. See [sharing a computer](/docs/multi-seat/).
+Give each person a paid seat, their own installation code and phone pairing: either another instance on the same OS user (`agentj --instance 2`, simple) or an OS user per person (stronger separation). See [sharing a computer](/docs/multi-seat/).
 
 ## Before you leave the computer
 

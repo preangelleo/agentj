@@ -17,7 +17,7 @@ const MAX_FIELD = 8192;
 
 function build() {
   if (root) return root;
-  root = mk('div', 'ajmodal elev');
+  root = mk('div', 'ajmodal dlgcard elev');
   root.id = 'elev';
   // P142 (A16): a layer — ESC = the card's deny / 「不提供」 (a secret card's first press only arms it, as the button does)
   registerLayer({ element: () => root, open: () => !!root && !root.hidden, rank: 55, fallback: () => document.getElementById('input') || document.getElementById('setBtn'),
@@ -130,6 +130,8 @@ export function clear() {
 }
 export const openCount = () => cards.size;
 export const isOpen = () => !!root && !root.hidden;
+export const ids = () => [...cards.keys()];                                                          // P203 (§29.1)
+export function prune(gone) { const now = Date.now(); for (const c of [...cards.values()]) if (gone(c.id)) done({ id: c.id, result: c.deadline <= now ? 'timeout' : 'gone' }); }
 
 function row(dl, label, value, cls) {
   if (!value) return;

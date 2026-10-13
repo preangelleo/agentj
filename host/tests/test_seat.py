@@ -264,7 +264,7 @@ class SeatCli(unittest.TestCase):
             n = len(cp.seat_binds)
             # local refusals: exit 2, nothing sent
             for args in (("--seat", self.code[:-1], "--name", "W"), ("--seat", self.code, "--name", "a‮b"),
-                         ("--seat", self.code, "--name", " "), ("--seat", self.code)):
+                         ("--seat", self.code, "--name", " ")):   # P214: no --name is no longer a refusal (test_p214_code_paste)
                 r = self.agentj("login", "--api", cp.url, *args)
                 self.assertEqual(r.returncode, 2, (args[1][:6], r.stderr))
             self.assertEqual(len(cp.seat_binds), n)

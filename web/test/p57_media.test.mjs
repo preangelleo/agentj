@@ -106,7 +106,12 @@ test('HTML preview frame: an EMPTY sandbox, no referrer, a CSP that allows no ne
 test('skip notes say what happened, never the content', () => {
   assert.equal(M.skipText({ name: 'v.mp4', why: 'too_big', bytes: 60 * 1048576 }), 'v.mp4 太大（60.0 MB），没有发到手机。');
   assert.equal(M.skipText({ name: 'a.png', why: 'outside' }), 'a.png 不在工作目录里，没有发。');
-  assert.equal(M.skipText({ name: '.env', why: 'secret' }), '.env 可能含密钥，没有发。');
+  // P211: every refusal says why and what to do next
+  assert.equal(M.skipText({ name: '.env', why: 'secret' }), '.env 的文件名或内容像密钥，所以没发；去掉密钥或改个名后让 Agent 再发。');
+  assert.match(M.skipText({ name: '.env', why: 'key_file' }), /凭据文件.*密钥领取卡/);
+  assert.match(M.skipText({ name: 'k.txt', why: 'key_content' }), /真实的密钥.*密钥领取卡/);
+  assert.match(M.skipText({ name: '.env', why: 'key_card' }), /已弹出密钥领取卡/);
+  for (const w of ['private', 'key_file', 'key_content', 'key_card']) assert.ok(M.WHYS.includes(w), w);
   for (const w of M.WHYS) assert.ok(!M.skipText({ name: 'n', why: w }).startsWith('media.'), w);
 });
 

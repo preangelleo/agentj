@@ -15,13 +15,14 @@ import * as shotclip from './shotclip.js';
 import * as remotes from './remotes.js';
 import * as mail from './mail.js';
 import * as contacts from './contacts.js';
+import * as ctmanage from './ctmanage.js';   // P207 §3: Settings → 通讯录
 
 let H = { agentName: () => 'Agent J', paired: () => false, connected: () => false, unpair: () => {}, reload: () => location.reload(),
   view: () => document.body.dataset.view, forget: () => {} };
 let prefs = null;                                    // the last `preferences` value from the host (null = none yet / older host)
 let hostInfo = null;                                 // its `host` block (host ≥ 0.15: version, settable keys, paired phones)
 let noPrefSet = false;                               // the host never answered a pref_set → show commands
-let sub = 'main';                                    // 'main' | 'ios' | 'remotes' | 'mail'
+let sub = 'main';                                    // 'main' | 'ios' | 'remotes' | 'mail' | 'contacts'
 
 // ---------------------------------------------------------------- reply text size (phone-local)
 export const FONT_STEPS = [0.8, 0.9, 1, 1.1, 1.25, 1.4, 1.6];
@@ -119,9 +120,13 @@ async function onA2hs() {
 // ---------------------------------------------------------------- host preferences (pref_set)
 export const PREF_KEYS = ['appearance.language', 'appearance.theme', 'voice.speak_replies', 'voice.wake_enabled', 'agent.high_risk_warnings', 'agent.session_mode', 'agent.isolation', 'agent.allow_docker'];
 PREF_KEYS.push('updates.mode', 'heartbeat.enabled', 'heartbeat.interval_minutes', 'approval.jev_threshold', 'approval.goal_auto');
-// P156: the heartbeat's idle interval steps through these (minutes); a value set elsewhere (agentj heartbeat set 45m) is shown as is
-export const HB_STEPS = [15, 30, 60, 120, 240, 480, 1440];
-export function hbNext(n) { return HB_STEPS.find((x) => x > n) || HB_STEPS[0]; }
+PREF_KEYS.push('updates.auto_install');                 // P203: half of the 升级方式 (自动 = install when idle) choice
+PREF_KEYS.push('heartbeat.daily_at');   // P207 §3: 「每天固定时间唤醒」 "HH:MM" | "" (host ≥ 0.20.2 lists it in settable)
+// P207 §3 (was P156's ⇄ stepper): the idle interval is a dropdown of these (minutes) + a custom number 5–1440; a value set
+// elsewhere (agentj heartbeat set 45m) shows as 「自定义」 with that number
+export const HB_STEPS = [30, 60, 120, 180, 240, 360, 480, 720, 1440];
+export const HB_MIN = 5, HB_MAX = 1440;
+const HHMM = /^([01]\d|2[0-3]):[0-5]\d$/;
 function hbText(n) { return n % 60 === 0 ? t('set.heartbeatHour', { n: n / 60 }) : t('set.heartbeatMin', { n }); }
 const pget = (key, dflt) => {
   let v = prefs;
@@ -129,6 +134,8 @@ const pget = (key, dflt) => {
   return v === undefined || v === null ? dflt : v;
 };
 const cmdFor = (key, value) => `agentj config set ${key} ${value}`;
+// P203: the one 「空闲时自动更新」 switch = updates.auto_install (night / idle install) + updates.mode (upgrade notices)
+const autoUpdates = () => pget('updates.auto_install', true) !== false && pget('updates.mode', 'auto') !== 'ask';
 function problemText(p) {
   const s = typeof p === 'string' ? p : p && typeof p === 'object' ? (p.error || p.message || p.code || '') : '';
   return String(s || '?').slice(0, 200);
@@ -142,7 +149,7 @@ export async function setPref(key, value) {
   if ((prefs && !hostInfo) || (hostInfo && Array.isArray(hostInfo.settable) && !hostInfo.settable.includes(key))) {
     noPrefSet = true; say(''); showCmd(key, value); render(); return false;
   }
-  say(t('set.saving'));
+  say(t('set.saving'), true);
   const m = await ask1({ t: 'pref_set', key, value }, 'pref_res', 8000);
   if (m.t === 'pref_res' && m.ok === true) { noPrefSet = false; hideCmd(); say(t('set.saved')); return true; }
   if (m.t === 'pref_res') say(t('set.saveFail', { why: problemText(m.problem) }));
@@ -153,7 +160,7 @@ export async function setPref(key, value) {
 }
 function showCmd(key, value) {
   const box = el(key === 'appearance.language' ? 'set-lang-cmd' : 'set-pref-cmd');
-  box.querySelector('code').textContent = cmdFor(key, value);
+  box.querySelector('code').textContent = cmdFor(key, value === '' ? '""' : value);
   box.hidden = false;
 }
 function hideCmd() { el('set-lang-cmd').hidden = true; el('set-pref-cmd').hidden = true; }
@@ -167,7 +174,17 @@ export function applyThemeLocal(want) {
 }
 
 // ---------------------------------------------------------------- render
-function say(s) { el('set-status').textContent = s; }
+// P207 §3: the notice bar under the header closes with its ✕ and fades by itself after ~4 s (it stayed forever before);
+// only 「正在保存…」 waits for its answer.
+export const SAY_MS = 4000;
+let sayTimer = 0;
+function say(s, keep = false) {
+  clearTimeout(sayTimer);
+  el('set-status').textContent = s || '';
+  el('set-status-bar').hidden = !s;
+  el('set-status-x').hidden = !s;
+  if (s && !keep) sayTimer = setTimeout(() => say(''), SAY_MS);
+}
 const tgl = (id, on) => { el(id).setAttribute('aria-checked', String(!!on)); };
 function renderPush() {
   const st = push.state(), b = el('set-push');
@@ -179,9 +196,41 @@ function renderPush() {
   b.textContent = t(st === 'on' ? 'set.pushDisable' : 'set.pushEnable');
   b.dataset.act = st === 'on' ? 'off' : 'on';
 }
+/** P207 §3: a two-way switch — aria-checked = the RIGHT option; its two labels say which side is which (bold = current). */
+function twoWay(id, right) {
+  const sw = el(id);
+  sw.setAttribute('aria-checked', String(!!right));
+  for (const l of sw.parentElement.querySelectorAll('.tw-lab')) l.setAttribute('aria-current', String((l.dataset.side === 'right') === !!right));
+}
+/** P207 §3: the heartbeat interval dropdown (+ custom minutes) and the daily wake-up time. */
+function renderHb(on, n) {
+  const sel = el('set-hb-every');
+  for (const o of sel.options) if (o.value !== 'custom') o.textContent = hbText(Number(o.value));
+  const preset = HB_STEPS.includes(n);
+  if (document.activeElement !== sel && !(sel.value === 'custom' && !el('set-hb-custom').hidden && !preset)) sel.value = preset ? String(n) : 'custom';
+  el('set-hb-custom').hidden = sel.value !== 'custom';
+  if (document.activeElement !== el('set-hb-custom-n')) el('set-hb-custom-n').value = String(n);
+  sel.disabled = !on; el('set-hb-custom-n').disabled = !on;
+  const dailyKnown = !!(hostInfo && Array.isArray(hostInfo.settable) && hostInfo.settable.includes('heartbeat.daily_at'));
+  el('set-hb-daily-row').hidden = !dailyKnown;
+  const at = String(pget('heartbeat.daily_at', '') || '');
+  const daily = HHMM.test(at) || dailyOn;
+  tgl('set-hb-daily', daily);
+  el('set-hb-daily').disabled = !on;
+  el('set-hb-time').hidden = !daily;
+  el('set-hb-time').disabled = !on;
+  if (HHMM.test(at) && document.activeElement !== el('set-hb-time')) el('set-hb-time').value = at;
+}
+let dailyOn = false;           // the daily switch turned on, time not picked / saved yet
+function hbInterval(v) {
+  const n = Math.round(Number(v));
+  if (!Number.isFinite(n) || n < HB_MIN || n > HB_MAX) { say(t('p207set.hb.range', { min: HB_MIN, max: HB_MAX })); return; }
+  setPref('heartbeat.interval_minutes', n);
+}
 export function render() {
   const lang = window.AJLang ? window.AJLang.get() : 'zh';
   for (const b of document.querySelectorAll('[data-set-lang]')) b.setAttribute('aria-pressed', String(b.dataset.setLang === lang));
+  twoWay('set-lang', lang === 'en');                                    // P207: left 中文 · right English
   const theme = curTheme();
   for (const b of document.querySelectorAll('[data-set-theme]')) b.setAttribute('aria-pressed', String(b.dataset.setTheme === theme));
   tgl('set-speak', pget('voice.speak_replies', false) === true);
@@ -208,8 +257,8 @@ export function render() {
   el('set-risk-cmd').textContent = cmdFor('agent.high_risk_warnings', risk ? 'false' : 'true');
   renderJev();
   const mode = pget('agent.session_mode', 'independent') === 'shared' ? 'shared' : 'independent';   // P174: independent by default
-  el('set-updates').textContent = t(pget('updates.mode', 'auto') === 'ask' ? 'set.updatesAsk' : 'set.updatesAuto');
-  el('set-mode').textContent = t(mode === 'shared' ? 'set.modeShared' : 'set.modeIndependent');
+  twoWay('set-updates', !autoUpdates());     // P207 two-way (left 自动 · right 先问我) over P203's two keys: 自动 = install when idle
+  twoWay('set-mode', mode === 'shared');                                // P207: left 独立 · right 共享
   el('set-mode-cmd').textContent = cmdFor('agent.session_mode', mode === 'shared' ? 'independent' : 'shared');
   const iso = pget('agent.isolation', true) !== false, dock = pget('agent.allow_docker', false) === true;
   tgl('set-iso', iso);
@@ -221,9 +270,9 @@ export function render() {
   el('set-hb-row').hidden = !hbKnown;
   const hbOn = pget('heartbeat.enabled', true) !== false, hbN = Number(pget('heartbeat.interval_minutes', 60)) || 60;
   tgl('set-hb', hbOn);
-  el('set-hb-every').textContent = hbText(hbN);
-  el('set-hb-every').disabled = !hbOn;
+  renderHb(hbOn, hbN);
   el('set-owner-nav').hidden = !contacts.forwardAvailable();   // P194: slot 0 needs a host with the address book
+  el('set-contacts-nav').hidden = !contacts.forwardAvailable(); // P207: the address book page, same host support
 }
 /** 「遥控器管理」 row: 已用 N / 10 (from the last dev_list / devs, else the preferences host block). */
 function renderRemotesRow() {
@@ -247,7 +296,7 @@ export function setPrefs(value, host) {
 
 // ---------------------------------------------------------------- open / close / sub-view
 export const isOpen = () => !el('settings').hidden;
-const SUB_TITLE = { main: 'set.title', ios: 'set.iosTitle', remotes: 'rm.title', mail: 'mail.nav' };
+const SUB_TITLE = { main: 'set.title', ios: 'set.iosTitle', remotes: 'rm.title', mail: 'mail.nav', contacts: 'p207set.ct.nav' };
 function showSub(v) {
   const from = sub;
   sub = v;
@@ -255,15 +304,18 @@ function showSub(v) {
   el('set-ios').hidden = v !== 'ios';
   el('set-remotes').hidden = v !== 'remotes';
   el('set-mail').hidden = v !== 'mail';
+  el('set-contacts').hidden = v !== 'contacts';
   el('set-back').hidden = v === 'main';
   el('set-title').textContent = t(SUB_TITLE[v]);
   el('settings').dataset.sub = v;
   if (from === 'remotes' && v !== 'remotes') remotes.close();
+  if (from === 'contacts' && v !== 'contacts') ctmanage.close();
   if (v === 'remotes') { remotes.open(); return; }
-  const back = { ios: 'set-a2hs', remotes: 'set-remotes-open', mail: 'set-mail-nav' }[from];
+  const back = { ios: 'set-a2hs', remotes: 'set-remotes-open', mail: 'set-mail-nav', contacts: 'set-contacts-nav' }[from];
   (v === 'main' ? el(back || 'set-close') : el('set-back')).focus({ preventScroll: v === 'main' && !back });
   if (v === 'main') renderRemotesRow();
   if (v === 'mail') mail.load();   // P170
+  if (v === 'contacts') ctmanage.open();   // P207
 }
 /** Opens Settings (any view but the camera); `page` = 'remotes' lands straight on 遥控器管理. */
 export function open(page = 'main') {
@@ -274,6 +326,7 @@ export function open(page = 'main') {
   const box = el('settings');
   box.hidden = false; box.dataset.modalOpen = '1';
   sub = 'main'; el('set-main').hidden = false; el('set-ios').hidden = true; el('set-remotes').hidden = true; el('set-mail').hidden = true; el('set-back').hidden = true;
+  el('set-contacts').hidden = true;
   box.dataset.sub = 'main';
   el('set-title').textContent = t('set.title');
   el('setBtn').setAttribute('aria-expanded', 'true');
@@ -290,7 +343,9 @@ export function close() {
   const box = el('settings');
   if (box.hidden) return;
   if (sub === 'remotes') remotes.close();
+  if (sub === 'contacts') ctmanage.close();
   sub = 'main';
+  say('');
   box.hidden = true; delete box.dataset.modalOpen;
   el('setBtn').setAttribute('aria-expanded', 'false');
   if (document.activeElement && box.contains(document.activeElement)) document.activeElement.blur();
@@ -341,6 +396,12 @@ function followScroll() {          // the side navigation marks the section at t
   markSection(cur);
 }
 
+function pickLang(l) {
+  if (window.AJLang && window.AJLang.get() !== l) window.AJLang.set(l);   // the page follows at once
+  render();
+  setPref('appearance.language', l);
+}
+
 /** hooks: { agentName(), paired(), connected(), myId(), unpair(), reload(), view(), forget(), hostDevices() } — app.js wires them. */
 export function configure(hooks) {
   H = { ...H, ...hooks };
@@ -355,12 +416,7 @@ export function configure(hooks) {
   el('set-back').addEventListener('click', () => showSub('main'));
   el('settings').addEventListener('click', (e) => { if (e.target === el('settings')) close(); });
   // keysBtn: relay.js opens the shortcut page ABOVE Settings (P187: its back / Esc returns here)
-  for (const b of document.querySelectorAll('[data-set-lang]')) b.addEventListener('click', () => {
-    const l = b.dataset.setLang;
-    if (window.AJLang && window.AJLang.get() !== l) window.AJLang.set(l);   // the page follows at once
-    render();
-    setPref('appearance.language', l);
-  });
+  for (const b of document.querySelectorAll('[data-set-lang]')) b.addEventListener('click', () => pickLang(b.dataset.setLang));
   for (const b of document.querySelectorAll('[data-set-theme]')) b.addEventListener('click', () => {
     applyThemeLocal(b.dataset.setTheme);
     render();
@@ -371,9 +427,38 @@ export function configure(hooks) {
     tgl(id, next);
     setPref(b.dataset.pref, next);
   });
-  el('set-updates').addEventListener('click', () => setPref('updates.mode', pget('updates.mode', 'auto') === 'auto' ? 'ask' : 'auto'));
-  el('set-hb-every').addEventListener('click', () => setPref('heartbeat.interval_minutes', hbNext(Number(pget('heartbeat.interval_minutes', 60)) || 60)));
-  el('set-mode').addEventListener('click', () => setPref('agent.session_mode', pget('agent.session_mode', 'independent') === 'shared' ? 'independent' : 'shared'));
+  // P207 §3: two-way switches — the switch flips, a side label picks that side (a no-op when it is already chosen)
+  const TW = {
+    'set-lang': [() => (window.AJLang ? window.AJLang.get() : 'zh') === 'en', (right) => pickLang(right ? 'en' : 'zh')],
+    // P203 + P207: 自动 (left) = updates.auto_install true + mode auto (install when idle); 先问我 (right) = both off
+    'set-updates': [() => !autoUpdates(), async (right) => { if (await setPref('updates.auto_install', !right)) await setPref('updates.mode', right ? 'ask' : 'auto'); }],
+    'set-mode': [() => pget('agent.session_mode', 'independent') === 'shared', (right) => setPref('agent.session_mode', right ? 'shared' : 'independent')],
+  };
+  for (const [id, [isRight, pick]] of Object.entries(TW)) {
+    el(id).addEventListener('click', () => { const next = !isRight(); twoWay(id, next); pick(next); });
+    for (const l of el(id).parentElement.querySelectorAll('.tw-lab[data-tw]')) l.addEventListener('click', () => {
+      const right = l.dataset.side === 'right';
+      if (right !== isRight()) { twoWay(id, right); pick(right); }
+    });
+  }
+  el('set-hb-every').addEventListener('change', () => {
+    const v = el('set-hb-every').value;
+    el('set-hb-custom').hidden = v !== 'custom';
+    if (v === 'custom') { el('set-hb-custom-n').focus({ preventScroll: true }); return; }
+    hbInterval(v);
+  });
+  el('set-hb-custom-n').addEventListener('change', () => hbInterval(el('set-hb-custom-n').value));
+  el('set-hb-daily').addEventListener('click', () => {
+    const next = el('set-hb-daily').getAttribute('aria-checked') !== 'true';
+    tgl('set-hb-daily', next);
+    el('set-hb-time').hidden = !next;
+    dailyOn = next;
+    if (next) { el('set-hb-time').focus({ preventScroll: true }); if (HHMM.test(el('set-hb-time').value)) setPref('heartbeat.daily_at', el('set-hb-time').value); }
+    else setPref('heartbeat.daily_at', '');
+  });
+  el('set-hb-time').addEventListener('change', () => { const v = el('set-hb-time').value; if (HHMM.test(v)) setPref('heartbeat.daily_at', v); });
+  el('set-status-x').addEventListener('click', () => say(''));
+  el('set-hostupg').addEventListener('click', () => { if (H.upgradeHost) H.upgradeHost(); });   // P203: impact → card → /update
   el('set-jev-minus').addEventListener('click', () => setJev(jevAt() - 1));
   el('set-jev-plus').addEventListener('click', () => setJev(jevAt() + 1));
   el('set-font-minus').addEventListener('click', () => setFontStep(fontAt - 1));
@@ -398,10 +483,15 @@ export function configure(hooks) {
   el('set-a2hs').addEventListener('click', onA2hs);
   el('set-mail-nav').addEventListener('click', () => showSub('mail'));   // P170
   el('set-owner-nav').addEventListener('click', () => contacts.openOwner());   // P194: 我的联系方式 (slot 0)
+  el('set-contacts-nav').addEventListener('click', () => showSub('contacts'));   // P207: 通讯录
   mail.configure();
+  // P207 §3: copy = an icon button; ✓ for 1.6 s on success (plus the fading notice for screen readers)
   for (const b of document.querySelectorAll('[data-copy]')) b.addEventListener('click', async () => {
     const ok = await RelayMD.copyText(el(b.dataset.copy).textContent);
     say(ok ? t('set.copied') : t('r.copy.fail'));
+    if (!ok) return;
+    b.dataset.done = '1'; clearTimeout(b._done);
+    b._done = setTimeout(() => { delete b.dataset.done; }, 1600);
   });
   onLang(() => { if (isOpen()) { render(); el('set-title').textContent = t(SUB_TITLE[sub]); } });
 }

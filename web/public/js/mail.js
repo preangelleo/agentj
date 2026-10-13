@@ -59,6 +59,8 @@ function render() {
   el('mail-status').textContent = parts.join(' · ');
   const d = view.today || {};
   el('mail-today').textContent = t('mail.today', { ok: d.delivered || 0, out: d.not_allowed || 0, auth: d.auth || 0, auto: d.auto || 0, sent: d.reply_sent || 0 });
+  // P206: `agentj mail expect` windows (the Agent waiting for one sign-up mail) — shown only once used today
+  if (d.expect) el('mail-today').textContent += ' · ' + t('mail.todayExpect', { found: d.expect_found || 0, timeout: d.expect_timeout || 0, rejected: d.expect_rejected || 0 });
   // sender-check sample from the last connection test
   const smp = view.auth_sample;
   el('mail-sample').textContent = !smp || !smp.checked ? '' : smp.with_results

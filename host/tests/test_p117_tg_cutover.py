@@ -11,6 +11,7 @@ export (only ever forward). A faithful fake Bot API keeps every update until a g
 restarted or switched poller can be handed an update a second time. Each direction: exactly one delivery, one reply.
 """
 import _hermetic  # noqa: F401,I001
+from _testtmp import TEST_TMP  # noqa: E402  P202: fixtures on tmpfs, not the system disk
 import asyncio
 import hashlib
 import json
@@ -183,7 +184,7 @@ class SharedInbox(unittest.IsolatedAsyncioTestCase):
     Unix socket (Claude's messaging socket stand-in) → UserPromptSubmit / committed Stop → the reply back on Telegram."""
 
     async def asyncSetUp(self):
-        self.tmp = tempfile.TemporaryDirectory(prefix="p117-", dir="/var/tmp")
+        self.tmp = tempfile.TemporaryDirectory(prefix="p117-", dir=TEST_TMP)
         self.addCleanup(self.tmp.cleanup)
         root = pathlib.Path(self.tmp.name)
         self.bot = FaithfulBot()
@@ -429,7 +430,7 @@ class _Fake:
 
 class Cursor(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
-        self.tmp = tempfile.TemporaryDirectory(prefix="p117c-", dir="/var/tmp")
+        self.tmp = tempfile.TemporaryDirectory(prefix="p117c-", dir=TEST_TMP)
         self.addCleanup(self.tmp.cleanup)
         self.root = pathlib.Path(self.tmp.name) / "st"
         self.bot = FaithfulBot()

@@ -46,6 +46,9 @@ import { parseAgentId } from './proto/wire.js';
 import { SCAN_CONSTRAINTS, SCAN_FALLBACK, SCAN_SLOW_MS, scanFrame } from './js/scan.js';   // F29 (ADR-A177)
 import { classifyScan, RV_PREFIX } from './proto/wire.js';
 import * as rvpair from './js/rvpair.js';   // P190 (§27): be scanned on the pairing screen; scan a new device from a paired one
+import * as cardsync from './js/cardsync.js';   // P203 (§29.1): rebuild the cards from the computer's snapshot
+import * as upgcard from './js/upgcard.js';     // P203 (§29.2): the upgrade confirmation card
+import * as pairpage from './js/pairpage.js'; // P210: the numbered method cards of 「连上你的电脑」
 
 import { registerLayer, initLayers } from './js/layers.js';
 import { applyViewport, watchViewport } from './js/viewport.js';
@@ -310,6 +313,7 @@ session.configure({
     if (pendingRv) { const c = pendingRv; pendingRv = null; rvpair.approve(c).catch(() => {}); }
     api.myDeviceId().then(() => rerender());
     relay.onReady();
+    setTimeout(() => cardsync.sync(true), 1200);      // P203: after the host's own replay — fills gaps, drops cards that ended
     // P189: the file cards' 「转发到邮箱」 icon (P183, mailfwd.js) opens P184's dialog — only on a host with `contacts`
     registerMailForward(contacts.forwardAvailable() ? (req) => contacts.openForward({ mid: req.mid, name: req.name }) : null);
     blobs.onReconnect([]);
@@ -336,6 +340,8 @@ bots.configure({openPanel:controls.openPanel});
 setupcard.configure({ openPanel: controls.openPanel, view: () => view });   // P131: the checklist page + chat banner
 friends.configure({ openPanel: controls.openPanel, leave: () => leavePage(), agentName: () => agentName ?? DEFAULT_NAME });
 contacts.configure({ openSettingsMail: () => settings.openMail() });   // P184: no mailbox yet → Settings → 邮件通道
+upgcard.configure({ upgrade: () => api.upgradeNow() });   // P203: 「现在升级」 = this phone's signed /update
+api.setUpgradeFlow(() => upgcard.start());                 // ≡ /update and Settings ask the computer first
 
 function onApp(m) {
   if (api.route(m) || blobs.handle(m) || media.handle(m)) return;
@@ -380,6 +386,8 @@ function onApp(m) {
     case 'lt_caps': longtask.showCaps(m); return;      // 「我的 Agent 会什么」
     case 'rt': gotTicket(m); return;                  // P122 (§12.1): this phone's renewal ticket → the HttpOnly cookie
     case 'question': snap.addQuestion(m); return;
+    case 'upg_card': upgcard.add(m); return;         // P203 (§29.2): what an upgrade now would interrupt — the owner decides
+    case 'upg_card_done': upgcard.done(m); return;
     case 'question_done': snap.questionDone(m); return;
     case 'auto': controls.showAuto(m); return;
     case 'grant': controls.setGrant(m); return;
@@ -772,7 +780,7 @@ async function startScan(mode = 'pair') {
   if (!history.state?.ajScan) history.pushState({ajScan:true}, "");
   const hint = $('camera-hint');
   fillText(hint, t(mode === 'pair' ? 'camera.aim' : mode === 'rv' ? 'scan.aimRv' : 'scan.aim')); hint.hidden = false;
-  if (mode !== 'pair') { scanActive = true; $('scan-trigger').textContent = t('camera.pause'); }
+  scanActive = true; paintScanTrigger();   // P207 §3: every mode scans at once (no 「扫描」 tap first)
   let det = null;
   try {
     if (window.BarcodeDetector && (await window.BarcodeDetector.getSupportedFormats()).includes('qr_code'))
@@ -792,7 +800,7 @@ async function startScan(mode = 'pair') {
     fillText(hint, t('pair.scanNoCam')); hint.hidden = false; stopScan(false); return;
   }
   if (generation !== scanGeneration) { stream.getTracks().forEach(tr => tr.stop()); return; }
-  scanStream = stream;
+  scanStream = stream; paintScanTrigger();
   const video = $('scan-video');
   video.srcObject = stream;
   $('scan-box').hidden = false;
@@ -829,6 +837,14 @@ async function startScan(mode = 'pair') {
   };
   tick();
 }
+/** P207 §3: the round pause / resume icon (aria-pressed = paused; the word lives in aria-label + title). No stream = retry. */
+function paintScanTrigger() {
+  const b = $('scan-trigger'), paused = !scanActive;
+  const label = t(scanStream && scanActive ? 'camera.pause' : 'camera.scan');
+  b.setAttribute('aria-pressed', String(!!scanStream && paused));
+  b.setAttribute('aria-label', label); b.title = label;
+  if (scanStream && paused) document.body.dataset.scanPaused = '1'; else delete document.body.dataset.scanPaused;
+}
 function stopScan(leave = true) {
   ++scanGeneration;
   if (scanStream) for (const tr of scanStream.getTracks()) tr.stop();
@@ -836,7 +852,7 @@ function stopScan(leave = true) {
   $('scan-video').srcObject = null;
   $('scan-box').hidden = true;
   scanActive = false;
-  $('scan-trigger').textContent = t('camera.scan');
+  paintScanTrigger();
   delete document.body.dataset.scan;
   if (leave) {
     if (view === 'scan') {
@@ -874,7 +890,9 @@ window.addEventListener('pagehide', () => stopScan());
 window.addEventListener('popstate', () => { if(view === 'scan') stopScan(); });
 function fitPairViewport() {
   applyViewport();          // P142: the same rule as the chat (keyboard up → visual viewport, else full height)
-  if (document.activeElement === $('pair-link')) $('pair-controls').scrollIntoView({ block: 'start' });
+  // P218: since P210 the link box sits under a title, a note and the command, so the block's top no longer keeps the box
+  // and 「开始配对」 above a 300 px keyboard on a 360×640 phone — start the scroll at the box's own label instead
+  if (document.activeElement === $('pair-link')) ($('pair-link').labels?.[0] || $('pair-link')).scrollIntoView({ block: 'start' });
 }
 document.addEventListener('focusin', () => { fitPairViewport(); setTimeout(fitPairViewport, 300); });
 document.addEventListener('focusout', () => setTimeout(fitPairViewport, 300));
@@ -993,14 +1011,14 @@ function wire() {
   $('scan').hidden = false;
   $('pair-link').addEventListener('focus', () => { stopScan(); fitPairViewport(); setTimeout(fitPairViewport, 300); });
   $('pair-go').addEventListener('click', () => startPairing($('pair-link').value));
-  $('scan').addEventListener('click', () => { startScan(); });
+  pairpage.init(() => startScan());
   $('scanBtn').addEventListener('click', () => { closeMenu(); scanIcon(); });
-  $('rm-scan').addEventListener('click', () => startScan('rv'));
+  $('rm-scan-icon').addEventListener('click', () => startScan('rv'));   // P207 §3: the scan icon right of 「添加遥控器」
   $('pk-restore').addEventListener('click', () => { stopScan(); pkRestore().catch(() => pkFailed('bad')); });
   $('takeover-pk').addEventListener('click', () => { pkRestore(false, true).catch(() => pkFailed('bad')); });   // P198
   $('scan-stop').addEventListener('click', () => stopScan());
   $('scan-back').addEventListener('click', () => stopScan());
-  $('scan-trigger').addEventListener('click', () => { if (!scanStream) { startScan(); return; } scanActive = !scanActive; $('scan-trigger').textContent = t(scanActive ? 'camera.pause' : 'camera.scan'); });
+  $('scan-trigger').addEventListener('click', () => { if (view !== 'scan') return; if (!scanStream) { startScan(scanMode); return; } scanActive = !scanActive; paintScanTrigger(); });
   $('open-models').addEventListener('click', fromSettings(openModels));
   $('models-back').addEventListener('click', leavePage);
   $('grant-off').addEventListener('click', controls.revokeGrants);
@@ -1047,6 +1065,10 @@ function wire() {
     reload: () => location.reload(),
     view: () => view,
     forget: forgetHost,                               // P171: this remote unbound itself from 遥控器管理
+    upgradeHost: async () => {                        // P203: Settings → 升级电脑上的 Agent J (the same path as ≡ /update)
+      if (!session.isReady()) { toast(t('set.offline'), 2400); return; }
+      if (await api.slash('update')) { settings.close(); toast(t('upg.started'), 2600); }
+    },
   });
   $('scan-repair').addEventListener('click', async () => {
     closeMenu();
@@ -1081,10 +1103,12 @@ function wire() {
     const fg = document.visibilityState === 'visible';
     if (session.isReady()) session.sendApp({ t: 'vis', fg }).catch(() => {});   // the host pushes only while hidden
     if (fg) session.reconnectNow();
+    if (fg && session.isReady()) cardsync.sync();   // P203: back in front on a live session — cards sent while frozen
     if (fg && view === 'pair' && state === 'idle') renderPk().catch(() => {});   // a fresh challenge timestamp
     if (fg) ticketWhenIdle();
   });
   onLang(relang);
+  onLang(() => paintScanTrigger());   // P207: the scan icon's words follow the language
 }
 
 async function main() {

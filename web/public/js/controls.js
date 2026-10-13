@@ -2,7 +2,7 @@
 // Reads are plain requests answered to this session only; every write is signed with the approval key over (action,
 // nonce, time, SHA-256 of the target as shown) — the host does nothing without a valid signature. Nothing is stored here.
 import { controlMessage, b64u } from '../proto/wire.js';
-import { request, done, isReady, channel, sendApp, randHex, gen } from './session.js';
+import { request, done, isReady, channel, sendApp, randHex, gen, peer } from './session.js';
 import { signKey } from './store.js';
 import { myDeviceId } from './api.js';
 import { t, lang, locale, plain } from './t.js';
@@ -14,7 +14,7 @@ export let panel = 'chat';
 export const estop = { on: false, by: '' };
 
 const GEN = Symbol('gen');                            // the session a signed write was made for (never serialized)
-async function signed(action, target, extra) {
+export async function signed(action, target, extra) {   // P203: cardsync signs its read the same way
   const sk = await signKey();
   const g = gen();
   if (!g || !sk) throw new Error(sk ? 'offline' : 'no_key');
@@ -98,6 +98,8 @@ export function endGrant(id, code) {
   if (code !== 'turn_end') toast(t('grant.end.' + (GRANT_END.includes(code) ? code : 'other')), 3200);
 }
 export function clearGrants() { grants.clear(); renderGrants(); }
+export const grantIds = () => [...grants.keys()];                                                     // P203 (§29.1)
+export function pruneGrants(gone) { for (const id of [...grants.keys()]) if (gone(id)) endGrant(id, 'turn_end'); }   // quietly
 export async function revokeGrants() {
   if (!isReady() || grants.size === 0) return;
   await sendApp({ t: 'grant_off', id: null }).catch(() => {});
@@ -241,6 +243,7 @@ export function loadActivity(fresh) {
 
 // ---- 定时任务 (scheduled tasks)
 export function loadTasks() {
+  loadSysTasks();
   el('tasks-status').textContent = t('tasks.loading');
   const ul = el('tasks-list'); ul.replaceChildren();
   const r = request({ t: 'task_list' }, (m) => {
@@ -252,6 +255,83 @@ export function loadTasks() {
       el('tasks-status').textContent = (m.paused ? t('tasks.paused') : '') + (n ? '' : (m.agent ? t('tasks.none') : t('tasks.noAgent')));
     }
   });
+}
+
+// ---- P207 §2: the computer's own scheduled tasks (systemd timers / crontab / LaunchAgents / Task Scheduler), read-only.
+// Only a host announcing `systasks` is asked; rows carry name, schedule, next / last run, state, source — never a command.
+const SYS_STATES = { active: 'sysActive', waiting: 'sysWaiting', failed: 'sysFailed', disabled: 'sysDisabled' };
+const SYS_SRC = { systemd: 'srcSystemd', cron: 'srcCron', launchd: 'srcLaunchd', schtasks: 'srcSchtasks' };
+function loadSysTasks() {
+  const box = el('systasks'), ul = el('systasks-list'), st = el('systasks-status');
+  const on = peer.systasks === true;
+  box.hidden = !on; el('tasks-h-own').hidden = !on;
+  ul.replaceChildren();
+  if (!on) return;
+  st.textContent = t('tasks.sysLoading');
+  const r = request({ t: 'systask_list' }, (m) => {
+    if (m.t !== 'systasks') return;
+    for (const x of Array.isArray(m.items) ? m.items.slice(0, 200) : []) if (x && typeof x === 'object') ul.append(sysCard(x));
+    if (m.more === false) {
+      done(r);
+      const n = ul.children.length;
+      st.textContent = n ? t('tasks.sysCount', { n }) + (Number.isInteger(m.max) && n >= m.max ? ' · ' + t('tasks.sysMax', { n: m.max }) : '') : t('tasks.sysNone');
+    }
+  });
+}
+const str = (v, n = 120) => (typeof v === 'string' ? v.slice(0, n) : '');
+const atText = (x) => new Date(x * 1000).toLocaleString(locale(), { hour12: false, month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+function durText(secs) {
+  const n = Number(secs);
+  if (!Number.isFinite(n) || n <= 0) return '';
+  if (n % 86400 === 0) return t('tasks.durD', { n: n / 86400 });
+  if (n % 3600 === 0) return t('tasks.durH', { n: n / 3600 });
+  if (n % 60 === 0 || n >= 3600) return t('tasks.durM', { n: Math.round(n / 60) });
+  return t('tasks.durS', { n });
+}
+const CRON_AT = { '@hourly': '0 * * * *', '@daily': '0 0 * * *', '@midnight': '0 0 * * *', '@weekly': '0 0 * * 0', '@monthly': '0 0 1 * *' };
+const CAL_DAYS = { sun: 0, mon: 1, tue: 2, wed: 3, thu: 4, fri: 5, sat: 6 };
+function calText(v) {                                   // systemd OnCalendar → the cron sentence when it is a simple one
+  const short = { hourly: '0 * * * *', daily: '0 0 * * *', weekly: '0 0 * * 1', monthly: '0 0 1 * *', minutely: '* * * * *' }[v.trim().toLowerCase()];
+  if (short) return cronText(short);
+  const m = /^(?:([A-Za-z]{3}(?:,[A-Za-z]{3})*) )?(?:\*-\*-\* )?(\d{1,2}|\*):(\d{1,2})(?::00)?(?: [A-Za-z_]+(?:\/[A-Za-z_]+)?)?$/.exec(v.trim());
+  if (m) {
+    const dow = m[1] ? m[1].toLowerCase().split(',').map((d) => CAL_DAYS[d]) : null;
+    if (!dow || dow.every((d) => d !== undefined)) return cronText(`${+m[3]} ${m[2] === '*' ? '*' : +m[2]} * * ${dow ? dow.join(',') : '*'}`);
+  }
+  return t('tasks.cal', { v });
+}
+function sysWhen(list) {
+  const parts = [];
+  for (const w of Array.isArray(list) ? list.slice(0, 3) : []) {
+    if (!w || typeof w !== 'object') continue;
+    if (w.k === 'cron' && typeof w.v === 'string') parts.push(cronText(CRON_AT[w.v] ?? w.v));
+    else if (w.k === 'every' && Number.isFinite(w.v)) parts.push(t('tasks.every', { d: durText(w.v) }));
+    else if (w.k === 'boot' && Number.isFinite(w.v)) parts.push(w.v > 0 ? t('tasks.boot', { d: durText(w.v) }) : t('tasks.bootNow'));
+    else if (w.k === 'cal' && typeof w.v === 'string') parts.push(calText(str(w.v, 80)));
+    else if (w.k === 'raw' && typeof w.v === 'string') parts.push(str(w.v, 60));
+  }
+  return parts.length ? parts.join(lang() === 'en' ? '; ' : '；') : t('tasks.whenUnknown');
+}
+function sysCard(x) {
+  const li = mk('li', 'task-card systask-card');
+  const state = SYS_STATES[x.state] ? x.state : 'waiting';
+  const src = SYS_SRC[x.src] ? x.src : '';
+  li.dataset.src = src; li.dataset.state = state;
+  const name = str(x.name) || str(x.id) || '?';
+  li.append(mk('p', 'task-title', name));
+  const tags = mk('p', 'ask-tags');
+  tags.append(mk('span', 'tag ' + ({ active: 'tag-task', waiting: 'tag-on', failed: 'tag-fail', disabled: 'tag-off' }[state]), t('tasks.' + SYS_STATES[state])));
+  if (src) tags.append(mk('span', 'tag', t('tasks.' + SYS_SRC[src])));
+  li.append(tags);
+  let line = t('tasks.sysWhen', { when: sysWhen(x.when) });
+  if (Number.isInteger(x.next) && x.next > 0) line += t('tasks.next', { at: atText(x.next) });
+  else if (str(x.next_s, 40)) line += t('tasks.next', { at: str(x.next_s, 40) });
+  if (Number.isInteger(x.last) && x.last > 0) line += t('tasks.sysLast', { at: atText(x.last) });
+  else if (str(x.last_s, 40)) line += t('tasks.sysLast', { at: str(x.last_s, 40) });
+  li.append(mk('p', 'small', line));
+  const id = str(x.id, 80);
+  if (id && id !== name) li.append(mk('p', 'small muted systask-id', id));
+  return li;
 }
 const tzText = (tk) => (tk.tz === 'local' ? t('tasks.localTz') : tk.tz ?? '');
 function taskCard(tk, paused) {

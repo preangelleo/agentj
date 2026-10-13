@@ -2,6 +2,7 @@
 its service environment (yes/no over the control socket — never the value); a terminal's environment counts only when serve is
 not running. P134 did the same for `config set`. No real Bot API."""
 import _hermetic  # noqa: F401,I001
+from _testtmp import TEST_TMP  # noqa: E402  P202: fixtures on tmpfs, not the system disk
 import asyncio
 import json
 import os
@@ -26,7 +27,7 @@ print(json.dumps({"enroll": telegram.enroll(123, sys.argv[1]),
 
 class ServeEnvDecides(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
-        self.tmp = tempfile.TemporaryDirectory(prefix='aj-p142tg-', dir='/var/tmp')
+        self.tmp = tempfile.TemporaryDirectory(prefix='aj-p142tg-', dir=TEST_TMP)
         self.addCleanup(self.tmp.cleanup)
         self.home = Path(self.tmp.name)
         env = {'HOME': str(self.home), 'XDG_CONFIG_HOME': str(self.home / '.config'),

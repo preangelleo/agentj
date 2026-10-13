@@ -26,7 +26,7 @@ export const shownDigest = secretOutDigest;
 
 function build() {
   if (root) return root;
-  root = mk('div', 'ajmodal sout');
+  root = mk('div', 'ajmodal dlgcard sout');
   root.id = 'sout'; root.hidden = true;
   // P142 (A16): a layer — ESC = 「完成」 once opened (the value is wiped), else the card's 「不需要了」; shortcuts stay off
   registerLayer({ element: () => root, open: () => !!root && !root.hidden, rank: 55, fallback: () => document.getElementById('input') || document.getElementById('setBtn'),
@@ -129,6 +129,8 @@ export function failed(m) {
   render();
 }
 
+export const ids = () => [...cards.keys()];                                                          // P203 (§29.1)
+export function prune(gone) { const now = Date.now(); for (const c of [...cards.values()]) if (gone(c.id) && !(opened && opened.id === c.id)) done({ id: c.id, result: c.deadline <= now ? 'expired' : 'gone' }); }   // a value on screen stays
 /** Unpair / revoke: forget everything (and wipe a shown value). A connection blip (`keepOpened`): the host re-sends the open
  *  cards after ready, but a value already on screen (its card ended at the host) stays until 完成 / 2 minutes. */
 export function clear({ keepOpened = false } = {}) {

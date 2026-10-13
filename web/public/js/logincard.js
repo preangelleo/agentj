@@ -14,7 +14,7 @@ let root = null, timer = 0, busy = false;
 
 function build() {
   if (root) return root;
-  root = mk('div', 'ajmodal lqr');
+  root = mk('div', 'ajmodal dlgcard lqr');
   root.id = 'lqr'; root.hidden = true;
   // P142 (A16): a layer — ESC = the card's own quiet way out (「稍后」 while it waits, 「关闭」 once ended); shortcuts stay off
   registerLayer({ element: () => root, open: () => !!root && !root.hidden, rank: 55, fallback: () => document.getElementById('input') || document.getElementById('setBtn'),
@@ -102,6 +102,8 @@ export function clear() {
   clearTimeout(timer);
 }
 export const openCount = () => cards.size;
+export const ids = () => [...cards.keys()];                                                          // P203 (§29.1)
+export function prune(gone) { const now = Date.now(); for (const c of [...cards.values()]) if (gone(c.id)) done({ id: c.id, result: c.deadline <= now ? 'expired' : 'gone' }); }
 
 function render() {
   build();

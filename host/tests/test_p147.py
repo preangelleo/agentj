@@ -2,6 +2,7 @@
 repairs serve / relay / agent; every new session learns the self-check. Local fixtures only (fake registry, sleeping
 child processes as live pids, local sockets) — never the owner's sessions."""
 import _hermetic  # noqa: F401
+from _testtmp import TEST_TMP  # noqa: E402  P202: fixtures on tmpfs, not the system disk
 import asyncio
 import io
 import json
@@ -37,7 +38,7 @@ class Host:
 
 class Fixture(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
-        self.tmp = tempfile.TemporaryDirectory(prefix="p147-", dir="/var/tmp")
+        self.tmp = tempfile.TemporaryDirectory(prefix="p147-", dir=TEST_TMP)
         self.addCleanup(self.tmp.cleanup)
         self.root = Path(self.tmp.name)
         self.work = self.root / "work"; self.work.mkdir()

@@ -76,6 +76,7 @@ ENV = "AGENTJ_ELEVATE_SOCK"
 PHONE_TYPES = ("elev_answer", "secret_out_open", "secret_out_decline")   # the last two: F32 (secret_out.py)
 PHONE_TYPES += ("login_qr_check", "login_qr_cancel", "login_qr_tg", "login_qr_refresh")   # P114: browser_login.py
 PHONE_TYPES += ("ct_list", "ct_save", "ct_card_answer", "mail_fwd")   # P184: contacts_serve.py (address book, forward to e-mail)
+PHONE_TYPES += ("ct_rm", "ct_export", "ct_import")   # P207: contacts_serve.py (delete one, export vcf/csv, import a file)
 RESULTS_NAME = "secret-results.json"
 RESULTS_KEEP = 100
 NAME_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]{0,127}")
@@ -608,6 +609,7 @@ class Elevator:
         self.login = LoginCards(self)  # P114: login QR cards (`agentj browser login`)
         from .contacts_serve import ContactService
         self.contacts = ContactService(self)  # P184: address book, contact cards, 「转发到邮箱」, `agentj mail send`
+        self._upgrade_mem: dict = {}  # P205: the fenced `update apply`'s cached old wheel (update.host_op)
 
     @property
     def sock_path(self) -> pathlib.Path:
@@ -682,10 +684,17 @@ class Elevator:
         c["deadline"] = time.monotonic() + TTL[c["kind"]]
         del old
 
+    def open_msgs(self, s) -> list[dict]:
+        """P203: the open sudo / secret cards as this device sees them (on_ready's replay and the cards_get snapshot)."""
+        return [self.card_msg(c, s) for c in list(self.cards.values()) if not c["fut"].done() and not c.get("busy")]
+
+    def all_open_msgs(self, s) -> list[dict]:
+        """P203: these and the pickup / sign-in / contact cards this module also owns."""
+        return self.open_msgs(s) + self.out.open_msgs(s) + self.login.open_msgs(s) + self.contacts.open_msgs(s)
+
     async def on_ready(self, s) -> None:
-        for c in list(self.cards.values()):
-            if not c["fut"].done() and not c.get("busy"):
-                await self.host.send_app(s, self.card_msg(c, s))
+        for m in self.open_msgs(s):
+            await self.host.send_app(s, m)
         await self.out.on_ready(s)
         await self.login.on_ready(s)
         await self.contacts.on_ready(s)
@@ -789,7 +798,7 @@ class Elevator:
         if cancelled:raise asyncio.CancelledError
         return res
 
-    contacts_types = ("ct_list", "ct_save", "ct_card_answer", "mail_fwd")
+    contacts_types = ("ct_list", "ct_save", "ct_card_answer", "mail_fwd", "ct_rm", "ct_export", "ct_import")   # + P207
 
     async def on_phone(self, s, obj: dict) -> None:
         if obj.get("t") in ("secret_out_open", "secret_out_decline"):   # F32
@@ -1064,6 +1073,17 @@ class Elevator:
                 # P115: Google tools (google.py) and the first-run checklist (first_run.py) keep their state outside the
                 # Agent fence; the Agent asks here. Fixed operations only; the checklist cannot mark choices from here.
                 res = await self._p115(req)
+                w.write((json.dumps(res, ensure_ascii=False) + "\n").encode())
+                await w.drain()
+                w.close()
+                return
+            if isinstance(req, dict) and req.get("t") == "upgrade":
+                # P205: `agentj update apply` inside the Agent fence cannot see the state directory: the host caches the old
+                # wheel, writes the pending record / marker, rolls back and runs the post-upgrade doctor (update.host_op).
+                from . import update
+                if not isinstance(req.get("op"), str):
+                    raise Refused("shape", "upgrade: op")
+                res = await asyncio.to_thread(update.host_op, self.st, req, self._upgrade_mem)
                 w.write((json.dumps(res, ensure_ascii=False) + "\n").encode())
                 await w.drain()
                 w.close()

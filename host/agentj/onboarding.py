@@ -209,7 +209,8 @@ def welcome_prompt(kind: str, label: str, s: dict, lang: str) -> str:
             + (". " if not (s["computer"] and s["phone"]) else " ")
             + "Then give the full guide " + MANUAL["en"] + " and say they can simply ask you anything about the screen. Finally "
             "offer, in one sentence, to prepare everything for remote use while they are still at the computer (a first-run "
-            "checklist); only if they agree, run `agentj setup checklist --resume --json`.\n"
+            "checklist); only if they agree, run `agentj setup checklist --resume --json`. Once that is settled (or declined), ask once \"What are "
+            "three things you do again and again every week?\" and propose the first workflow as documentation/WORKFLOW.md says.\n"
             "Other phones, pads or computers: only when the owner asks.")
     return (
         "〔Agent J 系统消息，不是主人说的话〕主人刚配好第一个遥控器（" + KIND["zh"][k] + ("，" + label if label else "")
@@ -232,7 +233,8 @@ def welcome_prompt(kind: str, label: str, s: dict, lang: str) -> str:
         + ("没配的那个，用一句话说怎么配：" + "；".join(HOW["zh"][x] for x in ("computer", "phone") if not s[x]) + "。"
            if not (s["computer"] and s["phone"]) else "")
         + "最后给完整使用说明 " + MANUAL["zh"] + " ，并告诉主人屏幕上有什么不懂直接问你；再用一句话提议「趁你在电脑前，"
-        "我把以后远程要用的事一次准备好」，主人同意才运行 agentj setup checklist --resume --json。\n"
+        "我把以后远程要用的事一次准备好」，主人同意才运行 agentj setup checklist --resume --json。这件事定下来（或主人不做）之后，"
+        "问一次「你每周重复做的三件事是什么？」，按 documentation/WORKFLOW.md 提议第一个工作流。\n"
         "其他手机、平板、电脑：主人问的时候再帮他配。")
 
 

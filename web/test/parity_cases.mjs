@@ -299,7 +299,11 @@ export async function runCases({ B, web, fake, only }) {
     await touchTap('#orb');
     await wait(`document.documentElement.dataset.fz === 'l'`);
     await waitToast(T('r.fz.l'));
+    // P207 (追加 2): the logo hold is 「第一条未读」 now (nothing unread here → 「没有未读」); the size stays, the next tap is 中 again
     await touchHold('#orb', 800);
+    await waitToast(T('r.unread.none'));
+    ok((await ev(`document.documentElement.dataset.fz`)) === 'l', 'the hold no longer resets the size');
+    await touchTap('#orb');
     await wait(`!document.documentElement.dataset.fz`);
   });
   await C('copy-reply', async () => {
@@ -393,7 +397,10 @@ export async function runCases({ B, web, fake, only }) {
   await C('weekly-bar', async () => {
     ok((await ev(`document.querySelector('#mWeek i').style.width`)) === '55%', 'weekly 55 %');
     await click('#mWeek');
-    await waitToast(T('r.meter.used', { label: T('r.meter.week'), pct: 55 }));
+    // P207 §1: the numbers open the global centred dialog (relay: a toast) — same facts, the standard dark card
+    await wait(`!document.getElementById('usageDlg').hidden && document.getElementById('usageList').textContent.includes(${JSON.stringify(T('r.meter.week'))}) && document.getElementById('usageList').textContent.includes('55%')`);
+    await click('#usageClose');
+    await wait(`document.getElementById('usageDlg').hidden`);
   });
   await C('five-hour-bar', async () => { ok((await ev(`document.querySelector('#m5h i').style.width`)) === '30%' && (await ev(`document.getElementById('m5h').dataset.known`)) === '1', '5 h 30 %'); });
   await C('model-pill', async () => { ok((await text('#meta')) === 'Opus 5.5 · medium', 'model · effort: ' + await text('#meta')); });
@@ -677,7 +684,7 @@ export async function runCases({ B, web, fake, only }) {
     const before = fake.st.turns.length, total0 = (await pg()).split('/ ')[1];
     await sendText('排队中的话');
     await wait(`!document.getElementById('sayCancel').hidden && document.getElementById('input').value === ''`);
-    // one look tells it is queued: the page says so (not 「正在处理…」), the composer keeps a pending line + how to withdraw
+    // one look tells it is queued: the page says so (not the working line 「董事长，您的最新指示已经收到…」), the composer keeps a pending line + how to withdraw
     await wait(`document.getElementById('words').textContent.includes(${JSON.stringify(T('r.queue.card'))})`, 3000);
     ok(await ev(`document.body.dataset.pageQueued === '1' && getComputedStyle(document.querySelector('.thinking')).display === 'none'`), 'queued page: no working dots');
     ok(await ev(`(() => { const b = document.getElementById('outbox'), i = b.querySelector('.obi[data-queued="1"]');
@@ -1211,7 +1218,10 @@ export async function runCases({ B, web, fake, only }) {
   await C('keys-panel', async () => {
     await click('#keysBtn');
     await wait(`!document.getElementById('keys').hidden`);
-    ok((await ev(`document.querySelectorAll('#keys dt').length`)) === 29 && (await ev(`document.querySelectorAll('#keys dd').length`)) === 29, 'all relay shortcuts listed + F13 s · Ctrl+, (Settings) + P150 ← → in the field + P154 approval ⌘/Ctrl+Enter · Esc + P154 追加 8 / + P188 ⌘K / Ctrl+K search');
+    // P207: the sheet is drawn from interactions.json — one row per entry with a key (relay's rows are all in it: j k g G o f y Y r a p c m i / ? s Esc …)
+    const rows = await ev(`import('./js/interactions.gen.js').then(g => g.ROWS.length)`);
+    ok(rows >= 60 && (await ev(`document.querySelectorAll('#keys dt').length`)) === rows && (await ev(`document.querySelectorAll('#keys dd').length`)) === rows, 'every interactions.json entry with a key is listed (' + rows + ')');
+    for (const k of ['j', 'k', 'g', 'G', 'o', 'f', 'y', 'Y', 'r', 'a', 'p', 'c', 'm', 'i', '/', '?', 's', 'u']) ok(await ev(`[...document.querySelectorAll('#keys dt kbd')].some(x => x.textContent === ${JSON.stringify(k)})`), 'the sheet lists ' + k);
     await click('#keysClose');
   });
   await C('key-j-older', async () => { await blur(); await key(P, 'j', { code: 'KeyJ' }); await wait(`document.getElementById('pg').textContent === '3 / 4'`); });

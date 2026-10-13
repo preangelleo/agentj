@@ -42,6 +42,9 @@ child directory per workflow. Keep existing workflow files in place and record l
    call may put an approval card on the human's phone, and a short command is easy to judge there. Read files with your
    read tool; write the staging files with your write tool.
 
+10. **Keep every `<!-- agentj:core … -->` block verbatim** when you rewrite a root document: it carries the chairman ideas
+   (see `references/files.md`, "Core blocks"); your business content goes outside it.
+
 ## Step 0 — look before asking (no questions)
 
 - List this folder. If `documentation/` or `.agentj/wizard-manifest.json` exists, this is a **re-run**: read the

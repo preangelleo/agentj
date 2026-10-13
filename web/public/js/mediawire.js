@@ -8,7 +8,8 @@ export const LRU_MAX = 64 * 1024 * 1024;
 export const MAX_ITEMS = 24;                 // P194: = the host's per-page cap (a gallery reply is one page)
 const MIB = 1024 * 1024;
 export const CAPS = { image: 10 * MIB, audio: 25 * MIB, video: 50 * MIB, pdf: 25 * MIB, html: 2 * MIB, file: 25 * MIB };
-export const WHYS = ['too_big', 'outside', 'secret', 'type', 'gone', 'masked', 'too_many'];   // P194: masked / too_many
+export const WHYS = ['too_big', 'outside', 'secret', 'type', 'gone', 'masked', 'too_many',   // P194: masked / too_many
+  'private', 'key_file', 'key_content', 'key_card'];   // P211: agentj's folder (others) · credential file · real key · pickup card
 export const HTML_CSP = "default-src 'none'; img-src data:; style-src 'unsafe-inline'";   // no network at all
 
 const ID22 = /^[A-Za-z0-9_-]{22}$/;

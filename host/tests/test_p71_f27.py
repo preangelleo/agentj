@@ -8,6 +8,7 @@ ask again instead of guessing. Spaces alone without files are still refused (`sh
 without a caption is a normal turn. The Agent itself never hands a harness an empty prompt (agent.Agent.run guard).
 """
 import _hermetic  # noqa: F401,I001
+from _testtmp import TEST_TMP  # noqa: E402  P202: fixtures on tmpfs, not the system disk
 import asyncio
 import json
 import os
@@ -197,7 +198,7 @@ class OpenCodeV2F27(_F27, _Chain):
 class TelegramNoCaption(_Bot, unittest.IsolatedAsyncioTestCase):
     def setUp(self):
         self.start_bot()
-        self.tmp = tempfile.TemporaryDirectory(prefix="p71tg-", dir="/var/tmp")
+        self.tmp = tempfile.TemporaryDirectory(prefix="p71tg-", dir=TEST_TMP)
         self.addCleanup(self.tmp.cleanup)
         root = pathlib.Path(self.tmp.name)
         self.st = State(root / "state")

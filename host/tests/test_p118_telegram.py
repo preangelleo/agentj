@@ -9,6 +9,7 @@ the Agent, history or log), rate-limited, untrusted programs refused. B10: the p
 owner's private chat (dedupe, rate limit, secrets masked, cap `tgfwd`, `tg_fwd_res`).
 """
 import _hermetic  # noqa: F401,I001
+from _testtmp import TEST_TMP  # noqa: E402  P202: fixtures on tmpfs, not the system disk
 import asyncio
 import json
 import os
@@ -41,7 +42,7 @@ def msg(text='hello', uid=OWNER, cid=OWNER, mid=1, **extra):
 class _Base(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
         self.bot = FakeBot(); self.addCleanup(self.bot.close)
-        self.tmp = tempfile.TemporaryDirectory(prefix='p118-', dir='/var/tmp'); self.addCleanup(self.tmp.cleanup)
+        self.tmp = tempfile.TemporaryDirectory(prefix='p118-', dir=TEST_TMP); self.addCleanup(self.tmp.cleanup)
         self.root = pathlib.Path(self.tmp.name); self.st = State(self.root / 'state'); self.st.init()
         self.cfg = {'owner_id': OWNER, 'key_env': KEY_ENV, 'generation': 'test'}
         pref = prefs.defaults()
@@ -349,7 +350,7 @@ class RealHostIntake(unittest.IsolatedAsyncioTestCase):
         from unittest.mock import Mock
         from test_l1 import _host, _state
         bot = FakeBot(); self.addCleanup(bot.close)
-        with tempfile.TemporaryDirectory(prefix='p118r-', dir='/var/tmp') as d, \
+        with tempfile.TemporaryDirectory(prefix='p118r-', dir=TEST_TMP) as d, \
                 patch.object(tg, 'BASE', bot.url), patch.dict(os.environ, {KEY_ENV: 'test-placeholder'}), \
                 patch('agentj.telegram.configuration', return_value={'owner_id': OWNER, 'key_env': KEY_ENV, 'generation': 'r'}), \
                 patch('agentj.tg_guard.evaluate', return_value=PASS):
@@ -394,7 +395,7 @@ class HostWire(unittest.IsolatedAsyncioTestCase):
     """serve: cap `tgfwd` only with Telegram ready; `tg_fwd` → `tg_fwd_res` on the asking ready session."""
     async def test_caps_and_answer(self):
         from test_l1 import _host, _state, Phone, _ready
-        with tempfile.TemporaryDirectory(prefix='p118h-', dir='/var/tmp') as d:
+        with tempfile.TemporaryDirectory(prefix='p118h-', dir=TEST_TMP) as d:
             st = _state(d); sent = []; host = _host(st, sent)
             phone = Phone(st); s = _ready(host, phone); s.p33 = True
             self.assertNotIn('tgfwd', host._caps(s)['caps'])

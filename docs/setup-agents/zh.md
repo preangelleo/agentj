@@ -46,7 +46,7 @@ shasum -a 256 setup-agents.sh
 ```
 
 
-SHA256 sh: `0da9634e566bdc1d8222988dae48159b43887a8b4791efbd4e65f6785a1a023b`
+SHA256 sh: `1bb1e41ac6987a25489743c2e58f5104b52fc1ca964a3933f3747388279b03d1`
 
 
 ```bash
@@ -1301,6 +1301,8 @@ command not found：回 PATH 步骤，确认 shell 文件和新开终端。EACCE
 ## 安装 Agent J {#agent-j}
 
 结尾会问`现在安装 Agent J 吗？[Y/n]`。选 Y 就调用现有正式安装助手，需要账户页的安装码（`AJI-…`），在本机隐藏输入。`--with-agentj` 选择这一步，`--no-agentj` 跳过；账号确认和手机配对仍要你本人操作。无终端时只打印下一步。没检测到登录或 key 时，会先提示：`Agent J 能装能配对，但要登录 AI 工具或填 key 后才能真正聊天`。检测到凭据不等于确认它仍有效。
+
+问 `Installation code (AJI-…)` 时，在账户页点「复制安装码」，只粘贴这串 AJI- 开头的码。不小心粘贴了整段提示词或安装命令也没关系，脚本会从中取出第一张 AJI 码；全角字符、前后空格和换行都会自动处理。
 
 正式助手会实际调用已安装的 Claude Code、Codex 和 OpenCode，验证能回复后复用本机登录；多个可用时由你选择。手机配对后，发 Hello 就能开始聊天。都不能调用时，才继续填写正式服务地址、模型和手机密钥卡。AgentsRelay 已配好的凭据也能由后台服务读取，无需新开终端。Gemini 可以由本页安装，但当前还不能作为 Agent J 的主 Agent。
 

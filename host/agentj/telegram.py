@@ -310,12 +310,13 @@ class Telegram:
         from .privacy import owner_text as redact     # P194: the owner's own chat — as written, credentials still hidden
         when=time.strftime('%m-%d %H:%M',time.localtime((turn.get('ts') or 0)/1000)) if turn.get('ts') else ''
         body=redact(FWD_HEADER.get(getattr(self.host,'lang','zh'),FWD_HEADER['zh']).format(when=when).strip()+'\n\n'+text)
-        parts=list(chunks(body))
-        if len(parts)>FWD_MAX_PARTS:parts=parts[:FWD_MAX_PARTS-1]+[parts[FWD_MAX_PARTS-1][:3900]+'\n…']
+        from .tg_format import parts as html_parts     # P201: rendered like a reply (HTML), each part falls back to plain once
+        parts=html_parts(body)
+        if len(parts)>FWD_MAX_PARTS:parts=parts[:FWD_MAX_PARTS-1]+[(parts[FWD_MAX_PARTS-1][0]+'\n…',parts[FWD_MAX_PARTS-1][1]+'\n…')]
         try:
-            for part in parts:
+            for rendered,plain in parts:
                 if configuration(self.host.st)!=cfg or not self.enabled():raise ValueError()
-                await asyncio.to_thread(api,cfg,'sendMessage',{'chat_id':cfg['owner_id'],'text':part})
+                await send_formatted(cfg,cfg['owner_id'],rendered,plain)
             self.fwd_sent={k:v for k,v in self.fwd_sent.items() if now-v<FWD_REPEAT};self.fwd_sent[turn_id]=time.monotonic()
             self.host.st.log('telegram_forward',device=device,id=turn_id,result='ok',parts=len(parts),chars=len(body))
             return {'ok':True,'parts':len(parts)}
@@ -492,7 +493,11 @@ class Telegram:
         """The files the owner's reply shows (tg_media: the phone's checks + Telegram's limits), then one skip note."""
         from . import tg_media
         from .media import Gone
-        items,skips=await asyncio.to_thread(tg_media.collect,self.host.media,text)
+        keys=[]
+        items,skips=await asyncio.to_thread(tg_media.collect,self.host.media,text,keys)
+        if keys:   # P211: a credential file the owner's reply linked → a pickup card on the paired phone, never a Telegram file
+            from . import owner_route
+            await owner_route.offer_files(self.host,keys,getattr(self.host,'lang','zh'))
         sent=0
         for rec in items:
             if configuration(self.host.st)!=cfg or not self.enabled():return

@@ -33,6 +33,7 @@ const busyMsg = (lang, ids = [0, 1, 2], since = NOW() - 754) => ({ t: 'busy', by
   const [who, label, kind, c] = T[lang][i];
   return { id: 'k' + i, who, kind, label, since: since + i, c };
 }) });
+const CMD200 = '/usr/bin/bash ~/work/run-px.sh 160 p160-busy claude';   // P200: the command line, card only
 const S = { zh: { temp: '临时助理', codex: 'Codex 子 Agent', oc: 'OpenCode 子 Agent', unit: '后台派单', since: /已经干了 12 分钟/, back: '返回',
   noReport: '还没写出来', gone: '已经做完了', old: /版本较旧/ },
 en: { temp: 'Helper', codex: 'Codex sub-agent', oc: 'OpenCode sub-agent', unit: 'Background dispatch', since: /working for 12 min/, back: 'Back',
@@ -68,7 +69,7 @@ export async function runP160() {
         if (m.t !== 'busy_get') return false;
         asked.push(m.id);
         const item = {
-          k0: { id: 'k0', src: 'unit', since: NOW() - 754, report },
+          k0: { id: 'k0', src: 'unit', since: NOW() - 754, report, cmd: CMD200 },
           k1: { id: 'k1', src: 'codex', since: NOW() - 754, last: { text: lastStep, at: NOW() } },
           k2: { id: 'k2', src: 'opencode', since: NOW() - 754, last: { text: 'read · agentj/busy.py', at: NOW() } },
           kx: { id: 'kx', src: 'claude', since: NOW() - 30, last: { text: '<img src=x onerror="window.__pwn=1">', at: NOW() } },
@@ -137,6 +138,8 @@ export async function runP160() {
           report = { ...report, head: lang === 'zh' ? '完成条目数：3/3；候选 ready；需要贾维斯：P165 集成' : 'Done 3/3; candidate ready; Jarvis: integrate in P165', at: NOW() };
           await waitFor(p, `${$('busyOne')}.textContent.includes(${JSON.stringify(report.head)})`, 9000);
           check(true, 'report first line appears');
+          check((await txt(p, '#busyOne dl')).includes(CMD200) && (await txt(p, '#busyOne dl')).includes(lang === 'zh' ? '启动命令' : 'Command'), 'P200: the command line is in the card (启动命令)');
+          check(!(await txt(p, '#busyList')).includes('run-px.sh'), 'P200: never on the list');
           await freeze(); await save('card-dispatch-report'); await play();
         });
 

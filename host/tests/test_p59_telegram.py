@@ -9,6 +9,7 @@ handover-then-compact path as the phone (the stand-ins fakeclaude / fakecodex / 
 to Telegram; a group member's /compact is refused and never reaches the Agent.
 """
 import _hermetic  # noqa: F401,I001
+from _testtmp import TEST_TMP  # noqa: E402  P202: fixtures on tmpfs, not the system disk
 import asyncio
 import email.parser
 import email.policy
@@ -135,7 +136,7 @@ def msg(text, uid=123, cid=123, **extra):
 class MediaOut(_Bot, unittest.IsolatedAsyncioTestCase):
     def setUp(self):
         self.start_bot()
-        self.tmp = tempfile.TemporaryDirectory(prefix="p59tg-", dir="/var/tmp")
+        self.tmp = tempfile.TemporaryDirectory(prefix="p59tg-", dir=TEST_TMP)
         self.addCleanup(self.tmp.cleanup)
         root = pathlib.Path(self.tmp.name)
         self.st = State(root / "state")
@@ -192,8 +193,11 @@ class MediaOut(_Bot, unittest.IsolatedAsyncioTestCase):
         self.assertEqual(ups[0]["files"]["photo"]["mime"], "image/png")
         self.assertTrue(all(c["fields"]["chat_id"] == "123" for c in ups), "the owner's private chat only")
         [note] = self.bot.texts()
-        self.assertEqual(note.splitlines(), [".env 可能含密钥，没有发。", "notes.txt 可能含密钥，没有发。",
-                                             "huge.mp4 太大（48.2 MB），没有发到 Telegram。"])
+        # P211: still never uploaded; the note now says why and what to do (no paired phone here → no pickup card)
+        self.assertEqual(note.splitlines(), [
+            ".env 是凭据文件（.env、私钥这类），不直接发；要拿到它，跟 Agent 说「用密钥领取卡发给我」，在手机上用 Face ID 领取。",
+            "notes.txt 里有真实的密钥（如 sk-…），所以没随文件发；要拿到它，跟 Agent 说「用密钥领取卡发给我」，或删掉密钥后再发。",
+            "huge.mp4 太大（48.2 MB），没有发到 Telegram。"])
         log = self.st.log_path.read_text()
         self.assertIn('"status": "4/3"', log)
         for leak in ("photo.png", "report.pdf", FAKE_KEY[:19], "ghp_", str(self.work)):

@@ -20,8 +20,10 @@ try {
  const cam=await evaluate(p,`(()=>{const v=document.getElementById('scan-video').getBoundingClientRect(); const b=document.getElementById('scan-trigger').getBoundingClientRect();return {w:v.width,h:v.height,control:b.bottom<=innerHeight,active:document.getElementById('scan-video').srcObject.active}})()`);
  ok(cam.w===390 && cam.h===844 && cam.control && cam.active && await evaluate(p,`getComputedStyle(document.querySelector('.top')).display==='none'`),'new camera page fills 390x844 screen with visible scan button');
  await shoot(p,'').then(x=>writeFileSync(new URL('camera.png',out),x));
+ // P207 §3: the page scans at once (no 「扫描」 tap first); the round trigger is pause / resume (aria-pressed = paused)
+ ok(await evaluate(p,`document.getElementById('scan-trigger').getAttribute('aria-label')==='暂停扫描' && document.getElementById('scan-trigger').getAttribute('aria-pressed')==='false'`),'camera scanning starts at once and exposes pause');
  await evaluate(p,`window.p67Track=document.getElementById('scan-video').srcObject.getTracks()[0]; document.getElementById('scan-trigger').click()`);
- ok(await evaluate(p,`document.getElementById('scan-trigger').textContent==='暂停扫描'`),'camera Scan starts scanning and exposes pause');
+ ok(await evaluate(p,`document.getElementById('scan-trigger').getAttribute('aria-pressed')==='true'`),'the trigger pauses scanning');
  await evaluate(p,`document.getElementById('scan-back').click()`);await waitFor(p,`document.body.dataset.view==='pair'`);
  ok(await evaluate(p,`window.p67Track.readyState==='ended' && !document.getElementById('scan-video').srcObject`),'camera Back releases camera track');
  await evaluate(p,`document.getElementById('scan').click()`);await waitFor(p,`document.getElementById('scan-video').srcObject?.active`);
@@ -46,7 +48,7 @@ try {
  const pairing=fake.newPairing(web.url);
  await evaluate(p,`window.BarcodeDetector=class {static async getSupportedFormats(){return ['qr_code']} async detect(){return [{rawValue:${JSON.stringify(pairing)}}]}};document.getElementById('scan').click()`);
  await waitFor(p,`document.body.dataset.view==='scan' && document.getElementById('scan-video').srcObject?.active`);
- await evaluate(p,`window.p67Track=document.getElementById('scan-video').srcObject.getTracks()[0];document.getElementById('scan-trigger').click()`);
+ await evaluate(p,`window.p67Track=document.getElementById('scan-video').srcObject.getTracks()[0]`);   // P207: no tap — it scans at once
  await waitState(p,'awaiting-approval'); await sleep(300);
  ok(await evaluate(p,`document.body.dataset.view==='sas' && window.p67Track.readyState==='ended'`),'successful scan ends camera and retains pairing approval page after browser history pop');
 await waitState(p,'awaiting-approval');await fake.approve();await waitState(p,'ready');

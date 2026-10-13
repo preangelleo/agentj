@@ -1,0 +1,82 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agentj.app/schemas/interactions.schema.json",
+  "title": "Agent J web app — gestures and keyboard shortcuts (P207)",
+  "description": "The single source of truth for every mouse / touch gesture and keyboard shortcut of the web app. agentjarvis/tools/interactions validates the same rules (plus key collisions, reserved browser / OS keys and wording) and renders every derived file.",
+  "type": "object",
+  "required": ["groups", "entries", "words", "next_version"],
+  "properties": {
+    "$schema": {"type": "string"},
+    "about": {"type": "string"},
+    "next_version": {"$ref": "#/$defs/version", "description": "default `since` for `interactions add`"},
+    "words": {
+      "type": "object",
+      "required": ["hold", "space", "gesture"],
+      "additionalProperties": {"$ref": "#/$defs/text"},
+      "description": "small words the Settings page and the docs need (hold, the Space key, the gesture prefix)"
+    },
+    "groups": {
+      "type": "array", "minItems": 1,
+      "items": {
+        "type": "object", "required": ["id", "zh", "en"], "additionalProperties": false,
+        "properties": {"id": {"type": "string", "pattern": "^[a-z]+$"}, "zh": {"type": "string", "minLength": 1}, "en": {"type": "string", "minLength": 1}}
+      }
+    },
+    "entries": {"type": "array", "items": {"$ref": "#/$defs/entry"}}
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "version": {"type": "string", "pattern": "^\\d+\\.\\d+\\.\\d+$"},
+    "text": {
+      "type": "object", "required": ["zh", "en"], "additionalProperties": false,
+      "properties": {"zh": {"type": "string", "minLength": 1}, "en": {"type": "string", "minLength": 1}}
+    },
+    "scope": {"enum": ["chat", "input", "any", "reader", "viewer", "search", "sheet"],
+      "description": "chat = the chat screen with the focus outside any field; input = in the message box; any = both; reader / viewer / search / sheet = while that layer is open"},
+    "impl": {"enum": ["table", "code"], "description": "table = dispatched by relay.js ACT through interactions.gen.js KEYMAP (chat scope, single key or Alt+key); code = a hand-written handler marked // @ix <id>"},
+    "gesture": {
+      "type": "object", "required": ["type"], "additionalProperties": false,
+      "properties": {
+        "type": {"enum": ["tap", "double-tap", "long-press", "hold", "swipe-left", "swipe-right", "swipe-up", "swipe-down", "pinch", "scroll", "select", "drag-drop"]},
+        "pointer": {"enum": ["any", "touch", "mouse", "pen"], "default": "any"},
+        "on": {"type": "string", "description": "a selector when the gesture is on a part of the target"},
+        "when": {"type": "string"}
+      }
+    },
+    "key": {
+      "type": "object", "required": ["combo"], "additionalProperties": false,
+      "properties": {
+        "combo": {"type": "string", "pattern": "^((Ctrl|Alt|Shift|Mod)\\+)*(.|ArrowLeft|ArrowRight|ArrowUp|ArrowDown|Space|Enter|Escape|Tab|Backspace)$",
+          "description": "one character (capital letter = with Shift) or a named key, after modifiers in the order Ctrl+Alt+Shift+Mod; Mod = ⌘ on Apple platforms, Ctrl elsewhere"},
+        "how": {"enum": ["press", "hold", "double"], "default": "press"},
+        "scope": {"$ref": "#/$defs/scope"},
+        "impl": {"$ref": "#/$defs/impl"}
+      }
+    },
+    "entry": {
+      "type": "object",
+      "required": ["id", "since", "impl", "scope", "target", "gestures", "keys", "zh", "en", "gesture_zh", "gesture_en"],
+      "additionalProperties": false,
+      "properties": {
+        "id": {"type": "string", "pattern": "^[a-z]+\\.[a-z][a-z0-9_]*$", "description": "<group>.<name>"},
+        "since": {"$ref": "#/$defs/version"},
+        "impl": {"$ref": "#/$defs/impl"},
+        "scope": {"$ref": "#/$defs/scope"},
+        "repeat": {"type": "boolean", "description": "a held key repeats the action (table keys only)"},
+        "target": {
+          "type": "object", "required": ["selector", "zh", "en"], "additionalProperties": false,
+          "properties": {"selector": {"type": "string", "minLength": 1}, "zh": {"type": "string", "minLength": 1}, "en": {"type": "string", "minLength": 1}}
+        },
+        "gestures": {"type": "array", "items": {"$ref": "#/$defs/gesture"}},
+        "keys": {"type": "array", "items": {"$ref": "#/$defs/key"}},
+        "zh": {"type": "string", "minLength": 1},
+        "en": {"type": "string", "minLength": 1},
+        "gesture_zh": {"type": "string"},
+        "gesture_en": {"type": "string"},
+        "nokey": {"type": "string", "minLength": 1, "description": "why a gesture has no shortcut"},
+        "allowReserved": {"type": "string", "minLength": 1, "description": "why a key the browser / OS uses is taken anyway"},
+        "common": {"type": "boolean", "description": "also in the user guide's short table"}
+      }
+    }
+  }
+}

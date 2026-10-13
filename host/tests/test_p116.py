@@ -2,6 +2,7 @@
 status-line layer chaining and the single approval answerer. Fakes only (fake Herdr + Claude picker captured from
 Claude Code 2.1.280 by Relay's ADR-035 tests); no network, no real session."""
 import _hermetic  # noqa: F401
+from _testtmp import TEST_TMP  # noqa: E402  P202: fixtures on tmpfs, not the system disk
 import asyncio
 import json
 import os
@@ -121,7 +122,7 @@ save()
 
 class Tmp(unittest.TestCase):
     def setUp(self):
-        self.t = tempfile.TemporaryDirectory(prefix="p116-", dir="/var/tmp"); self.addCleanup(self.t.cleanup)
+        self.t = tempfile.TemporaryDirectory(prefix="p116-", dir=TEST_TMP); self.addCleanup(self.t.cleanup)
         self.root = Path(self.t.name); os.chmod(self.root, 0o700)
 
     def file(self, text, mode=0o600, name="private.md"):

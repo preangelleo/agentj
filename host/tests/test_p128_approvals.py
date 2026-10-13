@@ -5,6 +5,7 @@ the file as operand or stdin, output to the terminal). A program reading .env by
 that only mentions it, does not ask. Spend / send / public delete are the same in both modes. Independent mode unchanged.
 """
 import _hermetic  # noqa: F401,I001
+from _testtmp import TEST_TMP  # noqa: E402  P202: fixtures on tmpfs, not the system disk
 import asyncio
 import json
 import re
@@ -153,7 +154,7 @@ class Card(unittest.TestCase):
 class SharedE2E(unittest.IsolatedAsyncioTestCase):
     """The shared Claude hook path end to end (PreToolUse → card → PermissionRequest), standard and strict."""
     async def asyncSetUp(self):
-        self.tmp = tempfile.TemporaryDirectory(prefix="p128-", dir="/var/tmp")
+        self.tmp = tempfile.TemporaryDirectory(prefix="p128-", dir=TEST_TMP)
         self.addCleanup(self.tmp.cleanup)
         self.host = Mock()
         self.host.st.root = Path(self.tmp.name)

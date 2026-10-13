@@ -353,6 +353,11 @@ def _check_colours(doc, out) -> None:
             out.append(_m("color.contrast", "colors.menu.accent",
                           f"强调色 {full['accent']} 在菜单底色上对比度只有 {k:.2f}:1，开关和选中标记看不清，至少 {MENU_ACCENT_MIN_CONTRAST}:1",
                           f"the accent {full['accent']} on the menu background is only {k:.2f}:1 — switches and the selection would not show; needs {MENU_ACCENT_MIN_CONTRAST}:1"))
+    dlg = (c.get("dialog") or {}).get("background")     # P207: the one centred-dialog background, Lotion text on it
+    if dlg and contrast(dlg, LOTION) < MENU_MIN_CONTRAST:
+        out.append(_m("color.contrast", "colors.dialog.background",
+                      f"{dlg} 太浅：弹窗上的白字（Lotion #faf9f5）对比度只有 {contrast(dlg, LOTION):.2f}:1，至少 {MENU_MIN_CONTRAST}:1，调深一点",
+                      f"{dlg} is too light: the Lotion #faf9f5 text on it is only {contrast(dlg, LOTION):.2f}:1, needs {MENU_MIN_CONTRAST}:1 — go darker"))
     for i, p in enumerate((((doc.get("busy") or {}).get("dots") or {}).get("colors")) or []):
         if distance(p["heavy"], p["light"]) < DOT_MIN_DISTANCE:
             out.append(_m("color.blink", f"busy.dots.colors[{i}]", f"heavy 和 light 太像，闪烁看不出来",

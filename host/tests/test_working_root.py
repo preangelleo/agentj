@@ -9,11 +9,12 @@ import unittest
 from unittest.mock import patch
 from agentj import cli, doctor, main_identity, preferences, tasks, wizard, working_root
 from agentj.state import State, DEFAULT_RELAY, DEFAULT_WEB
+from _testtmp import TEST_TMP  # noqa: E402  P202: fixtures on tmpfs, not the system disk
 
 
 class WorkingRoot(unittest.TestCase):
     def setUp(self):
-        self.tmp = tempfile.TemporaryDirectory(prefix='aj-root-', dir='/var/tmp')
+        self.tmp = tempfile.TemporaryDirectory(prefix='aj-root-', dir=TEST_TMP)
         self.addCleanup(self.tmp.cleanup)
         self.home = Path(self.tmp.name)
         env = patch.dict(os.environ, {'HOME':str(self.home), 'XDG_CONFIG_HOME':str(self.home/'.config'),

@@ -11,6 +11,7 @@
 Every child process a test starts is reaped and asserted gone before the test ends.
 """
 import _hermetic  # noqa: F401
+from _testtmp import TEST_TMP  # noqa: E402  P202: fixtures on tmpfs, not the system disk
 import asyncio
 import json
 import os
@@ -47,7 +48,7 @@ def alive(pid):
 
 class Tmp(unittest.TestCase):
     def setUp(self):
-        t = tempfile.TemporaryDirectory(prefix="p139-", dir="/var/tmp")
+        t = tempfile.TemporaryDirectory(prefix="p139-", dir=TEST_TMP)
         self.addCleanup(t.cleanup)
         self.root = Path(t.name)
         self.work = self.root / "work"

@@ -1,5 +1,6 @@
 """Product shared hooks: native authority, committed Stop and local channel."""
 import _hermetic
+from _testtmp import TEST_TMP  # noqa: E402  P202: fixtures on tmpfs, not the system disk
 import re
 import asyncio
 import json
@@ -59,7 +60,7 @@ class SharedRisk(unittest.TestCase):
 
 class ClaudeHooks(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
-        self.tmp=tempfile.TemporaryDirectory(prefix='cc-hooks-',dir='/var/tmp');self.addCleanup(self.tmp.cleanup)
+        self.tmp=tempfile.TemporaryDirectory(prefix='cc-hooks-',dir=TEST_TMP);self.addCleanup(self.tmp.cleanup)
         self.root=Path(self.tmp.name);self.host=Mock();self.host.st.root=self.root
         self.host.stopped.return_value=False
         self.host.st.sign_key.return_value='TEST_SIGNING_IDENTITY'
@@ -195,7 +196,7 @@ class DisconnectedHooks(unittest.TestCase):
                '{"hook_event_name":"PreToolUse","tool_name":"Read","tool_input":"malformed"}']
 
     def setUp(self):
-        tmp=tempfile.TemporaryDirectory(prefix='absent-agentj-',dir='/var/tmp');self.addCleanup(tmp.cleanup)
+        tmp=tempfile.TemporaryDirectory(prefix='absent-agentj-',dir=TEST_TMP);self.addCleanup(tmp.cleanup)
         self.root=Path(tmp.name)
 
     def run_hook(self,family,payload,event=None):
@@ -258,7 +259,7 @@ class ConnectedPhoneDenyUnchanged(unittest.IsolatedAsyncioTestCase):
     """A live host whose paired phone answers deny is still a deny; F11 changes only the unavailable path."""
     async def test_connected_phone_deny_reaches_the_hook_script_as_deny(self):
         import subprocess,sys
-        tmp=tempfile.TemporaryDirectory(prefix='cc-hooks-',dir='/var/tmp');self.addCleanup(tmp.cleanup)
+        tmp=tempfile.TemporaryDirectory(prefix='cc-hooks-',dir=TEST_TMP);self.addCleanup(tmp.cleanup)
         root=Path(tmp.name);host=Mock();host.st.root=root;host.stopped.return_value=False
         host.ask=AsyncMock(return_value={'behavior':'deny'})
         a=shared.SharedClaudeAgent(host,{'kind':'claude','dir':str(root),'_workflow_ceo':True,'high_risk_warnings':True})

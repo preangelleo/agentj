@@ -560,7 +560,7 @@ class SendApp(unittest.TestCase):
             self.assertEqual(got[-1], big)
             self.assertEqual([(o, c) for o, c, _ in frames if o == wire.OP_BULK], [(wire.OP_BULK, 5)],
                              "BULK only for the ready p33 session")
-            self.assertEqual(host._caps()["caps"], ["p33", "heartbeat", "lt1", "pair1", "busyget", "contacts", "hfind"])   # 0.18: long-task cards (§20); P153: pair cards (§4 step 10); P160 busy_get (§22); P184 §25; P188 §28
+            self.assertEqual(host._caps()["caps"], ["p33", "heartbeat", "lt1", "pair1", "busyget", "contacts", "hfind", "cards1", "upg1", "systasks"])   # 0.18: long-task cards (§20); P153: pair cards (§4 step 10); P160 busy_get (§22); P184 §25; P188 §28; P203 §29; P207 §2 systask_list
             self.assertIn(host._caps()["asr"], ("ready", "not_installed", "off", "broken"))
 
 

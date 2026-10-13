@@ -34,7 +34,7 @@ export async function launch({ allowOrigins = [], args = [], scrollbars = false 
   // scrollbars: draw classic scrollbars (P150 scrollbar shots); every other test keeps them hidden for stable pixels
   // args: extra Chromium switches, e.g. --use-file-for-fake-audio-capture=<wav> (the real-host parity e2e feeds a speech WAV)
   const profile = mkdtempSync(join(tmpdir(), 'aj-web-chrome-'));
-  const chrome = guardedSpawn(CHROMIUM, ['--headless=new', `--user-data-dir=${profile}`, '--remote-debugging-port=0', '--remote-debugging-address=127.0.0.1',
+  const chrome = guardedSpawn(CHROMIUM, [...(process.env.AJ_HEADFUL === '1' ? ['--ozone-platform=wayland', '--window-size=1440,960'] : ['--headless=new']), `--user-data-dir=${profile}`, '--remote-debugging-port=0', '--remote-debugging-address=127.0.0.1',
     '--no-first-run', '--no-default-browser-check', '--disable-gpu', ...(scrollbars ? [] : ['--hide-scrollbars']), '--disable-background-networking',
     '--disable-component-update', '--disable-sync', '--disable-extensions', '--mute-audio', '--autoplay-policy=no-user-gesture-required',
     '--use-fake-ui-for-media-stream', '--use-fake-device-for-media-stream', ...(process.env.AJ_MEDIA_DIAGNOSTICS === '1' ? ['--enable-logging=stderr', '--vmodule=audio*=2,media_stream*=2,user_media*=2'] : []), ...args, 'about:blank'], { stdio: ['ignore', 'ignore', 'pipe'] });

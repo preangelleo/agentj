@@ -9,6 +9,7 @@
    main-thread cards; a sub-agent's card stays until its call finishes, it stops, or /clear. The card names the sub-agent.
 """
 import _hermetic  # noqa: F401
+from _testtmp import TEST_TMP  # noqa: E402  P202: fixtures on tmpfs, not the system disk
 import asyncio
 import json
 import os
@@ -121,7 +122,7 @@ def ev(name, inp=None, tool="Bash", **kw):       # git push: a card in shared mo
 
 class SubAgentCard(unittest.TestCase):
     def setUp(self):
-        t = tempfile.TemporaryDirectory(prefix="p172-", dir="/var/tmp")
+        t = tempfile.TemporaryDirectory(prefix="p172-", dir=TEST_TMP)
         self.addCleanup(t.cleanup)
         self.root = Path(t.name)
         (self.root / "work/.claude").mkdir(parents=True)

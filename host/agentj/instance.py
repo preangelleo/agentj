@@ -1,4 +1,4 @@
-"""P180 (internal, not public): several seats on one computer under one OS user — one numbered instance per seat.
+"""P180 (public since P217, 0.20.2): several seats on one computer under one OS user — one numbered instance per seat.
 
 `agentj --instance N <command>` (or AGENTJ_INSTANCE=N) selects instance N, 1 ≤ N ≤ MAX. Instance 1 is the ordinary install
 and stays exactly where it always was (`~/.local/state/agentj`, unit `agentj` / label `net.agentj.host`,
@@ -17,7 +17,7 @@ recovery / auto-update jobs and the fenced Agent's own `agentj …` calls resolv
 What stays shared on purpose: the installed program (one venv — `agentj update` restarts every instance's service), the
 harness logins (~/.claude, ~/.codex, OpenCode: one subscription, one quota), the OS user's files. The fence hides the other
 instances' state and preferences folders and the other seats' workspaces from each Agent; it is a data-visibility layer,
-not a boundary between people (see the private skill agentj-multi-seat).
+not a boundary between people (see the bundled skill agentj-multi-seat).
 """
 from __future__ import annotations
 

@@ -66,5 +66,6 @@ export function init({ name, canRename } = {}) {
   $('nameDlg').addEventListener('click', (e) => { if (e.target === e.currentTarget) close(); });
   registerLayer({ element: () => $('nameDlg'), open: () => !$('nameDlg').hidden, close, fallback: () => $('agent'), rank: 5 });
   // on the release: inside the user gesture, so iOS raises the keyboard for the focused field
+  // @ix app.rename_agent
   longPress($('agent'), () => { if (!canRename || canRename()) open(); else toast(t('p181.name.offline'), 2600); }, { at: 'release' });
 }

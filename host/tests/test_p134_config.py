@@ -1,5 +1,6 @@
 """CLI shell and host service have different environments; no real Bot API calls."""
 import _hermetic  # noqa: F401,I001
+from _testtmp import TEST_TMP  # noqa: E402  P202: fixtures on tmpfs, not the system disk
 import asyncio
 import json
 import os
@@ -15,7 +16,7 @@ from agentj.state import State
 
 class ServiceEnvironmentConfig(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
-        self.tmp = tempfile.TemporaryDirectory(prefix='aj-p134-', dir='/var/tmp')
+        self.tmp = tempfile.TemporaryDirectory(prefix='aj-p134-', dir=TEST_TMP)
         self.addCleanup(self.tmp.cleanup)
         self.home = Path(self.tmp.name)
         env = {'HOME': str(self.home), 'XDG_CONFIG_HOME': str(self.home / '.config'),

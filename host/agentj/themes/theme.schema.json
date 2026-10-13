@@ -52,6 +52,14 @@
             "accent": { "$ref": "#/$defs/hex", "default": "#71bbde", "description": "Switches that are on, the selected section, focus ring (factory: Milky Waves)." },
             "line": { "$ref": "#/$defs/hex", "description": "Dividers and outlines (factory: the text colour at 16 %)." }
           }
+        },
+        "dialog": {
+          "type": "object",
+          "description": "P207: every centred dialog (usage numbers, the 在办 robots, the load line, confirmations, contact cards …) shares ONE background. Its text is Lotion #faf9f5, so the colour needs ≥ 4.5:1 against Lotion (a dark colour).",
+          "additionalProperties": false,
+          "properties": {
+            "background": { "$ref": "#/$defs/hex", "default": "#2c2b26", "description": "The dialog card (factory: Noir)." }
+          }
         }
       }
     },

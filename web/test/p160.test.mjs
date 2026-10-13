@@ -19,6 +19,8 @@ test('P160 busy: the detail is bounded plain text from known sources', () => {
   assert.equal(sanitizeDetail({ src: 'evil', last: { text: '' }, report: { path: '' } }).src, null);
   assert.deepEqual(Object.keys(sanitizeDetail({ src: 'unit', last: { text: '' }, report: { path: '' } })).sort(), ['since', 'src']);
   for (const s of ['claude', 'codex', 'opencode', 'unit', 'file', 'workflow']) assert.equal(sanitizeDetail({ src: s }).src, s);
+  assert.equal(sanitizeDetail({ src: 'unit', cmd: '/usr/bin/bash\u0007 run-px.sh ' + 'x'.repeat(600) }).cmd.length, 400, 'P200 cmd bounded');
+  assert.equal(sanitizeDetail({ src: 'unit', cmd: '/usr/bin/bash\u0007 x' }).cmd, '/usr/bin/bash  x');
   assert.equal(sanitize({ tasks: [{ id: 'a', since: 1760000000 }] })[0].since, 1760000000, 'the list keeps since for the card');
   assert.equal(sanitize({ tasks: [{ id: 'a', since: 'x' }] })[0].since, null);
   assert.ok(DETAIL_POLL_MS >= 2000 && DETAIL_POLL_MS <= 10000, 'polls gently while open');
@@ -39,7 +41,7 @@ test('P160 busy: the card is in the page once, its strings in both languages, ho
   for (const id of ['busyOne', 'busyBack']) assert.equal(html.split(`id="${id}"`).length, 2, id);
   const zh = JSON.parse(read('../i18n/web.zh.json')), en = JSON.parse(read('../i18n/web.en.json'));
   const keys = ['busy.detail.open', 'busy.detail.back', 'busy.detail.since', 'busy.detail.last', 'busy.detail.lastNone', 'busy.detail.report',
-    'busy.detail.reportNone', 'busy.detail.loading', 'busy.detail.old', 'busy.detail.goneTitle', 'busy.detail.gone',
+    'busy.detail.reportNone', 'busy.detail.cmd', 'busy.detail.loading', 'busy.detail.old', 'busy.detail.goneTitle', 'busy.detail.gone',
     ...['claude', 'codex', 'opencode', 'unit', 'file', 'workflow'].map((s) => 'busy.src.' + s)];
   for (const k of keys) { assert.ok(zh[k], 'zh ' + k); assert.ok(en[k], 'en ' + k); }
   const src = read('../public/js/busy.js');

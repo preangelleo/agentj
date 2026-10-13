@@ -75,7 +75,7 @@ export function reconnectReason() {
 // a handshake past the host timeout. Only an authenticated `removed` can revoke it;
 // confirm a revoked record once with the same device key before clearing local data.
 let refusals = 0, removalProbe = false;
-export const peer = { heartbeat: false, p33: false, asr: 'off', hist: 'off', tgfwd: false, pair1: false, tgfile: false, busyget: false, contacts: false, hfind: false };
+export const peer = { heartbeat: false, p33: false, asr: 'off', hist: 'off', tgfwd: false, pair1: false, tgfile: false, busyget: false, contacts: false, hfind: false, systasks: false };
 export function configure(hooks) { H = hooks; }
 export const current = () => sess;
 export const isReady = () => !!sess && sess.phase === 'ready';
@@ -182,9 +182,12 @@ function readCaps(m) {
   peer.busyget = peer.p33 && Array.isArray(m.caps) && m.caps.includes('busyget'); // P160 (§22): one 「在办」 row's detail
   peer.contacts = peer.p33 && Array.isArray(m.caps) && m.caps.includes('contacts');   // P184 (§25): address book + 转发到邮箱
   peer.hfind = peer.p33 && Array.isArray(m.caps) && m.caps.includes('hfind');   // P188 (§28): the computer answers hist_find
+  peer.systasks = peer.p33 && Array.isArray(m.caps) && m.caps.includes('systasks');   // P207 §2: the computer's own scheduled tasks (read-only)
   peer.asr = ['ready', 'not_installed', 'off', 'broken'].includes(m.asr) ? m.asr : (peer.p33 ? 'not_installed' : 'off');
   peer.hist = m.hist === 'on' ? 'on' : 'off';
   peer.pair1 = peer.p33 && Array.isArray(m.caps) && m.caps.includes('pair1');   // P153: add a remote from here (§3.3)
+  peer.cards1 = peer.p33 && Array.isArray(m.caps) && m.caps.includes('cards1'); // P203 (§29.1): signed open-cards snapshot
+  peer.upg1 = peer.p33 && Array.isArray(m.caps) && m.caps.includes('upg1');     // P203 (§29.2): upgrade impact + card
 }
 
 async function onApp(s, m) {

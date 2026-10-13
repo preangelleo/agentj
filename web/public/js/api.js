@@ -130,7 +130,7 @@ export async function answerQ(q, picks) {
 
 export function slash(cmd, arg = '', confirm = false) {
   if (!isReady()) return false;
-  if (cmd === 'update') return signedUpgrade();
+  if (cmd === 'update') return upgradeFlow();        // P203: upgcard.start — asks first; nothing in the way → signedUpgrade
   sendApp({ t: 'slash', cmd, ...(arg ? { arg: String(arg).slice(0, 200) } : {}), ...(confirm ? { confirm: true } : {}) }).catch(() => {});
   return true;
 }
@@ -251,6 +251,10 @@ export async function pairNew() {
 /** The QR sheet closed before a device was added: the host ends that pairing. */
 export function pairStop() { if (isReady()) sendApp({ t: 'pair_stop' }).catch(() => {}); }
 
+// P203 (§29.2): app.js plugs in upgcard.start (impact → card → this); without it (node tests) /update is the old one step
+let upgradeFlow = () => signedUpgrade();
+export function setUpgradeFlow(fn) { upgradeFlow = fn; }
+export const upgradeNow = () => signedUpgrade();
 async function signedUpgrade() {
   const g = gen(), sk = await signKey();
   if (!g || !sk) return false;

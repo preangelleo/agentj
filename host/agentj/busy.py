@@ -214,12 +214,87 @@ def read_items(root, now: float | None = None) -> list[dict]:
     return out
 
 
+# P200 追加 1: systemd-run without --description names the unit after its command line ("[systemd-run] /usr/bin/bash
+# …/run-px.sh 165 …"; systemd < 256: the bare command line). That is not a title: a known launcher (`run-<name>.sh|py`)
+# is asked for its PROMPT file's first "# " heading; else the unit name. The command line itself is detail only (`cmd`).
+SYSTEMD_RUN = re.compile(r"^\[systemd-run\]\s+")
+LAUNCHER_RE = re.compile(r"^run-[\w.-]{1,40}\.(?:sh|bash|py)$")
+PROMPT_ARG = re.compile(r"^[\w.-]{1,40}$")
+CMD_MAX = 400
+
+
+def cmdline_desc(desc: str) -> str | None:
+    """The command line when a Description is systemd-run's default (prefixed, or an absolute path first); else None."""
+    m = SYSTEMD_RUN.match(desc or "")
+    if m:
+        return desc[m.end():].strip() or None
+    return desc.strip() if (desc or "").startswith("/") else None
+
+
+def prompt_title(path) -> str | None:
+    """The first markdown H1 ("# …", outside ``` fences) of a regular file (lstat, ≤ REPORT_READ bytes); else None."""
+    try:
+        import stat as _stat
+        if not _stat.S_ISREG(os.lstat(path).st_mode):
+            return None
+        with open(path, "rb") as f:
+            data = f.read(REPORT_READ)
+    except OSError:
+        return None
+    fence = False
+    for line in data.decode("utf-8", "replace").splitlines():
+        if line.lstrip().startswith("```"):
+            fence = not fence
+        elif not fence and line.startswith("# ") and line[2:].strip():
+            return line[2:].strip()
+    return None
+
+
+def launcher_title(cmd: str, num: str | None = None) -> str | None:
+    """The PROMPT title of a known launcher on a command line: `…/run-px.sh 165 …` → PROMPT-165.md next to the script,
+    `…/run-shotfable.sh [name]` → PROMPT-<name>.md, else PROMPT-<launcher name>.md / PROMPT-<unit number>.md."""
+    argv = cmd.split()
+    for i, tok in enumerate(argv[:4]):
+        p = Path(tok)
+        if p.is_absolute() and LAUNCHER_RE.match(p.name):
+            names = [a for a in argv[i + 1:i + 4] if PROMPT_ARG.match(a)]
+            names += [p.stem[len("run-"):]] + ([num] if num else [])
+            for n in dict.fromkeys(names):
+                t = prompt_title(p.parent / f"PROMPT-{n}.md")
+                if t:
+                    return t
+            return None
+    return None
+
+
+def _drop_who(who: str, title: str) -> str:
+    """"P165 — 0.20.0 集成" under who P165 → "0.20.0 集成" (the card already shows who); unchanged when nothing is left."""
+    rest = re.sub(rf"^{re.escape(who)}(?![\w])\s*(?:[—–\-:：·|]\s*)?", "", title, flags=re.I).strip()
+    return rest or title
+
+
+def unit_names(unit: str, desc: str) -> tuple[str | None, str, str | None]:
+    """(who, label, cmd) for a dispatch unit: ① Description "who · what" / "who: what" or any other written title (who =
+    the unit's P-number); ② systemd-run's default (a command line): a launcher's PROMPT title, the leading "P<N> —" cut
+    when it repeats who; ③ the unit name. `cmd` = the command line (detail only), else None."""
+    who = unit[len("agentj-"):].split(".")[0].split("-")[0].upper()
+    cmd = cmdline_desc(desc)
+    if cmd is None:
+        m = re.match(r"^(.{1,24}?)\s*(?:·|:|：)\s*(.+)$", desc)
+        return (m.group(1), m.group(2), None) if m else (who, _drop_who(who, desc) if desc else unit.removesuffix(".service"), None)
+    num = re.match(r"^agentj-p(\d+)", unit)
+    title = launcher_title(cmd, num.group(1) if num else None)
+    if title:
+        from . import privacy
+        return who, _drop_who(who, privacy.redact(title, paths=True)), cmd[:CMD_MAX]
+    return who, unit.removesuffix(".service"), cmd[:CMD_MAX]
+
+
 def scan_units(run=subprocess.run) -> list[dict]:
-    """Active systemd user units `agentj-p<digits>…` (the CEO dispatch convention). Description "who · what" or
-    "who: what"; otherwise the unit name (P150) is who and the Description the label."""
+    """Active systemd user units `agentj-p<digits>…` (the CEO dispatch convention). Names: see unit_names (P150 / P200)."""
     try:
         r = run(["systemctl", "--user", "list-units", "--type=service", "--state=active", "--plain", "--no-legend",
-                 "--no-pager", "agentj-p*"], capture_output=True, text=True, timeout=3)
+                 "--no-pager", "--full", "agentj-p*"], capture_output=True, text=True, timeout=3)
     except (OSError, subprocess.SubprocessError):
         return []
     out = []
@@ -228,9 +303,11 @@ def scan_units(run=subprocess.run) -> list[dict]:
         if len(parts) < 4 or not UNIT_RE.match(parts[0]):
             continue
         desc = parts[4].strip() if len(parts) > 4 else ""
-        m = re.match(r"^(.{1,24}?)\s*(?:·|:|：)\s*(.+)$", desc)
-        who, what = (m.group(1), m.group(2)) if m else (parts[0][len("agentj-"):].split(".")[0].split("-")[0].upper(), desc)
-        out.append(item("unit:" + parts[0], who, "ceo", what))
+        who, what, cmd = unit_names(parts[0], desc)
+        it = item("unit:" + parts[0], who, "ceo", what)
+        if cmd:
+            it["cmd"] = clean(cmd, CMD_MAX)
+        out.append(it)
     return out
 
 
@@ -785,6 +862,8 @@ def detail_of(v: dict, last: dict | None, run=subprocess.run) -> dict:
                 else "codex" if src.endswith("codex") else "opencode" if src.endswith("opencode") else "claude")
     if last:
         d["last"] = {"text": red(last["text"]), "at": last["at"]}
+    if v.get("cmd"):
+        d["cmd"] = red(v["cmd"])[:CMD_MAX]                     # P200: the raw command line, detail only
     path = v.get("report") or (unit_report(v["key"][5:], run) if src == "unit" else None)
     rep = report_head(path) if path else None
     if rep:
@@ -912,6 +991,8 @@ def cmd_busy(a) -> int:
             print(f"{d['who'] or '临时助理'} · {d['label']}")
             if d.get("last"):
                 print("最近 / latest: " + d["last"]["text"])
+            if d.get("cmd"):
+                print("命令 / command: " + d["cmd"])
             if d.get("report"):
                 print("报告 / report: " + d["report"]["path"] + ("\n  " + d["report"]["head"] if d["report"]["head"] else
                                                                  "（还没有 / not yet）"))

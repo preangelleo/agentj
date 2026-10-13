@@ -99,7 +99,7 @@ export async function startFakeHost() {
     asrTexts: [], asrDelays: [], sayDelay: 0, stallAfter: 0, blobErr: null, slashes: [], resWatch: [], res: null, renames: [], renameWhy: null,
     epoch: 1, nextId: 1, turns: [], blobs: new Map(), staged: new Set(), queued: new Map(), opens: [], cancels: [], answers: [],
     qAnswers: [], chunks: 0, wavs: [], menu: null, models: null, meter: null, sigOk: [], says: [], modelSets: [], rate: true,
-    firsts: [], errors: [],
+    firsts: [], errors: [], cards: false, cardsMute: false, cardGets: [], upgItems: [], upgOpen: null, upgOffs: [],   // P203
     prefs: null, prefSet: true, prefSets: [], version: null,
     hfind: true, finds: [], findMute: false, findDelay: 0, olderDelay: 0,   // P188: the host answers hist_find (false = an older host)
   };
@@ -247,6 +247,15 @@ export async function startFakeHost() {
       st.qAnswers.push(m);
       return broadcast({ t: 'question_done', id: m.id, result: m.cancel ? 'cancelled' : 'answered' });
     }
+    if (m.t === 'mail_allow') {                                 // P207: Settings → 通讯录 「加入邮件白名单」, signed like every phone write
+      const sigOk = await verifyControl(c, 'mail_allow', m, { addr: m.addr, role: m.role });
+      (st.ctl = st.ctl || []).push({ ...m, sigOk });
+      if (!sigOk) return sendApp(c, { t: 'ctl_res', r: m.r, action: 'mail_allow', ok: false, why: 'bad_signature' });
+      const cfg = st.mail && st.mail.config;
+      const already = !!(cfg && (cfg.allow || []).some((x) => x.addr.toLowerCase() === String(m.addr).toLowerCase()));
+      if (cfg && !already) cfg.allow = [...(cfg.allow || []), { addr: m.addr, role: m.role }];
+      return sendApp(c, { t: 'ctl_res', r: m.r, action: 'mail_allow', ok: true, ...(already ? { already: true } : {}) });
+    }
     if (typeof m.t === 'string' && m.t.startsWith('mail_')) {   // P170: Settings → 邮件通道 (a host-shaped view; never a real mailbox)
       (st.mailMsgs = st.mailMsgs || []).push(m);
       const v = st.mail = st.mail || { config: { enabled: false, preset: '', address: '', username: '', imap: { host: '', port: 993, security: 'ssl' },
@@ -271,7 +280,8 @@ export async function startFakeHost() {
       if (!st.prefSet) return;
       const allowed = PREF_ENUM[m.key];
       if (!allowed) return sendApp(c, { t: 'pref_res', r: m.r, ok: false, key: m.key, problem: 'not_allowed' });
-      if (!allowed.includes(m.value)) return sendApp(c, { t: 'pref_res', r: m.r, ok: false, key: m.key, problem: 'bad_value' });
+      if (st.prefRefuse) return sendApp(c, { t: 'pref_res', r: m.r, ok: false, key: m.key, problem: st.prefRefuse });   // P207: a refused save
+      if (!(typeof allowed === 'function' ? allowed(m.value) : allowed.includes(m.value))) return sendApp(c, { t: 'pref_res', r: m.r, ok: false, key: m.key, problem: 'bad_value' });
       st.prefs = st.prefs || { appearance: { language: 'zh', theme: 'system' }, voice: { speak_replies: false, wake_enabled: false }, agent: { high_risk_warnings: true, session_mode: 'shared' } };
       const [a, b] = m.key.split('.');
       st.prefs[a] = { ...(st.prefs[a] || {}), [b]: m.value };
@@ -279,6 +289,18 @@ export async function startFakeHost() {
       await broadcast(prefsMsg());
       return;
     }
+    if (m.t === 'cards_get' && st.cards) {          // P203 (§29.1): signed like the real host; missing cards, then every open id
+      const ok = await verifyControl(c, 'cards_get', m, {});
+      st.cardGets.push({ have: m.have, sigOk: ok });
+      if (!ok) return sendApp(c, { t: 'cards', r: m.r, ok: false, why: 'bad_signature' });
+      if (st.cardsMute) return;
+      const have = new Set(Array.isArray(m.have) ? m.have : []);
+      for (const a of st.asksOpen.values()) if (!have.has(a.id)) await sendApp(c, { t: 'ask', ...a });
+      if (st.upgOpen && !have.has(st.upgOpen.id)) await sendApp(c, st.upgOpen);
+      return sendApp(c, { t: 'cards', r: m.r, ok: true, open: [...st.asksOpen.keys(), ...(st.upgOpen ? [st.upgOpen.id] : [])] });
+    }
+    if (m.t === 'upg_check' && st.cards) return sendApp(c, { t: 'upg_impact', r: m.r, items: st.upgItems, current: '0.20.1', latest: '0.20.2', newer: true });
+    if (m.t === 'upg_card_off') { st.upgOffs.push(m.id); if (st.upgOpen && st.upgOpen.id === m.id) st.upgOpen = null; return; }
     if (m.t === 'slash') {
       st.slashes = (st.slashes || []).concat([m]);
       await addTurn({ k: 'cmd', text: '/' + m.cmd + (m.arg ? ' ' + m.arg : '') }, m.cmd === 'stop' ? '已中断这一轮。' : `/${m.cmd} 完成。`, 'done',
@@ -575,6 +597,11 @@ export async function startFakeHost() {
     remotes(state) { st.remotes = state; return state; },
     async remotePending(device, name, extra = {}) { st.remotes.pending = { device, name }; await broadcast({ t: 'dev_pending', device, name, deadline_in: 120, limit: st.remotes.limit ?? 10, ...extra }); },
     async askDone(id, result) { st.asksOpen.delete(id); await broadcast({ t: 'ask_done', id, result }); },
+    /** P203: a card made while the page could not hear it (frozen / offline) · one that ended without the page hearing */
+    askSilently(m) { st.asksOpen.set(m.id, m); },
+    forget(id) { st.asksOpen.delete(id); },
+    async upgCard(u) { st.upgOpen = { t: 'upg_card', ...u }; await broadcast(st.upgOpen); },
+    async upgDone(id, result) { if (st.upgOpen && st.upgOpen.id === id) st.upgOpen = null; await broadcast({ t: 'upg_card_done', id, result }); },
     setUp(v) {
       up = v;
       for (const c of conns) { if (!v) { c.hs = c.send = c.recv = null; c.mode = null; c.awaiting = false; c.isReady = false; } c.sendText(JSON.stringify({ t: 'host', up: v })); }
@@ -600,7 +627,8 @@ export async function startFakeHost() {
         stallAfter: 0, blobErr: null, sayWhy: null, estop: false, rate: true, firsts: [], errors: [], lastError: undefined,
         prefs: null, prefSet: true, prefSets: [], version: null, friends: null, remotes: null, tgfwd: false, tgfwdWhy: null, tgFwds: [], holdAnswers: false,
         resWatch: [], res: null, renames: [], renameWhy: null, busyget: false,
-        hfind: true, finds: [], findMute: false, findDelay: 0, olderDelay: 0 });
+        hfind: true, finds: [], findMute: false, findDelay: 0, olderDelay: 0,
+        cards: false, cardsMute: false, cardGets: [], upgItems: [], upgOpen: null, upgOffs: [] });   // P203
       st.asksOpen = new Map();
       log.length = 0;
     },
@@ -611,7 +639,11 @@ export async function startFakeHost() {
 }
 // the phone-settable keys (contract C6 / Amendment A1) and their values; everything else → not_allowed
 const PREF_ENUM = { 'updates.mode': ['auto', 'ask'], 'appearance.language': ['zh', 'en'], 'appearance.theme': ['system', 'light', 'dark'], 'voice.speak_replies': [true, false], 'voice.wake_enabled': [true, false], 'agent.high_risk_warnings': [true, false], 'agent.session_mode': ['shared', 'independent'], 'agent.isolation': [true, false], 'agent.allow_docker': [true, false],
-  'heartbeat.enabled': [true, false], 'heartbeat.interval_minutes': [15, 30, 60, 120, 240, 480, 1440] };   // P156
+  'heartbeat.enabled': [true, false], 'heartbeat.interval_minutes': [15, 30, 60, 120, 240, 480, 1440],   // P156
+  'updates.auto_install': [true, false] };   // P203
+// P207: any whole number of minutes 5–1440 (the dropdown + custom input) and the daily wake-up time "HH:MM" | ""
+PREF_ENUM['heartbeat.interval_minutes'] = (v) => Number.isInteger(v) && v >= 5 && v <= 1440;
+PREF_ENUM['heartbeat.daily_at'] = (v) => v === '' || (typeof v === 'string' && /^([01]\d|2[0-3]):[0-5]\d$/.test(v));
 const ANY_MIME = /^[a-z0-9][a-z0-9!#$&^_.+-]{0,63}\/[a-z0-9][a-z0-9!#$&^_.+-]{0,126}$/;
 const TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/gif', 'image/heic', 'image/heif', 'application/pdf', 'text/plain', 'text/markdown', 'text/csv',
   'application/json', 'audio/webm', 'audio/ogg', 'audio/mpeg', 'audio/mp4', 'audio/aac', 'audio/wav', 'audio/x-wav'];

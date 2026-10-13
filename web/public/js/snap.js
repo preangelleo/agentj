@@ -44,7 +44,7 @@ export function addAsk(m) {
   S.order.push(m.id);
   onChange();
 }
-const ASK_RESULT = { allow: 'approved', deny: 'denied', timeout: 'timeout', gone: 'ended', stopped: 'stopped' };
+const ASK_RESULT = { allow: 'approved', deny: 'denied', timeout: 'timeout', expired: 'expired', gone: 'ended', stopped: 'stopped' };
 export function askDone(m) {
   const a = S.asks.get(m.id);
   if (!a || !ASK_RESULT[m.result]) return;
@@ -71,7 +71,7 @@ export function addQuestion(m) {
   S.order.push(m.id);
   onChange();
 }
-const Q_RESULT = { answered: 'answered', cancelled: 'cancelled', timeout: 'timeout', gone: 'ended', stopped: 'stopped' };
+const Q_RESULT = { answered: 'answered', cancelled: 'cancelled', timeout: 'timeout', expired: 'expired', gone: 'ended', stopped: 'stopped' };
 export function questionDone(m) {
   const q = S.qs.get(m.id);
   if (!q || !Q_RESULT[m.result]) return;
@@ -79,6 +79,14 @@ export function questionDone(m) {
   S.qs.delete(m.id); S.order = S.order.filter((x) => x !== m.id);
   S.lastQ = q;
   onChange();
+}
+/** P203 (§29.1): the approval / question cards this page shows (the snapshot's `have`). */
+export const cardIds = () => [...S.asks.keys(), ...S.qs.keys()];
+/** P203: cards the computer no longer lists: expired here (past their deadline) → 「已过期」, else answered elsewhere / ended. */
+export function prune(gone) {
+  const now = Date.now();
+  for (const a of [...S.asks.values()]) if (gone(a.id)) askDone({ id: a.id, result: a.deadline <= now ? 'expired' : 'gone' });
+  for (const q of [...S.qs.values()]) if (gone(q.id)) questionDone({ id: q.id, result: q.deadline <= now ? 'expired' : 'gone' });
 }
 /** The open request on screen: the oldest one still open. */
 export function openItem() {

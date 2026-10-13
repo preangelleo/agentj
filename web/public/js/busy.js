@@ -122,7 +122,7 @@ function robot(x, k, h, dance = true) {
   i.style.backgroundImage = `url(${sheet(h)})`;
   i.style.backgroundSize = `${13 * h}px ${robotN() * h}px`;
   i.style.backgroundPositionY = -x.r * h + 'px';
-  if (dance) i.style.animationDelay = danceDelay(k) + 's';
+  if (dance) i.style.setProperty('--rbd', danceDelay(k) + 's');   // P207 追加 4: the dance offset, kept under the pop too
   return i;
 }
 /** P169 dots (the P150 look, theme preset `dots`): one round dot per item, its colour pair softly blinking (Heavy ⇄ Light);
@@ -148,7 +148,7 @@ function fillRow(box, now, h) {     // `now`: already keyed + assigned (over the
     if (!i || i.dataset.r !== String(x.r)) {
       if (i) i.remove();
       i = robot(x, k, h);
-      if (!still() && heard) { i.classList.add('in'); i.addEventListener('animationend', () => i.classList.remove('in'), { once: true }); }
+      if (!still() && heard) popIn(i);
     }
     const at = prev ? prev.nextElementSibling : box.firstElementChild;
     if (at !== i) box.insertBefore(i, at);
@@ -156,9 +156,26 @@ function fillRow(box, now, h) {     // `now`: already keyed + assigned (over the
   });
   for (const b of box.querySelectorAll('b')) b.remove();
 }
+/** A new robot pops in (dancing underneath already). .in is dropped on its animationend, or by a timer when that event never
+    comes (P207 追加 4: popped in while the window was hidden / occluded) — and swept when the page shows again. */
+export const ROBOT_POP_MS = 420;
+function popIn(i) {
+  i.classList.add('in');
+  const done = (e) => { if (!e || e.animationName === 'rb-pop') i.classList.remove('in'); };
+  i.addEventListener('animationend', done);
+  setTimeout(done, ROBOT_POP_MS + 200);
+}
+/** Back from the background: no robot stays half-popped, and one whose bow timers were throttled leaves now. */
+export function sweep(box = $('busyDots')) {
+  if (!box) return;
+  for (const i of box.querySelectorAll('i.rb.in')) i.classList.remove('in');
+  const now = Date.now();
+  for (const i of box.querySelectorAll('i.rb.bye')) if (now - (+i.dataset.bye || now) > ROBOT_BYE_MS + ROBOT_CLOSE_MS + 500) i.remove();
+  if (!box.querySelector('i.rb') && !tasks.length) box.hidden = true;
+}
 function leave(i, box) {
   if (still()) { i.remove(); return; }
-  i.classList.add('bye');
+  i.classList.add('bye'); i.dataset.bye = String(Date.now());
   i.style.backgroundPositionX = -ROBOT_BOW * (i.classList.contains('rb24') ? 24 : 18) + 'px';   // the bow frame
   setTimeout(() => {
     i.classList.add('gone');
@@ -226,6 +243,7 @@ export function sanitizeDetail(d) {
   if (d.last && typeof d.last === 'object' && str(d.last.text, 200)) out.last = { text: str(d.last.text, 200), at: num(d.last.at) };
   if (d.report && typeof d.report === 'object' && str(d.report.path, 400))
     out.report = { path: str(d.report.path, 400), head: str(d.report.head, 240) || null, at: num(d.report.at) };
+  if (str(d.cmd, 400)) out.cmd = str(d.cmd, 400);     // P200: a dispatch's raw command line — here only, never on the list
   return out;
 }
 const nowS = () => Math.floor(Date.now() / 1000);
@@ -258,6 +276,7 @@ function paintOne() {
       const agent = !['unit', 'file', 'workflow'].includes(info.src);  // a dispatch / command has no steps of ours, only a report
       if (info.last || agent || !info.report) row(t('busy.detail.last'), dd(info.last ? info.last.text : t('busy.detail.lastNone')));
       if (info.report) row(t('busy.detail.report'), dd(info.report.path, true), dd(info.report.head || t('busy.detail.reportNone')));
+      if (info.cmd) row(t('busy.detail.cmd'), dd(info.cmd, true));
     }
     if (dl.childElementCount) kids.push(dl);
     if (oneData === 'old') { const n = document.createElement('div'); n.className = 'bo-note'; n.textContent = t('busy.detail.old'); kids.push(n); }
@@ -423,16 +442,17 @@ export function init(fns = {}) {
   if (fns.name) agentName = fns.name;
   if (typeof fns.detail === 'function') fetchDetail = fns.detail;
   if ($('busyBack')) $('busyBack').addEventListener('click', (e) => { e.stopPropagation(); backToList(); });
-  $('busyDots').addEventListener('click', (e) => { e.stopPropagation(); open(); });
+  $('busyDots').addEventListener('click', (e) => { e.stopPropagation(); open(); });   // @ix app.busy_list
   $('busyClose').addEventListener('click', close);
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) sweep(); });   // P207 追加 4
   if (fns.prompt) prompt = fns.prompt;
   // P181: 「换个样子」 under the robots, and a long press on the robots themselves (a tap still opens this card)
   if ($('busyTheme')) $('busyTheme').addEventListener('click', () => { close(); prompt('theme'); });
-  longPress($('busyDots'), () => { close(); prompt('theme'); });
+  longPress($('busyDots'), () => { close(); prompt('theme'); });   // @ix app.robots_theme
   $('busyDlg').addEventListener('click', (e) => { if (e.target === e.currentTarget) close(); });   // outside the square
   registerLayer({ element: () => $('busyDlg'), open: () => !$('busyDlg').hidden, close, fallback: () => $('busyDots'), rank: 5 });
   if ($('loadHit')) {
-    $('loadHit').addEventListener('click', (e) => { e.stopPropagation(); openLoad(); });
+    $('loadHit').addEventListener('click', (e) => { e.stopPropagation(); openLoad(); });   // @ix app.load
     $('loadClose').addEventListener('click', closeLoad);
     $('loadDlg').addEventListener('click', (e) => { if (e.target === e.currentTarget) closeLoad(); });
     registerLayer({ element: () => $('loadDlg'), open: () => !$('loadDlg').hidden, close: closeLoad, fallback: () => $('loadHit'), rank: 5 });

@@ -1,5 +1,6 @@
 """B11 regression: saved owner paths, upgrade drift, credential store hints."""
 import _hermetic
+from _testtmp import TEST_TMP  # noqa: E402  P202: fixtures on tmpfs, not the system disk
 import os
 from pathlib import Path
 import plistlib
@@ -12,7 +13,7 @@ from agentj import service, harness, doctor
 
 class ServiceOverrides(unittest.TestCase):
     def setUp(self):
-        self.tmp = tempfile.TemporaryDirectory(prefix="p40c-service-", dir="/var/tmp")
+        self.tmp = tempfile.TemporaryDirectory(prefix="p40c-service-", dir=TEST_TMP)
         self.addCleanup(self.tmp.cleanup)
         self.home = Path(self.tmp.name)
         self.env = {"HOME": str(self.home), "XDG_CONFIG_HOME": str(self.home/"cfg"), "PATH": str(self.home/"bin")}

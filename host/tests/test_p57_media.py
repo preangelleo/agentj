@@ -10,6 +10,7 @@ fakeopencode) answering with `![](out/chart.png)` produce a page with `media`, a
 import _hermetic  # noqa: F401,I001  (never the real ~/.local/state; see _hermetic.py)
 import asyncio
 import hashlib
+import json
 import os
 import pathlib
 import sys
@@ -147,17 +148,26 @@ class Refusals(_Base):
         self.put("out/page.html", b"<p>" + f"Authorization: Bearer {KEY}".encode() + b"</p>")
         self.put("out/ok.html", b"<img src=\"data:image/png;base64," + __import__("base64").b64encode(os.urandom(3000)) + b"\">")
         (self.st.root / "x.png").write_bytes(png())
-        items, skips = self.scan("![](.git/x.png) [e](.env) [e](.env.local) [k](out/server.pem) ![](credentials/a.png) "
-                                 "![](.agentj/inbox/2026-10-05/a.png) [n](out/notes.md) [p](out/page.html) [ok](out/ok.html) "
-                                 f"![]({self.st.root / 'x.png'})")
+        refs = ("![](.git/x.png) [e](.env) [e](.env.local) [k](out/server.pem) ![](credentials/a.png) "
+                "![](.agentj/inbox/2026-10-05/a.png) [n](out/notes.md) [p](out/page.html) [ok](out/ok.html) "
+                f"![]({self.st.root / 'x.png'})")
+        items, skips = self.scan(refs)
+        # P211: the page is the owner's own — `.git` / `.agentj` are not secrets; credential files and real keys are held
+        # back as pickup-card candidates (key_file / key_content); agentj's state folder stays private
         self.assertEqual([(s["name"], s["why"]) for s in skips], [
-            ("x.png", "secret"), (".env", "secret"), (".env.local", "secret"), ("server.pem", "secret"), ("a.png", "secret"),
-            ("a.png", "secret"), ("notes.md", "secret"), ("page.html", "secret"), ("x.png", "secret")])
-        self.assertEqual([i["name"] for i in items], ["ok.html"], "a data: picture inside html is not a key")
+            (".env", "key_file"), (".env.local", "key_file"), ("server.pem", "key_file"), ("a.png", "key_file"),
+            ("notes.md", "key_content"), ("page.html", "key_content"), ("x.png", "private")])
+        self.assertEqual([i["name"] for i in items], ["x.png", "a.png", "ok.html"], "a data: picture inside html is not a key")
+        _, _, keys = self.m.scan_keys(refs, 2)
+        self.assertEqual([k[0]["name"] for k in keys], [".env", ".env.local", "server.pem", "a.png", "notes.md", "page.html"])
+        # everyone else (a contact's mail, owner=False) keeps the full rules
+        whys = [self.m.check(r, owner=False)[1] for r in media.refs(refs)]
+        self.assertEqual(whys, ["private", "secret", "secret", "secret", "secret", "private", "secret", "secret", None, "private"])
         # a secret-named link pointing at a harmless file is still refused (the name as written counts too)
         self.put("out/fine.txt", b"hello")
         os.symlink(self.work / "out" / "fine.txt", self.work / "id_rsa")
-        self.assertEqual(self.scan("[k](id_rsa)")[1], [{"name": "id_rsa", "why": "secret"}])
+        self.assertEqual(self.scan("[k](id_rsa)")[1], [{"name": "id_rsa", "why": "key_file"}])
+        self.assertEqual(self.m.check(media.Ref("id_rsa", "id_rsa", True))[1], "secret")
 
     def test_too_big_type_and_page_caps(self):
         big = self.work / "out" / "big.png"
@@ -245,7 +255,11 @@ class HostWire(_Base):
             await h._attach_media(t["id"])
             page = h.hist.get(t["id"])
             self.assertEqual([i["name"] for i in page["media"]], ["clip.mp4"])
-            self.assertEqual(page["media_skip"], [{"name": ".env", "why": "secret"}])
+            # P211: toward the owner a credential file is never a plain card — it becomes a secret pickup card (no value on it)
+            self.assertEqual(page["media_skip"], [{"name": ".env", "why": "key_card"}])
+            cards = [m for _, m in h._sent if m.get("t") == "secret_out"]
+            self.assertEqual([(c["name"], c["kind"]) for c in cards], [(".env", "file")])
+            self.assertNotIn("A=1", json.dumps(cards))
             self.assertTrue(any(m["t"] == "hist_turn" and m["turn"].get("media") for _, m in h._sent), "pushed to the phone")
             got, errs = await _get(h, s, page["media"][0]["mid"])
             self.assertEqual(errs, [])

@@ -29,7 +29,7 @@
 //      persisted); ↑/↓ from the keyboard, Esc closes back to the field; hold-and-slide with a finger sets it and letting go
 //      closes; with text in the box a hold never opens it
 //   m) 追加 13: the logo's text-size step survives a reload (the iPhone home-screen app reopening is the same path);
-//      a hold resets to 中 and forgets it
+//      a hold no longer resets (P207 追加 2: hold = first unread); the tap cycle reaches 中 and forgets it
 // Shots → reports/qa/p154/screens/*.png
 import assert from 'node:assert/strict';
 import { mkdirSync, writeFileSync } from 'node:fs';
@@ -297,6 +297,15 @@ export async function runP154() {
             await fake.send({ t: 'busy', by: NAME, tasks: mk(4) });
             await waitFor(p, `${$('busyDots')}.querySelectorAll('i.rb').length===4`);
             check(await evaluate(p, `(()=>{const l=[...${$('busyDots')}.querySelectorAll('i.rb')];return l.slice(0,3).every((i,k)=>i.dataset.mark==='m'+k) && l[3].classList.contains('in') && !l[3].dataset.mark})()`), 'the new one pops in, the rest keep dancing');
+            // P207 追加 4: it dances while it pops, and a pop whose animationend never comes (window hidden) still ends
+            check(await evaluate(p, `getComputedStyle(${$('busyDots')}.querySelectorAll('i.rb')[3]).animationName`) === 'rb-dance-18, rb-pop', 'dances underneath the pop');
+            await fake.send({ t: 'busy', by: NAME, tasks: [...mk(4), ...mk(1, 9)] });
+            await waitFor(p, `${$('busyDots')}.querySelectorAll('i.rb').length===5`);
+            await evaluate(p, `document.getAnimations().filter(a=>a.animationName==='rb-pop').forEach(a=>a.pause())`);
+            await sleep(900);
+            check(await evaluate(p, `(()=>{const i=${$('busyDots')}.querySelectorAll('i.rb')[4];return !i.classList.contains('in') && getComputedStyle(i).animationName==='rb-dance-18'})()`), 'a lost animationend never leaves a robot standing still');
+            await fake.send({ t: 'busy', by: NAME, tasks: mk(4) });
+            await waitFor(p, `${$('busyDots')}.querySelectorAll('i.rb').length===4 && !${$('busyDots')}.querySelector('.bye')`, 4000);
             // a finished worker bows (the 13th frame) and floats away, then its slot closes
             await fake.send({ t: 'busy', by: NAME, tasks: mk(4).filter((x) => x.id !== 'r1') });
             await waitFor(p, `${$('busyDots')}.querySelector('i.rb.bye')`);
@@ -742,8 +751,11 @@ export async function runP154() {
           check(await fz() === 'm|null', 'the cycle goes on from the remembered step: 中, nothing stored');
           await press(40);
           check(await fz() === 'l|l', '→ 大');
+          // P207 追加 2 (Leo): a hold on the logo now jumps to the first unread — it never touches the text size
           await press(900);
-          check(await fz() === 'm|null', 'a hold resets to 中 and forgets it');
+          check(await fz() === 'l|l', 'a hold leaves the size alone (P207: hold = first unread)');
+          await press(40);
+          check(await fz() === 'm|null', 'the tap cycle still reaches 中 and forgets it');
           await p.send('Page.reload'); await sleep(800); await waitFor(p, `!!document.getElementById('orb')`);
           check(await fz() === 'm|null', 'after a reload: 中');
           check(!p.problems.length, 'no CSP errors');

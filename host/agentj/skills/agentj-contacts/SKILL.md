@@ -26,7 +26,9 @@ a command.
 ## Slot 0 = the owner (「发给我自己」)
 - Slot 0 of the book is the owner themself: name, main e-mail (the first), optional phone. `agentj contacts owner show`.
   Every "send it to me" — a web report, meeting minutes, a mail, a file — goes to that main e-mail:
-  `agentj mail send --to me …` (「我」「我自己」「me」 find slot 0).
+  `agentj mail send --to-owner …` (slot 0 + the 「我本人」 allowlist addresses; or `--to me`, which finds slot 0 only).
+  `--to-owner` with `--to` sends to both (deduped, 10 at most); no owner address yet → `no_owner_address`: say so and offer
+  `agentj contacts owner set`. The approval card on the phone comes first, exactly as with `--to <owner address>`.
 - Empty → `agentj contacts owner set [--name … --email … --phone …] --why '…'`: a card rises on the phone, pre-filled with what
   you pass (or the 「我本人」 address of the e-mail channel); the owner saves or skips. You can never write slot 0 yourself
   (`edit` / `rm` on it are refused): an address there skips the outward filter. The first pairing already shows this card once.
@@ -37,6 +39,10 @@ a command.
   owner: Agent J takes them out of the text, leaves 〔密钥 n …〕 in their place and opens a secret pickup card on the phone
   (the owner opens it with Face ID). Better still, send such a value yourself with `agentj secret send` and keep it out of
   the mail. A low-risk code is not a credential: write it out.
+- Files to the owner (P211): any file in your folder goes as it is — audio, video, pictures, documents, also from
+  `.agentj/`; there is no secret guess on them. A credential file (`.env`, `*.pem`, `id_*`, `.ssh/` …) or a text file with
+  a real key never goes as an attachment: link it and Agent J opens a pickup card, or run `agentj secret send --file`.
+  Files to anyone else are checked strictly (anything that looks like a key, `.agentj/` and `.git/` stay home).
 
 ## Keep the book current
 - The owner gives a new detail (「李总的手机是 139…」「他还有个邮箱」) → `agentj contacts find` him, then
@@ -49,6 +55,11 @@ a command.
   without `--dry-run`. Export: `agentj contacts export <file>.vcf|.csv|.json` (vCard 3.0 by default — every phone and mail app
   imports it) and show the file to the owner.
 - `agentj contacts list --sort recent|frequent|name` · `rm <id>` only when the owner asks to delete.
+- The owner can also do all of this on the phone: Settings → 通讯录 / Contacts lists and searches the book, adds, edits
+  and deletes contacts, imports a vCard / CSV / JSON file and exports a vCard, and its envelope icon puts a contact's
+  e-mail on the e-mail channel's allowlist in one tap (as a guest; slot 0 as 「我本人」). Point the owner there when they
+  want to manage the book themselves or ask how to let a friend e-mail the Agent (an allowlist change you make yourself
+  with `agentj mail allow` still waits for the owner's approval on the phone).
 
 ## Never
 - Never send mail any other way (no SMTP scripts, no other CLI) and never to an address the owner did not approve.

@@ -1,5 +1,6 @@
 """Same-thread ownership, original profile and desktop mirror regressions."""
 import _hermetic
+from _testtmp import TEST_TMP  # noqa: E402  P202: fixtures on tmpfs, not the system disk
 import json,os,sys,tempfile,unittest
 from pathlib import Path
 from unittest.mock import Mock,patch
@@ -9,7 +10,7 @@ SID='11111111-1111-1111-1111-111111111111'
 PROFILE={'type':'managed','file_system':{'type':'restricted','entries':[{'path':{'type':'special','value':{'kind':'root'}},'access':'read'}]},'network':'restricted'}
 class OriginalThread(unittest.TestCase):
  def setUp(self):
-  self.tmp=tempfile.TemporaryDirectory(dir='/var/tmp');self.addCleanup(self.tmp.cleanup)
+  self.tmp=tempfile.TemporaryDirectory(dir=TEST_TMP);self.addCleanup(self.tmp.cleanup)
   self.root=Path(self.tmp.name);self.path=self.root/'owner.jsonl'
   self.ctx={'cwd':str(self.root),'approval_policy':'on-request','approvals_reviewer':'auto_review','sandbox_policy':{'type':'read-only'},'permission_profile':PROFILE,'active_permission_profile':{'id':':read-only'}}
   self.write([{'type':'session_meta','payload':{'id':SID,'cwd':str(self.root)}},{'type':'turn_context','payload':self.ctx}])

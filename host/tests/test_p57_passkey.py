@@ -207,6 +207,10 @@ class HostLevel(unittest.TestCase):
         async def on_ready(s, since):
             pass
         self.host.send_app, self.host._op, self.host.on_ready = send_app, op, on_ready
+
+        async def no_owner_card():      # P194's card waits 40 s, then for a tap no test gives; tearDown below waits for every task
+            pass                        # (parity's pyrun hung here 900 s → SIGKILL, P202). The card itself: test_p194_owner_direct.
+        self.host._owner_card_after_welcome = no_owner_card
         self.loop = asyncio.new_event_loop()
 
     def tearDown(self):

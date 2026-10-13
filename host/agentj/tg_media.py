@@ -31,11 +31,22 @@ METHODS = {"image/png": ("sendPhoto", "photo"), "image/jpeg": ("sendPhoto", "pho
 DOCUMENT = ("sendDocument", "document")
 MAX_ITEMS = 8          # Telegram's own per-reply cap (P194 raised the phone page to media.MAX_ITEMS = 24; a chat is not a page)
 
+# P211: every refusal says why and what to do next — never just 「可能含密钥」
 SKIP = {"zh": {"too_big": "{name} 太大（{mb} MB），没有发到 Telegram。", "outside": "{name} 不在工作目录里，没有发。",
-               "secret": "{name} 可能含密钥，没有发。", "type": "{name} 这种文件发不了。", "gone": "{name} 找不到了，没有发。",
+               "secret": "{name} 的文件名或内容像密钥，所以没发；去掉密钥或改个名后让 Agent 再发。",
+               "private": "{name} 在 Agent J 的内部文件夹里，不对外发；要给别人，先让 Agent 把它复制到工作目录的普通文件夹里。",
+               "key_file": "{name} 是凭据文件（.env、私钥这类），不直接发；要拿到它，跟 Agent 说「用密钥领取卡发给我」，在手机上用 Face ID 领取。",
+               "key_content": "{name} 里有真实的密钥（如 sk-…），所以没随文件发；要拿到它，跟 Agent 说「用密钥领取卡发给我」，或删掉密钥后再发。",
+               "key_card": "{name} 含密钥，没有随消息发出：已在你的手机上弹出密钥领取卡，验证 Face ID 后领取。",
+               "type": "{name} 这种文件发不了。", "gone": "{name} 找不到了，没有发。",
                "masked": "{name} 的路径被隐私规则遮住了，所以没发；文件本身可能还在。", "failed": "{name} 没发出去。"},
         "en": {"too_big": "{name} is too big ({mb} MB) — not sent to Telegram.", "outside": "{name} isn't in the working folder — not sent.",
-               "secret": "{name} may contain a key — not sent.", "type": "{name} is a kind of file that can't be sent.",
+               "secret": "{name} — its name or content looks like a key, so it wasn't sent. Remove the key or rename it, then ask the Agent again.",
+               "private": "{name} is in Agent J's internal folder and doesn't go to others — ask the Agent to copy it to a normal folder first.",
+               "key_file": "{name} is a credential file (.env, a private key …) and isn't sent as a file — ask the Agent to send it as a secret pickup card (Face ID on your phone).",
+               "key_content": "{name} holds a real key (like sk-…), so it wasn't sent as a file — ask the Agent to send it as a secret pickup card, or remove the key and send again.",
+               "key_card": "{name} holds a key and wasn't sent with the message: a secret pickup card is waiting on your phone (Face ID to open).",
+               "type": "{name} is a kind of file that can't be sent.",
                "gone": "{name} wasn't found — not sent.",
                "masked": "{name} — its path was masked by a privacy rule, so it wasn't sent (the file may still be there).", "failed": "{name} couldn't be sent."}}
 
@@ -47,8 +58,10 @@ def method_of(rec: dict) -> tuple[str, str]:
     return m
 
 
-def collect(media: "media_mod.Media", text: str) -> tuple[list[dict], list[dict]]:
-    """A reply → (records to upload, skips {name, why, bytes?}). Blocking (hashing, the secret scan): run in a thread."""
+def collect(media: "media_mod.Media", text: str, keys: list | None = None) -> tuple[list[dict], list[dict]]:
+    """A reply → (records to upload, skips {name, why, bytes?}). Blocking (hashing, the secret scan): run in a thread.
+    Only the owner's channels call it (the owner bot's private chat, a mail reply to the owner): owner=True (P211). A
+    credential file an explicit link named is appended to `keys` as (skip, record) for a pickup card."""
     items: list[dict] = []
     skips: list[dict] = []
     total, seen = 0, set()
@@ -63,11 +76,14 @@ def collect(media: "media_mod.Media", text: str) -> tuple[list[dict], list[dict]
                 skips.append({"name": name, "why": "masked"})
             continue
         try:
-            rec, why = media.check(ref)
+            rec, why = media.check(ref, owner=True)
         except OSError:
             rec, why = None, None
         if why:
-            skips.append({"name": name, "why": why, **({"bytes": rec["bytes"]} if rec and why == "too_big" else {})})
+            skip = {"name": name, "why": why, **({"bytes": rec["bytes"]} if rec and why == "too_big" else {})}
+            skips.append(skip)
+            if keys is not None and why in ("key_file", "key_content") and rec and "sha256" in rec and ref.explicit:
+                keys.append((skip, rec))
             continue
         if rec is None or (rec["dev"], rec["ino"]) in seen:
             continue

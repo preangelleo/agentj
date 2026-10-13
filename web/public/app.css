@@ -69,6 +69,15 @@ body[data-status=unknown]{--state:var(--c-offline)}
 body[data-conn=off]{--state:var(--c-offline)}
 
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+/* P200 追加 2 (Leo, 2026-10-13): no ring, frame or tap flash is ever left on what a finger or mouse touched. Rings show
+   only during keyboard navigation (js/ui.js sets <html data-kbd> on Tab / arrows, any pointer clears it) — there one
+   quiet ring in the theme's accent. --ring is the one token; every relay / menu focus rule below only places it. */
+:root{--ring:var(--focus,var(--accent))}
+:focus:not(:focus-visible){outline:none}
+html:not([data-kbd]) :focus,html:not([data-kbd]) :focus-visible{outline:none!important}
+html:not([data-kbd]) .omq:focus-visible{box-shadow:none}
+html[data-kbd] :focus-visible{outline-color:var(--ring)!important}
+html[data-kbd] .omq:focus-visible{box-shadow:0 0 0 2px var(--ring)}
 /* overscroll-behavior on the root too: a sideways swipe that is not a page turn
    (from the screen edge, or at the first / last page) must never become the
    browser's history-back gesture and leave the app (ADR-033). */
@@ -404,11 +413,25 @@ main::-webkit-scrollbar{display:none}
   background:var(--peachy-feeling);color:var(--lotion);font:700 11px/15px var(--font-body);font-style:normal;text-align:center}
 .rmbar .act[data-state=failed]{color:var(--mellow-marrow)}
 .rmbar .act[data-state=failed] .bang{display:block}
-/* P183: 转发 to the owner's Telegram shows the Telegram mark (the share arrow stays for the phone's share sheet) */
+/* P183/P201: 转发 to the owner's Telegram shows the paper plane (the share arrow stays for the phone's share sheet) */
 .rmbar .act[hidden]{display:none}   /* P189: 转发到邮箱 only with the host's `contacts` cap */
 .rmbar #fwdBtn[data-tg="1"] .g0{display:none}
-.rmbar #fwdBtn[data-tg="1"]:not([data-state=sent]) .gtg{display:block;width:20px;height:20px}
+.rmbar #fwdBtn[data-tg="1"]:not([data-state=sent]) .gtg{display:block}
 .rmbar #fwdBtn[data-tg="1"][data-state=sending] .gtg{animation:breathe 1.1s ease-in-out infinite}
+/* P216: 分享成网页报告 — the one action that is not about this card alone, so it sits apart on the LEFT and is filled
+   (Leo 10-13, scheme A4): a 36 px Lotion disc, the ring-with-a-gap + arrow cut out in the card's own colour
+   (currentColor = --rm-bg, so it follows idle / working / waiting / question / offline and the dark --deep).
+   44 px target; margin-left pulls the disc's edge onto the card's 20 px text inset. */
+.rmbar .wrbtn{-webkit-appearance:none;appearance:none;-webkit-tap-highlight-color:transparent;flex:none;
+  width:44px;height:44px;margin:0 auto 0 -4px;padding:0;border:0;border-radius:50%;background:none;color:var(--rm-bg);
+  display:grid;place-items:center;cursor:pointer;touch-action:manipulation;transition:transform .12s var(--re,ease)}
+.rmbar .wrbtn svg{width:36px;height:36px;display:block}
+.rmbar .wrbtn .disc{fill:var(--ink)}
+.rmbar .wrbtn:active{transform:scale(.92)}
+.rmbar .wrbtn:focus-visible{outline:2px solid var(--ink);outline-offset:1px}
+.rmbar .wrbtn:disabled{opacity:.35;cursor:default;transform:none}
+.rmbar .wrbtn[hidden]{display:none}
+@media (orientation: landscape){.rmbar .wrbtn{margin-left:0}}   /* main's inset is 24 px there */
 /* the copy button left the header; the header keeps speaker + time */
 .rm main{padding-bottom:12px}
 /* Long text fades into the card over its last 28 px — only while there is more below
@@ -497,7 +520,7 @@ body[data-sheet="1"] .deck{filter:blur(1.5px);opacity:.55}
 @media (max-width:600px) and (orientation:portrait){
   .words,.words.m,.words.l{font-size:calc(17px*var(--fz));line-height:1.6}
 }
-.words.empty p{color:var(--ink-soft)}
+.words.empty p{color:var(--ink-soft);word-break:keep-all;text-wrap:balance}   /* P205: a wait line breaks at its commas, lines even */
 
 /* ---- the agent's Markdown (pwa/assets/md.js builds these nodes) ----------
    Sizes are in em so the three reading sizes above scale everything; code is
@@ -644,22 +667,59 @@ body[data-kb="1"] .composer{padding-bottom:12px}   /* keyboard up: no home-indic
   color:var(--btn-strong-ink);animation:lockring 1.2s ease-out infinite}
 .tools .tool.mic.lock.cancel{opacity:.5;animation:none}
 @keyframes lockring{0%{box-shadow:0 0 0 0 var(--peachy-feeling)}100%{box-shadow:0 0 0 12px transparent}}
-.ptt{position:absolute;left:50%;bottom:calc(100% + 18px);z-index:9;transform:translateX(-50%);
-  display:flex;flex-direction:column;align-items:center;gap:6px;min-width:220px;
-  padding:16px 26px;border-radius:24px;pointer-events:none;
-  background:var(--btn-strong-bg);color:var(--btn-strong-ink);box-shadow:0 12px 32px rgba(20,20,20,.28);
-  user-select:none;-webkit-user-select:none}
+/* P205: the recording card — one for hold to talk, a locked take and a long take. A dark circle in the middle of the screen
+   (the P150 centred-dialog language, Noir in both themes), the microphone with a ring that follows the voice (--lv, 0…1, set
+   per frame from an analyser; without one the ring just breathes), the time, and small text. A soft scrim lets the chat show
+   through and never takes a tap (the mic button stays the gesture surface). Locked: end / dim / cancel icons under the circle.
+   .dim = the same card on black, a tap anywhere but the icons does nothing (pocket-proof), the card at low brightness. */
+.ptt{position:fixed;inset:0;z-index:60;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:18px;
+  padding:var(--space-content);pointer-events:none;background:rgba(20,20,20,.28);user-select:none;-webkit-user-select:none;
+  transition:background .25s}
 .ptt[hidden]{display:none}
-.ptt b{font:500 calc(30px*var(--fz))/1 var(--font-mono);letter-spacing:.02em;display:flex;align-items:center;gap:10px}
-.ptt b::before{content:"";width:10px;height:10px;border-radius:50%;background:var(--peachy-feeling);
-  animation:beat 1.1s ease-in-out infinite}
-.ptt span{font:500 calc(14px*var(--fz))/1.3 var(--font-body)}
-.ptt .pttseg{font-size:calc(12px*var(--fz));opacity:.82;text-align:center;max-width:min(320px,80vw)}   /* P182: part · ceiling · keep the screen on */
+.pttc{position:relative;width:min(66vw,252px);aspect-ratio:1;border-radius:50%;flex:none;
+  display:flex;flex-direction:column;align-items:center;justify-content:center;gap:5px;padding:0 30px;text-align:center;
+  background:var(--dlg-bg);color:var(--dlg-fg);box-shadow:var(--dlg-shadow);animation:gdlg-in var(--dlg-dur) var(--re) both;   /* P218: P207's dialog tokens (a theme's dialog colour reaches it) */
+  --lv:0;--ring:var(--peachy-feeling)}
+.pttring{position:absolute;left:50%;top:31%;width:76px;height:76px;margin:-38px 0 0 -38px;border-radius:50%;
+  background:var(--ring);opacity:calc(.22 + var(--lv) * .5);transform:scale(calc(1 + var(--lv) * .7));transition:transform .08s linear,opacity .08s linear}
+.pttring.r2{background:none;border:2px solid var(--ring);opacity:.5;transform:none;animation:pttwave 1.6s ease-out infinite}
+.pttc:not([data-live]) .pttring:not(.r2){animation:pttbreathe 1.4s ease-in-out infinite}
+@keyframes pttwave{0%{transform:scale(1);opacity:.55}100%{transform:scale(1.9);opacity:0}}
+@keyframes pttbreathe{0%,100%{transform:scale(1)}50%{transform:scale(1.18)}}
+.pttmic,.pttx{position:relative;width:34px;height:34px;margin:0 0 8px;flex:none;top:0}
+.pttc .pttmic,.pttc .pttx{margin-top:-14px}
+.pttx{display:none}
+.ptt b{position:relative;font:500 calc(26px*var(--fz))/1 var(--font-mono);letter-spacing:.02em;display:flex;align-items:center;gap:8px}
+.ptt span:not(.pttring){position:relative;font:500 calc(12.5px*var(--fz))/1.3 var(--font-body);opacity:.9;text-wrap:balance}
+.ptt .pttseg{font-size:calc(11px*var(--fz));opacity:.66}
 .ptt .pttseg[hidden]{display:none}
-.ptt.cancel{background:var(--sooty);color:var(--lotion)}
-.ptt.cancel b::before{background:var(--lotion);animation:none;border-radius:2px}
-.ptt.lock b::after{content:attr(data-lock);font:500 calc(13px*var(--fz))/1 var(--font-body);padding:4px 8px;border-radius:8px;
+.ptt.lock b::after{content:attr(data-lock);font:600 calc(11px*var(--fz))/1 var(--font-body);padding:3px 7px;border-radius:7px;
   background:var(--peachy-feeling);color:#fff;letter-spacing:0}
+.ptt.cancel .pttc{--ring:var(--c-danger);background:#3a1712}
+.ptt.cancel .pttmic{display:none}
+.ptt.cancel .pttx{display:block}
+.ptt.cancel .pttring:not(.r2){animation:none;transform:none;opacity:.35}
+.ptt.cancel .pttring.r2{animation:none;opacity:0}
+.pttact{display:flex;gap:22px;pointer-events:auto}
+.pttact[hidden]{display:none}
+.pttbtn{width:52px;height:52px;border-radius:50%;display:grid;place-items:center;border:1.5px solid rgba(250,249,245,.55);cursor:pointer;
+  background:rgba(44,43,38,.82);color:#faf9f5;padding:0;-webkit-tap-highlight-color:transparent}
+.pttbtn svg{width:24px;height:24px}
+.pttbtn.go{background:var(--peachy-feeling);border-color:var(--peachy-feeling);color:#fff}
+.pttbtn:focus-visible{outline:2px solid #faf9f5;outline-offset:3px}
+.pttbtn .sun{display:none}
+.pttnote{margin:0;max-width:min(320px,86vw);text-align:center;font:500 calc(12.5px*var(--fz))/1.4 var(--font-body);color:#faf9f5;
+  padding:6px 12px;border-radius:999px;background:rgba(44,43,38,.72);text-wrap:balance}
+.pttnote[hidden]{display:none}
+.ptt.dim{background:#000;pointer-events:auto}
+.ptt.dim .pttc{background:#0b0b0a;color:rgba(250,249,245,.42);box-shadow:none;--ring:rgba(217,119,87,.45)}
+.ptt.dim .pttbtn{background:#0b0b0a;border-color:rgba(250,249,245,.22);color:rgba(250,249,245,.5)}
+.ptt.dim .pttbtn.go{background:rgba(217,119,87,.35);border-color:transparent}
+.ptt.dim .pttbtn .moon{display:none}
+.ptt.dim .pttbtn .sun{display:inline}
+.ptt.dim .pttnote{background:none;color:rgba(250,249,245,.38)}
+body.recdim .toast{z-index:61;position:fixed}
+@media(prefers-reduced-motion:reduce){.pttring,.pttring.r2,.pttc{animation:none!important;transition:none}}
 .row{display:flex;align-items:flex-end;gap:10px}
 /* ---- the reply strip (§2): a chat app's "Reply to …", directly above the field -------
    Left accent = the quoted page's SOURCE colour; the middle (two lines: who · when,
@@ -734,6 +794,12 @@ textarea{--ta-fs:max(16px,calc(17px*var(--fz)));width:100%;max-height:30vh;min-h
    so "说点什么（≤2万字）" stays on one line on a ~390 px phone. Typed text keeps
    17 px (and ≥ 16 px, or iOS zooms on focus). restingPlaceholder() measures at
    this size. */
+/* P200 (Leo, 2026-10-13, Android Chrome): the field's own bar only when the words really outgrow it. P150 paints every
+   scrollbar (track included) instead of the system's fading overlay, so a field that overflows by 1–3 px — the empty
+   field's placeholder or one line in a CJK fallback font whose line box is taller than line-height — showed a fixed
+   vertical bar with nothing typed. autosize() sets .ovf only when the text is taller than the 30 vh cap. */
+#input{overflow-y:hidden}
+#input.ovf{overflow-y:auto}
 textarea::placeholder{color:var(--ink-soft);font-size:calc(13.6px*var(--fz));line-height:calc(var(--ta-fs) * 1.45)}  /* the typed line's box: centred */
 .slashmenu{position:absolute;left:12px;right:12px;bottom:calc(100% - 4px);z-index:9;
   max-height:46vh;overflow-x:hidden;overflow-y:auto;overscroll-behavior:contain;
@@ -1102,7 +1168,6 @@ body[data-agent="stopped"]{--state:var(--c-offline)}
 .slashmenu .estopitem b{color:var(--c-danger)}
 .keys dd code{display:inline-block;min-width:1.6em;padding:0 6px;border:1px solid var(--line);border-radius:6px;background:var(--surface);
   text-align:center;font:500 .9em/1.5 var(--font-mono);color:var(--ink)}
-.ptt.lock b::after{content:attr(data-lock)}
 
 /* ---- dialogs in the brand theme: the security panel and the two-step confirm ---- */
 .ajmodal{position:fixed;left:0;right:0;top:var(--vvtop,0px);height:var(--vvh,100dvh);z-index:45;display:grid;place-items:center;padding:16px;background:rgba(20,20,20,.55);
@@ -1500,7 +1565,6 @@ div.math.display{text-align:center}
   display:grid;place-items:center;padding:0;cursor:pointer;touch-action:manipulation}
 .macts .mact[hidden]{display:none}
 .macts .mact svg{width:21px;height:21px;grid-area:1/1}
-.macts .mact.tg svg.g0{width:20px;height:20px}
 .macts .mact:active{background:var(--surface)}
 @media (hover:hover){.macts .mact:hover{background:var(--surface)}}
 .macts .mact:focus-visible{outline:1px solid var(--ink);outline-offset:-2px}
@@ -1913,12 +1977,15 @@ body[data-conn=off] .loadhit .loadline::after{display:none}
    in 2.4 s; .in = pops in, .bye = bows (the 13th frame) and floats away, .gone = its slot closes. Never smoothed. */
 .rb{display:block;flex:none;background-repeat:no-repeat;image-rendering:crisp-edges;image-rendering:pixelated;transform-origin:50% 100%;
   transition:width .28s ease,margin .28s ease}
-.rb18{width:18px;height:18px;background-size:234px 288px;animation:rb-dance-18 2.4s steps(12) infinite}
-.rb24{width:24px;height:24px;background-size:312px 384px;animation:rb-dance-24 2.4s steps(12) infinite}
+.rb18{width:18px;height:18px;background-size:234px 288px;animation:rb-dance-18 2.4s steps(12) var(--rbd,0s) infinite}
+.rb24{width:24px;height:24px;background-size:312px 384px;animation:rb-dance-24 2.4s steps(12) var(--rbd,0s) infinite}
 .rb.still{animation:none}
 @keyframes rb-dance-18{from{background-position-x:0}to{background-position-x:-216px}}
 @keyframes rb-dance-24{from{background-position-x:0}to{background-position-x:-288px}}
-.rb.in{animation:rb-pop .42s cubic-bezier(.3,1.6,.5,1) both}
+/* P207 追加 4: the pop runs on top of the dance, never instead of it — a robot whose animationend was lost (it popped in
+   while the window was hidden / occluded) used to keep .in and stand still on frame 0 for good. --rbd = its dance offset. */
+.rb18.in{animation:rb-dance-18 2.4s steps(12) var(--rbd,0s) infinite,rb-pop .42s cubic-bezier(.3,1.6,.5,1) both}
+.rb24.in{animation:rb-dance-24 2.4s steps(12) var(--rbd,0s) infinite,rb-pop .42s cubic-bezier(.3,1.6,.5,1) both}
 @keyframes rb-pop{0%{transform:translateY(40%) scale(.2);opacity:0}100%{transform:none;opacity:1}}
 .rb.bye{animation:rb-bow 1s ease-in-out forwards}
 @keyframes rb-bow{0%{transform:none;opacity:1}22%,55%{transform:translateY(6%) rotate(-16deg) scaleY(.86);opacity:1}
@@ -1933,19 +2000,18 @@ body[data-conn=off] .loadhit .loadline::after{display:none}
 /* ---- P150 Global Design: the centred rounded-square dialog (gdlg) ----------------------------------------------
    One shell for 「在办事项」 and 「服务器已升级」 (and later others): a soft blur over the page, a square in the middle, Lotion
    in light, Noir in dark (P187: was an off-palette #1f1e1b). ESC / a tap outside closes it (agentj-ui-spacing-and-esc, layers.js). */
+/* P207 追加 1: the colours / type / shadow / scrim / motion below are the --dlg-* tokens (end of file) — one Noir card, light or dark. */
 .gdlg{position:fixed;inset:0;z-index:100;display:grid;place-items:center;padding:var(--space-content);
-  background:rgba(20,20,20,.42);-webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px);--dbg:var(--c-lotion,#faf9f5);--dfg:#141414}
+  background:var(--dlg-scrim);-webkit-backdrop-filter:blur(var(--dlg-blur));backdrop-filter:blur(var(--dlg-blur));--dbg:var(--dlg-bg);--dfg:var(--dlg-fg)}
 .gdlg[hidden]{display:none}
-@media (prefers-color-scheme:dark){:root:not([data-theme="light"]) .gdlg{--dbg:var(--c-noir);--dfg:#faf9f5}}
-:root[data-theme="dark"] .gdlg{--dbg:var(--c-noir);--dfg:#faf9f5}
-.gdlg .sq{width:min(80vw,312px);min-height:min(80vw,312px);max-height:calc(100% - 2 * var(--space-content));border-radius:36px;
-  background:var(--dbg);color:var(--dfg);box-shadow:0 18px 50px rgba(20,20,20,.28);display:flex;flex-direction:column;align-items:center;
-  text-align:center;padding:26px 22px 18px;overflow:auto;scrollbar-width:none;animation:gdlg-in .18s var(--re) both}
+.gdlg .sq{width:min(80vw,312px);min-height:min(80vw,312px);max-height:calc(100% - 2 * var(--space-content));border-radius:var(--dlg-radius);
+  background:var(--dbg);color:var(--dfg);box-shadow:var(--dlg-shadow);display:flex;flex-direction:column;align-items:center;
+  text-align:center;padding:26px 22px 18px;overflow:auto;scrollbar-width:none;animation:gdlg-in var(--dlg-dur) var(--re) both}
 @keyframes gdlg-in{from{opacity:0;transform:scale(.94)}to{opacity:1;transform:none}}
 @media(prefers-reduced-motion:reduce){.gdlg .sq{animation:none}}
-.gdlg h2{margin:0;font:600 calc(17px*var(--fz))/1.3 var(--font-title)}
-.gdlg p{margin:var(--space-control) 0 0;font:400 calc(14px*var(--fz))/1.5 var(--font-body);opacity:.75}
-.gdlg .gdlg-sub{margin:4px 0 var(--space-control);font-size:calc(13px*var(--fz));opacity:.62}
+.gdlg h2{margin:0;font:600 var(--dlg-fs-title)/1.3 var(--font-title)}
+.gdlg p{margin:var(--space-control) 0 0;font:400 var(--dlg-fs-body)/1.5 var(--font-body);opacity:.75}
+.gdlg .gdlg-sub{margin:4px 0 var(--space-control);font-size:var(--dlg-fs-sub);opacity:.62}
 .gdlg-icon{width:64px;height:64px;flex:none;border-radius:50%;display:grid;place-items:center;background:var(--c-idle);color:#faf9f5;margin:6px 0 var(--space-content)}
 .gdlg-icon svg{width:30px;height:30px}
 .gdlg-row{display:flex;gap:var(--space-control);width:100%;margin-top:auto;padding-top:var(--space-content)}
@@ -2161,9 +2227,12 @@ i.bd.still{animation:none}
 .rmtop{position:sticky;top:-6px;z-index:3;flex:none;display:flex;flex-direction:column;
   margin:-6px -20px 0;padding:6px 20px 0;background:var(--rm-bg)}
 @media (orientation: landscape){.rmtop{margin:-6px -24px 0;padding:6px 24px 0}}
-/* only while words sit under it: a 14 px fade below the pinned header, the twin of the 28 px fade above the icon bar */
+/* only while words sit under it: a 14 px fade below the pinned header, the twin of the 28 px fade above the icon bar.
+   P205: on and off at once — no opacity transition. A send resets the scroll of a read-down reply, so the fade used to
+   animate 1 → 0 on its own compositor layer exactly while the state colour changed; Chromium kept drawing that layer's
+   stale tiles (the old card colour's gradient: a grey blurry line right of the load line) until the reply repainted. */
 .rmtop::after{content:"";position:absolute;left:0;right:0;top:100%;height:14px;pointer-events:none;opacity:0;
-  background:linear-gradient(to bottom,var(--rm-bg),transparent);transition:opacity .2s var(--re)}
+  background:linear-gradient(to bottom,var(--rm-bg),transparent)}
 .rm.under .rmtop::after{opacity:1}
 /* ---- P184 (§25) 「转发到邮箱」 + the contact card: the P150 centred dialog, a wider square for a list / a form ------------
    Only palette colours: the dialog's Lotion / deep Noir (--dbg / --dfg), the idle green for the icon and for what the
@@ -2264,13 +2333,35 @@ i.bd.still{animation:none}
 .gdlg .ren-input:focus-visible{outline:2px solid var(--dfg);outline-offset:2px}
 .set-phones .name-note,#set-phones .name-note,.rmname .name-note{opacity:.62;font-size:.85em}
 /* ---- P190 reverse pairing (PROTOCOL §27): the code on the pairing screen + the remote's confirm card ---- */
-.rvcard{display:flex;flex-direction:column;align-items:center;gap:var(--space-control);margin:var(--space-control) 0 0;
-  padding:var(--space-content);border:1px solid var(--border);border-radius:var(--r-lg);background:var(--surface-1);text-align:center}
-.rvcard h2{margin:0;font:600 calc(16px*var(--fz))/1.35 var(--font-title)}
+/* ---- P210 「连上你的电脑」: numbered method cards (任选一种), one primary each; 「以前配过？」 apart at the bottom ---- */
+.pm{margin-top:var(--space-content);padding:var(--space-content);border:1px solid var(--border);border-radius:var(--r-lg);background:var(--surface-1)}
+.pm[hidden],.pm-past[hidden]{display:none}
+.pm__no{display:inline-flex;align-items:center;margin:0;padding:2px 10px;border-radius:var(--r-pill);border:1px solid var(--accent);
+  color:var(--accent);font:600 calc(12px*var(--fz))/1.5 var(--font-title);letter-spacing:.04em}
+.ajpages .pm h2{margin:var(--sp-2) 0 0;font:600 calc(17px*var(--fz))/1.35 var(--font-title)}
+.ajpages .pm p.pm__when{margin:var(--sp-1) 0 0;font-size:var(--fs-sm);color:var(--text-muted)}
+.pm .steps{margin-top:var(--sp-3)}
+.pm .ajrow{margin:var(--sp-4) 0 0}
+.pm .note{margin-top:var(--sp-3)}
+.pm__qr{display:flex;flex-direction:column;align-items:center;gap:var(--space-control);margin-top:var(--sp-4);text-align:center}
+.pm__where{display:block;margin-top:var(--sp-2);font-size:var(--fs-sm);color:var(--text-muted)}
+.pm-cmd{display:flex;align-items:center;gap:var(--sp-2);margin-top:var(--sp-2);padding-left:var(--sp-3);border-radius:var(--r-md);background:var(--code-bg)}
+.ajpages .pm-cmd code{flex:1;min-width:0;padding:0;background:none;font:500 calc(15px*var(--fz))/1.4 var(--font-mono);overflow-wrap:anywhere}
+.pm-copy{flex:none;display:inline-flex;align-items:center;justify-content:center;width:44px;height:44px;padding:0;border:0;border-radius:var(--r-md);
+  background:none;color:var(--text-muted);cursor:pointer}
+.pm-copy svg{width:20px;height:20px}
+.pm-copy:hover{color:var(--text)}
+.pm-copy:focus-visible{outline:2px solid var(--focus);outline-offset:-2px}
+.pm-link{display:flex;width:fit-content;align-items:center;min-height:44px;font-size:var(--fs-sm);color:var(--link,var(--accent))}
+.pm__alt{margin-top:var(--sp-5);padding-top:var(--sp-4);border-top:1px dashed var(--border-soft)}
+.ajpages .pm__alth{margin:0;font:600 calc(15px*var(--fz))/1.4 var(--font-title)}
+.ajpages .pm__alt p.pm__altp{margin:var(--sp-1) 0 0;font-size:var(--fs-sm)}
+.pm-past{margin-top:var(--sp-6);padding-top:var(--sp-4);border-top:1px solid var(--border-soft)}
+.ajpages .pm-past h2{margin:0;font:600 calc(16px*var(--fz))/1.35 var(--font-title)}
+.ajpages .pm-past p{margin:var(--sp-1) 0 0;font-size:var(--fs-sm);color:var(--text-muted)}
 .rvqr{width:min(64vw,240px);aspect-ratio:1;border-radius:14px;overflow:hidden;background:#fff}
 .rvqr svg{display:block;width:100%;height:100%}
 .rvstatus{margin:0;min-height:2.6em;max-width:22rem}
-.rvor{margin:var(--space-content) 0 0;text-align:center;font:500 calc(13px*var(--fz))/1.4 var(--font-body);color:var(--text-muted)}
 .rvdlg .rvwarn{font-weight:600;opacity:.9}
 .rvdlg .rvpend{width:100%}
 .rvdlg .rvname{display:flex;flex-wrap:wrap;justify-content:center;align-items:baseline;gap:4px 8px;opacity:1;font-weight:600}
@@ -2279,3 +2370,110 @@ i.bd.still{animation:none}
 .rvdlg .rvevict{font-size:calc(13px*var(--fz))}
 .rvdlg .rvdone{white-space:pre-line;opacity:1;font-weight:600}
 .rmsum__acts{display:flex;flex-wrap:wrap;gap:var(--space-control);justify-content:flex-end}
+
+/* ---- P207 追加 1 · THE global centred dialog (owner 2026-10-13: 「弹窗的背景色都统一用一个」「中心位置弹窗有一套统一的 Global CSS，
+   可以是正方形、长方形、圆边、正圆形，但文字、颜色都统一」). One background token = the colour the 在办 robots and the load-line
+   dialogs already used in dark mode: Noir #2c2b26 — now in light mode too (the owner calls it 「中间黑色的弹窗」). A theme
+   overrides the ONE token (theme.json colors.dialog.background → --dlg-bg, js/theme.js). Every centred dialog / card points
+   at these tokens: .gdlg (usage, busy, load, rename, Agent name, reverse pairing, offline, version notice, contacts dialogs),
+   .ajconfirm (#confirm: every confirmation / danger question), and the .ajmodal cards (elevate, secret-out, login QR, long
+   task, capability) via .dlgcard. Shape = a modifier on the dialog root: gdlg--rect · gdlg--rounded (default) · gdlg--circle.
+   Behaviour (Esc / a tap outside = the dialog's own quiet way out) stays per dialog through js/layers.js registerLayer. */
+:root{
+  --dlg-bg:var(--c-noir);                     /* THE one token (Noir #2c2b26); a theme may set it, nothing else may */
+  --dlg-fg:var(--c-lotion);                   /* text and icons on it (Lotion #faf9f5, 12.9:1) */
+  --dlg-muted:color-mix(in srgb,var(--dlg-fg) 72%,transparent);
+  --dlg-line:color-mix(in srgb,var(--dlg-fg) 22%,transparent);
+  --dlg-chip:color-mix(in srgb,var(--dlg-fg) 9%,transparent);
+  --dlg-scrim:rgb(20 20 20 / .42);            /* the page behind: dimmed + soft blur */
+  --dlg-blur:6px;
+  --dlg-shadow:0 18px 50px rgb(20 20 20 / .28);
+  --dlg-radius:36px;                          /* rounded (default) */
+  --dlg-radius-rect:16px;                     /* rect */
+  --dlg-dur:.18s;
+  --dlg-fs-title:calc(17px*var(--fz,1));
+  --dlg-fs-body:calc(14px*var(--fz,1));
+  --dlg-fs-sub:calc(13px*var(--fz,1));
+}
+.gdlg--rect .sq,.ajmodal.gdlg--rect>.box{border-radius:var(--dlg-radius-rect)}
+.gdlg--rounded .sq,.ajmodal.gdlg--rounded>.box{border-radius:var(--dlg-radius)}
+.gdlg--circle .sq,.ajmodal.gdlg--circle>.box{width:min(80vw,320px);height:min(80vw,320px);min-height:0;aspect-ratio:1;border-radius:50%;
+  justify-content:center;padding:14%;overflow:hidden}
+/* the brand-theme cards (.ajmodal .box: elevate, secret-out, login QR, long task, capability): same card, same tokens; their
+   inner parts keep using the semantic tokens, re-bound here to the dialog layer (like the menu scope does in menu.css) */
+.ajmodal.dlgcard{background:var(--dlg-scrim);-webkit-backdrop-filter:blur(var(--dlg-blur));backdrop-filter:blur(var(--dlg-blur));color-scheme:dark;
+  --bg:var(--dlg-bg);--text:var(--dlg-fg);--text-muted:var(--dlg-muted);--text-subtitle:var(--dlg-muted);--surface-1:var(--dlg-chip);--surface-2:var(--dlg-chip);
+  --surface:var(--dlg-chip);--border:var(--dlg-line);--border-soft:var(--dlg-line);--code-bg:var(--dlg-chip);--ink:var(--dlg-fg);--ink-soft:var(--dlg-muted);
+  --line:var(--dlg-line);--primary-bg:var(--dlg-fg);--primary-fg:var(--dlg-bg);--quiet-bg:transparent;--quiet-fg:var(--dlg-fg);
+  --quiet-border:color-mix(in srgb,var(--dlg-fg) 42%,transparent);--focus:var(--dlg-fg);--dbg:var(--dlg-bg);--dfg:var(--dlg-fg);
+  --accent:var(--milky-waves);--link:var(--milky-waves);--danger:var(--strawberry-field);--c-danger:var(--strawberry-field);--danger-bg:transparent}
+.ajmodal.dlgcard>.box{background:var(--dlg-bg);color:var(--dlg-fg);box-shadow:var(--dlg-shadow);border-radius:var(--dlg-radius);animation:gdlg-in var(--dlg-dur) var(--re) both}
+.ajmodal.dlgcard h2{font:600 var(--dlg-fs-title)/1.3 var(--font-title)}
+@media(prefers-reduced-motion:reduce){.ajmodal.dlgcard>.box{animation:none}}
+
+/* ---- P207 §1 · the usage dialog (tap Weekly / 5H): the same centred dark card, numbers as bars --------------------------- */
+.usage-list{list-style:none;margin:var(--space-control) 0 0;padding:0;align-self:stretch;display:flex;flex-direction:column;gap:10px;text-align:left}
+.usage-list li{display:grid;grid-template-columns:7.5em minmax(0,1fr) 3.2em;align-items:center;column-gap:10px;font:400 var(--dlg-fs-body)/1.3 var(--font-body)}
+.usage-list .ub{display:block;height:6px;border-radius:3px;background:color-mix(in srgb,var(--dfg) 16%,transparent);overflow:hidden}
+.usage-list .ub i{display:block;height:100%;border-radius:3px;background:var(--dfg);opacity:.78}
+.usage-list b{font-weight:600;text-align:right;font-variant-numeric:tabular-nums}
+.usage-list li.txt{grid-template-columns:7.5em minmax(0,1fr)}
+.usage-age{margin-top:var(--space-control)!important;font-size:var(--dlg-fs-sub)!important;opacity:.6!important}
+
+
+/* P207 §2: the computer's own scheduled tasks (read-only group under Agent J's own) */
+#tasks-view .tasks-h{margin:var(--space-section,var(--sp-4)) 0 0;color:var(--menu-muted,var(--text-muted));font:600 var(--ui-fs-caption,var(--fs-xs))/1.4 var(--font-body);letter-spacing:.06em;text-transform:uppercase}
+#tasks-view .systasks{display:flex;flex-direction:column;gap:var(--sp-1)}
+#tasks-view .systasks[hidden]{display:none}
+.tag-fail,.ajpages .tag.tag-fail{color:var(--menu-danger,var(--danger));border-color:currentColor}
+#tasks-view .systask-id{color:var(--menu-muted,var(--text-muted));overflow-wrap:anywhere}
+
+/* ---- P207 §3 · the scan page: scanning starts at once; a square viewfinder of four rounded corner brackets (the middle
+   empty), a grey translucent bar sweeping top → bottom, round icon buttons (back · pause / resume · stop). ------------- */
+.scan-finder{position:absolute;left:50%;top:46%;width:min(68vw,62vh,320px);aspect-ratio:1;transform:translate(-50%,-50%);pointer-events:none;overflow:hidden;border-radius:22px}
+.scan-finder .sf-c{position:absolute;width:22%;height:22%;border:0 solid var(--c-lotion);filter:drop-shadow(0 0 2px rgb(20 20 20 / .5))}
+.scan-finder .sf-tl{left:0;top:0;border-top-width:4px;border-left-width:4px;border-top-left-radius:22px}
+.scan-finder .sf-tr{right:0;top:0;border-top-width:4px;border-right-width:4px;border-top-right-radius:22px}
+.scan-finder .sf-bl{left:0;bottom:0;border-bottom-width:4px;border-left-width:4px;border-bottom-left-radius:22px}
+.scan-finder .sf-br{right:0;bottom:0;border-bottom-width:4px;border-right-width:4px;border-bottom-right-radius:22px}
+.scan-finder .sf-sweep{position:absolute;left:6%;right:6%;top:0;height:18%;border-radius:2px;
+  background:linear-gradient(to bottom,rgb(133 133 133 / 0),rgb(133 133 133 / .45));border-bottom:2px solid rgb(250 249 245 / .55);
+  animation:sf-sweep 2.2s cubic-bezier(.45,0,.55,1) infinite}
+@keyframes sf-sweep{0%{transform:translateY(-100%);opacity:0}12%{opacity:1}88%{opacity:1}100%{transform:translateY(560%);opacity:0}}
+body[data-scan-paused="1"] .scan-finder .sf-sweep{animation-play-state:paused;opacity:.35}
+@media(prefers-reduced-motion:reduce){.scan-finder .sf-sweep{animation-duration:4.4s}}
+.camera-actions{align-items:center;gap:28px}
+.camera-actions .scan-ico{width:56px;height:56px;padding:0;border-radius:50%;border:1.5px solid rgb(250 249 245 / .5);display:grid;place-items:center;
+  background:rgb(20 20 20 / .55);color:var(--c-lotion);cursor:pointer;-webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px)}
+.camera-actions .scan-ico svg{width:24px;height:24px}
+.camera-actions .scan-main{width:68px;height:68px;background:var(--c-lotion);color:var(--c-sooty);border-color:var(--c-lotion)}
+.camera-actions .scan-main svg{width:28px;height:28px}
+.camera-actions .scan-main .ic-play{display:none;fill:currentColor}
+.camera-actions .scan-main[aria-pressed="true"] .ic-play{display:inline}
+.camera-actions .scan-main[aria-pressed="true"] .ic-pause{display:none}
+.camera-actions .scan-ico:focus-visible{outline:2px solid var(--c-lotion);outline-offset:3px}
+
+/* P207 (追加 2): the input card's header = three equal tap zones — left 1/3 earliest (double tap), middle 1/3 the first
+   unread (tap; a round badge with the count, the page number's new-message pulse), right 1/3 newest. The source icon +
+   label start exactly at the message text's left edge (no button padding) and may run on over the middle third when no
+   badge sits there; the page number's right edge lines up with the 「…」 button's pill below. */
+.omhd{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:0;position:relative}
+.omhd>.history-corner{padding:0;margin:0;min-width:0;width:100%;height:44px}
+.om-first{position:relative;grid-column:1;display:block;overflow:visible;text-align:left}
+.om-first .omfl{position:absolute;left:0;top:0;bottom:0;display:flex;align-items:center;gap:8px;max-width:calc(200% - 8px);
+  white-space:nowrap;pointer-events:none}
+.om-first .omfl>b{min-width:0;overflow:hidden;text-overflow:ellipsis}
+.om-first .omfl>.t,.om-first .omfl>#omIcon{flex:none}
+.om-first #omIcon{display:inline-flex}
+.om[data-unread="1"] .om-first .omfl{max-width:calc(150% - 20px)}
+.om-unread{grid-column:2;position:relative;z-index:1;display:grid;place-items:center;background:transparent;cursor:default}
+.om[data-unread="1"] .om-unread{cursor:pointer}
+.om-unread .unb{display:none;min-width:22px;height:22px;padding:0 6px;box-sizing:border-box;border-radius:999px;
+  border:1px solid rgba(250,249,245,.6);background:var(--sage-sensation);color:var(--sooty);
+  font:600 calc(12px*var(--fz))/20px var(--font-mono);letter-spacing:0;text-align:center}
+.om[data-unread="1"] .om-unread .unb{display:inline-block;animation:new-message-pulse 1.2s ease-in-out infinite}
+@media(prefers-reduced-motion:reduce){.om[data-unread="1"] .om-unread .unb{animation:none}}
+.omhd>.pg-corner{grid-column:3;margin-left:0;justify-self:stretch;min-width:0;width:100%}
+.omhd .pg-latest{width:100%;padding:0;justify-items:end}
+/* the 「…」 pill sits 12 px from the card's edge, the header's content 16 px: the capsule moves the 4 px, the zones stay thirds */
+.omhd .pg-latest .pg{position:relative;left:4px}

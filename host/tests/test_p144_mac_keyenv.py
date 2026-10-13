@@ -1,5 +1,6 @@
 """macOS launchd private key loading; fixtures only, no Bot API or real env files."""
 import _hermetic  # noqa: F401,I001
+from _testtmp import TEST_TMP  # noqa: E402  P202: fixtures on tmpfs, not the system disk
 import asyncio
 import contextlib
 import io
@@ -22,7 +23,7 @@ VALUE = 'p144-synthetic-value-only'
 class PrivateFixture:
 
     def setUp(self):
-        self.tmp = tempfile.TemporaryDirectory(prefix='aj-p144-', dir='/var/tmp')
+        self.tmp = tempfile.TemporaryDirectory(prefix='aj-p144-', dir=TEST_TMP)
         self.addCleanup(self.tmp.cleanup)
         self.home = Path(self.tmp.name)
         self.env = patch.dict(os.environ, {'HOME': str(self.home), 'XDG_CONFIG_HOME': str(self.home / '.config'),

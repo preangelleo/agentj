@@ -486,6 +486,30 @@ class PrefSet(_AsyncEnv):
         self.assertEqual(preferences.language_state(self.st)[0], "en")
         self.assertGreater(preferences.language_state(self.st)[1], 0, "a phone change is a local change (stamped)")
 
+    async def test_integer_pref_p207(self):
+        """P207: the phone's heartbeat interval (schema type "integer") is accepted in range, refused outside / as a float."""
+        if "heartbeat.interval_minutes" not in serve.PREF_SET_KEYS:
+            self.skipTest("no heartbeat on this host")
+        res = await self.pref("heartbeat.interval_minutes", 120)
+        self.assertEqual((res[0]["ok"], res[0].get("problem")), (True, None))
+        self.assertEqual(preferences.get(preferences.effective(self.st), "heartbeat.interval_minutes"), 120)
+        for bad in (1, 99999, 30.5, "60", True):
+            res = await self.pref("heartbeat.interval_minutes", bad)
+            self.assertEqual(res[0]["problem"], "bad_value", bad)
+
+    async def test_daily_at_pattern_p207(self):
+        """P207: heartbeat.daily_at is "HH:MM" (24-hour) or "" — anything else answers bad_value and writes nothing."""
+        if "heartbeat.daily_at" not in serve.PREF_SET_KEYS:
+            self.skipTest("no daily heartbeat on this host")
+        for good in ("07:30", "00:00", "23:59", ""):
+            res = await self.pref("heartbeat.daily_at", good)
+            self.assertEqual((res[0]["ok"], res[0].get("problem")), (True, None), good)
+            self.assertEqual(preferences.get(preferences.effective(self.st), "heartbeat.daily_at"), good)
+        for bad in ("7:30", "24:00", "12:60", "07:30 ", "0730", 5, None, True, "07:30\n"):
+            res = await self.pref("heartbeat.daily_at", bad)
+            self.assertEqual(res[0]["problem"], "bad_value", bad)
+        self.assertEqual(preferences.get(preferences.effective(self.st), "heartbeat.daily_at"), "")
+
     async def test_refusals(self):
         before = preferences.path().read_text()
         for key, value in (("human.devices", "x"), ("approval.timeout", 999), ("appearance.font_scale", 2), (None, 1)):

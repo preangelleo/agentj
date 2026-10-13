@@ -1,5 +1,6 @@
 """P125 cross-branch contracts: one truthful capability registry and first-run browser evidence."""
 import _hermetic  # noqa: F401,I001
+from _testtmp import TEST_TMP  # noqa: E402  P202: fixtures on tmpfs, not the system disk
 import pathlib
 import tempfile
 import time
@@ -11,7 +12,7 @@ from agentj.state import State
 
 class Capabilities(unittest.TestCase):
     def setUp(self):
-        self.tmp = tempfile.TemporaryDirectory(prefix='p125-contract-', dir='/var/tmp')
+        self.tmp = tempfile.TemporaryDirectory(prefix='p125-contract-', dir=TEST_TMP)
         self.addCleanup(self.tmp.cleanup)
         self.st = State(pathlib.Path(self.tmp.name) / 'state'); self.st.init()
         self.now = int(time.time())

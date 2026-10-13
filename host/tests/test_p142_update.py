@@ -8,6 +8,7 @@ back to the cached old wheel when the upgrade fails.
     service is installed again; the record says `rolled_back`.
 (d) apply: a failed version check / service hand-off rolls back in place; without a cached wheel it says `unavailable`."""
 import _hermetic  # noqa: F401,I001
+from _testtmp import TEST_TMP  # noqa: E402  P202: fixtures on tmpfs, not the system disk
 import asyncio
 import hashlib
 import json
@@ -160,7 +161,7 @@ class ApplyRollback(Base):
 
 class UpgradeReadyCtl(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
-        self.tmp = tempfile.TemporaryDirectory(prefix='aj-p142ur-', dir='/var/tmp')
+        self.tmp = tempfile.TemporaryDirectory(prefix='aj-p142ur-', dir=TEST_TMP)
         self.addCleanup(self.tmp.cleanup)
         home = Path(self.tmp.name)
         env = patch.dict(os.environ, {'HOME': str(home), 'XDG_CONFIG_HOME': str(home / '.config'),

@@ -24,6 +24,15 @@ Do not write the section between `<!-- agentj:docs-rule v1 -->` and `<!-- /agent
 itself" / 「关于 Agent J 本身的问题」) and do not copy it into staging: `agentj wizard apply` adds it to the entry file by itself.
 Follow it whenever your human asks about Agent J itself.
 
+**Core blocks (keep verbatim).** A fresh install seeds each root `documentation/*.md` (except NEXT_SESSION) with one block
+between `<!-- agentj:core v… -->` and `<!-- /agentj:core -->`: the chairman ideas every maintainer must keep (a company is a
+workflow; built for production; the documents are the company; the three settling rules — repeated work → workflow, repeated
+capability → skill, deterministic steps → command-line tool; read reports, not exit codes; delegation grows; dispatch, don't
+carry; documents grow with the model; the phone is a remote control). Read the current file first and copy its core block
+**unchanged** into your version, right under the `# ` title; write the business-specific content outside it and do not
+repeat what the block already says. Agent J upgrades only that block later; everything outside it stays the human's.
+On a root that has no core block yet, copy it from `agentj/wizard/rootdocs/<zh|en>/<file>` in the package.
+
 Every `documentation/*.md` starts with this frontmatter (dates as YYYY-MM-DD; `stale_after` = today + 90 days for
 CONSTITUTION / IDENTITY / WORKFLOW / ROLES, + 180 for SOUL / MEMORY, + 14 for NEXT_SESSION):
 

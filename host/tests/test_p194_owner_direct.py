@@ -12,6 +12,7 @@
 Local fake SMTP only (tests/mailfake.py).
 """
 import _hermetic  # noqa: F401,I001
+from _testtmp import TEST_TMP  # noqa: E402  P202: fixtures on tmpfs, not the system disk
 import asyncio
 import email
 import email.policy
@@ -76,7 +77,7 @@ class _Svc(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
         self.smtp = FakeSMTP(AGENT, CODE)
         self.addCleanup(self.smtp.close)
-        self.tmp = tempfile.TemporaryDirectory(prefix="p194-", dir="/var/tmp")
+        self.tmp = tempfile.TemporaryDirectory(prefix="p194-", dir=TEST_TMP)
         self.addCleanup(self.tmp.cleanup)
         root = pathlib.Path(self.tmp.name)
         self.st = State(root / "state"); self.st.init()
@@ -308,7 +309,7 @@ class Divert(unittest.IsolatedAsyncioTestCase):
 
     async def test_welcome_pops_owner_card_once(self):
         from agentj import serve
-        tmp = tempfile.TemporaryDirectory(prefix="p194w-", dir="/var/tmp")
+        tmp = tempfile.TemporaryDirectory(prefix="p194w-", dir=TEST_TMP)
         self.addCleanup(tmp.cleanup)
         st = State(pathlib.Path(tmp.name) / "s"); st.init()
         card = AsyncMock(return_value={"result": "cancelled"})
@@ -358,7 +359,7 @@ class GalleryPaths(unittest.TestCase):
     def test_media_scan_offers_all_17_and_says_why_otherwise(self):
         from unittest import mock
         from agentj import media
-        tmp = tempfile.TemporaryDirectory(prefix="p194g-", dir="/var/tmp")
+        tmp = tempfile.TemporaryDirectory(prefix="p194g-", dir=TEST_TMP)
         self.addCleanup(tmp.cleanup)
         home = pathlib.Path(tmp.name) / "home"
         g = home / "coding/agentjarvis-catalog/skills/web-page-report/gallery"

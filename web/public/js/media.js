@@ -112,7 +112,8 @@ export function handle(m) {
 export function forgetAll() {
   for (const f of [...flights.values()]) f.fail('net');
   waiting.length = 0; cache.clear(); cacheBytes = 0;
-  clearShown();
+  clearScope(reading, true); reading = scope();
+  clearShown(true);
 }
 export const cacheSize = () => cacheBytes;
 
@@ -122,12 +123,17 @@ export const cacheSize = () => cacheBytes;
 const scope = () => ({ key: null, page: null, urls: [], io: null, cards: () => [] });
 let shown = scope();
 let reading = scope();
-function clearScope(sc) {
-  for (const u of sc.urls) URL.revokeObjectURL(u);
+// P205: a card still on the page keeps its object URL (a re-render whose page lost its file list leaves the inline cards in
+// place — their player and 下载 must not point at a revoked URL); it is revoked by a later sweep once the card is gone.
+let kept = [];
+function clearScope(sc, all = false) {
+  const live = [];
+  for (const x of [...kept, ...sc.urls]) { if (!all && x.c.isConnected) live.push(x); else URL.revokeObjectURL(x.u); }
+  kept = live;
   if (sc.io) sc.io.disconnect();
 }
-function clearShown() {
-  clearScope(shown);
+function clearShown(all = false) {
+  clearScope(shown, all);
   shown = scope();
   closeViewer();
 }
@@ -177,9 +183,29 @@ const observer = (sc) => (typeof IntersectionObserver === 'function' ? new Inter
   for (const e of es) if (e.isIntersecting) { sc.io.unobserve(e.target); e.target._load?.(); }
 }, { rootMargin: '200px 0px' }) : null);
 
+// P205 (6): a [label](local file) the computer never sent with a finished page (a page written before the host scanned
+// shared-session text, or a file it did not offer) kept its raw Markdown — a dead link. After UNSENT_MS (the file list
+// follows the page's end) the slot shows the label and one line saying so; a list that arrives later still fills it.
+export const UNSENT_MS = 6000;
+function unsent(words, p) {
+  if (!p || p.end === 'open') return;
+  const late = p.ts && Date.now() / 1000 - p.ts > 600 ? 0 : UNSENT_MS;
+  for (const s of words.querySelectorAll('.mslot[data-link="1"]')) {
+    if (s.dataset.mid || s.dataset.skip || s.dataset.unsent) continue;
+    s.dataset.unsent = 'wait';
+    const show = () => {
+      if (!s.isConnected || s.dataset.mid || s.dataset.skip) return;
+      s.dataset.unsent = '1';
+      s.replaceChildren(mk('span', 'mlabel', (s.dataset.label || '').trim() || String(s.dataset.ref || '').split(/[/\\]/).filter(Boolean).pop() || ''), mk('span', 'mskip', t('media.unsent')));
+    };
+    if (late) setTimeout(show, late); else show();
+  }
+}
+
 /** After the page's words are on screen: fill its inline slots, the strip under the words and the skip notes.
  *  p = the page (snap.toPage: {id, media, mediaSkip}). Idempotent while the same page and list are shown. */
 export function renderPage(words, p) {
+  unsent(words, p);
   const box = strip(words);
   const items = (p && p.media) || [], skips = (p && p.mediaSkip) || [];
   const key = pageKey(p, items, skips);
@@ -201,6 +227,7 @@ export function renderPage(words, p) {
 /** P59: the full-screen reader's words (relay.js fills them with md.js like the page's): the same slots filled the same way,
  *  from the same verified Blobs. Only the slots — what the reply did not place stays in the strip under the page. */
 export function renderReader(words, p) {
+  unsent(words, p);
   const items = (p && p.media) || [], skips = (p && p.mediaSkip) || [];
   const key = pageKey(p, items, skips);
   const fresh = [...words.querySelectorAll('.mslot')].some((s) => !s.dataset.mid && !s.dataset.skip);
@@ -286,9 +313,9 @@ function card(m, inline, sc) {
   const preview = () => { want = c; return load().then((blob) => { if (want === c) openPreview(m, c, blob); }, () => { if (want === c && viewerOpen() && viewer.card === c) loadFailed(); }); };
   c._preview = preview;
   status.addEventListener('click', (e) => { e.stopPropagation(); load().then(() => { if (m.kind === 'audio' || m.kind === 'video') body.querySelector('audio,video')?.play?.().catch(() => {}); }, () => {}); });
-  bPv.addEventListener('click', (e) => { e.stopPropagation(); preview(); });
-  bDl.addEventListener('click', (e) => { e.stopPropagation(); load().then((blob) => download(m, c, blob), () => {}); });
-  bSh.addEventListener('click', (e) => {
+  bPv.addEventListener('click', (e) => { e.stopPropagation(); preview(); });   // @ix file.preview
+  bDl.addEventListener('click', (e) => { e.stopPropagation(); dlTap(m, c, load, bDl); });   // @ix file.download
+  bSh.addEventListener('click', (e) => {   // @ix file.share
     e.stopPropagation();
     const ready = !!c._blob;
     load().then((blob) => {
@@ -297,11 +324,11 @@ function card(m, inline, sc) {
       navigator.share({ files: [file], title: m.name }).catch((err) => { if (!ready && err && err.name === 'NotAllowedError') toast(t('media.shareAgain'), 2600); });
     }, () => {});
   });
-  bMail.addEventListener('click', (e) => {
+  bMail.addEventListener('click', (e) => {   // @ix file.mail
     e.stopPropagation();
     mailForward({ kind: 'file', mid: m.mid, name: m.name, mime: m.mime, bytes: m.bytes, page: sc.page ?? null, blob: load });
   });
-  bTg.addEventListener('click', (e) => { e.stopPropagation(); tgTap(m, bTg); });
+  bTg.addEventListener('click', (e) => { e.stopPropagation(); tgTap(m, bTg); });   // @ix file.forward
   c.addEventListener('keydown', (e) => {
     if (e.target !== c || e.ctrlKey || e.metaKey || e.altKey || (e.key !== ' ' && e.key !== 'Enter')) return;
     e.preventDefault(); e.stopPropagation(); preview();
@@ -336,12 +363,40 @@ async function tgTap(m, b) {
 }
 
 function urlOf(c, blob) {
-  if (!c._url) { c._url = URL.createObjectURL(blob); c._sc.urls.push(c._url); }
+  if (!c._url) { c._url = URL.createObjectURL(blob); c._sc.urls.push({ u: c._url, c }); }
   return c._url;
 }
+// P205 (Leo 10-13, Mac Chrome 0.20.1a1: the 下载 icon on 张教授的思念.mp3 did nothing he could see). Not reproduced in Chromium
+// (headless and headed) or WebKit with the same reply, name and size (web/test/p205_dl.mjs), so the download no longer leans on
+// anything that can go stale or silent: its own object URL of an application/octet-stream view (the card's player URL is
+// revoked when the page re-renders; a typed audio/PDF Blob may open in place instead of saving), an anchor on <body> (no
+// ancestor click handler), the URL kept a minute (Safari reads it after the click returns), a toast with the name (the owner
+// sees that it went to the browser), and a fetch that fails says so on the icon. iPhone / iPad home-screen apps cannot save a
+// blob link at all (WebKit opens nothing), so there the share sheet ("Save to Files") is the download.
+const IOS = typeof navigator !== 'undefined' && (/iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1));
+const standalone = () => navigator.standalone === true || (typeof matchMedia === 'function' && matchMedia('(display-mode: standalone)').matches);
+export const DL_KEEP_MS = 60_000;
 function download(m, c, blob) {
-  const a = mk('a'); a.href = urlOf(c, blob); a.download = m.name; a.rel = 'noopener'; a.hidden = true;
-  c.appendChild(a); a.click(); a.remove();
+  if (IOS && standalone() && shareable(m)) {
+    let file;
+    try { file = new File([blob], m.name, { type: blob.type || blobType(m) }); } catch { file = null; }
+    if (file) { navigator.share({ files: [file], title: m.name }).catch((err) => { if (err && err.name === 'NotAllowedError') toast(t('media.dlAgain'), 2600); }); return; }
+  }
+  const url = URL.createObjectURL(new Blob([blob], { type: 'application/octet-stream' }));
+  const a = mk('a'); a.href = url; a.download = m.name; a.rel = 'noopener'; a.hidden = true;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), DL_KEEP_MS);
+  toast(t('media.dlStarted', { name: m.name }), 2400);
+}
+/** The 下载 icon: fetch the bytes if needed (the icon breathes meanwhile), then save; a failed fetch marks the icon and says so. */
+function dlTap(m, c, load, b) {
+  if (c._blob) { download(m, c, c._blob); return; }
+  b.dataset.state = 'sending';
+  load().then((blob) => { b.dataset.state = 'idle'; download(m, c, blob); }, (e) => {
+    b.dataset.state = 'failed';
+    setTimeout(() => { if (b.dataset.state === 'failed') b.dataset.state = 'idle'; }, 3000);
+    toast(t(e && e.why === 'gone' ? 'media.expired' : e && e.why === 'sha' ? 'media.shaBad' : 'media.dlFailed'), 2600);
+  });
 }
 function show(m, c, body, blob) {
   c._blob = blob;
@@ -393,10 +448,10 @@ function viewerEl() {
   const note = mk('div', 'mnote');
   const hint = mk('div', 'mvhint'); hint.setAttribute('role', 'status'); hint.setAttribute('aria-live', 'polite');
   v.append(bar, stage, note, hint);
-  x.addEventListener('click', closeViewer);
-  prev.addEventListener('click', () => step(-1));
+  x.addEventListener('click', closeViewer);   // @ix viewer.close (+ Space / Esc, a tap outside the file)
+  prev.addEventListener('click', () => step(-1));   // @ix viewer.step (+ swipeable below, ← → in viewerKey)
   next.addEventListener('click', () => step(1));
-  dl.addEventListener('click', () => { const c = viewer.card; if (c && c._blob && viewer.m) download(viewer.m, c, c._blob); });
+  dl.addEventListener('click', viewerDownload);   // @ix viewer.download (+ d in viewerKey)
   v.addEventListener('click', (e) => {
     if (performance.now() - viewer.dragAt < 400) return;            // the end of a drag is not a tap on the backdrop
     if (e.target === v || e.target === stage) closeViewer();
@@ -410,6 +465,7 @@ function viewerEl() {
 /** The preview layer's keys (capture, before the chat screen's shortcuts and the layers' own handler): ← / → step,
  *  Space closes (Quick Look) unless a player or a field has it; Esc and Tab go on to the layers (close, focus trap);
  *  every other key reaches only the preview itself (its default action: scroll the document, press the button). */
+function viewerDownload() { const c = viewer && viewer.card; if (c && c._blob && viewer.m) download(viewer.m, c, c._blob); }
 function viewerKey(e) {
   if (!viewerOpen() || e.key === 'Escape' || e.key === 'Tab' || e.isComposing) return;
   const tg = e.target && e.target.closest ? e.target : null;
@@ -417,6 +473,11 @@ function viewerKey(e) {
   if (!mods && !e.shiftKey && (e.key === 'ArrowLeft' || e.key === 'ArrowRight') && !tg?.closest('input,textarea,select,[contenteditable]')) {
     e.preventDefault(); e.stopImmediatePropagation();
     if (!e.repeat) step(e.key === 'ArrowLeft' ? -1 : 1);
+    return;
+  }
+  // P207: d = 下载 the file being previewed (the bar's download icon)
+  if (e.key === 'd' && !mods && !e.shiftKey && !e.repeat && !tg?.closest('input,textarea,select,[contenteditable]')) {
+    e.preventDefault(); e.stopImmediatePropagation(); viewerDownload();
     return;
   }
   if (e.key === ' ' && !mods && !tg?.closest('audio,video,input,textarea,select,.mpvtabs')) {

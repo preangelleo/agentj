@@ -1,5 +1,6 @@
 """P40b explicit attachment regressions; local fixtures, never owner's sessions."""
 import _hermetic
+from _testtmp import TEST_TMP  # noqa: E402  P202: fixtures on tmpfs, not the system disk
 import asyncio
 import hashlib
 import json
@@ -29,7 +30,7 @@ class Host:
 
 class ClaudeTransport(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
-        self.tmp = tempfile.TemporaryDirectory(prefix='p40b-',dir='/var/tmp')
+        self.tmp = tempfile.TemporaryDirectory(prefix='p40b-',dir=TEST_TMP)
         self.addCleanup(self.tmp.cleanup)
         self.root = Path(self.tmp.name); self.work = self.root/'work'; self.work.mkdir()
         self.cc = self.root/'claude'; (self.cc/'sessions').mkdir(parents=True)

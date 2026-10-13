@@ -130,7 +130,8 @@ CHUNK = 11 * 1024      # phone-control answers are split into app messages of ab
 ITEM_SHOW = 6000       # a memory item longer than this is shown cut on the phone (its id still covers the whole text)
 _RID = re.compile(r"[A-Za-z0-9_-]{1,32}")
 FRIEND_READS = ("fr_list", "fr_hist", "fr_usage", "fr_ctx_get")   # P71 §17.7 (+ P73 fr_ctx_get); writes = controls.FRIEND_ACTIONS
-PHONE_CONTROLS = ("mem_list", "mem_rm", "mem_undo", "act_list", "task_list", "task_set", "estop", "resume")
+PHONE_CONTROLS = ("mem_list", "mem_rm", "mem_undo", "act_list", "task_list", "task_set", "estop", "resume",
+                  "systask_list")   # P207 §2: the computer's own scheduled tasks, read-only (systasks.py)
 # §10 (PROMPT-33)
 Q_TTL = _ttl("AGENTJ_TEST_Q_TTL", 180)     # a question nobody answers is ended (relay's default)
 MAX_QUESTIONS = 4                           # open at once; more are answered "nobody answered" at once
@@ -166,6 +167,11 @@ PREF_SET_KEYS = ("updates.mode", "appearance.language", "appearance.theme", "voi
 PREF_SET_KEYS += ("heartbeat.enabled", "heartbeat.interval_minutes")    # P156: the settings panel's heartbeat switch
 PREF_SET_KEYS += ("approval.jev_threshold",)     # P157: the phone's Jev threshold stepper (number, schema range and step)
 PREF_SET_KEYS += ("approval.goal_auto",)         # P158: the phone's goal-mode countdown switch (enterprise: off)
+PREF_SET_KEYS += ("updates.auto_install",)       # P203: 「空闲时自动更新」 = auto_install + mode together (one switch)
+CARDS_HAVE_MAX = 256       # P203 (§29.1): ids a cards_get may list as already shown
+CARDS_OPEN_MAX = 256       # … and the open ids one `cards` answer carries
+UPG_TTL = 600              # P203 (§29.2): the upgrade confirmation card waits ten minutes
+PREF_SET_KEYS += ("heartbeat.daily_at",)         # P207: the phone's "wake every day at HH:MM" ("" = off; schema pattern)
 METER_KEYS = ("model", "model_name", "effort", "ctx", "h5", "week", "quota_windows", "shared_status", "shared_writer", "source_at")
 Q_CANCEL = "用户在手机上取消了这个问题，没有选择任何选项。请不要替他做选择，停下来等他直接输入文字。"
 Q_TIMEOUT = "没有人作答，请改用文字列出选项"
@@ -299,6 +305,12 @@ def approval_summary(tool, tool_input, verdict, lang="zh"):
 class Host:
     def __init__(self, st: State, events: str = "text", read_stdin: bool = True):
         self.st = st
+        from . import userdata                     # P207: missing user files come back from the newest snapshot first,
+        self.userdata_restored = []                # then this version keeps its own snapshot (once per version)
+        with contextlib.suppress(Exception):
+            self.userdata_restored = userdata.heal(st)
+        with contextlib.suppress(Exception):
+            userdata.version_snapshot(st, update.__version__)
         with contextlib.suppress(OSError, ValueError):   # P179: pre-P179 remotes → self_name / owner_name (audit-based)
             st.migrate_device_names()
         self.cfg = st.config()
@@ -399,6 +411,7 @@ class Host:
         self.capabilities = Capabilities(self)  # 0.18 (ADR-A193): capability.sock, opening cards, dispatch
         self.goals = goal_mod.Goals(self)       # P158: <state>/goal.json, `agentj goal …` over capability.sock
         self.peers = None                       # P71: Agent friends (peer_service.PeerService, PROTOCOL §17), set in run()
+        self.upg: dict | None = None            # P203: the open upgrade confirmation card (one at a time, §29)
         from . import busy as busy_mod
         self.busy = busy_mod.Board(st.root, on_change=self.busy_changed)   # P150 (§22): who works in the background
         self.busy_sent: str | None = None
@@ -899,6 +912,12 @@ class Host:
             for g in list(self.grants.values()):
                 if gid is None or g.rid == gid:
                     self.end_grant(g.rid, "revoked", by=s.device)
+        elif t == "cards_get":          # P203 (§29.1): a signed read — every card still waiting, as this device sees it
+            if s.p33:
+                await self.on_cards_get(s, obj)
+        elif t in ("upg_check", "upg_card_off"):   # P203 (§29.2): what an upgrade now would interrupt · close the card
+            if s.p33:
+                await self.on_upg_phone(s, t, obj)
         elif t in ("setup_get", "setup_mark", "setup_close"):   # P115 / P131: the first-run checklist (first_run.py)
             await self.on_setup(s, t, obj)
         elif t in PHONE_CONTROLS:
@@ -909,6 +928,9 @@ class Host:
         elif t == "agent_name":         # P181 (§22.2): long-press the Agent's name → rename, signed like every phone write
             if s.p33:
                 await self.on_agent_name(s, obj)
+        elif t == "mail_allow":         # P207 (§25): the address book adds an address to the mail allowlist (signed)
+            if s.p33:
+                await self.on_mail_allow(s, obj)
         elif t == "slash":              # a command from the phone's ≡「全部命令」 menu (or typed: the page sends it like this)
             name, arg = obj.get("cmd"), obj.get("arg", "")
             if isinstance(name, str) and isinstance(arg, str) and len(name) <= 32 and text_units(arg) <= slash.ARG_MAX:
@@ -1613,6 +1635,10 @@ class Host:
                 elif cmd == "upgrade_ready":        # P142 (A12): the recovery worker restarts only an idle serve
                     from . import auto_update
                     await self._ctl_send(w, {"ok": True, "ready": not auto_update.busy(self)})
+                elif cmd == "upgrade_impact":       # P203: `agentj update apply` asks what a restart now would interrupt
+                    await self._ctl_send(w, {"ok": True, "items": self.upg_items("agent" if req.get("caller") == "agent" else None)})
+                elif cmd == "upgrade_card":         # P203: … and, when it is not empty, puts the confirmation card on the phones
+                    await self._ctl_send(w, {"ok": True, **self.upg_open("agent" if req.get("caller") == "agent" else None)})
                 elif cmd == "auto_update_ready":
                     from . import auto_update
                     rec = auto_update.read(self.st)
@@ -1666,6 +1692,8 @@ class Host:
                                                                      bool(req.get("to_owner"))) if self.mail else {"ok": False, "why": "not_running"})
                 elif cmd == "mail_key":
                     await self._ctl_send(w, await self.mail.secret_card() if self.mail else {"result": "refused", "why": "not_running"})
+                elif cmd == "mail_expect":          # P206 A: the calling Agent waits for one mail (outside data, only to this caller)
+                    await self._ctl_send(w, await self.mail.expect(req) if self.mail else {"ok": False, "why": "not_running"})
                 elif cmd == "config_revision":
                     import hashlib
                     revision=hashlib.sha256(json.dumps(self.preferences,sort_keys=True).encode()).hexdigest()
@@ -2062,6 +2090,8 @@ class Host:
         if s.p33 and self.peers is not None:      # P71: open friend cards (they survive a serve restart)
             for m in self.peers.ask_msgs():
                 await self.send_app(s, m)
+        if s.p33 and self._upg_live():            # P203: the open upgrade confirmation card comes back on reconnect
+            await self.send_app(s, self._upg_msg())
         await self.elevate.on_ready(s)
         await self.capabilities.on_ready(s)
         with contextlib.suppress(Exception):      # P115: a checklist resumed in the last 6 h comes back on reconnect
@@ -2358,11 +2388,17 @@ class Host:
             self.st.log("pref_set_refused", device=s.device)
             return await res(False, "not_allowed")
         meta = preferences.SCHEMA[key]
+        # P207: "integer" (heartbeat.interval_minutes) was missing here, so every phone change of it answered bad_value
         typ_ok = {"boolean": type(value) is bool, "string": isinstance(value, str),
-                  "number": type(value) in (int, float) and math.isfinite(value)}.get(meta["type"], False)
-        if not typ_ok or ("enum" in meta and value not in meta["enum"]) or (meta["type"] == "number" and not (
+                  "number": type(value) in (int, float) and math.isfinite(value),
+                  "integer": type(value) is int}.get(meta["type"], False)
+        if not typ_ok or ("enum" in meta and value not in meta["enum"]) or (meta["type"] in ("number", "integer") and not (
                 meta.get("minimum", -math.inf) <= value <= meta.get("maximum", math.inf) and (not meta.get("multipleOf") or abs(
                     value / meta["multipleOf"] - round(value / meta["multipleOf"])) < 1e-6))):
+            return await res(False, "bad_value")
+        # P207: strings also obey the schema's maxLength / pattern (heartbeat.daily_at "HH:MM" or ""), answered bad_value
+        if meta["type"] == "string" and (len(value) > meta.get("maxLength", 1000) or any(ord(c) < 32 for c in value) or (
+                meta.get("pattern") and not re.fullmatch(meta["pattern"], value))):
             return await res(False, "bad_value")
         if preferences.get(self.preferences, key) == value:
             return await res(True)
@@ -2530,6 +2566,48 @@ class Host:
         self.name_changed()
         await self._ctl_res(s, r, "agent_name", True, name=res["name"])
 
+    async def on_mail_allow(self, s: Session, obj: dict) -> None:
+        """P207 (§25): a signed `mail_allow {r, addr, role, n, ts, sig}` (controls action, object = addr \n role) → the
+        address joins the P170 e-mail channel's allowlist with that role (owner | guest), through Mail.set_config like the
+        phone's mail_set. Works before the mailbox itself is set up (the allowlist is only config). Already on the list
+        (case-insensitive) → ok with `already: true`, nothing changed. → `ctl_res {r, action: "mail_allow", ok, already?, why?}`."""
+        from . import mail as mail_mod
+        r = obj.get("r")
+        if not wire.is_rid(r):
+            return
+        addr, role = obj.get("addr"), obj.get("role")
+        if not isinstance(addr, str) or len(addr) > 254 or role not in mail_mod.ROLES:
+            return await self._ctl_res(s, r, "mail_allow", False, why="shape")
+        target = {"addr": addr, "role": role}
+        why = controls.check(self.st, self.nonces, self.channel, s.device, obj, "mail_allow", target)
+        if why:
+            self.st.log("control_refused", device=s.device, action="mail_allow", reason=why)
+            controls.log(self.st, action="mail_allow", device=s.device, result="refused:" + why)
+            return await self._ctl_res(s, r, "mail_allow", False, why=why)
+        res: dict = {}
+        if self.mail is None:
+            res = {"why": "no_mail"}
+        else:
+            try:
+                norm = mail_mod.norm_addr(addr)
+                cfg = await asyncio.to_thread(mail_mod.read_config, self.st)
+                if any(str(x.get("addr", "")).lower() == norm.lower() for x in cfg.get("allow") or []):
+                    res = {"already": True}
+                else:
+                    new = dict(cfg, allow=[*cfg.get("allow", []), {"addr": norm, "role": role}])
+                    cfg = self.mail.set_config(new)    # on the loop, like mail_set (it adds a page and wakes the poller)
+            except mail_mod.MailError as e:
+                res = {"why": e.why}
+        ok = "why" not in res
+        controls.log(self.st, action="mail_allow", device=s.device, result=("already" if res.get("already") else "ok") if ok
+                     else res["why"], obj=target, sig=obj.get("sig"), n=obj.get("n"), ts=obj.get("ts"))
+        self.st.log("mail_allow", device=s.device, role=role, result=("already" if res.get("already") else "ok") if ok
+                    else res["why"])
+        if ok and not res.get("already"):
+            self.activity("decision", by=s.name or s.device, result="allow",
+                          tool=pick(self.lang, "邮件白名单", "Mail allowlist"), text=role)
+        await self._ctl_res(s, r, "mail_allow", ok, **res)
+
     def theme_refresh(self) -> bool:
         """P169: re-read the theme when <state>/agentperm/theme/current.json changed (`agentj theme apply|reset|restore`,
         also from inside the Agent's fence) → True when the phones need the new one. Off the event loop (PNG checks)."""
@@ -2629,10 +2707,13 @@ class Host:
         ids = next((ids for ids in self.hist.parts.values() if tid in ids), [tid])   # a long reply: every part's text
         text = "\n\n".join(x["reply"]["text"] for x in (self.hist.get(i) for i in ids) if x)
         try:
-            items, skips = await asyncio.to_thread(self.media.scan, text, tid)
+            items, skips, keys = await asyncio.to_thread(self.media.scan_keys, text, tid)
         except Exception:  # noqa: BLE001 — a scan that fails offers nothing; the page stays as it is
             self.st.log("media_scan_fail", turn=tid)
             return
+        if keys:          # P211: a credential file the owner's page linked → a secret pickup card, never a plain card
+            from . import owner_route
+            await owner_route.offer_files(self, keys, getattr(self, "lang", "zh"))
         if items or skips:
             self.hist_update(tid, media=(items, skips))
             self.st.log("media_page", turn=tid, status=f"{len(items)}/{len(skips)}")
@@ -2786,8 +2867,8 @@ class Host:
         if not text or not text.strip():
             return
         tid = getattr(self, "desktop_turn", None)
-        if tid is None:
-            self.hist_add(self._agent_src(), text, "done")
+        if tid is None:     # P205 (6): a finished page of its own (e.g. 后台任务完成) — its files are offered like any page's
+            self.media_later(self.hist_add(self._agent_src(), text, "done")["id"])
         else:
             changed = self.hist_update(tid, append=text)
             if changed:
@@ -2854,7 +2935,9 @@ class Host:
         while True:
             try:
                 from . import auto_update
-                if auto_update.due(self.st, blocked=auto_update.busy(self), stopped=self.stopped()):
+                # P203: the idle opportunity only when nothing at all would be interrupted (the upgrade card's list is empty)
+                idle_newer = auto_update.newer_known(self.st) and not auto_update.impact(self)
+                if auto_update.due(self.st, blocked=auto_update.busy(self), stopped=self.stopped(), newer=idle_newer):
                     # Remove completed journal only when starting a later opportunity.
                     job = auto_update.read(self.st, auto_update.JOB)
                     if job.get("phase") == "done":
@@ -2876,6 +2959,13 @@ class Host:
         """F12 / C3: serve restarted after `agentj update apply --authorization`: one line to the phones, in the owner's
         language, with the doctor counts — "已升级到 <v>（doctor: N ✓ / M ! / K ✗）". Once per version (the marker is removed
         as it is read)."""
+        if getattr(self, "userdata_restored", None):       # P207: self-heal told the owner, never silently
+            from . import userdata
+            note = userdata.restored_text(self.userdata_restored, preferences.get(self.preferences, "appearance.language", "zh"))
+            self.userdata_restored = []
+            e = self._remember("notice", note)
+            self._post(self._send_legacy, lambda s, e=e: self._render(e, s))
+            self.hist_add({"k": "sys", "text": ""}, note, "done")
         try:
             from . import phone_update, service_recovery
             # Bounded wait for manager-owned restart verification before doctor.
@@ -2954,6 +3044,114 @@ class Host:
         if self.turn_text:
             self.turn_text = False
             self.push_notify("reply")
+
+    # ------------------------------------------------------------ P203 (§29): open-cards snapshot + upgrade card
+    def open_cards(self, s: Session) -> list[dict]:
+        """Every card still waiting for a human, exactly as on_ready re-sends it to this device: approvals (the pair card
+        only to a pair1 remote, Face ID fields for this device's own passkey), live batch grants, questions, friend cards,
+        sudo / secret / pickup / sign-in / contact cards, opening cards (lt1) and the upgrade card."""
+        out = [self._ask_msg(a, s) for a in list(self.asks.values())
+               if not a.fut.done() and (a.tool != pair_card.TOOL or s.pair1)]
+        out += [self._grant_msg(g) for g in list(self.grants.values()) if self._grant_live(g)]
+        if s.p33:
+            out += [self._question_msg(q) for q in list(self.questions.values()) if not q.fut.done()]
+            if self.peers is not None:
+                out += self.peers.ask_msgs()
+            if self._upg_live():
+                out.append(self._upg_msg())
+        out += self.elevate.all_open_msgs(s)
+        out += self.capabilities.open_msgs(s)
+        return out
+
+    async def on_cards_get(self, s: Session, obj: dict) -> None:
+        """`cards_get {r, have, n, ts, sig}` (§29.1): read-only, but signed with this device's approval key (control-v1,
+        action `cards_get`, object "cards") so only an approved remote that can answer cards gets them. The host sends the
+        open cards the device does not list in `have`, then `cards {r, ok, open}` — every open id, so the device drops the
+        ones that ended while it was away. Queued behind earlier broadcasts (same order as ask / ask_done)."""
+        r = obj.get("r")
+        if not wire.is_rid(r):
+            return
+        have = obj.get("have")
+        have = {x for x in have[:CARDS_HAVE_MAX] if isinstance(x, str) and len(x) <= 64} if isinstance(have, list) else set()
+        why = controls.check(self.st, self.nonces, self.channel, s.device, obj, "cards_get", {})
+        if why:
+            self.st.log("control_refused", device=s.device, action="cards_get", reason=why)
+            controls.log(self.st, action="cards_get", device=s.device, result="refused:" + why)
+            return await self.send_app(s, {"t": "cards", "r": r, "ok": False, "why": why})
+        self._post(self._cards_reply, s, r, have)
+
+    async def _cards_reply(self, s: Session, r: str, have: set) -> None:
+        if self.sessions.get(s.cid) is not s or s.state != "ready" or not self.st.is_allowed(s.pub):
+            return
+        msgs = self.open_cards(s)
+        sent = 0
+        for m in msgs:
+            if m.get("id") not in have:
+                await self.send_app(s, m)
+                sent += 1
+        ids = [m["id"] for m in self.open_cards(s) if isinstance(m.get("id"), str)]   # what is open right now
+        self.st.log("cards_snap", cid=s.cid, device=s.device, n=len(ids), sent=sent)
+        await self.send_app(s, {"t": "cards", "r": r, "ok": True, "open": ids[:CARDS_OPEN_MAX]})
+
+    def upg_items(self, caller=None) -> list:
+        from . import auto_update
+        return auto_update.impact(self, caller)
+
+    def _upg_live(self) -> bool:
+        return self.upg is not None and time.monotonic() < self.upg["deadline"]
+
+    def _upg_msg(self) -> dict:
+        u = self.upg
+        return {"t": "upg_card", "id": u["id"], "items": self.upg_items(u.get("caller")), "from": update.__version__,
+                "to": u.get("to") or "", "ttl": max(0, int(u["deadline"] - time.monotonic()))}
+
+    def upg_open(self, caller=None) -> dict:
+        """`agentj update apply` (an Agent, or a script without --yes) found things a restart would interrupt: one card on
+        every p33 phone lists them; 「现在升级」 there is the phone's own signed /update (the owner's decision, not the
+        Agent's). A newer request replaces the open card. → {"id", "phones", "items"}."""
+        from . import auto_update
+        items = self.upg_items(caller)
+        latest = update.read_rec(self.st).get("latest")
+        rid = secrets.token_hex(16)
+        old, self.upg = self.upg, {"id": rid, "deadline": time.monotonic() + UPG_TTL, "caller": caller,
+                                    "to": latest if isinstance(latest, str) and auto_update.newer_known(self.st) else ""}
+        if old is not None:
+            self._post(self._send_p33, lambda s, i=old["id"]: {"t": "upg_card_done", "id": i, "result": "replaced"})
+        self._post(self._send_p33, lambda s: self._upg_msg())
+        self._bg(self._upg_expire(rid), "upg_expire")
+        phones = sum(1 for x in self.sessions.values() if x.state == "ready" and x.p33 and self.st.is_allowed(x.pub))
+        self.st.log("upg_card", id=rid, n=len(items), phones=phones)
+        self.activity("auto_update", result="card", text=f"升级前确认卡：{len(items)} 项会被打断 / Upgrade confirmation card: {len(items)} item(s) would be interrupted")
+        self.push_notify("ask")
+        return {"id": rid, "phones": phones, "items": items}
+
+    def upg_end(self, result: str, by: str | None = None) -> None:
+        u, self.upg = self.upg, None
+        if u is None:
+            return
+        self.st.log("upg_card_done", id=u["id"], result=result, device=by)
+        self._post(self._send_p33, lambda s: {"t": "upg_card_done", "id": u["id"], "result": result})
+
+    async def _upg_expire(self, rid: str) -> None:
+        await asyncio.sleep(UPG_TTL)
+        if self.upg is not None and self.upg["id"] == rid:
+            self.upg_end("expired")
+
+    async def on_upg_phone(self, s: Session, t: str, obj: dict) -> None:
+        """`upg_check {r}` → `upg_impact {r, items, current, latest}` (the menu / settings button asks before signing
+        /update; [] = upgrade at once). `upg_card_off {id}` closes the card (narrows only: any ready paired remote)."""
+        if t == "upg_card_off":
+            if self.upg is not None and obj.get("id") == self.upg["id"]:
+                self.upg_end("cancelled", by=s.device)
+            return
+        r = obj.get("r")
+        if not wire.is_rid(r):
+            return
+        from . import auto_update
+        latest = update.read_rec(self.st).get("latest")
+        await self.send_app(s, {"t": "upg_impact", "r": r, "items": self.upg_items(), "current": update.__version__,
+                                "latest": latest if isinstance(latest, str) else None,
+                                "newer": auto_update.newer_known(self.st)})
 
     def _ask_msg(self, a: Ask, s=None) -> dict:
         m = {"t": "ask", "id": a.rid, "tool": a.tool, "summary": a.summary, "ttl": max(0, int(a.deadline - time.monotonic())),
@@ -3569,6 +3767,10 @@ class Host:
                 x["running"] = self.scheduler.current_id == x["id"]
             return await self._send_chunks(s, {"t": "tasks", "r": r}, "items", rows,
                                            {"paused": self.stopped(), "agent": self.agent_cfg["kind"] if self.agent_cfg else None})
+        if t == "systask_list":         # P207 §2: read-only list of the computer's own timers / cron / LaunchAgents / schtasks
+            from . import systasks
+            items = await asyncio.to_thread(systasks.rows)
+            return await self._send_chunks(s, {"t": "systasks", "r": r}, "items", items, {"max": systasks.MAX})
         # ---- writes: signed like an approval (Invariant 20)
         action = {"mem_rm": "mem_rm", "mem_undo": "mem_undo", "estop": "estop", "resume": "resume",
                   "task_set": "task_on" if obj.get("on") is True else "task_off"}[t]
@@ -3903,6 +4105,7 @@ class Host:
                 return done(slash.Result("Send /update from a paired phone" if self.lang == "en" else "请从已配对手机发送 /update", "refused"))
             if not phone_update.reserve(self.st):
                 return done(slash.Result("Upgrade in progress" if self.lang == "en" else "正在升级，请稍候", "info"))
+            self.upg_end("started", by=s.device)    # P203: the confirmation card (if any) is answered by this signed /update
             self.cmd_card("update", slash.Result("Checking and upgrading; reconnect for the result." if self.lang == "en" else "正在查最新版并升级，服务会重启；重连后回报结果。", "info"), by, turn, interim=True)
             self.phone_upgrade_task = asyncio.create_task(self.phone_upgrade(turn, by))
             return turn
@@ -4002,6 +4205,8 @@ class Host:
         caps.append("busyget")                 # P160 (§22): a tap on one 「在办」 row asks for its detail
         caps.append("contacts")          # P184 (§25): address book, contact cards, 「转发到邮箱」 (mail ready or not: the dialog says)
         caps.append(hsearch.CAP)                               # P188 (§28): this computer answers hist_find
+        caps += ["cards1", "upg1"]       # P203 (§29): signed open-cards snapshot · upgrade impact + confirmation card
+        caps.append("systasks")                                # P207 §2: answers systask_list (the computer's own scheduled tasks)
         return {"caps": caps, "asr": self.asr_state(), "hist": "on" if self.hist.on else "off"}
 
     async def _bulk(self, s: Session) -> None:
@@ -5077,6 +5282,16 @@ class Host:
             os.chmod(psock, 0o600)
             from . import personalize                # P57: bundled skills linked where free, before the harness starts
             self.st.log("skills_linked", **personalize.ensure())
+            try:                                     # P215: WDB wizard skill + boot-doc core upgrade in the working root
+                from . import main_identity as _mi, wizard as _wiz
+                kind = self.agent_cfg.get("kind")
+                rows = await asyncio.to_thread(_wiz.refresh_root, _mi.working_root(self.agent_cfg),
+                                               [kind] if kind in _wiz.HARNESSES else None)
+                changed = [r["status"] for r in rows if r.get("status") not in ("unchanged",)]
+                if changed:
+                    self.st.log("root_docs_refreshed", n=len(changed), kinds=",".join(sorted(set(changed))))
+            except Exception:  # noqa: BLE001 — the documents never stop the Agent from starting
+                self.st.log("root_docs_refresh_failed")
             from .service import ensure_agentj_on_path   # P155: the skills' `agentj …` must run in the Agent's shell
             if ensure_agentj_on_path():
                 self.st.log("agentj_path_added")

@@ -12,6 +12,7 @@ import unittest
 import wave
 from unittest.mock import patch
 from agentj import preferences as p, voice
+from _testtmp import TEST_TMP  # noqa: E402  P202: fixtures on tmpfs, not the system disk
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -21,7 +22,7 @@ WRITE_WAV = ("import sys,wave; w=wave.open(sys.argv[-1],'wb'); w.setnchannels(1)
 
 class P59TTS(unittest.TestCase):
     def setUp(self):
-        self.tmp = tempfile.TemporaryDirectory(prefix='aj-p59-tts-', dir='/var/tmp')
+        self.tmp = tempfile.TemporaryDirectory(prefix='aj-p59-tts-', dir=TEST_TMP)
         self.addCleanup(self.tmp.cleanup)
         self.root = Path(self.tmp.name)
         self.env = patch.dict(os.environ, {

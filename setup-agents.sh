@@ -407,14 +407,32 @@ fi
 if [[ $AGENTJ == yes ]]; then
   if has_tty; then
     printf '在账户页创建安装码；安装码只在本机终端输入，不要发进聊天。\n'
+    printf '在账户页点「复制安装码」，粘贴到这里。 / On the account page choose Copy installation code and paste it here.\n'
     printf 'Installation code (AJI-…): ' >/dev/tty
-    IFS= read -r -s INSTALL_CODE </dev/tty; printf '\n' >/dev/tty
-    [[ $INSTALL_CODE == AJI-* ]] || { printf 'Installation code required. See %s#agent-j\n' "$PAGE"; exit 2; }
+    IFS= read -r -s INSTALL_CODE </dev/tty
+    # P214: a pasted prompt or command spans lines; take the rest of the paste too, so it cannot answer a later question.
+    while IFS= read -r -s -t 1 MORE </dev/tty; do INSTALL_CODE+=$'\n'$MORE; done; INSTALL_CODE+=$'\n'${MORE-}; unset MORE
+    printf '\n' >/dev/tty
+    # Keep only the first AJI code (full-width characters, any dash, spaces, CRLF); the input goes by stdin, never argv.
+    INSTALL_CODE=$(printf '%s' "$INSTALL_CODE" | python3 -c "$(cat <<'EXTRACT_CODE'
+import re,sys,unicodedata
+s=unicodedata.normalize('NFKC',sys.stdin.read()).translate({ord(c):'-' for c in '\u2010\u2011\u2012\u2013\u2014\u2015\u2212\ufe58\ufe63\uff0d\u30fc'})
+for t in (s,re.sub(r'\s+','',s)):
+    m=re.search(r'AJI-([0-9a-f]{32})(?![0-9a-f])',t,re.I)
+    if m: print('AJI-'+m.group(1).lower()); sys.exit()
+print('ajt' if re.search(r'ajt_[A-Za-z0-9_-]{43}',s) else '')
+EXTRACT_CODE
+)")
+    if [[ $INSTALL_CODE != AJI-* ]]; then
+      printf '没找到安装码。请只粘贴 AJI- 开头的那串码：在账户页点「复制安装码」。 / No installation code found. Paste only the code that starts with AJI- (account page → Copy installation code).\n'
+      [[ $INSTALL_CODE == ajt ]] && printf 'ajt_ 开头的是设置码，只给已经装好 Agent J 的电脑绑定席位用。 / A code starting with ajt_ is a setup code; it only links a computer that already has Agent J.\n'
+      printf 'See %s#agent-j\n' "$PAGE"; exit 2
+    fi
     AJTMP=$(mktemp -d); trap 'rm -rf "$AJTMP"' EXIT
     curl --proto '=https' --proto-redir '=https' --connect-timeout 10 --max-time 90 -fsSL https://agentj.app/install-assistant.sh -o "$AJTMP/install-assistant.sh"
     python3 - "$AJTMP/install-assistant.sh" <<'VERIFY_INSTALLER'
 import hashlib,pathlib,sys
-if hashlib.sha256(pathlib.Path(sys.argv[1]).read_bytes()).hexdigest() != '04106669ad1396e9010d6205a7603f7a6d52721cd782bd0fc437343eae70cb8e':
+if hashlib.sha256(pathlib.Path(sys.argv[1]).read_bytes()).hexdigest() != '4947da78e3c47a6bd7c07f8cf58f53d0ac04cb111ecae57f923be64198ec4fb8':
     sys.exit('Installer integrity check failed')
 VERIFY_INSTALLER
     sh "$AJTMP/install-assistant.sh" "$INSTALL_CODE" </dev/tty

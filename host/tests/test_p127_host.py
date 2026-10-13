@@ -2,6 +2,7 @@
 user) with specific phone reasons; (3) the Claude status-line tap on by default, chained at the layer really in effect.
 Every case uses a temporary HOME / CLAUDE_CONFIG_DIR (never the real ~/.claude)."""
 import _hermetic
+from _testtmp import TEST_TMP  # noqa: E402  P202: fixtures on tmpfs, not the system disk
 import asyncio
 import io
 import json
@@ -22,7 +23,7 @@ from agentj.state import State  # noqa: E402
 
 class _Home(unittest.TestCase):
     def setUp(self):
-        self.tmp = tempfile.TemporaryDirectory(prefix="p127-host-", dir="/var/tmp" if os.path.isdir("/var/tmp") else None)
+        self.tmp = tempfile.TemporaryDirectory(prefix="p127-host-", dir=TEST_TMP)
         self.addCleanup(self.tmp.cleanup)
         self.home = Path(self.tmp.name)
         env = patch.dict(os.environ, {"HOME": str(self.home), "CLAUDE_CONFIG_DIR": str(self.home / "cc"),

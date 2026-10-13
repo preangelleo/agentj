@@ -25,13 +25,14 @@ from unittest.mock import AsyncMock, Mock, patch
 from agentj import fence, shared, shared_hook, shared_state
 from agentj.shared_risk import RiskGuard
 from agentj.state import State
+from _testtmp import TEST_TMP  # noqa: E402  P202: fixtures on tmpfs, not the system disk
 
 PUSH = {"command": "git push origin HEAD:main"}
 
 
 class _Tmp(unittest.TestCase):
     def setUp(self):
-        t = tempfile.TemporaryDirectory(prefix="p198ch-", dir="/var/tmp")
+        t = tempfile.TemporaryDirectory(prefix="p198ch-", dir=TEST_TMP)
         self.addCleanup(t.cleanup)
         self.root = Path(t.name)
         self.work = self.root / "work"

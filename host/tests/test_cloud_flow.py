@@ -124,7 +124,7 @@ class Flow(unittest.TestCase):
         with FakeCP(interval=4, bound_after=1) as cp:
             r = self.agentj("login", "--api", cp.url, "--yes", "--account", "acme-co", env={"AGENTJ_APP_URL": "https://agentj.app/account"})
             self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
-            self.assertIn("在已登录的账号后台里打开 https://agentj.app/account/\n", r.stdout)
+            self.assertIn("到账户页「Agent（席位）→ 添加 Agent」填这个电脑绑定码：https://agentj.app/account/#add-agent\n", r.stdout)
             self.assertNotIn(cp.url, r.stdout)
             self.assertIn("y（--yes --account）", r.stdout)
             self.assertTrue(self.st.cloud_path.exists())

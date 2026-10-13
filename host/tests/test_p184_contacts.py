@@ -10,6 +10,7 @@ its files and of one file, counting + remembering recipients, refusals (no mailb
 folder, recipients remembered with source agent. Item 6: the new file-card kinds and inbox types.
 """
 import _hermetic  # noqa: F401,I001
+from _testtmp import TEST_TMP  # noqa: E402  P202: fixtures on tmpfs, not the system disk
 import argparse
 import asyncio
 import email
@@ -81,7 +82,7 @@ def book(*rows):
 
 class _St(unittest.TestCase):
     def setUp(self):
-        self.tmp = tempfile.TemporaryDirectory(prefix="p184-", dir="/var/tmp")
+        self.tmp = tempfile.TemporaryDirectory(prefix="p184-", dir=TEST_TMP)
         self.addCleanup(self.tmp.cleanup)
         self.st = State(pathlib.Path(self.tmp.name) / "state")
         self.st.init()
@@ -228,7 +229,7 @@ class _Svc(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
         self.smtp = FakeSMTP(AGENT, CODE)
         self.addCleanup(self.smtp.close)
-        self.tmp = tempfile.TemporaryDirectory(prefix="p184-", dir="/var/tmp")
+        self.tmp = tempfile.TemporaryDirectory(prefix="p184-", dir=TEST_TMP)
         self.addCleanup(self.tmp.cleanup)
         root = pathlib.Path(self.tmp.name)
         self.st = State(root / "state"); self.st.init()
@@ -470,7 +471,7 @@ class RealHost(unittest.IsolatedAsyncioTestCase):
     async def test_agent_socket_phone_routing_and_cap(self):
         from test_l1 import _host, _state
         from agentj import elevate
-        with tempfile.TemporaryDirectory(prefix="p184r-", dir="/var/tmp") as d:
+        with tempfile.TemporaryDirectory(prefix="p184r-", dir=TEST_TMP) as d:
             st = _state(d); host = _host(st, [])
             self.assertIn("contacts", host._caps()["caps"])
             await host.elevate.start()

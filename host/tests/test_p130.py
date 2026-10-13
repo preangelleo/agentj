@@ -3,6 +3,7 @@ import sys
 from pathlib import Path
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
 import _hermetic
+from _testtmp import TEST_TMP  # noqa: E402  P202: fixtures on tmpfs, not the system disk
 import json
 import os
 from pathlib import Path
@@ -124,7 +125,7 @@ class FenceEnvironment(unittest.TestCase):
             self.assertNotIn('SSH_AUTH_SOCK',fence.launch_environment(env,kind='codex'))
     @unittest.skipUnless(sys.platform.startswith('linux') and shutil.which('bwrap'),'Linux bwrap required')
     def test_live_proc_pid1_environ_hides_variables(self):
-        with tempfile.TemporaryDirectory(prefix='p130-fence-',dir='/var/tmp') as d:
+        with tempfile.TemporaryDirectory(prefix='p130-fence-',dir=TEST_TMP) as d:
             home=Path(d);work=home/'work';work.mkdir()
             env={'HOME':d,'PATH':os.environ['PATH'],'XDG_CONFIG_HOME':str(home/'config'),
                  'HERDR_TEST_HIDDEN':'fixture-p130-hidden','SSH_AUTH_SOCK':'fixture-p130-hidden','DISPLAY':'fixture-p130-hidden'}

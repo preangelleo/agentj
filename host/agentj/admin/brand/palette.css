@@ -28,6 +28,12 @@
   --c-shield-soft: #dbf5ec;     /* the shield's eye colour */
   --c-danger: #a23b2a;          /* text-safe red for destructive actions (on lotion ≥ 6:1) */
   --c-danger-soft: #f6dcd5;
+  /* closed-palette entries the surfaces below need (leo-palette.json; P209 / P214) */
+  --c-strawberry-field: #f7827e;
+  --c-channel: #fbc8c6;
+  --c-bisque: #fee2c5;
+  --c-snowy-mint: #dff3d1;
+  --c-elephant: #acacac;
 
   /* ---- fonts: Latin faces first, then system CJK (we never ship CJK web fonts) ---- */
   --font-cjk: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans CJK SC", "Source Han Sans SC";
@@ -88,9 +94,16 @@
   --accent: var(--c-shield);          /* small doses only */
   --focus: var(--c-shield);
   --code-bg: var(--c-salt);
-  --callout-warm: var(--c-mellow-marrow);
-  --callout-info: var(--c-peek-a-blue);
-  --callout-note: var(--c-banana-republic);
+  /* P214 (2026-10-13, scheme A): ONE callout look — solid palette colours, no tint. Light = Salt + Windstorm bar,
+     Sooty text; dark = Noir + Milky Waves bar and title, Lotion text. warm / info / note are the same box (a warning only
+     adds a Peachy Feeling dot before its title in base.css); never a yellow (Banana Republic) or off-palette fill again. */
+  --callout-bg: var(--c-salt);
+  --callout-bar: var(--c-windstorm);
+  --callout-title: var(--c-sooty);
+  --callout-dot: var(--c-peachy-feeling);
+  --callout-warm: var(--callout-bg);
+  --callout-info: var(--callout-bg);
+  --callout-note: var(--callout-bg);
   --callout-fg: var(--c-sooty);
   --footer-bg: var(--c-sooty);
   --footer-fg: var(--c-lotion);
@@ -121,9 +134,12 @@
     --danger: #f0a493;
     --danger-bg: #3d2420;
     --code-bg: var(--c-noir);
-    --callout-warm: #4a3a31;
-    --callout-info: #2b3e3c;
-    --callout-note: #4a4227;
+    --callout-bg: var(--c-noir);
+    --callout-bar: var(--c-milky-waves);
+    --callout-title: var(--c-milky-waves);
+    --callout-warm: var(--callout-bg);
+    --callout-info: var(--callout-bg);
+    --callout-note: var(--callout-bg);
     --callout-fg: var(--c-lotion);
     --footer-bg: var(--c-sooty);
     --footer-border: #3a3934;
@@ -151,10 +167,52 @@ html[data-theme="dark"] {
   --danger: #f0a493;
   --danger-bg: #3d2420;
   --code-bg: var(--c-noir);
-  --callout-warm: #4a3a31;
-  --callout-info: #2b3e3c;
-  --callout-note: #4a4227;
+  --callout-bg: var(--c-noir);
+  --callout-bar: var(--c-milky-waves);
+  --callout-title: var(--c-milky-waves);
+  --callout-warm: var(--callout-bg);
+  --callout-info: var(--callout-bg);
+  --callout-note: var(--callout-bg);
   --callout-fg: var(--c-lotion);
   --footer-bg: var(--c-sooty);
   --footer-border: #3a3934;
+}
+
+/* ---- CLOSED PALETTE roles (P214): <html class="aj-closed"> on agentj.app pages + docs + legal and `agentj admin`
+   (the account Dashboard carries the same values in its own P209 block). Every role a page paints becomes a
+   leo-palette.json entry, solid. Light: no palette grey is AA on Lotion, so muted text is Noir (as P209); no palette red is
+   text-safe on Lotion, so danger TEXT is Noir and the meaning rides on a Strawberry Field line. Dark: Elephant in the Room
+   for muted text, Milky Waves links, Strawberry Field danger. Light block first; the dark blocks below outrank it. ---- */
+html.aj-closed {
+  --text-muted: var(--c-noir);
+  --danger: var(--c-noir);
+  --danger-line: var(--c-strawberry-field);
+  --danger-bg: var(--c-lotion);
+  --footer-muted: var(--c-elephant);
+  --footer-border: var(--c-noir);
+  --status-ok: var(--c-snowy-mint);
+  --status-bad: var(--c-channel);
+  --status-mid: var(--c-bisque);
+}
+@media (prefers-color-scheme: dark) {
+  html.aj-closed:not([data-theme="light"]) {
+    --text-muted: var(--c-elephant);
+    --text-subtitle: var(--c-elephant);
+    --border-soft: var(--c-black-mana);
+    --quiet-border: var(--c-black-mana);
+    --link: var(--c-milky-waves);
+    --danger: var(--c-strawberry-field);
+    --danger-line: var(--c-strawberry-field);
+    --danger-bg: var(--c-noir);
+  }
+}
+html.aj-closed[data-theme="dark"] {
+  --text-muted: var(--c-elephant);
+  --text-subtitle: var(--c-elephant);
+  --border-soft: var(--c-black-mana);
+  --quiet-border: var(--c-black-mana);
+  --link: var(--c-milky-waves);
+  --danger: var(--c-strawberry-field);
+  --danger-line: var(--c-strawberry-field);
+  --danger-bg: var(--c-noir);
 }

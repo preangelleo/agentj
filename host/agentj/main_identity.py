@@ -165,10 +165,10 @@ ONBOARDING_LINE = {
 }
 
 
-# P94 operational guidance; core hashes remain unchanged.
+# P94 operational guidance (P217: two plans + the bundled agentj-multi-seat skill); core hashes remain unchanged.
 MULTI_USER_LINE = {
-    'zh': '同一台电脑多人使用：每人一个系统用户、一个付费席位，各用自己的安装码、AI 登录与手机配对，按 https://agentj.app/docs/multi-seat/zh.md 引导，绝不复制另一人的状态目录；恢复整机防休眠设置前先协调所有用户。\n',
-    'en': "Each person sharing a computer uses a separate OS user and paid Agent J seat, with their own installation code, AI login and phone pairing. Guide them using https://agentj.app/docs/multi-seat/en.md; never copy another user's state. Recommend Linux linger, and explain macOS GUI login once after each reboot. Coordinate machine-wide sleep settings with every user before restoring them.\n",
+    'zh': '多人共用这台电脑：每人一个付费席位，方案 A 同一系统用户 agentj --instance N，方案 B 每人一个系统用户；按 agentj-multi-seat 技能和 https://agentj.app/docs/multi-seat/zh.md 引导，不复制他人状态；防休眠先协调。\n',
+    'en': "Several people on one computer, each with their own paid seat: plan A, several instances on one OS user (agentj --instance N; recommended, simple), or plan B, one OS user per person (stronger separation). Follow the agentj-multi-seat skill and https://agentj.app/docs/multi-seat/en.md; never copy another person's state, never take a setup code in chat. Coordinate machine-wide sleep settings with every user before restoring them.\n",
 }
 
 

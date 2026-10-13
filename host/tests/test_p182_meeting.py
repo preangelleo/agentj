@@ -1,6 +1,7 @@
 """P182 `/会议总结` (en `/meeting-notes`): the owner's command becomes one instruction for the Agent; the minutes go by e-mail only
 to addresses the owner typed (or the owner's own allowlisted address). Local fake SMTP only (tests/mailfake.py)."""
 import _hermetic  # noqa: F401,I001
+from _testtmp import TEST_TMP  # noqa: E402  P202: fixtures on tmpfs, not the system disk
 import asyncio
 import email
 import email.policy
@@ -40,7 +41,7 @@ class Parse(unittest.TestCase):
 
 class Grants(unittest.TestCase):
     def setUp(self):
-        self.tmp = tempfile.TemporaryDirectory(prefix="p182g-", dir="/var/tmp"); self.addCleanup(self.tmp.cleanup)
+        self.tmp = tempfile.TemporaryDirectory(prefix="p182g-", dir=TEST_TMP); self.addCleanup(self.tmp.cleanup)
         self.st = State(pathlib.Path(self.tmp.name) / "s"); self.st.init()
 
     def test_command_grants_follow_up_window_and_expiry(self):
@@ -93,7 +94,7 @@ class Instruction(unittest.TestCase):
 class Notes(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
         self.smtp = FakeSMTP(AGENT, CODE); self.addCleanup(self.smtp.close)
-        self.tmp = tempfile.TemporaryDirectory(prefix="p182n-", dir="/var/tmp"); self.addCleanup(self.tmp.cleanup)
+        self.tmp = tempfile.TemporaryDirectory(prefix="p182n-", dir=TEST_TMP); self.addCleanup(self.tmp.cleanup)
         self.st = State(pathlib.Path(self.tmp.name) / "s"); self.st.init()
         self.notes = []
         self.host = SimpleNamespace(st=self.st, lang="zh", hist_add=lambda src, text, end: self.notes.append(text))
@@ -151,7 +152,7 @@ class Notes(unittest.IsolatedAsyncioTestCase):
 class RealHost(unittest.IsolatedAsyncioTestCase):
     async def test_phone_command_reaches_the_agent_as_an_instruction_and_grants(self):
         from test_l1 import _host, _state
-        with tempfile.TemporaryDirectory(prefix="p182r-", dir="/var/tmp") as d:
+        with tempfile.TemporaryDirectory(prefix="p182r-", dir=TEST_TMP) as d:
             st = _state(d); host = _host(st, [])
             host.agent_cfg = {"dir": d}
             host.agent = SimpleNamespace(kind="claude", status="idle", halting=False, submit=Mock(), passthrough=lambda n: False)

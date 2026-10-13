@@ -15,6 +15,9 @@ fetched) and nothing inside a fenced code block (what the phone shows as code is
   * text-type content (svg, html, txt/md/csv/json …) runs through the host's secret-fragment detector
     (taskspec.secret_like = privacy layer 1, secret kinds only) before anything is offered; `data:` payloads inside
     html / svg are dropped from that scan (they are pictures, and a base64 picture always looks "high entropy").
+  * P211: that scan and the `.agentj` / `.git` folder rule apply to OTHERS (owner=False). Toward the owner a file goes as it
+    is, except a credential file (by name / KEY_DIRS) or a text file holding a real key shape, which is offered as a secret
+    pickup card instead (see WHYS). Audio / video / pictures are typed by their leading bytes and never read as text.
 
 Implicit references (backticks / bare paths) offer only media (image, audio, video, pdf, html) and deliverables (zip, office
 files, csv …) — an Agent that lists the source files it edited does not fill the phone with cards — and are silent when the
@@ -57,7 +60,13 @@ KEEP_N = 500
 MAX_REFS = 64                     # candidate references examined per page
 NAME_MAX = 128
 REF_MAX = 512
-WHYS = ("too_big", "outside", "secret", "type", "gone", "masked", "too_many")
+WHYS = ("too_big", "outside", "secret", "type", "gone", "masked", "too_many", "private", "key_file", "key_content", "key_card")
+# P211: toward the owner (Media.scan = the owner's own remote, the owner bot's private chat, mail to the owner's own address) a
+# file is NOT run through the secret guess. The floor that stays is deterministic: a credential file by name / folder
+# (KEY_DIRS, DENY_FILES …) → `key_file`, a text file holding a real key shape (OWNER_KINDS — never `high_entropy`) →
+# `key_content`; an explicit link to either becomes a secret pickup card (`key_card`, owner_route.offer_files) instead of
+# being dropped. agentj's own per-folder workspace (`.agentj/`, where an Agent may keep an outbox) and `.git` are not secrets:
+# open to the owner, `private` to anyone else. Everyone else (owner=False: friends, contacts, groups) keeps the full scan.
 # P194: a reference whose path a privacy placeholder replaced (the reply text was masked before the scan) is `masked`, never
 # `gone` — the file may be right there; one past MAX_ITEMS is `too_many`, never silently dropped.
 _PLACEHOLDER = re.compile(r"<(?:redacted|email|phone|private-ip|host|user)>")
@@ -100,7 +109,11 @@ DELIVERABLE = {*ZIPS, *OLE, ".gz", ".tgz", ".tar", ".7z", ".csv", ".tsv", ".vcf"
 TEXTY = {"image/svg+xml", "text/html"} | {m for k, m in KINDS.values() if k == "file" and not m.startswith(("application/zip",
          "application/gzip", "application/vnd", "application/epub", "application/msword", "application/x-tar", "application/x-7z"))}
 
-DENY_DIRS = {".agentj", ".git", "credentials", ".ssh", ".aws", ".gnupg"}
+KEY_DIRS = {"credentials", ".ssh", ".aws", ".gnupg"}
+INNER_DIRS = {".agentj", ".git"}
+DENY_DIRS = KEY_DIRS | INNER_DIRS
+OWNER_KINDS = taskspec.SECRET_KINDS - {"high_entropy"}
+CARD_MAX = 256 * 1024             # = secret_out.MAX_FILE: a credential file larger than this cannot ride a pickup card
 DENY_FILES = {".env", ".netrc", ".npmrc", ".pypirc"}
 DENY_SUFFIX = (".key", ".pem", ".p12", ".pfx")
 DENY_PREFIX = (".env.", "id_rsa", "id_ed25519")
@@ -206,14 +219,18 @@ def refs(text: str) -> list[Ref]:
 
 
 # ------------------------------------------------------------------ path safety
-def _denied(parts) -> bool:
+def _denied(parts, dirs=DENY_DIRS) -> bool:
     for i, p in enumerate(parts):
         low = p.lower()
-        if low in DENY_DIRS:
+        if low in dirs:
             return True
         if i == len(parts) - 1 and (low in DENY_FILES or low.endswith(DENY_SUFFIX) or low.startswith(DENY_PREFIX)):
             return True
     return False
+
+
+def _inner(parts) -> bool:
+    return any(p.lower() in INNER_DIRS for p in parts)
 
 
 def _inside(path: str, root: str) -> bool:
@@ -277,7 +294,7 @@ def _sniff(mime: str, ext: str, head: bytes) -> bool:
     return b"\x00" not in head                                   # text: html, txt, md, csv, json …
 
 
-def _hash_and_scan(fd: int, size: int, texty: bool, html: bool) -> tuple[str, bool]:
+def _hash_and_scan(fd: int, size: int, texty: bool, html: bool, owner: bool = False) -> tuple[str, bool]:
     """(sha256 hex, secret?) of the whole file read from fd (from offset 0)."""
     h = hashlib.sha256()
     tail = ""
@@ -295,18 +312,21 @@ def _hash_and_scan(fd: int, size: int, texty: bool, html: bool) -> tuple[str, bo
             if len(buf) >= SCAN_SLICE:
                 piece = tail + bytes(buf).decode("utf-8", "replace")
                 buf.clear()
-                secret = _secret(piece, html)
+                secret = _secret(piece, html, owner)
                 tail = piece[-SCAN_OVERLAP:]
     if texty and not secret and (buf or tail):
-        secret = _secret(tail + bytes(buf).decode("utf-8", "replace"), html)
+        secret = _secret(tail + bytes(buf).decode("utf-8", "replace"), html, owner)
     if pos != size:
         raise Gone("size")
     return h.hexdigest(), secret
 
 
-def _secret(text: str, html: bool) -> bool:
+def _secret(text: str, html: bool, owner: bool = False) -> bool:
     if html:
         text = _DATA_URI.sub("data:", text)
+    if owner:                     # P211: a real key shape only — the high-entropy guess never blocks the owner's own file
+        from .privacy import redact_with_report
+        return any(k in OWNER_KINDS for k in redact_with_report(text)[1])
     return taskspec.secret_like(text)
 
 
@@ -336,8 +356,10 @@ class Media:
         except OSError:
             self.st.log("media_table_fail")
 
-    def check(self, ref: Ref) -> tuple[dict | None, str | None]:
-        """One reference → (record, None) | (None, why) | (None, None) = not a file reference (silently ignored)."""
+    def check(self, ref: Ref, owner: bool = False) -> tuple[dict | None, str | None]:
+        """One reference → (record, None) | (None, why) | (None, None) = not a file reference (silently ignored).
+        owner=True (P211): the destination is the owner's own channel — see WHYS. A credential file / a text file with a real
+        key → (record, "key_file" | "key_content"): the record (hashed, re-readable) is what a pickup card would carry."""
         root = self.workdir
         if not root:
             return None, None
@@ -355,14 +377,19 @@ class Media:
         real = os.path.realpath(raw)
         state = os.path.realpath(str(self.st.root))
         if _inside(real, state):
-            return None, "secret"
+            return None, "private"
         if not _inside(real, rroot):
             return None, (None if quiet else "outside")
         raw_parts = os.path.relpath(raw, os.path.normpath(root)).split(os.sep) if _inside(raw, os.path.normpath(root)) \
             else raw.split(os.sep)
         parts = os.path.relpath(real, rroot).split(os.sep)
-        if parts == ["."] or _denied(parts) or _denied(raw_parts):
-            return (None, None) if parts == ["."] else (None, "secret")
+        if parts == ["."]:
+            return None, None
+        keyish = _denied(parts, KEY_DIRS) or _denied(raw_parts, KEY_DIRS)
+        if not owner and (keyish or _inner(parts) or _inner(raw_parts)):
+            return None, ("secret" if keyish else "private")
+        if keyish and quiet:
+            return None, None             # owner: the Agent naming `.env` in passing is not sending it
         ext = os.path.splitext(parts[-1])[1].lower()
         kind, mime = KINDS.get(ext, (None, None))
         try:
@@ -375,6 +402,11 @@ class Media:
                 return None, None                                 # a folder, a device, a FIFO: not an attachment
             if s.st_uid != os.getuid():
                 return None, (None if quiet else "outside")
+            if keyish:                    # owner: never sent as a file — a pickup card when it fits, else a clear note
+                if s.st_size > CARD_MAX or s.st_size == 0:
+                    return {"name": parts[-1][:NAME_MAX], "bytes": s.st_size}, "key_file"
+                sha, _ = _hash_and_scan(fd, s.st_size, False, False)
+                return self._rec(parts, "application/octet-stream", "file", s, sha, ref, rroot), "key_file"
             if kind is None or (quiet and kind == "file" and ext not in DELIVERABLE):
                 return None, (None if quiet else "type")
             if not _sniff(mime, ext, os.pread(fd, 8192, 0)):
@@ -383,20 +415,48 @@ class Media:
                 return {"name": parts[-1], "bytes": s.st_size}, "too_big"
             if s.st_size == 0:
                 return None, None
-            sha, secret = _hash_and_scan(fd, s.st_size, mime in TEXTY, mime in ("text/html", "image/svg+xml"))
+            # binary media (typed by leading bytes above) is never read as text: only TEXTY kinds are scanned
+            sha, secret = _hash_and_scan(fd, s.st_size, mime in TEXTY, mime in ("text/html", "image/svg+xml"), owner)
             if secret:
-                return None, "secret"
+                if not owner:
+                    return None, "secret"
+                rec = self._rec(parts, mime, kind, s, sha, ref, rroot)
+                return (rec if s.st_size <= CARD_MAX else {"name": rec["name"], "bytes": s.st_size}), "key_content"
         except Gone:
             return None, "gone"
         finally:
             os.close(fd)
+        return self._rec(parts, mime, kind, s, sha, ref, rroot), None
+
+    @staticmethod
+    def _rec(parts, mime, kind, s, sha, ref, rroot) -> dict:
         return {"name": parts[-1][:NAME_MAX], "mime": mime, "kind": kind, "bytes": s.st_size, "sha256": sha,
                 "ref": ref.text, "root": rroot, "parts": parts, "dev": s.st_dev, "ino": s.st_ino,
-                "mtime": s.st_mtime_ns}, None
+                "mtime": s.st_mtime_ns}
+
+    def strict(self, rec: dict) -> str | None:
+        """P211: a record checked toward the owner, about to go to someone else (a contact's mail) → None when it also
+        passes the strict checks (no secret guess hit, no `.agentj` / `.git`), else the why."""
+        p = os.path.join(rec["root"], *rec["parts"])
+        try:
+            again, why = self.check(Ref(p, p, True), owner=False)
+        except OSError:
+            return "gone"
+        if why:
+            return why
+        if not again or again.get("sha256") != rec.get("sha256"):
+            return "gone"
+        return None
 
     def scan(self, text: str, page: int) -> tuple[list[dict], list[dict]]:
         """A finished page's reply → (media, media_skip) as they go on the wire. Blocking: run it in a thread."""
-        items, skips, total, seen = [], [], 0, set()
+        items, skips, _ = self.scan_keys(text, page)
+        return items, skips
+
+    def scan_keys(self, text: str, page: int) -> tuple[list[dict], list[dict], list[tuple[dict, dict]]]:
+        """scan + the credential files an explicit link named: [(the skip on the wire, the record)] — serve offers each as a
+        pickup card and turns that skip's why into `key_card` (P211). The page is the owner's: owner=True."""
+        items, skips, keys, total, seen = [], [], [], 0, set()
         for ref in refs(text):
             name = os.path.basename(ref.path.rstrip("/"))[:NAME_MAX] or ref.path[:NAME_MAX]
             if _PLACEHOLDER.search(ref.path):
@@ -408,11 +468,14 @@ class Media:
                     skips.append({"name": name, "why": "too_many"})
                 continue
             try:
-                rec, why = self.check(ref)
+                rec, why = self.check(ref, owner=True)
             except OSError:
                 rec, why = None, None
             if why:
-                skips.append({"name": name, "why": why, **({"bytes": rec["bytes"]} if rec and why == "too_big" else {})})
+                skip = {"name": name, "why": why, **({"bytes": rec["bytes"]} if rec and why == "too_big" else {})}
+                skips.append(skip)
+                if why in ("key_file", "key_content") and rec and "sha256" in rec and ref.explicit:
+                    keys.append((skip, rec))
                 continue
             if rec is None or (rec["dev"], rec["ino"]) in seen:
                 continue
@@ -429,7 +492,8 @@ class Media:
             with self.lock:
                 self._prune()
                 self._save()
-        return items, skips[:MAX_ITEMS * 2]
+        skips = skips[:MAX_ITEMS * 2]
+        return items, skips, [(sk, r) for sk, r in keys if any(sk is x for x in skips)]
 
     def window(self, mid: str, o: int) -> list[tuple[int, bytes, bool]]:
         """≤ WINDOW chunks from offset o, re-opened safely and re-checked. Raises Gone."""

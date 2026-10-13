@@ -121,9 +121,9 @@ try {
     await ev(p, `document.getElementById('setBtn').click()`);
     await waitFor(p, `!document.getElementById('settings').hidden`);
     await ev(p, `document.getElementById('set-remotes-open').click()`);
-    await waitFor(p, `!document.getElementById('set-remotes').hidden && !document.getElementById('rm-scan').hidden`);
+    await waitFor(p, `!document.getElementById('set-remotes').hidden && !document.getElementById('rm-scan-icon').hidden`);
     writeFileSync(OUT + 'remotes-scan-button-390.png', await shoot(p, 'unused'));
-    await ev(p, `document.getElementById('input').value = ''; document.getElementById('rm-scan').click()`);
+    await ev(p, `document.getElementById('input').value = ''; document.getElementById('rm-scan-icon').click()`);
     await waitFor(p, `document.body.dataset.scan === 'rv'`, 6000);
     await waitFor(p, `document.getElementById('toast').classList.contains('on') && /不是新设备的配对码/.test(document.getElementById('toast').textContent)`, 20000);
     await waitFor(p, `!document.getElementById('settings').hidden && !document.getElementById('set-remotes').hidden`, 4000);

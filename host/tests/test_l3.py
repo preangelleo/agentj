@@ -505,7 +505,9 @@ class WheelInstall(unittest.TestCase):
         p170=[i for i in zipfile.ZipFile(self.wheel).infolist() if i.filename=='agentj/mail.py']
         p170_bytes=sum(i.compress_size+76+2*len(i.filename.encode())+2*len(i.extra)+len(i.comment) for i in p170)
         self.assertEqual(len(p170),1)
-        self.assertLessEqual(p170_bytes,24576,'P170 e-mail channel allocation is bounded')
+        # P206 A (0.20.2 `agentj mail expect`: the Agent waits for one sign-up mail): +8 KiB on mail.py (measured 28.8 KiB in
+        # total); flagged to Jarvis.
+        self.assertLessEqual(p170_bytes,24576+8192,'P170 e-mail channel allocation (+ P206 A mail expect) is bounded')
         # P184 (0.20.0 address book: contacts.py store / pinyin search / vCard·CSV import-export / CLI, contacts_serve.py the
         # phone + Agent side, skill agentj-contacts): its own explicit 28 KiB allocation (measured ≈ 25 KiB), same accounting;
         # flagged to Jarvis. The wiring (elevate routing, serve cap, mail send CLI, media / inbox types, identity sentence) takes a
@@ -530,6 +532,13 @@ class WheelInstall(unittest.TestCase):
         p189_bytes=sum(i.compress_size+76+2*len(i.filename.encode())+2*len(i.extra)+len(i.comment) for i in p189)
         self.assertEqual(len(p189),1)
         self.assertLessEqual(p189_bytes,8192,'P189 mail template allocation is bounded')
+        # P207 (§0 user-data snapshots + start-up self-heal: userdata.py; §2 the computer's own scheduled tasks, read-only:
+        # systasks.py): their own explicit 12 KiB allocation (measured 9 784 B = 6 123 + 3 661 B), same accounting; flagged to Jarvis.
+        # The serve wiring (systask_list, the capability, the snapshot hooks) stays inside the core ceiling.
+        p207=[i for i in zipfile.ZipFile(self.wheel).infolist() if i.filename in ('agentj/userdata.py','agentj/systasks.py')]
+        p207_bytes=sum(i.compress_size+76+2*len(i.filename.encode())+2*len(i.extra)+len(i.comment) for i in p207)
+        self.assertEqual(len(p207),2)
+        self.assertLessEqual(p207_bytes,12288,'P207 user-data + system scheduled tasks allocation is bounded')
         # P135 (0.18.2 integration of P131–P134 + the shared-turn reply fix): an explicit 8 KiB core increment, flagged to Jarvis.
         # P139 (0.18.3 shared-mode trust boundary: ctl_auth, hook token/watch, never-yield): another explicit 8 KiB, flagged to Jarvis.
         # P142 (0.18.3 host reliability: diskq, _bg, B14/A12/B15/B17/B19): a further explicit 8 KiB, flagged to Jarvis (P143 integration keeps both).
@@ -566,7 +575,7 @@ class WheelInstall(unittest.TestCase):
         # P181 4 · P182 4 · P184 4 · P185 8 · P186 8 · P188 4 · P191 4 · P192 4 KiB = 124 KiB; P189 / P190 / P193 declared none); merged and measured, the core grew +126.4 KiB over the 0.18.4 wheel
         # (overlap + P165's own fixes) → ONE explicit +136 KiB core increment on the 0.18.4 ceiling (P188's +4 KiB included), plus the new
         # bounded allocations above (P155 16 · P158 20 · P169 48 · P170 24 · P171 8 · P181 12 · P184 28 · P188 20 · P189 8 KiB). Flagged to Jarvis for ratification.
-        allocs=bot_bytes+lt_bytes+browser_bytes+p115_bytes+cut_bytes+p147_bytes+p155_bytes+p158_bytes+p169_bytes+p170_bytes+p171_bytes+p181_bytes+p184_bytes+p188_bytes+p189_bytes
+        allocs=bot_bytes+lt_bytes+browser_bytes+p115_bytes+cut_bytes+p147_bytes+p155_bytes+p158_bytes+p169_bytes+p170_bytes+p171_bytes+p181_bytes+p184_bytes+p188_bytes+p189_bytes+p207_bytes   # + P207 12 KiB
         core_0184=2_260_000+8192+8192+8192+12288+4096+8192+8192+12288      # P118 + P135 P139 P142 P143 P149 P150 P151 P152
         core_0200=core_0184+139264                                          # + P165 (0.20.0)
         core_0200+=8192           # P194: owner_route.py (owner-directed outbound) + mail / telegram / privacy / media wiring, flagged to Jarvis
@@ -575,8 +584,36 @@ class WheelInstall(unittest.TestCase):
         # unenforced, `agentj service import-key`, reasoning strip): measured +6.2 KiB over core_0200 → a further explicit 12 KiB,
         # flagged to Jarvis for ratification.
         core_0200+=12288
-        self.assertLess(pathlib.Path(self.wheel).stat().st_size-allocs,core_0200,'P118 approved bounded core ceiling + 0.18.x increments + P165 (0.20.0) + P198 (0.20.1)')
-        self.assertLess(pathlib.Path(self.wheel).stat().st_size,core_0200+65536+40960+49152+32768+4096+12288+8192+16384+20480+49152+24576+8192+12288+28672+4096+20480+8192,
+        core_0200+=4096           # P201: tg_format relay-parity Markdown (tables, code language, quotes, line-end cuts) + forward wiring; measured +1.7 KiB, flagged to Jarvis
+        # P203 (0.20.2: open-cards snapshot + upgrade confirmation card + idle auto-update): measured +2.2 KiB over the 0.20.1
+        # ceiling → an explicit 6 KiB, flagged to Jarvis in REPORT-203
+        core_0200+=6144
+        # P205 (`mail send --to-owner`; fenced `update apply`: fence.inside, doctor `unverifiable` rows, update.host_op over
+        # elevate.sock): measured +0.4 KiB over the ceiling above → a further explicit 4 KiB, flagged to Jarvis for ratification.
+        core_0200+=4096
+        # P211 (owner-bound files skip the secret guess: media.check owner / scan_keys / strict, owner_route.offer_files, clearer
+        # skip notes): measured +0.6 KiB over the ceiling above → a further explicit 4 KiB, flagged to Jarvis for ratification.
+        core_0200+=4096
+        # P207 (0.20.2: heartbeat.daily_at, contacts manage / import / export / mail-allowlist ops, theme colors.dialog, systask_list
+        # wiring, the userdata snapshot/heal hooks, the manual's generated 键盘快捷键 pages shortcuts.{zh,en}.md): measured +6.3 KiB over
+        # core_0200 → a further explicit 8 KiB, flagged to Jarvis for ratification.
+        core_0200+=8192
+        # P214 (0.20.2: code pasted whole → first AJI / ajt_ code, interactive `agentj login` paste, name default = host name,
+        # service start + next step after a seat bind): measured +0.4 KiB over the 0.20.1 ceiling → explicit 4 KiB, flagged to Jarvis.
+        core_0200+=4096
+        # P215 (0.20.2: the seven working-root documents as reviewable package files agentj/wizard/rootdocs/<zh|en>/ with marked
+        # core blocks, refresh_root / upgrade_root_docs, first-workflow guidance): measured +12.3 KiB over the ceiling above → a
+        # further explicit 16 KiB, flagged to Jarvis for ratification.
+        core_0200+=16384
+        # P217 (0.20.2): the bundled agentj-multi-seat skill (multi-instance made public, ~10 KB of Markdown) + help strings:
+        # measured +1.3 KiB over the P198 line → a further explicit 4 KiB, flagged to Jarvis for ratification.
+        core_0200+=4096
+        # P218 (0.20.2 integration): branches that declared no core increment of their own (P200 busy unit names, P206 A wiring
+        # outside the P170 allocation, P209 / P210 / P216 manual and skill text) — merged and measured +3.7 KiB over the sum of
+        # the declared ones → an explicit 8 KiB, flagged to Jarvis for ratification (REPORT-218).
+        core_0200+=8192
+        self.assertLess(pathlib.Path(self.wheel).stat().st_size-allocs,core_0200,'P118 approved bounded core ceiling + 0.18.x increments + P165 (0.20.0) + P198 (0.20.1) + 0.20.2 increments (P201 P203 P205 P207 P211 P214 P215 P217 + P218 integration)')
+        self.assertLess(pathlib.Path(self.wheel).stat().st_size,core_0200+65536+40960+49152+32768+4096+12288+8192+16384+20480+49152+24576+8192+12288+28672+4096+20480+8192+12288,   # + P207 12 KiB
                         'combined bounded allocations')
         # flagged to Jarvis.
         self.assertFalse([n for n in names_ if n.startswith("tests/") or "wiredump" in n or "fakeclaude" in n])

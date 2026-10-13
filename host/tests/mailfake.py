@@ -1,7 +1,8 @@
 """P170: a local fake IMAP4rev1 + SMTP server pair on 127.0.0.1 (plain TCP) for the mail channel tests. Never a real mailbox.
 
 FakeIMAP: LOGIN, CAPABILITY, ID, SELECT/EXAMINE INBOX, UID SEARCH ALL, UID FETCH (RFC822.SIZE | BODY.PEEK[] |
-BODY.PEEK[HEADER.FIELDS (…)]), LOGOUT, NOOP. `require_id=True` behaves like NetEase 163: SELECT says "Unsafe Login" until ID.
+BODY.PEEK[HEADER.FIELDS (…)] | INTERNALDATE RFC822.SIZE BODY.PEEK[HEADER] (P206)), LOGOUT, NOOP. `fetched` lists the full
+bodies handed out (uids); flags are never changed (no STORE). `require_id=True` behaves like NetEase 163: SELECT says "Unsafe Login" until ID.
 FakeSMTP: EHLO/HELO, AUTH PLAIN / LOGIN, MAIL, RCPT, DATA, RSET, NOOP, QUIT; `sent` keeps (from, [to], bytes).
 """
 from __future__ import annotations
@@ -11,6 +12,7 @@ import re
 import socket
 import socketserver
 import threading
+import time
 
 
 def _tokens(s: str) -> list[str]:
@@ -46,6 +48,8 @@ class FakeIMAP:
         self.uidvalidity = 7
         self.mails: list[tuple[int, bytes]] = []
         self.next_uid = 1
+        self.dates: dict[int, float] = {}
+        self.fetched: list[int] = []
         self.logins = 0
         self.commands: list[str] = []
         fake = self
@@ -93,9 +97,14 @@ class FakeIMAP:
                               + tag.encode() + b" OK done\r\n")
                         elif sub == "FETCH":
                             want, _, item = a2.partition(" ")
-                            rows = [(i + 1, u, raw) for i, (u, raw) in enumerate(fake.mails) if str(u) == want]
+                            rows = [(i + 1, u, raw) for i, (u, raw) in enumerate(fake.mails) if str(u) in want.split(",")]
                             for seq, u, raw in rows:
-                                if "RFC822.SIZE" in item.upper():
+                                if "INTERNALDATE" in item.upper():
+                                    head = raw.split(b"\r\n\r\n", 1)[0] + b"\r\n\r\n"
+                                    when = time.strftime("%d-%b-%Y %H:%M:%S +0000", time.gmtime(fake.dates.get(u, time.time())))
+                                    w(f'* {seq} FETCH (UID {u} INTERNALDATE "{when}" RFC822.SIZE {len(raw)} BODY[HEADER] {{{len(head)}}}\r\n'.encode()
+                                      + head + b")\r\n")
+                                elif "RFC822.SIZE" in item.upper():
                                     w(f"* {seq} FETCH (UID {u} RFC822.SIZE {len(raw)})\r\n".encode())
                                 elif "HEADER.FIELDS" in item.upper():
                                     head = raw.split(b"\r\n\r\n", 1)[0].split(b"\n\n", 1)[0]
@@ -104,6 +113,7 @@ class FakeIMAP:
                                     w(f"* {seq} FETCH (UID {u} BODY[HEADER.FIELDS (AUTHENTICATION-RESULTS)] {{{len(keep)}}}\r\n".encode()
                                       + keep + b")\r\n")
                                 else:
+                                    fake.fetched.append(u)
                                     w(f"* {seq} FETCH (UID {u} BODY[] {{{len(raw)}}}\r\n".encode() + raw + b")\r\n")
                             w(tag.encode() + b" OK done\r\n")
                         else:
@@ -120,12 +130,13 @@ class FakeIMAP:
         self.port = self.server.server_address[1]
         threading.Thread(target=self.server.serve_forever, daemon=True).start()
 
-    def add(self, raw: bytes | str) -> int:
+    def add(self, raw: bytes | str, at: float | None = None) -> int:
         if isinstance(raw, str):
             raw = raw.replace("\r\n", "\n").replace("\n", "\r\n").encode()
         uid = self.next_uid
         self.next_uid += 1
         self.mails.append((uid, raw))
+        self.dates[uid] = time.time() if at is None else at
         return uid
 
     def close(self):

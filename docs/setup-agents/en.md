@@ -46,7 +46,7 @@ shasum -a 256 setup-agents.sh
 ```
 
 
-SHA256 sh: `0da9634e566bdc1d8222988dae48159b43887a8b4791efbd4e65f6785a1a023b`
+SHA256 sh: `1bb1e41ac6987a25489743c2e58f5104b52fc1ca964a3933f3747388279b03d1`
 
 
 ```bash
@@ -1301,6 +1301,8 @@ command not found: revisit PATH, check the shell startup file and open a fresh t
 ## Agent J
 
 At the end, setup asks “现在安装 Agent J 吗？[Y/n]”. Yes opens the existing official installation assistant; it needs your account-page installation code (`AJI-…`), entered locally with hidden input. `--with-agentj` selects this step; `--no-agentj` skips it. These flags choose the step; pairing and account consent still require you. Without a terminal, setup only prints the next step. If no login/key is detected, it explains: “Agent J 能装能配对，但要登录 AI 工具或填 key 后才能真正聊天”. Credential presence is not proof that a token is still valid.
+
+When it asks for `Installation code (AJI-…)`, choose "Copy installation code" on the account page and paste only that AJI- code. Pasting the whole prompt or install command by mistake is fine: the script takes the first AJI code out of it, and full-width characters, spaces and line breaks are handled.
 
 The formal assistant verifies a tool-free model call with installed Claude Code, Codex and OpenCode. It reuses a callable CLI; if several work, you choose. After phone pairing, send Hello. It asks for a formal service URL/model and a secure phone key card only if none can call. AgentsRelay configuration works in the background service without opening a new terminal. Gemini is installed only when explicitly selected and cannot be selected as the main Agent in Agent J. If only Gemini is installed, the assistant asks you to sign in to Codex / Claude Code / OpenCode or use AgentsRelay.
 

@@ -13,6 +13,8 @@ const CARD_VARS = { owner: ['--src-leo'], agent: ['--src-agent'], computer: ['--
   system: ['--src-sys', '--src-task', '--src-cmd'] };
 // P187: the menus (Settings, the command list, shortcuts …) — five colours; muted text, dividers and fills derive from them
 const MENU_VARS = { background: ['--menu-bg'], panel: ['--menu-panel'], text: ['--menu-text'], accent: ['--menu-accent'], line: ['--menu-line'] };
+// P207 追加 1: every centred dialog (usage, 在办, load line, confirmations …) — ONE background token (factory Noir #2c2b26)
+const DIALOG_VARS = { background: ['--dlg-bg'] };
 const SQUARE = [128, 256];
 const MAX_PNG = 64 * 1024;
 let set = [];                    // CSS variables this module put on <html>
@@ -59,7 +61,7 @@ export function sanitize(m) {
   out.factory = null;
   out.id = typeof m.id === 'string' && /^[a-z0-9][a-z0-9-]{1,31}$/.test(m.id) ? m.id : 'custom';
   const c = m.colors && typeof m.colors === 'object' ? m.colors : {};
-  for (const [group, vars] of [['state', STATE_VARS], ['card', CARD_VARS], ['menu', MENU_VARS]]) {
+  for (const [group, vars] of [['state', STATE_VARS], ['card', CARD_VARS], ['menu', MENU_VARS], ['dialog', DIALOG_VARS]]) {
     const g = c[group] && typeof c[group] === 'object' ? c[group] : {};
     for (const k of Object.keys(vars)) if (HEX.test(g[k] || '')) for (const v of vars[k]) out.colors[v] = g[k].toLowerCase();
   }

@@ -17,6 +17,10 @@ opening card. Everything below is `agentj capability …` (serve answers on its 
    each workflow's CEO → that CEO's staff; work with no CEO goes to a junior assistant. Say "don't ask me about this" and I
    remember it and decide the next one myself." Use the form of address the owner chose, if any.
 
+4. No workflow in the roster yet (a fresh computer): end with one question — 「你每周重复做的三件事是什么？我挑最合适的一件，
+   帮你建成第一个工作流。」 / "What are three things you do again and again every week? I will turn the best one into your first
+   workflow." — then follow documentation/WORKFLOW.md ("A new computer with no workflows yet"). Once per conversation.
+
 ## A goal that needs tools or a workflow (「做每周竞品简报」)
 1. **Understand and shrink.** Read the CEO roster (documentation/ROLES.md / STRUCTURE.json of the working root) and
    `agentj capability list --json`. Choose the smallest useful deliverable. Decide the route:

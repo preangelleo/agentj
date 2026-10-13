@@ -1,6 +1,7 @@
 """P166: any file from the phone (≤ 200 MiB), audio / video transcribed at say time like Telegram (long files in 10-minute
 segments), and Telegram's attachment refusals say which reason it was, in the owner's language, with a reason-code log line."""
 import _hermetic  # noqa: F401,I001  (never the real ~/.local/state; see _hermetic.py)
+from _testtmp import TEST_TMP  # noqa: E402  P202: fixtures on tmpfs, not the system disk
 import asyncio
 import hashlib
 import json
@@ -219,7 +220,7 @@ class SayTime(unittest.TestCase):
 
 class TelegramWhy(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
-        self.tmp = tempfile.TemporaryDirectory(prefix="p166-", dir="/var/tmp")
+        self.tmp = tempfile.TemporaryDirectory(prefix="p166-", dir=TEST_TMP)
         self.addCleanup(self.tmp.cleanup)
         self.root = pathlib.Path(self.tmp.name)
         self.st = State(self.root / "state")

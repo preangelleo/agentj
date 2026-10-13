@@ -1,4 +1,4 @@
-"""P186: the chairman philosophy (「人人都能做董事长」) in the packaged core, the seeded root documents and the wizard guide."""
+"""P186 (texts updated by P215): the chairman philosophy (「人人都能做董事长」) in the packaged core, the seeded root documents and the wizard guide."""
 import pathlib
 import sys
 import tempfile
@@ -65,19 +65,19 @@ class RootDocs(unittest.TestCase):
 
     def test_each_principle_in_its_document(self):
         where = {
-            "zh": {"CONSTITUTION.md": ("人人都能做董事长", "公司就是工作流", "面向生产", "文档就是公司", "员工随时可以换", "手机是遥控器",
+            "zh": {"CONSTITUTION.md": ("人人都能做董事长", "一家公司就是一个工作流", "面向生产", "文档就是公司", "全体员工都会辞职", "手机是遥控器",
                                        "终端里一样能跑", "先在手机上请董事长批准", "不兼任任何工作流的 CEO"),
-                   "IDENTITY.md": ("董事长助理", "「董事长」", "自称助理"),
+                   "IDENTITY.md": ("董事长助理", "「董事长」", "自称「助理」"),
                    "SOUL.md": ("结果在前", "引导董事长思维", "答准、答短", "不说教，也不藏信息", "点头才建"),
                    "WORKFLOW.md": ("退出码不能证明成功", "意图往哪沉淀", "一个代号", "全局技能", "本地技能", "命令行工具",
                                    "全体员工辞职", "NEXT_SESSION", "模型升级后复盘", "中专生"),
                    "ROLES.md": ("董事长（主人）", "董事长助理（主 Agent）", "工作流 CEO", "子 Agent（员工）", "小助理")},
             "en": {"CONSTITUTION.md": ("Anyone can be a chairman", "A company is a workflow", "Built for production",
-                                       "The documents are the company", "Staff can change at any moment", "remote control",
-                                       "run the same way in a terminal", "Ask the Chairman on the phone", "never a workflow's CEO"),
+                                       "The documents are the company", "whole staff resigns at every moment", "remote control",
+                                       "runs the same way in a terminal", "Ask the Chairman on the phone", "never a workflow's CEO"),
                    "IDENTITY.md": ("chief of staff", "\"Chairman\""),
                    "SOUL.md": ("results first", "think like a chairman", "accurately and briefly", "never lecture", "after a yes"),
-                   "WORKFLOW.md": ("exit codes alone prove nothing", "Where an intention settles", "code name", "global when",
+                   "WORKFLOW.md": ("Exit codes alone prove nothing", "where an intention settles", "code name", "global when",
                                    "local inside", "command-line tool", "whole staff resigned", "NEXT_SESSION",
                                    "Review after a model upgrade"),
                    "ROLES.md": ("Chairman (the owner)", "Chief of staff (main Agent)", "Workflow CEO", "Sub-Agents (staff)",

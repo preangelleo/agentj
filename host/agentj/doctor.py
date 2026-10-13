@@ -153,7 +153,28 @@ def check_browser(st: State) -> dict:
               "; ".join(r.get("hints") or []) or "agentj browser setup")
 
 
+# P205: inside the Agent fence the host's state directory is an empty mount and control.sock is hidden — `state` and `serve`
+# cannot be checked from there. Such a row is a ! (never ✗) with "unverifiable": true; `update apply` then asks the host
+# itself (elevate.sock) or reports `unverifiable_in_fence`. A WARN, not a new status: an older `update apply` (the version
+# being upgraded from runs this doctor) only knows ok / warn / fail and would read anything else as a failure.
+UNVERIFIABLE = ("在 Agent 的隔离环境里看不到主机状态，无法在这里核对 / inside the Agent's isolated environment the host's state is "
+                "hidden, so it cannot be checked here")
+UNVERIFIABLE_HINT = ("请主人在手机上看版本，或在隔离外（电脑终端）运行 agentj doctor / ask the owner to check the version on the "
+                     "phone, or run agentj doctor outside the fence (a terminal on the computer)")
+
+
+def _unverifiable(cid: str) -> dict:
+    return {**_c(cid, WARN, UNVERIFIABLE, UNVERIFIABLE_HINT), "unverifiable": True}
+
+
+def _fenced() -> bool:
+    from . import fence
+    return fence.inside()
+
+
 def check_state(st: State) -> dict:
+    if _fenced():
+        return _unverifiable("state")
     if not st.exists():
         return _c("state", FAIL, f"没初始化 / not initialised ({tilde(str(st.root))})", "agentj init")
     try:
@@ -608,7 +629,7 @@ def check_harness(svc=None) -> dict:
 def check_bound(st: State) -> dict:
     link = cloud.read_cloud(st) if st.exists() else None
     if link:
-        via = "用设置码加入 / joined with a setup code" if link["via"] == "seat" else "用 8 位代码加入 / joined with the 8-character code"
+        via = "用设置码加入 / joined with a setup code" if link["via"] == "seat" else "用电脑绑定码加入 / joined with a computer binding code"
         return _c("bound", OK, f"Agent J 账号 / Agent J account {link['tenant']['slug']} · {via}")
     return _c("bound", WARN, "还没加到 Agent J 账号 / not in an Agent J account yet", "agentj login")
 
@@ -677,6 +698,8 @@ def check_onboarding(st: State) -> dict:
 
 
 def check_serve(st: State) -> dict:
+    if _fenced():
+        return _unverifiable("serve")
     if not st.exists():
         return _c("serve", WARN, "没在运行 / not running", "agentj init first")
     try:

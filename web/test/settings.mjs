@@ -281,7 +281,7 @@ try {
       await click(p, '#setBtn');
       await waitFor(p, `document.getElementById('set-risk').getAttribute('aria-checked') === 'true'`);
       assert.equal(await ev(p, `document.getElementById('set-risk-cmd').textContent`), 'agentj config set agent.high_risk_warnings false');
-      assert.equal(await ev(p, `document.getElementById('set-mode').textContent`), '共享电脑会话');
+      assert.equal(await ev(p, `document.getElementById('set-mode').getAttribute('aria-checked')`), 'true');   // P207: two-way switch, right = 共享
       assert.equal(await ev(p, `document.getElementById('set-mode-cmd').textContent`), 'agentj config set agent.session_mode independent');
       // nothing on these rows can write: no switch, no pref_set
       assert.equal(await ev(p, `document.querySelectorAll('#set-risk-cmd, #set-mode-cmd').length === 2 && !!document.querySelector('#settings [data-pref^="agent."]')`), true);
@@ -297,12 +297,12 @@ try {
       await waitFor(p, `document.getElementById('set-risk').getAttribute('aria-checked') === 'true'`);
       assert.equal(fake.st.prefSets.at(-1).key, 'agent.high_risk_warnings');
       await click(p, '#set-mode');
-      await waitFor(p, `document.getElementById('set-mode').textContent === '共享电脑会话'`);
+      await waitFor(p, `document.getElementById('set-mode').getAttribute('aria-checked') === 'true'`);
       assert.equal(fake.st.prefSets.at(-1).key, 'agent.session_mode');
       // P174: a host that sends no session_mode shows the factory default (independent) and offers shared
       fake.st.prefs = { ...PREFS, agent: { high_risk_warnings: false } };
       await fake.send(fake.prefsMsg(fake.st.prefs));
-      await waitFor(p, `document.getElementById('set-mode').textContent === '使用独立会话'`);
+      await waitFor(p, `document.getElementById('set-mode').getAttribute('aria-checked') === 'false' && document.querySelector('#set-mode ~ .tw-lab, .tw-lab[data-tw="set-mode"][data-side="left"]').getAttribute('aria-current') === 'true'`);
       assert.equal(await ev(p, `document.getElementById('set-mode-cmd').textContent`), 'agentj config set agent.session_mode shared');
       // F14 (P45b): isolation (default on) and docker (default off) switch from the phone
       assert.equal(await ev(p, `document.getElementById('set-iso').getAttribute('aria-checked')`), 'true');
@@ -325,13 +325,15 @@ try {
     const p = await paired({ before: (st) => { st.prefs = structuredClone(PREFS); } });
     try {
       await click(p, '#setBtn');
-      await waitFor(p, `document.getElementById('set-updates').textContent.includes('自动')`);
+      // P203 + P207: the two-way 升级方式 (left 自动 · right 先问我) writes both keys — updates.auto_install + updates.mode
+      await waitFor(p, `document.getElementById('set-updates').getAttribute('aria-checked') === 'false'`);   // left = 自动
       await click(p, '#set-updates');
-      await waitFor(p, `document.getElementById('set-updates').textContent.includes('先问')`);
-      assert.equal(fake.st.prefSets.at(-1).key, 'updates.mode');
-      assert.equal(fake.st.prefSets.at(-1).value, 'ask');
+      await waitFor(p, `document.getElementById('set-updates').getAttribute('aria-checked') === 'true'`);
+      for (let i = 0; i < 50 && fake.st.prefSets.at(-1)?.key !== 'updates.mode'; i++) await sleep(100);
+      assert.deepEqual(fake.st.prefSets.slice(-2).map((m) => [m.key, m.value]), [['updates.auto_install', false], ['updates.mode', 'ask']]);
       await click(p, '#set-updates');
-      await waitFor(p, `document.getElementById('set-updates').textContent.includes('自动')`);
+      await waitFor(p, `document.getElementById('set-updates').getAttribute('aria-checked') === 'false'`);
+      for (let i = 0; i < 50 && fake.st.prefSets.at(-1)?.value !== 'auto'; i++) await sleep(100);
       assert.equal(fake.st.prefSets.at(-1).value, 'auto');
       await click(p, '#set-close');
       const id = 'N'.repeat(22);
@@ -351,13 +353,13 @@ try {
       await click(p, '#setBtn');
       await waitFor(p, `!document.getElementById('set-hb-row').hidden`);
       assert.equal(await ev(p, `document.getElementById('set-hb').getAttribute('aria-checked')`), 'true');
-      assert.equal(await ev(p, `document.getElementById('set-hb-every').textContent`), '空闲 1 小时后');
+      assert.equal(await ev(p, `document.getElementById('set-hb-every').value + ' ' + document.getElementById('set-hb-every').selectedOptions[0].textContent`), '60 空闲 1 小时后');   // P207: a dropdown
       assert.match(await ev(p, `document.querySelector('#set-hb-row .setnote').textContent`), /每次心跳都会用掉一次模型调用/);
       await ev(p, `document.getElementById('set-hb-row').scrollIntoView({block:'center'})`);
       mkdirSync(OUT_P156, { recursive: true });
       writeFileSync(OUT_P156 + 'settings-heartbeat-zh.png', await shoot(p));
-      await click(p, '#set-hb-every');
-      await waitFor(p, `document.getElementById('set-hb-every').textContent === '空闲 2 小时后'`);
+      await ev(p, `(() => { const s = document.getElementById('set-hb-every'); s.value = '120'; s.dispatchEvent(new Event('change', { bubbles: true })); })()`);
+      await waitFor(p, `document.getElementById('set-hb-every').value === '120'`);
       assert.deepEqual([fake.st.prefSets.at(-1).key, fake.st.prefSets.at(-1).value], ['heartbeat.interval_minutes', 120]);
       await click(p, '#set-hb');
       await waitFor(p, `document.getElementById('set-hb').getAttribute('aria-checked') === 'false'`);

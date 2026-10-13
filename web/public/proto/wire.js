@@ -126,15 +126,19 @@ export const CONTROL_ACTIONS = ['mem_rm', 'mem_undo', 'estop', 'resume', 'task_o
   'fr_set', 'pg_set', 'pg_del', 'fr_add', 'fr_discoverable', 'fr_card',          // §17.7 agent friends (0.16)
   'fr_ctx', 'update', 'bots_write', 'setup_mark', 'pair_new',               // P153: pair_new = a paired remote opens a pairing (§3.3)
   'dev_name', 'dev_unbind', 'dev_add', 'dev_confirm',                     // P171 (§24): the phone's 遥控器管理 page                                                         // P115: first-run checklist card                                                                       // P73: a friend's 「补充设定」
-  'agent_name'];                                                            // P181 (§22.2): rename the Agent from the header
+  'agent_name',                                                             // P181 (§22.2): rename the Agent from the header
+  'cards_get',                                                              // P203 (§29.1): the signed open-cards snapshot (a read)
+  'mail_allow'];                                                            // P207 (§25): add an address to the mail allowlist
 /** The text whose SHA-256 a control signature covers (the target, with the content hash the phone saw). */
 export function controlObject(action, o) {
   if (action === 'bots_write') return canonicalJson(o.request);
   if (action === 'update') return 'latest';
+  if (action === 'cards_get') return 'cards';
   if (action === 'pair_new') return 'start';
   if (action === 'setup_mark') return `${o.item}\n${o.choice}\n${o.rev}`;
   if (action === 'dev_name') return `${o.device}\n${o.name}`;
   if (action === 'agent_name') return String(o.name);
+  if (action === 'mail_allow') return `${o.addr}\n${o.role}`;   // P207: address as sent \n owner | guest
   if (action === 'dev_unbind') return String(o.device);
   if (action === 'dev_add') return o.rv ? `rv\n${o.rv}` : 'new';   // P190 (§27): a reverse pairing names the scanned code's channel
   if (action === 'dev_confirm') return `${o.device}\n${o.code}`;

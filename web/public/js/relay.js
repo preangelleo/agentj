@@ -5,6 +5,7 @@ import { open as openRename } from './dev-rename.js';
 import { deviceInfo } from './settings.js';
 import { SharedNotice } from './shared-notice.js';
 import { quotaWindows } from './dashboard.js';
+import { openUsage, initUsage } from './usagedlg.js';   // P207 §1: Weekly / 5H → the centred dark dialog
 // The chat screen = relay's phone page (pwa/index.html <script>, ADR-022 … ADR-052 there), ported section by section.
 // What changed is only the transport and the wording: relay's HTTP calls (requests, the event stream, raw uploads) go through the
 // adapter `ctx.api` (Noise session, PROTOCOL §10), every string comes from the i18n dictionaries, Telegram forwarding is
@@ -20,7 +21,7 @@ import * as sendvol from './sendvol.js';   // P154 追加 12: hold the grey Send
 import * as shotclip from './shotclip.js';
 import { Upload, TYPES as DROP_TYPES, MAX_BYTES as UPLOAD_MAX, MAX_ATT, ASR_MAX_BYTES, anyMime } from './blobs.js';
 import { renderPage as renderMedia, forgetAll as forgetMedia, renderReader as renderReaderMedia, clearReader as clearReaderMedia } from './media.js';   // F21: files the reply shows (§13); P59: in the reader too
-import { toWav } from './wav.js';
+import { toWav, GAP_MIN_MS, GAP_SKIP_MS } from './wav.js';
 import * as LR from './longrec.js';   // P182: long takes kept on the phone until the computer has them
 import { Speaker, configureSpeech } from './speak.js';
 import { isReady, sendApp, hostId, peer } from './session.js';
@@ -29,6 +30,9 @@ import { Outbox, paint as paintOutbox, MAX as OUT_MAX, isEcho } from './outbox.j
 import { themeLogo } from './theme.js';   // P169 (§23)
 import { longPress } from './longpress.js';   // P181: long-press shortcuts on the composer buttons
 import * as search from './search.js';   // P188 (§28): 搜索聊天记录
+import { lookup as ixLookup, ROWS as IX_ROWS, GROUPS as IX_GROUPS, kbdTokens } from './interactions.gen.js';   // P207: keys from interactions.json
+import { createUnread } from './unread.js';   // P207 (追加 2): this device's unread mark
+import { open as openAgentName } from './agentname.js';
 import { askKind as friendAsk, renderAsk as renderFriendAsk, addFriendCmd, openFromCmd } from './friends.js';   // §17.7: friend request / friend's question cards
 
 let C = null;                        // ctx from app.js: api, myDev(), estopOn(), canSign(), panels …
@@ -59,6 +63,16 @@ function waitKey(s, syncing, quietMs){
   if (QUIET.includes(s?.hostStatus) && quietMs >= NO_ECHO_MS) return "r.replyNoEcho";
   return "r.replyPending";
 }
+// P205: the working line speaks to the owner — 「董事长，您的最新指示已经收到…」 / "Chairman, your latest instruction is in…".
+// The address is the host's `owner.address` preference (≤ 16 characters; "" = 董事长 / Chairman). Text only: control
+// characters go, whitespace collapses, and every wait line is drawn as plain text nodes (never Markdown / HTML).
+const ADDRESS_MAX = 16;
+let ownerAddr = "";
+function cleanAddress(v){
+  if (typeof v !== "string") return "";
+  return Array.from(v.replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029]/g, " ").replace(/\s+/g, " ").trim()).slice(0, ADDRESS_MAX).join("").trim();
+}
+function waitText(key){ return t(key, {address: ownerAddr || t("r.ownerAddress")}); }
 function noteQuiet(k){
   if (k === (quiet && quiet.k)) return;
   if (quiet) clearTimeout(quiet.timer);
@@ -74,7 +88,7 @@ function renderWords(text, pending = false, label = ""){
   // a page-specific label (queued behind a busy session) wins over the session-wide wait words
   noteQuiet(pending && !tx && !label && QUIET.includes(cur?.hostStatus) ? shownKey + "|" + cur.hostStatus : null);
   const wait = waitKey(cur, historySync, quiet ? Date.now() - quiet.at : 0);
-  const key = pending && !tx ? "\u0000pending:" + (label || wait) : tx;
+  const key = pending && !tx ? "\u0000pending:" + (label || wait) + (!label && wait === "r.replyWorking" && ownerAddr ? "|" + ownerAddr : "") : tx;
   if (key === wordsSrc) return;
   // P193 (B10): a streaming reply grows chunk by chunk and every redraw re-parses the whole Markdown (O(n²) over a long
   // answer). While the open page only grows, redraw at most every STREAM_MS; the trailing timer draws the latest text.
@@ -88,12 +102,12 @@ function renderWords(text, pending = false, label = ""){
   wordsSrc = key;
   const w = el("words");
   w.className = "words" + (!tx ? " empty" : tx.length > 600 ? " l" : tx.length > 240 ? " m" : "");
-  fill(w, pending && !tx ? (label || t(wait)) : tx);
+  fill(w, pending && !tx ? (label || waitText(wait)) : tx, pending && !tx);
   afterWords();
   rdFollow(tx);
 }
-function fill(w, tx){
-  if (tx){
+function fill(w, tx, plain = false){
+  if (tx && !plain){
     try{
       const detail = tx.match(/^([\s\S]*)\n\n(\u8be6\u60c5|Details):\n```text\n([\s\S]*)\n```$/);
       tx = detail ? detail[1] : tx;
@@ -174,7 +188,7 @@ const cardKey = c => c ? [c.kind, c.id, c.received_at].join("|") : null;
 // ---- questions answered from the phone (§10.7; relay M2-ask) -------------------------
 // The phone sends option NUMBERS, signed; the labels never come from here. After 确认 the sheet says 「已发送，等待生效」
 // until the host's question_done.
-const ASK_FINAL = ["answered", "cancelled", "terminal", "timeout", "ended", "stopped"];
+const ASK_FINAL = ["answered", "cancelled", "terminal", "timeout", "expired", "ended", "stopped"];   // P203: expired = timed out while away
 const ASK_RESULT_S = 6;
 let askSel = {id: null, picks: []};
 let askSent = {id: null, state: null};
@@ -192,7 +206,7 @@ function askLabels(a){
 function askText(a){
   const st = askState(a);
   if (st === "answered") return t('r.q.st.answered', {labels: askLabels(a)});
-  return ["sent", "cancel_sent", "cancelled", "terminal", "timeout", "ended", "detached", "stopped"].includes(st) ? t('r.q.st.' + st) : "";
+  return ["sent", "cancel_sent", "cancelled", "terminal", "timeout", "expired", "ended", "detached", "stopped"].includes(st) ? t('r.q.st.' + st) : "";
 }
 function askComplete(a){
   return askSel.id === a.id && a.questions.every((_, i) => (askSel.picks[i] || []).length > 0);
@@ -336,7 +350,7 @@ function renderCard(s){
 // ---- tool approval from the phone (§8, §10.8; relay M2-approve) ---------------------
 // 拒绝 is one tap; 批准 needs a HOLD of APPR_HOLD_MS — a tap alone never approves. Both are Ed25519-signed by this
 // device's non-extractable key over exactly what the sheet shows (tool + summary; the batch scope for 批量).
-const APPR_FINAL = ["approved", "denied", "terminal", "timeout", "ended", "stopped"];
+const APPR_FINAL = ["approved", "denied", "terminal", "timeout", "expired", "ended", "stopped"];
 const APPR_HOLD_MS = 1200;
 let apprSent = {id: null, state: null}, apprBusy = false, apprToasted = null, apprDismissed = null;
 // P154 追加: the remote that sends the answer puts the card away at once (other remotes close when the host says so).
@@ -348,12 +362,12 @@ function apprState(p){
   if (!p) return null;
   return p.state === "open" && apprSent.id === p.id ? apprSent.state : p.state;
 }
-const FR_DONE = {approved: "allow", denied: "deny", timeout: "timeout", ended: "ended", stopped: "stopped", terminal: "ended"};
+const FR_DONE = {approved: "allow", denied: "deny", timeout: "timeout", expired: "timeout", ended: "ended", stopped: "stopped", terminal: "ended"};
 function apprText(p){
   const st = apprState(p);
   if (friendAsk(p) && FR_DONE[st]) return t('fr.ask.done.' + (p.tool === "friend_request" ? "fr_" : "pq_") + FR_DONE[st]);
   if (st === "open") return p.local_only ? t('r.appr.st.localOnly') : "";
-  return ["allow_sent", "deny_sent", "batch_sent", "approved", "denied", "terminal", "timeout", "ended", "stopped"].includes(st) ? t('r.appr.st.' + st) : "";
+  return ["allow_sent", "deny_sent", "batch_sent", "approved", "denied", "terminal", "timeout", "expired", "ended", "stopped"].includes(st) ? t('r.appr.st.' + st) : "";
 }
 function renderPermission(card, p){
   el("askText").textContent = t('r.ask.nod');
@@ -607,16 +621,13 @@ function paintCompacting(on){
   void w.offsetHeight;
   w.style.transform = "";
 }
-function meterToast(){
+// P207 §1: the numbers open the global centred dark dialog (js/usagedlg.js), not a toast pill at the top
+function meterToast(e){
   const u = (cur && cur.usage) || {};
-  if (!u.source){ toast(t('r.usage.none'), 3200); return; }
-  const bits = [];
-  for (const x of quotaWindows(u)) bits.push(t('r.meter.used', {label:t('r.meter.' + ({weekly:'week',daily:'daily',monthly:'monthly','5h':'h5'}[x.window])),pct:x.pct}));
-  if (u.context_pct != null) bits.push(t('r.usage.ctx', {p: u.context_pct}));
-  else if (Number.isFinite(u.context_used)) bits.push(`${u.context_used} tokens`);
-  else if (postCompact) bits.push(t('r.usage.ctxPost'));
-  if (u.age_s != null) bits.push(t('r.usage.ago', {s: Math.round(u.age_s)}));
-  toast(bits.join(" · ") || "—", 3600);
+  const windows = u.source ? quotaWindows(u).map(x => ({label: t('r.meter.' + ({weekly:'week',daily:'daily',monthly:'monthly','5h':'h5'}[x.window])), pct: x.pct})) : [];
+  const ctx = typeof u.context_pct === 'number' ? u.context_pct : null;
+  const ctxText = ctx != null ? null : Number.isFinite(u.context_used) ? `${u.context_used} tokens` : postCompact ? t('p207set.usage.ctxPost') : null;
+  openUsage({source: !!u.source, windows, ctx, ctxText, age: u.age_s != null ? u.age_s : null}, e && e.currentTarget);
 }
 
 /** The single entry: a snapshot from snap.js (relay's render(s)). */
@@ -1005,6 +1016,7 @@ function showPage(){
   el("pgLatest").title = t(unreadReply ? "r.newReply" : "r.pg.latestHint");
   el("pgCorner").dataset.unread = unreadReply ? "1" : "0";
   const p = ps[pageAt];
+  paintUnread(ps, p);
   const key = (p.id === null ? "live" : p.id) + "|" + pageAt;
   const om = el("om"), src = p.source;
   if (src?.notice_id && !document.hidden && isReady()) {
@@ -1152,6 +1164,53 @@ async function goEdge(newest){
   pageAt = 0; shownKey = null; showPage();
 }
 
+// ---- P207 (追加 2): 未读 — replies that came after the last one this device saw in the foreground ----------------------
+// The input card's header is three equal tap zones: left = earliest (double tap), middle = first unread (tap; a round
+// badge with the count, flashing like the page number's new-message pulse), right = newest (double tap / tap while it
+// flashes). Logo hold and `u` do the same as the middle. Seeing a page = it is on screen while the page is visible.
+const unread = createUnread();
+const UNREAD_FILL_BATCHES = 10;
+let unreadFilling = false;
+const replyIds = ps => ps.filter(x => x.id !== null && visibleReply(x)).map(x => x.id);
+function unreadCovered(){
+  const m = unread.mark();
+  return !olderLeft() || (m !== null && hist.turns.length > 0 && hist.turns[0].id <= m + 1);
+}
+function paintUnread(ps, p){
+  const ids = replyIds(ps);
+  if (!historySync) unread.sync(hist.epoch, ids);
+  const covered = unreadCovered();
+  if (!historySync && p && p.id !== null && visibleReply(p) && document.visibilityState === "visible" && document.body.dataset.view === "chat")
+    unread.see(p.id, ids, covered);
+  else unread.advance(ids, covered);
+  const n = unread.list(ids).length;
+  const b = el("omUnread");
+  el("omUnreadN").textContent = n > 99 ? "99+" : String(n);
+  b.dataset.n = String(n);
+  el("om").dataset.unread = n ? "1" : "0";
+  b.setAttribute("aria-label", n ? t('r.unread.badge', {n}) : t('r.unread.none'));
+  b.title = n ? t('r.unread.badge', {n}) : "";
+  b.setAttribute("aria-disabled", n ? "false" : "true");
+  b.tabIndex = n ? 0 : -1;
+  if (!covered && !unreadFilling && unread.mark() && !historySync) fillUnread();
+}
+// The mark is older than what is loaded: fetch older batches (≤ 10 × 50 turns) so the count is whole.
+async function fillUnread(){
+  unreadFilling = true;
+  try { for (let i = 0; i < UNREAD_FILL_BATCHES && !unreadCovered(); i++){ const b = await loadOlderBatch(); if (!b || !b.all) break; } }
+  finally { unreadFilling = false; }
+  showPage();
+}
+async function goFirstUnread(tell){
+  for (let i = 0; i < UNREAD_FILL_BATCHES * 2 && !unreadCovered(); i++){ const b = await loadOlderBatch(); if (!b || !b.all) break; }
+  const ps = pages(), first = unread.list(replyIds(ps))[0];
+  const at = first === undefined ? -1 : ps.findIndex(x => x.id === first);
+  if (at < 0){ if (tell) toast(t('r.unread.none'), 1600); return false; }
+  pageAt = at; follow = at === ps.length - 1; tailWait = false; shownKey = null; stick = true;
+  showPage();
+  return true;
+}
+
 // Copy: y the reply, Y the input. What is copied is the stored text, not the rendering.
 function copyOut(text, doneMsg){
   if (!text){ toast(t('r.copy.nothing'), 1600); return; }
@@ -1169,7 +1228,31 @@ function paintActs(){
   el("replyBtn").disabled = id === null || !C.connected();
   el("replyBtn").classList.toggle("on", !!replyTo && replyTo.id === id);
   el("copyReply").disabled = !(p.reply || "").trim();
+  el("webReportBtn").disabled = !(p.reply || "").trim();
   paintSpeak(); paintFwd(); paintMail();
+}
+// P216 (Leo 10-13): 分享成网页报告 — puts the web-page-report skill's command at the front of the field, cursor after it,
+// never sends. The owner may add which part / who should see it, or send it bare and the Agent asks (the skill's own
+// 「先问」 step). A card that is not the newest also becomes the quote (the same reply_to as 回复), so the Agent knows
+// where the share starts. An unknown slash reaches the Agent as text (Claude Code, measured), so a host without the
+// package still gets the request and offers to install it from the plaza.
+const WR_CMD = "/web-page-report";
+const WR_RE = /^[/\uff0f]web-page-report(?:[ \t]+|$)/i;
+function webReport(p){
+  if (!p || !(p.reply || "").trim()) return;
+  const ps = pages(), i = ps.indexOf(p);
+  const older = p.id !== null && i >= 0 && ps.slice(i + 1).some(x => x.id !== null);
+  if (older && !(replyTo && replyTo.id === p.id)){
+    replyTo = {id: p.id, kind: sourceOf(p.source).kind, speaker: C.agentName(), ts: p.ts, line: plainLine(p.reply)};
+    paintReply();
+  }
+  const rest = input.value.replace(WR_RE, "").replace(/^\s+/, "");
+  input.value = WR_CMD + " " + rest;
+  paintActs();
+  input.focus();
+  input.setSelectionRange(input.value.length, input.value.length);
+  autosize(); refreshSend(); saveDraft();
+  toast(t(older ? 'r.wr.hintFrom' : 'r.wr.hint'), 5200);
 }
 function plainLine(md){
   for (let ln of String(md || "").split("\n")){
@@ -1540,12 +1623,26 @@ function refreshSend(){
   el("send").disabled = sending || asrBusy > 0 || !hasSayable() || !(C.connected() || outbox.host !== null);   // offline: it queues (null = not paired)
   const c = el("clr"); if (c) c.hidden = !input.value;
 }
-function fieldMaxH(){ return innerHeight * 0.3; }
+// P200 追加 3 (Leo, 2026-10-13): one line never scrolls, whatever the type size, zoom or viewport — the cap is at least
+// one line and a half (a fallback font's taller line box still fits; two lines do not), so only real multi-line text
+// that outgrows the 30 vh cap gets the bar (a landscape phone with the keyboard up can have 30 vh under one line).
+function fieldMaxH(){
+  const cs = getComputedStyle(input), lh = parseFloat(cs.lineHeight) || parseFloat(cs.fontSize) * 1.45 || 0;
+  return Math.max(innerHeight * 0.3, Math.ceil((parseFloat(cs.paddingTop) || 0) + (parseFloat(cs.paddingBottom) || 0) + lh * 1.5));
+}
 function autosize(){
   input.style.height = "auto";
+  input.style.maxHeight = fieldMaxH() + "px";     // the CSS 30vh, raised to one line and a half when 30 vh is less
+  // P200: measured without the bar (full width); the bar comes back only when the words are taller than the cap, so an
+  // empty field (placeholder) or a line a pixel taller than line-height never shows one. Empty = back at the top.
+  input.classList.remove("ovf");
   // scrollHeight is 0 while the chat view is hidden (a sub-view is open): a fixed "0px" would leave the field squashed to
   // its padding when the view comes back, so stay "auto" — the visibility observer below measures again once it shows.
-  if (input.value && input.scrollHeight) input.style.height = Math.min(input.scrollHeight, fieldMaxH()) + "px";
+  if (input.value && input.scrollHeight){
+    const max = fieldMaxH();
+    input.style.height = Math.min(input.scrollHeight, max) + "px";
+    if (input.scrollHeight > max + 1) input.classList.add("ovf");
+  } else input.scrollTop = 0;
   refreshSend();
 }
 
@@ -2377,10 +2474,20 @@ function pttUI(p){
   b.classList.toggle("rec", !!p && !p.cancel);
   b.classList.toggle("cancel", !!p && p.cancel);
   b.classList.toggle("lock", !!p && p.locked);
-  if (!p){ box.hidden = true; box.classList.remove("lock"); el("pttSeg").hidden = true; el("micLabel").textContent = asrBusy ? t('r.asr.tag') : t('r.mic.hold'); return; }
+  if (!p){ box.hidden = true; box.classList.remove("lock", "dim", "cancel"); document.body.classList.remove("recdim"); el("pttSeg").hidden = true; el("pttAct").hidden = true; el("pttNote").hidden = true; el("micLabel").textContent = asrBusy ? t('r.asr.tag') : t('r.mic.hold'); return; }
   box.hidden = false;
   box.classList.toggle("cancel", p.cancel);
   box.classList.toggle("lock", p.locked);
+  // P205: locked → end / dim / cancel under the circle; dim only while locked (a held take has a finger on the glass)
+  const dim = p.locked && recDim;
+  box.classList.toggle("dim", dim);
+  document.body.classList.toggle("recdim", dim);
+  el("pttAct").hidden = !p.locked;
+  el("pttDim").setAttribute("aria-label", t(dim ? 'r.ptt.undim' : 'r.ptt.dim')); el("pttDim").title = t(dim ? 'r.ptt.undim' : 'r.ptt.dim');
+  const note = el("pttNote");
+  note.textContent = !p.locked || !p.rec ? "" : dim ? t('r.ptt.dimNote')
+    : matchMedia("(pointer:coarse)").matches ? (p.wlFail ? t('r.ptt.awakeNoLock') : t('r.ptt.awake')) : "";
+  note.hidden = !note.textContent;
   el("pttTime").dataset.lock = t('r.ptt.locked');
   const s = p.rec ? Math.floor(recTotalMs(p) / 1000) : 0;
   el("pttTime").textContent = p.rec ? Math.floor(s / 60) + ":" + String(s % 60).padStart(2, "0") : "…";
@@ -2390,7 +2497,6 @@ function pttUI(p){
   if (!seg.hidden){
     const parts = [t('r.ptt.seg', {n: p.seg + 1, max: p.maxSegs, m: Math.round(capMs(p) / 60000)})];
     if (p.seg) parts.push(t('r.ptt.segUp', {n: p.seg}));
-    if (matchMedia("(pointer:coarse)").matches) parts.push(p.wlFail ? t('r.ptt.awakeNoLock') : t('r.ptt.awake'));
     seg.textContent = parts.join(" · ");
   }
   if (p.rec && p.T == null) p.T = voiceThresholdS();
@@ -2429,6 +2535,83 @@ function wakeOn(p){
   navigator.wakeLock.request("screen").then(w => { if (p.over) w.release().catch(() => {}); else { p.wl = w; p.wlFail = false; } }, () => { p.wlFail = true; });
 }
 function wakeOff(p){ if (p.wl){ p.wl.release().catch(() => {}); p.wl = null; } }
+// P205 (Leo 10-13: a locked Android phone handed the page 23 s of digital zeros): the microphone is opened WITHOUT the
+// browser's noise suppression and echo cancellation (auto gain stays). Suppression gates every pause down to near-digital
+// silence (-112 dBFS in Leo's takes), which can swallow quiet speech and made a real gap indistinguishable from a pause;
+// nothing plays while recording (the speaker stops), so there is no echo to cancel. With it off, a stretch of true digital
+// silence means the system fed the page zeros — recorded as a gap (with track mute → unmute) and told to the owner.
+const MIC_AUDIO = {echoCancellation: false, noiseSuppression: false, autoGainControl: true};
+const SILENT_PEAK = 4 / 32768, DIM_KEY = "aj.recDim";
+let recDim = false;
+try{ recDim = localStorage.getItem(DIM_KEY) === "1"; }catch(_){}
+// The level meter: an analyser on the take's stream (→ a muted gain → the destination, so every engine pulls it). Fails
+// soft — no meter, the ring breathes instead — and is closed with the take.
+function meterCtx(){
+  const AC = window.AudioContext || window.webkitAudioContext;
+  if (!AC) return null;
+  try{ const ac = new AC(); ac.resume?.().catch(() => {}); return ac; }catch(_){ return null; }
+}
+function meterOn(p, stream){
+  if (!p.ac) return;
+  try{
+    const src = p.ac.createMediaStreamSource(stream), an = p.ac.createAnalyser(), mute = p.ac.createGain();
+    an.fftSize = 1024; mute.gain.value = 0;
+    src.connect(an); an.connect(mute); mute.connect(p.ac.destination);
+    p.an = an; p.buf = new Float32Array(an.fftSize);
+    const frame = () => { if (p.over) return; meterSample(p); p.raf = requestAnimationFrame(frame); };
+    p.raf = requestAnimationFrame(frame);
+  }catch(_){ p.an = null; }
+}
+function meterOff(p){
+  cancelAnimationFrame(p.raf);
+  const c = document.querySelector("#ptt .pttc"); if (c){ c.style.removeProperty("--lv"); delete c.dataset.live; }
+  if (p.ac){ p.ac.close?.().catch(() => {}); p.ac = null; }
+  p.an = null;
+}
+function meterSample(p){
+  if (!p.an || p.over || !p.rec || !p.ac || p.ac.state !== "running") return;
+  p.an.getFloatTimeDomainData(p.buf);
+  let peak = 0, sum = 0;
+  for (let i = 0; i < p.buf.length; i++){ const x = p.buf[i]; sum += x * x; if (x > peak) peak = x; else if (-x > peak) peak = -x; }
+  const c = document.querySelector("#ptt .pttc");
+  if (c && document.visibilityState === "visible"){ c.dataset.live = "1"; c.style.setProperty("--lv", Math.min(1, Math.sqrt(Math.sqrt(sum / p.buf.length)) * 2.2).toFixed(3)); }
+  if (!p.nsOff) return;                                                // suppression on: a pause reads as silence too
+  const now = performance.now();
+  if (peak <= SILENT_PEAK){ if (!p.silT0) p.silT0 = now; }
+  else if (p.silT0){ gapAdd(p, p.silT0, now, true); p.silT0 = 0; }
+}
+/** A stretch [a, b] (performance.now) with no sound captured; kept as ms from the take's start. */
+function gapAdd(p, a, b, silence){
+  if (!p.recT0 || !a) return;
+  if (silence) a = Math.max(a, p.recT0 + GAP_SKIP_MS);
+  if (b - a < GAP_MIN_MS) return;
+  p.gaps.push({a: a - p.recT0, b: b - p.recT0});
+}
+/** Ranges overlapping by < 0.4 s merged, sorted. */
+export function gapMerge(list){
+  const xs = list.filter(g => g && g.b > g.a).map(g => ({a: g.a, b: g.b})).sort((x, y) => x.a - y.a), out = [];
+  for (const g of xs){ const l = out[out.length - 1]; if (l && g.a <= l.b + 400) l.b = Math.max(l.b, g.b); else out.push(g); }
+  return out;
+}
+/** The take's gaps inside [t0, t1] (performance.now), as ms from t0. */
+function gapsIn(p, t0, t1){
+  const base = t0 - p.recT0, end = t1 - p.recT0;
+  return gapMerge(p.gaps.map(g => ({a: Math.max(g.a, base) - base, b: Math.min(g.b, end) - base})));
+}
+/** "0:07–0:30、1:02–1:20" (at most three ranges, then "…"). */
+export function gapText(list){
+  const sep = lang() === "en" ? ", " : "、";
+  const xs = list.slice(0, 3).map(g => mmss(g.a / 1000) + "–" + mmss(g.b / 1000));
+  return xs.join(sep) + (list.length > 3 ? sep + "…" : "");
+}
+// Told once per take, after the destination is known (and after an interruption notice, which it would otherwise cover).
+function gapNote(p, list){
+  if (!p || p.gapNoted || !list.length) return;
+  p.gapNoted = true;
+  const show = () => toast(t('r.ptt.gap', {r: gapText(list)}), 8000);
+  if (p.noted) setTimeout(show, 7000); else show();
+}
+const takeGaps = (p, decoded) => gapMerge([...gapsIn(p, p.recT0, p.recT1 || performance.now()), ...(p.nsOff && decoded ? decoded : [])]);
 const MIC_OPEN_MAX_MS = 15000;
 function pttStart(id, y){
   if (ptt) return;
@@ -2441,8 +2624,8 @@ function pttStart(id, y){
                    pend: 0, tUp: 0, locked: false, lockT0: 0, cap: 0, viaM: false,
                    seg: 0, segMs: segMs(), maxSegs: Math.max(1, Math.min(REC_SEGS, MAX_ATT - atts.length)),
                    takeP: null, take: null, stampS: stamp(), lastData: 0, mutedAt: 0, wl: null, wlFail: false, interrupted: false,
-                   hidAt: 0, visAt: 0, cutAt: 0, segT0: 0};
-  p.timer = setInterval(() => { pttWatch(p); pttUI(p); }, 250);
+                   hidAt: 0, visAt: 0, cutAt: 0, segT0: 0, segT: [], gaps: [], muteT0: 0, nsOff: false, ac: null, silT0: 0, gapSeen: 0};
+  p.timer = setInterval(() => { meterSample(p); pttWatch(p); pttUI(p); }, 250);
   pttUI(p);
   // Native permission/device acquisition may never settle. Do not leave a
   // locked take waiting forever, and do not retain a stream arriving after cancel.
@@ -2452,7 +2635,8 @@ function pttStart(id, y){
     pttEnd(p, "cancel", true);
     toast(t('r.ptt.noMic'), 3000);
   }, MIC_OPEN_MAX_MS);
-  navigator.mediaDevices.getUserMedia({audio: true}).then(stream => {
+  p.ac = meterCtx();                                               // P205: made inside the gesture, so iOS lets it run
+  navigator.mediaDevices.getUserMedia({audio: MIC_AUDIO}).then(stream => {
     clearTimeout(p.openTimer);
     if (p.over){
       stream.getTracks().forEach(tr => tr.stop());
@@ -2461,9 +2645,11 @@ function pttStart(id, y){
     p.stream = stream;
     for (const tr of stream.getAudioTracks()){
       tr.addEventListener("ended", () => pttInterrupted(p));
-      tr.addEventListener("mute", () => { p.mutedAt = Date.now(); });
-      tr.addEventListener("unmute", () => { p.mutedAt = 0; });
+      tr.addEventListener("mute", () => { p.mutedAt = Date.now(); p.muteT0 = performance.now(); });
+      tr.addEventListener("unmute", () => { p.mutedAt = 0; gapAdd(p, p.muteT0, performance.now()); p.muteT0 = 0; });
+      try{ p.nsOff = tr.getSettings().noiseSuppression === false; }catch(_){ p.nsOff = false; }
     }
+    meterOn(p, stream);
     if (!segStart(p)){ toast(t('r.ptt.noRec'), 3000); pttEnd(p, "cancel", true); return; }
     p.recT0 = performance.now();
     p.takeP = LR.startTake(p.rec.mimeType || "").then(v => (p.take = v), () => null);
@@ -2491,7 +2677,7 @@ function segStart(p){
   catch(_){ try{ rec = new MediaRecorder(p.stream); }catch(_){ return false; } }
   const n = p.seg, chunks = [], t0 = performance.now();
   let i = 0, last = t0;
-  p.rec = rec; p.chunks = chunks; p.segT0 = t0;
+  p.rec = rec; p.chunks = chunks; p.segT0 = t0; p.segT[n] = t0;
   rec.ondataavailable = e => {
     if (!e.data || !e.data.size) return;
     chunks.push(e.data);
@@ -2570,6 +2756,10 @@ function pttEnd(p, reason, quiet){
   p.over = true;
   clearInterval(p.timer); clearTimeout(p.pend); clearTimeout(p.cap); clearTimeout(p.openTimer);
   wakeOff(p);
+  const tEnd = p.tUp || p.cutAt || performance.now();
+  if (p.muteT0){ gapAdd(p, p.muteT0, tEnd); p.muteT0 = 0; }
+  if (p.silT0){ gapAdd(p, p.silT0, tEnd, true); p.silT0 = 0; }
+  meterOff(p);
   if (ptt === p) ptt = null;
   if (p.locked) lockEndAt = performance.now();
   const held = (p.tUp || performance.now()) - p.t0;
@@ -2601,6 +2791,8 @@ function segAttach(p, n, blob, secs, quiet){
   const [a] = addFiles([f], "recording", secs, p.bids && p.bids[n]);
   if (!a){ if (!quiet) toast(t('r.voice.trayFull', {max: MAX_ATT}), 3200); return null; }
   a.label = t('r.tray.part', {n: n + 1, d: mmss(secs)});
+  const g = p.gaps && p.segT && p.segT[n] ? gapsIn(p, p.segT[n], p.segT[n] + secs * 1000) : [];   // P205
+  if (g.length) a.label += t('r.tray.gap', {r: gapText(g)});
   paintChip(a);
   p.takeP?.then(id => { if (!id) return; a.rec = {take: id, seg: n}; LR.closeSeg(id, n, Math.round(secs * 1000)); if (a.up) LR.setBid(id, n, a.up.bid); });
   return a;
@@ -2609,7 +2801,7 @@ function pttFinish(p, n, blob, secs){
   if (p.stream) p.stream.getTracks().forEach(tr => tr.stop());
   const dropTake = () => p.takeP?.then(id => id && LR.dropSeg(id, n));
   if (!p.send || !blob){ intNote(p, n > 0 ? "tray" : "none"); dropTake(); return; }   // P198: earlier parts are in the tray
-  if (n > 0 || secs > WAV_MAX_S){ if (segAttach(p, n, blob, secs) || n > 0) intNote(p, "tray"); return; }     // long: the compressed original, as it was recorded
+  if (n > 0 || secs > WAV_MAX_S){ if (segAttach(p, n, blob, secs) || n > 0){ intNote(p, "tray"); gapNote(p, takeGaps(p)); } return; }     // long: the compressed original, as it was recorded
   takeFinished(blob, secs, p);
 }
 // A finished take, from the mic or from a native shell (relayNative.take): words into the field, or a long one into the tray.
@@ -2624,12 +2816,14 @@ async function takeFinished(blob, dur, p){
       const f = new File([b], `${t('r.file.voice')}-${stamp()}.${audioExt(b.type)}`, {type: b.type || "audio/webm"});
       if (f.size > UPLOAD_MAX){ toast(uploadError("too_big"), 3000); return; }
       const [a] = addFiles([f], "recording", dur);
+      const g = p ? takeGaps(p, w && w.gaps) : [];                    // P205
       if (a){
-        a.label = t('r.tray.voice', {d: mmss(dur)}); paintChip(a);
+        a.label = t('r.tray.voice', {d: mmss(dur)}) + (g.length ? t('r.tray.gap', {r: gapText(g)}) : ""); paintChip(a);
         p?.takeP?.then(id => { if (id){ a.rec = {take: id, seg: 0}; LR.closeSeg(id, 0, Math.round(dur * 1000)); } });
       }
       if (a && p?.interrupted) intNote(p, "tray");
-      else toast(C.asr() === "ready" ? t('r.voice.asAtt') : t('r.voice.asAttNoAsr'), 3200);
+      else if (!g.length) toast(C.asr() === "ready" ? t('r.voice.asAtt') : t('r.voice.asAttNoAsr'), 3200);
+      if (a) gapNote(p, g);
       return;
     }
     toast(t('r.voice.trayFull', {max: MAX_ATT}), 3200);
@@ -2645,6 +2839,7 @@ async function takeFinished(blob, dur, p){
     const tx = r.ok && typeof r.text === "string" ? r.text.trim() : "";
     if (tx){ appendText(tx); forget(); }
     else toast(asrError(r), 3400);
+    if (p) gapNote(p, takeGaps(p, r.gaps));                          // P205: words in, but a stretch came in silent
     asrUI(); autosize();
   });
 }
@@ -2680,8 +2875,9 @@ async function recRecover(){
 async function transcribe(blob, secs){
   const w = blob.type === "audio/wav" ? {blob, secs} : await toWav(blob);
   if (!w) return {ok: false, why: "bad_audio"};
-  if (w.blob.size > ASR_MAX_BYTES) return {ok: false, why: "too_long"};
-  return C.api.transcribe(w.blob, w.secs);
+  if (w.blob.size > ASR_MAX_BYTES) return {ok: false, why: "too_long", gaps: w.gaps};
+  const r = await C.api.transcribe(w.blob, w.secs);
+  return r && typeof r === "object" ? Object.assign({}, r, {gaps: w.gaps}) : r;
 }
 function asrError(r){
   const why = r.why || "";
@@ -2813,7 +3009,38 @@ async function moreSilent(){
 const shownById = (id) => { const n = el(id); return !!n && !n.hidden; };
 const dialogOpen = () => search.isOpen() || !el("silent").hidden || !el("cam").hidden || !el("keys").hidden || !el("confirm").hidden || !el("badge-panel").hidden || !el("settings").hidden
   || shownById("lqr") || shownById("sout") || shownById("elev") || shownById("setup-view");
-function openKeys(){ closeSug(); el("keys").hidden = false; el("keysClose").focus(); }   // P187: above the list / Settings
+function openKeys(){ paintKeys(); closeSug(); el("keys").hidden = false; el("keysClose").focus(); }   // P187: above the list / Settings
+// P207: the 「键盘快捷键」 page is drawn from interactions.json (interactions.gen.js ROWS + the ix* dictionary texts), never
+// written by hand: one card per group, a row per entry with a key — its keys, what it does and the mouse / touch gesture.
+const isMac = () => /Mac|iP(hone|ad|od)/.test(navigator.platform || navigator.userAgent || "");
+function paintKeys(){
+  const box = el("keysCols");
+  if (!box) return;
+  const mac = isMac(), cards = [];
+  for (const g of IX_GROUPS){
+    const rows = IX_ROWS.filter(r => r[0].split(".")[0] === g);
+    if (!rows.length) continue;
+    const sec = document.createElement("section"); sec.className = "menucard"; sec.dataset.group = g;
+    const h = document.createElement("h3"); h.className = "setg"; h.textContent = t('ixgrp.' + g);
+    const dl = document.createElement("dl"); dl.className = "keydl";
+    for (const [id, keys, hasGesture] of rows){
+      const dt = document.createElement("dt"), dd = document.createElement("dd");
+      dt.dataset.ix = id;
+      keys.forEach(([combo, how], i) => {
+        if (i) dt.append(" · ");
+        if (how === "hold") dt.append(t('ixw.hold') + " ");
+        const one = () => { const f = document.createDocumentFragment(); kbdTokens(combo, mac).forEach((tok, j) => { if (j) f.append("+"); const k = document.createElement("kbd"); k.textContent = tok || t('ixw.space'); f.append(k); }); return f; };
+        dt.append(one());
+        if (how === "double"){ dt.append(" "); dt.append(one()); }
+      });
+      dd.textContent = t('ix.' + id);
+      if (hasGesture){ const sm = document.createElement("small"); sm.className = "keyges"; sm.textContent = t('ixw.gesture') + t('ixges.' + id); dd.append(sm); }
+      dl.append(dt, dd);
+    }
+    sec.append(h, dl); cards.push(sec);
+  }
+  box.replaceChildren(...cards);
+}
 function closeKeys(){ el("keys").hidden = true; if (document.activeElement) document.activeElement.blur(); }
 export async function pasteClipImages(){
   let items;
@@ -2987,6 +3214,7 @@ function relang(){
   renderMenu();
   pttUI(ptt); paintTray(); for (const a of atts) paintChip(a);
   paintPlaceholder(); paintReply(); setOm(el("om").classList.contains("open")); paintOut();
+  paintKeys();   // P207
   if (cur) render(cur); else showPage();
 }
 
@@ -3025,7 +3253,7 @@ export function init(ctx){
     paintSpeak();
   }, why=>{if(why==='voice_fallback')toast(t('r.speak.voice_fallback'),2600);});
   document.addEventListener('pointerdown',()=>speaker?.unlock(),{passive:true});
-  mainEl.addEventListener("scroll", () => { stick = atBottom(); paintMore(); }, {passive: true});
+  mainEl.addEventListener("scroll", () => { stick = atBottom(); paintMore(); }, {passive: true});   // @ix page.scroll
   try{ const ro = new ResizeObserver(() => paintMore()); ro.observe(mainEl); ro.observe(el("read")); }
   catch(_){ addEventListener("resize", paintMore); }
   el("words").addEventListener("click", copyCodeClick);
@@ -3036,7 +3264,7 @@ export function init(ctx){
   el("apprDeny").addEventListener("click", () => { const p = apprLive(); if (p) apprPost(p, "deny"); });
   el("cmdMore").addEventListener("click", toggleCmd);
   el("cmdCopy").addEventListener("click", () => copyOut(cmdFull, t('r.appr.cmdCopied')));
-  holdToApprove(el("apprAllow"), "allow");
+  holdToApprove(el("apprAllow"), "allow");   // @ix appr.approve (+ apprHotkey: ⌘ / Ctrl+Enter)
   document.addEventListener("keydown", apprHotkey, true);     // capture: before the text box's Enter-to-send
   holdToApprove(el("apprBatch"), "batch");
   el("qs").addEventListener("click", e => {
@@ -3066,13 +3294,13 @@ export function init(ctx){
     askArmUntil = 0;
     askPost(a, true);
   });
-  el("sheetClose").addEventListener("click", () => {
+  el("sheetClose").addEventListener("click", () => {   // @ix appr.fold (Esc: the sheet's layer)
     foldedCard = cur && cur.card ? cardKey(cur.card) : null;
     if (cur && cur.ask && ASK_FINAL.includes(cur.ask.state)) askDismissed = cur.ask.id;
     if (cur && cur.approval && APPR_FINAL.includes(cur.approval.state)) apprDismissed = cur.approval.id;
     if (cur) renderCard(cur);
   });
-  el("pendTag").addEventListener("click", () => { foldedCard = null; if (cur) renderCard(cur); });
+  el("pendTag").addEventListener("click", () => { foldedCard = null; if (cur) renderCard(cur); });   // @ix app.pending
 
   // chrome
   new MutationObserver(() => paintChrome()).observe(document.body,
@@ -3084,28 +3312,35 @@ export function init(ctx){
   try{ matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => paintChrome(true)); }catch(_){}
   paintChrome();
 
+  // @ix app.quota (the two quota lines below)
   for (const id of ["mWeek", "m5h"]) el(id).addEventListener("click", meterToast);
+  initUsage();   // P207 §1
   setInterval(renderSub, 30000);
-  pressable(el("meta"), e => pillStep(pillHalf(e)), pillDefault);
-  pressable(el("orb"), () => setFz((fzAt + 1) % FZ_STEPS.length, true), () => setFz(0, true));
+  pressable(el("meta"), e => pillStep(pillHalf(e)), pillDefault);   // @ix app.model_step app.effort_step app.model_default
+  // P207 (追加 2): the logo — tap = the page's type size (unchanged), hold = the first unread reply (was: back to 中, which Leo
+  // found did nothing; 中 is one more tap away and Settings keeps the reset)
+  pressable(el("orb"), () => setFz((fzAt + 1) % FZ_STEPS.length, true), () => goFirstUnread(true));   // @ix app.font_step page.first_unread
 
-  el("omMore").addEventListener("click", () => setOm(!el("om").classList.contains("open")));
+  el("omMore").addEventListener("click", () => setOm(!el("om").classList.contains("open")));   // @ix page.expand
   // P181: a double tap / double click on the source card's words = 「…」 / O (open ⇄ close here, never the full-screen reader);
   // a long press still selects text, and a double click no longer selects a word first.
   dblTap(el("omText"), rdTarget, () => setOm(!el("om").classList.contains("open")));
-  el("pgPrev").addEventListener("click", () => goPage(-1));
+  el("pgPrev").addEventListener("click", () => goPage(-1));   // @ix page.prev
   const latestCorner = () => { if (pageAt !== pages().length - 1 || unreadReply) toNewest(); };
   el("pgLatest").addEventListener("click", () => { if (unreadReply) latestCorner(); });
-  historyDoubleTap(el("pgLatest"), latestCorner);
-  historyDoubleTap(el("omFirst"), () => goEdge(false));
-  cornerLongPress(el("omFirst"), () => { const p = currentPage(); if (p && p.source && p.source.k === "phone") openRename(p.source); });   // P179
-  el("pgNext").addEventListener("click", () => goPage(1));
-  el("copyReply").addEventListener("click", copyReply);
-  el("replyBtn").addEventListener("click", () => startReply(currentPage()));
+  historyDoubleTap(el("pgLatest"), latestCorner);   // @ix page.newest
+  historyDoubleTap(el("omFirst"), () => goEdge(false));   // @ix page.earliest
+  // P207: the middle third — one tap = the first unread; nothing to do (no badge) = no reaction
+  el("omUnread").addEventListener("click", () => { if (+el("omUnread").dataset.n) goFirstUnread(false); });   // @ix page.first_unread
+  cornerLongPress(el("omFirst"), () => { const p = currentPage(); if (p && p.source && p.source.k === "phone") openRename(p.source); });   // P179 @ix app.rename_remote
+  el("pgNext").addEventListener("click", () => goPage(1));   // @ix page.next
+  el("copyReply").addEventListener("click", copyReply);   // @ix card.copy
+  el("replyBtn").addEventListener("click", () => startReply(currentPage()));   // @ix card.reply
+  el("webReportBtn").addEventListener("click", () => webReport(currentPage()));   // P216 @ix card.web_report
   for (const id of ["qbX", "qbJump"]) el(id).addEventListener("pointerdown", e => e.preventDefault());
-  el("qbX").addEventListener("click", cancelReply);
+  el("qbX").addEventListener("click", cancelReply);   // @ix compose.cancel_reply
   el("qbJump").addEventListener("click", () => { if (replyTo) jumpToTurn(replyTo.id); });
-  el("omQuote").addEventListener("click", () => jumpToTurn(+el("omQuote").dataset.id));
+  el("omQuote").addEventListener("click", () => jumpToTurn(+el("omQuote").dataset.id));   // @ix page.quoted
   el("omQuote").addEventListener("keydown", e => {
     if (e.key !== "Enter" && e.key !== " ") return;
     e.preventDefault(); e.stopPropagation(); jumpToTurn(+el("omQuote").dataset.id);
@@ -3123,6 +3358,7 @@ export function init(ctx){
     clearTimeout(selTimer); selTimer = 0;
     if (wordsSelection()){ const type = e.pointerType || null; selTimer = setTimeout(() => selCommit(type), SEL_IDLE_MS); }
   }, true);
+  // @ix card.quote_selection (select words in the reply → quote them)
   const selUp = e => { selRetry(); selPtr = false; const type = e.pointerType || "mouse"; setTimeout(() => selCommit(type), 0); };
   if (window.PointerEvent) document.addEventListener("pointerup", selUp, true);
   else document.addEventListener("mouseup", selUp, true);
@@ -3130,9 +3366,9 @@ export function init(ctx){
   document.addEventListener("keydown", selRetry, true);
   document.addEventListener("copy", () => { if (selPending && wordsSelection() === selPending) selCopied(selPending); });
 
-  el("speakBtn").addEventListener("click", speakTap);
-  el("fwdBtn").addEventListener("click", forwardTap);
-  el("mailBtn").addEventListener("click", mailTap);
+  el("speakBtn").addEventListener("click", speakTap);   // @ix card.speak
+  el("fwdBtn").addEventListener("click", forwardTap);   // @ix card.forward
+  el("mailBtn").addEventListener("click", mailTap);   // @ix card.mail
 
   // reader
   addEventListener("popstate", () => {
@@ -3140,13 +3376,13 @@ export function init(ctx){
     if (rdOpen()){ rdPushed = false; closeReader(true); }
   });
   document.addEventListener("pointerdown", e => { rdPtr = e.pointerType || ""; }, true);
-  dblTap(el("rm"), rdTarget, openReader);
-  dblTap(el("rdScroll"), rdTarget, () => closeReader());
+  dblTap(el("rm"), rdTarget, openReader);   // @ix card.reader
+  dblTap(el("rdScroll"), rdTarget, () => closeReader());   // @ix read.close
   document.addEventListener("click", e => { if (performance.now() - rdGuard < 350){ e.preventDefault(); e.stopPropagation(); } }, true);
   el("readBtn").addEventListener("click", openReader);
   el("rdClose").addEventListener("click", () => closeReader());
   el("rdMinus").addEventListener("click", () => rdStep(-1));
-  el("rdPlus").addEventListener("click", () => rdStep(1));
+  el("rdPlus").addEventListener("click", () => rdStep(1));   // @ix read.font (+ the pinch below)
   el("rdSlider").addEventListener("input", () => rdSetFs(Number(el("rdSlider").value), false));
   el("rdSlider").addEventListener("change", () => rdSetFs(Number(el("rdSlider").value), true));
   el("rdScroll").addEventListener("touchstart", e => { if (e.touches.length === 2) rdPinch = {d: Math.max(1, rdDist(e.touches)), fs: rdFs}; }, {passive: true});
@@ -3160,7 +3396,7 @@ export function init(ctx){
   el("rdScroll").addEventListener("touchcancel", rdPinchEnd);
   for (const g of ["gesturestart", "gesturechange"]) document.addEventListener(g, e => { if (rdOpen()) e.preventDefault(); });
 
-  // swipe
+  // swipe   @ix page.prev page.next (cards right / left)
   deck.addEventListener("touchstart", e => {
     if (e.touches.length !== 1 || document.body.dataset.sheet === "1"){ sw = null; return; }
     const tt = e.touches[0];
@@ -3256,7 +3492,7 @@ export function init(ctx){
     if (!dragDepth) dropUI(null);
   });
   window.addEventListener("dragend", () => { dragDepth = 0; dropUI(null); });
-  window.addEventListener("drop", e => {
+  window.addEventListener("drop", e => {   // @ix compose.paste
     e.preventDefault();
     dragDepth = 0; dropUI(null);
     if (!isFileDrag(e) || modalOpen()) return;
@@ -3264,7 +3500,7 @@ export function init(ctx){
   });
 
   // pickers + camera
-  const PICKERS = {tDoc: "fDoc", tPhoto: "fPhoto", tCamera: "fCamera"};
+  const PICKERS = {tDoc: "fDoc", tPhoto: "fPhoto", tCamera: "fCamera"};   // @ix compose.file compose.photo compose.camera
   for (const [btn, inp] of Object.entries(PICKERS)){
     el(btn).addEventListener("click", e => {
       if (btn === "tCamera" && camHeld) { camHeld = false; e.preventDefault(); return; }   // P190: that was a hold (= scan)
@@ -3276,7 +3512,7 @@ export function init(ctx){
   // button cancels. No fifth button in the tool row.
   let camHold = 0, camHeld = false;
   const camBtn = el("tCamera");
-  camBtn.addEventListener("pointerdown", e => {
+  camBtn.addEventListener("pointerdown", e => {   // @ix app.scan (camera held)
     if (e.button !== 0) return;
     camHeld = false; clearTimeout(camHold);
     camHold = setTimeout(() => { camHold = 0; camHeld = true; camBtn.dataset.held = "1"; try { navigator.vibrate?.(12); } catch { /* */ } }, CAM_HOLD_MS);
@@ -3322,15 +3558,15 @@ export function init(ctx){
 
   // menu + type-ahead
   renderMenu();
-  el("slashBtn").addEventListener("click", e => {
+  el("slashBtn").addEventListener("click", e => {   // @ix compose.slash
     e.stopPropagation(); menu.hidden = !menu.hidden;
     if (!menu.hidden){ closeSug(); renderMenu(); loadMenu(); }
   });
   document.addEventListener("click", e => { if (!menu.hidden && !(e.target.closest && e.target.closest("#menu, #keys, #silent"))) closeMenu(); });
   // P181 long presses: ≡ → 「定制命令」, file → clipboard text, photo → clipboard image (camera: nothing for now)
-  longPress(el("slashBtn"), () => { closeMenu(); sayPreset("cmds"); });
-  longPress(el("tDoc"), pasteClipText, {at: "release"});
-  longPress(el("tPhoto"), pasteClipImage, {at: "release"});
+  longPress(el("slashBtn"), () => { closeMenu(); sayPreset("cmds"); });   // @ix compose.customize
+  longPress(el("tDoc"), pasteClipText, {at: "release"});   // @ix compose.paste_text
+  longPress(el("tPhoto"), pasteClipImage, {at: "release"});   // @ix compose.paste_image
   menu.addEventListener("click", async e => {
     const b = e.target.closest && e.target.closest("button");
     if (!b) return;
@@ -3375,7 +3611,7 @@ export function init(ctx){
   // mic
   addEventListener("resize", keyboardDown);
   keyboardDown();
-  mic.addEventListener("pointerdown", e => {
+  mic.addEventListener("pointerdown", e => {   // @ix compose.talk compose.talk_lock
     if (e.button !== 0 || !e.isPrimary) return;
     e.preventDefault();
     if (e.pointerType !== "mouse" && document.activeElement === input && keyboardDown()) input.blur();
@@ -3421,6 +3657,14 @@ export function init(ctx){
   mic.addEventListener("contextmenu", e => e.preventDefault());
   mic.addEventListener("selectstart", e => e.preventDefault());
   mic.addEventListener("dblclick", e => e.preventDefault());
+  // P205: the recording card's icons (a locked take): end · dim ↔ normal · cancel
+  el("pttEnd").addEventListener("click", () => { if (ptt && ptt.locked) pttEnd(ptt, "release"); });   // P205 @ix compose.rec_end
+  el("pttCancel").addEventListener("click", () => { if (ptt && ptt.locked) pttEnd(ptt, "cancel"); });   // P205 @ix compose.rec_cancel
+  el("pttDim").addEventListener("click", () => {   // P205 @ix compose.rec_dim
+    recDim = !recDim;
+    try{ if (recDim) localStorage.setItem(DIM_KEY, "1"); else localStorage.removeItem(DIM_KEY); }catch(_){}
+    pttUI(ptt);
+  });
   mic.addEventListener("keydown", e => {
     if ((e.key === " " || e.key === "Enter") && !e.repeat){
       e.preventDefault();
@@ -3447,6 +3691,12 @@ export function init(ctx){
     ptt.visAt = performance.now();
     if (ptt.locked) wakeOn(ptt);
     pttWatch(ptt);
+    // P205: back from a dark screen with the take still going — say at once which stretch came in silent
+    if (ptt && !ptt.over){
+      meterSample(ptt);
+      const g = gapsIn(ptt, ptt.recT0, performance.now());
+      if (g.length > ptt.gapSeen){ toast(t('r.ptt.gapLive', {r: gapText(g.slice(ptt.gapSeen))}), 7000); ptt.gapSeen = g.length; }
+    }
   });
   window.addEventListener("blur", () => { if (ptt && !ptt.locked && !ptt.pend && !ptt.seg) pttEnd(ptt, "cancel"); });   // P181: not between the two taps; P182: not mid-take
   window.addEventListener("pagehide", () => { if (ptt) pttEnd(ptt, ptt.locked || ptt.seg ? "release" : "cancel", true); });
@@ -3478,7 +3728,7 @@ export function init(ctx){
   });
 
   // send, clear, keys
-  el("send").addEventListener("click", () => { unlockWhoosh(); say(); });
+  el("send").addEventListener("click", () => { unlockWhoosh(); say(); });   // @ix compose.send (hold = sendvol.js: compose.volume)
   sendvol.attach(el("send"), input);
   el("sayCancel").addEventListener("click", e => { e.stopPropagation(); cancelSay(); });
   const clr = el("clr");
@@ -3486,7 +3736,7 @@ export function init(ctx){
     clr._keep = clr._keep || document.activeElement === input;
     e.preventDefault();
   });
-  clr.addEventListener("click", e => {
+  clr.addEventListener("click", e => {   // @ix compose.clear
     e.preventDefault(); e.stopPropagation();
     if (clr._keep || document.activeElement === clr) input.focus();
     clr._keep = false;
@@ -3502,15 +3752,88 @@ export function init(ctx){
     }, 5000);
   });
   input.addEventListener("keydown", e => {
-    if (e.key === "Enter" && !e.shiftKey && !e.isComposing && e.keyCode !== 229){ e.preventDefault(); unlockWhoosh(); say(); }
+    if (e.key === "Enter" && !e.shiftKey && !e.isComposing && e.keyCode !== 229){ e.preventDefault(); unlockWhoosh(); say(); }   // @ix compose.send
   });
   el("silentClose").addEventListener("click", closeSilent);
   el("silentMore").addEventListener("click", moreSilent);
   el("silent").addEventListener("click", e => { if (e.target === el("silent")) closeSilent(); });
   el("keysClose").addEventListener("click", closeKeys);
-  el("keysBtn").addEventListener("click", openKeys);
+  el("keysBtn").addEventListener("click", openKeys);   // @ix app.keys
   el("keys").addEventListener("click", e => { if (e.target === el("keys")) closeKeys(); });
 
+  // P207: what each table key of interactions.json does (tools/interactions check compares these ids with the JSON).
+  const scrollStep = () => Math.max(40, Math.round(mainEl.clientHeight * 0.25));
+  const scrollScreen = () => Math.max(40, Math.round(mainEl.clientHeight * 0.9));
+  const pick = id => { closeMenu(); el(id).click(); };
+  const shown = id => { const b = el(id); return !!b && !b.hidden && !b.disabled && b.getClientRects().length > 0; };
+  // 「这一页的文件」: the file card that has the focus, else the first one of this page; its own icon does the rest.
+  const fileAct = cls => {
+    const fc = document.activeElement?.closest?.(".mcard") || el("words").querySelector(".mcard") || el("mstrip")?.querySelector(".mcard");
+    const b = fc && fc.querySelector(".mact." + cls);
+    if (!b || b.hidden) { toast(t(fc ? 'r.ix.fileNo' : 'r.ix.noFile'), 1600); return; }
+    b.click();
+  };
+  const ACT = {
+    // @ix-actions-begin
+    "page.prev": () => goPage(-1),
+    "page.next": () => goPage(1),
+    "page.newest": () => goEdge(true),
+    "page.earliest": () => goEdge(false),
+    "page.first_unread": () => goFirstUnread(true),
+    "page.quoted": () => { const q = el("omQuote"); if (!q.hidden && !el("om").hidden) jumpToTurn(+q.dataset.id); else toast(t('r.ix.noQuote'), 1600); },
+    // P150: ↑ expands the message card (= o), ↓ folds it; with nothing to toggle they scroll as before.
+    "page.expand": e => {
+      if (e.key === "o"){ if (!el("om").hidden) setOm(!el("om").classList.contains("open")); return; }
+      if (e.key === "ArrowUp"){ if (omCan() && !omOpen()) setOm(true); else mainEl.scrollBy(0, -scrollStep()); return; }
+      if (omCan() && omOpen()) setOm(false); else mainEl.scrollBy(0, scrollStep());
+    },
+    "page.scroll": e => mainEl.scrollBy(0, e.shiftKey ? -scrollScreen() : scrollScreen()),
+    "card.reader": () => openReader(),
+    "card.speak": () => speakTap(),
+    "card.forward": () => forwardTap(),
+    "card.mail": () => { if (shown("mailBtn")) mailTap(); else toast(t('r.ix.noMail'), 2000); },
+    "card.copy": () => copyReply(),
+    "card.copy_source": () => copySource(),
+    "card.reply": () => startReply(currentPage()),
+    "card.web_report": () => { if (shown("webReportBtn")) webReport(currentPage()); },   // P216
+    "file.preview": () => fileAct("pv"),
+    "file.download": () => fileAct("dl"),
+    "file.share": () => fileAct("sh"),
+    "file.mail": () => fileAct("mail"),
+    "file.forward": () => fileAct("tg"),
+    "app.font_step": () => setFz((fzAt + 1) % FZ_STEPS.length, true),
+    "app.rename_agent": () => { if (isReady()) openAgentName(); else toast(t('p181.name.offline'), 2600); },
+    "app.rename_remote": () => { const p = currentPage(); if (p && p.source && p.source.k === "phone") openRename(p.source); else toast(t('r.ix.noRemote'), 2000); },
+    "app.busy_list": () => { if (shown("busyDots")) el("busyDots").click(); else toast(t('r.ix.noBusy'), 1600); },
+    "app.robots_theme": () => { closeMenu(); sayPreset("theme"); },
+    "app.load": () => { if (shown("loadHit")) el("loadHit").click(); },
+    "app.quota": () => el("mWeek").click(),
+    "app.model_step": () => { if (!el("meta").hidden) pillStep("model"); },
+    "app.effort_step": () => { if (!el("meta").hidden) pillStep("effort"); },
+    "app.model_default": () => { if (!el("meta").hidden) pillDefault(); },
+    "app.scan": () => { closeMenu(); if (C.scan) C.scan(); },
+    "app.settings": () => { closeMenu(); closeSug(); C.settings && C.settings(); },
+    "app.keys": () => openKeys(),
+    "app.pending": () => { if (shown("pendTag")) el("pendTag").click(); },
+    "compose.focus": () => { closeMenu(); input.focus(); input.setSelectionRange(input.value.length, input.value.length); },
+    // P154 追加 8: "/" outside the field = into the field with the "/" typed at the end of the draft — the same input event
+    // as typing it there, so an empty draft opens the slash-command menu. Not while a dialog / Settings is open, not from
+    // another field, never on a held key.
+    "compose.slash": () => {
+      closeMenu(); input.focus();
+      const n = input.value.length;
+      input.setRangeText("/", n, n, "end");
+      input.dispatchEvent(new InputEvent("input", {inputType: "insertText", data: "/", bubbles: true}));
+    },
+    "compose.customize": () => { closeMenu(); sayPreset("cmds"); },
+    "compose.file": () => pick("tDoc"),
+    "compose.paste_text": () => pasteClipText(),
+    "compose.photo": () => pick("tPhoto"),
+    "compose.paste_image": () => pasteClipImage(),
+    "compose.camera": () => pick("tCamera"),
+    "compose.volume": () => sendvol.open(),
+    // @ix-actions-end
+  };
   document.addEventListener("keydown", e => {
     if (e.isComposing || (e.keyCode === 229 && !isM(e))) return;
     if (document.body.dataset.view !== "chat") return;
@@ -3521,8 +3844,8 @@ export function init(ctx){
       if (!el("keys").hidden){ e.preventDefault(); closeKeys(); return; }
       if (!el("cam").hidden || !el("confirm").hidden || !el("badge-panel").hidden || !el("settings").hidden) return;
       if (!menu.hidden){ e.preventDefault(); closeMenu(); return; }
-      if (replyTo){ e.preventDefault(); escAt = 0; cancelReply(); return; }
-      if (tg === input){ e.preventDefault(); input.blur(); escAt = 0; return; } // Leave the field without counting dismissal toward double-Escape clear.
+      if (replyTo){ e.preventDefault(); escAt = 0; cancelReply(); return; }   // @ix compose.cancel_reply
+      if (tg === input){ e.preventDefault(); input.blur(); escAt = 0; return; }   // @ix compose.focus compose.clear (Esc Esc below) // Leave the field without counting dismissal toward double-Escape clear.
       // P150: Esc never interrupts the Agent (owner, 2026-10-12) — the stop button / /stop / e-stop are the only ways.
       const now = performance.now();
       if (escAt && now - escAt <= ESC2_MS){
@@ -3533,17 +3856,19 @@ export function init(ctx){
       escAt = now;
       return;
     }
+    // @ix app.search
     // P188: ⌘K anywhere / Ctrl+K outside the field (in the field Ctrl+K stays readline's 删到行尾) opens 搜索聊天记录; again = close.
     if ((e.metaKey || (e.ctrlKey && tg !== input)) && !e.altKey && !e.shiftKey && (e.key === "k" || e.key === "K" || e.code === "KeyK")){
       if (dialogOpen() && !search.isOpen()) return;
       e.preventDefault(); search.toggle(); return;
     }
+    // @ix app.settings (⌘, / Ctrl+,)
     // F13: ⌘, (mac) / Ctrl+, opens Settings from anywhere on the chat screen, the field and the reader included.
     if ((e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey && (e.key === "," || e.code === "Comma")){
       if (dialogOpen() && el("settings").hidden) return;
       e.preventDefault(); if (rdOpen()) closeReader(); closeMenu(); C.settings && C.settings(); return;
     }
-    if (rdOpen()){
+    if (rdOpen()){   // @ix read.close read.font read.scroll
       if (e.ctrlKey || e.metaKey || e.altKey || (tg && tg.id === "rdSlider" && e.key.startsWith("Arrow"))) return;
       const sc = el("rdScroll"), rstep = Math.max(40, Math.round(sc.clientHeight * 0.25)), rscreen = Math.max(40, Math.round(sc.clientHeight * 0.9));
       const f = {f: () => closeReader(), "+": () => rdStep(1), "=": () => rdStep(1), "-": () => rdStep(-1), "_": () => rdStep(-1),
@@ -3554,16 +3879,19 @@ export function init(ctx){
     }
     if (tg === input){
       const k = e.key.length === 1 ? e.key.toLowerCase() : "";
+      // @ix compose.readline compose.history compose.edge_arrows
       if (e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey && READLINE[k]){ e.preventDefault(); READLINE[k](); return; }
       if ((e.key === "ArrowUp" || e.key === "ArrowDown") && !e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey
           && !e.defaultPrevented && sug.hidden && histKey(e.key === "ArrowUp")){ e.preventDefault(); return; }
       // P150: ← / → turn the card when the caret has nowhere to go (empty field, or already at that end); never on a held key with text.
       if (edgeArrow(e)){ e.preventDefault(); goPage(e.key === "ArrowLeft" ? -1 : 1); return; }
     }
-    if (e.ctrlKey || e.metaKey || e.altKey || typingIn(tg) || typingIn(document.activeElement) || dialogOpen()) return;
-    if (e.key === "?"){ e.preventDefault(); openKeys(); return; }
-    if (e.key === "s" && !e.shiftKey){ e.preventDefault(); closeMenu(); closeSug(); C.settings && C.settings(); return; }
-    if (isM(e)){
+    if (e.ctrlKey || e.metaKey || typingIn(tg) || typingIn(document.activeElement) || dialogOpen()) return;
+    // P207: every other key of this screen comes from interactions.json (interactions.gen.js KEYMAP → ACT below); Alt+key
+    // only when it is one of ours (Alt+M is never the talk key).
+    const ix = ixLookup(e);
+    if (e.altKey && !ix) return;
+    if (!e.altKey && isM(e)){   // @ix compose.talk compose.talk_lock (hold m / m m: keyup ends it, so not in the table)
       e.preventDefault();
       if (mKey || e.repeat) return;
       mKey = true; mCode = e.code;
@@ -3573,36 +3901,11 @@ export function init(ctx){
       if (ptt) ptt.viaM = true;
       return;
     }
-    if (e.repeat && !["ArrowUp", "ArrowDown", " "].includes(e.key)) return;
-    const btn = {a: "tDoc", p: "tPhoto", c: "tCamera"}[e.key];
-    if (btn){ e.preventDefault(); closeMenu(); el(btn).click(); return; }
-    const step = Math.max(40, Math.round(mainEl.clientHeight * 0.25));
-    const screen = Math.max(40, Math.round(mainEl.clientHeight * 0.9));
-    const nav = {j: () => goPage(-1), ArrowLeft: () => goPage(-1), k: () => goPage(1), ArrowRight: () => goPage(1),
-                 g: () => goEdge(true), G: () => goEdge(false),
-                 // P150: ↑ expands the message card (= o), ↓ folds it; with nothing to toggle they scroll as before.
-                 ArrowUp: () => { if (omCan() && !omOpen()) setOm(true); else mainEl.scrollBy(0, -step); },
-                 ArrowDown: () => { if (omCan() && omOpen()) setOm(false); else mainEl.scrollBy(0, step); },
-                 " ": () => mainEl.scrollBy(0, e.shiftKey ? -screen : screen),
-                 o: () => { if (!el("om").hidden) setOm(!el("om").classList.contains("open")); },
-                 y: copyReply, Y: copySource, r: () => startReply(currentPage()), f: openReader}[e.key];
-    if (nav){ e.preventDefault(); nav(); return; }
-    if (e.key === "i"){
-      e.preventDefault(); closeMenu();
-      input.focus();
-      input.setSelectionRange(input.value.length, input.value.length);
-      return;
-    }
-    // P154 追加 8: "/" outside the field = into the field with the "/" typed at the end of the draft — the same input event
-    // as typing it there, so an empty draft opens the slash-command menu. Not while a dialog / Settings is open, not from
-    // another field (both returned above), never on a held key.
-    if (e.key === "/" && !e.repeat && !e.isComposing){
-      e.preventDefault(); closeMenu();
-      input.focus();
-      const n = input.value.length;
-      input.setRangeText("/", n, n, "end");
-      input.dispatchEvent(new InputEvent("input", {inputType: "insertText", data: "/", bubbles: true}));
-    }
+    if (!ix || (e.repeat && !ix.repeat)) return;
+    const act = ACT[ix.id];
+    if (!act) return;
+    e.preventDefault();
+    act(e);
   });
   document.addEventListener("keyup", e => {
     if (!mKey || !(mCode ? e.code === mCode : isM(e))) return;
@@ -3614,6 +3917,7 @@ export function init(ctx){
   });
   window.addEventListener("keydown", e => {
     if (swallowed.has(keyId(e))){ swallow(e); return; }
+    if ((e.key === "Enter" || e.key === " ") && e.target && e.target.closest && e.target.closest(".pttbtn")) return;   // P205: the icon decides
     if (!ptt || !ptt.locked || MOD_KEYS.has(e.key) || e.isComposing
         || (e.keyCode === 229 && (typingIn(e.target) || typingIn(document.activeElement)))) return;
     swallow(e);
@@ -3629,6 +3933,7 @@ export function init(ctx){
   try{ document.fonts.ready.then(paintPlaceholder); }catch(_){}
   getSealed("ihist").then(h => { if (Array.isArray(h)) histMem = h.filter(x => typeof x === "string").slice(-HIST_MAX); });
   restoreDraft();
+  paintKeys();   // P207: the sheet is in the DOM from the start (drawn from interactions.json), as the hand-written one was
   outbox.open(); addEventListener("online", paintOut); addEventListener("offline", paintOut);
   showPage();
   pttUI(null);
@@ -3645,6 +3950,7 @@ export function debug(){ return {search: search.debug(), pageAt, follow, pages: 
 let userPreferences={};
 export function applyPreferences(value){
   userPreferences=value||{};configureSpeech(userPreferences.voice);
+  ownerAddr=cleanAddress(userPreferences.owner?.address);   // P205: the working line's address (rerender follows in app.js)
   speaker?.stop();
   const app=userPreferences.appearance||{};
   if(app.language)window.AJLang?.set(app.language);

@@ -24,7 +24,8 @@ const APP = read(pub('app.js'));
 // PROMPT-33: the page is app.js + the modules under js/ (relay's page ported). Every rule that used to look at app.js
 // alone now looks at all of them (OURS) — the same rules over more code, never fewer.
 const MODULES = ['api', 'blobs', 'boot', 'controls', 'md', 'push', 'relay', 'session', 'settings', 'snap', 'speak', 'store', 't', 'ui', 'wav', 'elevate', 'outbox', 'render', 'friends', 'qr', 'share', 'device-label', 'sfx', 'shotclip', 'sendvol',
-  'media', 'mediawire', 'preview', 'mailfwd', 'icons', 'search'];   // P183: the file cards, the preview views and the mail-dialog door
+  'media', 'mediawire', 'preview', 'mailfwd', 'icons', 'search',   // P183: the file cards, the preview views and the mail-dialog door
+  'unread', 'interactions.gen'];   // P207: this device's unread mark (turn ids only) + the key table generated from interactions.json
 const OURS_FILES = ['app.js', ...MODULES.map((m) => `js/${m}.js`)];
 const OURS = OURS_FILES.map((r) => read(pub(r))).join('\n');
 const HTML = read(pub('index.html'));
@@ -106,6 +107,8 @@ test('no URLs to anywhere in shipped files except links to agentj.app pages', ()
         if (rel(f) === 'js/sendvol.js' && m[0] === 'http://www.w3.org/2000/svg') continue;   // P154: the slider's speaker icon
         if (rel(f) === 'js/icons.js' && m[0] === 'http://www.w3.org/2000/svg') continue;     // P183: the file card's icons
         if (rel(f) === 'js/contacts.js' && m[0] === 'http://www.w3.org/2000/svg') continue;  // P184: the dialog icons
+        // P210: the pairing page says the link 「以 https:// 开头」 — a bare scheme in text, no address at all
+        if (/^https:\/\/[.)）]?$/.test(m[0]) && ['index.html', 'i18n.js'].includes(rel(f))) continue;
         assert.match(m[0], SITE_LINK, `${rel(f)} contains URL ${m[0]}`);
       }
     }
@@ -200,10 +203,15 @@ test('app.js + js/*.js: only WebSocket egress, non-extractable keys, no plaintex
     // P154 追加 13: the logo's page text size step (FZ_KEY = "aj.pageFz", "l"/"s"; removed at 中)
     'getItem(FZ_KEY)', 'setItem(FZ_KEY)', 'removeItem(FZ_KEY)',
     // P171: Settings writes the theme itself (the ≡ menu's brand switch is gone) — the same "aj.theme" brand/lang.js reads
-    "setItem('aj.theme')", "removeItem('aj.theme')"].sort());
+    "setItem('aj.theme')", "removeItem('aj.theme')",
+    // P205: the recording card's brightness choice (DIM_KEY = "aj.recDim", "1"; removed at normal)
+    'getItem(DIM_KEY)', 'setItem(DIM_KEY)', 'removeItem(DIM_KEY)',
+    // P207: this device's unread mark (UNREAD_KEY = "aj.unread": {e, m, s} — the history epoch and turn ids, numbers only)
+    'getItem(UNREAD_KEY)', 'setItem(UNREAD_KEY)'].sort());
+  assert.match(OURS, /export const UNREAD_KEY = 'aj\.unread';/);
   assert.match(OURS, /const VOLUME_KEY = 'aj\.sfxVolume';/); assert.match(OURS, /const SHOT_KEY = 'aj\.shotClip';/);
-  assert.match(OURS, /const FZ_KEY = "aj\.pageFz";/);
-  assert.equal(OURS_FILES.reduce((n, r) => n + (code(read(pub(r))).match(/localStorage/g) || []).length, 0), 25, 'localStorage appears only in these calls (P171: + the two aj.theme writes; P182: aj.test.segMs only shortens a recording part, tests only) (homeInstalled is a boolean, never pairing data)');
+  assert.match(OURS, /const FZ_KEY = "aj\.pageFz";/); assert.match(OURS, /DIM_KEY = "aj\.recDim";/);
+  assert.equal(OURS_FILES.reduce((n, r) => n + (code(read(pub(r))).match(/localStorage/g) || []).length, 0), 30, 'localStorage appears only in these calls (P171: + the two aj.theme writes; P182: aj.test.segMs only shortens a recording part, tests only; P205: aj.recDim) (homeInstalled is a boolean, never pairing data)');
   assert.match(OURS, /const IID_KEY = 'aj\.iid';/);
   assert.match(OURS, /const PAIRED_KEY = 'aj\.paired';/);
   assert.match(OURS, /const FONT_KEY = 'aj\.fontScale';/);
@@ -494,10 +502,15 @@ test('F13 Settings: the gear replaced the bulb; s / ⌘, / Ctrl+, / ? wired; pre
   assert.doesNotMatch(top, /id="keysBtn"/, 'the lightbulb left the header');
   const panel = HTML.slice(HTML.indexOf('<section id="settings"'), HTML.indexOf('<div id="confirm"'));   // P171: sections inside
   assert.match(panel, /id="keysBtn"/, 'the shortcut sheet is a second-level item in Settings');
-  assert.match(HTML, /<dt><kbd>s<\/kbd> · <kbd>Ctrl<\/kbd>\+<kbd>,<\/kbd><\/dt><dd data-i18n="r\.keys\.s">/, 'the shortcut sheet lists s · Ctrl+,');
+  // P207: the sheet is drawn from interactions.json (relay.js paintKeys over interactions.gen.js ROWS) — it lists s · ⌘, / Ctrl+,
+  assert.match(HTML, /<div class="menucols" id="keysCols"><\/div>/, 'the shortcut sheet is rendered, not hand-written');
+  assert.match(read(pub('js/interactions.gen.js')), /\["app\.settings",\[\["s","press"\],\["Mod\+,","press"\]\],1\]/, 'the shortcut sheet lists s · ⌘, / Ctrl+,');
   assert.match(RELAY, /\(e\.ctrlKey \|\| e\.metaKey\) && !e\.altKey && !e\.shiftKey && \(e\.key === "," \|\| e\.code === "Comma"\)/);
-  assert.match(RELAY, /if \(e\.key === "s" && !e\.shiftKey\)\{ e\.preventDefault\(\); closeMenu\(\); closeSug\(\); C\.settings && C\.settings\(\); return; \}/);
-  assert.match(RELAY, /if \(e\.key === "\?"\)\{ e\.preventDefault\(\); openKeys\(\); return; \}/, '? still opens the sheet');
+  // P207: s and ? come from interactions.json's table (KEYMAP "s" → app.settings, "?" → app.keys) through relay.js ACT
+  assert.match(read(pub('js/interactions.gen.js')), /"s": \["app\.settings",0\],/);
+  assert.match(read(pub('js/interactions.gen.js')), /"\?": \["app\.keys",0\],/);
+  assert.match(RELAY, /"app\.settings": \(\) => \{ closeMenu\(\); closeSug\(\); C\.settings && C\.settings\(\); \},/);
+  assert.match(RELAY, /"app\.keys": \(\) => openKeys\(\),/, '? still opens the sheet');
   assert.match(RELAY, /el\("keysBtn"\)\.addEventListener\("click", openKeys\)/);
   // C6 / Amendment A1: exactly these keys go to the host; the font size never does; nothing lowers safety from the phone
   assert.match(SET, /export const PREF_KEYS = \['appearance\.language', 'appearance\.theme', 'voice\.speak_replies', 'voice\.wake_enabled', 'agent\.high_risk_warnings', 'agent\.session_mode', 'agent\.isolation', 'agent\.allow_docker'\];/);

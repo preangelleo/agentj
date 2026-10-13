@@ -81,18 +81,109 @@ def busy(host):
                 or (host.peers and (getattr(host.peers, 'jobs', None) or getattr(host.peers, 'asks', None))))
 
 
+SOON = 900   # P203: a scheduled task due within 15 minutes is on the upgrade card's list
+
+
+IMPACT_TEXT = {   # P203: the upgrade card's lines (the phone has its own i18n copy: upg.k.*)
+    'turn': ('Agent 正在进行的回合', "the Agent's turn in progress"),
+    'shared_turn': ('共享会话里正在进行的回合', 'the turn running in the shared session'),
+    'queue': ('排队等待的 {n} 条消息', '{n} queued message(s)'),
+    'ask': ('{n} 张等待中的审批卡', '{n} approval card(s) waiting'),
+    'question': ('{n} 张等待中的问题卡', '{n} question card(s) waiting'),
+    'secret': ('{n} 张等待中的 sudo / 密钥卡', '{n} sudo / secret card(s) waiting'),
+    'card': ('{n} 张其他待处理卡片（领取、登录、联系人、开工卡）', '{n} other open card(s) (pickup, sign-in, contact, opening)'),
+    'friend_card': ('{n} 张好友卡', '{n} friend card(s)'),
+    'friend': ('{n} 个正在进行的好友会话', '{n} friend session(s) in progress'),
+    'task': ('正在跑的定时任务', 'a scheduled task that is running'),
+    'task_queue': ('{n} 个排队的定时任务', '{n} scheduled task(s) queued'),
+    'bots': ('{n} 个机器人后台操作', '{n} bot operation(s) in the background'),
+    'bg': ('{n} 个后台任务（在办事项）', '{n} background task(s) (in progress list)'),
+    'task_soon': ('{n} 个 15 分钟内要跑的定时任务', '{n} scheduled task(s) due within 15 minutes'),
+}
+
+
+def impact_text(items, lang='zh'):
+    """One line per item, in the owner's language (unknown kinds are skipped)."""
+    i = 1 if lang == 'en' else 0
+    return [IMPACT_TEXT[x['k']][i].format(n=x['n']) for x in items if x.get('k') in IMPACT_TEXT]
+
+
+def newer_known(st):
+    """P203: the daily check (update.json) already saw a version newer than this one — no network here."""
+    latest = update.read_rec(st).get('latest')
+    return isinstance(latest, str) and update.compare(latest, __version__) == 1
+
+
+def impact(host, caller=None, now=None):
+    """P203: what restarting the host now would interrupt — the upgrade card's list, counts and kinds only (no text the
+    Agent wrote). [] = nothing: upgrade at once. caller='agent': `agentj update apply` run by the Agent itself, whose own
+    turn ends before the restart (the manager waits for an idle serve), so the running turn is not listed."""
+    items = []
+    def add(k, n=1):
+        if n:
+            items.append({'k': k, 'n': int(n)})
+    a = host.agent
+    shared = (getattr(host, 'agent_cfg', None) or {}).get('session_mode') == 'shared'
+    if a and a.status != 'idle' and caller != 'agent':
+        add('shared_turn' if shared else 'turn')
+    q = getattr(a, 'q', None) if a else None
+    with_q = q.qsize() if q is not None and hasattr(q, 'qsize') else 0
+    add('queue', with_q)
+    add('ask', sum(1 for x in host.asks.values() if not x.fut.done()))
+    add('question', sum(1 for x in getattr(host, 'questions', {}).values() if not x.fut.done()))
+    el = host.elevate
+    add('secret', sum(1 for c in el.cards.values() if not c['fut'].done()))
+    others = len(getattr(el.out, 'cards', {})) + len(getattr(el.login, 'cards', {}))
+    others += sum(1 for c in getattr(el.contacts, 'cards', {}).values() if not c['fut'].done())
+    others += sum(1 for c in getattr(host.capabilities, 'cards', {}).values() if not c.get('done'))
+    add('card', others)
+    peers = getattr(host, 'peers', None)
+    if peers is not None:
+        add('friend_card', len(getattr(peers, 'asks', {}) or {}))
+        ps = getattr(peers, 'sessions', None)
+        add('friend', (getattr(ps, 'active', 0) or 0) + len(getattr(peers, 'jobs', {}) or {}) if ps is not None else 0)
+    sch = host.scheduler
+    add('task', 1 if sch.current_id else 0)
+    add('task_queue', len(sch.waiting))
+    add('bots', len(getattr(getattr(host, 'bots', None), 'phone_tasks', None) or {}))
+    board = getattr(host, 'busy', None)
+    try:
+        add('bg', len(board.items()) if board is not None else 0)
+    except Exception:  # noqa: BLE001 — a display list must never block an upgrade decision
+        pass
+    add('task_soon', soon(host, now))
+    return items
+
+
+def soon(host, now=None):
+    """Enabled scheduled tasks whose next run is within SOON seconds (0 when none or unreadable)."""
+    from . import tasks
+    import datetime as dt
+    wd = host.scheduler.workdir()
+    if not wd:
+        return 0
+    now = time.time() if now is None else now
+    try:
+        rows = tasks.rows(host.st, wd, dt.datetime.fromtimestamp(now, dt.timezone.utc))
+    except Exception:  # noqa: BLE001
+        return 0
+    return sum(1 for r in rows if r.get('enabled') and isinstance(r.get('next'), int) and r['next'] - now <= SOON)
+
+
 def _primary_present():
     from . import instance
     return instance.exists(1)
 
 
-def due(st, *, now=None, blocked=False, stopped=False, rand=secrets.randbelow):
+def due(st, *, now=None, blocked=False, stopped=False, rand=secrets.randbelow, newer=False):
     with st.config_lock():
-        return _due(st, now=now, blocked=blocked, stopped=stopped, rand=rand)
+        return _due(st, now=now, blocked=blocked, stopped=stopped, rand=rand, newer=newer)
 
 
-def _due(st, *, now=None, blocked=False, stopped=False, rand=secrets.randbelow):
-    """One opportunity each local date. Missed/busy/stopped never retries that night."""
+def _due(st, *, now=None, blocked=False, stopped=False, rand=secrets.randbelow, newer=False):
+    """One night opportunity each local date. Missed/busy/stopped never retries that night.
+    P203 「空闲时自动更新」: besides it, a newer version the daily check already saw (`newer`, no extra network) is installed
+    the first time the host is idle — no turn, card or task, no phone input for IDLE s — at most once a day."""
     now = time.time() if now is None else now
     if not enabled(st):
         return False
@@ -109,6 +200,11 @@ def _due(st, *, now=None, blocked=False, stopped=False, rand=secrets.randbelow):
         write(st, rec)
     second = local.tm_hour*3600 + local.tm_min*60 + local.tm_sec
     if rec.get('attempted') or second < rec['second']:
+        if (newer and rec.get('idle_day') != day and not stopped and not blocked
+                and now - rec.get('phone_at', now) >= IDLE):
+            rec.update(idle_day=day, decision='idle')
+            write(st, rec)
+            return True
         return False
     rec['attempted'] = True
     reason = ('window_missed' if second >= 5*3600 else 'stopped' if stopped else
@@ -254,6 +350,9 @@ def _finish(st, result):
 
 
 def notice(r, lang='zh'):
+    if r.get('result') == 'ok' and r.get('when') == 'idle':
+        return (f"Updated automatically while idle to {r['to']} ({r.get('summary_en') or 'latest published fixes'})." if lang == 'en' else
+                f"电脑空闲时已自动升级到 {r['to']}（{r.get('summary') or '安装最新正式发布的改进'}）。")
     if r.get('result') == 'ok':
         return (f"Updated automatically overnight to {r['to']} ({r.get('summary_en') or 'latest published fixes'})." if lang == 'en' else
                 f"夜里已自动升级到 {r['to']}（{r.get('summary') or '安装最新正式发布的改进'}）。")
@@ -345,7 +444,7 @@ def run(st, *, check_fn=update.check, cache=cached_wheel, runner=quiet, restart=
             # No checkout git pulls or other owner code changes during unattended updates.
             install_commands(info, '/unused.whl')
             job = {'attempt': secrets.token_hex(16), 'from': __version__, 'to': latest['latest'], 'install': info,
-                   'argv': update.new_argv(info)}
+                   'argv': update.new_argv(info), 'when': 'idle' if read(st).get('decision') == 'idle' else 'night'}
             # Rollback old releases predate artifact signatures; retain hash-verified wheel.
             old = cache(st, job['from'], require_signature=False)
             new = cache(st, job['to'], require_signature=True)
@@ -380,7 +479,7 @@ def run(st, *, check_fn=update.check, cache=cached_wheel, runner=quiet, restart=
             raise ValueError('worker_interrupted')
         if job['phase'] == 'installed':
             verify(job['to'])
-            result = {**{k:job[k] for k in ('attempt','from','to','summary','summary_en') if k in job}, 'result': 'ok', 'reason': 'upgraded'}
+            result = {**{k:job[k] for k in ('attempt','from','to','summary','summary_en','when') if k in job}, 'result': 'ok', 'reason': 'upgraded'}
             finish(st, result)
             save('done')
             return result

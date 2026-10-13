@@ -1097,11 +1097,15 @@ class Capabilities:
                                                  "waiting: reload this page (0.18) to confirm it."})
         return n
 
+    def open_msgs(self, s) -> list[dict]:
+        """P203: open opening cards for a device that announced lt1 (on_ready's replay and the cards_get snapshot)."""
+        if not getattr(s, "lt1", False):
+            return []
+        return [self.card_msg(c) for c in list(self.cards.values()) if not c["done"]]
+
     async def on_ready(self, s) -> None:
-        if getattr(s, "lt1", False):
-            for c in list(self.cards.values()):
-                if not c["done"]:
-                    await self.host.send_app(s, self.card_msg(c))
+        for m in self.open_msgs(s):
+            await self.host.send_app(s, m)
 
     async def show_capabilities(self, lang: str = "zh") -> dict:
         reg = await asyncio.to_thread(sync, self.st, self.cfg(), adapters=self.adapters)
