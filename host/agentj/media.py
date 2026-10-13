@@ -50,14 +50,17 @@ WINDOW = 8                        # chunks answered per media_get (the phone ask
 FPS = 22                          # host → device pacing, the §10.3 boosted rate (≤ 22 frames / s)
 MIB = 1024 * 1024
 CAPS = {"image": 10 * MIB, "audio": 25 * MIB, "video": 50 * MIB, "pdf": 25 * MIB, "html": 2 * MIB, "file": 25 * MIB}
-MAX_ITEMS = 8
+MAX_ITEMS = 24                    # P194: a gallery reply (14 pictures + 3 pages) is one page, not 8 cards and silence
 PAGE_BYTES = 100 * MIB
 KEEP_SECS = 24 * 3600
 KEEP_N = 500
 MAX_REFS = 64                     # candidate references examined per page
 NAME_MAX = 128
 REF_MAX = 512
-WHYS = ("too_big", "outside", "secret", "type", "gone")
+WHYS = ("too_big", "outside", "secret", "type", "gone", "masked", "too_many")
+# P194: a reference whose path a privacy placeholder replaced (the reply text was masked before the scan) is `masked`, never
+# `gone` — the file may be right there; one past MAX_ITEMS is `too_many`, never silently dropped.
+_PLACEHOLDER = re.compile(r"<(?:redacted|email|phone|private-ip|host|user)>")
 SCAN_SLICE = MIB                  # the secret scan reads text in slices of this much …
 SCAN_OVERLAP = 8 * 1024           # … overlapping by this much, so a token across a boundary is still seen
 
@@ -395,13 +398,19 @@ class Media:
         """A finished page's reply → (media, media_skip) as they go on the wire. Blocking: run it in a thread."""
         items, skips, total, seen = [], [], 0, set()
         for ref in refs(text):
+            name = os.path.basename(ref.path.rstrip("/"))[:NAME_MAX] or ref.path[:NAME_MAX]
+            if _PLACEHOLDER.search(ref.path):
+                if ref.explicit:
+                    skips.append({"name": name, "why": "masked"})
+                continue
             if len(items) >= MAX_ITEMS:
-                break
+                if ref.explicit:
+                    skips.append({"name": name, "why": "too_many"})
+                continue
             try:
                 rec, why = self.check(ref)
             except OSError:
                 rec, why = None, None
-            name = os.path.basename(ref.path.rstrip("/"))[:NAME_MAX] or ref.path[:NAME_MAX]
             if why:
                 skips.append({"name": name, "why": why, **({"bytes": rec["bytes"]} if rec and why == "too_big" else {})})
                 continue

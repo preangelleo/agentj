@@ -191,7 +191,8 @@ def read(st) -> dict | None:
         fresh["recovered"] = True
         return fresh
     base = _blank(st)
-    base.update({k: rec[k] for k in base if k in rec})
+    base.update({k: rec[k] for k in base if k in rec and k != "items"})   # items merge row by row below: a newer
+    # release's item (P170 "mail") keeps its blank row instead of vanishing with the old dict (0.20.0 KeyError: 'mail')
     for iid, row in base["items"].items():
         got = rec["items"].get(iid)
         if isinstance(got, dict):

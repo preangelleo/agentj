@@ -605,7 +605,7 @@ class State:
                 "shared_session_id": preferences.get(prefs, "agent.shared_session_id", ""),
                 "shared_opencode_port": preferences.get(prefs, "agent.shared_opencode_port", 0),
                 "high_risk_warnings": preferences.get(prefs, "agent.high_risk_warnings", False),
-                "approvals": "strict" if preferences.get(prefs, "agent.approvals", "standard") == "strict" else "standard"}
+                "approvals": {"strict": "strict", "native": "native"}.get(preferences.get(prefs, "agent.approvals", "standard"), "standard")}
 
     def set_agent_config(self, kind: str | None, directory: str | None = None, model: str | None = None,
                          fence: bool = True, docker: bool = False) -> None:
@@ -714,7 +714,8 @@ class State:
                   "generation", "model", "effort", "layers", "identity",
                   "ms", "code", "count",   # P129: timings (ms), close codes, failure counts — numbers only. P116: metadata only (no text, path or digest)
                   "cmd", "keys", "events", "event",   # P139: control command / config key / hook event NAMES only
-                  "where", "task", "pstate", "majflt"}   # P142: loop-stall diagnostics (site/task names, process state, fault counts)
+                  "where", "task", "pstate", "majflt",   # P142: loop-stall diagnostics (site/task names, process state, fault counts)
+                  "handoff", "sha", "full", "by"}   # P198: P151 handoff present (bool), P156 heartbeat prompt sha8 / full / trigger
 
     def log(self, ev: str, **kw) -> None:
         rec = {"ts": int(time.time()), "ev": ev, **{k: v for k, v in kw.items() if k in self.LOG_FIELDS}}

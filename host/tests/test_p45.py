@@ -54,8 +54,9 @@ class Autonomy(unittest.TestCase):
         self.assertEqual(main_identity.verify_core()['version'],11)   # P156: v11
         self.assertIn('without extra approvals',main_identity.prompt({'language':'en'}))
     def test_high_risk_shared_call_adds_no_decision(self):
+        # P198: F14's "native only" is now the owner's explicit agent.approvals = native (the default asks: test_p198)
         host=Mock();host.stopped.return_value=False
-        a=shared.SharedClaudeAgent(host,{'kind':'claude','dir':'/tmp','_workflow_ceo':True})
+        a=shared.SharedClaudeAgent(host,{'kind':'claude','dir':'/tmp','_workflow_ceo':True,'approvals':'native'})
         a.session={'sessionId':'owner'}
         out=asyncio.run(a.hook_event({'session_id':'owner','hook_event_name':'PreToolUse','tool_name':'Bash','tool_input':{'command':'git push origin main'}}))
         self.assertEqual(out,{});host.ask.assert_not_called()

@@ -92,6 +92,16 @@ human_enable_required (true for weekly)} · `failure_policy` {safe_fallback, ret
 - `requested`: a one-off run of a workflow the owner already uses, exactly as they asked.
 - No keys, tokens, cookies or customer data in the brief: name the service only.
 
+## Recommending a third-party service (优先推荐伙伴)
+When a missing capability needs an outside service (TTS, voice cloning, storage, email …), run
+`agentj plaza partners --slot <slot> --json` (or read the 「优先推荐伙伴」 lines of `agentj plaza show <package>`) before you name one.
+- **Already has an account → keep it.** If the owner already uses a service for this (an account, a key in the inventory),
+  use that one; 已有账号的不推荐换服务, never suggest switching.
+- Otherwise give the partner line exactly as agentj printed it: the link (`link`, which may carry Agent J's referral) and
+  right after it — 紧贴链接、同一行，不放末尾 — the disclosure 「这是 Agent J 的优先推荐伙伴，可能有推荐返佣」 (a self-owned site:
+  「这是 Agent J 出品方自己的免费网站」), plus at least one alternative. Never shorten, rewrite or drop the disclosure, never
+  invent a referral code, a discount or a contract; no partner for the slot → recommend on merit, without a referral link.
+
 ## Rules
 - Optional items never block; a missing optional key → use the free route and say so in the report.
 - Passing the card or confirming a brief never allows spend / delete / send outside / credential changes / price changes:

@@ -328,7 +328,7 @@ _RM = {"rm", "rmdir", "unlink", "trash", "trash-put", "gio"}
 
 def delete_targets(tool: str, tool_input, cwd: str | None) -> tuple[list[str], bool] | None:
     """([real paths], to_trash) when every part of a Bash command is a plain delete (rm / rmdir / unlink / trash-put /
-    `gio trash`); None otherwise. A glob is reduced to the folder before it (the grant must cover that folder)."""
+    `gio trash` / `git rm`, P198); None otherwise. A glob is reduced to the folder before it (the grant must cover that folder)."""
     if tool != "Bash":
         return None
     segs = _segments(action_text(tool, tool_input))
@@ -340,16 +340,24 @@ def delete_targets(tool: str, tool_input, cwd: str | None) -> tuple[list[str], b
     targets, trash = [], True
     for argv in segs:
         name = os.path.basename(argv[0])
-        if name not in _RM:
-            return None
-        args = argv[1:]
-        if name == "gio":
-            if not args or args[0] != "trash":
+        base = d
+        if name == "git":                     # P198: git rm
+            g = _git_rm(argv, d)
+            if g is None:
                 return None
-            args = args[1:]
+            base, files = g
+            trash = False
+        elif name in _RM:
+            args = argv[1:]
+            if name == "gio":
+                if not args or args[0] != "trash":
+                    return None
+                args = args[1:]
+            else:
+                trash = trash and name in ("trash", "trash-put")
+            files = [a for a in args if not a.startswith("-")]
         else:
-            trash = trash and name in ("trash", "trash-put")
-        files = [a for a in args if not a.startswith("-")]
+            return None
         if not files:
             return None
         for f in files:
@@ -357,8 +365,31 @@ def delete_targets(tool: str, tool_input, cwd: str | None) -> tuple[list[str], b
             if any(c in f for c in "*?["):
                 f = f[:min(f.find(c) for c in "*?[" if c in f)]
                 f = f.rsplit("/", 1)[0] if "/" in f else "."
-            targets.append(os.path.realpath(os.path.join(d, f)))
+            targets.append(os.path.realpath(os.path.join(base, f)))
     return targets, trash
+
+
+_GIT_RM_FLAGS = {"-r", "-f", "-q", "-n", "-rf", "-fr", "--cached", "--force", "--quiet", "--dry-run", "--ignore-unmatch"}
+
+
+def _git_rm(argv: list[str], d: str) -> tuple[str, list[str]] | None:
+    """P198: (git's folder, paths) of `git [-C dir] rm [flags] [--] paths`; None for anything else (as before)."""
+    i, base = 1, d
+    while i < len(argv) and argv[i] == "-C" and i + 1 < len(argv):
+        base = os.path.realpath(os.path.join(base, os.path.expanduser(argv[i + 1])))
+        i += 2
+    if i >= len(argv) or argv[i] != "rm":
+        return None
+    files, opts = [], True
+    for a in argv[i + 1:]:
+        if opts and a == "--":
+            opts = False
+        elif opts and a.startswith("-"):
+            if a not in _GIT_RM_FLAGS:
+                return None
+        else:
+            files.append(a)
+    return (base, files) if files else None
 
 
 def _under(p: str, roots) -> bool:
@@ -492,8 +523,13 @@ def pieces(cmd: str) -> list[str] | None:
                     i += 1
         elif c == "<" and cmd[i:i + 2] == "<<":
             # a heredoc: keep everything up to the end of its body in this piece (the body is data or a script to judge)
-            out.append("".join(cur) + cmd[i:])
-            return [p.strip() for p in out if p.strip()]
+            end = _heredoc_end(cmd, i)
+            if end is None:
+                out.append("".join(cur) + cmd[i:])
+                return [p.strip() for p in out if p.strip()]
+            cur.append(cmd[i:end])                  # P198: what follows the body is cut as usual
+            i = end
+            continue
         else:
             cur.append(c)
         i += 1
@@ -501,6 +537,20 @@ def pieces(cmd: str) -> list[str] | None:
         return None
     out.append("".join(cur))
     return [p.strip() for p in out if p.strip()]
+
+
+_HEREDOC = re.compile(r"<<(-?)[ \t]*(?:'([^'\n]+)'|\"([^\"\n]+)\"|\\?([A-Za-z0-9_.-]+))")
+
+
+def _heredoc_end(cmd: str, i: int) -> int | None:
+    """P198: the end of the plain heredoc at cmd[i] (its closing line); None = anything unusual (the old behaviour)."""
+    m = _HEREDOC.match(cmd, i)
+    nl = cmd.find("\n", m.end()) if m else -1
+    if nl < 0 or "<<" in cmd[m.end():nl]:
+        return None
+    e = re.compile("^" + ("\t*" if m.group(1) else "") + re.escape(m.group(2) or m.group(3) or m.group(4)) + "$",
+                   re.M).search(cmd, nl + 1)
+    return e.end() if e else None
 
 
 _SUBST = re.compile(r"\$\(|`|<\(|>\(")
@@ -610,6 +660,38 @@ def hold_message(key: str, lang: str = "zh") -> str:
                 "in the goal's result card. Do not retry it now — carry on with the other independent parts of the goal.")
     return (f"目标模式：这一步需要主人亲自决定（{why_text(key)}），这次没有批准，已记进目标结束报告「等你决定」。"
             "现在不要重试，先把目标里其它不依赖它的部分做完。")
+
+
+def agent_words(arg: str, lang: str = "zh") -> str:
+    """P198: what the main Agent reads for the owner's `/goal <what>` — never text starting with `/goal`: Claude Code 2.1.x has
+    a native `/goal` (a session-scoped Stop hook that re-asks every turn until 「/goal clear」) and runs any stream-json
+    message that starts with it. The page keeps the owner's own words; only the Agent's copy is reworded."""
+    return ("Goal mode — the owner's goal: " if lang == "en" else "目标模式——主人的目标：") + (arg or "").strip()
+
+
+NATIVE_TAIL = 8 * 1024 * 1024             # how much of a transcript's end is searched for the native goal's last status
+
+
+def native_goal_active(transcript) -> bool:
+    """P198: Claude Code's own `/goal` is still set in this session (its last `goal_status` attachment says met=false).
+    Read-only, bounded to the transcript's last NATIVE_TAIL bytes; any error reads as not set."""
+    try:
+        with open(transcript, "rb") as f:
+            size = f.seek(0, 2)
+            f.seek(max(0, size - NATIVE_TAIL))
+            data = f.read()
+    except OSError:
+        return False
+    for line in reversed(data.split(b"\n")):
+        if b'"goal_status"' not in line:
+            continue
+        try:
+            att = json.loads(line).get("attachment")
+        except (ValueError, AttributeError):
+            continue
+        if isinstance(att, dict) and att.get("type") == "goal_status":
+            return att.get("met") is False
+    return False
 
 
 def start_note(arg: str, lang: str = "zh") -> str:

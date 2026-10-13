@@ -346,13 +346,20 @@ class CodexAgent(Agent):
         the system, like the owner's terminal; the danger list and phone cards still apply); research tasks read-only."""
         from . import codex_perm
         p = {}
+        sandbox, self.perm_source = codex_perm.main_sandbox(self.human.get("sandbox_mode"), self.research)
         if self.cfg.get("high_risk_warnings", False):
             p["approvalsReviewer"] = "user"
             if not isinstance(self.human.get("approval_policy"), dict):
-                p["approvalPolicy"] = "untrusted"
+                # P198 (P164 D): under `untrusted` an ACCEPTED command runs outside Codex's sandbox (re-measured on 0.162.1,
+                # reports/qa/p198/), so with the owner's own read-only / workspace-write sandbox every non-read-only command
+                # was declined by beyond_sandbox (`policy`) and the Agent could do nothing. There the sandbox is the guard:
+                # the owner's own policy (else on-request) — commands run inside it, escalations are still declined.
+                # A research task keeps `untrusted` (its read-only sandbox; anything not read-only is declined anyway).
+                p["approvalPolicy"] = "untrusted" if sandbox == codex_perm.FULL or self.research else (
+                    self.human["approval_policy"] if isinstance(self.human.get("approval_policy"), str) else "on-request")
         elif isinstance(self.human.get("approval_policy"), (str, dict)):
             p["approvalPolicy"] = self.human["approval_policy"]   # named on resume too: a changed setting applies at once
-        p["sandbox"], self.perm_source = codex_perm.main_sandbox(self.human.get("sandbox_mode"), self.research)
+        p["sandbox"] = sandbox
         if self.cfg.get("model"):
             p["model"] = self.cfg["model"]
         return p
@@ -636,7 +643,8 @@ class CodexAgent(Agent):
                 acts = [a.get("command") for a in p.get("commandActions") or [] if isinstance(a, dict)]
                 cmd = " && ".join(a for a in acts if isinstance(a, str))
             inner = unwrap_shell(cmd)
-            inp = {"command": inner}
+            from .approval_jev import with_cwd            # P198: the folder Codex really runs it in (relative paths)
+            inp = {"command": with_cwd(inner, p.get("cwd"), self.cfg.get("dir"))}
             extra = []
             if p.get("kind") == "writeStdin":
                 extra.append("（写入一个正在运行的命令）")
@@ -744,7 +752,10 @@ class CodexAgent(Agent):
                 ok, _ = danger.readonly(tool, inp)
                 if not ok:                         # a `mode: research` task: anything not read-only is refused outright
                     return
-            r = await self.host.ask(clean_line(tool, 64) or "?", inp, gone, batch=batch)
+            name = clean_line(tool, 64) or "?"
+            from .approval_jev import low_risk_pass       # P198: P157 layer 1 — low risk runs without a card, like Claude
+            r = ({"behavior": "allow"} if not self.research and low_risk_pass(self.host, self.cfg, name, inp, batch)
+                 else await self.host.ask(name, inp, gone, batch=batch))
             if r.get("behavior") == "allow":
                 ans = yes
         except Exception:  # noqa: BLE001 — fail closed
@@ -909,7 +920,9 @@ class CodexAgent(Agent):
         if isinstance(self.human.get("approval_policy"), dict):
             pol = "你自己的 granular 策略（agentj 没改）"
         elif self.cfg.get("high_risk_warnings", False) and src != "desktop":
-            pol = "每条非只读命令和每个文件改动都问手机（高危提醒开着：agentj 要求 untrusted）"
+            pol = ("危险清单上的命令和文件改动问手机，低风险的直接执行（高危提醒开着：agentj 要求 untrusted）"     # P198
+                   if sbt == codex_perm.FULL or self.research else
+                   "命令在你的 Codex 沙箱里运行，超出沙箱的一律拒绝（高危提醒开着；沙箱就是这道闸）")
         else:
             ap = self.thread.get("approvalPolicy") or self.human.get("approval_policy") or "on-request"
             pol = f"{ap if isinstance(ap, str) else '自定义'}（{'这条对话自己的' if src == 'desktop' else '你的 Codex 设置 / Codex 默认'}）"

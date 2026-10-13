@@ -1075,7 +1075,9 @@
     "rescan": "重新扫码配对",
     "legal": "数据和条款",
     "bots": "Bots / 客服",
-    "gChannels": "沟通渠道"
+    "gChannels": "沟通渠道",
+    "owner": "我的联系方式",
+    "ownerNote": "通讯录 0 号位：「发给我自己」用的主邮箱和手机号。"
   },
   "set.updates": "升级方式",
   "set.updatesAuto": "自动升级并告诉我",
@@ -1186,7 +1188,9 @@
       "outside": "{name} 不在工作目录里，没有发。",
       "secret": "{name} 可能含密钥，没有发。",
       "type": "{name} 这种文件发不了。",
-      "gone": "{name} 找不到了，没有发。"
+      "gone": "{name} 找不到了，没有发。",
+      "masked": "{name} 的路径在回复里被隐私规则遮住了，所以没发；文件本身可能还在。",
+      "too_many": "{name} 没发：一条回复最多带 24 个文件。"
     },
     "tapSize": "点一下加载 · {size}",
     "shareAgain": "文件已取好，再点一次分享",
@@ -1211,7 +1215,12 @@
       "docx": "Word 文档预览",
       "none": "这种文件暂时不能预览，可以下载后用手机上的应用打开。",
       "fail": "这个文件没能打开预览，可以下载后查看。",
-      "pdfFail": "这份 PDF 没能在这里显示，可以用系统的 PDF 查看器打开，或者下载。"
+      "pdfFail": "这份 PDF 没能在这里显示，可以用系统的 PDF 查看器打开，或者下载。",
+      "prev": "上一个（←）",
+      "next": "下一个（→）",
+      "pos": "第 {n} 个，共 {of} 个",
+      "first": "已经是第一个了",
+      "last": "已经是最后一个了"
     }
   },
   "camera": {
@@ -1427,7 +1436,8 @@
       "exists": "已经是好友了",
       "too_many": "太多了，先删掉一些",
       "too_long": "太长了（最多 4000 字）",
-      "bad_id": "这个号码不对"
+      "bad_id": "这个号码不对",
+      "seat": "需要有效的 Agent J 席位（到账户页续费或绑定）"
     },
     "ask": {
       "title": "🤝 好友请求",
@@ -2115,7 +2125,9 @@
       "phones": "手机号（可不填）",
       "addresses": "地址（可不填）",
       "org": "公司（可不填）",
-      "note": "备注（可不填）"
+      "note": "备注（可不填）",
+      "mainEmail": "主邮箱",
+      "phoneOpt": "手机号（可选）"
     },
     "more": {
       "emails": "再加一个邮箱",
@@ -2130,7 +2142,11 @@
     "fwdTurn": "你的提问和这条回复（连同里面的文件）",
     "noInput": "不带我的提问",
     "noInputSub": "只发 Agent 的回复，不附上你发的那条消息",
-    "sentSkip": "已发出；{n} 个文件太大，没有附上"
+    "sentSkip": "已发出；{n} 个文件太大，没有附上",
+    "cardOwner": "你的联系方式",
+    "ownerWhy": "通讯录 0 号位是你本人。以后「发给我自己」的邮件和报告都发到主邮箱；手机号可以不填。可以先跳过，之后在设置里补。",
+    "cardSkip": "跳过",
+    "needEmail": "请至少填一个主邮箱"
   },
   "off.title.reconnecting": "正在重新连接…",
   "off.title.computer": "电脑可能关机或睡着了",
@@ -2215,5 +2231,10 @@
     "ended": "这次配对已经结束（可能在电脑上被取消，或者被新的配对顶掉了）。",
     "scanAdd": "扫码添加遥控器"
   },
-  "r.mail.idle": "转发到邮箱"
+  "r.mail.idle": "转发到邮箱",
+  "revoked.takeoverPk": "用 Face ID 在这里继续",
+  "revoked.takeoverLead": "主屏幕 App、Safari 或无痕页里的另一边刚刚接管了连接，这边已断开。想回到这里用，点下面的按钮，用 Face ID 验证一下；另一边会随之断开。",
+  "revoked.takeoverNone": "没能用 Face ID 验证：可能是取消了，也可能这台手机没有保存 Agent J 的 Face ID 记录。可以再点一次，或者回到另一边继续用。",
+  "r.ptt.intText": "录音被系统打断（锁屏或切到别的 App），已录的 {d} 正在转成文字，会放进输入框",
+  "r.ptt.intNone": "录音被系统打断（锁屏或切到别的 App），这次没有录到声音"
 }

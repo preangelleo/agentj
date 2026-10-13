@@ -119,7 +119,7 @@ export const cacheSize = () => cacheBytes;
 // ---------------------------------------------------------------- rendering
 // Two scopes own object URLs: the page on screen (`main`) and the full-screen reader (`reader`, P59 / ADR-A164). Both take
 // their Blobs from the one LRU above (fetchMedia), so opening the reader never fetches a file a second time.
-const scope = () => ({ key: null, page: null, urls: [], io: null });
+const scope = () => ({ key: null, page: null, urls: [], io: null, cards: () => [] });
 let shown = scope();
 let reading = scope();
 function clearScope(sc) {
@@ -191,6 +191,7 @@ export function renderPage(words, p) {
   box.hidden = !key;
   if (!key) return;
   shown.io = observer(shown);
+  shown.cards = () => [...words.querySelectorAll('.mcard'), ...box.querySelectorAll('.mcard')];
   const { rest, restSkips } = fillSlots(words, items, skips, shown);
   for (const m of rest) box.appendChild(card(m, false, shown));
   for (const sk of restSkips) box.appendChild(mk('div', 'mskip', skipText(sk)));
@@ -208,6 +209,9 @@ export function renderReader(words, p) {
   reading.key = key; reading.page = p && p.id !== undefined ? p.id : null;
   if (!key) return;
   reading.io = observer(reading);
+  // the reader shows only the slots; what the reply did not place is still this reply's, in the strip under the page
+  const page = reading.page;
+  reading.cards = () => [...words.querySelectorAll('.mcard'), ...(shown.page === page ? [...(document.getElementById('mstrip')?.querySelectorAll('.mcard') || [])] : [])];
   fillSlots(words, items, skips, reading);
 }
 
@@ -277,7 +281,10 @@ function card(m, inline, sc) {
     return flight;
   };
   c._load = () => load().catch(() => {});
-  const preview = () => load().then((blob) => openPreview(m, c, blob), () => {});
+  c._m = m;
+  // P196: the last card asked for wins — flipping fast through big files never opens an older one late
+  const preview = () => { want = c; return load().then((blob) => { if (want === c) openPreview(m, c, blob); }, () => { if (want === c && viewerOpen() && viewer.card === c) loadFailed(); }); };
+  c._preview = preview;
   status.addEventListener('click', (e) => { e.stopPropagation(); load().then(() => { if (m.kind === 'audio' || m.kind === 'video') body.querySelector('audio,video')?.play?.().catch(() => {}); }, () => {}); });
   bPv.addEventListener('click', (e) => { e.stopPropagation(); preview(); });
   bDl.addEventListener('click', (e) => { e.stopPropagation(); load().then((blob) => download(m, c, blob), () => {}); });
@@ -343,8 +350,8 @@ function show(m, c, body, blob) {
   if (m.kind === 'image') {
     const img = mk('img'); img.alt = m.name; img.src = url; img.decoding = 'async';
     img.tabIndex = 0; img.setAttribute('role', 'button');
-    img.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.stopPropagation(); viewImage(url, m.name, c, m); } });
-    img.addEventListener('click', (e) => { e.stopPropagation(); viewImage(url, m.name, c, m); });
+    img.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.stopPropagation(); want = c; viewImage(url, m.name, c, m); } });
+    img.addEventListener('click', (e) => { e.stopPropagation(); want = c; viewImage(url, m.name, c, m); });
     body.replaceChildren(img);
   } else if (m.kind === 'audio' || m.kind === 'video') {
     const v = mk(m.kind); v.controls = true; v.preload = 'metadata'; v.src = url;
@@ -362,37 +369,163 @@ function openPreview(m, c, blob) {
   return viewDoc(kind, m, blob, c);
 }
 
-// ---------------------------------------------------------------- the viewer: full screen, a bar (name · 下载 · ×), Esc / Space close
+// ---------------------------------------------------------------- the viewer: full screen, a bar (‹ 3 / 14 › · name · 下载 · ×), Esc / Space close
+// P196: while it is open it is the preview layer — the top layer (Esc closes it) that takes every key before the chat's own
+// shortcuts and the deck's card swipe ever see it. ← / → (and a sideways swipe; on a picture only while it is not zoomed —
+// zoomed, one finger pans) step to the previous / next file of the SAME reply that can be previewed, in reading order;
+// no wrap-around at either end (a short note says so). A player is paused before it goes.
 let viewer = null;
+let want = null;                              // the card whose preview was asked for last
+const SWIPE_PX = 60, FLING_PX = 30, FLING_V = 0.5, SWIPE_TAN = Math.tan(30 * Math.PI / 180), CLICK_SLOP = 10;
 function viewerEl() {
   if (viewer) return viewer;
   const v = mk('div', 'mview'); v.hidden = true;
   v.setAttribute('role', 'dialog'); v.setAttribute('aria-modal', 'true');
   const bar = mk('div', 'mvbar');
   const title = mk('span', 'mvtitle');
+  const prev = mk('button', 'mvact mvprev', '‹'); prev.type = 'button';
+  const next = mk('button', 'mvact mvnext', '›'); next.type = 'button';
+  const count = mk('span', 'mvcount'); count.hidden = true;
   const dl = mk('button', 'mvact mvdl'); dl.type = 'button'; dl.append(glyph('download'));
   const x = mk('button', 'mview-x', '×'); x.type = 'button';
-  bar.append(title, dl, x);
+  bar.append(prev, count, next, title, dl, x);
   const stage = mk('div', 'mstage');
   const note = mk('div', 'mnote');
-  v.append(bar, stage, note);
+  const hint = mk('div', 'mvhint'); hint.setAttribute('role', 'status'); hint.setAttribute('aria-live', 'polite');
+  v.append(bar, stage, note, hint);
   x.addEventListener('click', closeViewer);
+  prev.addEventListener('click', () => step(-1));
+  next.addEventListener('click', () => step(1));
   dl.addEventListener('click', () => { const c = viewer.card; if (c && c._blob && viewer.m) download(viewer.m, c, c._blob); });
-  v.addEventListener('click', (e) => { if (e.target === v || e.target === stage) closeViewer(); });
-  // Space closes the preview again (Quick Look), unless a player or a field has the key
-  v.addEventListener('keydown', (e) => {
-    if (e.key === ' ' && !e.ctrlKey && !e.metaKey && !e.altKey && !e.target.closest('audio,video,input,textarea,select,.mpvtabs')) {
-      e.preventDefault(); e.stopPropagation(); closeViewer();
-    } else if (e.key !== 'Escape' && e.key !== 'Tab') e.stopPropagation();   // arrows / PageDown scroll the preview, not the cards behind it
+  v.addEventListener('click', (e) => {
+    if (performance.now() - viewer.dragAt < 400) return;            // the end of a drag is not a tap on the backdrop
+    if (e.target === v || e.target === stage) closeViewer();
   });
+  swipeable(v, stage);
   document.body.appendChild(v);
-  viewer = { v, x, dl, title, stage, note, card: null, m: null, cleanup: null };
-  registerLayer({element:()=>v,open:()=>!v.hidden,close:closeViewer,fallback:()=>document.getElementById(document.body.dataset.reader==='1'?'rdClose':'readBtn'),rank:70});
+  viewer = { v, x, dl, title, stage, note, hint, prev, next, count, card: null, m: null, cleanup: null, dragAt: 0, hintT: 0 };
+  viewer.layer = registerLayer({element:()=>v,open:()=>!v.hidden,close:closeViewer,fallback:()=>document.getElementById(document.body.dataset.reader==='1'?'rdClose':'readBtn'),rank:90});
   return viewer;
+}
+/** The preview layer's keys (capture, before the chat screen's shortcuts and the layers' own handler): ← / → step,
+ *  Space closes (Quick Look) unless a player or a field has it; Esc and Tab go on to the layers (close, focus trap);
+ *  every other key reaches only the preview itself (its default action: scroll the document, press the button). */
+function viewerKey(e) {
+  if (!viewerOpen() || e.key === 'Escape' || e.key === 'Tab' || e.isComposing) return;
+  const tg = e.target && e.target.closest ? e.target : null;
+  const mods = e.ctrlKey || e.metaKey || e.altKey;
+  if (!mods && !e.shiftKey && (e.key === 'ArrowLeft' || e.key === 'ArrowRight') && !tg?.closest('input,textarea,select,[contenteditable]')) {
+    e.preventDefault(); e.stopImmediatePropagation();
+    if (!e.repeat) step(e.key === 'ArrowLeft' ? -1 : 1);
+    return;
+  }
+  if (e.key === ' ' && !mods && !tg?.closest('audio,video,input,textarea,select,.mpvtabs')) {
+    e.preventDefault(); e.stopImmediatePropagation(); closeViewer();
+    return;
+  }
+  e.stopImmediatePropagation();
+}
+if (typeof document !== 'undefined') document.addEventListener('keydown', viewerKey, true);
+
+/** The files of the reply the viewer's card belongs to, in reading order: those that can be previewed (+ the one shown). */
+function navList(c) {
+  const all = c && c._sc ? c._sc.cards() : [];
+  return all.filter((x) => x === c || (x.isConnected && x.dataset.pv !== 'none'));
+}
+function paintNav() {
+  const V = viewer, list = navList(V.card), i = list.indexOf(V.card), n = list.length;
+  const on = n > 1 && i >= 0;
+  V.prev.hidden = V.next.hidden = V.count.hidden = !on;
+  V.v.dataset.nav = on ? '1' : '';
+  if (!on) return;
+  V.count.textContent = `${i + 1} / ${n}`;
+  V.count.setAttribute('aria-label', t('media.pv.pos', { n: i + 1, of: n }));
+  V.prev.disabled = i === 0; V.next.disabled = i === n - 1;
+  V.prev.setAttribute('aria-label', t('media.pv.prev')); V.prev.title = t('media.pv.prev');
+  V.next.setAttribute('aria-label', t('media.pv.next')); V.next.title = t('media.pv.next');
+}
+function pausePlayers(V) { for (const p of V.stage.querySelectorAll('audio,video')) { try { p.pause(); } catch { /* gone */ } } }
+/** ← / → / a swipe: the previous / next file of the same reply. → true when it moved. */
+export function step(d) {
+  const V = viewer;
+  if (!V || V.v.hidden || !V.card) return false;
+  const list = navList(V.card), i = list.indexOf(V.card), c = list[i + d];
+  if (i < 0 || !c) { edge(d); return false; }
+  pausePlayers(V);
+  const m = c._m;
+  if (!c._blob && m) {                                     // not here yet: say so in the viewer while it loads
+    const W = openViewer(m.name, c, 'doc', m);
+    W.stage.replaceChildren(mk('p', 'mpvnote mvloading', t('media.loading')));
+  }
+  c._preview?.();
+  if (V.layer) V.layer.opener = c;                         // Esc / × gives the focus back to the file last shown
+  if (c.isConnected) c.scrollIntoView?.({ block: 'nearest' });
+  return true;
+}
+function edge(d) {
+  const V = viewer;
+  V.hint.textContent = t(d < 0 ? 'media.pv.first' : 'media.pv.last');
+  V.hint.classList.add('on');
+  clearTimeout(V.hintT);
+  V.hintT = setTimeout(() => V.hint.classList.remove('on'), 1400);
+  V.stage.animate?.([{ transform: 'translateX(0)' }, { transform: `translateX(${d < 0 ? 18 : -18}px)` }, { transform: 'translateX(0)' }], { duration: 240, easing: 'ease-out' });
+}
+function loadFailed() { viewer.stage.replaceChildren(mk('p', 'mpvnote', t('media.pv.fail'))); }
+/** A sideways swipe anywhere in a document / player preview (pictures: zoomable() owns their pointer). Not on a player's
+ *  own controls, nor where the content itself scrolls sideways that way (a wide table, long code lines). */
+function hScrolls(el, root, dx) {
+  for (let n = el; n && n !== root; n = n.parentElement) {
+    if (n.scrollWidth > n.clientWidth + 1) {
+      const ox = getComputedStyle(n).overflowX;
+      if ((ox === 'auto' || ox === 'scroll') && (dx > 0 ? n.scrollLeft > 0 : n.scrollLeft + n.clientWidth < n.scrollWidth - 1)) return true;
+    }
+  }
+  return false;
+}
+function swipeable(v, stage) {
+  let g = null;
+  v.addEventListener('touchstart', (e) => {
+    g = null;
+    if (e.touches.length !== 1 || v.dataset.mode === 'image' || e.target.closest('audio,video,input,select,textarea,.mvbar')) return;
+    const p = e.touches[0];
+    g = { x: p.clientX, y: p.clientY, lx: p.clientX, lt: performance.now(), v: 0, mode: null, dx: 0, el: e.target };
+  }, { passive: true });
+  v.addEventListener('touchmove', (e) => {
+    if (!g) return;
+    if (e.touches.length !== 1) { reset(); return; }
+    const p = e.touches[0], dx = p.clientX - g.x, dy = p.clientY - g.y;
+    if (g.mode === null) {
+      if (Math.abs(dx) + Math.abs(dy) < CLICK_SLOP) return;
+      g.mode = Math.abs(dy) <= Math.abs(dx) * SWIPE_TAN && !hScrolls(g.el, v, dx) ? 'nav' : 'scroll';
+    }
+    if (g.mode !== 'nav') return;
+    if (e.cancelable) e.preventDefault();               // ours: never the browser's overscroll back / forward navigation
+    const now = performance.now();
+    g.v = (p.clientX - g.lx) / Math.max(1, now - g.lt); g.lx = p.clientX; g.lt = now; g.dx = dx;
+    stage.style.transition = 'none';
+    stage.style.transform = `translateX(${dx * 0.5}px)`;
+  }, { passive: false });
+  const reset = () => { stage.style.transition = ''; stage.style.transform = ''; g = null; };
+  v.addEventListener('touchend', () => {
+    if (!g || g.mode !== 'nav') { g = null; return; }
+    const { dx, v: speed } = g;
+    viewer.dragAt = performance.now();
+    g = null;
+    if ((Math.abs(dx) >= SWIPE_PX || (Math.abs(dx) >= FLING_PX && Math.abs(speed) >= FLING_V)) && step(dx < 0 ? 1 : -1)) {
+      // the next file comes in from the side the finger went to, not back from where the old one was dragged
+      stage.style.transition = 'none';
+      stage.style.transform = `translateX(${dx < 0 ? 32 : -32}px)`;
+      void stage.offsetWidth;
+    }
+    stage.style.transition = ''; stage.style.transform = '';
+  });
+  v.addEventListener('touchcancel', reset);
 }
 function openViewer(label, c, mode = 'image', m = null) {
   const V = viewerEl();
   if (V.cleanup) { try { V.cleanup(); } catch { /* gone */ } V.cleanup = null; }
+  pausePlayers(V);
+  V.stage.style.transition = ''; V.stage.style.transform = '';
   V.card = c || null; V.m = m;
   if (mode !== 'image') V.stage.onpointerdown = V.stage.onpointermove = V.stage.onpointerup = V.stage.onpointercancel = null;
   V.v.dataset.mode = mode;
@@ -402,13 +535,17 @@ function openViewer(label, c, mode = 'image', m = null) {
   V.dl.setAttribute('aria-label', t('media.act.download')); V.dl.title = t('media.act.download');
   V.dl.hidden = !(c && c._blob);
   V.note.textContent = ''; V.note.hidden = true;
+  const was = !V.v.hidden;
   V.v.hidden = false; V.v.dataset.modalOpen = '1';
-  V.x.focus({ preventScroll: true });
+  paintNav();
+  if (!was || !V.v.contains(document.activeElement)) V.x.focus({ preventScroll: true });
   return V;
 }
 export function closeViewer() {
   if (!viewer || viewer.v.hidden) return;
   if (viewer.cleanup) { try { viewer.cleanup(); } catch { /* gone */ } viewer.cleanup = null; }
+  pausePlayers(viewer); want = null;
+  viewer.hint.classList.remove('on');
   viewer.v.hidden = true; delete viewer.v.dataset.modalOpen;
   viewer.stage.replaceChildren(); viewer.note.textContent = ''; viewer.note.hidden = true; viewer.card = null; viewer.m = null;
 }
@@ -453,24 +590,34 @@ function unsupported(m, c, blob, key = 'media.pv.none') {
   }
   return w;
 }
-/** Two-finger pinch, one-finger pan when zoomed, double-tap / double-click toggles 2.5×. */
+/** Two-finger pinch, one-finger pan when zoomed, double-tap / double-click toggles 2.5×. P196: not zoomed, a one-finger
+ *  sideways drag follows the finger and, past SWIPE_PX (or a fling), steps to the previous / next file; a gesture that
+ *  started zoomed, or had two fingers at any point, only pans / zooms. */
 function zoomable(stage, img) {
   let s = 1, x = 0, y = 0;
   const pts = new Map();
-  let start = null, lastTap = 0;
+  let start = null, lastTap = 0, g = null;
   const paint = () => { img.style.transform = `translate(${x}px, ${y}px) scale(${s})`; };
   const dist = () => { const [a, b] = [...pts.values()]; return Math.hypot(a.x - b.x, a.y - b.y); };
   stage.onpointerdown = (e) => {
+    if (!pts.size) g = { x: e.clientX, y: e.clientY, s, multi: false, moved: false, lx: e.clientX, lt: performance.now(), v: 0 };
     pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (pts.size > 1 && g) g.multi = true;
     start = { s, x, y, d: pts.size === 2 ? dist() : 0, px: e.clientX, py: e.clientY };
+    img.style.transition = 'none';
     stage.setPointerCapture?.(e.pointerId);
   };
   stage.onpointermove = (e) => {
     if (!pts.has(e.pointerId) || !start) return;
     pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (g && Math.hypot(e.clientX - g.x, e.clientY - g.y) > CLICK_SLOP) g.moved = true;
     if (pts.size === 2 && start.d) s = Math.min(5, Math.max(1, start.s * dist() / start.d));
     else if (pts.size === 1 && s > 1) { x = start.x + e.clientX - start.px; y = start.y + e.clientY - start.py; }
-    if (s === 1) { x = 0; y = 0; }
+    if (s === 1) {
+      y = 0;
+      x = pts.size === 1 && g && !g.multi && g.s === 1 ? e.clientX - g.x : 0;     // the picture follows the finger sideways
+      if (g) { const now = performance.now(); g.v = (e.clientX - g.lx) / Math.max(1, now - g.lt); g.lx = e.clientX; g.lt = now; }
+    }
     paint();
   };
   const up = (e) => {
@@ -479,11 +626,24 @@ function zoomable(stage, img) {
   };
   stage.onpointerup = (e) => {
     const now = Date.now();
-    if (pts.size === 1 && now - lastTap < 300) { s = s > 1 ? 1 : 2.5; x = 0; y = 0; paint(); lastTap = 0; }
-    else lastTap = now;
+    const last = pts.size === 1, gg = g;
+    if (last && gg && gg.moved && viewer) viewer.dragAt = performance.now();
+    if (last && gg && !gg.multi && gg.s === 1 && s === 1 && gg.moved) {
+      const dx = e.clientX - gg.x, dy = e.clientY - gg.y;
+      const side = Math.abs(dy) <= Math.abs(dx) * SWIPE_TAN && (Math.abs(dx) >= SWIPE_PX || (Math.abs(dx) >= FLING_PX && Math.abs(gg.v) >= FLING_V));
+      up(e); g = null;
+      img.style.transition = ''; x = 0; y = 0; paint();
+      if (side) step(dx < 0 ? 1 : -1);
+      lastTap = 0;
+      return;
+    }
+    if (last && !(gg && gg.moved) && now - lastTap < 300) { s = s > 1 ? 1 : 2.5; x = 0; y = 0; paint(); lastTap = 0; }
+    else if (last) lastTap = gg && gg.moved ? 0 : now;
+    img.style.transition = '';
     up(e);
+    if (!pts.size) g = null;
   };
-  stage.onpointercancel = up;
+  stage.onpointercancel = (e) => { up(e); if (!pts.size) { g = null; if (s === 1) { x = 0; y = 0; img.style.transition = ''; paint(); } } };
   paint();
 }
 

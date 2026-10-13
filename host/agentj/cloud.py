@@ -940,7 +940,8 @@ def parse_relay_cert(obj: dict, channel: str, now: float) -> tuple[str, int] | N
 
 def relay_cert(st, *, post: Callable = post_json, now: Callable = time.time) -> PeerCertResult:
     """P185: one signed `/v1/host/relay/cert` (blocking) — a 72-hour relay seat certificate for this host's channel, or why
-    not: unlinked (no cloud.json) · not_bound (403) · payment_required (402 agent_suspended) · rate_limited · unreachable · fail."""
+    not: unlinked (no cloud.json) · not_bound (403) · payment_required (402 agent_suspended) · rate_limited · unreachable ·
+    unsupported (404: the Dashboard predates the route — P198) · fail."""
     cloud = read_cloud(st)
     if not cloud:
         return PeerCertResult("unlinked")
@@ -965,7 +966,9 @@ def relay_cert(st, *, post: Callable = post_json, now: Callable = time.time) -> 
         return PeerCertResult("payment_required", status=status_class(status))
     if status == 429:
         return PeerCertResult("rate_limited", status=status_class(status))
-    if status >= 500 or status == 404:      # 404: a Dashboard older than this route — not a verdict about the seat
+    if status == 404:       # P198 (J): a Dashboard older than this route (its catch-all 404) — no seat certificates there
+        return PeerCertResult("unsupported", status=status_class(status))
+    if status >= 500:
         return PeerCertResult("unreachable", status=status_class(status))
     return PeerCertResult("fail", status=status_class(status) if err is None else err)
 
@@ -989,7 +992,7 @@ def plaza_call(st, kind: str, fields: dict, *, post: Callable = post_json, now: 
 
 
 # ------------------------------------------------------------------ skill & workflow plaza (protocol/PLAZA_PACKAGES.md §4; agentj/market.py)
-PKG_ROUTES = ("search", "get", "mine", "installed", "like", "report", "publish")
+PKG_ROUTES = ("search", "get", "mine", "installed", "like", "report", "publish", "partners")   # partners: P195
 CTX_PKG = {r: f"agentjarvis-host-plaza-pkg-{r}-v1" for r in PKG_ROUTES}   # wire strings: never renamed
 MAX_BUNDLE = 2 * 1024 * 1024          # = bundle.MAX_BUNDLE: what a download may be and what an upload may carry
 TRANSFER_TIMEOUT = 60

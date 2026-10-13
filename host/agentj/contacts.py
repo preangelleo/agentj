@@ -45,6 +45,12 @@ IMPORT_MAX = 20 * 1024 * 1024
 EMAIL = re.compile(r"[A-Za-z0-9._%+'=-]{1,64}@[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?)+")
 CJK = re.compile(r"[㐀-鿿豈-﫿]")
 ID = re.compile(r"c[0-9a-f]{12}")
+# P194 (Leo, 10-13): slot 0 = the seat's owner — name, main e-mail, optional phone. Always first; never merged into, never removed;
+# changed only by the owner (the owner card on a paired phone, Settings, or the owner's own terminal) — the Agent can only ask
+# (`agentj contacts owner set` pops the card). Its addresses are what "send it to me" means everywhere, and what makes a mail
+# owner-directed (owner_route): an address the Agent could write here would be an address that skips the outbound filter.
+OWNER_ID = "c000000000000"
+SELF_WORDS = frozenset(("我", "我自己", "自己", "本人", "主人", "董事长", "me", "myself", "self", "owner"))
 
 
 class ContactError(ValueError):
@@ -198,16 +204,57 @@ def by_email(book: dict, addr: str) -> dict | None:
     return next((c for c in book["contacts"] if any(e["v"] == a for e in c.get("emails", []))), None) if a else None
 
 
+def owner(book: dict) -> dict | None:
+    return get(book, OWNER_ID)
+
+
+def set_owner(book: dict, raw: dict) -> tuple[dict, str]:
+    """Slot 0 ← the owner's own answer: name, e-mails (the first is the main one), phones replace what was there. → (it,
+    "added" | "updated" | "same"). At least one e-mail."""
+    c = clean(raw, partial=True)
+    if not c["emails"]:
+        raise ContactError("no_email", "the owner's main e-mail is required / 至少填主邮箱")
+    o = owner(book)
+    now = int(time.time())
+    if o is None:
+        o = {"id": OWNER_ID, **c, "name": c["name"], "source": "owner", "created": now, "updated": now, "last_sent_at": None,
+             "send_count": 0}
+        book["contacts"].insert(0, o)
+        return o, "added"
+    new = {k: c[k] for k in ("name", "emails", "phones") if c.get(k) or k == "phones"}
+    if all(o.get(k) == v for k, v in new.items()):
+        return o, "same"
+    o.update(new)
+    o["updated"] = now
+    book["contacts"].remove(o)
+    book["contacts"].insert(0, o)
+    return o, "updated"
+
+
+def owner_emails(st) -> list[str]:
+    """The owner's own addresses: slot 0 first (main e-mail first), then the e-mail channel's allowlist rows marked 「我本人」
+    (P170). Lower case, no duplicates."""
+    out = [e["v"].lower() for e in (owner(read(st)) or {}).get("emails", [])]
+    with contextlib.suppress(Exception):
+        from . import mail as M
+        out += [str(r["addr"]).lower() for r in M.read_config(st).get("allow", []) if r.get("role") == "owner"]
+    return list(dict.fromkeys(a for a in out if a))
+
+
 def _match(book: dict, c: dict) -> dict | None:
     em = {e["v"] for e in c["emails"]}
     ph = {phone_key(p["v"]) for p in c["phones"]} - {""}
     for o in book["contacts"]:
+        if o["id"] == OWNER_ID:            # P194: nothing is merged INTO slot 0 (an e-mail added there would be an owner address)
+            continue
         if em & {e["v"] for e in o.get("emails", [])}:
             return o
         if ph & {phone_key(p["v"]) for p in o.get("phones", [])}:
             return o
     nk = name_key(c["name"])
     for o in book["contacts"]:
+        if o["id"] == OWNER_ID:
+            continue
         if not nk or name_key(o.get("name", "")) != nk:
             continue
         oem = {e["v"] for e in o.get("emails", [])}
@@ -289,6 +336,8 @@ def remove(book: dict, cid: str) -> dict:
     o = get(book, cid)
     if o is None:
         raise ContactError("not_found")
+    if cid == OWNER_ID:
+        raise ContactError("owner_slot", "slot 0 is the owner's own card; the owner changes it / 0 号位是主人本人，只能主人改")
     book["contacts"].remove(o)
     return o
 
@@ -483,6 +532,8 @@ def score(c: dict, q: str) -> int:
 
 
 def find(book: dict, q: str, limit: int = 10, floor: int = 36) -> list[tuple[int, dict]]:
+    if (q or "").strip().lower() in SELF_WORDS and owner(book):
+        return [(100, owner(book))]
     hits = [(score(c, q), c) for c in book["contacts"]]
     hits = [h for h in hits if h[0] >= floor]
     hits.sort(key=lambda h: (-h[0], -(h[1].get("send_count") or 0), -(h[1].get("last_sent_at") or 0), sort_key(h[1])))
@@ -504,18 +555,20 @@ def letter(c: dict) -> str:
 
 
 def ordered(book: dict, how: str = "recent") -> list[dict]:
-    cs = list(book["contacts"])
+    me = [c for c in book["contacts"] if c["id"] == OWNER_ID]          # P194: slot 0 always first
+    cs = [c for c in book["contacts"] if c["id"] != OWNER_ID]
     if how == "name":
-        return sorted(cs, key=lambda c: ("#" == letter(c), sort_key(c)))
+        return me + sorted(cs, key=lambda c: ("#" == letter(c), sort_key(c)))
     if how == "frequent":
-        return sorted(cs, key=lambda c: (-(c.get("send_count") or 0), -(c.get("last_sent_at") or 0), sort_key(c)))
-    return sorted(cs, key=lambda c: (-(c.get("last_sent_at") or 0), -(c.get("send_count") or 0), -(c.get("updated") or 0), sort_key(c)))
+        return me + sorted(cs, key=lambda c: (-(c.get("send_count") or 0), -(c.get("last_sent_at") or 0), sort_key(c)))
+    return me + sorted(cs, key=lambda c: (-(c.get("last_sent_at") or 0), -(c.get("send_count") or 0), -(c.get("updated") or 0),
+                                          sort_key(c)))
 
 
 def view(c: dict) -> dict:
     """What the phone / the Agent sees of one contact (everything but internal bookkeeping)."""
     return {k: c.get(k) for k in ("id", "name", "nicks", "emails", "phones", "addresses", "org", "title", "bday", "note", "source",
-                                  "last_sent_at", "send_count")} | {"letter": letter(c)}
+                                  "last_sent_at", "send_count")} | {"letter": letter(c)} | ({"slot": 0} if c.get("id") == OWNER_ID else {})
 
 
 def missing(c: dict) -> list[str]:
@@ -914,6 +967,21 @@ def local(st, req: dict) -> dict:
             with edit_book(st) as book:
                 c, how = add(book, req.get("contact") or {}, source=req.get("source") or "agent", merge=not req.get("no_merge"))
             return {"ok": True, "result": how, "contact": view(c)}
+        if op == "owner_get":
+            book = read(st)
+            o = owner(book)
+            return {"ok": True, "owner": view(o) if o else None, "emails": owner_emails(st),
+                    "suggest": [a for a in owner_emails(st) if not o or a not in [e["v"] for e in o.get("emails", [])]]}
+        if op == "owner_set":
+            if not req.get("owner_ok"):
+                return {"ok": False, "why": "owner_only", "detail": "only the owner sets slot 0 (the owner card on the phone) / "
+                        "0 号位只能主人本人填：用 agentj contacts owner set 在手机上弹卡片"}
+            with edit_book(st) as book:
+                c, how = set_owner(book, req.get("contact") or {})
+            return {"ok": True, "result": how, "contact": view(c)}
+        if op in ("edit", "rm") and str(req.get("id") or "") == OWNER_ID and not req.get("owner_ok"):
+            return {"ok": False, "why": "owner_slot", "detail": "0 号位是主人本人：用 agentj contacts owner set 请主人在手机上改 / "
+                    "slot 0 is the owner: `agentj contacts owner set` asks them on the phone"}
         if op == "edit":
             with edit_book(st) as book:
                 c = update(book, str(req.get("id") or ""), req.get("changes") or {})
@@ -977,6 +1045,8 @@ def cmd(a) -> int:
         res = _call(st, req, timeout)
         return res if res is not None else local(st, req)
 
+    if a.action == "owner":
+        return owner_cmd(st, a, zh, out, run)
     if a.action == "list":
         return out(run({"op": "list", "sort": a.sort, "limit": a.limit}))
     if a.action == "find":
@@ -1038,15 +1108,56 @@ def cmd(a) -> int:
     return out({"ok": False, "why": "shape"})
 
 
+def owner_cmd(st, a, zh: bool, out, run) -> int:
+    """P194 `agentj contacts owner show|set`: slot 0 = the owner. `show` prints it (or what could be suggested); `set` never
+    writes by itself from the Agent: it opens the owner card on the paired phone (pre-filled with --name / --email / --phone,
+    else with the 「我本人」 address of the e-mail channel) and the owner saves or skips. Only the owner's own terminal (a TTY,
+    Agent J not running) writes directly."""
+    import sys
+    sub_ = (a.query or "show").lower()
+    if sub_ not in ("show", "set"):
+        return out({"ok": False, "why": "shape", "detail": "agentj contacts owner show | set"})
+    if sub_ == "show":
+        res = run({"op": "owner_get"})
+        if a.json or not res.get("ok"):
+            return out(res)
+        o = res.get("owner")
+        if not o:
+            print("0 号位（你本人）还没填。" if zh else "Slot 0 (the owner) is empty.", end=" ")
+            if res.get("suggest"):
+                print(("可以建议：" if zh else "Suggested: ") + ", ".join(res["suggest"]))
+            else:
+                print("用 agentj contacts owner set 在手机上弹卡片请主人填。" if zh else "Run `agentj contacts owner set` to ask on the phone.")
+            return 0
+        em = ", ".join(e["v"] for e in o.get("emails") or [])
+        ph = ", ".join(x["v"] for x in o.get("phones") or [])
+        print(f"0  {o.get('name') or ''}  {em}  {ph}".rstrip())
+        return 0
+    contact = {k: v for k, v in (("name", a.name or ""), ("emails", a.email or []), ("phones", a.phone or [])) if v}
+    served = _call(st, {"op": "ping"}, 5) is not None
+    if not served:
+        if sys.stdin.isatty() and sys.stdout.isatty() and contact.get("emails"):
+            return out(local(st, {"op": "owner_set", "contact": contact, "owner_ok": True}))   # the owner at their own terminal
+        return out({"ok": False, "why": "not_running", "detail": "0 号位要主人在手机上确认：Agent J 要在运行（agentj service status）"
+                    if zh else "slot 0 is confirmed by the owner on the phone: Agent J must be running (agentj service status)"})
+    req = {"op": "card", "owner": True, "contact": contact, "why": a.why or ""}
+
+    def early(m):
+        print(f"CONTACT_CARD: {m.get('id')}", flush=True)
+    from .elevate import client_request
+    return out(client_request(st, {"t": "contacts", **req}, timeout=700, on_card=early))
+
+
 def add_parser(sub) -> None:
     import sys
-    p = sub.add_parser("contacts", help="通讯录：list · find · add · edit · rm · import · export · card / the owner's address book",
+    p = sub.add_parser("contacts", help="通讯录：list · find · add · edit · rm · import · export · card · owner / the owner's address book",
                        description="主人的通讯录，只存在这台电脑上。find 按姓名、昵称、拼音（含谐音、声母）、邮箱模糊查找；"
                                    "import 吃 Google / Outlook / Apple / QQ / 163 导出的 .vcf .csv .json；card 在手机上弹联系人卡片让主人确认保存。"
                                    " / The owner's address book, on this computer only: fuzzy find by name, nickname, pinyin, e-mail; "
                                    "import vCard / CSV / JSON exports; `card` asks the owner on the phone.")
-    p.add_argument("action", choices=["list", "find", "add", "edit", "rm", "import", "export", "card"])
-    p.add_argument("query", nargs="?", help="find：要找的人 · edit/rm/card：id 或名字 · import/export：文件（- = 标准输入/输出）")
+    p.add_argument("action", choices=["list", "find", "add", "edit", "rm", "import", "export", "card", "owner"])
+    p.add_argument("query", nargs="?", help="find：要找的人 · edit/rm/card：id 或名字 · import/export：文件（- = 标准输入/输出）"
+                                            " · owner：show（看 0 号位=主人本人）| set（在手机上弹卡片请主人填）")
     p.add_argument("--name")
     p.add_argument("--nick", action="append", help="昵称 / 别名（可多次）")
     p.add_argument("--email", action="append", help="邮箱（可多次）")

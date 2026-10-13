@@ -25,7 +25,11 @@ LEGACY_RECONNECT=240
 
 class Runtime:
     def __init__(self,manager):
-        self.manager=manager;self.host=manager.host;self.tasks={};self.active={};self.stopping=False;self.epochs={};self.synced={};self.pruned=0;self.telegram_tasks={};self.telegram_epochs={};self.telegram_targets={}
+        self.manager=manager;self.host=manager.host;self.seated=True;self.tasks={};self.active={};self.stopping=False;self.epochs={};self.synced={};self.pruned=0;self.telegram_tasks={};self.telegram_epochs={};self.telegram_targets={}
+    def seat_ok(self):
+        f=getattr(self.host,'seat_refusal',None)
+        try:return not (f and f('bots'))
+        except Exception:return True
     def engine(self):
         agent=self.host.agent
         return Engine(self.manager.state(),getattr(agent,'kind',None) or (self.host.agent_cfg or {}).get('kind'),agent.cur_model() if agent and hasattr(agent,'cur_model') else None,approve=self.manager.approve,handoff=self.manager.handoff)
@@ -36,11 +40,14 @@ class Runtime:
                 configured=self.host.st.root/'bots'/'bots.sqlite3'
                 bots=self.manager.state().listing(include_removed=True) if configured.exists() else []
                 if configured.exists() and time.monotonic()-self.pruned>=3600:self.manager.state().prune();self.pruned=time.monotonic()
-                wanted={b['id'] for b in bots if b['enabled'] and not self.manager.state().lifecycle(b['id'])['removed']} if cloud.read_cloud(self.host.st) and not self.host.stopped() else set()
+                # P199: public bots (web and Telegram) need a usable Agent J seat — serve's P185 verdict, grace and cache.
+                seated=self.seat_ok()
+                if seated!=self.seated:self.host.st.log('bots',outcome='seat_resumed' if seated else 'seat_paused');self.seated=seated
+                wanted={b['id'] for b in bots if b['enabled'] and not self.manager.state().lifecycle(b['id'])['removed']} if seated and cloud.read_cloud(self.host.st) and not self.host.stopped() else set()
                 for bid in list(self.tasks):
                     if bid not in wanted or self.tasks[bid].done() or self.epochs.get(bid)!=self.manager.state().lifecycle(bid)['epoch']:
                         self.tasks[bid].cancel();await asyncio.gather(self.tasks.pop(bid),return_exceptions=True)
-                telegram_wanted={b['id'] for b in bots if b['enabled'] and b['telegram']['enabled'] and not self.manager.state().lifecycle(b['id'])['removed']} if cloud.read_cloud(self.host.st) and not self.host.stopped() else set()
+                telegram_wanted={b['id'] for b in bots if b['enabled'] and b['telegram']['enabled'] and not self.manager.state().lifecycle(b['id'])['removed']} if seated and cloud.read_cloud(self.host.st) and not self.host.stopped() else set()
                 for bid in list(self.telegram_tasks):
                     if bid not in telegram_wanted or self.telegram_tasks[bid].done() or self.telegram_epochs.get(bid)!=self.manager.state().lifecycle(bid)['epoch']:
                         self.telegram_tasks[bid].cancel();await asyncio.gather(self.telegram_tasks.pop(bid),return_exceptions=True)
@@ -52,7 +59,7 @@ class Runtime:
                         try:channel=Channel(self,bid)
                         except BotError:continue
                         self.telegram_epochs[bid]=channel.epoch;self.telegram_tasks[bid]=asyncio.create_task(channel.run())
-                if cloud.read_cloud(self.host.st):
+                if seated and cloud.read_cloud(self.host.st):
                     for b in bots:
                         bid=b['id'];epoch=self.manager.state().lifecycle(bid)['epoch']
                         if self.synced.get(bid,(0,0))[0]!=epoch or time.monotonic()-self.synced.get(bid,(0,0))[1]>=60:

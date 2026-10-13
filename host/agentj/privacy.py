@@ -168,11 +168,87 @@ def redact_with_report(text: str, host: str | None = None, user: str | None = No
     hits: collections.Counter = collections.Counter()
     paths = paths or owner
     for _ in range(8):
-        new = _one_pass(text, host, user, hits, paths, owner)
+        new = _owner_pass(text, host, user, hits) if owner else _one_pass(text, host, user, hits, paths, owner)
         if new == text:
             break
         text = new
     return text, hits
+
+
+# P194 (Leo, 10-13): what goes to the owner's OWN channels (paired remotes, the owner bot's private chat, the owner's own
+# mailbox) keeps links, access codes, one-time codes and private addresses as written — only real credentials go. A link is
+# kept whole except a credential embedded in it (user:password@, or a key of a known provider's shape: `?key=AIza…`,
+# api.telegram.org/bot<token>); outside links every secret rule and the high-entropy rule still apply.
+_LINK = _re(r"\b[a-z][a-z0-9+.-]*://[^\s<>\"'`]+", re.I)
+_LINK_HARD = frozenset(("private_key", "url_credentials", "aws_access_key", "github_token", "gitlab_token", "slack_token",
+                        "stripe_key", "google_api_key", "anthropic_key", "openrouter_key", "openai_key", "replicate_token",
+                        "huggingface_token", "telegram_bot_token", "agentjarvis_id", "mailgun_key"))
+_MNEMONIC = _re(r"(?i)((?:mnemonic|seed\s+phrase|recovery\s+phrase|secret\s+recovery\s+phrase|助记词|恢复短语)[^\n:：]{0,12}[:：]?\s*)"
+                r"((?:[a-z]{3,8}[ ,]+){11,23}[a-z]{3,8})\b")
+
+
+def _owner_pass(text: str, host: str | None, user: str | None, hits: collections.Counter) -> str:
+    out, at = [], 0
+    for m in _LINK.finditer(text):
+        out.append(_one_pass(text[at:m.start()], host, user, hits, True, True))
+        link = m.group(0)
+        for kind, pat, repl in _SECRETS:
+            if kind in _LINK_HARD:
+                link, n = pat.subn(repl, link)
+                if n:
+                    hits[kind] += n
+        out.append(link)
+        at = m.end()
+    out.append(_one_pass(text[at:], host, user, hits, True, True))
+    return "".join(out)
+
+
+def credentials(text: str) -> list[tuple[str, str, int, int]]:
+    """P194: the real credentials in an owner-bound text — (kind, value, start, end), in order, not overlapping. The same
+    rules as the owner mode (`redact(owner=True)`): what this finds is what that mode would hide. Low-risk codes (an access
+    code, a one-time code, a report's authorization code, a link) are not credentials and are not returned."""
+    spans: list[tuple[int, int, str]] = []
+
+    def add(seg_start, m, repl, kind):
+        rep = m.expand(repl) if isinstance(repl, str) else R
+        i = rep.find(R)
+        pre, suf = (rep[:i], rep[i + len(R):]) if i >= 0 else ("", "")
+        s, e = seg_start + m.start() + len(pre), seg_start + m.end() - len(suf)
+        if e > s:
+            spans.append((s, e, kind))
+
+    def scan(seg: str, base: int, link: bool) -> None:
+        for kind, pat, repl in _SECRETS:
+            if link and kind not in _LINK_HARD:
+                continue
+            for m in pat.finditer(seg):
+                if R in m.group(0):
+                    continue
+                add(base, m, repl, kind)
+        if link:
+            return
+        for m in _MNEMONIC.finditer(seg):
+            spans.append((base + m.start(2), base + m.end(2), "mnemonic"))
+        for m in _ENTROPIC.finditer(seg):
+            if _pathlike(m):                # P194: same as the owner mode — a local path is not a credential
+                continue
+            if _entropic(m.group(0)):
+                spans.append((base + m.start(), base + m.end(), "high_entropy"))
+    at = 0
+    for m in _LINK.finditer(text):
+        scan(text[at:m.start()], at, False)
+        scan(m.group(0), m.start(), True)
+        at = m.end()
+    scan(text[at:], at, False)
+    spans.sort(key=lambda x: (x[0], -(x[1] - x[0])))
+    out: list[tuple[str, str, int, int]] = []
+    end = -1
+    for s, e, kind in spans:
+        if s < end:                       # inside one already taken (a key inside a credential assignment …)
+            continue
+        out.append((kind, text[s:e], s, e))
+        end = e
+    return out
 
 
 def _one_pass(text: str, host: str | None, user: str | None, hits: collections.Counter, paths: bool = False,
@@ -185,6 +261,7 @@ def _one_pass(text: str, host: str | None, user: str | None, hits: collections.C
 
     for kind, pat, repl in _SECRETS:
         text = sub(kind, pat, repl, text)
+    text = sub("mnemonic", _MNEMONIC, r"\1" + R, text)          # P194: a wallet's seed words
 
     def email(m):
         if _EMAIL_OK_DOMAIN.search(m.group(1)) or m.group(0).split("@")[0].lower() == "git":
@@ -203,9 +280,12 @@ def _one_pass(text: str, host: str | None, user: str | None, hits: collections.C
 
     for pat in () if owner else _PHONES:
         text = sub("phone", pat, "<phone>", text)
-    text = sub("private_ip", _PRIVATE_IP, "<private-ip>", text)
+    if not owner:                               # P194: the owner's own LAN addresses are theirs to copy
+        text = sub("private_ip", _PRIVATE_IP, "<private-ip>", text)
 
     def entropic(m):
+        if owner and _pathlike(m):          # P194: a local path to the owner's own channel stays whole — the media scan and
+            return m.group(0)               # the owner both need it (named key shapes inside it were already taken above)
         if paths and _pathlike(m):
             segs = [R if len(x) >= SEGMENT_MIN and _entropic(x) else x for x in m.group(0).split("/")]
             hits["high_entropy"] += segs.count(R)
@@ -222,7 +302,8 @@ def redact(text: str, host: str | None = None, user: str | None = None, paths: b
 
 
 def owner_text(text: str) -> str:
-    """P167: what the owner's own paired phone / web page (E2E) shows — secrets redacted, contacts and paths readable."""
+    """P167 / P194: what the owner's OWN channels show — the paired remotes (E2E), the owner bot's private chat and the
+    owner's own mailbox: credentials redacted; e-mail, phone, paths, private IPs, links and low-risk codes as written."""
     return redact(text, owner=True)
 
 

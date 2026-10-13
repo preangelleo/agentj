@@ -406,6 +406,8 @@ try {
       await shot('08-approval-sheet');
       await fake.send({ t: 'question', id: hex(16), ttl: 180, qs: [{ q: lang === 'en' ? 'Which supplier?' : '找哪家供应商？', h: '', m: false, o: [{ l: 'A', d: lang === 'en' ? 'cheaper' : '便宜' }, { l: 'B', d: lang === 'en' ? 'faster' : '快' }] }] });
       await evaluate(p, `document.getElementById('sheetClose').click()`);
+      // P165: let the .55 s slide-out finish — measuring mid-transition caught the closing sheet's cmdCopy (44×44 rounded, < 44 raw)
+      await waitFor(p, `document.body.dataset.sheet !== '1' && getComputedStyle(document.getElementById('sheet')).visibility === 'hidden'`, 3000).catch(() => {});
       await shot('09-pending-tag');
       await evaluate(p, `document.getElementById('pendTag').click()`);
       fake.reset();

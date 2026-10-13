@@ -526,7 +526,7 @@ function viewAdd(box) {
  *  my own ID, already a friend, friends off) is told. */
 async function sendAdd(id, noteText) {
   const res = await write('fr_add', { id, note: String(noteText || '').replace(/\r\n?/g, '\n').trim().slice(0, 280) });
-  if (!res.ok && ['offline', 'timeout', 'no_key', 'bad_signature', 'stale', 'replay', 'self', 'exists', 'off', 'bad_id', 'shape'].includes(res.why)) {
+  if (!res.ok && ['offline', 'timeout', 'no_key', 'bad_signature', 'stale', 'replay', 'self', 'exists', 'off', 'bad_id', 'shape', 'seat'].includes(res.why)) {
     toast(t('fr.fail', { why: why(res.why) }), 4000);
     return false;
   }

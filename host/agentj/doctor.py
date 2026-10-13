@@ -626,7 +626,9 @@ def check_seat(st: State) -> dict:
     if v["verdict"] in seatcert.ALLOWED:
         exp = time.strftime("%Y-%m-%d %H:%M", time.localtime(v["exp"])) if v["exp"] else "—"
         what = {"ok": f"有效，到 {exp} / valid until {exp}", "grace": "已绑定，正在确认 / bound, confirming",
-                "exempt": "本机中继，不检查 / local relay, not checked"}[v["verdict"]]
+                "exempt": "本机中继，不检查 / local relay, not checked",
+                "unenforced": "账户服务还没启用席位证书，不检查 / the account service does not issue seat certificates yet, "
+                              "not checked"}[v["verdict"]]
         return _c("seat", OK, "席位证书 / seat certificate: " + what)
     return _c("seat", WARN, "席位 / seat: " + v["verdict"], seatcert.message(v["verdict"], "zh", v["url"]) + " / "
               + seatcert.message(v["verdict"], "en", v["url"]))
@@ -639,6 +641,25 @@ def _serve_status(st: State) -> dict | None:
         return names.ctl_call(st, {"cmd": "status"}, 5)
     except Exception:  # noqa: BLE001 — busy / not running: the row says so
         return None
+
+
+def check_jev_key(svc: dict) -> dict | None:
+    """P198 (I): whether the background service gets Jev's key (P157 approval layer 2, optional). Only with an installed
+    service (a terminal serve sees this shell). Names only: never a value. ! when this terminal has the key and the service
+    does not (one-step import); a plain ✓ "off (optional)" when neither has it."""
+    if not svc.get("installed") or service.platform() not in ("linux", "macos"):
+        return None
+    key = service.JEV_KEY_ENV
+    n = svc.get("name") or service.DEFAULT_UNIT
+    has = service.env_file_has(service.env_file(n), key)
+    if has:
+        return _c("jev", OK, f"Jev（审批第二层）：服务有 {key} / approval layer 2: the service has {key}")
+    if has is None:
+        return _c("jev", WARN, "服务环境文件读不了 / the service env file cannot be read", service.MESSAGES["bad_service_env"])
+    if (os.environ.get(key) or "").strip():
+        return _c("jev", WARN, f"Jev 不生效：{key} 只在这个终端里，后台服务没有 / Jev is off: {key} is only in this terminal, "
+                  "not in the background service", service.key_note(n, key) or "")
+    return _c("jev", OK, f"Jev（审批第二层，可选）未启用：没有 {key} / approval layer 2 (optional) is off: no {key}")
 
 
 def check_onboarding(st: State) -> dict:
@@ -932,7 +953,7 @@ def run(st: State | None = None, offline: bool = False) -> list[dict]:
     reach_row = check_chatgpt(st, offline)
     if reach_row:
         out.append(reach_row)
-    out += [check_agent_cli(st, svc), check_harness(svc), check_fence(st), check_danger(st), check_passphrase(st), check_bound(st), check_seat(st), check_onboarding(st),
+    out += [check_agent_cli(st, svc), check_harness(svc), check_fence(st), check_danger(st), check_passphrase(st), check_bound(st), check_seat(st), *filter(None, [check_jev_key(svc)]), check_onboarding(st),
             check_serve(st), check_friends(st, _serve_status(st)), check_service(svc, service.legacy_status()), check_alias(),
             check_estop(st), check_tasks(st), check_activity(st)]
     out += check_asr(st)

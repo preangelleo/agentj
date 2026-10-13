@@ -2440,7 +2440,8 @@ function pttStart(id, y){
                    send: false, stream: null, rec: null, recT0: 0, recT1: 0, chunks: [],
                    pend: 0, tUp: 0, locked: false, lockT0: 0, cap: 0, viaM: false,
                    seg: 0, segMs: segMs(), maxSegs: Math.max(1, Math.min(REC_SEGS, MAX_ATT - atts.length)),
-                   takeP: null, take: null, stampS: stamp(), lastData: 0, mutedAt: 0, wl: null, wlFail: false, interrupted: false};
+                   takeP: null, take: null, stampS: stamp(), lastData: 0, mutedAt: 0, wl: null, wlFail: false, interrupted: false,
+                   hidAt: 0, visAt: 0, cutAt: 0, segT0: 0};
   p.timer = setInterval(() => { pttWatch(p); pttUI(p); }, 250);
   pttUI(p);
   // Native permission/device acquisition may never settle. Do not leave a
@@ -2490,12 +2491,14 @@ function segStart(p){
   catch(_){ try{ rec = new MediaRecorder(p.stream); }catch(_){ return false; } }
   const n = p.seg, chunks = [], t0 = performance.now();
   let i = 0, last = t0;
-  p.rec = rec; p.chunks = chunks;
+  p.rec = rec; p.chunks = chunks; p.segT0 = t0;
   rec.ondataavailable = e => {
     if (!e.data || !e.data.size) return;
     chunks.push(e.data);
     const now = performance.now(), ms = now - last, k = i++;
     last = now; p.lastData = Date.now();
+    // P198: audio still arriving while hidden moves "known good" forward; a full slice after coming back clears it
+    if (p.hidAt){ if (document.visibilityState !== "visible") p.hidAt = now; else if (now - p.visAt > REC_SLICE_MS + 1000) p.hidAt = 0; }
     p.takeP?.then(id => id && LR.addChunk(id, n, k, e.data, ms));
   };
   rec.onerror = () => pttInterrupted(p);
@@ -2542,11 +2545,25 @@ function pttWatch(p){
   if (p.rec.state === "inactive" && !p.rec.closing) return pttInterrupted(p);
   if (p.lastData && now - p.lastData > REC_SLICE_MS * 3 + 2000) return pttInterrupted(p);
 }
+// P198: the take ends where the audio did, not when the page noticed. Found on return to the foreground (iOS takes the
+// microphone at the screen lock and freezes the page): the moment the page went hidden, or the last audio that came in
+// while it was hidden; a muted track: the moment of the mute. So the time with the screen locked is never counted.
 function pttInterrupted(p){
   if (p.over || p.interrupted) return;
   p.interrupted = true;
-  toast(t('r.ptt.interrupted', {d: mmss(recTotalMs(p) / 1000)}), 7000);
+  const now = performance.now();
+  let cut = document.visibilityState === "visible" && p.hidAt ? p.hidAt : now;
+  if (p.mutedAt) cut = Math.min(cut, now - Math.max(0, Date.now() - p.mutedAt));
+  p.cutAt = Math.max(p.segT0 || p.recT0, Math.min(cut, now));
   pttEnd(p, "release", true);
+}
+// P198: the interruption notice says where the recording really went — the tray, the message field (being transcribed),
+// or nowhere (not a sound was captured); shown once the destination is known.
+function intNote(p, where){
+  if (!p || !p.interrupted || p.noted) return;
+  p.noted = true;
+  const d = mmss(recTotalMs(p) / 1000);
+  toast(where === "tray" ? t('r.ptt.interrupted', {d}) : where === "text" ? t('r.ptt.intText', {d}) : t('r.ptt.intNone'), 7000);
 }
 function pttEnd(p, reason, quiet){
   if (!p || p.over) return;
@@ -2556,7 +2573,7 @@ function pttEnd(p, reason, quiet){
   if (ptt === p) ptt = null;
   if (p.locked) lockEndAt = performance.now();
   const held = (p.tUp || performance.now()) - p.t0;
-  p.recT1 = p.tUp || performance.now();
+  p.recT1 = p.tUp || p.cutAt || performance.now();
   p.send = reason === "release" && !p.cancel && !!p.rec && (p.locked || p.interrupted || p.seg > 0 || held >= PTT_MIN_MS);
   if (!quiet){
     if (reason === "release" && !p.cancel && !p.locked && !p.seg && held < PTT_MIN_MS) toast(t('r.ptt.short'), 1600);
@@ -2591,8 +2608,8 @@ function segAttach(p, n, blob, secs, quiet){
 function pttFinish(p, n, blob, secs){
   if (p.stream) p.stream.getTracks().forEach(tr => tr.stop());
   const dropTake = () => p.takeP?.then(id => id && LR.dropSeg(id, n));
-  if (!p.send || !blob){ dropTake(); return; }
-  if (n > 0 || secs > WAV_MAX_S){ segAttach(p, n, blob, secs); return; }     // long: the compressed original, as it was recorded
+  if (!p.send || !blob){ intNote(p, n > 0 ? "tray" : "none"); dropTake(); return; }   // P198: earlier parts are in the tray
+  if (n > 0 || secs > WAV_MAX_S){ if (segAttach(p, n, blob, secs) || n > 0) intNote(p, "tray"); return; }     // long: the compressed original, as it was recorded
   takeFinished(blob, secs, p);
 }
 // A finished take, from the mic or from a native shell (relayNative.take): words into the field, or a long one into the tray.
@@ -2611,12 +2628,14 @@ async function takeFinished(blob, dur, p){
         a.label = t('r.tray.voice', {d: mmss(dur)}); paintChip(a);
         p?.takeP?.then(id => { if (id){ a.rec = {take: id, seg: 0}; LR.closeSeg(id, 0, Math.round(dur * 1000)); } });
       }
-      toast(C.asr() === "ready" ? t('r.voice.asAtt') : t('r.voice.asAttNoAsr'), 3200);
+      if (a && p?.interrupted) intNote(p, "tray");
+      else toast(C.asr() === "ready" ? t('r.voice.asAtt') : t('r.voice.asAttNoAsr'), 3200);
       return;
     }
     toast(t('r.voice.trayFull', {max: MAX_ATT}), 3200);
   }
   if (C.asr() !== "ready"){ C.asrInstall?.(); return; }
+  intNote(p, "text");
   asrBusy++; asrUI();
   const ep = localEpoch;
   const job = transcribe(blob, dur);
@@ -3419,9 +3438,13 @@ export function init(ctx){
     if (!ptt) return;
     if (document.visibilityState !== "visible"){
       if (!ptt.locked && !ptt.seg) pttEnd(ptt, "cancel");
-      else try{ if (ptt.rec && ptt.rec.state === "recording") ptt.rec.requestData(); }catch(_){}
+      else{
+        if (!ptt.hidAt) ptt.hidAt = performance.now();                 // P198: see pttInterrupted
+        try{ if (ptt.rec && ptt.rec.state === "recording") ptt.rec.requestData(); }catch(_){}
+      }
       return;
     }
+    ptt.visAt = performance.now();
     if (ptt.locked) wakeOn(ptt);
     pttWatch(ptt);
   });

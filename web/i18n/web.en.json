@@ -1075,7 +1075,9 @@
     "rescan": "Scan to pair again",
     "legal": "Data and terms",
     "bots": "Bots / Customer service",
-    "gChannels": "Channels"
+    "gChannels": "Channels",
+    "owner": "My contact details",
+    "ownerNote": "Slot 0 of the address book: the main e-mail and phone for \"send it to me\"."
   },
   "set.updates": "Upgrade method",
   "set.updatesAuto": "Upgrade automatically and tell me",
@@ -1186,7 +1188,9 @@
       "outside": "{name} isn't in the working folder — not sent.",
       "secret": "{name} may contain a key — not sent.",
       "type": "{name} is a kind of file that can't be sent.",
-      "gone": "{name} wasn't found — not sent."
+      "gone": "{name} wasn't found — not sent.",
+      "masked": "{name} — its path was masked by a privacy rule in the reply, so it wasn't sent (the file itself may still be there).",
+      "too_many": "{name} — not sent: one reply carries at most 24 files."
     },
     "tapSize": "Tap to load · {size}",
     "shareAgain": "The file is ready — tap share again",
@@ -1211,7 +1215,12 @@
       "docx": "Word document preview",
       "none": "This kind of file can't be previewed yet. Download it and open it in an app on your phone.",
       "fail": "This file couldn't be previewed. Download it to view it.",
-      "pdfFail": "This PDF couldn't be shown here. Open it in the system PDF viewer, or download it."
+      "pdfFail": "This PDF couldn't be shown here. Open it in the system PDF viewer, or download it.",
+      "prev": "Previous (←)",
+      "next": "Next (→)",
+      "pos": "File {n} of {of}",
+      "first": "This is the first one",
+      "last": "This is the last one"
     }
   },
   "camera": {
@@ -1427,7 +1436,8 @@
       "exists": "already friends",
       "too_many": "too many; delete some first",
       "too_long": "too long (at most 4000 characters)",
-      "bad_id": "this ID is wrong"
+      "bad_id": "this ID is wrong",
+      "seat": "needs a valid Agent J seat (renew or bind on the account page)"
     },
     "ask": {
       "title": "🤝 Friend request",
@@ -2115,7 +2125,9 @@
       "phones": "Phone (optional)",
       "addresses": "Address (optional)",
       "org": "Company (optional)",
-      "note": "Note (optional)"
+      "note": "Note (optional)",
+      "mainEmail": "Main e-mail",
+      "phoneOpt": "Phone (optional)"
     },
     "more": {
       "emails": "Add another e-mail",
@@ -2130,7 +2142,11 @@
     "fwdTurn": "Your message and this reply (with its files)",
     "noInput": "Leave out my message",
     "noInputSub": "Send only the Agent's reply, without the message you sent",
-    "sentSkip": "Sent; {n} file(s) too big to attach were left out"
+    "sentSkip": "Sent; {n} file(s) too big to attach were left out",
+    "cardOwner": "Your contact details",
+    "ownerWhy": "Slot 0 of your address book is you. Everything you ask to \"send to me\" — mail, reports — goes to your main e-mail; the phone number is optional. You can skip this and add it later in Settings.",
+    "cardSkip": "Skip",
+    "needEmail": "Please enter your main e-mail"
   },
   "off.title.reconnecting": "Reconnecting…",
   "off.title.computer": "Your computer may be off or asleep",
@@ -2215,5 +2231,10 @@
     "ended": "The pairing ended (cancelled on the computer, or replaced by a newer one).",
     "scanAdd": "Scan to add a remote"
   },
-  "r.mail.idle": "Forward by e-mail"
+  "r.mail.idle": "Forward by e-mail",
+  "revoked.takeoverPk": "Continue here with Face ID",
+  "revoked.takeoverLead": "Another copy of Agent J on this phone (the Home Screen app, Safari or a private tab) just took over the connection, so this one was disconnected. To use it here instead, tap the button below and confirm with Face ID; the other one will be disconnected.",
+  "revoked.takeoverNone": "Face ID didn't confirm. It may have been cancelled, or this phone has no saved Agent J Face ID record. Tap again, or keep using the other one.",
+  "r.ptt.intText": "The system interrupted the recording (screen lock or another app); the {d} recorded is being turned into text for the message field",
+  "r.ptt.intNone": "The system interrupted the recording (screen lock or another app); no sound was recorded"
 }

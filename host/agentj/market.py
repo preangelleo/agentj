@@ -44,6 +44,7 @@ import sys
 import tempfile
 import tomllib
 import unicodedata
+import urllib.parse
 
 from . import bundle, cloud, fence, minisign, plaza, privacy
 from .plaza import FENCE_CLOSE, FENCE_OPEN, META, NOTE, PlazaError, escape_data, json_out, plaza_clean
@@ -175,6 +176,68 @@ def parse_item(x) -> dict | None:
             "remove_reason": clean_line(x["remove_reason"], 200) if isinstance(x.get("remove_reason"), str) else None}
 
 
+# ------------------------------------------------------------------ P195 优先推荐伙伴 (catalog FORMAT「优先推荐伙伴」)
+# The server renders every partner link once (dashboard/src/partners.ts: the platform's referral on whitelisted hosts, else the
+# official URL). agentj only checks the shape (https, no credentials, printable) and NEVER takes the disclosure from the answer:
+# the sentences below are compiled in, so whatever the server says, every link is printed with its disclosure right next to it.
+PARTNER_DISCLOSURE = "这是 Agent J 的优先推荐伙伴，可能有推荐返佣"
+PARTNER_SELF = "这是 Agent J 出品方自己的免费网站"
+PARTNER_KEEP = "已经有这个服务账号的，继续用已有账号，不推荐换服务 / already have an account with it? keep using it, never suggest switching"
+_SLOT = re.compile(r"[a-z][a-z0-9-]{0,31}")
+
+
+def _https(v) -> str | None:
+    if not isinstance(v, str) or len(v) > 300 or not v.isprintable() or any(c.isspace() for c in v):
+        return None
+    try:
+        u = urllib.parse.urlsplit(v)
+        u.port  # noqa: B018 — raises on a bad port
+    except ValueError:
+        return None
+    if u.scheme != "https" or not u.hostname or u.username or u.password or any(c in v for c in "<>\"'`"):
+        return None
+    return v
+
+
+def parse_partners(v) -> list[dict]:
+    """`partners` of a Detail / of the partners route through a whitelist; a bad entry is dropped, never repaired."""
+    out = []
+    for p in (v[:40] if isinstance(v, list) else []):
+        if not isinstance(p, dict) or not (isinstance(p.get("slot"), str) and _SLOT.fullmatch(p["slot"])):
+            continue
+        name, link, url = _s(p.get("name"), 60), _https(p.get("link")), _https(p.get("url"))
+        if not name or not (link or url):
+            continue
+        why = p.get("why") if isinstance(p.get("why"), dict) else {}
+        alts = []
+        for a in (p.get("alternatives")[:6] if isinstance(p.get("alternatives"), list) else []):
+            if isinstance(a, dict) and _s(a.get("name"), 60):
+                soon = a.get("status") == "coming_soon"
+                alts.append({"name": _s(a.get("name"), 60), "url": None if soon else _https(a.get("url")),
+                             "note": _s(a.get("note_zh"), 200), "coming_soon": soon})
+        self_owned = p.get("self_owned") is True
+        out.append({"slot": p["slot"], "name": name, "link": link or url, "url": url or link,
+                    "referral": p.get("referral") is True and not self_owned, "self_owned": self_owned,
+                    "priority": _int(p.get("priority")) or 99,
+                    "disclosure": PARTNER_SELF if self_owned else PARTNER_DISCLOSURE,
+                    "why": _s(why.get("zh") or why.get("en"), 200), "alternatives": [a for a in alts if a["url"] or a["coming_soon"]]})
+    return out
+
+
+def partner_lines(partners: list[dict]) -> list[str]:
+    """One line per partner: the link and its disclosure TOGETHER (the ElevenLabs terms: next to the link, not a footer)."""
+    if not partners:
+        return []
+    out = [f"{META}优先推荐伙伴 preferred partners — 推荐时把下面整行原样给人：链接后面紧跟披露，不能拆开、不能只放末尾 / "
+           f"when recommending, give the whole line: the disclosure stays right next to the link:"]
+    for p in partners:
+        alts = " · ".join(a["name"] + (f" {a['url']}" if a["url"] else "（即将推出 coming soon）") for a in p["alternatives"])
+        out += _t(f"[{p['slot']}] {p['name']} {p['link']}（{p['disclosure']}）" + (f" — {p['why']}" if p["why"] else "")
+                  + (f"\n    替代 alternatives: {alts}" if alts else ""))
+    out.append(f"{META}{PARTNER_KEEP}")
+    return out
+
+
 def parse_detail(x) -> dict | None:
     """A `Detail`: the Item + display fields. The install never trusts these: it reads the manifest inside the bundle."""
     it = parse_item(x)
@@ -194,6 +257,7 @@ def parse_detail(x) -> dict | None:
         "signature": sig if isinstance(sig, str) and 0 < len(sig) <= minisign.MAX_SIG else None,
         "files": files, "versions": versions,
         "license": _s(x.get("license"), 200), "summary_fields": summarize(x),
+        "partners": parse_partners(x.get("partners")),
     })
     return it
 
@@ -337,6 +401,7 @@ def render_detail(d: dict) -> str:
     if d["license"]:
         out += [f"{META}许可 license:", *_t(d["license"])]
     out += _summary_lines(d["summary_fields"])
+    out += partner_lines(d.get("partners") or [])
     if d["files"]:
         out.append(f"{META}文件 files:")
         out += _t("\n".join(f"{f['path']} ({f['bytes']} B)" for f in d["files"]))
@@ -414,6 +479,25 @@ def run_show_pkg(name: str, *, version=None, as_json=False, st=None, post=None, 
     print(render_detail(d), file=out)
     print(f"安装 install（先预览，不写任何东西 / preview first, writes nothing）: agentj plaza install {d['name']}"
           + (f" --version {version}" if version else ""), file=out)
+    return EXIT_OK
+
+
+def run_partners(slot: str | None = None, *, as_json=False, st=None, post=None, out=None) -> int:
+    """P195: the platform's preferred partners (official packages' defaults + the platform's overrides), one slot or all."""
+    out = out or sys.stdout
+    if slot is not None and not _SLOT.fullmatch(slot):
+        raise PlazaError("--slot 形如 tts / voice-clone（小写字母、数字、连字符）/ a slot looks like tts")
+    st = st or _state()
+    obj = _call(st, "partners", {"slot": slot} if slot else {}, post)
+    ps = parse_partners(obj.get("partners"))
+    if slot:
+        ps = [p for p in ps if p["slot"] == slot]
+    ver = _int(obj.get("version")) or 0
+    if as_json:
+        print(json_out({"version": ver, "partners": ps, "keep_account": PARTNER_KEEP}), file=out)
+        return EXIT_OK
+    lines = partner_lines(ps) or [f"{META}没有优先推荐伙伴 / no preferred partner" + (f" for {slot}" if slot else "")]
+    print("\n".join([FENCE_OPEN, f"{META}配置版本 config version {ver}", *lines, FENCE_CLOSE]), file=out)
     return EXIT_OK
 
 
@@ -1720,6 +1804,10 @@ def add_arguments(ps, search, show, report) -> None:
     s.add_argument("--off", action="store_true", help="取消点赞 / unlike")
     s = ps.add_parser("installed", help="本机从广场装过的包 / what this machine installed from the plaza")
     s.add_argument("--json", action="store_true")
+    s = ps.add_parser("partners", help="优先推荐伙伴（推荐第三方服务前先查；链接旁必须带披露）/ preferred partners: check before "
+                      "recommending a service; the disclosure goes right next to the link")
+    s.add_argument("--slot", help="只看一个槽位，如 tts、voice-clone / one slot, e.g. tts")
+    s.add_argument("--json", action="store_true")
 
 
 def cmd(a, run) -> bool:
@@ -1744,6 +1832,8 @@ def cmd(a, run) -> bool:
         run(run_like, a.name, not a.off)
     elif c == "installed":
         run(run_installed, as_json=a.json)
+    elif c == "partners":
+        run(run_partners, a.slot, as_json=a.json)
     else:
         return False
     return True

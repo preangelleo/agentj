@@ -6,7 +6,8 @@
 
 Like Codex, what asks depends on the thread's approval policy: `untrusted` asks before every command that is not a known
 read-only one (ls, pwd, cat, echo) and before every file change; `never` / unset runs everything without asking (so a test
-sees whether serve asked for `untrusted`). What a turn does (the text of the message):
+sees whether serve asked for `untrusted`); `on-request` asks only for what the sandbox refuses (P198, blocked()). What a turn
+does (the text of the message):
     RUN: <cmd>             one command (`/usr/bin/bash -lc '<cmd>'`); runs it with /bin/sh after "accept"
     RUNSEQ: a ;; b ;; …    several commands in order
     PATCH: add|update|delete <file>   one file change (an item/started fileChange, then item/fileChange/requestApproval)
@@ -92,8 +93,28 @@ def say(tid, turn, text):
     note("item/completed", {"item": item, "threadId": tid, "turnId": turn})
 
 
+def _sandbox(tid):
+    return THREADS[tid]["sandbox"] or os.environ.get("FAKE_CX_SANDBOX") or "danger-full-access"
+
+
+def blocked(tid, cmd):
+    """P198: like Codex's own sandbox under on-request — read-only refuses anything but a read; workspace-write refuses the
+    network and an absolute path outside the work folder and /tmp. A refused command asks to run again without the sandbox."""
+    sb = _sandbox(tid)
+    if sb == "danger-full-access":
+        return False
+    words = shlex.split(cmd)
+    if sb == "read-only":
+        return words[0] not in SAFE + ("stat",)
+    if words[0] in ("curl", "wget"):
+        return True
+    return any(w.startswith("/") and not (w.startswith(os.getcwd() + "/") or w.startswith("/tmp/")) for w in words[1:])
+
+
 def asks(tid, cmd):
     pol = THREADS[tid]["policy"]
+    if pol == "on-request":
+        return blocked(tid, cmd)
     return pol == "untrusted" and cmd.split()[0] not in SAFE
 
 
@@ -126,7 +147,9 @@ def patch(tid, turn, kind, path):
     iid = "patch-" + uuid.uuid4().hex[:12]
     item = {"type": "fileChange", "id": iid, "changes": [{"path": full, "kind": {"type": kind}, "diff": diff}], "status": "inProgress"}
     note("item/started", {"item": item, "threadId": tid, "turnId": turn})
-    if THREADS[tid]["policy"] == "untrusted":
+    inside = (_sandbox(tid) == "danger-full-access" or _sandbox(tid) == "workspace-write"
+              and full.startswith(os.getcwd() + "/") and "/.git/" not in full)     # P198: on-request asks only beyond it
+    if THREADS[tid]["policy"] == "untrusted" or THREADS[tid]["policy"] == "on-request" and not inside:
         d = server_request("item/fileChange/requestApproval", {"threadId": tid, "turnId": turn, "itemId": iid,
                                                                 "startedAtMs": int(time.time() * 1000), "reason": None,
                                                                 "grantRoot": None}).get("decision")

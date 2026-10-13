@@ -118,6 +118,9 @@ class Manager:
             raw=config(raw)
             if op=='save':store.get(bid)
             if raw.get('enabled'):
+                # P199: going public needs a usable Agent J seat; editing a paused bot stays local and free.
+                refusal=getattr(self.host,'seat_refusal',None)
+                if refusal and refusal('bots'):raise BotError('seat_required')
                 if not raw.get('subscription_risk_accepted'):raise BotError('accept_subscription_risk')
                 if op=='create':raise BotError('create_paused_first')
                 if raw['provider']['source']=='own':

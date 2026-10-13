@@ -322,45 +322,36 @@ class CodexChain(_Chain):
             await host._app(s, ph.answer(a, False))
             await c["wait"](lambda: any(m["text"] == "declined: rm victim.txt" for m in c["msgs"]()))
             self.assertTrue((self.work / "victim.txt").exists())
-            # approve → runs
+            # P198 (P157 layer 1, like Claude's danger hook): low risk runs without a card
             await c["say"]("RUN: touch made.txt")
-            await c["wait"](lambda: len(c["asks"]()) == 2)
-            await host._app(s, ph.answer(c["asks"]()[-1], True))
             await c["wait"](lambda: any(m["text"] == "ran: touch made.txt" for m in c["msgs"]()))
             self.assertTrue((self.work / "made.txt").exists())
-            # batch for low risk; rm in the same turn still asks
+            self.assertEqual(len(c["asks"]()), 1)
+            # low risk in the same turn: no card; rm in the same turn still asks
             await c["say"]("RUNSEQ: touch b1.txt ;; touch b2.txt ;; rm victim.txt")
-            await c["wait"](lambda: len(c["asks"]()) == 3)
-            low = c["asks"]()[-1]
-            self.assertTrue(low.get("batch", "").startswith("Bash：touch"), low)
-            await host._app(s, _sign(ph, low, "allow_batch", low["batch"]))
-            await c["wait"](lambda: len(c["asks"]()) == 4)
+            await c["wait"](lambda: len(c["asks"]()) == 2)
             self.assertTrue((self.work / "b2.txt").exists())
-            self.assertTrue(any(o["t"] == "auto" for _, o in c["sent"]))
             self.assertEqual(c["asks"]()[-1]["cat"], ["delete"])
             await host._app(s, ph.answer(c["asks"]()[-1], False))
             await c["idle"]()
             # a read-only command Codex knows: no card
             await c["say"]("RUN: ls")
             await c["wait"](lambda: any(m["text"] == "ran: ls" for m in c["msgs"]()))
-            self.assertEqual(len(c["asks"]()), 4)
-            # patches: delete = a danger card; add = low risk
+            self.assertEqual(len(c["asks"]()), 2)
+            # patches: delete = a danger card; add = low risk, no card
             await c["say"]("PATCH: delete victim.txt")
-            await c["wait"](lambda: len(c["asks"]()) == 5)
+            await c["wait"](lambda: len(c["asks"]()) == 3)
             d = c["asks"]()[-1]
             self.assertEqual((d["tool"], d["cat"]), ("Delete", ["delete"]))
             await host._app(s, ph.answer(d, False))
             await c["wait"](lambda: any(m["text"] == "patch declined: victim.txt" for m in c["msgs"]()))
             self.assertTrue((self.work / "victim.txt").exists())
             await c["say"]("PATCH: add new.txt")
-            await c["wait"](lambda: len(c["asks"]()) == 6)
-            w = c["asks"]()[-1]
-            self.assertEqual((w["tool"], w["cat"]), ("Write", []))
-            await host._app(s, ph.answer(w, True))
             await c["wait"](lambda: (self.work / "new.txt").exists())
+            self.assertEqual(len(c["asks"]()), 3)
             # a permission escalation: a card that never batches; deny → nothing granted
             await c["say"]("PERM: /etc")
-            await c["wait"](lambda: len(c["asks"]()) == 7)
+            await c["wait"](lambda: len(c["asks"]()) == 4)
             p = c["asks"]()[-1]
             self.assertEqual(p["tool"], "CodexPermissions")
             self.assertNotIn("batch", p)
@@ -368,14 +359,14 @@ class CodexChain(_Chain):
             await c["wait"](lambda: any(m["text"] == "granted: {}" for m in c["msgs"]()))
             # a network request: a card without batch
             await c["say"]("NET: curl -s https://example.com")
-            await c["wait"](lambda: len(c["asks"]()) == 8)
+            await c["wait"](lambda: len(c["asks"]()) == 5)
             self.assertNotIn("batch", c["asks"]()[-1])
             self.assertIn("要联网", c["asks"]()[-1]["summary"])
             await host._app(s, ph.answer(c["asks"]()[-1], False))
             # nobody answers → declined after the ttl
-            await c["say"]("RUN: touch late.txt")
-            await c["wait"](lambda: len(c["asks"]()) == 9)
-            await c["wait"](lambda: any(m["text"] == "declined: touch late.txt" for m in c["msgs"]()), 15000)
+            await c["say"]("RUN: rm late.txt")
+            await c["wait"](lambda: len(c["asks"]()) == 6)
+            await c["wait"](lambda: any(m["text"] == "declined: rm late.txt" for m in c["msgs"]()), 15000)
             await c["idle"]()
         self.run_chain(script, ttl=3)
         lg = self.logged()
@@ -390,9 +381,7 @@ class CodexChain(_Chain):
         self.assertTrue(all(d in ("accept", "decline") for d in decisions), "never acceptForSession / an amendment")
         self.assertIn({"permissions": {}, "scope": "turn"}, answers)
         self.assertEqual([(x["decision"], x["reason"]) for x in approvals.read_log(self.st)],
-                         [("deny", "device"), ("allow", "device"), ("allow_batch", "device"), ("allow", "batch"),
-                          ("deny", "device"), ("deny", "device"), ("allow", "device"), ("deny", "device"), ("deny", "device"),
-                          ("deny", "timeout")])
+                         [("deny", "device")] * 5 + [("deny", "timeout")])     # P198: low risk is no card
         self.assertNotIn("victim", self.st.log_path.read_text())
 
     def test_commands_clear_undo_stop_estop_and_migration(self):
@@ -486,60 +475,49 @@ class CodexChain(_Chain):
                                     for n in notices()[n0:]), (text, notices()[n0:]))
             self.assertTrue((self.work / "victim.txt").exists())
             self.assertFalse((self.work / "made.txt").exists() or (self.work / "new.txt").exists())
-            # a command that only reads stays within a read-only sandbox: the usual card
+            # P198: with the owner's own restricted sandbox Agent J no longer asks for `untrusted` (on-request): a command that
+            # only reads runs inside the sandbox — no card; what the sandbox refuses asks to escalate and is declined as above
             await c["say"]("RUN: stat victim.txt")
-            await c["wait"](lambda: len(c["asks"]()) == 1)
-            a = c["asks"]()[-1]
-            self.assertEqual((a["summary"], a["cat"]), ("stat victim.txt", []))
-            await host._app(s, ph.answer(a, True))
             await c["wait"](lambda: any(m["text"] == "ran: stat victim.txt" for m in c["msgs"]()))
+            self.assertEqual(c["asks"](), [])
         self.run_chain(script)
+        start = [x["params"] for x in self.logged() if x.get("method") == "thread/start"][0]
+        self.assertEqual((start["sandbox"], start["approvalPolicy"]), ("read-only", "on-request"))
         log = approvals.read_log(self.st)
-        self.assertEqual([(x["decision"], x["reason"]) for x in log], [("deny", "policy")] * 5 + [("allow", "device")])
+        self.assertEqual([(x["decision"], x["reason"]) for x in log], [("deny", "policy")] * 5)
         self.assertTrue(all(x["sig"] is None for x in log[:5]), "refused by policy: nobody was asked")
         acts = [json.loads(x) for f in (self.st.root / "activity").glob("*.jsonl") for x in f.read_text().splitlines()]
         self.assertEqual(sum(1 for r in acts if r.get("k") == "decision" and r.get("result") == "policy"), 5)
         self.assertNotIn("victim", self.st.log_path.read_text())
         answers = [x["answer"] for x in self.logged() if "answer" in x]
-        self.assertEqual([a.get("decision") for a in answers if "decision" in a],
-                         ["decline", "decline", "decline", "decline", "accept"])
+        self.assertEqual([a.get("decision") for a in answers if "decision" in a], ["decline"] * 4)
         self.assertIn({"permissions": {}, "scope": "turn"}, answers)
 
     def test_workspace_write_sandbox_cards_only_what_stays_inside(self):
+        """P198 (P164 D): under `untrusted` an accepted command runs outside Codex's sandbox (ADR-A73, re-measured on 0.162.1),
+        so with the owner's own workspace-write sandbox every command that writes was declined and the Agent could do nothing.
+        Agent J now keeps the owner's sandbox as the guard (on-request): work inside it runs without a card; what goes beyond
+        it (outside the writable roots, .git, the network) asks to escalate and is declined without a card."""
         os.environ["FAKE_CX_SANDBOX"] = "workspace-write"
 
         async def script(c):
-            host, ph, s = c["host"], c["ph"], c["s"]
-            # a patch inside the work folder: within the sandbox → the usual card (a delete is still red)
             await c["say"]("PATCH: add new.txt")
-            await c["wait"](lambda: len(c["asks"]()) == 1)
-            w = c["asks"]()[-1]
-            self.assertEqual((w["tool"], w["cat"]), ("Write", []))
-            await host._app(s, ph.answer(w, True))
             await c["wait"](lambda: (self.work / "new.txt").exists())
-            await c["say"]("PATCH: delete victim.txt")
-            await c["wait"](lambda: len(c["asks"]()) == 2)
-            self.assertEqual(c["asks"]()[-1]["cat"], ["delete"])
-            await host._app(s, ph.answer(c["asks"]()[-1], False))
-            await c["wait"](lambda: any(m["text"] == "patch declined: victim.txt" for m in c["msgs"]()))
-            # outside the writable roots, or Codex's protected .git: declined without a card
+            await c["say"]("RUN: touch inside.txt")
+            await c["wait"](lambda: any(m["text"] == "ran: touch inside.txt" for m in c["msgs"]()))
+            self.assertTrue((self.work / "inside.txt").exists())
             for text in ("PATCH: add /srv/aj-outside-never-written.txt", "PATCH: add .git/config"):
                 await c["say"](text)
                 await c["wait"](lambda: any(m["text"].startswith("patch declined") and text.split()[-1] in m["text"] for m in c["msgs"]()))
-            # a shell command that writes runs OUTSIDE the sandbox once accepted: declined, even inside the work folder
-            await c["say"]("RUN: touch inside.txt")
-            await c["wait"](lambda: any(m["text"] == "declined: touch inside.txt" for m in c["msgs"]()))
+            await c["say"]("RUN: touch /srv/aj-outside-never-written.txt")
+            await c["wait"](lambda: any(m["text"] == "declined: touch /srv/aj-outside-never-written.txt" for m in c["msgs"]()))
             await c["idle"]()
-            self.assertEqual(len(c["asks"]()), 2)
-            self.assertFalse((self.work / "inside.txt").exists())
+            self.assertEqual(c["asks"](), [])
             self.assertFalse(os.path.exists("/srv/aj-outside-never-written.txt"))
-            await c["say"]("RUN: stat new.txt")
-            await c["wait"](lambda: len(c["asks"]()) == 3)
-            await host._app(s, ph.answer(c["asks"]()[-1], False))
         self.run_chain(script)
-        self.assertEqual([(x["decision"], x["reason"]) for x in approvals.read_log(self.st)],
-                         [("allow", "device"), ("deny", "device"), ("deny", "policy"), ("deny", "policy"), ("deny", "policy"),
-                          ("deny", "device")])
+        start = [x["params"] for x in self.logged() if x.get("method") == "thread/start"][0]
+        self.assertEqual((start["sandbox"], start["approvalPolicy"]), ("workspace-write", "on-request"))
+        self.assertEqual([(x["decision"], x["reason"]) for x in approvals.read_log(self.st)], [("deny", "policy")] * 3)
 
     def test_granular_policy_stays_theirs(self):
         os.environ["FAKE_CX_POLICY"] = json.dumps({"granular": {"rules": False, "sandbox_approval": False, "mcp_elicitations": False}})
@@ -554,7 +532,8 @@ class CodexChain(_Chain):
 
     def test_scheduled_runs(self):
         task_dir(self.work, "look", "RUN: touch research-wrote.txt\nRUN: ls\nSAY: VERDICT: ok — 看完了")
-        task_dir(self.work, "work", "RUN: touch normal-wrote.txt\nSAY: VERDICT: ok — 写好了", mode="normal")
+        # P198: the low-risk touch runs without a card; the delete still asks, labelled with the task
+        task_dir(self.work, "work", "RUN: touch normal-wrote.txt\nRUN: rm -f gone.txt\nSAY: VERDICT: ok — 写好了", mode="normal")
 
         async def script(c):
             host = c["host"]
@@ -567,7 +546,7 @@ class CodexChain(_Chain):
             t = asyncio.create_task(host.scheduler.run("work", "manual"))
             await c["wait"](lambda: c["asks"]())
             a = c["asks"]()[-1]
-            self.assertEqual((a["summary"], a["task"]), ("touch normal-wrote.txt", "任务work"))
+            self.assertEqual((a["summary"], a["task"]), ("rm -f gone.txt", "任务work"))
             await host._app(c["s"], c["ph"].answer(a, True))
             res = await t
             self.assertEqual(res["verdict"], "ok", res)

@@ -1035,7 +1035,7 @@ class Mail:
 
     async def deliver(self, cfg: dict, msg, v: Verdict) -> bool:
         from . import inbox, provenance
-        from .privacy import redact
+        from .privacy import owner_text, redact
         from .text import clean
         lang = self.lang()
         subject = decode_subject(msg)
@@ -1077,7 +1077,7 @@ class Mail:
             put(name, mime, data)
         source = provenance.email_owner(v.addr) if v.role == "owner" else provenance.email_guest(v.addr)
         lines = [f"Subject: {subject}" if subject else ""]
-        lines.append(redact(clean(words, TEXT_MAX)))
+        lines.append((owner_text if v.role == "owner" else redact)(clean(words, TEXT_MAX)))   # P194: the owner's own words as written
         if fwds:
             lines.append(T[lang]["fwd_note"] + " " + ", ".join(f"forwarded-original-{i + 1}.txt" for i in range(len(fwds))))
         if skipped:
@@ -1154,10 +1154,12 @@ class Mail:
         if used[0] == hour and used[1] >= cfg["reply_per_hour"]:
             self.note(T[lang]["limited"].format(to=route["to"]))
             return drop("limited")
-        body = redact(text)
-        if row["role"] != "owner":
+        if row["role"] == "owner":      # P194: owner-directed — as written; credentials → secret pickup cards on the phone
+            from . import owner_route
+            body, _ = await owner_route.divert(self.host, text, "mail", lang, route.get("subject") or "邮件")
+        else:
             from .telegram import group_filter
-            body = group_filter(body, "proxy", ())
+            body = group_filter(redact(text), "proxy", ())
         files = []
         if row["role"] == "owner":
             files = await asyncio.to_thread(self._files, text)
@@ -1189,7 +1191,8 @@ class Mail:
         cfg, lang = read_config(self.st), self.lang()
         if not cfg.get("address") or not has_secret(self.st, cfg["address"]):
             return {"ok": False, "why": "not_configured"}
-        owners = [r["addr"] for r in cfg["allow"] if r.get("role") == "owner"]
+        from . import contacts as C
+        owners = C.owner_emails(self.st)        # P194: slot 0 of the address book first, then the 「我本人」 allowlist rows
         if not isinstance(to, list) or not all(isinstance(a, str) for a in to):
             return {"ok": False, "why": "shape"}
         rcpt = []
@@ -1220,7 +1223,12 @@ class Mail:
         agent_name = ""
         with contextlib.suppress(Exception):
             agent_name = self.st.agent_name() or ""
-        msg = build_notes(cfg, rcpt, subject, redact(body), agent_name)
+        from . import owner_route
+        if owner_route.all_owner(self.st, rcpt):     # P194: minutes only to the owner — as written, keys → pickup cards
+            text, _ = await owner_route.divert(self.host, body, "mail", lang, subject or "会议纪要")
+        else:
+            text = redact(body)
+        msg = build_notes(cfg, rcpt, subject, text, agent_name)
         s["hour"]["out"] = [hour, (used[1] if used[0] == hour else 0) + 1]
         save_state(self.st, s)
         try:

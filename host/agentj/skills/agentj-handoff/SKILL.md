@@ -7,12 +7,20 @@ A compaction turns the conversation into a summary and drops details: exact numb
 rejected, attempts that failed. A file on disk is not compacted. Write it before, read it after.
 
 ## Where (fixed, human-readable — the owner copies these from the phone)
-| Situation | File |
-|---|---|
-| Before a compaction (shared session: your own Claude Code) | `~/.local/state/agentj/handoff/compact.md` |
-| Before a `/clear` | `~/.local/state/agentj/handoff/clear.md` (used once: Agent J renames it to `clear-used.md` when it hands it back) |
-| Agent J's own main conversation (it names the path in its message) | `<work folder>/.agentj/handover/compact.md` |
+First decide which conversation you are (P198):
+- **Agent J's main conversation** (its own Claude Code / Codex / OpenCode session — the default, and every fenced one):
+  `<work folder>/.agentj/handover/compact.md` — before a compaction **and** before a `/clear` (Agent J keeps the old one as
+  `previous.md` in the same folder after a clear). Agent J's host line names this absolute path for you.
+  Never write a handoff under `~/.local/state/agentj/` here: inside the fence that folder is an empty scratch space that
+  is thrown away — the write "succeeds" and the file is gone after the compaction.
+- **A shared session** (the owner's own Claude Code that Agent J only relays — Agent J's messages name these paths):
 
+| Shared session | File |
+|---|---|
+| Before a compaction | `~/.local/state/agentj/handoff/compact.md` |
+| Before a `/clear` | `~/.local/state/agentj/handoff/clear.md` (used once: Agent J renames it to `clear-used.md` when it hands it back) |
+
+When an Agent J message names a path, use exactly that path. Not sure which one you are → the work-folder path.
 Never put a session id, hash or random string in a handoff path or file name: the phone masks id-like strings and the
 owner can no longer copy the path. Create the folder if missing (`mkdir -p`).
 

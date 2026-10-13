@@ -556,5 +556,15 @@
   "r.find.f.quote": "引用",
   "r.find.f.att": "附件",
   "r.find.f.reply": "回复",
-  "r.keys.find": "搜索聊天记录（输入框里的 Ctrl+K 仍是删到行尾）；结果里 ↑ ↓ 选、Enter 打开，← → 换之前的搜索，Esc 关闭"
+  "r.keys.find": "搜索聊天记录（输入框里的 Ctrl+K 仍是删到行尾）；结果里 ↑ ↓ 选、Enter 打开，← → 换之前的搜索，Esc 关闭",
+  "media.pv.prev": "上一个（←）",
+  "media.pv.next": "下一个（→）",
+  "media.pv.pos": "第 {n} 个，共 {of} 个",
+  "media.pv.first": "已经是第一个了",
+  "media.pv.last": "已经是最后一个了",
+  "revoked.takeoverPk": "用 Face ID 在这里继续",
+  "revoked.takeoverLead": "主屏幕 App、Safari 或无痕页里的另一边刚刚接管了连接，这边已断开。想回到这里用，点下面的按钮，用 Face ID 验证一下；另一边会随之断开。",
+  "revoked.takeoverNone": "没能用 Face ID 验证：可能是取消了，也可能这台手机没有保存 Agent J 的 Face ID 记录。可以再点一次，或者回到另一边继续用。",
+  "r.ptt.intText": "录音被系统打断（锁屏或切到别的 App），已录的 {d} 正在转成文字，会放进输入框",
+  "r.ptt.intNone": "录音被系统打断（锁屏或切到别的 App），这次没有录到声音"
 }

@@ -239,7 +239,7 @@ class Chain(_Chain):
     def curl(self, refused):
         async def script(c):
             notices = lambda: [m["text"] for m in c["msgs"](("notice",))]  # noqa: E731
-            await c["say"]("RUN: curl -s https://awscli.amazonaws.com")
+            await c["say"]("RUN: curl -s -d x=1 https://awscli.amazonaws.com")   # P198: a send (a plain GET is low risk: no card)
             if refused:
                 await c["wait"](lambda: any(m["text"].startswith("declined: curl") for m in c["msgs"]()))
                 await c["idle"]()
@@ -248,7 +248,7 @@ class Chain(_Chain):
             else:
                 await c["wait"](lambda: len(c["asks"]()) == 1)
                 a = c["asks"]()[-1]
-                self.assertEqual(a["summary"], "curl -s https://awscli.amazonaws.com")
+                self.assertEqual(a["summary"], "curl -s -d x=1 https://awscli.amazonaws.com")
                 await c["host"]._app(c["s"], c["ph"].answer(a, False))     # the phone decides; no real network in tests
                 await c["wait"](lambda: any(m["text"].startswith("declined: curl") for m in c["msgs"]()))
                 self.assertFalse(any("沙箱" in n for n in notices()))

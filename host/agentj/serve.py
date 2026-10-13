@@ -590,9 +590,10 @@ class Host:
             with contextlib.suppress(asyncio.TimeoutError):
                 await asyncio.wait_for(self.stopping.wait(), SEAT_TICK)
 
-    def seat_refusal(self) -> str | None:
+    def seat_refusal(self, feature: str | None = None) -> str | None:
         """P185: None while this host may serve (seat ok / bootstrap grace / exempt), else the one-language reason with where
-        to fix it. Shown to the phones as a 「在电脑上处理」 notice at most every SEAT_NOTE seconds."""
+        to fix it. Shown to the phones as a 「在电脑上处理」 notice at most every SEAT_NOTE seconds.
+        P199: `feature` (plaza / support / friends / bots) → the same verdict, worded for that feature (seatcert.feature_message)."""
         seat = getattr(self, "seat", None)
         if seat is None:
             return None
@@ -600,6 +601,8 @@ class Host:
         v = seat.verdict()
         if v in seatcert.ALLOWED:
             return None
+        if feature:
+            return seatcert.feature_message(feature, v, getattr(self, "lang", "zh"), _cloud.app_url(self.st))
         return seatcert.message(v, getattr(self, "lang", "zh"), _cloud.app_url(self.st))
 
     def seat_note(self, text: str) -> None:
@@ -1219,6 +1222,8 @@ class Host:
                 return
             lang, kind = self.onboarding_lang(), onboarding.kind_of(s.name)
             now = await asyncio.to_thread(onboarding.status, self.st)
+            if what == "welcome":           # P194: the owner card (slot 0 of the address book) follows the first welcome
+                self._bg(self._owner_card_after_welcome(), "owner-card")
             if what == "welcome" and self.agent and not self.stopped():
                 self.agent.submit(onboarding.WelcomeSend(onboarding.welcome_prompt(kind, s.name, now, lang)))
                 return
@@ -1228,6 +1233,21 @@ class Host:
             self.hist_add({"k": "sys" if what == "also" else "agent", "text": ""}, text, "done")
         except Exception:  # noqa: BLE001 — a failed welcome never costs the pairing
             self.st.log("onboarding", status="error")
+
+    OWNER_CARD_DELAY = 40.0            # seconds after the first pairing: the welcome is read first, then the card rises
+
+    async def _owner_card_after_welcome(self) -> None:
+        """P194: once, after the first remote's welcome — the owner card asks for the owner's own name / main e-mail / phone
+        (slot 0). Skippable; filled later in Settings or by `agentj contacts owner set`. Nothing is saved without the tap."""
+        from . import contacts as C
+        await asyncio.sleep(self.OWNER_CARD_DELAY)
+        try:
+            if self.stopped() or C.owner(await asyncio.to_thread(C.read, self.st)) is not None:
+                return
+            res = await self.elevate.contacts.card({"op": "card", "owner": True, "contact": {}})
+            self.st.log("owner_card", result=res.get("result"))
+        except Exception:  # noqa: BLE001 — a failed card never costs the welcome
+            self.st.log("owner_card", result="error")
 
     async def _accept_resume(self, s: Session, since) -> None:
         """A resume (or a passkey restore, §12) is accepted: `ready`, BULK, history replay."""
@@ -4369,6 +4389,7 @@ class Host:
         gc = slash.parse(text) if not blobs else None
         if gc and gc[0] == "goal" and gc[1] and not goal_mod.host_cmd(gc[1]):   # P158: `/goal <what>` → the Agent proposes
             send.onboarding_note += goal_mod.start_note(gc[1], card_lang(self.lang))
+            text = goal_mod.agent_words(gc[1], card_lang(self.lang))     # P198: never Claude Code's own /goal
         send.source = getattr(s, "provenance", None)      # B1: set only by host code (telegram.incoming), never from text
         files = [{"path": b.path, "mime": b.mime, "bytes": b.size, "origin": b.origin, "secs": b.secs,
                   "voice": getattr(b, "voice", "")} for b in blobs]

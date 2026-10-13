@@ -1367,7 +1367,7 @@ usage: agentj config [-h] [--json] [--json-value] [--dry-run]
 ### agentj config approvals
 
 ```text
-shared-mode approval strength (standard = default, strict = old rule)
+shared-mode approval strength (standard = default, strict = old rule, native = the harness's own permissions only)
 ```
 
 ```bash
@@ -1375,13 +1375,13 @@ agentj config approvals --help
 ```
 
 ```text
-usage: agentj config approvals [-h] [{standard,strict,status}]
+usage: agentj config approvals [-h] [{standard,strict,native,status}]
 ```
 
 | Argument | Default | Required | Choices | Help |
 | --- | --- | --- | --- | --- |
 | `-h / --help` | `null` | false | — | `show this help message and exit` |
-| `level` | `"status"` | false | `standard`, `strict`, `status` | `` |
+| `level` | `"status"` | false | `standard`, `strict`, `native`, `status` | `` |
 
 ### agentj config auto-update
 
@@ -1478,14 +1478,15 @@ usage: agentj contacts [-h] [--name NAME] [--nick NICK] [--email EMAIL]
                        [--sort {recent,frequent,name}] [--limit LIMIT]
                        [--format {auto,vcf,csv,json}]
                        [--vcard-version {3.0,4.0}] [--dry-run] [--en] [--json]
-                       {list,find,add,edit,rm,import,export,card} [query]
+                       {list,find,add,edit,rm,import,export,card,owner}
+                       [query]
 ```
 
 | Argument | Default | Required | Choices | Help |
 | --- | --- | --- | --- | --- |
 | `-h / --help` | `null` | false | — | `show this help message and exit` |
-| `action` | `null` | true | `list`, `find`, `add`, `edit`, `rm`, `import`, `export`, `card` | `` |
-| `query` | `null` | false | — | `find：要找的人 · edit/rm/card：id 或名字 · import/export：文件（- = 标准输入/输出）` |
+| `action` | `null` | true | `list`, `find`, `add`, `edit`, `rm`, `import`, `export`, `card`, `owner` | `` |
+| `query` | `null` | false | — | `find：要找的人 · edit/rm/card：id 或名字 · import/export：文件（- = 标准输入/输出） · owner：show（看 0 号位=主人本人）\| set（在手机上弹卡片请主人填）` |
 | `--name` | `null` | false | — | `` |
 | `--nick` | `null` | false | — | `昵称 / 别名（可多次）` |
 | `--email` | `null` | false | — | `邮箱（可多次）` |
@@ -2824,7 +2825,7 @@ agentj plaza --help
 
 ```text
 usage: agentj plaza [-h]
-                    {search,show,mine,post,reply,resolve,report,install,publish,like,installed} ...
+                    {search,show,mine,post,reply,resolve,report,install,publish,like,installed,partners} ...
 ```
 
 | Argument | Default | Required | Choices | Help |
@@ -2923,6 +2924,26 @@ usage: agentj plaza mine [-h] [--json]
 | Argument | Default | Required | Choices | Help |
 | --- | --- | --- | --- | --- |
 | `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `--json` | `false` | false | — | `` |
+
+### agentj plaza partners
+
+```text
+优先推荐伙伴（推荐第三方服务前先查；链接旁必须带披露）/ preferred partners: check before recommending a service; the disclosure goes right next to the link
+```
+
+```bash
+agentj plaza partners --help
+```
+
+```text
+usage: agentj plaza partners [-h] [--slot SLOT] [--json]
+```
+
+| Argument | Default | Required | Choices | Help |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `--slot` | `null` | false | — | `one slot, e.g. tts` |
 | `--json` | `false` | false | — | `` |
 
 ### agentj plaza post
@@ -3500,13 +3521,15 @@ agentj service --help
 
 ```text
 usage: agentj service [-h] [--json]
-                      {install,uninstall,status,restart,start,stop}
+                      {install,uninstall,status,restart,start,stop,import-key}
+                      [key]
 ```
 
 | Argument | Default | Required | Choices | Help |
 | --- | --- | --- | --- | --- |
 | `-h / --help` | `null` | false | — | `show this help message and exit` |
-| `mode` | `null` | true | `install`, `uninstall`, `status`, `restart`, `start`, `stop` | `install, start, stop, restart, uninstall, status` |
+| `mode` | `null` | true | `install`, `uninstall`, `status`, `restart`, `start`, `stop`, `import-key` | `install 安装 · start 启动 · stop 停止 · restart 重启 · uninstall 删除 · status 状态 · import-key 把这个终端里的一个 key 导入服务（不显示值）/ install, start, stop, restart, uninstall, status, import-key: copy one key from this terminal into the service (value never shown)` |
+| `key` | `null` | false | — | `import-key：变量名，默认 OPENROUTER_API_KEY（Jev 审批第二层）/ import-key: the variable name, default OPENROUTER_API_KEY (Jev, approval layer 2)` |
 | `--json` | `false` | false | — | `machine-readable status` |
 | `--deferred` | `null` | false | — | `internal option (hidden from --help)` |
 | `--recovery-worker` | `null` | false | — | `internal option (hidden from --help)` |
@@ -5734,13 +5757,13 @@ agentj config approvals --help
 ```
 
 ```text
-usage: agentj config approvals [-h] [{standard,strict,status}]
+usage: agentj config approvals [-h] [{standard,strict,native,status}]
 ```
 
 | 参数 | 默认值 | 必填 | 可选值 | 说明 |
 | --- | --- | --- | --- | --- |
 | `-h / --help` | `null` | false | — | `show this help message and exit` |
-| `level` | `"status"` | false | `standard`, `strict`, `status` | `` |
+| `level` | `"status"` | false | `standard`, `strict`, `native`, `status` | `` |
 
 ### agentj config auto-update
 
@@ -5821,7 +5844,7 @@ usage: agentj config private-instructions [-h] {status}
 ### agentj contacts
 
 ```text
-通讯录：list · find · add · edit · rm · import · export · card
+通讯录：list · find · add · edit · rm · import · export · card · owner
 ```
 
 ```bash
@@ -5837,14 +5860,15 @@ usage: agentj contacts [-h] [--name NAME] [--nick NICK] [--email EMAIL]
                        [--sort {recent,frequent,name}] [--limit LIMIT]
                        [--format {auto,vcf,csv,json}]
                        [--vcard-version {3.0,4.0}] [--dry-run] [--en] [--json]
-                       {list,find,add,edit,rm,import,export,card} [query]
+                       {list,find,add,edit,rm,import,export,card,owner}
+                       [query]
 ```
 
 | 参数 | 默认值 | 必填 | 可选值 | 说明 |
 | --- | --- | --- | --- | --- |
 | `-h / --help` | `null` | false | — | `show this help message and exit` |
-| `action` | `null` | true | `list`, `find`, `add`, `edit`, `rm`, `import`, `export`, `card` | `` |
-| `query` | `null` | false | — | `find：要找的人 · edit/rm/card：id 或名字 · import/export：文件（- = 标准输入/输出）` |
+| `action` | `null` | true | `list`, `find`, `add`, `edit`, `rm`, `import`, `export`, `card`, `owner` | `` |
+| `query` | `null` | false | — | `find：要找的人 · edit/rm/card：id 或名字 · import/export：文件（- = 标准输入/输出） · owner：show（看 0 号位=主人本人）\| set（在手机上弹卡片请主人填）` |
 | `--name` | `null` | false | — | `` |
 | `--nick` | `null` | false | — | `昵称 / 别名（可多次）` |
 | `--email` | `null` | false | — | `邮箱（可多次）` |
@@ -7183,7 +7207,7 @@ agentj plaza --help
 
 ```text
 usage: agentj plaza [-h]
-                    {search,show,mine,post,reply,resolve,report,install,publish,like,installed} ...
+                    {search,show,mine,post,reply,resolve,report,install,publish,like,installed,partners} ...
 ```
 
 | 参数 | 默认值 | 必填 | 可选值 | 说明 |
@@ -7282,6 +7306,26 @@ usage: agentj plaza mine [-h] [--json]
 | 参数 | 默认值 | 必填 | 可选值 | 说明 |
 | --- | --- | --- | --- | --- |
 | `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `--json` | `false` | false | — | `` |
+
+### agentj plaza partners
+
+```text
+优先推荐伙伴（推荐第三方服务前先查；链接旁必须带披露）/ preferred partners: check before recommending a service; the disclosure goes right next to the link
+```
+
+```bash
+agentj plaza partners --help
+```
+
+```text
+usage: agentj plaza partners [-h] [--slot SLOT] [--json]
+```
+
+| 参数 | 默认值 | 必填 | 可选值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `--slot` | `null` | false | — | `只看一个槽位，如 tts、voice-clone` |
 | `--json` | `false` | false | — | `` |
 
 ### agentj plaza post
@@ -7859,13 +7903,15 @@ agentj service --help
 
 ```text
 usage: agentj service [-h] [--json]
-                      {install,uninstall,status,restart,start,stop}
+                      {install,uninstall,status,restart,start,stop,import-key}
+                      [key]
 ```
 
 | 参数 | 默认值 | 必填 | 可选值 | 说明 |
 | --- | --- | --- | --- | --- |
 | `-h / --help` | `null` | false | — | `show this help message and exit` |
-| `mode` | `null` | true | `install`, `uninstall`, `status`, `restart`, `start`, `stop` | `install 安装 · start 启动 · stop 停止 · restart 重启 · uninstall 删除 · status 状态` |
+| `mode` | `null` | true | `install`, `uninstall`, `status`, `restart`, `start`, `stop`, `import-key` | `install 安装 · start 启动 · stop 停止 · restart 重启 · uninstall 删除 · status 状态 · import-key 把这个终端里的一个 key 导入服务（不显示值）/ install, start, stop, restart, uninstall, status, import-key: copy one key from this terminal into the service (value never shown)` |
+| `key` | `null` | false | — | `import-key：变量名，默认 OPENROUTER_API_KEY（Jev 审批第二层）/ import-key: the variable name, default OPENROUTER_API_KEY (Jev, approval layer 2)` |
 | `--json` | `false` | false | — | `status 的机器可读输出` |
 | `--deferred` | `null` | false | — | `内部参数（--help 隐藏）` |
 | `--recovery-worker` | `null` | false | — | `内部参数（--help 隐藏）` |

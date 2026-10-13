@@ -4,7 +4,7 @@ Same detection and the same safety checks as the phone (media.py, PROTOCOL §13)
 `Media.check` resolves each one (realpath inside the Agent's folder, outside the state dir, the deny list, an O_NOFOLLOW
 dir-fd chain, a regular file of this user, extension + leading bytes, the per-kind caps, `taskspec.secret_like` for text
 kinds). On top: Telegram's own bot upload limits (UPLOAD_MAX; a photo above PHOTO_MAX goes as a document instead), ≤
-media.MAX_ITEMS files and ≤ media.PAGE_BYTES per reply. Right before each upload the file is re-opened the same safe way and
+MAX_ITEMS (8) files and ≤ media.PAGE_BYTES per reply. Right before each upload the file is re-opened the same safe way and
 (dev, inode, size, mtime) and the SHA-256 of what is sent must equal what was checked — otherwise it is `gone`.
 
 Who gets files: ONLY the owner's private chat. A reply to a turn that came from a Telegram group never carries files (a group
@@ -29,13 +29,15 @@ METHODS = {"image/png": ("sendPhoto", "photo"), "image/jpeg": ("sendPhoto", "pho
            "audio/mpeg": ("sendAudio", "audio"), "audio/mp4": ("sendAudio", "audio"),
            "video/mp4": ("sendVideo", "video")}
 DOCUMENT = ("sendDocument", "document")
+MAX_ITEMS = 8          # Telegram's own per-reply cap (P194 raised the phone page to media.MAX_ITEMS = 24; a chat is not a page)
 
 SKIP = {"zh": {"too_big": "{name} 太大（{mb} MB），没有发到 Telegram。", "outside": "{name} 不在工作目录里，没有发。",
                "secret": "{name} 可能含密钥，没有发。", "type": "{name} 这种文件发不了。", "gone": "{name} 找不到了，没有发。",
-               "failed": "{name} 没发出去。"},
+               "masked": "{name} 的路径被隐私规则遮住了，所以没发；文件本身可能还在。", "failed": "{name} 没发出去。"},
         "en": {"too_big": "{name} is too big ({mb} MB) — not sent to Telegram.", "outside": "{name} isn't in the working folder — not sent.",
                "secret": "{name} may contain a key — not sent.", "type": "{name} is a kind of file that can't be sent.",
-               "gone": "{name} wasn't found — not sent.", "failed": "{name} couldn't be sent."}}
+               "gone": "{name} wasn't found — not sent.",
+               "masked": "{name} — its path was masked by a privacy rule, so it wasn't sent (the file may still be there).", "failed": "{name} couldn't be sent."}}
 
 
 def method_of(rec: dict) -> tuple[str, str]:
@@ -53,13 +55,17 @@ def collect(media: "media_mod.Media", text: str) -> tuple[list[dict], list[dict]
     if not media or not getattr(media, "workdir", None) or not text:
         return items, skips
     for ref in media_mod.refs(text):
-        if len(items) >= media_mod.MAX_ITEMS:
+        if len(items) >= MAX_ITEMS:
             break
+        name = os.path.basename(ref.path.rstrip("/"))[:media_mod.NAME_MAX] or ref.path[:media_mod.NAME_MAX]
+        if media_mod._PLACEHOLDER.search(ref.path):        # P194: a masked path is `masked`, never 「找不到了」
+            if ref.explicit:
+                skips.append({"name": name, "why": "masked"})
+            continue
         try:
             rec, why = media.check(ref)
         except OSError:
             rec, why = None, None
-        name = os.path.basename(ref.path.rstrip("/"))[:media_mod.NAME_MAX] or ref.path[:media_mod.NAME_MAX]
         if why:
             skips.append({"name": name, "why": why, **({"bytes": rec["bytes"]} if rec and why == "too_big" else {})})
             continue
@@ -71,7 +77,7 @@ def collect(media: "media_mod.Media", text: str) -> tuple[list[dict], list[dict]
         seen.add((rec["dev"], rec["ino"]))
         total += rec["bytes"]
         items.append(rec)
-    return items, skips[:media_mod.MAX_ITEMS * 2]
+    return items, skips[:MAX_ITEMS * 2]
 
 
 def read_checked(rec: dict) -> bytes:

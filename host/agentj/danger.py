@@ -2023,7 +2023,7 @@ _SHARED_PUBLIC_DELETE = frozenset({
 })
 
 
-APPROVAL_MODES = ("standard", "strict")
+APPROVAL_MODES = ("standard", "strict", "native")   # P198: native = the harness's own permissions only (0.15–0.20.0 default)
 # P128: commands that put a file's contents on the screen (the shared transcript reaches the phone)
 _SHOW_CMDS = frozenset({"cat", "less", "more", "most", "pg", "view", "head", "tail", "grep", "egrep", "fgrep", "rg", "ag", "ack",
                         "strings", "bat", "batcat", "xxd", "hexdump", "od", "base64", "base32", "basenc", "nl", "tac", "rev",
@@ -2320,6 +2320,20 @@ def grant_keys(v: Verdict) -> list:
             keys = [k for k in keys if k != "credentials"]
         keys.append("credentials:hooks")
     return keys
+
+
+def shared_guard(cfg) -> bool:
+    """P198: does the shared-mode guard ask the phone for the five clear dangers before the harness runs them? Yes, unless the
+    owner chose `agent.approvals = native` (only the harness's own permission prompts — what every shared session did from
+    0.15 / F14 to 0.20.0, contradicting P128's documented `standard`) and did not opt into agent.high_risk_warnings."""
+    cfg = cfg or {}
+    return cfg.get("approvals", "standard") != "native" or bool(cfg.get("high_risk_warnings"))
+
+
+def shared_keys(v: Verdict, cfg) -> list:
+    """The grant keys the shared guard asks for: every one, or under `native` only the hook-file rewrite (A5, ALWAYS_CARD)."""
+    keys = grant_keys(v)
+    return keys if shared_guard(cfg) else [k for k in keys if k in ALWAYS_CARD]
 
 
 def card_why(v: Verdict, lang: str) -> str:

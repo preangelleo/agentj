@@ -278,3 +278,27 @@ Everything above holds; these fill gaps or tighten it (the host and the page rel
 The seat gate in §0 continues to cover Q&A, full package contents, downloads, installation and publishing. The only unauthenticated exception is read-only `GET|HEAD /api/v1/plaza/catalog` on the front Worker (`/v1/plaza/catalog` over the Dashboard service binding). It returns schema `agentj.public-catalog/v1`, `generated_at` (UTC epoch milliseconds), and `items`. Each item contains only name, type, track, certified, version, bilingual title/summary, tags, category, likes and installs. No author/tenant/host identity, README, manifest, parameters, command or download link is public through it. Community packages are always labelled unverified; a site badge is a catalog record, not proof of a valid bundle signature.
 
 Only visible packages whose current version is live are eligible; malformed or privacy-flagged metadata is omitted. The existing publication privacy/Jev/owner-confirmation rules are unchanged. The endpoint accepts no query parameters or writes, uses HMAC-IP rate limiting (120/minute per Cloudflare location), and advertises a300-second shared cache. The front checks age explicitly, with no expired fallback: withdrawal removes list/sitemap entries within five minutes; detail pages return410/noindex, and upstream outage returns503. Public HTML contains summaries only. Limits exceeding10,000 packages fail closed. No schema migration.
+
+## P195 — 优先推荐伙伴 (platform referral layer)
+
+Catalog FORMAT「优先推荐伙伴」: a package's `partners` are DEFAULTS and never carry a code. The platform keeps overrides by
+`(slot, name)` (D1 `partner_overrides`, migration 0026; every write logged in `partner_override_log`, whose max id is the config
+`version`) and renders every link once, in `dashboard/src/partners.ts`:
+- `Detail.partners?` (only when the stored manifest has a non-empty `partners`) = `[{slot, name, priority, url (official), link,
+  referral: bool, self_owned, disclosure:{zh,en}, keep_account:{zh,en}, why:{zh,en}, pricing_hint_zh, alternatives:[{name,
+  url|null, note_zh, status?:"coming_soon"}]}]`, sorted slot → priority → name; `Detail.partners_version` = config version.
+- Host route `partners` (this §4 table, P195): inner optional `slot` (`^[a-z][a-z0-9-]{0,31}$`) → 200 `{schema:
+  "agentjarvis.partners/v1", version, disclosure, keep_account, partners:[…same shape…]}` over the latest live version of every
+  visible **official** package (first package by name wins per `(slot, name)`); read-charged like `get`; 400 `bad_request`.
+- `link` = the override's `url_template` with `{code}` replaced (URL-encoded) only when the override is active, the code is
+  `[A-Za-z0-9_-]{1,64}`, the template has exactly one `{code}` and the result is `https://` on `REF_HOSTS` (no port, no
+  credentials; today `try.elevenlabs.io`, `elevenlabs.io`); anything else → the official URL, `referral:false`. A package's own
+  `referral` is ignored; `self_owned` entries never get one; an override never adds a partner that no package names.
+- Disclosure: 「这是 Agent J 的优先推荐伙伴，可能有推荐返佣」 (self-owned: 「这是 Agent J 出品方自己的免费网站」) on every
+  entry. agentj prints its OWN compiled-in sentence after every link (never the server's text); the Dashboard page uses its
+  dictionary sentence next to every URL (URLs stay plain text there, §5 rule). Already has an account → keep it.
+- Admin (`api.<zone>/v1/plaza/admin/partners`, the plaza admin token, same failure budget): `GET partners` → `{version, ref_hosts,
+  disclosure, overrides:[row + link], log:[last 50]}`; `POST partners/set {slot, name, priority?, url?, code?, url_template?,
+  note?}` (patch: absent = keep, null = clear; code and url_template together; re-activates; 400 `bad_slot` / `bad_name` /
+  `bad_priority` / `code_and_template_together` / `bad_code` / `url_not_allowed` / `bad_note`; 409 `conflict` on a concurrent
+  write); `POST partners/disable {slot, name, note?}` (referral off; 404 without a row). CLI: `agentjarvis/tools/partners-ref`.

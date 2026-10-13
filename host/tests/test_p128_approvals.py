@@ -201,7 +201,7 @@ class Config(unittest.TestCase):
     def test_schema_default_and_agent_config(self):
         from agentj import preferences
         self.assertEqual(preferences.get(preferences.defaults(), "agent.approvals"), "standard")
-        self.assertEqual(preferences.SCHEMA["agent.approvals"]["enum"], ["standard", "strict"])
+        self.assertEqual(preferences.SCHEMA["agent.approvals"]["enum"], ["standard", "strict", "native"])   # P198: native = the harness's own permissions only
 
     def test_cli(self):
         import contextlib

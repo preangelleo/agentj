@@ -282,6 +282,7 @@ session.configure({
     // dk = this browser's device public key: a later page that finds the pairing but another device key knows the browser
     // lost the key (0.15.1) instead of failing the resume and calling it "removed"
     const host = { relay: ctx.relay, channel: ctx.channel, hostPub: ctx.hostPub, approved: true, dk: b64u((await deviceKey()).pub) };
+    if (restoreKind === 'pk') host.pk = true;         // P198: restored with a passkey, so the taken-over page can offer it again
     await forgetLocal();                              // a new pairing starts empty: nothing of the previous computer goes to it
     await dbPut('host', host);
     markPaired(true);
@@ -297,7 +298,7 @@ session.configure({
   },
   onReady() {
     backfillPairing().catch(() => { /* only a hint for later */ });
-    restoreKind = null; rtRetries = 0;
+    restoreKind = null; rtRetries = 0; pkTakeover = false;
     if (!ticketComing) ticketCheck().catch(() => {});
     ticketComing = false;
     onHostGone();
@@ -431,6 +432,7 @@ async function revoked(why = 'revoked') {
   // a new QR for the same computer pairs again (main() resumes instead only for a still-approved pairing)
   const h = await dbGet('host').catch(() => null);
   if (h && (h.approved || h.removed !== why)) await dbPut('host', { ...h, approved: false, removed: why }).catch(() => {});
+  takeoverWith = null;
   markPaired(false);
   ticketQueue(renew.clear);                           // P122: a removed / replaced phone's ticket is dead on the host anyway
   const replaced = why === 'replaced';
@@ -441,6 +443,31 @@ async function revoked(why = 'revoked') {
   applyStatic($('revoked-view'));
   show('revoked');
   $('revoked-draft').hidden = !hadDraft;
+  $('takeover-note').hidden = true;
+  $('takeover-pk').hidden = true;
+  if (replaced) renderTakeover(h && { ...h, approved: false, removed: why }).catch(() => { $('takeover-pk').hidden = true; });
+}
+// P198 (F20 over F36, Jarvis's decision): Safari / the Home Screen app / a private tab share one Face ID record, and the side
+// that was taken over may take the connection back here — one button on this page, never a prompt. It shows only when this
+// pairing has (or may have) a passkey: `pk` true = saved or restored with one here; false = the computer offered to save
+// one, i.e. it has none (a record from before P198 never said: the button shows, and a refused tap says why).
+// A successful restore stores a new approved record (onApproved), so the next launch no longer opens this page.
+let takeoverWith = null;
+async function renderTakeover(h) {
+  const b = $('takeover-pk'), lead = $('revoked-lead');
+  const ok = !!h && h.removed === 'replaced' && h.pk !== false && !!(await signKey()) && (await passkey.supported());
+  if (view !== 'revoked' || state !== 'revoked') return;
+  takeoverWith = ok ? h : null;
+  if (ok) pkPrep = await passkey.prepareRestore((await deviceKey()).pub, (await signKey()).pub);
+  b.hidden = !ok;
+  lead.dataset.i18n = ok ? 'revoked.takeoverLead' : 'revoked.replacedLead';
+  fillText(lead, t(lead.dataset.i18n));
+}
+function takeoverNote(key) {
+  const n = $('takeover-note');
+  n.dataset.k = key;
+  n.textContent = t(key);
+  n.hidden = false;
 }
 /** Unpair / re-pair / revoke / a new pairing (§10.14, P33-X02 / X13). In-memory first, in the same tick (no await before it):
  *  uploads, queued and in-flight sends, the tray, the quote, the field and ↑↓ history; then the sealed records and their key. */
@@ -545,8 +572,10 @@ async function checkPhoneEnvironment(afterPair = false) {
   renderPhoneEnvironment();
 }
 async function offerPasskey(m) {
-  const h = await dbGet('host');
+  let h = await dbGet('host');
   const forced = pkForce; pkForce = false;
+  // P198: the computer offers this only to a device without a passkey (after a pairing, a ticket restore): remember that
+  if (h && h.approved && !forced && h.pk !== false && h.channel === session.channel()) await dbPut('host', (h = { ...h, pk: false }));
   if (!h || !h.approved || (h.pkAsked && !forced) || h.channel !== session.channel()) return;
   const ri = passkey.relayIndex(h.relay);
   const nonce = unb64u(m.n);
@@ -580,13 +609,18 @@ async function renderPk() {
   pkPrep = await passkey.prepareRestore((await deviceKey()).pub, sk.pub);
   b.hidden = view !== 'pair' || state !== 'idle';
 }
-async function pkRestore(auto = false) {
+async function pkRestore(auto = false, takeover = false) {
+  pkTakeover = takeover;
   let prep = pkPrep;
   if (!prep || Date.now() - prep.ts > 4 * 60 * 1000) prep = await passkey.prepareRestore((await deviceKey()).pub, (await signKey()).pub);
   pkPrep = null;
   let a;
   try { a = await passkey.assert(prep.challenge); } catch (e) {                  // cancelled / no passkey here / not focused
     document.body.dataset.pkErr = (e && e.name) || 'error';                       // diagnostics only (tests read it)
+    if (takeover) {                                   // P198: stay on the taken-over page; the button stays for another tap
+      if (e && e.name === 'NotAllowedError') takeoverNote('revoked.takeoverNone');
+      return renderTakeover(takeoverWith);
+    }
     // P122: a tap that found nothing says why (no passkey saved — on iPhone usually iCloud Keychain off — or cancelled);
     // an automatic try (iOS may refuse it without a tap) stays silent: the button is still there
     if (!auto && e && e.name === 'NotAllowedError') pairNote('pk.none');
@@ -600,6 +634,8 @@ async function pkRestore(auto = false) {
   pkCred = a.id;
   restoreKind = 'pk';
   $('pk-restore').hidden = true;
+  $('takeover-pk').hidden = true;
+  $('takeover-note').hidden = true;
   $('pair-error').hidden = true;
   session.openSession('restore', { relay: to.relay, channel: to.channel, hostPub: to.hostPub,
     pk: { id: a.id, cd: a.cd, ad: a.ad, sig: a.sig, uh: b64u(a.uh), ts: prep.ts, nonce: b64u(prep.nonce) } });
@@ -684,9 +720,17 @@ async function autoPasskey() {
   await pkRestore(true);
 }
 
+let pkTakeover = false;                                // P198: the restore in flight started on the taken-over page
 function pkFailed(why) {
   const dead = why === 'unknown' || why === 'revoked';
   if (dead && pkCred) passkey.forgetDead(pkCred);
+  if (pkTakeover) {
+    pkTakeover = false;
+    // the computer unreachable / busy: still taken over here, the button stays; a passkey the computer no longer knows can
+    // never bring this pairing back — forget the record (no more taken-over page) and say so on the pairing screen
+    if (!dead) { setStatus('revoked', 'st.replaced'); show('revoked'); takeoverNote('pk.failed'); return renderTakeover(takeoverWith).catch(() => {}); }
+    dbDel('host').catch(() => {});
+  }
   showIdle();
   const err = $('pair-error');
   err.dataset.k = dead ? 'pk.dead' : 'pk.failed';
@@ -857,6 +901,7 @@ function relang() {
   push.renderA2hs(view);
   if (!$('scan-hint').hidden) fillText($('scan-hint'), t('pair.scanHint'));
   if (!$('pair-error').hidden) $('pair-error').textContent = t($('pair-error').dataset.k || 'pair.badLink');
+  if (!$('takeover-note').hidden) $('takeover-note').textContent = t($('takeover-note').dataset.k);
   controls.reloadPanel();
   friends.relang();
   push.reregister();
@@ -952,6 +997,7 @@ function wire() {
   $('scanBtn').addEventListener('click', () => { closeMenu(); scanIcon(); });
   $('rm-scan').addEventListener('click', () => startScan('rv'));
   $('pk-restore').addEventListener('click', () => { stopScan(); pkRestore().catch(() => pkFailed('bad')); });
+  $('takeover-pk').addEventListener('click', () => { pkRestore(false, true).catch(() => pkFailed('bad')); });   // P198
   $('scan-stop').addEventListener('click', () => stopScan());
   $('scan-back').addEventListener('click', () => stopScan());
   $('scan-trigger').addEventListener('click', () => { if (!scanStream) { startScan(); return; } scanActive = !scanActive; $('scan-trigger').textContent = t(scanActive ? 'camera.pause' : 'camera.scan'); });

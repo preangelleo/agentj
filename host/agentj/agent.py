@@ -864,6 +864,7 @@ class ClaudeAgent(Agent):
         self.last_result: dict = {}
         self.boundary: dict | None = None          # compact_metadata of the last compact_boundary
         self.replay = False                        # after a compact_boundary: Claude Code re-sends a kept synthetic message
+        self.native_goal_checked = False           # P198: this process's session checked once for Claude Code's own /goal
 
     def is_down(self) -> bool:
         return self.failed_start
@@ -922,6 +923,7 @@ class ClaudeAgent(Agent):
                                                          stderr=asyncio.subprocess.PIPE, limit=LINE_LIMIT,
                                                          start_new_session=True)
         self.got_init, self.failed_start, self.err_tail = False, False, ""
+        self.native_goal_checked = False
         self.reader = asyncio.create_task(self._read(self.proc, resumed=bool(sid)))
         bg.spawn(self._drain_err(self.proc), "agent_drain_err", self.host.st.log)   # P192 (B13): held, failure logged
         self.host.st.log("agent_start", agent=self.kind, fence=self.cfg.get("fence", True))
@@ -1105,7 +1107,40 @@ class ClaudeAgent(Agent):
             if self.turn_done:
                 self.turn_done.set()
 
+    def transcript_path(self) -> str | None:
+        sid = self.host.st.agent_session(self.kind)
+        if not sid:
+            return None
+        import re
+        root = os.environ.get("CLAUDE_CONFIG_DIR") or os.path.expanduser("~/.claude")
+        for d in dict.fromkeys((self.cfg["dir"], os.path.realpath(self.cfg["dir"]))):
+            p = os.path.join(root, "projects", re.sub(r"[^A-Za-z0-9]", "-", d), sid + ".jsonl")
+            if os.path.isfile(p):
+                return p
+        return None
+
+    async def clear_native_goal(self) -> bool:
+        """P198: before 0.20.1 the phone's `/goal <what>` reached Claude Code verbatim and set its native goal, whose Stop hook
+        then re-asked every turn 「…发 /goal clear」. A session left that way is cleaned once per process: `/goal clear` as a
+        local command (no model call, no phone page), before the owner's message. True when one was cleared."""
+        from . import goal as goal_mod
+        t = self.transcript_path()
+        if not t or not await asyncio.to_thread(goal_mod.native_goal_active, t):
+            return False
+        cur, self.cur_send = self.cur_send, None   # the clear is not the owner's message: it never marks it delivered
+        try:
+            await self.local("/goal clear")
+        finally:
+            self.cur_send = cur
+        still = await asyncio.to_thread(goal_mod.native_goal_active, t)
+        self.host.st.log("native_goal_cleared", agent=self.kind, result="still_set" if still else "ok")
+        return not still
+
     async def turn(self, text: str) -> None:
+        if self.capture is None and not self.native_goal_checked:
+            self.native_goal_checked = True
+            with contextlib.suppress(OSError, ConnectionError, ValueError):
+                await self.clear_native_goal()
         for attempt in range(2):
             if self.proc is None and not await self._spawn():
                 return

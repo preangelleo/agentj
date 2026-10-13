@@ -673,7 +673,7 @@
     "agent.approvals": {
       "type": "string",
       "default": "standard",
-      "description": "Shared-mode approvals: standard asks when a credential is changed or shown on screen; strict also asks when one is only read or mentioned / 共享模式审批：standard 只在改凭据或把凭据显示到屏幕时弹；strict 只要读到或提到凭据也弹",
+      "description": "Shared-mode approvals: standard asks for spending, sending out, public deletion and a credential changed or shown on screen; strict also asks when a credential is only read or mentioned; native adds no Agent J card (the harness's own permissions only) / 共享模式审批：standard 花钱、对外发送、公开删除、改凭据或把凭据显示到屏幕时弹；strict 只要读到或提到凭据也弹；native 不另外弹卡，只看 harness 自己的权限",
       "aliases": [
         "审批",
         "审批强度",
@@ -685,7 +685,8 @@
       "since": "0.18",
       "enum": [
         "standard",
-        "strict"
+        "strict",
+        "native"
       ]
     },
     "updates.mode": {

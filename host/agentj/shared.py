@@ -22,7 +22,7 @@ import signal
 import sys
 import uuid
 
-from .text import pick
+from .text import pick, strip_reasoning
 from .agent import Agent
 from .agent_opencode import OpenCodeAgent, Client, HTTPError, CONNECT_WAIT, to_tool, split_model
 from . import privacy, shared_hook, danger, provenance, handoff, approval_jev
@@ -37,6 +37,7 @@ CONTROL_WARN_S = 30
 OBSERVE_RETRIES = 5     # P142 (B17): consecutive failed observe passes before the shared session is down
 FRESH_MS = 30 * 60 * 1000   # P147: a registered session this young may not have written its transcript yet
 CLAUDE_INPUT_WAIT = 10  # acceptance, not completion; never retry an uncertain socket write
+NATIVE_STALE_S = 3.0    # P198: native_turn with registry + hook state idle this long is a leftover flag, not a turn
 TURN_END_GRACE = 1.0    # P151: a turn end the transcript records (turn_duration) waits this long for its native Stop
 EMPTY_STOP_WAIT = 2.0   # P151b: a native Stop with no last_assistant_message: the transcript's end (or this) closes the turn
 END_TURN_TOOLS = ("ScheduleWakeup",)   # P151b: a tool that ends the turn — its result is the turn's end, Stop or not
@@ -178,6 +179,8 @@ class SharedClaudeAgent(Agent):
         self.phone_seen = self.phone_reply_seen = False
         self.phone_claim = False       # P135: a phone message taken inside a native turn already running → its next Stop
         self.native_turn = False       # P135: the transcript shows a native turn in progress (no UserPromptSubmit came)
+        self.ended_at = None           # P198: wall clock of the last turn end; assistant lines written before it are that turn's
+        self._native_idle_since = None  # P198: monotonic start of "native_turn, yet the session and its registry entry are idle"
         self.pending_text = ""
         self.pending_source = None
         self.untrusted_state = None    # B1: None | "pending" (group envelope sent) | "running" (native turn seen)
@@ -283,6 +286,7 @@ class SharedClaudeAgent(Agent):
         # is authoritative, exactly as in relay; never turn that race into an
         # early empty phone completion or a later desktop duplicate.
         import time
+        self.ended_at = time.time()     # P198: the turn's late lines (read below or by the observer) must not reopen it
         if source == "committed-Stop":
             claimed, self.end_claimed = self.end_claimed, None
             if claimed and claimed[0] == public_text(reply) and time.monotonic() - claimed[1] < 60:
@@ -578,6 +582,7 @@ class SharedClaudeAgent(Agent):
             self.offset = 0
             self.discard_line = False
             self.seen.clear()
+            self.native_turn = False                # P198: the old session's flag never carries into the new one
             self.compacted_at = __import__('time').time()
             self.meter(ctx=None, source_at=None)
             callback = getattr(self.host, "shared_clear", None)
@@ -619,9 +624,9 @@ class SharedClaudeAgent(Agent):
         if name == "PreToolUse":
             verdict = danger.classify_shared(event.get("tool_name"), event.get("tool_input"), self.cfg.get("danger_extra"),
                                              self.cfg.get("approvals", "standard"))
-            keys = danger.grant_keys(verdict)
-            if not self.cfg.get("high_risk_warnings", False):
-                keys = [k for k in keys if k in danger.ALWAYS_CARD]     # A5: hook-file writes ask even with warnings off
+            # P198: the five clear dangers ask on the phone (P128's documented `standard`); from 0.15 (F14) to 0.20.0 the
+            # default kept only hook-file writes (A5) — now only under agent.approvals = native
+            keys = danger.shared_keys(verdict, self.cfg)
             if keys and set(keys) <= self.permissions:
                 for cat in keys:
                     self.host.st.log("shared_risk_batch", category=cat, grant=self.risk_grants[cat]["rid"],
@@ -701,6 +706,10 @@ class SharedClaudeAgent(Agent):
                         self.risk_denied.update(cats)
             decision = {"behavior": "allow"} if answer.get("behavior") == "allow" else {
                 "behavior": "deny", "message": "Denied by paired phone or timeout."}
+            if decision["behavior"] == "deny":
+                # P198 (H): Claude Code 2.1.296 sends no PostToolUse(Failure) after a hook's deny — the card set by this
+                # PermissionRequest would hold the state at waiting past the turn's Stop (_commit_idle keeps a waiting card)
+                self.state.clear_card(tool)
             return {"hookSpecificOutput": {"hookEventName": "PermissionRequest", "decision": decision}}
         return {}
 
@@ -1295,6 +1304,37 @@ class SharedClaudeAgent(Agent):
             self.native_turn = False
             if not self.phone_turn and self.status == "working":
                 self.set_status("idle")
+        self._reconcile_native(status)
+
+    def _reconcile_native(self, status):
+        """P198: native_turn is set by assistant lines and cleared by the turn's Stop. When it is still set while Claude Code's
+        own registry and our hook state have both said idle for NATIVE_STALE_S, no turn is running: clear it (else the next
+        phone message waits as 「电脑正忙」 and the compaction recovery gives up as busy)."""
+        import time
+        if not (self.native_turn and status == "idle" and self.state.status in ("idle", "none") and not self.phone_turn):
+            self._native_idle_since = None
+            return
+        now = time.monotonic()
+        if self._native_idle_since is None:
+            self._native_idle_since = now
+        elif now - self._native_idle_since >= NATIVE_STALE_S:
+            self._native_idle_since = None
+            self.native_turn = False
+            self.host.st.log("shared_native_turn_stale", why="registry_idle")
+
+    def _line_of_ended_turn(self, item) -> bool:
+        """P198: an assistant line stamped before the last turn end belongs to that ended turn (Claude Code 2.1.296 sends the
+        Stop hook before it flushes the turn's last lines) — it must not mark a new native turn."""
+        if self.ended_at is None:
+            return False
+        ts = item.get("timestamp")
+        if not isinstance(ts, str):
+            return False
+        try:
+            from datetime import datetime
+            return datetime.fromisoformat(ts.replace("Z", "+00:00")).timestamp() <= self.ended_at
+        except ValueError:
+            return False
 
     def read_statusline(self):
         from . import claude_statusline
@@ -1349,7 +1389,8 @@ class SharedClaudeAgent(Agent):
                 text = blocks if isinstance(blocks, str) else "\n".join(
                     b.get("text", "") for b in blocks if isinstance(b, dict) and b.get("type") == "text")
                 if role == "assistant":
-                    self.native_turn = True       # P135: a native turn is producing; its Stop clears this
+                    if not self._line_of_ended_turn(item):
+                        self.native_turn = True   # P135: a native turn is producing; its Stop clears this
                     self._turn_output(msg, blocks)
                 elif role == "user" and isinstance(blocks, list):
                     self._tool_results(blocks)
@@ -1546,6 +1587,7 @@ class SharedClaudeAgent(Agent):
         if self.untrusted_state == "running":
             self.untrusted_state = None
         self.native_turn = False
+        self.ended_at = time.time()
         emit = getattr(self.host, "emit", None)
         if emit:
             emit("shared_stop", agent="claude", phone=self.phone_turn, phone_input=phone, source="turn-end-empty")
@@ -1576,7 +1618,11 @@ class SharedClaudeAgent(Agent):
         if source == "compact" and handoff.mtime(handoff.COMPACT) is not None:
             return "\n\n" + handoff.recover_text(lang, "compact", True)
         if source == "clear" and handoff.mtime(handoff.CLEAR) is not None:
-            return "\n\n" + handoff.recover_text(lang, "clear", True, handoff.path(handoff.CLEAR))
+            # P198: the host's recovery renames it a moment later (applies once) — measured on 2.1.296, the Agent then
+            # reported the named file missing before reading the renamed one
+            return "\n\n" + handoff.recover_text(lang, "clear", True, handoff.path(handoff.CLEAR)) + (
+                " If it is gone, it was renamed " + handoff.CLEAR_USED + " in the same folder: read that." if lang == "en" else
+                "如果找不到，它已在同一目录改名为 " + handoff.CLEAR_USED + "，读那个。")
         return ""
 
     def _schedule_recover(self, kind, has):
@@ -1595,16 +1641,25 @@ class SharedClaudeAgent(Agent):
         """After RECOVER_DELAY with no new turn and the session idle, the host sends its recovery message itself."""
         await asyncio.sleep(handoff.RECOVER_DELAY)
         why = None
+        stale = 0
         for _ in range(20):
             if self.turn_began_at != began or self.phone_turn:
                 why = "new_turn"
             elif self.session is None or self.host.stopped() is True:
                 why = "offline"
-            elif self.native_turn or self.state.status not in ("idle", "none"):
+            elif self.state.status not in ("idle", "none"):
                 why = "busy"            # Claude Code's automatic compaction inside a turn: the turn goes on by itself
             elif not await asyncio.to_thread(self._registry_idle):
                 why = "busy"
+            elif self.native_turn and stale < 2:
+                # P198: our state and Claude Code's registry both idle; only native_turn says busy — a flag left by the
+                # ended turn's late transcript lines (2.1.296: no Stop follows a /compact or /clear). Confirm, then clear.
+                stale += 1
+                why = "busy"
             else:
+                if self.native_turn:
+                    self.native_turn = False
+                    self.host.st.log("shared_native_turn_stale", why="recover", kind=kind)
                 why = None
                 break
             if why != "busy":
@@ -1935,10 +1990,16 @@ class SharedOpenCodeAgent(OpenCodeAgent):
         self.risk_channel=None
         self.owned_server=False   # P59: True once Agent J started this ordinary server itself (restartable, same session)
 
-    async def prepare_risk(self):
-        if not self.cfg.get('high_risk_warnings',False) or self.risk_channel:
+    async def prepare_risk(self, owner=False):
+        # P198: Agent J's own ordinary server always loads the guard (the five clear dangers ask on the phone); a server the
+        # OWNER started keeps it opt-in (agent.high_risk_warnings: loading it disposes their instance, refused while busy)
+        if (owner and not self.cfg.get('high_risk_warnings',False)) or not danger.shared_guard(self.cfg) or self.risk_channel:
+            if owner and not self.risk_channel:
+                self.host.st.log('shared_guard_unavailable', agent=self.kind, reason='owner_server')
             return
-        self.risk_channel=shared_hook.Channel(self.risk,shared_hook.channel_path(self.host.st.root,'opencode'))
+        # P198 (C): under agentperm/ — the only part of the state dir the fence binds back (fence.py); at <state>/ the fenced
+        # plugin's hook could not reach it, SharedGuardReady never came and every turn ended in TimeoutError
+        self.risk_channel=shared_hook.Channel(self.risk,shared_hook.channel_path(self.host.st.perm_dir,'opencode'))
         await self.risk_channel.start()
         shared_opencode_hook.install(self.cfg['dir'],self.risk_channel.path)
 
@@ -2058,7 +2119,7 @@ class SharedOpenCodeAgent(OpenCodeAgent):
             self.failed_start = True
             self.local_fail(owner_password_note())
             return False
-        await self.prepare_risk()                     # the v1 pre-execution plugin: v1 owner servers only
+        await self.prepare_risk(owner=True)           # the v1 pre-execution plugin on an owner's v1 server: opt-in
         try:
             await self._attach()
             if self.risk_channel:
@@ -2192,7 +2253,7 @@ class SharedOpenCodeAgent(OpenCodeAgent):
         self.emitted.add(part.get("id"))
         if self.quiet:
             return
-        text = public_text(part.get("text") or "")
+        text = public_text(strip_reasoning(part.get("text") or ""))   # P198: a model's </think> reasoning is not the reply
         if text:
             (self.host.desktop_text if self.desktop_turn else self.host.agent_text)(text)
 
@@ -2211,7 +2272,15 @@ class SharedOpenCodeAgent(OpenCodeAgent):
         if self.owned_server and not await self._session_ok():
             return
         if self.risk_channel:
-            await asyncio.wait_for(self.risk.ready.wait(),CONNECT_WAIT)
+            try:
+                await asyncio.wait_for(self.risk.ready.wait(),CONNECT_WAIT)
+            except asyncio.TimeoutError:   # P198 (C): fail closed, but say why (was a bare 「Agent 出错（TimeoutError）」)
+                self.host.st.log('shared_guard_not_ready', agent=self.kind, channel=str(self.risk_channel.path))
+                self.local_fail(pick(getattr(self.host, "lang", "zh"),
+                    "手机审批守卫没有在 OpenCode 里就位，这条没有交给 Agent（安全起见不放行）。请运行 `agentj doctor`，或在设置里关掉隔离后重试。",
+                    "The phone approval guard did not come up inside OpenCode, so this message was not handed over (fails closed). "
+                    "Run `agentj doctor`, or retry with isolation off."))
+                return
         self.risk.reset()
         self.turn_done = asyncio.Event()
         self.turn_progress = __import__("time").monotonic()

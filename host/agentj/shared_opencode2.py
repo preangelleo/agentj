@@ -25,7 +25,7 @@ import os
 import re
 from urllib.parse import quote
 
-from .text import pick
+from .text import pick, strip_reasoning
 from .agent_opencode import CONNECT_WAIT, HTTPError, session_rules, split_model
 from .agent_opencode2 import AGENT_TRIES, END, OpenCodeV2Agent, _data, rules_from_v2, rules_to_v2
 from .privacy import redact
@@ -86,6 +86,8 @@ class SharedOpenCodeV2Agent(OpenCodeV2Agent):
         self.root = self.cfg["dir"]
         self.identity_sent = getattr(self, "identity_sent", {})
         self.agent_rules, self.rules = [], []
+        # P198: still opt-in here — v2 has no pre-execution plugin, and its ask rules would card every call (no low-risk
+        # pass in shared mode); the five-danger guard on a v2 shared server is a known gap (REPORT-198)
         if self.cfg.get("high_risk_warnings", False):    # the v1 plugin is not a v2 plugin: v2's own ask rules instead
             ag = None
             for _ in range(AGENT_TRIES):
@@ -306,7 +308,7 @@ class OwnerOpenCodeV2Agent(SharedOpenCodeV2Agent):
         self.texts_seen.add(key)
         if self.quiet:
             return  # native compaction summaries are not owner-facing replies
-        text = public_text(text)
+        text = public_text(strip_reasoning(text))    # P198: a model's </think> reasoning is not the reply
         if not text:
             return
         if self.desktop_turn and not (self.turn_done and not self.turn_done.is_set()):

@@ -10,7 +10,10 @@ Verdicts: ``ok`` (a valid cached certificate) · ``grace`` (bound, no certificat
 from the first try — an upgrade from 0.18 while our cloud is down never locks a paying owner out) · ``unbound`` (no Agent J
 account here, or the Dashboard says this host is not bound) · ``suspended`` (402: the seat is unpaid past its billing grace) ·
 ``expired`` (the cloud has been unreachable for longer than the certificate lives) · ``exempt`` (a loopback relay: local tests /
-development; AGENTJ_TEST_SEAT_ENFORCE=1 turns enforcement on there). Only a definitive answer from the Dashboard (not bound /
+development; AGENTJ_TEST_SEAT_ENFORCE=1 turns enforcement on there) · ``unenforced`` (P198: the Dashboard answered 404 — it
+predates `/v1/host/relay/cert`, so there is no certificate to get and no seat verdict; asked again every RETRY_REFUSED, never
+starts or runs down the 72 h grace — before P198 this counted as "unreachable" and locked a 0.20 host out after 72 h while the
+Dashboard was still older than the route; the relay, not this host, is the enforcement). Only a definitive answer from the Dashboard (not bound /
 suspended) ends a seat early; an unreachable cloud never does — the cached certificate is used to its end.
 
 The cache `<state>/seat/cert.json` (0600) holds only the certificate (a signature over channel + expiry), its expiry, the
@@ -31,8 +34,8 @@ RENEW_AGE = 6 * 3600           # renew a certificate older than this (≥ 66 h o
 RETRY_FAIL = 600               # unreachable / rate limited / malformed answer → ask again after this
 RETRY_REFUSED = 900            # not bound / suspended → ask again after this (a refused ask costs no rate budget; a re-bind is
                                # noticed at once: see due()) — paying on the account page resumes within 15 minutes
-VERDICTS = ("ok", "grace", "unbound", "suspended", "expired", "exempt")
-ALLOWED = ("ok", "grace", "exempt")
+VERDICTS = ("ok", "grace", "unbound", "suspended", "expired", "exempt", "unenforced")
+ALLOWED = ("ok", "grace", "exempt", "unenforced")
 
 TEXT = {
     "zh": {
@@ -53,6 +56,51 @@ TEXT = {
         "pair": "Pairing a new remote needs a valid Agent J seat.",
     },
 }
+
+
+# P199: the account's own services (plaza, support, friends, public bots) answer only a host with a usable seat — the same
+# verdict, grace and cache as above. The owner's local Agent, terminal and scheduled tasks are never gated here.
+FEATURE = {
+    "zh": {"plaza": "Agent 广场", "support": "Agent J 客服", "friends": "Agent 好友", "bots": "对外客服 bot"},
+    "en": {"plaza": "The Agent plaza", "support": "Agent J support", "friends": "Agent friends", "bots": "Public customer-service bots"},
+}
+FEATURE_TEXT = {
+    "zh": {
+        "need": "{feature}需要有效的 Agent J 席位。",
+        "unbound": "这台电脑还没有绑定席位：在账户页 {url} 买一个席位、点「复制安装提示词」完成绑定（`agentj login --seat-file …`）后即可使用。",
+        "suspended": "这台电脑的席位已暂停：到账户页 {url} 续费或调整席位后自动恢复。",
+        "expired": "这台电脑超过 72 小时没能和 Agent J 账户服务确认席位：检查网络后运行 `agentj doctor`，恢复联系后自动继续。",
+    },
+    "en": {
+        "need": "{feature} needs a valid Agent J seat.",
+        "unbound": " This computer is not bound to a seat yet: buy one on the account page {url}, press “Copy installation prompt” and "
+                   "finish binding (`agentj login --seat-file …`).",
+        "suspended": " This computer's seat is suspended: renew or adjust seats on the account page {url} — it resumes by itself.",
+        "expired": " This computer could not confirm its seat with the Agent J account service for more than 72 hours: check the "
+                   "network, then run `agentj doctor`; it continues once the service is reachable.",
+    },
+}
+
+
+def feature_message(feature: str, verdict: str, lang: str, url: str) -> str:
+    """P199: one friendly sentence pair — what needs the seat, and where to fix it. lang "both" = zh, then en on its own line."""
+    if lang == "both":
+        return feature_message(feature, verdict, "zh", url) + "\n" + feature_message(feature, verdict, "en", url)
+    k = "en" if lang == "en" else "zh"
+    t = FEATURE_TEXT[k]
+    return t["need"].format(feature=FEATURE[k].get(feature, feature)) + t.get(verdict, t["unbound"]).format(url=url)
+
+
+def refusal(st, feature: str, lang: str = "both", relay: str | None = None) -> str | None:
+    """P199, for CLI processes (no serve object): None while this host may use `feature`, else feature_message. Reads the
+    serve's cached verdict (`<state>/seat/cert.json`) — never asks the cloud itself."""
+    if relay is None:
+        try:
+            relay = st.config().get("relay") or ""
+        except (OSError, ValueError, AttributeError):
+            relay = ""
+    v = SeatCert(st, relay).verdict()
+    return None if v in ALLOWED else feature_message(feature, v, lang, cloud.app_url(st))
 
 
 def _loopback(url: str) -> bool:
@@ -123,6 +171,8 @@ class SeatCert:
             return "suspended"
         if self.cert(now):
             return "ok"
+        if last == "unsupported":               # P198: the Dashboard has no seat certificates yet — nothing to enforce
+            return "unenforced"
         first = d.get("first_try")
         if type(first) in (int, float) and now < first + TTL_GRACE and not d.get("cert"):
             return "grace"
@@ -181,6 +231,10 @@ class SeatCert:
         elif res.kind == "unlinked":
             d = {}
             self._next = 0.0
+        elif res.kind == "unsupported":         # P198: the route is not on this Dashboard — not a verdict, not a grace clock
+            d["verdict"] = "unsupported"
+            d.pop("first_try", None)
+            self._next = now + RETRY_REFUSED
         else:                                   # unreachable / rate limited / malformed: keep what we have (and the last verdict)
             if not d.get("cert") and type(d.get("first_try")) not in (int, float):
                 d["first_try"] = now

@@ -69,7 +69,7 @@ It may need you here:
 The AI installs `agentj`, the program on your computer, at one fixed version:
 
 ```bash
-uv tool install "git+https://github.com/preangelleo/agentj@v0.20.0a1#subdirectory=host"
+uv tool install "git+https://github.com/preangelleo/agentj@v0.20.1a1#subdirectory=host"
 agentj doctor
 ```
 

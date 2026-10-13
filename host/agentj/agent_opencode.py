@@ -45,7 +45,7 @@ from . import bg, slash
 from .agent import LINE_LIMIT, UNCERTAIN, Agent, _bin, _signal_tree
 from .slash import Result
 from .envcompat import getenv
-from .text import clean, clean_line
+from .text import clean, clean_line, strip_reasoning
 
 START_WAIT = 60          # seconds with no startup output before failing
 START_MAX = 300          # bounded cold start even if output continues
@@ -804,11 +804,12 @@ class OpenCodeAgent(Agent):
         if not isinstance(pid, str) or pid in self.emitted:
             return
         self.emitted.add(pid)
-        if isinstance(part.get("text"), str) and part["text"].strip() and not self.quiet:
+        text = strip_reasoning(part.get("text"))     # P198: a model's </think> reasoning is not the reply
+        if isinstance(text, str) and text.strip() and not self.quiet:
             if self.collect is not None:
-                self.collect.append(part["text"])
+                self.collect.append(text)
             else:
-                self.host.agent_text(part["text"])
+                self.host.agent_text(text)
 
     def on_event(self, ev: dict) -> None:
         t = ev.get("type")
@@ -825,6 +826,7 @@ class OpenCodeAgent(Agent):
             if p.get("reply") in ("once", "always") and rid not in self.ours:
                 self._tamper("foreign_reply")
         elif t == "message.part.updated":
+            self._tool_dir(p.get("part"))
             self._text_part(p.get("part"))
         elif t == "session.error" and p.get("sessionID") in (self.sid, None):
             err = p.get("error") if isinstance(p.get("error"), dict) else {}
@@ -938,11 +940,33 @@ class OpenCodeAgent(Agent):
         self.pending[rid] = gone
         self._bg(self._decide(rid, req, gone))
 
+    def _tool_dir(self, part) -> None:
+        """P198 (P164 G): a bash call's `workdir` (OpenCode runs it there, not in the project root), by call id — its
+        permission request carries only the command, so the card / the goal tiers would resolve relative paths wrongly."""
+        if not isinstance(part, dict) or part.get("type") != "tool" or not isinstance(part.get("callID"), str):
+            return
+        st = part.get("state") if isinstance(part.get("state"), dict) else {}
+        inp = st.get("input") if isinstance(st.get("input"), dict) else {}
+        wd = inp.get("workdir")
+        if isinstance(wd, str) and wd:
+            dirs = self.__dict__.setdefault("tool_dirs", {})
+            if len(dirs) >= 256:
+                dirs.pop(next(iter(dirs)))
+            dirs[part["callID"]] = wd if os.path.isabs(wd) else os.path.join(self.cfg.get("dir") or "/", wd)
+
     async def _decide(self, rid: str, req: dict, gone: asyncio.Future) -> None:
         reply, msg = "reject", "已拒绝。"
         try:
             tool, inp = to_tool(req, self.root)
-            ans = await self.host.ask(clean_line(tool, 64) or "?", inp, gone)
+            call = (req.get("tool") or {}).get("callID") if isinstance(req.get("tool"), dict) else None
+            wd = getattr(self, "tool_dirs", {}).get(call) if isinstance(call, str) else None
+            if wd and tool == "Bash" and isinstance(inp.get("command"), str):
+                from .approval_jev import with_cwd        # P198: where OpenCode really runs it (its workdir)
+                inp = {**inp, "command": with_cwd(inp["command"], wd, self.cfg.get("dir"))}
+            name = clean_line(tool, 64) or "?"
+            from .approval_jev import low_risk_pass       # P198: P157 layer 1 — low risk runs without a card, like Claude
+            ans = ({"behavior": "allow"} if low_risk_pass(self.host, self.cfg, name, inp)
+                   else await self.host.ask(name, inp, gone))
             if ans.get("behavior") == "allow":
                 reply = "once"
             else:

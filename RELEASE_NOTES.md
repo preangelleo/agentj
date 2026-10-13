@@ -1,6 +1,6 @@
-# Agent J 0.20.0a1 release notes
+# Agent J 0.20.1a1 release notes
 
-Host 0.20.0a1 / install 0.22.0; phone-web scope.
+Host 0.20.1a1 / install 0.22.1; phone-web scope.
 Phone parity must pass --strict. Full Android/Telegram parity is incomplete.
 Full Android/Telegram parity is incomplete.
 No APK is included in this release. Android source is for review, not a released app.
@@ -8,19 +8,15 @@ No APK is included in this release. Android source is for review, not a released
 Publication status: local preparation only. Live site verification is DEFERRED until
 the public commit and tag are pushed, the site is deployed, and cold installation passes.
 
-On publication failure, restore v0.18.4a1 host/site/phone, the captured Dashboard and relay Worker versions (D1 0025 is additive and stays). C Dashboard (app migration 0025_device_names, seat certificate endpoint, account pairing fixes) first, then the relay Worker (seat check present, enforcement off), A front Worker/site/signed downloads/install guide, B phone web.
+On publication failure, restore v0.20.0a1 host/site/phone. A front Worker/site/signed downloads/install guide; B phone web. No relay Worker change and no D1 migration in this publication (the P195 partner overrides and further Dashboard checks ship later as a Dashboard-only batch C with app migration 0026).
 ## Changes
 
-- /goal goal mode: one signed opening card covers the dangerous actions a goal needs by kind and limit; undoable steps outside it get a 10 s countdown card, irreversible / suspicious ones wait for the owner; the heartbeat and new sessions continue a running goal.
-- Platform heartbeat on every harness (default 60 min, silent unless something needs the owner); `agentj busy capacity` decides how many background jobs to start.
-- E-mail channel (allowlist + sender authentication before the model, reply in the same thread), address book, contact cards and 「转发到邮箱」; any file up to 200 MB; long recordings in 20-minute parts with the screen kept awake; meeting notes.
-- One full-screen Settings page (the ≡ menu folded in) with 遥控器管理: list, rename, unbind and add remotes (up to 10, signed controls); a pairing card on every paired remote; terminal-only pairing on an account-bound computer; owner / device names for remotes.
-- Phone themes (colours, logo, Send icon, pixel robots or dots) with validate → apply; a menu design system; background robots with per-task cards for Claude Code, Codex and OpenCode sub-agents.
-- Fewer false approvals: heredoc bodies are data, Jev may clear what Agent J cannot read (owner threshold), sub-agent cards name their origin; Codex error classes; independent sessions by default; seat enforcement (an unbound host cannot pair).
-- Main-Agent core v11 (chairman philosophy, compressed rules); /switch-harness with a guarded switch-back.
-- 中文：/goal 目标模式；心跳；邮件通道、通讯录与「转发到邮箱」；任意文件与长录音；设置合成全屏页并能在手机上管理遥控器；主题换肤；误报更少；默认独立会话；席位强制；身份 v11。
+- Address-book slot 0 is the owner (name, main e-mail, optional phone), set only by the owner; messages whose destination is the owner's own paired remote, owner bot chat or own addresses go unmasked.
+- Full-screen preview: ← / → and swipes page through the files of the same reply; a zoomed image pans instead; background shortcuts never leak.
+- `agentj plaza partners` and partner lines in `agentj plaza show`, each with its disclosure.
+- Upgrades from older releases with a first-run journal gain the new checklist rows (no `KeyError: 'mail'`).
+- 中文：通讯录 0 号位是主人；发给主人本人的消息不打码；全屏预览左右切换同一条回复的文件；优先推荐伙伴带披露；旧版升级的首次准备不再报错。
 
-- Physical iPhone/Android lock-screen recording, iPhone file sharing, real mailbox providers beyond the tested ones and the relay seat-certificate enforcement (left off) remain pending; local browsers and fixtures do not prove them.
 ## Material acceptance limits
 
 - Android arbitrary-name wake recognition, false-accept/false-reject rates, background operation,

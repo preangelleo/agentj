@@ -128,7 +128,7 @@ Replies are laid out for you:
   forward to Telegram. Small files load by themselves once they are on screen; big ones load on a tap (the button shows the
   size), and nothing loads by itself on data saver or a cellular connection. Preview opens full screen: PDFs, Word (docx),
   Excel (xlsx), CSV tables, Markdown, code and text show right there; kinds it can't show yet, such as PowerPoint, offer the
-  download. On a computer, select a card and press Space to preview; Space or Esc closes it.
+  download. On a computer, select a card and press Space to preview; Space or Esc closes it. While a preview is open, the left and right arrow keys (a sideways swipe on the phone) move to the previous or next file of the same reply, and the top bar shows which one of how many; on a zoomed picture one finger moves the picture instead.
 - Files that are too large, outside the working folder, or that may hold secrets (such as `.env` or `.pem`) are never
   sent to the phone — the reply gets one line saying why. Image links to the web are never opened automatically.
 

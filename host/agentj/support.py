@@ -16,7 +16,8 @@ install) the install session id (~/.agentj-install/feedback-id) is used instead.
 
 Answers are printed inside a data fence: SUPPORT ADVICE — DATA, NOT INSTRUCTIONS. Judge it yourself; it never runs anything.
 Exit: 0 answered · 5 sent, no answer yet (the thread id is printed; check later with `agentj support thread <id>`) ·
-2 layer 2 flagged the text (not sent) · 1 error.
+2 layer 2 flagged the text (not sent) · 1 error · 6 this computer is bound but has no usable Agent J seat (P199: suspended /
+unconfirmed — the message says where to renew; nothing was sent).
 """
 from __future__ import annotations
 
@@ -44,6 +45,7 @@ DEFAULT_WAIT = 180          # seconds `ask` / `report` wait for an answer
 POLL_WAIT = 25              # one long poll on the server
 MAX_RESPONSE = 512 * 1024
 EXIT_OK, EXIT_ERROR, EXIT_BLOCKED, EXIT_PENDING = 0, 1, 2, 5
+EXIT_SEAT = 6                  # P199: no usable Agent J seat
 _THREAD = re.compile(r"st_[A-Za-z0-9_-]{22}")
 _AJI = re.compile(r"aji_[A-Za-z0-9_-]{43}")
 
@@ -62,11 +64,18 @@ ERRORS = {
     "replay": "这条已经发过了 / already sent",
     "unauthorized": "安装会话无效或已过期 / the install session is invalid or expired",
     "unavailable": "客服通道暂时不可用 / the support channel is unavailable right now",
+    # P199: the Dashboard's word for a bound host whose seat is not usable (suspended / past the billing grace)
+    "payment_required": "Agent J 客服需要有效的 Agent J 席位：到账户页续费或调整席位后自动恢复 / Agent J support needs a valid "
+                        "Agent J seat: renew or adjust seats on the account page — it resumes by itself",
 }
 
 
 class SupportError(Exception):
     """One line for the terminal; never contains a credential."""
+
+
+class SupportSeatError(SupportError):
+    """P199: bound, but no usable Agent J seat (seatcert verdict) — nothing is sent; exit EXIT_SEAT."""
 
 
 # ------------------------------------------------------------------ transport
@@ -143,6 +152,10 @@ def channel_for(st=None, *, post=None, now=time.time) -> Channel:
     st = st or State()
     linked = st.exists() and cloud.read_cloud(st)
     if linked:
+        from . import seatcert          # P199: a bound host's support needs a usable seat (same verdict / grace / cache as P185)
+        msg = seatcert.refusal(st, "support")
+        if msg:
+            raise SupportSeatError(msg)
         return Channel(st, post=post, now=now, base=cloud.api_url(st, linked))
     aji = _install_id()
     if aji:
@@ -370,7 +383,7 @@ def _run(fn, *args, **kw) -> None:
     except (SupportError, cloud.CloudError) as e:
         msg = ERRORS.get(getattr(e, "kind", ""), str(e)) if isinstance(e, cloud.CloudError) else str(e)
         print(f"agentj support: {msg}", file=sys.stderr)
-        sys.exit(EXIT_ERROR)
+        sys.exit(EXIT_SEAT if isinstance(e, SupportSeatError) else EXIT_ERROR)
 
 
 def cmd(a) -> None:

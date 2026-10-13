@@ -1,6 +1,6 @@
 ---
 name: agentj-contacts
-description: The owner's address book and sending e-mail to people — 「发邮件给张三」「把这个文件发给李总」「转给老王」「记一下他的邮箱」「存个联系人」「导入通讯录」「导出联系人」「张三的邮箱是多少」, "email this to Zhang", "send it to my accountant", "save this contact", "import my contacts CSV / vCard". Look the person up first (`agentj contacts find`, pinyin and homophones included); nobody found → say so and put a contact card on the phone; send only through `agentj mail send` (the owner approves recipients on the phone).
+description: The owner's address book and sending e-mail to people — 「发邮件给张三」「把这个文件发给李总」「转给老王」「记一下他的邮箱」「存个联系人」「导入通讯录」「导出联系人」「张三的邮箱是多少」, "email this to Zhang", "send it to my accountant", "save this contact", "import my contacts CSV / vCard". Look the person up first (`agentj contacts find`, pinyin and homophones included); nobody found → say so and put a contact card on the phone; send only through `agentj mail send` (the owner approves recipients on the phone). Also 「发给我自己」「发我邮箱」 "send it to me": slot 0 = the owner.
 ---
 # Address book and e-mail (通讯录)
 
@@ -22,6 +22,21 @@ a command.
    nothing goes out before 「允许」. `not_found` → step 3; `denied` → tell the owner it was not sent;
    `mail_not_configured` / `no_password` → the mailbox is not set up: read the e-mail section of agentj-config.
    Every address that went out is remembered automatically (new ones as contacts with source `agent`).
+
+## Slot 0 = the owner (「发给我自己」)
+- Slot 0 of the book is the owner themself: name, main e-mail (the first), optional phone. `agentj contacts owner show`.
+  Every "send it to me" — a web report, meeting minutes, a mail, a file — goes to that main e-mail:
+  `agentj mail send --to me …` (「我」「我自己」「me」 find slot 0).
+- Empty → `agentj contacts owner set [--name … --email … --phone …] --why '…'`: a card rises on the phone, pre-filled with what
+  you pass (or the 「我本人」 address of the e-mail channel); the owner saves or skips. You can never write slot 0 yourself
+  (`edit` / `rm` on it are refused): an address there skips the outward filter. The first pairing already shows this card once.
+- Owner-directed = a paired remote, the owner's Telegram private chat, or a mail whose recipients are ALL owner addresses
+  (slot 0 + the 「我本人」 rows of the e-mail channel). That goes as written: e-mail addresses, phone numbers, links, access
+  codes, one-time codes, a report's authorization code are not masked. One other recipient → the whole mail is masked.
+- Real credentials (API keys, private keys, passwords, tokens, seed words) never ride in mail or Telegram, not even to the
+  owner: Agent J takes them out of the text, leaves 〔密钥 n …〕 in their place and opens a secret pickup card on the phone
+  (the owner opens it with Face ID). Better still, send such a value yourself with `agentj secret send` and keep it out of
+  the mail. A low-risk code is not a credential: write it out.
 
 ## Keep the book current
 - The owner gives a new detail (「李总的手机是 139…」「他还有个邮箱」) → `agentj contacts find` him, then

@@ -30,11 +30,9 @@ class RiskGuard:
         verdict=danger.classify_shared(tool,inp,a.cfg.get('danger_extra'),a.cfg.get('approvals','standard'))
         if not verdict.danger:
             return True
-        keys=danger.grant_keys(verdict)
-        if not a.cfg.get('high_risk_warnings',True):
-            keys=[k for k in keys if k in danger.ALWAYS_CARD]   # A5 (P139): hook-file writes ask even with warnings off
-            if not keys:
-                return True
+        keys=danger.shared_keys(verdict,a.cfg)   # P198: the five clear dangers ask (was: only with high_risk_warnings)
+        if not keys:
+            return True
         async with self.lock:
             if set(keys) & self.denied:
                 return False

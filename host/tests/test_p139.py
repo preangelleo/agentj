@@ -361,7 +361,7 @@ class HookFiles(Tmp):
 
     def test_shared_claude_asks_for_hook_writes_even_with_warnings_off_and_every_time(self):
         h = self.host()
-        a = self.agent(h)                                                   # high_risk_warnings defaults off
+        a = self.agent(h, approvals="native")    # P198: native = no five-danger card (the default asks, test_p198)
         tool, inp = self.WRITES[0]
         self.assertEqual(asyncio.run(a.hook_event(ev("PreToolUse", tool=tool, inp=inp)))["hookSpecificOutput"]
                          ["permissionDecision"], "ask")
@@ -375,7 +375,7 @@ class HookFiles(Tmp):
 
     def test_codex_guard_asks_for_hook_writes_with_warnings_off(self):
         h = self.host()
-        ad = Mock(cfg={"high_risk_warnings": False, "dir": str(self.work)}, host=h, kind="codex")
+        ad = Mock(cfg={"high_risk_warnings": False, "approvals": "native", "dir": str(self.work)}, host=h, kind="codex")
         g = RiskGuard(ad)
         self.assertTrue(asyncio.run(g.check("Bash", {"command": "git push origin main"})))
         h.ask.assert_not_awaited()

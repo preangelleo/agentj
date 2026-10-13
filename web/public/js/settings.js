@@ -14,6 +14,7 @@ import * as sfx from './sfx.js';
 import * as shotclip from './shotclip.js';
 import * as remotes from './remotes.js';
 import * as mail from './mail.js';
+import * as contacts from './contacts.js';
 
 let H = { agentName: () => 'Agent J', paired: () => false, connected: () => false, unpair: () => {}, reload: () => location.reload(),
   view: () => document.body.dataset.view, forget: () => {} };
@@ -222,6 +223,7 @@ export function render() {
   tgl('set-hb', hbOn);
   el('set-hb-every').textContent = hbText(hbN);
   el('set-hb-every').disabled = !hbOn;
+  el('set-owner-nav').hidden = !contacts.forwardAvailable();   // P194: slot 0 needs a host with the address book
 }
 /** 「遥控器管理」 row: 已用 N / 10 (from the last dev_list / devs, else the preferences host block). */
 function renderRemotesRow() {
@@ -395,6 +397,7 @@ export function configure(hooks) {
   el('set-refresh').addEventListener('click', refreshApp);
   el('set-a2hs').addEventListener('click', onA2hs);
   el('set-mail-nav').addEventListener('click', () => showSub('mail'));   // P170
+  el('set-owner-nav').addEventListener('click', () => contacts.openOwner());   // P194: 我的联系方式 (slot 0)
   mail.configure();
   for (const b of document.querySelectorAll('[data-copy]')) b.addEventListener('click', async () => {
     const ok = await RelayMD.copyText(el(b.dataset.copy).textContent);

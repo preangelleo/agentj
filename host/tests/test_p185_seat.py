@@ -137,8 +137,9 @@ class Verdicts(Base):
     def test_a_dashboard_older_than_the_route_is_not_a_verdict(self):
         bind(self.st)
         self.dash.mode = "404"
-        self.assertEqual(self.seat.refresh(), "unreachable")
-        self.assertEqual(self.seat.verdict(), "grace")
+        self.assertEqual(self.seat.refresh(), "unsupported")      # P198 (J): not "unreachable" → no 72 h grace clock
+        self.assertEqual(self.seat.verdict(), "unenforced")
+        self.assertTrue(self.seat.allowed())
 
     def test_suspended_and_not_bound_end_the_seat_at_once(self):
         bind(self.st)

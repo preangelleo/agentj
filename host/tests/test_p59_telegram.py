@@ -31,6 +31,7 @@ sys.path.insert(0, str(HERE.parent))
 sys.path.insert(0, str(HERE))
 from agentj import compactprep, preferences as prefs, telegram as tg, tg_media  # noqa: E402
 from agentj import media as media_mod  # noqa: E402
+from agentj import tg_media  # noqa: E402
 from agentj.state import State  # noqa: E402
 from test_p57_agent import _Prep  # noqa: E402
 
@@ -216,7 +217,7 @@ class MediaOut(_Bot, unittest.IsolatedAsyncioTestCase):
         for i in range(10):
             self.put(f"p{i}.png", PNG + bytes([i]))
         await self.deliver(self.complete(" ".join(f"![](p{i}.png)" for i in range(10))))
-        self.assertEqual(len(self.bot.sent("sendPhoto")), media_mod.MAX_ITEMS)
+        self.assertEqual(len(self.bot.sent("sendPhoto")), tg_media.MAX_ITEMS)
         self.bot.calls.clear()
         big = self.put("poster.png", PNG)
         os.truncate(big, 10_200_000)                     # under the phone's 10 MiB, over sendPhoto's 10 MB

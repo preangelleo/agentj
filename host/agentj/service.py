@@ -365,6 +365,97 @@ def claude_env(path: str) -> dict:
     return private_env(path, CLAUDE_AUTH_ENV, "bad_claude_env")
 
 
+# ------------------------------------------------------------------ P198 (I): a key the shell has but the service does not
+JEV_KEY_ENV = "OPENROUTER_API_KEY"     # = approval_jev.KEY_ENV (P157 layer 2); importing approval_jev here is not needed
+MAX_KEY_VALUE = 4096
+
+
+def env_file_has(path: str, key: str) -> bool | None:
+    """Whether the service env file assigns `key` a non-empty value (the last assignment wins, as systemd / private_env).
+    Names only: the value is parsed, never returned. None = the file exists but cannot be read (a symlink, unreadable)."""
+    try:
+        fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+    except FileNotFoundError:
+        return False
+    except OSError:
+        return None
+    found = False
+    try:
+        with os.fdopen(fd, "r", errors="replace") as stream:
+            for line in stream:
+                k, sep, v = line.strip().partition("=")
+                if sep and k.strip() == key:
+                    try:
+                        parts = shlex.split(v, comments=True, posix=True)
+                    except ValueError:
+                        parts = []
+                    found = len(parts) == 1 and bool(parts[0])
+    except OSError:
+        return None
+    return found
+
+
+def import_key(n: str, key: str, environ: dict | None = None) -> str:
+    """P198 (I): one step, no hand-editing — copy `key` from the invoking shell's environment into the service env file
+    (owner's regular file, never through a symlink, 0600; every other byte kept). The value is never printed, logged or put
+    on a command line. → "present" (the file already has it) · "imported" · "absent" (this shell does not have it either).
+    Raises ServiceError("bad_service_env") for a file that is not safely ours or a value that cannot be one line."""
+    import stat
+    if not isinstance(key, str) or not KEY_ENV_RE.fullmatch(key):
+        raise ServiceError("bad_key_name")
+    e = os.environ if environ is None else environ
+    path = env_file(n, e if environ is not None else None)
+    has = env_file_has(path, key)
+    if has is None:
+        raise ServiceError("bad_service_env")
+    if has:
+        return "present"
+    value = (e.get(key) or "").strip()
+    if not value:
+        return "absent"
+    if len(value) > MAX_KEY_VALUE or any(c in value for c in "\n\r\0'"):
+        raise ServiceError("bad_service_env")
+    prior = b""
+    try:
+        fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
+    except FileNotFoundError:
+        os.makedirs(os.path.dirname(path), mode=0o700, exist_ok=True)
+    except OSError:
+        raise ServiceError("bad_service_env") from None
+    else:
+        with os.fdopen(fd, "rb") as f:
+            info = os.fstat(f.fileno())
+            if not stat.S_ISREG(info.st_mode) or info.st_uid != os.getuid():
+                raise ServiceError("bad_service_env")
+            prior = f.read()
+    # single quotes: literal both for systemd's EnvironmentFile and for private_env's shlex (macOS) — no escaping rules differ
+    line = ("\n" if prior and not prior.endswith(b"\n") else "") + f"{key}='{value}'\n"
+    _write(path, prior + line.encode(), 0o600)
+    return "imported"
+
+
+def key_note(n: str, key: str = JEV_KEY_ENV, environ: dict | None = None) -> str | None:
+    """P198 (I): what to tell the owner when the service will not see `key` (default: Jev's, the P157 approval layer 2).
+    None when the service env file has it. Names and commands only — never a value."""
+    e = os.environ if environ is None else environ
+    path = env_file(n, e if environ is not None else None)
+    has = env_file_has(path, key)
+    if has:
+        return None
+    if (e.get(key) or "").strip():
+        return (f"{key} 在这个终端里有，但后台服务里没有：手机审批的第二层 Jev（P157）不会生效。一步导入（不显示值）："
+                f"`agentj service import-key {key}`，再 `agentj service restart`。 / {key} is set in this terminal but not "
+                f"in the background service, so Jev (approval layer 2, P157) is off there. Import it in one step (the value "
+                f"is never shown): `agentj service import-key {key}`, then `agentj service restart`.")
+    target = tilde(path)
+    return (f"后台服务没有 {key}：Jev（手机审批第二层，可选）不生效。要开：在电脑上运行 `agentj secret request --name {key} "
+            f"--purpose 'OpenRouter key（Jev 审批第二层）' --dest env:{target}#{key} --verify-url https://openrouter.ai/api/v1/key`，"
+            f"在手机的密钥卡片里贴上 key，再 `agentj service restart`。 / The background service has no {key}: Jev (optional "
+            f"approval layer 2) is off. To turn it on: run `agentj secret request --name {key} --purpose 'OpenRouter key (Jev)' "
+            f"--dest env:{target}#{key} --verify-url https://openrouter.ai/api/v1/key` on the computer, paste the key on the "
+            f"phone's secret card, then `agentj service restart`.")
+
+
 def missing_key_message(key_name: str, environment="CLI") -> str:
     # Names are validated configuration fields; values never enter this message.
     if not isinstance(key_name, str) or not KEY_ENV_RE.fullmatch(key_name):
@@ -850,6 +941,7 @@ def _write(path: str, data: bytes, mode: int) -> None:
 
 MESSAGES = {
     "bad_service_env": "Service env must be an owner-owned regular 0600 file with valid assignments; no symlinks. Fix ~/Library/LaunchAgents/net.agentj.host.env locally (chmod 600), then run agentj service restart; never paste values in chat",
+    "bad_key_name": "变量名不合规（大写字母、数字、下划线）/ not a variable name (A–Z, 0–9, _)",
     "bad_claude_env": "Claude 服务 env 文件须为主人所有的普通 0600 文件，且赋值格式正确 / Claude service env must be an owner-owned regular 0600 file with valid assignments",
     "bad_binary_env": "AGENTJ_*_BIN 路径格式无效：检查服务 env 文件 / invalid harness path in service environment file",
     "bad_name": "服务名不合规（AGENTJ_SERVICE_NAME） / invalid service name",

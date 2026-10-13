@@ -16,9 +16,11 @@ Authorization header to ENDPOINT, never logged. Stdlib only.
 """
 from __future__ import annotations
 
+import contextlib
 import json
 import math
 import os
+import shlex
 from dataclasses import dataclass
 
 ENDPOINT = "https://openrouter.ai/api/alpha/decisions"
@@ -182,3 +184,52 @@ def transcript_context(path, limit: int = 512 * 1024) -> dict:
                                                              for b in content):
                     return {"owner": "\n".join(texts), "plan": "\n".join(plan)[-MAX_TEXT:]}
     return {"plan": "\n".join(plan)[-MAX_TEXT:]} if plan else {}
+
+
+# P198 (P164 D): layer 1's "not dangerous" for the harnesses without a PreToolUse hook. Claude Code's danger hook asks only on
+# a hit, so a low-risk call never reaches the phone. Independent OpenCode / Codex with agent.high_risk_warnings ask Agent J
+# for EVERY call that is not a plain read (our "*" ask rule / approvalPolicy=untrusted): `ls … 2>&1; echo`, `rg`, a heredoc
+# note were each a card (35 in one /goal). Their adapters now pass such a call without a card, as Claude's hook would; a hit
+# (gray included: layer 2 / the card) and every special request still go through Host.ask.
+ALWAYS_ASK = frozenset({"ExternalDirectory", "DoomLoop", "task", "CodexPermissions", "SandboxOnce", "AskUserQuestion", "agentj goal"})
+
+
+def low_risk_pass(host, cfg, tool, tool_input, batch: bool = True) -> bool:
+    """True = run it without a card (logged `perm_low`). Only for an independent session with high_risk_warnings on, a
+    batchable request of an ordinary tool, nothing stopped, the owner's own turn, no live goal (the goal path already lets
+    low risk through and counts it), and layer 1 finds none of the five categories and nothing it cannot read.
+    cfg = the asking adapter's own config (a scheduled task's adapter is not host.agent)."""
+    try:
+        cfg = cfg if isinstance(cfg, dict) else {}
+        if (not batch or not cfg.get("high_risk_warnings") or cfg.get("session_mode") == "shared"
+                or not isinstance(tool, str) or tool in ALWAYS_ASK or not isinstance(tool_input, dict)):
+            return False
+        stopped = getattr(host, "stopped", None)
+        if callable(stopped) and stopped():
+            return False
+        from . import provenance
+        if provenance.untrusted_turn(getattr(host, "agent", None)):
+            return False
+        goals = getattr(host, "goals", None)
+        if goals is not None and goals.current() is not None:
+            return False
+        v = host._classify(tool, tool_input)
+        if v.danger or v.cats:
+            return False
+        host.st.log("perm_low", agent=cfg.get("kind") or "?", tool=tool[:64])
+        return True
+    except Exception:  # noqa: BLE001 — fail closed: the ordinary path (Host.ask)
+        return False
+
+
+def with_cwd(command: str, cwd, home: str | None) -> str:
+    """P198 (P164 G): the command as the card and goal.tier read it when the harness reports the folder it runs in (Codex's
+    request `cwd`, OpenCode's bash `workdir`) and that is not the Agent folder: `cd <cwd> && <command>` — what really runs,
+    so a relative path (`git rm old.log`) is matched against the goal grant where it is deleted. Anything odd → unchanged."""
+    if not isinstance(command, str) or not isinstance(cwd, str) or not os.path.isabs(cwd) or "\n" in cwd or "\x00" in cwd:
+        return command
+    with contextlib.suppress(OSError, ValueError, TypeError):
+        if home and os.path.realpath(cwd) == os.path.realpath(home):
+            return command
+        return "cd " + shlex.quote(cwd) + " && " + command
+    return command

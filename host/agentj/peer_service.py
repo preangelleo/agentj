@@ -279,9 +279,21 @@ class PeerService:
         self.index = None
         self.index_at = 0.0
         self._cert_retry = 0.0
+        self.seat_blocked = False    # P199: the mailbox is down because this host has no usable Agent J seat
         self._lock = asyncio.Lock()
 
     # ------------------------------------------------------------ small helpers
+    def seat_refusal(self) -> str | None:
+        """P199: friends need a usable Agent J seat — serve's verdict (seatcert, the P185 grace and cache) worded for friends;
+        None = usable. A host stand-in without seat_refusal (tests) is usable."""
+        f = getattr(self.host, "seat_refusal", None)
+        if f is None:
+            return None
+        try:
+            return f("friends")
+        except Exception:  # noqa: BLE001 — a broken verdict never takes friends (or serve) down
+            return None
+
     @property
     def lang(self) -> str:
         return "en" if getattr(self.host, "lang", "zh") == "en" else "zh"
@@ -342,6 +354,15 @@ class PeerService:
                 await self._stop_net()
                 self.state = "off"
                 return
+            if self.seat_refusal():           # P199: no usable seat → no mailbox (nothing in, nothing out) until it is back
+                if not self.seat_blocked:
+                    self.log("peer_seat", result="blocked")
+                await self._stop_net()
+                self.state, self.seat_blocked = "need_seat", True
+                return
+            if self.seat_blocked:
+                self.log("peer_seat", result="resumed")
+                self.seat_blocked = False
             if self.task and not self.task.done():
                 return
             relay = self.host.cfg.get("relay") or ""
@@ -992,7 +1013,9 @@ class PeerService:
                 now = self.clock()
                 for k in [k for k, v in self.leaving.items() if v[2] <= now]:
                     del self.leaving[k]
-                if self.store.on and self.state == "need_seat" and now >= self._cert_retry:
+                if self.store.on and bool(self.seat_refusal()) != self.seat_blocked:     # P199: the seat lapsed / came back
+                    await self.apply()
+                elif self.store.on and self.state == "need_seat" and now >= self._cert_retry:
                     await self.apply()
             except asyncio.CancelledError:
                 raise
@@ -1105,6 +1128,8 @@ class PeerService:
             why = self.store.del_group(gid) if isinstance(gid, str) else "shape"
             return (False, why, None) if why else (True, None, None)
         if action == "fr_add":
+            if self.seat_refusal():           # P199: a new friend request needs a usable seat
+                return False, "seat", None
             tid = parse_id(target.get("id"))
             note = target.get("note")
             note = note if isinstance(note, str) else ""
@@ -1160,6 +1185,9 @@ class PeerService:
             return {"ok": False, "why": "bad_text"}
         if self.host.stopped():
             return {"ok": False, "why": "stopped"}
+        refusal = self.seat_refusal()         # P199: nothing is queued for a friend while the seat is not usable
+        if refusal:
+            return {"ok": False, "why": "seat", "message": refusal}
         fid = self.store.find(ref)
         if fid is None:
             return {"ok": False, "why": "ambiguous" if len(self.store.matches(ref)) > 1 else "not_friend"}
@@ -1250,7 +1278,7 @@ class PeerService:
             ok, why, fid = await self.write("fr_add", {"id": req.get("id"), "note": req.get("note") or ""})
             if ok:
                 self.changed(fid)
-            return {"ok": ok, "why": why, "id": fid}
+            return {"ok": ok, "why": why, "id": fid, **({"message": self.seat_refusal()} if why == "seat" else {})}
         if t == "history":
             fid, why = self._resolve(req.get("friend"))
             if not fid:
@@ -1358,7 +1386,7 @@ WHY_ZH = {"not_friend": "找不到这个好友", "ambiguous": "名字对上了�
           "bad_group": "没有这个组", "builtin": "预置组不能删", "no_group": "没有这个组", "too_many": "组太多了",
           "gate": "这句话里像有密钥或「绝不外说」的内容，没有发出", "stopped": "已急停，恢复后再发",
           "blocked": "这个好友被拉黑了", "bad_text": "内容不对（空的或太长）", "shape": "参数不对", "unknown": "不认识的命令",
-          "too_long": "太长了（补充设定最多 4000 字）", "bad_owner": "主人名字太长（≤ 32 字）", "bad_intro": "简介太长（≤ 140 字）"}
+          "too_long": "太长了（补充设定最多 4000 字）", "seat": "Agent 好友需要有效的 Agent J 席位", "bad_owner": "主人名字太长（≤ 32 字）", "bad_intro": "简介太长（≤ 140 字）"}
 
 
 def add_parser(sub) -> None:
@@ -1511,6 +1539,8 @@ def cmd_friends(a) -> None:
         sys.exit(0 if res.get("ok") else 1)
     if not res.get("ok"):
         why = res.get("why")
+        if why == "seat" and isinstance(res.get("message"), str):     # P199: the serve's own words (where to renew / bind)
+            sys.exit("没成功：" + res["message"])
         sys.exit("没成功：" + WHY_ZH.get(why, str(why)) + (f"（{res['rule']}）" if res.get("rule") else ""))
     _print(req["t"], res)
 

@@ -33,7 +33,7 @@ from agentj import agent as agents  # noqa: E402
 from agentj import agent_opencode as oc  # noqa: E402
 from agentj import approvals, danger, fence, harness  # noqa: E402
 
-from test_danger import CASES, _sign  # noqa: E402
+from test_danger import CASES  # noqa: E402
 from test_l1 import Phone, _host, _ready, _state  # noqa: E402
 import fakeopencode  # noqa: E402
 
@@ -278,6 +278,7 @@ class Chain(unittest.TestCase):
     def test_message_danger_card_reject_approve_batch_and_rules(self):
         (self.work / "victim.txt").write_text("keep me")
         (self.work / "secret.txt").write_text("s")
+        (self.work / ".env").write_text("K=v\n")
         os.environ["FAKE_OC_AGENT_RULES"] = json.dumps(fakeopencode.DEFAULT_RULES + [
             {"permission": "bash", "pattern": "rm *", "action": "allow"},          # the human allows rm …
             {"permission": "bash", "pattern": "cat secret*", "action": "deny"}])   # … and denies reading one file
@@ -298,21 +299,15 @@ class Chain(unittest.TestCase):
             await c["host"]._app(c["s"], c["ph"].answer(ask, False))
             await c["wait"](lambda: any(m["text"].startswith("被拒绝: 用户在手机上拒绝") for m in c["msgs"]()))
             self.assertTrue((self.work / "victim.txt").exists())
-            # 3. approve → once → runs
+            # 3. P198 (P157 layer 1, like Claude's danger hook): a low-risk command runs without a card — "once" at once
             await c["say"]("RUN: touch made.txt")
-            await c["wait"](lambda: len(c["asks"]()) == 2)
-            await c["host"]._app(c["s"], c["ph"].answer(c["asks"]()[-1], True))
             await c["wait"](lambda: any(m["text"] == "ran: touch made.txt" for m in c["msgs"]()))
             self.assertTrue((self.work / "made.txt").exists())
-            # 4. low risk: batch → the second touch of the turn runs without a card; rm in the same turn still asks
+            self.assertEqual(len(c["asks"]()), 1)
+            # 4. low risk in the same turn: no card; rm in the same turn still asks
             await c["say"]("RUNSEQ: touch b1.txt ;; touch b2.txt ;; rm victim.txt")
-            await c["wait"](lambda: len(c["asks"]()) == 3)
-            low = c["asks"]()[-1]
-            self.assertTrue(low.get("batch", "").startswith("Bash：touch"))
-            await c["host"]._app(c["s"], _sign(c["ph"], low, "allow_batch", low["batch"]))
-            await c["wait"](lambda: len(c["asks"]()) == 4)
+            await c["wait"](lambda: len(c["asks"]()) == 2)
             self.assertTrue((self.work / "b2.txt").exists())
-            self.assertTrue(any(o["t"] == "auto" for _, o in c["sent"]))
             self.assertEqual(c["asks"]()[-1]["cat"], ["delete"])
             await c["host"]._app(c["s"], c["ph"].answer(c["asks"]()[-1], False))
             await c["wait"](lambda: c["statuses"]()[-1:] == ["idle"])
@@ -321,13 +316,13 @@ class Chain(unittest.TestCase):
             await c["wait"](lambda: any(m["text"] == "ran: ls" for m in c["msgs"]()))
             await c["say"]("RUN: cat secret.txt")
             await c["wait"](lambda: any(m["text"] == "被规则拒绝: cat secret.txt" for m in c["msgs"]()))
-            self.assertEqual(len(c["asks"]()), 4)
-            # 6. nobody answers → deny after the ttl
-            await c["say"]("EDIT: victim.txt")
-            await c["wait"](lambda: len(c["asks"]()) == 5)
+            self.assertEqual(len(c["asks"]()), 2)
+            # 6. nobody answers → deny after the ttl (an edit of a credential file: still a card)
+            await c["say"]("EDIT: .env")
+            await c["wait"](lambda: len(c["asks"]()) == 3)
             self.assertEqual(c["asks"]()[-1]["tool"], "Edit")
             await c["wait"](lambda: any(m["text"] == "被拒绝: edit" for m in c["msgs"]()), 15000)
-            self.assertEqual((self.work / "victim.txt").read_text(), "keep me")
+            self.assertEqual((self.work / ".env").read_text(), "K=v\n")
         self.run_chain(script)
         rq = self.reqs()
         replies = [r["body"] for r in rq if r.get("path", "").startswith("/permission/") and r["method"] == "POST"]
@@ -347,8 +342,8 @@ class Chain(unittest.TestCase):
         log = self.st.log_path.read_text()
         self.assertNotIn("victim", log)
         self.assertEqual([(x["decision"], x["reason"]) for x in approvals.read_log(self.st)],
-                         [("deny", "device"), ("allow", "device"), ("allow_batch", "device"), ("allow", "batch"),
-                          ("deny", "device"), ("deny", "timeout")])
+                         [("deny", "device"), ("deny", "device"), ("deny", "timeout")])   # P198: low risk is no card
+        self.assertEqual(log.count('"ev": "perm_low"'), 3)
 
     def test_wrong_password_reconnect_foreign_reply_resume_and_exit(self):
         async def script(c):
@@ -369,7 +364,7 @@ class Chain(unittest.TestCase):
             log = self.st.log_path.read_text()
             self.assertIn('"status": "lost"', log)
             # a reply serve did not send (someone else used the password) → OpenCode is stopped, notice
-            await c["say"]("FOREIGN: touch evil.txt")
+            await c["say"]("FOREIGN: rm evil.txt")             # P198: a danger (low risk no longer waits on a card)
             await c["wait"](lambda: any("绕过手机" in m["text"] for m in c["msgs"]()))
             await c["wait"](lambda: a.proc is None)
             self.assertIn('"ev": "agent_tamper"', self.st.log_path.read_text())

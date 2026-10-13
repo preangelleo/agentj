@@ -173,10 +173,13 @@ class Refusals(_Base):
                                  {"name": "fake.png", "why": "type"}, {"name": "run.py", "why": "type"}],
                          "implicit source / text files are silent; explicit ones say why")
         self.assertEqual(self.scan("[r](out/readme.md)")[0][0]["kind"], "file", "an explicit link offers a text file")
-        for i in range(10):
+        n = media.MAX_ITEMS + 2
+        for i in range(n):
             self.put(f"out/{i}.png", png(100 + i))
-        items, _ = self.scan(" ".join(f"![](out/{i}.png)" for i in range(10)))
+        items, skips = self.scan(" ".join(f"![](out/{i}.png)" for i in range(n)))
         self.assertEqual(len(items), media.MAX_ITEMS)
+        self.assertEqual(skips, [{"name": f"{i}.png", "why": "too_many"} for i in range(media.MAX_ITEMS, n)],
+                         "P194: past the cap an explicit reference says so, never silence")
         self.assertEqual(self.scan("![](out/nothing.png)")[1], [{"name": "nothing.png", "why": "gone"}])
         self.assertEqual(self.scan("`out/nothing.png` out/ ./out"), ([], []), "missing / folders: silent")
 

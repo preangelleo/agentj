@@ -1,6 +1,7 @@
 """Untrusted text → safe for this machine's terminal (and for metadata reports). Shared by serve and cloud."""
 from __future__ import annotations
 
+import re
 import unicodedata
 
 LABEL_MAX, LABEL_DIGITS = 64, 4
@@ -183,3 +184,28 @@ def one(lang, text: str) -> str:
             and parts[1][:1].isascii() and parts[1][:1].isalpha():
         return pick(lang, parts[0], parts[1])
     return text
+
+
+_THINK_BLOCK = re.compile(r"<(think|thinking)>.*?</\1>\s*", re.S | re.I)
+_THINK_CLOSE = re.compile(r"</(?:think|thinking)>\s*", re.I)
+_THINK_OPEN = re.compile(r"<(?:think|thinking)>", re.I)
+_THINK_ANY = re.compile(r"</?(?:think|thinking)>", re.I)
+
+
+def strip_reasoning(text: str) -> str:
+    """P198: a model's raw reasoning inside an Agent's reply text never reaches the phone. OpenCode with some models
+    (big-pickle) hands over a text part shaped 「reasoning…</think>answer」 — the opening tag already eaten — or a whole
+    <think>…</think> block. Whole blocks go; then everything up to a stray closing tag; then an unclosed opening tag and
+    everything after it."""
+    if not isinstance(text, str) or not _THINK_ANY.search(text):
+        return text
+    text = _THINK_BLOCK.sub("", text)
+    close = None
+    for close in _THINK_CLOSE.finditer(text):
+        pass
+    if close is not None:
+        text = text[close.end():]
+    opened = _THINK_OPEN.search(text)
+    if opened is not None:
+        text = text[:opened.start()]
+    return text.strip()

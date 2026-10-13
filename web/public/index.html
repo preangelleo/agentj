@@ -512,7 +512,10 @@
       <h1 id="revoked-title" data-i18n="revoked.title">这台手机已被电脑移除</h1>
       <p id="revoked-lead" class="lead" data-i18n="revoked.lead">电脑不再认这台手机。要继续用，先在电脑上运行 agentj pair，再重新配对。</p>
       <p id="revoked-draft" class="small" data-i18n="revoked.draft" hidden>没发出去的草稿、输入记录和加密它们的密钥，都已从这台手机上删除。</p>
-      <div class="ajrow"><button type="button" id="repair" class="aj-btn aj-btn--primary aj-btn--block" data-i18n="revoked.btn">重新配对</button></div>
+      <div class="ajrow"><button type="button" id="repair" class="aj-btn aj-btn--primary aj-btn--block" data-i18n="revoked.btn">重新配对</button>
+        <!-- P198: the taken-over side takes the connection back here with the same Face ID (one button, no prompt) -->
+        <button type="button" id="takeover-pk" class="aj-btn aj-btn--primary aj-btn--block" data-i18n="revoked.takeoverPk" hidden>用 Face ID 在这里继续</button></div>
+      <p id="takeover-note" class="error" role="alert" hidden></p>
       <p class="small helpline" data-i18n="help.mail">完全连不上时，写信到 feedback@agentj.app，附上账号 ID、发生了什么和截图。</p>
       <p class="helpmail"><a href="mailto:feedback@agentj.app" rel="noopener">feedback@agentj.app</a></p>
     </section>
@@ -670,6 +673,7 @@
           <section class="setcard" id="set-s-channels" data-paired aria-labelledby="set-h-channels">
             <h3 class="setg" id="set-h-channels" data-i18n="set.gChannels">沟通渠道</h3>
             <button type="button" id="set-mail-nav" class="setnav"><svg class="mi" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3.5 6.5l8.5 6 8.5-6"/></svg><span><b data-i18n="mail.nav">邮件通道</b><small data-i18n="mail.navNote">用邮件给 Agent 派活，回复会发回同一封邮件。</small></span><svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 5l7 7-7 7"/></svg></button>
+            <button type="button" id="set-owner-nav" class="setnav" hidden><svg class="mi" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 20c1.5-4 4.5-6 8-6s6.5 2 8 6"/></svg><span><b data-i18n="set.owner">我的联系方式</b><small data-i18n="set.ownerNote">通讯录 0 号位：「发给我自己」用的主邮箱和手机号。</small></span><svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 5l7 7-7 7"/></svg></button>
           </section>
 
           <section class="setcard" id="set-s-safety" aria-labelledby="set-h-safety">

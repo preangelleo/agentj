@@ -239,6 +239,7 @@ stale 401 `stale` · then per endpoint. Vector: `protocol/vectors/host-envelope.
 | `POST /v1/host/plaza/pkg/like` | `{"v":1,"t":"plaza_pkg_like","channel","ts","nonce","name","on"}` | 200 `{"name","liked","likes"}` · 404 · 409 `replay` · 403 · 429 |
 | `POST /v1/host/plaza/pkg/report` | `{"v":1,"t":"plaza_pkg_report","channel","ts","nonce","name","reason"}` (`spam` `malware` `privacy` `injection` `license` `other`) | 201 `{"name","reported","hidden"}` · 200 `{…,"already":true}` · 403 `own_package` / `official_package` · 404 · 409 `replay` · 429 |
 | `POST /v1/host/plaza/pkg/publish` | `{"v":1,"t":"plaza_pkg_publish","channel","ts","nonce","name","type","version","sha256","bytes","show_name"}` | 201 `{"id","version_id","upload":{"url","expires_at"}}` (`PUT` the bundle ≤ 10 min, `application/octet-stream` → 200 `{"name","version","state":"live"}` · 413 / 415 / 422 `bad_bundle` / `secret_found` · 409) · 409 `name_taken` / `version_exists` / `version_not_newer` / `type_mismatch` / `replay` · 413 `too_large` · 403 · 429 · 503 |
+| `POST /v1/host/plaza/pkg/partners` (P195) | `{"v":1,"t":"plaza_pkg_partners","channel","ts"}` + optional `"slot"` | 200 `{"schema":"agentjarvis.partners/v1","version","disclosure","keep_account","partners":[…]}` (PLAZA_PACKAGES P195) · 400 · 403 · 429 |
 
 | `POST /v1/host/upgrade-auth` (F12, 0.15) | `{"v":1,"t":"upgrade_auth","channel","ts","code","version"}` (`code` = C1 `AJUP-XXXXX-XXXXX-XXXXX-XXXXX`, normalised by the host; `version` = the release the host is about to install) | 200 `{"ok":true,"version","expires_at"}` (ms) · 404 `invalid_authorization` (unknown, another account's, or this host is not bound — one answer) · 409 `{"error":"version_mismatch","version":<the grant's version>}` · 410 `expired` · 409 `already_used` (this host already spent it) · 429 `rate_limited` (≤ 10 tries per channel per hour) |
 | `POST /v1/host/peer/cert` (§17.3, 0.16) | `{"v":1,"t":"peer_cert","channel","ts","mbox"}` (`mbox` = 22 b64url chars, §17.1) | 200 `{"cert","exp"}` (writes `hosts.peer_mbox`, `peer_enabled_at` the first time) · 402 `payment_required` (seat not paid / comp / grace) · 403 `not_bound` · 429 `rate_limited` (≤ 24 per host per day) · 503 `peer_unavailable` (no `PEER_CERT_KEY`) |
@@ -1291,7 +1292,7 @@ is relative to the Agent's folder (`agentj agent … --dir`, = the session cwd);
 - Type = extension AND leading bytes: image png / jpeg / gif / webp / svg (svg is shown only as `<img>` from a Blob URL),
   audio mp3 / m4a / aac / ogg / opus / wav, video mp4 / m4v / mov / webm, pdf, html / htm, file (txt md csv tsv json jsonl
   log xml yaml toml zip gz docx xlsx pptx odt ods epub) — anything else, or bytes that contradict the extension: `type`.
-- Caps: image ≤ 10 MiB, audio ≤ 25, video ≤ 50, pdf ≤ 25, html ≤ 2, file ≤ 25 (`too_big`); ≤ 8 items and ≤ 100 MiB per page.
+- Caps: image ≤ 10 MiB, audio ≤ 25, video ≤ 50, pdf ≤ 25, html ≤ 2, file ≤ 25 (`too_big`); ≤ 24 items (P194; was 8 — an explicit reference past the cap is listed `too_many`) and ≤ 100 MiB per page.
 - Text content (svg, html, file text types) runs through the host's secret-fragment detector (`taskspec.secret_like` =
   `privacy.py` layer 1, secret kinds only) before it is offered (`secret`); `data:` payloads in html / svg are left out of
   that scan (pictures, not keys).
@@ -1302,8 +1303,10 @@ is relative to the Agent's folder (`agentj agent … --dir`, = the session cwd);
 **Page fields** (`hist_turn` / `hist_page`, §10.5; written to history like any change of the page):
 `"media":[{"mid":"<22 b64url>","name":"<base name ≤ 128>","mime","kind":"image"|"audio"|"video"|"pdf"|"html"|"file","bytes":n,
 "sha256":"<64 hex>","ref":"<the reference as written in the reply ≤ 512>"}]` and
-`"media_skip":[{"name","why":"too_big"|"outside"|"secret"|"type"|"gone"[,"bytes"]}]` (`gone` = an explicit reference to a file
-that is not there). `ref` (an addition to the brief) lets the phone put an item where the reply wrote `![](ref)`; it repeats
+`"media_skip":[{"name","why":"too_big"|"outside"|"secret"|"type"|"gone"|"masked"|"too_many"[,"bytes"]}]` (`gone` = an explicit
+reference to a file that is not there; P194 `masked` = the reference holds a privacy placeholder such as `<redacted>` — the
+reply text was masked before the scan, so the file was never looked up and is NOT reported `gone`; `too_many` = past the
+per-page cap; ≤ 48 entries; an older phone drops the two new reasons). `ref` (an addition to the brief) lets the phone put an item where the reply wrote `![](ref)`; it repeats
 text the reply already holds. A host without F21 sends neither field; an older phone ignores them.
 
 **Wire** (device → host; `p33` only, ready and allowlisted, unsigned like `hist_get` — a read of the shared history, §10.15;

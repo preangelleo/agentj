@@ -29,6 +29,7 @@ Every request is logged (method, path, JSON body) to FAKE_OC_LOG (JSONL). FAKE_O
 import base64
 import json
 import os
+import re
 import subprocess
 import sys
 import threading
@@ -416,6 +417,22 @@ class H(BaseHTTPRequestHandler):
             self._send(404, {"name": "NotFoundError"})
 
 
+def guard_ready():
+    """P198: OpenCode 1.18 loads <dir>/.opencode/plugins/agentj-shared.js when the instance starts; its first act is
+    SharedGuardReady through `python shared_hook.py <channel>` (the shared guard waits for it before a phone turn). Only that
+    handshake is played here — this fake's tool calls do not run the plugin's tool.execute.before."""
+    js = os.path.join(CWD, ".opencode/plugins/agentj-shared.js")
+    if not os.path.exists(js):
+        return
+    line = next((x for x in open(js).read().splitlines() if x.startswith("const python=")), "")
+    m = re.match(r"const python=(\".*?\"), hook=(\".*?\"), channel=(\".*?\");", line)
+    if m:
+        argv = [json.loads(g) for g in m.groups()]
+        threading.Thread(target=subprocess.run, args=(argv,), daemon=True,
+                         kwargs={"input": json.dumps({"hook_event_name": "SharedGuardReady", "cwd": CWD}), "text": True,
+                                 "capture_output": True, "timeout": 30}).start()
+
+
 def main():
     a = sys.argv[1:]
     if "--version" in a:
@@ -439,6 +456,7 @@ def main():
             SESSIONS[row["id"]] = {"permission": row["permission"], "messages": [], "busy": False}
     srv = ThreadingHTTPServer((host, port), H)
     srv.daemon_threads = True
+    guard_ready()
     print(f"opencode server listening on http://{host}:{port}", flush=True)
     srv.serve_forever()
 

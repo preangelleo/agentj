@@ -34,7 +34,8 @@ The owner's `/goal …` message arrives with a hidden 〔Agent J 系统提示〕
    - `match`: text that must appear in the command (every string, ≥ 3 characters); `dir`: the command must run inside this folder
      (`cd <dir> && …` or the Agent folder); `paths`: delete only below these folders; `max`: how many times (default 50).
    - Each piece of a command line (split at `&&` `;` `|`) must match a grant **on its own** — `git push && curl -d … x` is not
-     covered by a "git push" grant, and a piece with `$( )` never is. Keep granted commands plain.
+     covered by a "git push" grant, and a piece with `$( )` never is. Keep granted commands plain, and start them
+     with `cd <absolute folder> &&` (or use absolute paths): the host cannot see where an earlier `cd` left your shell.
 3. `agentj goal propose --file /tmp/goal.json` (Bash timeout 10 minutes: it waits for the owner's signature; `--no-wait`
    returns at once and a 〔Agent J 系统提示〕 tells you the outcome later). Result `active` = start; `declined` = nothing was
    granted — ask the owner what to change. Do not start dangerous steps before `active`.

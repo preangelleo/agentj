@@ -32,7 +32,7 @@ from .agent import UNCERTAIN
 from .agent_opencode import (HTTPError, OpenCodeAgent, PROVIDER_LOGIN_ATTACHED, PROVIDER_NOTES, RESTART_AFTER,
                              TURN_IDLE, WATCH, ends_with_ours, provider_error_reason, session_rules, split_model)
 from .slash import Result
-from .text import clean_line
+from .text import clean_line, strip_reasoning
 
 IDENTITY_KEY = "agentj.identity"
 # v2 keeps several keys per provider (「DeepSeek 2」): a second key that is saved but not active is never used (measured:
@@ -243,7 +243,8 @@ class OpenCodeV2Agent(OpenCodeAgent):
         if key in self.texts_seen or not isinstance(text, str) or not text.strip():
             return
         self.texts_seen.add(key)
-        if self.quiet:
+        text = strip_reasoning(text)                 # P198: a model's </think> reasoning is not the reply
+        if self.quiet or not text:
             return
         if self.collect is not None:
             self.collect.append(text)

@@ -23,7 +23,7 @@ import re
 from .text import pick
 from .agent_codex import CodexAgent, RPCError
 from .shared import public_text
-from . import shared_hook
+from . import danger, shared_hook
 from .shared_risk import RiskGuard
 
 UUID = re.compile(r'[0-9a-fA-F]{8}(?:-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}')
@@ -382,7 +382,7 @@ class SharedCodexAgent(CodexAgent):
             await self.risk_channel.stop()
 
     async def _spawn(self):
-        if not self.read_probe and self.cfg.get('high_risk_warnings',True) and not self.risk_channel:
+        if not self.read_probe and danger.shared_guard(self.cfg) and not self.risk_channel:   # P198: on by default
             self.risk_channel=shared_hook.Channel(self.risk,shared_hook.channel_path(self.host.st.root,'codex'))
             await self.risk_channel.start()
             shared_hook.install(self.cfg['dir'],self.risk_channel.path,family='codex')

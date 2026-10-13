@@ -43,9 +43,12 @@ _ID = re.compile(r"[0-9a-f]{32}")
 PHONE_TYPES = ("ct_list", "ct_save", "ct_card_answer", "mail_fwd")
 T = {
     "zh": {"file_body": "{agent} 转来一个文件：{name}", "file_subj": "{agent} 转来文件：{name}",
-           "why_new": "存成新联系人", "why_update": "补全联系人"},
+           "why_new": "存成新联系人", "why_update": "补全联系人",
+           "why_owner": "通讯录 0 号位是你本人：填上主邮箱（手机号可选），以后「发给我自己」的邮件、报告都发到这里。可以跳过，之后在设置里补。"},
     "en": {"file_body": "{agent} forwarded a file: {name}", "file_subj": "{agent} forwarded: {name}",
-           "why_new": "Save as a new contact", "why_update": "Complete this contact"},
+           "why_new": "Save as a new contact", "why_update": "Complete this contact",
+           "why_owner": "Slot 0 of the address book is you: your main e-mail (phone optional) is where everything \"send it to "
+                        "me\" goes — mail, reports. You can skip this and add it later in Settings."},
 }
 
 
@@ -80,8 +83,8 @@ class ContactService:
         return cfg, pw, None
 
     def owner_addresses(self) -> list[str]:
-        from . import mail as M
-        return [r["addr"] for r in M.read_config(self.st).get("allow", []) if r.get("role") == "owner"]
+        """P194: slot 0's e-mails first, then the e-mail channel's 「我本人」 rows (P170)."""
+        return C.owner_emails(self.st)
 
     def build(self, cfg: dict, to: list[str], subject: str, body: str, files=(), kind: str = "forward",
               html: str | None = None) -> EmailMessage:
@@ -132,7 +135,8 @@ class ContactService:
         if t == "ct_save":
             raw = obj.get("contact")
             cid = obj.get("id")
-            req = {"op": "edit", "id": cid, "changes": raw} if isinstance(cid, str) and cid else \
+            req = {"op": "owner_set", "contact": raw, "owner_ok": True} if cid == C.OWNER_ID else \
+                {"op": "edit", "id": cid, "changes": raw} if isinstance(cid, str) and cid else \
                 {"op": "add", "contact": raw, "source": "phone"}
             res = await asyncio.to_thread(C.local, self.st, req)
             self.st.log("contacts_save", device=s.device, result=res.get("result") or res.get("why"))
@@ -150,6 +154,7 @@ class ContactService:
                       {"op": "list", "sort": obj.get("sort"), "limit": min(lim, C.MAX_CONTACTS)})
         _, _, why = self.mail_state()
         res["me"] = self.owner_addresses()
+        res["owner"] = (C.local(self.st, {"op": "owner_get"}) or {}).get("owner")      # P194: slot 0 (None until filled)
         res["mail"] = {"ready": why is None, **({"why": why} if why else {})}
         res["count"] = res.get("count", len(res.get("contacts") or []))
         return res
@@ -179,7 +184,9 @@ class ContactService:
             q.popleft()
         if len(q) >= FWD_PER_HOUR:
             return {"ok": False, "why": "rate_limited"}
-        content = await asyncio.to_thread(self._content, turn, mid, obj.get("input") is not False)
+        from . import owner_route
+        mine = await asyncio.to_thread(owner_route.all_owner, self.st, [r["addr"] for r in recips])
+        content = await asyncio.to_thread(self._content, turn, mid, obj.get("input") is not False, mine)
         if content is None:
             return {"ok": False, "why": "not_found"}
         subject, body, files, html, skipped = content
@@ -193,11 +200,15 @@ class ContactService:
         await asyncio.to_thread(C.record_sent, self.st, recips, "phone")
         return {"ok": True, "sent": len(recips), "files": len(files), **({"skipped": skipped} if skipped else {})}
 
-    def _content(self, turn, mid, with_input: bool = True) -> tuple[str, str, list, str | None, int] | None:
-        """(subject, text, [(name, mime, bytes)], html, files not attached) of what the owner forwards, or None when gone."""
+    def _content(self, turn, mid, with_input: bool = True, mine: bool = False) -> tuple[str, str, list, str | None, int] | None:
+        """(subject, text, [(name, mime, bytes)], html, files not attached) of what the owner forwards, or None when gone.
+        P194: to the owner's own addresses only (`mine`) the owner mode — contacts, links and codes as written, credentials
+        still redacted; with anyone else on the list the strict rules."""
         from . import mail_template
         from . import tg_media
-        from .privacy import redact
+        from .privacy import owner_text, redact
+        if mine:
+            redact = owner_text   # noqa: F811
         L = T[self.lang()]
         agent = self.agent_name()
         media = getattr(self.host, "media", None)
@@ -257,7 +268,8 @@ class ContactService:
             return {"ok": True}
         if op == "card":
             return await self.card(req)
-        if op in ("list", "find", "get", "add", "edit", "rm", "import", "export"):
+        req = {k: v for k, v in req.items() if k != "owner_ok"}     # P194: only the owner's own paths may change slot 0
+        if op in ("list", "find", "get", "add", "edit", "rm", "import", "export", "owner_get", "owner_set"):
             if op == "add":
                 req = {**req, "source": req.get("source") if req.get("source") in C.SOURCES else "agent"}
             res = await asyncio.to_thread(C.local, self.st, req)
@@ -325,18 +337,32 @@ class ContactService:
             files.append((rec["name"], rec["mime"], data))
             names.append(rec["name"])
         zh = self.lang() == "zh"
+        from . import owner_route, privacy
+        mine = await asyncio.to_thread(owner_route.all_owner, self.st, [r["addr"] for r in recips])
+        keys = len(privacy.credentials(body)) if mine else 0
         lines = [("发邮件给：" if zh else "Mail to: ") + "、".join(
                     f"{r['name']} <{r['addr']}>" if r["name"] else r["addr"] for r in recips),
                  ("标题：" if zh else "Subject: ") + subject]
         if names:
             lines.append(("附件：" if zh else "Attachments: ") + "、".join(names))
         lines.append(("正文：" if zh else "Body: ") + body[:600] + (" …" if len(body) > 600 else ""))
+        # P194: say which filter the mail will get — owner-directed (as written; keys → pickup cards) or outward (masked)
+        lines.append(("发给你自己：原样发出，不打码" if zh else "To yourself: sent as written, nothing masked") +
+                     ((f"；其中 {keys} 个密钥不随邮件发出，改成手机上的密钥领取卡" if zh else
+                       f"; {keys} key(s) stay out of the mail and come as secret pickup cards") if keys else "")
+                     if mine else ("发给外人：邮箱、电话、密钥等会打码" if zh else "To others: e-mail, phone numbers and keys are masked"))
         ans = await self.host.ask("agentj mail send", {"summary": "\n".join(lines)}, batch=False)
         if ans.get("behavior") != "allow":
             self.st.log("mail_send", result="denied", to=len(recips))
             return {"ok": False, "why": "denied", "detail": "主人在手机上拒绝了 / declined on the phone"}
         from .privacy import redact
-        msg = self.build(cfg, [r["addr"] for r in recips], subject, redact(body), files, kind="agent")
+        rep = {}
+        if mine:        # P194: owner-directed — as written, credentials diverted to secret pickup cards
+            out, rep = await owner_route.divert(self.host, body, "mail", self.lang(), subject or "邮件")
+            subj = privacy.owner_text(subject)
+        else:
+            out, subj = redact(body), redact(subject)
+        msg = self.build(cfg, [r["addr"] for r in recips], subj, out, files, kind="agent")
         from . import mail as M
         try:
             await asyncio.to_thread(self.smtp_send, cfg, pw, msg, [r["addr"] for r in recips])
@@ -344,8 +370,10 @@ class ContactService:
             self.st.log("mail_send", result="failed", why=e.why)
             return {"ok": False, "why": "send_failed", "detail": e.why}
         rec = await asyncio.to_thread(C.record_sent, self.st, [{"addr": r["addr"], "name": r["name"]} for r in recips], "agent")
-        self.st.log("mail_send", result="sent", to=len(recips), files=len(files))
-        return {"ok": True, "sent": [r["addr"] for r in recips], "files": names, "new_contacts": [x["addr"] for x in rec if x["added"]]}
+        self.st.log("mail_send", result="sent", to=len(recips), files=len(files), owner=mine)
+        return {"ok": True, "sent": [r["addr"] for r in recips], "files": names, "new_contacts": [x["addr"] for x in rec if x["added"]],
+                "owner_direct": mine, **({"secret_cards": rep["cards"], "withheld": rep["withheld"]} if rep.get("cards") or
+                                          rep.get("withheld") else {})}
 
     # ------------------------------------------------------------------ the contact card
     def card_msg(self, c: dict) -> dict:
@@ -369,7 +397,10 @@ class ContactService:
         if provenance.untrusted_turn(getattr(self.host, "agent", None)):
             return {"result": "group_source"}
         base = None
-        if req.get("id"):
+        own = req.get("owner") is True or (req.get("id") == C.OWNER_ID and C.owner(C.read(self.st)) is not None)
+        if own:                                 # P194: the owner card — slot 0, saved only by the owner's tap
+            base = C.owner(C.read(self.st))
+        elif req.get("id"):
             base = C.get(C.read(self.st), str(req["id"]))
             if base is None:
                 return {"ok": False, "result": "not_found"}
@@ -377,12 +408,14 @@ class ContactService:
             pre = C.clean(req.get("contact") or {}, partial=True)
         except C.ContactError as e:
             return {"ok": False, "result": "refused", "why": e.why}
+        if own and not pre["emails"] and not (base or {}).get("emails"):
+            pre["emails"] = [{"v": a, "label": ""} for a in C.owner_emails(self.st)[:1]]   # a suggestion; the owner confirms
         if len(self.cards) >= 4:
             return {"ok": False, "result": "busy"}
         cid = secrets.token_hex(16)
         L = T[self.lang()]
-        why = C._s(req.get("why"), 200) or (L["why_update"] if base else L["why_new"])
-        c = {"id": cid, "nonce": secrets.token_hex(8), "mode": "update" if base else "new",
+        why = C._s(req.get("why"), 200) or (L["why_owner"] if own else L["why_update"] if base else L["why_new"])
+        c = {"id": cid, "nonce": secrets.token_hex(8), "mode": "owner" if own else "update" if base else "new",
              "contact": {k: v for k, v in pre.items() if v}, "base": C.view(base) if base else None, "why": why,
              "deadline": time.monotonic() + TTL, "fut": asyncio.get_running_loop().create_future()}
         self.cards[cid] = c
@@ -413,7 +446,9 @@ class ContactService:
             c["fut"].set_result({"result": "cancelled", "device": s.device})
             return
         raw = obj.get("contact")
-        if c["mode"] == "update":
+        if c["mode"] == "owner":
+            req = {"op": "owner_set", "contact": raw if isinstance(raw, dict) else {}, "owner_ok": True}
+        elif c["mode"] == "update":
             req = {"op": "edit", "id": c["base"]["id"], "changes": raw if isinstance(raw, dict) else {}}
         else:
             req = {"op": "add", "contact": raw, "source": "owner"}

@@ -79,7 +79,7 @@ test('slot ↔ item: the same reference, else the only item with that file name;
 test('wire sanitiser: kinds, ids, caps, base names; snap.toPage carries media / mediaSkip', () => {
   const good = { mid: mid('a'), name: 'dir/../chart.png', mime: 'image/png', kind: 'image', bytes: 10, sha256: sha, ref: 'out/chart.png' };
   const { media, skip } = M.sanitize({ media: [good, { ...good, mid: 'short' }, { ...good, kind: 'exe' }, { ...good, bytes: M.CAPS.image + 1 },
-    { ...good, sha256: 'x' }, { ...good, mime: 'text/html; x=<y>' }, ...Array(20).fill(good)],
+    { ...good, sha256: 'x' }, { ...good, mime: 'text/html; x=<y>' }, ...Array(M.MAX_ITEMS + 4).fill(good)],
   media_skip: [{ name: '/a/b/.env', why: 'secret' }, { name: 'x', why: 'nope' }, { name: 'big.mp4', why: 'too_big', bytes: 5 * 1048576 }] });
   assert.equal(media.length, M.MAX_ITEMS);
   assert.equal(media[0].name, 'chart.png', 'only the base name is shown');

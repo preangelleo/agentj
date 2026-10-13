@@ -231,6 +231,21 @@ class Checklist(unittest.TestCase):
     def tearDown(self):
         self.tmp.cleanup()
 
+    def test_a_journal_from_an_older_release_gains_the_new_items(self):
+        # P165 (found on the owner's own host after 0.18.4 → 0.20.0): a journal written before P170 has no "mail" row; reading
+        # it must add the blank row (not keep the old items dict), so the checklist and doctor do not fail with KeyError
+        with fake_probes({"exit": ("pending", "start_check")}):
+            first_run.resume(self.st)
+        p = first_run.path(self.st)
+        old = json.loads(p.read_text())
+        del old["items"]["mail"]
+        p.write_text(json.dumps(old))
+        rec = first_run.read(self.st)
+        self.assertIn("mail", rec["items"])
+        self.assertEqual(rec["items"]["mail"]["choice"], "undecided")
+        with fake_probes({"exit": ("pending", "start_check")}):
+            first_run.run_checks(self.st, rec)
+
     def test_catalog_is_the_designed_thirty_items_without_cycles(self):
         self.assertEqual(len(first_run.ITEMS), 31)   # P170 added the optional e-mail channel row
         inv = DESIGN / "p92/inventory.json"

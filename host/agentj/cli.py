@@ -1999,6 +1999,18 @@ def cmd_service(a) -> None:
             service_recovery.schedule(State(), service.agentj_argv(), __version__)
             print("✓ 服务重装已交给独立任务 / service re-install scheduled independently")
             return
+        if a.mode == "import-key":           # P198 (I): one step, no hand-editing of the service env file; value never shown
+            key = getattr(a, "key", None) or service.JEV_KEY_ENV
+            r = service.import_key(service.name(), key)
+            path = service.tilde(service.env_file(service.name()))
+            if r == "absent":
+                sys.exit(f"✗ 这个终端里没有 {key}，没有可导入的 / {key} is not set in this terminal: nothing to import\n"
+                         + (service.key_note(service.name(), key) or ""))
+            print(f"✓ {key} 已在服务环境文件里 / already in the service env file ({path})" if r == "present" else
+                  f"✓ {key} 已导入服务环境文件（0600，值不显示）/ imported into the service env file ({path}, 0600, value not shown)")
+            if r == "imported":
+                print("  下一步 / next: agentj service restart")
+            return
         if a.mode in ("start", "stop"):
             r = service.start(State()) if a.mode == "start" else service.stop()
             print(f"✓ {'已启动 / started' if a.mode == 'start' else '已停止 / stopped'}: {r['name']}")
@@ -2042,6 +2054,7 @@ def cmd_service(a) -> None:
         if running and cur.get("active") != "active":
             sys.exit("✗ 有一个 `agentj serve` 正在终端里运行：先 Ctrl-C 停掉它，再安装服务 / "
                      "a `agentj serve` is running in a terminal: stop it first")
+        _offer_key_import(service)          # P198 (I): before the service starts, so no restart is needed afterwards
         r = service.install(st)
     except service.ServiceError as e:
         sys.exit("✗ " + service.MESSAGES.get(e.reason, e.reason) + (f"\n  {e.detail}" if e.detail else ""))
@@ -2058,6 +2071,28 @@ def cmd_service(a) -> None:
                                                                 else service.tilde(str(st.root / 'service.log'))))
     print("服务日志里不会有你的消息内容 / the service log never holds your messages.")
     print(SERVICE_NEXT)
+
+
+def _offer_key_import(service) -> None:
+    """P198 (I): Jev's key (P157 approval layer 2) in this shell but not in the service env file → a person at a terminal is
+    asked once (y/N) and it is imported in one step; an Agent (no terminal) gets the one command to run. Neither has it →
+    one line on how to add it from the phone. Never a value; never fails the install."""
+    try:
+        n = service.name()
+        note = service.key_note(n)
+        if not note:
+            return
+        key = service.JEV_KEY_ENV
+        if (os.environ.get(key) or "").strip() and sys.stdin.isatty() and sys.stdout.isatty():
+            ans = input(f"? 这个终端里有 {key}，后台服务里没有。导入服务（不显示值）？/ {key} is in this terminal but not in the "
+                        "service. Import it (value not shown)? [y/N] ").strip().lower()
+            if ans in ("y", "yes", "是"):
+                service.import_key(n, key)
+                print(f"✓ {key} 已导入服务环境文件 / imported into the service env file ({service.tilde(service.env_file(n))})")
+                return
+        print("! " + note)
+    except (service.ServiceError, OSError, EOFError):
+        pass
 
 
 SERVICE_NEXT = ("下一步：运行 `agentj doctor`，把每一行以 ! 或 ✗ 开头的内容报告出来（AI 装的话，原样转告主人）。/ Next: run "
@@ -2196,15 +2231,22 @@ APPROVALS_HELP = {
                  "screen, or for spending, sending out and public deletion; a program reading .env by name no longer asks."),
     "strict": ("strict：只要命令里出现凭据文件（哪怕只是读取或提到）就要手机点头，即旧规则。",
                "strict: any credential file anywhere in a call asks the phone, even a read or a mention (the old rule)."),
+    "native": ("native：共享会话里 Agent J 不另外弹卡，花钱、对外发送、公开删除、改凭据都只看 Claude Code / Codex / OpenCode "
+               "自己的权限设置（只有改 Agent J 的 hook 文件仍要手机点头）。",
+               "native: in a shared session Agent J adds no card of its own — spending, sending out, public deletion and credential "
+               "changes follow only Claude Code's / Codex's / OpenCode's own permission settings (rewriting Agent J's hook files "
+               "still asks the phone)."),
 }
 
 
 def config_approvals(rest: list) -> int:
-    """`agentj config approvals standard|strict|status` (P128): shared-mode approval strength; independent mode unchanged."""
+    """`agentj config approvals standard|strict|native|status` (P128, P198): shared-mode approval strength; independent
+    mode unchanged."""
     from . import preferences
     p = argparse.ArgumentParser(prog="agentj config approvals",
-                                description="共享模式审批强度 / shared-mode approval strength (standard = default, strict = old rule)")
-    p.add_argument("level", nargs="?", default="status", choices=("standard", "strict", "status"))
+                                description="共享模式审批强度 / shared-mode approval strength (standard = default, strict = old rule, "
+                                            "native = the harness's own permissions only)")
+    p.add_argument("level", nargs="?", default="status", choices=("standard", "strict", "native", "status"))
     a = p.parse_args(rest)
     lang = "en" if str(preferences.get(preferences.effective(State()), "appearance.language", "zh")).startswith("en") else "zh"
     if a.level == "status":
@@ -2349,7 +2391,8 @@ def main(argv=None) -> None:
     dc.set_defaults(fn=cmd_doctor)
     sv = sub.add_parser("service", help="开机 / 登录后自动运行 serve：install · start · stop · restart · status / run serve as a service",
                         description="Linux: systemd user unit · macOS: LaunchAgent. 不写任何密钥 / never writes a secret.")
-    sv.add_argument("mode", choices=["install", "uninstall", "status", "restart", "start", "stop"], help="install 安装 · start 启动 · stop 停止 · restart 重启 · uninstall 删除 · status 状态 / install, start, stop, restart, uninstall, status")
+    sv.add_argument("mode", choices=["install", "uninstall", "status", "restart", "start", "stop", "import-key"], help="install 安装 · start 启动 · stop 停止 · restart 重启 · uninstall 删除 · status 状态 · import-key 把这个终端里的一个 key 导入服务（不显示值）/ install, start, stop, restart, uninstall, status, import-key: copy one key from this terminal into the service (value never shown)")
+    sv.add_argument("key", nargs="?", default=None, help="import-key：变量名，默认 OPENROUTER_API_KEY（Jev 审批第二层）/ import-key: the variable name, default OPENROUTER_API_KEY (Jev, approval layer 2)")
     sv.add_argument("--json", action="store_true", help="status 的机器可读输出 / machine-readable status")
     sv.add_argument("--deferred", help=argparse.SUPPRESS)
     sv.add_argument("--recovery-worker", help=argparse.SUPPRESS)

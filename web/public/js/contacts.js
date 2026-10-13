@@ -5,6 +5,9 @@
 //     the addresses ticked here; with no mailbox set up the dialog leads to Settings → 邮件通道.
 //  2. the contact card — the Agent asks to save a new contact (pre-filled with what the owner said) or to complete one; the
 //     owner edits, then 保存 (≥ one e-mail or phone) or 不保存. Nothing is saved without that tap.
+// P194: mode 'owner' = slot 0 of the address book, the owner themself (name, main e-mail, optional phone): raised once by the
+// host after the first welcome, by the Agent (`agentj contacts owner set`), or from Settings → 我的联系方式 (`openOwner()`, a
+// local card saved with `ct_save {id: OWNER_ID}`). 「跳过」 saves nothing.
 // Entry for other cards (P183's file cards and the reply card): `openForward({turn, mid, name, whole})`, `forwardAvailable()`,
 // (P189: `whole` = the reply card's 转发到邮箱 — the owner's message goes along unless 「不带我的提问」 is ticked)
 // or any element with data-mailfwd (data-turn / data-mid / data-name). Names and addresses are always textContent.
@@ -15,6 +18,7 @@ import { registerLayer } from './layers.js';
 
 const ADDR = /^[A-Za-z0-9._%+'=-]{1,64}@[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?)+$/;
 const MAX_TO = 10;
+export const OWNER_ID = 'c000000000000';            // P194: slot 0 (host contacts.OWNER_ID)
 const ICON = [['rect', { x: 3, y: 5, width: 18, height: 14, rx: 2.5 }], ['path', { d: 'm4 7 8 6 8-6' }]];
 const PERSON = [['circle', { cx: 12, cy: 8, r: 4 }], ['path', { d: 'M4 20c1.5-4 4.5-6 8-6s6.5 2 8 6' }]];
 
@@ -314,15 +318,28 @@ function renderCard(keepValues) {
   const c = K.shown; if (!c) return;
   const { sq } = K.root;
   const name = (c.base && c.base.name) || (c.contact && c.contact.name) || '';
-  sq.querySelector('#ctCard-title').textContent = c.mode === 'update' ? t('ct.cardUpdate', { name }) : t('ct.cardNew');
-  sq.querySelector('#ctCard-why').textContent = c.why || '';
-  sq.querySelector('#ctCard-no').textContent = t('ct.cardNo');
+  const own = c.mode === 'owner';
+  sq.querySelector('#ctCard-title').textContent = own ? t('ct.cardOwner') : c.mode === 'update' ? t('ct.cardUpdate', { name }) : t('ct.cardNew');
+  sq.querySelector('#ctCard-why').textContent = own ? (c.local ? t('ct.ownerWhy') : c.why || t('ct.ownerWhy')) : c.why || '';
+  sq.querySelector('#ctCard-why').classList.toggle('ct-wrap', own);
+  sq.querySelector('#ctCard-no').textContent = t(own ? 'ct.cardSkip' : 'ct.cardNo');
   sq.querySelector('#ctCard-save').textContent = t('ct.cardSave');
   sq.querySelector('#ctCard-note').textContent = K.err;
   if (keepValues) { relabel(); return; }
-  const v = c.mode === 'update' ? merged(c) : { ...(c.contact || {}), fresh: new Set() };
+  const v = c.mode === 'update' || (own && c.base) ? merged(c) : { ...(c.contact || {}), fresh: new Set() };
   const form = sq.querySelector('#ctCard-form');
   form.replaceChildren();
+  if (own) {        // P194: slot 0 asks only for what "send it to me" needs — name, main e-mail (first), phone (optional)
+    form.append(field(t('ct.f.name'), 'ct-f-name', v.name, 'text', v.fresh.has('name')));
+    for (const [k, type] of LIST_FIELDS.slice(0, 2)) {
+      const grp = mk('div', 'ct-multi'); grp.dataset.k = k;
+      const items = (v[k] || []).length ? v[k] : [{ v: '' }];
+      items.forEach((x, i) => grp.append(field(t(k === 'emails' ? (i ? 'ct.f.emails' : 'ct.f.mainEmail') : 'ct.f.phoneOpt') + (i ? ' ' + (i + 1) : ''),
+        `ct-f-${k}-${i}`, x.v, type, !!x.fresh)));
+      form.append(grp);
+    }
+    return;
+  }
   form.append(field(t('ct.f.name'), 'ct-f-name', v.name, 'text', v.fresh.has('name')),
     field(t('ct.f.nick'), 'ct-f-nick', (v.nicks || []).join('、'), 'text', v.fresh.has('nicks')));
   for (const [k, type] of LIST_FIELDS) {
@@ -364,9 +381,11 @@ async function answer(ok) {
     contact = collect();
     const bad = contact.emails.find((e) => !ADDR.test(e.v));
     if (bad) { K.err = t('ct.badAddr'); renderCard(true); return; }
+    if (c.mode === 'owner' && !contact.emails.length) { K.err = t('ct.needEmail'); renderCard(true); return; }
     if (!contact.emails.length && !contact.phones.length) { K.err = t('ct.needOne'); renderCard(true); return; }
-    if (!contact.name && !contact.nicks.length) { K.err = t('ct.needName'); renderCard(true); return; }
+    if (c.mode !== 'owner' && !contact.name && !contact.nicks.length) { K.err = t('ct.needName'); renderCard(true); return; }
   }
+  if (c.local) return ownerSave(c, ok ? contact : null);
   try { await sendApp({ t: 'ct_card_answer', id: c.id, n: c.n, ok, ...(ok ? { contact } : {}) }); }
   catch (_) { K.err = t('ct.offline'); renderCard(true); return; }
   if (!ok) { K.cards.delete(c.id); showNext(); return; }
@@ -377,9 +396,29 @@ async function answer(ok) {
 export function card(m) {
   if (!m || typeof m.id !== 'string' || !/^[0-9a-f]{32}$/.test(m.id)) return;
   const known = K.cards.has(m.id);
-  K.cards.set(m.id, { id: m.id, n: String(m.n || ''), mode: m.mode === 'update' ? 'update' : 'new', contact: m.contact || {},
+  K.cards.set(m.id, { id: m.id, n: String(m.n || ''), mode: m.mode === 'update' || m.mode === 'owner' ? m.mode : 'new', contact: m.contact || {},
     base: m.base || null, why: typeof m.why === 'string' ? m.why : '' });
   if (!known && !K.shown) showNext();
+}
+/** P194: Settings → 我的联系方式 — slot 0 on a local card (read with ct_list, saved with ct_save {id: OWNER_ID}). */
+export async function openOwner() {
+  if (!forwardAvailable()) { toast(t('ct.unsupported'), 2600); return false; }
+  if (!isReady()) { toast(t('ct.offline'), 2400); return false; }
+  const m = await ask1({ t: 'ct_list', limit: 1 }, 'ct_res', 15000);
+  if (m.t !== 'ct_res' || !m.ok) { toast(m.t === 'timeout' ? t('ct.timeout') : t('ct.offline'), 2400); return false; }
+  const base = m.owner && typeof m.owner === 'object' ? m.owner : null;
+  const me = Array.isArray(m.me) ? m.me.filter((a) => typeof a === 'string') : [];
+  K.cards.set('local-owner', { id: 'local-owner', local: true, n: '', mode: 'owner', base,
+    contact: base ? {} : { emails: me.slice(0, 1).map((v) => ({ v })) }, why: '' });
+  if (!K.shown) showNext();
+  return true;
+}
+async function ownerSave(c, contact) {
+  if (!contact) { K.cards.delete(c.id); showNext(); return; }
+  K.err = t('ct.saving'); renderCard(true);
+  const m = await ask1({ t: 'ct_save', id: OWNER_ID, contact }, 'ct_res', 15000);
+  if (m.t !== 'ct_res' || !m.ok) { K.err = m.t === 'timeout' ? t('ct.timeout') : m.why === 'no_email' ? t('ct.needEmail') : t('ct.saveFail'); renderCard(true); return; }
+  K.cards.delete(c.id); showNext(); toast(t('ct.saved'), 2200);
 }
 export function cardDone(m) {
   if (!m || !K.cards.has(m.id)) return;

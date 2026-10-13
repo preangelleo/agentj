@@ -174,6 +174,9 @@ def upload(cfg,method,fields,field,name,mime,data,timeout=120):
         return result.get('result')
     except Exception:raise ValueError('Telegram upload failed; no credentials or provider body logged') from None
 
+_DIVERTS=set()   # P194: secret pickup cards opened for a credential the owner chat will not carry
+
+
 class Owed(str):
     """An owed reply's text; `tid` = its turn (the outbox row, B3). Compares as the plain text."""
     tid = None
@@ -304,7 +307,7 @@ class Telegram:
         if len(q)>=FWD_PER_DEVICE:
             self.host.st.log('telegram_forward',device=device,id=turn_id,result='rate_limited');return {'ok':False,'why':'rate_limited'}
         q.append(now);self.fwd_inflight.add(turn_id)
-        from .privacy import redact
+        from .privacy import owner_text as redact     # P194: the owner's own chat — as written, credentials still hidden
         when=time.strftime('%m-%d %H:%M',time.localtime((turn.get('ts') or 0)/1000)) if turn.get('ts') else ''
         body=redact(FWD_HEADER.get(getattr(self.host,'lang','zh'),FWD_HEADER['zh']).format(when=when).strip()+'\n\n'+text)
         parts=list(chunks(body))
@@ -397,8 +400,17 @@ class Telegram:
         from .silent import is_silent
         if not text or is_silent(text):return False
         from .privacy import redact
-        raw, text = text, redact(text)
         owner = chat_id == enrolled['owner_id']
+        raw, text = text, redact(text)
+        if owner:       # P194: the owner's private chat is owner-directed — as written; credentials → secret pickup cards
+            from . import owner_route
+            try:loop=asyncio.get_running_loop()
+            except RuntimeError:loop=None
+            text, values = owner_route.plan(raw, 'telegram', getattr(self.host,'lang','zh'), loop is not None and owner_route.can_card(self.host))
+            if values:
+                task=loop.create_task(owner_route.offer(self.host,values,'Telegram',getattr(self.host,'lang','zh')))
+                _DIVERTS.add(task);task.add_done_callback(_DIVERTS.discard)
+                self.host.st.log('owner_divert',via='telegram',cards=len(values))
         if not owner:
             row=self.group(chat_id,uid)
             if not row:return False
@@ -576,7 +588,7 @@ class Telegram:
                 except ValueError:self.host.st.log('telegram_refusal',result='failed')
             return False
         from .text import clean
-        from .privacy import redact
+        from .privacy import redact, owner_text
         from . import tg_guard, inbox, provenance
         from .friends import FriendStore
         source = (provenance.telegram_forward(uid) if forwarded else provenance.telegram_owner(uid) if owner
@@ -584,7 +596,8 @@ class Telegram:
         if group:source['owner_name'] = FriendStore(self.host.st).owner
         device = 'telegram:'+str(chat_id)+':'+str(uid)
         # A private scratch copy is the transcription source; the agent-visible inbox cannot replace it.
-        blobs=[];paths=[];texts=[redact(clean(raw,20000))];asr_failed=[];stage='local'
+        # P194: the owner's own words (private chat, not a forward) reach the Agent as written; everyone else strict
+        blobs=[];paths=[];texts=[(owner_text if owner and not forwarded else redact)(clean(raw,20000))];asr_failed=[];stage='local'
         try:
             # P166: the owner's own chat takes any file; group members keep the original allowlist
             media_items = [x for one in msgs for x in media_of(one, any_type=private_owner)]

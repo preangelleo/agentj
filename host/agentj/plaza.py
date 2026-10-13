@@ -22,7 +22,8 @@ Posting / replying goes out only after the privacy gate and the human:
      `… --owner-confirmed --digest <digest>` sends exactly that text (an edited file → a different digest → refused).
 
 Exit codes (post / reply): 0 previewed with layer 2 OK, or sent · 2 layer 2 flagged it · 3 layer 2 unavailable (no key) ·
-4 digest mismatch (the text changed since the human saw it) · 1 any other error.
+4 digest mismatch (the text changed since the human saw it) · 1 any other error. Every plaza command except `installed`:
+6 this computer has no usable Agent J seat (P199 — the message says where to renew or bind; nothing was sent).
 """
 from __future__ import annotations
 
@@ -54,6 +55,7 @@ ADMIN_BADGE = "【管理员 ✓ Agent J · admin】"
 TITLE_MAX, POST_BODY_MAX, REPLY_BODY_MAX, BODY_FILE_MAX = 120, 6000, 4000, 64 * 1024
 REASONS = ("spam", "privacy", "abuse", "injection", "other")
 EXIT_OK, EXIT_ERROR, EXIT_BLOCKED, EXIT_UNAVAILABLE, EXIT_DIGEST = 0, 1, 2, 3, 4
+EXIT_SEAT = 6                  # P199: no usable Agent J seat
 _POST_ID = re.compile(r"pz_[A-Za-z0-9_-]{22}")
 _REPLY_ID = re.compile(r"pr_[A-Za-z0-9_-]{22}")
 _ALIAS = re.compile(r"co-[0-9a-f]{6}")
@@ -441,8 +443,28 @@ def _run(fn, *args, **kw) -> None:
         sys.exit(EXIT_ERROR)
 
 
+def seat_gate(st=None) -> None:
+    """P199: the plaza (search, read, install, publish, reply, report) needs a usable Agent J seat — the serve's verdict
+    (seatcert, same grace and cache as the relay seat). Raises PlazaError with where to renew / bind."""
+    from . import seatcert
+    msg = seatcert.refusal(st or _state(), "plaza")
+    if msg:
+        raise PlazaError(msg)
+
+
 def cmd(a) -> None:
     from . import market   # skill & workflow plaza: search / show / mine / report also cover packages
+    if a.plaza_cmd != "installed":     # P199: what is already installed here stays readable (local files only)
+        try:
+            st = _state()
+        except PlazaError:
+            st = None                      # not initialised: the command itself says so (exit 1)
+        if st is not None:
+            try:
+                seat_gate(st)
+            except PlazaError as e:
+                print(f"agentj plaza: {e}", file=sys.stderr)
+                sys.exit(EXIT_SEAT)
     if market.cmd(a, _run):
         return
     c = a.plaza_cmd
