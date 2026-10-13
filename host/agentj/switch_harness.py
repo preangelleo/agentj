@@ -280,6 +280,9 @@ def scan_worker(st, job: str | None, probe=None) -> int:
     rows = []
     for name in KINDS:
         model = (cur.get("model") if cur.get("kind") == name else (saved.get(name) or {}).get("model"))
+        if name == "claude" and not model:            # P219: what a switch to Claude would run
+            from .harness_setup import DEFAULT_CLAUDE_MODEL
+            model = DEFAULT_CLAUDE_MODEL
         d = (probe or harness.probe)(only=(name,), model=model if isinstance(model, str) and model else None)
         h = next((x for x in d.get("harnesses", []) if x.get("name") == name), {"name": name})
         rows.append({"name": name, "installed": bool(h.get("installed")), "version": h.get("version"),
@@ -434,6 +437,10 @@ def worker(st, target: str, model: str | None = None, *, job: str | None = None,
     mine = saved.get(target) or {}
     if not model and isinstance(mine.get("model"), str):
         model = mine["model"]
+    default_claude = target == "claude" and not model
+    if default_claude:               # P219: Agent J's Claude Code default, never Claude Code's own pick (a relay may 400 it)
+        from .harness_setup import DEFAULT_CLAUDE_MODEL
+        model = DEFAULT_CLAUDE_MODEL
     # 1. the gate, in this job's environment = the service's (launch_job), ≤ harness.PROBE_TIMEOUT
     g = gate(target, model, probe)
     version = g.get("version")
@@ -453,7 +460,11 @@ def worker(st, target: str, model: str | None = None, *, job: str | None = None,
         return done("failed", "estop")
     saved[prev["kind"]] = {"model": raw.get("model"), "effort": raw.get("effort")}
     st.write_private(st.root / SAVED, json.dumps(saved).encode())
-    _apply(st, target, prev["dir"], model, mine.get("effort") if model == mine.get("model") else None, raw)
+    effort = mine.get("effort") if model == mine.get("model") else None
+    if default_claude and not effort:
+        from .harness_setup import DEFAULT_CLAUDE_EFFORT
+        effort = DEFAULT_CLAUDE_EFFORT
+    _apply(st, target, prev["dir"], model, effort, raw)
     st.log("harness_switch", status="switching", frm=prev["kind"], to=target)
     write_receipt(st, {"status": "switching", "target": target, "from": prev["kind"]})
     try:

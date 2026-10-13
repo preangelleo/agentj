@@ -293,8 +293,8 @@ class UpgradedNotice(unittest.IsolatedAsyncioTestCase):
 
     async def test_once_in_the_owners_language(self):
         rows = [{"status": "ok"}] * 3 + [{"status": "warn"}, {"status": "fail"}]
-        for lang, want in (("zh", f"电脑上的 Agent J 程序已升级到 {__version__}（原 0.14.0a1）。 自检有 1 项未通过；请在电脑运行 `agentj doctor`，按提示修复。\n\n手机/网页上的 Agent J 还没升级。请点右上角设置图标 →「更新并刷新」。"),
-                           ("en", f'Agent J on your computer has been upgraded to {__version__} (previously 0.14.0a1). Self-check found 1 failed check; run `agentj doctor` on the computer and follow its repair guidance.\n\nThe phone/web page has not been updated yet. Tap the settings icon at the top right → "Update and reload".')):
+        for lang, want in (("zh", f"电脑上的 Agent J 程序已升级到 {__version__}（原 0.14.0a1）。 自检有 1 项未通过；请在电脑运行 `agentj doctor`，按提示修复。\n\n手机/网页的新版会单独上线：上线后页面会弹「服务器已升级」，点「刷新」就行（也可以点右上角设置图标 →「更新并刷新」）；在那之前页眉下有一行小字「电脑已升级，新版网页稍后上线」。"),
+                           ("en", f'Agent J on your computer has been upgraded to {__version__} (previously 0.14.0a1). Self-check found 1 failed check; run `agentj doctor` on the computer and follow its repair guidance.\n\nThe phone/web page updates separately: when its new version is out, the page shows "Server upgraded" — tap Refresh (or the settings icon at the top right → "Update and reload"). Until then a small line under the header says the new page is on its way.')):
             update.write_marker(self.st, "0.14.0a1", __version__)
             host, sent = await self._host()
             host.preferences["appearance"]["language"] = lang

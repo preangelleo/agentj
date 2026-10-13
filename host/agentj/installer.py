@@ -57,7 +57,8 @@ def issue_owner(output: Path, *, opener=None, request_id=None, token=None):
         if not now < expiry <= now+7260: raise ValueError()
     except (KeyError, ValueError, TypeError): raise ValueError('owner_code_issue_failed') from None
     value={k:value[k] for k in ('code','expires_at','quota_usd')}
-    value['command']='curl -fsSL https://agentj.app/install-assistant.sh | sh -s -- '+value['code']
+    value['command']='curl -fsSL https://agentj.app/install.sh | bash -s -- '+value['code']      # P220: the one-command entry
+    value['command_windows']="$env:AGENTJ_CODE='"+value['code']+"'; irm https://agentj.app/install.ps1 | iex"
     fd=os.open(output, os.O_WRONLY|os.O_CREAT|os.O_EXCL|os.O_NOFOLLOW, 0o600)
     with os.fdopen(fd,'w') as f: json.dump(value,f)
 

@@ -30,9 +30,9 @@
 }
 @media (max-width: 400px) {
   .adm-brand .aj-badge { display: none; }
-  .adm-header .aj-lang button { min-width: var(--tap); padding: 0 4px; }
-  .adm-header .aj-lang [aria-pressed="true"]::after { display: none; }
-  .adm-header .aj-lang__sep { display: none; }
+  .adm-header .aj-lang--pair button { min-width: var(--tap); padding: 0 4px; }
+  .adm-header .aj-lang--pair [aria-pressed="true"]::after { display: none; }
+  .adm-header .aj-lang--pair .aj-lang__sep { display: none; }
   .adm-logout { padding-inline: var(--sp-2); }
 }
 

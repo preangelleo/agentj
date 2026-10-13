@@ -9,7 +9,7 @@ localhost ports. Sessions: 30 min idle, 8 h absolute, at most 4, all revoked whe
 valid session — and any foreign Host header (DNS rebinding) — gets a bare 404; static assets carry no data and need no session.
 A write also needs our own Origin and a JSON body ≤ 4 KiB. At most 16 requests are handled at once (more are closed at once)
 and headers + body must arrive within 10 s. Approval still needs the human to type the phone's 6-digit code *and* the
-approval passphrase (L2, gate.py — so holding the link or a tab session is not enough): the page is a control-socket client
+remote pairing password (L2, gate.py — so holding the link or a tab session is not enough): the page is a control-socket client
 of `agentj serve` speaking the very protocol `agentj pair` speaks. Stdlib only; segno renders the QR.
 """
 from __future__ import annotations
@@ -165,7 +165,7 @@ class Pairing:
         self.seq, self.last_ev, self.closed = 0, "", False
         self.phase, self.reason, self.device, self.deadline = "waiting", None, None, None
         self.makes_room: dict | None = None   # 0.15.1: {"kind": "evict"|"replaces", "device": {id, name, paired_at, online}}
-        self.pass_wrong: int | None = None   # tries left after a wrong approval passphrase (the device keeps waiting)
+        self.pass_wrong: int | None = None   # tries left after a wrong remote pairing password (the device keeps waiting)
         try:
             self.sock.sendall(b'{"cmd":"pair"}\n')
             first = json.loads(self.rfile.readline() or b"{}")
@@ -313,7 +313,7 @@ class Admin:
 
     def pair_start(self) -> tuple[int, dict]:
         # P127: the shared pre-check runs before any QR exists — never let the human reach the last step and only then learn
-        # the approval passphrase is missing (bound + online hosts pass: the account page approves with a passkey)
+        # the remote pairing password is missing (bound + online hosts pass: the account page approves with a passkey)
         status = self.serve_status()
         chk = pairprep.precheck(self.st, bool(status.get("relay_up"))) if status is not None else None
         if chk is not None and chk["route"] == "seat":     # P185: no usable seat → no QR

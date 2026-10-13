@@ -346,7 +346,7 @@ api.setUpgradeFlow(() => upgcard.start());                 // ≡ /update and Se
 function onApp(m) {
   if (api.route(m) || blobs.handle(m) || media.handle(m)) return;
   switch (m.t) {
-    case 'preferences': setHostVersion(m.host?.version); relay.applyPreferences(m.value); settings.setPrefs(m.value, m.host); rerender(); if(m.problem)relay.configProblem(m.problem.error); return;
+    case 'preferences': setHostVersion(m.host?.version); relay.hostVersionIs(m.host?.version); relay.applyPreferences(m.value); settings.setPrefs(m.value, m.host); rerender(); if(m.problem)relay.configProblem(m.problem.error); return;
     case 'status': setAgentName(m.name); snap.setStatus(m); renderTg(); return;
     case 'busy': busy.setBusy(m); return;            // P150 (§22): who works in the background (display only)
     case 'res': busy.setRes(m); return;              // P181 (§22.1): the load card's five resources (only while it is open)

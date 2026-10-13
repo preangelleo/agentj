@@ -94,14 +94,14 @@ def _zh(f: dict) -> str:
         out.append(f"- 已配对的手机：{f['phones']} 台（最多 {MAX_DEVICES} 台）")
         out.append("")
     if f.get("account"):
-        out += ['已绑定账号：接下来在账户页这台电脑的席位卡上点「添加遥控器」，用通行密钥确认一次，扫码即可；不需要在终端设置批准口令。十分钟内免重复确认，也可在账户页批准等待中的手机、恢复「全部停下」和启用具体定时任务。下面的终端配对与口令说明是本机备选。', ""]
+        out += ['已绑定账号：接下来在账户页这台电脑的席位卡上点「添加遥控器」，用通行密钥（或这台电脑的遥控器配对密码）确认，扫码即可。十分钟内免重复确认，也可在账户页批准等待中的手机、恢复「全部停下」和启用具体定时任务。下面的终端配对是本机备选：在终端配对要有遥控器配对密码，`agentj pair` 会先请你设一个。', ""]
     out += [
         f"**手机上打开哪里**：从主屏幕上的 Agent J 图标打开（网址是 {web} ）。手机这边不用注册，也不用登录。"
         "锁屏提醒只有从主屏幕图标打开才能用。如果图标打开后显示「还没配对」，就照下面再配一次。",
         "",
-        "**加一台手机、换手机**：先确认 Agent J 在运行（`agentj service status`），再在这台电脑的终端里运行 `agentj pair`，"
+        "**加一台手机、换手机**：先确认 Agent J 在运行（`agentj service status`），再在这台电脑的终端里运行 `agentj pair`（没设遥控器配对密码的话，它会先请你设一个），"
         "安卓手机在页面里点「扫二维码」扫电脑屏幕上的码；iPhone 改用 `agentj pair --link`，把链接粘贴到主屏幕图标打开的页面里"
-        "「或者粘贴配对链接」下面的框里，点「开始配对」，不要用 Safari 打开。手机上会显示 6 位码，在电脑上输入，再输批准口令。"
+        "「或者粘贴配对链接」下面的框里，点「开始配对」，不要用 Safari 打开。手机上会显示 6 位码，在电脑上输入，再输遥控器配对密码。"
         "这个链接就是钥匙：5 分钟内有效，只能用一次，别发到微信、群里、邮件里，也别发给任何 AI。",
         "",
         "**平时怎么用**",
@@ -112,7 +112,7 @@ def _zh(f: dict) -> str:
         "- 需要你点头时，手机上会弹出来问你：按住「长按批准」才算批准（点一下不算），点「拒绝」就拒绝；2 分钟不按就当拒绝。"
         "花钱、删除、对外发送、改密码或密钥、改价格，这五类事每一次都要你单独点头（卡片标着 ⚠）。",
         "- 红色的「全部停下」：马上让它停手，定时任务也停。要继续，在手机上点「恢复」，或者在电脑上运行 `agentj resume`"
-        "（要输批准口令）。",
+        "（设了遥控器配对密码就要输它）。",
         "- 「记忆」看它记住了什么，「记录」看它最近做了什么，「定时任务」看它按时做的事（只有你能打开），"
         "输入框左边的 ≡「全部命令」里有压缩、清空、换模型这些。",
         "",
@@ -127,8 +127,8 @@ def _zh(f: dict) -> str:
         "**手机丢了**：在这台电脑上运行 `agentj devices` 找到那部手机的设备号，再运行 `agentj revoke <设备号>`，它马上就断开了。"
         + ("不在电脑旁边的话，在账号后台的 Agent 卡片上找到那部手机点「解绑」，电脑在线时大约 20 秒内生效。" if f["account"] else ""),
         "",
-        "**忘了批准口令**：在这台电脑的终端里运行 `agentj passphrase reset`（输入 RESET 确认）。所有手机都会被解除配对，"
-        "之后运行 `agentj pair` 重新配对，它会先请你设一个新的批准口令。",
+        "**忘了遥控器配对密码**：在这台电脑的终端里运行 `agentj passphrase reset`（输入 RESET 确认）。所有手机都会被解除配对，"
+        "之后运行 `agentj pair` 重新配对，它会先请你设一个新的遥控器配对密码。",
         "",
         "**有新版本时**：手机上会收到一句提醒。它不会自己升级。想看看有没有新版本：`agentj update check`；"
         "要升级，你自己在这台电脑的终端里运行 `agentj update apply`，它先给你看要运行的命令，你输入 y 才升级。",
@@ -168,17 +168,17 @@ def _en(f: dict) -> str:
         out.append(f"- Phones paired: {f['phones']} (up to {MAX_DEVICES})")
         out.append("")
     if f.get("account"):
-        out += ['Account bound: choose Add a remote on this computer’s account-page seat card, confirm once with your passkey and scan. No terminal approval passphrase is required. Confirmation is reused for ten minutes; the account page also approves waiting phones, resumes Stop everything and enables a reviewed scheduled task. The terminal pairing and passphrase instructions below are an optional local alternative.', ""]
+        out += ['Account bound: choose Add a remote on this computer’s account-page seat card, confirm with your passkey (or this computer’s remote pairing password) and scan. Confirmation is reused for ten minutes; the account page also approves waiting phones, resumes Stop everything and enables a reviewed scheduled task. The terminal pairing below is a local alternative: pairing at the terminal needs a remote pairing password, and `agentj pair` asks you to set one first.', ""]
     out += [
         f"**On your phone:** open Agent J from its Home Screen icon (the address is {web}). No account and no sign-in on "
         "the phone. Lock-screen alerts only work when you open it from that icon. If the icon shows \"Not paired yet\", "
         "pair again as below.",
         "",
         "**Adding or replacing a phone:** first check that Agent J is running (`agentj service status`), then run "
-        "`agentj pair` in a terminal on this computer. Android: tap \"Scan QR code\" on the page and scan the code on the "
+        "`agentj pair` in a terminal on this computer (no remote pairing password yet? it asks you to set one first). Android: tap \"Scan QR code\" on the page and scan the code on the "
         "computer screen. iPhone: run `agentj pair --link` instead and paste the link into the page opened from the "
         "Home Screen icon, under \"Or paste the pairing link\", then tap \"Pair\"; don't open it in Safari. The phone "
-        "shows a 6-digit code: type it on the computer, then your approval passphrase. The link is the key: it works once, "
+        "shows a 6-digit code: type it on the computer, then your remote pairing password. The link is the key: it works once, "
         "for 5 minutes. Never send it through WeChat, a group chat, email or to any AI.",
         "",
         "**Every day**",
@@ -191,7 +191,7 @@ def _en(f: dict) -> str:
         "out, changing passwords or keys, and changing prices always need your OK one at a time (\"Hold to approve this "
         "one\").",
         "- The red \"Stop everything\" button stops it at once, scheduled tasks too. To carry on, tap \"Resume\" on the "
-        "phone, or run `agentj resume` on the computer (it asks your approval passphrase).",
+        "phone, or run `agentj resume` on the computer (it asks your remote pairing password if one is set).",
         "- \"Memory\" shows what it remembers, \"Activity\" what it did, \"Schedules\" what it does on a schedule (only you "
         "can turn one on), and the ≡ \"All commands\" button left of the text box has compact, clear, switch model and the "
         "rest.",
@@ -211,9 +211,9 @@ def _en(f: dict) -> str:
         + (" Away from the computer? In the account dashboard, find the phone on the Agent card and tap \"Unlink\"; it "
            "takes effect within about 20 seconds while the computer is online." if f["account"] else ""),
         "",
-        "**Forgot the approval passphrase:** run `agentj passphrase reset` in a terminal on this computer (type RESET to "
+        "**Forgot the remote pairing password:** run `agentj passphrase reset` in a terminal on this computer (type RESET to "
         "confirm). Every phone is unpaired; then run `agentj pair` to pair again, and it asks you to choose a new "
-        "approval passphrase first.",
+        "remote pairing password first.",
         "",
         "**New versions:** the phone gets a one-line notice. Nothing upgrades by itself. To see whether there is one: "
         "`agentj update check`. To upgrade, you run `agentj update apply` yourself in a terminal on this computer; it "

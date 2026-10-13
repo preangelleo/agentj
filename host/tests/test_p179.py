@@ -209,7 +209,7 @@ class Env(unittest.IsolatedAsyncioTestCase):
     async def test_account_page_rename_follows_the_same_path(self):
         from agentj import remote_pair
         q = {"id": "acct1", "op": "device_name", "target": {"device": self.did2, "name": "孔丹（法务·投后）"}, "expires_at": 1 << 60}
-        with mock.patch.object(remote_pair, "open_request", return_value=q), mock.patch.object(remote_pair, "consume", return_value=True), \
+        with mock.patch.object(remote_pair, "check_request", return_value=(q, None)), mock.patch.object(remote_pair, "consume", return_value=True), \
                 mock.patch.object(self.host.remote_pair, "allowed", return_value=True), \
                 mock.patch.object(self.host.remote_pair, "reply") as reply:
             self.host.relay_up = True

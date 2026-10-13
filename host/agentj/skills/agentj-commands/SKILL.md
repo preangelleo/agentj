@@ -5,6 +5,8 @@ description: Add, change or remove the owner's own slash commands — the list t
 
 The phone's 「/」 list has three parts, top to bottom: Agent J's own one-tap commands (fixed: /compact /clear /model …,
 /customize, 全部停下), **the owner's menu items**, then **the harness's skills**. You change only the last two.
+`/switch-harness` (one tap, among the one-tap commands) and `/goal` are always there, whatever the owner's items are — never
+add, remove or re-describe them.
 
 ## 1. Ask first (always)
 Show what is there now, then ask ONE short question set:

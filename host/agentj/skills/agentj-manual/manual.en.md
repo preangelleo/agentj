@@ -231,13 +231,13 @@ The two commands in the "Friends" group are put into the message box when tapped
 | `/my-agent-id` | Your computer answers with your Agent ID (tap the code block to copy it), the share link and an "Open my card" button; never goes to the AI, costs no tokens |
 | `/add-friend ID [note]` | Add a friend: signed by this phone like "Add friend" on the friends page; a mistyped character is caught at once; without an ID it opens "Add friend" |
 
-The "Main Agent" group has the command to switch the AI coding tool (`/switch-harness`); it is also put into the message box: send it as it is, or add "switch to Codex" first. It does not switch at once; it goes to your main Agent, which says which kind of tool it means, scans which ones this computer has, tries each one's sign-in with a quick headless call and tells you which ones you can switch to. It switches only after you confirm. The phone disconnects for a few seconds and reconnects by itself, then the new tool introduces itself; if it does not come up, Agent J switches back by itself and tells you why. See [Switch AI coding tool](https://agentj.app/docs/switch-harness/).
+In the "Run now" group, the command to switch the AI coding tool (`/switch-harness`) goes to your main Agent with one tap; you can also type it in the message box, add "switch to Codex" after it and send it. It does not switch at once; it goes to your main Agent, which says which kind of tool it means, scans which ones this computer has, tries each one's sign-in with a quick headless call and tells you which ones you can switch to. It switches only after you confirm. The phone disconnects for a few seconds and reconnects by itself, then the new tool introduces itself; if it does not come up, Agent J switches back by itself and tells you why. See [Switch AI coding tool](https://agentj.app/docs/switch-harness/).
 Want commands of your own? Tap `/customize` in the list, or press and hold ≡: it sends the Agent a message from you asking to customize your slash commands; it lists the current ones, asks what to add, remove or change, and only switches the change on after it validates.
 
 The menu also has "Stop everything" and the Agent's own skills. Other commands, such as changing settings, are for the
 computer. See [Agent friends](https://agentj.app/docs/friends/).
 
-The model and effort at the top: tap to switch to the next one, hold to go back to the default.
+The model and effort at the top: tap to switch to the next one, hold to go back to the default. Taps only change the label: a half is switched once you leave it alone for 5 seconds (meanwhile it fades, with a thin line running out underneath); tapping back to the one in use sends nothing. Holding for the default and typing `/model name` take effect at once.
 
 ## Cards that need you
 
@@ -360,7 +360,7 @@ On a computer browser or a tablet with a keyboard, press `?` for the full list (
 ## Pairing and Face ID
 
 （Screenshot：Not paired yet: scan the QR code on your computer — https://agentj.app/docs/manual/pair.en.webp）
-The first time: scan the QR code on your computer, then type the phone's 6-digit code and your approval passphrase on
+The first time: scan the QR code on your computer, then type the phone's 6-digit code and your remote pairing password on
 the computer (see [Using your phone](https://agentj.app/docs/phone/)).
 
 （Screenshot：The 6-digit code during pairing — https://agentj.app/docs/manual/pair-code.en.webp）
@@ -411,11 +411,11 @@ Silent turns do not take up chat pages. Open ≡ → View silent history to read
 
 ## Add a remote for another computer
 
-Once the target computer is installed, account-bound and online, find its seat card on your account page and choose Add a remote. Confirm with your passkey and scan with the phone. No target-computer terminal, passphrase setup or six-digit entry is needed. Confirmation is reused for ten minutes on the same session; the QR expires after five minutes and can add one remote. Review and approve pending remotes on that card too. Under More on the seat card, See what the computer is waiting on you for is only for two cases: resuming after Stop everything, or enabling a scheduled task the Agent created. It has nothing to do with seats or billing; an unpaid bill never stops the tasks on your computer.
+Once the target computer is installed, account-bound and online, find its seat card on your account page and choose Add a remote. Confirm it's you, then scan with the phone; the target computer's terminal isn't needed. Confirm either way: with your passkey (none on this computer? choose Use a phone or tablet in the prompt and confirm on your phone), or with that computer's remote pairing password. After a passkey confirmation, the same session doesn't ask again for ten minutes; the QR expires after five minutes and adds one device. Pending devices can also be reviewed and approved on the seat card. Under More on the seat card, See what the computer is waiting on you for is only for two cases: resuming after Stop everything, or enabling a scheduled task the Agent created. It has nothing to do with seats or billing; an unpaid bill never stops the tasks on your computer.
 
 Account-page pairing is on by default. The target computer’s owner can disable it with `agentj remote-pair off`. Offline hosts are never queued; turn them on and try again. Older hosts must run `agentj update apply` or update from a paired phone. Devices record “Added from account page” and other remotes receive a notice.
 
-This route trusts the signing control plane. Pairing material is encrypted to an ephemeral browser key and its plaintext is never stored by the backend; compromise of the signing service could still add a device. The local passphrase remains a local-only hash and is optional for bound hosts, available for offline/local approval and required on unbound hosts.
+This route trusts the signing control plane. Pairing material is encrypted to an ephemeral browser key and its plaintext is never stored by the backend; compromise of the signing service could still add a device. The remote pairing password is stored only on that computer, as a hash. When you type it on the account page, the browser first encrypts it to a one-time public key that computer just handed out; only that computer can open and check it. Our servers pass on ciphertext they can't read and keep nothing. Five wrong tries in a row lock it on that computer for a while.
 
 
 For Codex failures, follow the phone guidance: tap the top model name to replace an account-unsupported model (temporarily disabled until an account refresh); check your proxy/VPN for ChatGPT connection failures; run `codex login` on the computer when login expires. Redacted native errors remain under Details.
@@ -471,6 +471,12 @@ Shared Claude ingress: startup and doctor repair the effective writable layer to
 0.18.1: Valid older Telegram enrollment continues with its local bot environment name. Huawei HarmonyOS devices have accurate names; account owners can rename a remote with a passkey while its host is online.
 
 Renaming a remote: press and hold the source at the top left of the input card (half a second) to rename the remote in your hand; other remotes and the account page show the new name right away. Only the owner can rename other remotes, on the account page. A remote the owner renamed shows that name and its device type as the message source (for example "Alex (boss) · iOS Safari"), marked "(name set by the owner)"; a tap shows the name the device gave itself. Remotes nobody renamed are marked "(name set by the device)". The Agent uses the owner's name to tell who is speaking, but the name is only a label, not proof of identity. A double tap at the top left still goes to the first message.
+
+## The first message is slow and the phone shows nothing
+
+On a new computer it is usually one of four, and the phone says which: the model service cannot be reached (Claude Code retries for about three minutes; the phone shows a card when it is still failing after about 10 seconds); bubblewrap is missing (every start shows a "Sandbox unavailable" card, whose "Run this launch without isolation" button needs the owner's passkey; install `sudo apt-get install -y bubblewrap socat` on the computer); running as root with bypassPermissions (Claude Code refuses to start; Agent J starts it in the default permission mode and says so); a model the provider does not serve (400; sent again once on the default Opus 5.5 · medium).
+
+`agentj agent claude` (or codex) answers the tool's one-time setup ahead (onboarding, theme, folder trust, bypass confirmation) — only what is missing, no key read; the `first-setup` row of `agentj doctor` checks it. When the Agent really waits at a terminal prompt, the phone gets a "Handle it on the computer" card quoting the terminal's words: answer it at the computer, or run `agentj agent claude`, then send again.
 
 ## Sandbox failures and admin commands
 

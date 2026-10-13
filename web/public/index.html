@@ -189,6 +189,8 @@
   <!-- ================================================================ chat (relay's page) -->
   <div class="chatv" id="chat-view">
     <p id="shared-status" class="shared-status" role="status" hidden></p>
+    <!-- P240: the computer runs a newer Agent J than any page a refresh can fetch yet (batch B not out) — one quiet line, no dialog. -->
+    <p id="version-later" class="ver-later" role="status" hidden></p>
     <!-- P131: the first-run checklist is its own page; the chat only carries this thin, closable banner (never covers the input) -->
     <div id="setup-banner" class="setup-banner" role="status" hidden>
       <button type="button" id="setup-banner-open" class="setup-banner__open"></button>
@@ -240,6 +242,10 @@
             <button class="wrbtn" id="webReportBtn" type="button" data-i18n-attr="aria-label=r.wr.btn,title=r.wr.btn" aria-label="分享成网页报告" title="分享成网页报告">
               <svg viewBox="0 0 36 36" aria-hidden="true"><circle class="disc" cx="18" cy="18" r="18"/><g transform="translate(6.5 6.5) scale(.96)" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M17.76 11.19A7 7 0 1 1 12.81 6.24"/><path d="M11.6 12.4 20 4M14.6 4H20v5.4"/></g></svg>
             </button>
+            <!-- P238: 「⋯」 shows only when the card is too narrow for every icon; the folded ones (邮件 → 阅读 → 转发) open from it -->
+            <button class="act rmmorebtn" id="rmMoreBtn" type="button" hidden aria-haspopup="menu" aria-expanded="false" aria-controls="rmMore" data-i18n-attr="aria-label=p238.more,title=p238.more" aria-label="更多操作" title="更多操作">
+              <svg class="g g0" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="5.5" cy="12" r="1.9"/><circle cx="12" cy="12" r="1.9"/><circle cx="18.5" cy="12" r="1.9"/></svg>
+            </button>
             <button class="act" id="readBtn" type="button" data-i18n-attr="aria-label=r.bar.read,title=r.bar.read" aria-label="全屏阅读（f · 双击卡片）" title="全屏阅读（f · 双击卡片）">
               <svg class="g g0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M12 6.5C10.2 5.2 7.6 4.7 3.5 4.9v13.2c4.1-.2 6.7.3 8.5 1.6 1.8-1.3 4.4-1.8 8.5-1.6V4.9c-4.1-.2-6.7.3-8.5 1.6z"/><path d="M12 6.5v13.2"/></svg>
             </button>
@@ -268,6 +274,7 @@
               <svg class="g g0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M10 5 4 11l6 6"/><path d="M4 11h9a7 7 0 0 1 7 7v1"/></svg>
             </button>
           </div>
+          <div class="rmmore" id="rmMore" role="menu" hidden data-i18n-attr="aria-label=p238.more" aria-label="更多操作"></div>
         </div>
       </div>
       <button class="pz next" id="pgNext" type="button" data-i18n-attr="aria-label=r.pg.next,title=r.pg.nextTitle" aria-label="下一条（更新）" title="下一条（k / →）">&#8250;</button>
@@ -342,10 +349,13 @@
 
     <div class="meter" id="m5h" role="img" data-known="0" data-i18n-attr="aria-label=r.meter.h5" aria-label="5 小时额度"><i></i><span class="lab">5h</span></div>
     <footer class="composer">
-      <!-- P187: the command list is a full-screen menu page (menu.css); relay.js renderMenu() fills #menuList -->
-      <div class="cmdmenu menupage" id="menu" hidden role="dialog" aria-modal="true" aria-labelledby="menuTitle">
+      <!-- P238: the command list is a card that rises from the 5-hour bar (menu.css .cmdsheet) over a tap-to-close scrim;
+           relay.js renderMenu() fills #menuList, placeSheet() anchors it, pull-down at the top closes it -->
+      <div class="cmdmenu" id="menu" hidden role="dialog" aria-modal="true" aria-labelledby="menuTitle">
+        <div class="cmdsheet" id="menuSheet"><div class="cmdgrab" aria-hidden="true"></div>
         <div class="menuhead"><h2 id="menuTitle" data-i18n="r.menu.aria">全部命令</h2><kbd class="setesc" aria-hidden="true">Esc</kbd><button type="button" class="menuicon" id="menuClose" data-i18n-attr="aria-label=r.menu.close,title=r.menu.close" aria-label="关闭（Esc）" title="关闭（Esc）"><svg class="" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg></button></div>
-        <div class="menubody"><div class="menunarrow"><div class="menulist" id="menuList" role="menu" data-i18n-attr="aria-label=r.menu.aria" aria-label="全部命令"></div></div></div>
+        <div class="menubody" id="menuBody"><div class="menulist" id="menuList" role="menu" data-i18n-attr="aria-label=r.menu.aria" aria-label="全部命令"></div></div>
+        </div>
       </div>
       <div class="tools" id="tools">
         <button class="tool" id="tDoc" type="button" data-i18n-attr="aria-label=r.tool.doc,title=r.tool.docTitle" aria-label="发文件" title="文件">

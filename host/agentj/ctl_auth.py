@@ -8,7 +8,7 @@ owner's phone off) — need a one-time claim, asked for on the same connection (
 - `{"cmd":"claim"}` → a token for this connection's peer process, single use, CLAIM_TTL s. It is refused when the peer
   (SO_PEERCRED / LOCAL_PEERPID) descends from a process serve runs or serves (owned Agent, scheduled task, the shared
   session), carries an Agent harness marker in its environment, or cannot be identified at all.
-- `resume` additionally needs the approval passphrase, verified here by serve (the CLI checks it too), or — without one — a
+- `resume` additionally needs the remote pairing password, verified here by serve (the CLI checks it too), or — without one — a
   terminal on the caller's stdin.
 - `config_apply` without a claim (an Agent running `agentj config set`, e.g. the agentj-config skill) still applies ordinary
   keys; a change to a SECURITY key becomes a signed approval card on the phone and is applied only after the owner allows it.

@@ -26,6 +26,7 @@ import asyncio
 import contextlib
 import json
 import os
+import re
 import shlex
 import shutil
 import signal
@@ -48,6 +49,14 @@ CLAIM_WAIT = 30               # s: the permission tool must claim perm.sock this
 CONTROL_SUBTYPES = ("interrupt", "get_context_usage", "get_status", "list_models", "set_model")
 CONTROL_WAIT = 20
 CLAUDE_EFFORTS = ("low", "medium", "high", "xhigh", "max")   # `claude --effort` (2.1.285), "for the current session"
+# P219: never a silent wait. No progress from the harness this long after a message (no phone card open) → the host looks
+# at why (a terminal prompt / text the harness printed / nothing) and tells the phone once per turn. STALL_QUIET_SECS: the
+# "still nothing" card when no reason is visible, only on the first message of a freshly started process (where one-time
+# setup screens and dead connections show up; a later long think is not news).
+STALL_SECS = 45
+STALL_QUIET_SECS = 90
+STALL_TICK = 1.0
+RETRY_NOTICE_AT = 5           # Claude Code's api_retry attempt (≈ 9 s in; a brief blip retries 2–3 times) that puts the "cannot reach the model" card up
 
 
 @dataclass
@@ -322,6 +331,62 @@ def codex_failure(raw, model: str | None, lang: str = "zh") -> tuple[str, str, s
     return kind, text + ("\n\n" + ("Details" if en else "详情") + ":\n```text\n" + detail + "\n```" if detail else ""), blocked
 
 
+HARNESS_CMD = {"claude": "claude", "codex": "codex", "opencode": "opencode"}
+_CLAUDE_ID = re.compile(r"claude-(opus|sonnet|haiku|fable)-(\d+)(?:-(\d{1,2}))?(?:-\d{8})?(\[1m\])?", re.I)
+
+
+def pretty_model(mid) -> str | None:
+    """P219: a concrete Claude model id → the name with its version, as the phone shows it: claude-opus-5-5 → "Opus 5.5"
+    (an alias such as "opus" alone never says which Opus). None for anything else."""
+    m = _CLAUDE_ID.fullmatch(mid.strip()) if isinstance(mid, str) else None
+    if not m:
+        return None
+    return f"{m.group(1).capitalize()} {m.group(2)}{'.' + m.group(3) if m.group(3) else ''}{' (1M)' if m.group(4) else ''}"
+
+
+def tty_waiting(pid: int) -> bool:
+    """Linux: some process of the Agent's session (it runs in its own, start_new_session) is blocked reading a terminal.
+    Read-only /proc look (same user); False wherever that cannot be seen."""
+    try:
+        names = os.listdir("/proc")
+    except OSError:
+        return False
+    for n in names:
+        if not n.isdigit():
+            continue
+        try:
+            with open(f"/proc/{n}/stat", "rb") as f:
+                rest = f.read().rsplit(b")", 1)[1].split()
+            if int(rest[3]) != pid:          # field 6: session id
+                continue
+            with open(f"/proc/{n}/wchan") as f:
+                wchan = f.read()
+        except (OSError, IndexError, ValueError):
+            continue
+        if "tty" in wchan:                   # n_tty_read / tty_read: waiting for someone to type
+            return True
+    return False
+
+
+def stall_text(kind: str, reason: str, excerpt: str, secs: int, lang: str = "zh") -> str:
+    """The phone's card for a stalled turn (P219): where it is stuck, the harness's own words, what to do at the computer."""
+    cmd = HARNESS_CMD.get(kind, kind)
+    en = lang == "en"
+    shown = ("\n```text\n" + excerpt.replace("```", "` ` `") + "\n```") if excerpt else ""
+    if reason in ("tty", "prompt"):
+        return (f"The Agent has been waiting {secs} s for an answer in a terminal on the computer — the phone cannot answer it."
+                f"{' It printed:' if shown else ''}{shown}\nAt the computer: run `agentj agent {kind}` (answers the one-time "
+                f"setup ahead), or run `{cmd}` once in the working folder and answer it there; then send the message again."
+                if en else
+                f"Agent 卡在电脑终端里的一个确认上（已等 {secs} 秒），手机上没法回答。{'它显示的是：' if shown else ''}{shown}\n"
+                f"在电脑上处理：运行 `agentj agent {kind}`（预先完成首次设置），或在工作目录里运行一次 `{cmd}` 把它答掉；然后在手机上重发这条消息。")
+    return (f"No answer from the Agent for {secs} s; its process is still running. It may be thinking for a long time, or the "
+            f"connection to the model service is very slow. If nothing changes: at the computer run `agentj doctor`, or tap Stop "
+            f"and send again." if en else
+            f"Agent 已经 {secs} 秒没有任何回应，进程还在运行：可能在长时间思考，也可能连模型服务很慢。"
+            f"一直没有动静的话：在电脑上运行 `agentj doctor` 查看，或在手机上按「停止」后重发。")
+
+
 class Agent:
     """Base: a queue of user messages, one turn at a time, status reported to the host."""
     kind = "?"
@@ -341,6 +406,8 @@ class Agent:
         self.cur_send = None          # the phone's `say` this turn delivers (compose.Send), None for anything else
         self.cur_cmd = None           # the command (Cmd) running now — F24 shows its progress on that page
         self.models_cache: list = []  # §10.11: [{"id", "name", "efforts"}] as the harness listed them
+        self.touched = False          # P219: the running turn has seen progress from the harness (stall watch)
+        self.fresh = False            # P219: the next turn is the first of a freshly started process
 
     def set_status(self, s: str) -> None:
         if s != self.status:
@@ -442,7 +509,7 @@ class Agent:
                             send.state = "failed"
                             self.fail_notice("这条消息是空的（没有文字，附件也没整理出来），没有发给 Agent。")
                         else:
-                            await self.turn(compactprep.decorate(self, send))   # F24: handover note / context reminder
+                            await self.watched(self.turn(compactprep.decorate(self, send)))   # F24 handover; P219 stall watch
                     except asyncio.CancelledError:
                         raise
                     except Withdrawn:
@@ -504,7 +571,7 @@ class Agent:
                     self.host.agent_turn_start(text)
                 try:
                     await self._identity_refresh()
-                    await self.turn(text)
+                    await self.watched(self.turn(text))
                 except asyncio.CancelledError:
                     raise
                 except Exception as e:  # noqa: BLE001 — an adapter bug costs one turn, never serve
@@ -512,6 +579,63 @@ class Agent:
                 self.host.agent_turn_end()
                 if self.q.empty():
                     self.set_status("down" if self.is_down() else "idle")
+
+    # ------------------------------------------------ P219: never a silent wait
+    def touch(self) -> None:
+        """The harness made progress on this turn (a reply, a tool step, the turn's end)."""
+        self.touched = True
+
+    async def watched(self, coro):
+        """Run one turn with the stall watch beside it."""
+        self.touched = False
+        w = asyncio.create_task(self._stall_watch())
+        try:
+            return await coro
+        finally:
+            w.cancel()
+
+    def _asks_open(self) -> bool:
+        asks = getattr(self.host, "asks", None)
+        return isinstance(asks, dict) and any(not a.fut.done() for a in asks.values() if hasattr(a, "fut"))
+
+    async def _stall_watch(self) -> None:
+        start = time.monotonic()
+        with contextlib.suppress(asyncio.CancelledError):
+            while True:
+                await asyncio.sleep(STALL_TICK)
+                if self.touched or self.halting:
+                    return
+                if self._asks_open():            # a card is on the phone: that card is what everyone waits for
+                    start = time.monotonic()
+                    continue
+                waited = time.monotonic() - start
+                if waited < STALL_SECS:
+                    continue
+                found = self.stall_probe()
+                if found == "skip":              # already told (e.g. the model-service retry card)
+                    return
+                if found is None and not (self.fresh and waited >= STALL_QUIET_SECS):   # fresh: set by the spawn
+                    continue
+                reason, excerpt = found or ("quiet", "")
+                self.host.st.log("agent_stall", agent=self.kind, reason=reason, ms=int(waited * 1000))
+                self.local_only(stall_text(self.kind, reason, excerpt, int(waited), getattr(self.host, "lang", "zh")))
+                return
+
+    def stall_probe(self):
+        """Why the harness has said nothing: ("tty" | "prompt", excerpt), "skip" (already on the phone) or None (no sign)."""
+        p = getattr(self, "proc", None)
+        if p is None or p.returncode is not None:
+            return None
+        return ("tty", self.printed_tail()) if tty_waiting(p.pid) else None
+
+    def printed_tail(self) -> str:
+        """What the harness printed outside its protocol (stdout that is not protocol, stderr): the last lines, redacted."""
+        raw = (getattr(self, "raw_tail", "") or "") + "\n" + (getattr(self, "err_tail", "") or "")
+        lines = [ln for ln in raw.splitlines() if ln.strip()][-6:]
+        if not lines:
+            return ""
+        from .privacy import redact
+        return clean(redact("\n".join(lines)), 600)
 
     async def halt(self, clear_queue: bool = True) -> bool:
         """Stop everything (ADR-A51) — or make room for a scheduled task run (clear_queue=False, called while holding
@@ -865,6 +989,10 @@ class ClaudeAgent(Agent):
         self.boundary: dict | None = None          # compact_metadata of the last compact_boundary
         self.replay = False                        # after a compact_boundary: Claude Code re-sends a kept synthetic message
         self.native_goal_checked = False           # P198: this process's session checked once for Claude Code's own /goal
+        self.raw_tail = ""                         # P219: what Claude Code printed on stdout that is not stream-json
+        self.retry_told = False                    # P219: this turn's "cannot reach the model service" card is up
+        self.fallback = None                       # P219: (unsupported model, its error) → retry once on the default model
+        self.fell_back = False
 
     def is_down(self) -> bool:
         return self.failed_start
@@ -884,6 +1012,11 @@ class ClaudeAgent(Agent):
             a += ["--model", self.cfg["model"]]
         if self.cfg.get("effort") in CLAUDE_EFFORTS:      # §10.11: "for the current session" — no settings write
             a += ["--effort", self.cfg["effort"]]
+        from . import harness_setup
+        if harness_setup.root_bypass(self.cfg.get("dir")):
+            # P219: as root Claude Code refuses bypassPermissions and exits before its first word; the stricter default
+            # mode (every tool through the phone) is the only start left — narrower than the owner's setting, never wider
+            a += ["--permission-mode", "default"]
         if resume:
             a += ["--resume", resume]
         return a
@@ -922,8 +1055,18 @@ class ClaudeAgent(Agent):
                                                          stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE,
                                                          stderr=asyncio.subprocess.PIPE, limit=LINE_LIMIT,
                                                          start_new_session=True)
-        self.got_init, self.failed_start, self.err_tail = False, False, ""
+        self.got_init, self.failed_start, self.err_tail, self.raw_tail = False, False, "", ""
         self.native_goal_checked = False
+        self.fresh = True                          # P219: the stall watch may say "still nothing" on this first message
+        if "--permission-mode" in argv and not getattr(self, "root_told", False):
+            self.root_told = True
+            self.host.st.log("agent_root_bypass", agent=self.kind)
+            self.host.agent_notice(pick(getattr(self.host, "lang", "zh"),
+                                        "Agent J 以 root 运行，Claude Code 不允许 root 跳过权限（bypassPermissions）。这次按普通权限模式启动："
+                                        "需要批准的动作会到手机上。想恢复原样，请用普通用户运行 Agent J。",
+                                        "Agent J runs as root and Claude Code refuses bypassPermissions for root, so it starts in the "
+                                        "default permission mode: actions that need approval come to the phone. Run Agent J as a normal "
+                                        "user to keep your setting."))
         self.reader = asyncio.create_task(self._read(self.proc, resumed=bool(sid)))
         bg.spawn(self._drain_err(self.proc), "agent_drain_err", self.host.st.log)   # P192 (B13): held, failure logged
         self.host.st.log("agent_start", agent=self.kind, fence=self.cfg.get("fence", True))
@@ -1003,6 +1146,8 @@ class ClaudeAgent(Agent):
                 try:
                     ev = json.loads(line)
                 except ValueError:
+                    if line.strip():                # P219: not stream-json = Claude Code talking to a terminal
+                        self.raw_tail = (self.raw_tail + line.decode("utf-8", "replace"))[-2000:]
                     continue
                 if isinstance(ev, dict):
                     self._busy(ev)
@@ -1040,7 +1185,11 @@ class ClaudeAgent(Agent):
 
     def on_event(self, ev: dict) -> None:
         t = ev.get("type")
-        if t == "system" and ev.get("subtype") == "init":
+        if t in ("assistant", "user", "result", "stream_event"):
+            self.touch()                           # P219: progress (the stall watch stays quiet)
+        if t == "system" and ev.get("subtype") == "api_retry":
+            self._api_retry(ev)
+        elif t == "system" and ev.get("subtype") == "init":
             first = not self.init
             self.got_init = True
             self.init = ev
@@ -1087,6 +1236,9 @@ class ClaudeAgent(Agent):
             synthetic = msg.get("model") == "<synthetic>"
             if synthetic and self.replay:          # the kept segment re-sent after a compact_boundary: not a new reply
                 return
+            if synthetic and self.capture is None and any(
+                    isinstance(b, dict) and str(b.get("text", "")).startswith("API Error") for b in msg.get("content") or []):
+                return     # P219: the turn's result carries the same error (its notice, or the model fallback) — not a reply
             if not synthetic:
                 self.replay = False
             for block in msg.get("content") or []:
@@ -1099,6 +1251,9 @@ class ClaudeAgent(Agent):
             self.replay = False
             self.last_result = ev
             if (ev.get("is_error") or ev.get("subtype") not in ("success", None)) and not self.halting \
+                    and self.capture is None and self._unsupported_model(ev):
+                pass                               # P219: turn() switches to the default model and sends it again
+            elif (ev.get("is_error") or ev.get("subtype") not in ("success", None)) and not self.halting \
                     and self.capture is None:
                 r = ev.get("result")
                 from . import claude_auth
@@ -1106,6 +1261,57 @@ class ClaudeAgent(Agent):
                                  "Agent 这一轮没有正常完成" + (f"：{clean(r, 300)}" if isinstance(r, str) and r else "。"))
             if self.turn_done:
                 self.turn_done.set()
+
+    def _api_retry(self, ev: dict) -> None:
+        """P219: Claude Code retries a failing model request by itself (measured 2.1.296: 10 attempts, ≈ 3 min when the
+        service cannot be reached) and says so only in `api_retry` events — the phone hears about it once per turn."""
+        attempt, most = ev.get("attempt"), ev.get("max_retries")
+        if self.retry_told or not isinstance(attempt, int) or attempt < RETRY_NOTICE_AT or self.capture is not None:
+            return
+        self.retry_told = True
+        code = ev.get("error_status") if isinstance(ev.get("error_status"), int) else None
+        en = getattr(self.host, "lang", "zh") == "en"
+        what = (f"HTTP {code}" if code else clean_line(str(ev.get("error") or "unknown"), 40))
+        why = (("rate limited" if en else "被限流") if code == 429 else ("the service is busy or failing" if en else "服务繁忙或出错")
+               if code and code >= 500 else ("could not connect (network / proxy / address)" if en else "连不上（网络 / 代理 / 地址）")
+               if not code else ("the request was refused" if en else "请求被拒绝"))
+        self.host.st.log("agent_api_retry", agent=self.kind, code=code, count=attempt)
+        self.host.agent_notice(
+            f"Claude Code cannot reach its model service ({why}, {what}) and is retrying by itself: attempt {attempt}"
+            f"{f' of {most}' if isinstance(most, int) else ''}. Giving up takes about 3 minutes; it continues on its own when the "
+            "network or provider recovers. At the computer: `agentj doctor`, and check the provider (e.g. Agents Relay) status."
+            if en else
+            f"Claude Code 连不上模型服务（{why}，{what}），正在自动重试：第 {attempt}"
+            f"{f'/{most}' if isinstance(most, int) else ''} 次。全部失败约需 3 分钟；网络或服务商恢复后会自己接上。"
+            "在电脑上可以运行 `agentj doctor`，并检查服务商（例如 Agents Relay）是否正常。")
+
+    def _unsupported_model(self, ev: dict) -> bool:
+        """P219: a 400 that says the model is not served (a relay without Fable: 「Claude Fable 5.1 is not supported」) on a
+        model other than Agent J's default → remembered for turn() to retry once on the default."""
+        from . import harness_setup
+        r = ev.get("result") if isinstance(ev.get("result"), str) else ""
+        status = ev.get("api_error_status")
+        if self.fell_back or self.cfg.get("_workflow_ceo") or not (status == 400 or "400" in r[:40]):
+            return False
+        if not re.search(r"not (be )?supported|unsupported|not available|does not exist|not[_ ]found|invalid model|"
+                         r"unknown model|model[^\n]{0,40}(not|unavailable)", r, re.I):
+            return False
+        cur = self.cur_model()
+        if cur == harness_setup.DEFAULT_CLAUDE_MODEL:
+            return False
+        self.fallback = (cur, clean(r, 200))
+        return True
+
+    def stall_probe(self):
+        """P219: a terminal read by Claude Code (or something it started), or text it printed outside stream-json."""
+        if self.retry_told:
+            return "skip"
+        p = self.proc
+        if p is None or p.returncode is not None:
+            return None
+        if tty_waiting(p.pid):
+            return "tty", self.printed_tail()
+        return ("prompt", self.printed_tail()) if self.raw_tail.strip() else None
 
     def transcript_path(self) -> str | None:
         sid = self.host.st.agent_session(self.kind)
@@ -1141,7 +1347,9 @@ class ClaudeAgent(Agent):
             self.native_goal_checked = True
             with contextlib.suppress(OSError, ConnectionError, ValueError):
                 await self.clear_native_goal()
-        for attempt in range(2):
+        self.retry_told, self.fallback, self.fell_back = False, None, False
+        retried = False
+        for attempt in range(3):
             if self.proc is None and not await self._spawn():
                 return
             self.turn_done, self.turn_proc = asyncio.Event(), self.proc
@@ -1157,10 +1365,35 @@ class ClaudeAgent(Agent):
                 self.proc = None
                 continue
             await self.turn_done.wait()
-            if self.got_init or attempt:   # a resumed process that died before init is retried once, fresh
+            self.fresh = False
+            if self.fallback is not None and not self.fell_back:   # P219: the model is not served → once on the default
+                await self._fall_back()
+                continue
+            if self.got_init or retried:   # a resumed process that died before init is retried once, fresh
                 if self.capture is None:
                     await self.context_meter()
                 return
+            retried = True
+
+    async def _fall_back(self) -> None:
+        from . import harness_setup
+        old, err = self.fallback
+        self.fallback, self.fell_back = None, True
+        new = harness_setup.DEFAULT_CLAUDE_MODEL
+        self.cfg["model"] = new
+        with contextlib.suppress(Exception):   # the next start (and every later one) uses it; the owner can change it back
+            self.host.st.set_agent_model(new)
+        self.host.st.log("agent_model_fallback", agent=self.kind, model=new)
+        p = self.proc
+        if p is not None:
+            await self._kill(p)
+        self.init, self.got_init = {}, False
+        nice = pretty_model(new) or new
+        self.host.agent_notice(pick(getattr(self.host, "lang", "zh"),
+                                    f"模型 {old or '（Claude Code 自选）'} 用不了：{err}\n已自动改用默认模型 {nice} 重发这条消息，以后也用它；"
+                                    "想换模型：点手机上的模型标签。",
+                                    f"Model {old or '(Claude Code default)'} is not available: {err}\nSent the message again on the default "
+                                    f"model {nice}, which stays selected; tap the model label on the phone to change it."))
 
     async def context_meter(self) -> None:
         """§10.10: `get_context_usage` after each turn end (and compaction) — the exact numbers Claude Code reports."""
@@ -1198,7 +1431,10 @@ class ClaudeAgent(Agent):
         out = []
         for m in r.get("models") or []:
             if isinstance(m, dict) and isinstance(m.get("value"), str) and slash.MODEL_RE.match(m["value"]):
-                out.append({"id": clean_line(m["value"], 100), "name": clean_line(str(m.get("displayName") or m["value"]), 60),
+                name = str(m.get("displayName") or m["value"])
+                if m["value"] != "default" and not re.search(r"\d", name):     # P219: "Opus" → "Opus 5.5"
+                    name = pretty_model(m.get("resolvedModel")) or name
+                out.append({"id": clean_line(m["value"], 100), "name": clean_line(name, 60),
                             "efforts": list(CLAUDE_EFFORTS),
                             "resolved": clean_line(str(m.get("resolvedModel") or ""), 100)})
         self.models_cache = out[:40]
@@ -1209,9 +1445,12 @@ class ClaudeAgent(Agent):
         self.meter(model=cur, model_name=self.model_name(cur))
 
     def model_name(self, model: str | None) -> str | None:
+        """P219: always with its version ("Opus 5.5"): a concrete id names itself; an alias / "default" by what it resolves to."""
+        if pretty_model(model):
+            return pretty_model(model)
         for m in self.models_cache:
             if model and (m["id"] == model or m.get("resolved") == model):
-                return m["name"]
+                return pretty_model(m.get("resolved")) or m["name"]
         return None
 
     async def apply_model(self, model: str | None, effort: str | None, default: bool = False) -> str | None:

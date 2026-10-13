@@ -14,6 +14,8 @@ order: 17
 
 手机遥控需要工具继续执行；全权限能减少反复弹出的审批。风险：AI 可以以你的用户权限改文件和执行命令，只对可信目录和任务启用。项目或公司设置仍可能要求审批。
 
+只想装好 Agent J 加一个 AI，不想逐个工具配置？用 [一条命令自己装](/docs/install/#one-command)，它会按需调用本页的脚本。
+
 [安装 Agent J](/docs/install/) · [电脑上怎么用](/docs/computer/) · [agentj 命令参考](/docs/cli/)
 
 ## 一键安装
@@ -46,7 +48,7 @@ shasum -a 256 setup-agents.sh
 ```
 
 
-SHA256 sh: `1bb1e41ac6987a25489743c2e58f5104b52fc1ca964a3933f3747388279b03d1`
+SHA256 sh: `87b4fdf068beaead10fceca82e71acff6373282c17613d41866727c061bcc7c7`
 
 
 ```bash
@@ -1297,6 +1299,12 @@ macOS：先试运行 `opencode --version`（或所选 Agent 的 `--version`）�
 中国大陆：Claude Code / Codex 官方服务不可用，npm 镜像只帮你下载，不能解锁服务。选择 OpenCode + 国产模型，或使用有对应套餐/模型的 AgentsRelay；需自己核对服务提供方和地区条款。Windows 只走 WSL2。
 
 command not found：回 PATH 步骤，确认 shell 文件和新开终端。EACCES：使用本页用户目录 npm prefix，不 sudo npm。登录失败：核对账号、地区和自己的代理，别把 key 贴出来。
+
+## Agent 隔离与首次设置 {#isolation}
+
+Linux 上 Agent J 用 bubblewrap 把手机上的 Agent 关在隔离里运行；socat 是 Claude Code 自带沙箱要用的。一键安装会用 apt-get 装上这两个；装不了时会打印要你自己运行的命令：`sudo apt-get install -y bubblewrap socat`（Fedora 用 dnf，Arch 用 pacman）。不装的话，每次启动 Agent 手机上都要用通行密钥批准「本次不隔离运行」。
+
+选了 Claude Code 时，脚本还会预先完成它的首次设置（引导、主题、危险模式确认），后台会话不会停在没人看的终端确认上；只补缺的，不改你设过的。用 root 运行时不写全权限（bypassPermissions）：Claude Code 不允许 root 这样做，会直接退出。
 
 ## 安装 Agent J {#agent-j}
 

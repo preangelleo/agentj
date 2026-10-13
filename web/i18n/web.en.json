@@ -1595,6 +1595,7 @@
   "ver.later": "Later",
   "ver.title": "Server upgraded",
   "ver.body": "Agent J is now {v}. Refresh the page to use the new version.",
+  "ver.later_line": "Your computer is upgraded; the new web page is on its way.",
   "ver.refresh": "Refresh",
   "busy.temp": "Helper",
   "busy.aria": "{n} agents at work in the background — tap to see who",
@@ -2348,9 +2349,9 @@
       "robots_theme": "Ask the Agent to redraw the robots (theme)",
       "load": "See how busy the computer is (system load)",
       "quota": "See how much quota is used",
-      "model_step": "Switch to the next model",
-      "effort_step": "Switch to the next effort level",
-      "model_default": "Back to the default model and effort",
+      "model_step": "Switch to the next model (shown at once, applied after 5 s without another tap)",
+      "effort_step": "Switch to the next effort level (shown at once, applied after 5 s without another tap)",
+      "model_default": "Back to the default model and effort (at once)",
       "scan": "Scan a QR code (a new device's pairing code, a friend's card, or anything else)",
       "settings": "Open Settings",
       "search": "Search the chat (inside the message box Ctrl+K still deletes to the end); press again to close",
@@ -2546,5 +2547,9 @@
   "p207set.ct.importing": "Importing ({i}/{n})…",
   "r.wr.btn": "Share as a web report",
   "r.wr.hint": "Add a line if you like: which part, and who should see it. Or just send — the Agent will ask",
-  "r.wr.hintFrom": "Starting from this reply. Add a line if you like: which part, and who should see it. Or just send — the Agent will ask"
+  "r.wr.hintFrom": "Starting from this reply. Add a line if you like: which part, and who should see it. Or just send — the Agent will ask",
+  "p238.switch": "Switch AI coding tool: tested before switching",
+  "p238.sent": "Sent: your Agent first lists the AI coding tools you can switch to; nothing switches until you choose",
+  "p238.more": "More actions",
+  "p238.updRestart": "{v} is installed; it takes effect when the computer is idle and restarts the service"
 }

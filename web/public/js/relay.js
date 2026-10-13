@@ -657,10 +657,15 @@ export function render(s){
 }
 
 // ---- the header pill switches the model / effort (relay ADR-035; §10.11) ---------------
-// Tap the model half = the next model, tap the effort half = the next effort, hold ≈ 0.6 s = the default. Taps are
-// gathered: only the target standing 1 s after the last tap is sent, once. Dashed until the next meter reports it.
-const PILL_GATHER_MS = 1000, HOLD_MS = 600, PILL_SETTLE_MS = 45000, HOLD_SLOP_PX = 10;
-const pill = {want: null, timer: 0, sentAt: 0};
+// Tap the model half = the next model, tap the effort half = the next effort, hold ≈ 0.6 s = the default.
+// P239 (Leo 10-13: 「点着玩」): a tap only changes what the label shows. Each half keeps its own clock — it commits once it
+// has been left alone PILL_GATHER_MS (5 s); another tap on that half restarts it. A pick equal to what the Agent already
+// runs is never sent. While a half waits it is faded with a thin line running out under it (data-sw-model / -effort);
+// once sent the pill is dashed until the next meter reports it; a refusal puts the label back with one toast.
+// Hold = the default at once (a deliberate gesture, not play): it drops any waiting tap. Leaving the page sends a waiting
+// pick at once (pillFlush). Typed `/model …` and the /model card's buttons are immediate and drop a waiting tap (pillDrop).
+const PILL_GATHER_MS = 5000, HOLD_MS = 600, PILL_SETTLE_MS = 45000, HOLD_SLOP_PX = 10;
+const pill = {want: null, sent: null, sentAt: 0, wait: {model: 0, effort: 0}};
 function swCat(){ return cur && cur.switch && Array.isArray(cur.switch.models) && cur.switch.models.length ? cur.switch : null; }
 function realPick(){
   const u = (cur && cur.usage) || {}, c = swCat();
@@ -669,6 +674,9 @@ function realPick(){
 }
 const effortsOf = (c, id) => { const m = c && c.models.find(x => x.id === id); return m && Array.isArray(m.efforts) ? m.efforts : []; };
 const samePick = (a, b) => !!a && !!b && a.model === b.model && (a.effort || null) === (b.effort || null);
+// P239: a model with no effort levels (Haiku) is settled whatever effort the meter still reports.
+const sameRun = (a, b) => samePick(a, b) || (!!a && !!b && !!a.model && a.model === b.model && !effortsOf(swCat(), a.model).length);
+const pillWaiting = () => !!(pill.wait.model || pill.wait.effort);
 const sharedNotice = new SharedNotice();
 function paintPill(u){
   u = u || (cur && cur.usage) || {};
@@ -690,18 +698,26 @@ function paintPill(u){
     });
   }
   const c = swCat(), real = realPick();
-  if (pill.want && samePick(pill.want, real)){ pill.want = null; pill.sentAt = 0; }
-  if (pill.want && pill.sentAt && Date.now() - pill.sentAt > PILL_SETTLE_MS){ pill.want = null; pill.sentAt = 0; }
+  if (!pillWaiting()){
+    if (pill.want && sameRun(pill.want, real)){ pill.want = null; pill.sent = null; pill.sentAt = 0; }
+    if (pill.want && pill.sentAt && Date.now() - pill.sentAt > PILL_SETTLE_MS){ pill.want = null; pill.sent = null; pill.sentAt = 0; }
+  }
+  if (pill.sent && sameRun(pill.sent, real)) pill.sent = null;
   const show = pill.want || null;
   const name = show ? ((c && c.models.find(x => x.id === show.model)) || {}).name || (show.isDefault ? u.model : "") || "—" : (u.model || "—");
-  const effort = show ? show.effort : (u.model ? u.effort : null);
+  const noEffort = !!(c && real.model && !effortsOf(c, real.model).length);   // P239: e.g. Haiku — the meter's effort means nothing
+  const effort = show ? show.effort : (u.model && !noEffort ? u.effort : null);
   el("metaModel").textContent = name;
   el("metaSep").textContent = effort ? " · " : "";
   el("metaEffort").textContent = effort || "";
   el("metaStale").textContent = "";
   const m = el("meta");
-  if (show) m.dataset.sw = pill.sentAt && cur && cur.status !== "idle" ? "queued" : "pending";
+  if (show) m.dataset.sw = pillWaiting() ? "wait" : pill.sentAt && cur && cur.status !== "idle" ? "queued" : "pending";
   else delete m.dataset.sw;
+  for (const h of ["model", "effort"]){
+    const k = h === "model" ? "swModel" : "swEffort";
+    if (show && pill.wait[h]) m.dataset[k] = "wait"; else delete m.dataset[k];
+  }
 }
 // P142: no catalogue (shared Claude before its picker is known, an older host): the tap asks the host for `/model` — the
 // same self-slash path as typing it; its card lists the models as buttons. Only an offline page still says "unsupported".
@@ -709,7 +725,7 @@ function pillList(){ if (!C.api.slash("model")) toast(t('r.pill.unsupported'), 2
 function pillStep(half){
   const c = swCat();
   if (!c){ pillList(); return; }
-  const b = pill.want || realPick();
+  const b = pill.want && pill.want.model ? pill.want : (pill.sent || realPick());
   let model = b.model || c.default.model, effort = b.effort || c.default.effort;
   if (half === "model"){
     const available = c.models.filter(x => !x.disabled);
@@ -724,27 +740,62 @@ function pillStep(half){
     effort = efs[(efs.indexOf(effort) + 1) % efs.length];
   }
   pill.want = {model, effort}; pill.sentAt = 0;
+  const m = el("meta"), k = half === "model" ? "swModel" : "swEffort";
+  delete m.dataset[k]; void m.offsetWidth;                         // a new tap restarts the running-out line
+  clearTimeout(pill.wait[half]);
+  pill.wait[half] = setTimeout(() => { pill.wait[half] = 0; pillCommit(); }, PILL_GATHER_MS) || 1;
   paintPill();
-  clearTimeout(pill.timer);
-  pill.timer = setTimeout(pillSend, PILL_GATHER_MS);
+}
+// The pick to send now: halves whose clock is still running keep what the Agent runs (sent / real), the others take the
+// shown target. An effort that does not fit the committed model takes the shown one (the model step already fitted it).
+function pillCommit(){
+  const want = pill.want; if (!want || want.isDefault) return;
+  const base = pill.sent || realPick(), c = swCat();
+  const model = pill.wait.model ? base.model || want.model : want.model;
+  let effort = pill.wait.effort ? base.effort : want.effort;
+  if (pill.wait.effort && c && !effortsOf(c, model).includes(effort)) effort = want.effort;
+  const pick = {model, effort};
+  if (sameRun(pick, base)){                                     // tapped back to what runs: nothing to send
+    if (pill.sent) pill.sentAt = Date.now();                     // still settling an earlier send: its clock runs again
+    paintPill(); return;
+  }
+  pillSend(pick);
+}
+// Leaving the page (hidden / pagehide): a waiting pick is sent at once rather than lost.
+function pillFlush(){
+  if (!pillWaiting()) return;
+  clearTimeout(pill.wait.model); clearTimeout(pill.wait.effort);
+  pill.wait.model = pill.wait.effort = 0;
+  pillCommit();
+}
+// An immediate switch from elsewhere (typed /model, the /model card): the waiting taps are dropped, the label shows the
+// real reading again.
+function pillDrop(){
+  clearTimeout(pill.wait.model); clearTimeout(pill.wait.effort);
+  pill.wait.model = pill.wait.effort = 0;
+  pill.want = null; pill.sent = null; pill.sentAt = 0;
+  paintPill();
 }
 function pillDefault(){
   const c = swCat();
-  if (!c){ clearTimeout(pill.timer); pill.want = {isDefault: true}; pill.sentAt = 0; pillSend(); return; }   // P142: hold = default, catalogue or not
-  clearTimeout(pill.timer);
+  clearTimeout(pill.wait.model); clearTimeout(pill.wait.effort);
+  pill.wait.model = pill.wait.effort = 0;
+  if (!c){ pill.want = {isDefault: true}; pill.sentAt = 0; pillSend(pill.want); return; }   // P142: hold = default, catalogue or not
   pill.want = {...c.default, isDefault: true}; pill.sentAt = 0;
   paintPill();
   toast(t('r.pill.default', {name: ((c.models.find(x => x.id === c.default.model) || {}).name || ""), effort: c.default.effort || "—"}), 1800);
-  pillSend();
+  pillSend(pill.want);
 }
-async function pillSend(){
+async function pillSend(pick){
   const want = pill.want; if (!want) return;
-  const r = await C.api.model(want.isDefault ? {default: true} : {model: want.model, effort: want.effort});
-  if (pill.want !== want) return;
+  const r = await C.api.model(pick.isDefault ? {default: true} : {model: pick.model, effort: pick.effort});
+  if (r.ok && r.superseded){ if (pill.want === want && !pillWaiting()) pillDrop(); return; }   // another remote's later pick won
   if (!r.ok){
     toast(t('r.pill.fail', {why: t('r.pill.why.' + (["unknown_model", "unknown_effort", "busy", "unsupported", "stopped", "offline", "timeout", "unconfirmed", "blocked", "failed"].includes(r.why) ? r.why : "other"))}), 2600);
-    pill.want = null; paintPill(); return;
+    pillDrop(); return;                                            // the label goes back to what the Agent runs
   }
+  if (pick.model) pill.sent = {model: pick.model, effort: pick.effort || null};   // the default too, when the catalogue names it
+  if (pill.want !== want) return;
   pill.sentAt = Date.now();
   if (r.queued || (cur && cur.status !== "idle")) toast(t('r.pill.queued'), 2000);
   paintPill();
@@ -767,6 +818,7 @@ function pressable(node, onTap, onHold){
   node.addEventListener("dragstart", e => e.preventDefault());
 }
 function pillHalf(e){
+  if (!el("metaEffort").textContent) return "model";             // P239: no effort shown (e.g. Haiku) → the whole pill is the model
   const sep = el("metaSep").getBoundingClientRect(), m = el("meta").getBoundingClientRect();
   const cut = sep.width ? sep.left + sep.width / 2 : m.left + m.width / 2;
   return e.clientX < cut ? "model" : "effort";
@@ -1124,7 +1176,7 @@ function paintCmdx(p){
       const n = document.createElement("b"); n.textContent = (typeof x.name === "string" && x.name ? x.name : x.id) + (x.cur ? t('cmd.current') : "");
       const d = document.createElement("span"); d.textContent = [x.id, typeof x.desc === "string" ? x.desc : ""].filter(Boolean).join(" · ");
       b.append(n, d);
-      b.addEventListener("click", () => { for (const o of box.querySelectorAll("button")) o.disabled = true; C.api.slash("model", x.id); });
+      b.addEventListener("click", () => { for (const o of box.querySelectorAll("button")) o.disabled = true; pillDrop(); C.api.slash("model", x.id); });
       box.appendChild(b);
     }
   }
@@ -1230,6 +1282,57 @@ function paintActs(){
   el("copyReply").disabled = !(p.reply || "").trim();
   el("webReportBtn").disabled = !(p.reply || "").trim();
   paintSpeak(); paintFwd(); paintMail();
+  fitBar();
+}
+// P238 (Leo 10-13 23:44, a fold's narrow outer screen): the row never leaves the card. The icons shrink 44 → 40 px (app.css);
+// when even that does not fit, the secondary ones fold into 「⋯」 in this order — 邮件, 阅读, 转发 — and come back when
+// there is room. 分享成网页报告 / 朗读 / 复制 / 回复 never fold. A folded button stays the real button (keys still reach it).
+const FOLD = ["mailBtn", "readBtn", "fwdBtn"], ACT_MIN = 40;
+function fitBar(){
+  const bar = el("rmbar"), more = el("rmMoreBtn");
+  if (!bar || !more) return;
+  const w = bar.clientWidth;
+  if (!w) return;                                    // not laid out (hidden page): try again on the next resize
+  for (const id of FOLD) el(id).classList.remove("folded");
+  const cs = getComputedStyle(bar), gap = parseFloat(cs.columnGap) || 0;
+  const room = w - (parseFloat(cs.paddingLeft) || 0) - (parseFloat(cs.paddingRight) || 0);
+  const wr = el("webReportBtn"), wrW = wr.hidden ? 0 : 44 + (parseFloat(getComputedStyle(wr).marginLeft) || 0);
+  const live = () => [...bar.querySelectorAll(".act")].filter(b => !b.hidden && !b.classList.contains("folded") && b !== more);
+  const need = (n, withMore) => wrW + (n + (withMore ? 1 : 0)) * ACT_MIN + Math.max(0, n + (withMore ? 1 : 0) - (wrW ? 0 : 1)) * gap;
+  let folded = 0;
+  if (need(live().length, false) > room)
+    for (const id of FOLD){
+      const b = el(id);
+      if (b.hidden) continue;
+      b.classList.add("folded"); folded++;
+      if (need(live().length, true) <= room) break;
+    }
+  more.hidden = !folded;
+  if (!folded) closeBarMore();
+  else if (!el("rmMore").hidden) openBarMore();      // repaint an open popover (states change while it is up)
+}
+function openBarMore(){
+  const pop = el("rmMore"), more = el("rmMoreBtn"), rm = el("rm");
+  const rows = FOLD.map(el).filter(b => b.classList.contains("folded") && !b.hidden).map(b => {
+    const r = document.createElement("button");
+    r.type = "button"; r.setAttribute("role", "menuitem"); r.dataset.for = b.id; r.disabled = b.disabled;
+    const g = [...b.querySelectorAll("svg.g")].find(x => getComputedStyle(x).display !== "none") || b.querySelector("svg");
+    const lab = document.createElement("span"); lab.textContent = b.getAttribute("aria-label") || "";
+    if (g){ const ic = g.cloneNode(true); ic.removeAttribute("class"); ic.setAttribute("aria-hidden", "true"); r.append(ic); }
+    r.append(lab);
+    r.addEventListener("click", e => { e.stopPropagation(); closeBarMore(); b.click(); });
+    return r;
+  });
+  pop.replaceChildren(...rows);
+  pop.hidden = false; more.setAttribute("aria-expanded", "true"); more.classList.add("on");
+  const rr = rm.getBoundingClientRect(), mr = more.getBoundingClientRect();
+  pop.style.left = Math.max(8, Math.min(mr.left - rr.left, rr.width - pop.offsetWidth - 8)) + "px";
+  pop.style.right = "auto";
+}
+function closeBarMore(){
+  const pop = el("rmMore"), more = el("rmMoreBtn");
+  if (!pop || pop.hidden) return;
+  pop.hidden = true; more.setAttribute("aria-expanded", "false"); more.classList.remove("on");
 }
 // P216 (Leo 10-13): 分享成网页报告 — puts the web-page-report skill's command at the front of the field, cursor after it,
 // never sends. The owner may add which part / who should see it, or send it bare and the Agent asks (the skill's own
@@ -1612,6 +1715,7 @@ export async function restoreDraft(){
 function fitViewport(){
   applyViewport();          // P142: follows visualViewport only while the keyboard is up; else full height (iOS resume)
   paintChrome();
+  placeSheet();             // P238: the command card stays on the 5-hour bar
 }
 
 // ---- composer --------------------------------------------------------------------------
@@ -2068,6 +2172,7 @@ export function onSayState(m){
 const CMDS = ["clear", "compact", "model", "context", "cost", "usage", "status", "help", "stop", "update"];
 const CMD_RE = /^\/([A-Za-z][\w:.-]{0,63})(?:[ \t]+([\s\S]*))?$/;
 async function runCmd(cmd, arg = ""){
+  if (cmd === "model") pillDrop();                               // P239: typed /model is immediate; drop a waiting tap
   if (cmd === "clear"){
     if (!await confirmSheet(t('cmd.clearTitle'), t('cmd.clearText'), t('cmd.clearYes'))) return false;
     return C.api.slash("clear", "", true);
@@ -2080,7 +2185,11 @@ async function runCmd(cmd, arg = ""){
 export const PRESETS = ["theme", "cmds"];
 export async function sayPreset(kind){
   if (!PRESETS.includes(kind)) return false;
-  const text = t('p181.prompt.' + kind);
+  return sayWords(t('p181.prompt.' + kind), t('p181.sent.' + kind));
+}
+// P238: one tap on /switch-harness sends it as typed — serve hands it to the main Agent, which lists the harnesses first
+const saySwitch = () => sayWords(SWITCH_CMD, t('p238.sent'));
+async function sayWords(text, done){
   if (C.estopOn()){ toast(t('r.say.stopped'), 3200); return false; }
   if (!C.connected()){ toast(t('p181.offline'), 3000); return false; }
   toNewest();
@@ -2090,7 +2199,7 @@ export async function sayPreset(kind){
   if (!r.ok){ toast(r.why === "stopped" ? t('r.say.stopped') : t('r.say.err.' + (SAY_ERR.includes(r.why) ? r.why : "other")), 3000); return false; }
   if (!C.p33()) C.saidOld(text);
   launchRocket();
-  toast(t('p181.sent.' + kind), 2200);
+  toast(done, 2200);
   return true;
 }
 async function say(){
@@ -2267,6 +2376,16 @@ const MENU_CMD_RE = /^\/[A-Za-z0-9][A-Za-z0-9_:.\-]{0,62}$/;
 const RUN = ["compact", "clear", "model", "context", "cost", "usage", "status", "stop", "update"];
 const runDescription = c => t('r.run.' + c);
 let hostMenu = null;          // {items:[[cmd, desc, group]], skills:[[cmd, desc]]}
+// P238 (Leo 10-13 23:31): the version of the serve this connection talks to (every `preferences` message carries it). The
+// ⬆ row trusts it over a menu answer cached from before an upgrade's restart — the host log showed the phone back on the
+// new 0.20.2a1 serve at 23:29:07 and the row still saying 「0.20.1a1 → 0.20.2a1 · 点击即授权升级」 at 23:31.
+let liveHostVer = null;
+export function hostVersionIs(v){
+  const nv = typeof v === "string" && v ? v.slice(0, 40) : null;
+  if (nv === liveHostVer) return;
+  liveHostVer = nv;
+  if (!menu.hidden) renderMenu();
+}
 // P182: the meeting-notes command (its zh name is in the dictionary; en /meeting-notes): audio in the tray (or the latest recording) → transcript → minutes; addresses written
 // after it get the minutes by e-mail (the host only sends to addresses the owner typed). `all`: the other language's name
 // too, for the type-ahead.
@@ -2275,6 +2394,28 @@ function toolItems(all){
   if (all && cmd !== "/meeting-notes") out.push(["/meeting-notes", t('r.meet.desc'), ""]);
   return out;
 }
+// P238: /switch-harness (ADR-P155) sits among Agent J's one-tap commands (after /customize), with the page's own sentence — the host's list could
+// leave it out (before 0.20.3 an owner command set with `agentj menu add` replaced the whole list), so any host that knows
+// it (0.18.6+) gets it here; an older one never does (there the words would only reach the Agent as text).
+const SWITCH_CMD = "/switch-harness";
+const SWITCH_SINCE = [0, 18, 6];
+function hostAtLeast(v, want){
+  const m = /^(\d+)\.(\d+)\.(\d+)/.exec(typeof v === "string" ? v : "");
+  if (!m) return false;
+  for (let i = 0; i < 3; i++){ const n = +m[i + 1]; if (n !== want[i]) return n > want[i]; }
+  return true;
+}
+// PEP 440 subset the host uses (0.20.2, 0.20.2a1, 0.20.2rc1): -1 / 0 / 1; not understood → NaN (never 「up to date」)
+function verCmp(a, b){
+  const p = v => { const m = /^(\d+)\.(\d+)(?:\.(\d+))?(?:(a|b|rc)(\d+))?$/.exec(typeof v === "string" ? v.trim() : "");
+    return m && [+m[1], +m[2], +(m[3] || 0), {a: 0, b: 1, rc: 2}[m[4]] ?? 3, +(m[5] || 0)]; };
+  const x = p(a), y = p(b);
+  if (!x || !y) return a && a === b ? 0 : NaN;
+  for (let i = 0; i < 5; i++) if (x[i] !== y[i]) return x[i] > y[i] ? 1 : -1;
+  return 0;
+}
+const switchOffered = () => !!hostMenu && (hostMenu.switchHarness || hostAtLeast(hostMenu.upgrade.current, SWITCH_SINCE));
+const switchItems = () => switchOffered() ? [[SWITCH_CMD, t('p238.switch'), ""]] : [];
 let menuItems = [];           // what the type-ahead filters: [cmd, desc, group]
 function insertSlash(cmd){
   const v = input.value;
@@ -2300,7 +2441,9 @@ function menuFromHost(j){
     seen.add(cmd);
     skills.push([cmd, typeof s.desc === "string" ? s.desc.slice(0, MENU_LIMITS.desc) : "", t('r.menu.skills')]);
   }
-  return {items, skills, upgrade: j.upgrade || {}, source: j.source === "file" ? "file" : "default"};
+  const switchHarness = items.some(it => it[0] === SWITCH_CMD);
+  return {items: items.filter(it => it[0] !== SWITCH_CMD), skills: skills.filter(it => it[0] !== SWITCH_CMD), switchHarness,
+          upgrade: j.upgrade && typeof j.upgrade === "object" ? j.upgrade : {}, source: j.source === "file" ? "file" : "default"};
 }
 const IN_APP = / (?:JarvisApp|AgentJApp)\/\d/.test(navigator.userAgent);
 const CLIP_READ = !!(navigator.clipboard && navigator.clipboard.read) && !IN_APP;
@@ -2313,6 +2456,7 @@ function renderMenu(){
     for (const [k, v] of Object.entries(data)) b.dataset[k] = v;
     const n = document.createElement("b"); n.textContent = cmdText;
     const d = document.createElement("span"); d.textContent = desc;
+    if (desc && desc.length > 40) b.title = desc;   // P238: the row shows two lines at most
     b.append(n, d);
     nodes.push(b);
     return b;
@@ -2320,13 +2464,18 @@ function renderMenu(){
   group(t('r.menu.run'));
   for (const c of RUN) {
     if (c !== 'update') { item("/" + c, runDescription(c), {run: c}); continue; }
-    const u = hostMenu?.upgrade || {}, current = u.current || '–', latest = u.latest || '–';
-    const same = u.latest && u.latest === u.current;
-    const desc = t(same ? 'r.update.current' : 'r.update.authorize');
-    const b = item(t('r.update.title'), `${current} → ${latest} · ${desc}`, {run: c});
-    b.disabled = !!same;
+    // P238: the row follows the version on disk — between an upgrade's install and serve's restart (`installed` ≠
+    // `current`) it says so and cannot be tapped; a newer-or-equal copy is 「已是最新」 (a dev build ahead of the release too)
+    const u = {...(hostMenu?.upgrade || {}), ...(liveHostVer ? {current: liveHostVer} : {})};
+    const have = u.installed || u.current, latest = u.latest || '–';
+    const pending = !!(u.installed && u.installed !== u.current && verCmp(u.installed, u.latest) >= 0);
+    const same = !pending && !!u.latest && verCmp(have, u.latest) >= 0;
+    const desc = pending ? t('p238.updRestart', {v: u.installed}) : t(same ? 'r.update.current' : 'r.update.authorize');
+    const b = item(t('r.update.title'), pending ? desc : `${have || '–'} → ${latest} · ${desc}`, {run: c});
+    b.disabled = same || pending;
   }
   item("/customize", t('p181.customize'), {prompt: "cmds"});   // P181: 定制命令 → the preset message (≡ hold does the same)
+  for (const [cmd, why] of switchItems()) item(cmd, why, {}).id = "switchEntry";   // P238: one tap sends it
   const stop = item("■", C.estopOn() ? t('estop.resume') : t('estop.btn'), {estop: C.estopOn() ? "resume" : "stop"});
   stop.classList.add("estopitem");
   // P182: Agent J's own tools — inserted like a menu item (the human adds files / addresses and sends)
@@ -2344,7 +2493,7 @@ function renderMenu(){
     }
   }
   if (host.skills.length){ group(t('r.menu.skills')); for (const [cmd, why] of host.skills) item(cmd, why, {slash: cmd}); }
-  menuItems = RUN.map(c => ["/" + c, runDescription(c), ""]).concat([["/customize", t('p181.customize'), ""]], toolItems(true), fromHost, host.skills);
+  menuItems = RUN.map(c => ["/" + c, runDescription(c), ""]).concat([["/customize", t('p181.customize'), ""]], toolItems(true), switchItems(), fromHost, host.skills);
   const k = item("?", t('r.keys.title'), {});
   k.className = "keysentry"; k.id = "keysEntry";
   if (CLIP_READ){ const c = item("📋", t('r.menu.clip'), {}); c.className = "clipentry"; c.id = "clipEntry"; }
@@ -2367,9 +2516,70 @@ async function loadMenu(){
   const j = await C.api.menu();
   if (!j) return;
   hostMenu = menuFromHost(j);
-  renderMenu();
+  renderMenu(); placeSheet();
 }
-function closeMenu(){ menu.hidden = true; }
+function closeMenu(){ menu.hidden = true; delete el("menuSheet").dataset.drag; el("menuSheet").style.transform = ""; sheetDrag = null; }
+// P238: the list is a card rising from the 5-hour bar (menu.css .cmdsheet): its bottom edge on the bar, its left / width those
+// of the tool row (so it lines up with ≡ on a phone and with the composer on a wide screen), at most 60 % of what is visible.
+function placeSheet(){
+  if (menu.hidden) return;
+  const box = menu.getBoundingClientRect(), bar = el("m5h"), row = el("tools");
+  const lab = bar && bar.querySelector(".lab");   // its 「5H 64%」 label sits above the line: the card stops above both
+  let edge = bar && bar.getClientRects().length ? Math.min(bar.getBoundingClientRect().top, lab && lab.getClientRects().length ? lab.getBoundingClientRect().top : Infinity) : 0;
+  if (!(edge > box.top)) edge = menu.parentElement.getBoundingClientRect().top;
+  const r = row && row.getClientRects().length ? row.getBoundingClientRect() : {left: 8, width: box.width - 16};
+  const gap = 8, w = Math.min(r.width, 480), room = edge - box.top - gap - Math.max(gap, parseFloat(getComputedStyle(menu).paddingTop) || 0);   // below the notch
+  menu.style.setProperty("--sheet-bottom", Math.max(0, box.bottom - edge + gap) + "px");
+  menu.style.setProperty("--sheet-left", Math.max(gap, r.left) + "px");
+  menu.style.setProperty("--sheet-w", Math.max(0, Math.min(w, box.width - 2 * gap)) + "px");
+  menu.style.setProperty("--sheet-max", Math.max(160, Math.min(box.height * 0.6, room)) + "px");
+}
+function openMenu(){
+  if (!menu.hidden) return;
+  closeSug();
+  menu.hidden = false;
+  el("menuBody").scrollTop = 0;
+  placeSheet(); renderMenu(); loadMenu();
+}
+function toggleMenu(){ if (menu.hidden) openMenu(); else closeMenu(); }
+// Pull-down: a drag that starts on the grab / header, or on the list while it is at its top, moves the card; past 64 px (or a
+// quick flick) it slides away. Every touch inside stays inside (the reply cards underneath never page sideways).
+let sheetDrag = null;
+function sheetTouch(){
+  const sheet = el("menuSheet"), body = el("menuBody");
+  sheet.addEventListener("touchstart", e => {
+    if (e.touches.length !== 1){ sheetDrag = null; return; }
+    const tt = e.touches[0];
+    sheetDrag = {y: tt.clientY, x: tt.clientX, t: performance.now(), dy: 0, on: false,
+                 top: !body.contains(e.target) || body.scrollTop <= 0};
+  }, {passive: true});
+  sheet.addEventListener("touchmove", e => {
+    e.stopPropagation();
+    const d = sheetDrag; if (!d || e.touches.length !== 1) return;
+    const tt = e.touches[0], dy = tt.clientY - d.y, dx = tt.clientX - d.x;
+    if (!d.on){
+      if (Math.abs(dx) > Math.abs(dy)){ if (e.cancelable) e.preventDefault(); return; }   // never sideways
+      if (!(d.top && dy > 6 && (body.scrollTop <= 0 || !body.contains(e.target)))) return;
+      d.on = true; d.y = tt.clientY; sheet.dataset.drag = "on";
+    }
+    if (e.cancelable) e.preventDefault();
+    d.dy = Math.max(0, tt.clientY - d.y);
+    sheet.style.transform = `translateY(${d.dy}px)`;
+  }, {passive: false});
+  const end = () => {
+    const d = sheetDrag; sheetDrag = null;
+    if (!d || !d.on) return;
+    const quick = d.dy > 24 && d.dy / Math.max(1, performance.now() - d.t) > 0.6;
+    sheet.style.transform = "";
+    if (d.dy > 64 || quick){ sheet.dataset.drag = "off"; setTimeout(closeMenu, 180); }
+    else { sheet.dataset.drag = "back"; setTimeout(() => { if (sheet.dataset.drag === "back") delete sheet.dataset.drag; }, 200); }
+  };
+  sheet.addEventListener("touchend", end);
+  sheet.addEventListener("touchcancel", end);
+  // the scrim: a tap closes, a drag does nothing at all (no page scroll, no card paging behind it)
+  menu.addEventListener("touchmove", e => { if (!sheet.contains(e.target) && e.cancelable) e.preventDefault(); }, {passive: false});
+  menu.addEventListener("click", e => { if (e.target === menu) closeMenu(); });
+}
 // Type-ahead: a "/" at the very start of the field opens the list, filtered as you type (prefix matches first).
 let sugList = [], sugAt = 0, sugDismissed = null, sugLoading = false, sugLoadedAt = 0;
 const SLASH_RE = /^[/\uff0f]([^\s]*)$/;
@@ -3317,6 +3527,9 @@ export function init(ctx){
   initUsage();   // P207 §1
   setInterval(renderSub, 30000);
   pressable(el("meta"), e => pillStep(pillHalf(e)), pillDefault);   // @ix app.model_step app.effort_step app.model_default
+  // P239: a pick still waiting its 5 s is sent when the page is left (background, app switch, close), not lost.
+  document.addEventListener("visibilitychange", () => { if (document.visibilityState === "hidden") pillFlush(); });
+  addEventListener("pagehide", pillFlush);
   // P207 (追加 2): the logo — tap = the page's type size (unchanged), hold = the first unread reply (was: back to 中, which Leo
   // found did nothing; 中 is one more tap away and Settings keeps the reset)
   pressable(el("orb"), () => setFz((fzAt + 1) % FZ_STEPS.length, true), () => goFirstUnread(true));   // @ix app.font_step page.first_unread
@@ -3337,6 +3550,11 @@ export function init(ctx){
   el("copyReply").addEventListener("click", copyReply);   // @ix card.copy
   el("replyBtn").addEventListener("click", () => startReply(currentPage()));   // @ix card.reply
   el("webReportBtn").addEventListener("click", () => webReport(currentPage()));   // P216 @ix card.web_report
+  // P238: 「⋯」 on a narrow card; a tap anywhere else, Esc or a page turn closes its popover
+  el("rmMoreBtn").addEventListener("click", e => { e.stopPropagation(); if (el("rmMore").hidden) openBarMore(); else closeBarMore(); });
+  document.addEventListener("click", e => { if (!(e.target.closest && e.target.closest("#rmMore"))) closeBarMore(); });
+  document.addEventListener("keydown", e => { if (e.key === "Escape" && !el("rmMore").hidden){ e.stopPropagation(); closeBarMore(); el("rmMoreBtn").focus(); } }, true);
+  try{ new ResizeObserver(() => fitBar()).observe(el("rmbar")); }catch(_){}
   for (const id of ["qbX", "qbJump"]) el(id).addEventListener("pointerdown", e => e.preventDefault());
   el("qbX").addEventListener("click", cancelReply);   // @ix compose.cancel_reply
   el("qbJump").addEventListener("click", () => { if (replyTo) jumpToTurn(replyTo.id); });
@@ -3559,9 +3777,11 @@ export function init(ctx){
   // menu + type-ahead
   renderMenu();
   el("slashBtn").addEventListener("click", e => {   // @ix compose.slash
-    e.stopPropagation(); menu.hidden = !menu.hidden;
-    if (!menu.hidden){ closeSug(); renderMenu(); loadMenu(); }
+    e.stopPropagation(); toggleMenu();
   });
+  sheetTouch();
+  // the 5-hour bar's label appears / changes with the first reading, the composer grows with the text: keep the card on it
+  try{ const ro = new ResizeObserver(() => placeSheet()); ro.observe(el("m5h")); const lab = el("m5h").querySelector(".lab"); if (lab) ro.observe(lab); ro.observe(menu.parentElement); }catch(_){}
   document.addEventListener("click", e => { if (!menu.hidden && !(e.target.closest && e.target.closest("#menu, #keys, #silent"))) closeMenu(); });
   // P181 long presses: ≡ → 「定制命令」, file → clipboard text, photo → clipboard image (camera: nothing for now)
   longPress(el("slashBtn"), () => { closeMenu(); sayPreset("cmds"); });   // @ix compose.customize
@@ -3577,6 +3797,7 @@ export function init(ctx){
     if (b.id === "keysEntry"){ openKeys(); return; }
     if (b.id === "appEntry"){ closeMenu(); location.href = / AgentJApp\//.test(navigator.userAgent) ? "agentj-app://status" : "jarvis-app://status"; return; }
     if (b.id === "clipEntry"){ closeMenu(); pasteClipImages(); return; }
+    if (b.id === "switchEntry"){ closeMenu(); saySwitch(); return; }
     if (b.dataset.run){ closeMenu(); if (await runCmd(b.dataset.run)) { toNewest(); toast(t('r.run.sent', {cmd: "/" + b.dataset.run}), 1600); } return; }
     if (b.dataset.prompt){ closeMenu(); sayPreset(b.dataset.prompt); return; }
     if (b.dataset.estop){ closeMenu(); C.estop(b.dataset.estop === "stop"); return; }
@@ -3765,7 +3986,7 @@ export function init(ctx){
   const scrollStep = () => Math.max(40, Math.round(mainEl.clientHeight * 0.25));
   const scrollScreen = () => Math.max(40, Math.round(mainEl.clientHeight * 0.9));
   const pick = id => { closeMenu(); el(id).click(); };
-  const shown = id => { const b = el(id); return !!b && !b.hidden && !b.disabled && b.getClientRects().length > 0; };
+  const shown = id => { const b = el(id); return !!b && !b.hidden && !b.disabled && (b.getClientRects().length > 0 || b.classList.contains("folded")); };   // P238: folded into 「⋯」 still counts
   // 「这一页的文件」: the file card that has the focus, else the first one of this page; its own icon does the rest.
   const fileAct = cls => {
     const fc = document.activeElement?.closest?.(".mcard") || el("words").querySelector(".mcard") || el("mstrip")?.querySelector(".mcard");
@@ -3967,7 +4188,7 @@ document.addEventListener('keydown',e=>{
   const combo=[e.ctrlKey?'ctrl':null,e.altKey?'alt':null,e.shiftKey?'shift':null,e.metaKey?'meta':null,e.key.toLowerCase()].filter(Boolean).join('+');
   const binding=(userPreferences.keyboard?.bindings||[]).find(x=>x.combo===combo);
   if(!binding)return;
-  const fn={'open-menu':()=>{menu.hidden=!menu.hidden;},'read-reply':speakTap,'stop-speech':()=>speaker?.stop(),'focus-input':()=>input?.focus(),'interrupt':()=>C.api.slash('stop')}[binding.action];
+  const fn={'open-menu':toggleMenu,'read-reply':speakTap,'stop-speech':()=>speaker?.stop(),'focus-input':()=>input?.focus(),'interrupt':()=>C.api.slash('stop')}[binding.action];
   if(fn){e.preventDefault();e.stopImmediatePropagation();fn();}
 },true);
 

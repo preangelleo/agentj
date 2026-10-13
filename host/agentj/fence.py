@@ -556,7 +556,7 @@ def wrap(st, argv: list[str], workdir: str, allow_docker: bool = False) -> list[
 
 REASONS = {
     "unsupported_os": "这个系统上还没有 Agent 隔离（支持 Linux 与 macOS；Windows 请用 WSL2）",
-    "no_bwrap": "没找到 bubblewrap（bwrap），Agent 隔离起不来：装上它（apt / dnf / pacman install bubblewrap）",
+    "no_bwrap": "没找到 bubblewrap（bwrap），Agent 隔离起不来：在电脑上装上它（Ubuntu / Debian / WSL：sudo apt-get install -y bubblewrap socat；其它：dnf / pacman install bubblewrap）",
     "apparmor_userns": "bubblewrap 起不来且 AppArmor userns 限制开启；请用 agentj doctor 查看仅 /usr/bin/bwrap 的修法",
     "bwrap_failed": "bubblewrap 起不来（多半是系统禁止了非特权用户命名空间，或在容器里），Agent 隔离起不来",
     "no_sandbox_exec": "这台 Mac 上没有 /usr/bin/sandbox-exec，Agent 隔离起不来",

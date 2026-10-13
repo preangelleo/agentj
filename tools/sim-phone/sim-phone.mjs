@@ -154,6 +154,7 @@ export async function launch(bin, profileDir) {
   await p.send('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 2, mobile: true });
   const page = {
     goto: (url) => p.send('Page.navigate', { url }),
+    send: (method, params) => p.send(method, params),        // P220: screenshots of the phone for e2e reports
     eval: async (expr) => {
       const r = await p.send('Runtime.evaluate', { expression: expr, awaitPromise: true, returnByValue: true });
       if (r.exceptionDetails) throw new Error('page: ' + (r.exceptionDetails.exception?.description || r.exceptionDetails.text));
@@ -257,7 +258,7 @@ async function run(a) {
     const askResults = new Map();
     let lastAgent = base.agent, answered = false, gotReply = false, sawWork = false, quietSince = 0;
     if (a.send !== undefined) {
-      await page.eval(`(() => { const t = document.querySelector('#msg-input'); t.focus(); t.value = ${JSON.stringify(a.send)};
+      await page.eval(`(() => { const t = document.querySelector('#input'); t.focus(); t.value = ${JSON.stringify(a.send)};
         t.dispatchEvent(new Event('input', { bubbles: true })); document.querySelector('#send').click(); return true; })()`);
       out(`SENT ${oneLine(a.send)}`);
     }

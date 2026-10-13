@@ -113,7 +113,7 @@ class State:
     @property
     def perm_sock_path(self): return self.perm_dir / "perm.sock"   # serve ↔ the agent's permission tool (PROTOCOL §8), 0600
     @property
-    def approver_path(self): return self.root / "approver.json"   # approval passphrase: scrypt hash + failure ledger (L2)
+    def approver_path(self): return self.root / "approver.json"   # remote pairing password: scrypt hash + failure ledger (L2)
     @property
     def approvals_path(self): return self.root / "approvals.log"   # one line per approval decision, signed, no tool input
     @property
@@ -608,7 +608,7 @@ class State:
                 "approvals": {"strict": "strict", "native": "native"}.get(preferences.get(prefs, "agent.approvals", "standard"), "standard")}
 
     def set_agent_config(self, kind: str | None, directory: str | None = None, model: str | None = None,
-                         fence: bool = True, docker: bool = False) -> None:
+                         fence: bool = True, docker: bool = False, effort: str | None = None) -> None:
         with self.config_lock():
             cfg = self.config()
             if kind is None:
@@ -624,6 +624,8 @@ class State:
                     if d == p or d.startswith(p.rstrip(os.sep) + os.sep):
                         raise ValueError("protected_dir")
                 cfg["agent"] = {"kind": kind, "dir": d, "model": model or None, "fence": bool(fence)}
+                if effort:                         # P219: the default (or the owner's earlier) effort survives `agentj agent`
+                    cfg["agent"]["effort"] = effort
                 if docker:
                     cfg["agent"]["docker"] = True
             _write_private(self.config_path, json.dumps(cfg, indent=1, ensure_ascii=False).encode())

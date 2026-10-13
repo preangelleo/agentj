@@ -64,9 +64,10 @@ class Precheck(Base):
         self.assertEqual(c["account_url"], cloud.app_url(self.st))
         zh, en = pairprep.message(c, "zh"), pairprep.message(c, "en")
         self.assertIn("添加遥控器", zh)
-        self.assertIn("可选", zh)
+        self.assertIn("遥控器配对密码", zh)      # P221: the account page takes it too; the terminal needs it
+        self.assertIn("会先请你设一个", zh)
         self.assertIn(c["account_url"], zh)
-        self.assertIn("optional", en)
+        self.assertIn("asks you to set one first", en)
         gate.set_passphrase(self.st, PASS)
         self.assertEqual(pairprep.precheck(self.st, relay_up=True)["route"], "account", "passkey route stays the default")
 
@@ -147,19 +148,20 @@ class Terminal(Base):
         return code, out.getvalue(), err.getvalue()
 
     def test_bound_online_pairs_without_forcing_a_passphrase(self):
+        """P221 (Leo 10-13) reverses this: pairing at the terminal needs the remote pairing password. Without a terminal to
+        set it in (a pipe, an Agent's shell), `agentj pair` stops before any link and says where to go."""
         self.bind()
         fs = FakeServe(self.st)
         try:
             code, out, err = self.run_pair()
         finally:
             fs.close()
-        self.assertIn(code, (0, None), out + err)
-        self.assertFalse(gate.is_set(self.st), "no passphrase was set")
-        self.assertNotIn("配对前先设置批准口令", out)
-        self.assertIn(cloud.app_url(self.st), out)
-        self.assertIn("可选", out)
-        self.assertIn("✓ 已批准", out)
-        self.assertEqual(fs.sent, [], "with no passphrase the terminal never asks for / sends a code: the account page approves")
+        self.assertNotIn(code, (0, None), out + err)
+        self.assertFalse(gate.is_set(self.st), "never set from a pipe")
+        self.assertIn("还没设遥控器配对密码", str(code) + err)
+        self.assertIn(cloud.app_url(self.st), str(code) + err)
+        self.assertNotIn("m.agentj.app/#p=", out, "no link before the password exists")
+        self.assertEqual(fs.sent, [])
 
     def test_unbound_is_refused_before_any_link(self):
         fs = FakeServe(self.st)

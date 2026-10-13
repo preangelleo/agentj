@@ -890,8 +890,8 @@
           "combo": "Alt+M"
         }
       ],
-      "zh": "换下一个模型",
-      "en": "Switch to the next model",
+      "zh": "换下一个模型（只改显示，停手 5 秒才生效）",
+      "en": "Switch to the next model (shown at once, applied after 5 s without another tap)",
       "gesture_zh": "点模型名",
       "gesture_en": "Tap the model name"
     },
@@ -916,8 +916,8 @@
           "combo": "Alt+R"
         }
       ],
-      "zh": "换下一档思考强度",
-      "en": "Switch to the next effort level",
+      "zh": "换下一档思考强度（只改显示，停手 5 秒才生效）",
+      "en": "Switch to the next effort level (shown at once, applied after 5 s without another tap)",
       "gesture_zh": "点思考强度",
       "gesture_en": "Tap the effort level"
     },
@@ -942,8 +942,8 @@
           "combo": "Alt+Shift+M"
         }
       ],
-      "zh": "模型和思考强度都回到默认",
-      "en": "Back to the default model and effort",
+      "zh": "模型和思考强度都回到默认（立即生效）",
+      "en": "Back to the default model and effort (at once)",
       "gesture_zh": "长按模型或思考强度",
       "gesture_en": "Hold the model or the effort"
     },

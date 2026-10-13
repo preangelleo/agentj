@@ -26,5 +26,5 @@ test('P76 update signature binds channel device nonce and latest target; menu au
  const b=await controlMessage('other-host','phone','update','ab'.repeat(16),123,{});
  assert.equal(await crypto.subtle.verify('Ed25519',key.publicKey,sig,b),false);
  const ui=readFileSync(new URL('../public/js/relay.js',import.meta.url),'utf8');
- assert.ok(ui.includes("t('r.update.title')"));assert.ok(ui.includes('b.disabled = !!same'));
+ assert.ok(ui.includes("t('r.update.title')"));assert.ok(ui.includes('b.disabled = same || pending'));   // P238: also not tappable while installed-but-not-restarted
 });

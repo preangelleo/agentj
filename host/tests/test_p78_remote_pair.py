@@ -135,11 +135,13 @@ class HandoverRoute(unittest.TestCase):
         for lang,term in [("zh","通行密钥"),("en","passkey")]:
             text=handover.note(f,lang)
             self.assertLess(text.index(term),text.index("agentj pair"))
-            self.assertIn("不需要在终端设置批准口令" if lang=="zh" else "No terminal approval passphrase is required",text)
+            # P221: the account page takes a passkey or the remote pairing password; the terminal needs the password
+            self.assertIn("或这台电脑的遥控器配对密码" if lang=="zh" else "or this computer’s remote pairing password",text)
+            self.assertIn("会先请你设一个" if lang=="zh" else "asks you to set one first",text)
             self.assertIn("agentj pair --link",text)
     def test_unbound_handover_still_explains_local_approval(self):
         from agentj import handover
         f={"set_up":True,"name":"Desk","account":None,"phones":0,"agent":None,"folder":None,"web":"https://m.agentj.app","account_url":"https://agentj.app/account","service":None}
         text=handover.note(f,"en")
-        self.assertNotIn("No terminal approval passphrase is required",text)
-        self.assertIn("then your approval passphrase",text)
+        self.assertNotIn("this computer’s remote pairing password) and scan",text)
+        self.assertIn("then your remote pairing password",text)

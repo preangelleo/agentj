@@ -37,7 +37,10 @@ try {
     const id = (lang === 'zh' ? 'a' : 'd') + String(w).padEnd(31, '0').slice(0, 31);
     await fake.send(card(id.replace(/[^0-9a-f]/g, '0')));
     await waitFor(p, `!!document.getElementById('lqr') && !document.getElementById('lqr').hidden`, 8000);
+    // P240: the card rises in; under a loaded full parity run 150 ms was not always enough, so wait for the settled buttons
+    // (still asserted ≥ 56 px below — a card whose buttons never reach that times out here instead)
     await sleep(150);
+    await waitFor(p, `[...document.querySelectorAll('#lqr .lqr-acts .aj-btn')].filter(b => !b.hidden).every(b => b.getBoundingClientRect().height >= 56)`, 5000).catch(() => {});
     const lay = await evaluate(p, `({over: document.documentElement.scrollWidth > innerWidth + 1, src: document.getElementById('lqr-img').src.slice(0, 22),
       btns: [...document.querySelectorAll('#lqr .lqr-acts .aj-btn')].filter(b => !b.hidden).map(b => Math.round(b.getBoundingClientRect().height)),
       fw: [...document.querySelectorAll('#lqr .lqr-acts .aj-btn')].filter(b => !b.hidden).every(b => b.getBoundingClientRect().width > 200),

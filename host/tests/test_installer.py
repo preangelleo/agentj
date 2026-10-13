@@ -10,7 +10,7 @@ class OwnerIssuerTests(unittest.TestCase):
   def opener(req,timeout):requests.append(req);return io.BytesIO(json.dumps(self.value()).encode())
   with tempfile.TemporaryDirectory() as d,patch.dict(os.environ,{'INSTALL_ASSISTANT_OWNER_ISSUER_TOKEN':'fixture-owner-issuer'}):
    out=Path(d)/'code.json';installer.issue_owner(out,opener=opener)
-   self.assertEqual(out.stat().st_mode & 0o777,0o600);self.assertEqual(set(json.loads(out.read_text())),{'code','expires_at','quota_usd','command'})
+   self.assertEqual(out.stat().st_mode & 0o777,0o600);self.assertEqual(set(json.loads(out.read_text())),{'code','expires_at','quota_usd','command','command_windows'})  # P220: + the Windows one-liner
    request_id=json.loads(requests[0].data)['entitlement_id'];out.unlink();installer.issue_owner(out,opener=opener)
    self.assertEqual(request_id,json.loads(requests[1].data)['entitlement_id']);self.assertEqual(requests[0].get_header('Authorization'),'Bearer fixture-owner-issuer')
  def test_limits_and_parent_permissions_fail_closed(self):

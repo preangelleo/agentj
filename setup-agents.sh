@@ -51,6 +51,7 @@ fi
 if ((DRY)); then
   printf 'PLAN: ensure curl, git, certificates, build tools, Python 3.11+, Node.js 22+ and npm; registry %s\n' "$REGISTRY"
   [[ $OS != Darwin ]] || printf 'PLAN: Homebrew shellenv in zprofile/bash_profile (Intel /usr/local, Apple Silicon /opt/homebrew)\n'
+  [[ $OS != Linux ]] || printf 'PLAN: Agent isolation: bubblewrap + socat (apt-get when available, else the exact command)\n'
   printf 'PLAN: install missing CLIs: %s; user-owned npm prefix; PATH before bashrc early-return\n' "$SELECT"
   printf 'PLAN: full-access=%s; back up and merge configs, 0600, refuse symlinks/JSONC; Gemini launcher only when explicitly selected; personal login discontinued, paid Gemini API key required\n' "$FULL"
   printf 'PLAN: relay=%s; probe official services; official AgentsRelay --paste --only --no-launch verifies real model BEFORE CLI install, 3 attempts; Gemini unsupported\n' "$RELAY"
@@ -83,6 +84,17 @@ else
   printf 'Automatic dependencies support macOS/Homebrew and Debian/Ubuntu/WSL only. See %s#dependencies\n' "$PAGE" >&2; exit 2
 fi
 python3 -c 'import sys; sys.exit(0 if sys.version_info >= (3,11) else 1)' || { printf 'Install Python 3.11+; see %s#dependencies\n' "$PAGE"; exit 1; }
+STEP=isolation
+# P219: Agent J runs the phone's Agent inside bubblewrap; without it (stock WSL2 Ubuntu) every start waits for an owner passkey
+# on the phone. socat is what Claude Code's own sandbox needs next to it. Installed here, never silently skipped.
+if [[ $OS == Linux ]] && { ! command -v bwrap >/dev/null 2>&1 || ! command -v socat >/dev/null 2>&1; }; then
+  if command -v apt-get >/dev/null 2>&1 && { [[ $(id -u) == 0 ]] || sudo -n true 2>/dev/null || has_tty; }; then
+    printf 'Agent isolation: installing bubblewrap and socat.\n'
+    root_run apt-get install -y --no-install-recommends bubblewrap socat || printf 'Could not install them. Run: sudo apt-get install -y bubblewrap socat\n'
+  else
+    printf 'Agent isolation needs bubblewrap and socat. Run: sudo apt-get install -y bubblewrap socat (Fedora: sudo dnf install -y bubblewrap socat; Arch: sudo pacman -S bubblewrap socat). See %s#isolation\n' "$PAGE"
+  fi
+fi
 STEP=agentsrelay
 RELAY_OK=0
 if [[ $RELAY == ask ]]; then
@@ -350,8 +362,19 @@ if sys.argv[4]=='1':
         added=[v for k,v in definitions.items() if k in selected and v not in lines]
         if added: write(p,old+('\n' if old and not old.endswith('\n') else '')+'\n'.join(added)+'\n')
     if 'claude' in selected: print('cc alias shadows the interactive C compiler; use command cc for the compiler, or rename to ccx.')
+if 'claude' in selected:
+    # P219: Claude Code's one-time terminal screens (onboarding / theme, bypass-mode confirmation) answered ahead, so a
+    # background session never waits at a terminal nobody sees. Merge only; folder trust is `agentj agent claude --dir`.
+    def first_run(d):
+        if d.get('hasCompletedOnboarding') is not True: d['hasCompletedOnboarding']=True
+        d.setdefault('theme','dark')
+    merge(home/'.claude.json',first_run)
+    merge(home/'.claude/settings.json',lambda d:d.setdefault('skipDangerousModePermissionPrompt',True))
 if full:
-    if 'claude'  in selected:
+    if 'claude' in selected and os.geteuid()==0:
+        # Claude Code refuses bypassPermissions for root and exits before its first word (P219, measured 2.1.296)
+        print('root: Claude Code refuses bypassPermissions for root; left at its default mode. Use a normal user for full access.')
+    elif 'claude' in selected:
         merge(home/'.claude/settings.json',lambda d:d.setdefault('permissions',{}).update(defaultMode='bypassPermissions'))
     if 'opencode' in selected:
         p=pathlib.Path(os.environ.get('XDG_CONFIG_HOME',str(home/'.config')))/'opencode/opencode.json'
@@ -432,7 +455,7 @@ EXTRACT_CODE
     curl --proto '=https' --proto-redir '=https' --connect-timeout 10 --max-time 90 -fsSL https://agentj.app/install-assistant.sh -o "$AJTMP/install-assistant.sh"
     python3 - "$AJTMP/install-assistant.sh" <<'VERIFY_INSTALLER'
 import hashlib,pathlib,sys
-if hashlib.sha256(pathlib.Path(sys.argv[1]).read_bytes()).hexdigest() != '4947da78e3c47a6bd7c07f8cf58f53d0ac04cb111ecae57f923be64198ec4fb8':
+if hashlib.sha256(pathlib.Path(sys.argv[1]).read_bytes()).hexdigest() != '437c5687169d3d121403f3d5bdefa8156850a5be2fff02269299cfe0fbdae05a':
     sys.exit('Installer integrity check failed')
 VERIFY_INSTALLER
     sh "$AJTMP/install-assistant.sh" "$INSTALL_CODE" </dev/tty

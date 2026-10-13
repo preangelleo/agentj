@@ -155,10 +155,10 @@ KIND = {"zh": {"computer": "这台电脑的浏览器", "phone": "主力手机", 
         "en": {"computer": "this computer's browser", "phone": "the main phone", "other": "remote"}}
 
 HOW = {
-    "zh": {"computer": "已绑定账号时，在账户页这台电脑的席位卡点「添加遥控器」，用通行密钥确认一次，无需设置批准口令（未绑定时运行 agentj admin），用这台电脑的浏览器打开 https://m.agentj.app 扫码或粘贴配对链接",
+    "zh": {"computer": "已绑定账号时，在账户页这台电脑的席位卡点「添加遥控器」，用通行密钥或这台电脑的遥控器配对密码确认（终端里配对用 agentj pair，会先请你设遥控器配对密码；本机管理页 agentj admin 也能扫码），用这台电脑的浏览器打开 https://m.agentj.app 扫码或粘贴配对链接",
            "phone": "手机打开 https://m.agentj.app，先添加到主屏幕，在账户页这台电脑的席位卡点「添加遥控器」，用通行密钥确认后显示二维码，用主屏幕图标里的「扫二维码」扫",
            "seat": "这台电脑还没加进 Agent J 账号的席位：在账号页空席位上「复制安装提示词」拿设置码，交给我用 agentj login --seat-file 激活"},
-    "en": {"computer": "on a bound host, choose Add a remote on its account-page seat card and confirm with a passkey; no terminal passphrase needed (unbound: agentj admin) and open https://m.agentj.app in this computer's browser to scan or paste the pairing link",
+    "en": {"computer": "on a bound host, choose Add a remote on its account-page seat card and confirm with a passkey or this computer's remote pairing password (pairing at the terminal: agentj pair asks you to set that password first; the local agentj admin page also shows a QR) and open https://m.agentj.app in this computer's browser to scan or paste the pairing link",
            "phone": "open https://m.agentj.app on the phone, add it to the Home Screen, choose Add a remote on its account-page seat card, confirm with a passkey and use Scan QR code inside the Home Screen icon",
            "seat": "this computer is not in an Agent J seat yet: copy the installation prompt on an empty seat in the account page and give me the setup code for agentj login --seat-file"},
 }
@@ -349,10 +349,10 @@ def doctor_row(st) -> tuple[str, str, str]:
     from . import pairprep   # P127: the same pairing pre-check as `agentj pair --check` / the admin page
     if s["seat"]:
         chk = pairprep.precheck(st)
-        hint = ("账户页席位卡 → 添加遥控器 → 通行密钥确认 → 扫码 / account seat card → Add a remote → passkey → scan; no terminal passphrase"
+        hint = ("账户页席位卡 → 添加遥控器 → 通行密钥确认 → 扫码 / account seat card → Add a remote → passkey or remote pairing password → scan"
                 if chk["route"] == "account" else pairprep.both(chk).replace("\n", " / "))
     else:       # P185: an unbound host cannot pair at all — binding the seat comes first
-        hint += "  (先绑定席位才能配对遥控器；绑定后不需要批准口令 / bind the seat before pairing; no passphrase is needed after binding)"
+        hint += "  (先绑定席位才能配对遥控器 / bind the seat before pairing)"
     return "warn", summary, hint
 
 

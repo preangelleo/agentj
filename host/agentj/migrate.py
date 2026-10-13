@@ -2,7 +2,7 @@
 
 Runs at the start of every `agentj` command that opens state (cli.main → auto()), `serve` included — so a service unit
 written by 0.9 that now starts the new code moves its own state before it binds the control socket. Rules (never lose a
-key, a paired device, the approval passphrase or a log):
+key, a paired device, the remote pairing password or a log):
   * only when neither AGENTJ_STATE_DIR nor AGENTJARVIS_STATE_DIR is set, the old path is a real directory and the new path
     does not exist;
   * never while a serve is running on the old directory (its control socket answers): then the old directory stays in use
@@ -301,7 +301,7 @@ def _move(old, new, out=None) -> str:
     rec = read_record(st)
     rec.update({"v": 1, "migrated_from": str(old), "at": int(time.time()), "version": __version__, "symlink": link})
     _write_record(st, rec)
-    _say(f"Agent J：状态目录已搬到 {tilde(new)}（密钥、已配对的手机、批准口令、记录都在；旧路径 {tilde(old)} 留了一个指向它的链接）。"
+    _say(f"Agent J：状态目录已搬到 {tilde(new)}（密钥、已配对的手机、遥控器配对密码、记录都在；旧路径 {tilde(old)} 留了一个指向它的链接）。"
          f"撤销：agentj migrate rollback / the state directory moved to {tilde(new)}; the old path is a link to it", out)
     return "moved"
 

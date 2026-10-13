@@ -147,7 +147,7 @@ class PairExits(unittest.TestCase):
 
     def test_device_gone_at_the_passphrase_prompt_exits_and_gives_the_echo_back(self):
         status, out, secs, echo = self.pair({"ev": "gone"}, typed=b"123456\r")
-        self.assertIn("批准口令", out, "reached the passphrase prompt (getpass: echo off)")
+        self.assertIn("遥控器配对密码", out, "reached the password prompt (getpass: echo off)")
         self.assertIsNotNone(status, f"agentj pair hung at the passphrase prompt ({secs:.1f} s):\n{out}")
         self.assertNotEqual(status, 0, out)
         self.assertIn("手机断开了", out)

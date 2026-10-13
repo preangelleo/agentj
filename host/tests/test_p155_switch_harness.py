@@ -291,6 +291,15 @@ class Job(unittest.TestCase):
         self.assertEqual(self.run_job(st, fake, "codex", "gpt-6"), 0)    # a model named now wins
         self.assertEqual(st.agent_config()["model"], "gpt-6")
 
+    def test_p219_switching_to_claude_without_a_model_gets_opus_medium(self):
+        st = mk_state(self.tmp.name, "codex")
+        fake = FakeServe(st, "codex")
+        seen = []
+        self.assertEqual(self.run_job(st, fake, "claude", probe=fake_probe(seen=seen)), 0)
+        cfg = st.agent_config()
+        self.assertEqual((cfg["kind"], cfg["model"], cfg["effort"]), ("claude", "claude-opus-5-5", "medium"))
+        self.assertEqual(seen, [(("claude",), "claude-opus-5-5")])
+
     def check_rolled_back(self, st, raw_before, fake, reason):
         self.assertEqual(st.config()["agent"], raw_before)          # the previous entry, byte for byte (model, effort)
         self.assertEqual(fake.restarts, 2)
@@ -443,7 +452,7 @@ class Request(unittest.TestCase):
         self.assertIn("--scan", self.launched[0])
         self.assertEqual([(h["name"], h["callable"]) for h in r["harnesses"]], [("claude", False), ("codex", True), ("opencode", False)])
         self.assertEqual(r["current"], "claude")
-        self.assertEqual(asked, [(("claude",), None), (("codex",), None), (("opencode",), "p66dqa/gpt-6")])  # its own model
+        self.assertEqual(asked, [(("claude",), "claude-opus-5-5"), (("codex",), None), (("opencode",), "p66dqa/gpt-6")])  # its own model; P219: Claude's default
         zh = sw._say_scan(r, "zh")
         self.assertIn("现在能切到：Codex", zh)
         self.assertIn("没装", zh)

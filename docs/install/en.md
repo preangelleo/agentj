@@ -1,17 +1,243 @@
 ---
 title: Installing Agent J
 nav: Installing
-summary: Send one sentence to the AI on your computer and it sets everything up; this page explains each step and the few you do yourself.
+summary: Pick your computer (Windows, macOS, Linux), then one way to install: one command yourself, the AI on your computer, the cloud installation assistant, or a helper.
 order: 2
 ---
 
 # Installing Agent J
 
-## The one thing you do
+All four ways install the same Agent J, and afterwards you talk to it from your phone. Not sure? Choose ①.
 
-Open your AI coding tool on the computer (Claude Code, Codex or OpenCode) and send it this sentence, exactly as written:
+## Windows {#windows}
+
+For Windows 10 and Windows 11 (64-bit). Agent J runs in Ubuntu inside Microsoft's Linux subsystem (WSL2); the install command sets that up first, so there is nothing to prepare.
+
+### ① Install it yourself: one command {#windows-self}
+
+**When to choose it:** the computer has no AI tool yet, or you would rather do it yourself. You need one code from start to finish: the **installation code** (it starts with `AJI-`) on an empty seat card in your account.
+
+**Time:** usually 15 to 30 minutes, mostly downloading; the first WSL install may need one restart. The parts that need you add up to a few minutes.
+
+1. On https://agentj.app/account/ press "Get installation command" on the empty seat card, then "Copy installation command". Opened on Windows, the page gives you the PowerShell line; if not, press "Windows (PowerShell) command".
+2. Open PowerShell (search Start for PowerShell; no administrator needed), paste and press Enter. The command looks like `$env:AGENTJ_CODE='AJI-…'; irm https://agentj.app/install.ps1 | iex`
+3. Follow the screen. Every step starts with its number and what it is doing:
+
+| On screen | What you do |
+|---|---|
+| Installation code | Taken from the command; if it is missing you paste it once (hidden) |
+| WSL2 and Ubuntu | Allow the Windows administrator prompt; restart if asked, then paste the same command again |
+| Ubuntu user | Pick a user name (Enter takes the suggestion) and a password (hidden; remember it) |
+| System parts | Nothing; Windows does not ask for a password |
+| AI | Reuses Claude Code or Codex if you are signed in. Otherwise pick a route: if the official services are unreachable choose the Agents Relay route (see [Hong Kong and mainland China](/docs/install/#hk-cn)); if they work, sign in with your own account in the browser |
+| Agent J | Nothing: it installs, starts the background service and links this seat with the same code |
+| Phone | A QR code appears: open https://m.agentj.app on **your own phone**, tap "Scan QR code" and scan it |
+| Connect the AI | Nothing: the AI must answer one real request before it is connected |
+
+4. When you see "✅ 全部完成" (all done), say hello to it from your phone. To use `agentj` on the computer later, open "Ubuntu" from the Start menu, not PowerShell.
+
+If something goes wrong:
+
+- If a step fails, the screen says what to do. Fix it and **paste the same command again**; finished steps are skipped.
+- The installation code works once and expires after 24 hours (the card shows the time).
+- Only the AI is missing? In "Ubuntu" run `curl -fsSL https://agentj.app/install.sh | bash` again (no code): it does just that step.
+
+### ② Let the AI on your computer install it {#windows-ai}
+
+**When to choose it:** you already use Claude Code, Codex or OpenCode inside Ubuntu on WSL and want it to do the work and explain as it goes. On Windows Agent J installs only inside WSL2, and an AI running on Windows itself stops and tells you so; without WSL yet, ① is simpler.
+
+1. Already bought a seat: press "Copy installation prompt" on the empty seat card in your account and send it to the AI in Ubuntu.
+2. Not yet: send it this sentence exactly as written, and it walks you through opening an account and buying a seat:
 
 > Please download https://agentj.app/install.md with curl, read the whole file with your file-reading tool, then follow it step by step, re-reading each section before you do it. Tell me when you need me to do something.
+
+What the AI does at each step, and where it stops for you: [When the AI installs it](/docs/install/#ai-steps).
+
+### ③ Remote installation assistant (cloud) {#windows-assistant}
+
+**When to choose it:** nobody is around to help, there is no AI on the computer, and you are stuck halfway and want to ask someone.
+
+How it works today:
+
+1. Install with the command from ①. That command is the installation assistant: the screen says what each step is doing, and when something fails it says what to do. Fix it and paste the same command again to carry on.
+2. Still stuck, and Agent J is already installed: run this command in "Ubuntu". It sends your question and a health check with the secrets removed to our support desk, which usually answers with concrete steps within a few minutes.
+
+```bash
+agentj support ask "<your question>" --attach-doctor
+```
+
+3. Not installed yet, or you cannot reach us: email feedback@agentj.app with the step, the exact error and a screenshot (cover the installation code, keys and QR code first).
+
+> **Tip:** From 0.21 the cloud assistant suggests the next step right on your phone, and nothing runs until you tap it.
+
+### ④ Get someone to help: beside you or remotely {#windows-helper}
+
+**When to choose it:** you are not at home with computers or terminals, and a family member, friend or colleague can sit with you or help over a video call or screen sharing.
+
+What to do today:
+
+1. The helper walks you through ①. The code is copied only from **your own** account page and pasted only on your own computer; when helping remotely, you share your screen and the helper tells you what to do. Never put the code or a key into a chat.
+2. A Windows administrator prompt appears along the way, and there may be one restart. A helper who warns you in advance saves you a fright.
+3. Scan the pairing QR code with **your own phone**. If the helper's phone scans it, that phone becomes a remote for this computer: afterwards run `agentj devices` to find its device ID, then `agentj revoke <device-id>` to remove it.
+4. Phone not at hand, or the scan did not work? No need to reinstall: once it is installed, press "Add a remote" on this computer's seat card in your account, confirm with your passkey, and scan with your phone.
+
+> **Tip:** One-step helper pairing arrives in 0.21: the helper connects their own phone for a while and guides you through the install from it; once your phone is paired and the AI is connected, the helper is disconnected automatically.
+
+## macOS {#macos}
+
+For Macs with Apple silicon and Intel processors.
+
+### ① Install it yourself: one command {#macos-self}
+
+**When to choose it:** the computer has no AI tool yet, or you would rather do it yourself. You need one code from start to finish: the **installation code** (it starts with `AJI-`) on an empty seat card in your account.
+
+**Time:** usually under 10 minutes. The computer's own work takes a few minutes (about 2 on our test machine); the rest is you signing in to an AI and scanning a code.
+
+1. On https://agentj.app/account/ press "Get installation command" on the empty seat card, then "Copy installation command". Opened on a Mac, the page gives you the Terminal line; if not, press "macOS / Linux command".
+2. Open Terminal (press Command + Space and search for Terminal), paste and press Enter. The command looks like `curl -fsSL https://agentj.app/install.sh | bash -s -- AJI-…`
+3. Follow the screen. Every step starts with its number and what it is doing:
+
+| On screen | What you do |
+|---|---|
+| Installation code | Taken from the command; if it is missing you paste it once (hidden) |
+| System parts | You may be asked for your computer password once (hidden) |
+| AI | Reuses Claude Code or Codex if you are signed in. Otherwise pick a route: if the official services are unreachable choose the Agents Relay route (see [Hong Kong and mainland China](/docs/install/#hk-cn)); if they work, sign in with your own account in the browser |
+| Agent J | Nothing: it installs, starts the background service and links this seat with the same code |
+| Phone | A QR code appears: open https://m.agentj.app on **your own phone**, tap "Scan QR code" and scan it |
+| Connect the AI | Nothing: the AI must answer one real request before it is connected |
+
+4. When you see "✅ 全部完成" (all done), say hello to it from your phone. Afterwards `agentj status` works in **the same Terminal window**.
+
+If something goes wrong:
+
+- If a step fails, the screen says what to do. Fix it and **paste the same command again**; finished steps are skipped.
+- The installation code works once and expires after 24 hours (the card shows the time).
+- Only the AI is missing? Run `curl -fsSL https://agentj.app/install.sh | bash` again (no code): it does just that step.
+
+### ② Let the AI on your computer install it {#macos-ai}
+
+**When to choose it:** you already use Claude Code, Codex or OpenCode and want it to do the work and explain as it goes.
+
+1. Already bought a seat: press "Copy installation prompt" on the empty seat card in your account and send it to the AI on the computer.
+2. Not yet: send it this sentence exactly as written, and it walks you through opening an account and buying a seat:
+
+> Please download https://agentj.app/install.md with curl, read the whole file with your file-reading tool, then follow it step by step, re-reading each section before you do it. Tell me when you need me to do something.
+
+What the AI does at each step, and where it stops for you: [When the AI installs it](/docs/install/#ai-steps).
+
+### ③ Remote installation assistant (cloud) {#macos-assistant}
+
+**When to choose it:** nobody is around to help, there is no AI on the computer, and you are stuck halfway and want to ask someone.
+
+How it works today:
+
+1. Install with the command from ①. That command is the installation assistant: the screen says what each step is doing, and when something fails it says what to do. Fix it and paste the same command again to carry on.
+2. Still stuck, and Agent J is already installed: run this command in Terminal. It sends your question and a health check with the secrets removed to our support desk, which usually answers with concrete steps within a few minutes.
+
+```bash
+agentj support ask "<your question>" --attach-doctor
+```
+
+3. Not installed yet, or you cannot reach us: email feedback@agentj.app with the step, the exact error and a screenshot (cover the installation code, keys and QR code first).
+
+> **Tip:** From 0.21 the cloud assistant suggests the next step right on your phone, and nothing runs until you tap it.
+
+### ④ Get someone to help: beside you or remotely {#macos-helper}
+
+**When to choose it:** you are not at home with computers or terminals, and a family member, friend or colleague can sit with you or help over a video call or screen sharing.
+
+What to do today:
+
+1. The helper walks you through ①. The code is copied only from **your own** account page and pasted only on your own computer; when helping remotely, you share your screen and the helper tells you what to do. Never put the code or a key into a chat.
+2. When the computer asks for its password, you type it yourself; don't tell your helper.
+3. Scan the pairing QR code with **your own phone**. If the helper's phone scans it, that phone becomes a remote for this computer: afterwards run `agentj devices` to find its device ID, then `agentj revoke <device-id>` to remove it.
+4. Phone not at hand, or the scan did not work? No need to reinstall: once it is installed, press "Add a remote" on this computer's seat card in your account, confirm with your passkey, and scan with your phone.
+
+> **Tip:** One-step helper pairing arrives in 0.21: the helper connects their own phone for a while and guides you through the install from it; once your phone is paired and the AI is connected, the helper is disconnected automatically.
+
+## Linux {#linux}
+
+For Ubuntu, Debian and other common distributions, on desktops, laptops and cloud servers. A cloud server you reach only over SSH (no desktop) also needs the cloud-server section of [the install guide](https://agentj.app/install.md).
+
+### ① Install it yourself: one command {#linux-self}
+
+**When to choose it:** the computer has no AI tool yet, or you would rather do it yourself. You need one code from start to finish: the **installation code** (it starts with `AJI-`) on an empty seat card in your account.
+
+**Time:** usually under 10 minutes. The computer's own work takes a few minutes (about 2 on our test machine); the rest is you signing in to an AI and scanning a code.
+
+1. On https://agentj.app/account/ press "Get installation command" on the empty seat card, then "Copy installation command". Opened on Linux, the page gives you the terminal line; if not, press "macOS / Linux command".
+2. Open a terminal, paste and press Enter. The command looks like `curl -fsSL https://agentj.app/install.sh | bash -s -- AJI-…`
+3. Follow the screen. Every step starts with its number and what it is doing:
+
+| On screen | What you do |
+|---|---|
+| Installation code | Taken from the command; if it is missing you paste it once (hidden) |
+| System parts | Installs bubblewrap and socat (the Agent runs fenced); you may be asked for your computer password once (hidden) |
+| AI | Reuses Claude Code or Codex if you are signed in. Otherwise pick a route: if the official services are unreachable choose the Agents Relay route (see [Hong Kong and mainland China](/docs/install/#hk-cn)); if they work, sign in with your own account in the browser |
+| Agent J | Nothing: it installs, starts the background service and links this seat with the same code |
+| Phone | A QR code appears: open https://m.agentj.app on **your own phone**, tap "Scan QR code" and scan it |
+| Connect the AI | Nothing: the AI must answer one real request before it is connected |
+
+4. When you see "✅ 全部完成" (all done), say hello to it from your phone. Afterwards `agentj status` works in **the same terminal window**.
+
+If something goes wrong:
+
+- If a step fails, the screen says what to do. Fix it and **paste the same command again**; finished steps are skipped.
+- The installation code works once and expires after 24 hours (the card shows the time).
+- Only the AI is missing? Run `curl -fsSL https://agentj.app/install.sh | bash` again (no code): it does just that step.
+
+### ② Let the AI on your computer install it {#linux-ai}
+
+**When to choose it:** you already use Claude Code, Codex or OpenCode and want it to do the work and explain as it goes.
+
+1. Already bought a seat: press "Copy installation prompt" on the empty seat card in your account and send it to the AI on the computer.
+2. Not yet: send it this sentence exactly as written, and it walks you through opening an account and buying a seat:
+
+> Please download https://agentj.app/install.md with curl, read the whole file with your file-reading tool, then follow it step by step, re-reading each section before you do it. Tell me when you need me to do something.
+
+What the AI does at each step, and where it stops for you: [When the AI installs it](/docs/install/#ai-steps).
+
+### ③ Remote installation assistant (cloud) {#linux-assistant}
+
+**When to choose it:** nobody is around to help, there is no AI on the computer, and you are stuck halfway and want to ask someone.
+
+How it works today:
+
+1. Install with the command from ①. That command is the installation assistant: the screen says what each step is doing, and when something fails it says what to do. Fix it and paste the same command again to carry on.
+2. Still stuck, and Agent J is already installed: run this command in a terminal. It sends your question and a health check with the secrets removed to our support desk, which usually answers with concrete steps within a few minutes.
+
+```bash
+agentj support ask "<your question>" --attach-doctor
+```
+
+3. Not installed yet, or you cannot reach us: email feedback@agentj.app with the step, the exact error and a screenshot (cover the installation code, keys and QR code first).
+
+> **Tip:** From 0.21 the cloud assistant suggests the next step right on your phone, and nothing runs until you tap it.
+
+### ④ Get someone to help: beside you or remotely {#linux-helper}
+
+**When to choose it:** you are not at home with computers or terminals, and a family member, friend or colleague can sit with you or help over a video call or screen sharing.
+
+What to do today:
+
+1. The helper walks you through ①. The code is copied only from **your own** account page and pasted only on your own computer; when helping remotely, you share your screen and the helper tells you what to do. Never put the code or a key into a chat.
+2. When the computer asks for its password, you type it yourself; don't tell your helper.
+3. Scan the pairing QR code with **your own phone**. If the helper's phone scans it, that phone becomes a remote for this computer: afterwards run `agentj devices` to find its device ID, then `agentj revoke <device-id>` to remove it.
+4. Phone not at hand, or the scan did not work? No need to reinstall: once it is installed, press "Add a remote" on this computer's seat card in your account, confirm with your passkey, and scan with your phone.
+
+> **Tip:** One-step helper pairing arrives in 0.21: the helper connects their own phone for a while and guides you through the install from it; once your phone is paired and the AI is connected, the helper is disconnected automatically.
+
+## Hong Kong and mainland China: which AI {#hk-cn}
+
+> **Note:** In Hong Kong and mainland China the official Claude Code and Codex services are usually unreachable. When the one-command install reaches the AI step it tests the network first and, if they are unreachable, recommends the **Agents Relay route**: sign up at https://agentsrelay.net/onboard/, get a key, then paste it into the terminal (hidden). Paste the key only into the terminal, never into a chat, and don't tell it to your helper.
+
+In mainland China you can also use OpenCode with a Chinese model: see [Install the AI command-line tools](/docs/setup-agents/).
+
+## Cover the codes before a screenshot {#screenshots}
+
+> **Note:** Before you send anyone a screenshot, your helper and our support desk included, cover the installation code (starting with `AJI-`), keys and QR codes on the screen. In someone else's hands they could be used to take your seat or to ask to connect to your computer.
+
+## When the AI installs it {#ai-steps}
 
 Why download it and read it whole: some AIs read web pages through a tool that only returns a summary, and a summary drops the safety rules and the points where the AI must stop and ask you. Before it starts, your AI may first tell you about the risks and ask whether to go on — that's normal.
 
@@ -31,7 +257,7 @@ The AI will not do these for you, and it will never ask you to paste a password,
 - paying on Stripe's page and entering a promo code;
 - tapping "Copy installation prompt" in the account dashboard and giving that sentence to the AI on your computer;
 - naming your Agent;
-- optionally setting a local approval passphrase for offline or unbound use;
+- setting a remote pairing password (asked once at the end of the installation; optional, recommended; required to pair at the terminal);
 - choosing the AI coding tool when more than one is available, and the folder the Agent works in;
 - confirming Add a remote on the account page with your passkey, then scanning the QR code or pasting the pairing link on your phone;
 - sending the first message from the phone and tapping "Approve" for the first time;
@@ -69,7 +295,7 @@ It may need you here:
 The AI installs `agentj`, the program on your computer, at one fixed version:
 
 ```bash
-uv tool install "git+https://github.com/preangelleo/agentj@v0.20.2a1#subdirectory=host"
+uv tool install "git+https://github.com/preangelleo/agentj@v0.20.3a1#subdirectory=host"
 agentj doctor
 ```
 
@@ -107,9 +333,9 @@ If setup instructions fail, copy the installation prompt from the same empty sea
 
 ### Step 8: ✋ Human: approve with an account passkey
 
-After this computer is bound, open its seat card on the account page and select Add a remote. Confirm once with your passkey and scan. No terminal approval passphrase is required. The same account page can add a phone to another bound, online computer.
+After this computer is bound, open its seat card on the account page and select Add a remote. Confirm with your passkey (or this computer's remote pairing password) and scan. The same account page can add a phone to another bound, online computer.
 
-A local approval passphrase is optional for offline or unbound use. Set it yourself with `agentj passphrase set`; the Agent must never choose or enter it. Not sure which route works right now? `agentj pair --check` says it before any QR code: on a bound, online computer `agentj pair` and `agentj admin` need no passphrase either (approve the waiting phone on the seat card); on an unbound one they still require it.
+At the end of the installation you're asked whether to set a remote pairing password (optional, recommended): press Enter to skip, and set it any time later with `agentj passphrase set`. The Agent must never choose or enter it. Pairing at the terminal (`agentj pair`, `agentj pair --link`) requires it; without one, `agentj pair` asks you to set it first. `agentj pair --check` says which route works before any QR code.
 
 ### Step 9: Connect the AI coding tool
 
@@ -151,9 +377,9 @@ Agent J has to be running on the computer first (Step 10).
 1. On the phone, open https://m.agentj.app, add it to your Home Screen and open it from that icon. The top of the page says "Not paired yet".
 2. In the account dashboard, find this computer’s seat card and choose Add a remote. Confirm with your passkey once; confirmation is reused for ten minutes on this session. The account page can be open on another computer.
 3. On the phone, tap Scan QR code and scan the code shown on the account page. If needed, use Copy pairing link and paste it into the Home Screen app under Or paste the pairing link. Do not paste it into an AI chat.
-4. This account-approved pairing needs no terminal code or approval passphrase. Wait for the phone to connect.
+4. This account-approved pairing needs no terminal code. Wait for the phone to connect.
 
-For an offline or unbound computer (`agentj pair --check` tells you), the local alternative remains `agentj pair` (or `agentj pair --link`): enter the phone’s six-digit code and your local approval passphrase on that computer.
+When the computer is offline or account-page pairing is off (`agentj pair --check` tells you), the local alternative is `agentj pair` (or `agentj pair --link`): type the phone's six-digit code and the remote pairing password on that computer (it asks you to set one first if there is none).
 The link is the pairing key: it works once, for 5 minutes. Never send it through WeChat, a group chat or email, and never to any AI.
 
 ### Step 12: Try it on the phone, then offer the completion feedback
@@ -190,11 +416,11 @@ Every paid, unbound seat has its own one-line installation code. Two empty paid 
 
 ## Add a remote for another computer
 
-Once the target computer is installed, account-bound and online, find its seat card on your account page and choose Add a remote. Confirm with your passkey and scan with the phone. No target-computer terminal, passphrase setup or six-digit entry is needed. Confirmation is reused for ten minutes on the same session; the QR expires after five minutes and can add one remote. Review and approve pending remotes on that card too. Under More on the seat card, See what the computer is waiting on you for is only for two cases: resuming after Stop everything, or enabling a scheduled task the Agent created. It has nothing to do with seats or billing; an unpaid bill never stops the tasks on your computer.
+Once the target computer is installed, account-bound and online, find its seat card on your account page and choose Add a remote. Confirm it's you, then scan with the phone; the target computer's terminal isn't needed. Confirm either way: with your passkey (none on this computer? choose Use a phone or tablet in the prompt and confirm on your phone), or with that computer's remote pairing password. After a passkey confirmation, the same session doesn't ask again for ten minutes; the QR expires after five minutes and adds one device. Pending devices can also be reviewed and approved on the seat card. Under More on the seat card, See what the computer is waiting on you for is only for two cases: resuming after Stop everything, or enabling a scheduled task the Agent created. It has nothing to do with seats or billing; an unpaid bill never stops the tasks on your computer.
 
 Account-page pairing is on by default. The target computer’s owner can disable it with `agentj remote-pair off`. Offline hosts are never queued; turn them on and try again. Older hosts must run `agentj update apply` or update from a paired phone. Devices record “Added from account page” and other remotes receive a notice.
 
-This route trusts the signing control plane. Pairing material is encrypted to an ephemeral browser key and its plaintext is never stored by the backend; compromise of the signing service could still add a device. The local passphrase remains a local-only hash and is optional for bound hosts, available for offline/local approval and required on unbound hosts.
+This route trusts the signing control plane. Pairing material is encrypted to an ephemeral browser key and its plaintext is never stored by the backend; compromise of the signing service could still add a device. The remote pairing password is stored only on that computer, as a hash. When you type it on the account page, the browser first encrypts it to a one-time public key that computer just handed out; only that computer can open and check it. Our servers pass on ciphertext they can't read and keep nothing. Five wrong tries in a row lock it on that computer for a while.
 
 
 ## macOS requirements
@@ -202,7 +428,7 @@ This route trusts the signing control plane. Pairing material is encrypted to an
 First run `opencode --version` (or your selected agent’s `--version`). If it works, continue installing; there is no macOS version-number gate. The one-line installer also probes its downloaded, pinned OpenCode binary. Only an actual failure such as `dyld: Symbol not found: _ubrk_clone` in `/usr/lib/libicucore.A.dylib` indicates incompatible system libraries. PATH changes or npm reinstalls cannot fix that; upgrade macOS, use another computer, or choose another working agent with the manual installation guide. The one-line installer downloads pinned uv from our site first, uses a managed-Python mirror, and retries package dependencies via a mirror; the obsolete preview path is no longer supported.
 
 
-An installed computer can also use an AJI installation code. Rerun the account-page installation command to preserve its configuration, upgrade and link its seat. Alternatively, keep the code in a mode-0600 file and run `agentj login --install-code-file <file> --name <name>`. AJI codes are single-use; ajt_ setup codes only link an installed computer. After linking, add a remote from the account page, confirm with your passkey and scan; no terminal passphrase is required.
+An installed computer can also use an AJI installation code. Rerun the account-page installation command to preserve its configuration, upgrade and link its seat. Alternatively, keep the code in a mode-0600 file and run `agentj login --install-code-file <file> --name <name>`. AJI codes are single-use; ajt_ setup codes only link an installed computer. After linking, add a remote from the account page, confirm with your passkey or the remote pairing password, and scan.
 
 If a manual installation asks for `Installation code (AJI-…)`, choose "Copy installation code" on the account page and paste only that AJI- code.
 

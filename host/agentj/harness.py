@@ -256,8 +256,8 @@ def reach(d: dict) -> dict:
     return d
 
 
-def main(as_json: bool = False, call_probe: bool = False) -> int:
-    d = reach(probe() if call_probe else detect())
+def main(as_json: bool = False, call_probe: bool = False, only=None, model: str | None = None) -> int:
+    d = reach(probe(only=only, model=model) if call_probe else detect())
     if as_json:
         def local_paths(value):
             if isinstance(value, dict): return {k: local_paths(v) for k, v in value.items()}

@@ -14,6 +14,8 @@ Want to use OpenCode to finish installing Agent J? Once curl is available, go st
 
 Full access reduces repeated approval dialogs during phone control. Risk: the AI can modify files and run commands with your user permissions; enable it only for trusted folders and tasks. Project or company policies may still require approval.
 
+Just want Agent J plus one AI, without setting up each tool? Use [one command](/docs/install/#one-command); it runs this page's script when it needs it.
+
 [Install Agent J](/docs/install/) · [On your computer](/docs/computer/) · [agentj command reference](/docs/cli/)
 
 ## One-command setup
@@ -46,7 +48,7 @@ shasum -a 256 setup-agents.sh
 ```
 
 
-SHA256 sh: `1bb1e41ac6987a25489743c2e58f5104b52fc1ca964a3933f3747388279b03d1`
+SHA256 sh: `87b4fdf068beaead10fceca82e71acff6373282c17613d41866727c061bcc7c7`
 
 
 ```bash
@@ -1297,6 +1299,12 @@ macOS: first run `opencode --version` (or your selected agent’s `--version`). 
 Mainland China: official Claude Code / Codex services are unavailable; npm mirrors help downloads, not service access. Use OpenCode with a domestic model, or an appropriate AgentsRelay plan/model, checking the provider’s terms and regional requirements. Windows uses WSL2.
 
 command not found: revisit PATH, check the shell startup file and open a fresh terminal. EACCES: use the user-owned npm prefix above, rather than sudo npm. Sign-in failure: check account, region and your proxy without sharing keys.
+
+## Agent isolation and first-run setup {#isolation}
+
+On Linux, Agent J runs the phone's Agent inside bubblewrap; socat is what Claude Code's own sandbox needs. The one-line installer installs both with apt-get; when it cannot, it prints the command to run yourself: `sudo apt-get install -y bubblewrap socat` (dnf on Fedora, pacman on Arch). Without them, every start of the Agent needs the owner's passkey on the phone for "Run this launch without isolation".
+
+When Claude Code is selected, the script also answers its one-time setup ahead (onboarding, theme, bypass-mode confirmation), so a background session never stops at a terminal prompt nobody sees — only what is missing, never what you set. As root it does not write full access (bypassPermissions): Claude Code refuses that for root and exits.
 
 ## Agent J
 

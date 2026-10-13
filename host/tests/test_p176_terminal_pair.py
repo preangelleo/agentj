@@ -5,6 +5,10 @@ said "approve on the account page"; typing the phone's code went to the shell, 1
 terminal offers both ways at once (account-page passkey OR the code typed here, first one wins); serve accepts the code alone
 only from a human's terminal (ctl_auth: not an Agent, stdin a terminal) on that bound host; a passphrase, when set, is still
 required; a wrong code may be retried (3 tries); without a terminal it stays as before, with a hint.
+
+P221 (Leo 10-13) replaces the keyboard-only part: pairing at the terminal always needs the remote pairing password —
+`agentj pair` asks the owner to set one first (≥ 8 characters), then takes the phone's code + the password; serve never
+accepts a code alone any more. Still here from P176: both ways at once (the account page may win), 3 code tries, the hint.
 """
 import _hermetic  # noqa: F401,I001
 import argparse
@@ -83,28 +87,17 @@ class ServeSide(Base, unittest.IsolatedAsyncioTestCase):
     def wrong(self, code):
         return f"{(int(code) + 1) % 1_000_000:06d}"
 
-    async def test_terminal_code_ok_only_for_a_human_terminal_on_a_bound_host_without_passphrase(self):
+    async def test_p221_a_keyboard_is_never_enough(self):
         with patch.object(ctl_auth, "has_tty", return_value=True), patch.object(ctl_auth, "refusal", return_value=None):
-            self.assertIs(self.h.terminal_code_ok(123), True)
-        with patch.object(ctl_auth, "has_tty", return_value=False), patch.object(ctl_auth, "refusal", return_value=None):
-            self.assertIs(self.h.terminal_code_ok(123), False, "no terminal on stdin (a pipe, a script)")
-        with patch.object(ctl_auth, "has_tty", return_value=True), patch.object(ctl_auth, "refusal", return_value="agent"):
-            self.assertIs(self.h.terminal_code_ok(123), False, "an Agent's process tree / harness never qualifies")
-        self.h.relay_up = False
-        self.assertIsNone(self.h.terminal_code_ok(123), "not the account route: the passphrase rules apply")
-        self.h.relay_up = True
+            self.assertIs(self.h.terminal_code_ok(123), False, "a human's terminal without a password: refused (P221)")
         gate.set_passphrase(self.st, PASS)
-        self.assertIsNone(self.h.terminal_code_ok(123), "a passphrase is set: it is still required")
-        self.st.approver_path.unlink()
-        self.st.cloud_path.unlink()
-        self.assertIsNone(self.h.terminal_code_ok(123), "unbound hosts always need the passphrase")
+        self.assertIsNone(self.h.terminal_code_ok(123), "a password is set: it is required")
 
-    async def test_terminal_code_alone_approves_and_is_logged(self):
+    async def test_p221_terminal_code_alone_no_longer_approves(self):
         p, s, code = self.pending()
         res = await self.h.decide(p, code, None, terminal=True, retry=True)
-        self.assertEqual(s.state, "ready", res)
-        self.assertIn(s.device, self.st.devices())
-        self.assertIn("pair_terminal_code", self.st.log_path.read_text())
+        self.assertEqual(res, {"ev": "denied", "reason": "pass_not_set"})
+        self.assertEqual(self.st.devices(), {})
 
     async def test_without_the_terminal_proof_no_passphrase_still_denies(self):
         p, s, code = self.pending()
@@ -121,12 +114,13 @@ class ServeSide(Base, unittest.IsolatedAsyncioTestCase):
         self.assertEqual(s.state, "ready", res)
 
     async def test_wrong_code_retries_three_tries_then_denied(self):
+        gate.set_passphrase(self.st, PASS)
         p, s, code = self.pending()
         bad = self.wrong(code)
-        self.assertEqual(await self.h.decide(p, bad, None, terminal=True, retry=True), {"ev": "code_wrong", "left": 2})
-        self.assertEqual(await self.h.decide(p, bad, None, terminal=True, retry=True), {"ev": "code_wrong", "left": 1})
+        self.assertEqual(await self.h.decide(p, bad, PASS, retry=True), {"ev": "code_wrong", "left": 2})
+        self.assertEqual(await self.h.decide(p, bad, PASS, retry=True), {"ev": "code_wrong", "left": 1})
         self.assertEqual(s.state, "pending")
-        res = await self.h.decide(p, bad, None, terminal=True, retry=True)
+        res = await self.h.decide(p, bad, PASS, retry=True)
         self.assertEqual(res, {"ev": "denied", "reason": "code_mismatch"})
         self.assertEqual(self.closed, ["code_mismatch"])
         self.assertEqual(self.st.devices(), {})
@@ -164,24 +158,25 @@ class ServeSide(Base, unittest.IsolatedAsyncioTestCase):
         await asyncio.sleep(0.1)      # `_ctl_pair` sees the hang-up and ends before the loop closes
         srv.close()
 
-    async def test_ctl_terminal_flag_from_a_real_terminal_approves(self):
+    async def test_ctl_code_and_password_from_the_terminal_approves(self):
+        gate.set_passphrase(self.st, PASS)
         srv, w, send, take = await self.ctl()
         try:
             p, s, code = self.pending()
-            with patch.object(ctl_auth, "has_tty", return_value=True), patch.object(ctl_auth, "refusal", return_value=None):
-                await send({"cmd": "code", "code": self.wrong(code), "terminal": True, "retry": True})
-                self.assertEqual(await take(), {"ev": "code_wrong", "left": 2})
-                await send({"cmd": "code", "code": code, "terminal": True, "retry": True})
-                self.assertEqual((await take())["ev"], "approved")
+            await send({"cmd": "code", "code": self.wrong(code), "pass": PASS, "retry": True})
+            self.assertEqual(await take(), {"ev": "code_wrong", "left": 2})
+            await send({"cmd": "code", "code": code, "pass": PASS, "retry": True})
+            self.assertEqual((await take())["ev"], "approved")
             self.assertEqual(s.state, "ready")
         finally:
             await self.hang_up(srv, w)
 
-    async def test_ctl_terminal_flag_without_a_terminal_keeps_the_phone_waiting_for_the_account_page(self):
+    async def test_ctl_terminal_flag_keeps_the_phone_waiting_for_the_account_page(self):
+        """An older `agentj pair` (P176) still sends `terminal` without a password: refused, the phone keeps waiting."""
         srv, w, send, take = await self.ctl()
         try:
             p, s, code = self.pending()
-            with patch.object(ctl_auth, "has_tty", return_value=False), patch.object(ctl_auth, "refusal", return_value=None):
+            with patch.object(ctl_auth, "has_tty", return_value=True), patch.object(ctl_auth, "refusal", return_value=None):
                 await send({"cmd": "code", "code": code, "terminal": True, "retry": True})
                 self.assertEqual(await take(), {"ev": "code_refused", "why": "terminal"})
             self.assertEqual((s.state, self.st.devices()), ("pending", {}), "not approved, not refused")
@@ -353,24 +348,36 @@ class Terminal(Base, unittest.TestCase):
             serve_obj.close()
         return code, out.getvalue(), str(code or "") + err.getvalue()
 
-    def test_bound_no_passphrase_offers_both_ways_and_the_code_approves(self):
+    def test_p221_bound_no_password_sets_it_first_then_code_and_password_approve(self):
         self.bind()
         fs = ScriptServe(self.st, lambda req: [APPROVED])
-        code, out, err = self.run_pair(TTYIn(["123456"]), fs)
+        code, out, err = self.run_pair(TTYIn(["123456"]), fs, secrets=[PASS, PASS, PASS])
         self.assertIn(code, (0, None), out + err)
-        self.assertIn("两条路任选其一", out)
-        self.assertIn("6 位安全码", out)
-        self.assertIn("Either way", out)
+        self.assertIn("遥控器配对密码", out)
+        self.assertIn("remote pairing password", out)
+        self.assertTrue(gate.is_set(self.st), "set before anything reached serve")
+        self.assertNotIn("两条路任选其一", out)
+        self.assertIn("也可以直接到账户页批准", out)
         self.assertIn(cloud.app_url(self.st), out)
         self.assertIn("✓ 已批准", out)
-        self.assertEqual(fs.sent, [{"cmd": "code", "code": "123456", "terminal": True, "retry": True}])
-        self.assertFalse(gate.is_set(self.st))
+        self.assertEqual(fs.sent, [{"cmd": "code", "code": "123456", "pass": PASS, "retry": True}])
+
+    def test_p221_too_short_or_mismatched_password_never_pairs(self):
+        self.bind()
+        for secrets in (["short", "short"], [PASS, PASS + "x"]):
+            with self.subTest(secrets=secrets):
+                fs = ScriptServe(self.st, lambda req: [APPROVED])
+                code, out, err = self.run_pair(TTYIn(["123456"]), fs, secrets=secrets)
+                self.assertNotIn(code, (0, None))
+                self.assertFalse(gate.is_set(self.st))
+                self.assertEqual(fs.sent, [])
 
     def test_wrong_code_retries_then_succeeds(self):
         self.bind()
+        gate.set_passphrase(self.st, PASS)
         answers = iter([[{"ev": "code_wrong", "left": 2}], [{"ev": "code_wrong", "left": 1}], [APPROVED]])
         fs = ScriptServe(self.st, lambda req: next(answers))
-        code, out, err = self.run_pair(TTYIn(["111111", "abc", "222222", "333333"]), fs)
+        code, out, err = self.run_pair(TTYIn(["111111", "abc", "222222", "333333"]), fs, secrets=[PASS])
         self.assertIn(code, (0, None), out + err)
         self.assertIn("还能再试 2 次", out)
         self.assertIn("还能再试 1 次", out)
@@ -379,16 +386,18 @@ class Terminal(Base, unittest.TestCase):
 
     def test_three_wrong_codes_end_with_how_to_start_again(self):
         self.bind()
+        gate.set_passphrase(self.st, PASS)
         answers = iter([[{"ev": "code_wrong", "left": 2}], [{"ev": "code_wrong", "left": 1}],
                         [{"ev": "denied", "reason": "code_mismatch"}]])
         fs = ScriptServe(self.st, lambda req: next(answers))
-        code, out, err = self.run_pair(TTYIn(["111111", "222222", "333333"]), fs)
+        code, out, err = self.run_pair(TTYIn(["111111", "222222", "333333"]), fs, secrets=[PASS])
         self.assertNotIn(code, (0, None))
         self.assertIn("安全码不一致", err)
         self.assertIn("agentj pair --link", err)
 
     def test_timeout_explains_how_to_start_again(self):
         self.bind()
+        gate.set_passphrase(self.st, PASS)
         kb = TTYIn(hold=True)
         fs = ScriptServe(self.st, later=(0.3, {"ev": "denied", "reason": "timeout"}))
         code, out, err = self.run_pair(kb, fs)
@@ -401,6 +410,7 @@ class Terminal(Base, unittest.TestCase):
 
     def test_account_page_approval_wins_while_the_terminal_waits_for_the_code(self):
         self.bind()
+        gate.set_passphrase(self.st, PASS)
         kb = TTYIn(hold=True)
         fs = ScriptServe(self.st, later=(0.3, APPROVED))
         code, out, err = self.run_pair(kb, fs)
@@ -409,16 +419,9 @@ class Terminal(Base, unittest.TestCase):
         self.assertIn("✓ 已批准", out)
         self.assertEqual(fs.sent, [], "the code prompt ended by itself; nothing sent")
 
-    def test_serve_refusing_the_terminal_keeps_waiting_for_the_account_page(self):
-        self.bind()
-        fs = ScriptServe(self.st, lambda req: [{"ev": "code_refused", "why": "terminal"}], later=(0.5, APPROVED))
-        code, out, err = self.run_pair(TTYIn(["123456"]), fs)
-        self.assertIn(code, (0, None), out + err)
-        self.assertIn("这个终端不能直接批准", out)
-        self.assertIn("✓ 已批准", out)
-
     def test_enter_alone_refuses(self):
         self.bind()
+        gate.set_passphrase(self.st, PASS)
         fs = ScriptServe(self.st, lambda req: [{"ev": "denied", "reason": "denied"}])
         code, out, err = self.run_pair(TTYIn([""]), fs)
         self.assertNotIn(code, (0, None))
@@ -433,7 +436,7 @@ class Terminal(Base, unittest.TestCase):
         self.assertIn(code, (0, None), out + err)
         self.assertNotIn("两条路任选其一", out)
         self.assertIn("也可以直接到账户页批准", out)
-        self.assertIn("批准口令不对", out)
+        self.assertIn("遥控器配对密码不对", out)
         self.assertEqual(fs.sent, [{"cmd": "code", "code": "123456", "pass": "nope-nope", "retry": True},
                                    {"cmd": "code", "code": "123456", "pass": PASS, "retry": True},
                                    {"cmd": "code", "code": "654321", "pass": PASS, "retry": True}])
@@ -448,13 +451,15 @@ class Terminal(Base, unittest.TestCase):
         self.assertIn("席位", out + err)
         self.assertEqual(fs.sent, [])
 
-    def test_no_terminal_falls_back_to_the_account_page_with_a_hint(self):
+    def test_p221_no_terminal_and_no_password_says_where_to_go(self):
         self.bind()
         fs = ScriptServe(self.st, later=(0.3, APPROVED))
         code, out, err = self.run_pair(io.StringIO("123456\n"), fs)
-        self.assertIn(code, (0, None), out + err)
-        self.assertIn("通行密钥确认", out)
-        self.assertIn("不是交互终端", out)
+        self.assertNotIn(code, (0, None))
+        self.assertIn("还没设遥控器配对密码", err)
+        self.assertIn("agentj pair", err)
+        self.assertIn(cloud.app_url(self.st), err)
+        self.assertFalse(gate.is_set(self.st))
         self.assertEqual(fs.sent, [], "a pipe never sends a code")
 
 

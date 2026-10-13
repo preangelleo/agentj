@@ -139,7 +139,7 @@ export async function model(want) {
   if (!isReady()) return { ok: false, why: 'offline' };
   if (!peer.p33) return { ok: false, why: 'unsupported' };
   const m = await ask1(want.default ? { t: 'model_set', default: true } : { t: 'model_set', model: want.model ?? null, effort: want.effort ?? null }, 'model_res', 15000);
-  if (m.t === 'model_res') return m.ok === true ? { ok: true, queued: m.why === 'queued' } : { ok: false, why: m.why || 'other' };
+  if (m.t === 'model_res') return m.ok === true ? { ok: true, queued: m.why === 'queued', superseded: m.why === 'superseded' } : { ok: false, why: m.why || 'other' };
   return { ok: false, why: m.t };
 }
 

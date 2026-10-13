@@ -150,6 +150,7 @@ FF_DEMUX = {"video/mp4": "mov", "audio/webm": "matroska", "audio/ogg": "ogg", "a
             "audio/x-caf": "caf", "audio/aiff": "aiff", "audio/x-aiff": "aiff", "audio/wave": "wav", "audio/vnd.wave": "wav",
             "video/quicktime": "mov", "video/x-m4v": "mov", "video/3gpp": "mov", "video/webm": "matroska",
             "video/x-matroska": "matroska", "video/mpeg": "mpeg", "video/x-msvideo": "avi"}
+MODEL_SET_COALESCE = 2.0   # P239: pill switches closer than this collapse to the last one (host-side backstop)
 MODEL_REFRESH_TIMEOUT = 8.0                # Background catalogue work never stalls the relay reader.
 METER_GAP = 2.0                             # ≤ 1 meter message per 2 s
 HIST_READY = 50                             # turns a p33 device gets on ready (it pages for more)
@@ -406,6 +407,8 @@ class Host:
         self.ff_lock: asyncio.Lock | None = None    # one say-time ffmpeg conversion at a time (P33-X09)
         self.asr_waiting: dict[str, int] = {}
         self.model_sets = 0
+        self.model_set_at = 0.0                  # P239: monotonic time of the last pill switch handed to the Agent
+        self.model_set_held: dict | None = None  # P239: a switch held back inside MODEL_SET_COALESCE (only the last one runs)
         self.elevate = elevate.Elevator(self)   # F17: admin password / secret cards (PROTOCOL §11)
         from .capability import Capabilities
         self.capabilities = Capabilities(self)  # 0.18 (ADR-A193): capability.sock, opening cards, dispatch
@@ -987,20 +990,17 @@ class Host:
         return ev
 
     def terminal_code_ok(self, pid) -> bool | None:
-        """P176: on an account-bound host without an approval passphrase, `agentj pair` may approve with the 6-digit code
-        alone — when its peer is a human's terminal (the same test `resume` uses without a passphrase, ctl_auth): not an
-        Agent's process tree or harness, stdin a terminal. The code proves which phone; the terminal proves a person here.
-        None = not this host's case (a passphrase is set, or not the account route: the passphrase rules apply)."""
-        from . import ctl_auth, pairprep
-        if gate.is_set(self.st) or pairprep.precheck(self.st, self.relay_up)["route"] != "account":
-            return None
-        return ctl_auth.refusal(pid, os.getpid(), self._agent_pids()) is None and ctl_auth.has_tty(pid)
+        """P176 let `agentj pair` approve with the 6-digit code alone on a bound host without a passphrase. P221 (Leo 10-13):
+        pairing at the terminal always needs the remote pairing password (`agentj pair` sets it first), so a keyboard is
+        never enough: False = refused (the phone keeps waiting for the account page / a paired remote), None = a password
+        is set and the usual rules apply. Kept so a pre-0.20.3 `agentj pair` sending `terminal` is answered, not broken."""
+        return None if gate.is_set(self.st) else False
 
     async def decide(self, p: Pairing, code: str, passphrase: str | None = None, terminal: bool = False,
                      retry: bool = False) -> dict:
-        """The human's answer for the pending device. A non-empty code also needs the approval passphrase (L2, gate.py),
+        """The human's answer for the pending device. A non-empty code also needs the remote pairing password (L2, gate.py),
         checked before the code; a wrong one keeps the device waiting (`pass_wrong`, the code is not used up) until the
-        gate locks. P176: `terminal` (serve checked terminal_code_ok) stands in for the passphrase when none is set;
+        gate locks. P221: `terminal` no longer stands in for the passphrase (P176 did, on a bound host without one);
         `retry` lets a wrong code keep the device waiting (`code_wrong`) until CODE_TRIES are used."""
         s = self.sessions.get(p.cid) if p.cid is not None else None
         if not s or s.state != "pending":
@@ -1009,9 +1009,7 @@ class Host:
             res = {"ev": "denied", "reason": "timeout"}
             await self.close_cid(s.cid, "approve_timeout", res)
             return res
-        if code.strip() and terminal and not gate.is_set(self.st):
-            pass                                            # P176: the human's terminal on a bound host, no passphrase
-        elif code.strip():
+        if code.strip():                                    # P221: no keyboard-only approval any more (was P176)
             if not passphrase and gate.is_set(self.st):     # nothing typed: ask again, no try used
                 return {"ev": "pass_wrong", "left": gate.tries_left(self.st)}
             try:
@@ -1040,8 +1038,6 @@ class Host:
             await self.close_cid(s.cid, res["reason"], res)
             self.emit("denied", device=s.device, name=s.name)
             return res
-        if terminal and not passphrase:
-            self.st.log("pair_terminal_code", cid=s.cid, device=s.device)
         return await self._grant_pair(s)
 
     async def _grant_pair(self, s: Session, source: str = 'local') -> dict:
@@ -1710,7 +1706,7 @@ class Host:
                 elif cmd == "stop":                 # `agentj stop` (the terminal: no signature needed — it only stops)
                     await self.do_estop("terminal", "终端")
                     await self._ctl_send(w, {"ok": True, "estop": self.estop})
-                elif cmd == "resume":               # `agentj resume` checked the approval passphrase before calling
+                elif cmd == "resume":               # `agentj resume` checked the remote pairing password before calling
                     await self.do_resume("terminal", "终端")
                     await self._ctl_send(w, {"ok": True, "estop": self.estop})
                 elif cmd == "task_run":
@@ -3297,7 +3293,7 @@ class Host:
             from . import fence
             batch = False
             if card_lang(self.lang) == "en":
-                why = {"no_bwrap": "bubblewrap (bwrap) is missing; install bubblewrap",
+                why = {"no_bwrap": "bubblewrap (bwrap) is missing; on the computer run: sudo apt-get install -y bubblewrap socat (Ubuntu / Debian / WSL)",
                        "bwrap_failed": "bubblewrap failed; check user namespaces and container policy",
                        "apparmor_userns": "AppArmor blocks user namespaces; ask for agentj doctor repair guidance",
                        "no_sandbox_exec": "macOS sandbox-exec is missing",
@@ -3974,10 +3970,11 @@ class Host:
         if self.telegram and turn is not None and not interim:      # P59: the owner's Telegram /compact gets its result line
             self.telegram.cmd_result(turn, res.text)
 
-    def cmd_waiting(self, cmd) -> None:
+    def cmd_waiting(self, cmd, detail: str | None = None) -> None:
+        """A queued shared /clear or /compact waiting for the desktop; P243: `detail` says why (background tasks, a dialog)."""
         if not isinstance(cmd, agents.Cmd) or cmd.cancelled or cmd.native_started:
             return
-        text = pick(self.lang, "等电脑空下来再执行", "Waiting for the computer to become idle")
+        text = detail or pick(self.lang, "等电脑空下来再执行", "Waiting for the computer to become idle")
         self.hist_update(cmd.turn, text=text, end="open", card={"cmd": cmd.name, "cancel_wait": True})
 
     def cancel_waiting_cmd(self, s, turn) -> bool:
@@ -4494,11 +4491,8 @@ class Host:
             if self.agent and self.agent.kind == "claude":
                 skills = [x for x in (getattr(self.agent, "init", {}) or {}).get("skills") or [] if isinstance(x, str)]
             wd = self.agent_cfg["dir"] if self.agent_cfg else None
-            res = await asyncio.to_thread(menu.served, wd, skills, self.lang)
-            configured = preferences.get(self.preferences, "menu.items", [])
-            if configured:
-                res.update(source="config", items=[{k: v for k, v in x.items() if k != "id"} for x in menu.arrange(configured)])
-            return await self.send_app(s, {"t": "menu", "r": r, **res, "upgrade": {"current": update.__version__, "latest": update.read_rec(self.st).get("latest")}})
+            res = await asyncio.to_thread(menu.for_phone, wd, skills, self.lang, preferences.get(self.preferences, "menu.items", []))
+            return await self.send_app(s, {"t": "menu", "r": r, **res, "upgrade": update.phone_view(self.st)})
         if t in ("provider_get", "provider_key", "asr_install"):
             from . import provider_runtime
             r = obj.get("r")
@@ -4608,6 +4602,7 @@ class Host:
             send.text = compose.render(text, files, self.lang, quote_text) + send.onboarding_note
         self.sends.add(send)
         self.turn_by = s.name or s.device
+        await self._model_set_flush()        # P240: a pill switch still held by the 2 s backstop goes ahead of this message
         self.agent.submit(send)
         return send
 
@@ -5027,9 +5022,47 @@ class Host:
                                                                                                     or len(e) > 16)):
                 return await res(False, "unknown_model" if m is not None and not isinstance(m, str) else "unknown_effort")
             d.update(model=m, effort=e)
+        # P239 backstop (the phone already waits 5 s after the last tap): a switch that follows another within
+        # MODEL_SET_COALESCE seconds is held; a newer one inside the window replaces it (the replaced one is answered
+        # ok + "superseded"); only the last runs, MODEL_SET_COALESCE after it arrived. A lone switch runs at once.
+        held, self.model_set_held = self.model_set_held, None
+        if held is not None:
+            held["h"].cancel()
+            await self._model_set_res(held["s"], held["d"].get("r"), True, "superseded")
+        if held is not None or time.monotonic() - self.model_set_at < MODEL_SET_COALESCE:
+            entry = {"s": s, "d": d}
+            entry["h"] = asyncio.get_running_loop().call_later(
+                MODEL_SET_COALESCE, lambda: asyncio.ensure_future(self._model_set_go(entry)))
+            self.model_set_held = entry
+            return
+        await self._model_set_go({"s": s, "d": d})
+
+    async def _model_set_flush(self) -> None:
+        """P240: the owner's next message runs on the switch they made last — a switch held inside MODEL_SET_COALESCE
+        is handed to the Agent now, ahead of the message (the Agent's queue keeps that order)."""
+        held = self.model_set_held
+        if held is not None:
+            held["h"].cancel()
+            await self._model_set_go(held)
+
+    async def _model_set_res(self, s: Session, r, ok: bool, why: str | None = None) -> None:
+        if s is not None and s.state == "ready":
+            await self.send_app(s, {"t": "model_res", "r": r, "ok": ok, **({"why": why} if why else {})})
+
+    async def _model_set_go(self, entry: dict) -> None:
+        if self.model_set_held is entry:
+            self.model_set_held = None
+        elif "h" in entry:
+            return                                   # replaced while it waited
+        s, d = entry["s"], entry["d"]
+        if self.stopped():
+            return await self._model_set_res(s, d.get("r"), False, "stopped")
+        if not self.agent:
+            return await self._model_set_res(s, d.get("r"), False, "unsupported")
         if self.model_sets >= 2:
-            return await res(False, "busy")
+            return await self._model_set_res(s, d.get("r"), False, "busy")
         self.model_sets += 1
+        self.model_set_at = time.monotonic()
         self.st.log("model_set", cid=s.cid, device=s.device)
         self.agent.submit(agents.Cmd("model_set", "", s.name or s.device, None, d))
 
@@ -5302,6 +5335,12 @@ class Host:
                               (_hb.ENV, _hb.SOCK_NAME),
                               (_peer.ENV, getattr(_peer, "SOCK_NAME", "friends.sock"))):
                 os.environ[env] = str(self.st.perm_dir / name)
+            from . import harness_setup                # P219: the harness's one-time terminal questions, answered ahead
+            if harness_setup.enabled() and not self.agent_cfg.get("_workflow_ceo"):
+                with contextlib.suppress(Exception):
+                    r = await asyncio.to_thread(harness_setup.prepare, self.agent_cfg["kind"], self.agent_cfg["dir"])
+                    self.st.log("harness_prepared", agent=self.agent_cfg["kind"], result=",".join(r["done"]) or None,
+                                reason=",".join(r["skipped"]) or None)
             self.agent = agents.make(self, self.agent_cfg)
             self.agent.start()
             self.sent_status = self.eff_status()

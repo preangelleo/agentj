@@ -1307,6 +1307,7 @@ export default {
   "ver.later": "稍后",
   "ver.title": "服务器已升级",
   "ver.body": "Agent J 已经升级到 {v}，刷新页面就能用上新版本。",
+  "ver.later_line": "电脑已升级，新版网页稍后上线",
   "ver.refresh": "刷新",
   "busy.temp": "临时助理",
   "busy.aria": "有 {n} 个 Agent 在后台干活，点开看是谁",
@@ -1972,9 +1973,9 @@ export default {
   "ix.app.robots_theme": "请 Agent 重新画机器人（换主题）",
   "ix.app.load": "看电脑现在有多忙（系统负载）",
   "ix.app.quota": "看额度用了多少",
-  "ix.app.model_step": "换下一个模型",
-  "ix.app.effort_step": "换下一档思考强度",
-  "ix.app.model_default": "模型和思考强度都回到默认",
+  "ix.app.model_step": "换下一个模型（只改显示，停手 5 秒才生效）",
+  "ix.app.effort_step": "换下一档思考强度（只改显示，停手 5 秒才生效）",
+  "ix.app.model_default": "模型和思考强度都回到默认（立即生效）",
   "ix.app.scan": "扫二维码（新设备的配对码、好友名片，或者任何二维码）",
   "ix.app.settings": "打开设置",
   "ix.app.search": "搜索聊天记录（输入框里的 Ctrl+K 仍是删到行尾），再按一次关闭",
@@ -2134,7 +2135,11 @@ export default {
   "p207set.ct.importing": "正在导入（{i}/{n}）…",
   "r.wr.btn": "分享成网页报告",
   "r.wr.hint": "可以补一句：分享哪部分、给谁看。不写也行，Agent 会问你",
-  "r.wr.hintFrom": "从这条回复开始。可以补一句：分享哪部分、给谁看。不写也行，Agent 会问你"
+  "r.wr.hintFrom": "从这条回复开始。可以补一句：分享哪部分、给谁看。不写也行，Agent 会问你",
+  "p238.switch": "换 AI 编程工具：列出已装的，试通才切，不通切回",
+  "p238.sent": "已交给 Agent：它会先列出能切换的 AI 编程工具，你选了才切",
+  "p238.more": "更多操作",
+  "p238.updRestart": "已装好 {v}，电脑空闲时自动重启生效"
  },
  "en": {
   "meta.title": "Agent J · Phone remote",
@@ -3443,6 +3448,7 @@ export default {
   "ver.later": "Later",
   "ver.title": "Server upgraded",
   "ver.body": "Agent J is now {v}. Refresh the page to use the new version.",
+  "ver.later_line": "Your computer is upgraded; the new web page is on its way.",
   "ver.refresh": "Refresh",
   "busy.temp": "Helper",
   "busy.aria": "{n} agents at work in the background — tap to see who",
@@ -4108,9 +4114,9 @@ export default {
   "ix.app.robots_theme": "Ask the Agent to redraw the robots (theme)",
   "ix.app.load": "See how busy the computer is (system load)",
   "ix.app.quota": "See how much quota is used",
-  "ix.app.model_step": "Switch to the next model",
-  "ix.app.effort_step": "Switch to the next effort level",
-  "ix.app.model_default": "Back to the default model and effort",
+  "ix.app.model_step": "Switch to the next model (shown at once, applied after 5 s without another tap)",
+  "ix.app.effort_step": "Switch to the next effort level (shown at once, applied after 5 s without another tap)",
+  "ix.app.model_default": "Back to the default model and effort (at once)",
   "ix.app.scan": "Scan a QR code (a new device's pairing code, a friend's card, or anything else)",
   "ix.app.settings": "Open Settings",
   "ix.app.search": "Search the chat (inside the message box Ctrl+K still deletes to the end); press again to close",
@@ -4270,6 +4276,10 @@ export default {
   "p207set.ct.importing": "Importing ({i}/{n})…",
   "r.wr.btn": "Share as a web report",
   "r.wr.hint": "Add a line if you like: which part, and who should see it. Or just send — the Agent will ask",
-  "r.wr.hintFrom": "Starting from this reply. Add a line if you like: which part, and who should see it. Or just send — the Agent will ask"
+  "r.wr.hintFrom": "Starting from this reply. Add a line if you like: which part, and who should see it. Or just send — the Agent will ask",
+  "p238.switch": "Switch AI coding tool: tested before switching",
+  "p238.sent": "Sent: your Agent first lists the AI coding tools you can switch to; nothing switches until you choose",
+  "p238.more": "More actions",
+  "p238.updRestart": "{v} is installed; it takes effect when the computer is idle and restarts the service"
  }
 };

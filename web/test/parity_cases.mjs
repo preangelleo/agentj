@@ -416,16 +416,19 @@ export async function runCases({ B, web, fake, only }) {
     await sleep(200);
     const e = await rect(P, '#metaEffort');
     await tap(P, e.x, e.y);
-    await wait(`document.getElementById('meta').textContent === 'Opus 5.5 · high' && !!document.getElementById('meta').dataset.sw`);
-    await wait(`document.getElementById('meta').textContent === 'Opus 5.5 · high' && !document.getElementById('meta').dataset.sw`, 5000);
+    await wait(`document.getElementById('meta').textContent === 'Opus 5.5 · high' && document.getElementById('meta').dataset.sw === 'wait' && document.getElementById('meta').dataset.swEffort === 'wait'`);
+    ok(fake.st.modelSets.length === 0, 'P239: a tap only changes the label; nothing is sent inside 5 s');
+    await wait(`document.getElementById('meta').textContent === 'Opus 5.5 · high' && !document.getElementById('meta').dataset.sw`, 9000);
     ok(fake.st.modelSets.length === 1 && fake.st.modelSets[0].model === 'opus' && fake.st.modelSets[0].effort === 'high', 'model_set effort high');
   });
   await C('pill-gather', async () => {
     const m = await rect(P, '#metaModel');
-    await tap(P, m.x, m.y); await sleep(120); await tap(P, m.x, m.y);
-    await sleep(1500);
+    await tap(P, m.x, m.y); await sleep(1500); await tap(P, m.x, m.y);
+    await sleep(4000);
+    ok(fake.st.modelSets.length === 1, 'P239: 4 s after the last tap nothing more is sent: ' + JSON.stringify(fake.st.modelSets.slice(1)));
+    await sleep(1600);
     const sets = fake.st.modelSets.slice(1);
-    ok(sets.length === 1 && sets[0].model === 'haiku', 'two taps within 1 s → one model_set with the final target: ' + JSON.stringify(sets));
+    ok(sets.length === 1 && sets[0].model === 'haiku', 'two taps 1.5 s apart → one model_set with the final target, 5 s after the last tap: ' + JSON.stringify(sets));
     await wait(`document.getElementById('meta').textContent === 'Haiku 5'`);
   });
   await C('pill-long-press-default', async () => {

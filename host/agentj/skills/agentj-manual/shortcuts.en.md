@@ -55,9 +55,9 @@ The "This reply" group acts on the page you are reading; "Files on this page" ac
 | `B` | Hold the dancing robots | Ask the Agent to redraw the robots (theme) |
 | `w` | Tap the load line under the Agent's name | See how busy the computer is (system load) |
 | `Q` | Tap the grey line at the top or above the message box | See how much quota is used |
-| `Alt+M` | Tap the model name | Switch to the next model |
-| `Alt+R` | Tap the effort level | Switch to the next effort level |
-| `Alt+Shift+M` | Hold the model or the effort | Back to the default model and effort |
+| `Alt+M` | Tap the model name | Switch to the next model (shown at once, applied after 5 s without another tap) |
+| `Alt+R` | Tap the effort level | Switch to the next effort level (shown at once, applied after 5 s without another tap) |
+| `Alt+Shift+M` | Hold the model or the effort | Back to the default model and effort (at once) |
 | `C` | Tap the scan icon; hold the camera button | Scan a QR code (a new device's pairing code, a friend's card, or anything else) |
 | `s` · `⌘+,` / `Ctrl+,` | Tap the gear | Open Settings |
 | `⌘+K` / `Ctrl+K` | Tap the magnifier | Search the chat (inside the message box Ctrl+K still deletes to the end); press again to close |

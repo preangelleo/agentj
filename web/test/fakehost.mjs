@@ -230,6 +230,7 @@ export async function startFakeHost() {
     if (m.t === 'menu_get') return sendApp(c, { t: 'menu', r: m.r, ...(st.menu || { source: 'default', items: [], skills: [], cmds: ['clear', 'compact', 'model', 'context', 'cost', 'usage', 'status', 'help', 'stop'] }) });
     if (m.t === 'model_set') {
       st.modelSets.push(m);
+      if (st.modelWhy) { const why = st.modelWhy; st.modelWhy = null; return sendApp(c, { t: 'model_res', r: m.r, ok: false, why }); }   // P239: a one-shot refusal
       await sendApp(c, { t: 'model_res', r: m.r, ok: true });
       const mod = st.models?.models.find((x) => x.id === (m.default ? st.models.default.model : m.model));
       if (st.meter && mod) { st.meter = { ...st.meter, model: mod.id, model_name: mod.name, effort: m.default ? st.models.default.effort : (m.effort ?? st.meter.effort), at: Math.floor(Date.now() / 1000) }; await broadcast({ t: 'meter', ...st.meter }); }

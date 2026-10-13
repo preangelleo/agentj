@@ -37,6 +37,12 @@ CONTROL_WARN_S = 30
 OBSERVE_RETRIES = 5     # P142 (B17): consecutive failed observe passes before the shared session is down
 FRESH_MS = 30 * 60 * 1000   # P147: a registered session this young may not have written its transcript yet
 CLAUDE_INPUT_WAIT = 10  # acceptance, not completion; never retry an uncertain socket write
+# P243: a background Bash keeps Claude Code's registry at "shell", a background sub-agent at "busy", although the turn has
+# ended and the prompt takes input. Phone /compact and /clear go once our hooks say the main thread is idle and has been
+# quiet this long — with background work known (Stop.background_tasks, a run_in_background call, registry "shell")...
+BG_SETTLE_S = 3.0
+# ...or, registry busy with no background work we know of (e.g. started before Agent J attached), after this much silence.
+BUSY_FALLBACK_S = 60.0
 NATIVE_STALE_S = 3.0    # P198: native_turn with registry + hook state idle this long is a leftover flag, not a turn
 TURN_END_GRACE = 1.0    # P151: a turn end the transcript records (turn_duration) waits this long for its native Stop
 EMPTY_STOP_WAIT = 2.0   # P151b: a native Stop with no last_assistant_message: the transcript's end (or this) closes the turn
@@ -181,6 +187,8 @@ class SharedClaudeAgent(Agent):
         self.native_turn = False       # P135: the transcript shows a native turn in progress (no UserPromptSubmit came)
         self.ended_at = None           # P198: wall clock of the last turn end; assistant lines written before it are that turn's
         self._native_idle_since = None  # P198: monotonic start of "native_turn, yet the session and its registry entry are idle"
+        self.bg_live = {}               # P243: background task id → type ("shell" / "subagent" / …), main thread's own
+        self.main_seen_at = __import__("time").monotonic()   # P243: main thread's last hook event / transcript line (start = now)
         self.pending_text = ""
         self.pending_source = None
         self.untrusted_state = None    # B1: None | "pending" (group envelope sent) | "running" (native turn seen)
@@ -446,6 +454,81 @@ class SharedClaudeAgent(Agent):
         if futs:
             self.host.st.log("shared_card_withdrawn", event=name, count=len(futs))
 
+    def _note_background(self, name, event):
+        """P243: the main thread's background work. The main Stop's background_tasks is Claude Code's own list (it replaces
+        ours); a run_in_background Bash / async Agent result adds one; SubagentStop, a task notification, TaskStop/KillShell
+        or a session change removes one. Display and the control gate only — nothing here starts or stops work."""
+        import time
+        aid = event.get("agent_id")
+        if not aid:
+            self.main_seen_at = time.monotonic()
+        if name == "Stop" and not aid and isinstance(event.get("background_tasks"), list):
+            self.bg_live = {str(t.get("id")): str(t.get("type") or "task") for t in event["background_tasks"]
+                            if isinstance(t, dict) and t.get("id") and t.get("status") in (None, "running", "pending")}
+        elif name == "PostToolUse" and not aid:
+            resp = event.get("tool_response") if isinstance(event.get("tool_response"), dict) else {}
+            inp = event.get("tool_input") if isinstance(event.get("tool_input"), dict) else {}
+            if resp.get("backgroundTaskId"):
+                self.bg_live[str(resp["backgroundTaskId"])] = "shell"
+            elif resp.get("agentId") and (resp.get("isAsync") or resp.get("status") == "async_launched"):
+                self.bg_live[str(resp["agentId"])] = "subagent"
+            elif event.get("tool_name") in ("TaskStop", "KillShell", "KillBash"):
+                for k in ("task_id", "shell_id", "bash_id"):
+                    self.bg_live.pop(str(inp.get(k)), None)
+        elif name == "SubagentStop" and aid:
+            self.bg_live.pop(str(aid), None)
+        elif name in ("SessionEnd",) or (name == "SessionStart" and event.get("source") in ("clear", "startup")):
+            self.bg_live = {}
+        while len(self.bg_live) > 64:
+            self.bg_live.pop(next(iter(self.bg_live)))
+
+    def _control_gate(self, reg) -> tuple[bool, str]:
+        """P243: may a phone /compact or /clear be typed now? (go, why) — why: "idle" (registry idle), "bg" (registry busy only
+        with background work), "quiet" (registry busy, nothing known, long silence) when go; "fg" (a turn / a dialog / a
+        compaction on the main thread), "bg" / "quiet" (still settling) when not. Our hooks own the main thread's state;
+        Claude Code's registry stays "shell"/"busy" for background work after the turn ended (probed on 2.1.296)."""
+        import time
+        if self.state.status != "idle" or self.native_turn or self.phone_turn:
+            return False, "fg"
+        if reg in ("idle", "done"):
+            return True, "idle"
+        if reg not in ("shell", "busy"):
+            return False, "fg"
+        quiet = time.monotonic() - self.main_seen_at
+        if self.bg_live or reg == "shell":
+            return quiet >= BG_SETTLE_S, "bg"
+        return quiet >= BUSY_FALLBACK_S, "quiet"
+
+    def _wait_detail(self, name, why) -> str | None:
+        """P243: the waiting card's line — None = the plain 「等电脑空下来再执行」."""
+        lang = getattr(self.host, "lang", "zh")
+        n = len(self.bg_live)
+        act = pick(lang, {"compact": "压缩", "clear": "清空"}.get(name, "执行"), name)
+        if why == "bg":
+            return pick(lang, (f"电脑上有 {n} 个后台任务在跑" if n else "电脑上有后台任务在跑") + f"，前台已空闲：马上照常{act}，后台任务不受影响",
+                        (f"{n} background task(s) running on the computer" if n else "Background work running on the computer")
+                        + f"; the foreground is idle — /{name} goes in a moment, background work keeps running")
+        if why == "quiet":
+            return pick(lang, f"电脑上的会话仍显示忙（多半是后台任务），前台回合已结束；{int(BUSY_FALLBACK_S)} 秒内没有新回合就照常{act}",
+                        f"The desktop session still reports busy (most likely background work) though its turn ended; "
+                        f"/{name} goes if no new turn starts within {int(BUSY_FALLBACK_S)} s")
+        if self.state.status == "waiting":
+            return pick(lang, f"电脑上有个确认框在等你处理，处理完就{act}", f"A dialog on the computer is waiting for you; /{name} goes after it")
+        if n:
+            return pick(lang, f"等电脑这一轮结束再{act}（另有 {n} 个后台任务在跑，不用等它们）",
+                        f"Waiting for the desktop turn to end ({n} background task(s) running — not waited for)")
+        return None
+
+    def _wait_timeout(self, name, why) -> str:
+        lang = getattr(self.host, "lang", "zh")
+        mins = int(DESKTOP_IDLE_WAIT // 60) or 1
+        act = pick(lang, {"compact": "压缩", "clear": "清空"}.get(name, "执行"), name)
+        if self.state.status == "waiting":
+            return pick(lang, f"没{act}：等待超时——{mins} 分钟里电脑上一直有个确认框没处理，命令没有发送。处理完再发 /{name} 即可。",
+                        f"No change: timed out — a dialog on the computer waited {mins} min; /{name} was not sent. Answer it, then send /{name} again.")
+        return pick(lang, f"没{act}：等待超时——{mins} 分钟里电脑上的这一轮一直没结束，命令没有发送。可以稍后再发，或在电脑上直接输入 /{name}。",
+                    f"No change: timed out — the desktop turn did not end within {mins} min; /{name} was not sent. Try again later or type /{name} on the computer.")
+
     def _note_agent(self, name, event):
         """P172: who is asking — the main thread or a sub-agent (its type and the description it was dispatched with)."""
         aid = event.get("agent_id")
@@ -564,6 +647,7 @@ class SharedClaudeAgent(Agent):
             if hb is not None:                      # P156: the next beat carries the full heartbeat prompt again
                 with contextlib.suppress(Exception):
                     hb.forget("compact")
+        self._note_background(name, event)
         self.state.handle(event)
         if name == "Stop" and not event.get("agent_id") and getattr(self.state, "_deferred_stop", None) is event:
             self.stop_since_end = False         # P151b: held as a fake Stop (foreground sub-agent) — not this turn's end
@@ -878,27 +962,37 @@ class SharedClaudeAgent(Agent):
         deadline = started + DESKTOP_IDLE_WAIT
         warned = noted = False
         prepped = False
+        shown = None
         while True:
             if self.halting or self.host.stopped() is True or getattr(self.cur_cmd, "cancelled", False):
                 return Result(pick(getattr(self.host, "lang", "zh"), "已取消，未发送控制。", "Cancelled; control not sent."), "error")
             live = claude_sessions(self.cfg['dir'], self.session['sessionId'])
             if not live or live[0]['pid'] != self.session['pid']:
                 return Result(pick(getattr(self.host, "lang", "zh"), "没清成：所选桌面会话已离线", "No change: selected desktop session offline"), "error")
-            self.validate_session(live[0].get('status'))
-            if self.state.status == 'idle' and live[0].get('status') in ('idle', 'done'):
+            reg = live[0].get('status')
+            self.validate_session(reg)
+            go, why = self._control_gate(reg)      # P243: background work alone no longer holds the control
+            if go:
                 if name == "compact" and not prepped and not handoff.fresh(self.turn_began_at):
                     prepped = True          # P151: the handoff first (agentj-handoff), then wait for idle again
                     await self._handoff_prep()
                     continue
+                if why != "idle":
+                    self.host.st.log("shared_control_background", cmd=name, why=why, tasks=len(self.bg_live), registry=str(reg)[:12])
                 break
-            if not noted:
-                self.host.cmd_waiting(self.cur_cmd)
-                noted = True
+            detail = self._wait_detail(name, why)
+            if not noted or detail != shown:
+                if detail is None:
+                    self.host.cmd_waiting(self.cur_cmd)
+                else:
+                    self.host.cmd_waiting(self.cur_cmd, detail)
+                noted, shown = True, detail
             if not warned and time.monotonic() - started >= CONTROL_WARN_S:
-                self.host.st.log("shared_control_wait_warning", cmd=name, seconds=30, level="warning")
+                self.host.st.log("shared_control_wait_warning", cmd=name, seconds=30, why=why, tasks=len(self.bg_live), level="warning")
                 warned = True
             if time.monotonic() >= deadline:
-                return Result(pick(getattr(self.host, "lang", "zh"), "没清成：等待桌面回合结束超时，未发送命令", "No change: desktop idle timeout; command not sent"), "error")
+                self.host.st.log("shared_control_timeout", cmd=name, why=why, tasks=len(self.bg_live), registry=str(reg)[:12])
+                return Result(self._wait_timeout(name, why), "error")
             await asyncio.sleep(.1)
         if self.native_lock.locked():
             return Result("没执行：模型切换正在进行，稍后再试。 / Not sent: a model switch is in progress.", "error")
@@ -1342,6 +1436,7 @@ class SharedClaudeAgent(Agent):
         self.meter(**claude_statusline.read(self.host.st.root, sid, self.compacted_at))
 
     def read_transcript(self):
+        import time
         with self.transcript.open("rb") as f:
             if f.seek(0, 2) < self.offset:
                 self.offset = 0
@@ -1388,6 +1483,8 @@ class SharedClaudeAgent(Agent):
                 blocks = msg.get("content", "")
                 text = blocks if isinstance(blocks, str) else "\n".join(
                     b.get("text", "") for b in blocks if isinstance(b, dict) and b.get("type") == "text")
+                if role in ("user", "assistant"):
+                    self.main_seen_at = time.monotonic()    # P243: main-thread activity restarts the quiet window
                 if role == "assistant":
                     if not self._line_of_ended_turn(item):
                         self.native_turn = True   # P135: a native turn is producing; its Stop clears this
@@ -1401,6 +1498,9 @@ class SharedClaudeAgent(Agent):
                     if item.get("isMeta") and self._from_phone(item, text):
                         self._phone_anchor(text)  # P151b: 2.1.296 writes the peer (phone) message as an isMeta record
                     via = proactive_origin(item, text)
+                    if via == "task":
+                        for tid in re.findall(r"<task-id>\s*([^<\s]+)\s*</task-id>", text):
+                            self.bg_live.pop(tid, None)     # P243: that background task has ended
                     if via:
                         self.native_turn = True
                         self.stop_since_end = False   # P151: a harness-started turn begins (loop tick, task notification)
@@ -1649,7 +1749,7 @@ class SharedClaudeAgent(Agent):
                 why = "offline"
             elif self.state.status not in ("idle", "none"):
                 why = "busy"            # Claude Code's automatic compaction inside a turn: the turn goes on by itself
-            elif not await asyncio.to_thread(self._registry_idle):
+            elif not await asyncio.to_thread(self._registry_quiet):
                 why = "busy"
             elif self.native_turn and stale < 2:
                 # P198: our state and Claude Code's registry both idle; only native_turn says busy — a flag left by the
@@ -1701,6 +1801,16 @@ class SharedClaudeAgent(Agent):
         ok = after is not None and after != before
         self.host.st.log("shared_handoff_prep", result="ok" if ok else "missing")
         return ok
+
+    def _registry_quiet(self) -> bool:
+        """P243: the registry says idle — or "shell"/"busy" that is only background work (Stop.background_tasks) and the
+        main thread is idle. The post-compaction recovery message must not wait for a background `sleep`."""
+        live = claude_sessions(self.cfg["dir"], (self.session or {}).get("sessionId", "")) if self.session else []
+        if not live:
+            return False
+        reg = live[0].get("status")
+        return reg == "idle" or (reg in ("shell", "busy") and (reg == "shell" or bool(self.bg_live))
+                                 and self.state.status in ("idle", "none") and not self.phone_turn)
 
     def _registry_idle(self) -> bool:
         live = claude_sessions(self.cfg["dir"], (self.session or {}).get("sessionId", "")) if self.session else []

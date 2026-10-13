@@ -2,7 +2,7 @@
 // P187 · one menu design system: every menu-type surface is a full-screen dark page (Sooty canvas, Noir panels, Lotion
 // text) built from two layers of tokens — `--ui-*` (global, inherits brand/palette.css) and `--menu-*` (inherits global).
 // Real page + local fake host, own headless Chromium (never :9222).
-//   a) every menu surface covers the whole viewport, wears the menu tokens (canvas Sooty, text Lotion) in light AND dark
+//   a) every menu surface (P238: except the command list, a card on the 5-hour bar) covers the whole viewport, wears the menu tokens (canvas Sooty, text Lotion) in light AND dark
 //      themes, and carries the one menu header (title + back / close icon buttons)
 //   b) WCAG AA: every visible text node inside a menu ≥ 4.5:1 against the colour it actually sits on (≥ 3:1 for ≥ 24 px /
 //      ≥ 18.66 px bold); icon buttons ≥ 3:1 (non-text)
@@ -64,13 +64,13 @@ const noProblems = (p) => { assert.equal(p.problems.length, 0, p.problems.join('
 const shown = (id) => `(() => { const e = document.getElementById(${JSON.stringify(id)}); return !!e && !e.hidden && e.getClientRects().length > 0; })()`;
 async function openSettings(p) { if (!(await ev(p, shown('settings')))) await click(p, '#setBtn'); await waitFor(p, shown('settings')); await sleep(120); }
 async function toChat(p) {
-  for (let i = 0; i < 6 && await ev(p, `document.body.dataset.view !== 'chat' || !document.getElementById('settings').hidden || [...document.querySelectorAll('.menupage')].some((e) => !e.hidden)`); i++) { await key(p, 'Escape'); await sleep(80); }
+  for (let i = 0; i < 6 && await ev(p, `document.body.dataset.view !== 'chat' || !document.getElementById('settings').hidden || [...document.querySelectorAll('.menupage, .cmdmenu')].some((e) => !e.hidden)`); i++) { await key(p, 'Escape'); await sleep(80); }
 }
 
 // Every menu surface: how to open it from the chat page, and the element that is the page.
 const SURFACES = [
   { id: 'settings', level: 1, el: '#settings', open: async (p) => openSettings(p) },
-  { id: 'commands', level: 1, el: '#menu', open: async (p) => { await click(p, '#slashBtn'); await waitFor(p, shown('menu')); } },
+  { id: 'commands', level: 1, el: '#menuSheet', sheet: true, open: async (p) => { await click(p, '#slashBtn'); await waitFor(p, shown('menu')); } },
   { id: 'remotes', level: 2, el: '#settings', open: async (p) => { await openSettings(p); await click(p, '#set-remotes-open'); await waitFor(p, shown('set-remotes')); await sleep(200); } },
   { id: 'keys', level: 2, el: '#keys', open: async (p) => { await openSettings(p); await click(p, '#keysBtn'); await waitFor(p, shown('keys')); } },
   { id: 'silent', level: 2, el: '#silent', open: async (p) => { await click(p, '#slashBtn'); await waitFor(p, shown('menu')); await click(p, '#silentEntry'); await waitFor(p, shown('silent')); } },
@@ -170,12 +170,16 @@ try {
             await sleep(260);                               // the 160 ms fade-in of a menu page
             const g = await ev(p, GEOM(s.el));
             const tag = `${s.id} ${w} ${scheme}`;
-            assert.equal(g.w, w, `${tag} full width ${JSON.stringify(g)}`);
-            assert.ok(Math.abs(g.h - h) <= 1, `${tag} full height ${JSON.stringify(g)}`);
+            if (s.sheet) {                                  // P238: the command list is a card (≤ 60 % high), the rest are pages
+              assert.ok(g.w < w && g.h <= h * 0.6 + 1, `${tag} a card ${JSON.stringify(g)}`);
+            } else {
+              assert.equal(g.w, w, `${tag} full width ${JSON.stringify(g)}`);
+              assert.ok(Math.abs(g.h - h) <= 1, `${tag} full height ${JSON.stringify(g)}`);
+            }
             assert.equal(g.canvas, SOOTY, `${tag} Sooty canvas`);
             assert.equal(g.text, LOTION, `${tag} Lotion text`);
             assert.ok(g.head, `${tag} has the menu header`);
-            assert.ok(g.head.h >= 56, `${tag} header height ${g.head.h}`);
+            assert.ok(g.head.h >= (s.sheet ? 52 : 56), `${tag} header height ${g.head.h}`);
             assert.ok(g.head.icons.length >= 1 && g.head.icons.every((x) => x === 44), `${tag} header icon buttons 44 px: ${g.head.icons}`);
             assert.equal(g.overflowX, false, `${tag} no sideways scroll`);
             assert.deepEqual(g.small, [], `${tag} taps < 44 px`);

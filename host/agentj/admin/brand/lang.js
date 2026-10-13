@@ -7,6 +7,10 @@
    Sets <html lang> + data-lang immediately (no flash). base.css hides [data-l] elements of the other language.
    Also pre-applies an explicit theme from localStorage "aj.theme" (light|dark) as html[data-theme].
 
+   Switch: [data-aj-lang-switch] in a page header → a round globe button + menu (中文 / English, current one ticked;
+   arrows / Home / End / Esc, closes on outside press); elsewhere (footers, pairing page) → the 「中文 / EN」 pair.
+   Force either with data-aj-lang-switch="globe" | "pair".
+
    API: window.AJLang = { get(), set(lang), t(dict, key, vars), onChange(cb) → unsubscribe, link(url) → url }
 */
 (function (root) {
@@ -97,18 +101,32 @@
     }
   }
 
-  var LABELS = { zh: "中文", en: "EN" };
+  var LABELS = { zh: "中文", en: "EN" };             // the pair's short labels (footers, the phone's pairing page)
+  var NAMES = { zh: "中文", en: "English" };        // the globe menu: each language in its own script (add 日本語 here)
   var SWITCH_LABEL = { zh: "语言", en: "Language" };
+  var MENU_LABEL = "语言 · Language";               // the globe button: readable whichever language is on screen
+  var SVG_NS = "http://www.w3.org/2000/svg";
+  var menuSeq = 0;
+  var openMenu = null;                              // the one open globe menu (its switch node), or null
+
+  // Style: data-aj-lang-switch="globe" | "pair"; empty = globe inside a page header, pair elsewhere.
+  function styleOf(node) {
+    var v = node.getAttribute("data-aj-lang-switch");
+    if (v === "globe" || v === "pair") return v;
+    return node.closest && node.closest(".aj-header, header") ? "globe" : "pair";
+  }
 
   function renderSwitches(lang) {
     if (!doc || !doc.querySelectorAll) return;
     var nodes = doc.querySelectorAll("[data-aj-lang-switch]");
-    for (var i = 0; i < nodes.length; i++) renderSwitch(nodes[i], lang);
+    for (var i = 0; i < nodes.length; i++) {
+      if (styleOf(nodes[i]) === "globe") renderGlobe(nodes[i], lang); else renderSwitch(nodes[i], lang);
+    }
   }
   function renderSwitch(node, lang) {
     if (!node.getAttribute("data-aj-ready")) {
       while (node.firstChild) node.removeChild(node.firstChild);
-      ["zh", "en"].forEach(function (l, idx) {
+      api.langs.forEach(function (l, idx) {
         if (idx) {
           var sep = doc.createElement("span");
           sep.className = "aj-lang__sep"; sep.setAttribute("aria-hidden", "true"); sep.textContent = "/";
@@ -122,7 +140,7 @@
         b.addEventListener("click", function () { api.set(l); });
         node.appendChild(b);
       });
-      if (!node.classList.contains("aj-lang")) node.classList.add("aj-lang");
+      node.classList.add("aj-lang", "aj-lang--pair");
       node.setAttribute("role", "group");
       node.setAttribute("data-aj-ready", "1");
     }
@@ -131,6 +149,107 @@
     for (var j = 0; j < btns.length; j++) {
       btns[j].setAttribute("aria-pressed", btns[j].getAttribute("data-aj-lang") === lang ? "true" : "false");
     }
+  }
+
+  function svg(cls, paths) {
+    var el = doc.createElementNS(SVG_NS, "svg");
+    el.setAttribute("class", cls); el.setAttribute("viewBox", "0 0 24 24");
+    el.setAttribute("aria-hidden", "true"); el.setAttribute("focusable", "false");
+    paths.forEach(function (d) {
+      var p = doc.createElementNS(SVG_NS, d[0]);
+      for (var k in d[1]) if (Object.prototype.hasOwnProperty.call(d[1], k)) p.setAttribute(k, d[1][k]);
+      el.appendChild(p);
+    });
+    return el;
+  }
+  var GLOBE = [["circle", { cx: "12", cy: "12", r: "9" }], ["path", { d: "M3 12h18" }],
+    ["path", { d: "M12 3c2.5 2.6 3.8 5.6 3.8 9s-1.3 6.4-3.8 9c-2.5-2.6-3.8-5.6-3.8-9S9.5 5.6 12 3z" }]];
+  var CHECK = [["path", { d: "M5 12.5l4.5 4.5L19 7.5" }]];
+
+  function menuItems(node) { return node.querySelectorAll('[role="menuitemradio"]'); }
+  function setOpen(node, open, focusTo) {
+    var btn = node.querySelector(".aj-lang__button"), menu = node.querySelector(".aj-lang__menu");
+    if (!btn || !menu) return;
+    if (open && openMenu && openMenu !== node) setOpen(openMenu, false);
+    menu.hidden = !open;
+    btn.setAttribute("aria-expanded", open ? "true" : "false");
+    openMenu = open ? node : (openMenu === node ? null : openMenu);
+    if (open) {
+      var items = menuItems(node), pick = items[0];
+      for (var i = 0; i < items.length; i++) if (items[i].getAttribute("aria-checked") === "true") pick = items[i];
+      if (focusTo === "last") pick = items[items.length - 1];
+      if (pick) pick.focus();
+    } else if (focusTo === "button") btn.focus();
+  }
+  function onMenuKey(node, ev) {
+    var items = Array.prototype.slice.call(menuItems(node));
+    var at = items.indexOf(doc.activeElement);
+    var k = ev.key;
+    if (k === "Escape") { ev.preventDefault(); setOpen(node, false, "button"); return; }
+    if (k === "Tab") { setOpen(node, false); return; }
+    var next = k === "ArrowDown" ? at + 1 : k === "ArrowUp" ? at - 1 : k === "Home" ? 0 : k === "End" ? items.length - 1 : null;
+    if (next === null) return;
+    ev.preventDefault();
+    items[(next + items.length) % items.length].focus();
+  }
+
+  function renderGlobe(node, lang) {
+    if (!node.getAttribute("data-aj-ready")) {
+      while (node.firstChild) node.removeChild(node.firstChild);
+      var id = "aj-lang-menu-" + (++menuSeq);
+      var btn = doc.createElement("button");
+      btn.type = "button";
+      btn.className = "aj-lang__button";
+      btn.setAttribute("aria-haspopup", "menu");
+      btn.setAttribute("aria-expanded", "false");
+      btn.setAttribute("aria-controls", id);
+      btn.setAttribute("aria-label", MENU_LABEL);
+      btn.setAttribute("title", MENU_LABEL);
+      btn.appendChild(svg("aj-lang__globe", GLOBE));
+      var menu = doc.createElement("div");
+      menu.className = "aj-lang__menu";
+      menu.id = id;
+      menu.setAttribute("role", "menu");
+      menu.setAttribute("aria-label", MENU_LABEL);
+      menu.hidden = true;
+      api.langs.forEach(function (l) {
+        var it = doc.createElement("button");
+        it.type = "button";
+        it.className = "aj-lang__item";
+        it.setAttribute("role", "menuitemradio");
+        it.setAttribute("data-aj-lang", l);
+        it.setAttribute("lang", LANGS[l]);
+        var name = doc.createElement("span");
+        name.textContent = NAMES[l];
+        it.appendChild(name);
+        it.appendChild(svg("aj-lang__check", CHECK));
+        it.addEventListener("click", function () { setOpen(node, false, "button"); api.set(l); });
+        menu.appendChild(it);
+      });
+      btn.addEventListener("click", function () { setOpen(node, menu.hidden); });
+      btn.addEventListener("keydown", function (ev) {
+        if (ev.key === "ArrowDown" || ev.key === "ArrowUp") { ev.preventDefault(); setOpen(node, true, ev.key === "ArrowUp" ? "last" : null); }
+        else if (ev.key === "Escape" && !menu.hidden) { ev.preventDefault(); setOpen(node, false, "button"); }
+      });
+      menu.addEventListener("keydown", function (ev) { onMenuKey(node, ev); });
+      node.addEventListener("focusout", function (ev) {
+        if (!menu.hidden && ev.relatedTarget && !node.contains(ev.relatedTarget)) setOpen(node, false);
+      });
+      node.appendChild(btn);
+      node.appendChild(menu);
+      node.classList.add("aj-lang", "aj-lang--globe");
+      node.removeAttribute("role");
+      node.setAttribute("data-aj-ready", "1");
+    }
+    var items = menuItems(node);
+    for (var j = 0; j < items.length; j++) {
+      items[j].setAttribute("aria-checked", items[j].getAttribute("data-aj-lang") === lang ? "true" : "false");
+    }
+  }
+
+  // A press anywhere outside the open globe menu closes it.
+  function onOutside(ev) {
+    if (openMenu && ev.target && !openMenu.contains(ev.target)) setOpen(openMenu, false);
   }
 
   function isOurCrossOrigin(u) {
@@ -222,5 +341,6 @@
     doc.addEventListener("click", onNavigate, true);
     doc.addEventListener("auxclick", onNavigate, true);
     doc.addEventListener("contextmenu", onNavigate, true);
+    doc.addEventListener("pointerdown", onOutside, true);
   }
 })(typeof window !== "undefined" ? window : globalThis);

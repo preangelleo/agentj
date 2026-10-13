@@ -195,6 +195,8 @@ class OpenCodeV2Agent(OpenCodeAgent):
         t = ev.get("type")
         p = ev.get("data") if isinstance(ev.get("data"), dict) else {}
         mine = p.get("sessionID") == self.sid and self.sid is not None
+        if mine:
+            self.touch()                   # P219: progress on our session (stall watch)
         if mine and isinstance(t, str) and t.startswith("session."):
             self.turn_progress = time.monotonic()
         if t == "permission.asked" and mine:

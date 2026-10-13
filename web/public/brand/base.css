@@ -130,22 +130,41 @@ hr { border: 0; border-top: 1px solid var(--border); margin: var(--sp-6) 0; colo
 @media (max-width: 480px) {
   .aj-menu__label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
   .aj-menu__button { padding: 0; width: var(--tap); }
-  .aj-header .aj-lang button { min-width: var(--tap); padding: 0 4px; }
-  .aj-header .aj-lang [aria-pressed="true"]::after { display: none; }
-  .aj-header .aj-lang__sep { display: none; }
+  .aj-header .aj-lang--pair button { min-width: var(--tap); padding: 0 4px; }
+  .aj-header .aj-lang--pair [aria-pressed="true"]::after { display: none; }
+  .aj-header .aj-lang--pair .aj-lang__sep { display: none; }
 }
 @media (max-width: 400px) { .aj-brand__name { font-size: 1rem; } .aj-header__inner .aj-badge { display: none; } }
 
-/* ===== language switch (lang.js renders the two buttons) ===== */
+/* ===== language switch (lang.js renders it: a globe menu in headers, the two-button pair elsewhere) ===== */
 .aj-lang { display: inline-flex; align-items: center; border: 1px solid var(--quiet-border); border-radius: var(--r-pill);
   padding: 0; min-height: calc(var(--tap) + 2px); font-size: var(--fs-sm); color: var(--text-muted); white-space: nowrap; }
-.aj-lang button, .aj-lang a { min-height: var(--tap); min-width: var(--tap); padding: 0 var(--sp-2);
+.aj-lang:not(.aj-lang--globe) button, .aj-lang:not(.aj-lang--globe) a { min-height: var(--tap); min-width: var(--tap); padding: 0 var(--sp-2);
   border: 0; border-radius: var(--r-pill); background: transparent; color: var(--text-muted); text-decoration: none;
   display: inline-flex; align-items: center; justify-content: center; font-weight: 500; }
 .aj-lang [aria-pressed="true"] { color: var(--text); font-weight: 700; }
 .aj-lang [aria-pressed="true"]::after { content: ""; width: 5px; height: 5px; border-radius: 50%; background: var(--accent);
   margin-left: 5px; }
 .aj-lang__sep { opacity: 0.6; padding: 0 1px; }
+/* header: one round globe button (44 px, line icon, no fill) → a small menu, current language ticked */
+.aj-header .aj-lang:not([data-aj-ready]) { visibility: hidden; width: var(--tap); overflow: hidden; border: 0; }
+.aj-lang--globe { position: relative; border: 0; min-height: 0; }
+.aj-lang__button { display: inline-grid; place-items: center; width: var(--tap); height: var(--tap); padding: 0;
+  border: 1px solid var(--quiet-border); border-radius: 50%; background: transparent; color: var(--text-muted); cursor: pointer;
+  transition: background-color var(--dur) var(--ease), color var(--dur) var(--ease), border-color var(--dur) var(--ease); }
+.aj-lang__button:hover, .aj-lang__button[aria-expanded="true"] { color: var(--text); background: var(--surface-2); border-color: var(--text-muted); }
+.aj-lang__globe { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
+.aj-lang__menu { position: absolute; right: 0; top: calc(100% + 6px); z-index: 40; min-width: 168px; padding: var(--sp-1);
+  display: grid; background: var(--bg); border: 1px solid var(--border); border-radius: var(--r-md); box-shadow: var(--shadow-2); }
+.aj-lang__menu[hidden] { display: none; }
+.aj-lang__item { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-4); min-height: var(--tap);
+  padding: 0 var(--sp-3); border: 0; border-radius: var(--r-sm); background: transparent; color: var(--text);
+  font: inherit; font-size: var(--fs-sm); font-weight: 500; text-align: left; cursor: pointer; }
+.aj-lang__item:hover, .aj-lang__item:focus-visible { background: var(--surface-2); }
+.aj-lang__item[aria-checked="true"] { font-weight: 700; }
+.aj-lang__check { width: 18px; height: 18px; flex: 0 0 auto; fill: none; stroke: currentColor; stroke-width: 2;
+  stroke-linecap: round; stroke-linejoin: round; visibility: hidden; }
+.aj-lang__item[aria-checked="true"] .aj-lang__check { visibility: visible; }
 
 /* ===== footer (dark sooty; dashed lotion divider above) ===== */
 .aj-footer { background: var(--footer-bg); color: var(--footer-fg); border-top: 1.5px dashed var(--c-lotion);

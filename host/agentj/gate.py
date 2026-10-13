@@ -1,6 +1,9 @@
-"""The approval passphrase (批准口令, L2 / G-A8): a second gate in front of every device approval that only the human has.
+"""The remote pairing password (遥控器配对密码, L2 / G-A8): a second gate in front of every device approval that only the human has.
 
 P78: on an account-bound host, a signed one-use account request authorized by a fresh owner passkey supplies equivalent L2 proof for the exact host/operation (remote_pair.py). It never transmits or sets a passphrase. Local approvals below still require one.
+P221 (Leo 10-13): renamed 「遥控器配对密码」 / remote pairing password (CLI and file names unchanged). The account page may also
+send it — sealed in the browser to a one-use key of this host, opened and checked only here by `verify` below, same ledger
+and lock (remote_pair.py `pass_check`). Pairing at the terminal always needs it (`agentj pair` asks to set it first).
 
 The 6-digit code proves *which phone* is being paired; the passphrase proves *a human at this host* is the one approving.
 The agent runs fenced (fence.py) and cannot see this state directory; even a process that reaches the control socket or
@@ -127,11 +130,11 @@ def reset(st) -> None:
 
 
 MESSAGES = {
-    "not_set": "还没有设置批准口令：先在这台电脑的终端里运行 `agentj passphrase set`（只有你知道，别让 Agent 替你设）。",
-    "locked": "批准口令连续输错，已暂时锁定，请稍后再试。",
-    "wrong": "批准口令不对。",
-    "too_short": f"批准口令至少 {MIN_LEN} 个字符。",
-    "too_long": f"批准口令最多 {MAX_LEN} 个字符。",
+    "not_set": "还没有设置遥控器配对密码：在这台电脑的终端里运行 `agentj pair`（会先请你设）或 `agentj passphrase set`（只有你知道，别让 Agent 替你设）。",
+    "locked": "遥控器配对密码连续输错，已暂时锁定，请稍后再试。",
+    "wrong": "遥控器配对密码不对。",
+    "too_short": f"遥控器配对密码至少 {MIN_LEN} 个字符。",
+    "too_long": f"遥控器配对密码最多 {MAX_LEN} 个字符。",
     "mismatch": "两次输入不一致。",
-    "exists": "已经设置过批准口令；要改用 `agentj passphrase change`，忘了就用 `agentj passphrase reset`（所有手机都要重新配对）。",
+    "exists": "已经设置过遥控器配对密码；要改用 `agentj passphrase change`，忘了就用 `agentj passphrase reset`（所有手机都要重新配对）。",
 }

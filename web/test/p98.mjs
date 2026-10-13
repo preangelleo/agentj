@@ -40,6 +40,7 @@ try {
    await fake.send({t:'status',s:'idle',agent});
    await fake.send(meter);
    await waitFor(p,`document.getElementById('toast').classList.contains('on')`);
+   const shownAt=Date.now();
    assert.equal(await evaluate(p,`document.getElementById('shared-status').hidden`),true);
    const before=await evaluate(p,`document.querySelector('.composer').getBoundingClientRect().top`);
    const text=await evaluate(p,`document.getElementById('toast').textContent`);
@@ -47,10 +48,13 @@ try {
    const box=await evaluate(p,`(()=>{const r=document.getElementById('toast').getBoundingClientRect();return {left:r.left,right:r.right}})()`);
    assert.ok(box.left>=0 && box.right<=360,'narrow toast within viewport');
    writeFileSync(new URL(agent+'-'+language+'-visible.png',out),await shoot(p,''));
-   // Repeated meters may not restart the original deadline.
-   await sleep(1800);await fake.send(meter);await sleep(1300);
-   assert.equal(await evaluate(p,`document.getElementById('toast').classList.contains('on')`),true);
+   // Repeated meters may not restart the original deadline (3.5 s toast): a meter at ~1.8 s leaves it on until ~3.5 s and it
+   // is gone well before a restarted deadline (~5.3 s). Times count from when the toast was seen, so a slow screenshot above
+   // under load cannot eat the margin (P240: the fixed 1.8 s + 1.3 s sleeps after the shot flaked in full parity runs).
+   await sleep(Math.max(0,shownAt+1800-Date.now()));await fake.send(meter);await sleep(Math.max(0,shownAt+3100-Date.now()));
+   if (Date.now()-shownAt<3300) assert.equal(await evaluate(p,`document.getElementById('toast').classList.contains('on')`),true);
    await waitFor(p,`!document.getElementById('toast').classList.contains('on')`);
+   assert.ok(Date.now()-shownAt<4900,'the repeated meter did not restart the 3.5 s deadline');
    await sleep(300);
    assert.equal(await evaluate(p,`getComputedStyle(document.getElementById('toast')).opacity`),'0');
    assert.equal(await evaluate(p,`document.querySelector('.composer').getBoundingClientRect().top`),before);

@@ -165,9 +165,27 @@ def served(workdir: str | None, skills: list | None, lang: str = "zh") -> dict:
         if errs:
             out["problems"] = [e[:200] for e in errs[:10]]
     else:
-        items = [{k: it[k] for k in ("cmd", "desc", "group") if k in it} for it in arrange(doc["items"])]
-        if not any(it.get("cmd") == "/goal" for it in items) and len(items) < MAX_ITEMS:
-            items.append(dict(GOAL_ITEM.get(lang, GOAL_ITEM["zh"])))
-        have = {it["cmd"] for it in items}
-        out.update(source="file", items=items + [it for it in agent_items(lang) if it["cmd"] not in have])
+        out.update(source="file", items=complete([{k: it[k] for k in ("cmd", "desc", "group") if k in it}
+                                                  for it in arrange(doc["items"])], lang))
     return out
+
+
+def complete(items: list[dict], lang: str = "zh") -> list[dict]:
+    """An owner's own list (menu.json, or P238 `menu.items` in preferences) + `/goal` and the main-Agent items it lacks."""
+    items = list(items)
+    if not any(it.get("cmd") == "/goal" for it in items) and len(items) < MAX_ITEMS:
+        items.append(dict(GOAL_ITEM.get(lang, GOAL_ITEM["zh"])))
+    have = {it.get("cmd") for it in items}
+    return items + [it for it in agent_items(lang) if it["cmd"] not in have]
+
+
+def for_phone(workdir: str | None, skills: list | None, lang: str = "zh", configured: list | None = None) -> dict:
+    """serve's `menu_get` answer minus t / r / upgrade. P238: owner commands set through `agentj menu add` (preferences
+    `menu.items`) replace menu.json / the defaults, but never drop `/switch-harness` or `/goal` — before 0.20.3 they did,
+    so an owner with one own command (/good-morning) never saw `/switch-harness` on the phone."""
+    res = served(workdir, skills, lang)
+    rows = [x for x in configured or [] if isinstance(x, dict) and not x.get("disabled")]
+    if rows:
+        res.update(source="config", items=complete([{k: v for k, v in x.items() if k in ("cmd", "desc", "group")}
+                                                    for x in arrange(rows)], lang))
+    return res

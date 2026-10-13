@@ -213,7 +213,7 @@ usage: agentj agent [-h] [--probe] [--dry-run] [--result] [--scan] [--json]
 | --- | --- | --- | --- | --- |
 | `-h / --help` | `null` | false | — | `show this help message and exit` |
 | `mode` | `"status"` | false | `claude`, `codex`, `opencode`, `off`, `reset`, `restart`, `status`, `detect`, `switch` | `detect = 本机有哪些可用（不需要 init；只看是否安装、登录文件是否存在）/ which agents are usable here (no init needed; checks only what is installed and whether login files exist)` |
-| `target` | `null` | false | `claude`, `codex`, `opencode` | `the harness to switch to` |
+| `target` | `null` | false | `claude`, `codex`, `opencode` | `the harness to switch to; with detect --probe: probe only this one` |
 | `--probe` | `false` | false | — | `detect: verify one tool-free model call using existing login (≤ 60 s each); no native output is returned` |
 | `--dry-run` | `false` | false | — | `only check whether it can switch` |
 | `--result` | `false` | false | — | `the last switch's outcome` |
@@ -2821,13 +2821,13 @@ usage: agentj pair [-h] [--no-qr] [--link] [--check] [--json]
 | `-h / --help` | `null` | false | — | `show this help message and exit` |
 | `--no-qr` | `false` | false | — | `不画二维码，改为打印配对链接` |
 | `--link` | `false` | false | — | `二维码之外也打印配对链接（它就是配对密钥）` |
-| `--check` | `false` | false | — | `只做配对前检查：该走账户页通行密钥还是本机批准口令（不开始配对）/ pre-check only: account passkey or local passphrase route` |
+| `--check` | `false` | false | — | `只做配对前检查：该走账户页通行密钥还是本机遥控器配对密码（不开始配对）/ pre-check only: account page or local remote pairing password route` |
 | `--json` | `false` | false | — | `与 --check 一起：输出 JSON` |
 
 ### agentj passphrase
 
 ```text
-批准口令：set 设置 · change 修改 · reset 忘了（会吊销全部遥控器）· status
+遥控器配对密码：set 设置 · change 修改 · reset 忘了（会吊销全部遥控器）· status · offer（安装结束时问一句，回车跳过）
 ```
 
 ```bash
@@ -2835,13 +2835,14 @@ agentj passphrase --help
 ```
 
 ```text
-usage: agentj passphrase [-h] [{set,change,reset,status}]
+usage: agentj passphrase [-h] [--json] [{set,change,reset,status,offer}]
 ```
 
 | Argument | Default | Required | Choices | Help |
 | --- | --- | --- | --- | --- |
 | `-h / --help` | `null` | false | — | `show this help message and exit` |
-| `mode` | `"status"` | false | `set`, `change`, `reset`, `status` | `` |
+| `mode` | `"status"` | false | `set`, `change`, `reset`, `status`, `offer` | `` |
+| `--json` | `false` | false | — | `与 offer 一起：最后一行输出 JSON（安装脚本用）` |
 
 ### agentj plaza
 
@@ -3431,7 +3432,7 @@ usage: agentj report-hostname [-h] [{on,off,status}]
 ### agentj resume
 
 ```text
-从急停恢复（已配对手机点「恢复」即可；终端要批准口令或主人的键盘）/ resume after a stop (paired phone, or the owner at the terminal)
+从急停恢复（已配对手机点「恢复」即可；终端要遥控器配对密码或主人的键盘）/ resume after a stop (paired phone, or the owner at the terminal)
 ```
 
 ```bash
@@ -4625,7 +4626,7 @@ usage: agentj agent [-h] [--probe] [--dry-run] [--result] [--scan] [--json]
 | --- | --- | --- | --- | --- |
 | `-h / --help` | `null` | false | — | `show this help message and exit` |
 | `mode` | `"status"` | false | `claude`, `codex`, `opencode`, `off`, `reset`, `restart`, `status`, `detect`, `switch` | `detect = 本机有哪些可用（不需要 init；只看是否安装、登录文件是否存在）/ which agents are usable here (no init needed; checks only what is installed and whether login files exist)` |
-| `target` | `null` | false | `claude`, `codex`, `opencode` | `switch：要切到的 harness` |
+| `target` | `null` | false | `claude`, `codex`, `opencode` | `switch：要切到的 harness；detect --probe：只探测这一个（可加 --model）` |
 | `--probe` | `false` | false | — | `detect: verify one tool-free model call using existing login (≤ 60 s each); no native output is returned` |
 | `--dry-run` | `false` | false | — | `switch：只检查能不能切，不切` |
 | `--result` | `false` | false | — | `switch：上一次切换的结果` |
@@ -7233,13 +7234,13 @@ usage: agentj pair [-h] [--no-qr] [--link] [--check] [--json]
 | `-h / --help` | `null` | false | — | `show this help message and exit` |
 | `--no-qr` | `false` | false | — | `不画二维码，改为打印配对链接` |
 | `--link` | `false` | false | — | `二维码之外也打印配对链接（它就是配对密钥）` |
-| `--check` | `false` | false | — | `只做配对前检查：该走账户页通行密钥还是本机批准口令（不开始配对）/ pre-check only: account passkey or local passphrase route` |
+| `--check` | `false` | false | — | `只做配对前检查：该走账户页通行密钥还是本机遥控器配对密码（不开始配对）/ pre-check only: account page or local remote pairing password route` |
 | `--json` | `false` | false | — | `与 --check 一起：输出 JSON` |
 
 ### agentj passphrase
 
 ```text
-批准口令：set 设置 · change 修改 · reset 忘了（会吊销全部遥控器）· status
+遥控器配对密码：set 设置 · change 修改 · reset 忘了（会吊销全部遥控器）· status · offer（安装结束时问一句，回车跳过）
 ```
 
 ```bash
@@ -7247,13 +7248,14 @@ agentj passphrase --help
 ```
 
 ```text
-usage: agentj passphrase [-h] [{set,change,reset,status}]
+usage: agentj passphrase [-h] [--json] [{set,change,reset,status,offer}]
 ```
 
 | 参数 | 默认值 | 必填 | 可选值 | 说明 |
 | --- | --- | --- | --- | --- |
 | `-h / --help` | `null` | false | — | `show this help message and exit` |
-| `mode` | `"status"` | false | `set`, `change`, `reset`, `status` | `` |
+| `mode` | `"status"` | false | `set`, `change`, `reset`, `status`, `offer` | `` |
+| `--json` | `false` | false | — | `与 offer 一起：最后一行输出 JSON（安装脚本用）` |
 
 ### agentj plaza
 
@@ -7843,7 +7845,7 @@ usage: agentj report-hostname [-h] [{on,off,status}]
 ### agentj resume
 
 ```text
-从急停恢复（已配对手机点「恢复」即可；终端要批准口令或主人的键盘）/ resume after a stop (paired phone, or the owner at the terminal)
+从急停恢复（已配对手机点「恢复」即可；终端要遥控器配对密码或主人的键盘）/ resume after a stop (paired phone, or the owner at the terminal)
 ```
 
 ```bash

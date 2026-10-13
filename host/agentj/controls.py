@@ -15,7 +15,7 @@ only — like approvals.log) and, when the activity log is on, a readable line i
 
 The stop switch (`estop.json`, 0600) survives restarts: while it is on, serve interrupts and does not run the Agent, denies
 every permission request, ends every batch grant and runs no scheduled task. Only a signed `resume` from a phone or
-`agentj resume` at the terminal (approval passphrase) turns it off.
+`agentj resume` at the terminal (remote pairing password) turns it off.
 """
 from __future__ import annotations
 

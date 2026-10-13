@@ -1,6 +1,6 @@
 {
-  "version": "0.20.2a1",
+  "version": "0.20.3a1",
   "major": false,
-  "zh": "0.20.2：审批卡断线后自动补齐；升级前先列出会打断的事再问你；发给你的文件不再被拦；设置里的升级方式、用量弹窗、未读跳转、通讯录管理。电脑升级后请在手机设置点「更新并刷新」。",
-  "en": "Cards rebuilt after a dropped link; upgrades ask before interrupting; files to you are no longer held; usage dialog, unread jump, contacts. Settings → Update."
+  "zh": "0.20.3：一条命令装好（Windows / Mac / Linux）；遥控器配对密码；新装第一条消息不再无声卡住；模型与思考强度停手 5 秒才切；「/」里有 /switch-harness；电脑先升级时不再反复弹刷新。",
+  "en": "One-command install; remote pairing password; no silent first message; model picks settle after 5 s; /switch-harness in /; no refresh loop."
 }

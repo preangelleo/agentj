@@ -3,7 +3,7 @@
 Source: the Agent's folder (`agentj agent … --dir D`) → `D/workflows/*/task.json`, each checked with taskspec.problems();
 an invalid task is listed with its reason and never runs. Its `enabled` is read only as a suggestion: whether a task runs is
 the human's decision, stored in the state directory (`tasks.json`, 0600), made at the terminal (`agentj tasks enable`, with
-the approval passphrase) or on a paired phone (signed, controls.py). An enabling is bound to the task's contract hash
+the remote pairing password) or on a paired phone (signed, controls.py). An enabling is bound to the task's contract hash
 (task.json + its prompt file): when either changes, the task stops running until a human enables it again.
 
 `serve` runs enabled tasks when their cron fields match the minute (in the task's `tz`), at most once per minute, no catch-up

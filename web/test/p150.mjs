@@ -122,6 +122,9 @@ export async function runP150({ anim = false } = {}) {
           const ver = await evaluate(p, `import('./version.js').then(m=>m.default.version)`);
           const next = ver.replace(/^(\d+)\.(\d+)\.(\d+)/, (m, a, b, c) => `${a}.${b}.${+c + 1}`);
           await evaluate(p, `${$('input')}.focus()`);
+          // P240: the dialog only offers a page the server really serves — stand in for version.json at the host's version.
+          const serve = (v) => evaluate(p, `(()=>{const f=window.__realFetch||(window.__realFetch=window.fetch);window.fetch=(u,o)=>String(u).endsWith('/version.json')?Promise.resolve(new Response(JSON.stringify({v:1,version:${JSON.stringify(v)}}))):f(u,o);})()`);
+          await serve(next);
           await evaluate(p, `import('./js/version-notice.js').then(m=>m.setHostVersion(${JSON.stringify(next)}))`);
           await waitFor(p, `!${$('version-notice')}.hidden`);
           check(await evaluate(p, `${$('version-notice-title')}.textContent`) === s.up, 'title ' + lang);
@@ -132,6 +135,7 @@ export async function runP150({ anim = false } = {}) {
           check(Math.abs(sq.l + sq.w / 2 - 195) < 2 && Math.abs(sq.t + sq.h / 2 - 422) < 3, 'centred');
           await save('dialog-update');
           await esc(p); await waitFor(p, `${$('version-notice')}.hidden`); check(true, 'ESC = later');
+          await serve(next.replace(/(\d+)$/, (d) => +d + 1));
           await evaluate(p, `import('./js/version-notice.js').then(m=>m.setHostVersion(${JSON.stringify(next.replace(/(\d+)$/, (d) => +d + 1))}))`);
           await waitFor(p, `!${$('version-notice')}.hidden`);
           await tapAt(p, 20, 820); await waitFor(p, `${$('version-notice')}.hidden`); check(true, 'outside = later');

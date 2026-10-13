@@ -17,7 +17,7 @@ Skill & workflow plaza: `agentj plaza install | publish | like | installed` (mar
 packages too) — install only after a preview and `--owner-confirmed --digest`; 官方认证 only with a valid compiled-in signature.
 
 State dir: $AGENTJ_STATE_DIR or ~/.local/state/agentj (0700). Account-bound hosts can add a new device from the account page after fresh owner passkey confirmation.
-The local `agentj pair` alternative requires the human's 6-digit code and local approval passphrase. At most MAX_DEVICES (10) remotes
+The local `agentj pair` alternative requires the human's 6-digit code and local remote pairing password. At most MAX_DEVICES (10) remotes
 per host: when the list is full, `agentj pair` lists them and the human unbinds one before approving. `agentj admin` is the
 same thing as a local web page (127.0.0.1 only, one-time link printed here; the human still types the phone's code).
 """
@@ -344,6 +344,16 @@ PAIR_NOT_TERMINAL = ("✗ 这个终端不能直接批准：它不是交互终端
                      "the phone keeps waiting — approve it on the account page.")
 
 
+PAIR_SET_FIRST = ("在终端里配对，要先设一个「遥控器配对密码」（至少 8 位，只存在这台电脑上）。以后在这里、或者在别的电脑的浏览器上"
+                  "批准新遥控器，都可以用它证明是你。只有你自己知道，别让 Agent 替你设。\nPairing at the terminal needs a remote "
+                  "pairing password first (at least 8 characters, kept on this computer only). It proves it's you when you approve "
+                  "a new remote here or from a browser on another computer. Set it yourself, never through an Agent.")
+PAIR_NEED_PASS = ("✗ 这台电脑还没设遥控器配对密码，所以不能在这里配对。请你自己在这台电脑的终端里运行 `agentj pair`（它会先请你设密码），"
+                  "或者到账户页 {url} 这台电脑的席位卡点「添加遥控器」。/ This computer has no remote pairing password yet, so it "
+                  "can't pair from here. Run `agentj pair` yourself in a terminal on this computer (it asks you to set one "
+                  "first), or choose Add a remote on this computer's seat card at {url}.")
+
+
 def cmd_pair(a) -> None:
     from . import pairprep
     st = State()
@@ -359,12 +369,16 @@ def cmd_pair(a) -> None:
     chk = _pair_check(st, _serve_or_exit(st))
     if chk["route"] == "seat":          # P185: no usable seat → no pairing; say where to bind / renew
         sys.exit("✗ " + pairprep.both(chk))
-    if chk["route"] == "set_passphrase":
+    if not chk["passphrase_set"]:
+        # P221 (Leo 10-13): pairing at the terminal always needs the remote pairing password — set it first, then pair
+        # (replaces P176's "a bound host's keyboard is enough"). A pipe / an Agent's shell cannot set it: say where to go.
+        url = chk.get("account_url") or cloud.DEFAULT_APP
         if not sys.stdin.isatty():
-            sys.exit("✗ " + pairprep.both(chk))
-        print(pairprep.message(chk, "zh") + "\n" + "配对前先设置批准口令（每次批准新遥控器都要输入，只在这台电脑上）。", flush=True)
+            sys.exit(PAIR_NEED_PASS.format(url=url))
+        print(PAIR_SET_FIRST, flush=True)
         _set_passphrase_interactive(st, change=False)
-    elif chk["route"] == "account":
+        chk = {**chk, "passphrase_set": True, "route": "account" if chk["route"] == "account" else "passphrase"}
+    if chk["route"] == "account":
         print(pairprep.both(chk) + "\n", flush=True)
     passkey_only = chk["route"] == "account" and not chk["passphrase_set"]
 
@@ -443,7 +457,7 @@ def cmd_pair(a) -> None:
                 else:
                     while True:
                         if pw is None:
-                            ask, f = _secret_async("批准口令 / approval passphrase："), next_line()
+                            ask, f = _secret_async("遥控器配对密码 / remote pairing password："), next_line()
                             done, _ = await asyncio.wait({ask, f}, return_when=asyncio.FIRST_COMPLETED)
                             if f in done:
                                 print()
@@ -454,7 +468,7 @@ def cmd_pair(a) -> None:
                         if ev.get("ev") != "pass_wrong":
                             break
                         pw = None
-                        print(f"✗ 批准口令不对（再错 {ev.get('left', 0)} 次会锁定）。设备还在等，请再输一次。", flush=True)
+                        print(f"✗ 遥控器配对密码不对（再错 {ev.get('left', 0)} 次会锁定）。设备还在等，请再输一次。", flush=True)
                 if ev.get("ev") == "code_wrong":
                     print(f"✗ 安全码不对，还能再试 {ev.get('left', 0)} 次：看清手机上的 6 位数字再输。/ Wrong safety code, "
                           f"{ev.get('left', 0)} tries left: check the 6 digits on the phone.", flush=True)
@@ -589,7 +603,7 @@ def _ask_async(prompt: str) -> asyncio.Future:
 
 
 def _secret(prompt: str) -> str:
-    """The approval passphrase: never echoed on a terminal; a pipe (scripts, tests) gives one line."""
+    """The remote pairing password: never echoed on a terminal; a pipe (scripts, tests) gives one line."""
     import getpass
     if sys.stdin.isatty():
         try:
@@ -614,28 +628,65 @@ def _secret_async(prompt: str) -> asyncio.Future:
 
 def _gate_msg(e: gate.GateError) -> str:
     if e.reason == "locked":
-        return f"批准口令连续输错，锁定中（还要 {max(1, e.info.get('seconds', 60) // 60)} 分钟）。"
+        return f"遥控器配对密码连续输错，锁定中（还要 {max(1, e.info.get('seconds', 60) // 60)} 分钟）。"
     if e.reason == "wrong":
-        return f"批准口令不对（再错 {e.info.get('left', 0)} 次会锁定）。"
+        return f"遥控器配对密码不对（再错 {e.info.get('left', 0)} 次会锁定）。"
     return gate.MESSAGES.get(e.reason, e.reason)
 
 
 def _set_passphrase_interactive(st: State, change: bool) -> None:
-    old = _secret("现在的批准口令：") if change else None
-    print("批准口令：以后每次批准一台新的遥控器都要输入它。只有你知道——别告诉 Agent，也别让 Agent 替你设。", flush=True)
-    new = _secret(f"新的批准口令（至少 {gate.MIN_LEN} 个字符）：")
+    old = _secret("现在的遥控器配对密码：") if change else None
+    print("遥控器配对密码：在这台电脑的终端配对，或者在别的电脑的浏览器上批准新遥控器时，用它证明是你。只有你知道——别告诉 Agent，"
+          "也别让 Agent 替你设。/ The remote pairing password proves it's you when pairing at this terminal or approving a new "
+          "remote from a browser on another computer. Only you know it: never tell an Agent, never let one set it.", flush=True)
+    new = _secret(f"新的遥控器配对密码（至少 {gate.MIN_LEN} 个字符）：")
     if _secret("再输一次：") != new:
         sys.exit("✗ " + gate.MESSAGES["mismatch"])
     try:
         gate.set_passphrase(st, new, old)
     except gate.GateError as e:
         sys.exit("✗ " + _gate_msg(e))
-    print("✓ 批准口令已保存。/ approval passphrase saved.")
+    print("✓ 遥控器配对密码已保存。/ remote pairing password saved.")
+
+
+PASS_OFFER = ("要不要现在设一个遥控器配对密码？（可选，推荐）它用于在别的电脑或浏览器上批准新遥控器的最后一步，也是在这台电脑的终端里配对时"
+              "必须的。不设也能用这台电脑的浏览器完成首次配对（账户页 → 添加遥控器 → 通行密钥），但将来所有遥控器都失效时，可能要回到这台"
+              "电脑的终端设它。\nSet a remote pairing password now? (Optional, recommended.) It is the last step when approving a new "
+              "remote from another computer or browser, and it is required to pair at this computer's terminal. You can skip it "
+              "and pair the first remote in this computer's browser (account page → Add a remote → passkey), but if every remote "
+              "is ever lost you may have to come back to this terminal to set it.")
+PASS_OFFER_SKIPPED = ("已跳过。以后随时在这台电脑的终端运行 `agentj passphrase set` 设置。/ Skipped. Set it any time with "
+                      "`agentj passphrase set` in a terminal on this computer.")
+
+
+def _passphrase_offer(st: State) -> str:
+    """P221 item 5 (install end): ask once; Enter skips. → 'set' | 'skipped' | 'already' | 'no_terminal'."""
+    if gate.is_set(st):
+        print("✓ 遥控器配对密码已经设置过。/ A remote pairing password is already set.", flush=True)
+        return "already"
+    if not sys.stdin.isatty():
+        print(PASS_OFFER + "\n" + PASS_OFFER_SKIPPED, flush=True)
+        return "no_terminal"
+    print(PASS_OFFER, flush=True)
+    try:
+        yes = input("现在设置？输入 y 回车设置，直接回车跳过 / Set it now? y + Enter to set, Enter to skip: ").strip().lower()
+    except EOFError:
+        yes = ""
+    if yes not in ("y", "yes", "是", "好"):
+        print(PASS_OFFER_SKIPPED, flush=True)
+        return "skipped"
+    _set_passphrase_interactive(st, change=False)
+    return "set"
 
 
 def cmd_passphrase(a) -> None:
     st = State()
     _need_init(st)
+    if a.mode == "offer":
+        res = _passphrase_offer(st)
+        if getattr(a, "json", False):
+            print(json.dumps({"result": res, "set": gate.is_set(st)}))
+        return
     if a.mode == "set":
         if gate.is_set(st):
             sys.exit(gate.MESSAGES["exists"])
@@ -646,7 +697,7 @@ def cmd_passphrase(a) -> None:
         _set_passphrase_interactive(st, change=True)
     elif a.mode == "reset":
         n = len(st.devices())
-        print(f"忘了批准口令：重置会删除它，并吊销本机全部 {n} 台遥控器（之后用新口令重新配对）。", flush=True)
+        print(f"忘了遥控器配对密码：重置会删除它，并吊销本机全部 {n} 台遥控器（之后用新密码重新配对）。", flush=True)
         if input("确认重置？输入 RESET 回车：").strip() != "RESET":
             sys.exit("没有重置。")
         for did in list(st.devices()):
@@ -659,8 +710,8 @@ def cmd_passphrase(a) -> None:
             if res is None:
                 st.remove_device(did)
         gate.reset(st)
-        print("✓ 已重置，所有手机都已解除配对。运行 `agentj pair` 重新配对：它会先请你设一个新的批准口令。/ Reset: every "
-              "phone is unpaired. Run `agentj pair` to pair again; it asks you to choose a new approval passphrase first.")
+        print("✓ 已重置，所有手机都已解除配对。运行 `agentj pair` 重新配对：它会先请你设一个新的遥控器配对密码。/ Reset: every "
+              "phone is unpaired. Run `agentj pair` to pair again; it asks you to choose a new remote pairing password first.")
     else:
         left = gate.lock_left(st)
         print(("已设置" + (f"（锁定中，还要 {max(1, left // 60)} 分钟）" if left else "")) if gate.is_set(st)
@@ -994,7 +1045,7 @@ def cmd_status(a) -> None:
               " / Agent J is not running (keep it running: `agentj service install`)")
         print(f"Agent：{_name_or_unset(st)}")
         print(_link_line(st))
-        print("批准方式：" + ("本机口令已设置" if gate.is_set(st) else "账户页通行密钥；口令可选" if cloud.read_cloud(st) else "未设置（agentj passphrase set）"))
+        print("遥控器配对密码：" + ("已设置" if gate.is_set(st) else "未设置（账户页用通行密钥添加遥控器；终端配对时 `agentj pair` 会先请你设）"))
         print(_estop_line(st))
         return
     link = cloud.read_cloud(st)
@@ -1504,11 +1555,16 @@ def _agent_line(st: State, lang: str | None = None) -> str:
 def cmd_agent(a) -> None:
     if a.mode == "detect":   # works before `agentj init`: only looks at PATH and whether login files exist
         from . import harness
-        sys.exit(harness.main(as_json=a.json, call_probe=getattr(a, "probe", False)))
+        # P220: `detect <harness> --probe --model M` = one real call to that harness with that model (the installer's
+        # fallback when Claude Code's own default is a model the owner's relay does not serve)
+        target = getattr(a, "target", None)
+        sys.exit(harness.main(as_json=a.json, call_probe=getattr(a, "probe", False),
+                              only=(target,) if target else None, model=a.model if target else None))
     if a.mode == "switch":   # P155: gate (headless probe) → a job outside the service switches, verifies, rolls back
         from . import switch_harness
         st = State()
-        sys.exit(switch_harness.cli(a, st, _lang(st)))
+        if not _first_connect(st, a):
+            sys.exit(switch_harness.cli(a, st, _lang(st)))
     st = State()
     _need_init(st)
     if a.mode in ("claude", "codex", "opencode"):
@@ -1540,7 +1596,19 @@ def cmd_agent(a) -> None:
                     from . import service
                     sys.exit("✗ " + service.token_hint(service.name()))
             root = working_root.select(st, a.dir)
-            st.set_agent_config(a.mode, str(root), a.model, fence=not a.unfenced, docker=bool(a.allow_docker and not a.unfenced))
+            from . import harness_setup
+            prev = st.agent_config() or {}
+            same = prev.get("kind") == a.mode
+            model = a.model or (prev.get("model") if same else None)     # P219: the owner's earlier choice is kept
+            effort = prev.get("effort") if same else None
+            if a.mode == "claude":                # P219: never Claude Code's own pick (a relay may not serve it: 400)
+                model, effort = model or harness_setup.DEFAULT_CLAUDE_MODEL, effort or harness_setup.DEFAULT_CLAUDE_EFFORT
+            st.set_agent_config(a.mode, str(root), model, fence=not a.unfenced, docker=bool(a.allow_docker and not a.unfenced),
+                                effort=effort)
+            if harness_setup.enabled():           # P219: the harness's one-time terminal questions, answered ahead
+                line = harness_setup.summary(harness_setup.prepare(a.mode, str(root)), lang)
+                if line:
+                    print(line, flush=True)
             from . import claude_inbound, claude_statusline
             claude_statusline.ensure_default(st)        # P127: same moment as the inbound default; never raises
             claude_inbound.ensure_shared_default(st)
@@ -1562,8 +1630,9 @@ def cmd_agent(a) -> None:
         if not a.unfenced and (st.agent_config() or {}).get("session_mode") != "shared":   # the fence is independent mode's
             from . import fence
             why = fence.problem(st, st.agent_config()["dir"])
-            if why:
-                print(f"⚠ {fence.REASONS.get(why, why)}：serve 会按普通模式运行 Agent（不隔离，底层 harness 的权限照常）。", flush=True)
+            if why:   # P219: serve refuses an unfenced start; the phone gets the 「本次不隔离运行」 card (owner passkey)
+                print(f"⚠ {fence.REASONS.get(why, why)}。\n  不修的话：每次启动 Agent 时手机上会弹「沙箱不可用 · 本次不隔离运行」卡，"
+                      "要主人通行密钥批准；或者主人明确选择不隔离：agentj agent " + a.mode + " --unfenced", flush=True)
     elif a.mode == "off":
         st.set_agent_config(None)
         st.log("agent_config", agent="off")
@@ -1594,6 +1663,36 @@ def cmd_agent(a) -> None:
         print("Takes effect after restarting `agentj serve`. The Agent runs as you, with your own login and permission settings; "
               "Agent J gives it no extra permission." if _lang(st) == "en" else
               "重启 `agentj serve` 后生效。Agent 以你自己的身份、登录和权限设置运行，本程序不会给它更多权限。")
+
+
+def _first_connect(st: State, a) -> bool:
+    """P220 (HK owner 10-13): `agentj agent switch claude` on a computer with no Agent connected yet said only 「Agent J 还没接任何
+    Agent」. Nothing to switch from is a first connection: do exactly what `agentj agent <harness>` does, then restart the
+    background service so it takes effect now. False = a real switch (or --scan / --result / the worker): unchanged."""
+    target = getattr(a, "target", None)
+    if (target not in ("claude", "codex", "opencode") or getattr(a, "worker", False) or getattr(a, "scan", False)
+            or getattr(a, "result", False) or getattr(a, "dry_run", False)):
+        return False
+    try:
+        if not st.root.exists() or st.agent_config():
+            return False
+    except Exception:  # noqa: BLE001 — an unreadable state is the switch's business, as before
+        return False
+    print(("No Agent is connected yet, so there is nothing to switch from: connecting %s now." if _lang(st) == "en" else
+           "还没接任何 Agent，不用切换：现在直接接上 %s。") % target, flush=True)
+    a.mode = target
+    cmd_agent(a)
+    from . import service
+    try:
+        sv = service.status()
+        if sv.get("installed") and sv.get("active") == "active":
+            service.restart()
+            print("✓ 后台服务已重启，手机发一句「你好」试试 / background service restarted: say hello from the phone", flush=True)
+        else:
+            print("还差一步：运行 agentj service install 让它在后台运行 / one more step: agentj service install", flush=True)
+    except Exception as e:  # noqa: BLE001
+        print(f"后台服务没能自动重启（{type(e).__name__}）：运行 agentj service restart / restart it: agentj service restart", flush=True)
+    return True
 
 
 def cmd_approvals(a) -> None:
@@ -1666,7 +1765,7 @@ def cmd_stop(a) -> None:
 def _ctl_refused_msg(res: dict) -> str:
     """A4 (P139): serve refused a safety command over its control socket."""
     if res.get("error") == "passphrase":
-        return "批准口令不对（或已锁定），没有恢复 / wrong or locked approval passphrase"
+        return "遥控器配对密码不对（或已锁定），没有恢复 / wrong or locked remote pairing password"
     return ("这个操作只能由主人在自己的终端里做，Agent 和脚本做不了（可以在已配对手机上操作）。 / Only the owner, in their "
             "own terminal (or on a paired phone), can do this — not an Agent or a script.")
 
@@ -1683,7 +1782,7 @@ def cmd_resume(a) -> None:
     req = {"cmd": "resume"}
     if gate.is_set(st):
         try:
-            pw = _secret("输入批准口令恢复（或在已配对手机上点「恢复」）：")
+            pw = _secret("输入遥控器配对密码恢复（或在已配对手机上点「恢复」）：")
             gate.verify(st, pw)
         except gate.GateError as e:
             sys.exit("✗ " + _gate_msg(e))
@@ -2377,7 +2476,7 @@ NEXT_STEPS = (   # (command, 中文, English)
     ("agentj init", "生成本机身份", "create this host's identity"),
     ("agentj login", "把这台电脑加到你的 Agent J 账号（有设置码：--seat-file）",
      "add this computer to your Agent J account (setup code: --seat-file)"),
-    ("agentj passphrase set", "设批准口令（自己输，别让 Agent 代劳）", "set the approval passphrase (yourself)"),
+    ("agentj passphrase set", "设遥控器配对密码（自己输，别让 Agent 代劳）", "set the remote pairing password (yourself)"),
     ("agentj agent claude --dir <folder>", "接上 Claude Code（或 codex / opencode）", "connect Claude Code (or codex / opencode)"),
     ("agentj service install", "后台常驻运行 serve", "keep `agentj serve` running"),
     ("agentj pair", "手机扫码配对", "pair your phone (scan the QR)"),
@@ -2402,7 +2501,7 @@ def cmd_hint() -> None:
     print(f"{DIST} {__version__} — 用手机和你自己的 Claude Code / Codex 对话 · talk to your own Agent from your phone\n")
     for i, ((cmd, zh, en), ok) in enumerate(zip(NEXT_STEPS, done), 1):
         if cloud.read_cloud(st) and cmd == "agentj passphrase set":
-            cmd, zh, en = "账户页 / Account page", "通行密钥批准（口令可选）", "passkey approval (passphrase optional)"
+            zh, en = "设遥控器配对密码（可选，推荐：别的电脑上批准新遥控器、终端配对时用）", "set a remote pairing password (optional, recommended)"
         elif cloud.read_cloud(st) and cmd == "agentj pair":
             cmd, zh, en = "账户页 / Account page", "席位卡添加遥控器 → 扫码", "seat card → Add a remote → scan"
         print(f"  {'✓' if ok else '·'} {i}. {cmd:<36} {zh} / {en}")
@@ -2634,15 +2733,15 @@ def main(argv=None) -> None:
     proto.set_defaults(fn=protocol_handler.main)
     pr = sub.add_parser("pair", help="用二维码配对一台手机（Agent J 要在运行：agentj service status）/ pair a phone (Agent J must be "
                                      "running: agentj service status)",
-                        description="配对一台手机。已绑定账号的电脑：手机连上后，在这个终端输入手机上显示的 6 位安全码即可批准（输错可再试，共 3 次），"
-                                    "也可以到账户页席位卡用通行密钥批准，先完成的算数；设了批准口令就还要输口令。远程 SSH：`agentj pair --link`，"
-                                    "在同一个终端里完成。/ Pair a phone. On an account-bound computer, type the 6-digit code the phone shows "
-                                    "into this terminal (3 tries) or approve on the account page with your passkey — whichever comes first; "
-                                    "a set passphrase is asked for too. Over SSH: `agentj pair --link` and finish in the same terminal.")
+                        description="配对手机：在这个终端输入手机上的 6 位安全码和遥控器配对密码即可批准（安全码输错可再试，共 3 次）；"
+                                    "还没设遥控器配对密码的话，这条命令会先请你设一个（至少 8 位）。也可以到账户页席位卡批准，先完成的算数。远程 SSH：`agentj pair --link`，在同一个终端里完成。/ Pair a phone. Pairing at the "
+                                    "terminal needs the remote pairing password; if none is set yet, this command asks you to set one first "
+                                    "(at least 8 characters). Then type the 6-digit code the phone shows (3 tries) and the password here, or "
+                                    "approve on the account page — whichever comes first. Over SSH: `agentj pair --link` and finish in the same terminal.")
     pr.add_argument("--no-qr", action="store_true", help="不画二维码，改为打印配对链接")
     pr.add_argument("--link", action="store_true", help="二维码之外也打印配对链接（它就是配对密钥）")
-    pr.add_argument("--check", action="store_true", help="只做配对前检查：该走账户页通行密钥还是本机批准口令（不开始配对）/ "
-                                                        "pre-check only: account passkey or local passphrase route")
+    pr.add_argument("--check", action="store_true", help="只做配对前检查：该走账户页通行密钥还是本机遥控器配对密码（不开始配对）/ "
+                                                        "pre-check only: account page or local remote pairing password route")
     pr.add_argument("--json", action="store_true", help="与 --check 一起：输出 JSON")
     pr.set_defaults(fn=cmd_pair)
     d = sub.add_parser("devices", help="列出已批准的设备")
@@ -2716,7 +2815,7 @@ def main(argv=None) -> None:
                     help="detect = 本机有哪些可用（不需要 init；只看是否安装、登录文件是否存在）/ which agents are usable here "
                          "(no init needed; checks only what is installed and whether login files exist)")
     ag.add_argument("target", nargs="?", choices=["claude", "codex", "opencode"],
-                    help="switch：要切到的 harness / the harness to switch to")
+                    help="switch：要切到的 harness；detect --probe：只探测这一个（可加 --model） / the harness to switch to; with detect --probe: probe only this one")
     ag.add_argument("--probe", action="store_true", help="detect: verify one tool-free model call using existing login (≤ 60 s each); no native output is returned")
     ag.add_argument("--dry-run", action="store_true", help="switch：只检查能不能切，不切 / only check whether it can switch")
     ag.add_argument("--result", action="store_true", help="switch：上一次切换的结果 / the last switch's outcome")
@@ -2736,8 +2835,9 @@ def main(argv=None) -> None:
     smx.add_argument("--independent", dest="session_mode", action="store_const", const="independent",
                      help="独立会话（默认）：Agent J 自己开一个、在隔离里运行 / independent session (the default): Agent J's own, fenced")
     ag.set_defaults(fn=cmd_agent)
-    pp = sub.add_parser("passphrase", help="批准口令：set 设置 · change 修改 · reset 忘了（会吊销全部遥控器）· status")
-    pp.add_argument("mode", nargs="?", choices=["set", "change", "reset", "status"], default="status")
+    pp = sub.add_parser("passphrase", help="遥控器配对密码：set 设置 · change 修改 · reset 忘了（会吊销全部遥控器）· status · offer（安装结束时问一句，回车跳过）")
+    pp.add_argument("mode", nargs="?", choices=["set", "change", "reset", "status", "offer"], default="status")
+    pp.add_argument("--json", action="store_true", help="与 offer 一起：最后一行输出 JSON（安装脚本用）")
     pp.set_defaults(fn=cmd_passphrase)
     ap = sub.add_parser("approvals", help="手机批准记录（approvals.log；不含命令内容，只有哈希）")
     ap.add_argument("--verify", action="store_true", help="逐条核对设备签名")
@@ -2747,7 +2847,7 @@ def main(argv=None) -> None:
     feedback.add_parser(sub)
     sub.add_parser("stop", help="⛔ 全部停下：中断 Agent、拒绝待批准、收回批量授权、暂停定时任务（重启后仍停）/ stop everything"
                    ).set_defaults(fn=cmd_stop)
-    sub.add_parser("resume", help="从急停恢复（已配对手机点「恢复」即可；终端要批准口令或主人的键盘）/ resume after a stop (paired phone, or the owner at the terminal)").set_defaults(fn=cmd_resume)
+    sub.add_parser("resume", help="从急停恢复（已配对手机点「恢复」即可；终端要遥控器配对密码或主人的键盘）/ resume after a stop (paired phone, or the owner at the terminal)").set_defaults(fn=cmd_resume)
     me = sub.add_parser("memory", help="Agent 记住了什么：list · show <来源> · rm <来源> <条目> · restore [id] / what the Agent remembers")
     me.add_argument("mode", choices=["list", "show", "rm", "restore"])
     me.add_argument("args", nargs="*")

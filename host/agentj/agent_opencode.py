@@ -814,6 +814,9 @@ class OpenCodeAgent(Agent):
     def on_event(self, ev: dict) -> None:
         t = ev.get("type")
         p = ev.get("properties") if isinstance(ev.get("properties"), dict) else {}
+        if self.sid is not None and self.sid in (p.get("sessionID"), (p.get("part") or {}).get("sessionID"),
+                                                 (p.get("info") or {}).get("sessionID") if isinstance(p.get("info"), dict) else None):
+            self.touch()                   # P219: progress on our session (stall watch)
         if t == "message.part.updated" and (p.get("part") or {}).get("sessionID") == self.sid:
             self.turn_progress = time.monotonic()
         if t == "permission.asked":
@@ -933,6 +936,7 @@ class OpenCodeAgent(Agent):
 
     # ------------------------------------------------ approvals
     def _on_perm(self, req: dict) -> None:
+        self.touch()
         rid = req.get("id")
         if not isinstance(rid, str) or not rid.startswith("per") or rid in self.pending or rid in self.ours:
             return

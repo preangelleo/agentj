@@ -7,9 +7,10 @@ refuses `set_passphrase` before a QR exists), `agentj onboarding` and the agentj
 Routes:
 - ``account``: the host is account-bound, account-page pairing is on (`agentj remote-pair`) and the relay is up. The owner
   adds a remote from the account page's seat card with a passkey, or scans a local QR and approves the waiting phone there.
-  The local approval passphrase is optional.
-- ``passphrase``: local approval with the 6-digit code + the approval passphrase (already set).
-- ``set_passphrase``: neither works yet — the owner sets the approval passphrase themselves first (`agentj passphrase set`,
+  The remote pairing password is optional there (P221: the account page also accepts it); pairing at the terminal needs it
+  (`agentj pair` asks the owner to set it first).
+- ``passphrase``: local approval with the 6-digit code + the remote pairing password (already set).
+- ``set_passphrase``: neither works yet — the owner sets the remote pairing password themselves first (`agentj pair` asks for it,
   at a terminal, never through an agent).
 - ``seat`` (P185): this host has no usable Agent J seat (unbound, suspended, or unconfirmed for > 72 h — `seatcert`). No route
   pairs a remote until it is bound / renewed; the message says where. Checked first.
@@ -23,30 +24,33 @@ ROUTES = ("seat", "account", "passphrase", "set_passphrase")
 
 TEXT = {
     "zh": {
-        "account": "这台电脑已绑定账号：在账户页 {url} 这台电脑的席位卡点「添加遥控器」，用通行密钥确认一次再扫码——不需要批准口令。"
-                   "在这里扫码也行：手机连上后到同一个席位卡上批准等待中的手机。批准口令可选（离线时本机批准用：`agentj passphrase set`）。",
-        "account_with_pass": "这台电脑已绑定账号：可以在账户页 {url} 这台电脑的席位卡点「添加遥控器」用通行密钥批准，"
-                             "也可以在这里输手机上的 6 位码和批准口令。",
-        "passphrase": "批准口令已设置：扫码后输入手机上的 6 位码和批准口令即可。",
-        "set_passphrase": "配对前要先设置批准口令（只在这台电脑上，每次批准新遥控器都要输）：请你自己在这台电脑的终端运行 "
-                          "`agentj passphrase set`，别让 Agent 代劳。",
-        "set_passphrase_bound": "这台电脑已绑定账号，但账户页现在批准不了（{why}）。先自己在终端运行 `agentj passphrase set` 设批准口令，"
+        "account": "这台电脑已绑定账号：在账户页 {url} 这台电脑的席位卡点「添加遥控器」，用通行密钥（或这台电脑的遥控器配对密码）确认后扫码。"
+                   "在这台电脑的终端配对（`agentj pair`）要有遥控器配对密码：还没设，它会先请你设一个（至少 8 位）。",
+        "account_with_pass": "这台电脑已绑定账号：可以在账户页 {url} 这台电脑的席位卡点「添加遥控器」，用通行密钥或遥控器配对密码确认，"
+                             "也可以在这里输手机上的 6 位码和遥控器配对密码。",
+        "passphrase": "遥控器配对密码已设置：扫码后输入手机上的 6 位码和遥控器配对密码即可。",
+        "set_passphrase": "在终端配对要先设遥控器配对密码（只存在这台电脑上）：请你自己在这台电脑的终端运行 `agentj pair`，"
+                          "它会先请你设密码（至少 8 位），别让 Agent 代劳。",
+        "set_passphrase_bound": "这台电脑已绑定账号，但账户页现在批准不了（{why}）。请你自己在终端运行 `agentj pair`（会先请你设遥控器配对密码），"
                                 "或者等{fix}后到账户页 {url} 添加遥控器。",
         "why_offline": "这台电脑还没连上中继", "fix_offline": "连上",
         "why_off": "账户页添加遥控器已关闭", "fix_off": "运行 `agentj remote-pair on`",
     },
     "en": {
         "account": "This computer is bound to your account: on the account page {url}, choose Add a remote on this computer's seat "
-                   "card, confirm once with your passkey and scan — no approval passphrase needed. Scanning here also works: "
-                   "approve the waiting phone on the same seat card. The approval passphrase is optional (for local approval "
-                   "while offline: `agentj passphrase set`).",
-        "account_with_pass": "This computer is bound to your account: approve with your passkey from Add a remote on the account page "
-                             "{url}, or type the phone's 6-digit code and your approval passphrase here.",
-        "passphrase": "Approval passphrase is set: after the scan, type the phone's 6-digit code and your approval passphrase.",
-        "set_passphrase": "Set the approval passphrase before pairing (on this computer only; asked for every new remote): run "
-                          "`agentj passphrase set` in a terminal on this computer yourself — never through an agent.",
-        "set_passphrase_bound": "This computer is bound, but the account page cannot approve right now ({why}). Set an approval "
-                                "passphrase yourself with `agentj passphrase set`, or {fix} and add a remote on the account page {url}.",
+                   "card, confirm with your passkey (or this computer's remote pairing password) and scan. Pairing at this "
+                   "computer's terminal (`agentj pair`) needs a remote pairing password; if none is set, it asks you to set one "
+                   "first (at least 8 characters).",
+        "account_with_pass": "This computer is bound to your account: choose Add a remote on the account page {url} and confirm with "
+                             "your passkey or the remote pairing password, or type the phone's 6-digit code and the remote pairing "
+                             "password here.",
+        "passphrase": "Remote pairing password is set: after the scan, type the phone's 6-digit code and the remote pairing password.",
+        "set_passphrase": "Pairing at the terminal needs a remote pairing password first (kept on this computer only): run "
+                          "`agentj pair` in a terminal on this computer yourself; it asks you to set one (at least 8 characters). "
+                          "Never through an Agent.",
+        "set_passphrase_bound": "This computer is bound, but the account page cannot approve right now ({why}). Run `agentj pair` "
+                                "yourself in a terminal (it asks you to set a remote pairing password first), or {fix} and add a "
+                                "remote on the account page {url}.",
         "why_offline": "this computer is not connected to the relay yet", "fix_offline": "wait until it connects",
         "why_off": "account-page pairing is off", "fix_off": "run `agentj remote-pair on`",
     },

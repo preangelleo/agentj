@@ -14,6 +14,7 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
+from pathlib import Path
 
 from . import DIST, __version__
 from .envcompat import getenv
@@ -239,6 +240,26 @@ def read_rec(st) -> dict:
         return {}
 
 
+def installed_version() -> str | None:
+    """P238: the version on disk right now (the package's own __init__.py, read afresh). After `apply` installs a new copy
+    the running serve still says its old __version__ until the recovery worker restarts it when idle."""
+    try:
+        m = _VER_RE.search(Path(__file__).with_name("__init__.py").read_text("utf-8", "replace")[:MAX_BYTES])
+    except OSError:
+        return None
+    return m.group(1) if m else None
+
+
+def phone_view(st) -> dict:
+    """The phone's ⬆ row (serve's menu answer): running / on disk / latest published. `installed` differs from `current`
+    only between an upgrade's install and serve's restart — the row then says it is installed, never 「authorize」 again."""
+    out = {"current": __version__, "latest": read_rec(st).get("latest")}
+    disk = installed_version()
+    if disk and disk != __version__:
+        out["installed"] = disk
+    return out
+
+
 def auto_enabled(st) -> bool:
     try:
         return st.config().get("update_check", True) is not False and latest_url() is not None
@@ -460,8 +481,11 @@ def take_marker(st, now: float | None = None) -> dict | None:
 
 def web_refresh_text(lang="zh") -> str:
     if lang == "en":
-        return 'The phone/web page has not been updated yet. Tap the settings icon at the top right → "Update and reload".'
-    return '手机/网页上的 Agent J 还没升级。请点右上角设置图标 →「更新并刷新」。'
+        return ('The phone/web page updates separately: when its new version is out, the page shows "Server upgraded" — tap '
+                'Refresh (or the settings icon at the top right → "Update and reload"). Until then a small line under the header says the new page is on its way.')
+    # P240: the page's new version can lag the computer (batch B after A); telling the owner to refresh now sent them round a
+    # refresh loop on the old page (Leo 10-13 23:13). The page itself now offers a refresh only when one would help.
+    return '手机/网页的新版会单独上线：上线后页面会弹「服务器已升级」，点「刷新」就行（也可以点右上角设置图标 →「更新并刷新」）；在那之前页眉下有一行小字「电脑已升级，新版网页稍后上线」。'
 
 
 def health_text(counts, lang="zh", rows=None) -> str:

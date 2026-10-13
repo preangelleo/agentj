@@ -72,7 +72,7 @@
   --menu-chip:color-mix(in srgb,var(--menu-text) 9%,transparent);--menu-press:color-mix(in srgb,var(--menu-text) 14%,transparent)}
 
 /* ---- the menu scope: global tokens re-bound to the menu layer ------------------------------------------------------ */
-.menupage,#settings,#sug,
+.menupage,.cmdsheet,#settings,#sug,
 body:is([data-view="mem"],[data-view="act"],[data-view="tasks"],[data-view="models"],[data-view="friends"],[data-view="bots"],[data-view="setup"]){
   color-scheme:dark;
   --bg:var(--menu-bg); --surface-1:var(--menu-panel); --surface-2:var(--menu-chip);
@@ -100,8 +100,34 @@ body:is([data-view="mem"],[data-view="act"],[data-view="tasks"],[data-view="mode
 @keyframes menu-in{from{opacity:0}to{opacity:1}}
 @media (prefers-reduced-motion:reduce){.menupage{animation:none}}
 #badge-panel.menupage{z-index:47}          /* opened from Settings (45): above it; the confirm card (48) above all */
-.cmdmenu.menupage{z-index:44}              /* the command list; shortcuts / silent history (46) open above it */
-.composer:has(.cmdmenu:not([hidden])){z-index:44}
+.composer:has(.cmdmenu:not([hidden])){z-index:44}   /* the command list; shortcuts / silent history (46) open above it */
+
+/* ---- P238 · the command list is a card, not a page (owner, 2026-10-13: 「卡片从下往上弹起来……从 5 小时额度条这儿弹出来
+   ……不能全屏，不能左右滑动……点一个就进输入框……滚到顶再往下拉就收起来」). #menu = a light scrim over the viewport (tap = close,
+   swallows every touch so the reply cards underneath never page); .cmdsheet = the menu-token card whose bottom edge sits on
+   the 5-hour bar and whose height is at most 60 % of the visible viewport. relay.js placeSheet() sets --sheet-bottom /
+   --sheet-left / --sheet-w / --sheet-max from the bar and the tool row; pull-down at the list's top drags it shut. ----------- */
+.cmdmenu{position:fixed;left:0;right:0;top:var(--vvtop,0px);height:var(--vvh,100dvh);z-index:44;padding-top:env(safe-area-inset-top);box-sizing:border-box;
+  background:color-mix(in srgb,var(--c-sooty) 28%,transparent);animation:menu-in var(--ui-dur) var(--ui-ease) both;
+  overscroll-behavior:contain;-webkit-tap-highlight-color:transparent}
+.cmdmenu[hidden]{display:none}
+.cmdsheet{position:absolute;bottom:var(--sheet-bottom,96px);left:var(--sheet-left,var(--sp-2));width:var(--sheet-w,calc(100% - 2 * var(--sp-2)));
+  max-height:var(--sheet-max,60vh);display:flex;flex-direction:column;overflow:hidden;touch-action:pan-y;
+  background:var(--menu-bg);color:var(--menu-text);border:1px solid var(--menu-line);border-radius:var(--ui-radius-panel);
+  box-shadow:0 -12px 32px color-mix(in srgb,#000 32%,transparent);font:400 var(--ui-fs-small)/1.5 var(--font-body);
+  transform-origin:bottom left;animation:sheet-in var(--ui-dur) var(--ui-ease) both}
+.cmdsheet[data-drag]{animation:none;transition:none}
+.cmdsheet[data-drag="off"]{transition:transform var(--ui-dur) var(--ui-ease),opacity var(--ui-dur) var(--ui-ease);transform:translateY(110%);opacity:0}
+.cmdsheet[data-drag="back"]{transition:transform var(--ui-dur) var(--ui-ease);transform:none}
+@keyframes sheet-in{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:none}}
+@media (prefers-reduced-motion:reduce){.cmdmenu,.cmdsheet{animation:none}}
+.cmdgrab{flex:none;align-self:center;width:36px;height:4px;margin:var(--sp-2) 0 0;border-radius:var(--ui-radius-pill);background:var(--menu-line)}
+.cmdsheet .menuhead{min-height:52px;padding:0 var(--ui-space-content);border-bottom:1px solid var(--menu-line)}
+.cmdsheet .menuhead>h2{font-size:var(--menu-title-3)}
+.cmdsheet .menuhead .menuicon{flex:none}   /* the card is narrower than a page: the × must not give up its 44 px */
+.cmdsheet .menubody{flex:1;min-height:0;overflow-x:hidden;overflow-y:auto;overscroll-behavior:contain;touch-action:pan-y;padding:0;
+  -webkit-overflow-scrolling:touch}
+.cmdsheet .menulist{border:0;border-radius:0;background:transparent;padding-bottom:var(--sp-2)}
 .menubody{flex:1;min-height:0;overflow-y:auto;overscroll-behavior:contain;scrollbar-width:none;
   padding:var(--menu-gap) max(var(--menu-pad), calc((100% - var(--menu-max)) / 2)) calc(var(--menu-gap) + env(safe-area-inset-bottom))}
 .menubody::-webkit-scrollbar{display:none}
@@ -115,7 +141,7 @@ body:is([data-view="mem"],[data-view="act"],[data-view="tasks"],[data-view="mode
   padding:var(--sp-2) max(var(--menu-pad), calc((100% - var(--menu-max)) / 2));border-bottom:1.5px dashed var(--menu-line)}
 .menuhead>:is(h1,h2){flex:1;min-width:0;margin:0;font:700 var(--menu-title-2)/1.25 var(--font-title);color:var(--menu-text);
   overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-#settings .menuhead>h2,.cmdmenu .menuhead>h2{font-size:var(--menu-title-1)}          /* level 1 */
+#settings .menuhead>h2{font-size:var(--menu-title-1)}          /* level 1 */
 .menuhead>.menuicon:first-child{margin-left:calc(-1 * var(--sp-2))}
 .menuhead>.menuicon:last-child{margin-right:calc(-1 * var(--sp-2))}
 .menuhead .setesc{flex:none}
@@ -132,7 +158,7 @@ body:is([data-view="mem"],[data-view="act"],[data-view="tasks"],[data-view="mode
 .menuicon:hover{background:var(--menu-chip)}
 .menuicon:active{background:var(--menu-press)}
 .menuicon svg,.menupage .mi,#settings .mi,#settings .chev,.cmdmenu .mi svg{width:var(--ui-icon);height:var(--ui-icon);flex:none}
-:is(.menupage,#settings,.ajpages) :is(.menuicon,.aj-btn,.seg button,.setnav,.setside button,.tgl,.setswitch,.setcopy,.setlink,.fontstep>button,.sfxvol>button,.menulist button,summary):focus-visible{
+:is(.menupage,.cmdsheet,#settings,.ajpages) :is(.menuicon,.aj-btn,.seg button,.setnav,.setside button,.tgl,.setswitch,.setcopy,.setlink,.fontstep>button,.sfxvol>button,.menulist button,summary):focus-visible{
   outline:var(--ui-focus-w) solid var(--menu-accent);outline-offset:var(--ui-focus-gap)}
 kbd.setesc{background:var(--menu-chip);border-color:var(--menu-line);color:var(--menu-muted)}
 
@@ -200,7 +226,10 @@ kbd.setesc{background:var(--menu-chip);border-color:var(--menu-line);color:var(-
   color:var(--menu-muted);font:600 var(--ui-fs-caption)/1.4 var(--font-body);letter-spacing:.06em;text-transform:uppercase}
 .menulist .menugroup:first-child{border-top:0}
 .menulist button{display:flex;flex-direction:column;justify-content:center;align-items:flex-start;gap:2px;width:100%;min-height:var(--menu-row-2);
-  padding:var(--sp-2) var(--menu-pad);border:0;border-top:1px solid var(--menu-line);background:none;color:var(--menu-text);text-align:left;cursor:pointer}
+  padding:var(--sp-2) var(--menu-pad);border:0;border-top:1px solid var(--menu-line);background:none;color:var(--menu-text);text-align:left;cursor:pointer;
+  white-space:normal}   /* P238: a button is nowrap page-wide — a long description (/会议总结 …) was cut at the right edge */
+/* …and at most two lines (P87: a button never grows past 1.5 × its one-line height); the full sentence is the row's title */
+.menulist button>span{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;line-clamp:2;overflow:hidden;max-width:100%}
 .menulist .menugroup+button{border-top:0}
 .menulist button:hover{background:var(--menu-chip)}
 .menulist button:active{background:var(--menu-press)}

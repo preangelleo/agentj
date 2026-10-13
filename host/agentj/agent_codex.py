@@ -557,6 +557,7 @@ class CodexAgent(Agent):
 
     def _on_note(self, method: str, p: dict) -> None:
         th = p.get("threadId")
+        self.touch()                       # P219: the app-server is making progress (stall watch)
         if method == "item/started" or method == "item/completed":
             it = p.get("item") if isinstance(p.get("item"), dict) else {}
             if isinstance(it.get("id"), str) and it.get("type") in ("fileChange", "commandExecution"):
@@ -636,6 +637,7 @@ class CodexAgent(Agent):
     # ------------------------------------------------ approvals (server → client requests)
     def _on_request(self, m: dict) -> None:
         method, rid = m["method"], m["id"]
+        self.touch()
         p = m.get("params") if isinstance(m.get("params"), dict) else {}
         if method == "item/commandExecution/requestApproval":
             cmd = p.get("command") if isinstance(p.get("command"), str) else ""

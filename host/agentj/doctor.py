@@ -68,7 +68,7 @@ def _distro() -> str:
 def _bwrap_hint() -> str:
     d = _distro()
     if any(x in d for x in ("debian", "ubuntu")):
-        return "sudo apt install bubblewrap"
+        return "sudo apt-get install -y bubblewrap socat"
     if any(x in d for x in ("fedora", "rhel", "centos")):
         return "sudo dnf install bubblewrap"
     if "arch" in d:
@@ -276,6 +276,39 @@ def check_agent(st: State) -> dict:
         return _c("agent", WARN, f"{AGENT_LABEL[c['kind']]} · {tilde(c['dir'])} · fenced, docker allowed (--allow-docker): "
                   "容器引擎能挂载整台电脑的文件 / the container engine can mount every file", f"agentj agent {c['kind']} --dir <folder>  (docker hidden again)")
     return _c("agent", OK, f"{AGENT_LABEL[c['kind']]} · {tilde(c['dir'])} · {fz}")
+
+
+def check_harness_setup(st: State) -> dict | None:
+    """P219: nothing on this computer will stop the Agent's first message at a terminal prompt nobody sees — the harness's
+    one-time questions answered for the working folder, Claude Code startable as this user, the fence's tools present."""
+    from . import harness_setup
+    c = st.agent_config() if st.exists() else None
+    if not c or not os.path.isdir(c["dir"]):
+        return None
+    bad, fix = [], []
+    if c["kind"] == "claude":
+        s = harness_setup.claude_status(c["dir"])
+        if s["onboarding"] is not True:
+            bad.append("Claude Code 首次引导未完成 / onboarding not finished")
+        if s["trusted"] is not True:
+            bad.append("工作目录未被 Claude Code 信任 / working folder not trusted")
+        if s["onboarding"] is not True or s["trusted"] is not True:
+            fix.append(f"agentj agent claude --dir {tilde(c['dir'])}")
+        if s["root_bypass"]:
+            bad.append("以 root 运行且设置了 bypassPermissions：Claude Code 会拒绝启动，Agent J 改用普通权限模式 / root + "
+                       "bypassPermissions: Claude Code refuses it; Agent J starts it with --permission-mode default")
+            fix.append("用普通用户运行 Agent J，或从 ~/.claude/settings.json 去掉 defaultMode / run as a normal user")
+    elif c["kind"] == "codex":
+        if harness_setup.codex_trusted(c["dir"]) is not True:
+            bad.append("工作目录未被 Codex 信任 / working folder not trusted by Codex")
+            fix.append(f"agentj agent codex --dir {tilde(c['dir'])}")
+    deps = harness_setup.fence_deps()
+    if deps and not deps.get("socat"):
+        bad.append("缺 socat（Claude Code 自带沙箱要用）/ socat missing (Claude Code's own sandbox)")
+        fix.append(deps["hint"])
+    if not bad:
+        return _c("first-setup", OK, "首次设置已完成，后台不会停在终端确认 / one-time setup done: no terminal prompt in the background")
+    return _c("first-setup", WARN, "；".join(bad), " · ".join(dict.fromkeys(f for f in fix if f)))
 
 
 def check_codex_shared(st: State) -> dict | None:
@@ -602,8 +635,8 @@ def check_passphrase(st: State) -> dict:
         return _c("passphrase", OK, "已设置 / set" + (f" (locked {max(1, left // 60)} min)" if left else ""))
     from . import cloud
     if cloud.read_cloud(st):
-        return _c("passphrase", OK, "用账户页通行密钥批准 / account-page passkey approval",
-                  "口令可选；离线批准可设 / optional for offline approval: agentj passphrase set")
+        return _c("passphrase", OK, "未设置，账户页用通行密钥添加遥控器 / not set: add remotes on the account page with a passkey",
+                  "可选，推荐设：别的电脑上批准新遥控器、在终端配对都要用 / optional, recommended (other computers, terminal pairing): agentj passphrase set")
     return _c("passphrase", WARN, "未设置 / not set", "agentj passphrase set   (自己在终端里输 / type it yourself, never via an agent)")
 
 
@@ -955,6 +988,9 @@ def run(st: State | None = None, offline: bool = False) -> list[dict]:
     if mig:
         out.append(mig)
     out += [check_agent(st)]
+    setup_row = check_harness_setup(st)
+    if setup_row:
+        out.append(setup_row)
     mode_row = check_session_mode(st)
     if mode_row:
         out.append(mode_row)

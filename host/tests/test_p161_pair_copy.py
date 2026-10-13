@@ -30,6 +30,7 @@ class TerminalLine(Base):
 
     def test_account_route_with_a_paired_remote(self):
         self.bind()
+        gate.set_passphrase(self.st, "test-passphrase-p161")   # P221: terminal pairing needs the remote pairing password
         self.st.add_device(b"\x01" * 32, "Leo iPhone")
         code, out, err = self.pair()
         self.assertIn(code, (0, None), out + err)
@@ -49,6 +50,7 @@ class TerminalLine(Base):
 
     def test_no_line_without_a_paired_remote(self):
         self.bind()
+        gate.set_passphrase(self.st, "test-passphrase-p161")
         code, out, err = self.pair()
         self.assertIn(code, (0, None), out + err)
         self.assertNotIn(ZH, out, "the first remote has nothing to confirm on")

@@ -25,7 +25,8 @@ const APP = read(pub('app.js'));
 // alone now looks at all of them (OURS) — the same rules over more code, never fewer.
 const MODULES = ['api', 'blobs', 'boot', 'controls', 'md', 'push', 'relay', 'session', 'settings', 'snap', 'speak', 'store', 't', 'ui', 'wav', 'elevate', 'outbox', 'render', 'friends', 'qr', 'share', 'device-label', 'sfx', 'shotclip', 'sendvol',
   'media', 'mediawire', 'preview', 'mailfwd', 'icons', 'search',   // P183: the file cards, the preview views and the mail-dialog door
-  'unread', 'interactions.gen'];   // P207: this device's unread mark (turn ids only) + the key table generated from interactions.json
+  'unread', 'interactions.gen',   // P207: this device's unread mark (turn ids only) + the key table generated from interactions.json
+  'version-notice'];   // P240: the version check (its one metadata GET had a branch below but the file was never in this list)
 const OURS_FILES = ['app.js', ...MODULES.map((m) => `js/${m}.js`)];
 const OURS = OURS_FILES.map((r) => read(pub(r))).join('\n');
 const HTML = read(pub('index.html'));
@@ -109,6 +110,7 @@ test('no URLs to anywhere in shipped files except links to agentj.app pages', ()
         if (rel(f) === 'js/contacts.js' && m[0] === 'http://www.w3.org/2000/svg') continue;  // P184: the dialog icons
         // P210: the pairing page says the link 「以 https:// 开头」 — a bare scheme in text, no address at all
         if (/^https:\/\/[.)）]?$/.test(m[0]) && ['index.html', 'i18n.js'].includes(rel(f))) continue;
+        if (rel(f) === 'brand/lang.js' && m[0] === 'http://www.w3.org/2000/svg') continue;  // P236: the header's globe / tick icons
         assert.match(m[0], SITE_LINK, `${rel(f)} contains URL ${m[0]}`);
       }
     }
@@ -207,11 +209,14 @@ test('app.js + js/*.js: only WebSocket egress, non-extractable keys, no plaintex
     // P205: the recording card's brightness choice (DIM_KEY = "aj.recDim", "1"; removed at normal)
     'getItem(DIM_KEY)', 'setItem(DIM_KEY)', 'removeItem(DIM_KEY)',
     // P207: this device's unread mark (UNREAD_KEY = "aj.unread": {e, m, s} — the history epoch and turn ids, numbers only)
-    'getItem(UNREAD_KEY)', 'setItem(UNREAD_KEY)'].sort());
+    'getItem(UNREAD_KEY)', 'setItem(UNREAD_KEY)',
+    // P240: the version offer a refresh already tried (VER_KEY = "aj.verRefresh": {from, to}, two public version strings)
+    'getItem(VER_KEY)', 'setItem(VER_KEY)'].sort());
+  assert.match(OURS, /const VER_KEY='aj\.verRefresh';/);
   assert.match(OURS, /export const UNREAD_KEY = 'aj\.unread';/);
   assert.match(OURS, /const VOLUME_KEY = 'aj\.sfxVolume';/); assert.match(OURS, /const SHOT_KEY = 'aj\.shotClip';/);
   assert.match(OURS, /const FZ_KEY = "aj\.pageFz";/); assert.match(OURS, /DIM_KEY = "aj\.recDim";/);
-  assert.equal(OURS_FILES.reduce((n, r) => n + (code(read(pub(r))).match(/localStorage/g) || []).length, 0), 30, 'localStorage appears only in these calls (P171: + the two aj.theme writes; P182: aj.test.segMs only shortens a recording part, tests only; P205: aj.recDim) (homeInstalled is a boolean, never pairing data)');
+  assert.equal(OURS_FILES.reduce((n, r) => n + (code(read(pub(r))).match(/localStorage/g) || []).length, 0), 32, 'localStorage appears only in these calls (P240: aj.verRefresh; P171: + the two aj.theme writes; P182: aj.test.segMs only shortens a recording part, tests only; P205: aj.recDim) (homeInstalled is a boolean, never pairing data)');
   assert.match(OURS, /const IID_KEY = 'aj\.iid';/);
   assert.match(OURS, /const PAIRED_KEY = 'aj\.paired';/);
   assert.match(OURS, /const FONT_KEY = 'aj\.fontScale';/);
