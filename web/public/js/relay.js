@@ -549,7 +549,7 @@ function toHex(c){
 }
 function chromeTarget(){
   // The topmost full-screen surface owns the OS bar; nested Settings pages use the same menu background.
-  const pages = [...document.querySelectorAll('.menupage:not([hidden]),.setpage:not([hidden]),.ajpages:not([hidden])')]
+  const pages = [...document.querySelectorAll('.menupage:not([hidden]),.setpage:not([hidden]),.ajpages:not([hidden]),#five-page:not([hidden]),#five-detail:not([hidden])')]
     .filter(n => n.getClientRects().length);
   if (pages.length){ pages.sort((a,b)=>(+getComputedStyle(a).zIndex||0)-(+getComputedStyle(b).zIndex||0)); return toHex(getComputedStyle(pages.at(-1)).backgroundColor); }
 

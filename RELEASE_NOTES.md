@@ -1,6 +1,6 @@
-# Agent J 0.21.0a1 release notes
+# Agent J 0.21.1a1 release notes
 
-Host 0.21.0a1 / install 0.23.0; phone-web scope.
+Host 0.21.1a1 / install 0.23.1; phone-web scope.
 Phone parity must pass --strict. Full Android/Telegram parity is incomplete.
 Full Android/Telegram parity is incomplete.
 No APK is included in this release. Android source is for review, not a released app.
@@ -8,25 +8,15 @@ No APK is included in this release. Android source is for review, not a released
 Publication status: local preparation only. Live site verification is DEFERRED until
 the public commit and tag are pushed, the site is deployed, and cold installation passes.
 
-On failure restore v0.20.3a1. C (pending app migration 0026 and account pages) then A signed host/site/downloads then B phone web. No relay change. Daily upgrade digest only at 09:00 JST; at most one mail per account per day.
+On failure restore v0.21.0a1. Hotfix: A signed host/site/downloads then B phone web right after, in the same window. No relay, Dashboard or D1 change.
 ## Changes
 
-- Five menu pages organize chat, workflows, skills, memory and the current Agent.
-- Workflow run records retain status and report links.
-- Phone login rescue handles expired logins, with a reminder to enable the official setting before Codex device-code login.
-- Queued controls show why they are waiting and can be cancelled.
-- Quota pacing reminders and feedback addressed to Agent J Father.
-- Improved footer, shortcuts and silent coordinated upgrades. Input cards retain their narrower width.
-- Fixed approvals --verify false failures on older records.
-- The load indicator description now identifies a light segment moving along the line.
-- 五页菜单整理聊天、工作流、技能、记忆和当前 Agent。
-- 工作流运行账本保留状态与报告。
-- 登录过期可从手机启动登录救援，Codex 设备码登录前会提醒开启官方设置。
-- 待执行控制命令显示等待原因并可撤销。
-- 额度管家提醒消耗节奏；反馈统一称为「Agent J 爸爸」。
-- 底栏、快捷键和静默跟随升级改进，聊天输入卡保持原有较窄宽度。
-- 修复 approvals --verify 对旧审批记录的误报。
-- 负载线说明更正为一段亮色（浅色）在线上来回滑。
+- Menu pages are now dark with white text: every page except the chat (five menu pages, Settings, command list, shortcuts) uses Noir, header included.
+- A skill's detail shows a description and usage in your language first, with the original folded behind View original; every filter chip has a line icon.
+- Fixed unreadable inline code, cut-off long titles, overlapping cards and the usage label hidden under the header.
+- 菜单页改为深色底白字：除聊天外的所有页面（五页菜单、设置、命令列表、快捷键）统一 Noir 底色，页眉同色。
+- 技能详情先显示中文说明和用法，英文原文折叠在「查看原文」里；筛选芯片都换成线条图标。
+- 修复行内代码文字看不清、长标题截断、卡片互相重叠，以及额度标签被页眉压住。
 
 ## Material acceptance limits
 

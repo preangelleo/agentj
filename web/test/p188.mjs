@@ -348,7 +348,7 @@ try {
           const small = [...card.querySelectorAll('button, input')].filter(vis).filter((b) => { const q = b.getBoundingClientRect(); return q.height < 43.5 || q.width < 43.5; }).map((b) => b.id || b.className);
           return { bg: getComputedStyle(card).backgroundColor, fg: getComputedStyle(card).color, l: r.left, rgt: innerWidth - r.right, top: r.top, w: r.width, vw: innerWidth, small,
             overflowX: document.documentElement.scrollWidth > innerWidth || card.scrollWidth > card.clientWidth + 1 }; })()`);
-        assert.equal(a.bg, 'rgb(20, 20, 20)'); assert.equal(a.fg, 'rgb(250, 249, 245)');
+        assert.equal(a.bg, 'rgb(44, 43, 38)'); assert.equal(a.fg, 'rgb(250, 249, 245)');
         assert.ok(Math.abs(a.l - a.rgt) <= 1, 'centred'); assert.deepEqual(a.small, []); assert.equal(a.overflowX, false);
         if (w > 500) assert.ok(a.w <= 641 && a.top > 60, 'a card in the middle, not a full page');
         const k = await ev(p, `(() => {

@@ -43,16 +43,16 @@
   --strawberry-field:#f7827e;          /* Heavy red — danger on a dark surface */
 
   /* ---- layer 2 · menu (inherits layer 1) ------------------------------------------------------------------------ */
-  --menu-bg:var(--c-sooty);            /* canvas */
-  --menu-panel:var(--c-noir);          /* panels / groups */
+  --menu-bg:var(--c-noir);             /* canvas (P299, owner 2026-10-15: every page but chat = Noir, header included) */
+  --menu-panel:var(--c-sooty);         /* panels / groups: one step deeper than the canvas */
   --menu-text:var(--c-lotion);         /* body text, icons */
   --menu-accent:var(--milky-waves);    /* selection, switches on, focus ring, links */
   --menu-line:color-mix(in srgb,var(--menu-text) 16%,transparent);         /* dividers, outlines */
-  --menu-muted:color-mix(in srgb,var(--menu-text) 72%,transparent);        /* notes (≥ 7:1 on Sooty and Noir) */
+  --menu-muted:color-mix(in srgb,var(--menu-text) 72%,transparent);        /* notes (≥ 7:1 on Noir and Sooty) */
   --menu-chip:color-mix(in srgb,var(--menu-text) 9%,transparent);          /* filled icon buttons, code, hover */
   --menu-press:color-mix(in srgb,var(--menu-text) 14%,transparent);
   --menu-danger:var(--strawberry-field);
-  --menu-on-accent:var(--c-sooty);     /* text / knob on an accent fill */
+  --menu-on-accent:var(--c-noir);     /* text / knob on an accent fill */
   --menu-head-h:64px;                  /* header bar (56 on a phone) */
   --menu-row-1:64px;                   /* level-1 entry: icon + title + one-line note (Settings rows) */
   --menu-row-2:56px;                   /* level-2 row: a command, a device, a switch / picker row */
@@ -67,12 +67,12 @@
 }
 @media (max-width:599px){ :root{ --menu-head-h:56px; --menu-pad:var(--ui-space-content); --menu-gap:var(--ui-space-content); } }
 /* 「这个网页版有多安全」 is locked (theme.schema.json x-agentj-locked): the factory menu colours whatever a theme says */
-#badge-panel{--menu-bg:var(--c-sooty);--menu-panel:var(--c-noir);--menu-text:var(--c-lotion);--menu-accent:var(--milky-waves);
+#badge-panel{--menu-bg:var(--c-noir);--menu-panel:var(--c-sooty);--menu-text:var(--c-lotion);--menu-accent:var(--milky-waves);
   --menu-line:color-mix(in srgb,var(--menu-text) 16%,transparent);--menu-muted:color-mix(in srgb,var(--menu-text) 72%,transparent);
   --menu-chip:color-mix(in srgb,var(--menu-text) 9%,transparent);--menu-press:color-mix(in srgb,var(--menu-text) 14%,transparent)}
 
 /* ---- the menu scope: global tokens re-bound to the menu layer ------------------------------------------------------ */
-.menupage,.cmdsheet,#settings,#sug,
+.menupage,.cmdsheet,#settings,#sug,#five-page,#five-detail,   /* P299: the five menu pages are menu pages too */
 body:is([data-view="mem"],[data-view="act"],[data-view="tasks"],[data-view="models"],[data-view="friends"],[data-view="bots"],[data-view="setup"]){
   color-scheme:dark;
   --bg:var(--menu-bg); --surface-1:var(--menu-panel); --surface-2:var(--menu-chip);

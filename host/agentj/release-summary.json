@@ -1,6 +1,6 @@
 {
-  "version": "0.21.0a1",
-  "major": true,
-  "zh": "0.21.0：五页菜单、运行账本、等待撤销、额度提醒、Agent J 爸爸反馈与登录救援；底栏和升级同步改进。",
-  "en": "Five-page menu, run journal, cancellable waiting controls, quota reminders, Agent J Father feedback and login rescue; footer and upgrade improvements."
+  "version": "0.21.1a1",
+  "major": false,
+  "zh": "0.21.1：菜单页改为深色底白字，修复代码文字看不清、长标题截断、卡片重叠，技能详情先显示中文说明。",
+  "en": "Menu pages turn dark with white text; fixed unreadable code, cut-off titles and overlapping cards; skill details show your language first."
 }

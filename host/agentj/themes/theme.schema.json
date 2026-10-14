@@ -43,11 +43,11 @@
         },
         "menu": {
           "type": "object",
-          "description": "Every menu page (Settings and its pages, the command list, keyboard shortcuts …) is a full-screen dark page. Text needs ≥ 4.5:1 against the background and the panel, and so does the muted note text (the text colour at 72 %); the accent needs ≥ 3:1 against the background.",
+          "description": "Every page but the chat (the five menu pages, Settings and its pages, the command list, keyboard shortcuts …) is a full-screen dark page, header included. Text needs ≥ 4.5:1 against the background and the panel, and so does the muted note text (the text colour at 72 %); the accent needs ≥ 3:1 against the background.",
           "additionalProperties": false,
           "properties": {
-            "background": { "$ref": "#/$defs/hex", "default": "#141414", "description": "The page (factory: Sooty)." },
-            "panel": { "$ref": "#/$defs/hex", "default": "#2c2b26", "description": "Groups / cards on the page (factory: Noir)." },
+            "background": { "$ref": "#/$defs/hex", "default": "#2c2b26", "description": "The page and its header (factory: Noir)." },
+            "panel": { "$ref": "#/$defs/hex", "default": "#141414", "description": "Groups / cards on the page (factory: Sooty)." },
             "text": { "$ref": "#/$defs/hex", "default": "#faf9f5", "description": "Text and icons (factory: Lotion)." },
             "accent": { "$ref": "#/$defs/hex", "default": "#71bbde", "description": "Switches that are on, the selected section, focus ring (factory: Milky Waves)." },
             "line": { "$ref": "#/$defs/hex", "description": "Dividers and outlines (factory: the text colour at 16 %)." }

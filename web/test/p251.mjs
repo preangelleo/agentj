@@ -82,8 +82,8 @@ try{
      const chatColor=await p.evaluate(()=>document.querySelector('meta[name="theme-color"]').content);
      await p.locator('#setBtn').click();await p.waitForTimeout(150);
      const chrome=()=>p.evaluate(()=>({meta:document.querySelector('meta[name="theme-color"]').content,bg:getComputedStyle(document.getElementById('settings')).backgroundColor}));
-     const c=await chrome();assert.equal(c.meta,'#141414');assert.equal(c.bg,'rgb(20, 20, 20)');
-     await p.locator('#keysBtn').click();await p.waitForTimeout(150);assert.equal((await chrome()).meta,'#141414');
+     const c=await chrome();assert.equal(c.meta,'#2c2b26');assert.equal(c.bg,'rgb(44, 43, 38)');
+     await p.locator('#keysBtn').click();await p.waitForTimeout(150);assert.equal((await chrome()).meta,'#2c2b26');
      assert.ok(await p.locator('#keysCols').textContent().then(t=>t.includes('Alt')&&t.includes('升级主机')));
      await p.screenshot({path:`${OUT}/settings-${engine}-${w}-${scheme}.png`});
      await p.keyboard.press('Escape');await p.keyboard.press('Escape');await p.waitForTimeout(150);

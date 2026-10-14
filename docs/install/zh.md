@@ -284,7 +284,7 @@ Ubuntu 24.04 还会检查 AppArmor 对用户命名空间的限制，并实际试
 AI 安装电脑端程序 `agentj`，装的是固定的一个版本：
 
 ```bash
-uv tool install "git+https://github.com/preangelleo/agentj@v0.21.0a1#subdirectory=host"
+uv tool install "git+https://github.com/preangelleo/agentj@v0.21.1a1#subdirectory=host"
 agentj doctor
 ```
 

@@ -42,9 +42,9 @@ class MenuColours(unittest.TestCase):
     def test_defaults_are_the_factory_menu_and_leos_palette(self):
         props = theme.schema()["properties"]["colors"]["properties"]["menu"]["properties"]
         self.assertEqual({k: v.get("default") for k, v in props.items()},
-                         {"background": "#141414", "panel": "#2c2b26", "text": "#faf9f5", "accent": "#71bbde", "line": None})
-        # menu.css: the same factory values (Sooty / Noir / Lotion / Milky Waves)
-        for token, hexv in (("--menu-bg", "var(--c-sooty)"), ("--menu-panel", "var(--c-noir)"), ("--menu-text", "var(--c-lotion)"),
+                         {"background": "#2c2b26", "panel": "#141414", "text": "#faf9f5", "accent": "#71bbde", "line": None})
+        # menu.css: the same factory values (P299: Noir page / Sooty panels / Lotion / Milky Waves)
+        for token, hexv in (("--menu-bg", "var(--c-noir)"), ("--menu-panel", "var(--c-sooty)"), ("--menu-text", "var(--c-lotion)"),
                             ("--menu-accent", "var(--milky-waves)")):
             self.assertIn(f"{token}:{hexv};", MENU_CSS)
         self.assertIn("--milky-waves:#71bbde;", MENU_CSS)
@@ -54,13 +54,13 @@ class MenuColours(unittest.TestCase):
         self.assertTrue(self.menu(accent="#f7827e")["ok"], "one key alone: the others stay factory")
 
     def test_contrast_rules(self):
-        r = self.menu(text="#858585")                    # Black Mana on Sooty 4.99 but the 72 % notes fall below 4.5
+        r = self.menu(text="#858585")                    # Black Mana on Noir: below 4.5
         self.assertIn(("color.contrast", "colors.menu.text"), codes(r))
         r = self.menu(background="#faf9f5")              # a light page with the factory Lotion text
         self.assertIn(("color.contrast", "colors.menu.background"), codes(r))
         r = self.menu(panel="#e3dacc")                   # a light panel under Lotion text
         self.assertIn(("color.contrast", "colors.menu.panel"), codes(r))
-        r = self.menu(accent="#2c2b26")                  # Noir accent on Sooty: switches would vanish
+        r = self.menu(accent="#2c2b26")                  # Noir accent on the Noir page: switches would vanish
         self.assertEqual(codes(r), {("color.contrast", "colors.menu.accent")})
         r = self.menu(text="red")
         self.assertIn(("schema.pattern", "colors.menu.text"), codes(r))

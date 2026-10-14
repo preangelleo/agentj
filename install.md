@@ -1,15 +1,15 @@
 ---
 document: agentj-install
-version: 0.23.0
-released: 2026-10-14
+version: 0.23.1
+released: 2026-10-15
 status: beta (anyone can sign up; not advertised yet, pages are not indexed)
 host_package: agentj (the `agentj` command)
-host_version: 0.21.0a1
-source_tag: v0.21.0a1
-host_wheel: agentj-0.21.0a1-py3-none-any.whl
-host_wheel_sha256: e8d59a7ac53d0e9c9cba46b1dd2a0189f48153d2493f8ad2376e6999488827eb
-host_sdist: agentj-0.21.0a1.tar.gz
-host_sdist_sha256: df83e3060f9d17cbaaf24361ba14a2809a79a47b9cc3c9dfc3f2081b1b3aa459
+host_version: 0.21.1a1
+source_tag: v0.21.1a1
+host_wheel: agentj-0.21.1a1-py3-none-any.whl
+host_wheel_sha256: 9d9258d29619a0114261c9781fbc05cecc1a0caea5b07a745e67b1bac2d61805
+host_sdist: agentj-0.21.1a1.tar.gz
+host_sdist_sha256: 6a3ac48b8d70400d63482190063688cde4ce9fdc04d69db3a519a09cbb57ea84
 canonical_url: https://agentj.app/install.md
 sha256_url: https://agentj.app/install.md.sha256
 alias: https://agentjarvis.net/install.md (the older address: the same file, kept for one more version)
@@ -138,7 +138,7 @@ curl -fsSL --retry 3 --retry-all-errors --retry-delay 2 --retry-max-time 45 --co
 curl -fsSL --retry 3 --retry-all-errors --retry-delay 2 --retry-max-time 45 --connect-timeout 10 --max-time 20 https://raw.githubusercontent.com/preangelleo/agentj/main/install.md -o install.github.md
 if command -v sha256sum >/dev/null; then sha256sum -c install.md.sha256; else shasum -a 256 -c install.md.sha256; fi   # → "install.md: OK"
 cmp install.md install.github.md && echo "site and GitHub copies match"
-grep -m1 '^version:' install.md                                           # → version: 0.23.0
+grep -m1 '^version:' install.md                                           # → version: 0.23.1
 ```
 - For a brief connection reset, timeout or interrupted download, these GET commands retry at most three times after the initial attempt, with a 45-second retry budget and a 20-second limit per attempt. If the network keeps failing, stop retrying and use the fallback below or ask the support desk. Do not add automatic retries to setup-code redemption, payment or other POST requests. Never disable TLS checks or continue after a SHA-256/GitHub mismatch.
 - Both checks pass → continue with that `install.md` (note its `version:` for feedback). Keep the file: Step 4 reads the
@@ -466,7 +466,7 @@ The astral installer warning that `uv` / `uvx` are shadowed is informational if 
 carry over). So start every command line from here on with `export PATH="$HOME/.local/bin:$PATH";` — or call
 `~/.local/bin/agentj` by its full path. This document writes `agentj` for short.
 
-The program is pinned to one release: the tag `v0.21.0a1` (front matter `source_tag`). The tag never moves, and its
+The program is pinned to one release: the tag `v0.21.1a1` (front matter `source_tag`). The tag never moves, and its
 `host/` folder is byte for byte the same code as the two files on our site whose SHA-256 is in this document's front matter.
 ```bash
 cd ~/.agentj-install
@@ -477,7 +477,7 @@ uv tool install "./$W"
 
 Intel Mac: this release keeps `cryptography<49` because newer releases lack an Intel macOS wheel. If an older installer tries to compile OpenSSL (`openssl-sys` / OpenSSL not found), rerun `uv tool install --with "cryptography<49" "./$W"`. The same platform constraint applies to `agentj update apply`.
 
-export PATH="$HOME/.local/bin:$PATH"; agentj --version     # → agentj 0.21.0a1
+export PATH="$HOME/.local/bin:$PATH"; agentj --version     # → agentj 0.21.1a1
 export PATH="$HOME/.local/bin:$PATH"; agentj doctor
 ```
 **Your human's own terminal must find `agentj` too** — they may use `agentj passphrase set` and `agentj pair` as a local alternative
@@ -505,16 +505,16 @@ echo "$WS  $W" | sha256sum -c - && echo "$SS  $S" | sha256sum -c -    # macOS: s
 uv tool install "./$W"          # the wheel; its dependencies come from PyPI or the mirror in UV_DEFAULT_INDEX
 ```
 `uv tool install "./$S"` installs from the checked source archive instead (it builds the same program).
-`https://agentj.app/dl/latest.txt` and `https://agentj.app/dl/latest-sdist.txt` name the same two files. `agentj --version` is the program's own version (`0.21.0a1`); it is
+`https://agentj.app/dl/latest.txt` and `https://agentj.app/dl/latest-sdist.txt` name the same two files. `agentj --version` is the program's own version (`0.21.1a1`); it is
 numbered separately from this document (`0.21.1`).
 
-Alternative from the matching published source tag: `uv tool install "git+https://github.com/preangelleo/agentj@v0.21.0a1#subdirectory=host"`.
+Alternative from the matching published source tag: `uv tool install "git+https://github.com/preangelleo/agentj@v0.21.1a1#subdirectory=host"`.
 
-Alternative without uv: `pipx install "git+https://github.com/preangelleo/agentj@v0.21.0a1#subdirectory=host"` (needs Python 3.11+).
+Alternative without uv: `pipx install "git+https://github.com/preangelleo/agentj@v0.21.1a1#subdirectory=host"` (needs Python 3.11+).
 
 **What each route checks.** The wheel and the source archive above are checked against the SHA-256 in this document. Each
 also has a minisign signature beside it (`<file>.minisig`, key `B79F925B0585F9D4` — front matter `signature`), which
-`agentj update apply` and the nightly automatic upgrade verify before they install (Section U). The two `git+https://…@v0.21.0a1`
+`agentj update apply` and the nightly automatic upgrade verify before they install (Section U). The two `git+https://…@v0.21.1a1`
 routes check **neither**: Git trusts GitHub's HTTPS and the tag name, and nothing compares that code with this document.
 Use them only when the checked files cannot be downloaded, and say so in the final feedback.
 `agentj doctor` lists what is ready and what is not (prerequisites, the fence, connectivity, which agents are usable).
@@ -1379,7 +1379,7 @@ Nightly automatic installation is enabled by default and verifies the official w
 In a shared session (the default of 0.13–0.19), reinstall directly using Step 4's checked wheel (SHA-256 must match this document and
 its public GitHub copy), preserving the host's identity, paired phones, account and preferences:
 ```bash
-uv tool install --force "./agentj-0.21.0a1-py3-none-any.whl"
+uv tool install --force "./agentj-0.21.1a1-py3-none-any.whl"
 agentj --version
 agentj service install
 agentj service restart
@@ -1388,7 +1388,7 @@ agentj doctor
 The matching published tag is another source, after verifying the tag object against the upgrade email (no signature or
 hash check on this route — Step 4):
 ```bash
-uv tool install --force "git+https://github.com/preangelleo/agentj@v0.21.0a1#subdirectory=host"
+uv tool install --force "git+https://github.com/preangelleo/agentj@v0.21.1a1#subdirectory=host"
 ```
 **0.14 independent session** (`agent.session_mode=independent`): 0.14's fence keeps Agent J's own program read-only and
 hides the service manager, so the Agent on the phone cannot reinstall or restart from inside it (measured: the install
@@ -1414,11 +1414,11 @@ prints something and `uv tool list` (or `pipx list`) shows `agentjarvis-host`, t
 the new name, then:
 ```bash
 jarvis service uninstall      # stop the old service first (Step 10 used tmux / nohup instead? stop that process)
-uv tool uninstall agentjarvis-host && uv tool install "git+https://github.com/preangelleo/agentj@v0.21.0a1#subdirectory=host"
+uv tool uninstall agentjarvis-host && uv tool install "git+https://github.com/preangelleo/agentj@v0.21.1a1#subdirectory=host"
 agentj doctor
 agentj service install        # start it again under the new name (or the tmux / nohup fallback, Step 10)
 ```
-With pipx instead of uv: `pipx uninstall agentjarvis-host && pipx install "git+https://github.com/preangelleo/agentj@v0.21.0a1#subdirectory=host"`.
+With pipx instead of uv: `pipx uninstall agentjarvis-host && pipx install "git+https://github.com/preangelleo/agentj@v0.21.1a1#subdirectory=host"`.
 - After the move, `agentj` puts back a `jarvis` command (a link to `agentj`, only if no other `jarvis` exists) for one more
   version; it prints a notice that points here. New installs never get `jarvis`.
 - The state moves from `~/.local/state/agentjarvis-alpha` to `~/.local/state/agentj` on the first run of `agentj` **after your
@@ -2247,6 +2247,16 @@ or when the agent waits for terminal input, Claude defaults to `claude-opus-5-5`
 unsupported-model 400; `agentj doctor` has a `first-setup` line. On the phone, the model / effort pill commits after 5 s of quiet,
 `/switch-harness` is always in the / list, and the phone offers a refresh only when the page server already serves the newer page.
 中文：账户页只给一条安装命令（Mac/Linux 用 install.sh，Windows 用 install.ps1，自动装 WSL2 + Ubuntu）；安装码只兑换一次；批准口令改名「遥控器配对密码」，终端配对必须先设，账户页也能用它添加遥控器；新装第一条消息不再无声卡住（预写首次设置、重试卡、停滞卡、Claude 默认 Opus 5.5 · medium）；手机上模型/强度停手 5 秒才提交，`/` 列表里总有 /switch-harness，电脑先升级时只在新网页已上线时才提示刷新。
+
+### 0.21.1a1 menu pages hotfix
+Every page except the chat (the five menu pages, Settings and its pages, the command list, keyboard shortcuts) is now a dark
+Noir page with Lotion text, header included; the theme's `colors.menu` factory values follow (background Noir `#2c2b26`, panels
+Sooty `#141414`), and a custom theme still overrides them. Inline code is readable (Sooty with Lotion text), Markdown headings
+and file names keep sane sizes, long CHANGELOG titles stop at two lines, cards no longer overlap, the weekly usage label no longer
+hides under the header, and every filter chip has a line icon. A skill's detail page shows a one-line description and usage in
+the owner's language first (`description_zh` / `usage_zh` in the front matter, or the Chinese sentence of the description), with
+the original SKILL.md folded behind "View original".
+中文：菜单页改为深色底白字（除聊天外所有页面，页眉同色）；修复行内代码看不清、长标题截断、卡片重叠、额度标签被页眉压住；技能详情先显示中文说明和用法，原文折叠在「查看原文」里。
 
 ### 0.20.2a1 cards that come back, upgrades that ask, files that reach you
 When the phone returns (background, dropped link, fresh open) it asks the computer for every card still waiting: missed

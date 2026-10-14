@@ -2,7 +2,7 @@
 // P238 (RESUME, owner 2026-10-13 23:29) · the 「/」 command list is a card that rises from the 5-hour bar, not a full-screen page.
 // Real page + local fake host (own headless Chromium with touch, never :9222).
 //   a) geometry, zh/en × light/dark × 390/1440: a card (not full width on a wide screen, ≤ 60 % of the viewport high), its
-//      bottom edge just above the 5-hour bar and its label, menu tokens (Sooty card, Lotion text), every description wraps
+//      bottom edge just above the 5-hour bar and its label, menu tokens (Noir card, Lotion text), every description wraps
 //      inside the card, nothing scrolls sideways
 //   b) a sideways swipe on the card moves nothing: the list does not scroll sideways, the reply cards underneath do not page,
 //      the card stays open
@@ -36,7 +36,7 @@ const MENU = (upgrade = { current: '0.20.3a1', latest: '0.20.3a1' }) => ({ sourc
     ...Array.from({ length: 14 }, (_, i) => ({ cmd: `/cmd${i}`, desc: `第 ${i} 条命令`, group: '日常' })),
     { cmd: '/goal', desc: '目标模式', group: '命令' }, { cmd: '/switch-harness', desc: '换底层 harness', group: '主 Agent' }],
   skills: [{ cmd: '/review', desc: '' }], upgrade });
-const SOOTY = 'rgb(20, 20, 20)', LOTION = 'rgb(250, 249, 245)';
+const NOIR = 'rgb(44, 43, 38)', LOTION = 'rgb(250, 249, 245)';
 
 async function paired({ w = 390, h = 844, lang = 'zh', scheme = 'light', menu = MENU() } = {}) {
   fake.reset();
@@ -86,7 +86,7 @@ await C('a-card-on-the-5h-bar', async () => {
     if (w > 600) assert.ok(g.w <= 481, `a card, not a page — ${tag}`);
     else assert.ok(g.w <= g.vw - 16 && g.left >= 8, `phone gutters — ${tag}`);
     assert.ok(Math.abs(g.scrim - g.vh) <= 1, `the scrim covers the viewport — ${tag}`);
-    assert.equal(g.bg, SOOTY); assert.equal(g.color, LOTION);
+    assert.equal(g.bg, NOIR); assert.equal(g.color, LOTION);
     assert.equal(g.sideways, false, `no sideways scroll in the list — ${tag}`);
     assert.equal(g.docX, false);
     assert.deepEqual(g.clipped, [], `every line wraps inside the card — ${tag}`);

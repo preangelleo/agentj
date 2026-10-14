@@ -1,8 +1,8 @@
 #!/usr/bin/env node
-// P187 · one menu design system: every menu-type surface is a full-screen dark page (Sooty canvas, Noir panels, Lotion
+// P187 · one menu design system: every menu-type surface is a full-screen dark page (P299: Noir canvas, Sooty panels, Lotion
 // text) built from two layers of tokens — `--ui-*` (global, inherits brand/palette.css) and `--menu-*` (inherits global).
 // Real page + local fake host, own headless Chromium (never :9222).
-//   a) every menu surface (P238: except the command list, a card on the 5-hour bar) covers the whole viewport, wears the menu tokens (canvas Sooty, text Lotion) in light AND dark
+//   a) every menu surface (P238: except the command list, a card on the 5-hour bar) covers the whole viewport, wears the menu tokens (canvas Noir, text Lotion) in light AND dark
 //      themes, and carries the one menu header (title + back / close icon buttons)
 //   b) WCAG AA: every visible text node inside a menu ≥ 4.5:1 against the colour it actually sits on (≥ 3:1 for ≥ 24 px /
 //      ≥ 18.66 px bold); icon buttons ≥ 3:1 (non-text)
@@ -135,7 +135,7 @@ const GEOM = (sel) => `(() => {
     text: getComputedStyle(page).color, small: small.slice(0, 10), overflowX: document.documentElement.scrollWidth > innerWidth };
 })()`;
 
-const SOOTY = 'rgb(20, 20, 20)', LOTION = 'rgb(250, 249, 245)';
+const SOOTY = 'rgb(20, 20, 20)', NOIR = 'rgb(44, 43, 38)', LOTION = 'rgb(250, 249, 245)';
 
 try {
   await C('shots', async () => {
@@ -176,7 +176,7 @@ try {
               assert.equal(g.w, w, `${tag} full width ${JSON.stringify(g)}`);
               assert.ok(Math.abs(g.h - h) <= 1, `${tag} full height ${JSON.stringify(g)}`);
             }
-            assert.equal(g.canvas, SOOTY, `${tag} Sooty canvas`);
+            assert.equal(g.canvas, NOIR, `${tag} Noir canvas (P299)`);
             assert.equal(g.text, LOTION, `${tag} Lotion text`);
             assert.ok(g.head, `${tag} has the menu header`);
             assert.ok(g.head.h >= (s.sheet ? 52 : 56), `${tag} header height ${g.head.h}`);
@@ -260,19 +260,19 @@ try {
       const p = await paired({ w: 390, h: 844 });
       try {
         await fake.send({ t: 'theme', v: 1, id: 'night', factory: null, rev: 'r1', name: { zh: '夜', en: 'Night' },
-          colors: { menu: { background: '#2c2b26', panel: '#141414', text: '#faf9f5', accent: '#d97757', line: '#858585' } } });
+          colors: { menu: { background: '#141414', panel: '#2c2b26', text: '#faf9f5', accent: '#d97757', line: '#858585' } } });
         await sleep(200);
         await openSettings(p);
         const c = await ev(p, `[getComputedStyle(document.getElementById('settings')).backgroundColor, getComputedStyle(document.querySelector('#set-main .setcard')).backgroundColor, getComputedStyle(document.documentElement).getPropertyValue('--menu-accent').trim()]`);
-        assert.deepEqual(c, ['rgb(44, 43, 38)', 'rgb(20, 20, 20)', '#d97757']);
+        assert.deepEqual(c, [SOOTY, NOIR, '#d97757']);
         // the security page is locked: factory menu colours under any theme
         await click(p, '#menu-about'); await waitFor(p, shown('badge-panel')); await sleep(260);
-        assert.equal(await ev(p, `getComputedStyle(document.getElementById('badge-panel')).backgroundColor`), SOOTY);
+        assert.equal(await ev(p, `getComputedStyle(document.getElementById('badge-panel')).backgroundColor`), NOIR);
         await key(p, 'Escape');
         // anything that is not #rrggbb is dropped
         await fake.send({ t: 'theme', v: 1, id: 'bad', factory: null, rev: 'r2', colors: { menu: { background: 'red', text: 'url(x)' } } });
         await sleep(200);
-        assert.equal(await ev(p, `getComputedStyle(document.getElementById('settings')).backgroundColor`), SOOTY);
+        assert.equal(await ev(p, `getComputedStyle(document.getElementById('settings')).backgroundColor`), NOIR);
         await fake.send({ t: 'theme', v: 1, id: 'robots', factory: 'robots', rev: 'robots' });
         await sleep(200);
         assert.equal(await ev(p, `getComputedStyle(document.documentElement).getPropertyValue('--menu-accent').trim()`), '#71bbde');

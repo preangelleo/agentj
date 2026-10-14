@@ -51,3 +51,72 @@ body:not([data-five-page=chat]) #orb{animation:fp-heart 2.4s ease-in-out infinit
 .busy-vendor img{opacity:0}.busy-palette-mark{position:absolute;inset:0;width:64px;height:16px}
 .busy-vendor-fallback{position:absolute;inset:0;line-height:16px;color:var(--c-lotion)}
 .busy-vendor[data-palette=ready] .busy-vendor-fallback{display:none}
+
+/* P299 (owner 2026-10-15 on iPhone: 「至少颜色，底色，还有 bug」, then 「统一用 Noir……白色字体……header 和 footer 也换过来」):
+   every page but the chat is a menu page — Noir canvas, Noir header, Lotion text and line icons, in light / dark /
+   follow-system alike (colors.menu repaints them); the light cards keep their palette tints with Noir text. */
+#five-page,#five-detail{top:var(--fp-top,72px);background:var(--menu-bg);color:var(--menu-text)}
+[data-theme=dark] #five-page,[data-theme=dark] #five-detail{background:var(--menu-bg);color:var(--menu-text)}
+html:has(body:is([data-five-page]:not([data-five-page="chat"]),:has(>#five-detail:not([hidden])))),
+body:is([data-five-page]:not([data-five-page="chat"]),:has(>#five-detail:not([hidden]))){background:var(--menu-bg)}
+body:is([data-five-page]:not([data-five-page="chat"]),:has(>#five-detail:not([hidden]))) .top{background:var(--menu-bg);border-bottom:1.5px dashed var(--menu-line);
+  --ink:var(--menu-text);--ink-soft:var(--menu-muted);--surface:var(--menu-chip);--raised:var(--menu-panel);--line:var(--menu-line)}
+body:is([data-five-page]:not([data-five-page="chat"]),:has(>#five-detail:not([hidden]))) .top .orb{box-shadow:none}
+body:is([data-five-page]:not([data-five-page="chat"]),:has(>#five-detail:not([hidden]))) .top .srchbtn{display:none}
+body:is([data-five-page]:not([data-five-page="chat"]),:has(>#five-detail:not([hidden])))[data-conn="on"] .connline{display:flex}
+/* the page header row: the menu header (title one line, ellipsis; icons 44 px) */
+.fp-header{min-height:var(--menu-head-h);padding:var(--sp-2) var(--menu-pad);border-bottom:1.5px dashed var(--menu-line);max-width:none}
+.fp-header h1{font:700 var(--menu-title-2)/1.25 var(--font-title);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+.fp-back{color:var(--menu-text);border-radius:var(--ui-radius-control)}
+#five-body{padding-top:var(--ui-space-content)}
+/* cards: light palette tints, separated (they used to overlap by 12 px, which read as a clipped card) */
+.fp-card{margin-bottom:var(--ui-space-control);padding:16px 20px 18px;min-height:0;contain-intrinsic-size:auto 110px}
+.fp-card-head{white-space:normal;font-size:19px}
+.fp-card-title{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;line-clamp:2;overflow:hidden;overflow-wrap:anywhere}
+.fp-card{color:var(--c-noir)}.fp-card p{color:var(--c-noir)}
+.fp-card small{color:var(--c-noir);opacity:1}
+.fp-meta{color:var(--menu-muted);opacity:1}
+.fp-card .fp-meta,.fp-card .fp-at{color:var(--c-noir)}
+.fp-group{background:var(--menu-bg);color:var(--menu-muted);font:600 var(--ui-fs-caption)/1.4 var(--font-body);letter-spacing:.06em;margin:0;z-index:1}
+.fp-empty{color:var(--menu-muted)}
+.fp-file{min-height:44px;color:var(--c-noir)}
+/* filter chips: outline pills, line icons with no disc (owner: 线条图标、不带深底); the chosen one = Banana Republic + Sooty */
+.fp-tab{border-color:color-mix(in srgb,var(--menu-text) 42%,transparent);color:var(--menu-text);padding:0 16px 0 12px}
+.fp-tab[aria-pressed=true]{border-color:var(--c-banana-republic);color:var(--c-noir)}
+.fp-category-icon{width:22px;height:22px;padding:0;border-radius:0;background:transparent;color:currentColor}
+.fp-category-all,.fp-category-global,.fp-category-local{background:transparent}
+/* the reader: file name = a small label; headings in steps; code one step deeper (Sooty) than the Noir canvas */
+.fp-file-name{margin:4px 0 16px;color:var(--menu-muted);font:500 var(--ui-fs-caption)/1.4 var(--font-mono);overflow-wrap:anywhere}
+.fp-detail-title{margin:4px 0 12px;font:700 22px/1.3 var(--font-title);overflow-wrap:anywhere}
+.fp-prose{font-size:15px;color:var(--menu-text)}
+.fp-prose :is(h1,h2,h3,h4){font-family:var(--font-title);font-weight:700;line-height:1.35;margin:28px 0 10px;overflow-wrap:anywhere}
+.fp-prose>:first-child{margin-top:0}
+.fp-prose h1{font-size:22px}.fp-prose h2{font-size:18px}.fp-prose h3{font-size:16px}.fp-prose h4{font-size:15px}
+.fp-prose p,.fp-prose ul,.fp-prose ol{margin:0 0 12px}
+.fp-prose :not(pre)>code{background:var(--menu-panel);color:var(--c-lotion);border:1px solid var(--menu-line);border-radius:6px;padding:.05em .35em;
+  font:500 .86em/1.5 var(--font-mono);overflow-wrap:anywhere;word-break:break-word}
+.fp-prose .codeblock{background:var(--menu-panel);border:1px solid var(--menu-line)}
+.fp-prose .codeblock pre,.fp-prose .codeblock code{color:var(--c-lotion)}
+.fp-prose a{color:var(--menu-accent)}.fp-prose .fp-link{color:var(--menu-text)}
+.fp-prose hr{border:0;border-top:1.5px dashed var(--menu-line);margin:20px 0}
+.fp-prose blockquote{margin:0 0 12px;padding-left:12px;border-left:3px solid var(--menu-accent);color:var(--menu-muted)}
+.fp-prose table{border-collapse:collapse}.fp-prose :is(th,td){border:1px solid var(--menu-line);padding:6px 10px}
+/* skill detail: what it does + how to use it first, the original SKILL.md folded */
+.fp-summary{padding:16px 18px;border:1px dashed var(--menu-line);border-radius:16px;margin:0 0 4px}
+.fp-lead{margin:0 0 10px;font-size:16px;line-height:1.6}
+.fp-use{margin:0 0 10px;line-height:1.6}.fp-use b{margin-right:4px}
+.fp-summary .fp-meta{margin:2px 0;font-size:13px}
+.fp-raw{margin-top:8px;border-top:1.5px dashed var(--menu-line)}
+.fp-raw>summary{min-height:44px;display:flex;align-items:center;cursor:pointer;color:var(--menu-text);font-weight:600}
+.fp-raw[open]>summary{margin-bottom:8px}
+/* the five-card menu: each card's one line stays above the next card (the step was 120 px, the line ended at 125) */
+.fp-menu-card{top:calc(16px + var(--fp-i)*clamp(116px, (100dvh - 300px)/4, 140px))}
+.fp-menu-card h2{top:56px}.fp-menu-card p{top:92px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.fp-back.menuicon{min-width:0;padding:0}.fp-back .fp-line-icon{width:var(--ui-icon);height:var(--ui-icon)}
+#five-detail>.fp-back{margin-left:calc(-1 * var(--sp-2))}
+.fp-card>p{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:3;line-clamp:3;overflow:hidden}
+.fp-raw>summary{list-style:none}.fp-raw>summary::-webkit-details-marker{display:none}
+.fp-raw>summary::after{content:"";width:8px;height:8px;margin-left:12px;border-right:1.5px solid currentColor;border-bottom:1.5px solid currentColor;transform:rotate(45deg) translateY(-3px);transition:transform var(--ui-dur) var(--ui-ease)}
+.fp-raw[open]>summary::after{transform:rotate(225deg) translate(-3px,0)}
+#five-menu{top:var(--fp-top,72px)}
+.fp-dark-4{box-shadow:inset 0 0 0 1.5px color-mix(in srgb,var(--c-lotion) 32%,transparent)}   /* the Noir card on the Noir canvas keeps an edge */

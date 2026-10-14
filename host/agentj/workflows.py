@@ -285,10 +285,26 @@ def skill_dir(base: str, scope: str, folder: str | None, root_of: str | None, sk
         s = {"id": f"{scope}:{folder or ''}:{name}"[:160], "name": name[:64],
              "desc": sentence(meta.get("description") if isinstance(meta.get("description"), str) else "", 160),
              "scope": scope, "_al": [str(a)[:40] for a in al if str(a).strip()][:8], "_path": p}
+        s.update(zh_lines(meta, s["desc"]))
         if folder:
             s["folder"] = folder
         out.append(s)
     return out, hidden
+
+
+def zh_lines(meta: dict, desc: str) -> dict:
+    """P299: the owner-language line (desc_zh) and usage (use_zh) for the 技能 page — front matter description_zh /
+    usage_zh, else the first mostly-Chinese sentence of an English description. Bundled skills' lines live in the
+    web dictionary (p299.sk.* / p299.su.*), so an older host shows them too."""
+    d, u, out = meta.get("description_zh"), meta.get("usage_zh"), {}
+    if not (isinstance(d, str) and d) and isinstance(meta.get("description"), str) and len(_CJK.findall(desc)) < 6:
+        d = next((x for x in re.split(r"(?<=[。！？])|(?<=[.!?])\s+", meta["description"])
+                  if len(_CJK.findall(x)) >= 6 and len(_CJK.findall(x)) * 2 >= len(re.sub(r"\s", "", x))), "")
+    if isinstance(d, str) and d and sentence(d, 160) != desc:
+        out["desc_zh"] = sentence(d, 160)
+    if isinstance(u, str) and u:
+        out["use_zh"] = re.sub(r"\s+", " ", u).strip()[:200]
+    return out
 
 
 def settle_aliases(skills: list, table: dict) -> list[dict]:
