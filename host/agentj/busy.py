@@ -103,7 +103,7 @@ HEARTBEAT = 30                 # `agentj busy run` in another PID namespace touc
 STALE = 120                    # … and serve drops it after this long without one
 
 
-def item(key: str, who, kind: str, label="", lk=None, since=None, pid=None, session=None, ns=None, report=None) -> dict:
+def item(key: str, who, kind: str, label="", lk=None, since=None, pid=None, session=None, ns=None, report=None, **meta) -> dict:
     d = {"key": key, "who": clean(who, WHO_MAX) or None, "kind": "ceo" if kind == "ceo" else "temp",
          "label": short(label) if label else "", "since": int(since or time.time())}
     if isinstance(report, str) and report.strip():
@@ -116,7 +116,18 @@ def item(key: str, who, kind: str, label="", lk=None, since=None, pid=None, sess
             d["ns"] = ns[:64]
     if session:
         d["session"] = clean(session, 80)
+    d.update(task_meta(meta))
     return d
+
+
+META_LIMITS = {"harness": 32, "model": 100, "cwd": 400, "workflow": 80, "role": 80, "parent": 80}
+
+
+def task_meta(meta):
+    """Only declared display metadata; never infer a child's model from its parent."""
+    from .privacy import redact
+    return {k: redact(clean(meta.get(k), n)) for k, n in META_LIMITS.items()
+            if isinstance(meta.get(k), str) and clean(meta[k], n)}
 
 
 def sys_load(getloadavg=getattr(os, "getloadavg", None), cpus=os.cpu_count) -> float | None:
@@ -198,7 +209,7 @@ def read_items(root, now: float | None = None) -> list[dict]:
             if not isinstance(it, dict) or not isinstance(it.get("key"), str):
                 raise ValueError("bad item")
             it = item(it["key"], it.get("who"), it.get("kind"), it.get("label", ""), it.get("lk"), it.get("since"),
-                      it.get("pid"), it.get("session"), it.get("ns"), it.get("report"))
+                      it.get("pid"), it.get("session"), it.get("ns"), it.get("report"), **task_meta(it))
             if "pid" in it and it.get("ns", me) != me:      # another PID namespace (inside the fence): its heartbeat
                 gone = now - p.stat().st_mtime > STALE
             else:
@@ -452,6 +463,7 @@ class Board:
 
     def __init__(self, root, on_change=None):
         self.root = Path(root) if root else None
+        self.context: dict[str, dict] = {}
         self.mem: dict[str, dict] = {}
         self.outside: list[dict] = []
         self.units: list[dict] = []
@@ -472,12 +484,35 @@ class Board:
                 self.colors = {str(k)[:64]: int(v) % COLORS for k, v in c.items()} if isinstance(c, dict) else {}
 
     # -- in-process sources
-    def start(self, key, who, kind="temp", label="", lk=None, session=None) -> None:
+    def set_context(self, scope, harness=None, cwd=None):
+        # Default working directory / tool only; a child's model is always its own event.
+        self.context[scope] = task_meta({"harness": harness, "cwd": cwd})
+
+    def start(self, key, who, kind="temp", label="", lk=None, session=None, **meta) -> None:
         old = self.mem.get(key)
         it = item(key, who, kind, label, lk, old["since"] if old else None, session=session)
+        context = next((v for k,v in self.context.items() if str(session or key)==k or str(session or key).startswith(k+":")), {})
+        it.update(context)
+        if old:
+            it.update(task_meta(old))
+        source = str(session or key).lower()
+        harness = next((x for x in ("codex", "opencode", "claude") if x in source), None)
+        if harness is None and source in ("own", "shared"):
+            harness = "claude"
+        if harness:
+            it["harness"] = harness
+        it.update(task_meta(meta))
         if old != it:
             self.mem[key] = it
             self.on_change()
+
+    def annotate(self, key, **meta):
+        key = self.alias.get(key, key)
+        if key in self.mem:
+            it = {**self.mem[key], **task_meta(meta)}
+            if it != self.mem[key]:
+                self.mem[key] = it
+                self.on_change()
 
     def stop(self, key) -> None:
         if self.mem.pop(key, None) is not None:
@@ -518,12 +553,14 @@ class Board:
         name, sid = ev.get("hook_event_name"), clean(ev.get("session_id"), 80)
         now = time.time()
         self.pending = [p for p in self.pending if now - p["at"] < PENDING_TTL]
+        if ev.get("agent_id"):
+            self.annotate(f"{scope}:{sid}:{clean(ev.get('agent_id'), 80)}", model=ev.get("model"), cwd=ev.get("cwd"))
         if name == "PreToolUse" and ev.get("agent_id"):            # P160: a sub-agent's own tool call → its detail
             self.note(f"{scope}:{sid}:{clean(ev.get('agent_id'), 80)}", tool_desc(ev.get("tool_name"), ev.get("tool_input")))
         if name == "PreToolUse" and ev.get("tool_name") in AGENT_TOOLS and not ev.get("agent_id"):
             ti = ev.get("tool_input") if isinstance(ev.get("tool_input"), dict) else {}
             self.pending = (self.pending + [{"session": sid, "type": clean(ti.get("subagent_type"), WHO_MAX),
-                                             "desc": clean(ti.get("description"), 200), "at": now}])[-16:]
+                                             "desc": clean(ti.get("description"), 200), "model": ti.get("model"), "at": now}])[-16:]
         elif name == "SubagentStart":
             aid, typ = clean(ev.get("agent_id"), 80), clean(ev.get("agent_type"), WHO_MAX)
             match = next((p for p in self.pending if p["session"] == sid
@@ -533,7 +570,8 @@ class Board:
             if match is not None:
                 self.pending.remove(match)
             self.start(f"{scope}:{sid}:{aid or uuid.uuid4().hex}", who_of(typ), "temp",
-                       (match or {}).get("desc") or typ, session=f"{scope}:{sid}")
+                       (match or {}).get("desc") or typ, session=f"{scope}:{sid}",
+                       harness="claude", model=ev.get("model"), cwd=ev.get("cwd"), role=typ)
         elif name == "SubagentStop":
             aid = clean(ev.get("agent_id"), 80)
             if aid:
@@ -550,7 +588,9 @@ class Board:
         if not isinstance(ev, dict):
             return
         t = ev.get("type")
-        if t == "assistant" and ev.get("parent_tool_use_id"):     # P160: inside a sub-agent → its latest tool call
+        if t == "assistant" and ev.get("parent_tool_use_id"):
+            self.annotate(f"{scope}:tu:{clean(ev.get('parent_tool_use_id'), 80)}",
+                          model=(ev.get("message") or {}).get("model"))     # P160: inside a sub-agent → its latest tool call
             for b in (ev.get("message") or {}).get("content") or []:
                 if isinstance(b, dict) and b.get("type") == "tool_use":
                     self.note(f"{scope}:tu:{clean(ev.get('parent_tool_use_id'), 80)}", tool_desc(b.get("name"), b.get("input")))
@@ -559,7 +599,7 @@ class Board:
                 if isinstance(b, dict) and b.get("type") == "tool_use" and b.get("name") in AGENT_TOOLS:
                     inp = b.get("input") if isinstance(b.get("input"), dict) else {}
                     self.start(f"{scope}:tu:{clean(b.get('id'), 80)}", who_of(inp.get("subagent_type")), "temp",
-                               inp.get("description") or inp.get("subagent_type") or "", session=scope)
+                               inp.get("description") or inp.get("subagent_type") or "", session=scope, role=inp.get("subagent_type"))
         elif t == "user" and not ev.get("parent_tool_use_id"):
             for b in (ev.get("message") or {}).get("content") or []:
                 if not (isinstance(b, dict) and b.get("type") == "tool_result"):
@@ -612,7 +652,7 @@ class Board:
                     while len(self.child) > 128:
                         self.child.pop(next(iter(self.child)))
                     if k not in self.mem:
-                        self.start(k, c.get("who"), "temp", c.get("label") or "", session=scope)
+                        self.start(k, c.get("who"), "temp", c.get("label") or "", session=scope, **task_meta(c))
             elif th and method == "item/started" and f"{scope}:th:{th}" in self.mem:
                 self.note(f"{scope}:th:{th}", codex_item_desc(it))
         elif method == "thread/started":
@@ -624,13 +664,15 @@ class Board:
                 who = who_of(spawn.get("agent_role")) or who_of(spawn.get("agent_nickname"))
                 c = self.child.setdefault(k, {})
                 c["who"] = who
+                c.update(task_meta({"model": t.get("model"), "cwd": t.get("cwd"), "role": spawn.get("agent_role")}))
+                self.annotate(k, **task_meta(c))
                 if k in self.mem and who and self.mem[k]["who"] != who:
                     self.mem[k] = {**self.mem[k], "who": who}
                     self.on_change()
         elif method == "turn/started" and th and f"{scope}:th:{th}" in self.child:
             k = f"{scope}:th:{th}"
             c = self.child[k]
-            self.start(k, c.get("who"), "temp", c.get("label") or "", session=scope)
+            self.start(k, c.get("who"), "temp", c.get("label") or "", session=scope, **task_meta(c))
         elif method == "turn/completed" and th:
             self.stop(f"{scope}:th:{th}")
 
@@ -684,6 +726,13 @@ class Board:
             return
         t = ev.get("type")
         p = ev.get("properties") if isinstance(ev.get("properties"), dict) else {}
+        if t == "message.updated":
+            info = p.get("info") if isinstance(p.get("info"), dict) else {}
+            if info.get("sessionID") != sid:
+                model = info.get("modelID")
+                provider = info.get("providerID")
+                self.annotate(f"{scope}:s:{clean(info.get('sessionID'), 80)}",
+                              model=f"{provider}/{model}" if provider and model else model)
         if t == "message.part.updated":
             part = p.get("part") if isinstance(p.get("part"), dict) else {}
             if part.get("type") != "tool":
@@ -732,8 +781,9 @@ class Board:
             m = OC_SUFFIX.search(title)
             c = self.child.setdefault(k, {})
             c.update(who=who_of(info.get("agent") or (m.group(1) if m else None)), label=OC_SUFFIX.sub("", title))
+            c.update(task_meta({"model": info.get("model"), "cwd": info.get("directory"), "role": info.get("agent")}))
             if t == "session.created" or k in self.mem:
-                self.start(k, c["who"], "temp", c["label"], session=scope)
+                self.start(k, c["who"], "temp", c["label"], session=scope, **task_meta(c))
             return
         cid = clean(p.get("sessionID"), 80)
         k = f"{scope}:s:{cid}"
@@ -780,7 +830,7 @@ class Board:
                     self.colors_dirty = True
             used.add(c)
             out.append({"id": v["key"][-40:], "who": v["who"], "kind": v["kind"], "label": v["label"],
-                        **({"lk": v["lk"]} if v.get("lk") else {}), "since": v["since"], "c": c})
+                        **({"lk": v["lk"]} if v.get("lk") else {}), "since": v["since"], "c": c, **task_meta(v)})
         return out
 
     def find(self, wid) -> tuple[dict, dict | None] | None:
@@ -998,7 +1048,7 @@ def cmd_busy(a) -> int:
                                                                  "（还没有 / not yet）"))
         return 0 if d is not None else 1
     if a.busy_cmd == "start":
-        it = item("cli:" + (a.key or uuid.uuid4().hex[:12]), a.who, a.kind, a.label, pid=a.pid, report=a.report)
+        it = item("cli:" + (a.key or uuid.uuid4().hex[:12]), a.who, a.kind, a.label, pid=a.pid, report=a.report, **task_meta(vars(a)))
         write_item(root, it)
         print(it["key"])
         return 0
@@ -1012,7 +1062,7 @@ def cmd_busy(a) -> int:
         key = "run:" + uuid.uuid4().hex[:12]
         path = None
         try:
-            path = write_item(root, item(key, a.who, a.kind, a.label, pid=os.getpid(), ns=pidns(), report=a.report))
+            path = write_item(root, item(key, a.who, a.kind, a.label, pid=os.getpid(), ns=pidns(), report=a.report, cwd=os.getcwd(), **task_meta({k:v for k,v in vars(a).items() if k != "cwd"})))
         except OSError as e:              # e.g. no state dir: the work still runs, only unseen on the phone
             print(f"agentj busy: 手机上不会显示这件事 / not shown on the phone ({e.__class__.__name__})", file=sys.stderr)
         stop = threading.Event()
@@ -1047,6 +1097,8 @@ def add_parser(sub) -> None:
         x.add_argument("--kind", choices=("ceo", "temp"), default="ceo")
         x.add_argument("--report", default=None, help="报告文件路径：手机点开这一条时显示它的第一行 / the REPORT file whose first "
                                                      "line the phone shows when this row is tapped")
+        for field in ("harness", "model", "workflow", "role", "parent"):
+            x.add_argument("--" + field, default=None, help="P244 task display metadata: " + field)
         if n == "start":
             x.add_argument("--key", default="", help="稍后 stop 用的名字 / the name to stop it with")
             x.add_argument("--pid", type=int, default=None, help="这个进程结束就自动撤下 / removed when this pid ends")

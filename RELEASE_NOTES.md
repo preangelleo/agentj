@@ -1,6 +1,6 @@
-# Agent J 0.20.3a1 release notes
+# Agent J 0.21.0a1 release notes
 
-Host 0.20.3a1 / install 0.22.3; phone-web scope.
+Host 0.21.0a1 / install 0.23.0; phone-web scope.
 Phone parity must pass --strict. Full Android/Telegram parity is incomplete.
 Full Android/Telegram parity is incomplete.
 No APK is included in this release. Android source is for review, not a released app.
@@ -8,15 +8,25 @@ No APK is included in this release. Android source is for review, not a released
 Publication status: local preparation only. Live site verification is DEFERRED until
 the public commit and tag are pushed, the site is deployed, and cold installation passes.
 
-On publication failure, restore v0.20.2a1 host/site/phone. A front Worker/site/signed downloads/install guide/install.sh/install.ps1/install assistant; B phone web, right after A in the same window. No relay Worker change. Batch C (its own 05:00–07:00 window) applies app migration 0026 and deploys the Dashboard (account page: one install command, remote pairing password, globe language menu).
+On failure restore v0.20.3a1. C (pending app migration 0026 and account pages) then A signed host/site/downloads then B phone web. No relay change. Daily upgrade digest only at 09:00 JST; at most one mail per account per day.
 ## Changes
 
-- One command installs everything: `curl -fsSL https://agentj.app/install.sh | bash -s -- AJI-…` on macOS / Linux, `install.ps1` on Windows (WSL2 + Ubuntu, one administrator prompt); the install code is redeemed once, a failed step says what to do and never removes the service.
-- The approval passphrase is now the remote pairing password: terminal pairing needs it, the account page can add a remote with it (sealed to a one-time host key, five tries), or with a passkey; `agentj passphrase offer` asks once during install.
-- A new host's first message is never silent: harness first-run settings are pre-written, a retry card shows after the fifth API retry, a stall card quotes what the agent is waiting for, Claude defaults to Opus 5.5 · medium and falls back once on an unsupported-model 400; `agentj doctor` has a first-setup line.
-- Phone web: model / effort pill commits after 5 s of quiet; /switch-harness is always in the / list; a refresh is offered only when the page server already serves the newer page (otherwise one quiet header line), never twice for the same version.
-- Site: /docs/install/ by computer (Windows / macOS / Linux) × four ways; a round globe language menu on site, account and admin.
-- 中文：一条命令安装（install.sh / install.ps1）；遥控器配对密码（终端必需、账户页可用）；新装第一条消息不再无声卡住、Claude 默认 Opus 5.5；模型/强度停手 5 秒提交；「/」里有 /switch-harness；电脑先升级时不再反复弹刷新；安装页三系统×四种方式；地球仪语言菜单。
+- Five menu pages organize chat, workflows, skills, memory and the current Agent.
+- Workflow run records retain status and report links.
+- Phone login rescue handles expired logins, with a reminder to enable the official setting before Codex device-code login.
+- Queued controls show why they are waiting and can be cancelled.
+- Quota pacing reminders and feedback addressed to Agent J Father.
+- Improved footer, shortcuts and silent coordinated upgrades. Input cards retain their narrower width.
+- Fixed approvals --verify false failures on older records.
+- The load indicator description now identifies a light segment moving along the line.
+- 五页菜单整理聊天、工作流、技能、记忆和当前 Agent。
+- 工作流运行账本保留状态与报告。
+- 登录过期可从手机启动登录救援，Codex 设备码登录前会提醒开启官方设置。
+- 待执行控制命令显示等待原因并可撤销。
+- 额度管家提醒消耗节奏；反馈统一称为「Agent J 爸爸」。
+- 底栏、快捷键和静默跟随升级改进，聊天输入卡保持原有较窄宽度。
+- 修复 approvals --verify 对旧审批记录的误报。
+- 负载线说明更正为一段亮色（浅色）在线上来回滑。
 
 ## Material acceptance limits
 

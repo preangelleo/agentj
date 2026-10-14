@@ -51,13 +51,16 @@ class Text(unittest.TestCase):
 
 class Core(unittest.TestCase):
     def test_v11_and_compressed(self):
-        self.assertEqual(main_identity.VERSION, 11)
-        self.assertEqual(main_identity.verify_core()["version"], 11)
+        self.assertEqual(main_identity.VERSION, 14)                       # P244: v12 (@folder dispatch + /skill naming)
+        self.assertEqual(main_identity.verify_core()["version"], 14)
         # P159: v10 was zh 4359 / en 13148 characters; the same rules ~10 % shorter
         # P186 added the chairman philosophy and moved bot / auto-update / long-task detail to their skills: zh stays ~flat
         # (the phone-turn additionalContext must stay inline under HOOK_MAX), en grows a little (it goes to the file anyway)
-        self.assertLessEqual(len((main_identity.DATA / "core.zh.md").read_text()), 4000)
-        self.assertLessEqual(len((main_identity.DATA / "core.en.md").read_text()), 12460)
+        # P244 (v12): + the @<folder>（CEO 名） dispatch rule and `/skill` naming — zh 3987 → 4098, en 12452 → 12727 (measured;
+        # the zh prompt stays inline: 9049 ≤ INLINE_MAX), bounds raised by that much, to ratify
+        # P253 v13 moves support consent into the pinned core; the shared hook cap remains unchanged.
+        self.assertLessEqual(len((main_identity.DATA / "core.zh.md").read_text()), 4410)
+        self.assertLessEqual(len((main_identity.DATA / "core.en.md").read_text()), 13980)
 
     def test_zh_stays_inline_under_the_claude_hook_cap(self):
         self.assertEqual((shared.SharedClaudeAgent.INLINE_MAX, shared.SharedClaudeAgent.HOOK_MAX), (9500, 10000))

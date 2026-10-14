@@ -6,6 +6,8 @@ scheduler and the stop-everything switch (later rounds). Shape (exact key set �
     {"v": 1, "id": "<template id>", "title": {"zh": "…", "en": "…"}, "schedule": "<cron, 5 fields>",
      "tz": "<IANA name or 'local'>", "prompt_file": "RUN.md", "dry_run_prompt_file": "DRYRUN.md",
      "mode": "normal" | "research", "enabled": false, "needs": ["<which service, never a key>"], "outputs": ["reports/…"]}
+    optional (P254): "harness": "claude" | "codex" | "opencode" | [one or more of them] — the only harnesses this workflow may
+    run on; the quota steward never moves it elsewhere. Absent = any (normally the main Agent's own).
 
 - `enabled` is turned on only by a human (the scheduler round); the wizard and `add-template` always write `false`.
 - `mode: "research"` = the read-only run profile (reports only). `normal` workflows may draft, but every step that spends
@@ -20,6 +22,8 @@ import json
 import re
 
 KEYS = ("v", "id", "title", "schedule", "tz", "prompt_file", "dry_run_prompt_file", "mode", "enabled", "needs", "outputs")
+OPTIONAL = ("harness",)
+HARNESS_NAMES = ("claude", "codex", "opencode")
 MODES = ("normal", "research")
 ID_RE = re.compile(r"[a-z0-9][a-z0-9-]{0,39}")
 _FILE_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,63}\.md")
@@ -69,7 +73,7 @@ def problems(obj: object, expect_id: str | None = None) -> list[str]:
         return ["task.json must be a JSON object"]
     out: list[str] = []
     missing = [k for k in KEYS if k not in obj]
-    extra = [k for k in obj if k not in KEYS]
+    extra = [k for k in obj if k not in KEYS and k not in OPTIONAL]
     if missing:
         out.append("missing keys: " + ", ".join(missing))
     if extra:
@@ -100,6 +104,9 @@ def problems(obj: object, expect_id: str | None = None) -> list[str]:
         out.append("needs must be ≤ 20 strings of 1–120 characters")
     elif isinstance(needs, list) and secret_like(" \n".join(x for x in needs if isinstance(x, str))):
         out.append("needs looks like it holds a credential: name the service only")
+    h = obj.get("harness")
+    if "harness" in obj and not (h in HARNESS_NAMES or (isinstance(h, list) and 0 < len(h) <= 3 and all(x in HARNESS_NAMES for x in h))):
+        out.append("harness must be claude, codex or opencode, or a list of them")
     outs = obj.get("outputs")
     if "outputs" in obj and not (isinstance(outs, list) and 0 < len(outs) <= 10 and all(
             isinstance(x, str) and _OUT_RE.fullmatch(x) and ".." not in x.split("/") for x in outs)):

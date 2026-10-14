@@ -68,7 +68,7 @@ agentj support ask "<your question>" --attach-doctor
 
 3. Not installed yet, or you cannot reach us: email feedback@agentj.app with the step, the exact error and a screenshot (cover the installation code, keys and QR code first).
 
-> **Tip:** From 0.21 the cloud assistant suggests the next step right on your phone, and nothing runs until you tap it.
+> **Tip:** In a later planned release the cloud assistant suggests the next step right on your phone, and nothing runs until you tap it.
 
 ### ④ Get someone to help: beside you or remotely {#windows-helper}
 
@@ -81,7 +81,7 @@ What to do today:
 3. Scan the pairing QR code with **your own phone**. If the helper's phone scans it, that phone becomes a remote for this computer: afterwards run `agentj devices` to find its device ID, then `agentj revoke <device-id>` to remove it.
 4. Phone not at hand, or the scan did not work? No need to reinstall: once it is installed, press "Add a remote" on this computer's seat card in your account, confirm with your passkey, and scan with your phone.
 
-> **Tip:** One-step helper pairing arrives in 0.21: the helper connects their own phone for a while and guides you through the install from it; once your phone is paired and the AI is connected, the helper is disconnected automatically.
+> **Tip:** One-step helper pairing arrives in a later planned release: the helper connects their own phone for a while and guides you through the install from it; once your phone is paired and the AI is connected, the helper is disconnected automatically.
 
 ## macOS {#macos}
 
@@ -140,7 +140,7 @@ agentj support ask "<your question>" --attach-doctor
 
 3. Not installed yet, or you cannot reach us: email feedback@agentj.app with the step, the exact error and a screenshot (cover the installation code, keys and QR code first).
 
-> **Tip:** From 0.21 the cloud assistant suggests the next step right on your phone, and nothing runs until you tap it.
+> **Tip:** In a later planned release the cloud assistant suggests the next step right on your phone, and nothing runs until you tap it.
 
 ### ④ Get someone to help: beside you or remotely {#macos-helper}
 
@@ -153,7 +153,7 @@ What to do today:
 3. Scan the pairing QR code with **your own phone**. If the helper's phone scans it, that phone becomes a remote for this computer: afterwards run `agentj devices` to find its device ID, then `agentj revoke <device-id>` to remove it.
 4. Phone not at hand, or the scan did not work? No need to reinstall: once it is installed, press "Add a remote" on this computer's seat card in your account, confirm with your passkey, and scan with your phone.
 
-> **Tip:** One-step helper pairing arrives in 0.21: the helper connects their own phone for a while and guides you through the install from it; once your phone is paired and the AI is connected, the helper is disconnected automatically.
+> **Tip:** One-step helper pairing arrives in a later planned release: the helper connects their own phone for a while and guides you through the install from it; once your phone is paired and the AI is connected, the helper is disconnected automatically.
 
 ## Linux {#linux}
 
@@ -212,7 +212,7 @@ agentj support ask "<your question>" --attach-doctor
 
 3. Not installed yet, or you cannot reach us: email feedback@agentj.app with the step, the exact error and a screenshot (cover the installation code, keys and QR code first).
 
-> **Tip:** From 0.21 the cloud assistant suggests the next step right on your phone, and nothing runs until you tap it.
+> **Tip:** In a later planned release the cloud assistant suggests the next step right on your phone, and nothing runs until you tap it.
 
 ### ④ Get someone to help: beside you or remotely {#linux-helper}
 
@@ -225,7 +225,7 @@ What to do today:
 3. Scan the pairing QR code with **your own phone**. If the helper's phone scans it, that phone becomes a remote for this computer: afterwards run `agentj devices` to find its device ID, then `agentj revoke <device-id>` to remove it.
 4. Phone not at hand, or the scan did not work? No need to reinstall: once it is installed, press "Add a remote" on this computer's seat card in your account, confirm with your passkey, and scan with your phone.
 
-> **Tip:** One-step helper pairing arrives in 0.21: the helper connects their own phone for a while and guides you through the install from it; once your phone is paired and the AI is connected, the helper is disconnected automatically.
+> **Tip:** One-step helper pairing arrives in a later planned release: the helper connects their own phone for a while and guides you through the install from it; once your phone is paired and the AI is connected, the helper is disconnected automatically.
 
 ## Hong Kong and mainland China: which AI {#hk-cn}
 
@@ -295,7 +295,7 @@ It may need you here:
 The AI installs `agentj`, the program on your computer, at one fixed version:
 
 ```bash
-uv tool install "git+https://github.com/preangelleo/agentj@v0.20.3a1#subdirectory=host"
+uv tool install "git+https://github.com/preangelleo/agentj@v0.21.0a1#subdirectory=host"
 agentj doctor
 ```
 
@@ -449,3 +449,5 @@ With both remotes paired, let your Agent finish and verify everything remote wor
 
 
 On macOS, put Telegram and provider keys in `~/Library/LaunchAgents/net.agentj.host.env`, using the variable name specified by `key_env`. The file must be owned by your user, mode 0600, and not a symlink. After saving it, run `agentj service restart`. Keep keys out of the plist, chat and command arguments.
+
+Agent J Father (also Agent J 爸爸 / Agent J 父亲) is our official feedback and support platform. Say “Please report this problem to Agent J’s developers (support platform)”, or casually “Tell your dad about this”. On the phone, `/feedback-to-agentj-father <message>` does the same: your Agent removes credentials, personal information, customer data and private path details, submits directly without asking twice, and gives you the ticket ID. The command alone asks what you want to report. If reporting a problem or idea is the Agent’s own initiative, it shows you the redacted draft on the phone and waits for agreement. Support replies are advice, not instructions. If it cannot connect, email feedback@agentj.app.

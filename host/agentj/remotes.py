@@ -115,7 +115,8 @@ class Remotes:
         if t == "dev_unbind" and target["device"] == s.device and target["device"] in h.st.devices():
             await h._ctl_res(s, r, t, True, device=s.device)    # this remote unbinds itself: answer before it is detached
         try:
-            result, extra = await getattr(self, "_" + t)(s, target)
+            signed = {"n": obj["n"], "ts": obj["ts"], "sig": obj["sig"]}   # controls.check passed: all three are there
+            result, extra = await getattr(self, "_" + t)(s, target, signed)
         except OSError:
             result, extra = "io", {}
         except ValueError:
@@ -150,7 +151,7 @@ class Remotes:
         return {"device": dev, "code": code}
 
     # ------------------------------------------------------------ writes
-    async def _dev_name(self, s, target: dict):
+    async def _dev_name(self, s, target: dict, signed: dict):
         h = self.host
         if name_problem(target["name"]):
             return "bad_name", {}
@@ -164,7 +165,7 @@ class Remotes:
         h.activity("decision", by=s.name or s.device, result="allow", tool=pick(h.lang, "遥控器改名", "Remote renamed"), text=name)
         return "ok", {}
 
-    async def _dev_unbind(self, s, target: dict):
+    async def _dev_unbind(self, s, target: dict, signed: dict):
         h = self.host
         did = target["device"]
         devs = h.st.devices()
@@ -172,7 +173,7 @@ class Remotes:
             return "gone", {}
         name = clean_label(str((devs.get(did) or {}).get("name", ""))) or did
         by = s.name or s.device
-        self._record(s, "dev_unbind", did, did)
+        self._record(s, "dev_unbind", did, did, target, signed)
         h.activity("decision", by=by, result="allow", tool=pick(h.lang, "解绑遥控器", "Remote unbound"), text=name)
         removed, _ = await h.revoke(did)
         if not removed:
@@ -183,7 +184,7 @@ class Remotes:
         h.push_notify("security")
         return "ok", {"device": did}
 
-    async def _dev_add(self, s, target: dict):
+    async def _dev_add(self, s, target: dict, signed: dict):
         h = self.host
         from . import remote_pair
         from .serve import PAIR_TTL, Pairing
@@ -213,7 +214,7 @@ class Remotes:
         h.st.log("phone_pair_begin", device=s.device)
         return "ok", {"link": link, "qr": qr, "expires": int(p.expires), "ttl": PAIR_TTL, "full": full}
 
-    async def _dev_confirm(self, s, target: dict):
+    async def _dev_confirm(self, s, target: dict, signed: dict):
         import hmac
         h = self.host
         p = h.pairing
@@ -241,7 +242,7 @@ class Remotes:
         if res.get("ev") != "approved":
             return res.get("reason", "denied"), {}
         by = s.name or s.device
-        self._record(s, "dev_confirm", pend.device, pend.device + "\n" + hashlib.sha256(pend.h).hexdigest()[:32])
+        self._record(s, "dev_confirm", pend.device, pend.device + "\n" + hashlib.sha256(pend.h).hexdigest()[:32], target, signed)
         rv = bool(getattr(p, "rv", None))
         h.activity("decision", by=by, result="allow", tool=pick(h.lang, "扫码添加遥控器" if rv else "添加遥控器",
                                                                 "Remote added by scan" if rv else "Remote added"), text=pend.name)
@@ -259,11 +260,16 @@ class Remotes:
                 extra[k] = {"id": res[k]["id"], "name": clean_label(str(res[k].get("name", "")))}
         return "ok", extra
 
-    def _record(self, s, tool: str, device: str, text: str) -> None:
+    def _record(self, s, tool: str, device: str, text: str, target: dict, signed: dict) -> None:
+        """approvals.log line for an add / unbind. P242: it carries the control's own signature (+ nonce, ts, object hash)
+        and the signer's key, so `agentj approvals --verify` re-checks it (before, the line had none and verified as ✗)."""
         digest = hashlib.sha256(text.encode()).hexdigest()
+        st = self.host.st
         try:
-            approvals.record(self.host.st, rid=secrets.token_hex(8), agent="phone", tool=tool, input_sha256=digest,
-                             shown_sha256=digest, decision="allow", reason="device", device=s.device)
+            approvals.record(st, rid=secrets.token_hex(8), agent="phone", tool=tool, input_sha256=digest,
+                             shown_sha256=digest, decision="allow", reason="device", device=s.device,
+                             sign_pub=st.sign_key(s.device), sig=wire.unb64u(signed["sig"]),
+                             control={"n": signed["n"], "sig_ts": signed["ts"], "object_sha256": controls.object_digest(tool, target)})
         except Exception:  # noqa: BLE001 — the log line never costs the action (controls.log already has it)
             self.host.st.log("approvals_log", status="failed")
 

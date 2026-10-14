@@ -93,25 +93,43 @@ const MOD = { LABELS: { copy: "Copy", copyAria: "Copy code", copied: "Copied", i
 
   function runLen(s, i, c) { let n = 0; while (s[i + n] === c) n++; return n; }
 
-  // Where does the code span that opens at i (with n backticks) close?
-  // P33-X12: memoised per string — an answer for (i) is reused, and once a run of n finds no closer from i, it finds none
-  // from any later position either — so "[[[ `` ` `` …" and runs of growing length stay linear.
-  let ccStr = null, ccAt = null, ccFail = null;
+  // Index raw backtick runs once per string and parse, including nested link labels.
+  // A cached miss for one length does not help growing runs of different lengths.
+  const ccCache = new Map();
+  let ccLastString = null, ccLastIndex = null;
+  function clearCodeCache() { ccCache.clear(); ccLastString = null; ccLastIndex = null; }
   function codeClose(s, i, n) {
-    if (s !== ccStr) { ccStr = s; ccAt = new Map(); ccFail = new Map(); }
-    if (ccAt.has(i)) return ccAt.get(i);
-    if (ccFail.has(n) && ccFail.get(n) <= i) return -1;
-    let k = i + n, r = -1;
-    while (k < s.length) {
-      const j = s.indexOf("`", k);
-      if (j < 0) break;
-      const m = runLen(s, j, "`");
-      if (m === n) { r = j; break; }
-      k = j + m;
+    if (s !== ccLastString) {
+      let index = ccCache.get(s);
+      if (!index) {
+        const next = new Map(), byLength = new Map();
+        let at = 0;
+        while (at < s.length) {
+          const j = s.indexOf("`", at);
+          if (j < 0) break;
+          const length = runLen(s, j, "`");
+          let positions = byLength.get(length);
+          if (!positions) { positions = []; byLength.set(length, positions); }
+          else next.set(positions[positions.length - 1], j);
+          positions.push(j);
+          at = j + length;
+        }
+        index = { next, byLength };
+        ccCache.set(s, index);
+      }
+      ccLastString = s; ccLastIndex = index;
     }
-    ccAt.set(i, r);
-    if (r < 0) ccFail.set(n, Math.min(i, ccFail.has(n) ? ccFail.get(n) : i));
-    return r;
+    const index = ccLastIndex;
+    if (index.next.has(i)) return index.next.get(i);
+    // An escaped first backtick can leave an opener in the middle of a raw run.
+    const positions = index.byLength.get(n);
+    if (!positions) return -1;
+    let lo = 0, hi = positions.length;
+    while (lo < hi) {
+      const mid = (lo + hi) >>> 1;
+      if (positions[mid] < i + n) lo = mid + 1; else hi = mid;
+    }
+    return lo < positions.length ? positions[lo] : -1;
   }
   // Total characters tryLink may scan per parse(): "[[[[…" costs ≤ 2 000 per bracket otherwise.
   const LINK_WORK = 4000000;
@@ -250,6 +268,7 @@ const MOD = { LABELS: { copy: "Copy", copyAria: "Copy code", copied: "Copied", i
     // Once a closer search for (char, len) fails, every later one would scan the
     // same suffix and fail too: remembering that keeps "*a *b *c …" linear.
     const noClose = {};
+    const linkPossible = s.includes("](");
     let i = 0;
     while (i < s.length) {
       const ch = s[i];
@@ -269,7 +288,7 @@ const MOD = { LABELS: { copy: "Copy", copyAria: "Copy code", copied: "Copied", i
       }
       if (ch === "[" || (ch === "!" && s[i + 1] === "[")) {
         const img = ch === "!";
-        const L = tryLink(s, img ? i + 1 : i);
+        const L = linkPossible ? tryLink(s, img ? i + 1 : i) : null;
         if (!L || (inLink && !img)) { buf += ch; i++; continue; }
         const dest = L.dest.replace(/\\([!-\/:-@\[-`{-~])/g, "$1");
         const href = safeHref(dest);
@@ -556,9 +575,10 @@ const MOD = { LABELS: { copy: "Copy", copyAria: "Copy code", copied: "Copied", i
     let s = String(src).replace(/\r\n?/g, "\n").replace(/\u0000/g, "�");
     let tail = "";
     if (s.length > MAX_INPUT) { tail = s.slice(MAX_INPUT); s = s.slice(0, MAX_INPUT); }
-    cellBudget = MAX_CELLS; linkWork = 0; ccStr = null;
+    cellBudget = MAX_CELLS; linkWork = 0; clearCodeCache();
     const out = parseBlocks(s.split("\n").map(detab), 0);
     if (tail) out.push({ tag: "p", children: [text(tail)] });
+    clearCodeCache();
     return out;
   }
 
@@ -728,7 +748,7 @@ const MOD = { LABELS: { copy: "Copy", copyAria: "Copy code", copied: "Copied", i
     return legacyCopy(t, doc);
   }
 
-  root.RelayMD = { parse, parseInline: (s) => { linkWork = 0; cellBudget = MAX_CELLS; return parseInline(s); }, toDOM, safeHref, localRef, shownTarget, copyText, legacyCopy, LABELS,
+  root.RelayMD = { parse, parseInline: (s) => { linkWork = 0; cellBudget = MAX_CELLS; clearCodeCache(); const out = parseInline(s); clearCodeCache(); return out; }, toDOM, safeHref, localRef, shownTarget, copyText, legacyCopy, LABELS,
     LIMITS: { MAX_INPUT, MAX_COLS, MAX_ROWS, MAX_CELLS, MAX_NODES, MAX_CODE_HL, MAX_TEX, MAX_MERMAID } };
 })(MOD);
 export const RelayMD = MOD.RelayMD;

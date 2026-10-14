@@ -619,7 +619,7 @@ class Surfaces(unittest.TestCase):
             (pathlib.Path(d) / ".agentj").mkdir()
             (pathlib.Path(d) / ".agentj" / "menu.json").write_text(json.dumps({"version": 1, "items": [{"cmd": "/deploy", "desc": "上线"}]}))
             out = menu.served(d, ["switch-harness", "review"], "zh")
-            self.assertEqual([i["cmd"] for i in out["items"]], ["/deploy", "/goal", "/switch-harness"])
+            self.assertEqual([i["cmd"] for i in out["items"]], ["/deploy", "/goal", "/switch-harness", "/feedback-to-agentj-father"])
             self.assertEqual([s["cmd"] for s in out["skills"]], ["/review"])
         self.assertIn("switch-harness", slash.AGENT_CMDS)
         self.assertNotIn("switch-harness", slash.WHITELIST)

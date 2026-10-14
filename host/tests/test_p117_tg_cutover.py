@@ -444,6 +444,12 @@ class Cursor(unittest.IsolatedAsyncioTestCase):
         self.relay = pathlib.Path(self.tmp.name) / "relay-telegram"
         self.relay.mkdir(mode=0o700)
 
+    async def asyncTearDown(self):
+        # IsolatedAsyncioTestCase cleans temporary files before the loop shuts down its async generators.
+        # Drain the real disk writer first, like serve shutdown; a queued fsync must not recreate a removed state dir.
+        from agentj import diskq
+        self.assertTrue(await diskq.aflush(), "state writer did not drain before fixture cleanup")
+
     def texts(self):
         return [t.split("\n", 1)[1] for _, t in self.host.delivered]
 

@@ -26,7 +26,7 @@ export const ROWS = [
   ["file.share",[["x","press"]],1],
   ["file.mail",[["E","press"]],1],
   ["file.forward",[["T","press"]],1],
-  ["app.font_step",[["z","press"]],1],
+  ["app.font_step",[["z","press"]],0],
   ["app.rename_agent",[["n","press"]],1],
   ["app.rename_remote",[["N","press"]],1],
   ["app.busy_list",[["b","press"]],1],
@@ -41,6 +41,9 @@ export const ROWS = [
   ["app.search",[["Mod+K","press"]],1],
   ["app.keys",[["?","press"]],1],
   ["app.pending",[["Alt+P","press"]],1],
+  ["app.pages_menu",[["Alt+W","press"]],1],
+  ["app.upgrade_host",[["Alt+Shift+U","press"]],1],
+  ["app.refresh_web",[["Alt+Shift+R","press"]],1],
   ["compose.focus",[["i","press"],["Escape","press"]],1],
   ["compose.slash",[["/","press"]],1],
   ["compose.customize",[["Alt+/","press"]],1],
@@ -112,6 +115,9 @@ export const KEYMAP = {
   "s": ["app.settings",0],
   "?": ["app.keys",0],
   "alt:KeyP": ["app.pending",0],
+  "alt:KeyW": ["app.pages_menu",0],
+  "alt+shift:KeyU": ["app.upgrade_host",0],
+  "alt+shift:KeyR": ["app.refresh_web",0],
   "i": ["compose.focus",0],
   "/": ["compose.slash",0],
   "alt:Slash": ["compose.customize",0],
@@ -122,7 +128,7 @@ export const KEYMAP = {
   "c": ["compose.camera",0],
   "V": ["compose.volume",0],
 };
-export const TABLE = ["page.prev","page.next","page.newest","page.earliest","page.first_unread","page.quoted","page.expand","page.scroll","card.reader","card.speak","card.forward","card.mail","card.copy","card.copy_source","card.reply","card.web_report","file.preview","file.download","file.share","file.mail","file.forward","app.font_step","app.rename_agent","app.rename_remote","app.busy_list","app.robots_theme","app.load","app.quota","app.model_step","app.effort_step","app.model_default","app.scan","app.settings","app.keys","app.pending","compose.focus","compose.slash","compose.customize","compose.file","compose.paste_text","compose.photo","compose.paste_image","compose.camera","compose.volume"];
+export const TABLE = ["page.prev","page.next","page.newest","page.earliest","page.first_unread","page.quoted","page.expand","page.scroll","card.reader","card.speak","card.forward","card.mail","card.copy","card.copy_source","card.reply","card.web_report","file.preview","file.download","file.share","file.mail","file.forward","app.font_step","app.rename_agent","app.rename_remote","app.busy_list","app.robots_theme","app.load","app.quota","app.model_step","app.effort_step","app.model_default","app.scan","app.settings","app.keys","app.pending","app.pages_menu","app.upgrade_host","app.refresh_web","compose.focus","compose.slash","compose.customize","compose.file","compose.paste_text","compose.photo","compose.paste_image","compose.camera","compose.volume"];
 export function matchKey(e) {
   if (e.ctrlKey || e.metaKey) return null;
   if (e.altKey) return (e.shiftKey ? 'alt+shift:' : 'alt:') + e.code;

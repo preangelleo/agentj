@@ -1,0 +1,4 @@
+{
+  "$comment": "P244 (PROTOCOL §30, P233 §6): Chinese names for skills whose SKILL.md has no `aliases:` front matter. Global: a name that clashes with another skill's name or alias is dropped (the later one) and reported by `agentj doctor`.",
+  "workflow-design-bible": ["工作流设计宝典"]
+}

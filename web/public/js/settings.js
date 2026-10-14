@@ -14,6 +14,7 @@ import * as sfx from './sfx.js';
 import * as shotclip from './shotclip.js';
 import * as remotes from './remotes.js';
 import * as mail from './mail.js';
+import * as authrescue from './authrescue.js';   // P258
 import * as contacts from './contacts.js';
 import * as ctmanage from './ctmanage.js';   // P207 §3: Settings → 通讯录
 
@@ -119,7 +120,7 @@ async function onA2hs() {
 
 // ---------------------------------------------------------------- host preferences (pref_set)
 export const PREF_KEYS = ['appearance.language', 'appearance.theme', 'voice.speak_replies', 'voice.wake_enabled', 'agent.high_risk_warnings', 'agent.session_mode', 'agent.isolation', 'agent.allow_docker'];
-PREF_KEYS.push('updates.mode', 'heartbeat.enabled', 'heartbeat.interval_minutes', 'approval.jev_threshold', 'approval.goal_auto');
+PREF_KEYS.push('updates.mode', 'heartbeat.enabled', 'heartbeat.interval_minutes', 'approval.jev_threshold', 'approval.goal_auto', 'quota.auto_switch');
 PREF_KEYS.push('updates.auto_install');                 // P203: half of the 升级方式 (自动 = install when idle) choice
 PREF_KEYS.push('heartbeat.daily_at');   // P207 §3: 「每天固定时间唤醒」 "HH:MM" | "" (host ≥ 0.20.2 lists it in settable)
 // P207 §3 (was P156's ⇄ stepper): the idle interval is a dropdown of these (minutes) + a custom number 5–1440; a value set
@@ -254,6 +255,9 @@ export function render() {
   const goalAuto = pget('approval.goal_auto', true) !== false;          // P158: goal-mode 10-second countdown
   tgl('set-goal', goalAuto);
   el('set-goal-cmd').textContent = cmdFor('approval.goal_auto', goalAuto ? 'false' : 'true');
+  const qSwitch = pget('quota.auto_switch', false) === true;            // P254: quota alarm → new tasks to another AI account
+  tgl('set-qswitch', qSwitch);
+  el('set-qswitch-cmd').textContent = cmdFor('quota.auto_switch', qSwitch ? 'false' : 'true');
   el('set-risk-cmd').textContent = cmdFor('agent.high_risk_warnings', risk ? 'false' : 'true');
   renderJev();
   const mode = pget('agent.session_mode', 'independent') === 'shared' ? 'shared' : 'independent';   // P174: independent by default
@@ -296,7 +300,7 @@ export function setPrefs(value, host) {
 
 // ---------------------------------------------------------------- open / close / sub-view
 export const isOpen = () => !el('settings').hidden;
-const SUB_TITLE = { main: 'set.title', ios: 'set.iosTitle', remotes: 'rm.title', mail: 'mail.nav', contacts: 'p207set.ct.nav' };
+const SUB_TITLE = { main: 'set.title', ios: 'set.iosTitle', remotes: 'rm.title', mail: 'mail.nav', contacts: 'p207set.ct.nav', auth: 'ar.nav' };
 function showSub(v) {
   const from = sub;
   sub = v;
@@ -305,16 +309,19 @@ function showSub(v) {
   el('set-remotes').hidden = v !== 'remotes';
   el('set-mail').hidden = v !== 'mail';
   el('set-contacts').hidden = v !== 'contacts';
+  el('set-auth').hidden = v !== 'auth';
   el('set-back').hidden = v === 'main';
   el('set-title').textContent = t(SUB_TITLE[v]);
   el('settings').dataset.sub = v;
   if (from === 'remotes' && v !== 'remotes') remotes.close();
   if (from === 'contacts' && v !== 'contacts') ctmanage.close();
+  if (from === 'auth' && v !== 'auth') authrescue.close();
   if (v === 'remotes') { remotes.open(); return; }
-  const back = { ios: 'set-a2hs', remotes: 'set-remotes-open', mail: 'set-mail-nav', contacts: 'set-contacts-nav' }[from];
+  const back = { ios: 'set-a2hs', remotes: 'set-remotes-open', mail: 'set-mail-nav', contacts: 'set-contacts-nav', auth: 'set-auth-nav' }[from];
   (v === 'main' ? el(back || 'set-close') : el('set-back')).focus({ preventScroll: v === 'main' && !back });
   if (v === 'main') renderRemotesRow();
   if (v === 'mail') mail.load();   // P170
+  if (v === 'auth') authrescue.load();   // P258
   if (v === 'contacts') ctmanage.open();   // P207
 }
 /** Opens Settings (any view but the camera); `page` = 'remotes' lands straight on 遥控器管理. */
@@ -325,7 +332,7 @@ export function open(page = 'main') {
   render();
   const box = el('settings');
   box.hidden = false; box.dataset.modalOpen = '1';
-  sub = 'main'; el('set-main').hidden = false; el('set-ios').hidden = true; el('set-remotes').hidden = true; el('set-mail').hidden = true; el('set-back').hidden = true;
+  sub = 'main'; el('set-main').hidden = false; el('set-ios').hidden = true; el('set-remotes').hidden = true; el('set-mail').hidden = true; el('set-auth').hidden = true; el('set-back').hidden = true;
   el('set-contacts').hidden = true;
   box.dataset.sub = 'main';
   el('set-title').textContent = t('set.title');
@@ -339,6 +346,8 @@ export function open(page = 'main') {
 export function back() { if (sub !== 'main') showSub('main'); else close(); }
 /** P184: 「转发到邮箱」 with no mailbox yet → Settings → 邮件通道. */
 export function openMail() { open(); if (isOpen()) showSub('mail'); }
+/** P258: an expired-login alert → Settings → AI 登录救援. */
+export function openAuth() { open(); if (isOpen()) showSub('auth'); }
 export function close() {
   const box = el('settings');
   if (box.hidden) return;
@@ -354,8 +363,8 @@ export function close() {
 /** Update / refresh the app: ask the browser for a fresh service worker, unregister every one of ours, drop every Cache
  *  Storage entry, then reload (the page itself is `no-store`, so the reload fetches the new files). The metadata-only
  *  version notice checks version.json; this action remains an explicit owner choice. */
-export async function refreshApp() {
-  say(t('set.refreshGo'));
+export async function refreshApp({silent=false, beforeReload=null} = {}) {
+  if (!silent) say(t('set.refreshGo'));
   try {
     if ('serviceWorker' in navigator) {
       for (const r of await navigator.serviceWorker.getRegistrations()) {
@@ -365,9 +374,11 @@ export async function refreshApp() {
     }
     if (globalThis.caches) for (const k of await caches.keys()) await caches.delete(k);
   } catch {
-    say(t('set.refreshFail'));
+    if (!silent) say(t('set.refreshFail'));
   }
+  if (beforeReload && !await beforeReload()) return false;
   H.reload();
+  return true;
 }
 
 // ---------------------------------------------------------------- side navigation (wide screens)
@@ -422,7 +433,7 @@ export function configure(hooks) {
     render();
     setPref('appearance.theme', b.dataset.setTheme);
   });
-  for (const id of ['set-speak', 'set-wake', 'set-risk', 'set-goal', 'set-iso', 'set-docker', 'set-hb']) el(id).addEventListener('click', () => {
+  for (const id of ['set-speak', 'set-wake', 'set-risk', 'set-goal', 'set-qswitch', 'set-iso', 'set-docker', 'set-hb']) el(id).addEventListener('click', () => {
     const b = el(id), next = b.getAttribute('aria-checked') !== 'true';
     tgl(id, next);
     setPref(b.dataset.pref, next);
@@ -458,7 +469,7 @@ export function configure(hooks) {
   });
   el('set-hb-time').addEventListener('change', () => { const v = el('set-hb-time').value; if (HHMM.test(v)) setPref('heartbeat.daily_at', v); });
   el('set-status-x').addEventListener('click', () => say(''));
-  el('set-hostupg').addEventListener('click', () => { if (H.upgradeHost) H.upgradeHost(); });   // P203: impact → card → /update
+  el('set-hostupg').addEventListener('click', () => { if (H.upgradeHost) H.upgradeHost(); });   // P203: impact → card → /update @ix app.upgrade_host
   el('set-jev-minus').addEventListener('click', () => setJev(jevAt() - 1));
   el('set-jev-plus').addEventListener('click', () => setJev(jevAt() + 1));
   el('set-font-minus').addEventListener('click', () => setFontStep(fontAt - 1));
@@ -479,9 +490,10 @@ export function configure(hooks) {
     renderPush();
   });
   push.onChange(() => { if (isOpen()) renderPush(); });
-  el('set-refresh').addEventListener('click', refreshApp);
+  el('set-refresh').addEventListener('click', () => refreshApp());   // @ix app.refresh_web
   el('set-a2hs').addEventListener('click', onA2hs);
   el('set-mail-nav').addEventListener('click', () => showSub('mail'));   // P170
+  el('set-auth-nav').addEventListener('click', () => showSub('auth'));   // P258
   el('set-owner-nav').addEventListener('click', () => contacts.openOwner());   // P194: 我的联系方式 (slot 0)
   el('set-contacts-nav').addEventListener('click', () => showSub('contacts'));   // P207: 通讯录
   mail.configure();

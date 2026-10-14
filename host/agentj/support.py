@@ -1,10 +1,11 @@
-"""`agentj support ask | report | thread | list` — talk to the Agent J support desk (F18; worker/FEEDBACK_API.md §Support).
+"""`agentj support ask | report | feedback | thread | list` — talk to the Agent J support desk (F18; worker/FEEDBACK_API.md §Support).
 
 Hit a problem with Agent J itself — an error, a hint you do not understand, something that looks like a bug, a doc that
-misled you, an idea about your workflow? Ask support FIRST, yourself; do not send your human off to find a person.
+misled you, an idea about your workflow? Ask official support first, after the owner authorizes your redacted draft. An explicit owner request already authorizes sending; never ask twice.
 
   ask "<question>" [--attach-doctor]       a question (default kind)
   report --kind bug|report "<text>"        a bug / a report (doc problem, workflow idea)
+  feedback "<text>" [--kind report|bug]  general feedback / idea (same report channel)
   thread <st_…> [--wait S]                 read a thread (waits for news up to S seconds; 0 = just read)
   list                                     the threads this computer opened
 
@@ -223,8 +224,23 @@ def doctor_text() -> str:
     return "\n".join(lines)
 
 
+def redact_paths(text: str) -> str:
+    """Support never needs private directory/filename text, even outside the home folder."""
+    from . import slash
+    public_commands = {"/" + name for name in slash.WHITELIST + slash.AGENT_CMDS + ("goal", "add-friend", "my-agent-id")}
+
+    def replace(match):
+        value = match.group(0)
+        # A public slash command is diagnostic context, not a private filesystem path.
+        return value if value.rstrip(".,;:!?)}]") in public_commands else "<redacted-path>"
+
+    return re.sub(r"(?<![\w:/])(?:[A-Za-z]:[\\/]|~/|/)[^\s\"'`<>，。；]+", replace, text)
+
+
 def prepare(body: str, attach: str | None, *, identity=None) -> tuple[dict, dict]:
     """Layer 1 on the exact text that would leave + the server's cleaning; → (draft, hits)."""
+    body = redact_paths(body)
+    attach = redact_paths(attach) if attach else attach
     host, user = identity if identity is not None else privacy.local_identity()
     hits: dict = {}
     b, h1 = privacy.redact_with_report(plaza_clean(body), host, user)
@@ -390,7 +406,7 @@ def cmd(a) -> None:
     c = a.support_cmd
     if c == "ask":
         _run(lambda: run_send("question", _text(a), thread=a.thread, attach_doctor=a.attach_doctor, wait=a.wait, lang=a.lang))
-    elif c == "report":
+    elif c in ("report", "feedback"):
         _run(lambda: run_send(a.kind, _text(a), thread=a.thread, attach_doctor=a.attach_doctor, wait=a.wait, lang=a.lang))
     elif c == "thread":
         _run(run_thread, a.id, wait=a.wait)
@@ -404,10 +420,11 @@ def add_parser(sub) -> None:
                         description=__doc__.split("\n\n")[0])
     ss = sp.add_subparsers(dest="support_cmd", required=True)
     for name, helptext in (("ask", "提问（默认等 3 分钟回复）/ ask a question (waits up to 3 min)"),
-                           ("report", "报告 bug / 文档问题 / 工作流想法 / report a bug, a doc problem or a workflow idea")):
+                           ("report", "报告 bug / 文档问题 / 工作流想法 / report a bug, a doc problem or a workflow idea"),
+                           ("feedback", "反馈给 Agent J 爸爸 / Feedback to Agent J Father")):
         s = ss.add_parser(name, help=helptext)
-        if name == "report":
-            s.add_argument("--kind", choices=("bug", "report"), default="bug")
+        if name in ("report", "feedback"):
+            s.add_argument("--kind", choices=("bug", "report"), default="report" if name == "feedback" else "bug")
         s.add_argument("text", nargs="*", help="问题全文（或 --file）/ the text (or --file)")
         s.add_argument("--file", help="从文件读正文 / read the text from a file")
         s.add_argument("--attach-doctor", action="store_true", help="附上脱敏后的 agentj doctor 输出和版本 / attach the redacted doctor output + version")

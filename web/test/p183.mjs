@@ -121,7 +121,7 @@ async function loadAll(p, items) {
 }
 async function preview(p, mid, mode = 'doc') {
   await ev(p, `${card(mid)}.querySelector('.mact.pv').click()`);
-  await waitFor(p, `!document.querySelector('.mview').hidden && document.querySelector('.mview').dataset.mode === '${mode}'`, 15000);
+  await waitFor(p, `!!document.querySelector('.mview') && !document.querySelector('.mview').hidden && document.querySelector('.mview').dataset.mode === '${mode}'`, 15000);
 }
 async function closeEsc(p) {
   await key(p, 'Escape', { code: 'Escape' });
@@ -147,7 +147,10 @@ try {
       assert.equal(look.bg, 'rgba(0, 0, 0, 0)', 'no fill');
       assert.equal(look.style, 'dashed'); assert.equal(look.toolStyle, 'dashed');
       assert.equal(look.color, look.tool, 'the same outline colour as the composer\'s tool buttons');
-      assert.deepEqual(look.btn, look.read, 'icon buttons as big as the reply card\'s');
+      assert.deepEqual(look.btn, [44, 44], 'file-card targets stay 44px square');
+      assert.equal(look.read[1], look.btn[1], 'same 44px target height');
+      // P251: reply slots are elastic (24px floor, 46px desktop pitch); file targets stay fixed.
+      assert.ok(look.read[0] >= 24 && look.read[0] <= 46, 'reply target follows the P251 elastic range');
       assert.deepEqual(look.svg, look.rsvg, 'same glyph size and stroke');
       assert.equal(look.btnBg, look.readBg); assert.equal(look.ink, look.readInk);
       assert.deepEqual(look.labels, ['预览（空格）|预览（空格）', '下载|下载'], 'icons with labels; no share sheet in headless, no mail / Telegram without P184 / tgfile');

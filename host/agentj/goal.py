@@ -48,7 +48,7 @@ MAX_BLOCKED = 30
 MAX_MILESTONES = 40
 DEFAULT_MAX = 50
 CAP_MAX = 500
-SOFT_EXEMPT = ("SandboxOnce", TOOL)       # never sorted into a goal tier: they keep their own card exactly as today
+SOFT_EXEMPT = ("SandboxOnce", "AuthRescue", TOOL, "agentj quota switch")  # each retains its own approval card
 # P137 rules that mean "the text runs something it fetched / decoded" — the injection shapes Leo named (base64|sh, curl|sh)
 ATTACK_RULES = frozenset({"opaque.piped_shell", "opaque.piped_interp", "opaque.source", "opaque.dynamic_code", "opaque.ansi"})
 _SETTINGS = re.compile(

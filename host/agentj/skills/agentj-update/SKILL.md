@@ -27,3 +27,5 @@ Phone `/update` receipts follow the effective `appearance.language`, including a
 中文：手机 `/update` 回执使用当前生效的语言，运行中切换后也立即跟随。
 
 Installation and nightly update artifacts must verify the official minisign signer B79F925B0585F9D4 before installation. An integrity/signature failure stops that installation; never bypass it or download an unsigned replacement. HTTPS downloads must not redirect to HTTP. /update remains available from the paired phone.
+
+P251: When the host and page server both have the same newer version, the page reloads after ten seconds without input, preserving the draft; recording and unsubmitted card actions block it. Otherwise only offer a refresh. Keyboard: Alt+Shift+U upgrades the host through the existing phone confirmation; Alt+Shift+R updates and reloads the page.

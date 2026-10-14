@@ -123,7 +123,7 @@ export async function runP154() {
             // the sheet slides up: wait until 长按批准 stops moving (a fixed sleep raced it under a loaded gate run)
             for (let i = 0, prev = null; i < 50; i++) {
               const b = await box(p, '#apprAllow');
-              const moving = await evaluate(p, `${$('sheet')}.getAnimations({subtree:true}).some(a=>a.playState==='running')`);
+              const moving = await evaluate(p, `${$('sheet')}.getAnimations({subtree:true}).some(a=>a.pending || a.playState==='running')`);
               if (prev && b.t === prev.t && !moving) break;
               prev = b; await sleep(100);
             }
@@ -725,7 +725,13 @@ export async function runP154() {
         const p = await paired(B, web, fake, lang, 390, 844, {});
         try {
           const fz = () => evaluate(p, `(document.documentElement.dataset.fz||'m')+'|'+localStorage.getItem('aj.pageFz')`);
+          const reloadReady = async () => {
+            const load = p.waitFor('Page.loadEventFired', 8000);
+            await p.send('Page.reload'); await load; await waitState(p, 'ready', 8000);
+          };
           const press = async (ms) => {
+            if(ms<550){await evaluate(p,`document.activeElement?.blur()`);await p.send('Input.dispatchKeyEvent',{type:'keyDown',key:'z',code:'KeyZ'});await sleep(150);return;} // P244: original font cycle stays on Z
+
             const ob = await box(p, '#orb'), x = ob.l + ob.w / 2, y = ob.t + ob.h / 2;
             await p.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x, y });
             await p.send('Input.dispatchMouseEvent', { type: 'mousePressed', x, y, button: 'left', clickCount: 1 });
@@ -737,26 +743,26 @@ export async function runP154() {
           await press(40);
           check(await fz() === 'l|l', 'a tap: 大, stored');
           const big = await evaluate(p, `getComputedStyle(document.documentElement).getPropertyValue('--fz').trim()`);
-          await p.send('Page.reload'); await sleep(800); await waitFor(p, `!!document.getElementById('orb')`);
+          await reloadReady();
           check(await fz() === 'l|l', 'after a reload: still 大');
           check(await evaluate(p, `getComputedStyle(document.documentElement).getPropertyValue('--fz').trim()`) === big, 'the size really applies after the reload');
           // 大 → 中 → 小, reload keeps 小; the next tap goes on from there (→ 中)
           await waitState(p, 'ready');
           await press(40); await press(40);
           check(await fz() === 's|s', 'two more taps: 小');
-          await p.send('Page.reload'); await sleep(800); await waitFor(p, `!!document.getElementById('orb')`);
+          await reloadReady();
           check(await fz() === 's|s', 'after a reload: still 小');
           await waitState(p, 'ready');
           await press(40);
           check(await fz() === 'm|null', 'the cycle goes on from the remembered step: 中, nothing stored');
           await press(40);
           check(await fz() === 'l|l', '→ 大');
-          // P207 追加 2 (Leo): a hold on the logo now jumps to the first unread — it never touches the text size
+          // P244 (Leo): a hold on the logo returns to chat — it never touches the text size
           await press(900);
-          check(await fz() === 'l|l', 'a hold leaves the size alone (P207: hold = first unread)');
+          check(await fz() === 'l|l', 'a hold leaves the size alone (P244: hold = chat)');
           await press(40);
           check(await fz() === 'm|null', 'the tap cycle still reaches 中 and forgets it');
-          await p.send('Page.reload'); await sleep(800); await waitFor(p, `!!document.getElementById('orb')`);
+          await reloadReady();
           check(await fz() === 'm|null', 'after a reload: 中');
           check(!p.problems.length, 'no CSP errors');
         } finally { await p.dispose(); }

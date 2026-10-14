@@ -26,6 +26,7 @@
 <link rel="stylesheet" href="menu.css">
 <script src="brand/ui.js" defer></script>
 <script src="vendor/jsQR.js"></script>
+<link rel="stylesheet" href="five-pages.css">
 <script type="module" src="app.js"></script>
 </head>
 <body data-status="unknown" data-conn="off" data-view="pair" data-agent="none">
@@ -71,7 +72,12 @@
       <div class="busy-big" id="busyBig" aria-hidden="true"></div>
       <h2 id="busyTitle"></h2>
       <p class="gdlg-sub" id="busySub"></p>
-      <ul class="busy-list" id="busyList"></ul>
+      <div class="busy-tabs" id="busyTabs" role="tablist" aria-label="Agent views">
+        <button id="busyTasksTab" data-i18n="p244.busy46" type="button" role="tab" aria-controls="busyList" aria-selected="true">在办事项</button>
+        <button id="busyWorkflowTab" data-i18n="p244.busy47" type="button" role="tab" aria-controls="busyWorkflow" aria-selected="false">工作流</button>
+      </div>
+      <ul class="busy-list" id="busyList" role="tabpanel" aria-labelledby="busyTasksTab"></ul>
+      <div id="busyWorkflow" role="tabpanel" aria-labelledby="busyWorkflowTab" hidden></div>
       <!-- P160: one row tapped → its 24 px robot card (read-only detail: latest step, report's first line). -->
       <div class="busy-one" id="busyOne" aria-live="polite" hidden></div>
       <!-- P181: the look is the owner's — one tap hands the theme skill to the main Agent, which asks first (the square
@@ -94,7 +100,7 @@
   <div id="loadDlg" class="gdlg" role="dialog" aria-modal="true" aria-labelledby="loadTitle" hidden>
     <div class="sq">
       <h2 id="loadTitle" data-i18n="load.title">负载线</h2>
-      <p class="gdlg-sub" data-i18n="load.sub">回复卡名字下面这条线。线上那段深色滑得越快，说明你的电脑越忙：快的时候可以等一等再发，慢的时候随时发。</p>
+      <p class="gdlg-sub" data-i18n="load.sub">回复卡名字下面这条线。一段亮色（浅色）在线上来回滑；滑得越快，说明你的电脑越忙：快的时候可以等一等再发，慢的时候随时发。</p>
       <p class="load-now" id="loadNow"></p>
       <!-- P181 (§22.1): the five resources, sampled by the computer only while this card is open -->
       <ul class="res-list" id="resList">
@@ -166,7 +172,7 @@
 
   <header class="top">
     <!-- The logo wears the state; tap = the page's type size (中 → 大 → 中 → 小), hold = 中. -->
-    <img class="orb" id="orb" src="brand/img/logo-mark.png" alt="" width="40" height="40" data-i18n-attr="title=r.orb.title" title="点一下换字号，按住跳到第一条未读">
+    <img class="orb" id="orb" src="brand/img/logo-mark.png" alt="" width="40" height="40" data-i18n-attr="title=r.orb.title" title="点一下打开菜单，按住回到聊天">
     <!-- Model · effort; tap a half = the next one, hold = the default (relay ADR-035). -->
     <div class="meta" id="meta" aria-live="polite" hidden><span class="mt"><span id="metaModel">—</span><span id="metaSep"></span><span id="metaEffort"></span><span id="metaStale"></span></span></div>
     <p id="status" class="connline" data-state="idle" role="status" aria-live="polite" data-i18n="st.idle">还没配对</p>
@@ -242,10 +248,7 @@
             <button class="wrbtn" id="webReportBtn" type="button" data-i18n-attr="aria-label=r.wr.btn,title=r.wr.btn" aria-label="分享成网页报告" title="分享成网页报告">
               <svg viewBox="0 0 36 36" aria-hidden="true"><circle class="disc" cx="18" cy="18" r="18"/><g transform="translate(6.5 6.5) scale(.96)" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M17.76 11.19A7 7 0 1 1 12.81 6.24"/><path d="M11.6 12.4 20 4M14.6 4H20v5.4"/></g></svg>
             </button>
-            <!-- P238: 「⋯」 shows only when the card is too narrow for every icon; the folded ones (邮件 → 阅读 → 转发) open from it -->
-            <button class="act rmmorebtn" id="rmMoreBtn" type="button" hidden aria-haspopup="menu" aria-expanded="false" aria-controls="rmMore" data-i18n-attr="aria-label=p238.more,title=p238.more" aria-label="更多操作" title="更多操作">
-              <svg class="g g0" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="5.5" cy="12" r="1.9"/><circle cx="12" cy="12" r="1.9"/><circle cx="18.5" cy="12" r="1.9"/></svg>
-            </button>
+            <div class="rmicons" id="rmIcons">
             <button class="act" id="readBtn" type="button" data-i18n-attr="aria-label=r.bar.read,title=r.bar.read" aria-label="全屏阅读（f · 双击卡片）" title="全屏阅读（f · 双击卡片）">
               <svg class="g g0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M12 6.5C10.2 5.2 7.6 4.7 3.5 4.9v13.2c4.1-.2 6.7.3 8.5 1.6 1.8-1.3 4.4-1.8 8.5-1.6V4.9c-4.1-.2-6.7.3-8.5 1.6z"/><path d="M12 6.5v13.2"/></svg>
             </button>
@@ -273,8 +276,9 @@
             <button class="act" id="replyBtn" type="button" data-i18n-attr="aria-label=r.bar.reply,title=r.bar.reply" aria-label="回复这一条（r）" title="回复这一条（r）">
               <svg class="g g0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M10 5 4 11l6 6"/><path d="M4 11h9a7 7 0 0 1 7 7v1"/></svg>
             </button>
+            </div>
           </div>
-          <div class="rmmore" id="rmMore" role="menu" hidden data-i18n-attr="aria-label=p238.more" aria-label="更多操作"></div>
+
         </div>
       </div>
       <button class="pz next" id="pgNext" type="button" data-i18n-attr="aria-label=r.pg.next,title=r.pg.nextTitle" aria-label="下一条（更新）" title="下一条（k / →）">&#8250;</button>
@@ -663,6 +667,7 @@
         <div class="setcards">
           <section class="setcard" id="set-s-agent" data-paired aria-labelledby="set-h-agent">
             <h3 class="setg" id="set-h-agent" data-i18n="set.gAgent">Agent 与遥控器</h3>
+            <button type="button" id="set-auth-nav" class="setnav"><svg class="mi" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="8" cy="15" r="4"/><path d="M10.8 12.2L20 3M16 7l2 2M14 9l2 2"/></svg><span><b><span data-i18n="ar.nav">AI 登录救援</span> <i class="ardot" id="ar-dot" hidden aria-hidden="true"></i></b><small data-i18n="ar.navNote">电脑上的 AI 登录过期了？在手机上重新登录，不用回电脑。</small></span><svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 5l7 7-7 7"/></svg></button>
             <div class="setrow setid">
               <img src="brand/img/logo-mark.png" width="40" height="40" alt="">
               <div class="setid__txt"><b id="brand-name">Agent J</b><p class="setval" id="set-computer"></p></div>
@@ -800,6 +805,12 @@
               <p class="setcmd"><code id="set-goal-cmd"></code><button type="button" class="setcopy" data-copy="set-goal-cmd" data-i18n-attr="aria-label=set.copy,title=set.copy" aria-label="复制命令" title="复制命令"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect class="ic-copy" x="8.5" y="8.5" width="11.5" height="11.5" rx="2.5"/><path class="ic-copy" d="M15.5 8.5V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v7.5a2 2 0 0 0 2 2h2.5"/><path class="ic-done" d="M5 12.5l4.5 4.5L19 7.5"/></svg></button></p>
             </div>
             <div class="setrow" data-paired>
+              <span class="setlab" data-i18n="set.quotaSwitch">额度告警时把新任务交给其他 AI 账号</span>
+              <button type="button" role="switch" aria-checked="false" class="setswitch" id="set-qswitch" data-pref="quota.auto_switch" data-i18n-attr="aria-label=set.quotaSwitch" aria-label="额度告警时把新任务交给其他 AI 账号"></button>
+              <p class="setnote" data-i18n="set.quotaSwitchNote">本机登录了不止一个 AI 账号（比如 Claude Code 和 Codex）时：当前这个的 5 小时额度到 80% 或周额度到 90%，新开始的定时任务 / 工作流会先跟另一个额度还宽裕的账号握一次手，能用就直接交给它，消息里写一句改用了谁。关着的话（默认）只在手机上问你「切到 X 做这件？」，你同意才切。主对话不会被切走；工作流写明只能用某个 AI 的不受影响。</p>
+              <p class="setcmd"><code id="set-qswitch-cmd"></code><button type="button" class="setcopy" data-copy="set-qswitch-cmd" data-i18n-attr="aria-label=set.copy,title=set.copy" aria-label="复制命令" title="复制命令"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect class="ic-copy" x="8.5" y="8.5" width="11.5" height="11.5" rx="2.5"/><path class="ic-copy" d="M15.5 8.5V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v7.5a2 2 0 0 0 2 2h2.5"/><path class="ic-done" d="M5 12.5l4.5 4.5L19 7.5"/></svg></button></p>
+            </div>
+            <div class="setrow" data-paired>
               <span class="setlab" data-i18n="set.mode">会话模式</span>
               <div class="twoway" role="group" data-i18n-attr="aria-label=set.mode" aria-label="会话模式"><button type="button" class="tw-lab" data-side="left" data-tw="set-mode" data-i18n="p207set.tw.independent">独立会话</button><button type="button" role="switch" id="set-mode" class="tw-sw" aria-checked="false" data-pref="agent.session_mode" data-i18n-attr="aria-label=p207set.tw.mode" aria-label="会话模式：左边独立会话，右边共享电脑会话"><i class="tw-knob"></i></button><button type="button" class="tw-lab" data-side="right" data-tw="set-mode" data-i18n="p207set.tw.shared">共享会话</button></div>
               <p class="setnote" data-i18n="set.modeNote">默认用独立会话：Agent J 自己开一个，不改你终端里的工具。共享（高级）会接入你电脑上正在用的会话，沿用它的权限。</p>
@@ -923,6 +934,19 @@
 
             <h3 class="setg" id="mail-blocked-h" hidden data-i18n="mail.gBlocked">最近被挡下的发件人</h3>
             <ul class="setphones mailallow" id="mail-blocked"></ul>
+          </section>
+        </div>
+      </div>
+      <!-- P258: AI 登录救援 — the subscription login of the computer's AI expired → sign in again from the phone (js/authrescue.js, PROTOCOL §31) -->
+      <div id="set-auth" class="setsub" hidden>
+        <div class="setsub__in">
+          <section class="setcard">
+            <p class="setnote" data-i18n="ar.intro">电脑上的 Claude Code / Codex 订阅登录过期时，Agent 就回不了话。在这里点「重新登录」：电脑运行官方登录命令，把授权链接或设备码发到手机；你在任何一台登录了该账号的设备上完成授权，新凭据只存在电脑上。之后电脑自动重启 AI、检查没有卡在任何确认界面、发一条测试消息拿到回复，才显示「已恢复」。</p>
+            <p class="setnote" data-i18n="ar.introBalance">如果只是余额或额度不够，到服务商网站充值就行，不需要重新登录。</p>
+            <p class="setnote mailmsg" id="ar-msg" role="status" aria-live="polite"></p>
+            <div id="ar-flow" class="arflow" hidden></div>
+            <div id="ar-list"></div>
+            <p class="setnote" data-i18n="ar.safety">开始救援需要主人的通行密钥确认；授权码和 token 只在密钥卡里填写，端到端加密直达电脑，不会出现在聊天、日志或中继里。</p>
           </section>
         </div>
       </div>
