@@ -52,6 +52,7 @@ function accept(req, sock, onConn) {
     close: (code = 1000) => { if (closed) return; closed = true; const p = Buffer.alloc(2); p.writeUInt16BE(code); sock.write(wsFrame(8, p)); sock.end(); },
     onText: () => {}, onBin: () => {}, onClose: () => {},
     get closed() { return closed; },
+    destroy: () => sock.destroy(),
   };
   sock.on('data', (d) => {
     buf = Buffer.concat([buf, d]);
@@ -635,7 +636,7 @@ export async function startFakeHost() {
     },
     get conns() { return conns.size; },
     sendRaw(u8) { for (const c of conns) c.sendBin(u8); },
-    stop: () => new Promise((r) => { for (const c of conns) c.close(1001); server.closeAllConnections?.(); server.close(() => r()); }),
+    stop: () => new Promise((r) => { for (const c of conns) c.destroy(); server.closeAllConnections?.(); server.close(() => r()); }),
   };
 }
 // the phone-settable keys (contract C6 / Amendment A1) and their values; everything else → not_allowed

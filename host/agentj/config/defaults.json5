@@ -137,4 +137,12 @@
   },
   // Harness child processes only. Direct values (no user:password@) or variable NAMES; a value wins over a name.
   "proxy": {"https": "", "http": "", "no_proxy": "", "https_env": "", "http_env": "", "no_proxy_env": ""},
+  // P254: the quota steward — weekly quota pace and reset opportunities, reminded in the heartbeat and morning brief.
+  "quota":
+  {
+    // Quota reminders on/off, at most once a day per kind / 额度提醒开关（同类每天最多一次）; default=true
+    "reminders": true,
+    // New tasks to another AI account when quota runs low, without asking / 额度告警时新任务自动交给其他 AI 账号; default=false
+    "auto_switch": false,
+  },
 }

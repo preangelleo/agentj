@@ -108,7 +108,7 @@ class Support(unittest.TestCase):
         sent = api.sent[0]
         for leak in (OR_KEY, f"bob{GMAIL}", HOST, f"{HOME_}{USER}"):
             self.assertNotIn(leak, json.dumps(sent, ensure_ascii=False))
-        self.assertIn("~/proj", sent["body"])
+        self.assertIn("<redacted-path>", sent["body"])
         self.assertEqual(sent["kind"], "question")
         self.assertRegex(sent["nonce"], r"^[A-Za-z0-9_-]{16,}$")
         self.assertNotIn("link", sent)
@@ -150,7 +150,7 @@ class Support(unittest.TestCase):
         api = FakeAPI(self.st, [answered("ok")])
         rc, _ = self.run_send(api, attach_doctor=True, doctor_fn=lambda: f"agentj 0.15.0\n✓ state: {HOME_}{USER}/.local/state/agentj on {HOST}")
         self.assertEqual(rc, support.EXIT_OK)
-        self.assertIn("~/.local/state/agentj", api.sent[0]["attach"])
+        self.assertIn("<redacted-path>", api.sent[0]["attach"])
         self.assertNotIn(HOST, api.sent[0]["attach"])
 
     def test_server_refusal_is_one_line_without_the_value(self):
@@ -285,7 +285,8 @@ class Identity(unittest.TestCase):
             p = mi.prompt({"language": lang})
             self.assertIn(mi.SUPPORT_LINE[lang], p)
             self.assertIn("agentj support ask", p)
-            self.assertLess(p.index(mi.LANGUAGE_LINE[lang]), p.index(mi.SUPPORT_LINE[lang]))
+            self.assertEqual(mi.SUPPORT_LINE[lang], "", "P253 consent lives once in the hashed core")
+            self.assertLess(p.index("agentj support ask"), p.index(mi.LANGUAGE_LINE[lang]))
         skill = (pathlib.Path(support.__file__).parent / "skills" / "agentj-config" / "SKILL.md").read_text()
         self.assertIn("agentj support ask", skill)
 

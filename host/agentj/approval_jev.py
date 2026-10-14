@@ -191,7 +191,7 @@ def transcript_context(path, limit: int = 512 * 1024) -> dict:
 # for EVERY call that is not a plain read (our "*" ask rule / approvalPolicy=untrusted): `ls … 2>&1; echo`, `rg`, a heredoc
 # note were each a card (35 in one /goal). Their adapters now pass such a call without a card, as Claude's hook would; a hit
 # (gray included: layer 2 / the card) and every special request still go through Host.ask.
-ALWAYS_ASK = frozenset({"ExternalDirectory", "DoomLoop", "task", "CodexPermissions", "SandboxOnce", "AskUserQuestion", "agentj goal"})
+ALWAYS_ASK = frozenset({"ExternalDirectory", "DoomLoop", "task", "CodexPermissions", "SandboxOnce", "AuthRescue", "AskUserQuestion", "agentj goal"})
 
 
 def low_risk_pass(host, cfg, tool, tool_input, batch: bool = True) -> bool:

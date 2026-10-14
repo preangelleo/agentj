@@ -107,7 +107,14 @@ await C('load-card-five-resources', async () => {
     await key(p, 'Escape');
     await waitFor(p, `${$('loadDlg')}.hidden`);
     await sleep(100);
-    assert.deepEqual(fake.st.resWatch, [true, false], 'closing the card stops the sampling');
+    // §22.1 renews every 10s while open; a loaded screenshot run may legitimately renew several times.
+    assert.equal(fake.st.resWatch.at(-1), false, 'closing the card stops the sampling');
+    assert.ok(fake.st.resWatch.slice(0, -1).every(on => on === true), 'only renewals preceded the close');
+    if (lang === 'zh' && w === 390) {
+      const stopped = fake.st.resWatch.length;
+      await sleep(11000); // One full protocol renewal period after close: no subscription may resume.
+      assert.equal(fake.st.resWatch.length, stopped, 'no renewal after closing');
+    }
     noProblems(p);
     await p.dispose();
   }

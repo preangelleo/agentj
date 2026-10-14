@@ -62,6 +62,7 @@ async function openMenu(p) {
   await ev(p, `${$('slashBtn')}.click()`);
   await waitFor(p, `!${$('menu')}.hidden`);
   await sleep(450);                                    // the host's answer re-renders the list; the 160 ms rise
+  await waitFor(p, `document.getElementById("menuSheet").getAnimations().every(a => !a.pending && (a.playState === "finished" || a.playState === "idle"))`);
 }
 const isOpen = (p) => ev(p, `!${$('menu')}.hidden`);
 const GEOM = `(() => {

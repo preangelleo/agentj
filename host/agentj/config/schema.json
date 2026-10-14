@@ -1075,6 +1075,36 @@
       "maxLength": 5,
       "pattern": "(([01][0-9]|2[0-3]):[0-5][0-9])?",
       "patternHint": "HH:MM (24-hour, local time) or empty"
+    },
+    "quota.reminders": {
+      "type": "boolean",
+      "default": true,
+      "tier": "user",
+      "description": "Quota steward: the heartbeat and morning brief remind you when a harness's weekly quota is going to waste or an extra reset is about to expire, at most once a day per kind (agentj quota off) / 额度管家：周额度要浪费、额外 reset 快过期时，心跳和晨报提醒你，同类每天最多一次",
+      "aliases": [
+        "quota reminders",
+        "额度提醒",
+        "额度管家"
+      ],
+      "needs": [],
+      "apply": "hot",
+      "verify": "agentj quota --json",
+      "since": "0.21.0"
+    },
+    "quota.auto_switch": {
+      "type": "boolean",
+      "default": false,
+      "tier": "user",
+      "description": "When the current AI account's 5-hour quota passes 80 % or its weekly quota 90 %, newly starting scheduled tasks / workflows go to another signed-in AI account that still has room and answers a handshake, without asking; off = the phone asks first. The main conversation never moves; a task.json naming its harness is kept / 额度告警时把新任务交给其他 AI 账号（不问）；关=先在手机上问",
+      "aliases": [
+        "quota auto switch",
+        "额度告警自动切换",
+        "自动换账号"
+      ],
+      "needs": [],
+      "apply": "hot",
+      "verify": "agentj config get quota.auto_switch",
+      "since": "0.21.0"
     }
   }
 }

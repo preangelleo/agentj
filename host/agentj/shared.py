@@ -112,6 +112,9 @@ def owner_session(d: dict) -> bool:
     return not (isinstance(ep, str) and ep.startswith("sdk"))
 
 
+PROBE_PIDS: set[int] = set()   # P258: auth_rescue.screen_check's short-lived interactive screens — never attached to
+
+
 def claude_sessions(directory: str, sid: str = "", owner_only: bool = False) -> list[dict]:
     out = []
     registry = Path(os.environ.get("CLAUDE_CONFIG_DIR") or Path.home() / ".claude") / "sessions"
@@ -125,6 +128,8 @@ def claude_sessions(directory: str, sid: str = "", owner_only: bool = False) -> 
             if sid and d.get("sessionId") != sid:
                 continue
             if d.get("kind") not in (None, "interactive") or type(d.get("pid")) is not int or d["pid"] <= 0:
+                continue
+            if d["pid"] in PROBE_PIDS:
                 continue
             os.kill(d["pid"], 0)
             if not _same_process(d) or (owner_only and not owner_session(d)):
@@ -654,6 +659,7 @@ class SharedClaudeAgent(Agent):
         busy = getattr(self.host, "busy", None)
         if busy is not None:                        # P150: the phone's 「在办事项」 dots (busy.py)
             with contextlib.suppress(Exception):
+                busy.set_context("shared-" + str(self.kind), harness=self.kind, cwd=self.cfg.get("dir"))
                 busy.hook_event(event, scope="shared-" + str(self.kind))
         self.sync_compacting()
         if name == "SessionStart" and event.get("source") == "clear" and self.clear_seen != sid:
@@ -828,8 +834,8 @@ class SharedClaudeAgent(Agent):
         if not text or not isinstance(sid, str) or (not force and self.identity_applied.get(sid) == key):
             return ""
         marker = "agentj-identity:" + key[:16] + ":" + uuid.uuid4().hex[:8]
-        head = ("\n\n[Agent J · owner's main-Agent identity and private instructions for this shared session — appended below "
-                "the native project instructions and every harness rule; they grant no permission. Marker " + marker + "]\n")
+        head = ("\n\n[Agent J · owner main-Agent identity + private instructions (shared session); below "
+                "native project instructions and every harness rule; they grant no permission. Marker " + marker + "]\n")
         tail = "\n[/Agent J identity " + marker + "]"
         if len(text) <= self.INLINE_MAX and len(head) + len(text) + len(tail) + reserve <= self.HOOK_MAX:
             body, mechanism = head + text + tail, "hook.additionalContext"

@@ -55,24 +55,17 @@ export async function runScrollbar() {
       await evaluate(p, `document.body.dataset.status = '${s}'`); await sleep(500);
       const r = await evaluate(p, FIND);
       assert.ok(r, `${s}: the long command scrolls inside the approval`);
-      // P154 追加 7: Chromium draws the ::-webkit-scrollbar bar (no scrollbar-color → no little arrows); Firefox alone gets
-      // scrollbar-color. So the colours are checked on the pixels: a state-tinted thumb, and the track reaching the very top.
-      assert.equal(r.color, 'auto', `${s}: Chromium keeps the webkit bar (scrollbar-color would add the arrows)`);
-      await evaluate(p, `(() => { const n = document.querySelector('[data-p150sb]'); n.scrollTop = n.scrollHeight / 3; })()`);
-      await sleep(150);
-      const q = await evaluate(p, FIND);
-      const bx = Math.round(q.x + q.w - 4);
-      const thumb = await px(p, bx, Math.round(q.y + q.thumb[0] + q.thumb[1] / 2));
-      const top = await px(p, bx, Math.round(q.y + 3)), track = await px(p, bx, Math.round(q.y + q.thumb[0] + q.thumb[1] + 8));
-      assert.ok(!grey(thumb), `${s}: the thumb is tinted by the state, not the browser grey (${thumb})`);
-      assert.ok(top.every((v, i) => Math.abs(v - track[i]) < 8), `${s}: no arrow button at the top — the track runs to the edge (${top} vs ${track})`);
-      seen[s] = thumb.join(',');
+      // P251 supersedes the palette: no rendered bar, while the exact same command still scrolls.
+      assert.equal(r.width,'none');
+      const result=await evaluate(p,`(() => {const n=document.querySelector('[data-p150sb]');n.scrollTop=100;return {top:n.scrollTop,display:getComputedStyle(n,'::-webkit-scrollbar').display};})()`);
+      assert.ok(result.top>0);assert.equal(result.display,'none');
+      const q=await evaluate(p,FIND);seen[s]=result;
       const full = await p.send('Page.captureScreenshot', { format: 'png' });
       writeFileSync(join(OUT, `${s}.png`), Buffer.from(full.data, 'base64'));
       const crop = await p.send('Page.captureScreenshot', { format: 'png', clip: { x: Math.max(0, q.x + q.w - 120), y: q.y, width: 120, height: Math.min(q.h, 300), scale: 3 } });
       writeFileSync(join(OUT, `${s}-bar.png`), Buffer.from(crop.data, 'base64'));
     }
-    assert.ok(new Set(Object.values(seen)).size === 3, 'the bar follows the state colour: ' + JSON.stringify(seen));
+    assert.equal(Object.keys(seen).length,3,'all states hide bars and remain scrollable');
     writeFileSync(join(OUT, 'results.json'), JSON.stringify({ scope: 'real Chromium + local fake host; not a physical phone', colors: seen, complete: true }, null, 2) + '\n');
     console.log('p150-scrollbar: 3 states pass', JSON.stringify(seen));
     ok = true;

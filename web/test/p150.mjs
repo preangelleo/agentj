@@ -104,7 +104,8 @@ export async function runP150({ anim = false } = {}) {
           check(items.length === 3 && items[1].startsWith(s.temp + '·') && items[0] === W[lang][0][0] + '·' + W[lang][0][1], 'who · what ' + items);
           const sq = await box(p, '#busyDlg .sq');
           check(Math.abs(sq.l + sq.w / 2 - 195) < 2 && Math.abs(sq.t + sq.h / 2 - 422) < 3, `centred (${sq.l},${sq.t})`);
-          check(Math.abs(sq.w - sq.h) < 2, `square (${sq.w}x${sq.h})`);
+          check(sq.w >= 330 && sq.h <= 796, `enlarged card fits viewport (${sq.w}x${sq.h})`);
+          check(await evaluate(p, `document.getElementById('busyTasksTab').getAttribute('aria-selected')==='true' && !!document.getElementById('busyWorkflowTab')`), 'P244 two tabs, work list default');
           check(await evaluate(p, `document.activeElement.id`) === 'busyClose', 'focus to its button');
           await freeze(600); await save('dialog-tasks'); await play();
           await esc(p); await waitFor(p, `${$('busyDlg')}.hidden`);
@@ -125,7 +126,8 @@ export async function runP150({ anim = false } = {}) {
           // P240: the dialog only offers a page the server really serves — stand in for version.json at the host's version.
           const serve = (v) => evaluate(p, `(()=>{const f=window.__realFetch||(window.__realFetch=window.fetch);window.fetch=(u,o)=>String(u).endsWith('/version.json')?Promise.resolve(new Response(JSON.stringify({v:1,version:${JSON.stringify(v)}}))):f(u,o);})()`);
           await serve(next);
-          await evaluate(p, `import('./js/version-notice.js').then(m=>m.setHostVersion(${JSON.stringify(next)}))`);
+          await evaluate(p, `import('./js/version-notice.js').then(m=>m.setHostVersion(${JSON.stringify(ver)}))`);
+          await evaluate(p, `document.dispatchEvent(new Event('visibilitychange'))`);
           await waitFor(p, `!${$('version-notice')}.hidden`);
           check(await evaluate(p, `${$('version-notice-title')}.textContent`) === s.up, 'title ' + lang);
           check(await evaluate(p, `${$('version-refresh')}.textContent`) === s.refresh, 'button ' + lang);
@@ -136,7 +138,8 @@ export async function runP150({ anim = false } = {}) {
           await save('dialog-update');
           await esc(p); await waitFor(p, `${$('version-notice')}.hidden`); check(true, 'ESC = later');
           await serve(next.replace(/(\d+)$/, (d) => +d + 1));
-          await evaluate(p, `import('./js/version-notice.js').then(m=>m.setHostVersion(${JSON.stringify(next.replace(/(\d+)$/, (d) => +d + 1))}))`);
+          await evaluate(p, `import('./js/version-notice.js').then(m=>m.setHostVersion(${JSON.stringify(ver)}))`);
+          await evaluate(p, `document.dispatchEvent(new Event('visibilitychange'))`);
           await waitFor(p, `!${$('version-notice')}.hidden`);
           await tapAt(p, 20, 820); await waitFor(p, `${$('version-notice')}.hidden`); check(true, 'outside = later');
         });

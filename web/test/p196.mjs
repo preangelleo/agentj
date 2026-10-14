@@ -96,6 +96,9 @@ async function paired(w, h, scheme = 'light') {
   const t1 = await fake.addTurn({ k: 'phone', dev: null, text: '发几个测试文件' }, REPLY, 'done');
   await fake.updateTurn(t1.id, { media: FILES, media_skip: [] });
   await waitFor(p, `document.querySelectorAll('.mcard').length === ${FILES.length}`, 15000);
+  // The deck snapshot must follow thumbnail loading: loading labels are not reply navigation.
+  await ev(p, `document.querySelectorAll('#words .mcard[data-kind="image"]').forEach(c => c.querySelector('.mtap')?.click())`);
+  await waitFor(p, `(() => { const c = [...document.querySelectorAll('#words .mcard[data-kind="image"]')]; return c.length === 2 && c.every(n => n.dataset.state === 'ready'); })()`, 15000);
   return p;
 }
 const ONLY = process.env.P196_ONLY ? new RegExp(process.env.P196_ONLY) : null;
