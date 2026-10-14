@@ -296,15 +296,15 @@ export async function runCases({ B, web, fake, only }) {
     await wait(`document.getElementById('rd').hidden && !document.body.dataset.reader`);
   });
   await C('global-font-size', async () => {
-    await ev(`document.activeElement?.blur()`);
-    await key(P, 'z', {code:'KeyZ'});
+    await touchTap('#orb');
     await wait(`document.documentElement.dataset.fz === 'l'`);
     await waitToast(T('r.fz.l'));
-    await key(P, 'z', {code:'KeyZ'});
+    // P207 (追加 2): the logo hold is 「第一条未读」 now (nothing unread here → 「没有未读」); the size stays, the next tap is 中 again
+    await touchHold('#orb', 800);
+    await waitToast(T('r.unread.none'));
+    ok((await ev(`document.documentElement.dataset.fz`)) === 'l', 'the hold no longer resets the size');
+    await touchTap('#orb');
     await wait(`!document.documentElement.dataset.fz`);
-    // P244: the original capability remains; the owner moved logo gestures to pages.
-    await touchTap('#orb');await wait(`!document.getElementById('five-menu').hidden`);
-    await touchHold('#orb',800);await wait(`document.getElementById('five-menu').hidden`);
   });
   await C('copy-reply', async () => {
     // P132 (Leo, 2026-10-11) replaces P87's "an unread long reply keeps focus": on the newest page a new page is shown,
@@ -1117,8 +1117,6 @@ export async function runCases({ B, web, fake, only }) {
     const p2 = await newPage(B, 390, 844, 'light', { touch: true, ua: ANDROID, allow });
     await navigate(p2, web.url);
     await waitState(p2, 'idle');
-    // idle is the initial state, before asynchronous boot has rendered the pairing view.
-    await waitFor(p2, `document.body.dataset.view === 'pair'`);
     ok(!(await evaluate(p2, `document.getElementById('a2hs').hidden`)), 'phone browser: the hint');
     await evaluate(p2, `document.getElementById('a2hs-ok').click()`);
     ok(await evaluate(p2, `document.getElementById('a2hs').hidden && localStorage.getItem('aj.a2hs') === '1'`), 'dismissed once');

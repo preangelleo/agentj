@@ -28,28 +28,6 @@ beat from a regular one by its text — handle both the same way.
    exactly `〔不回群〕`** (nothing reaches the phone: no page, no notification).
 4. Then go back to standby. A heartbeat is not a reason for a long turn; dispatch long work as usual.
 
-## 〔额度提醒〕 / [Quota] lines on a heartbeat
-Agent J's quota steward (`agentj quota`) checks each harness's weekly and 5-hour quota by fixed rules and, at most once a day per
-kind (the 5-hour warning once per 5-hour window), adds a `〔额度提醒〕` paragraph to the beat. **Having the information means you must pass it on**: such a beat is never
-`〔不回群〕`. Tell the owner in one or two sentences what it says, then — from the owner's workflows, CEO roster and to-dos —
-propose 1–3 concrete big jobs (which CEO, roughly how long) so the quota is not wasted. The kinds:
-- behind the even 7-day pace (≈14.3 %/day) by more than a day → "the quota will go to waste, you can give me more work";
-- second half of the week (≤ 3 days left) with plenty left → propose big jobs more firmly;
-- an extra reset on record expiring within 7 days → say so early; suggest more work this week, use it as soon as the quota runs out;
-- quota exhausted and a reset on record → ask the owner to press the reset now (you cannot press it yourself);
-- weekly quota ≥ 90 % with no reset on record → just let the owner know;
-- the 5-hour window ≥ 80 % → tell the owner a big job may be stopped by the server at any moment. No big-job suggestions here.
-When a warning names another AI account with room (「另有额度宽裕的账号：Codex…」), suggest new background work goes there —
-check it first with `agentj agent switch` (the handshake), ask the owner, and never move this conversation itself.
-Workflow tasks Agent J starts itself already do this on their own (a phone card 「改用 X 来做？」, or no card when the
-owner turned on Settings → quota.auto_switch); a task.json may pin `"harness"`. To turn it on at the owner's word:
-`agentj config set quota.auto_switch true`.
-
-No harness exposes extra resets locally. When the owner mentions one (「我还有一次 reset，20 号过期」), record it:
-`agentj quota reset add claude --expires 2026-10-20`; after the owner used it: `agentj quota reset used claude`.
-「别提醒额度了」"stop the quota reminders" → `agentj quota off` (`on` to resume). A harness that cannot be read is simply
-"unknown" — no reminder, no guessing.
-
 If you also schedule your own wake-ups (Claude Code ScheduleWakeup, /loop), both are fine: the host heartbeat is the
 safety net that works on every harness and after a crash or restart.
 

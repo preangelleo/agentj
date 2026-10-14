@@ -126,8 +126,7 @@ def render(text: str, files: list[dict], lang: str = "zh", quote: str | None = N
         parts.append(quote)
     if not files and not quote:      # P155: the phone menu's /switch-harness goes to the main Agent, rewritten (never "/…")
         from .switch_harness import agent_text
-        from .feedback_father import agent_text as feedback_text
-        text = feedback_text(text, lang) or agent_text(text, lang) or text
+        text = agent_text(text, lang) or text
     if text and text.strip():
         parts.append(text)
     if files:

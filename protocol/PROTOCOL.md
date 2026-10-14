@@ -160,8 +160,7 @@ First byte = message kind (visible to the relay — see §5):
      without a passkey signs only. First valid answer wins: allow → step 5 (source `remote`), deny → the device is closed
      (`denied_remote`). Every ready session gets `ask_done` (`allow`|`deny`|`timeout`|`gone`|`stopped`) and folds the card.
      The card also ends `gone` when step 4 (terminal / admin page) or the account page decides first, the device leaves, or the
-     pairing is cancelled (its approvals.log line: `deny`, unsigned, reason `gone` — reason `elsewhere` since 0.20.3 (P242)
-     when the device was in fact approved on another route, e.g. the §24 code typed on the asking remote); 全部停下 ends it `stopped` and refuses the device. `approvals.log` keeps tool `pair_device`, the
+     pairing is cancelled; 全部停下 ends it `stopped` and refuses the device. `approvals.log` keeps tool `pair_device`, the
      input digest of {device, handshake id = b64url(SHA-256("agentjarvis-pair-card-v1" ‖ h)[0:16])}, the shown digest, the
      approving device, its key and signature — never the SAS.
    - **Why the SAS stays:** it is still the only thing that binds the human's decision to THIS handshake. A copied QR whose
@@ -1975,11 +1974,7 @@ when the new device reached `hello` (the same facts `agentj pair` shows), and `{
 pairing ended any other way (expired, denied, replaced by `agentj pair`). Host → every ready p33 remote: `devs` (no `r`)
 after any accepted change, plus the normal `preferences` (its `host.devices` / `host.limit`).
 Every accepted add / unbind is also an approvals.log line (`agent: "phone"`, hashes only), an activity `decision`, a notice
-to every remote and a `security` push. P242 (0.20.3): that line is `kind: "control"` and carries the control's own proof —
-the signer's key `sk`, `sig`, nonce `n`, `sig_ts` and `object_sha256` (= the §8 phone-control message) — so
-`agentj approvals --verify` re-checks it with the control context. A host before 0.20.3 wrote it without `sk` / `sig`; the
-check then uses the matching controls.log line (same signer and action, result ok, ±5 s): ✓ when it verifies, ✗ when it does
-not, and "legacy" (never ✗) when that line is gone. The pairing link carries the pairing secret: it travels only inside the asking
+to every remote and a `security` push. The pairing link carries the pairing secret: it travels only inside the asking
 remote's Noise session and is never logged. A host without §24 never answers `dev_list`: the page waits 6 s, then shows the
 `preferences` list read-only with the `agentj pair` / `devices` / `revoke` commands.
 
@@ -2190,126 +2185,3 @@ a y/N (no → `reason: not_confirmed`), otherwise the card and `UPGRADE_RESULT r
 **Idle auto-update** (`updates.auto_install`, the phone's 「空闲时自动更新」 together with `updates.mode`): besides the nightly
 opportunity, a version the daily check already recorded installs the first time the items list is empty and no phone input
 came for 30 minutes — once a local day, never while stopped. The result notice says 「电脑空闲时已自动升级到 …」.
-
-## 30. The five pages: 工作流 · 技能 · 记忆 · Agent J · 消息 (P244, host 0.21, design P233 / P234)
-
-The logo opens a menu of five parallel pages (the chat page is one of them). Four of them read what is on the computer:
-the working root's workflow folders, skills, memory files and the Agent J constitution layer. **Read-only**: nothing in
-this section writes a file; changes go through 「跟 Agent 讨论」 (the page fills or sends a plain chat message). A host that
-answers announces `wf1` in `ready.caps`; the page shows the four pages only then (an older host: the menu shows them
-greyed with 「电脑上的 Agent J 需要升级」).
-
-### 30.1 What the host scans (`host/agentj/workflows.py`)
-
-- **Workflows** = the working root's direct child folders (one level, never recursive). Skipped: hidden folders,
-  `.worktrees`, `node_modules`, `credentials`, `__pycache__`, symlinks that leave the working root, a folder whose only
-  entries are `.env*`, and the Agent J state / protected paths (`fence.protected_paths`).
-- **WDB** (Workflow Design Bible spec, 「认证」) = the folder has `documentation/CONSTITUTION.md` **and**
-  `documentation/ROLES.md`, or its `documentation/STRUCTURE.json` declares `bible_version`. Everything else is a plain
-  folder (`wdb:false`, grey, no colour). P245's starter workflows are WDB folders by this rule.
-- `ceo` / `company` / `one` (one-line description): `documentation/IDENTITY.md` (bullets `**Name**` / `**Role**` /
-  `**Mission**`, or the first heading / paragraph) and `STRUCTURE.json` (`ceo`, `company`, `one` if present); fallback =
-  the working root's `documentation/ROLES.md` roster row naming the folder.
-- `agents`: `.claude/agents/*.md` (name = file stem, `desc` = frontmatter `description` first sentence ≤ 80 chars) merged
-  with `.codex/agents/*.toml` (`description`).
-- `docs`: `documentation/*.md` **file names** only (+ `title` = first `# heading` ≤ 60 chars). Body only on `wf_doc`.
-- `skills` (local): `.claude/skills/*/SKILL.md` and `.agents/skills/*/SKILL.md` (name, desc, `aliases` from frontmatter).
-- **Credential rule (hard)**: a file or folder whose name matches `/(credential|secret|token|password|passwd|private|\.env|\.pem|\.key|id_rsa|id_ed25519)/i`
-  is never listed, never counted by name, never readable through `wf_doc` / `skill_get` (only an anonymous count
-  `hidden` per list). Doc bodies pass through `privacy.redact` before they leave the host and are cut at 64 KiB.
-- **Colours / robots** (P233 §2): `<state>/workflows.json` `{folder: {ci, lap, robot, assigned_at}}`; a new WDB folder
-  gets the next of 16 colours (index = robot row) in first-verified order, the 17th starts lap 2; plain folders none;
-  renamed folder with the same CEO keeps its colour; a gone folder's colour is freed after 30 days. Order changes never
-  change a colour.
-- **Active**: a workflow is `busy` when an entry of the 「在办事项」 list (§22) has a cwd inside it.
-- Cache: one scan result kept until a top-level / `documentation/` / skills mtime changes; 100 folders < 200 ms.
-- `pinyin`: full pinyin + initials of `ceo` / `company` (pypinyin) for the @ list search.
-
-### 30.2 Messages (p33 sessions of a paired, ready device; answered to the asking session only)
-
-| direction | message | notes |
-|---|---|---|
-| device → host | `{"t":"wf_list","r","etag"?}` | the whole picture; `etag` equal → `{"t":"wf_same","r"}` |
-| host → device | `{"t":"wf_items","r","items":[W…],"more"}` then the last chunk carries `{"etag","root_name","counts":{"all","wdb","busy"},"skills":[S…],"agentj":A,"memory":[M…]}` | chunked like §8 lists (≤ 11 KiB per message, `skills` / `memory` may also be chunked as `wf_skills` / `wf_mem` with `more`) |
-| device → host | `{"t":"wf_doc","r","folder","name"}` | `folder` = a workflow folder name, `""` = the working root, `"@core"` = the bundled constitution layer (`name` = `core`); `name` = a listed doc file name — anything not in the last scan's list → `{"t":"wf_doc","r","ok":false,"why":"not_found"}` |
-| host → device | `{"t":"wf_doc","r","ok":true,"folder","name","title","text","cut"?}` | markdown, redacted, ≤ 64 KiB (`cut` = original length) |
-| device → host | `{"t":"skill_get","r","id"}` | `id` from `S.id` |
-| host → device | `{"t":"skill_get","r","ok","id","name","text","cut"?}` | SKILL.md without its frontmatter, redacted, ≤ 64 KiB |
-
-`W` = `{"folder","wdb","ci"?,"lap"?,"robot"?,"ceo"?,"company"?,"one"?,"busy","agents":[{"name","desc"}≤60],"docs":[{"name","title"}≤60],
-"skills":[S.id…≤80],"py"?:"<pinyin index>","hidden"?:n,"mtime"}` (sorted: busy first, then WDB by colour order, then plain by name).
-`S` = `{"id","name","desc","aliases"?:[…],"scope":"bundled"|"global"|"local","folder"?}` (bundled = shipped with Agent J,
-global = the harness's user skills folder, local = a workflow's own). `id` = `scope:folder:name`.
-`A` = `{"core":{"name":"core","title","lang","version"},"docs":[{"name","title"}],"hidden":n}` — `docs` = the working root's
-`documentation/*.md` minus credential names.
-`M` = one card per memory owner (P233 MEMORY-PROPOSAL **M2**, recommended): first `{"owner":"agent","items":n,"files":[…],"latest"}`
-(the main Agent: the working root's `documentation/MEMORY.md` + the harness memory the existing 「它记住了什么」 page reads, §8
-`mem_list` — counts and file names only, the items stay on that page), then one per WDB workflow
-`{"owner":"<folder>","files":[{"name","kind":"memory"|"soul"|"next","title","mtime"}],"latest"}`; bodies via `wf_doc`.
-
-### 30.3 The page side (web)
-
-- **Logo tap** = the five-card menu (full-screen blur; Esc / tap outside / tap the logo again closes; key `m`). **Logo
-  long-press (≥ 550 ms)** = back to the chat page from anywhere (replaces P207's jump to the first unread; that stays on
-  the unread badge and `u`). The text size step moved to Settings → 字体大小 (key `z` kept).
-- Phone (≤ 600 px wide): layout A (cards share the height); wider: layout C (a 393 px phone column on the left).
-- **@ mention**: `@` at the start, after whitespace, CJK punctuation, a Han character or an opening bracket opens the
-  workflow / CEO list (an `@` after `[A-Za-z0-9._%+-]` is an e-mail and never does). A chosen workflow is a
-  non-editable token in the input; **sent as plain text** `@<folder>（CEO <name>）` — the message never carries markup.
-- **Internal links** exist only in the page's rendering: after markdown, text nodes (not code / pre / links / 《…》) that
-  name 「工作流」/`workflow`, a WDB folder or company, an agent, a doc, `/skill-name` or an alias become bold + light
-  colour + underline links into the pages. Copy / forward / share always take the original text.
-- The main Agent's identity core: a message with `@<folder>（CEO <name>）` = the owner hands this to that company: dispatch
-  to that CEO by the roster, do not ask whom to give it to.
-
-
-### 30.4 Working card metadata (P244 RESUME 1)
-
-`busy.tasks[]` may additionally carry bounded `harness` (32), `model` (100), `workflow` (80), `company` (80), `role` (80),
-`parent` (80), `robot` (0..15). Native stream/hook/thread/session metadata and explicitly registered busy item metadata are
-sources; missing model remains unknown. No parent-model inference. `cwd` is host-local matching input and never sent on the list.
-Workflow association needs a declared folder / actual cwd / unique exact employee match in the last catalogue scan;
-otherwise `workflow`, `role`, `parent` are empty and the UI shows temporary helper, no workflow. CEO reports to Agent J;
-worker reports to the workflow CEO unless a specific parent is explicitly declared. The Workflow tab is read-only.
-
-The Working tab is the default on each open, retains existing task detail actions and adds the reported AI tool and model.
-Arrow keys/Home/End switch the two accessible tabs. Plain text vendor marks are fallbacks, never invented look-alike logos.
-
-## 31. AI 登录救援 — re-sign-in a harness from the phone (P258, host 0.21; the number is provisional until the merge)
-
-A harness whose **subscription login** expired (not a balance or rate limit) is signed in again from a paired phone, without
-touching the computer. Host side `host/agentj/auth_rescue.py`; page side `web/public/js/authrescue.js` (Settings →
-AI 登录救援). The whole chain is serve's deterministic code — the logged-out Agent is never asked.
-
-**Messages** (p33 sessions of a paired, ready device; listed in `P33_ONLY`; answered to the asking session only):
-`{"t":"auth_get","r"}` · `{"t":"auth_start","r","kind":"claude|codex|opencode","route":"setup_token|paste|login|device|provider_key"}` ·
-`{"t":"auth_press","r","kind","id":<catalogued confirm screen id>}` · `{"t":"auth_cancel","r"}` → `{"t":"auth_res","r","ok"[,"why"],"view"}`.
-Push to every ready p33 phone (and on ready while the dot is on): `{"t":"auth_rescue","view"}`.
-`view = {"dot": bool, "harnesses": [{kind, label, installed, current, state: ok|login|balance|rate_limit, routes,
-[token: {minted, expires, days_left}], [warn], [login], [conflicts: [names]], [last: {result: recovered|failed|partial|blocked,
-at, [why], [screen: {id, action, label[, last]}], [answered], [note]}]}], "flow": null | {kind, route, stage:
-starting|device|url|paste|verifying|done|failed, [url], [code], [expires_at], [why]}}`.
-`code` is the Codex one-time device code (short-lived, shown so the owner can type it on another device). **No
-authorization code or token is ever in these messages**: Claude's code / token goes into the sealed secret card (§11,
-`name` `CLAUDE_AUTH_CODE` / `CLAUDE_CODE_OAUTH_TOKEN`, a host-internal `sink`).
-
-**Gate.** `auth_start` / `auth_press` first raise an `ask` with tool `AuthRescue`, `batch:false`, `require_passkey:true`
-(never auto-allowed: not by grants, briefs, goals or Jev — `approval_jev.ALWAYS_ASK`, `goal.SOFT_EXEMPT`). A device without a
-passkey cannot start a rescue. Refused → `why:"passkey"`.
-
-**Routes.** `codex/device`: `codex login --device-auth`; the link + code go out in `flow`; the CLI polls and writes auth.json;
-the previous auth.json is restored on failure / timeout / cancel. `claude/setup_token`: `claude setup-token` in a private
-PTY (`BROWSER=true`, old credentials removed from its env); the authorize URL goes out; the secret card's value (the code) is
-typed into the PTY; the printed token is live-checked (`claude -p`, exactly this token) and written as
-`CLAUDE_CODE_OAUTH_TOKEN` to the service env file (0600), the serve process env updated, the mint date recorded in
-`<state>/auth-rescue.json` (0600, no secrets). `claude/paste`: the card's value is the token (same check and write).
-`claude/login`: `claude auth login --claudeai` (credentials file). `opencode/provider_key`: the provider key card (§10 provider_key).
-
-**Recovery and self-check** (`recover`): `harness_setup.prepare()` re-answers the first-run screens → a Claude credential that
-outranks the token (`ANTHROPIC_API_KEY` / `ANTHROPIC_AUTH_TOKEN`, by name) stops with `why:"conflict"` → an owned harness
-restarts before its next turn, an Agent-J-started shared terminal is replaced, the owner's own terminal gets a note →
-`screen_check` opens the harness's interactive screen in a PTY for ≤ 25 s and walks `BLOCKERS` (auto: fixed keys; confirm:
-reported, the phone may press; fail: reported by name; unknown: the scrubbed last line) → `harness.probe` must get a reply →
-only then `last.result:"recovered"` and a notice. Detection: every adapter failure line is classified (balance and rate limit
-first, so they never start a re-login); `login` lights the dot and sends one notice per 10 minutes. A recorded token is
-reminded once a day inside its last 30 days.

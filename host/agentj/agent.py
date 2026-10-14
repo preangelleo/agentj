@@ -69,7 +69,6 @@ class Cmd:
     data: dict | None = None         # model_set (§10.11): {"r", "model", "effort", "default", "device"}
     cancelled: bool = False
     native_started: bool = False
-    workflow_wait: bool = False     # eligible for withdrawal while waiting for the scheduler lock
 
 
 UNCERTAIN = object()        # Agent.deliver: fn's answer "maybe delivered" (e.g. a 5xx after the request was sent, P33-X08)
@@ -405,7 +404,6 @@ class Agent:
         self.ended: set = set()       # processes serve ended on purpose: their exit is not news (no notice)
         self.turn_proc = None         # the process the running turn talks to (an older one's exit cannot end it)
         self.cur_send = None          # the phone's `say` this turn delivers (compose.Send), None for anything else
-        self.lock_cmd: Cmd | None = None   # dequeued command waiting for turn_lock (P249)
         self.cur_cmd = None           # the command (Cmd) running now — F24 shows its progress on that page
         self.models_cache: list = []  # §10.11: [{"id", "name", "efforts"}] as the harness listed them
         self.touched = False          # P219: the running turn has seen progress from the harness (stall watch)
@@ -427,12 +425,6 @@ class Agent:
         fn = getattr(self.host, "meter_update", None)
         if fn:
             fn(**kw)
-
-    def _auth_signal(self, text) -> None:
-        """P258: hand a native failure line to serve's AI 登录救援 (login expired vs balance vs rate limit)."""
-        fn = getattr(self.host, "auth_signal", None)
-        if fn and not self.cfg.get("_workflow_ceo"):
-            fn(self.kind, text)
 
     def fail_notice(self, text: str) -> None:
         """A notice that means this turn did not finish normally (its page ends `failed`)."""
@@ -492,22 +484,6 @@ class Agent:
             fn2(s)
         return r
 
-    @contextlib.asynccontextmanager
-    async def _command_lock(self, cmd):
-        # Keep a dequeued command reachable while acquire() waits (P249).
-        self.lock_cmd = cmd
-        try:
-            notify = getattr(self.host, "workflow_cmd_waiting", None)
-            if notify:
-                notify(cmd)
-            async with getattr(self.host, "turn_lock", None) or contextlib.nullcontext():
-                started = getattr(self.host, "cmd_lock_acquired", None)
-                if started:
-                    started(cmd)
-                yield
-        finally:
-            self.lock_cmd = None
-
     async def run(self) -> None:
         while True:
             text = await self.q.get()
@@ -557,7 +533,7 @@ class Agent:
                     if self.q.empty() and self.status == "working":
                         self.set_status("down" if self.is_down() else "idle")
                     continue
-                async with self._command_lock(text):
+                async with getattr(self.host, "turn_lock", None) or contextlib.nullcontext():
                     if text.cancelled:
                         if self.q.empty() and self.status == "working":
                             self.set_status("down" if self.is_down() else "idle")
@@ -1194,7 +1170,6 @@ class ClaudeAgent(Agent):
             last = clean(self.err_tail.strip().splitlines()[-1], 200) if self.err_tail.strip() else ""
             if not quiet and not self.halting:
                 from . import claude_auth
-                self._auth_signal(last)
                 self.fail_notice(claude_auth.failure_notice(self.cfg.get("language", "zh")) if claude_auth.login_failure(last) else
                                  f"Claude Code 退出了（{code}）" + (f"：{last}" if last else ""))
             self.turn_done.set()
@@ -1206,7 +1181,6 @@ class ClaudeAgent(Agent):
         if b is None or self.cfg.get("_workflow_ceo"):
             return
         with contextlib.suppress(Exception):
-            b.set_context("own", harness="claude", cwd=self.cfg.get("dir"))
             b.session_gone("own") if ev is None else b.stream_event(ev, "own")
 
     def on_event(self, ev: dict) -> None:
@@ -1283,7 +1257,6 @@ class ClaudeAgent(Agent):
                     and self.capture is None:
                 r = ev.get("result")
                 from . import claude_auth
-                self._auth_signal(r)
                 self.fail_notice(claude_auth.failure_notice(self.cfg.get("language", "zh")) if claude_auth.login_failure(r) else
                                  "Agent 这一轮没有正常完成" + (f"：{clean(r, 300)}" if isinstance(r, str) and r else "。"))
             if self.turn_done:

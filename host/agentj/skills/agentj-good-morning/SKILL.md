@@ -1,6 +1,6 @@
 ---
 name: agentj-good-morning
-description: The owner's good morning — 「早上好」「我起来了」「醒了」「检查一下自动化的登录」, "good morning", "I'm up", "check my automation logins". Checks that the websites the automations use are still signed in, walks the owner through any sign-in (phone QR card or the computer), then gives a short morning brief from real reports (plus quota reminders when the weekly quota is going to waste or an extra reset is about to expire). A greeting is a login check, never permission to publish.
+description: The owner's good morning — 「早上好」「我起来了」「醒了」「检查一下自动化的登录」, "good morning", "I'm up", "check my automation logins". Checks that the websites the automations use are still signed in, walks the owner through any sign-in (phone QR card or the computer), then gives a short morning brief from real reports. A greeting is a login check, never permission to publish.
 ---
 
 Only you (the main Agent) speak; there is no button for this. Reply in the owner's language.
@@ -23,11 +23,7 @@ Only you (the main Agent) speak; there is no button for this. Reply in the owner
    failed first; what is not run. Everything ready: 「截至现在，配置过的账号都确认登录着。今天可以放心交给我；状态有变化，
    你下次找我时我会提醒。」 / "As of now your configured accounts are confirmed signed in. You can hand today over to me; if that
    changes I will flag it next time you talk to me." Never promise they stay signed in all day.
-5. **Quota (one line, only when it matters).** `agentj quota --remind --json`: its `due` list holds today's not-yet-given
-   quota reminders (and marks them given, so the heartbeat will not repeat them). Each one goes into the brief with 1–3
-   concrete big-job suggestions from the owner's workflows and to-dos (see agentj-heartbeat, 〔额度提醒〕). Nothing due →
-   say nothing about quota. A harness Agent J cannot read is skipped, never guessed.
-6. **Today's automations (optional).** When all needed sites are ready, ask once: 「要运行今天已经启用的自动化吗？」 / "Run today's
+5. **Today's automations (optional).** When all needed sites are ready, ask once: 「要运行今天已经启用的自动化吗？」 / "Run today's
    enabled automations?" If the owner already asked for that in this message, do it without asking again — only within
    automations already enabled and authorized, after checking today's reports so nothing runs twice. New workflows or new
    schedules still need the owner's confirmation; sending, publishing, paying, deleting, credentials and prices keep their

@@ -238,12 +238,6 @@ class CodexAgent(Agent):
 
     def fail_notice(self, text: str) -> None:
         kind, notice, blocked = _agentmod.codex_failure(text, self.cur_model(), getattr(self.host, "lang", "zh"))
-        fn = getattr(self.host, "auth_rescue", None)
-        if fn is not None and kind in ("auth", "quota", "usage") and not self.cfg.get("_workflow_ceo"):
-            try:   # P258: the classifier already decided; map it, never re-guess (a quota reply must not start a re-login)
-                fn.signal("codex", {"auth": "login", "quota": "balance", "usage": "rate_limit"}[kind])
-            except Exception:  # noqa: BLE001
-                pass
         if kind == "model" and blocked and slash.MODEL_RE.fullmatch(blocked):
             self.unavailable_models.add(blocked)
             for m in self.models_cache:
@@ -553,7 +547,6 @@ class CodexAgent(Agent):
         if b is None or self.cfg.get("_workflow_ceo") or self.research:
             return
         with contextlib.suppress(Exception):
-            b.set_context(self.busy_scope(), harness="codex", cwd=self.cfg.get("dir"))
             b.session_gone(self.busy_scope()) if method is None else b.codex_event(method, p, self.busy_scope())
 
     def _emit(self, text: str) -> None:

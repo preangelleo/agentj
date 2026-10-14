@@ -1,4 +1,4 @@
-// P251: metadata-only checks; matched host/server updates follow only after protected input is idle.
+// P120: metadata-only version checks; never reload or move focus without an owner click.
 import VERSION from '../version.js';
 import {t,onLang} from './t.js';
 import {registerLayer} from './layers.js';
@@ -42,59 +42,22 @@ export function versionState(current,host,web,triedTo){
 }
 function state(){return versionState(VERSION.version,hostVersion,webVersion,refreshedTo());}
 function close(){dismissed=state().offer;render();}
-export function followsHost(current,host,web,triedTo){
- return compareVersion(host,web)===0 && !!versionState(current,host,web,triedTo).offer;
-}
-let guards={blocked:()=>true,save:async()=>{}}, lastInput=Date.now(), refreshing=false, composing=false;
-const IDLE_MS=10000, DONE_KEY='aj.verUpdated';
-const autoTarget=()=>followsHost(VERSION.version,hostVersion,webVersion,refreshedTo())?webVersion:null;
-function idle(){return !document.hidden && !composing && Date.now()-lastInput>=IDLE_MS && !guards.blocked();}
-async function follow(){
- const target=autoTarget();
- if (!target || !idle() || refreshing) return;
- refreshing=true;
- try{
-  // Confirm metadata again, after the idle wait. A failed check or changed host cancels this attempt.
-  const fresh=await readWebVersion();
-  if(fresh!==target || autoTarget()!==target || !idle())return;
-  if(!await guards.save())return;
-  if(autoTarget()!==target || !idle())return;
-  await refresh({silent:true,beforeReload:async()=>{
-   if(autoTarget()!==target || !idle())return false;
-   if(!await guards.save())return false;
-   if(autoTarget()!==target || !idle())return false;
-   // No draft in localStorage; only public versions. A stale edge gets one attempt, never a reload loop.
-   try{localStorage.setItem(VER_KEY,JSON.stringify({from:VERSION.version,to:target}));
-       localStorage.setItem(DONE_KEY,target);}catch{return false;}
-   return true;
-  }});
- }catch{/* Stay on the usable page on network/storage failure. */}
- finally{refreshing=false;}
-}
 function render(){
  const box=document.getElementById('version-notice');if(!box)return;
  const {offer,later}=state();
- box.hidden=!!autoTarget()||!offer||offer===dismissed;
+ box.hidden=!offer||offer===dismissed;
  // P150: the global centred dialog 「服务器已升级」 + 刷新 (it used to be a card pressed down from the top).
  document.getElementById('version-notice-text').textContent=t('ver.body',{v:offer||''});
  document.getElementById('version-refresh').textContent=t('ver.refresh');
  document.getElementById('version-dismiss').textContent=t('ver.later');
  const line=document.getElementById('version-later');
- if(line){
-  let updated=null;try{updated=localStorage.getItem(DONE_KEY);}catch{}
-  const done=updated===VERSION.version;
-  line.hidden=!(later||done)||!box.hidden;
-  line.textContent=done?t('ver.updated',{v:VERSION.version}):later?t('ver.later_line'):'';
- }
+ if(line){line.hidden=!later||!box.hidden;line.textContent=later?t('ver.later_line'):'';}
 }
 // A new host version: read version.json first, then decide (never a dialog on the host's word alone).
 export function setHostVersion(v){hostVersion=v;render();if(check&&v&&compareVersion(v,VERSION.version)===1)check();}
 let check=null;
-export function initVersionNotice(refreshApp, inputGuards){
- refresh=refreshApp; if(inputGuards)guards=inputGuards;
- const activity=e=>{lastInput=Date.now(); if(e.type==='compositionstart')composing=true; if(e.type==='compositionend')composing=false;};
- for(const name of ['input','keydown','pointerdown','compositionstart','compositionend'])document.addEventListener(name,activity,true);
- setInterval(follow,1000);
+export function initVersionNotice(refreshApp){
+ refresh=refreshApp;
  document.getElementById('version-refresh').addEventListener('click',()=>{
   const {offer}=state();
   try{if(offer)localStorage.setItem(VER_KEY,JSON.stringify({from:VERSION.version,to:offer}));}catch{/* blocked storage: the dialog may come back once */}
@@ -102,7 +65,7 @@ export function initVersionNotice(refreshApp, inputGuards){
  });
  document.getElementById('version-dismiss').addEventListener('click',close);
  document.getElementById('version-notice').addEventListener('click',e=>{if(e.target===e.currentTarget)close();});   // outside the square = later
- registerLayer({element:()=>document.getElementById('version-notice'),open:()=>!document.getElementById('version-notice').hidden,close,fallback:()=>document.getElementById('setBtn'),trap:false,rank:-10,preserveOutsideFocus:true});
+ registerLayer({element:()=>document.getElementById('version-notice'),open:()=>!document.getElementById('version-notice').hidden,close,fallback:()=>document.getElementById('setBtn'),trap:false,rank:-10});
  onLang(render);render();
  check=async()=>{try{webVersion=await readWebVersion();render();}catch{/* Offline/old metadata: no false update warning. */}};
  check();setInterval(()=>{if(!document.hidden)check();},300000);

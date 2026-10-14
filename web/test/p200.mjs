@@ -2,7 +2,7 @@
 // P200 (Leo, 2026-10-13, Android Chrome 0.20.0a1): an empty composer showed a vertical scrollbar. P150 paints every
 // scrollbar (track included), so a field overflowing by 1–3 px — the placeholder's line box, or one line in a CJK fallback
 // font whose ascent + descent beat line-height (Android's Noto CJK) — drew a fixed bar with nothing typed.
-// P251/Leo19:10: no visible scrollbar, including overflowing input; scrollability and the original 30 vh cap remain. Real page + local fake host, three engines:
+// Rule: the field's bar shows only when the words are taller than its 30 vh cap. Real page + local fake host, three engines:
 //   Android Chrome  — Chromium, Pixel 7 profile (mobile, touch, DPR 2.625), the system Chromium binary, scrollbars drawn
 //   desktop Chrome  — Chromium 1280 × 900, scrollbars drawn
 //   iOS Safari      — Playwright WebKit, iPhone 13 profile (overlay bars: checked on overflow-y + scrollability)
@@ -55,10 +55,10 @@ for (const pr of profiles) {
     if (m.ov !== 'hidden' || m.bar !== 0 || m.ovf) throw new Error(`${what}: bar shown ${JSON.stringify(m)}`);
     if (!m.v && m.top !== 0) throw new Error(`${what}: empty field not at the top ${JSON.stringify(m)}`); return m; };
   const bar = async (p, what) => { const m = await p.evaluate(M);
-    if (m.ov !== 'auto' || !m.ovf || m.sh <= m.ch || (m.bar !== 0 || await p.evaluate(() => getComputedStyle(document.getElementById("input")).scrollbarWidth !== "none"))) throw new Error(`${what}: no bar for overflowing text ${JSON.stringify(m)}`); return m; };
+    if (m.ov !== 'auto' || !m.ovf || m.sh <= m.ch || (pr.drawn && m.bar === 0)) throw new Error(`${what}: no bar for overflowing text ${JSON.stringify(m)}`); return m; };
   // the matrix's CDP metrics override can turn Chromium's bars into overlay ones (0 px wide): the scroll state is checked
   const ovfOn = async (p, what) => { const m = await p.evaluate(M);
-    if (m.ov !== 'auto' || !m.ovf || m.sh <= m.ch || m.bar !== 0) throw new Error(`${what}: not scrollable for overflowing text ${JSON.stringify(m)}`); return m; };
+    if (m.ov !== 'auto' || !m.ovf || m.sh <= m.ch) throw new Error(`${what}: not scrollable for overflowing text ${JSON.stringify(m)}`); return m; };
   const shot = async (p, tag) => { const box = await p.locator('.field').boundingBox(); const vp = p.viewportSize();
     const y = Math.max(0, box.y - 120); await p.screenshot({ path: `${OUT}${pr.name}-${tag}.png`, clip: { x: 0, y, width: vp.width, height: Math.min(vp.height - y, box.height + 160) } }); };
   try {

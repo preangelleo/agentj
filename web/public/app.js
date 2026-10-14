@@ -1,4 +1,3 @@
-import * as fivePages from './js/five-pages.js';
 import { describeDevice } from './js/device-label.js';
 // agentj web client. Spec: agentjarvis/protocol/PROTOCOL.md §2–§4, §8–§10; design agentjarvis/parity/DESIGN.md (PROMPT-33).
 // The chat screen is relay's phone page (js/relay.js) on Agent J's end-to-end session; this module boots the page and owns
@@ -27,7 +26,6 @@ import * as settings from './js/settings.js';
 import {initVersionNotice,setHostVersion} from './js/version-notice.js';
 import {initShare, onShareReady, forgetShare} from './js/share.js';
 import * as elevate from './js/elevate.js';     // F17: sudo / secret cards (§11)
-import * as authrescue from './js/authrescue.js';   // P258: AI 登录救援 (red dot + pushes)
 import { registerMailForward } from './js/mailfwd.js';   // P189: file card → the dialog below
 import * as contacts from './js/contacts.js';   // P184 (§25): contact cards + 「转发到邮箱」
 import * as secretout from './js/secretout.js'; // F32: secret pickup cards (§18)
@@ -298,7 +296,6 @@ session.configure({
     $('pair-error').hidden = true;
     setAgentName(null, false);                        // a new pairing: its name comes with the host's first status
     snap.synthReset(); snap.S.hist = { epoch: 0, first: 0, last: 0, count: 0 }; relay.historyReset(0);
-    fivePages.clear();
     lastSeq = 0; controls.panel !== 'chat' && controls.openPanel('chat');
     return host;
   },
@@ -316,7 +313,6 @@ session.configure({
     if (pendingRv) { const c = pendingRv; pendingRv = null; rvpair.approve(c).catch(() => {}); }
     api.myDeviceId().then(() => rerender());
     relay.onReady();
-    fivePages.refresh();
     setTimeout(() => cardsync.sync(true), 1200);      // P203: after the host's own replay — fills gaps, drops cards that ended
     // P189: the file cards' 「转发到邮箱」 icon (P183, mailfwd.js) opens P184's dialog — only on a host with `contacts`
     registerMailForward(contacts.forwardAvailable() ? (req) => contacts.openForward({ mid: req.mid, name: req.name }) : null);
@@ -367,7 +363,6 @@ function onApp(m) {
     case 'bots_proposal': bots.proposal(m); return;
     case 'fr_changed': friends.changed(m); return;   // §17.7: something changed on the computer → the friends page re-reads
     case 'elev': elevate.add(m); return;             // F17 (§11)
-    case 'auth_rescue': authrescue.onPush(m); return;   // P258 (§31)
     case 'elev_done': elevate.done(m); return;
     case 'elev_refused': elevate.refused(m); return;   // ADR-A163: Face ID not accepted, the card stays open
     case 'ct_card': contacts.card(m); return;         // P184 (§25): save / complete a contact (the owner's tap)
@@ -1042,7 +1037,7 @@ function wire() {
     if (await confirmSheet(t('menu.unpairTitle'), t('menu.unpairText'), t('menu.unpairYes'), true)) forgetHost();
   };
   $('unpair').addEventListener('click', unpairAsk);
-  initVersionNotice(settings.refreshApp, {blocked: relay.refreshBlocked, save: relay.saveDraft});
+  initVersionNotice(settings.refreshApp);
   busy.init({ name: () => agentName ?? DEFAULT_NAME, prompt: (k) => relay.sayPreset(k), detail: api.busyDetail });   // P160: a row → its read-only card
   agentname.init({ name: () => agentName ?? DEFAULT_NAME, canRename: () => session.isReady() });
   shotclip.init({ attach: relay.attachShot, say: () => toast(t('set.shotDenied'), 4000) });
@@ -1131,8 +1126,6 @@ async function main() {
   rvpair.configure({ allowRelay, pair: pairFromRemote,
     testRelay: () => (['127.0.0.1', 'localhost'].includes(location.hostname) ? new URLSearchParams(location.search).get('relay') : null) });
   relay.init({
-    menuPages: fivePages.toggleMenu,
-    goChat: () => fivePages.go('chat'),
     scan: () => { scanBack = null; startScan('any'); },
     api,
     myDev: api.myIdSync,
@@ -1150,7 +1143,6 @@ async function main() {
     models: openModels,
     asrInstall: installAsr,
   });
-  fivePages.init({ chat: () => controls.openPanel('chat'), memory: () => controls.openPanel('mem'), insert: relay.insertText, send: () => $('send').click() });
   const host = await dbGet('host');
   // 0.15.1: the browser deleted this phone's pairing (Safari private tab closed, site data cleared, …) — say so, not "removed"
   let lost = !host && wasPaired();

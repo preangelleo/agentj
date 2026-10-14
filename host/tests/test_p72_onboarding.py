@@ -271,11 +271,8 @@ class Serve(unittest.TestCase):
         self.host.pairing = p
         res = await self.host.decide(p, wire.safety_code(s.h), self.PASS)
         self.assertEqual(res["ev"], "approved")
-        # Pairing schedules the ready/onboarding task. Await that exact phase, rather than guessing how many
-        # event-loop turns its threaded state write will take on a busy disk. Owner-card delays remain background.
-        onboard = [t for t in self.host._bg_tasks if t.get_coro().__name__ == "_ready_then_onboard"]
-        if onboard:
-            await asyncio.wait_for(asyncio.gather(*onboard), 10)
+        for _ in range(200):
+            await asyncio.sleep(0.01)
         return s
 
     def test_first_pairing_asks_the_agent_for_the_welcome_second_gets_one_line(self):

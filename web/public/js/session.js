@@ -175,7 +175,6 @@ async function onFrame(s, data) {
 function rcField() { const rc = reconnectReason(); return rc ? { rc } : {}; }
 
 function readCaps(m) {
-  peer.wf1 = Array.isArray(m.caps) && m.caps.includes('wf1');
   peer.heartbeat = Array.isArray(m.caps) && m.caps.includes('heartbeat');
   peer.p33 = Array.isArray(m.caps) && m.caps.includes('p33');
   peer.tgfwd = peer.p33 && Array.isArray(m.caps) && m.caps.includes('tgfwd');   // P118 (B10): share → the owner's own Telegram

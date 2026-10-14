@@ -38,8 +38,8 @@ class Core(unittest.TestCase):
     def test_length_budget_and_zh_inline(self):
         for lang, chars in V10.items():
             self.assertLessEqual(len((main_identity.DATA / f"core.{lang}.md").read_text()), chars * 1.2, lang)
-        # P253 v13 adds the owner-authorized Father rule (+310 zh chars over P244 v12); complete-hook cap stays fixed.
-        self.assertLessEqual(len((main_identity.DATA / "core.zh.md").read_text()), 4410)
+        # zh keeps the shared-session identity inline (P159): the core did not grow past v10
+        self.assertLessEqual(len((main_identity.DATA / "core.zh.md").read_text()), V10["zh"])
         self.assertLessEqual(len(main_identity.prompt({"language": "zh"}, harness="claude")), shared.SharedClaudeAgent.INLINE_MAX)   # P165: the shared-Claude hook text
 
     def test_moved_detail_still_lives_in_the_skills(self):

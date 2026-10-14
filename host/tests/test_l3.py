@@ -445,11 +445,11 @@ class WheelInstall(unittest.TestCase):
         bot_entries=[i for i in zipfile.ZipFile(self.wheel).infolist() if i.filename.startswith(('agentj/bots/','agentj/skills/agentj-bots/'))]
         bot_bytes=sum(i.compress_size+76+2*len(i.filename.encode())+2*len(i.extra)+len(i.comment) for i in bot_entries)
         self.assertLessEqual(bot_bytes,65536,'P82 bot package allocation is bounded; no models or knowledge ship')
-        # P113 (0.18, ADR-A194): an explicit bounded 48 KiB increment for long tasks (P250 owner-approved growth) (registry, schemas, skill); same accounting.
+        # P113 (0.18, ADR-A194): an explicit bounded 40 KiB increment for long tasks (registry, schemas, skill); same accounting.
         lt_entries=[i for i in zipfile.ZipFile(self.wheel).infolist() if i.filename in ('agentj/capability.py','agentj/ltschema.py')
                     or i.filename.startswith(('agentj/longtask_schemas/','agentj/skills/agentj-capability/'))]
         lt_bytes=sum(i.compress_size+76+2*len(i.filename.encode())+2*len(i.extra)+len(i.comment) for i in lt_entries)
-        self.assertLessEqual(lt_bytes,49152,'P113 long-task allocation is bounded; no models, data or templates ship')
+        self.assertLessEqual(lt_bytes,40960,'P113 long-task allocation is bounded; no models, data or templates ship')
         # P114: Agent J's own browser (runtime, sign-in checks, login card, two skills) gets its own bounded 48 KiB, like the bots.
         # The browser itself is downloaded at setup against the signed manifest; nothing of it ships in the wheel.
         browser_entries=[i for i in zipfile.ZipFile(self.wheel).infolist() if i.filename.startswith(('agentj/browser','agentj/skills/agentj-browser/','agentj/skills/agentj-good-morning/'))]
@@ -539,12 +539,6 @@ class WheelInstall(unittest.TestCase):
         p207_bytes=sum(i.compress_size+76+2*len(i.filename.encode())+2*len(i.extra)+len(i.comment) for i in p207)
         self.assertEqual(len(p207),2)
         self.assertLessEqual(p207_bytes,12288,'P207 user-data + system scheduled tasks allocation is bounded')
-        # P244: the catalogue + bundled alias table have their own bounded 12 KiB allocation;
-        # shared metadata / adapter / identity / doctor wiring gets 4 KiB core. Flagged to Jarvis in REPORT-244.
-        p244=[i for i in zipfile.ZipFile(self.wheel).infolist() if i.filename in ('agentj/workflows.py','agentj/skills/aliases.json')]
-        p244_bytes=sum(i.compress_size+76+2*len(i.filename.encode())+2*len(i.extra)+len(i.comment) for i in p244)
-        self.assertEqual(len(p244),2)
-        self.assertLessEqual(p244_bytes,12288,'P244 read-only catalogue allocation is bounded')
         # P135 (0.18.2 integration of P131–P134 + the shared-turn reply fix): an explicit 8 KiB core increment, flagged to Jarvis.
         # P139 (0.18.3 shared-mode trust boundary: ctl_auth, hook token/watch, never-yield): another explicit 8 KiB, flagged to Jarvis.
         # P142 (0.18.3 host reliability: diskq, _bg, B14/A12/B15/B17/B19): a further explicit 8 KiB, flagged to Jarvis (P143 integration keeps both).
@@ -581,7 +575,7 @@ class WheelInstall(unittest.TestCase):
         # P181 4 · P182 4 · P184 4 · P185 8 · P186 8 · P188 4 · P191 4 · P192 4 KiB = 124 KiB; P189 / P190 / P193 declared none); merged and measured, the core grew +126.4 KiB over the 0.18.4 wheel
         # (overlap + P165's own fixes) → ONE explicit +136 KiB core increment on the 0.18.4 ceiling (P188's +4 KiB included), plus the new
         # bounded allocations above (P155 16 · P158 20 · P169 48 · P170 24 · P171 8 · P181 12 · P184 28 · P188 20 · P189 8 KiB). Flagged to Jarvis for ratification.
-        allocs=bot_bytes+lt_bytes+browser_bytes+p115_bytes+cut_bytes+p147_bytes+p155_bytes+p158_bytes+p169_bytes+p170_bytes+p171_bytes+p181_bytes+p184_bytes+p188_bytes+p189_bytes+p207_bytes+p244_bytes   # + P244 catalogue
+        allocs=bot_bytes+lt_bytes+browser_bytes+p115_bytes+cut_bytes+p147_bytes+p155_bytes+p158_bytes+p169_bytes+p170_bytes+p171_bytes+p181_bytes+p184_bytes+p188_bytes+p189_bytes+p207_bytes   # + P207 12 KiB
         core_0184=2_260_000+8192+8192+8192+12288+4096+8192+8192+12288      # P118 + P135 P139 P142 P143 P149 P150 P151 P152
         core_0200=core_0184+139264                                          # + P165 (0.20.0)
         core_0200+=8192           # P194: owner_route.py (owner-directed outbound) + mail / telegram / privacy / media wiring, flagged to Jarvis
@@ -629,22 +623,8 @@ class WheelInstall(unittest.TestCase):
         # P238 menu.for_phone, P239 switch coalescing, P240 receipt text) — merged and measured +0.1 KiB over the line above →
         # an explicit 4 KiB, flagged to Jarvis for ratification (REPORT-240).
         core_0200+=4096
-        core_0200+=4096           # P244 native task metadata and five-page/identity wiring; flagged to Jarvis
-
-        # P248 rebased on final P240: persistent run journal + receipt wiring is measured
-        # 1409 bytes over the existing core sum. Declare a bounded 4 KiB feature increment;
-        # no models, reports, data or templates ship. Flagged to Jarvis in REPORT-250.
-        core_0200+=4096
-
-        core_0200+=4096           # P253 v13 + feedback skill/CLI/manual: measured 3296 bytes over; P250 to ratify.
-        # P254 (quota steward: quota.py — weekly pace, 5-hour window, recorded resets, reminders — heartbeat / sock wiring,
-        # skill text): measured +11.6 KiB over the line above → an explicit 16 KiB, flagged to Jarvis for ratification.
-        core_0200+=16384
-        # P250 23:4x: ratified named core growth (36 KiB already in the sum)
-        # and a further measured 16 KiB for P258; internal package guard, not an external limit.
-        core_0200+=16384
-        self.assertLess(pathlib.Path(self.wheel).stat().st_size-allocs,core_0200,'P118 approved bounded core ceiling + 0.18.x increments + P165 (0.20.0) + P198 (0.20.1) + 0.20.2 increments (P201 P203 P205 P207 P211 P214 P215 P217 + P218 integration) + 0.20.3 increments (P219 P221 + P240 integration) + P254')
-        self.assertLess(pathlib.Path(self.wheel).stat().st_size,core_0200+65536+49152+49152+32768+4096+12288+8192+16384+20480+49152+24576+8192+12288+28672+4096+20480+8192+12288+12288,   # + P244 bounded catalogue
+        self.assertLess(pathlib.Path(self.wheel).stat().st_size-allocs,core_0200,'P118 approved bounded core ceiling + 0.18.x increments + P165 (0.20.0) + P198 (0.20.1) + 0.20.2 increments (P201 P203 P205 P207 P211 P214 P215 P217 + P218 integration) + 0.20.3 increments (P219 P221 + P240 integration)')
+        self.assertLess(pathlib.Path(self.wheel).stat().st_size,core_0200+65536+40960+49152+32768+4096+12288+8192+16384+20480+49152+24576+8192+12288+28672+4096+20480+8192+12288,   # + P207 12 KiB
                         'combined bounded allocations')
         # flagged to Jarvis.
         self.assertFalse([n for n in names_ if n.startswith("tests/") or "wiredump" in n or "fakeclaude" in n])
@@ -700,7 +680,7 @@ class WheelInstall(unittest.TestCase):
             self.assertEqual({c["id"]: c["status"] for c in d_["checks"]}["state"], "ok")
             core = next(c for c in d_["checks"] if c["id"] == "main-core")
             self.assertEqual(core["status"], "ok")
-            self.assertIn("core v14:", core["summary"])
+            self.assertIn("core v11:", core["summary"])
 
     @unittest.skipUnless((sys.platform.startswith("linux") and shutil.which("bwrap")) or
                          (sys.platform == "darwin" and os.access(fence.SANDBOX_EXEC, os.X_OK)),

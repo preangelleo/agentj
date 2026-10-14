@@ -1,4 +1,3 @@
-import { linkify } from './five-pages.js';
 import { registerLayer } from './layers.js';
 import { applyViewport, watchViewport } from './viewport.js';
 import { historyDoubleTap, longPress as cornerLongPress } from './history-corners.js';   // P179 (P165: renamed — P181's longpress.js owns longPress)
@@ -112,7 +111,7 @@ function fill(w, tx, plain = false){
     try{
       const detail = tx.match(/^([\s\S]*)\n\n(\u8be6\u60c5|Details):\n```text\n([\s\S]*)\n```$/);
       tx = detail ? detail[1] : tx;
-      w.replaceChildren(RelayMD.toDOM(RelayMD.parse(tx), document)); upgradeWords(w); linkify(w);
+      w.replaceChildren(RelayMD.toDOM(RelayMD.parse(tx), document)); upgradeWords(w);
       if (detail){
         const d = document.createElement("details"), label = document.createElement("summary"), raw = document.createElement("pre");
         label.textContent = detail[2]; raw.textContent = detail[3]; d.append(label, raw); w.appendChild(d);
@@ -548,11 +547,6 @@ function toHex(c){
   return "#" + v.map(x => Math.round(Math.min(255, Math.max(0, x * k))).toString(16).padStart(2, "0")).join("");
 }
 function chromeTarget(){
-  // The topmost full-screen surface owns the OS bar; nested Settings pages use the same menu background.
-  const pages = [...document.querySelectorAll('.menupage:not([hidden]),.setpage:not([hidden]),.ajpages:not([hidden])')]
-    .filter(n => n.getClientRects().length);
-  if (pages.length){ pages.sort((a,b)=>(+getComputedStyle(a).zIndex||0)-(+getComputedStyle(b).zIndex||0)); return toHex(getComputedStyle(pages.at(-1)).backgroundColor); }
-
   if (LAUNCH_CHROME){ if (document.body.dataset.conn !== "on") return LAUNCH_CHROME; LAUNCH_CHROME = ""; }
   try{ return toHex(getComputedStyle(el("chromeProbe")).backgroundColor); }catch(_){ return ""; }
 }
@@ -1290,17 +1284,55 @@ function paintActs(){
   paintSpeak(); paintFwd(); paintMail();
   fitBar();
 }
-// P251: equal-width hit regions; compress empty space before shrinking every glyph together.
+// P238 (Leo 10-13 23:44, a fold's narrow outer screen): the row never leaves the card. The icons shrink 44 → 40 px (app.css);
+// when even that does not fit, the secondary ones fold into 「⋯」 in this order — 邮件, 阅读, 转发 — and come back when
+// there is room. 分享成网页报告 / 朗读 / 复制 / 回复 never fold. A folded button stays the real button (keys still reach it).
+const FOLD = ["mailBtn", "readBtn", "fwdBtn"], ACT_MIN = 40;
 function fitBar(){
-  const group = el("rmIcons");
-  if (!group) return;
-  const count = [...group.querySelectorAll(".act")].filter(b => !b.hidden).length;
-  // Desktop used 44px targets + 2px gap. Cap at that pitch; surplus stays beside the left button.
-  group.style.setProperty("--rm-count", count);
-  const room = group.getBoundingClientRect().width;
-  if (!room) return;
-  const slot = room / Math.max(1, count);
-  group.style.setProperty("--rm-icon", Math.min(21, Math.max(18, slot - 6)) + "px");
+  const bar = el("rmbar"), more = el("rmMoreBtn");
+  if (!bar || !more) return;
+  const w = bar.clientWidth;
+  if (!w) return;                                    // not laid out (hidden page): try again on the next resize
+  for (const id of FOLD) el(id).classList.remove("folded");
+  const cs = getComputedStyle(bar), gap = parseFloat(cs.columnGap) || 0;
+  const room = w - (parseFloat(cs.paddingLeft) || 0) - (parseFloat(cs.paddingRight) || 0);
+  const wr = el("webReportBtn"), wrW = wr.hidden ? 0 : 44 + (parseFloat(getComputedStyle(wr).marginLeft) || 0);
+  const live = () => [...bar.querySelectorAll(".act")].filter(b => !b.hidden && !b.classList.contains("folded") && b !== more);
+  const need = (n, withMore) => wrW + (n + (withMore ? 1 : 0)) * ACT_MIN + Math.max(0, n + (withMore ? 1 : 0) - (wrW ? 0 : 1)) * gap;
+  let folded = 0;
+  if (need(live().length, false) > room)
+    for (const id of FOLD){
+      const b = el(id);
+      if (b.hidden) continue;
+      b.classList.add("folded"); folded++;
+      if (need(live().length, true) <= room) break;
+    }
+  more.hidden = !folded;
+  if (!folded) closeBarMore();
+  else if (!el("rmMore").hidden) openBarMore();      // repaint an open popover (states change while it is up)
+}
+function openBarMore(){
+  const pop = el("rmMore"), more = el("rmMoreBtn"), rm = el("rm");
+  const rows = FOLD.map(el).filter(b => b.classList.contains("folded") && !b.hidden).map(b => {
+    const r = document.createElement("button");
+    r.type = "button"; r.setAttribute("role", "menuitem"); r.dataset.for = b.id; r.disabled = b.disabled;
+    const g = [...b.querySelectorAll("svg.g")].find(x => getComputedStyle(x).display !== "none") || b.querySelector("svg");
+    const lab = document.createElement("span"); lab.textContent = b.getAttribute("aria-label") || "";
+    if (g){ const ic = g.cloneNode(true); ic.removeAttribute("class"); ic.setAttribute("aria-hidden", "true"); r.append(ic); }
+    r.append(lab);
+    r.addEventListener("click", e => { e.stopPropagation(); closeBarMore(); b.click(); });
+    return r;
+  });
+  pop.replaceChildren(...rows);
+  pop.hidden = false; more.setAttribute("aria-expanded", "true"); more.classList.add("on");
+  const rr = rm.getBoundingClientRect(), mr = more.getBoundingClientRect();
+  pop.style.left = Math.max(8, Math.min(mr.left - rr.left, rr.width - pop.offsetWidth - 8)) + "px";
+  pop.style.right = "auto";
+}
+function closeBarMore(){
+  const pop = el("rmMore"), more = el("rmMoreBtn");
+  if (!pop || pop.hidden) return;
+  pop.hidden = true; more.setAttribute("aria-expanded", "false"); more.classList.remove("on");
 }
 // P216 (Leo 10-13): 分享成网页报告 — puts the web-page-report skill's command at the front of the field, cursor after it,
 // never sends. The owner may add which part / who should see it, or send it bare and the Agent asks (the skill's own
@@ -1654,14 +1686,6 @@ export function setConn(on, text){
   wordsSrc = null; showPage(); paintChrome(); refreshSend();
 }
 
-// P251: preserve text through the existing sealed draft store; never discard in-flight card/media work.
-export function refreshBlocked(){
-  return !!((document.body?.dataset?.view && document.body.dataset.view !== "chat") || !C?.connected() || ptt || asrBusy || sending || atts.length || replyTo || askBusy || apprBusy || apprHold ||
-    (askState(cur?.ask) === "open" && askSel.id === cur?.ask?.id && askSel.picks.some(p => p.length)) ||
-    [...document.querySelectorAll('.gdlg:not([hidden]):not(#version-notice),.ajmodal:not([hidden]),.sheet')].some(n => n.getClientRects().length && getComputedStyle(n).visibility !== 'hidden') ||
-    (document.activeElement && document.activeElement !== input && document.activeElement.matches('input,textarea,[contenteditable=true]')));
-}
-
 // ---- drafts (§10.14: sealed in IndexedDB, 24 h, deleted on unpair / re-pair) -------------------------
 const DRAFT_TTL_MS = 24 * 3600 * 1000;
 let draftTimer = 0, draftQ = Promise.resolve();
@@ -1674,8 +1698,7 @@ export function saveDraft(){
     try{
       if (!tx.trim()) await dbDel("draft");
       else await putSealed("draft", {t: tx, at: Date.now()});
-      return true;
-    }catch(_){ return false; }
+    }catch(_){}
   }));
 }
 function draftSoon(){ clearTimeout(draftTimer); draftTimer = setTimeout(saveDraft, 600); }
@@ -2369,7 +2392,6 @@ export function hostVersionIs(v){
 function toolItems(all){
   const cmd = t('r.meet.cmd'), out = [[cmd, t('r.meet.desc'), ""]];
   if (all && cmd !== "/meeting-notes") out.push(["/meeting-notes", t('r.meet.desc'), ""]);
-  if (hostMenu?.father) out.push(hostMenu.father);
   return out;
 }
 // P238: /switch-harness (ADR-P155) sits among Agent J's one-tap commands (after /customize), with the page's own sentence — the host's list could
@@ -2405,10 +2427,7 @@ function insertSlash(cmd){
 function menuFromHost(j){
   if (!j || !Array.isArray(j.items)) return null;
   const items = [], skills = [], seen = new Set();
-  // The host keeps up to 60 owner rows, then appends its two built-in Agent commands.
-  const builtins = j.items.slice(MENU_LIMITS.items, MENU_LIMITS.items + 2).filter(it =>
-    it && (it.cmd === SWITCH_CMD || it.cmd === "/feedback-to-agentj-father"));
-  for (const it of j.items.slice(0, MENU_LIMITS.items).concat(builtins)){
+  for (const it of j.items.slice(0, MENU_LIMITS.items)){
     if (!it || typeof it.cmd !== "string" || typeof it.desc !== "string") continue;
     const cmd = it.cmd.slice(0, MENU_LIMITS.cmd);
     if (!MENU_CMD_RE.test(cmd) || seen.has(cmd)) continue;
@@ -2423,8 +2442,7 @@ function menuFromHost(j){
     skills.push([cmd, typeof s.desc === "string" ? s.desc.slice(0, MENU_LIMITS.desc) : "", t('r.menu.skills')]);
   }
   const switchHarness = items.some(it => it[0] === SWITCH_CMD);
-  const father = items.find(it => it[0] === "/feedback-to-agentj-father");
-  return {father, items: items.filter(it => it[0] !== SWITCH_CMD && it !== father), skills: skills.filter(it => it[0] !== SWITCH_CMD), switchHarness,
+  return {items: items.filter(it => it[0] !== SWITCH_CMD), skills: skills.filter(it => it[0] !== SWITCH_CMD), switchHarness,
           upgrade: j.upgrade && typeof j.upgrade === "object" ? j.upgrade : {}, source: j.source === "file" ? "file" : "default"};
 }
 const IN_APP = / (?:JarvisApp|AgentJApp)\/\d/.test(navigator.userAgent);
@@ -3496,7 +3514,7 @@ export function init(ctx){
 
   // chrome
   new MutationObserver(() => paintChrome()).observe(document.body,
-    {attributes: true, subtree: true, attributeFilter: ["hidden", "data-status", "data-conn", "data-kind", "data-sheet", "data-kb", "data-reader", "data-view"]});
+    {attributes: true, attributeFilter: ["data-status", "data-conn", "data-kind", "data-sheet", "data-kb", "data-reader", "data-view"]});
   new MutationObserver(() => paintChrome(true)).observe(document.documentElement, {attributes: true, attributeFilter: ["data-theme"]});
   document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") { paintChrome(true); showPage(); } });
   window.addEventListener("pageshow", () => paintChrome(true));
@@ -3514,7 +3532,7 @@ export function init(ctx){
   addEventListener("pagehide", pillFlush);
   // P207 (追加 2): the logo — tap = the page's type size (unchanged), hold = the first unread reply (was: back to 中, which Leo
   // found did nothing; 中 is one more tap away and Settings keeps the reset)
-  pressable(el("orb"), () => C.menuPages(), () => C.goChat());   // @ix app.pages_menu page.go_chat
+  pressable(el("orb"), () => setFz((fzAt + 1) % FZ_STEPS.length, true), () => goFirstUnread(true));   // @ix app.font_step page.first_unread
 
   el("omMore").addEventListener("click", () => setOm(!el("om").classList.contains("open")));   // @ix page.expand
   // P181: a double tap / double click on the source card's words = 「…」 / O (open ⇄ close here, never the full-screen reader);
@@ -3532,10 +3550,11 @@ export function init(ctx){
   el("copyReply").addEventListener("click", copyReply);   // @ix card.copy
   el("replyBtn").addEventListener("click", () => startReply(currentPage()));   // @ix card.reply
   el("webReportBtn").addEventListener("click", () => webReport(currentPage()));   // P216 @ix card.web_report
-  try{ const barSize = new ResizeObserver(() => fitBar());
-    barSize.observe(el("rmbar")); barSize.observe(el("rmIcons"));
-    new MutationObserver(fitBar).observe(el("rmIcons"), {childList:true,subtree:true,attributes:true,attributeFilter:["hidden"]});
-  }catch(_){}
+  // P238: 「⋯」 on a narrow card; a tap anywhere else, Esc or a page turn closes its popover
+  el("rmMoreBtn").addEventListener("click", e => { e.stopPropagation(); if (el("rmMore").hidden) openBarMore(); else closeBarMore(); });
+  document.addEventListener("click", e => { if (!(e.target.closest && e.target.closest("#rmMore"))) closeBarMore(); });
+  document.addEventListener("keydown", e => { if (e.key === "Escape" && !el("rmMore").hidden){ e.stopPropagation(); closeBarMore(); el("rmMoreBtn").focus(); } }, true);
+  try{ new ResizeObserver(() => fitBar()).observe(el("rmbar")); }catch(_){}
   for (const id of ["qbX", "qbJump"]) el(id).addEventListener("pointerdown", e => e.preventDefault());
   el("qbX").addEventListener("click", cancelReply);   // @ix compose.cancel_reply
   el("qbJump").addEventListener("click", () => { if (replyTo) jumpToTurn(replyTo.id); });
@@ -3967,7 +3986,7 @@ export function init(ctx){
   const scrollStep = () => Math.max(40, Math.round(mainEl.clientHeight * 0.25));
   const scrollScreen = () => Math.max(40, Math.round(mainEl.clientHeight * 0.9));
   const pick = id => { closeMenu(); el(id).click(); };
-  const shown = id => { const b = el(id); return !!b && !b.hidden && !b.disabled && (b.getClientRects().length > 0); };
+  const shown = id => { const b = el(id); return !!b && !b.hidden && !b.disabled && (b.getClientRects().length > 0 || b.classList.contains("folded")); };   // P238: folded into 「⋯」 still counts
   // 「这一页的文件」: the file card that has the focus, else the first one of this page; its own icon does the rest.
   const fileAct = cls => {
     const fc = document.activeElement?.closest?.(".mcard") || el("words").querySelector(".mcard") || el("mstrip")?.querySelector(".mcard");
@@ -4003,7 +4022,6 @@ export function init(ctx){
     "file.share": () => fileAct("sh"),
     "file.mail": () => fileAct("mail"),
     "file.forward": () => fileAct("tg"),
-    "app.pages_menu": () => C.menuPages(),
     "app.font_step": () => setFz((fzAt + 1) % FZ_STEPS.length, true),
     "app.rename_agent": () => { if (isReady()) openAgentName(); else toast(t('p181.name.offline'), 2600); },
     "app.rename_remote": () => { const p = currentPage(); if (p && p.source && p.source.k === "phone") openRename(p.source); else toast(t('r.ix.noRemote'), 2000); },
@@ -4017,8 +4035,6 @@ export function init(ctx){
     "app.scan": () => { closeMenu(); if (C.scan) C.scan(); },
     "app.settings": () => { closeMenu(); closeSug(); C.settings && C.settings(); },
     "app.keys": () => openKeys(),
-    "app.upgrade_host": () => el("set-hostupg").click(),
-    "app.refresh_web": () => el("set-refresh").click(),
     "app.pending": () => { if (shown("pendTag")) el("pendTag").click(); },
     "compose.focus": () => { closeMenu(); input.focus(); input.setSelectionRange(input.value.length, input.value.length); },
     // P154 追加 8: "/" outside the field = into the field with the "/" typed at the end of the draft — the same input event

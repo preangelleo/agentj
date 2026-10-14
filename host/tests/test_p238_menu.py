@@ -91,7 +91,7 @@ class EveryCombination(unittest.TestCase):
                                 if own in ("config", "both"):
                                     self.assertEqual(cmds[0], "/good-morning", "the owner's own commands come first")
                                 if own == "file":
-                                    self.assertEqual(cmds, ["/deploy", "/goal", "/switch-harness", "/feedback-to-agentj-father"])
+                                    self.assertEqual(cmds, ["/deploy", "/goal", "/switch-harness"])
                                 if own == "none":
                                     self.assertIn("/add-friend", cmds)
                                 skills = [x["cmd"] for x in m["skills"]]
@@ -104,7 +104,7 @@ class EveryCombination(unittest.TestCase):
     def test_owner_list_with_its_own_switch_harness_keeps_the_owners_words(self):
         rows = [{"id": "sw", "cmd": "/switch-harness", "desc": "我自己的说明", "group": "常用"}, GM]
         out = menu.for_phone(None, [], "zh", rows)
-        self.assertEqual([i["cmd"] for i in out["items"]], ["/switch-harness", "/good-morning", "/goal", "/feedback-to-agentj-father"])
+        self.assertEqual([i["cmd"] for i in out["items"]], ["/switch-harness", "/good-morning", "/goal"])
         self.assertEqual(out["items"][0]["desc"], "我自己的说明")
 
     def test_all_rows_removed_falls_back_to_the_defaults(self):
@@ -115,7 +115,7 @@ class EveryCombination(unittest.TestCase):
     def test_a_full_owner_list_still_gets_switch_harness(self):
         rows = [{"id": f"c{i}", "cmd": f"/c{i}", "desc": "x"} for i in range(menu.MAX_ITEMS)]
         cmds = [i["cmd"] for i in menu.for_phone(None, [], "zh", rows)["items"]]
-        self.assertEqual(cmds[-2:], ["/switch-harness", "/feedback-to-agentj-father"])
+        self.assertEqual(cmds[-1], "/switch-harness")
         self.assertNotIn("/goal", cmds)
 
     def test_serve_uses_the_single_answer(self):

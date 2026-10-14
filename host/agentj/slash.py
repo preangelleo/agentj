@@ -28,7 +28,7 @@ from dataclasses import dataclass, field
 WHITELIST = ("clear", "compact", "model", "context", "cost", "usage", "status", "help", "stop", "update")
 INTERNAL = ("undo_clear",)                      # the phone's 「撤销清空」 button (never typed)
 # P155: not run by the host — always handed to the main Agent (any harness), rewritten by switch_harness.agent_text
-AGENT_CMDS = ("switch-harness", "feedback-to-agentj-father")
+AGENT_CMDS = ("switch-harness",)
 LABEL = {"clear": "清空", "compact": "压缩", "model": "换模型", "context": "上下文", "cost": "花费", "usage": "用量",
          "status": "状态", "help": "帮助", "stop": "停止", "undo_clear": "撤销清空", "skill": "技能", "refused": "命令", "goal": "目标"}
 ARG_MAX = 200

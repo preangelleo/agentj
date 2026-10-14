@@ -134,7 +134,7 @@ agentj --help
 
 ```text
 usage: agentj [-h] [-V] [--migrate-legacy] [--instance N] [--fresh]
-              {doctor,service,update,init,serve,protocol,pair,devices,revoke,send,status,name,admin,login,report,unlink,report-hostname,remote-pair,remote-unbind,agent,passphrase,approvals,feedback,stop,resume,memory,activity,config,history,inbox,asr,tasks,wizard,keep-awake,browser,setup,google,mail,contacts,workflows,sudo,secret,provider,sudo-helper,docs-rule,handover,telegram-cursor,plaza,support,capability,goal,heartbeat,quota,busy,recall,bots,friends,codex-sandbox,migrate,alias,instances,label,onboarding} ...
+              {doctor,service,update,init,serve,protocol,pair,devices,revoke,send,status,name,admin,login,report,unlink,report-hostname,remote-pair,remote-unbind,agent,passphrase,approvals,feedback,stop,resume,memory,activity,config,history,inbox,asr,tasks,wizard,keep-awake,browser,setup,google,mail,contacts,sudo,secret,provider,sudo-helper,docs-rule,handover,telegram-cursor,plaza,support,capability,goal,heartbeat,busy,recall,bots,friends,codex-sandbox,migrate,alias,instances,label,onboarding} ...
 ```
 
 | Argument | Default | Required | Choices | Help |
@@ -987,8 +987,7 @@ agentj busy run --help
 
 ```text
 usage: agentj busy run [-h] [--who WHO] [--label LABEL] [--kind {ceo,temp}]
-                       [--report REPORT] [--harness HARNESS] [--model MODEL]
-                       [--workflow WORKFLOW] [--role ROLE] [--parent PARENT]
+                       [--report REPORT]
                        ...
 ```
 
@@ -999,11 +998,6 @@ usage: agentj busy run [-h] [--who WHO] [--label LABEL] [--kind {ceo,temp}]
 | `--label` | `""` | false | — | `在干什么（一句话标题，最多 120 字）/ what (a one-line title, ≤ 120 characters)` |
 | `--kind` | `"ceo"` | false | `ceo`, `temp` | `` |
 | `--report` | `null` | false | — | `the REPORT file whose first line the phone shows when this row is tapped` |
-| `--harness` | `null` | false | — | `P244 task display metadata: harness` |
-| `--model` | `null` | false | — | `P244 task display metadata: model` |
-| `--workflow` | `null` | false | — | `P244 task display metadata: workflow` |
-| `--role` | `null` | false | — | `P244 task display metadata: role` |
-| `--parent` | `null` | false | — | `P244 task display metadata: parent` |
 | `command` | `null` | false | — | `` |
 
 ### agentj busy show
@@ -1039,9 +1033,7 @@ agentj busy start --help
 
 ```text
 usage: agentj busy start [-h] [--who WHO] [--label LABEL] [--kind {ceo,temp}]
-                         [--report REPORT] [--harness HARNESS] [--model MODEL]
-                         [--workflow WORKFLOW] [--role ROLE] [--parent PARENT]
-                         [--key KEY] [--pid PID]
+                         [--report REPORT] [--key KEY] [--pid PID]
 ```
 
 | Argument | Default | Required | Choices | Help |
@@ -1051,11 +1043,6 @@ usage: agentj busy start [-h] [--who WHO] [--label LABEL] [--kind {ceo,temp}]
 | `--label` | `""` | false | — | `在干什么（一句话标题，最多 120 字）/ what (a one-line title, ≤ 120 characters)` |
 | `--kind` | `"ceo"` | false | `ceo`, `temp` | `` |
 | `--report` | `null` | false | — | `the REPORT file whose first line the phone shows when this row is tapped` |
-| `--harness` | `null` | false | — | `P244 task display metadata: harness` |
-| `--model` | `null` | false | — | `P244 task display metadata: model` |
-| `--workflow` | `null` | false | — | `P244 task display metadata: workflow` |
-| `--role` | `null` | false | — | `P244 task display metadata: role` |
-| `--parent` | `null` | false | — | `P244 task display metadata: parent` |
 | `--key` | `""` | false | — | `the name to stop it with` |
 | `--pid` | `null` | false | — | `removed when this pid ends` |
 
@@ -3343,121 +3330,6 @@ usage: agentj provider profile use [-h] id
 | `-h / --help` | `null` | false | — | `show this help message and exit` |
 | `id` | `null` | true | — | `` |
 
-### agentj quota
-
-```text
-weekly quota pace and reset opportunities per harness
-```
-
-```bash
-agentj quota --help
-```
-
-```text
-usage: agentj quota [-h] [--json] [--remind] {on,off,reset} ...
-```
-
-| Argument | Default | Required | Choices | Help |
-| --- | --- | --- | --- | --- |
-| `-h / --help` | `null` | false | — | `show this help message and exit` |
-| `--json` | `false` | false | — | `` |
-| `--remind` | `false` | false | — | `只输出今天还没提醒过的提醒，并记为已提醒（晨报 / 例行用）/ only today's not-yet-given reminders, marked given` |
-
-### agentj quota off
-
-```text
-reminders off
-```
-
-```bash
-agentj quota off --help
-```
-
-```text
-usage: agentj quota off [-h]
-```
-
-| Argument | Default | Required | Choices | Help |
-| --- | --- | --- | --- | --- |
-| `-h / --help` | `null` | false | — | `show this help message and exit` |
-
-### agentj quota on
-
-```text
-打开额度提醒（默认开）/ reminders on (default)
-```
-
-```bash
-agentj quota on --help
-```
-
-```text
-usage: agentj quota on [-h]
-```
-
-| Argument | Default | Required | Choices | Help |
-| --- | --- | --- | --- | --- |
-| `-h / --help` | `null` | false | — | `show this help message and exit` |
-
-### agentj quota reset
-
-```text
-登记额外 reset（各 harness 都查不到时由主人告诉你）/ record extra resets the harness does not expose
-```
-
-```bash
-agentj quota reset --help
-```
-
-```text
-usage: agentj quota reset [-h] {add,used} ...
-```
-
-| Argument | Default | Required | Choices | Help |
-| --- | --- | --- | --- | --- |
-| `-h / --help` | `null` | false | — | `show this help message and exit` |
-
-### agentj quota reset add
-
-```text
-record one
-```
-
-```bash
-agentj quota reset add --help
-```
-
-```text
-usage: agentj quota reset add [-h] --expires EXPIRES [--note NOTE]
-                              {claude,codex,opencode}
-```
-
-| Argument | Default | Required | Choices | Help |
-| --- | --- | --- | --- | --- |
-| `-h / --help` | `null` | false | — | `show this help message and exit` |
-| `harness` | `null` | true | `claude`, `codex`, `opencode` | `` |
-| `--expires` | `null` | true | — | `YYYY-MM-DD 或 'YYYY-MM-DD HH:MM'（本地时间）/ local time` |
-| `--note` | `null` | false | — | `a note, never a credential` |
-
-### agentj quota reset used
-
-```text
-the owner used one
-```
-
-```bash
-agentj quota reset used --help
-```
-
-```text
-usage: agentj quota reset used [-h] {claude,codex,opencode}
-```
-
-| Argument | Default | Required | Choices | Help |
-| --- | --- | --- | --- | --- |
-| `-h / --help` | `null` | false | — | `show this help message and exit` |
-| `harness` | `null` | true | `claude`, `codex`, `opencode` | `` |
-
 ### agentj recall
 
 ```text
@@ -3864,7 +3736,7 @@ agentj support --help
 ```
 
 ```text
-usage: agentj support [-h] {ask,report,feedback,thread,list} ...
+usage: agentj support [-h] {ask,report,thread,list} ...
 ```
 
 | Argument | Default | Required | Choices | Help |
@@ -3890,34 +3762,6 @@ usage: agentj support ask [-h] [--file FILE] [--attach-doctor]
 | Argument | Default | Required | Choices | Help |
 | --- | --- | --- | --- | --- |
 | `-h / --help` | `null` | false | — | `show this help message and exit` |
-| `text` | `null` | false | — | `问题全文（或 --file）/ the text (or --file)` |
-| `--file` | `null` | false | — | `read the text from a file` |
-| `--attach-doctor` | `false` | false | — | `attach the redacted doctor output + version` |
-| `--thread` | `null` | false | — | `continue a thread (st_…)` |
-| `--wait` | `180` | false | — | `等回复的秒数（0 = 不等）/ seconds to wait (0 = do not wait)` |
-| `--lang` | `null` | false | `zh`, `en` | `` |
-
-### agentj support feedback
-
-```text
-Feedback to Agent J Father
-```
-
-```bash
-agentj support feedback --help
-```
-
-```text
-usage: agentj support feedback [-h] [--kind {bug,report}] [--file FILE]
-                               [--attach-doctor] [--thread THREAD]
-                               [--wait WAIT] [--lang {zh,en}]
-                               [text ...]
-```
-
-| Argument | Default | Required | Choices | Help |
-| --- | --- | --- | --- | --- |
-| `-h / --help` | `null` | false | — | `show this help message and exit` |
-| `--kind` | `"report"` | false | `bug`, `report` | `` |
 | `text` | `null` | false | — | `问题全文（或 --file）/ the text (or --file)` |
 | `--file` | `null` | false | — | `read the text from a file` |
 | `--attach-doctor` | `false` | false | — | `attach the redacted doctor output + version` |
@@ -4561,28 +4405,7 @@ usage: agentj wizard templates [-h] [--dir DIR] [--json]
 | `--dir` | `null` | false | — | `Agent 的工作目录（默认 agentj agent 设的目录）/ the Agent's working folder` |
 | `--json` | `false` | false | — | `` |
 
-### agentj workflows
-
-```text
-工作根目录里的工作流、技能和记忆文件（只读，手机「工作流」页看到的）/ the workflows, skills and memory files the phone's pages show (read-only)
-```
-
-```bash
-agentj workflows --help
-```
-
-```text
-usage: agentj workflows [-h] [--json]
-```
-
-| Argument | Default | Required | Choices | Help |
-| --- | --- | --- | --- | --- |
-| `-h / --help` | `null` | false | — | `show this help message and exit` |
-| `--json` | `false` | false | — | `` |
-
 </details>
-
-Agent J Father is the official feedback platform. Say “Please report this to Agent J’s developers (support platform)”, or “Tell your dad about this”. Use `/feedback-to-agentj-father <text>` on the phone: owner requests send after redaction without asking twice; Agent-initiated reports need agreement first.
 
 For AI tool full-access flags, configuration, short aliases and rollback, see [Full-access launch (three ways)](/docs/setup-agents/#full-access).
 
@@ -4724,7 +4547,7 @@ agentj --help
 
 ```text
 usage: agentj [-h] [-V] [--migrate-legacy] [--instance N] [--fresh]
-              {doctor,service,update,init,serve,protocol,pair,devices,revoke,send,status,name,admin,login,report,unlink,report-hostname,remote-pair,remote-unbind,agent,passphrase,approvals,feedback,stop,resume,memory,activity,config,history,inbox,asr,tasks,wizard,keep-awake,browser,setup,google,mail,contacts,workflows,sudo,secret,provider,sudo-helper,docs-rule,handover,telegram-cursor,plaza,support,capability,goal,heartbeat,quota,busy,recall,bots,friends,codex-sandbox,migrate,alias,instances,label,onboarding} ...
+              {doctor,service,update,init,serve,protocol,pair,devices,revoke,send,status,name,admin,login,report,unlink,report-hostname,remote-pair,remote-unbind,agent,passphrase,approvals,feedback,stop,resume,memory,activity,config,history,inbox,asr,tasks,wizard,keep-awake,browser,setup,google,mail,contacts,sudo,secret,provider,sudo-helper,docs-rule,handover,telegram-cursor,plaza,support,capability,goal,heartbeat,busy,recall,bots,friends,codex-sandbox,migrate,alias,instances,label,onboarding} ...
 ```
 
 | 参数 | 默认值 | 必填 | 可选值 | 说明 |
@@ -5577,8 +5400,7 @@ agentj busy run --help
 
 ```text
 usage: agentj busy run [-h] [--who WHO] [--label LABEL] [--kind {ceo,temp}]
-                       [--report REPORT] [--harness HARNESS] [--model MODEL]
-                       [--workflow WORKFLOW] [--role ROLE] [--parent PARENT]
+                       [--report REPORT]
                        ...
 ```
 
@@ -5589,11 +5411,6 @@ usage: agentj busy run [-h] [--who WHO] [--label LABEL] [--kind {ceo,temp}]
 | `--label` | `""` | false | — | `在干什么（一句话标题，最多 120 字）/ what (a one-line title, ≤ 120 characters)` |
 | `--kind` | `"ceo"` | false | `ceo`, `temp` | `` |
 | `--report` | `null` | false | — | `报告文件路径：手机点开这一条时显示它的第一行` |
-| `--harness` | `null` | false | — | `P244 task display metadata: harness` |
-| `--model` | `null` | false | — | `P244 task display metadata: model` |
-| `--workflow` | `null` | false | — | `P244 task display metadata: workflow` |
-| `--role` | `null` | false | — | `P244 task display metadata: role` |
-| `--parent` | `null` | false | — | `P244 task display metadata: parent` |
 | `command` | `null` | false | — | `` |
 
 ### agentj busy show
@@ -5629,9 +5446,7 @@ agentj busy start --help
 
 ```text
 usage: agentj busy start [-h] [--who WHO] [--label LABEL] [--kind {ceo,temp}]
-                         [--report REPORT] [--harness HARNESS] [--model MODEL]
-                         [--workflow WORKFLOW] [--role ROLE] [--parent PARENT]
-                         [--key KEY] [--pid PID]
+                         [--report REPORT] [--key KEY] [--pid PID]
 ```
 
 | 参数 | 默认值 | 必填 | 可选值 | 说明 |
@@ -5641,11 +5456,6 @@ usage: agentj busy start [-h] [--who WHO] [--label LABEL] [--kind {ceo,temp}]
 | `--label` | `""` | false | — | `在干什么（一句话标题，最多 120 字）/ what (a one-line title, ≤ 120 characters)` |
 | `--kind` | `"ceo"` | false | `ceo`, `temp` | `` |
 | `--report` | `null` | false | — | `报告文件路径：手机点开这一条时显示它的第一行` |
-| `--harness` | `null` | false | — | `P244 task display metadata: harness` |
-| `--model` | `null` | false | — | `P244 task display metadata: model` |
-| `--workflow` | `null` | false | — | `P244 task display metadata: workflow` |
-| `--role` | `null` | false | — | `P244 task display metadata: role` |
-| `--parent` | `null` | false | — | `P244 task display metadata: parent` |
 | `--key` | `""` | false | — | `稍后 stop 用的名字` |
 | `--pid` | `null` | false | — | `这个进程结束就自动撤下` |
 
@@ -7933,121 +7743,6 @@ usage: agentj provider profile use [-h] id
 | `-h / --help` | `null` | false | — | `show this help message and exit` |
 | `id` | `null` | true | — | `` |
 
-### agentj quota
-
-```text
-额度管家：各 harness 周额度进度、均分线、reset 机会 · --json · --remind · on · off · reset add\|used
-```
-
-```bash
-agentj quota --help
-```
-
-```text
-usage: agentj quota [-h] [--json] [--remind] {on,off,reset} ...
-```
-
-| 参数 | 默认值 | 必填 | 可选值 | 说明 |
-| --- | --- | --- | --- | --- |
-| `-h / --help` | `null` | false | — | `show this help message and exit` |
-| `--json` | `false` | false | — | `` |
-| `--remind` | `false` | false | — | `只输出今天还没提醒过的提醒，并记为已提醒（晨报 / 例行用）/ only today's not-yet-given reminders, marked given` |
-
-### agentj quota off
-
-```text
-关闭额度提醒
-```
-
-```bash
-agentj quota off --help
-```
-
-```text
-usage: agentj quota off [-h]
-```
-
-| 参数 | 默认值 | 必填 | 可选值 | 说明 |
-| --- | --- | --- | --- | --- |
-| `-h / --help` | `null` | false | — | `show this help message and exit` |
-
-### agentj quota on
-
-```text
-打开额度提醒（默认开）/ reminders on (default)
-```
-
-```bash
-agentj quota on --help
-```
-
-```text
-usage: agentj quota on [-h]
-```
-
-| 参数 | 默认值 | 必填 | 可选值 | 说明 |
-| --- | --- | --- | --- | --- |
-| `-h / --help` | `null` | false | — | `show this help message and exit` |
-
-### agentj quota reset
-
-```text
-登记额外 reset（各 harness 都查不到时由主人告诉你）/ record extra resets the harness does not expose
-```
-
-```bash
-agentj quota reset --help
-```
-
-```text
-usage: agentj quota reset [-h] {add,used} ...
-```
-
-| 参数 | 默认值 | 必填 | 可选值 | 说明 |
-| --- | --- | --- | --- | --- |
-| `-h / --help` | `null` | false | — | `show this help message and exit` |
-
-### agentj quota reset add
-
-```text
-登记一次：agentj quota reset add claude --expires 2026-10-20
-```
-
-```bash
-agentj quota reset add --help
-```
-
-```text
-usage: agentj quota reset add [-h] --expires EXPIRES [--note NOTE]
-                              {claude,codex,opencode}
-```
-
-| 参数 | 默认值 | 必填 | 可选值 | 说明 |
-| --- | --- | --- | --- | --- |
-| `-h / --help` | `null` | false | — | `show this help message and exit` |
-| `harness` | `null` | true | `claude`, `codex`, `opencode` | `` |
-| `--expires` | `null` | true | — | `YYYY-MM-DD 或 'YYYY-MM-DD HH:MM'（本地时间）/ local time` |
-| `--note` | `null` | false | — | `备注，不写凭据` |
-
-### agentj quota reset used
-
-```text
-主人按掉了一次：去掉最早过期的那次
-```
-
-```bash
-agentj quota reset used --help
-```
-
-```text
-usage: agentj quota reset used [-h] {claude,codex,opencode}
-```
-
-| 参数 | 默认值 | 必填 | 可选值 | 说明 |
-| --- | --- | --- | --- | --- |
-| `-h / --help` | `null` | false | — | `show this help message and exit` |
-| `harness` | `null` | true | `claude`, `codex`, `opencode` | `` |
-
 ### agentj recall
 
 ```text
@@ -8454,7 +8149,7 @@ agentj support --help
 ```
 
 ```text
-usage: agentj support [-h] {ask,report,feedback,thread,list} ...
+usage: agentj support [-h] {ask,report,thread,list} ...
 ```
 
 | 参数 | 默认值 | 必填 | 可选值 | 说明 |
@@ -8480,34 +8175,6 @@ usage: agentj support ask [-h] [--file FILE] [--attach-doctor]
 | 参数 | 默认值 | 必填 | 可选值 | 说明 |
 | --- | --- | --- | --- | --- |
 | `-h / --help` | `null` | false | — | `show this help message and exit` |
-| `text` | `null` | false | — | `问题全文（或 --file）/ the text (or --file)` |
-| `--file` | `null` | false | — | `从文件读正文` |
-| `--attach-doctor` | `false` | false | — | `附上脱敏后的 agentj doctor 输出和版本` |
-| `--thread` | `null` | false | — | `接着一个已有会话问` |
-| `--wait` | `180` | false | — | `等回复的秒数（0 = 不等）/ seconds to wait (0 = do not wait)` |
-| `--lang` | `null` | false | `zh`, `en` | `` |
-
-### agentj support feedback
-
-```text
-反馈给 Agent J 爸爸
-```
-
-```bash
-agentj support feedback --help
-```
-
-```text
-usage: agentj support feedback [-h] [--kind {bug,report}] [--file FILE]
-                               [--attach-doctor] [--thread THREAD]
-                               [--wait WAIT] [--lang {zh,en}]
-                               [text ...]
-```
-
-| 参数 | 默认值 | 必填 | 可选值 | 说明 |
-| --- | --- | --- | --- | --- |
-| `-h / --help` | `null` | false | — | `show this help message and exit` |
-| `--kind` | `"report"` | false | `bug`, `report` | `` |
 | `text` | `null` | false | — | `问题全文（或 --file）/ the text (or --file)` |
 | `--file` | `null` | false | — | `从文件读正文` |
 | `--attach-doctor` | `false` | false | — | `附上脱敏后的 agentj doctor 输出和版本` |
@@ -9151,27 +8818,6 @@ usage: agentj wizard templates [-h] [--dir DIR] [--json]
 | `--dir` | `null` | false | — | `Agent 的工作目录（默认 agentj agent 设的目录）/ the Agent's working folder` |
 | `--json` | `false` | false | — | `` |
 
-### agentj workflows
-
-```text
-工作根目录里的工作流、技能和记忆文件（只读，手机「工作流」页看到的）/ the workflows, skills and memory files the phone's pages show (read-only)
-```
-
-```bash
-agentj workflows --help
-```
-
-```text
-usage: agentj workflows [-h] [--json]
-```
-
-| 参数 | 默认值 | 必填 | 可选值 | 说明 |
-| --- | --- | --- | --- | --- |
-| `-h / --help` | `null` | false | — | `show this help message and exit` |
-| `--json` | `false` | false | — | `` |
-
 </details>
-
-Agent J Father（Agent J 爸爸 / Agent J 父亲）是官方反馈平台。标准说法：请把问题汇报给 Agent J 开发者（客服平台）；轻松说法：把这事告诉你爸爸。手机用 `/feedback-to-agentj-father <内容>`，主人下令脱敏直发，Agent 自发先请示。
 
 AI 工具的全权限启动参数、配置、短别名与回退方法：[全权限启动（三种方式）](/docs/setup-agents/#full-access)。

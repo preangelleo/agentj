@@ -26,7 +26,7 @@ const APP = read(pub('app.js'));
 const MODULES = ['api', 'blobs', 'boot', 'controls', 'md', 'push', 'relay', 'session', 'settings', 'snap', 'speak', 'store', 't', 'ui', 'wav', 'elevate', 'outbox', 'render', 'friends', 'qr', 'share', 'device-label', 'sfx', 'shotclip', 'sendvol',
   'media', 'mediawire', 'preview', 'mailfwd', 'icons', 'search',   // P183: the file cards, the preview views and the mail-dialog door
   'unread', 'interactions.gen',   // P207: this device's unread mark (turn ids only) + the key table generated from interactions.json
-  'version-notice', 'five-pages', 'workflow-compose'];   // P240: the version check (its one metadata GET had a branch below but the file was never in this list)
+  'version-notice'];   // P240: the version check (its one metadata GET had a branch below but the file was never in this list)
 const OURS_FILES = ['app.js', ...MODULES.map((m) => `js/${m}.js`)];
 const OURS = OURS_FILES.map((r) => read(pub(r))).join('\n');
 const HTML = read(pub('index.html'));
@@ -111,9 +111,6 @@ test('no URLs to anywhere in shipped files except links to agentj.app pages', ()
         // P210: the pairing page says the link 「以 https:// 开头」 — a bare scheme in text, no address at all
         if (/^https:\/\/[.)）]?$/.test(m[0]) && ['index.html', 'i18n.js'].includes(rel(f))) continue;
         if (rel(f) === 'brand/lang.js' && m[0] === 'http://www.w3.org/2000/svg') continue;  // P236: the header's globe / tick icons
-        if ((rel(f) === 'js/five-pages.js' || rel(f) === 'js/vendor-marks.js' || /^assets\/vendors\/[^/]+\.svg$/.test(rel(f))) && ['http://www.w3.org/2000/svg','http://www.w3.org/1999/xlink'].includes(m[0].replace(/\\$/, ''))) continue; // P244: XML namespace, never a request
-        // P266: owner-clicked ChatGPT security settings; never fetched by this page.
-        if (rel(f) === 'js/authrescue.js' && m[0] === 'https://chatgpt.com/#settings/Security') continue;
         assert.match(m[0], SITE_LINK, `${rel(f)} contains URL ${m[0]}`);
       }
     }
@@ -214,12 +211,12 @@ test('app.js + js/*.js: only WebSocket egress, non-extractable keys, no plaintex
     // P207: this device's unread mark (UNREAD_KEY = "aj.unread": {e, m, s} — the history epoch and turn ids, numbers only)
     'getItem(UNREAD_KEY)', 'setItem(UNREAD_KEY)',
     // P240: the version offer a refresh already tried (VER_KEY = "aj.verRefresh": {from, to}, two public version strings)
-    'getItem(VER_KEY)', 'setItem(VER_KEY)', 'setItem(VER_KEY)', 'getItem(DONE_KEY)', 'setItem(DONE_KEY)'].sort());
+    'getItem(VER_KEY)', 'setItem(VER_KEY)'].sort());
   assert.match(OURS, /const VER_KEY='aj\.verRefresh';/);
   assert.match(OURS, /export const UNREAD_KEY = 'aj\.unread';/);
   assert.match(OURS, /const VOLUME_KEY = 'aj\.sfxVolume';/); assert.match(OURS, /const SHOT_KEY = 'aj\.shotClip';/);
   assert.match(OURS, /const FZ_KEY = "aj\.pageFz";/); assert.match(OURS, /DIM_KEY = "aj\.recDim";/);
-  assert.equal(OURS_FILES.reduce((n, r) => n + (code(read(pub(r))).match(/localStorage/g) || []).length, 0), 35, 'localStorage appears only in these calls (P240: aj.verRefresh; P171: + the two aj.theme writes; P182: aj.test.segMs only shortens a recording part, tests only; P205: aj.recDim) (homeInstalled is a boolean, never pairing data)');
+  assert.equal(OURS_FILES.reduce((n, r) => n + (code(read(pub(r))).match(/localStorage/g) || []).length, 0), 32, 'localStorage appears only in these calls (P240: aj.verRefresh; P171: + the two aj.theme writes; P182: aj.test.segMs only shortens a recording part, tests only; P205: aj.recDim) (homeInstalled is a boolean, never pairing data)');
   assert.match(OURS, /const IID_KEY = 'aj\.iid';/);
   assert.match(OURS, /const PAIRED_KEY = 'aj\.paired';/);
   assert.match(OURS, /const FONT_KEY = 'aj\.fontScale';/);
@@ -246,7 +243,7 @@ test('app.js + js/*.js: only WebSocket egress, non-extractable keys, no plaintex
   // §10.14 / P33-X13: revoke wipes like unpair — drafts, history, the sealing key, and everything in memory
   assert.match(APP, /async function revoked\(why = 'revoked'\) \{\n  session\.closeSession\(\);\n[^}]*await forgetLocal\(\);/, 'revoked() wipes local records');   // 0.15.1: + why
   assert.match(APP, /async function forgetLocal\(\) \{\n  forgetShare\(\);\n  relay\.forgetLocal\(\);\n  friends\.forget\(\);\n  blobs\.forgetAll\(\);\n  elevate\.clear\(\);\n  contacts\.clear\(\);\n  secretout\.clear\(\);\n  longtask\.clear\(\);\n  logincard\.clear\(\);\n  setupcard\.clear\(\);\n  await wipeLocal\(\);\n\}/);   // F17: open sudo / secret cards go too; 0.16: the friends page's data too; F32: pickup cards (+ a shown value); 0.18: opening cards; P184: contact cards + the forward dialog
-  assert.doesNotMatch(APP.slice(APP.indexOf('async function revoked('), APP.indexOf('async function revoked(')+700), /saveDraft/, 'revocation never saves the draft');
+  assert.doesNotMatch(APP, /saveDraft/, 'revocation never saves the draft');
   assert.match(STORE, /generateKey\(\{ name: 'AES-GCM', length: 256 \}, false, \['encrypt', 'decrypt'\]\)/, 'sealing key not extractable');
   assert.match(STORE, /for \(const k of \['draft', 'ihist', 'outbox', 'srch', 'local'\]\)/, 'unpair / re-pair wipes drafts, history, the offline queue, the search pages and the sealing key');
   assert.match(STORE, /indexedDB\.open\('agentjarvis', 1\)/, 'the IndexedDB name stays "agentjarvis" (paired phones keep their keys)');
@@ -547,14 +544,4 @@ test('F13 Settings: the gear replaced the bulb; s / ⌘, / Ctrl+, / ? wired; pre
   assert.match(read(pub('app.css')), /\.words\{font-size:calc\(18px\*var\(--fz\)\*var\(--rs\)\)/);
   // push off is the §9 message, inside the session
   assert.match(read(pub('js/push.js')), /sendApp\(\{ t: 'push_off' \}\)/);
-});
-
-// Licensed vector data is deterministic build input, not an additional network request.
-test('P250 vendor module retains licensed sources and manifest provenance', async () => {
-  const { VENDOR_SVGS } = await import('../public/js/vendor-marks.js');
-  assert.deepEqual(Object.keys(VENDOR_SVGS).sort(), ['deepseek.svg', 'opencode-dark.svg']);
-  for (const [name, svg] of Object.entries(VENDOR_SVGS))
-    assert.equal(svg, read(pub(`assets/vendors/${name}`)));
-  assert.equal(read(pub('js/vendor-marks.js')), sourceFiles().get('js/vendor-marks.js').toString());
-  assert.ok(manifest(sourceFiles()).files['js/vendor-marks.js']);
 });

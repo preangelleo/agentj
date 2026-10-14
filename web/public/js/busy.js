@@ -14,10 +14,8 @@
 import { t, onLang } from './t.js';
 import { registerLayer } from './layers.js';
 import { ROBOTS } from './robots.js';
-import { VENDOR_SVGS } from './vendor-marks.js';
 import { busyLook, onTheme } from './theme.js';   // P169 (§23): the owner's theme may bring its own robots, or the dots
 import { isReady, sendApp } from './session.js';
-import { lang } from './t.js';
 import { longPress } from './longpress.js';
 
 export const MAX_DOTS = 6;
@@ -54,7 +52,6 @@ let agentName = () => 'Agent J';
 let prompt = async () => false;      // P181: relay.sayPreset — the 「定制主题」 message to the main Agent
 let fetchDetail = null;       // P160: api.busyDetail (injected by app.js, so this module stays importable without a session)
 export const DETAIL_POLL_MS = 4000;
-let view = 'tasks';
 let one = null;               // the key of the task whose card is open, or null (the list)
 let oneData = null, oneTimer = 0, oneSeq = 0;
 const $ = (id) => document.getElementById(id);
@@ -68,9 +65,6 @@ export function sanitize(m) {
     const str = (v, n) => (typeof v === 'string' ? v.replace(/[\u0000-\u001f\u007f]/g, '').trim().slice(0, n) : '');
     out.push({
       id: str(x.id, 64), who: str(x.who, 24) || null, kind: x.kind === 'ceo' ? 'ceo' : 'temp', label: str(x.label, LABEL_MAX),
-      robot: Number.isInteger(x.robot)&&x.robot>=0&&x.robot<16?x.robot:null,
-      harness: str(x.harness, 32), model: str(x.model, 100), workflow: str(x.workflow, 80),
-      company: str(x.company, 80), role: str(x.role, 80), parent: str(x.parent, 80),
       lk: x.lk === 'schedule' || x.lk === 'dispatch' ? x.lk : null,
       since: Number.isInteger(x.since) && x.since > 0 ? x.since : null,      // P160: the card's 「已经干了 …」
       c: Number.isInteger(x.c) && x.c >= 0 && x.c < COLORS ? x.c : out.length % COLORS,
@@ -87,8 +81,7 @@ export function assign(list) {
   const rkey = (x) => (x.kind === 'ceo' && x.who ? 'ceo:' + x.who : 'id:' + x.key);
   const used = new Set(), N = robotN();
   const out = list.map((x) => ({ ...x, rk: rkey(x) }));
-  for (const x of out) { if (x.robot!==null && x.robot!==undefined) {x.r=x.robot%N;used.add(x.r);assigned.set(x.rk,x.r);} }
-  for (const x of out) { if(x.r!==undefined)continue;                       // keepers first: a task that already has a robot keeps it
+  for (const x of out) {                       // keepers first: a task that already has a robot keeps it
     const r = assigned.get(x.rk);
     if (r !== undefined && !used.has(r)) { x.r = r; used.add(r); }
   }
@@ -220,11 +213,7 @@ function paintDialog() {
     const li = document.createElement('li');
     const b = document.createElement('b'); b.textContent = who(x);
     const s = document.createElement('span'); s.textContent = what(x); s.title = what(x);
-    const identity = document.createElement('div'); identity.className = 'busy-identity';
-    const brand = document.createElement('strong'); brand.className = 'busy-wordmark'; brand.textContent = harnessName(x.harness);
-    const model = document.createElement('small'); model.textContent = x.model || t('p244.busy44');
-    identity.append(vendorMark(x.harness), brand, vendorMark(x.model, true), model);
-    li.append(fig(x, k, 'row'), b, s, identity);   // 追加 11: every task, its own robot at 24 px (P169 dots: its dot)
+    li.append(fig(x, k, 'row'), b, s);   // 追加 11: every task, its own robot at 24 px (P169 dots: its dot)
     li.setAttribute('role', 'button'); li.tabIndex = 0;     // P160: a tap → this task's card
     li.setAttribute('aria-label', t('busy.detail.open', { who: who(x), what: what(x) }));
     const go = (e) => { e.stopPropagation(); openOne(x.key); };
@@ -232,85 +221,10 @@ function paintDialog() {
     li.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); go(e); } });
     return li;
   }));
-  paintWorkflow();
   paintOne();
   d.querySelector('.sq').dataset.n = String(Math.min(tasks.length, 9));
   d.querySelector('.sq').dataset.big = String(big.length);
 }
-
-// P250: original licensed assets stay byte-identical; the UI uses only approved palette fills.
-const vendorPaletteSvg = new Map();
-function paletteVendor(src) {
-  if (!vendorPaletteSvg.has(src)) vendorPaletteSvg.set(src, Promise.resolve().then(() => {
-    const text=VENDOR_SVGS[src.split('/').pop()];
-    if (!text) throw new Error('vendor_asset_unavailable');
-    const svg = new DOMParser().parseFromString(text, 'image/svg+xml').documentElement;
-    if (svg.localName !== 'svg') throw new Error('vendor_asset_invalid');
-    const tags = new Set(['svg','g','path','rect','polygon','polyline','circle','ellipse','line','defs','clipPath','title']);
-    const fills = {'#211e1e':'var(--c-noir)', '#656363':'var(--c-black-mana)', '#cfcecd':'var(--c-lotion)', '#4d6bfe':'var(--c-lotion)'};
-    for (const node of [svg, ...svg.querySelectorAll('*')]) {
-      if (!tags.has(node.localName)) { node.remove(); continue; }
-      for (const attr of [...node.attributes]) if (/^on/i.test(attr.name) || /href$/i.test(attr.name) || attr.name === 'style') node.removeAttribute(attr.name);
-      for (const prop of ['fill','stroke']) if (node.hasAttribute(prop)) {
-        const color = node.getAttribute(prop).toLowerCase();
-        if (color !== 'none') node.style[prop] = fills[color] || 'var(--c-lotion)';
-      }
-    }
-    svg.style.fill = 'var(--c-lotion)';
-    svg.classList.add('busy-palette-mark');svg.setAttribute('aria-hidden','true');svg.setAttribute('focusable','false');
-    return svg;
-  }));
-  return vendorPaletteSvg.get(src).then(svg => svg.cloneNode(true));
-}
-
-function vendorMark(value, isModel=false) {
-  const wrap=document.createElement('span');wrap.className='busy-vendor';
-  const v=(value||'').toLowerCase();
-  const vendor=v.includes('deepseek')?'deepseek':!isModel&&v==='opencode'?'opencode':null;
-  if(vendor){const img=document.createElement('img');img.alt=vendor==='deepseek'?'DeepSeek':'OpenCode';
-    // The working dialog always uses the dark Noir surface, in both page themes.
-    img.src='assets/vendors/'+(vendor==='deepseek'?'deepseek.svg':'opencode-dark.svg');
-    const fallback=document.createElement('span');fallback.className='busy-vendor-fallback';fallback.textContent=img.alt;
-    wrap.append(img,fallback);paletteVendor(img.src).then(svg=>{wrap.append(svg);wrap.dataset.palette='ready';}).catch(e=>{wrap.dataset.palette='error';wrap.dataset.paletteError=e.name+': '+e.message;});}
-  else if(isModel){wrap.textContent=v.includes('claude')?'Anthropic':v.includes('gemini')?'Google':/gpt|o[134]-/.test(v)?'OpenAI':'';}
-  return wrap;
-}
-export function harnessName(h) {
-  return ({claude:'Claude Code · Anthropic', codex:'Codex · OpenAI', opencode:'OpenCode', gemini:'Gemini · Google',
-    deepseek:'DeepSeek'})[h] || h || t('p244.busy45');
-}
-function paintWorkflow() {
-  if (!$('busyWorkflow')) return;
-  $('busyTasksTab').textContent = t('p244.busy46');
-  $('busyWorkflowTab').textContent = t('p244.busy47');
-  for (const [id, selected] of [['busyTasksTab',view==='tasks'], ['busyWorkflowTab',view==='workflow']]) {
-    $(id).setAttribute('aria-selected', selected); $(id).tabIndex = selected ? 0 : -1;
-  }
-  $('busyList').hidden = view !== 'tasks'; $('busyWorkflow').hidden = view !== 'workflow';
-  const box = $('busyWorkflow'); box.replaceChildren();
-  const groups = new Map();
-  for (const x of keyed(tasks)) {
-    const key = x.workflow || '';
-    if (!groups.has(key)) groups.set(key, []);
-    groups.get(key).push(x);
-  }
-  for (const [folder, workers] of groups) {
-    const section = document.createElement('section'); section.className = 'busy-org';
-    const head = document.createElement('h3'); head.textContent = folder ? workers[0].company || folder : t('p244.busy48');
-    section.append(head);
-    if (folder) {
-      const root = document.createElement('p'); root.className = 'busy-org-root'; root.textContent = t('p244.busy49') + (workers.find(x=>x.role==='CEO')?.who || workers[0].parent || 'CEO');
-      section.append(root);
-    }
-    workers.forEach((x,k)=>{
-      const row=document.createElement('button'); row.type='button'; row.className='busy-org-person';
-      const words=document.createElement('span'); words.textContent=who(x)+' · '+(x.role||t('p244.busy50'));
-      const meta=document.createElement('small'); meta.textContent=folder ? (x.role==='CEO' ? t('p244.busy51') : t('p244.busy52')+(x.parent||'CEO')) : harnessName(x.harness);
-      row.append(robot(x,k,24),words,meta); row.onclick=()=>{view='tasks';paintDialog();openOne(x.key);}; section.append(row);
-    }); box.append(section);
-  }
-}
-function switchView(v) { backToList(); view=v; paintDialog(); }
 
 // ---- P160: one task's card
 /** Seconds → 「不到 1 分钟」 / 「12 分钟」 / 「2 小时 5 分钟」. */
@@ -339,7 +253,6 @@ function paintOne() {
   const sq = d.querySelector('.sq');
   if (!one) { box.hidden = true; box.replaceChildren(); $('busyBack').hidden = true; delete sq.dataset.view; return; }
   sq.dataset.view = 'one';
-  if ($('busyWorkflow')) $('busyWorkflow').hidden = true;
   box.hidden = false; $('busyBack').hidden = false;
   const all = keyed(tasks);
   const k = all.findIndex((x) => x.key === one);
@@ -405,7 +318,6 @@ export function backToList() {
 export function open() {
   if (!tasks.length) return;
   closeLoad();
-  view = 'tasks';
   $('busyDlg').hidden = false;
   paintDialog();
   $('busyClose').focus({ preventScroll: true });
@@ -532,10 +444,6 @@ export function init(fns = {}) {
   if ($('busyBack')) $('busyBack').addEventListener('click', (e) => { e.stopPropagation(); backToList(); });
   $('busyDots').addEventListener('click', (e) => { e.stopPropagation(); open(); });   // @ix app.busy_list
   $('busyClose').addEventListener('click', close);
-  for (const [id,v] of [['busyTasksTab','tasks'],['busyWorkflowTab','workflow']]) if ($(id)) {
-    $(id).onclick=()=>switchView(v);
-    $(id).onkeydown=e=>{if(['ArrowLeft','ArrowRight','Home','End'].includes(e.key)){e.preventDefault();const next=e.key==='Home'?'tasks':e.key==='End'?'workflow':view==='tasks'?'workflow':'tasks';switchView(next);$(next==='tasks'?'busyTasksTab':'busyWorkflowTab').focus();}};
-  }
   document.addEventListener('visibilitychange', () => { if (!document.hidden) sweep(); });   // P207 追加 4
   if (fns.prompt) prompt = fns.prompt;
   // P181: 「换个样子」 under the robots, and a long press on the robots themselves (a tap still opens this card)

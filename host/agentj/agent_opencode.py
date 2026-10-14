@@ -724,7 +724,6 @@ class OpenCodeAgent(Agent):
         if b is None or self.cfg.get("_workflow_ceo") or getattr(self, "research", False):
             return
         with contextlib.suppress(Exception):
-            b.set_context(self.busy_scope(), harness="opencode", cwd=self.cfg.get("dir"))
             if ev is None:
                 b.session_gone(self.busy_scope())
             elif self.EVENT_PATH == "/event":
@@ -844,14 +843,6 @@ class OpenCodeAgent(Agent):
                 reason = provider_error_reason(name, data, self.connected_at_start, pid)
                 self.host.st.log("agent_provider_fail", agent=self.kind, reason=reason, http_status=code)
                 self.last_provider_fail = {"reason": reason, "http_status": code, "at": int(time.time())}
-                ar = getattr(self.host, "auth_rescue", None)
-                cls = {"login": "login", "no_key": "login", "balance": "balance", "quota_window": "rate_limit",
-                       "rate_limit": "rate_limit"}.get(reason)
-                if ar is not None and cls and not self.cfg.get("_workflow_ceo"):
-                    try:   # P258: the provider classifier decided; OpenCode's rescue is the provider key card
-                        ar.signal("opencode", cls)
-                    except Exception:  # noqa: BLE001
-                        pass
                 if reason in RESTART_AFTER and self.owns_harness():
                     self.restart_after_turn = True        # P60: the next message gets a fresh serve (current keys)
                 notes = PROVIDER_NOTES if self.owns_harness() else {**PROVIDER_NOTES, "login": PROVIDER_LOGIN_ATTACHED}

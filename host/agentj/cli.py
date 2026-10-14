@@ -1714,8 +1714,6 @@ def cmd_approvals(a) -> None:
             who = f"手机 {r.get('device')}" if r.get("device") else {"timeout": "超时", "no_device": "无可批准手机",
                                                                        "serve_stop": "serve 停止", "agent_gone": "Agent 撤回",
                                                                        "too_many": "请求过多",
-                                                                       "elsewhere": "新遥控器已在别处确认，这张配对卡收起（未签名）",
-                                                                       "gone": "卡片作废（配对已结束）",
                                                                        "policy": "超出 Agent 自己的沙箱，自动拒绝"}.get(r.get("reason"), r.get("reason"))
             if r.get("reason") == "batch":
                 who = f"按手机 {r.get('device')} 的批量授权自动批准（{str(r.get('grant'))[:8]}…）"
@@ -1723,7 +1721,6 @@ def cmd_approvals(a) -> None:
                 who = ("目标模式：10 秒无人点，自动批准" if r.get("reason") == "goal_auto" else "目标模式：按目标授权自动批准") + \
                     f"（{str(r.get('grant'))[:8]}…）"
             mark = {"ok": " ✓签名有效", "ok_removed": " ✓签名有效（设备已移除）", "bad": " ✗签名无效", "unsigned": "",
-                    "legacy": " ·旧版记录未存签名（controls.log 里也已找不到可核对的那一行）",
                     "auto": " ✓授权签名有效"}.get(v, "")
             cats = ("  [" + "、".join(r["cats"]) + "]") if r.get("cats") else ""
             if r.get("kind") == "question":       # §10.7: the picks as option numbers, never the question text
@@ -2901,8 +2898,6 @@ def main(argv=None) -> None:
     mail.add_parser(sub)        # P170: agentj mail setup|allow|deny|password|test|check|on|off|status|presets
     from . import contacts
     contacts.add_parser(sub)    # P184: agentj contacts list|find|add|edit|rm|import|export|card
-    from . import workflows
-    workflows.add_parser(sub)   # P244 (§30): agentj workflows [--json] — what the phone's five pages read, read-only
     elevate.add_parser(sub)   # F17: agentj sudo · agentj secret request
     from . import opencode_provider
     opencode_provider.add_parser(sub)   # P60 / F25: agentj provider add|list|remove (OpenCode base_url + key)
@@ -2920,8 +2915,6 @@ def main(argv=None) -> None:
     from . import busy
     from . import heartbeat as heartbeat_mod
     heartbeat_mod.add_parser(sub)   # P156: agentj heartbeat status|on|off|set|now|prompt show|edit|set|reset
-    from . import quota as quota_mod
-    quota_mod.add_parser(sub)       # P254: agentj quota [--json] [--remind] · on · off · reset add|used
     busy.add_parser(sub)         # P150 (§22): agentj busy list|start|stop|run — the phone's 「在办事项」 dots
     recall.add_parser(sub)    # F22 (P57): agentj recall <keywords> [--days N] [--date D] — the main Agent finds an earlier conversation
     from . import peer_service

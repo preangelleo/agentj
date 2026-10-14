@@ -2,11 +2,7 @@
 # Test launcher: same as ../agentj, but through tests/wiredump.py (frame recorder for the end-to-end tests). Never shipped.
 set -euo pipefail
 here="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/.." && pwd -P)"
-# P250: P44 supplies the qualified shared interpreter. Parallel cold suites must
-# not race an implicit uv sync against a half-created worktree-local environment.
-test_python="${AJ_PYTHON:-$here/.venv/bin/python}"
-if [[ ! -x "$test_python" ]]; then
+if [[ ! -x "$here/.venv/bin/python" ]]; then
   uv sync --project "$here" -q
-  test_python="$here/.venv/bin/python"
 fi
-PYTHONPATH="$here${PYTHONPATH:+:$PYTHONPATH}" exec "$test_python" "$here/tests/wiredump.py" "$@"
+PYTHONPATH="$here${PYTHONPATH:+:$PYTHONPATH}" exec "$here/.venv/bin/python" "$here/tests/wiredump.py" "$@"

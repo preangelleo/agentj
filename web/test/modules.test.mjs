@@ -251,14 +251,3 @@ test('P127: a Telegram page shows the owner words, not the Agent source line (ol
   assert.equal(toPage({ id: 4, src: { k: 'telegram', text: '帮我看看' } }).source.text, '帮我看看', 'a new page is already clean');
   assert.equal(toPage({ id: 5, src: { k: 'phone', text: 'Telegram owner private chat.\nx' } }).source.text, 'Telegram owner private chat.\nx', 'only Telegram pages');
 });
-
-test('P250 code closers preserve exact run length, escaped openers and nested labels', () => {
-  const cases = [{"input": "`a`", "expected": [{"tag": "code", "children": [{"text": "a"}]}]}, {"input": "``a`b``", "expected": [{"tag": "code", "children": [{"text": "a`b"}]}]}, {"input": "\\``a`", "expected": [{"text": "`"}, {"tag": "code", "children": [{"text": "a"}]}]}, {"input": "[`a`](https://a.example)", "expected": [{"tag": "a", "attrs": {"href": "https://a.example/"}, "children": [{"tag": "code", "children": [{"text": "a"}]}]}]}, {"input": "`a``b", "expected": [{"text": "`a``b"}]}, {"input": "``a```b``", "expected": [{"tag": "code", "children": [{"text": "a```b"}]}]}];
-  for (const {input, expected} of cases) assert.deepEqual(RelayMD.parseInline(input), expected, input);
-});
-
-test('P250 indexed fallback handles an escaped opener inside a longer run', () => {
-  const prefix = Array.from({length:32}, (_, i) => '`'.repeat(i + 1)).join(' ') + ' ';
-  const src = prefix + '\\' + '`'.repeat(64) + 'a' + '`'.repeat(63);
-  assert.deepEqual(RelayMD.parseInline(src), [{text:prefix + '`'}, {tag:'code',children:[{text:'a'}]}]);
-});

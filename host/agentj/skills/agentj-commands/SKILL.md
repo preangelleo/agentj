@@ -8,8 +8,6 @@ The phone's 「/」 list has three parts, top to bottom: Agent J's own one-tap c
 `/switch-harness` (one tap, among the one-tap commands) and `/goal` are always there, whatever the owner's items are — never
 add, remove or re-describe them.
 
-If `/compact` or `/clear` is waiting behind a scheduled workflow, explain that task and that the command has not been sent. Only the requesting remote can cancel the wait. Cancellation never stops the workflow. Once command execution starts, do not promise withdrawal; shared Claude follows its native-control waiting card. An unsupported adapter still reports its usual refusal after the wait.
-
 ## 1. Ask first (always)
 Show what is there now, then ask ONE short question set:
 - `agentj menu list` (the owner's items, as JSON) and the skills you can see (Claude Code: `~/.claude/skills/`, the

@@ -1,33 +1,40 @@
-"""Long tasks (0.18, ADR-A193): registry, opening card, brief and CEO report.
+"""Long tasks (0.18, ADR-A193): the capability inventory, the one opening card, the task brief and the CEO report.
 
-agentj-capability drives local-only contracts: no new owner command/button, no clear
-account-dashboard/D1/log copy (PR1). Full details: ARCHITECTURE ADR-A193, ltschema,
-the packaged skill and the signature domains below.
+The main Agent's `agentj-capability` skill drives everything here; the owner never types a command and the phone has no new
+button. Four pieces, all on this computer only (never the account dashboard, D1 or a log in clear — PR1):
 
-Registry: state/capabilities/registry.json (0700/0600). Only configured harness/CLI
-allowlist, packaged/root skills, .mcp.json, web, local files, paired phone, secret
-names and CEOs. No home crawl/history/secret reads. Trusted structured adapters
-cannot pay/send/delete/write credentials; ready requires verification. TTL browser
-15min, credential 24h, CLI/skill/MCP 7d or source change; CEO checked on dispatch.
-Expired entries recheck automatically, without asking again.
+- **Registry** `<state>/capabilities/registry.json` (0700 / 0600, `ltschema` "registry"): what this Agent can use — the
+  configured harness, a short allowlist of CLIs, the packaged and working-root skills, `.mcp.json` servers, public web
+  reading, local files, the paired phone, credentials saved through a secret card (name only) and every workflow CEO.
+  `sync` only looks at those configured places (never a home-directory crawl, browser history or a secret file). Every
+  entry is checked by a trusted adapter with structured arguments (the registry never stores an executable string) that has
+  no side effect: no payment, sending, credential write or deletion. A new entry is never ready before its check passes;
+  TTL browser 15 min · credential 24 h · CLI / skill / MCP 7 days or a changed source · CEO on every dispatch. A TTL is a
+  cache, not a reason to ask the owner again: expired entries are re-checked automatically.
+- **Opening card** (`ltschema` "preflight", kind=capability_preflight): at most five required items (the owner's real
+  choices + required capabilities that are not ready), optional items never block. More than five → refused, the Agent
+  narrows the deliverable. The answer is an Ed25519 signature of the paired device over canonical JSON with domain
+  `agentj.preflight.v1` (channel, device, card, task, revision, brief digest, registry revision, nonce, expiry, action,
+  picks). Card TTL 30 min, nonce once; expired / replayed / unpaired / changed-brief answers are refused and grant nothing.
+  A valid submit goes to *verifying* (re-check), never straight to ready. Secrets are never in the card: they use the
+  existing secret card.
+- **Brief** `<workflow>/brief.json` (`ltschema` "brief"): the dispatch contract next to the unchanged task.json v1. Its
+  *scope digest* (goal, acceptance, required capabilities, red lines, deliverables, plan) joins the workflow's contract hash
+  (tasks.contract_sha), so a change the owner must decide voids an earlier enable; a wording / technical change does not.
+  A new workflow or a schedule needs the owner's signed confirmation (domain `agentj.brief.v1`), shown on the SAME card;
+  enabling the schedule is a second, ordinary `task_on` control signature checked by controls.py — each verified and
+  logged on its own, any failure enables nothing. Receipts live in the state directory; a `confirmed: true` written by the
+  Agent means nothing.
+- **Report** `<workflow>/reports/report.json` (`ltschema` "report"): read after a run of a workflow that has a brief. It
+  must match the brief (task, revision, digest, acceptance ids), its status must equal the VERDICT line and every artifact
+  must be a readable file; otherwise the run is not reported as ok.
 
-Opening card: <=5 required items; optional never blocks. Overflow refuses and narrows
-the goal. Paired-device Ed25519 signs canonical agentj.preflight.v1 binding the full
-channel/device/card/task/revision/digest/nonce/expiry/action/picks context. TTL 30min,
-nonce once. Expired/replayed/unpaired/changed-brief answers grant nothing; submit
-rechecks before ready. Secrets use the separate existing secret card.
+Dispatch (`agentj capability dispatch`) checks the brief, its receipt, the required capabilities and that the workflow is
+not already queued or running (system idempotency, not a lock on the owner), then hands it to the existing Scheduler.
+Nothing here widens the five dangerous categories (danger.py): spend / delete / send / credentials / price stay per action.
 
-brief.json beside task.json v1 joins its scope digest to tasks.contract_sha. Owner
-scope decisions void prior enable; wording/technical edits do not. New workflows and
-schedules need signed agentj.brief.v1 on the same card; scheduling also requires its
-own verified/logged task_on control. Any failure enables nothing. Only host-state
-receipts count, never an Agent-written confirmed:true.
-
-reports/report.json must match brief task/revision/digest/acceptance ids, VERDICT and
-readable artifacts. Dispatch rechecks brief/receipt/capabilities and queued/running
-idempotency before Scheduler. No owner lock or danger.py exception: spend/delete/
-send/credentials/price remain per-action. The fence uses agentperm/capability.sock;
-without serve, list/sync/check/digest/report-check remain local read-only commands.
+The fenced Agent reaches serve through `<state>/agentperm/capability.sock` (like recall.sock); without serve the read-only
+commands (list / sync / check / digest / report-check) work locally.
 """
 from __future__ import annotations
 
@@ -1293,7 +1300,6 @@ class Capabilities:
             raise CapError("stopped", "Stop everything is on")
         if not isinstance(wf, str) or not _ID.fullmatch(wf):
             raise CapError("shape", "workflow id")
-        from . import tasks
         sch = self.host.scheduler
         if sch.current_id == wf or any(t == wf for t, _ in sch.waiting):
             audit(self.st, "dispatch", wf_sha=sha(wf)[:16], result="already_running")
@@ -1310,66 +1316,24 @@ class Capabilities:
         pending = [c for c in self.cards.values() if c["wf"] == wf and not c["done"]]
         if pending:
             raise CapError("not_ready", "an opening card for this workflow is still open", card=pending[0]["id"])
+        with _locked(self.st):
+            d = _read(self.st, "dispatch.json", {})
+            d[wf] = {"at": iso(), "brief_digest": plan["preflight"]["brief_digest"], "pid": os.getpid(), "status": "queued"}
+            _write(self.st, "dispatch.json", d)
         if b["confirmation"]["mode"] == "requested":
             add_receipt(self.st, wf, {"mode": "requested", "request_id": b["confirmation"]["request_id"], "at": iso(),
                                       "revision": b["revision"], "brief_digest": plan["preflight"]["brief_digest"],
                                       "scope_digest": scope_digest(b)})
-        try:
-            rid = sch.request(wf, "dispatch")
-        except tasks.TaskError as err:
-            raise CapError("not_ready", err.detail or err.reason) from None
-        with _locked(self.st):
-            d = _read(self.st, "dispatch.json", {})
-            d[wf] = {"at": iso(), "brief_digest": plan["preflight"]["brief_digest"], "run_id": rid, "status": "queued"}
-            _write(self.st, "dispatch.json", d)
-        from . import diskq
-        if not await diskq.aflush():
-            raise CapError("not_ready", "Run journal has not settled; inspect state before retrying")
+        sch.request(wf, "dispatch")
         audit(self.st, "dispatch", wf_sha=sha(wf)[:16], result="queued")
         self.host.activity("lt_dispatch", id=wf)
-        return {"result": "queued", "workflow": wf, "run_id": rid, "next": "end_turn", "detail": END_TURN}
-
-    def recover_runs(self, runs: dict) -> list[dict]:
-        """Repair the dispatch projection, including pre-ledger queued entries. No PID-based ownership."""
-        legacy = []
-        with _locked(self.st):
-            d = _read(self.st, "dispatch.json", {})
-            for wf, rec in d.items():
-                run = runs.get(rec.get("run_id"))
-                if not run and rec.get("status") in ("queued", "running"):
-                    run = next((v for v in runs.values() if v.get("id") == wf
-                                and str(v.get("run_id", "")).startswith("legacy-") and v.get("uncertain")), None)
-                if run:
-                    rec.update({k: run[k] for k in ("run_id", "status", "verdict", "line", "report", "uncertain") if k in run})
-                elif rec.get("status") in ("queued", "running"):
-                    from . import tasks
-                    rid = "legacy-" + secrets.token_hex(16)
-                    run = {"run_id": rid, "id": wf, "trigger": "dispatch", "tsha": None,
-                           "status": "interrupted", "uncertain": True, "verdict": "attention",
-                           "ended_at": int(time.time()), "report": None,
-                           "line": ("Legacy dispatch is uncertain; check effects, then enable again." if getattr(self.host, "lang", "zh") == "en"
-                                    else "旧版派单无法确认是否结束；核对外部操作后由主人重新启用。")}
-                    def migrate(cur):
-                        cur["runs"][rid] = run
-                        cur["last"][wf] = dict(run, at=run["ended_at"])
-                    tasks.update(self.st, migrate)  # canonical fence first; a crash cannot permit a blind retry
-                    rec.update(run_id=rid, status="interrupted", uncertain=True, line=run["line"])
-                    legacy.append(run)
-            _write(self.st, "dispatch.json", d)
-        return legacy
-
-    def run_started(self, wf: str, rid: str) -> None:
-        with _locked(self.st):
-            d = _read(self.st, "dispatch.json", {})
-            if wf in d and d[wf].get("run_id") == rid:
-                d[wf].update(status="running")
-                _write(self.st, "dispatch.json", d)
+        return {"result": "queued", "workflow": wf, "next": "end_turn", "detail": END_TURN}
 
     def run_finished(self, wf: str, res: dict) -> None:
         with contextlib.suppress(Exception), _locked(self.st):
             d = _read(self.st, "dispatch.json", {})
             if wf in d:
-                d[wf].update(status=res.get("status", "finished"), run_id=res.get("run_id"), verdict=res.get("verdict"), report_check=res.get("report_check"))
+                d[wf].update(status="done", verdict=res.get("verdict"), report_check=res.get("report_check"))
                 _write(self.st, "dispatch.json", d)
         # the owner is waiting in this conversation: the main Agent reads the report back and answers (design: 「主 Agent 读回后
         # 手机交付」); a host-originated turn like the welcome, never shown as the owner's words

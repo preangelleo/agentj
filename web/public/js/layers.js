@@ -5,8 +5,6 @@ let serial=0,lastTarget=null;
 const visible=e=>!!e&&e.isConnected&&e.getClientRects().length&&!e.closest('[hidden]');
 const focusable='button:not([disabled]),a[href],summary,input:not([disabled]),select:not([disabled]),textarea:not([disabled]),[tabindex]';
 function restore(l){
- // A non-modal notice can disappear while the owner edits outside it. Keep that live focus.
- if(!l.trap&&l.preserveOutsideFocus&&visible(document.activeElement)&&!l.element()?.contains(document.activeElement)&&document.activeElement.matches?.(focusable))return;
  if(layers.some(other=>other!==l&&other.open()&&other.element()?.contains(document.activeElement)&&visible(document.activeElement)))return;
  const target=visible(l.opener)&&l.opener.matches?.(focusable)?l.opener:l.fallback?.();
  if(visible(target)&&target.matches?.(focusable))target.focus({preventScroll:true});
@@ -19,8 +17,8 @@ function sync(){
   l.on=on;
  }
 }
-export function registerLayer({element,open,close,fallback,trigger,trap=true,rank=0,preserveOutsideFocus=false}){
- const l={element,open,close,fallback,trigger,trap,rank,preserveOutsideFocus,on:false};layers.push(l);sync();return l;
+export function registerLayer({element,open,close,fallback,trigger,trap=true,rank=0}){
+ const l={element,open,close,fallback,trigger,trap,rank,on:false};layers.push(l);sync();return l;
 }
 export function initLayers({onEscape}={}){
  document.addEventListener('click',e=>{lastTarget=e.target.closest?.(focusable)||document.activeElement;},true);

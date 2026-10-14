@@ -15,11 +15,10 @@ The "This reply" group acts on the page you are reading; "Files on this page" ac
 | `k` · `→` | Swipe the cards left; in landscape tap › on the right | Next page (newer) |
 | `g` | Double-tap the right third of the header (page number); a single tap while it flashes | Jump to the newest page |
 | `G` | Double-tap the left third of the header | Jump to the earliest page (older ones are fetched from the computer) |
-| `u` | Tap the unread badge in the middle third of the header | Jump to the first unread reply (arrived after this device last saw the page), then page forward |
+| `u` | Tap the unread badge in the middle third of the header, or hold the logo at the top left | Jump to the first unread reply (arrived after this device last saw the page), then page forward |
 | `q` | Tap the quote above the message | Jump to the message this one quotes |
 | `o` · `↑` · `↓` | Tap the … button on the right; double-tap the message | Expand / fold the message (↑ expands, ↓ folds; with nothing to toggle ↑ ↓ scroll the page) |
 | `Space` · `Shift+Space` | Scroll the reply | Scroll down one screen (Shift+Space up) |
-| — | Hold the logo | Go to chat |
 
 ## This reply
 
@@ -49,7 +48,7 @@ The "This reply" group acts on the page you are reading; "Files on this page" ac
 
 | Key | Mouse / touch | What it does |
 |---|---|---|
-| `z` | Change the text size in Settings | Step the page text size (medium → large → medium → small) |
+| `z` | Tap the logo | Step the page text size (medium → large → medium → small) |
 | `n` | Hold the Agent's name | Rename the Agent |
 | `N` | Hold the source label at the left of the header | Rename the other remote that sent this message |
 | `b` | Tap the dancing robots | See which agents are at work in the background |
@@ -66,9 +65,6 @@ The "This reply" group acts on the page you are reading; "Files on this page" ac
 | `Alt+P` | Tap Pending | Reopen the approval or question card you put away |
 | — | Tap "Scan QR code" | On the unpaired page, scan the pairing QR code from the terminal or the account page |
 | — | Tap the copy icon | Copy the command next to it (agentj pair …) |
-| `Alt+W` | Tap the logo | Open the five-page menu |
-| `Alt+Shift+U` | Tap Upgrade computer in Settings | Upgrade computer (confirm on phone) |
-| `Alt+Shift+R` | Tap Update and reload in Settings | Update and reload page |
 
 ## Message box and attachments
 

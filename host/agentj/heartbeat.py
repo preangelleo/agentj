@@ -464,12 +464,6 @@ class Heartbeat:
             g = goal_mod.heartbeat_line(h.st, lang)
             if g:
                 body += "\n" + g
-        with contextlib.suppress(Exception):          # P254: the quota steward's not-yet-given reminders of the day
-            from . import quota as quota_mod
-            q = quota_mod.heartbeat_lines(h.st.root, getattr(h, "preferences", None), lang,
-                                          meter_state=getattr(h, "meter_state", None))
-            if q:
-                body += "\n" + q
         page = h.hist_add({"k": "agent", "via": "heartbeat", "text": ""}, "", "open")
         send = HeartbeatSend(page["id"], body, key, digest)
         self.inflight = send
@@ -545,15 +539,10 @@ class Heartbeat:
         if op == "prompt_show":
             got = read_prompt()
             return {"ok": True, "path": shown(prompt_path()), "text": got[0] if got else "", "sha": got[1] if got else None}
-        from . import quota as quota_mod
-        if op in quota_mod.READ_OPS:                   # P254: agentj quota (the fenced Agent cannot read the state directory)
-            return await quota_mod.handle(self.host, req)
         # changes: never while a message that is not the owner's is being handled (a group member cannot rewrite them)
         if provenance.untrusted_turn(getattr(self.host, "agent", None)):
             self.host.st.log("heartbeat_refused", op=str(op)[:16], reason="untrusted_turn")
             return {"ok": False, "why": "untrusted_turn"}
-        if op in quota_mod.WRITE_OPS:                  # P254: reminders on/off, recorded resets, today's reminders marked given
-            return await quota_mod.handle(self.host, req)
         if op == "now":
             why = self.wait_reason()
             if why in ("no_agent", "stopped", "agent_down", "pending"):

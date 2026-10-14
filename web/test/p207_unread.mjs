@@ -108,8 +108,14 @@ export async function runP207Unread({ B, web, fake, out = OUT }) {
       await waitFor(p, `+${$('omUnread')}.dataset.n===2 && ${$('pg')}.textContent==='6 / 10'`);
       await key(p, 'u'); await waitFor(p, `${$('pg')}.textContent==='9 / 10'`);
       await evaluate(p, `${$('pgPrev')}.click()`); await waitFor(p, `${$('pg')}.textContent==='8 / 10'`);
-      // P244: logo hold returns to chat; U and the middle badge retain unread navigation.
-      await key(p, 'u');
+      const orb = await box(p, 'orb');
+      if (phone) await touchAt(p, orb.x + orb.w / 2, orb.y + orb.h / 2, 650);
+      else {
+        await p.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: orb.x + orb.w / 2, y: orb.y + orb.h / 2 });
+        await p.send('Input.dispatchMouseEvent', { type: 'mousePressed', x: orb.x + orb.w / 2, y: orb.y + orb.h / 2, button: 'left', clickCount: 1 });
+        await sleep(650);
+        await p.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: orb.x + orb.w / 2, y: orb.y + orb.h / 2, button: 'left', clickCount: 1 });
+      }
       await waitFor(p, `${$('pg')}.textContent==='10 / 10'`);   // 9 was seen above: the first unread is 10
       // the left / right thirds keep their double taps
       if (phone) {

@@ -1,6 +1,6 @@
 {
-  "version": "0.21.0a1",
-  "major": true,
-  "zh": "0.21.0：五页菜单、运行账本、等待撤销、额度提醒、Agent J 爸爸反馈与登录救援；底栏和升级同步改进。",
-  "en": "Five-page menu, run journal, cancellable waiting controls, quota reminders, Agent J Father feedback and login rescue; footer and upgrade improvements."
+  "version": "0.20.3a1",
+  "major": false,
+  "zh": "0.20.3：一条命令装好（Windows / Mac / Linux）；遥控器配对密码；新装第一条消息不再无声卡住；模型与思考强度停手 5 秒才切；「/」里有 /switch-harness；电脑先升级时不再反复弹刷新。",
+  "en": "One-command install; remote pairing password; no silent first message; model picks settle after 5 s; /switch-harness in /; no refresh loop."
 }

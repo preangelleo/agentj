@@ -66,12 +66,10 @@ def input_digest(tool_input) -> str:
 
 def record(st, *, rid: str, agent: str, tool: str, input_sha256: str, shown_sha256: str, decision: str, reason: str,
            device: str | None = None, sign_pub: bytes | None = None, sig: bytes | None = None, cats: list | None = None,
-           scope: str | None = None, grant: str | None = None, auto: str = "batch", control: dict | None = None) -> dict:
+           scope: str | None = None, grant: str | None = None, auto: str = "batch") -> dict:
     """Append one decision to approvals.log (0600). reason: device | batch | goal | goal_auto (P158) | brief (0.18: inside a confirmed brief) | host (0.18: `agentj capability`, host-gated) | timeout | no_device | serve_stop | agent_gone |
     too_many | estop | policy (beyond the harness's own sandbox, never asked: ADR-A73). cats = danger categories ([] = low risk); scope = the signed batch scope (allow_batch); grant = for an
-    automatic approval, the id of the signed allow_batch it relied on. control (P242) = a signed phone control (controls.py,
-    e.g. dev_confirm / dev_unbind): {"n", "sig_ts", "object_sha256"} — the line is then kind "control" and `sig` is the
-    control signature, re-checked with controls.verify."""
+    automatic approval, the id of the signed allow_batch it relied on."""
     rec = {"ts": int(time.time()), "id": rid, "channel": st.config()["channel"], "agent": agent, "tool": tool,
            "input_sha256": input_sha256, "shown_sha256": shown_sha256, "decision": decision, "reason": reason,
            "device": device, "sk": wire.b64u(sign_pub) if sign_pub else None, "sig": wire.b64u(sig) if sig else None}
@@ -81,9 +79,6 @@ def record(st, *, rid: str, agent: str, tool: str, input_sha256: str, shown_sha2
         rec["scope_sha256"] = scope_digest(scope)
     if grant is not None:
         rec["auto"], rec["grant"] = auto, grant   # P158: auto "goal" = under the signed goal card (reason goal | goal_auto)
-    if control is not None:
-        rec["kind"] = "control"
-        rec.update({k: control[k] for k in ("n", "sig_ts", "object_sha256")})
     st.append_private(st.approvals_path, json.dumps(rec, ensure_ascii=False))
     return rec
 
@@ -198,59 +193,6 @@ def record_question(st, *, qid: str, agent: str, q_sha256: str, decision: str, r
     return rec
 
 
-# ---------------------------------------------------------------- P242: signed phone controls in approvals.log
-CONTROL_TOOLS = ("dev_confirm", "dev_unbind")   # remotes.py writes these two to approvals.log too (adds / unbinds)
-LEGACY_WINDOW_S = 5                             # a pre-0.20.3 line and its controls.log line are written in the same moment
-
-
-def _key_verdict(st, device: str, sk: bytes) -> str:
-    cur = st.sign_key(device)
-    return "ok_removed" if cur is None else ("ok" if cur == sk else "bad")
-
-
-def _check_control(st, r: dict) -> str:
-    from . import controls
-    if r.get("kind") == "control":
-        try:
-            sk, sig = wire.unb64u(r.get("sk") or ""), wire.unb64u(r.get("sig") or "")
-        except ValueError:
-            return "bad"
-        ts = r.get("sig_ts")
-        if not isinstance(ts, int) or isinstance(ts, bool) or r.get("tool") not in controls.ACTIONS or \
-                not controls.verify(sk, sig, str(r.get("channel")), str(r.get("device")), str(r.get("tool")), str(r.get("n")),
-                                    ts, str(r.get("object_sha256"))):
-            return "bad"
-        return _key_verdict(st, str(r.get("device")), sk)
-    # before 0.20.3 (P242): the line kept no signature — the control's own line in controls.log has it
-    dev, tool, at = str(r.get("device")), str(r.get("tool")), r.get("ts")
-    try:
-        lines = st.controls_path.read_text(encoding="utf-8", errors="replace").splitlines()
-    except OSError:
-        lines = []
-    found = None
-    for ln in lines:
-        try:
-            c = json.loads(ln)
-        except ValueError:
-            continue
-        if not isinstance(c, dict) or c.get("action") != tool or c.get("device") != dev or c.get("result") != "ok" \
-                or not isinstance(at, int) or not isinstance(c.get("ts"), int) or abs(c["ts"] - at) > LEGACY_WINDOW_S:
-            continue
-        found = "bad"
-        try:
-            sig = wire.unb64u(str(c.get("sig") or ""))
-        except ValueError:
-            continue
-        cur = st.sign_key(dev)
-        ts = c.get("sig_ts")
-        if cur is None:
-            return "legacy"    # signer unpaired since: no key left to check the old line against
-        if isinstance(ts, int) and controls.verify(cur, sig, str(r.get("channel")), dev, tool, str(c.get("n")), ts,
-                                                   str(c.get("object_sha256"))):
-            return "ok"
-    return found or "legacy"
-
-
 def read_log(st) -> list[dict]:
     try:
         lines = st.approvals_path.read_text().splitlines()
@@ -271,13 +213,7 @@ def check_record(st, r: dict, index: dict | None = None) -> str:
     """'ok' (signature valid and the key is the device's current one) · 'ok_removed' (valid; device no longer paired) ·
     'bad' (signature does not verify / key differs from the paired device's) · 'unsigned' (a host-side decision:
     timeout, no device, serve stopped — these never carry a signature) · for an automatic batch approval: 'auto' when the
-    allow_batch line it names (index: id → record) verifies and covers the same tool, else 'bad'.
-    P242: a signed phone control (kind "control": dev_confirm / dev_unbind) is checked as the control it was; a line written
-    by a host before 0.20.3 for one carries no signature itself and is checked against its controls.log line ('legacy' when
-    that line is gone — never 'bad' for a signature that was simply not copied)."""
-    if r.get("kind") == "control" or (r.get("tool") in CONTROL_TOOLS and r.get("agent") == "phone"
-                                      and r.get("reason") == "device" and not r.get("sig") and not r.get("sk")):
-        return _check_control(st, r)
+    allow_batch line it names (index: id → record) verifies and covers the same tool, else 'bad'."""
     if r.get("kind") == "question":
         if r.get("reason") != "device":
             return "unsigned"

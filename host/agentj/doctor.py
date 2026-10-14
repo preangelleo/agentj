@@ -1251,14 +1251,8 @@ def check_skills(home=None) -> dict:
     names = personalize.bundled()
     missing = sorted({r["skill"] for r in rows if not r["installed"] and not r["conflict"]})
     foreign = sorted({r["skill"] for r in rows if r["conflict"]})
-    try:                                 # P244 (§30): a skill alias that clashes with another name / alias is dropped
-        from .workflows import common_skills
-        clash = sorted({f"{c['alias']} ({c['skill'].rsplit(':', 1)[-1]})" for c in common_skills(None)[2]})[:8]
-    except (OSError, ValueError):
-        clash = []
-    if not missing and not foreign and not clash:
+    if not missing and not foreign:
         return _c("skills", OK, f"随包技能已安装 / bundled skills linked: {', '.join(names)}")
     parts = ([f"未安装 / not linked: {', '.join(missing)}"] if missing else []) + \
-            ([f"同名的是你自己的，保留 / your own copy kept: {', '.join(foreign)}"] if foreign else []) + \
-            ([f"技能别名重名，后来的没用上 / alias clash, the later one dropped: {', '.join(clash)}"] if clash else [])
+            ([f"同名的是你自己的，保留 / your own copy kept: {', '.join(foreign)}"] if foreign else [])
     return _c("skills", WARN, "随包技能 / bundled skills — " + "; ".join(parts), "agentj skill install" if missing else "")

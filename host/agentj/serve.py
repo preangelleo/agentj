@@ -130,7 +130,6 @@ CHUNK = 11 * 1024      # phone-control answers are split into app messages of ab
 ITEM_SHOW = 6000       # a memory item longer than this is shown cut on the phone (its id still covers the whole text)
 _RID = re.compile(r"[A-Za-z0-9_-]{1,32}")
 FRIEND_READS = ("fr_list", "fr_hist", "fr_usage", "fr_ctx_get")   # P71 §17.7 (+ P73 fr_ctx_get); writes = controls.FRIEND_ACTIONS
-WF_READS = ("wf_list", "wf_doc", "skill_get")   # P244 (§30.2): answered to the asking session only, read-only
 PHONE_CONTROLS = ("mem_list", "mem_rm", "mem_undo", "act_list", "task_list", "task_set", "estop", "resume",
                   "systask_list")   # P207 §2: the computer's own scheduled tasks, read-only (systasks.py)
 # §10 (PROMPT-33)
@@ -162,8 +161,7 @@ P33_ONLY = ("say", "say_cancel", "cmd_cancel", "blob_open", "blob_chunk", "blob_
             "tg_fwd", "turn_wait", "res_watch", "busy_get",   # P181 (§22.1) load card resources; P160 (§22) one 「在办」 row's detail
             "mail_get", "mail_set", "mail_key", "mail_test", "mail_check",   # P170 (§10.20)
             "dev_rename",    # P179 (§10.16a): a remote renames itself
-            "hist_find",     # P188 (§28): chat search, a read like hist_get
-            "auth_get", "auth_start", "auth_cancel", "auth_press")   # P258 (§31): AI 登录救援
+            "hist_find")     # P188 (§28): chat search, a read like hist_get
 # F14: paired phones may change optional warnings, session mode, isolation, docker and the upgrade mode (F19); native permissions stay authoritative.
 PREF_SET_KEYS = ("updates.mode", "appearance.language", "appearance.theme", "voice.wake_enabled", "voice.speak_replies",
                  "agent.high_risk_warnings", "agent.session_mode", "agent.isolation", "agent.allow_docker")
@@ -412,8 +410,6 @@ class Host:
         self.model_set_at = 0.0                  # P239: monotonic time of the last pill switch handed to the Agent
         self.model_set_held: dict | None = None  # P239: a switch held back inside MODEL_SET_COALESCE (only the last one runs)
         self.elevate = elevate.Elevator(self)   # F17: admin password / secret cards (PROTOCOL §11)
-        from .auth_rescue import Rescue
-        self.auth_rescue = Rescue(self)          # P258: AI 登录救援 (subscription login expired → re-login from the phone)
         from .capability import Capabilities
         self.capabilities = Capabilities(self)  # 0.18 (ADR-A193): capability.sock, opening cards, dispatch
         self.goals = goal_mod.Goals(self)       # P158: <state>/goal.json, `agentj goal …` over capability.sock
@@ -422,8 +418,6 @@ class Host:
         from . import busy as busy_mod
         self.busy = busy_mod.Board(st.root, on_change=self.busy_changed)   # P150 (§22): who works in the background
         self.busy_sent: str | None = None
-        from . import workflows as wf_mod
-        self.wf = wf_mod.Scanner(st)            # P244 (§30): the five pages' read-only picture (workflows.py)
         from .heartbeat import Heartbeat
         self.heartbeat = Heartbeat(self)        # P156: wakes the main Agent after an idle spell (heartbeat.py)
         self.res_watch: dict[int, float] = {}    # P181 (§22.1): cid → monotonic expiry of its load-card watch
@@ -931,9 +925,6 @@ class Host:
             await self.on_setup(s, t, obj)
         elif t in PHONE_CONTROLS:
             await self.on_control(s, t, obj)
-        elif t in WF_READS:             # P244 (§30): 工作流 · 技能 · 记忆 · Agent J pages, read-only
-            if s.p33:
-                await self.on_wf(s, t, obj)
         elif t in REMOTES_TYPES:        # P171 (§24): list / rename / unbind / add remotes from a paired remote
             if s.p33:
                 await self.remotes.on_phone(s, t, obj)
@@ -1199,8 +1190,6 @@ class Host:
         else:
             result = "timeout" if decision == "timeout" else "gone"
         reason = "device" if did and result in ("allow", "deny") else result
-        if result == "gone" and decision == "end" and self.st.is_allowed(s.pub):
-            reason = "elsewhere"   # P242: approved on another route (the asking remote's code, terminal, account page)
         approvals.record(self.st, rid=a.rid, agent="host", tool=pair_card.TOOL, input_sha256=a.input_sha,
                          shown_sha256=a.digest, decision="allow" if result == "allow" else "deny", reason=reason,
                          device=did if reason == "device" else None, sign_pub=sk, sig=sig)
@@ -1728,16 +1717,12 @@ class Host:
                         await self._ctl_send(w, {"ok": False, "error": "no_agent"})
                     else:
                         try:
-                            rid = self.scheduler.request(tid, "manual")
-                            from . import diskq
-                            if not await diskq.aflush():
-                                raise tasks.TaskError("busy", "运行记录尚未完成落盘；重试前请核对状态 / Run journal has not settled; inspect state before retrying")
-                        except tasks.TaskError as err:
-                            await self._ctl_send(w, {"ok": False, "error": err.reason, "detail": err.detail})
-                        except OSError:
-                            await self._ctl_send(w, {"ok": False, "error": "busy", "detail": "无法保存运行记录 / Could not save run journal"})
+                            tasks.find(self.agent_cfg["dir"], tid)
+                        except tasks.TaskError:
+                            await self._ctl_send(w, {"ok": False, "error": "unknown"})
                         else:
-                            await self._ctl_send(w, {"ok": True, "queued": tid, "run_id": rid})
+                            self.scheduler.request(tid, "manual")
+                            await self._ctl_send(w, {"ok": True, "queued": tid})
                 elif cmd == "tasks_changed":
                     self.scheduler.wake.set()
                     await self._ctl_send(w, {"ok": True})
@@ -2046,8 +2031,6 @@ class Host:
         await self.send_app(s, self._status_msg())
         if s.p33: await self.send_app(s, self.preferences_msg())
         await self.send_app(s, self._estop_msg())
-        if s.p33 and self.auth_rescue.needs_dot():       # P258: the red dot reaches a phone that was away
-            await self.send_app(s, {"t": "auth_rescue", "view": await asyncio.to_thread(self.auth_rescue.view)})
         await self.send_app(s, {"t": "push_key", "k": webpush.b64u(webpush.vapid_public(self._push_key()))})
         if s.p33:                       # §10.5: history pages instead of §8's msg replay; meters, models (§10.10 / §10.11)
             await self.send_app(s, self._meter_msg())
@@ -2482,15 +2465,7 @@ class Host:
     def busy_msg(self) -> dict:
         """PROTOCOL §22: `{"t":"busy","tasks":[{id, who, kind, label, lk?, since, c}],"by":<Agent name>,"load"?:0..1,"cap"?:n}`
         — display only (load: P154, the line under the reply card's header; cap: 追加 11, how many robots fit)."""
-        msg = self.busy.msg(self.st.agent_name())
-        # Resolve only a declared folder / actual cwd / exact named employee in the last paired catalogue scan.
-        if self.wf.last:
-            from .workflows import task_assignment
-            for task in msg["tasks"]:
-                task.update(task_assignment(task, self.wf.last))
-        for task in msg["tasks"]:
-            task.pop("cwd", None)   # local matching only; no absolute path on the list
-        return msg
+        return self.busy.msg(self.st.agent_name())
 
     def busy_changed(self) -> None:
         """P150: the 「在办事项」 list changed (or may have: TTL) → every ready phone, once per real change."""
@@ -3333,8 +3308,6 @@ class Host:
                            "需要安装或管理员权限时，可在手机上批准。\n本次不隔离运行：批准后会在沙箱外运行，可能访问本机文件和凭据。仅本次启动有效，需主人通行密钥批准。")
         if risk_scope:
             summary += CARD_TEXT[card_lang(self.lang)]["risk_scope"]
-        if tool == "AuthRescue" and isinstance(tool_input.get("summary"), str):
-            summary = tool_input["summary"][:600]   # P258: the rescue card shows (and the phone signs) exactly this text
         if tool == goal_mod.TOOL and isinstance(tool_input.get("card"), str):
             summary = tool_input["card"]            # P158: the goal card shows (and the phone signs) exactly this text
         if origin:
@@ -3737,9 +3710,7 @@ class Host:
         for gid in list(self.grants):
             self.end_grant(gid, "turn_end")
         title = res.get("title") or res["id"]
-        if res.get("status") == "interrupted" and not res.get("stopped"):
-            text = f"工作流「{title}」：{res['line']}"
-        elif res.get("stopped"):
+        if res.get("stopped"):
             text = f"定时任务「{title}」：被急停中断"
         else:
             text = f"定时任务「{title}」：{res['verdict']} — {res['line']}" + ("（只读运行）" if res.get("readonly") else "")
@@ -3754,7 +3725,7 @@ class Host:
         if res.get("deliver") and not res.get("stopped"):   # 0.18: the brief's owner deliverables, offered as files (§13)
             page += "\n\n" + "\n".join(f"[{os.path.basename(p)}]({p})" for p in res["deliver"][:5])
         t = self.hist_add({"k": "task", "name": clean(str(title), 64), "text": ""}, clean(page, wire.MAX_TEXT_P33),
-                          "stopped" if res.get("stopped") or res.get("status") == "interrupted" else "done")
+                          "stopped" if res.get("stopped") else "done")
         if res.get("deliver") and isinstance(t, dict):
             self.media_later(t.get("id"))
         self.push_notify("reply")
@@ -3942,32 +3913,6 @@ class Host:
         if snap:
             self.push_setup(snap, show=True)
 
-    async def on_wf(self, s: Session, t: str, obj: dict) -> None:
-        """P244 (§30.2): wf_list (etag → wf_same; chunked per workflows.messages) · wf_doc · skill_get — only names / ids of the
-        last scan are ever read (workflows.Scanner)."""
-        r = obj.get("r")
-        if not isinstance(r, str) or not _RID.fullmatch(r):
-            return
-        if t == "wf_list" or self.wf.last is None:
-            from . import main_identity
-            c = self.agent_cfg or {}
-            root = main_identity.working_root(c)
-            items = list(self.busy.mem.values()) + list(self.busy.outside)
-            pic = await asyncio.to_thread(self.wf.scan, root, c.get("kind"), self.lang, items)
-            if t == "wf_list":
-                if obj.get("etag") == pic["tail"]["etag"]:
-                    return await self.send_app(s, {"t": "wf_same", "r": r})
-                from .workflows import messages
-                for m in messages(pic, r):
-                    await self.send_app(s, m)
-                self.busy_changed()  # the organisation metadata may now be available
-                return
-        if t == "wf_doc":
-            res = await asyncio.to_thread(self.wf.doc, obj.get("folder"), obj.get("name"))
-        else:
-            res = await asyncio.to_thread(self.wf.skill, obj.get("id"))
-        await self.send_app(s, {"t": t, "r": r, **res})
-
     async def send_memory(self, s: Session, r: str) -> None:
         c = self.agent_cfg
         res = await asyncio.to_thread(memory.scan, c["kind"] if c else None, c["dir"] if c else None)
@@ -4032,42 +3977,15 @@ class Host:
         text = detail or pick(self.lang, "等电脑空下来再执行", "Waiting for the computer to become idle")
         self.hist_update(cmd.turn, text=text, end="open", card={"cmd": cmd.name, "cancel_wait": True})
 
-    def workflow_cmd_waiting(self, cmd) -> bool:
-        """Reuse the P144/P243 card, but name the workflow that actually owns turn_lock."""
-        label = getattr(self, "task_label", None)
-        lock = getattr(self, "turn_lock", None)
-        if not label or not lock or not lock.locked() or cmd.name not in ("clear", "compact"):
-            return False
-        cmd.workflow_wait = True
-        action = pick(self.lang, "压缩" if cmd.name == "compact" else "清空", "compaction" if cmd.name == "compact" else "clear")
-        label = clean_line(str(label), 160)
-        self.cmd_waiting(cmd, pick(self.lang, f"正在完成定时任务 {label}，{action}尚未发送。",
-                                  f"Finishing scheduled task {label}; {action} has not been sent."))
-        return True
-
-    def cmd_lock_acquired(self, cmd) -> None:
-        # Shared Claude retains P243's desktop wait and its precise native-send boundary.
-        # Other adapters may send handoff prompts as soon as command() starts: close
-        # withdrawal before that first possible write, never claim a late cancellation.
-        if not cmd.workflow_wait or cmd.cancelled:
-            return
-        if isinstance(self.agent, SharedClaudeAgent):
-            self.cmd_waiting(cmd)       # task no longer owns the lock; P243 explains any desktop wait
-        else:
-            cmd.native_started = True
-            self.hist_update(cmd.turn, text=pick(self.lang, "开始处理命令。", "Processing the command."), card={})
-
     def cancel_waiting_cmd(self, s, turn) -> bool:
         page = self.hist.get(turn) if type(turn) is int else None
         if not page or page.get("end") != "open" or page.get("src", {}).get("dev") != s.device:
             return False
-        if self.agent is None:
+        if not isinstance(self.agent, SharedClaudeAgent):
             return False
-        items = [getattr(self.agent, "lock_cmd", None), self.agent.cur_cmd, *list(self.agent.q._queue)]
+        items = [self.agent.cur_cmd, *list(self.agent.q._queue)]
         for cmd in items:
-            if (isinstance(cmd, agents.Cmd) and cmd.turn == turn and cmd.name in ("clear", "compact")
-                    and (isinstance(self.agent, SharedClaudeAgent) or cmd.workflow_wait)
-                    and not cmd.native_started and not cmd.cancelled):
+            if isinstance(cmd, agents.Cmd) and cmd.turn == turn and cmd.name in ("clear", "compact") and not cmd.native_started and not cmd.cancelled:
                 cmd.cancelled = True
                 self.hist_update(turn, text=pick(self.lang, "已取消，未发送控制。", "Cancelled; control not sent."), end="stopped", card={})
                 self.st.log("shared_control_cancel", cmd=cmd.name, device=s.device)
@@ -4208,7 +4126,7 @@ class Host:
             self.cmd_card(name, slash.Result("这一轮结束后执行。", "info"), by, turn, interim=True)
         cmd = agents.Cmd(name, arg, by, turn)
         self.agent.submit(cmd)
-        if not self.workflow_cmd_waiting(cmd) and isinstance(self.agent, SharedClaudeAgent) and name in ("clear", "compact"):
+        if isinstance(self.agent, SharedClaudeAgent) and name in ("clear", "compact"):
             self.cmd_waiting(cmd)
         return turn
 
@@ -4286,7 +4204,6 @@ class Host:
         caps.append(hsearch.CAP)                               # P188 (§28): this computer answers hist_find
         caps += ["cards1", "upg1"]       # P203 (§29): signed open-cards snapshot · upgrade impact + confirmation card
         caps.append("systasks")                                # P207 §2: answers systask_list (the computer's own scheduled tasks)
-        caps.append("wf1")                                     # P244 §30: answers wf_list / wf_doc / skill_get (the five pages)
         return {"caps": caps, "asr": self.asr_state(), "hist": "on" if self.hist.on else "off"}
 
     async def _bulk(self, s: Session) -> None:
@@ -4345,47 +4262,6 @@ class Host:
             await self.send_app(s,{"t":"tts_end","r":r,"ok":False,"why":error.why})
         finally:
             self.tts_busy=False
-
-    async def on_auth(self, s: Session, t: str, obj: dict) -> None:
-        """P258 (PROTOCOL §31): the paired phone's 「AI 登录救援」. auth_get → the view; auth_start {kind, route} → owner passkey
-        card, then the official login flow (device code / authorize URL + sealed code card / sealed token card); auth_press
-        {kind, id} → re-check pressing one catalogued confirm screen's fixed keys (passkey); auth_cancel. Every answer:
-        auth_res {r, ok[, why], view}. No code or token ever travels in these messages (the secret card carries it, sealed)."""
-        r = obj.get("r")
-        if not wire.is_rid(r):
-            return
-        ar = self.auth_rescue
-
-        async def answer(res: dict) -> None:
-            if self.sessions.get(s.cid) is s and s.state == "ready" and self.st.is_allowed(s.pub):
-                await self.send_app(s, {"t": "auth_res", "r": r, "ok": bool(res.get("ok", True)),
-                                        **({"why": res["why"]} if res.get("why") else {}),
-                                        "view": await asyncio.to_thread(ar.view)})
-        kind, route, bid = obj.get("kind"), obj.get("route"), obj.get("id")
-        if t == "auth_get":
-            return await answer({"ok": True})
-        if t == "auth_cancel":
-            return await answer(await ar.cancel_flow())
-        if not isinstance(kind, str) or len(kind) > 16:
-            return await answer({"ok": False, "why": "unsupported"})
-        self.st.log("auth_rescue_req", device=s.device, agent=kind, status=t)
-        if t == "auth_start":
-            async def go():
-                await answer(await ar.start(kind, route if isinstance(route, str) else ""))
-            self._bg(go(), "auth_start")     # the passkey card waits for the owner; never hold the relay reader
-            return
-        if t == "auth_press":
-            async def go2():
-                await answer(await ar.press(kind, bid if isinstance(bid, str) else ""))
-            self._bg(go2(), "auth_press")
-            return
-
-    def auth_signal(self, kind: str, text) -> None:
-        """P258: an adapter's failure text → classify (login / balance / rate_limit) → the rescue's dot and alert."""
-        try:
-            self.auth_rescue.text_signal(kind, text)
-        except Exception:  # noqa: BLE001 — detection must never break the failure notice itself
-            pass
 
     async def on_mail(self, s: Session, t: str, obj: dict) -> None:
         """P170 (PROTOCOL §10.20): the paired phone's e-mail settings. The app password never comes this way — 「设置授权码」
@@ -4529,8 +4405,6 @@ class Host:
             return
         if t.startswith("mail_"):          # P170: the e-mail channel's settings page
             return await self.on_mail(s, t, obj)
-        if t.startswith("auth_"):          # P258: AI 登录救援
-            return await self.on_auth(s, t, obj)
         if t == "tg_fwd":                  # P118 (B10): one tap → this reply to the owner's own Telegram private chat
             r = obj.get("r")
             if not wire.is_rid(r):
@@ -5473,7 +5347,6 @@ class Host:
             self.st.log("agent_on", agent=self.agent.kind, isolation_requested=self.agent_cfg.get("fence", True), session_mode=self.agent_cfg.get("session_mode", "independent"), phase="configured")
         await self.bots.start()
         await self.elevate.start()                 # F17: <state>/agentperm/elevate.sock for `agentj sudo` / `agentj secret`
-        self.scheduler.recover()                   # P248: reconcile before accepting any dispatch
         await self.capabilities.start()            # 0.18: <state>/agentperm/capability.sock for `agentj capability`
         try:                                       # P156: heartbeat.sock + the default heartbeat.md; never blocks serve
             from .heartbeat import ensure_prompt
@@ -5507,7 +5380,6 @@ class Host:
         jobs.append(asyncio.create_task(self.sweep_loop()))
         from .browser_login import daily_loop     # P114: the daily read-only sign-in check (status only, never a QR)
         jobs.append(asyncio.create_task(daily_loop(self)))
-        jobs.append(asyncio.create_task(self.auth_rescue.loop()))   # P258: token expiry reminder (30 days ahead)
         if self.read_stdin:
             jobs.append(asyncio.create_task(self.stdin_loop()))
         try:

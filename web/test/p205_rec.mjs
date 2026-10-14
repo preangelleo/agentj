@@ -9,7 +9,7 @@
 // Shots → reports/qa/p205/rec-*.png. Not covered here: a real Android / iPhone (the report says what Leo should try).
 // Usage: node web/test/p205_rec.mjs
 import assert from 'node:assert/strict';
-import {mkdirSync, writeFileSync, mkdtempSync, rmSync} from 'node:fs';
+import {mkdirSync, writeFileSync, mkdtempSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {fileURLToPath} from 'node:url';
@@ -67,14 +67,8 @@ async function pair(B, w, h, language, opts){
 }
 
 // ---- A. phone, both languages ----------------------------------------------------------------------------------------
-// A known non-silent source, rather than Chromium's periodic default beeps, drives the real media pipeline.
-const steadyDir = mkdtempSync(join(tmpdir(), 'aj-p205-tone-'));
-const steadyRate = 16000, steadySamples = new Float32Array(steadyRate);
-for (let i=0;i<steadySamples.length;i++)steadySamples[i]=0.2*Math.sin(2*Math.PI*440*i/steadyRate);
-const steadyWav=join(steadyDir,'steady.wav');writeFileSync(steadyWav,wavBytes(steadySamples,steadyRate));
-let B;
+let B = await launch();
 try {
-  B=await launch({args:[`--use-file-for-fake-audio-capture=${steadyWav}`]});
   for (const language of ['zh', 'en']){
     const L = T[language];
     const S = await pair(B, 390, 844, language, {touch: true}), p = S.p;
@@ -158,7 +152,7 @@ try {
       assert.deepEqual(p.problems, []); assert.deepEqual(p.offsite, []);
     } finally { await S.stop(); }
   }
-} finally { if(B)await B.close(); rmSync(steadyDir,{recursive:true,force:true}); }
+} finally { await B.close(); }
 
 // ---- B. digital zeros in the microphone itself ---------------------------------------------------------------------
 {
