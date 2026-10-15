@@ -11,7 +11,6 @@ import math
 import os
 from pathlib import Path
 import re
-import sys
 import time
 import json5
 from .state import State, _write_private
@@ -30,29 +29,7 @@ class ConfigError(ValueError):
 def path():
     from .instance import current   # P180: instance N ≥ 2 keeps its own preferences in agentj-N/
     n = current()
-    return guard(Path(os.environ.get('XDG_CONFIG_HOME') or Path.home()/'.config')/('agentj' if n == 1 else f'agentj-{n}')/'config.json5')
-
-def under_test():
-    # agentj itself never imports unittest / pytest: either loaded means a test runner (`-m unittest`, the gates' `-c "import unittest…"`)
-    return os.environ.get('AGENTJ_TEST') == '1' or 'pytest' in sys.modules or 'unittest.runner' in sys.modules
-
-def real_home():
-    try:
-        import pwd
-        return pwd.getpwuid(os.getuid()).pw_dir
-    except (ImportError, KeyError):   # Windows / no passwd entry: the profile dir
-        return os.environ.get('USERPROFILE') or os.path.expanduser('~')
-
-def guard(p):
-    """P316: a test process never resolves the developer's real ~/.config/agentj* (the passwd home, not $HOME): some desktops export
-    XDG_CONFIG_HOME=~/.config, so `HOME=$tmp python -m unittest` still rewrote the owner's config.json5 with /tmp working roots."""
-    if under_test():
-        real = os.path.realpath(os.path.join(real_home(), '.config'))
-        try: rel = os.path.relpath(os.path.realpath(p), real)
-        except ValueError: return p   # another Windows drive
-        if rel.split(os.sep)[0].startswith('agentj'):
-            raise RuntimeError(f'test process refused the real {real}/{rel}: import tests/_hermetic first or set XDG_CONFIG_HOME to a temp dir')
-    return p
+    return Path(os.environ.get('XDG_CONFIG_HOME') or Path.home()/'.config')/('agentj' if n == 1 else f'agentj-{n}')/'config.json5'
 
 def get(doc, key, default=None):
     for p in key.split('.'):
@@ -97,40 +74,8 @@ def _line(raw,key):
     hits=list(re.finditer(r'["\']?'+re.escape(key.split('.')[-1])+r'["\']?\s*:',raw))
     return raw.count('\n',0,hits[-1].start())+1 if hits else 1
 
-def _dotted(doc,prefix=''):
-    """P318: the first object key spelled with a '.' (a literal "agent.allow_docker" would alias the nested key: flatten
-    sees one schema key twice, the runtime reads only the nested one) — keys inside a schema value are data, not checked."""
-    for k,v in doc.items():
-        key=f'{prefix}.{k}' if prefix else str(k)
-        if not isinstance(k,str) or '.' in k: return key
-        if key not in SCHEMA and isinstance(v,dict):
-            hit=_dotted(v,key)
-            if hit: return hit
-    return None
-
-def _undot(doc,prefix=''):
-    """P324 upgrade compatibility: a config.json5 written before P318 may hold a literal dotted key ("agent.x": …). The
-    runtime never read those (get() walks nested objects), so they are dropped here — same effect as before, no error at
-    upgrade, and a dropped key can no longer alias a nested one. → (doc without them, their dotted paths)."""
-    out,gone={},[]
-    for k,v in doc.items():
-        key=f'{prefix}.{k}' if prefix else str(k)
-        if not isinstance(k,str) or '.' in k: gone.append(key); continue
-        if key not in SCHEMA and isinstance(v,dict):
-            v,g=_undot(v,key); gone+=g
-        out[k]=v
-    return out,gone
-
-def ignored(raw):
-    """P324: the literal dotted keys parse() drops from this text (names only, for doctor / `agentj config check`)."""
-    try: doc=json5.loads(raw,allow_duplicate_keys=False)
-    except ValueError: return []
-    return _undot(doc)[1] if isinstance(doc,dict) else []
-
 def validate(doc,raw=''):
     if not isinstance(doc,dict): raise ConfigError('/', 'expected an object')
-    dotted=_dotted(doc)
-    if dotted: raise ConfigError(dotted,'a key may not contain "."; nest it instead: {"agent": {"allow_docker": false}}',_line(raw,dotted))
     for k,v in flatten(doc):
         m=SCHEMA.get(k); line=_line(raw,k)
         if not m: raise ConfigError(k,'unknown key; use agentj config keys',line)
@@ -241,7 +186,6 @@ def parse(raw):
     except ValueError as e:
         # Parser messages can include the bad input (possibly a pasted credential). Do not echo it.
         m=re.search(r':(\d+)\b',str(e)); raise ConfigError('/','invalid JSON5 syntax (or duplicate key)',int(m[1]) if m else 1) from None
-    if isinstance(doc,dict): doc=_undot(doc)[0]   # P324: pre-P318 dotted keys are ignored (as the runtime always did), not an error
     validate(doc,raw)
     return doc
 
@@ -267,7 +211,6 @@ def spans(raw):
                 ki=i; k=ts[i][0]; k=json5.loads(k) if k.startswith(('"',"'")) else k
                 assert ts[i+1][0]==':'
                 child=p+'.'+k if p else k
-                if '.' in k: child='\0'+child     # P324: a literal dotted key is not the nested key it spells; edit() never targets it
                 i=value(i+2,child); end=i; comma=None
                 if ts[i][0]==',': comma=i; i+=1
                 rows.append((child,ki,end,comma))
@@ -457,11 +400,6 @@ def transact(st,newraw):
         result={'ok':True,'applied':True,'verify':{'ok':True,'detail':'commit confirmed after lost acknowledgement'}}
     if result is not None:
         if not result.get('ok'):raise ConfigError(result.get('key','/'),result.get('error','apply rejected'),code=3)
-        if result.get('reload'):
-            # P320: a reload-tier key (an Agent's `agentj config set`, the owner's terminal) — reload at once, never ask
-            try:result['reloaded']=ctl_call(st,{'cmd':'reload'},30)
-            except ServeBusy:result['reloaded']={'ok':False,'error':'serve busy; run agentj reload'}
-            if (result['reloaded'] or {}).get('ok'):result['needs']=[n for n in result.get('needs',[]) if n!='reload']
         return result
     # The running host owns provider/channel dependencies in its service environment.
     # Only an offline write is validated against this CLI process's environment.
@@ -493,7 +431,6 @@ def command(args):
         elif a.action=='explain': result={'ok':True,'key':a.key,**SCHEMA[a.key]}
         elif a.action=='validate':
             raw=Path(a.file).read_text() if a.file else read()[0]; parse(raw); result={'ok':True,'path':str(a.file or path())}
-            if ignored(raw): result['ignored']=ignored(raw)   # P324: pre-P318 dotted keys, never read; nest them to use them
         elif a.action in ('show','get','diff'):
             raw,doc=read(); out=effective(st)
             if a.action=='show': result={'ok':True,'effective':out,'sources':{k:'user' if get(doc,k) is not None else m['tier'] if m['tier']!='user' else 'default' for k,m in SCHEMA.items()}}

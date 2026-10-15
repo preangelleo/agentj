@@ -233,38 +233,12 @@ class Stdlib(unittest.TestCase):
         self.assertTrue(mods <= set(sys.stdlib_module_names) | {"__future__"}, mods)
 
 
-def _published_view(d: pathlib.Path, tmp: pathlib.Path) -> pathlib.Path:
-    """P324: the catalog package as it is published — its git-tracked (+ untracked, not ignored) files only. Someone running a
-    package's own scripts/tests leaves git-ignored __pycache__/ behind; bundle.build rightly refuses those, but they are never
-    published, so they must not turn this test red. Outside a git checkout the folder is used as it is."""
-    import shutil
-    import subprocess
-    try:
-        out = subprocess.run(["git", "-C", str(d), "ls-files", "-co", "--exclude-standard", "-z", "--", "."],
-                             capture_output=True, check=True, timeout=30).stdout
-    except (OSError, subprocess.SubprocessError):
-        return d
-    files = [f for f in out.decode().split("\0") if f]
-    if not files:
-        return d
-    dst = tmp / d.parent.name / d.name
-    for f in files:
-        src = d / f
-        if src.is_file() and not src.is_symlink():
-            (dst / f).parent.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(src, dst / f)
-    return dst
-
-
 @unittest.skipUnless(fx.CATALOG.is_dir(), "the catalog is not on this machine")
 class Catalog(unittest.TestCase):
     def test_every_catalog_package_builds_and_parses(self):
         pkgs = sorted([*(fx.CATALOG / "skills").iterdir(), *(fx.CATALOG / "workflows").iterdir()])
         self.assertGreaterEqual(len(pkgs), 33)
         refused = {}
-        tmp = pathlib.Path(tempfile.mkdtemp(prefix="p324-catalog-"))
-        self.addCleanup(__import__("shutil").rmtree, tmp, True)
-        pkgs = [_published_view(d, tmp) for d in pkgs]
         for d in pkgs:
             try:
                 data, m = bundle.build(d)
@@ -280,26 +254,6 @@ class Catalog(unittest.TestCase):
         for name, why in refused.items():
             self.assertIn(name, CATALOG_KNOWN_BAD, f"{name}: {why}")
             self.assertIn(CATALOG_KNOWN_BAD[name], why)
-
-
-class PublishedView(unittest.TestCase):
-    def test_git_ignored_cache_is_left_out(self):
-        import subprocess
-        root = pathlib.Path(tempfile.mkdtemp(prefix="p324-view-"))
-        self.addCleanup(__import__("shutil").rmtree, root, True)
-        d = root / "skills" / "demo"
-        (d / "scripts" / "__pycache__").mkdir(parents=True)
-        (d / "SKILL.md").write_text("x")
-        (d / "scripts" / "run.py").write_text("print(1)")
-        (d / "scripts" / "__pycache__" / "run.cpython-313.pyc").write_bytes(b"\0")
-        (root / ".gitignore").write_text("__pycache__/\n")
-        try:
-            subprocess.run(["git", "init", "-q", str(root)], check=True, capture_output=True)
-        except (OSError, subprocess.CalledProcessError):
-            self.skipTest("git is not available")
-        view = _published_view(d, root / "out")
-        got = sorted(str(p.relative_to(view)) for p in view.rglob("*") if p.is_file())
-        self.assertEqual(got, ["SKILL.md", "scripts/run.py"])
 
 
 if __name__ == "__main__":

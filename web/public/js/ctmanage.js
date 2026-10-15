@@ -134,7 +134,7 @@ async function saveEdit(e) {
   el('ctm-e-save').disabled = false;
   if (m.t !== 'ct_res' || !m.ok) return err(m.t === 'timeout' ? 'ct.timeout' : 'ct.saveFail');
   closeEdit();
-  toast(t('ct.saved'), 2200, 'success');
+  toast(t('ct.saved'), 2200);
   load();
 }
 async function remove() {

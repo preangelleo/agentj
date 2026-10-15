@@ -520,15 +520,6 @@ def switch_text(cur: dict, alt: str, title: str, lang: str = "zh") -> str:
             f"{cur['name']} 额度告警（{'、'.join(why)}）。「{title}」这次改用 {NAMES[alt]} 来做？（已握手，能用）")
 
 
-async def pick_alt(rep: dict, kind: str, allowed: tuple, probe=handshake) -> str | None:
-    """The first other harness whose own readings show room and which answers a tool-free handshake, or None."""
-    import asyncio
-    for c in headroom(rep, kind):
-        if c["harness"] in allowed and await asyncio.to_thread(probe, c["harness"]):
-            return c["harness"]
-    return None
-
-
 async def route(host, kind: str | None, task: dict | None, title: str, rep: dict | None = None,
                 probe=handshake) -> tuple[str | None, str | None]:
     """(harness to run this task on, one sentence for the run's notice or None)."""
@@ -543,7 +534,11 @@ async def route(host, kind: str | None, task: dict | None, title: str, rep: dict
     if not cur or not alarmed(cur):
         return kind, None
     lang = "en" if getattr(host, "lang", "zh") == "en" else "zh"
-    alt = await pick_alt(rep, kind, allowed, probe)
+    alt = None
+    for c in headroom(rep, kind):
+        if c["harness"] in allowed and await asyncio.to_thread(probe, c["harness"]):
+            alt = c["harness"]
+            break
     if alt is None:
         host.st.log("quota_switch", result="none", frm=kind)
         return kind, None
@@ -559,8 +554,8 @@ async def route(host, kind: str | None, task: dict | None, title: str, rep: dict
 
 
 # ------------------------------------------------------------------ serve side (heartbeat.sock ops)
-READ_OPS = ("quota", "quota_resume")
-WRITE_OPS = ("quota_on", "quota_off", "quota_reset_add", "quota_reset_use", "quota_remind", "quota_resume_cancel")
+READ_OPS = ("quota",)
+WRITE_OPS = ("quota_on", "quota_off", "quota_reset_add", "quota_reset_use", "quota_remind")
 
 
 async def handle(host, req: dict) -> dict:
@@ -571,14 +566,6 @@ async def handle(host, req: dict) -> dict:
 
 async def _handle(host, req: dict, root, prefs: dict, meter_state: dict | None = None) -> dict:
     op = req.get("op")
-    if op in ("quota_resume", "quota_resume_cancel"):     # P314: the waiting automatic continues (serve only)
-        qr = getattr(host, "quota_resume", None)
-        if qr is None:
-            return {"ok": False, "why": "serve_not_running"}
-        if op == "quota_resume_cancel":
-            ok = qr.cancel(str(req.get("id") or ""), by="agent")
-            return {"ok": ok, **({} if ok else {"why": "no_such_resume"}), "items": qr.view()}
-        return {"ok": True, "items": qr.view()}
     if op == "quota":
         rep = report(root, meter_state=meter_state)
         rep["reminders_on"] = reminders_on(prefs)
@@ -717,9 +704,6 @@ def add_parser(sub) -> None:
     x.add_argument("--note", help="备注，不写凭据 / a note, never a credential")
     x = rs.add_parser("used", help="主人按掉了一次：去掉最早过期的那次 / the owner used one")
     x.add_argument("harness", choices=HARNESSES)
-    r = qs.add_parser("resume", help="额度用完后等着自动继续的会话/工作流；cancel ID 取消 / waiting automatic continues; cancel ID")
-    r.add_argument("cancel", nargs="?", choices=("cancel",))
-    r.add_argument("id", nargs="?")
     p.set_defaults(fn=cmd_quota)
 
 
@@ -743,18 +727,6 @@ def cmd_quota(a) -> None:
         if not res.get("ok"):
             sys.exit("没有登记过的 reset / no recorded reset")
         print(f"记下了：{NAMES[a.harness]} 用掉一次 reset / one reset used")
-        return
-    if c == "resume":
-        res = call({"op": "quota_resume_cancel", "id": a.id} if a.cancel else {"op": "quota_resume"})
-        if a.cancel and not res.get("ok"):
-            sys.exit("没有这条自动继续 / no such automatic continue: " + str(res.get("why")))
-        from .quota_resume import hhmm, RESUME_MARGIN
-        rows = [f"{i['id']}  {NAMES.get(i['harness'], i['harness'])}"
-                + (f" · {i['title']}" if i.get("title") else (" · 聊天 / chat" if i["scope"] == "main" else ""))
-                + f" · {hhmm(i['at'] + (0 if i.get('to') else RESUME_MARGIN), lang)}" + (f" → {NAMES.get(i['to'], i['to'])}" if i.get("to") else "")
-                for i in res.get("items", [])]
-        print(("已取消 / cancelled\n" if a.cancel else "") + ("\n".join(rows) or
-              ("没有等着自动继续的 / nothing waiting" if not a.cancel else "")))
         return
     if a.remind:
         res = call({"op": "quota_remind", "lang": lang})

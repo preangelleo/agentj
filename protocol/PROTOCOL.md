@@ -1420,23 +1420,13 @@ No wire change: this section states the `say` / `dup` contract (§10.2) that the
   memory (the files leave the tray with it) and, on `ready`, its files upload (resume) first, then the `say` carries them
   (`att_gone` → those files once more, same `sid`). After a reload the files are gone: the pending line says so, and when
   the drain reaches it the words go back into the field — nothing is sent without its files.
-- **Dedupe guarantee (host, `compose.Sends` + `receipts.py`, P313).** The `sid` never changes after queuing, so a `say`
-  resent because its `say_res` was lost (the connection dropped after the host took it) is answered `dup` and delivered
-  once. The host keys this by device, not by session (a reconnect is a new session), and remembers every `sid` a device
-  used — the newest **1 024** per device, independently of the 10-minute withdraw table. Since P313 the key also goes to
-  disk the moment a `say` is accepted, before the Agent gets it and before the phone hears `say_res ok`:
-  `<state>/say_receipts.jsonl` (0600, fsync'ed by one writer thread off the loop; device id + `sid` + state + page id +
-  time, never the words) with the state `recv` (accepted) → `deliv` (handed to the harness, or the write failed half-way)
-  → `done` (the turn ended, the host answered it itself, withdrawn, dropped by the stop switch). Bounded: 7 days, the newest
-  1 024 per device, 8 192 in all; rewritten when it holds more than twice the live lines. So a host restart forgets nothing:
-  a resend of any remembered `sid` is `dup`. **No replay:** a message the old process had not finished is never run again
-  by the host. Once, at start, each one's page (still `open`) ends `failed` with one line in the owner's language — 「还没交给
-  Agent，没有执行」 for `recv`, 「已交给 Agent，不确定做完没有，不会自动重发」 for `deliv` — both ending 「需要的话请再发一次」
-  (a manual resend is a new `sid`); a page that already ended gets no line; without the page (history off) one `sys` page
-  counts them. No wire change. Not covered: a device that used more than 1 024 other `sid`s in between (impossible from one
-  phone's queue of ≤ 50, but another tab of the same pairing shares the device id), and a store the disk refuses (logged
-  `say_receipts write_failed`; memory dedupe as before, the message is never refused for it). An older host without `p33`
-  gets §8 `msg`, which has no `sid`: no dedupe there.
+- **Dedupe guarantee (host, `compose.Sends`).** The `sid` never changes after queuing, so a `say` resent because its
+  `say_res` was lost (the connection dropped after the host took it) is answered `dup` and delivered once. The host keys
+  this by device, not by session (a reconnect is a new session), and remembers every `sid` a device used — the newest
+  **1 024** per device, independently of the 10-minute withdraw table — **for the life of the host process**. Not covered:
+  a host restart between taking the `say` and the resend (the memory is gone: that one message can be delivered twice), and
+  a device that used more than 1 024 other `sid`s in between (impossible from one phone's queue of ≤ 50, but another tab of
+  the same pairing shares the device id). An older host without `p33` gets §8 `msg`, which has no `sid`: no dedupe there.
 
 ## 15. Compaction preparation (F24, 0.15.2) — and the main Agent's recall (F22)
 Host behaviour only: no new message type, no new page field, no new button. Applies to the main Agent's own conversation on
@@ -2270,13 +2260,6 @@ came for 30 minutes — once a local day, never while stopped. The result notice
 
 Before painting unread after ready/foreground, the client fetches the head (`hist_get`) with the host watermark; while that fetch is unresolved it suppresses unread hints. Same-host/same-epoch snapshots merge by maximum. Numbers-only host-scoped local receipts retry after reconnect, including a receipt whose first transmission was lost; legacy device-local records are not imported into host state. Hosts without the additive `read` field retain the P207 device-local fallback. The account-page web remote uses this same client; separate hosts/seats retain separate watermarks.
 
-### P321 — read sync across every remote (additive to P247, no wire version change)
-
-- **Seeded first mark.** A host with no `history-read.json` (first start of a P247+ host, or a fresh install) seeds it with the newest nonsilent reply id of the current epoch and persists it before serving: replies already in the history count as read, as P207's first run on a remote did. Without this every remote opened a long history at mark 0 and painted 「99+」. A stored mark is never reseeded; a reset epoch still starts at zero.
-- **Answer to a no-op receipt.** When a ready, allowlisted p33 remote's `hist_read` does not advance the mark (lower or equal id, unknown/silent id, other epoch), the host answers **that session only** with `{t:"hist_read",epoch,read}` (the current value). Pending / revoked sessions still get nothing. Clients already accept this frame (P247), so old pages are unaffected.
-- **Client retry.** In owner mode the client remembers the host's last value (`acked`). A local mark above it is pending and is sent again every 4 s while pending, at most three sends per id; a newer id starts again; another host or epoch forgets it. Old hosts without `read` keep the P207 device-local fallback.
-- Everything stays inside the paired Noise transport (end-to-end encrypted; the relay sees ciphertext only). The mark is a visual receipt and carries no approval or execution authority.
-
 ## 30. The five pages: 工作流 · 技能 · 记忆 · Agent J · 消息 (P244, host 0.21, design P233 / P234)
 
 The logo opens a menu of five parallel pages (the chat page is one of them). Four of them read what is on the computer:
@@ -2464,38 +2447,3 @@ command) per harness that is installed and not known to be signed out; output cl
 `health {at, ok, cls}`; `cls:"login"` → the rescue notice + dot at once; `balance` → the top-up state; rate limit /
 network → recorded only; a pass clears a stale login dot. Never a model call before `HEALTH_DELAY`; reminders and the
 health check wait outside the quiet hours (22:00–07:00 local, `browser_login.QUIET`).
-
-## 32. 额度用完自动续跑 — continue after the usage limit resets (P314; the number is provisional until the merge)
-
-A chat turn (own or shared session, any phone or desktop turn) or a workflow / dispatched run that stopped because the AI
-account's **usage limit is used up** continues by itself once. Host side `host/agentj/quota_resume.py`; page side
-`web/public/js/qresume.js` (the chat's thin banner). A momentary 429, an empty balance or a login problem never resume by
-time (waiting would not fix them).
-
-**Detection.** Claude Code: a `result` with `is_error` whose text is its usage-limit line (「usage limit reached」, 「limit
-reached ∙ resets …」, 「You've hit your … limit」); a shared Claude session: the turn's reply is that line (≤ 300 characters).
-Codex (own, shared, task runner): `codex_failure` kind `usage`. **Reset time**, first reliable answer: a rejected
-`rate_limit_event.resetsAt` · the harness's words (`…|<epoch>`, `in 2 hours`, `resets 3pm (Asia/Tokyo)`, `try again at Oct
-20th, 2026 3:05 PM`) · the chat's meters / the quota steward's readings with a window ≥ 95 %. Past, under 30 s away or over 8
-days away = unknown → nothing scheduled, the phone gets a notice saying so.
-
-**Record** (`<state>/quota_resume.json`, 0600): one per scope — `main` or `task:<id>` — `{id, harness, at, created[, title,
-to, frm, trigger]}`; a new hit replaces it. It fires `RESUME_MARGIN` (90 s) after `at`; a chat record made on another harness
-than the one serve runs now fires at once (the owner switched account). A task whose task.json does not pin `harness`, with
-`quota.auto_switch` on and another harness with room that answers a handshake (`quota.pick_alt`), gets `to` and reruns
-`SWITCH_DELAY` (20 s) after the hit on that harness.
-
-**Firing — at most once.** The record is removed (written) before anything is queued. Chat: dropped, not sent, when the stop
-switch is on, the Agent is working / has a queue / a card waits / the turn lock is held, or the owner already sent a message
-(a phone or Telegram `say` drops it at once). Otherwise one fresh turn: its own page `src {k:"agent", via:"quota"}`, system
-provenance, no attachments, text 「继续。〔额度恢复〕… 不是主人新的指令，不授予任何新权限。」 — it never answers or reuses an approval
-card (batch grants already end with the failed turn, ADR-A48). Task: `Scheduler.request(id, "quota_resume")` with a rerun
-note appended to the prompt; a schedule-triggered task still needs its enabling; any new run of the task drops the waiting
-one. A resumed turn that hits the limit again schedules again only for a strictly later reset. Stop-everything drops every
-record. The heartbeat waits (`quota_wait`) while a chat record exists.
-
-**Messages** (p33 sessions of a paired, ready device). Push to every ready p33 phone on each change, and on ready while any
-record exists: `{"t":"quota_resume","items":[{"id","scope":"main|task","harness","at"[,"title"][,"to"]}]}` (`at` = the
-reset; the page shows `at + 90 s`, or `at` when `to` is set). Cancel: `{"t":"qr_cancel","r","id"}` →
-`{"t":"qr_res","r","ok"[,"why":"gone"],"items"}` — unsigned like `grant_off`: it only stops an automatic action. The Agent:
-`agentj quota resume` / `agentj quota resume cancel <id>` (heartbeat.sock `quota_resume` read, `quota_resume_cancel` write).

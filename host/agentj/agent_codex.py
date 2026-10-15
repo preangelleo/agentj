@@ -365,10 +365,6 @@ class CodexAgent(Agent):
             if fn:
                 fn()
         super().fail_notice(notice)
-        if kind == "usage":                     # P314: a used-up usage limit → continue by itself after the reset
-            from . import quota_resume
-            with contextlib.suppress(Exception):
-                quota_resume.main_hit(self, "codex", text)
 
     def is_down(self) -> bool:
         return self.failed_start

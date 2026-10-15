@@ -133,10 +133,7 @@ async def request_key(host, provider):
         if not api:
             return {'result': 'unsupported'}
         from .bailian import verify_for
-        from . import ark
         fixed = verify_for(provider)   # P310: Bailian's Anthropic base has no model list; its OpenAI one does (or none: Coding Plan)
-        if fixed is None:
-            fixed = ark.verify_for(provider)   # P315: Ark's coding address has no published read-only check
         url = fixed[0] if fixed else await asyncio.to_thread(public_url, options(p).get('baseURL'), 'models')
         if not url and not fixed:
             host.agent_notice('无法验证该服务商地址，暂不能打开密钥卡。' if getattr(host, 'lang', 'en') == 'zh' else 'Cannot verify this provider address; the key card is unavailable.')

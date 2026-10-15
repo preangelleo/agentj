@@ -2,19 +2,18 @@
 public/js/outbox.js). The phone fixes a message's `sid` when it queues it and resends with the same sid when a say_res was
 lost; the host must answer `dup` for it — never deliver it twice. These cases pin down exactly how far that goes
 (compose.Sends): per device, not per session (a reconnect is a new session); beyond the 10-minute table; for slash commands
-typed as a say; the newest 1 024 sids per device; and since P313 across a host restart too (receipts.py, on disk).
+typed as a say; the newest 1 024 sids per device; and NOT across a host restart (memory only) — the documented limit.
 No wire change; the serve-level `dup` answer itself is covered by test_p33_chain (say → dup)."""
 import _hermetic  # noqa: F401,I001  (never the real ~/.local/state; see _hermetic.py)
 import os
 import pathlib
 import sys
-import tempfile
 import time
 import unittest
 from unittest import mock
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
-from agentj import compose, receipts, wire  # noqa: E402
+from agentj import compose, wire  # noqa: E402
 
 
 def sid() -> str:
@@ -60,17 +59,13 @@ class OfflineQueueContract(unittest.TestCase):
             self.assertFalse(ss.used("D", first), "the 1 025th send pushed it out (the phone queues ≤ 50, so a queued "
                                                    "message is never that far behind)")
 
-    def test_a_host_restart_keeps_the_sids_on_disk(self):
+    def test_a_host_restart_forgets_the_sids(self):
         ss = compose.Sends()
         s = sid()
         ss.add(compose.Send("D", s, 1, state="delivered"))
-        self.assertFalse(compose.Sends().used("D", s), "compose.Sends itself is memory only …")
-        with tempfile.TemporaryDirectory() as d:
-            r = receipts.Receipts(pathlib.Path(d))
-            r.mark("D", s, "recv", 1)
-            r.flush()
-            self.assertTrue(receipts.Receipts(pathlib.Path(d)).used("D", s),
-                            "… serve also keeps every phone sid on disk (P313): a resend after a restart is dup")
+        self.assertFalse(compose.Sends().used("D", s), "memory only: after a restart a resend of a say whose say_res was "
+                                                       "lost would be delivered again (PROTOCOL §14 limit)")
+
 
 if __name__ == "__main__":
     unittest.main()

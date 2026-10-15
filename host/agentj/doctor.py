@@ -210,82 +210,12 @@ def probe_relay(relay: str, timeout: float = NET_TIMEOUT) -> tuple[bool, str]:
     return (True, "ok") if isinstance(m, dict) and m.get("t") == "host" else (False, "unexpected_answer")
 
 
-def probe_host_leg(st: State, relay: str, timeout: float = NET_TIMEOUT) -> tuple[bool, dict | None]:
-    """P317: this computer's own signed host leg — identity files agree (the channel is the signing key's), then a short
-    host socket: challenge → signed auth (+ seat certificate) → the relay's `ok`, closed at once. Never while serve's link
-    is up (an authenticated host socket replaces the current one). The key stays in this process; nothing is printed."""
-    from websockets.sync.client import connect
-    from . import relaydiag, seatcert
-    try:
-        cfg, sk = st.config(), st.signing_key()
-    except (OSError, ValueError) as e:
-        return False, {"phase": "seat", "why": "error", "code": None, "http": None, "kind": type(e).__name__}
-    channel = cfg.get("channel")
-    if wire.channel_id(st._ed_pub(sk)) != channel:
-        return False, {"phase": "auth", "why": "identity", "code": None, "http": None, "kind": "channel_mismatch"}
-    phase = "seat"
-    try:
-        cert = seatcert.SeatCert(st, relay).cert()
-        phase = "connect"
-        with connect(f"{relay.rstrip('/')}/v1/host/{channel}", open_timeout=timeout, close_timeout=2, max_size=2**12) as ws:
-            phase = "auth"
-            msg = json.loads(ws.recv(timeout=timeout))
-            n = msg.get("n") if isinstance(msg, dict) and msg.get("t") == "challenge" else None
-            if not isinstance(n, str) or not re.fullmatch(r"[A-Za-z0-9_-]{43}", n):
-                raise ValueError("bad challenge")
-            auth = {"t": "auth", "pk": wire.b64u(st._ed_pub(sk)),
-                    "sig": wire.b64u(sk.sign(f"agentjarvis-relay-auth-v1\n{channel}\n{n}".encode()))}
-            if cert:
-                auth["cert"] = cert
-            ws.send(json.dumps(auth))
-            ok = json.loads(ws.recv(timeout=timeout))
-            if not isinstance(ok, dict) or ok.get("t") != "ok":
-                raise ValueError("relay refused auth")
-        return True, None
-    except Exception as e:  # noqa: BLE001 — any failure is a finding; relaydiag keeps it to phase / reason / close code
-        return False, relaydiag.classify(e, phase)
-
-
-def _host_leg(st: State, relay: str) -> tuple[str, str, str]:
-    """P317: (status, summary part, hint) for the host leg. A running serve with its link up is the answer itself; a serve
-    that is down says where its own attempts stick (relay_last), and a fresh signed probe tells a credential / network fault
-    from one inside serve."""
-    from . import relaydiag
-    if _fenced() or not st.exists():
-        return OK, "", ""
-    res = _serve_status(st)
-    if isinstance(res, dict) and res.get("relay_up"):
-        return OK, "主机腿已连上 / host leg up", ""
-    if isinstance(res, dict) and res.get("relay_state") == "seat":   # the seat row says what to do
-        return WARN, "主机腿：等席位证书 / host leg: waiting for a seat certificate", "看 doctor 的 seat 行 / see the seat row"
-    serve_says = relaydiag.text2(res.get("relay_last")) if isinstance(res, dict) else ""
-    ok, d = probe_host_leg(st, relay)
-    if not ok and d["why"] == "seat":      # not bound / no seat yet (a fresh install): the seat row is the fault, not the relay
-        return WARN, "主机腿 / host leg: " + relaydiag.text2(d), "看 doctor 的 seat 行 / see the seat row"
-    if ok:
-        if serve_says:
-            return WARN, (f"主机腿：本次签名探测能连上，但后台服务的连接卡在 / host leg: a signed probe connects, but the service's "
-                          f"own link is stuck at: {serve_says}"), "agentj doctor --reconnect"
-        return OK, "主机腿签名认证 ok / host leg signed auth ok", ""
-    hint = {"identity": "agentj doctor --json 发给客服；不要自己删状态目录 / send `agentj doctor --json` to support; "
-                        "do not delete the state directory",
-            "replaced": "pgrep -af 'agentj serve' — 只留一个 / keep exactly one",
-            "limit": "同一出口 IP 连接太多，稍后再试 / too many connections from this IP, retry later",
-            "tls": "检查代理 / 抓包软件与系统证书 / check proxies, TLS interception, system certificates"}.get(d["why"], "agentj doctor --reconnect")
-    return FAIL, "主机腿 / host leg ✗ " + relaydiag.text2(d) + (f" · 后台服务 / service: {serve_says}" if serve_says else ""), hint
-
-
 def check_relay(st: State) -> dict:
     relay = _relay_url(st)
     ok, why = probe_relay(relay)
     if ok:
         selected = proxy.relay_summary(relay)
-        try:                                       # P317: the device probe alone was green while the host leg never came up
-            status, leg, hint = _host_leg(st, relay)
-        except Exception as e:  # noqa: BLE001 — a doctor row, never a crash
-            status, leg, hint = WARN, f"主机腿：检查失败 / host leg: check failed ({_why(e)})", ""
-        return _c("relay", status, f"{relay} (TLS + WebSocket)" + (f" · proxy / 代理 {selected}" if selected else "")
-                  + (f" · {leg}" if leg else ""), hint)
+        return _c("relay", OK, f"{relay} (TLS + WebSocket)" + (f" · proxy / 代理 {selected}" if selected else ""))
     return _c("relay", FAIL, f"{relay} 连不上 / unreachable ({why})",
               "检查网络和代理（HTTPS_PROXY）；有防火墙的话要放行 wss:// / check network, proxy, firewall (wss://)")
 
@@ -563,10 +493,6 @@ def check_agent_cli(st: State, svc: dict) -> dict:
         for f in bailian.facts():
             s += (f" · 阿里百炼 {f['provider']}: key {f['key_env'] or '—'} " +
                   ("已存 / set" if f["key_set"] else "未存 / not set (agentj provider bailian → key card)"))
-        from . import ark                            # P315: the Volcano Ark Coding Plan, same facts
-        for f in ark.facts():
-            s += (f" · 火山方舟 {f['provider']}: key {f['key_env'] or '—'} " +
-                  ("已存 / set" if f["key_set"] else "未存 / not set (agentj provider ark → key card)"))
     if k == 'opencode' and harness.opencode_v2(ver):
         s += ' · v2 (/api)'                         # P60: supported (agent_opencode2); the live check below asks the server
     if k == "opencode" and c:
@@ -849,10 +775,8 @@ def check_serve(st: State) -> dict:
             if isinstance(obs.get("errors"), int) and obs["errors"] > 0 else "")
     if not up and res.get("relay_state", res.get("relay")) == "connecting":   # P129: just started, first link not up yet — not a fault
         return _c("serve", OK, "在运行 / running · 正在连接中继 / relay connecting" + note, "")
-    from . import relaydiag
-    stuck = "" if up else relaydiag.text2(res.get("relay_last"))   # P317: where the host leg sticks, not only "reconnecting"
-    return _c("serve", OK if up else WARN, "在运行 / running · relay " + ("connected" if up else "reconnecting") + note
-              + (f" · {stuck}" if stuck else ""), "" if up else "agentj doctor --reconnect")
+    return _c("serve", OK if up else WARN, "在运行 / running · relay " + ("connected" if up else "reconnecting") + note,
+              "" if up else "检查网络 / check the network")
 
 
 def _wait_relay(st: State, res: dict) -> dict:

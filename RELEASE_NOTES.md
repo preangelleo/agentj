@@ -1,6 +1,6 @@
-# Agent J 0.22.1a1 release notes
+# Agent J 0.22.0a1 release notes
 
-Host 0.22.1a1 / install 0.24.1; phone-web scope.
+Host 0.22.0a1 / install 0.24.0; phone-web scope.
 Phone parity must pass --strict. Full Android/Telegram parity is incomplete.
 Full Android/Telegram parity is incomplete.
 No APK is included in this release. Android source is for review, not a released app.
@@ -8,35 +8,51 @@ No APK is included in this release. Android source is for review, not a released
 Publication status: local preparation only. Live site verification is DEFERRED until
 the public commit and tag are pushed, the site is deployed, and cold installation passes.
 
-On failure restore v0.22.0a1. Release order: C (Dashboard only, no D1) in 05:00–07:00 JST, then A signed host/site/downloads and B phone web right after, in the same 23:00–08:00 window. No relay change.
+On failure restore v0.21.1a1. Release order: C (D1 app 0027 + Dashboard) in 05:00–07:00 JST, then A signed host/site/downloads and B phone web right after, in the same 23:00–08:00 window. No relay change.
 ## Changes
 
-- No restart after changing settings: tap Reload configuration in ≡ All commands, send /reload, press Alt+Shift+L, or run agentj reload on the computer; the Agent picks up the new settings before your next message and the conversation stays.
-- When the quota runs out, work continues by itself at the reset time: a banner says when, and Cancel the automatic continue stops it.
-- Whatever runs on your computer (Claude Code, Codex, OpenCode, Kimi or Qwen), the Agent can show you a choice card on the phone.
-- A Volcengine Ark Coding Plan preset for mainland China: agentj provider ark connects it in one step.
-- Every notice on the phone is one dark pop-up that tells success, warning, error and progress apart at a glance; the empty message box says Message… and shows what is left near the length limit.
-- Alt+Shift+A replies to the current message from anywhere, with the focus left in the message box; the upgrade receipt reads more clearly.
-- Read marks sync more reliably across all your remotes: after an upgrade existing replies count as read, so nothing opens at 99+.
-- The website and account page have clearer dark-mode layers and a new footer line.
-- A message you just sent is never run twice when the computer restarts or upgrades; one that did not finish is marked, so you can send it again if needed.
-- When the computer cannot reach the connection service, status and doctor now say where it is stuck (network, sign-in, seat) instead of connecting forever.
-- macOS Login Items no longer fill up with agentj entries; the old ones are removed on upgrade.
-- Switching a shared session to OpenCode on a Mac no longer idles and rolls back; asking for the same security setting twice shows one card, applied with the newest value once you allow it.
-- Old configuration files with dotted keys such as "agent.xxx" no longer turn into a configuration error after the upgrade (that spelling never took effect; nest the key to use it).
-- 改完设置不用重启：在 ≡ 全部命令里点「重新加载配置」、发 /reload、按 Alt+Shift+L，或在电脑上运行 agentj reload，Agent 在下一条消息前换上新设置，对话保留。
-- 额度用完后，到重置时间自动接着干：页面上方写着「额度用完，预计几点自动继续」，不想等可以点「取消自动继续」。
-- 不管电脑上用的是 Claude Code、Codex、OpenCode、Kimi 还是 Qwen，Agent 都能在手机上弹选择卡让你点选。
-- 新增火山方舟 Coding Plan 预设（中国大陆），用 agentj provider ark 一步接上。
-- 全站提示统一成深色弹窗：成功、提醒、出错、进行中一眼分清；输入框里没字时写着「说点什么…」，快到字数上限会显示还剩多少。
-- Alt+Shift+A 在任何地方都能回复当前这条，焦点留在输入框；升级完成的回执说得更清楚。
-- 已读在你所有遥控器之间同步更稳：升级后已有的回复都算已读，不会一打开就是 99+。
-- 官网和账户页暗色更有层次，页脚换成新标语。
-- 电脑重启或升级时，手机上刚发的消息不会被执行两遍；没办完的会标一句，需要请再发一次。
-- 电脑一直连不上中继时，状态和体检会说清卡在哪一步（网络、认证、席位等），不再只是一直「连接中」。
-- Mac「登录项与扩展」里不再堆出一排 agentj，升级后旧的会自动清掉。
-- Mac 上共享会话切到 OpenCode 不再空转后回滚；同一项安全设置连着申请两次，只弹一张卡，批准后按最新设置生效。
-- 旧配置文件里写成「agent.xxx」这种带点的键，升级后不会报配置错误（这种写法从来不生效，要用请写成嵌套的形式）。
+- A new Agent J father-robot logo in five state colours; the site adds a robots & logo page and an official brand kit, and your Telegram bot gets the official avatar when it has none.
+- Your own Telegram bot can double as customer service: your private chat still reaches the main conversation, strangers go to the bot you pick; Telegram now pairs with a one-time code.
+- Switching the underlying tool (Claude Code / Codex / OpenCode) shows each step on the phone, checks you can switch back first, and hands over through a written handoff; OpenCode works with its free models even without a key.
+- Claude login reminders 7, 3 and 1 days before expiry, renewed right from the phone; a failed upgrade says which step and why, and the account page shows the last upgrade.
+- The reply card's bottom-left key can run any command or skill; up to five quotes above the message box; a full set of keyboard shortcuts, listed at agentj.app/hotkeys.
+- iMessage assistant (Mac only, off by default): codes, deliveries and family texts reach your phone, spam is held back; read-only.
+- New installs come with three example workflows (knowledge base, scripts & articles, e-book); where Claude Code / Codex are not offered, a measured Kimi route is recommended.
+- Two more underlying tools: Kimi Code, and Alibaba Cloud Bailian Token Plan (an OpenCode preset or Qwen Code); where Claude Code / Codex are not offered a monthly plan is enough, and the Agent explains the plan's terms first.
+- Qwen creators can say 「装千问自媒体工具」 to install a kit for images, video and voice-over; the workflow wizard gains a Qwen self-media template.
+- The Workflow page counts only real staff; a workflow with only a CEO says so once and helps you add 3–7 staff from its own work.
+- Status lines speak in the Agent's own voice and use your chosen form of address; /clear can be undone until your next message.
+- Every background job shows a dancing robot, and when one finishes the Agent reads its report and tells you; unread marks sync across all your remotes.
+- A rebuilt full-screen reader and no drawn scrollbars anywhere on the phone; every command and code copies with a tap; files go to Telegram in one tap; tap the mic to lock, hold to talk.
+- Settings can be searched, Friends and Bots pages have "Let Agent J set this up", the mail app password is set from Settings, and when something is missing the Agent says what and how to add it.
+- The weekly allowance in the top bar shows which day of the reset cycle it is, glows faintly blue when you are ahead of the average pace and orange at 80% and 90%; open Usage to see when it resets and where today's pace will land.
+- Menu pages share one spacing scale, sub-page headers and skill tabs stay on top; Esc, a swipe from the left edge or Android Back all go back; the menu turns fully dark; the new logo everywhere; bottom sheets never rise above the message card.
+- After the service on your computer restarts or upgrades, an open phone turns from grey back to ready within seconds without you sending a message first; when the shared terminal window is closed, the phone shows grey and explains how to reattach.
+- A very busy disk no longer stalls the connection; Macs no longer show a false log-in reminder after a restart (the phone's offline page explains instead); Linux / WSL without systemd get a clear fix.
+- Fixed forwarded-mail results and duplicates, the Android gesture-bar colour, Markdown colours in replies and the secret pickup card preview.
+- The "hand over to another AI account on a quota warning" switch now saves; the Mac home-screen app's "Updated to …" line disappears after 5 seconds.
+- Answering a question on the phone in a shared session now releases the terminal too; a momentary rate limit on a Codex API proxy is retried once, and a second failure names the proxy; a slow Codex start during a switch is waited for, and a failure says why and what next.
+- 新的 Agent J 爸爸机器人 Logo，五种状态五种颜色；官网新增机器人与 Logo 页和官方品牌套件，你的 Telegram 机器人没有头像时自动换上官方头像。
+- 你自己的 Telegram 机器人可以兼做客服：你的私聊照旧进主对话，陌生人交给你选的客服 Bot；Telegram 改用一次性配对码绑定。
+- 切换底层工具（Claude Code / Codex / OpenCode）时手机上一步步显示进度，切之前先确认切得回来，切前自动写交接、切过去先读交接；OpenCode 没有 key 也能用它的免费模型。
+- Claude 登录到期前 7、3、1 天提醒，直接在手机上续期；升级失败会说清哪一步、什么原因，账户页能看到最近一次升级。
+- 回复卡左下角的快捷键可以换成任何命令或技能；输入框上方最多同时放 5 段引用；全套键盘快捷键，官网 agentj.app/hotkeys 有完整列表。
+- iMessage 助手（仅 Mac，默认关）：验证码、快递、家人等短信推到手机，垃圾短信挡掉，只读不改。
+- 新装时预置三套示例工作流（知识库、脚本与文章、电子书）；用不了 Claude Code / Codex 的地区按实测推荐 Kimi 路线。
+- 多两种底层工具：Kimi Code，和阿里云百炼 Token Plan（OpenCode 预设或 Qwen Code）；用不了 Claude Code / Codex 的地区按月订阅就能用，Agent 会先讲清套餐条款。
+- 千问创作者说「装千问自媒体工具」就能装上生图、出视频、配音的工具箱；工作流向导多了「千问自媒体一条龙」模板。
+- 工作流页只把真正的员工算作员工；只有 CEO 的工作流会提示一次，并按它的工作内容帮你补 3–7 名员工。
+- 状态提示改成 Agent 自己的口吻，称呼跟着「对你的称呼」设置走；/clear 在下一条消息前都能撤销。
+- 后台在干的活一律有跳舞机器人显示，后台任务结束后 Agent 自动读报告向你汇报；未读在你的所有遥控器之间同步。
+- 全屏阅读重做，整个手机网页不再画滚动条；所有命令和代码一点就复制；文件卡一键发到 Telegram，麦克风单击锁定、长按说话。
+- 设置页可以搜索，好友页、客服 Bot 页有「让 Agent J 帮我设置」；邮箱授权码在设置页就能填；能力不够时 Agent 会说清差什么、怎么补。
+- 顶栏本周额度后面写着重置周期的第几天，用得比平均快会微微发蓝光，用到 80%、90% 发橙光；点开「用量」能看到还有多久重置、按现在的速度到重置时大概用到多少。
+- 菜单页间距统一，子页面页眉和技能页标签固定在顶部；Esc、左边缘右滑、安卓返回键都能退出；菜单打开时整页深色；全站换新 Logo；底部弹窗最高只到消息卡顶部。
+- 电脑上的服务重启或升级后，开着的手机几秒内就从灰色恢复，不用先发一条消息；共享会话的终端窗口关了时手机会显示灰色并说明怎么接回。
+- 电脑磁盘很忙时不再卡住断线；Mac 重启后不再误弹登录提醒，改由手机离线页说明；没有 systemd 的 Linux / WSL 会给出修法。
+- 修复转发邮件的结果与防重复、Android 底部手势条颜色、回复里的 Markdown 颜色和密钥领取卡的预览。
+- 「额度告警时交给其他 AI 账号」开关现在能保存；Mac 主屏幕 App 的「已更新到…」提示 5 秒后自动消失。
+- 共享会话里在手机上回答提问，电脑终端也会放行；Codex 中转偶发限流时自动重试一次，还失败会说清是哪家中转；切到 Codex 时启动慢会多等一会，失败会说清原因和下一步。
 
 ## Material acceptance limits
 

@@ -5,8 +5,6 @@
 // epoch, the read-up-to turn id, and the ids seen above it; numbers only, never text). Silent turns are not pages, so they
 // never count. A reply counts as seen when its page is on screen while the page is visible.
 //
-// P321: in owner mode the host's own value is `acked`; a local mark above it (a receipt lost on the way, or sent while the
-// connection was down) is `pending()` and relay.js sends it again — a few times per id, so a refused id cannot loop.
 // Pure bookkeeping: relay.js passes the loaded reply ids (ascending) and whether they reach back to the mark (`covered`).
 export const UNREAD_KEY = 'aj.unread';
 const SEEN_MAX = 400;
@@ -23,8 +21,7 @@ function writeStore(st) {
 }
 
 export function createUnread() {
-  let st, owner = false, scope, acked = -1, tries = new Map();
-  const RETRY_MAX = 3;
+  let st, owner = false, scope;
   const ownerKey = () => 'aj.ownerRead:' + scope;
   const saveOwner = () => { try { localStorage.setItem(ownerKey(), JSON.stringify({e:st.e,m:st.m})); } catch {} };
   const state = () => (st === undefined ? (st = readStore()) : st);
@@ -37,30 +34,20 @@ export function createUnread() {
       if (owner) return;
       if (s.e !== epoch) { s.e = epoch; s.m = 0; s.s.clear(); writeStore(s); }
     },
-    bind(key) { if (scope !== key) { scope = key; owner = false; st = undefined; acked = -1; tries.clear(); } },
+    bind(key) { if (scope !== key) { scope = key; owner = false; st = undefined; } },
     owner(epoch, mark) {
       if (!Number.isSafeInteger(epoch) || !Number.isSafeInteger(mark) || mark < 0) return false;
       if (!owner || !st || epoch > st.e) {
-        if (st && epoch > st.e) { acked = -1; tries.clear(); }
         let saved;
         try { saved = JSON.parse(localStorage.getItem(ownerKey()) || 'null'); } catch {}
         st = {e: epoch, m: saved?.e === epoch && Number.isSafeInteger(saved.m) && saved.m >= 0 ? Math.max(mark,saved.m) : mark, s: new Set()};
       }
       else if (epoch !== st.e) return false;
       else st.m = Math.max(st.m, mark);
-      acked = Math.max(acked, mark);
       owner = true; saveOwner();
       return true;
     },
     isOwner: () => owner,
-    /** P321: the owner mark the host has not confirmed yet, or null (none / not owner / tried RETRY_MAX times). */
-    pending() {
-      if (!owner || !st || st.m <= acked) return null;
-      const n = tries.get(st.m) || 0;
-      if (n >= RETRY_MAX) return null;
-      tries.set(st.m, n + 1);
-      return st.m;
-    },
     ready: () => !!state(),
     /** The page showing reply `id` was on screen in the foreground. */
     see(id, ids, covered) {

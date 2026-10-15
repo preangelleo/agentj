@@ -538,19 +538,14 @@
       ],
       "keys": [
         {
-          "combo": "Alt+Shift+A",
-          "scope": "any"
-        },
-        {
           "combo": "r"
         }
       ],
-      "zh": "回复这一条（引用条出现在输入框上方，焦点留在输入框，Esc 取消）；Alt+Shift+A 在输入框里也能用",
-      "en": "Reply to this one (the quote shows above the message box, focus stays in it; Esc cancels); Alt+Shift+A also works while typing",
+      "zh": "回复这一条（引用条出现在输入框上方，Esc 取消）",
+      "en": "Reply to this one (the quote shows above the message box; Esc cancels)",
       "gesture_zh": "点弯箭头图标",
       "gesture_en": "Tap the curved-arrow icon",
-      "common": true,
-      "allowReserved": "Leo 10-15 chose Alt+Shift+A (Answer) as the global reply key; ChromeOS may take it — r and the reply icon still work"
+      "common": true
     },
     {
       "id": "card.quote_selection",
@@ -2253,33 +2248,6 @@
       "en": "Update and reload page",
       "gesture_zh": "点击设置里的更新并刷新",
       "gesture_en": "Tap Update and reload in Settings"
-    },
-    {
-      "id": "app.reload_host",
-      "since": "0.22.1",
-      "impl": "table",
-      "scope": "any",
-      "target": {
-        "selector": "#reloadEntry",
-        "zh": "≡ 全部命令：重新加载配置",
-        "en": "≡ All commands: Reload configuration"
-      },
-      "gestures": [
-        {
-          "type": "tap",
-          "pointer": "any"
-        }
-      ],
-      "keys": [
-        {
-          "combo": "Alt+Shift+L"
-        }
-      ],
-      "allowReserved": "P320 (Leo 10-15): Reload needs a key and every free Alt+Shift letter is a ChromeOS shell key; L = reLoad. The ≡ row and /reload work everywhere",
-      "zh": "重新加载主机配置（不重启后台服务）",
-      "en": "Reload the computer's configuration (no service restart)",
-      "gesture_zh": "在 ≡ 全部命令里点「重新加载配置」",
-      "gesture_en": "Tap Reload configuration in ≡ All commands"
     },
     {
       "id": "page.go_chat",

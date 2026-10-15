@@ -42,9 +42,9 @@ def take(st):
     p.unlink()
     return rec
 
-def text(rec, lang="zh", web="older", machine=None):
+def text(rec, lang="zh"):
     if rec.get("reason") in ("upgraded", "doctor_failed"):
-        return update.completion_text(rec, rec.get("counts"), lang, rec.get("checks"), web, machine)
+        return update.completion_text(rec, rec.get("counts"), lang, rec.get("checks"))
     if rec.get("reason") == "already_current":
         from . import humane
         return humane.say("update.current", lang, to=rec["to"])

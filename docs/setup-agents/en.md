@@ -1302,8 +1302,6 @@ agentj agent route
 
 It asks the Claude, OpenAI and Kimi servers once each, without any key. Your time zone only breaks a tie and is never sent anywhere. When Claude Code and Codex are not available, it shows Agent J's official invite link with this sentence right next to it: "This is Agent J's official invite link: you and we each get one prize draw". The draw counts when you subscribe within 24 hours. Then create a key in the Kimi Code console and paste it only into the key card on your phone; your Agent switches OpenCode to `kimi-code-plan-cn/k3`. It also lists alternatives: Qwen (Alibaba Cloud Bailian, mainland China site), Zhipu GLM / DeepSeek, OpenRouter and Kimi's pay-as-you-go platform. If you already have an account with one of them, keep using it. A membership bought on the overseas site kimi.ai uses different keys: `kimi-code-plan-global/k3`. Side by side with Kimi it recommends an [Alibaba Cloud Bailian Token Plan](/docs/setup-agents/#bailian) — you choose.
 
-Already paying for a Volcano Ark (火山方舟) Coding Plan? Keep it and use it instead: see [Volcano Ark Coding Plan](/docs/setup-agents/#ark).
-
 ## System requirements {#requirements}
 
 macOS: first run `opencode --version` (or your selected agent’s `--version`). If it works, continue installing; there is no operating-system version gate. The one-line installer probes its downloaded, pinned OpenCode binary and reports actual dyld / _ubrk_clone or execution failures. PATH changes or npm reinstalls cannot repair system libraries; upgrade macOS, use another computer, or choose another working agent with the manual installation guide. Intel Mac uses x86_64 tools and /usr/local Homebrew; Apple Silicon uses arm64 and /opt/homebrew. Gemini currently lists macOS 15+. Physical Intel Mac and Windows installation still requires verification on those machines.
@@ -1368,15 +1366,3 @@ Qwen Code (`qwen`, Alibaba, Apache-2.0) is Alibaba's own coding agent, and Agent
 Check with `qwen --version`; Agent J needs 0.25 or newer. Its free sign-in ended on 2026-04-15, so the key is its login: the same phone key card as above (`BAILIAN_TOKEN_PLAN_API_KEY`). Agent J hands the key to Qwen Code in memory only and writes nothing into `~/.qwen`. If you already set Qwen Code up yourself, for example with `bl config agent --agent qwen-code`, your own settings are used. Then `agentj agent switch qwen`.
 
 Isolation and approvals: Agent J runs Qwen Code inside the same isolation as the other tools. Qwen Code normally starts in a mode where it approves some actions by itself; Agent J switches it back to asking every time, and every request goes to your phone, for that one action only. On the phone, /model lists the plan's models; the ones marked as reading images can look at screenshots.
-
-## Volcano Ark Coding Plan (mainland China) {#ark}
-
-Who it is for: you **already have** a Volcano Engine Ark (火山方舟) Coding Plan (Lite or Pro), or you want ByteDance Doubao, Kimi, Zhipu GLM, DeepSeek and MiniMax models in one subscription. For everyone else, Kimi and Bailian above stay the first recommendations. Prices only from Ark's console.
-
-Which models read images (measured on 2026-10-15): `doubao-seed-2.1-pro` (the default), `kimi-k3` (Pro plan only), `kimi-k2.7-code`, `glm-5-3-flash`, `minimax-m3` and `deepseek-v4-1-flash` can look at screenshots; `glm-5.3`, `deepseek-v4-pro` and `deepseek-v4-flash` are text only. Agent J writes this into OpenCode's settings for you, together with higher output limits (GLM-5.3's thinking can use up OpenCode's 32k default). The Coding Plan has no image-generation model.
-
-It is a plan for interactive use inside coding tools; Ark's console terms are authoritative. For unattended work such as scheduled tasks or a support bot, use a pay-as-you-go Ark key: Agent J never gives the Coding Plan key to tasks or bots.
-
-Create an API key in the Ark console (https://console.volcengine.com/ark/). Then ask your Agent to set it up. For OpenCode it runs `agentj provider ark`, which adds all the plan's models to OpenCode's settings and leaves everything you already have there untouched. A key card then opens on your phone: paste the key there and nowhere else. Ark has no read-only check, so the first reply is the check. Finally your Agent switches OpenCode to `ark-coding-plan/doubao-seed-2.1-pro`.
-
-Prefer Claude Code? Ask your Agent to set Ark up for Claude Code instead; it follows the three steps Agent J prints, with the same phone key card. Claude Code's Haiku, Sonnet and Opus defaults and its subagent model all point at the same Ark model, so background work never asks Ark for a Claude model name.

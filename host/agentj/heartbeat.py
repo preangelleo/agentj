@@ -405,9 +405,6 @@ class Heartbeat:
             return "busy"
         if getattr(getattr(h, "elevate", None), "cards", None):
             return "approval"
-        qr = getattr(h, "quota_resume", None)
-        if qr is not None and qr.pending("main"):     # P314: out of quota until the reset; the continue comes then
-            return "quota_wait"
         from . import preferences
         auto = preferences.get(getattr(h, "preferences", None) or {}, "updates.auto_install", True) is not False
         if _night(now or time.time(), auto):

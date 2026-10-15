@@ -1,15 +1,15 @@
 ---
 document: agentj-install
-version: 0.24.1
-released: 2026-10-16
+version: 0.24.0
+released: 2026-10-15
 status: beta (anyone can sign up; not advertised yet, pages are not indexed)
 host_package: agentj (the `agentj` command)
-host_version: 0.22.1a1
-source_tag: v0.22.1a1
-host_wheel: agentj-0.22.1a1-py3-none-any.whl
-host_wheel_sha256: 5e26cebdd43262d5c42b3968089c83162c9dd765f262ad83d81280a4f6f7d2a0
-host_sdist: agentj-0.22.1a1.tar.gz
-host_sdist_sha256: 8ac5cfd81fe7a7ffafefb8ca10e463551790d02808d21392c19deed7fbc085ba
+host_version: 0.22.0a1
+source_tag: v0.22.0a1
+host_wheel: agentj-0.22.0a1-py3-none-any.whl
+host_wheel_sha256: c0e136977f23c0780ab01d74c9de6516b240faa3120ca3e82e5a86d58ea864df
+host_sdist: agentj-0.22.0a1.tar.gz
+host_sdist_sha256: a7cbc6abd46907f85ce63be7c966cd6b3a4747a259d420362ec320a4ec9b0d5a
 canonical_url: https://agentj.app/install.md
 sha256_url: https://agentj.app/install.md.sha256
 alias: https://agentjarvis.net/install.md (the older address: the same file, kept for one more version)
@@ -369,8 +369,7 @@ account, key or payment: Step 3c).
 - **Claude Code and Codex are not offered where this computer is** (Hong Kong, Macau, mainland China and the other places
   Anthropic / OpenAI do not serve) → our first recommendation is a **Kimi membership, Plus or higher**, in OpenCode
   (Step 3d) or in Kimi's own Kimi Code CLI (Step 3e), side by side with an **Alibaba Cloud Bailian Token Plan**
-  (personal) in OpenCode (Step 3f) or Qwen Code (Step 3g) — the human chooses. A human who already pays for a **Volcano
-  Ark (火山方舟) Coding Plan** uses it instead (Step 3h). After Step 4, `agentj agent route` decides
+  (personal) in OpenCode (Step 3f) or Qwen Code (Step 3g) — the human chooses. After Step 4, `agentj agent route` decides
   it from what really answers here, not from a guess.
 After Step 4, `agentj agent detect --json` gives the exact answer, including whether each one is logged in (it only checks
 that a login file exists; it never reads it). When Codex is installed it also asks api.openai.com once, without any key,
@@ -379,15 +378,12 @@ whether this computer can reach OpenAI: `"chatgpt": "ok" | "region" | "unreachab
 recommend OpenCode with a model available where they are (Step 3a), or Claude Code outside mainland China (the rule
 above still holds: no VPN or proxy advice). The `decision` itself is unchanged: the human still chooses. `agentj doctor`
 shows the same check as its `chatgpt` row whenever the Agent is Codex (through the proxy Agent J is set to use, if any).
-Phone question cards (single / multiple choice, "Other — I'll type it", open questions) work whichever one is chosen:
-Claude Code uses its own AskUserQuestion; under Codex, OpenCode, Kimi or Qwen — or whenever a native question tool is
-refused, like Codex's `request_user_input` outside Plan mode — the Agent runs `agentj ask`. Nothing to set up here.
 
 ### 3a. OpenCode with a model the human chooses (no usable agent, or mainland China)
 
 OpenCode (open source, MIT: https://opencode.ai/docs/) is the agent; the model behind it comes from a model vendor the
 human signs up with **themselves**. Where Claude Code and Codex are not offered, our recommendation is a Kimi
-membership (Step 3d) or a Bailian Token Plan (Step 3f), side by side; already on a Volcano Ark Coding Plan → Step 3h. Pay-as-you-go alternatives for mainland China: **GLM-5.3** (Zhipu) as the main model,
+membership (Step 3d) or a Bailian Token Plan (Step 3f), side by side. Pay-as-you-go alternatives for mainland China: **GLM-5.3** (Zhipu) as the main model,
 plus **DeepSeek V4.1-Flash** (`deepseek-flash`, cheaper, can read images) for simple or image tasks.
 
 Before installing on macOS, run `opencode --version` (or the selected agent’s `--version`). If it runs successfully,
@@ -503,7 +499,6 @@ and the provider's region error; the time zone / language of this computer only 
   link: you and we each get one prize draw". The draw counts only for a paid subscription within 24 hours. Never invent
   or change a link; prices only from Kimi's own page.
 - side by side with Kimi: an Alibaba Cloud Bailian Token Plan, personal (Step 3f) — tell its prices and terms as printed.
-  A human who already subscribes to a Volcano Ark Coding Plan keeps it (Step 3h) — do not sell them a second plan.
 - the alternatives it lists (Qwen pay-as-you-go on the mainland site, GLM / DeepSeek, OpenRouter, Kimi's pay-as-you-go
   platform). A human who already has an account with one of them keeps using it.
 ✋ The human subscribes, then creates a key in the Kimi Code console (shown once). The key goes **only** into the phone's
@@ -575,29 +570,6 @@ Code up (`~/.qwen/settings.json`, e.g. with `bl config agent --agent qwen-code`)
 `agentj agent qwen --dir <folder>` (add `--model qwen3.8-flash` to save Credits). Independent sessions only. Qwen reads `~/.qwen/skills` and
 `~/.agents/skills`.
 
-### 3h. Mainland China: a Volcano Ark (火山方舟) Coding Plan in OpenCode or Claude Code
-
-Who it is for: a human who **already has** a Volcano Engine Ark Coding Plan (Lite or Pro), or who wants ByteDance Doubao,
-Kimi, GLM, DeepSeek and MiniMax in one subscription. Kimi (3d) and Bailian (3f) stay the first recommendations for
-everyone else. Prices only from Ark's console — never from memory. What the owner measured (2026-10-15): **reads images**
-`doubao-seed-2.1-pro` (the default), `kimi-k3` (Pro plan only), `kimi-k2.7-code`, `glm-5-3-flash`, `minimax-m3`,
-`deepseek-v4-1-flash`; **text only** `glm-5.3`, `deepseek-v4-pro`, `deepseek-v4-flash` — pick an image model for
-screenshots and browser work. The Coding Plan has no image-generation model. Tell the human: it is a plan for interactive
-use in coding tools (Ark's console terms are authoritative); unattended work needs a pay-as-you-go key — Agent J never
-gives this key to tasks or bots.
-
-✋ The human creates an API key in the Ark console (https://console.volcengine.com/ark/). Then you, after Step 4:
-```bash
-agentj provider ark                      # OpenCode: all 16 plan models, with image input and output limits; anything already there stays
-agentj provider ark --harness claude     # Claude Code instead: prints the three provider-profile commands
-```
-OpenCode: run the printed key card (`agentj secret request --name ARK_CODING_PLAN_API_KEY …`) right after pairing
-(Step 11) — Ark publishes no read-only check, so the first reply is the check — then `agentj service restart` and
-`agentj agent switch opencode --model ark-coding-plan/doubao-seed-2.1-pro`. Claude Code: run the three printed steps in
-order (save the `ark-claude` profile with the `ark-coding` preset, the key card to the printed `key_destination`, then use
-the profile; it sends one real test message before writing anything) — it points Claude Code's HAIKU / SONNET / OPUS
-defaults and its subagent model at the same Ark model (otherwise background work asks Ark for a Claude model name and fails).
-
 ## 4. Install the `agentj` program — stage `6-host`
 
 > Stuck here, or the text below seems wrong? Ask the support desk yourself (Step 2b; after Step 4: `agentj support ask`).
@@ -606,7 +578,7 @@ defaults and its subagent model at the same Ark model (otherwise background work
 carry over). So start every command line from here on with `export PATH="$HOME/.local/bin:$PATH";` — or call
 `~/.local/bin/agentj` by its full path. This document writes `agentj` for short.
 
-The program is pinned to one release: the tag `v0.22.1a1` (front matter `source_tag`). The tag never moves, and its
+The program is pinned to one release: the tag `v0.22.0a1` (front matter `source_tag`). The tag never moves, and its
 `host/` folder is byte for byte the same code as the two files on our site whose SHA-256 is in this document's front matter.
 ```bash
 cd ~/.agentj-install
@@ -617,7 +589,7 @@ uv tool install "./$W"
 
 Intel Mac: this release keeps `cryptography<49` because newer releases lack an Intel macOS wheel. If an older installer tries to compile OpenSSL (`openssl-sys` / OpenSSL not found), rerun `uv tool install --with "cryptography<49" "./$W"`. The same platform constraint applies to `agentj update apply`.
 
-export PATH="$HOME/.local/bin:$PATH"; agentj --version     # → agentj 0.22.1a1
+export PATH="$HOME/.local/bin:$PATH"; agentj --version     # → agentj 0.22.0a1
 export PATH="$HOME/.local/bin:$PATH"; agentj doctor
 ```
 **Your human's own terminal must find `agentj` too** — they may use `agentj passphrase set` and `agentj pair` as a local alternative
@@ -645,16 +617,16 @@ echo "$WS  $W" | sha256sum -c - && echo "$SS  $S" | sha256sum -c -    # macOS: s
 uv tool install "./$W"          # the wheel; its dependencies come from PyPI or the mirror in UV_DEFAULT_INDEX
 ```
 `uv tool install "./$S"` installs from the checked source archive instead (it builds the same program).
-`https://agentj.app/dl/latest.txt` and `https://agentj.app/dl/latest-sdist.txt` name the same two files. `agentj --version` is the program's own version (`0.22.1a1`); it is
-numbered separately from this document (`0.24.1`).
+`https://agentj.app/dl/latest.txt` and `https://agentj.app/dl/latest-sdist.txt` name the same two files. `agentj --version` is the program's own version (`0.22.0a1`); it is
+numbered separately from this document (`0.21.1`).
 
-Alternative from the matching published source tag: `uv tool install "git+https://github.com/preangelleo/agentj@v0.22.1a1#subdirectory=host"`.
+Alternative from the matching published source tag: `uv tool install "git+https://github.com/preangelleo/agentj@v0.22.0a1#subdirectory=host"`.
 
-Alternative without uv: `pipx install "git+https://github.com/preangelleo/agentj@v0.22.1a1#subdirectory=host"` (needs Python 3.11+).
+Alternative without uv: `pipx install "git+https://github.com/preangelleo/agentj@v0.22.0a1#subdirectory=host"` (needs Python 3.11+).
 
 **What each route checks.** The wheel and the source archive above are checked against the SHA-256 in this document. Each
 also has a minisign signature beside it (`<file>.minisig`, key `B79F925B0585F9D4` — front matter `signature`), which
-`agentj update apply` and the nightly automatic upgrade verify before they install (Section U). The two `git+https://…@v0.22.1a1`
+`agentj update apply` and the nightly automatic upgrade verify before they install (Section U). The two `git+https://…@v0.22.0a1`
 routes check **neither**: Git trusts GitHub's HTTPS and the tag name, and nothing compares that code with this document.
 Use them only when the checked files cannot be downloaded, and say so in the final feedback.
 `agentj doctor` lists what is ready and what is not (prerequisites, the fence, connectivity, which agents are usable).
@@ -1097,13 +1069,10 @@ still runs the shared session but has not written it into the settings file yet:
 (Section A); nothing to ask.
 `! jev` → `OPENROUTER_API_KEY` (Jev, the optional second approval layer) is set in this terminal but the background service
 does not have it: run `agentj service import-key` (one step: copies it into the service env file, 0600, the value is never
-shown), then `agentj reload` (serve reads its key file again, no restart; P320) — never ask your human to edit that file or paste the key into chat. `agentj service
+shown), then `agentj service restart` — never ask your human to edit that file or paste the key into chat. `agentj service
 install` offers the same import (y/N) when a person runs it at a terminal. No key anywhere = Jev stays off (optional); the doctor
 hint names the phone secret card that adds it. 中文：`! jev` = 终端里有 `OPENROUTER_API_KEY`、后台服务没有：运行
-`agentj service import-key` 一步导入（不显示值），再 `agentj reload`（不重启服务）；不要让主人手改环境文件。
-`agentj reload` also makes the reload-tier settings effective (isolation, Docker, warnings, approvals, instructions,
-Telegram channel): serve stays up, the owned harness restarts before the next message. Only `agent.working_root` and
-`agent.session_mode` still need `agentj service restart`.
+`agentj service import-key` 一步导入（不显示值），再 `agentj service restart`；不要让主人手改环境文件。
 On a server (nobody stays logged in) the service must survive logout: if `agentj service install` or `agentj doctor`
 says `loginctl enable-linger $USER`, ✋ your human runs exactly that once (Ubuntu may ask for their password), then
 `agentj service install` again. **Windows (WSL2): confirm systemd is on first** — `ps -p 1 -o comm=` must print `systemd`.
@@ -1427,10 +1396,6 @@ reset expires within a week or the quota ran out while a reset is left, and once
 With several AI accounts signed in, a quota alarm can hand newly starting workflow tasks to another one that
 answers a handshake: the phone asks first, or not at all once the owner turns on `quota.auto_switch` (Settings); the
 conversation itself never moves.
-A turn or workflow run stopped because the usage limit is used up continues by itself once after the reset time that AI
-reported (the phone shows 「额度用完，预计 HH:MM 自动继续」 with ✕ to cancel; a workflow reruns at once on another account
-when `quota.auto_switch` is on). The automatic 「继续」 says it is not the owner's words — pick up where the turn stopped.
-`agentj quota resume` lists what waits; `agentj quota resume cancel <id>` when the owner says not to continue.
 
 **Make the "look it up first" rule outlast this conversation.** Your next conversation will not remember this one.
 Ask your human whether the "look it up first" rule (`agentj docs-rule` prints it) may be saved in your long-term memory,
@@ -1563,7 +1528,7 @@ Nightly automatic installation is enabled by default and verifies the official w
 In a shared session (the default of 0.13–0.19), reinstall directly using Step 4's checked wheel (SHA-256 must match this document and
 its public GitHub copy), preserving the host's identity, paired phones, account and preferences:
 ```bash
-uv tool install --force "./agentj-0.22.1a1-py3-none-any.whl"
+uv tool install --force "./agentj-0.22.0a1-py3-none-any.whl"
 agentj --version
 agentj service install
 agentj service restart
@@ -1572,7 +1537,7 @@ agentj doctor
 The matching published tag is another source, after verifying the tag object against the upgrade email (no signature or
 hash check on this route — Step 4):
 ```bash
-uv tool install --force "git+https://github.com/preangelleo/agentj@v0.22.1a1#subdirectory=host"
+uv tool install --force "git+https://github.com/preangelleo/agentj@v0.22.0a1#subdirectory=host"
 ```
 **0.14 independent session** (`agent.session_mode=independent`): 0.14's fence keeps Agent J's own program read-only and
 hides the service manager, so the Agent on the phone cannot reinstall or restart from inside it (measured: the install
@@ -1598,11 +1563,11 @@ prints something and `uv tool list` (or `pipx list`) shows `agentjarvis-host`, t
 the new name, then:
 ```bash
 jarvis service uninstall      # stop the old service first (Step 10 used tmux / nohup instead? stop that process)
-uv tool uninstall agentjarvis-host && uv tool install "git+https://github.com/preangelleo/agentj@v0.22.1a1#subdirectory=host"
+uv tool uninstall agentjarvis-host && uv tool install "git+https://github.com/preangelleo/agentj@v0.22.0a1#subdirectory=host"
 agentj doctor
 agentj service install        # start it again under the new name (or the tmux / nohup fallback, Step 10)
 ```
-With pipx instead of uv: `pipx uninstall agentjarvis-host && pipx install "git+https://github.com/preangelleo/agentj@v0.22.1a1#subdirectory=host"`.
+With pipx instead of uv: `pipx uninstall agentjarvis-host && pipx install "git+https://github.com/preangelleo/agentj@v0.22.0a1#subdirectory=host"`.
 - After the move, `agentj` puts back a `jarvis` command (a link to `agentj`, only if no other `jarvis` exists) for one more
   version; it prints a notice that points here. New installs never get `jarvis`.
 - The state moves from `~/.local/state/agentjarvis-alpha` to `~/.local/state/agentj` on the first run of `agentj` **after your
@@ -2179,13 +2144,6 @@ and if your shell times out or the turn ends, the card stays on the phone for it
 round, when the owner wants back their own config, link or key (a proxy `ss://` link, a config file with a password), send
 a pickup card — `agentj secret send --name '<what it is>' --file <path>` or `--value-from env:<VAR>|file:<path>` — which
 the owner opens on the paired phone with Face ID; never paste the value into a reply.
-A Claude Code profile on a service other than api.anthropic.com points every model Claude Code may ask for at that service
-(`ANTHROPIC_DEFAULT_HAIKU_MODEL` / `_SONNET_` / `_OPUS_` and `CLAUDE_CODE_SUBAGENT_MODEL` = `--model`; choose others with
-`--haiku-model`, `--sonnet-model`, `--opus-model`, `--subagent-model`; `--max-output N` sets
-`CLAUDE_CODE_MAX_OUTPUT_TOKENS`). For OpenCode, `agentj provider add … --vision` marks the models as reading images
-(without it OpenCode never sends a picture; `--no-vision` = text only) and `--max-output N [--context N]` raises the output
-limit — thinking models such as GLM-5.3 can use up the 32k default. Adding again merges: other models and keys the owner
-added by hand stay.
 The host verifies a real model response before applying the native configuration,
 keeps a private backup, and can restore it while refusing to overwrite later edits.
 Shared sessions keep their original permissions. Finish other active work before
@@ -2453,21 +2411,6 @@ or when the agent waits for terminal input, Claude defaults to `claude-opus-5-5`
 unsupported-model 400; `agentj doctor` has a `first-setup` line. On the phone, the model / effort pill commits after 5 s of quiet,
 `/switch-harness` is always in the / list, and the phone offers a refresh only when the page server already serves the newer page.
 中文：账户页只给一条安装命令（Mac/Linux 用 install.sh，Windows 用 install.ps1，自动装 WSL2 + Ubuntu）；安装码只兑换一次；批准口令改名「遥控器配对密码」，终端配对必须先设，账户页也能用它添加遥控器；新装第一条消息不再无声卡住（预写首次设置、重试卡、停滞卡、Claude 默认 Opus 5.5 · medium）；手机上模型/强度停手 5 秒才提交，`/` 列表里总有 /switch-harness，电脑先升级时只在新网页已上线时才提示刷新。
-
-### 0.22.1a1 reload without a restart, auto-continue at the quota reset, choice cards everywhere
-`agentj reload` (also ≡ All commands → Reload configuration, `/reload`, Alt+Shift+L) re-reads the configuration and the service
-key file without restarting the service; the Agent's launch settings (instructions, isolation, Docker, high-risk warnings,
-approvals) apply before its next message, the conversation kept; a security key an Agent edited still needs the owner's card.
-When a quota runs out, the turn or background task continues by itself at the reset time (once; the phone banner can cancel it).
-`agentj ask` lets every harness — Claude Code, Codex, OpenCode, Kimi, Qwen — show the phone's choice card, and an Agent never
-says a card appeared when it did not. A Volcengine Ark Coding Plan preset (`agentj provider ark`, mainland China). One dark
-notice style on the phone; Alt+Shift+A replies from anywhere; read marks sync across remotes without opening at 99+. A host
-restart never runs a phone message twice (receipts on disk; an unfinished one is marked, never replayed). A relay link that never
-comes up now says where it sticks in status, doctor and the service log. macOS Login Items keep one agentj entry (one-shot jobs
-no longer register there; old ones are removed on upgrade). A shared session switched to OpenCode on macOS no longer idles.
-Two requests for the same security setting merge into one card. An old `config.json5` with a literal dotted key
-(`"agent.xxx": …`) still loads: that spelling was never read and is ignored (`agentj config validate` lists it); nest the key to use it.
-中文：`agentj reload`（≡ 全部命令「重新加载配置」、/reload、Alt+Shift+L）不重启服务就让新设置生效；额度用完到重置时间自动继续一次（手机横条可取消）；所有底层工具都能用 `agentj ask` 弹选择卡；新增火山方舟 Coding Plan 预设；手机提示统一深色弹窗、Alt+Shift+A 随处回复、已读多端同步不再 99+；电脑重启不会重复执行手机消息；中继连不上会说清卡在哪；Mac 登录项只留一条 agentj；Mac 共享会话切 OpenCode 不再空转；同一安全设置两次申请合成一张卡；旧配置里带点的键升级后不报错（这种写法从来不生效，会被忽略）。
 
 ### 0.22.0a1 new logo, Telegram customer service, guided switching
 A new Agent J father-robot logo in five state colours, a robots & logo page with the official brand kit, and an automatic
@@ -2745,9 +2688,9 @@ After account linking, installation or upgrade downloads three signed plaza exam
 
 ## 未读在自己的遥控器间同步 / Unread replies sync across your remotes (P247 candidate)
 
-任何已配对遥控器在前台显示一条回复，就推进这个主人在这台电脑上的已读水位；其他遥控器上这条及此前的未读提示自动消失。离线遥控器回来先同步，账户页打开的网页遥控器也一样。清空聊天后从新聊天重新计数，静默回复不计入。电脑第一次记已读（升级到这一版后）时，已有的回复都算已读，各遥控器不会一上来显示 99+；某台遥控器的已读回执没送到，它会自动重发（每条最多三次），电脑对重复或过期的回执只回告当前位置（P321）。按住说话时，麦克风和声波圆环在背景圆形正中，时间与说明在圆形外。
+任何已配对遥控器在前台显示一条回复，就推进这个主人在这台电脑上的已读水位；其他遥控器上这条及此前的未读提示自动消失。离线遥控器回来先同步，账户页打开的网页遥控器也一样。清空聊天后从新聊天重新计数，静默回复不计入。按住说话时，麦克风和声波圆环在背景圆形正中，时间与说明在圆形外。
 
-A reply shown in the foreground on any paired remote advances this owner's read watermark on the computer. That reply and earlier unread hints clear on all the other remotes, including the web remote opened from the account page. Offline remotes sync before displaying unread hints. Clearing history starts a new read epoch; silent turns never count. When the computer first keeps a read mark (after upgrading to this version) the replies already there count as read, so no remote opens at 99+; a receipt that did not arrive is sent again by its remote (at most three times per reply), and the computer answers a repeated or stale receipt with its current mark (P321). The recording microphone and voice rings sit in the centre of the circle, with the time and hints outside it.
+A reply shown in the foreground on any paired remote advances this owner's read watermark on the computer. That reply and earlier unread hints clear on all the other remotes, including the web remote opened from the account page. Offline remotes sync before displaying unread hints. Clearing history starts a new read epoch; silent turns never count. The recording microphone and voice rings sit in the centre of the circle, with the time and hints outside it.
 
 ### 工作流重启状态 / Workflow restart state (P248 candidate)
 

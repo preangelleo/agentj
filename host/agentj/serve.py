@@ -14,7 +14,6 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
-import copy
 import hmac
 import hashlib
 import json
@@ -39,14 +38,12 @@ from .shared import SharedClaudeAgent
 from . import notices, activity, approvals, cloud, controls, danger, fence, gate, memory, slash, tasks, update, webpush, wire
 from . import asr as asr_mod
 from . import compose, history, hsearch, humane, inbox, menu, uploads, preferences, proxy, provenance
-from . import receipts as receipts_mod  # P313: say receipts on disk — a restart never runs a phone message twice
 from . import meeting  # P182: /会议总结 → minutes, recipients only from the owner's words
 from . import diskq  # P142: fsync'ed state writes off the loop (one ordered writer)
 from . import approval_jev  # P157: layer 2 of the approval card (Jev may only make fewer cards)
 from . import goal as goal_mod  # P158: /goal — one signed grant, reversible steps pass after a 10 s card
 from . import bg  # P192 (B18): swallowed errors on connection / approval paths leave a (rate-limited) line
 from . import loopwatch  # P136: what was running when the loop stalled
-from . import relaydiag  # P317: why a relay leg is not up (journal / status / doctor)
 from . import media as media_mod  # F21: files the Agent shows to the phone (PROTOCOL §13)
 from . import elevate  # F17: sudo + secret cards (PROTOCOL §11)
 from . import pair_card  # P153: add a remote from a remote (PROTOCOL §3.3)
@@ -54,12 +51,6 @@ from . import passkey  # F20: the same phone without a second pairing (PROTOCOL 
 from . import renewal  # P122: the same phone after its browser deleted the page's storage (§12.1)
 from . import onboarding  # F28: seat → two required remotes → one welcome (P72)
 TG_PAIR_CMDS = ("telegram-pair", "telegram_pair", "rebind-telegram")   # P283: the phone's 「重新绑定 Telegram」
-# P320: three tiers (schema `apply`): hot (at once) · reload (`agentj reload`, the phone's /reload or ≡ Reload: serve re-reads
-# the configuration and its key file, the owned harness restarts before its next turn, the conversation kept) · restart:serve.
-RELOAD_CMDS = ("reload",)
-RELOAD_KEYS = ("agent.instructions", "agent.isolation", "agent.allow_docker", "agent.high_risk_warnings", "agent.approvals",
-               "channels.items")
-RESTART_SERVE_KEYS = ("agent.working_root", "agent.session_mode", "agent.shared_session_id", "agent.shared_opencode_port")
 from . import friend_cmds  # P73: /my-agent-id · /add-friend, answered by the host (ADR-A176)
 from . import friends as friends_mod
 from .remotes import TYPES as REMOTES_TYPES  # P171 (§24): the phone's 遥控器管理 page
@@ -82,7 +73,14 @@ def _ms(t0: float) -> int:
     return int((time.monotonic() - t0) * 1000)
 
 
-_close_code = relaydiag.close_code   # P317: shared with the mailbox leg and doctor
+def _close_code(e: Exception) -> int | None:
+    """The WebSocket close code a relay link ended with (4003 = relay auth deadline / refusal, 4001 = replaced), or None."""
+    for attr in ("rcvd", "sent"):
+        frame = getattr(e, attr, None)
+        code = getattr(frame, "code", None)
+        if type(code) is int:
+            return code
+    return None
 
 
 RC_WHY = ("load", "close", "hb", "host", "error", "ticket", "visibility", "offline", "stall")   # P129/P133: see session.js
@@ -109,14 +107,12 @@ RELAY_OPEN_TIMEOUT = 10   # TCP + TLS + upgrade (the relay takes a per-IP lease 
 FAST_RETRIES = 3       # P129: a relay link that did not come up is retried after FAST_RETRY s this many times before backing off
 FAST_RETRY = 1
 RELAY_GRACE = 60       # s after serve start in which a relay link that never came up reads "connecting", not "reconnecting"
-RELAY_SAY = 600        # P317: an unchanged relay failure is repeated in the journal at most this often (s)
 CLOSE_SEAT = 4002      # P185: the relay refused / closed this host for lack of a valid seat certificate (PROTOCOL §2 seat certificate)
 SEAT_RETRY = 20        # s before the relay is tried again after a seat refusal (a renewed certificate retries at once)
 SEAT_TICK = 30         # s between seat_loop looks (local file reads; the Dashboard is asked only when seatcert says due)
 SEAT_NOTE = 600        # s between two "no seat" notices to the phones
 STOP_FLUSH = 5.0       # P292: serve's stop waits at most this long for queued fsyncs / log lines (launchd kills at 20 s)
 LOOP_STALL = 3.0       # P129: the event loop answering this late (s) is logged as `loop_stall` (it delays every phone's pong)
-EMPTY_TURN = 5.0       # P326: a turn ending sooner than this (s) with nothing shown is an error the owner is told about
 _NONCE = re.compile(r"[A-Za-z0-9_-]{43}")   # relay auth challenge n = b64url(32 random bytes) (PROTOCOL §1)
 CLOSE_TIMEOUT = 2      # a close notice to the relay is best-effort; never let a slow relay hold up a revoke
 MAX_SESSIONS = 64      # the relay caps a channel at 32 device sockets; this bounds a misbehaving relay too
@@ -170,8 +166,7 @@ P33_ONLY = ("say", "say_cancel", "cmd_cancel", "blob_open", "blob_chunk", "blob_
             "dev_rename",    # P179 (§10.16a): a remote renames itself
             "hist_find", "hist_read",     # P188 · P247 (owner-level read sync) (§28): chat search, a read like hist_get
             "auth_get", "auth_start", "auth_cancel", "auth_press",   # P258 (§31): AI 登录救援
-            "imsg_check", "imsg_fda",   # P274 (§10.21): the iMessage card's 「重新检测」 / 「在电脑上打开授权页」
-            "qr_cancel")                # P314 (§32): cancel the automatic continue after a used-up usage limit
+            "imsg_check", "imsg_fda")   # P274 (§10.21): the iMessage card's 「重新检测」 / 「在电脑上打开授权页」
 # F14: paired phones may change optional warnings, session mode, isolation, docker and the upgrade mode (F19); native permissions stay authoritative.
 PREF_SET_KEYS = ("updates.mode", "appearance.language", "appearance.theme", "voice.wake_enabled", "voice.speak_replies",
                  "agent.high_risk_warnings", "agent.session_mode", "agent.isolation", "agent.allow_docker")
@@ -235,35 +230,6 @@ class Question:
     deadline: float               # monotonic
     fut: asyncio.Future
     task: str | None = None
-
-
-def _cfg_patch(old: dict, new: dict) -> tuple[dict, dict]:
-    """P318: an Agent's config request as {schema key: (present, value)} and the values those keys had when it asked."""
-    of, nf = dict(preferences.flatten(old)), dict(preferences.flatten(new))
-    keys = [k for k in set(of) | set(nf) if (k in of, of.get(k)) != (k in nf, nf.get(k))]
-    return {k: (k in nf, nf.get(k)) for k in keys}, {k: (k in of, of.get(k)) for k in keys}
-
-
-def _cfg_apply(doc: dict, patch: dict) -> dict:
-    out = copy.deepcopy(doc)
-    for k, (present, v) in patch.items():
-        if present:
-            preferences.put(out, k, copy.deepcopy(v))
-        else:
-            *up, leaf = k.split(".")
-            parent = preferences.get(out, ".".join(up)) if up else out
-            if isinstance(parent, dict):
-                parent.pop(leaf, None)
-    return out
-
-
-def _superseded(f) -> bool:
-    return f is not None and f.done() and not f.cancelled() and f.exception() is None and f.result() == "superseded"
-
-
-def _cfg_security(key: str) -> bool:
-    from .ctl_auth import SECURITY_PREFIXES
-    return any(key.startswith(p) or p.startswith(key + ".") for p in SECURITY_PREFIXES)
 
 
 @dataclass
@@ -350,34 +316,6 @@ def approval_summary(tool, tool_input, verdict, lang="zh"):
     return agents.summarize(tool, tool_input)
 
 
-
-# ---------------------------------------------------------------- P313: say receipts on disk (receipts.py, PROTOCOL §14)
-# Module functions, not Host methods: many test doubles borrow single Host methods and are built without __init__.
-async def _rcpt_recv(host, device: str, sid: str) -> None:
-    """The moment a phone `say` is accepted: its (device, sid) is on disk before anything acts on it. A disk that refuses
-    only costs the restart guarantee (memory dedupe stays), never the message."""
-    rc = getattr(host, "receipts", None)
-    if rc is None:
-        return
-    try:
-        await rc.persist(device, sid, "recv")
-    except Exception:  # noqa: BLE001
-        host.st.log("say_receipts", result="write_failed")
-
-
-def _rcpt(host, device, sid, state: str, turn: int | None = None) -> None:
-    """A later state of a receipt the phone created (Telegram / e-mail / host sends have none: nothing to do)."""
-    rc = getattr(host, "receipts", None)
-    if rc is not None and isinstance(device, str) and isinstance(sid, str) and rc.used(device, sid):
-        rc.mark(device, sid, state, turn)
-
-
-def _rcpt_turn(host, tid) -> None:
-    rc = getattr(host, "receipts", None)
-    if rc is not None:
-        rc.done_turn(tid)
-
-
 class Host:
     def __init__(self, st: State, events: str = "text", read_stdin: bool = True):
         self.st = st
@@ -416,9 +354,6 @@ class Host:
         self.stopping = asyncio.Event()
         self.relay_up = False
         self.relay_ever_up = False         # P129: since this serve started (doctor / admin: connecting vs reconnecting)
-        self.relay_last = None             # P317: the last failed attempt {phase, why, code, http, kind, at, attempts, retry_in}
-        self.relay_said = (None, 0.0)      # P317: what the journal line last said, and when (one line per change / RELAY_SAY s)
-        self.identity_ok = wire.channel_id(st._ed_pub(self.sk)) == self.channel   # P317: else every auth is refused (4003)
         self.started_at = time.monotonic()
         self.name_refused = False   # one agent_name_refused line per refused streak, not one per sync
         self.official_pending = {}
@@ -437,8 +372,6 @@ class Host:
             self.config_problem = e.result() if isinstance(e,preferences.ConfigError) else {"ok":False,"key":"/","error":"configuration unreadable"}
         self.config_stamp = None
         self.config_apply_lock = asyncio.Lock()
-        self.boot_preferences = self.preferences   # P320: what serve started with — restart:serve keys compare against it
-        self.reload_pending: set = set()           # P320: reload-tier keys changed since the last reload
         self.ask_ttl = min(ASK_TTL, preferences.get(self.preferences, "approval.timeout", ASK_TTL))
         self.agent_cfg = st.agent_config()
         self.perm_token: str | None = None          # one-time: issued per agent start, spent by the first claim (L2)
@@ -450,8 +383,6 @@ class Host:
         self.seq = 0
         self.sent_status = None
         self.turn_text = False
-        self.turn_shown = False                     # P326: anything (text, a silent marker, a notice) shown in this turn
-        self.turn_at = (0.0, 0.0, False)            # P326: last turn's start / end (epoch) + failed-or-empty, for status
         self.push_key = None
         self.push_last: dict[tuple, float] = {}
         self.post_q: asyncio.Queue | None = None
@@ -466,14 +397,12 @@ class Host:
         self.estop = controls.estop_state(st)
         self.scheduler = tasks.Scheduler(self)
         self.task_label: str | None = None
-        from .ask import CliAsks
-        self.cli_asks = CliAsks(self)             # P322: `agentj ask` — the question card for any harness
         self.turn_by: str | None = None
         self.turn_t0 = 0.0
         # relay parity (PROTOCOL §10, PROMPT-33)
         self.hist = history.History(st)
         from .readmark import ReadMark
-        self.readmark = ReadMark(st, self.hist)   # P321: seeded at the newest reply on a host's first mark
+        self.readmark = ReadMark(st)
         self.lang = preferences.get(self.preferences, "appearance.language", "zh")
         self.uploads = uploads.Uploads(st, self.agent_cfg["dir"] if self.agent_cfg else None,
                                        asr_off=lambda: self.asr_state() == "off")
@@ -481,7 +410,6 @@ class Host:
         self.media_streams: dict[tuple, asyncio.Task] = {}   # (cid, mid) → the window being sent
         self.media_jobs: set = set()
         self.sends = compose.Sends()
-        self.receipts = receipts_mod.Receipts(st.root, st.log)   # P313 (§14): the same (device, sid) keys, on disk
         self.questions: dict[str, Question] = {}
         self.cur_turn: int | None = None        # the history page the running Agent turn answers
         self.cur_failed = False
@@ -513,8 +441,6 @@ class Host:
         self.wf = wf_mod.Scanner(st)            # P244 (§30): the five pages' read-only picture (workflows.py)
         from .heartbeat import Heartbeat
         self.heartbeat = Heartbeat(self)        # P156: wakes the main Agent after an idle spell (heartbeat.py)
-        from .quota_resume import Resumer
-        self.quota_resume = Resumer(self)       # P314: a turn stopped by a used-up usage limit continues after the reset
         from .imessage import IMessage
         self.imessage = IMessage(self)          # P274: macOS read-only iMessage assistant (off by default)
         self.res_watch: dict[int, float] = {}    # P181 (§22.1): cid → monotonic expiry of its load-card watch
@@ -539,8 +465,6 @@ class Host:
             print(f"« {kw['name']}: " + kw["text"].replace("\n", "\n  │ "), flush=True)
         elif ev == "relay":
             print(f"· 中继{'已连接' if kw['up'] else '断开，正在重连'}", flush=True)
-        elif ev in ("relay_fail", "mbox_fail"):   # P317: metadata only (relaydiag), also in quiet (service / journal) mode
-            print(f"· {kw['line']}", flush=True)
         elif ev == "agent_name":   # a §1-valid name (no control / format / line-break chars), quoted, after the "· " marker
             print(f"· Agent 名已按账号后台改为「{kw['name']}」", flush=True)
         elif ev == "agent_name_refused":
@@ -645,26 +569,17 @@ class Host:
     async def relay_loop(self) -> None:
         backoff, fails = 1, 0
         url = f"{self.cfg['relay'].rstrip('/')}/v1/host/{self.channel}"
-        if not self.identity_ok:            # P317: say it once, plainly — the relay will refuse every signature (4003)
-            self.st.log("relay_identity", reason="channel_mismatch")
-            self.emit("relay_fail", line=relaydiag.text2({"phase": "auth", "why": "identity"}) + " → agentj doctor")
-        attempts = 0
         while not self.stopping.is_set():
-            phase, t0 = "seat", time.monotonic()
+            phase, t0 = "connect", time.monotonic()
             try:
-                # P292: read before the relay's 10 s auth deadline starts, off the loop; P317: bounded (a parked disk)
-                cert = await asyncio.wait_for(asyncio.to_thread(self.seat.cert), RELAY_OPEN_TIMEOUT)
-                phase = "connect"
+                cert = await asyncio.to_thread(self.seat.cert)   # P292: read before the relay's 10 s auth deadline starts, off the loop
                 async with connect(url, max_size=2**17, ping_interval=20, ping_timeout=20, open_timeout=RELAY_OPEN_TIMEOUT) as ws:
                     phase = "auth"
                     await self._auth(ws, cert)
                     phase = "up"
                     self.ws, self.relay_up, self.relay_ever_up, backoff, fails = ws, True, True, 1, 0
                     self.relay_seat_refused = False
-                    self.st.log("relay_up", channel=self.channel, ms=_ms(t0), count=attempts)
-                    if self.relay_last is not None:   # P317: the journal says the failure streak is over
-                        self.emit("relay_fail", line=f"中继已连上（之前失败 {attempts} 次）/ relay up after {attempts} failed attempts")
-                    self.relay_last, self.relay_said, attempts = None, (None, 0.0), 0
+                    self.st.log("relay_up", channel=self.channel, ms=_ms(t0))
                     self.emit("relay", up=True)
                     async for msg in ws:
                         self._tap("in", msg)
@@ -674,12 +589,8 @@ class Host:
                 # P129: where it failed (connect / auth / up), the relay's close code and how long it took — no message text
                 code = _close_code(e)
                 self.relay_seat_refused = code == CLOSE_SEAT
-                d = relaydiag.classify(e, phase)
-                attempts += 1
                 self.st.log("relay_down", reason="seat" if code == CLOSE_SEAT else proxy.relay_failure(e, url), phase=phase, code=code,
-                            ms=_ms(t0), why=d["why"], http_status=d["http"], count=attempts)
-                if phase != "up":
-                    self.relay_last = {**d, "at": int(time.time()), "attempts": attempts}
+                            ms=_ms(t0))
             finally:
                 if self.relay_up:
                     self.emit("relay", up=False)
@@ -697,32 +608,10 @@ class Host:
             if self.relay_seat_refused:         # P185: no seat — asking again every second changes nothing
                 cert = await asyncio.to_thread(self.seat.cert)
                 wait = wait if cert and cert != self.seat_sent else SEAT_RETRY
-            if phase != "up" and self.relay_last is not None:
-                self.relay_last["retry_in"] = round(wait, 1)
-                self._say_relay_fail(self.relay_last)
             with contextlib.suppress(asyncio.TimeoutError):
                 await asyncio.wait_for(self.stopping.wait(), wait)
             if fails > FAST_RETRIES:
                 backoff = min(backoff * 2, 30)
-
-    def _say_relay_fail(self, d: dict) -> None:
-        """P317: a failed relay attempt reaches the journal / `serve --events text` (before, only host.log had it): the first
-        one, every change of phase / reason / close code, and an unchanged streak at most every RELAY_SAY s."""
-        key, now = (d["phase"], d["why"], d["code"], d["http"]), time.monotonic()
-        if key == self.relay_said[0] and now - self.relay_said[1] < RELAY_SAY:
-            return
-        self.relay_said = (key, now)
-        self.emit("relay_fail", line=f"中继连接失败 / relay connect failed #{d['attempts']}: {relaydiag.text2(d)} · "
-                  f"{d.get('retry_in')} s 后重试 / retry in {d.get('retry_in')} s")
-
-    def _say_mbox_fail(self, d: dict) -> None:
-        """P317: the friends mailbox leg's failed attempt, the same way (its own change / RELAY_SAY memory)."""
-        key, now = (d.get("phase"), d.get("why"), d.get("code"), d.get("http")), time.monotonic()
-        said = getattr(self, "mbox_said", (None, 0.0))
-        if key == said[0] and now - said[1] < RELAY_SAY:
-            return
-        self.mbox_said = (key, now)
-        self.emit("mbox_fail", line=f"好友信箱连接失败 / friends mailbox connect failed: {relaydiag.text2(d)}")
 
     async def seat_loop(self) -> None:
         """P185: keep the relay seat certificate fresh (seatcert decides when to ask the Dashboard — never when exempt or
@@ -992,7 +881,7 @@ class Host:
             if not isinstance(text, str) or text_units(text) > limit:  # reject, never silently truncate
                 return await self.close_cid(s.cid, "bad_msg")
             hc = slash.parse(text)
-            if hc and (friend_cmds.name_of(hc[0]) or hc[0] in TG_PAIR_CMDS or hc[0] in RELOAD_CMDS):   # P73 · P283 · P320: the host's own answer
+            if hc and (friend_cmds.name_of(hc[0]) or hc[0] in TG_PAIR_CMDS):   # P73 · P283: the host's own answer
                 return await self.on_slash(s, hc[0], hc[1], confirm=False, typed=True)
             if hc and hc[0] == "goal" and goal_mod.host_cmd(hc[1]):  # P158: /goal status · /goal stop
                 return await self.on_slash(s, "goal", hc[1], confirm=False, typed=True)
@@ -1672,145 +1561,39 @@ class Host:
 
     async def _ctl_config_from_agent(self, w: asyncio.StreamWriter, raw) -> None:
         """A4: `agentj config set` from inside an Agent. Ordinary keys apply at once; a security key needs the owner's signed
-        approval on the phone (a card now; applied when allowed).
-        P318: the request is kept as a per-key patch {key: (present, value)} plus the value each key had when asked. A new
-        request touching a key of a still-pending card merges into ONE card (the old card ends `gone`, approvals.log reason
-        `superseded`). On allow the patch is replayed on the configuration as it is THEN (unrelated changes meanwhile are
-        kept); a security key someone else set to another value meanwhile → nothing applied (never reverts their change)."""
+        approval on the phone (a card now; applied when allowed, unless the configuration changed meanwhile)."""
         from . import ctl_auth
         try:
             candidate = preferences.validate(preferences.parse(raw) if isinstance(raw, str) else preferences.read()[1])
         except preferences.ConfigError as e:
-            self.st.log("ctl_config_refused", reason="invalid",      # key NAMES only: a schema key, never Agent text
-                        keys=e.key if e.key in preferences.SCHEMA else "/")
             return await self._ctl_send(w, e.result())
         old = self.preferences
         keys = ctl_auth.security_changes(old, candidate)
-        pend = self.__dict__.setdefault("_cfg_cards", [])
-        patch, base = _cfg_patch(old, candidate)
-        hit = [c for c in pend if set(c["patch"]) & set(patch)]
-        if not keys and not hit:
-            async def still_ordinary():           # under config_apply_lock: an owner change meanwhile cannot ride along
-                now = preferences.validate(preferences.parse(raw) if isinstance(raw, str) else preferences.read()[1])
-                extra = ctl_auth.security_changes(self.preferences, now)
-                return {"ok": False, "code": "conflict", "keys": extra, "key": extra[0],
-                        "error": "changed while waiting"} if extra else None
-            return await self._ctl_send(w, await self.apply_preferences(raw, build=still_ordinary))
-        if len(hit) == 1 and all(hit[0]["patch"].get(k) == v for k, v in patch.items()):
-            self.st.log("ctl_config_card_repeat", keys=",".join(sorted(patch))[:200])   # identical repeat: the card stays
-            return await self._ctl_send(w, self._cfg_pending_reply(hit[0]["keys"]))
-        for c in hit:                                 # the same config item asked again: one card, the newest values
-            patch, base = {**c["patch"], **patch}, {**c["base"], **base}
-            pend.remove(c)
-            if not c["gone"].done():
-                c["gone"].set_result("superseded")
-            self.st.log("ctl_config_card_merged", keys=",".join(sorted(c["patch"]))[:200])
-        view = _cfg_apply(old, patch)
-        keys = ctl_auth.security_changes(old, view)
-        if not keys:                                  # merged back to no security change: the ordinary rest applies now
-            res = await self._cfg_replay(patch, base, {})
-            self.st.log("ctl_config_card_done", result="merged_ordinary" if res.get("ok") else "merged_ordinary_failed")
-            return await self._ctl_send(w, res)
+        if not keys:
+            return await self._ctl_send(w, await self.apply_preferences(raw))
         self.st.log("ctl_config_card", keys=",".join(keys)[:200])
-        await self._ctl_send(w, self._cfg_pending_reply(keys))
-        self._cfg_card_start(patch, base, keys, view)
-
-    def _config_card(self, raw, candidate: dict, keys: list, old: dict) -> None:
-        """P320: a reload of a file the Agent edited with security keys → the same P318 card (one card per config item:
-        a pending card for the same keys merges, newest values); applied when allowed, then the harness reloads."""
-        from . import ctl_auth
-        pend = self.__dict__.setdefault("_cfg_cards", [])
-        patch, base = _cfg_patch(old, candidate)
-        for c in [c for c in pend if set(c["patch"]) & set(patch)]:
-            patch, base = {**c["patch"], **patch}, {**c["base"], **base}
-            pend.remove(c)
-            if not c["gone"].done():
-                c["gone"].set_result("superseded")
-            self.st.log("ctl_config_card_merged", keys=",".join(sorted(c["patch"]))[:200])
-        view = _cfg_apply(old, patch)
-        self._cfg_card_start(patch, base, ctl_auth.security_changes(old, view) or keys, view)
-
-    def _cfg_card_start(self, patch: dict, base: dict, keys: list, view: dict) -> None:
-        pend = self.__dict__.setdefault("_cfg_cards", [])
-        shown = {k: preferences.get(view, k) for k in keys}    # the card's values; replay must land exactly these
-        me = {"patch": patch, "base": base, "keys": keys, "gone": asyncio.get_running_loop().create_future()}
-        pend.append(me)
+        await self._ctl_send(w, {"ok": False, "key": keys[0], "code": "owner_approval",
+                                 "error": "a security setting changed from inside an Agent needs the owner's approval: a card "
+                                          "was sent to the paired phone; nothing changed yet (applied when the owner allows) / "
+                                          "安全设置需要主人在手机上批准，已发卡片，批准后生效"})
+        flat = ctl_auth._flat(candidate)
 
         async def card():
-            try:
-                ans = await self.ask("agentj config", {"changes": shown}, gone=me["gone"], batch=False)
-            finally:
-                if me in pend:
-                    pend.remove(me)
-            if me["gone"].done():                     # an allow that raced the merge applies nothing: say so
-                self.st.log("ctl_config_card_done",
-                            result="superseded_after_allow" if ans.get("behavior") == "allow" else "superseded")
-                return
+            ans = await self.ask("agentj config", {"changes": {k: flat.get(k) for k in keys}}, batch=False)
             if ans.get("behavior") != "allow":
                 self.st.log("ctl_config_card_done", result="deny")
                 return
-            res = await self._cfg_replay(patch, base, shown)
-            if res.get("code") == "conflict":
-                self.st.log("ctl_config_card_done", result="stale", keys=",".join(res.get("keys") or [])[:200])
+            if self.preferences != old:
+                self.st.log("ctl_config_card_done", result="stale")
                 self.agent_notice("配置在等待批准期间已被改过，这次批准没有生效，请重新发起。 / The configuration changed while "
                                   "waiting; this approval was not applied.")
                 return
+            res = await self.apply_preferences(raw)
             self.st.log("ctl_config_card_done", result="applied" if res.get("ok") else "failed")
-            if res.get("ok") and res.get("reload"):   # P320: the approved text is active — refresh the harness from it (never
-                self._reload_runtime()                 # a second read of the file: that one was not on the card)
         task = asyncio.ensure_future(card())
         self._ctl_bg = getattr(self, "_ctl_bg", set())
         self._ctl_bg.add(task)
         task.add_done_callback(self._ctl_bg.discard)
-
-    @staticmethod
-    def _cfg_pending_reply(keys: list) -> dict:
-        return {"ok": False, "key": keys[0], "code": "owner_approval",
-                "error": "a security setting changed from inside an Agent needs the owner's approval: a card "
-                         "was sent to the paired phone; nothing changed yet (applied when the owner allows) / "
-                         "安全设置需要主人在手机上批准，已发卡片，批准后生效"}
-
-    async def _cfg_replay(self, patch: dict, base: dict, shown: dict) -> dict:
-        """P318: put an Agent's config patch on the configuration as it is now. A key already at the asked value is skipped;
-        a key someone else changed meanwhile: ordinary → their newer value stays, security → `conflict`, nothing applied.
-        The result may change no security key beyond `shown` (what the owner's card showed), and each of those must end at
-        exactly the value the card showed. Read → edit → validate → checks → commit all run under config_apply_lock
-        (apply_preferences' build callback), so an owner edit meanwhile is never overwritten by stale text."""
-        from . import ctl_auth
-
-        def conflict(keys, why):
-            keys = sorted(keys)
-            return {"ok": False, "code": "conflict", "keys": keys, "key": keys[0] if keys else "/", "error": why}
-
-        async def build():
-            cur = dict(preferences.flatten(self.preferences))
-            use, clash = {}, []
-            for k, want in patch.items():
-                now = (k in cur, cur.get(k))
-                if now == want:
-                    continue
-                if now != base.get(k):
-                    if _cfg_security(k):
-                        clash.append(k)
-                    continue
-                use[k] = want
-            if clash:
-                return conflict(clash, "changed while waiting")
-            text = await asyncio.to_thread(lambda: preferences.read()[0])
-            try:
-                for k, (present, v) in use.items():
-                    text = preferences.edit(text, k, v, remove=not present)
-                final = preferences.validate(preferences.parse(text))
-            except (preferences.ConfigError, AssertionError, IndexError, KeyError) as e:
-                return e.result() if isinstance(e, preferences.ConfigError) else {"ok": False, "key": "/", "error": "edit failed"}
-            extra = set(ctl_auth.security_changes(self.preferences, final)) - set(shown)
-            if extra:                                 # e.g. the file holds an unapproved security edit: never ride along
-                return conflict(extra, "unapproved security change")
-            off = [k for k, v in shown.items() if preferences.get(final, k) != v]
-            if off:                                   # what lands must be what the owner saw on the card
-                return conflict(off, "changed while waiting")
-            return text
-        return await self.apply_preferences(build=build)
 
     async def on_ctl(self, r: asyncio.StreamReader, w: asyncio.StreamWriter) -> None:
         from . import ctl_auth
@@ -1916,12 +1699,8 @@ class Host:
                         time.time() - rec.get("phone_at", time.time()) >= auto_update.IDLE})
                 elif cmd == "status":
                     await self._ctl_send(w, {"ok": True, "relay_up": self.relay_up, "relay_state": self.relay_state(), "channel": self.channel,
-                                             "relay_last": None if self.relay_up else self.relay_last,   # P317: the host leg's stuck point
-                                             "identity_ok": self.identity_ok,
                                              "agent": self.agent.kind if self.agent else None, "agent_status": self.eff_status(),
                                              "agent_said_at": getattr(self, "agent_said_at", 0),
-                                             **dict(zip(("agent_turn_start_at", "agent_turn_end_at", "agent_turn_failed"),
-                                                        getattr(self, "turn_at", (0.0, 0.0, False)))),
                                              **self._agent_phase(),
                                              "asks": len(self.asks), "estop": self.estop,
                                              "task_running": self.scheduler.current_id,
@@ -1949,10 +1728,6 @@ class Host:
                         await self._ctl_send(w,{'ok':True,'applicable':applicable,'model':previous})
                 elif cmd == "agent_reconnect":      # P147 `agentj doctor --reconnect`: re-attach the shared session now
                     await self._ctl_send(w, await self.agent_reconnect(req.get("session")))
-                elif cmd == "ask_open":             # P322 `agentj ask`: the §10.7 card from a shell call, any harness
-                    await self._ctl_send(w, await self.cli_asks.open(req))
-                elif cmd == "ask_wait":
-                    await self._ctl_send(w, await self.cli_asks.wait(req))
                 elif cmd == "status_push":          # P306 `agentj doctor --reconnect`, links fine: re-send the status anyway
                     self.push_status()
                     await self._ctl_send(w, {"ok": True, "agent_status": self.eff_status()})
@@ -1962,11 +1737,6 @@ class Host:
                     await self._ctl_send(w, self.harness_handoff(req))
                 elif cmd == "harness_progress":     # P281: the switch / scan job's phase → a fixed line the owner sees
                     await self._ctl_send(w, self.harness_progress(req))
-                elif cmd == "reload":               # P320 `agentj reload`: an Agent's terminal is not trusted with security keys
-                    # trusted = what a claim needs (no Agent ancestry AND a terminal on stdin): `env -i setsid agentj reload`
-                    # from an Agent escapes the ancestry check but has no terminal (security review P320 F3)
-                    trusted = ctl_auth.refusal(pid, os.getpid(), self._agent_pids()) is None and ctl_auth.has_tty(pid)
-                    await self._ctl_send(w, await self.reload_config(trusted=trusted, by="terminal" if trusted else "agent"))
                 elif cmd == "agent_restart":        # `agentj agent restart` (P59): the owned harness, before its next turn
                     await self._ctl_send(w, self.restart_harness("cli"))
                 elif cmd == "config_apply":
@@ -2331,8 +2101,6 @@ class Host:
         await self.send_app(s, self._estop_msg())
         if s.p33 and self.auth_rescue.needs_dot():       # P258: the red dot reaches a phone that was away
             await self.send_app(s, {"t": "auth_rescue", "view": await asyncio.to_thread(self.auth_rescue.view)})
-        if s.p33 and self.quota_resume.items:            # P314 (§32): 「额度用完，预计 HH:MM 自动继续」
-            await self.send_app(s, self.quota_resume.msg())
         await self.send_app(s, {"t": "push_key", "k": webpush.b64u(webpush.vapid_public(self._push_key()))})
         if s.p33:                       # §10.5: history pages instead of §8's msg replay; meters, models (§10.10 / §10.11)
             await self.send_app(s, self._meter_msg())
@@ -2543,20 +2311,11 @@ class Host:
                 info["imessage"] = im.brief()
         return info
 
-    async def apply_preferences(self, raw=None, ack=None, language_at=None, build=None):
+    async def apply_preferences(self, raw=None, ack=None, language_at=None):
         """Activate a configuration (raw = new file text to commit; None = the file as it is now). ack(result) is awaited
         before the `preferences` broadcast (pref_res first, C6). language_at = the account's time when the account's
-        language is being applied (A1), so it is not reported back as a newer host change.
-        build (P318): an async callback run INSIDE config_apply_lock (asyncio.Lock is not re-entrant — never call
-        apply_preferences from it) → str = the text to commit instead of raw · dict = refuse with that result, nothing
-        changed (config_problem untouched) · None = go on with raw."""
+        language is being applied (A1), so it is not reported back as a newer host change."""
         async with self.config_apply_lock:
-            if build is not None:
-                built = await build()
-                if isinstance(built, dict):
-                    return built
-                if isinstance(built, str):
-                    raw = built
             old = self.preferences
             try:
                 candidate = preferences.validate(preferences.parse(raw) if isinstance(raw,str) else preferences.read()[1])
@@ -2588,10 +2347,8 @@ class Host:
             preferences.note_language(self.st, candidate, language_at)
             if lang_changed:
                 self.language_changed(preferences.get(candidate, "appearance.language"), from_account=language_at is not None)
-            # P320: only RESTART_SERVE_KEYS still need serve restarted; RELOAD_KEYS wait for a reload (the phone offers it)
-            restart = any(preferences.get(old, key) != preferences.get(candidate, key) for key in RESTART_SERVE_KEYS)
-            reload_keys = [key for key in RELOAD_KEYS if preferences.get(old, key) != preferences.get(candidate, key)]
-            self.reload_pending.update(reload_keys)
+            restart = any(preferences.get(old, key) != preferences.get(candidate, key)
+                          for key in ("agent.working_root", "agent.instructions", "agent.isolation", "agent.allow_docker", "agent.session_mode"))
             # P59 (A167): proxy settings reach only harness children, read at their launch → restart the owned harness
             # before its next turn (conversation kept), not serve. A shared/attached harness keeps its own environment.
             proxied = any(preferences.get(old, "proxy." + k) != preferences.get(candidate, "proxy." + k)
@@ -2609,12 +2366,9 @@ class Host:
                             c[ck] = preferences.get(candidate, key)
                     if self.agent is not None and not self.agent.cfg.get("_workflow_ceo"):
                         self.agent.identity_changed()
-            result = {"ok": True, "applied": not restart and not reload_keys,
-                      "verify": {"ok": True, "detail": "stored; restart serve for the working root or session mode" if restart else
-                                 "stored; run agentj reload to activate" if reload_keys else "host configuration activated; voice needs a listening test"},
-                      "needs": (["restart serve"] if restart else []) + (["reload"] if reload_keys else [])}
-            if reload_keys:
-                result["reload"] = reload_keys
+            result = {"ok": True, "applied": not restart,
+                      "verify": {"ok": True, "detail": "stored; restart serve for Agent instructions or proxy variables" if restart else "host configuration activated; voice needs a listening test"},
+                      "needs": ["restart serve"] if restart else []}
             if harness_note is not None:
                 result["harness"] = harness_note
                 if harness_note.get("when") == "own":
@@ -2682,114 +2436,6 @@ class Host:
             return {"ok": False, "when": "own", "error": "shared"}
         return {"ok": True, "when": a.request_restart(why)}
 
-    async def reload_config(self, trusted: bool = False, by: str = "cli") -> dict:
-        """P320 `agentj reload` (also the phone's /reload, ≡ Reload, Alt+Shift+L; run by itself after an Agent's `agentj config
-        set` of a reload-tier key): make the configuration file and the service's key file effective WITHOUT restarting serve.
-        1) the private service environment file is read again (key names only; the Telegram bot key added tonight) ·
-        2) the configuration file is activated like `agentj config apply` — a security key changed in the file by an Agent
-        (trusted=False: the phone, an Agent's terminal) goes to the owner's approval card instead · 3) the Agent settings read
-        at harness launch (instructions, isolation, docker, warnings, approvals) are refreshed and the owned harness restarts
-        before its next turn, the conversation kept · 4) the Telegram channel binds again with the new key. RESTART_SERVE_KEYS
-        changed since serve started are named, never applied half-way. Never prints or returns a value."""
-        from . import service, ctl_auth
-        out = {"ok": True, "changed": [], "pending": [], "restart_serve": [], "env_changed": 0, "harness": None}
-        try:
-            env = await asyncio.to_thread(service.reload_service_env, self.preferences)
-        except service.ServiceError as e:
-            env, out["env_error"] = [], e.reason
-        out["env_changed"] = len(env)
-        try:
-            raw, doc = preferences.read()            # one read: the text checked = the text on the card = the text committed
-            candidate = preferences.validate(doc)
-        except (preferences.ConfigError, OSError) as e:
-            res = e.result() if isinstance(e, preferences.ConfigError) else {"ok": False, "key": "/", "error": "configuration unreadable"}
-            self.st.log("reload", result="config_error", by=by)
-            return {**out, **res, "ok": False}
-        old = self.preferences
-        a, b = ctl_auth._flat(old), ctl_auth._flat(candidate)
-        changed = sorted(k for k in set(a) | set(b) if a.get(k) != b.get(k))
-        sec = ctl_auth.security_changes(old, candidate) if changed else []
-        if sec and not trusted:
-            self.st.log("ctl_config_card", keys=",".join(sec)[:200])
-            self._config_card(raw, candidate, sec, old)
-            out["pending"] = sec
-        elif changed:
-            res = await self.apply_preferences(raw)
-            if not res.get("ok"):
-                self.st.log("reload", result="rejected", by=by)
-                return {**out, **res, "ok": False}
-            out["changed"] = changed
-        if not out["pending"]:
-            out["harness"] = self._reload_runtime(bool(env))
-        if env and self.telegram is not None:
-            self.telegram.bot_id = None           # the next poll binds with the key as it is now (getMe)
-        out["restart_serve"] = [k for k in RESTART_SERVE_KEYS
-                                if preferences.get(self.boot_preferences, k) != preferences.get(self.preferences, k)]
-        out["text"] = self.reload_text(out)
-        self.st.log("reload", result="pending" if out["pending"] else "ok", by=by, status=f"{len(out['changed'])}/{len(env)}")
-        self.push_status()
-        return out
-
-    def _reload_runtime(self, env_changed: bool = False) -> dict | None:
-        """P320: the active configuration → the running adapter (launch fields) + the owned harness restarts before its next
-        turn when anything it reads at launch changed. → restart_harness's answer, or None when nothing needed it."""
-        refreshed = self._reload_agent_settings()
-        note = None
-        if refreshed or env_changed or self.reload_pending:
-            note = self.restart_harness("reload") if self.agent is not None else {"ok": True, "when": "next_start"}
-        self.reload_pending.clear()
-        return note
-
-    def _reload_agent_settings(self) -> list:
-        """P320: the Agent settings read when the harness starts, refreshed into the running adapter's cfg from the ACTIVE,
-        validated self.preferences — never the file on disk (an Agent's unapproved edit must not reach the harness; security
-        review F1). → the fields that changed (instructions also reload the identity text)."""
-        if self.agent_cfg is None:
-            return []
-        prefs, raw = self.preferences, (self.st.config().get("agent") or {})
-        fresh = {"instructions": preferences.get(prefs, "agent.instructions", ""),
-                 "high_risk_warnings": preferences.get(prefs, "agent.high_risk_warnings", False),
-                 "approvals": {"strict": "strict", "native": "native"}.get(preferences.get(prefs, "agent.approvals", "standard"), "standard"),
-                 "fence": raw.get("fence") is not False and preferences.get(prefs, "agent.isolation", True) is not False,
-                 "docker": raw.get("docker") is True or preferences.get(prefs, "agent.allow_docker", False) is True}
-        fields = [k for k in ("instructions", "high_risk_warnings", "approvals", "fence", "docker")
-                  if self.agent_cfg.get(k) != fresh.get(k) or (self.agent is not None and getattr(self.agent, "cfg", None) is not None
-                                                                and self.agent.cfg is not self.agent_cfg and self.agent.cfg.get(k) != fresh.get(k))]
-        for k in fields:
-            for c in (self.agent_cfg, getattr(self.agent, "cfg", None) if self.agent is not None else None):
-                if c is not None:
-                    c[k] = fresh.get(k)
-        if "instructions" in fields and self.agent is not None and not self.agent.cfg.get("_workflow_ceo"):
-            self.agent.identity_changed()
-        return fields
-
-    def reload_text(self, r: dict) -> str:
-        """The one card / terminal line of a reload, in the owner's language (names of settings only, never values)."""
-        en = self.lang == "en"
-        parts = []
-        n = len(r.get("changed") or [])
-        parts.append((f"Reloaded: {n} setting{'s' if n != 1 else ''} now in effect." if n else "Reloaded: the configuration had no new changes.")
-                     if en else (f"已重新加载：{n} 项设置已生效。" if n else "已重新加载：配置没有新的改动。"))
-        if r.get("env_changed"):
-            k = r["env_changed"]
-            parts.append(f"{k} key{'s' if k != 1 else ''} from the service key file updated." if en else f"服务密钥文件里 {k} 个 key 已更新。")
-        if r.get("env_error"):
-            parts.append("The service key file could not be read (it must be yours, mode 600); keys unchanged."
-                         if en else "服务密钥文件读不了（须属于你、权限 600），key 没有变。")
-        h = r.get("harness") or {}
-        if h.get("when") == "next_turn":
-            parts.append("The main Agent restarts before its next message, same conversation." if en else "主 Agent 会在下一条消息前重启，对话接着原来的。")
-        elif h.get("when") == "own":
-            parts.append("The shared session is your own program: restart it yourself to pick up Agent settings."
-                         if en else "共享会话是你电脑上自己的程序：Agent 设置要你自己重启它才生效。")
-        if r.get("pending"):
-            keys = ", ".join(r["pending"][:6])
-            parts.append(f"Security settings ({keys}) wait for your approval on the phone card." if en else f"安全设置（{keys}）要你在手机卡片上批准后才生效。")
-        if r.get("restart_serve"):
-            keys = ", ".join(r["restart_serve"])
-            parts.append(f"{keys} still needs a service restart: agentj service restart." if en else f"{keys} 仍需重启后台服务才生效：agentj service restart。")
-        return " ".join(parts)
-
     def language_changed(self, lang, from_account: bool = False) -> None:
         """A1: the one language changed. The main Agent speaks it from its next turn (identity text, hot); the account
         learns a local change with the next report (soon: triggered here)."""
@@ -2853,12 +2499,10 @@ class Host:
             return
         key_out = key if isinstance(key, str) and len(key) <= 64 else None
 
-        async def res(ok: bool, problem: str | None = None, reload: bool = False) -> None:
+        async def res(ok: bool, problem: str | None = None) -> None:
             m = {"t": "pref_res", "r": r, "ok": ok, "key": key_out}
             if problem:
                 m["problem"] = problem
-            if reload:                                # P320: saved, takes effect after a reload — the phone offers 「Reload」
-                m["reload"] = True
             if self.sessions.get(s.cid) is s and s.state == "ready" and self.st.is_allowed(s.pub):
                 await self.send_app(s, m)
         if key not in PREF_SET_KEYS:
@@ -2886,7 +2530,7 @@ class Host:
 
         async def ack(result: dict) -> None:
             await res(bool(result.get("ok")), None if result.get("ok") else
-                      ("busy" if result.get("error") == "busy" else "rejected"), reload=bool(result.get("reload")))
+                      ("busy" if result.get("error") == "busy" else "rejected"))
             if not result.get("ok") and key == "agent.session_mode" and str(result.get("error", "")).startswith("电脑上的服务没有 Claude 登录"):
                 from . import claude_auth
                 self.agent_notice(claude_auth.failure_notice(self.lang))
@@ -3276,7 +2920,6 @@ class Host:
         if not text or not text.strip():
             return
         _hb_touch(self)
-        self.turn_shown = True
         self.jev_plan = (getattr(self, "jev_plan", "") + "\n" + text)[-approval_jev.MAX_TEXT:]
         from .silent import is_silent
         if is_silent(text):
@@ -3356,7 +2999,6 @@ class Host:
         page = self.hist.get(tid) if tid is not None else None
         if page and page["end"] == "open":
             self.hist_update(tid, text=humane.of(self, "shared.merged"), end="done")
-        _rcpt_turn(self, tid)                           # P313: its words reached the running turn
         self.cur_turn, self.cur_failed = None, False
 
     def desktop_cmd_done(self, name: str) -> None:    # P133: a desktop-typed /compact has no Stop
@@ -3389,7 +3031,6 @@ class Host:
     def agent_notice(self, text: str) -> None:
         text = one(self.lang, text)       # P128: a legacy "中文 / English" notice reaches the phone in one language
         local, self.notice_local = getattr(self, "notice_local", False), False
-        self.turn_shown = True
         self.emit("agent_notice", text=text)
         e = self._remember("notice", text)
         self._post(self._send_legacy, lambda s, e=e: self._render(e, s))
@@ -3480,11 +3121,6 @@ class Host:
             e = self._remember("notice", note)
             self._post(self._send_legacy, lambda s, e=e: self._render(e, s))
             self.hist_add({"k": "sys", "text": ""}, note, "done")
-        with contextlib.suppress(Exception):     # P323: finished one-shot launchd jobs left behind (Login Items rows)
-            from . import service
-            swept = await asyncio.to_thread(service.sweep_jobs)
-            if swept:
-                self.st.log("launchd_jobs_swept", count=len(swept))
         try:
             from . import phone_update, service_recovery
             # Bounded wait for manager-owned restart verification before doctor.
@@ -3512,8 +3148,7 @@ class Host:
                         completed["counts"], failed = None, True
                     completed["reason"] = "doctor_failed" if failed else "upgraded"
                     completed["result"] = "failed" if failed else "ok"
-                web, machine = await self._receipt_context()   # P320: the page's version + which computer
-                text = phone_update.text(completed, self.lang, web, machine)
+                text = phone_update.text(completed, self.lang)
                 if completed.get("result") == "ok":
                     text += await self._starters_line()
                 self.cmd_card("update", slash.Result(text, "ok" if completed.get("result") == "ok" else "error"))
@@ -3529,31 +3164,15 @@ class Host:
             counts = update.doctor_counts(rows)
         except Exception:  # noqa: BLE001 — the line still goes out, with "doctor: ?"
             counts, rows = None, None
-        web, machine = await self._receipt_context()
-        note = update.upgraded_text(rec, counts, preferences.get(self.preferences, "appearance.language", "zh"), rows, web, machine)
+        note = update.upgraded_text(rec, counts, preferences.get(self.preferences, "appearance.language", "zh"), rows)
         note += await self._starters_line()
         self.st.log("upgrade_notice", status=str(rec.get("to"))[:32])
         e = self._remember("notice", note)
         self._post(self._send_legacy, lambda s, e=e: self._render(e, s))
         self.hist_add({"k": "sys", "text": ""}, note, "done")
 
-    async def _receipt_context(self) -> tuple:
-        """P320 (Leo 10-15 22:49): the upgrade receipt checks the page's served version first (no 「稍后上线」 when it is
-        already out) and names this computer (several computers, several receipts)."""
-        from .text import machine_name
-        try:
-            web = await asyncio.to_thread(update.web_state, (self.cfg or {}).get("web"))
-        except Exception:  # noqa: BLE001
-            web = None
-        try:
-            machine = machine_name() or self.st.agent_name()
-        except Exception:  # noqa: BLE001
-            machine = None
-        return web, machine
-
     def agent_turn_start(self, text: str, send=None) -> None:
         self.turn_t0 = time.monotonic()
-        self.turn_shown, self.turn_at = False, (time.time(), 0.0, False)
         _hb_touch(self)
         self.jev_owner, self.jev_plan = text or "", ""      # P157: layer 2's view of this turn
         by = send.by if send is not None and send.by else self.turn_by
@@ -3564,33 +3183,18 @@ class Host:
         # thread before `turn/start` (measured 46–65 s on a busy Mac) — the phone must stop calling it "queued, not handed
         # to the Agent" while the Agent is already working on it (`delivered` still follows at the write).
         if send is not None and isinstance(getattr(send, "sid", None), str) and not any(
-                getattr(send, k, None) for k in ("heartbeat_key", "bot_handoff_id", "official_notice_id", "quota_resume_id")):
+                getattr(send, k, None) for k in ("heartbeat_key", "bot_handoff_id", "official_notice_id")):
             self._post(self._send_device, send.device, {"t": "say_state", "sid": send.sid, "s": "taken"})
 
     def agent_turn_end(self) -> None:
         self.st.log("turn_end", agent=self.agent.kind if self.agent else None)
         _hb_touch(self)
         halted = bool(self.agent and self.agent.halting)
-        secs = time.monotonic() - self.turn_t0 if self.turn_t0 else None
-        if (self.cur_turn is not None and not halted and not self.cur_failed and not getattr(self, "turn_shown", True)
-                and secs is not None and secs < EMPTY_TURN):
-            # P326 (Mac 10-15): a turn that ends at once without a word, a card or a notice is an error the owner is told
-            # about — never a silent 「done」 (OpenCode never reached its server: every message ended in one second)
-            self.st.log("turn_empty", agent=self.agent.kind if self.agent else None, secs=round(secs, 1))
-            from .harness import LABEL
-            label = LABEL.get(self.agent.kind, self.agent.kind) if self.agent else "Agent"
-            self.agent_notice(pick(self.lang, f"{label} 没有处理这条消息：这一轮 {secs:.0f} 秒就结束了，一个字也没回。再发一次试试；"
-                                              "还是这样，在电脑上运行 agentj doctor。",
-                                   f"{label} did not handle this message: the turn ended after {secs:.0f} s without a word. "
-                                   "Send it again; if it keeps happening, run agentj doctor on the computer."))
-            self.cur_failed = True
-        self.turn_at = (getattr(self, "turn_at", (0.0,))[0], time.time(), bool(self.cur_failed))
         self.activity("turn_end", secs=round(time.monotonic() - self.turn_t0, 1) if self.turn_t0 else None,
                       result="stopped" if halted else "done")
         if self.cur_turn is not None:
             self.hist_update(self.cur_turn, end="stopped" if halted else ("failed" if self.cur_failed else "done"))
             self.media_later(self.cur_turn)
-            _rcpt_turn(self, self.cur_turn)             # P313
         if self.telegram and self.cur_turn is not None:
             self.telegram.completed(self.hist.get(self.cur_turn))
         if self.mail and self.cur_turn is not None:      # P170: the reply goes back by e-mail, same thread
@@ -4008,8 +3612,7 @@ class Host:
                 reason = "device" if did else ("estop" if self.stopped() else "serve_stop")
             else:
                 decision, did, sk, sig = "deny", None, None, None
-                reason = ("superseded" if _superseded(gone) else "agent_gone") if gone in done else \
-                    ("serve_stop" if self.stopping.is_set() else "timeout")      # P318: a newer card for the same item
+                reason = "agent_gone" if gone in done else ("serve_stop" if self.stopping.is_set() else "timeout")
                 if reason == "timeout" and a.goal == "auto" and not self.stopped() and self.goals.current() is not None:
                     decision, reason = "allow", "goal_auto"     # P158: reversible step, nobody answered in 10 s
                 if not a.fut.done():
@@ -4022,9 +3625,6 @@ class Host:
                          scope=a.scope_text if decision == "allow_batch" else None,
                          scope_sha256=approvals.allow_add_line(picks) if picks else None,
                          **({"grant": gd["grant"].get("rid"), "auto": "goal"} if reason == "goal_auto" and gd else {}))
-        if decision in ("allow", "allow_batch") and reason == "device" and _superseded(gone):
-            # P318: the signed allow raced a merge that superseded this card — the caller applies nothing; say so
-            approvals.record(self.st, **base, decision="deny", reason="superseded_after_allow", device=did)
         if gd is not None:
             if reason == "goal_auto":
                 self.goals.count("auto")
@@ -4257,8 +3857,6 @@ class Host:
                 q.fut.set_result(("stopped", None, None, None, None))
         for gid in list(self.grants):
             self.end_grant(gid, "estop")
-        for scope in list(self.quota_resume.items):    # P314: no automatic continue after stop-everything
-            self.quota_resume.drop(scope, "stopped")
         with contextlib.suppress(Exception):           # P158: the goal's one-time grant ends with everything else
             self.goals.end("estop", by="estop")
         self.bots.estop()
@@ -4696,14 +4294,12 @@ class Host:
         its page ends `stopped`), a command's page ends `stopped`."""
         if getattr(item, "background_done_ids", None):
             self.background_done.complete(item)
-        if getattr(item, "heartbeat_key", None) or getattr(item, "background_done_ids", None) \
-                or getattr(item, "quota_resume_id", None):
+        if getattr(item, "heartbeat_key", None) or getattr(item, "background_done_ids", None):
             item.state = "cancelled"
             self.hist_update(item.turn, end="stopped")
             return
         if getattr(item, "sid", None) is not None:
             item.state = "cancelled"
-            _rcpt(self, item.device, item.sid, "done")      # P313: dropped by the stop switch — never ran
             self.uploads.release(item.blobs)
             if item.prep is not None and not item.prep.done():
                 item.prep.cancel()
@@ -4730,12 +4326,6 @@ class Host:
             self.st.log("slash_in", cid=s.cid, device=s.device, cmd="telegram-pair")
             turn = self.cmd_turn(s, "telegram-pair")
             await self.telegram_pair(by=by, turn=turn)
-            return turn
-        if name in RELOAD_CMDS:                # P320: /reload — the host's own answer, no Agent, also while stopped
-            self.st.log("slash_in", cid=s.cid, device=s.device, cmd="reload")
-            turn = self.cmd_turn(s, "reload")
-            res = await self.reload_config(trusted=False, by="phone")
-            self.cmd_card("reload", slash.Result(res.get("text") or res.get("error") or "", "ok" if res.get("ok") else "error"), by, turn)
             return turn
         hc = friend_cmds.name_of(name)
         if hc:                                 # P73: answered here — no Agent, no model, no tokens; works while stopped
@@ -4816,8 +4406,7 @@ class Host:
                 await asyncio.sleep(1)
                 rec = phone_update.take(self.st)
                 if rec:
-                    web, machine = await self._receipt_context() if rec.get("reason") in ("upgraded", "doctor_failed") else ("older", None)
-                    self.cmd_card("update", slash.Result(phone_update.text(rec, self.lang, web, machine), "ok" if rec.get("result") == "ok" else "error"), by, turn)
+                    self.cmd_card("update", slash.Result(phone_update.text(rec, self.lang), "ok" if rec.get("result") == "ok" else "error"), by, turn)
                     return
             self.cmd_card("update", slash.Result("Upgrade timed out: run agentj doctor" if self.lang == "en" else "升级超时：在电脑运行 agentj doctor", "error"), by, turn)
         except Exception as e:
@@ -5200,16 +4789,6 @@ class Host:
             return await self.on_auth(s, t, obj)
         if t in ("imsg_check", "imsg_fda"):  # P274 (§10.21): the iMessage card
             return await self.on_imsg(s, t, obj)
-        if t == "qr_cancel":               # P314 (§32): only stops an automatic action (like grant_off): no signature
-            r, rid = obj.get("r"), obj.get("id")
-            if not wire.is_rid(r):
-                return
-            ok = isinstance(rid, str) and len(rid) <= 32 and self.quota_resume.cancel(rid, by=s.device)
-            if ok:
-                self.activity("quota_resume_cancel", by=s.name or s.device)
-            await self.send_app(s, {"t": "qr_res", "r": r, "ok": bool(ok), **({} if ok else {"why": "gone"}),
-                                    "items": self.quota_resume.view()})
-            return
         if t == "tg_fwd":                  # P118 (B10): one tap → this reply to the owner's own Telegram private chat
             r = obj.get("r")
             if not wire.is_rid(r):
@@ -5241,7 +4820,6 @@ class Host:
             r, send = await self.sends.cancel(s.device, sid)
             if r == "cancelled" and send is not None:
                 self.uploads.release(send.blobs)        # the attachments are staged again under the same ids
-                _rcpt(self, s.device, sid, "done")       # P313: withdrawn — never ran, never will
                 self.hist_update(send.turn, end="stopped", card={"withdrawn": True})
                 self.st.log("say_cancel", cid=s.cid, device=s.device, result=r)
                 self._post(self._send_device, s.device, {"t": "say_state", "sid": sid, "s": "cancelled"})
@@ -5279,8 +4857,6 @@ class Host:
             if changed:
                 self.st.log("hist_read", device=s.device, epoch=self.hist.epoch, read=self.readmark.value(self.hist))
                 self._post(self._send_p33, lambda s: {"t": "hist_read", "epoch": self.hist.epoch, "read": self.readmark.value(self.hist)})
-            else:   # P321: a lower / refused receipt — this remote learns the host's mark (and stops retrying it)
-                await self.send_app(s, {"t": "hist_read", "epoch": self.hist.epoch, "read": self.readmark.value(self.hist)})
             return
         if t == "hist_get":
             r = obj.get("r")
@@ -5312,7 +4888,7 @@ class Host:
                 skills = [x for x in (getattr(self.agent, "init", {}) or {}).get("skills") or [] if isinstance(x, str)]
             wd = self.agent_cfg["dir"] if self.agent_cfg else None
             res = await asyncio.to_thread(menu.for_phone, wd, skills, self.lang, preferences.get(self.preferences, "menu.items", []))
-            return await self.send_app(s, {"t": "menu", "r": r, **res, "upgrade": update.phone_view(self.st), "reload": True})   # P320: ≡ Reload
+            return await self.send_app(s, {"t": "menu", "r": r, **res, "upgrade": update.phone_view(self.st)})
         if t in ("provider_get", "provider_key", "asr_install"):
             from . import provider_runtime
             r = obj.get("r")
@@ -5422,7 +4998,6 @@ class Host:
             send.text = compose.render(text, files, self.lang, quote_text) + send.onboarding_note
         self.sends.add(send)
         self.turn_by = s.name or s.device
-        self.quota_resume.owner_spoke("main")   # P314: the owner moved on by hand; no automatic continue on top
         await self._model_set_flush()        # P240: a pill switch still held by the 2 s backstop goes ahead of this message
         self.agent.submit(send)
         return send
@@ -5472,19 +5047,16 @@ class Host:
             return await res(ok=False, why="too_long")
         if not text.strip() and not att:
             return await res(ok=False, why="shape")
-        rc = getattr(self, "receipts", None)
-        if self.sends.used(s.device, sid) or (rc is not None and rc.used(s.device, sid)):     # P313: also across a restart
+        if self.sends.used(s.device, sid):
             return await res(ok=False, why="dup")
         if self.sends.full(s.device):       # 16 of this device's sends still wait: refuse, never evict one (P33-C03)
             return await res(ok=False, why="too_many")
         is_meeting = meeting.parse(text) is not None      # P182: /会议总结 · /meeting-notes is a message for the Agent, never refused
         hc = slash.parse(text) if not att and reply_to is None and not is_meeting else None
-        if hc and (friend_cmds.name_of(hc[0]) or hc[0] in TG_PAIR_CMDS or hc[0] in RELOAD_CMDS or hc[0] == "goal" and goal_mod.host_cmd(hc[1])):
+        if hc and (friend_cmds.name_of(hc[0]) or hc[0] in TG_PAIR_CMDS or hc[0] == "goal" and goal_mod.host_cmd(hc[1])):
             # P73: /my-agent-id · /add-friend; P283: /telegram-pair; P158: /goal status · /goal stop — the host's own answer, also stopped / no Agent
             self.sends.add(compose.Send(s.device, sid, 0, state="delivered"))
-            await _rcpt_recv(self, s.device, sid)
             turn = await self.on_slash(s, hc[0], hc[1], confirm=False, typed=True)
-            _rcpt(self, s.device, sid, "done")
             self._post(self.send_app, s, {"t": "say_res", "sid": sid, "ok": True, "state": "delivered", "turn": turn})
             return
         if self.stopped() and self.agent:
@@ -5501,9 +5073,7 @@ class Host:
         cmd = slash.parse(text) if not att and reply_to is None and not is_meeting else None
         if cmd and cmd[0] != "goal" and cmd[0] not in slash.AGENT_CMDS and not self.agent.passthrough(cmd[0]):   # P155 /switch-harness, P158 `/goal <what>` → the Agent
             self.sends.add(compose.Send(s.device, sid, 0, state="delivered"))
-            await _rcpt_recv(self, s.device, sid)
             turn = await self.on_slash(s, cmd[0], cmd[1], confirm=False, typed=True)
-            _rcpt(self, s.device, sid, "done")
             self._post(self.send_app, s, {"t": "say_res", "sid": sid, "ok": True, "state": "delivered", "turn": turn})
             return
         quote = quote_text = None
@@ -5522,9 +5092,7 @@ class Host:
             blobs = self.uploads.claim(s.device, att)
         except uploads.Refused as e:
             return await res(ok=False, why=e.why, **({"att": e.att} if e.att else {}))
-        await _rcpt_recv(self, s.device, sid)      # P313: on disk before the Agent (or the phone's `ok`) hears of it
         send = await self._accept(s, text, sid, blobs, quote, quote_text)
-        _rcpt(self, s.device, sid, "recv", send.turn)
         # through the same queue as its page (hist_turn), so the phone has the page before the answer that names it
         self._post(self.send_app, s, {"t": "say_res", "sid": sid, "ok": True, "state": "queued", "turn": send.turn})
         if send.prep is not None:
@@ -5676,29 +5244,6 @@ class Host:
                         await asyncio.shield(p.wait())
             return "ok" if p.returncode == 0 else "fail"
 
-    # ------------------------------------------------------------ P313: say receipts on disk (receipts.py, §14)
-    def receipts_restart(self) -> None:
-        """Once at start: the phone messages an earlier serve took but did not finish are never replayed (their sid stays
-        `dup`). Each one's page — still `open` — ends `failed` with one line saying whether the Agent had it, so the owner
-        can resend it by hand; a page that already ended needs no word; without the page (history off) one notice counts them."""
-        if getattr(self, "receipts", None) is None:
-            return
-        left = 0
-        for r in self.receipts.interrupted:
-            page = self.hist.get(r["n"]) if r["n"] is not None else None
-            if page is None:
-                left += 1
-                continue
-            if page["end"] != "open":
-                continue
-            key = "say.restart_lost" if r["s"] == "recv" else "say.restart_unsure"
-            self.hist_update(r["n"], append=humane.of(self, key), end="failed")
-        if left:
-            self.hist_add({"k": "sys", "text": ""}, humane.of(self, "say.restart_some", n=left), "done")
-        if self.receipts.interrupted:
-            self.st.log("say_restart", count=len(self.receipts.interrupted), result=left)
-        self.receipts.interrupted = []
-
     def say_delivered(self, send: compose.Send) -> None:
         """The harness has the message (agent.Agent.deliver): the attachments belong to the Agent now."""
         if getattr(send, "background_done_ids", None):
@@ -5707,9 +5252,6 @@ class Host:
             return
         if getattr(send, 'heartbeat_key', None):
             self.st.log("heartbeat_delivery", outcome="delivered")
-            return
-        if getattr(send, 'quota_resume_id', None):     # P314: no phone, no attachments
-            self.st.log("quota_resume_delivery", outcome="delivered")
             return
         if getattr(send, 'bot_handoff_id', None):
             self.st.log("bot_handoff_delivery", id=send.bot_handoff_id, outcome="delivered")
@@ -5720,7 +5262,6 @@ class Host:
             self.reporter.trigger("notice_delivered")
             return
         self.uploads.commit(send.blobs)
-        _rcpt(self, send.device, send.sid, "deliv", send.turn)
         self.st.log("say_delivered", device=send.device, id=send.turn)
         self._post(self._send_device, send.device, {"t": "say_state", "sid": send.sid, "s": "delivered"})
 
@@ -5737,9 +5278,6 @@ class Host:
         if getattr(send, 'heartbeat_key', None):
             self.st.log("heartbeat_delivery", outcome="uncertain")
             return
-        if getattr(send, 'quota_resume_id', None):     # P314: never replayed
-            self.st.log("quota_resume_delivery", outcome="uncertain")
-            return
         if getattr(send, 'official_notice_id', None):
             # Native transport may have accepted it: do not replay auto-upgrade authority on an uncertain write.
             notices.processed(self.st, send.official_notice_id)
@@ -5747,7 +5285,6 @@ class Host:
             self.st.log("notice_delivery_uncertain", id=send.official_notice_id)
             return
         self.uploads.commit(send.blobs)
-        _rcpt(self, send.device, send.sid, "deliv", send.turn)
         self.st.log("say_uncertain", device=send.device, id=send.turn)
 
     # ------------------------------------------------------------ voice (§10.9)
@@ -6168,7 +5705,6 @@ class Host:
             os.umask(old)
         os.chmod(sock, 0o600)
         self.st.log("serve_start", channel=self.channel)
-        self.receipts_restart()                      # P313: what the last serve left half-done → one line, never a replay
         from . import codex_procs                    # ADR-A178: app-servers an earlier serve left behind (one serve per state)
         ended = await asyncio.to_thread(codex_procs.sweep, self.st)
         if ended:
@@ -6265,7 +5801,6 @@ class Host:
         jobs.append(asyncio.create_task(self.mail.run()))
         jobs.append(asyncio.create_task(self.scheduler.loop()))
         jobs.append(asyncio.create_task(self.heartbeat.loop()))
-        self.quota_resume.start()                 # P314: re-arm the waiting continues (at most once each)
         jobs.append(asyncio.create_task(self.imessage.loop()))   # P274: idle unless macOS + imessage.enabled
         jobs.append(asyncio.create_task(self.goals.loop()))     # P158: deadline / unpaired phone ends the goal
         jobs.append(asyncio.create_task(self.sweep_loop()))

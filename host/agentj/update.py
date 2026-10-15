@@ -511,37 +511,7 @@ def take_marker(st, now: float | None = None) -> dict | None:
     return d
 
 
-def web_state(web: str | None, version: str | None = None, timeout: float = 5.0) -> str | None:
-    """P320 (Leo 10-15 22:49): what the phone/web page serves right now, before the upgrade receipt talks about it. Reads
-    `<web>/version.json` (the page's own file, HTTPS only). → "same" (the page already serves this computer's version or a
-    newer one: just refresh) · "older" (the page's new version is still on its way) · None (could not tell)."""
-    version = version or __version__
-    try:
-        p = urllib.parse.urlparse(str(web or ""))
-        if not (p.scheme == "https" or (p.scheme == "http" and p.hostname in LOOPBACK)) or not parse(version):
-            return None
-        req = urllib.request.Request(str(web).rstrip("/") + "/version.json", headers={"User-Agent": "agentj/" + __version__,
-                                                                                    "Cache-Control": "no-cache"})
-        with open_download(req, timeout=timeout) as r:
-            served = json.loads(r.read(1 << 20).decode()).get("version")
-    except Exception:  # noqa: BLE001 — never keeps the receipt from going out
-        return None
-    if not isinstance(served, str) or not parse(served):
-        return None
-    return "same" if parse(served) >= parse(version) else "older"
-
-
-def web_refresh_text(lang="zh", web: str | None = "older") -> str:
-    """P320: the page's sentence follows what the web actually serves (web_state): the same version → refresh now; still
-    older → it comes separately; unknown → refresh if the page offers it."""
-    if web == "same":
-        return ('The phone/web page is already on this version: just refresh the page (or the settings icon at the top right → '
-                '"Update and reload").' if lang == "en" else
-                '手机/网页已经是同一版本：刷新页面即可（或点右上角设置图标 →「更新并刷新」）。')
-    if web is None:
-        return ('Could not check the web page\'s version just now: if the page shows "Server upgraded", tap Refresh; otherwise '
-                'refresh the page once.' if lang == "en" else
-                '这次没查到网页的版本：页面弹「服务器已升级」就点「刷新」；没弹的话刷新一次页面试试。')
+def web_refresh_text(lang="zh") -> str:
     if lang == "en":
         return ('The phone/web page updates separately: when its new version is out, the page shows "Server upgraded" — tap '
                 'Refresh (or the settings icon at the top right → "Update and reload"). Until then a small line under the header says the new page is on its way.')
@@ -588,22 +558,17 @@ def health_text(counts, lang="zh", rows=None) -> str:
     return f"自检通过（有 {counts[1]} 项提醒，没有未通过项）。" if counts[1] else "自检全部通过。"
 
 
-def completion_text(rec, counts, lang="zh", rows=None, web: str | None = "older", machine: str | None = None) -> str:
-    """P320: `machine` = this computer's name (several computers each send their own receipt — the owner must tell which);
-    `web` = web_state() before the sentence about the page."""
+def completion_text(rec, counts, lang="zh", rows=None) -> str:
     if lang == "en":
-        where = f'Agent J on the computer "{machine}"' if machine else "Agent J on your computer"
-        head = f"{where} has been upgraded to {rec['to']} (previously {rec.get('from', '—')})."
+        head = f"Agent J on your computer has been upgraded to {rec['to']} (previously {rec.get('from', '—')})."
     else:
-        where = f"电脑「{machine}」上的 Agent J 程序" if machine else "电脑上的 Agent J 程序"
-        head = f"{where}已升级到 {rec['to']}（原 {rec.get('from', '—')}）。"
-    return head + " " + health_text(counts, lang, rows) + "\n\n" + web_refresh_text(lang, web)
+        head = f"电脑上的 Agent J 程序已升级到 {rec['to']}（原 {rec.get('from', '—')}）。"
+    return head + " " + health_text(counts, lang, rows) + "\n\n" + web_refresh_text(lang)
 
 
-def upgraded_text(rec: dict, counts: tuple[int, int, int] | None, lang: str = "zh", rows=None, web: str | None = "older",
-                  machine: str | None = None) -> str:
+def upgraded_text(rec: dict, counts: tuple[int, int, int] | None, lang: str = "zh", rows=None) -> str:
     if rec["to"] == __version__:
-        return completion_text(rec, counts, lang, rows, web, machine)
+        return completion_text(rec, counts, lang, rows)
     if lang == "en":
         return f"The upgrade to {rec['to']} did not take effect: this computer still runs {__version__}. " + health_text(counts, lang, rows)
     return f"升级到 {rec['to']} 没有生效：这台电脑仍运行 {__version__}。" + health_text(counts, lang, rows)

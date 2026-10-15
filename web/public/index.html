@@ -217,11 +217,6 @@
       <button type="button" id="ar-renew-open" class="setup-banner__open"></button>
       <button type="button" id="ar-renew-x" class="setup-banner__x" data-i18n-attr="aria-label=ar.renewLater,title=ar.renewLater" aria-label="稍后再提醒" title="稍后再提醒">✕</button>
     </div>
-    <!-- P314: a used-up usage limit — 「额度用完，预计 HH:MM 自动继续」; ✕ cancels that automatic continue -->
-    <div id="qr-banner" class="setup-banner qrbanner" role="status" hidden>
-      <p id="qr-banner-text" class="setup-banner__open"></p>
-      <button type="button" id="qr-banner-x" class="setup-banner__x" data-i18n-attr="aria-label=p314.cancel,title=p314.cancel" aria-label="取消自动继续" title="取消自动继续">✕</button>
-    </div>
     <!-- The rule under the header is the weekly quota; the one above the composer is the 5-hour window. -->
     <div class="meter" id="mWeek" role="img" data-known="0" data-i18n-attr="aria-label=r.meter.week" aria-label="本周额度"><i></i><span class="lab">weekly</span></div>
 
@@ -436,7 +431,7 @@
         <button class="attach" id="slashBtn" type="button" data-i18n-attr="aria-label=r.menu.aria" aria-label="全部命令" aria-haspopup="true">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16M4 12h16M4 17h16"/></svg>
         </button>
-        <label class="field"><textarea id="input" rows="1" placeholder="说点什么" enterkeyhint="send" aria-autocomplete="list" aria-controls="sug"></textarea><span class="asrtag" id="asrTag" hidden data-i18n="r.asr.tag">转写中…</span><span class="capnote" id="capNote" hidden></span><button class="clr" id="clr" type="button" hidden tabindex="-1" data-i18n-attr="aria-label=r.clr.aria,title=r.clr.title" aria-label="清空输入框" title="清空文字（附件不动）"><i><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"/></svg></i></button></label>
+        <label class="field"><textarea id="input" rows="1" placeholder="说点什么" enterkeyhint="send" aria-autocomplete="list" aria-controls="sug"></textarea><span class="asrtag" id="asrTag" hidden data-i18n="r.asr.tag">转写中…</span><button class="clr" id="clr" type="button" hidden tabindex="-1" data-i18n-attr="aria-label=r.clr.aria,title=r.clr.title" aria-label="清空输入框" title="清空文字（附件不动）"><i><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"/></svg></i></button></label>
         <button class="saycancel" id="sayCancel" type="button" hidden data-i18n-attr="aria-label=r.say.cancelAria,title=r.say.cancelAria" aria-label="取消发送" title="取消发送"><b>
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"/></svg><span data-i18n="r.say.cancel">取消</span></b>
         </button>

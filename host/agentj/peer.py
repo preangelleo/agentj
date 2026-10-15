@@ -24,7 +24,7 @@ import time
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey, Ed25519PublicKey
 
-from . import relaydiag, wire
+from . import wire
 from .noise import KK, XX, Handshake, Keypair, NoiseError, sha256
 from .state import _write_private
 
@@ -290,7 +290,6 @@ class PeerNet:
         self.url = f"{relay_url.rstrip('/')}/v1/mbox/{keys.mbox}"
         self.ws = None
         self.up = False
-        self.last_down: dict | None = None             # P317: the last failed mailbox attempt (relaydiag.classify), until up
         self._stopped = False
         self._stopping = asyncio.Event()
         self._wake: asyncio.Event | None = None
@@ -505,16 +504,11 @@ class PeerNet:
                     cert = await self.cert_fn()
                 except Exception as e:
                     self._log("peer_cert_failed", err=type(e).__name__)
-                if not cert:
-                    self.last_down = {"phase": "seat", "why": "seat", "code": None, "http": None, "kind": "no_cert"}
                 if cert:
-                    phase = "connect"
                     try:
                         async with connect(self.url, max_size=2**17, ping_interval=20, ping_timeout=20,
                                            open_timeout=15) as ws:
-                            phase = "auth"
                             await self._auth(ws, cert)
-                            phase = "up"
                             self._on_up(ws)
                             backoff = self.RECONNECT[0]
                             async for m in ws:
@@ -523,11 +517,7 @@ class PeerNet:
                     except asyncio.CancelledError:
                         raise
                     except Exception as e:  # network, auth refusal (4003), replaced (4001) → back off, retry
-                        d = relaydiag.classify(e, phase)    # P317: phase, reason and close code, not only the exception kind
-                        self._log("peer_mbox_down", reason=type(e).__name__, phase=phase, code=d["code"], why=d["why"])
-                        if phase != "up":
-                            self.last_down = d
-                            self._status("mbox_fail", **d)
+                        self._log("peer_mbox_down", reason=type(e).__name__)
                     finally:
                         self._on_down()
                 if self._stopping.is_set():
@@ -551,7 +541,7 @@ class PeerNet:
             raise ValueError("relay refused auth")
 
     def _on_up(self, ws) -> None:
-        self.ws, self.up, self.last_down = ws, True, None
+        self.ws, self.up = ws, True
         self._drop_all_sessions()   # §17.4: a mailbox reconnect ends every session
         self.hs_next.clear()
         self.hs_fail.clear()

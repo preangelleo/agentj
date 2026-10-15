@@ -30,12 +30,12 @@ INTERNAL = ("undo_clear",)                      # the phone's 「撤销清空」
 # P155: not run by the host — always handed to the main Agent (any harness), rewritten by switch_harness.agent_text
 AGENT_CMDS = ("switch-harness", "feedback-to-agentj-father")
 LABEL = {"clear": "清空", "compact": "压缩", "model": "换模型", "context": "上下文", "cost": "花费", "usage": "用量",
-         "status": "状态", "help": "帮助", "stop": "停止", "undo_clear": "撤销清空", "skill": "技能", "refused": "命令", "goal": "目标", "reload": "重新加载"}
+         "status": "状态", "help": "帮助", "stop": "停止", "undo_clear": "撤销清空", "skill": "技能", "refused": "命令", "goal": "目标"}
 ARG_MAX = 200
 _CMD = re.compile(r"^/([A-Za-z][\w:.-]{0,63})(?:[ \t]+(.*))?$", re.S)
 MODEL_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:/\[\]@+-]{0,99}$")
 REFUSE = ("这个命令请在电脑上执行。手机上能用的：/clear /compact /model /context /cost /usage /status /help /stop"
-          " /my-agent-id /add-friend /telegram-pair /update /reload /switch-harness /goal")
+          " /my-agent-id /add-friend /telegram-pair /update /switch-harness /goal")
 NONE = "—"
 # F24: the whole message, nothing else (「把这个文件压缩一下」 stays a message)
 SAY_COMPACT = ("压缩", "压缩一下", "压缩吧", "压缩上下文", "compact", "compact now", "compact the context")
@@ -141,7 +141,6 @@ HELP = ("手机上能用的命令（也可以点输入框左边的 ≡「全部�
         "/compact 压缩上下文 · /clear 开新对话（发消息前可撤销） · /model [名字] 换模型 · /context 上下文用了多少 · "
         "/cost 本会话花费 · /usage 套餐用量 · /status 状态 · /stop 停下这一轮 · /help 这条说明\n"
         "/update 升级 Agent J（发送即授权安装、重启、自检）\n"
-        "/reload 重新加载配置（不重启后台服务；改了设置后用）\n"
         "/switch-harness [切换到 Codex] 换底层 harness：交给主 Agent，先检查、能用才切\n"
         "好友：/my-agent-id 我的 Agent ID 和分享链接 · /add-friend <ID> [附言] 加好友\n"
         "Telegram：/telegram-pair 重新绑定 Telegram（手机上出一次性配对码）\n"

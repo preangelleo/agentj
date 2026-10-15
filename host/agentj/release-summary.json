@@ -1,6 +1,6 @@
 {
-  "version": "0.22.1a1",
-  "major": false,
-  "zh": "0.22.1：改设置不用重启（重新加载配置）、额度用完到点自动继续、任何底层工具都能弹选择卡、统一深色提示；重启不重复执行消息。",
-  "en": "Reload settings without a restart, auto-continue at the quota reset, choice cards on every tool, one dark notice style; restarts never run a message twice."
+  "version": "0.22.0a1",
+  "major": true,
+  "zh": "0.22.0：新 Logo 与品牌套件、Telegram 机器人兼做客服、切换底层工具有进度和交接、Claude 登录手机续期、快捷键与多段引用、iMessage 助手。",
+  "en": "New logo, Telegram bot as customer service, guided tool switching, Claude login renewal on the phone, shortcuts, multi-quote, iMessage assistant."
 }

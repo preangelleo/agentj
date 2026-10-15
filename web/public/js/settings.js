@@ -8,7 +8,7 @@ import { longPress } from './longpress.js';
 import VERSION from '../version.js';
 import { RelayMD } from './md.js';
 import { t, fillText, onLang } from './t.js';
-import { el, noticeSheet, notify, confirmSheet } from './ui.js';
+import { el, noticeSheet } from './ui.js';
 import { ask1, isReady, peer, sendApp } from './session.js';
 import * as push from './push.js';
 import * as sfx from './sfx.js';
@@ -159,20 +159,12 @@ export async function setPref(key, value) {
   }
   say(t('set.saving'), true);
   const m = await ask1({ t: 'pref_set', key, value }, 'pref_res', 8000);
-  if (m.t === 'pref_res' && m.ok === true) { noPrefSet = false; hideCmd(); say(t('set.saved')); notify({ kind: 'success', shape: 'circle', text: t('set.saved') }); if (m.reload) offerReload(); return true; }   // P318: the bar + the Noir ✓; P320: offer Reload
+  if (m.t === 'pref_res' && m.ok === true) { noPrefSet = false; hideCmd(); say(t('set.saved')); return true; }
   if (m.t === 'pref_res') { say(t('set.saveFail', { why: problemText(m.problem) })); prefFail = { kind: 'fail', why: problemText(m.problem), cmd: cmdFor(key, value) }; }
   else if (m.t === 'timeout') { noPrefSet = true; say(''); showCmd(key, value); prefFail = { kind: 'old', cmd: cmdFor(key, value) }; }
   else { say(t('set.offline')); prefFail = { kind: 'offline' }; }
   render();
   return false;
-}
-/** P320: saved, but it takes effect after a reload (isolation, Docker, warnings …): one Noir notice — title on top, the
- *  words below, 「Reload」 on the right. Reload = the host's /reload (no serve restart); 「稍后」 leaves it for ≡ /reload. */
-export async function offerReload() {
-  if (!await confirmSheet(t('p320.needTitle'), t('p320.needText'), t('p320.reloadBtn'), false, t('p320.later'))) return false;
-  try { await sendApp({ t: 'slash', cmd: 'reload', arg: '' }); } catch { say(t('set.chanOffline')); return false; }
-  say(t('p320.reloading'));
-  return true;
 }
 /** P285: does the connected host take this key from the phone? (an older one lists no such key in `settable`) */
 export const prefSettable = (key) => !!hostInfo && Array.isArray(hostInfo.settable) && hostInfo.settable.includes(key);

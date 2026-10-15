@@ -2369,7 +2369,7 @@
       "mail": "Forward this one by e-mail (when the e-mail channel is on)",
       "copy": "Copy the whole reply",
       "copy_source": "Copy the whole message",
-      "reply": "Reply to this one (the quote shows above the message box, focus stays in it; Esc cancels); Alt+Shift+A also works while typing",
+      "reply": "Reply to this one (the quote shows above the message box; Esc cancels)",
       "quote_selection": "Select some words to quote them; each further selection adds one more (up to 5, from any replies, also in the full-screen reader)",
       "web_report": "Hot key: by default share as a web report (puts /web-page-report in the message box, never sends; on an older reply also quotes it); once rebound, runs the command or skill you chose — /clear still asks first",
       "hot_pick": "Change which command or skill the hot key runs (search, confirm, saved; the icon stays the same)"
@@ -2402,7 +2402,6 @@
       "pages_menu": "Open the five-page menu",
       "upgrade_host": "Upgrade computer (confirm on phone)",
       "refresh_web": "Update and reload page",
-      "reload_host": "Reload the computer's configuration (no service restart)",
       "pair_add": "Add a remote",
       "screenshot": "Capture this page as an attachment",
       "friends": "Open Friends",
@@ -2514,7 +2513,6 @@
       "pages_menu": "Tap the logo",
       "upgrade_host": "Tap Upgrade computer in Settings",
       "refresh_web": "Tap Update and reload in Settings",
-      "reload_host": "Tap Reload configuration in ≡ All commands",
       "screenshot": "Hold the gear; help via right-click or Keyboard shortcuts",
       "friends": "Settings → Friends",
       "bots": "Settings → Bots"
@@ -3023,21 +3021,5 @@
   "p303.empty": "almost used up (over 90% used)",
   "p303.spanM": "{m} min",
   "p308.nostaff": "Only a CEO, no staff yet",
-  "p308.count": "{label} ({n} with only a CEO)",
-  "p314.banner": "Quota used up · continues automatically at {t}",
-  "p314.bannerTask": "「{title}」 out of quota · reruns automatically at {t}",
-  "p314.bannerSwitch": "「{title}」 out of quota · continues on {to} at {t}",
-  "p314.more": " (+{n} more)",
-  "p314.cancel": "Cancel the automatic continue",
-  "p314.tomorrow": "tomorrow {t}",
-  "p314.src": "Auto-continue after the quota reset",
-  "p318.ph": "Message…",
-  "p318.cap": "{n} / {max}",
-  "p320.reloadDesc": "Reload configuration: changed settings take effect now, no service restart",
-  "p320.reloadOld": "Agent J on this computer is older and cannot reload yet: upgrade it, or run agentj service restart on the computer.",
-  "p320.needTitle": "Takes effect after a reload",
-  "p320.needText": "Saved on the computer. This setting takes effect after a configuration reload: no service restart; the main Agent restarts before its next message, same conversation.",
-  "p320.reloadBtn": "Reload",
-  "p320.later": "Later",
-  "p320.reloading": "Asked the computer to reload its configuration; the result shows in the chat."
+  "p308.count": "{label} ({n} with only a CEO)"
 }

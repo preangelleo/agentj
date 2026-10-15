@@ -439,8 +439,7 @@ class PeerService:
 
     def status_view(self) -> dict:
         return {"on": self.store.on, "state": self.state, "mbox_up": self.mbox_up, "cert_exp": self.cert_exp,
-                "id": self.keys.id if self.keys else None, "asks": len(self.asks),
-                "mbox_last": None if self.mbox_up or self.net is None else getattr(self.net, "last_down", None)}   # P317
+                "id": self.keys.id if self.keys else None, "asks": len(self.asks)}
 
     # ------------------------------------------------------------ seat certificate (§17.3)
     def _cert_path(self) -> pathlib.Path:
@@ -515,9 +514,6 @@ class PeerService:
         return None
 
     def on_status(self, ev: str, **kw) -> None:
-        if ev == "mbox_fail":       # P317: the journal line (serve rate-limits it like the host leg's)
-            say = getattr(self.host, "_say_mbox_fail", None)
-            return say(kw) if say else None
         self.log("peer_" + ev, kind=kw.get("kind"), status=kw.get("s"))
         if ev == "connected":
             self.mbox_up, self.state = True, "connected"

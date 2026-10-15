@@ -67,8 +67,6 @@ closes it.
 
 The day in brackets after the weekly figure is where you are in the 7-day reset cycle. The Usage box also has a "Reset cycle" bar with how long until the reset and when, and a small line under each quota with how much you will have used by the reset at the current pace. The figures do not glow normally: the weekly one glows faint blue when it is used faster than the even pace (about 14% a day), and its used part turns light blue in the box; anything at 80% or more glows soft orange, at 90% or more orange-red — little is left. Providers that do not report a reset time show no day.
 
-5H or WEEKLY showing "—" usually means one of two things: ① your plan has no limit for that window (for example ChatGPT Pro at $200: OpenAI reports only the weekly window and a credit balance, no 5-hour window), or ② the figure is temporarily unavailable. Neither affects normal use.
-
 （Screenshot：Water past half: the level in the background is above the middle — https://agentj.app/docs/manual/water-high.en.webp）
 ### The water is past half — what now?
 
@@ -110,7 +108,7 @@ hold still for a third of a second and then drag, and you are selecting text ins
 dragging a selection's handles. While a long reply scrolls, the name, the load line and the robots stay pinned at the top of
 the card.
 
-The header is split into three equal parts: double-tap the left third to go to the first (oldest) message, double-tap the right third (the page number) for the latest; the middle third is for unread replies. When replies arrived after you last looked, a small pulsing round badge in the middle of the header shows how many; tap it to jump to the first unread reply and page forward from there — the badge goes away once you reach the latest. With nothing unread there is no badge and a tap in the middle does nothing. Pressing `u` on a computer also jumps to the first unread reply. Unread replies sync across all your remotes: seeing a reply on any remote clears that reply and earlier unread hints on the others. An offline remote syncs before showing unread hints when it returns. After an upgrade the replies already there count as read, so no remote opens at 99+; a read that did not reach the computer is sent again by itself. Silent turns do not count.
+The header is split into three equal parts: double-tap the left third to go to the first (oldest) message, double-tap the right third (the page number) for the latest; the middle third is for unread replies. When replies arrived after you last looked, a small pulsing round badge in the middle of the header shows how many; tap it to jump to the first unread reply and page forward from there — the badge goes away once you reach the latest. With nothing unread there is no badge and a tap in the middle does nothing. Pressing `u` on a computer also jumps to the first unread reply. Unread replies sync across all your remotes: seeing a reply on any remote clears that reply and earlier unread hints on the others. An offline remote syncs before showing unread hints when it returns. Silent turns do not count.
 
 The buttons under a reply, left to right:
 
@@ -179,8 +177,6 @@ On the computer: `agentj history search <words>`.
 - You can send while the Agent is busy (blue); messages wait their turn.
 - **It works offline, too.** With no network, send as usual: the message is kept encrypted on this phone and the page
   says "Will send when you're back online". When the network returns, queued messages go out in order, never twice.
-  Even if the computer restarts, a message is never run twice: one it hadn't finished is marked on the phone with a line
-  saying so — send it again yourself if you still need it.
 
 （Screenshot：Two messages sent offline wait above the message box — https://agentj.app/docs/manual/offline-queue.en.webp）
 - Type `/` at the start of the box to see the commands you can use.
@@ -276,7 +272,7 @@ Goal mode (`/goal`): tap `/goal` in the ≡ menu and add what to finish and by w
 （Screenshot：Tucked away: a small tag stays at the top — https://agentj.app/docs/manual/approval-later.en.webp）
 ### Question card (purple)
 
-The Agent wants you to choose: tap an answer and confirm. If none fits, cancel the question and type your answer. The card works whichever Agent runs on the computer — Claude Code, Codex, OpenCode, Kimi or Qwen (`agentj ask`): single or multiple choice, sometimes with a short preview under an option. Pick "Other (I'll type it in the chat)", or "OK, I'll answer in the chat" on an open question, then type your answer in the message box. If the card did not really appear, the Agent never says it did.
+The Agent wants you to choose: tap an answer and confirm. If none fits, cancel the question and type your answer.
 
 ### Admin-password card
 
@@ -384,7 +380,7 @@ On a computer browser or a tablet with a keyboard, press `?` for the full list (
 | `o` · `↑` · `↓` | Expand / fold the message (↑ expands, ↓ folds; with nothing to toggle ↑ ↓ scroll the page) |
 | `f` | Read this reply full screen |
 | `Alt+Shift+Y` · `y` | Copy the whole reply |
-| `Alt+Shift+A` · `r` | Reply to this one (the quote shows above the message box, focus stays in it; Esc cancels); Alt+Shift+A also works while typing |
+| `r` | Reply to this one (the quote shows above the message box; Esc cancels) |
 | `Alt+Shift+O` · `s` · `⌘+,` / `Ctrl+,` | Open Settings |
 | `Alt+Shift+K` · `⌘+K` / `Ctrl+K` | Search the chat, or settings while Settings is open (inside the message box Ctrl+K still deletes to the end); press again to close |
 | `i` · `Esc` | Into the message box; Esc in it leaves (the draft stays) |

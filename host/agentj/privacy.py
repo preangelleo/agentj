@@ -61,8 +61,7 @@ _CRED_NAMES = (r"(?:api[_-]?key|apikey|secret|token|password|passwd|pass|pwd|pw|
                r"|private[_-]?key|[A-Za-z0-9_-]*[_-](?:key|secret|token|pass|passwd|pwd|pw)|[A-Za-z0-9]*(?-i:KEY|SECRET|TOKEN|Key|Secret|Token))")
 _SECRETS: list[tuple[str, re.Pattern, str]] = [
     ("private_key", _re(r"-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----(?:[\s\S]*?-----END [A-Z0-9 ]*PRIVATE KEY-----|[\s\S]*)"), R),
-    # P326: a scheme is at most 32 characters — unbounded, a long "a.b.c…" run was scanned once per position (quadratic)
-    ("url_credentials", _re(r"\b([a-z][a-z0-9+.-]{0,31}://)[^\s/:@]+:[^\s/@]+@", re.I), r"\1" + R + "@"),
+    ("url_credentials", _re(r"\b([a-z][a-z0-9+.-]*://)[^\s/:@]+:[^\s/@]+@", re.I), r"\1" + R + "@"),
     ("bearer_token", _re(r"\b(Bearer\s+)[A-Za-z0-9._~+/-]{20,}=*"), r"\1" + R),
     ("jwt", _re(r"\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}"), R),
     ("aws_access_key", _re(r"\b(?:AKIA|ASIA)[0-9A-Z]{16}\b"), R),
@@ -90,9 +89,7 @@ _SECRETS: list[tuple[str, re.Pattern, str]] = [
     ("labelled_hex", _re(
         r"(?<![A-Za-z0-9])((?:" + _CRED_NAMES + r"|key)[\"']?(?:\s*[:=]\s*|\s+(?:is\s+)?)[\"']?)[0-9a-fA-F]{32,}(?![0-9A-Za-z])", re.I), r"\1" + R),
 ]
-# P326: starts only where a run of local-part characters starts — the same matches, but a long run without an "@" (a
-# base64 blob, a minified line) is scanned once, not once per position (100 k chars took 7.9 s on the event loop)
-_EMAIL = _re(r"(?<![A-Za-z0-9._%+-])[A-Za-z0-9._%+-]+@((?:[A-Za-z0-9-]+\.)+[A-Za-z]{2,})")
+_EMAIL = _re(r"[A-Za-z0-9._%+-]+@((?:[A-Za-z0-9-]+\.)+[A-Za-z]{2,})")
 _EMAIL_OK_DOMAIN = _re(r"(?:^|\.)(?:agentj\.app|agentjarvis\.net|example\.(?:com|org|net))$", re.I)
 _SEG = r"[^/\\\s\"'`<>:;,()\[\]{}|*?]+"   # one path segment (a user name)
 _HOME_PATHS = [
@@ -194,7 +191,7 @@ def redact_with_report(text: str, host: str | None = None, user: str | None = No
 # mailbox) keeps links, access codes, one-time codes and private addresses as written — only real credentials go. A link is
 # kept whole except a credential embedded in it (user:password@, or a key of a known provider's shape: `?key=AIza…`,
 # api.telegram.org/bot<token>); outside links every secret rule and the high-entropy rule still apply.
-_LINK = _re(r"\b[a-z][a-z0-9+.-]{0,31}://[^\s<>\"'`]+", re.I)     # P326: bounded scheme (see url_credentials)
+_LINK = _re(r"\b[a-z][a-z0-9+.-]*://[^\s<>\"'`]+", re.I)
 _LINK_HARD = frozenset(("private_key", "url_credentials", "aws_access_key", "github_token", "gitlab_token", "slack_token",
                         "stripe_key", "google_api_key", "anthropic_key", "openrouter_key", "openai_key", "replicate_token",
                         "huggingface_token", "telegram_bot_token", "agentjarvis_id", "mailgun_key"))

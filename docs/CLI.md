@@ -134,7 +134,7 @@ agentj --help
 
 ```text
 usage: agentj [-h] [-V] [--migrate-legacy] [--instance N] [--fresh]
-              {doctor,reload,service,update,init,serve,protocol,pair,devices,revoke,send,status,name,admin,login,report,unlink,report-hostname,remote-pair,remote-unbind,agent,passphrase,approvals,feedback,stop,resume,memory,activity,config,history,inbox,asr,tasks,wizard,keep-awake,browser,setup,google,mail,contacts,ask,workflows,sudo,secret,provider,sudo-helper,docs-rule,handover,telegram-cursor,plaza,support,capability,goal,heartbeat,quota,imessage,busy,recall,bots,friends,codex-sandbox,migrate,alias,instances,label,onboarding} ...
+              {doctor,service,update,init,serve,protocol,pair,devices,revoke,send,status,name,admin,login,report,unlink,report-hostname,remote-pair,remote-unbind,agent,passphrase,approvals,feedback,stop,resume,memory,activity,config,history,inbox,asr,tasks,wizard,keep-awake,browser,setup,google,mail,contacts,workflows,sudo,secret,provider,sudo-helper,docs-rule,handover,telegram-cursor,plaza,support,capability,goal,heartbeat,quota,imessage,busy,recall,bots,friends,codex-sandbox,migrate,alias,instances,label,onboarding} ...
 ```
 
 | Argument | Default | Required | Choices | Help |
@@ -272,37 +272,6 @@ usage: agentj approvals [-h] [--verify] [--json] [--last LAST]
 | `--verify` | `false` | false | — | `逐条核对设备签名` |
 | `--json` | `false` | false | — | `` |
 | `--last` | `0` | false | — | `只看最后 N 条` |
-
-### agentj ask
-
-```text
-在手机上弹 Agent J 选择卡片并等主人作答（任何 harness 都能用）/ show an Agent J question card on the phone and wait for the owner's answer (works under any harness)
-```
-
-```bash
-agentj ask --help
-```
-
-```text
-usage: agentj ask [-h] [-o LABEL] [--preview TEXT] [--header HEADER] [--multi]
-                  [--no-other] [--json FILE|-] [--wait ID] [--wait-s WAIT_S]
-                  [--compact]
-                  [question]
-```
-
-| Argument | Default | Required | Choices | Help |
-| --- | --- | --- | --- | --- |
-| `-h / --help` | `null` | false | — | `show this help message and exit` |
-| `question` | `null` | false | — | `the question` |
-| `-o / --option` | `null` | false | — | `选项（可重复；不给 = 开放题）/ an option (repeat; none = an open question)` |
-| `--preview` | `null` | false | — | `a preview for the option in the same position` |
-| `--header` | `null` | false | — | `a short header` |
-| `--multi` | `false` | false | — | `multiple choice` |
-| `--no-other` | `false` | false | — | `不加「其他（聊天框里写）」/ no Other choice` |
-| `--json` | `null` | false | — | `AskUserQuestion-shaped questions (file or - for stdin), several questions` |
-| `--wait` | `null` | false | — | `keep waiting on a card already shown` |
-| `--wait-s` | `170` | false | — | `最多等几秒（≤ 170）/ seconds to wait` |
-| `--compact` | `false` | false | — | `one-line JSON` |
 
 ### agentj asr
 
@@ -3517,7 +3486,7 @@ usage: agentj protocol open [-h] url
 ### agentj provider
 
 ```text
-list / remove；bailian = 阿里百炼 Token Plan 预设（大陆推荐）· a third-party model service for OpenCode (base URL + key); bailian = the Alibaba Cloud Bailian Token Plan preset; ark = 火山方舟 Coding Plan 预设 / the Volcano Ark Coding Plan preset
+list / remove；bailian = 阿里百炼 Token Plan 预设（大陆推荐）· a third-party model service for OpenCode (base URL + key); bailian = the Alibaba Cloud Bailian Token Plan preset
 ```
 
 ```bash
@@ -3527,30 +3496,23 @@ agentj provider --help
 ```text
 usage: agentj provider [-h] [--base-url BASE_URL] [--model MODEL]
                        [--api {anthropic,openai}] [--name NAME]
-                       [--key-env KEY_ENV] [--vision | --no-vision]
-                       [--max-output MAX_OUTPUT] [--context CONTEXT]
-                       [--plan {token-plan,coding-plan}]
-                       [--harness {opencode,claude}] [--lang {zh,en}]
-                       [--dry-run] [--json]
-                       {add,list,remove,bailian,ark} [id]
+                       [--key-env KEY_ENV] [--plan {token-plan,coding-plan}]
+                       [--lang {zh,en}] [--dry-run] [--json]
+                       {add,list,remove,bailian} [id]
 ```
 
 | Argument | Default | Required | Choices | Help |
 | --- | --- | --- | --- | --- |
 | `-h / --help` | `null` | false | — | `show this help message and exit` |
-| `action` | `null` | true | `add`, `list`, `remove`, `bailian`, `ark` | `` |
+| `action` | `null` | true | `add`, `list`, `remove`, `bailian` | `` |
 | `id` | `null` | false | — | `服务商 id，例如 myrelay（模型写成 myrelay/<模型>）` |
 | `--base-url` | `null` | false | — | `例如 https://api.example.com/v1` |
 | `--model` | `null` | false | — | `模型 id，可重复` |
 | `--api` | `"openai"` | false | `anthropic`, `openai` | `openai（默认，OpenAI 兼容）或 anthropic（Anthropic 兼容）` |
 | `--name` | `null` | false | — | `显示名` |
 | `--key-env` | `null` | false | — | `key 的环境变量名（默认 <ID>_API_KEY）` |
-| `--vision / --no-vision` | `null` | false | — | `add：这些模型能看图（--no-vision = 纯文本）/ the models read images (--no-vision: text only)` |
-| `--max-output` | `null` | false | — | `output limit in tokens` |
-| `--context` | `null` | false | — | `add：上下文长度 token（配 --max-output，默认 128000）/ context window` |
 | `--plan` | `null` | false | `token-plan`, `coding-plan` | `which Bailian plan` |
-| `--harness` | `null` | false | `opencode`, `claude` | `ark：opencode（默认）或 claude（打印 Claude Code 的 profile 三步）/ ark: which harness` |
-| `--lang` | `null` | false | `zh`, `en` | `ark：说明文字的语言 / text language` |
+| `--lang` | `null` | false | `zh`, `en` | `text language` |
 | `--dry-run` | `false` | false | — | `` |
 | `--json` | `false` | false | — | `` |
 
@@ -3622,14 +3584,8 @@ agentj provider profile save --help
 ```text
 usage: agentj provider profile save [-h] --harness {claude,codex,opencode}
                                     [--base-url BASE_URL]
-                                    [--preset {openai,anthropic,agentsrelay,ark-coding}]
+                                    [--preset {openai,anthropic,agentsrelay}]
                                     --model MODEL [--api {openai,anthropic}]
-                                    [--haiku-model HAIKU_MODEL]
-                                    [--sonnet-model SONNET_MODEL]
-                                    [--opus-model OPUS_MODEL]
-                                    [--subagent-model SUBAGENT_MODEL]
-                                    [--max-output MAX_OUTPUT]
-                                    [--vision | --no-vision]
                                     id
 ```
 
@@ -3639,15 +3595,9 @@ usage: agentj provider profile save [-h] --harness {claude,codex,opencode}
 | `id` | `null` | true | — | `` |
 | `--harness` | `null` | true | `claude`, `codex`, `opencode` | `` |
 | `--base-url` | `null` | false | — | `` |
-| `--preset` | `null` | false | `openai`, `anthropic`, `agentsrelay`, `ark-coding` | `` |
+| `--preset` | `null` | false | `openai`, `anthropic`, `agentsrelay` | `` |
 | `--model` | `null` | true | — | `` |
-| `--api` | `null` | false | `openai`, `anthropic` | `default: anthropic for claude, openai otherwise` |
-| `--haiku-model` | `null` | false | — | `` |
-| `--sonnet-model` | `null` | false | — | `` |
-| `--opus-model` | `null` | false | — | `` |
-| `--subagent-model` | `null` | false | — | `` |
-| `--max-output` | `null` | false | — | `claude: CLAUDE_CODE_MAX_OUTPUT_TOKENS; opencode: limit.output` |
-| `--vision / --no-vision` | `null` | false | — | `opencode: the model reads images` |
+| `--api` | `"openai"` | false | `openai`, `anthropic` | `` |
 
 ### agentj provider profile use
 
@@ -3679,7 +3629,7 @@ agentj quota --help
 ```
 
 ```text
-usage: agentj quota [-h] [--json] [--remind] {on,off,reset,resume} ...
+usage: agentj quota [-h] [--json] [--remind] {on,off,reset} ...
 ```
 
 | Argument | Default | Required | Choices | Help |
@@ -3783,26 +3733,6 @@ usage: agentj quota reset used [-h] {claude,codex,opencode}
 | `-h / --help` | `null` | false | — | `show this help message and exit` |
 | `harness` | `null` | true | `claude`, `codex`, `opencode` | `` |
 
-### agentj quota resume
-
-```text
-waiting automatic continues; cancel ID
-```
-
-```bash
-agentj quota resume --help
-```
-
-```text
-usage: agentj quota resume [-h] [{cancel}] [id]
-```
-
-| Argument | Default | Required | Choices | Help |
-| --- | --- | --- | --- | --- |
-| `-h / --help` | `null` | false | — | `show this help message and exit` |
-| `cancel` | `null` | false | `cancel` | `` |
-| `id` | `null` | false | — | `` |
-
 ### agentj recall
 
 ```text
@@ -3826,25 +3756,6 @@ usage: agentj recall [-h] [--days DAYS] [--date DATE] [--limit LIMIT] [--json]
 | `--date` | `null` | false | — | `only this day` |
 | `--limit` | `10` | false | — | `最多几条（≤ 50）/ at most N hits` |
 | `--json` | `false` | false | — | `` |
-
-### agentj reload
-
-```text
-reload the configuration and the service key file without restarting serve
-```
-
-```bash
-agentj reload --help
-```
-
-```text
-usage: agentj reload [-h] [--json]
-```
-
-| Argument | Default | Required | Choices | Help |
-| --- | --- | --- | --- | --- |
-| `-h / --help` | `null` | false | — | `show this help message and exit` |
-| `--json` | `false` | false | — | `machine-readable` |
 
 ### agentj remote-pair
 
@@ -5129,7 +5040,7 @@ agentj --help
 
 ```text
 usage: agentj [-h] [-V] [--migrate-legacy] [--instance N] [--fresh]
-              {doctor,reload,service,update,init,serve,protocol,pair,devices,revoke,send,status,name,admin,login,report,unlink,report-hostname,remote-pair,remote-unbind,agent,passphrase,approvals,feedback,stop,resume,memory,activity,config,history,inbox,asr,tasks,wizard,keep-awake,browser,setup,google,mail,contacts,ask,workflows,sudo,secret,provider,sudo-helper,docs-rule,handover,telegram-cursor,plaza,support,capability,goal,heartbeat,quota,imessage,busy,recall,bots,friends,codex-sandbox,migrate,alias,instances,label,onboarding} ...
+              {doctor,service,update,init,serve,protocol,pair,devices,revoke,send,status,name,admin,login,report,unlink,report-hostname,remote-pair,remote-unbind,agent,passphrase,approvals,feedback,stop,resume,memory,activity,config,history,inbox,asr,tasks,wizard,keep-awake,browser,setup,google,mail,contacts,workflows,sudo,secret,provider,sudo-helper,docs-rule,handover,telegram-cursor,plaza,support,capability,goal,heartbeat,quota,imessage,busy,recall,bots,friends,codex-sandbox,migrate,alias,instances,label,onboarding} ...
 ```
 
 | 参数 | 默认值 | 必填 | 可选值 | 说明 |
@@ -5267,37 +5178,6 @@ usage: agentj approvals [-h] [--verify] [--json] [--last LAST]
 | `--verify` | `false` | false | — | `逐条核对设备签名` |
 | `--json` | `false` | false | — | `` |
 | `--last` | `0` | false | — | `只看最后 N 条` |
-
-### agentj ask
-
-```text
-在手机上弹 Agent J 选择卡片并等主人作答（任何 harness 都能用）/ show an Agent J question card on the phone and wait for the owner's answer (works under any harness)
-```
-
-```bash
-agentj ask --help
-```
-
-```text
-usage: agentj ask [-h] [-o LABEL] [--preview TEXT] [--header HEADER] [--multi]
-                  [--no-other] [--json FILE|-] [--wait ID] [--wait-s WAIT_S]
-                  [--compact]
-                  [question]
-```
-
-| 参数 | 默认值 | 必填 | 可选值 | 说明 |
-| --- | --- | --- | --- | --- |
-| `-h / --help` | `null` | false | — | `show this help message and exit` |
-| `question` | `null` | false | — | `问题` |
-| `-o / --option` | `null` | false | — | `选项（可重复；不给 = 开放题）/ an option (repeat; none = an open question)` |
-| `--preview` | `null` | false | — | `按顺序给选项附预览` |
-| `--header` | `null` | false | — | `短标题 ≤ 64` |
-| `--multi` | `false` | false | — | `多选` |
-| `--no-other` | `false` | false | — | `不加「其他（聊天框里写）」/ no Other choice` |
-| `--json` | `null` | false | — | `AskUserQuestion 形状的 questions（文件或 - = stdin），可多题` |
-| `--wait` | `null` | false | — | `继续等一张已弹出的卡片` |
-| `--wait-s` | `170` | false | — | `最多等几秒（≤ 170）/ seconds to wait` |
-| `--compact` | `false` | false | — | `单行 JSON` |
 
 ### agentj asr
 
@@ -8522,30 +8402,23 @@ agentj provider --help
 ```text
 usage: agentj provider [-h] [--base-url BASE_URL] [--model MODEL]
                        [--api {anthropic,openai}] [--name NAME]
-                       [--key-env KEY_ENV] [--vision | --no-vision]
-                       [--max-output MAX_OUTPUT] [--context CONTEXT]
-                       [--plan {token-plan,coding-plan}]
-                       [--harness {opencode,claude}] [--lang {zh,en}]
-                       [--dry-run] [--json]
-                       {add,list,remove,bailian,ark} [id]
+                       [--key-env KEY_ENV] [--plan {token-plan,coding-plan}]
+                       [--lang {zh,en}] [--dry-run] [--json]
+                       {add,list,remove,bailian} [id]
 ```
 
 | 参数 | 默认值 | 必填 | 可选值 | 说明 |
 | --- | --- | --- | --- | --- |
 | `-h / --help` | `null` | false | — | `show this help message and exit` |
-| `action` | `null` | true | `add`, `list`, `remove`, `bailian`, `ark` | `` |
+| `action` | `null` | true | `add`, `list`, `remove`, `bailian` | `` |
 | `id` | `null` | false | — | `服务商 id，例如 myrelay（模型写成 myrelay/<模型>）` |
 | `--base-url` | `null` | false | — | `例如 https://api.example.com/v1` |
 | `--model` | `null` | false | — | `模型 id，可重复` |
 | `--api` | `"openai"` | false | `anthropic`, `openai` | `openai（默认，OpenAI 兼容）或 anthropic（Anthropic 兼容）` |
 | `--name` | `null` | false | — | `显示名` |
 | `--key-env` | `null` | false | — | `key 的环境变量名（默认 <ID>_API_KEY）` |
-| `--vision / --no-vision` | `null` | false | — | `add：这些模型能看图（--no-vision = 纯文本）/ the models read images (--no-vision: text only)` |
-| `--max-output` | `null` | false | — | `add：输出上限 token` |
-| `--context` | `null` | false | — | `add：上下文长度 token（配 --max-output，默认 128000）/ context window` |
 | `--plan` | `null` | false | `token-plan`, `coding-plan` | `bailian：token-plan（默认，个人版，含 Qwen 3.8 Max）或 coding-plan` |
-| `--harness` | `null` | false | `opencode`, `claude` | `ark：opencode（默认）或 claude（打印 Claude Code 的 profile 三步）/ ark: which harness` |
-| `--lang` | `null` | false | `zh`, `en` | `bailian` |
+| `--lang` | `null` | false | `zh`, `en` | `bailian：说明文字的语言` |
 | `--dry-run` | `false` | false | — | `` |
 | `--json` | `false` | false | — | `` |
 
@@ -8617,14 +8490,8 @@ agentj provider profile save --help
 ```text
 usage: agentj provider profile save [-h] --harness {claude,codex,opencode}
                                     [--base-url BASE_URL]
-                                    [--preset {openai,anthropic,agentsrelay,ark-coding}]
+                                    [--preset {openai,anthropic,agentsrelay}]
                                     --model MODEL [--api {openai,anthropic}]
-                                    [--haiku-model HAIKU_MODEL]
-                                    [--sonnet-model SONNET_MODEL]
-                                    [--opus-model OPUS_MODEL]
-                                    [--subagent-model SUBAGENT_MODEL]
-                                    [--max-output MAX_OUTPUT]
-                                    [--vision | --no-vision]
                                     id
 ```
 
@@ -8634,15 +8501,9 @@ usage: agentj provider profile save [-h] --harness {claude,codex,opencode}
 | `id` | `null` | true | — | `` |
 | `--harness` | `null` | true | `claude`, `codex`, `opencode` | `` |
 | `--base-url` | `null` | false | — | `` |
-| `--preset` | `null` | false | `openai`, `anthropic`, `agentsrelay`, `ark-coding` | `` |
+| `--preset` | `null` | false | `openai`, `anthropic`, `agentsrelay` | `` |
 | `--model` | `null` | true | — | `` |
-| `--api` | `null` | false | `openai`, `anthropic` | `default: anthropic for claude, openai otherwise` |
-| `--haiku-model` | `null` | false | — | `` |
-| `--sonnet-model` | `null` | false | — | `` |
-| `--opus-model` | `null` | false | — | `` |
-| `--subagent-model` | `null` | false | — | `` |
-| `--max-output` | `null` | false | — | `claude: CLAUDE_CODE_MAX_OUTPUT_TOKENS; opencode: limit.output` |
-| `--vision / --no-vision` | `null` | false | — | `opencode: the model reads images` |
+| `--api` | `"openai"` | false | `openai`, `anthropic` | `` |
 
 ### agentj provider profile use
 
@@ -8674,7 +8535,7 @@ agentj quota --help
 ```
 
 ```text
-usage: agentj quota [-h] [--json] [--remind] {on,off,reset,resume} ...
+usage: agentj quota [-h] [--json] [--remind] {on,off,reset} ...
 ```
 
 | 参数 | 默认值 | 必填 | 可选值 | 说明 |
@@ -8778,26 +8639,6 @@ usage: agentj quota reset used [-h] {claude,codex,opencode}
 | `-h / --help` | `null` | false | — | `show this help message and exit` |
 | `harness` | `null` | true | `claude`, `codex`, `opencode` | `` |
 
-### agentj quota resume
-
-```text
-额度用完后等着自动继续的会话/工作流；cancel ID 取消
-```
-
-```bash
-agentj quota resume --help
-```
-
-```text
-usage: agentj quota resume [-h] [{cancel}] [id]
-```
-
-| 参数 | 默认值 | 必填 | 可选值 | 说明 |
-| --- | --- | --- | --- | --- |
-| `-h / --help` | `null` | false | — | `show this help message and exit` |
-| `cancel` | `null` | false | `cancel` | `` |
-| `id` | `null` | false | — | `` |
-
 ### agentj recall
 
 ```text
@@ -8821,25 +8662,6 @@ usage: agentj recall [-h] [--days DAYS] [--date DATE] [--limit LIMIT] [--json]
 | `--date` | `null` | false | — | `只看这一天 YYYY-MM-DD` |
 | `--limit` | `10` | false | — | `最多几条（≤ 50）/ at most N hits` |
 | `--json` | `false` | false | — | `` |
-
-### agentj reload
-
-```text
-重新加载配置与服务密钥文件，不重启 serve
-```
-
-```bash
-agentj reload --help
-```
-
-```text
-usage: agentj reload [-h] [--json]
-```
-
-| 参数 | 默认值 | 必填 | 可选值 | 说明 |
-| --- | --- | --- | --- | --- |
-| `-h / --help` | `null` | false | — | `show this help message and exit` |
-| `--json` | `false` | false | — | `机器可读` |
 
 ### agentj remote-pair
 

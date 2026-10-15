@@ -20,7 +20,7 @@ export const ROWS = [
   ["card.mail",[["e","press"]],1],
   ["card.copy",[["Alt+Shift+Y","press"],["y","press"]],1],
   ["card.copy_source",[["Y","press"]],0],
-  ["card.reply",[["Alt+Shift+A","press"],["r","press"]],1],
+  ["card.reply",[["r","press"]],1],
   ["card.quote_selection",[],1],
   ["card.web_report",[["W","press"]],1],
   ["card.hot_pick",[],1],
@@ -49,7 +49,6 @@ export const ROWS = [
   ["app.pages_menu",[["Alt+W","press"]],1],
   ["app.upgrade_host",[["Alt+Shift+U","press"]],1],
   ["app.refresh_web",[["Alt+Shift+R","press"]],1],
-  ["app.reload_host",[["Alt+Shift+L","press"]],1],
   ["app.pair_add",[["Alt+Shift+P","press"]],0],
   ["app.screenshot",[["Alt+Shift+C","press"]],1],
   ["app.friends",[["Alt+Shift+F","press"]],1],
@@ -123,7 +122,6 @@ export const KEYMAP = {
   "alt+shift:KeyY": ["card.copy",0],
   "y": ["card.copy",0],
   "Y": ["card.copy_source",0],
-  "alt+shift:KeyA": ["card.reply",0],
   "r": ["card.reply",0],
   "W": ["card.web_report",0],
   "v": ["file.preview",0],
@@ -155,7 +153,6 @@ export const KEYMAP = {
   "alt:KeyW": ["app.pages_menu",0],
   "alt+shift:KeyU": ["app.upgrade_host",0],
   "alt+shift:KeyR": ["app.refresh_web",0],
-  "alt+shift:KeyL": ["app.reload_host",0],
   "alt+shift:KeyP": ["app.pair_add",0],
   "alt+shift:KeyC": ["app.screenshot",0],
   "alt+shift:KeyF": ["app.friends",0],
@@ -171,8 +168,8 @@ export const KEYMAP = {
   "c": ["compose.camera",0],
   "V": ["compose.volume",0],
 };
-export const TABLE = ["page.prev","page.next","page.newest","page.earliest","page.first_unread","page.quoted","page.expand","page.scroll","card.reader","card.speak","card.forward","card.mail","card.copy","card.copy_source","card.reply","card.web_report","file.preview","file.download","file.share","file.mail","file.forward","app.font_step","app.rename_agent","app.rename_remote","app.busy_list","app.robots_theme","app.load","app.quota","app.model_step","app.effort_step","app.model_default","app.scan","app.settings","app.search","app.keys","app.pending","app.pages_menu","app.upgrade_host","app.refresh_web","app.reload_host","app.pair_add","app.screenshot","app.friends","app.bots","app.setup","compose.focus","compose.slash","compose.customize","compose.file","compose.paste_text","compose.photo","compose.paste_image","compose.camera","compose.volume"];
-export const GLOBAL = ["page.prev","page.newest","page.quoted","card.copy","card.reply","file.download","file.share","app.font_step","app.load","app.model_default","app.settings","app.search","app.keys","app.upgrade_host","app.refresh_web","app.reload_host","app.pair_add","app.screenshot","app.friends","app.bots","app.setup"];
+export const TABLE = ["page.prev","page.next","page.newest","page.earliest","page.first_unread","page.quoted","page.expand","page.scroll","card.reader","card.speak","card.forward","card.mail","card.copy","card.copy_source","card.reply","card.web_report","file.preview","file.download","file.share","file.mail","file.forward","app.font_step","app.rename_agent","app.rename_remote","app.busy_list","app.robots_theme","app.load","app.quota","app.model_step","app.effort_step","app.model_default","app.scan","app.settings","app.search","app.keys","app.pending","app.pages_menu","app.upgrade_host","app.refresh_web","app.pair_add","app.screenshot","app.friends","app.bots","app.setup","compose.focus","compose.slash","compose.customize","compose.file","compose.paste_text","compose.photo","compose.paste_image","compose.camera","compose.volume"];
+export const GLOBAL = ["page.prev","page.newest","page.quoted","card.copy","file.download","file.share","app.font_step","app.load","app.model_default","app.settings","app.search","app.keys","app.upgrade_host","app.refresh_web","app.pair_add","app.screenshot","app.friends","app.bots","app.setup"];
 export function matchKey(e) {
   if (e.ctrlKey || e.metaKey) return null;
   if (e.altKey) return (e.shiftKey ? 'alt+shift:' : 'alt:') + e.code;

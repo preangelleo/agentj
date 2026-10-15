@@ -339,7 +339,7 @@
         "channels items"
       ],
       "tier": "user",
-      "apply": "reload",
+      "apply": "restart:serve",
       "verify": "agentj config validate --json",
       "since": "0.12",
       "merge": "id"
@@ -578,7 +578,7 @@
         "个人指令"
       ],
       "tier": "user",
-      "apply": "reload",
+      "apply": "restart:serve",
       "verify": "agentj doctor --offline --json",
       "since": "0.13",
       "maxLength": 6000
@@ -666,7 +666,7 @@
         "high risk warnings"
       ],
       "tier": "user",
-      "apply": "reload",
+      "apply": "restart",
       "verify": "agentj config validate --json",
       "since": "0.13"
     },
@@ -680,7 +680,7 @@
         "approvals"
       ],
       "tier": "user",
-      "apply": "reload",
+      "apply": "restart",
       "verify": "agentj config validate --json",
       "since": "0.18",
       "enum": [
@@ -897,7 +897,7 @@
         "fence"
       ],
       "tier": "user",
-      "apply": "reload",
+      "apply": "restart",
       "verify": "agentj config validate --json",
       "since": "0.15"
     },
@@ -911,7 +911,7 @@
         "allow docker"
       ],
       "tier": "user",
-      "apply": "reload",
+      "apply": "restart",
       "verify": "agentj config validate --json",
       "since": "0.15"
     },

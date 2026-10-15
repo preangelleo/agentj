@@ -35,8 +35,7 @@ SUPPORTED = ("claude", "codex", "opencode", "kimi", "qwen")   # P310: + Qwen Cod
 OPENCODE_KEY_ENV = ("ZHIPU_API_KEY", "DEEPSEEK_API_KEY", "DASHSCOPE_API_KEY", "MOONSHOT_API_KEY", "KIMI_API_KEY", "ARK_API_KEY",
                     "MINIMAX_API_KEY", "SILICONFLOW_CN_API_KEY", "OPENROUTER_API_KEY", "OPENCODE_API_KEY", "OPENAI_API_KEY",
                     "ANTHROPIC_API_KEY", "GEMINI_API_KEY", "GOOGLE_GENERATIVE_AI_API_KEY",
-                    "BAILIAN_TOKEN_PLAN_API_KEY", "BAILIAN_CODING_PLAN_API_KEY",   # P310: bailian.py presets
-                    "ARK_CODING_PLAN_API_KEY")   # P315: ark.py preset
+                    "BAILIAN_TOKEN_PLAN_API_KEY", "BAILIAN_CODING_PLAN_API_KEY")   # P310: bailian.py presets
 NAMES = ("claude", "codex", "opencode", "kimi", "qwen")
 LATER = "coming in a later version"
 VERSION_TIMEOUT = 15

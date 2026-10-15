@@ -2,13 +2,6 @@
 
 The paired phone writes a private key file. A switch verifies a real model request
 before merging native configuration; a guarded restore preserves concurrent edits.
-
-P315: a Claude profile on a third-party service points EVERY model Claude Code may ask for at that service —
-ANTHROPIC_DEFAULT_{HAIKU,SONNET,OPUS}_MODEL and CLAUDE_CODE_SUBAGENT_MODEL default to the profile's model (otherwise
-background work asks for a Claude model name the service does not have); `--haiku/--sonnet/--opus/--subagent-model`
-pick others from the same service, `--max-output` sets CLAUDE_CODE_MAX_OUTPUT_TOKENS. On api.anthropic.com nothing is
-mapped, and switching to a profile removes the previous profile's mapping. OpenCode profiles take `--vision` /
-`--max-output` (opencode_provider.capabilities).
 """
 import argparse
 import contextlib
@@ -26,46 +19,14 @@ import urllib.error
 import urllib.request
 
 from . import diskq
-from .opencode_provider import ID_RE, MODEL_RE, ProviderError, _check_url, block, capabilities, config_file
+from .opencode_provider import ID_RE, MODEL_RE, ProviderError, _check_url, block, config_file
 
-# P315: a preset may have one address per wire API (Volcano Ark's Coding Plan: Anthropic …/api/coding, OpenAI …/coding/v3)
 PRESETS = {'openai': 'https://api.openai.com/v1', 'anthropic': 'https://api.anthropic.com/v1',
-           'agentsrelay': 'https://agentsrelay.net/v1',
-           'ark-coding': {'anthropic': 'https://ark.cn-beijing.volces.com/api/coding/v1',
-                          'openai': 'https://ark.cn-beijing.volces.com/api/coding/v3'}}
-TIERS = {'haiku': 'ANTHROPIC_DEFAULT_HAIKU_MODEL', 'sonnet': 'ANTHROPIC_DEFAULT_SONNET_MODEL',
-         'opus': 'ANTHROPIC_DEFAULT_OPUS_MODEL', 'subagent': 'CLAUDE_CODE_SUBAGENT_MODEL'}
-MAX_OUTPUT_ENV = 'CLAUDE_CODE_MAX_OUTPUT_TOKENS'
-
-
-def default_api(harness, api=None):
-    return api or ('anthropic' if harness == 'claude' else 'openai')
-
-
-def preset_url(preset, api):
-    v = PRESETS.get(preset)
-    return v.get(api) if isinstance(v, dict) else v
-
-
-def official(url):
-    from urllib.parse import urlparse
-    return (urlparse(url or '').hostname or '') == 'api.anthropic.com'
-
-
-def claude_env(c):
-    """P315: the Claude Code env keys this profile sets (tier models, subagent model, output limit); {} = none."""
-    out = {}
-    if not official(c['base_url']):
-        tiers = c.get('tiers') or {}
-        out = {env: tiers.get(t) or c['model'] for t, env in TIERS.items()}
-    if c.get('max_output'):
-        out[MAX_OUTPUT_ENV] = str(c['max_output'])
-    return out
+           'agentsrelay': 'https://agentsrelay.net/v1'}
 
 
 def root():
-    from .preferences import guard   # P316: never the developer's real ~/.config/agentj from a test
-    return guard(Path(os.environ.get('XDG_CONFIG_HOME') or Path.home()/'.config')/'agentj/provider-profiles')
+    return Path(os.environ.get('XDG_CONFIG_HOME') or Path.home()/'.config')/'agentj/provider-profiles'
 
 
 def private_dir(p):
@@ -107,27 +68,16 @@ def profile(pid):
     return root()/pid
 
 
-def define(pid, harness, url, model, api=None, tiers=None, max_output=None, vision=None):
-    api=default_api(harness,api)
+def define(pid, harness, url, model, api='openai'):
     if harness not in ('claude','codex','opencode') or api not in ('openai','anthropic'):
         raise ProviderError('invalid_harness_or_api')
     if not MODEL_RE.fullmatch(model or ''):
         raise ProviderError('invalid_model')
-    tiers={k:v for k,v in (tiers or {}).items() if v}
-    if any(k not in TIERS or not isinstance(v,str) or not MODEL_RE.fullmatch(v) for k,v in tiers.items()):
-        raise ProviderError('invalid_model')
-    if (tiers and harness!='claude') or (vision is not None and harness!='opencode') or (max_output and harness=='codex'):
-        raise ProviderError('option_not_for_this_harness')
-    if max_output is not None:
-        try:capabilities(max_output=max_output)
-        except ProviderError:raise ProviderError('invalid_max_output') from None
     url=_check_url(url)
     if harness=='claude' and api!='anthropic' or harness=='codex' and api!='openai':
         raise ProviderError('harness_api_mismatch')
     private_dir(root());p=profile(pid);private_dir(p)
-    value={'id':pid,'harness':harness,'base_url':url,'model':model,'api':api,
-           **({'tiers':tiers} if tiers else {}),**({'max_output':max_output} if max_output else {}),
-           **({'vision':vision} if vision is not None else {})}
+    value={'id':pid,'harness':harness,'base_url':url,'model':model,'api':api}
     old=p/'profile.json'
     if old.exists() and json.loads(secure_read(old)) != value:
         raise ProviderError('profile_exists_use_a_new_id')
@@ -226,21 +176,15 @@ def merge(c, key, old):
         base=c['base_url'].removesuffix('/v1')
         env.update(ANTHROPIC_BASE_URL=base,ANTHROPIC_AUTH_TOKEN=key)
         env.pop('ANTHROPIC_API_KEY',None)
-        for k in (*TIERS.values(),MAX_OUTPUT_ENV):env.pop(k,None)   # P315: never keep the last profile's mapping
-        env.update(claude_env(c))
         d['model']=c['model']
     else:
         providers=d.setdefault('provider',{})
         if not isinstance(providers,dict):raise ProviderError('native_provider_not_object')
-        entry=block(c['id'],c['base_url'],[c['model']],c['api'],caps=capabilities(c.get('vision'),c.get('max_output')))
+        entry=block(c['id'],c['base_url'],[c['model']],c['api'])
         previous=providers.get(c['id'],{})
         if not isinstance(previous,dict):raise ProviderError('native_provider_not_object')
         entry={**previous,**entry,'models':{**previous.get('models',{}),**entry['models']},
                'options':{**previous.get('options',{}),**entry['options'],'apiKey':key}}
-        old_model=previous.get('models',{}).get(c['model'])
-        if isinstance(old_model,dict):   # P315: the owner's hand-added keys on this model stay
-            from .opencode_provider import _merge_model
-            entry['models'][c['model']]=_merge_model({**old_model,'name':c['model']},capabilities(c.get('vision'),c.get('max_output')))
         providers[c['id']]=entry;d['model']=c['id']+'/'+c['model']
     return (json.dumps(d,ensure_ascii=False,indent=2)+'\n').encode()
 
@@ -313,7 +257,7 @@ def listing():
     out=[]
     for p in sorted(root().iterdir()):
         if p.is_dir() and not p.is_symlink() and (p/'profile.json').is_file():
-            c=json.loads(secure_read(p/'profile.json'));out.append({k:c[k] for k in ('id','harness','base_url','model','api','tiers','max_output','vision') if k in c})
+            c=json.loads(secure_read(p/'profile.json'));out.append({k:c[k] for k in ('id','harness','base_url','model','api')})
     return out
 
 
@@ -328,10 +272,7 @@ def execute(spec):
             fcntl.flock(lock,fcntl.LOCK_EX)
             action=spec['action']
             if action=='save':
-                api=default_api(spec.get('harness'),spec.get('api'))
-                tiers={t:spec.get(t+'_model') for t in TIERS if spec.get(t+'_model')}
-                result=define(spec.get('id'),spec.get('harness'),spec.get('base_url') or preset_url(spec.get('preset'),api),spec.get('model'),
-                              api,tiers,spec.get('max_output'),spec.get('vision'))
+                result=define(spec.get('id'),spec.get('harness'),spec.get('base_url') or PRESETS.get(spec.get('preset')),spec.get('model'),spec.get('api','openai'))
             elif action=='use':result=use(spec.get('id'),verify=probe)
             elif action=='restore':result=restore(spec.get('id'))
             else:result={'profiles':listing()}
@@ -347,11 +288,7 @@ def command(args):
     sub=ap.add_subparsers(dest='action',required=True)
     add=sub.add_parser('save');add.add_argument('id');add.add_argument('--harness',choices=['claude','codex','opencode'],required=True)
     add.add_argument('--base-url');add.add_argument('--preset',choices=list(PRESETS));add.add_argument('--model',required=True)
-    add.add_argument('--api',choices=['openai','anthropic'],help='default: anthropic for claude, openai otherwise')
-    for t in TIERS:   # P315: Claude Code's tier / subagent models on the same service (default: --model)
-        add.add_argument('--'+t+'-model',dest=t+'_model')
-    add.add_argument('--max-output',dest='max_output',type=int,help='claude: CLAUDE_CODE_MAX_OUTPUT_TOKENS; opencode: limit.output')
-    add.add_argument('--vision',action=argparse.BooleanOptionalAction,default=None,help='opencode: the model reads images')
+    add.add_argument('--api',choices=['openai','anthropic'],default='openai')
     for name in ('use','restore'):sub.add_parser(name).add_argument('id')
     sub.add_parser('list')
     a=ap.parse_args(args)

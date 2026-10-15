@@ -7,7 +7,7 @@ import { elevateFields, elevateDigest, elevateMessage, sealValue, b64u, unb64u }
 import { signKey } from './store.js';
 import { myDeviceId, myIdSync } from './api.js';
 import { t, onLang } from './t.js';
-import { mk, toast, notify } from './ui.js';
+import { mk, toast } from './ui.js';
 import { registerLayer } from './layers.js';
 import { copyable } from './copycode.js';   // P292
 import { paintMailPassword } from './mail-password.js';
@@ -114,11 +114,8 @@ export function done(m) {
     if (m.verify === 'ok') text += ' ' + t('elev.r.verifyOk');
     if (m.verify === 'fail') text += ' ' + t('elev.r.verifyFail');
     if (c.kind === 'secret' && m.key_hint === 'short') text += ' ' + t('elev.r.keyShort');   // P163: from the length only
-    // P318: a clean save / run is the success format (the mail key: the centred ✓ circle, P256's place); a refusal is error
-    const fail = ['denied', 'bad_password', 'failed', 'locked'].includes(m.result) || (m.result === 'done' && Number.isInteger(m.code) && m.code !== 0) || m.verify === 'fail';
-    const ok = !fail && (m.result === 'saved' || m.result === 'done') && m.key_hint !== 'short';
-    const mailSaved = c.name === 'AGENTJ_MAIL_PASSWORD' && m.result === 'saved';
-    notify({ kind: fail ? 'error' : ok ? 'success' : 'info', text, ms: m.key_hint === 'short' ? 8000 : 3600, shape: mailSaved && ok ? 'circle' : undefined });
+    toast(text, m.key_hint === 'short' ? 8000 : 3600);
+    if (c.name === 'AGENTJ_MAIL_PASSWORD' && m.result === 'saved') document.getElementById('toast').classList.add('mail-saved');
   }
   render();
 }

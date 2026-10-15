@@ -1388,10 +1388,6 @@ class ClaudeAgent(Agent):
                 self._auth_signal(r)
                 self.fail_notice(claude_auth.failure_notice(self.cfg.get("language", "zh")) if claude_auth.login_failure(r) else
                                  "Agent J 这一轮没有正常完成" + (f"：{clean(r, 300)}" if isinstance(r, str) and r else "。"))
-                from . import quota_resume      # P314: a used-up usage limit → continue by itself after the reset
-                if quota_resume.claude_limit(r):
-                    with contextlib.suppress(Exception):
-                        quota_resume.main_hit(self, "claude", r, self.rate)
             if self.turn_done:
                 self.turn_done.set()
 

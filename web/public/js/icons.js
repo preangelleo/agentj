@@ -1,6 +1,6 @@
 // P183: the file card's and the viewer's icons — 24-unit glyphs drawn like the reply card's own (.rmbar: stroke 1.9, round
 // caps), built with createElementNS from the constants below (never markup).
-export const SVG = 'http://www.w3.org/2000/svg';   // P318: js/ui.js's notice icons use it too
+const SVG = 'http://www.w3.org/2000/svg';
 export const GLYPH = {
   preview: [['path', { d: 'M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z' }], ['circle', { cx: 12, cy: 12, r: 3 }]],
   download: [['path', { d: 'M12 4v11' }], ['path', { d: 'm7 10 5 5 5-5' }], ['path', { d: 'M5 19.5h14' }]],
