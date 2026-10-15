@@ -339,7 +339,7 @@ function renderCard(s){
   if (!pending) foldedCard = null;
   const fin = !!a && ASK_FINAL.includes(a.state);
   const age = fin && a.final_at ? Date.now() / 1000 - skew - a.final_at : Infinity;
-  if (fin && age < ASK_RESULT_S && askToasted !== a.id){ askToasted = a.id; toast(askText(a), 2600); }
+  if (fin && age < ASK_RESULT_S && askToasted !== a.id){ askToasted = a.id; toast(askText(a), 2600, askState(a) === 'answered' ? 'success' : 'info'); }
   const result = fin && age < ASK_RESULT_S && !pending && askDismissed !== a.id;
   const pfin = !!p && APPR_FINAL.includes(p.state);
   const page = pfin && p.final_at ? Date.now() / 1000 - skew - p.final_at : Infinity;
@@ -1011,7 +1011,7 @@ async function refreshNewest(retry = false){
     hist.firstId = j.first_id || hist.turns[0]?.id || 0;
     if (Number.isSafeInteger(j.read)) {
       unread.owner(j.epoch, j.read);
-      if (unread.mark() > j.read) C.api.readHistory(j.epoch, unread.mark());
+      if (unread.mark() > j.read) sendRead();
     }
     pagesCache = null; historySync = false; historyDelay = 0;
   }catch(_){
@@ -1104,7 +1104,7 @@ function sourceOf(src){
   if (src.k === "host") return {kind: "host", label: t('r.src.host')};
   // P132: a page the Agent started itself says why — a /loop or wake-up check, a background task, or just reporting in
   // P156: the host's own heartbeat check (its prompt is not shown — a folded label; a quiet beat has no page at all)
-  if (src.k === "agent") return {kind: "agent", label: src.via === "heartbeat" ? t('r.src.heartbeat') : src.via === "loop" ? t('r.src.loop') : src.via === "task" ? t('r.src.bgTask')
+  if (src.k === "agent") return {kind: "agent", label: src.via === "heartbeat" ? t('r.src.heartbeat') : src.via === "quota" ? t('p314.src') : src.via === "loop" ? t('r.src.loop') : src.via === "task" ? t('r.src.bgTask')
     : t(src.text?.trim() ? 'r.src.agent' : 'r.src.agentReport', {name: C.agentName()})};
   if (src.k === "task") return {kind: "task", label: src.name ? t('r.src.taskNamed', {name: src.name}) : t('r.src.task')};
   if (src.k === "cmd") return {kind: "cmd", label: t('r.src.cmd')};
@@ -1337,6 +1337,17 @@ export function ownerRead(m) {
   unread.bind(hostId());
   if (m.epoch === hist.epoch && unread.owner(m.epoch, m.read)) showPage();
 }
+// P321: every remote's count follows the host's mark; a receipt the host has not confirmed is sent again (a few times
+// per id, at most every READ_RETRY_MS) so one lost frame cannot leave the other remotes a reply behind.
+const READ_RETRY_MS = 4000;
+let readSentAt = 0, readTimer = null;
+function sendRead(){
+  const m = unread.pending();
+  if (m === null) return;
+  readSentAt = Date.now(); C.api.readHistory(hist.epoch, m);
+  if (!readTimer) readTimer = setTimeout(() => { readTimer = null; if (unread.isOwner()) sendRead(); }, READ_RETRY_MS);
+}
+function retryRead(){ if (!readTimer && Date.now() - readSentAt >= READ_RETRY_MS) sendRead(); }
 const UNREAD_FILL_BATCHES = 10;
 let unreadFilling = false;
 const replyIds = ps => ps.filter(x => x.id !== null && visibleReply(x)).map(x => x.id);
@@ -1349,8 +1360,9 @@ function paintUnread(ps, p){
   if (!historySync) unread.sync(hist.epoch, ids);
   const covered = unreadCovered();
   if (!historySync && p && p.id !== null && visibleReply(p) && document.visibilityState === "visible" && document.body.dataset.view === "chat")
-    { if (unread.see(p.id, ids, covered) && unread.isOwner()) C.api.readHistory(hist.epoch, p.id); }
+    { if (unread.see(p.id, ids, covered) && unread.isOwner()) sendRead(); }
   else unread.advance(ids, covered);
+  if (!historySync && unread.isOwner()) retryRead();
   const n = historySync ? 0 : unread.list(ids).length;
   if (historySync || (unread.isOwner() && !n)) {
     unreadReply = false; el("pgCorner").dataset.unread = "0";
@@ -1465,6 +1477,14 @@ export async function hotTap(p = currentPage()){
   slashOn(p, cmd, t('p285.hint', {cmd}), t('p285.hintFrom', {cmd}));
 }
 export { openHot };
+// P320: 「重新加载配置」 — the host re-reads its configuration and key file without restarting serve (≡ row, /reload, Alt+Shift+L,
+// the settings page's Reload notice). The answer is the /reload card in the chat.
+export async function reloadHost(){
+  if (hostMenu && !hostMenu.reload){ toast(t('p320.reloadOld'), 4000); return false; }
+  const ok = await runCmd("reload");
+  if (ok){ toNewest(); toast(t('r.run.sent', {cmd: "/reload"}), 1600); }
+  return ok;
+}
 function plainLine(md){
   for (let ln of String(md || "").split("\n")){
     ln = ln.trim();
@@ -2035,6 +2055,16 @@ function hasSayable(){ return !!input.value.trim() || atts.some(a => a.st !== "f
 function refreshSend(){
   el("send").disabled = sending || asrBusy > 0 || !hasSayable() || !(C.connected() || outbox.host !== null);   // offline: it queues (null = not paired)
   const c = el("clr"); if (c) c.hidden = !input.value;
+  paintCapNote();
+}
+// P318 (Leo, 2026-10-15): the cap is not in the placeholder any more (it folded to two lines on an iPhone); it shows on the
+// field only near the limit — from 90 % on, 「18,000 / 20,000」 in a small tag — and capField() still stops it at the cap.
+const CAP_NEAR = 0.9;
+function paintCapNote(){
+  const n = el("capNote"); if (!n) return;
+  const len = input.value.length, max = MAX_TEXT(), on = max > 0 && len >= Math.ceil(max * CAP_NEAR);
+  n.hidden = !on;
+  if (on){ const f = x => x.toLocaleString(lang() === "zh" ? "zh-CN" : "en"); n.textContent = t('p318.cap', {n: f(len), max: f(max)}); }
 }
 // P200 追加 3 (Leo, 2026-10-13): one line never scrolls, whatever the type size, zoom or viewport — the cap is at least
 // one line and a half (a fallback font's taller line box still fits; two lines do not), so only real multi-line text
@@ -2106,15 +2136,11 @@ function fieldCapacity(sample = "\u4e2d"){
   while (lo < hi){ const mid = (lo + hi + 1) >> 1; if (overflowsField(sample.repeat(mid))) hi = mid - 1; else lo = mid; }
   return lo;
 }
+// P318 (Leo, 2026-10-15): one short hint on every width (「Say something (≤ 20,000 characters)」 folded to two lines on an
+// iPhone Air); the cap shows near the limit only (paintCapNote) and stays in the field's title.
 function restingPlaceholder(){
   if (C && C.estopOn()) return t('chat.placeholderStopped');
-  const L = t('r.ph.long', {cap: capWords()}), S = t('r.ph.short', {cap: capWords()});
-  if (input.clientWidth < 80) return S;
-  twin.style.fontSize = getComputedStyle(input, "::placeholder").fontSize;
-  try{
-    const oneLine = twinHeight("\u4e2d");
-    return oneLine > 0 && twinHeight(L + "\u4e2d") <= oneLine ? L : S;
-  } finally { twin.style.fontSize = ""; }
+  return t('p318.ph');
 }
 export function paintPlaceholder(){
   if (!input) return;
@@ -2783,7 +2809,7 @@ function menuFromHost(j){
   }
   const switchHarness = items.some(it => it[0] === SWITCH_CMD);
   const father = items.find(it => it[0] === "/feedback-to-agentj-father");
-  return {father, items: items.filter(it => it[0] !== SWITCH_CMD && it !== father), skills: skills.filter(it => it[0] !== SWITCH_CMD), switchHarness,
+  return {father, items: items.filter(it => it[0] !== SWITCH_CMD && it !== father), skills: skills.filter(it => it[0] !== SWITCH_CMD), switchHarness, reload: j.reload === true,
           upgrade: j.upgrade && typeof j.upgrade === "object" ? j.upgrade : {}, source: j.source === "file" ? "file" : "default"};
 }
 const IN_APP = / (?:JarvisApp|AgentJApp)\/\d/.test(navigator.userAgent);
@@ -2815,6 +2841,7 @@ function renderMenu(){
     const b = item(t('r.update.title'), pending ? desc : `${have || '–'} → ${latest} · ${desc}`, {run: c});
     b.disabled = same || pending;
   }
+  if (hostMenu?.reload) item("/reload", t('p320.reloadDesc'), {run: "reload"}).id = "reloadEntry";   // @ix app.reload_host (P320: a host that answers /reload)
   item("/customize", t('p181.customize'), {prompt: "cmds"});   // P181: 定制命令 → the preset message (≡ hold does the same)
   for (const [cmd, why] of switchItems()) item(cmd, why, {}).id = "switchEntry";   // P238: one tap sends it
   const stop = item("■", C.estopOn() ? t('estop.resume') : t('estop.btn'), {estop: C.estopOn() ? "resume" : "stop"});
@@ -2834,7 +2861,7 @@ function renderMenu(){
     }
   }
   if (host.skills.length){ group(t('r.menu.skills')); for (const [cmd, why] of host.skills) item(cmd, why, {slash: cmd}); }
-  menuItems = RUN.map(c => ["/" + c, runDescription(c), ""]).concat([["/customize", t('p181.customize'), ""]], toolItems(true), switchItems(), fromHost, host.skills);
+  menuItems = RUN.map(c => ["/" + c, runDescription(c), ""]).concat(hostMenu?.reload ? [["/reload", t('p320.reloadDesc'), ""]] : [], [["/customize", t('p181.customize'), ""]], toolItems(true), switchItems(), fromHost, host.skills);
   const k = item("?", t('r.keys.title'), {});
   k.className = "keysentry"; k.id = "keysEntry";
   if (CLIP_READ){ const c = item("📋", t('r.menu.clip'), {}); c.className = "clipentry"; c.id = "clipEntry"; }
@@ -4454,6 +4481,7 @@ export function init(ctx){
     "app.settings": e => keyNav(() => e.altKey && e.shiftKey && C.openSettings ? C.openSettings() : C.settings && C.settings()),
     "app.keys": () => { if (mediaViewerOpen()) closeMediaViewer(); openKeys(); },
     "app.upgrade_host": () => keyNav(() => { C.goChat && C.goChat(); upgradeFromKey(); }),   // P265: from any layer (reader too) back to chat, then the upgrade card
+    "app.reload_host": () => { reloadHost(); },   // P320: the same as ≡ /reload (an older host without it: the row is absent, the key says so)
     "app.refresh_web": () => { refreshApp(); },   // P265: the same action as Settings → 更新并刷新, not a click on a hidden button
     "app.search": () => keyNav(() => search.toggle(), true),
     "app.pair_add": () => keyNav(() => C.pairAdd && C.pairAdd()),

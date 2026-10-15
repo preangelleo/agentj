@@ -123,7 +123,7 @@ class StartProbe(unittest.TestCase):
     def test_not_measured(self):
         self.mode("old")
         self.assertIsNone(sw.start_probe(self.st, "codex", self.cfg))           # no ephemeral threads: never a kept thread
-        self.assertIsNone(sw.start_probe(self.st, "opencode", self.cfg))
+        self.assertIsNone(sw.start_probe(self.st, "kimi", self.cfg))             # P326: OpenCode is measured now (test_p326)
         self.assertIsNone(sw.start_probe(self.st, "codex", {**self.cfg, "dir": "/nonexistent-p312"}))
 
 

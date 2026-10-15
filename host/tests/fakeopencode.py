@@ -249,6 +249,8 @@ def run_prompt(sid, text):
             code, _, why = text[6:].partition(" ")
             publish("session.error", {"sessionID": sid, "error": {"name": "APIError", "data": {
                 "message": why, "statusCode": int(code), "isRetryable": False}}})
+        elif text.strip() == "EMPTY":             # P326: the turn ends at once without a word (no text part, no error)
+            pass
         elif text.strip() == "DROPSSE":
             drop_streams()
             time.sleep(0.5)

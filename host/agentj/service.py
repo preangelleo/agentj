@@ -400,6 +400,11 @@ def load_launch_binary_env(cfg=None) -> None:
     path = os.environ.get("AGENTJ_SERVICE_ENV_FILE")
     if not path:
         return
+    os.environ.update(private_env(path, _service_env_names(cfg)))
+
+
+def _service_env_names(cfg=None) -> set:
+    """The key NAMES the service environment file may set in serve's own environment (never arbitrary names)."""
     from . import preferences, telegram, harness, relay_auth
     from .state import State
     st = State()
@@ -413,7 +418,19 @@ def load_launch_binary_env(cfg=None) -> None:
         except preferences.ConfigError:
             cfg = {}  # The configuration validator owns its error; never load arbitrary names.
     names.update(referenced_key_env(cfg))
-    os.environ.update(private_env(path, names))
+    return names
+
+
+def reload_service_env(cfg=None) -> list:
+    """P320 `agentj reload`: read the service's private environment file again into serve's own environment, so a key added
+    with `agentj service import-key` (or by hand) works without restarting serve. Linux: systemd read the EnvironmentFile only
+    at start (the reason the Telegram channel needed a restart, Leo 10-15); macOS: the plist's file. Known names only, values
+    never returned or logged. → the NAMES whose value was added or changed (sorted). A missing file changes nothing."""
+    path = os.environ.get("AGENTJ_SERVICE_ENV_FILE") or env_file(name())
+    fresh = private_env(path, _service_env_names(cfg))
+    changed = sorted(k for k, v in fresh.items() if os.environ.get(k) != v)
+    os.environ.update(fresh)
+    return changed
 
 
 def claude_env(path: str) -> dict:
@@ -719,6 +736,66 @@ def plist_path(n: str) -> str:
     return os.path.join(os.path.expanduser("~"), "Library", "LaunchAgents", f"{n}.plist")
 
 
+# P323: one-shot jobs (recovery / update / autoupdate / switch, label net.agentj.<purpose>.<uuid32>) are bootstrapped from
+# here, not from ~/Library/LaunchAgents. macOS lists every plist in LaunchAgents under System Settings → Login Items →
+# "App Background Activity" (one "agentj · unidentified developer" row each, plus a "Background Items Added" notice), and
+# a job left behind there re-ran at every login (RunAtLoad). A plist bootstrapped from this directory runs once and is
+# never loaded again at login. Outside the state directory on purpose: a fenced caller (F14) cannot write that one.
+JOB_RX = re.compile(r"net\.agentj\.(?:recovery|update|autoupdate|switch)\.[a-f0-9]{32}")
+JOB_GRACE = 120.0    # s: a just-written job may not be running yet (bootstrap → spawn); leave it alone
+
+
+def job_dir() -> str:
+    return os.path.join(os.path.expanduser("~"), "Library", "Application Support", "Agent J", "jobs")
+
+
+def job_plist_path(label: str) -> str:
+    return os.path.join(job_dir(), f"{label}.plist")
+
+
+def _job_running(label: str) -> bool:
+    try:
+        r = _launchctl("print", f"{_gui()}/{label}", timeout=10)
+    except (OSError, subprocess.TimeoutExpired):
+        return True      # cannot tell: keep it
+    return r.returncode == 0 and bool(re.search(r"^\s*state = running", r.stdout, re.M))
+
+
+def sweep_jobs(*, everything: bool = False, now: float | None = None) -> list[str]:
+    """P323: unload + delete finished one-shot job plists — those older versions left in ~/Library/LaunchAgents (each one
+    a Login Items row) and any in job_dir() whose job died before its own cleanup. Never the running job, never the
+    caller's own job, never one younger than JOB_GRACE; `everything` (uninstall) takes running ones too, still not the
+    caller's own. → the labels removed. macOS only; never raises."""
+    import time
+    if platform() != "macos":
+        return []
+    now = time.time() if now is None else now
+    own = os.environ.get("AGENTJ_JOB_LABEL", "")
+    removed = []
+    for d in (os.path.dirname(plist_path("x")), job_dir()):
+        try:
+            names = sorted(os.listdir(d))
+        except OSError:
+            continue
+        for f in names:
+            label = f[:-6] if f.endswith(".plist") else ""
+            if not JOB_RX.fullmatch(label) or label == own:
+                continue
+            p = os.path.join(d, f)
+            try:
+                st = os.lstat(p)
+            except OSError:
+                continue
+            if not everything and (now - st.st_mtime < JOB_GRACE or _job_running(label)):
+                continue
+            with contextlib.suppress(OSError, subprocess.TimeoutExpired):
+                _launchctl("bootout", f"{_gui()}/{label}", timeout=10)
+            with contextlib.suppress(OSError):
+                os.unlink(p)
+                removed.append(label)
+    return removed
+
+
 def plist_bytes(n: str, argv: list[str], env: dict, log_path: str) -> bytes:
     return plistlib.dumps({"Label": n, "ProgramArguments": argv + SERVE_ARGS, "EnvironmentVariables": {k: v for k, v in env.items() if k not in (*CAPTURED_ENV[1:], *CLAUDE_AUTH_ENV)},
                            "RunAtLoad": True, "KeepAlive": True, "ThrottleInterval": 5, "ProcessType": "Background",
@@ -831,6 +908,10 @@ def install(st) -> dict:
         if r.returncode != 0:
             raise ServiceError("launchctl_failed", (r.stderr or r.stdout).strip()[:300])
         remember_binary_selection(st, n)
+        swept = sweep_jobs()          # P323: one-shot jobs older versions left in LaunchAgents (Login Items rows)
+        if swept:
+            with contextlib.suppress(Exception):
+                st.log("launchd_jobs_swept", count=len(swept))
         _register_pair_protocol(notes)
         notes.append(login_reminder())
         return {"kind": "launchd", "name": n, "path": path, "argv": argv + SERVE_ARGS, "notes": notes}
@@ -1002,7 +1083,11 @@ def uninstall(st=None) -> dict:
         if st is not None:
             with contextlib.suppress(OSError):
                 restored = _restore_disabled(st, n)
-        return {"kind": "launchd", "name": n, "path": path, "removed": existed, "restored_disabled": restored}
+        jobs = sweep_jobs(everything=True)        # P323: no one-shot job plist outlives the uninstall
+        with contextlib.suppress(OSError):
+            os.rmdir(job_dir())
+        return {"kind": "launchd", "name": n, "path": path, "removed": existed, "restored_disabled": restored,
+                "jobs_removed": len(jobs)}
     raise ServiceError("unsupported_os")
 
 

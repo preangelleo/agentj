@@ -8,7 +8,7 @@ The owner should never need to know a command. You run these yourself.
 
 1. `agentj status --json`
    - Not running (`running: false`) → step 2.
-   - `relay_state` is `reconnecting` → step 2.
+   - `relay_state` is `reconnecting` → step 2; quote `relay_stuck` (where the relay link sticks: phase / reason / close code).
    - `agent_status` is `down` (or anything other than `idle` / `working` / `waiting` / `compacting`) → step 2.
    - Everything up → tell the owner the computer side is fine; a grey page usually comes back with pull-to-refresh.
 2. `agentj doctor --reconnect` — run it **in this session**: it attaches the session that runs it.

@@ -7,13 +7,30 @@ import os
 import shutil
 import tempfile
 
-if not os.environ.get("AGENTJ_STATE_DIR"):
+# P316: the developer's real home is the passwd entry, not $HOME (`HOME=$tmp python -m unittest` keeps a desktop-exported
+# XDG_CONFIG_HOME=~/.config). A state / config dir inside it is replaced, not kept; AGENTJ_TEST=1 tells this process and every
+# child it starts that agentj/preferences.guard must refuse the real ~/.config/agentj.
+try:
+    import pwd
+    _REAL_HOME = os.path.realpath(pwd.getpwuid(os.getuid()).pw_dir)
+except (ImportError, KeyError):
+    _REAL_HOME = os.path.realpath(os.environ.get("USERPROFILE") or os.path.expanduser("~"))
+
+
+def _ours(name):
+    v = os.environ.get(name)
+    return bool(v) and not (os.path.realpath(v) + os.sep).startswith(_REAL_HOME + os.sep)
+
+
+os.environ["AGENTJ_TEST"] = "1"
+if not _ours("AGENTJ_STATE_DIR"):
     _d = tempfile.mkdtemp(prefix="aj-tests-state-")
     os.environ["AGENTJ_STATE_DIR"] = os.path.join(_d, "state")
     atexit.register(shutil.rmtree, _d, True)
 # P64: preferences live at $XDG_CONFIG_HOME/agentj/config.json5 (else ~/.config): every in-process State.set_agent_config
-# (working_root.record) used to rewrite the developer's REAL ~/.config/agentj/config.json5. A throw-away config home too.
-if not os.environ.get("XDG_CONFIG_HOME"):
+# (working_root.record) used to rewrite the developer's REAL ~/.config/agentj/config.json5. A throw-away config home too —
+# also when XDG_CONFIG_HOME is set but points into the real home (P316: some desktops always export it).
+if not _ours("XDG_CONFIG_HOME"):
     _c = tempfile.mkdtemp(prefix="aj-tests-config-")
     os.environ["XDG_CONFIG_HOME"] = _c
     atexit.register(shutil.rmtree, _c, True)

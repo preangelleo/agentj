@@ -7,7 +7,6 @@ from __future__ import annotations
 import json
 import os
 import plistlib
-import re
 import subprocess
 import time
 import uuid
@@ -106,7 +105,7 @@ def launch_job(st, argv, purpose='recovery', *, restart=False, extra_env=None):
                 why = service.systemd_problem()
                 raise service.ServiceError(why if why in service.NO_MANAGER else 'recovery_launch_failed')
     elif service.platform() == 'macos':
-        path = Path(service.plist_path(label))
+        path = Path(service.job_plist_path(label))    # P323: never in ~/Library/LaunchAgents (a Login Items row each)
         path.parent.mkdir(parents=True, exist_ok=True)
         env['AGENTJ_JOB_PLIST'] = str(path)
         job = {'Label': label, 'ProgramArguments': argv, 'EnvironmentVariables': env,
@@ -128,11 +127,12 @@ def cleanup_job(st):
     # P282: `switch` too — /switch-harness scan / switch jobs stayed loaded with RunAtLoad and re-ran at every login.
     path = os.environ.get('AGENTJ_JOB_PLIST')
     label = os.environ.get('AGENTJ_JOB_LABEL', '')
-    if service.platform() == 'macos' and path and re.fullmatch(r'net\.agentj\.(?:recovery|update|autoupdate|switch)\.[a-f0-9]{32}', label):
-        p = Path(service.plist_path(label))
-        if str(p) == path:
-            p.unlink(missing_ok=True)
-            service._launchctl('bootout', service._gui() + '/' + label)
+    # P323: jobs live in service.job_dir(); a job an older version wrote into LaunchAgents is still its own to remove.
+    if service.platform() == 'macos' and path and service.JOB_RX.fullmatch(label):
+        for p in (Path(service.job_plist_path(label)), Path(service.plist_path(label))):
+            if str(p) == path:
+                p.unlink(missing_ok=True)
+                service._launchctl('bootout', service._gui() + '/' + label)
 
 
 def schedule(st, argv, target):

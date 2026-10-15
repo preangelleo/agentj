@@ -178,7 +178,7 @@ export function toPage(t) {
   return {
     id: t.id, ts: typeof t.ts === 'number' ? t.ts / 1000 : null,
     source: { k, dev: typeof src.dev === 'string' ? src.dev : null, name: typeof src.name === 'string' ? src.name.slice(0, 64) : '',
-      text: typeof src.text !== 'string' ? '' : k === 'telegram' ? src.text.replace(TG_SOURCE_LINE, '') : src.text, quote: q, att, local: src.local === true, ...(k === 'sys' && typeof src.notice_id === 'string' && /^[A-Za-z0-9_-]{22}$/.test(src.notice_id) ? {notice_id:src.notice_id} : {}), ...(k === 'agent' && ['loop', 'task'].includes(src.via) ? {via: src.via} : {}) },
+      text: typeof src.text !== 'string' ? '' : k === 'telegram' ? src.text.replace(TG_SOURCE_LINE, '') : src.text, quote: q, att, local: src.local === true, ...(k === 'sys' && typeof src.notice_id === 'string' && /^[A-Za-z0-9_-]{22}$/.test(src.notice_id) ? {notice_id:src.notice_id} : {}), ...(k === 'agent' && ['loop', 'task', 'quota'].includes(src.via) ? {via: src.via} : {}) },
     reply: typeof reply.text === 'string' ? dropReplacement(reply.text) : '',
     part: Array.isArray(reply.part) && reply.part.length === 2 ? reply.part.map(Number) : null,
     end: ['open', 'done', 'stopped', 'failed'].includes(t.end) ? t.end : 'done',
@@ -242,7 +242,7 @@ export function findHistory(q, sort = 'score') {
         return { id: h.id, ts: typeof h.ts === 'number' ? h.ts / 1000 : null, score: Number(h.score) || 0,
           where: Array.isArray(h.where) ? h.where.filter((f) => f in snip) : Object.keys(snip), snip,
           src: { k: str(src.k, 16) || 'sys', dev: str(src.dev, 64) || null, name: str(src.name, 64), local: src.local === true,
-            ...(src.k === 'agent' && ['loop', 'task'].includes(src.via) ? { via: src.via } : {}) } };
+            ...(src.k === 'agent' && ['loop', 'task', 'quota'].includes(src.via) ? { via: src.via } : {}) } };
       });
       resolve({ epoch: Number(m.epoch) || 0, hits, n: Number(m.n) || hits.length, more: m.more === true });
     });

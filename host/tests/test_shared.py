@@ -230,11 +230,26 @@ class OpenCodeOrdinaryStartup(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(a.client.request.call_args_list[0].args,('POST','/session',{'title':'Agent J shared'}))
         self.assertEqual(a.sid,'sesNew');self.assertEqual(a.rules,[])
         self.assertEqual(a.launch_argv(['/bin/native']),['/bin/native'])
-    async def test_stale_explicit_owner_selector_never_spawns_another_server(self):
-        cfg={'kind':'opencode','dir':'/var/tmp/work','_workflow_ceo':True,'session_mode':'shared','high_risk_warnings':False,'shared_session_id':'sesMissing'}
-        a=shared.SharedOpenCodeAgent(Host(),cfg)
+    async def test_pin_without_owner_port_is_opened_by_our_own_server(self):
+        # P326 (was: a pinned session without a port refused every turn — 「指定 loopback 端口」, a dead end on the phone):
+        # with no owner port Agent J starts its own server; an OpenCode pin is kept (that server opens it), any other is not ours
+        for pin,kept in (('sesMissing','sesMissing'),('0b6f3e2a-1c4d-4e5f-8a9b-0c1d2e3f4a5b','')):
+            cfg={'kind':'opencode','dir':'/var/tmp/work','_workflow_ceo':True,'session_mode':'shared','high_risk_warnings':False,'shared_session_id':pin}
+            host=Host();host.st.agent_session=Mock(return_value=None)
+            a=shared.SharedOpenCodeAgent(host,cfg)
+            with patch.object(shared.OpenCodeAgent,'_spawn',AsyncMock(return_value=True)) as own, \
+                 patch.object(a,'_installed_v2',AsyncMock(return_value=True)):
+                self.assertTrue(await a._spawn())
+            own.assert_awaited_once()
+            self.assertTrue(a.owned_server)
+            self.assertEqual(a.cfg['shared_session_id'],kept)
+    async def test_bad_owner_port_is_a_failed_start(self):
+        cfg={'kind':'opencode','dir':'/var/tmp/work','_workflow_ceo':True,'session_mode':'shared','high_risk_warnings':False,'shared_session_id':'sesX','shared_opencode_port':70000}
+        a=shared.SharedOpenCodeAgent(Host(),cfg);a.local_fail=Mock()
         with patch.object(shared.OpenCodeAgent,'_spawn',side_effect=AssertionError('must not fall back')):
             self.assertFalse(await a._spawn())
+        self.assertTrue(a.is_down())
+        self.assertIn('agentj config unset agent.shared_opencode_port',a.local_fail.call_args.args[0])
 
 class SafetyDefaults(unittest.TestCase):
     def test_default_shared_keeps_warning_layer_on(self):

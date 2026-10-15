@@ -1074,6 +1074,9 @@ def cmd_status(a) -> None:
     res["passphrase"] = gate.is_set(st)
     if res.get("agent_status") == "down" or res.get("relay_state") == "reconnecting":
         res["hint"] = RECONNECT_HINT          # P147: grey phone → one command
+    if res.get("relay_last"):                 # P317: the host leg's stuck point in words (relay_last keeps the tokens)
+        from . import relaydiag
+        res["relay_stuck"] = relaydiag.text2(res["relay_last"])
     print(json.dumps(res, ensure_ascii=False, indent=1))
 
 
@@ -1652,7 +1655,8 @@ def cmd_agent(a) -> None:
                 if note:
                     print("⚠ " + note, flush=True)
                 from .bailian import model_note       # P310: Token Plan terms (interactive use only; data used for training)
-                note = model_note(model, "en" if lang == "en" else "zh")
+                from .ark import model_note as ark_note   # P315: Ark Coding Plan terms + image input
+                note = model_note(model, "en" if lang == "en" else "zh") or ark_note(model, "en" if lang == "en" else "zh")
                 if note:
                     print("⚠ " + note, flush=True)
             if harness_setup.enabled():           # P219: the harness's one-time terminal questions, answered ahead
@@ -2281,6 +2285,29 @@ def cmd_onboarding(a) -> None:
     sys.exit(onboarding.command(a, st))
 
 
+def cmd_reload(a) -> None:
+    """P320 `agentj reload`: serve re-reads the configuration and its key file without restarting (see serve.reload_config)."""
+    st = State()
+    try:
+        res = names.ctl_call(st, {"cmd": "reload"}, 30) if st.exists() else None
+    except names.ServeBusy:
+        sys.exit("✗ agentj serve 在运行但没有响应：没有重新加载 / serve is running but not answering")
+    if res is None:
+        print("agentj serve 没有在运行：下次启动时直接读最新配置，不需要 reload。 / serve is not running: it reads the newest "
+              "configuration when it starts.")
+        return
+    if res.get("error") == "unknown command":       # a serve older than this CLI
+        sys.exit("✗ 正在运行的 serve 版本较旧，不认识 reload：运行 `agentj service restart` / the running serve is older: "
+                 "`agentj service restart`")
+    if a.json:
+        print(json.dumps({k: res.get(k) for k in ("ok", "changed", "pending", "restart_serve", "env_changed", "harness", "key", "error")},
+                         ensure_ascii=False))
+    else:
+        print(("✓ " if res.get("ok") else "✗ ") + (res.get("text") or res.get("error") or ""))
+    if not res.get("ok"):
+        sys.exit(1)
+
+
 def cmd_doctor(a) -> None:
     from . import doctor
     if getattr(a, "reconnect", False):         # P147: repair whichever of serve / relay / agent is broken
@@ -2598,7 +2625,7 @@ def main_jarvis(argv=None) -> None:
 
 # `migrate status` reports, `migrate rollback` undoes, `docs-rule` prints (or, with --write and the human's y, appends to the
 # AI's own memory file), `handover` only reads: none may move the state directory first
-NO_MIGRATE = ("migrate", "docs-rule", "handover", "recall", "friends", "codex-sandbox", "capability", "google", "setup", "busy", "mail", "contacts", "imessage")   # recall / friends / codex-sandbox / capability: usually inside the fence
+NO_MIGRATE = ("migrate", "docs-rule", "handover", "recall", "friends", "codex-sandbox", "capability", "google", "setup", "busy", "mail", "contacts", "imessage", "ask")   # recall / friends / codex-sandbox / capability: usually inside the fence
 
 
 APPROVALS_HELP = {
@@ -2770,6 +2797,14 @@ def main(argv=None) -> None:
                     "disconnected: check service, relay and Agent, repair the broken one")
     dc.add_argument("--session", help="和 --reconnect 一起：接上这个会话 ID / with --reconnect: attach this session ID")
     dc.set_defaults(fn=cmd_doctor)
+    rl = sub.add_parser("reload", help="重新加载配置与服务密钥文件，不重启 serve / reload the configuration and the service key file "
+                        "without restarting serve",
+                        description="大多数设置改完 reload 就生效（主 Agent 下一条消息前重启，对话保留）；只有工作根目录、会话模式要重启服务；从密钥文件删掉的 key 也要重启才会消失。"
+                                    " / Most settings take effect on reload (the main Agent restarts before its next message, same "
+                                    "conversation); only the working root and session mode need `agentj service restart` — so does a key "
+                                    "removed from the service key file.")
+    rl.add_argument("--json", action="store_true", help="机器可读 / machine-readable")
+    rl.set_defaults(fn=cmd_reload)
     sv = sub.add_parser("service", help="开机 / 登录后自动运行 serve：install · start · stop · restart · status / run serve as a service",
                         description="Linux: systemd user unit · macOS: LaunchAgent. 不写任何密钥 / never writes a secret.")
     sv.add_argument("mode", choices=["install", "uninstall", "status", "restart", "start", "stop", "import-key"], help="install 安装 · start 启动 · stop 停止 · restart 重启 · uninstall 删除 · status 状态 · import-key 把这个终端里的一个 key 导入服务（不显示值）/ install, start, stop, restart, uninstall, status, import-key: copy one key from this terminal into the service (value never shown)")
@@ -2981,6 +3016,8 @@ def main(argv=None) -> None:
     mail.add_parser(sub)        # P170: agentj mail setup|allow|deny|password|test|check|on|off|status|presets
     from . import contacts
     contacts.add_parser(sub)    # P184: agentj contacts list|find|add|edit|rm|import|export|card
+    from . import ask
+    ask.add_parser(sub)         # P322: agentj ask — the Agent J question card under any harness
     from . import workflows
     workflows.add_parser(sub)   # P244 (§30): agentj workflows [--json] — what the phone's five pages read, read-only
     elevate.add_parser(sub)   # F17: agentj sudo · agentj secret request

@@ -203,10 +203,11 @@ export async function startFakeHost() {
     if (m.t === 'blob_open' || m.t === 'blob_chunk' || m.t === 'blob_end' || m.t === 'blob_drop') return onBlob(c, m);
     if (m.t === 'hist_read' && st.ownerRead) {
       if (st.ownerReadMute) return;
+      if (st.ownerReadLose > 0) { st.ownerReadLose--; st.ownerReadLost = (st.ownerReadLost || 0) + 1; return; }   // P321: a frame lost on the way
       if (m.epoch === st.epoch && st.turns.some(t => t.id === m.id && t.reply.text.trim() && t.reply.text.trim() !== '〔不回群〕')) {
         st.read = Math.max(st.read || 0, m.id);
         for (const c of ready()) if(c.devId !== st.ownerReadDropTo) await sendApp(c,{t:'hist_read',epoch:st.epoch,read:st.read});
-      }
+      } else await sendApp(c,{t:'hist_read',epoch:st.epoch,read:st.read || 0});   // P321: a refused receipt answers its sender
       return;
     }
     if (m.t === 'hist_get') {
@@ -661,7 +662,7 @@ export async function startFakeHost() {
     kick(code = 1001) { for (const c of conns) c.close(code); },
     /** back to an empty host between test blocks (pairings and allowlist stay) */
     reset() {
-      Object.assign(st, { ownerRead:false, ownerReadMute:false, ownerReadDropTo:null, ownerReadHeadDelay:0, read:0, kind: null, extraCaps: [], p33: true, asr: 'ready', asrText: '这是转写出来的文字', asrWhy: null, asrTexts: [], asrDelays: [], sayMode: 'delivered', sayDelay: 0,
+      Object.assign(st, { ownerRead:false, ownerReadMute:false, ownerReadLose:0, ownerReadLost:0, ownerReadDropTo:null, ownerReadHeadDelay:0, read:0, kind: null, extraCaps: [], p33: true, asr: 'ready', asrText: '这是转写出来的文字', asrWhy: null, asrTexts: [], asrDelays: [], sayMode: 'delivered', sayDelay: 0,
         autoReply: true, replyFor: null, epoch: st.epoch + 1, turns: [], blobs: new Map(), staged: new Set(), queued: new Map(), opens: [], cancels: [],
         answers: [], qAnswers: [], chunks: 0, wavs: [], menu: null, models: null, meter: null, sigOk: [], says: [], modelSets: [], slashes: [],
         stallAfter: 0, blobErr: null, sayWhy: null, estop: false, rate: true, firsts: [], errors: [], lastError: undefined,

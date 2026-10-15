@@ -142,7 +142,7 @@
   "session.link_used": "This link was already used or has expired. Press Enter in the terminal running `agentj admin` to get a fresh one.",
   "session.bye": "Signed out. To come back, press Enter in the terminal running `agentj admin` for a fresh link.",
   "session.unreachable": "Can't reach the Agent settings page right now (`agentj admin` may have stopped).",
-  "footer.tagline": "Your AI assistant works on your computer. You run it from your phone.",
+  "footer.tagline": "Your AI chief of staff runs on your computer. Direct it from any browser.",
   "footer.help": "Help",
   "footer.trust": "Trust",
   "footer.docs": "Docs",

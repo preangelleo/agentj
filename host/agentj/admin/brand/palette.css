@@ -203,7 +203,20 @@ html.aj-closed {
     --link: var(--c-milky-waves);
     --danger: var(--c-strawberry-field);
     --danger-line: var(--c-strawberry-field);
-    --danger-bg: var(--c-noir);
+    --danger-bg: var(--c-sooty);
+    /* P319 (2026-10-15): two dark layers — header + body on Noir, the footer stays the deeper Sooty; nested
+       surfaces (level-2, quiet, code, callout) step DOWN to Sooty so they still read on the Noir canvas. */
+    --bg: var(--c-noir);
+    --surface-1: var(--c-noir);
+    --surface-2: var(--c-sooty);
+    --seam: var(--c-sooty);
+    --quiet-bg: var(--c-sooty);
+    --code-bg: var(--c-sooty);
+    --callout-bg: var(--c-sooty);
+    --callout-warm: var(--callout-bg);
+    --callout-info: var(--callout-bg);
+    --callout-note: var(--callout-bg);
+    --footer-bg: var(--c-sooty);
   }
 }
 html.aj-closed[data-theme="dark"] {
@@ -214,5 +227,18 @@ html.aj-closed[data-theme="dark"] {
   --link: var(--c-milky-waves);
   --danger: var(--c-strawberry-field);
   --danger-line: var(--c-strawberry-field);
-  --danger-bg: var(--c-noir);
+  --danger-bg: var(--c-sooty);
+  /* P319 (2026-10-15): two dark layers — header + body on Noir, the footer stays the deeper Sooty; nested
+     surfaces (level-2, quiet, code, callout) step DOWN to Sooty so they still read on the Noir canvas. */
+  --bg: var(--c-noir);
+  --surface-1: var(--c-noir);
+  --surface-2: var(--c-sooty);
+  --seam: var(--c-sooty);
+  --quiet-bg: var(--c-sooty);
+  --code-bg: var(--c-sooty);
+  --callout-bg: var(--c-sooty);
+  --callout-warm: var(--callout-bg);
+  --callout-info: var(--callout-bg);
+  --callout-note: var(--callout-bg);
+  --footer-bg: var(--c-sooty);
 }

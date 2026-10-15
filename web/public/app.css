@@ -762,10 +762,10 @@ body[data-kb="1"] .composer{padding-bottom:12px}   /* keyboard up: no home-indic
 .tools .tool svg{flex:none;width:23px;height:23px}
 .tools .tool:disabled{opacity:.35}
 .tools .tool:active{border-color:var(--ink)}
-/* Narrow screens: a quarter of the row cannot hold icon + "按住说话", so the
-   voice button is icon-only there; its state is carried by its outline and by
-   the timer bubble above it. */
-@media (max-width:519px){ .tools .tool.mic span{display:none} }
+/* P318 (owner, 2026-10-15): the four tool buttons are icon-only at every width — the drawings say enough; a label in a
+   quarter of the row was cut (「单击锁定 · 按住说…」) and pushed the microphone half out of its box on a Pad (≥ 520 px).
+   The words live in aria-label / title; the voice button's state is carried by its outline and the recording card. */
+.tools .tool span{display:none}
 /* Recording is carried by the outline, not a fill: solid lotion with a
    breathing inner ring, so it reads on all four state colours. */
 .tools .tool.rec{border-style:solid;border-color:var(--ink);animation:ring 1.1s ease-in-out infinite}
@@ -909,9 +909,6 @@ body[data-sending="1"] .field{padding-right:96px}
 .clr svg{width:10px;height:10px}
 .clr[hidden],body[data-sending="1"] .clr{display:none}
 .field:has(.clr:not([hidden])){padding-right:44px}
-.toast.act{pointer-events:auto;display:flex;align-items:center;gap:12px;padding:4px 6px 4px 18px}
-.toast .undo{min-height:44px;padding:0 14px;border-radius:var(--r-pill);font:600 calc(14px*var(--fz))/1 var(--font-body);
-  color:inherit;background:rgba(255,255,255,.14)}
 .field{flex:1;min-width:0;position:relative;min-height:var(--rtap);display:flex;align-items:center;background:var(--surface);
   border-radius:28px;padding:0 20px;border:1px solid transparent;transition:border-color .2s}
 .field:focus-within{border-color:var(--line)}
@@ -921,6 +918,10 @@ body[data-sending="1"] .field{padding-right:96px}
   background:var(--btn-strong-bg);color:var(--btn-strong-ink);font:500 calc(12px*var(--fz))/1.2 var(--font-body);
   pointer-events:none;animation:breathe 1.4s ease-in-out infinite}
 .asrtag[hidden]{display:none}
+/* P318: the cap near the limit (≥ 90 %), on the field's left edge so it never meets 「转写中…」 on the right. */
+.capnote{position:absolute;left:14px;top:-11px;padding:3px 10px;border-radius:var(--r-pill);
+  background:var(--btn-strong-bg);color:var(--btn-strong-ink);font:500 calc(12px*var(--fz))/1.2 var(--font-mono);pointer-events:none}
+.capnote[hidden]{display:none}
 .tools .tool.mic.asr svg{animation:breathe 1.4s ease-in-out infinite}
 /* One line + padding = the field's inner height (--tap minus its 1 px borders),
    so the idle field is exactly as tall as the round ≡ / 🚀 buttons. */
@@ -1141,13 +1142,38 @@ body[data-conn=off] .composer{filter:grayscale(1);opacity:.7}
 /* Same background as body, without the transition: what the phone chrome
    should be painted with right now, not where the fade happens to be. */
 .probe{position:fixed;width:0;height:0;overflow:hidden;pointer-events:none;background:var(--pg);transition:none!important}
-/* ---- toast ---------------------------------------------------------------- */
+/* ---- toast = P318 Noir Notification (js/ui.js notify(); DESIGN_TOKENS.md「Noir Notification」) ---------------------------
+   One component, two shapes. rect: as wide as the input-message card (--nt-w, set at show time), height by content;
+   accent icon · title over body · buttons on the right. circle: a centred perfect circle, big accent mark, short text.
+   Always the dialog layer: Noir --dlg-bg, Lotion --dlg-fg, opaque, on every state and in light and dark. The accent
+   (--nt-accent, palette only: emerald oasis / windstorm / peachy feeling / magic carpet) is a line, never a background. */
 .toast{position:absolute;left:50%;top:calc(64px + env(safe-area-inset-top));z-index:9;
   transform:translate(-50%,-8px);opacity:0;pointer-events:none;
-  width:max-content;max-width:calc(100vw - 2 * var(--rg));text-align:center;line-height:1.4;
-  padding:10px 18px;border-radius:var(--r-pill);background:var(--btn-strong-bg);color:var(--btn-strong-ink);
-  font-size:calc(14px*var(--fz));transition:opacity .25s,transform .25s var(--re)}
+  box-sizing:border-box;width:var(--nt-w,calc(100vw - 2 * var(--rg)));max-width:calc(100vw - 2 * var(--rg));
+  display:flex;align-items:center;gap:12px;text-align:left;line-height:1.45;
+  padding:12px 16px 12px 14px;border-radius:var(--dlg-radius-rect);background:var(--dlg-bg);color:var(--dlg-fg);
+  box-shadow:inset 3px 0 0 var(--nt-accent,var(--windstorm)),var(--dlg-shadow);color-scheme:dark;
+  font-size:var(--dlg-fs-body);transition:opacity var(--dlg-dur),transform .25s var(--re)}
 .toast.on{opacity:1;transform:translate(-50%,0)}
+.toast .nt-ico{flex:none;width:22px;height:22px;fill:none;stroke:var(--nt-accent,var(--windstorm));stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.toast[data-kind="progress"].on .nt-ico{animation:nt-spin 1s linear infinite}
+@keyframes nt-spin{to{transform:rotate(360deg)}}
+.toast .nt-text{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px;overflow-wrap:anywhere}
+.toast .nt-title{font:600 var(--dlg-fs-title)/1.3 var(--font-title)}
+.toast .nt-acts{flex:none;display:flex;gap:8px;margin-left:auto}
+.toast.act{pointer-events:auto;padding:6px 6px 6px 14px;gap:12px}
+.toast .undo{min-height:44px;padding:0 16px;border-radius:var(--r-pill);font:600 var(--dlg-fs-body)/1 var(--font-body);
+  color:var(--dlg-fg);background:var(--dlg-chip);border:1.5px solid var(--nt-accent,var(--windstorm))}
+.toast .undo:focus-visible{outline:2px solid var(--dlg-fg);outline-offset:2px}
+/* circle: the ✓ moment (saved, done) — centred like the hold-to-talk circle; .mail-saved (P256) is the same shape */
+.toast:is(.circle,.mail-saved){position:fixed;top:50%;z-index:90;width:calc(156px * var(--fz,1));height:calc(156px * var(--fz,1));
+  max-width:none;aspect-ratio:1;border-radius:50%;flex-direction:column;justify-content:center;gap:8px;padding:18px;text-align:center;
+  box-shadow:inset 0 0 0 2px var(--nt-accent,var(--emerald-oasis)),var(--dlg-shadow);transform:translate(-50%,-50%) scale(.92);
+  font-size:var(--dlg-fs-sub);line-height:1.3}
+.toast:is(.circle,.mail-saved).on{transform:translate(-50%,-50%)}
+.toast:is(.circle,.mail-saved) .nt-ico{width:44px;height:44px;stroke-width:2.2}
+.toast:is(.circle,.mail-saved) .nt-text{flex:none;align-items:center}
+@media(prefers-reduced-motion:reduce){.toast,.toast:is(.circle,.mail-saved){transition:opacity var(--dlg-dur)}.toast[data-kind="progress"].on .nt-ico{animation:none}}
 
 /* ---- desktop camera (stage 9): the browser asks, then a live preview -------- */
 .cam{position:fixed;inset:0;z-index:22;display:grid;place-items:center;padding:16px;
@@ -1984,9 +2010,12 @@ body[data-view="scan"] .top{display:none}
 }
 
 /* P110 share arrival: a prominent action, shown only on an explicit share launch. */
-.share-notice{position:fixed;z-index:80;left:12px;right:12px;top:calc(env(safe-area-inset-top) + 64px);padding:var(--space-control);border:1px solid currentColor;border-radius:12px;background:var(--pg);color:var(--ink);display:flex;align-items:center;gap:var(--space-control);font-size:14px}
+/* P318: the share hand-off notice is a Noir Notification rect (same tokens as .toast: Noir, Lotion, opaque, Windstorm rule) */
+.share-notice{position:fixed;z-index:80;left:12px;right:12px;top:calc(env(safe-area-inset-top) + 64px);padding:var(--space-control) var(--space-control) var(--space-control) 16px;border:0;border-radius:var(--dlg-radius-rect);background:var(--dlg-bg);color:var(--dlg-fg);box-shadow:inset 3px 0 0 var(--windstorm),var(--dlg-shadow);color-scheme:dark;display:flex;align-items:center;gap:var(--space-control);font-size:var(--dlg-fs-body);line-height:1.45}
 .share-notice[hidden],.share-notice button[hidden]{display:none}
-.share-notice button{min-height:56px;min-width:112px;border:1px solid currentColor;border-radius:10px;background:#b7e396;color:#141414;font:inherit;font-weight:700;padding:8px}
+.share-notice>span{flex:1;min-width:0}
+.share-notice button{min-height:56px;min-width:112px;margin-left:auto;border:1.5px solid var(--emerald-oasis);border-radius:var(--r-pill);background:var(--dlg-chip);color:var(--dlg-fg);font:inherit;font-weight:700;padding:8px 16px}
+.share-notice button:disabled{opacity:.5}
 body[data-view="chat"] .share-notice{position:static;margin:0 var(--space-control) var(--space-content)}
 
 /* P119: page/list/action rhythm inherits the brand semantic tokens, including narrow screens. */
@@ -2646,13 +2675,17 @@ body[data-scan-paused="1"] .scan-finder .sf-sweep{animation-play-state:paused;op
 .omhd{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:0;position:relative}
 .omhd>.history-corner{padding:0;margin:0;min-width:0;width:100%;height:44px}
 .om-first{position:relative;grid-column:1;display:block;overflow:visible;text-align:left}
-.om-first .omfl{position:absolute;left:0;top:0;bottom:0;display:flex;align-items:center;gap:8px;max-width:calc(200% - 8px);
+.om-first .omfl{position:absolute;left:0;top:0;bottom:0;display:flex;align-items:center;gap:6px;width:max-content;max-width:calc(200% - 8px);
   white-space:nowrap;pointer-events:none}
 .om-first .omfl>b{min-width:0;overflow:hidden;text-overflow:ellipsis}
+/* P318 (owner, 2026-10-15: 「Not…」 / 「Background task finish…」): the label wraps to a second line before it is cut (the
+   header is 44 px: two 13 px lines fit), and the unread badge sits at the right end of its third, so the label gets the
+   middle third up to the badge instead of stopping half-way. The tap zones stay equal thirds. */
+.om-first .omfl>b{white-space:normal;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;line-clamp:2;line-height:1.15;overflow-wrap:normal;word-break:normal}
 .om-first .omfl>.t,.om-first .omfl>#omIcon{flex:none}
 .om-first #omIcon{display:inline-flex}
-.om[data-unread="1"] .om-first .omfl{max-width:calc(150% - 20px)}
-.om-unread{grid-column:2;position:relative;z-index:1;display:grid;place-items:center;background:transparent;cursor:default}
+.om[data-unread="1"] .om-first .omfl{max-width:calc(200% - 6px - 2.8em)}
+.om-unread{grid-column:2;position:relative;z-index:1;display:grid;place-items:center end;background:transparent;cursor:default}
 .om[data-unread="1"] .om-unread{cursor:pointer}
 .om-unread .unb{display:none;min-width:22px;height:22px;padding:0 6px;box-sizing:border-box;border-radius:999px;
   border:1px solid rgba(250,249,245,.6);background:var(--sage-sensation);color:var(--sooty);
@@ -2684,6 +2717,8 @@ body[data-scan-paused="1"] .scan-finder .sf-sweep{animation-play-state:paused;op
 .arrenew .setup-banner__open{color:var(--danger,#d33)}
 .arrenew .setup-banner__open::before{content:"";display:inline-block;width:8px;height:8px;border-radius:50%;background:currentColor;margin-right:8px;vertical-align:middle}
 .arreopen{color:var(--warn,#b7791f)}
+/* P314: 「额度用完，预计 HH:MM 自动继续」 — a status line, not a button; ✕ cancels */
+.qrbanner .setup-banner__open{margin:0;display:flex;align-items:center;cursor:default;white-space:normal;overflow:visible;text-overflow:clip;padding-block:8px}
 .arleft{font-variant-numeric:tabular-nums}
 .arlink{display:inline-flex;align-items:center;min-height:36px;font-weight:600;color:var(--accent);overflow-wrap:anywhere}
 /* ---- P292: one copy affordance for every code / pre (js/copycode.js) -----------------------------------------------
@@ -2777,7 +2812,7 @@ code[data-cc],pre[data-cc],.cc-in{cursor:copy}
 .mbody:has(.mvideo-surface){position:relative}
 .mvideo-surface{position:absolute;inset:4px 6px 48px 0;touch-action:manipulation;cursor:pointer}
 /* P256 / P252: mail receipt at the centre, above the settings and key card. */
-.toast.mail-saved{position:fixed;top:50%;z-index:90;transform:translate(-50%,-50%)}
+/* P256 / P252 mail receipt at the centre: since P318 the Noir Notification circle (.toast:is(.circle,.mail-saved), toast section). */
 .elev.secret #elev-rows dd{white-space:pre-line;overflow-wrap:anywhere}
 /* P247: the circle owns the mic/rings' centre; the copy stays outside the circle. */
 .pttc .pttring{top:50%}

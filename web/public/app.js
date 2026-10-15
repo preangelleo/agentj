@@ -29,6 +29,7 @@ import {initVersionNotice,setHostVersion} from './js/version-notice.js';
 import {initShare, onShareReady, forgetShare} from './js/share.js';
 import * as elevate from './js/elevate.js';     // F17: sudo / secret cards (§11)
 import * as authrescue from './js/authrescue.js';   // P258: AI 登录救援 (red dot + pushes)
+import * as qresume from './js/qresume.js';         // P314 (§32): 「额度用完，预计 HH:MM 自动继续」 banner
 import { registerMailForward } from './js/mailfwd.js';   // P189: file card → the dialog below
 import * as contacts from './js/contacts.js';   // P184 (§25): contact cards + 「转发到邮箱」
 import * as secretout from './js/secretout.js'; // F32: secret pickup cards (§18)
@@ -367,6 +368,7 @@ friends.configure({ openPanel: controls.openPanel, leave: () => leavePage(), age
 contacts.configure({ openSettingsMail: () => settings.openMail() });   // P184: no mailbox yet → Settings → 邮件通道
 upgcard.configure({ upgrade: () => api.upgradeNow() });   // P203: 「现在升级」 = this phone's signed /update
 authrescue.configure({ openAuth: () => settings.openAuth() });   // P288: the chat's 「现在续期」 banner → Settings → AI 登录救援
+qresume.configure();                                           // P314: ✕ on the quota banner = qr_cancel
 api.setUpgradeFlow(() => upgcard.start());                 // ≡ /update and Settings ask the computer first
 
 function onApp(m) {
@@ -390,6 +392,7 @@ function onApp(m) {
     case 'fr_changed': friends.changed(m); return;   // §17.7: something changed on the computer → the friends page re-reads
     case 'elev': elevate.add(m); return;             // F17 (§11)
     case 'auth_rescue': authrescue.onPush(m); return;   // P258 (§31)
+    case 'quota_resume': qresume.onPush(m); return;     // P314 (§32)
     case 'elev_done': elevate.done(m); return;
     case 'elev_refused': elevate.refused(m); return;   // ADR-A163: Face ID not accepted, the card stays open
     case 'ct_card': contacts.card(m); return;         // P184 (§25): save / complete a contact (the owner's tap)

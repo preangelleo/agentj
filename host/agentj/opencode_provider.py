@@ -6,9 +6,15 @@ What it writes: `provider.<id>` in `$XDG_CONFIG_HOME/opencode/opencode.json` (ot
 `opencode.json.agentj-bak`) with `options.apiKey = "{env:<ID>_API_KEY}"` — a NAME. The key itself never passes through here
 or through the Agent: the owner pastes it on the phone's secret card (`agentj secret request`, F17), which writes it into the
 service's environment file; the service restart makes it visible to the OpenCode that Agent J starts.
+
+P315 capabilities (OpenCode's own model keys): `--vision` writes `attachment: true` + `modalities.input: [text, image]`
+(without them OpenCode never sends a picture), `--no-vision` the text-only pair; `--max-output N [--context N]` writes
+`limit.output` / `limit.context` (OpenCode needs both; GLM-5.3's thinking alone can use up a 32k output budget). Adding
+again MERGES: other models of the same provider and keys the owner added by hand stay.
 """
 from __future__ import annotations
 
+import argparse
 import json
 import os
 import re
@@ -48,8 +54,36 @@ def _check_url(url: str) -> str:
     return url.rstrip("/")
 
 
+DEFAULT_CONTEXT = 128000   # P315: only when --max-output comes without --context and nothing is configured yet
+
+
+def capabilities(vision: bool | None = None, max_output: int | None = None, context: int | None = None) -> dict:
+    """P315: the per-model keys OpenCode reads — image input and the output / context limits ({} = say nothing)."""
+    out: dict = {}
+    if vision is not None:
+        out["attachment"] = bool(vision)
+        out["modalities"] = {"input": ["text", "image"] if vision else ["text"], "output": ["text"]}
+    for label, v in (("--max-output", max_output), ("--context", context)):
+        if v is not None and (not isinstance(v, int) or isinstance(v, bool) or not 1024 <= v <= 10_000_000):
+            raise ProviderError(f"{label} 要是 1024 到 10000000 之间的整数（token 数） / {label}: tokens, 1024–10000000")
+    if max_output is not None or context is not None:
+        out["limit"] = {k: v for k, v in (("context", context), ("output", max_output)) if v is not None}
+    return out
+
+
+def _merge_model(previous, new: dict) -> dict:
+    """`new` over `previous`, `limit` merged key by key; an output limit without a context gets DEFAULT_CONTEXT."""
+    prev = previous if isinstance(previous, dict) else {}
+    out = {**prev, **new}
+    lim = {**(prev.get("limit") if isinstance(prev.get("limit"), dict) else {}), **new.get("limit", {})}
+    if lim:
+        lim.setdefault("context", DEFAULT_CONTEXT)
+        out["limit"] = lim
+    return out
+
+
 def block(pid: str, base_url: str, models: list[str], api: str = "openai", name: str | None = None,
-          env: str | None = None) -> dict:
+          env: str | None = None, caps: dict | None = None) -> dict:
     if not ID_RE.match(pid or ""):
         raise ProviderError("服务商 id 只能用小写字母、数字、- 和 _（例如 myrelay） / provider id: lowercase letters, digits, - and _")
     if pid in RESERVED:
@@ -64,7 +98,7 @@ def block(pid: str, base_url: str, models: list[str], api: str = "openai", name:
         raise ProviderError("--key-env 要像 MYRELAY_API_KEY 这样的变量名")
     return {"npm": NPM[api], "name": (name or pid)[:60],
             "options": {"baseURL": _check_url(base_url), "apiKey": "{env:" + env + "}"},
-            "models": {m: {"name": m} for m in models}}
+            "models": {m: _merge_model({"name": m}, caps or {}) for m in models}}
 
 
 def _load(path: str) -> dict:
@@ -97,19 +131,28 @@ def _write(path: str, cfg: dict) -> None:
 
 
 def add(pid: str, base_url: str, models: list[str], api: str = "openai", name: str | None = None, env: str | None = None,
-        dry_run: bool = False, environ=None) -> dict:
+        dry_run: bool = False, environ=None, vision: bool | None = None, max_output: int | None = None,
+        context: int | None = None) -> dict:
     path = config_file(environ)
-    b = block(pid, base_url, models, api, name, env)
+    b = block(pid, base_url, models, api, name, env, capabilities(vision, max_output, context))
     cfg = _load(path)
     prov = cfg.get("provider")
     if prov is not None and not isinstance(prov, dict):
         raise ProviderError(f"{path} 里的 provider 不是对象：没有改它")
+    old = (prov or {}).get(pid)
+    if isinstance(old, dict):   # P315: merge — the owner's other models and hand-added keys stay
+        om = old.get("models") if isinstance(old.get("models"), dict) else {}
+        oo = old.get("options") if isinstance(old.get("options"), dict) else {}
+        caps = capabilities(vision, max_output, context)
+        b = {**old, **b, "options": {**oo, **b["options"]},
+             "models": {**om, **{m: _merge_model({"name": m, **(om[m] if isinstance(om.get(m), dict) else {})}, caps)
+                                for m in models}}}
     cfg["provider"] = {**(prov or {}), pid: b}
     if not dry_run:
         _write(path, cfg)
     var = b["options"]["apiKey"][5:-1]
     return {"file": path, "provider": pid, "models": [f"{pid}/{m}" for m in models], "key_env": var,
-            "written": not dry_run, "next": next_steps(pid, var, b["options"]["baseURL"], api, models[0])}
+            "written": not dry_run, "vision": [f"{pid}/{m}" for m in models if b["models"][m].get("attachment") is True], "next": next_steps(pid, var, b["options"]["baseURL"], api, models[0])}
 
 
 def next_steps(pid: str, var: str, base_url: str, api: str, model: str) -> list[str]:
@@ -154,6 +197,9 @@ def listing(environ=None) -> list[dict]:
 
 
 def cmd(a) -> int:
+    if a.action == "ark":                     # P315: the Volcano Ark Coding Plan preset (ark.py)
+        from . import ark
+        return ark.cmd(a)
     if a.action == "bailian":                 # P310: the Bailian plan preset (bailian.py)
         from . import bailian
         if a.id and not a.plan:
@@ -163,7 +209,8 @@ def cmd(a) -> int:
         if a.action == "add":
             if not a.id or not a.base_url:
                 raise ProviderError("用法：agentj provider add <id> --base-url https://… --model <模型> [--api openai|anthropic]")
-            r = add(a.id, a.base_url, a.model or [], a.api, a.name, a.key_env, a.dry_run)
+            r = add(a.id, a.base_url, a.model or [], a.api, a.name, a.key_env, a.dry_run,
+                    vision=a.vision, max_output=a.max_output, context=a.context)
         elif a.action == "remove":
             if not a.id:
                 raise ProviderError("用法：agentj provider remove <id>")
@@ -178,7 +225,8 @@ def cmd(a) -> int:
         return 0
     if a.action == "add":
         print(("已写入" if r["written"] else "（预演，未写入）") + f" {r['file']}：服务商 {r['provider']}，模型 {', '.join(r['models'])}；"
-              f"key 从环境变量 {r['key_env']} 读（这里不存 key）。")
+              f"key 从环境变量 {r['key_env']} 读（这里不存 key）。" +
+              (f"能看图：{', '.join(r['vision'])}。" if r["vision"] else ""))
         print("接下来：\n  1. " + r["next"][0] + "\n     （手机上弹出密钥卡，主人贴 key；Agent 看不到值）\n  2. " + r["next"][1] +
               "\n  3. " + r["next"][2])
     elif a.action == "remove":
@@ -195,19 +243,26 @@ def cmd(a) -> int:
 def add_parser(sub) -> None:
     sp = sub.add_parser("provider", help="OpenCode 的第三方模型服务（base_url + key）：add / list / remove；bailian = 阿里百炼 "
                                          "Token Plan 预设（大陆推荐）· a third-party model service for OpenCode (base URL + key); "
-                                         "bailian = the Alibaba Cloud Bailian Token Plan preset",
+                                         "bailian = the Alibaba Cloud Bailian Token Plan preset; ark = 火山方舟 "
+                                         "Coding Plan 预设 / the Volcano Ark Coding Plan preset",
                         description="Declares an OpenAI- or Anthropic-compatible service in OpenCode's config; the key is "
                                     "only referenced by name ({env:<ID>_API_KEY}) and is pasted on the phone's secret card.")
-    sp.add_argument("action", choices=["add", "list", "remove", "bailian"])
+    sp.add_argument("action", choices=["add", "list", "remove", "bailian", "ark"])
     sp.add_argument("id", nargs="?", help="服务商 id，例如 myrelay（模型写成 myrelay/<模型>）")
     sp.add_argument("--base-url", dest="base_url", help="例如 https://api.example.com/v1")
     sp.add_argument("--model", action="append", help="模型 id，可重复")
     sp.add_argument("--api", choices=sorted(NPM), default="openai", help="openai（默认，OpenAI 兼容）或 anthropic（Anthropic 兼容）")
     sp.add_argument("--name", help="显示名")
     sp.add_argument("--key-env", dest="key_env", help="key 的环境变量名（默认 <ID>_API_KEY）")
+    sp.add_argument("--vision", action=argparse.BooleanOptionalAction, default=None,
+                    help="add：这些模型能看图（--no-vision = 纯文本）/ the models read images (--no-vision: text only)")
+    sp.add_argument("--max-output", dest="max_output", type=int, help="add：输出上限 token / output limit in tokens")
+    sp.add_argument("--context", type=int, help="add：上下文长度 token（配 --max-output，默认 128000）/ context window")
     sp.add_argument("--plan", choices=["token-plan", "coding-plan"],
                     help="bailian：token-plan（默认，个人版，含 Qwen 3.8 Max）或 coding-plan / which Bailian plan")
-    sp.add_argument("--lang", choices=["zh", "en"], help="bailian：说明文字的语言 / text language")
+    sp.add_argument("--harness", choices=["opencode", "claude"],
+                    help="ark：opencode（默认）或 claude（打印 Claude Code 的 profile 三步）/ ark: which harness")
+    sp.add_argument("--lang", choices=["zh", "en"], help="bailian / ark：说明文字的语言 / text language")
     sp.add_argument("--dry-run", dest="dry_run", action="store_true")
     sp.add_argument("--json", action="store_true")
     sp.set_defaults(fn=lambda a: sys.exit(cmd(a)))

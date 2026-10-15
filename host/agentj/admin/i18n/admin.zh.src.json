@@ -142,7 +142,7 @@
   "session.link_used": "这个链接已经用过或者过期了。在运行 `agentj admin` 的终端里按回车，拿一个新链接。",
   "session.bye": "已退出。要再打开，在运行 `agentj admin` 的终端里按回车，拿一个新链接。",
   "session.unreachable": "暂时连不上 Agent 管理页（`agentj admin` 可能已经关了）。",
-  "footer.tagline": "电脑上的 AI 助手干活，你用手机指挥它。",
+  "footer.tagline": "电脑上的 AI 董事长助理，通过任何浏览器远程遥控它干活。",
   "footer.help": "帮助",
   "footer.trust": "信任",
   "footer.docs": "文档",

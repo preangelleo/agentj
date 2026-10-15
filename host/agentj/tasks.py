@@ -365,6 +365,9 @@ class Scheduler:
         self.instance_id = uuid.uuid4().hex  # ownership is never inferred from a reusable PID
         self.queued: dict[str, str] = {}
         self.recovered = False
+        self.resume: dict[str, dict] = {}    # P314: tid → the quota_resume record its next run continues
+        self.cur_resume: dict | None = None
+        self.limit: dict | None = None       # P314: the running run ended on a used-up usage limit {harness, at}
 
     @property
     def st(self):
@@ -522,7 +525,11 @@ class Scheduler:
             res["line"] = "合同已变更，没有运行 / Contract changed; did not run"
             self._finish(e, res)
             return res
-        if trigger == "schedule":
+        resume = self.resume.pop(tid, None) if trigger == "quota_resume" else None
+        qr = getattr(host, "quota_resume", None)
+        if qr is not None and trigger != "quota_resume":
+            qr.owner_spoke("task:" + tid)              # P314: this run is the continuation; the waiting one is not needed
+        if trigger == "schedule" or (resume or {}).get("trigger") == "schedule":
             on = load(self.st)["on"].get(tid)
             if not on or on.get("tsha") != e["tsha"]:
                 res["line"] = "定时任务已禁用，没有运行 / Schedule disabled; did not run"
@@ -534,7 +541,12 @@ class Scheduler:
         note = None
         try:                                         # P254: quota alarm → this run on another AI account (or the owner's card)
             from . import quota
-            kind, note = await quota.route(host, kind, e["task"], title)
+            if resume and resume.get("to"):          # P314: the switch was decided when the limit was hit
+                kind, note = resume["to"], (f"(run on {resume['to']}: {resume['harness']} usage limit used up)"
+                                            if getattr(host, "lang", "zh") == "en" else
+                                            f"（{resume['harness']} 额度用完，这次改用 {resume['to']} 运行）")
+            else:
+                kind, note = await quota.route(host, kind, e["task"], title)
         except asyncio.CancelledError:
             res.update(line="已急停，没有运行", stopped=True)
             self._finish(e, res)
@@ -580,6 +592,7 @@ class Scheduler:
                         raise TaskError("busy", "运行记录未完成落盘，没有运行 / Run journal did not settle; did not run")
                     if host.agent:
                         await host.agent.halt(clear_queue=False)   # resumes on the next message; queued controls stay
+                    self.cur_resume, self.limit = resume, None
                     out, code = await asyncio.wait_for(self._exec(kind, e, research), RUN_TIMEOUT)
                 finally:
                     if busy is not None:
@@ -595,6 +608,8 @@ class Scheduler:
                 res["line"] = "回答里没有 VERDICT 行（按失败处理）" if out.strip() else f"没有回答（{code}）"
             if note:
                 res["line"], res["harness"] = (res["line"] + " " + note)[:300], kind
+            if self.limit and not v:                 # P314: stopped by the usage limit → rerun after the reset
+                await self._limit_hit(e, title, kind, trigger, resume)
             res["report"] = await asyncio.to_thread(self._save, e, out, research, rid)
             self._check_report(e, res, run_started)
         except asyncio.TimeoutError:
@@ -614,6 +629,25 @@ class Scheduler:
         res["secs"] = round(time.monotonic() - t0, 1)
         self._finish(e, res)
         return res
+
+    async def _limit_hit(self, e: dict, title: str, kind: str | None, trigger: str, resume: dict | None) -> None:
+        """P314: one record for this task — after the reset, or at once on another account (quota.auto_switch on, the
+        task does not pin its harness, that harness shows room and answers a handshake)."""
+        qr = getattr(self.host, "quota_resume", None)
+        lim, self.limit = self.limit, None
+        if qr is None or not kind:
+            return
+        from . import quota
+        from .quota_resume import SWITCH_DELAY
+        to = None
+        with contextlib.suppress(Exception):
+            if quota.auto_switch_on(getattr(self.host, "preferences", None)):
+                rep = await asyncio.to_thread(quota.report, self.st.root, None, None, None,
+                                              getattr(self.host, "meter_state", None))
+                to = await quota.pick_alt(rep, kind, quota.allowed_harnesses(e["task"]), quota.handshake)
+        first = (resume or {}).get("trigger", trigger)
+        qr.hit("task:" + e["id"], kind, time.time() + SWITCH_DELAY if to else lim.get("at"), title,
+               frm_resume=(resume or {}).get("id"), to=to, task={"trigger": first})
 
     @staticmethod
     def _check_report(e: dict, res: dict, since: float) -> None:
@@ -687,6 +721,9 @@ class Scheduler:
         cfg["dir"] = e["dir"]
         wd = cfg["dir"]
         prompt = prompt_for(e, research)
+        if self.cur_resume:                          # P314: the automatic rerun after a used-up usage limit
+            from .quota_resume import task_note
+            prompt += task_note(self.cur_resume, getattr(host, "lang", "zh"))
         if kind == "claude":
             a = agents.ClaudeAgent(host, cfg)
             argv = a.argv(None, research=research)
@@ -723,11 +760,13 @@ class Scheduler:
                 from .agent_qwen import QwenAgent as Runner
             else:
                 from .agent_opencode import OpenCodeAgent as Runner
-            self.runner = Runner(host, cfg, persist=False, research=research)
+            self.runner = runner = Runner(host, cfg, persist=False, research=research)
             try:
-                return await self.runner.run_once(prompt)
+                return await runner.run_once(prompt)
             finally:
                 self.runner = None
+                if getattr(runner, "limit_hit", None):   # P314: set by quota_resume.main_hit from its fail_notice
+                    self.limit = runner.limit_hit
         else:
             raise TaskError("unsupported", "这个 Agent 还不能跑定时任务")
         if cfg.get("fence", True):
@@ -747,7 +786,7 @@ class Scheduler:
         msg = json.dumps({"type": "user", "message": {"role": "user", "content": prompt}}, ensure_ascii=False) + "\n"
         p.stdin.write(msg.encode())
         await p.stdin.drain()
-        last = ""
+        last, rate = "", None
         while line := await p.stdout.readline():
             try:
                 ev = json.loads(line)
@@ -760,9 +799,15 @@ class Scheduler:
                 for b in m.get("content") or []:
                     if isinstance(b, dict) and b.get("type") == "text" and isinstance(b.get("text"), str):
                         texts.append(b["text"])
+            elif ev.get("type") == "rate_limit_event" and isinstance(ev.get("rate_limit_info"), dict):
+                rate = ev["rate_limit_info"]
             elif ev.get("type") == "result":
                 if isinstance(ev.get("result"), str):
                     last = ev["result"]
+                from . import quota_resume              # P314
+                if ev.get("is_error") and quota_resume.claude_limit(last):
+                    self.limit = {"harness": "claude", "at": quota_resume.reset_time(
+                        "claude", last, rate, None, host.st.root)}
                 break
         with contextlib.suppress(Exception):
             p.stdin.close()

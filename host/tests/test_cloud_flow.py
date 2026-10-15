@@ -221,7 +221,8 @@ class Flow(unittest.TestCase):
         for rec in self.log():
             self.assertLessEqual(set(rec), {"ts", "ev", "channel", "cid", "device", "name", "reason", "kind", "bytes",
                                             "code_ok", "seq", "status", "trigger", "tenant",
-                                            "phase", "code", "ms"})   # P129: relay_down/up — fixed phase word, close code, ms
+                                            "phase", "code", "ms",    # P129: relay_down/up — fixed phase word, close code, ms
+                                            "why", "http_status", "count"})   # P317: relaydiag reason slug, HTTP status, attempt n
             if rec["ev"].startswith("report_"):
                 self.assertNotIn("name", rec)
         p.send_signal(signal.SIGTERM)
