@@ -301,6 +301,14 @@ PAIRING_LINE['en'] += ('When the owner says "open the admin page", "admin page" 
 RECONNECT_LINE['zh'] += '发给主人本人的（遥控器、TG 私聊、通讯录 0 号位邮箱）原样不打码，密钥除外（自动改手机密钥卡）；发外人照旧打码。\n'
 RECONNECT_LINE['en'] += "What goes to the owner themself (paired remotes, the Telegram private chat, the slot-0 e-mail of the address book) arrives as written, keys excepted (they become a phone secret pickup card); outward channels are still masked.\n"
 
+# P322: the question card for every harness (`agentj ask`) and "never claim a card you did not see shown". Host line, core
+# hashes unchanged; left out of the shared-Claude hook path (Claude Code's native AskUserQuestion works there, inline cap).
+CARD_LINE = {
+    "zh": "提问卡：要主人在手机上选择或回答时，Claude Code 用原生 AskUserQuestion；其他 harness（Codex、OpenCode、Kimi、Qwen…），或原生提问工具不可用、被拒（如 Codex 非计划模式下的 request_user_input）时，用 `agentj ask \"<问题>\" -o <选项> -o <选项>`（--multi 多选；不给 -o 是开放题；多题或选项预览用 --json，形状同 AskUserQuestion）。它等主人作答并输出 JSON，Bash 超时设到 200 秒以上；被打断时卡片仍在，答案会以〔Agent J 系统提示〕送来，或 `agentj ask --wait <id>`。只有输出 shown=true 才算已弹出、result=answered 才算已回答；工具只回 accepted、报错或说不支持时，绝不说「已弹出」，如实说明并改用文字提问。typed_in_chat=true 就结束这一轮，等主人打字。\n",
+    "en": "Question cards: to have the owner choose or answer on the phone, Claude Code uses its native AskUserQuestion; under any other harness (Codex, OpenCode, Kimi, Qwen…), or when the native question tool is unavailable or refused (e.g. Codex request_user_input outside Plan mode), run `agentj ask \"<question>\" -o <option> -o <option>` (--multi for multiple choice; no -o = an open question; several questions or option previews via --json, the AskUserQuestion shape). It waits for the answer and prints JSON: set the Bash timeout above 200 s. If the call is cut off the card stays; the answer arrives as an [Agent J system notice], or run `agentj ask --wait <id>`. Only shown=true means the card was shown and only result=answered means the owner answered; when a tool merely returns accepted, an error or \"not supported\", never say the card popped up: say what happened and ask in text. typed_in_chat=true → end the turn and wait for the owner's words.\n",
+}
+
+
 def prompt(cfg: dict, harness: str | None = None) -> str:
     """harness="claude" (P165, the shared-Claude hook path): the Codex-only line is left out so the zh text stays inline
     under Claude Code's 10 000-character additionalContext cap (shared.SharedClaudeAgent.INLINE_MAX)."""
@@ -310,7 +318,7 @@ def prompt(cfg: dict, harness: str | None = None) -> str:
     extra = cfg.get("instructions") or ""
     if not isinstance(extra, str):
         raise IdentityError("agent.instructions must be append-only text")
-    return (core + ("" if core.endswith("\n") else "\n") + LANGUAGE_LINE[lang] + ELEVATE_LINE[lang] + SUPPORT_LINE[lang] + OPERATIONS_LINE[lang] + SILENCE_LINE[lang] + ("" if harness == "claude" else SHARED_CODEX_LINE[lang]) + PAIRING_LINE[lang] + ONBOARDING_LINE[lang] + MULTI_USER_LINE[lang] + BOT_RECOVERY_LINE[lang] + UPDATE_WEB_LINE[lang] + BROWSER_LINE[lang] + FIRST_RUN_LINE[lang] + RECONNECT_LINE[lang] + HEARTBEAT_LINE[lang] + SWITCH_HARNESS_LINE[lang] + GOAL_LINE[lang] + MAIL_LINE[lang] + handoff_line(cfg, lang, harness)
+    return (core + ("" if core.endswith("\n") else "\n") + LANGUAGE_LINE[lang] + ELEVATE_LINE[lang] + SUPPORT_LINE[lang] + OPERATIONS_LINE[lang] + SILENCE_LINE[lang] + ("" if harness == "claude" else SHARED_CODEX_LINE[lang]) + PAIRING_LINE[lang] + ONBOARDING_LINE[lang] + MULTI_USER_LINE[lang] + BOT_RECOVERY_LINE[lang] + UPDATE_WEB_LINE[lang] + BROWSER_LINE[lang] + FIRST_RUN_LINE[lang] + RECONNECT_LINE[lang] + HEARTBEAT_LINE[lang] + SWITCH_HARNESS_LINE[lang] + GOAL_LINE[lang] + MAIL_LINE[lang] + ("" if harness == "claude" else CARD_LINE[lang]) + handoff_line(cfg, lang, harness)
             + ("\n<User preferences — append only; core takes precedence>\n" + extra + "\n</User preferences>\n" if extra else "")
             + private_block(cfg))
 

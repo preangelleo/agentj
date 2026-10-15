@@ -61,7 +61,10 @@ REASON = {
            "launch_failed": "安排不了切换任务", "restart_failed": "重启 Agent J 失败",
            "wrong_agent": "重启后接上的不是 {x}", "agent_down": "重启后 {x} 没有接上",
            "hello_refused": "重启后 {x} 不接收消息", "no_reply": "{x} 切换后一直没有自报家门", "not_idle": "{x} 回答后一直没有空下来",
-           "start_failed": "{x} 的长驻会话打不开", "start_timeout": "{x} 的长驻会话 150 秒内没打开（MCP 服务器 / 插件太多，或电脑太忙）"},
+           "start_failed": "{x} 的长驻会话打不开", "start_timeout": "{x} 的长驻会话 150 秒内没打开（MCP 服务器 / 插件太多，或电脑太忙）",
+           "owner_unreachable": "设置里指定的 {x} server（agent.shared_opencode_port）连不上；让 Agent J 自己管 {x}：agentj config unset agent.shared_opencode_port",
+           "owner_password": "设置里指定的 {x} server 要密码，Agent J 还没有（agentj secret request --name OPENCODE_SERVER_PASSWORD）",
+           "owner_session": "设置里指定的 {x} server 里没有指定的会话（agent.shared_session_id）"},
     "en": {"not_installed": "{x} is not installed", "not_supported": "{x} is not supported yet",
            "native_timeout": "{x} did not answer within 60 s (usually not signed in, an expired token, or no network / proxy)",
            "native_failed": "{x} could not complete a call (usually not signed in or an expired token)",
@@ -80,7 +83,10 @@ REASON = {
            "hello_refused": "after the restart {x} did not take messages", "no_reply": "{x} never introduced itself after the switch",
            "not_idle": "{x} did not become idle after answering",
            "start_failed": "{x}'s long-running session cannot open",
-           "start_timeout": "{x}'s long-running session did not open within 150 s (too many MCP servers / plugins, or a busy computer)"},
+           "start_timeout": "{x}'s long-running session did not open within 150 s (too many MCP servers / plugins, or a busy computer)",
+           "owner_unreachable": "the {x} server named in the settings (agent.shared_opencode_port) cannot be reached; let Agent J manage {x} itself: agentj config unset agent.shared_opencode_port",
+           "owner_password": "the {x} server named in the settings needs a password Agent J does not have (agentj secret request --name OPENCODE_SERVER_PASSWORD)",
+           "owner_session": "the pinned session (agent.shared_session_id) is not on the {x} server named in the settings"},
 }
 
 # P312: why a new Agent stayed silent (serve's status.agent_phase) + the owner's next step
@@ -90,7 +96,8 @@ DETAIL = {
            "approval": "：在等手机上的批准卡。下一步：处理掉那张卡再切",
            "failed": "：启动失败。下一步：运行 agentj doctor，修好再切",
            "turn": "：会话已打开但一直没说话（多半是模型服务慢或网络 / 代理不稳）。下一步：稍后再切；还不行在工作目录里运行 {cmd} 计时",
-           "idle": "：没有接手自报家门的消息。下一步：再切一次；还不行运行 agentj doctor"},
+           "idle": "：没有接手自报家门的消息。下一步：再切一次；还不行运行 agentj doctor",
+           "empty": "：自报家门那一轮一下子就结束了，一个字也没说（会话没真正接上）。下一步：运行 agentj doctor，修好再切"},
     "en": {"starting": ": still starting (loading MCP servers / plugins, opening the session). Next: switch again when the computer "
                        "is less busy, or turn off unused MCP servers / plugins in its config",
            "prompt": ": stuck on a terminal prompt. Next: run {cmd} once by hand in Agent J's working folder, answer it, switch again",
@@ -98,7 +105,9 @@ DETAIL = {
            "failed": ": it failed to start. Next: run agentj doctor, fix it, then switch again",
            "turn": ": the session opened but it never spoke (usually a slow model service or an unstable network / proxy). Next: "
                    "switch again later; if it persists, time {cmd} in the working folder",
-           "idle": ": it never picked up the self-introduction. Next: switch again; if it persists run agentj doctor"},
+           "idle": ": it never picked up the self-introduction. Next: switch again; if it persists run agentj doctor",
+           "empty": ": the self-introduction turn ended at once without a word (the session never really connected). Next: run "
+                    "agentj doctor, fix it, then switch again"},
 }
 ERR = {     # agent.codex_failure kinds of the harness's last stderr line
     "zh": {"auth": "没登录或登录失效（codex login）", "network": "连不上服务（查代理 / VPN）", "region": "地区不受支持",
@@ -478,7 +487,11 @@ def gate(target: str, model: str | None = None, probe=None) -> dict:
 
 
 def start_probe(st, target: str, cfg: dict, limit: float = START_LIMIT) -> dict | None:
-    """P312: the start the session will make, measured before the switch (Codex only: agent_codex.start_probe)."""
+    """P312: the start the session will make, measured before the switch (Codex: agent_codex.start_probe; P326 OpenCode:
+    opencode_start — our own `opencode serve`, or the owner's server named in the settings)."""
+    if target == "opencode":
+        from .opencode_start import start_probe as opencode
+        return opencode(st, cfg, limit)
     if target != "codex":
         return None
     from .agent_codex import start_probe as codex
@@ -539,7 +552,8 @@ def request(st, target: str | None, model: str | None = None, dry_run: bool = Fa
     note = opencode_free.privacy_note(m, _lang_of(st)) if target == "opencode" else None
     if target == "opencode" and not note:            # P310: Bailian Token Plan terms ride the same "privacy" field
         from .bailian import model_note
-        note = model_note(m, "en" if _lang_of(st) == "en" else "zh")
+        from .ark import model_note as ark_note     # P315
+        note = model_note(m, "en" if _lang_of(st) == "en" else "zh") or ark_note(m, "en" if _lang_of(st) == "en" else "zh")
     base = {"target": target, "from": rec.get("from") or cur, "version": rec.get("version"),
             **({"model": m} if m else {}), **({"privacy": note} if note else {}),
             **({"back": rec["back"]} if isinstance(rec.get("back"), str) else {}), **({"undo": True} if undo else {}),
@@ -752,6 +766,12 @@ def _hello(ctl, req: dict, sleep, clock, wait: float = HELLO_WAIT) -> dict | Non
             said, end = True, clock() + IDLE_WAIT
         if said and s.get("agent_status") == "idle":
             return None
+        ts, te = s.get("agent_turn_start_at") or 0, s.get("agent_turn_end_at") or 0
+        if not said and ts >= t0 and te >= ts and s.get("agent_status") == "idle":
+            # P326: the hello turn already ended without a word (Mac 10-15: one second, then three minutes of waiting) —
+            # a failed start or an empty turn, said now, not after HELLO_WAIT
+            phase = "failed" if phase == "failed" or s.get("agent_turn_failed") else "empty"
+            end = clock()
         if not said:
             if phase == "failed":
                 end = clock()

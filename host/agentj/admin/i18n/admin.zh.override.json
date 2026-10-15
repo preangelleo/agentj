@@ -15,5 +15,6 @@
   "pair.pass_label": "遥控器配对密码",
   "pair.pass_wrong": "遥控器配对密码不对，再错 {n} 次会暂时锁定。设备还在等，请再输一次。",
   "deny.pass_locked": "遥控器配对密码连续输错，暂时锁定了，请稍后再试。",
-  "err.passphrase_required": "还要输入遥控器配对密码。"
+  "err.passphrase_required": "还要输入遥控器配对密码。",
+  "footer.tagline": "电脑上的 AI 董事长助理，通过任何浏览器远程遥控它干活。"
 }

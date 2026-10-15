@@ -395,7 +395,7 @@ function ctxSection(box, f) {
     if (cps(text) > FRIEND_CTX_MAX) { toast(t('fr.ctx.tooLong', { max: FRIEND_CTX_MAX }), 3000); return; }
     save.disabled = true;
     const res = await write('fr_ctx', { friend: f.id, text: text.trim() ? text : '' });
-    if (res.ok) { ctxText = { friend: f.id, text: text.trim() ? text : '' }; ctxDraft = { friend: null, text: null }; toast(t('fr.ctx.saved'), 3000); }
+    if (res.ok) { ctxText = { friend: f.id, text: text.trim() ? text : '' }; ctxDraft = { friend: null, text: null }; toast(t('fr.ctx.saved'), 3000, 'success'); }
     else toast(t('fr.fail', { why: why(res.why) }), 3000);
     check();
   });
@@ -467,7 +467,7 @@ function viewCard(box) {
     const b = e.currentTarget; b.disabled = true;
     const o = { owner: owner.value.trim().slice(0, 32), intro: intro.value.replace(/\s+/g, ' ').trim().slice(0, 140) };
     const res = await write('fr_card', o);
-    toast(res.ok ? t('fr.saved') : t('fr.fail', { why: why(res.why) }), 3000);
+    toast(res.ok ? t('fr.saved') : t('fr.fail', { why: why(res.why) }), 3000, res.ok ? 'success' : 'error');
     if (res.ok && data) { Object.assign(data.me.card, o); renderMain(); }
     else b.disabled = false;
     refresh();
@@ -657,7 +657,7 @@ function viewGroup(box) {
     err.hidden = true;
     const b = e.currentTarget; b.disabled = true;
     const res = await write('pg_set', { group: out });
-    toast(res.ok ? t('fr.saved') : t('fr.fail', { why: why(res.why) }), 3000);
+    toast(res.ok ? t('fr.saved') : t('fr.fail', { why: why(res.why) }), 3000, res.ok ? 'success' : 'error');
     if (res.ok) { V.group = out.id; go('groups'); }
     else b.disabled = false;
     refresh();

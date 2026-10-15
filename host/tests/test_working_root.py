@@ -183,7 +183,8 @@ class WorkingRoot(unittest.TestCase):
                 # A1 (0.15): the language is hot for the next turn (the identity line is re-injected), no serve restart
                 hot = key == 'appearance.language'
                 self.assertEqual(result['applied'], hot)
-                self.assertEqual(result['needs'], [] if hot else ['restart serve'])
+                # P320: the instructions are the reload tier (agentj reload / the phone's Reload), the root still a restart
+                self.assertEqual(result['needs'], [] if hot else ['reload'] if key == 'agent.instructions' else ['restart serve'])
                 self.assertEqual(preferences.get(preferences.effective(self.st), key), value)
         asyncio.run(check())
 

@@ -100,9 +100,13 @@ def run(st, lang="zh", session=None, ask=None, out=None, ctl=None, service=None,
                                   f"relay not connected → restarting the background service failed ({type(e).__name__})"))
             res = _wait(st, ctl, sleep, 30, lambda r: up(r) and r.get("relay_state") == "up")
         if not up(res) or res.get("relay_state") != "up":
-            return finish(False, "电脑连不上 Agent J 中继（网络或账户问题），手机暂时联系不到它：检查网络后运行 agentj doctor。",
-                          "This computer cannot reach the Agent J relay (network or account), so the phone cannot reach it: "
-                          "check the network, then run agentj doctor.", broken="relay")
+            from . import relaydiag     # P317: where the host leg sticks (phase / reason / close code), not a guess
+            last = res.get("relay_last") if isinstance(res, dict) else None
+            return finish(False, "电脑连不上 Agent J 中继，手机暂时联系不到它" + (f"：卡在 {relaydiag.text(last, 'zh')}" if last else
+                          "（网络或账户问题）") + "。运行 agentj doctor 看主机腿探测。",
+                          "This computer cannot reach the Agent J relay, so the phone cannot reach it" + (
+                          f": stuck at {relaydiag.text(last, 'en')}" if last else " (network or account)")
+                          + ". Run agentj doctor for the host-leg probe.", broken="relay", relay_last=last)
         steps.append(_say(lang, "中继已连上", "relay connected"))
 
     # ---- 3. agent

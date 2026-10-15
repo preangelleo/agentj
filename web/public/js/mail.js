@@ -3,7 +3,7 @@
 // and 「立即检查」 run on the computer. Everything here is inside the Noise session; addresses are shown with textContent only.
 import { mailServers } from './mail-servers.js';
 import { t } from './t.js';
-import { el, toast } from './ui.js';
+import { el, toast, notify } from './ui.js';
 import { ask1, isReady } from './session.js';
 
 let view = null;          // the host's last `mail_res.view`
@@ -165,7 +165,7 @@ export function configure() {
     busy = true; render(); say(t('mail.keyOpen'));
     const m = await call({ t: 'mail_key' }, 660000);
     busy = false; render();
-    if (m?.ok) { toast(t('mail.passwordSaved')); el('toast').classList.add('mail-saved'); }
+    if (m?.ok) notify({ kind: 'success', shape: 'circle', text: t('mail.passwordSaved'), ms: 2400 });   // P318: the centred ✓ (was .mail-saved)
     if (m) say(m.ok ? t(m.verify === 'fail' ? 'mail.testFail' : 'mail.testOk', {why: why(m.detail)}) : t('mail.keyFail', {why: why(m.why)}));
   });
   el('mail-test').addEventListener('click', async () => {

@@ -529,7 +529,8 @@ export async function runCases({ B, web, fake, only }) {
   });
   await C('composer-placeholder', async () => {
     await clearField();
-    ok((await ev(`document.getElementById('input').placeholder`)) === T('r.ph.long', { cap: T('r.cap.wan', { n: 2 }) }), 'the long form fits at 390 px: ' + await ev(`document.getElementById('input').placeholder`));
+    // P318: one short hint on every width; the cap shows on the field near the limit only (p318.mjs)
+    ok((await ev(`document.getElementById('input').placeholder`)) === T('p318.ph'), 'the short hint at 390 px: ' + await ev(`document.getElementById('input').placeholder`));
   });
   await C('clear-input-button', async () => {
     await typeIn('清掉我');
@@ -1158,7 +1159,7 @@ export async function runCases({ B, web, fake, only }) {
   await C('aj-i18n', async () => {
     await ev(`(document.getElementById('settings').hidden && document.getElementById('setBtn').click()); document.querySelector('[data-set-lang="en"]').click()`);
     await wait(`document.documentElement.lang === 'en'`);
-    ok((await ev(`document.getElementById('send').getAttribute('aria-label')`)) === D.en['r.say.send'] && (await ev(`document.getElementById('input').placeholder`)).startsWith('Say something'), 'English everywhere');
+    ok((await ev(`document.getElementById('send').getAttribute('aria-label')`)) === D.en['r.say.send'] && (await ev(`document.getElementById('input').placeholder`)) === D.en['p318.ph'], 'English everywhere');
     await ev(`document.querySelector('[data-set-lang="zh"]').click(); (!document.getElementById('settings').hidden && document.getElementById('setBtn').click())`);
     await wait(`document.documentElement.lang === 'zh-CN'`);
   });

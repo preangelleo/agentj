@@ -1302,6 +1302,8 @@ agentj agent route
 
 它向 Claude、OpenAI 和 Kimi 的服务器各问一次，不带任何 key。时区只在拿不准时参考，不会发到任何地方。Claude Code 和 Codex 用不了时，它会给出 Agent J 官方的邀请链接，链接后面紧跟这句话：「这是 Agent J 官方的邀请链接，您和我们各得一次抽奖」。24 小时内付费订阅才算数。订阅后在 Kimi Code 控制台新建一把 key，只粘贴进手机上的密钥卡；Agent 会把 OpenCode 切到 `kimi-code-plan-cn/k3`。它也会列出备选：千问（阿里云百炼中国大陆站）、智谱 GLM / DeepSeek、OpenRouter、Kimi 开放平台按量付费。已经有其中某个服务账号的，继续用就行。在海外站 kimi.ai 买的会员，key 不通用，改用 `kimi-code-plan-global/k3`。和 Kimi 并列，它还会推荐[阿里百炼 Token Plan](/docs/setup-agents/#bailian)，两条由你挑。
 
+已经在用火山方舟 Coding Plan？不用再买别的，直接用它：见[火山方舟 Coding Plan](/docs/setup-agents/#ark)。
+
 ## 运行要求 {#requirements}
 
 macOS：先试运行 `opencode --version`（或所选 Agent 的 `--version`）；能正常运行就能继续安装，不按系统版本号拦截。一键安装会实际试运行它下载的固定版 OpenCode；若实际出现 dyld / _ubrk_clone 或无法运行，才提示失败原因。PATH 或 npm 重装不能修复系统库，请升级系统、换电脑，或用能正常运行的其他 Agent 按手动路线安装。Intel Mac 使用 x86_64 工具与 /usr/local Homebrew，Apple Silicon 使用 arm64 与 /opt/homebrew；不要混用架构。Gemini 当前官方列 macOS 15+。物理 Intel Mac/Windows 安装尚需对应机器验证。
@@ -1366,3 +1368,15 @@ Qwen Code（`qwen`，阿里，Apache-2.0 开源）是阿里自己的编程 Agent
 装好用 `qwen --version` 检查，Agent J 需要 0.25 或更新。它的免费登录 2026-04-15 已经停了，所以 key 就是它的登录：用上面那张手机密钥卡（`BAILIAN_TOKEN_PLAN_API_KEY`）。Agent J 只在内存里把 key 交给 Qwen Code，不往 `~/.qwen` 写任何东西。如果你自己已经配好了 Qwen Code（比如用过 `bl config agent --agent qwen-code`），就用你自己的设置。然后运行 `agentj agent switch qwen`。
 
 隔离和审批：Agent J 让 Qwen Code 和别的工具一样在隔离里运行。Qwen Code 默认的模式会自己批准一部分操作，Agent J 每次都把它切回「每次都问」，每个请求都发到你手机上，只批这一次。手机上的 /model 会列出套餐里的模型，名字后面带“看图”两个字的能读图。
+
+## 火山方舟 Coding Plan（中国大陆） {#ark}
+
+适合谁：你**已经开通**了火山引擎方舟 Coding Plan（Lite 或 Pro），或者想用一个套餐同时用上字节豆包、Kimi、智谱 GLM、DeepSeek 和 MiniMax 的模型。其他人还是首选上面的 Kimi 和百炼。价格只以方舟控制台为准。
+
+哪些模型能看图（2026-10-15 实测）：`doubao-seed-2.1-pro`（默认）、`kimi-k3`（只在 Pro 套餐里）、`kimi-k2.7-code`、`glm-5-3-flash`、`minimax-m3`、`deepseek-v4-1-flash` 能看截图；`glm-5.3`、`deepseek-v4-pro`、`deepseek-v4-flash` 是纯文本。Agent J 会把这些写进 OpenCode 的设置，同时调高输出上限（GLM-5.3 的思考会用光 OpenCode 默认的 32k）。Coding Plan 不含生图模型。
+
+这是给编程工具交互使用的套餐，条款以方舟控制台为准。定时任务、客服 bot 这类无人值守的活，请用按量付费的方舟 key：Agent J 不会把 Coding Plan 的 key 交给定时任务或 bot。
+
+在方舟控制台（https://console.volcengine.com/ark/）新建一把 API Key。然后让 Agent 帮你配：用 OpenCode 时它运行 `agentj provider ark`，把套餐里的模型全部写进 OpenCode 的设置，你原来的设置一项都不动。接着手机上会弹出密钥卡，key 只粘贴在那里。方舟没有只读的核对接口，所以第一条回复就是核对。最后 Agent 把 OpenCode 切到 `ark-coding-plan/doubao-seed-2.1-pro`。
+
+想用 Claude Code？让 Agent 改为给 Claude Code 配方舟，它按 Agent J 打印的三步做，key 还是走手机密钥卡。Claude Code 的 Haiku、Sonnet、Opus 默认模型和子 agent 模型都会指向同一个方舟模型，后台任务就不会去向方舟要 Claude 的模型名。

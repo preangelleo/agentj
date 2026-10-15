@@ -334,6 +334,7 @@ class SharedClaudeAgent(Agent):
         if emit:
             emit("shared_stop", agent="claude", phone=self.phone_turn, phone_input=self.phone_turn and self.phone_seen, source=source)
         self.native_turn = False
+        self._limit_check(reply)
         if self.phone_turn and (self.phone_seen or self.phone_claim):
             self.phone_reply_seen = True
             if self.phone_claim:
@@ -345,6 +346,14 @@ class SharedClaudeAgent(Agent):
             self.host.desktop_text(public_text(reply))
             self.host.desktop_end()
             self.system_done.set()
+
+    def _limit_check(self, reply):
+        """P314: the shared session's turn (phone or desktop) ended on Claude Code's own usage-limit line → continue by
+        itself after the reset. Only a short reply counts: the model talking about limits is not the limit."""
+        from . import quota_resume
+        if isinstance(reply, str) and len(reply) <= 300 and quota_resume.claude_limit(reply):
+            with contextlib.suppress(Exception):
+                quota_resume.main_hit(self, "claude", reply)
 
     def authentic(self, event) -> bool:
         """A14 (P139): an event for the served session (its session id, or a /clear of it) must carry the served session's
@@ -2232,6 +2241,24 @@ def owner_password_note() -> str:
             " \"opencode\"), then `agentj service restart`.")
 
 
+OC_SESSION = re.compile(r"ses[A-Za-z0-9_-]+")     # an OpenCode session id (Claude / Codex pins are UUIDs)
+# P326: what the owner reads when the OpenCode server THEY named cannot be used — what happened and the one command that
+# hands the job back to Agent J (unset the port: Agent J starts and manages its own OpenCode server)
+_UNSET = "agentj config unset agent.shared_opencode_port && agentj service restart"
+OWNER_PORT_BAD = {
+    "zh": f"设置里的 OpenCode 端口（agent.shared_opencode_port）不是有效端口，Agent J 没法连上你的 OpenCode。想让 Agent J 自己启动、"
+          f"管理 OpenCode，在电脑上运行：`{_UNSET}`；要连你自己开着的 OpenCode server，就把它改成那个 server 的端口号。",
+    "en": f"The OpenCode port in the settings (agent.shared_opencode_port) is not a valid port, so Agent J cannot reach your "
+          f"OpenCode. To let Agent J start and manage OpenCode itself, run on the computer: `{_UNSET}`; to use your own running "
+          f"OpenCode server, set it to that server's port."}
+OWNER_ATTACH_FAIL = {
+    "zh": "设置里指定了你自己的 OpenCode server（端口 {port}），但 Agent J 连不上它或它里面没有指定的会话，这条消息没有交给它。"
+          "先确认那个 OpenCode 正开着、端口和会话 ID 没写错；想让 Agent J 自己启动、管理 OpenCode，在电脑上运行：`" + _UNSET + "`。",
+    "en": "The settings name your own OpenCode server (port {port}), but Agent J cannot reach it or the pinned session is not "
+          "there; this message was not handed over. Check that OpenCode is running and the port / session ID are right; to let "
+          "Agent J start and manage OpenCode itself, run on the computer: `" + _UNSET + "`."}
+
+
 class SharedOpenCodeAgent(OpenCodeAgent):
     """Existing loopback server + exact session; native rules are never PATCHed."""
     def __init__(self, host, cfg):
@@ -2340,16 +2367,25 @@ class SharedOpenCodeAgent(OpenCodeAgent):
 
     async def _spawn(self):
         port = self.cfg.get("shared_opencode_port")
-        if not port and (not self.cfg.get("shared_session_id") or self.owned_server):
-            # An explicit shared experiment without an owner session starts an
-            # ordinary native server/session. Native config and permissions stay
-            # untouched. A stale explicit owner selector never falls through here.
+        pin = self.cfg.get("shared_session_id")
+        if pin and not (isinstance(pin, str) and OC_SESSION.fullmatch(pin)):
+            # P326 (Mac 10-15): agent.shared_session_id is ONE pin for every harness — a Claude / Codex session id left there
+            # is not an OpenCode session. It used to send OpenCode down the owner-server branch ("set the loopback port"),
+            # the switch rolled back. It is not ours: our own server, the conversation agent.json names (or a new one).
+            mine = self.host.st.agent_session(self.kind)
+            self.cfg["shared_session_id"] = mine if isinstance(mine, str) and OC_SESSION.fullmatch(mine) else ""
+            self.host.st.log("shared_pin_foreign", agent=self.kind)
+        if not port:
+            # No owner server named: Agent J starts an ordinary native server itself (P326: also with an OpenCode session
+            # pinned — our server opens that session from OpenCode's own store, same folder, else a new one). Native config
+            # and permissions stay untouched.
             self.owned_server = True
             if not await self._installed_v2():        # P63: the v1 plugin is not a v2 plugin (shared_opencode2)
                 await self.prepare_risk()
             return await super()._spawn()
         if type(port) is not int or not 1 <= port <= 65535:
-            self.local_fail(pick(getattr(self.host, "lang", "zh"), "指定电脑 OpenCode server 的 loopback 端口。", "Set the existing OpenCode loopback port."))
+            self.failed_start = True                  # P326: a failed start, not an idle Agent (the switch job ends at once)
+            self.local_fail(pick(getattr(self.host, "lang", "zh"), OWNER_PORT_BAD["zh"], OWNER_PORT_BAD["en"]))
             return False
         # Owner's server password is read from its native environment, never config
         # or phone input. Empty supports a native unauthenticated loopback server.
@@ -2391,7 +2427,7 @@ class SharedOpenCodeAgent(OpenCodeAgent):
         except (OSError, ValueError, HTTPError, asyncio.TimeoutError):
             self.proc = None
             self.failed_start = True
-            self.fail_notice(pick(getattr(self.host, "lang", "zh"), "不能附着电脑 OpenCode server/session。", "Cannot attach the desktop OpenCode server/session."))
+            self.local_fail(pick(getattr(self.host, "lang", "zh"), OWNER_ATTACH_FAIL["zh"], OWNER_ATTACH_FAIL["en"]).format(port=port))
             return False
         return True
 

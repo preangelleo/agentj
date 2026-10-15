@@ -75,19 +75,32 @@ def has_tty(pid) -> bool:
     return bool(tty) and tty not in ("?", "??", "-")
 
 
+class DuplicateKey(ValueError):
+    """P318: two spellings of one flattened key (`{"agent": {"x": 1}, "agent.x": 2}`): never let the later one win silently."""
+
+
 def _flat(d, prefix=""):
     out = {}
     if isinstance(d, dict):
         for k, v in d.items():
             key = f"{prefix}.{k}" if prefix else str(k)
-            if isinstance(v, dict) and v:
-                out.update(_flat(v, key))
-            else:
-                out[key] = v
+            part = _flat(v, key) if isinstance(v, dict) and v else {key: v}
+            dup = set(part) & set(out)
+            if dup:
+                raise DuplicateKey(sorted(dup)[0])
+            out.update(part)
     return out
 
 
 def security_changes(old: dict, new: dict) -> list:
-    """Security keys whose effective value differs between two validated configurations."""
-    a, b = _flat(old or {}), _flat(new or {})
-    return sorted(k for k in set(a) | set(b) if a.get(k) != b.get(k) and k.startswith(SECURITY_PREFIXES))
+    """Security keys whose effective value differs between two validated configurations. Each schema security key is
+    compared through preferences.get — the accessor the runtime reads with — so no spelling of a key can hide a change;
+    security-prefixed keys outside the schema (validate refuses them anyway) are compared flattened, duplicates raise."""
+    from . import preferences
+    old, new = old or {}, new or {}
+    keys = {k for k in preferences.SCHEMA if k.startswith(SECURITY_PREFIXES)}
+    out = {k for k in keys if preferences.get(old, k) != preferences.get(new, k)}
+    a, b = _flat(old), _flat(new)
+    rest = {k for k in set(a) | set(b) if k.startswith(SECURITY_PREFIXES) and not any(k == s or k.startswith(s + ".") for s in keys)}
+    out |= {k for k in rest if a.get(k) != b.get(k)}
+    return sorted(out)

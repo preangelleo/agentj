@@ -62,3 +62,36 @@ Agent J / memory pages, the background panel and the @ / / lists at 390 px and 1
 3. two sibling buttons overlap or are closer than 8 px.
 
 8 px is the floor (the tokens give 12); the audit output is written to `reports/qa/p302/after/spacing-audit.json`.
+
+## Noir Notification (P318, 2026-10-15)
+
+Leo: 「浅色背景黑字从上面滑下来」 is gone. Every popup that tells the owner something — a 1–3 s glance or a held notice —
+is ONE component: `notify(spec)` in `public/js/ui.js`, drawn by the「toast = P318 Noir Notification」block in `app.css`.
+`toast(text, ms, kind?)` and `toastAction(text, label, fn, ms?)` are thin wrappers over it, so every old call site is already
+Noir. The element is still `#toast` (classes `on` / `act` / `cmd`, action buttons `.undo`).
+
+`spec = { kind, title?, text, ms?, actions?: [{ label, fn }], shape?: 'rect' | 'circle' }` → format:
+
+| kind | accent (palette only) | icon | default ms | shape |
+|---|---|---|---|---|
+| `success` | Emerald Oasis `--emerald-oasis` #629887 | check | 1800 | rect |
+| `info` | Windstorm `--windstorm` #6a9bcc | info | 1800 | rect |
+| `warn` | Peachy Feeling `--peachy-feeling` #d97757 | triangle | 3000 | rect |
+| `error` | Peachy Feeling `--peachy-feeling` #d97757 | ✕ in a ring | 3000 | rect |
+| `progress` | Magic Carpet `--magic-carpet` #827dbd | turning arc | 0 = held | rect |
+| `confirm` | Windstorm `--windstorm` #6a9bcc | ? in a ring | 0 = held (toastAction: 5000) | rect |
+
+- **Two shapes only.** `rect`: rounded rectangle (`--dlg-radius-rect`) as wide as the input-message card (`#om`, else
+  `.composer`; set at show time as `--nt-w`), height by content; icon · title over body · buttons right-aligned. `circle`: a
+  centred perfect circle (156 px × `--fz`) with a big mark — the ✓ moment (settings saved, mail key saved). The circle takes
+  ≤ 48 units of text (a CJK character = 2) and no buttons; anything more falls back to the rect.
+- **Tokens.** Background `--dlg-bg` (Noir), text `--dlg-fg` (Lotion, 12.9:1), buttons `--dlg-chip`, shadow `--dlg-shadow`,
+  motion `--dlg-dur` — the same layer as the centred dialogs (`.gdlg`), opaque, in light and dark and on every state.
+- **The accent is a line, never a fill:** the icon stroke, the 3 px left rule (rect) / ring (circle), the button outline.
+- **Held** kinds (ms 0) stay until replaced, dismissed by their button, `toastOff()`, or Esc.
+- The share hand-off notice (`.share-notice`) uses the same rect look.
+
+The rule: **no light toast, no ad-hoc popup.** A new notice calls `notify()`; it never adds a class with its own
+background. `test/p318_noir.test.mjs` (web-unit) fails when any CSS rule whose selector names toast / notice / snack /
+flash / notif paints a light (`--btn-strong-bg`, Lotion, `--pg`, `--bg`, `--surface`, `#fff`) or see-through background,
+when `.toast` / `.share-notice` leave `--dlg-bg` / `--dlg-fg`, or when FORMATS uses anything but the four accents.

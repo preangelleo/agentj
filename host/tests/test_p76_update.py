@@ -21,6 +21,8 @@ class Upgrade(unittest.IsolatedAsyncioTestCase):
         td = self.tmp.name
         env = patch.dict(os.environ, {"HOME":td,"AGENTJ_STATE_DIR":td+"/st","XDG_CONFIG_HOME":td+"/cfg"})
         env.start();self.addCleanup(env.stop)
+        web = patch("agentj.update.web_state", return_value="older")   # P320: the receipt's version.json read, never the network here
+        web.start();self.addCleanup(web.stop)
         self.st=State();self.st.init();self.h=Host(self.st);self.h.cmd_card=Mock();self.h._post=Mock();self.h.cmd_turn=Mock(return_value=1)
         self.s=Session(1,state="ready",pub=b"a"*32,device="fixture",name="Owner")
         self.key=Ed25519PrivateKey.generate()

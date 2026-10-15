@@ -45,6 +45,11 @@ Workflow tasks Agent J starts itself already do this on their own (a phone card 
 owner turned on Settings → quota.auto_switch); a task.json may pin `"harness"`. To turn it on at the owner's word:
 `agentj config set quota.auto_switch true`.
 
+A turn or workflow run stopped because the usage limit is used up continues by itself once, after the reset time the AI
+tool reported (the phone shows 「额度用完，预计 HH:MM 自动继续」; a workflow reruns, at once on another account when
+quota.auto_switch is on). The automatic 「继续」 is marked as not the owner's words — pick up where the last turn stopped. See
+what waits: `agentj quota resume`; 「别自动继续了」"don't continue automatically" → `agentj quota resume cancel <id>`.
+
 No harness exposes extra resets locally. When the owner mentions one (「我还有一次 reset，20 号过期」), record it:
 `agentj quota reset add claude --expires 2026-10-20`; after the owner used it: `agentj quota reset used claude`.
 「别提醒额度了」"stop the quota reminders" → `agentj quota off` (`on` to resume). A harness that cannot be read is simply

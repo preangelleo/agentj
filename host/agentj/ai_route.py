@@ -191,6 +191,9 @@ def alternatives(region: str | None) -> list[dict]:
     cn = [{"zh": "千问 Qwen 按量付费（阿里云百炼，中国大陆站，需实名；定时任务 / bot 用这条）",
            "en": "Qwen pay as you go (Alibaba Cloud Bailian, mainland China site; for scheduled tasks / bots)",
            "how": "agentj plaza show qwen-in-opencode-cn", "url": "https://bailian.console.aliyun.com/"},
+          {"zh": "火山方舟 Coding Plan（字节豆包 / Kimi / GLM / DeepSeek 一个套餐；已经订了方舟的用这条）",
+           "en": "Volcano Ark Coding Plan (Doubao / Kimi / GLM / DeepSeek in one plan; for owners already on Ark)",
+           "how": "agentj provider ark", "url": "https://console.volcengine.com/ark/"},   # P315: ark.py
           {"zh": "智谱 GLM-5.3 / DeepSeek（install.md 第 3a 步）", "en": "Zhipu GLM-5.3 / DeepSeek (install.md Step 3a)",
            "how": "agentj agent switch opencode --model zhipuai/glm-5.3", "url": "https://open.bigmodel.cn/"}]
     intl = [{"zh": "OpenRouter（国际信用卡，按量付费）", "en": "OpenRouter (card, pay as you go)",

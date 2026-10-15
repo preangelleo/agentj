@@ -298,7 +298,11 @@ class UpgradedNotice(unittest.IsolatedAsyncioTestCase):
             update.write_marker(self.st, "0.14.0a1", __version__)
             host, sent = await self._host()
             host.preferences["appearance"]["language"] = lang
-            with mock.patch.object(self.st, "is_allowed", return_value=True), mock.patch("agentj.doctor.run", return_value=rows):
+            # P320: the receipt reads the page's version.json and names the computer — pinned here (no network in tests;
+            # test_p320_reload covers the same-version / named-computer wording)
+            with mock.patch.object(self.st, "is_allowed", return_value=True), mock.patch("agentj.doctor.run", return_value=rows), \
+                    mock.patch.object(update, "web_state", return_value="older"), mock.patch("agentj.text.machine_name", return_value=None), \
+                    mock.patch.object(self.st, "agent_name", return_value=None):
                 await host.upgraded_notice()
                 await asyncio.sleep(0.05)
                 self.assertEqual([o["text"] for o in sent if o.get("from") == "notice"], [want])

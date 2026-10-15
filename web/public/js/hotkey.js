@@ -116,7 +116,7 @@ async function confirmPick() {
   if (await setPref(HOT_KEY, n)) {
     setHot(n);
     closeHot();
-    toast(t('p285.saved', { cmd: '/' + n }), 2400);
+    toast(t('p285.saved', { cmd: '/' + n }), 2400, 'success');
   } else el('hotYes').disabled = false;   // setPref already said why (offline / refused)
 }
 

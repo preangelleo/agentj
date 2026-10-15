@@ -17,6 +17,7 @@ Function keys also work while a text field is focused. System or input-method sh
 | `Alt+Shift+G` | Double-tap the right third of the header (page number); a single tap while it flashes | Jump to the newest page |
 | `Alt+Shift+Q` | Tap the quote above the message | Jump to the message this one quotes |
 | `Alt+Shift+Y` | Tap the copy icon | Copy the whole reply |
+| `Alt+Shift+A` | Tap the curved-arrow icon | Reply to this one (the quote shows above the message box, focus stays in it; Esc cancels); Alt+Shift+A also works while typing |
 | `Alt+Shift+D` | Tap the download icon | Download the first file on this page |
 | `Alt+Shift+X` | Tap the share icon | Share the first file on this page with the system share sheet |
 | `Alt+Shift+Z` | Change the text size in Settings | Step the page text size (medium → large → medium → small) |
@@ -27,6 +28,7 @@ Function keys also work while a text field is focused. System or input-method sh
 | `Alt+Shift+H` | Tap Keyboard shortcuts in Settings | Show this list of shortcuts |
 | `Alt+Shift+U` | Tap Upgrade computer in Settings | Upgrade computer (confirm on phone) |
 | `Alt+Shift+R` | Tap Update and reload in Settings | Update and reload page |
+| `Alt+Shift+L` | Tap Reload configuration in ≡ All commands | Reload the computer's configuration (no service restart) |
 | `Alt+Shift+P` | — | Add a remote |
 | `Alt+Shift+C` | Hold the gear; help via right-click or Keyboard shortcuts | Capture this page as an attachment |
 | `Alt+Shift+F` | Settings → Friends | Open Friends |
@@ -51,7 +53,7 @@ Function keys also work while a text field is focused. System or input-method sh
 | `e` | Tap the envelope icon | Forward this one by e-mail (when the e-mail channel is on) |
 | `y` | Tap the copy icon | Copy the whole reply |
 | `Y` | — | Copy the whole message |
-| `r` | Tap the curved-arrow icon | Reply to this one (the quote shows above the message box; Esc cancels) |
+| `r` | Tap the curved-arrow icon | Reply to this one (the quote shows above the message box, focus stays in it; Esc cancels); Alt+Shift+A also works while typing |
 | `W` | Tap the round share icon at the bottom left | Hot key: by default share as a web report (puts /web-page-report in the message box, never sends; on an older reply also quotes it); once rebound, runs the command or skill you chose — /clear still asks first |
 | `v` | Tap the file card, picture or Full screen; double-tap a non-audio file card to view that file full screen | Preview the first file on this page (← → in the preview for the others) |
 | `d` | Tap the download icon | Download the first file on this page |
@@ -131,7 +133,7 @@ Function keys also work while a text field is focused. System or input-method sh
 | `t` | Tap the arrow icon | Forward this reply to yourself (the phone's share sheet when forwarding is not set up) |
 | `e` | Tap the envelope icon | Forward this one by e-mail (when the e-mail channel is on) |
 | `Alt+Shift+Y` · `y` | Tap the copy icon | Copy the whole reply |
-| `r` | Tap the curved-arrow icon | Reply to this one (the quote shows above the message box; Esc cancels) |
+| `Alt+Shift+A` · `r` | Tap the curved-arrow icon | Reply to this one (the quote shows above the message box, focus stays in it; Esc cancels); Alt+Shift+A also works while typing |
 | — | Select words in the reply | Select some words to quote them; each further selection adds one more (up to 5, from any replies, also in the full-screen reader) |
 | `W` | Tap the round share icon at the bottom left | Hot key: by default share as a web report (puts /web-page-report in the message box, never sends; on an older reply also quotes it); once rebound, runs the command or skill you chose — /clear still asks first |
 | — | Hold the round share icon at the bottom left | Change which command or skill the hot key runs (search, confirm, saved; the icon stays the same) |
@@ -159,6 +161,7 @@ Function keys also work while a text field is focused. System or input-method sh
 | `Alt+W` | Tap the logo | Open the five-page menu |
 | `Alt+Shift+U` | Tap Upgrade computer in Settings | Upgrade computer (confirm on phone) |
 | `Alt+Shift+R` | Tap Update and reload in Settings | Update and reload page |
+| `Alt+Shift+L` | Tap Reload configuration in ≡ All commands | Reload the computer's configuration (no service restart) |
 | `Alt+Shift+C` | Hold the gear; help via right-click or Keyboard shortcuts | Capture this page as an attachment |
 | `Alt+Shift+F` | Settings → Friends | Open Friends |
 | `Alt+Shift+E` | Settings → Bots | Open Customer service |

@@ -474,13 +474,13 @@ async function ownerSave(c, contact) {
   K.err = t('ct.saving'); renderCard(true);
   const m = await ask1({ t: 'ct_save', id: OWNER_ID, contact }, 'ct_res', 15000);
   if (m.t !== 'ct_res' || !m.ok) { K.err = m.t === 'timeout' ? t('ct.timeout') : m.why === 'no_email' ? t('ct.needEmail') : t('ct.saveFail'); renderCard(true); return; }
-  K.cards.delete(c.id); showNext(); toast(t('ct.saved'), 2200);
+  K.cards.delete(c.id); showNext(); toast(t('ct.saved'), 2200, 'success');
 }
 export function cardDone(m) {
   if (!m || !K.cards.has(m.id)) return;
   K.cards.delete(m.id);
   if (K.shown && K.shown.id === m.id) {
-    if (m.result === 'saved' || m.result === 'merged' || m.result === 'same') toast(t('ct.saved'), 2200);
+    if (m.result === 'saved' || m.result === 'merged' || m.result === 'same') toast(t('ct.saved'), 2200, 'success');
     showNext();
   }
 }
