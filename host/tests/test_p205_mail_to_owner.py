@@ -30,8 +30,6 @@ from _testtmp import TEST_TMP  # noqa: E402  P202: fixtures on tmpfs, not the sy
 
 class ToOwner(_Svc):
     def summary(self):
-        if self.ask.call_args is None:          # P296: owner-direct goes without a card; the same text is in activity
-            return [kw for k, kw in self.acts if k == "auto"][-1]["summary"]
         return self.ask.call_args.args[1]["summary"]
 
     async def test_allowlist_owner_only(self):
@@ -40,7 +38,7 @@ class ToOwner(_Svc):
         self.assertEqual(res["sent"], [ALLOW_ME])
         self.assertEqual(self.smtp.sent[-1][1], [ALLOW_ME])
         self.assertIn("13812345678", body_of(self.smtp.sent[-1][2]), "owner-direct: as written, same as --to <owner>")
-        self.ask.assert_not_called()            # P296: only the owner's own addresses — no phone card
+        self.ask.assert_awaited_once()
         self.assertIn("发给你自己：原样发出", self.summary())
 
     async def test_slot0_and_allowlist_deduped_same_as_explicit(self):
@@ -61,9 +59,8 @@ class ToOwner(_Svc):
         self.assertIn("发给外人", self.summary())
 
     async def test_denied_on_phone_sends_nothing(self):
-        await self.svc.agent({"op": "add", "contact": {"name": "张三", "emails": ["zs@qq.com"]}})
         self.ask.return_value = {"behavior": "deny"}
-        res = await self.svc.agent_send({"to": ["张三"], "to_owner": True, "subject": "x", "body": "b"})
+        res = await self.svc.agent_send({"to_owner": True, "subject": "x", "body": "b"})
         self.assertEqual(res["why"], "denied")
         self.assertEqual(self.smtp.sent, [])
 
@@ -127,17 +124,17 @@ class RealCli(unittest.IsolatedAsyncioTestCase):
             code, res = await self.run_cli(d, ["mail", "send", "--to-owner", "--subject", "周报", "--body", "hello", "--json"])
             self.assertEqual((code, res["ok"], res["sent"], res["owner_direct"]), (0, True, [ALLOW_ME], True), res)
             self.assertEqual(smtp.sent[-1][1], [ALLOW_ME])
-            host.ask.assert_not_called()         # P296: owner-only mail needs no card
+            host.ask.assert_awaited_once()
             code, res = await self.run_cli(d, ["mail", "send", "--to", "zs@qq.com", "--to-owner", "--subject", "s",
                                                "--body", "b", "--json"])
             self.assertEqual(res["sent"], ["zs@qq.com", ALLOW_ME], res)
-            self.assertEqual(host.ask.await_count, 1, "a non-allowlisted recipient still asks the phone")
+            self.assertEqual(host.ask.await_count, 2, "every send still asks the phone")
             cfg["allow"] = []
             M.save_config(st, M.validate(cfg))
             code, res = await self.run_cli(d, ["mail", "send", "--to-owner", "--subject", "s", "--body", "b", "--en", "--json"])
             self.assertEqual((code, res["why"]), (1, "no_owner_address"))
             self.assertIn("slot 0", res["detail"])
-            self.assertEqual(host.ask.await_count, 1)
+            self.assertEqual(host.ask.await_count, 2)
 
 
 if __name__ == "__main__":

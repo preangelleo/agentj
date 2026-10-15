@@ -546,7 +546,7 @@ class Cursor(unittest.IsolatedAsyncioTestCase):
         await self.settle()
         await self.stop()
         self.assertEqual(self.texts(), ["接入后"])
-        self.assertEqual(self.host.sys, [])          # P283: older messages are counted in host.log, never announced
+        self.assertTrue(any("旧消息没有投递" in s for s in self.host.sys))
 
     # ------------------------------------------------------------ the pending-update fence and the owed reply
     async def test_hand_over_cut_by_a_crash_is_uncertain_never_rerun(self):

@@ -25,9 +25,8 @@ const subs = new Set();
 /** busy.js reads the indicator from here: style robots|dots, custom sheets ({18, 24} URLs) + names + n, or dot count. */
 export const busyLook = () => look;
 let logoUrl = null;
-let logoStates = null;
 /** The chat page's top-left logo of a custom theme (one image for every state), or null = the official state logos. */
-export const themeLogo = (state = "idle") => logoStates?.[state] || logoUrl;
+export const themeLogo = () => logoUrl;
 /** The blob: URLs this theme holds (the previous theme's are revoked). */
 export const liveUrls = () => urls.slice();
 export function onTheme(fn) { subs.add(fn); return () => subs.delete(fn); }
@@ -66,7 +65,7 @@ export function sanitize(m) {
     const g = c[group] && typeof c[group] === 'object' ? c[group] : {};
     for (const k of Object.keys(vars)) if (HEX.test(g[k] || '')) for (const v of vars[k]) out.colors[v] = g[k].toLowerCase();
   }
-  if (m.logo && typeof m.logo === 'object') out.logo = { png: m.logo.png, states: m.logo.states, disc: m.logo.disc !== false };
+  if (m.logo && typeof m.logo === 'object') out.logo = { png: m.logo.png, disc: m.logo.disc !== false };
   if (m.send && typeof m.send === 'object') out.send = { png: m.send.png };
   const b = m.busy && typeof m.busy === 'object' ? m.busy : {};
   if (b.style === 'dots') {
@@ -92,18 +91,7 @@ export function applyTheme(m) {
   for (const [k, v] of Object.entries(s.colors)) prop(k, v);
   const orb = document.getElementById('orb');
   logoUrl = s.logo ? image(s.logo.png, (w, h) => w === h && SQUARE.includes(w)) : null;
-  logoStates = null;
-  if (s.logo?.states && Object.keys(STATE_VARS).every(k => s.logo.states[k])) {
-    const start = urls.length;
-    const sizes = Object.keys(STATE_VARS).map(k => pngSize(bytes(s.logo.states[k])));
-    const same = sizes.every(wh => wh && wh[0] === sizes[0][0] && wh[1] === sizes[0][1]);
-    const group = same ? Object.fromEntries(Object.keys(STATE_VARS).map(k => [k, image(s.logo.states[k], (w, h) => w === h && SQUARE.includes(w))])) : {};
-    if (Object.keys(STATE_VARS).every(k => group[k])) {
-      logoStates = group;
-      for (const url of Object.values(group)) { const preload = new Image(); preload.src = url; }
-    } else { for (const u of urls.splice(start)) URL.revokeObjectURL(u); }
-  }
-  if (orb) orb.classList.toggle('bare', !!(logoUrl || logoStates) && s.logo.disc === false);   // the src: relay.js paintLogo (chat page only)
+  if (orb) orb.classList.toggle('bare', !!logoUrl && s.logo.disc === false);   // the src: relay.js paintLogo (chat page only)
   const send = s.send ? image(s.send.png, (w, h) => w === h && SQUARE.includes(w)) : null;
   if (send) { prop('--send-mask', `url("${send}")`); root.dataset.thSend = '1'; } else delete root.dataset.thSend;
   const b = s.busy;

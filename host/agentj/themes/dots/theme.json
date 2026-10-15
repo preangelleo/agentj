@@ -1,6 +1,6 @@
 {
-  "$schema": "https://agentj.app/schema/agentj-theme-2.json",
-  "schema": 2,
+  "$schema": "https://agentj.app/schema/agentj-theme-1.json",
+  "schema": 1,
   "id": "dots",
   "name": {
     "zh": "圆点",
@@ -67,18 +67,5 @@
       ],
       "blink": true
     }
-  },
-  "logo": {
-    "states": {
-      "idle": "logo-idle.png",
-      "working": "logo-working.png",
-      "waiting": "logo-waiting.png",
-      "question": "logo-question.png",
-      "offline": "logo-offline.png"
-    },
-    "disc": true
-  },
-  "send_icon": {
-    "image": "send-robot.png"
   }
 }

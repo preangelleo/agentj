@@ -10,7 +10,7 @@
 // the send ("offline"), so nothing meant for one session — or one computer — is ever sent on another (P33-X01 / X02).
 import { sendApp, isReady, peer, ask1, channel, textMax, gen } from './session.js';
 import { Upload, newId } from './blobs.js';
-import { approveMessage, mailAllowMessage, questionMessage, controlMessage, b64u, deviceId } from '../proto/wire.js';
+import { approveMessage, questionMessage, controlMessage, b64u, deviceId } from '../proto/wire.js';
 import { deviceKey, signKey } from './store.js';
 import * as snap from './snap.js';
 import { approve as passkeyApprove, canAssert } from './faceid.js';
@@ -42,9 +42,7 @@ export function route(m) {
 
 export const newSid = () => newId();
 
-/** P286: this computer takes several quotes in one say (`quote_more`, §10.6). */
-export const multiQuote = () => !!(peer.p33 && peer.mq);
-export async function say({ sid, text, att = [], reply_to = null, excerpt = null, more = null }) {
+export async function say({ sid, text, att = [], reply_to = null, excerpt = null }) {
   const g = gen();
   if (!g) return { ok: false, why: 'offline' };
   text = cleanText(text);
@@ -59,11 +57,8 @@ export async function say({ sid, text, att = [], reply_to = null, excerpt = null
   if (Number.isInteger(reply_to)) {
     m.reply_to = reply_to;
     if (typeof excerpt === 'string' && excerpt) m.excerpt = cleanText(excerpt).slice(0, 2000);
-    const mq = Array.isArray(more) ? more.filter((q) => q && Number.isInteger(q.id)).slice(0, 4) : [];
-    if (mq.length) m.quote_more = mq.map((q) => typeof q.excerpt === 'string' && q.excerpt ? { id: q.id, ex: cleanText(q.excerpt).slice(0, 2000) } : { id: q.id });
   }
-  const exn = (m.excerpt ? m.excerpt.length : 0) + (m.quote_more || []).reduce((n, q) => n + (q.ex ? q.ex.length : 0), 0);
-  if ((m.text.length + exn) > textMax()) return { ok: false, why: 'too_long' };
+  if ((m.text.length + (m.excerpt ? m.excerpt.length : 0)) > textMax()) return { ok: false, why: 'too_long' };
   const res = new Promise((resolve) => {
     sayWait.set(sid, resolve);
     setTimeout(() => { if (sayWait.delete(sid)) resolve({ ok: false, why: 'timeout' }); }, 30000);
@@ -95,9 +90,8 @@ export const history = (q) => snap.history(q);
 export const findHistory = (q, sort) => snap.findHistory(q, sort);   // P188 (§28)
 export const canFind = () => peer.p33 && peer.hfind;
 
-/** action: allow | deny | batch. Signed over exactly what the sheet shows (§8). allowAdd (P296, a mail card): the ticked
- *  「以后发给 X 不用再确认」 addresses, in the card's order — signed with the allow (mailAllowMessage). */
-export async function approve(p, action, allowAdd) {
+/** action: allow | deny | batch. Signed over exactly what the sheet shows (§8). */
+export async function approve(p, action) {
   const g = gen();
   if (!g) return { ok: false, why: 'offline' };
   let fa = null;
@@ -112,11 +106,9 @@ export async function approve(p, action, allowAdd) {
     const batch = action === 'batch';
     if (batch && !p.scope) return { ok: false, why: 'no_batch' };
     const decision = batch ? 'allow_batch' : action === 'allow' ? 'allow' : 'deny';
-    const picks = decision === 'allow' && Array.isArray(allowAdd) && Array.isArray(p.allow_offer) ? p.allow_offer.filter((a) => allowAdd.includes(a)) : [];
-    const msg = picks.length ? await mailAllowMessage(channel(), await myDeviceId(), p.id, p.tool, p.summary, picks)
-      : await approveMessage(channel(), await myDeviceId(), p.id, decision, p.tool, p.summary, batch ? p.scope : undefined);
+    const msg = await approveMessage(channel(), await myDeviceId(), p.id, decision, p.tool, p.summary, batch ? p.scope : undefined);
     const sig = new Uint8Array(await crypto.subtle.sign({ name: 'Ed25519' }, sk.priv, msg));
-    await sendApp(batch ? { t: 'answer', id: p.id, ok: true, batch: true, sig: b64u(sig) } : { t: 'answer', id: p.id, ok: decision === 'allow', sig: b64u(sig), ...(picks.length ? { allow_add: picks } : {}), ...(fa ? { fa } : {}) }, g);
+    await sendApp(batch ? { t: 'answer', id: p.id, ok: true, batch: true, sig: b64u(sig) } : { t: 'answer', id: p.id, ok: decision === 'allow', sig: b64u(sig), ...(fa ? { fa } : {}) }, g);
     return { ok: true };
   } catch { return { ok: false, why: 'offline' }; }
 }
@@ -272,11 +264,4 @@ async function signedUpgrade() {
   if (g !== gen()) return false;
   await sendApp({t:'slash',cmd:'update',n,ts,sig});
   return true;
-}
-
-// A visual receipt, not an approval; sent only on this paired Noise generation.
-export async function readHistory(epoch, id) {
-  const g = gen();
-  if (!g) return;
-  try { await sendApp({t: 'hist_read', epoch, id}, g); } catch {}
 }

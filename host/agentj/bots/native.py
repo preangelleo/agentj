@@ -109,9 +109,7 @@ def run(cmd,prompt,env,cwd,timeout=90):
                     if not raw:sel.unregister(key.fileobj);continue
                     out.extend(raw)
                     if len(out)>MAX_BYTES:raise BotError('native_output_limit')
-        if proc.wait(timeout=max(.1,deadline-time.monotonic())):
-            # P298: OpenCode's free tier refuses this tool-free agent as "not OpenCode's own client" (403 FreeTierError)
-            raise BotError('free_tier' if b'FreeTierError' in out else 'native_failed')
+        if proc.wait(timeout=max(.1,deadline-time.monotonic())):raise BotError('native_failed')
         return out.decode('utf-8')
     except BotError:raise
     except Exception:raise BotError('native_failed') from None
@@ -154,7 +152,6 @@ def parse(kind,raw):
         else:
             part=obj.get('part',{})
             if t=='text':text.append(part.get('text',''))
-            if t=='error' and 'FreeTierError' in line:raise BotError('free_tier')
             if t in ('tool_use','error'):raise BotError('native_tool_refused')
             if t=='step_finish':
                 u=part.get('tokens',{});values=[u.get('input'),u.get('output'),u.get('reasoning',0),u.get('cache',{}).get('read',0),u.get('cache',{}).get('write',0)]

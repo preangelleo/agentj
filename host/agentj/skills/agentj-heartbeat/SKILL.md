@@ -1,6 +1,6 @@
 ---
 name: agentj-heartbeat
-description: The heartbeat — Agent J wakes you after an idle spell to check background work and the owner's to-dos. Use when background work ended in 〔Agent J 系统提示〕 / [Agent J system notice], or a message starts with 〔Agent J 心跳〕 / [Agent J heartbeat], or the owner says 「以后每 30 分钟看一次」「心跳改成两小时」「别再定时叫醒了」「每天早上 7 点叫醒你看一眼」「醒来以后先看备份任务」「心跳的时候帮我盯着 X」"heartbeat", "check every hour", "wake up every day at 7", "stop the heartbeat", "what does the heartbeat do". Changes the interval, the daily wake-up time, turns it on/off and maintains the heartbeat prompt.
+description: The heartbeat — Agent J wakes you after an idle spell to check background work and the owner's to-dos. Use when a message starts with 〔Agent J 心跳〕 / [Agent J heartbeat], or the owner says 「以后每 30 分钟看一次」「心跳改成两小时」「别再定时叫醒了」「每天早上 7 点叫醒你看一眼」「醒来以后先看备份任务」「心跳的时候帮我盯着 X」"heartbeat", "check every hour", "wake up every day at 7", "stop the heartbeat", "what does the heartbeat do". Changes the interval, the daily wake-up time, turns it on/off and maintains the heartbeat prompt.
 ---
 
 The heartbeat is Agent J's own wake-up call, the same on Claude Code, Codex and OpenCode. When nothing has happened
@@ -83,9 +83,3 @@ agentj heartbeat prompt reset                # back to the default template
 Every heartbeat costs one model call; on a metered plan a longer interval costs less. The phone's Settings → Heartbeat
 has the same switch, the idle interval as a drop-down (30 minutes … 24 hours, or 「自定义…」/ "Custom…" for 5–1440
 minutes) and 「每天固定时间唤醒」/ "Also wake up every day at" with a time.
-
-## Background work ended (P262)
-
-A `〔Agent J 系统提示〕` / `[Agent J system notice]` saying background work ended is separate from the heartbeat. Read the actual report and evidence, then tell the owner the result in one or two sentences; never infer success from the exit code. Investigate missing reports. The host sends it when the main session is idle, holds it during a turn, and groups subsequent completions within one minute. It grants no new authority.
-
-Default on, independent of `agentj heartbeat off`. At the owner's request use `agentj config set background_done.enabled false` (`true` to resume); acknowledge the change. For headless commands prefer `agentj busy run --label <title> --report <path> -- <command>`; systemd dispatches use the existing `agentj-p<digits>…` naming and `AGENTJ_REPORT` environment metadata. Exit codes unavailable from native sub-Agent events or collected units are shown as unknown.

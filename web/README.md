@@ -124,16 +124,6 @@ The installed Android PWA registers a POST multipart `share_target` at `/share-t
 
 Tests: `node --test web/test/p110.test.mjs`; `node web/test/p110.mjs` launches isolated Chromium and a real Noise fake host, tests multipart navigation / byte equality / no server POST or auto-send, actual clipboard (CDP browser permission) and explicit denied/empty fixtures. Set `P110_DOC_SHOTS=1` only to deliberately refresh public fixture screenshots, then rebuild site; normal/parity runs never rewrite source illustrations. Neither is Android system-share-sheet nor physical iPhone acceptance. Full qualification uses `flock /tmp/agentj-full-gates.lock`.
 
-## P271 Android bottom safe area
-
-The chat page paints the bottom gesture safe area in the current page colour, and keeps input controls above it. All five states follow light/dark theme; the full-screen reader remains Sooty. `theme-color` still follows the existing chrome probe. This requires a browser that exposes an edge-to-edge viewport: CSS cannot colour a system bar outside the web viewport.
-
-Chrome's [official migration guide](https://developer.chrome.com/docs/css-ui/edge-to-edge) documents Chrome 135+ small-screen rollout and a large-screen exclusion in that guide. Installed standalone PWAs depend on their Chrome/WebAPK path too; the manifest background colour is a launch fallback, not a dynamic navigation-bar API. Native review shells explicitly use transparent navigation bars over their existing background.
-
-Run `node web/test/p271.mjs` for 390px, 744px fold width, iPhone-sized and desktop simulations (five states × light/dark, 40 screenshot cases). Actual Android/OEM and installed-PWA acceptance remains separate.
-
-The current [Chromium WebAPK architecture](https://github.com/chromium/chromium/blob/main/components/webapps/docs/android_architecture.md#display-modes-and-immersive-mode) also documents a feature/parameter-controlled standalone cutout path (`WebAppShortEdgesCutoutMode`, default-off `enable_standalone`). The tab rollout version is not a guarantee for every installed WebAPK.
-
 P166: the 「文件」 picker takes any file (`accept="*/*"`, unknown types as their own MIME or `application/octet-stream`, ≤ 200 MiB; a finished upload drops its in-memory copy). `?from=share&via=file` is the iPhone 「发给 Agent J」 Shortcut's landing (it saved the file into the Files app): the share notice's button becomes 「选择分享的文件」 and opens the same picker inside that tap. No upload endpoint; `test/p166.mjs` (real Chromium + fake host) and `test/p110.test.mjs` (SW any-type intake).
 
 ## P168 disconnected card + the human fallback mailbox (feedback@agentj.app)
@@ -145,9 +135,6 @@ Tests: `node --test web/test/p168.test.mjs`; `node web/test/p168.mjs` (gate `p16
 
 `interactions.json` (+ `interactions.schema.json`) is the only place a gesture or shortcut is described. `agentjarvis/tools/interactions add | check | render`: render writes `public/js/interactions.gen.js` (relay.js dispatches the chat screen's single keys / Alt+keys through its `KEYMAP` → the ACT table), the `ix*` dictionary texts, the Settings 「键盘快捷键」 page rows (`#keysCols`, drawn by relay.js `paintKeys`), `../site/content/docs/36-shortcuts/` and the user guide's shortcut section, then the agentj-manual skill. `check` (gate `interactions-check`) fails when the code (ACT ids, `// @ix <id>` markers) or any generated file disagrees with the JSON. A new gesture starts with `interactions add`.
 `public/js/unread.js`: this device's unread mark (`localStorage["aj.unread"]`, epoch + turn ids only); the input card's header is three tap zones (`#omFirst` earliest · `#omUnread` first unread, round count badge · `#pgLatest` newest), logo hold / `u` = first unread. Tests: `test/p207_unread.test.mjs`, `test/p207_unread.mjs` (gate `p207-unread`, shots → `reports/qa/p207/unread/`).
-
-
-P260: Double-click / double-tap a non-audio file card to view the file full screen; audio and reply space open the reply reader. The visible Full screen button is also keyboard accessible. Images retain zoom; documents reuse the sandboxed file reader. Video uses the same inline player, preserving playback and time. Single-click playback waits the shared 300 ms double-tap window; native controls and action buttons keep their actions. Escape / browser Back close only the file layer and preserve the reply position. No host, permission, encryption, version or deployment boundary changes. Tests: `web/test/p260.mjs`, `web/test/p260.test.mjs`.
 
 ## P251 phone polish
 

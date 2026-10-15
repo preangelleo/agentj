@@ -4,7 +4,6 @@ import { ask1, isReady } from './session.js';
 import { signedWrite } from './controls.js';
 import { lang } from './t.js';
 import { el, mk, toast, confirmSheet } from './ui.js';
-import { copyable, copyNow } from './copycode.js';   // P292: every pre can be copied (⧉)
 let hooks, selected=null, tab='settings', generation=0, pendingProposal=null,hostZone='UTC';
 const copy=(zh,en)=>lang()==='en'?en:zh;
 const text=(v,max=6000)=>typeof v==='string'?v.slice(0,max):'';
@@ -67,12 +66,6 @@ function draw(detail,main){const c=detail.bot;main.append(mk('h2','',text(c.titl
     const register=mk('a','',copy('注册 OpenRouter（审核费用自付）','Register OpenRouter (you pay review costs)'));register.href='https://openrouter.ai/';register.target='_blank';register.rel='noopener noreferrer';main.append(register,mk('p','',copy('密钥仅用手机密钥卡写入电脑。每次启用均真实验证 decisions，失败则保持暂停。','The phone secret card writes the key only to your computer. Each activation verifies decisions; failure keeps the bot paused.')),button(copy('添加 / 更新 OpenRouter 审核 key','Add / update OpenRouter review key'),()=>act(async()=>{await write({op:'audit_key',id:c.id});await refresh();})));
     main.append(button(copy('添加 / 更新自带模型 key','Add / update own model key'),()=>act(async()=>{await write({op:'model_key',id:c.id});await refresh();})),button(copy('添加 / 更换 Telegram token','Add / replace Telegram token'),()=>act(async()=>{await write({op:'telegram_key',id:c.id});await refresh();})));
     const telegram=checkbox(main,copy('在 Telegram 接待（停用后停止收发）','Serve on Telegram (disable to stop receiving and sending)'),c.telegram?.enabled);
-    // P297: the owner's own Agent J Telegram bot — the owner's chat stays the main session; everyone else is this bot's visitor
-    const guests=checkbox(main,copy('让我的 Agent J Telegram 机器人也接待客人','Let my Agent J Telegram bot receive guests'),c.telegram?.owner_bot);
-    guests.addEventListener('change',()=>act(async()=>{await write({op:'attach_telegram',id:c.id,attach:guests.checked});await refresh();}));
-    main.append(mk('p','small',copy('同一个机器人两种身份：对你是助理（主对话），对别人是这个客服（独立会话、这里的提示词、模型和限额）。只接待私聊；客人永远拿不到你的权限。关掉后陌生人只收到自己的数字 ID。','One bot, two roles: your assistant for you (main chat), this customer service for everyone else (separate sessions; this bot’s prompt, model and limits). Private chats only; guests never get your permissions. Off: strangers only get their numeric ID.')));
-    // P275: a bot without a photo gets the official Agent J one automatically; one with its own photo keeps it, unless the owner taps here.
-    if(detail.telegram?.configured)main.append(button(copy('换成 Agent J 头像','Use the Agent J avatar'),()=>act(async()=>{if(await confirmSheet(copy('换成 Agent J 头像','Use the Agent J avatar'),copy('把这个 Telegram bot 现在的头像换成 Agent J 官方 Logo。','Replace this Telegram bot’s current photo with the official Agent J logo.'),copy('换成 Agent J 头像','Use the Agent J avatar'))){await write({op:'telegram_avatar',id:c.id});toast(copy('头像已换成 Agent J 官方 Logo','The bot now uses the official Agent J logo'));}})),mk('p','small',copy('绑定后 bot 还没有头像的，会自动用上 Agent J 官方 Logo；已经有头像的不会动。','A bot with no photo gets the official Agent J logo when bound; a bot that already has a photo keeps it.')));
     main.append(mk('p','small',copy('先用密钥卡添加 token，再启用 Telegram。更换 token 会暂停 Telegram；保存后恢复。仅接待私聊，每位 Telegram 访客独立会话。Telegram 平台能看到此渠道的消息。','Add a token using the secret card, then enable Telegram. Replacing the token pauses Telegram; save to resume. Private chats only, with separate visitor sessions. Telegram can see messages on this channel.')));
     const free=field(main,copy('每天每位访客免费问答数','Daily free questions per visitor'),String(c.paid_qa?.free_questions??3),'number'),payment=field(main,copy('主人设置的付费链接（HTTPS，不接支付）','Owner’s payment link (HTTPS; no payment integration)'),c.paid_qa?.payment_url||'');free.parentElement.hidden=payment.parentElement.hidden=c.template!=='paid_qa';
     const nativeProblems={
@@ -100,20 +93,20 @@ function draw(detail,main){const c=detail.bot;main.append(mk('h2','',text(c.titl
   }else if(tab==='tools'){
     main.append(mk('p','',copy('请让 Agent J 配置公司 API；查询工具可以自动调用。写入工具默认关闭，每次都需你在手机批准。','Ask Agent J to configure company APIs. Read tools run automatically. Write tools default to off and always require your phone approval.')));
     act(async()=>{const usage=await read({op:'statistics',id:c.id});if(tab!=='tools'||selected!==c.id)return;for(const tool of usage.tools||[])main.append(mk('p','',`${tool.day}: ${tool.tool} · ${tool.calls} ${copy('调用','calls')}`));});
-    for(const tool of detail.tools||[]){const row=mk('div','bots-row');row.append(mk('h3','',text(tool.name,40)+(tool.level==='write'?copy(' · 写入：每次需批准',' · WRITE: approval every time'):copy(' · 查询',' · Read'))),mk('p','',text(tool.description,1000)));const definition=copyable(mk('pre','',JSON.stringify(tool,null,2)),{click:false});row.append(definition,button(tool.enabled?copy('停用','Disable'):copy('启用','Enable'),()=>act(async()=>{await write({op:'tool_save',id:c.id,tool:{...tool,enabled:!tool.enabled}});await refresh();})));main.append(row);}
+    for(const tool of detail.tools||[]){const row=mk('div','bots-row');row.append(mk('h3','',text(tool.name,40)+(tool.level==='write'?copy(' · 写入：每次需批准',' · WRITE: approval every time'):copy(' · 查询',' · Read'))),mk('p','',text(tool.description,1000)));const definition=mk('pre','',JSON.stringify(tool,null,2));row.append(definition,button(tool.enabled?copy('停用','Disable'):copy('启用','Enable'),()=>act(async()=>{await write({op:'tool_save',id:c.id,tool:{...tool,enabled:!tool.enabled}});await refresh();})));main.append(row);}
   }else if(tab==='conversations')act(async()=>{const m=await read({op:'history',id:c.id});for(const session of m.sessions||[])main.append(button(session.visitor.slice(0,8)+' · '+session.messages,()=>act(async()=>{const m=await read({op:'history',id:c.id,visitor:session.visitor});const history=mk('div','');for(const msg of m.messages||[])history.append(mk('p','',msg.role+': '+text(msg.text,12000)));main.append(history);})));});
   else if(tab==='statistics')act(async()=>{const m=await read({op:'statistics',id:c.id});for(const day of m.days||[])main.append(mk('p','',`${day.day}: ${day.calls} ${copy('调用','calls')} · ${day.charged_tokens} ${copy('已计费/预留 tokens','charged/reserved tokens')}`));for(const tool of m.tools||[])main.append(mk('p','',`${tool.day}: ${tool.tool} · ${tool.calls}`));});
   else if(tab==='embed'){
     const url='https://agentj.app/bots/'+c.slug;main.append(mk('p','',copy('免费公开网址','Free public URL')+': '+url));
     const code=`<iframe src="${url}" title="AI customer service" width="400" height="600" loading="lazy" referrerpolicy="no-referrer"></iframe>`;
-    main.append(copyable(mk('pre','',code),{label:'r.md.copyAria'}),button(copy('复制嵌入代码','Copy embed code'),()=>act(async()=>{if(!await copyNow(code))throw new Error(copy('复制失败','Copy failed'));})));
+    main.append(mk('pre','',code),button(copy('复制嵌入代码','Copy embed code'),()=>act(()=>navigator.clipboard.writeText(code))));
     const domains=field(main,copy('工具出站域名（逗号分隔）','Tool outbound domains (comma separated)'),c.outbound_domains.join(',')),origins=field(main,copy('允许嵌入的网站（https origin，逗号分隔）','Allowed embedding websites (HTTPS origins, comma separated)'),c.embed_origins.join(','));main.append(button(copy('保存','Save'),()=>act(async()=>{await write({op:'save',id:c.id,config:{...withoutId(c),outbound_domains:domains.value.split(',').map(x=>x.trim()).filter(Boolean),embed_origins:origins.value.split(',').map(x=>x.trim()).filter(Boolean)}});await refresh();})));
   }
 }
 function withoutId(c){const {id,...value}=c;return value;}
 function paintProposal(m){
   if(!m||typeof m.id!=='string'||!m.request||typeof m.request!=='object'||m.expires<=Date.now())return;
-  const main=el('bots-main');main.replaceChildren(mk('h2','',copy('Agent J 请求修改 bot','Agent J proposes a bot change')),copyable(mk('pre','',JSON.stringify(m.request,null,2).slice(0,60000)),{click:false}),button(copy('批准这次修改','Approve this change'),()=>act(async()=>{if(m.expires<=Date.now())throw new Error('expired');await write(m.request);pendingProposal=null;await refresh();})),button(copy('返回','Back'),()=>{pendingProposal=null;refresh();}));
+  const main=el('bots-main');main.replaceChildren(mk('h2','',copy('Agent J 请求修改 bot','Agent J proposes a bot change')),mk('pre','',JSON.stringify(m.request,null,2).slice(0,60000)),button(copy('批准这次修改','Approve this change'),()=>act(async()=>{if(m.expires<=Date.now())throw new Error('expired');await write(m.request);pendingProposal=null;await refresh();})),button(copy('返回','Back'),()=>{pendingProposal=null;refresh();}));
 }
 
 export function proposal(m){if(!m?.request || typeof m.expires!=='number' || m.expires<=Date.now())return;pendingProposal=m;open();}
@@ -122,5 +115,5 @@ export function toolRequest(m){
  if(!m?.digest || typeof m.expires!=='number' || m.expires*1000<=Date.now())return;
  const req={op:'tool_approve',approval:m.id,digest:m.digest,allow:true};
  const main=el('bots-main');hooks.openPanel('bots');++generation;
- main.replaceChildren(mk('h2','',copy('批准 bot 写入操作','Approve a bot write operation')),mk('p','',text(m.tool,40)),copyable(mk('pre','',text(m.args,4000)),{click:false}),button(copy('批准这一次','Approve once'),()=>act(async()=>{await write(req);await refresh();})),button(copy('拒绝','Deny'),()=>act(async()=>{await write({...req,allow:false});await refresh();})));
+ main.replaceChildren(mk('h2','',copy('批准 bot 写入操作','Approve a bot write operation')),mk('p','',text(m.tool,40)),mk('pre','',text(m.args,4000)),button(copy('批准这一次','Approve once'),()=>act(async()=>{await write(req);await refresh();})),button(copy('拒绝','Deny'),()=>act(async()=>{await write({...req,allow:false});await refresh();})));
 }

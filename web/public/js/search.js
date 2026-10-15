@@ -333,7 +333,7 @@ export function flashCards(ts, where) {
 export function init(ctx) {
   X = ctx;
   const input = el('srchInput'), list = el('srchList');
-  el('srchBtn').addEventListener('click', () => { if (!el('settings').hidden) return; toggle(); });   // @ix app.search
+  el('srchBtn').addEventListener('click', toggle);   // @ix app.search
   el('srchClose').addEventListener('click', close);   // @ix search.close
   el('srchPrev').addEventListener('click', () => step(-1));   // @ix search.history (+ ← → and the swipe below)
   el('srchNext').addEventListener('click', () => step(1));

@@ -41,12 +41,6 @@
   /* palette entries this page uses that brand/palette.css does not carry (leo-palette.json names, same hex) */
   --milky-waves:#71bbde;               /* Heavy blue — the accent (the retired Assassin's successor) */
   --strawberry-field:#f7827e;          /* Heavy red — danger on a dark surface */
-  --lama:#dbb293;                      /* Heavy brown — the 「Agent J」 menu card on the Noir canvas (P302) */
-  /* P302 spacing (owner: 「行间距、文字和线条的距离、按钮上下之间、左右之间」) — every menu / settings / detail page uses
-     these; test/p302.mjs audits them (text ↔ a drawn line ≥ 8 px, sibling buttons ≥ 8 px apart, never overlapping) */
-  --ui-space-line:var(--sp-3);         /* 12 — text ↔ a divider / dashed line, either side */
-  --ui-space-btn:var(--sp-3);          /* 12 — between two buttons, side by side or stacked */
-  --ui-leading:1.5;                    /* body line height on menu pages */
 
   /* ---- layer 2 · menu (inherits layer 1) ------------------------------------------------------------------------ */
   --menu-bg:var(--c-noir);             /* canvas (P299, owner 2026-10-15: every page but chat = Noir, header included) */
@@ -134,36 +128,6 @@ body:is([data-view="mem"],[data-view="act"],[data-view="tasks"],[data-view="mode
 .cmdsheet .menubody{flex:1;min-height:0;overflow-x:hidden;overflow-y:auto;overscroll-behavior:contain;touch-action:pan-y;padding:0;
   -webkit-overflow-scrolling:touch}
 .cmdsheet .menulist{border:0;border-radius:0;background:transparent;padding-bottom:var(--sp-2)}
-/* P285 · 快捷技能键: the same menu-token card, risen from the bottom edge (not the 5-hour bar — it opens from a reply card), ≤ 480
-   px centred, ≤ 78 % of the visible height; intro (binding + what a tap does + 「换成别的」 + search) fixed, the list scrolls,
-   the confirm row slides in at the bottom once a row is picked (Leo: pick → confirm → save; the icon stays the same). */
-.hotmenu .hotsheet{bottom:calc(var(--sp-2) + env(safe-area-inset-bottom));left:max(var(--sp-2),calc(50% - 240px));right:max(var(--sp-2),calc(50% - 240px));
-  width:auto;max-height:min(78%,640px)}
-.hotintro{flex:none;padding:var(--ui-space-control) var(--ui-space-content) var(--ui-space-control);display:flex;flex-direction:column;gap:4px;border-bottom:1px solid var(--menu-line)}
-.hotintro p{margin:0}
-.hotintro .hotnow{font:600 var(--ui-fs-body)/1.4 var(--font-body);color:var(--menu-text)}
-.hotintro .hotwhat,.hotintro .hotswap{color:var(--menu-muted)}
-.hotintro code,.hotask code{font-family:var(--font-mono);font-size:.92em;padding:0 4px;border-radius:5px;background:var(--menu-chip)}
-.hotintro input{margin-top:var(--sp-2);min-height:40px;padding:0 12px;border-radius:var(--ui-radius-pill);border:1px solid var(--menu-line);background:var(--menu-chip);
-  color:var(--menu-text);font:400 var(--ui-fs-body)/1.3 var(--font-body);-webkit-appearance:none;appearance:none;outline:none}
-.hotintro input:focus-visible{border-color:var(--c-shield)}
-.hotsheet .menulist button{position:relative;padding-right:56px}
-.hotsheet .menulist button.cur>b{color:var(--c-shield)}
-.hotsheet .menulist button>i{position:absolute;right:var(--menu-pad);top:50%;transform:translateY(-50%);font:600 var(--ui-fs-small)/1 var(--font-body);font-style:normal;color:var(--c-shield)}
-.hotsheet .menulist .hotreset>b{font-family:var(--font-body);font-weight:600}
-.hotsheet .hotnone{margin:0;padding:var(--ui-space-content) var(--menu-pad);color:var(--menu-muted)}
-.hotask{flex:none;padding:var(--ui-space-control) var(--ui-space-content) var(--ui-space-content);border-top:1px solid var(--menu-line);background:var(--menu-panel);
-  animation:sheet-in var(--ui-dur) var(--ui-ease) both}
-.hotask[hidden]{display:none}
-.hotask p{margin:0}
-.hotask .t{font:600 var(--ui-fs-body)/1.4 var(--font-body);color:var(--menu-text)}
-.hotask .w{margin-top:2px;color:var(--menu-muted)}
-.hotask .row{display:flex;gap:var(--sp-2);justify-content:flex-end;margin-top:var(--ui-space-control)}
-.hotask button{min-height:44px;padding:0 18px;border-radius:var(--ui-radius-pill);border:1px solid var(--menu-line);background:none;color:var(--menu-text);
-  font:600 var(--ui-fs-body)/1 var(--font-body);cursor:pointer}
-.hotask button.yes{background:var(--c-shield);border-color:var(--c-shield);color:#fff}
-.hotask button:disabled{opacity:.45;cursor:default}
-@media (prefers-reduced-motion:reduce){.hotask{animation:none}}
 .menubody{flex:1;min-height:0;overflow-y:auto;overscroll-behavior:contain;scrollbar-width:none;
   padding:var(--menu-gap) max(var(--menu-pad), calc((100% - var(--menu-max)) / 2)) calc(var(--menu-gap) + env(safe-area-inset-bottom))}
 .menubody::-webkit-scrollbar{display:none}
@@ -253,7 +217,6 @@ kbd.setesc{background:var(--menu-chip);border-color:var(--menu-line);color:var(-
 #settings .rmdot[data-on="true"]{background:var(--menu-accent)}
 #settings :is(.rmcode,.rmrename input){background:var(--menu-bg);border-color:var(--menu-line);color:var(--menu-text)}
 #settings .setsample{background:var(--menu-chip)}
-#settings .setsamplelab{color:var(--menu-muted);font:600 var(--ui-fs-caption)/1.4 var(--font-body)}
 #settings .iosico{background:var(--menu-bg);border-color:var(--menu-line);color:var(--menu-accent)}
 #settings .setstatus{background:var(--callout-info);color:var(--menu-text)}
 
@@ -492,35 +455,3 @@ body:is([data-view="mem"],[data-view="act"],[data-view="tasks"],[data-view="mode
 #keys .keydl dt{white-space:normal}
 /* the smaller menu type must not shrink a two-character link (隐私 / 条款) under the 44 px tap */
 #settings .setlinks a{min-width:var(--ui-tap);justify-content:center}
-
-/* P265: the offline reference's website entry shares the menu's minimum touch target. */
-.keys-site-link{display:inline-flex;align-items:center;min-height:var(--menu-row-3);min-width:var(--menu-row-3)}
-/* P264: the real header controls move into the non-scrolling Settings header (one set of handlers / IDs). */
-.set-actions{display:flex;align-items:center;gap:var(--ui-space-control);margin-left:auto}
-#set-actions .bulb{position:static;flex:none;color:var(--menu-text);background:transparent}
-#set-actions .bulb svg{width:24px;height:24px}
-.sethead{flex:none}
-.set-find{flex:none;padding:var(--sp-3);background:var(--menu-bg);max-height:45%;overflow:auto}
-.set-find[hidden]{display:none}
-#set-find-input{width:100%;min-height:var(--ui-tap);background:var(--menu-card);color:var(--menu-text);border:1px solid var(--menu-line)}
-.set-found{outline:2px solid var(--menu-accent);outline-offset:-2px}
-.setup-assist{display:flex;align-items:center;justify-content:center;gap:var(--ui-space-control);width:100%;min-height:64px;padding:var(--sp-3);background:var(--c-shield);color:var(--c-sooty);border:0;border-radius:var(--ui-radius-control);font:inherit;font-weight:700;cursor:pointer}
-.setup-assist img{flex:none}
-
-#set-actions .bulb{margin:0;width:var(--ui-icon-btn);height:var(--ui-icon-btn)}
-
-body:not([data-view="chat"]) #set-actions .bulb{display:flex}
-/* P302 (owner 10-18 / 10-20: 「AI 登录救援这么紧凑」「Agent J 那一栏上边也没有 margin」) — Settings rows and sub-pages on the spacing
-   tokens (DESIGN_TOKENS.md): text keeps --ui-space-line from every dashed line, buttons keep --ui-space-btn, a note under buttons
-   keeps --ui-space-control */
-#settings .setrow,#settings .setid{padding-block:var(--ui-space-line)}
-#settings .setnote+.setnote{margin-top:var(--ui-space-control)}
-#settings .mailbtns{display:flex;flex-wrap:wrap;gap:var(--ui-space-btn);margin:var(--ui-space-control) 0}
-#set-auth .arrow{display:flex;flex-direction:column;gap:var(--ui-space-control);padding-block:var(--ui-space-content)}
-#set-auth .arrow>*{margin:0}
-#set-auth .arrow .mailadv>*+*{margin-top:var(--ui-space-control)}
-#set-auth #ar-list+.setnote{margin-top:var(--ui-space-content)}
-#set-auth .arflow{margin:var(--ui-space-content) 0}
-/* P302 追加 28 (owner 10-15: 「所有弹窗……最高只到 message card 的顶部」): the question / approval sheet never rises above the sheet
-   ceiling (js/fit.js syncCeil → --ui-sheet-stage-top; DESIGN_TOKENS.md「Sheet ceiling」); a long one scrolls inside */
-#stage>.sheet{max-height:calc(100% - var(--ui-sheet-stage-top,0px))}

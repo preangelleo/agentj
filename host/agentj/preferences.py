@@ -87,13 +87,10 @@ def validate(doc,raw=''):
         if not valid: raise ConfigError(k,'expected '+typ,line)
         if 'enum' in m and v not in m['enum']: raise ConfigError(k,'allowed: '+', '.join(m['enum']),line)
         if isinstance(v,str):
-            if any(ord(c)<32 and not (k in ('agent.instructions','imessage.instructions') and c in '\n\t') for c in v) or len(v)>m.get('maxLength',1000): raise ConfigError(k,'invalid characters or length',line)
+            if any(ord(c)<32 and not (k=='agent.instructions' and c in '\n\t') for c in v) or len(v)>m.get('maxLength',1000): raise ConfigError(k,'invalid characters or length',line)
             if m.get('pattern') and not re.fullmatch(m['pattern'],v): raise ConfigError(k,'expected '+m['patternHint'] if m.get('patternHint') else 'expected environment variable NAME, never a secret',line)
         if typ in ('integer','number') and not m.get('minimum',-math.inf)<=v<=m.get('maximum',math.inf): raise ConfigError(k,f"allowed range: {m.get('minimum')}..{m.get('maximum')}",line)
         if typ=='number' and m.get('multipleOf') and abs(v/m['multipleOf']-round(v/m['multipleOf']))>1e-6: raise ConfigError(k,f"steps of {m['multipleOf']}",line)
-    for lk in ('imessage.vip','imessage.mute'):   # P274: numbers / e-mails / keywords, matched exactly; never names guessed
-        lv=get(doc,lk,[])
-        if len(lv)>200 or any(not isinstance(x,str) or not x.strip() or len(x)>100 or any(ord(c)<32 for c in x) for x in lv): raise ConfigError(lk,'a list of up to 200 numbers, e-mails or keywords (each 1–100 characters)')
     cats = get(doc, 'updates.skill_categories', [])
     if len(cats)>4 or any(c not in ('content','app','commerce','general') for c in cats): raise ConfigError('updates.skill_categories','allowed: content, app, commerce, general')
     pif = get(doc, 'agent.private_instructions_file', '')

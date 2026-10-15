@@ -1,8 +1,7 @@
 #!/usr/bin/env node
-// P150 追加 9 → P273 (2026-10-14 19:10, 「在任何页面都不出现这种下拉状态条」): the long Bash command in an approval —
-// the case P150 painted in the state colours — now draws NO scrollbar at all in any state, and still scrolls (the case
-// id stays: same place, the rule replaced). Classic bars are switched on (launch scrollbars:true), so a drawn bar would
-// take layout width (offsetWidth − clientWidth) and show in the pixels at the scroller's right edge. Real page + local fake host, independent headless Chromium (never :9222).
+// P150 追加 9: every scrollbar the page still draws (here: a long Bash command in an approval) is thin, round and in the
+// colours of the current state — the thumb a light shade of green / blue / orange, the track a faint veil of it; never
+// the browser's grey. Real page + local fake host, independent headless Chromium (never :9222).
 // An open approval holds the page on waiting; idle / working set body[data-status] directly to paint the same sheet green /
 // blue (the CSS keys on that attribute only). Shots → reports/qa/p150/scrollbar/<state>.png (+ a crop of the bar).
 import assert from 'node:assert/strict';
@@ -23,7 +22,7 @@ const CMD = Array.from({ length: 40 }, (_, i) => `echo "step ${i}: rebuild the i
 const FIND = `(() => { for (const n of [...document.querySelectorAll('body *')].reverse()) { const cs = getComputedStyle(n);
   if (/(auto|scroll)/.test(cs.overflowY) && n.scrollHeight > n.clientHeight + 20 && n.clientHeight > 40 && n.offsetParent && n.textContent.includes('step 39')) {
     n.dataset.p150sb = '1'; const r = n.getBoundingClientRect();
-    return { color: cs.scrollbarColor, width: cs.scrollbarWidth, bar: n.offsetWidth - n.clientWidth - (parseFloat(cs.borderLeftWidth) || 0) - (parseFloat(cs.borderRightWidth) || 0), top: n.scrollTop, x: r.left, y: r.top, w: r.width, h: r.height,
+    return { color: cs.scrollbarColor, width: cs.scrollbarWidth, x: r.left, y: r.top, w: r.width, h: r.height,
       thumb: [n.scrollTop / n.scrollHeight * r.height, n.clientHeight / n.scrollHeight * r.height] }; } } return null; })()`;
 // One device pixel of the page → [r, g, b] (1×1 PNG: one filter byte + RGBA after the IDAT inflate).
 async function px(p, x, y) {
@@ -31,6 +30,7 @@ async function px(p, x, y) {
   const idat = []; for (let o = 8; o < b.length;) { const n = b.readUInt32BE(o), t = b.toString('ascii', o + 4, o + 8); if (t === 'IDAT') idat.push(b.subarray(o + 8, o + 8 + n)); o += 12 + n; }
   const raw = inflateSync(Buffer.concat(idat)); return [raw[1], raw[2], raw[3]];
 }
+const grey = ([r, g, b]) => Math.max(r, g, b) - Math.min(r, g, b) < 12;
 
 export async function runScrollbar() {
   mkdirSync(OUT, { recursive: true });

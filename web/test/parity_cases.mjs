@@ -588,10 +588,7 @@ export async function runCases({ B, web, fake, only }) {
     ok(Array.isArray(lastSay().att) && lastSay().att.length === 1, 'say names the blob');
     const b = fake.st.blobs.get(lastSay().att[0]);
     ok(b && b.bytes && b.bytes.toString('utf8') === 'hello from the phone\n'.repeat(20), 'the host got the exact bytes');
-    await wait(`!document.getElementById('omAttCount').hidden && document.getElementById('omAttCount').textContent.trim()==='1'`);
-    await click('#omMore');
     await wait(`document.getElementById('omAtt').textContent.includes('notes.txt')`);
-    await click('#omMore');
   });
   await C('attach-photo-multi', async () => {
     await setFiles('fPhoto', [files.png1, files.png2]);
@@ -690,11 +687,11 @@ export async function runCases({ B, web, fake, only }) {
     const before = fake.st.turns.length, total0 = (await pg()).split('/ ')[1];
     await sendText('排队中的话');
     await wait(`!document.getElementById('sayCancel').hidden && document.getElementById('input').value === ''`);
-    // one look tells it is queued: the page says so (not the working line 「董事长，您的最新指示已经收到…」) and how to withdraw;
-    // P282 (追加): ONE place only — no second pending line above the field (it read as "sent" and "not sent" at once)
+    // one look tells it is queued: the page says so (not the working line 「董事长，您的最新指示已经收到…」), the composer keeps a pending line + how to withdraw
     await wait(`document.getElementById('words').textContent.includes(${JSON.stringify(T('r.queue.card'))})`, 3000);
     ok(await ev(`document.body.dataset.pageQueued === '1' && getComputedStyle(document.querySelector('.thinking')).display === 'none'`), 'queued page: no working dots');
-    ok(T('r.queue.card').includes('取消') && await ev(`document.getElementById('outbox').hidden && !document.querySelector('#outbox .obi[data-queued="1"]')`), 'queued: shown once (the page), no pending line above the field');
+    ok(await ev(`(() => { const b = document.getElementById('outbox'), i = b.querySelector('.obi[data-queued="1"]');
+      return !b.hidden && !!i && i.textContent.includes('排队中的话') && i.textContent.includes(${JSON.stringify(T('r.queue.note'))}); })()`), 'composer: the queued line says it can be withdrawn');
     await click('#sayCancel');
     await waitToast(T('r.say.withdrawn'));
     ok((await ev(`document.getElementById('input').value`)) === '排队中的话' && fake.st.cancels.length === 1, 'withdrawn: the words are back');
@@ -707,7 +704,7 @@ export async function runCases({ B, web, fake, only }) {
     // the other path: queued, then the computer takes it — only then the pending line and the × go; the field stays empty
     await sendText('被接手的话');
     await wait(`document.getElementById('words').textContent.includes(${JSON.stringify(T('r.queue.card'))})`, 3000);
-    ok(await ev(`!document.getElementById('sayCancel').hidden && document.getElementById('outbox').hidden && document.getElementById('input').value === ''`), 'queued: × in the field, no pending line, field empty');
+    ok(await ev(`!document.getElementById('sayCancel').hidden && !document.getElementById('outbox').hidden && document.getElementById('input').value === ''`), 'queued: × + pending line, field empty');
     // P152 (P149 plan B): a second queued message's page says how many wait ahead of it; withdrawn again (× takes the latest)
     await sendText('第二条排队的话');
     await wait(`document.getElementById('words').textContent.includes(${JSON.stringify(T('r.queue.card') + ' · ' + T('r.queue.ahead', { n: 1 }))})`, 3000);
@@ -715,12 +712,6 @@ export async function runCases({ B, web, fake, only }) {
     await waitToast(T('r.say.withdrawn'));
     await clearField();
     await wait(`document.getElementById('words').textContent.includes(${JSON.stringify(T('r.queue.card'))}) && !document.getElementById('words').textContent.includes(${JSON.stringify(T('r.queue.ahead', { n: 1 }))})`, 3000);
-    // P282 (追加): the Agent takes it (a shared Codex still opens its session before the write) — no longer 「排队中」, the
-    // × goes, the page reads as worked on; `delivered` follows later and changes nothing visible
-    await fake.takeQueued();
-    await wait(`document.getElementById('sayCancel').hidden && document.body.dataset.pageQueued !== '1' && !document.getElementById('words').textContent.includes(${JSON.stringify(T('r.queue.card'))})`, 3000);
-    // P281 (P290 merge): the working sign is the dancing robot — under the reply (.thinking) or leading the page's wait line
-    ok(await ev(`getComputedStyle(document.querySelector('.thinking')).display !== 'none' || !!document.querySelector('#words .wbot')`), 'taken: the page shows the working dots');
     await fake.send({ t: 'status', s: 'idle', agent: 'claude', name: 'Wren' });
     await fake.deliverQueued();
     await wait(`document.getElementById('sayCancel').hidden && document.getElementById('outbox').hidden`);
@@ -790,18 +781,11 @@ export async function runCases({ B, web, fake, only }) {
       // all following recording cases into cascading failures.
       await P.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
     }
-    for (let i=0;i<150 && !fake.st.says.some(s=>s.text==='前面的字'+fake.st.asrText);i++) await sleep(100);
-    ok(fake.st.says.some(s=>s.text==='前面的字'+fake.st.asrText), 'held release sends draft plus transcription');
+    await wait(`document.getElementById('input').value === '前面的字' + ${JSON.stringify(fake.st.asrText)}`, 15000);
     ok(fake.st.wavs.length === 1 && fake.st.wavs[0].ok, 'the host got a 16 kHz mono PCM16 WAV made in the page');
   });
   await C('ptt-timer', async () => { ok(true, 'checked inside ptt-hold (timer m:ss + hint while recording)'); });
-  await C('asr-append', async () => {
-    await clearField(); await ev(`document.activeElement && document.activeElement.blur()`); await sleep(500);
-    await key(P, 'm', {code:'KeyM',type:'down'}); await captureReady(); await sleep(1100);
-    await key(P, 'm', {code:'KeyM',type:'up'});
-    await wait(`document.getElementById('input').value === ${JSON.stringify(fake.st.asrText)}`,15000);
-    ok(true, 'keyboard dictation remains a draft');
-  });
+  await C('asr-append', async () => { ok((await ev(`document.getElementById('input').value`)).startsWith('前面的字'), 'appended after what was typed, nothing sent'); ok(!fake.st.says.some((s) => s.text && s.text.includes(fake.st.asrText)), 'not sent'); });
   await C('ptt-slide-cancel', async () => {
     const n = fake.st.wavs.length;
     const r = await rect(P, '#mic');
@@ -851,9 +835,7 @@ export async function runCases({ B, web, fake, only }) {
     await touchHold('#mic', 1100);
     await sleep(500);
     await touchHold('#mic', 1100);
-    for(let i=0;i<200 && !fake.st.says.some(s=>s.text==='第二段');i++) await sleep(100);
-    const sent=fake.st.says.filter(s=>['第一段','第二段'].includes(s.text)).map(s=>s.text);
-    ok(JSON.stringify(sent)===JSON.stringify(['第一段','第二段']), 'held transcriptions send once in recording order');
+    await wait(`document.getElementById('input').value === '第一段第二段'`, 20000);
   });
   await C('asr-errors', async () => {
     fake.st.asrWhy = 'no_speech';
@@ -1073,7 +1055,7 @@ export async function runCases({ B, web, fake, only }) {
     await fake.send({ t: 'push_key', k: Buffer.from(Uint8Array.of(4, ...crypto.getRandomValues(new Uint8Array(64)))).toString('base64url') });
     await ev(`(document.getElementById('settings').hidden && document.getElementById('setBtn').click())`);
     await wait(`!document.getElementById('settings').hidden && !['', ${JSON.stringify(D.zh['set.pushStateWait'])}, ${JSON.stringify(D.zh['set.pushStateNo'])}].includes(document.getElementById('set-push-text').textContent)`);
-    await ev(`(!document.getElementById('settings').hidden && document.getElementById('setBtn').click())`);
+    await ev(`(!document.getElementById('settings').hidden && document.getElementById('set-close').click())`);
   });
   await C('aj-memory-page', async () => {
     fake.answer('mem_list', () => [{ t: 'mem_sources', harness: 'codex', sources: [{ id: 'p', label: 'AGENTS.md', path: '~/x/AGENTS.md', n: 1 }], trash: [] },
@@ -1153,13 +1135,13 @@ export async function runCases({ B, web, fake, only }) {
     await wait(`document.documentElement.dataset.theme === 'dark'`);
     const dark = await ev(`getComputedStyle(document.getElementById('chromeProbe')).backgroundColor`).then(rgb);
     ok(dark !== light, `dark theme deepens the state colour (${light} → ${dark})`);
-    await ev(`document.querySelector('[data-set-theme="system"]').click(); (!document.getElementById('settings').hidden && document.getElementById('setBtn').click())`);
+    await ev(`document.querySelector('[data-set-theme="system"]').click(); (!document.getElementById('settings').hidden && document.getElementById('set-close').click())`);
   });
   await C('aj-i18n', async () => {
     await ev(`(document.getElementById('settings').hidden && document.getElementById('setBtn').click()); document.querySelector('[data-set-lang="en"]').click()`);
     await wait(`document.documentElement.lang === 'en'`);
     ok((await ev(`document.getElementById('send').getAttribute('aria-label')`)) === D.en['r.say.send'] && (await ev(`document.getElementById('input').placeholder`)).startsWith('Say something'), 'English everywhere');
-    await ev(`document.querySelector('[data-set-lang="zh"]').click(); (!document.getElementById('settings').hidden && document.getElementById('setBtn').click())`);
+    await ev(`document.querySelector('[data-set-lang="zh"]').click(); (!document.getElementById('settings').hidden && document.getElementById('set-close').click())`);
     await wait(`document.documentElement.lang === 'zh-CN'`);
   });
   // relay keeps the draft across a lost login; Agent J keeps it (sealed) across every disconnect (draft-save), but a
@@ -1241,9 +1223,9 @@ export async function runCases({ B, web, fake, only }) {
   await C('keys-panel', async () => {
     await click('#keysBtn');
     await wait(`!document.getElementById('keys').hidden`);
-    // P207: the sheet is drawn from interactions.json — every entry in the function / single-key / gesture groups (entries may appear in more than one group) (relay's rows are all in it: j k g G o f y Y r a p c m i / ? s Esc …)
+    // P207: the sheet is drawn from interactions.json — one row per entry with a key (relay's rows are all in it: j k g G o f y Y r a p c m i / ? s Esc …)
     const rows = await ev(`import('./js/interactions.gen.js').then(g => g.ROWS.length)`);
-    ok(rows >= 60 && (await ev(`new Set([...document.querySelectorAll('#keys dt')].map(e=>e.dataset.ix)).size`)) === rows && (await ev(`document.querySelectorAll('#keys dd').length`)) === (await ev(`document.querySelectorAll('#keys dt').length`)), 'every interactions.json entry with a key is listed (' + rows + ')');
+    ok(rows >= 60 && (await ev(`document.querySelectorAll('#keys dt').length`)) === rows && (await ev(`document.querySelectorAll('#keys dd').length`)) === rows, 'every interactions.json entry with a key is listed (' + rows + ')');
     for (const k of ['j', 'k', 'g', 'G', 'o', 'f', 'y', 'Y', 'r', 'a', 'p', 'c', 'm', 'i', '/', '?', 's', 'u']) ok(await ev(`[...document.querySelectorAll('#keys dt kbd')].some(x => x.textContent === ${JSON.stringify(k)})`), 'the sheet lists ' + k);
     await click('#keysClose');
   });

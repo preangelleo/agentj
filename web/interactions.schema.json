@@ -33,7 +33,7 @@
     },
     "scope": {"enum": ["chat", "input", "any", "reader", "viewer", "search", "sheet"],
       "description": "chat = the chat screen with the focus outside any field; input = in the message box; any = both; reader / viewer / search / sheet = while that layer is open"},
-    "impl": {"enum": ["table", "code"], "description": "table = dispatched by relay.js ACT through interactions.gen.js KEYMAP (chat scope: single key or Alt+key; any scope: Alt+Shift+Latin letter); code = a hand-written handler marked // @ix <id>"},
+    "impl": {"enum": ["table", "code"], "description": "table = dispatched by relay.js ACT through interactions.gen.js KEYMAP (chat scope, single key or Alt+key); code = a hand-written handler marked // @ix <id>"},
     "gesture": {
       "type": "object", "required": ["type"], "additionalProperties": false,
       "properties": {

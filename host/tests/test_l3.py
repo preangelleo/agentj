@@ -431,8 +431,6 @@ class WheelInstall(unittest.TestCase):
 
     def test_wheel_contents(self):
         import zipfile
-        import _budget
-        self = _budget.soft(self)   # P293: byte budgets below are soft up to +10 % (ADR line); counts and contents stay exact
         names_ = zipfile.ZipFile(self.wheel).namelist()
         for f in ("agentj/__init__.py", "agentj/permtool.py", "agentj/admin/index.html",
                   "agentj/admin/app.js", "agentj/admin/app.css", "agentj/service.py", "agentj/doctor.py",
@@ -482,15 +480,12 @@ class WheelInstall(unittest.TestCase):
         p155=[i for i in zipfile.ZipFile(self.wheel).infolist() if i.filename=='agentj/switch_harness.py' or i.filename.startswith('agentj/skills/agentj-switch-harness/')]
         p155_bytes=sum(i.compress_size+76+2*len(i.filename.encode())+2*len(i.extra)+len(i.comment) for i in p155)
         self.assertEqual(len(p155),2)
-        # P282: +8 KiB (way-back gate, --undo, login hints, stale-path report; room for P281's progress lines) — measured 18.7 KiB. Flagged to Jarvis.
-        # P312: + the no_reply diagnosis (zh + en next steps) and the start-probe call — measured +2.9 KiB on top of P282 → an
-        # explicit 4 KiB, flagged to Jarvis for ratification (REPORT-312; the probe itself lives in agent_codex, core).
-        self.assertLessEqual(p155_bytes,16384+8192+4096,'P155 harness-switch allocation (+ P282 + P312) is bounded')
+        self.assertLessEqual(p155_bytes,16384,'P155 harness-switch allocation is bounded')
         # P169 (0.20.0 phone themes): the theme module, its schema + the two factory presets (the robots preset carries the two
         # 16-robot sprite sheets, the same bytes as the web page's) and the agentj-theme skill get their own explicit 48 KiB.
         p169=[i for i in zipfile.ZipFile(self.wheel).infolist() if i.filename=='agentj/theme.py' or i.filename.startswith(('agentj/themes/','agentj/skills/agentj-theme/'))]
         p169_bytes=sum(i.compress_size+76+2*len(i.filename.encode())+2*len(i.extra)+len(i.comment) for i in p169)
-        self.assertEqual(len(p169),19)  # P263: five state logos + Send per factory; same 48 KiB ceiling
+        self.assertEqual(len(p169),7)
         self.assertLessEqual(p169_bytes,49152,'P169 theme allocation is bounded')
         # P181 (0.20.0 load card five resources + the agentj-commands skill): resources.py and the new bundled skill get their
         # own explicit 12 KiB; the serve / controls / names hooks ride in a +4 KiB core increment (flagged to Jarvis).
@@ -523,11 +518,7 @@ class WheelInstall(unittest.TestCase):
         self.assertEqual(len(p184),3)
         # P194 (owner card = slot 0, owner e-mails for 「发给我自己」, the owner-card op): +4 KiB on the same files, measured
         # 30.2 KiB in total; flagged to Jarvis (P165 may fold it into the consolidated ceiling).
-        # P296 (no card to the owner / allowlist, the card's 「加入白名单」 picks): +1 KiB, measured 32.7 KiB (2.3 % over the old
-        # line, soft budget ≤ 10 % → ADR-P296 one line).
-        # P295 (forward result: real skip reasons, SMTP receipt + recipient domains in the log, double-send guard, work-note
-        # trim): measured 33 570 B, +802 B (2.4 %) over the P194 ceiling → an explicit +1 KiB, ADR line in REPORT-295.
-        self.assertLessEqual(p184_bytes,28672+4096+1024+1024,'P184 address book allocation (+ P194 slot 0, P296, P295) is bounded')
+        self.assertLessEqual(p184_bytes,28672+4096,'P184 address book allocation (+ P194 slot 0) is bounded')
         # P188 (0.20.0 搜索聊天记录, PROTOCOL §28): hsearch.py carries the 2 956-pair Traditional→Simplified table (OpenCC, the same
         # bytes as protocol/search.js), measured 16.4 KiB in the wheel → its own explicit 20 KiB, flagged to Jarvis.
         p188=[i for i in zipfile.ZipFile(self.wheel).infolist() if i.filename=='agentj/hsearch.py']
@@ -553,19 +544,7 @@ class WheelInstall(unittest.TestCase):
         p244=[i for i in zipfile.ZipFile(self.wheel).infolist() if i.filename in ('agentj/workflows.py','agentj/skills/aliases.json')]
         p244_bytes=sum(i.compress_size+76+2*len(i.filename.encode())+2*len(i.extra)+len(i.comment) for i in p244)
         self.assertEqual(len(p244),2)
-        # P276 (Workflows first scan, CEO roster backfill, set up / review organisation: workflows.py) + P299 (desc_zh/use_zh):
-        # measured 14 858 B in the P290 integration, +2 570 B (20.9 %) over the line → an explicit +4 KiB; over the 10 % soft
-        # line, so flagged to Jarvis for ratification (REPORT-290).
-        self.assertLessEqual(p244_bytes,12288+4096,'P244 read-only catalogue allocation (+ P276 first scan) is bounded')
-        # P274 (iMessage assistant, macOS only: imessage.py service + CLI, imessage_core.py — the reader shared byte-for-byte with
-        # the plaza package imessage-assistant — and the agentj-imessage skill): its own explicit 28 KiB allocation (measured 23.9 KiB; core +3.5 KiB on the 64eeacd8 wheel), same
-        # accounting; the serve / preferences / cli wiring and the 12 schema keys take a further explicit 4 KiB core increment.
-        # Flagged to Jarvis in REPORT-274.
-        p274=[i for i in zipfile.ZipFile(self.wheel).infolist() if i.filename in ('agentj/imessage.py','agentj/imessage_core.py')
-              or i.filename.startswith('agentj/skills/agentj-imessage/')]
-        p274_bytes=sum(i.compress_size+76+2*len(i.filename.encode())+2*len(i.extra)+len(i.comment) for i in p274)
-        self.assertEqual(len(p274),3)
-        self.assertLessEqual(p274_bytes,28672,'P274 iMessage assistant allocation is bounded')
+        self.assertLessEqual(p244_bytes,12288,'P244 read-only catalogue allocation is bounded')
         # P135 (0.18.2 integration of P131–P134 + the shared-turn reply fix): an explicit 8 KiB core increment, flagged to Jarvis.
         # P139 (0.18.3 shared-mode trust boundary: ctl_auth, hook token/watch, never-yield): another explicit 8 KiB, flagged to Jarvis.
         # P142 (0.18.3 host reliability: diskq, _bg, B14/A12/B15/B17/B19): a further explicit 8 KiB, flagged to Jarvis (P143 integration keeps both).
@@ -602,13 +581,7 @@ class WheelInstall(unittest.TestCase):
         # P181 4 · P182 4 · P184 4 · P185 8 · P186 8 · P188 4 · P191 4 · P192 4 KiB = 124 KiB; P189 / P190 / P193 declared none); merged and measured, the core grew +126.4 KiB over the 0.18.4 wheel
         # (overlap + P165's own fixes) → ONE explicit +136 KiB core increment on the 0.18.4 ceiling (P188's +4 KiB included), plus the new
         # bounded allocations above (P155 16 · P158 20 · P169 48 · P170 24 · P171 8 · P181 12 · P184 28 · P188 20 · P189 8 KiB). Flagged to Jarvis for ratification.
-        # P275 (official Agent J photo for Telegram bots): the 640 px avatar JPG (13 KiB, already compressed) and tg_avatar.py get
-        # their own explicit 20 KiB allocation, same accounting; flagged to Jarvis. The hooks in telegram.py / bots stay in the core.
-        p275=[i for i in zipfile.ZipFile(self.wheel).infolist() if i.filename in ('agentj/tg_avatar.py','agentj/assets/agentj-telegram-avatar-640.jpg')]
-        p275_bytes=sum(i.compress_size+76+2*len(i.filename.encode())+2*len(i.extra)+len(i.comment) for i in p275)
-        self.assertEqual(len(p275),2)
-        self.assertLessEqual(p275_bytes,20480,'P275 avatar allocation is bounded')
-        allocs=bot_bytes+lt_bytes+browser_bytes+p115_bytes+cut_bytes+p147_bytes+p155_bytes+p158_bytes+p169_bytes+p170_bytes+p171_bytes+p181_bytes+p184_bytes+p188_bytes+p189_bytes+p207_bytes+p244_bytes+p274_bytes+p275_bytes   # + P244 catalogue + P274 iMessage
+        allocs=bot_bytes+lt_bytes+browser_bytes+p115_bytes+cut_bytes+p147_bytes+p155_bytes+p158_bytes+p169_bytes+p170_bytes+p171_bytes+p181_bytes+p184_bytes+p188_bytes+p189_bytes+p207_bytes+p244_bytes   # + P244 catalogue
         core_0184=2_260_000+8192+8192+8192+12288+4096+8192+8192+12288      # P118 + P135 P139 P142 P143 P149 P150 P151 P152
         core_0200=core_0184+139264                                          # + P165 (0.20.0)
         core_0200+=8192           # P194: owner_route.py (owner-directed outbound) + mail / telegram / privacy / media wiring, flagged to Jarvis
@@ -670,59 +643,8 @@ class WheelInstall(unittest.TestCase):
         # P250 23:4x: ratified named core growth (36 KiB already in the sum)
         # and a further measured 16 KiB for P258; internal package guard, not an external limit.
         core_0200+=16384
-        # P279 (AI route: ai_route.py + ai_route.json — keyless reach probes, decision matrix, the one invite-link file, Kimi
-        # steps; first-run row, CLI `agent route`, two skills): measured +8.1 KiB over the line above → an explicit 12 KiB,
-        # soft budget (ADR-P279), flagged to Jarvis for ratification (REPORT-279).
-        core_0200+=12288
-        # P291 (robots for background work: libproc ancestry off the loop, Stop.background_tasks adds / background Bash,
-        # launchd scan, identity + skill lines): measured +2.4 KiB over the line above → an explicit 4 KiB (soft budget,
-        # +0.1 %; ADR line in REPORT-291), flagged to Jarvis for ratification.
-        core_0200+=4096
-        # P292 (slow disk: diskq log thread + bounded queue, off-loop status-line / phone-touch / seat-cert reads, allowlist
-        # stat cache, bounded serve exit): measured +2.7 KiB of compressed host code → an explicit 4 KiB, flagged to Jarvis.
-        core_0200+=4096
-        # P277 (0.20.4: upgrade failures diagnosable — upgrade_diag.py: redacted installer tail, last-upgrade record, automatic
-        # support report, owner sentence; finer reasons + recover line in update.py; heartbeat last_upgrade): measured +8.6 KiB
-        # over the line above → an explicit 12 KiB, flagged to Jarvis for ratification (REPORT-277).
-        core_0200+=12288
-        # P278 (0.20.4: no systemd on Linux / WSL — detection + bilingual fix sentences in service.py, no_manager result in
-        # update.py, the agentj-update skill paragraph): measured +0.6 KiB over the line above → an explicit 4 KiB, flagged to
-        # Jarvis for ratification (REPORT-278).
-        core_0200+=4096
-        # P282 (switch gate in the service environment: stale harness paths bypassed + healed, Claude Code login lookup order,
-        # not_logged_in, --undo / --force flags, switch-job unload): measured +1.2 KiB over the line above → an explicit 4 KiB,
-        # flagged to Jarvis for ratification (REPORT-282).
-        core_0200+=4096
-        # P289 (harness-switch handoff: handoff.switch_* paths / probe / texts, serve `harness_handoff`, agentj-handoff skill and
-        # manual lines): measured +1.3 KiB over the line above → an explicit 4 KiB, flagged to Jarvis for ratification (REPORT-289).
-        core_0200+=4096
-        # P298 (OpenCode free models as the harness: opencode_free.py — free list from `opencode models`, data-terms notes,
-        # the formal-path probe with warm-up retries; login "free", read-back checks): measured +6.2 KiB over the line above →
-        # an explicit 8 KiB (soft budget, +0.3 % of core; ADR-P298), flagged to Jarvis for ratification (REPORT-298).
-        core_0200+=8192
-        # P281 (0.20.4: no stray U+FFFD on any channel — text.drop_replacement + its four call sites; /switch-harness progress
-        # lines — switch_harness.PROGRESS zh/en + serve.harness_progress; the skill paragraph): measured +0.2 KiB over the line
-        # above → an explicit 4 KiB, flagged to Jarvis for ratification (REPORT-281).
-        core_0200+=4096
-        # P285 (after 0.20.3: ui.card_hot_action schema + default, the agentj-config row, the manual's 快捷技能键 paragraph and
-        # shortcut rows zh/en): measured +0.3 KiB over the line above → an explicit 4 KiB, flagged to Jarvis (REPORT-285).
-        core_0200+=4096
-        # P296 (0.20.4 candidate: mail with no card to the owner / allowlist, the card's signed 「加入白名单」 picks, `mail allow`
-        # waits for its card; serve / approvals / mail / skills / manual text): measured +0.3 KiB over the line above → an explicit
-        # 2 KiB (soft budget, ADR-P296), flagged to Jarvis.
-        core_0200+=2048
-        core_0200+=4096           # P274: imessage wiring (serve messages + host_info platform, pref_set gate, cli, 12 schema keys); flagged to Jarvis
-        # P280 (humane.json/humane.py: every status-change line in one dictionary, owner address, /clear undo window):
-        # an explicit 4 KiB (REPORT-280: the old ceiling had 1.3 KB left), flagged to Jarvis.
-        core_0200+=4096
-        # P283 + P297 (Telegram pair code binding, customer-service routing): measured over the 0.18.4 core line on its own branch → an explicit 8 KiB here, flagged to Jarvis.
-        core_0200+=8192
-        # P312 (switch hello diagnosis: Agent.phase / err_kind, serve status fields, agent_codex.start_probe): measured +1.7 KiB
-        # over the line above → an explicit 2 KiB (soft, +0.08 %; ADR-P312 budget-soft line), flagged to Jarvis.
-        core_0200+=2048
-        core_0200+=4096           # P307 AskUserQuestion phone/terminal race (shared.py): measured +1922 bytes; flagged to Jarvis
         self.assertLess(pathlib.Path(self.wheel).stat().st_size-allocs,core_0200,'P118 approved bounded core ceiling + 0.18.x increments + P165 (0.20.0) + P198 (0.20.1) + 0.20.2 increments (P201 P203 P205 P207 P211 P214 P215 P217 + P218 integration) + 0.20.3 increments (P219 P221 + P240 integration) + P254')
-        self.assertLess(pathlib.Path(self.wheel).stat().st_size,core_0200+65536+49152+49152+32768+4096+12288+8192+16384+20480+49152+24576+8192+12288+28672+4096+20480+8192+12288+12288+8192+28672+20480,   # + P244 bounded catalogue + P275 avatar
+        self.assertLess(pathlib.Path(self.wheel).stat().st_size,core_0200+65536+49152+49152+32768+4096+12288+8192+16384+20480+49152+24576+8192+12288+28672+4096+20480+8192+12288+12288,   # + P244 bounded catalogue
                         'combined bounded allocations')
         # flagged to Jarvis.
         self.assertFalse([n for n in names_ if n.startswith("tests/") or "wiredump" in n or "fakeclaude" in n])
@@ -778,7 +700,7 @@ class WheelInstall(unittest.TestCase):
             self.assertEqual({c["id"]: c["status"] for c in d_["checks"]}["state"], "ok")
             core = next(c for c in d_["checks"] if c["id"] == "main-core")
             self.assertEqual(core["status"], "ok")
-            self.assertIn("core v15:", core["summary"])
+            self.assertIn("core v14:", core["summary"])
 
     @unittest.skipUnless((sys.platform.startswith("linux") and shutil.which("bwrap")) or
                          (sys.platform == "darwin" and os.access(fence.SANDBOX_EXEC, os.X_OK)),

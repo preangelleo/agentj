@@ -42,10 +42,7 @@ def build(base) -> dict:
         _w(d / "CREDENTIALS.md", f"# never listed\n{SECRET}\n")
         _w(d / "SECRET_x.md", f"# never listed\n{SECRET}\n")
         for a in agents:
-            title = "编剧" if a == "scriptwriter" else ""     # P308: an employee's own title is shown instead of the slug
-            _w(root / folder / ".claude/agents" / f"{a}.md", f"---\nname: {a}\ndescription: The {a} of {company}. Second sentence.\n"
-                                                            + (f"title: {title}\n" if title else "") + "---\nbody\n")
-        _w(root / folder / ".claude/agents/README.md", "# 员工说明\n\n不是员工。\n")      # P308: no front-matter name → not staff
+            _w(root / folder / ".claude/agents" / f"{a}.md", f"---\nname: {a}\ndescription: The {a} of {company}. Second sentence.\n---\nbody\n")
         _w(root / folder / ".claude/skills" / skill / "SKILL.md",
            f"---\nname: {skill}\ndescription: {skill} for {company}.\n---\n# {skill}\n\nSteps. token={SECRET}\n")
     _w(root / "script-room/.codex/agents/critic.toml", 'name = "critic"\ndescription = "Reads the script cold. Then more."\n')

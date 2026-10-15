@@ -9,8 +9,6 @@ import { myDeviceId, myIdSync } from './api.js';
 import { t, onLang } from './t.js';
 import { mk, toast } from './ui.js';
 import { registerLayer } from './layers.js';
-import { copyable } from './copycode.js';   // P292
-import { paintMailPassword } from './mail-password.js';
 import { elevateChallenge, canAssert, approve } from './faceid.js';
 
 const cards = new Map();           // id → card (in arrival order)
@@ -80,7 +78,7 @@ export function add(m) {
     c.interpreter = m.interpreter === true;
     c.helper = Array.isArray(m.helper) ? m.helper.filter((x) => typeof x === 'string' && x.length <= 64).slice(0, 64) : [];
   } else {
-    c.name = str(m.name, 128); c.purpose = str(m.purpose, m.name === 'AGENTJ_MAIL_PASSWORD' ? 2000 : 300); c.dest = str(m.dest, 1100); c.verify = str(m.verify ?? '', 800);
+    c.name = str(m.name, 128); c.purpose = str(m.purpose, 300); c.dest = str(m.dest, 1100); c.verify = str(m.verify ?? '', 800);
     if (!c.name || c.purpose === null || c.dest === null || c.verify === null) return;
   }
   // ADR-A163: this device saved a passkey (F20) → 「同意」 needs Face ID. The host names our own credential id; the challenge
@@ -109,13 +107,11 @@ export function done(m) {
   if (key) {
     let text = t(key, { code: m.code ?? '' });
     if (m.result === 'done' && Number.isInteger(m.code) && m.code !== 0) text = t('elev.r.doneFail', { code: m.code });
-    if (c.name === 'AGENTJ_MAIL_PASSWORD' && m.result === 'saved') text = t('mail.passwordSaved');
     if (c.kind === 'secret' && m.result === 'done') text = t('elev.r.saved');
     if (m.verify === 'ok') text += ' ' + t('elev.r.verifyOk');
     if (m.verify === 'fail') text += ' ' + t('elev.r.verifyFail');
     if (c.kind === 'secret' && m.key_hint === 'short') text += ' ' + t('elev.r.keyShort');   // P163: from the length only
     toast(text, m.key_hint === 'short' ? 8000 : 3600);
-    if (c.name === 'AGENTJ_MAIL_PASSWORD' && m.result === 'saved') document.getElementById('toast').classList.add('mail-saved');
   }
   render();
 }
@@ -141,7 +137,7 @@ function row(dl, label, value, cls) {
   if (!value) return;
   dl.appendChild(mk('dt', '', label));
   const dd = mk('dd', cls || '', value);
-  dl.appendChild(cls === 'mono' ? copyable(dd, { variant: 'block' }) : dd);   // P292: a command / path / name can be copied (⧉ inside)
+  dl.appendChild(dd);
 }
 function render() {
   build();
@@ -172,11 +168,8 @@ function render() {
       row(dl, t('elev.secret.verify'), c.verify, 'mono');
     }
     $('elev-label').textContent = t(sudo ? 'elev.sudo.label' : 'elev.secret.label', { name: c.name || '' });
-    const mail = paintMailPassword(c, $('elev-label'), $('elev-input'), $('elev-rows'));
-    if (mail) { $('elev-title').textContent = c.purpose.split('\n')[0]; $('elev-kicker').textContent = t('mail.key'); }
     $('elev-input').setAttribute('aria-label', $('elev-label').textContent);
     $('elev-note').textContent = (c.interpreter ? t('elev.interpreter') + ' ' : '') + t(nopw ? 'elev.sudo.noteHelper' : sudo ? 'elev.sudo.note' : 'elev.secret.note');
-    if (mail) $('elev-note').textContent = t('mail.sealNote');
     denyArmed = 0;
     $('elev-empty').hidden = true;
     $('elev-deny').textContent = t(sudo ? 'elev.deny' : 'elev.secret.cancel');
@@ -227,7 +220,7 @@ async function decide(ok) {
   const nopw = viaHelper(c);
   if (ok && !nopw && !(c.kind === 'secret' ? input.value.trim() : input.value)) {   // nothing typed: say so, never send false
     const e = $('elev-empty');
-    e.textContent = t(c.kind === 'secret' ? 'elev.secret.empty' : 'elev.sudo.empty', { name: c.name === 'AGENTJ_MAIL_PASSWORD' ? $('elev-label').textContent : c.name || '' });
+    e.textContent = t(c.kind === 'secret' ? 'elev.secret.empty' : 'elev.sudo.empty', { name: c.name || '' });
     e.hidden = false;
     try { input.focus({ preventScroll: true }); } catch { /* old browsers */ }
     return;

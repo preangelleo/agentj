@@ -175,7 +175,7 @@ def _blank(st) -> dict:
             "items": {i[0]: {"choice": "selected" if i[2] == "required" else "undecided", "state": "pending", "reason": None,
                              "checked_at": None, "expires_at": None, "attempt_id": None, "owner_decision_ref": None}
                       for i in ITEMS},
-            "exit": {"armed_at": None, "evidence": None}, "action": None, "browser_source": None, "ai_route": None}
+            "exit": {"armed_at": None, "evidence": None}, "action": None, "browser_source": None}
 
 
 def read(st) -> dict | None:
@@ -207,8 +207,6 @@ def read(st) -> dict | None:
         base["action"] = None
     if not isinstance(base.get("browser_source"), dict):
         base["browser_source"] = None
-    from . import ai_route
-    base["ai_route"] = ai_route.journal_entry(base.get("ai_route"))
     return base
 
 
@@ -268,18 +266,13 @@ def probe(st, iid: str, ctx: dict) -> tuple[str, str | None]:
         return ("verified", None) if cloud.read_cloud(st) else ("waiting_local", "not_bound")
     if iid == "harness":
         c = st.agent_config()
-        # P279: where Claude Code / Codex are not offered (the last `agentj agent route`), the row recommends Kimi
-        from . import ai_route
-        route = ai_route.cached(st)
-        kimi = bool(route and route["route"] == "kimi")
-        ctx["ai_route"] = {"route": route["route"], "link": route["link"]} if kimi else None
         if not c:
-            return "waiting_local", "no_agent_kimi" if kimi else "no_agent"
+            return "waiting_local", "no_agent"
         if not os.path.isdir(c.get("dir") or ""):
             return "attention", "folder_missing"
         serve = ctx.get("serve") or {}
         if serve and serve.get("agent") is None:
-            return "attention", "agent_not_running_kimi" if kimi and c.get("kind") in ("claude", "codex") else "agent_not_running"
+            return "attention", "agent_not_running"
         return "verified", None
     if iid in ("desktop", "phone"):
         return ("verified", None) if ctx["devices"]["computer" if iid == "desktop" else "phone"] else ("waiting_local", "not_paired")
@@ -409,11 +402,6 @@ def run_checks(st, rec: dict, only: list[str] | None = None, serve: dict | None 
         if exp and ev:                                # the round trip itself is only good for EXIT_FRESH
             exp = min(exp, int(ev.get("at", 0)) + EXIT_FRESH)
         row.update(state=state, reason=reason, checked_at=now, expires_at=exp)
-    if "ai_route" in ctx:                             # P279: the harness row's Kimi link (codes + link only)
-        if ctx["ai_route"]:
-            rec["ai_route"] = ctx["ai_route"]
-        else:
-            rec.pop("ai_route", None)
     if isinstance(ctx.get("browser_source"), dict):
         rec["browser_source"] = {k: ctx["browser_source"][k] for k in ("kind", "port", "running") if k in ctx["browser_source"]}
     return rec
@@ -498,18 +486,6 @@ FACT = {
     "not_bound": ("还没完成：这台电脑还没加入你的 Agent J 账号。", "Not done: this computer has not joined your Agent J account."),
     "no_agent": ("还没完成：还没选主 AI。", "Not done: no main AI chosen yet."),
     "agent_not_running": ("没通过：主 AI 现在没在运行。", "Not passed: the main AI is not running."),
-    "no_agent_kimi": ("还没完成：还没选主 AI。这台电脑所在地区用不了 Claude Code 和 Codex，推荐 Kimi 会员 Plus 或更高档"
-                      "（Go 档没有编程额度），用 OpenCode 接入：{kimi}。也可以选阿里百炼 Token Plan 个人版（¥39 起/月，"
-                      "只限本人交互使用；`agentj agent route` 看详情）。订阅后让 Agent 发手机密钥卡收 key。",
-                      "Not done: no main AI chosen yet. Claude Code and Codex are not available where this computer is; we "
-                      "recommend a Kimi membership, Plus or higher (Go has no coding quota), through OpenCode: {kimi}. Or an "
-                      "Alibaba Cloud Bailian Token Plan, personal (from ¥39 a month, your own interactive use only; details: "
-                      "`agentj agent route`). After subscribing, ask your Agent for the phone key card."),
-    "agent_not_running_kimi": ("没通过：主 AI 现在没在运行，而这台电脑所在地区用不了 Claude Code 和 Codex。推荐改用 Kimi 会员 Plus "
-                               "或更高档（OpenCode）：{kimi}，或阿里百炼 Token Plan 个人版（`agentj agent route`）。",
-                               "Not passed: the main AI is not running, and Claude Code and Codex are not available where "
-                               "this computer is. We recommend switching to a Kimi membership, Plus or higher (OpenCode): {kimi}, or an "
-                               "Alibaba Cloud Bailian Token Plan, personal (`agentj agent route`)."),
     "not_paired": ("还没完成：还没配对。", "Not done: not paired yet."),
     "no_passkey": ("还没完成：手机上还没设通行密钥（Face ID / 指纹）。", "Not done: no passkey (Face ID / fingerprint) on the phone yet."),
     "sleep_enabled": ("没通过：这台电脑还会自动睡眠，睡着时手机就找不到它。", "Not passed: this computer still sleeps when idle; the phone can't reach it then."),
@@ -544,11 +520,6 @@ def explain(rec: dict, iid: str) -> dict | None:
             "en": {"title": en, "port": port, "browser": f"the browser you registered (port {port})" if adopted else "Agent J's own browser",
                    "other": "" if adopted else " (your everyday browser does not count)"}}
     reason = row["reason"] or ""
-    if iid == "harness":                              # P279: the link and its disclosure, together
-        from . import ai_route
-        link = (ai_route.journal_entry(rec.get("ai_route")) or {}).get("link") or ai_route.invite(use_platform=False)
-        for lang in ("zh", "en"):
-            fill[lang]["kimi"] = ai_route.link_line(link, lang)
     if reason in FACT:
         fact = {lang: FACT[reason][k].format(**fill[lang]) for k, lang in enumerate(("zh", "en"))}
     elif row["state"] == "waiting_local":

@@ -41,7 +41,7 @@ import socket
 import tempfile
 import time
 
-from . import bg, humane, slash
+from . import bg, slash
 from .agent import LINE_LIMIT, UNCERTAIN, Agent, _bin, _signal_tree
 from .slash import Result
 from .envcompat import getenv
@@ -183,8 +183,6 @@ def provider_error_reason(name, data, connected=None, provider=None):
         pass
     detail = (str(data.get('message') or '') + ' ' + body).lower()
     lname = name.lower()
-    if "freetiererror" in detail:      # P298: OpenCode Zen's free tier said no (warm-up, quota, a withdrawn model) — not access
-        return "free_tier"
     if code == 451 or (code in (400, 403, None) and any(x in detail for x in _REGION)):
         return "region"
     if code == 429 and (any(x in detail for x in _QUOTA_WINDOW)
@@ -217,7 +215,6 @@ PROVIDER_NOTES = {
     "model": "模型名称不可用：运行 `opencode models` 核实服务商/模型 ID，再用 `agentj agent opencode --model <provider/model>` 更新。 / Run `opencode models`, then update the model ID.",
     "network": "连不上模型服务：核实网络与代理设置（`agentj config get proxy.https`）。 / Provider connection failed; check network and proxy.",
     "internal": "OpenCode 内部错误：在电脑运行 `agentj doctor`，再让 Agent 运行 `agentj agent restart`。 / OpenCode internal error; run `agentj doctor`, then `agentj agent restart`.",
-    "free_tier": "OpenCode 的免费通道暂时不让用（刚装好的头一两分钟常见，也可能是免费额度用完或这个免费模型下线了）：过一两分钟再发；还不行就在「模型与 Key」换一个免费模型（opencode/…-free），或用你自己的模型。 / OpenCode's free tier refused for now (common right after installing; or the free quota is used up / the model was withdrawn): send again in a minute or two, or pick another free model or one of your own in Models & Key.",
     "provider": "模型服务或 OpenCode 报错：在电脑运行 `agentj doctor`，核实模型名称、余额和网络。 / Provider/OpenCode error; run `agentj doctor`, then check model, balance and network.",
 }
 
@@ -431,13 +428,6 @@ def ends_with_ours(have, ours) -> bool:
     """Do a session's rules end with exactly ours (so nothing written before them can loosen them)?"""
     h, o = _key(have), _key(ours)
     return bool(o) and h[-len(o):] == o
-
-
-def _free_terms(model: str) -> str:
-    """P298: the short data-terms phrase of a known OpenCode free model (zh), else ""."""
-    from .opencode_free import terms, TERMS_TEXT
-    k = terms(model)
-    return TERMS_TEXT["zh"][k] if k else ""
 
 
 def free_port() -> int:
@@ -1475,11 +1465,7 @@ class OpenCodeAgent(Agent):
             for mid, mm in p["models"].items():
                 if isinstance(mid, str):
                     name = mm.get("name") if isinstance(mm, dict) and isinstance(mm.get("name"), str) else mid
-                    full = f"{p['id']}/{mid}"
-                    # P298: a free model whose provider keeps / trains on the conversation says so on the card
-                    warn = " · ⚠ " + _free_terms(full) if _free_terms(full) else ""
-                    models.append({"id": clean_line(full, 100), "name": clean_line(name, 60),
-                                   "desc": clean_line(p.get("name") or "", 60) + warn})
+                    models.append({"id": clean_line(f"{p['id']}/{mid}", 100), "name": clean_line(name, 60), "desc": clean_line(p.get("name") or "", 60)})
         cur = self.cfg.get("model") or ""
         if not arg:
             for m in models:
@@ -1490,6 +1476,4 @@ class OpenCodeAgent(Agent):
             return Result(f"没有这个模型：{clean_line(arg, 100)}（写成「服务商/模型」）", "error")
         self.host.set_model(arg)
         self.meter(model=arg, model_name=self.model_name(arg))
-        from .opencode_free import privacy_note
-        note = privacy_note(arg, "zh")
-        return Result(humane.of(self, "model.switched_next", model=arg) + ("\n" + note if note else ""))
+        return Result(f"已切换到 {arg}：从下一条消息起使用，写进了 config.json。")

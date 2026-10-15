@@ -34,11 +34,11 @@ class FileForward(_Base):
 
     async def test_picture_and_document_reach_the_owner_once(self):
         r = await self.t.forward_media(self.mids['chart.png'], 'dev1'); self.assertEqual(r, {'ok': True})
-        photo = self.bot.sent('sendDocument'); self.assertEqual(len(photo), 1)
-        self.assertEqual(photo[0]['fields']['chat_id'], str(OWNER)); self.assertEqual(photo[0]['files']['document']['data'], PNG)
-        self.assertEqual(photo[0]['files']['document']['filename'], 'chart.png')
+        photo = self.bot.sent('sendPhoto'); self.assertEqual(len(photo), 1)
+        self.assertEqual(photo[0]['fields']['chat_id'], str(OWNER)); self.assertEqual(photo[0]['files']['photo']['data'], PNG)
+        self.assertEqual(photo[0]['fields']['caption'], 'chart.png')
         r = await self.t.forward_media(self.mids['notes.md'], 'dev1'); self.assertTrue(r['ok'])
-        doc = self.bot.sent('sendDocument')[1:]; self.assertEqual(len(doc), 1)
+        doc = self.bot.sent('sendDocument'); self.assertEqual(len(doc), 1)
         self.assertEqual(doc[0]['files']['document']['filename'], 'notes.md')
         self.assertEqual((await self.t.forward_media(self.mids['chart.png'], 'dev1'))['why'], 'recently_sent')
         log = self.st.log_path.read_text()

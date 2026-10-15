@@ -97,14 +97,12 @@ export async function startFakeHost() {
   const fixtures = {};              // fixtures[t] = (req) => answer | [answers] (memory / activity / tasks / estop)
   const st = {
     p33: true, asr: 'ready', asrText: '这是转写出来的文字', asrWhy: null, sayMode: 'delivered', autoReply: true, replyFor: null,
-    kind: null,                                        // P287: {plat, boot} carried by approved / ready
     asrTexts: [], asrDelays: [], sayDelay: 0, stallAfter: 0, blobErr: null, slashes: [], resWatch: [], res: null, renames: [], renameWhy: null,
     epoch: 1, nextId: 1, turns: [], blobs: new Map(), staged: new Set(), queued: new Map(), opens: [], cancels: [], answers: [],
     qAnswers: [], chunks: 0, wavs: [], menu: null, models: null, meter: null, sigOk: [], says: [], modelSets: [], rate: true,
     firsts: [], errors: [], cards: false, cardsMute: false, cardGets: [], upgItems: [], upgOpen: null, upgOffs: [],   // P203
     prefs: null, prefSet: true, prefSets: [], version: null,
     hfind: true, finds: [], findMute: false, findDelay: 0, olderDelay: 0,   // P188: the host answers hist_find (false = an older host)
-    platform: 'linux', imsg: null, imsgCheck: null, imsgCalls: [],   // P274: the computer's OS + the iMessage card's status
   };
 
   // one ordered send queue per connection: CipherState nonces must hit the socket in the order they were taken
@@ -129,7 +127,7 @@ export async function startFakeHost() {
   }
   const ready = () => [...conns].filter((c) => c.send && c.mode === 'resume' && c.isReady);
   const broadcast = async (obj) => { for (const c of ready()) await sendApp(c, obj); };
-  const meta = () => ({ ...(st.ownerRead ? {read: st.read || 0} : {}), t: 'hist_meta', epoch: st.epoch, first: st.turns.length ? st.turns[0].id : 0, last: st.turns.length ? st.turns[st.turns.length - 1].id : 0, count: st.turns.length });
+  const meta = () => ({ t: 'hist_meta', epoch: st.epoch, first: st.turns.length ? st.turns[0].id : 0, last: st.turns.length ? st.turns[st.turns.length - 1].id : 0, count: st.turns.length });
   async function pushTurn(turn) { for (const c of ready()) if (c.p33) await sendApp(c, { t: 'hist_turn', epoch: st.epoch, turn }); }
   async function addTurn(src, reply = '', end = 'done', card = null, extra = {}) {
     const turn = { id: st.nextId++, ts: Date.now(), src, reply: { text: reply, ...(extra.part ? { part: extra.part } : {}) }, end, ...(card ? { card } : {}) };
@@ -153,9 +151,7 @@ export async function startFakeHost() {
     // §17.7: a friend_request accepted into a group signs one more line (friendAnswerMessage)
     const msg = a.tool === 'friend_request' && m.ok && (m.group != null || m.ctx != null)
       ? await wire.friendAnswerMessage(channel, c.devId, m.id, 'allow', a.tool, a.summary, m.group, m.ctx)
-      : m.ok && !m.batch && Array.isArray(m.allow_add)   // P296: ticked 「加入白名单」 boxes, signed with the allow (serve._answer)
-        ? await wire.mailAllowMessage(channel, c.devId, m.id, a.tool, a.summary, m.allow_add)
-        : await wire.approveMessage(channel, c.devId, m.id, decision, a.tool, a.summary, m.batch ? a.batch : undefined);
+      : await wire.approveMessage(channel, c.devId, m.id, decision, a.tool, a.summary, m.batch ? a.batch : undefined);
     const key = await webcrypto.subtle.importKey('raw', unb64u(sk), { name: 'Ed25519' }, false, ['verify']);
     return webcrypto.subtle.verify({ name: 'Ed25519' }, key, unb64u(m.sig), msg);
   }
@@ -167,7 +163,7 @@ export async function startFakeHost() {
       if(c.removed){await sendApp(c,{t:'removed',why:'revoked'});return c.close(4010);}
       c.p33 = st.p33 && Array.isArray(m.caps) && m.caps.includes('p33');
       c.hello = m;
-      await sendApp(c, st.p33 ? { t: 'ready', caps: ['p33', ...(st.heartbeat ? ['heartbeat'] : []), ...(st.tgfwd ? ['tgfwd'] : []), ...(st.busyget ? ['busyget'] : []), ...(st.hfind ? ['hfind'] : []), ...(st.caps || []), ...(st.extraCaps || [])], asr: st.asr, hist: 'on', ...(st.kind || {}) } : { t: 'ready' });
+      await sendApp(c, st.p33 ? { t: 'ready', caps: ['p33', ...(st.heartbeat ? ['heartbeat'] : []), ...(st.tgfwd ? ['tgfwd'] : []), ...(st.busyget ? ['busyget'] : []), ...(st.hfind ? ['hfind'] : []), ...(st.caps || []), ...(st.extraCaps || [])], asr: st.asr, hist: 'on' } : { t: 'ready' });
       c.isReady = true;
       return afterReady(c);
     }
@@ -201,16 +197,7 @@ export async function startFakeHost() {
       return sendApp(c, { t: 'say_cancel_res', sid: m.sid, r: st.says.some((x) => x.sid === m.sid) ? 'already_delivered' : 'not_found' });
     }
     if (m.t === 'blob_open' || m.t === 'blob_chunk' || m.t === 'blob_end' || m.t === 'blob_drop') return onBlob(c, m);
-    if (m.t === 'hist_read' && st.ownerRead) {
-      if (st.ownerReadMute) return;
-      if (m.epoch === st.epoch && st.turns.some(t => t.id === m.id && t.reply.text.trim() && t.reply.text.trim() !== '〔不回群〕')) {
-        st.read = Math.max(st.read || 0, m.id);
-        for (const c of ready()) if(c.devId !== st.ownerReadDropTo) await sendApp(c,{t:'hist_read',epoch:st.epoch,read:st.read});
-      }
-      return;
-    }
     if (m.t === 'hist_get') {
-      if(st.ownerReadHeadDelay && !m.before && !m.after && !m.delayed){setTimeout(()=>onData(c,{...m,delayed:true}).catch(()=>{}),st.ownerReadHeadDelay);return;}
       // P188: a slow page-back that does not hold up the messages behind it (a real host answers reads independently)
       if (st.olderDelay && Number.isInteger(m.before) && !m.delayed) { setTimeout(() => onData(c, { ...m, delayed: true }).catch(() => {}), st.olderDelay); return; }
       let ts = st.turns.slice();
@@ -220,7 +207,7 @@ export async function startFakeHost() {
       const more = ts.length > lim;
       ts = Number.isInteger(m.after) ? ts.slice(0, lim) : ts.slice(-lim);
       const mm = meta();
-      return sendApp(c, { t: 'hist_page', r: m.r, ...(st.ownerRead ? {read: st.read || 0} : {}), epoch: st.epoch, first: mm.first, last: mm.last, count: mm.count, turns: ts, more });
+      return sendApp(c, { t: 'hist_page', r: m.r, epoch: st.epoch, first: mm.first, last: mm.last, count: mm.count, turns: ts, more });
     }
     if (m.t === 'hist_find') {       // P188 (§28): the host's search, with protocol/search.js (the Python host mirrors it)
       (st.finds = st.finds || []).push(m);
@@ -290,22 +277,11 @@ export async function startFakeHost() {
       if (m.t === 'mail_test') v.auth_sample = { checked: 5, with_results: 5, servid: 'mx.qq.com' };
       return sendApp(c, { t: 'mail_res', r: m.r, ok: true, view: v, ...(m.t === 'mail_test' ? { test: { imap: 'ok', smtp: 'ok', auth_sample: v.auth_sample } } : {}) });
     }
-    if (m.t === 'imsg_check' || m.t === 'imsg_fda') {   // P274 (§10.21): status only, never message text
-      st.imsgCalls.push(m.t);
-      if (st.platform !== 'macos') return sendApp(c, { t: 'imsg_res', r: m.r, ok: false, why: 'not_macos' });
-      const res = m.t === 'imsg_fda' ? { ok: true, check: { grant_to: (st.imsg && st.imsg.grant_to) || 'python3.13' } }
-        : st.imsgCheck || { ok: true, check: { status: 'ok' } };
-      if (m.t === 'imsg_check' && res.ok) st.imsg = { ...(st.imsg || {}), status: 'ok' };
-      await sendApp(c, { t: 'imsg_res', r: m.r, ...res });
-      if (st.prefs) await broadcast(prefsMsg());
-      return;
-    }
     if (m.t === 'pref_set') {                       // F13 · C6 / Amendment A1: user-tier whitelist only; older hosts (prefSet:false) ignore it
       st.prefSets.push(m);
       if (!st.prefSet) return;
       const allowed = PREF_ENUM[m.key];
       if (!allowed) return sendApp(c, { t: 'pref_res', r: m.r, ok: false, key: m.key, problem: 'not_allowed' });
-      if (m.key.startsWith('imessage.') && st.platform !== 'macos') return sendApp(c, { t: 'pref_res', r: m.r, ok: false, key: m.key, problem: 'not_macos' });
       if (st.prefRefuse) return sendApp(c, { t: 'pref_res', r: m.r, ok: false, key: m.key, problem: st.prefRefuse });   // P207: a refused save
       if (!(typeof allowed === 'function' ? allowed(m.value) : allowed.includes(m.value))) return sendApp(c, { t: 'pref_res', r: m.r, ok: false, key: m.key, problem: 'bad_value' });
       st.prefs = st.prefs || { appearance: { language: 'zh', theme: 'system' }, voice: { speak_replies: false, wake_enabled: false }, agent: { high_risk_warnings: true, session_mode: 'shared' } };
@@ -434,8 +410,7 @@ export async function startFakeHost() {
   function prefsMsg(value = st.prefs) {
     const m = { t: 'preferences', value, problem: null };
     if (st.prefSet) m.host = { version: st.version || '0.15.0a1', language_at: 0, settable: Object.keys(PREF_ENUM),
-      devices: [...conns].filter((c) => c.devId).map((c) => ({ id: c.devId, name: lastLabel || '', online: !!c.isReady, paired_at: 0 })),
-      platform: st.platform, ...(st.platform === 'macos' && st.imsg ? { imessage: st.imsg } : {}) };   // P274
+      devices: [...conns].filter((c) => c.devId).map((c) => ({ id: c.devId, name: lastLabel || '', online: !!c.isReady, paired_at: 0 })) };
     return m;
   }
   async function afterReady(c) {
@@ -464,15 +439,6 @@ export async function startFakeHost() {
       const q = st.turns.find((x) => x.id === m.reply_to);
       if (!q) return sendApp(c, { t: 'say_res', sid: m.sid, ok: false, why: 'reply_unknown' });
       src.quote = { id: q.id, who: 'Agent', ts: q.ts, text: m.excerpt || q.reply.text.slice(0, 300), ex: !!m.excerpt };
-      if (Array.isArray(m.quote_more) && (st.caps || []).concat(st.extraCaps || []).includes('mq5')) {   // P286: quotes 2…5
-        const more = [];
-        for (const x of m.quote_more) {
-          const t2 = st.turns.find((y) => y.id === x.id);
-          if (!t2) return sendApp(c, { t: 'say_res', sid: m.sid, ok: false, why: 'reply_unknown' });
-          more.push({ id: t2.id, who: 'Agent', ts: t2.ts, text: x.ex || t2.reply.text.slice(0, 300), ex: !!x.ex });
-        }
-        src.quote.more = more;
-      }
     }
     if (st.sayMode === 'queued') {
       // like serve.on_say: the page first (open, no reply), then say_res queued naming it
@@ -607,7 +573,7 @@ export async function startFakeHost() {
       for (const c of conns) if (c.awaiting) {
         c.awaiting = false; c.mode = 'resume'; allow.set(b64u(c.devPub), { sk: c.sk });
         c.p33 = st.p33 && Array.isArray(c.helloCaps) && c.helloCaps.includes('p33');
-        await sendApp(c, st.p33 ? { t: 'approved', caps: ['p33', ...(st.heartbeat ? ['heartbeat'] : []), ...(st.tgfwd ? ['tgfwd'] : []), ...(st.busyget ? ['busyget'] : []), ...(st.hfind ? ['hfind'] : []), ...(st.caps || []), ...(st.extraCaps || [])], asr: st.asr, hist: 'on', ...(st.kind || {}) } : { t: 'approved' });
+        await sendApp(c, st.p33 ? { t: 'approved', caps: ['p33', ...(st.heartbeat ? ['heartbeat'] : []), ...(st.tgfwd ? ['tgfwd'] : []), ...(st.busyget ? ['busyget'] : []), ...(st.hfind ? ['hfind'] : []), ...(st.caps || []), ...(st.extraCaps || [])], asr: st.asr, hist: 'on' } : { t: 'approved' });
         c.isReady = true; c.hello = null;
         await afterReady(c);
       }
@@ -618,10 +584,6 @@ export async function startFakeHost() {
       for (const c of ready()) if (!c.p33) await sendApp(c, { t: 'msg', id: randomBytes(8).toString('hex'), text, ts: Date.now(), from, seq: ++st.seq });
     },
     addTurn, updateTurn,
-    /** P282: the Agent took the queued says (say_state taken) but has not written them to the harness yet */
-    async takeQueued() {
-      for (const [sid, q] of st.queued) await sendApp(q.c, { t: 'say_state', sid, s: 'taken' });
-    },
     async deliverQueued(reply = true) {
       for (const [sid, q] of st.queued) {
         st.queued.delete(sid); st.says.push({ sid });
@@ -661,15 +623,14 @@ export async function startFakeHost() {
     kick(code = 1001) { for (const c of conns) c.close(code); },
     /** back to an empty host between test blocks (pairings and allowlist stay) */
     reset() {
-      Object.assign(st, { ownerRead:false, ownerReadMute:false, ownerReadDropTo:null, ownerReadHeadDelay:0, read:0, kind: null, extraCaps: [], p33: true, asr: 'ready', asrText: '这是转写出来的文字', asrWhy: null, asrTexts: [], asrDelays: [], sayMode: 'delivered', sayDelay: 0,
+      Object.assign(st, { extraCaps: [], p33: true, asr: 'ready', asrText: '这是转写出来的文字', asrWhy: null, asrTexts: [], asrDelays: [], sayMode: 'delivered', sayDelay: 0,
         autoReply: true, replyFor: null, epoch: st.epoch + 1, turns: [], blobs: new Map(), staged: new Set(), queued: new Map(), opens: [], cancels: [],
         answers: [], qAnswers: [], chunks: 0, wavs: [], menu: null, models: null, meter: null, sigOk: [], says: [], modelSets: [], slashes: [],
         stallAfter: 0, blobErr: null, sayWhy: null, estop: false, rate: true, firsts: [], errors: [], lastError: undefined,
         prefs: null, prefSet: true, prefSets: [], version: null, friends: null, remotes: null, tgfwd: false, tgfwdWhy: null, tgFwds: [], holdAnswers: false,
         resWatch: [], res: null, renames: [], renameWhy: null, busyget: false,
         hfind: true, finds: [], findMute: false, findDelay: 0, olderDelay: 0,
-        cards: false, cardsMute: false, cardGets: [], upgItems: [], upgOpen: null, upgOffs: [],   // P203
-        platform: 'linux', imsg: null, imsgCheck: null, imsgCalls: [] });   // P274
+        cards: false, cardsMute: false, cardGets: [], upgItems: [], upgOpen: null, upgOffs: [] });   // P203
       st.asksOpen = new Map();
       log.length = 0;
     },
@@ -682,18 +643,9 @@ export async function startFakeHost() {
 const PREF_ENUM = { 'updates.mode': ['auto', 'ask'], 'appearance.language': ['zh', 'en'], 'appearance.theme': ['system', 'light', 'dark'], 'voice.speak_replies': [true, false], 'voice.wake_enabled': [true, false], 'agent.high_risk_warnings': [true, false], 'agent.session_mode': ['shared', 'independent'], 'agent.isolation': [true, false], 'agent.allow_docker': [true, false],
   'heartbeat.enabled': [true, false], 'heartbeat.interval_minutes': [15, 30, 60, 120, 240, 480, 1440],   // P156
   'updates.auto_install': [true, false] };   // P203
-PREF_ENUM['quota.auto_switch'] = [true, false];   // P302: the host whitelists it from 0.21.2 (P254 drew the switch, never whitelisted)
-PREF_ENUM['approval.goal_auto'] = [true, false];   // P302: the real host whitelists it since P158; the fake now matches (every switch is clicked)
 // P207: any whole number of minutes 5–1440 (the dropdown + custom input) and the daily wake-up time "HH:MM" | ""
 PREF_ENUM['heartbeat.interval_minutes'] = (v) => Number.isInteger(v) && v >= 5 && v <= 1440;
 PREF_ENUM['heartbeat.daily_at'] = (v) => v === '' || (typeof v === 'string' && /^([01]\d|2[0-3]):[0-5]\d$/.test(v));
-PREF_ENUM['ui.card_hot_action'] = (v) => typeof v === 'string' && /^\/?[A-Za-z0-9][A-Za-z0-9_:.\-]{0,62}$/.test(v);   // P285: the schema's pattern
-// P274: the iMessage card's parameters (the real host's schema; refused with not_macos unless st.platform === 'macos')
-const HM = '([01]\\d|2[0-3]):[0-5]\\d';
-Object.assign(PREF_ENUM, { 'imessage.enabled': [true, false], 'imessage.interval_minutes': (v) => Number.isInteger(v) && v >= 1 && v <= 1440,
-  'imessage.delivery': ['instant', 'instant_digest', 'digest'], 'imessage.digest_at': (v) => typeof v === 'string' && new RegExp(`^(${HM}(,${HM}){0,3})?$`).test(v),
-  'imessage.quiet_hours': (v) => typeof v === 'string' && new RegExp(`^(${HM}-${HM})?$`).test(v), 'imessage.strictness': ['loose', 'standard', 'strict'],
-  'imessage.codes': ['show', 'mask', 'off'], 'imessage.groups': [true, false], 'imessage.llm': ['off', 'redacted'] });
 const ANY_MIME = /^[a-z0-9][a-z0-9!#$&^_.+-]{0,63}\/[a-z0-9][a-z0-9!#$&^_.+-]{0,126}$/;
 const TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/gif', 'image/heic', 'image/heif', 'application/pdf', 'text/plain', 'text/markdown', 'text/csv',
   'application/json', 'audio/webm', 'audio/ogg', 'audio/mpeg', 'audio/mp4', 'audio/aac', 'audio/wav', 'audio/x-wav'];

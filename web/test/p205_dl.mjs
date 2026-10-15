@@ -192,7 +192,7 @@ try {
       writeFileSync(join(OUT, 'unsent-before.png'), await shoot(p));
       await waitFor(p, `${slot}?.dataset.unsent === '1'`, 12000);
       assert.equal(await ev(p, `${slot}.querySelector('.mlabel').textContent`), 'plan.md');
-      assert.equal(await ev(p, `${slot}.querySelector('.mskip').textContent`), '这个文件没有随回复发过来，这里打不开；可以让 Agent J 再发一次');
+      assert.equal(await ev(p, `${slot}.querySelector('.mskip').textContent`), '这个文件没有随回复发过来，这里打不开；可以让 Agent 再发一次');
       assert.ok(!(await ev(p, `document.getElementById('words').textContent`)).includes(']('), 'no raw Markdown on the page');
       writeFileSync(join(OUT, 'unsent-note.png'), await shoot(p));
       // the file list arrives after all (a slow scan): the slot becomes the card

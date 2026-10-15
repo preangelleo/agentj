@@ -48,24 +48,13 @@ def signed_message(channel: str, device: str, rid: str, decision: str, digest_he
     return base.encode()
 
 
-def allow_add_line(addrs) -> str:
-    """P296: an `agentj mail send` card's allow that also puts the ticked recipients on the mail allowlist signs one more
-    line — hex SHA-256 of "allow:" + the ticked addresses in the order the card offered them, newline-joined (wire.js
-    mailAllowMessage). The host checks the picks against what IT offered, so a phone cannot add anyone else."""
-    return hashlib.sha256(("allow:" + "\n".join(addrs)).encode()).hexdigest()
-
-
 def verify(sign_pub: bytes, sig: bytes, channel: str, device: str, rid: str, decision: str, digest_hex: str,
-           scope: str | None = None, allow_add: list | None = None) -> bool:
+           scope: str | None = None) -> bool:
     if len(sign_pub) != 32 or len(sig) != 64:
         return False
     try:
-        msg = signed_message(channel, device, rid, decision, digest_hex, scope)
-        if allow_add:
-            if decision != "allow":
-                return False
-            msg += ("\n" + allow_add_line(allow_add)).encode()
-        Ed25519PublicKey.from_public_bytes(sign_pub).verify(sig, msg)
+        Ed25519PublicKey.from_public_bytes(sign_pub).verify(sig, signed_message(channel, device, rid, decision, digest_hex,
+                                                                                 scope))
         return True
     except (InvalidSignature, ValueError):
         return False
@@ -77,9 +66,8 @@ def input_digest(tool_input) -> str:
 
 def record(st, *, rid: str, agent: str, tool: str, input_sha256: str, shown_sha256: str, decision: str, reason: str,
            device: str | None = None, sign_pub: bytes | None = None, sig: bytes | None = None, cats: list | None = None,
-           scope: str | None = None, grant: str | None = None, auto: str = "batch", control: dict | None = None,
-           scope_sha256: str | None = None) -> dict:
-    """Append one decision to approvals.log (0600). reason: device | batch | goal | goal_auto (P158) | brief (0.18: inside a confirmed brief) | host (0.18: `agentj capability`, host-gated) | owner_direct / allowlist (P296: `agentj mail send` to the owner's own addresses / only allowlisted ones) | timeout | no_device | serve_stop | agent_gone |
+           scope: str | None = None, grant: str | None = None, auto: str = "batch", control: dict | None = None) -> dict:
+    """Append one decision to approvals.log (0600). reason: device | batch | goal | goal_auto (P158) | brief (0.18: inside a confirmed brief) | host (0.18: `agentj capability`, host-gated) | timeout | no_device | serve_stop | agent_gone |
     too_many | estop | policy (beyond the harness's own sandbox, never asked: ADR-A73). cats = danger categories ([] = low risk); scope = the signed batch scope (allow_batch); grant = for an
     automatic approval, the id of the signed allow_batch it relied on. control (P242) = a signed phone control (controls.py,
     e.g. dev_confirm / dev_unbind): {"n", "sig_ts", "object_sha256"} — the line is then kind "control" and `sig` is the
@@ -91,8 +79,6 @@ def record(st, *, rid: str, agent: str, tool: str, input_sha256: str, shown_sha2
         rec["cats"] = list(cats)
     if scope is not None:
         rec["scope_sha256"] = scope_digest(scope)
-    elif scope_sha256 is not None:          # P296: the signed allowlist line (allow_add_line), checked like the group line
-        rec["scope_sha256"] = scope_sha256
     if grant is not None:
         rec["auto"], rec["grant"] = auto, grant   # P158: auto "goal" = under the signed goal card (reason goal | goal_auto)
     if control is not None:

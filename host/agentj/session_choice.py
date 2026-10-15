@@ -31,7 +31,7 @@ from . import preferences
 KEY = "agent.session_mode"
 PIN = "agent.shared_session_id"
 MARK = "session-mode-choice.json"
-LABEL = {"claude": "Claude Code", "codex": "Codex", "opencode": "OpenCode", "kimi": "Kimi Code", "qwen": "Qwen Code"}
+LABEL = {"claude": "Claude Code", "codex": "Codex", "opencode": "OpenCode"}
 
 
 # ------------------------------------------------------------------ the owner's recorded choice

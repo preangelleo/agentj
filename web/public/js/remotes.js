@@ -7,7 +7,6 @@ import { el, mk, toast, confirmSheet } from './ui.js';
 import { ask1, isReady } from './session.js';
 import { signedWrite } from './controls.js';
 import { RelayMD } from './md.js';
-import { copyable } from './copycode.js';   // P292
 
 let H = { myId: () => null, hostDevices: () => null, forget: () => {}, say: () => {} };
 let snap = null;          // {limit, items:[{id,name,paired_at,seen,online,me,source}], can_add, busy} — null = not read yet
@@ -43,14 +42,12 @@ export function count() {
 }
 
 // ---------------------------------------------------------------- open / refresh
-export async function open(opts = {}) {
+export async function open() {
   shown = true;
   editing = null;
   if (!snap) snap = fromPrefs();
   render();
   await refresh();
-  // P265: the same signed Add action; retain offline/limit/legacy/busy refusals and an existing QR.
-  if (opts.add && shown && !add && !legacy && isReady() && !el('rm-add').disabled) { await startAdd(); return; }
   el('rm-add').focus({ preventScroll: true });
 }
 export function close() {
@@ -127,7 +124,7 @@ function row(d) {
     d.seen && !d.online && fmt(d.seen) && t('rm.seenAt', { d: fmt(d.seen) }), d.source && t(src)].filter(Boolean);
   meta.textContent = bits.join(' · ');
   const id = mk('p', 'rmid');
-  id.append(mk('span', '', t('rm.idLabel') + ' '), copyable(mk('code', '', clean(d.id, 32))));   // P292: the ID can be copied
+  id.append(mk('span', '', t('rm.idLabel') + ' '), mk('code', '', clean(d.id, 32)));
   txt.append(name, meta, id);
   head.append(dot, txt);
   li.append(head);

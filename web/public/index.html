@@ -15,9 +15,9 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="Agent J">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
-<link rel="icon" href="favicon.ico?v=7317ed3b" sizes="any">
-<link rel="icon" href="brand/img/favicon-32.png?v=67bf2a6d" type="image/png" sizes="32x32">
-<link rel="apple-touch-icon" href="apple-touch-icon.png?v=896106dd">
+<link rel="icon" href="favicon.ico" sizes="any">
+<link rel="icon" href="brand/img/favicon-32.png" type="image/png" sizes="32x32">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="preload" href="brand/fonts/ubuntu-400.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="stylesheet" href="brand/palette.css">
@@ -34,7 +34,7 @@
   <aside id="version-notice" class="gdlg" role="dialog" aria-modal="false" aria-labelledby="version-notice-title" hidden>
     <div class="sq">
       <div class="gdlg-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 12a8 8 0 1 1-2.34-5.66"/><path d="M20 4v5h-5"/></svg></div>
-      <h2 id="version-notice-title" data-i18n="ver.title">我升级了</h2>
+      <h2 id="version-notice-title" data-i18n="ver.title">服务器已升级</h2>
       <p id="version-notice-text" aria-live="polite"></p>
       <div class="gdlg-row"><button id="version-dismiss" type="button"></button><button id="version-refresh" class="go" type="button"></button></div>
     </div>
@@ -118,22 +118,12 @@
       <div class="gdlg-row"><button id="loadClose" class="go" type="button" data-i18n="busy.close">知道了</button></div>
     </div>
   </div>
-  <!-- P286: a quote chip's words in full (the chips show only the first characters); Esc / outside close it. -->
-  <div id="quoteDlg" class="gdlg gdlg--rounded" role="dialog" aria-modal="true" aria-labelledby="quoteDlgTitle" hidden>
-    <div class="sq namesq qdlg">
-      <h2 id="quoteDlgTitle" data-i18n="r.quote.full">引用全文</h2>
-      <p class="gdlg-sub" id="quoteDlgSrc"></p>
-      <div class="qdlg-text" id="quoteDlgText"></div>
-      <div class="gdlg-row"><button id="quoteDlgDel" type="button" data-i18n="r.quote.remove">删掉这段引用</button><button id="quoteDlgJump" class="go" type="button" data-i18n="r.quote.jumpSrc">跳到原文</button></div>
-    </div>
-  </div>
-  <!-- P207 §1: tap Weekly / 5H → the usage numbers in the same global centred dialog (js/usagedlg.js); Esc / outside / 知道了 close it.
-       P303: .usagesq = as wide as the input-message card, height by content. -->
+  <!-- P207 §1: tap Weekly / 5H → the usage numbers in the same global centred dialog (js/usagedlg.js); Esc / outside / 知道了 close it. -->
   <div id="usageDlg" class="gdlg gdlg--rounded" role="dialog" aria-modal="true" aria-labelledby="usageTitle" hidden>
-    <div class="sq namesq usagesq">
+    <div class="sq namesq">
       <h2 id="usageTitle" data-i18n="p207set.usage.title">用量</h2>
       <ul class="usage-list" id="usageList"></ul>
-      <p class="gdlg-sub" id="usageNone" data-i18n="r.usage.none" hidden>电脑上的 Agent J 还没报告用量</p>
+      <p class="gdlg-sub" id="usageNone" data-i18n="r.usage.none" hidden>电脑上的 Agent 还没报告用量</p>
       <p class="usage-age" id="usageAge"></p>
       <div class="gdlg-row"><button id="usageClose" class="go" type="button" data-i18n="busy.close">知道了</button></div>
     </div>
@@ -181,8 +171,8 @@
   <div class="flow" aria-hidden="true"></div>
 
   <header class="top">
-    <!-- The Agent J robot wears the state; tap = menu, hold = chat. -->
-    <img class="orb" id="orb" src="brand/img/logo-mark.png?v=e2d5a0d6" alt="" width="40" height="40" data-i18n-attr="title=r.orb.title" title="点一下打开菜单，按住回到聊天">
+    <!-- The logo wears the state; tap = the page's type size (中 → 大 → 中 → 小), hold = 中. -->
+    <img class="orb" id="orb" src="brand/img/logo-mark.png" alt="" width="40" height="40" data-i18n-attr="title=r.orb.title" title="点一下打开菜单，按住回到聊天">
     <!-- Model · effort; tap a half = the next one, hold = the default (relay ADR-035). -->
     <div class="meta" id="meta" aria-live="polite" hidden><span class="mt"><span id="metaModel">—</span><span id="metaSep"></span><span id="metaEffort"></span><span id="metaStale"></span></span></div>
     <p id="status" class="connline" data-state="idle" role="status" aria-live="polite" data-i18n="st.idle">还没配对</p>
@@ -212,11 +202,6 @@
       <button type="button" id="setup-banner-open" class="setup-banner__open"></button>
       <button type="button" id="setup-banner-x" class="setup-banner__x" data-i18n-attr="aria-label=setup.bannerClose,title=setup.bannerClose" aria-label="收起首次准备，不再自动弹出" title="收起首次准备，不再自动弹出">✕</button>
     </div>
-    <!-- P288: the Claude login is inside its last 7 days — one thin, closable banner; tapping it starts the renewal (passkey card follows) -->
-    <div id="ar-renew" class="setup-banner arrenew" role="status" hidden>
-      <button type="button" id="ar-renew-open" class="setup-banner__open"></button>
-      <button type="button" id="ar-renew-x" class="setup-banner__x" data-i18n-attr="aria-label=ar.renewLater,title=ar.renewLater" aria-label="稍后再提醒" title="稍后再提醒">✕</button>
-    </div>
     <!-- The rule under the header is the weekly quota; the one above the composer is the 5-hour window. -->
     <div class="meter" id="mWeek" role="img" data-known="0" data-i18n-attr="aria-label=r.meter.week" aria-label="本周额度"><i></i><span class="lab">weekly</span></div>
 
@@ -235,19 +220,15 @@
           <div class="omq" id="omQuote" role="link" tabindex="0" hidden data-i18n-attr="aria-label=r.quote.jump" aria-label="跳到被回复的那一条">
             <div class="qb"><div class="qh"><b id="omqWho"></b><span id="omqMeta"></span></div><div class="qt" id="omqText"></div></div>
           </div>
-          <div class="omqs" id="omQuoteMore" hidden></div>
           <div class="omtxt" id="omText"></div>
           <div class="omatt" id="omAtt" hidden></div>
-          <div class="omtools">
-            <span class="om-att-count" id="omAttCount" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m21 11-8 8a6 6 0 0 1-8.5-8.5l8-8a4 4 0 0 1 5.7 5.7l-8 8a2 2 0 0 1-2.8-2.8l7.5-7.5"/></svg><span>0</span></span>
-            <button class="ommore" id="omMore" type="button" aria-expanded="false" data-i18n-attr="aria-label=r.om.expand" aria-label="展开原话（o）"><i>…</i></button>
-          </div>
+          <button class="ommore" id="omMore" type="button" aria-expanded="false" data-i18n-attr="aria-label=r.om.expand" aria-label="展开原话（o）"><i>…</i></button>
         </section>
         <div class="rm" id="rm">
           <main id="main">
             <div class="read" id="read">
               <div class="rmtop" id="rmTop">
-              <div class="rmhd"><div class="speaker" id="agent" data-i18n-attr="title=r.agent.tip" title="这是你的 Agent J 的名字。长按可以改名（和在电脑上运行 agentj name 一样）">Agent J</div><span class="t" id="rmTime"></span><span class="t rmpart" id="rmPart"></span><button class="busy-dots" id="busyDots" type="button" hidden></button></div>
+              <div class="rmhd"><div class="speaker" id="agent" data-i18n-attr="title=r.agent.tip" title="这是你的 Agent 的名字。长按可以改名（和在电脑上运行 agentj name 一样）">Agent J</div><span class="t" id="rmTime"></span><span class="t rmpart" id="rmPart"></span><button class="busy-dots" id="busyDots" type="button" hidden></button></div>
               <button class="loadhit" id="loadHit" type="button" data-i18n-attr="aria-label=load.aria,title=load.aria" aria-label="负载线：电脑现在有多忙（点开看说明）" title="负载线：电脑现在有多忙（点开看说明）"><span class="loadline" id="loadLine" aria-hidden="true"></span></button>
               </div>
               <blockquote class="words empty" id="words"><p data-i18n="r.empty">还没有消息</p></blockquote>
@@ -256,16 +237,15 @@
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="5" width="16" height="11" rx="1.5"/><path d="M2 19h20"/></svg>
                 <span data-i18n="r.local">这件事要在电脑上处理</span>
               </div>
-              <div class="thinking" id="thinking" aria-hidden="true"></div>
+              <div class="thinking" aria-hidden="true"><i></i><i></i><i></i></div>
               <div class="stale" id="stale"></div>
-              <div class="offhint" id="offHint" role="status" aria-live="polite" hidden></div>
               <div class="tgdown" id="tgdown" role="status" aria-live="polite" hidden></div>
             </div>
           </main>
           <!-- The card's last row: 阅读 · 朗读 · 转发 · 转发到邮箱 (P189) · 复制 · 回复, right-packed.
                P216: 分享成网页报告 alone on the left — a filled Lotion disc whose lines are the card's own colour (currentColor). -->
           <div class="rmbar" id="rmbar" role="toolbar" data-i18n-attr="aria-label=r.bar.aria" aria-label="这条回复">
-            <button class="wrbtn" id="webReportBtn" type="button" aria-haspopup="dialog" aria-label="分享成网页报告" title="分享成网页报告">
+            <button class="wrbtn" id="webReportBtn" type="button" data-i18n-attr="aria-label=r.wr.btn,title=r.wr.btn" aria-label="分享成网页报告" title="分享成网页报告">
               <svg viewBox="0 0 36 36" aria-hidden="true"><circle class="disc" cx="18" cy="18" r="18"/><g transform="translate(6.5 6.5) scale(.96)" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M17.76 11.19A7 7 0 1 1 12.81 6.24"/><path d="M11.6 12.4 20 4M14.6 4H20v5.4"/></g></svg>
             </button>
             <div class="rmicons" id="rmIcons">
@@ -304,14 +284,14 @@
       <button class="pz next" id="pgNext" type="button" data-i18n-attr="aria-label=r.pg.next,title=r.pg.nextTitle" aria-label="下一条（更新）" title="下一条（k / →）">&#8250;</button>
       <!-- 全部停下: a red banner over the stage while the stop switch is on. -->
       <div id="estop-banner" class="estop-banner" role="alert" hidden>
-        <p><strong data-i18n="estop.banner">已全部停下</strong><span id="estop-by" class="small"></span><br><span class="small" data-i18n="estop.bannerNote">Agent J 不接新消息，等你批准的请求都已拒绝，定时任务已暂停。</span></p>
+        <p><strong data-i18n="estop.banner">已全部停下</strong><span id="estop-by" class="small"></span><br><span class="small" data-i18n="estop.bannerNote">Agent 不接新消息，等你批准的请求都已拒绝，定时任务已暂停。</span></p>
         <button type="button" id="resume" class="estop-resume" data-i18n="estop.resume">恢复</button>
       </div>
       <div class="scrim" aria-hidden="true"></div>
       <section class="sheet" id="sheet" data-i18n-attr="aria-label=r.sheet.aria" aria-label="待决">
         <div class="grab"></div>
         <div class="sheetacts">
-          <button class="qcancel" id="askCancel" type="button" hidden data-i18n-attr="aria-label=r.q.cancelAria" aria-label="取消这个问题（告诉 Agent J 你要直接打字）">取消问题</button>
+          <button class="qcancel" id="askCancel" type="button" hidden data-i18n-attr="aria-label=r.q.cancelAria" aria-label="取消这个问题（告诉 Agent 你要直接打字）">取消问题</button>
           <button class="close" id="sheetClose" type="button" data-i18n-attr="aria-label=r.sheet.foldAria" aria-label="收起（只是收起，请求仍在等你）">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M6 9l6 6 6-6"/></svg><span data-i18n="r.sheet.fold">收起</span>
           </button>
@@ -324,10 +304,9 @@
         <div class="cmd" id="cmdBox">
           <!-- P154: the command shows 2 lines; 展开全部 / 收起 beside the tool tag when it is longer. -->
           <div class="cmdtop"><span class="tool" id="tool"></span><button class="cmdmore" id="cmdMore" type="button" hidden aria-expanded="false" aria-controls="cmd"><span id="cmdMoreLbl" data-i18n="r.appr.cmdMore">展开全部</span></button></div>
-          <p class="cmddesc" id="cmdDesc" hidden></p><pre id="cmd" data-cc="ext" data-cc-btn="cmdCopy"></pre>
+          <p class="cmddesc" id="cmdDesc" hidden></p><pre id="cmd"></pre>
         </div>
         <p class="why" id="why" hidden></p>
-        <div class="mailallow" id="apprMailAllow" hidden></div>
         <div class="qs" id="qs" hidden></div>
         <p class="askstate" id="askState" hidden role="status" aria-live="polite"></p>
         <button class="asksend" id="askSend" type="button" hidden disabled data-i18n="r.q.confirm">确认</button>
@@ -382,18 +361,6 @@
         <div class="menubody" id="menuBody"><div class="menulist" id="menuList" role="menu" data-i18n-attr="aria-label=r.menu.aria" aria-label="全部命令"></div></div>
         </div>
       </div>
-      <!-- P285: hold the reply card's bottom-left disc → 快捷技能键 (js/hotkey.js): what it is bound to, what a tap does, and every
-           command / skill of the 「/」 list to bind instead (search, pick, confirm → pref_set ui.card_hot_action) -->
-      <div class="cmdmenu hotmenu" id="hotMenu" hidden role="dialog" aria-modal="true" aria-labelledby="hotTitle">
-        <div class="cmdsheet hotsheet" id="hotSheet"><div class="cmdgrab" aria-hidden="true"></div>
-        <div class="menuhead"><h2 id="hotTitle" data-i18n="p285.title">快捷技能键</h2><kbd class="setesc" aria-hidden="true">Esc</kbd><button type="button" class="menuicon" id="hotClose" data-i18n-attr="aria-label=r.menu.close,title=r.menu.close" aria-label="关闭（Esc）" title="关闭（Esc）"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg></button></div>
-        <div class="hotintro"><p class="hotnow" id="hotNow"></p><p class="hotwhat" id="hotWhat"></p><p class="hotswap" data-i18n="p285.swap">这个按钮可以换成你常用的命令或技能，图标不变。选一个就行。</p>
-          <input type="search" id="hotQ" enterkeyhint="search" autocomplete="off" data-i18n-attr="placeholder=p285.search,aria-label=p285.search" placeholder="搜索命令或技能" aria-label="搜索命令或技能"></div>
-        <div class="menubody" id="hotBody"><div class="menulist" id="hotList" role="listbox" data-i18n-attr="aria-label=p285.title" aria-label="快捷技能键"></div></div>
-        <div class="hotask" id="hotAsk" hidden role="group" aria-labelledby="hotAskT"><p class="t" id="hotAskT"></p><p class="w" id="hotAskW"></p>
-          <div class="row"><button type="button" class="no" id="hotNo" data-i18n="p285.no">取消</button><button type="button" class="yes" id="hotYes" data-i18n="p285.yes">确认绑定</button></div></div>
-        </div>
-      </div>
       <div class="tools" id="tools">
         <button class="tool" id="tDoc" type="button" data-i18n-attr="aria-label=r.tool.doc,title=r.tool.docTitle" aria-label="发文件" title="文件">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3v5h5M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/></svg>
@@ -404,15 +371,14 @@
         <button class="tool" id="tCamera" type="button" data-i18n-attr="aria-label=r.tool.camera,title=r.tool.cameraTitle" aria-label="拍一张" title="拍照">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8h3l1.6-2.2h6.8L17 8h3a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1z"/><circle cx="12" cy="13.5" r="3.4"/></svg>
         </button>
-        <button class="tool mic" id="mic" type="button" data-i18n-attr="aria-label=r.mic.aria,title=r.mic.title" aria-label="单击或双击锁定录音，再点一下结束；按住说话，松开直接发送，滑出取消" title="单击 / 双击锁定 · 按住说话 · 松开发送 · 滑出取消">
+        <button class="tool mic" id="mic" type="button" data-i18n-attr="aria-label=r.mic.aria,title=r.mic.title" aria-label="按住说话，松开转成文字，上滑取消；双击锁定录音，再点一下结束" title="按住说话 · 松开转成文字 · 上滑取消 · 双击锁定录音，再点一下结束">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M12 15a3 3 0 0 0 3-3V6a3 3 0 0 0-6 0v6a3 3 0 0 0 3 3z"/><path d="M19 11a7 7 0 0 1-14 0M12 18v3"/></svg>
           <span id="micLabel">按住说话</span>
         </button>
       </div>
       <div class="qbar" id="qbar" hidden>
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 5 4 11l6 6"/><path d="M4 11h9a7 7 0 0 1 7 7v1"/></svg>
-        <!-- P286: one quote = this row as before; two to five = one chip each (source tag · words · ×), side by side -->
-        <div class="qlist" id="qbList"><button class="qb" id="qbJump" type="button" data-i18n-attr="aria-label=r.quote.jump" aria-label="跳到被回复的那一条"><span class="qh" id="qbHead"></span><span class="qt" id="qbText"></span></button></div>
+        <button class="qb" id="qbJump" type="button" data-i18n-attr="aria-label=r.quote.jump" aria-label="跳到被回复的那一条"><span class="qh" id="qbHead"></span><span class="qt" id="qbText"></span></button>
         <button class="qx" id="qbX" type="button" data-i18n-attr="aria-label=r.quote.cancel,title=r.quote.cancel" aria-label="取消回复（Esc）" title="取消回复（Esc）">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"/></svg>
         </button>
@@ -445,7 +411,7 @@
   <!-- ================================================================ Agent J pages (brand theme, over the chat) -->
   <div class="ajpages" id="pages">
     <aside id="a2hs" class="hint" hidden>
-      <img src="brand/img/icon-192.png?v=8a59854e" width="44" height="44" alt="">
+      <img src="brand/img/icon-192.png" width="44" height="44" alt="">
       <div class="hint__body">
         <p class="hint__title" data-i18n="a2hs.title">添加到主屏幕，用起来像 App</p>
         <p id="a2hs-text" class="small"></p>
@@ -463,7 +429,7 @@
     </aside>
     <section id="pair-view" class="aj-flow view pair" hidden>
       <div class="pair__hero">
-        <img src="brand/img/shield-256.png?v=e2d5a0d6" width="96" height="96" alt="">
+        <img src="brand/img/shield-256.png" width="96" height="96" alt="">
         <div class="aj-lang pair__lang" data-aj-lang-switch>中文 / EN</div>
       </div>
       <p id="pair-wiped" class="note" role="status" data-i18n="pair.wiped" hidden>这个浏览器清掉了本机保存的配对数据（比如无痕浏览的标签页关掉了，或者浏览器清理了网站数据）。电脑没有移除这台手机。在电脑上运行 agentj pair，重新配对一次就好；iPhone 上别用无痕浏览，最好添加到主屏幕，从图标打开。</p>
@@ -494,7 +460,7 @@
         <p class="pm__when" data-i18n="pair.m2.when">适合：第一次配对，或者手边没有配好的遥控器。每个人都能用。</p>
         <ol class="steps">
           <li><span><span id="pair-step1" data-i18n="pair.m2.s1">在电脑上打开终端，运行下面这条命令，终端里会出现一个二维码。</span>
-            <span class="pm-cmd"><code id="pm-cmd" data-cc="ext">agentj pair</code><button type="button" id="pm-copy" class="pm-copy" data-pm-copy="pm-cmd" data-i18n-attr="aria-label=pair.copy,title=pair.copy" aria-label="复制命令" title="复制命令"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="8" y="8" width="12" height="12" rx="2.5"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/></svg></button></span>
+            <span class="pm-cmd"><code id="pm-cmd">agentj pair</code><button type="button" id="pm-copy" class="pm-copy" data-pm-copy="pm-cmd" data-i18n-attr="aria-label=pair.copy,title=pair.copy" aria-label="复制命令" title="复制命令"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="8" y="8" width="12" height="12" rx="2.5"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/></svg></button></span>
             <span class="pm__where" data-i18n="pair.m2.where">终端在哪：macOS 打开「终端」（Terminal）；Windows 打开 PowerShell 或 Windows Terminal；Linux 打开「终端」。</span></span></li>
           <li><span id="pair-step2" data-i18n="pair.m2.s2">在这台设备上点下面的「扫二维码」，对准终端里的二维码。手机也可以直接用自带相机扫。</span></li>
           <li><span data-i18n="pair.m2.s3">这台设备上会出现 6 位安全码：在电脑的终端里输入它，按回车；设过批准口令的，再输入批准口令。</span></li>
@@ -507,7 +473,7 @@
         <div id="pair-controls" class="pm__alt">
           <h3 class="pm__alth" data-i18n="pair.m2.altTitle">扫不了码？改用链接</h3>
           <p class="pm__altp" data-i18n="pair.m2.alt">在电脑的终端里运行这条命令，终端会打印一个以 https:// 开头的配对链接。把它复制到这台设备上，粘贴到下面，再点「开始配对」。</p>
-          <span class="pm-cmd"><code id="pm-cmd-link" data-cc="ext">agentj pair --link</code><button type="button" id="pm-copy-link" class="pm-copy" data-pm-copy="pm-cmd-link" data-i18n-attr="aria-label=pair.copy,title=pair.copy" aria-label="复制命令" title="复制命令"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="8" y="8" width="12" height="12" rx="2.5"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/></svg></button></span>
+          <span class="pm-cmd"><code id="pm-cmd-link">agentj pair --link</code><button type="button" id="pm-copy-link" class="pm-copy" data-pm-copy="pm-cmd-link" data-i18n-attr="aria-label=pair.copy,title=pair.copy" aria-label="复制命令" title="复制命令"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="8" y="8" width="12" height="12" rx="2.5"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/></svg></button></span>
           <label for="pair-link" class="label" data-i18n="pair.or">或者粘贴配对链接</label>
           <textarea id="pair-link" class="aj-textarea" rows="3" autocomplete="off" autocapitalize="off" spellcheck="false" data-i18n-attr="placeholder=pair.placeholder" placeholder="粘贴终端里 agentj pair --link 打印的链接（以 https:// 开头）"></textarea>
           <p id="pair-error" class="error" role="alert" hidden></p>
@@ -621,13 +587,11 @@
     <!-- §17.7 agent friends: read-only conversations; no field here sends anything to a friend (js/friends.js) -->
     <section id="bots-view" class="aj-flow view sub" hidden>
       <div class="sub-head menuhead"><button type="button" class="menuicon back" data-back data-i18n-attr="aria-label=fr.back,title=fr.back" aria-label="返回" title="返回"><svg class="" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 5l-7 7 7 7"/></svg></button><h1 data-i18n="set.bots">Bots / 客服</h1></div>
-            <button type="button" id="assist-bots" class="setup-assist"><img src="brand/img/logo-mark.png?v=e2d5a0d6" width="36" height="36" alt=""><span data-i18n="p264.assist">让 Agent J 帮我设置</span></button>
-<p id="bots-status" role="status" aria-live="polite"></p>
+      <p id="bots-status" role="status" aria-live="polite"></p>
       <div class="fr-split"><div id="bots-side" class="fr-side aj-actions"></div><div id="bots-main" class="fr-main aj-flow"></div></div>
     </section>
     <section id="friends-view" class="aj-flow view sub" data-fv="list" hidden>
       <div class="sub-head menuhead"><button type="button" id="fr-back" class="menuicon back" data-i18n-attr="aria-label=fr.back,title=fr.back" aria-label="返回" title="返回"><svg class="" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 5l-7 7 7 7"/></svg></button><h1 id="fr-title" data-i18n="fr.title">好友</h1></div>
-      <button type="button" id="assist-friends" class="setup-assist"><img src="brand/img/logo-mark.png?v=e2d5a0d6" width="36" height="36" alt=""><span data-i18n="p264.assist">让 Agent J 帮我设置</span></button>
       <p id="fr-status" class="small" role="status" aria-live="polite" hidden></p>
       <div class="fr-split">
         <div id="fr-side" class="fr-side aj-flow"></div>
@@ -664,13 +628,13 @@
     <div class="menuhead"><button type="button" class="menuicon" id="badge-close" data-i18n-attr="aria-label=r.keys.back,title=r.keys.back" aria-label="返回（Esc）" title="返回（Esc）"><svg class="" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 5l-7 7 7 7"/></svg></button><h2 id="badge-title" data-i18n="badge.title">这个网页版有多安全</h2><kbd class="setesc" aria-hidden="true">Esc</kbd></div>
     <div class="menubody"><div class="menunarrow">
       <section class="menucard box aj-flow">
-        <div class="panel__head"><img src="brand/img/shield-64.png?v=7cc7cbf0" width="40" height="40" alt=""></div>
+        <div class="panel__head"><img src="brand/img/shield-64.png" width="40" height="40" alt=""></div>
         <ul>
           <li data-i18n="badge.p1">手机和电脑之间的内容是加密的，我们的服务器看不懂。</li>
           <li data-i18n="badge.p3">草稿和发过的话只存在这台手机上，而且是加密存的；朗读用手机自己的语音，分享走手机自己的分享面板。</li>
         </ul>
         <p class="small" data-i18n="badge.hash">本页的版本号（用来核对网页有没有被改过）：</p>
-        <p><code id="version-hash" class="hash" data-cc="inline">—</code></p>
+        <p><code id="version-hash" class="hash">—</code></p>
         <p class="small" data-i18n="badge.verify">怎么核对、我们存了什么，都写在「数据安全」页：agentj.app/security/</p>
       </section>
     </div></div>
@@ -685,9 +649,8 @@
         <button type="button" id="set-back" class="setx menuicon" hidden data-i18n-attr="aria-label=set.back,title=set.back" aria-label="返回设置" title="返回设置"><svg class="" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 5l-7 7 7 7"/></svg></button>
         <h2 id="set-title" data-i18n="set.title">设置</h2>
         <kbd class="setesc" aria-hidden="true">Esc</kbd>
-        <div id="set-actions" class="set-actions"></div>
+        <button type="button" id="set-close" class="setx menuicon" data-i18n-attr="aria-label=set.close,title=set.close" aria-label="关闭设置（Esc）" title="关闭设置（Esc）"><svg class="" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg></button>
       </div>
-      <div id="set-find" class="set-find" hidden><input id="set-find-input" type="search" data-i18n-attr="placeholder=p264.search,aria-label=p264.search" placeholder="搜索设置" aria-label="搜索设置"><div id="set-find-results" role="status"></div></div>
       <div class="setstatus setstatusbar" id="set-status-bar" hidden><p id="set-status" role="status" aria-live="polite"></p><button type="button" id="set-status-x" class="menuicon" hidden data-i18n-attr="aria-label=p207set.status.close,title=p207set.status.close" aria-label="关闭提示" title="关闭提示"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg></button></div>
       <div id="set-main" class="setmain">
         <nav class="setside" data-i18n-attr="aria-label=set.nav" aria-label="设置分区">
@@ -704,11 +667,11 @@
         <div class="setcards">
           <section class="setcard" id="set-s-agent" data-paired aria-labelledby="set-h-agent">
             <h3 class="setg" id="set-h-agent" data-i18n="set.gAgent">Agent 与遥控器</h3>
+            <button type="button" id="set-auth-nav" class="setnav"><svg class="mi" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="8" cy="15" r="4"/><path d="M10.8 12.2L20 3M16 7l2 2M14 9l2 2"/></svg><span><b><span data-i18n="ar.nav">AI 登录救援</span> <i class="ardot" id="ar-dot" hidden aria-hidden="true"></i></b><small data-i18n="ar.navNote">电脑上的 AI 登录过期了？在手机上重新登录，不用回电脑。</small></span><svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 5l7 7-7 7"/></svg></button>
             <div class="setrow setid">
-              <img src="brand/img/logo-mark.png?v=e2d5a0d6" width="40" height="40" alt="">
+              <img src="brand/img/logo-mark.png" width="40" height="40" alt="">
               <div class="setid__txt"><b id="brand-name">Agent J</b><p class="setval" id="set-computer"></p></div>
             </div>
-            <button type="button" id="set-auth-nav" class="setnav"><svg class="mi" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="8" cy="15" r="4"/><path d="M10.8 12.2L20 3M16 7l2 2M14 9l2 2"/></svg><span><b><span data-i18n="ar.nav">AI 登录救援</span> <i class="ardot" id="ar-dot" hidden aria-hidden="true"></i></b><small data-i18n="ar.navNote">电脑上的 AI 登录过期了？在手机上重新登录，不用回电脑。</small></span><svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 5l7 7-7 7"/></svg></button>
             <button type="button" id="set-remotes-open" class="setnav"><svg class="mi" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2.5" y="4" width="10" height="16" rx="2"/><rect x="15" y="8" width="6.5" height="12" rx="1.5"/><path d="M7 17h1"/></svg><span><b data-i18n="set.remotes">遥控器管理</b><small id="set-remotes-count"></small></span><svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 5l7 7-7 7"/></svg></button>
             <button type="button" id="setup-faceid" class="setnav" hidden><svg class="mi" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 8V6a2 2 0 0 1 2-2h2M16 4h2a2 2 0 0 1 2 2v2M20 16v2a2 2 0 0 1-2 2h-2M8 20H6a2 2 0 0 1-2-2v-2M9 9.5v1M15 9.5v1M12 9.5V13h-1M9.5 16a3.5 3.5 0 0 0 5 0"/></svg><span><b data-i18n="phoneEnv.setup">设置 Face ID</b><small data-i18n="set.faceidNote">危险操作前用 Face ID 确认是你本人。</small></span><svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 5l7 7-7 7"/></svg></button>
             <p class="setnote" data-i18n="set.computerNote">这台手机一次只配对一台电脑。给 Agent 改名：在电脑上运行 agentj name &lt;新名字&gt;。你所有的 Agent 都能在账号后台看到。</p>
@@ -725,11 +688,9 @@
             <button type="button" id="open-mem" class="setnav"><svg class="mi" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6.5 3H18a1 1 0 0 1 1 1v16a1 1 0 0 1-1 1H6.5A2.5 2.5 0 0 1 4 18.5v-13A2.5 2.5 0 0 1 6.5 3z"/><path d="M8 3v18M11.5 8H16M11.5 12H16"/></svg><span><b data-i18n="nav.mem">记忆</b><small data-i18n="set.memNote">Agent 记住了什么，不想要的可以删。</small></span><svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 5l7 7-7 7"/></svg></button>
             <button type="button" id="open-act" class="setnav"><svg class="mi" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6h11M9 12h11M9 18h11M4.5 6h.01M4.5 12h.01M4.5 18h.01"/></svg><span><b data-i18n="nav.act">记录</b><small data-i18n="set.actNote">Agent 做过的每件事。</small></span><svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 5l7 7-7 7"/></svg></button>
             <button type="button" id="open-tasks" class="setnav"><svg class="mi" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="13" r="8"/><path d="M12 9v4l2.5 2.5M9 2h6"/></svg><span><b data-i18n="nav.tasks">定时任务</b><small data-i18n="set.tasksNote">按时自动跑的任务，可以开关。</small></span><svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 5l7 7-7 7"/></svg></button>
-            <button type="button" id="open-friends" class="setnav" data-keywords="friend 好友 添加 名片"><svg class="mi" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20a6.5 6.5 0 0 1 13 0M16 4.6a3.5 3.5 0 0 1 0 6.8M17.5 14.2A6.5 6.5 0 0 1 21.5 20"/></svg><span><b data-i18n="nav.friends">好友</b><small data-i18n="set.friendsNote">让你的 Agent 跟别人的 Agent 联系。</small></span><svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 5l7 7-7 7"/></svg></button>
-            <button type="button" id="open-bots" class="setnav" data-keywords="bot 客服 customer service"><svg class="mi" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 4.5h16a1 1 0 0 1 1 1V16a1 1 0 0 1-1 1h-9l-5 4v-4H4a1 1 0 0 1-1-1V5.5a1 1 0 0 1 1-1z"/><path d="M8 11h.01M12 11h.01M16 11h.01"/></svg><span><b data-i18n="set.bots">Bots / 客服</b><small data-i18n="set.botsNote">对外接待客人的 Bot。</small></span><svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 5l7 7-7 7"/></svg></button>
+            <button type="button" id="open-friends" class="setnav"><svg class="mi" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20a6.5 6.5 0 0 1 13 0M16 4.6a3.5 3.5 0 0 1 0 6.8M17.5 14.2A6.5 6.5 0 0 1 21.5 20"/></svg><span><b data-i18n="nav.friends">好友</b><small data-i18n="set.friendsNote">让你的 Agent 跟别人的 Agent 联系。</small></span><svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 5l7 7-7 7"/></svg></button>
+            <button type="button" id="open-bots" class="setnav"><svg class="mi" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 4.5h16a1 1 0 0 1 1 1V16a1 1 0 0 1-1 1h-9l-5 4v-4H4a1 1 0 0 1-1-1V5.5a1 1 0 0 1 1-1z"/><path d="M8 11h.01M12 11h.01M16 11h.01"/></svg><span><b data-i18n="set.bots">Bots / 客服</b><small data-i18n="set.botsNote">对外接待客人的 Bot。</small></span><svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 5l7 7-7 7"/></svg></button>
             <button type="button" id="open-setup" class="setnav"><svg class="mi" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M11 6h9M11 12h9M11 18h9M3.5 6l1.5 1.5L8 4.5M3.5 12l1.5 1.5L8 10.5M4 18h2.5"/></svg><span><b data-i18n="setup.menu">首次准备清单</b><small data-i18n="set.setupNote">离开电脑前要准备好的事。</small></span><svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 5l7 7-7 7"/></svg></button>
-            <!-- P274: macOS hosts only (host_info.platform); the sub-page is js/imessage.js -->
-            <button type="button" id="set-imsg-nav" class="setnav" hidden><svg class="mi" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 11.5c0 4.1-3.6 7.5-8 7.5-1.2 0-2.4-.3-3.4-.7L4 19.5l1.2-3.6A7.2 7.2 0 0 1 4 11.5C4 7.4 7.6 4 12 4s8 3.4 8 7.5z"/><path d="M8.5 11.5h.01M12 11.5h.01M15.5 11.5h.01"/></svg><span><b data-i18n="imsg.nav">iMessage 助手</b><small id="set-imsg-note" data-i18n="imsg.navNote">只读这台 Mac 的短信，重要的推给你。</small></span><svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 5l7 7-7 7"/></svg></button>
             <div class="setrow" id="set-hb-row">
               <span class="setlab" data-i18n="set.heartbeat">心跳</span>
               <button type="button" id="set-hb" class="tgl" role="switch" aria-checked="false" data-pref="heartbeat.enabled"><i></i></button>
@@ -754,7 +715,7 @@
               <!-- P207 §3: two options = left label · a small sliding switch · right label (three or more = one row of segments) -->
               <div class="twoway" role="group" data-i18n-attr="aria-label=set.lang" aria-label="语言"><button type="button" class="tw-lab" data-side="left" data-set-lang="zh" aria-pressed="false">中文</button><button type="button" role="switch" id="set-lang" class="tw-sw" aria-checked="false" data-i18n-attr="aria-label=p207set.tw.lang" aria-label="语言：左边中文，右边 English"><i class="tw-knob"></i></button><button type="button" class="tw-lab" data-side="right" data-set-lang="en" aria-pressed="false">English</button></div>
               <p class="setnote" data-i18n="set.langNote">只有这一个语言设置：App 界面、发给你的邮件、Agent J 跟你说话，都用它。改了以后，电脑和账号会自动同步。</p>
-              <p class="setcmd" id="set-lang-cmd" hidden><span class="setnote" data-i18n="set.readOnly">这台电脑上的程序还不能从手机改设置。要改，在电脑上运行：</span><code id="set-lang-cmd-code" data-cc="ext"></code><button type="button" class="setcopy" data-copy="set-lang-cmd-code" data-i18n-attr="aria-label=set.copy,title=set.copy" aria-label="复制命令" title="复制命令"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect class="ic-copy" x="8.5" y="8.5" width="11.5" height="11.5" rx="2.5"/><path class="ic-copy" d="M15.5 8.5V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v7.5a2 2 0 0 0 2 2h2.5"/><path class="ic-done" d="M5 12.5l4.5 4.5L19 7.5"/></svg></button></p>
+              <p class="setcmd" id="set-lang-cmd" hidden><span class="setnote" data-i18n="set.readOnly">这台电脑上的程序还不能从手机改设置。要改，在电脑上运行：</span><code id="set-lang-cmd-code"></code><button type="button" class="setcopy" data-copy="set-lang-cmd-code" data-i18n-attr="aria-label=set.copy,title=set.copy" aria-label="复制命令" title="复制命令"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect class="ic-copy" x="8.5" y="8.5" width="11.5" height="11.5" rx="2.5"/><path class="ic-copy" d="M15.5 8.5V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v7.5a2 2 0 0 0 2 2h2.5"/><path class="ic-done" d="M5 12.5l4.5 4.5L19 7.5"/></svg></button></p>
             </div>
             <div class="setrow">
               <span class="setlab" data-i18n="set.theme">外观</span>
@@ -773,8 +734,7 @@
                 <button type="button" id="set-font-reset" class="setlink" data-i18n="set.fontReset">恢复默认</button>
               </div>
               <p class="setnote" data-i18n="set.fontNote">只改回复卡片里的字，只存在这台手机上。</p>
-              <span class="setsamplelab" aria-hidden="true" data-i18n="set.fontSampleLab">预览</span>
-              <p class="setsample" id="set-font-sample" aria-hidden="true" data-i18n="set.fontSample">这是回复卡片里文字的大小，按 − / + 调整看效果。</p>
+              <p class="setsample" id="set-font-sample" aria-hidden="true" data-i18n="set.fontSample">清单在 restock.md 里，按供应商分组。</p>
             </div>
             <div class="setrow" id="set-sfx-row">
               <span class="setlab" data-i18n="set.sfx">提示音音量</span>
@@ -796,7 +756,7 @@
               <button type="button" id="set-wake" class="tgl" role="switch" aria-checked="false" data-pref="voice.wake_enabled" data-i18n-attr="aria-label=set.wake" aria-label="语音唤起"><i></i></button>
               <p class="setnote" data-i18n="set.wakeNote">说出唤醒词就能开始说话。只在 Agent J 的安卓 App 里起作用，网页版没有这个功能。</p>
             </div>
-            <p class="setcmd" id="set-pref-cmd" hidden><span class="setnote" data-i18n="set.readOnly">这台电脑上的程序还不能从手机改设置。要改，在电脑上运行：</span><code id="set-pref-cmd-code" data-cc="ext"></code><button type="button" class="setcopy" data-copy="set-pref-cmd-code" data-i18n-attr="aria-label=set.copy,title=set.copy" aria-label="复制命令" title="复制命令"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect class="ic-copy" x="8.5" y="8.5" width="11.5" height="11.5" rx="2.5"/><path class="ic-copy" d="M15.5 8.5V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v7.5a2 2 0 0 0 2 2h2.5"/><path class="ic-done" d="M5 12.5l4.5 4.5L19 7.5"/></svg></button></p>
+            <p class="setcmd" id="set-pref-cmd" hidden><span class="setnote" data-i18n="set.readOnly">这台电脑上的程序还不能从手机改设置。要改，在电脑上运行：</span><code id="set-pref-cmd-code"></code><button type="button" class="setcopy" data-copy="set-pref-cmd-code" data-i18n-attr="aria-label=set.copy,title=set.copy" aria-label="复制命令" title="复制命令"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect class="ic-copy" x="8.5" y="8.5" width="11.5" height="11.5" rx="2.5"/><path class="ic-copy" d="M15.5 8.5V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v7.5a2 2 0 0 0 2 2h2.5"/><path class="ic-done" d="M5 12.5l4.5 4.5L19 7.5"/></svg></button></p>
             <div class="setrow" id="set-shot-row" hidden>
               <span class="setlab" data-i18n="set.shot">截图自动进附件</span>
               <button type="button" id="set-shot" class="tgl" role="switch" aria-checked="false" data-i18n-attr="aria-label=set.shot" aria-label="截图自动进附件"><i></i></button>
@@ -818,11 +778,6 @@
             <button type="button" id="set-mail-nav" class="setnav"><svg class="mi" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3.5 6.5l8.5 6 8.5-6"/></svg><span><b data-i18n="mail.nav">邮件通道</b><small data-i18n="mail.navNote">用邮件给 Agent 派活，回复会发回同一封邮件。</small></span><svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 5l7 7-7 7"/></svg></button>
             <button type="button" id="set-contacts-nav" class="setnav" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" class="mi"><rect x="4" y="3" width="15" height="18" rx="2"/><circle cx="11.5" cy="10" r="2.8"/><path d="M7 17c.9-2 2.6-3 4.5-3s3.6 1 4.5 3M19 7h2M19 12h2M19 17h2"/></svg><span><b data-i18n="p207set.ct.nav">通讯录</b><small data-i18n="p207set.ct.navNote">朋友的邮箱和电话，可以一键加进邮件白名单。</small></span><svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 5l7 7-7 7"/></svg></button>
             <button type="button" id="set-owner-nav" class="setnav" hidden><svg class="mi" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 20c1.5-4 4.5-6 8-6s6.5 2 8 6"/></svg><span><b data-i18n="set.owner">我的联系方式</b><small data-i18n="set.ownerNote">通讯录 0 号位：「发给我自己」用的主邮箱和手机号。</small></span><svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 5l7 7-7 7"/></svg></button>
-            <div class="setrow">   <!-- P283 / P297: re-pair the owner's Telegram bot (one-time code card in the chat) -->
-              <span class="setlab" id="set-chan"></span>
-              <button type="button" id="set-tgpair" class="aj-btn aj-btn--sm"></button>
-              <p class="setnote" id="set-chan-note"></p>
-            </div>
           </section>
 
           <section class="setcard" id="set-s-safety" aria-labelledby="set-h-safety">
@@ -831,7 +786,7 @@
               <span class="setlab" data-i18n="set.risk">高风险提醒</span>
               <button type="button" role="switch" aria-checked="false" class="setswitch" id="set-risk" data-pref="agent.high_risk_warnings" data-i18n-attr="aria-label=set.risk" aria-label="高风险提醒"></button>
               <p class="setnote" data-i18n="set.riskNote">额外高危提醒默认是关着的。你可以在这儿开关；底层工具自身的权限规则一直生效。</p>
-              <p class="setcmd"><code id="set-risk-cmd" data-cc="ext"></code><button type="button" class="setcopy" data-copy="set-risk-cmd" data-i18n-attr="aria-label=set.copy,title=set.copy" aria-label="复制命令" title="复制命令"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect class="ic-copy" x="8.5" y="8.5" width="11.5" height="11.5" rx="2.5"/><path class="ic-copy" d="M15.5 8.5V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v7.5a2 2 0 0 0 2 2h2.5"/><path class="ic-done" d="M5 12.5l4.5 4.5L19 7.5"/></svg></button></p>
+              <p class="setcmd"><code id="set-risk-cmd"></code><button type="button" class="setcopy" data-copy="set-risk-cmd" data-i18n-attr="aria-label=set.copy,title=set.copy" aria-label="复制命令" title="复制命令"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect class="ic-copy" x="8.5" y="8.5" width="11.5" height="11.5" rx="2.5"/><path class="ic-copy" d="M15.5 8.5V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v7.5a2 2 0 0 0 2 2h2.5"/><path class="ic-done" d="M5 12.5l4.5 4.5L19 7.5"/></svg></button></p>
             </div>
             <div class="setrow" data-paired>
               <span class="setlab" data-i18n="set.jev">Jev 判断阈值</span>
@@ -841,39 +796,37 @@
                 <button type="button" id="set-jev-plus" data-i18n-attr="aria-label=set.jevPlus,title=set.jevPlus" aria-label="调高（弹窗更多）" title="调高（弹窗更多）"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M5 12h14M12 5v14"/></svg></button>
               </div>
               <p class="setnote" data-i18n="set.jevNote">配置 Jev（电脑上的 OPENROUTER_API_KEY）后可以少弹审批卡：Agent J 看不清的命令会先问 Jev 是否与当前任务一致，概率不低于这个值就直接放行，并记进记录。调低弹窗更少，调高更谨慎（0.50–0.95，默认 0.70）。花钱、删除、对外发送、改凭据、改价这五类明确危险的动作不受影响，一律弹卡。</p>
-              <p class="setcmd"><code id="set-jev-cmd" data-cc="ext"></code><button type="button" class="setcopy" data-copy="set-jev-cmd" data-i18n-attr="aria-label=set.copy,title=set.copy" aria-label="复制命令" title="复制命令"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect class="ic-copy" x="8.5" y="8.5" width="11.5" height="11.5" rx="2.5"/><path class="ic-copy" d="M15.5 8.5V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v7.5a2 2 0 0 0 2 2h2.5"/><path class="ic-done" d="M5 12.5l4.5 4.5L19 7.5"/></svg></button></p>
+              <p class="setcmd"><code id="set-jev-cmd"></code><button type="button" class="setcopy" data-copy="set-jev-cmd" data-i18n-attr="aria-label=set.copy,title=set.copy" aria-label="复制命令" title="复制命令"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect class="ic-copy" x="8.5" y="8.5" width="11.5" height="11.5" rx="2.5"/><path class="ic-copy" d="M15.5 8.5V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v7.5a2 2 0 0 0 2 2h2.5"/><path class="ic-done" d="M5 12.5l4.5 4.5L19 7.5"/></svg></button></p>
             </div>
             <div class="setrow" data-paired>
               <span class="setlab" data-i18n="set.goalAuto">目标模式 10 秒自动批准</span>
               <button type="button" role="switch" aria-checked="true" class="setswitch" id="set-goal" data-pref="approval.goal_auto" data-i18n-attr="aria-label=set.goalAuto" aria-label="目标模式 10 秒自动批准"></button>
               <p class="setnote" data-i18n="set.goalAutoNote">用 /goal 交代好一件事后，授权范围外、电脑能撤回的动作（git 里有提交、移到回收站、推到已有的远端）会弹 10 秒倒计时卡，你不点就算同意，好让目标在你睡觉或开会时也能做完。不可逆的和疑似攻击的永远等你决定。公司或团队用的话可以关掉：关掉后这些卡只会等你点。</p>
-              <p class="setcmd"><code id="set-goal-cmd" data-cc="ext"></code><button type="button" class="setcopy" data-copy="set-goal-cmd" data-i18n-attr="aria-label=set.copy,title=set.copy" aria-label="复制命令" title="复制命令"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect class="ic-copy" x="8.5" y="8.5" width="11.5" height="11.5" rx="2.5"/><path class="ic-copy" d="M15.5 8.5V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v7.5a2 2 0 0 0 2 2h2.5"/><path class="ic-done" d="M5 12.5l4.5 4.5L19 7.5"/></svg></button></p>
+              <p class="setcmd"><code id="set-goal-cmd"></code><button type="button" class="setcopy" data-copy="set-goal-cmd" data-i18n-attr="aria-label=set.copy,title=set.copy" aria-label="复制命令" title="复制命令"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect class="ic-copy" x="8.5" y="8.5" width="11.5" height="11.5" rx="2.5"/><path class="ic-copy" d="M15.5 8.5V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v7.5a2 2 0 0 0 2 2h2.5"/><path class="ic-done" d="M5 12.5l4.5 4.5L19 7.5"/></svg></button></p>
             </div>
             <div class="setrow" data-paired>
               <span class="setlab" data-i18n="set.quotaSwitch">额度告警时把新任务交给其他 AI 账号</span>
               <button type="button" role="switch" aria-checked="false" class="setswitch" id="set-qswitch" data-pref="quota.auto_switch" data-i18n-attr="aria-label=set.quotaSwitch" aria-label="额度告警时把新任务交给其他 AI 账号"></button>
               <p class="setnote" data-i18n="set.quotaSwitchNote">本机登录了不止一个 AI 账号（比如 Claude Code 和 Codex）时：当前这个的 5 小时额度到 80% 或周额度到 90%，新开始的定时任务 / 工作流会先跟另一个额度还宽裕的账号握一次手，能用就直接交给它，消息里写一句改用了谁。关着的话（默认）只在手机上问你「切到 X 做这件？」，你同意才切。主对话不会被切走；工作流写明只能用某个 AI 的不受影响。</p>
-              <p class="setcmd"><code id="set-qswitch-cmd" data-cc="ext"></code><button type="button" class="setcopy" data-copy="set-qswitch-cmd" data-i18n-attr="aria-label=set.copy,title=set.copy" aria-label="复制命令" title="复制命令"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect class="ic-copy" x="8.5" y="8.5" width="11.5" height="11.5" rx="2.5"/><path class="ic-copy" d="M15.5 8.5V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v7.5a2 2 0 0 0 2 2h2.5"/><path class="ic-done" d="M5 12.5l4.5 4.5L19 7.5"/></svg></button></p>
+              <p class="setcmd"><code id="set-qswitch-cmd"></code><button type="button" class="setcopy" data-copy="set-qswitch-cmd" data-i18n-attr="aria-label=set.copy,title=set.copy" aria-label="复制命令" title="复制命令"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect class="ic-copy" x="8.5" y="8.5" width="11.5" height="11.5" rx="2.5"/><path class="ic-copy" d="M15.5 8.5V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v7.5a2 2 0 0 0 2 2h2.5"/><path class="ic-done" d="M5 12.5l4.5 4.5L19 7.5"/></svg></button></p>
             </div>
             <div class="setrow" data-paired>
               <span class="setlab" data-i18n="set.mode">会话模式</span>
               <div class="twoway" role="group" data-i18n-attr="aria-label=set.mode" aria-label="会话模式"><button type="button" class="tw-lab" data-side="left" data-tw="set-mode" data-i18n="p207set.tw.independent">独立会话</button><button type="button" role="switch" id="set-mode" class="tw-sw" aria-checked="false" data-pref="agent.session_mode" data-i18n-attr="aria-label=p207set.tw.mode" aria-label="会话模式：左边独立会话，右边共享电脑会话"><i class="tw-knob"></i></button><button type="button" class="tw-lab" data-side="right" data-tw="set-mode" data-i18n="p207set.tw.shared">共享会话</button></div>
               <p class="setnote" data-i18n="set.modeNote">默认用独立会话：Agent J 自己开一个，不改你终端里的工具。共享（高级）会接入你电脑上正在用的会话，沿用它的权限。</p>
-              <p class="setcmd"><code id="set-mode-cmd" data-cc="ext"></code><button type="button" class="setcopy" data-copy="set-mode-cmd" data-i18n-attr="aria-label=set.copy,title=set.copy" aria-label="复制命令" title="复制命令"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect class="ic-copy" x="8.5" y="8.5" width="11.5" height="11.5" rx="2.5"/><path class="ic-copy" d="M15.5 8.5V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v7.5a2 2 0 0 0 2 2h2.5"/><path class="ic-done" d="M5 12.5l4.5 4.5L19 7.5"/></svg></button></p>
+              <p class="setcmd"><code id="set-mode-cmd"></code><button type="button" class="setcopy" data-copy="set-mode-cmd" data-i18n-attr="aria-label=set.copy,title=set.copy" aria-label="复制命令" title="复制命令"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect class="ic-copy" x="8.5" y="8.5" width="11.5" height="11.5" rx="2.5"/><path class="ic-copy" d="M15.5 8.5V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v7.5a2 2 0 0 0 2 2h2.5"/><path class="ic-done" d="M5 12.5l4.5 4.5L19 7.5"/></svg></button></p>
             </div>
             <div class="setrow" data-paired>
-              <span class="setlab" data-i18n="set.iso">隔离运行</span>
-              <button type="button" role="switch" aria-checked="true" class="setswitch" id="set-iso" data-pref="agent.isolation" data-i18n-attr="aria-label=set.iso" aria-label="隔离运行"></button>
-              <p class="setnote" data-i18n="set.isoNote">只管 Agent J 自己启动的 Agent（独立会话和定时任务）：它们在隔离环境里跑，看不到 Agent J 的密钥和配对数据。关掉后，就按底层工具自身的权限来。下次启动 Agent 时生效。</p>
-              <p class="setnote setscope" id="set-iso-shared" hidden data-i18n="set.isoShared">你现在用的是共享会话：电脑上已经开着的那个会话不受这一项影响，只有定时任务等 Agent J 自己启动的还会隔离。</p>
-              <p class="setcmd"><code id="set-iso-cmd" data-cc="ext"></code><button type="button" class="setcopy" data-copy="set-iso-cmd" data-i18n-attr="aria-label=set.copy,title=set.copy" aria-label="复制命令" title="复制命令"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect class="ic-copy" x="8.5" y="8.5" width="11.5" height="11.5" rx="2.5"/><path class="ic-copy" d="M15.5 8.5V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v7.5a2 2 0 0 0 2 2h2.5"/><path class="ic-done" d="M5 12.5l4.5 4.5L19 7.5"/></svg></button></p>
+              <span class="setlab" data-i18n="set.iso">隔离运行（独立会话）</span>
+              <button type="button" role="switch" aria-checked="true" class="setswitch" id="set-iso" data-pref="agent.isolation" data-i18n-attr="aria-label=set.iso" aria-label="隔离运行（独立会话）"></button>
+              <p class="setnote" data-i18n="set.isoNote">开启时，独立会话里的 Agent 看不到 Agent J 的密钥和配对数据；关闭后按底层工具自身的权限运行。下次启动 Agent 时生效。</p>
+              <p class="setcmd"><code id="set-iso-cmd"></code><button type="button" class="setcopy" data-copy="set-iso-cmd" data-i18n-attr="aria-label=set.copy,title=set.copy" aria-label="复制命令" title="复制命令"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect class="ic-copy" x="8.5" y="8.5" width="11.5" height="11.5" rx="2.5"/><path class="ic-copy" d="M15.5 8.5V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v7.5a2 2 0 0 0 2 2h2.5"/><path class="ic-done" d="M5 12.5l4.5 4.5L19 7.5"/></svg></button></p>
             </div>
             <div class="setrow" data-paired>
               <span class="setlab" data-i18n="set.docker">允许使用 Docker</span>
               <button type="button" role="switch" aria-checked="false" class="setswitch" id="set-docker" data-pref="agent.allow_docker" data-i18n-attr="aria-label=set.docker" aria-label="允许使用 Docker"></button>
-              <p class="setnote" data-i18n="set.dockerNote">依附于隔离运行，只对隔离中的 Agent 生效。默认关闭；开启后它们可以使用 docker / podman，容器能挂载电脑上的任何文件。</p>
-              <p class="setnote setscope" id="set-docker-off" hidden data-i18n="set.dockerOff">隔离运行已关闭，这一项暂时不生效。</p>
-              <p class="setcmd"><code id="set-docker-cmd" data-cc="ext"></code><button type="button" class="setcopy" data-copy="set-docker-cmd" data-i18n-attr="aria-label=set.copy,title=set.copy" aria-label="复制命令" title="复制命令"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect class="ic-copy" x="8.5" y="8.5" width="11.5" height="11.5" rx="2.5"/><path class="ic-copy" d="M15.5 8.5V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v7.5a2 2 0 0 0 2 2h2.5"/><path class="ic-done" d="M5 12.5l4.5 4.5L19 7.5"/></svg></button></p>
+              <p class="setnote" data-i18n="set.dockerNote">默认关闭。开启后，隔离中的 Agent 可以使用 docker / podman，容器能挂载电脑上的任何文件。</p>
+              <p class="setcmd"><code id="set-docker-cmd"></code><button type="button" class="setcopy" data-copy="set-docker-cmd" data-i18n-attr="aria-label=set.copy,title=set.copy" aria-label="复制命令" title="复制命令"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect class="ic-copy" x="8.5" y="8.5" width="11.5" height="11.5" rx="2.5"/><path class="ic-copy" d="M15.5 8.5V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v7.5a2 2 0 0 0 2 2h2.5"/><path class="ic-done" d="M5 12.5l4.5 4.5L19 7.5"/></svg></button></p>
             </div>
             <button type="button" id="menu-about" class="setnav"><svg class="mi" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l8 3v6c0 4.5-3.4 8.3-8 9-4.6-.7-8-4.5-8-9V6z"/><path d="M8.5 12l2.5 2.5 4.5-4.5"/></svg><span><b><span data-i18n="menu.about">这个网页版有多安全</span> <span id="badge" class="badge__chip setchip" data-i18n="badge.label">网页版</span></b><small data-i18n="set.aboutNote">加密、本页的版本号，以及怎么核对。</small></span><svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 5l7 7-7 7"/></svg></button>
           </section>
@@ -921,10 +874,9 @@
               <span class="setlab" data-i18n="set.legal">数据和条款</span>
               <p class="setlinks"><a href="https://agentj.app/security/" target="_blank" rel="noopener" data-i18n="menu.security">数据安全</a><a href="https://agentj.app/privacy/" target="_blank" rel="noopener" data-i18n="menu.privacy">隐私</a><a href="https://agentj.app/terms/" target="_blank" rel="noopener" data-i18n="menu.terms">条款</a></p>
             </div>
-            <p class="setfoot"><img src="brand/img/shield-64.png?v=7cc7cbf0" width="20" height="20" alt=""><span data-i18n="menu.foot">我们看不到你的聊天内容。</span></p>
+            <p class="setfoot"><img src="brand/img/shield-64.png" width="20" height="20" alt=""><span data-i18n="menu.foot">我们看不到你的聊天内容。</span></p>
           </section>
         </div>
-        <a id="set-brandkit" class="setnav setkit" href="https://agentj.app/docs/robots/#brand-kit" target="_blank" rel="noopener"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v11M7 10l5 5 5-5M5 20h14"/></svg><span><b data-i18n="set.brandKit">下载 Agent J Brand Kit</b><small data-i18n="set.brandKitNote">官方 Logo 和 16 个机器人的透明 PNG，可以拿去做聊天 bot、邮箱等的头像。在官网新标签页打开。</small></span><i aria-hidden="true">↗</i></a>
       </div>
       <div id="set-mail" class="setsub setmail" hidden>
         <div class="setsub__in">
@@ -957,18 +909,18 @@
               <option value="10" data-i18n="mail.poll10">每 10 分钟</option><option value="15" data-i18n="mail.poll15">每 15 分钟</option>
               <option value="30" data-i18n="mail.poll30">每 30 分钟</option><option value="60" data-i18n="mail.poll60">每 60 分钟</option></select></label>
             <p class="mailbtns"><button type="button" id="mail-save" class="aj-btn aj-btn--primary aj-btn--sm" data-i18n="mail.save">保存</button>
-              <button type="button" id="mail-key" class="aj-btn aj-btn--sm" data-i18n="mail.key">设置邮箱授权码</button>
+              <button type="button" id="mail-key" class="aj-btn aj-btn--sm" data-i18n="mail.key">设置授权码</button>
               <button type="button" id="mail-test" class="aj-btn aj-btn--sm" data-i18n="mail.test">测试连接</button>
               <button type="button" id="mail-check" class="aj-btn aj-btn--sm" data-i18n="mail.check">立即检查</button></p>
-            <p class="setnote" data-i18n="mail.keyNote">点「设置邮箱授权码」，按服务商提示获取并粘贴。密码加密保存到 Agent J 工作主机后自动测试连接，不发信。</p>
+            <p class="setnote" data-i18n="mail.keyNote">授权码不是邮箱登录密码。点「设置授权码」会弹出一张密钥卡：在卡上填，电脑先用它登录一次邮箱，成功才加密保存在电脑上。授权码不会出现在聊天、日志里，也不会上传。</p>
 
-            <h3 class="setg" data-i18n="mail.gAllow">白名单（谁的来信直接处理，给谁发信不用确认）</h3>
+            <h3 class="setg" data-i18n="mail.gAllow">白名单（谁的邮件能交给 Agent）</h3>
             <ul class="setphones mailallow" id="mail-allow"></ul>
             <p class="setnote" id="mail-allow-empty" data-i18n="mail.allowEmpty">白名单是空的：现在任何邮件都不会交给 Agent。先把你自己常用的邮箱加进来。</p>
             <div class="mailadd"><input id="mail-add-addr" class="aj-input" type="email" inputmode="email" autocomplete="off" autocapitalize="off" spellcheck="false" data-i18n-attr="placeholder=mail.addPh" placeholder="你常用的邮箱">
               <select id="mail-add-role" class="aj-select"><option value="owner" data-i18n="mail.roleOwner">我本人</option><option value="guest" data-i18n="mail.roleGuest">访客</option></select>
               <button type="button" id="mail-add" class="aj-btn aj-btn--sm" data-i18n="mail.add">加入</button></div>
-            <p class="setnote" data-i18n="mail.roleNote">「我本人」的邮件按你的指令处理；「访客」的邮件不当作你的指令，不能批准任何操作，回信会去掉私人信息。白名单里的人，Agent 给他们发信不用你再确认；加进来之前想清楚：Agent 可以不经你确认给他发信。</p>
+            <p class="setnote" data-i18n="mail.roleNote">「我本人」的邮件按你的指令处理；「访客」的邮件不当作你的指令，不能批准任何操作，回信会去掉私人信息。</p>
 
             <h3 class="setg" data-i18n="mail.gAuth">发件人校验</h3>
             <label class="mailf"><span data-i18n="mail.auth">校验强度</span><select id="mail-auth" class="aj-select">
@@ -998,51 +950,6 @@
           </section>
         </div>
       </div>
-      <!-- P274 · Settings → iMessage 助手 (macOS hosts only): parameters via pref_set (the same validator as `agentj imessage set`),
-           the rules text read-only (the Agent changes it), status / 重新检测 / 在电脑上打开授权页 (PROTOCOL §10.21) -->
-      <div id="set-imessage" class="setsub setmail setimsg" hidden>
-        <div class="setsub__in">
-          <section class="setcard">
-            <p class="setnote" data-i18n="imsg.intro">Agent J 定时看一眼这台 Mac 上新的 iMessage 和短信，验证码、快递、银行、行程、家人的消息推到这台手机，垃圾和骗人的短信挡掉。它只读：不会回复、不标已读、不改「信息」里的任何东西。</p>
-            <div class="setrow">
-              <span class="setlab" data-i18n="imsg.onLab">iMessage 助手</span>
-              <button type="button" id="imsg-on" class="tgl" role="switch" aria-checked="false" data-i18n-attr="aria-label=imsg.onLab" aria-label="iMessage 助手"><i></i></button>
-              <p class="setnote" id="imsg-status" aria-live="polite"></p>
-            </div>
-            <div id="imsg-fda" class="imsgfda" hidden>
-              <p class="setnote" data-i18n="imsg.fda">还差一步，要在电脑上做：打开 系统设置 → 隐私与安全性 → 完全磁盘访问权限，把下面这个程序加进去并打开开关，然后回来点「重新检测」。macOS 不会自己弹窗问你。</p>
-              <p class="setnote"><span data-i18n="imsg.grantTo">要授权的程序：</span><code id="imsg-grant" data-cc="inline"></code></p>
-            </div>
-            <p class="mailbtns"><button type="button" id="imsg-fda-open" class="aj-btn aj-btn--sm" data-i18n="imsg.fdaOpen">在电脑上打开授权页</button>
-              <button type="button" id="imsg-check" class="aj-btn aj-btn--sm" data-i18n="imsg.check">重新检测</button></p>
-            <p class="setnote mailmsg" id="imsg-msg" role="status" aria-live="polite"></p>
-
-            <h3 class="setg" data-i18n="imsg.gHow">怎么提醒</h3>
-            <label class="mailf"><span data-i18n="imsg.every">多久看一次</span><select id="imsg-every" class="aj-select" data-imsg="imessage.interval_minutes"><option value="1" data-i18n="imsg.e1">每 1 分钟</option><option value="5" data-i18n="imsg.e5">每 5 分钟（推荐）</option><option value="15" data-i18n="imsg.e15">每 15 分钟</option><option value="60" data-i18n="imsg.e60">每 1 小时</option></select></label>
-            <label class="mailf"><span data-i18n="imsg.delivery">提醒方式</span><select id="imsg-delivery" class="aj-select" data-imsg="imessage.delivery"><option value="instant_digest" data-i18n="imsg.dMix">重要的马上推，其余进摘要（推荐）</option><option value="instant" data-i18n="imsg.dAll">全部马上推</option><option value="digest" data-i18n="imsg.dDigest">只要摘要（验证码和重要联系人仍马上推）</option></select></label>
-            <label class="mailf"><span data-i18n="imsg.digestAt">摘要时间</span><select id="imsg-digest" class="aj-select" data-imsg="imessage.digest_at"><option value="09:00,18:00" data-i18n="imsg.dg2">每天 09:00 和 18:00</option><option value="09:00" data-i18n="imsg.dg1">每天 09:00</option><option value="08:00,12:00,18:00" data-i18n="imsg.dg3">每天 08:00、12:00、18:00</option><option value="21:00" data-i18n="imsg.dgN">每天 21:00</option><option value="" data-i18n="imsg.dg0">不发摘要</option></select></label>
-            <label class="mailf"><span data-i18n="imsg.quiet">免打扰时段</span><select id="imsg-quiet" class="aj-select" data-imsg="imessage.quiet_hours"><option value="" data-i18n="imsg.q0">关</option><option value="22:00-07:00" data-i18n="imsg.q1">22:00–07:00</option><option value="23:00-08:00" data-i18n="imsg.q2">23:00–08:00</option><option value="00:00-07:00" data-i18n="imsg.q3">00:00–07:00</option></select></label>
-            <p class="setnote" data-i18n="imsg.quietNote">免打扰时段里的提醒攒进摘要，时段结束时一起发；验证码和重要联系人照常马上推。</p>
-
-            <h3 class="setg" data-i18n="imsg.gFilter">过滤</h3>
-            <label class="mailf"><span data-i18n="imsg.strict">过滤强度</span><select id="imsg-strict" class="aj-select" data-imsg="imessage.strictness"><option value="standard" data-i18n="imsg.sStd">标准（推荐）</option><option value="loose" data-i18n="imsg.sLoose">宽松：只挡确定的垃圾</option><option value="strict" data-i18n="imsg.sStrict">严格：只提醒验证码、重要联系人和明确的通知</option></select></label>
-            <label class="mailf"><span data-i18n="imsg.codes">验证码</span><select id="imsg-codes" class="aj-select" data-imsg="imessage.codes"><option value="show" data-i18n="imsg.cShow">显示（30 分钟后从记录里隐去）</option><option value="mask" data-i18n="imsg.cMask">打码，只显示来源</option><option value="off" data-i18n="imsg.cOff">不提醒验证码</option></select></label>
-            <div class="setrow">
-              <span class="setlab" data-i18n="imsg.groups">包含群聊</span>
-              <button type="button" id="imsg-groups" class="tgl" role="switch" aria-checked="true" data-imsg="imessage.groups" data-i18n-attr="aria-label=imsg.groups" aria-label="包含群聊"><i></i></button>
-              <p class="setnote" data-i18n="imsg.groupsNote">群聊只进摘要，不会马上推。</p>
-            </div>
-            <label class="mailf"><span data-i18n="imsg.llm">智能分类</span><select id="imsg-llm" class="aj-select" data-imsg="imessage.llm"><option value="off" data-i18n="imsg.lOff">关：只用本地规则（推荐）</option><option value="redacted" data-i18n="imsg.lJev">开：拿不准的交给 Jev（脱敏副本）</option></select></label>
-            <p class="setnote" data-i18n="imsg.llmNote">关掉时，短信正文不出这台电脑。打开时，只有规则拿不准的短信，去掉号码、邮箱、链接后交给 Jev；验证码永远不会交给任何模型。Jev 用你电脑上已有的 OpenRouter Key，没有 Key 或者出错时这条照样进摘要，不会丢。</p>
-
-            <h3 class="setg" data-i18n="imsg.gRules">过滤与提醒规则</h3>
-            <pre id="imsg-rules" class="imsgrules" data-cc="block"></pre>
-            <p class="setnote" id="imsg-lists"></p>
-            <p class="setnote" data-i18n="imsg.rulesNote">规则、重要联系人和静音名单由 Agent J 帮你改：点下面的按钮，在聊天里用一句话告诉它。</p>
-            <button type="button" id="imsg-assist" class="aj-btn imsg-assist"><img src="brand/img/logo-mark.png?v=e2d5a0d6" width="28" height="28" alt=""><span data-i18n="imsg.assist">让 Agent J 帮我改</span></button>
-          </section>
-        </div>
-      </div>
       <!-- P207 §3: 通讯录 — list / search / add / edit / delete, import / export, one tap 「加入邮件白名单」 (js/ctmanage.js, PROTOCOL §25) -->
       <div id="set-contacts" class="setsub" hidden>
         <div class="setsub__in ctmpage">
@@ -1059,7 +966,7 @@
             <template id="ctm-ico-allow"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3.5 6.5l8.5 6 8.5-6"/><path d="M17 16.5h5M19.5 14v5"/></svg></template>
             <template id="ctm-ico-done"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3.5 6.5l8.5 6 8.5-6"/><path d="M15.5 16.5l2 2 4-4"/></svg></template>
             <p class="setnote" id="ctm-empty" hidden data-i18n="p207set.ct.empty">通讯录还是空的。点上面的加号新增，或者导入手机导出的 vCard / CSV 文件。</p>
-            <p class="setnote" data-i18n="p207set.ct.note">「加入邮件白名单」把这个人的邮箱加进「邮件通道」的白名单（访客身份）：他发来的邮件会交给 Agent J，但不当作你的指令。你自己的那一条（0 号位）点开就是「我的联系方式」。</p>
+            <p class="setnote" data-i18n="p207set.ct.note">「加入邮件白名单」把这个人的邮箱加进「邮件通道」的白名单（访客身份）：他发来的邮件会交给 Agent，但不当作你的指令。你自己的那一条（0 号位）点开就是「我的联系方式」。</p>
           </section>
         </div>
       </div>
@@ -1070,7 +977,7 @@
             <ol class="iossteps">
               <li><span class="iosico" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12M8 7l4-4 4 4"/><path d="M6 11H5a1 1 0 0 0-1 1v8a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-8a1 1 0 0 0-1-1h-1"/></svg></span><span data-i18n="set.ios1">在 Safari 里点底部的「分享」按钮。</span></li>
               <li><span class="iosico" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="4"/><path d="M12 8v8M8 12h8"/></svg></span><span data-i18n="set.ios2">往下滑，点「添加到主屏幕」。</span></li>
-              <li><span class="iosico" aria-hidden="true"><img src="brand/img/icon-192.png?v=8a59854e" width="28" height="28" alt=""></span><span data-i18n="set.ios3">点右上角的「添加」。以后从主屏幕上的 Agent J 图标打开它。</span></li>
+              <li><span class="iosico" aria-hidden="true"><img src="brand/img/icon-192.png" width="28" height="28" alt=""></span><span data-i18n="set.ios3">点右上角的「添加」。以后从主屏幕上的 Agent J 图标打开它。</span></li>
             </ol>
           </section>
         </div>
@@ -1143,10 +1050,9 @@
   <!-- P205: one recording card for every way in (hold to talk, double tap / M lock, long takes): a dark circle in the middle of the
        screen, the microphone and a ring that follows the voice; locked takes add end / dim / cancel. Dim = the same card on black. -->
   <div class="ptt gdlg--circle" id="ptt" hidden>
-    <div class="pttc"><span class="pttring" aria-hidden="true"></span><span class="pttring r2" aria-hidden="true"></span>
+    <div class="pttc" role="status" aria-live="assertive"><span class="pttring" aria-hidden="true"></span><span class="pttring r2" aria-hidden="true"></span>
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" class="pttmic" aria-hidden="true"><path d="M12 15a3 3 0 0 0 3-3V6a3 3 0 0 0-6 0v6a3 3 0 0 0 3 3z"/><path d="M19 11a7 7 0 0 1-14 0M12 18v3"/></svg><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" class="pttx" aria-hidden="true"><path d="M7 7l10 10M17 7 7 17"/></svg>
-    </div>
-    <div class="pttcopy" role="status" aria-live="assertive"><b id="pttTime">0:00</b><span id="pttHint"></span><span id="pttSeg" class="pttseg" hidden></span></div>
+      <b id="pttTime">0:00</b><span id="pttHint"></span><span id="pttSeg" class="pttseg" hidden></span></div>
     <div class="pttact" id="pttAct" hidden>
       <button type="button" class="pttbtn" id="pttCancel" data-i18n-attr="aria-label=r.ptt.cancelBtn,title=r.ptt.cancelBtn" aria-label="取消录音" title="取消录音"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg></button>
       <button type="button" class="pttbtn" id="pttDim" data-i18n-attr="aria-label=r.ptt.dim,title=r.ptt.dim" aria-label="暗屏模式" title="暗屏模式"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path class="moon" d="M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5z"/><g class="sun"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></g></svg></button>
@@ -1169,33 +1075,21 @@
       </div>
     </div>
   </div>
-  <!-- The full-screen reader: double tap / the book icon / Esc / back closes it.
-       P273 (Leo 10-14): a fixed header + a fixed footer, only the words between them scroll (no scrollbar), on the Noir of
-       the centred dialogs (--dlg-bg). Header = the message card's header, one 44 px row: Agent name + time (double tap = the
-       first reply) · the first-unread badge · the page number in the corner (double tap = the newest reply). No × (Leo
-       10-14 23:1x: it only takes room — you leave the way you came in: double tap the words, the book icon, 复制, 回复, Esc,
-       back); #rdClose stays as a visually hidden "exit" for screen readers / Tab, shown only while it has the focus. Footer: the type-size icon (opens the slider) on the
-       left, the reply card's six icons on the right (relay.js clones them into #rdActs, same order, 回复 last). -->
+  <!-- The full-screen reader: double tap / × / Esc / back closes it. -->
   <div class="rd" id="rd" hidden role="dialog" aria-modal="true" data-i18n-attr="aria-label=r.rd.aria" aria-label="全屏阅读">
-    <div class="rdhd" id="rdHd">
-      <button class="rdwho" id="rdWho" type="button" data-i18n-attr="aria-label=r.rd.firstTip,title=r.rd.firstTip" aria-label="双击跳到第一条消息（G）" title="双击跳到第一条消息（G）"><b id="rdName"></b><span class="t" id="rdTime"></span></button>
-      <button class="rdun" id="rdUnread" type="button" data-n="0" aria-disabled="true" tabindex="-1" data-i18n-attr="aria-label=r.unread.none" aria-label="没有未读"><span class="unb" id="rdUnreadN" aria-hidden="true">0</span></button>
-      <button class="rdpg" id="rdPgBtn" type="button" data-i18n-attr="aria-label=r.rd.lastTip,title=r.rd.lastTip" aria-label="双击跳到最新一条（g）" title="双击跳到最新一条（g）"><span class="pg" id="rdPg"></span></button>
-      <button class="rdsr" id="rdClose" type="button" data-i18n-attr="aria-label=r.rd.close" aria-label="退出全屏阅读（Esc · 双击）"><span data-i18n="r.rd.exit">退出全屏阅读（f · Esc）</span></button>
+    <div class="rdbar" role="toolbar" data-i18n-attr="aria-label=r.rd.size" aria-label="字号">
+      <div class="sz">
+      <button id="rdMinus" type="button" data-i18n-attr="aria-label=r.rd.minus,title=r.rd.minus" aria-label="字小一号（-）" title="字小一号（-）"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M5 12h14"/></svg></button>
+      <input id="rdSlider" type="range" min="14" max="32" step="1" value="20" data-i18n-attr="aria-label=r.rd.size" aria-label="字号">
+      <button id="rdPlus" type="button" data-i18n-attr="aria-label=r.rd.plus,title=r.rd.plus" aria-label="字大一号（+）" title="字大一号（+）"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M5 12h14M12 5v14"/></svg></button>
+      <span class="fs" id="rdFsN" aria-hidden="true">20</span>
+      </div>
+      <button class="x" id="rdClose" type="button" data-i18n-attr="aria-label=r.rd.close,title=r.rd.close" aria-label="退出全屏阅读（Esc · 双击）" title="退出全屏阅读（Esc · 双击）"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"/></svg></button>
     </div>
     <div class="rdsc" id="rdScroll"><div class="rdin">
+      <div class="who" id="rdWho"></div>
       <div class="words rdw" id="rdWords"></div>
     </div></div>
-    <div class="rdft" id="rdFt">
-      <button class="rdfsbtn" id="rdFsBtn" type="button" aria-haspopup="true" aria-expanded="false" aria-controls="rdFsPop" data-i18n-attr="aria-label=r.rd.size,title=r.rd.sizeTip" aria-label="字号" title="字号（+ / - · 两指缩放）"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 19 8.5 5 14 19M5 14.5h7"/><path d="M15.5 10.5h6M18.5 10.5V19"/></svg></button>
-      <div class="rdacts" id="rdActs" role="toolbar" data-i18n-attr="aria-label=r.bar.aria" aria-label="这条回复"></div>
-      <div class="rdfspop" id="rdFsPop" hidden role="group" data-i18n-attr="aria-label=r.rd.size" aria-label="字号">
-        <button id="rdMinus" type="button" data-i18n-attr="aria-label=r.rd.minus,title=r.rd.minus" aria-label="字小一号（-）" title="字小一号（-）"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M5 12h14"/></svg></button>
-        <input id="rdSlider" type="range" min="14" max="32" step="1" value="20" data-i18n-attr="aria-label=r.rd.size" aria-label="字号">
-        <button id="rdPlus" type="button" data-i18n-attr="aria-label=r.rd.plus,title=r.rd.plus" aria-label="字大一号（+）" title="字大一号（+）"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M5 12h14M12 5v14"/></svg></button>
-        <span class="fs" id="rdFsN" aria-hidden="true">20</span>
-      </div>
-    </div>
   </div>
   <div class="silent menupage" id="silent" hidden role="dialog" aria-modal="true" aria-labelledby="silentTitle">
     <div class="menuhead"><button type="button" class="menuicon" id="silentClose" data-i18n-attr="aria-label=r.keys.back,title=r.keys.back" aria-label="返回（Esc）" title="返回（Esc）"><svg class="" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 5l-7 7 7 7"/></svg></button><h2 id="silentTitle" data-i18n="r.silent.title">静默记录</h2><kbd class="setesc" aria-hidden="true">Esc</kbd></div>
@@ -1225,13 +1119,12 @@
   </div>
   <div class="keys menupage" id="keys" hidden role="dialog" aria-modal="true" aria-labelledby="keysTitle">
     <div class="menuhead"><button type="button" class="menuicon" id="keysClose" data-i18n-attr="aria-label=r.keys.back,title=r.keys.back" aria-label="返回（Esc）" title="返回（Esc）"><svg class="" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 5l-7 7 7 7"/></svg></button><h2 id="keysTitle" data-i18n="r.keys.title">键盘快捷键</h2><kbd class="setesc" aria-hidden="true">Esc</kbd></div>
-    <div class="menubody"><!-- P207: drawn from interactions.json by relay.js paintKeys() (interactions.gen.js + the ix* texts) --><p><a class="keys-site-link" href="https://agentj.app/hotkeys" target="_blank" rel="noopener" data-i18n="ixw.website">在官网打开</a></p><p data-i18n="ixw.globalNote">功能键在输入框聚焦时也有效。系统或输入法占用的组合可能无法传到页面；ChromeOS 的 Alt+Shift+M 会打开文件应用，请从模型菜单恢复默认。</p><div class="menucols" id="keysCols"></div></div>
+    <div class="menubody"><!-- P207: drawn from interactions.json by relay.js paintKeys() (interactions.gen.js + the ix* texts) --><div class="menucols" id="keysCols"></div></div>
   </div>
   <div class="dropzone" id="dropzone" hidden aria-hidden="true">
     <div class="card"><span id="dropText"></span><small id="dropSub"></small></div>
   </div>
   <i class="probe" id="chromeProbe" aria-hidden="true"></i>
   <i class="satband" id="satband" aria-hidden="true"></i>
-  <i class="sabband" id="sabband" aria-hidden="true"></i>
 </body>
 </html>

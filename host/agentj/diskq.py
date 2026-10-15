@@ -7,19 +7,13 @@ in kernel state D for seconds — every phone heartbeat and the relay's auth ans
   opens is a power cut between the rename and that fsync; ext4 (auto_da_alloc) and btrfs flush a file renamed over an
   existing one at the rename's commit, so the old-or-new guarantee holds there too.
 - `fsync` / `settle`: the same split for writers with their own tmp/rename logic.
-- `append` (P292): host.log lines. The loop never writes one itself: its line goes to a bounded per-file queue that the log
-  thread ("agentj-log", separate from the fsync thread so a slow fsync never holds log lines) appends in order. While the
-  disk is healthy the loop waits up to LOOP_WAIT for its line to land (readers see it at once, as before); once a wait runs
-  out it stops waiting for BUFFER_FOR s. A full queue drops its oldest lines and the thread writes one `log_dropped`
-  {count} line in their place. Off the loop a line is written by the caller after everything queued for that file.
-  (2026-10-14: the P142 rule "write at once until one append was slow" put the first slow append on the loop — 58.8 s.)
-- `flush` / `aflush`: the barrier — serve's shutdown and every loop's end wait for it, bounded. The control socket does
-  NOT: readers already see every renamed file, and on a thrashing disk a CLI answer must not wait for the fsync queue."""
+- `append`: host.log lines — written at once while the disk is quick; after one slow append the loop's lines are buffered
+  and appended by the same thread, in order, for a while (no fsync either way).
+- `flush` / `aflush`: the barrier — serve's shutdown and every loop's end wait for it. The control socket does NOT: readers
+  already see every renamed file, and on a thrashing disk a CLI answer must not wait for the fsync queue."""
 from __future__ import annotations
 
 import asyncio
-import collections
-import json
 import os
 import pathlib
 import queue
@@ -30,7 +24,8 @@ _lk = threading.Lock()
 _idle = threading.Condition(_lk)
 _q: "queue.Queue | None" = None
 _thread: threading.Thread | None = None
-_outstanding = 0                                # fsync jobs queued and not yet finished
+_outstanding = 0                                # jobs queued and not yet finished
+_logbuf: dict[str, list[bytes]] = {}            # path → lines appended on the loop, not yet on disk
 _guards: dict[int, object] = {}                 # loop id → the async generator that flushes when that loop shuts down
 
 
@@ -86,80 +81,41 @@ def _sync(path: pathlib.Path) -> None:
             os.close(fd)
 
 
-# ------------------------------------------------------------ host.log lines (P292)
-LOOP_WAIT = 0.02       # s: the loop waits at most this long for its line to land while the disk is healthy
-BUFFER_FOR = 30.0      # s: after one wait ran out the loop hands its lines over without waiting, for this long
-LOG_MAX_LINES = 4096   # per file: ~2 min of the busiest host.log seen (a reconnect storm) — far more than one stall
-LOG_MAX_BYTES = 1 << 20   # per file: 1 MiB of queued lines (a line is ~150 B), bounded memory on a disk that never answers
+SLOW_APPEND = 0.05     # s: an append on the loop slower than this = the disk is struggling → buffer for a while
+BUFFER_FOR = 30.0      # s: how long the loop then hands its log lines to the writer thread
 _buffer_until = 0.0
-
-_llk = threading.Lock()
-_lcv = threading.Condition(_llk)
-_pending: dict[str, collections.deque] = {}     # path → [(seq, line)] not yet on disk
-_pbytes: dict[str, int] = {}
-_dropped: dict[str, int] = {}                   # path → oldest lines dropped since the last write of that file
-_seq: dict[str, int] = {}                       # path → last line number queued
-_done: dict[str, int] = {}                      # path → last line number settled (on disk, dropped or failed)
-_writing: set[str] = set()                      # paths someone (log thread / an off-loop caller) is appending to now
-_lthread: threading.Thread | None = None
 
 
 def append(path: pathlib.Path, line: bytes) -> None:
-    """O_APPEND a line (host.log). On the loop: queued for the log thread (never written here); off the loop: written by the
-    caller after every line still queued for that file — so lines never overtake each other inside this process."""
+    """O_APPEND a line (host.log). While the disk answers quickly a line on the loop is written at once (readers see it
+    immediately, as before). One slow append (> SLOW_APPEND) switches the loop to buffered for BUFFER_FOR seconds: lines
+    are then appended by the writer thread, in order, and the loop never waits on that file again meanwhile."""
     global _buffer_until
     key = str(path)
-    if not on_loop():
-        return _append_now(key, line)
-    _guard_loop()
-    with _llk:
-        q = _pending.setdefault(key, collections.deque())
-        n = _seq[key] = _seq.get(key, 0) + 1
-        q.append((n, line))
-        size = _pbytes[key] = _pbytes.get(key, 0) + len(line)
-        while q and (len(q) > LOG_MAX_LINES or size > LOG_MAX_BYTES):
-            m, old = q.popleft()                     # keep the newest: the stall's own diagnosis is in them
-            size -= len(old)
-            _dropped[key] = _dropped.get(key, 0) + 1
-            _done[key] = max(_done.get(key, 0), m)
-        _pbytes[key] = size
-        _start_log_thread()
-        _lcv.notify_all()
-        if time.monotonic() < _buffer_until:
-            return
-        if _lcv.wait_for(lambda: _done.get(key, 0) >= n, LOOP_WAIT):
-            return
-        _buffer_until = time.monotonic() + BUFFER_FOR
-
-
-def _take(key: str) -> tuple[list[bytes], int]:
-    """Under _llk: every queued line of `key` (oldest first, a `log_dropped` line ahead of them) and the last line number."""
-    q = _pending.pop(key, None) or ()
-    _pbytes.pop(key, None)
-    lines = [ln for _, ln in q]
-    last = q[-1][0] if q else _done.get(key, 0)
-    dropped = _dropped.pop(key, 0)
-    if dropped:
-        lines.insert(0, (json.dumps({"ts": int(time.time()), "ev": "log_dropped", "count": dropped}) + "\n").encode())
-    return lines, last
-
-
-def _settled(key: str, last: int) -> None:
-    with _llk:
-        _writing.discard(key)
-        _done[key] = max(_done.get(key, 0), last)
-        _lcv.notify_all()
-
-
-def _append_now(key: str, line: bytes) -> None:
-    with _llk:
-        _lcv.wait_for(lambda: key not in _writing)   # off the loop: the thread may be mid-write on this file
-        lines, last = _take(key)
-        _writing.add(key)
-    try:
-        _append(key, lines + [line])
-    finally:
-        _settled(key, last)
+    loop = on_loop()
+    with _lk:
+        behind = key in _logbuf
+        buffered = loop and (behind or time.monotonic() < _buffer_until)
+        if buffered:
+            if behind:
+                _logbuf[key].append(line)
+                return
+            _logbuf[key] = [line]
+    if buffered:
+        def job():
+            with _lk:
+                lines = _logbuf.pop(key, [])
+            if lines:
+                _append(key, lines)
+        _submit(job)
+        return
+    if behind:
+        flush()                                       # off the loop: never overtake lines still queued
+    t = time.monotonic()
+    _append(key, [line])
+    if loop and time.monotonic() - t > SLOW_APPEND:
+        with _lk:
+            _buffer_until = time.monotonic() + BUFFER_FOR
 
 
 def _append(path: str, lines: list[bytes]) -> None:
@@ -170,60 +126,19 @@ def _append(path: str, lines: list[bytes]) -> None:
         os.close(fd)
 
 
-def _log_worker() -> None:
-    while True:
-        with _llk:
-            key = None
-            while key is None:
-                key = next((k for k, q in _pending.items() if (q or _dropped.get(k)) and k not in _writing), None)
-                if key is None:
-                    _lcv.wait()
-            lines, last = _take(key)
-            _writing.add(key)
-        try:
-            if lines:
-                _append(key, lines)
-        except Exception:  # noqa: BLE001 — a failed log append must never kill the writer
-            pass
-        finally:
-            _settled(key, last)
-
-
-def _start_log_thread() -> None:
-    """Under _llk."""
-    global _lthread
-    if _lthread is None or not _lthread.is_alive():
-        _lthread = threading.Thread(target=_log_worker, name="agentj-log", daemon=True)
-        _lthread.start()
-
-
-def _log_busy() -> bool:
-    """Under _llk."""
-    return bool(_writing) or any(q for q in _pending.values()) or any(_dropped.values())
-
-
-def log_pending() -> int:
-    with _llk:
-        return sum(len(q) for q in _pending.values())
-
-
-# ------------------------------------------------------------ the fsync thread
 def _worker() -> None:
     global _outstanding
     while True:
         job = _q.get()
         try:
             job()
-        except Exception:  # noqa: BLE001 — a failed fsync must never kill the writer
+        except Exception:  # noqa: BLE001 — a failed fsync / log append must never kill the writer
             pass
         finally:
             with _lk:
                 _outstanding -= 1
                 if not _outstanding:
                     _idle.notify_all()
-
-
-LOOP_END_FLUSH = 5.0   # s: a loop that ends waits at most this long for its queued work (a stuck disk never hangs the exit)
 
 
 def _guard_loop() -> None:
@@ -237,7 +152,7 @@ def _guard_loop() -> None:
             yield
         finally:
             _guards.pop(id(loop), None)
-            await aflush(LOOP_END_FLUSH)
+            await aflush()
     g = guard()
     _guards[id(loop)] = g
     from . import bg
@@ -257,24 +172,18 @@ def _submit(job) -> None:
 
 
 def flush(timeout: float | None = 30.0) -> bool:
-    """Wait until every queued fsync and log line is done (False = `timeout` ran out first). Never on the loop (use `aflush`)."""
-    end = None if timeout is None else time.monotonic() + timeout
-    left = lambda: None if end is None else max(0.0, end - time.monotonic())   # noqa: E731
+    """Wait until every queued fsync and log line is done. Never on the loop (use `aflush`)."""
     with _lk:
-        if not _idle.wait_for(lambda: not _outstanding, left()):
-            return False
-    with _llk:
-        return _lcv.wait_for(lambda: not _log_busy(), left())
+        return _idle.wait_for(lambda: not _outstanding, timeout)
 
 
 async def aflush(timeout: float = 30.0) -> bool:
-    with _lk, _llk:
-        if not _outstanding and not _log_busy():
+    with _lk:
+        if not _outstanding:
             return True
     return await asyncio.to_thread(flush, timeout)
 
 
 def pending() -> int:
     with _lk:
-        n = _outstanding
-    return n + log_pending()
+        return _outstanding

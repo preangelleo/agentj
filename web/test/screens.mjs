@@ -173,7 +173,6 @@ try {
       const p = await newPage(B, w, h, scheme, { allow: ALLOW });
       await navigate(p, BASE);
       await waitState(p, 'idle');
-      await waitFor(p, `!document.getElementById('pair-view').hidden`); // state is published before async initial view setup finishes
       check(!(await evaluate(p, `document.getElementById('pair-view').hidden`)), `${tag}: idle shows the pairing input`);
       check((await text(p, '#badge')) === '网页版' && await evaluate(p, `!!document.getElementById('badge').closest('#settings')`), `${tag}: 网页版 tag lives in Settings (P190)`);
       check(await evaluate(p, `(() => { const r = document.getElementById('scanBtn').getBoundingClientRect(); return r.width >= 44 && r.height >= 44 && !document.querySelector('.top #badge'); })()`), `${tag}: the header has the scan icon, not the 网页版 tag (P190)`);
@@ -368,7 +367,6 @@ try {
       const shot = async (name, opts) => { await layoutOk(p, `${name} ${tag}`); await shoot(p, `${name}-${tag}`, opts); };
       await navigate(p, BASE + (lang === 'en' ? '?lang=en' : ''));
       await waitState(p, 'idle');
-      await waitFor(p, `!document.getElementById('pair-view').hidden`); // show('pair') paints A2HS after the idle state notification
       check((await text(p, '#status')) === plain(L['st.idle']), `${tag}: status in ${lang}`);
       if (sz === 'mobile') check(!(await evaluate(p, `document.getElementById('a2hs').hidden`)), `${tag}: Add-to-Home-Screen hint in a phone browser`);
       else check(await evaluate(p, `document.getElementById('a2hs').hidden`), `${tag}: no Add-to-Home-Screen hint on a desktop browser`);

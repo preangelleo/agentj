@@ -40,7 +40,7 @@ class Schema(unittest.TestCase):
     def test_is_draft_2020_12_and_uses_only_supported_keywords(self):
         s = theme.schema()
         self.assertEqual(s["$schema"], "https://json-schema.org/draft/2020-12/schema")
-        self.assertEqual(s["$id"], "https://agentj.app/schema/agentj-theme-2.json")
+        self.assertEqual(s["$id"], "https://agentj.app/schema/agentj-theme-1.json")
         def walk(n, where):
             if isinstance(n, dict):
                 for k, v in n.items():
@@ -80,7 +80,7 @@ class Schema(unittest.TestCase):
         for i, p in enumerate(dots):
             self.assertIn(f"--busy-h{i}:{p['heavy']};--busy-l{i}:{p['light']}", css)
         self.assertEqual(len(dots), 9)
-        site = HERE.parents[1] / "site" / "public" / "schema" / "agentj-theme-2.json"   # the site is not in the public tree
+        site = HERE.parents[1] / "site" / "public" / "schema" / "agentj-theme-1.json"   # the site is not in the public tree
         if site.exists():
             self.assertEqual(site.read_bytes(), theme.SCHEMA_PATH.read_bytes(), "the site publishes the shipped schema")
 
@@ -94,7 +94,7 @@ class Schema(unittest.TestCase):
         with tempfile.TemporaryDirectory() as d:
             good = fx.make_theme(d)
         bad = [dict(good, id="X"), dict(good, colour={}), dict(good, colors={"state": {"idle": "green"}}),
-               dict(good, busy={"style": "sparkles"}), {k: v for k, v in good.items() if k != "name"}, dict(good, schema=3)]
+               dict(good, busy={"style": "sparkles"}), {k: v for k, v in good.items() if k != "name"}, dict(good, schema=2)]
         for doc in [good, *(json.loads((theme.preset(p) / "theme.json").read_text()) for p in theme.FACTORY)]:
             self.assertEqual(list(v.iter_errors(doc)), [])
             self.assertEqual(theme.schema_errors(doc), [])

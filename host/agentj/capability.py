@@ -68,7 +68,7 @@ REQ_MAX = 256 * 1024
 CARDS_KEEP = 50
 CLI_ALLOW = {"git": ["code.git"], "python3": ["code.python"], "node": ["code.node"], "curl": ["web.fetch"],
              "ffmpeg": ["media.convert"], "pandoc": ["docs.convert"]}
-HARNESS_TITLE = {"claude": "Claude Code", "codex": "Codex", "opencode": "OpenCode", "kimi": "Kimi Code", "qwen": "Qwen Code"}
+HARNESS_TITLE = {"claude": "Claude Code", "codex": "Codex", "opencode": "OpenCode"}
 PROBE_RESULTS = ("ok", "auth_required", "not_found", "permission_denied", "offline", "timeout", "unsupported")
 STATUS_OF = {"ok": "ready", "not_found": "missing", "auth_required": "unavailable", "permission_denied": "unavailable",
              "offline": "unavailable", "timeout": "unavailable", "unsupported": "unverified"}
@@ -1327,15 +1327,7 @@ class Capabilities:
             raise CapError("not_ready", "Run journal has not settled; inspect state before retrying")
         audit(self.st, "dispatch", wf_sha=sha(wf)[:16], result="queued")
         self.host.activity("lt_dispatch", id=wf)
-        out = {"result": "queued", "workflow": wf, "run_id": rid, "next": "end_turn", "detail": END_TURN}
-        root = working_root(self.cfg())
-        if root is not None:                    # P308: a CEO with no staff → one line for the reply, once per company
-            from . import workflows
-            with contextlib.suppress(Exception):
-                h = workflows.staff_hint(self.st, root, wf)
-                if h.get("staff_hint"):
-                    out["staff_hint"] = h["staff_hint"]
-        return out
+        return {"result": "queued", "workflow": wf, "run_id": rid, "next": "end_turn", "detail": END_TURN}
 
     def recover_runs(self, runs: dict) -> list[dict]:
         """Repair the dispatch projection, including pre-ledger queued entries. No PID-based ownership."""

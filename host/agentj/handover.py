@@ -23,7 +23,7 @@ MANUAL_URL = "https://agentj.app/docs/manual/"   # F23 (0.15.2): the illustrated
 REFUND_DAYS = 7
 CONTACT = "founder@agentj.app"   # refunds and billing (site pricing / refund policy)
 FEEDBACK = "feedback@agentj.app"  # P168: the human fallback mailbox when the Agent cannot report (offline, agentj.app unreachable)
-AGENT_LABEL = {"claude": "Claude Code", "codex": "Codex", "opencode": "OpenCode", "kimi": "Kimi Code", "qwen": "Qwen Code"}
+AGENT_LABEL = {"claude": "Claude Code", "codex": "Codex", "opencode": "OpenCode"}
 
 
 def _tilde(p: str) -> str:

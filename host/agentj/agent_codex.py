@@ -30,7 +30,7 @@ import shlex
 import signal
 import time
 
-from . import bg, codex_perm, compactprep, danger, humane, slash
+from . import bg, compactprep, danger, slash
 from . import agent as _agentmod
 from .agent import LINE_LIMIT, Agent, _signal_tree
 from .slash import Result
@@ -38,12 +38,6 @@ from .text import clean, clean_line
 
 START_WAIT = 60          # s for initialize / config / thread answers
 CALL_WAIT = 60
-TAIL_QUIET = 120         # P282: s of app-server silence after the turn's reply, nothing open → the turn is over (fallback)
-TAIL_TICK = 5
-# P309: the one automatic continue after a momentary 429 (the owner's message is already in the thread's history)
-RATE_RETRY_TEXT = ("（Agent J 自动重试：上一次请求被服务方限流打断。请接着完成我上一条消息；已经做完的步骤不要重做。）"
-                   "\n(Agent J auto-retry: the last request was cut off by a rate limit. Please finish my previous message; "
-                   "do not redo steps already done.)")
 _SHELLS = ("bash", "sh", "zsh", "dash")
 
 
@@ -211,89 +205,9 @@ class RPCError(Exception):
         self.err = err if isinstance(err, dict) else {}
 
 
-def start_probe(st, cfg: dict, limit: float = 150, *, clock=time.monotonic) -> dict | None:
-    """P312 (ADR-P312): the exec probe proves the login, not the start the session makes (config.toml MCP / plugins / hooks,
-    the Agent's folder, fence or shared launch): `codex app-server` as serve starts it, timed through initialize →
-    config/read → thread/start {ephemeral} — no turn, nothing kept. {"secs"[, "reason", "err"]}; None = not measured."""
-    if not os.path.isdir(d := str(cfg.get("dir") or "")):
-        return None
-    import selectors
-    import subprocess
-    import tempfile
-    from . import fence, preferences, proxy
-    from .bots import native
-    from .bots.store import BotError
-    try:
-        argv = [native.executable("codex", os.environ), "app-server"]
-        try:
-            prefs = preferences.validate(preferences.read()[1])
-        except Exception:  # noqa: BLE001
-            prefs = preferences.defaults()
-        env = proxy.environment(os.environ, prefs)
-        if cfg.get("session_mode") != "shared" and cfg.get("fence", True):
-            if fence.problem(st, d):
-                return None
-            argv = fence.wrap(st, argv, d, allow_docker=cfg.get("docker", False))
-            env = fence.launch_environment(env, cfg.get("docker", False), "codex")
-        err = tempfile.TemporaryFile()
-        p = subprocess.Popen(argv, cwd=d, env=env, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=err,
-                             start_new_session=True)
-    except (BotError, OSError, ValueError):
-        return {"secs": 0, "reason": "start_failed"}
-    t0, buf, out = clock(), b"", {}
-    steps = (("initialize", {"clientInfo": {"name": "agentj", "title": "Agent J", "version": "1"}, "capabilities": {}}),
-             ("config/read", {"cwd": d}), ("thread/start", {"cwd": d, "ephemeral": True}))
-    try:
-        with selectors.DefaultSelector() as sel:
-            sel.register(p.stdout, selectors.EVENT_READ)
-            for i, (method, params) in enumerate(steps, 1):
-                p.stdin.write((json.dumps({"jsonrpc": "2.0", "id": i, "method": method, "params": params}) + "\n").encode())
-                p.stdin.flush()
-                answer = None
-                while answer is None:
-                    left = t0 + limit - clock()
-                    if left <= 0:
-                        out["reason"] = "start_timeout"
-                        return out
-                    if sel.select(min(1.0, left)):
-                        raw = os.read(p.stdout.fileno(), 65536)
-                        if not raw:
-                            raise OSError("exited")
-                        *lines, buf = (buf + raw).split(b"\n")
-                        for line in lines:
-                            with contextlib.suppress(ValueError):
-                                m = json.loads(line)
-                                if isinstance(m, dict) and m.get("id") == i and "method" not in m:
-                                    answer = m
-                if "error" in answer:
-                    if i == 3 and "ephemeral" in json.dumps(answer["error"]).lower():
-                        return None
-                    raise OSError("refused")
-                if i == 1:
-                    p.stdin.write(b'{"jsonrpc":"2.0","method":"initialized"}\n')
-                    p.stdin.flush()
-            return out
-    except (OSError, ValueError):
-        out["reason"] = "start_failed"
-        return out
-    finally:
-        out["secs"] = round(clock() - t0, 1)
-        with contextlib.suppress(OSError):
-            os.killpg(p.pid, signal.SIGKILL)
-        p.wait()
-        for f in (p.stdin, p.stdout):
-            f.close()
-        err.seek(0)
-        last = [ln for ln in err.read()[-2000:].decode("utf-8", "replace").splitlines() if ln.strip()][-1:]
-        err.close()
-        if out.get("reason") and last:
-            out["err"] = _agentmod.codex_failure(last[0], None)[0]
-
-
 class CodexAgent(Agent):
     """One long-lived `codex app-server`; one thread per conversation; approvals to the phone."""
     kind = "codex"
-    said, last_note, tail_cut = False, 0.0, None          # P282 defaults (instance values set in __init__ / tail_reset)
 
     def __init__(self, host, cfg: dict, persist: bool = True, research: bool = False):
         if not persist:
@@ -321,40 +235,13 @@ class CodexAgent(Agent):
         self.quiet = False                                     # compaction: no text to the phone
         self.tasks: set[asyncio.Task] = set()
         self.unavailable_models: set[str] = set()  # native account rejection; survives model refresh/reconnect
-        self.open_items: set[str] = set()          # P282: items of this turn started and not yet completed
-        self.said = False                          # P282: this turn already delivered a reply (agentMessage)
-        self.last_note = 0.0                       # P282: monotonic time of the app-server's last notification
-        self.tail_cut: str | None = None           # P282: a turn ended by the tail fallback (its late turn/completed is not ours)
-        self.rate_retry: str | bool | None = False             # P309: None = this turn may retry once; str = the failure
-        self.rate_retried = False
-        self.thread_at: float | None = None                    # when self.tid was loaded (config.toml staleness)
-
-    def provider(self) -> dict | None:
-        """P309: the provider the loaded thread really uses (Codex's own answer first, then config.toml)."""
-        try:
-            return codex_perm.provider(self.thread.get("modelProvider") or self.human.get("model_provider"))
-        except Exception:  # noqa: BLE001 — a notice must never fail on this
-            return None
-
-    def config_stale(self) -> bool:
-        """P309: config.toml changed after this thread was loaded — the loaded thread still runs on the old provider
-        settings (measured on 0.162.1: same app-server + same thread keeps them; a new thread or a fresh resume re-reads)."""
-        at = getattr(self, "thread_at", None)
-        try:
-            return bool(at and self.tid and codex_perm.config_path().stat().st_mtime > at)
-        except OSError:
-            return False
-
-    def failure(self, text: str) -> tuple[str, str, str | None]:
-        return _agentmod.codex_failure(text, self.cur_model(), getattr(self.host, "lang", "zh"), self.provider(),
-                                       self.config_stale(), bool(getattr(self, "rate_retried", False)))
 
     def fail_notice(self, text: str) -> None:
-        kind, notice, blocked = self.failure(text)
+        kind, notice, blocked = _agentmod.codex_failure(text, self.cur_model(), getattr(self.host, "lang", "zh"))
         fn = getattr(self.host, "auth_rescue", None)
-        if fn is not None and kind in ("auth", "quota", "usage", "rate") and not self.cfg.get("_workflow_ceo"):
+        if fn is not None and kind in ("auth", "quota", "usage") and not self.cfg.get("_workflow_ceo"):
             try:   # P258: the classifier already decided; map it, never re-guess (a quota reply must not start a re-login)
-                fn.signal("codex", {"auth": "login", "quota": "balance", "usage": "rate_limit", "rate": "rate_limit"}[kind])
+                fn.signal("codex", {"auth": "login", "quota": "balance", "usage": "rate_limit"}[kind])
             except Exception:  # noqa: BLE001
                 pass
         if kind == "model" and blocked and slash.MODEL_RE.fullmatch(blocked):
@@ -368,16 +255,6 @@ class CodexAgent(Agent):
 
     def is_down(self) -> bool:
         return self.failed_start
-
-    def session_open(self) -> bool:
-        return self.tid is not None
-
-    def err_kind(self) -> str | None:
-        """P312: codex_failure's fixed kind of the last stderr line (never the line itself)."""
-        last = self._last_err()
-        if not last:
-            return None
-        return _agentmod.codex_failure(last, None)[0]
 
     def argv(self) -> list[str]:
         return [_agentmod._bin("AGENTJ_CODEX_BIN", "codex") or "codex", "app-server"]
@@ -526,9 +403,6 @@ class CodexAgent(Agent):
         self.tid = th["id"]
         self.thread = {k: res.get(k) for k in ("model", "sandbox", "approvalPolicy", "approvalsReviewer", "cwd",
                                                "reasoningEffort")}
-        if isinstance(th.get("modelProvider"), str):                     # P309: which service this thread talks to
-            self.thread["modelProvider"] = th["modelProvider"]
-        self.thread_at = time.time()
         self.usage = None
         if self.persist:
             self.host.st.set_agent_session(self.kind, self.tid)
@@ -691,17 +565,8 @@ class CodexAgent(Agent):
     def _on_note(self, method: str, p: dict) -> None:
         th = p.get("threadId")
         self.touch()                       # P219: the app-server is making progress (stall watch)
-        self.last_note = time.monotonic()
         if method == "item/started" or method == "item/completed":
             it = p.get("item") if isinstance(p.get("item"), dict) else {}
-            if th == self.tid and isinstance(it.get("id"), str):
-                open_items = self.__dict__.setdefault("open_items", set())
-                if method == "item/started":
-                    open_items.add(it["id"])
-                else:
-                    open_items.discard(it["id"])
-                    if it.get("type") == "agentMessage":
-                        self.said = True
             if isinstance(it.get("id"), str) and it.get("type") in ("fileChange", "commandExecution"):
                 self.items[it["id"]] = it
                 if len(self.items) > 500:
@@ -722,9 +587,6 @@ class CodexAgent(Agent):
                 self.turn_id = t["id"]
         elif method == "turn/completed" and th == self.tid:
             t = p.get("turn") if isinstance(p.get("turn"), dict) else {}
-            if self.tail_cut is not None and t.get("id") == self.tail_cut:
-                self.tail_cut = None       # P282: the turn the fallback already closed — never the next turn's end
-                return
             self.turn_status = t
             if isinstance(t.get("model"), str) and slash.MODEL_RE.fullmatch(t["model"]):
                 self.thread["model"] = t["model"]
@@ -740,11 +602,7 @@ class CodexAgent(Agent):
                 more = e.get("additionalDetails")
                 tail = ("\n" + json.dumps(info, ensure_ascii=False)[:500] if isinstance(info, (str, dict)) and info else "") + \
                        ("\n" + clean(more, 1000) if isinstance(more, str) and more.strip() else "")
-                why = "Codex 这一轮没有正常完成" + (f"：{clean(m, 4000)}" if isinstance(m, str) and m else "。") + tail
-                if getattr(self, "rate_retry", False) is None and self.failure(why)[0] == "rate":
-                    self.rate_retry = why          # P309: a momentary limit — turn() retries once before telling the phone
-                else:
-                    self.fail_notice(why)
+                self.fail_notice("Codex 这一轮没有正常完成" + (f"：{clean(m, 4000)}" if isinstance(m, str) and m else "。") + tail)
             if self.turn_done:
                 self.turn_done.set()
         elif method == "thread/tokenUsage/updated" and th == self.tid:
@@ -936,8 +794,7 @@ class CodexAgent(Agent):
         if self.persist and not self.cfg.get("_workflow_ceo"):
             await self.remind(True)
         self.turn_done, self.turn_proc = asyncio.Event(), self.proc
-        self.turn_id, self.turn_status, self.rate_retry = None, {}, None
-        self.tail_reset()
+        self.turn_id, self.turn_status = None, {}
         params = {"threadId": self.tid, "input": [{"type": "text", "text": text, "text_elements": []}]}
         rev = getattr(self, "revert", None)
         if self.cfg.get("model"):
@@ -952,75 +809,13 @@ class CodexAgent(Agent):
             r = await self.deliver(lambda: self.call("turn/start", params))    # §10.2: turn/start sent = delivered
             self.revert = None
         except (RPCError, ConnectionError, OSError, asyncio.TimeoutError) as e:
-            self.rate_retry = False
             if not self.halting:
                 self.fail_notice(f"Codex 没有接这条消息（{clean(str(e), 4000) or type(e).__name__}）。")
             return
         t = (r or {}).get("turn") if isinstance(r, dict) else None
         if isinstance(t, dict) and isinstance(t.get("id"), str):
             self.turn_id = t["id"]
-        await self.await_turn()
-        why, self.rate_retry = self.rate_retry, False
-        if isinstance(why, str):
-            await self._retry_rate(why)
-
-    RATE_RETRY_WAIT = 8.0
-
-    async def _retry_rate(self, why: str) -> None:
-        """P309: a 429 / momentary limit ended the turn. Codex itself does not retry a 429 (measured: one request per turn),
-        so wait a few seconds and continue the same thread once; the owner's message is already in its history. A second
-        failure — or a halt meanwhile — is told as usual, saying the retry already ran."""
-        self.host.st.log("agent_rate_retry", agent=self.kind)
-        await asyncio.sleep(self.RATE_RETRY_WAIT)
-        if self.halting or self.proc is None or self.turn_proc is not self.proc:
-            self.rate_retried = True
-            try:
-                if not self.halting:
-                    self.fail_notice(why)
-            finally:
-                self.rate_retried = False
-            return
-        self.turn_done, self.turn_id, self.turn_status = asyncio.Event(), None, {}
-        self.tail_reset()
-        self.rate_retried = True
-        try:
-            await self.call("turn/start", {"threadId": self.tid, "input": [{"type": "text", "text": RATE_RETRY_TEXT,
-                                                                            "text_elements": []}]})
-            await self.await_turn()
-        except (RPCError, ConnectionError, OSError, asyncio.TimeoutError):
-            if not self.halting:
-                self.fail_notice(why)
-        finally:
-            self.rate_retried, self.rate_retry = False, False
-
-    def tail_reset(self) -> None:
-        self.open_items.clear()
-        self.said = False
-        self.last_note = time.monotonic()
-
-    async def await_turn(self) -> None:
-        """P282 (Mac 10-14): `turn/completed` ends the turn. Fallback: the reply came, nothing is still running (no item
-        open, no approval card or question waiting) and the app-server has said nothing for TAIL_QUIET s → the turn is
-        over: interrupt it on Codex's side (so the next turn/start is not refused) and hand the queue on. Never cuts a
-        command or a card — those are open items / pending requests."""
-        td = self.turn_done
-        while not td.is_set():
-            with contextlib.suppress(asyncio.TimeoutError):
-                await asyncio.wait_for(td.wait(), TAIL_TICK)
-            if td.is_set() or not self.said or self.open_items or self.halting:
-                continue
-            if any(not f.done() for f in self.pending.values()) or self._asks_open():
-                continue
-            quiet = time.monotonic() - self.last_note
-            if quiet < TAIL_QUIET:
-                continue
-            self.host.st.log("codex_turn_tail", agent=self.kind, ms=int(quiet * 1000))
-            if self.tid and self.turn_id:
-                self.tail_cut = self.turn_id
-                with contextlib.suppress(RPCError, ConnectionError, OSError, asyncio.TimeoutError):
-                    await self.call("turn/interrupt", {"threadId": self.tid, "turnId": self.turn_id}, 3)
-            self.turn_status = {"id": self.turn_id, "status": "completed"}
-            td.set()
+        await self.turn_done.wait()
 
     async def interrupt_request(self, p) -> None:
         """app-server's own `turn/interrupt`, then ≤ 2 s for `turn/completed` (halt() ends the process tree right after)."""
@@ -1174,4 +969,4 @@ class CodexAgent(Agent):
             return Result(_agentmod.codex_failure(f"The '{arg}' model is not supported when using Codex with a ChatGPT account.", arg, getattr(self.host, "lang", "zh"))[1], "error")
         self.host.set_model(arg)
         self.meter(model=arg, model_name=self.model_name(arg))
-        return Result(humane.of(self, "model.switched_next", model=arg))
+        return Result(f"已切换到 {arg}：从下一条消息起使用，写进了 config.json。")

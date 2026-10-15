@@ -82,7 +82,7 @@ class Nightly(unittest.TestCase):
 
     def test_result_one_notice_survives_history_off_and_doctor_reads(self):
         au.finish(self.st,{'result':'ok','from':'0.16.4a1','to':__version__,'reason':'upgraded'})
-        self.assertIn('我夜里自己升级到',au.take_notice(self.st));self.assertIsNone(au.take_notice(self.st))
+        self.assertIn('夜里已自动升级',au.take_notice(self.st));self.assertIsNone(au.take_notice(self.st))
         self.assertEqual(au.read(self.st)['result']['to'],__version__)
         self.assertEqual((self.st.root/au.RECORD).stat().st_mode & 0o777,0o600)
 
@@ -134,7 +134,7 @@ class SharedVerification(unittest.TestCase):
         with patch.object(update,'writable',return_value=True),patch.object(update,'verified_plan',side_effect=ValueError('wrong signature')),patch.object(update,'install_kind',return_value={'kind':'uv','where':'/fixture'}):
             runner=Mock()
             r=update.apply(st,check_fn=lambda:{'status':'newer','latest':'9.9.9'},run=runner,svc_on=False)
-            self.assertEqual(r['reason'],'signature_or_hash_mismatch');runner.assert_not_called()
+            self.assertEqual(r['reason'],'artifact_refused');runner.assert_not_called()
     def test_upgrade_doctor_does_not_probe_owner_workflows_or_network(self):
         from agentj import doctor, main_identity
         with tempfile.TemporaryDirectory() as td:

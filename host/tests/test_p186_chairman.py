@@ -14,11 +14,11 @@ class Core(unittest.TestCase):
     def test_philosophy_every_turn(self):
         needles = {
             "zh": ("人人都能做董事长", "工作流就是董事长的公司", "不为闲聊或搜索", "帮董事长赚钱",
-                   "引导主人像董事长思考", "一两句解释", "不当场排查", "待拍板事项", "不说教、不藏信息",
+                   "引导主人像董事长一样思考", "一两句讲清原理", "不当场排查", "待定的决定", "不说教也不藏信息",
                    "一个代号", "全局技能", "放它本地", "配齐技能、命令行与 MCP",
                    "文档就是公司", "随时整批换新", "模型大升级后", "documentation/WORKFLOW.md"),
             "en": ("Anyone can be a chairman", "one of the Chairman's companies", "not to chat or search", "help the Chairman earn",
-                   "think like a chairman", "in one or two sentences", "delegate full investigations", "their decisions", "without lecturing or withholding",
+                   "think like a chairman", "in a sentence or two", "without investigating on the spot", "pending decisions", "never lecture, never withhold",
                    "a code name", "a global skill", "a local skill", "command-line tools and MCP",
                    "The documents are the company", "replaced at any moment", "major model upgrade", "documentation/WORKFLOW.md"),
         }

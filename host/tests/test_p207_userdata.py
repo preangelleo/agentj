@@ -142,7 +142,7 @@ class UpgradeHook(Base):
         res = update.apply(self.st, "9.9.9", check_fn=lambda: {"status": "newer", "latest": "9.9.9"}, run=run,
                            svc_on=False, plan_fn=lambda st, info, t: [["true"]], rollback_fn=lambda st: None,
                            prefix=str(self.tmp))
-        self.assertEqual(res["reason"], "uv_failed")
+        self.assertEqual(res["reason"], "install_failed")
         self.assertTrue(seen and any("pre-upgrade" in n for n in seen[0]), seen)
 
 

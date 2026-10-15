@@ -1197,12 +1197,11 @@ def resolve_harness(arg: str | None, st) -> str:
         return arg
     a = st.agent_config()
     if a:
-        # P305: Kimi Code reads ~/.agents/skills — the Codex target — so a package for Codex is the one it gets
-        return {"claude": "claude_code", "codex": "codex", "opencode": "opencode", "kimi": "codex", "qwen": "codex"}[a["kind"]]
+        return {"claude": "claude_code", "codex": "codex", "opencode": "opencode"}[a["kind"]]
     from . import harness as hz
     d = hz.detect()["decision"]
     if d.startswith("use:"):
-        return {"claude": "claude_code", "codex": "codex", "opencode": "opencode", "kimi": "codex", "qwen": "codex"}[d[4:]]
+        return {"claude": "claude_code", "codex": "codex", "opencode": "opencode"}[d[4:]]
     raise PlazaError("装给哪个 Agent？问你的人，然后加 --harness claude_code | codex | opencode / which Agent? ask your human, "
                      "then add --harness")
 
@@ -1389,7 +1388,7 @@ def _confirm_cmd(name, *, version, harness, workspace, params, params_file, sign
 
 def run_install(name: str, *, version=None, harness=None, workspace=None, params=None, params_file=None, accept_unverified=False,
                 sign_as=None, replace=False, skip_verify=False, owner_confirmed=False, digest=None, st=None, post=None, get=None,
-                keyring=None, now=None, out=None, _starter=False) -> int:
+                keyring=None, now=None, out=None) -> int:
     out = out or sys.stdout
     if owner_confirmed and not (digest and _DIGEST.fullmatch(digest)):
         raise PlazaError("--owner-confirmed 要和预览时打印的 --digest 一起用：先不带它运行一次，把预览给你的人看 / "
@@ -1408,14 +1407,6 @@ def run_install(name: str, *, version=None, harness=None, workspace=None, params
     except SignatureError as e:
         print(f"refused: {e}", file=out)
         return EXIT_SIGNATURE
-    if _starter:
-        from .starters import STARTERS
-        if (name not in STARTERS or m['type'] != 'workflow' or not certified or version is not None
-                or replace or skip_verify or accept_unverified or sign_as or params or params_file
-                or any(g.get('required') for g in m.get('credentials', []))):
-            raise PlazaError('automatic starter must be a curated signed workflow with account-free defaults')
-        # Install/upgrade's curated examples are pre-authorized; all ordinary marketplace installs
-        # retain the preview and owner-confirmation contract. Never sign on the owner's behalf.
     s = summarize(m)
     if s["harness"] and h not in s["harness"]:
         raise PlazaError(f"这个包只支持 / the package supports only: {', '.join(s['harness'])}")
@@ -1435,8 +1426,6 @@ def run_install(name: str, *, version=None, harness=None, workspace=None, params
         install_date = now.date().isoformat()
     # render now (preview too): a placeholder / JSON problem is found before the human is asked
     rendered = install_files(m, files, h, values, sign_as, install_date)
-    if _starter:
-        owner_confirmed, digest = True, dg
     exists = os.path.lexists(target)
     owned = exists and _owned(st, target, m["name"])
     if exists and replace and not owned:

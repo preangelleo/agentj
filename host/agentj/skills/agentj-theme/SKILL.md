@@ -1,10 +1,10 @@
 ---
 name: agentj-theme
-description: Change how the owner's phone page looks — 「换个主题」「把绿色背景换成…」「换个颜色」「重新画一个 logo」「换掉发送按钮的机器人」「重新画跳舞机器人」「我想要原来的圆点」「恢复默认外观」「换回上一个主题」, "change the theme", "new colours", "redraw the dancing robots", "new logo / send icon", "go back to the dots", "reset the look". Builds a theme folder (theme.json + PNG files) by the rules, runs `agentj theme validate` until it passes, then `agentj theme apply`; the phone repaints by itself within seconds and the old theme sleeps, so it can always come back.
+description: Change how the owner's phone page looks — 「换个主题」「把绿色背景换成…」「换个颜色」「重新画一个 logo」「换掉发送按钮的火箭」「重新画跳舞机器人」「我想要原来的圆点」「恢复默认外观」「换回上一个主题」, "change the theme", "new colours", "redraw the dancing robots", "new logo / send icon", "go back to the dots", "reset the look". Builds a theme folder (theme.json + PNG files) by the rules, runs `agentj theme validate` until it passes, then `agentj theme apply`; the phone repaints by itself within seconds and the old theme sleeps, so it can always come back.
 ---
 
 A theme is one folder: `theme.json` + PNG files next to it. Schema: `agentj theme schema` (JSON Schema 2020-12, also
-https://agentj.app/schema/agentj-theme-2.json); full rules and examples: https://agentj.app/docs/theme/. Every section is
+https://agentj.app/schema/agentj-theme-1.json); full rules and examples: https://agentj.app/docs/theme/. Every section is
 optional: what the theme leaves out keeps the factory look.
 
 ## The loop (always this order)
@@ -27,9 +27,9 @@ Never edit files under the state folder by hand; never skip validate. Light / da
 | `colors.state.{idle,working,waiting,question,offline}` | the whole chat screen per state (factory green / blue / orange / purple / grey) | `#rrggbb`; white text (Lotion #faf9f5) on it ≥ 2.5:1 → not too light; the five clearly different; dark mode deepens them by itself |
 | `colors.card.{owner,agent,computer,developer,system}` | fill of the message card on top of a page, by who sent it | `#rrggbb`; dark text (Noir #2c2b26) on it ≥ 4.5:1 → light colours |
 | `colors.menu.{background,panel,text,accent,line}` | every menu page — Settings and its pages, All commands, Keyboard shortcuts (factory: Noir page and header, Sooty panels, Lotion text, Milky Waves accent) | `#rrggbb`; text and the notes (text at 72 %) ≥ 4.5:1 on background and panel; accent ≥ 3:1 on background; the security page keeps the factory colours |
-| `colors.dialog.background` | every centred dialog — usage numbers, 在办 robots, load line, confirmations, contact cards — and the full-screen reader (factory: Noir `#2c2b26`) | `#rrggbb`; the Lotion text on it ≥ 4.5:1 (a dark colour) |
-| `logo` `{image, disc}` or `{states, disc}` | the logo at the top left of the chat page (one image for every state) | PNG, square 128×128 or 256×256, ≤ 64 KiB, still image, not empty; `disc: false` drops the light round disc behind it |
-| `send_icon` `{image}` | the glyph on Send (factory: the pixel robot) | PNG with transparency, 128×128 or 256×256, ≤ 32 KiB; only the shape counts (painted white); four corners clear; 5–70 % covered |
+| `colors.dialog.background` | every centred dialog — usage numbers, 在办 robots, load line, confirmations, contact cards (factory: Noir `#2c2b26`) | `#rrggbb`; the Lotion text on it ≥ 4.5:1 (a dark colour) |
+| `logo` `{image, disc}` | the logo at the top left of the chat page (one image for every state) | PNG, square 128×128 or 256×256, ≤ 64 KiB, still image, not empty; `disc: false` drops the light round disc behind it |
+| `send_icon` `{image}` | the glyph on Send (factory: the rocket) | PNG with transparency, 128×128 or 256×256, ≤ 32 KiB; only the shape counts (painted white); four corners clear; 5–70 % covered |
 | `busy` `{style: robots, robots: {sheet_12, sheet_18, names}}` | the dancing robots, one per background Agent | see below |
 | `busy` `{style: dots, dots: {colors: [{heavy, light}], blink}}` | round dots instead (1–9 colour pairs; each dot blinks heavy ⇄ light) | heavy and light clearly different |
 
@@ -72,10 +72,3 @@ copied). `--json` gives the same as `{"code", "path", "zh", "en"}`. Common ones:
 | `file.missing` / `file.size` / `png.animated` | file next to theme.json (no links) / too big / only still PNGs |
 | `id.reserved` | robots and dots belong to the factory themes |
 Apply re-checks a private copy, so a theme that validates is exactly what the phone gets.
-
-
-P263 / schema 2: `logo` accepts either the legacy `{image, disc}` or `{states: {idle, working, waiting, question, offline}, disc}`. All five static PNGs must be 128×128 or 256×256, the same size, each ≤64 KiB and nonempty. Validation checks each against its corresponding state background in light and dark mode: at least 10% of the canvas must reach 2.5:1 against the background (or the opaque Lotion disc); the disc itself must reach 2.5:1. The page preloads all five images and switches with the state. Old schema 1 single-image themes still apply. `send_icon` is unchanged.
-
-换跳舞机器人时，先问「要同时换左上角的 logo 吗？」。要换就做一组五张，同形、随五种状态换主色，并逐张 validate；不换就从 active 导出保留 logo，或省略 logo（apply 会保留当前 logo；当前没有自定义 logo 则用出厂组）。Before redrawing dancing robots, ask whether the owner also wants a new logo set. Only build the set if requested; otherwise retain the active logo. Validate everything before applying.
-
-Official non-chat headers use the Agent J father robot with the current state colour, 12 dance frames in 2.4 seconds. Reduced motion keeps a static robot and a subtle inset heartbeat outline. Tap opens the menu; hold returns to chat. Custom logo images apply to chat only.

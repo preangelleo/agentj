@@ -142,7 +142,7 @@ class ApplyRollback(Base):
     def test_service_handoff_failure_rolls_back_and_drops_pending(self):
         old = wheel(self.st, __version__)
         res = self.apply(Runner(fail=('--deferred',)), old)
-        self.assertEqual((res['reason'], res['rollback'], res['service']), ('service_restart_failed', 'ok', 'failed'))
+        self.assertEqual((res['reason'], res['rollback'], res['service']), ('service_failed', 'ok', 'failed'))
         self.assertFalse((self.st.root / update.PENDING).exists())
         self.assertFalse((self.st.root / update.UPGRADED).exists())
 

@@ -8,7 +8,6 @@
     {
      "folder": "music-studio",
      "wdb": true,
-     "staff": 1,
      "ceo": "乐师阿律",
      "company": "律动音乐",
      "one": "每周产出一首可发布的原创配乐。",
@@ -50,7 +49,6 @@
      "py": "yueshialv ysal lvdongyinyue ldyy",
      "hidden": 2,
      "mtime": 1791900600,
-     "reg": true,
      "ci": 1,
      "lap": 1,
      "robot": 1,
@@ -59,7 +57,6 @@
     {
      "folder": "video-studio",
      "wdb": true,
-     "staff": 2,
      "ceo": "导演阿影",
      "one": "把一个选题做成一条能发的短视频。",
      "agents": [
@@ -69,8 +66,7 @@
       },
       {
        "name": "scriptwriter",
-       "desc": "The scriptwriter of 影棚 Studio.",
-       "title": "编剧"
+       "desc": "The scriptwriter of 影棚 Studio."
       }
      ],
      "docs": [
@@ -106,7 +102,6 @@
      "py": "daoyanaying dyay",
      "hidden": 2,
      "mtime": 1791900600,
-     "reg": false,
      "ci": 0,
      "lap": 1,
      "robot": 0,
@@ -115,7 +110,6 @@
     {
      "folder": "script-room",
      "wdb": true,
-     "staff": 2,
      "ceo": "Scribe",
      "one": "Turns a brief into a shooting script.",
      "agents": [
@@ -159,7 +153,6 @@
      ],
      "hidden": 2,
      "mtime": 1791900600,
-     "reg": false,
      "ci": 2,
      "lap": 1,
      "robot": 2,
@@ -168,7 +161,6 @@
     {
      "folder": "documentation",
      "wdb": false,
-     "staff": 0,
      "agents": [],
      "docs": [],
      "skills": [],
@@ -178,7 +170,6 @@
     {
      "folder": "notes",
      "wdb": false,
-     "staff": 0,
      "agents": [],
      "docs": [],
      "skills": [],
@@ -188,7 +179,6 @@
     {
      "folder": "photos",
      "wdb": false,
-     "staff": 0,
      "agents": [],
      "docs": [],
      "skills": [],
@@ -510,14 +500,8 @@
      "latest": 1791900180
     }
    ],
-   "org": {
-    "registry": true,
-    "ready": true,
-    "unreg": 2,
-    "nostaff": 0
-   },
    "skills_hidden": 2,
-   "etag": "3851e7c66714df1a2f93a5f4"
+   "etag": "f5993ecf715f0bd9f08b0972"
   }
  ],
  "wf_same": {

@@ -1292,16 +1292,6 @@ python3 ~/.config/agentsrelay/agentsrelay-setup.py --restore
 
 [AgentsRelay official onboarding](https://agentsrelay.net/onboard/)
 
-## Where Claude Code and Codex are not offered: Kimi {#kimi}
-
-Anthropic and OpenAI do not serve Hong Kong, Macau, mainland China and some other places. There, Agent J's first recommendation is a Kimi membership, Plus or higher, used through OpenCode. The Go plan has no coding quota and does not work. After installing Agent J, your Agent checks what really works from your computer:
-
-```bash
-agentj agent route
-```
-
-It asks the Claude, OpenAI and Kimi servers once each, without any key. Your time zone only breaks a tie and is never sent anywhere. When Claude Code and Codex are not available, it shows Agent J's official invite link with this sentence right next to it: "This is Agent J's official invite link: you and we each get one prize draw". The draw counts when you subscribe within 24 hours. Then create a key in the Kimi Code console and paste it only into the key card on your phone; your Agent switches OpenCode to `kimi-code-plan-cn/k3`. It also lists alternatives: Qwen (Alibaba Cloud Bailian, mainland China site), Zhipu GLM / DeepSeek, OpenRouter and Kimi's pay-as-you-go platform. If you already have an account with one of them, keep using it. A membership bought on the overseas site kimi.ai uses different keys: `kimi-code-plan-global/k3`. Side by side with Kimi it recommends an [Alibaba Cloud Bailian Token Plan](/docs/setup-agents/#bailian) — you choose.
-
 ## System requirements {#requirements}
 
 macOS: first run `opencode --version` (or your selected agent’s `--version`). If it works, continue installing; there is no operating-system version gate. The one-line installer probes its downloaded, pinned OpenCode binary and reports actual dyld / _ubrk_clone or execution failures. PATH changes or npm reinstalls cannot repair system libraries; upgrade macOS, use another computer, or choose another working agent with the manual installation guide. Intel Mac uses x86_64 tools and /usr/local Homebrew; Apple Silicon uses arm64 and /opt/homebrew. Gemini currently lists macOS 15+. Physical Intel Mac and Windows installation still requires verification on those machines.
@@ -1334,35 +1324,3 @@ Please download https://agentj.app/install.md with curl, read the whole file wit
 [Installation steps](/docs/install/) · [install.md](/install/) · [Command reference](/docs/cli/)
 
 [Keep your computer awake](/docs/keep-awake/): commands, system settings and a request to send your Agent.
-
-## Kimi Code CLI {#kimi}
-
-Kimi Code CLI (`kimi`, Moonshot AI, MIT) is an AI coding tool Agent J can use directly. The official script needs no Node.js:
-
-`curl -fsSL https://code.kimi.com/kimi-code/install.sh | bash`
-
-On Windows (PowerShell): `irm https://code.kimi.com/kimi-code/install.ps1 | iex` (install Git for Windows first). With npm instead: `npm install -g @moonshot-ai/kimi-code` (in mainland China add `--registry=https://registry.npmmirror.com`). Check with `kimi --version` — Agent J needs 2.2.0 or newer.
-
-Sign in in your own terminal: `kimi login --region mainland-cn` for kimi.com, `kimi login --region global` for kimi.ai (separate accounts). It prints a link and a one-time code; confirm on any device signed in to Kimi. Then `agentj agent switch kimi`.
-
-Isolation: Kimi has no sandbox of its own and its hooks let calls through when they fail, so Agent J runs it inside the same isolation as the other tools, keeps it in manual-approval mode and sends every permission request to your phone.
-
-## Alibaba Cloud Bailian Token Plan (mainland China) {#bailian}
-
-A monthly plan for coding tools instead of pay-as-you-go API prices. Token Plan, personal, has four tiers — Lite, Essential, Standard and Pro — metered in Credits (11,500 / 25,500 / 45,000 / 180,000 a month; Standard and up run 3–4 agents at once). Your Agent shows the monthly prices with `agentj agent route`; Alibaba Cloud's subscription page is authoritative. Qwen 3.8 Max and Qwen 3.8 Flash read images, so screenshots and browser work are fine; Agent J picks `qwen3.8-max` and offers `qwen3.8-flash` to save Credits.
-
-Read its terms before you buy. You may only use it yourself, interactively, inside a coding tool. Automation scripts, app back ends and non-interactive batch calls are not allowed with this key; Alibaba Cloud may suspend the plan or the key. While you are subscribed, what you send to the model and what it writes are used to improve Alibaba Cloud's models, so be careful with private data. The plan is for you only; do not share it. For unattended work such as scheduled tasks or a support bot, use a pay-as-you-go key: Agent J never gives the Token Plan key to tasks or bots.
-
-Subscribe at https://bailian.console.aliyun.com/cn-beijing/subscription/overview and create the plan's own API key in the console. Then ask your Agent to set it up. It runs `agentj provider bailian`, which adds Bailian to OpenCode's settings and leaves everything you already have there untouched. A key card then opens on your phone: paste the key there and nowhere else. Agent J checks it against Bailian's read-only model list, which costs no Credits. Finally your Agent switches OpenCode to `bailian-token-plan-personal/qwen3.8-max`.
-
-The Coding Plan (keys starting with `sk-sp-`) also works (`agentj provider bailian --plan coding-plan`), but it has no Max model and its key cannot be checked in advance.
-
-## Qwen Code {#qwen}
-
-Qwen Code (`qwen`, Alibaba, Apache-2.0) is Alibaba's own coding agent, and Agent J can drive it directly with the same Bailian key. Install it with npm (Node.js 20 or newer; in mainland China add `--registry=https://registry.npmmirror.com`):
-
-`npm install -g @qwen-code/qwen-code@latest`
-
-Check with `qwen --version`; Agent J needs 0.25 or newer. Its free sign-in ended on 2026-04-15, so the key is its login: the same phone key card as above (`BAILIAN_TOKEN_PLAN_API_KEY`). Agent J hands the key to Qwen Code in memory only and writes nothing into `~/.qwen`. If you already set Qwen Code up yourself, for example with `bl config agent --agent qwen-code`, your own settings are used. Then `agentj agent switch qwen`.
-
-Isolation and approvals: Agent J runs Qwen Code inside the same isolation as the other tools. Qwen Code normally starts in a mode where it approves some actions by itself; Agent J switches it back to asking every time, and every request goes to your phone, for that one action only. On the phone, /model lists the plan's models; the ones marked as reading images can look at screenshots.

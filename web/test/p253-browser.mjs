@@ -47,7 +47,7 @@ const $ = (id) => `document.getElementById(${JSON.stringify(id)})`;
 const SWITCH = { zh: '换 AI 编程工具：列出已装的，试通才切，不通切回',
   en: 'Switch AI coding tool: tested before switching' };
 const RUN_NOW = { zh: '一键执行', en: 'Run now' };
-const SENT = { zh: '已交给 Agent J：它会先列出能切换的 AI 编程工具，你选了才切', en: 'Sent: Agent J first lists the AI coding tools you can switch to; nothing switches until you choose' };
+const SENT = { zh: '已交给 Agent：它会先列出能切换的 AI 编程工具，你选了才切', en: 'Sent: your Agent first lists the AI coding tools you can switch to; nothing switches until you choose' };
 
 async function paired({ w = 390, h = 844, lang = 'zh', kind = 'claude', menu }) {
   fake.reset();

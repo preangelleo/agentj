@@ -9,16 +9,14 @@ import { sendApp, gen, channel } from './session.js';
 import { myDeviceId } from './api.js';
 import { t, onLang } from './t.js';
 import { mk, toast, human } from './ui.js';
-import { copyable } from './copycode.js';   // P292
 import { registerLayer } from './layers.js';
-import { createSecretPreview } from './secretpreview.js';
 import { elevateChallenge, canAssert, approve, SECRET_OUT_CTX, SECRET_OUT_KIND, secretOutFields, secretOutDigest } from './faceid.js';
 
 export const CTX = SECRET_OUT_CTX;
 export const KIND = SECRET_OUT_KIND;
 const SHOW_MS = 120000;            // an opened value is cleared after this long
 const cards = new Map();           // id → card (arrival order)
-let root = null, timer = 0, busy = false, shownId = null, opened = null, hooks = {}, previewUI = null;
+let root = null, timer = 0, busy = false, shownId = null, opened = null, hooks = {};
 
 /** app.js: {setupFaceId()} — ask the computer for a passkey offer and show the F20 「用 Face ID 记住这台手机？」 sheet. */
 export function configure(h) { hooks = h || {}; }
@@ -32,13 +30,12 @@ function build() {
   root.id = 'sout'; root.hidden = true;
   // P142 (A16): a layer — ESC = 「完成」 once opened (the value is wiped), else the card's 「不需要了」; shortcuts stay off
   registerLayer({ element: () => root, open: () => !!root && !root.hidden, rank: 55, fallback: () => document.getElementById('input') || document.getElementById('setBtn'),
-    close: () => { if (previewUI?.close()) return; const d = $('sout-done'); (d && !d.hidden ? d : $('sout-decline'))?.click(); } });
+    close: () => { const d = $('sout-done'); (d && !d.hidden ? d : $('sout-decline'))?.click(); } });
   root.setAttribute('role', 'dialog'); root.setAttribute('aria-modal', 'true'); root.setAttribute('aria-labelledby', 'sout-title');
   const box = mk('div', 'box');
   const node = (tag, id, cls) => { const n = mk(tag, cls); n.id = id; return n; };
   const val = node('div', 'sout-value', 'sout-value');
   val.hidden = true;
-  previewUI = createSecretPreview(root, val, copyValue);
   const mask = node('p', 'sout-mask', 'sout-mask');
   const main = mk('div', 'ajrow sout-main');
   const open = node('button', 'sout-open', 'aj-btn aj-btn--primary'); open.type = 'button';
@@ -96,16 +93,14 @@ export function value(m) {
   if (text === null && bytes === null) return;
   opened = { id: c.id, text, bytes, filename: c.filename || 'secret.txt', at: Date.now() };
   busy = false;
-  previewUI.reset();
-  if (text !== null) previewUI.show(text, false);
+  const v = $('sout-value');
+  v.replaceChildren();
+  if (text !== null) v.appendChild(mk('pre', 'mono', text));
   else {
     let preview = null;
     try { preview = new TextDecoder('utf-8', { fatal: true }).decode(bytes); } catch { preview = null; }
-    if (preview !== null && preview.length <= 200000) {
-      opened.preview = preview;
-      previewUI.show(preview, /\.(?:md|markdown)$/i.test(opened.filename));
-    }
-    else previewUI.note(t('sout.binary', { size: human(bytes.length) }));
+    if (preview !== null && preview.length <= 20000) v.appendChild(mk('pre', 'mono', preview));
+    else v.appendChild(mk('p', 'elev-note', t('sout.binary', { size: human(bytes.length) })));
   }
   clearTimeout(opened.wipe);
   opened.wipe = setTimeout(() => finish(), SHOW_MS);
@@ -154,7 +149,7 @@ function wipeOpened() {
   clearTimeout(opened.wipe);
   if (opened.bytes) opened.bytes.fill(0);
   opened = null;
-  previewUI?.reset();
+  if (root) $('sout-value').replaceChildren();
 }
 
 function row(dl, label, value) {
@@ -189,7 +184,7 @@ function render() {
     $('sout-decline').textContent = t('sout.decline');
     $('sout-open').hidden = isOpen || !c.fa;
     $('sout-setup').hidden = isOpen || !!c.fa;
-    $('sout-copy').hidden = !isOpen || (c.kind === 'file' && !(opened && opened.preview !== undefined));
+    $('sout-copy').hidden = !isOpen || (c.kind === 'file' && !(opened && opened.bytes && $('sout-value').querySelector('pre')));
     $('sout-download').hidden = !isOpen || c.kind !== 'file';
     $('sout-done').hidden = !isOpen;
     $('sout-decline').hidden = isOpen;

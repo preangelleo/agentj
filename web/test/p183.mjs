@@ -147,13 +147,14 @@ try {
       assert.equal(look.bg, 'rgba(0, 0, 0, 0)', 'no fill');
       assert.equal(look.style, 'dashed'); assert.equal(look.toolStyle, 'dashed');
       assert.equal(look.color, look.tool, 'the same outline colour as the composer\'s tool buttons');
-      assert.equal(look.btn[1], look.read[1], 'full-screen action retains the icon target height'); assert.ok(look.btn[0] >= look.read[0], 'visible label widens its target');
+      assert.deepEqual(look.btn, [44, 44], 'file-card targets stay 44px square');
+      assert.equal(look.read[1], look.btn[1], 'same 44px target height');
       // P251: reply slots are elastic (24px floor, 46px desktop pitch); file targets stay fixed.
       assert.ok(look.read[0] >= 24 && look.read[0] <= 46, 'reply target follows the P251 elastic range');
       assert.deepEqual(look.svg, look.rsvg, 'same glyph size and stroke');
       assert.equal(look.btnBg, look.readBg); assert.equal(look.ink, look.readInk);
-      assert.deepEqual(look.labels, ['全屏查看|全屏查看', '下载|下载'], 'icons with labels; no share sheet in headless, no mail / Telegram without P184 / tgfile');
-      assert.equal(look.text, '全屏查看', 'P260 visible full-screen entry; other actions stay icons');
+      assert.deepEqual(look.labels, ['预览（空格）|预览（空格）', '下载|下载'], 'icons with labels; no share sheet in headless, no mail / Telegram without P184 / tgfile');
+      assert.equal(look.text, '', 'no words on the buttons — icons only');
       // the big PDF: not fetched, its size on the button
       assert.equal(await ev(p, `${card(id('B'))}.dataset.state`), 'idle');
       assert.equal(await ev(p, `${card(id('B'))}.querySelector('.mtap').textContent`), '点一下加载 · 6.0 MB');
@@ -293,11 +294,11 @@ try {
       await ev(p, `${tg}.click()`);
       await waitFor(p, `${tg}.dataset.state === 'sent'`);
       assert.deepEqual(fwds.map((m) => [m.mid, m.id]), [[id('P'), undefined]], 'by media id only — no bytes go up');
-      assert.equal(await ev(p, `${card(id('P'))}.querySelector('.mtg-status').textContent`), '已发到 Telegram');
+      assert.equal(await ev(p, `document.getElementById('toast').textContent`), '已发到你的 Telegram 私聊');
       fwdAnswer = { ok: false, why: 'too_big' };
       await ev(p, `${card(id('B'))}.querySelector('.mact.tg').click()`);
       await waitFor(p, `${card(id('B'))}.querySelector('.mact.tg').dataset.state === 'failed'`);
-      assert.equal(await ev(p, `${card(id('B'))}.querySelector('.mtg-status').textContent`), '文件超过 Telegram 的 50 MB 上限，没有发');
+      assert.equal(await ev(p, `document.getElementById('toast').textContent`), '文件超过 Telegram 的 50 MB 上限，没有发');
       // the reply card's forward button: the Telegram mark instead of the arrow
       const bar = await ev(p, `(() => { const b = document.getElementById('fwdBtn'); return [b.dataset.tg, getComputedStyle(b.querySelector('.gtg')).display, getComputedStyle(b.querySelector('.g0')).display]; })()`);
       assert.deepEqual(bar, ['1', 'block', 'none']);
@@ -323,8 +324,8 @@ try {
     try {
       await page(p);
       await ev(p, `${card(id('P'))}.querySelector('.mact.tg').click()`);
-      await waitFor(p, `${card(id('P'))}.querySelector('.mtg-status').textContent.includes('设置')`);
-      assert.equal(await ev(p, `${card(id('P'))}.querySelector('.mtg-status').textContent`), '还没绑定 Telegram：到设置里绑定后，就能一键转发到你自己的 Telegram 私聊。');
+      await waitFor(p, `document.getElementById('toast').textContent.includes('设置')`);
+      assert.equal(await ev(p, `document.getElementById('toast').textContent`), '还没绑定 Telegram：到设置里绑定后，就能一键转发到你自己的 Telegram 私聊。');
       assert.deepEqual(fwds, [], 'nothing sent while Telegram is not linked');
       assert.deepEqual(await ev(p, `(() => { const b = document.getElementById('fwdBtn'); return [b.dataset.tg, getComputedStyle(b.querySelector('.gtg')).display, getComputedStyle(b.querySelector('.g0')).display]; })()`),
         ['', 'none', 'block'], 'no Telegram: the reply bar keeps the share arrow');

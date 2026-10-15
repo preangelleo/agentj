@@ -36,7 +36,7 @@ class HandoffSend(Send):
         return bool(row and row['status']=='pending' and self.manager.state().now()-row['created']<600 and not self.manager.host.stopped())
 
 READS={'list','detail','history','statistics','handoffs'}
-WRITES={'create','save','delete','knowledge_add','knowledge_remove','knowledge_directory','knowledge_url','tool_save','tool_delete','tool_test','tool_approve','human_reply','audit_key','telegram_key','model_key','attach_telegram','telegram_avatar'}
+WRITES={'create','save','delete','knowledge_add','knowledge_remove','knowledge_directory','knowledge_url','tool_save','tool_delete','tool_test','tool_approve','human_reply','audit_key','telegram_key','model_key'}
 
 class Manager:
     def __init__(self,host):
@@ -78,7 +78,7 @@ class Manager:
     async def write(self,req, gone=None):
         if not isinstance(req,dict) or len(canonical(req).encode())>2*1024*1024:raise BotError('invalid_request')
         store=self.state();op=req.get('op');bid=req.get('id')
-        if op in ('telegram_key','model_key','telegram_avatar') and set(req)!={'op','id'}:raise BotError('invalid_request')
+        if op in ('telegram_key','model_key') and set(req)!={'op','id'}:raise BotError('invalid_request')
         if op=='tool_approve':
             item=self.pending_calls.get(req.get('approval'))
             if not item or item['request']['digest']!=req.get('digest') or item['request']['expires']<=time.time() or type(req.get('allow')) is not bool:raise BotError('approval_expired')
@@ -97,7 +97,7 @@ class Manager:
             c=store.get(bid)
             # Stop the old channel before token replacement; a declined card stays paused.
             if op=='telegram_key':
-                c['telegram']={**c['telegram'],'enabled':False};store.save(bid,c)
+                c['telegram']={'enabled':False};store.save(bid,c)
             elif c['provider']['source']=='own':
                 c['enabled']=False;store.save(bid,c)
             name='TELEGRAM_BOT_TOKEN' if op=='telegram_key' else 'BOT_MODEL_KEY'
@@ -113,19 +113,10 @@ class Manager:
             result=await self.host.elevate.request(card, gone)
             if result.get('result')!='saved':raise BotError('openrouter_required')
             return {'name':NAME,'stored':True}
-        if op=='attach_telegram':return self.attach_telegram(store,req)
-        if op=='telegram_avatar':
-            # P275 card button 「换成 Agent J 头像」: replaces whatever photo the bot has with the official one.
-            store.get(bid)
-            return {'avatar':await self.avatar('set',bid)}
         if op in ('create','save'):
             raw={'timezone':str(store.timezone),**req['config']} if op=='create' else req['config']
-            if op=='save' and isinstance(raw,dict) and isinstance(raw.get('telegram'),dict) and 'owner_bot' not in raw['telegram']:
-                # P297: a save that does not mention the owner-bot switch keeps it (only attach_telegram turns it on)
-                raw={**raw,'telegram':{**raw['telegram'],'owner_bot':store.get(bid)['telegram'].get('owner_bot') is True}}
             raw=config(raw)
-            if op=='save':
-                if raw['telegram'].get('owner_bot') and not store.get(bid)['telegram'].get('owner_bot'):raise BotError('use_attach_telegram')
+            if op=='save':store.get(bid)
             if raw.get('enabled'):
                 # P199: going public needs a usable Agent J seat; editing a paused bot stays local and free.
                 refusal=getattr(self.host,'seat_refusal',None)
@@ -186,51 +177,6 @@ class Manager:
         if op=='tool_delete':
             reg=ToolRegistry(store,bid);d=reg.load(req['name']);(reg.root/'tools'/(d['name']+'.json')).unlink();return {}
         raise BotError('unknown_operation')
-    def attach_telegram(self,store,req):
-        """P297 `agentj bots attach-telegram <bot>` (signed on the paired phone like every bot write): this bot also
-        receives the private chats of the owner's own Agent J Telegram bot that are not the owner's. One bot at most;
-        attach=false turns it back to P283 (strangers get only their ID)."""
-        if set(req)!={'op','id','attach'} or type(req['attach']) is not bool:raise BotError('invalid_request')
-        bid=ident(req['id']);c=store.get(bid)
-        if req['attach']:
-            from .. import telegram as owner_tg
-            cfg=owner_tg.enrollment(self.host.st)
-            if not cfg:raise BotError('owner_telegram_required')   # pair the owner first (P283): no owner, no "everyone else"
-            same=False
-            if (store.secrets(bid)/'TELEGRAM_BOT_TOKEN').is_file() and os.environ.get(cfg['key_env']):
-                with contextlib.suppress(BotError):
-                    from .telegram import token
-                    same=secrets.compare_digest(token(store,bid).encode(),os.environ[cfg['key_env']].strip().encode())
-            if same:raise BotError('telegram_same_token')   # two pollers on one token would steal each other's updates
-            for other in store.listing():
-                if other['id']!=bid and other['telegram'].get('owner_bot'):
-                    oc=store.get(other['id']);oc['telegram']={**oc['telegram'],'owner_bot':False};store.save(other['id'],oc)
-        c['telegram']={**c['telegram'],'owner_bot':req['attach']}
-        self.host.st.log('bots',outcome='telegram_attached' if req['attach'] else 'telegram_detached')
-        return {'bot':store.save(bid,c)}
-    async def avatar(self,action,bid):
-        """P275: status / set / reset the Telegram photo of the owner bot ('owner') or a customer-service bot. Only the
-        official Agent J image can be uploaded; the bot key stays in this process (the owner bot's in serve's environment)."""
-        if action not in ('status','set','reset'):raise BotError('unknown_action')
-        root=self.host.st.root
-        if bid=='owner':
-            from .. import telegram as tg,tg_avatar
-            cfg=tg.configuration(self.host.st)
-            if not cfg:raise BotError('telegram_key_required')
-            def run():
-                me=tg.api(cfg,'getMe',{})
-                if not isinstance(me,dict) or type(me.get('id')) is not int:raise BotError('telegram_unavailable')
-                return tg_avatar.act(root,action,lambda m,v:tg.api(cfg,m,v),lambda *a:tg.upload(cfg,*a),me['id'])
-            try:res=await asyncio.to_thread(run)
-            except BotError:raise
-            except Exception:raise BotError('telegram_unavailable') from None
-            self.host.st.log('telegram_avatar',result=action)
-            return res
-        from .telegram import avatar
-        self.state().get(bid)
-        res=await asyncio.to_thread(avatar,self.state(),bid,root,action)
-        self.state().event(bid,'','telegram_avatar',action)
-        return res
     def detach(self,session):
         # Key cards retain their existing disconnect semantics; stop other writes.
         for task,(owner,gone,op,bid) in list(self.phone_tasks.items()):
@@ -277,7 +223,7 @@ class Manager:
             if why:raise BotError(why)
             op=req.get('op');bid=req.get('id')
             if any(bid==item[3] for item in self.phone_tasks.values()) and op!='tool_approve':raise BotError('busy')
-            slow=op in ('audit_key','telegram_key','model_key','human_reply','tool_test','telegram_avatar') or (op=='save' and isinstance(req.get('config'),dict) and req['config'].get('enabled'))
+            slow=op in ('audit_key','telegram_key','model_key','human_reply','tool_test') or (op=='save' and isinstance(req.get('config'),dict) and req['config'].get('enabled'))
             if background and slow:
                 if len(self.phone_tasks)>=4:raise BotError('busy')
                 gone=asyncio.get_running_loop().create_future()
@@ -337,7 +283,6 @@ class Manager:
             op=req.get('op')
             if op in ('telegram_key','model_key') and set(req)!={'op','id'}:raise BotError('invalid_request')
             if op in READS:res={'ok':True,**self.read(req)}
-            elif op=='avatar':res={'ok':True,'bot':req.get('id'),'action':req.get('action'),**await self.avatar(req.get('action'),req.get('id'))}
             elif op=='result':
                 item=self.proposals.get(req.get('proposal'))
                 res={'ok':True,'status':item['status'],'result':item.get('result')} if item else {'ok':False,'why':'proposal_expired'}

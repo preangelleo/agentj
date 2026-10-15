@@ -13,7 +13,6 @@ import re
 import pathlib
 import platform as _pf
 import shutil
-import subprocess
 import sys
 import tempfile
 import time
@@ -254,7 +253,7 @@ def check_dashboard(st: State) -> dict:
     return _c("dashboard", OK, f"服务器 / server {api} · 账号后台 / account dashboard {app}")
 
 
-AGENT_LABEL = {"claude": "Claude Code", "codex": "Codex", "opencode": "OpenCode", "kimi": "Kimi Code", "qwen": "Qwen Code"}
+AGENT_LABEL = {"claude": "Claude Code", "codex": "Codex", "opencode": "OpenCode"}
 BIN_ENV = harness.BIN_ENV
 # one implementation for doctor and `agentj agent detect` (existence checks only, never content)
 _agent_bin, _version_of = harness.agent_bin, harness.version_of
@@ -262,7 +261,7 @@ _claude_login, _codex_login, _opencode_login = harness.claude_login, harness.cod
 
 
 def _login(k: str) -> tuple[str, str]:
-    return harness.login_of(k) if k in ("kimi", "qwen") else {"claude": _claude_login, "codex": _codex_login, "opencode": _opencode_login}[k]()
+    return {"claude": _claude_login, "codex": _codex_login, "opencode": _opencode_login}[k]()
 
 
 def check_agent(st: State) -> dict:
@@ -462,8 +461,7 @@ def check_agent_cli(st: State, svc: dict) -> dict:
         if ver is None:
             return _c("agent_cli", FAIL, f"{AGENT_LABEL[k]} {tilde(exe)} 运行失败 / does not run (`{k} --version`)",
                       f"重装 {AGENT_LABEL[k]} / reinstall {AGENT_LABEL[k]}")
-        login, where = (harness.opencode_login(ver, c.get("model") if c and c.get("kind") == "opencode" else None, exe)
-                        if k == "opencode" else _login(k))     # P298: "free" = an OpenCode free model, no key needed
+        login, where = harness.opencode_login(ver) if k == "opencode" else _login(k)
         found.append((k, exe, ver, login, where))
     if not found:
         if c:
@@ -488,11 +486,6 @@ def check_agent_cli(st: State, svc: dict) -> dict:
             s += " · doctor runs inside Claude Code (its token is hidden from child commands)"
         return _c("agent_cli", OK if ready else WARN, s + " · service login " + ("available" if ready else "missing"),
                   "" if ready else service.token_hint(svc.get("name") or service.name()))
-    if k == "opencode":                              # P310: a Bailian plan in OpenCode's config — key NAME and presence only
-        from . import bailian
-        for f in bailian.facts():
-            s += (f" · 阿里百炼 {f['provider']}: key {f['key_env'] or '—'} " +
-                  ("已存 / set" if f["key_set"] else "未存 / not set (agentj provider bailian → key card)"))
     if k == 'opencode' and harness.opencode_v2(ver):
         s += ' · v2 (/api)'                         # P60: supported (agent_opencode2); the live check below asks the server
     if k == "opencode" and c:
@@ -514,21 +507,6 @@ def check_agent_cli(st: State, svc: dict) -> dict:
                       '优先使用 Claude Code。OpenCode /provider.connected 只证明已配置连接；核实选中 provider/model。换 key 后 Agent J 在下一条消息前自动重启它启动的 OpenCode，接着原对话（也可运行 agentj agent restart）；附着的电脑 OpenCode 要你自己重启。 / Prefer Claude Code. Connected is not a live key test. After a key change Agent J restarts its own OpenCode before the next message (or `agentj agent restart`); restart an attached desktop server yourself.')
         return _c('agent_cli', WARN, s + ' · runtime provider authentication unknown',
                   '优先使用 Claude Code；OpenCode 需运行中的 GET /provider.connected 才能确认所选连接。凭据文件或数据库存在不等于已登录；换 key 后 Agent J 会在下一条消息前自动重启它启动的 OpenCode。 / Prefer Claude Code; store existence is not authentication. Check the running provider connection; Agent J restarts its own OpenCode after a key change.')
-    if k == "kimi":                                 # P305: Kimi's own config that a phone card cannot cover (names only)
-        from . import agent_kimi
-        f = agent_kimi.config_facts()
-        if f["allow_rules"]:
-            s += f" · ~/.kimi-code/config.toml: {f['allow_rules']} allow rule(s) run without a phone card"
-        if login == WARN:
-            return _c("agent_cli", FAIL if c else WARN, s, agent_kimi.login_text((c or {}).get("region"), "zh") + " / " +
-                      agent_kimi.login_text((c or {}).get("region"), "en"))
-    if k == "qwen":                                 # P310: Qwen's own settings that a phone card cannot cover (names only)
-        from . import agent_qwen
-        f = agent_qwen.settings_facts()
-        if f["allow_rules"]:
-            s += f" · ~/.qwen/settings.json: {f['allow_rules']} permissions.allow rule(s) run without a phone card"
-        if login == WARN:
-            return _c("agent_cli", FAIL if c else WARN, s, agent_qwen.login_text("zh") + " / " + agent_qwen.login_text("en"))
     if login == WARN and k == "opencode":
         return _c("agent_cli", WARN if not c else FAIL, s, "人类在自己的终端运行 `opencode auth login` 存好模型服务的 key "
                   "（install.md 第 3 步）/ the human runs `opencode auth login` in their own terminal")
@@ -862,13 +840,8 @@ def check_service(svc: dict, legacy: dict | None = None) -> dict:
                   f"name {legacy.get('name')}", "运行 agentj service install 换成新名字 / run `agentj service install` to switch to "
                   "the new name")
     if svc.get("kind") == "none":
-        why = service.classify_no_manager() if svc.get("active") == "no_systemctl" else None   # P278: WSL / container fix
         return _c("service", WARN, f"没有可用的服务管理器 / no service manager ({svc.get('active')})",
-                  service.MESSAGES[why] if why in service.NO_MANAGER else "run `agentj serve` under tmux / your own supervisor")
-    if svc.get("kind") == "systemd" and svc.get("active") not in ("active", "inactive", "failed", "activating", "deactivating"):
-        why = service.systemd_problem()          # P278: systemctl is there, but no systemd user manager answers it
-        if why in service.NO_MANAGER:
-            return _c("service", WARN, f"没有可用的 systemd / no usable systemd ({why})", service.MESSAGES[why])
+                  "run `agentj serve` under tmux / your own supervisor")
     n = svc.get("name")
     if not svc.get("installed"):
         return _c("service", WARN, "没安装 / not installed", "agentj service start")

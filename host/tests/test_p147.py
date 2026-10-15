@@ -113,7 +113,7 @@ class Heal(Fixture):
         self.assertEqual(a.session["sessionId"], new)
         self.assertEqual(a.cfg["shared_session_id"], new)
         self.assertEqual(self.host.prefs, [("agent.shared_session_id", new)])
-        self.assertIn("又接上了，新会话 " + new[:8], self.host.notices[-1])
+        self.assertIn("已接上新会话 " + new[:8], self.host.notices[-1])
         self.assertEqual(self.host.statuses[-1], "idle")
 
     async def test_two_equally_likely_sessions_ask_once_then_the_announced_one_wins(self):
@@ -207,7 +207,7 @@ class Regressions(Fixture):
         (self.cc / "projects" / slug / (new + ".jsonl")).unlink()
         a = shared.SharedClaudeAgent(self.host, {**self.cfg, "shared_session_id": old})
         self.assertTrue(await a.attach())
-        self.assertIn("又接上了，新会话 " + new[:8], self.host.notices[-1])
+        self.assertIn("已接上新会话 " + new[:8], self.host.notices[-1])
 
     async def test_an_old_session_without_transcript_is_still_refused(self):
         sid = self.session("b", 1000)
@@ -257,7 +257,7 @@ class Doctor(unittest.TestCase):
     def test_all_up_is_one_sentence_and_no_repair(self):
         code, res, sent = self.run_it([self.UP])
         self.assertEqual(code, 0); self.assertTrue(res["ok"]); self.assertEqual(res["steps"], [])
-        self.assertEqual([r["cmd"] for r in sent], ["status", "status_push"])   # P306: the phone gets the status again
+        self.assertEqual([r["cmd"] for r in sent], ["status"])
 
     def test_serve_not_running_is_started(self):
         svc = FakeService()

@@ -117,7 +117,7 @@ Before every reply, the peer session checks whether the topic is within its grou
 
 - **In scope**: it replies, and the friends page marks the message "auto reply".
 - **Out of scope** (a price, a meeting): it tells the friend it will check with its owner, and a card appears on your phone
-  with their words, the draft reply and the reason. Tap "Let my Agent J reply" (it drafts a reply first if needed), "Don't reply", or "I'll say it" to go back to
+  with their words, the draft reply and the reason. Tap "Let my Agent reply" (it drafts a reply first if needed), "Don't reply", or "I'll say it" to go back to
   your main chat and tell the Agent what to answer.
 - **Two Agents being polite forever**: once the automatic rounds in a row hit the limit, it tells the friend it is pausing
   and lets you know.
@@ -235,7 +235,3 @@ The question card also offers to let your Agent chat with this friend from now o
 
 
 Cards accept up to 64 characters for the name, 32 for the owner and 140 for the introduction. Supplementary context containing a credential-shaped value rejects the entire edit and preserves the previous text. Use ordinary background information; keys still belong only in secret cards.
-
-## Let Agent J help you set up
-
-Press Alt+Shift+G to open Friends, or choose Friends in Settings. Tap “Let Agent J help me set up” at the top. The chat opens with the skill command and an opening ready in your draft. Add your idea or send it as it is. Agent J explains the feature first, asks what you want, then helps set it up.

@@ -279,7 +279,7 @@ class B15Rollback(unittest.TestCase):
     def test_authorized_service_failure_rolls_back(self):
         old = wheel(self.st, __version__)
         res = self.authorized(Runner(fail=("--deferred",)), old)
-        self.assertEqual((res["reason"], res["rollback"], res["service"]), ("service_restart_failed", "ok", "failed"))
+        self.assertEqual((res["reason"], res["rollback"], res["service"]), ("service_failed", "ok", "failed"))
         self.assertFalse((self.st.root / update.PENDING).exists())
 
     def test_authorized_success_pending_carries_old_wheel(self):

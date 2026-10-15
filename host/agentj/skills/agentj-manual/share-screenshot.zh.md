@@ -67,7 +67,3 @@ Telegram 机器人最多只能下载 20 MB 的文件（这是 Telegram 官方限
 安卓分享由手机内的网页接收，文件不会以普通表单上传到网站服务器。快捷指令打开的网址只含入口标记，没有文件、正文或凭据；文件留在你自己的「文件」App 里，由你亲手选中。附件沿用手机与电脑之间的端到端加密路径；网页版的安全边界见[隐私与安全](https://agentj.app/security/)。快捷指令复制的图片会留在系统剪贴板，存进「文件」的文件会留在 `Agent J` 文件夹，用后可自行删除。
 
 参考：[Chrome Web Share Target](https://developer.chrome.com/docs/capabilities/web-apis/web-share-target)、[WebKit 剪贴板说明](https://webkit.org/blog/10855/async-clipboard-api/)、[Apple 快捷指令签名](https://support.apple.com/zh-cn/guide/shortcuts-mac/apd455c82f02/mac)。
-
-## 截取 Agent J 当前页面
-
-长按右上角齿轮，或按 Alt+Shift+Y，截取当前网页可见区域。截图不含系统状态栏，也不需要屏幕共享权限。密码框和密钥卡会被遮住；图片放进聊天附件栏，等你补话后发送。设置页的扫码、搜索、齿轮固定在页眉，滚动后仍能用；单击齿轮退出设置，长按截取设置页。设置页内点搜索或按 ⌘K / Ctrl+K，可按标题、说明和关键词找设置项，点结果跳转并高亮。齿轮说明可从右键菜单或快捷键页查看。

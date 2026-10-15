@@ -13,8 +13,6 @@ export const CAP_P33 = 'p33';
 export const MAX_JSON_P33 = 60 * 1024;   // padded plaintext ≤ 61 696, relay payload ≤ 61 713 < 65 536
 export const MAX_TEXT_P33 = 20000;       // UTF-16 code units per message; say text + excerpt together
 export const EXCERPT_MAX = 2000;
-export const QUOTES_MAX = 5;           // P286: one say quotes ≤ 5 places (reply_to + quote_more ≤ 4)
-export const CAP_MQ = 'mq5';           // P286: the host takes quote_more
 export const FRAG_MAX_N = 128;
 export const FRAG_MAX_TOTAL = 2 * 1024 * 1024;
 export const BLOB_CHUNK = 45056;         // raw bytes per blob_chunk → 60 075 base64url chars → one 60 160-byte padded frame
@@ -121,13 +119,6 @@ export async function approveMessage(channel, device, id, decision, tool, summar
   if ((decision === 'allow_batch') !== (typeof scope === 'string' && scope.length > 0)) throw new Error('scope only with allow_batch');
   const base = `${APPROVE_CONTEXT}\n${channel}\n${device}\n${id}\n${decision}\n${await shownDigest(tool, summary)}`;
   return enc.encode(decision === 'allow_batch' ? `${base}\n${hex(await sha256(enc.encode(scope)))}` : base);
-}
-/** P296: an `agentj mail send` allow that also puts the ticked recipients on the mail allowlist: approveMessage('allow'), plus
- *  one more line hex(SHA-256("allow:" + the ticked addresses in the card's offered order, newline-joined)). Mirrors
- *  approvals.allow_add_line; the host checks the picks against what it offered. */
-export async function mailAllowMessage(channel, device, id, tool, summary, picks) {
-  if (!Array.isArray(picks) || !picks.length) throw new Error('no picks');
-  return concat(await approveMessage(channel, device, id, 'allow', tool, summary), enc.encode(`\n${hex(await sha256(enc.encode('allow:' + picks.join('\n'))))}`));
 }
 // ---------------------------------------------------------------- phone controls (PROTOCOL §8). Mirrors host/agentj/controls.py.
 export const CONTROL_CONTEXT = 'agentjarvis-control-v1';
@@ -266,15 +257,11 @@ export async function questionMessage(channel, device, id, action, qs, picks) {
 }
 
 /** §10.2 a `say` (validated like the host does; throws on anything the host would answer shape / too_long). */
-export function sayMessage({ sid = newId22(), text = '', att, reply_to, excerpt, quote_more, ts = Date.now() } = {}) {
+export function sayMessage({ sid = newId22(), text = '', att, reply_to, excerpt, ts = Date.now() } = {}) {
   const t = normalizeNewlines(text), ex = excerpt == null ? null : normalizeNewlines(excerpt);
-  // P286 §10.6: quotes 2…5 after reply_to's — [{id[, ex]}]
-  const more = quote_more == null ? null : quote_more.map((q) => (q.ex == null ? { id: q.id } : { id: q.id, ex: normalizeNewlines(q.ex) }));
-  if (more && (reply_to == null || !more.length || more.length >= QUOTES_MAX || !more.every((q) => Number.isInteger(q.id)))) throw new Error('bad quote_more');
-  const exs = [ex, ...(more || []).map((q) => q.ex ?? null)].filter((x) => x != null);
-  const bad = textProblem(t) || exs.map((x) => textProblem(x, EXCERPT_MAX)).find(Boolean);
+  const bad = textProblem(t) || (ex != null ? textProblem(ex, EXCERPT_MAX) : null);
   if (bad) throw new Error(bad);
-  if (t.length + exs.reduce((n, x) => n + x.length, 0) > MAX_TEXT_P33) throw new Error('too_long');
+  if (t.length + (ex ? ex.length : 0) > MAX_TEXT_P33) throw new Error('too_long');
   if (ex != null && reply_to == null) throw new Error('excerpt only with reply_to');
   if (att != null && (!Array.isArray(att) || att.length > 10 || !att.every(isId22) || new Set(att).size !== att.length)) throw new Error('bad att');
   if (!t.trim() && !(att && att.length)) throw new Error('empty');
@@ -282,7 +269,6 @@ export function sayMessage({ sid = newId22(), text = '', att, reply_to, excerpt,
   if (att && att.length) m.att = att;
   if (reply_to != null) m.reply_to = reply_to;
   if (ex != null) m.excerpt = ex;
-  if (more) m.quote_more = more;
   return m;
 }
 /** §10.3 blob messages. */

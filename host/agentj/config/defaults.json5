@@ -1,6 +1,6 @@
 // Factory defaults; put only your changes in the user override file.
 {
-  "updates": {"auto_install": true, "mode": "auto", "report_failures": true, "skill_categories": []},
+  "updates": {"auto_install": true, "mode": "auto", "skill_categories": []},
   "agent": {
     // Empty preserves existing work folder; fresh init defaults to ~/coding.
     "working_root": "",
@@ -120,8 +120,6 @@
     "check_time": "08:00",
   },
   // P156: the main Agent wakes after an idle spell (checks background work and to-dos); every beat is one model call.
-  // P262: background completions wake the main Agent, independent of heartbeat.
-  "background_done": {"enabled": true},
   "heartbeat":
   {
     // Heartbeat on/off / 心跳开关; default=true
@@ -136,40 +134,6 @@
   {
     // Text only, ≤ 16 characters; empty = 董事长 / Chairman / 对你的称呼，留空即「董事长」; default=""
     "address": "",
-  },
-  // P285: the reply card's bottom-left hot key (the share icon stays the same); any command or skill from the phone's / list.
-  "ui":
-  {
-    // Command or skill the hot key runs / 回复卡左下角快捷技能键; default="web-page-report"
-    "card_hot_action": "web-page-report",
-  },
-  // P274: macOS only. Read-only iMessage / SMS assistant (Full Disk Access); off by default; never writes chat.db.
-  "imessage":
-  {
-    // On/off (macOS only) / iMessage 助手开关（仅 macOS）; default=false
-    "enabled": false,
-    // Minutes between looks, 1–1440 / 扫描间隔（分钟）; default=5
-    "interval_minutes": 5,
-    // instant | instant_digest | digest / 提醒方式; default="instant_digest"
-    "delivery": "instant_digest",
-    // Digest times HH:MM[,HH:MM…]; empty = none / 摘要时间; default="09:00,18:00"
-    "digest_at": "09:00,18:00",
-    // Quiet hours HH:MM-HH:MM; empty = off / 免打扰时段; default=""
-    "quiet_hours": "",
-    // loose | standard | strict / 过滤强度; default="standard"
-    "strictness": "standard",
-    // show | mask | off / 验证码显示; default="show"
-    "codes": "show",
-    // Group chats into the digest / 包含群聊; default=true
-    "groups": true,
-    // off | redacted (Jev on a redacted copy) / 第二层智能分类; default="off"
-    "llm": "off",
-    // VIP numbers / e-mails (exact match) / 重要联系人; default=[]
-    "vip": [],
-    // Muted numbers / e-mails / keywords / 静音名单; default=[]
-    "mute": [],
-    // Your rules in your own words; the phone shows them read-only / 过滤与提醒规则说明; default=""
-    "instructions": "",
   },
   // Harness child processes only. Direct values (no user:password@) or variable NAMES; a value wins over a name.
   "proxy": {"https": "", "http": "", "no_proxy": "", "https_env": "", "http_env": "", "no_proxy_env": ""},

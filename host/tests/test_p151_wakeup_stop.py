@@ -164,7 +164,7 @@ class WakeupStop(unittest.IsolatedAsyncioTestCase):
         await self.settle(task)
         self.assertEqual(self.host.phone, [])
         self.assertEqual(len(self.host.notices), 1)
-        self.assertIn("没留文字回复", self.host.notices[0])
+        self.assertIn("没有写文字回复", self.host.notices[0])
 
     async def test_no_text_at_all_is_an_honest_notice_not_unconfirmed(self):
         task = await self.phone_turn("嗯")
@@ -172,7 +172,7 @@ class WakeupStop(unittest.IsolatedAsyncioTestCase):
         self.write(asst("m5", tool_use("ScheduleWakeup")), END)
         await self.settle(task)
         self.assertEqual(self.host.phone, [])
-        self.assertEqual(self.host.notices, ["这一轮结束了，不过 Claude 没留文字回复。"])
+        self.assertEqual(self.host.notices, ["共享 Claude 这一回合已结束，但没有写文字回复。"])
         self.assertFalse(self.host.failed)
 
     async def test_committed_stop_keeps_priority_and_is_not_doubled(self):
@@ -216,7 +216,7 @@ class WakeupStop(unittest.IsolatedAsyncioTestCase):
                    asst("m10", tool_use("ScheduleWakeup")), END)
         await self.settle(task)
         self.assertEqual(self.host.phone, [])
-        self.assertIn("没留文字回复", self.host.notices[0])
+        self.assertIn("没有写文字回复", self.host.notices[0])
 
     async def test_input_not_taken_still_names_the_reason(self):
         """P127 unchanged: a socket write is not acceptance — no input seen, no turn end claimed."""

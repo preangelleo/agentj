@@ -81,8 +81,7 @@ def merged(data: bytes | None, blk: bytes) -> bytes | None:
 
 
 # --write: the AI's own user-level memory file, per harness (what install.md Step 13 lists)
-MEMORY_FILES = {"claude": "~/.claude/CLAUDE.md", "codex": "~/.codex/AGENTS.md", "opencode": "~/.config/opencode/AGENTS.md",
-                "kimi": "~/.kimi-code/AGENTS.md", "qwen": "~/.qwen/QWEN.md"}   # P305: Kimi Code reads its brand AGENTS.md first (then ~/.agents/AGENTS.md)
+MEMORY_FILES = {"claude": "~/.claude/CLAUDE.md", "codex": "~/.codex/AGENTS.md", "opencode": "~/.config/opencode/AGENTS.md"}
 EXIT_REFUSED = 2
 
 

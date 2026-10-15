@@ -262,7 +262,7 @@ class V2Chain(unittest.TestCase):
             await c.wait(lambda: c.host.agent.status == "working")
             await asyncio.sleep(0.5)
             res = await c.host.stop_turn("phone")
-            self.assertTrue(res.text.startswith("好，停下了这一轮"), res.text)
+            self.assertTrue(res.text.startswith("已停下这一轮"), res.text)
             await c.idle()
             self.assertTrue(any(r["p"].endswith("/interrupt") for r in self.requests()))
             self.assertNotIn("SLEPT", c.msgs())
@@ -310,7 +310,7 @@ class V2Chain(unittest.TestCase):
             ids = [m["id"] for m in r.models or []]
             self.assertEqual(ids, ["opencode/chat"], "only providers with a key are offered (fixture: opencode only)")
             r = await a.command("model", "opencode/chat")
-            self.assertTrue(r.text.startswith("换好了，下一条消息起用 opencode/chat"), r.text)
+            self.assertTrue(r.text.startswith("已切换到 opencode/chat"), r.text)
             await c.say("after switch")
             await c.wait(lambda: "ECHO: after switch" in c.msgs())
             await c.idle()

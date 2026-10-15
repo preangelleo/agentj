@@ -637,10 +637,7 @@ Product principle 「只给结果，不灌过程」: the phone gets replies, res
 
 ### 10.0 Capability, limits, text rules
 - Device `hello` gains `"caps":["p33"]` (and, for a resume, `"hist":{"epoch":e,"last":id}` — §10.5). The host's `approved` /
-  `ready` gains `"caps":["p33"]`, `"asr":"ready"|"not_installed"|"off"|"broken"` (§10.9), `"hist":"on"|"off"` and (P287, optional)
-  `"plat":"macos"|"linux"|"windows"|"other"` + `"boot":"login"|"auto"` (after an OS restart the service waits for the owner's
-  login / starts by itself; absent = unknown) — the phone keeps both with the pairing and, only after the relay has reported
-  the computer offline for ≥ 90 s, shows its own offline line from them (an unknown value → the general line) — only for a
+  `ready` gains `"caps":["p33"]`, `"asr":"ready"|"not_installed"|"off"|"broken"` (§10.9) and `"hist":"on"|"off"` — only for a
   device whose hello announced `p33` (an older device gets exactly §3's `{"t":"approved"}` / `{"t":"ready"}`). A side
   sends a §10 message, or any app message larger than §3's 16 KiB, **only** to a peer that announced `p33`; to an older peer
   it behaves exactly as §3 / §8 (chat as `msg`, replies split at 4 000). Unknown `t` stays ignored both ways; unknown keys in
@@ -648,8 +645,8 @@ Product principle 「只给结果，不灌过程」: the phone gets replies, res
 - `p33` limits (both ends enforce, receiver too): app-message JSON ≤ **61 440 bytes** (60 KiB; padded plaintext ≤ 61 696,
   ciphertext ≤ 61 712, relay payload ≤ 61 713 < 65 536 — §2 is unchanged). **Text**: ≤ **20 000** UTF-16 code units per
   message (relay's limit), well-formed (no lone surrogate), no C0 control character except `\t` and `\n` (the sender turns
-  `\r\n` / `\r` into `\n`; a receiver that finds one rejects the message — `why:"shape"`). In `say`, `text` + `excerpt` (+ every
-  `quote_more[].ex`, P286) together ≤ 20 000. These rules make every UTF-16 unit cost ≤ 3 bytes of JSON, so a maximal `say` (≈ 60 400 bytes) always
+  `\r\n` / `\r` into `\n`; a receiver that finds one rejects the message — `why:"shape"`). In `say`, `text` + `excerpt`
+  together ≤ 20 000. These rules make every UTF-16 unit cost ≤ 3 bytes of JSON, so a maximal `say` (≈ 60 400 bytes) always
   fits one frame — no device → host chunking of text exists. A violation is answered (`say_res ok:false why:"too_long"` /
   `"shape"`), not a closed session; an over-size *frame* still closes the session (§3).
 - Ids: `r` (request id) `[A-Za-z0-9_-]{1,32}` echoed on every answer; `sid` / `bid` = 128 random bits as 22 base64url
@@ -669,9 +666,9 @@ a revoke in the middle stops the message there (P33-X07).
 ### 10.2 `say` — chat with attachments, quote and withdraw
 | direction | message | meaning |
 |---|---|---|
-| device → host | `{"t":"say","sid","text","ts":<ms>[,"att":["<bid>",…]][,"reply_to":<turn id>][,"excerpt":"<≤ 2 000>"][,"quote_more":[{"id":<turn id>[,"ex":"<≤ 2 000>"]},…]]}` | one message to the Agent. `att` ≤ 10 ids, each a finished blob of this device (§10.3), no duplicates; `reply_to` = a turn id of the current epoch (§10.5); `excerpt` only with `reply_to` (the text the human selected on that page). `quote_more` (P286, only to a host announcing `mq5`, only with `reply_to`): 1–4 more quotes after the first, in the order picked — ≤ 5 in all, each an id of the current epoch with its own optional excerpt; `text` + every excerpt together ≤ 20 000. `text` may be empty only when `att` is not |
+| device → host | `{"t":"say","sid","text","ts":<ms>[,"att":["<bid>",…]][,"reply_to":<turn id>][,"excerpt":"<≤ 2 000>"]}` | one message to the Agent. `att` ≤ 10 ids, each a finished blob of this device (§10.3), no duplicates; `reply_to` = a turn id of the current epoch (§10.5); `excerpt` only with `reply_to` (the text the human selected on that page). `text` may be empty only when `att` is not |
 | host → device | `{"t":"say_res","sid","ok":true,"state":"queued"\|"delivered","turn":<id>}` · `{"t":"say_res","sid","ok":false,"why",["att":[ids]]}` | accepted (its source entry is history turn `turn`) / refused, nothing queued: `shape` · `too_long` · `stopped` (estop: the phone shows §8's 「已急停：这条没有交给 Agent，也不会排队。恢复后再发。」) · `att_gone` (ids not staged — the phone re-uploads exactly those) · `att_open` (still uploading) · `too_many_att` · `reply_unknown` · `dup` (this `sid` was used — the host remembers the newest 1 024 sids per device, beyond the 10-min table) · `too_many` (16 of this device's sends still wait for the Agent: refused, none evicted) · `no_agent` |
-| host → device | `{"t":"say_state","sid","s":"transcribing"\|"taken"\|"delivered"\|"cancelled"\|"failed"[,"why"]}` | progress after `say_res`; `taken` (P282) = the Agent took it off its queue and is opening the harness for it (a shared Codex spawns + resumes first) — no longer shown as queued, a withdraw may still win until `delivered`; `delivered` = handed to the harness (Claude Code stdin line written / Codex `turn/start` sent / OpenCode `prompt_async` accepted). Older phones ignore `taken` |
+| host → device | `{"t":"say_state","sid","s":"transcribing"\|"delivered"\|"cancelled"\|"failed"[,"why"]}` | progress after `say_res`; `delivered` = handed to the harness (Claude Code stdin line written / Codex `turn/start` sent / OpenCode `prompt_async` accepted) |
 | device → host | `{"t":"say_cancel","sid"}` | relay's 「× 取消」 |
 | host → device | `{"t":"say_cancel_res","sid","r":"cancelled"\|"already_delivered"\|"not_found"}` | `cancelled` = it will never reach the Agent; its attachments go back to staged under the same ids (TTL continues) |
 - **Withdraw semantics** (relay `compose.Sends`): one lock per send from "is it cancelled?" through the write to the harness;
@@ -803,15 +800,6 @@ code units (relay `EXCERPT_MAX`), taken by the phone from the rendered reply of 
 phone); the host does not check it against the reply (the rendering differs from the stored Markdown), it labels it. The
 stored `src.quote` lets every phone draw the quote above the input and jump to page `quote.id` (loading older pages with
 `hist_get before` until it is there; gone after a reset = stay).
-**Several quotes (P286).** The phone keeps up to five quotes above the field — each selection adds one (never replaces), 回复
-adds the whole page; the sixth is refused with 「最多 5 段」 (the clipboard still gets the latest selection). They may come from
-the same page or different pages, found by paging or in the full-screen reader. `ready.caps` `"mq5"` = the host takes
-`say.quote_more` (§10.2): `reply_to`/`excerpt` carry the first, `quote_more` the rest in order, so an older host still gets the
-first one; to a host without `mq5` the phone appends quotes 2…5 to `text` as the human's own words, labelled. With two or more,
-the Agent gets one block per quote: 「【引用 i/n · 你的回复 #<id> · <HH:MM, or MM-DD HH:MM when not today>】」 + the words as
-`> ` lines; an excerpt adds 「（摘录）」 and 「（选自这条回复，它的开头：<first line ≤ 60>）」 unless it starts with it (one quote = the
-single block exactly as before). Stored: `src.quote` = the first, `src.quote.more` = `[quote_info…]` for the rest (older phones
-ignore it). `reply_unknown` if any of them is gone.
 
 ### 10.7 Questions — AskUserQuestion and its equivalents; an answer is an approval
 | direction | message |
@@ -1067,28 +1055,10 @@ Every answer is one `{"t":"mail_res","r","ok","why"?,"view"}` on the asking sess
 reason only, never content), the latest Authentication-Results sample and the presets. `mail_test` adds `test`
 `{imap, smtp, auth_sample}`; `mail_check` adds `check` (counts). **The app password never travels in these messages:**
 `mail_key` makes the host open a §11 secret card (`name` `AGENTJ_MAIL_PASSWORD`, sealed and signed like every secret card);
-the host stores it AES-256-GCM under a key derived from its own identity key, then checks IMAP and SMTP with the value
+the host signs in to IMAP and SMTP with the value, stores it AES-256-GCM under a key derived from its own identity key
 (`<state>/mail/secret.bin`, 0600), wipes it, and answers `mail_res` once when the card ends (≤ its 600 s). A paired phone
 may widen the allowlist directly; the same change from inside an Agent (`agentj mail …` over the control socket without
 an owner claim) becomes an approval card (`agentj mail`, the changes listed) and applies only when allowed.
-
-P256: `mail_key` continues to open the same sealed §11 secret card as `agentj mail password` (no password fields in `mail_*`). Provider-specific label, steps, official URLs and server summary are in its signed `purpose` (up to 2000 characters for the host-generated mail card). Gmail display spaces are removed on the host only. Host saves encrypted first and runs a read-only test; final `mail_res` additionally has `verify: "ok" | "fail"` and a fixed safe `detail` reason. `ok:true` means saved even when verification failed. No message is sent by the test. Existing pairing, signature, passkey, nonce and seal rules apply unchanged.
-
-### 10.21 The iMessage assistant's card — `host.platform` · `host.imessage` · `imsg_check` · `imsg_fda` (P274)
-
-The `preferences` message's `host` block carries `"platform"`: `"macos"` | `"linux"` | `"other"` (the computer's OS). Only
-for `"macos"` does it also carry `"imessage"` `{status: ok|no_fda|no_db|schema|error|pending|off, last_scan, next_digest,
-digest_waiting, alerts_today, blocked_today, grant_to?, hint?}` — counts and a program name, **never message text**. The
-phone shows Settings → iMessage 助手 only when `platform` is `"macos"` and `settable` lists `imessage.enabled`.
-Parameters are ordinary `pref_set` keys (`imessage.enabled`, `.interval_minutes`, `.delivery`, `.digest_at`,
-`.quiet_hours`, `.strictness`, `.codes`, `.groups`, `.llm`); a host that is not a Mac answers `pref_res` `problem`
-`"not_macos"`. `imessage.instructions`, `.vip`, `.mute` arrive in `value` for display and are never phone-settable
-(`not_allowed`); the Agent changes them with `agentj imessage …` through the same validator.
-Device → host (p33, ready, allowlisted): `{"t":"imsg_check"|"imsg_fda","r":<rid>}`. `imsg_check` runs a fresh read-only
-doctor (and one scan when it passes); `imsg_fda` opens System Settings at Full Disk Access on the Mac and reveals the
-program to add. One answer on the asking session: `{"t":"imsg_res","r","ok","why"?,"check"?:{status?,grant_to?,hint?}}`,
-then a `preferences` broadcast. Alerts and digests reach the phone as ordinary history pages (`src.via = "imessage"`,
-a content-free `reply` push); nothing is ever sent back toward Messages.
 
 ### 10.16a A remote renames itself — `dev_rename` / `dev_rename_res` (P179)
 
@@ -1975,7 +1945,7 @@ Host → device, display only (no signature, no answer, never part of an approva
 2 s; `rev` = a hash of theme.json + files, unchanged rev = no send). A factory theme carries only `id`/`factory`/`rev`
 (the page has its files); `broken:true` = the active custom theme failed serve's re-check and the factory robots are used.
 Custom themes are written by `agentj theme apply|reset|restore` after `agentj theme validate` (schema
-`host/agentj/themes/theme.schema.json` = https://agentj.app/schema/agentj-theme-2.json + file rules: PNG sizes, 13 frames,
+`host/agentj/themes/theme.schema.json` = https://agentj.app/schema/agentj-theme-1.json + file rules: PNG sizes, 13 frames,
 hard pixel edges, ≤ 8 colours per robot, contrast — P187: menu text and its 72 % notes ≥ 4.5:1 on the menu background and
 panel, the menu accent ≥ 3:1 on the background); ≤ 512 KiB of files, so ≤ 2 MiB after base64 = within §10.1 frag.
 The page (`web/public/js/theme.js`) re-checks every field (hex `#rrggbb`, PNG signature + IHDR size, the same pixel
@@ -1984,15 +1954,6 @@ colours as CSS variables (`--menu-bg --menu-panel --menu-text --menu-accent --me
 dots (busy.js). Locked whatever a theme says: pairing / safety code / security (P187: its menu page keeps the factory menu colours) /
 offline / removed screens, the 网页版 badge, the menu's shield line, the home-screen icon, fonts, every agentj.app page. A host without §23 sends nothing (the
 page keeps the factory robots); a page without §23 ignores the message.
-
-P263 compatible extension (wire `v:1` unchanged; theme folder schema2): `logo` may instead be
-`{"states":{"idle":<base64>,"working":<base64>,"waiting":<base64>,"question":<base64>,"offline":<base64>},"disc":bool}`.
-All five static PNGs have the same128|256 square size, each≤64KiB; host checks nonempty images and≥10% readable
-pixels at2.5:1 against the state background or opaque Lotion disc (disc/background≥2.5:1). A legacy `png` still works;
-a missing logo in a robot-only applied package retains the active custom logo, otherwise factory group. The page preloads
-five URLs and selects the state. Non-chat headers use the official father sprite in the matching state colour (12 frames,
-2.4s); reduced motion is static with an inset heartbeat outline. Tap menu/hold chat; custom logos remain chat-only.
-The existing512KiB file cap and2MiB fragmented-message cap cover five-logo packages; no new data or approval path.
 
 ## 24. 遥控器管理 from a paired remote (P171, 0.20.0, ADR-P171)
 
@@ -2050,18 +2011,6 @@ source `agent` → `{ok, sent[], files[], new_contacts[]}` · `why`: `denied` ·
 `no_password` · `send_failed` · `group_source`. Logs: counts and reason words only (`contacts_*`, `mail_fwd`, `mail_send`,
 `contact_card*`), never an address, a name or a body.
 
-P296 (Leo, 10-15): **no card** when every recipient is the owner's own address (slot 0 + 「我本人」 allowlist rows; approvals.log
-reason `owner_direct`) or on the e-mail channel's allowlist (§ P170 rows, any role — the same rows that let their mail in;
-reason `allowlist`); the answer carries `owner_direct`, `no_card: true`. One other recipient → the card as before, whose `ask`
-message carries `allow_offer: [address]` (recipients neither the owner's nor allowlisted, in recipient order). The phone shows
-one unticked box per address 「以后发给 X 不用再确认（加入白名单）」; `answer {…, ok:true, allow_add:[ticked, in offer order]}` is
-signed as the allow text plus one line `"\n" + hex(SHA-256("allow:" + ticked.join("\n")))` (JS `wire.js` `mailAllowMessage`,
-Python `approvals.allow_add_line`; the log keeps that hash as `scope_sha256`, so `--verify` re-checks it). The host refuses
-(`answer_refused` `allow_add`) picks that are not an ordered subset of its own offer, on a deny or a batch. Ticked addresses join
-the allowlist as `guest` (`allowlisted: […]` in the answer) — no second card. Declined / timed out → `why: denied`, the CLI prints
-「主人没在手机上确认，邮件没有发出」 on stderr and exits 1. `agentj mail allow <address>` from inside an Agent (P170 widening)
-now waits for its card (「加入后：他的来信会直接处理，给他发信不用再确认」) and exits 0 only when it was applied.
-
 Entry for other cards (P183): `js/contacts.js` `openForward({turn?, mid?, name?, whole?})` / `forwardAvailable()`, also
 `window.AgentJMailForward`, or any element with `data-mailfwd` + `data-turn` / `data-mid` / `data-name`.
 
@@ -2075,18 +2024,6 @@ reply's first line without the input); body = 「你问」 (src.name, page ts, s
 order while their sum stays ≤ 20 MiB; a file over the rest is not read and is listed 「文件太大未附上」, a file gone or
 changed since the page 「文件已不在，未附上」. Input, quote and reply are redacted (privacy.redact) first. P183's file cards
 reach the dialog through `js/mailfwd.js` `registerMailForward`, registered on `ready` only when cap `contacts` is on.
-
-**P295 — what the owner hears back.** `mail_fwd_res` gains `skips?: [{name, bytes, why: too_big | secret | gone}]` +
-`limit` (FILES_MAX) next to `skipped`, `refused?: n` (recipients the SMTP server turned down; `sent` counts the rest) and
-`why: dup` + `ago` (s): the same page / file with the same `input` to the same recipient set already went out within
-600 s — `mail_fwd {…, again: true}` sends anyway. A file the strict scan holds back from someone else (`secret`) is
-listed in that mail only as 「未附上」 / "Not attached" (never why); the owner's phone says why. The phone shows the
-result in the same centred dialog (已发到 + each address · every skipped file with its reason, size and the limit ·
-「发送失败」 + reason + 重试 · 「刚刚已经发过了」 + 再发一次), never a toast; its buttons ignore taps for 600 ms after it
-appears. A Chinese reply's leading English work-note sentences (≤ 3 one-line paragraphs before the first Chinese text)
-are left out of the mail. Host log `mail_fwd`: `to` / `files` / `skipped` / `refused` counts, recipient `domains`, our
-`msgid` and the SMTP server's queue id (`smtp`, last word of its 250 after DATA) — never an address. privacy: a
-hyphenated title slug (≥ 6 chunks, ≥ 4 of them words) is not a high-entropy token.
 
 **P207 — the address-book page's own operations** (same routing and gate as `ct_list` / `ct_save`: elevate types, an
 approved device only — anything else is ignored; logs carry result words and counts only):
@@ -2254,12 +2191,6 @@ a y/N (no → `reason: not_confirmed`), otherwise the card and `UPGRADE_RESULT r
 opportunity, a version the daily check already recorded installs the first time the items list is empty and no phone input
 came for 30 minutes — once a local day, never while stopped. The result notice says 「电脑空闲时已自动升级到 …」.
 
-### P247 — owner-level history read receipts (candidate)
-
-`hist_meta` and `hist_page` add `read` (nonnegative integer) for their `epoch`. A ready, allowlisted p33 remote sends `{t:"hist_read",epoch,id}` over its authenticated Noise transport when the visible reply page is shown in foreground chat. The host validates the current epoch and an existing nonsilent reply id, persists the maximum in owner-only `history-read.json`, then sends `{t:"hist_read",epoch,read}` to all ready allowlisted p33 remotes. This is a visual receipt with no approval or execution authority; no control signature/nonce or cloud storage is added. Unknown ids, silent/empty replies and old epochs never advance it. Lower receipts are no-ops. A history reset changes epoch and starts at zero.
-
-Before painting unread after ready/foreground, the client fetches the head (`hist_get`) with the host watermark; while that fetch is unresolved it suppresses unread hints. Same-host/same-epoch snapshots merge by maximum. Numbers-only host-scoped local receipts retry after reconnect, including a receipt whose first transmission was lost; legacy device-local records are not imported into host state. Hosts without the additive `read` field retain the P207 device-local fallback. The account-page web remote uses this same client; separate hosts/seats retain separate watermarks.
-
 ## 30. The five pages: 工作流 · 技能 · 记忆 · Agent J · 消息 (P244, host 0.21, design P233 / P234)
 
 The logo opens a menu of five parallel pages (the chat page is one of them). Four of them read what is on the computer:
@@ -2344,54 +2275,6 @@ worker reports to the workflow CEO unless a specific parent is explicitly declar
 The Working tab is the default on each open, retains existing task detail actions and adds the reported AI tool and model.
 Arrow keys/Home/End switch the two accessible tabs. Plain text vendor marks are fallbacks, never invented look-alike logos.
 
-### 30.5 First scan, CEO roster, 「初始化 / 复查组织结构」 (P276, candidate after 0.21.0a1)
-
-Additive, same capability `wf1` (an older page ignores the new fields; an older host sends none and the page treats them as absent).
-
-- **When**: once at host start (when an Agent is configured, not in a workflow CEO's own serve) and on every `wf_list`. The scan
-  stays one level deep, is bounded to `SCAN_BUDGET` = 5 s (folders past it keep their last card, or wait for the next scan; the
-  tail then carries `"partial": true`) and peeks at ≤ 64 entries per child folder. Unchanged folders are not re-read (mtime signature).
-- **WDB**: §30.1's rules, plus: an entry file (`CLAUDE.md` / `AGENTS.md`) + `documentation/CONSTITUTION.md` + one of
-  `STRUCTURE.json` / `IDENTITY.md` / `WORKFLOW.md` / `NEXT_SESSION.md`.
-- **CEO roster = Agent J's CEO registry**: the working root's `documentation/ROLES.md` (roster table) — a folder also counts as
-  registered when `documentation/STRUCTURE.json` `workflows[]` names it (`id` / `dir`). A WDB folder not named there gets **one
-  appended row** (`| folder | folder/CLAUDE.md | 手动 | folder/reports/ | 扫描补登 |`, the table's own column count; a new
-  section with the standard table when the file does not end with a table). Never creates ROLES.md, never changes a byte already
-  in it (checked), refuses a symlink, a file over 256 KiB, a name that would break a cell or looks like a credential, and any row
-  the privacy layer flags; written under the wizard lock with its atomic write. Each added folder is remembered in
-  `<state>/workflows.json` `reg` (root + folder): a row the owner deletes is never added back. `agentj wizard register --dir .`
-  does the same on demand (inside the fence, no state) and `agentj wizard doctor` reports `roster` ok / warn.
-- **Wire**: each WDB `W` gains `"reg": bool`; the last `wf_items` tail gains
-  `"org":{"registry":bool,"ready":bool,"unreg":n}` (`ready` = the roster exists and names at least one WDB folder).
-- **Page**: under the meta line, a secondary button: 「初始化组织结构」/ Set up organization, or 「复查组织结构」/ Review organization
-  once `org.ready` or after one tap on this page. A tap sends the main Agent one standard dictionary prompt (`p276.setupPrompt` /
-  `p276.reviewPrompt`: agentj-workflow-wizard, list unorganised projects before touching them, `agentj wizard register` +
-  `doctor`, report the cards). The P267 light confirmation card is not out yet: the prompt is sent at once and the note under the
-  button says so. `counts.wdb == 0` → the three workflows that come with Agent J on the Plaza (`llm-wiki`,
-  `script-article-writing`, `ebook-writing`) as cards; 「装上它」 sends a prompt to preview `agentj plaza install <id>` first.
-  A WDB card with `reg: false` shows 「未登记到 CEO 花名册」.
-
-
-### 30.6 Staff, 「只有 CEO」 (P308, candidate after 0.21.1a1)
-
-Additive, same capability `wf1` (an older page ignores the fields; an older host sends none and the page shows nothing new).
-
-- **Staff = employees only**: `.claude/agents/*.md` with a front-matter `name`, and `.codex/agents/*.toml` with a top-level
-  `name` (one entry per slug; the `.md` wins). A README or a note in those folders is not listed and not counted.
-- **Wire**: `A` gains `"title"` (front matter `title`, else `name_zh` / `display_name`; omitted when absent or equal to the
-  slug — the page then shows `name`); a `desc` that starts with the title loses that prefix. Each `W` gains `"staff": n`
-  (counted before §30.1's 60-entry cut). The tail's `org` gains `"nostaff": n` = WDB folders with `staff == 0`.
-- **Page**: a WDB card with `staff === 0` shows 「只有 CEO，还没有员工」 / Only a CEO, no staff yet (the §30.5 badge's small
-  type); `org.nostaff > 0` adds 「（n 家只有 CEO）」 to the 「初始化 / 复查组织结构」 label (`p308.count`). Both prompts gain step 5:
-  propose 3–7 staff from the company's reports/, task.json and RUN.md, show the owner first, then `agentj wizard apply`.
-- **Wizard**: staging accepts `[<id>/].claude/agents/<role>.md` (front matter `name` = file name + `description`) and
-  `[<id>/].codex/agents/<role>.toml` (valid TOML, `name`, `description`, `developer_instructions`); `apply` writes the Codex
-  twin of each staged `.md` that has none; both go through the owner-change guard. `agentj wizard doctor` gains `staff`
-  (warn, never fail) listing workflow folders whose CEO has no staff.
-- **Dispatch**: `capability dispatch` → `queued` carries `"staff_hint"` (one line for the reply) when that folder's CEO has
-  no staff and the company was not mentioned before; `agentj workflows --staff-hint <folder>` answers the same for any other
-  dispatch route. Once per (root, folder), remembered in `<state>/workflows.json` `staffhint`.
-
 ## 31. AI 登录救援 — re-sign-in a harness from the phone (P258, host 0.21; the number is provisional until the merge)
 
 A harness whose **subscription login** expired (not a balance or rate limit) is signed in again from a paired phone, without
@@ -2404,10 +2287,8 @@ AI 登录救援). The whole chain is serve's deterministic code — the logged-o
 Push to every ready p33 phone (and on ready while the dot is on): `{"t":"auth_rescue","view"}`.
 `view = {"dot": bool, "harnesses": [{kind, label, installed, current, state: ok|login|balance|rate_limit, routes,
 [token: {minted, expires, days_left}], [warn], [login], [conflicts: [names]], [last: {result: recovered|failed|partial|blocked,
-at, [why], [screen: {id, action, label[, last]}], [answered], [note]}], expiry: known|unknown|auto|none, [health: {at, ok,
-[cls]}]}], "flow": null | {kind, route, stage: starting|device|url|paste|verifying|done|failed, [url], [code], [expires_at],
-[why], [round], [rounds], [reopened: expired|rejected|timeout]}, [renew: {kind:"claude", days_left, expires, mark}]}`
-(P288 fields: `expiry`, `health`, `round`/`rounds`/`reopened`, `renew`).
+at, [why], [screen: {id, action, label[, last]}], [answered], [note]}]}], "flow": null | {kind, route, stage:
+starting|device|url|paste|verifying|done|failed, [url], [code], [expires_at], [why]}}`.
 `code` is the Codex one-time device code (short-lived, shown so the owner can type it on another device). **No
 authorization code or token is ever in these messages**: Claude's code / token goes into the sealed secret card (§11,
 `name` `CLAUDE_AUTH_CODE` / `CLAUDE_CODE_OAUTH_TOKEN`, a host-internal `sink`).
@@ -2430,20 +2311,5 @@ restarts before its next turn, an Agent-J-started shared terminal is replaced, t
 `screen_check` opens the harness's interactive screen in a PTY for ≤ 25 s and walks `BLOCKERS` (auto: fixed keys; confirm:
 reported, the phone may press; fail: reported by name; unknown: the scrubbed last line) → `harness.probe` must get a reply →
 only then `last.result:"recovered"` and a notice. Detection: every adapter failure line is classified (balance and rate limit
-first, so they never start a re-login); `login` lights the dot and sends one notice per 10 minutes.
-
-**P288 — renewing before expiry.** `expiry` per harness: `known` = a Claude setup-token Agent J stored (minted day + 365;
-the only countdown — no API tells the date); `unknown` = a `CLAUDE_CODE_OAUTH_TOKEN` stored elsewhere; `auto` = `/login` or
-Codex (refreshed by the CLI); `none` = provider keys. Reminders: inside the last 7 days `renew` is in the view (the phone's
-「现在续期」 banner, dismissed locally per `mark`) and the dot is on; one notice + push per expiry on days 7, 3, 1
-(`MARKS`; a missed day fires only the smallest mark crossed, each once; recorded as `claude.reminded {expires, marks}` in
-auth-rescue.json). The banner / button sends the ordinary `auth_start claude setup_token` (same passkey gate). The
-authorize link (only in `flow`, i.e. only to paired phones) lives 10 minutes = the secret card's TTL; an unused link or a
-refused code opens the next round by itself (`round` of `rounds` = 3, `reopened` says why). A new credential replaces the
-old one at once after its live check (token: `claude -p` with exactly that token; Codex: one tool-free `codex exec`);
-a failed check keeps the old one (Codex: the previous auth.json bytes are restored) — `why:"verify"` / `"verify_codex"`.
-Health: once a day, first ≥ `HEALTH_DELAY` (600 s) after serve starts, one tool-free call (the bots' native no-tool
-command) per harness that is installed and not known to be signed out; output classified in memory and dropped →
-`health {at, ok, cls}`; `cls:"login"` → the rescue notice + dot at once; `balance` → the top-up state; rate limit /
-network → recorded only; a pass clears a stale login dot. Never a model call before `HEALTH_DELAY`; reminders and the
-health check wait outside the quiet hours (22:00–07:00 local, `browser_login.QUIET`).
+first, so they never start a re-login); `login` lights the dot and sends one notice per 10 minutes. A recorded token is
+reminded once a day inside its last 30 days.

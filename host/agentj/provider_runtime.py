@@ -132,16 +132,13 @@ async def request_key(host, provider):
         api = next((api for api, npm in NPM.items() if p.get('npm') == npm), None)
         if not api:
             return {'result': 'unsupported'}
-        from .bailian import verify_for
-        fixed = verify_for(provider)   # P310: Bailian's Anthropic base has no model list; its OpenAI one does (or none: Coding Plan)
-        url = fixed[0] if fixed else await asyncio.to_thread(public_url, options(p).get('baseURL'), 'models')
-        if not url and not fixed:
+        url = await asyncio.to_thread(public_url, options(p).get('baseURL'), 'models')
+        if not url:
             host.agent_notice('无法验证该服务商地址，暂不能打开密钥卡。' if getattr(host, 'lang', 'en') == 'zh' else 'Cannot verify this provider address; the key card is unavailable.')
             return {'result': 'unsupported'}
         card = elevate.norm_secret({'name': name, 'purpose': provider+' API Key',
-            'dest': 'env:'+env_path()+'#'+name, 'verify_url': url or '', 'verify_header': (fixed[1] if fixed else HEADER[api]) if url else ''},
-            host.st.root)
-        card["verify_before_write"] = bool(url)
+            'dest': 'env:'+env_path()+'#'+name, 'verify_url': url or '', 'verify_header': HEADER[api]}, host.st.root)
+        card["verify_before_write"] = True
         return await host.elevate.request(card)
     finally:
         host._provider_cards.discard(provider)

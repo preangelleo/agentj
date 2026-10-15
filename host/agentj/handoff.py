@@ -108,94 +108,10 @@ def recover_text(lang: str, kind: str, has: bool, where: Path | None = None) -> 
 
 
 def phone_line(lang: str, kind: str) -> str:
-    from . import humane
-    return humane.say("recover.clear" if kind == "clear" else "recover.compact", lang)
+    if kind == "clear":
+        return "Cleared; the Agent is reading its handoff." if lang == "en" else "已清空，Agent 正在读交接文件。"
+    return "Compaction finished; the Agent is restoring its context." if lang == "en" else "压缩完成，Agent 正在恢复上下文。"
 
 
 def now() -> float:
     return time.time()
-
-
-# ------------------------------------------------------------------ P289: switching the harness
-# Leo (2026-10-14): "切换 Harness 的时候，写好交接文档，有一个标准的 Protocol 进行交接……把之前的对话的精要落档就行了". The
-# harness being switched away from writes `switch.md` (the agentj-handoff format) in a host turn right before the switch
-# (switch_harness.worker, after the gate and the way-back check); the new harness's first turn — the host's 「自报家门」 —
-# reads it first, then one more host turn carries on with its next step. Same place as the compaction handoff: a shared
-# session (the owner's unfenced harness) → `~/.local/state/agentj/handoff/switch.md`; Agent J's own conversation →
-# `<working root>/.agentj/handover/switch.md` (the fence hides the state directory). No session id in either name.
-SWITCH = "switch.md"
-SWITCH_WAIT = 180.0         # s: the writing turn; timed out or failed → switch anyway, the owner is told there is no handoff
-SWITCH_MAX_LINES = 150      # the instruction's length limit (the essentials, not a transcript)
-SWITCH_MARK = "[agentj:switch-handoff]"   # first line of the writing instruction (logs, tests, the stand-ins)
-
-
-def switch_shared(cfg: dict | None) -> bool:
-    return (cfg or {}).get("session_mode") == "shared"
-
-
-def switch_path(cfg: dict) -> Path:
-    if switch_shared(cfg):
-        return path(SWITCH)
-    from . import compactprep, inbox
-    return Path(cfg["dir"]) / inbox.DOT / compactprep.DIR / SWITCH
-
-
-def switch_where(cfg: dict) -> str:
-    """The path as the Agent is told it: `~/…` in a shared session (copyable from the phone); absolute in Agent J's own
-    conversation, whose fenced home is not the owner's."""
-    return shown(switch_path(cfg)) if switch_shared(cfg) else str(switch_path(cfg))
-
-
-def switch_ensure(cfg: dict) -> None:
-    try:
-        if switch_shared(cfg):
-            ensure()
-        else:
-            from . import compactprep
-            compactprep.ensure_dir(cfg["dir"])
-    except OSError:
-        pass
-
-
-def switch_probe(cfg: dict) -> tuple | None:
-    """(mtime, size, sha256) of switch.md, never through a link; None when missing / empty / not ours."""
-    from . import compactprep
-    if not switch_shared(cfg):
-        return compactprep.probe(cfg["dir"], SWITCH[:-3])
-    import hashlib
-    import stat as _stat
-    try:
-        fd = os.open(path(SWITCH), os.O_RDONLY | os.O_NOFOLLOW | getattr(os, "O_CLOEXEC", 0))
-        with os.fdopen(fd, "rb") as f:
-            s = os.fstat(f.fileno())
-            if not _stat.S_ISREG(s.st_mode) or s.st_uid != os.getuid() or s.st_size <= 0:
-                return None
-            data = f.read(compactprep.READ_MAX)
-    except OSError:
-        return None
-    return (s.st_mtime, s.st_size, hashlib.sha256(data).hexdigest()) if data.strip() else None
-
-
-def switch_prep_text(lang: str, where: str, frm: str, to: str) -> str:
-    """The host turn for the harness being switched away from (`frm`, `to` are display names)."""
-    n = SWITCH_MAX_LINES
-    if lang == "en":
-        return (SWITCH_MARK + "\n" + TAG["en"] + " The owner is switching the harness from " + frm + " (you) to " + to + "; " + to + " cannot see this "
-                "conversation. Before the switch, write the handoff with the " + SKILL + " skill to `" + where + "` (Markdown; if it "
-                "exists, read it and merge into one new version; at most " + str(n) + " lines): 1. the owner's key points in "
-                "their own words; 2. progress (done / in progress / not started); 3. decisions already made; 4. key absolute "
-                "paths and commands; 5. pitfalls and failed attempts; 6. the next step; 7. questions waiting for the owner. "
-                "Only the essentials — leave out small talk and process. No keys, tokens, passwords or other credentials. "
-                "Then reply with one line \"Handoff written\" and do nothing else.")
-    return (SWITCH_MARK + "\n" + TAG["zh"] + "主人要把底层 harness 从 " + frm + "（你）切换到 " + to + "，" + to + " 看不到这边的对话。切换前先按 " + SKILL
-            + " 技能把交接写进 `" + where + "`（Markdown；已有就先读再合并成一份新的；不超过 " + str(n) + " 行）：1. 主人原话要点；"
-            "2. 进度（已完成 / 进行中 / 没开始）；3. 已拍板的决定；4. 关键绝对路径和命令；5. 坑和失败的尝试；6. 下一步；"
-            "7. 等主人回答的问题。只留要点，闲聊和过程略过；不写任何密钥、token、密码或其他凭据。写完只回一句「交接写好了」，不要做别的事。")
-
-
-def switch_resume_text(lang: str, where: str) -> str:
-    """After the new harness introduced itself (and the switch was verified): carry on — the P151 recovery's twin."""
-    if lang == "en":
-        return (TAG["en"] + " The switch is done. Carry on with the task from the handoff " + where + " (its next step) as "
-                "if nothing had happened; if it has no task in progress, stop and wait for the owner.")
-    return TAG["zh"] + "切换完成。按交接文件 " + where + " 里的「下一步」接着干刚才的任务；交接里没有进行中的任务就停下，等主人发话。"

@@ -20,8 +20,6 @@ from dataclasses import dataclass, field
 
 QUOTE_CHARS = 300
 EXCERPT_MAX = 2000
-QUOTES_MAX = 5                  # P286: one say quotes ≤ 5 places (reply_to + excerpt, then quote_more ≤ 4)
-CAP_MQ = "mq5"                  # P286: `ready` caps — this host takes `quote_more`
 SEND_TTL = 600
 MAX_SENDS = 16                  # not yet handed to the Agent, per device (the 17th is refused: too_many)
 SEEN_MAX = 1024                 # sids remembered per device (dup), independent of SEND_TTL
@@ -51,8 +49,6 @@ T = {
         "asr_more": "（转写较长，上面只是开头；全文在 {path}）",
         "quote_head": "【回复 #{id} · {who} · {hhmm}】",
         "excerpt": "（摘录）",
-        "mq_head": "【引用 {i}/{n} · 你的回复 #{id} · {when}】",
-        "mq_ctx": "（选自这条回复，它的开头：{line}）",
         "voice_only_fail": "（这条消息只有语音、没有文字，而且语音没转写出来。请简短告诉对方没听清，请他再说一遍或者打字——不要自己猜他说了什么。）",
         "who": {"phone": "你", "host": "电脑", "agent": "Agent", "sys": "系统", "task": "定时任务", "cmd": "命令"},
         "why": {"timeout": "处理超时", "no_speech": "没有听到说话", "not_installed": "电脑上还没装语音转写",
@@ -70,8 +66,6 @@ T = {
         "asr_more": "(Long transcript: only the beginning is above; the full text is at {path})",
         "quote_head": "[Reply to #{id} · {who} · {hhmm}]",
         "excerpt": "(excerpt)",
-        "mq_head": "[Quote {i}/{n} · your reply #{id} · {when}]",
-        "mq_ctx": "(selected from that reply, which begins: {line})",
         "voice_only_fail": "(This message is a voice note only, with no text, and it could not be transcribed. Briefly tell them you "
                            "did not catch it and ask them to say it again or type it — do not guess what was said.)",
         "who": {"phone": "you", "host": "computer", "agent": "Agent", "sys": "system", "task": "scheduled task",
@@ -118,36 +112,6 @@ def quote_block(turn: dict, excerpt: str | None, lang: str) -> str:
     if excerpt:
         lines.append("> " + T[lang]["excerpt"])
     return "\n".join(lines)
-
-
-def _first_line(text: str, n: int = 60) -> str:
-    for ln in (text or "").split("\n"):
-        ln = ln.strip().lstrip("#>*-+ ").strip()
-        if ln:
-            return ln if len(ln) <= n else ln[:n] + "…"
-    return ""
-
-
-def quotes_block(items: list, lang: str) -> str:
-    """P286: [(turn, excerpt|None)], in the order the human picked them. One = `quote_block` exactly; two to five = one
-    numbered block each — 「引用 i/n」, the page's id (the Agent's own reply: the phone quotes reply cards) and time (with the date when not today), the words as `> `
-    lines; an excerpt also gets that reply's opening line so the Agent knows which reply it came from."""
-    if len(items) == 1:
-        return quote_block(items[0][0], items[0][1], lang)
-    t, now, out = T[lang], time.localtime(), []
-    for i, (turn, ex) in enumerate(items, 1):
-        q = quote_info(turn, ex, lang)
-        lt = time.localtime((q["ts"] or 0) / 1000)
-        when = time.strftime("%H:%M" if lt[:3] == now[:3] else "%m-%d %H:%M", lt)
-        lines = [t["mq_head"].format(i=i, n=len(items), id=q["id"], when=when)]
-        lines += ["> " + ln for ln in (ex if ex else q["text"]).split("\n")]
-        if ex:
-            lines.append("> " + t["excerpt"])
-            head = _first_line((turn.get("reply") or {}).get("text") or "")
-            if head and not ex.strip().startswith(head.rstrip("…")[:12]):
-                lines.append("> " + t["mq_ctx"].format(line=head))
-        out.append("\n".join(lines))
-    return "\n\n".join(out)
 
 
 def render(text: str, files: list[dict], lang: str = "zh", quote: str | None = None) -> str:

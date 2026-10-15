@@ -1,5 +1,3 @@
-// P247: new hosts own the maximum watermark, scoped by host and epoch. Owner receipts
-// are cached for reconnect retries; P207 bookkeeping below is only the old-host fallback.
 // P207 (追加 2): 「未读」 = the Agent's replies that arrived after the last one this device saw while the page was in the
 // foreground. Each remote keeps its own mark, here in localStorage (UNREAD_KEY = "aj.unread": {e, m, s} — the history
 // epoch, the read-up-to turn id, and the ids seen above it; numbers only, never text). Silent turns are not pages, so they
@@ -21,9 +19,7 @@ function writeStore(st) {
 }
 
 export function createUnread() {
-  let st, owner = false, scope;
-  const ownerKey = () => 'aj.ownerRead:' + scope;
-  const saveOwner = () => { try { localStorage.setItem(ownerKey(), JSON.stringify({e:st.e,m:st.m})); } catch {} };
+  let st;
   const state = () => (st === undefined ? (st = readStore()) : st);
   return {
     /** Before anything else on a synced history: first run → everything already here counts as read; another epoch
@@ -31,29 +27,13 @@ export function createUnread() {
     sync(epoch, ids) {
       const s = state();
       if (!s) { st = { e: epoch, m: ids.length ? ids[ids.length - 1] : 0, s: new Set() }; writeStore(st); return; }
-      if (owner) return;
       if (s.e !== epoch) { s.e = epoch; s.m = 0; s.s.clear(); writeStore(s); }
     },
-    bind(key) { if (scope !== key) { scope = key; owner = false; st = undefined; } },
-    owner(epoch, mark) {
-      if (!Number.isSafeInteger(epoch) || !Number.isSafeInteger(mark) || mark < 0) return false;
-      if (!owner || !st || epoch > st.e) {
-        let saved;
-        try { saved = JSON.parse(localStorage.getItem(ownerKey()) || 'null'); } catch {}
-        st = {e: epoch, m: saved?.e === epoch && Number.isSafeInteger(saved.m) && saved.m >= 0 ? Math.max(mark,saved.m) : mark, s: new Set()};
-      }
-      else if (epoch !== st.e) return false;
-      else st.m = Math.max(st.m, mark);
-      owner = true; saveOwner();
-      return true;
-    },
-    isOwner: () => owner,
     ready: () => !!state(),
     /** The page showing reply `id` was on screen in the foreground. */
     see(id, ids, covered) {
       const s = state();
       if (!s || !Number.isInteger(id) || id <= s.m || s.s.has(id)) return false;
-      if (owner) { s.m = id; saveOwner(); return true; }
       s.s.add(id);
       this.advance(ids, covered);
       writeStore(s);
@@ -62,7 +42,7 @@ export function createUnread() {
     /** Move the mark over the seen replies that follow it without a gap (only when the loaded ids reach the mark). */
     advance(ids, covered) {
       const s = state();
-      if (owner || !s || !covered) return;
+      if (!s || !covered) return;
       for (const id of ids) {
         if (id <= s.m) continue;
         if (!s.s.has(id)) break;

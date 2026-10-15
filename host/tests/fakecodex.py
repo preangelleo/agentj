@@ -172,11 +172,11 @@ def patch(tid, turn, kind, path):
 #   the message behaves as before; FAKE_CTX_USED = the context the next turn reports (compaction drops it).
 def p57_prepare(text):
     import re as _re
-    m = _re.search(r"`([^`]*(?:\.agentj/handover|agentj/handoff)/[^`]+\.md)`", text)   # P289: + switch.md (shared: ~/…)
+    m = _re.search(r"`([^`]*\.agentj/handover/[^`]+\.md)`", text)
     if os.environ.get("FAKE_PREP_SLEEP"):
         time.sleep(float(os.environ["FAKE_PREP_SLEEP"]))
     if m and os.environ.get("FAKE_NO_HANDOVER") != "1":
-        with open(os.path.expanduser(m.group(1)), "w") as f:
+        with open(m.group(1), "w") as f:
             f.write("# Handover\n- goal: the user's words\n- done / in progress / next\n- decisions\n- paths\n- open questions\n")
         return "交接写好了"
     return "没写交接"
@@ -200,7 +200,7 @@ def run_turn(tid, turn, text):
     if ("（Agent J：" in text or "(Agent J: " in text) and not text.startswith("[agentj:"):
         text = p57_notes(text, lambda ln: log(method="HOST_NOTE", path="", host_note=ln))
     try:
-        if text.startswith(("[agentj:compact-prepare]", "[agentj:switch-handoff]")):
+        if text.startswith("[agentj:compact-prepare]"):
             say(tid, turn, p57_prepare(text))
         elif text.startswith("RUN: "):
             command(tid, turn, text[5:].strip())

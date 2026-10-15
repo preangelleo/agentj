@@ -1,10 +1,10 @@
 // P150 (PROTOCOL §22): 「在办事项」 dots at the right of the reply card's header + the global centred dialog (busy list,
-// 「我升级了」, P280). Real page + local fake host, independent headless Chromium (never :9222).
+// 「服务器已升级」). Real page + local fake host, independent headless Chromium (never :9222).
 //   a) no worker → no dots, the header is taller and the name lower; 1 / 3 workers → 1 / 3 dots, fixed distinct colours,
 //      blinking Heavy ⇄ Light, right of the name, never over it, inside the right 2/3
 //   b) a tap on the dots opens the centred square: 「有 N 个 Agent 在后台干活」 + 「<Agent 名> 正在替你监控」 + who · what;
 //      ESC, a tap outside and 知道了 close it; the list going empty closes it; one fewer worker = one fewer dot
-//   c) the version notice is the same centred square (title 我升级了, button 刷新); it never takes focus, ESC = later
+//   c) the version notice is the same centred square (title 服务器已升级, button 刷新); it never takes focus, ESC = later
 //   d) the Agent name explains itself (title); the flashing page capsule's ring is a light Lotion veil
 // Shots → reports/qa/p150/screens/<lang>-<theme>-<state>-<n>.png; `--anim` also writes the blink loop (mp4 + gif).
 import assert from 'node:assert/strict';
@@ -26,8 +26,8 @@ const W = { zh: [['掌枢', '发布收尾', 0], [null, '转录视频', 1], ['玄
   en: [['Relay', 'Wrap up', 0], [null, 'Transcribe', 1], ['Xuanshu', 'Proxy scan', 2]] };
 const busyMsg = (lang, n) => ({ t: 'busy', by: NAME, tasks: W[lang].slice(0, n).map(([who, label, c], i) =>
   ({ id: 'k' + i, who, kind: who ? 'ceo' : 'temp', label, since: 1760000000 + i, c })) });
-const S = { zh: { title3: '有 3 个 Agent 在后台干活', sub: `${NAME} 正在替你监控`, temp: '临时助理', up: '我升级了', refresh: '刷新', tip: /Agent J 的名字/ },
-  en: { title3: '3 agents at work in the background', sub: `${NAME} is watching them for you`, temp: 'Helper', up: "I've been upgraded", refresh: 'Refresh', tip: /Agent J's name/ } };
+const S = { zh: { title3: '有 3 个 Agent 在后台干活', sub: `${NAME} 正在替你监控`, temp: '临时助理', up: '服务器已升级', refresh: '刷新', tip: /Agent 的名字/ },
+  en: { title3: '3 agents at work in the background', sub: `${NAME} is watching them for you`, temp: 'Helper', up: 'Server upgraded', refresh: 'Refresh', tip: /Agent's name/ } };
 export const CASES = { a: 'busy-dots', b: 'busy-dialog', c: 'global-dialog-upgrade', d: 'name-tip-and-capsule-ring' };
 const box = (p, sel) => evaluate(p, `(()=>{const r=document.querySelector(${JSON.stringify(sel)}).getBoundingClientRect();return {l:r.left,r:r.right,t:r.top,b:r.bottom,w:r.width,h:r.height}})()`);
 const esc = (p) => p.send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 });

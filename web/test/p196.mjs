@@ -111,7 +111,7 @@ async function C(name, fn) {
 }
 const card = (mid) => `document.querySelector('#words .mcard[data-mid="${mid}"], #mstrip .mcard[data-mid="${mid}"]')`;
 const state = (p) => ev(p, `(() => { const v = document.querySelector('.mview'); return { open: !!v && !v.hidden, mode: v?.dataset.mode, title: v ? document.querySelector('.mvtitle').textContent : '',
-  count: !v || document.querySelector('.mvcount').hidden ? '' : document.querySelector('.mvcount').textContent, page: document.getElementById('pg').textContent, words: document.getElementById('words').textContent.slice(0, 40) }; })()`);
+  count: !v || document.querySelector('.mvcount').hidden ? '' : document.querySelector('.mvcount').textContent, words: document.getElementById('words').textContent.slice(0, 40) }; })()`);
 const at = (p, name) => waitFor(p, `document.querySelector('.mvtitle')?.textContent === ${JSON.stringify(name)} && !document.querySelector('.mview .mvloading')`, 15000);
 const center = async (p) => ev(p, `(() => { const r = document.querySelector('.mstage').getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2, w: r.width }; })()`);
 async function openImage(p, mid) {
@@ -164,7 +164,7 @@ try {
       assert.equal(await ev(p, `document.querySelector('.mvhint').textContent`), '已经是第一个了');
       writeFileSync(join(OUT, 'p196-desktop-edge-first.png'), await shoot(p));
       s = await state(p);
-      assert.equal(s.title, 'chart.png'); assert.equal(s.page, before.page, 'the reply card behind did not turn');
+      assert.equal(s.title, 'chart.png'); assert.equal(s.words, before.words, 'the reply card behind did not turn');
       // → through every file; the pptx is skipped
       const seen = ['chart.png'];
       for (let i = 1; i < NAV.length; i++) {
@@ -201,7 +201,7 @@ try {
         field: document.activeElement === document.getElementById('input') || document.getElementById('input').value !== '',
         reader: document.body.dataset.reader === '1', open: !document.querySelector('.mview').hidden })`);
       assert.deepEqual(leak, { keys: false, settings: false, field: false, reader: false, open: true });
-      assert.equal((await state(p)).page, before.page);
+      assert.equal((await state(p)).words, before.words);
       // Esc closes; the focus goes back to the file last shown
       await key(p, 'Escape', { code: 'Escape' });
       await waitFor(p, `document.querySelector('.mview').hidden`);
@@ -209,7 +209,7 @@ try {
       // and the chat's ← works again once the preview is gone
       await ev(p, `document.activeElement.blur()`);
       await key(p, 'ArrowLeft', { code: 'ArrowLeft' });
-      await waitFor(p, `document.getElementById('pg').textContent !== ${JSON.stringify(before.page)}`, 4000);
+      await waitFor(p, `document.getElementById('words').textContent.slice(0, 40) !== ${JSON.stringify(before.words)}`, 4000);
       assert.deepEqual(p.problems.filter((x) => !/webm|media/i.test(x)), []);
       assert.deepEqual(p.offsite, []);
     } finally { await p.dispose(); }
@@ -294,7 +294,7 @@ try {
       assert.equal(await ev(p, `window.__a.paused`), true, 'the audio paused when it went');
       await waitFor(p, `(() => { const v = document.querySelector('.mview video.mplayer'); return v && v.readyState >= 2; })()`, 8000);
       writeFileSync(join(OUT, 'p196-phone-video-7.png'), await shoot(p));
-      assert.equal((await state(p)).page, before.page, 'the reply card behind never turned');
+      assert.equal((await state(p)).words, before.words, 'the reply card behind never turned');
       // × closes; the deck still turns afterwards
       await ev(p, `document.querySelector('.mview-x').click()`);
       await waitFor(p, `document.querySelector('.mview').hidden`);

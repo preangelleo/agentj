@@ -77,8 +77,6 @@ VERDICT_RE = re.compile(r"^[ \t>*`_#-]*VERDICT[*`_]*[ \t]*[:：][ \t*`_]*(ok|att
                         re.M | re.I)
 REQUIRED_TEMPLATE_FILES = ("TEMPLATE.md", "RUN.md", "DRYRUN.md", "task.json")
 GOAL_FILES = ("RUN.md", "DRYRUN.md", "CONSTITUTION.md", "task.json", "brief.json")   # 0.18 goal mode, one workflow folder
-ROLE_RE = re.compile(r"[a-z][a-z0-9]*(?:-[a-z0-9]+)*")
-STAFF_DIRS = {".claude": ".md", ".codex": ".toml"}     # P308: a CEO's staff, <wf>/.claude/agents/<role>.md + Codex mirror
 
 
 class WizardError(Exception):
@@ -528,21 +526,13 @@ def ensure_wizard_skill(root: Path, harnesses: list[str]) -> list[dict]:
     return place(root, files, "skill")
 
 
-def refresh_root(root: Path, harnesses: list[str] | None = None, lang: str | None = None, *, st=None) -> list[dict]:
+def refresh_root(root: Path, harnesses: list[str] | None = None) -> list[dict]:
     """P215: run at `agentj init`, `agentj agent set` and every serve start: the WDB wizard skill + the boot-doc upgrade.
-    P245: + three signed plaza example workflows, once per root (starters.ensure; never over an existing folder, never back after
-    the owner deleted one). Never raises on an unusable root (returns []); never creates missing boot documents (that is
-    bootstrap_root's job)."""
+    Never raises on an unusable root (returns []); never creates missing boot documents (that is bootstrap_root's job)."""
     root = Path(root)
     if not root.is_dir() or root.is_symlink():
         return []
-    rows = ensure_wizard_skill(root, harnesses or list(HARNESSES)) + upgrade_root_docs(root)
-    from .. import starters
-    try:
-        rows += starters.ensure(root, harnesses, lang, st=st)
-    except (OSError, WizardError):
-        pass                                # the examples never stop the skill / boot-doc refresh
-    return rows
+    return ensure_wizard_skill(root, harnesses or list(HARNESSES)) + upgrade_root_docs(root)
 
 
 def _ensure_docs_rule(root: Path, m: dict, rels: list[str], blk: bytes) -> list[dict]:
@@ -614,17 +604,15 @@ def _staged(staging: Path) -> dict[str, bytes]:
             continue
         parts = p.relative_to(staging).parts
         wf_dir = len(parts) >= 2 and re.fullmatch(r"[a-z][a-z0-9]*(?:-[a-z0-9]+)*", parts[0]) and parts[0] != "documentation"
-        staff = _staff_rel(parts)
         ok = (rel in ENTRY_FILES or (rel.startswith("documentation/") and rel.endswith((".md", ".json")))
-              or staff is not None
               or (wf_dir and len(parts) == 2 and p.name in ENTRY_FILES)
               # 0.18 goal mode (ADR-A194): one workflow's own contract files, checked below (dormant task, valid brief)
               or (wf_dir and len(parts) == 2 and p.name in GOAL_FILES)
               or (wf_dir and len(parts) == 3 and parts[1] == "requests" and re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,63}\.md", p.name)))
         if not ok:
             raise WizardError(f"refused: {rel} — the wizard writes only root entries, documentation/*.md|json, one-level workflow "
-                              "CEO entries, a CEO's staff (<id>/.claude/agents/<role>.md, <id>/.codex/agents/<role>.toml) and "
-                              "(goal mode) a workflow's RUN.md / DRYRUN.md / CONSTITUTION.md / task.json / brief.json / requests/*.md")
+                              "CEO entries and (goal mode) a workflow's RUN.md / DRYRUN.md / CONSTITUTION.md / task.json / "
+                              "brief.json / requests/*.md")
         data = p.read_bytes()
         if len(data) > MAX_FILE:
             raise WizardError(f"refused: {rel} is larger than {MAX_FILE // 1024} KiB")
@@ -636,10 +624,6 @@ def _staged(staging: Path) -> dict[str, bytes]:
         except UnicodeDecodeError:
             raise WizardError(f"refused: {rel} is not UTF-8 text")
         _check_rel(rel)
-        if staff is not None:
-            prob = staff_problem(staff[1], staff[2], data.decode("utf-8"))
-            if prob:
-                raise WizardError(f"refused: {rel}: {prob}")
         if wf_dir and p.name == "task.json":
             try:
                 t = json.loads(data)
@@ -668,79 +652,6 @@ def _staged(staging: Path) -> dict[str, bytes]:
     return files
 
 
-def _staff_rel(parts) -> tuple[str, str, str] | None:
-    """(prefix, harness dir, role) for `[<id>/].claude/agents/<role>.md` or `[<id>/].codex/agents/<role>.toml`, else None."""
-    parts = tuple(parts)
-    pre = parts[:-3]
-    if len(parts) not in (3, 4) or parts[-2] != "agents" or parts[-3] not in STAFF_DIRS:
-        return None
-    if pre and (not re.fullmatch(r"[a-z][a-z0-9]*(?:-[a-z0-9]+)*", pre[0]) or pre[0] == "documentation"):
-        return None
-    stem, dot, ext = parts[-1].rpartition(".")
-    if not dot or "." + ext != STAFF_DIRS[parts[-3]] or not ROLE_RE.fullmatch(stem):
-        return None
-    return ("/".join(pre), parts[-3], stem)
-
-
-def staff_problem(kind: str, role: str, text: str) -> str | None:
-    """A staff file must name its role (the file name) and say what it does; Claude Code / Codex read exactly these keys."""
-    from .. import workflows
-    if kind == ".claude":
-        meta = workflows.front(text)[0]
-        if not text.startswith("---"):
-            return "needs --- front matter with name: and description:"
-    else:
-        import tomllib
-        try:
-            meta = tomllib.loads(text)
-        except (tomllib.TOMLDecodeError, ValueError) as e:
-            return f"not valid TOML ({str(e)[:60]})"
-        if not (isinstance(meta.get("developer_instructions"), str) and meta["developer_instructions"].strip()):
-            return "needs developer_instructions"
-    if meta.get("name") != role:
-        return f"name must be {role} (the file name)"
-    if not (isinstance(meta.get("description"), str) and meta["description"].strip()):
-        return "needs a description (what this employee does and when the CEO sends it)"
-    return None
-
-
-def _toml_str(v: str) -> str:
-    return json.dumps(v, ensure_ascii=False)        # a JSON string is a valid TOML basic string
-
-
-def codex_mirror(md: str) -> bytes:
-    """The Codex `.codex/agents/<role>.toml` twin of a Claude `.claude/agents/<role>.md` (same name / description / title,
-    body → developer_instructions), parse-checked."""
-    import tomllib
-    from .. import workflows
-    meta, body = workflows.front(md)
-    lines = [f"name = {_toml_str(meta['name'])}", f"description = {_toml_str(meta['description'])}"]
-    for k in ("title", "name_zh"):
-        if isinstance(meta.get(k), str) and meta[k]:
-            lines.append(f"{k} = {_toml_str(meta[k])}")
-    body = body.replace("\r", "").strip("\n") + "\n"
-    multi = 'developer_instructions = """\n' + body.replace("\\", "\\\\").replace('"""', '""\\"') + '"""'
-    out = "\n".join(lines + [multi]) + "\n"
-    try:
-        if tomllib.loads(out).get("developer_instructions") != body:
-            raise ValueError
-    except (tomllib.TOMLDecodeError, ValueError):
-        out = "\n".join(lines + [f"developer_instructions = {_toml_str(body)}"]) + "\n"
-    return out.encode()
-
-
-def add_codex_mirrors(files: dict[str, bytes]) -> dict[str, bytes]:
-    """P308: every staged Claude staff file without a staged Codex twin gets one (owner-changed twins stay theirs: place())."""
-    out = dict(files)
-    for rel, data in files.items():
-        st = _staff_rel(rel.split("/"))
-        if st and st[1] == ".claude":
-            twin = "/".join(x for x in (st[0], ".codex", "agents", st[2] + ".toml") if x)
-            if twin not in files:
-                out[twin] = codex_mirror(data.decode("utf-8"))
-    return out
-
-
 def secret_hits(files: dict[str, bytes]) -> list[str]:
     from ..privacy import redact_with_report
     out = []
@@ -759,7 +670,7 @@ def apply(root: Path, staging: Path) -> list[dict]:
         staging = root / STATE_REL / staging.name
     elif staging == root / STAGING_REL and not staging.exists():
         _adopt_legacy(root)
-    files = add_codex_mirrors(_staged(staging))
+    files = _staged(staging)
     for rel in ENTRY_FILES:     # PROMPT-29 C-5: a generated entry file keeps the "look it up first" block (the one on disk, else both languages)
         if rel in files:
             if CORE_REF.encode() not in files[rel]:
@@ -810,27 +721,6 @@ def workflow_dir(root: Path, tid: str) -> Path:
     if legacy.exists() or legacy.is_symlink():
         return legacy
     return direct
-
-
-def wdb_children(root: Path) -> list[str]:
-    """P276: the root's child folders the phone's 「工作流」 page shows as workflow cards (workflows.is_wdb)."""
-    from .. import workflows
-    return [n for n in workflows._folder_entries(str(root), []) if workflows.is_wdb(str(root / n))]
-
-
-def unregistered(root: Path) -> list[str]:
-    from .. import workflows
-    reg = workflows.registry_of(str(root))
-    return [n for n in wdb_children(root) if not workflows.is_registered(reg, n)] if reg["exists"] else []
-
-
-def no_staff(root: Path) -> list[str] | None:
-    """P308: the workflow folders (cards on the phone + installed workflows) whose CEO has no staff; None = no workflow folder."""
-    from .. import workflows
-    kids = dict.fromkeys(wdb_children(root) + [d.relative_to(root).as_posix() for d in _workflow_dirs(root)])
-    if not kids:
-        return None
-    return [k for k in kids if not workflows.staff_count(str(root / k))]
 
 
 def _workflow_dirs(root: Path) -> list[Path]:
@@ -990,18 +880,6 @@ def doctor(root: Path, today: str | None = None) -> list[dict]:
             bprobs.append(f"{d.name}: {pr[0]}")
     if nb:
         add("briefs", "fail" if bprobs else "ok", "; ".join(bprobs[:6]) if bprobs else f"{nb} brief(s) valid")
-
-    unreg = unregistered(root)                 # P276: every WDB child folder is in the CEO roster (agentj wizard register)
-    if (root / "documentation/ROLES.md").is_file():
-        add("roster", "warn" if unreg else "ok", ("not in documentation/ROLES.md (agentj wizard register): " + ", ".join(unreg[:8]))
-            if unreg else "every workflow folder is registered")
-
-    staffless = no_staff(root)                 # P308: a CEO without staff is a warning, never a failure
-    if staffless is not None:
-        add("staff", "warn" if staffless else "ok",
-            ("only a CEO, no staff yet — propose 3–7 roles, the owner agrees, then agentj wizard apply writes "
-             "<id>/.claude/agents/<role>.md (+ the Codex .toml): " + ", ".join(staffless[:8])) if staffless
-            else "every workflow CEO has staff")
 
     pend = pending(root)
     add("pending", "warn" if pend else "ok",
@@ -1402,45 +1280,6 @@ def cmd_doctor(a) -> int:
     return 0 if ok else 1
 
 
-def cmd_register(a) -> int:
-    """P276: put every workflow folder of this root into the CEO roster (documentation/ROLES.md), append-only; then list
-    what the phone's 「工作流」 page will show. Needs no state directory (works inside the fence)."""
-    from .. import workflows
-    root = _dir_arg(a)
-    kids = wdb_children(root)
-    res = workflows.register(root, unregistered(root) if (root / "documentation/ROLES.md").is_file() else kids)
-    reg = workflows.registry_of(str(root))
-    rows = [{"folder": n, "registered": workflows.is_registered(reg, n), **({"added": True} if n in res["added"] else {})}
-            for n in kids]
-    if a.json:
-        print(json.dumps({"dir": str(root), "registry": res["registry"], "workflows": rows, "refused": res["refused"]},
-                         ensure_ascii=False))
-    elif not res["registry"]:
-        print("没有 documentation/ROLES.md（CEO 花名册）：先跑向导建好根目录文档 / no CEO roster yet: run the wizard first")
-    else:
-        for r in rows:
-            print(f"  {'+' if r.get('added') else '✓' if r['registered'] else '✗'} {r['folder']}")
-        print(f"花名册里 {sum(r['registered'] for r in rows)}/{len(rows)} 个工作流；手机「工作流」页显示同样这些卡片 / "
-              f"{sum(r['registered'] for r in rows)}/{len(rows)} registered; the phone's Workflows page shows these cards")
-    return 0 if res["registry"] and all(r["registered"] for r in rows) else 1
-def cmd_starters(a) -> int:
-    """P245: the three example workflows — their state and the ordinary plaza reinstall command."""
-    from .. import starters
-    root = _dir_arg(a)
-    rows = starters.status(root)
-    if a.json:
-        print(json.dumps({"dir": str(root), "starters": rows}, ensure_ascii=False))
-        return 0
-    word = {"installed": "已放入 / installed", "removed": "已删除，不会自动回来 / removed (stays removed)",
-            "pending": "绑定后从广场安装 / installed from plaza after linking", "skipped": "跳过 / skipped"}
-    why = {"enough": "已有 ≥ 3 个工作流 / already ≥ 3 workflows", "name-taken": "同名目录已存在 / name taken"}
-    for r in rows:
-        extra = f"（{why.get(r['why'], r['why'])}）" if r.get("why") else ""
-        print(f"{r['name']:<26} {r['company']:<12} {word.get(r['state'], r['state'])}{extra}")
-    print("重新安装 / reinstall: agentj plaza install <name> --workspace <working-root>（先预览后确认 / preview then confirm）")
-    return 0
-
-
 def _state():
     from ..state import State
     st = State()
@@ -1529,8 +1368,6 @@ def add_parser(sub) -> None:
     r = p("resolve", cmd_resolve, "人决定后：保留自己的（mine）或用向导的（new）/ settle one .wizard-new")
     r.add_argument("--file", required=True)
     r.add_argument("--keep", required=True, choices=["mine", "new"])
-    rg = p("register", cmd_register, "把工作流文件夹登记进 CEO 花名册 documentation/ROLES.md（只追加）/ register workflow folders in the CEO roster")
-    rg.add_argument("--json", action="store_true")
     dc = p("doctor", cmd_doctor, "检查生成物：入口、七份 boot set、STRUCTURE.json、frontmatter、占位符、密钥 / check the workspace")
     dc.add_argument("--json", action="store_true")
     t = p("templates", cmd_templates, "列出可用模板（需要已绑定、席位有效）/ list templates (bound host, valid seat)")
@@ -1538,8 +1375,6 @@ def add_parser(sub) -> None:
     at = p("add-template", cmd_add_template, "下载并装好一个模板（休眠）/ install one template, dormant")
     at.add_argument("id")
     at.add_argument("--json", action="store_true")
-    sw = p("starters", cmd_starters, "广场预装的 3 个示例工作流：状态 / the three example workflows")
-    sw.add_argument("--json", action="store_true")
     dr = p("dry-run", cmd_dry_run, "用模板自带的虚构样例演练一次（隔离运行，不产生外部动作），读 VERDICT / dry run on samples")
     dr.add_argument("id")
     dr.add_argument("--harness", choices=list(HARNESSES))

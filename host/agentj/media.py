@@ -325,7 +325,8 @@ def _secret(text: str, html: bool, owner: bool = False) -> bool:
     if html:
         text = _DATA_URI.sub("data:", text)
     if owner:                     # P211: a real key shape only — the high-entropy guess never blocks the owner's own file
-        return taskspec.secret_like(text, owner=True)
+        from .privacy import redact_with_report
+        return any(k in OWNER_KINDS for k in redact_with_report(text)[1])
     return taskspec.secret_like(text)
 
 

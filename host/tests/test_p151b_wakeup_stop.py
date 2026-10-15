@@ -301,7 +301,7 @@ class WaitLine(Rig):
         self.write(asst("m4", tool_use("ScheduleWakeup", "t4")), result("t4"), end())
         await self.settle(task)
         self.assertEqual(self.host.notices, [])
-        self.assertIn(("这一轮结束了，不过 Claude 没留文字回复。", False, True), self.noted.notes)   # P280 humane shared.empty_turn
+        self.assertIn(("共享 Claude 这一回合已结束，但没有写文字回复。", False, True), self.noted.notes)
 
 
 async def _fast_wait(fs, timeout=None, return_when=None):
@@ -333,6 +333,7 @@ class HostWaitNote(unittest.TestCase):
 
         class H:
             turn_wait_note = Host.turn_wait_note
+            BUSY_NOTE = Host.BUSY_NOTE
 
             def __init__(self):
                 self.lang, self.wait_note = "zh", None

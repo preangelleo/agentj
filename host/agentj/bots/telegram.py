@@ -4,12 +4,11 @@ Private chats only, host-owned visitor binding, persistent offsets and request I
 All URL errors are fixed codes: a token must never escape via an exception or log.
 """
 import asyncio
-import collections
 import contextlib
 import hashlib
 import re
 from ..provider_profiles import secure_read,ProviderError
-from .network import request,request_json
+from .network import request_json
 from .store import BotError
 from .engine import UNAVAILABLE
 
@@ -39,38 +38,11 @@ def token(store,bid):
     return value
 
 def api(secret,method,body,transport=request_json):
-    if method not in ('getMe','getUpdates','sendMessage','getUserProfilePhotos','removeMyProfilePhoto'):raise BotError('invalid_telegram_method')
+    if method not in ('getMe','getUpdates','sendMessage'):raise BotError('invalid_telegram_method')
     try:
         value=transport('https://api.telegram.org/bot'+secret+'/'+method,'POST',body,timeout=30,limit=512*1024,domains=['api.telegram.org'])
         if not isinstance(value,dict) or value.get('ok') is not True:raise BotError('telegram_unavailable')
         return value.get('result')
-    except Exception:raise BotError('telegram_unavailable') from None
-
-def upload(secret,method,fields,field,name,mime,data,transport=request):
-    """P275: one multipart upload (setMyProfilePhoto only), same pinned HTTPS boundary and fixed error code as api()."""
-    if method!='setMyProfilePhoto':raise BotError('invalid_telegram_method')
-    import json,uuid
-    boundary='agentj'+uuid.uuid4().hex;body=bytearray()
-    for k,v in fields.items():body+=('--'+boundary+'\r\nContent-Disposition: form-data; name="'+k+'"\r\n\r\n'+str(v)+'\r\n').encode()
-    body+=('--'+boundary+'\r\nContent-Disposition: form-data; name="'+field+'"; filename="'+name+'"\r\nContent-Type: '+mime+'\r\n\r\n').encode()+data+('\r\n--'+boundary+'--\r\n').encode()
-    try:
-        value=json.loads(transport('https://api.telegram.org/bot'+secret+'/'+method,'POST',bytes(body),{'Content-Type':'multipart/form-data; boundary='+boundary},timeout=60,limit=65536,domains=['api.telegram.org']))
-        if not isinstance(value,dict) or value.get('ok') is not True:raise BotError('telegram_unavailable')
-        return value.get('result')
-    except Exception:raise BotError('telegram_unavailable') from None
-
-def avatar(store,bid,root,action=None,request=api,send=upload):
-    """P275: action None = the automatic first check (tg_avatar.ensure); else status / set / reset for the CLI and the card."""
-    from .. import tg_avatar
-    secret=token(store,bid)
-    me=request(secret,'getMe',{})
-    if not isinstance(me,dict) or me.get('is_bot') is not True or type(me.get('id')) is not int:raise BotError('telegram_unavailable')
-    call=lambda m,v:request(secret,m,v)
-    put=lambda *a:send(secret,*a)
-    try:
-        if action is None:return tg_avatar.ensure(root,call,put,me['id'])
-        return tg_avatar.act(root,action,call,put,me['id'])
-    except BotError:raise
     except Exception:raise BotError('telegram_unavailable') from None
 
 def verify(store,bid,request=api):
@@ -92,12 +64,6 @@ class Channel:
         return row['offset'] if row and row['token_hash']==self.digest else 0
     def advance(self,n):
         self.store.db.execute('INSERT INTO telegram_cursors VALUES(?,?,?) ON CONFLICT(bot) DO UPDATE SET token_hash=excluded.token_hash,offset=excluded.offset',(self.bid,self.digest,n))
-    def identity(self,uid):
-        return hashlib.sha256(('telegram:'+str(uid)).encode()).hexdigest()[:32]
-    def refusal(self,error):
-        return UNAVAILABLE
-    async def no_text(self,chat):
-        return None
     async def deliver(self,chat,result):
         if not self.enabled():return
         for part in segments(result['text']):
@@ -111,7 +77,7 @@ class Channel:
         # Group members and public usernames are not authentication identities.
         if chat.get('type')!='private' or type(chat.get('id')) is not int or type(user.get('id')) is not int or user.get('is_bot') or chat['id']!=user['id']:return
         text=message.get('text')
-        if not isinstance(text,str) or not text:return await self.no_text(chat['id'])
+        if not isinstance(text,str) or not text:return
         if len(text)>2000:
             await self.deliver(chat['id'],{'text':TOO_LONG});return
         if not self.enabled():return
@@ -119,7 +85,7 @@ class Channel:
             # Admission can fail before Engine.reply, and an upstream call can stall.
             # Keep the channel responsive and give every admitted private text a fixed reply.
             async with asyncio.timeout(TURN_TIMEOUT):
-                identity=self.identity(user['id'])
+                identity=hashlib.sha256(('telegram:'+str(user['id'])).encode()).hexdigest()[:32]
                 vid,cap=self.store.admit_visitor(self.bid,identity)
                 if hasattr(self.runtime,'telegram_targets'):self.runtime.telegram_targets[(self.bid,vid)]=(self,chat['id'])
                 rid=hashlib.sha256((self.digest+':'+str(update['update_id'])).encode()).hexdigest()[:32]
@@ -127,20 +93,14 @@ class Channel:
                 if not isinstance(result,dict) or not isinstance(result.get('text'),str) or not result['text']:
                     raise BotError('telegram_unavailable')
         except asyncio.CancelledError:raise
-        except Exception as e:
+        except Exception:
             self.store.event(self.bid,'','telegram_turn','unavailable')
-            result={'text':self.refusal(e),'status':'refused'}
+            result={'text':UNAVAILABLE,'status':'refused'}
         # Mutation/estop while a model runs cancels outbound delivery.
         if not self.enabled():return
         await self.deliver(chat['id'],result)
-    async def auto_avatar(self):
-        # P275: once per Telegram bot, only when it has no photo; never stops the channel.
-        try:result=await asyncio.to_thread(avatar,self.store,self.bid,self.runtime.host.st.root,None,self.request)
-        except Exception:result='failed'
-        if result!='skipped':self.store.event(self.bid,'','telegram_avatar',result)
     async def run(self):
         # Bounded pending work; one chain per chat preserves order while other chats progress.
-        avatar_task=asyncio.create_task(self.auto_avatar())
         pending=set();tails={}
         async def after(previous,update):
             if previous is not None:
@@ -178,67 +138,7 @@ class Channel:
                     self.store.event(self.bid,'','telegram','unavailable')
                     await asyncio.sleep(5)
         finally:
-            avatar_task.cancel()
             tasks=list(pending)
             for task in tasks:task.cancel()
             await asyncio.gather(*tasks,return_exceptions=True)
             pending.clear();tails.clear()
-
-
-# P297: guests of the owner's own Agent J Telegram bot. Same bot, two identities: the P283-enrolled owner chat is the main
-# session (serve's telegram.py, never here); every other private chat is a visitor of the one bot the owner attached.
-LIMIT='Too many messages right now. Please try again later. / 消息有点多，请稍后再试。'
-HOURS='We are outside service hours. Please come back later. / 现在不在服务时间，请稍后再来。'
-TEXT_ONLY='Text messages only, please. / 请发文字消息。'
-NOTICE_GAP=60
-
-class GuestChannel(Channel):
-    """Visitor turns arriving on the owner's bot token. The token stays in serve's environment: `send(chat, text)` is
-    serve's own Bot API call, so this class never reads it. Visitors are keyed by bot id + Telegram user id (a separate
-    identity from a bot's own-token channel); limits, Jev reviews, knowledge, tools and the 30-day history are the bot's."""
-    def __init__(self,runtime,bid,bot_id,send):
-        self.runtime=runtime;self.store=runtime.manager.state();self.bid=bid;self.send=send;self.secret=None;self.bot_id=bot_id
-        self.digest=hashlib.sha256(('agentj-owner-bot:'+str(bot_id)).encode()).hexdigest()
-        self.epoch=self.store.lifecycle(bid)['epoch'];self.pending=set();self.tails={};self.noticed=collections.OrderedDict()
-    def enabled(self):
-        try:c=self.store.get(self.bid);life=self.store.lifecycle(self.bid)
-        except BotError:return False
-        return c['enabled'] and c['telegram'].get('owner_bot') is True and not life['removed'] and life['epoch']==self.epoch and not self.runtime.host.stopped()
-    def identity(self,uid):
-        return hashlib.sha256(('telegram-owner-bot:'+str(self.bot_id)+':'+str(uid)).encode()).hexdigest()[:32]
-    def refusal(self,error):
-        why=str(error) if isinstance(error,BotError) else ''
-        return LIMIT if why in ('message_limit','busy','session_busy') else HOURS if why=='outside_hours' else UNAVAILABLE
-    async def no_text(self,chat):
-        now=asyncio.get_running_loop().time()
-        if now-self.noticed.get(chat,-1e9)<NOTICE_GAP:return
-        self.noticed[chat]=now;self.noticed.move_to_end(chat)
-        while len(self.noticed)>512:self.noticed.popitem(last=False)
-        await self.deliver(chat,{'text':TEXT_ONLY})
-    async def deliver(self,chat,result):
-        if not self.enabled():return
-        await self.send(chat,result['text'][:4096])
-    def submit(self,update):
-        """Called from serve's Telegram poll loop: never waits for a model. One chain per chat keeps order; at most
-        MAX_PENDING turns wait (False = full, the caller answers nothing more). At-most-once like the own-token channel."""
-        if not self.enabled() or len(self.pending)>=MAX_PENDING:return False
-        chat=((update.get('message') or {}).get('chat') or {}).get('id')
-        previous=self.tails.get(chat)
-        async def after():
-            if previous is not None:
-                with contextlib.suppress(Exception):await previous
-            if not self.enabled():return
-            try:await self.handle(update)
-            except asyncio.CancelledError:raise
-            except Exception:self.store.event(self.bid,'','telegram_guest','unavailable')
-        task=asyncio.create_task(after());self.pending.add(task);self.tails[chat]=task
-        def finished(t):
-            self.pending.discard(t)
-            if self.tails.get(chat) is t:self.tails.pop(chat,None)
-        task.add_done_callback(finished)
-        return True
-    async def close(self):
-        tasks=list(self.pending)
-        for task in tasks:task.cancel()
-        await asyncio.gather(*tasks,return_exceptions=True)
-        self.pending.clear();self.tails.clear()

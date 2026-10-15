@@ -37,9 +37,6 @@ export async function pairedHost() {
 function valid(e) {
   if (!e || !SID_RE.test(e.sid) || typeof e.text !== 'string' || e.text.length > TEXT_MAX || !Number.isInteger(e.ts)) return false;
   if (e.rt != null && !(Number.isInteger(e.rt.id) && (e.rt.excerpt == null || typeof e.rt.excerpt === 'string'))) return false;
-  // P286: quotes 2…5 ({id, excerpt|null, ts, speaker}), only after rt
-  if (e.more != null && !(e.rt != null && Array.isArray(e.more) && e.more.length >= 1 && e.more.length <= 4
-    && e.more.every((q) => q && Number.isInteger(q.id) && (q.excerpt == null || typeof q.excerpt === 'string')))) return false;
   if (e.att != null && !(Array.isArray(e.att) && e.att.length <= 10 && e.att.every((a) => a && typeof a.name === 'string'))) return false;
   return !!e.text.trim() || !!(e.att && e.att.length);
 }

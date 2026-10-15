@@ -201,32 +201,7 @@ Never set a workflow to enabled here — turning a schedule on is the human's de
 
 For every wanted workflow stage `<id>/CLAUDE.md` and `<id>/AGENTS.md` with the same CEO routing body:
 identity = CEO of this workflow only; read its own RUN.md and the root constitution/roster; execute in its own folder;
-write reports ending in VERDICT; send a report path to the main Agent; send each piece of work to the staff member that
-owns it. RUN.md business roles belong only here — and each one is also a staff file (below).
+write reports ending in VERDICT; send a report path to the main Agent. RUN.md business roles belong only here.
 Add each CEO entry to STRUCTURE.json workflows as `ceo_entry`, plus `reports` and `execution`.
 Use a single lowercase-hyphen child directory under working_root. Preserve existing legacy `workflows/<id>/` in place
 and record its exact directory and report location; do not relocate or duplicate it.
-
-## Staff files (`<id>/.claude/agents/<role>.md`)
-
-One file per role, 3–7 per workflow. `agentj wizard apply` checks it (`name` = the file name, a `description`) and writes the
-Codex twin `<id>/.codex/agents/<role>.toml` by itself. The phone's 「工作流」 page shows `title` (in the human's language)
-instead of the code name.
-
-```
----
-name: {{role, e.g. copywriter}}
-title: {{what the human calls it, e.g. 文案员}}
-description: {{one sentence: what it does and when the CEO sends it}}
-tools: Read, Write, Edit, Grep, Glob
----
-
-你是{{company}}的{{title}}。开工先读 CEO 给的 brief 和 ../RUN.md。
-## 你管什么
-{{3–6 bullets: its inputs, its outputs and where they go}}
-## 红线
-{{the company's red lines that touch this role; no keys, no outside messages without approval}}
-## 交付
-{{what it hands back to the CEO, ending with a one-line VERDICT}}
-```
-Read-only roles (a reviewer, a researcher) get `tools: Read, Grep, Glob` (plus web fetch / search when they need it).

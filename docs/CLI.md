@@ -134,7 +134,7 @@ agentj --help
 
 ```text
 usage: agentj [-h] [-V] [--migrate-legacy] [--instance N] [--fresh]
-              {doctor,service,update,init,serve,protocol,pair,devices,revoke,send,status,name,admin,login,report,unlink,report-hostname,remote-pair,remote-unbind,agent,passphrase,approvals,feedback,stop,resume,memory,activity,config,history,inbox,asr,tasks,wizard,keep-awake,browser,setup,google,mail,contacts,workflows,sudo,secret,provider,sudo-helper,docs-rule,handover,telegram-cursor,plaza,support,capability,goal,heartbeat,quota,imessage,busy,recall,bots,friends,codex-sandbox,migrate,alias,instances,label,onboarding} ...
+              {doctor,service,update,init,serve,protocol,pair,devices,revoke,send,status,name,admin,login,report,unlink,report-hostname,remote-pair,remote-unbind,agent,passphrase,approvals,feedback,stop,resume,memory,activity,config,history,inbox,asr,tasks,wizard,keep-awake,browser,setup,google,mail,contacts,workflows,sudo,secret,provider,sudo-helper,docs-rule,handover,telegram-cursor,plaza,support,capability,goal,heartbeat,quota,busy,recall,bots,friends,codex-sandbox,migrate,alias,instances,label,onboarding} ...
 ```
 
 | Argument | Default | Required | Choices | Help |
@@ -194,7 +194,7 @@ usage: agentj admin [-h] [--port PORT] [--events {text,jsonl}]
 ### agentj agent
 
 ```text
-codex / opencode / kimi / qwen / off；reset = 开一段新对话（重启 serve 生效）；restart = 下一条消息前重启 Agent 进程、对话不变（换了 key 或代理后）；detect = 本机有哪些可用 / which agents are usable here；switch <claude\|codex\|opencode\|kimi\|qwen> = 先无头探测、能用才切，失败自动切回 / probe first, switch only if it works, switch back on failure；route = 按本机实测推荐 AI 路线（用不了 Claude Code / Codex 的地区推荐 Kimi 或阿里百炼 Token Plan）/ recommend an AI route from what works here
+codex / opencode / off；reset = 开一段新对话（重启 serve 生效）；restart = 下一条消息前重启 Agent 进程、对话不变（换了 key 或代理后）；detect = 本机有哪些可用 / which agents are usable here；switch <claude\|codex\|opencode> = 先无头探测、能用才切，失败自动切回 / probe first, switch only if it works, switch back on failure
 ```
 
 ```bash
@@ -202,30 +202,26 @@ agentj agent --help
 ```
 
 ```text
-usage: agentj agent [-h] [--probe] [--dry-run] [--result] [--scan] [--undo]
-                    [--force] [--json] [--dir DIR]
-                    [--region {mainland-cn,global}] [--model MODEL]
-                    [--unfenced] [--allow-docker] [--shared | --independent]
-                    [{claude,codex,opencode,kimi,qwen,off,reset,restart,status,detect,switch,route}]
-                    [{claude,codex,opencode,kimi,qwen}]
+usage: agentj agent [-h] [--probe] [--dry-run] [--result] [--scan] [--json]
+                    [--dir DIR] [--model MODEL] [--unfenced] [--allow-docker]
+                    [--shared | --independent]
+                    [{claude,codex,opencode,off,reset,restart,status,detect,switch}]
+                    [{claude,codex,opencode}]
 ```
 
 | Argument | Default | Required | Choices | Help |
 | --- | --- | --- | --- | --- |
 | `-h / --help` | `null` | false | — | `show this help message and exit` |
-| `mode` | `"status"` | false | `claude`, `codex`, `opencode`, `kimi`, `qwen`, `off`, `reset`, `restart`, `status`, `detect`, `switch`, `route` | `detect = 本机有哪些可用（不需要 init；只看是否安装、登录文件是否存在）/ which agents are usable here (no init needed; checks only what is installed and whether login files exist)` |
-| `target` | `null` | false | `claude`, `codex`, `opencode`, `kimi`, `qwen` | `the harness to switch to; with detect --probe: probe only this one` |
+| `mode` | `"status"` | false | `claude`, `codex`, `opencode`, `off`, `reset`, `restart`, `status`, `detect`, `switch` | `detect = 本机有哪些可用（不需要 init；只看是否安装、登录文件是否存在）/ which agents are usable here (no init needed; checks only what is installed and whether login files exist)` |
+| `target` | `null` | false | `claude`, `codex`, `opencode` | `the harness to switch to; with detect --probe: probe only this one` |
 | `--probe` | `false` | false | — | `detect: verify one tool-free model call using existing login (≤ 60 s each); no native output is returned` |
 | `--dry-run` | `false` | false | — | `only check whether it can switch` |
 | `--result` | `false` | false | — | `the last switch's outcome` |
 | `--scan` | `false` | false | — | `probe all three in the service's environment` |
-| `--undo` | `false` | false | — | `go back to the harness used before the last switch, with no pre-check (if it does not come up, back here)` |
-| `--force` | `false` | false | — | `switch even if the current harness would fail the check on the way back (then --undo returns)` |
 | `--worker` | `false` | false | — | `internal option (hidden from --help)` |
 | `--job` | `null` | false | — | `internal option (hidden from --help)` |
 | `--json` | `false` | false | — | `machine-readable detect output` |
 | `--dir` | `null` | false | — | `Agent 的工作目录（默认当前目录）` |
-| `--region` | `null` | false | `mainland-cn`, `global` | `kimi: which Kimi site the account is on (separate accounts, keys and quota)` |
 | `--model` | `null` | false | — | `模型（默认用你自己的设置）；OpenCode 写成 服务商/模型，例如 zhipuai/glm-5.3` |
 | `--unfenced` | `false` | false | — | `不隔离运行 Agent（按底层 harness 自己的权限）。默认 Agent 在 bubblewrap 里运行，看不到 Agent J 的状态` |
 | `--allow-docker` | `false` | false | — | `podman（默认不开；主人要求时可直接打开）。默认容器引擎的 socket 对 Agent 隐藏` |
@@ -400,52 +396,12 @@ agentj bots --help
 
 ```text
 usage: agentj bots [-h]
-                   {list,detail,history,statistics,handoffs,request,attach-telegram,result,avatar,tool} ...
+                   {list,detail,history,statistics,handoffs,request,result,tool} ...
 ```
 
 | Argument | Default | Required | Choices | Help |
 | --- | --- | --- | --- | --- |
 | `-h / --help` | `null` | false | — | `show this help message and exit` |
-
-### agentj bots attach-telegram
-
-```text
-Let your own Agent J Telegram bot receive guests with this bot / 让主人 Telegram 机器人也接待客人
-```
-
-```bash
-agentj bots attach-telegram --help
-```
-
-```text
-usage: agentj bots attach-telegram [-h] [--off] bot
-```
-
-| Argument | Default | Required | Choices | Help |
-| --- | --- | --- | --- | --- |
-| `-h / --help` | `null` | false | — | `show this help message and exit` |
-| `bot` | `null` | true | — | `` |
-| `--off` | `false` | false | — | `strangers get only their ID again / 关闭` |
-
-### agentj bots avatar
-
-```text
-Telegram bot photo: status, set (the official Agent J logo) or reset (remove the current photo)
-```
-
-```bash
-agentj bots avatar --help
-```
-
-```text
-usage: agentj bots avatar [-h] {status,set,reset} bot
-```
-
-| Argument | Default | Required | Choices | Help |
-| --- | --- | --- | --- | --- |
-| `-h / --help` | `null` | false | — | `show this help message and exit` |
-| `action` | `null` | true | `status`, `set`, `reset` | `` |
-| `bot` | `null` | true | — | `owner = your own bot, or a customer-service bot id` |
 
 ### agentj bots detail
 
@@ -1597,7 +1553,7 @@ agentj docs-rule --help
 
 ```text
 usage: agentj docs-rule [-h] [--lang {zh,en}] [--write]
-                        [--harness {claude,codex,kimi,opencode,qwen}]
+                        [--harness {claude,codex,opencode}]
 ```
 
 | Argument | Default | Required | Choices | Help |
@@ -1605,7 +1561,7 @@ usage: agentj docs-rule [-h] [--lang {zh,en}] [--write]
 | `-h / --help` | `null` | false | — | `show this help message and exit` |
 | `--lang` | `null` | false | `zh`, `en` | `只要中文或英文（默认两种都有）/ one language only (default: both)` |
 | `--write` | `false` | false | — | `加到 AI 的用户级记忆文件末尾（只加一次）/ append it once to the AI's user-level memory file` |
-| `--harness` | `null` | false | `claude`, `codex`, `kimi`, `opencode`, `qwen` | `和 --write 一起：claude → ~/.claude/CLAUDE.md · codex → ~/.codex/AGENTS.md · opencode → ~/.config/opencode/AGENTS.md` |
+| `--harness` | `null` | false | `claude`, `codex`, `opencode` | `和 --write 一起：claude → ~/.claude/CLAUDE.md · codex → ~/.codex/AGENTS.md · opencode → ~/.config/opencode/AGENTS.md` |
 
 ### agentj doctor
 
@@ -2490,234 +2446,6 @@ usage: agentj history [-h] [--time] [--json] [--all]
 | `--json` | `false` | false | — | `` |
 | `--all` | `false` | false | — | `clear：连同全部归档立即删除（不能撤销）/ with clear: delete current + every archive` |
 
-### agentj imessage
-
-```text
-the iMessage assistant (macOS only, read-only)
-```
-
-```bash
-agentj imessage --help
-```
-
-```text
-usage: agentj imessage [-h]
-                       {status,doctor,on,off,set,instructions,vip,mute,scan,backfill,open-fda} ...
-```
-
-| Argument | Default | Required | Choices | Help |
-| --- | --- | --- | --- | --- |
-| `-h / --help` | `null` | false | — | `show this help message and exit` |
-
-### agentj imessage backfill
-
-```text
-one digest of the last N hours
-```
-
-```bash
-agentj imessage backfill --help
-```
-
-```text
-usage: agentj imessage backfill [-h] --hours HOURS
-```
-
-| Argument | Default | Required | Choices | Help |
-| --- | --- | --- | --- | --- |
-| `-h / --help` | `null` | false | — | `show this help message and exit` |
-| `--hours` | `null` | true | — | `` |
-
-### agentj imessage doctor
-
-```text
-check permission and database again
-```
-
-```bash
-agentj imessage doctor --help
-```
-
-```text
-usage: agentj imessage doctor [-h]
-```
-
-| Argument | Default | Required | Choices | Help |
-| --- | --- | --- | --- | --- |
-| `-h / --help` | `null` | false | — | `show this help message and exit` |
-
-### agentj imessage instructions
-
-```text
-your rules text
-```
-
-```bash
-agentj imessage instructions --help
-```
-
-```text
-usage: agentj imessage instructions [-h] [--file FILE] {show,set,reset} [text]
-```
-
-| Argument | Default | Required | Choices | Help |
-| --- | --- | --- | --- | --- |
-| `-h / --help` | `null` | false | — | `show this help message and exit` |
-| `action` | `null` | true | `show`, `set`, `reset` | `` |
-| `text` | `null` | false | — | `` |
-| `--file` | `null` | false | — | `` |
-
-### agentj imessage mute
-
-```text
-静音名单（号码/邮箱/关键词）/ muted：list · add <x> · remove <x> · clear
-```
-
-```bash
-agentj imessage mute --help
-```
-
-```text
-usage: agentj imessage mute [-h] {list,add,remove,clear} [item]
-```
-
-| Argument | Default | Required | Choices | Help |
-| --- | --- | --- | --- | --- |
-| `-h / --help` | `null` | false | — | `show this help message and exit` |
-| `action` | `null` | true | `list`, `add`, `remove`, `clear` | `` |
-| `item` | `null` | false | — | `` |
-
-### agentj imessage off
-
-```text
-turn off and clear the cursor and digest queue
-```
-
-```bash
-agentj imessage off --help
-```
-
-```text
-usage: agentj imessage off [-h]
-```
-
-| Argument | Default | Required | Choices | Help |
-| --- | --- | --- | --- | --- |
-| `-h / --help` | `null` | false | — | `show this help message and exit` |
-
-### agentj imessage on
-
-```text
-打开（仅 macOS）/ turn on (macOS only)
-```
-
-```bash
-agentj imessage on --help
-```
-
-```text
-usage: agentj imessage on [-h]
-```
-
-| Argument | Default | Required | Choices | Help |
-| --- | --- | --- | --- | --- |
-| `-h / --help` | `null` | false | — | `show this help message and exit` |
-
-### agentj imessage open-fda
-
-```text
-open the Full Disk Access pane on this Mac
-```
-
-```bash
-agentj imessage open-fda --help
-```
-
-```text
-usage: agentj imessage open-fda [-h]
-```
-
-| Argument | Default | Required | Choices | Help |
-| --- | --- | --- | --- | --- |
-| `-h / --help` | `null` | false | — | `show this help message and exit` |
-
-### agentj imessage scan
-
-```text
-look for new messages now
-```
-
-```bash
-agentj imessage scan --help
-```
-
-```text
-usage: agentj imessage scan [-h]
-```
-
-| Argument | Default | Required | Choices | Help |
-| --- | --- | --- | --- | --- |
-| `-h / --help` | `null` | false | — | `show this help message and exit` |
-
-### agentj imessage set
-
-```text
-change one parameter
-```
-
-```bash
-agentj imessage set --help
-```
-
-```text
-usage: agentj imessage set [-h] key value
-```
-
-| Argument | Default | Required | Choices | Help |
-| --- | --- | --- | --- | --- |
-| `-h / --help` | `null` | false | — | `show this help message and exit` |
-| `key` | `null` | true | — | `` |
-| `value` | `null` | true | — | `` |
-
-### agentj imessage status
-
-```text
-开关、状态、计数（不含短信内容）/ switch, status, counts (no message text)
-```
-
-```bash
-agentj imessage status --help
-```
-
-```text
-usage: agentj imessage status [-h] [--json]
-```
-
-| Argument | Default | Required | Choices | Help |
-| --- | --- | --- | --- | --- |
-| `-h / --help` | `null` | false | — | `show this help message and exit` |
-| `--json` | `false` | false | — | `` |
-
-### agentj imessage vip
-
-```text
-重要联系人（号码/邮箱，严格匹配）/ VIP numbers or e-mails：list · add <x> · remove <x> · clear
-```
-
-```bash
-agentj imessage vip --help
-```
-
-```text
-usage: agentj imessage vip [-h] {list,add,remove,clear} [item]
-```
-
-| Argument | Default | Required | Choices | Help |
-| --- | --- | --- | --- | --- |
-| `-h / --help` | `null` | false | — | `show this help message and exit` |
-| `action` | `null` | true | `list`, `add`, `remove`, `clear` | `` |
-| `item` | `null` | false | — | `` |
-
 ### agentj inbox
 
 ```text
@@ -2920,7 +2648,7 @@ agentj mail --help
 
 ```text
 usage: agentj mail [-h] [--address ADDRESS_OPT]
-                   [--preset {126,163,aliyun,aliyun_biz,custom,exmail,gmail,icloud,netease_biz,outlook,qq,yahoo}]
+                   [--preset {126,163,aliyun,aliyun_biz,custom,exmail,gmail,icloud,netease_biz,outlook,qq}]
                    [--username USERNAME] [--imap-host IMAP_HOST]
                    [--imap-port IMAP_PORT]
                    [--imap-security {ssl,starttls,plain}]
@@ -2942,7 +2670,7 @@ usage: agentj mail [-h] [--address ADDRESS_OPT]
 | `action` | `null` | true | `status`, `presets`, `setup`, `allow`, `deny`, `password`, `test`, `check`, `on`, `off`, `send`, `notes`, `expect` | `` |
 | `address` | `null` | false | — | `deny：发件地址 / the sender address` |
 | `--address` | `null` | false | — | `the mailbox address` |
-| `--preset` | `null` | false | `126`, `163`, `aliyun`, `aliyun_biz`, `custom`, `exmail`, `gmail`, `icloud`, `netease_biz`, `outlook`, `qq`, `yahoo` | `setup：邮箱预设（默认按域名猜）/ preset (guessed from the domain)` |
+| `--preset` | `null` | false | `126`, `163`, `aliyun`, `aliyun_biz`, `custom`, `exmail`, `gmail`, `icloud`, `netease_biz`, `outlook`, `qq` | `setup：邮箱预设（默认按域名猜）/ preset (guessed from the domain)` |
 | `--username` | `null` | false | — | `setup：登录名（默认 = 邮箱地址）/ sign-in name (default: the address)` |
 | `--imap-host` | `null` | false | — | `` |
 | `--imap-port` | `null` | false | — | `` |
@@ -3486,7 +3214,7 @@ usage: agentj protocol open [-h] url
 ### agentj provider
 
 ```text
-list / remove；bailian = 阿里百炼 Token Plan 预设（大陆推荐）· a third-party model service for OpenCode (base URL + key); bailian = the Alibaba Cloud Bailian Token Plan preset
+list / remove · a third-party model service for OpenCode (base URL + key)
 ```
 
 ```bash
@@ -3496,23 +3224,20 @@ agentj provider --help
 ```text
 usage: agentj provider [-h] [--base-url BASE_URL] [--model MODEL]
                        [--api {anthropic,openai}] [--name NAME]
-                       [--key-env KEY_ENV] [--plan {token-plan,coding-plan}]
-                       [--lang {zh,en}] [--dry-run] [--json]
-                       {add,list,remove,bailian} [id]
+                       [--key-env KEY_ENV] [--dry-run] [--json]
+                       {add,list,remove} [id]
 ```
 
 | Argument | Default | Required | Choices | Help |
 | --- | --- | --- | --- | --- |
 | `-h / --help` | `null` | false | — | `show this help message and exit` |
-| `action` | `null` | true | `add`, `list`, `remove`, `bailian` | `` |
+| `action` | `null` | true | `add`, `list`, `remove` | `` |
 | `id` | `null` | false | — | `服务商 id，例如 myrelay（模型写成 myrelay/<模型>）` |
 | `--base-url` | `null` | false | — | `例如 https://api.example.com/v1` |
 | `--model` | `null` | false | — | `模型 id，可重复` |
 | `--api` | `"openai"` | false | `anthropic`, `openai` | `openai（默认，OpenAI 兼容）或 anthropic（Anthropic 兼容）` |
 | `--name` | `null` | false | — | `显示名` |
 | `--key-env` | `null` | false | — | `key 的环境变量名（默认 <ID>_API_KEY）` |
-| `--plan` | `null` | false | `token-plan`, `coding-plan` | `which Bailian plan` |
-| `--lang` | `null` | false | `zh`, `en` | `text language` |
 | `--dry-run` | `false` | false | — | `` |
 | `--json` | `false` | false | — | `` |
 
@@ -4655,7 +4380,7 @@ agentj wizard --help
 
 ```text
 usage: agentj wizard [-h]
-                     {install,apply,diff,resolve,register,doctor,templates,add-template,starters,dry-run} ...
+                     {install,apply,diff,resolve,doctor,templates,add-template,dry-run} ...
 ```
 
 | Argument | Default | Required | Choices | Help |
@@ -4795,26 +4520,6 @@ usage: agentj wizard install [-h] [--dir DIR]
 | `--lang` | `null` | false | `zh`, `en` | `入口文件里「先查文档」那段只用一种语言（默认中英都有）/ one language for the "look it up first" section` |
 | `--json` | `false` | false | — | `` |
 
-### agentj wizard register
-
-```text
-把工作流文件夹登记进 CEO 花名册 documentation/ROLES.md（只追加）/ register workflow folders in the CEO roster
-```
-
-```bash
-agentj wizard register --help
-```
-
-```text
-usage: agentj wizard register [-h] [--dir DIR] [--json]
-```
-
-| Argument | Default | Required | Choices | Help |
-| --- | --- | --- | --- | --- |
-| `-h / --help` | `null` | false | — | `show this help message and exit` |
-| `--dir` | `null` | false | — | `Agent 的工作目录（默认 agentj agent 设的目录）/ the Agent's working folder` |
-| `--json` | `false` | false | — | `` |
-
 ### agentj wizard resolve
 
 ```text
@@ -4835,26 +4540,6 @@ usage: agentj wizard resolve [-h] [--dir DIR] --file FILE --keep {mine,new}
 | `--dir` | `null` | false | — | `Agent 的工作目录（默认 agentj agent 设的目录）/ the Agent's working folder` |
 | `--file` | `null` | true | — | `` |
 | `--keep` | `null` | true | `mine`, `new` | `` |
-
-### agentj wizard starters
-
-```text
-the three example workflows
-```
-
-```bash
-agentj wizard starters --help
-```
-
-```text
-usage: agentj wizard starters [-h] [--dir DIR] [--json]
-```
-
-| Argument | Default | Required | Choices | Help |
-| --- | --- | --- | --- | --- |
-| `-h / --help` | `null` | false | — | `show this help message and exit` |
-| `--dir` | `null` | false | — | `Agent 的工作目录（默认 agentj agent 设的目录）/ the Agent's working folder` |
-| `--json` | `false` | false | — | `` |
 
 ### agentj wizard templates
 
@@ -4887,14 +4572,13 @@ agentj workflows --help
 ```
 
 ```text
-usage: agentj workflows [-h] [--json] [--staff-hint FOLDER]
+usage: agentj workflows [-h] [--json]
 ```
 
 | Argument | Default | Required | Choices | Help |
 | --- | --- | --- | --- | --- |
 | `-h / --help` | `null` | false | — | `show this help message and exit` |
 | `--json` | `false` | false | — | `` |
-| `--staff-hint` | `null` | false | — | `before dispatching to this workflow's CEO: its staff count, plus a one-time hint when it has none` |
 
 </details>
 
@@ -5040,7 +4724,7 @@ agentj --help
 
 ```text
 usage: agentj [-h] [-V] [--migrate-legacy] [--instance N] [--fresh]
-              {doctor,service,update,init,serve,protocol,pair,devices,revoke,send,status,name,admin,login,report,unlink,report-hostname,remote-pair,remote-unbind,agent,passphrase,approvals,feedback,stop,resume,memory,activity,config,history,inbox,asr,tasks,wizard,keep-awake,browser,setup,google,mail,contacts,workflows,sudo,secret,provider,sudo-helper,docs-rule,handover,telegram-cursor,plaza,support,capability,goal,heartbeat,quota,imessage,busy,recall,bots,friends,codex-sandbox,migrate,alias,instances,label,onboarding} ...
+              {doctor,service,update,init,serve,protocol,pair,devices,revoke,send,status,name,admin,login,report,unlink,report-hostname,remote-pair,remote-unbind,agent,passphrase,approvals,feedback,stop,resume,memory,activity,config,history,inbox,asr,tasks,wizard,keep-awake,browser,setup,google,mail,contacts,workflows,sudo,secret,provider,sudo-helper,docs-rule,handover,telegram-cursor,plaza,support,capability,goal,heartbeat,quota,busy,recall,bots,friends,codex-sandbox,migrate,alias,instances,label,onboarding} ...
 ```
 
 | 参数 | 默认值 | 必填 | 可选值 | 说明 |
@@ -5108,30 +4792,26 @@ agentj agent --help
 ```
 
 ```text
-usage: agentj agent [-h] [--probe] [--dry-run] [--result] [--scan] [--undo]
-                    [--force] [--json] [--dir DIR]
-                    [--region {mainland-cn,global}] [--model MODEL]
-                    [--unfenced] [--allow-docker] [--shared | --independent]
-                    [{claude,codex,opencode,kimi,qwen,off,reset,restart,status,detect,switch,route}]
-                    [{claude,codex,opencode,kimi,qwen}]
+usage: agentj agent [-h] [--probe] [--dry-run] [--result] [--scan] [--json]
+                    [--dir DIR] [--model MODEL] [--unfenced] [--allow-docker]
+                    [--shared | --independent]
+                    [{claude,codex,opencode,off,reset,restart,status,detect,switch}]
+                    [{claude,codex,opencode}]
 ```
 
 | 参数 | 默认值 | 必填 | 可选值 | 说明 |
 | --- | --- | --- | --- | --- |
 | `-h / --help` | `null` | false | — | `show this help message and exit` |
-| `mode` | `"status"` | false | `claude`, `codex`, `opencode`, `kimi`, `qwen`, `off`, `reset`, `restart`, `status`, `detect`, `switch`, `route` | `detect = 本机有哪些可用（不需要 init；只看是否安装、登录文件是否存在）/ which agents are usable here (no init needed; checks only what is installed and whether login files exist)` |
-| `target` | `null` | false | `claude`, `codex`, `opencode`, `kimi`, `qwen` | `switch：要切到的 harness；detect --probe：只探测这一个（可加 --model）` |
+| `mode` | `"status"` | false | `claude`, `codex`, `opencode`, `off`, `reset`, `restart`, `status`, `detect`, `switch` | `detect = 本机有哪些可用（不需要 init；只看是否安装、登录文件是否存在）/ which agents are usable here (no init needed; checks only what is installed and whether login files exist)` |
+| `target` | `null` | false | `claude`, `codex`, `opencode` | `switch：要切到的 harness；detect --probe：只探测这一个（可加 --model）` |
 | `--probe` | `false` | false | — | `detect: verify one tool-free model call using existing login (≤ 60 s each); no native output is returned` |
 | `--dry-run` | `false` | false | — | `switch：只检查能不能切，不切` |
 | `--result` | `false` | false | — | `switch：上一次切换的结果` |
 | `--scan` | `false` | false | — | `switch：用服务的环境逐个无头探测三个，列出现在能切到哪些` |
-| `--undo` | `false` | false | — | `switch：撤回上一次切换，不经检查直接切回原来那个（起不来会自动回到现在这个）` |
-| `--force` | `false` | false | — | `switch：原来那个在后台过不了检查也照样切（之后用 --undo 切回）` |
 | `--worker` | `false` | false | — | `内部参数（--help 隐藏）` |
 | `--job` | `null` | false | — | `内部参数（--help 隐藏）` |
 | `--json` | `false` | false | — | `detect 的机器可读输出` |
 | `--dir` | `null` | false | — | `Agent 的工作目录（默认当前目录）` |
-| `--region` | `null` | false | `mainland-cn`, `global` | `kimi：Kimi 账号在哪个站 —— mainland-cn = kimi.com（默认）· global = kimi.ai（两边账号、key、额度不通用）` |
 | `--model` | `null` | false | — | `模型（默认用你自己的设置）；OpenCode 写成 服务商/模型，例如 zhipuai/glm-5.3` |
 | `--unfenced` | `false` | false | — | `不隔离运行 Agent（按底层 harness 自己的权限）。默认 Agent 在 bubblewrap 里运行，看不到 Agent J 的状态` |
 | `--allow-docker` | `false` | false | — | `隔离里也让 Agent 用 docker` |
@@ -5306,52 +4986,12 @@ agentj bots --help
 
 ```text
 usage: agentj bots [-h]
-                   {list,detail,history,statistics,handoffs,request,attach-telegram,result,avatar,tool} ...
+                   {list,detail,history,statistics,handoffs,request,result,tool} ...
 ```
 
 | 参数 | 默认值 | 必填 | 可选值 | 说明 |
 | --- | --- | --- | --- | --- |
 | `-h / --help` | `null` | false | — | `show this help message and exit` |
-
-### agentj bots attach-telegram
-
-```text
-Let your own Agent J Telegram bot receive guests with this bot / 让主人 Telegram 机器人也接待客人
-```
-
-```bash
-agentj bots attach-telegram --help
-```
-
-```text
-usage: agentj bots attach-telegram [-h] [--off] bot
-```
-
-| 参数 | 默认值 | 必填 | 可选值 | 说明 |
-| --- | --- | --- | --- | --- |
-| `-h / --help` | `null` | false | — | `show this help message and exit` |
-| `bot` | `null` | true | — | `` |
-| `--off` | `false` | false | — | `strangers get only their ID again / 关闭` |
-
-### agentj bots avatar
-
-```text
-Telegram bot 头像：查看、换成 Agent J 官方 Logo、移除当前头像
-```
-
-```bash
-agentj bots avatar --help
-```
-
-```text
-usage: agentj bots avatar [-h] {status,set,reset} bot
-```
-
-| 参数 | 默认值 | 必填 | 可选值 | 说明 |
-| --- | --- | --- | --- | --- |
-| `-h / --help` | `null` | false | — | `show this help message and exit` |
-| `action` | `null` | true | `status`, `set`, `reset` | `` |
-| `bot` | `null` | true | — | `owner = 主人自己的 bot，或客服 bot 的 id` |
 
 ### agentj bots detail
 
@@ -6503,7 +6143,7 @@ agentj docs-rule --help
 
 ```text
 usage: agentj docs-rule [-h] [--lang {zh,en}] [--write]
-                        [--harness {claude,codex,kimi,opencode,qwen}]
+                        [--harness {claude,codex,opencode}]
 ```
 
 | 参数 | 默认值 | 必填 | 可选值 | 说明 |
@@ -6511,7 +6151,7 @@ usage: agentj docs-rule [-h] [--lang {zh,en}] [--write]
 | `-h / --help` | `null` | false | — | `show this help message and exit` |
 | `--lang` | `null` | false | `zh`, `en` | `只要中文或英文（默认两种都有）/ one language only (default: both)` |
 | `--write` | `false` | false | — | `加到 AI 的用户级记忆文件末尾（只加一次）/ append it once to the AI's user-level memory file` |
-| `--harness` | `null` | false | `claude`, `codex`, `kimi`, `opencode`, `qwen` | `和 --write 一起：claude → ~/.claude/CLAUDE.md · codex → ~/.codex/AGENTS.md · opencode → ~/.config/opencode/AGENTS.md` |
+| `--harness` | `null` | false | `claude`, `codex`, `opencode` | `和 --write 一起：claude → ~/.claude/CLAUDE.md · codex → ~/.codex/AGENTS.md · opencode → ~/.config/opencode/AGENTS.md` |
 
 ### agentj doctor
 
@@ -7396,234 +7036,6 @@ usage: agentj history [-h] [--time] [--json] [--all]
 | `--json` | `false` | false | — | `` |
 | `--all` | `false` | false | — | `clear：连同全部归档立即删除（不能撤销）/ with clear: delete current + every archive` |
 
-### agentj imessage
-
-```text
-iMessage 助手（仅 macOS，只读）：status · doctor · on · off · set · instructions · vip · mute · scan · backfill · open-fda
-```
-
-```bash
-agentj imessage --help
-```
-
-```text
-usage: agentj imessage [-h]
-                       {status,doctor,on,off,set,instructions,vip,mute,scan,backfill,open-fda} ...
-```
-
-| 参数 | 默认值 | 必填 | 可选值 | 说明 |
-| --- | --- | --- | --- | --- |
-| `-h / --help` | `null` | false | — | `show this help message and exit` |
-
-### agentj imessage backfill
-
-```text
-补看过去 N 小时（≤ 72），推一份摘要
-```
-
-```bash
-agentj imessage backfill --help
-```
-
-```text
-usage: agentj imessage backfill [-h] --hours HOURS
-```
-
-| 参数 | 默认值 | 必填 | 可选值 | 说明 |
-| --- | --- | --- | --- | --- |
-| `-h / --help` | `null` | false | — | `show this help message and exit` |
-| `--hours` | `null` | true | — | `` |
-
-### agentj imessage doctor
-
-```text
-重新检测权限与数据库
-```
-
-```bash
-agentj imessage doctor --help
-```
-
-```text
-usage: agentj imessage doctor [-h]
-```
-
-| 参数 | 默认值 | 必填 | 可选值 | 说明 |
-| --- | --- | --- | --- | --- |
-| `-h / --help` | `null` | false | — | `show this help message and exit` |
-
-### agentj imessage instructions
-
-```text
-过滤与提醒规则说明：show · set <文字>\|--file F\|- · reset
-```
-
-```bash
-agentj imessage instructions --help
-```
-
-```text
-usage: agentj imessage instructions [-h] [--file FILE] {show,set,reset} [text]
-```
-
-| 参数 | 默认值 | 必填 | 可选值 | 说明 |
-| --- | --- | --- | --- | --- |
-| `-h / --help` | `null` | false | — | `show this help message and exit` |
-| `action` | `null` | true | `show`, `set`, `reset` | `` |
-| `text` | `null` | false | — | `` |
-| `--file` | `null` | false | — | `` |
-
-### agentj imessage mute
-
-```text
-静音名单（号码/邮箱/关键词）/ muted：list · add <x> · remove <x> · clear
-```
-
-```bash
-agentj imessage mute --help
-```
-
-```text
-usage: agentj imessage mute [-h] {list,add,remove,clear} [item]
-```
-
-| 参数 | 默认值 | 必填 | 可选值 | 说明 |
-| --- | --- | --- | --- | --- |
-| `-h / --help` | `null` | false | — | `show this help message and exit` |
-| `action` | `null` | true | `list`, `add`, `remove`, `clear` | `` |
-| `item` | `null` | false | — | `` |
-
-### agentj imessage off
-
-```text
-关闭并清除游标与摘要队列
-```
-
-```bash
-agentj imessage off --help
-```
-
-```text
-usage: agentj imessage off [-h]
-```
-
-| 参数 | 默认值 | 必填 | 可选值 | 说明 |
-| --- | --- | --- | --- | --- |
-| `-h / --help` | `null` | false | — | `show this help message and exit` |
-
-### agentj imessage on
-
-```text
-打开（仅 macOS）/ turn on (macOS only)
-```
-
-```bash
-agentj imessage on --help
-```
-
-```text
-usage: agentj imessage on [-h]
-```
-
-| 参数 | 默认值 | 必填 | 可选值 | 说明 |
-| --- | --- | --- | --- | --- |
-| `-h / --help` | `null` | false | — | `show this help message and exit` |
-
-### agentj imessage open-fda
-
-```text
-在这台 Mac 上打开「完全磁盘访问权限」设置页
-```
-
-```bash
-agentj imessage open-fda --help
-```
-
-```text
-usage: agentj imessage open-fda [-h]
-```
-
-| 参数 | 默认值 | 必填 | 可选值 | 说明 |
-| --- | --- | --- | --- | --- |
-| `-h / --help` | `null` | false | — | `show this help message and exit` |
-
-### agentj imessage scan
-
-```text
-马上看一次新消息
-```
-
-```bash
-agentj imessage scan --help
-```
-
-```text
-usage: agentj imessage scan [-h]
-```
-
-| 参数 | 默认值 | 必填 | 可选值 | 说明 |
-| --- | --- | --- | --- | --- |
-| `-h / --help` | `null` | false | — | `show this help message and exit` |
-
-### agentj imessage set
-
-```text
-改一个参数：interval_minutes 5 · delivery digest · digest_at 09:00,18:00 · quiet_hours 22:00-07:00 · strictness strict · codes mask · groups false · llm redacted
-```
-
-```bash
-agentj imessage set --help
-```
-
-```text
-usage: agentj imessage set [-h] key value
-```
-
-| 参数 | 默认值 | 必填 | 可选值 | 说明 |
-| --- | --- | --- | --- | --- |
-| `-h / --help` | `null` | false | — | `show this help message and exit` |
-| `key` | `null` | true | — | `` |
-| `value` | `null` | true | — | `` |
-
-### agentj imessage status
-
-```text
-开关、状态、计数（不含短信内容）/ switch, status, counts (no message text)
-```
-
-```bash
-agentj imessage status --help
-```
-
-```text
-usage: agentj imessage status [-h] [--json]
-```
-
-| 参数 | 默认值 | 必填 | 可选值 | 说明 |
-| --- | --- | --- | --- | --- |
-| `-h / --help` | `null` | false | — | `show this help message and exit` |
-| `--json` | `false` | false | — | `` |
-
-### agentj imessage vip
-
-```text
-重要联系人（号码/邮箱，严格匹配）/ VIP numbers or e-mails：list · add <x> · remove <x> · clear
-```
-
-```bash
-agentj imessage vip --help
-```
-
-```text
-usage: agentj imessage vip [-h] {list,add,remove,clear} [item]
-```
-
-| 参数 | 默认值 | 必填 | 可选值 | 说明 |
-| --- | --- | --- | --- | --- |
-| `-h / --help` | `null` | false | — | `show this help message and exit` |
-| `action` | `null` | true | `list`, `add`, `remove`, `clear` | `` |
-| `item` | `null` | false | — | `` |
-
 ### agentj inbox
 
 ```text
@@ -7826,7 +7238,7 @@ agentj mail --help
 
 ```text
 usage: agentj mail [-h] [--address ADDRESS_OPT]
-                   [--preset {126,163,aliyun,aliyun_biz,custom,exmail,gmail,icloud,netease_biz,outlook,qq,yahoo}]
+                   [--preset {126,163,aliyun,aliyun_biz,custom,exmail,gmail,icloud,netease_biz,outlook,qq}]
                    [--username USERNAME] [--imap-host IMAP_HOST]
                    [--imap-port IMAP_PORT]
                    [--imap-security {ssl,starttls,plain}]
@@ -7848,7 +7260,7 @@ usage: agentj mail [-h] [--address ADDRESS_OPT]
 | `action` | `null` | true | `status`, `presets`, `setup`, `allow`, `deny`, `password`, `test`, `check`, `on`, `off`, `send`, `notes`, `expect` | `` |
 | `address` | `null` | false | — | `allow` |
 | `--address` | `null` | false | — | `setup：Agent 用的邮箱地址` |
-| `--preset` | `null` | false | `126`, `163`, `aliyun`, `aliyun_biz`, `custom`, `exmail`, `gmail`, `icloud`, `netease_biz`, `outlook`, `qq`, `yahoo` | `setup：邮箱预设（默认按域名猜）/ preset (guessed from the domain)` |
+| `--preset` | `null` | false | `126`, `163`, `aliyun`, `aliyun_biz`, `custom`, `exmail`, `gmail`, `icloud`, `netease_biz`, `outlook`, `qq` | `setup：邮箱预设（默认按域名猜）/ preset (guessed from the domain)` |
 | `--username` | `null` | false | — | `setup：登录名（默认 = 邮箱地址）/ sign-in name (default: the address)` |
 | `--imap-host` | `null` | false | — | `` |
 | `--imap-port` | `null` | false | — | `` |
@@ -8402,23 +7814,20 @@ agentj provider --help
 ```text
 usage: agentj provider [-h] [--base-url BASE_URL] [--model MODEL]
                        [--api {anthropic,openai}] [--name NAME]
-                       [--key-env KEY_ENV] [--plan {token-plan,coding-plan}]
-                       [--lang {zh,en}] [--dry-run] [--json]
-                       {add,list,remove,bailian} [id]
+                       [--key-env KEY_ENV] [--dry-run] [--json]
+                       {add,list,remove} [id]
 ```
 
 | 参数 | 默认值 | 必填 | 可选值 | 说明 |
 | --- | --- | --- | --- | --- |
 | `-h / --help` | `null` | false | — | `show this help message and exit` |
-| `action` | `null` | true | `add`, `list`, `remove`, `bailian` | `` |
+| `action` | `null` | true | `add`, `list`, `remove` | `` |
 | `id` | `null` | false | — | `服务商 id，例如 myrelay（模型写成 myrelay/<模型>）` |
 | `--base-url` | `null` | false | — | `例如 https://api.example.com/v1` |
 | `--model` | `null` | false | — | `模型 id，可重复` |
 | `--api` | `"openai"` | false | `anthropic`, `openai` | `openai（默认，OpenAI 兼容）或 anthropic（Anthropic 兼容）` |
 | `--name` | `null` | false | — | `显示名` |
 | `--key-env` | `null` | false | — | `key 的环境变量名（默认 <ID>_API_KEY）` |
-| `--plan` | `null` | false | `token-plan`, `coding-plan` | `bailian：token-plan（默认，个人版，含 Qwen 3.8 Max）或 coding-plan` |
-| `--lang` | `null` | false | `zh`, `en` | `bailian：说明文字的语言` |
 | `--dry-run` | `false` | false | — | `` |
 | `--json` | `false` | false | — | `` |
 
@@ -9561,7 +8970,7 @@ agentj wizard --help
 
 ```text
 usage: agentj wizard [-h]
-                     {install,apply,diff,resolve,register,doctor,templates,add-template,starters,dry-run} ...
+                     {install,apply,diff,resolve,doctor,templates,add-template,dry-run} ...
 ```
 
 | 参数 | 默认值 | 必填 | 可选值 | 说明 |
@@ -9701,26 +9110,6 @@ usage: agentj wizard install [-h] [--dir DIR]
 | `--lang` | `null` | false | `zh`, `en` | `入口文件里「先查文档」那段只用一种语言（默认中英都有）/ one language for the "look it up first" section` |
 | `--json` | `false` | false | — | `` |
 
-### agentj wizard register
-
-```text
-把工作流文件夹登记进 CEO 花名册 documentation/ROLES.md（只追加）/ register workflow folders in the CEO roster
-```
-
-```bash
-agentj wizard register --help
-```
-
-```text
-usage: agentj wizard register [-h] [--dir DIR] [--json]
-```
-
-| 参数 | 默认值 | 必填 | 可选值 | 说明 |
-| --- | --- | --- | --- | --- |
-| `-h / --help` | `null` | false | — | `show this help message and exit` |
-| `--dir` | `null` | false | — | `Agent 的工作目录（默认 agentj agent 设的目录）/ the Agent's working folder` |
-| `--json` | `false` | false | — | `` |
-
 ### agentj wizard resolve
 
 ```text
@@ -9741,26 +9130,6 @@ usage: agentj wizard resolve [-h] [--dir DIR] --file FILE --keep {mine,new}
 | `--dir` | `null` | false | — | `Agent 的工作目录（默认 agentj agent 设的目录）/ the Agent's working folder` |
 | `--file` | `null` | true | — | `` |
 | `--keep` | `null` | true | `mine`, `new` | `` |
-
-### agentj wizard starters
-
-```text
-广场预装的 3 个示例工作流：状态
-```
-
-```bash
-agentj wizard starters --help
-```
-
-```text
-usage: agentj wizard starters [-h] [--dir DIR] [--json]
-```
-
-| 参数 | 默认值 | 必填 | 可选值 | 说明 |
-| --- | --- | --- | --- | --- |
-| `-h / --help` | `null` | false | — | `show this help message and exit` |
-| `--dir` | `null` | false | — | `Agent 的工作目录（默认 agentj agent 设的目录）/ the Agent's working folder` |
-| `--json` | `false` | false | — | `` |
 
 ### agentj wizard templates
 
@@ -9793,14 +9162,13 @@ agentj workflows --help
 ```
 
 ```text
-usage: agentj workflows [-h] [--json] [--staff-hint FOLDER]
+usage: agentj workflows [-h] [--json]
 ```
 
 | 参数 | 默认值 | 必填 | 可选值 | 说明 |
 | --- | --- | --- | --- | --- |
 | `-h / --help` | `null` | false | — | `show this help message and exit` |
 | `--json` | `false` | false | — | `` |
-| `--staff-hint` | `null` | false | — | `派活给这个工作流的 CEO 前：员工数，没有员工时（每家只一次）附一句提示` |
 
 </details>
 

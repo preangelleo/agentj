@@ -122,8 +122,6 @@ class ApprovalRace(Tmp):
                 self.local(hooks)
                 self.assertEqual(shared_hook.foreign_answerers(self.work, tool), ["local"])
                 h = self.host()
-                if tool == "AskUserQuestion":           # P307: the host's real answer shape (answers in updatedInput)
-                    h.ask.return_value = {"behavior": "allow", "updatedInput": {"x": 1, "answers": {"q": "a"}}}
                 a = self.agent(h)
                 out = asyncio.run(a.hook_event(ev("PermissionRequest", tool=tool, inp={"x": 1})))
                 self.assertIn(out["hookSpecificOutput"]["decision"]["behavior"], ("allow",))

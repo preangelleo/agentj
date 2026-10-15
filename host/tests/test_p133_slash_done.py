@@ -6,7 +6,7 @@ import unittest
 from pathlib import Path
 from types import SimpleNamespace
 
-from agentj import humane, shared, slash
+from agentj import shared, slash
 from agentj.history import History
 from agentj.serve import Host
 from agentj.state import State
@@ -14,11 +14,10 @@ from agentj.state import State
 
 class DoneLine(unittest.TestCase):
     def test_one_language_and_once(self):
-        done_zh = humane.say("compact.done", "zh")       # P280: the words live in humane.json
-        self.assertEqual(slash.with_done("compact", "", "zh"), done_zh)
-        self.assertIn(slash.with_done("clear", "", "en"), [x.replace("{title}", "Chairman") for x in humane.variants("clear.greet", "en")])
+        self.assertEqual(slash.with_done("compact", "", "zh"), "✓ 压缩完成，可以继续说话")
+        self.assertEqual(slash.with_done("clear", "", "en"), "✓ New conversation")
         self.assertEqual(slash.with_done("compact", "已压缩：21k → 1k tokens\n交接失败", "zh"),
-                         "已压缩：21k → 1k tokens\n" + done_zh + "\n交接失败")
+                         "已压缩：21k → 1k tokens\n✓ 压缩完成，可以继续说话\n交接失败")
         done = slash.with_done("compact", "x", "zh")
         self.assertEqual(slash.with_done("compact", done, "zh"), done, "never twice")
         self.assertEqual(slash.with_done("status", "ok", "zh"), "ok", "other commands untouched")
@@ -29,6 +28,7 @@ class Host133:
     """Just enough of Host for desktop_cmd_done / turn_queued_note (hist, hist_update, desktop_end)."""
     desktop_cmd_done = Host.desktop_cmd_done
     turn_queued_note = Host.turn_queued_note
+    BUSY_NOTE = Host.BUSY_NOTE
     desktop_end = Host.desktop_end
     desktop_input = Host.desktop_input
 
@@ -55,7 +55,7 @@ class DesktopCompact(unittest.TestCase):
             h.desktop_cmd_done("compact")
             page = h.hist.get(tid)
             self.assertEqual(page["end"], "done")
-            self.assertEqual(page["reply"]["text"], humane.say("compact.done", "zh"))
+            self.assertEqual(page["reply"]["text"], "✓ 压缩完成，可以继续说话")
             self.assertIsNone(h.desktop_turn)
 
     def test_other_desktop_turns_untouched(self):
@@ -128,7 +128,7 @@ class BusyIsNotHeld(unittest.TestCase):
 
     def test_page_note_one_language_and_removed(self):
         with tempfile.TemporaryDirectory() as root:
-            for lang, want in (("zh", humane.say("shared.busy_queued", "zh")), ("en", humane.say("shared.busy_queued", "en"))):
+            for lang, want in (("zh", "电脑正忙，消息已排队，忙完就接手。"), ("en", "The computer is busy; your message is queued.")):
                 h = Host133(root, lang)
                 h.cur_turn = h.hist_add({"k": "phone", "text": "hi"})["id"]
                 h.turn_queued_note(True)

@@ -14,7 +14,6 @@ export function longPress(node, action, { at = 'hold', ms = HOLD_MS } = {}) {
   const end = () => { if (p) { clearTimeout(p.timer); node.classList.remove('held'); p = null; } };
   node.addEventListener('pointerdown', (e) => {
     if (e.button > 0 || !e.isPrimary) return;
-    if (eatUntil && performance.now() >= eatUntil) eatUntil = 0;   // P285: a new press after the window is a plain tap again
     end();
     const me = p = { x: e.clientX, y: e.clientY, armed: false };
     me.timer = setTimeout(() => {
@@ -39,9 +38,7 @@ export function longPress(node, action, { at = 'hold', ms = HOLD_MS } = {}) {
   // after a hold, the finger's lift must not become a tap: no compatibility mousedown (it would take the focus away from a
   // field the action just focused) and no click
   node.addEventListener('touchend', (e) => {
-    // P285: only inside the window — an expired mark used to stay set (on a touch screen no click comes to clear it), so
-    // every later tap re-armed it on pointerup and lost its click here: the button went dead after one hold
-    if (eatUntil && performance.now() < eatUntil && e.cancelable) { e.preventDefault(); eatUntil = performance.now() + 250; }   // no click follows: a new tap soon after is real
+    if (eatUntil && e.cancelable) { e.preventDefault(); eatUntil = performance.now() + 250; }   // no click follows: a new tap soon after is real
   });
   node.addEventListener('contextmenu', (e) => { if (p || eatUntil) e.preventDefault(); });
   // capture on the document: runs before the button's own click listeners, so a hold never also counts as a tap. Any

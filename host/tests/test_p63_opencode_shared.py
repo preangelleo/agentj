@@ -105,7 +105,7 @@ class SharedV2Chain(_DefaultMode, p60.V2Chain):
             await c.wait(lambda: c.host.agent.status == "working")
             await asyncio.sleep(0.5)
             res = await c.host.stop_turn("phone")
-            self.assertTrue(res.text.startswith("好，停下了这一轮"), res.text)
+            self.assertTrue(res.text.startswith("已停下这一轮"), res.text)
             await c.idle()
             self.assertTrue(any(r["p"].endswith("/interrupt") for r in self.requests()))
             # key failures: no key → names the provider, serve restarted, SAME ordinary session; 401 → phone Models & Key path
@@ -146,7 +146,7 @@ class SharedV2Chain(_DefaultMode, p60.V2Chain):
             r = await a.command("model", "")
             self.assertEqual([m["id"] for m in r.models or []], ["opencode/chat"])
             r = await a.command("model", "opencode/chat")
-            self.assertTrue(r.text.startswith("换好了，下一条消息起用 opencode/chat"), r.text)
+            self.assertTrue(r.text.startswith("已切换到 opencode/chat"), r.text)
             await c.say("after switch")
             await c.wait(lambda: "ECHO: after switch" in c.msgs())
             await c.idle()

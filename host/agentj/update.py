@@ -389,24 +389,6 @@ def _spent_here(st, code: str, version: str) -> bool:
     return isinstance(d, dict) and d.get("version") == version and d.get("code_sha256") == _code_hash(code)
 
 
-NO_MANAGER_EXIT = 78    # = service.NO_MANAGER_EXIT: the new CLI's `service install --deferred` found no systemd (P278)
-NO_MANAGER_WHY = ("新版已装好，但这台电脑没有可用的 systemd，后台服务没法自动重启接管；没有回滚（回滚也一样没法重启）。按 fix 行开启 "
-                  "systemd，或在运行 `agentj serve` 的终端里 Ctrl-C 后重新运行一次",
-                  "the new version is installed, but this computer has no usable systemd, so the background service could not "
-                  "restart on it; no rollback (the old version could not restart either). Turn systemd on as the fix line says, or "
-                  "Ctrl-C the terminal running `agentj serve` and run it again")
-
-
-def no_manager(tail: str) -> dict:
-    """P278: the result fields for 'installed, but no systemd to restart the service': which case (from the new CLI's own
-    words) + its fix line; never a rollback."""
-    from . import service
-    reason = next((r for r in ("wsl_systemd_restart", "wsl_systemd_off", "no_systemd") if service.MESSAGES[r][:24] in (tail or "")), None)
-    reason = reason or service.systemd_problem() or "no_systemd"
-    reason = reason if reason in service.NO_MANAGER else "no_systemd"
-    return {"service": "no_systemd", "rollback": "skipped", "detail": reason, "fix": service.MESSAGES[reason], "stderr_tail": tail}
-
-
 def write_marker(st, frm: str, to: str, now: float | None = None) -> None:
     st.write_private(st.root / UPGRADED, json.dumps({"from": frm, "to": to, "at": int(time.time() if now is None else now)}).encode())
 
@@ -474,20 +456,6 @@ def roll_back(st, info: dict, wheel, frm: str, run) -> bool:
     except Exception as e:  # noqa: BLE001 — a failed rollback is reported, never raised
         _logged(st, "rollback_failed", e)
         return False
-
-
-def recover_of(info: dict, wheel, rb: str) -> dict:
-    """P277 (container check of the WSL case): a failed `uv tool install --force` can delete the tool's own environment, so
-    `agentj` itself is gone and the automatic rollback fails with it. Then the block names the one command that puts the
-    cached previous version back (a local path on this computer; never sent anywhere)."""
-    if rb != "failed" or not wheel or wheel == HOST_WHEEL:
-        return {}
-    try:
-        from . import auto_update
-        cmds = auto_update.install_commands(info, wheel)
-    except Exception:  # noqa: BLE001
-        return {}
-    return {"recover": " && ".join(shlex.join(c) for c in cmds)} if cmds else {}
 
 
 def take_marker(st, now: float | None = None) -> dict | None:
@@ -648,22 +616,6 @@ AUTH_REASONS = {
     "not_confirmed": (10, "没有确认，没有升级", "not confirmed; nothing was installed"),
     "service_failed": (1, "程序已升级，但服务没能重新安装：运行 `agentj service install`",
                        "upgraded, but service recovery failed: run `agentj service start`"),
-    # P277: the failed step, finer (install_failed / artifact_refused / service_failed above stay for older records)
-    "download_failed": (1, "下载正式发布包失败（网络不通或 agentj.app 暂时连不上），什么都没安装。稍后再运行同一条命令",
-                        "downloading the published release failed (offline or agentj.app unreachable); nothing was installed. "
-                        "Run the same command again later"),
-    "signature_or_hash_mismatch": (1, "下载到的发布包签名或哈希校验不对，拒绝安装，什么都没装。不要绕过校验；稍后重试，仍失败就交给客服",
-                                   "the downloaded release failed its signature/hash check and was refused; nothing was installed. "
-                                   "Never bypass the check; retry later, and leave it to support if it keeps failing"),
-    "uv_failed": (1, "安装命令失败，原文见 stderr 行；已尝试回滚到原版本（见 rollback 行）。修好原因后再运行同一条命令",
-                  "the install command failed (its own words are on the stderr lines); a rollback to the previous version was "
-                  "tried (see rollback). Fix the cause, then run the same command again"),
-    "service_restart_failed": (1, "新版已装好，但后台服务没能重启接管；已尝试回滚。运行 `agentj doctor`，再按提示 `agentj service start`",
-                               "the new version installed but the background service did not restart; a rollback was tried. "
-                               "Run `agentj doctor`, then `agentj service start` as it says"),
-    "unsupported_install": (1, "这台电脑的安装方式（源码目录或旧名安装）不能自动升级，什么都没装；按 install.md 重新安装",
-                            "this installation (a source checkout or the old package name) cannot be upgraded automatically; "
-                            "nothing was installed — reinstall as install.md says"),
 }
 
 
@@ -672,16 +624,8 @@ def _exit_of(reason: str) -> int:
     return AUTH_REASONS.get(reason, (1,))[0]
 
 
-def authorized_apply(st, code: str | None, target: str | None, **kw) -> dict:
-    """Contract C3 (see _authorized_apply). P277: an attempt that got as far as the download is remembered (last upgrade)."""
-    from . import upgrade_diag
-    res = _authorized_apply(st, code, target, **kw)
-    upgrade_diag.remember(st, res)
-    return res
-
-
-def _authorized_apply(st, code: str | None, target: str | None, *, mail: dict | None = None, prefix: str | None = None,
-                      check_fn=None, auth_fn=None, run=None, svc_on=None, say=None, plan_fn=None, rollback_fn=None) -> dict:
+def authorized_apply(st, code: str | None, target: str | None, *, mail: dict | None = None, prefix: str | None = None,
+                     check_fn=None, auth_fn=None, run=None, svc_on=None, say=None, plan_fn=None, rollback_fn=None) -> dict:
     """Contract C3. Order: local checks (code shape, read-only, identity, account link) → check() says newer and latest ==
     target → signed upgrade-auth → only on 200: install pinned to target (no y/N, no terminal), verify the new version,
     marker for serve's phone notice, service re-install. → {"result": "ok" | "refused" | "failed", "reason", "from", "to",
@@ -738,12 +682,10 @@ def _authorized_apply(st, code: str | None, target: str | None, *, mail: dict | 
                                                           "at": int(time.time())}).encode())
         st.log("upgrade_authorized", status=target)
     info = install_kind(prefix)
-    from .upgrade_diag import plan_detail, plan_reason, run_step
-    out["step"] = "download"
     try:
         plan = (plan_fn or verified_plan)(st, info, target)
-    except Exception as e:  # noqa: BLE001 — P277: download vs signature/hash, the exception type kept (never its text)
-        return done(plan_reason(e), detail=plan_detail(e))
+    except Exception:
+        return done("artifact_refused")
     _pre_snapshot(st)
     # P192 (B15): the same cached-wheel rollback as `apply` — this path used to leave a half-installed version behind
     old = (rollback_fn or rollback_wheel)(st)
@@ -751,16 +693,17 @@ def _authorized_apply(st, code: str | None, target: str | None, *, mail: dict | 
         ok = roll_back(st, info, old, __version__, run)
         rb = "ok" if ok else "failed" if old else "unavailable"
         st.log("upgrade_rollback", status=rb, reason=reason)
-        return done(reason, rollback=rb, **recover_of(info, old, rb), **kw)
-    out["step"] = "install"
+        return done(reason, rollback=rb, **kw)
     for c in plan:
         say("$ " + shlex.join(c))
-        rc, tl = run_step(run, c, say)
+        try:
+            rc = run(c, stdin=subprocess.DEVNULL).returncode
+        except OSError:
+            rc = 127
         if rc != 0:
             st.log("upgrade_failed", status=str(rc))
-            return back("uv_failed", stderr_tail=tl)
+            return back("install_failed")
     argv = new_argv(info)
-    out["step"] = "verify"
     try:
         v = run(argv + ["--version"], stdin=subprocess.DEVNULL, capture_output=True, text=True)
         now_v = ((v.stdout or "") + " " + (v.stderr or "")).split()
@@ -781,17 +724,15 @@ def _authorized_apply(st, code: str | None, target: str | None, *, mail: dict | 
         return {**out, "result": "ok", "reason": "upgraded", "service": "not_installed", "exit": 0}
     write_pending(st, __version__, target, info, old)    # P142: the recovery worker writes the marker right before restart
     #                                                       (P192: and has the old wheel to roll back to, as after `apply`)
-    out["step"] = "service"
     say(f"✓ 已安装 {target}，正在重启服务。如果这段对话在这里中断，Agent J 回来后会在手机上说「已升级到 {target}」。/ installed "
         f"{target}; restarting the service now — if this conversation stops here, the phone hears \"Upgraded to {target}\" once "
         "Agent J is back.")
-    rc, tl = run_step(run, argv + ["service", "install", "--deferred", target], say)
-    if rc == NO_MANAGER_EXIT:      # P278: no systemd here — the new version stays (a rollback could not restart either)
-        (st.root / PENDING).unlink(missing_ok=True)
-        write_marker(st, __version__, target)
-        return done("service_restart_failed", **no_manager(tl))
+    try:
+        rc = run(argv + ["service", "install", "--deferred", target], stdin=subprocess.DEVNULL).returncode
+    except OSError:
+        rc = 127
     if rc != 0:
-        return back("service_restart_failed", service="failed", stderr_tail=tl)
+        return back("service_failed", service="failed")
     return {**out, "result": "ok", "reason": "upgraded", "service": "restart_scheduled", "exit": 0}
 
 
@@ -832,20 +773,8 @@ def _pre_snapshot(st) -> None:
         pass
 
 
-def apply(st, target=None, *, fenced=None, **kw):
-    """Explicit caller-requested upgrade (see _apply). P277: an attempt that got as far as the download is remembered as the
-    last upgrade — in the state directory, or inside the fence by the host (elevate.sock op `record`)."""
-    from . import upgrade_diag
-    if fenced is None:
-        from . import fence
-        fenced = fence.inside()
-    res = _apply(st, target, fenced=fenced, **kw)
-    upgrade_diag.remember(st, res, fenced=fenced)
-    return res
-
-
-def _apply(st, target=None, *, prefix=None, check_fn=None, run=None, say=None, svc_on=None, plan_fn=None, rollback_fn=None,
-           fenced=None):
+def apply(st, target=None, *, prefix=None, check_fn=None, run=None, say=None, svc_on=None, plan_fn=None, rollback_fn=None,
+          fenced=None):
     """Explicit caller-requested upgrade. No terminal or cloud grant is required.
     Native filesystem restrictions and exact published target checks still apply.
     P142 (A12/B15): the old version's wheel is cached first; a failed version check or service hand-off rolls back to it
@@ -881,12 +810,10 @@ def _apply(st, target=None, *, prefix=None, check_fn=None, run=None, say=None, s
             svc_on = bool(service.status().get("installed") or service.legacy_status().get("installed"))
         except Exception:  # noqa: BLE001 — no service manager: nothing to restart (as authorized_apply)
             svc_on = False
-    from .upgrade_diag import plan_detail, plan_reason, run_step
-    out["step"] = "download"
     try:
         plan = (plan_fn or verified_plan)(st, info, target)
-    except Exception as e:  # noqa: BLE001 — P277: download vs signature/hash, the exception type kept (never its text)
-        return done(plan_reason(e), detail=plan_detail(e))
+    except Exception:
+        return done("artifact_refused")
     if not fenced:
         _pre_snapshot(st)          # P207 (inside the fence the state directory is an empty mount; serve snapshots at start)
     chan = fenced and host_channel(st)
@@ -906,16 +833,15 @@ def _apply(st, target=None, *, prefix=None, check_fn=None, run=None, say=None, s
         rb = "ok" if ok else "failed" if old else "unavailable"
         if st.exists():
             st.log("upgrade_rollback", status=rb, reason=reason)
-        return done(reason, rollback=rb, **recover_of(info, old, rb), **kw)
-    out["step"] = "install"
+        return done(reason, rollback=rb, **kw)
     for cmd in plan:
         say("$ " + shlex.join(cmd))
-        rc, tl = run_step(run, cmd, say)
+        try:
+            rc = run(cmd, stdin=subprocess.DEVNULL).returncode
+        except OSError:
+            rc = 127
         if rc:
-            if not fenced and st.exists():
-                st.log("upgrade_failed", status=str(rc))
-            return back("uv_failed", stderr_tail=tl)
-    out["step"] = "verify"
+            return back("install_failed")
     argv = new_argv(info)
     handed = False      # P192 (B15): until the service hand-off / marker, any failure rolls back (an OSError included)
 
@@ -935,22 +861,14 @@ def _apply(st, target=None, *, prefix=None, check_fn=None, run=None, say=None, s
             return back("not_upgraded")
         if svc_on:
             record("pending")
-            out["step"] = "service"
             # The new CLI hands off before touching the calling service tree.
-            rc, tl = run_step(run, argv + ["service", "install", "--deferred", target], say, catch=False)
-            if rc == NO_MANAGER_EXIT:   # P278: no systemd — keep the new version, the marker instead of the pending record
-                if not fenced and st.exists():
-                    (st.root / PENDING).unlink(missing_ok=True)
-                record("marker")
-                return done("service_restart_failed", **no_manager(tl))
-            if rc:
-                return back("service_restart_failed", service="failed", stderr_tail=tl)
+            if run(argv + ["service", "install", "--deferred", target], stdin=subprocess.DEVNULL).returncode:
+                return back("service_failed", service="failed")
             out["service"] = "restart_scheduled"
         else:
             record("marker")
             out["service"] = "not_installed"
         handed = True
-        out["step"] = "health"
         rows = None
         if chan:
             h = _host(st, "health", HEALTH_TIMEOUT + 30)
@@ -991,22 +909,6 @@ def host_op(st, req: dict, mem: dict, run=None) -> dict:
         (st.root / UPGRADED).unlink(missing_ok=True)
         (st.root / PENDING).unlink(missing_ok=True)
         return {"ok": True}
-    if op == "record":                     # P277: the fenced apply's last-upgrade record (validated; never a path)
-        from . import upgrade_diag
-        rec = req.get("rec")
-        if not isinstance(rec, dict) or not upgrade_diag.valid(rec):
-            return {"ok": False, "why": "record"}
-        keep = {k: rec[k] for k in ("v", "from", "to", "result", "reason", "at", "step") if k in rec}
-        if isinstance(rec.get("detail"), str):
-            keep["detail"] = rec["detail"][:120]
-        if isinstance(rec.get("stderr_tail"), str):
-            keep["stderr_tail"] = upgrade_diag.redact(rec["stderr_tail"])[-upgrade_diag.TAIL_MAX:]
-        if keep.get("step") not in (None, *upgrade_diag.STEPS):
-            keep["step"] = "install"
-        keep["at"] = int(time.time())
-        ok = upgrade_diag.write(st, keep)
-        st.log("upgrade_host", op=op, result="ok" if ok else "refused")
-        return {"ok": ok}
     if op == "health":
         info = install_kind()
         try:
@@ -1059,12 +961,6 @@ def result_block(res: dict) -> str:
                      "\"upgraded\" notice may be off and there is no automatic rollback")
     if res.get("existing_issues"):
         lines.append("existing_issues: " + ", ".join(res["existing_issues"]) + " — 升级已完成，这些其他问题请另行检查 / upgrade completed; review these other issues separately")
-    if res.get("result") != "ok" and res.get("step"):        # P277: where it failed, the installer's own words (redacted)
-        lines.append(f"step: {res['step']}")
-    if res.get("detail") and res.get("result") != "ok":
-        lines.append(f"detail: {res['detail']}")
-    if res.get("stderr_tail") and res.get("result") != "ok":
-        lines += ["stderr: " + ln for ln in str(res["stderr_tail"]).splitlines()]
     if res.get("latest"):
         lines.append(f"latest: {res['latest']}")
     for line in res.get("interrupts") or []:           # P203: what a restart now would interrupt
@@ -1072,19 +968,8 @@ def result_block(res: dict) -> str:
     if res.get("granted"):
         lines.append(f"authorized_version: {res['granted']}")
     zh, en = AUTH_REASONS[res["reason"]][1:] if res["reason"] in AUTH_REASONS else REASON_EXTRA.get(res["reason"], ("", ""))
-    if res.get("service") == "no_systemd":        # P278: installed, no systemd to restart it — no rollback was tried
-        zh, en = NO_MANAGER_WHY
     if zh:
         lines.append(f"why: {zh} / {en}")
-    if res.get("fix"):
-        lines.append(f"fix: {res['fix']}")
-    if res.get("recover"):
-        lines.append(f"recover: {res['recover']} — 回滚没成功、agentj 命令可能已经不在了：运行这一条装回原版本 / the rollback failed and "
-                     "`agentj` may be gone: run this to put the previous version back")
-    if res.get("support"):
-        lines.append(f"support: {res['support']}")
-    if res.get("tell_owner"):
-        lines.append(f"tell_owner: {res['tell_owner']}")
     lines.append("next: " + (UNVERIFIABLE_NEXT if res["reason"] == "unverifiable_in_fence" else "agentj doctor" if res["result"] == "ok" else
                              "agentj doctor; tell your human this block" if res["result"] == "failed" else "tell your human this block"))
     return "\n".join(lines)

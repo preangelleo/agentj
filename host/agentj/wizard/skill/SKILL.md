@@ -79,8 +79,7 @@ what is 待定) and ask 「对吗？要改哪一条？」. Apply corrections. Th
 Tell the human once: 「接下来我会写入大约 10 个文件；手机上可能弹出几次批准，请点批准。」 Then:
 
 1. Write every file of `references/files.md` into `.agentj/wizard-staging/` with the same relative paths
-   (`CLAUDE.md` or `AGENTS.md`, `documentation/…`, `<id>/CLAUDE.md`, `<id>/AGENTS.md`, and each CEO's staff
-   `<id>/.claude/agents/<role>.md`). Write them fresh each time.
+   (`CLAUDE.md` or `AGENTS.md`, `documentation/…`, `<id>/CLAUDE.md`, `<id>/AGENTS.md`). Write them fresh each time.
 2. Run:
    ```bash
    agentj wizard apply --dir . --json
@@ -101,17 +100,7 @@ ask 「保留你自己的版本，还是换成新的？」, then
 agentj wizard doctor --dir . --json
 ```
 `ok: true` is required. For every `fail`, fix the staged file and `apply` again. A `pending` warning means Step 5 is not
-finished. A `staff` warning names workflows whose CEO has no staff yet: propose them (see "Staff" below). Do not tell the human about passing checks one by one — only the outcome.
-
-## Step 6b — register every workflow (mandatory, never skip)
-
-Every workflow folder must be in the CEO roster (documentation/ROLES.md — the CEO registry the main Agent routes by; the
-phone's 「工作流」 page shows the same folders as cards):
-```bash
-agentj wizard register --dir . --json
-```
-Every row must come back `registered: true` (it appends a row only for a missing folder, never edits a row). Then
-`agentj wizard doctor --dir . --json` shows `roster ok`. A folder that stays unregistered: say which and why in Step 7.
+finished. Do not tell the human about passing checks one by one — only the outcome.
 
 ## Step 7 — hand over
 
@@ -133,32 +122,17 @@ Used by the agentj-capability skill when the owner asked for a goal (「做每�
 2. From what the owner already said, stage ONE new child folder `<id>/` (lowercase-hyphen): `CLAUDE.md` / `AGENTS.md`
    (thin entry, pointing to its own short constitution with red lines), `RUN.md`, `DRYRUN.md`, `task.json`
    (`"enabled": false`, `"mode": "normal"` so the CEO can write its deliverables and report, a cron for a weekly plan),
-   `brief.json` (see the agentj-capability skill), its staff (`<id>/.claude/agents/<role>.md`, "Staff" below), and a ROLES.md /
+   `brief.json` (see the agentj-capability skill), and a ROLES.md /
    STRUCTURE.json update for the root (the new CEO, `workflows: [{id, ceo_entry, execution, reports}]`).
    RUN.md tells the CEO to use its web fetch and write / edit tools only (no shell: an unattended run must not need taps)
    and to finish with `reports/report.json` (agentj-capability's `report.example.json`) and a VERDICT line.
 3. Every question that is genuinely the owner's (≤ 5: e.g. which competitors, day and time, who receives it) is NOT asked
    here one by one: the agentj-capability skill puts them on the one opening card. Unknowns stay 「待定」 in the files
    until the card's answer arrives in `<id>/inputs/owner-choices.json`.
-4. `agentj wizard apply --dir . --json`, then `agentj wizard register --dir . --json` (the new folder must come back
-   `registered: true` — Step 6b), then `agentj wizard doctor --dir . --json` (it also checks every brief.json and the roster).
+4. `agentj wizard apply --dir . --json` then `agentj wizard doctor --dir . --json` (it also checks every brief.json).
    Never overwrite what the owner edited; a `kept` file that matters for the goal goes on the same card as a choice.
 5. The schedule stays dormant: only the owner's tap on the opening card enables it.
-
-## Staff — every CEO gets employees (P308)
-
-A workflow CEO without staff does everything itself. For each workflow, write its roles as staff files, not only as text in
-RUN.md: 3–7 roles (fewer when the work is small), taken from what the workflow actually does — its RUN.md roles, task.json,
-and for an existing company its latest `reports/`. Stage `<id>/.claude/agents/<role>.md` (`<role>` lowercase-hyphen, the
-file format in `references/files.md`, "Staff files"); `apply` writes the Codex twin `<id>/.codex/agents/<role>.toml` by
-itself and, like every file, never replaces one the owner changed. For an existing company list the proposed roles for the
-owner first (one line each: name, what it does, when the CEO sends it) and stage them only after a yes. A README or a note
-in `.claude/agents/` is not an employee — the phone counts only files with a front-matter `name`.
 
 ## When to run again
 
 The human can say 「重新设计工作流」 at any time: same flow, re-run mode (Step 0). `apply` never overwrites what they edited.
-The phone's 「初始化组织结构 / 复查组织结构」 button sends a standard prompt naming this skill: look at every child folder of
-the working root, only review the ones already organised, list the unorganised ones for the human before touching them,
-then Step 6b, then propose staff for every company that has only a CEO ("Staff" above; the doctor's `staff` warning lists
-them). Organising never moves, deletes or edits a project's own work files.

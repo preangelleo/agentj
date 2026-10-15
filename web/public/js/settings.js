@@ -4,12 +4,11 @@
 // Host-side values go through `pref_set` → `pref_res` → the normal `preferences` broadcast (PROTOCOL §10, contract C6 /
 // F14): optional risk warnings and session mode are phone-editable too. Reply size is phone-local.
 // PR1: nothing here leaves the page except inside the Noise session (pref_set / push_off), and no customer text is shown.
-import { longPress } from './longpress.js';
 import VERSION from '../version.js';
 import { RelayMD } from './md.js';
 import { t, fillText, onLang } from './t.js';
-import { el, noticeSheet } from './ui.js';
-import { ask1, isReady, peer, sendApp } from './session.js';
+import { el } from './ui.js';
+import { ask1, isReady, peer } from './session.js';
 import * as push from './push.js';
 import * as sfx from './sfx.js';
 import * as shotclip from './shotclip.js';
@@ -18,18 +17,15 @@ import * as mail from './mail.js';
 import * as authrescue from './authrescue.js';   // P258
 import * as contacts from './contacts.js';
 import * as ctmanage from './ctmanage.js';   // P207 §3: Settings → 通讯录
-import * as imsg from './imessage.js';      // P274: Settings → iMessage 助手 (Mac hosts only)
 
 let H = { agentName: () => 'Agent J', paired: () => false, connected: () => false, unpair: () => {}, reload: () => location.reload(),
   view: () => document.body.dataset.view, forget: () => {} };
 let prefs = null;                                    // the last `preferences` value from the host (null = none yet / older host)
 let hostInfo = null;                                 // its `host` block (host ≥ 0.15: version, settable keys, paired phones)
 let noPrefSet = false;                               // the host never answered a pref_set → show commands
-let prefFail = null;                                 // P302: why the last setPref returned false (old / fail / offline + text)
-let sub = 'main';                                    // 'main' | 'ios' | 'remotes' | 'mail' | 'contacts' | 'imessage'
+let sub = 'main';                                    // 'main' | 'ios' | 'remotes' | 'mail' | 'contacts'
 
 // ---------------------------------------------------------------- reply text size (phone-local)
-const CHAN = 'Telegram';
 export const FONT_STEPS = [0.8, 0.9, 1, 1.1, 1.25, 1.4, 1.6];
 const FONT_KEY = 'aj.fontScale';
 let fontAt = FONT_STEPS.indexOf(1);
@@ -126,9 +122,7 @@ async function onA2hs() {
 export const PREF_KEYS = ['appearance.language', 'appearance.theme', 'voice.speak_replies', 'voice.wake_enabled', 'agent.high_risk_warnings', 'agent.session_mode', 'agent.isolation', 'agent.allow_docker'];
 PREF_KEYS.push('updates.mode', 'heartbeat.enabled', 'heartbeat.interval_minutes', 'approval.jev_threshold', 'approval.goal_auto', 'quota.auto_switch');
 PREF_KEYS.push('updates.auto_install');                 // P203: half of the 升级方式 (自动 = install when idle) choice
-PREF_KEYS.push(...imsg.PREF_KEYS);       // P274: the iMessage card's parameters (host lists them only on a Mac)
 PREF_KEYS.push('heartbeat.daily_at');   // P207 §3: 「每天固定时间唤醒」 "HH:MM" | "" (host ≥ 0.20.2 lists it in settable)
-PREF_KEYS.push('ui.card_hot_action');   // P285: the reply card's bottom-left hot key (hotkey.js writes it from its own sheet)
 // P207 §3 (was P156's ⇄ stepper): the idle interval is a dropdown of these (minutes) + a custom number 5–1440; a value set
 // elsewhere (agentj heartbeat set 45m) shows as 「自定义」 with that number
 export const HB_STEPS = [30, 60, 120, 180, 240, 360, 480, 720, 1440];
@@ -149,32 +143,21 @@ function problemText(p) {
 }
 /** → true when the host saved it. The `preferences` broadcast that follows re-renders the panel. */
 export async function setPref(key, value) {
-  prefFail = null;
   if (!PREF_KEYS.includes(key)) return false;
-  if (!isReady()) { say(t('set.offline')); prefFail = { kind: 'offline' }; return false; }
+  if (!isReady()) { say(t('set.offline')); return false; }
   // a host that sent preferences without the `host` block (before 0.15), or one that does not list this key: no round
   // trip to wait for — show the command at once
   if ((prefs && !hostInfo) || (hostInfo && Array.isArray(hostInfo.settable) && !hostInfo.settable.includes(key))) {
-    noPrefSet = true; say(''); showCmd(key, value); render(); prefFail = { kind: 'old', cmd: cmdFor(key, value) }; return false;
+    noPrefSet = true; say(''); showCmd(key, value); render(); return false;
   }
   say(t('set.saving'), true);
   const m = await ask1({ t: 'pref_set', key, value }, 'pref_res', 8000);
   if (m.t === 'pref_res' && m.ok === true) { noPrefSet = false; hideCmd(); say(t('set.saved')); return true; }
-  if (m.t === 'pref_res') { say(t('set.saveFail', { why: problemText(m.problem) })); prefFail = { kind: 'fail', why: problemText(m.problem), cmd: cmdFor(key, value) }; }
-  else if (m.t === 'timeout') { noPrefSet = true; say(''); showCmd(key, value); prefFail = { kind: 'old', cmd: cmdFor(key, value) }; }
-  else { say(t('set.offline')); prefFail = { kind: 'offline' }; }
+  if (m.t === 'pref_res') say(t('set.saveFail', { why: problemText(m.problem) }));
+  else if (m.t === 'timeout') { noPrefSet = true; say(''); showCmd(key, value); }
+  else say(t('set.offline'));
   render();
   return false;
-}
-/** P285: does the connected host take this key from the phone? (an older one lists no such key in `settable`) */
-export const prefSettable = (key) => !!hostInfo && Array.isArray(hostInfo.settable) && hostInfo.settable.includes(key);
-/** P302 (Leo 10-20: 「点了没反应」): a switch that did not change says why in a centred card, not only in a line far up the page. */
-export function explainPrefFail() {
-  const f = prefFail;
-  prefFail = null;
-  if (!f) return;
-  const text = f.kind === 'offline' ? t('p302.prefOffline') : t(f.kind === 'old' ? 'p302.prefOld' : 'p302.prefFail', { cmd: f.cmd, why: f.why || '' });
-  noticeSheet(t('p302.prefTitle'), text, t('p302.ok'));
 }
 function showCmd(key, value) {
   const box = el(key === 'appearance.language' ? 'set-lang-cmd' : 'set-pref-cmd');
@@ -219,14 +202,6 @@ function twoWay(id, right) {
   const sw = el(id);
   sw.setAttribute('aria-checked', String(!!right));
   for (const l of sw.parentElement.querySelectorAll('.tw-lab')) l.setAttribute('aria-current', String((l.dataset.side === 'right') === !!right));
-}
-/** P294: say where isolation and Docker apply. Shared mode keeps isolation live (scheduled tasks, the OpenCode serve
- *  Agent J starts), so it only gets a note; Docker means nothing without isolation, so it greys out until isolation is on. */
-function isoScope(iso, mode) {
-  el('set-iso-shared').hidden = mode !== 'shared';
-  el('set-docker-off').hidden = iso;
-  el('set-docker').disabled = !iso;
-  el('set-docker').closest('.setrow').classList.toggle('setoff', !iso);
 }
 /** P207 §3: the heartbeat interval dropdown (+ custom minutes) and the daily wake-up time. */
 function renderHb(on, n) {
@@ -275,10 +250,6 @@ export function render() {
   renderRemotesRow();
   const name = H.agentName();
   el('set-computer').textContent = !H.paired() ? t('set.computerNone') : t(H.connected() ? 'set.computerOn' : 'set.computerOff', { name });
-  // P283: the owner's Telegram is re-paired with a one-time code; the channel's name is data, not dictionary copy
-  el('set-chan').textContent = CHAN;
-  el('set-tgpair').textContent = t('set.chanPair', { name: CHAN });
-  fillText(el('set-chan-note'), t('set.chanNote', { name: CHAN }) + ' ' + t('set.chanGuests', { name: CHAN }));   // P297: the same bot as customer service
   const risk = pget('agent.high_risk_warnings', false) !== false;
   tgl('set-risk', risk);
   const goalAuto = pget('approval.goal_auto', true) !== false;          // P158: goal-mode 10-second countdown
@@ -298,7 +269,6 @@ export function render() {
   el('set-iso-cmd').textContent = cmdFor('agent.isolation', iso ? 'false' : 'true');
   tgl('set-docker', dock);
   el('set-docker-cmd').textContent = cmdFor('agent.allow_docker', dock ? 'false' : 'true');
-  isoScope(iso, mode);
   // P156: a host before 0.20 has no heartbeat: the row stays hidden
   const hbKnown = !!(hostInfo && Array.isArray(hostInfo.settable) && hostInfo.settable.includes('heartbeat.enabled'));
   el('set-hb-row').hidden = !hbKnown;
@@ -307,8 +277,6 @@ export function render() {
   renderHb(hbOn, hbN);
   el('set-owner-nav').hidden = !contacts.forwardAvailable();   // P194: slot 0 needs a host with the address book
   el('set-contacts-nav').hidden = !contacts.forwardAvailable(); // P207: the address book page, same host support
-  el('set-imsg-nav').hidden = !imsg.available();               // P274: only when the computer is a Mac
-  if (sub === 'imessage') { if (imsg.available()) imsg.render(); else showSub('main'); }
 }
 /** 「遥控器管理」 row: 已用 N / 10 (from the last dev_list / devs, else the preferences host block). */
 function renderRemotesRow() {
@@ -332,8 +300,8 @@ export function setPrefs(value, host) {
 
 // ---------------------------------------------------------------- open / close / sub-view
 export const isOpen = () => !el('settings').hidden;
-const SUB_TITLE = { main: 'set.title', ios: 'set.iosTitle', remotes: 'rm.title', mail: 'mail.nav', contacts: 'p207set.ct.nav', auth: 'ar.nav', imessage: 'imsg.nav' };
-function showSub(v, add = false) {
+const SUB_TITLE = { main: 'set.title', ios: 'set.iosTitle', remotes: 'rm.title', mail: 'mail.nav', contacts: 'p207set.ct.nav', auth: 'ar.nav' };
+function showSub(v) {
   const from = sub;
   sub = v;
   el('set-main').hidden = v !== 'main';
@@ -342,42 +310,37 @@ function showSub(v, add = false) {
   el('set-mail').hidden = v !== 'mail';
   el('set-contacts').hidden = v !== 'contacts';
   el('set-auth').hidden = v !== 'auth';
-  el('set-imessage').hidden = v !== 'imessage';
   el('set-back').hidden = v === 'main';
   el('set-title').textContent = t(SUB_TITLE[v]);
   el('settings').dataset.sub = v;
   if (from === 'remotes' && v !== 'remotes') remotes.close();
   if (from === 'contacts' && v !== 'contacts') ctmanage.close();
   if (from === 'auth' && v !== 'auth') authrescue.close();
-  if (v === 'remotes') { remotes.open({add}); return; }
-  const back = { ios: 'set-a2hs', remotes: 'set-remotes-open', mail: 'set-mail-nav', contacts: 'set-contacts-nav', auth: 'set-auth-nav', imessage: 'set-imsg-nav' }[from];
+  if (v === 'remotes') { remotes.open(); return; }
+  const back = { ios: 'set-a2hs', remotes: 'set-remotes-open', mail: 'set-mail-nav', contacts: 'set-contacts-nav', auth: 'set-auth-nav' }[from];
   (v === 'main' ? el(back || 'set-close') : el('set-back')).focus({ preventScroll: v === 'main' && !back });
   if (v === 'main') renderRemotesRow();
   if (v === 'mail') mail.load();   // P170
   if (v === 'auth') authrescue.load();   // P258
   if (v === 'contacts') ctmanage.open();   // P207
-  if (v === 'imessage') imsg.load();       // P274
 }
 /** Opens Settings (any view but the camera); `page` = 'remotes' lands straight on 遥控器管理. */
-export function open(page = 'main', add = false) {
+export function open(page = 'main') {
   if (document.body.dataset.view === 'scan') return;
   say('');
   if (!noPrefSet) hideCmd();
   render();
   const box = el('settings');
   box.hidden = false; box.dataset.modalOpen = '1';
-  for (const id of ['scanBtn', 'srchBtn', 'setBtn']) el('set-actions').append(el(id));
   sub = 'main'; el('set-main').hidden = false; el('set-ios').hidden = true; el('set-remotes').hidden = true; el('set-mail').hidden = true; el('set-auth').hidden = true; el('set-back').hidden = true;
   el('set-contacts').hidden = true;
-  el('set-imessage').hidden = true;
   box.dataset.sub = 'main';
   el('set-title').textContent = t('set.title');
   el('setBtn').setAttribute('aria-expanded', 'true');
-  el('srchBtn').setAttribute('aria-label', t('p264.search')); el('srchBtn').title = t('p264.search');
   el('set-main').scrollTop = 0;
   markSection(null);
   el('settings').querySelector('.setbox').focus();
-  if (page === 'remotes' && H.paired()) showSub('remotes', add);
+  if (page === 'remotes' && H.paired()) showSub('remotes');
   else if (H.paired() && isReady()) remotes.refresh().then(renderRemotesRow);   // 已用 N / 10 from the computer itself
 }
 export function back() { if (sub !== 'main') showSub('main'); else close(); }
@@ -392,11 +355,8 @@ export function close() {
   if (sub === 'contacts') ctmanage.close();
   sub = 'main';
   say('');
-  closeSearch();
-  for (const id of ['scanBtn', 'srchBtn', 'setBtn']) document.querySelector('header').append(el(id));
   box.hidden = true; delete box.dataset.modalOpen;
   el('setBtn').setAttribute('aria-expanded', 'false');
-  el('srchBtn').setAttribute('aria-label', t('r.find.btn')); el('srchBtn').title = t('r.find.btnTitle');
   if (document.activeElement && box.contains(document.activeElement)) document.activeElement.blur();
 }
 
@@ -463,13 +423,7 @@ export function configure(hooks) {
   el('set-main').addEventListener('scroll', () => { cancelAnimationFrame(raf); raf = requestAnimationFrame(followScroll); }, { passive: true });
   el('set-remotes-open').addEventListener('click', () => showSub('remotes'));
   el('setBtn').addEventListener('click', () => (isOpen() ? close() : open()));
-  longPress(el('setBtn'), () => H.screenshot?.()); // @ix app.screenshot
-  el('setBtn').addEventListener('contextmenu', e => {
-    e.preventDefault();
-    // Touch browsers may emit contextmenu during a hold: the gear's hold is exclusively capture.
-    if (e.pointerType === 'touch' || (!e.pointerType && matchMedia('(pointer:coarse)').matches)) return;
-    H.gearHelp?.();
-  });
+  el('set-close').addEventListener('click', close);
   el('set-back').addEventListener('click', () => showSub('main'));
   el('settings').addEventListener('click', (e) => { if (e.target === el('settings')) close(); });
   // keysBtn: relay.js opens the shortcut page ABOVE Settings (P187: its back / Esc returns here)
@@ -482,8 +436,7 @@ export function configure(hooks) {
   for (const id of ['set-speak', 'set-wake', 'set-risk', 'set-goal', 'set-qswitch', 'set-iso', 'set-docker', 'set-hb']) el(id).addEventListener('click', () => {
     const b = el(id), next = b.getAttribute('aria-checked') !== 'true';
     tgl(id, next);
-    if (id === 'set-iso') isoScope(next, pget('agent.session_mode', 'independent') === 'shared' ? 'shared' : 'independent');
-    setPref(b.dataset.pref, next).then((ok) => { if (!ok) explainPrefFail(); });
+    setPref(b.dataset.pref, next);
   });
   // P207 §3: two-way switches — the switch flips, a side label picks that side (a no-op when it is already chosen)
   const TW = {
@@ -544,16 +497,7 @@ export function configure(hooks) {
   el('set-owner-nav').addEventListener('click', () => contacts.openOwner());   // P194: 我的联系方式 (slot 0)
   el('set-contacts-nav').addEventListener('click', () => showSub('contacts'));   // P207: 通讯录
   mail.configure();
-  el('set-imsg-nav').addEventListener('click', () => showSub('imessage'));   // P274
-  imsg.configure({ pget, setPref, hostInfo: () => hostInfo, assist: (text) => { close(); if (H.assist) H.assist(text); } });
   // P207 §3: copy = an icon button; ✓ for 1.6 s on success (plus the fading notice for screen readers)
-  // P283: 「重新绑定 Telegram」 — the host answers /telegram-pair with a one-time code card in the chat (no Agent, no model)
-  el('set-tgpair').addEventListener('click', async () => {
-    if (!isReady()) { say(t('set.chanOffline')); return; }
-    try { await sendApp({ t: 'slash', cmd: 'telegram-pair', arg: '' }); } catch { say(t('set.chanOffline')); return; }
-    say(t('set.chanSent'));
-    close();
-  });
   for (const b of document.querySelectorAll('[data-copy]')) b.addEventListener('click', async () => {
     const ok = await RelayMD.copyText(el(b.dataset.copy).textContent);
     say(ok ? t('set.copied') : t('r.copy.fail'));
@@ -579,37 +523,3 @@ export function onRemotes(m) {
 export function onPairEv() {}
 /** app.js (P165): a P153 pair card arrived — keep this remote's pending add alive while Settings steps aside. */
 export function onPairCard() { remotes.onPairCard(); }
-
-/** P265/P264 integration seam: the shortcut and gear hold invoke the same configured capture callback. */
-export function screenshotFromKey() { if (H.screenshot) return H.screenshot(); say(t('ixw.capturePending')); }
-
-/** P265: the same configured owner action as the upgrade button, without a synthetic click. */
-export function upgradeFromKey() { return H.upgradeHost?.(); }
-
-/** P265 / P241 pairing key: reuse the existing signed Add flow and show its QR, never toggle it away. */
-export function pairFromKey() { if (sub === 'remotes' && isOpen()) return remotes.open({add: true}); return open('remotes', true); }
-// P264: only public labels / descriptions, never input values or secret cards, form the local search index.
-export function closeSearch() { el('set-find').hidden = true; el('set-find-input').value = ''; el('set-find-results').replaceChildren(); }
-export function toggleSearch() {
-  if (!isOpen()) return;
-  if (!el('set-find').hidden) { closeSearch(); return; }
-  if (sub !== 'main') showSub('main');
-  el('set-find').hidden = false; el('set-find-input').focus();
-}
-export function searchItems(query) {
-  const q = query.trim().toLocaleLowerCase(); if (!q) return [];
-  return [...el('set-main').querySelectorAll('.setrow, .setnav, .setlinks')].filter(n => n.getClientRects().length &&
-    [...n.querySelectorAll('.setlab, .setnote, b, small, a')].map(x => x.textContent).join(' ').concat(' ', n.dataset.keywords || '', n.closest('.setcard')?.querySelector('h3')?.textContent || '').toLocaleLowerCase().includes(q));
-}
-function renderSearch() {
-  const box = el('set-find-results'); box.replaceChildren();
-  const found = searchItems(el('set-find-input').value);
-  for (const row of found) {
-    const b = document.createElement('button'); b.type = 'button'; b.className = 'setnav';
-    b.textContent = row.querySelector('.setlab, b, a')?.textContent || row.textContent;
-    b.addEventListener('click', () => { closeSearch(); row.scrollIntoView({block: 'center'}); row.classList.remove('set-found'); void row.offsetWidth; row.classList.add('set-found'); row.tabIndex = -1; row.focus({preventScroll:true}); setTimeout(() => row.classList.remove('set-found'), 2400); });
-    box.append(b);
-  }
-  if (!found.length && el('set-find-input').value.trim()) box.textContent = t('p264.noResults');
-}
-el('set-find-input').addEventListener('input', renderSearch);

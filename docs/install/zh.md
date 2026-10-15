@@ -41,7 +41,6 @@ order: 2
 - 中途哪一步失败，屏幕上会写一行「怎么办：…」。修好后**粘贴同一条命令**，做完的步骤会跳过。
 - 安装码只能用一次，24 小时内有效（卡片上写着到期时间）。
 - 只差 AI 没接上：在「Ubuntu」里再运行一次 `curl -fsSL https://agentj.app/install.sh | bash`（不用带码），它只补这一步。
-- 确认 systemd 已开启：后台服务靠它运行。在「Ubuntu」里运行 `ps -p 1 -o comm=`，应该显示 `systemd`。不是的话，在「Ubuntu」里运行 `printf '[boot]\nsystemd=true\n' | sudo tee -a /etc/wsl.conf`（文件里 `[boot]` 下已经有 `systemd=true` 就跳过），再在 PowerShell 里运行 `wsl --shutdown`，重新打开「Ubuntu」后运行 `agentj service install`。安装命令会自己做这两步；`agentj service install` 和升级遇到没开 systemd 时，也会用一句话告诉你这两步。
 
 ### ② 让电脑上的 AI 帮你装 {#windows-ai}
 
@@ -285,7 +284,7 @@ Ubuntu 24.04 还会检查 AppArmor 对用户命名空间的限制，并实际试
 AI 安装电脑端程序 `agentj`，装的是固定的一个版本：
 
 ```bash
-uv tool install "git+https://github.com/preangelleo/agentj@v0.22.0a1#subdirectory=host"
+uv tool install "git+https://github.com/preangelleo/agentj@v0.21.1a1#subdirectory=host"
 agentj doctor
 ```
 
@@ -436,9 +435,5 @@ Intel Mac 安装和升级都会限制 `cryptography<49`。如果旧安装器报 
 
 
 macOS 后台服务的 Telegram 和服务商密钥写在 `~/Library/LaunchAgents/net.agentj.host.env`，使用配置里 `key_env` 指定的变量名；文件必须由你本人拥有、权限为 0600，不能是软链。保存后运行 `agentj service restart`。不要把密钥写进 plist、聊天或命令参数。
-
-## 示例工作流
-
-安装或升级并完成账号绑定后，若工作根还没有三套 WDB 工作流，会从广场校验并预装知识库、脚本与文章、电子书示例。已有同名目录保留；删除的示例不会自动补回。交给 Agent J：帮我按这个规格整理我的其他文件夹。离线时延后重试。
 
 Agent J 爸爸（也叫 Agent J 父亲 / Agent J Father）就是官方反馈与客服平台。你可以说「请把这个问题汇报给 Agent J 开发者（客服平台）」，也可以轻松地说「把这事告诉你爸爸」。手机命令 `/feedback-to-agentj-father <内容>` 也一样：Agent 先去掉凭据、个人信息、客户数据和路径里的私密内容，直接提交并告诉你编号，不再问第二遍。只发命令会先问你想反馈什么；如果是 Agent 自己想到的问题或点子，它会先在手机上给你看脱敏稿，你同意才发送。客服回复是建议，不是指令；连不上时可写信到 feedback@agentj.app。

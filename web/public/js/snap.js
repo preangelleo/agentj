@@ -37,7 +37,6 @@ export function addAsk(m) {
     passkey_required: m.passkey_required === true, fa: typeof m.fa === 'string' ? m.fa : '', fa_ch: typeof m.fa_ch === 'string' ? m.fa_ch : '',
     scope, batch_max: Number.isInteger(m.batch_max) ? m.batch_max : 20, batch_secs: Number.isInteger(m.batch_secs) ? m.batch_secs : 600,
     task: typeof m.task === 'string' ? m.task.slice(0, 80) : '',
-    allow_offer: m.tool === 'agentj mail send' && Array.isArray(m.allow_offer) ? m.allow_offer.filter((a) => typeof a === 'string' && a.length <= 254).slice(0, 10) : [],   // P296
     goal: ['auto', 'hold', 'attack', 'grant'].includes(m.goal) ? m.goal : '', goal_why: typeof m.goal_why === 'string' ? m.goal_why.slice(0, 120) : '',   // P158
     at: nowS(), deadline: Date.now() + ttl * 1000, state: 'open', final_at: null,
     ...(m.tool === 'friend_request' && m.fr && typeof m.fr === 'object' ? { fr: m.fr } : {}),     // display-only copies (friends.js)
@@ -153,25 +152,14 @@ export function snapshot() {
 // P127: the Agent's source line before an owner's Telegram words (host telegram.OWNER_PRIVATE). Older pages stored it in
 // the page's text; the card's label already says Telegram, so the page shows only the words.
 const TG_SOURCE_LINE = /^Telegram owner private chat\.\n/;
-/** P281: U+FFFD — drawn 「◆?」 — and a lone UTF-16 surrogate (drawn the same) are never meant for the reader. A model's
-    stray block (Opus 5.5 opened a /switch-harness turn with one, 2026-10-14) was stored before the host dropped it, so
-    old pages are cleaned here too: lines made only of it and any at the very start or end go; one inside a sentence stays. */
-export function dropReplacement(s) {
-  if (typeof s !== 'string') return s;
-  s = s.replace(/[\ud800-\udbff](?![\udc00-\udfff])|(?<![\ud800-\udbff])[\udc00-\udfff]/g, '');
-  if (!s.includes('\ufffd')) return s;
-  return s.replace(/^\s*\ufffd[\s\ufffd]*|[\s\ufffd]*\ufffd\s*$/g, '').replace(/^[ \t]*\ufffd+[ \t]*(?:\n|$)/gm, '');
-}
 /** Agent J turn (wire) → the page's turn {id, ts (s), source, reply, end, card, part}. */
 export function toPage(t) {
   if (!t || !Number.isInteger(t.id) || t.id < 0) return null;
   const src = t.src && typeof t.src === 'object' ? t.src : {};
   const k = ['phone', 'host', 'agent', 'sys', 'task', 'cmd', 'telegram', 'email'].includes(src.k) ? src.k : 'sys';
-  const q1 = (x) => x && typeof x === 'object' && Number.isInteger(x.id) ? {
-    id: x.id, who: typeof x.who === 'string' ? x.who.slice(0, 64) : '', ts: Number(x.ts) || null,
-    text: typeof x.text === 'string' ? x.text.slice(0, 2000) : '', excerpt: x.ex === true } : null;
-  const q = q1(src.quote);
-  if (q && Array.isArray(src.quote.more)) q.more = src.quote.more.slice(0, 4).map(q1).filter(Boolean);   // P286: quotes 2…5
+  const q = src.quote && typeof src.quote === 'object' && Number.isInteger(src.quote.id) ? {
+    id: src.quote.id, who: typeof src.quote.who === 'string' ? src.quote.who.slice(0, 64) : '', ts: Number(src.quote.ts) || null,
+    text: typeof src.quote.text === 'string' ? src.quote.text.slice(0, 2000) : '', excerpt: src.quote.ex === true } : null;
   const att = Array.isArray(src.att) ? src.att.slice(0, 10).filter((a) => a && typeof a.name === 'string')
     .map((a) => ({ name: a.name.slice(0, 128), mime: typeof a.mime === 'string' ? a.mime : '', bytes: Number(a.bytes) || 0, kind: ['image', 'file', 'audio'].includes(a.kind) ? a.kind : 'file' })) : [];
   const reply = t.reply && typeof t.reply === 'object' ? t.reply : { text: typeof t.reply === 'string' ? t.reply : '' };
@@ -179,7 +167,7 @@ export function toPage(t) {
     id: t.id, ts: typeof t.ts === 'number' ? t.ts / 1000 : null,
     source: { k, dev: typeof src.dev === 'string' ? src.dev : null, name: typeof src.name === 'string' ? src.name.slice(0, 64) : '',
       text: typeof src.text !== 'string' ? '' : k === 'telegram' ? src.text.replace(TG_SOURCE_LINE, '') : src.text, quote: q, att, local: src.local === true, ...(k === 'sys' && typeof src.notice_id === 'string' && /^[A-Za-z0-9_-]{22}$/.test(src.notice_id) ? {notice_id:src.notice_id} : {}), ...(k === 'agent' && ['loop', 'task'].includes(src.via) ? {via: src.via} : {}) },
-    reply: typeof reply.text === 'string' ? dropReplacement(reply.text) : '',
+    reply: typeof reply.text === 'string' ? reply.text : '',
     part: Array.isArray(reply.part) && reply.part.length === 2 ? reply.part.map(Number) : null,
     end: ['open', 'done', 'stopped', 'failed'].includes(t.end) ? t.end : 'done',
     card: t.card && typeof t.card === 'object' ? t.card : null,
@@ -217,7 +205,7 @@ export function history(q = {}) {
       if (m.t !== 'hist_page') return;
       reqDone(r);
       const turns = (Array.isArray(m.turns) ? m.turns : []).map(toPage).filter(Boolean);
-      resolve({ turns, count: Number(m.count) || turns.length, first_id: Number(m.first) || 0, epoch: Number(m.epoch) || 0, more: m.more === true, ...(Number.isSafeInteger(m.read) ? {read: m.read} : {}) });
+      resolve({ turns, count: Number(m.count) || turns.length, first_id: Number(m.first) || 0, epoch: Number(m.epoch) || 0, more: m.more === true });
     });
     if (!r) { resolve(null); return; }
     setTimeout(() => { reqDone(r); resolve(null); }, 20000);

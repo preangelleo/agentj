@@ -27,7 +27,7 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 from agentj import agent as agents  # noqa: E402
 from agentj import agent_codex as cx  # noqa: E402
 from agentj import agent_opencode as oc  # noqa: E402
-from agentj import activity, approvals, danger, fence, humane, slash, tasks  # noqa: E402
+from agentj import activity, approvals, danger, fence, slash, tasks  # noqa: E402
 
 from test_danger import _sign  # noqa: E402
 from test_l1 import Phone, _host, _ready, _state  # noqa: E402
@@ -177,7 +177,7 @@ class _Chain(unittest.TestCase):
             async def cmd(name, arg="", confirm=False, want=None):
                 k = len(cards(want or name))
                 await host._app(s, {"t": "slash", "cmd": name, "arg": arg, **({"confirm": True} if confirm else {})})
-                await wait(lambda: len(cards(want or name)) > k and cards(want or name)[-1]["text"] != "收到，等这一轮忙完就办。")
+                await wait(lambda: len(cards(want or name)) > k and cards(want or name)[-1]["text"] != "这一轮结束后执行。")
                 return cards(want or name)[-1]
 
             async def idle():
@@ -259,28 +259,16 @@ class ClaudeChain(_Chain):
             self.assertTrue(cl["sep"] and cl["undo"], cl)
             self.assertIsNone(self.st.agent_session("claude"))
             self.assertEqual(self.st.agent_session("claude.prev"), first)
-            # P280: undo works until the new conversation starts …
+            await c["say"]("新的")
+            await c["wait"](lambda: any(m["text"] == "ECHO: 新的" for m in c["msgs"]()))
+            self.assertNotEqual(self.st.agent_session("claude"), first)
             un = await c["cmd"]("undo_clear")
             self.assertTrue(un["sep"] and not un.get("undo"), un)
             self.assertEqual(self.st.agent_session("claude"), first)
-            # … and once a message opened the new one, an undo (an older phone's button) is refused, nothing changes
-            await c["cmd"]("clear", confirm=True)
-            await c["say"]("新的")
-            await c["wait"](lambda: any(m["text"] == "ECHO: 新的" for m in c["msgs"]()))
-            fresh = self.st.agent_session("claude")
-            self.assertNotEqual(fresh, first)
-            late = await c["cmd"]("undo_clear")
-            self.assertEqual(late["kind"], "error", late)
-            self.assertEqual(late["text"], humane.say("undo.late", "zh"))
-            self.assertEqual(self.st.agent_session("claude"), fresh)
-            self.assertIsNone(self.st.agent_session("claude.prev"), "the undo window is closed for good")
-            await c["cmd"]("clear", confirm=True)
-            await c["cmd"]("undo_clear")
-            self.assertEqual(self.st.agent_session("claude"), fresh)
             await c["say"]("回来了")
             await c["wait"](lambda: any(m["text"] == "ECHO: 回来了" for m in c["msgs"]()))
             argvs = [x["argv"] for x in self.logged() if "argv" in x]
-            self.assertEqual(argvs[-1][argvs[-1].index("--resume") + 1], fresh, "undo: Claude Code resumed the old session")
+            self.assertEqual(argvs[-1][argvs[-1].index("--resume") + 1], first, "undo: Claude Code resumed the old session")
             self.assertEqual(argvs[-1][argvs[-1].index("--model") + 1], "haiku", "the chosen model survives a restart")
             again = await c["cmd"]("undo_clear")
             self.assertEqual(again["kind"], "error")
@@ -288,7 +276,7 @@ class ClaudeChain(_Chain):
             await c["say"]("SLOW")
             await c["wait"](lambda: c["host"].agent.status == "working")
             stop = await c["cmd"]("stop")
-            self.assertTrue(stop["text"].startswith("好，停下了这一轮"), stop)
+            self.assertTrue(stop["text"].startswith("已停下这一轮"), stop)
             self.assertFalse(c["host"].stopped())
             await c["say"]("还在吗")
             await c["wait"](lambda: any(m["text"] == "ECHO: 还在吗" for m in c["msgs"]()))
@@ -300,7 +288,7 @@ class ClaudeChain(_Chain):
             # a command while a turn runs waits for it (queued), then runs
             await c["say"]("SLOW")
             await c["host"]._app(c["s"], {"t": "slash", "cmd": "context"})
-            await c["wait"](lambda: c["cards"]("context")[-1]["text"] == "收到，等这一轮忙完就办。")
+            await c["wait"](lambda: c["cards"]("context")[-1]["text"] == "这一轮结束后执行。")
             await c["wait"](lambda: c["cards"]("context")[-1]["text"].startswith("上下文"))
             await c["wait"](lambda: any(m["text"] == "慢回复" for m in c["msgs"]()))
             # stopped: commands other than /help are refused
@@ -429,28 +417,23 @@ class CodexChain(_Chain):
             await c["wait"](lambda: any(m["text"] == "ECHO: 二" for m in c["msgs"]()))
             await c["idle"]()
             # /clear → a new thread; undo → the old one is resumed
-            # P280: undo before the next message resumes the old one; after it, the undo is refused
             await c["cmd"]("clear", confirm=True)
-            await c["cmd"]("undo_clear")
             await c["say"]("三")
             await c["wait"](lambda: any(m["text"] == "ECHO: 三" for m in c["msgs"]()))
             await c["idle"]()
-            self.assertEqual(self.st.agent_session("codex"), "exec-era-thread")
-            await c["cmd"]("clear", confirm=True)
+            fresh = self.st.agent_session("codex")
+            self.assertNotEqual(fresh, "exec-era-thread")
+            await c["cmd"]("undo_clear")
             await c["say"]("四")
             await c["wait"](lambda: any(m["text"] == "ECHO: 四" for m in c["msgs"]()))
             await c["idle"]()
-            fresh = self.st.agent_session("codex")
-            self.assertNotEqual(fresh, "exec-era-thread")
-            late = await c["cmd"]("undo_clear")
-            self.assertEqual(late["kind"], "error", late)
-            self.assertEqual(self.st.agent_session("codex"), fresh)
+            self.assertEqual(self.st.agent_session("codex"), "exec-era-thread")
             # /stop: turn/interrupt, nothing paused
             await c["say"]("SLEEP: 20")
             await c["wait"](lambda: host.agent.status == "working")
             await asyncio.sleep(0.3)
             stop = await c["cmd"]("stop")
-            self.assertTrue(stop["text"].startswith("好，停下了这一轮"), stop)
+            self.assertTrue(stop["text"].startswith("已停下这一轮"), stop)
             self.assertFalse(host.stopped())
             await c["say"]("五")
             await c["wait"](lambda: any(m["text"] == "ECHO: 五" for m in c["msgs"]()))
@@ -612,28 +595,22 @@ class OpenCodeChain(_Chain):
             await c["say"]("二")
             await c["wait"](lambda: any(m["text"] == "ECHO: 二" for m in c["msgs"]()))
             await c["idle"]()
-            # P280: undo before the next message resumes the old one; after it, the undo is refused
             await c["cmd"]("clear", confirm=True)
-            await c["cmd"]("undo_clear")
             await c["say"]("三")
             await c["wait"](lambda: any(m["text"] == "ECHO: 三" for m in c["msgs"]()))
             await c["idle"]()
-            self.assertEqual(self.st.agent_session("opencode"), first)
-            await c["cmd"]("clear", confirm=True)
+            self.assertNotEqual(self.st.agent_session("opencode"), first)
+            await c["cmd"]("undo_clear")
             await c["say"]("四")
             await c["wait"](lambda: any(m["text"] == "ECHO: 四" for m in c["msgs"]()))
             await c["idle"]()
-            fresh = self.st.agent_session("opencode")
-            self.assertNotEqual(fresh, first)
-            late = await c["cmd"]("undo_clear")
-            self.assertEqual(late["kind"], "error", late)
-            self.assertEqual(self.st.agent_session("opencode"), fresh)
+            self.assertEqual(self.st.agent_session("opencode"), first)
             # /stop → abort; nothing paused
             await c["say"]("SLEEP: 20")
             await c["wait"](lambda: host.agent.status == "working")
             await asyncio.sleep(0.3)
             stop = await c["cmd"]("stop")
-            self.assertTrue(stop["text"].startswith("好，停下了这一轮"), stop)
+            self.assertTrue(stop["text"].startswith("已停下这一轮"), stop)
             await c["say"]("五")
             await c["wait"](lambda: any(m["text"] == "ECHO: 五" for m in c["msgs"]()))
             # a scheduled research run: its own session, not stored, deny-instead-of-ask rules

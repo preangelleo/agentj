@@ -10,7 +10,7 @@ import re
 import shutil
 import tomllib
 
-NAMES = ("claude", "codex", "opencode", "kimi", "qwen")
+NAMES = ("claude", "codex", "opencode")
 ENV = {n: "AGENTJ_" + n.upper() + "_BIN" for n in (*NAMES, "gemini")}
 
 
@@ -70,35 +70,8 @@ def _selected(name, e):
     return None
 
 
-def version_sibling(a, b):
-    """P282: the same install tree, another version — the paths differ in exactly one component and both differing
-    components carry a digit (…/releases/0.156.0-aarch64-apple-darwin/bin/codex vs …/releases/0.162.1-…/bin/codex;
-    …/claude/versions/2.1.283 vs …/2.1.290; …/mise/installs/codex/0.156.0/… vs …/0.162.1/…)."""
-    pa, pb = Path(a).parts, Path(b).parts
-    if len(pa) != len(pb):
-        return False
-    diff = [(x, y) for x, y in zip(pa, pb) if x != y]
-    return len(diff) == 1 and all(re.search(r"\d", c) for c in diff[0])
-
-
 def resolve(name, environ=None):
-    """P282: a saved path (AGENTJ_<NAME>_BIN, e.g. the one `agentj service install` wrote) that a self-updating harness
-    has left behind is not used: missing → reason "pin_missing", another version of the same install tree than the one
-    PATH finds now → "pin_stale" (Mac seat 10-14: the service kept codex 0.156.0's release folder after codex updated
-    itself to 0.162.1). Both fall back to what PATH resolves; `pinned` keeps the saved path for the report."""
     e = os.environ if environ is None else environ
-    if e.get(ENV[name]) or e.get(ENV[name].replace("AGENTJ_", "AGENTJARVIS_")):
-        r = _resolve(name, e)
-        if r["reason"] in ("explicit", "missing"):
-            fresh = _resolve(name, {k: v for k, v in e.items() if k not in (ENV[name], ENV[name].replace("AGENTJ_", "AGENTJARVIS_"))})
-            pin = r["path"] or (str(Path(r["requested"]).absolute()) if r["requested"] else None)
-            if fresh["path"] and pin and pin != fresh["path"] and version_sibling(pin, fresh["path"]):
-                return {**fresh, "reason": "pin_missing" if r["path"] is None else "pin_stale", "pinned": r["requested"], "via": fresh["reason"]}
-        return r
-    return _resolve(name, e)
-
-
-def _resolve(name, e):
     override = e.get(ENV[name]) or e.get(ENV[name].replace("AGENTJ_", "AGENTJARVIS_"))
     home = Path(e.get("HOME", str(Path.home())))
     original = (str(home / override[2:]) if override.startswith("~/") else override) if override else shutil.which(name, path=e.get("PATH", ""))

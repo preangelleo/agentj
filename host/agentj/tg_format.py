@@ -6,8 +6,6 @@ import re
 import unicodedata
 from urllib.parse import urlsplit
 
-from .text import drop_replacement
-
 INLINE = re.compile(r'\\([\\`*_{}\[\]()#+\-.!|~>])|<(https?://[^\s<>]+)>|(?<![\w/])(https?://[^\s<>]+)|(`+)(.+?)\4'
                     r'|!?\[([^\]\n]+)\]\(<?([^\s)>]+)>?\)|(\*\*|(?<!\w)__|~~|\+\+|\*|(?<!\w)_)(?=\S)(.+?)(?<=\S)\8', re.S)
 TAGS = {'**': 'b', '__': 'b', '*': 'i', '_': 'i', '~~': 's', '++': 'u'}
@@ -179,7 +177,7 @@ def parts(text, limit=3900):
     if limit < 1500:
         raise ValueError('Telegram HTML chunk budget must be at least 1500')
     parser = _Parts(limit)
-    parser.feed(markdown(drop_replacement(text)))   # P281: no stray 「◆?」 in Telegram either (stored history too)
+    parser.feed(markdown(text))
     parser.close()
     parser.flush(final=True)
     return parser.parts

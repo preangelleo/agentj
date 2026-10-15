@@ -126,12 +126,12 @@ export async function runP207Unread({ B, web, fake, out = OUT }) {
       await key(p, 'Escape'); await waitFor(p, `${$('loadDlg')}.hidden`);
       await evaluate(p, `document.activeElement?.blur()`);
       await key(p, '?', { code: 'Slash', shift: true, text: '?' }); await waitFor(p, `!${$('keys')}.hidden`);
-      const sheet = await evaluate(p, `import('./js/interactions.gen.js').then(g=>({rows:g.ROWS.reduce((n,r)=>n+(r[1].some(k=>k[0].startsWith('Alt+Shift+'))?1:0)+(r[1].some(k=>!k[0].startsWith('Alt+Shift+'))?1:0)+(r[2]?1:0),0),dt:document.querySelectorAll('#keys dt').length,dd:document.querySelectorAll('#keys dd').length,
-        u:[...document.querySelectorAll('#keys section[data-group="single"] dt[data-ix="page.first_unread"] kbd')].map(k=>k.textContent).join(''),title:document.getElementById('keysTitle').textContent,
+      const sheet = await evaluate(p, `import('./js/interactions.gen.js').then(g=>({rows:g.ROWS.length,dt:document.querySelectorAll('#keys dt').length,dd:document.querySelectorAll('#keys dd').length,
+        u:[...document.querySelectorAll('#keys dt[data-ix="page.first_unread"] kbd')].map(k=>k.textContent).join(''),title:document.getElementById('keysTitle').textContent,
         groups:document.querySelectorAll('#keys section.menucard').length,ges:document.querySelectorAll('#keys .keyges').length}))`);
       assert.equal(sheet.dt, sheet.rows); assert.equal(sheet.dd, sheet.rows);
       assert.equal(sheet.u, 'u'); assert.equal(sheet.title, s.keysTitle);
-      assert.ok(sheet.groups === 3 && sheet.ges > 40, JSON.stringify(sheet));
+      assert.ok(sheet.groups >= 8 && sheet.ges > 40, JSON.stringify(sheet));
       await save('keys');
       await key(p, 'Escape'); await waitFor(p, `${$('keys')}.hidden`);
       assert.deepEqual(p.problems, []); assert.deepEqual(p.offsite, []);

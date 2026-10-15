@@ -44,8 +44,6 @@ def command(args):
             elif group=='key' and a.action=='bind':
                 if not a.value or not a.run:raise p.ConfigError(key,'use key bind <combo> --run <allowed action>')
                 rows=p.merge(rows,[{'id':a.value.replace('+','-'),'combo':a.value,'action':a.run}])
-            elif group=='channel' and a.action in ('add','pair','rebind') and a.value=='telegram' and a.owner_id is None:
-                return pair_telegram(a.key_env)
             elif group=='channel' and a.action=='add' and a.value=='telegram':
                 from .telegram import enroll
                 result=enroll(a.owner_id,a.key_env)
@@ -54,30 +52,12 @@ def command(args):
                 rows=p.merge(rows,[{'id':'telegram','type':'telegram'}])
             elif group=='channel' and a.action=='remove':
                 rows=[x for x in rows if x['id']!=a.value]+[{'id':a.value,'disabled':True}]
-            elif group=='channel':raise p.ConfigError(key,'use agentj channel add telegram: the paired phone shows a one-time code the owner sends to the bot')
+            elif group=='channel':raise p.ConfigError(key,'use channel add telegram --owner-id <your ID>; only the owner can enroll')
             else:raise p.ConfigError(key,'unsupported action')
             return p.command(['set',key,json.dumps(rows,ensure_ascii=False),'--json-value'])
         except p.ConfigError as e:print(json.dumps(e.result()));return e.code
     if group=='skill':return skill(a)
     return 1
-
-def pair_telegram(key_env):
-    """P283: ask the running serve for a one-time Telegram pairing code. The code appears only on the paired phone's card;
-    whoever sends `/start <code>` to the bot in a private chat becomes the owner. No numeric ID to look up anywhere."""
-    from .state import State
-    from .names import ctl_call, ServeBusy
-    st=State()
-    try:res=ctl_call(st,{'cmd':'telegram_pair','key_env':key_env},30) if st.exists() else None
-    except ServeBusy:res={'ok':False,'error':'busy'}
-    if res is None:
-        print(json.dumps({'ok':False,'error':'not_running','detail':'Agent J is not running: start it (agentj service install, or agentj service restart), then run this again'}));return 2
-    if not res.get('ok'):
-        print(json.dumps({k:res[k] for k in ('ok','error','detail') if k in res}));return 2
-    res.pop('code',None)
-    bot='@'+res['bot'] if res.get('bot') else 'your bot'
-    res['next']=(f'The pairing code is on your paired phone (valid {res.get("expires_in",600)//60} minutes, one use). In Telegram send {bot}: '
-                 '/start <code>. That private chat becomes the owner; Agent J then says on Telegram that it is connected.')
-    print(json.dumps(res,ensure_ascii=False));return 0
 
 SKILLS=Path(__file__).with_name('skills')
 HARNESS_DIRS=('.claude/skills','.codex/skills','.agents/skills','.config/opencode/skills')

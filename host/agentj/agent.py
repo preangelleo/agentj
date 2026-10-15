@@ -34,7 +34,7 @@ import sys
 import time
 from dataclasses import dataclass
 
-from . import bg, compactprep, danger, fence, humane, slash, main_identity
+from . import bg, compactprep, danger, fence, slash, main_identity
 from .slash import Result
 from .envcompat import getenv
 from .text import clean, clean_line, text_units, pick
@@ -122,7 +122,7 @@ def summarize(tool: str, tool_input) -> str:
         s = "删除 " + inp["file_path"] + (("\n" + inp["detail"]) if isinstance(inp.get("detail"), str) else "")
     elif tool == "CodexPermissions" and isinstance(inp.get("permissions"), str):   # Codex asks for more than its sandbox
         s = "Codex 要求本轮放宽沙箱：" + inp["permissions"] + (f"\n— {inp['reason']}" if isinstance(inp.get("reason"), str) else "")
-    elif tool in ("agentj mail send", "agentj mail") and isinstance(inp.get("summary"), str):   # P184 / P296: the host's text
+    elif tool == "agentj mail send" and isinstance(inp.get("summary"), str):   # P184: recipients, subject, files, body
         s = inp["summary"]
     if s is None:
         s = json.dumps(inp, ensure_ascii=False, separators=(", ", ": "))
@@ -155,15 +155,10 @@ def _signal_tree(p, sig: int) -> None:
 # binary; samples in tests/test_p175_codex_errors.py). Order matters: the most specific class wins, `other` is the fallback.
 _CODEX_REGION = ("unsupported_country", "country, region, or territory", "not available in your country",
                  "not available in your region", "region is not supported", "location is not supported")
-# P309: a used-up allowance (usage) is not a momentary throttle (rate). A bare 429 is `rate`: Codex 0.162 drops the
-# body of a non-OpenAI provider's 429 ("exceeded retry limit, last status: 429 Too Many Requests" +
-# responseTooManyFailedAttempts, measured against a mock relay), so only the provider's own words can say "used up".
-_CODEX_USAGE = ("usage limit", "usage_limit_reached", "usagelimitexceeded", "workspace_owner_rate_limit", "weekly limit",
-                "5-hour limit")
-_CODEX_RATE = ("rate limit", "rate_limit_exceeded", "ratelimit", "too many requests", "请求过于频繁", "限流", "负载已饱和")
+_CODEX_USAGE = ("usage limit", "usage_limit_reached", "usagelimitexceeded", "rate limit", "rate_limit_exceeded",
+                "too many requests", "workspace_owner_rate_limit")
 _CODEX_QUOTA = ("quota exceeded", "insufficient_quota", "check your plan and billing", "credits_depleted", "quotaexceeded",
-                "out of credits", "insufficient_user_quota", "quota is not enough", "pre_consume_token_quota_failed",
-                "余额不足", "额度不足", "额度已用尽")
+                "out of credits")
 _CODEX_PLAN = ("usage not included", "usage_not_included", "usagenotincluded", "to use codex with your chatgpt plan",
                "plan does not include")
 _CODEX_WORKSPACE = ("not enabled for your workspace", "login is restricted to workspace", "workspace administrator",
@@ -198,33 +193,10 @@ def _codex_exit(raw: str) -> str | None:
     return "start" if "Codex（app-server）没有启动" in raw else None
 
 
-def _codex_relay_hint(kind: str, provider: dict | None, stale: bool, en: bool) -> str:
-    """P309: the tail of a usage / rate / quota / auth line — which service Codex really talks to, and the way out when the
-    owner already topped up or changed the key (a thread loaded in the running app-server keeps the provider settings it
-    was opened with; a new conversation, or a fresh app-server resuming it, reads config.toml again — measured on 0.162.1)."""
-    out = ""
-    if provider and not provider.get("relay") and kind in ("usage", "rate", "quota"):
-        out += (" (Agent J's Codex is using OpenAI itself. If you normally use a relay, the background service does not "
-                "see that setting: put it in ~/.codex/config.toml as model_provider, not only in your terminal's "
-                "environment.)" if en else
-                "（Agent J 的 Codex 现在走的是 OpenAI 官方账号。你平时用中转的话，说明后台服务没读到中转配置："
-                "把它写进 ~/.codex/config.toml 的 model_provider，别只设在终端的环境变量里。）")
-    if stale or (provider and provider.get("relay")):
-        out += (" Already topped up or changed the key and still seeing this? Send /clear for a new conversation (it reads "
-                "the relay address and key from config.toml again) and resend; if that does not help, run "
-                "`agentj agent restart` on this computer." if en else
-                "已经充值或换了 key 还报这个：发 /clear 开新对话再试（新对话会重新读 config.toml 里的中转地址和 key）；"
-                "还不行就在电脑上运行 `agentj agent restart`。")
-    return out
-
-
-def codex_failure(raw, model: str | None, lang: str = "zh", provider: dict | None = None, stale: bool = False,
-                  retried: bool = False) -> tuple[str, str, str | None]:
+def codex_failure(raw, model: str | None, lang: str = "zh") -> tuple[str, str, str | None]:
     """P78/P175: classify native failures into a line the owner can act on, retain bounded redacted details, never log
-    the body. Kinds: model · region · usage · rate · quota · plan · workspace · auth · context · policy · server · sandbox ·
-    access · network · crash · missing · other. P309: `provider` (codex_perm.provider) names a relay instead of
-    ChatGPT where it matters; `stale` = the loaded thread predates a config.toml change; `retried` = the one automatic
-    retry of a momentary limit already ran."""
+    the body. Kinds: model · region · usage · quota · plan · workspace · auth · context · policy · server · sandbox ·
+    access · network · crash · missing · other."""
     import re
     from .privacy import redact
     if isinstance(raw, dict):
@@ -233,8 +205,6 @@ def codex_failure(raw, model: str | None, lang: str = "zh", provider: dict | Non
     low = raw.lower()
     en = lang == "en"
     blocked = None
-    relay = bool(provider and provider.get("relay"))
-    where = clean_line(str((provider or {}).get("host") or (provider or {}).get("id") or "?"), 100)
     has = lambda words: any(w in low for w in words)  # noqa: E731
     status = re.search(r"\b(?:status|statusCode|http_status_code|httpStatusCode)\W{0,3}(\d{3})\b|\b(\d{3}) (?:Forbidden|Too Many|Unauthori|Internal|Bad Gateway|Service Unavailable)", raw, re.I)
     code = int(status.group(1) or status.group(2)) if status else None
@@ -257,11 +227,6 @@ def codex_failure(raw, model: str | None, lang: str = "zh", provider: dict | Non
                 "或者改用 Claude Code，或 OpenCode + 国内模型：`agentj agent opencode --dir <文件夹> --model zhipuai/glm-5.3`"
                 "（安装说明第 3a 步）。")
         kind = "region"
-    elif has(_CODEX_QUOTA) and relay:
-        text = (f"Your relay service {where} says the balance/credit is not enough. Top up or check this key's quota in "
-                f"{where}'s dashboard, then resend." if en else
-                f"你用的中转服务 {where} 说余额/额度不够了。到 {where} 的后台充值或查看这把 key 的额度，再重发。")
-        kind = "quota"
     elif has(_CODEX_QUOTA):
         text = ("The OpenAI account behind Codex is out of quota/credits. Top up or check billing at "
                 "https://platform.openai.com/settings/organization/billing (API key) or ChatGPT → Settings → Usage, then resend."
@@ -269,29 +234,7 @@ def codex_failure(raw, model: str | None, lang: str = "zh", provider: dict | Non
                 "Codex 背后的 OpenAI 账户额度/余额用完了。到 https://platform.openai.com/settings/organization/billing（API key）"
                 "或 ChatGPT 设置 → 用量 里充值或查看，再重发。")
         kind = "quota"
-    elif has(_CODEX_USAGE) and relay:
-        when = _codex_retry_at(raw)
-        text = (f"Your relay service {where} reports a usage limit" + (f" (it says: try again {when})" if when else "") +
-                f". This is not your ChatGPT account: check balance, plan and limits in {where}'s dashboard, then resend."
-                if en else
-                f"你用的中转服务 {where} 返回了用量/限额上限" + (f"，恢复时间：{when}" if when else "") +
-                f"。这不是 ChatGPT 账号的事：到 {where} 的后台看余额、套餐和限额，处理好再重发。")
-        kind = "usage"
-    elif (has(_CODEX_RATE) or code == 429) and not has(_CODEX_USAGE):
-        again = (" (Agent J already retried once)" if en else "，Agent J 已自动重试过一次") if retried else ""
-        text = ((f"Your relay service {where} answered 429 (limit / throttling){again}. It may be a momentary throttle or "
-                 f"this key's balance or limit — Codex does not pass on the relay's own words, so the two look the same. "
-                 f"Wait a minute or two and resend; if it keeps happening, check balance, limits and this key's group in "
-                 f"{where}'s dashboard." if en else
-                 f"你用的中转服务 {where} 返回了 429（限额/限流）{again}。可能是它那边瞬时限流，也可能是这把 key 的余额或"
-                 f"限额到了——Codex 不转交中转的原话，两种看起来一样。等一两分钟重发；还这样就到 {where} 的后台看余额、"
-                 f"限额和这把 key 的分组。") if relay else
-                (f"OpenAI answered 429 (rate limited){again}. Usually momentary: wait a minute or two and resend; if it keeps "
-                 "happening the usage limit is reached — ChatGPT → Settings → Usage shows when it resets." if en else
-                 f"OpenAI 返回了 429（被限流）{again}。多半是瞬时的：等一两分钟重发；一直这样就是用量到上限了，"
-                 "ChatGPT 设置 → 用量 里能看到恢复时间。"))
-        kind = "rate"
-    elif has(_CODEX_USAGE):
+    elif has(_CODEX_USAGE) or code == 429:
         when = _codex_retry_at(raw)
         text = ((f"Codex usage limit reached — it resets {'at' if re.search(r'try again at', raw, re.I) else 'in'} {when}. "
                  if when else "Codex usage limit reached (Codex did not say when it resets; ChatGPT → Settings → Usage shows it). ")
@@ -317,14 +260,6 @@ def codex_failure(raw, model: str | None, lang: str = "zh", provider: dict | Non
                 "你的 ChatGPT 工作区/组织不允许这个登录使用 Codex。请工作区管理员开通 Codex，"
                 "或在电脑上运行 `codex login` 换成个人账号登录后重发。")
         kind = "workspace"
-    elif relay and re.search(r"\b401\b|unauthori[sz]ed|invalid.{0,10}(?:api.?key|token)|incorrect api key", low):
-        pid = clean_line(str(provider.get("id") or "?"), 60)
-        text = (f"Your relay service {where} rejected the key (401). Check the key [model_providers.{pid}] uses in "
-                "~/.codex/config.toml; if it comes from an environment variable, the background service must see it too "
-                "(after changing it run `agentj service install` on this computer)." if en else
-                f"你用的中转服务 {where} 拒绝了这把 key（401）。检查 ~/.codex/config.toml 里 [model_providers.{pid}] 用的 key；"
-                "key 放在环境变量里的话，后台服务也要读得到（改完在电脑上运行 `agentj service install`）。")
-        kind = "auth"
     elif re.search(r"\b401\b|unauthori[sz]ed|authentication.*(?:failed|required)|token.*(?:expired|rejected)|"
                    r"refresh token|sign in again|log ?in again", low):
         from . import harness
@@ -349,10 +284,10 @@ def codex_failure(raw, model: str | None, lang: str = "zh", provider: dict | Non
                 if en else "OpenAI 服务器这会儿繁忙或出错（不是你这边的问题）。等几分钟再发，或点顶部模型名换个模型。")
         kind = "server"
     elif has(_CODEX_SANDBOX):
-        text = ("The sandbox blocked a step Codex tried (a safety fence, not a fault). Ask Agent J to do it another way, "
+        text = ("The sandbox blocked a step Codex tried (a safety fence, not a fault). Ask the Agent to do it another way, "
                 "or approve the wider permission when the card asks; `agentj doctor` on this computer shows the fence state."
                 if en else
-                "沙箱拦下了 Codex 的某一步（这是安全隔离，不是故障）。让 Agent J 换个做法，或在卡片弹出时批准放宽权限；"
+                "沙箱拦下了 Codex 的某一步（这是安全隔离，不是故障）。让 Agent 换个做法，或在卡片弹出时批准放宽权限；"
                 "电脑上运行 `agentj doctor` 可看隔离状态。")
         kind = "sandbox"
     elif code == 403 or re.search(r"\b403\b|forbidden", low):
@@ -393,16 +328,11 @@ def codex_failure(raw, model: str | None, lang: str = "zh", provider: dict | Non
                 "Codex 没能完成这条请求，原因没认出来。先直接重发一次；还不行，把下面的「详情」截图，"
                 f"发给这台 Agent J 的主人或客服 {CODEX_FEEDBACK}。")
         kind = "other"
-    if kind in ("usage", "rate", "quota", "auth"):
-        text += _codex_relay_hint(kind, provider, stale, en)
     detail = redact(raw).replace("```", "` ` `")
-    if detail and provider:
-        detail = f"provider: {clean_line(str(provider.get('id') or '?'), 60)}" + (f" ({where})" if provider.get("host") else "") + \
-            (" · relay" if relay else " · OpenAI") + "\n" + detail
     return kind, text + ("\n\n" + ("Details" if en else "详情") + ":\n```text\n" + detail + "\n```" if detail else ""), blocked
 
 
-HARNESS_CMD = {"claude": "claude", "codex": "codex", "opencode": "opencode", "kimi": "kimi", "qwen": "qwen"}
+HARNESS_CMD = {"claude": "claude", "codex": "codex", "opencode": "opencode"}
 _CLAUDE_ID = re.compile(r"claude-(opus|sonnet|haiku|fable)-(\d+)(?:-(\d{1,2}))?(?:-\d{8})?(\[1m\])?", re.I)
 
 
@@ -445,16 +375,16 @@ def stall_text(kind: str, reason: str, excerpt: str, secs: int, lang: str = "zh"
     en = lang == "en"
     shown = ("\n```text\n" + excerpt.replace("```", "` ` `") + "\n```") if excerpt else ""
     if reason in ("tty", "prompt"):
-        return (f"Agent J has been waiting {secs} s for an answer in a terminal on the computer — the phone cannot answer it."
+        return (f"The Agent has been waiting {secs} s for an answer in a terminal on the computer — the phone cannot answer it."
                 f"{' It printed:' if shown else ''}{shown}\nAt the computer: run `agentj agent {kind}` (answers the one-time "
                 f"setup ahead), or run `{cmd}` once in the working folder and answer it there; then send the message again."
                 if en else
-                f"Agent J 卡在电脑终端里的一个确认上（已等 {secs} 秒），手机上没法回答。{'它显示的是：' if shown else ''}{shown}\n"
+                f"Agent 卡在电脑终端里的一个确认上（已等 {secs} 秒），手机上没法回答。{'它显示的是：' if shown else ''}{shown}\n"
                 f"在电脑上处理：运行 `agentj agent {kind}`（预先完成首次设置），或在工作目录里运行一次 `{cmd}` 把它答掉；然后在手机上重发这条消息。")
-    return (f"No answer from Agent J for {secs} s; its process is still running. It may be thinking for a long time, or the "
+    return (f"No answer from the Agent for {secs} s; its process is still running. It may be thinking for a long time, or the "
             f"connection to the model service is very slow. If nothing changes: at the computer run `agentj doctor`, or tap Stop "
             f"and send again." if en else
-            f"Agent J 已经 {secs} 秒没有任何回应，进程还在运行：可能在长时间思考，也可能连模型服务很慢。"
+            f"Agent 已经 {secs} 秒没有任何回应，进程还在运行：可能在长时间思考，也可能连模型服务很慢。"
             f"一直没有动静的话：在电脑上运行 `agentj doctor` 查看，或在手机上按「停止」后重发。")
 
 
@@ -601,7 +531,7 @@ class Agent:
                         await self._identity_refresh()
                         if not (send.text or "").strip():   # F27: never an empty prompt (compose.render always names the files)
                             send.state = "failed"
-                            self.fail_notice("这条消息是空的（没有文字，附件也没整理出来），没有发给 Agent J。")
+                            self.fail_notice("这条消息是空的（没有文字，附件也没整理出来），没有发给 Agent。")
                         else:
                             await self.watched(self.turn(compactprep.decorate(self, send)))   # F24 handover; P219 stall watch
                     except asyncio.CancelledError:
@@ -609,7 +539,7 @@ class Agent:
                     except Withdrawn:
                         pass
                     except Exception as e:  # noqa: BLE001 — an adapter bug costs one turn, never serve
-                        self.fail_notice(f"Agent J 出错（{type(e).__name__}），这条没有完成。")
+                        self.fail_notice(f"Agent 出错（{type(e).__name__}），这条没有完成。")
                     finally:
                         self.cur_send = None
                     self.host.agent_turn_end()
@@ -669,7 +599,7 @@ class Agent:
                 except asyncio.CancelledError:
                     raise
                 except Exception as e:  # noqa: BLE001 — an adapter bug costs one turn, never serve
-                    self.fail_notice(f"Agent J 出错（{type(e).__name__}），这条没有完成。")
+                    self.fail_notice(f"Agent 出错（{type(e).__name__}），这条没有完成。")
                 self.host.agent_turn_end()
                 if self.q.empty():
                     self.set_status("down" if self.is_down() else "idle")
@@ -767,30 +697,6 @@ class Agent:
 
     def is_down(self) -> bool:
         return False
-
-    def session_open(self) -> bool:
-        """P312: the harness's session is ready for a turn (adapters: Codex thread loaded, Claude Code init seen)."""
-        return True
-
-    def phase(self) -> str:
-        """P312: where the Agent stands, a fixed code for the harness-switch job's diagnosis (never native output):
-        failed · idle · prompt (a terminal prompt waits for someone, Linux /proc) · approval (a card is on the phone) ·
-        starting (working, the session not open yet) · turn (session open, the turn running)."""
-        if self.is_down():
-            return "failed"
-        if self.status != "working":
-            return "idle"
-        p = getattr(self, "proc", None)
-        alive = p is not None and getattr(p, "returncode", 0) is None
-        if alive and tty_waiting(p.pid):
-            return "prompt"
-        if self._asks_open():
-            return "approval"
-        return "turn" if alive and self.session_open() else "starting"
-
-    def err_kind(self) -> str | None:
-        """P312: the class of what the harness printed on stderr (a fixed code; None = nothing / not classified)."""
-        return None
 
     def perm_lost(self) -> None:
         """The permission tool's connection to serve dropped (ClaudeAgent restarts; others have none)."""
@@ -933,26 +839,21 @@ class Agent:
         st = self.host.st
         old = st.agent_session(self.kind)
         if not old:
-            return Result(humane.of(self, "clear.noop"), "info", sep=True)
+            return Result("现在就是一段新对话，不用清空。", "info", sep=True)
         await self.drop_conversation()
         st.set_agent_session(self.kind + ".prev", old)
         st.set_agent_session(self.kind, None)
-        return Result(humane.of(self, "clear.kept"), sep=True, undo=True)
+        return Result("已清空：Agent 不再记得上面的对话。旧对话仍保存在这台电脑上，可以撤销。", sep=True, undo=True)
 
     async def cmd_undo_clear(self, arg: str) -> Result:
-        """「撤销清空」 works until the new conversation starts (P280): once a message opened a new session, the undo window
-        is over — the phone has already taken the button away, and an older phone's tap is refused here, never half-done."""
         st = self.host.st
         prev = st.agent_session(self.kind + ".prev")
         if not prev:
-            return Result(humane.of(self, "undo.none"), "error")
-        if st.agent_session(self.kind):
-            st.set_agent_session(self.kind + ".prev", None)
-            return Result(humane.of(self, "undo.late"), "error")
+            return Result("没有可以撤销的清空。", "error")
         await self.drop_conversation()
         st.set_agent_session(self.kind, prev)
         st.set_agent_session(self.kind + ".prev", None)
-        return Result(humane.of(self, "undo.done"), sep=True)
+        return Result("已撤销清空：接着之前的对话（清空之后说的话不在这段对话里）。", sep=True)
 
     async def cmd_help(self, arg: str) -> Result:
         return Result(slash.HELP)
@@ -1120,9 +1021,6 @@ class ClaudeAgent(Agent):
     def is_down(self) -> bool:
         return self.failed_start
 
-    def session_open(self) -> bool:
-        return self.got_init
-
     def argv(self, resume: str | None, research: bool = False) -> list[str]:
         # the running venv's own interpreter + the installed module (L3); -P: the agent's folder (Claude Code's cwd) is
         # never put on sys.path, so a `agentj/` or `json.py` planted there cannot stand in for the permission tool
@@ -1158,7 +1056,7 @@ class ClaudeAgent(Agent):
             self.failed_start = True
             self.host.st.log("agent_hooks_off", agent=self.kind)
             self.local_fail(f"{why}。危险动作（花钱、删除、对外发送、改凭据、改价）必须经手机逐条批准，这要靠一个 hook，"
-                                   "所以 Agent J 没有启动。去掉 disableAllHooks 这一项后再发一条消息。")
+                                   "所以 Agent 没有启动。去掉 disableAllHooks 这一项后再发一条消息。")
             return False
         argv = await self.authorized_launch_argv(self.argv(self.host.st.agent_session(self.kind)))
         if argv is None:
@@ -1387,7 +1285,7 @@ class ClaudeAgent(Agent):
                 from . import claude_auth
                 self._auth_signal(r)
                 self.fail_notice(claude_auth.failure_notice(self.cfg.get("language", "zh")) if claude_auth.login_failure(r) else
-                                 "Agent J 这一轮没有正常完成" + (f"：{clean(r, 300)}" if isinstance(r, str) and r else "。"))
+                                 "Agent 这一轮没有正常完成" + (f"：{clean(r, 300)}" if isinstance(r, str) and r else "。"))
             if self.turn_done:
                 self.turn_done.set()
 
@@ -1720,7 +1618,7 @@ class ClaudeAgent(Agent):
             return Result(f"没有切换（{clean(str(e), 120) or type(e).__name__}）。", "error")
         self.host.set_model(arg)
         self.meter(model=arg, model_name=self.model_name(arg))
-        return Result(humane.of(self, "model.switched_now", model=arg))
+        return Result(f"已切换到 {arg}：立即生效，写进了 config.json（重启后也用它）。")
 
     async def cmd_help(self, arg: str) -> Result:
         skills = [s for s in (self.init.get("skills") or []) if isinstance(s, str)][:40]
@@ -1731,12 +1629,6 @@ class ClaudeAgent(Agent):
 def make(host, cfg: dict | None):
     if not cfg:
         return None
-    if cfg["kind"] == "kimi":                       # P305: independent sessions only (no shared Kimi terminal yet)
-        from .agent_kimi import KimiAgent           # kimi acp + phone approvals (acp.py)
-        return KimiAgent(host, cfg)
-    if cfg["kind"] == "qwen":                       # P310: Qwen Code over the same ACP adapter, independent sessions only
-        from .agent_qwen import QwenAgent
-        return QwenAgent(host, cfg)
     if cfg.get("session_mode") == "shared" and not cfg.get("_workflow_ceo"):
         from .shared import make_shared
         return make_shared(host, cfg)

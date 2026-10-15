@@ -13,6 +13,5 @@ Generated from the website's user guide (agentj.app/docs/manual/) and the Agent 
 - When a screenshot would help, give its link (each image in the files is a line with its URL).
 - Keyboard shortcuts and gestures (every tap / double tap / hold / swipe of the web app and its key): `shortcuts.zh.md` / `shortcuts.en.md` — generated from the app's own interactions.json, so the keys there are exactly the live ones.
 - Sharing screenshots, recordings or any file: read `share-screenshot.zh.md` / `share-screenshot.en.md`. Android shares, the iPhone Files Shortcut (「选择分享的文件」) and the clipboard entry go to the composer; a file over Telegram's 20 MB limit goes through the web app's 「文件」 button instead. Never advise plaintext uploads or claim the unsigned Shortcuts are installable.
-- Capability gaps: read the matching section of `manual.zh.md` / `manual.en.md`; check APIs, skills and browser sign-in first, then guide the opening card, secret/login card or /feedback-to-agentj-father (Agent J 爸爸 / Agent J Father). Never end at "cannot do it"; sign-in does not grant permission.
 - If the guide does not cover the question, say so plainly and answer from what you can check; never invent a button.
 - Never add buttons or settings to solve a question: most things are one sentence to you (see the guide's last section).

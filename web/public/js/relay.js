@@ -1,16 +1,12 @@
-import { bindReaderSwipe } from './reader-swipe.js';
-import { DOUBLE_MS as RD_DTAP_MS, TAP_MS as RD_TAP_MS, TAP_PX as RD_TAP_PX, PAIR_PX as RD_PAIR_PX } from './file-gestures.js';
 import { linkify } from './five-pages.js';
-import { capAbove, sheetCeil, wireCeil } from './fit.js';
 import { registerLayer } from './layers.js';
 import { applyViewport, watchViewport } from './viewport.js';
 import { historyDoubleTap, longPress as cornerLongPress } from './history-corners.js';   // P179 (P165: renamed — P181's longpress.js owns longPress)
 import { open as openRename } from './dev-rename.js';
-import { deviceInfo, refreshApp, upgradeFromKey } from './settings.js';
+import { deviceInfo } from './settings.js';
 import { SharedNotice } from './shared-notice.js';
 import { quotaWindows } from './dashboard.js';
 import { openUsage, initUsage } from './usagedlg.js';   // P207 §1: Weekly / 5H → the centred dark dialog
-import { cycle, tier } from './quotapace.js';   // P303: day of the reset cycle + the faint pace / amount glow
 // The chat screen = relay's phone page (pwa/index.html <script>, ADR-022 … ADR-052 there), ported section by section.
 // What changed is only the transport and the wording: relay's HTTP calls (requests, the event stream, raw uploads) go through the
 // adapter `ctx.api` (Noise session, PROTOCOL §10), every string comes from the i18n dictionaries, Telegram forwarding is
@@ -18,7 +14,6 @@ import { cycle, tier } from './quotapace.js';   // P303: day of the reset cycle 
 // IndexedDB. The sections keep relay's order and `// ----` markers; they share ~40 bindings (cur, hist, atts, ptt, …),
 // which is why they stay one module (the leaf parts live in md.js, blobs.js, wav.js, speak.js, ui.js; padding, frag and signatures come from proto/wire.js).
 import { RelayMD } from './md.js';
-import { copyable } from './copycode.js';   // P292: every code / pre can be copied
 import { upgrade as upgradeWords, forget as forgetRendered } from './render.js';   // P57: lazy code / math / diagrams
 import { t, lang, onLang, fillText } from './t.js';
 import { el, toast, toastOff, toastAction, human, stamp, mmss, confirmSheet } from './ui.js';
@@ -26,25 +21,24 @@ import * as sfx from './sfx.js';
 import * as sendvol from './sendvol.js';   // P154 追加 12: hold the grey Send → the send-sound slider
 import * as shotclip from './shotclip.js';
 import { Upload, TYPES as DROP_TYPES, MAX_BYTES as UPLOAD_MAX, MAX_ATT, ASR_MAX_BYTES, anyMime } from './blobs.js';
-import { renderPage as renderMedia, forgetAll as forgetMedia, renderReader as renderReaderMedia, clearReader as clearReaderMedia, closeViewer as closeMediaViewer, viewerOpen as mediaViewerOpen } from './media.js';   // F21: files the reply shows (§13); P59: in the reader too
+import { renderPage as renderMedia, forgetAll as forgetMedia, renderReader as renderReaderMedia, clearReader as clearReaderMedia } from './media.js';   // F21: files the reply shows (§13); P59: in the reader too
 import { toWav, GAP_MIN_MS, GAP_SKIP_MS } from './wav.js';
 import * as LR from './longrec.js';   // P182: long takes kept on the phone until the computer has them
 import { Speaker, configureSpeech } from './speak.js';
 import { isReady, sendApp, hostId, peer } from './session.js';
 import { getSealed, putSealed, dbDel } from './store.js';
 import { Outbox, paint as paintOutbox, MAX as OUT_MAX, isEcho } from './outbox.js';
-import { onTheme } from './theme.js';   // P169 (§23)
-import { paintHeader } from './logo.js';   // P263: the five-state header logo
-import { waitRobot } from './busy.js';   // P281: every wait line starts with the theme's dancing robot
+import { themeLogo } from './theme.js';   // P169 (§23)
 import { longPress } from './longpress.js';   // P181: long-press shortcuts on the composer buttons
-import { initHot, setHot, openHot, kindOf as hotKind, hotName } from './hotkey.js';   // P285: the reply card's bottom-left hot key
 import * as search from './search.js';   // P188 (§28): 搜索聊天记录
-import { lookup as ixLookup, ROWS as IX_ROWS, GROUPS as IX_GROUPS, dispatchFunctional, functionalLookup, kbdTokens } from './interactions.gen.js';   // P207: keys from interactions.json
+import { lookup as ixLookup, ROWS as IX_ROWS, GROUPS as IX_GROUPS, kbdTokens } from './interactions.gen.js';   // P207: keys from interactions.json
 import { createUnread } from './unread.js';   // P207 (追加 2): this device's unread mark
 import { open as openAgentName } from './agentname.js';
 import { askKind as friendAsk, renderAsk as renderFriendAsk, addFriendCmd, openFromCmd } from './friends.js';   // §17.7: friend request / friend's question cards
 
 let C = null;                        // ctx from app.js: api, myDev(), estopOn(), canSign(), panels …
+const BRAND_LOGO = { idle: 'brand/img/logo-mark.png', working: 'brand/img/status/logo-working.png',
+  waiting: 'brand/img/status/logo-waiting.png', question: 'brand/img/status/logo-question.png', unknown: 'brand/img/status/logo-offline.png' };
 const VERBS = ['Bash', 'Write', 'Edit', 'MultiEdit', 'NotebookEdit', 'Read', 'WebFetch', 'WebSearch', 'Delete', 'ExternalDirectory', 'CodexPermissions'];
 const verb = (tool) => (VERBS.includes(tool) ? t('r.verb.' + tool) : t('r.verb.other', { tool }));
 let lastStatus = null;
@@ -89,19 +83,13 @@ const STREAM_MS = 150;   // P193 (B10): an open page's growing reply is redrawn 
 let wordsAt = 0, wordsTimer = null;
 // pending: an open page whose reply has not come yet — no words at all (the thinking dots say it), never the
 // empty-history line 「已连上你的电脑…」 (relay never showed a page before its reply; Agent J shows the say's page at once)
-// P281: wait words that are not a wait — 「已停下」 is over, 「电脑没有回音」 needs the owner — get no robot
-const NOT_WAITING = ["r.replyStopped", "r.replyNoEcho"];
-let themeGen = 0;          // P281: a new theme redraws the wait robot (its sheet) on the page shown
-function renderWords(text, pending = false, label = "", waitLine = false){
+function renderWords(text, pending = false, label = ""){
   const tx = (text || "").trim();
   // P127: a compaction in flight (any mode: PreCompact on a shared Claude, system/status on our own) says so at once;
   // a page-specific label (queued behind a busy session) wins over the session-wide wait words
   noteQuiet(pending && !tx && !label && QUIET.includes(cur?.hostStatus) ? shownKey + "|" + cur.hostStatus : null);
   const wait = waitKey(cur, historySync, quiet ? Date.now() - quiet.at : 0);
-  // P281: the page's words are a wait line (the host's own wait / queue / switch lines included) → the robot leads them
-  const robot = pending && !tx ? !!label || !NOT_WAITING.includes(wait) : !!waitLine && !!tx;
-  const key = (pending && !tx ? "\u0000pending:" + (label || wait) + (!label && wait === "r.replyWorking" && ownerAddr ? "|" + ownerAddr : "") : tx)
-    + (robot ? "\u0000robot:" + themeGen : "");
+  const key = pending && !tx ? "\u0000pending:" + (label || wait) + (!label && wait === "r.replyWorking" && ownerAddr ? "|" + ownerAddr : "") : tx;
   if (key === wordsSrc) return;
   // P193 (B10): a streaming reply grows chunk by chunk and every redraw re-parses the whole Markdown (O(n²) over a long
   // answer). While the open page only grows, redraw at most every STREAM_MS; the trailing timer draws the latest text.
@@ -116,7 +104,7 @@ function renderWords(text, pending = false, label = "", waitLine = false){
   const w = el("words");
   w.className = "words" + (!tx ? " empty" : tx.length > 600 ? " l" : tx.length > 240 ? " m" : "");
   fill(w, pending && !tx ? (label || waitText(wait)) : tx, pending && !tx);
-  afterWords(robot);
+  afterWords();
   rdFollow(tx);
 }
 function fill(w, tx, plain = false){
@@ -127,7 +115,7 @@ function fill(w, tx, plain = false){
       w.replaceChildren(RelayMD.toDOM(RelayMD.parse(tx), document)); upgradeWords(w); linkify(w);
       if (detail){
         const d = document.createElement("details"), label = document.createElement("summary"), raw = document.createElement("pre");
-        label.textContent = detail[2]; raw.textContent = detail[3]; d.append(label, copyable(raw, {click: false})); w.appendChild(d);
+        label.textContent = detail[2]; raw.textContent = detail[3]; d.append(label, raw); w.appendChild(d);
       }
       return;
     }catch(_){}
@@ -137,34 +125,12 @@ function fill(w, tx, plain = false){
   for (const p of paras){ const n = document.createElement("p"); n.textContent = p.trim(); w.appendChild(n); }
 }
 const emptyText = () => (C && C.connected() ? t('r.emptyReady') : t('r.empty'));
-/** P281: the robot goes in front of the first words (inside the first paragraph, so it sits on the text's line). */
-function leadRobot(w){
-  const first = w.firstElementChild;
-  if (first && first.tagName === "P") first.prepend(waitRobot());
-  else w.prepend(waitRobot());
-}
-/** P281: the line under a reply still being written — the robot alone, or with what a /switch-harness is doing right now
-    (card.progress, host text). Shown while the Agent works (CSS) or while the open page has a progress line. */
-let thinkingSrc = null;
-function paintThinking(progress){
-  const key = (progress || "") + "\u0000" + themeGen;
-  document.body.dataset.pageProgress = progress ? "1" : "0";
-  if (key === thinkingSrc) return;
-  thinkingSrc = key;
-  const box = el("thinking");
-  if (!box) return;
-  box.replaceChildren(waitRobot());
-  if (progress){ const s = document.createElement("span"); s.textContent = progress; box.appendChild(s); }
-}
-onTheme(() => { themeGen++; wordsSrc = null; thinkingSrc = null; showPage(); });
 
 // ---- the reading area scrolls; the page does not ---------------------------------
 const STICK_PX = 24, NEW_AT = "start";
 let stick = true;
 function atBottom(){ return mainEl.scrollHeight - mainEl.scrollTop - mainEl.clientHeight <= STICK_PX; }
-function afterWords(robot = false){
-  document.body.dataset.waitLine = robot ? "1" : "0";     // P281: the words lead with the robot → no second one under them
-  if (robot) leadRobot(el("words"));
+function afterWords(){
   if (stick) mainEl.scrollTop = NEW_AT === "end" ? mainEl.scrollHeight : 0;
   paintMore();
 }
@@ -174,9 +140,19 @@ function paintMore(){
 }
 function copyCodeClick(e){
   // P154 追加: inline `code` — one click (a tap on a phone) copies it; no icon, the shade flashes and a ≤ 1 s note.
-  // P292: that click now lives in copycode.js (data-cc="bare", set by md.js; a press that selected text is not a click to
-  // copy, a code inside a link stays a link); it bubbles `cc:copied` and the note is said here (copiedNote). A click on a
-  // code block's code presses its 拷贝 below (data-cc="ext").
+  // A press that selected text (long-press / drag → 引用) is not a click to copy; a code inside a link stays a link.
+  const ic = e.target.closest && e.target.closest("code.icode");
+  if (ic && !ic.closest("a")){
+    const sel = getSelection && getSelection();
+    if (sel && !sel.isCollapsed && String(sel).trim()) return;
+    RelayMD.copyText(ic.textContent).then(ok => {
+      if (!ok){ toast(t('r.copy.fail'), 2200); return; }
+      ic.classList.remove("copied"); void ic.offsetWidth; ic.classList.add("copied");
+      clearTimeout(ic._t); ic._t = setTimeout(() => ic.classList.remove("copied"), 900);
+      toast(t('r.md.inlineCopied'), 900);
+    });
+    return;
+  }
   const b = e.target.closest && e.target.closest(".copy");
   if (!b) return;
   const code = b.closest(".codeblock").querySelector("pre > code");
@@ -186,11 +162,6 @@ function copyCodeClick(e){
     clearTimeout(b._t);
     b._t = setTimeout(() => { b.textContent = t('r.md.copy'); b.classList.remove("done"); }, 1600);
   });
-}
-
-function copiedNote(e){
-  if (!e.detail || e.detail.variant !== "bare") return;
-  toast(e.detail.ok ? t('r.md.inlineCopied') : t('r.copy.fail'), e.detail.ok ? 900 : 2200);
 }
 
 // "已等 N 分钟" from the request's arrival on this page.
@@ -428,7 +399,6 @@ function renderPermission(card, p){
   el("why").textContent = why; el("why").hidden = !why;
   const st = apprState(p), open = st === "open";
   const sign = C.canSign();
-  paintMailAllow(p, open && sign);
   el("apprBtns").hidden = !open || !sign;
   el("apprDeny").disabled = apprBusy;
   el("apprAllow").hidden = !p || p.local_only;
@@ -450,29 +420,6 @@ function renderPermission(card, p){
   el("askState").textContent = text;
   el("elsewhereText").textContent = pairAsk && open ? t('pair.card.where') : !p ? t('r.appr.elsewhere') : p.local_only ? t('r.appr.st.localOnlyShort') : open ? t('r.appr.elsewhereLive') : t('r.appr.elsewhere');
   paintTags(p || null);
-}
-// P296: a mail card to someone not yet on the mail allowlist offers one unticked box per such recipient — 「以后发给 X 不用再
-//确认（加入白名单）」. Ticked ones go out with 长按批准, inside the same signature (api.approve → mailAllowMessage).
-let mailPicks = {id: null, set: new Set()};
-function paintMailAllow(p, live){
-  const box = el("apprMailAllow");
-  const offer = live && p && p.tool === "agentj mail send" && Array.isArray(p.allow_offer) ? p.allow_offer : [];
-  if (!offer.length){ box.hidden = true; box.replaceChildren(); return; }
-  if (mailPicks.id !== p.id) mailPicks = {id: p.id, set: new Set()};
-  if (box.dataset.id !== p.id || box.childElementCount !== offer.length + 1){
-    box.dataset.id = p.id;
-    const rows = offer.map((a) => {
-      const lab = document.createElement("label"), cb = document.createElement("input"), sp = document.createElement("span");
-      cb.type = "checkbox"; cb.checked = mailPicks.set.has(a);
-      cb.addEventListener("change", () => { if (cb.checked) mailPicks.set.add(a); else mailPicks.set.delete(a); });
-      sp.textContent = t('r.appr.mailAllow', {a});
-      lab.append(cb, sp);
-      return lab;
-    });
-    const hint = document.createElement("small"); hint.textContent = t('r.appr.mailAllowHint');
-    box.replaceChildren(...rows, hint);
-  }
-  box.hidden = false;
 }
 // P154: a long command used to push 长按批准 below the fold. It now shows 2 lines (the sandbox explanation stays whole);
 // 展开全部 / 收起 (beside the tool tag) appears only when there is more, and the copy icon (the reply bar's, at the right of
@@ -517,7 +464,7 @@ async function apprPost(p, action){
   apprFail = null;
   if (now){ apprOpt = {id: p.id, key: cardKey(cur.card), action}; foldedCard = apprOpt.key; apprDismissed = p.id; }
   apprBusy = true; if (cur) renderCard(cur);
-  const r = await C.api.approve(p, action, action === "allow" && mailPicks.id === p.id ? [...mailPicks.set] : undefined);
+  const r = await C.api.approve(p, action);
   apprBusy = false;
   if (r.ok){ apprSent = {id: p.id, state: action === "batch" ? "batch_sent" : action === "allow" ? "allow_sent" : "deny_sent"}; }
   else {
@@ -602,7 +549,7 @@ function toHex(c){
 }
 function chromeTarget(){
   // The topmost full-screen surface owns the OS bar; nested Settings pages use the same menu background.
-  const pages = [...document.querySelectorAll('.menupage:not([hidden]),.setpage:not([hidden]),.ajpages:not([hidden]),#five-page:not([hidden]),#five-detail:not([hidden]),#five-menu:not([hidden])')]   // P302: the five-card menu is Noir from the moment it opens
+  const pages = [...document.querySelectorAll('.menupage:not([hidden]),.setpage:not([hidden]),.ajpages:not([hidden]),#five-page:not([hidden]),#five-detail:not([hidden])')]
     .filter(n => n.getClientRects().length);
   if (pages.length){ pages.sort((a,b)=>(+getComputedStyle(a).zIndex||0)-(+getComputedStyle(b).zIndex||0)); return toHex(getComputedStyle(pages.at(-1)).backgroundColor); }
 
@@ -648,12 +595,9 @@ function paintUsage(u){
     bar.hidden = !x && id !== 'm5h'; bar.dataset.known = x ? '1' : '0';
     bar.dataset.zero = x && x.pct === 0 ? '1' : '0';
     bar.firstElementChild.style.width = x ? x.pct + '%' : '0';
-    // P303: WEEKLY n%（第 N 天）, and a faint glow — fast (weekly only), ≥ 80 % Mellow Marrow, ≥ 90 % Peachy Feeling
-    const c = x ? cycle(x.window, quotaReset(u, x.window)) : null, day = c && x.window === 'weekly' ? t('p303.day', {n: c.step}) : '';
-    bar.dataset.glow = x ? tier(x.pct, c, {pace: x.window === 'weekly'}) : '';
-    bar.querySelector('.lab').textContent = x ? `${x.window} ${Math.round(x.pct)}%${day}` : (id === 'm5h' ? '5h —' : '');
+    bar.querySelector('.lab').textContent = x ? `${x.window} ${Math.round(x.pct)}%` : (id === 'm5h' ? '5h —' : '');
     const label = x ? t('r.meter.' + ({weekly:'week',daily:'daily',monthly:'monthly','5h':'h5'}[x.window])) : '';
-    bar.setAttribute('aria-label', x ? t('r.meter.used', {label, pct:x.pct}) + (day ? ' ' + t('p303.dayAria', {n: c.step, of: c.steps}) : '') : '');
+    bar.setAttribute('aria-label', x ? t('r.meter.used', {label, pct:x.pct}) : '');
     bar.title = bar.getAttribute('aria-label');
   }
   const w = el("water"), ctx = u.context_pct;
@@ -683,15 +627,10 @@ function paintCompacting(on){
   void w.offsetHeight;
   w.style.transform = "";
 }
-// P303: the reset time the harness reported for a window (unix s; Claude Code / Codex), or null
-function quotaReset(u, w){
-  const r = w === 'weekly' ? u.week_reset : w === '5h' ? u.h5_reset : null;
-  return Number.isFinite(r) && r > 0 ? r : null;
-}
 // P207 §1: the numbers open the global centred dark dialog (js/usagedlg.js), not a toast pill at the top
 function meterToast(e){
   const u = (cur && cur.usage) || {};
-  const windows = u.source ? quotaWindows(u).map(x => ({window: x.window, reset: quotaReset(u, x.window), label: t('r.meter.' + ({weekly:'week',daily:'daily',monthly:'monthly','5h':'h5'}[x.window])), pct: x.pct})) : [];
+  const windows = u.source ? quotaWindows(u).map(x => ({label: t('r.meter.' + ({weekly:'week',daily:'daily',monthly:'monthly','5h':'h5'}[x.window])), pct: x.pct})) : [];
   const ctx = typeof u.context_pct === 'number' ? u.context_pct : null;
   const ctxText = ctx != null ? null : Number.isFinite(u.context_used) ? `${u.context_used} tokens` : postCompact ? t('p207set.usage.ctxPost') : null;
   openUsage({source: !!u.source, windows, ctx, ctxText, age: u.age_s != null ? u.age_s : null}, e && e.currentTarget);
@@ -915,7 +854,14 @@ function setFz(i, say){
 }
 
 // ---- the logo wears the state colour ----------------------------------------------
-function paintLogo(st, kind){ paintHeader(st, kind); }
+function paintLogo(st, kind){
+  if (document.body.dataset.view !== "chat") return;
+  const key = st === "waiting" && kind === "question" ? "question" : (BRAND_LOGO[st] ? st : "unknown");
+  const o = el("orb");
+  const src = themeLogo() || BRAND_LOGO[key];      // P169: a theme's logo stands for every state (the orb still beats / greys)
+  if (o.getAttribute("src") !== src) o.setAttribute("src", src);
+  o.dataset.v = key;
+}
 
 // ---- pages: every reply with the input it answered (relay ADR-033 / 036) -----------------
 // `hist` = the loaded turns of the host's history (§10.5); pageAt = index; `follow` = on the newest page. P132 (Leo,
@@ -991,7 +937,6 @@ let historyRetry = null, historyDelay = 0;
 async function refreshNewest(retry = false){
   if (historyRetry){ clearTimeout(historyRetry); historyRetry = null; }
   if (!retry) historyDelay = 0;
-  unread.bind(hostId());
   const generation = ++historyGeneration;
   historySync = true; wordsSrc = null; showPage();
   const before = new Map(hist.turns.map(x => [x.id, x]));
@@ -1009,10 +954,6 @@ async function refreshNewest(retry = false){
     hist.lastId = hist.turns.at(-1)?.id || 0;
     hist.count = Math.max(j.count || 0, hist.turns.length);
     hist.firstId = j.first_id || hist.turns[0]?.id || 0;
-    if (Number.isSafeInteger(j.read)) {
-      unread.owner(j.epoch, j.read);
-      if (unread.mark() > j.read) C.api.readHistory(j.epoch, unread.mark());
-    }
     pagesCache = null; historySync = false; historyDelay = 0;
   }catch(_){
     if (generation === historyGeneration){   // keep the syncing wording and try again later
@@ -1160,7 +1101,12 @@ function showPage(){
   const header = !tx && !src?.att?.length && !src?.quote;
   om.dataset.header = header ? "1" : "0";
   if (header) ot.textContent = t('r.om.noInput');
-  paintOmAttachments(src);
+  const att = el("omAtt");
+  att.replaceChildren();
+  if (src && src.att && src.att.length){
+    for (const a of src.att){ const s = document.createElement("span"); s.className = "omchip"; s.dataset.kind = a.kind; s.textContent = a.name; att.appendChild(s); }
+  }
+  att.hidden = !(src && src.att && src.att.length);
   const q = src && src.quote ? src.quote : null;
   el("omQuote").hidden = !q;
   el("omQuote").dataset.id = q ? String(q.id) : "";
@@ -1168,21 +1114,6 @@ function showPage(){
   const qx = !!q && q.excerpt === true;
   el("omqMeta").textContent = q ? [q.ts ? hhmm(q.ts / 1000) : "", qx ? t('r.quote.excerptTag') : ""].filter(Boolean).map(x => " · " + x).join("") : "";
   el("omqText").textContent = q && typeof q.text === "string" ? (qx ? t('r.quote.wrap', {text: q.text}) : q.text) : "";
-  // P286: quotes 2…5 of the same message, one row each (same look; a tap jumps to that page)
-  const more = q && Array.isArray(q.more) ? q.more : [], box = el("omQuoteMore");
-  box.hidden = !more.length;
-  box.replaceChildren(...more.map(m => {
-    const r = el("omQuote").cloneNode(true), mx = m.excerpt === true;
-    r.removeAttribute("id"); r.hidden = false; r.dataset.id = String(m.id);
-    for (const n of r.querySelectorAll("[id]")) n.removeAttribute("id");
-    const [who, meta] = r.querySelectorAll(".qh>*");
-    who.textContent = m.who || C.agentName();
-    meta.textContent = [m.ts ? hhmm(m.ts / 1000) : "", mx ? t('r.quote.excerptTag') : ""].filter(Boolean).map(x => " · " + x).join("");
-    r.querySelector(".qt").textContent = mx ? t('r.quote.wrap', {text: m.text}) : m.text;
-    r.addEventListener("click", () => jumpToTurn(m.id));
-    r.addEventListener("keydown", e => { if (e.key === "Enter" || e.key === " "){ e.preventDefault(); e.stopPropagation(); jumpToTurn(m.id); } });
-    return r;
-  }));
   const total = totalPages(), n = total - (ps.length - 1 - pageAt);
   el("pg").textContent = blank && total <= 1 ? "0 / 0" : n + " / " + total;
   el("rmTime").textContent = p.ts ? "· " + hhmm(p.ts) : "";
@@ -1199,24 +1130,11 @@ function showPage(){
   }
   const qd = p.end === "open" && queuedTurn(p.id);     // P127: accepted, waiting behind the running turn — say so
   document.body.dataset.pageQueued = qd ? "1" : "0";
-  // P282 (追加): the working dots belong to the page being worked on. A closed page shown while another page is still open
-  // (e.g. the Agent's 「切换已完成」 report landed after the owner's queued message) does not look busy itself.
-  document.body.dataset.workElsewhere = p.end !== "open" && Number.isInteger(activeTurn) && activeTurn !== p.id
-    && hist.turns.some(x => x.id === activeTurn && x.end === "open") ? "1" : "0";
   const ahead = qd ? queuedAhead(p.id) : 0;              // P152 (P149 plan B): 「前面还有 N 条」 when this device queued more than one
-  // P281: what a running /switch-harness is doing (host card.progress on the open page) — the wait line itself while no
-  // words came yet, else the robot line under them; the host's own wait lines (card.wait: 「正在等待 …」, card.queued: the
-  // busy session's queue line) and the newest switch page (card.switch: 正在切换 / 已切回 …) start with the robot too
-  const open = p.end === "open" && p.id !== null, c = p.card || {};
-  const progress = open && typeof c.progress === "string" ? c.progress.trim().slice(0, 300) : "";
-  const hostWait = open && (c.wait === true || c.queued === true) || (typeof c.switch === "string" && p === ps[ps.length - 1]);
-  renderWords((isSilent(p.reply) ? "" : p.reply?.trim()) || (p.end === "open" || p.id === null ? "" : t('r.noReply')), open,
-    qd ? t('r.queue.card') + (ahead ? " · " + t('r.queue.ahead', {n: ahead}) : "") : progress, hostWait);
-  paintThinking(visibleReply(p) && !hostWait ? progress : "");
+  renderWords((isSilent(p.reply) ? "" : p.reply?.trim()) || (p.end === "open" || p.id === null ? "" : t('r.noReply')), p.end === "open" && p.id !== null, qd ? t('r.queue.card') + (ahead ? " · " + t('r.queue.ahead', {n: ahead}) : "") : "");
   el("words").classList.toggle("empty", !visibleReply(p));
   renderMedia(el("words"), p);
   if (rdAt && rdAt.key === shownKey) renderReaderMedia(el("rdWords"), p);   // P59: the reader's slots, same Blobs
-  if (rdOpen()) rdSync();                                                   // P273: the reader follows every jump
   document.body.dataset.pageOpen = p.end === "open" ? "1" : "0";
   paintActs();
   if (!el("silent").hidden) renderSilent();
@@ -1269,35 +1187,12 @@ function paintCmdx(p){
     }
   }
   if (c.undo === true && p.id === newestUndoId()){
-    if (undoExpired(p.id)){            // P280: the new conversation has begun — no button that can no longer work
-      const g = document.createElement("span"); g.className = "cmdundogone"; g.textContent = t('cmd.undoGone');
-      box.appendChild(g);
-    } else {
-      const u = document.createElement("button"); u.type = "button"; u.className = "cmdundo"; u.textContent = t('cmd.undo');
-      u.addEventListener("click", () => { u.disabled = true; C.api.slash("undo_clear"); });
-      box.appendChild(u);
-    }
+    const u = document.createElement("button"); u.type = "button"; u.className = "cmdundo"; u.textContent = t('cmd.undo');
+    u.addEventListener("click", () => { u.disabled = true; C.api.slash("undo_clear"); });
+    box.appendChild(u);
   }
 }
 const newestUndoId = () => { for (let i = hist.turns.length - 1; i >= 0; i--){ const x = hist.turns[i]; if (x.card && (x.card.cmd === "clear" || x.card.cmd === "undo_clear")) return x.card.undo ? x.id : -1; } return -1; };
-// P280: 「撤销清空」 lasts until the new conversation starts — the first message after the clear (phone, Telegram, desktop or the
-// Agent's own) opens it, and the host refuses an undo from then on.
-const NEW_TALK = new Set(["phone", "telegram", "host", "agent"]);
-const undoExpired = (id) => hist.turns.some(x => x.id > id && x.source && NEW_TALK.has(x.source.k));
-// P261: folded source cards show only a count; attachment cards exist only while open.
-function paintOmAttachments(src = currentPage()?.source){
-  const list = src?.att || [], open = el("om").classList.contains("open");
-  const count = el("omAttCount"), att = el("omAtt");
-  count.hidden = !list.length || open;
-  count.querySelector("span").textContent = String(list.length);
-  count.setAttribute("aria-label", t('r.om.attachments', {n: list.length}));
-  el("om").classList.toggle("has-att", !!list.length);
-  att.replaceChildren();
-  if (open) for (const a of list){
-    const s = document.createElement("span"); s.className = "omchip"; s.dataset.kind = a.kind; s.textContent = a.name; att.appendChild(s);
-  }
-  att.hidden = !open || !list.length;
-}
 function setOm(open){
   const om = el("om");
   om.classList.toggle("open", open);
@@ -1305,7 +1200,6 @@ function setOm(open){
   el("omMore").setAttribute("aria-expanded", open ? "true" : "false");
   el("omMore").setAttribute("aria-label", open ? t('r.om.collapse') : t('r.om.expand'));
   el("omMore").firstElementChild.textContent = open ? t('r.om.collapseShort') : "…";
-  paintOmAttachments();
   if (!open) el("deck").scrollTop = 0;
 }
 async function goPage(delta){
@@ -1333,10 +1227,6 @@ async function goEdge(newest){
 // badge with the count, flashing like the page number's new-message pulse), right = newest (double tap / tap while it
 // flashes). Logo hold and `u` do the same as the middle. Seeing a page = it is on screen while the page is visible.
 const unread = createUnread();
-export function ownerRead(m) {
-  unread.bind(hostId());
-  if (m.epoch === hist.epoch && unread.owner(m.epoch, m.read)) showPage();
-}
 const UNREAD_FILL_BATCHES = 10;
 let unreadFilling = false;
 const replyIds = ps => ps.filter(x => x.id !== null && visibleReply(x)).map(x => x.id);
@@ -1349,14 +1239,9 @@ function paintUnread(ps, p){
   if (!historySync) unread.sync(hist.epoch, ids);
   const covered = unreadCovered();
   if (!historySync && p && p.id !== null && visibleReply(p) && document.visibilityState === "visible" && document.body.dataset.view === "chat")
-    { if (unread.see(p.id, ids, covered) && unread.isOwner()) C.api.readHistory(hist.epoch, p.id); }
+    unread.see(p.id, ids, covered);
   else unread.advance(ids, covered);
-  const n = historySync ? 0 : unread.list(ids).length;
-  if (historySync || (unread.isOwner() && !n)) {
-    unreadReply = false; el("pgCorner").dataset.unread = "0";
-    el("pgLatest").setAttribute("aria-label", t("r.pg.latest"));
-    el("pgLatest").title = t("r.pg.latestHint");
-  }
+  const n = unread.list(ids).length;
   const b = el("omUnread");
   el("omUnreadN").textContent = n > 99 ? "99+" : String(n);
   b.dataset.n = String(n);
@@ -1394,27 +1279,14 @@ function copySource(){ const p = currentPage(); copyOut(p.source && p.source.tex
 
 // ---- reply actions: 阅读 · 朗读 · 分享 · 复制 · 回复 (relay ADR-037) ---------------------
 // Each acts on a turn by its id — never a page number.
-// P286 (Leo 10-14): up to five quotes above the field, oldest first — each selection adds one, 回复 adds the whole page;
-// the sixth is refused (never drops an older one). A new array on every change: a send compares identity.
-const QMAX = 5;
-let quotes = [];             // [{id, kind, speaker, ts, line[, excerpt, copied]}]
-const quoted = (id, ex) => quotes.some(q => q.id === id && (q.excerpt ?? null) === (ex ?? null));
-function addQuote(q){
-  if (quoted(q.id, q.excerpt)) return "dup";
-  if (quotes.length >= QMAX) return "full";
-  quotes = [...quotes, q]; paintReply(); paintActs();
-  return "ok";
-}
-const pageQuote = (p, excerpt) => ({id: p.id, kind: sourceOf(p.source).kind, speaker: C.agentName(), ts: p.ts, line: plainLine(p.reply),
-  ...(excerpt == null ? {} : {excerpt, copied: false})});
+let replyTo = null;          // {id, kind, speaker, ts, line[, excerpt, copied]} while the strip is up
 function paintActs(){
   const p = currentPage(), id = p.id;
   el("readBtn").disabled = !(p.reply || "").trim();
   el("replyBtn").disabled = id === null || !C.connected();
-  el("replyBtn").classList.toggle("on", quotes.some(q => q.id === id));
+  el("replyBtn").classList.toggle("on", !!replyTo && replyTo.id === id);
   el("copyReply").disabled = !(p.reply || "").trim();
-  // P285: a draft (web report / a skill) needs the reply's words, like 阅读 / 复制; a command needs the connection
-  el("webReportBtn").disabled = ["report", "skill"].includes(hotKind()) ? !(p.reply || "").trim() : !C.connected();
+  el("webReportBtn").disabled = !(p.reply || "").trim();
   paintSpeak(); paintFwd(); paintMail();
   fitBar();
 }
@@ -1436,35 +1308,23 @@ function fitBar(){
 // where the share starts. An unknown slash reaches the Agent as text (Claude Code, measured), so a host without the
 // package still gets the request and offers to install it from the plaza.
 const WR_CMD = "/web-page-report";
-function webReport(p){ slashOn(p, WR_CMD, t('r.wr.hint'), t('r.wr.hintFrom')); }
-// P285: the same for any skill the hot key is bound to — `/<skill> ` at the front of the field (never doubled), an older card
-// quoted, never sent: the owner adds a line, and the Agent runs it on that reply.
-function slashOn(p, cmd, hint, hintFrom){
+const WR_RE = /^[/\uff0f]web-page-report(?:[ \t]+|$)/i;
+function webReport(p){
   if (!p || !(p.reply || "").trim()) return;
   const ps = pages(), i = ps.indexOf(p);
   const older = p.id !== null && i >= 0 && ps.slice(i + 1).some(x => x.id !== null);
-  if (older && !quotes.some(q => q.id === p.id) && addQuote(pageQuote(p)) === "full") toast(t('r.quote.max'), 2600);
-  const re = new RegExp("^[/\\uff0f]" + cmd.slice(1).replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "(?:[ \\t]+|$)", "i");
-  const rest = input.value.replace(re, "").replace(/^\s+/, "");
-  input.value = cmd + " " + rest;
+  if (older && !(replyTo && replyTo.id === p.id)){
+    replyTo = {id: p.id, kind: sourceOf(p.source).kind, speaker: C.agentName(), ts: p.ts, line: plainLine(p.reply)};
+    paintReply();
+  }
+  const rest = input.value.replace(WR_RE, "").replace(/^\s+/, "");
+  input.value = WR_CMD + " " + rest;
   paintActs();
   input.focus();
   input.setSelectionRange(input.value.length, input.value.length);
   autosize(); refreshSend(); saveDraft();
-  toast(older ? hintFrom : hint, 5200);
+  toast(t(older ? 'r.wr.hintFrom' : 'r.wr.hint'), 5200);
 }
-// P285: one tap on the hot key. A command does exactly what its row in the ≡ list does (/clear: confirmSheet first, the same
-// danger confirmation as typing it — a hot key never skips it); /customize and /switch-harness are sent as their rows send them.
-export async function hotTap(p = currentPage()){
-  const n = hotName(), k = hotKind(n);
-  if (k === "report") return webReport(p);
-  if (k === "run" || k === "clear"){ if (await runCmd(n)){ toNewest(); toast(t('r.run.sent', {cmd: "/" + n}), 1600); } return; }
-  if (n === "customize") return sayPreset("cmds");
-  if (n === "switch-harness") return saySwitch();
-  const cmd = "/" + n;
-  slashOn(p, cmd, t('p285.hint', {cmd}), t('p285.hintFrom', {cmd}));
-}
-export { openHot };
 function plainLine(md){
   for (let ln of String(md || "").split("\n")){
     ln = ln.trim();
@@ -1478,99 +1338,23 @@ function plainLine(md){
 }
 function startReply(p){
   if (!p || p.id === null) return;
-  if (addQuote(pageQuote(p)) === "full") toast(t('r.quote.max'), 2600);
+  replyTo = {id: p.id, kind: sourceOf(p.source).kind, speaker: C.agentName(), ts: p.ts, line: plainLine(p.reply)};
+  paintReply(); paintActs();
   input.focus();
   input.setSelectionRange(input.value.length, input.value.length);
 }
-// a chip's source tag: time · Agent, just the time from three chips on (the words need the room); no 「已复制」 here
-const chipTag = q => (quotes.length > 2 ? [hhmm(q.ts) || q.speaker] : [hhmm(q.ts), q.speaker]).filter(Boolean).join(" · ");
-const quoteWords = q => typeof q.excerpt === "string" ? excerptLine(q.excerpt) : (q.line || t('r.quote.noText'));
 function paintReply(){
-  const bar = el("qbar"), n = quotes.length, q = quotes[0];
-  bar.hidden = !n;
-  const old = [...bar.querySelectorAll(".qc")], key = q => q.id + "\n" + (q.excerpt ?? "");
-  // the same quotes (only 「已复制」 changed, e.g. a clipboard write landing during a tap): update in place, never swap the
-  // chip under the finger
-  if (n > 1 && old.length === n && old.every((c, i) => c.dataset.k === key(quotes[i]))){
-    old.forEach((c, i) => { c._q = quotes[i]; c.firstChild.textContent = chipTag(quotes[i]); });
-    return;
-  }
-  for (const c of old) c.remove();
-  if (n > 1) bar.dataset.n = String(n); else delete bar.dataset.n;
-  const x1 = el("qbX");
-  x1.setAttribute("aria-label", t(n > 1 ? 'r.quote.clearAll' : 'r.quote.cancel')); x1.title = x1.getAttribute("aria-label");
-  if (!n) return;
-  bar.style.setProperty("--qc", "var(--src-" + q.kind + ")");
-  if (n > 1){                                       // P286: one chip each — source tag (jump) · first words (full text) · ×
-    const list = el("qbList");
-    quotes.forEach((q, i) => {
-      const c = document.createElement("div"), tag = document.createElement("button"), w = document.createElement("button"), x = document.createElement("button");
-      c.className = "qc"; c.style.setProperty("--qc", "var(--src-" + q.kind + ")"); c.dataset.k = key(q); c._q = q;
-      tag.type = w.type = x.type = "button";
-      tag.className = "qs"; tag.textContent = chipTag(q);
-      tag.setAttribute("aria-label", t('r.quote.jumpSrc') + " · " + [hhmm(q.ts), q.speaker].filter(Boolean).join(" · "));
-      w.className = "qw"; w.textContent = typeof q.excerpt === "string" ? q.excerpt.replace(/\s+/g, " ").trim() : (q.line || t('r.quote.noText')); w.setAttribute("aria-label", t('r.quote.open'));
-      x.className = "qcx"; x.setAttribute("aria-label", t('r.quote.remove')); x.title = t('r.quote.remove');
-      x.append(el("qbX").querySelector("svg").cloneNode(true));
-      for (const b of [tag, w, x]) b.addEventListener("pointerdown", e => e.preventDefault());   // the field keeps the focus
-      tag.addEventListener("click", () => jumpToQuote(c._q));   // @ix compose.quote_chip
-      w.addEventListener("click", () => openQuote(c._q));
-      x.addEventListener("click", () => removeQuote(c._q));
-      c.append(tag, w, x); list.appendChild(c);
-    });
-    return;
-  }
+  const q = replyTo;
+  el("qbar").hidden = !q;
+  if (!q) return;
+  el("qbar").style.setProperty("--qc", "var(--src-" + q.kind + ")");
   const tm = hhmm(q.ts), head = el("qbHead"), x = typeof q.excerpt === "string";
   head.replaceChildren(t(x ? 'r.quote.headEx' : 'r.quote.head', {who: q.speaker}));
   const meta = (tm ? " · " + tm : "") + (x && q.copied ? " · " + t('r.quote.copied') : "");
   if (meta){ const s = document.createElement("span"); s.textContent = meta; head.appendChild(s); }
-  el("qbText").textContent = quoteWords(q);
+  el("qbText").textContent = x ? excerptLine(q.excerpt) : (q.line || t('r.quote.noText'));
 }
-function removeQuote(q){ quotes = quotes.filter(x => !(x.id === q.id && (x.excerpt ?? null) === (q.excerpt ?? null))); paintReply(); paintActs(); if (!quotes.length) input.focus({preventScroll: true}); }
-function cancelReply(){ if (!quotes.length) return; quotes = []; paintReply(); paintActs(); }
-// The full words of one quote (the chips only show the first characters), its source, 跳到原文 / 删掉
-let qdlgAt = null, qdlgFrom = null;
-function openQuote(q){
-  qdlgAt = q; qdlgFrom = document.activeElement;
-  el("quoteDlgSrc").textContent = [hhmm(q.ts), q.speaker].filter(Boolean).join(" · ");
-  el("quoteDlgText").textContent = typeof q.excerpt === "string" ? q.excerpt : (q.line || t('r.quote.noText'));
-  el("quoteDlg").hidden = false;
-  el("quoteDlgJump").focus({preventScroll: true});
-}
-function closeQuote(){
-  if (el("quoteDlg").hidden) return;
-  el("quoteDlg").hidden = true; qdlgAt = null;
-  if (qdlgFrom && qdlgFrom.isConnected) qdlgFrom.focus({preventScroll: true}); else input.focus({preventScroll: true});
-}
-// 跳回原卡并高亮该段: the page by its id, then the excerpt marked with the CSS Highlight API (a selection would quote it again)
-async function jumpToQuote(q){
-  if (rdOpen()) closeReader();
-  await jumpToTurn(q.id);
-  if (typeof q.excerpt !== "string" || currentPage().id !== q.id) return;
-  requestAnimationFrame(() => markExcerpt(el("words"), q.excerpt));
-}
-let markT = 0;
-function markExcerpt(root, ex){
-  const H = window.CSS && CSS.highlights, nodes = [], w = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
-  let all = "";
-  for (let n; (n = w.nextNode());){ if (n.parentElement && n.parentElement.closest("button")) continue; nodes.push([n, all.length]); all += n.data; }
-  // whitespace differs between the rendering and the selection's toString(): match on the words, map back to node offsets
-  const sq = [], map = [];
-  for (let i = 0; i < all.length; i++) if (!/\s/.test(all[i])){ sq.push(all[i]); map.push(i); }
-  const needle = ex.replace(/\s+/g, ""), at = needle ? sq.join("").indexOf(needle) : -1;
-  if (at < 0) return false;
-  const pos = i => { for (let k = nodes.length - 1; k >= 0; k--) if (nodes[k][1] <= i) return [nodes[k][0], i - nodes[k][1]]; return null; };
-  const a = pos(map[at]), b = pos(map[at + needle.length - 1]);
-  if (!a || !b) return false;
-  const r = document.createRange();
-  r.setStart(a[0], a[1]); r.setEnd(b[0], b[1] + 1);
-  const box = r.getBoundingClientRect(), mr = mainEl.getBoundingClientRect();
-  if (box.height && (box.top < mr.top || box.bottom > mr.bottom)) mainEl.scrollTop += box.top - mr.top - mr.height / 3;
-  if (!H || typeof Highlight !== "function") return true;
-  H.set("aj-quote", new Highlight(r));
-  clearTimeout(markT); markT = setTimeout(() => H.delete("aj-quote"), 2600);
-  return true;
-}
+function cancelReply(){ if (!replyTo) return; replyTo = null; paintReply(); paintActs(); }
 async function jumpToTurn(id){
   if (typeof id !== "number" || !(id > 0)) return;
   while (!hist.turns.some(p => p.id === id) && olderLeft() && hist.turns[0].id > id){
@@ -1588,7 +1372,7 @@ let selPtr = false, selTimer = 0, selLast = null, selPending = null;
 function wordsSelection(){
   const s = document.getSelection ? document.getSelection() : null;
   if (!s || !s.rangeCount || s.isCollapsed) return null;
-  const w = rdOpen() ? el("rdWords") : el("words");     // P286: selecting in the full-screen reader quotes too
+  const w = el("words");
   const inside = n => { const e = n && (n.nodeType === 1 ? n : n.parentElement); return !!e && w.contains(e) && !e.closest("button"); };
   if (!inside(s.anchorNode) || !inside(s.focusNode)) return null;
   const tx = s.toString().trim();
@@ -1601,8 +1385,7 @@ function excerptLine(x){
 }
 function selCopied(text){
   if (selPending === text) selPending = null;
-  const i = quotes.findIndex(q => q.excerpt === text && !q.copied);
-  if (i >= 0){ quotes = quotes.map((q, k) => k === i ? {...q, copied: true} : q); paintReply(); }
+  if (replyTo && replyTo.excerpt === text && !replyTo.copied){ replyTo.copied = true; paintReply(); }
 }
 async function selCopy(text){
   const cb = navigator.clipboard, ua = navigator.userActivation;
@@ -1621,14 +1404,14 @@ async function selCommit(type){
   if (!text) return;
   const p = currentPage(), id = p ? p.id : null;
   if (selLast && selLast.id === id && selLast.text === text) return;
-  if (id !== null && quoted(id, text)) return;
+  if (id !== null && replyTo && replyTo.id === id && replyTo.excerpt === text) return;
   selLast = {id, text};
-  // P286: added, never replacing; the clipboard still gets this latest selection (also when the five are full)
-  const r = id !== null ? addQuote(pageQuote(p, text)) : null;
-  if (r === "full") toast(t('r.quote.max'), 2600);
-  else if (r === "ok" && rdOpen()) toast(t('r.quote.added', {i: quotes.length, n: QMAX}), 1600);   // the strip is under the reader
+  if (id !== null){
+    replyTo = {id, kind: sourceOf(p.source).kind, speaker: C.agentName(), ts: p.ts, line: plainLine(p.reply), excerpt: text, copied: false};
+    paintReply(); paintActs();
+  }
   await selCopy(text);
-  if (r === "ok" && !rdOpen() && quoted(id, text) && selFocus(type)){
+  if (id !== null && replyTo && replyTo.excerpt === text && selFocus(type)){
     input.focus({preventScroll: true});
     input.setSelectionRange(input.value.length, input.value.length);
   }
@@ -1714,7 +1497,7 @@ function mailTap(){
 
 // ---- the full-screen reader (relay ADR-049) ----------------------------------------------
 var RD_SIZES = [14, 16, 18, 20, 24, 28, 32], RD_MIN = 14, RD_MAX = 32, RD_DEFAULT = 20, RD_KEY = "aj.readerFs";
-// P260: file cards use the same double-tap bounds as the reply reader.
+var RD_DTAP_MS = 300, RD_TAP_MS = 350, RD_TAP_PX = 10, RD_PAIR_PX = 32;
 var rdFs = RD_DEFAULT, rdAt = null, rdGuard = -1e9, rdMuteUntil = 0, rdPushed = false, rdSkipPop = false, rdPinch = null, rdPinchAt = -1e9, rdPtr = "";
 try{ const v = Number(localStorage.getItem(RD_KEY)); if (v >= RD_MIN && v <= RD_MAX) rdFs = Math.round(v); }catch(_){}
 function rdSave(){ try{ localStorage.setItem(RD_KEY, String(rdFs)); }catch(_){} }
@@ -1745,7 +1528,7 @@ function openReader(){
   rdAt = {key: shownKey, scroll: mainEl.scrollTop, text: tx};
   fill(el("rdWords"), tx);
   renderReaderMedia(el("rdWords"), p);                 // P59 (ADR-A164): local pictures / files in place, not their Markdown
-  rdHead();
+  el("rdWho").textContent = C.agentName() + (p.ts ? " · " + hhmm(p.ts) : "");
   if (document.activeElement === input) input.blur();
   const rd = el("rd");
   rd.hidden = false; rd.dataset.modalOpen = "1"; document.body.dataset.reader = "1";
@@ -1754,124 +1537,9 @@ function openReader(){
   sc.scrollTop = max > 0 && m2 > 0 ? mainEl.scrollTop / max * m2 : 0;
   try{ history.pushState({ajReader: 1}, ""); rdPushed = true; }catch(_){ rdPushed = false; }
 }
-let rdPaging = false;
-const rdHasText = p => !!(p && (p.reply || "").trim() && !isSilent(p.reply));
-function rdBounce(dir){
-  const sc = el('rdScroll');
-  if (!matchMedia('(prefers-reduced-motion: reduce)').matches)
-    sc.animate([{transform:'translateX(0)'},{transform:`translateX(${dir < 0 ? 10 : -10}px)`},{transform:'translateX(0)'}],{duration:180});
-  toast(t(dir < 0 ? 'r.rd.first' : 'r.rd.last'), 1400);
-}
-async function rdPage(dir){
-  if (!rdOpen() || rdPaging) return;
-  rdPaging = true;
-  try {
-    const before = rdAt?.key, beforeId = currentPage()?.id;
-    let moved = await goPage(dir);
-    while (moved && !rdHasText(currentPage())) moved = await goPage(dir);
-    if (!rdOpen()) return;
-    if (!moved && !rdHasText(currentPage())) {
-      const i = pages().findIndex(p => p.id === beforeId);
-      if (i >= 0) { pageAt=i; follow=i===pages().length-1; shownKey=null; showPage(); }
-    }
-    if (rdAt?.key === before) rdBounce(dir);      // showPage → rdSync painted the new reply; nothing moved = an end
-  } finally { rdPaging = false; }
-}
-// P273: the header's corners in the reader — double tap the Agent / time = the first reply, double tap the page number =
-// the newest, the unread badge = the first unread. Each lands on a page that has words (empty pages are stepped over).
-async function rdJump(where){
-  if (!rdOpen() || rdPaging) return;
-  rdPaging = true;
-  try {
-    const before = rdAt?.key;
-    if (where === "first") await goEdge(false);
-    else if (where === "last") toNewest();
-    else if (!(await goFirstUnread(false))) return;
-    const dir = where === "last" ? -1 : 1;
-    for (let i = 0; i < 500 && rdOpen() && !rdHasText(currentPage()); i++) if (!(await goPage(dir))) break;
-    if (rdOpen() && rdAt?.key === before && where !== "unread") rdBounce(where === "first" ? -1 : 1);
-  } finally { rdPaging = false; }
-}
-// The header: the Agent's name, the reply's time, the page number (newest = brighter; a newer reply pulses it), the
-// unread badge — the same numbers as the message card's header, for the page under the reader.
-function rdHead(){
-  const p = currentPage(), rd = el("rd"), u = el("rdUnread"), ou = el("omUnread"), n = +ou.dataset.n || 0;
-  el("rdName").textContent = C.agentName();
-  el("rdTime").textContent = p && p.ts ? hhmm(p.ts) : "";
-  el("rdPg").textContent = el("pg").textContent;
-  rd.dataset.latest = follow ? "1" : "0";
-  rd.dataset.newreply = unreadReply ? "1" : "0";
-  rd.dataset.unread = n ? "1" : "0";
-  el("rdUnreadN").textContent = el("omUnreadN").textContent;
-  u.dataset.n = String(n);
-  u.setAttribute("aria-label", ou.getAttribute("aria-label") || ""); u.title = ou.title;
-  u.setAttribute("aria-disabled", n ? "false" : "true"); u.tabIndex = n ? 0 : -1;
-  const rb = el("rdReadBtn");
-  if (rb){ rb.disabled = false; rb.hidden = false; rb.classList.add("on"); rb.setAttribute("aria-pressed", "true");
-           rb.setAttribute("aria-label", t('r.rd.exit')); rb.title = t('r.rd.exit'); }
-}
-function rdSync(){
-  if (!rdAt) return;
-  rdHead();
-  if (rdAt.key === shownKey) return;
-  const p = currentPage();
-  if (!rdHasText(p)) return;                    // an empty page on the way: the jump that brought us here moves on
-  const tx = p.reply.trim();
-  rdAt = {key: shownKey, scroll: 0, text: tx};
-  fill(el("rdWords"), tx); renderReaderMedia(el("rdWords"), p);
-  el("rdScroll").scrollTop = 0;
-}
-// The footer: the reply card's six icons, cloned once (same glyphs, same order — 阅读 · 朗读 · 转发 · 邮件 · 复制 · 回复,
-// 回复 in the corner) and kept in step with the card's buttons (disabled / hidden / state / label), which already follow the
-// page under the reader. 复制 and 回复 leave the reader (回复 quotes this reply and focuses the field); 朗读, Telegram and
-// e-mail stay; the book = leave.
-const RD_ACTS = [["readBtn", "rdReadBtn"], ["speakBtn", "rdSpeakBtn"], ["fwdBtn", "rdFwdBtn"], ["mailBtn", "rdMailBtn"],
-                 ["copyReply", "rdCopyBtn"], ["replyBtn", "rdReplyBtn"]];
-const RD_MIRROR = ["disabled", "hidden", "data-state", "data-tg", "aria-label", "title"];
-function rdBuildActs(){
-  const box = el("rdActs"), pairs = [];
-  for (const [src, id] of RD_ACTS){
-    const s = el(src), b = s.cloneNode(true);
-    b.id = id; b.classList.remove("folded"); b.removeAttribute("data-i18n-attr");
-    box.appendChild(b);
-    if (src !== "readBtn") pairs.push([s, b]);
-  }
-  const copy = (s, b) => {
-    for (const a of RD_MIRROR){ const v = s.getAttribute(a); if (v === null) b.removeAttribute(a); else b.setAttribute(a, v); }
-    b.classList.toggle("on", s.classList.contains("on"));
-  };
-  const mo = new MutationObserver(rs => { for (const r of rs){ const m = pairs.find(x => x[0] === r.target); if (m) copy(m[0], m[1]); } });
-  for (const [s, b] of pairs){ copy(s, b); mo.observe(s, {attributes: true, attributeFilter: [...RD_MIRROR, "class"]}); }
-}
-function rdCopy(){
-  const tx = currentPage().reply || "";
-  copyOut(tx, t('r.copy.reply'));
-  closeReader();
-}
-function rdReply(){
-  const p = currentPage();
-  if (!p || p.id === null) return;
-  closeReader();
-  startReply(p);
-  // the reader's layer gives the focus back to its opener in the MutationObserver microtask queued by closeReader;
-  // this one runs after it, still inside the tap, so the caret ends in the field (and the phone keyboard opens)
-  queueMicrotask(() => {
-    if (!quotes.some(q => q.id === p.id) || document.activeElement === input) return;
-    input.focus(); input.setSelectionRange(input.value.length, input.value.length);
-  });
-}
-// The type-size popover (footer, left): − · slider · + — pinch and + / - keep working without it.
-function rdFsPop(open){
-  const pop = el("rdFsPop"), b = el("rdFsBtn");
-  if (open === undefined) open = pop.hidden;
-  if (open === !pop.hidden) return;
-  pop.hidden = !open; b.setAttribute("aria-expanded", open ? "true" : "false");
-  if (open) el("rdSlider").focus({preventScroll: true});
-}
 function closeReader(fromPop){
   if (!rdOpen()) return;
   rdGuard = performance.now(); rdPinch = null;
-  rdFsPop(false);
   const rd = el("rd");
   rd.hidden = true; delete rd.dataset.modalOpen; delete document.body.dataset.reader;
   el("rdWords").replaceChildren();
@@ -1914,7 +1582,7 @@ function dblTap(node, ok, fn){
     if (rdPtr === "mouse" && performance.now() - rdGuard > 400) fn();
   });
 }
-const rdTarget = tg => !(tg && tg.closest && tg.closest("button, a, input, [role=link], .rmbar, .mcard:not([data-kind=audio])"));
+const rdTarget = tg => !(tg && tg.closest && tg.closest("button, a, input, [role=link], .rmbar, .mcard"));
 const rdDist = ts => Math.hypot(ts[0].clientX - ts[1].clientX, ts[0].clientY - ts[1].clientY);
 
 // ---- swipe to page: within 30° of horizontal = a page turn; past 25 % or a fling commits ----------
@@ -1988,7 +1656,7 @@ export function setConn(on, text){
 
 // P251: preserve text through the existing sealed draft store; never discard in-flight card/media work.
 export function refreshBlocked(){
-  return !!((document.body?.dataset?.view && document.body.dataset.view !== "chat") || !C?.connected() || ptt || asrBusy || sending || atts.length || quotes.length || askBusy || apprBusy || apprHold ||
+  return !!((document.body?.dataset?.view && document.body.dataset.view !== "chat") || !C?.connected() || ptt || asrBusy || sending || atts.length || replyTo || askBusy || apprBusy || apprHold ||
     (askState(cur?.ask) === "open" && askSel.id === cur?.ask?.id && askSel.picks.some(p => p.length)) ||
     [...document.querySelectorAll('.gdlg:not([hidden]):not(#version-notice),.ajmodal:not([hidden]),.sheet')].some(n => n.getClientRects().length && getComputedStyle(n).visibility !== 'hidden') ||
     (document.activeElement && document.activeElement !== input && document.activeElement.matches('input,textarea,[contenteditable=true]')));
@@ -2082,7 +1750,6 @@ let lastSent = null;      // {text, until}
 function settleField(text){
   lastSent = {text, until: Date.now() + ECHO_MS};
   if (input.value === text || isEcho(input.value, text)) input.value = "";
-  closeSug();      // P280: the `/clear` suggestion reopened when the confirm sheet gave the focus back — it must not linger
 }
 // Only a real keyboard / dictation input (isTrusted) or an IME's compositionend (the page never dispatches one; Chromium's
 // own may arrive untrusted) is checked: the page's own writes (↑ history, a withdraw putting the words back, a transcript)
@@ -2410,7 +2077,6 @@ function launchLoop(){
 // The send in flight (one at a time) and the ones accepted but still queued behind a running turn (withdrawable).
 let inflight = null;      // {phase, sid, cancelled, delivered, cancelling, wake, batch}
 const queued = [];        // {sid, text, atts, rt, turn, at} accepted with state "queued", not yet delivered
-let activeTurn = null;    // P282: the page of this device's say the Agent took last (say_state taken / delivered)
 // P127 (追加6): the host answers every say `queued` first; an idle Agent takes it within milliseconds (say_state delivered).
 // Only one still waiting after QUEUE_QUIET_MS (the shared session is busy) is shown as queued — its page says
 // 「已收到，助理正在收尾上一件，马上接手」 (P152: + 「前面还有 N 条」) and the composer keeps it as a pending line saying 「取消」 takes it back — so a quick hand-over
@@ -2472,14 +2138,10 @@ function withdrawn(q){
   toast(t('r.say.withdrawn'), 2600);
 }
 /** say_state from the host. */
-const early = new Map();  // P282: sid → taken / delivered that overtook its say_res (the Agent was idle), so it never shows as queued
 export function onSayState(m){
   const q = queued.find(x => x.sid === m.sid);
-  if (!q){
-    if (m.s === "taken" || m.s === "delivered"){ early.set(m.sid, m.s); if (early.size > 32) early.delete(early.keys().next().value); }
-    return;
-  }
-  if (m.s === "delivered" || m.s === "taken"){ activeTurn = q.turn; dequeue(m.sid); }   // P282: taken = the Agent is on it (a shared Codex opens first)
+  if (!q) return;
+  if (m.s === "delivered") dequeue(m.sid);
   else if (m.s === "cancelled") withdrawn(q);
   else if (m.s === "failed"){ dequeue(m.sid); toast(t('r.say.failedLater'), 3200); }
 }
@@ -2517,33 +2179,18 @@ async function sayWords(text, done){
   toast(done, 2200);
   return true;
 }
-// P286: the say's quote fields — the first as reply_to / excerpt (every host knows those), the rest as quote_more; a host
-// without "mq5" gets quotes 2…5 in the text instead, labelled, so nothing the owner picked is lost.
-function quoteArgs(text, qs){
-  if (!qs.length) return {text};
-  const [a, ...more] = qs, ex = q => typeof q.excerpt === "string" && q.excerpt ? q.excerpt : null;
-  const out = {text, reply_to: a.id, excerpt: ex(a)};
-  if (!more.length) return out;
-  if (C.api.multiQuote && C.api.multiQuote()) return {...out, more: more.map(q => ({id: q.id, excerpt: ex(q)}))};
-  const lines = [t('r.quote.fold', {n: more.length})];
-  more.forEach((q, i) => {
-    lines.push(t('r.quote.foldItem', {i: i + 2, src: "#" + q.id + ([hhmm(q.ts), q.speaker].filter(Boolean).map(x => " · " + x).join(""))}));
-    lines.push(...String(ex(q) || q.line || "").split("\n").map(l => "> " + l));
-  });
-  return {...out, text: (text.trim() ? text + "\n\n" : "") + lines.join("\n")};
-}
-async function say(voiceReady = false){
+async function say(){
   const text = input.value;
-  if (!hasSayable() || sending || (asrBusy && voiceReady !== true)) return;                 // F27: files alone (no words) go too
+  if (!hasSayable() || sending || asrBusy) return;                 // F27: files alone (no words) go too
   // P73 (ADR-A176): /add-friend is the friends page's signed fr_add, sent from here (the approval key never leaves the page);
   // it works while stopped (a request is not an Agent action) and opens the prefilled form when offline.
   const fa = /^[/\uff0f]add[-_]friend(?:[ \t]+([\s\S]*))?$/i.exec(text.trim());
-  if (fa && !atts.length && !quotes.length){
+  if (fa && !atts.length && !replyTo){
     if (await addFriendCmd((fa[1] || "").trim())){ pushHist(text); settleField(text); autosize(); saveDraft(); }
     return;
   }
   // P181: /customize (中文「定制命令」) sends the same preset message as a long press on the ≡ button
-  if (/^[/\uff0f]customize$/i.test(text.trim()) && !atts.length && !quotes.length){
+  if (/^[/\uff0f]customize$/i.test(text.trim()) && !atts.length && !replyTo){
     if (await sayPreset("cmds")){ pushHist(text); settleField(text); autosize(); saveDraft(); }
     return;
   }
@@ -2551,7 +2198,7 @@ async function say(voiceReady = false){
   // 0.15.2: not connected, or older messages still waiting → it queues behind them (/stop, /clear never wait)
   if (!C.connected() || (outbox.items.length && !/^\/(stop|clear)(\s|$)/i.test(text.trim()))) return sayLater(text);
   const c = CMD_RE.exec(text.trim());
-  if (c && CMDS.includes(c[1].toLowerCase()) && !atts.length && !quotes.length){
+  if (c && CMDS.includes(c[1].toLowerCase()) && !atts.length && !replyTo){
     if (!await runCmd(c[1].toLowerCase(), (c[2] || "").trim())) return;
     pushHist(text); settleField(text); autosize(); saveDraft(); toNewest(); launchRocket();
     return;
@@ -2561,9 +2208,9 @@ async function say(voiceReady = false){
   const batch = atts.slice();
   const S = inflight = {phase: "upload", batch, sid: null, cancelled: false, delivered: false, cancelling: false, wake: null};
   const loop = launchLoop();
-  const rt = quotes;
+  const rt = replyTo;
   const uploaded = list => { S.phase = "upload"; return Promise.race([Promise.all(list.map(a => a.promise)), new Promise(res => { S.wake = res; })]); };
-  const attempt = live => { S.phase = "say"; S.sid = S.sid || C.api.newSid(); return C.api.say({sid: S.sid, att: live.map(a => a.id), ...quoteArgs(text, rt)}); };
+  const attempt = live => { S.phase = "say"; S.sid = S.sid || C.api.newSid(); return C.api.say({sid: S.sid, text, att: live.map(a => a.id), reply_to: rt ? rt.id : null, excerpt: rt ? rt.excerpt : null}); };
   let landed = false;
   try{
     for (const a of batch) if (a.st === "held" || (a.st === "up" && a.retry)){ a.retry = false; stage(a); }
@@ -2592,11 +2239,9 @@ async function say(voiceReady = false){
     if (r.ok || S.delivered){
       landed = true;
       pushHist(text);
-      if (rt.length && quotes === rt) cancelReply();
+      if (rt && replyTo === rt) cancelReply();
       settleField(text);     // P127: also when a dictation 「。」 / IME commit landed while say_res was on its way
-      if (r.state === "queued" && !early.has(S.sid)) queued.push({sid: S.sid, text, atts: live.slice(), rt, turn: r.turn, at: Date.now()});
-      else if (Number.isInteger(r.turn)) activeTurn = r.turn;
-      early.delete(S.sid);
+      if (r.state === "queued") queued.push({sid: S.sid, text, atts: live.slice(), rt, turn: r.turn, at: Date.now()});
       for (const a of live) removeAtt(a, false);
       saveDraft();
       if (!C.p33()) C.saidOld(text);
@@ -2631,22 +2276,20 @@ const outbox = new Outbox({}, {
 });
 function paintOut(){
   if (!C) return;
-  // P282 (追加): a message queued behind a running turn shows in ONE place — its own page, marked 「排队中」 (showPage) —
-  // never also as a pending line here; the field's 「取消」 still takes it back. This line is the offline outbox only.
-  paintOutbox(el("outbox"), outbox.items, {line: t('offline.line'), lostNote: t('offline.attLost'),
+  const waiting = queuedShown().map(q => ({sid: q.sid, text: q.text, att: q.atts.length ? q.atts.map(a => ({name: a.name, kind: a.kind})) : null, queued: true}));
+  paintOutbox(el("outbox"), outbox.items.concat(waiting), {line: t('offline.line'), lostNote: t('offline.attLost'), queuedNote: t('r.queue.note'),
     isLost: e => !!(e.att && e.att.length && !held.has(e.sid)), showLine: !C.connected() && (outbox.items.length > 0 || navigator.onLine === false)});
 }
 function drainOut(){ if (outbox.items.length) outbox.drain(); }
 function sayLater(text){
   const c = CMD_RE.exec(text.trim());
-  const cmd = c && CMDS.includes(c[1].toLowerCase()) && !atts.length && !quotes.length ? c[1].toLowerCase() : null;
+  const cmd = c && CMDS.includes(c[1].toLowerCase()) && !atts.length && !replyTo ? c[1].toLowerCase() : null;
   // 全部停下 / 清空 are "now or not at all": a stop that lands minutes later would cut whatever runs then
   if (cmd === "stop" || cmd === "clear"){ toast(t('offline.now'), 2800); return; }
   const bad = atts.filter(a => a.st === "failed");
   if (bad.length){ toast(t('r.say.badAtt', {n: bad.length}), 3200); return; }
-  const list = atts.slice(), rt = quotes;
-  const e = {sid: C.api.newSid(), text, ts: Date.now(), rt: rt.length ? {id: rt[0].id, excerpt: rt[0].excerpt || null} : null,
-    ...(rt.length > 1 ? {more: rt.slice(1).map(q => ({id: q.id, excerpt: q.excerpt || null, ts: q.ts, speaker: q.speaker}))} : {}),
+  const list = atts.slice(), rt = replyTo;
+  const e = {sid: C.api.newSid(), text, ts: Date.now(), rt: rt ? {id: rt.id, excerpt: rt.excerpt || null} : null,
     att: list.length ? list.map(a => ({name: a.name, kind: a.kind})) : null};
   if (list.length) held.set(e.sid, list);           // before add(): its line is painted with the files still here
   if (outbox.add(e) === "full"){ held.delete(e.sid); toast(t('offline.full', {n: OUT_MAX}), 3200); return; }
@@ -2655,7 +2298,7 @@ function sayLater(text){
     paintTray();
   }
   pushHist(text);
-  if (rt.length && quotes === rt) cancelReply();
+  if (rt && replyTo === rt) cancelReply();
   settleField(text);
   autosize(); saveDraft(); toNewest();
   if (C.connected()) drainOut();
@@ -2671,7 +2314,7 @@ async function outSay(e){
     if (live.length) await Promise.all(live.map(a => a.promise));
     if (live.some(a => a.st === "up")) return {ok: false, why: "offline"};          // the connection went again
     if (live.some(a => a.st !== "ready")) return {ok: false, why: "att_failed"};
-    const r = await C.api.say({sid: e.sid, att: live.map(a => a.id), ...quoteArgs(e.text, e.rt ? [e.rt, ...(e.more || [])] : [])});
+    const r = await C.api.say({sid: e.sid, text: e.text, att: live.map(a => a.id), reply_to: e.rt ? e.rt.id : null, excerpt: e.rt ? e.rt.excerpt : null});
     if (r.ok || r.why !== "att_gone" || n) return r;
     const gone = new Set(Array.isArray(r.att) ? r.att : live.map(a => a.id));
     for (const a of live) if (gone.has(a.id)){ a.up = null; a.st = "up"; }
@@ -2681,9 +2324,7 @@ function outDone(e, r, kind){
   const list = held.get(e.sid) || [];
   held.delete(e.sid);
   if (kind === "sent"){
-    if (r.ok && r.state === "queued" && !early.has(e.sid)) queued.push({sid: e.sid, text: e.text, atts: list.slice(), rt: null, turn: r.turn, at: Date.now()});
-    else if (r.ok && Number.isInteger(r.turn)) activeTurn = r.turn;
-    early.delete(e.sid);
+    if (r.ok && r.state === "queued") queued.push({sid: e.sid, text: e.text, atts: list.slice(), rt: null, turn: r.turn, at: Date.now()});
     for (const a of list) if (a.url){ URL.revokeObjectURL(a.url); a.url = null; }
     for (const a of list) if (a.rec){ LR.dropSeg(a.rec.take, a.rec.seg); a.rec = null; }   // P182
     if (r.ok && !C.p33()) C.saidOld(e.text);
@@ -2869,7 +2510,7 @@ function placeSheet(){
   let edge = bar && bar.getClientRects().length ? Math.min(bar.getBoundingClientRect().top, lab && lab.getClientRects().length ? lab.getBoundingClientRect().top : Infinity) : 0;
   if (!(edge > box.top)) edge = menu.parentElement.getBoundingClientRect().top;
   const r = row && row.getClientRects().length ? row.getBoundingClientRect() : {left: 8, width: box.width - 16};
-  const gap = 8, w = Math.min(r.width, 480), room = edge - gap - Math.max(box.top + Math.max(gap, parseFloat(getComputedStyle(menu).paddingTop) || 0), sheetCeil());   // below the notch and (P302 追加 28) never above the message card's top
+  const gap = 8, w = Math.min(r.width, 480), room = edge - box.top - gap - Math.max(gap, parseFloat(getComputedStyle(menu).paddingTop) || 0);   // below the notch
   menu.style.setProperty("--sheet-bottom", Math.max(0, box.bottom - edge + gap) + "px");
   menu.style.setProperty("--sheet-left", Math.max(gap, r.left) + "px");
   menu.style.setProperty("--sheet-w", Math.max(0, Math.min(w, box.width - 2 * gap)) + "px");
@@ -2947,9 +2588,6 @@ function paintSug(){
 }
 function updateSug(){
   const v = input.value, m = SLASH_RE.exec(v);
-  // P302 (owner: 「输入 / 没有弹出 slash command list」): a dismissal only holds while the field still reads what was dismissed —
-  // once the text changes it is forgotten (it used to stick, so 「/」 → Esc → delete → 「/」 never opened the list again)
-  if (sugDismissed !== null && v !== sugDismissed) sugDismissed = null;
   if (!m || v === sugDismissed || document.activeElement !== input){ closeSug(); return; }
   sugDismissed = null;
   // the host's menu (its skills come from the harness once it started) is re-read whenever the list opens afresh
@@ -2978,7 +2616,6 @@ function updateSug(){
   }));
   closeMenu();
   sug.hidden = false;
-  capAbove(sug); requestAnimationFrame(() => requestAnimationFrame(() => { if (!sug.hidden) capAbove(sug); }));   // P302: never under the status bar while the keyboard is up
   paintSug();
 }
 function pickSug(i){
@@ -2991,15 +2628,16 @@ function pickSug(i){
 }
 
 // ---- voice: hold to talk (relay ADR-048 / 052; §10.9) ------------------------------------------------
-// Pointer hold = record and release to send; tap / double tap = lock; slide clearly away = cancel (cancelZone). Locked takes (P182: up to 200 min in 20-min parts), m / m m on a keyboard. A clean
-// keyboard release keeps a draft: the take is turned into 16 kHz WAV here, transcribed on the customer's own computer, and the words
+// Hold = record, slide clearly away = cancel (cancelZone), double tap = lock (P182: up to 200 min in 20-min parts), m / m m on a keyboard. A clean
+// release never sends: the take is turned into 16 kHz WAV here, transcribed on the customer's own computer, and the words
 // are APPENDED to the field. A take longer than the field's threshold travels as an audio attachment instead.
 // P181 (owner: 「手抖动就不应该取消」): a take is cancelled only when the pointer ends up clearly outside the button —
 // ≥ PTT_OUT_PX (mouse) / PTT_OUT_TOUCH_PX (finger) from its edge, or above it after sliding up at least one button height
 // + PTT_UP_EXTRA_PX — and is released there; coming back within PTT_BACK_PX of that line un-cancels (no flicker).
 const PTT_MIN_MS = 500, PTT_OUT_PX = 80, PTT_OUT_TOUCH_PX = 96, PTT_UP_EXTRA_PX = 24, PTT_UP_EXTRA_TOUCH_PX = 32, PTT_BACK_PX = 24;
-// P272: first pointer tap locks on release; its second tap within DTAP_MS keeps that lock.
-// Cancellation never locks. Keyboard m / m m retains its draft / lock behavior.
+// P181 (owner: iPhone 双击锁定「经常抓不到」): the second tap may come up to DTAP_MS after the first lifts (iOS UIKit allows
+// ~350 ms; 300 ms was too tight), and the first tap's end is accepted from pointerup, lostpointercapture, pointercancel or
+// touchend — whichever WebKit delivers — so a cancelled / blurred first tap still pairs with the second (lastTapUp).
 const DTAP_MS = 450, LOCK_WARN_MS = 60 * 1000, LOCK_REARM_MS = 400;
 let ptt = null;
 let lockEndAt = -1e9, lastTapUp = -1e9, lockCount = 0;
@@ -3055,7 +2693,6 @@ function pttUI(p){
   }
   if (p.rec && p.T == null) p.T = voiceThresholdS();
   const long = p.rec && recTotalMs(p) / 1000 > p.T;
-  const keyboardTake = p.viaM || p.id === "key";
   const left = capMs(p) - recTotalMs(p);
   if (p.locked){
     const stop = p.viaM ? t('r.ptt.anyKey') : t('r.ptt.tapEnd');
@@ -3067,8 +2704,8 @@ function pttUI(p){
     return;
   }
   el("pttHint").textContent = p.cancel ? t('r.ptt.releaseCancel') : p.pend ? (p.viaM ? t('r.ptt.lockM') : t('r.ptt.lockTap'))
-    : p.rec ? t(keyboardTake ? (long ? 'r.ptt.keyLongHint' : 'r.ptt.keyHint') : (long ? 'r.ptt.longHint' : 'r.ptt.hint')) : t('r.ptt.opening');
-  el("micLabel").textContent = p.cancel ? t('r.mic.releaseCancel') : t(keyboardTake ? (long ? 'r.mic.keyReleaseVoice' : 'r.mic.keyReleaseText') : (long ? 'r.mic.releaseVoice' : 'r.mic.releaseText'));
+    : p.rec ? (long ? t('r.ptt.longHint') : t('r.ptt.hint')) : t('r.ptt.opening');
+  el("micLabel").textContent = p.cancel ? t('r.mic.releaseCancel') : long ? t('r.mic.releaseVoice') : t('r.mic.releaseText');
 }
 function pttTap(p){
   p.id = null; p.tUp = performance.now();
@@ -3174,7 +2811,7 @@ function pttStart(id, y){
   if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia || !window.MediaRecorder){
     toast(t('r.ptt.noRec'), 3000); return;
   }
-  const p = ptt = {epoch: localEpoch, id, x0: 0, y0: y, t0: performance.now(), cancel: false, over: false, touch: false,
+  const p = ptt = {id, x0: 0, y0: y, t0: performance.now(), cancel: false, over: false, touch: false,
                    send: false, stream: null, rec: null, recT0: 0, recT1: 0, chunks: [],
                    pend: 0, tUp: 0, locked: false, lockT0: 0, cap: 0, viaM: false,
                    seg: 0, segMs: segMs(), maxSegs: Math.max(1, Math.min(REC_SEGS, MAX_ATT - atts.length)),
@@ -3356,25 +2993,17 @@ function pttFinish(p, n, blob, secs){
   if (p.stream) p.stream.getTracks().forEach(tr => tr.stop());
   const dropTake = () => p.takeP?.then(id => id && LR.dropSeg(id, n));
   if (!p.send || !blob){ intNote(p, n > 0 ? "tray" : "none"); dropTake(); return; }   // P198: earlier parts are in the tray
-  if (p.epoch !== localEpoch) return;
-  if (n > 0 || secs > WAV_MAX_S){
-    const final = segAttach(p, n, blob, secs);
-    if (final || n > 0){ intNote(p, "tray"); gapNote(p, takeGaps(p)); }
-    if (final && p.autoSend) say();
-    return;
-  }     // long: the compressed original, as it was recorded
+  if (n > 0 || secs > WAV_MAX_S){ if (segAttach(p, n, blob, secs) || n > 0){ intNote(p, "tray"); gapNote(p, takeGaps(p)); } return; }     // long: the compressed original, as it was recorded
   takeFinished(blob, secs, p);
 }
 // A finished take, from the mic or from a native shell (relayNative.take): words into the field, or a long one into the tray.
 // P182: `p` (a mic take) carries its stored copy — dropped once the words are in the field, kept with the attachment.
 let asrQueue = Promise.resolve();
 async function takeFinished(blob, dur, p){
-  const takeEpoch = p?.epoch ?? localEpoch;
   const forget = () => p?.takeP?.then(id => id && LR.dropTake(id));
   if (dur > voiceThresholdS()){
     if (atts.length < MAX_ATT){
       const w = blob.type === "audio/wav" ? {blob, secs: dur} : await toWav(blob);
-      if (takeEpoch !== localEpoch) return;
       const b = w ? w.blob : blob;
       const f = new File([b], `${t('r.file.voice')}-${stamp()}.${audioExt(b.type)}`, {type: b.type || "audio/webm"});
       if (f.size > UPLOAD_MAX){ toast(uploadError("too_big"), 3000); return; }
@@ -3386,7 +3015,7 @@ async function takeFinished(blob, dur, p){
       }
       if (a && p?.interrupted) intNote(p, "tray");
       else if (!g.length) toast(C.asr() === "ready" ? t('r.voice.asAtt') : t('r.voice.asAttNoAsr'), 3200);
-      if (a) { gapNote(p, g); if (p?.autoSend && takeEpoch === localEpoch) say(); }
+      if (a) gapNote(p, g);
       return;
     }
     toast(t('r.voice.trayFull', {max: MAX_ATT}), 3200);
@@ -3396,15 +3025,14 @@ async function takeFinished(blob, dur, p){
   asrBusy++; asrUI();
   const ep = localEpoch;
   const job = transcribe(blob, dur);
-  asrQueue = asrQueue.then(() => job).then(async r => {
+  asrQueue = asrQueue.then(() => job).then(r => {
     asrBusy--;
-    if (ep !== localEpoch || takeEpoch !== localEpoch){ asrUI(); return; }           // unpaired / removed meanwhile: the words belong to no one now
+    if (ep !== localEpoch){ asrUI(); return; }           // unpaired / removed meanwhile: the words belong to no one now
     const tx = r.ok && typeof r.text === "string" ? r.text.trim() : "";
     if (tx){ appendText(tx); forget(); }
     else toast(asrError(r), 3400);
     if (p) gapNote(p, takeGaps(p, r.gaps));                          // P205: words in, but a stretch came in silent
     asrUI(); autosize();
-    if (tx && p?.autoSend) await say(true);
   });
 }
 // P182: takes still on this phone after a reload / crash / closed tab (not yet accepted by the computer) are offered back,
@@ -3581,12 +3209,11 @@ function paintKeys(){
   const box = el("keysCols");
   if (!box) return;
   const mac = isMac(), cards = [];
-  for (const g of ['functional', 'single', 'gestures']){
-    const rows = IX_ROWS.map(([id, keys, ges]) => [id, g === 'gestures' ? keys : keys.filter(k => k[0].startsWith('Alt+Shift+') === (g === 'functional')), ges])
-      .filter(r => g === 'gestures' ? r[2] : r[1].length);
+  for (const g of IX_GROUPS){
+    const rows = IX_ROWS.filter(r => r[0].split(".")[0] === g);
     if (!rows.length) continue;
     const sec = document.createElement("section"); sec.className = "menucard"; sec.dataset.group = g;
-    const h = document.createElement("h3"); h.className = "setg"; h.textContent = t('ixw.' + g);
+    const h = document.createElement("h3"); h.className = "setg"; h.textContent = t('ixgrp.' + g);
     const dl = document.createElement("dl"); dl.className = "keydl";
     for (const [id, keys, hasGesture] of rows){
       const dt = document.createElement("dt"), dd = document.createElement("dd");
@@ -3635,7 +3262,7 @@ export async function pasteClipText(){
   try{ text = await navigator.clipboard.readText(); }
   catch(err){ toast(err && err.name === "NotAllowedError" ? t('r.clip.denied') : t('r.clip.fail'), 3200); return; }
   if (!text){ toast(t('p181.clip.noText'), 2400); return; }
-  if ([...text].length > CLIP_TEXT_MAX || overflowsField(text)){
+  if ([...text].length > CLIP_TEXT_MAX){
     if (atts.length >= MAX_ATT){ toast(t('r.take.tooMany', {max: MAX_ATT, have: atts.length, verb: t('r.verb2.paste'), n: 1}), 3600); return; }
     addFiles([new File([text], `${t('r.file.paste')}-${stamp()}.txt`, {type: "text/plain"})], "paste");
     toast(t('p181.clip.asFile', {n: CLIP_TEXT_MAX}), 2600);
@@ -3661,12 +3288,6 @@ export function attachShot(file){
 }
 // P110 external shares enter the existing tray / encrypted upload path, never auto-send.
 /** P190: text from the scanner goes into the field at the caret (never sent by itself). */
-// P264: the skill command starts the draft; existing words are kept as the owner's idea.
-export function prepareSetupDraft(text) {
-  input.value = text + (input.value.trim() ? '\n\n' + input.value : '') + '\n';
-  input.dispatchEvent(new Event('input'));
-  input.focus({preventScroll: true}); input.setSelectionRange(input.value.length, input.value.length);
-}
 export function insertText(text){
   const at = document.activeElement === input ? input.selectionStart : input.value.length;
   const end = document.activeElement === input ? input.selectionEnd : at;
@@ -3769,7 +3390,7 @@ export function forgetLocal(){
   for (const a of atts.slice()) removeAtt(a, false);
   if (ptt) pttEnd(ptt, "cancel", true);
   LR.wipe();                                         // P182: stored recordings go with the pairing
-  cancelReply(); closeQuote();
+  if (replyTo) cancelReply();
   if (input){ input.value = ""; autosize(); }
   paintQueued();
 }
@@ -3784,7 +3405,6 @@ function relang(){
   wordsSrc = null; qsKey = null;
   renderMenu();
   pttUI(ptt); paintTray(); for (const a of atts) paintChip(a);
-  for (const c of document.querySelectorAll("#qbar .qc")) c.remove();   // P286: chips rebuilt in the new language
   paintPlaceholder(); paintReply(); setOm(el("om").classList.contains("open")); paintOut();
   paintKeys();   // P207
   if (cur) render(cur); else showPage();
@@ -3831,7 +3451,6 @@ export function init(ctx){
   el("words").addEventListener("click", copyCodeClick);
   el("words").addEventListener("click", () => { if (wordsSrc === NO_ECHO_SRC) refreshNewest(); });   // P135: 「点此刷新」
   el("rdWords").addEventListener("click", copyCodeClick);
-  for (const id of ["words", "rdWords"]) el(id).addEventListener("cc:copied", copiedNote);   // P292: the inline code's 「已拷贝」
 
   // sheet
   el("apprDeny").addEventListener("click", () => { const p = apprLive(); if (p) apprPost(p, "deny"); });
@@ -3879,7 +3498,7 @@ export function init(ctx){
   new MutationObserver(() => paintChrome()).observe(document.body,
     {attributes: true, subtree: true, attributeFilter: ["hidden", "data-status", "data-conn", "data-kind", "data-sheet", "data-kb", "data-reader", "data-view"]});
   new MutationObserver(() => paintChrome(true)).observe(document.documentElement, {attributes: true, attributeFilter: ["data-theme"]});
-  document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") { paintChrome(true); refreshNewest(); } });
+  document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") { paintChrome(true); showPage(); } });
   window.addEventListener("pageshow", () => paintChrome(true));
   window.addEventListener("focus", () => paintChrome(true));
   try{ matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => paintChrome(true)); }catch(_){}
@@ -3912,19 +3531,14 @@ export function init(ctx){
   el("pgNext").addEventListener("click", () => goPage(1));   // @ix page.next
   el("copyReply").addEventListener("click", copyReply);   // @ix card.copy
   el("replyBtn").addEventListener("click", () => startReply(currentPage()));   // @ix card.reply
-  el("webReportBtn").addEventListener("click", () => hotTap(currentPage()));   // P216 / P285 @ix card.web_report
-  longPress(el("webReportBtn"), openHot);   // P285 @ix card.hot_pick
+  el("webReportBtn").addEventListener("click", () => webReport(currentPage()));   // P216 @ix card.web_report
   try{ const barSize = new ResizeObserver(() => fitBar());
     barSize.observe(el("rmbar")); barSize.observe(el("rmIcons"));
     new MutationObserver(fitBar).observe(el("rmIcons"), {childList:true,subtree:true,attributes:true,attributeFilter:["hidden"]});
   }catch(_){}
   for (const id of ["qbX", "qbJump"]) el(id).addEventListener("pointerdown", e => e.preventDefault());
   el("qbX").addEventListener("click", cancelReply);   // @ix compose.cancel_reply
-  el("qbJump").addEventListener("click", () => { if (quotes.length) jumpToQuote(quotes[0]); });
-  el("quoteDlg").addEventListener("click", e => { if (e.target === el("quoteDlg")) closeQuote(); });
-  el("quoteDlgJump").addEventListener("click", () => { const q = qdlgAt; closeQuote(); if (q) jumpToQuote(q); });
-  el("quoteDlgDel").addEventListener("click", () => { const q = qdlgAt; closeQuote(); if (q) removeQuote(q); });
-  registerLayer({element: () => el("quoteDlg"), open: () => !el("quoteDlg").hidden, close: closeQuote, fallback: () => input, rank: 48});
+  el("qbJump").addEventListener("click", () => { if (replyTo) jumpToTurn(replyTo.id); });
   el("omQuote").addEventListener("click", () => jumpToTurn(+el("omQuote").dataset.id));   // @ix page.quoted
   el("omQuote").addEventListener("keydown", e => {
     if (e.key !== "Enter" && e.key !== " ") return;
@@ -3956,7 +3570,6 @@ export function init(ctx){
   el("mailBtn").addEventListener("click", mailTap);   // @ix card.mail
 
   // reader
-  bindReaderSwipe(el('rdScroll'), {open: rdOpen, step: rdPage}); // @ix read.prev read.next
   addEventListener("popstate", () => {
     if (rdSkipPop){ rdSkipPop = false; return; }
     if (rdOpen()){ rdPushed = false; closeReader(true); }
@@ -3967,24 +3580,6 @@ export function init(ctx){
   document.addEventListener("click", e => { if (performance.now() - rdGuard < 350){ e.preventDefault(); e.stopPropagation(); } }, true);
   el("readBtn").addEventListener("click", openReader);
   el("rdClose").addEventListener("click", () => closeReader());
-  // P273: header corners + footer
-  rdBuildActs();
-  historyDoubleTap(el("rdWho"), () => rdJump("first"));   // @ix read.first
-  historyDoubleTap(el("rdPgBtn"), () => rdJump("last"));   // @ix read.last
-  el("rdPgBtn").addEventListener("click", () => { if (unreadReply) rdJump("last"); });
-  el("rdUnread").addEventListener("click", () => { if (+el("rdUnread").dataset.n) rdJump("unread"); });   // @ix read.first_unread
-  el("rdReadBtn").addEventListener("click", () => closeReader());
-  el("rdSpeakBtn").addEventListener("click", speakTap);   // @ix read.speak
-  el("rdFwdBtn").addEventListener("click", forwardTap);   // @ix read.forward
-  el("rdMailBtn").addEventListener("click", mailTap);   // @ix read.mail
-  el("rdCopyBtn").addEventListener("click", rdCopy);   // @ix read.copy
-  el("rdReplyBtn").addEventListener("click", rdReply);   // @ix read.reply
-  el("rdFsBtn").addEventListener("click", () => rdFsPop());
-  registerLayer({element: () => el("rdFsPop"), open: () => !el("rdFsPop").hidden, close: () => rdFsPop(false), fallback: () => el("rdFsBtn"), rank: 46, trap: false});
-  document.addEventListener("pointerdown", e => {
-    if (el("rdFsPop").hidden || el("rdFsPop").contains(e.target) || el("rdFsBtn").contains(e.target)) return;
-    rdFsPop(false);
-  }, true);
   el("rdMinus").addEventListener("click", () => rdStep(-1));
   el("rdPlus").addEventListener("click", () => rdStep(1));   // @ix read.font (+ the pinch below)
   el("rdSlider").addEventListener("input", () => rdSetFs(Number(el("rdSlider").value), false));
@@ -4040,9 +3635,7 @@ export function init(ctx){
 
   // composer
   input.addEventListener("compositionstart", () => { composing = true; });
-  // P302: an IME (Chinese keyboards on Android, pinyin on a Mac) commits 「/」 through a composition — its input events arrive
-  // while composing, so the list is opened here, once the text is final
-  input.addEventListener("compositionend", e => { composing = false; if (dropEcho(e, true)) return; capField(); autosize(); draftSoon(); updateSug(); });
+  input.addEventListener("compositionend", e => { composing = false; if (dropEcho(e, true)) return; capField(); autosize(); draftSoon(); });
   input.addEventListener("input", e => { if (!composing && dropEcho(e)) return; if (!composing) capField(); autosize(); draftSoon(); });
   if (window.IntersectionObserver) new IntersectionObserver(es => { if (es.some(e => e.isIntersecting)) autosize(); }).observe(input);
   twin = document.createElement("textarea");
@@ -4068,7 +3661,8 @@ export function init(ctx){
       takeFiles(files.map((f, i) => pastedName(f, i, files.length)), 'r.verb2.paste', "paste");
     }
     if (!text) return;
-    if ([...text].length <= CLIP_TEXT_MAX && !overflowsField(text)) return;
+    const v = input.value, a = input.selectionStart, b = input.selectionEnd;
+    if (!overflowsField(v.slice(0, a) + text + v.slice(b))) return;
     e.preventDefault();
     const full = atts.length >= MAX_ATT;
     addFiles([new File([text], `${t('r.file.paste')}-${stamp()}.txt`, {type: "text/plain"})], "paste");
@@ -4167,21 +3761,6 @@ export function init(ctx){
     e.stopPropagation(); toggleMenu();
   });
   sheetTouch();
-  // P285: the hot-key sheet lists what the 「/」 list offers, in its order (/update and 全部停下 are not names to bind)
-  initHot({run: RUN.filter(c => c !== "update"), say: ["customize", SWITCH_CMD.slice(1)], changed: paintActs,
-    refresh: () => loadMenu().catch(() => {}),
-    groups: () => {
-      const host = hostMenu || {items: [], skills: []}, out = [];
-      out.push({label: t('r.menu.run'), rows: RUN.filter(c => c !== "update").map(c => ["/" + c, runDescription(c)])
-        .concat([["/customize", t('p181.customize')]], switchItems())});
-      out.push({label: t('r.menu.tools'), rows: [["/meeting-notes", t('r.meet.desc')]]});
-      for (const [cmd, why, gg] of host.items){
-        const label = gg || t('r.menu.insert'), g = out.find(x => x.label === label);
-        if (g) g.rows.push([cmd, why]); else out.push({label, rows: [[cmd, why]]});
-      }
-      if (host.skills.length) out.push({label: t('r.menu.skills'), rows: host.skills.map(([c, d]) => [c, d])});
-      return out;
-    }});
   // the 5-hour bar's label appears / changes with the first reading, the composer grows with the text: keep the card on it
   try{ const ro = new ResizeObserver(() => placeSheet()); ro.observe(el("m5h")); const lab = el("m5h").querySelector(".lab"); if (lab) ro.observe(lab); ro.observe(menu.parentElement); }catch(_){}
   document.addEventListener("click", e => { if (!menu.hidden && !(e.target.closest && e.target.closest("#menu, #keys, #silent"))) closeMenu(); });
@@ -4210,8 +3789,6 @@ export function init(ctx){
   input.addEventListener("focus", updateSug);
   input.addEventListener("blur", () => setTimeout(() => { if (document.activeElement !== input) closeSug(); }, 150));
   sug.addEventListener("mousedown", e => e.preventDefault());
-  for (const ev of ["resize", "scroll"]) window.visualViewport?.addEventListener(ev, () => { if (!sug.hidden) capAbove(sug); });
-  wireCeil();   // P302 追加 28: --ui-sheet-ceil / --ui-sheet-stage-top follow the WEEKLY rule
   sug.addEventListener("click", e => {
     e.stopPropagation();
     const b = e.target.closest("[data-sug]");
@@ -4242,7 +3819,6 @@ export function init(ctx){
     if (e.pointerType !== "mouse" && document.activeElement === input && keyboardDown()) input.blur();
     if (ptt && ptt.pend){ pttLock(ptt); return; }
     if (ptt && ptt.locked && ptt.id === null){
-      if (performance.now() - ptt.lockT0 <= DTAP_MS) return; // second tap keeps the new lock
       try{ mic.setPointerCapture(e.pointerId); }catch(_){}
       ptt.id = e.pointerId; ptt.x0 = e.clientX; ptt.y0 = e.clientY; ptt.touch = e.pointerType !== "mouse"; return;
     }
@@ -4262,15 +3838,13 @@ export function init(ctx){
   const pressEnd = (how, e) => {
     if (!ptt) return;
     if (how === "touchend" ? typeof ptt.id !== "number" || e.touches.length : e.pointerId !== ptt.id) return;
-    if (shortTap(ptt) && (how === "pointerup" || how === "touchend")){ pttLock(ptt); lastTapUp = performance.now(); return; }
+    if (shortTap(ptt)){ lastTapUp = performance.now(); pttTap(ptt); return; }
     if (ptt.locked){
       if (how === "pointerup" || how === "touchend") pttEnd(ptt, "release");
       else { ptt.id = null; ptt.cancel = false; pttUI(ptt); }
       return;
     }
-    const released = how === "pointerup" || how === "touchend";
-    ptt.autoSend = released && !ptt.cancel && !ptt.interrupted;
-    pttEnd(ptt, released ? "release" : "cancel");
+    pttEnd(ptt, how === "pointerup" || how === "touchend" ? "release" : "cancel");
   };
   mic.addEventListener("pointerup", e => pressEnd("pointerup", e));
   mic.addEventListener("pointercancel", e => pressEnd("pointercancel", e));
@@ -4278,6 +3852,7 @@ export function init(ctx){
   mic.addEventListener("lostpointercapture", e => {
     const p = ptt, id = e.pointerId;
     if (!p || id !== p.id) return;
+    if (shortTap(p)){ pressEnd("lostpointercapture", e); return; }
     setTimeout(() => { if (ptt === p && p.id === id) pressEnd("lostpointercapture", e); }, 80);
   });
   mic.addEventListener("touchend", e => pressEnd("touchend", e));
@@ -4400,17 +3975,6 @@ export function init(ctx){
     if (!b || b.hidden) { toast(t(fc ? 'r.ix.fileNo' : 'r.ix.noFile'), 1600); return; }
     b.click();
   };
-  // Function navigation must reveal its destination above ordinary reading/help layers.
-  // Use each layer's own close action, so reader history and focus restoration remain intact.
-  const keyNav = (fn, keepSearch = false) => {
-    if (mediaViewerOpen()) closeMediaViewer();
-    if (rdOpen()) closeReader();
-    if (!el('keys').hidden) closeKeys();
-    if (!el('silent').hidden) closeSilent();
-    if (!keepSearch && search.isOpen()) search.close();
-    closeMenu(); closeSug();
-    return fn();
-  };
   const ACT = {
     // @ix-actions-begin
     "page.prev": () => goPage(-1),
@@ -4433,7 +3997,7 @@ export function init(ctx){
     "card.copy": () => copyReply(),
     "card.copy_source": () => copySource(),
     "card.reply": () => startReply(currentPage()),
-    "card.web_report": () => { if (shown("webReportBtn") && !el("webReportBtn").disabled) hotTap(currentPage()); },   // P216 / P285
+    "card.web_report": () => { if (shown("webReportBtn")) webReport(currentPage()); },   // P216
     "file.preview": () => fileAct("pv"),
     "file.download": () => fileAct("dl"),
     "file.share": () => fileAct("sh"),
@@ -4451,21 +4015,10 @@ export function init(ctx){
     "app.effort_step": () => { if (!el("meta").hidden) pillStep("effort"); },
     "app.model_default": () => { if (!el("meta").hidden) pillDefault(); },
     "app.scan": () => { closeMenu(); if (C.scan) C.scan(); },
-    "app.settings": e => keyNav(() => e.altKey && e.shiftKey && C.openSettings ? C.openSettings() : C.settings && C.settings()),
-    "app.keys": () => { if (mediaViewerOpen()) closeMediaViewer(); openKeys(); },
-    "app.upgrade_host": () => keyNav(() => { C.goChat && C.goChat(); upgradeFromKey(); }),   // P265: from any layer (reader too) back to chat, then the upgrade card
-    "app.refresh_web": () => { refreshApp(); },   // P265: the same action as Settings → 更新并刷新, not a click on a hidden button
-    "app.search": () => keyNav(() => search.toggle(), true),
-    "app.pair_add": () => keyNav(() => C.pairAdd && C.pairAdd()),
-    "app.screenshot": async () => {
-      if (C.screenshot) await C.screenshot(); // capture the visible layer first; only then reveal its attachment
-      if (mediaViewerOpen()) closeMediaViewer();
-      if (rdOpen()) closeReader();
-      if (!el('keys').hidden) closeKeys();
-    },
-    "app.friends": () => keyNav(() => C.friends && C.friends()),
-    "app.bots": () => keyNav(() => C.bots && C.bots()),
-    "app.setup": () => keyNav(() => C.setup && C.setup()),
+    "app.settings": () => { closeMenu(); closeSug(); C.settings && C.settings(); },
+    "app.keys": () => openKeys(),
+    "app.upgrade_host": () => el("set-hostupg").click(),
+    "app.refresh_web": () => el("set-refresh").click(),
     "app.pending": () => { if (shown("pendTag")) el("pendTag").click(); },
     "compose.focus": () => { closeMenu(); input.focus(); input.setSelectionRange(input.value.length, input.value.length); },
     // P154 追加 8: "/" outside the field = into the field with the "/" typed at the end of the draft — the same input event
@@ -4486,15 +4039,6 @@ export function init(ctx){
     "compose.volume": () => sendvol.open(),
     // @ix-actions-end
   };
-  // P265: global functional keys precede field editing and use physical codes (macOS Option symbols).
-  window.addEventListener('keydown', e => {
-    if (!functionalLookup(e) || !C.paired?.()) return;
-    // Preserve the locked take's existing any-key release, then perform the deliberate function action.
-    if (ptt && ptt.locked && !e.repeat) pttEnd(ptt, 'release');
-    // Secret/approval layers keep ownership; never navigate away from an unanswered sensitive card.
-    const blocked = !el('confirm').hidden || shownById('lqr') || shownById('sout') || shownById('elev') || document.body.dataset.sheet === '1';
-    dispatchFunctional(e, ACT, C.paired?.(), blocked);
-  }, true);
   document.addEventListener("keydown", e => {
     if (e.isComposing || (e.keyCode === 229 && !isM(e))) return;
     if (document.body.dataset.view !== "chat") return;
@@ -4505,7 +4049,7 @@ export function init(ctx){
       if (!el("keys").hidden){ e.preventDefault(); closeKeys(); return; }
       if (!el("cam").hidden || !el("confirm").hidden || !el("badge-panel").hidden || !el("settings").hidden) return;
       if (!menu.hidden){ e.preventDefault(); closeMenu(); return; }
-      if (quotes.length){ e.preventDefault(); escAt = 0; cancelReply(); return; }   // @ix compose.cancel_reply
+      if (replyTo){ e.preventDefault(); escAt = 0; cancelReply(); return; }   // @ix compose.cancel_reply
       if (tg === input){ e.preventDefault(); input.blur(); escAt = 0; return; }   // @ix compose.focus compose.clear (Esc Esc below) // Leave the field without counting dismissal toward double-Escape clear.
       // P150: Esc never interrupts the Agent (owner, 2026-10-12) — the stop button / /stop / e-stop are the only ways.
       const now = performance.now();
@@ -4531,13 +4075,8 @@ export function init(ctx){
     }
     if (rdOpen()){   // @ix read.close read.font read.scroll
       if (e.ctrlKey || e.metaKey || e.altKey || (tg && tg.id === "rdSlider" && e.key.startsWith("Arrow"))) return;
-      const horizontal = e.key === "ArrowLeft" || e.key === "ArrowRight", selected = getSelection();
-      if (horizontal && (e.shiftKey || (selected && !selected.isCollapsed))) return; // selection keeps native arrows
       const sc = el("rdScroll"), rstep = Math.max(40, Math.round(sc.clientHeight * 0.25)), rscreen = Math.max(40, Math.round(sc.clientHeight * 0.9));
       const f = {f: () => closeReader(), "+": () => rdStep(1), "=": () => rdStep(1), "-": () => rdStep(-1), "_": () => rdStep(-1),
-                 g: () => rdJump("last"), G: () => rdJump("first"), u: () => rdJump("unread"), y: rdCopy, r: rdReply,   // @ix read.first read.last read.first_unread read.copy read.reply
-                 l: () => el("rdSpeakBtn").click(), t: () => el("rdFwdBtn").click(), e: () => { if (!el("rdMailBtn").hidden) el("rdMailBtn").click(); },   // @ix read.speak read.forward read.mail
-                 ArrowLeft: () => rdPage(-1), ArrowRight: () => rdPage(1),
                  ArrowUp: () => sc.scrollBy(0, -rstep), ArrowDown: () => sc.scrollBy(0, rstep),
                  " ": () => sc.scrollBy(0, e.shiftKey ? -rscreen : rscreen)}[e.key];
       if (f){ e.preventDefault(); f(); }
@@ -4622,7 +4161,6 @@ export function applyPreferences(value){
   if(app.language)window.AJLang?.set(app.language);
   if(app.theme==='system')document.documentElement.removeAttribute('data-theme');
   else if(['light','dark'].includes(app.theme))document.documentElement.setAttribute('data-theme',app.theme);
-  setHot(userPreferences.ui?.card_hot_action);   // P285: absent (an older host) = the default
   loadMenu();
 }
 export function announceTurn(turn,old){

@@ -15,9 +15,8 @@
 // the download has the whole file. Each view returns a cleanup function (pdf.js: destroy the document and its worker).
 import { t } from './t.js';
 import { RelayMD } from './md.js';
-import { copyable } from './copycode.js';   // P292
 import { upgrade } from './render.js';
-import { PREVIEW, parseDelimited, codeLang, sandboxAttrs, FRAME_NOBAR } from './mediawire.js';
+import { PREVIEW, parseDelimited, codeLang, sandboxAttrs } from './mediawire.js';
 
 const mk = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text !== undefined) e.textContent = text; return e; };
 
@@ -132,7 +131,7 @@ async function viewDocx(blob, box) {
   for (const [k, v] of Object.entries(sandboxAttrs())) f.setAttribute(k, v);
   f.className = 'mframe';
   f.title = t('media.pv.docx');
-  f.srcdoc = '<!doctype html><meta charset="utf-8">' + css + FRAME_NOBAR + String(r && r.value || '');
+  f.srcdoc = '<!doctype html><meta charset="utf-8">' + css + String(r && r.value || '');
   box.replaceChildren(f);
 }
 
@@ -191,9 +190,9 @@ async function viewMarkdown(blob, box) {
 async function viewCode(blob, box, m, lang) {
   const { text, cut } = await textOf(blob);
   const wrap = mk('div', 'codeblock mpvcode');
-  const pre = mk('pre'), code = mk('code', null, text);   // P292: the whole file behind ⧉ (a tap here is reading)
+  const pre = mk('pre'), code = mk('code', null, text);
   if (lang && text.length <= 20000) pre.setAttribute('data-lang', lang);
-  pre.appendChild(code); wrap.appendChild(copyable(pre, { click: false }));
+  pre.appendChild(code); wrap.appendChild(pre);
   box.replaceChildren(wrap);
   if (cut) box.appendChild(noteEl('media.pv.more'));
   upgrade(box);
@@ -211,6 +210,6 @@ export async function renderDoc(kind, m, blob, box) {
   if (kind === 'markdown') return viewMarkdown(blob, box);
   if (kind === 'code') return viewCode(blob, box, m, codeLang(m.name));
   const { text, cut } = await textOf(blob);
-  box.replaceChildren(copyable(mk('pre', 'mpvtext', text), { click: false }));   // P292: ⧉ copies the text shown
+  box.replaceChildren(mk('pre', 'mpvtext', text));
   if (cut) box.appendChild(noteEl('media.pv.more'));
 }

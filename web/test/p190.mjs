@@ -128,7 +128,7 @@ try {
     await waitFor(p, `document.getElementById('toast').classList.contains('on') && /不是新设备的配对码/.test(document.getElementById('toast').textContent)`, 20000);
     await waitFor(p, `!document.getElementById('settings').hidden && !document.getElementById('set-remotes').hidden`, 4000);
     assert.equal(await ev(p, `document.getElementById('input').value`), '', 'a 「扫码添加」 scan never fills the field');
-    await ev(p, `document.getElementById('settings') && document.getElementById('setBtn')?.click()`);
+    await ev(p, `document.getElementById('settings') && document.getElementById('set-close')?.click()`);
   });
 
   await p.dispose();

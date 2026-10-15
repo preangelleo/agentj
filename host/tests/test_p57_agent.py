@@ -249,12 +249,12 @@ class Recall(unittest.TestCase):
 # ------------------------------------------------------------------ identity
 class Identity(unittest.TestCase):
     def test_core_v4_rules_and_hashes(self):
-        self.assertEqual(main_identity.verify_core()["version"], 15)   # P156: v11; P244: v12
+        self.assertEqual(main_identity.verify_core()["version"], 14)   # P156: v11; P244: v12
         man = json.loads((main_identity.DATA / "manifest.json").read_text())
         self.assertEqual(man, {"version": main_identity.VERSION, "hashes": main_identity.HASHES})
         zh = main_identity.prompt({"language": "zh"})
         en = main_identity.prompt({"language": "en"})
-        for needle in ("每几分钟或里程碑报一句进度", "重来", "换个说法", "接着昨天那件事", "agentj recall", "那个 xx 项目", "/compact", "交接", "不刷工具过程"):
+        for needle in ("3/5", "重来", "换个说法", "接着昨天那件事", "agentj recall", "那个 xx 项目", "/compact", "交接", "不要刷工具过程"):
             self.assertIn(needle, zh)
         for needle in ("3/5", "redo", "say it differently", "agentj-recall", "agentj recall", "That xx project", "/compact",
                        "handover", "never a tool stream"):
@@ -263,7 +263,7 @@ class Identity(unittest.TestCase):
             from test_l1 import _state
             rows = doctor.check_main_identity(_state(td))
         self.assertEqual((rows[0]["id"], rows[0]["status"]), ("main-core", "ok"))
-        self.assertIn("core v15:", rows[0]["summary"])
+        self.assertIn("core v14:", rows[0]["summary"])
 
     def test_bare_word_compact_is_the_command_only_when_alone(self):
         for t in ("压缩", "压缩一下", " 压缩。", "compact", "Compact"):
@@ -313,7 +313,7 @@ class _Prep(_Chain):
             comp = await c["cmd"]("compact")
             self.assertTrue(comp["text"].startswith("已压缩"), comp["text"])
             [ho] = self.handovers()
-            self.assertIn(f"交接已写好：{ho}", comp["text"])
+            self.assertIn(f"压缩前已写好交接：{ho}", comp["text"])
             self.assertTrue(ho.read_text().startswith("# Handover"))
             self.assertEqual(oct(ho.parent.stat().st_mode & 0o777), "0o700")
             self.assertEqual((self.work / ".agentj" / ".gitignore").read_text(), "*\n")
@@ -340,7 +340,7 @@ class _Prep(_Chain):
             n = len(self.prep_seen(c))
             comp2 = await c["cmd"]("compact")
             self.assertTrue(comp2["text"].startswith("已压缩"), comp2["text"])
-            self.assertIn("交接已写好", comp2["text"])
+            self.assertIn("压缩前已写好交接", comp2["text"])
             self.assertEqual(len(self.prep_seen(c)), n, "already prepared: no preparation turn")
             self.assertEqual(ho.read_text(), "# Handover\nwritten by the Agent on request\n")
             # 4. /clear: a new conversation starts clean (no note for its first message)
@@ -375,7 +375,7 @@ class _Prep(_Chain):
             self.assertTrue(comp["text"].startswith("已压缩"), comp["text"])
             self.assertTrue(comp["text"].endswith(compactprep.FAILED["zh"]), comp["text"])
             self.assertEqual(comp["text"].count("\n"), 2, "one line (+ P133's completion line)")
-            self.assertIn("\n压缩好了，脑子清爽了，咱们接着聊。\n", comp["text"])
+            self.assertIn("\n✓ 压缩完成，可以继续说话\n", comp["text"])
             self.assertEqual(self.handovers(), [])
             await c["say"]("二")
             await c["wait"](lambda: any(m["text"] == "ECHO: 二" for m in c["msgs"]()))
@@ -418,7 +418,7 @@ class _Prep(_Chain):
             await c["wait"](lambda: c["host"].agent.status == "working")
             await asyncio.sleep(0.5)
             stop = await c["cmd"]("stop")
-            self.assertTrue(stop["text"].startswith("好，停下了这一轮"), stop)
+            self.assertTrue(stop["text"].startswith("已停下这一轮"), stop)
             await c["wait"](lambda: c["cards"]("compact") and c["cards"]("compact")[-1]["text"] == compactprep.STOPPED["zh"])
             await c["idle"]()
             await c["say"]("还在")

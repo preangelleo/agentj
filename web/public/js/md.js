@@ -615,7 +615,6 @@ const MOD = { LABELS: { copy: "Copy", copyAria: "Copy code", copied: "Copied", i
     bar.appendChild(btn);
     const pre = doc.createElement("pre");
     const code = doc.createElement("code");
-    code.setAttribute("data-cc", "ext");             // P292 copycode.js: a click on the code presses this block's 拷贝
     code.textContent = String(node.code == null ? "" : node.code);
     // P57 marks for render.js: ```mermaid → .mermaid-src (still a code block: copy, and the fallback); any other
     // named language → <pre data-lang>. Oversized blocks get no mark and stay plain.
@@ -693,9 +692,8 @@ const MOD = { LABELS: { copy: "Copy", copyAria: "Copy code", copied: "Copied", i
         if (ok) el.setAttribute(k, ok);
       }
       if (tag === "a") { el.setAttribute("target", "_blank"); el.setAttribute("rel", "noopener noreferrer"); }
-      // P154: inline `code` (a code block's <code> is made in codeBlock) — one click copies it; P292: through copycode.js
-      // (data-cc="bare": no icon inside the reply's prose, the shade flashes, relay.js says 「已拷贝」 on cc:copied).
-      if (tag === "code") { el.className = "icode"; el.setAttribute("title", LABELS.tapCopy); el.setAttribute("data-cc", "bare"); }
+      // P154: inline `code` (a code block's <code> is made in codeBlock) — one click copies it (relay.js copyCodeClick).
+      if (tag === "code") { el.className = "icode"; el.setAttribute("title", LABELS.tapCopy); }
       if (n.tag === "table") {
         const scroll = doc.createElement("div");
         scroll.className = "tablewrap";

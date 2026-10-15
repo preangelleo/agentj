@@ -16,7 +16,7 @@ test('P205 dictionaries: the working line and the default address', ()=>{
   assert.equal(zh.ownerAddress,'董事长'); assert.equal(en.ownerAddress,'Chairman');
   assert.equal(zhSrc.replyWorking,zh.replyWorking); assert.equal(ov['r.replyWorking'],zh.replyWorking, 'the human fix wins over the polish');
   // only the "working" moment changed: delivered-not-yet-taken still says so (the computer has not picked it up)
-  assert.equal(zh.replyPending,'送到了，等电脑接手…'); assert.equal(en.replyPending,'Delivered — waiting for the computer to pick it up…');   // P280 wording
+  assert.equal(zh.replyPending,'已送达，等待电脑接手…'); assert.equal(en.replyPending,'Delivered, waiting for the computer…');
 });
 
 function ctx(){
@@ -34,7 +34,7 @@ test('P205 the open page while working: default address, the owner\'s address, p
   vm.runInContext(`ownerAddr=cleanAddress('老王')`,c); show();
   assert.equal(painted.at(-1)[0],'老王，您的最新指示已经收到，小助理正在处理，请稍候。','a new address redraws the same page');
   vm.runInContext(`cur={status:'idle',hostStatus:'idle'}`,c); show();
-  assert.equal(painted.at(-1)[0],'送到了，等电脑接手…');   // P280 wording
+  assert.equal(painted.at(-1)[0],'已送达，等待电脑接手…');
 });
 
 test('P205 cleanAddress: text only, control characters out, ≤ 16 characters, junk → ""', ()=>{

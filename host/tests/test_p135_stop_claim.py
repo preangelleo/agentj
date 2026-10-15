@@ -10,7 +10,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
-from agentj import claude_inbound, compactprep, humane, shared
+from agentj import claude_inbound, compactprep, shared
 from agentj.history import History
 from agentj.serve import Host
 from agentj.state import State
@@ -20,6 +20,7 @@ class Host135:
     """The page side: history pages, the busy note, the merge, the reply append."""
     turn_queued_note = Host.turn_queued_note
     turn_merged = Host.turn_merged
+    BUSY_NOTE, MERGED_NOTE = Host.BUSY_NOTE, Host.MERGED_NOTE
 
     def __init__(self, root, lang="zh"):
         self.lang, self.cur_turn, self.cur_failed, self.notices, self.failed = lang, None, False, [], False
@@ -97,7 +98,7 @@ class StopClaim(unittest.IsolatedAsyncioTestCase):
             (s1, s2), wrote = await self.run_turns(a, h, ["第一条", "第二条"])
             self.assertEqual(wrote.call_count, 2, "both messages reach the native session")
             p1, p2 = h.hist.get(s1.turn), h.hist.get(s2.turn)
-            self.assertEqual(p1["reply"]["text"], humane.say("shared.merged", "zh"))
+            self.assertEqual(p1["reply"]["text"], "已合并到下一条回复。")
             self.assertEqual(p1["end"], "done")
             self.assertEqual(p2["reply"]["text"], "两件事都办好了", "the Stop reply on the last page, no busy note left")
             self.assertEqual(p2["end"], "done")
@@ -136,7 +137,7 @@ class StopClaim(unittest.IsolatedAsyncioTestCase):
             h.cur_turn = h.hist.add({"k": "phone", "text": "a"}, "", "open")["id"]
             tid = h.cur_turn
             h.turn_merged()
-            self.assertEqual(h.hist.get(tid)["reply"]["text"], "I'll answer this together with the next reply.")
+            self.assertEqual(h.hist.get(tid)["reply"]["text"], "Merged into the next reply.")
             self.assertIsNone(h.cur_turn)
 
 

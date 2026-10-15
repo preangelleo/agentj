@@ -6,11 +6,9 @@ the list is display only, and an empty list sends `tasks: []` (the dots disappea
 
 Sources (all folded by `Board` in serve):
 - the owned Claude session's stream-json (agent.py): an `Agent`/`Task` tool_use = a sub-agent (its description is
-  the label), its tool_result ends it, unless it went to the background; then the `task_notification` ends it; a
-  run_in_background Bash (`task_started` task_type local_bash, P291) is an item until its notification;
+  the label), its tool_result ends it, unless it went to the background; then the `task_notification` ends it;
 - shared Claude sessions' hooks (shared.py): PreToolUse(Agent|Task) remembers the description, SubagentStart /
-  SubagentStop open / close the item, SessionEnd and Stop.background_tasks reconcile it (P291: that list also ADDS what is
-  missing — a lost SubagentStart, a run_in_background Bash, which PostToolUse(backgroundTaskId) shows at once);
+  SubagentStop open / close the item, SessionEnd and Stop.background_tasks reconcile it;
 - the Codex app-server (agent_codex.py `_on_note`, owned and shared, P160): a `collabAgentToolCall` spawnAgent opens one
   item per receiver thread (the prompt's first line is the label), the child thread's `turn/started` / `turn/completed`
   re-open / close it, `agentsStates` with a final status, a `subAgentActivity` completed/interrupted or closeAgent close
@@ -21,7 +19,7 @@ Sources (all folded by `Board` in serve):
 - a workflow run (tasks.py): its CEO (the workflow's title) is busy for the length of the run;
 - outside dispatches: `agentj busy run --who 掌枢 --label 发布收尾 -- claude -p …` (an item file with the wrapper's
   pid), `agentj busy start|stop`, and active systemd user units named `agentj-p<digits>…` (Description
-  "who · what" / "who: what"); on macOS the running launchd jobs labelled `agentj-p<digits>…` (P291). Item files live in <state>/agentperm/busy/ (0600), are display text only and are pruned when
+  "who · what" / "who: what"). Item files live in <state>/agentperm/busy/ (0600), are display text only and are pruned when
   their pid is gone or after ITEM_TTL.
 
 Detail (P160, PROTOCOL §22 `busy_get`): a tap on one row asks for that item only — `last` = the sub-agent's most recent
@@ -41,12 +39,10 @@ from __future__ import annotations
 
 import argparse
 import contextlib
-from collections import deque
 import json
 import os
 import re
 import subprocess
-import stat
 import sys
 import threading
 import time
@@ -57,7 +53,6 @@ COLORS = 9
 MAX_ITEMS = 32                 # on the wire; the phone shows up to 6 robots (12 on a wide screen of a strong computer) and "+n"
 ITEM_TTL = 12 * 3600           # an item file without a live pid (or a lost close) is gone after this long
 TEMP_TTL = 3 * 3600            # a sub-agent whose close never arrived
-BG_DONE = ("completed", "failed", "killed", "stopped", "error", "cancelled")   # P291: a background entry that is over
 PENDING_TTL = 120              # PreToolUse(Agent) description waiting for its SubagentStart
 WHO_MAX = 24
 LABEL_MAX = 120               # P154: the full human-readable title, not 5 characters
@@ -306,140 +301,13 @@ def unit_names(unit: str, desc: str) -> tuple[str | None, str, str | None]:
     return who, unit.removesuffix(".service"), cmd[:CMD_MAX]
 
 
-# P302 (owner 09:47: P290 / P302 / P303 sat under 「临时帮手 · 不属于任何工作流」): a dispatch unit runs a CEO in some folder
-# of the working root — systemd-run's own cwd is $HOME, the launcher cd's later, so the unit's place is the deepest working
-# directory among the processes of its control group (serve's task_assignment maps it to the folder → the company). Its
-# title is the heading of the nearest PROMPT-<N>.md (in a `.jarvis` folder) above that directory.
-CG_ROOT = Path("/sys/fs/cgroup")
-CG_PIDS = 64
-
-
-def cg_pids(cg: str, root: Path = CG_ROOT) -> list[int]:
-    """The pids of a control group and its children (≤ CG_PIDS); [] off Linux / unreadable."""
-    pids: list[int] = []
-    base = root / cg.lstrip("/")
-    for d, _dirs, _files in os.walk(base):
-        with contextlib.suppress(OSError, ValueError):
-            pids += [int(x) for x in (Path(d) / "cgroup.procs").read_text().split()]
-        if len(pids) >= CG_PIDS:
-            break
-    return pids[:CG_PIDS]
-
-
-def deepest_cwd(pids, readlink=os.readlink) -> str | None:
-    best = None
-    for pid in pids:
-        try:
-            c = readlink(f"/proc/{pid}/cwd")
-        except OSError:
-            continue
-        if best is None or len(Path(c).parts) > len(Path(best).parts):
-            best = c
-    return best
-
-
-def unit_places(units, run=subprocess.run, pids_of=cg_pids, readlink=os.readlink) -> dict:
-    """unit → {"cg": its control group, "cwd"?: where it works} — one `systemctl show` for all units."""
-    if not units:
-        return {}
+def scan_units(run=subprocess.run) -> list[dict]:
+    """Active systemd user units `agentj-p<digits>…` (the CEO dispatch convention). Names: see unit_names (P150 / P200)."""
     try:
-        r = run(["systemctl", "--user", "show", "-p", "Id,ControlGroup", "--", *units], capture_output=True, text=True,
-                timeout=3)
-    except (OSError, subprocess.SubprocessError):
-        return {}
-    out, cur = {}, {}
-    for line in (r.stdout or "").splitlines() + [""]:
-        if not line.strip():
-            if cur.get("Id") in units and cur.get("ControlGroup", "").startswith("/"):
-                out[cur["Id"]] = {"cg": cur["ControlGroup"]}
-            cur = {}
-            continue
-        k, _, v = line.partition("=")
-        cur[k] = v.strip()
-    for place in out.values():
-        cwd = deepest_cwd(pids_of(place["cg"]), readlink)
-        if cwd:
-            place["cwd"] = cwd
-    return out
-
-
-def prompt_near(cwd: str, num: str, up: int = 6) -> str | None:
-    """The first heading of PROMPT-<num>.md in the `.jarvis` folder of cwd or one of its parents (≤ up levels)."""
-    d = Path(cwd)
-    for _ in range(up):
-        t = prompt_title(d / ".jarvis" / f"PROMPT-{num}.md")
-        if t:
-            return t
-        if d.parent == d:
-            break
-        d = d.parent
-    return None
-
-
-def in_cgroup(pid, cg: str | None) -> bool:
-    """The pid runs inside the control group cg (or one of its children)."""
-    if not isinstance(pid, int) or not cg:
-        return False
-    try:
-        lines = Path(f"/proc/{pid}/cgroup").read_text().splitlines()
-    except OSError:
-        return False
-    return any((ln.split(":", 2)[-1] + "/").startswith(cg.rstrip("/") + "/") for ln in lines)
-
-
-def same_job(f: dict, u: dict) -> bool:
-    """P302: an `agentj busy run` item (the 10-15 run-px2.sh convention) and the dispatch unit it runs in are one job —
-    its pid sits in the unit's control group, or its REPORT is the unit's REPORT-<N>.md."""
-    if in_cgroup(f.get("pid"), u.get("cg")):
-        return True
-    m = re.match(r"^unit:agentj-p(\d+)", u.get("key", ""))
-    return bool(m) and Path(str(f.get("report") or "")).name == f"REPORT-{m.group(1)}.md"
-
-
-LAUNCHD_RE = re.compile(r"^agentj-p(\d+)([\w.-]*)$")
-
-
-def scan_launchd(run=subprocess.run) -> list[dict]:
-    """P291: macOS has no systemd — running launchd jobs labelled `agentj-p<digits>…` are the same convention
-    (`launchctl submit -l agentj-p291-busy-fix -- …` or a LaunchAgent plist with that Label). who = P<N>; what = the rest of
-    the label, dashes as spaces. A job without a pid (loaded, not running) is not work."""
-    try:
-        r = run(["launchctl", "list"], capture_output=True, text=True, timeout=3)
-    except (OSError, subprocess.SubprocessError):
-        return []
-    out = []
-    for line in (r.stdout or "").splitlines()[:2048]:
-        parts = line.split(None, 2)
-        if len(parts) < 3 or not parts[0].isdigit():
-            continue
-        m = LAUNCHD_RE.match(parts[2].strip())
-        if not m:
-            continue
-        what = re.sub(r"[-_.]+", " ", m.group(2)).strip() or parts[2].strip()
-        out.append(item("unit:" + parts[2].strip(), "P" + m.group(1), "ceo", what))
-        if len(out) >= 32:
-            break
-    return out
-
-
-def scan_units(run=subprocess.run, platform=None, strict=False, places=unit_places) -> list[dict]:
-    """Active systemd user units `agentj-p<digits>…` (the CEO dispatch convention). Names: see unit_names (P150 / P200).
-    macOS (P291): no systemctl there → the running launchd jobs of the same name (scan_launchd). strict (P262): a failed
-    scan raises instead of looking like "nothing runs". P302: where each works (cwd → its workflow), the PROMPT heading as
-    its title, role CEO."""
-    try:
-        r = run(["systemctl", "--user", "list-units", "--type=service", "--state=active,activating", "--plain", "--no-legend",
+        r = run(["systemctl", "--user", "list-units", "--type=service", "--state=active", "--plain", "--no-legend",
                  "--no-pager", "--full", "agentj-p*"], capture_output=True, text=True, timeout=3)
-    except OSError:
-        if strict and (platform or sys.platform) != "darwin":
-            raise
-        return scan_launchd(run) if (platform or sys.platform) == "darwin" else []
-    except subprocess.SubprocessError:
-        if strict:
-            raise
+    except (OSError, subprocess.SubprocessError):
         return []
-    if strict and getattr(r, "returncode", 0):
-        raise OSError("systemd scan failed")
     out = []
     for line in (r.stdout or "").splitlines()[:32]:
         parts = line.split(None, 4)
@@ -447,23 +315,10 @@ def scan_units(run=subprocess.run, platform=None, strict=False, places=unit_plac
             continue
         desc = parts[4].strip() if len(parts) > 4 else ""
         who, what, cmd = unit_names(parts[0], desc)
-        it = item("unit:" + parts[0], who, "ceo", what, role="CEO")
+        it = item("unit:" + parts[0], who, "ceo", what)
         if cmd:
             it["cmd"] = clean(cmd, CMD_MAX)
         out.append(it)
-    if out:
-        where = places([x["key"][5:] for x in out], run)
-        for it in out:
-            place = where.get(it["key"][5:]) or {}
-            if place.get("cg"):
-                it["cg"] = place["cg"]
-            num = re.match(r"^unit:agentj-p(\d+)", it["key"])
-            if place.get("cwd"):
-                it.update(task_meta({"cwd": place["cwd"]}))
-                title = prompt_near(place["cwd"], num.group(1)) if num else None
-                if title:
-                    from . import privacy
-                    it["label"] = short(_drop_who(it["who"] or "", privacy.redact(title, paths=True)))
     return out
 
 
@@ -602,66 +457,6 @@ def unit_report(unit: str, run=subprocess.run) -> str | None:
     return str(cands[0]) if cands else None
 
 
-
-# P262: completion receipts are local metadata, never argv or report contents.
-def write_finished(root, it, code):
-    d = items_dir(root) / "finished"
-    d.mkdir(mode=0o700, parents=True, exist_ok=True)
-    from .state import _write_private
-    _write_private(d / (_safe(it["key"]) + ".json"),
-                   json.dumps({**it, "ended": time.time(), "exit_code": code}, ensure_ascii=False).encode())
-
-
-def finished_items(root):
-    d = items_dir(root) / "finished"
-    out = []
-    for p in sorted(d.glob("*.json"))[:256]:
-        try:
-            info = p.lstat()
-            if not stat.S_ISREG(info.st_mode) or info.st_size > 4096:
-                continue
-            v = json.loads(p.read_text())
-            if not isinstance(v, dict) or not isinstance(v.get("key"), str):
-                continue
-            it = item(v["key"], v.get("who"), v.get("kind"), v.get("label"), since=v.get("since"), report=v.get("report"))
-            it["ended"] = v.get("ended") if isinstance(v.get("ended"), (int, float)) else time.time()
-            it["exit_code"] = v.get("exit_code") if type(v.get("exit_code")) is int else None
-            out.append(it)
-        except (OSError, ValueError, TypeError):
-            continue
-    return out
-
-
-def unit_since(unit, run=subprocess.run):
-    # systemd monotonic start gives real elapsed time and stable dedup across serve restarts.
-    try:
-        r = run(["systemctl", "--user", "show", unit, "-p", "ExecMainStartTimestampMonotonic", "--value"],
-                capture_output=True, text=True, timeout=3)
-        value = int((r.stdout or "").strip())
-        if r.returncode == 0 and value > 0:
-            return int(time.time() - time.monotonic() + value / 1000000)
-    except (OSError, ValueError, subprocess.SubprocessError):
-        pass
-    return None
-
-
-def unit_end(unit, run=subprocess.run):
-    try:
-        r = run(["systemctl", "--user", "show", unit, "-p", "ActiveState", "-p", "LoadState",
-                 "-p", "ExecMainStatus", "-p", "ExecMainCode", "--no-pager"],
-                capture_output=True, text=True, timeout=3)
-    except (OSError, subprocess.SubprocessError):
-        return None
-    props = dict(line.split("=", 1) for line in (r.stdout or "").splitlines() if "=" in line)
-    if props.get("LoadState") == "not-found":
-        return {"exit_code": None}               # collected transient unit; never invent success
-    if r.returncode or props.get("ActiveState") not in ("inactive", "failed"):
-        return None
-    code = props.get("ExecMainStatus", "")
-    mode = props.get("ExecMainCode", "")
-    return {"exit_code": int(code) if mode in ("1", "exited") and code.isdigit() else None}
-
-
 # ------------------------------------------------------------------------------------------- the board (serve)
 class Board:
     """serve's view: in-memory items (owned / shared sessions, workflow runs) + item files + systemd units."""
@@ -672,7 +467,6 @@ class Board:
         self.mem: dict[str, dict] = {}
         self.outside: list[dict] = []
         self.units: list[dict] = []
-        self.finished = deque()              # P262: terminal events, drained by serve on its event loop
         self.pending: list[dict] = []          # shared hooks: [{session, type, desc, at}]
         self.colors: dict[str, int] = {}
         self.colors_dirty = False
@@ -699,7 +493,6 @@ class Board:
         it = item(key, who, kind, label, lk, old["since"] if old else None, session=session)
         context = next((v for k,v in self.context.items() if str(session or key)==k or str(session or key).startswith(k+":")), {})
         it.update(context)
-        it["generation"] = old.get("generation") if old else uuid.uuid4().hex
         if old:
             it.update(task_meta(old))
         source = str(session or key).lower()
@@ -721,19 +514,14 @@ class Board:
                 self.mem[key] = it
                 self.on_change()
 
-    def stop(self, key, exit_code=None) -> None:
-        it = self.mem.pop(key, None)
-        if it is not None:
-            self.finish(it, exit_code=exit_code)
+    def stop(self, key) -> None:
+        if self.mem.pop(key, None) is not None:
             self.on_change()
-
-    def finish(self, it, exit_code=None, ended=None):
-        self.finished.append({**it, "ended": ended or time.time(), "exit_code": exit_code})
 
     def stop_where(self, pred) -> None:
         gone = [k for k, v in self.mem.items() if pred(k, v)]
         for k in gone:
-            self.finish(self.mem.pop(k))
+            del self.mem[k]
         if gone:
             self.on_change()
 
@@ -788,51 +576,12 @@ class Board:
             aid = clean(ev.get("agent_id"), 80)
             if aid:
                 self.stop(f"{scope}:{sid}:{aid}")
-        elif name == "PostToolUse" and not ev.get("agent_id"):
-            # P291: the main thread's background work as soon as it is launched — a run_in_background Bash
-            # (backgroundTaskId) is an item of its own; an async Agent whose SubagentStart never arrived is caught up here
-            resp = ev.get("tool_response") if isinstance(ev.get("tool_response"), dict) else {}
-            ti = ev.get("tool_input") if isinstance(ev.get("tool_input"), dict) else {}
-            if resp.get("backgroundTaskId"):
-                self._background(scope, sid, {"id": resp["backgroundTaskId"], "type": "shell",
-                                              "description": ti.get("description"), "command": ti.get("command")})
-            elif resp.get("agentId") and (resp.get("isAsync") or resp.get("status") == "async_launched"):
-                self._background(scope, sid, {"id": resp["agentId"], "type": "subagent", "agent_type": ti.get("subagent_type"),
-                                              "description": ti.get("description") or resp.get("description")})
-            elif ev.get("tool_name") in ("TaskStop", "KillShell", "KillBash"):
-                for k in ("task_id", "shell_id", "bash_id"):
-                    if ti.get(k):
-                        self.stop(f"{scope}:{sid}:{clean(str(ti[k]), 80)}")
         elif name == "SessionEnd":
             self.stop_where(lambda k, v: v.get("session") == f"{scope}:{sid}")
         elif name == "Stop" and not ev.get("agent_id") and isinstance(ev.get("background_tasks"), list):
-            # Claude Code's own list of live background work (sub-agents, run_in_background shells, …). P291: it also ADDS
-            # what is missing — a lost / refused SubagentStart, a background Bash — so the phone never under-reports.
-            live = set()
-            for t in ev["background_tasks"]:
-                if isinstance(t, dict) and t.get("id") and t.get("status") not in BG_DONE:
-                    live.add(self._background(scope, sid, t))
+            live = {f"{scope}:{sid}:{t.get('id')}" for t in ev["background_tasks"] if isinstance(t, dict)}
             # foreground sub-agents are done when the main turn stops; background ones only when the harness drops them
             self.stop_where(lambda k, v: v.get("session") == f"{scope}:{sid}" and k not in live)
-
-    def _background(self, scope: str, sid: str, t: dict) -> str:
-        """P291: one entry of Claude Code's background list (Stop.background_tasks / a launch result) on the board; an item
-        already there (SubagentStart's, with its better label) is kept as it is. → its key."""
-        key = f"{scope}:{sid}:{clean(str(t.get('id')), 80)}"
-        if key in self.mem:
-            return key
-        typ = clean(t.get("type"), 24) or "task"
-        if typ == "subagent":
-            role = clean(t.get("agent_type"), WHO_MAX)
-            self.start(key, who_of(role), "temp", t.get("description") or role, session=f"{scope}:{sid}",
-                       harness="claude", role=role or None)
-        else:                                  # "shell" (run_in_background Bash) and anything newer: labelled by its description
-            label = t.get("description")
-            if not (isinstance(label, str) and label.strip()) and isinstance(t.get("command"), str):
-                from .privacy import redact    # a bare command line may carry a token: scrubbed before it is a label
-                label = redact(clean(t["command"], 4 * LABEL_MAX), paths=True)
-            self.start(key, None, "temp", label or typ, session=f"{scope}:{sid}", harness="claude", role=typ)
-        return key
 
     # -- the owned Claude session's stream-json (agent.py)
     def stream_event(self, ev: dict, scope: str = "own") -> None:
@@ -867,13 +616,8 @@ class Board:
                     self.stop(key)
         elif t == "system" and ev.get("subtype") == "task_started":
             tid = clean(ev.get("task_id"), 80)
-            if tid and f"{scope}:task:{tid}" not in self.mem and ev.get("task_type") in (None, "local_agent", "agent", "local_bash"):
-                # P291: a run_in_background Bash (local_bash) is background work too, labelled by its description
-                self.start(f"{scope}:task:{tid}", None, "temp", ev.get("description") or "", session=scope,
-                           **({"role": "shell"} if ev.get("task_type") == "local_bash" else {}))
-        elif t == "system" and ev.get("subtype") == "task_updated":
-            if ((ev.get("patch") or {}).get("status") if isinstance(ev.get("patch"), dict) else None) in BG_DONE:
-                self.stop(f"{scope}:task:{clean(ev.get('task_id'), 80)}")
+            if tid and f"{scope}:task:{tid}" not in self.mem and ev.get("task_type") in (None, "local_agent", "agent"):
+                self.start(f"{scope}:task:{tid}", None, "temp", ev.get("description") or "", session=scope)
         elif t == "system" and ev.get("subtype") == "task_notification":
             if ev.get("status") in ("completed", "failed", "stopped", "killed", "error"):
                 self.stop(f"{scope}:task:{clean(ev.get('task_id'), 80)}")
@@ -1056,39 +800,9 @@ class Board:
     def refresh_outside(self, units: bool = True, run=subprocess.run) -> bool:
         """Re-read item files (and, when `units`, the systemd units; otherwise the last scan stays). True = changed."""
         files = read_items(self.root) if self.root is not None else []
-        if self.root is not None:
-            for receipt in finished_items(self.root):
-                self.finish(receipt, receipt.get("exit_code"), receipt.get("ended"))
         if units:
-            try:
-                scanned = scan_units(run, strict=True)
-            except (OSError, subprocess.SubprocessError):
-                scanned = None                  # an unavailable bus is not a completion
-            if scanned is not None:
-                old = {it["key"]: it for it in self.units}
-                current = {it["key"] for it in scanned}
-                retained = []
-                for it in self.units:
-                    if it["key"] not in current:
-                        result = unit_end(it["key"][5:], run)
-                        if result is None:
-                            retained.append(it)  # still running, or lookup failed: try next scan
-                        else:
-                            self.finish(it, result.get("exit_code"), result.get("ended"))
-                for it in scanned:
-                    if it["key"] in old:
-                        it.update(since=old[it["key"]]["since"], report=old[it["key"]].get("report"))
-                    else:
-                        it["report"] = unit_report(it["key"][5:], run)
-                        it["since"] = unit_since(it["key"][5:], run) or it["since"]
-                self.units = scanned + retained
-        # P302: a unit whose job already registered itself (`agentj busy run` inside it) is shown once — as that item
-        got = files + [u for u in getattr(self, "units", []) if not any(same_job(f, u) for f in files)]
-        live = {it["key"] for it in got}
-        for it in self.outside:
-            if not it["key"].startswith("unit:") and it["key"] not in live:
-                self.finish(it)                   # unwrapped pid/stop: exit code is unknowable
-
+            self.units = scan_units(run)
+        got = files + getattr(self, "units", [])
         changed = got != self.outside
         self.outside = got
         return changed
@@ -1358,19 +1072,13 @@ def cmd_busy(a) -> int:
                 with contextlib.suppress(OSError):
                     os.utime(path)
         threading.Thread(target=beat, daemon=True).start()
-        code = 127
         try:
-            code = subprocess.call(cmd)
-            return code
+            return subprocess.call(cmd)
         except OSError as e:
             print(e, file=sys.stderr)
             return 127
         finally:
             stop.set()
-            if path is not None:
-                with contextlib.suppress(OSError, ValueError):
-                    it = json.loads(path.read_text())
-                    write_finished(root, it, code)
             remove_item(root, key)
     return 2
 

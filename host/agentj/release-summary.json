@@ -1,6 +1,6 @@
 {
-  "version": "0.22.0a1",
-  "major": true,
-  "zh": "0.22.0：新 Logo 与品牌套件、Telegram 机器人兼做客服、切换底层工具有进度和交接、Claude 登录手机续期、快捷键与多段引用、iMessage 助手。",
-  "en": "New logo, Telegram bot as customer service, guided tool switching, Claude login renewal on the phone, shortcuts, multi-quote, iMessage assistant."
+  "version": "0.21.1a1",
+  "major": false,
+  "zh": "0.21.1：菜单页改为深色底白字，修复代码文字看不清、长标题截断、卡片重叠，技能详情先显示中文说明。",
+  "en": "Menu pages turn dark with white text; fixed unreadable code, cut-off titles and overlapping cards; skill details show your language first."
 }

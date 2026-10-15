@@ -170,11 +170,11 @@ def bash_call(sid, msg, cmd, foreign=False):
 #   the message behaves as before; FAKE_CTX_USED = the context the next turn reports (compaction drops it).
 def p57_prepare(text):
     import re as _re
-    m = _re.search(r"`([^`]*(?:\.agentj/handover|agentj/handoff)/[^`]+\.md)`", text)   # P289: + switch.md (shared: ~/…)
+    m = _re.search(r"`([^`]*\.agentj/handover/[^`]+\.md)`", text)
     if os.environ.get("FAKE_PREP_SLEEP"):
         time.sleep(float(os.environ["FAKE_PREP_SLEEP"]))
     if m and os.environ.get("FAKE_NO_HANDOVER") != "1":
-        with open(os.path.expanduser(m.group(1)), "w") as f:
+        with open(m.group(1), "w") as f:
             f.write("# Handover\n- goal: the user's words\n- done / in progress / next\n- decisions\n- paths\n- open questions\n")
         return "交接写好了"
     return "没写交接"
@@ -204,7 +204,7 @@ def run_prompt(sid, text):
     s["messages"].append(msg)
     publish("session.status", {"sessionID": sid, "status": {"type": "busy"}})
     try:
-        if text.startswith(("[agentj:compact-prepare]", "[agentj:switch-handoff]")):
+        if text.startswith("[agentj:compact-prepare]"):
             text_part(sid, msg, p57_prepare(text))
         elif text.startswith("RUN: "):
             bash_call(sid, msg, text[5:].strip())
