@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import contextlib
+import copy
 import fcntl
 import hashlib
 import hmac
@@ -75,8 +76,12 @@ def legacy_state(home: str | None = None) -> pathlib.Path:
     return pathlib.Path(os.path.join(home, LEGACY_STATE[2:]) if home else os.path.expanduser(LEGACY_STATE))
 
 
+_WRITES = [0]   # P292: private writes by this process — part of the allowlist cache key (an inode number can be reused)
+
+
 def _write_private(path: pathlib.Path, data: bytes) -> None:
     diskq.write(path, data)   # P142: atomic + fsync; on the event loop the fsync goes to the ordered disk writer
+    _WRITES[0] += 1
 
 
 class State:
@@ -181,11 +186,27 @@ class State:
         return self._ed_pub(self.signing_key())
 
     # ------------------------------------------------------------ allowlist
+    DEVICES_TTL = 2.0   # P292: s an unchanged-looking allowlist is trusted before it is read again
     def devices(self) -> dict:
+        """P292: every phone frame asks `is_allowed` — the parsed allowlist is kept, keyed by the file's identity (inode, size,
+        mtime, ctime) and this process's own private-write count, and read again at least every DEVICES_TTL s. Every writer
+        replaces the file by rename (a new inode, a new ctime), so a change by any process is seen at the next call; the count
+        covers this process reusing a freed inode inside one timestamp tick, the TTL anything stranger. An unchanged file costs
+        one stat instead of a read + parse on the event loop."""
         try:
-            return json.loads(self.devices_path.read_text())
+            stt = os.stat(self.devices_path)
         except FileNotFoundError:
             return {}
+        key = (stt.st_ino, stt.st_size, stt.st_mtime_ns, stt.st_ctime_ns, _WRITES[0])
+        hit = getattr(self, "_devices_cache", None)
+        if hit is not None and hit[0] == key and time.monotonic() - hit[2] < self.DEVICES_TTL:
+            return copy.deepcopy(hit[1])
+        try:
+            d = json.loads(self.devices_path.read_text())
+        except FileNotFoundError:
+            return {}
+        self._devices_cache = (key, d, time.monotonic())
+        return copy.deepcopy(d)
 
     @contextlib.contextmanager
     def devices_lock(self):
@@ -573,7 +594,7 @@ class State:
         return name
 
     # ------------------------------------------------------------ agent bridge (L1, PROTOCOL §8)
-    AGENT_KINDS = ("claude", "codex", "opencode")
+    AGENT_KINDS = ("claude", "codex", "opencode", "kimi", "qwen")
 
     def agent_config(self) -> dict | None:
         """{"kind": "claude"|"codex"|"opencode", "dir": absolute path, "model": str|None} or None (no agent: terminal chat as in A2)."""
@@ -605,7 +626,9 @@ class State:
                 "shared_session_id": preferences.get(prefs, "agent.shared_session_id", ""),
                 "shared_opencode_port": preferences.get(prefs, "agent.shared_opencode_port", 0),
                 "high_risk_warnings": preferences.get(prefs, "agent.high_risk_warnings", False),
-                "approvals": {"strict": "strict", "native": "native"}.get(preferences.get(prefs, "agent.approvals", "standard"), "standard")}
+                "approvals": {"strict": "strict", "native": "native"}.get(preferences.get(prefs, "agent.approvals", "standard"), "standard"),
+                # P305: Kimi's site (kimi.com = mainland-cn, kimi.ai = global) for an API key / the login rescue; None = mainland-cn
+                "region": a.get("region") if a.get("region") in ("mainland-cn", "global") else None}
 
     def set_agent_config(self, kind: str | None, directory: str | None = None, model: str | None = None,
                          fence: bool = True, docker: bool = False, effort: str | None = None) -> None:
@@ -635,6 +658,17 @@ class State:
         if kind is not None and directory is not None:
             from . import working_root
             working_root.record(self, pathlib.Path(d))
+
+    def set_agent_region(self, region: str | None) -> None:
+        """P305: `agentj agent kimi --region mainland-cn|global` (Kimi's two sites; separate accounts and keys)."""
+        with self.config_lock():
+            cfg = self.config()
+            if isinstance(cfg.get("agent"), dict):
+                if region in ("mainland-cn", "global"):
+                    cfg["agent"]["region"] = region
+                else:
+                    cfg["agent"].pop("region", None)
+                _write_private(self.config_path, json.dumps(cfg, indent=1, ensure_ascii=False).encode())
 
     def set_agent_model(self, model: str | None) -> None:
         """/model from the phone (slash.py): only the model of the configured Agent changes."""
@@ -717,7 +751,9 @@ class State:
                   "ms", "code", "count",   # P129: timings (ms), close codes, failure counts — numbers only. P116: metadata only (no text, path or digest)
                   "cmd", "keys", "events", "event",   # P139: control command / config key / hook event NAMES only
                   "where", "task", "pstate", "majflt",   # P142: loop-stall diagnostics (site/task names, process state, fault counts)
-                  "handoff", "sha", "full", "by"}   # P198: P151 handoff present (bool), P156 heartbeat prompt sha8 / full / trigger
+                  "handoff", "sha", "full", "by",   # P198: P151 handoff present (bool), P156 heartbeat prompt sha8 / full / trigger
+                  "to", "files", "skipped", "refused", "domains", "msgid", "smtp"}   # P295 mail_fwd: counts, recipient
+                  # domains (never a whole address), our Message-ID and the SMTP server's queue id from its 250 after DATA
 
     def log(self, ev: str, **kw) -> None:
         rec = {"ts": int(time.time()), "ev": ev, **{k: v for k, v in kw.items() if k in self.LOG_FIELDS}}

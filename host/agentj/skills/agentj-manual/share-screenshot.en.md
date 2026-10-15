@@ -67,3 +67,7 @@ A Telegram bot can download at most 20 MB per file (a Telegram limit); a recordi
 Android intake is handled inside the phone's browser; files are not submitted as an ordinary form upload to our website. The Shortcut URL contains only an entry marker, never file data, text or credentials; the file stays in your own Files app until you pick it. Sending uses the existing end to end encrypted attachment path. Read the [web security boundaries](https://agentj.app/security/). A copied screenshot remains on the system clipboard, and saved files stay in the `Agent J` folder until you delete them.
 
 References: [Chrome Web Share Target](https://developer.chrome.com/docs/capabilities/web-apis/web-share-target), [WebKit clipboard API](https://webkit.org/blog/10855/async-clipboard-api/), [Apple Shortcut signing](https://support.apple.com/en-au/guide/shortcuts-mac/apd455c82f02/mac).
+
+## Capture the current Agent J page
+
+Hold the gear at the top right, or press Alt+Shift+Y, to capture the visible part of this web page. It excludes the system status bar and needs no screen-sharing permission. Password fields and secret cards are masked. The image enters the chat attachment tray; add your words and send when ready. Settings keeps Scan, Search and the gear in its fixed header while you scroll. Tap the gear to exit or hold it to capture Settings. Search or ⌘K / Ctrl+K within Settings finds titles, descriptions and keywords; tap a result to jump and highlight it. Right-click the gear or open Keyboard shortcuts for help.

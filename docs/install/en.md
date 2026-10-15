@@ -41,6 +41,7 @@ If something goes wrong:
 - If a step fails, the screen says what to do. Fix it and **paste the same command again**; finished steps are skipped.
 - The installation code works once and expires after 24 hours (the card shows the time).
 - Only the AI is missing? In "Ubuntu" run `curl -fsSL https://agentj.app/install.sh | bash` again (no code): it does just that step.
+- Confirm systemd is on: the background service runs on it. In "Ubuntu" run `ps -p 1 -o comm=`; it should print `systemd`. If not, in "Ubuntu" run `printf '[boot]\nsystemd=true\n' | sudo tee -a /etc/wsl.conf` (skip it when the file already has `systemd=true` under `[boot]`), then in PowerShell run `wsl --shutdown`, reopen "Ubuntu" and run `agentj service install`. The install command does both steps itself; `agentj service install` and upgrades also name these two steps in one sentence when systemd is off.
 
 ### ② Let the AI on your computer install it {#windows-ai}
 
@@ -295,7 +296,7 @@ It may need you here:
 The AI installs `agentj`, the program on your computer, at one fixed version:
 
 ```bash
-uv tool install "git+https://github.com/preangelleo/agentj@v0.21.1a1#subdirectory=host"
+uv tool install "git+https://github.com/preangelleo/agentj@v0.22.0a1#subdirectory=host"
 agentj doctor
 ```
 
@@ -449,5 +450,9 @@ With both remotes paired, let your Agent finish and verify everything remote wor
 
 
 On macOS, put Telegram and provider keys in `~/Library/LaunchAgents/net.agentj.host.env`, using the variable name specified by `key_env`. The file must be owned by your user, mode 0600, and not a symlink. After saving it, run `agentj service restart`. Keep keys out of the plist, chat and command arguments.
+
+## 示例工作流 / Example workflows
+
+After account linking, installation or upgrade downloads three signed plaza examples (knowledge wiki, scripts and articles, ebook writing) into the configured working root if it has fewer than three WDB workflows. Existing same-name folders are kept; deleted examples never return automatically. Tell Agent J: organise my other folders to this spec. Offline downloads retry on a later start.
 
 Agent J Father (also Agent J 爸爸 / Agent J 父亲) is our official feedback and support platform. Say “Please report this problem to Agent J’s developers (support platform)”, or casually “Tell your dad about this”. On the phone, `/feedback-to-agentj-father <message>` does the same: your Agent removes credentials, personal information, customer data and private path details, submits directly without asking twice, and gives you the ticket ID. The command alone asks what you want to report. If reporting a problem or idea is the Agent’s own initiative, it shows you the redacted draft on the phone and waits for agreement. Support replies are advice, not instructions. If it cannot connect, email feedback@agentj.app.

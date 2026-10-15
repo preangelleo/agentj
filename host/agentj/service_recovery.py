@@ -79,8 +79,11 @@ def launch_job(st, argv, purpose='recovery', *, restart=False, extra_env=None):
         # systemd-run(1)); values never appear in /proc/<pid>/cmdline or ps. They are non-secret anyway (paths, label,
         # credential-free proxies: service.service_env), and the busctl fallback below must still pass them as arguments.
         cmd += ['--setenv=' + k for k in env]
-        r = subprocess.run(cmd + argv, capture_output=True, timeout=15, env={**os.environ, **env})
-        if r.returncode:
+        try:
+            r = subprocess.run(cmd + argv, capture_output=True, timeout=15, env={**os.environ, **env})
+        except FileNotFoundError:     # P278: no systemd-run (a container, WSL without systemd): the bus, then a plain reason
+            r = None
+        if r is None or r.returncode:
             # F14's PID namespace cannot authenticate on systemd's private socket;
             # the user's D-Bus broker can authenticate the same uid correctly.
             # `--` ends busctl's own options: the job's argv (`--recovery-worker`, `--worker --job …`) follows as plain
@@ -94,9 +97,14 @@ def launch_job(st, argv, purpose='recovery', *, restart=False, extra_env=None):
                    'ExecStart', 'a(sasb)', '1', argv[0], str(len(argv)), *argv, 'false', '0']
             if restart:
                 bus[-1:-1] = ['Restart', 's', 'on-failure', 'RestartSec', 't', '5000000']
-            r = subprocess.run(bus, capture_output=True, timeout=15)
-            if r.returncode:
-                raise service.ServiceError('recovery_launch_failed')
+            try:
+                r = subprocess.run(bus, capture_output=True, timeout=15)
+            except FileNotFoundError:
+                r = None
+            if r is None or r.returncode:
+                # P278: say why when there is no systemd user manager at all (never a traceback)
+                why = service.systemd_problem()
+                raise service.ServiceError(why if why in service.NO_MANAGER else 'recovery_launch_failed')
     elif service.platform() == 'macos':
         path = Path(service.plist_path(label))
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -117,9 +125,10 @@ def launch_job(st, argv, purpose='recovery', *, restart=False, extra_env=None):
 def cleanup_job(st):
     # The one-shot job has no KeepAlive; unload only our UUID label after the
     # durable result is written. launchd may terminate us at this last operation.
+    # P282: `switch` too — /switch-harness scan / switch jobs stayed loaded with RunAtLoad and re-ran at every login.
     path = os.environ.get('AGENTJ_JOB_PLIST')
     label = os.environ.get('AGENTJ_JOB_LABEL', '')
-    if service.platform() == 'macos' and path and re.fullmatch(r'net\.agentj\.(?:recovery|update|autoupdate)\.[a-f0-9]{32}', label):
+    if service.platform() == 'macos' and path and re.fullmatch(r'net\.agentj\.(?:recovery|update|autoupdate|switch)\.[a-f0-9]{32}', label):
         p = Path(service.plist_path(label))
         if str(p) == path:
             p.unlink(missing_ok=True)
@@ -130,8 +139,9 @@ def schedule(st, argv, target):
     record(st, 'pending', target, external=True)
     try:
         launch_job(st, argv + ['service', 'install', '--recovery-worker', target])
-    except Exception:
-        record(st, 'failed', target, 'launch_failed', external=True)
+    except Exception as e:
+        reason = e.reason if isinstance(e, service.ServiceError) and e.reason in service.NO_MANAGER else 'launch_failed'
+        record(st, 'failed', target, reason, external=True)
         raise
 
 
@@ -261,6 +271,8 @@ def failure(st):
 
 
 def failure_text(rec):
+    if rec and rec.get('reason') in service.NO_MANAGER:   # P278: no systemd here — say so and how to fix it
+        return service.MESSAGES[rec['reason']]
     if rec and rec.get('reason') == 'rolled_back':   # P142 (B15)
         return ('新版本的服务没能启动，已自动回滚到原来的版本，一切照旧。运行 `agentj doctor` 可查看详情。 / '
                 'The new version\'s service did not start, so Agent J rolled back to the previous version; everything works as '

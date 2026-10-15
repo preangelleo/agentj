@@ -4,10 +4,16 @@ Phone (approved devices only, inside the Noise session; routed through elevate.P
 - `ct_list {r, sort?, q?, limit?}` → `ct_res {r, ok, contacts, count, me, mail}` — `me` = the owner's own addresses (the
   e-mail channel's allowlist rows with role owner), `mail` = can this computer send (P170 SMTP + app password).
 - `ct_save {r, contact, id?}` → `ct_res` — the forward dialog's 「新增」 (address + nickname) or an edit.
-- `mail_fwd {r, to: [{addr, name?}], turn?, mid?, input?}` → `mail_fwd_res {r, ok, why?, sent?, files?, skipped?}` — a reply
+- `mail_fwd {r, to: [{addr, name?}], turn?, mid?, input?, again?}` → `mail_fwd_res {r, ok, why?, sent?, files?, skipped?,
+  skips?, limit?, refused?, ago?}` — a reply
   page (P189: the input that started it — sender remote, time, quote — unless `input: false`, then the reply, as the
   mail_template HTML + plain text; its files attached within FILES_MAX, the rest listed 「文件太大未附上」) or one file of it, mailed through the owner's SMTP to exactly the addresses the owner picked in the dialog. Then every
   address is remembered (new ones as contacts, source `phone`) and counted (last_sent_at, send_count).
+  P295: `skips` = [{name, bytes, why: too_big | secret | gone}] — the owner's phone hears the real reason (the outsider's
+  mail only says 「未附上」), `limit` = FILES_MAX; `refused` = recipients the SMTP server turned down (the rest went);
+  the same page / file to the same recipients again within DUP_WINDOW → why `dup` + `ago` (seconds) until the phone
+  resends with `again: true`. A reply that opens with the Agent's short English work notes before its first tool call
+  (「Need to create worktree first …」 in a Chinese reply) goes without them.
 - `ct_card_answer {id, n, ok, contact?}` — the owner's answer to a contact card.
 - P207 `ct_rm {r, id}` → `ct_res {r, ok, result?, contact?, why?}` — delete one contact (slot 0 / the owner: why `owner`).
 - P207 `ct_export {r, fmt}` (vcf | csv, default vcf) → `ct_res {r, ok, fmt, text, count}`; a whole answer past the §10.1
@@ -23,8 +29,11 @@ Agent (elevate.sock, visible inside the fence, `agentj contacts` / `agentj mail 
 - `{t: mail_send, to, to_owner?, subject, body, files}` → `to_owner: true` adds the owner's own addresses (slot 0 + the
   「我本人」 allowlist rows; none → `no_owner_address`) to `to` (union, deduped, ≤ 10 in all); names are looked up in the address book (no unique match → `not_found`, the
   Agent says so and offers a card); files must be the Agent's own (media.check: inside its folder, no secrets); then an
-  approval card shows recipients, subject and attachments — mail goes out only when the owner allows. A group member's /
-  guest's turn never reaches that card (serve.ask). Sent addresses are remembered with source `agent`.
+  approval card shows recipients, subject and attachments — mail goes out only when the owner allows. P296: when every
+  recipient is the owner's own address (reason `owner_direct`) or on the mail allowlist (P170 rows, any role; reason
+  `allowlist`) there is no card; one other recipient → the card as before, which offers each recipient not yet on the
+  allowlist as an unticked box 「以后发给 X 不用再确认」 — ticked ones are signed with the allow and join as guests. A group member's / guest's turn never sends (provenance check above the card). Sent addresses are
+  remembered with source `agent`.
 Logs carry counts and reason words, never an address, a name or a body.
 """
 from __future__ import annotations
@@ -45,6 +54,9 @@ TTL = 600
 MAX_TO = 10
 FWD_PER_HOUR = 30                     # mails per device per hour from the forward dialog
 FILES_MAX = 20 * 1024 * 1024          # attachments of one mail (most providers stop at 20–25 MB)
+DUP_WINDOW = 600                      # P295: the same page to the same recipients within 10 min asks first
+_NOTE = re.compile(r"[A-Z][^\n`|#>*\[\]]{8,200}[.:…!]")   # P295: one English sentence of work notes
+_CJK = re.compile(r"[\u3400-\u9fff\uf900-\ufaff]")
 _ID = re.compile(r"[0-9a-f]{32}")
 PHONE_TYPES = ("ct_list", "ct_save", "ct_card_answer", "mail_fwd")
 PHONE_TYPES += ("ct_rm", "ct_export", "ct_import")   # P207: delete one contact, export the book, import a file's text
@@ -62,6 +74,9 @@ T = {
 }
 
 
+DENIED = {"zh": "主人没在手机上确认，邮件没有发出", "en": "The owner did not confirm on the phone; the mail was not sent"}
+
+
 class ContactService:
     def __init__(self, elev):
         self.elev = elev
@@ -71,6 +86,7 @@ class ContactService:
         self.results: dict[str, dict] = {}
         self.bg: set = set()
         self.rate: dict[str, collections.deque] = collections.defaultdict(collections.deque)
+        self.recent: dict[tuple, float] = {}  # P295: (what, recipients) → when it last went out
 
     def lang(self) -> str:
         return "en" if getattr(self.host, "lang", "zh") == "en" else "zh"
@@ -96,6 +112,39 @@ class ContactService:
         """P194: slot 0's e-mails first, then the e-mail channel's 「我本人」 rows (P170)."""
         return C.owner_emails(self.st)
 
+    def allowlisted(self, addrs) -> bool:
+        """P296: every address is on the e-mail channel's allowlist (P170, any role) — the same rows that let their mail in."""
+        from . import mail as M
+        rows = {str(r.get("addr", "")).lower() for r in M.read_config(self.st).get("allow") or []}
+        return bool(addrs) and all(str(a).lower() in rows for a in addrs)
+
+    def allow_add(self, addrs: list[str]) -> list[str]:
+        """P296: the recipients the owner ticked on the signed mail card join the allowlist as guests (no second card: the
+        card's signature covers them, serve._answer checked they were offered). → the addresses actually added."""
+        from . import mail as M
+        if not addrs:
+            return []
+        cfg = M.read_config(self.st)
+        have = {str(r.get("addr", "")).lower() for r in cfg.get("allow") or []}
+        new = [a for a in addrs if a.lower() not in have]
+        if not new:
+            return []
+        try:
+            nxt = dict(cfg, allow=[*cfg.get("allow", []), *({"addr": M.norm_addr(a), "role": "guest"} for a in new)])
+            mail = getattr(self.host, "mail", None)
+            if mail is not None:
+                mail.set_config(nxt)
+            else:
+                M.save_config(self.st, M.validate(nxt))
+        except M.MailError as e:
+            self.st.log("mail_allow", device="card", result=e.why)
+            return []
+        self.st.log("mail_allow", device="card", role="guest", result="ok", count=len(new))
+        with contextlib.suppress(Exception):
+            self.host.activity("decision", result="allow", tool="邮件白名单" if self.lang() == "zh" else "Mail allowlist",
+                               text="guest")
+        return new
+
     def build(self, cfg: dict, to: list[str], subject: str, body: str, files=(), kind: str = "forward",
               html: str | None = None) -> EmailMessage:
         from . import mail as M
@@ -114,11 +163,22 @@ class ContactService:
             m.add_attachment(data, maintype=main or "application", subtype=sub or "octet-stream", filename=name)
         return m
 
-    def smtp_send(self, cfg: dict, pw: str, msg: EmailMessage, to: list[str]) -> None:
+    def smtp_send(self, cfg: dict, pw: str, msg: EmailMessage, to: list[str]) -> tuple[int, str]:
+        """→ (recipients the server refused, its queue id from the 250 after DATA — `OK 1791991713 …-gsmtp` → `…-gsmtp`)."""
         from . import mail as M
         c = M.smtp_open(cfg, pw)
+        got = {}
+        data = c.data
+
+        def keep(m):                   # sendmail drops DATA's reply; keep it as the receipt
+            code, repl = data(m)
+            got["r"] = repl
+            return code, repl
+        c.data = keep
         try:
-            c.send_message(msg, from_addr=cfg["address"], to_addrs=to)
+            refused = c.send_message(msg, from_addr=cfg["address"], to_addrs=to) or {}
+            words = re.findall(r"[A-Za-z0-9._@<>-]{6,}", (got.get("r") or b"").decode("ascii", "replace"))
+            return len(refused), (words[-1][:64] if words else "")
         except M.MailError:
             raise
         except Exception as e:   # noqa: BLE001
@@ -174,8 +234,9 @@ class ContactService:
             return await self.host.send_app(s, {"t": "ct_res", "r": r, **res})
         if t == "mail_fwd":
             res = await self.forward(s, obj)
+            log = res.pop("_log", {})
             self.st.log("mail_fwd", device=s.device, result="ok" if res.get("ok") else res.get("why"), to=res.get("sent", 0),
-                        files=res.get("files", 0))
+                        files=res.get("files", 0), skipped=res.get("skipped", 0), refused=res.get("refused", 0), **log)
             return await self.host.send_app(s, {"t": "mail_fwd_res", "r": r, **res})
 
     def _list(self, obj: dict) -> dict:
@@ -243,6 +304,13 @@ class ContactService:
             q.popleft()
         if len(q) >= FWD_PER_HOUR:
             return {"ok": False, "why": "rate_limited"}
+        key = (turn if type(turn) is int else None, mid if isinstance(mid, str) else None, obj.get("input") is not False,
+               tuple(sorted(r["addr"] for r in recips)))
+        for k, at in list(self.recent.items()):
+            if now - at >= DUP_WINDOW:
+                del self.recent[k]
+        if key in self.recent and obj.get("again") is not True:
+            return {"ok": False, "why": "dup", "ago": int(now - self.recent[key])}
         from . import owner_route
         mine = await asyncio.to_thread(owner_route.all_owner, self.st, [r["addr"] for r in recips])
         content = await asyncio.to_thread(self._content, turn, mid, obj.get("input") is not False, mine)
@@ -250,19 +318,26 @@ class ContactService:
             return {"ok": False, "why": "not_found"}
         if content == "secret":       # P211: a file checked for the owner's page, refused by the strict rules for others
             return {"ok": False, "why": "secret"}
-        subject, body, files, html, skipped = content
+        subject, body, files, html, skips = content
         msg = self.build(cfg, [r["addr"] for r in recips], subject, body, files, html=html)
         q.append(now)
         from . import mail as M
+        log = {"domains": sorted({r["addr"].rpartition("@")[2] for r in recips})[:MAX_TO],   # never a whole address
+               "msgid": str(msg["Message-ID"]).strip("<>")[:120]}
         try:
-            await asyncio.to_thread(self.smtp_send, cfg, pw, msg, [r["addr"] for r in recips])
+            refused, smtp_id = await asyncio.to_thread(self.smtp_send, cfg, pw, msg, [r["addr"] for r in recips])
         except M.MailError as e:
-            return {"ok": False, "why": "send_failed", "detail": e.why}
+            return {"ok": False, "why": "send_failed", "detail": e.why, "_log": log}
+        log["smtp"] = smtp_id
+        self.recent[key] = now
         await asyncio.to_thread(C.record_sent, self.st, recips, "phone")
-        return {"ok": True, "sent": len(recips), "files": len(files), **({"skipped": skipped} if skipped else {})}
+        return {"ok": True, "sent": len(recips) - refused, "files": len(files), "_log": log,
+                **({"refused": refused} if refused else {}),
+                **({"skipped": len(skips), "skips": skips, "limit": FILES_MAX} if skips else {})}
 
-    def _content(self, turn, mid, with_input: bool = True, mine: bool = False) -> tuple[str, str, list, str | None, int] | None:
-        """(subject, text, [(name, mime, bytes)], html, files not attached) of what the owner forwards, or None when gone.
+    def _content(self, turn, mid, with_input: bool = True, mine: bool = False) -> tuple[str, str, list, str | None, list] | None:
+        """(subject, text, [(name, mime, bytes)], html, [{name, bytes, why}] not attached) of what the owner forwards, or None
+        when gone.
         P194: to the owner's own addresses only (`mine`) the owner mode — contacts, links and codes as written, credentials
         still redacted; with anyone else on the list the strict rules."""
         from . import mail_template
@@ -291,12 +366,13 @@ class ContactService:
             one = read(mid)
             if one is None or one == "secret":
                 return one
-            return L["file_subj"].format(agent=agent, name=one[0]), L["file_body"].format(agent=agent, name=one[0]), [one], None, 0
+            return L["file_subj"].format(agent=agent, name=one[0]), L["file_body"].format(agent=agent, name=one[0]), [one], None, []
         hist = getattr(self.host, "hist", None)
         page = hist.get(turn) if hist is not None else None
         text = ((page or {}).get("reply") or {}).get("text", "") if page and page.get("end") in ("done", "stopped", "failed") else ""
         if not text.strip():
             return None
+        text = self.drop_notes(text)
         files, skipped, total = [], [], 0
         for item in page.get("media") or []:
             if not isinstance(item, dict) or not isinstance(item.get("mid"), str):
@@ -308,8 +384,8 @@ class ContactService:
                 skipped.append((name, size, "too_big"))
                 continue
             got = read(item["mid"])
-            if got is None or got == "secret":       # an outsider's mail never says why a file stayed home
-                skipped.append((name, size, "gone"))
+            if got is None or got == "secret":       # an outsider's mail never says why a file stayed home (P295: 「未附上」)
+                skipped.append((name, size, "secret" if got else "gone"))
                 continue
             total += len(got[2])
             files.append(got)
@@ -321,8 +397,22 @@ class ContactService:
             if isinstance(raw.get("quote"), dict) and raw["quote"].get("text"):
                 src["quote"] = {"who": str(raw["quote"].get("who") or "")[:64], "text": redact(str(raw["quote"]["text"]))[:300]}
         subject, body, html = mail_template.render(lang=self.lang(), agent=agent, src=src, reply=redact(text),
-                                                   files=[(n, len(b)) for n, _, b in files], skipped=skipped)
-        return subject, body, files, html, len(skipped)
+                                                   files=[(n, len(b)) for n, _, b in files],
+                                                   skipped=[(n, b, "held" if w == "secret" else w) for n, b, w in skipped])
+        return subject, body, files, html, [{"name": n, "bytes": b, "why": w} for n, b, w in skipped]
+
+    def drop_notes(self, text: str) -> str:
+        """P295: a Chinese reply's leading English work notes — one short sentence per paragraph, written before the first
+        tool call and joined to the page by history.SEP — stay out of the mail. Never the whole reply, never in English."""
+        if self.lang() == "en" or not _CJK.search(text):
+            return text
+        paras = text.split("\n\n")
+        n = 0
+        while n < len(paras) - 1 and n < 3 and _NOTE.fullmatch(paras[n].strip()) and paras[n].count(" ") >= 3 \
+                and "://" not in paras[n] and not _CJK.search(paras[n]):
+            n += 1
+        rest = "\n\n".join(paras[n:])
+        return rest if n and _CJK.search(rest) else text
 
     # ------------------------------------------------------------------ the Agent
     async def agent(self, req: dict) -> dict:
@@ -354,7 +444,8 @@ class ContactService:
         return good[0][1]["emails"][0]["v"], good[0][1]
 
     async def agent_send(self, req: dict) -> dict:
-        """`agentj mail send`: always the owner's approval card first; only the addresses shown there."""
+        """`agentj mail send`: only the addresses shown on the owner's approval card — or, P296, no card when every
+        recipient is the owner's own or on the mail allowlist."""
         from . import media as media_mod
         from . import provenance, tg_media
         to_raw = req.get("to")
@@ -432,10 +523,27 @@ class ContactService:
                      ((f"；其中 {keys} 个密钥不随邮件发出，改成手机上的密钥领取卡" if zh else
                        f"; {keys} key(s) stay out of the mail and come as secret pickup cards") if keys else "")
                      if mine else ("发给外人：邮箱、电话、密钥等会打码" if zh else "To others: e-mail, phone numbers and keys are masked"))
-        ans = await self.host.ask("agentj mail send", {"summary": "\n".join(lines)}, batch=False)
+        listed = mine or await asyncio.to_thread(self.allowlisted, [r["addr"] for r in recips])
+        if listed:      # P296: only the owner's own / allowlisted addresses — no card; logged, not asked
+            if self.host.stopped():
+                return {"ok": False, "why": "stopped", "detail": "已急停，邮件没有发出 / Agent J is stopped; the mail was not sent"}
+            from . import approvals
+            tool, summary, by = "agentj mail send", "\n".join(lines), "owner_direct" if mine else "allowlist"
+            rid = secrets.token_hex(16)
+            approvals.record(self.st, rid=rid, agent=getattr(getattr(self.host, "agent", None), "kind", "?"), tool=tool,
+                             input_sha256=approvals.input_digest({"summary": summary}),
+                             shown_sha256=approvals.shown_digest(tool, summary), decision="allow", reason=by, cats=[])
+            with contextlib.suppress(Exception):
+                self.host.activity("auto", id=rid, tool=tool, summary=summary, by=by)
+            ans = {"behavior": "allow"}
+        else:           # P296: the card offers each recipient not yet on the allowlist as an unticked box
+            mine_set = set(C.owner_emails(self.st))
+            offer = [r["addr"] for r in recips if r["addr"] not in mine_set and not self.allowlisted([r["addr"]])]
+            ans = await self.host.ask("agentj mail send", {"summary": "\n".join(lines)}, batch=False, allow_offer=offer)
         if ans.get("behavior") != "allow":
             self.st.log("mail_send", result="denied", to=len(recips))
-            return {"ok": False, "why": "denied", "detail": "主人在手机上拒绝了 / declined on the phone"}
+            return {"ok": False, "why": "denied", "detail": DENIED[self.lang()]}
+        added = await asyncio.to_thread(self.allow_add, ans.get("allow_add") or [])
         from .privacy import redact
         rep = {}
         if mine:        # P194: owner-directed — as written, credentials diverted to secret pickup cards
@@ -449,11 +557,11 @@ class ContactService:
             await asyncio.to_thread(self.smtp_send, cfg, pw, msg, [r["addr"] for r in recips])
         except M.MailError as e:
             self.st.log("mail_send", result="failed", why=e.why)
-            return {"ok": False, "why": "send_failed", "detail": e.why}
+            return {"ok": False, "why": "send_failed", "detail": e.why, **({"allowlisted": added} if added else {})}
         rec = await asyncio.to_thread(C.record_sent, self.st, [{"addr": r["addr"], "name": r["name"]} for r in recips], "agent")
         self.st.log("mail_send", result="sent", to=len(recips), files=len(files), owner=mine)
         return {"ok": True, "sent": [r["addr"] for r in recips], "files": names, "new_contacts": [x["addr"] for x in rec if x["added"]],
-                "owner_direct": mine, **({"secret_cards": rep["cards"], "withheld": rep["withheld"]} if rep.get("cards") or
+                "owner_direct": mine, "no_card": bool(listed), **({"allowlisted": added} if added else {}), **({"secret_cards": rep["cards"], "withheld": rep["withheld"]} if rep.get("cards") or
                                           rep.get("withheld") else {})}
 
     # ------------------------------------------------------------------ the contact card

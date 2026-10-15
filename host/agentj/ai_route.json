@@ -1,0 +1,17 @@
+{
+  "schema": "agentj.ai-route/v1",
+  "_comment": "P279: the ONE place for the AI-route recommendation (Kimi Plus for regions without Claude Code / Codex). Change the invite link here; a bound host prefers the platform's partner entry (slot ai-coding, name Kimi) when it has one. Measured 2026-10-14: experimental/kimi-opencode/REPORT-plus.md.",
+  "kimi": {
+    "name": "Kimi",
+    "invite_url": "https://kimi-bot.com/activities/en/invite/share?scenario=subscribe&from=share_poster&invitation_code=DYLQCT",
+    "official_url": "https://www.kimi.com/",
+    "console_url": "https://www.kimi.com/code/console",
+    "hosts": ["kimi-bot.com", "www.kimi-bot.com", "kimi.com", "www.kimi.com", "kimi.ai", "www.kimi.ai"],
+    "key_env": "KIMI_API_KEY",
+    "verify_url": "https://api.kimi.com/coding/v1/models",
+    "model": "kimi-code-plan-cn/k3",
+    "model_light": "kimi-code-plan-cn/kimi-for-coding",
+    "model_global": "kimi-code-plan-global/k3",
+    "verify_url_global": "https://api.kimi.ai/coding/v1/models"
+  }
+}

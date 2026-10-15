@@ -5,8 +5,9 @@ import { controlMessage, b64u } from '../proto/wire.js';
 import { request, done, isReady, channel, sendApp, randHex, gen, peer } from './session.js';
 import { signKey } from './store.js';
 import { myDeviceId } from './api.js';
-import { t, lang, locale, plain } from './t.js';
+import { t, lang, locale, plain, fillText } from './t.js';
 import { el, mk, toast, toastAction, confirmSheet } from './ui.js';
+import { copyable } from './copycode.js';   // P292
 
 let H = null;          // {show(view), estopChanged(), friends()}
 export function configure(h) { H = h; }
@@ -147,7 +148,7 @@ export function loadMemory() {
         const body = mk('div', 'mem-body');
         if (it.title) body.append(mk('p', 'mem-title', String(it.title) + (it.file ? `  ·  ${it.file}` : '')));
         if (it.desc) body.append(mk('p', 'small mem-desc', String(it.desc)));
-        body.append(mk('pre', 'mem-text', it.text + (it.cut ? '\n' + t('mem.cut', { shown: it.text.length, total: it.cut }) : '')));
+        body.append(copyable(mk('pre', 'mem-text', it.text + (it.cut ? '\n' + t('mem.cut', { shown: it.text.length, total: it.cut }) : '')), { click: false, text: () => it.text }));   // P292: ⧉ copies the memory
         const del = mk('button', 'aj-btn aj-btn--sm mem-del', t('mem.del')); del.type = 'button';
         del.setAttribute('aria-label', t('mem.delAria'));
         del.addEventListener('click', () => deleteMemory(key));
@@ -236,7 +237,7 @@ export function loadActivity(fresh) {
       actNext = typeof m.next === 'string' ? m.next : null;
       el('act-more').hidden = !actNext;
       const n = el('act-list').children.length;
-      el('act-status').textContent = (m.on === false ? t('act.off') + ' ' : '') + (n ? t('act.recent', { n }) : t('act.none'));
+      fillText(el('act-status'), (m.on === false ? t('act.off') + ' ' : '') + (n ? t('act.recent', { n }) : t('act.none')));   // P292: `agentj config activity on` + ⧉
     }
   });
 }

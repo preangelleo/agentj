@@ -65,6 +65,8 @@ Tap either line (or the number next to it) and the "Usage" box opens in the midd
 for example week 58 %, 5 hours 34 %, context 64 %, and how long ago they were reported. "Got it", a tap outside or Esc
 closes it.
 
+The day in brackets after the weekly figure is where you are in the 7-day reset cycle. The Usage box also has a "Reset cycle" bar with how long until the reset and when, and a small line under each quota with how much you will have used by the reset at the current pace. The figures do not glow normally: the weekly one glows faint blue when it is used faster than the even pace (about 14% a day), and its used part turns light blue in the box; anything at 80% or more glows soft orange, at 90% or more orange-red — little is left. Providers that do not report a reset time show no day.
+
 （Screenshot：Water past half: the level in the background is above the middle — https://agentj.app/docs/manual/water-high.en.webp）
 ### The water is past half — what now?
 
@@ -84,8 +86,10 @@ The handoff path is fixed and copyable from the phone: `~/.local/state/agentj/ha
 Agent J itself reminds the Agent to read the handoff and carry on, and the phone shows one line about it. See the
 compaction and handoff page.
 
-`/clear` wipes the whole conversation and starts fresh; it asks first and can be undone. To keep your progress, use
-`/compact`, not `/clear`.
+`/clear` starts a new conversation. It asks first, and you can undo it until you send your next message; once the new
+conversation has begun, the button turns into a short "Too late to undo: the new conversation has started. The old one is saved on this computer." line and the old one stays on your computer. To keep
+your progress, use `/compact`, not `/clear`. Status lines such as the new-conversation greeting address you as "Chairman" by
+default; change it with `agentj config set owner.address Alex`.
 
 ## Heartbeat: the Agent checks in by itself
 
@@ -104,7 +108,7 @@ hold still for a third of a second and then drag, and you are selecting text ins
 dragging a selection's handles. While a long reply scrolls, the name, the load line and the robots stay pinned at the top of
 the card.
 
-The header is split into three equal parts: double-tap the left third to go to the first (oldest) message, double-tap the right third (the page number) for the latest; the middle third is for unread replies. When replies arrived after this remote last looked, a small pulsing round badge in the middle of the header shows how many; tap it to jump to the first unread reply and page forward from there — the badge goes away once you reach the latest. With nothing unread there is no badge and a tap in the middle does nothing. Holding the logo at the top left, or pressing `u` on a computer, also jumps to the first unread reply. Each remote keeps its own unread count; silent turns do not count.
+The header is split into three equal parts: double-tap the left third to go to the first (oldest) message, double-tap the right third (the page number) for the latest; the middle third is for unread replies. When replies arrived after you last looked, a small pulsing round badge in the middle of the header shows how many; tap it to jump to the first unread reply and page forward from there — the badge goes away once you reach the latest. With nothing unread there is no badge and a tap in the middle does nothing. Pressing `u` on a computer also jumps to the first unread reply. Unread replies sync across all your remotes: seeing a reply on any remote clears that reply and earlier unread hints on the others. An offline remote syncs before showing unread hints when it returns. Silent turns do not count.
 
 The buttons under a reply, left to right:
 
@@ -116,11 +120,13 @@ The buttons under a reply, left to right:
 | Two pages | Copy the whole reply |
 | Curved arrow | Reply to this one; the quote appears above the message box |
 
-Select some text in a reply to quote just that part.
+Select some text in a reply to quote just that part. Selecting somewhere else adds another quote instead of replacing it — up to 5, from any replies, also while paging or in the full-screen reader — side by side above the message box; tap a quote's words to read it in full, its time to jump back to it (highlighted), its ✕ to remove it; the ✕ at the end or Esc clears them all. The clipboard always holds your latest selection.
 
 On its own at the bottom left of the reply card is a white round button (a ring with a gap and an arrow leaving it): Share as a web report — it turns what you worked out in the chat into a good-looking web page you can send to others. Tap it and the message box gets `/web-page-report` with the cursor after it; nothing is sent. Add a line if you like — "only the pricing part, for people at my company, open for a week" — or send it as it is and the Agent asks first: the whole conversation, a few topics or just this reply; who may open it (anyone with the link, an access code, only your company's e-mail domain, any e-mail sign-in); how long it stays up; whether to hide names and numbers. Once you have said it, it does not ask again. Tap it on an older reply and that reply goes along as a quote, so the Agent knows where to start. If the web report skill is not on your computer yet, the Agent asks whether to install it from the plaza first.
 
-The name at the top left of the reply card is the name you gave your Agent. Press and hold it to rename the Agent — the same as `agentj name` on your computer; the new name shows on the phone and the computer. Sometimes a few little pixel robots dance at the top right: each one is an Agent working for you in the background — a workflow CEO, or a helper the main Agent sent out. New work brings a new robot; a robot whose work is done takes a bow and floats away. A phone shows up to 6 side by side, then +N. Tap the robots and a square opens in the middle of the screen: how many Agents are at work, who is watching them for you, and all of them listed — each row its robot, who, and what it is doing (the whole task title, with an ellipsis if it is too long). Tap a row to open that Agent's own card: where it runs, how long it has been working, its latest step, and for a background dispatch the report path and the report's first line; the card is only for looking, and Back returns to the list. Sub-agents sent out by Claude Code, Codex and OpenCode all show up this way. At its bottom, "Change the look" sends the Agent a message from you asking to customize the look, and it asks how you want the robots, colours, logo or send button to change, then validates the theme before applying it. Pressing and holding the robots does the same. ESC or a tap outside closes it. The robot gallery and the display rules: [Background robots](https://agentj.app/docs/robots/).
+Hold the round button and the Hot key sheet rises from the bottom: what it is bound to now and what a tap does, then every command and skill of the phone's 「/」 menu (one-tap commands, your own commands, the Agent's skills), with a search box. Bind it to anything you use often: pick one, tap Bind it, and from then on the button is that — the icon stays the same. Bound to a command (`/status`, `/compact` …) a tap runs it at once; one that wipes the conversation such as `/clear` still asks you first — a hot key never skips that. Bound to a skill, a tap puts it in the message box; add a line and send, and the Agent runs it on that reply. Back to default at the top of the list makes it Share as a web report again. You can also ask the Agent to change it, or run `agentj config set ui.card_hot_action status` on the computer.
+
+The name at the top left of the reply card is the name you gave your Agent. Press and hold it to rename the Agent — the same as `agentj name` on your computer; the new name shows on the phone and the computer. Sometimes a few little pixel robots dance at the top right: each one is an Agent working for you in the background — a workflow CEO, or a helper the main Agent sent out. New work brings a new robot; a robot whose work is done takes a bow and floats away. A phone shows up to 6 side by side, then +N. Tap the robots and a square opens in the middle of the screen: how many Agents are at work, who is watching them for you, and all of them listed — each row its robot, who, and what it is doing (the whole task title, with an ellipsis if it is too long). Tap a row to open that Agent's own card: where it runs, how long it has been working, its latest step, and for a background dispatch the report path and the report's first line; the card is only for looking, and Back returns to the list. Sub-agents sent out by Claude Code, Codex and OpenCode all show up this way. They show whether or not the main Agent is replying; work running with no robot means it was not registered — ask the Agent to wrap it in `agentj busy run`. At its bottom, "Change the look" sends the Agent a message from you asking to customize the look, and it asks how you want the robots, colours, logo or send button to change, then validates the theme before applying it. Pressing and holding the robots does the same. ESC or a tap outside closes it. The robot gallery and the display rules: [Background robots](https://agentj.app/docs/robots/).
 
 The thin grey line under the name is the load line: a light-coloured segment glides back and forth along it, and the faster it glides, the busier your computer is — if it is racing and your message can wait, wait a little. Tap the line and a square in the middle of the screen explains it: the overall load right now, then five rows — CPU, memory, GPU, disk and network: disk is how busy reads and writes are plus the space left, network is what goes in and out per second. Without a graphics card, or when it cannot be read, the row says "— (not detected)". The five are measured every 2–3 s only while the square is open and stop when it closes, so they cost your computer nothing otherwise. Last, how fast idle, normal and busy look (about 6 s, 3 s and 1 s a sweep). It stands still while the phone is disconnected.
 
@@ -198,11 +204,11 @@ With Codex, as long as you never wrote `sandbox_mode` at the top of `~/.codex/co
 - Up to 10 attachments at a time, 200 MB each, of any file type. Recordings and videos are transcribed on your computer and the Agent gets the original too. Very long pasted text becomes an attachment automatically.
 - Attachments travel encrypted straight to your computer, into the Agent's working folder, and are removed after 30 days.
 
-## Voice: hold to talk, release for text
+## Voice: tap to lock, hold to talk and release to send
 
 （Screenshot：Hold to talk: recording — https://agentj.app/docs/manual/voice.en.webp）
-- Hold the microphone and speak; release and the words appear in the message box for you to check. To cancel, slide clearly off the button (about 80 px away, or up by more than a button's height) and let go there; a shaky hand or a small move does not cancel, and sliding back keeps recording.
-- For a long take, double-tap the microphone to lock it; tap once more to finish. A quick or a slower double tap (within half a second) both count.
+- Hold the microphone and speak; release to transcribe and send automatically. Long recordings send as attachments. To cancel, slide clearly off the button (about 80 px away, or up by more than a button's height) and let go there; a shaky hand or a small move does not cancel, and sliding back keeps recording.
+- Tap or double-tap the microphone to lock recording. Wait half a second, then tap again to finish; review the words in the message box before sending. Keyboard m still releases to text and double-m still locks.
 - Speech is turned into text **on your own computer**, never by us. If the computer has no speech model yet, your phone
   keyboard's dictation works too.
 - To have every reply read aloud, turn on auto-read in Settings.
@@ -234,6 +240,8 @@ The two commands in the "Friends" group are put into the message box when tapped
 In the "Run now" group, the command to switch the AI coding tool (`/switch-harness`) goes to your main Agent with one tap; you can also type it in the message box, add "switch to Codex" after it and send it. It does not switch at once; it goes to your main Agent, which says which kind of tool it means, scans which ones this computer has, tries each one's sign-in with a quick headless call and tells you which ones you can switch to. It switches only after you confirm. The phone disconnects for a few seconds and reconnects by itself, then the new tool introduces itself; if it does not come up, Agent J switches back by itself and tells you why. See [Switch AI coding tool](https://agentj.app/docs/switch-harness/).
 Want commands of your own? Tap `/customize` in the list, or press and hold ≡: it sends the Agent a message from you asking to customize your slash commands; it lists the current ones, asks what to add, remove or change, and only switches the change on after it validates.
 
+Before switching, the tool you use now writes the conversation's key points into a handoff file; the new tool reads it first, then carries on. If none was written the switch still happens, and the phone says "No handoff this time".
+
 The menu also has "Stop everything" and the Agent's own skills. Other commands, such as changing settings, are for the
 computer. See [Agent friends](https://agentj.app/docs/friends/).
 
@@ -250,6 +258,10 @@ the answer did not arrive or the request had timed out. A long command shows two
 copy button at the right of the title copies the whole command. On a computer, `⌘↩` (Mac) or `Ctrl↩`
 (Windows / Linux) approves, the same as the hold; `Esc` tucks the card away.
 No answer within 2 minutes counts as a no. You can tuck the card away; a small tag at the top keeps reminding you.
+
+E-mail: mail to yourself, or to people who are all on your e-mail allowlist, goes out without a card. On a card for
+anyone else, each new recipient has an unticked "Don't ask again for mail to them (add to the allowlist)"; tick it and
+hold to approve, and they join the allowlist — their mail is handled directly and mail to them no longer asks you.
 
 In a shared session a card marked "Shows passwords or keys" would print a credential on the screen, and one marked "Changes passwords or keys" would change it; a program reading `.env` by name, or a note that mentions `.env`, no longer asks. For the stricter old rule run `agentj config approvals strict` on the computer (`agentj config approvals standard` switches back). Cards use only your language setting.
 
@@ -315,13 +327,36 @@ The gear in the top-right corner opens Settings, full screen (on a computer brow
 closes it). It is the only menu: Agent & remotes (the Agent's name, Remotes, Face ID, unpairing); Agent tools (Models & Key,
 Memory — rules the Agent keeps, you can delete them —, Activity — what it did recently and who approved what —, Schedules,
 Friends, Bots, the first-run checklist); language and appearance; reply text size, send sound volume, auto-read, wake word;
-lock-screen alerts; Channels (Email, Contacts — your friends' e-mails and phones, one tap onto the e-mail allowlist — and My contact details); safety options (high-risk warnings, session mode, isolation, Docker); the web app (how updates happen, upgrade Agent J on the computer,
+lock-screen alerts; Channels (re-pair Telegram, Email, Contacts — your friends' e-mails and phones, one tap onto the e-mail allowlist — and My contact details); safety options (high-risk warnings, session mode, isolation, Docker); the web app (how updates happen, upgrade Agent J on the computer,
 versions, update and reload, Add to Home Screen, keyboard shortcuts); account, help, and the security, privacy and terms
 pages. The phone must be connected to the computer to change settings.
 
 Every menu — Settings and the pages it opens, ≡ All commands, keyboard shortcuts, silent history, "How safe is this web app?" — is a full-screen dark page with the same header, icons and buttons. The back arrow at the top left does what Esc does: one level up, so a page opened from Settings returns to Settings. Confirmations and risky actions still ask in a centred card.
 
+### AI login rescue and renewing before expiry
+
+When the computer's Claude Code / Codex login expires, the Agent cannot reply. Open Settings → AI login rescue and sign in
+again from the phone, without going back to the computer: Codex shows a link and a device code; Claude Code shows an
+authorize link, and its code goes only into the secret card.
+
+With a long-lived Claude token, Agent J writes down the day it stored the token and counts one year from it. The section
+shows how many days the Claude login has left. On day 7, 3 and 1 before the expiry you get one reminder each: a note in the
+chat, a push, and a red banner at the top of the chat. Tap the banner (or Renew now in the section) → passkey → open the authorize link
+in the phone's browser and approve → paste the code into the secret card. The new token replaces the old one as soon as a
+few-second live check passes, and a new one-year countdown starts; if the check fails, the old one stays and you approve
+again. The authorize link lasts 10 minutes (the page counts down); when it expires or the code does not work, the computer
+opens a new link by itself (up to 3 rounds). The link goes only to paired phones, never to Telegram.
+
+Subscription /login and Codex's ChatGPT sign-in renew themselves, and provider keys usually do not expire, so they have no
+fixed date. Once a day the computer sends each signed-in AI one very short, tool-free test message. If the login no longer
+works (for example you signed out of all devices on the web), you are told at once to rescue it; running out of balance or
+hitting a rate limit never asks you to sign in again.
+
 ## Remotes
+
+At the bottom of Settings, "Download Agent J Brand Kit" opens the [official Brand Kit](https://agentj.app/docs/robots/#brand-kit) on the
+website in a new tab: the main logo and the 16 robots as transparent PNGs (256, 512 or 1024 pixels; 512 is recommended),
+ready to use as the avatar of your Telegram bot, your email or any other bot.
 
 （Screenshot：Remotes — https://agentj.app/docs/manual/remotes.en.webp）
 Settings → Remotes is its own page: how many of the 10 remotes are in use, every paired phone or browser (online or not,
@@ -337,23 +372,23 @@ On a computer browser or a tablet with a keyboard, press `?` for the full list (
 
 | Key | What it does |
 |---|---|
-| `j` · `←` | Previous page (older) |
+| `Alt+Shift+J` · `j` · `←` | Previous page (older) |
 | `k` · `→` | Next page (newer) |
-| `g` | Jump to the newest page |
+| `Alt+Shift+G` · `g` | Jump to the newest page |
 | `G` | Jump to the earliest page (older ones are fetched from the computer) |
-| `u` | Jump to the first unread reply (arrived after this device last saw the page), then page forward |
+| `u` | Jump to the first unread reply (read status syncs across your remotes), then page forward |
 | `o` · `↑` · `↓` | Expand / fold the message (↑ expands, ↓ folds; with nothing to toggle ↑ ↓ scroll the page) |
 | `f` | Read this reply full screen |
-| `y` | Copy the whole reply |
+| `Alt+Shift+Y` · `y` | Copy the whole reply |
 | `r` | Reply to this one (the quote shows above the message box; Esc cancels) |
-| `s` · `⌘+,` / `Ctrl+,` | Open Settings |
-| `⌘+K` / `Ctrl+K` | Search the chat (inside the message box Ctrl+K still deletes to the end); press again to close |
+| `Alt+Shift+O` · `s` · `⌘+,` / `Ctrl+,` | Open Settings |
+| `Alt+Shift+K` · `⌘+K` / `Ctrl+K` | Search the chat, or settings while Settings is open (inside the message box Ctrl+K still deletes to the end); press again to close |
 | `i` · `Esc` | Into the message box; Esc in it leaves (the draft stays) |
 | `/` | Commands: / outside the message box jumps in with / typed and the command menu open; not while a dialog or Settings is open |
 | `a` | Pick a file for the Agent |
 | `p` | Pick pictures from the photo library |
 | `c` | Take a photo |
-| hold `m` | Hold to talk, release for text (slide up while holding to cancel) |
+| hold `m` | Hold to talk, release to send (slide out to cancel); keyboard m still releases to text |
 | `Esc` `Esc` | Esc twice outside the message box clears text and attachments (✕ clears the text only, with undo). Esc never interrupts the Agent; to stop the current task, use the stop button or send /stop |
 | `⌘+Enter` / `Ctrl+Enter` | Approve, the same as holding the approve button (identity checks as usual); the card wins over the message box |
 
@@ -484,6 +519,12 @@ If an independent session's sandbox cannot start, the Agent stays stopped. The p
 
 The sudo card labels the reason and effect as **Agent claim**. Shell or interpreter commands are marked red and require an admin password even with the passwordless helper installed. Secret cards support URL verification; `--verify-cmd` is disabled and runs no command outside the sandbox. Scheduled tasks and native customer-service bots authenticate from native storage and do not inherit host-service API keys or tokens.
 
+### Connecting Telegram
+
+Telegram uses a bot of your own. Save its key with a key card, then run `agentj channel add telegram` on the computer or tap 「Re-pair Telegram」 in Settings. The chat shows a one-time 6-digit pairing code (10 minutes, one use). In Telegram, send `/start <code>` to your bot in a private chat: that chat becomes the owner, and the bot replies that Telegram is connected. No other bot is needed to look up your ID. Anyone else who writes to the bot only gets their own numeric ID back; a code sent in a group does not count. To move to a new phone or Telegram account, tap 「Re-pair Telegram」 again.
+
+The same bot can also be customer service for everyone else. In Bots, open a customer-service bot and tick 「Let my Agent J Telegram bot receive guests」 (or ask your Agent J; you approve it on the phone). Your paired private chat stays your main conversation; any other private chat becomes a visitor of that bot, with its own session, instructions, model and limits, and never gets your permissions. Off by default: then strangers only get their numeric ID. See [Customer service bots](https://agentj.app/docs/bots/).
+
 ### Telegram and friend safety boundaries
 
 Forwarded messages in the owner’s Telegram private chat are external data, not the owner’s instructions. Forwarded commands do not execute. Approval commands in groups remain silent; use the paired phone to approve. When the family safety check is unavailable, that message pauses: the owner can send the request directly from the paired phone. Only a leading `/notification` or `/notify` command counts as a reminder request; the word notification inside other text does not.
@@ -500,5 +541,44 @@ Support bots process Telegram private chats independently, preserving order with
 ## Five pages (candidate after 0.20.3)
 
 Tap the logo for Chat, Workflows, Skills, Memory or Agent J; hold it to return to Chat. These pages read your computer's documents and hide credential files. A workflow's @ inserts an atomic mention that sends as plain text. Tap the dancing robots for Working (AI tool and reported model) or Workflow (CEO, people and reporting lines); unassigned workers are temporary helpers. Alt+W opens the menu; Z still cycles text size and M still records.
+
+Double-click or double-tap a non-audio file card (image, video, PDF, document, text, code, Markdown or HTML) to view the file full screen, or use Full screen. Audio cards and reply text open the reply reader. Video keeps its playback position; Escape or Back closes the current viewer.
+
+
+A collapsed input card shows two quote lines and one body line, or up to three body lines without a quote, with an ellipsis for overflow. Attachments appear as a line paperclip and total count beside “…” (images, files and audio together); zero attachments show no count. Double-click the body, tap “…” or press `o` to expand all text, the quote and attachments.
+
+The Agent J father robot is the official logo. Its body follows the five state colours; the Send button uses its white silhouette. Outside chat it dances to remind you that holding it returns to chat. Reduced motion uses a static logo and a subtle inset heartbeat outline. When changing the background robots, Agent J first asks whether you also want a new five-state logo set; leaving it out keeps the current set.
+
+## When a goal needs a capability you have not set up
+
+Agent J checks existing APIs, skills and its browser sign-in before explaining what is missing and how to supply it. It does not end with “I cannot do that.” The routes, in order, are:
+
+1. **Official API.** For missing accounts, authorization or keys, it gives one sentence stating what you can supply, followed by a short list of providers, registration pages and approximate costs. After you agree it guides setup step by step. Keys go only in the phone secret card, never chat or the opening card. Service charges need separate approval.
+2. **A website with no API.** Agent J can operate it with its own browser. It first checks browser setup and the site's sign-in. When needed it says “This site has no official API; I can operate it through my browser. Please sign in to X there once” and starts the login flow. QR sites open a phone login card; QR codes only appear there. Other sites open a sign-in page on the computer. An uncertain check is reported as uncertain, never as signed in. Sign-in is not authorization: publishing, payment and other sensitive actions still require phone approval.
+3. **A missing platform primitive in this version.** It explains the gap, offers /feedback-to-agentj-father to send feedback to Agent J Father, and states what you must still supply once the capability is unlocked. For feedback it proposes itself, you review and approve the draft first. Your explicit /feedback-to-agentj-father command with content is redacted and submitted directly, without a second confirmation. Submission does not mean it is scheduled and never promises a release. Combined gaps get both paths.
+
+For goals needing a workflow, genuinely missing choices, authorization and setup go on one opening card (at most five required items), followed by a secret or login card as needed. Already authorized, equipped work continues; only dependent work waits. Truly illegal or dangerous requests are still refused.
+
+The first time you open Workflows, and each time Agent J starts on your computer, it scans the folders one level under the working root: folders organized with the workflow design method (an entry file and the documentation/ boot documents) show as cards; one missing from the CEO roster (documentation/ROLES.md) gets a row appended at its end — append-only, nothing else changes, and a row you delete is not added back. When no workflow is found, the three that come with Agent J (Knowledge base, Scripts and articles, E-book) are shown; Install it makes Agent J show you the preview first. Set up organization sends Agent J one standard instruction: organize the projects you use with the workflow design method, register their CEOs and check, listing any unorganized project for you first; nothing is deleted or moved. After one use it reads Review organization, which fills gaps.
+
+Open a workflow card and its staff are listed under the CEO: only employee files with a name in `.claude/agents/` (on the Codex side, the .toml files in `.codex/agents/`) count — a README or another note there does not; an employee file with a title (for example title: Copywriter) shows that name. When a CEO has no staff yet, the card carries a small line "Only a CEO, no staff yet", and the Review organization button adds the count, for example "Review organization (2 with only a CEO)". Tap it and Agent J reads that company's latest reports, task.json and RUN.md, lists 3–7 proposed staff roles for you first, and writes them only after you agree (the Codex copy is made with them), never over an employee file you changed. When work is sent to a company that has only a CEO, Agent J also mentions it once in its reply — once per company.
+
+## Full-screen history and file forwarding
+
+In the reader, swipe right on text for an older reply and left for a newer reply. Desktop ← / → do the same. A small bounce marks either end. Vertical scrolling, long-press selection, horizontally scrolling tables/code, file controls and edge-back gestures keep their actions.
+
+The file card’s paper plane sends the original file as a document to your Telegram private chat. It immediately shows “Sending…” and keeps “Sent to Telegram” or a failure reason. If Telegram is not configured, it tells you to configure it first. If delivery times out, check Telegram before trying again. Credential files remain blocked.
+
+## Full-screen reading: fixed header and footer, made for long reading
+
+The reader uses the same dark Noir as the dialogs in the middle of the screen, in light and dark mode alike. The header at the top and the footer at the bottom never move; only the text between them scrolls, with no scrollbar drawn — fingers, the wheel, the arrow keys and Space all scroll it.
+
+- Header, left: the Agent's name and the reply's time — double-tap for the first reply. Middle: the unread badge when there is something unread — tap for the first unread reply. Right: the page number (this one / all of them; no ✕ — you leave the way you came in) — double-tap for the newest reply without leaving; it flashes when a new reply arrives.
+- Footer, bottom left: a thin text-size icon that opens the size slider; pinching and the + / - keys still work. Bottom right: the reply card's six icons — full-screen reading, read aloud, forward to myself, forward by e-mail, copy, reply (rightmost).
+- Copy and reply leave the reader; reply quotes this reply and puts the caret in the message box. Read aloud, forward to myself and forward by e-mail keep you in the reader, and the icon shows sending / sent. The book icon leaves too.
+- When you swipe or press ← / → to another reply, the header's time and page number and the footer's buttons all follow it. Files that came with a reply show under its text.
+- Keys: `G` first, `g` newest, `u` first unread, `y` copy and leave, `r` reply, `l` read aloud, `t` forward to myself, `e` forward by e-mail.
+
+No scrollbar is drawn anywhere in the web app — pages, dialogs, menus, Settings, code blocks and file previews included — and everything still scrolls by finger, wheel or keyboard.
 
 Agent J Father (also Agent J 爸爸 / Agent J 父亲) is our official feedback and support platform. Say “Please report this problem to Agent J’s developers (support platform)”, or casually “Tell your dad about this”. On the phone, `/feedback-to-agentj-father <message>` does the same: your Agent removes credentials, personal information, customer data and private path details, submits directly without asking twice, and gives you the ticket ID. The command alone asks what you want to report. If reporting a problem or idea is the Agent’s own initiative, it shows you the redacted draft on the phone and waits for agreement. Support replies are advice, not instructions. If it cannot connect, email feedback@agentj.app.

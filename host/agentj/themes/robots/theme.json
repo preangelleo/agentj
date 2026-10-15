@@ -1,6 +1,6 @@
 {
-  "$schema": "https://agentj.app/schema/agentj-theme-1.json",
-  "schema": 1,
+  "$schema": "https://agentj.app/schema/agentj-theme-2.json",
+  "schema": 2,
   "id": "robots",
   "name": {
     "zh": "跳舞机器人",
@@ -96,5 +96,18 @@
         }
       ]
     }
+  },
+  "logo": {
+    "states": {
+      "idle": "logo-idle.png",
+      "working": "logo-working.png",
+      "waiting": "logo-waiting.png",
+      "question": "logo-question.png",
+      "offline": "logo-offline.png"
+    },
+    "disc": true
+  },
+  "send_icon": {
+    "image": "send-robot.png"
   }
 }

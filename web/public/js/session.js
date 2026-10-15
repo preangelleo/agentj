@@ -6,6 +6,7 @@
 // close, a new session) ends it. A send is bound to the generation it was queued on and re-checks it after pacing and
 // after encryption, so nothing queued before a reset can ever be encrypted under — or reach the socket of — the next
 // session; `hello` is always the first message of a generation; app messages go only on a `ready` generation.
+import { hostKind } from './offhint.js';
 import { IK, IKPSK2, Handshake } from '../proto/noise.js';
 import { KIND, MAX_JSON, MAX_JSON_P33, MAX_TEXT_P33, padJson, unpadJson, Defrag, pairPrologue, resumePrologue, safetyCode, frame, b64u } from '../proto/wire.js';
 import { deviceKey, signKey, installId } from './store.js';
@@ -75,7 +76,7 @@ export function reconnectReason() {
 // a handshake past the host timeout. Only an authenticated `removed` can revoke it;
 // confirm a revoked record once with the same device key before clearing local data.
 let refusals = 0, removalProbe = false;
-export const peer = { heartbeat: false, p33: false, asr: 'off', hist: 'off', tgfwd: false, pair1: false, tgfile: false, busyget: false, contacts: false, hfind: false, systasks: false };
+export const peer = { heartbeat: false, p33: false, asr: 'off', hist: 'off', tgfwd: false, pair1: false, tgfile: false, busyget: false, contacts: false, hfind: false, systasks: false, plat: null, boot: null };
 export function configure(hooks) { H = hooks; }
 export const current = () => sess;
 export const isReady = () => !!sess && sess.phase === 'ready';
@@ -189,6 +190,8 @@ function readCaps(m) {
   peer.pair1 = peer.p33 && Array.isArray(m.caps) && m.caps.includes('pair1');   // P153: add a remote from here (§3.3)
   peer.cards1 = peer.p33 && Array.isArray(m.caps) && m.caps.includes('cards1'); // P203 (§29.1): signed open-cards snapshot
   peer.upg1 = peer.p33 && Array.isArray(m.caps) && m.caps.includes('upg1');     // P203 (§29.2): upgrade impact + card
+  peer.mq = peer.p33 && Array.isArray(m.caps) && m.caps.includes('mq5');        // P286 (§10.6): ≤ 5 quotes in one say
+  Object.assign(peer, hostKind(m));                   // P287: what the offline line says if this computer goes away
 }
 
 async function onApp(s, m) {

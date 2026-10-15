@@ -5,45 +5,55 @@
 export const GROUPS = ["page","card","file","app","compose","read","viewer","search","appr"];
 /** [id, [[combo, how], …], has a gesture] — every entry with a key, in page order. */
 export const ROWS = [
-  ["page.prev",[["j","press"],["ArrowLeft","press"]],1],
+  ["page.prev",[["Alt+Shift+J","press"],["j","press"],["ArrowLeft","press"]],1],
   ["page.next",[["k","press"],["ArrowRight","press"]],1],
-  ["page.newest",[["g","press"]],1],
+  ["page.newest",[["Alt+Shift+G","press"],["g","press"]],1],
   ["page.earliest",[["G","press"]],1],
   ["page.first_unread",[["u","press"]],1],
-  ["page.quoted",[["q","press"]],1],
+  ["page.quoted",[["Alt+Shift+Q","press"],["q","press"]],1],
   ["page.expand",[["o","press"],["ArrowUp","press"],["ArrowDown","press"]],1],
   ["page.scroll",[["Space","press"],["Shift+Space","press"]],1],
+  ["page.go_chat",[],1],
   ["card.reader",[["f","press"]],1],
   ["card.speak",[["l","press"]],1],
   ["card.forward",[["t","press"]],1],
   ["card.mail",[["e","press"]],1],
-  ["card.copy",[["y","press"]],1],
+  ["card.copy",[["Alt+Shift+Y","press"],["y","press"]],1],
   ["card.copy_source",[["Y","press"]],0],
   ["card.reply",[["r","press"]],1],
+  ["card.quote_selection",[],1],
   ["card.web_report",[["W","press"]],1],
+  ["card.hot_pick",[],1],
   ["file.preview",[["v","press"]],1],
-  ["file.download",[["d","press"]],1],
-  ["file.share",[["x","press"]],1],
+  ["file.download",[["Alt+Shift+D","press"],["d","press"]],1],
+  ["file.share",[["Alt+Shift+X","press"],["x","press"]],1],
   ["file.mail",[["E","press"]],1],
   ["file.forward",[["T","press"]],1],
-  ["app.font_step",[["z","press"]],0],
+  ["app.font_step",[["Alt+Shift+Z","press"],["z","press"]],0],
   ["app.rename_agent",[["n","press"]],1],
   ["app.rename_remote",[["N","press"]],1],
   ["app.busy_list",[["b","press"]],1],
   ["app.robots_theme",[["B","press"]],1],
-  ["app.load",[["w","press"]],1],
+  ["app.load",[["Alt+Shift+W","press"],["w","press"]],1],
   ["app.quota",[["Q","press"]],1],
   ["app.model_step",[["Alt+M","press"]],1],
   ["app.effort_step",[["Alt+R","press"]],1],
   ["app.model_default",[["Alt+Shift+M","press"]],1],
   ["app.scan",[["C","press"]],1],
-  ["app.settings",[["s","press"],["Mod+,","press"]],1],
-  ["app.search",[["Mod+K","press"]],1],
-  ["app.keys",[["?","press"]],1],
+  ["app.settings",[["Alt+Shift+O","press"],["s","press"],["Mod+,","press"]],1],
+  ["app.search",[["Alt+Shift+K","press"],["Mod+K","press"]],1],
+  ["app.keys",[["Alt+Shift+H","press"],["?","press"]],1],
   ["app.pending",[["Alt+P","press"]],1],
+  ["app.pair_scan",[],1],
+  ["app.pair_copy",[],1],
   ["app.pages_menu",[["Alt+W","press"]],1],
   ["app.upgrade_host",[["Alt+Shift+U","press"]],1],
   ["app.refresh_web",[["Alt+Shift+R","press"]],1],
+  ["app.pair_add",[["Alt+Shift+P","press"]],0],
+  ["app.screenshot",[["Alt+Shift+C","press"]],1],
+  ["app.friends",[["Alt+Shift+F","press"]],1],
+  ["app.bots",[["Alt+Shift+E","press"]],1],
+  ["app.setup",[["Alt+Shift+V","press"]],0],
   ["compose.focus",[["i","press"],["Escape","press"]],1],
   ["compose.slash",[["/","press"]],1],
   ["compose.customize",[["Alt+/","press"]],1],
@@ -62,9 +72,23 @@ export const ROWS = [
   ["compose.readline",[["Ctrl+A","press"],["Ctrl+E","press"],["Ctrl+U","press"],["Ctrl+K","press"],["Ctrl+W","press"],["Ctrl+Y","press"]],0],
   ["compose.cancel_reply",[["Escape","press"]],1],
   ["compose.clear",[["Escape","double"]],1],
+  ["compose.rec_end",[],1],
+  ["compose.rec_cancel",[],1],
+  ["compose.rec_dim",[],1],
+  ["compose.quote_chip",[],1],
   ["read.close",[["f","press"],["Escape","press"]],1],
   ["read.font",[["+","press"],["-","press"]],1],
   ["read.scroll",[["ArrowUp","press"],["ArrowDown","press"],["Space","press"]],1],
+  ["read.prev",[["ArrowLeft","press"]],1],
+  ["read.next",[["ArrowRight","press"]],1],
+  ["read.first",[["G","press"]],1],
+  ["read.last",[["g","press"]],1],
+  ["read.first_unread",[["u","press"]],1],
+  ["read.copy",[["y","press"]],1],
+  ["read.reply",[["r","press"]],1],
+  ["read.speak",[["l","press"]],1],
+  ["read.forward",[["t","press"]],1],
+  ["read.mail",[["e","press"]],1],
   ["viewer.step",[["ArrowLeft","press"],["ArrowRight","press"]],1],
   ["viewer.download",[["d","press"]],1],
   ["viewer.close",[["Space","press"],["Escape","press"]],1],
@@ -76,13 +100,16 @@ export const ROWS = [
 ];
 /** match key → [id, repeat]: a plain key is KeyboardEvent.key; Alt (+Shift) is "alt:" / "alt+shift:" + KeyboardEvent.code. */
 export const KEYMAP = {
+  "alt+shift:KeyJ": ["page.prev",0],
   "j": ["page.prev",0],
   "ArrowLeft": ["page.prev",0],
   "k": ["page.next",0],
   "ArrowRight": ["page.next",0],
+  "alt+shift:KeyG": ["page.newest",0],
   "g": ["page.newest",0],
   "G": ["page.earliest",0],
   "u": ["page.first_unread",0],
+  "alt+shift:KeyQ": ["page.quoted",0],
   "q": ["page.quoted",0],
   "o": ["page.expand",1],
   "ArrowUp": ["page.expand",1],
@@ -92,32 +119,45 @@ export const KEYMAP = {
   "l": ["card.speak",0],
   "t": ["card.forward",0],
   "e": ["card.mail",0],
+  "alt+shift:KeyY": ["card.copy",0],
   "y": ["card.copy",0],
   "Y": ["card.copy_source",0],
   "r": ["card.reply",0],
   "W": ["card.web_report",0],
   "v": ["file.preview",0],
+  "alt+shift:KeyD": ["file.download",0],
   "d": ["file.download",0],
+  "alt+shift:KeyX": ["file.share",0],
   "x": ["file.share",0],
   "E": ["file.mail",0],
   "T": ["file.forward",0],
+  "alt+shift:KeyZ": ["app.font_step",0],
   "z": ["app.font_step",0],
   "n": ["app.rename_agent",0],
   "N": ["app.rename_remote",0],
   "b": ["app.busy_list",0],
   "B": ["app.robots_theme",0],
+  "alt+shift:KeyW": ["app.load",0],
   "w": ["app.load",0],
   "Q": ["app.quota",0],
   "alt:KeyM": ["app.model_step",0],
   "alt:KeyR": ["app.effort_step",0],
   "alt+shift:KeyM": ["app.model_default",0],
   "C": ["app.scan",0],
+  "alt+shift:KeyO": ["app.settings",0],
   "s": ["app.settings",0],
+  "alt+shift:KeyK": ["app.search",0],
+  "alt+shift:KeyH": ["app.keys",0],
   "?": ["app.keys",0],
   "alt:KeyP": ["app.pending",0],
   "alt:KeyW": ["app.pages_menu",0],
   "alt+shift:KeyU": ["app.upgrade_host",0],
   "alt+shift:KeyR": ["app.refresh_web",0],
+  "alt+shift:KeyP": ["app.pair_add",0],
+  "alt+shift:KeyC": ["app.screenshot",0],
+  "alt+shift:KeyF": ["app.friends",0],
+  "alt+shift:KeyE": ["app.bots",0],
+  "alt+shift:KeyV": ["app.setup",0],
   "i": ["compose.focus",0],
   "/": ["compose.slash",0],
   "alt:Slash": ["compose.customize",0],
@@ -128,7 +168,8 @@ export const KEYMAP = {
   "c": ["compose.camera",0],
   "V": ["compose.volume",0],
 };
-export const TABLE = ["page.prev","page.next","page.newest","page.earliest","page.first_unread","page.quoted","page.expand","page.scroll","card.reader","card.speak","card.forward","card.mail","card.copy","card.copy_source","card.reply","card.web_report","file.preview","file.download","file.share","file.mail","file.forward","app.font_step","app.rename_agent","app.rename_remote","app.busy_list","app.robots_theme","app.load","app.quota","app.model_step","app.effort_step","app.model_default","app.scan","app.settings","app.keys","app.pending","app.pages_menu","app.upgrade_host","app.refresh_web","compose.focus","compose.slash","compose.customize","compose.file","compose.paste_text","compose.photo","compose.paste_image","compose.camera","compose.volume"];
+export const TABLE = ["page.prev","page.next","page.newest","page.earliest","page.first_unread","page.quoted","page.expand","page.scroll","card.reader","card.speak","card.forward","card.mail","card.copy","card.copy_source","card.reply","card.web_report","file.preview","file.download","file.share","file.mail","file.forward","app.font_step","app.rename_agent","app.rename_remote","app.busy_list","app.robots_theme","app.load","app.quota","app.model_step","app.effort_step","app.model_default","app.scan","app.settings","app.search","app.keys","app.pending","app.pages_menu","app.upgrade_host","app.refresh_web","app.pair_add","app.screenshot","app.friends","app.bots","app.setup","compose.focus","compose.slash","compose.customize","compose.file","compose.paste_text","compose.photo","compose.paste_image","compose.camera","compose.volume"];
+export const GLOBAL = ["page.prev","page.newest","page.quoted","card.copy","file.download","file.share","app.font_step","app.load","app.model_default","app.settings","app.search","app.keys","app.upgrade_host","app.refresh_web","app.pair_add","app.screenshot","app.friends","app.bots","app.setup"];
 export function matchKey(e) {
   if (e.ctrlKey || e.metaKey) return null;
   if (e.altKey) return (e.shiftKey ? 'alt+shift:' : 'alt:') + e.code;
@@ -138,6 +179,21 @@ export function matchKey(e) {
 export function lookup(e) {
   const k = matchKey(e), hit = k !== null && Object.prototype.hasOwnProperty.call(KEYMAP, k) ? KEYMAP[k] : null;
   return hit ? { id: hit[0], repeat: !!hit[1] } : null;
+}
+/** The application function binding, before local viewer/field keyboard ownership. */
+export function functionalLookup(e) {
+  if (!e.altKey || !e.shiftKey || e.ctrlKey || e.metaKey || e.isComposing || e.keyCode === 229) return null;
+  const ix = lookup(e);
+  return ix && GLOBAL.includes(ix.id) ? ix : null;
+}
+/** Consume repeats and blocked layers without typing Option characters. */
+export function dispatchFunctional(e, actions, enabled = true, blocked = false) {
+  if (!enabled) return false;
+  const ix = functionalLookup(e);
+  if (!ix) return false;
+  e.preventDefault(); e.stopImmediatePropagation();
+  if (!blocked && !e.repeat) actions[ix.id]?.(e);
+  return true;
 }
 const NAMED = {"ArrowLeft":"←","ArrowRight":"→","ArrowUp":"↑","ArrowDown":"↓","Enter":"Enter","Escape":"Esc","Tab":"Tab","Backspace":"⌫"};
 /** One shortcut as the page shows it: [tokens, how] — tokens are <kbd> texts ("" = the word for Space). */

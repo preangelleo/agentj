@@ -179,7 +179,7 @@ class HotLanguage(unittest.IsolatedAsyncioTestCase):
             with patch('agentj.update.check',return_value={'status':'current','latest':'0.17.3a1'}),patch.object(phone_update,'launch') as launch:
                 await self.command(self.obj)
                 progress=self.h.cmd_card.call_args.args[1].text
-                self.assertIn("Checking and upgrading" if last=="en" else "正在查最新版",progress)
+                self.assertIn("Upgrading now" if last=="en" else "我去升级了",progress)
                 self.assertNotIn("正在查最新版" if last=="en" else "Checking and upgrading",progress)
                 await self.h.phone_upgrade_task
                 launch.assert_not_called()

@@ -80,6 +80,40 @@ def config_info(env=None) -> dict:
     return {"path": str(p), "exists": True, **parse(text)}
 
 
+# ------------------------------------------------------------------ P309: which service Codex really talks to
+_OFFICIAL = ("openai.com", "chatgpt.com")
+
+
+def provider(active=None, env=None) -> dict:
+    """{"id", "host", "relay"}: the model provider the main Agent's Codex uses. `active` is what Codex itself reported
+    (thread `modelProvider` / config/read `model_provider`), else config.toml's (`profile` first). Its `base_url` comes from
+    `[model_providers.<id>]`; the built-in `openai` one also honours `openai_base_url` and the service's OPENAI_BASE_URL
+    (the app-server inherits serve's environment, not the owner's terminal). relay = anything that is not OpenAI itself.
+    Only the host name is returned (a base_url may carry a key in its query): never the URL, never a key."""
+    from urllib.parse import urlsplit
+    e = os.environ if env is None else env
+    data: dict = {}
+    try:
+        import tomllib
+        data = tomllib.loads(config_path(e).read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, ValueError):
+        pass
+    prof = data.get("profiles", {}).get(data.get("profile")) if isinstance(data.get("profiles"), dict) else None
+    pid = active if isinstance(active, str) and active else (
+        (prof or {}).get("model_provider") if isinstance(prof, dict) else None) or data.get("model_provider") or "openai"
+    pid = pid if isinstance(pid, str) else "openai"
+    table = data.get("model_providers", {}).get(pid) if isinstance(data.get("model_providers"), dict) else None
+    base = table.get("base_url") if isinstance(table, dict) else None
+    if pid == "openai" and not base:
+        base = data.get("openai_base_url") or e.get("OPENAI_BASE_URL")
+    try:
+        host = (urlsplit(base.strip()).hostname or None) if isinstance(base, str) and base.strip() else None
+    except ValueError:
+        host = None
+    official = pid == "openai" and (host is None or any(host == d or host.endswith("." + d) for d in _OFFICIAL))
+    return {"id": pid[:60], "host": host[:100] if host else None, "relay": not official}
+
+
 def main_sandbox(human_mode, research: bool = False) -> tuple[str, str]:
     """(the `sandbox` parameter for thread/start|resume, its source) for an independent main-Agent thread."""
     if research:

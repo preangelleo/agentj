@@ -118,8 +118,20 @@ def _entropy(s: str) -> float:
     return -sum(c / n * math.log2(c / n) for c in collections.Counter(s).values())
 
 
+def _sluglike(tok: str) -> bool:
+    """P295: a web page's hyphenated title slug (`Asus-ExpertBook-B9-OLED-review-…`) is words, not a key: ≥ 6 hyphen-joined
+    chunks, each all letters, all digits or ≤ 4 characters, at least four of them words (≥ 3 letters). A random base64url
+    key almost never splits that way (measured: 1 in 3 × 10⁶ `token_urlsafe(30 | 40 | 64)`)."""
+    parts = tok.split("-")
+    return (len(parts) >= 6 and all(p and (p.isalpha() or p.isdigit() or len(p) <= 4) for p in parts)
+            and sum(len(p) >= 3 and p.isalpha() for p in parts) >= 4)
+
+
 def _entropic(tok: str) -> bool:
     if re.fullmatch(r"[0-9a-fA-F-]+", tok):        # hashes, UUIDs, commit ids are fine (same as the server)
+        return False
+    segs = [x for x in tok.split("/") if x]      # a link's tail `net/Asus-…-review`: lower-case words around one slug
+    if any(_sluglike(x) for x in segs) and all(_sluglike(x) or not re.search(r"[A-Z]", x) for x in segs):
         return False
     if not (re.search(r"[A-Z]", tok) and re.search(r"[a-z]", tok) and re.search(r"[0-9]", tok)):
         return False

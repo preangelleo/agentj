@@ -270,7 +270,7 @@ class Cli(unittest.TestCase):
                 os.environ.pop(k, None)
             res, calls, out = self.run_gate(ans, tty=True, inp="n")
             self.assertEqual(res["reason"], "not_confirmed")
-            self.assertIn("Agent 正在进行的回合", out)
+            self.assertIn("Agent J 正在进行的回合", out)
             self.assertEqual([c["cmd"] for c in calls], ["upgrade_impact"], "no card for a terminal owner")
             self.assertIsNone(self.run_gate(ans, tty=True, inp="y")[0])
 

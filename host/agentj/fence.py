@@ -210,6 +210,14 @@ def launch_environment(base=None, allow_docker: bool = False, kind: str = "codex
         # OPENCODE_DISABLE_* carry rule must not erase the main session's config.
         # Preserve original bytes only, never arbitrary secret-looking settings.
         keep.update(name for name in env if name.startswith("OPENCODE_") and not SECRETISH.search(name))
+    if kind == "kimi":
+        # P305: Kimi's own settings (KIMI_CODE_HOME, KIMI_CODE_OAUTH_HOST …) — names that look like secrets stay out; an API key
+        # reaches Kimi only as agent_kimi.key_environment's in-memory model variables, added after this filter.
+        keep.update(name for name in env if name.startswith("KIMI_") and not SECRETISH.search(name))
+    if kind == "qwen":
+        # P310: Qwen's own settings (QWEN_HOME …) — names that look like secrets stay out; a key reaches Qwen only as
+        # agent_qwen.key_environment's OPENAI_* variables, added after this filter.
+        keep.update(name for name in env if name.startswith("QWEN_") and not SECRETISH.search(name))
     if kind == "codex":
         # Same owner-selected native provider reference used by peer_session.
         # Only its env_key NAME is added; values still come from the original input.

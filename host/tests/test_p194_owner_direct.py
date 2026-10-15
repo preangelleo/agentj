@@ -83,7 +83,7 @@ class _Svc(unittest.IsolatedAsyncioTestCase):
         self.st = State(root / "state"); self.st.init()
         self.st.sign_key = lambda d: b"k" * 32 if d == "dev1" else None
         self.work = root / "work"; self.work.mkdir()
-        self.sent, self.bcast = [], []
+        self.sent, self.bcast, self.acts = [], [], []
 
         async def send_app(s, obj):
             self.sent.append(obj)
@@ -96,7 +96,8 @@ class _Svc(unittest.IsolatedAsyncioTestCase):
         self.host = SimpleNamespace(st=self.st, lang="zh", agent=SimpleNamespace(kind="claude"), agent_cfg={"dir": str(self.work)},
                                     media=None, hist=SimpleNamespace(get=lambda i: None), stopped=lambda: False,
                                     send_app=send_app, _send_ready=send_ready, ask=self.ask, _approvers=lambda: ["dev1"],
-                                    elevate=SimpleNamespace(out=self.out))
+                                    elevate=SimpleNamespace(out=self.out),
+                                    activity=lambda kind, **kw: self.acts.append((kind, kw)))   # P296: no-card sends log here
         self.svc = ContactService(SimpleNamespace(host=self.host, st=self.st))
         self.s = SimpleNamespace(device="dev1")
         cfg = M.blank_config()
@@ -178,6 +179,8 @@ class AgentMail(_Svc):
         await self.svc.agent({"op": "add", "contact": {"name": "王五", "emails": ["w5@x.cn"]}})    # 3 号位
 
     def summary(self):
+        if self.ask.call_args is None:          # P296: owner-direct goes without a card; the same text is in activity
+            return [kw for k, kw in self.acts if k == "auto"][-1]["summary"]
         return self.ask.call_args.args[1]["summary"]
 
     async def test_owner_mail_with_access_code_goes_as_written(self):
@@ -191,6 +194,7 @@ class AgentMail(_Svc):
             self.assertIn(keep, got)
         self.assertIn("7F3K-29QX", email.message_from_bytes(raw, policy=email.policy.default)["Subject"])
         self.assertIn("发给你自己：原样发出", self.summary())
+        self.ask.assert_not_called()            # P296: to the owner only — no phone card
         self.out.send.assert_not_called()
 
     async def test_owner_mail_with_api_key_becomes_a_secret_card(self):

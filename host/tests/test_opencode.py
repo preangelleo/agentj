@@ -159,7 +159,8 @@ class Detect(unittest.TestCase):
     def test_opencode_login_is_existence_only_and_counts_as_a_harness(self):
         with tempfile.TemporaryDirectory() as d:
             env = {"XDG_DATA_HOME": d, "PATH": os.environ["PATH"]}
-            with mock.patch.dict(os.environ, env, clear=True):
+            # P298's free-model probe would ask a real `opencode` on PATH; this test is about the stores and env names only
+            with mock.patch.dict(os.environ, env, clear=True), mock.patch.object(harness, "opencode_free_login", return_value=None):
                 self.assertEqual(harness.opencode_login()[0], "warn")
                 os.environ["ZHIPU_API_KEY"] = "x"
                 st, where = harness.opencode_login()

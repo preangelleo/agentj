@@ -9,6 +9,7 @@ Prints one plain sentence (and the steps taken). Never prints a secret; never st
 """
 from __future__ import annotations
 
+import contextlib
 import json
 import os
 import sys
@@ -135,18 +136,21 @@ def run(st, lang="zh", session=None, ask=None, out=None, ctl=None, service=None,
                               "you want, or agentj doctor --reconnect --session <session ID>.", broken="agent", choices=choices)
         if not r.get("ok") and r.get("why") == "unsupported" and not restarted:
             service.restart()
-            steps.append(_say(lang, "Agent 没起来 → 已重启后台服务", "Agent down → background service restarted"))
+            steps.append(_say(lang, "Agent J 没起来 → 已重启后台服务", "Agent J down → background service restarted"))
             res2 = _wait(st, ctl, sleep, 30, lambda x: up(x) and x.get("agent_status") in OK_AGENT)
             r = {"ok": up(res2) and res2.get("agent_status") in OK_AGENT}
         if not r.get("ok"):
-            return finish(False, "Agent 还是接不上：电脑上这个目录里没有开着的会话。在工作目录里打开 Claude Code（或你的 Agent），"
+            return finish(False, "Agent J 还是接不上：电脑上这个目录里没有开着的会话。在工作目录里打开 Claude Code（或 Codex / OpenCode），"
                                  "它会自动接上；不行就运行 agentj doctor 并按 agentj-manual 的求助步骤。",
-                          "The Agent still is not attached: no session is open in its folder. Open Claude Code (or your "
-                          "Agent) in the working folder and it attaches by itself; otherwise run agentj doctor and follow "
+                          "Agent J still is not attached: no session is open in its folder. Open Claude Code (or Codex / "
+                          "OpenCode) in the working folder and it attaches by itself; otherwise run agentj doctor and follow "
                           "the agentj-manual support steps.", broken="agent", why=r.get("why"))
         if r.get("session"):
             steps.append(_say(lang, ("已接上会话 " if r.get("changed") else "会话正常 ") + r["session"],
                               ("attached session " if r.get("changed") else "session fine ") + r["session"]))
-    return finish(True, "三段都通：后台服务在跑、中继已连上、Agent 已接上。手机上下拉刷新或等几秒就会变回正常颜色。",
-                  "All three links are up: the service runs, the relay is connected and the Agent is attached. The phone "
+    else:
+        with contextlib.suppress(Exception):   # P306: links fine, phone may still show an old status → re-send it
+            ctl(st, {"cmd": "status_push"}, 5)
+    return finish(True, "三段都通：后台服务在跑、中继已连上、Agent J 已接上。手机上下拉刷新或等几秒就会变回正常颜色。",
+                  "All three links are up: the service runs, the relay is connected and Agent J is attached. The phone "
                   "turns back to its normal colour within seconds (or pull to refresh).")

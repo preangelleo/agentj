@@ -104,6 +104,7 @@ class DiskQ(unittest.TestCase):
         self.assertEqual(spy.calls[0], "agentj-disk")
 
     def test_log_buffered_after_slow_append_keeps_order(self):
+        # P292: the loop never appends itself; a line that does not land within LOOP_WAIT switches it to not waiting
         log = self.d / "host.log"
         orig = diskq._append
         slow_once = {"n": 0}
@@ -111,12 +112,14 @@ class DiskQ(unittest.TestCase):
         def slow(path, lines):
             if slow_once["n"] == 0:
                 slow_once["n"] = 1
-                time.sleep(diskq.SLOW_APPEND * 3)
+                time.sleep(0.3)
             orig(path, lines)
 
         async def main():
-            with patch.object(diskq, "_append", slow):
-                diskq.append(log, b"1\n")                 # slow → buffered mode
+            with patch.object(diskq, "_append", slow), patch.object(diskq, "LOOP_WAIT", 0.05):
+                t0 = time.monotonic()
+                diskq.append(log, b"1\n")                 # slow → the loop stops waiting
+                self.assertLess(time.monotonic() - t0, 0.25)
                 self.assertGreater(diskq._buffer_until, time.monotonic())
                 for i in range(2, 6):
                     diskq.append(log, f"{i}\n".encode())
@@ -130,12 +133,23 @@ class DiskQ(unittest.TestCase):
     def test_off_loop_line_never_overtakes_queued_lines(self):
         log = self.d / "host.log"
         gate = threading.Event()
-        diskq._submit(gate.wait)                         # the writer is busy
-        with diskq._lk:
-            diskq._logbuf[str(log)] = [b"a\n"]
-        diskq._submit(lambda: diskq._append(str(log), diskq._logbuf.pop(str(log))))
-        threading.Timer(0.2, gate.set).start()
-        diskq.append(log, b"b\n")                        # off the loop: waits for "a" first
+        orig = diskq._append
+
+        def held(path, lines):
+            gate.wait(5)
+            orig(path, lines)
+
+        async def queue_a():
+            diskq.append(log, b"a\n")                     # queued on the loop; the log thread is held
+        with patch.object(diskq, "_append", held), patch.object(diskq, "LOOP_WAIT", 0.0), \
+                patch.object(diskq, "LOOP_END_FLUSH", 0.1):
+            try:
+                asyncio.run(queue_a())                    # (the loop's end guard gives up after LOOP_END_FLUSH)
+            finally:
+                diskq._buffer_until = 0.0
+            threading.Timer(0.2, gate.set).start()
+            diskq.append(log, b"b\n")                    # off the loop: after "a"
+        self.assertTrue(diskq.flush(5))
         self.assertEqual(log.read_text(), "a\nb\n")
 
     def test_state_log_reaches_disk_by_serve_stop_barrier(self):

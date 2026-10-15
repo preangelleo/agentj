@@ -14,6 +14,30 @@
     "gesture": {
       "zh": "鼠标 / 触摸：",
       "en": "Mouse / touch: "
+    },
+    "functional": {
+      "zh": "功能键（Alt+Shift）",
+      "en": "Function keys (Alt+Shift)"
+    },
+    "single": {
+      "zh": "单键与其它组合",
+      "en": "Single keys and other combinations"
+    },
+    "gestures": {
+      "zh": "手势",
+      "en": "Gestures"
+    },
+    "website": {
+      "zh": "在官网打开",
+      "en": "Open on website"
+    },
+    "globalNote": {
+      "zh": "功能键在输入框聚焦时也有效。系统或输入法占用的组合可能无法传到页面；ChromeOS 的 Alt+Shift+M 会打开文件应用，请从模型菜单恢复默认。",
+      "en": "Function keys also work while a text field is focused. System or input-method shortcuts may intercept them; on ChromeOS Alt+Shift+M opens Files, so restore defaults from the model menu."
+    },
+    "capturePending": {
+      "zh": "截图功能将在本次集成后可用。",
+      "en": "Page capture will be available after this integration."
     }
   },
   "groups": [
@@ -88,6 +112,11 @@
       ],
       "keys": [
         {
+          "combo": "Alt+Shift+J",
+          "scope": "any",
+          "impl": "table"
+        },
+        {
           "combo": "j"
         },
         {
@@ -158,6 +187,11 @@
       ],
       "keys": [
         {
+          "combo": "Alt+Shift+G",
+          "scope": "any",
+          "impl": "table"
+        },
+        {
           "combo": "g"
         }
       ],
@@ -216,8 +250,8 @@
           "combo": "u"
         }
       ],
-      "zh": "跳到第一条未读（这台设备上次看到之后才来的回复），再一张张往后翻",
-      "en": "Jump to the first unread reply (arrived after this device last saw the page), then page forward",
+      "zh": "跳到第一条未读（所有遥控器同步已读），再一张张往后翻",
+      "en": "Jump to the first unread reply (read status syncs across your remotes), then page forward",
       "gesture_zh": "点页眉中间 1/3 的未读圆标",
       "gesture_en": "Tap the unread badge in the middle third of the header",
       "common": true
@@ -239,6 +273,11 @@
         }
       ],
       "keys": [
+        {
+          "combo": "Alt+Shift+Q",
+          "scope": "any",
+          "impl": "table"
+        },
         {
           "combo": "q"
         }
@@ -346,8 +385,8 @@
       ],
       "zh": "全屏阅读这条回复",
       "en": "Read this reply full screen",
-      "gesture_zh": "点书本图标；双击回复",
-      "gesture_en": "Tap the book icon; double-tap the reply",
+      "gesture_zh": "点书本图标；双击回复空白、正文或音频卡",
+      "gesture_en": "Tap the book icon; double-tap reply text, blank space or an audio card",
       "common": true
     },
     {
@@ -446,6 +485,11 @@
       ],
       "keys": [
         {
+          "combo": "Alt+Shift+Y",
+          "scope": "any",
+          "impl": "table"
+        },
+        {
           "combo": "y"
         }
       ],
@@ -520,8 +564,8 @@
         }
       ],
       "keys": [],
-      "zh": "选中一段文字，就引用这一段来回复",
-      "en": "Select some words to reply quoting just them",
+      "zh": "选中一段文字就引用它；再选别处是再加一段（最多 5 段，可以来自不同回复，全屏阅读里选也算）",
+      "en": "Select some words to quote them; each further selection adds one more (up to 5, from any replies, also in the full-screen reader)",
       "gesture_zh": "在回复里选中文字",
       "gesture_en": "Select words in the reply",
       "nokey": "Text selection is the gesture itself; r quotes the whole reply."
@@ -533,8 +577,8 @@
       "scope": "chat",
       "target": {
         "selector": "#webReportBtn",
-        "zh": "回复卡左下角「分享成网页报告」",
-        "en": "Reply card, bottom left: share as a web report"
+        "zh": "回复卡左下角快捷技能键（默认「分享成网页报告」）",
+        "en": "Reply card, bottom left: the hot key (default: share as a web report)"
       },
       "gestures": [
         {
@@ -547,10 +591,33 @@
           "combo": "W"
         }
       ],
-      "zh": "分享成网页报告：输入框放好 /web-page-report，可补一句分享范围，不自动发送；在旧卡上点同时引用这张",
-      "en": "Share as a web report: puts /web-page-report in the message box to add a line after, never sends; on an older reply also quotes it",
+      "zh": "快捷技能键：默认分享成网页报告（输入框放好 /web-page-report，可补一句，不自动发送；在旧卡上点同时引用这张）；换绑后执行你选的命令或技能，/clear 照旧先确认",
+      "en": "Hot key: by default share as a web report (puts /web-page-report in the message box, never sends; on an older reply also quotes it); once rebound, runs the command or skill you chose — /clear still asks first",
       "gesture_zh": "点左下角圆形分享图标",
       "gesture_en": "Tap the round share icon at the bottom left"
+    },
+    {
+      "id": "card.hot_pick",
+      "since": "0.20.2",
+      "impl": "code",
+      "scope": "chat",
+      "target": {
+        "selector": "#webReportBtn",
+        "zh": "回复卡左下角快捷技能键",
+        "en": "Reply card, bottom left: the hot key"
+      },
+      "gestures": [
+        {
+          "type": "long-press",
+          "pointer": "any"
+        }
+      ],
+      "keys": [],
+      "zh": "换快捷技能键绑定的命令或技能（可搜索，确认后保存；图标不变）",
+      "en": "Change which command or skill the hot key runs (search, confirm, saved; the icon stays the same)",
+      "gesture_zh": "长按左下角圆形分享图标",
+      "gesture_en": "Hold the round share icon at the bottom left",
+      "nokey": "a hold opens a picker sheet; W already taps it"
     },
     {
       "id": "file.preview",
@@ -566,6 +633,11 @@
         {
           "type": "tap",
           "pointer": "any"
+        },
+        {
+          "type": "double-tap",
+          "pointer": "any",
+          "on": ".mcard:not([data-kind=audio])"
         }
       ],
       "keys": [
@@ -575,8 +647,8 @@
       ],
       "zh": "预览这一页的第一个文件（预览里 ← → 换下一个）",
       "en": "Preview the first file on this page (← → in the preview for the others)",
-      "gesture_zh": "点文件卡、图片或「预览」",
-      "gesture_en": "Tap the file card, the picture or Preview"
+      "gesture_zh": "点文件卡、图片或「全屏查看」；双击非音频文件卡直接查看文件全屏",
+      "gesture_en": "Tap the file card, picture or Full screen; double-tap a non-audio file card to view that file full screen"
     },
     {
       "id": "file.download",
@@ -595,6 +667,11 @@
         }
       ],
       "keys": [
+        {
+          "combo": "Alt+Shift+D",
+          "scope": "any",
+          "impl": "table"
+        },
         {
           "combo": "d"
         }
@@ -621,6 +698,11 @@
         }
       ],
       "keys": [
+        {
+          "combo": "Alt+Shift+X",
+          "scope": "any",
+          "impl": "table"
+        },
         {
           "combo": "x"
         }
@@ -694,6 +776,11 @@
       },
       "gestures": [],
       "keys": [
+        {
+          "combo": "Alt+Shift+Z",
+          "scope": "any",
+          "impl": "table"
+        },
         {
           "combo": "z"
         }
@@ -825,6 +912,11 @@
       ],
       "keys": [
         {
+          "combo": "Alt+Shift+W",
+          "scope": "any",
+          "impl": "table"
+        },
+        {
           "combo": "w"
         }
       ],
@@ -929,13 +1021,16 @@
       ],
       "keys": [
         {
-          "combo": "Alt+Shift+M"
+          "combo": "Alt+Shift+M",
+          "scope": "any",
+          "impl": "table"
         }
       ],
       "zh": "模型和思考强度都回到默认（立即生效）",
       "en": "Back to the default model and effort (at once)",
       "gesture_zh": "长按模型或思考强度",
-      "gesture_en": "Hold the model or the effort"
+      "gesture_en": "Hold the model or the effort",
+      "allowReserved": "Existing owner-required M; ChromeOS reserves it for Files. Use the model menu there."
     },
     {
       "id": "app.scan",
@@ -987,6 +1082,11 @@
       ],
       "keys": [
         {
+          "combo": "Alt+Shift+O",
+          "scope": "any",
+          "impl": "table"
+        },
+        {
           "combo": "s"
         },
         {
@@ -1019,11 +1119,16 @@
       ],
       "keys": [
         {
+          "combo": "Alt+Shift+K",
+          "scope": "any",
+          "impl": "table"
+        },
+        {
           "combo": "Mod+K"
         }
       ],
-      "zh": "搜索聊天记录（输入框里的 Ctrl+K 仍是删到行尾），再按一次关闭",
-      "en": "Search the chat (inside the message box Ctrl+K still deletes to the end); press again to close",
+      "zh": "搜索聊天记录；设置页内搜索设置项（输入框里的 Ctrl+K 仍是删到行尾），再按一次关闭",
+      "en": "Search the chat, or settings while Settings is open (inside the message box Ctrl+K still deletes to the end); press again to close",
       "gesture_zh": "点放大镜",
       "gesture_en": "Tap the magnifier",
       "common": true
@@ -1045,6 +1150,11 @@
         }
       ],
       "keys": [
+        {
+          "combo": "Alt+Shift+H",
+          "scope": "any",
+          "impl": "table"
+        },
         {
           "combo": "?"
         }
@@ -1372,8 +1482,8 @@
           "how": "hold"
         }
       ],
-      "zh": "按住说话，松开转成文字（按住时上滑取消）",
-      "en": "Hold to talk, release for text (slide up while holding to cancel)",
+      "zh": "按住说话，松开直接发送（滑出取消）；键盘 m 松开仍转文字",
+      "en": "Hold to talk, release to send (slide out to cancel); keyboard m still releases to text",
       "gesture_zh": "按住麦克风",
       "gesture_en": "Hold the microphone",
       "common": true
@@ -1390,6 +1500,10 @@
       },
       "gestures": [
         {
+          "type": "tap",
+          "pointer": "any"
+        },
+        {
           "type": "double-tap",
           "pointer": "any"
         }
@@ -1402,8 +1516,8 @@
       ],
       "zh": "锁定录音，松手继续录；任意键或再点一下结束，Esc 取消",
       "en": "Lock the recording; any key or another tap ends it, Esc cancels",
-      "gesture_zh": "双击麦克风",
-      "gesture_en": "Double-tap the microphone"
+      "gesture_zh": "单击或双击麦克风",
+      "gesture_en": "Tap or double-tap the microphone"
     },
     {
       "id": "compose.send",
@@ -1575,8 +1689,8 @@
       "scope": "chat",
       "target": {
         "selector": "#qbX",
-        "zh": "输入框上方引用条的 ✕",
-        "en": "✕ on the quote above the message box"
+        "zh": "输入框上方引用条最右边的 ✕",
+        "en": "✕ at the right end of the quotes above the message box"
       },
       "gestures": [
         {
@@ -1589,8 +1703,8 @@
           "combo": "Escape"
         }
       ],
-      "zh": "取消引用回复",
-      "en": "Cancel the quoted reply",
+      "zh": "取消引用（有两段以上时，一次清空全部）",
+      "en": "Cancel the quote (with two or more, clears them all)",
       "gesture_zh": "点引用条上的 ✕",
       "gesture_en": "Tap ✕ on the quote"
     },
@@ -1692,6 +1806,29 @@
       "nokey": "只在锁定录音时出现，任意键已用于结束录音"
     },
     {
+      "id": "compose.quote_chip",
+      "since": "0.20.2",
+      "impl": "code",
+      "scope": "chat",
+      "target": {
+        "selector": "#qbList",
+        "zh": "输入框上方的一段引用（两段以上时）",
+        "en": "One quote above the message box (with two or more)"
+      },
+      "gestures": [
+        {
+          "type": "tap",
+          "pointer": "any"
+        }
+      ],
+      "keys": [],
+      "zh": "点时间跳回原回复并高亮这一段；点文字看全文；点它右上角的 ✕ 只删这一段",
+      "en": "Tap the time to go back to its reply with the words highlighted; tap the words to read them in full; its own ✕ removes just that one",
+      "gesture_zh": "点引用的时间 / 文字 / ✕",
+      "gesture_en": "Tap the quote’s time / words / ✕",
+      "nokey": "Several small targets in one strip; Esc clears them all."
+    },
+    {
       "id": "read.close",
       "since": "0.15.0",
       "impl": "code",
@@ -1710,7 +1847,7 @@
         {
           "type": "tap",
           "pointer": "any",
-          "on": "#rdClose"
+          "on": "#rdReadBtn"
         }
       ],
       "keys": [
@@ -1723,8 +1860,8 @@
       ],
       "zh": "退出全屏阅读",
       "en": "Leave the full-screen reader",
-      "gesture_zh": "双击文字；点 ✕",
-      "gesture_en": "Double-tap the text; tap ✕"
+      "gesture_zh": "双击文字；点右下角的书本（复制、回复也会退出）",
+      "gesture_en": "Double-tap the text; tap the book (bottom right; copy and reply leave too)"
     },
     {
       "id": "read.font",
@@ -1744,7 +1881,7 @@
         {
           "type": "tap",
           "pointer": "any",
-          "on": "#rdPlus"
+          "on": "#rdFsBtn"
         }
       ],
       "keys": [
@@ -1757,8 +1894,8 @@
       ],
       "zh": "调大 / 调小全屏阅读的字号",
       "en": "Larger / smaller text in the reader",
-      "gesture_zh": "两指捏合；点 A+ / A−；拖滑块",
-      "gesture_en": "Pinch; tap A+ / A−; drag the slider"
+      "gesture_zh": "两指捏合；点左下角的字号图标，拖滑块或点 + / −",
+      "gesture_en": "Pinch; tap the text-size icon (bottom left), then drag the slider or tap + / −"
     },
     {
       "id": "read.scroll",
@@ -2064,7 +2201,7 @@
       "id": "app.upgrade_host",
       "since": "0.21.0",
       "impl": "table",
-      "scope": "chat",
+      "scope": "any",
       "target": {
         "selector": "#set-hostupg",
         "zh": "设置：升级主机",
@@ -2090,7 +2227,7 @@
       "id": "app.refresh_web",
       "since": "0.21.0",
       "impl": "table",
-      "scope": "chat",
+      "scope": "any",
       "target": {
         "selector": "#set-refresh",
         "zh": "设置：更新并刷新网页",
@@ -2134,6 +2271,391 @@
       "en": "Go to chat",
       "gesture_zh": "长按 logo",
       "gesture_en": "Hold the logo"
+    },
+    {
+      "id": "app.pair_add",
+      "since": "0.20.2",
+      "impl": "table",
+      "scope": "any",
+      "target": {
+        "selector": "#rm-add",
+        "zh": "添加遥控器",
+        "en": "Add a remote"
+      },
+      "gestures": [],
+      "keys": [
+        {
+          "combo": "Alt+Shift+P"
+        }
+      ],
+      "zh": "添加遥控器",
+      "en": "Add a remote",
+      "gesture_zh": "",
+      "gesture_en": ""
+    },
+    {
+      "id": "app.screenshot",
+      "since": "0.20.2",
+      "impl": "table",
+      "scope": "any",
+      "target": {
+        "selector": "#setBtn",
+        "zh": "截取当前页面并放入附件",
+        "en": "Capture this page as an attachment"
+      },
+      "gestures": [
+        {
+          "type": "long-press",
+          "pointer": "any"
+        }
+      ],
+      "keys": [
+        {
+          "combo": "Alt+Shift+C"
+        }
+      ],
+      "zh": "截取当前页面并放入附件",
+      "en": "Capture this page as an attachment",
+      "gesture_zh": "长按齿轮；说明见右键或快捷键页",
+      "gesture_en": "Hold the gear; help via right-click or Keyboard shortcuts"
+    },
+    {
+      "id": "app.friends",
+      "since": "0.20.2",
+      "impl": "table",
+      "scope": "any",
+      "target": {
+        "selector": "#open-friends",
+        "zh": "打开好友页",
+        "en": "Open Friends"
+      },
+      "gestures": [
+        {
+          "type": "tap",
+          "pointer": "any"
+        }
+      ],
+      "keys": [
+        {
+          "combo": "Alt+Shift+F"
+        }
+      ],
+      "zh": "打开好友页",
+      "en": "Open Friends",
+      "gesture_zh": "点设置 → 好友",
+      "gesture_en": "Settings → Friends"
+    },
+    {
+      "id": "app.bots",
+      "since": "0.20.2",
+      "impl": "table",
+      "scope": "any",
+      "target": {
+        "selector": "#open-bots",
+        "zh": "打开客服页",
+        "en": "Open Customer service"
+      },
+      "gestures": [
+        {
+          "type": "tap",
+          "pointer": "any"
+        }
+      ],
+      "keys": [
+        {
+          "combo": "Alt+Shift+E"
+        }
+      ],
+      "zh": "打开客服页",
+      "en": "Open Customer service",
+      "gesture_zh": "点设置 → Bots / 客服",
+      "gesture_en": "Settings → Bots"
+    },
+    {
+      "id": "app.setup",
+      "since": "0.20.2",
+      "impl": "table",
+      "scope": "any",
+      "target": {
+        "selector": "#open-setup",
+        "zh": "打开设置向导",
+        "en": "Open Setup"
+      },
+      "gestures": [],
+      "keys": [
+        {
+          "combo": "Alt+Shift+V"
+        }
+      ],
+      "zh": "打开设置向导",
+      "en": "Open Setup",
+      "gesture_zh": "",
+      "gesture_en": ""
+    },
+    {
+      "id": "read.prev",
+      "since": "0.20.2",
+      "impl": "code",
+      "scope": "reader",
+      "target": {
+        "selector": "#rdScroll",
+        "zh": "全屏阅读",
+        "en": "Full-screen reader"
+      },
+      "gestures": [
+        {
+          "type": "swipe-right",
+          "pointer": "touch"
+        }
+      ],
+      "keys": [
+        {
+          "combo": "ArrowLeft"
+        }
+      ],
+      "zh": "上一条更早的回复",
+      "en": "Previous, older reply",
+      "gesture_zh": "向右滑动",
+      "gesture_en": "Swipe right"
+    },
+    {
+      "id": "read.next",
+      "since": "0.20.2",
+      "impl": "code",
+      "scope": "reader",
+      "target": {
+        "selector": "#rdScroll",
+        "zh": "全屏阅读",
+        "en": "Full-screen reader"
+      },
+      "gestures": [
+        {
+          "type": "swipe-left",
+          "pointer": "touch"
+        }
+      ],
+      "keys": [
+        {
+          "combo": "ArrowRight"
+        }
+      ],
+      "zh": "下一条更新的回复",
+      "en": "Next, newer reply",
+      "gesture_zh": "向左滑动",
+      "gesture_en": "Swipe left"
+    },
+    {
+      "id": "read.first",
+      "since": "0.20.2",
+      "impl": "code",
+      "scope": "reader",
+      "target": {
+        "selector": "#rdWho",
+        "zh": "全屏阅读页眉左边（Agent 名和时间）",
+        "en": "Reader header, left (Agent name and time)"
+      },
+      "gestures": [
+        {
+          "type": "double-tap",
+          "pointer": "any"
+        }
+      ],
+      "keys": [
+        {
+          "combo": "G"
+        }
+      ],
+      "zh": "跳到第一条回复，仍在全屏阅读",
+      "en": "Jump to the first reply, staying in the reader",
+      "gesture_zh": "双击左上角的 Agent 名和时间",
+      "gesture_en": "Double-tap the Agent name and time (top left)"
+    },
+    {
+      "id": "read.last",
+      "since": "0.20.2",
+      "impl": "code",
+      "scope": "reader",
+      "target": {
+        "selector": "#rdPgBtn",
+        "zh": "全屏阅读页眉右上角的页码",
+        "en": "Reader header: the page number (top right)"
+      },
+      "gestures": [
+        {
+          "type": "double-tap",
+          "pointer": "any"
+        },
+        {
+          "type": "tap",
+          "pointer": "any",
+          "when": "the page number flashes"
+        }
+      ],
+      "keys": [
+        {
+          "combo": "g"
+        }
+      ],
+      "zh": "跳到最新一条回复，不退出全屏",
+      "en": "Jump to the newest reply without leaving the reader",
+      "gesture_zh": "双击右上角的页码；页码闪烁时单击也行",
+      "gesture_en": "Double-tap the page number (top right); a single tap while it flashes"
+    },
+    {
+      "id": "read.first_unread",
+      "since": "0.20.2",
+      "impl": "code",
+      "scope": "reader",
+      "target": {
+        "selector": "#rdUnread",
+        "zh": "全屏阅读页眉中间（未读圆标）",
+        "en": "Reader header, middle (unread badge)"
+      },
+      "gestures": [
+        {
+          "type": "tap",
+          "pointer": "any"
+        }
+      ],
+      "keys": [
+        {
+          "combo": "u"
+        }
+      ],
+      "zh": "跳到第一条未读回复",
+      "en": "Jump to the first unread reply",
+      "gesture_zh": "点页眉中间的未读圆标",
+      "gesture_en": "Tap the unread badge in the middle of the header"
+    },
+    {
+      "id": "read.copy",
+      "since": "0.20.2",
+      "impl": "code",
+      "scope": "reader",
+      "target": {
+        "selector": "#rdCopyBtn",
+        "zh": "全屏阅读右下角「复制」",
+        "en": "Reader footer: copy"
+      },
+      "gestures": [
+        {
+          "type": "tap",
+          "pointer": "any"
+        }
+      ],
+      "keys": [
+        {
+          "combo": "y"
+        }
+      ],
+      "zh": "复制整条回复并退出全屏",
+      "en": "Copy the whole reply and leave the reader",
+      "gesture_zh": "点两张纸图标",
+      "gesture_en": "Tap the copy icon"
+    },
+    {
+      "id": "read.reply",
+      "since": "0.20.2",
+      "impl": "code",
+      "scope": "reader",
+      "target": {
+        "selector": "#rdReplyBtn",
+        "zh": "全屏阅读右下角「回复」（最右）",
+        "en": "Reader footer: reply (rightmost)"
+      },
+      "gestures": [
+        {
+          "type": "tap",
+          "pointer": "any"
+        }
+      ],
+      "keys": [
+        {
+          "combo": "r"
+        }
+      ],
+      "zh": "引用这条回复，退出全屏，光标进输入框",
+      "en": "Quote this reply, leave the reader and put the caret in the message box",
+      "gesture_zh": "点弯箭头图标",
+      "gesture_en": "Tap the curved-arrow icon"
+    },
+    {
+      "id": "read.speak",
+      "since": "0.20.2",
+      "impl": "code",
+      "scope": "reader",
+      "target": {
+        "selector": "#rdSpeakBtn",
+        "zh": "全屏阅读右下角「朗读」",
+        "en": "Reader footer: read aloud"
+      },
+      "gestures": [
+        {
+          "type": "tap",
+          "pointer": "any"
+        }
+      ],
+      "keys": [
+        {
+          "combo": "l"
+        }
+      ],
+      "zh": "朗读这条回复，留在全屏",
+      "en": "Read this reply aloud, staying in the reader",
+      "gesture_zh": "点喇叭图标",
+      "gesture_en": "Tap the speaker icon"
+    },
+    {
+      "id": "read.forward",
+      "since": "0.20.2",
+      "impl": "code",
+      "scope": "reader",
+      "target": {
+        "selector": "#rdFwdBtn",
+        "zh": "全屏阅读右下角「转发给我自己」",
+        "en": "Reader footer: forward to myself"
+      },
+      "gestures": [
+        {
+          "type": "tap",
+          "pointer": "any"
+        }
+      ],
+      "keys": [
+        {
+          "combo": "t"
+        }
+      ],
+      "zh": "转发给我自己，留在全屏（图标显示发送中 / 已发送）",
+      "en": "Forward to myself, staying in the reader (the icon shows sending / sent)",
+      "gesture_zh": "点纸飞机图标",
+      "gesture_en": "Tap the paper-plane icon"
+    },
+    {
+      "id": "read.mail",
+      "since": "0.20.2",
+      "impl": "code",
+      "scope": "reader",
+      "target": {
+        "selector": "#rdMailBtn",
+        "zh": "全屏阅读右下角「转发到邮箱」",
+        "en": "Reader footer: forward by e-mail"
+      },
+      "gestures": [
+        {
+          "type": "tap",
+          "pointer": "any"
+        }
+      ],
+      "keys": [
+        {
+          "combo": "e"
+        }
+      ],
+      "zh": "转发到邮箱，弹窗关掉后仍在全屏",
+      "en": "Forward by e-mail; after the dialog you are still in the reader",
+      "gesture_zh": "点信封图标",
+      "gesture_en": "Tap the envelope icon"
     }
   ]
 }

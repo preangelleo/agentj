@@ -98,7 +98,7 @@ class Recover(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(self.sent[0][0].startswith("〔Agent J 系统提示〕压缩完成。"))
         self.assertFalse(self.a.native_turn)
         self.assertEqual(self.host.logged("shared_native_turn_stale")[0]["why"], "recover")
-        self.assertEqual(self.host.notices, ["压缩完成，Agent 正在恢复上下文。"])
+        self.assertEqual(self.host.notices, ["压缩好了，我在翻交接笔记，马上接上思路。"])   # P280 humane.json recover.compact
 
     async def test_clear_recovers_although_native_turn_was_set(self):
         handoff.ensure()

@@ -23,7 +23,7 @@ import re
 
 KEYS = ("v", "id", "title", "schedule", "tz", "prompt_file", "dry_run_prompt_file", "mode", "enabled", "needs", "outputs")
 OPTIONAL = ("harness",)
-HARNESS_NAMES = ("claude", "codex", "opencode")
+HARNESS_NAMES = ("claude", "codex", "opencode", "kimi", "qwen")   # P305: + Kimi Code (ACP, tasks.py)
 MODES = ("normal", "research")
 ID_RE = re.compile(r"[a-z0-9][a-z0-9-]{0,39}")
 _FILE_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,63}\.md")
@@ -105,8 +105,8 @@ def problems(obj: object, expect_id: str | None = None) -> list[str]:
     elif isinstance(needs, list) and secret_like(" \n".join(x for x in needs if isinstance(x, str))):
         out.append("needs looks like it holds a credential: name the service only")
     h = obj.get("harness")
-    if "harness" in obj and not (h in HARNESS_NAMES or (isinstance(h, list) and 0 < len(h) <= 3 and all(x in HARNESS_NAMES for x in h))):
-        out.append("harness must be claude, codex or opencode, or a list of them")
+    if "harness" in obj and not (h in HARNESS_NAMES or (isinstance(h, list) and 0 < len(h) <= len(HARNESS_NAMES) and all(x in HARNESS_NAMES for x in h))):
+        out.append("harness must be claude, codex, opencode, kimi or qwen, or a list of them")
     outs = obj.get("outputs")
     if "outputs" in obj and not (isinstance(outs, list) and 0 < len(outs) <= 10 and all(
             isinstance(x, str) and _OUT_RE.fullmatch(x) and ".." not in x.split("/") for x in outs)):
@@ -114,11 +114,56 @@ def problems(obj: object, expect_id: str | None = None) -> list[str]:
     return out
 
 
-def secret_like(text: str) -> bool:
+def secret_like(text: str, owner: bool = False) -> bool:
     """Layer 1 of the host privacy gate, secret kinds only (keys, tokens, credential assignments, high-entropy strings)."""
     from .privacy import redact_with_report
+    if owner:
+        from .privacy import _SECRETS
+        for kind, pat, repl in _SECRETS:
+            for match in pat.finditer(text):
+                if kind in {"credential_assignment", "authorization_header", "bearer_token"} and not _credential_value(match, repl):
+                    continue
+                return True
+        return False                     # P211: no unlabelled entropy guess for owner's files
     _, hits = redact_with_report(text)
     return any(k in SECRET_KINDS for k in hits)
+
+
+def _credential_value(match, replacement: str) -> bool:
+    """P270: an OWNER file's labelled value must resemble a credential, not documentation.
+
+    Provider prefixes/private keys are checked independently, even inside an example.
+    Strict outbound/privacy gates retain their existing rules.
+    """
+    from .privacy import R, _entropy, _pathlike, _CRED_NAMES
+    rendered = match.expand(replacement)
+    pre, _, suffix = rendered.partition(R)
+    value = match.group(0)[len(pre):len(match.group(0)) - len(suffix) if suffix else None]
+    value = value.lstrip("`")
+    if not suffix:                         # an unquoted value ends before prose / Markdown punctuation
+        token = re.match(r"[A-Za-z0-9+/_=.!@#$%^&*?~-]+", value)
+        value = token.group(0) if token else ""
+    value = value.rstrip(",;|`)]}.")
+    if len(value) < 8 or not re.fullmatch(r"[A-Za-z0-9+/_=.!@#$%^&*?~ -]+", value):
+        return False
+    if value.lower() in {"true", "false", "null", "none", "undefined", "password", "changeme", "your_api_key",
+                         "your_token", "replace_me", "placeholder", "redacted", "example", "secret", "not_set"}:
+        return False
+    if re.fullmatch(r"(?:your|example|placeholder|replace|insert)[_-].*", value, re.I):
+        return False
+    if "..." in value or "${" in value or "$HOME" in value or value.startswith(("$", "<", "~/", "./")):
+        return False
+    path = re.match(r"[A-Za-z0-9+/_=-]+", value)
+    if path and _pathlike(path):
+        return False                     # reuse owner-path syntax, not a blanket slash exception
+    if (re.fullmatch(_CRED_NAMES, value, re.I) or
+            re.fullmatch(r"[A-Z][A-Z0-9_]*_(?:KEY|TOKEN|SECRET|PASSWORD|PASS|CREDENTIALS?|VAR|NAME)", value, re.I)):
+        return False                     # APIFY_TOKEN, OPENAI_API_KEY, etc. are names
+    if re.fullmatch(r"[0-9a-fA-F]{16,}", value):
+        return True
+    classes = sum(bool(re.search(pattern, value)) for pattern in (r"[a-z]", r"[A-Z]", r"[0-9]", r"[^A-Za-z0-9 ]"))
+    entropy = _entropy(value)
+    return (classes >= 2 and entropy >= 2.5) or (len(value) >= 32 and entropy >= 4.0)
 
 
 SECRET_KINDS = frozenset({"private_key", "url_credentials", "bearer_token", "jwt", "aws_access_key", "github_token",

@@ -1,3 +1,4 @@
+import { fileDoubleTap, DOUBLE_MS } from './file-gestures.js';
 import { registerLayer } from './layers.js';
 // Media out (PROTOCOL §13, F21, 0.15.2): files, pictures, audio, video, PDFs and generated HTML that the Agent's reply
 // refers to, sent by the computer inside the Noise session — the reverse of blobs.js. A finished page carries `media`
@@ -17,7 +18,7 @@ import { registerLayer } from './layers.js';
 // <style> applies only where the page's own CSP allows it too). Share only where the phone can share files (iOS:
 // 「存储到文件」). SVG only ever as <img> (scripts in an <img> never run).
 import { sendApp, gen, peer } from './session.js';
-import { t } from './t.js';
+import { t, onLang } from './t.js';
 import { human, toast } from './ui.js';
 import { tgForwardFile } from './api.js';
 import { canMailForward, mailForward } from './mailfwd.js';
@@ -25,7 +26,7 @@ import { renderDoc } from './preview.js';
 import { glyph } from './icons.js';
 import { unb64u } from '../proto/wire.js';
 
-import { CHUNK, WINDOW, EAGER, LRU_MAX, MAX_ITEMS, CAPS, WHYS, HTML_CSP, sanitize, sandboxAttrs, normRef, matchSlot, placeSlots, blobType, autoLoad, previewKind } from './mediawire.js';
+import { CHUNK, WINDOW, EAGER, LRU_MAX, MAX_ITEMS, CAPS, WHYS, HTML_CSP, sanitize, sandboxAttrs, FRAME_NOBAR, normRef, matchSlot, placeSlots, blobType, autoLoad, previewKind } from './mediawire.js';
 export { CHUNK, WINDOW, EAGER, LRU_MAX, MAX_ITEMS, CAPS, WHYS, HTML_CSP, sanitize, sandboxAttrs, normRef, matchSlot, placeSlots, blobType };
 const STALL_MS = 20000;
 const PARALLEL = 2;                          // fetches at once (the computer allows 3 per session)
@@ -110,6 +111,7 @@ export function handle(m) {
 }
 /** Unpair / re-pair / revoke: every Blob and every fetch goes. */
 export function forgetAll() {
+  tgStates.clear();
   for (const f of [...flights.values()]) f.fail('net');
   waiting.length = 0; cache.clear(); cacheBytes = 0;
   clearScope(reading, true); reading = scope();
@@ -225,7 +227,7 @@ export function renderPage(words, p) {
 }
 
 /** P59: the full-screen reader's words (relay.js fills them with md.js like the page's): the same slots filled the same way,
- *  from the same verified Blobs. Only the slots — what the reply did not place stays in the strip under the page. */
+ *  from the same verified Blobs. P273: the slots, then what the reply did not place (.rdstrip at the end of the words). */
 export function renderReader(words, p) {
   unsent(words, p);
   const items = (p && p.media) || [], skips = (p && p.mediaSkip) || [];
@@ -236,10 +238,15 @@ export function renderReader(words, p) {
   reading.key = key; reading.page = p && p.id !== undefined ? p.id : null;
   if (!key) return;
   reading.io = observer(reading);
-  // the reader shows only the slots; what the reply did not place is still this reply's, in the strip under the page
-  const page = reading.page;
-  reading.cards = () => [...words.querySelectorAll('.mcard'), ...(shown.page === page ? [...(document.getElementById('mstrip')?.querySelectorAll('.mcard') || [])] : [])];
-  fillSlots(words, items, skips, reading);
+  // P273 (long reading): what the reply did not place follows its words here too, in the reader's own strip (never #mstrip)
+  reading.cards = () => [...words.querySelectorAll('.mcard')];   // the slots + .rdstrip: every file of this reply, once
+  const { rest, restSkips } = fillSlots(words, items, skips, reading);
+  words.querySelector(':scope>.rdstrip')?.remove();
+  if (!rest.length && !restSkips.length) return;
+  const box = mk('div', 'mstrip rdstrip');
+  for (const m of rest) box.appendChild(card(m, false, reading));
+  for (const sk of restSkips) box.appendChild(mk('div', 'mskip', skipText(sk)));
+  words.appendChild(box);
 }
 
 // ---------------------------------------------------------------- P183: the card
@@ -280,7 +287,8 @@ function card(m, inline, sc) {
   const icon = glyph('file', 'mico');
   meta.append(icon, mk('span', 'mname', m.name), mk('span', 'msize', human(m.bytes)));
   const acts = mk('div', 'macts'); acts.setAttribute('role', 'toolbar'); acts.setAttribute('aria-label', m.name);
-  const bPv = iconBtn('pv', 'preview', t('media.act.preview'));
+  const bPv = iconBtn('pv', 'preview', t(m.kind === 'audio' ? 'media.act.preview' : 'media.act.fullscreen'));
+  if (m.kind !== 'audio') bPv.append(mk('span', 'mfullscreen-label', t('media.act.fullscreen')));
   const bDl = iconBtn('dl', 'download', t('media.act.download'));
   const bSh = iconBtn('sh', 'share', t('media.act.share'));
   const bMail = iconBtn('mail', 'mail', t('media.act.mail'));
@@ -290,7 +298,9 @@ function card(m, inline, sc) {
   bTg.hidden = !peer.tgfile;
   acts.append(bPv, bDl, bSh, bMail, bTg);
   foot.append(meta, acts);
-  c.append(body, foot);
+  const tgNote = mk('div', 'mtg-status'); tgNote.hidden = true; tgNote.setAttribute('role', 'status');
+  c.append(body, foot, tgNote);
+  queueMicrotask(() => paintTg(m.mid));
 
   let flight = null;
   const load = () => {
@@ -312,6 +322,7 @@ function card(m, inline, sc) {
   // P196: the last card asked for wins — flipping fast through big files never opens an older one late
   const preview = () => { want = c; return load().then((blob) => { if (want === c) openPreview(m, c, blob); }, () => { if (want === c && viewerOpen() && viewer.card === c) loadFailed(); }); };
   c._preview = preview;
+  if (m.kind !== 'audio') fileDoubleTap(c, preview);   // @ix file.preview
   status.addEventListener('click', (e) => { e.stopPropagation(); load().then(() => { if (m.kind === 'audio' || m.kind === 'video') body.querySelector('audio,video')?.play?.().catch(() => {}); }, () => {}); });
   bPv.addEventListener('click', (e) => { e.stopPropagation(); preview(); });   // @ix file.preview
   bDl.addEventListener('click', (e) => { e.stopPropagation(); dlTap(m, c, load, bDl); });   // @ix file.download
@@ -338,28 +349,48 @@ function card(m, inline, sc) {
     if (e.target.closest('button,a,audio,video,img,.mslot .mlabel')) return;
     if (m.kind !== 'audio' && m.kind !== 'video' && m.kind !== 'image') { e.stopPropagation(); preview(); }
   });
-  if (autoLoad(m, net())) {
+  // P273: bytes already in the LRU (the page showed them) cost nothing — draw them at once, wherever the card sits (the
+  // reader opens mid-reply); the rest still wait until they scroll near the screen
+  if (cache.has(m.mid)) queueMicrotask(() => c._load());
+  else if (autoLoad(m, net())) {
     if (sc.io) sc.io.observe(c); else queueMicrotask(() => c._load());
   }
   return c;
 }
 
-const tgBusy = new Set();
+// Status belongs to the media id, shared by the card and reader, and survives page turns.
+const tgStates = new Map();
+onLang(() => { for (const mid of tgStates.keys()) paintTg(mid); });
+function paintTg(mid) {
+  const st = tgStates.get(mid);
+  for (const c of document.querySelectorAll('.mcard')) {
+    if (c.dataset.mid !== mid) continue;
+    const b = c.querySelector('.mact.tg'), note = c.querySelector('.mtg-status');
+    if (!b || !note) continue;
+    b.dataset.state = st?.state || 'idle'; b.disabled = st?.state === 'sending';
+    note.textContent = st ? t(st.key, {channel: CHANNEL}) : ''; note.hidden = !st;
+    if (st) { b.title = note.textContent; b.setAttribute('aria-label', note.textContent); }
+  }
+}
 async function tgTap(m, b) {
-  if (!peer.tgfwd) { toast(t('media.tg.setup', { channel: CHANNEL }), 3200); return; }
-  if (tgBusy.has(m.mid)) return;
-  tgBusy.add(m.mid); b.dataset.state = 'sending'; b.disabled = true;
+  if (tgStates.get(m.mid)?.state === 'sending') return;
+  const set = (state, key) => {
+    tgStates.delete(m.mid); tgStates.set(m.mid, {state, key});
+    for (const [id, st] of tgStates) { if (tgStates.size <= 128) break; if (st.state !== 'sending') tgStates.delete(id); }
+    paintTg(m.mid);
+  };
+  if (!peer.tgfwd) { set('failed', 'media.tg.setup'); return; }
+  set('sending', 'media.tg.sending');
+  const request = tgStates.get(m.mid);
   let r;
-  try { r = await tgForwardFile(m.mid); } catch { r = { ok: false, why: 'send_failed' }; }
-  tgBusy.delete(m.mid); b.disabled = false;
-  const st = r.ok ? 'sent' : (r.why === 'recently_sent' || r.why === 'in_flight' || r.why === 'rate_limited') ? 'idle' : 'failed';
-  b.dataset.state = st;
-  if (st !== 'idle') setTimeout(() => { if (b.dataset.state === st) b.dataset.state = 'idle'; }, r.ok ? 2000 : 3000);
-  const key = r.ok ? 'media.tg.sent' : r.why === 'not_configured' ? 'media.tg.setup' : r.why === 'too_big' ? 'media.tg.tooBig'
+  try { r = await tgForwardFile(m.mid); } catch { r = {ok: false, why: 'send_failed'}; }
+  // Unpair clears the state; a stale request must not recreate it on another host.
+  if (tgStates.get(m.mid) !== request) return;
+  const sent = r.ok || r.why === 'recently_sent';
+  const key = sent ? 'media.tg.sent' : r.why === 'not_configured' ? 'media.tg.setup' : r.why === 'too_big' ? 'media.tg.tooBig'
     : r.why === 'not_found' ? 'media.tg.gone' : r.why === 'rate_limited' ? 'r.tg.limited'
-    : (r.why === 'recently_sent' || r.why === 'in_flight') ? 'r.tg.again' : 'media.tg.failed';
-  if (r.why === 'not_configured') peer.tgfwd = false;
-  toast(t(key, { channel: CHANNEL }), 2600);
+    : r.why === 'in_flight' ? 'r.tg.again' : r.why === 'timeout' ? 'media.tg.uncertain' : 'media.tg.failed';
+  set(sent ? 'sent' : 'failed', key);
 }
 
 function urlOf(c, blob) {
@@ -410,13 +441,31 @@ function show(m, c, body, blob) {
     body.replaceChildren(img);
   } else if (m.kind === 'audio' || m.kind === 'video') {
     const v = mk(m.kind); v.controls = true; v.preload = 'metadata'; v.src = url;
-    if (m.kind === 'video') { v.playsInline = true; v.setAttribute('playsinline', ''); }
+    if (m.kind === 'video') {
+      v.playsInline = true; v.setAttribute('playsinline', '');
+      let single = 0;
+      c._cancelSingle = () => { clearTimeout(single); single = 0; };
+      // An independent picture hit surface prevents UA shadow-controls from toggling
+      // playback before page listeners on touch. The native bottom controls stay exposed.
+      const surface = mk('div', 'mvideo-surface'); surface.setAttribute('aria-hidden', 'true');
+      c._videoSurface = surface;
+      surface.addEventListener('click', e => {
+        e.preventDefault(); e.stopPropagation();
+        c._cancelSingle();
+        if (e.detail < 2) single = setTimeout(() => {
+          single = 0;
+          if (v.paused) v.play().catch(() => {}); else v.pause();
+        }, DOUBLE_MS);
+      });
+    }
     body.replaceChildren(v);
+    if (m.kind === 'video') body.appendChild(c._videoSurface);
   } else {
     body.replaceChildren();                              // a document: name, size and the icons say it all
   }
 }
 function openPreview(m, c, blob) {
+  c._cancelSingle?.();
   const url = urlOf(c, blob), kind = previewKind(m);
   if (kind === 'image') return viewImage(url, m.name, c, m);
   if (kind === 'html') return blob.arrayBuffer().then((b) => viewHtml(new TextDecoder().decode(b), m, c));
@@ -430,6 +479,7 @@ function openPreview(m, c, blob) {
 // zoomed, one finger pans) step to the previous / next file of the SAME reply that can be previewed, in reading order;
 // no wrap-around at either end (a short note says so). A player is paused before it goes.
 let viewer = null;
+let viewerPushed = false, viewerSkipPop = false;
 let want = null;                              // the card whose preview was asked for last
 const SWIPE_PX = 60, FLING_PX = 30, FLING_V = 0.5, SWIPE_TAN = Math.tan(30 * Math.PI / 180), CLICK_SLOP = 10;
 function viewerEl() {
@@ -453,13 +503,16 @@ function viewerEl() {
   next.addEventListener('click', () => step(1));
   dl.addEventListener('click', viewerDownload);   // @ix viewer.download (+ d in viewerKey)
   v.addEventListener('click', (e) => {
+    if (performance.now() - viewer.openedAt < 400) return;
     if (performance.now() - viewer.dragAt < 400) return;            // the end of a drag is not a tap on the backdrop
-    if (e.target === v || e.target === stage) closeViewer();
+    // Pointer capture retargets image taps to the stage: they belong to zoomable.
+    if (e.target === v || (e.target === stage && v.dataset.mode !== 'image')) closeViewer();
   });
+  v.addEventListener('click', e => { if (performance.now() - viewer.openedAt < 400 && !e.target.closest('button,a,input,textarea,select,[role=link]')) { e.preventDefault(); e.stopImmediatePropagation(); } }, true);
   swipeable(v, stage);
   document.body.appendChild(v);
   viewer = { v, x, dl, title, stage, note, hint, prev, next, count, card: null, m: null, cleanup: null, dragAt: 0, hintT: 0 };
-  viewer.layer = registerLayer({element:()=>v,open:()=>!v.hidden,close:closeViewer,fallback:()=>document.getElementById(document.body.dataset.reader==='1'?'rdClose':'readBtn'),rank:90});
+  viewer.layer = registerLayer({element:()=>v,open:()=>!v.hidden,close:closeViewer,fallback:()=>document.getElementById(document.body.dataset.reader==='1'?'rdReadBtn':'readBtn'),rank:90});
   return viewer;
 }
 /** The preview layer's keys (capture, before the chat screen's shortcuts and the layers' own handler): ← / → step,
@@ -486,7 +539,19 @@ function viewerKey(e) {
   }
   e.stopImmediatePropagation();
 }
-if (typeof document !== 'undefined') document.addEventListener('keydown', viewerKey, true);
+if (typeof document !== 'undefined') {
+  document.addEventListener('keydown', viewerKey, true);
+  window.addEventListener('popstate', e => {
+    if (viewerSkipPop) {
+      viewerSkipPop = false;
+      // A new file can open while the preceding close waits for asynchronous Back.
+      // Push its entry only after that pop; otherwise Back would consume the new one.
+      if (viewerOpen()) { try { history.pushState({ ...history.state, ajFile: 1 }, ''); viewerPushed = true; } catch { viewerPushed = false; } }
+      e.stopImmediatePropagation(); return;
+    }
+    if (viewerOpen()) { viewerPushed = false; closeViewer(true); e.stopImmediatePropagation(); }
+  }, true);
+}
 
 /** The files of the reply the viewer's card belongs to, in reading order: those that can be previewed (+ the one shown). */
 function navList(c) {
@@ -584,8 +649,8 @@ function swipeable(v, stage) {
 }
 function openViewer(label, c, mode = 'image', m = null) {
   const V = viewerEl();
-  if (V.cleanup) { try { V.cleanup(); } catch { /* gone */ } V.cleanup = null; }
   pausePlayers(V);
+  if (V.cleanup) { try { V.cleanup(); } catch { /* gone */ } V.cleanup = null; }
   V.stage.style.transition = ''; V.stage.style.transform = '';
   V.card = c || null; V.m = m;
   if (mode !== 'image') V.stage.onpointerdown = V.stage.onpointermove = V.stage.onpointerup = V.stage.onpointercancel = null;
@@ -597,15 +662,19 @@ function openViewer(label, c, mode = 'image', m = null) {
   V.dl.hidden = !(c && c._blob);
   V.note.textContent = ''; V.note.hidden = true;
   const was = !V.v.hidden;
+  V.openedAt = performance.now();
+  if (!was && !viewerSkipPop) { try { history.pushState({ ...history.state, ajFile: 1 }, ''); viewerPushed = true; } catch { viewerPushed = false; } }
   V.v.hidden = false; V.v.dataset.modalOpen = '1';
   paintNav();
   if (!was || !V.v.contains(document.activeElement)) V.x.focus({ preventScroll: true });
   return V;
 }
-export function closeViewer() {
+export function closeViewer(fromPop = false) {
   if (!viewer || viewer.v.hidden) return;
   if (viewer.cleanup) { try { viewer.cleanup(); } catch { /* gone */ } viewer.cleanup = null; }
   pausePlayers(viewer); want = null;
+  if (fromPop !== true && viewerPushed && history.state?.ajFile) { viewerSkipPop = true; history.back(); }
+  viewerPushed = false;
   viewer.hint.classList.remove('on');
   viewer.v.hidden = true; delete viewer.v.dataset.modalOpen;
   viewer.stage.replaceChildren(); viewer.note.textContent = ''; viewer.note.hidden = true; viewer.card = null; viewer.m = null;
@@ -620,10 +689,22 @@ function viewImage(url, name, c, m = null) {
 }
 function viewPlayer(m, url, c) {
   const V = openViewer(m.name, c, 'player', m);
-  const v = mk(m.kind, 'mplayer'); v.controls = true; v.src = url; v.preload = 'metadata';
+  // Move a loaded inline video: no decoder restart, pause, duplicate audio or lost position.
+  const inline = m.kind === 'video' ? c?.querySelector('.mbody video') : null;
+  const inlineHeight = inline?.getBoundingClientRect().height;
+  const v = inline || mk(m.kind, 'mplayer');
+  v.classList.add('mplayer'); v.controls = true;
+  if (!inline) { v.src = url; v.preload = 'metadata'; }
+  if (inline) {
+    const body = c.querySelector('.mbody'), height = body.style.minHeight;
+    // Keep the card's geometry while its player is in the overlay (no scroll clamping).
+    body.style.minHeight = `${inlineHeight}px`;
+    const placeholder = mk('span'); placeholder.setAttribute('aria-hidden', 'true'); body.appendChild(placeholder);
+    V.cleanup = () => { v.classList.remove('mplayer'); body.style.minHeight = height; if (c.isConnected) body.replaceChildren(v, c._videoSurface); else v.pause(); };
+  }
   if (m.kind === 'video') { v.playsInline = true; v.setAttribute('playsinline', ''); }
   V.stage.replaceChildren(v);
-  v.play?.().catch(() => {});
+  if (!inline) v.play?.().catch(() => {});
 }
 async function viewDoc(kind, m, blob, c) {
   const V = openViewer(m.name, c, 'doc', m);
@@ -715,7 +796,7 @@ function viewHtml(html, m, c) {
   for (const [k, v] of Object.entries(sandboxAttrs())) f.setAttribute(k, v);
   f.className = 'mframe';
   f.title = name;
-  f.srcdoc = html;
+  f.srcdoc = html + FRAME_NOBAR;                     // P273: appended, so a doctype stays first (no quirks mode)
   V.stage.replaceChildren(f);
   V.note.textContent = t('media.htmlNote'); V.note.hidden = false;
 }

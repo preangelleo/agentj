@@ -13,7 +13,9 @@
 // arrive in the same list as Claude's (host busy.py), so they are the same robots. 返回 goes back to the list.
 import { t, onLang } from './t.js';
 import { registerLayer } from './layers.js';
+import { copyable } from './copycode.js';   // P292: the report path can be copied
 import { ROBOTS } from './robots.js';
+import { settleRobots } from './robot-color.js';   // P302: a robot never wears its ground's colour
 import { VENDOR_SVGS } from './vendor-marks.js';
 import { busyLook, onTheme } from './theme.js';   // P169 (§23): the owner's theme may bring its own robots, or the dots
 import { isReady, sendApp } from './session.js';
@@ -48,6 +50,7 @@ export const ROBOT_N = ROBOTS.length;            // the factory library; a theme
 const robotN = () => busyLook().n || ROBOT_N;
 const sheet = (h) => (busyLook().sheets || SHEETS)[h];
 const dotsMode = () => busyLook().style === 'dots';
+const settle = (el) => settleRobots(el, !!busyLook().sheets);   // P302: a theme's own robots keep their colours
 let tasks = [];
 const assigned = new Map();   // task key → robot index, for as long as the task is on screen (CEOs: by name, kept longer)
 let agentName = () => 'Agent J';
@@ -132,6 +135,26 @@ function robot(x, k, h, dance = true) {
   if (dance) i.style.setProperty('--rbd', danceDelay(k) + 's');   // P207 追加 4: the dance offset, kept under the pop too
   return i;
 }
+/** P281 (owner, 2026-10-14): the reading area's wait figure — every 「已收到 / 排队 / 正在处理 / 切换中」 line starts with it, and
+    a wait without words is this figure alone. The current theme's first robot (factory: 小蓝), dancing, about the body
+    text's height (CSS .wbot: em-sized, so it follows the text size and the font step); the dots theme keeps its three
+    blinking dots — the owner chose them. Decorative: the words beside it say what is going on. */
+export function waitRobot() {
+  if (dotsMode()) {
+    const s = document.createElement('span');
+    s.className = 'wbot wdots';
+    s.setAttribute('aria-hidden', 'true');
+    for (let k = 0; k < 3; k++) s.appendChild(document.createElement('i'));
+    return s;
+  }
+  const i = document.createElement('i');
+  i.className = 'wbot' + (still() ? ' still' : '');
+  i.setAttribute('aria-hidden', 'true');
+  i.dataset.r = '0';
+  i.style.backgroundImage = `url(${sheet(24)})`;
+  i.style.setProperty('--wbn', String(robotN()));
+  return i;
+}
 /** P169 dots (the P150 look, theme preset `dots`): one round dot per item, its colour pair softly blinking (Heavy ⇄ Light);
     a theme with fewer than 9 pairs repeats them. No dance, no bow — a finished dot just goes. */
 function dot(x, k, cls) {
@@ -199,7 +222,7 @@ function paintDots() {
   const shown = keyed(tasks).slice(0, tasks.length > lim ? lim - 1 : lim);
   b.classList.toggle('dots', dotsMode());
   if (dotsMode()) b.replaceChildren(...shown.map((x, k) => dot(x, k)));
-  else { for (const d of b.querySelectorAll('i.bd')) d.remove(); fillRow(b, shown, 18); }
+  else { for (const d of b.querySelectorAll('i.bd')) d.remove(); fillRow(b, shown, 18); settle(b); }
   b.hidden = !tasks.length && !b.querySelector('i.rb');
   if (shown.length < tasks.length) { const more = document.createElement('b'); more.textContent = '+' + (tasks.length - shown.length); b.append(more); }
   const label = t('busy.aria', { n: tasks.length });
@@ -222,9 +245,12 @@ function paintDialog() {
     const s = document.createElement('span'); s.textContent = what(x); s.title = what(x);
     const identity = document.createElement('div'); identity.className = 'busy-identity';
     const brand = document.createElement('strong'); brand.className = 'busy-wordmark'; brand.textContent = harnessName(x.harness);
-    const model = document.createElement('small'); model.textContent = x.model || t('p244.busy44');
-    identity.append(vendorMark(x.harness), brand, vendorMark(x.model, true), model);
-    li.append(fig(x, k, 'row'), b, s, identity);   // 追加 11: every task, its own robot at 24 px (P169 dots: its dot)
+    const model = document.createElement('small'); model.textContent = x.model || '';
+    // P302 (owner: 「工具未报告/模型未报告……没有就不写」): an unknown tool / model leaves no line at all
+    if (x.harness) identity.append(vendorMark(x.harness), brand);
+    if (x.model) identity.append(vendorMark(x.model, true), model);
+    li.append(fig(x, k, 'row'), b, s);
+    if (identity.childNodes.length) li.append(identity);   // 追加 11: every task, its own robot at 24 px (P169 dots: its dot)
     li.setAttribute('role', 'button'); li.tabIndex = 0;     // P160: a tap → this task's card
     li.setAttribute('aria-label', t('busy.detail.open', { who: who(x), what: what(x) }));
     const go = (e) => { e.stopPropagation(); openOne(x.key); };
@@ -236,6 +262,7 @@ function paintDialog() {
   paintOne();
   d.querySelector('.sq').dataset.n = String(Math.min(tasks.length, 9));
   d.querySelector('.sq').dataset.big = String(big.length);
+  settle(d);
 }
 
 // P250: original licensed assets stay byte-identical; the UI uses only approved palette fills.
@@ -277,7 +304,7 @@ function vendorMark(value, isModel=false) {
 }
 export function harnessName(h) {
   return ({claude:'Claude Code · Anthropic', codex:'Codex · OpenAI', opencode:'OpenCode', gemini:'Gemini · Google',
-    deepseek:'DeepSeek'})[h] || h || t('p244.busy45');
+    deepseek:'DeepSeek'})[h] || h || '';
 }
 function paintWorkflow() {
   if (!$('busyWorkflow')) return;
@@ -306,7 +333,7 @@ function paintWorkflow() {
       const row=document.createElement('button'); row.type='button'; row.className='busy-org-person';
       const words=document.createElement('span'); words.textContent=who(x)+' · '+(x.role||t('p244.busy50'));
       const meta=document.createElement('small'); meta.textContent=folder ? (x.role==='CEO' ? t('p244.busy51') : t('p244.busy52')+(x.parent||'CEO')) : harnessName(x.harness);
-      row.append(robot(x,k,24),words,meta); row.onclick=()=>{view='tasks';paintDialog();openOne(x.key);}; section.append(row);
+      row.append(robot(x,k,24),words);if(meta.textContent)row.append(meta); row.onclick=()=>{view='tasks';paintDialog();openOne(x.key);}; section.append(row);
     }); box.append(section);
   }
 }
@@ -356,7 +383,7 @@ function paintOne() {
     if (meta) { const m = document.createElement('div'); m.className = 'bo-meta'; m.textContent = meta; kids.push(m); }
     const dl = document.createElement('dl');
     const row = (label, ...vals) => { const dt = document.createElement('dt'); dt.textContent = label; dl.append(dt); for (const v of vals) dl.append(v); };
-    const dd = (text, code = false) => { const e = document.createElement('dd'); if (code) { const c = document.createElement('code'); c.textContent = text; e.append(c); } else e.textContent = text; return e; };
+    const dd = (text, code = false) => { const e = document.createElement('dd'); if (code) { const c = document.createElement('code'); c.textContent = text; e.append(copyable(c)); } else e.textContent = text; return e; };
     if (oneData === 'old') { /* an older computer: what the list says is all there is */ }
     else if (!info) row(t('busy.detail.last'), dd(t('busy.detail.loading')));
     else {
@@ -373,6 +400,7 @@ function paintOne() {
     const n = document.createElement('div'); n.className = 'bo-note'; n.textContent = t('busy.detail.gone'); kids.push(n);
   }
   box.replaceChildren(...kids);
+  settle($('busyDlg'));
 }
 async function askOne() {
   clearTimeout(oneTimer);

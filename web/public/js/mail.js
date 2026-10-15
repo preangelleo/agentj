@@ -1,8 +1,9 @@
 // P170 · Settings → 邮件通道 (PROTOCOL §10.20): the owner's mailbox for Agent J — preset, address, allowlist, sender check,
 // check interval; 「设置授权码」 opens the host's sealed secret card (the code never travels in these messages); 「测试连接」
 // and 「立即检查」 run on the computer. Everything here is inside the Noise session; addresses are shown with textContent only.
+import { mailServers } from './mail-servers.js';
 import { t } from './t.js';
-import { el } from './ui.js';
+import { el, toast } from './ui.js';
 import { ask1, isReady } from './session.js';
 
 let view = null;          // the host's last `mail_res.view`
@@ -50,6 +51,7 @@ function render() {
   el('mail-auth').value = c.auth || 'standard';
   el('mail-auth-off').hidden = c.auth !== 'off';
   renderPresetNote();
+  el('mail-key').textContent = t(view.has_password ? 'mail.passwordSet' : 'mail.key');
   // status
   const parts = [];
   parts.push(!c.address ? t('mail.stNone') : c.enabled ? t('mail.stOn', { a: c.address }) : t('mail.stOff', { a: c.address }));
@@ -134,7 +136,15 @@ export function configure() {
   el('mail-addr').addEventListener('change', () => {
     const dom = el('mail-addr').value.trim().split('@')[1] || '';
     const hit = ((view && view.presets) || []).find((p) => (p.domains || []).includes(dom.toLowerCase()));
-    if (hit) { el('mail-preset').value = hit.id; el('mail-preset').dispatchEvent(new Event('change')); }
+    const prior = (cfg().address || '').split('@')[1]?.toLowerCase();
+    el('mail-preset').value = hit ? hit.id : dom.toLowerCase() === prior ? (cfg().preset || 'custom') : 'custom';
+    if (!hit && dom.toLowerCase() !== prior) {
+      // A different unknown domain must not silently inherit the old provider's servers.
+      el('mail-imap-host').value = ''; el('mail-smtp-host').value = '';
+      el('mail-imap-port').value = '993'; el('mail-smtp-port').value = '465';
+    }
+    if (el('mail-user').value === cfg().address) el('mail-user').value = '';
+    el('mail-preset').dispatchEvent(new Event('change'));
   });
   el('mail-auth').addEventListener('change', () => { el('mail-auth-off').hidden = el('mail-auth').value !== 'off'; });
   el('mail-save').addEventListener('click', () => {
@@ -143,11 +153,20 @@ export function configure() {
     save(f, view && view.has_password ? t('set.saved') : t('mail.savedNext'));
   });
   el('mail-key').addEventListener('click', async () => {
-    if (!cfg().address) { say(t('mail.why.incomplete')); return; }
+    if (busy) return;
+    const f = formCfg();
+    if (!ADDR.test(f.address)) { say(t('mail.why.address')); el('mail-addr').focus(); return; }
+    if (f.preset === 'custom') {
+      const servers = await mailServers(f);
+      if (!servers) return;
+      Object.assign(f, servers);
+    }
+    if (!await save(f)) return;
     busy = true; render(); say(t('mail.keyOpen'));
     const m = await call({ t: 'mail_key' }, 660000);
     busy = false; render();
-    if (m) say(m.ok ? t('mail.keySaved') : t('mail.keyFail', { why: why(m.why) }));
+    if (m?.ok) { toast(t('mail.passwordSaved')); el('toast').classList.add('mail-saved'); }
+    if (m) say(m.ok ? t(m.verify === 'fail' ? 'mail.testFail' : 'mail.testOk', {why: why(m.detail)}) : t('mail.keyFail', {why: why(m.why)}));
   });
   el('mail-test').addEventListener('click', async () => {
     busy = true; render(); say(t('mail.testing'));

@@ -1,44 +1,111 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://agentj.app/schema/agentj-theme-1.json",
+  "$id": "https://agentj.app/schema/agentj-theme-2.json",
   "title": "Agent J phone theme",
-  "description": "theme.json of an Agent J theme folder (P169). Every section is optional: a missing one keeps the factory look. Colours are #rrggbb; images are PNG files next to theme.json. `agentj theme validate <folder>` checks this schema AND the file rules (pixel sizes, frames, hard pixel edges, contrast); only a folder that passes everything can be applied. Factory presets: robots (default) and dots. Whatever a theme says, the pairing, safety-code, security, offline and removed screens, the menu's shield line, the 网页版 badge, the home-screen icon and every agentj.app page stay official (x-agentj-locked).",
+  "description": "theme.json of an Agent J theme folder (P169). Every section is optional: a missing one keeps the factory look. Colours are #rrggbb; images are PNG files next to theme.json. `agentj theme validate <folder>` checks this schema AND the file rules (pixel sizes, frames, hard pixel edges, contrast); only a folder that passes everything can be applied. Factory presets: robots (default) and dots. Whatever a theme says, the pairing, safety-code, security, offline and removed screens, the menu's shield line, the \u7f51\u9875\u7248 badge, the home-screen icon and every agentj.app page stay official (x-agentj-locked).",
   "type": "object",
-  "required": ["schema", "id", "name"],
+  "required": [
+    "schema",
+    "id",
+    "name"
+  ],
   "additionalProperties": false,
   "properties": {
-    "$schema": { "type": "string", "maxLength": 200 },
-    "schema": { "const": 1, "description": "Theme format version." },
-    "id": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]{1,31}$", "description": "Short name, lower-case letters, digits and -. robots and dots belong to the factory presets." },
-    "name": { "$ref": "#/$defs/title", "description": "Shown by agentj theme list." },
-    "description": { "type": "string", "maxLength": 200 },
-    "author": { "type": "string", "maxLength": 64 },
+    "$schema": {
+      "type": "string",
+      "maxLength": 200
+    },
+    "schema": {
+      "type": "integer",
+      "enum": [
+        1,
+        2
+      ],
+      "description": "Version 2 adds five state logos; version 1 single images remain supported."
+    },
+    "id": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9-]{1,31}$",
+      "description": "Short name, lower-case letters, digits and -. robots and dots belong to the factory presets."
+    },
+    "name": {
+      "$ref": "#/$defs/title",
+      "description": "Shown by agentj theme list."
+    },
+    "description": {
+      "type": "string",
+      "maxLength": 200
+    },
+    "author": {
+      "type": "string",
+      "maxLength": 64
+    },
     "colors": {
       "type": "object",
       "additionalProperties": false,
       "properties": {
         "state": {
           "type": "object",
-          "description": "The whole chat screen is the Agent's state colour; text on it is Lotion #faf9f5, so each needs ≥ 2.5:1 against Lotion and the five must differ clearly. Dark mode deepens them automatically.",
+          "description": "The whole chat screen is the Agent's state colour; text on it is Lotion #faf9f5, so each needs \u2265 2.5:1 against Lotion and the five must differ clearly. Dark mode deepens them automatically.",
           "additionalProperties": false,
           "properties": {
-            "idle": { "$ref": "#/$defs/hex", "default": "#629887", "description": "Waiting for your next message (factory: Emerald Oasis, green)." },
-            "working": { "$ref": "#/$defs/hex", "default": "#6a9bcc", "description": "The Agent is working (factory: Windstorm, blue)." },
-            "waiting": { "$ref": "#/$defs/hex", "default": "#d97757", "description": "Waiting for your approval (factory: Peachy Feeling, orange)." },
-            "question": { "$ref": "#/$defs/hex", "default": "#827dbd", "description": "Waiting for you to pick an answer (factory: Magic Carpet, purple)." },
-            "offline": { "$ref": "#/$defs/hex", "default": "#858585", "description": "Disconnected / stopped (factory: Black Mana, grey)." }
+            "idle": {
+              "$ref": "#/$defs/hex",
+              "default": "#629887",
+              "description": "Waiting for your next message (factory: Emerald Oasis, green)."
+            },
+            "working": {
+              "$ref": "#/$defs/hex",
+              "default": "#6a9bcc",
+              "description": "The Agent is working (factory: Windstorm, blue)."
+            },
+            "waiting": {
+              "$ref": "#/$defs/hex",
+              "default": "#d97757",
+              "description": "Waiting for your approval (factory: Peachy Feeling, orange)."
+            },
+            "question": {
+              "$ref": "#/$defs/hex",
+              "default": "#827dbd",
+              "description": "Waiting for you to pick an answer (factory: Magic Carpet, purple)."
+            },
+            "offline": {
+              "$ref": "#/$defs/hex",
+              "default": "#858585",
+              "description": "Disconnected / stopped (factory: Black Mana, grey)."
+            }
           }
         },
         "card": {
           "type": "object",
-          "description": "Fill of the message card on top of each page, by who sent it. Text on it is Noir #2c2b26: ≥ 4.5:1.",
+          "description": "Fill of the message card on top of each page, by who sent it. Text on it is Noir #2c2b26: \u2265 4.5:1.",
           "additionalProperties": false,
           "properties": {
-            "owner": { "$ref": "#/$defs/hex", "default": "#ffe292", "description": "What you said (factory: Banana Republic)." },
-            "agent": { "$ref": "#/$defs/hex", "default": "#cacadb", "description": "Agent-to-Agent messages (factory: Dust of the Moon)." },
-            "computer": { "$ref": "#/$defs/hex", "default": "#c7dedc", "description": "Typed at the computer (factory: Peek-a-Blue)." },
-            "developer": { "$ref": "#/$defs/hex", "default": "#c1e1f0", "description": "From a developer tool (factory: Cotton Clouds)." },
-            "system": { "$ref": "#/$defs/hex", "default": "#efddcf", "description": "System, scheduled task and command cards (factory: White Truffle)." }
+            "owner": {
+              "$ref": "#/$defs/hex",
+              "default": "#ffe292",
+              "description": "What you said (factory: Banana Republic)."
+            },
+            "agent": {
+              "$ref": "#/$defs/hex",
+              "default": "#cacadb",
+              "description": "Agent-to-Agent messages (factory: Dust of the Moon)."
+            },
+            "computer": {
+              "$ref": "#/$defs/hex",
+              "default": "#c7dedc",
+              "description": "Typed at the computer (factory: Peek-a-Blue)."
+            },
+            "developer": {
+              "$ref": "#/$defs/hex",
+              "default": "#c1e1f0",
+              "description": "From a developer tool (factory: Cotton Clouds)."
+            },
+            "system": {
+              "$ref": "#/$defs/hex",
+              "default": "#efddcf",
+              "description": "System, scheduled task and command cards (factory: White Truffle)."
+            }
           }
         },
         "menu": {
@@ -55,59 +122,149 @@
         },
         "dialog": {
           "type": "object",
-          "description": "P207: every centred dialog (usage numbers, the 在办 robots, the load line, confirmations, contact cards …) shares ONE background. Its text is Lotion #faf9f5, so the colour needs ≥ 4.5:1 against Lotion (a dark colour).",
+          "description": "P207: every centred dialog (usage numbers, the \u5728\u529e robots, the load line, confirmations, contact cards \u2026) shares ONE background. Its text is Lotion #faf9f5, so the colour needs \u2265 4.5:1 against Lotion (a dark colour).",
           "additionalProperties": false,
           "properties": {
-            "background": { "$ref": "#/$defs/hex", "default": "#2c2b26", "description": "The dialog card (factory: Noir)." }
+            "background": {
+              "$ref": "#/$defs/hex",
+              "default": "#2c2b26",
+              "description": "The dialog card (factory: Noir)."
+            }
           }
         }
       }
     },
     "logo": {
       "type": "object",
-      "description": "The logo at the top left of the chat page (tap = text size). PNG, square, 128×128 or 256×256 px, ≤ 64 KiB, not animated. Pairing / security screens keep the official logo.",
-      "required": ["image"],
+      "description": "The logo at the top left of the chat page (tap = menu; hold = chat). PNG, square, 128\u00d7128 or 256\u00d7256 px, \u2264 64 KiB, not animated. Pairing / security screens keep the official logo.",
       "additionalProperties": false,
       "properties": {
-        "image": { "$ref": "#/$defs/png" },
-        "disc": { "type": "boolean", "default": true, "description": "Keep the light round disc behind the logo (it keeps a dark logo readable on every state colour)." }
-      }
+        "image": {
+          "$ref": "#/$defs/png"
+        },
+        "disc": {
+          "type": "boolean",
+          "default": true,
+          "description": "Keep the light round disc behind the logo (it keeps a dark logo readable on every state colour)."
+        },
+        "states": {
+          "type": "object",
+          "required": [
+            "idle",
+            "working",
+            "waiting",
+            "question",
+            "offline"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "idle": {
+              "$ref": "#/$defs/png"
+            },
+            "working": {
+              "$ref": "#/$defs/png"
+            },
+            "waiting": {
+              "$ref": "#/$defs/png"
+            },
+            "question": {
+              "$ref": "#/$defs/png"
+            },
+            "offline": {
+              "$ref": "#/$defs/png"
+            }
+          }
+        }
+      },
+      "oneOf": [
+        {
+          "required": [
+            "image"
+          ]
+        },
+        {
+          "required": [
+            "states"
+          ]
+        }
+      ]
     },
     "send_icon": {
       "type": "object",
-      "description": "The glyph on the Send button (factory: the rocket). PNG with transparency, 128×128 or 256×256 px, ≤ 32 KiB: only its shape (alpha) is used, painted in Lotion; the four corners must be clear and 5–70 % of it covered.",
-      "required": ["image"],
+      "description": "The glyph on the Send button (factory: the pixel robot). PNG with transparency, 128\u00d7128 or 256\u00d7256 px, \u2264 32 KiB: only its shape (alpha) is used, painted in Lotion; the four corners must be clear and 5\u201370 % of it covered.",
+      "required": [
+        "image"
+      ],
       "additionalProperties": false,
       "properties": {
-        "image": { "$ref": "#/$defs/png" }
+        "image": {
+          "$ref": "#/$defs/png"
+        }
       }
     },
     "busy": {
       "type": "object",
       "description": "The background-work indicator at the top right of the reply card: one figure per Agent working in the background.",
-      "required": ["style"],
+      "required": [
+        "style"
+      ],
       "additionalProperties": false,
       "properties": {
-        "style": { "enum": ["robots", "dots"], "default": "robots", "description": "robots = dancing pixel robots (factory default); dots = round dots that softly blink." },
+        "style": {
+          "enum": [
+            "robots",
+            "dots"
+          ],
+          "default": "robots",
+          "description": "robots = dancing pixel robots (factory default); dots = round dots that softly blink."
+        },
         "robots": {
           "type": "object",
-          "description": "Your own robots (style robots; missing = the 16 factory robots). Two sprite sheets, one row per robot, 13 frames across (12 dance steps, then the bow): sheet_12 = 12×12 px art (shown 24 px, 2×) → 156 × 12·N px; sheet_18 = 18×18 px art (shown 18 px) → 234 × 18·N px. Pixels fully clear or fully opaque, ≤ 8 colours per robot, no empty frame, ≤ 32 KiB each.",
-          "required": ["sheet_12", "sheet_18", "names"],
+          "description": "Your own robots (style robots; missing = the 16 factory robots). Two sprite sheets, one row per robot, 13 frames across (12 dance steps, then the bow): sheet_12 = 12\u00d712 px art (shown 24 px, 2\u00d7) \u2192 156 \u00d7 12\u00b7N px; sheet_18 = 18\u00d718 px art (shown 18 px) \u2192 234 \u00d7 18\u00b7N px. Pixels fully clear or fully opaque, \u2264 8 colours per robot, no empty frame, \u2264 32 KiB each.",
+          "required": [
+            "sheet_12",
+            "sheet_18",
+            "names"
+          ],
           "additionalProperties": false,
           "properties": {
-            "sheet_12": { "$ref": "#/$defs/png" },
-            "sheet_18": { "$ref": "#/$defs/png" },
-            "names": { "type": "array", "minItems": 1, "maxItems": 16, "items": { "$ref": "#/$defs/robotName" }, "description": "One name per row, top to bottom; N = how many." }
+            "sheet_12": {
+              "$ref": "#/$defs/png"
+            },
+            "sheet_18": {
+              "$ref": "#/$defs/png"
+            },
+            "names": {
+              "type": "array",
+              "minItems": 1,
+              "maxItems": 16,
+              "items": {
+                "$ref": "#/$defs/robotName"
+              },
+              "description": "One name per row, top to bottom; N = how many."
+            }
           }
         },
         "dots": {
           "type": "object",
           "description": "Dot colours (style dots; missing = the 9 factory pairs). Each dot blinks between heavy and light.",
-          "required": ["colors"],
+          "required": [
+            "colors"
+          ],
           "additionalProperties": false,
           "properties": {
-            "colors": { "type": "array", "minItems": 1, "maxItems": 9, "items": { "$ref": "#/$defs/dotPair" } },
-            "blink": { "type": "boolean", "default": true }
+            "colors": {
+              "type": "array",
+              "minItems": 1,
+              "maxItems": 9,
+              "items": {
+                "$ref": "#/$defs/dotPair"
+              }
+            },
+            "blink": {
+              "type": "boolean",
+              "default": true
+            }
           }
         }
       }
@@ -115,31 +272,76 @@
   },
   "x-agentj-locked": [
     "pairing, safety-code (SAS), removed and offline screens",
-    "the security badge 网页版 and its panel, the menu's shield line",
+    "the security badge \u7f51\u9875\u7248 and its panel, the menu's shield line",
     "the home-screen icon, favicon and manifest",
     "fonts (self-hosted; no third-party fonts)",
     "every agentj.app page (official site, account, docs) and the relay"
   ],
   "$defs": {
-    "hex": { "type": "string", "pattern": "^#[0-9a-fA-F]{6}$" },
-    "png": { "type": "string", "pattern": "^[a-z0-9][a-z0-9._-]{0,63}\\.png$", "description": "A PNG file name in the theme folder (no folders)." },
+    "hex": {
+      "type": "string",
+      "pattern": "^#[0-9a-fA-F]{6}$"
+    },
+    "png": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9._-]{0,63}\\.png$",
+      "description": "A PNG file name in the theme folder (no folders)."
+    },
     "title": {
       "type": "object",
-      "required": ["zh", "en"],
+      "required": [
+        "zh",
+        "en"
+      ],
       "additionalProperties": false,
-      "properties": { "zh": { "type": "string", "minLength": 1, "maxLength": 12 }, "en": { "type": "string", "minLength": 1, "maxLength": 24 } }
+      "properties": {
+        "zh": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 12
+        },
+        "en": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 24
+        }
+      }
     },
     "robotName": {
       "type": "object",
-      "required": ["zh", "en"],
+      "required": [
+        "zh",
+        "en"
+      ],
       "additionalProperties": false,
-      "properties": { "zh": { "type": "string", "minLength": 1, "maxLength": 6 }, "en": { "type": "string", "minLength": 1, "maxLength": 12 } }
+      "properties": {
+        "zh": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 6
+        },
+        "en": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 12
+        }
+      }
     },
     "dotPair": {
       "type": "object",
-      "required": ["heavy", "light"],
+      "required": [
+        "heavy",
+        "light"
+      ],
       "additionalProperties": false,
-      "properties": { "heavy": { "$ref": "#/$defs/hex" }, "light": { "$ref": "#/$defs/hex" } }
+      "properties": {
+        "heavy": {
+          "$ref": "#/$defs/hex"
+        },
+        "light": {
+          "$ref": "#/$defs/hex"
+        }
+      }
     }
   }
 }

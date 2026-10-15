@@ -930,6 +930,20 @@
       "verify": "agentj config auto-update status",
       "since": "0.16.5"
     },
+    "updates.report_failures": {
+      "type": "boolean",
+      "tier": "user",
+      "default": true,
+      "description": "When an upgrade fails, send the failed step, the reason and the installer's last lines (redacted on this computer: keys, tokens, paths, names) with the redacted doctor output to Agent J support, once per version and reason a day; off sends nothing / 升级失败时自动把失败步骤、原因和安装命令最后几行（本机先脱敏）连同脱敏后的自检结果发给 Agent J 客服；关闭则不发",
+      "aliases": [
+        "report-upgrade-failures",
+        "升级失败自动上报"
+      ],
+      "needs": [],
+      "apply": "hot",
+      "verify": "agentj config get updates.report_failures",
+      "since": "0.22.0"
+    },
     "browser.enabled": {
       "type": "boolean",
       "default": true,
@@ -1010,6 +1024,12 @@
       "verify": "agentj config validate --json",
       "since": "0.17.4",
       "maxLength": 160
+    },
+    "background_done.enabled": {
+      "type": "boolean", "default": true, "tier": "user", "apply": "hot",
+      "description": "Report background job completions / 后台活结束时唤醒主 Agent 汇报",
+      "aliases": ["background completion", "后台完成提示"], "needs": [],
+      "verify": "agentj config get background_done.enabled", "since": "0.22.0"
     },
     "heartbeat.enabled": {
       "type": "boolean",
@@ -1105,6 +1125,230 @@
       "apply": "hot",
       "verify": "agentj config get quota.auto_switch",
       "since": "0.21.0"
+    },
+    "ui.card_hot_action": {
+      "type": "string",
+      "default": "web-page-report",
+      "tier": "user",
+      "description": "The reply card's bottom-left hot key: which command or skill it runs (default web-page-report; e.g. status, compact, clear, or any skill name) / 回复卡左下角快捷技能键绑定的命令或技能（默认 web-page-report，可换成 status、compact、clear 或任意技能名）",
+      "aliases": [
+        "card hot action",
+        "hot key",
+        "hot skill",
+        "快捷技能键",
+        "快捷技能",
+        "左下角按钮"
+      ],
+      "needs": [],
+      "apply": "hot",
+      "verify": "agentj config get ui.card_hot_action --json",
+      "since": "0.22.0",
+      "maxLength": 64,
+      "pattern": "/?[A-Za-z0-9][A-Za-z0-9_:.\\-]{0,62}",
+      "patternHint": "a command or skill name like web-page-report, status or compact (a leading / is fine)"
+    },
+    "imessage.enabled": {
+      "type": "boolean",
+      "default": false,
+      "tier": "user",
+      "description": "macOS only: read new iMessage / SMS on this Mac (read-only, needs Full Disk Access) and send the important ones to your paired phone / 仅 macOS：只读这台 Mac 上新的 iMessage / 短信（需要完全磁盘访问权限），把重要的推到配对手机",
+      "aliases": [
+        "imessage",
+        "iMessage 助手",
+        "短信助手"
+      ],
+      "needs": [],
+      "apply": "hot",
+      "verify": "agentj imessage status",
+      "since": "0.22.0"
+    },
+    "imessage.interval_minutes": {
+      "type": "integer",
+      "default": 5,
+      "tier": "user",
+      "minimum": 1,
+      "maximum": 1440,
+      "description": "How often to look for new messages, 1–1440 minutes (codes: 1–5 is best) / 多久看一次新消息，1–1440 分钟（要及时收验证码建议 1–5）",
+      "aliases": [
+        "imessage interval",
+        "短信扫描间隔",
+        "扫描间隔"
+      ],
+      "needs": [],
+      "apply": "hot",
+      "verify": "agentj imessage status",
+      "since": "0.22.0"
+    },
+    "imessage.delivery": {
+      "type": "string",
+      "default": "instant_digest",
+      "tier": "user",
+      "enum": [
+        "instant",
+        "instant_digest",
+        "digest"
+      ],
+      "description": "instant = every kept message at once; instant_digest = important at once, the rest in the digest; digest = only codes and VIPs at once / 提醒方式：全部即时 / 重要即时 + 其余进摘要 / 只要摘要（验证码与重要联系人仍即时）",
+      "aliases": [
+        "imessage delivery",
+        "短信提醒方式",
+        "提醒方式"
+      ],
+      "needs": [],
+      "apply": "hot",
+      "verify": "agentj imessage status",
+      "since": "0.22.0"
+    },
+    "imessage.digest_at": {
+      "type": "string",
+      "default": "09:00,18:00",
+      "tier": "user",
+      "maxLength": 23,
+      "pattern": "(([01][0-9]|2[0-3]):[0-5][0-9](,([01][0-9]|2[0-3]):[0-5][0-9]){0,3})?",
+      "patternHint": "HH:MM[,HH:MM…] (24-hour, up to 4) or empty",
+      "description": "Digest times, local HH:MM, comma-separated, up to 4; empty = no digest / 摘要时间（本地 HH:MM，逗号分隔，最多 4 个），留空不发摘要",
+      "aliases": [
+        "imessage digest",
+        "短信摘要时间",
+        "摘要时间"
+      ],
+      "needs": [],
+      "apply": "hot",
+      "verify": "agentj imessage status",
+      "since": "0.22.0"
+    },
+    "imessage.quiet_hours": {
+      "type": "string",
+      "default": "",
+      "tier": "user",
+      "maxLength": 11,
+      "pattern": "(([01][0-9]|2[0-3]):[0-5][0-9]-([01][0-9]|2[0-3]):[0-5][0-9])?",
+      "patternHint": "HH:MM-HH:MM or empty",
+      "description": "Quiet hours HH:MM-HH:MM: alerts wait for the digest (codes and VIPs still come); empty = off / 免打扰时段 HH:MM-HH:MM：期间提醒攒进摘要（验证码与重要联系人照常），留空关闭",
+      "aliases": [
+        "imessage quiet",
+        "短信免打扰",
+        "免打扰时段"
+      ],
+      "needs": [],
+      "apply": "hot",
+      "verify": "agentj imessage status",
+      "since": "0.22.0"
+    },
+    "imessage.strictness": {
+      "type": "string",
+      "default": "standard",
+      "tier": "user",
+      "enum": [
+        "loose",
+        "standard",
+        "strict"
+      ],
+      "description": "Filter: loose = block only clear spam; standard; strict = only codes, VIPs and clear notices / 过滤强度：宽松（只挡确定的垃圾）/ 标准 / 严格（只提醒验证码、重要联系人和明确通知）",
+      "aliases": [
+        "imessage filter",
+        "短信过滤强度",
+        "过滤强度"
+      ],
+      "needs": [],
+      "apply": "hot",
+      "verify": "agentj imessage status",
+      "since": "0.22.0"
+    },
+    "imessage.codes": {
+      "type": "string",
+      "default": "show",
+      "tier": "user",
+      "enum": [
+        "show",
+        "mask",
+        "off"
+      ],
+      "description": "Verification codes: show (hidden from the history after 30 minutes), mask (source only) or off / 验证码：显示（30 分钟后从历史里隐去）/ 打码（只显示来源）/ 不提醒",
+      "aliases": [
+        "imessage codes",
+        "验证码显示"
+      ],
+      "needs": [],
+      "apply": "hot",
+      "verify": "agentj imessage status",
+      "since": "0.22.0"
+    },
+    "imessage.groups": {
+      "type": "boolean",
+      "default": true,
+      "tier": "user",
+      "description": "Include group chats (digest only) / 包含群聊（只进摘要）",
+      "aliases": [
+        "imessage groups",
+        "短信群聊"
+      ],
+      "needs": [],
+      "apply": "hot",
+      "verify": "agentj imessage status",
+      "since": "0.22.0"
+    },
+    "imessage.llm": {
+      "type": "string",
+      "default": "off",
+      "tier": "user",
+      "enum": [
+        "off",
+        "redacted"
+      ],
+      "description": "Second layer for undecided messages: off = local rules only (nothing leaves this Mac); redacted = Jev sees a redacted copy (numbers, e-mails, links removed; never codes) / 第二层智能分类：关（只用本地规则，正文不出本机）/ 脱敏后交 Jev 判断（去掉号码、邮箱、链接，验证码永不外发）",
+      "aliases": [
+        "imessage llm",
+        "短信智能分类"
+      ],
+      "needs": [],
+      "apply": "hot",
+      "verify": "agentj imessage status",
+      "since": "0.22.0"
+    },
+    "imessage.vip": {
+      "type": "array",
+      "default": [],
+      "tier": "user",
+      "description": "VIP numbers / e-mails: always alerted, matched exactly (never by name) / 重要联系人号码或邮箱：一律提醒，严格按号码匹配，不按姓名",
+      "aliases": [
+        "imessage vip",
+        "短信重要联系人"
+      ],
+      "needs": [],
+      "apply": "hot",
+      "verify": "agentj imessage status",
+      "since": "0.22.0"
+    },
+    "imessage.mute": {
+      "type": "array",
+      "default": [],
+      "tier": "user",
+      "description": "Muted numbers / e-mails / keywords: never alerted / 静音的号码、邮箱或关键词：永不提醒",
+      "aliases": [
+        "imessage mute",
+        "短信静音名单"
+      ],
+      "needs": [],
+      "apply": "hot",
+      "verify": "agentj imessage status",
+      "since": "0.22.0"
+    },
+    "imessage.instructions": {
+      "type": "string",
+      "default": "",
+      "tier": "user",
+      "maxLength": 4000,
+      "description": "Your filtering and alert rules in your own words (read-only on the phone; ask Agent J to change it: agentj imessage instructions set) / 用你自己的话写的过滤与提醒规则（手机上只读；要改就让 Agent J 用 agentj imessage instructions set 改）",
+      "aliases": [
+        "imessage instructions",
+        "短信规则说明",
+        "iMessage 规则"
+      ],
+      "needs": [],
+      "apply": "hot",
+      "verify": "agentj imessage status",
+      "since": "0.22.0"
     }
   }
 }

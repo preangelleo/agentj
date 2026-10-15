@@ -18,6 +18,20 @@ def clean(text: str, limit: int) -> str:
     return "".join(out)
 
 
+_FFFD_LINE = re.compile(r"^[ \t]*\ufffd+[ \t]*(?:\n|$)", re.M)
+_FFFD_EDGE = re.compile(r"^\s*\ufffd[\s\ufffd]*|[\s\ufffd]*\ufffd\s*$")
+
+
+def drop_replacement(text: str) -> str:
+    """P281: U+FFFD (the browser's 「◆?」) is never meant for the owner. A model now and then opens its turn with a text
+    block that is nothing but U+FFFD (Opus 5.5 before a /switch-harness Skill call, 2026-10-14: the byte is already in
+    Claude Code's own transcript), and the page kept it as the reply's first line. Lines made only of it and any at the
+    very start or end go; one inside a sentence (a quote of broken text) stays."""
+    if not isinstance(text, str) or "\ufffd" not in text:
+        return text
+    return _FFFD_LINE.sub("", _FFFD_EDGE.sub("", text))
+
+
 def clean_line(text: str, limit: int) -> str:
     """One line, no control/format chars, whitespace collapsed (for short server-supplied strings we print)."""
     out = []

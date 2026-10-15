@@ -330,6 +330,12 @@ class MainActivity : Activity() {
 
         // Edge-to-edge (forced on Android 15): pad for the system bars and the keyboard ourselves.
         window.setDecorFitsSystemWindows(false)
+        // P271: the root background owns the bar colour, including on Android 12–14.
+        // Android 15 ignores navigationBarColor for gestures; its transparent bar
+        // shows barsBg. Disable the system contrast scrim for 3-button navigation.
+        @Suppress("DEPRECATION")
+        window.navigationBarColor = Color.TRANSPARENT
+        window.isNavigationBarContrastEnforced = false
         root.setOnApplyWindowInsetsListener { v, insets ->
             val bars = insets.getInsets(WindowInsets.Type.systemBars() or WindowInsets.Type.displayCutout())
             val ime = insets.getInsets(WindowInsets.Type.ime())

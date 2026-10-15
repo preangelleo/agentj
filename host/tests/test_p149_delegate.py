@@ -24,40 +24,40 @@ class CoreV10(unittest.TestCase):
 
     def test_triage_sits_right_after_dispatch(self):
         for text, dispatch, triage in ((self.zh, "你绝不是某个工作流的 CEO", "每条请求先判三类"),
-                                       (self.en, "You are never the CEO", "Sort every request into one of three kinds")):
+                                       (self.en, "You are never the CEO", "Sort each request")):
             lines = text.splitlines()
             self.assertTrue(lines[3].startswith(dispatch))   # P186: line 2 is the chairman philosophy
             self.assertIn(triage, lines[4])
 
     def test_three_way_triage_and_harness_tools(self):
-        for needle in ("一定派 CEO", "派子 Agent", "Agent/Task 工具", "OpenCode 用 task 子 Agent", "headless 子会话", "`codex exec`",
-                       "只有立等可取的小事、而且没有对应 CEO，你才亲自做"):
+        for needle in ("一定派 CEO", "派子 Agent", "Agent/Task", "OpenCode 用 task", "headless", "`codex exec`",
+                       "立等可取且无 CEO 的小事才亲做"):
             self.assertIn(needle, self.zh)
-        for needle in ("always dispatch it to that CEO", "dispatch a sub-Agent", "Agent/Task tool", "OpenCode uses its task sub-Agent",
-                       "headless sub-session", "`codex exec`", "only a small thing that is ready in a moment and has no CEO you do yourself"):
+        for needle in ("always dispatch to the CEO", "dispatch a sub-Agent", "Agent/Task", "OpenCode task",
+                       "headless", "`codex exec`", "only immediate small work with no CEO is yours"):
             self.assertIn(needle, self.en)
 
     def test_handed_off_then_standby_and_progress_card(self):
-        for needle in ("已交代给 X，有结论再报", "回到待命", "不凭退出码", "同一张卡片", "随时能插话", "不让消息排队", "派活、监督、汇报"):
+        for needle in ("已交代给 X，有结论再报", "回到待命", "不凭退出码", "同回合叠同卡", "随时接主人插话", "避免消息排队", "派活、监督、汇报"):
             self.assertIn(needle, self.zh)
-        for needle in ("Handed to X; I will report when there is a result", "back to standby", "not the exit code", "same card",
-                       "interrupt at any time", "messages stop queueing", "Dispatch, supervise, report"):
+        for needle in ("Handed to X; I will report when there is a result", "return to standby", "not exit code", "same card",
+                       "stay interruptible", "keep messages from queueing", "Dispatch, supervise and report"):
             self.assertIn(needle, self.en)
 
     def test_address_and_hierarchy(self):
-        for needle in ("默认称用户「董事长」", "换称呼", "你能干什么", "董事长 → 董事长助理", "虚拟 CEO", "子 Agent（员工）", "「小助理」"):
+        for needle in ("默认称用户「董事长」", "改称", "你能干什么", "董事长 → 董事长助理", "工作流 CEO", "子 Agent 员工", "小助理"):
             self.assertIn(needle, self.zh)
-        for needle in ('call the human "Chairman" by default', "another form of address", "what can you do",
-                       "Chairman → chief of staff", "virtual CEO", "sub-Agents (staff)", '"junior assistant"'):
+        for needle in ('call the human "Chairman" by default', "chosen address", "what can you do",
+                       "Chairman → chief of staff", "workflow CEOs", "sub-Agents", 'junior assistant'):
             self.assertIn(needle, self.en)
 
     def test_delegation_memory_never_lifts_approvals(self):
-        for needle in ("这种不用问我", "这种要先问我", "documentation/MEMORY.md", "「放权规则」", "按决策类型", "不再重复问",
+        for needle in ("这种不用问我", "这种要先问我", "documentation/MEMORY.md", "「放权规则」", "按决策类型", "不重复问",
                        "不写凭据", "不解除五类危险操作的手机审批"):
             self.assertIn(needle, self.zh)
-        for needle in ("don't ask me about this", "ask me first about this", "documentation/MEMORY.md", '"Delegation rules"',
-                       "per decision type", "without asking again", "never a credential",
-                       "never lift the phone approval for the five dangerous operation types"):
+        for needle in ("don't ask me about this", "ask me first", "documentation/MEMORY.md", '"Delegation rules"',
+                       "each decision type", "without repeating questions", "never credentials",
+                       "never lifts the five dangerous operation phone approvals"):
             self.assertIn(needle, self.en)
 
     def test_handoff_before_compaction_and_plain_names(self):

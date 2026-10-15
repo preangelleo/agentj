@@ -7,6 +7,9 @@ The whole chain is deterministic serve code; the (logged-out) Agent is never ask
   Codex     `codex login --device-auth` (official, beta: the owner turns on "device code login" in ChatGPT → Security once).
             The link + one-time code go to the phone card; the owner finishes on ANY signed-in device; the CLI itself
             polls and writes auth.json. Nothing is pasted back.
+  Kimi      (P305) `kimi login --region mainland-cn|global` — Kimi Code CLI's official device-code flow, same shape as Codex:
+            link + code to the phone, the owner approves on any device signed in to kimi.com / kimi.ai, the CLI writes
+            ~/.kimi-code/credentials itself. Its files are backed up first and put back if the live check fails.
   Claude    route A (default) `claude setup-token` runs HERE in a private PTY → the official authorize URL goes to the phone →
             the owner approves in any browser signed in to claude.ai → the code it shows is pasted into the sealed secret
             card (elevate.py: E2E, passkey) → the PTY prints the 1-year token → live-checked (`claude -p`) → written to the
@@ -19,6 +22,16 @@ The whole chain is deterministic serve code; the (logged-out) Agent is never ask
             first-run / trust / login screens (BLOCKERS): safe ones are answered by fixed keys, the rest are reported by
             name (the phone can press the one fixed answer: 「代按确认」); then a real message must get a reply
             (harness.probe) — only then 「已恢复」.
+
+P288 (到期前主动续期): the 1-year Claude token's expiry is only known because Agent J records the day it stored it (no API
+tells). From 7 days before, one light reminder per expiry on day 7, 3 and 1 (a missed day fires the smallest mark crossed,
+once) — text + push + a 「现在续期」 card on the phone that starts route A. Everything else has no fixed expiry (/login and
+Codex ChatGPT sign-ins refresh themselves, provider keys do not expire), so once a day serve makes ONE real tool-free call
+per signed-in harness (`health_check`, the bots' no-tool contract): a login failure lights the rescue at once (a token can
+die early: "log out of all devices", revoked). A new credential replaces the old one the moment its few-second live check
+passes (owner ruling: no "wait for the old one to run out"); a failed check keeps the old one and asks again. The
+authorize link goes only to paired phones (the view), never into a notice / Telegram; it lives 10 minutes, then a new
+round opens by itself (RENEW_ROUNDS).
 
 Red lines: the code / token never reaches a log, history page, notice, relay plaintext or the Agent; PTY text is scanned in
 memory and dropped. Starting a rescue needs a paired phone AND the owner's passkey (serve.ask require_passkey). Only official
@@ -40,10 +53,14 @@ import time
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
-KINDS = ("claude", "codex", "opencode")
+KINDS = ("claude", "codex", "opencode", "kimi")
 META = "auth-rescue.json"           # state dir, 0600: dates and outcomes only — never a code or token
 TOKEN_DAYS = 365                     # `claude setup-token`: "long-lived (1-year) auth token" (2.1.296 banner, official docs)
-WARN_DAYS = 30                       # remind this many days before the token expires
+WARN_DAYS = 7                        # P288: the phone shows 「还有 N 天」 + 现在续期 from this many days before the expiry
+MARKS = (7, 3, 1)                    # P288: one reminder per expiry on each of these days left (smallest crossed mark only)
+RENEW_ROUNDS = 3                     # P288: an authorize link that expired / a refused code opens a new round, this many in all
+HEALTH_TIMEOUT = 60.0                # P288: one daily tool-free call per harness, bounded
+HEALTH_DELAY = float(os.environ.get("AGENTJ_TEST_AUTH_HEALTH_DELAY") or 600)   # s after serve start before the first one
 ALERT_GAP = 600                      # one phone alert per harness per 10 minutes
 CODE_WAIT = 600                      # the Claude flow keeps its PTY (and PKCE verifier) for 10 minutes
 URL_WAIT = 45
@@ -52,6 +69,10 @@ TOKEN_RE = re.compile(r"sk-ant-oat01-[A-Za-z0-9_\-]{40,}")
 CLAUDE_URL_RE = re.compile(r"https://(?:claude\.(?:com|ai)|console\.anthropic\.com|platform\.claude\.com)/\S*oauth/authorize\?\S+")
 CODEX_URL_RE = re.compile(r"https://auth\.openai\.com/\S+")
 CODEX_CODE_RE = re.compile(r"\b[A-Z0-9]{4}-[A-Z0-9]{4,6}\b")
+# P305: `kimi login` (2.2.0, apps/kimi-code/src/cli/sub/login-flow.ts) prints on stderr "Opening browser for Kimi device login:
+# <url>" / "… enter code: <code>" / "Code expires in <n>s."; the URL is on the region's auth host (auth.kimi.com · auth.kimi.ai)
+KIMI_URL_RE = re.compile(r"https://(?:[a-z0-9-]+\.)*kimi\.(?:com|ai)/\S+")
+KIMI_CODE_RE = re.compile(r"enter code:\s*([A-Za-z0-9-]{4,16})")
 ANSI_RE = re.compile(r"\x1b\[[0-9;?<>=]*[a-zA-Z~]|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)|\x1b[()][A-Z0-9]|\x1b[=>78]")
 CLAUDE_STRIP = ("CLAUDECODE", "CLAUDE_CODE_SESSION_ID", "CLAUDE_CODE_ENTRYPOINT", "CLAUDE_AGENT_SDK_SESSION_ID",
                 "CLAUDE_CODE_CHILD_SESSION", "CLAUDE_CODE_MESSAGING_SOCKET", "CLAUDE_CODE_MESSAGING_TOKEN", "CLAUDE_PID",
@@ -372,6 +393,7 @@ class CodexFlow:
         exe = binary("codex")
         if not exe:
             raise RescueError("no_binary")
+        self.had = self.auth.exists() or self.auth.is_symlink()
         try:
             self.backup = self.auth.read_bytes() if self.auth.is_file() and not self.auth.is_symlink() else None
         except OSError:
@@ -399,6 +421,21 @@ class CodexFlow:
         self.close(restore=True)
         raise RescueError(why)
 
+    def restore(self) -> None:
+        """P288: put the previous auth.json back after a login whose live check failed (no previous one → remove)."""
+        try:
+            if self.backup is not None:
+                fd, tmp = tempfile.mkstemp(dir=self.auth.parent, prefix=".auth-")
+                with os.fdopen(fd, "wb") as f:
+                    f.write(self.backup)
+                os.chmod(tmp, 0o600)
+                os.replace(tmp, self.auth)
+            elif not getattr(self, "had", True) and self.auth.is_file() and not self.auth.is_symlink():
+                self.auth.unlink()
+        except OSError:
+            pass
+        self.backup = None
+
     def _read(self, secs):
         try:
             r, _, _ = select.select([self.proc.stdout], [], [], secs)
@@ -424,7 +461,7 @@ class CodexFlow:
             if rc is not None:
                 self._read(.1)
                 if rc == 0:
-                    self.close(restore=False)
+                    self.close(restore=False, keep=True)     # P288: the backup stays until the live check passed
                     return "ok"
                 why = "device_disabled" if re.search(r"device[^\n]{0,60}(not enabled|disabled|enable)", plain(self.out), re.I) else "failed"
                 self.close(restore=True)
@@ -432,7 +469,7 @@ class CodexFlow:
         self.close(restore=True)
         return "timeout"
 
-    def close(self, restore: bool):
+    def close(self, restore: bool, keep: bool = False):
         if self.proc and self.proc.poll() is None:
             try:
                 os.killpg(self.proc.pid, signal.SIGTERM)
@@ -458,7 +495,108 @@ class CodexFlow:
                     f.write(self.backup)
                 os.chmod(tmp, 0o600)
                 os.replace(tmp, self.auth)
-        self.out, self.backup = "", None
+        self.out = ""
+        if not keep:
+            self.backup = None
+
+
+# ------------------------------------------------------------------ Kimi Code: device code (P305)
+class KimiFlow(CodexFlow):
+    """`kimi login --region <r>`: the same device-code shape as Codex. Kimi writes ~/.kimi-code/credentials/<slot>.json and
+    may touch config.toml (its oauth ref): both are backed up as bytes and put back unless the live check passes."""
+
+    def __init__(self, region: str | None = None):
+        super().__init__()
+        from . import agent_kimi
+        self.region = region if region in agent_kimi.REGIONS else "mainland-cn"
+        self.home = agent_kimi.home()
+        self.saved: dict[Path, bytes | None] | None = None
+
+    def _files(self) -> list[Path]:
+        d = self.home / "credentials"
+        try:
+            creds = [p for p in d.iterdir() if p.suffix == ".json" and p.is_file() and not p.is_symlink()]
+        except OSError:
+            creds = []
+        return [self.home / "config.toml", *creds]
+
+    def _snapshot(self) -> None:
+        self.saved = {}
+        for p in self._files():
+            try:
+                self.saved[p] = p.read_bytes() if p.is_file() and not p.is_symlink() else None
+            except OSError:
+                self.saved[p] = None
+
+    def start(self) -> tuple[str, str, int]:
+        exe = binary("kimi")
+        if not exe:
+            raise RescueError("no_binary")
+        self._snapshot()
+        env = harness_env("kimi")
+        env["NO_COLOR"] = "1"
+        for k in ("DISPLAY", "WAYLAND_DISPLAY"):      # a remote rescue: the link is for the phone, no browser opens here
+            env.pop(k, None)
+        env["BROWSER"] = "true"
+        self.proc = subprocess.Popen([exe, "login", "--region", self.region], stdin=subprocess.DEVNULL,
+                                     stdout=subprocess.PIPE, stderr=subprocess.STDOUT, env=env, start_new_session=True,
+                                     cwd=tempfile.gettempdir())
+        os.set_blocking(self.proc.stdout.fileno(), False)
+        end = time.monotonic() + URL_WAIT
+        while time.monotonic() < end:
+            self._read(.3)
+            txt = plain(self.out)
+            u, c = KIMI_URL_RE.search(txt), KIMI_CODE_RE.search(txt)
+            if u and c:
+                self.url, self.code = u.group(0).rstrip(".,;)"), c.group(1)
+                stop = time.monotonic() + 2                # the expiry is the next line: give it a moment
+                while not re.search(r"expires in \d+s", txt) and time.monotonic() < stop and self.proc.poll() is None:
+                    self._read(.2)
+                    txt = plain(self.out)
+                m = re.search(r"expires in (\d+)s", txt)
+                if m:
+                    self.expires = min(int(m.group(1)), 30 * 60)
+                return self.url, self.code, self.expires
+            if self.proc.poll() is not None:
+                self._read(.2)
+                break
+        self.close(restore=True)
+        raise RescueError("no_code_kimi")
+
+    def restore(self) -> None:
+        """Every file `kimi login` may have written goes back to its bytes before the flow (new ones are removed)."""
+        if self.saved is None:
+            return
+        for p in self._files():
+            if p not in self.saved:
+                try:
+                    p.unlink()
+                except OSError:
+                    pass
+        for p, data in self.saved.items():
+            try:
+                if data is None:
+                    if p.is_file() and not p.is_symlink():
+                        p.unlink()
+                    continue
+                if p.is_file() and p.read_bytes() == data:
+                    continue
+                fd, tmp = tempfile.mkstemp(dir=p.parent, prefix=".agentj-p305-")
+                with os.fdopen(fd, "wb") as f:
+                    f.write(data)
+                os.chmod(tmp, 0o600)
+                os.replace(tmp, p)
+            except OSError:
+                pass
+        self.saved = None
+
+    def close(self, restore: bool, keep: bool = False):
+        self.backup = None                            # CodexFlow's single-file backup is not used here
+        super().close(restore=False, keep=keep)
+        if restore:
+            self.restore()
+        elif not keep:
+            self.saved = None
 
 
 class RescueError(Exception):
@@ -583,27 +721,155 @@ def token_due(meta: dict, today: date | None = None) -> dict | None:
     return {"minted": minted.isoformat(), "expires": exp.isoformat(), "days_left": (exp - today).days}
 
 
+def next_mark(days_left: int, sent) -> int | None:
+    """P288: the reminder to send today for `days_left`, given the marks already sent for this expiry. Only the smallest
+    crossed mark fires (serve off on day 7 → day 5 sends the 7-day one late; nothing sent until day 2 → only the 3-day one);
+    each mark once."""
+    sent = set(sent or ())
+    due = [m for m in MARKS if days_left <= m and m not in sent and not any(x < m for x in sent)]
+    return min(due) if due else None
+
+
+def has_oauth_token() -> bool:
+    """A CLAUDE_CODE_OAUTH_TOKEN is in effect (this process or the service env file) — names only, never the value."""
+    if os.environ.get("CLAUDE_CODE_OAUTH_TOKEN"):
+        return True
+    p = service_env_path()
+    if not p:
+        return False
+    try:
+        from . import service
+        return bool(service.env_file_has(p, "CLAUDE_CODE_OAUTH_TOKEN"))
+    except Exception:  # noqa: BLE001
+        return False
+
+
+def expiry_kind(kind: str, meta: dict) -> str:
+    """P288 inventory, per harness: "known" (a setup-token Agent J stored: day + 365) · "unknown" (a setup-token stored
+    elsewhere — no date to count from) · "auto" (/login, Codex ChatGPT: refreshed by the CLI itself) · "none" (provider /
+    API keys: no expiry). Everything but "known" relies on the daily health check."""
+    if kind == "claude":
+        if token_due(meta):
+            return "known"
+        return "unknown" if has_oauth_token() else "auto"
+    return "auto" if kind in ("codex", "kimi") else "none"
+
+
+_HEALTH_ENV_DROP = ("AGENTJ_", "AGENTJARVIS_", "HERDR_", "VIBE_REMOTE_", "TMUX", "SSH_")
+
+
+def health_check(kind: str, timeout: float = HEALTH_TIMEOUT) -> dict:
+    """P288: ONE real tool-free call with the harness's current login (the bots' no-tool command: no tools, no MCP, no
+    session saved). → {"ok": bool, "cls": "login" | "balance" | "rate_limit" | None, "why": fixed word}. The output is
+    classified in memory and dropped; nothing of it is logged or returned."""
+    from types import SimpleNamespace
+    from .bots import native
+    exe = binary(kind)
+    if not exe:
+        return {"ok": False, "cls": None, "why": "no_binary"}
+    env = {k: v for k, v in os.environ.items()
+           if not k.startswith(_HEALTH_ENV_DROP) and not (kind == "claude" and k in CLAUDE_STRIP)}
+    if kind == "kimi":                    # P305: no one-shot print mode — one ACP session in plan mode (agent_kimi.probe)
+        from . import agent_kimi
+        try:
+            ok = bool(agent_kimi.probe(exe, env, timeout).strip())
+        except agent_kimi.ProbeError as e:
+            why = str(e.args[0]) if e.args else "failed"
+            return {"ok": False, "cls": "login" if why == "not_logged_in" else None,
+                    "why": "login" if why == "not_logged_in" else ("timeout" if why == "native_timeout" else "failed")}
+        return {"ok": ok, "cls": None, "why": "ok" if ok else "failed"}
+    out = err = ""
+    with tempfile.TemporaryDirectory(prefix="agentj-p288-") as d:
+        root = Path(d)
+        (root / "system.md").write_text("Reply to the supplied greeting only. No tools are available.")
+        try:
+            cmd = native.command(SimpleNamespace(name=kind, model=None), root, env, selected=exe)
+        except Exception:  # noqa: BLE001 — a BotError (provider config) is not a login problem
+            return {"ok": False, "cls": None, "why": "config"}
+        try:
+            proc = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=env,
+                                    cwd=d, start_new_session=True, text=True)
+        except OSError:
+            return {"ok": False, "cls": None, "why": "spawn"}
+        try:
+            out, err = proc.communicate("Hello. Reply with a short greeting only.", timeout=timeout)
+        except subprocess.TimeoutExpired:
+            for sig in (signal.SIGTERM, signal.SIGKILL):
+                try:
+                    os.killpg(proc.pid, sig)
+                    proc.wait(timeout=3)
+                    break
+                except (ProcessLookupError, PermissionError):
+                    break
+                except subprocess.TimeoutExpired:
+                    continue
+            return {"ok": False, "cls": None, "why": "timeout"}
+    out, err = (out or "")[-200_000:], (err or "")[-50_000:]
+    ok = False
+    if proc.returncode == 0:
+        try:
+            reply, _ = native.parse(kind, out)
+            ok = isinstance(reply, str) and bool(reply.strip())
+        except Exception:  # noqa: BLE001
+            ok = False
+    cls = None if ok else classify(kind, out + "\n" + err)
+    out = err = ""
+    return {"ok": ok, "cls": cls, "why": "ok" if ok else (cls or "failed")}
+
+
+def health_targets() -> list[str]:
+    """The harnesses worth a daily call: installed, supported, and not known to be signed out (a harness the owner never
+    signed in to is not checked — no alert for something never used)."""
+    from . import harness
+    try:
+        d = harness.detect()
+    except Exception:  # noqa: BLE001
+        return []
+    return [h["name"] for h in d.get("harnesses", []) if h.get("name") in KINDS and h.get("installed")
+            and h.get("supported") and h.get("logged_in") is not False]
+
+
+def heartbeat_line(st, lang: str) -> str | None:
+    """P288: one line at the end of a heartbeat while the Claude token is inside its last WARN_DAYS."""
+    due = token_due(read_meta(st))
+    if not due or due["days_left"] > WARN_DAYS:
+        return None
+    d = max(due["days_left"], 0)
+    if lang == "en":
+        return (f"Agent J: the Claude Code login expires in {d} days ({due['expires']}). Tell the owner: Settings → AI login "
+                "rescue → Renew now (one sign-in on the phone; never ask for the token in chat).")
+    return (f"Agent J 提示：Claude Code 登录还有 {d} 天到期（{due['expires']}）。请提醒主人：设置 → AI 登录救援 → 现在续期"
+            "（手机上授权一次即可；绝不在对话里索要 token）。")
+
+
 # ------------------------------------------------------------------ the manager serve owns
 TEXT = {
     "zh": {
-        "alert_login": "{h} 的订阅登录已过期，Agent 暂时不能回复。打开 设置 → AI 登录救援，在手机上一键重新登录（不用回电脑）。",
+        "alert_login": "{h} 的订阅登录已过期，Agent J 暂时不能回复。打开 设置 → AI 登录救援，在手机上一键重新登录（不用回电脑）。",
         "alert_balance": "{h} 的余额 / 额度不足：到服务商网站充值即可，不需要重新登录。",
-        "warn_token": "Claude 长期 token 将在 {d} 天后（{e}）到期。打开 设置 → AI 登录救援 → 重新登录 换一个新的。",
+        "warn_token": "Claude Code 登录还有 {d} 天到期（{e}）。打开 设置 → AI 登录救援 → 现在续期：在手机上授权一次就换上新的，不用回电脑。",
+        "warn_today": "Claude Code 登录今天到期（{e}）。打开 设置 → AI 登录救援 → 现在续期：在手机上授权一次就换上新的，不用回电脑。",
+        "health_login": "每日体检：{h} 的登录已失效（可能在网页上退出了全部设备，或被官方撤销）。打开 设置 → AI 登录救援，在手机上重新登录。",
         "recovered": "{h} 已重新登录并恢复：重启后没有待确认的界面，测试消息已拿到回复。",
         "partial": "{h} 新登录已写入，但自检没有通过：{why}",
         "confirm_title": "AI 登录救援：重新登录 {h}",
     },
     "en": {
-        "alert_login": "{h}'s subscription login expired; the Agent cannot reply. Open Settings → AI login rescue to sign in "
+        "alert_login": "{h}'s subscription login expired; Agent J cannot reply. Open Settings → AI login rescue to sign in "
                        "again from the phone (no need to go back to the computer).",
         "alert_balance": "{h} is out of balance / quota: top up on the provider's site — no new sign-in needed.",
-        "warn_token": "The long-lived Claude token expires in {d} days ({e}). Settings → AI login rescue → Sign in again makes a new one.",
+        "warn_token": "The Claude Code login expires in {d} days ({e}). Settings → AI login rescue → Renew now: approve once on "
+                      "the phone and the new one is in place — no need to go back to the computer.",
+        "warn_today": "The Claude Code login expires today ({e}). Settings → AI login rescue → Renew now: approve once on the "
+                      "phone and the new one is in place — no need to go back to the computer.",
+        "health_login": "Daily check: {h}'s login no longer works (signed out of all devices on the web, or revoked). Open "
+                        "Settings → AI login rescue to sign in again from the phone.",
         "recovered": "{h} is signed in again: no prompt waiting after the restart, and a test message got a reply.",
         "partial": "{h}'s new login is written, but the self-check failed: {why}",
         "confirm_title": "AI login rescue: sign in to {h} again",
     },
 }
-LABEL = {"claude": "Claude Code", "codex": "Codex", "opencode": "OpenCode"}
+LABEL = {"claude": "Claude Code", "codex": "Codex", "opencode": "OpenCode", "kimi": "Kimi Code"}
 WHY = {
     "zh": {"no_binary": "这台电脑上找不到这个程序", "no_url": "官方登录命令没有给出授权链接", "no_code": "Codex 没有给出设备码",
            "device_disabled": "Codex 设备码登录未开启：先在 ChatGPT 设置 → 安全 里打开「设备码登录」（官方要求），再点一次",
@@ -613,6 +879,9 @@ WHY = {
            "conflict": "这台电脑还设置了 {n}，它的优先级高于订阅 token：请删掉它（在服务 env 文件或环境变量里）",
            "cancelled": "已取消", "failed": "官方登录命令失败", "busy": "已有一次救援在进行", "passkey": "需要主人通行密钥确认",
            "probe": "测试消息没有拿到回复", "io": "写入失败", "unsupported": "这个 AI 不支持这种方式",
+           "verify_codex": "新的 Codex 登录发测试消息没有拿到回复：已保留原来的登录，请重新开始",
+           "no_code_kimi": "Kimi Code 没有给出设备码（kimi 版本太旧或连不上 kimi.com / kimi.ai）",
+           "verify_kimi": "新的 Kimi Code 登录发测试消息没有拿到回复：已恢复原来的登录文件，请重新开始",
            "owner_session": "你在电脑上自己开的 {h} 窗口要重开一次才会用到新登录（Agent J 自己的会话已恢复）"},
     "en": {"no_binary": "this program is not installed here", "no_url": "the official login did not print an authorize link",
            "no_code": "Codex did not print a device code",
@@ -623,6 +892,9 @@ WHY = {
            "conflict": "this computer also sets {n}, which outranks the subscription token: remove it (service env file or environment)",
            "cancelled": "cancelled", "failed": "the official login command failed", "busy": "a rescue is already running",
            "passkey": "the owner's passkey is required", "probe": "the test message got no reply", "io": "could not write",
+           "verify_codex": "a test message with the new Codex login got no reply: the previous login is kept, start again",
+           "no_code_kimi": "Kimi Code did not print a device code (kimi too old, or kimi.com / kimi.ai unreachable)",
+           "verify_kimi": "a test message with the new Kimi Code login got no reply: the previous login files are back, start again",
            "unsupported": "not supported for this AI",
            "owner_session": "the {h} window you opened yourself on the computer must be reopened to use the new login (Agent J's own session is back)"},
 }
@@ -658,7 +930,7 @@ class Rescue:
         return getattr(a, "kind", None) if a is not None else None
 
     # ---- detection
-    def signal(self, kind: str, cls: str | None) -> None:
+    def signal(self, kind: str, cls: str | None, text_key: str = "alert_login") -> None:
         """A harness failure was classified. login → dot + one alert (≤ 1 per ALERT_GAP); balance → a top-up hint, no dot."""
         if kind not in KINDS or cls not in ("login", "balance", "rate_limit"):
             return
@@ -670,7 +942,7 @@ class Rescue:
         now = time.monotonic()
         if cls == "login" and now - self.alerted.get(kind, -1e9) > ALERT_GAP:
             self.alerted[kind] = now
-            self.host.agent_notice(self.t("alert_login", h=LABEL[kind]))
+            self.host.agent_notice(self.t(text_key, h=LABEL[kind]))
             self.broadcast()
             push = getattr(self.host, "push_notify", None)
             if push:
@@ -694,13 +966,19 @@ class Rescue:
     def view(self) -> dict:
         from . import harness
         meta = read_meta(self.host.st)
+        health = meta.get("health") if isinstance(meta.get("health"), dict) else {}
         rows = []
         for k in KINDS:
             exe = binary(k)
             st = self.state.get(k, {})
             r = {"kind": k, "label": LABEL[k], "installed": bool(exe), "current": self.current() == k,
                  "state": st.get("cls") or "ok", "routes": {"claude": ["setup_token", "paste", "login"],
-                                                             "codex": ["device"], "opencode": ["provider_key"]}[k]}
+                                                             "codex": ["device"], "opencode": ["provider_key"],
+                                                             "kimi": ["device"]}[k]}
+            r["expiry"] = expiry_kind(k, meta)                   # P288: known / unknown / auto / none
+            hc = health.get(k)
+            if isinstance(hc, dict):
+                r["health"] = {x: hc[x] for x in ("at", "ok", "cls") if x in hc}
             if k == "claude":
                 due = token_due(meta)
                 if due:
@@ -717,9 +995,18 @@ class Rescue:
         f = self.flow
         flow = None
         if f:
-            flow = {k: f[k] for k in ("kind", "route", "stage", "url", "code", "expires_at", "why") if f.get(k) is not None}
+            flow = {k: f[k] for k in ("kind", "route", "stage", "url", "code", "expires_at", "why", "round", "rounds",
+                                                 "reopened", "region")
+                    if f.get(k) is not None}
         dot = any(r["state"] == "login" or r.get("warn") for r in rows)
-        return {"harnesses": rows, "flow": flow, "dot": dot}
+        out = {"harnesses": rows, "flow": flow, "dot": dot}
+        due = token_due(meta)
+        if due and 0 <= due["days_left"] <= WARN_DAYS and rows[0]["installed"]:
+            rem = meta["claude"].get("reminded") if isinstance(meta["claude"].get("reminded"), dict) else {}
+            marks = rem.get("marks") if rem.get("expires") == due["expires"] and isinstance(rem.get("marks"), list) else []
+            out["renew"] = {"kind": "claude", "days_left": max(due["days_left"], 0), "expires": due["expires"],
+                            "mark": min(marks) if marks else None}   # P288: the phone's 「现在续期」 card (dismissed per mark)
+        return out
 
     def needs_dot(self) -> bool:
         """Cheap: a login alert in memory, or a flow running, or a recorded token inside its last WARN_DAYS."""
@@ -749,7 +1036,8 @@ class Rescue:
     async def start(self, kind: str, route: str) -> dict:
         if kind not in KINDS:
             return {"ok": False, "why": "unsupported"}
-        allowed = {"claude": ("setup_token", "paste", "login"), "codex": ("device",), "opencode": ("provider_key",)}[kind]
+        allowed = {"claude": ("setup_token", "paste", "login"), "codex": ("device",), "opencode": ("provider_key",),
+                   "kimi": ("device",)}[kind]
         if route not in allowed:
             return {"ok": False, "why": "unsupported"}
         if self.flow and self.flow.get("stage") not in ("done", "failed"):
@@ -766,8 +1054,8 @@ class Rescue:
             self.host.st.log("auth_rescue_start", agent=kind, status=route)
         except Exception:  # noqa: BLE001
             pass
-        coro = {"device": self._codex, "setup_token": self._claude_pty, "login": self._claude_pty,
-                "paste": self._claude_paste}[route]
+        coro = {"device": self._kimi if kind == "kimi" else self._codex, "setup_token": self._claude_pty,
+                "login": self._claude_pty, "paste": self._claude_paste}[route]
         bg = getattr(self.host, "_bg", None)
         (bg(coro(), "auth_rescue") if bg else asyncio.ensure_future(coro()))
         return {"ok": True}
@@ -810,19 +1098,72 @@ class Rescue:
         res = await asyncio.to_thread(flow.wait, self.cancel)
         if res != "ok":
             return self._end("codex", "failed", res)
+        # P288: the CLI already wrote the new auth.json; a few-second live call decides. Failure → the previous bytes back.
+        self.flow.update(stage="verifying")
+        self.broadcast()
+        hc = await asyncio.to_thread(health_check, "codex")
+        if not hc["ok"]:
+            await asyncio.to_thread(flow.restore)
+            return self._end("codex", "failed", "verify_codex")
+        self._health_mark("codex", hc)
         await self.recover("codex")
 
-    async def _claude_pty(self):
-        route = self.flow["route"]
-        flow = ClaudeFlow(route)
+    async def _kimi(self):
+        """P305: `kimi login --region <the configured site>` — the Codex shape; a failed live check puts the files back."""
+        flow = KimiFlow((getattr(self.host, "agent_cfg", None) or {}).get("region"))
         try:
-            url = await asyncio.to_thread(flow.start)
+            url, code, ttl = await asyncio.to_thread(flow.start)
         except RescueError as e:
-            return self._end("claude", "failed", e.args[0])
-        self.flow.update(stage="url", url=url, expires_at=int(time.time()) + CODE_WAIT)
+            return self._end("kimi", "failed", e.args[0])
+        self.flow.update(stage="device", url=url, code=code, expires_at=int(time.time()) + ttl, region=flow.region)
         self.broadcast()
-        outcome: dict = {}
+        res = await asyncio.to_thread(flow.wait, self.cancel)
+        if res != "ok":
+            return self._end("kimi", "failed", res if res != "device_disabled" else "failed")
+        self.flow.update(stage="verifying")
+        self.broadcast()
+        hc = await asyncio.to_thread(health_check, "kimi")
+        if not hc["ok"]:
+            await asyncio.to_thread(flow.restore)
+            return self._end("kimi", "failed", "verify_kimi")
+        self._health_mark("kimi", hc)
+        await self.recover("kimi")
 
+    async def _claude_pty(self):
+        """P288: up to RENEW_ROUNDS rounds. The authorize link (and its PKCE verifier) lives CODE_WAIT; a link that expired
+        unused or a code the official service refused opens a fresh round by itself — the phone gets the new link."""
+        route = self.flow["route"]
+        for rnd in range(1, RENEW_ROUNDS + 1):
+            flow = ClaudeFlow(route)
+            try:
+                url = await asyncio.to_thread(flow.start)
+            except RescueError as e:
+                return self._end("claude", "failed", e.args[0])
+            if self.cancel.is_set():
+                await asyncio.to_thread(flow.close)
+                return None
+            self.flow.update(stage="url", url=url, expires_at=int(time.time()) + CODE_WAIT, round=rnd,
+                             rounds=RENEW_ROUNDS)
+            self.broadcast()
+            outcome: dict = {}
+            res = await self._claude_round(flow, route, outcome)
+            if res.get("result") == "saved":
+                return await self.recover("claude", route=route)
+            if self.cancel.is_set():
+                return None                       # cancel_flow already ended it
+            why = outcome.get("why") or ("expired" if res.get("result") in ("expired", "gone") else
+                                         "cancelled" if res.get("result") in ("denied", "cancelled") else "failed")
+            if why not in ("expired", "rejected", "timeout") or rnd == RENEW_ROUNDS:
+                return self._end("claude", "failed", why)
+            self.flow.update(stage="starting", url=None, expires_at=None, reopened=why)
+            try:
+                self.host.st.log("auth_rescue_round", agent="claude", status=str(rnd + 1), reason=why)
+            except Exception:  # noqa: BLE001
+                pass
+            self.broadcast()
+        return None
+
+    async def _claude_round(self, flow, route, outcome: dict) -> dict:
         def sink(value: bytearray) -> dict:
             try:
                 code = bytes(value).decode("utf-8")
@@ -845,13 +1186,9 @@ class Rescue:
                           "The authorization code from Claude's official page — paste it only into this card, never into chat",
                           sink)
         try:
-            res = await self.host.elevate.request(card)
+            return await self.host.elevate.request(card)
         finally:
             await asyncio.to_thread(flow.close)
-        if res.get("result") != "saved":
-            return self._end("claude", "failed", outcome.get("why") or ("expired" if res.get("result") in ("expired", "gone") else
-                                                                       "cancelled" if res.get("result") in ("denied", "cancelled") else "failed"))
-        await self.recover("claude", route=route)
 
     async def _claude_paste(self):
         self.flow.update(stage="paste")
@@ -902,7 +1239,13 @@ class Rescue:
                 return {"result": "failed", "why": "io"}
             os.environ["CLAUDE_CODE_OAUTH_TOKEN"] = s
             meta = read_meta(self.host.st)
-            meta["claude"] = {"minted": date.today().isoformat(), "route": "setup_token", "warned": None}
+            old = token_due(meta)
+            # P288: replaced at once, the expiry recounted from today; the reminder marks start over for the new expiry
+            meta["claude"] = {"minted": date.today().isoformat(), "route": "setup_token",
+                              **({"replaced": old["expires"]} if old else {})}
+            h = meta.get("health") if isinstance(meta.get("health"), dict) else {}
+            h["claude"] = {"at": int(time.time()), "ok": True}
+            meta["health"] = h
             write_meta(self.host.st, meta)
             outcome["ok"] = True
             return {"result": "saved", "receipt": {"name": "CLAUDE_CODE_OAUTH_TOKEN", "dest": "service env", "length": len(tok),
@@ -1008,27 +1351,101 @@ class Rescue:
         (bg(coro, "auth_rescue") if bg else asyncio.ensure_future(coro))
         return {"ok": True}
 
-    # ---- daily
+    # ---- daily (P288: 7 / 3 / 1 reminders + the health check)
     def daily(self, today: date | None = None) -> str | None:
-        """Token expiry reminder: once a day inside the last WARN_DAYS. → the text sent, or None."""
+        """Zero-token local check: the recorded token's days left → at most one reminder per mark (MARKS) per expiry.
+        → the text sent, or None."""
         meta = read_meta(self.host.st)
         due = token_due(meta, today)
-        if not due or due["days_left"] > WARN_DAYS:
+        if not due or due["days_left"] > WARN_DAYS or due["days_left"] < 0:
+            return None                   # past the date: the daily health check reports the real failure
+        c = meta["claude"]
+        rem = c.get("reminded") if isinstance(c.get("reminded"), dict) else {}
+        if rem.get("expires") != due["expires"] or not isinstance(rem.get("marks"), list):
+            rem = {"expires": due["expires"], "marks": []}
+        m = next_mark(due["days_left"], rem["marks"])
+        if m is None:
             return None
-        day = (today or date.today()).isoformat()
-        if meta.get("claude", {}).get("warned") == day:
-            return None
-        meta["claude"]["warned"] = day
+        rem["marks"] = sorted(set(rem["marks"]) | {x for x in MARKS if x >= m}, reverse=True)
+        c["reminded"] = rem
+        c.pop("warned", None)
         write_meta(self.host.st, meta)
-        text = self.t("warn_token", d=max(due["days_left"], 0), e=due["expires"])
+        d = max(due["days_left"], 0)
+        text = self.t("warn_token", d=d, e=due["expires"]) if d > 0 else self.t("warn_today", e=due["expires"])
+        try:
+            self.host.st.log("auth_renew_remind", agent="claude", status=str(m))
+        except Exception:  # noqa: BLE001
+            pass
         self.host.agent_notice(text)
         self.broadcast()
+        push = getattr(self.host, "push_notify", None)
+        if push:
+            try:
+                push("security")
+            except Exception:  # noqa: BLE001
+                pass
         return text
 
+    def _health_mark(self, kind: str, res: dict) -> None:
+        meta = read_meta(self.host.st)
+        h = meta.get("health") if isinstance(meta.get("health"), dict) else {}
+        h[kind] = {"at": int(time.time()), "ok": bool(res.get("ok")), **({"cls": res["cls"]} if res.get("cls") else {})}
+        meta["health"] = h
+        write_meta(self.host.st, meta)
+
+    async def health_daily(self, today: date | None = None, force: bool = False) -> dict:
+        """Once a day: one tool-free call per signed-in harness. login → the rescue alert at once (dot + push);
+        balance → the top-up hint; rate limit / a network failure → recorded only. A pass clears a stale login dot.
+        → {kind: result} (empty when already done today)."""
+        day = (today or date.today()).isoformat()
+        meta = read_meta(self.host.st)
+        h = meta.get("health") if isinstance(meta.get("health"), dict) else {}
+        if h.get("day") == day and not force:
+            return {}
+        h["day"] = day
+        meta["health"] = h
+        write_meta(self.host.st, meta)
+        out = {}
+        for kind in await asyncio.to_thread(health_targets):
+            if self.flow and self.flow.get("kind") == kind and self.flow.get("stage") not in ("done", "failed"):
+                continue
+            res = await asyncio.to_thread(health_check, kind)
+            out[kind] = res
+            self._health_mark(kind, res)
+            try:
+                self.host.st.log("auth_health", agent=kind, status="ok" if res["ok"] else res["why"])
+            except Exception:  # noqa: BLE001
+                pass
+            if res["ok"]:
+                if self.state.get(kind, {}).get("cls") == "login":
+                    self.clear(kind)
+                    self.broadcast()
+            elif res.get("cls"):
+                self.signal(kind, res["cls"], "health_login")
+        if out:
+            self.broadcast()
+        return out
+
     async def loop(self, every: float = 3600):
+        """Hourly. Reminders and the health check wait for daytime (browser_login's quiet hours): a push at 00:05 helps no
+        one, and a day's mark / check is still sent the same day once the morning comes."""
+        from .browser_login import quiet
+        started = time.monotonic()
         while True:
+            wait = every
+            if quiet():
+                await asyncio.sleep(every)
+                continue
             try:
                 await asyncio.to_thread(self.daily)
             except Exception:  # noqa: BLE001 — a reminder must never take serve down
                 pass
-            await asyncio.sleep(every)
+            left = HEALTH_DELAY - (time.monotonic() - started)
+            if left <= 0:
+                try:
+                    await self.health_daily()
+                except Exception:  # noqa: BLE001
+                    pass
+            else:
+                wait = min(every, left + 1)
+            await asyncio.sleep(wait)

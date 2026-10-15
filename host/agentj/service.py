@@ -36,7 +36,7 @@ DEFAULT_LABEL = "net.agentj.host"
 LEGACY_UNIT = "agentjarvis"                # ≤ 0.9
 LEGACY_LABEL = "net.agentjarvis.host"
 _NAME_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,63}")
-CAPTURED_ENV = ("AGENTJ_STATE_DIR", "AGENTJ_CLAUDE_BIN", "AGENTJ_CODEX_BIN", "AGENTJ_OPENCODE_BIN", "AGENTJ_GEMINI_BIN")   # written with the new names; read either
+CAPTURED_ENV = ("AGENTJ_STATE_DIR", "AGENTJ_CLAUDE_BIN", "AGENTJ_CODEX_BIN", "AGENTJ_OPENCODE_BIN", "AGENTJ_GEMINI_BIN", "AGENTJ_KIMI_BIN")   # written with the new names; read either
 PROXY_ENV = ("HTTPS_PROXY", "https_proxy", "HTTP_PROXY", "http_proxy", "NO_PROXY", "no_proxy", "ALL_PROXY", "all_proxy")
 TOKEN_ENV = "CLAUDE_CODE_OAUTH_TOKEN"
 
@@ -163,8 +163,8 @@ def service_env(environ: dict | None = None) -> tuple[dict, list[str]]:
     from .binaries import resolve, ENV
     for kind, key in ENV.items():
         resolution = resolve(kind, e)
-        if resolution["path"]:
-            out[key] = resolution["path"]
+        if resolution["path"]:   # P282: the PATH entry itself (…/bin/codex → current/…), not the versioned folder behind it
+            out[key] = stable_path(resolution)
         elif resolution["wrapper"]:
             out.pop(key, None)
             notes.append(f"{kind}: wrapper cannot be resolved; set {key} to the real executable, then agentj service install")
@@ -178,6 +178,57 @@ def service_env(environ: dict | None = None) -> tuple[dict, list[str]]:
         else:
             out[k] = v
     return out, notes
+
+
+def stable_path(resolution: dict) -> str:
+    """P282: what to save for a resolved harness: the PATH entry the owner's shell uses (a symlink a self-updating harness
+    moves to its new version: ~/.local/bin/codex → ~/.codex/packages/standalone/current/bin/codex, ~/.local/bin/claude →
+    ~/.local/share/claude/versions/<v>), never the versioned folder behind it, which the next update leaves behind. A
+    mise / asdf shim keeps the bypassed real path (a shim must never be executed)."""
+    via = resolution.get("via") or resolution.get("reason")
+    req = resolution.get("requested")
+    return req if via == "path" and req and os.path.isabs(req) else resolution["path"]
+
+
+def heal_binary_pins(n: str, environ: dict | None = None) -> list[dict]:
+    """P282: saved harness paths a self-update left behind (binaries.resolve → pin_stale / pin_missing) are rewritten to
+    the PATH entry the service finds now. Only those AGENTJ_<NAME>_BIN lines change; every other byte (keys included) is
+    kept, 0600. → [{"kind", "old", "new"}] (paths only). Never raises: a file that cannot be read or written heals nothing."""
+    from .binaries import ENV, resolve
+    path = env_file(n, environ)
+    try:
+        saved = binary_env(path)
+    except ServiceError:
+        return []
+    e = dict(os.environ if environ is None else environ)
+    e.update(saved)
+    fixes = {}
+    for kind, key in ENV.items():
+        if key not in saved:
+            continue
+        r = resolve(kind, e)
+        if r.get("reason") in ("pin_stale", "pin_missing") and r.get("path"):
+            new = stable_path(r)
+            if new and not any(c in new for c in "\n\r\0"):
+                fixes[key] = {"kind": kind, "old": saved[key], "new": new}
+    if not fixes:
+        return []
+    try:
+        lines = Path(path).read_bytes().decode().splitlines(keepends=True)
+    except (OSError, UnicodeError):
+        return []
+    out = []
+    for line in lines:
+        k = line.strip().partition("=")[0].strip()
+        if k in fixes and "=" in line:
+            v = fixes[k]["new"]
+            line = k + '="' + v.replace("\\", "\\\\").replace('"', '\\"') + '"\n'
+        out.append(line)
+    try:
+        _write(path, "".join(out).encode(), 0o600)
+    except OSError:
+        return []
+    return list(fixes.values())
 
 
 def binary_env(path: str) -> dict:
@@ -205,11 +256,15 @@ def prepare_binary_env(n: str, environ=None, previous=None) -> tuple[dict, list[
     from .binaries import ENV
     e = dict(os.environ if environ is None else environ)
     path = env_file(n, e)
+    healed = heal_binary_pins(n, e)        # P282: a path a self-update left behind follows PATH again
     saved = binary_env(path)
     e.update(saved)
     env, notes = service_env(e)
     selected = {k: saved[k] if k in saved else env[k] for k in ENV.values() if k in env or k in saved}
     previous = installed_binary_env(n) or previous or {}
+    for h in healed:
+        notes.append(f"{h['kind']}: {tilde(h['old'])} is gone or an older version; now {tilde(h['new'])} / "
+                     f"保存的旧路径已失效或是旧版本，改为 {tilde(h['new'])}")
     for kind, key in ENV.items():
         if key in selected:
             origin = "saved owner override" if key in saved else "shell override" if getenv(key, None, e) else "first PATH executable; configured mise/asdf version when PATH is a shim"
@@ -553,13 +608,82 @@ def _bus_systemctl(args: tuple, timeout: int) -> subprocess.CompletedProcess | N
     return None
 
 
+# ------------------------------------------------------------------ P278: no systemd (WSL without it, containers, …)
+NO_MANAGER = ("no_systemd", "wsl_systemd_off", "wsl_systemd_restart")
+NO_MANAGER_EXIT = 78     # EX_CONFIG: `service install` / `--deferred` could not reach a service manager (update.py reads it)
+WSL_CONF = "/etc/wsl.conf"
+OSRELEASE = "/proc/sys/kernel/osrelease"
+# what systemctl / systemd-run say when PID 1 is not systemd or there is no user manager to talk to
+_NO_SD = re.compile(r"not been booted with systemd|Failed to connect to (?:user scope )?bus|"
+                    r"No medium found|DBUS_SESSION_BUS_ADDRESS|XDG_RUNTIME_DIR", re.I)
+
+
+def is_wsl(environ: dict | None = None, osrelease: str = OSRELEASE) -> bool:
+    e = os.environ if environ is None else environ
+    if e.get("WSL_DISTRO_NAME") or e.get("WSL_INTEROP"):
+        return True
+    try:
+        return "microsoft" in Path(osrelease).read_text().lower()
+    except OSError:
+        return False
+
+
+def wsl_systemd_enabled(path: str = WSL_CONF) -> bool:
+    """/etc/wsl.conf `[boot]` `systemd=true` (WSL ≥ 0.67.6). Missing / unreadable / other value → False."""
+    import configparser
+    cp = configparser.ConfigParser(strict=False, interpolation=None)
+    try:
+        cp.read_string(Path(path).read_text(errors="replace"))
+    except (OSError, configparser.Error):
+        return False
+    return cp.get("boot", "systemd", fallback="").split("#")[0].strip().strip("\"'").lower() == "true"
+
+
+def pid1_systemd() -> bool:
+    """sd_booted(3): /run/systemd/system exists only when PID 1 is systemd; /proc/1/comm as a second witness."""
+    if os.path.isdir("/run/systemd/system"):
+        return True
+    try:
+        return Path("/proc/1/comm").read_text().strip() == "systemd"
+    except OSError:
+        return False
+
+
+def classify_no_manager(environ: dict | None = None, wsl_conf: str = WSL_CONF, osrelease: str = OSRELEASE) -> str:
+    """Why there is no systemd user manager here (call only after reaching it failed): wsl_systemd_off (WSL, wsl.conf
+    does not turn systemd on) · wsl_systemd_restart (it does, but this WSL started before: `wsl --shutdown`) ·
+    no_systemd (PID 1 is not systemd: a container, another init) · no_user_manager (systemd runs, the user manager not)."""
+    if is_wsl(environ, osrelease):
+        return "wsl_systemd_restart" if wsl_systemd_enabled(wsl_conf) and not pid1_systemd() else (
+            "wsl_systemd_off" if not pid1_systemd() else "no_user_manager")
+    return "no_user_manager" if pid1_systemd() else "no_systemd"
+
+
+def systemd_problem() -> str | None:
+    """None = `systemctl --user` answers (directly or over the bus inside the fence); else classify_no_manager()."""
+    if platform() != "linux":
+        return None
+    try:
+        if _systemctl("show-environment", timeout=10).returncode == 0:
+            return None
+    except ServiceError:
+        pass
+    except (OSError, subprocess.TimeoutExpired):
+        pass
+    return classify_no_manager()
+
+
 def _systemctl(*args: str, check: bool = False, timeout: int = 30) -> subprocess.CompletedProcess:
     exe = shutil.which("systemctl")
     if not exe:
-        raise ServiceError("no_systemctl")
+        raise ServiceError(classify_no_manager() if platform() == "linux" else "no_systemctl")
     r = subprocess.run([exe, "--user", *args], capture_output=True, text=True, timeout=timeout)
     if r.returncode != 0 and "via local transport" in (r.stderr or ""):   # F14: inside the Agent's fence → the bus
         r = _bus_systemctl(args, timeout) or r
+    if check and r.returncode != 0 and _NO_SD.search(r.stderr or ""):
+        reason = classify_no_manager()
+        if reason in NO_MANAGER:
+            raise ServiceError(reason, (r.stderr or "").strip()[:300])
     if check and r.returncode != 0:
         raise ServiceError("systemctl_failed", f"systemctl --user {' '.join(args)}: {(r.stderr or r.stdout).strip()[:300]}")
     return r
@@ -670,7 +794,7 @@ def install(st) -> dict:
     if plat == "linux":
         r = _systemctl("show-environment", timeout=10)
         if r.returncode != 0:
-            raise ServiceError("no_user_manager", (r.stderr or "").strip()[:300])
+            raise ServiceError(classify_no_manager(), (r.stderr or "").strip()[:300])
         d = unit_dir()
         os.makedirs(d, exist_ok=True)
         path = os.path.join(d, f"{n}.service")
@@ -946,6 +1070,23 @@ MESSAGES = {
     "bad_binary_env": "AGENTJ_*_BIN 路径格式无效：检查服务 env 文件 / invalid harness path in service environment file",
     "bad_name": "服务名不合规（AGENTJ_SERVICE_NAME） / invalid service name",
     "no_systemctl": "没有 systemctl：这台 Linux 不用 systemd，自己用 tmux / supervisord 跑 `agentj serve` / no systemd here",
+    # P278: no systemd → one plain sentence + the fix; the fallback is the existing one (`agentj serve` in the foreground)
+    "no_systemd": "这台 Linux 没有在用 systemd（容器或别的 init），Agent J 没法装成后台服务。改用前台运行：在 tmux / screen 里运行 "
+                  "`agentj serve`，关掉终端前先 detach；升级后在那里 Ctrl-C 再重新运行一次 / This Linux does not run systemd "
+                  "(a container or another init), so Agent J cannot be installed as a background service. Run it in the foreground "
+                  "instead: `agentj serve` inside tmux / screen (detach before closing the terminal); after an upgrade, Ctrl-C it and "
+                  "run it again",
+    "wsl_systemd_off": "这个 WSL 没有开启 systemd，Agent J 没法装成后台服务。开启只要两步：① 在 WSL 里运行 "
+                       "`printf '[boot]\\nsystemd=true\\n' | sudo tee -a /etc/wsl.conf`；② 在 Windows PowerShell 里运行 "
+                       "`wsl --shutdown`，再重新打开 WSL，然后运行 `agentj service install`。暂时不想开：在 tmux 里运行 `agentj serve` "
+                       "（前台运行，关窗口前 detach） / systemd is off in this WSL, so Agent J cannot be installed as a background "
+                       "service. Two steps turn it on: (1) in WSL run `printf '[boot]\\nsystemd=true\\n' | sudo tee -a "
+                       "/etc/wsl.conf`; (2) in Windows PowerShell run `wsl --shutdown`, reopen WSL, then run `agentj service install`. "
+                       "Not now: run `agentj serve` inside tmux (foreground; detach before closing the window)",
+    "wsl_systemd_restart": "/etc/wsl.conf 已经开启 systemd，但这个 WSL 是在那之前启动的，还没生效。在 Windows PowerShell 里运行 "
+                           "`wsl --shutdown`，再重新打开 WSL，然后运行 `agentj service install` / /etc/wsl.conf turns systemd on, but "
+                           "this WSL started before that and it is not active yet. In Windows PowerShell run `wsl --shutdown`, reopen "
+                           "WSL, then run `agentj service install`",
     "no_user_manager": "systemd 用户实例不可用（没有登录会话？）：先 `loginctl enable-linger $USER` 再重新登录 / "
                        "no systemd user manager: run `loginctl enable-linger $USER` and log in again",
     "systemctl_failed": "systemctl 失败 / systemctl failed",
@@ -961,14 +1102,30 @@ MESSAGES.update({
 
 
 def login_reminder(lang=None):
-    import pwd
-    user = pwd.getpwuid(os.getuid()).pw_name
-    zh = f"这台电脑重启后，请登录一次 {user}；用快速切换用户保持登录，切走后后台照跑。"
-    en = f"After this computer restarts, log in once as {user}. Use Fast User Switching to keep this user logged in; background work continues when switched out."
+    """Shown at the computer only (service install, `agentj doctor`): never pushed to the phone (P287). The phone shows its
+    own offline line when the computer really is unreachable."""
+    zh = "提醒一下：这台 Mac 重启后，要先登录一次您的账户，我才能在后台继续干活；登录后切到别的用户，我照常运行。"
+    en = "A reminder: after this Mac restarts, log in to your account once so I can keep working in the background; after that you can switch to another user and I keep running."
     return en if lang == "en" else zh if lang == "zh" else zh + " / " + en
 
 
-def residency_hint(lang=None):
-    if platform() == "macos":
-        return login_reminder(lang)
+def host_platform() -> str:
+    """What the phone is told in `ready` (PROTOCOL §10.0 `plat`): "macos" | "linux" | "windows" (WSL2) | "other"."""
+    p = platform()
+    if p == "linux":
+        with contextlib.suppress(OSError):
+            with open("/proc/sys/kernel/osrelease", encoding="ascii", errors="replace") as f:
+                if "microsoft" in f.read().lower():
+                    return "windows"
+    return p
+
+
+def boot_mode() -> str | None:
+    """After an OS restart: "login" = the service waits for this user's login (macOS LaunchAgent, Linux without linger,
+    WSL), "auto" = it starts by itself (Linux with linger), None = unknown. May run loginctl: call it off the event loop."""
+    plat = host_platform()
+    if plat in ("macos", "windows"):
+        return "login"
+    if plat == "linux":
+        return {"yes": "auto", "no": "login"}.get(_linger() or "")
     return None

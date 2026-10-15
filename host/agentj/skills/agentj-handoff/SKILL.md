@@ -20,6 +20,11 @@ First decide which conversation you are (P198):
 | Before a compaction | `~/.local/state/agentj/handoff/compact.md` |
 | Before a `/clear` | `~/.local/state/agentj/handoff/clear.md` (used once: Agent J renames it to `clear-used.md` when it hands it back) |
 
+**Before a harness switch (P289, `/switch-harness`)**: the same format, file `switch.md` beside the compaction one —
+`<work folder>/.agentj/handover/switch.md` (Agent J's own conversation) or `~/.local/state/agentj/handoff/switch.md`
+(shared). The harness being left writes it when Agent J's note asks (≤ 150 lines, the essentials only); the new harness
+reads it first. Switching back: read, merge, overwrite — the same file.
+
 When an Agent J message names a path, use exactly that path. Not sure which one you are → the work-folder path.
 Never put a session id, hash or random string in a handoff path or file name: the phone masks id-like strings and the
 owner can no longer copy the path. Create the folder if missing (`mkdir -p`).

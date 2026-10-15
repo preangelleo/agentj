@@ -14,3 +14,10 @@ test('template and channel configuration never render a token/key input',()=>{
  for(const op of ['telegram_key','model_key'])assert.ok(s.includes(`op:'${op}'`));
  assert.ok(s.includes('Telegram can see messages'));assert.ok(s.includes('payment integration'));
 });
+test('P297: the owner-bot guest switch is its own signed write, never folded into a save',async()=>{
+ const s=readFileSync(new URL('../public/js/bots.js',import.meta.url),'utf8');
+ assert.ok(s.includes(`op:'attach_telegram'`));assert.ok(s.includes('receive guests'));assert.ok(s.includes('guests never get your permissions'));
+ const sign=r=>controlMessage('channel','owner','bots_write','b'.repeat(32),123,{request:r});
+ const on={op:'attach_telegram',id:'a'.repeat(32),attach:true};
+ assert.notDeepEqual(await sign(on),await sign({...on,attach:false}));assert.notDeepEqual(await sign(on),await sign({...on,id:'c'.repeat(32)}));
+});

@@ -39,6 +39,8 @@ CANARY = "native-output-canary-7f3a"
 FAKE = r'''#!/usr/bin/env python3
 import json, os, sys, time
 kind = os.path.basename(sys.argv[0])
+if kind in ("kimi", "qwen"):             # P305 / P310: Kimi Code and Qwen Code speak ACP — the stand-in ACP agent
+    os.execv(sys.executable, [sys.executable, "''' + str(HERE / 'fakeacp.py') + r'''"] + sys.argv[1:])
 mode = open(os.path.join(os.path.dirname(os.path.abspath(sys.argv[0])), kind + ".mode")).read().strip()
 log = os.path.join(os.path.dirname(os.path.abspath(sys.argv[0])), kind + ".argv")
 if sys.argv[1:] == ["--version"]:
@@ -85,6 +87,11 @@ class FakeHarnesses(unittest.TestCase):
             env[harness.BIN_ENV[k]] = str(p)
         env["CODEX_HOME"] = str(self.bin / "codex-home")       # no owner config is read
         (self.bin / "codex-home").mkdir()
+        # P282: a signed-in owner (login files exist), so a failed call keeps its native code; test_p282 covers "no login"
+        (self.bin / "codex-home" / "auth.json").write_text("{}")
+        env["CLAUDE_CONFIG_DIR"] = str(self.bin / "claude-home")
+        (self.bin / "claude-home").mkdir()
+        (self.bin / "claude-home" / ".credentials.json").write_text("{}")
         patcher = mock.patch.dict(os.environ, env)
         patcher.start()
         self.addCleanup(patcher.stop)
@@ -98,7 +105,7 @@ class FakeHarnesses(unittest.TestCase):
 
     def test_three_harnesses_probe_ok_with_their_own_formats(self):
         d = harness.probe()
-        self.assertEqual(d["usable"], ["claude", "codex", "opencode"])
+        self.assertEqual(d["usable"], ["claude", "codex", "opencode", "kimi", "qwen"])   # P305 / P310: over ACP (fakeacp.py)
         self.assertEqual(d["decision"], "ask_owner")
         for h in d["harnesses"]:
             self.assertTrue(h["installed"] and h["callable"], h)
@@ -124,8 +131,10 @@ class FakeHarnesses(unittest.TestCase):
     def test_signed_out_and_empty_are_fixed_codes(self):
         self.mode("claude", "signed_out")
         self.mode("codex", "empty")
-        d = harness.probe()
+        with mock.patch.dict(os.environ, {"FAKE_ACP_AUTH": "1"}):     # P305: kimi answers auth_required
+            d = harness.probe()
         by = {h["name"]: h for h in d["harnesses"]}
+        self.assertEqual(by["kimi"]["probe_reason"], "not_logged_in")
         self.assertEqual(by["claude"]["probe_reason"], "native_failed")
         self.assertEqual(by["codex"]["probe_reason"], "empty_probe_reply")
         self.assertEqual(d["usable"], ["opencode"])
@@ -180,7 +189,7 @@ class FakeHarnesses(unittest.TestCase):
         with redirect_stdout(buf):
             self.assertEqual(harness.main(as_json=True, call_probe=True), 0)
         d = json.loads(buf.getvalue())
-        self.assertEqual([h["callable"] for h in d["harnesses"]], [True, True, True])
+        self.assertEqual([h["callable"] for h in d["harnesses"]], [True, True, True, True, True])
 
 
 # ------------------------------------------------------------------ state + the job
@@ -273,7 +282,8 @@ class Job(unittest.TestCase):
         self.assertEqual((cfg["kind"], cfg["model"]), ("opencode", "zhipuai/glm-5.3"))
         self.assertTrue(cfg["fence"])                               # isolation unchanged
         self.assertEqual(fake.restarts, 1)
-        self.assertEqual(fake.hellos, [("opencode", {"cmd": "harness_hello", "outcome": "ok", "from": "claude", "to": "opencode"})])
+        self.assertEqual(fake.hellos, [("opencode", {"cmd": "harness_hello", "outcome": "ok", "from": "claude", "to": "opencode",
+                                                    "handoff": "none"})])   # P289: this fake serve has no harness_handoff
         rec = sw.read_receipt(st)
         self.assertEqual((rec["status"], rec["from"], rec["target"]), ("ok", "claude", "opencode"))
         self.assertIn('"ev": "harness_switch"', st.log_path.read_text())
@@ -287,7 +297,8 @@ class Job(unittest.TestCase):
         self.assertEqual(self.run_job(st, fake, "opencode", probe=fake_probe(seen=seen)), 0)
         cfg = st.agent_config()
         self.assertEqual((cfg["kind"], cfg["model"], cfg["effort"]), ("opencode", "p66dqa/gpt-6", "high"))
-        self.assertEqual(seen, [(("opencode",), "p66dqa/gpt-6")])       # the gate probed the model it will run with
+        # the gate probed the model it will run with; P282: then the way back (codex, as configured)
+        self.assertEqual(seen, [(("opencode",), "p66dqa/gpt-6"), (("codex",), None)])
         self.assertEqual(self.run_job(st, fake, "codex", "gpt-6"), 0)    # a model named now wins
         self.assertEqual(st.agent_config()["model"], "gpt-6")
 
@@ -298,7 +309,7 @@ class Job(unittest.TestCase):
         self.assertEqual(self.run_job(st, fake, "claude", probe=fake_probe(seen=seen)), 0)
         cfg = st.agent_config()
         self.assertEqual((cfg["kind"], cfg["model"], cfg["effort"]), ("claude", "claude-opus-5-5", "medium"))
-        self.assertEqual(seen, [(("claude",), "claude-opus-5-5")])
+        self.assertEqual(seen, [(("claude",), "claude-opus-5-5"), (("codex",), None)])     # P282: + the way back
 
     def check_rolled_back(self, st, raw_before, fake, reason):
         self.assertEqual(st.config()["agent"], raw_before)          # the previous entry, byte for byte (model, effort)
@@ -416,7 +427,7 @@ class Request(unittest.TestCase):
     def test_pass_switches_through_the_job(self):
         r = self.req("opencode", model="zhipuai/glm-5.3")
         self.assertTrue(r["ok"] and r["scheduled"], r)
-        self.assertEqual(self.seen, [(("opencode",), "zhipuai/glm-5.3")])
+        self.assertEqual(self.seen, [(("opencode",), "zhipuai/glm-5.3"), (("claude",), "claude-opus-5-5")])  # P282: + way back
         argv = self.launched[0]
         self.assertIn("--worker", argv)
         self.assertEqual(argv[argv.index("switch") + 1], "opencode")
@@ -436,7 +447,8 @@ class Request(unittest.TestCase):
     def test_scan_probes_all_three_in_the_job(self):
         rows = {"claude": {"name": "claude", "installed": False},
                 "codex": {"name": "codex", "installed": True, "version": "0.162.1", "callable": True},
-                "opencode": {"name": "opencode", "installed": True, "version": "1.18", "callable": False, "probe_reason": "native_timeout"}}
+                "opencode": {"name": "opencode", "installed": True, "version": "1.18", "callable": False, "probe_reason": "native_timeout"},
+                "kimi": {"name": "kimi", "installed": False}, "qwen": {"name": "qwen", "installed": False}}
         asked = []
 
         def probe(only=None, model=None, timeout=60):
@@ -450,9 +462,11 @@ class Request(unittest.TestCase):
         r = sw.scan(self.st, launch=launch, sleep=self.clock.sleep, clock=self.clock)
         self.assertTrue(r["ok"])
         self.assertIn("--scan", self.launched[0])
-        self.assertEqual([(h["name"], h["callable"]) for h in r["harnesses"]], [("claude", False), ("codex", True), ("opencode", False)])
+        self.assertEqual([(h["name"], h["callable"]) for h in r["harnesses"]], [("claude", False), ("codex", True), ("opencode", False),
+                                                                                    ("kimi", False), ("qwen", False)])
         self.assertEqual(r["current"], "claude")
-        self.assertEqual(asked, [(("claude",), "claude-opus-5-5"), (("codex",), None), (("opencode",), "p66dqa/gpt-6")])  # its own model; P219: Claude's default
+        self.assertEqual(asked, [(("claude",), "claude-opus-5-5"), (("codex",), None), (("opencode",), "p66dqa/gpt-6"),
+                                (("kimi",), None), (("qwen",), None)])  # its own model; P219: Claude's default
         zh = sw._say_scan(r, "zh")
         self.assertIn("现在能切到：Codex", zh)
         self.assertIn("没装", zh)

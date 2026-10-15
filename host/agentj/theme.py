@@ -1,7 +1,7 @@
 """P169 外观主题: the phone's personalisable look as one folder (theme.json + PNG files), checked before it is used.
 
 What a theme can change (schema: themes/theme.schema.json, JSON Schema draft 2020-12, shipped in the package and at
-https://agentj.app/schema/agentj-theme-1.json): the five state colours of the chat screen, the five message-card fills,
+https://agentj.app/schema/agentj-theme-2.json): the five state colours of the chat screen, the five message-card fills,
 the menu pages' colours (P187: background, panel, text, accent, line — readable or refused), the logo at the top left of
 the chat page, the glyph on Send, and the background-work indicator (dancing robots with
 your own sprite sheets, or the round dots with your own colours). What it cannot (x-agentj-locked): the pairing, safety
@@ -179,7 +179,7 @@ def distance(a: str, b: str) -> float:
 
 
 # ---------------------------------------------------------------- schema (subset of draft 2020-12)
-SCHEMA_KEYWORDS = {"$schema", "$id", "$ref", "$defs", "title", "description", "default", "type", "const", "enum", "pattern",
+SCHEMA_KEYWORDS = {"oneOf", "$schema", "$id", "$ref", "$defs", "title", "description", "default", "type", "const", "enum", "pattern",
                    "minLength", "maxLength", "minItems", "maxItems", "items", "required", "properties",
                    "additionalProperties", "x-agentj-locked"}
 
@@ -197,6 +197,14 @@ def _schema_errors(value, node: dict, root: dict, path: str, out: list) -> None:
         node = {k: v for k, v in node.items() if k != "$ref"}
     where = path or "theme.json"
     t = node.get("type")
+    if "oneOf" in node:
+        matches = 0
+        for branch in node["oneOf"]:
+            branch_errors = []
+            _schema_errors(value, branch, root, path, branch_errors)
+            matches += not branch_errors
+        if matches != 1:
+            out.append(_m("schema.oneOf", where, "image 和 states 必须二选一", "choose exactly one of image or states"))
     types = {"object": dict, "string": str, "array": list, "boolean": bool}
     if t == "integer":
         ok = isinstance(value, int) and not isinstance(value, bool)
@@ -394,9 +402,32 @@ def validate(folder, factory_ok: bool = False) -> dict:
         errors.append(_m("id.reserved", "id", f"{doc['id']} 是出厂主题的名字，换一个", f"{doc['id']} is a factory theme's name — pick another"))
     _check_colours(doc, errors)
     if doc.get("logo"):
-        img = _png_rule(folder, doc["logo"]["image"], "logo.image", "logo", errors, files)
-        if img and _square(img, doc["logo"]["image"], "logo.image", errors) and _coverage(img) < LOGO_COVER_MIN:
-            errors.append(_m("logo.empty", "logo.image", "logo 几乎是空的（看得见的部分不到 10%）", "the logo is almost empty (under 10 % visible)"))
+        logo = doc["logo"]
+        refs = logo.get("states") or {"image": logo["image"]}
+        sizes = set()
+        for state, filename in refs.items():
+            where = "logo.image" if state == "image" else f"logo.states.{state}"
+            img = _png_rule(folder, filename, where, "logo", errors, files)
+            if not img or not _square(img, filename, where, errors):
+                continue
+            sizes.add(img[:2])
+            if _coverage(img) < LOGO_COVER_MIN:
+                errors.append(_m("logo.empty", where, "logo 几乎是空的（不到 10%）", "logo is almost empty (under 10%)"))
+            if state != "image":
+                bg = (doc.get("colors", {}).get("state", {}).get(state)
+                      or schema()["properties"]["colors"]["properties"]["state"]["properties"][state]["default"])
+                # Same rule in light and dark mode. Disc is opaque Lotion in the page.
+                for background in (bg, blend("#141414", .28, bg)):
+                    under = LOTION if logo.get("disc", True) else background
+                    pixels = [tuple(row[x:x+4]) for row in img[2] for x in range(0, len(row), 4)]
+                    visible = [px for px in pixels if px[3]]
+                    readable = sum(contrast(blend("#%02x%02x%02x" % px[:3], px[3]/255, under), under) >= STATE_MIN_CONTRAST for px in visible)
+                    if (logo.get("disc", True) and contrast(LOTION, background) < 2.5) or readable < len(pixels) * .10:
+                        errors.append(_m("logo.contrast", where, "logo 在对应背景上不够清楚（至少 10% 像素对比度 2.5:1）",
+                                         "logo needs at least 10% readable pixels at 2.5:1 on its state background"))
+                        break
+        if len(sizes) > 1:
+            errors.append(_m("logo.dimensions", "logo.states", "五张 logo 必须同尺寸", "all five logos must have the same dimensions"))
     if doc.get("send_icon"):
         name = doc["send_icon"]["image"]
         img = _png_rule(folder, name, "send_icon.image", "send_icon", errors, files)
@@ -551,6 +582,24 @@ def apply_dir(root, folder) -> dict:
     if not r["ok"]:
         return {"ok": False, "error": "invalid", "report": r}
     h = _ensure(root)
+    if not r["theme"].get("logo") and current(root)["kind"] == "custom":
+        old = validate(h / "active")
+        if old["ok"] and old["theme"].get("logo"):
+            logo = dict(old["theme"]["logo"])
+            refs = logo.get("states") or {"image": logo["image"]}
+            copied = {}
+            for state, filename in refs.items():
+                target = f"kept-logo-{state}.png"
+                while target in r["files"]:
+                    target = "k-" + target
+                r["files"][target] = old["files"][filename]
+                copied[state] = target
+            if "states" in logo:
+                logo["states"] = copied
+                r["theme"]["schema"] = 2
+            else:
+                logo["image"] = copied["image"]
+            r["theme"]["logo"] = logo
     new_rev = rev(r["theme"], r["files"])
     cur = current(root)
     if cur["kind"] == "custom" and cur.get("rev") == new_rev and (h / "active").is_dir():
@@ -558,7 +607,7 @@ def apply_dir(root, folder) -> dict:
     stage = h / f".staging-{secrets.token_hex(4)}"
     stage.mkdir(mode=0o700)
     try:
-        (stage / "theme.json").write_bytes((pathlib.Path(folder) / "theme.json").read_bytes())
+        (stage / "theme.json").write_text(json.dumps(r["theme"], ensure_ascii=False), encoding="utf-8")
         for name, data in r["files"].items():
             (stage / name).write_bytes(data)
         again = validate(stage)
@@ -638,7 +687,12 @@ def phone_message(root) -> dict:
     if doc.get("colors"):
         m["colors"] = doc["colors"]
     if doc.get("logo"):
-        m["logo"] = {"png": _b64(files[doc["logo"]["image"]]), "disc": doc["logo"].get("disc", True)}
+        logo = doc["logo"]
+        m["logo"] = {"disc": logo.get("disc", True)}
+        if logo.get("states"):
+            m["logo"]["states"] = {k: _b64(files[v]) for k, v in logo["states"].items()}
+        else:
+            m["logo"]["png"] = _b64(files[logo["image"]])
     if doc.get("send_icon"):
         m["send"] = {"png": _b64(files[doc["send_icon"]["image"]])}
     b = doc.get("busy")

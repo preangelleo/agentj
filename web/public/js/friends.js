@@ -11,8 +11,10 @@ import { signKey } from './store.js';
 import { myDeviceId, approve } from './api.js';
 import { signedWrite, whyText } from './controls.js';
 import { qrSvg } from './qr.js';
-import { t, locale } from './t.js';
+import { t, locale, fillText } from './t.js';
 import { el, mk, toast, confirmSheet } from './ui.js';
+import { copyable } from './copycode.js';   // P292
+const cmdNote = (cls, key) => { const p = mk('p', cls); fillText(p, t(key)); return p; };   // P292: `agentj friends on` as code + ⧉
 
 let H = { openPanel: () => {}, agentName: () => 'Agent J' };
 export function configure(h) { H = { ...H, ...h }; }
@@ -219,7 +221,7 @@ function renderSide() {
     btn('aj-btn--sm', t('fr.groups.btn'), () => go('groups'), 'fr-open-groups'));
   box.append(acts);
   if (!data) return;
-  if (!data.me.on) box.append(mk('p', 'note fr-off', t('fr.off')));
+  if (!data.me.on) box.append(cmdNote('note fr-off', 'fr.off'));
   const ul = mk('ul', 'fr-list'); ul.id = 'fr-list';
   for (const f of data.friends) {
     const li = mk('li');
@@ -427,7 +429,7 @@ async function deleteFriend(f) {
 // ---- my card: ID, link, QR, discoverable, owner name / intro
 function viewCard(box) {
   const me = data.me;
-  if (!me.on) box.append(mk('p', 'note fr-off', t('fr.off')));
+  if (!me.on) box.append(cmdNote('note fr-off', 'fr.off'));
   const card = mk('section', 'fr-cardbox fr-mycard');
   card.append(mk('p', 'fr-cardbox__name', me.card.name || H.agentName()));
   if (me.card.owner || me.card.intro) card.append(mk('p', 'small', [me.card.owner && t('fr.ownerIs', { owner: me.card.owner }), me.card.intro].filter(Boolean).join(' · ')));
@@ -490,7 +492,7 @@ function viewAdd(box) {
     rowIn(box).append(btn('', t('fr.add.backList'), () => go('list'), 'fr-sent-back'));
     return;
   }
-  if (!data.me.on) box.append(mk('p', 'note fr-off', t('fr.off')));
+  if (!data.me.on) box.append(cmdNote('note fr-off', 'fr.off'));
   const id = mk('input', 'aj-input fr-idin'); id.id = 'fr-add-id'; id.autocomplete = 'off'; id.spellcheck = false;
   id.setAttribute('autocapitalize', 'characters'); id.placeholder = 'AJ-XXXX-XXXX-XXXX-XXXX'; id.maxLength = 40; id.value = V.addId;
   const hint = mk('p', 'small fr-idhint'); hint.id = 'fr-add-hint'; hint.setAttribute('aria-live', 'polite');
@@ -748,7 +750,7 @@ export function renderAsk(p, ctx) {
       if (f.intro) card.append(mk('p', 'small', f.intro));
       if (f.id) card.append(mk('p', 'fr-id small', f.id));
       if (f.note) card.append(mk('p', 'fr-askcard__note', t('fr.ask.note', { note: f.note })));
-    } else card.append(mk('pre', 'fr-askcard__raw', p.summary));
+    } else card.append(copyable(mk('pre', 'fr-askcard__raw', p.summary), { click: false }));   // P292
     box.append(card);
     if (st === 'open' && ctx.sign) {
       const row = mk('label', 'fr-row');
@@ -782,7 +784,7 @@ export function renderAsk(p, ctx) {
     if (x.text) card.append(mk('p', 'fr-askcard__note', q(x.text)));
     card.append(mk('p', 'small', t('fr.q.draft')));
     card.append(mk('p', 'fr-askcard__draft', x.draft ? q(x.draft) : t('fr.q.noDraft')));
-    if (!p.pq) card.append(mk('pre', 'fr-askcard__raw', p.summary));
+    if (!p.pq) card.append(copyable(mk('pre', 'fr-askcard__raw', p.summary), { click: false }));   // P292
     box.append(card);
     if (st === 'open' && ctx.sign) {
       const acts = mk('div', 'fr-askbtns fr-askbtns--3');

@@ -59,7 +59,7 @@ test('version.json / version.js match the shipped files', () => {
 // CSP default-src 'self' + connect-src = the relays enforce that too), plus — in app.js only — the new web origin the
 // legacy host sends an unpaired visitor to. The relay URLs live only in the Worker CSP config (app.js pins relay HOSTS).
 // (F1: the menu's 「邀请与积分」 opens the account page at its invite block — the one link with a fragment)
-const SITE_LINK = /^https:\/\/agentj\.app\/(?:[a-z]+\/)*(?:#invite)?$/;
+const SITE_LINK = /^https:\/\/agentj\.app\/(?:hotkeys?|(?:[a-z]+\/)*(?:#invite|#brand-kit)?)$/;
 const MAIL_LINK = /^mailto:feedback@agentj\.app$/;   // F13 / P168: Settings → 帮助和反馈, the error / removed pages, the disconnected card (the human fallback mailbox)
 const NEW_WEB_ORIGIN = 'https://m.agentj.app';
 const LICENCE_TEXT = new Set(['brand/fonts/UFL-1.0-ubuntu.txt', 'brand/fonts/OFL-1.1-lexend.txt', 'brand/fonts/README.md',
@@ -104,10 +104,12 @@ test('no URLs to anywhere in shipped files except links to agentj.app pages', ()
         // P82 §6: owner-clicked registration link; no automated request.
         // P109: an editable API-address default sent inside the encrypted owner config, never fetched by the browser.
         if (rel(f) === 'js/bots.js' && ['https://openrouter.ai/','https://openrouter.ai/api/v1'].includes(m[0])) continue;
+        if (rel(f) === 'js/pageshot.js' && ['http://www.w3.org/2000/svg', 'http://www.w3.org/1999/xhtml'].includes(m[0])) continue; // P264: XML namespace identifiers, never network requests
         if (rel(f) === 'js/qr.js' && m[0] === 'http://www.w3.org/2000/svg') continue;
         if (rel(f) === 'js/sendvol.js' && m[0] === 'http://www.w3.org/2000/svg') continue;   // P154: the slider's speaker icon
         if (rel(f) === 'js/icons.js' && m[0] === 'http://www.w3.org/2000/svg') continue;     // P183: the file card's icons
         if (rel(f) === 'js/contacts.js' && m[0] === 'http://www.w3.org/2000/svg') continue;  // P184: the dialog icons
+        if (rel(f) === 'js/copycode.js' && m[0] === 'http://www.w3.org/2000/svg') continue;  // P292: the copy icon
         // P210: the pairing page says the link 「以 https:// 开头」 — a bare scheme in text, no address at all
         if (/^https:\/\/[.)）]?$/.test(m[0]) && ['index.html', 'i18n.js'].includes(rel(f))) continue;
         if (rel(f) === 'brand/lang.js' && m[0] === 'http://www.w3.org/2000/svg') continue;  // P236: the header's globe / tick icons
@@ -122,7 +124,7 @@ test('no URLs to anywhere in shipped files except links to agentj.app pages', ()
   }
   for (const m of HTML.matchAll(/<(\w+)\b[^>]*\s(src|href)="([^"]*)"/g)) {
     if (m[1] === 'a') assert.match(m[3], MAIL_LINK.test(m[3]) ? MAIL_LINK : SITE_LINK, `index.html links to ${m[3]}`);
-    else assert.match(m[3], /^(data:,|[a-z][\w./-]*)$/, `index.html loads ${m[3]}`);
+    else assert.match(m[3], /^(data:,|[a-z][\w./-]*(\?v=[0-9a-f]{8})?)$/, `index.html loads ${m[3]}`);
   }
   for (const m of HTML.matchAll(/<a\b[^>]*>/g)) assert.match(m[0], /rel="noopener"/, 'site links open with rel=noopener');
 });
@@ -213,13 +215,19 @@ test('app.js + js/*.js: only WebSocket egress, non-extractable keys, no plaintex
     'getItem(DIM_KEY)', 'setItem(DIM_KEY)', 'removeItem(DIM_KEY)',
     // P207: this device's unread mark (UNREAD_KEY = "aj.unread": {e, m, s} — the history epoch and turn ids, numbers only)
     'getItem(UNREAD_KEY)', 'setItem(UNREAD_KEY)',
+    // P247: only host/epoch-scoped numeric visual receipts; no conversation or credential bytes.
+    'getItem(ownerKey()', 'setItem(ownerKey()',
     // P240: the version offer a refresh already tried (VER_KEY = "aj.verRefresh": {from, to}, two public version strings)
-    'getItem(VER_KEY)', 'setItem(VER_KEY)', 'setItem(VER_KEY)', 'getItem(DONE_KEY)', 'setItem(DONE_KEY)'].sort());
+    'getItem(VER_KEY)', 'setItem(VER_KEY)', 'setItem(VER_KEY)', 'getItem(DONE_KEY)', 'setItem(DONE_KEY)',
+    // P302 #29: 「已更新到 x」 is consumed once (removeItem DONE_KEY) and seen once per version (ui.js flashLine onceKey =
+    // "aj.verUpdatedSeen.<public version>", "1")
+    'removeItem(DONE_KEY)', 'getItem(onceKey)', 'setItem(onceKey)'].sort());
   assert.match(OURS, /const VER_KEY='aj\.verRefresh';/);
+  assert.match(read(pub('js/unread.js')), /JSON\.stringify\(\{e:st\.e,m:st\.m\}\)/);
   assert.match(OURS, /export const UNREAD_KEY = 'aj\.unread';/);
   assert.match(OURS, /const VOLUME_KEY = 'aj\.sfxVolume';/); assert.match(OURS, /const SHOT_KEY = 'aj\.shotClip';/);
   assert.match(OURS, /const FZ_KEY = "aj\.pageFz";/); assert.match(OURS, /DIM_KEY = "aj\.recDim";/);
-  assert.equal(OURS_FILES.reduce((n, r) => n + (code(read(pub(r))).match(/localStorage/g) || []).length, 0), 35, 'localStorage appears only in these calls (P240: aj.verRefresh; P171: + the two aj.theme writes; P182: aj.test.segMs only shortens a recording part, tests only; P205: aj.recDim) (homeInstalled is a boolean, never pairing data)');
+  assert.equal(OURS_FILES.reduce((n, r) => n + (code(read(pub(r))).match(/localStorage/g) || []).length, 0), 40, 'localStorage appears only in these calls (P247: host-scoped numeric read receipts; P302 #29: aj.verUpdated consumed + aj.verUpdatedSeen.<version>; P240: aj.verRefresh; P171: + the two aj.theme writes; P182: aj.test.segMs only shortens a recording part, tests only; P205: aj.recDim) (homeInstalled is a boolean, never pairing data)');
   assert.match(OURS, /const IID_KEY = 'aj\.iid';/);
   assert.match(OURS, /const PAIRED_KEY = 'aj\.paired';/);
   assert.match(OURS, /const FONT_KEY = 'aj\.fontScale';/);
@@ -368,13 +376,18 @@ test('manifest + icons are local files from the brand (192, 512, 512 maskable), 
   assert.equal(m.display, 'standalone');
   assert.equal(m.name, 'Agent J');
   assert.ok(m.short_name && m.short_name.length <= 12);
-  for (const i of m.icons) assert.ok(!/^[a-z]+:/i.test(i.src) && i.src.startsWith('brand/img/') && statSync(join(PUBLIC_DIR, i.src)).size > 0, i.src);
+  for (const i of m.icons) assert.ok(!/^[a-z]+:/i.test(i.src) && i.src.startsWith('brand/img/') && statSync(join(PUBLIC_DIR, i.src.split('?')[0])).size > 0, i.src);
+  // P302: every icon URL carries the icon's own content hash (a new logo = a new URL, so no browser / installed app keeps the old one)
+  for (const u of [...m.icons.map((i) => i.src), ...[...HTML.matchAll(/<link rel="(?:icon|apple-touch-icon)" href="([^"]+)"/g)].map((x) => x[1])]) {
+    const [path, q] = u.split('?');
+    assert.equal(q, 'v=' + createHash('sha256').update(readFileSync(join(PUBLIC_DIR, path))).digest('hex').slice(0, 8), u);
+  }
   assert.deepEqual(m.icons.map((i) => `${i.sizes}/${i.purpose}`), ['192x192/any', '512x512/any', '512x512/maskable']);
   const TOK = read(pub('brand/palette.css'));
   for (const c of [m.background_color, m.theme_color]) assert.ok(TOK.includes(`: ${c};`), `${c} is a brand token`);
   assert.match(HTML, /<meta name="theme-color" content="#faf9f5" media="\(prefers-color-scheme: light\)">/);
   assert.match(HTML, /<meta name="theme-color" content="#141414" media="\(prefers-color-scheme: dark\)">/);
-  assert.match(HTML, /<link rel="apple-touch-icon" href="apple-touch-icon\.png">/);
+  assert.match(HTML, /<link rel="apple-touch-icon" href="apple-touch-icon\.png\?v=[0-9a-f]{8}">/);
   assert.match(HTML, /<link rel="manifest" href="manifest\.webmanifest">/);
 });
 
@@ -512,13 +525,13 @@ test('F13 Settings: the gear replaced the bulb; s / ⌘, / Ctrl+, / ? wired; pre
   assert.match(panel, /id="keysBtn"/, 'the shortcut sheet is a second-level item in Settings');
   // P207: the sheet is drawn from interactions.json (relay.js paintKeys over interactions.gen.js ROWS) — it lists s · ⌘, / Ctrl+,
   assert.match(HTML, /<div class="menucols" id="keysCols"><\/div>/, 'the shortcut sheet is rendered, not hand-written');
-  assert.match(read(pub('js/interactions.gen.js')), /\["app\.settings",\[\["s","press"\],\["Mod\+,","press"\]\],1\]/, 'the shortcut sheet lists s · ⌘, / Ctrl+,');
+  assert.match(read(pub('js/interactions.gen.js')), /\["app\.settings",\[\["Alt\+Shift\+O","press"\],\["s","press"\],\["Mod\+,","press"\]\],1\]/, 'the shortcut sheet lists s · ⌘, / Ctrl+,');
   assert.match(RELAY, /\(e\.ctrlKey \|\| e\.metaKey\) && !e\.altKey && !e\.shiftKey && \(e\.key === "," \|\| e\.code === "Comma"\)/);
   // P207: s and ? come from interactions.json's table (KEYMAP "s" → app.settings, "?" → app.keys) through relay.js ACT
   assert.match(read(pub('js/interactions.gen.js')), /"s": \["app\.settings",0\],/);
   assert.match(read(pub('js/interactions.gen.js')), /"\?": \["app\.keys",0\],/);
-  assert.match(RELAY, /"app\.settings": \(\) => \{ closeMenu\(\); closeSug\(\); C\.settings && C\.settings\(\); \},/);
-  assert.match(RELAY, /"app\.keys": \(\) => openKeys\(\),/, '? still opens the sheet');
+  assert.match(RELAY, /"app\.settings": e => keyNav\(\(\) => e\.altKey && e\.shiftKey && C\.openSettings \? C\.openSettings\(\) : C\.settings && C\.settings\(\)\),/);
+  assert.match(RELAY, /"app\.keys": \(\) => \{ if \(mediaViewerOpen\(\)\) closeMediaViewer\(\); openKeys\(\); \},/, '? still opens the sheet');
   assert.match(RELAY, /el\("keysBtn"\)\.addEventListener\("click", openKeys\)/);
   // C6 / Amendment A1: exactly these keys go to the host; the font size never does; nothing lowers safety from the phone
   assert.match(SET, /export const PREF_KEYS = \['appearance\.language', 'appearance\.theme', 'voice\.speak_replies', 'voice\.wake_enabled', 'agent\.high_risk_warnings', 'agent\.session_mode', 'agent\.isolation', 'agent\.allow_docker'\];/);

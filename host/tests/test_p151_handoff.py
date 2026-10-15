@@ -98,7 +98,7 @@ class Handoff(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(text.startswith("〔Agent J 系统提示〕压缩完成。先读交接文件 "), text)
         self.assertIn(str(handoff.path("compact.md")).replace(os.path.expanduser("~"), "~"), text)
         self.assertEqual(provenance.from_name(src), provenance.SYSTEM)
-        self.assertEqual(self.host.notices, ["压缩完成，Agent 正在恢复上下文。"])
+        self.assertEqual(self.host.notices, ["压缩好了，我在翻交接笔记，马上接上思路。"])
         self.assertEqual(self.host.logged("shared_precompact")[0]["handoff"], True)
 
     async def test_no_handoff_at_precompact_says_so_after(self):
@@ -156,7 +156,7 @@ class Handoff(unittest.IsolatedAsyncioTestCase):
         self.assertIn("clear-used.md", self.sent[0][0])
         self.assertFalse(handoff.path("clear.md").exists())
         self.assertTrue(handoff.path("clear-used.md").exists())
-        self.assertEqual(self.host.notices, ["已清空，Agent 正在读交接文件。"])
+        self.assertEqual(self.host.notices, ["清空好了，我在读交接笔记，一会儿就接上。"])
         await self.ev("SessionStart", source="clear")
         await self.settle()
         self.assertEqual(len(self.sent), 1, "used once")

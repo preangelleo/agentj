@@ -1,92 +1,37 @@
 ---
 name: agentj-capability
-description: Long tasks and "what can you do" — 「做每周竞品简报」「每周一帮我整理…」「以后每天自动…」「你会什么」「你能做哪些事」「帮我盯着 X 每周汇报」, "set up a weekly brief", "what can you do", any goal that needs tools or a workflow and should then run on its own. Checks the capability inventory, asks the owner everything still missing in ONE opening card (≤ 5 required items), writes the task brief, routes it to the right workflow CEO (or drafts a new one with the workflow wizard), dispatches without duplicates and reads the CEO's report before saying it is done.
+description: Long tasks, recurring goals and "what can you do" / 「你会什么」「每周帮我…」. Check capabilities, collect at most five required owner inputs on one opening card, write a brief, dispatch the workflow CEO without duplicates, then verify its report.
 ---
 
 The owner should set a long task up once and then not be interrupted. You do the planning; the phone shows at most one
 opening card. Everything below is `agentj capability …` (serve answers on its socket inside the fence; add `--json`).
 
 ## 「你会什么」 / "what can you do"
-1. `agentj capability show --json` — re-checks what expired and puts the 「我的 Agent 会什么」 sheet on the owner's phone
-   (ready / needs setup, filterable; a tap explains an item). On an older phone page (`no_phone`) answer in chat instead.
-2. Reply in 2–4 lines, in business words (「能读公开网页做调研、把简报存在电脑上并推到你手机；邮件发送还没配」) — no MCP / CLI
-   jargon wall, no list of every skill. Mention what needs setup only if it matters for what the owner seems to want.
-3. In the same reply (core v10+), one line on how the work is organised, in the owner's language: 「董事长 → 我（董事长助理：
-   派活、盯进度、汇报、做技术决定）→ 各工作流的 CEO → CEO 手下的员工；没有 CEO 的活我安排小助理去办。你说「这种不用问我」，
-   我记下来，下次同类事直接定。」 / "Chairman → me (chief of staff: I dispatch, follow up, report and make the technical calls) →
-   each workflow's CEO → that CEO's staff; work with no CEO goes to a junior assistant. Say "don't ask me about this" and I
-   remember it and decide the next one myself." Use the form of address the owner chose, if any.
+1. `agentj capability show --json` refreshes expiry and opens the filterable phone capability sheet (ready / needs setup; tap for details). `no_phone` → answer in chat.
+2. Reply in 2–4 business-language lines about useful deliverables and relevant setup, never an MCP/CLI wall or every skill.
+3. Explain in the owner's language: Chairman → chief of staff (dispatch, monitor, report, technical decisions) → workflow CEOs → staff. No CEO → junior assistant. Remember the owner's chosen address and delegation rules ("don't ask me about this" applies next time).
+4. Fresh roster: once per conversation ask “你每周重复做的三件事是什么？” / “What are three things you do again and again every week?”; propose the best as a first workflow, following documentation/WORKFLOW.md's fresh-computer section.
 
-4. No workflow in the roster yet (a fresh computer): end with one question — 「你每周重复做的三件事是什么？我挑最合适的一件，
-   帮你建成第一个工作流。」 / "What are three things you do again and again every week? I will turn the best one into your first
-   workflow." — then follow documentation/WORKFLOW.md ("A new computer with no workflows yet"). Once per conversation.
+## `@<folder>（CEO 名）` / naming skills (P244)
+An @folder/CEO mention assigns that company: find its folder and launch method in documentation/ROLES.md (`agentj workflows --json`), dispatch directly, never ask whom. Brief/opening-card rules still apply. Write skills as plain `/<skill-name>` or `/<中文别名>`; the phone adds links. No 《…》 or markup.
 
-## `@<folder>（CEO 名）` in a message / naming skills (P244)
-- 「消息里出现 `@<folder>（CEO 名）`，就是主人点名把这件事交给这家公司：按 ROLES 花名册找到该 CEO 的目录与启动方式直接派，不再问派给谁。」
-  / A message containing `@<folder>（CEO name）` means the owner hands this to that company: find that CEO's folder and
-  launch method in the ROLES roster (documentation/ROLES.md; `agentj workflows --json` lists the folders) and dispatch
-  directly — never ask whom to give it to. The rest of this skill (brief, one opening card) still applies to that CEO's run.
-- Refer to a skill in plain text as `/<skill-name>` or `/<中文别名>` (e.g. 「按 /工作流设计宝典 重新梳理」); never 《…》 or
-  markup — the phone page turns the plain text into a link by itself.
+## A goal needing tools or a workflow
+1. Read working-root documentation/ROLES.md / STRUCTURE.json and `agentj capability list --json`. Pick the smallest useful deliverable. Existing CEO → use that workflow, collecting only missing inputs. Never take over its business.
+2. No CEO → say “这件事会建成一个工作流” / “This becomes a workflow”: one code-named folder with its own CEO and documents; a schedule starts only after agreement. Follow agentj-workflow-wizard **goal mode**, not its 20-question interview: stage the entry, short constitution/red lines, RUN.md, task.json (`enabled:false`, `mode:"normal"`; research mode cannot write deliverables/report) and brief.json under `.agentj/wizard-staging/`. Use `agentj wizard apply` then `agentj wizard doctor`; edited files are preserved as `.wizard-new`. Owner questions go on the opening card. **Always last: register and check** — `agentj wizard register --dir . --json` (the CEO roster, documentation/ROLES.md; append-only) must list the new folder `registered: true`; that is also the card the phone's 「工作流」 page shows.
+3. Write `<workflow>/brief.json` (v1 below), run `agentj capability digest --dir <workflow> --json`, fix problems and copy `scope_digest` to `confirmation.scope_digest`.
+4. Put real owner choices in JSON (≤5 required, each why / how / reuse, `input` text|single|multi with options); `agentj capability prepare --workflow <id> --asks <file> --json`:
+   - `ready` → dispatch; no extra start permission for authorized work.
+   - `too_many` → shrink/split, never hide the sixth as optional or evade with another card.
+   - `shown` / `waiting_phone` → explain the card in one line; `agentj capability result <card> --wait --json`. After command timeout, reuse the same id.
+   - `needs_input` / `missing` → resolve permitted checks/install yourself; keys use `agentj secret request`, never chat/opening card; owner login uses the browser flow below. Prepare again with only remaining gaps.
+   - `cancelled` / `expired` → nothing runs; say so briefly.
+5. `agentj capability dispatch --workflow <id> --json` → `queued` / `already_running`, never duplicate. A `staff_hint` in the result (a CEO with no staff yet; it comes once per company) → add it to your reply as one plain line, never a question; dispatching any other way, `agentj workflows --staff-hint <folder>` gives the same line. `unconfirmed` / `not_ready` → step 4. **End your turn immediately** with a handoff line: execution starts after your turn, so polling/sleeping prevents it. The owner's card enables the schedule; you never do. The phone displays a CEO robot. Other background shell runs use `agentj busy run --who <name> --label <what> [--report <REPORT>] -- <command…>` for visibility/report access and automatic removal; native Claude Agent/Task, Codex spawn_agent, OpenCode task and Claude Code's run_in_background commands appear automatically. The same wrapper on every OS — Linux, macOS (also inside a launchd job or a `nohup … &`), Windows; a long dispatch may instead be a systemd user unit (Linux) or a launchd job (macOS) labelled `agentj-p<N>-<what>`, which the phone shows while it runs. The robots show background work whether or not you are replying; when the owner sees none while work runs, it was not registered — wrap it, never explain it away. Before starting more, `agentj busy capacity` checks cores/load/memory/runs: start more when idle, queue when tight; respect harness limits, never fix a concurrency number.
+6. Host completion notes are system data. Read VERDICT, `reports/report.json` and its named artifacts; `agentj capability report-check --dir <workflow> --verdict <v>`. Report in one or two lines (deliverables already reach the phone). Missing report, unverified acceptance or unreadable artifacts means unfinished.
 
-## A goal that needs tools or a workflow (「做每周竞品简报」)
-1. **Understand and shrink.** Read the CEO roster (documentation/ROLES.md / STRUCTURE.json of the working root) and
-   `agentj capability list --json`. Choose the smallest useful deliverable. Decide the route:
-   - a CEO exists and its workflow already covers it → step 3 with that workflow;
-   - a CEO exists but lacks something → step 3; the card collects only what is missing;
-   - no CEO → step 2.
-   Never take over a workflow's business yourself.
-2. **No CEO: draft one (goal mode of the workflow wizard).** First tell the owner in one line, in business words, that this
-   becomes a workflow — one folder with a code name, its own CEO and full document set, a schedule only after their yes
-   (「这件事会建成一个工作流：文件夹 competitor-weekly，自带 CEO 和整套文档；定时等你点头再开」 / "This becomes a workflow: a
-   competitor-weekly folder with its own CEO and documents; it runs on a schedule only after you say yes"). Use the agentj-workflow-wizard skill in *goal mode*: from what
-   the owner already said, stage the workflow folder (entry file, short constitution with red lines, RUN.md, task.json with
-   `"enabled": false` and **`"mode": "normal"`** — a research run is read-only and could not write the deliverables or
-   its report), brief.json) under `.agentj/wizard-staging/`, then `agentj wizard apply` and `agentj wizard doctor`.
-   Do NOT run the 20-question interview: every question that is genuinely the owner's goes on the opening card instead.
-   The owner's edited files are never overwritten (`apply` keeps them and leaves `.wizard-new`).
-3. **Write `<workflow>/brief.json`** (schema v1 — see below). Then `agentj capability digest --dir <workflow> --json`:
-   put its `scope_digest` into `confirmation.scope_digest` and fix every listed problem.
-4. **Prepare the one card.** Put the owner's real choices (≤ 5, each with why / how / reuse, `input` text | single | multi
-   with options) in a JSON file and run `agentj capability prepare --workflow <id> --asks <file> --json`.
-   - `ready` → nothing to ask: go to 5 directly. Never add a "may I start?" question to work that is already authorized.
-   - `too_many` → more than 5 required items: shrink the deliverable or split the goal; never hide the sixth as optional
-     and never send a second card to get around the limit.
-   - `shown` / `waiting_phone` → tell the owner in one line what the card is for, then
-     `agentj capability result <card> --wait --json` (it may outlive your command: ask again later with the same id).
-   - `needs_input` with `missing` after the answer → fix what you can yourself (a re-check, an install the harness allows);
-     a key → `agentj secret request` (the dedicated secret card — never in chat, never on this card); a login the owner
-     must do → one sentence telling where to tap. Then prepare again: the card only shows what is still missing.
-   - `cancelled` / `expired` → nothing runs; say so in one line.
-5. **Dispatch, then end your turn.** `agentj capability dispatch --workflow <id> --json` → `queued` or `already_running`
-   (never start it twice). Then **end your turn at once** with one line (「已交给竞品简报 CEO，跑完我读报告告诉你」): the run
-   starts only after your turn ends — the Agent has one user at a time — so waiting, sleeping or polling inside the turn
-   blocks the very run you wait for. `unconfirmed` / `not_ready` → back to 4. A weekly plan is enabled by the owner's card
-   itself; you never enable a schedule. While it runs, the phone shows the CEO as a pixel robot on the reply card (「在办事项」);
-   anything you start outside this flow that keeps working after your turn (`claude -p …`, `codex exec …`) goes through
-   `agentj busy run --who <name> --label <what> [--report <its REPORT file>] -- <command…>` so it shows there too and
-   disappears when it ends; a tap on its row shows the report's first line. Your own sub-agents (Claude Code Agent/Task,
-   Codex spawn_agent, OpenCode task) appear there by themselves.
-   How many to run at once depends on this computer, not on a fixed number: before starting more background work run
-   `agentj busy capacity` (cores, load, available memory, what already runs → 「可再起 N 条」/ "room for N more"). Idle
-   machine → start more; tight → queue the rest and start them as others finish. A harness's own concurrency limit
-   still applies.
-6. **Read back.** When the run ends the host sends you a system note (not the owner's words) with the VERDICT and its
-   report check. Read `reports/report.json` and the artifacts it names (`agentj capability report-check --dir <workflow>
-   --verdict <v>`), then tell the owner the result in one or two lines (the host already put the owner deliverables on the
-   phone). No report, unverified acceptance or an unreadable artifact is not done — say what is missing.
+Inside the fence, hidden state makes `agentj tasks …` unavailable: use capability list (`ceo-<id>`) and dispatch; the card enables the schedule. New workflow files go through `agentj wizard apply` (entry, RUN.md, DRYRUN.md, CONSTITUTION.md, dormant task.json, valid brief.json, requests/*.md). Digest the staged brief with `agentj capability digest --dir .agentj/wizard-staging/<id>` before applying.
 
-Inside the fence the state directory is hidden: `agentj tasks …` cannot see the schedule from your shell — use
-`agentj capability list` (workflows appear as `ceo-<id>`) and `dispatch`; the card enables the schedule. Write the new
-workflow's files only through `agentj wizard apply` (it accepts the entry file, RUN.md, DRYRUN.md, CONSTITUTION.md, a
-dormant task.json, a valid brief.json and requests/*.md); `agentj capability digest --dir .agentj/wizard-staging/<id>`
-checks the staged brief before you apply.
-
-## RUN.md of a long-task workflow (keeps runs free of phone taps)
-Tell the CEO to read public pages with its **web fetch tool** and to write only under `reports/` with its **write / edit
-tool**; **no shell commands** (each one would put an approval card on the owner's phone during an unattended run; inside a
-confirmed brief, web fetch and writes under the workflow's own folders need no card). It must end with
-`reports/report.json` (copy `report.example.json` next to this skill) and a VERDICT line.
+## RUN.md for unattended long tasks
+The CEO uses **web fetch** for public pages and **write/edit** only under reports/, never shell commands (each asks on the phone). Confirmed-brief fetches and writes in its own folders need no card. End with reports/report.json (report.example.json here) and VERDICT.
 
 ## brief.json (v1, closed fields — anything else is refused)
 Start from `brief.example.json` next to this skill (a valid weekly example), change the facts, then run
@@ -125,6 +70,14 @@ When a missing capability needs an outside service (TTS, voice cloning, storage,
 
 The registry also reads Agent J’s dedicated browser/site checks and Google CLI evidence. A stopped browser or expired site check is not ready. Do not confuse an installed gog tool or a Gmail browser sign-in with Google API authorization (guided connection arrives in 0.18.1). Use the existing browser check when a required site is stale; never edit the registry to make it ready.
 
+## Plaza examples (P245)
+
+Install/upgrade can seed `llm-wiki`, `script-article-writing`, `ebook-writing` in the configured working root through the signed plaza channel. They are examples, not the owner’s completed business workflows; read their local docs before dispatching. Deleted or same-name folders are never restored or replaced automatically. `agentj wizard starters --json` gives suppression status; explicit reinstall uses ordinary `agentj plaza install` preview and owner confirmation.
+
+入口：「交给 Agent J：帮我按这个规格整理我的其他文件夹。」 / "Tell Agent J: organise my other folders to this spec." Inspect the requested folder first, preserve its data, and use the local WDB wizard to propose a structure. Agent J remains the chief of staff and dispatches to the folder’s CEO.
+
+千问 / 百炼 owners (P311): 「装千问自媒体工具」, or 生图 / 视频 / 配音 with no media skill → `agentj plaza install qwen-media-kit` (preview), owner's yes, `--owner-confirmed --digest`. Offer once per conversation and once after a 百炼 key is first set. Its Token Plan key never runs in scheduled tasks.
+
 ## Interrupted workflow runs
 
 A queued dispatch returns a stable `run_id`. Host restart marks unfinished runs interrupted and keeps any existing report
@@ -132,3 +85,12 @@ path in the task's last result; it never resumes tools automatically. `uncertain
 active: inspect the existing report and external effects before asking the owner to enable that workflow again through
 the existing phone / terminal operation. Do not retry dispatch blindly, kill a process by PID alone, infer success from
 an exit code or existing report, or reuse an old approval. A rerun is a new run with fresh runtime permission requests.
+
+## 目标暂时缺能力 / capability gaps (P269)
+先检测 API、技能和浏览器登录态，给「差什么、怎么补」，不以「做不到」结束。依次：官方 API（哪家、去哪注册、费用；同意后逐步配，密钥卡）→ 无 API 网站的自带浏览器（先检查、需主人登录时启动登录卡）→ 平台缺口反馈 Agent J 爸爸。缺口并存都说；登录不等于授权；违法/危险仍拒绝。详细中英说明见 agentj-manual。
+
+Check APIs, skills and browser sign-in **before answering**. Give missing inputs and a route, never stop at "cannot".
+1. Official API: name the provider, registration page and approximate cost in a short list. State what the owner can supply; after agreement guide setup stepwise. Keys only use `agentj secret request` / phone secret card; charges need separate approval.
+2. No API: read agentj-browser; `agentj browser status --json`, then `agentj browser check --site <site> --json`. Follow setup guidance if missing; preserve `disabled`. `unknown` / `unavailable` prove neither sign-in nor sign-out. `auth_required`: say "This site has no official API; I can use my browser. Please sign in to X there once", run `agentj browser login <site> --wait --json`, then re-check. QR sites open the phone login card; other sites open the computer sign-in page. No passwords/codes/QR screenshots in chat. Sign-in never authorizes publishing/payment: existing phone approvals apply.
+3. Missing platform primitives: explain this version's gap, offer /feedback-to-agentj-father (Agent J 爸爸 / Agent J Father), and state owner inputs still needed after unlocking. Read that skill's preview/consent/receipt rules: proposed feedback needs draft approval; an explicit command with content submits redacted text without reconfirmation. No invented receipt or release promise; absent skill → explain P253 version dependency.
+Name combined gaps. Put missing owner choices/authorization/setup on the existing opening card via `agentj capability prepare` (≤5 required), then secret/login cards. Continue equipped, authorized independent work. Truly illegal/dangerous requests remain refused.

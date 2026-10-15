@@ -1,6 +1,6 @@
 // P184 (PROTOCOL §25): 「转发到邮箱」 and the contact card — real page + local fake host, own headless Chromium (never :9222).
 //   forward-me      a data-mailfwd button opens the centred dialog; 「发给我自己」 is ticked with the owner's address; 发送 →
-//                   mail_fwd {to:[owner], turn}; toast; Esc / outside close; touch targets ≥ 44 px; no sideways overflow
+//                   mail_fwd {to:[owner], turn}; P295 result in the same dialog (已发到 + address); Esc / outside close; touch targets ≥ 44 px; no sideways overflow
 //   forward-other   发给别人: the book sorted 最近 / 最常用 / A–Z (letter headers); search goes to the host (q); picking
 //                   someone unticks 「发给我自己」; 新增 (address + nickname) → ct_save, selected; 发送 → exactly the picked
 //                   addresses; a file card's mid is forwarded with its name shown
@@ -28,15 +28,22 @@ const BOOK = [
 ];
 const ORDER = { recent: ['c000000000001', 'c000000000003', 'c000000000002'], frequent: ['c000000000002', 'c000000000001', 'c000000000003'],
   name: ['c000000000003', 'c000000000002', 'c000000000001'] };
-const S = { zh: { title: '转发到邮箱', me: '发给我自己', other: '发给别人', sent: '已发到', noMail: '还没设置发信邮箱', card: '存成新联系人', need: '至少填一个邮箱或电话', saved: '联系人已保存', upd: '补全联系人' },
-  en: { title: 'Forward by e-mail', me: 'To me', other: 'To someone else', sent: 'Sent to', noMail: 'No mailbox to send from yet', card: 'Save as a new contact', need: 'at least one e-mail or phone', saved: 'Contact saved', upd: 'Complete contact' } };
-export const CASES = { a: 'forward-me', b: 'forward-other', c: 'forward-no-mail', d: 'contact-card' };
+const S = { zh: { dup: '刚刚已经发过了', again: '再发一次', fail: '发送失败', retry: '重试', title: '转发到邮箱', me: '发给我自己', other: '发给别人', sent: '已发到', noMail: '还没设置发信邮箱', card: '存成新联系人', need: '至少填一个邮箱或电话', saved: '联系人已保存', upd: '补全联系人' },
+  en: { dup: 'Already sent just now', again: 'Send again', fail: 'Sending failed', retry: 'Retry', title: 'Forward by e-mail', me: 'To me', other: 'To someone else', sent: 'Sent to', noMail: 'No mailbox to send from yet', card: 'Save as a new contact', need: 'at least one e-mail or phone', saved: 'Contact saved', upd: 'Complete contact' } };
+export const CASES = { a: 'forward-me', b: 'forward-other', c: 'forward-no-mail', d: 'contact-card', e: 'forward-dup-and-retry' };
 const esc = (p) => p.send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 });
 const box = (p, sel) => evaluate(p, `(()=>{const r=document.querySelector(${JSON.stringify(sel)}).getBoundingClientRect();return {l:r.left,r:r.right,t:r.top,b:r.bottom,w:r.width,h:r.height}})()`);
 async function tapEl(p, sel) {
   const r = await box(p, sel), x = r.l + r.w / 2, y = r.t + r.h / 2;
   await p.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x, y }] });
   await p.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+}
+// P295: the result shows in the same centred dialog (已发到 + addresses, never a toast); 知道了 closes it
+async function sendOk(p) {
+  await tapEl(p, '#ctFwd-send');
+  await waitFor(p, `!!${$('ctFwd-to')} && !${$('ctFwd')}.hidden`);
+  await sleep(650);                                   // the result ignores taps for 600 ms (the sending tap's ghost click)
+  await tapEl(p, '#ctFwd-send'); await waitFor(p, `${$('ctFwd')}.hidden`);
 }
 
 export async function runP184() {
@@ -53,7 +60,7 @@ export async function runP184() {
       const s = S[lang];
       fake.reset();
       const got = [];
-      const host = { mailReady: true, me: [OWNER], book: BOOK.map((c) => ({ ...c })) };
+      const host = { mailReady: true, me: [OWNER], book: BOOK.map((c) => ({ ...c })), fwd: [] };
       fake.st.caps = ['contacts'];
       fake.st.onApp = async (c, m, send) => {
         if (!/^(ct_|mail_fwd)/.test(m.t)) return false;
@@ -68,7 +75,10 @@ export async function runP184() {
           host.book.unshift(n);
           await send({ t: 'ct_res', r: m.r, ok: true, result: 'added', contact: n });
         } else if (m.t === 'mail_fwd') {
-          await send({ t: 'mail_fwd_res', r: m.r, ok: true, sent: m.to.length, files: m.mid ? 1 : 0 });
+          const mode = host.fwd.shift();                       // P295: scripted answers for the dup / failure case
+          if (mode === 'dup' && !m.again) await send({ t: 'mail_fwd_res', r: m.r, ok: false, why: 'dup', ago: 95 });
+          else if (mode === 'fail') await send({ t: 'mail_fwd_res', r: m.r, ok: false, why: 'send_failed', detail: 'smtp' });
+          else await send({ t: 'mail_fwd_res', r: m.r, ok: true, sent: m.to.length, files: m.mid ? 1 : 0 });
         }
         return true;
       };
@@ -98,10 +108,15 @@ export async function runP184() {
           await esc(p); await waitFor(p, `${$('ctFwd')}.hidden`); check(true, 'Esc closes');
           await tapEl(p, '#mf-test'); await waitFor(p, `!${$('ctFwd')}.hidden && !${$('ctFwd-send')}.disabled`);
           await tapEl(p, '#ctFwd-send');
-          await waitFor(p, `${$('ctFwd')}.hidden`);
+          await waitFor(p, `${$('ctFwd-to')}?.textContent.includes(${JSON.stringify(OWNER)})`);
+          await tapEl(p, '#ctFwd-send'); await sleep(100);
+          check(!(await evaluate(p, `${$('ctFwd')}.hidden`)), 'P295: a second tap right away does not close the result');
           const f = last('mail_fwd');
           check(f && f.turn === 1 && f.to.length === 1 && f.to[0].addr === OWNER && !f.mid, 'mail_fwd to the owner for turn 1 ' + JSON.stringify(f));
-          await waitFor(p, `${$('toast')}.textContent.includes(${JSON.stringify(s.sent)})`);
+          check((await evaluate(p, `${$('ctFwd-what')}.textContent`)).includes(s.sent), 'P295: 已发到 in the centred dialog');
+          check(!(await evaluate(p, `${$('toast')}.classList.contains('on')`)), 'P295: no toast');
+          await save('forward-sent');
+          await sleep(650); await tapEl(p, '#ctFwd-send'); await waitFor(p, `${$('ctFwd')}.hidden`);
         });
 
         await step('b', async () => {
@@ -135,12 +150,12 @@ export async function runP184() {
           check(sv.contact.emails[0] === 'Wang@X.cn' && sv.contact.nicks[0] === '王总', 'ct_save address + nickname');
           check((await evaluate(p, `document.querySelector('#ctFwd .ct-mode[data-mode=other]').textContent`)).includes('3'), 'three picked');
           await save('forward-other');
-          await tapEl(p, '#ctFwd-send'); await waitFor(p, `${$('ctFwd')}.hidden`);
+          await sendOk(p);
           const f = last('mail_fwd');
           check(JSON.stringify(f.to.map((x) => x.addr).sort()) === JSON.stringify(['anna@contoso.com', 'wang@x.cn', 'zhangsan@hongyuan.cn']), 'exactly the picked ' + JSON.stringify(f.to));
           await evaluate(p, `window.AgentJMailForward.open({turn:1, mid:'AAAAAAAAAAAAAAAAAAAAAA', name:'report.pdf'})`);
           await waitFor(p, `!${$('ctFwd')}.hidden && ${$('ctFwd-what')}.textContent.includes('report.pdf') && !${$('ctFwd-send')}.disabled`);
-          await tapEl(p, '#ctFwd-send'); await waitFor(p, `${$('ctFwd')}.hidden`);
+          await sendOk(p);
           check(last('mail_fwd').mid === 'AAAAAAAAAAAAAAAAAAAAAA', 'a file card forwards its mid');
           await tapEl(p, '#mf-test'); await waitFor(p, `!${$('ctFwd')}.hidden`);
           await p.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: 195, y: 838 }] });
@@ -158,6 +173,37 @@ export async function runP184() {
           check(true, '去设置 → Settings → 邮件通道');
           await evaluate(p, `${$('set-back')}.click()`); await esc(p); await waitFor(p, `${$('settings')}.hidden`);
           host.mailReady = true;
+        });
+
+        await step('e', async () => {        // P295: a second send of the same page asks first; a failure offers 重试
+          host.fwd = ['dup', 'ok'];
+          await tapEl(p, '#mf-test'); await waitFor(p, `!${$('ctFwd')}.hidden && !${$('ctFwd-send')}.disabled`);
+          await tapEl(p, '#ctFwd-send');
+          await waitFor(p, `${$('ctFwd-title')}.textContent===${JSON.stringify(s.dup)}`);
+          check((await evaluate(p, `${$('ctFwd-body')}.textContent`)).includes(lang === 'zh' ? '2 分钟' : '2 min'), 'how long ago');
+          check(await evaluate(p, `${$('ctFwd-send')}.textContent`) === s.again && !(await evaluate(p, `${$('ctFwd-cancel')}.hidden`)), '再发一次 + 关闭');
+          check(!(await evaluate(p, `${$('toast')}.classList.contains('on')`)), 'no toast');
+          await save('forward-dup');
+          await sleep(650); await tapEl(p, '#ctFwd-send');
+          await waitFor(p, `!!${$('ctFwd-to')}`);
+          check(last('mail_fwd').again === true, '再发一次 → again:true');
+          await esc(p); await waitFor(p, `${$('ctFwd')}.hidden`); check(true, 'Esc closes the result');
+          host.fwd = ['fail', 'ok'];
+          await tapEl(p, '#mf-test'); await waitFor(p, `!${$('ctFwd')}.hidden && !${$('ctFwd-send')}.disabled`);
+          await tapEl(p, '#ctFwd-send');
+          await waitFor(p, `${$('ctFwd-title')}.textContent===${JSON.stringify(s.fail)}`);
+          check(await evaluate(p, `${$('ctFwd-send')}.textContent`) === s.retry, '重试');
+          await save('forward-failed');
+          await sleep(650); await tapEl(p, '#ctFwd-send');
+          await waitFor(p, `!!${$('ctFwd-to')}`);
+          check(!last('mail_fwd').again, 'a retry after a failure is not again:true (the host still guards double sends)');
+          const small = await evaluate(p, `[...document.querySelectorAll('#ctFwd button')].filter(b=>b.offsetParent).map(b=>b.getBoundingClientRect()).filter(r=>r.height<44).length`);
+          check(small === 0, 'result buttons ≥ 44 px');
+          const wide = await evaluate(p, `document.querySelector('#ctFwd .sq').scrollWidth > document.querySelector('#ctFwd .sq').clientWidth + 1`);
+          check(!wide, 'no sideways overflow');
+          await p.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: 195, y: 838 }] });
+          await p.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+          await waitFor(p, `${$('ctFwd')}.hidden`); check(true, 'outside closes the result');
         });
 
         await step('d', async () => {

@@ -12,7 +12,7 @@
 // (P189: `whole` = the reply card's 转发到邮箱 — the owner's message goes along unless 「不带我的提问」 is ticked)
 // or any element with data-mailfwd (data-turn / data-mid / data-name). Names and addresses are always textContent.
 import { t, onLang } from './t.js';
-import { mk, toast } from './ui.js';
+import { human, mk, toast } from './ui.js';
 import { ask1, isReady, peer, sendApp } from './session.js';
 import { registerLayer } from './layers.js';
 
@@ -48,13 +48,14 @@ function icon(shapes) {
 
 // ------------------------------------------------------------------ 1. forward to e-mail
 const F = { root: null, what: null, list: [], me: [], mail: null, mode: 'me', picked: new Map(), sort: 'recent', q: '', busy: false, qTimer: 0, seq: 0,
-  noInput: false };   // P189: a whole turn (the reply card's 转发到邮箱) may leave the owner's message out
+  noInput: false,    // P189: a whole turn (the reply card's 转发到邮箱) may leave the owner's message out
+  result: null };    // P295: what came back, shown in this same centred dialog (never a toast): {ok, to, m} | {dup, ago} | {why}
 
 function fwdClose() { if (F.root) F.root.d.hidden = true; F.busy = false; clearTimeout(F.qTimer); }
 
 function buildForward() {
   if (F.root) return F.root;
-  F.root = shell('ctFwd', 6, fwdClose);
+  F.root = shell('ctFwd', 47, fwdClose);   // P273: above the full-screen reader (45) it can be opened from
   const sq = F.root.sq;
   const h = mk('h2'); h.id = 'ctFwd-title';
   const sub = mk('p', 'gdlg-sub'); sub.id = 'ctFwd-what';
@@ -65,11 +66,21 @@ function buildForward() {
   const go = mk('button', 'go'); go.type = 'button'; go.id = 'ctFwd-send';
   row.append(no, go);
   sq.append(icon(ICON), h, sub, body, note, row);
-  no.addEventListener('click', fwdClose);
-  go.addEventListener('click', () => (F.mail && F.mail.ready === false ? goSettings() : send()));
+  no.addEventListener('click', () => { if (!settling()) fwdClose(); });
+  go.addEventListener('click', () => {
+    if (settling()) return;
+    const r = F.result;
+    if (r && r.ok) fwdClose();
+    else if (r) { F.result = null; send(!!r.dup); }   // 再发一次 / 重试 (after a timeout the host answers dup if it went)
+    else if (F.mail && F.mail.ready === false) goSettings();
+    else send();
+  });
   onLang(() => { if (!F.root.d.hidden) renderForward(); });
   return F.root;
 }
+
+// P295: the tap that sent (or a double tap) must not land on the result's own buttons — 知道了 / 再发一次 sit where 发送 was
+const settling = () => !!F.result && performance.now() - (F.result.at || 0) < 600;
 
 function goSettings() { fwdClose(); if (openSettingsMail) openSettingsMail(); }
 
@@ -79,7 +90,7 @@ export async function openForward(what = {}) {
   buildForward();
   F.what = { turn: Number.isInteger(what.turn) ? what.turn : null, mid: typeof what.mid === 'string' ? what.mid : null,
     name: typeof what.name === 'string' ? what.name.slice(0, 128) : '', whole: what.whole === true && Number.isInteger(what.turn) && typeof what.mid !== 'string' };
-  F.mode = 'me'; F.picked = new Map(); F.q = ''; F.list = []; F.mail = null; F.me = []; F.noInput = false;
+  F.mode = 'me'; F.picked = new Map(); F.q = ''; F.list = []; F.mail = null; F.me = []; F.noInput = false; F.result = null;
   F.root.d.hidden = false;
   renderForward();
   document.getElementById('ctFwd-cancel').focus({ preventScroll: true });
@@ -91,7 +102,7 @@ async function refresh() {
   if (!isReady()) { say(t('ct.offline')); return; }
   const seq = ++F.seq;
   const m = await ask1({ t: 'ct_list', sort: F.sort, ...(F.q.trim() ? { q: F.q.trim() } : {}) }, 'ct_res', 15000);
-  if (seq !== F.seq || !F.root || F.root.d.hidden) return;
+  if (seq !== F.seq || !F.root || F.root.d.hidden || F.result) return;
   if (m.t !== 'ct_res' || !m.ok) { say(m.t === 'timeout' ? t('ct.timeout') : t('ct.offline')); return; }
   F.list = Array.isArray(m.contacts) ? m.contacts : [];
   F.me = Array.isArray(m.me) ? m.me.filter((a) => typeof a === 'string') : [];
@@ -110,7 +121,9 @@ function rows() {
 }
 
 function renderForward() {
+  if (F.result) { renderResult(); return; }
   const { sq } = F.root;
+  sq.querySelector('#ctFwd-cancel').hidden = false; sq.querySelector('#ctFwd-what').hidden = false;
   sq.querySelector('#ctFwd-title').textContent = t('ct.fwdTitle');
   sq.querySelector('#ctFwd-what').textContent = F.what && F.what.mid ? t('ct.fwdFile', { name: F.what.name || t('ct.file') })
     : F.what && F.what.whole && !F.noInput ? t('ct.fwdTurn') : t('ct.fwdReply');
@@ -230,24 +243,67 @@ async function addNew(addr, nick) {
   await refresh();
 }
 
-async function send() {
+async function send(again = false) {
   if (F.busy || !F.what) return;
   const to = F.mode === 'me' ? F.me.slice(0, 1).map((addr) => ({ addr })) : [...F.picked].map(([addr, name]) => ({ addr, ...(name ? { name } : {}) }));
   if (!to.length) return;
-  F.busy = true; renderForward(); say('');
+  F.busy = true; F.result = null; renderForward(); say('');
   const m = await ask1({ t: 'mail_fwd', to, ...(F.what.mid ? { mid: F.what.mid } : {}), ...(F.what.turn !== null ? { turn: F.what.turn } : {}),
-    ...(F.what.whole && F.noInput ? { input: false } : {}) }, 'mail_fwd_res', 90000);
+    ...(F.what.whole && F.noInput ? { input: false } : {}), ...(again ? { again: true } : {}) }, 'mail_fwd_res', 90000);
   F.busy = false;
-  if (m.t === 'mail_fwd_res' && m.ok) {
-    fwdClose();
-    toast(m.skipped > 0 ? t('ct.sentSkip', { n: m.skipped }) : t('ct.sent', { n: m.sent || to.length }), m.skipped > 0 ? 3600 : 2400);
+  if (!F.root || F.root.d.hidden) return;
+  const why = m.t === 'mail_fwd_res' ? (m.ok ? null : m.why) : m.t;
+  if (why === 'mail_not_configured' || why === 'no_password') { F.mail = { ready: false, why }; renderForward(); return; }
+  F.result = !why ? { ok: true, to: to.map((x) => x.addr), me: F.mode === 'me', m } : why === 'dup' ? { dup: true, ago: m.ago | 0 } : { why };
+  F.result.at = performance.now();
+  renderForward();
+  document.getElementById('ctFwd-send')?.focus({ preventScroll: true });
+}
+
+// P295 (Leo 10-15): the result in the same centred dialog — 已发到 + each address, every file left out with its real reason
+// (size against the limit, a key-like file held back from others, moved / changed); failure = the reason + 重试; a second
+// send of the same page to the same people within 10 min = 「刚刚已经发过了」 + 再发一次. ESC / outside close it (shell).
+function renderResult() {
+  const { sq } = F.root, r = F.result;
+  const no = sq.querySelector('#ctFwd-cancel'), go = sq.querySelector('#ctFwd-send'), body = sq.querySelector('#ctFwd-body');
+  const sub = sq.querySelector('#ctFwd-what');
+  body.replaceChildren(); say('');
+  go.disabled = false;
+  if (r.ok) {
+    const m = r.m || {};
+    sq.querySelector('#ctFwd-title').textContent = t('p295.ct.okTitle');
+    sub.textContent = t('p295.ct.okTo');
+    const ul = mk('ul', 'ct-res'); ul.id = 'ctFwd-to';
+    for (const a of r.to) ul.append(mk('li', '', a));
+    body.append(ul);
+    const notes = [];
+    for (const x of Array.isArray(m.skips) ? m.skips : []) {
+      if (!x || typeof x.name !== 'string') continue;
+      const k = 'p295.ct.skip.' + (x.why === 'too_big' || x.why === 'secret' ? x.why : 'gone');
+      notes.push(t(k, { name: x.name, size: human(x.bytes | 0).replace(' ', '\u00a0'), limit: human(m.limit | 0).replace(' ', '\u00a0') }));
+    }
+    if (!notes.length && m.skipped > 0) notes.push(t('ct.sentSkip', { n: m.skipped }));    // an older computer: count only
+    if (m.refused > 0) notes.push(t('p295.ct.refused', { n: m.refused }));
+    if (!r.me) notes.push(t('p295.ct.spam'));
+    for (const n of notes) body.append(mk('p', 'gdlg-sub ct-res-note', n));
+    no.hidden = true;
+    go.textContent = t('p295.ct.ok');
     return;
   }
-  const why = m.t === 'mail_fwd_res' ? m.why : m.t;
-  if (why === 'mail_not_configured' || why === 'no_password') { F.mail = { ready: false, why }; renderForward(); return; }
-  renderForward();
-  const k = 'ct.why.' + why, s = t(k);
-  say(s === k ? t('ct.why.send_failed') : s);
+  no.hidden = false; no.textContent = t('p295.ct.close');
+  if (r.dup) {
+    sq.querySelector('#ctFwd-title').textContent = t('p295.ct.dupTitle');
+    const ago = r.ago < 60 ? t('p295.ct.agoS', { n: Math.max(1, r.ago) }) : t('p295.ct.agoM', { n: Math.round(r.ago / 60) });
+    sub.textContent = ''; sub.hidden = true;
+    body.append(mk('p', 'gdlg-sub ct-res-note', t('p295.ct.dupSub', { ago })));
+    go.textContent = t('p295.ct.again');
+    return;
+  }
+  sq.querySelector('#ctFwd-title').textContent = t('p295.ct.failTitle');
+  const k = 'ct.why.' + r.why, s = t(k);
+  sub.textContent = ''; sub.hidden = true;
+  body.append(mk('p', 'gdlg-sub ct-res-note', s === k ? t('ct.why.send_failed') : s));
+  go.textContent = t('p295.ct.retry');
 }
 
 // data-mailfwd on any button (P183's file cards and reply card): the dialog opens for that page / file

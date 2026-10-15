@@ -1292,6 +1292,16 @@ python3 ~/.config/agentsrelay/agentsrelay-setup.py --restore
 
 [AgentsRelay 官方配置页](https://agentsrelay.net/onboard/)
 
+## 用不了 Claude Code 和 Codex 的地区：Kimi {#kimi}
+
+Anthropic 和 OpenAI 不服务香港、澳门、中国大陆等地区。在这些地方，Agent J 首推 Kimi 会员 Plus 或更高档，通过 OpenCode 使用。Go 档没有编程额度，用不了。装好 Agent J 后，Agent 会实测你这台电脑能用什么：
+
+```bash
+agentj agent route
+```
+
+它向 Claude、OpenAI 和 Kimi 的服务器各问一次，不带任何 key。时区只在拿不准时参考，不会发到任何地方。Claude Code 和 Codex 用不了时，它会给出 Agent J 官方的邀请链接，链接后面紧跟这句话：「这是 Agent J 官方的邀请链接，您和我们各得一次抽奖」。24 小时内付费订阅才算数。订阅后在 Kimi Code 控制台新建一把 key，只粘贴进手机上的密钥卡；Agent 会把 OpenCode 切到 `kimi-code-plan-cn/k3`。它也会列出备选：千问（阿里云百炼中国大陆站）、智谱 GLM / DeepSeek、OpenRouter、Kimi 开放平台按量付费。已经有其中某个服务账号的，继续用就行。在海外站 kimi.ai 买的会员，key 不通用，改用 `kimi-code-plan-global/k3`。和 Kimi 并列，它还会推荐[阿里百炼 Token Plan](/docs/setup-agents/#bailian)，两条由你挑。
+
 ## 运行要求 {#requirements}
 
 macOS：先试运行 `opencode --version`（或所选 Agent 的 `--version`）；能正常运行就能继续安装，不按系统版本号拦截。一键安装会实际试运行它下载的固定版 OpenCode；若实际出现 dyld / _ubrk_clone 或无法运行，才提示失败原因。PATH 或 npm 重装不能修复系统库，请升级系统、换电脑，或用能正常运行的其他 Agent 按手动路线安装。Intel Mac 使用 x86_64 工具与 /usr/local Homebrew，Apple Silicon 使用 arm64 与 /opt/homebrew；不要混用架构。Gemini 当前官方列 macOS 15+。物理 Intel Mac/Windows 安装尚需对应机器验证。
@@ -1324,3 +1334,35 @@ Please download https://agentj.app/install.md with curl, read the whole file wit
 [让电脑保持唤醒](/docs/keep-awake/)：命令、系统设置和可发给 Agent 的请求。
 
 仅有 Gemini 时，安装助手会提示：Agent J 主 Agent 暂不支持 Gemini，请再登录 Codex / Claude Code / OpenCode 之一或用 AgentsRelay。setup-agents 仍可安装 Gemini。
+
+## 安装 Kimi Code CLI {#kimi}
+
+Kimi Code CLI（`kimi`，月之暗面，MIT 开源）是 Agent J 可以直接用的 AI 编程工具。官方脚本不需要 Node.js：
+
+`curl -fsSL https://code.kimi.com/kimi-code/install.sh | bash`
+
+Windows（PowerShell）：`irm https://code.kimi.com/kimi-code/install.ps1 | iex`（先装 Git for Windows）。也可以用 npm：`npm install -g @moonshot-ai/kimi-code`（在中国大陆加 `--registry=https://registry.npmmirror.com`）。装好用 `kimi --version` 检查，Agent J 需要 2.2.0 或更新。
+
+在你自己的终端登录：国内站 kimi.com 用 `kimi login --region mainland-cn`，海外站 kimi.ai 用 `kimi login --region global`（两边账号不通用）。它会给出一个链接和一次性设备码，在任何登录了 Kimi 的设备上确认就行。然后运行 `agentj agent switch kimi`。
+
+隔离：Kimi 没有自带沙箱，它的 hook 出错时会放行，所以 Agent J 让它和别的工具一样在隔离里运行，固定在手动审批模式，每个权限请求都发到你手机上。
+
+## 阿里百炼 Token Plan（中国大陆） {#bailian}
+
+给编程工具用的包月套餐，不按 API 用量计费。Token Plan 个人版分 Lite、Essential、Standard、Pro 四档，按 Credits 计量（每月 11,500 / 25,500 / 45,000 / 180,000；Standard 起可以同时跑 3–4 个 Agent）。每档月费让 Agent 用 `agentj agent route` 列给你看，以阿里云订阅页为准。千问 3.8 Max 和 3.8 Flash 能看图，截图和浏览器自动化都能用；Agent J 默认用 `qwen3.8-max`，想省额度可以换 `qwen3.8-flash`。
+
+买之前先看清条款。只能你本人在编程工具里交互使用，不能拿这把 key 跑自动化脚本、做应用后端或者非交互的批量调用，违规的话阿里云可能暂停订阅或封掉 key。订阅期间，你发给模型的内容和模型生成的内容会被阿里云用于服务改进和模型优化，涉及隐私的数据要谨慎。套餐只限订阅人本人，不能共享。定时任务、客服 bot 这类没人值守的活，请用按量付费的 key：Agent J 不会把 Token Plan 的 key 交给定时任务或 bot。
+
+在 https://bailian.console.aliyun.com/cn-beijing/subscription/overview 订阅，再到控制台新建套餐专属 API Key。然后让 Agent 帮你配：它运行 `agentj provider bailian`，把百炼写进 OpenCode 的设置，你原来的设置一项都不动。接着手机上会弹出密钥卡，key 只粘贴在那里。Agent J 会用百炼只读的模型列表接口核对这把 key，不花 Credits。最后 Agent 把 OpenCode 切到 `bailian-token-plan-personal/qwen3.8-max`。
+
+Coding Plan（key 以 `sk-sp-` 开头）也能用（`agentj provider bailian --plan coding-plan`），但它没有 Max 模型，key 也没法事先核对。
+
+## 千问 Qwen Code {#qwen}
+
+Qwen Code（`qwen`，阿里，Apache-2.0 开源）是阿里自己的编程 Agent，Agent J 可以直接用它，用的还是同一把百炼 key。用 npm 安装（需要 Node.js 20 或更新；在中国大陆加 `--registry=https://registry.npmmirror.com`）：
+
+`npm install -g @qwen-code/qwen-code@latest`
+
+装好用 `qwen --version` 检查，Agent J 需要 0.25 或更新。它的免费登录 2026-04-15 已经停了，所以 key 就是它的登录：用上面那张手机密钥卡（`BAILIAN_TOKEN_PLAN_API_KEY`）。Agent J 只在内存里把 key 交给 Qwen Code，不往 `~/.qwen` 写任何东西。如果你自己已经配好了 Qwen Code（比如用过 `bl config agent --agent qwen-code`），就用你自己的设置。然后运行 `agentj agent switch qwen`。
+
+隔离和审批：Agent J 让 Qwen Code 和别的工具一样在隔离里运行。Qwen Code 默认的模式会自己批准一部分操作，Agent J 每次都把它切回「每次都问」，每个请求都发到你手机上，只批这一次。手机上的 /model 会列出套餐里的模型，名字后面带“看图”两个字的能读图。

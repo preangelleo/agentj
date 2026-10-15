@@ -35,7 +35,7 @@ ARG_MAX = 200
 _CMD = re.compile(r"^/([A-Za-z][\w:.-]{0,63})(?:[ \t]+(.*))?$", re.S)
 MODEL_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:/\[\]@+-]{0,99}$")
 REFUSE = ("这个命令请在电脑上执行。手机上能用的：/clear /compact /model /context /cost /usage /status /help /stop"
-          " /my-agent-id /add-friend /update /switch-harness /goal")
+          " /my-agent-id /add-friend /telegram-pair /update /switch-harness /goal")
 NONE = "—"
 # F24: the whole message, nothing else (「把这个文件压缩一下」 stays a message)
 SAY_COMPACT = ("压缩", "压缩一下", "压缩吧", "压缩上下文", "compact", "compact now", "compact the context")
@@ -55,17 +55,22 @@ def parse(text) -> tuple[str, str] | None:
     return m.group(1).lower(), (m.group(2) or "").strip()[:ARG_MAX]
 
 
-DONE = {"compact": ("✓ 压缩完成，可以继续说话", "✓ Compacted, keep talking"), "clear": ("✓ 已开新对话", "✓ New conversation")}   # P133
+DONE = {"compact": "compact.done", "clear": "clear.greet"}   # P133 → P280: the Agent's own words (humane.json)
 
 
-def done_line(name, lang="zh") -> str:
-    return DONE[name][lang == "en"] if name in DONE else ""
+def done_line(name, lang="zh", prefs=None, now=None) -> str:
+    from . import humane
+    return humane.say(DONE[name], lang, prefs, now) if name in DONE else ""
 
 
-def with_done(name, text, lang="zh") -> str:
-    line = done_line(name, lang)
-    if not line or "✓" in (text or ""):
+def with_done(name, text, lang="zh", prefs=None, now=None) -> str:
+    """The success line of /clear and /compact. /clear's greeting comes first (a new conversation opens with it);
+    /compact's goes under the result's first line."""
+    line = done_line(name, lang, prefs, now)
+    if not line or line in (text or ""):
         return text
+    if name == "clear":
+        return "\n".join(x for x in (line, (text or "").strip()) if x)
     head, _, rest = (text or "").strip().partition("\n")
     return "\n".join(x for x in (head, line, rest) if x)
 
@@ -133,9 +138,10 @@ def secs(ms) -> str:
 
 
 HELP = ("手机上能用的命令（也可以点输入框左边的 ≡「全部命令」）：\n"
-        "/compact 压缩上下文 · /clear 清空对话（可撤销） · /model [名字] 换模型 · /context 上下文用了多少 · "
+        "/compact 压缩上下文 · /clear 开新对话（发消息前可撤销） · /model [名字] 换模型 · /context 上下文用了多少 · "
         "/cost 本会话花费 · /usage 套餐用量 · /status 状态 · /stop 停下这一轮 · /help 这条说明\n"
         "/update 升级 Agent J（发送即授权安装、重启、自检）\n"
         "/switch-harness [切换到 Codex] 换底层 harness：交给主 Agent，先检查、能用才切\n"
         "好友：/my-agent-id 我的 Agent ID 和分享链接 · /add-friend <ID> [附言] 加好友\n"
+        "Telegram：/telegram-pair 重新绑定 Telegram（手机上出一次性配对码）\n"
         "别的命令（比如改设置的）请在电脑上执行。")

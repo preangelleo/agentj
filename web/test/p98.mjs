@@ -44,7 +44,7 @@ try {
    assert.equal(await evaluate(p,`document.getElementById('shared-status').hidden`),true);
    const before=await evaluate(p,`document.querySelector('.composer').getBoundingClientRect().top`);
    const text=await evaluate(p,`document.getElementById('toast').textContent`);
-   assert.match(text,language==='zh'?/正在跟/:/Following/);
+   assert.match(text,language==='zh'?/在跟着电脑/:/following the computer/);   // P280 wording
    const box=await evaluate(p,`(()=>{const r=document.getElementById('toast').getBoundingClientRect();return {left:r.left,right:r.right}})()`);
    assert.ok(box.left>=0 && box.right<=360,'narrow toast within viewport');
    writeFileSync(new URL(agent+'-'+language+'-visible.png',out),await shoot(p,''));
@@ -75,7 +75,7 @@ try {
   await evaluate(p,`(()=>{const n=document.getElementById('input');n.value='P98 rejected send';n.dispatchEvent(new Event('input',{bubbles:true}));document.getElementById('send').click()})()`);
   await waitFor(p,`document.getElementById('toast').classList.contains('on')`);
   const errorText=await evaluate(p,`document.getElementById('toast').textContent`);
-  assert.doesNotMatch(errorText,/Following|正在跟/);
+  assert.doesNotMatch(errorText,/[Ff]ollowing|在跟着/);
   assert.equal(await evaluate(p,`document.getElementById('input').value`),'P98 rejected send');
   await fake.send({t:'meter',shared_status:'following',shared_follow:{agent:'codex',id:'e'.repeat(32)}});
   await sleep(100);

@@ -26,6 +26,7 @@ LEGACY_RECONNECT=240
 class Runtime:
     def __init__(self,manager):
         self.manager=manager;self.host=manager.host;self.seated=True;self.tasks={};self.active={};self.stopping=False;self.epochs={};self.synced={};self.pruned=0;self.telegram_tasks={};self.telegram_epochs={};self.telegram_targets={}
+        self.owner_guest=None   # P297: GuestChannel on the owner's own Telegram bot, or None
     def seat_ok(self):
         f=getattr(self.host,'seat_refusal',None)
         try:return not (f and f('bots'))
@@ -70,10 +71,27 @@ class Runtime:
                         self.epochs[bid]=self.manager.state().lifecycle(bid)['epoch'];self.tasks[bid]=asyncio.create_task(self.serve_bot(bid))
                 await asyncio.sleep(2)
         finally:
+            if self.owner_guest is not None:await self.owner_guest.close();self.owner_guest=None
             for task in self.telegram_tasks.values():task.cancel()
             await asyncio.gather(*self.telegram_tasks.values(),return_exceptions=True);self.telegram_tasks.clear();self.telegram_targets.clear()
             for task in self.tasks.values():task.cancel()
             await asyncio.gather(*self.tasks.values(),return_exceptions=True);self.tasks.clear()
+    def telegram_guest(self,bot_id,send):
+        """P297: the bot attached to the owner's own Telegram bot (config telegram.owner_bot, enabled, not removed), as a
+        GuestChannel — or None: the switch is off, the bot is paused/removed, Stop everything is on, or no bot exists."""
+        configured=self.host.st.root/'bots'/'bots.sqlite3'
+        if not configured.exists() or self.host.stopped():return None
+        store=self.manager.state()
+        wanted=next((b['id'] for b in store.listing() if b['enabled'] and b['telegram'].get('owner_bot') is True),None)
+        ch=self.owner_guest
+        if ch is not None and (ch.bid!=wanted or ch.bot_id!=bot_id or not ch.enabled()):
+            # the old channel's waiting turns end with enabled() False: nothing more is sent from them
+            self.owner_guest=ch=None
+        if wanted is None:return None
+        if ch is None:
+            from .telegram import GuestChannel
+            ch=self.owner_guest=GuestChannel(self,wanted,bot_id,send)
+        return ch
     async def register(self,bid):
         store=self.manager.state();c=store.get(bid);now=int(time.time());life=store.lifecycle(bid);epoch=life['epoch']
         manifest={'bot':bid,'host':wire.b64u(public(self.host.sk)),'epoch':epoch,'expires':now+300,'slug':c['slug'],'title':c['title'],

@@ -32,8 +32,10 @@ SAMPLES = {
         "You've hit your usage limit. Upgrade to Plus to continue using Codex (https://chatgpt.com/explore/plus), or try again at 3:05 PM.",
         "You've hit your usage limit. Upgrade to Pro (https://chatgpt.com/explore/pro), visit https://chatgpt.com/settings/usage to purchase more credits or try again in 2 days 3 hours.",
         "You've hit your usage limit. To get more access now, send a request to your admin or try again at 9:00 AM.",
-        "exceeded retry limit, last status: 429 Too Many Requests, request id: <id>",
         "Codex 这一轮没有正常完成：unexpected error\n\"usageLimitExceeded\"",
+    ],
+    "rate": [   # P309: a bare 429 / "rate limit" is a momentary throttle, not a used-up allowance
+        "exceeded retry limit, last status: 429 Too Many Requests, request id: <id>",
         "rate limit exceeded",
     ],
     "quota": ["Quota exceeded. Check your plan and billing details.",

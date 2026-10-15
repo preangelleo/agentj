@@ -98,7 +98,7 @@ try {
       await fake.send(card.m);
       await waitFor(p, `!!document.getElementById('elev') && !document.getElementById('elev').hidden`);
       assert.equal(await ev(p, `document.getElementById('elev-input').type`), 'password');
-      assert.equal(await ev(p, `document.getElementById('elev-title').textContent`), 'Agent 想用管理员身份执行一条命令');
+      assert.equal(await ev(p, `document.getElementById('elev-title').textContent`), 'Agent J 想用管理员身份执行一条命令');
       const rows = await ev(p, `[...document.querySelectorAll('#elev-rows dd')].map((x) => x.textContent)`);
       assert.deepEqual(rows, ['apt-get install -y ffmpeg', '把录音转成 mp3 要用 ffmpeg', '安装一个系统软件包']);
       assert.match(await ev(p, `document.getElementById('elev-left').textContent`), /还剩 1\d\d 秒/);
@@ -139,7 +139,7 @@ try {
       const card = await hostCard('sudo', { cmd: 'systemctl restart nginx', why: 'Apply the new config', effect: '' });
       await fake.send(card.m);
       await waitFor(p, `!!document.getElementById('elev') && !document.getElementById('elev').hidden`);
-      assert.equal(await ev(p, `document.getElementById('elev-title').textContent`), 'Your Agent wants to run one command as admin');
+      assert.equal(await ev(p, `document.getElementById('elev-title').textContent`), 'Agent J wants to run one command as admin');
       assert.equal(await ev(p, `document.querySelectorAll('#elev-rows dd').length`), 2, 'no empty effect row');
       writeFileSync(OUT + 'f17-sudo-en-phone.png', await shoot(p, 'unused'));
       await ev(p, `document.getElementById('elev-deny').click()`);
