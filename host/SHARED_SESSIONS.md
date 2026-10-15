@@ -82,6 +82,15 @@ meanwhile is reported to the phone afterwards. Routine tools keep native rules.
 Codex (PreToolUse `ask` is unsupported) and OpenCode (its before-hook cannot ask)
 keep native rules on the detached path. Another PermissionRequest hook never makes
 Agent J yield: observers are ignored and answerers race the phone card.
+P307: AskUserQuestion is shown on the phone and in the terminal at once. A phone
+answer is returned as PermissionRequest `allow` + `updatedInput` carrying
+`answers` (probed with Claude Code 2.1.296: a bare `allow` leaves the terminal
+dialog open and loses the answer); phone cancel / timeout is `deny` with the
+host's message, which also closes the dialog. A terminal answer (PostToolUse with
+`answers`/`annotations`, ignored by the card key) or a terminal Esc (only the
+transcript's tool_result; no PostToolUse, no Stop) withdraws the phone card. A
+phone answer the session has not taken within 20 s, or at a phone-turn stall, is
+sent to the session as a message and the phone is told to press Esc there.
 Native CLI resume also verifies a real routine Read after the host exits.
 
 A same-category rejection blocks retries without another phone card until a new

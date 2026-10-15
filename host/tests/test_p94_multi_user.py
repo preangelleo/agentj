@@ -72,17 +72,19 @@ admin.stop();s.close()
         with mock.patch.object(service,'_linger',return_value='no'):
             row=doctor.check_linger({'kind':'systemd'},{'WAYLAND_DISPLAY':'wayland-1'})
             self.assertEqual(row['status'],'warn');self.assertIn('enable-linger',row['hint'])
-        with mock.patch.object(service,'platform',return_value='linux'), mock.patch.object(service,'_linger',return_value='yes'):
-            self.assertIsNone(service.residency_hint('en'))
+        with mock.patch.object(service,'host_platform',return_value='linux'), mock.patch.object(service,'_linger',return_value='yes'):
+            self.assertEqual(service.boot_mode(),'auto')
 
     def test_mac_gui_detection_and_phone_reminder(self):
         for code,want in ((0,'ok'),(1,'warn')):
             with mock.patch.object(service,'_launchctl',return_value=subprocess.CompletedProcess([],code)):
                 self.assertEqual(doctor.check_login_session({'kind':'launchd'})['status'],want)
         self.assertIsNone(doctor.check_login_session({'kind':'systemd'}))
-        with mock.patch.object(service,'platform',return_value='macos'):
-            self.assertIn('log in once',service.residency_hint('en'))
-            self.assertIn('重启后',service.residency_hint('zh'))
+        # P287: the reminder lives at the computer (install notes, doctor), in plain words, never with a system user name
+        self.assertIn('log in to your account once',service.login_reminder('en'))
+        self.assertIn('重启后',service.login_reminder('zh'))
+        import pwd
+        self.assertNotIn(pwd.getpwuid(os.getuid()).pw_name,service.login_reminder())
 
     def test_identity_guide_does_not_change_the_immutable_core(self):
         from agentj import main_identity
@@ -91,7 +93,7 @@ admin.stop();s.close()
             text=main_identity.prompt({'language':lang})
             self.assertIn('/docs/multi-seat/',text)
 
-    def test_phone_reminder_preserves_linux_onboarding_and_is_once_on_mac(self):
+    def test_phone_gets_no_reboot_reminder_from_the_host(self):
         import asyncio
         import test_p72_onboarding as onboarding_fixture
 
@@ -106,9 +108,9 @@ admin.stop();s.close()
                         return [t["reply"]["text"] for t in fixture.host.hist.page(limit=50)[0] if t["src"].get("k") == "sys"]
                     lines = system_lines()
                     self.assertEqual(sum("也连上了" in line for line in lines), 1)
-                    self.assertEqual(sum("这台电脑重启后，请登录一次" in line for line in lines), 1 if platform == "macos" else 0)
-                    self.assertEqual(len(lines), 2 if platform == "macos" else 1,
-                                     "Linux linger belongs in docs/doctor, not an extra onboarding chat")
+                    # P287: never pushed from the host (a host that can push it is logged in); the phone says it offline
+                    self.assertFalse(any("重启后" in line or "快速切换用户" in line for line in lines))
+                    self.assertEqual(len(lines), 1, "OS residency guidance belongs in docs/doctor and the phone's offline line")
                     await fixture.host.on_ready(session, None)
                     await asyncio.sleep(.05)
                     self.assertEqual(system_lines(), lines, "reconnect must not repeat the reboot reminder")

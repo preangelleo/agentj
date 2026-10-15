@@ -101,11 +101,15 @@ def cmd_init(a) -> None:
 def _refresh_root(st, root) -> None:
     """P215: the shipped Workflow Design Bible skill + the boot-doc core upgrade in the working root (wizard.refresh_root).
     Best effort: a problem here never stops init / agent set."""
-    from . import wizard
+    from . import preferences, wizard
     try:
         cfg = st.agent_config() if st.exists() else None
         kind = (cfg or {}).get("kind")
-        wizard.refresh_root(root, [kind] if kind in wizard.HARNESSES else None)
+        lang = preferences.get(preferences.effective(st), "appearance.language", None) if st.exists() else None
+        rows = wizard.refresh_root(root, [kind] if kind in wizard.HARNESSES else None, lang, st=st)
+        placed = [r["path"] for r in rows if r.get("status") == "starter-installed"]
+        if placed:                          # P245: say once, in the terminal, which example workflows were put in the root
+            print("示例工作流 / Example workflows: " + ", ".join(placed) + " → " + str(root))
     except Exception:  # noqa: BLE001 — never block installation on the documents
         pass
 
@@ -171,6 +175,21 @@ def cmd_migrate(a) -> None:
         print("旧网址已换成新的 / old addresses replaced: " + ", ".join(sorted(rec["urls"])))
 
 
+SERVE_EXIT_GRACE = 15.0   # P292: s from SIGTERM/SIGINT to a forced exit — under launchd's 20 s ExitTimeOut / systemd TimeoutStopSec=20
+_exit_timer = None
+
+
+def _serve_exit_guard() -> None:
+    """P292: on a saturated disk serve's stop (queued fsyncs, a worker thread parked in a read, the default executor join at
+    the end of asyncio.run) can outlast the service manager's stop timeout, which then SIGKILLs it (launchd: exit -9). Leave
+    by ourselves first; everything renamed is already on disk, a line still queued would be lost to SIGKILL just the same."""
+    global _exit_timer
+    if _exit_timer is None:
+        _exit_timer = threading.Timer(SERVE_EXIT_GRACE, os._exit, (0,))
+        _exit_timer.daemon = True
+        _exit_timer.start()
+
+
 def cmd_serve(a) -> None:
     from .serve import Host
     st = State()
@@ -188,7 +207,7 @@ def cmd_serve(a) -> None:
     async def main():
         loop = asyncio.get_running_loop()
         for sig in (signal.SIGINT, signal.SIGTERM):
-            loop.add_signal_handler(sig, host.stopping.set)
+            loop.add_signal_handler(sig, lambda: (host.stopping.set(), _serve_exit_guard()))
         if a.events == "quiet":     # service mode: metadata only (no message text ever reaches the journal / log)
             print(f"agentj serve {__version__} · 通道 {host.channel} · service mode (--events quiet)", flush=True)
             print(_agent_line(st), flush=True)
@@ -1513,7 +1532,13 @@ def cmd_unlink(a) -> None:
         print(f"已删掉这台电脑上的账号记录（账号 {slug}）。账号后台那边，还要在账号后台里把这台电脑移除。")
 
 
-AGENT_LABEL = {"claude": "Claude Code", "codex": "Codex", "opencode": "OpenCode"}
+AGENT_LABEL = {"claude": "Claude Code", "codex": "Codex", "opencode": "OpenCode", "kimi": "Kimi Code", "qwen": "Qwen Code"}
+
+
+def _route_lang() -> str:
+    """Before `agentj init` there is no language setting: the locale decides (zh_* → zh)."""
+    loc = os.environ.get("LC_ALL") or os.environ.get("LC_MESSAGES") or os.environ.get("LANG") or ""
+    return "zh" if loc.lower().startswith("zh") else "en"
 
 
 def _lang(st: State) -> str:
@@ -1560,6 +1585,10 @@ def cmd_agent(a) -> None:
         target = getattr(a, "target", None)
         sys.exit(harness.main(as_json=a.json, call_probe=getattr(a, "probe", False),
                               only=(target,) if target else None, model=a.model if target else None))
+    if a.mode == "route":    # P279: which AI route to recommend here (works before `agentj init`; never reads a key)
+        from . import ai_route
+        st = State()
+        sys.exit(ai_route.main(st, as_json=a.json, lang=_lang(st) if st.exists() else _route_lang()))
     if a.mode == "switch":   # P155: gate (headless probe) → a job outside the service switches, verifies, rolls back
         from . import switch_harness
         st = State()
@@ -1567,7 +1596,11 @@ def cmd_agent(a) -> None:
             sys.exit(switch_harness.cli(a, st, _lang(st)))
     st = State()
     _need_init(st)
-    if a.mode in ("claude", "codex", "opencode"):
+    if a.mode in ("claude", "codex", "opencode", "kimi", "qwen"):
+        if a.mode in ("kimi", "qwen") and getattr(a, "session_mode", None) == "shared":
+            sys.exit(f"✗ {AGENT_LABEL[a.mode]} 只支持独立会话（--independent）/ {AGENT_LABEL[a.mode]} runs independent sessions only")
+        if a.mode in ("kimi", "qwen"):
+            a.session_mode = "independent"
         if a.mode == "opencode" and a.model and not re.fullmatch(r"[A-Za-z0-9._-]+/[^\s/][^\s]*", a.model):
             sys.exit("✗ OpenCode 的模型写成「服务商/模型」，例如 zhipuai/glm-5.3 或 deepseek/deepseek-flash（`opencode models` 列出可用的）")
         if a.unfenced:   # F14: the owner's (or, at the owner's request, the Agent's) switch — no passphrase
@@ -1605,6 +1638,23 @@ def cmd_agent(a) -> None:
                 model, effort = model or harness_setup.DEFAULT_CLAUDE_MODEL, effort or harness_setup.DEFAULT_CLAUDE_EFFORT
             st.set_agent_config(a.mode, str(root), model, fence=not a.unfenced, docker=bool(a.allow_docker and not a.unfenced),
                                 effort=effort)
+            if a.mode == "kimi":                 # P305: kimi.com (mainland-cn, default) or kimi.ai (global) — keys / login differ
+                st.set_agent_region(getattr(a, "region", None) or (prev.get("region") if same else None))
+            back = st.agent_config() or {}          # P298: read back what was written — never trust anyone's account of it
+            if back.get("kind") != a.mode or (back.get("model") or None) != (model or None):
+                sys.exit(f"✗ 读回核对不一致：写入 {a.mode} · {model or '默认模型'}，读回 {back.get('kind')} · "
+                         f"{back.get('model') or '默认模型'} / read-back mismatch")
+            print(f"✓ 读回核对：{AGENT_LABEL[a.mode]} · 模型 {back.get('model') or '默认'} / read back: {a.mode} · "
+                  f"model {back.get('model') or 'default'}", flush=True)
+            if a.mode == "opencode":
+                from .opencode_free import privacy_note
+                note = privacy_note(model, lang)
+                if note:
+                    print("⚠ " + note, flush=True)
+                from .bailian import model_note       # P310: Token Plan terms (interactive use only; data used for training)
+                note = model_note(model, "en" if lang == "en" else "zh")
+                if note:
+                    print("⚠ " + note, flush=True)
             if harness_setup.enabled():           # P219: the harness's one-time terminal questions, answered ahead
                 line = harness_setup.summary(harness_setup.prepare(a.mode, str(root)), lang)
                 if line:
@@ -1659,7 +1709,7 @@ def cmd_agent(a) -> None:
             st.set_agent_session(k, None)
         print("已忘掉之前的对话：下一条手机消息开一段新对话。")
     print(_agent_line(st))
-    if a.mode in ("claude", "codex", "opencode", "off"):
+    if a.mode in ("claude", "codex", "opencode", "kimi", "qwen", "off"):
         print("Takes effect after restarting `agentj serve`. The Agent runs as you, with your own login and permission settings; "
               "Agent J gives it no extra permission." if _lang(st) == "en" else
               "重启 `agentj serve` 后生效。Agent 以你自己的身份、登录和权限设置运行，本程序不会给它更多权限。")
@@ -1670,7 +1720,7 @@ def _first_connect(st: State, a) -> bool:
     Agent」. Nothing to switch from is a first connection: do exactly what `agentj agent <harness>` does, then restart the
     background service so it takes effect now. False = a real switch (or --scan / --result / the worker): unchanged."""
     target = getattr(a, "target", None)
-    if (target not in ("claude", "codex", "opencode") or getattr(a, "worker", False) or getattr(a, "scan", False)
+    if (target not in ("claude", "codex", "opencode", "kimi", "qwen") or getattr(a, "worker", False) or getattr(a, "scan", False)
             or getattr(a, "result", False) or getattr(a, "dry_run", False)):
         return False
     try:
@@ -2244,6 +2294,7 @@ def cmd_doctor(a) -> None:
 
 
 def cmd_service(a) -> None:
+    import subprocess
     from . import service
     try:
         if getattr(a, "recovery_worker", None):
@@ -2321,7 +2372,13 @@ def cmd_service(a) -> None:
         _offer_key_import(service)          # P198 (I): before the service starts, so no restart is needed afterwards
         r = service.install(st)
     except service.ServiceError as e:
+        if e.reason in service.NO_MANAGER:     # P278: no systemd here → a plain sentence + the fix, and a code update.py knows
+            print("✗ " + service.MESSAGES[e.reason], file=sys.stderr)
+            sys.exit(service.NO_MANAGER_EXIT)
         sys.exit("✗ " + service.MESSAGES.get(e.reason, e.reason) + (f"\n  {e.detail}" if e.detail else ""))
+    except (OSError, subprocess.SubprocessError) as e:     # P278: a service-manager command that cannot run is never a traceback
+        sys.exit(f"✗ 服务管理命令没能运行（{type(e).__name__}），运行 agentj doctor / a service-manager command could not run "
+                 f"({type(e).__name__}): run agentj doctor")
     print(f"✓ 已安装 / installed: {r['name']} ({r['kind']}) → {service.tilde(r['path'])}")
     print("  " + " ".join(r["argv"]))
     for n in r["notes"]:
@@ -2399,9 +2456,23 @@ def cmd_update(a) -> None:
         if held:
             print(update.result_block(held))
             raise SystemExit(update._exit_of(held["reason"]))
-    res = update.apply(State(), a.version, check_fn=lambda: r, say=print)
+    st = State()
+    res = update.apply(st, a.version, check_fn=lambda: r, say=print)
+    _upgrade_failed(st, res)
     print(update.result_block(res))
     raise SystemExit(res["exit"])
+
+
+def _upgrade_failed(st, res: dict) -> None:
+    """P277: a failed attempt goes to support by itself (unless the owner switched it off) and the block gets the
+    `support:` / `tell_owner:` lines. Never changes the result or the exit code."""
+    if not isinstance(res, dict) or res.get("result") == "ok" or not res.get("step"):
+        return
+    try:
+        from . import upgrade_diag
+        upgrade_diag.after_failure(st, res, lang=_lang(st))
+    except Exception:  # noqa: BLE001
+        pass
 
 
 def _upgrade_gate(r: dict) -> dict | None:
@@ -2457,6 +2528,7 @@ def _update_authorized(a) -> None:
     def say(line: str) -> None:
         print(line, flush=True)
     res = update.authorized_apply(st, a.authorization, a.version, mail=mail, say=say)
+    _upgrade_failed(st, res)
     print(update.result_block(res), flush=True)
     sys.exit(res["exit"])
 
@@ -2526,7 +2598,7 @@ def main_jarvis(argv=None) -> None:
 
 # `migrate status` reports, `migrate rollback` undoes, `docs-rule` prints (or, with --write and the human's y, appends to the
 # AI's own memory file), `handover` only reads: none may move the state directory first
-NO_MIGRATE = ("migrate", "docs-rule", "handover", "recall", "friends", "codex-sandbox", "capability", "google", "setup", "busy", "mail", "contacts")   # recall / friends / codex-sandbox / capability: usually inside the fence
+NO_MIGRATE = ("migrate", "docs-rule", "handover", "recall", "friends", "codex-sandbox", "capability", "google", "setup", "busy", "mail", "contacts", "imessage")   # recall / friends / codex-sandbox / capability: usually inside the fence
 
 
 APPROVALS_HELP = {
@@ -2810,23 +2882,31 @@ def main(argv=None) -> None:
     ru = sub.add_parser("remote-unbind", help="允许 / 禁止在账号后台解绑这台电脑的手机遥控器（默认允许）/ allow unlinking phone remotes from the account dashboard")
     ru.add_argument("mode", nargs="?", choices=["on", "off", "status"], default="status")
     ru.set_defaults(fn=cmd_remote_unbind)
-    ag = sub.add_parser("agent", help="接哪个 Agent：claude / codex / opencode / off；reset = 开一段新对话（重启 serve 生效）；"
+    ag = sub.add_parser("agent", help="接哪个 Agent：claude / codex / opencode / kimi / qwen / off；reset = 开一段新对话（重启 serve 生效）；"
                                       "restart = 下一条消息前重启 Agent 进程、对话不变（换了 key 或代理后）；"
                                       "detect = 本机有哪些可用 / which agents are usable here；"
-                                      "switch <claude|codex|opencode> = 先无头探测、能用才切，失败自动切回 / probe first, switch only if it works, switch back on failure")
-    ag.add_argument("mode", nargs="?", choices=["claude", "codex", "opencode", "off", "reset", "restart", "status", "detect", "switch"], default="status",
+                                      "switch <claude|codex|opencode|kimi|qwen> = 先无头探测、能用才切，失败自动切回 / probe first, switch only if it works, switch back on failure；"
+                                      "route = 按本机实测推荐 AI 路线（用不了 Claude Code / Codex 的地区推荐 Kimi 或阿里百炼 Token Plan）/ recommend an AI route from what works here")
+    ag.add_argument("mode", nargs="?", choices=["claude", "codex", "opencode", "kimi", "qwen", "off", "reset", "restart", "status", "detect", "switch", "route"], default="status",
                     help="detect = 本机有哪些可用（不需要 init；只看是否安装、登录文件是否存在）/ which agents are usable here "
                          "(no init needed; checks only what is installed and whether login files exist)")
-    ag.add_argument("target", nargs="?", choices=["claude", "codex", "opencode"],
+    ag.add_argument("target", nargs="?", choices=["claude", "codex", "opencode", "kimi", "qwen"],
                     help="switch：要切到的 harness；detect --probe：只探测这一个（可加 --model） / the harness to switch to; with detect --probe: probe only this one")
     ag.add_argument("--probe", action="store_true", help="detect: verify one tool-free model call using existing login (≤ 60 s each); no native output is returned")
     ag.add_argument("--dry-run", action="store_true", help="switch：只检查能不能切，不切 / only check whether it can switch")
     ag.add_argument("--result", action="store_true", help="switch：上一次切换的结果 / the last switch's outcome")
     ag.add_argument("--scan", action="store_true", help="switch：用服务的环境逐个无头探测三个，列出现在能切到哪些 / probe all three in the service's environment")
+    ag.add_argument("--undo", action="store_true", help="switch：撤回上一次切换，不经检查直接切回原来那个（起不来会自动回到现在这个） / "
+                    "go back to the harness used before the last switch, with no pre-check (if it does not come up, back here)")
+    ag.add_argument("--force", action="store_true", help="switch：原来那个在后台过不了检查也照样切（之后用 --undo 切回） / "
+                    "switch even if the current harness would fail the check on the way back (then --undo returns)")
     ag.add_argument("--worker", action="store_true", help=argparse.SUPPRESS)
     ag.add_argument("--job", help=argparse.SUPPRESS)
     ag.add_argument("--json", action="store_true", help="detect 的机器可读输出 / machine-readable detect output")
     ag.add_argument("--dir", help="Agent 的工作目录（默认当前目录）")
+    ag.add_argument("--region", choices=["mainland-cn", "global"],
+                    help="kimi：Kimi 账号在哪个站 —— mainland-cn = kimi.com（默认）· global = kimi.ai（两边账号、key、额度不通用）"
+                         " / kimi: which Kimi site the account is on (separate accounts, keys and quota)")
     ag.add_argument("--model", help="模型（默认用你自己的设置）；OpenCode 写成 服务商/模型，例如 zhipuai/glm-5.3")
     ag.add_argument("--unfenced", action="store_true",
                     help="不隔离运行 Agent（按底层 harness 自己的权限）。默认 Agent 在 bubblewrap 里运行，看不到 Agent J 的状态")
@@ -2922,6 +3002,8 @@ def main(argv=None) -> None:
     heartbeat_mod.add_parser(sub)   # P156: agentj heartbeat status|on|off|set|now|prompt show|edit|set|reset
     from . import quota as quota_mod
     quota_mod.add_parser(sub)       # P254: agentj quota [--json] [--remind] · on · off · reset add|used
+    from . import imessage as imessage_mod
+    imessage_mod.add_parser(sub)    # P274: agentj imessage status|doctor|on|off|set|instructions|vip|mute|scan|backfill|open-fda
     busy.add_parser(sub)         # P150 (§22): agentj busy list|start|stop|run — the phone's 「在办事项」 dots
     recall.add_parser(sub)    # F22 (P57): agentj recall <keywords> [--days N] [--date D] — the main Agent finds an earlier conversation
     from . import peer_service

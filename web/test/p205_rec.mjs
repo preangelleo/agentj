@@ -22,8 +22,8 @@ import { parityRecorder } from '../../parity/lib.mjs';
 const out = fileURLToPath(new URL('../../../reports/qa/p205/', import.meta.url)); mkdirSync(out, {recursive: true});
 const results = {};
 const T = {
-  zh: {hint: '松开转成文字', awake: '请别按电源键锁屏', dimNote: '暗屏中', live: '没有声音，可能没录上', gap: '录音里 ', words: '这是转写出来的文字', cancelled: '已取消'},
-  en: {hint: 'Let go to turn it into text', awake: "Please don't press the power button", dimNote: 'Dimmed', live: 'came in silent and may be missing', gap: 'of the recording came in silent', words: '这是转写出来的文字', cancelled: 'Cancelled'},
+  zh: {hint: '松手直接发送', awake: '请别按电源键锁屏', dimNote: '暗屏中', live: '没有声音，可能没录上', gap: '录音里 ', words: '这是转写出来的文字', cancelled: '已取消'},
+  en: {hint: 'Release to send', awake: "Please don't press the power button", dimNote: 'Dimmed', live: 'came in silent and may be missing', gap: 'of the recording came in silent', words: '这是转写出来的文字', cancelled: 'Cancelled'},
 };
 const HOOKS = `(() => {
   const g = navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices); navigator.mediaDevices.getUserMedia = async (c) => { window.__gum = c; return (window.__stream = await g(c)); };
@@ -95,7 +95,8 @@ try {
       writeFileSync(out + `rec-hold-${language}-390.png`, await shoot(p, ''));
       await release(p);
       await waitFor(p, `document.getElementById('ptt').hidden`, 4000);
-      await waitFor(p, `document.getElementById('input').value.includes(${JSON.stringify(L.words)})`, 10000);
+      for(let i=0;i<100 && !S.fake.st.says.some(x=>x.text.includes(L.words));i++) await sleep(100);
+      assert.ok(S.fake.st.says.some(x=>x.text.includes(L.words)), 'held take is sent on release');
       results['hold-circle-' + language] = 'PASS';
       await reset(p);
 

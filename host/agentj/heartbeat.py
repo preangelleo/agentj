@@ -470,6 +470,11 @@ class Heartbeat:
                                           meter_state=getattr(h, "meter_state", None))
             if q:
                 body += "\n" + q
+        with contextlib.suppress(Exception):          # P288: the Claude login inside its last 7 days → one line
+            from . import auth_rescue
+            g = auth_rescue.heartbeat_line(h.st, lang)
+            if g:
+                body += "\n" + g
         page = h.hist_add({"k": "agent", "via": "heartbeat", "text": ""}, "", "open")
         send = HeartbeatSend(page["id"], body, key, digest)
         self.inflight = send

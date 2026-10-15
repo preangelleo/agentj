@@ -45,7 +45,7 @@ import re
 import stat
 import time
 
-from . import inbox, main_identity
+from . import humane, inbox, main_identity
 
 DIR = "handover"
 FILE = "compact"            # P151: `<working root>/.agentj/handover/compact.md` (agentj-handoff skill)
@@ -85,20 +85,19 @@ PREP_AUTO = {   # P59 (ADR-A165): the context is nearly full and the harness wil
            "3. decisions made and why;\n4. important absolute paths;\n5. open questions.\nNo keys, tokens, passwords or other "
            "credentials. When it is written, reply with one line \"Handover written\" and do nothing else.)"),
 }
-FAILED = {"zh": "压缩前没能先写好交接，已经直接压缩了。",
-          "en": "The handover could not be written before compacting; compacted anyway."}
-DONE = {"zh": "压缩前已写好交接：{path}", "en": "Handover written before compacting: {path}"}
-PROGRESS = {"zh": "先写交接，再压缩……", "en": "Writing the handover first, then compacting…"}
-STOPPED = {"zh": "已停下：没有压缩。", "en": "Stopped: nothing was compacted."}
+FAILED = {L: humane.say("compact.handover_fail", L) for L in ("zh", "en")}     # P280: words live in humane.json
+DONE = {L: humane.template("compact.handover_ok", L) for L in ("zh", "en")}
+PROGRESS = {L: humane.say("compact.progress", L) for L in ("zh", "en")}
+STOPPED = {L: humane.say("compact.stopped", L) for L in ("zh", "en")}
 _KEY = re.compile(r"[^A-Za-z0-9._-]+")
 
 
 # ------------------------------------------------------------------ who this applies to
 def applies(agent) -> bool:
-    """The main Agent's own conversation on one of the three adapters — never a shared session (the owner's harness), a
+    """The main Agent's own conversation on one of the adapters (P305: + Kimi Code over ACP) — never a shared session (the owner's harness), a
     workflow CEO or a scheduled run (persist=False)."""
     cfg = getattr(agent, "cfg", None) or {}
-    return (getattr(agent, "kind", None) in ("claude", "codex", "opencode") and not cfg.get("_workflow_ceo")
+    return (getattr(agent, "kind", None) in ("claude", "codex", "opencode", "kimi", "qwen") and not cfg.get("_workflow_ceo")
             and cfg.get("session_mode") != "shared" and getattr(agent, "persist", True)
             and callable(getattr(agent, "cmd_compact", None)))
 

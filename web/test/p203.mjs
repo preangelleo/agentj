@@ -27,8 +27,8 @@ async function click(p, id){
 }
 const shot = async (p, name) => writeFileSync(new URL(name + '.png', out), await shoot(p, ''));
 const T = {
-  zh: {expired: '已过期，已自动拒绝', upgTitle: '会打断一些事', ask: '2 张等待中的审批卡', turn: 'Agent 正在进行的回合', auto: '升级方式'},
-  en: {expired: 'Expired — denied automatically', upgTitle: 'would interrupt something', ask: '2 approval card(s) waiting', turn: "the Agent's turn in progress", auto: 'Upgrade method'},
+  zh: {expired: '已过期，已自动拒绝', upgTitle: '会打断一些事', ask: '2 张等待中的审批卡', turn: 'Agent J 正在进行的回合', auto: '升级方式'},
+  en: {expired: 'Expired — denied automatically', upgTitle: 'would interrupt something', ask: '2 approval card(s) waiting', turn: "Agent J's turn in progress", auto: 'Upgrade method'},
 };
 try {
   for (const language of ['zh', 'en']) {

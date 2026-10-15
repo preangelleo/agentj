@@ -85,7 +85,7 @@ SOON = 900   # P203: a scheduled task due within 15 minutes is on the upgrade ca
 
 
 IMPACT_TEXT = {   # P203: the upgrade card's lines (the phone has its own i18n copy: upg.k.*)
-    'turn': ('Agent 正在进行的回合', "the Agent's turn in progress"),
+    'turn': ('Agent J 正在进行的回合', "Agent J's turn in progress"),
     'shared_turn': ('共享会话里正在进行的回合', 'the turn running in the shared session'),
     'queue': ('排队等待的 {n} 条消息', '{n} queued message(s)'),
     'ask': ('{n} 张等待中的审批卡', '{n} approval card(s) waiting'),
@@ -333,9 +333,33 @@ def launch(st):
     return True
 
 
-def finish(st, result):
+def finish(st, result, diag=None):
     with st.config_lock():
         _finish(st, result)
+    _diagnose(st, result, diag or {})
+
+
+def _diagnose(st, result, diag):
+    """P277: the attempt is the host's last upgrade (heartbeat → Dashboard); a failure reports itself to support (metadata +
+    the redacted installer tail; `updates.report_failures`). Never raises: the phone notice above is already recorded."""
+    try:
+        from . import upgrade_diag
+        res = {**result, 'reason': upgrade_diag.category(result.get('reason')), 'step': diag.get('step') or 'install',
+               **({'stderr_tail': diag['stderr_tail']} if diag.get('stderr_tail') else {})}
+        if result.get('result') == 'rolled_back':
+            res.update(result='failed', rollback='ok')
+        elif result.get('result') == 'failed' and result.get('reason') == 'rollback_failed':
+            res.update(rollback='failed', reason=upgrade_diag.category(diag.get('failure')))
+        upgrade_diag.remember(st, res)
+        if res['result'] != 'ok':
+            lang = 'zh'
+            try:
+                lang = 'en' if preferences.get(preferences.effective(st), 'appearance.language', 'zh') == 'en' else 'zh'
+            except Exception:  # noqa: BLE001
+                pass
+            upgrade_diag.after_failure(st, res, lang=lang)
+    except Exception:  # noqa: BLE001
+        pass
 
 
 def _finish(st, result):
@@ -349,26 +373,26 @@ def _finish(st, result):
     st.log('auto_update_done', status=result['result'])
 
 
-def notice(r, lang='zh'):
+def notice(r, lang='zh', prefs=None):
+    from . import humane
     if r.get('result') == 'ok' and r.get('when') == 'idle':
         return (f"Updated automatically while idle to {r['to']} ({r.get('summary_en') or 'latest published fixes'})." if lang == 'en' else
                 f"电脑空闲时已自动升级到 {r['to']}（{r.get('summary') or '安装最新正式发布的改进'}）。")
     if r.get('result') == 'ok':
-        return (f"Updated automatically overnight to {r['to']} ({r.get('summary_en') or 'latest published fixes'})." if lang == 'en' else
-                f"夜里已自动升级到 {r['to']}（{r.get('summary') or '安装最新正式发布的改进'}）。")
+        summary = (r.get('summary_en') if lang == 'en' else r.get('summary')) or humane.say('update.auto_ok_default', lang)
+        return humane.say('update.auto_ok', lang, prefs, to=r['to'], summary=str(summary).rstrip('。.'))
     if r.get('result') == 'rolled_back':
-        return (f"Automatic update failed; rolled back to {r['from']} ({r['reason']})." if lang == 'en' else
-                f"自动升级失败，已回滚到 {r['from']}，原因：{r['reason']}。")
+        return humane.say('update.auto_rollback', lang, prefs, **{'from': r['from'], 'reason': r['reason']})
     return (f"Automatic update did not complete ({r['reason']}); run agentj doctor." if lang == 'en' else
             f"自动升级未完成，原因：{r['reason']}；请运行 agentj doctor。")
 
 
-def take_notice(st, lang='zh'):
+def take_notice(st, lang='zh', prefs=None):
     with st.config_lock():
-        return _take_notice(st, lang)
+        return _take_notice(st, lang, prefs)
 
 
-def _take_notice(st, lang='zh'):
+def _take_notice(st, lang='zh', prefs=None):
     rec = read(st)
     if not rec.get('notice_pending') or not rec.get('result'):
         return None
@@ -378,7 +402,7 @@ def _take_notice(st, lang='zh'):
         return None
     rec['notice_pending'] = False
     write(st, rec)
-    return notice(result, lang)
+    return notice(result, lang, prefs)
 
 
 def quiet(argv, **kw):
@@ -393,6 +417,7 @@ def run(st, *, check_fn=update.check, cache=cached_wheel, runner=quiet, restart=
     fd = os.open(st.root/'auto-update-worker.lock', os.O_CREAT | os.O_RDWR, 0o600)
     fcntl.flock(fd, fcntl.LOCK_EX)
     job = read(st, JOB)
+    diag = {}                       # P277: the failed step and the installer's redacted stderr tail
     def save(phase):
         job['phase'] = phase
         write(st, job, JOB)
@@ -406,7 +431,10 @@ def run(st, *, check_fn=update.check, cache=cached_wheel, runner=quiet, restart=
         if str(p) == job.get('new') and minisign.verify(data, rec.get('signature', ''), minisign.keyring('release')) != f"agentj-host/v1 version={job['to']} sha256={digest}":
             raise ValueError('artifact_signature_mismatch')
         for argv in install_commands(job['install'], wheel):
-            if runner(argv).returncode:
+            r = runner(argv)
+            if r.returncode:
+                from .upgrade_diag import tail
+                diag['stderr_tail'] = tail(getattr(r, 'stderr', '') or '') or tail(getattr(r, 'stdout', '') or '')
                 raise ValueError('install_failed')
     def verify(version):
         argv = job['argv']
@@ -418,6 +446,8 @@ def run(st, *, check_fn=update.check, cache=cached_wheel, runner=quiet, restart=
         else:
             r = runner(argv + ['service', 'install', '--deferred', version])
             if r.returncode:
+                from .upgrade_diag import tail
+                diag['stderr_tail'] = tail(getattr(r, 'stderr', '') or '')
                 raise ValueError('restart_failed')
             end = time.monotonic() + 90 + service_recovery.READY_LIMIT   # P142: the worker may wait for an idle serve
             while True:
@@ -480,7 +510,7 @@ def run(st, *, check_fn=update.check, cache=cached_wheel, runner=quiet, restart=
         if job['phase'] == 'installed':
             verify(job['to'])
             result = {**{k:job[k] for k in ('attempt','from','to','summary','summary_en','when') if k in job}, 'result': 'ok', 'reason': 'upgraded'}
-            finish(st, result)
+            finish(st, result, {'step': 'health'})
             save('done')
             return result
         if job['phase'] == 'rollback':
@@ -491,6 +521,8 @@ def run(st, *, check_fn=update.check, cache=cached_wheel, runner=quiet, restart=
             'install_failed','version_mismatch','restart_failed','upgrade_self_check_failed','worker_interrupted',
             'artifact_hash_mismatch','artifact_signature_mismatch','artifact_identity_mismatch','unsupported_install'} else type(e).__name__
         result = {'attempt': job.get('attempt'), 'from': job.get('from', __version__), 'to': job.get('to'), 'result': 'failed', 'reason': reason}
+        diag.update(failure=reason, step='service' if reason == 'restart_failed' else {
+            None: 'download', 'prepared': 'download', 'installing': 'install', 'installed': 'verify'}.get(job.get('phase'), 'install'))
         if job.get('phase') in ('installing','installed','rollback'):
             job['failure'] = reason
             save('rollback')
@@ -500,7 +532,7 @@ def run(st, *, check_fn=update.check, cache=cached_wheel, runner=quiet, restart=
                 result['result'] = 'rolled_back'
             except Exception:
                 result['reason'] = 'rollback_failed'
-        finish(st, result)
+        finish(st, result, diag)
         if job.get('phase'):
             save('done')
         return result

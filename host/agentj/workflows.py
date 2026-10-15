@@ -3,9 +3,14 @@ memory files and the Agent J constitution layer. Nothing here writes a file exce
 
 Safety: a name matching CRED is never listed, never counted by name and never readable (only an anonymous `hidden` count);
 wf_doc / skill_get serve only (folder, name) / id pairs present in the last scan, re-resolved and confirmed inside their
-folder (symlinks leaving it refused); bodies pass privacy.redact and are cut at 64 KiB."""
+folder (symlinks leaving it refused); bodies pass privacy.redact and are cut at 64 KiB.
+
+P276: the scan is bounded (one level, SCAN_BUDGET seconds, a few entries per folder) and a WDB folder missing from the CEO
+roster (the working root's documentation/ROLES.md — Agent J's CEO registry) is added once, append-only, by `register`:
+the only other file this module ever writes. A folder it registered once is never re-added (the owner may delete the row)."""
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import json
 import os
@@ -16,7 +21,11 @@ import time
 from pathlib import Path
 
 CRED = re.compile(r"(credential|secret|token|password|passwd|private|\.env|\.pem|\.key|id_rsa|id_ed25519)", re.I)
-SKIP = frozenset((".worktrees", "node_modules", "credentials", "__pycache__"))
+SKIP = frozenset((".worktrees", "node_modules", "credentials", "__pycache__", "venv", "site-packages"))
+SCAN_BUDGET = 5.0          # P276: seconds for one scan; folders past it keep their cached card or wait for the next scan
+PEEK = 64                  # P276: entries looked at per child folder (the only listing; a huge folder costs no more)
+ENTRY_FILES = ("CLAUDE.md", "AGENTS.md")
+_CELL = re.compile(r"[^|\n\r`]{1,120}")
 DOC_MAX = 64 * 1024
 COLORS = 16
 RECLAIM = 30 * 86400
@@ -147,8 +156,13 @@ def pinyin_index(*names) -> str | None:
 
 # ------------------------------------------------------------------ one workflow folder
 def is_wdb(d: str) -> bool:
-    doc = os.path.join(d, "documentation")
-    if _safe_file(d, "documentation/CONSTITUTION.md") and _safe_file(d, "documentation/ROLES.md"):
+    """A Workflow Design Bible folder: CONSTITUTION + ROLES; or a STRUCTURE.json with bible_version; or (P276) a thin entry
+    file + documentation/CONSTITUTION.md + one more boot document / STRUCTURE.json. Only fixed names are stat'ed."""
+    con = _safe_file(d, "documentation/CONSTITUTION.md")
+    if con and _safe_file(d, "documentation/ROLES.md"):
+        return True
+    if con and any(_safe_file(d, e) for e in ENTRY_FILES) and any(
+            _safe_file(d, "documentation/" + x) for x in ("STRUCTURE.json", "IDENTITY.md", "WORKFLOW.md", "NEXT_SESSION.md")):
         return True
     try:
         sp = _safe_file(d, "documentation/STRUCTURE.json")
@@ -204,12 +218,29 @@ def roster(root: str) -> list[list[str]]:
 def _from_roster(rows, folder: str) -> dict:
     pat = re.compile(r"(^|[/\s`])" + re.escape(folder) + r"($|[/\s`])")
     for r in rows:
-        if len(r) >= 2 and any(pat.search(c) for c in r[1:]) and r[0] and "CEO" not in r[0]:
+        if len(r) >= 2 and any(pat.search(c) for c in r[1:]) and r[0] and "CEO" not in r[0] and r[0] != folder:
             return {"ceo": sentence(r[0], 40), **({"company": sentence(r[1], 40)} if not pat.search(r[1]) else {})}
     return {}
 
 
+STAFF_TITLE = ("title", "name_zh", "display_name")     # P308: the owner-language name shown instead of the slug
+_TOML_KEY = re.compile(r'^(name|description|title|name_zh|display_name)\s*=\s*"((?:[^"\\\n]|\\.)*)"', re.M)
+
+
+def _toml_meta(text: str) -> dict:
+    """The few top-level `key = "…"` strings of a Codex agent .toml (no full parse: only the head of the file is read)."""
+    out = {}
+    for k, v in _TOML_KEY.findall(text):
+        try:
+            out.setdefault(k, json.loads(f'"{v}"'))
+        except ValueError:
+            out.setdefault(k, v)
+    return out
+
+
 def _agents(d: str) -> tuple[list, int]:
+    """P308: staff = `.claude/agents/*.md` with a front-matter `name` and `.codex/agents/*.toml` with a `name` (a README or
+    a note in that folder is not an employee); `title` (or name_zh / display_name) is shown instead of the slug."""
     out, hidden = {}, 0
     for sub, ext in ((".claude/agents", ".md"), (".codex/agents", ".toml")):
         base = os.path.join(d, sub)
@@ -226,13 +257,22 @@ def _agents(d: str) -> tuple[list, int]:
             if not p or stem in out:
                 continue
             text = _head(p)
-            if ext == ".md":
-                desc = front(text)[0].get("description", "")
-            else:
-                m = re.search(r'^description\s*=\s*"((?:[^"\\]|\\.)*)"', text, re.M)
-                desc = m.group(1) if m else ""
-            out[stem] = {"name": stem[:64], "desc": sentence(desc if isinstance(desc, str) else "", 80)}
+            meta = front(text)[0] if ext == ".md" else _toml_meta(text)
+            if not (isinstance(meta.get("name"), str) and meta["name"].strip()):
+                continue
+            desc = meta.get("description")
+            a = {"name": stem[:64], "desc": sentence(desc if isinstance(desc, str) else "", 80)}
+            title = next((meta[k] for k in STAFF_TITLE if isinstance(meta.get(k), str) and meta[k].strip()), "")
+            if title and title.strip() != stem:
+                a["title"] = sentence(title, 32)
+                if a["desc"].startswith(a["title"]):          # 「前端工程师，负责…」 → 「负责…」 under the title
+                    a["desc"] = a["desc"][len(a["title"]):].lstrip("，,：:;；·-— ") or a["desc"]
+            out[stem] = a
     return list(out.values()), hidden
+
+
+def staff_count(d: str) -> int:
+    return len(_agents(d)[0])
 
 
 def _docs(d: str) -> tuple[list, dict, int]:
@@ -344,7 +384,9 @@ def global_dirs(kind: str | None) -> list[str]:
     codex = os.environ.get("CODEX_HOME") or os.path.join(h, ".codex")
     xdg = os.environ.get("XDG_CONFIG_HOME") or os.path.join(h, ".config")
     by = {"claude": [os.path.join(claude, "skills")], "codex": [os.path.join(h, ".agents", "skills"), os.path.join(codex, "skills")],
-          "opencode": [os.path.join(xdg, "opencode", "skills")]}
+          "opencode": [os.path.join(xdg, "opencode", "skills")],
+          "kimi": [os.path.join(h, ".kimi-code", "skills"), os.path.join(h, ".agents", "skills")],   # P305
+          "qwen": [os.path.join(h, ".qwen", "skills"), os.path.join(h, ".agents", "skills")]}   # P310
     return by.get(kind) or [d for v in by.values() for d in v]
 
 
@@ -384,10 +426,11 @@ def _folder_entries(root: str, protected: list[str]) -> list[str]:
             real = os.path.realpath(e.path)
             if any(_inside(real, p) or _inside(p, real) for p in protected):
                 continue
-            kids = os.listdir(e.path)
+            with os.scandir(e.path) as it2:      # P276: peek, never list a huge folder whole
+                kids = [k.name for _, k in zip(range(PEEK + 1), it2)]
         except OSError:
             continue
-        if kids and all(k.startswith(".env") for k in kids):
+        if kids and len(kids) <= PEEK and all(k.startswith(".env") for k in kids):
             continue
         out.append(n)
         if len(out) >= MAX_FOLDERS:
@@ -421,6 +464,7 @@ def scan_folder(root: str, name: str, rows) -> dict:
         w.update(_from_roster(rows, name))
         w.update(identity(d))
     agents, h1 = _agents(d)
+    w["staff"] = len(agents)                 # P308: before fit() cuts the list
     docs, paths, h2 = _docs(d)
     skills, h3 = [], 0
     for sub in (".claude/skills", ".agents/skills"):
@@ -495,9 +539,132 @@ def colours(st, wdb: list[dict], now: float) -> dict:
             tab[w["folder"]]["ceo"] = w["ceo"]
     if path and json.dumps(tab, sort_keys=True) != before:
         tmp = path.with_suffix(".json.tmp")
-        tmp.write_text(json.dumps({"v": 1, "folders": tab}, ensure_ascii=False, indent=1), encoding="utf-8")
+        keep = {k: v for k, v in data.items() if k not in ("v", "folders")} if isinstance(data, dict) else {}
+        tmp.write_text(json.dumps({**keep, "v": 1, "folders": tab}, ensure_ascii=False, indent=1), encoding="utf-8")
         os.replace(tmp, path)
     return {f: tab[f] for f in here}
+
+
+# ------------------------------------------------------------------ P276: the CEO registry (root documentation/ROLES.md)
+ROSTER_REL = "documentation/ROLES.md"
+ROSTER_MAX = 256 * 1024
+_ROW_WORDS = {"zh": ("手动", "定时", "扫描补登", "## 扫描补登的工作流",
+                     "Agent J 扫描工作根目录时补登的工作流；只追加，不改上面的内容。删掉某一行，扫描不会再加回来。",
+                     "| 工作流 | CEO 入口 | 执行方式 | 报告位置 | 状态 |"),
+              "en": ("manual", "scheduled", "registered by scan", "## Workflows registered by scan",
+                     "Added when Agent J scanned the working root; append-only, nothing above is changed. Delete a row and the "
+                     "scan will not add it back.",
+                     "| Workflow | CEO entry | Execution | Report location | Status |")}
+
+
+def _cells(line: str) -> list[str]:
+    return [c.strip() for c in line.strip().strip("|").split("|")]
+
+
+def registry_of(root: str) -> dict:
+    """{exists: bool, names: set} — the folders the CEO registry already names: any roster-table cell naming the folder (a
+    path such as `x/CLAUDE.md` counts), or a STRUCTURE.json workflows entry (id / dir)."""
+    p = _safe_file(root, ROSTER_REL)
+    out = {"exists": bool(p) and not os.path.islink(os.path.join(root, ROSTER_REL)), "rows": roster(root) if p else [], "names": set()}
+    try:
+        sp = _safe_file(root, "documentation/STRUCTURE.json")
+        sj = json.loads((_head(sp, 65536) if sp else "") or "{}")
+    except (ValueError, TypeError):
+        sj = {}
+    for w in (sj.get("workflows") if isinstance(sj, dict) and isinstance(sj.get("workflows"), list) else []):
+        if isinstance(w, dict):
+            for k in ("id", "dir"):
+                if isinstance(w.get(k), str):
+                    out["names"].add(w[k].strip("/").split("/")[-1])
+    return out
+
+
+def is_registered(reg: dict, folder: str) -> bool:
+    if folder in reg["names"]:
+        return True
+    pat = re.compile(r"(^|[/\s`])" + re.escape(folder) + r"($|[/\s`])")
+    return any(pat.search(c) for r in reg["rows"] for c in r)
+
+
+def _row(root: str, folder: str, n: int, words) -> str:
+    entry = next((f"{folder}/{e}" for e in ENTRY_FILES if _safe_file(os.path.join(root, folder), e)), "—")
+    run = words[1] if _safe_file(os.path.join(root, folder), "task.json") else words[0]
+    std = [folder, entry, run, f"{folder}/reports/", words[2]]
+    cells = std if n == 5 else ([folder, entry] + ["—"] * max(0, n - 3) + [words[2]] if n >= 3 else [folder, entry][:max(n, 1)])
+    return "| " + " | ".join(cells) + " |"
+
+
+def register(root, folders, lang: str | None = None) -> dict:
+    """Append one roster row per folder not yet in the CEO registry. Never creates ROLES.md, never edits a byte already in it
+    (append-only, checked), refuses a symlink, a file over 256 KiB, a cell-breaking folder name or anything that looks like a
+    key; writes through the wizard's lock and atomic write. {registry: bool, added: [...], refused: [...]}"""
+    from . import wizard
+    root = os.path.realpath(str(root))
+    rel_ok = [f for f in dict.fromkeys(folders) if isinstance(f, str) and _CELL.fullmatch(f) and "/" not in f and not CRED.search(f)]
+    refused = [f for f in folders if f not in rel_ok]
+    reg = registry_of(root)
+    if not reg["exists"]:
+        return {"registry": False, "added": [], "refused": refused}
+    need = [f for f in rel_ok if not is_registered(reg, f)]
+    if not need:
+        return {"registry": True, "added": [], "refused": refused}
+    rp = Path(root) / ROSTER_REL
+    try:
+        with wizard._locked(Path(root)):
+            cur = wizard._read_regular(rp)
+            if cur is None or len(cur) > ROSTER_MAX:
+                return {"registry": cur is not None, "added": [], "refused": refused + need}
+            reg = registry_of(root)
+            need = [f for f in need if not is_registered(reg, f)]
+            if not need:
+                return {"registry": True, "added": [], "refused": refused}
+            text = cur.decode("utf-8", "replace")
+            # the document's own language (a roster written in English stays English); an unreadable guess → the phone's
+            words = _ROW_WORDS["zh" if _CJK.search(text) else "en" if re.search(r"[A-Za-z]{3}", text) or lang != "zh" else "zh"]
+            lines = text.rstrip("\n").split("\n")
+            if lines and lines[-1].strip().startswith("|") and lines[-1].strip().endswith("|"):
+                j = len(lines) - 1
+                while j > 0 and lines[j - 1].strip().startswith("|"):
+                    j -= 1
+                n = len(_cells(lines[j]))
+                add = "\n".join(_row(root, f, n, words) for f in need)
+                new = text.rstrip("\n") + "\n" + add + "\n"
+            else:
+                add = "\n".join(_row(root, f, 5, words) for f in need)
+                new = (text.rstrip("\n") + "\n\n" + words[3] + "\n\n" + words[4] + "\n\n" + words[5] + "\n"
+                       + "|" + "---|" * 5 + "\n" + add + "\n")
+            if not new.startswith(text.rstrip("\n")) or wizard.secret_hits({ROSTER_REL: add.encode()}):
+                return {"registry": True, "added": [], "refused": refused + need}
+            wizard._write_file(rp, new.encode())
+    except (OSError, wizard.WizardError):
+        return {"registry": True, "added": [], "refused": refused + need}
+    return {"registry": True, "added": need, "refused": refused}
+
+
+def _seen_reg(st, key: str = "reg") -> dict:
+    try:
+        d = json.loads((Path(st.root) / "workflows.json").read_text(encoding="utf-8"))
+        r = d.get(key) if isinstance(d, dict) else None
+        return {k: v for k, v in r.items() if isinstance(v, int)} if isinstance(r, dict) else {}
+    except (OSError, ValueError, AttributeError):
+        return {}
+
+
+def _remember_reg(st, root: str, folders, now: float, key: str = "reg") -> None:
+    path = Path(st.root) / "workflows.json"
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+        data = data if isinstance(data, dict) else {}
+    except (OSError, ValueError):
+        data = {}
+    r = data.get(key) if isinstance(data.get(key), dict) else {}
+    for f in folders:
+        r.setdefault(f"{root}\0{f}", int(now))
+    data.update({"v": 1, key: dict(list(r.items())[-2000:])})
+    data.setdefault("folders", {})
+    tmp = path.with_suffix(".json.tmp")
+    tmp.write_text(json.dumps(data, ensure_ascii=False, indent=1), encoding="utf-8")
+    os.replace(tmp, path)
 
 
 # ------------------------------------------------------------------ busy (§22 items → folders)
@@ -526,6 +693,33 @@ def busy_folders(items, root: str, ceos: dict) -> set:
     return out
 
 
+# ------------------------------------------------------------------ P308: a CEO without staff, mentioned once per company
+STAFF_HINT = ("「{f}」只有 CEO，还没有员工。可以在手机「工作流」页点「复查组织结构」，让我按它的报告和 RUN.md 提 3–7 个员工方案，"
+              "你同意后再写进去。 / {f} has only a CEO and no staff yet: tap Review organization on the phone's Workflows page "
+              "and I will propose 3–7 staff roles from its reports and RUN.md, written only after you agree.")
+
+
+def staff_hint(st, root, folder: str, now: float | None = None) -> dict:
+    """{folder, staff[, staff_hint]}: the hint line only when the folder's CEO has no staff and this company was not
+    mentioned before (remembered in <state>/workflows.json `staffhint`, root + folder); never twice for one company."""
+    root = os.path.realpath(str(root))
+    if not isinstance(folder, str) or not _CELL.fullmatch(folder) or "/" in folder or CRED.search(folder):
+        return {"folder": str(folder)[:64], "staff": None}
+    d = os.path.join(root, folder)
+    if not os.path.isdir(d) or not _inside(os.path.realpath(d), root):
+        return {"folder": folder, "staff": None}
+    n = staff_count(d)
+    out = {"folder": folder, "staff": n}
+    if n or st is None:
+        return out
+    key = f"{root}\0{folder}"
+    if key in _seen_reg(st, "staffhint"):
+        return out
+    _remember_reg(st, root, [folder], time.time() if now is None else now, "staffhint")
+    out["staff_hint"] = STAFF_HINT.format(f=folder)
+    return out
+
+
 # ------------------------------------------------------------------ the scanner
 class Scanner:
     def __init__(self, st=None):
@@ -537,6 +731,7 @@ class Scanner:
         self.conflicts: list = []
         self.last: dict | None = None
         self.mem_cache: tuple | None = None
+        self.added: list = []
 
     def scan(self, root, kind: str | None = None, lang: str = "zh", busy_items=(), now: float | None = None) -> dict:
         with self.lock:
@@ -553,14 +748,23 @@ class Scanner:
         rows = roster(root)
         names = _folder_entries(root, protected)
         cache = {}
+        deadline, partial = time.monotonic() + SCAN_BUDGET, False
         for n in names:
+            old = self.folders.get(n)
+            if time.monotonic() > deadline:          # P276: over budget → last card (if any) now, the rest next scan
+                partial = True
+                if old:
+                    cache[n] = old
+                continue
             d = os.path.join(root, n)
             sig = _sig(d) + (_mt(os.path.join(root, "documentation", "ROLES.md")),)
-            old = self.folders.get(n)
             cache[n] = old if old and old[0] == sig else (sig, scan_folder(root, n, rows))
         self.folders = cache
         ws = [dict(v[1]) for v in cache.values()]
         wdb = [w for w in ws if w["wdb"]]
+        reg = registry_of(root)
+        for w in wdb:
+            w["reg"] = is_registered(reg, w["folder"])
         col = colours(self.st, wdb, now)
         busy = busy_folders(busy_items, root, {w["folder"]: w.get("ceo") for w in wdb})
         allow, sk_paths = {}, {}
@@ -597,13 +801,37 @@ class Scanner:
                            "version": version}, "docs": rdocs, "hidden": rhidden}
         items = [{k: v for k, v in w.items() if not k.startswith("_")} for w in ws]
         tail = {"root_name": os.path.basename(root) or root, "counts": {"all": len(items), "wdb": len(wdb),
-                "busy": sum(1 for w in items if w["busy"])}, "skills": skills, "agentj": agentj, "memory": mem}
+                "busy": sum(1 for w in items if w["busy"])}, "skills": skills, "agentj": agentj, "memory": mem,
+                "org": {"registry": reg["exists"], "ready": reg["exists"] and any(w["reg"] for w in wdb),
+                        "unreg": sum(1 for w in wdb if not w["reg"]),
+                        "nostaff": sum(1 for w in wdb if not w.get("staff"))}}
+        if partial:
+            tail["partial"] = True
         if hidden_sk:
             tail["skills_hidden"] = hidden_sk
         tail["etag"] = hashlib.sha256(json.dumps([items, tail], ensure_ascii=False, sort_keys=True).encode()).hexdigest()[:24]
         self.allow, self.skill_paths = allow, sk_paths
         self.last = {"root": root, "items": items, "tail": tail}
         return self.last
+
+    def sweep(self, root, kind: str | None = None, lang: str = "zh", busy_items=(), now: float | None = None) -> dict:
+        """P276: scan, then add every WDB folder the CEO registry does not name yet — once per folder (remembered in
+        <state>/workflows.json, so a row the owner deleted stays deleted) — and rescan when a row was added."""
+        now = time.time() if now is None else now
+        pic = self.scan(root, kind, lang, busy_items, now)
+        if not pic["tail"]["org"]["registry"]:
+            return pic
+        seen = _seen_reg(self.st) if self.st is not None else {}
+        todo = [w["folder"] for w in pic["items"] if w["wdb"] and not w.get("reg") and f"{pic['root']}\0{w['folder']}" not in seen]
+        if not todo:
+            return pic
+        res = register(pic["root"], todo, lang)
+        if self.st is not None and res["added"]:
+            _remember_reg(self.st, pic["root"], res["added"], now)
+            with contextlib.suppress(Exception):
+                self.st.log("wf_registered", count=len(res["added"]))
+        self.added = res["added"]
+        return self.scan(root, kind, lang, busy_items, now) if res["added"] else pic
 
     def _agent_memory(self, root, kind) -> dict:
         """M for the main Agent: the working root's documentation/MEMORY.md + the harness memory memory.scan reads
@@ -741,11 +969,14 @@ def cmd_workflows(a) -> int:
     st = State()
     cfg = st.agent_config() or {}
     root = main_identity.working_root(cfg)
+    if getattr(a, "staff_hint", None):           # P308: before dispatching to a CEO by another route than capability dispatch
+        print(json.dumps(staff_hint(st, root, a.staff_hint), ensure_ascii=False))
+        return 0
     pic = Scanner(st).scan(root, cfg.get("kind"), main_identity.language_of(cfg))
     t = pic["tail"]
     if a.json:
         print(json.dumps({"root": str(root), "counts": t["counts"], "skills": len(t["skills"]),
-                          "workflows": [{k: w.get(k) for k in ("folder", "wdb", "ceo", "company", "ci", "lap", "busy")}
+                          "workflows": [{k: w.get(k) for k in ("folder", "wdb", "ceo", "company", "ci", "lap", "busy", "staff")}
                                         for w in pic["items"]]}, ensure_ascii=False))
         return 0
     c = t["counts"]
@@ -753,7 +984,8 @@ def cmd_workflows(a) -> int:
     print(f"文件夹 / folders: {c['all']} · 认证工作流 / WDB: {c['wdb']} · 在办 / busy: {c['busy']} · 技能 / skills: {len(t['skills'])}")
     for w in pic["items"]:
         if w["wdb"]:
-            print(f"  {w['folder']}" + (f" · CEO {w['ceo']}" if w.get("ceo") else "") + (" · 在办 busy" if w["busy"] else ""))
+            print(f"  {w['folder']}" + (f" · CEO {w['ceo']}" if w.get("ceo") else "") + (" · 在办 busy" if w["busy"] else "")
+                  + (f" · 员工 staff {w['staff']}" if w.get("staff") else " · 只有 CEO / CEO only"))
     return 0
 
 
@@ -761,6 +993,8 @@ def add_parser(sub) -> None:
     p = sub.add_parser("workflows", help="工作根目录里的工作流、技能和记忆文件（只读，手机「工作流」页看到的）/ the workflows, "
                                          "skills and memory files the phone's pages show (read-only)")
     p.add_argument("--json", action="store_true")
+    p.add_argument("--staff-hint", metavar="FOLDER", help="派活给这个工作流的 CEO 前：员工数，没有员工时（每家只一次）附一句提示 / "
+                   "before dispatching to this workflow's CEO: its staff count, plus a one-time hint when it has none")
     p.set_defaults(fn=cmd_workflows)
 
 
@@ -773,7 +1007,7 @@ def task_assignment(task, pic):
     folder, cwd, who = task.get("workflow"), task.get("cwd"), task.get("who")
     matches = [w for w in ws if folder == w["folder"]] if folder else []
     if not matches and isinstance(cwd, str):
-        real = os.path.realpath(cwd)
+        real = os.path.realpath(os.path.expanduser(cwd))   # P302: task_meta keeps cwd redacted (「~/…」)
         matches = [w for w in ws if _inside(real, os.path.realpath(os.path.join(pic["root"], w["folder"])))]
     if not matches and who:
         matches = [w for w in ws if who == w.get("ceo") or any(who == a["name"] for a in w["agents"])]

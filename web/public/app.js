@@ -1,3 +1,4 @@
+import { capturePage } from './js/pageshot.js';
 import * as fivePages from './js/five-pages.js';
 import { describeDevice } from './js/device-label.js';
 // agentj web client. Spec: agentjarvis/protocol/PROTOCOL.md §2–§4, §8–§10; design agentjarvis/parity/DESIGN.md (PROMPT-33).
@@ -41,18 +42,22 @@ import * as setupcard from './js/setup.js';   // P115: the first-run checklist c
 import * as devRename from './js/dev-rename.js';   // P179: long-press the source label → rename this remote
 import * as busy from './js/busy.js';         // P150 (§22): 「在办事项」 dots + the centred dialog
 import * as agentname from './js/agentname.js';   // P181 (§22.2): long-press the header name → rename
+import { paintHeader, initHeaderLogo } from './js/logo.js';
 import { applyTheme } from './js/theme.js';  // P169 (§23): the owner's theme (colours, logo, Send glyph, robots / dots)
 import * as shotclip from './js/shotclip.js'; // P154: a screenshot copied on a computer → the attachment tray
 import * as offline from './js/offline-card.js'; // P168: the disconnected card (blur + gdlg square, feedback@ after 30 min)
+import { hintKey, hostKind, HINT_AFTER_MS } from './js/offhint.js';   // P287: the offline line under 「电脑离线」
 import { parseAgentId } from './proto/wire.js';
 import { SCAN_CONSTRAINTS, SCAN_FALLBACK, SCAN_SLOW_MS, scanFrame } from './js/scan.js';   // F29 (ADR-A177)
 import { classifyScan, RV_PREFIX } from './proto/wire.js';
 import * as rvpair from './js/rvpair.js';   // P190 (§27): be scanned on the pairing screen; scan a new device from a paired one
 import * as cardsync from './js/cardsync.js';   // P203 (§29.1): rebuild the cards from the computer's snapshot
 import * as upgcard from './js/upgcard.js';     // P203 (§29.2): the upgrade confirmation card
+import * as copycode from './js/copycode.js';   // P292: one copy behaviour for every code / pre
 import * as pairpage from './js/pairpage.js'; // P210: the numbered method cards of 「连上你的电脑」
 
 import { registerLayer, initLayers } from './js/layers.js';
+import { initEdgeBack } from './js/edgeback.js';   // P302: left-edge swipe = back on every sub-page
 import { applyViewport, watchViewport } from './js/viewport.js';
 
 const $ = el;
@@ -152,9 +157,12 @@ let statusKey = ['st.idle'];
 // queue (connected() reads `state`, which is updated at once). Only a reconnect that takes longer is shown.
 const QUIET_MS = 6000;
 let quietTimer = 0, painted = 'idle';
+let downSince = 0, hintTimer = 0, knownHost = { plat: null, boot: null };   // P287: see paintOffHint
 function setStatus(s, key, vars) {
   state = s;
   statusKey = [key, vars];
+  if (s === 'ready' || s === 'idle' || s === 'revoked') downSince = 0;
+  else if (s === 'waiting-host' && key === 'st.hostDown' && !downSince) downSince = Date.now();
   // The relay saying the computer itself is offline (st.hostDown) on a steady session is news: shown at once. Right after
   // our own drop it is not (a relay deploy or restart drops both ends; the computer is back a second after the page).
   if ((s === 'connecting' || (s === 'waiting-host' && (key !== 'st.hostDown' || quietTimer))) && (painted === 'ready' || quietTimer)) {
@@ -175,6 +183,7 @@ function paintStatus() {
   snap.S.conn = on;
   $('meta').hidden = !on;
   relay.setConn(on, st.textContent);
+  paintOffHint();
   renderLogo();
   rerender();
   const m = offMode();
@@ -187,6 +196,26 @@ function offMode() {
   if (['idle', 'pairing', 'awaiting-approval', 'revoked'].includes(painted)) return 'gone';
   return (painted === 'connecting' || painted === 'waiting-host') && PAIRED_VIEWS.includes(view) ? 'down' : 'other';
 }
+// P287: 「电脑离线」 for a while → one line in the page's own words on why and what to do (js/offhint.js). Only the relay's
+// "computer offline" counts (our own network drop is 「正在恢复连接…」), only on the chat screen, never while connected.
+function paintOffHint() {
+  clearTimeout(hintTimer); hintTimer = 0;
+  const box = $('offHint');
+  const down = state === 'waiting-host' && statusKey[0] === 'st.hostDown' && view === 'chat' && downSince;
+  const key = down ? hintKey(knownHost, Date.now() - downSince) : null;
+  box.hidden = !key;
+  box.textContent = key ? plain(t(key)) : '';
+  if (down && !key) hintTimer = setTimeout(paintOffHint, Math.max(250, downSince + HINT_AFTER_MS - Date.now()));
+}
+async function learnHost() {
+  const k = hostKind(session.peer);
+  if (!k.plat) return;                                 // an older computer says nothing: keep what we knew
+  knownHost = k;
+  const h = await dbGet('host');
+  if (h && h.approved && h.channel === session.channel() && (h.plat !== k.plat || h.boot !== k.boot)) await dbPut('host', { ...h, ...k });
+}
+dbGet('host').then((h) => { if (h && h.approved && !knownHost.plat) knownHost = hostKind(h); }).catch(() => { /* no storage: the general line */ });
+onLang(() => paintOffHint());
 let view = null;
 let backToSettings = false;   // P187: see leavePage()
 const VIEWS = { pair: 'pair-view', scan: 'scan-view', models: 'models-view', sas: 'sas-view', mem: 'mem-view', act: 'act-view', tasks: 'tasks-view', friends: 'friends-view', bots: 'bots-view', setup: 'setup-view', revoked: 'revoked-view', error: 'error-view' };
@@ -211,17 +240,7 @@ function show(v) {
   const m = offMode();
   if (m) offline.update(m, statusKey[0]);
 }
-// Outside the chat screen the header logo says where pairing stands (the chat screen's logo wears the Agent's state).
-const LOGO = { mark: 'brand/img/logo-mark.png', question: 'brand/img/status/logo-question.png', offline: 'brand/img/status/logo-offline.png' };
-function renderLogo() {
-  if (view === 'chat') { rerender(); return; }
-  let v = 'mark';
-  if (state === 'pairing' || state === 'awaiting-approval') v = 'question';
-  else if (state === 'waiting-host' || state === 'error' || state === 'revoked') v = 'offline';
-  const img = $('orb');
-  if (img.getAttribute('src') !== LOGO[v]) img.setAttribute('src', LOGO[v]);
-  img.dataset.v = v;
-}
+function renderLogo() { paintHeader(); if (view === "chat") rerender(); }
 let renderQueued = false;
 function rerender() {
   if (renderQueued) return;
@@ -284,6 +303,7 @@ session.configure({
   // P153 (§3.3): the host put a card on the paired remotes — nothing to type; the code stays as the one to compare
   onPairWait: () => { $('sas-view').dataset.mode = 'card'; setStatus('awaiting-approval', 'st.awaitingRemote'); },
   async onApproved(ctx) {
+    knownHost = { plat: null, boot: null };           // P287: a new computer; its ready says what it is
     // dk = this browser's device public key: a later page that finds the pairing but another device key knows the browser
     // lost the key (0.15.1) instead of failing the resume and calling it "removed"
     const host = { relay: ctx.relay, channel: ctx.channel, hostPub: ctx.hostPub, approved: true, dk: b64u((await deviceKey()).pub) };
@@ -304,6 +324,7 @@ session.configure({
   },
   onReady() {
     backfillPairing().catch(() => { /* only a hint for later */ });
+    learnHost().catch(() => { /* only a hint for later */ });
     restoreKind = null; rtRetries = 0; pkTakeover = false;
     if (!ticketComing) ticketCheck().catch(() => {});
     ticketComing = false;
@@ -345,6 +366,7 @@ setupcard.configure({ openPanel: controls.openPanel, view: () => view });   // P
 friends.configure({ openPanel: controls.openPanel, leave: () => leavePage(), agentName: () => agentName ?? DEFAULT_NAME });
 contacts.configure({ openSettingsMail: () => settings.openMail() });   // P184: no mailbox yet → Settings → 邮件通道
 upgcard.configure({ upgrade: () => api.upgradeNow() });   // P203: 「现在升级」 = this phone's signed /update
+authrescue.configure({ openAuth: () => settings.openAuth() });   // P288: the chat's 「现在续期」 banner → Settings → AI 登录救援
 api.setUpgradeFlow(() => upgcard.start());                 // ≡ /update and Settings ask the computer first
 
 function onApp(m) {
@@ -399,7 +421,8 @@ function onApp(m) {
     case 'grant_end': controls.endGrant(m.id, m.why); return;
     case 'push_key': push.gotPushKey(m.k); return;
     case 'estop_state': controls.setEstop(m); snap.S.estop = { ...controls.estop }; return;
-    case 'hist_meta': snap.setMeta(m); return;
+    case 'hist_read': relay.ownerRead(m); return;
+    case 'hist_meta': snap.setMeta(m); relay.ownerRead(m); return;
     case 'hist_turn': snap.pushTurn(m); return;
     case 'meter': snap.setMeter(m); return;
     case 'models': snap.setModels(m); return;
@@ -517,7 +540,7 @@ function startPairing(input) {
     showIdle();
     const err = $('pair-error');
     delete err.dataset.k;
-    err.textContent = t('pair.badLink');
+    fillText(err, t('pair.badLink'));   // P292: `agentj pair` → code + ⧉
     err.hidden = false;
     return;
   }
@@ -923,7 +946,7 @@ function relang() {
   renderError();
   push.renderA2hs(view);
   if (!$('scan-hint').hidden) fillText($('scan-hint'), t('pair.scanHint'));
-  if (!$('pair-error').hidden) $('pair-error').textContent = t($('pair-error').dataset.k || 'pair.badLink');
+  if (!$('pair-error').hidden) fillText($('pair-error'), t($('pair-error').dataset.k || 'pair.badLink'));
   if (!$('takeover-note').hidden) $('takeover-note').textContent = t($('takeover-note').dataset.k);
   controls.reloadPanel();
   friends.relang();
@@ -1005,6 +1028,7 @@ function wire() {
   onLang(() => renderPhoneEnvironment());
   $('menu-about').addEventListener('click', () => toggleBadge(true));   // above Settings; closing it returns there
   initLayers({onEscape:relay.resetEscape});
+  initEdgeBack();
   const layer = (id, close, fallback, rank = 20, trap = true) => registerLayer({element: () => $(id), open: () => !$(id).hidden, close, fallback: () => $(fallback), rank, trap});
   layer('confirm', closeConfirm, 'setBtn', 60);
   layer('badge-panel', () => toggleBadge(false), 'menu-about', 40);
@@ -1017,7 +1041,7 @@ function wire() {
   $('pair-link').addEventListener('focus', () => { stopScan(); fitPairViewport(); setTimeout(fitPairViewport, 300); });
   $('pair-go').addEventListener('click', () => startPairing($('pair-link').value));
   pairpage.init(() => startScan());
-  $('scanBtn').addEventListener('click', () => { closeMenu(); scanIcon(); });
+  $('scanBtn').addEventListener('click', () => { settings.close(); closeMenu(); scanIcon(); });
   $('rm-scan-icon').addEventListener('click', () => startScan('rv'));   // P207 §3: the scan icon right of 「添加遥控器」
   $('pk-restore').addEventListener('click', () => { stopScan(); pkRestore().catch(() => pkFailed('bad')); });
   $('takeover-pk').addEventListener('click', () => { pkRestore(false, true).catch(() => pkFailed('bad')); });   // P198
@@ -1061,7 +1085,37 @@ function wire() {
   });
   offline.init();
   devRename.init({ myDev: api.myIdSync });
+  let shotBusy = false;
+  const screenshot = async () => {
+    if (shotBusy || !PAIRED_VIEWS.includes(view)) return;
+    shotBusy = true;
+    try {
+      const file = await capturePage();
+      settings.close(); show('chat'); relay.attachShot(file);
+    } catch { toast(t('p264.shotFail'), 2400); }
+    finally { shotBusy = false; }
+  };
+  const assist = kind => {
+    settings.close(); show('chat');
+    relay.prepareSetupDraft(t('p264.' + kind));
+  };
+  for (const kind of ['friends', 'bots']) $('assist-' + kind).addEventListener('click', () => assist(kind));
+  $('srchBtn').addEventListener('click', () => { if (settings.isOpen()) settings.toggleSearch(); });
+  document.addEventListener('keydown', e => {
+    if (e.isComposing || e.repeat || !PAIRED_VIEWS.includes(view)) return;
+    // @ix app.screenshot app.friends app.bots
+    if (e.altKey && e.shiftKey && !e.metaKey && !e.ctrlKey && ['KeyY','KeyG','KeyB'].includes(e.code)) {
+      e.preventDefault(); e.stopImmediatePropagation();
+      if (e.code === 'KeyY') screenshot();
+      else { settings.close(); if (e.code === 'KeyG') friends.open('list'); else bots.open(); }
+    }
+    if (settings.isOpen() && (e.metaKey || e.ctrlKey) && !e.altKey && !e.shiftKey && e.code === 'KeyK') {
+      e.preventDefault(); e.stopImmediatePropagation(); settings.toggleSearch();
+    }
+  }, true);
   settings.configure({                                // F13: the gear, before relay.init so its Esc runs first
+    screenshot,
+    gearHelp: () => confirmSheet(t('set.btn'), t('p264.gearHelp'), t('a2hs.ok')),
     agentName: () => agentName ?? DEFAULT_NAME,
     paired: () => !['idle', 'pairing', 'awaiting-approval', 'revoked'].includes(state),
     connected: () => state === 'ready',
@@ -1070,6 +1124,7 @@ function wire() {
     reload: () => location.reload(),
     view: () => view,
     forget: forgetHost,                               // P171: this remote unbound itself from 遥控器管理
+    assist: (text) => { show('chat'); relay.insertText(text); },   // P274: 「让 Agent J 帮我改」 → a draft, never sent
     upgradeHost: async () => {                        // P203: Settings → 升级电脑上的 Agent J (the same path as ≡ /update)
       if (!session.isReady()) { toast(t('set.offline'), 2400); return; }
       if (await api.slash('update')) { settings.close(); toast(t('upg.started'), 2600); }
@@ -1118,6 +1173,7 @@ function wire() {
 
 async function main() {
   if (await leaveLegacyHost()) return;
+  copycode.init();   // P292: every code / pre on the page can be copied (the static ones in index.html, then all later)
   applyStatic();
   renderName();
   wire();
@@ -1131,6 +1187,12 @@ async function main() {
   rvpair.configure({ allowRelay, pair: pairFromRemote,
     testRelay: () => (['127.0.0.1', 'localhost'].includes(location.hostname) ? new URLSearchParams(location.search).get('relay') : null) });
   relay.init({
+    paired: () => !['idle', 'pairing', 'awaiting-approval', 'revoked'].includes(state),
+    pairAdd: settings.pairFromKey,
+    screenshot: () => settings.screenshotFromKey(),
+    friends: () => { settings.close(); friends.open('list'); },
+    bots: () => { settings.close(); bots.open(); },
+    setup: () => { settings.close(); setupcard.open(true); },
     menuPages: fivePages.toggleMenu,
     goChat: () => fivePages.go('chat'),
     scan: () => { scanBack = null; startScan('any'); },
@@ -1147,6 +1209,9 @@ async function main() {
     p33: () => session.peer.p33,
     saidOld: (text) => snap.synthSaid(text, api.myIdSync()),
     settings: settings.toggleFromKey,
+    openSettings: () => settings.open(),
+    upgradeHost: settings.upgradeFromKey,
+    refreshApp: settings.refreshApp,
     models: openModels,
     asrInstall: installAsr,
   });
@@ -1181,3 +1246,5 @@ async function main() {
 }
 
 main();
+
+initHeaderLogo();

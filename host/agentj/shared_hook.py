@@ -202,12 +202,39 @@ def write_token(root, pid, token):
     return p
 
 
+_LIBPROC = None
+
+
+def _ppid_libproc(pid):
+    """macOS: libproc proc_pidinfo(PROC_PIDTBSDINFO) — no fork. P291: `ps` per ancestry level forked inside serve's event
+    loop and, on a loaded Mac, took 5–8 s (timeout 2 s) → the chain broke and the served session's own hooks were refused
+    ("process"). Same-user processes only (a root-owned one answers None: the served Claude is never above it)."""
+    global _LIBPROC
+    if sys.platform != 'darwin':
+        return None
+    try:
+        import ctypes
+        if _LIBPROC is None:
+            _LIBPROC = ctypes.CDLL('/usr/lib/libproc.dylib', use_errno=True)
+        buf = ctypes.create_string_buffer(136)            # sizeof(struct proc_bsdinfo)
+        n = _LIBPROC.proc_pidinfo(ctypes.c_int(pid), ctypes.c_int(3), ctypes.c_uint64(0), buf, ctypes.c_int(136))
+        if n != 136:
+            return None
+        pp = struct.unpack_from('I', buf.raw, 16)[0]     # pbi_ppid
+        return pp if pp > 0 else None
+    except (OSError, AttributeError, ValueError, struct.error):
+        return None
+
+
 def _ppid(pid):
     try:
         with open(f'/proc/{pid}/stat') as f:
             return int(f.read().rsplit(')', 1)[1].split()[1])
     except (OSError, ValueError, IndexError):
         pass
+    pp = _ppid_libproc(pid)
+    if pp is not None:
+        return pp
     try:
         import subprocess
         out = subprocess.run(['ps', '-o', 'ppid=', '-p', str(pid)], capture_output=True, text=True, timeout=2).stdout
@@ -216,11 +243,13 @@ def _ppid(pid):
         return None
 
 
-def ancestors(pid, depth=32):
-    """pid, its parent, … (bounded). Linux /proc; elsewhere `ps`."""
+def ancestors(pid, depth=32, until=None):
+    """pid, its parent, … (bounded; stops once `until` is reached). Linux /proc; macOS libproc; elsewhere `ps`."""
     out = []
     while isinstance(pid, int) and pid > 1 and len(out) < depth:
         out.append(pid)
+        if pid == until:
+            break
         pid = _ppid(pid)
     return out
 
@@ -283,12 +312,15 @@ class Channel:
                 event.pop(k)                      # host-only keys are never taken from the wire
             event['_agentj_peer'] = pid
             event['_agentj_token'] = event.pop('agentj_token', None)
+            if isinstance(pid, int):                # P291: the ancestry walk never runs on the event loop
+                served = getattr(getattr(self.adapter, 'session', None), 'get', lambda k: None)('pid')
+                event['_agentj_chain'] = await asyncio.to_thread(ancestors, pid, 32, served)
             check = getattr(self.adapter, 'authentic', None)
             if check and not check(event):
                 writer.write(b'{}\n')
                 await writer.drain()
                 return
-            for k in ('_agentj_peer', '_agentj_token'):
+            for k in ('_agentj_peer', '_agentj_token', '_agentj_chain'):
                 event.pop(k, None)
             # P139: the hook process going away (Claude took another answer / the dialog) withdraws the phone card
             gone = asyncio.get_running_loop().create_future()

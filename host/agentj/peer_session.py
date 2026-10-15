@@ -74,7 +74,7 @@ ENV_KEEP = {"HOME", "PATH", "LANG", "LANGUAGE", "TZ", "USER", "LOGNAME", "SHELL"
             "HTTPS_PROXY", "HTTP_PROXY", "NO_PROXY", "ALL_PROXY", "https_proxy", "http_proxy", "no_proxy", "all_proxy"}
 LOGIN_ENV = {"claude": {"ANTHROPIC_API_KEY", "CLAUDE_CODE_OAUTH_TOKEN", "ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_BASE_URL"},
              "codex": {"CODEX_API_KEY", "OPENAI_API_KEY", "OPENAI_BASE_URL"},
-             "opencode": set()}
+             "opencode": set(), "kimi": set(), "qwen": set()}
 SECRETISH = re.compile(r"(?i)(KEY|TOKEN|SECRET|PASS|CREDENTIAL|AUTH|COOKIE|PRIVATE)")
 OPENCODE_CARRY = ("provider", "model", "small_model", "enabled_providers", "disabled_providers")
 PEER_AGENT = "agentj-peer"

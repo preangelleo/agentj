@@ -71,7 +71,7 @@ test('one recording card: a centred dark circle with the microphone, at body lev
   const at = html.indexOf('id="ptt"');
   assert.ok(at > html.indexOf('</footer>') && at < html.indexOf('id="toast"'), 'moved out of the composer');
   for (const id of ['pttTime', 'pttHint', 'pttSeg', 'pttAct', 'pttEnd', 'pttDim', 'pttCancel', 'pttNote']) assert.ok(html.includes(`id="${id}"`), id);
-  assert.match(html, /class="pttc" role="status" aria-live="assertive"/);
+  assert.match(html, /class="pttcopy" role="status" aria-live="assertive"/);
   assert.match(css, /\.ptt\{position:fixed;inset:0;/);
   assert.match(css, /\.pttc\{[^}]*aspect-ratio:1;border-radius:50%/);
   assert.match(css, /\.pttc\{[^}]*background:var\(--dlg-bg\)/, 'P218: P207\'s one dialog token (Noir by default)');

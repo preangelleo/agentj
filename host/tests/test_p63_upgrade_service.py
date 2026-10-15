@@ -41,9 +41,9 @@ class ApplyServiceFailed(unittest.TestCase):
         for verb in ("deferred",):
             res, calls = self.apply(verb)                      # 0.15.3a1: KeyError: 'service_failed', no block
             self.assertEqual((res["result"], res["reason"], res["service"], res["exit"]),
-                             ("failed", "service_failed", "failed", 1), verb)
+                             ("failed", "service_restart_failed", "failed", 1), verb)
             block = update.result_block(res)
-            self.assertTrue(block.startswith("UPGRADE_RESULT failed\nreason: service_failed\n"), block)
+            self.assertTrue(block.startswith("UPGRADE_RESULT failed\nreason: service_restart_failed\n"), block)
             self.assertIn("agentj service start", block)
             self.assertIn("next: agentj doctor; tell your human this block", block)
             self.assertNotIn("doctor", [c[-1] for c in calls], "no doctor after a failed service step")

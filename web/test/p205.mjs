@@ -31,12 +31,12 @@ const RUNS = [['zh', 'light', 390, 844, true], ['zh', 'dark', 360, 800, true], [
 const geom = (p) => evaluate(p, `(()=>{const w=document.getElementById('words'),ps=[...w.querySelectorAll('p')];
   const r=ps[0]?ps[0].getBoundingClientRect():null,card=document.getElementById('rm').getBoundingClientRect();
   const lh=ps[0]?parseFloat(getComputedStyle(ps[0]).lineHeight):0;
-  const range=document.createRange(); if(ps[0]) range.selectNodeContents(ps[0]);
+  const range=document.createRange(); const txt=ps[0]&&[...ps[0].childNodes].find(n=>n.nodeType===3); if(txt) range.selectNodeContents(txt);   // P281: lines of the words, not the robot's own box
   const lines=ps[0]?new Set([...range.getClientRects()].map(x=>Math.round(x.top))).size:0;
-  let second='';const tn=ps[0]&&ps[0].firstChild;
+  let second='';const tn=ps[0]&&[...ps[0].childNodes].find(n=>n.nodeType===3);   // P281: the robot <i> comes first
   if(tn){const t0=(()=>{const r=document.createRange();r.setStart(tn,0);r.setEnd(tn,1);return r.getBoundingClientRect().top;})();
     for(let i=1;i<tn.length;i++){const r=document.createRange();r.setStart(tn,i);r.setEnd(tn,i+1);if(r.getBoundingClientRect().top>t0+2){second=tn.data.slice(i);break;}}}
-  return {second,text:w.textContent,paras:ps.length,children:w.querySelectorAll('*').length,lines,lh,h:r?r.height:0,
+  return {second,text:w.textContent,paras:ps.length,children:w.querySelectorAll('*').length,robot:w.querySelectorAll('p>i.wbot:first-child').length,lines,lh,h:r?r.height:0,
     l:r?r.left:0,r:r?r.right:0,cardL:card.left,cardR:card.right,empty:w.classList.contains('empty'),fs:ps[0]?getComputedStyle(ps[0]).fontSize:''}})()`);
 
 export async function runP205() {
@@ -69,7 +69,7 @@ export async function runP205() {
           const g = await geom(p);
           results.push({ lang, theme, width: w, address: 'default', ...g });
           check(g.text === TEXT[lang](DEFAULT[lang]), `default text ${tag}: ${g.text}`);
-          check(g.empty && g.paras === 1 && g.children === 1, `one plain paragraph ${tag}`);
+          check(g.empty && g.paras === 1 && g.children === 2 && g.robot === 1, `one plain paragraph, P281's robot first ${tag}`);
           check(g.lines <= (w >= 1000 ? 1 : 2), `${g.lines} line(s) at ${tag}`);
           // a phone breaks at a comma, never inside a word: zh 「…收到，」 / 「小助理正在处理，请稍候。」
           if (g.lines === 2 && lang === 'zh') check(g.second === '小助理正在处理，请稍候。', `zh breaks after 收到， (${g.second}) ${tag}`);
@@ -89,7 +89,7 @@ export async function runP205() {
           const want = Array.from('<b>x</b>**y** [z](https://e.x) and a very long tail'.replace(/\s+/g, ' ')).slice(0, 16).join('').trim();
           await waitFor(p, `document.getElementById('words').textContent===${JSON.stringify(TEXT[lang](want))}`);
           const g = await geom(p);
-          check(g.children === 1, `hostile address is text only ${tag} (${g.children} elements)`);
+          check(g.children === 2 && g.robot === 1, `hostile address is text only ${tag} (${g.children} elements: the paragraph + P281's robot)`);
           await send('');
           await waitFor(p, `document.getElementById('words').textContent===${JSON.stringify(TEXT[lang](DEFAULT[lang]))}`);
           check(true, 'empty address → default ' + tag);

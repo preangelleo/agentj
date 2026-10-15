@@ -397,7 +397,18 @@ def build_report(st, online, pending, *, seq: int, ts: int) -> dict:
     return {"v": 1, "t": "report", "channel": channel_of(st), "ts": int(ts), "seq": int(seq), "agent": AGENT,
             "devices": devs, "pending": norm_pending(pending), "agent_name": _clean_or_none(st.agent_name()),
             "machine": machine_name() if st.report_machine() else None, "language": lang, "language_at": int(at), "harness": (st.agent_config() or {}).get("kind", "unknown"),
-            "notices_v": 1, "notice_receipts": notices.receipts(st), **_names_field(st, devs)}
+            "notices_v": 1, "notice_receipts": notices.receipts(st), **_names_field(st, devs), **_upgrade_field(st)}
+
+
+def _upgrade_field(st) -> dict:
+    """P277: `last_upgrade` {from, to, result, reason, at} once this host attempted an upgrade — older reports (and the
+    vector) stay byte-identical. Never the failed step's text or the installer output (those go to support only)."""
+    try:
+        from .upgrade_diag import heartbeat_field
+        lu = heartbeat_field(st)
+    except Exception:  # noqa: BLE001 — a report never fails over this
+        lu = None
+    return {"last_upgrade": lu} if lu else {}
 
 
 def parse_account_language(obj) -> dict | None:
@@ -460,6 +471,7 @@ def report_post_json(url, payload):
 
 
 _NO_NAMES: dict[str, float] = {}   # P179: API base → when a server refused `device_names` (this process; re-probed after a day)
+_NO_UPGRADE: dict[str, float] = {}  # P277: the same for `last_upgrade`
 
 
 def send_report(st, online, pending, *, post: Callable = report_post_json, now: Callable = time.time) -> ReportResult:
@@ -484,6 +496,7 @@ def send_report(st, online, pending, *, post: Callable = report_post_json, now: 
     strip_notices = _skip_notices(cloud, base, int(now()*1000))
     replay_retry = probe_retry = False
     strip_names = now() - _NO_NAMES.get(base, -1e18) < 86400
+    strip_upgrade = now() - _NO_UPGRADE.get(base, -1e18) < 86400
     notice_retry = False
     seq = None
     while True:
@@ -491,8 +504,11 @@ def send_report(st, online, pending, *, post: Callable = report_post_json, now: 
         seq = next_seq(last, t)
         inner = build_report(st, online, pending, seq=seq, ts=int(t))
         names_sent = "device_names" in inner and not strip_names
+        upgrade_sent = "last_upgrade" in inner and not strip_upgrade
         if strip_names:
             inner.pop("device_names", None)
+        if strip_upgrade:
+            inner.pop("last_upgrade", None)
         if strip_notices:
             for k in NOTICE_KEYS:
                 inner.pop(k, None)
@@ -525,6 +541,12 @@ def send_report(st, online, pending, *, post: Callable = report_post_json, now: 
         if status == 409 and err == "replay" and not replay_retry:
             replay_retry = True
             last = seq  # self-heal: next try uses max(last_seq + 1, now_ms)
+            continue
+        if status == 400 and err == "bad_request" and upgrade_sent:     # P277: a server older than last_upgrade
+            strip_upgrade = True
+            _NO_UPGRADE[base] = now()
+            st.log("report_last_upgrade", result="server_without_last_upgrade")
+            last = seq
             continue
         if status == 400 and err == "bad_request" and names_sent:
             strip_names = True

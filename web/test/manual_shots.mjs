@@ -159,7 +159,7 @@ async function run(lang) {
   await waitFor(p, `document.querySelectorAll('#rm-list .rmitem').length === 3`);
   await shot(p, 'remotes', lang);
   fake.st.remotes = null;
-  await evaluate(p, `(!document.getElementById('settings').hidden && document.getElementById('set-close').click())`);
+  await evaluate(p, `(!document.getElementById('settings').hidden && document.getElementById('setBtn').click())`);
   const { root } = await p.send('DOM.getDocument', { depth: -1 });
   const { nodeId } = await p.send('DOM.querySelector', { nodeId: root.nodeId, selector: '#fPhoto' });
   await p.send('DOM.setFileInputFiles', { nodeId, files: [files.png1, files.txt] });

@@ -707,7 +707,7 @@ class Scheduler:
             why = agents.hooks_blocked(wd)
             if why:
                 raise TaskError("unsupported", why)
-        elif kind in ("codex", "opencode"):
+        elif kind in ("codex", "opencode", "kimi", "qwen"):
             # the chat adapter, once, in a throw-away conversation: approvals go to the phone as in chat (ADR-A72);
             # research: Codex gets sandbox read-only and every request that is not read-only declined, OpenCode rules that
             # deny instead of ask
@@ -717,6 +717,10 @@ class Scheduler:
                     raise TaskError("unsupported", fence.REASONS.get(why, why))
             if kind == "codex":
                 from .agent_codex import CodexAgent as Runner
+            elif kind == "kimi":             # P305: one throw-away ACP session; research = every non-read-only request refused
+                from .agent_kimi import KimiAgent as Runner
+            elif kind == "qwen":             # P310: same; a task never gets a key-card key (Token Plan: no unattended calls)
+                from .agent_qwen import QwenAgent as Runner
             else:
                 from .agent_opencode import OpenCodeAgent as Runner
             self.runner = Runner(host, cfg, persist=False, research=research)

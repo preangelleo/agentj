@@ -2,16 +2,17 @@
 // (brand/lang.js: 中文 default, ?lang=en or the switch, saved as localStorage "aj.lang"). Dictionary text is ours, so
 // `code` spans in it become <code> elements (createElement + textContent; never HTML). Host / Agent text is plain text.
 import DICT from '../i18n.js';
+import { copyable } from './copycode.js';   // P292: every `command` in our text can be copied (icon + one click)
 
 const fmtVars = (str, vars) => (vars ? String(str).replace(/\{(\w+)\}/g, (m, k) => (Object.prototype.hasOwnProperty.call(vars, k) ? String(vars[k]) : m)) : str);
 export function t(key, vars) { return window.AJLang ? window.AJLang.t(DICT, key, vars) : fmtVars(DICT.zh[key] ?? key, vars); }
 export const lang = () => (window.AJLang ? window.AJLang.get() : 'zh');
 export const locale = () => (lang() === 'en' ? 'en-GB' : 'zh-CN');
 export const plain = (str) => String(str).replace(/`/g, '');
-/** `x` → <code>x</code>; everything else text nodes. */
+/** `x` → <code>x</code> wired by copycode.js (⧉ beside it, one click copies); everything else text nodes. */
 export function fillText(node, str) {
   const parts = String(str).split('`');
-  node.replaceChildren(...parts.map((p, i) => { if (i % 2 === 0) return document.createTextNode(p); const c = document.createElement('code'); c.textContent = p; return c; }));
+  node.replaceChildren(...parts.map((p, i) => { if (i % 2 === 0) return document.createTextNode(p); const c = document.createElement('code'); c.textContent = p; return copyable(c, { label: 'set.copy' }); }));
 }
 /** Static markup: [data-i18n] text and [data-i18n-attr] attributes. */
 export function applyStatic(root = document) {

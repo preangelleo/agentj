@@ -331,10 +331,7 @@ await C('double-tap-lock-20x', async () => {
   const locks = () => ev(p, `import('./js/relay.js').then((m) => m.debug().lockCount)`);
   const pttNow = () => ev(p, `import('./js/relay.js').then((m) => m.debug().ptt)`);
   const endTake = async () => {     // a locked take: one more tap ends it (sends nothing useful: the fake mic is short)
-    if (await pttNow()) {
-      await p.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: r.x, y: r.y }] });
-      await p.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
-    }
+    if (await pttNow()) await ev(p, `${$('pttCancel')}.click()`); // explicit cleanup, not a third tap inside the double-tap window
     await sleep(700);                // past LOCK_REARM_MS and the transcription toast
     await ev(p, `(() => { const i = ${$('input')}; i.value = ''; i.dispatchEvent(new Event('input')); })()`);
   };

@@ -134,7 +134,7 @@ try {
       const strip = await ev(p, `[...document.querySelectorAll('#mstrip .mcard')].map((c) => c.dataset.kind + ':' + c.querySelector('.mname').textContent)`);
       assert.deepEqual(strip, ['audio:voice.wav', ...(VIDEO ? ['video:clip.mp4'] : []), 'pdf:report.pdf', 'html:report.html', 'file:data.csv', 'image:bad.png']);
       const skips = await ev(p, `[...document.querySelectorAll('#mstrip .mskip')].map((x) => x.textContent)`);
-      assert.deepEqual(skips, ['huge.mp4 太大（60.0 MB），没有发到手机。', '.env 的文件名或内容像密钥，所以没发；去掉密钥或改个名后让 Agent 再发。']);
+      assert.deepEqual(skips, ['huge.mp4 太大（60.0 MB），没有发到手机。', '.env 的文件名或内容像密钥，所以没发；去掉密钥或改个名后让 Agent J 再发。']);
       // P183: small files load by themselves once their card is on screen — not before
       const below = await ev(p, `document.getElementById('mstrip').getBoundingClientRect().top > innerHeight`);
       if (below) assert.ok(!gets.some((g) => g.mid === id('B') || g.mid === id('D')), 'cards below the fold wait until they are on screen');

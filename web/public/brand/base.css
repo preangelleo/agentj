@@ -84,7 +84,7 @@ hr { border: 0; border-top: 1px solid var(--border); margin: var(--sp-6) 0; colo
   min-height: 64px; display: flex; align-items: center; gap: var(--sp-4); }
 .aj-brand { display: inline-flex; align-items: center; gap: var(--sp-2); min-height: var(--tap);
   color: var(--text); text-decoration: none; flex: 0 0 auto; }
-.aj-brand img { width: 32px; height: 32px; }
+.aj-brand img { width: 32px; height: 32px; image-rendering: pixelated; }
 .aj-brand__name { font-family: var(--font-title); font-weight: 700; font-size: 1.125rem; letter-spacing: -0.01em; white-space: nowrap; }
 .aj-brand:hover { text-decoration: none; }
 .aj-menu { flex: 1 1 auto; display: flex; justify-content: flex-start; min-width: 0; }

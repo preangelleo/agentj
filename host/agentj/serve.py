@@ -37,7 +37,7 @@ from . import agent as agents
 from .shared import SharedClaudeAgent
 from . import notices, activity, approvals, cloud, controls, danger, fence, gate, memory, slash, tasks, update, webpush, wire
 from . import asr as asr_mod
-from . import compose, history, hsearch, inbox, menu, uploads, preferences, proxy, provenance
+from . import compose, history, hsearch, humane, inbox, menu, uploads, preferences, proxy, provenance
 from . import meeting  # P182: /会议总结 → minutes, recipients only from the owner's words
 from . import diskq  # P142: fsync'ed state writes off the loop (one ordered writer)
 from . import approval_jev  # P157: layer 2 of the approval card (Jev may only make fewer cards)
@@ -50,6 +50,7 @@ from . import pair_card  # P153: add a remote from a remote (PROTOCOL §3.3)
 from . import passkey  # F20: the same phone without a second pairing (PROTOCOL §12)
 from . import renewal  # P122: the same phone after its browser deleted the page's storage (§12.1)
 from . import onboarding  # F28: seat → two required remotes → one welcome (P72)
+TG_PAIR_CMDS = ("telegram-pair", "telegram_pair", "rebind-telegram")   # P283: the phone's 「重新绑定 Telegram」
 from . import friend_cmds  # P73: /my-agent-id · /add-friend, answered by the host (ADR-A176)
 from . import friends as friends_mod
 from .remotes import TYPES as REMOTES_TYPES  # P171 (§24): the phone's 遥控器管理 page
@@ -57,7 +58,7 @@ from .noise import IK, IKPSK2, CipherState, Handshake, NoiseError
 from .reporter import Reporter, in_daemon_thread
 from .envcompat import getenv
 from .state import MAX_DEVICES, DeviceLimit, State, device_label, device_names
-from .text import LABEL_DIGITS, LABEL_MAX, clean, clean_label, clean_line, text_units  # noqa: F401  (re-exported)
+from .text import LABEL_DIGITS, LABEL_MAX, clean, clean_label, clean_line, drop_replacement, text_units  # noqa: F401  (re-exported)
 
 
 def _ttl(env: str, default: int) -> float:
@@ -110,6 +111,7 @@ CLOSE_SEAT = 4002      # P185: the relay refused / closed this host for lack of 
 SEAT_RETRY = 20        # s before the relay is tried again after a seat refusal (a renewed certificate retries at once)
 SEAT_TICK = 30         # s between seat_loop looks (local file reads; the Dashboard is asked only when seatcert says due)
 SEAT_NOTE = 600        # s between two "no seat" notices to the phones
+STOP_FLUSH = 5.0       # P292: serve's stop waits at most this long for queued fsyncs / log lines (launchd kills at 20 s)
 LOOP_STALL = 3.0       # P129: the event loop answering this late (s) is logged as `loop_stall` (it delays every phone's pong)
 _NONCE = re.compile(r"[A-Za-z0-9_-]{43}")   # relay auth challenge n = b64url(32 random bytes) (PROTOCOL §1)
 CLOSE_TIMEOUT = 2      # a close notice to the relay is best-effort; never let a slow relay hold up a revoke
@@ -162,8 +164,9 @@ P33_ONLY = ("say", "say_cancel", "cmd_cancel", "blob_open", "blob_chunk", "blob_
             "tg_fwd", "turn_wait", "res_watch", "busy_get",   # P181 (§22.1) load card resources; P160 (§22) one 「在办」 row's detail
             "mail_get", "mail_set", "mail_key", "mail_test", "mail_check",   # P170 (§10.20)
             "dev_rename",    # P179 (§10.16a): a remote renames itself
-            "hist_find",     # P188 (§28): chat search, a read like hist_get
-            "auth_get", "auth_start", "auth_cancel", "auth_press")   # P258 (§31): AI 登录救援
+            "hist_find", "hist_read",     # P188 · P247 (owner-level read sync) (§28): chat search, a read like hist_get
+            "auth_get", "auth_start", "auth_cancel", "auth_press",   # P258 (§31): AI 登录救援
+            "imsg_check", "imsg_fda")   # P274 (§10.21): the iMessage card's 「重新检测」 / 「在电脑上打开授权页」
 # F14: paired phones may change optional warnings, session mode, isolation, docker and the upgrade mode (F19); native permissions stay authoritative.
 PREF_SET_KEYS = ("updates.mode", "appearance.language", "appearance.theme", "voice.wake_enabled", "voice.speak_replies",
                  "agent.high_risk_warnings", "agent.session_mode", "agent.isolation", "agent.allow_docker")
@@ -175,6 +178,12 @@ CARDS_HAVE_MAX = 256       # P203 (§29.1): ids a cards_get may list as already 
 CARDS_OPEN_MAX = 256       # … and the open ids one `cards` answer carries
 UPG_TTL = 600              # P203 (§29.2): the upgrade confirmation card waits ten minutes
 PREF_SET_KEYS += ("heartbeat.daily_at",)         # P207: the phone's "wake every day at HH:MM" ("" = off; schema pattern)
+PREF_SET_KEYS += ("ui.card_hot_action",)         # P285: the reply card's bottom-left hot key (command / skill name; schema pattern)
+# P274: the iMessage card's parameters (macOS hosts only; on_pref_set refuses them elsewhere). instructions / vip / mute
+# stay off this list: the phone shows them, the Agent changes them with `agentj imessage …` at the owner's word.
+PREF_SET_KEYS += ("imessage.enabled", "imessage.interval_minutes", "imessage.delivery", "imessage.digest_at",
+                  "imessage.quiet_hours", "imessage.strictness", "imessage.codes", "imessage.groups", "imessage.llm")
+PREF_SET_KEYS += ("quota.auto_switch",)          # P302: the phone's 「额度告警时交给其他 AI 账号」 switch (P254 drew it, never whitelisted)
 METER_KEYS = ("model", "model_name", "effort", "ctx", "h5", "week", "quota_windows", "shared_status", "shared_writer", "source_at")
 Q_CANCEL = "用户在手机上取消了这个问题，没有选择任何选项。请不要替他做选择，停下来等他直接输入文字。"
 Q_TIMEOUT = "没有人作答，请改用文字列出选项"
@@ -244,6 +253,8 @@ class Ask:
     require_passkey: bool = False
     pk_if_any: bool = False        # P153: a passkey assertion is required from an approving remote that has a passkey
     pk_kind: str = "sandbox"       # passkey.elevate_challenge kind
+    allow_offer: list = field(default_factory=list)   # P296: recipients the mail card offers to put on the allowlist
+    allow_add: list = field(default_factory=list)     # P296: the ones the owner ticked (signed with the allow)
     goal: str = ""                 # P158: "auto" (10 s countdown, no answer = allowed) | "hold" | "attack" | "" (no goal)
     goal_why: str = ""             # P158: goal.WHY key shown on the card
 
@@ -390,6 +401,8 @@ class Host:
         self.turn_t0 = 0.0
         # relay parity (PROTOCOL §10, PROMPT-33)
         self.hist = history.History(st)
+        from .readmark import ReadMark
+        self.readmark = ReadMark(st)
         self.lang = preferences.get(self.preferences, "appearance.language", "zh")
         self.uploads = uploads.Uploads(st, self.agent_cfg["dir"] if self.agent_cfg else None,
                                        asr_off=lambda: self.asr_state() == "off")
@@ -421,11 +434,15 @@ class Host:
         self.upg: dict | None = None            # P203: the open upgrade confirmation card (one at a time, §29)
         from . import busy as busy_mod
         self.busy = busy_mod.Board(st.root, on_change=self.busy_changed)   # P150 (§22): who works in the background
+        from .background_done import Notifier
+        self.background_done = Notifier(self)
         self.busy_sent: str | None = None
         from . import workflows as wf_mod
         self.wf = wf_mod.Scanner(st)            # P244 (§30): the five pages' read-only picture (workflows.py)
         from .heartbeat import Heartbeat
         self.heartbeat = Heartbeat(self)        # P156: wakes the main Agent after an idle spell (heartbeat.py)
+        from .imessage import IMessage
+        self.imessage = IMessage(self)          # P274: macOS read-only iMessage assistant (off by default)
         self.res_watch: dict[int, float] = {}    # P181 (§22.1): cid → monotonic expiry of its load-card watch
         self.res_task: asyncio.Task | None = None
         self.theme_stamp = self.theme_cached = None   # P169 (§23): the phone's look, re-read when current.json changes
@@ -555,9 +572,10 @@ class Host:
         while not self.stopping.is_set():
             phase, t0 = "connect", time.monotonic()
             try:
+                cert = await asyncio.to_thread(self.seat.cert)   # P292: read before the relay's 10 s auth deadline starts, off the loop
                 async with connect(url, max_size=2**17, ping_interval=20, ping_timeout=20, open_timeout=RELAY_OPEN_TIMEOUT) as ws:
                     phase = "auth"
-                    await self._auth(ws)
+                    await self._auth(ws, cert)
                     phase = "up"
                     self.ws, self.relay_up, self.relay_ever_up, backoff, fails = ws, True, True, 1, 0
                     self.relay_seat_refused = False
@@ -588,7 +606,7 @@ class Host:
             fast, spread = fails <= FAST_RETRIES, secrets.randbelow(501) / 1000
             wait = FAST_RETRY * (0.75 + spread) if fast else backoff * (1 + spread)
             if self.relay_seat_refused:         # P185: no seat — asking again every second changes nothing
-                cert = self.seat.cert()
+                cert = await asyncio.to_thread(self.seat.cert)
                 wait = wait if cert and cert != self.seat_sent else SEAT_RETRY
             with contextlib.suppress(asyncio.TimeoutError):
                 await asyncio.wait_for(self.stopping.wait(), wait)
@@ -662,14 +680,16 @@ class Host:
         finally:
             probe.stop.set()
 
-    async def _auth(self, ws) -> None:
+    async def _auth(self, ws, cert: str | None | bool = False) -> None:
+        if cert is False:                          # P292: never a file read on the loop inside the auth deadline
+            cert = await asyncio.to_thread(self.seat.cert)
         msg = json.loads(await asyncio.wait_for(ws.recv(), AUTH_TIMEOUT))
         # F10: sign only a nonce of the relay's exact shape (32 random bytes, b64url) — never an arbitrary string
         if msg.get("t") != "challenge" or not isinstance(msg.get("n"), str) or not _NONCE.fullmatch(msg["n"]):
             raise ValueError("bad challenge")
         sig = self.sk.sign(f"agentjarvis-relay-auth-v1\n{self.channel}\n{msg['n']}".encode())
-        auth = {"t": "auth", "pk": wire.b64u(self.st.signing_pub()), "sig": wire.b64u(sig)}
-        cert = self.seat_sent = self.seat.cert()   # P185 (§2 seat certificate): the relay seat certificate, when this host has one
+        auth = {"t": "auth", "pk": wire.b64u(self.st._ed_pub(self.sk)), "sig": wire.b64u(sig)}   # P292: the key in memory
+        self.seat_sent = cert                      # P185 (§2 seat certificate): the relay seat certificate, when this host has one
         if cert:
             auth["cert"] = cert
         await ws.send(json.dumps(auth))
@@ -854,15 +874,14 @@ class Host:
         if not self.st.is_allowed(s.pub):  # belt and braces: a ready session whose device left the allowlist
             return await self.close_cid(s.cid, "revoked")
         if t in ("msg", "say", "answer", "slash", "blob_open", "blob_chunk", "blob_end", "ask_answer", "estop", "resume", "task_set", "lt_answer") or t in elevate.PHONE_TYPES or t in ("fr_answer", "fr_accept"):
-            from . import auto_update
-            auto_update.touch(self.st)
+            self._phone_touch()                   # P292: config lock + write, off the loop
         if t == "msg":
             text = obj.get("text")
             limit = wire.MAX_TEXT_P33 if s.p33 else wire.MAX_TEXT
             if not isinstance(text, str) or text_units(text) > limit:  # reject, never silently truncate
                 return await self.close_cid(s.cid, "bad_msg")
             hc = slash.parse(text)
-            if hc and friend_cmds.name_of(hc[0]):                   # P73: the host's own answer
+            if hc and (friend_cmds.name_of(hc[0]) or hc[0] in TG_PAIR_CMDS):   # P73 · P283: the host's own answer
                 return await self.on_slash(s, hc[0], hc[1], confirm=False, typed=True)
             if hc and hc[0] == "goal" and goal_mod.host_cmd(hc[1]):  # P158: /goal status · /goal stop
                 return await self.on_slash(s, "goal", hc[1], confirm=False, typed=True)
@@ -872,7 +891,7 @@ class Host:
                 if not s.p33:
                     await self.send_app(s, {"t": "msg", "id": secrets.token_hex(8), "ts": int(time.time() * 1000),
                                             "seq": self.seq, "from": "notice",
-                                            "text": "已急停：这条没有交给 Agent，也不会排队。恢复后再发。"})
+                                            "text": "已急停：这条没有交给 Agent J，也不会排队。恢复后再发。"})
                 return
             cmd = slash.parse(text)
             if cmd and cmd[0] != "goal" and self.agent and cmd[0] not in slash.AGENT_CMDS and not self.agent.passthrough(cmd[0]):
@@ -1287,8 +1306,7 @@ class Host:
         s.ready_at = time.monotonic()
         why, code, down = s.rc or (None, None, None)
         self.st.log("resume_ok", cid=s.cid, device=s.device, why=why, code=code, ms=down)
-        with contextlib.suppress(OSError):
-            self.st.touch_seen(s.device)
+        self._bg(asyncio.to_thread(self._touch_seen, s.device), "touch_seen")   # P292: ≤ 1 write a minute, off the loop
         self.emit("ready", device=s.device, name=s.name)
         self.reporter.trigger("online")
         await self.on_ready(s, since)
@@ -1463,6 +1481,30 @@ class Host:
         return task
 
     # ------------------------------------------------------------ control socket (local, 0600)
+    def _touch_seen(self, did: str) -> None:
+        with contextlib.suppress(OSError):
+            self.st.touch_seen(did)
+
+    def _phone_touch(self) -> None:
+        """P292: auto_update.touch (phone activity for the nightly upgrade) takes the config flock and writes a file — never on
+        the loop. One at a time; a touch asked for meanwhile runs once after it (the newest time is all that counts)."""
+        if getattr(self, "_touching", None) is not None:
+            self._touch_again = True
+            return
+        from . import auto_update
+
+        async def run():
+            try:
+                while True:
+                    self._touch_again = False
+                    with contextlib.suppress(Exception):
+                        await asyncio.to_thread(auto_update.touch, self.st)
+                    if not self._touch_again:
+                        break
+            finally:
+                self._touching = None
+        self._touching = self._bg(run(), "phone_touch")
+
     async def _ctl_send(self, w: asyncio.StreamWriter, obj: dict) -> None:
         with contextlib.suppress(Exception):
             w.write((json.dumps(obj, ensure_ascii=False) + "\n").encode())
@@ -1639,6 +1681,9 @@ class Host:
                             await self._ctl_send(w, {"ok": True, "present": bool(os.environ.get(name))})
                     else:
                         await self._ctl_send(w, {"ok": False, "error": "bad_name"})
+                elif cmd == "telegram_pair":        # P283: a one-time Telegram pairing code → the phone's card only
+                    res = await self.telegram_pair(req.get("key_env"), by="terminal")
+                    await self._ctl_send(w, res)
                 elif cmd == "upgrade_ready":        # P142 (A12): the recovery worker restarts only an idle serve
                     from . import auto_update
                     await self._ctl_send(w, {"ok": True, "ready": not auto_update.busy(self)})
@@ -1656,6 +1701,7 @@ class Host:
                     await self._ctl_send(w, {"ok": True, "relay_up": self.relay_up, "relay_state": self.relay_state(), "channel": self.channel,
                                              "agent": self.agent.kind if self.agent else None, "agent_status": self.eff_status(),
                                              "agent_said_at": getattr(self, "agent_said_at", 0),
+                                             **self._agent_phase(),
                                              "asks": len(self.asks), "estop": self.estop,
                                              "task_running": self.scheduler.current_id,
                                              "friends": self.peers.status_view() if self.peers is not None else None,
@@ -1682,8 +1728,15 @@ class Host:
                         await self._ctl_send(w,{'ok':True,'applicable':applicable,'model':previous})
                 elif cmd == "agent_reconnect":      # P147 `agentj doctor --reconnect`: re-attach the shared session now
                     await self._ctl_send(w, await self.agent_reconnect(req.get("session")))
+                elif cmd == "status_push":          # P306 `agentj doctor --reconnect`, links fine: re-send the status anyway
+                    self.push_status()
+                    await self._ctl_send(w, {"ok": True, "agent_status": self.eff_status()})
                 elif cmd == "harness_hello":        # P155: after a harness switch / roll-back — a fixed host turn, no free text
                     await self._ctl_send(w, self.harness_hello(req))
+                elif cmd == "harness_handoff":      # P289: switch.md before a harness switch / carry on from it after
+                    await self._ctl_send(w, self.harness_handoff(req))
+                elif cmd == "harness_progress":     # P281: the switch / scan job's phase → a fixed line the owner sees
+                    await self._ctl_send(w, self.harness_progress(req))
                 elif cmd == "agent_restart":        # `agentj agent restart` (P59): the owned harness, before its next turn
                     await self._ctl_send(w, self.restart_harness("cli"))
                 elif cmd == "config_apply":
@@ -2032,7 +2085,7 @@ class Host:
         if self.sessions.get(s.cid) is not s:
             return
         from . import auto_update
-        note = auto_update.take_notice(self.st, self.lang)
+        note = auto_update.take_notice(self.st, self.lang, self.preferences)
         if note:
             self.agent_notice(note)
         from . import claude_inbound
@@ -2065,7 +2118,7 @@ class Host:
                             windows = await asyncio.to_thread(provider_runtime.probe, pid)
                             self.meter_update(quota_windows=windows)
                         self._bg(quota_initial(), "quota_initial")
-            await self.send_app(s, {"t": "hist_meta", **self.hist.meta()})
+            await self.send_app(s, {"t": "hist_meta", **self.hist_metadata()})
             # IDs track insertions, not revisions. A known open page may have completed
             # offline without advancing the phone's cursor; replay the bounded current head.
             turns, _ = self.hist.page(limit=HIST_READY)
@@ -2112,17 +2165,8 @@ class Host:
             rec = await asyncio.to_thread(first_run.read, self.st)
             if first_run.active(rec):
                 await self.send_app(s, {"t": "setup_card", "show": True, **first_run.snapshot(rec)})
-        from . import service
-        if service.platform() == "macos" and not getattr(self, "_residency_noticed", False):
-            self._residency_noticed = True
-            # GUI-login reminder only: Linux linger guidance belongs in install/doctor.
-            # Resolve the username after the ready snapshot, without delaying it.
-            async def residency_notice():
-                from . import service
-                notice = await asyncio.to_thread(service.residency_hint, self.lang)
-                if notice:
-                    self.agent_notice(notice)
-            self._bg(residency_notice(), "residency_notice")
+        # P287: no "log in after a restart" message from here: a host that can send it is already logged in. The phone
+        # keeps its own offline line (web/js/offhint.js) from the `plat` / `boot` this ready carried.
 
     # ------------------------------------------------------------ agent bridge (PROTOCOL §8)
     def harness_hello(self, req: dict) -> dict:
@@ -2131,13 +2175,69 @@ class Host:
         from . import switch_harness
         if not self.agent or self.stopped():
             return {"ok": False, "error": "no_agent"}
-        text = switch_harness.hello_prompt(self.agent.kind, req, self.lang)
+        from . import handoff
+        cfg = self._switch_cfg()
+        where = handoff.switch_where(cfg) if cfg else None
+        text = switch_harness.hello_prompt(self.agent.kind, req, self.lang, where)
         if text is None:
             return {"ok": False, "error": "bad_request"}
         at = time.time()
         self.agent.submit(switch_harness.HelloSend(text))
-        self.st.log("harness_hello", agent=self.agent.kind, outcome=req.get("outcome"))
+        self.st.log("harness_hello", agent=self.agent.kind, outcome=req.get("outcome"), handoff=req.get("handoff"))
         return {"ok": True, "at": at}
+
+    def _switch_cfg(self) -> dict | None:
+        cfg = getattr(self.agent, "cfg", None)
+        if not isinstance(cfg, dict) or not isinstance(cfg.get("dir"), str):
+            cfg = self.st.agent_config()
+        return cfg if isinstance(cfg, dict) and isinstance(cfg.get("dir"), str) else None
+
+    def harness_handoff(self, req: dict) -> dict:
+        """P289: the switch job's two host turns around a harness switch — `write` (the harness being left writes switch.md)
+        and `resume` (the new one, introduced, carries on from it). Host text from kinds only (switch_harness.handoff_prompt);
+        `at` lets the job see the answer, the job itself checks that the file was really written."""
+        from . import handoff, switch_harness
+        if not self.agent or self.stopped():
+            return {"ok": False, "error": "no_agent"}
+        cfg = self._switch_cfg()
+        text = switch_harness.handoff_prompt(self.agent.kind, req, cfg, self.lang) if cfg else None
+        if text is None:
+            return {"ok": False, "error": "bad_request"}
+        if req.get("step") == "write":
+            handoff.switch_ensure(cfg)
+        at = time.time()
+        self.agent.submit(switch_harness.HandoffSend(text))
+        self.st.log("harness_handoff", agent=self.agent.kind, step=req.get("step"))
+        return {"ok": True, "at": at}
+
+    def harness_progress(self, req: dict) -> dict:
+        """P281: what a running /switch-harness is doing — 「正在探测 / 正在切换 / 已切回」 — never an empty card. The text is
+        the host's own (switch_harness.progress_text from a phase code + kinds). In-turn phases (scan, probe, wait) go on the
+        open page as card.progress — the phone shows it after the dancing robot, under any words the Agent already wrote;
+        the rest (the turn is over, Agent J restarts) are pages of their own (card.switch = the phase)."""
+        from . import switch_harness
+        text = switch_harness.progress_text(req, self.lang)
+        if text is None:
+            return {"ok": False, "error": "bad_request"}
+        phase = req["phase"]
+        self.st.log("harness_progress", phase=phase)
+        if phase in switch_harness.IN_TURN:
+            tid = self.cur_turn
+            page = self.hist.get(tid) if tid is not None else None
+            if not page or page["end"] != "open":
+                return {"ok": True, "shown": False}
+            card = {k: v for k, v in (page.get("card") or {}).items() if k != "progress"}
+            self.hist_update(tid, card={**card, "progress": text})
+            return {"ok": True, "shown": True}
+        self.hist_add({"k": "sys", "text": ""}, text, "done", card={"switch": phase})
+        return {"ok": True, "shown": True}
+
+    def _agent_phase(self) -> dict:
+        """P312: the harness-switch job's diagnosis of a silent new Agent — fixed codes only (agent.phase / err_kind)."""
+        try:
+            return {"agent_phase": self.agent.phase(), "agent_err": self.agent.err_kind()} if self.agent else {}
+        except Exception:  # noqa: BLE001 — a diagnosis never breaks `status`
+            return {}
 
     def eff_status(self) -> str:
         if self.stopped():
@@ -2201,8 +2301,15 @@ class Host:
                 devs.append({"id": did, "name": clean_label(n["name"]), "online": did in online,
                              "paired_at": int(pa) if isinstance(pa, (int, float)) and not isinstance(pa, bool) else 0,
                              "named_by": n["named_by"], "self_name": clean_label(n["self_name"] or ""), "label": clean_label(device_label(v))})
-        return {"version": update.__version__, "language_at": at, "settable": list(PREF_SET_KEYS), "devices": devs,
+        info = {"version": update.__version__, "language_at": at, "settable": list(PREF_SET_KEYS), "devices": devs,
                 "limit": MAX_DEVICES}   # P171: 「已用 N / 10」
+        from . import service as _svc
+        info["platform"] = _svc.platform()   # P274: the phone shows the iMessage card only for "macos"
+        im = getattr(self, "imessage", None)
+        if im is not None and info["platform"] == "macos":
+            with contextlib.suppress(Exception):
+                info["imessage"] = im.brief()
+        return info
 
     async def apply_preferences(self, raw=None, ack=None, language_at=None):
         """Activate a configuration (raw = new file text to commit; None = the file as it is now). ack(result) is awaited
@@ -2314,6 +2421,7 @@ class Host:
         except asyncio.TimeoutError:
             res = {"ok": False, "why": "timeout"}
         res.update(agent=a.kind, agent_status=self.eff_status())
+        self.push_status()                  # P306: the phones see the answer at once, not at the next turn
         self.st.log("agent_reconnect", result="ok" if res.get("ok") else str(res.get("why"))[:16])
         return res
 
@@ -2400,6 +2508,10 @@ class Host:
         if key not in PREF_SET_KEYS:
             self.st.log("pref_set_refused", device=s.device)
             return await res(False, "not_allowed")
+        if isinstance(key, str) and key.startswith("imessage."):
+            from . import service as _svc
+            if _svc.platform() != "macos":           # P274: only a Mac has chat.db; the card is not shown elsewhere
+                return await res(False, "not_macos")
         meta = preferences.SCHEMA[key]
         # P207: "integer" (heartbeat.interval_minutes) was missing here, so every phone change of it answered bad_value
         typ_ok = {"boolean": type(value) is bool, "string": isinstance(value, str),
@@ -2424,6 +2536,8 @@ class Host:
                 self.agent_notice(claude_auth.failure_notice(self.lang))
         self.st.log("pref_set", device=s.device, status=key)
         await self.set_pref(key, value, ack=ack)
+        if key.startswith("imessage.") and getattr(self, "imessage", None) is not None:
+            self.imessage.kick()                     # P274: a switch / interval change takes effect at once
 
     async def on_dev_rename(self, s: Session, obj: dict) -> None:
         """P179 `dev_rename {r, name}` (§10.16a): a paired remote renames ITSELF from its message card (long-press on the
@@ -2509,6 +2623,7 @@ class Host:
         while True:
             with contextlib.suppress(Exception):
                 await asyncio.to_thread(self.busy.refresh_outside, n % 5 == 0)
+                self.background_done.tick()
                 self.busy.sample_load()
                 self.busy_changed()
                 colors = self.busy.take_colors()
@@ -2685,13 +2800,16 @@ class Host:
                 await self.send_app(s, obj)
 
     # ------------------------------------------------------------ history pages (PROTOCOL §10.5)
+    def hist_metadata(self):
+        return {**self.hist.meta(), "read": self.readmark.value(self.hist)}
+
     def hist_emit(self, turns: list[dict]) -> None:
         ep = self.hist.epoch
         for t in turns:
             self._post(self._send_p33, lambda s, t=t: {"t": "hist_turn", "epoch": ep, "turn": t})
 
     def hist_meta_all(self) -> None:
-        m = {"t": "hist_meta", **self.hist.meta()}
+        m = {"t": "hist_meta", **self.hist_metadata()}
         self._post(self._send_p33, lambda s: m)
 
     def hist_add(self, src: dict, reply: str = "", end: str = "done", card: dict | None = None) -> dict:
@@ -2787,11 +2905,18 @@ class Host:
         msg = self._status_msg()
         self._post(self._send_ready, lambda s: msg)
 
+    def push_status(self) -> None:
+        """P306: every ready phone gets the current status now, changed or not (doctor --reconnect, a re-attach): a phone
+        that missed one change must not stay grey until the next one."""
+        self.sent_status = None
+        self.status_changed()
+
     # callbacks from agent.Agent
     def agent_status(self, s: str) -> None:
         self.status_changed()
 
     def agent_text(self, text: str) -> None:
+        text = drop_replacement(text)       # P281: every harness's reply text passes here — no stray 「◆?」 on any channel
         if not text or not text.strip():
             return
         _hb_touch(self)
@@ -2838,13 +2963,12 @@ class Host:
         self.desktop_end()
         self.desktop_turn = self.hist_add({"k": "host", "name": pick(self.lang, "电脑", "Desktop"), "text": text}, "", "open")["id"]
 
-    BUSY_NOTE = ("电脑正忙，消息已排队，忙完就接手。", "The computer is busy; your message is queued.")
-
     def turn_queued_note(self, on: bool) -> None:     # P133: busy shared session, message in its queue
-        tid, note = self.cur_turn, pick(self.lang, *self.BUSY_NOTE)
+        tid, note = self.cur_turn, humane.of(self, "shared.busy_queued")
         page = self.hist.get(tid) if tid is not None else None
         if page and page["end"] == "open" and page["reply"]["text"] == ("" if on else note):
-            self.hist_update(tid, text=note if on else "")
+            card = {k: v for k, v in (page.get("card") or {}).items() if k != "queued"}   # P281: the phone's robot marks it
+            self.hist_update(tid, text=note if on else "", card={**card, **({"queued": True} if on else {})})
 
     def turn_wait_note(self, text: str | None, stall: bool = False, final: bool = False) -> None:
         """P151b (追加 4): what the host sees of a phone turn still running — 「正在等待 Bash：…（已 3 分钟）」 — on that page's
@@ -2855,33 +2979,33 @@ class Host:
         prev = getattr(self, "wait_note", None)
         if text is None:
             if page and prev and not prev[1] and page["reply"]["text"] == prev[0]:
-                self.hist_update(tid, text="", card={})
+                self.hist_update(tid, text="", card=_keep_progress(page))
             self.wait_note = None
             return
         if not page or page["end"] != "open":
             return
         cur = page["reply"]["text"]
-        if cur and cur != (prev[0] if prev else None) and cur != pick(self.lang, *self.BUSY_NOTE):
+        if cur and cur != (prev[0] if prev else None) and cur != humane.of(self, "shared.busy_queued"):
             return
         if prev and prev[0] == text and prev[2] == stall and cur == text:
             return
+        if not (stall or final) and _keep_progress(page) and not cur:
+            return                      # P281: 「正在探测 Codex（2/3）…」 says more than 「正在等待 Bash…」
         self.wait_note = (text, final, stall)
-        self.hist_update(tid, text=text, card={"wait": True, **({"stall": True} if stall else {})})
-
-    MERGED_NOTE = ("已合并到下一条回复。", "Merged into the next reply.")
+        self.hist_update(tid, text=text, card={**_keep_progress(page), "wait": True, **({"stall": True} if stall else {})})
 
     def turn_merged(self) -> None:      # P135: a later phone message joined the same native turn; the reply goes there
         tid = self.cur_turn
         page = self.hist.get(tid) if tid is not None else None
         if page and page["end"] == "open":
-            self.hist_update(tid, text=pick(self.lang, *self.MERGED_NOTE), end="done")
+            self.hist_update(tid, text=humane.of(self, "shared.merged"), end="done")
         self.cur_turn, self.cur_failed = None, False
 
     def desktop_cmd_done(self, name: str) -> None:    # P133: a desktop-typed /compact has no Stop
         tid = self.desktop_turn
         page = self.hist.get(tid) if tid is not None else None
         if page and page["src"].get("text", "").strip() == "/" + name and not page["reply"]["text"]:
-            self.hist_update(tid, append=slash.done_line(name, self.lang))
+            self.hist_update(tid, append=slash.done_line(name, self.lang, getattr(self, "preferences", None)))
             self.desktop_end()
 
     def desktop_text(self, text: str) -> None:
@@ -2976,6 +3100,16 @@ class Host:
                 self.hist_add({"k": "sys", "text": ""}, note, "done")
             await asyncio.sleep(min(UPDATE_WAKE, 30))
 
+    async def _starters_line(self) -> str:
+        """P245: the upgrade notice names the example workflows this version put into the working root (once)."""
+        try:
+            from . import main_identity as _mi, starters
+            line = await asyncio.to_thread(starters.take_announcement, _mi.working_root(self.agent_cfg),
+                                           preferences.get(self.preferences, "appearance.language", "zh"))
+        except Exception:  # noqa: BLE001 — the notice goes out without it
+            return ""
+        return "\n\n" + line if line else ""
+
     async def upgraded_notice(self) -> None:
         """F12 / C3: serve restarted after `agentj update apply --authorization`: one line to the phones, in the owner's
         language, with the doctor counts — "已升级到 <v>（doctor: N ✓ / M ! / K ✗）". Once per version (the marker is removed
@@ -3014,7 +3148,10 @@ class Host:
                         completed["counts"], failed = None, True
                     completed["reason"] = "doctor_failed" if failed else "upgraded"
                     completed["result"] = "failed" if failed else "ok"
-                self.cmd_card("update", slash.Result(phone_update.text(completed, self.lang), "ok" if completed.get("result") == "ok" else "error"))
+                text = phone_update.text(completed, self.lang)
+                if completed.get("result") == "ok":
+                    text += await self._starters_line()
+                self.cmd_card("update", slash.Result(text, "ok" if completed.get("result") == "ok" else "error"))
                 return
             rec = update.take_marker(self.st)
         except Exception:  # noqa: BLE001
@@ -3028,6 +3165,7 @@ class Host:
         except Exception:  # noqa: BLE001 — the line still goes out, with "doctor: ?"
             counts, rows = None, None
         note = update.upgraded_text(rec, counts, preferences.get(self.preferences, "appearance.language", "zh"), rows)
+        note += await self._starters_line()
         self.st.log("upgrade_notice", status=str(rec.get("to"))[:32])
         e = self._remember("notice", note)
         self._post(self._send_legacy, lambda s, e=e: self._render(e, s))
@@ -3041,6 +3179,12 @@ class Host:
         self.activity("turn_start", by=by, text=text[:120])
         self.turn_by = None
         self.cur_turn, self.cur_failed = (send.turn if send is not None else None), False
+        # P282 (追加): the Agent has taken this say off the queue. A shared Codex still spawns its app-server and resumes the
+        # thread before `turn/start` (measured 46–65 s on a busy Mac) — the phone must stop calling it "queued, not handed
+        # to the Agent" while the Agent is already working on it (`delivered` still follows at the write).
+        if send is not None and isinstance(getattr(send, "sid", None), str) and not any(
+                getattr(send, k, None) for k in ("heartbeat_key", "bot_handoff_id", "official_notice_id")):
+            self._post(self._send_device, send.device, {"t": "say_state", "sid": send.sid, "s": "taken"})
 
     def agent_turn_end(self) -> None:
         self.st.log("turn_end", agent=self.agent.kind if self.agent else None)
@@ -3197,6 +3341,8 @@ class Host:
             m["goal_why"] = goal_mod.why_text(a.goal_why, card_lang(self.lang))
         elif a.tool == goal_mod.TOOL:      # P158: the opening card (one signature for the whole goal)
             m["goal"] = "grant"
+        if a.allow_offer:                 # P296: unticked 「以后发给 X 不用再确认」 boxes on the mail card
+            m["allow_offer"] = list(a.allow_offer)
         return m
 
     # ------------------------------------------------------------ batch approval (ADR-A48)
@@ -3304,11 +3450,14 @@ class Host:
                 await self._perm_send(w, {"t": "answer", "id": rid, **ans})
 
     async def ask(self, tool: str, tool_input: dict, gone: asyncio.Future | None = None, batch: bool = True, risk_scope: bool = False, require_passkey: bool = False, context: dict | None = None,
-                  ttl: float | None = None, grant_info: bool = False, origin: str | None = None) -> dict:
+                  ttl: float | None = None, grant_info: bool = False, origin: str | None = None,
+                  allow_offer: list | None = None) -> dict:
         """batch=False: never offered for (or approved by) a batch grant (a Codex sandbox / network escalation).
         context (P157): {"owner", "plan"} for layer 2 (approval_jev); None = what this host saw of the current turn.
         ttl (P158): this card's own wait (the goal card); grant_info: an allow carries {rid, device, sign_pub}.
-        origin (P172): who is asking when it is not the main thread (「来自子 Agent：general-purpose · 写报告」), the card's last line."""
+        origin (P172): who is asking when it is not the main thread (「来自子 Agent：general-purpose · 写报告」), the card's last line.
+        allow_offer (P296, `agentj mail send`): addresses the card offers as unticked boxes 「以后发给 X 不用再确认」; an allow
+        from a device then carries `allow_add` = the ticked ones (signed, ⊆ the offer)."""
         if tool == "AskUserQuestion" and self.agent and self.agent.kind == "claude" and isinstance(tool_input, dict):
             return await self._ask_user_question(tool_input, gone)       # §10.7: a question card, not an approval card
         kind = self.agent.kind if self.agent else "?"
@@ -3324,12 +3473,12 @@ class Host:
                        "no_sandbox_exec": "macOS sandbox-exec is missing",
                        "sandbox_failed": "macOS sandbox-exec failed; check whether Agent J is already sandboxed",
                        "unsupported_os": "isolation is supported on Linux and macOS; use WSL2 on Windows"}.get(tool_input.get("reason"), "isolation check failed")
-                summary = ("Sandbox unavailable; Agent has not started: " + why + ".\nRepair the isolation tool and retry; "
+                summary = ("Sandbox unavailable; Agent J has not started: " + why + ".\nRepair the isolation tool and retry; "
                            "installation/admin approval can be completed on the phone.\nRun this launch without isolation: "
                            "it may access local files and credentials. Owner passkey required; this launch only.")
             else:
                 why = fence.REASONS.get(tool_input.get("reason"), "隔离检查失败")
-                summary = ("沙箱不可用，Agent 尚未启动：" + why + "。\n修复隔离工具后重试；"
+                summary = ("沙箱不可用，Agent J 尚未启动：" + why + "。\n修复隔离工具后重试；"
                            "需要安装或管理员权限时，可在手机上批准。\n本次不隔离运行：批准后会在沙箱外运行，可能访问本机文件和凭据。仅本次启动有效，需主人通行密钥批准。")
         if risk_scope:
             summary += CARD_TEXT[card_lang(self.lang)]["risk_scope"]
@@ -3441,7 +3590,8 @@ class Host:
         a = Ask(rid, tool, summary, digest, tool_input, isha, time.monotonic() + wait,
                 asyncio.get_running_loop().create_future(), cats=v.cats, why=v.why, why_en=v.why_en, cred=v.cred,
                 scope=sc[:2] if sc else None, scope_text=sc[2] if sc else None, task=self.task_label, require_passkey=require_passkey,
-                goal={"reversible": "auto", "hold": "hold", "attack": "attack"}.get(gt or "", ""), goal_why=str(gwhy or ""))
+                goal={"reversible": "auto", "hold": "hold", "attack": "attack"}.get(gt or "", ""), goal_why=str(gwhy or ""),
+                allow_offer=[str(x) for x in allow_offer or []][:10])
         self.asks[rid] = a
         self.activity("ask", id=rid, tool=tool, cats=v.cats, why=v.why or None, why_en=v.why_en or None, cred=v.cred or None,
                       summary=summary, task=self.task_label)
@@ -3470,8 +3620,10 @@ class Host:
         finally:
             self.asks.pop(rid, None)
         gd = self.goals.current() if a.goal else None
+        picks = list(a.allow_add) if decision == "allow" and reason == "device" else []
         approvals.record(self.st, **base, decision=decision, reason=reason, device=did, sign_pub=sk, sig=sig,
                          scope=a.scope_text if decision == "allow_batch" else None,
+                         scope_sha256=approvals.allow_add_line(picks) if picks else None,
                          **({"grant": gd["grant"].get("rid"), "auto": "goal"} if reason == "goal_auto" and gd else {}))
         if gd is not None:
             if reason == "goal_auto":
@@ -3495,6 +3647,8 @@ class Host:
                 answer["risk_grant"] = {"rid": rid, "device": did, "sign_pub": sk}
             if grant_info and reason == "device":
                 answer["grant_info"] = {"rid": rid, "device": did, "sign_pub": sk}
+            if picks:
+                answer["allow_add"] = picks
             return answer
         if a.goal in ("hold", "attack") and reason in ("device", "timeout"):
             return {"behavior": "deny", "message": goal_mod.hold_message(a.goal_why or a.goal, card_lang(self.lang))}
@@ -3557,7 +3711,13 @@ class Host:
             sigb = b""
         decision = "allow_batch" if batch else ("allow" if ok else "deny")
         scope = a.scope_text if batch else None   # the host checks the scope IT offered: a phone cannot widen it
-        if not sk or not approvals.verify(sk, sigb, self.channel, s.device, rid, decision, a.digest, scope):
+        picks = obj.get("allow_add")
+        if picks is not None:             # P296: ticked boxes — only on an allow, only addresses this card offered, in its order
+            if not (ok and not batch and isinstance(picks, list) and picks and all(isinstance(x, str) for x in picks)
+                    and len(set(picks)) == len(picks) and picks == [x for x in a.allow_offer if x in picks]):
+                self.st.log("answer_refused", id=rid, device=s.device, reason="allow_add")
+                return
+        if not sk or not approvals.verify(sk, sigb, self.channel, s.device, rid, decision, a.digest, scope, picks):
             self.st.log("answer_refused", id=rid, device=s.device, reason="no_key" if not sk else "bad_signature")
             return
         if a.tool == pair_card.TOOL and not s.pair1:
@@ -3577,6 +3737,7 @@ class Host:
             except (passkey.PasskeyError, ValueError):
                 self.st.log("answer_refused", id=rid, device=s.device, reason="passkey_required")
                 return
+        a.allow_add = list(picks or [])
         a.fut.set_result((decision, s.device, sk, sigb))
 
     # ------------------------------------------------------------ Agent friends (P71, PROTOCOL §17.7)
@@ -3710,7 +3871,7 @@ class Host:
         m = self._estop_msg()
         self._post(self._send_ready, lambda s: m)
         note = "已急停（" + name + "）：" + ("正在进行的一轮已中断；" if busy else "") + ("正在跑的定时任务已中断；" if ran else "") + \
-            "待批准的全部拒绝，批量授权已收回，定时任务暂停。恢复之前 Agent 不接新消息。"
+            "待批准的全部拒绝，批量授权已收回，定时任务暂停。恢复之前 Agent J 不接新消息。"
         e = self._remember("notice", note)
         self._post(self._send_legacy, lambda s, e=e: self._render(e, s))
         self.hist_add({"k": "sys", "text": ""}, note, "done")
@@ -3726,7 +3887,7 @@ class Host:
         self.status_changed()
         m = self._estop_msg()
         self._post(self._send_ready, lambda s: m)
-        note = f"已恢复（{name}）：Agent 接收新消息，定时任务按各自的启用状态继续。"
+        note = f"已恢复（{name}）：Agent J 接收新消息，定时任务按各自的启用状态继续。"
         e = self._remember("notice", note)
         self._post(self._send_legacy, lambda s, e=e: self._render(e, s))
         self.hist_add({"k": "sys", "text": ""}, note, "done")
@@ -3953,7 +4114,8 @@ class Host:
             c = self.agent_cfg or {}
             root = main_identity.working_root(c)
             items = list(self.busy.mem.values()) + list(self.busy.outside)
-            pic = await asyncio.to_thread(self.wf.scan, root, c.get("kind"), self.lang, items)
+            scan = self.wf.sweep if t == "wf_list" else self.wf.scan     # P276: wf_list also fills the CEO roster
+            pic = await asyncio.to_thread(scan, root, c.get("kind"), self.lang, items)
             if t == "wf_list":
                 if obj.get("etag") == pic["tail"]["etag"]:
                     return await self.send_app(s, {"t": "wf_same", "r": r})
@@ -3967,6 +4129,16 @@ class Host:
         else:
             res = await asyncio.to_thread(self.wf.skill, obj.get("id"))
         await self.send_app(s, {"t": t, "r": r, **res})
+
+    async def _wf_first_sweep(self) -> None:
+        """P276: one bounded scan of the working root at start (workflows.SCAN_BUDGET), adding new WDB folders to the CEO
+        roster; never blocks or stops serve."""
+        try:
+            from . import main_identity
+            c = self.agent_cfg or {}
+            await asyncio.to_thread(self.wf.sweep, main_identity.working_root(c), c.get("kind"), self.lang, ())
+        except Exception as e:  # noqa: BLE001
+            self.st.log("wf_sweep_failed", reason=type(e).__name__)
 
     async def send_memory(self, s: Session, r: str) -> None:
         c = self.agent_cfg
@@ -4012,7 +4184,7 @@ class Host:
         if by:
             x["by"] = by[:64]
         if not interim and res.kind == "ok":     # P133
-            res.text = slash.with_done(name, res.text, self.lang)
+            res.text = slash.with_done(name, res.text, self.lang, getattr(self, "preferences", None))
         text = res.text if text_units(res.text) <= wire.MAX_TEXT else res.text[:3900] + " …"
         self.emit("agent_notice", text=f"/{name}：{text}")
         e = self._remember("cmd", text, x=x)
@@ -4029,7 +4201,7 @@ class Host:
         """A queued shared /clear or /compact waiting for the desktop; P243: `detail` says why (background tasks, a dialog)."""
         if not isinstance(cmd, agents.Cmd) or cmd.cancelled or cmd.native_started:
             return
-        text = detail or pick(self.lang, "等电脑空下来再执行", "Waiting for the computer to become idle")
+        text = detail or humane.of(self, "shared.wait_idle")
         self.hist_update(cmd.turn, text=text, end="open", card={"cmd": cmd.name, "cancel_wait": True})
 
     def workflow_cmd_waiting(self, cmd) -> bool:
@@ -4120,7 +4292,9 @@ class Host:
     def queue_dropped(self, item) -> None:
         """The stop switch dropped something still queued (agent.halt): a say is withdrawn (its attachments staged again,
         its page ends `stopped`), a command's page ends `stopped`."""
-        if getattr(item, "heartbeat_key", None):
+        if getattr(item, "background_done_ids", None):
+            self.background_done.complete(item)
+        if getattr(item, "heartbeat_key", None) or getattr(item, "background_done_ids", None):
             item.state = "cancelled"
             self.hist_update(item.turn, end="stopped")
             return
@@ -4148,6 +4322,11 @@ class Host:
         the rest after the turn in front of it (the Agent's queue). Logged: command name + result class, never text.
         Returns the id of the command's history page (§10.5)."""
         by = s.name or s.device
+        if name in TG_PAIR_CMDS:               # P283: 「重新绑定 Telegram」 — the host's own answer, a new pairing code
+            self.st.log("slash_in", cid=s.cid, device=s.device, cmd="telegram-pair")
+            turn = self.cmd_turn(s, "telegram-pair")
+            await self.telegram_pair(by=by, turn=turn)
+            return turn
         hc = friend_cmds.name_of(name)
         if hc:                                 # P73: answered here — no Agent, no model, no tokens; works while stopped
             self.st.log("slash_in", cid=s.cid, device=s.device, cmd=hc)
@@ -4185,7 +4364,7 @@ class Host:
             if not phone_update.reserve(self.st):
                 return done(slash.Result("Upgrade in progress" if self.lang == "en" else "正在升级，请稍候", "info"))
             self.upg_end("started", by=s.device)    # P203: the confirmation card (if any) is answered by this signed /update
-            self.cmd_card("update", slash.Result("Checking and upgrading; reconnect for the result." if self.lang == "en" else "正在查最新版并升级，服务会重启；重连后回报结果。", "info"), by, turn, interim=True)
+            self.cmd_card("update", slash.Result(humane.of(self, "update.started"), "info"), by, turn, interim=True)
             self.phone_upgrade_task = asyncio.create_task(self.phone_upgrade(turn, by))
             return turn
         if not self.agent:
@@ -4203,9 +4382,9 @@ class Host:
         if self.stopped():
             return done(slash.Result("已急停：恢复之后再用这个命令。", "refused"))
         if name == "clear" and not confirm:
-            return done(slash.Result("清空要在手机上确认：点输入框左边的 ≡「全部命令」→「清空对话（可撤销）」。", "info"))
+            return done(slash.Result(humane.of(self, "clear.phone_only"), "info"))
         if self.agent.status in ("working", "compacting") or not self.agent.q.empty():
-            self.cmd_card(name, slash.Result("这一轮结束后执行。", "info"), by, turn, interim=True)
+            self.cmd_card(name, slash.Result(humane.of(self, "cmd.after_turn"), "info"), by, turn, interim=True)
         cmd = agents.Cmd(name, arg, by, turn)
         self.agent.submit(cmd)
         if not self.workflow_cmd_waiting(cmd) and isinstance(self.agent, SharedClaudeAgent) and name in ("clear", "compact"):
@@ -4230,7 +4409,11 @@ class Host:
                     self.cmd_card("update", slash.Result(phone_update.text(rec, self.lang), "ok" if rec.get("result") == "ok" else "error"), by, turn)
                     return
             self.cmd_card("update", slash.Result("Upgrade timed out: run agentj doctor" if self.lang == "en" else "升级超时：在电脑运行 agentj doctor", "error"), by, turn)
-        except Exception:
+        except Exception as e:
+            from . import service as _svc
+            if isinstance(e, _svc.ServiceError) and e.reason in _svc.NO_MANAGER:     # P278: no systemd to run the upgrade job
+                self.cmd_card("update", slash.Result(_svc.MESSAGES[e.reason], "error"), by, turn)
+                return
             self.cmd_card("update", slash.Result("Could not start upgrade: run agentj update apply" if self.lang == "en" else "无法启动升级：在电脑运行 agentj update apply", "error"), by, turn)
         finally:
             if not launched or not phone_update.busy(self.st):
@@ -4252,6 +4435,26 @@ class Host:
         d = goal_mod.load(self.st)
         return slash.Result(goal_mod.status_text(self.st, d if d and d.get("state") in ("active", "proposed") else None, lang), "info")
 
+    async def telegram_pair(self, key_env=None, by: str | None = None, turn: int | None = None) -> dict:
+        """P283: start Telegram pairing. The code goes on a command card on the paired phones (history), never into the
+        answer (the terminal or an Agent gets the bot name and how long it is valid), a log or Telegram."""
+        from . import tg_pair
+        lang = "en" if self.lang == "en" else "zh"
+        if self.telegram is None:
+            res = {"ok": False, "error": "telegram_unavailable"}
+        else:
+            res = await self.telegram.start_pairing(key_env)
+        if res.get("ok"):
+            card = slash.Result(tg_pair.card(lang, res.get("bot"), res.pop("code")), "info")
+            res["shown_on"] = "phone"
+        else:
+            why = {"missing_key": res.get("detail") or "", "bot_key_rejected": pick(lang, "Telegram 不认这个 bot 密钥（getMe 失败）。请在 @BotFather 里核对后重新保存。", "Telegram rejected the bot key (getMe failed). Check it in @BotFather and save it again."),
+                   "bad_name": pick(lang, "bot 密钥的环境变量名不合法。", "The bot key's environment variable name is not valid.")}.get(res.get("error"), "")
+            card = slash.Result(pick(lang, "没能生成 Telegram 配对码。", "Could not make a Telegram pairing code.") + (" " + why if why else ""), "error")
+        self.st.log("slash", cmd="telegram-pair", result=card.kind)
+        self.cmd_card("telegram-pair", card, by, turn)
+        return res
+
     def friend_cmd(self, name: str, arg: str = "", channel: str = "phone") -> "slash.Result":
         """P73 (ADR-A176) `/my-agent-id` · `/add-friend` (friend_cmds.py). Never adds a friend: that is the phone's signed fr_add."""
         lang = "en" if self.lang == "en" else "zh"
@@ -4266,9 +4469,9 @@ class Host:
         ran = await self.scheduler.stop_running()
         self.status_changed()
         if busy or ran:
-            return slash.Result("已停下" + ("这一轮" if busy else "") + ("、正在跑的定时任务" if ran else "") +
-                                "。没有暂停任何东西：可以接着发消息。")
-        return slash.Result("现在没有正在进行的一轮。", "info")
+            what = humane.of(self, "stop.what_both" if busy and ran else "stop.what_turn" if busy else "stop.what_task")
+            return slash.Result(humane.of(self, "stop.done", what=what))
+        return slash.Result(humane.of(self, "stop.none"), "info")
 
     # ============================================================ relay parity (PROTOCOL §10, PROMPT-33)
     def _caps(self, s: Session | None = None) -> dict:
@@ -4287,7 +4490,28 @@ class Host:
         caps += ["cards1", "upg1"]       # P203 (§29): signed open-cards snapshot · upgrade impact + confirmation card
         caps.append("systasks")                                # P207 §2: answers systask_list (the computer's own scheduled tasks)
         caps.append("wf1")                                     # P244 §30: answers wf_list / wf_doc / skill_get (the five pages)
-        return {"caps": caps, "asr": self.asr_state(), "hist": "on" if self.hist.on else "off"}
+        caps.append(compose.CAP_MQ)                            # P286 §10.6: takes quote_more (≤ 5 quotes in one say)
+        m = {"caps": caps, "asr": self.asr_state(), "hist": "on" if self.hist.on else "off"}
+        m.update(self._host_kind())
+        return m
+
+    def _host_kind(self) -> dict:
+        """P287 (§10.0): `plat` + `boot`, so a phone that later finds this computer offline can say why in its own words
+        (it cannot hear from us then). `boot` may need loginctl: worked out once in the background; until then only `plat`."""
+        from . import service
+        k = getattr(self, "_hk", None)
+        if k is None:
+            k = self._hk = {"plat": service.host_platform()}
+            async def fill():
+                b = await asyncio.to_thread(service.boot_mode)
+                if b:
+                    k["boot"] = b
+            c = fill()
+            try:
+                self._bg(c, "host_kind")
+            except RuntimeError:                        # no running loop (a synchronous caller): `plat` alone
+                c.close()
+        return dict(k)
 
     async def _bulk(self, s: Session) -> None:
         """§10.13: a ready, allowlisted p33 device may upload faster — tell the relay (it answers the device {"t":"rate"});
@@ -4386,6 +4610,34 @@ class Host:
             self.auth_rescue.text_signal(kind, text)
         except Exception:  # noqa: BLE001 — detection must never break the failure notice itself
             pass
+    async def on_imsg(self, s: Session, t: str, obj: dict) -> None:
+        """P274 (§10.21) the iMessage card: `imsg_check` = a fresh doctor (then one scan), `imsg_fda` = open System Settings
+        at Full Disk Access on the Mac. → `imsg_res {r, ok, why?, check?}` (no message text), then a `preferences`
+        broadcast so every phone's card shows the new status."""
+        r = obj.get("r")
+        if not wire.is_rid(r):
+            return
+        from . import service as _svc
+        im = getattr(self, "imessage", None)
+
+        async def answer(res: dict) -> None:
+            m = {"t": "imsg_res", "r": r, "ok": bool(res.get("ok"))}
+            if not res.get("ok"):
+                m["why"] = str(res.get("status") or res.get("why") or "error")[:32]
+            chk = {k: res.get(k) for k in ("status", "grant_to", "hint") if res.get(k)}
+            if chk:
+                m["check"] = chk
+            if self.sessions.get(s.cid) is s and s.state == "ready" and self.st.is_allowed(s.pub):
+                await self.send_app(s, m)
+        if im is None or _svc.platform() != "macos":
+            return await answer({"ok": False, "why": "not_macos"})
+        self.st.log(t, device=s.device)
+
+        async def run() -> None:
+            res = await im.check() if t == "imsg_check" else await asyncio.to_thread(im.open_fda)
+            await answer(res)
+            self._post(self._send_ready, lambda s2: self.preferences_msg())
+        self._bg(run(), t)
 
     async def on_mail(self, s: Session, t: str, obj: dict) -> None:
         """P170 (PROTOCOL §10.20): the paired phone's e-mail settings. The app password never comes this way — 「设置授权码」
@@ -4422,8 +4674,9 @@ class Host:
         if t == "mail_key":                 # one answer, when the card ends (the page waits up to the card's 10 minutes)
             async def card():
                 res = await self.mail.secret_card()
+                receipt = res.get("receipt") or {}
                 await answer(res.get("result") == "saved", None if res.get("result") == "saved" else
-                             (res.get("detail") or res.get("why") or res.get("result")), card=res.get("result"))
+                             (res.get("detail") or res.get("why") or res.get("result")), card=res.get("result"), verify=receipt.get("verify"), detail=receipt.get("detail"))
             self._bg(card(), "mail_key")
             return
         if t == "mail_test":
@@ -4450,7 +4703,9 @@ class Host:
     async def _ctl_mail(self, w: asyncio.StreamWriter, req: dict, claimed: bool) -> None:
         """P170 `agentj mail set|allow|deny|on|off`: from the owner's terminal it applies at once; from inside an Agent a change
         that widens who reaches the Agent (a new allowlisted address, weaker sender checks, turning it on, another server)
-        becomes an approval card on the phone, applied only when the owner allows and nothing changed meanwhile."""
+        becomes an approval card on the phone, applied only when the owner allows and nothing changed meanwhile.
+        P296: the call waits for that card — allowed → `{ok, applied}`; declined / timed out / stale → `{ok: false, why}` (the
+        CLI exits non-zero). An allowlisted address also means mail TO it goes out without a card, and the card says so."""
         from . import mail as mail_mod
         if self.mail is None:
             return await self._ctl_send(w, {"ok": False, "error": "not_running"})
@@ -4465,26 +4720,27 @@ class Host:
             self.st.log("mail_set", device="terminal" if claimed else "agent", allow=len(cfg["allow"]), enabled=cfg["enabled"])
             return await self._ctl_send(w, {"ok": True, "applied": True})
         self.st.log("mail_card", keys=",".join(keys)[:200])
-        await self._ctl_send(w, {"ok": False, "code": "owner_approval", "keys": keys,
-                                 "error": "a change that lets more mail reach the Agent needs the owner's approval: a card was sent "
-                                          "to the paired phone; nothing changed yet / 让更多邮件进来的改动需要主人在手机上批准，已发卡片，批准后生效"})
-
-        async def card():
-            ans = await self.ask("agentj mail", {"changes": keys}, batch=False)
-            if ans.get("behavior") != "allow":
-                self.st.log("mail_card_done", result="deny")
-                return
-            if mail_mod.read_config(self.st) != old:
-                self.st.log("mail_card_done", result="stale")
-                self.agent_notice("邮件设置在等待批准期间被改过，这次批准没有生效，请重新发起。 / The mail settings changed while "
-                                  "waiting; this approval was not applied.")
-                return
-            self.mail.set_config(new)
-            self.st.log("mail_card_done", result="applied")
-        task = asyncio.ensure_future(card())
-        self._ctl_bg = getattr(self, "_ctl_bg", set())
-        self._ctl_bg.add(task)
-        task.add_done_callback(self._ctl_bg.discard)
+        zh = card_lang(self.lang) != "en"
+        adds = [k.split("+", 1)[1] for k in keys if k.startswith(("allow+", "owner+"))]
+        lines = [("邮件设置改动（Agent 发起）：" if zh else "Mail settings change (asked by the Agent): ") + "、".join(keys)]
+        if adds:
+            lines.append(("加入邮件白名单：" if zh else "Add to the mail allowlist: ") + "、".join(adds))
+            lines.append("加入后：他的来信会直接处理，给他发信不用再确认" if zh else
+                         "Once added: their mail is handled directly, and mail to them goes out without asking you")
+        ans = await self.ask("agentj mail", {"changes": keys, "summary": "\n".join(lines)}, batch=False)
+        if ans.get("behavior") != "allow":
+            self.st.log("mail_card_done", result="deny")
+            return await self._ctl_send(w, {"ok": False, "why": "denied", "keys": keys,
+                                            "detail": "主人没在手机上确认，邮件设置没有改动 / the owner did not confirm on the phone; "
+                                                      "nothing changed"})
+        if mail_mod.read_config(self.st) != old:
+            self.st.log("mail_card_done", result="stale")
+            return await self._ctl_send(w, {"ok": False, "why": "stale", "keys": keys,
+                                            "detail": "邮件设置在等待确认期间被改过，这次没有生效，请重新发起 / the mail settings "
+                                                      "changed while waiting; not applied, ask again"})
+        self.mail.set_config(new)
+        self.st.log("mail_card_done", result="applied")
+        await self._ctl_send(w, {"ok": True, "applied": True, "keys": keys})
 
     async def on_tg_fwd(self, s: Session, r: str, turn_id, mid=None) -> None:
         if self.telegram is None:
@@ -4531,6 +4787,8 @@ class Host:
             return await self.on_mail(s, t, obj)
         if t.startswith("auth_"):          # P258: AI 登录救援
             return await self.on_auth(s, t, obj)
+        if t in ("imsg_check", "imsg_fda"):  # P274 (§10.21): the iMessage card
+            return await self.on_imsg(s, t, obj)
         if t == "tg_fwd":                  # P118 (B10): one tap → this reply to the owner's own Telegram private chat
             r = obj.get("r")
             if not wire.is_rid(r):
@@ -4588,6 +4846,18 @@ class Host:
             return
         if t == "media_get":
             return self.on_media_get(s, obj)
+        if t == "hist_read":
+            if self.sessions.get(s.cid) is not s or s.state != "ready" or not self.st.is_allowed(s.pub):
+                return
+            try:
+                changed = self.readmark.see(self.hist, obj.get("epoch"), obj.get("id"))
+            except OSError:
+                self.st.log("hist_read_failed", device=s.device)
+                return
+            if changed:
+                self.st.log("hist_read", device=s.device, epoch=self.hist.epoch, read=self.readmark.value(self.hist))
+                self._post(self._send_p33, lambda s: {"t": "hist_read", "epoch": self.hist.epoch, "read": self.readmark.value(self.hist)})
+            return
         if t == "hist_get":
             r = obj.get("r")
             if not wire.is_rid(r):
@@ -4596,7 +4866,7 @@ class Host:
             lim = lim if type(lim) is int and 1 <= lim <= history.PAGE_MAX else history.PAGE_MAX
             b, a = obj.get("before"), obj.get("after")
             turns, more = self.hist.page(before=b if type(b) is int else None, after=a if type(a) is int else None, limit=lim)
-            return await self.send_app(s, {"t": "hist_page", "r": r, **self.hist.meta(), "turns": turns, "more": more})
+            return await self.send_app(s, {"t": "hist_page", "r": r, **self.hist_metadata(), "turns": turns, "more": more})
         if t == "hist_find":                   # P188 (§28): search the current epoch; answered to the asking session only
             r, q, sort, lim = obj.get("r"), obj.get("q"), obj.get("sort", "score"), obj.get("limit", hsearch.HITS_MAX)
             if not wire.is_rid(r):
@@ -4760,14 +5030,20 @@ class Host:
         async def res(**kw):
             await self.send_app(s, {"t": "say_res", "sid": sid, **kw})
         text, att, reply_to, excerpt = obj.get("text"), obj.get("att"), obj.get("reply_to"), obj.get("excerpt")
+        more = obj.get("quote_more")    # P286: quotes 2…5 — [{"id": <turn id>[, "ex": "<≤ 2 000>"]}], after reply_to's
         if not isinstance(text, str) or (att is not None and not isinstance(att, list)) \
                 or (reply_to is not None and type(reply_to) is not int) or (excerpt is not None and reply_to is None) \
+                or (more is not None and (reply_to is None or not isinstance(more, list) or not 1 <= len(more) < compose.QUOTES_MAX
+                    or not all(isinstance(q, dict) and type(q.get("id")) is int and (q.get("ex") is None or isinstance(q["ex"], str))
+                               for q in more))) \
                 or not isinstance(obj.get("ts", 0), int):
             return await res(ok=False, why="shape")
-        why = wire.text_problem(text) or (wire.text_problem(excerpt, compose.EXCERPT_MAX) if excerpt is not None else None)
+        exs = [excerpt] + [q.get("ex") for q in more or []]
+        why = wire.text_problem(text) or next((w for x in exs if x is not None
+                                               for w in [wire.text_problem(x, compose.EXCERPT_MAX)] if w), None)
         if why:
             return await res(ok=False, why=why)
-        if wire.units(text) + (wire.units(excerpt) if excerpt else 0) > wire.MAX_TEXT_P33:
+        if wire.units(text) + sum(wire.units(x) for x in exs if x) > wire.MAX_TEXT_P33:
             return await res(ok=False, why="too_long")
         if not text.strip() and not att:
             return await res(ok=False, why="shape")
@@ -4777,8 +5053,8 @@ class Host:
             return await res(ok=False, why="too_many")
         is_meeting = meeting.parse(text) is not None      # P182: /会议总结 · /meeting-notes is a message for the Agent, never refused
         hc = slash.parse(text) if not att and reply_to is None and not is_meeting else None
-        if hc and (friend_cmds.name_of(hc[0]) or hc[0] == "goal" and goal_mod.host_cmd(hc[1])):
-            # P73: /my-agent-id · /add-friend; P158: /goal status · /goal stop — the host's own answer, also stopped / no Agent
+        if hc and (friend_cmds.name_of(hc[0]) or hc[0] in TG_PAIR_CMDS or hc[0] == "goal" and goal_mod.host_cmd(hc[1])):
+            # P73: /my-agent-id · /add-friend; P283: /telegram-pair; P158: /goal status · /goal stop — the host's own answer, also stopped / no Agent
             self.sends.add(compose.Send(s.device, sid, 0, state="delivered"))
             turn = await self.on_slash(s, hc[0], hc[1], confirm=False, typed=True)
             self._post(self.send_app, s, {"t": "say_res", "sid": sid, "ok": True, "state": "delivered", "turn": turn})
@@ -4802,11 +5078,16 @@ class Host:
             return
         quote = quote_text = None
         if reply_to is not None:
-            qt = self.hist.get(reply_to)
-            if qt is None:
-                return await res(ok=False, why="reply_unknown")
-            quote = compose.quote_info(qt, excerpt, self.lang)
-            quote_text = compose.quote_block(qt, excerpt, self.lang)
+            items = []
+            for qid, ex in [(reply_to, excerpt)] + [(q["id"], q.get("ex")) for q in more or []]:
+                qt = self.hist.get(qid)
+                if qt is None:
+                    return await res(ok=False, why="reply_unknown")
+                items.append((qt, ex or None))
+            quote = compose.quote_info(*items[0], self.lang)
+            if len(items) > 1:              # src.quote stays the first (older phones draw it); src.quotes = all, in order
+                quote = dict(quote, more=[compose.quote_info(qt, ex, self.lang) for qt, ex in items[1:]])
+            quote_text = compose.quotes_block(items, self.lang)
         try:
             blobs = self.uploads.claim(s.device, att)
         except uploads.Refused as e:
@@ -4965,6 +5246,10 @@ class Host:
 
     def say_delivered(self, send: compose.Send) -> None:
         """The harness has the message (agent.Agent.deliver): the attachments belong to the Agent now."""
+        if getattr(send, "background_done_ids", None):
+            self.background_done.complete(send)
+            self.st.log("background_done_delivery", count=len(send.background_done_ids), outcome="delivered")
+            return
         if getattr(send, 'heartbeat_key', None):
             self.st.log("heartbeat_delivery", outcome="delivered")
             return
@@ -4985,6 +5270,10 @@ class Host:
         are (never deleted by the staged TTL, never released to the phone) and a withdraw answers already_delivered."""
         if getattr(send, 'bot_handoff_id', None):
             self.st.log("bot_handoff_delivery", id=send.bot_handoff_id, outcome="uncertain")
+            return
+        if getattr(send, "background_done_ids", None):
+            self.background_done.complete(send)  # uncertain native writes are never replayed
+            self.st.log("background_done_delivery", count=len(send.background_done_ids), outcome="uncertain")
             return
         if getattr(send, 'heartbeat_key', None):
             self.st.log("heartbeat_delivery", outcome="uncertain")
@@ -5445,12 +5734,15 @@ class Host:
                 from . import main_identity as _mi, wizard as _wiz
                 kind = self.agent_cfg.get("kind")
                 rows = await asyncio.to_thread(_wiz.refresh_root, _mi.working_root(self.agent_cfg),
-                                               [kind] if kind in _wiz.HARNESSES else None)
+                                               [kind] if kind in _wiz.HARNESSES else None,
+                                               preferences.get(self.preferences, "appearance.language", None), st=self.st)
                 changed = [r["status"] for r in rows if r.get("status") not in ("unchanged",)]
                 if changed:
                     self.st.log("root_docs_refreshed", n=len(changed), kinds=",".join(sorted(set(changed))))
             except Exception:  # noqa: BLE001 — the documents never stop the Agent from starting
                 self.st.log("root_docs_refresh_failed")
+            if not self.agent_cfg.get("_workflow_ceo"):
+                jobs.append(asyncio.create_task(self._wf_first_sweep()))   # P276: scan + CEO roster once at start
             from .service import ensure_agentj_on_path   # P155: the skills' `agentj …` must run in the Agent's shell
             if ensure_agentj_on_path():
                 self.st.log("agentj_path_added")
@@ -5458,7 +5750,7 @@ class Host:
             # spawn, so a first command never misses one (0.18: seen as "Agent J is not running" from a fenced `agentj …`)
             from . import capability as _cap, heartbeat as _hb, peer_service as _peer, recall as _recall
             for env, name in ((elevate.ENV, elevate.SOCK_NAME), (_cap.ENV, _cap.SOCK_NAME), (_recall.ENV, _recall.SOCK_NAME),
-                              (_hb.ENV, _hb.SOCK_NAME),
+                              (_hb.ENV, _hb.SOCK_NAME), ("AGENTJ_IMESSAGE_SOCK", "imessage.sock"),
                               (_peer.ENV, getattr(_peer, "SOCK_NAME", "friends.sock"))):
                 os.environ[env] = str(self.st.perm_dir / name)
             from . import harness_setup                # P219: the harness's one-time terminal questions, answered ahead
@@ -5469,7 +5761,9 @@ class Host:
                                 reason=",".join(r["skipped"]) or None)
             self.agent = agents.make(self, self.agent_cfg)
             self.agent.start()
-            self.sent_status = self.eff_status()
+            # P306: a phone that resumed before the Agent existed (relay is up first after a restart / upgrade) was told
+            # "none"; recording "idle" here without sending it left that phone grey until the first turn changed status.
+            self.status_changed()
             self.st.log("agent_on", agent=self.agent.kind, isolation_requested=self.agent_cfg.get("fence", True), session_mode=self.agent_cfg.get("session_mode", "independent"), phase="configured")
         await self.bots.start()
         await self.elevate.start()                 # F17: <state>/agentperm/elevate.sock for `agentj sudo` / `agentj secret`
@@ -5481,6 +5775,10 @@ class Host:
             await self.heartbeat.start()
         except Exception as e:  # noqa: BLE001
             self.st.log("heartbeat_start_failed", reason=type(e).__name__)
+        try:                                       # P274: imessage.sock for `agentj imessage …`; never blocks serve
+            await self.imessage.start()
+        except Exception as e:  # noqa: BLE001
+            self.st.log("imessage_start_failed", reason=type(e).__name__)
         with contextlib.suppress(Exception):       # P115: pinned Google CLI pre-install, quiet, never blocks serve
             from . import google
             google.ensure_background(self.st)
@@ -5503,11 +5801,12 @@ class Host:
         jobs.append(asyncio.create_task(self.mail.run()))
         jobs.append(asyncio.create_task(self.scheduler.loop()))
         jobs.append(asyncio.create_task(self.heartbeat.loop()))
+        jobs.append(asyncio.create_task(self.imessage.loop()))   # P274: idle unless macOS + imessage.enabled
         jobs.append(asyncio.create_task(self.goals.loop()))     # P158: deadline / unpaired phone ends the goal
         jobs.append(asyncio.create_task(self.sweep_loop()))
         from .browser_login import daily_loop     # P114: the daily read-only sign-in check (status only, never a QR)
         jobs.append(asyncio.create_task(daily_loop(self)))
-        jobs.append(asyncio.create_task(self.auth_rescue.loop()))   # P258: token expiry reminder (30 days ahead)
+        jobs.append(asyncio.create_task(self.auth_rescue.loop()))   # P258/P288: expiry reminders (7/3/1 days) + daily login health check
         if self.read_stdin:
             jobs.append(asyncio.create_task(self.stdin_loop()))
         try:
@@ -5525,6 +5824,8 @@ class Host:
             await self.capabilities.stop()
             with contextlib.suppress(Exception):
                 await self.heartbeat.stop()
+            with contextlib.suppress(Exception):
+                await self.imessage.stop()
             await self.recall.stop()
             if self.peers is not None:
                 with contextlib.suppress(Exception):
@@ -5546,7 +5847,8 @@ class Host:
             self.st.log("serve_stop")
             from . import telegram as telegram_mod
             telegram_mod.IN_SERVE = False
-            await diskq.aflush()                         # P142: queued state writes and log lines reach the disk
+            # P142: queued state writes and log lines reach the disk — P292: bounded, a stuck disk never holds the exit
+            await diskq.aflush(STOP_FLUSH)
 
 
 _IID = re.compile(r"[A-Za-z0-9_-]{22}")
@@ -5568,6 +5870,12 @@ def _sign_key(info: dict) -> bytes:
     except ValueError:
         return b""
     return b if len(b) == 32 else b""
+
+
+def _keep_progress(page) -> dict:
+    """P281: a wait line never drops what a running /switch-harness said it is doing (card.progress)."""
+    p = (page or {}).get("card") or {}
+    return {"progress": p["progress"]} if isinstance(p.get("progress"), str) else {}
 
 
 def clean_line_tool(tool: str) -> str:

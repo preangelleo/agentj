@@ -11,6 +11,8 @@ export const CAPS = { image: 10 * MIB, audio: 25 * MIB, video: 50 * MIB, pdf: 25
 export const WHYS = ['too_big', 'outside', 'secret', 'type', 'gone', 'masked', 'too_many',   // P194: masked / too_many
   'private', 'key_file', 'key_content', 'key_card'];   // P211: agentj's folder (others) · credential file · real key · pickup card
 export const HTML_CSP = "default-src 'none'; img-src data:; style-src 'unsafe-inline'";   // no network at all
+/** P273: no scrollbar drawn inside a preview frame either (app.css can't reach into srcdoc); it still scrolls. */
+export const FRAME_NOBAR = '<style>html,body,*{scrollbar-width:none}::-webkit-scrollbar{display:none;width:0;height:0}</style>';
 
 const ID22 = /^[A-Za-z0-9_-]{22}$/;
 const MIME = /^[a-z0-9.+-]{1,40}\/[a-z0-9.+-]{1,80}$/i;

@@ -148,6 +148,8 @@ class FakeSMTP:
     def __init__(self, user="agent@example.cn", password="right-code"):
         self.user, self.password = user, password
         self.sent: list[tuple[str, list[str], bytes]] = []
+        self.refuse: set[str] = set()          # P295: RCPT TO these → 550 (the rest of the mail still goes)
+        self.data_reply = b"250 queued"        # P295: what the server says after DATA (Gmail: `250 2.0.0 OK <ts> <id> - gsmtp`)
         fake = self
 
         class H(socketserver.StreamRequestHandler):
@@ -193,7 +195,11 @@ class FakeSMTP:
                         frm, to = text[10:].strip().strip("<>").split(">")[0], []
                         w(b"250 ok\r\n")
                     elif up.startswith("RCPT TO:"):
-                        to.append(text[8:].strip().strip("<>").split(">")[0])
+                        rc = text[8:].strip().strip("<>").split(">")[0]
+                        if rc in fake.refuse:
+                            w(b"550 no such user\r\n")
+                            continue
+                        to.append(rc)
                         w(b"250 ok\r\n")
                     elif up == "DATA":
                         w(b"354 go\r\n")
@@ -204,7 +210,7 @@ class FakeSMTP:
                                 break
                             buf += ln[1:] if ln.startswith(b"..") else ln
                         fake.sent.append((frm, list(to), bytes(buf)))
-                        w(b"250 queued\r\n")
+                        w(fake.data_reply + b"\r\n")
                     elif up in ("RSET", "NOOP"):
                         w(b"250 ok\r\n")
                     elif up == "QUIT":

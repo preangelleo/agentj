@@ -29,12 +29,13 @@ from .text import pick, strip_reasoning
 from .agent_opencode import CONNECT_WAIT, HTTPError, session_rules, split_model
 from .agent_opencode2 import AGENT_TRIES, END, OpenCodeV2Agent, _data, rules_from_v2, rules_to_v2
 from .privacy import redact
+from .text import drop_replacement
 
 TITLE = "Agent J shared"
 
 
 def public_text(text: str) -> str:
-    return redact(text, owner=True)   # owner channel, same as shared.public_text (P127 / P167)
+    return redact(drop_replacement(text), owner=True)   # P281 (no stray U+FFFD); owner channel, same as shared.public_text (P127 / P167)
 
 
 def switch_shared(agent, version) -> bool:

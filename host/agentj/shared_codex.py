@@ -23,11 +23,12 @@ import re
 from .text import pick
 from .agent_codex import CodexAgent, RPCError
 from .shared import public_text
-from . import danger, shared_hook
+from . import danger, humane, shared_hook
 from .shared_risk import RiskGuard
 
 UUID = re.compile(r'[0-9a-fA-F]{8}(?:-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}')
 DESKTOP_WAIT = 30*60        # s a phone message waits for a running desktop turn
+KEEP_WAIT = 10              # P282: s a kept app-server waits for the queued next phone turn before it is released anyway
 DISCOVER_LIMIT = 400        # newest rollouts inspected when no thread is selected
 
 
@@ -192,6 +193,7 @@ class SharedCodexAgent(CodexAgent):
         self.read_probe = False
         self.writer = {}                 # ADR-A178: who held the writer at the last refusal ({"kind", "pid", "how"})
         self.perm_source = "pending"     # F30: desktop / config / agentj / codex, known once the thread is resumed
+        self.kept = False                # P282: the app-server stayed up for the next queued phone turn (thread still loaded)
         if not self.cfg.get("shared_session_id"):
             stored=self.host.st.agent_session(self.kind)
             if isinstance(stored,str) and UUID.fullmatch(stored):
@@ -465,8 +467,7 @@ class SharedCodexAgent(CodexAgent):
             if not told:
                 told = True
                 self.note('shared_waiting', 'desktop turn active; alternate turns')
-                self.host.agent_notice('电脑上的 Codex 正在回答，等它这一轮结束后自动发出你的消息。 / '
-                                       'The desktop Codex is answering; your message is sent when that turn ends.')
+                self.host.agent_notice(humane.of(self, 'codex.waiting'))
             if self.turn_done is not None and self.turn_done.is_set():
                 raise Stopped()
             if loop.time() > deadline:
@@ -562,6 +563,10 @@ class SharedCodexAgent(CodexAgent):
         return res
 
     async def _thread(self):
+        if self.kept and self.proc is not None and self.proc.returncode is None and self.tid:
+            self.kept=False      # P282: the previous phone turn left this thread loaded for us — no second spawn + resume
+            return True
+        self.kept=False
         sid=self.cfg.get('shared_session_id')
         why=None
         if not (isinstance(sid,str) and UUID.fullmatch(sid)):
@@ -625,6 +630,7 @@ class SharedCodexAgent(CodexAgent):
             self.risk.reset()
             self.turn_done,self.turn_proc=asyncio.Event(),self.proc
             self.turn_id,self.turn_status=None,{}
+            self.tail_reset()
             choice = self.phone_choice()
             await self.remind(False)    # P159: the owner's own thread keeps its identity; only the language rides hidden
             res=await self.deliver(lambda:self.call('turn/start',{'threadId':self.tid,
@@ -635,8 +641,12 @@ class SharedCodexAgent(CodexAgent):
             self.meter(model=self.thread.get('model'), model_name=self.model_name(self.thread.get('model')),
                        effort=self.thread.get('reasoningEffort'))
             self.turn_id=(res.get('turn') or {}).get('id')
-            await self.turn_done.wait()
+            await self.await_turn()     # P282: turn/completed, or the quiet-tail fallback
             self.read_desktop()
+            # P282 (Mac 10-14: 46–65 s per spawn + resume on a busy machine): a phone message already waiting keeps this
+            # app-server and its loaded thread for the very next turn; released after KEEP_WAIT s in any case.
+            self.kept = not self.halting and not self.q.empty() and self.shared_status != 'desktop_writer'
+            if self.kept: self._bg(self._release_kept(self.proc))
         except Stopped:
             pass
         except (ValueError,RPCError,OSError) as error:
@@ -656,11 +666,17 @@ class SharedCodexAgent(CodexAgent):
         finally:
             # Release this actor after its turn so the native desktop can resume
             # the same rollout. The observer stays alive between actors.
-            if self.proc is not None:
+            if self.proc is not None and not self.kept:
                 await self._kill(self.proc)
             self.phone_turn=False
             if self.rollout is not None and self.shared_status != 'desktop_writer':
                 self.follow_status('following')
+
+    async def _release_kept(self, p):
+        await asyncio.sleep(KEEP_WAIT)
+        if self.kept and self.proc is p and not self.phone_turn:
+            self.kept = False
+            await self._kill(p)
 
     def _emit(self,text):
         super()._emit(public_text(text))

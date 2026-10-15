@@ -63,7 +63,10 @@
     var nodes = doc.querySelectorAll("[data-aj-theme-switch]");
     var t = getTheme();
     for (var i = 0; i < nodes.length; i++) {
-      nodes[i].textContent = LABEL[lang()][t];
+      if (!nodes[i].hasAttribute("data-aj-theme-icon")) nodes[i].textContent = LABEL[lang()][t];
+      var label = (lang() === "zh" ? "外观：" : "Theme: ") + LABEL[lang()][t] + (lang() === "zh" ? "；切换为" : "; switch to ") + LABEL[lang()][ORDER[(ORDER.indexOf(t) + 1) % ORDER.length]];
+      nodes[i].setAttribute("aria-label", label);
+      nodes[i].setAttribute("title", label);
       nodes[i].setAttribute("data-theme-state", t);
     }
   }

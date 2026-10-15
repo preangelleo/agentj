@@ -493,7 +493,7 @@ class SingleAnswerer(Tmp):
             (work / ".claude/settings.local.json").write_text(json.dumps({"hooks": {"PermissionRequest": [
                 {"matcher": "AskUserQuestion", "hooks": [{"type": "command", "command": "python3 relay_hook.py ask"}]}]}}))
             host = Mock(); host.st.root = self.root; host.stopped.return_value = False
-            host.ask = AsyncMock(return_value={"behavior": "allow"})
+            host.ask = AsyncMock(return_value={"behavior": "allow", "updatedInput": {"x": 1, "answers": {"q": "a"}}})
             a = shared.SharedClaudeAgent(host, {"kind": "claude", "dir": str(work), "_workflow_ceo": True})
             a.session = {"sessionId": "owner"}
             ev = lambda tool: asyncio.run(a.hook_event({"hook_event_name": "PermissionRequest", "session_id": "owner",

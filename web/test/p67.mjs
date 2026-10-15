@@ -69,7 +69,7 @@ await waitState(p,'awaiting-approval');await fake.approve();await waitState(p,'r
  await waitFor(p,`document.getElementById('provider-status').textContent.includes('密钥卡')`);
  ok(fake.log.some(m=>m.t==='provider_key'&&m.provider==='p67'),'provider Key entry requests existing encrypted key card without key values');
  // P187: back from a page opened in Settings returns to Settings; close it to reach the chat
- await evaluate(p,`document.getElementById('models-back').click();document.getElementById('set-close').click();document.getElementById('mic').dispatchEvent(new PointerEvent('pointerdown',{pointerId:1,clientY:700,bubbles:true,isPrimary:true,button:0}))`);
+ await evaluate(p,`document.getElementById('models-back').click();document.getElementById('setBtn').click();document.getElementById('mic').dispatchEvent(new PointerEvent('pointerdown',{pointerId:1,clientY:700,bubbles:true,isPrimary:true,button:0}))`);
  await waitFor(p,`!document.getElementById('confirm').hidden`);
  await shoot(p,'').then(x=>writeFileSync(new URL('asr-install.png',out),x));
  await evaluate(p,`document.getElementById('confirm-yes').click()`);await sleep(200);

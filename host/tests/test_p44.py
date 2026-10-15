@@ -185,7 +185,7 @@ class AuthorizedApply(_Env):
     def test_rerun_after_failed_install_resumes_this_hosts_authorization(self):
         _link(self.st, "http://127.0.0.1:9")
         res, calls, _ = self._run(rc=1)
-        self.assertEqual((res["reason"], res["exit"]), ("install_failed", 1))
+        self.assertEqual((res["reason"], res["exit"]), ("uv_failed", 1))
         self.assertFalse((self.st.root / update.UPGRADED).exists())
         res, calls, _ = self._run(auth={"status": "already_used", "http": "http_4xx"})
         self.assertEqual((res["reason"], res["exit"]), ("upgraded", 0), "same host, same code, same version: continue")

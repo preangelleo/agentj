@@ -2,11 +2,17 @@
 // The host runs the official login command; this page shows its link / device code, and the code or token is pasted only
 // into the host's sealed secret card (elevate.js) — never into these messages. Starting needs the owner's passkey (an
 // ask card). Everything is textContent; the link opens in a new tab with noopener.
-import { t } from './t.js';
+// P288: 「Claude 登录还有 N 天」 per row (or how a login without a fixed expiry is watched: the daily health check), a
+// 「现在续期」 button inside the last 7 days, and a thin chat banner (the host's view.renew) that starts the same route A —
+// dismissed per reminder mark on this phone. The authorize round shows its countdown and reopens by itself on the host.
+import { t, fillText } from './t.js';
 import { el } from './ui.js';
+import { copyable, copyNow } from './copycode.js';   // P292
 import { ask1, isReady } from './session.js';
 
-let view = null;          // the host's last view: {harnesses, flow, dot}
+let view = null;          // the host's last view: {harnesses, flow, dot, renew?}
+let hooks = {};           // app.js: {openAuth} (Settings → AI 登录救援)
+const RENEW_KEY = 'aj.arRenew';
 let timer = null;
 const LONG = 11 * 60 * 1000;   // auth_start answers after the passkey card (up to its 10 minutes)
 
@@ -26,7 +32,29 @@ async function call(obj, ms = 20000) {
 export function onPush(m) { if (m && m.view && typeof m.view === 'object') setView(m.view); }
 export async function load() { say(t('ar.loading')); const m = await call({ t: 'auth_get' }); if (m) say(''); }
 
-function setView(v) { view = v; dot(); render(); }
+function setView(v) { view = v; dot(); render(); banner(); }
+
+/** P288: the chat's renew banner — view.renew {kind, days_left, expires, mark}; ✕ hides it until the next reminder mark. */
+function renewTag(r) { return r ? `${r.expires}:${r.mark ?? ''}` : ''; }
+function banner() {
+  const b = el('ar-renew');
+  if (!b) return;
+  const r = view && view.renew;
+  let gone = '';
+  try { gone = localStorage.getItem(RENEW_KEY) || ''; } catch { /* private mode */ }
+  b.hidden = !r || gone === renewTag(r);
+  if (b.hidden) return;
+  const open = el('ar-renew-open');
+  if (open) open.textContent = r.days_left > 0 ? t('ar.renewBanner').replace('{d}', String(r.days_left)) : t('ar.renewBannerToday');
+}
+function renewLater() {
+  try { localStorage.setItem(RENEW_KEY, renewTag(view && view.renew)); } catch { /* private mode */ }
+  banner();
+}
+function renewNow() {
+  if (hooks.openAuth) hooks.openAuth();
+  start('claude', 'setup_token');
+}
 function dot() {
   const on = !!(view && view.dot);
   for (const id of ['ar-dot', 'ar-dot-top']) { const d = el(id); if (d) d.hidden = !on; }
@@ -39,7 +67,7 @@ function btn(label, cls, fn) {
   b.addEventListener('click', fn);
   return b;
 }
-function line(text, cls) { const p = document.createElement('p'); p.className = 'setnote' + (cls ? ' ' + cls : ''); p.textContent = text; return p; }
+function line(text, cls) { const p = document.createElement('p'); p.className = 'setnote' + (cls ? ' ' + cls : ''); fillText(p, text); return p; }   // P292: `commands` → code + ⧉
 
 async function start(kind, route) {
   say(t('ar.confirm'));
@@ -61,7 +89,23 @@ function harnessCard(h) {
   box.append(head);
   if (h.state === 'balance') box.append(line(t('ar.balanceNote')));
   if (h.state === 'rate_limit') box.append(line(t('ar.rateNote')));
-  if (h.token) box.append(line(t('ar.token').replace('{e}', h.token.expires).replace('{d}', String(h.token.days_left)), h.warn ? 'ardanger' : ''));
+  if (h.token) {
+    const d = h.token.days_left;
+    const k = d > 0 ? 'ar.token' : d === 0 ? 'ar.tokenToday' : 'ar.tokenPast';
+    box.append(line(t(k).replace('{e}', h.token.expires).replace('{d}', String(d)), h.warn ? 'ardanger artoken' : 'artoken'));
+  } else if (h.installed && h.expiry) {
+    const k = { unknown: 'ar.expUnknown', auto: h.kind === 'codex' ? 'ar.expAutoCodex' : h.kind === 'kimi' ? 'ar.expAutoKimi' : 'ar.expAuto', none: 'ar.expNone' }[h.expiry];
+    if (k) box.append(line(t(k), 'arexp'));
+  }
+  if (h.health && h.health.at) {
+    const when = new Date(h.health.at * 1000).toLocaleString(undefined, { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+    box.append(line(t(h.health.ok ? 'ar.healthOk' : 'ar.healthFail').replace('{t}', when), h.health.ok ? 'arhealth' : 'arhealth ardanger'));
+  }
+  if (h.kind === 'claude' && h.installed && (h.warn || h.expiry === 'unknown')) {
+    const p = document.createElement('p'); p.className = 'mailbtns';
+    p.append(btn(t('ar.renewNow'), 'aj-btn--primary arrenewbtn', () => start('claude', 'setup_token')));
+    box.append(p, line(t('ar.renewNote')));
+  }
   if (h.conflicts && h.conflicts.length) box.append(line(t('ar.conflict').replace('{n}', h.conflicts.join(', ')), 'ardanger'));
   const last = h.last;
   if (last) {
@@ -98,6 +142,9 @@ function harnessCard(h) {
     box.append(before);
     p.append(btn(t('ar.codexA'), 'aj-btn--primary', () => start('codex', 'device')));
     box.append(p, line(t('ar.codexNote')));
+  } else if (h.kind === 'kimi') {   // P305: `kimi login` device code (kimi.com / kimi.ai), or a key card
+    p.append(btn(t('ar.kimiA'), 'aj-btn--primary', () => start('kimi', 'device')));
+    box.append(p, line(t('ar.kimiNote')), line(t('ar.kimiKey')));
   } else {
     p.append(btn(t('ar.opencodeA'), '', () => start('opencode', 'provider_key')));
     box.append(p, line(t('ar.opencodeNote')));
@@ -112,7 +159,7 @@ async function press(kind, id) {
 }
 
 function copyBtn(text) {
-  return btn(t('ar.copy'), '', () => { navigator.clipboard?.writeText(text).then(() => say(t('ar.copied')), () => {}); });
+  return btn(t('ar.copy'), '', () => { copyNow(text).then((ok) => say(t(ok ? 'ar.copied' : 'r.copy.fail')), () => {}); });   // P292: + the execCommand fallback
 }
 
 function flowCard(f) {
@@ -121,7 +168,7 @@ function flowCard(f) {
   clearInterval(timer); timer = null;
   if (!f) { box.hidden = true; return; }
   box.hidden = false;
-  const h = document.createElement('h3'); h.className = 'setg'; h.textContent = t('ar.flowTitle').replace('{h}', f.kind === 'codex' ? 'Codex' : 'Claude Code');
+  const h = document.createElement('h3'); h.className = 'setg'; h.textContent = t('ar.flowTitle').replace('{h}', { codex: 'Codex', kimi: 'Kimi Code' }[f.kind] || 'Claude Code');
   box.append(h);
   const link = (u) => { const a = document.createElement('a'); a.href = u; a.target = '_blank'; a.rel = 'noopener noreferrer'; a.className = 'arlink'; a.textContent = t('ar.openLink'); return a; };
   if (f.stage === 'starting') box.append(line(t('ar.stStarting')));
@@ -130,15 +177,26 @@ function flowCard(f) {
     const p = document.createElement('p'); p.className = 'mailbtns'; p.append(link(f.url), copyBtn(f.url)); box.append(p);
     box.append(line(t('ar.deviceStep2')));
     const c = document.createElement('p'); c.className = 'arcode'; c.textContent = f.code; box.append(c);
-    const q = document.createElement('p'); q.className = 'mailbtns'; q.append(copyBtn(f.code)); box.append(q);
+    const q = document.createElement('p'); q.className = 'mailbtns'; const cb = copyBtn(f.code); q.append(cb); box.append(q);
+    copyable(c, { variant: 'ext', btn: cb });   // P292: a tap on the code = 复制
     const left = line(''); box.append(left, line(t('ar.deviceNote')));
     const tick = () => { const s = Math.max(0, (f.expires_at || 0) - Math.floor(Date.now() / 1000)); left.textContent = t('ar.left').replace('{m}', String(Math.floor(s / 60))).replace('{s}', String(s % 60).padStart(2, '0')); };
     tick(); timer = setInterval(tick, 1000);
   }
+  if (f.reopened && ['starting', 'url'].includes(f.stage)) box.append(line(t(f.reopened === 'expired' ? 'ar.reopenedExpired' : 'ar.reopenedRejected'), 'arreopen'));
   if (f.stage === 'url' && f.url) {
     box.append(line(t('ar.urlStep1')));
     const p = document.createElement('p'); p.className = 'mailbtns'; p.append(link(f.url), copyBtn(f.url)); box.append(p);
     box.append(line(t('ar.urlStep2')));
+    if (f.expires_at) {   // P288: the link's 10 minutes; at 0 the host opens the next round by itself
+      const left = line('', 'arleft'); box.append(left);
+      const tick = () => {
+        const s = Math.max(0, f.expires_at - Math.floor(Date.now() / 1000));
+        left.textContent = t('ar.urlLeft').replace('{m}', String(Math.floor(s / 60))).replace('{s}', String(s % 60).padStart(2, '0'))
+          + (f.round ? ' · ' + t('ar.round').replace('{n}', String(f.round)).replace('{max}', String(f.rounds || 3)) : '');
+      };
+      tick(); timer = setInterval(tick, 1000);
+    }
   }
   if (f.stage === 'paste') box.append(line(t('ar.pasteStep')));
   if (f.stage === 'verifying') box.append(line(t('ar.verifying')));
@@ -158,5 +216,9 @@ function render() {
   flowCard(view.flow);
 }
 
-export function configure() { /* nothing to wire: buttons are built per render */ }
+export function configure(h = {}) {
+  hooks = h || {};
+  el('ar-renew-open')?.addEventListener('click', renewNow);
+  el('ar-renew-x')?.addEventListener('click', renewLater);
+}
 export function close() { clearInterval(timer); timer = null; }

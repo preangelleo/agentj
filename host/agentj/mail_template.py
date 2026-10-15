@@ -34,12 +34,13 @@ MONO_FONT = "SFMono-Regular,Menlo,Consolas,'Liberation Mono','Courier New',monos
 T = {
     "zh": {"asked": "你问", "answered": "{agent} 答", "from": "来自 {name}", "quote": "引用 {who}：",
            "sent_files": "随消息发送的文件：", "files": "附件", "too_big": "文件太大未附上", "gone": "文件已不在，未附上",
+           "held": "未附上",
            "kind": {"task": "定时任务", "agent": "{agent} 自己发起", "sys": "系统", "cmd": "命令", "telegram": "Telegram",
                     "email": "邮件"},
            "foot": "这封邮件是从 {agent} 的手机遥控器转发的。", "powered": "Powered by Agent J", "lang": "zh-CN"},
     "en": {"asked": "You asked", "answered": "{agent} answered", "from": "from {name}", "quote": "Quoting {who}: ",
            "sent_files": "Files sent with the message: ", "files": "Attachments", "too_big": "Too big, not attached",
-           "gone": "No longer there, not attached",
+           "gone": "No longer there, not attached", "held": "Not attached",
            "kind": {"task": "Scheduled task", "agent": "Started by {agent}", "sys": "System", "cmd": "Command",
                     "telegram": "Telegram", "email": "E-mail"},
            "foot": "Forwarded from {agent}'s phone remote.", "powered": "Powered by Agent J", "lang": "en"},
@@ -294,7 +295,8 @@ def _label(L: dict, src: dict, agent: str) -> tuple[str, str]:
 
 def render(*, lang: str, agent: str, src: dict | None, reply: str, files=(), skipped=()) -> tuple[str, str, str]:
     """→ (subject, plain text, HTML). `src` = the page's input (history Src: k, name, text, quote?, att?, ts) or None to
-    leave it out; `files` = [(name, bytes)] attached; `skipped` = [(name, bytes, why: too_big|gone)] not attached.
+    leave it out; `files` = [(name, bytes)] attached; `skipped` = [(name, bytes, why: too_big|gone|held)] not attached
+    (P295 held = kept back by the strict scan for someone else: the mail never says why).
     Texts must already be redacted by the caller."""
     L = T["en" if lang == "en" else "zh"]
     agent = (agent or BRAND).strip() or BRAND
@@ -318,7 +320,7 @@ def render(*, lang: str, agent: str, src: dict | None, reply: str, files=(), ski
     if files or skipped:
         tx += ["", L["files"] + ":"]
         tx += [f"- {n} ({human(b)})" for n, b in files]
-        tx += [f"- {n} ({human(b)}) — {L['too_big'] if why == 'too_big' else L['gone']}" for n, b, why in skipped]
+        tx += [f"- {n} ({human(b)}) — {L.get(why, L['gone'])}" for n, b, why in skipped]
     tx += ["", "-- ", f"{L['foot'].format(agent=agent)}", f"{L['powered']} · {SITE}"]
     text = "\n".join(tx) + "\n"
 
@@ -355,7 +357,7 @@ def render(*, lang: str, agent: str, src: dict | None, reply: str, files=(), ski
                        for n, b in files)
         rows += "".join(f'<tr><td class="aj-tx" style="padding:6px 0;font-size:14px;color:{SOOTY};border-top:1px dashed {STRAW}">'
                         f'{esc(n)}<span class="aj-sub" style="color:{ARGENT}">&nbsp;·&nbsp;{esc(human(b))}&nbsp;·&nbsp;'
-                        f'{esc(L["too_big"] if why == "too_big" else L["gone"])}</span></td></tr>' for n, b, why in skipped)
+                        f'{esc(L.get(why, L["gone"]))}</span></td></tr>' for n, b, why in skipped)
         fl = (f'<div style="margin:4px 0 12px"><div class="aj-sub" style="color:{ARGENT};font-size:12px;font-weight:700;'
               f'letter-spacing:.06em;text-transform:uppercase;margin:0 0 4px">{esc(L["files"])}</div>'
               f'<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">{rows}</table></div>')

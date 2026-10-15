@@ -1,6 +1,6 @@
 """P258 AI 登录救援: classification (login vs balance vs rate limit), the interactive screens a restart can stop at, the Claude
 setup-token / auth-login PTY flow, the Codex device-code flow, token storage + live check, recovery and self-check, the
-30-day reminder, and the passkey gate. Everything runs against tests/fakep258.py — never a real login."""
+expiry reminder (P288: 7/3/1 days), and the passkey gate. Everything runs against tests/fakep258.py — never a real login."""
 import _hermetic  # noqa: F401
 import asyncio
 import os
@@ -428,9 +428,9 @@ class Manager(Base, unittest.IsolatedAsyncioTestCase):
         today = date(2026, 10, 14)
         ar.write_meta(self.st, {"claude": {"minted": (today - timedelta(days=300)).isoformat()}})
         self.assertIsNone(self.r.daily(today))
-        ar.write_meta(self.st, {"claude": {"minted": (today - timedelta(days=340)).isoformat()}})
-        self.assertIn("25 天后", self.r.daily(today))
-        self.assertIsNone(self.r.daily(today))                    # once a day
+        ar.write_meta(self.st, {"claude": {"minted": (today - timedelta(days=360)).isoformat()}})   # P288: 7-day window
+        self.assertIn("还有 5 天", self.r.daily(today))
+        self.assertIsNone(self.r.daily(today))                    # once per mark (test_p288_auth_renew: 7 / 3 / 1)
         self.assertTrue(self.r.view()["dot"])
         self.assertEqual(stat.S_IMODE((pathlib.Path(self.st.root) / ar.META).stat().st_mode), 0o600)
 

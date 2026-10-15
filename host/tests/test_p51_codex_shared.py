@@ -148,7 +148,7 @@ class DesktopTurn(Base):
         t=asyncio.create_task(finish())
         await a._thread();await t
         self.assertEqual(self.calls[-1][0],'thread/resume')
-        self.assertIn('等它这一轮结束后自动发出',self.notices())
+        self.assertIn('等它说完我就把您的消息递过去',self.notices())
         self.assertEqual(self.events('shared_waiting')[0]['reason'],'desktop turn active; alternate turns')
         self.assertFalse(self.events('shared_refused'))
 

@@ -221,7 +221,7 @@ export async function runP154() {
           await evaluate(p, `import('./js/settings.js').then(m=>m.open())`);
           await evaluate(p, `${$('set-sfx-mute')}.click()`);
           check(await evaluate(p, `${$('set-sfx')}.value`) === '40', 'un-mute restores the previous level');
-          await evaluate(p, `${$('set-close')}.click()`);
+          await evaluate(p, `${$('setBtn')}.click()`);
           await evaluate(p, `${$('input')}.value='p154 loud';${$('input')}.dispatchEvent(new Event('input'))`);
           await evaluate(p, `${$('send')}.click()`);
           await waitFor(p, `+(document.body.dataset.whoosh||0)>=1`, 6000);
@@ -413,7 +413,7 @@ export async function runP154() {
           await evaluate(p, `${$('set-shot')}.click()`);
           await waitFor(p, `${$('set-shot')}.getAttribute('aria-checked')==='true'`);
           writeFileSync(join(OUT, `${lang}-desktop-settings-shot.png`), await shoot(p, ''));
-          await evaluate(p, `${$('set-close')}.click()`);
+          await evaluate(p, `${$('setBtn')}.click()`);
           await roundTrip();
           check(await chips() === 0, 'the image already there when it was turned on is not a new screenshot');
           await shot(2); await roundTrip();
@@ -512,7 +512,7 @@ export async function runP154() {
         for (const theme of ['light', 'dark']) {
           const p = await paired(B, web, fake, lang, 390, 844, { touch: true, theme });
           try {
-            await fake.say(lang === 'zh' ? '负荷分割线：电脑越忙，线上的深色段滑得越快。' : 'The load line: the busier the computer, the faster the dark segment glides.', 'agent');
+            await fake.say(lang === 'zh' ? '负荷分割线：电脑越忙，线上那段亮色（浅色）滑得越快。' : 'The load line: the busier the computer, the faster the bright (light) segment glides.', 'agent');
             await waitFor(p, `${$('rmTime')}.textContent.length>0`);
             const after = () => evaluate(p, `(()=>{const c=getComputedStyle(${$('loadLine')},'::after');return {d:c.display,n:c.animationName,dur:c.animationDuration}})()`);
             check((await after()).d === 'none', 'no load yet: no glide');
@@ -613,7 +613,7 @@ export async function runP154() {
           await waitFor(p, `!${$('settings')}.hidden`);
           await slash();
           check(await evaluate(p, `${$('input')}.value===''`), 'Settings open: "/" is not taken');
-          await evaluate(p, `${$('set-close')}.click()`);
+          await evaluate(p, `${$('setBtn')}.click()`);
           await waitFor(p, `${$('settings')}.hidden`);
           // "i" unchanged: into the field, nothing typed
           await evaluate(p, `${$('input')}.blur();document.body.focus()`);
@@ -681,7 +681,7 @@ export async function runP154() {
             await evaluate(p, `import('./js/settings.js').then(m=>m.open())`);
             await waitFor(p, `!${$('settings')}.hidden`);
             check(await evaluate(p, `import('./js/settings.js').then(m=>m._debug().sfx.vol)`) === 10, 'Settings: the same setting');
-            await evaluate(p, `${$('set-close')}.click()`); await waitFor(p, `${$('settings')}.hidden`);
+            await evaluate(p, `${$('setBtn')}.click()`); await waitFor(p, `${$('settings')}.hidden`);
             // with text a hold does not open it (and Send is not grey)
             await evaluate(p, `${$('input')}.value='hi';${$('input')}.dispatchEvent(new Event('input'))`);
             check(!(await evaluate(p, `${$('send')}.disabled`)), 'Send is live with text');

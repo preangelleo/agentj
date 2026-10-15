@@ -249,11 +249,11 @@ class _Chain(unittest.TestCase):
         await c["wait"](lambda: any(m["epoch"] == ep + 1 for m in c["of"]("hist_meta")))
         await c["wait"](lambda: any(t["src"]["k"] == "cmd" and t.get("card", {}).get("undo") for t in h.turns.values()))
         self.assertFalse(set(h.turns) & ids, "the new epoch starts empty but for the clear card")
-        await c["say"]("清空后")
-        await c["idle"]()
-        await c["host"]._app(c["s"], {"t": "slash", "cmd": "undo_clear"})
+        await c["host"]._app(c["s"], {"t": "slash", "cmd": "undo_clear"})     # P280: before the next message
         await c["wait"](lambda: h.epoch == ep + 2)
         self.assertTrue(ids <= set(h.turns), "「撤销清空」 restores every page")
+        await c["say"]("撤销后")
+        await c["idle"]()
 
     async def question_flow(self, c, prompt, answered, cancelled):
         """A two-question card (single + multi); a bad signature and bad picks change nothing; the good answer wins."""

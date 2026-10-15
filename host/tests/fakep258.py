@@ -7,7 +7,10 @@ claude -p …: PONG when CLAUDE_CODE_OAUTH_TOKEN == FAKE258_GOOD_TOKEN (or FAKE2
 claude / codex (no args): FAKE258_SCREENS=a,b,… shown in order, each waiting for its key; "ready" = the prompt; "unknown" =
     a screen nobody catalogued; "exit" = quits. A wrong key on trust (Enter = 「No, exit」) quits with status 1.
 codex login --device-auth: link + code; FAKE258_DEVICE=ok|fail|disabled|hang (ok writes $CODEX_HOME/auth.json).
+P288 health checks (the bots' no-tool command): claude -p … --output-format json → JSON result; FAKE258_PROBE=ok|balance|
+rate|down overrides the token rule. codex exec … → JSONL events; FAKE258_CODEX_PROBE=ok (default)|login|down.
 """
+import json
 import os
 import sys
 import time
@@ -145,8 +148,19 @@ def claude():
                 f.write("{}")
         return
     if "-p" in args:
-        ok = os.environ.get("FAKE258_PROBE") == "ok" or os.environ.get("CLAUDE_CODE_OAUTH_TOKEN") == GOOD
+        mode = os.environ.get("FAKE258_PROBE", "")
+        ok = mode == "ok" or (not mode and os.environ.get("CLAUDE_CODE_OAUTH_TOKEN") == GOOD)
         log("probe token=%s" % ("good" if os.environ.get("CLAUDE_CODE_OAUTH_TOKEN") == GOOD else "other"))
+        if "--output-format" in args:
+            if not sys.stdin.isatty():
+                sys.stdin.read()
+            if mode == "down":
+                sys.stderr.write("Error: connect ECONNREFUSED\n")
+                sys.exit(1)
+            line = {"balance": "Credit balance is too low", "rate": "Claude AI usage limit reached|1760000000"}.get(
+                mode, "Invalid API key · Please run /login")
+            print(json.dumps({"type": "result", "result": "Hello!"} if ok else {"type": "result", "is_error": True, "result": line}))
+            sys.exit(0 if ok else 1)
         if ok:
             print("PONG")
             return
@@ -183,6 +197,21 @@ def codex():
         sys.exit(1)
     if args and args[0] == "--version":
         print("codex-cli 0.162.1")
+        return
+    if args and args[0] == "exec":
+        sys.stdin.read()
+        mode = os.environ.get("FAKE258_CODEX_PROBE", "ok")
+        log("codex_exec " + mode)
+        if mode == "login":
+            sys.stderr.write("ERROR: unexpected status 401 Unauthorized: refresh token was revoked; sign in again\n")
+            sys.exit(1)
+        if mode == "down":
+            sys.stderr.write("ERROR: stream disconnected before completion\n")
+            sys.exit(1)
+        for ev in ({"type": "thread.started"}, {"type": "turn.started"},
+                   {"type": "item.completed", "item": {"type": "agent_message", "text": "Hello!"}},
+                   {"type": "turn.completed", "usage": {"input_tokens": 3, "output_tokens": 2}}):
+            print(json.dumps(ev))
         return
     interactive()
 

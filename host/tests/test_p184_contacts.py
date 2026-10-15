@@ -397,7 +397,7 @@ class AgentMail(_Svc):
     async def test_denied_and_files_outside_the_folder(self):
         self.mailbox()
         self.ask.return_value = {"behavior": "deny"}
-        res = await self.svc.agent_send({"to": [OWNER], "subject": "x", "body": "y"})
+        res = await self.svc.agent_send({"to": ["zs@qq.com"], "subject": "x", "body": "y"})   # P296: not the owner → a card
         self.assertEqual(res["why"], "denied")
         self.assertEqual(self.smtp.sent, [])
         self.ask.return_value = {"behavior": "allow"}

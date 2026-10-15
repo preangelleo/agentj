@@ -81,7 +81,8 @@ def config(raw):
         if u.scheme!='https' or not u.hostname or u.username or u.password or u.fragment or any(c.isspace() for c in link):raise BotError('invalid_payment_url')
         if any(pattern.search(link) for _,pattern,_ in privacy._SECRETS):raise BotError('config_contains_secret')
     tg=out['telegram']
-    if not isinstance(tg,dict) or set(tg)!={'enabled'} or type(tg['enabled']) is not bool:raise BotError('invalid_telegram')
+    # P297: owner_bot = this bot also receives the guests of the owner's own Agent J Telegram bot (one bot at most)
+    if not isinstance(tg,dict) or not {'enabled'}<=set(tg)<={'enabled','owner_bot'} or any(type(v) is not bool for v in tg.values()):raise BotError('invalid_telegram')
     own=out['own_model']
     if own is not None:
         if not isinstance(own,dict) or not {'base_url','model','daily_tokens'}<=set(own) or set(own)-{'base_url','model','daily_tokens','api'}:raise BotError('invalid_own_model')

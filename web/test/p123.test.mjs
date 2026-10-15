@@ -2,10 +2,11 @@ import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import vm from 'node:vm';
+import {createUnread} from '../public/js/unread.js';
 const src=readFileSync(new URL('../public/js/relay.js',import.meta.url),'utf8');
 test('P123 refreshed pending page waits for fresh host history, then renders offline completion',async()=>{
   let resolve,queries=[],painted=[];
-  const ctx=vm.createContext({C:{api:{history:q=>{queries.push(q);return new Promise(r=>resolve=r);}},myDev:()=> 'mine'},showPage(){},announceTurn(){},el:()=>({hidden:true}),cur:{status:'idle'},t:x=>x,fill:(w,x)=>painted.push(x),afterWords(){},rdFollow(){}});
+  const ctx=vm.createContext({unread:createUnread(),hostId:()=> 'test-host',C:{api:{history:q=>{queries.push(q);return new Promise(r=>resolve=r);}},myDev:()=> 'mine'},showPage(){},announceTurn(){},el:()=>({hidden:true}),cur:{status:'idle'},t:x=>x,fill:(w,x)=>painted.push(x),afterWords(){},rdFollow(){}});
   vm.runInContext(src.slice(src.indexOf('let wordsSrc ='),src.indexOf('function fill(')),ctx);
   vm.runInContext(src.slice(src.indexOf('const hist ='),src.indexOf('function hhmm')).replaceAll('export function','function'),ctx);
   vm.runInContext(`hist.turns=[{id:1,reply:'',end:'open',source:{k:'phone',text:'question'}}];hist.lastId=1;renderWords('',true)`,ctx);
@@ -22,7 +23,7 @@ test('P123 refreshed pending page waits for fresh host history, then renders off
 
 test('P123 an in-flight head refresh cannot overwrite a newer live reply',async()=>{
  let resolve;
- const ctx=vm.createContext({C:{api:{history:()=>new Promise(r=>resolve=r)},myDev:()=> 'mine'},showPage(){},announceTurn(){},el:()=>({hidden:true}),historySync:false,historyGeneration:0,wordsSrc:null});
+ const ctx=vm.createContext({unread:createUnread(),hostId:()=> 'test-host',C:{api:{history:()=>new Promise(r=>resolve=r)},myDev:()=> 'mine'},showPage(){},announceTurn(){},el:()=>({hidden:true}),historySync:false,historyGeneration:0,wordsSrc:null});
  vm.runInContext(src.slice(src.indexOf('const hist ='),src.indexOf('function hhmm')).replaceAll('export function','function'),ctx);
  vm.runInContext(`hist.turns=[{id:1,reply:'',end:'open',source:{k:'phone',text:'question'}}];hist.lastId=1`,ctx);
  const job=vm.runInContext('refreshNewest()',ctx);

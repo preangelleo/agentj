@@ -1,6 +1,6 @@
 ---
 name: agentj-contacts
-description: The owner's address book and sending e-mail to people — 「发邮件给张三」「把这个文件发给李总」「转给老王」「记一下他的邮箱」「存个联系人」「导入通讯录」「导出联系人」「张三的邮箱是多少」, "email this to Zhang", "send it to my accountant", "save this contact", "import my contacts CSV / vCard". Look the person up first (`agentj contacts find`, pinyin and homophones included); nobody found → say so and put a contact card on the phone; send only through `agentj mail send` (the owner approves recipients on the phone). Also 「发给我自己」「发我邮箱」 "send it to me": slot 0 = the owner.
+description: The owner's address book and sending e-mail to people — 「发邮件给张三」「把这个文件发给李总」「转给老王」「记一下他的邮箱」「存个联系人」「导入通讯录」「导出联系人」「张三的邮箱是多少」, "email this to Zhang", "send it to my accountant", "save this contact", "import my contacts CSV / vCard". Look the person up first (`agentj contacts find`, pinyin and homophones included); nobody found → say so and put a contact card on the phone; send only through `agentj mail send` (mail to the owner or allowlisted addresses goes at once; anyone else needs the owner's phone approval). Also 「发给我自己」「发我邮箱」 "send it to me": slot 0 = the owner.
 ---
 # Address book and e-mail (通讯录)
 
@@ -18,8 +18,10 @@ a command.
    timeout; it prints `CONTACT_CARD: <id>` first). Results: `saved` / `merged` / `same` = in the book now · `cancelled` =
    the owner declined (do not send another card for the same person) · `timeout` / `gone` = ask again later.
 4. Send: `agentj mail send --to '<name or address>' [--to …] --subject '…' --body-file - [--attach <file>]` (body on
-   stdin; files only from your working folder). The owner sees recipients, subject and attachments on an approval card;
-   nothing goes out before 「允许」. `not_found` → step 3; `denied` → tell the owner it was not sent;
+   stdin; files only from your working folder). Every recipient the owner's own or on the e-mail allowlist → it goes at
+   once (`no_card: true`). Anyone else → the owner sees recipients, subject and attachments on an approval card and may tick
+   「以后发给 X 不用再确认」 (that adds X to the allowlist); nothing goes out before 「允许」. Attachments are scanned either way.
+   `not_found` → step 3; `denied` (exit 1: declined or nobody confirmed in time) → tell the owner it was NOT sent;
    `mail_not_configured` / `no_password` → the mailbox is not set up: read the e-mail section of agentj-config.
    Every address that went out is remembered automatically (new ones as contacts with source `agent`).
 
@@ -28,7 +30,7 @@ a command.
   Every "send it to me" — a web report, meeting minutes, a mail, a file — goes to that main e-mail:
   `agentj mail send --to-owner …` (slot 0 + the 「我本人」 allowlist addresses; or `--to me`, which finds slot 0 only).
   `--to-owner` with `--to` sends to both (deduped, 10 at most); no owner address yet → `no_owner_address`: say so and offer
-  `agentj contacts owner set`. The approval card on the phone comes first, exactly as with `--to <owner address>`.
+  `agentj contacts owner set`. Mail only to the owner needs no phone approval (P296); add anyone else and the card is back.
 - Empty → `agentj contacts owner set [--name … --email … --phone …] --why '…'`: a card rises on the phone, pre-filled with what
   you pass (or the 「我本人」 address of the e-mail channel); the owner saves or skips. You can never write slot 0 yourself
   (`edit` / `rm` on it are refused): an address there skips the outward filter. The first pairing already shows this card once.
@@ -58,8 +60,9 @@ a command.
 - The owner can also do all of this on the phone: Settings → 通讯录 / Contacts lists and searches the book, adds, edits
   and deletes contacts, imports a vCard / CSV / JSON file and exports a vCard, and its envelope icon puts a contact's
   e-mail on the e-mail channel's allowlist in one tap (as a guest; slot 0 as 「我本人」). Point the owner there when they
-  want to manage the book themselves or ask how to let a friend e-mail the Agent (an allowlist change you make yourself
-  with `agentj mail allow` still waits for the owner's approval on the phone).
+  want to manage the book themselves or ask how to let a friend e-mail the Agent. Allowlist = their mail is handled AND
+  mail to them needs no confirmation. You may run `agentj mail allow <address> --guest` yourself: it waits for the owner's
+  card on the phone and exits non-zero (nothing added) unless they confirm.
 
 ## Never
 - Never send mail any other way (no SMTP scripts, no other CLI) and never to an address the owner did not approve.

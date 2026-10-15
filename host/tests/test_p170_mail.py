@@ -4,7 +4,7 @@ Gate (before any model): allowlist in code, sender authentication from the provi
 mail, duplicates. Delivery: one main-Agent task with the owner (or guest) envelope; a forwarded original becomes a DATA file;
 attachments go to the inbox. Reply: SMTP to the original sender only, same thread (In-Reply-To / References), Auto-Submitted,
 hourly cap, silent replies send nothing. Secrets: the app password is stored AES-GCM under the host key, never in a log / state
-file / the Agent's text; the secret card's sink logs in before saving. Serve: a real host's `_accept` labels the turn `email`
+file / the Agent's text; the secret card's sink saves then checks read-only connectivity. Serve: a real host's `_accept` labels the turn `email`
 and `agent_turn_end` sends the reply; an Agent's widening `agentj mail` change becomes a phone card.
 """
 import _hermetic  # noqa: F401,I001
@@ -357,7 +357,7 @@ class Flow(_Base):
         self.assertEqual((bad["imap"], bad["smtp"]), ("imap_login", "smtp_login"))
         self.assertEqual(self.smtp.sent, [], "a connection test never sends mail")
 
-    async def test_secret_card_sink_logs_in_before_saving(self):
+    async def test_secret_card_sink_saves_then_reports_readonly_check(self):
         M.forget_secret(self.st)
         cards = []
 
@@ -369,8 +369,9 @@ class Flow(_Base):
         self.host.elevate = el
         el.value = b"nope"
         res = await self.m.secret_card()
-        self.assertEqual((res["result"], res["why"], res["detail"]), ("failed", "verify", "imap_login"))
-        self.assertFalse(M.has_secret(self.st, AGENT))
+        self.assertEqual((res["result"], res["receipt"]["verify"], res["receipt"]["detail"]), ("saved", "fail", "imap_login"))
+        self.assertTrue(M.has_secret(self.st, AGENT))
+        self.assertEqual(self.sent(), [], "connection check never sends mail")
         el.value = CODE.encode()
         res = await self.m.secret_card()
         self.assertEqual(res["result"], "saved")
@@ -442,12 +443,13 @@ class RealHost(unittest.IsolatedAsyncioTestCase):
 
             async def ask(tool, inp, batch=True, **kw):
                 self.assertEqual(tool, "agentj mail"); self.assertIn("allow+evil@else.example", inp["changes"])
+                self.assertIn("给他发信不用再确认", inp["summary"])        # P296: the card says what the allowlist means
                 asked.set(); return {"behavior": "deny"}
             host.ask = ask
             wider = {**base, "allow": base["allow"] + [{"addr": "evil@else.example", "role": "owner"}]}
-            await host._ctl_mail(W(), {"cfg": wider}, claimed=False)
-            self.assertEqual(out[-1]["code"], "owner_approval")
-            await asyncio.wait_for(asked.wait(), 2); await asyncio.sleep(0.05)
+            await host._ctl_mail(W(), {"cfg": wider}, claimed=False)   # P296: waits for the card, then answers
+            self.assertTrue(asked.is_set())
+            self.assertEqual((out[-1]["ok"], out[-1]["why"]), (False, "denied"))
             self.assertEqual(len(M.read_config(st)["allow"]), 1, "denied: nothing changed")
             narrower = {**base, "allow": []}
             await host._ctl_mail(W(), {"cfg": narrower}, claimed=False)

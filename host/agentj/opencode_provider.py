@@ -154,6 +154,11 @@ def listing(environ=None) -> list[dict]:
 
 
 def cmd(a) -> int:
+    if a.action == "bailian":                 # P310: the Bailian plan preset (bailian.py)
+        from . import bailian
+        if a.id and not a.plan:
+            a.plan = a.id
+        return bailian.cmd(a)
     try:
         if a.action == "add":
             if not a.id or not a.base_url:
@@ -188,17 +193,21 @@ def cmd(a) -> int:
 
 
 def add_parser(sub) -> None:
-    sp = sub.add_parser("provider", help="OpenCode 的第三方模型服务（base_url + key）：add / list / remove · "
-                                         "a third-party model service for OpenCode (base URL + key)",
+    sp = sub.add_parser("provider", help="OpenCode 的第三方模型服务（base_url + key）：add / list / remove；bailian = 阿里百炼 "
+                                         "Token Plan 预设（大陆推荐）· a third-party model service for OpenCode (base URL + key); "
+                                         "bailian = the Alibaba Cloud Bailian Token Plan preset",
                         description="Declares an OpenAI- or Anthropic-compatible service in OpenCode's config; the key is "
                                     "only referenced by name ({env:<ID>_API_KEY}) and is pasted on the phone's secret card.")
-    sp.add_argument("action", choices=["add", "list", "remove"])
+    sp.add_argument("action", choices=["add", "list", "remove", "bailian"])
     sp.add_argument("id", nargs="?", help="服务商 id，例如 myrelay（模型写成 myrelay/<模型>）")
     sp.add_argument("--base-url", dest="base_url", help="例如 https://api.example.com/v1")
     sp.add_argument("--model", action="append", help="模型 id，可重复")
     sp.add_argument("--api", choices=sorted(NPM), default="openai", help="openai（默认，OpenAI 兼容）或 anthropic（Anthropic 兼容）")
     sp.add_argument("--name", help="显示名")
     sp.add_argument("--key-env", dest="key_env", help="key 的环境变量名（默认 <ID>_API_KEY）")
+    sp.add_argument("--plan", choices=["token-plan", "coding-plan"],
+                    help="bailian：token-plan（默认，个人版，含 Qwen 3.8 Max）或 coding-plan / which Bailian plan")
+    sp.add_argument("--lang", choices=["zh", "en"], help="bailian：说明文字的语言 / text language")
     sp.add_argument("--dry-run", dest="dry_run", action="store_true")
     sp.add_argument("--json", action="store_true")
     sp.set_defaults(fn=lambda a: sys.exit(cmd(a)))

@@ -144,13 +144,13 @@ try {
       assert.deepEqual(words.imgs, ['blob:'], 'one picture, from a Blob URL');
       const strip = await ev(p, `({ cards: [...document.querySelectorAll('#mstrip .mcard')].map((c) => c.dataset.kind + ':' + c.querySelector('.mname').textContent),
         skips: [...document.querySelectorAll('#mstrip .mskip')].map((x) => x.textContent) })`);
-      assert.deepEqual(strip, { cards: ['audio:voice.wav'], skips: ['.env 的文件名或内容像密钥，所以没发；去掉密钥或改个名后让 Agent 再发。'] }, 'the strip: only what the reply did not place');
+      assert.deepEqual(strip, { cards: ['audio:voice.wav'], skips: ['.env 的文件名或内容像密钥，所以没发；去掉密钥或改个名后让 Agent J 再发。'] }, 'the strip: only what the reply did not place');
       assert.equal(await ev(p, `document.querySelectorAll('[data-mid="${id('D')}"]').length`), 2, 'the PDF once (slot + its card), not again in the strip');
       // the inline PDF card works like the strip's (P183: loads on screen; icons 预览 / 下载)
       await ev(p, `document.querySelector('#words .mslot[data-link]').scrollIntoView({ block: 'center' })`);
       await waitFor(p, `!!document.querySelector('#words .mslot[data-link] .mcard[data-state=ready]')`, 10000);
       const acts = await ev(p, `[...document.querySelectorAll('#words .mslot[data-link] .macts .mact')].filter((b) => !b.hidden).map((b) => b.getAttribute('aria-label'))`);
-      assert.deepEqual(acts, ['预览（空格）', '下载']);
+      assert.deepEqual(acts, ['全屏查看', '下载']);
       await ev(p, `document.querySelector('#words .mslot[data-link]').scrollIntoView({ block: 'center' })`);
       writeFileSync(join(OUT, 'p59-page-phone.png'), await shoot(p));
       assert.ok(gets.filter((g) => g.mid === id('B')).length <= 1, 'audio fetched at most once (P183: by itself only when on screen)');

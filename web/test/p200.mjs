@@ -89,7 +89,7 @@ for (const pr of profiles) {
     await C('Settings open → closed', async () => {
       await setText(p, lines(40)); await sleep(80); await setText(p, ''); await sleep(50);
       await p.evaluate(() => document.getElementById('setBtn').click()); await sleep(400);
-      await p.evaluate(() => document.getElementById('set-close').click()); await sleep(400);
+      await p.evaluate(() => document.getElementById('setBtn').click()); await sleep(400);
       return noBar(p, 'back from settings'); });
     await C('keyboard up: the same 6 short lines overflow a shorter viewport', async () => {
       const vp = p.viewportSize(); out.vp = vp;

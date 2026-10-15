@@ -124,7 +124,7 @@ def run_one(cmd):
 #   the message behaves as before; FAKE_CTX_USED = the context the next turn reports (compaction drops it).
 def p57_prepare(text):
     import re as _re
-    m = _re.search(r"`([^`]*\.agentj/handover/[^`]+\.md)`", text)
+    m = _re.search(r"`([^`]*(?:\.agentj/handover|agentj/handoff)/[^`]+\.md)`", text)   # P289: + switch.md (shared: ~/…)
     if os.environ.get("FAKE_PREP_SLEEP"):
         # Native Claude consumes control requests during a turn. A blocking fixture sleep
         # made preparation timeout/restart race against an unresponsive fake process.
@@ -141,7 +141,7 @@ def p57_prepare(text):
             if request.get("request", {}).get("subtype") == "interrupt":
                 return None                      # interrupted work cannot write a handover
     if m and os.environ.get("FAKE_NO_HANDOVER") != "1":
-        with open(m.group(1), "w") as f:
+        with open(os.path.expanduser(m.group(1)), "w") as f:
             f.write("# Handover\n- goal: the user's words\n- done / in progress / next\n- decisions\n- paths\n- open questions\n")
         return "交接写好了"
     return "没写交接"
@@ -274,7 +274,7 @@ for line in sys.stdin:
                 time.sleep(float(step[7:]))
                 continue
             say(run_one(step))
-    elif text.startswith("[agentj:compact-prepare]"):
+    elif text.startswith(("[agentj:compact-prepare]", "[agentj:switch-handoff]")):
         prepared = p57_prepare(text)
         if prepared is not None:
             say(prepared)

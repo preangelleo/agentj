@@ -320,8 +320,9 @@ class Heartbeat(unittest.IsolatedAsyncioTestCase):
 
     async def test_heartbeat_capability_is_only_announced_to_p33(self):
         from agentj.serve import Host
-        host=SimpleNamespace(asr_state=lambda:{'state':'off'},hist=SimpleNamespace(on=False))
+        host=SimpleNamespace(asr_state=lambda:{'state':'off'},hist=SimpleNamespace(on=False),_host_kind=lambda:{'plat':'linux'})   # P287
         self.assertIn('heartbeat',Host._caps(host,SimpleNamespace(p33=True))['caps'])
+        self.assertEqual(Host._caps(host,SimpleNamespace(p33=True))['plat'],'linux')
         self.assertEqual(Host._caps(host,SimpleNamespace(p33=False)),{})
 
 

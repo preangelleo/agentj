@@ -39,6 +39,7 @@ Notes
   内容 选题池 `topic-pool` · 脚本与文章起草 `script-draft` · 多平台发布 `multi-publish` · 评论回复草稿 `comment-reply` ·
   数据周报 `weekly-stats`; 开发 CI 预检 `ci-preflight` · 发版准备 `release-prep` · 线上监控 `uptime-watch` ·
   用户反馈分拣 `feedback-triage` · 文档与 CHANGELOG `changelog-docs`. For those owners, offer their five in question 16.
+  Creators on Alibaba Cloud Model Studio (千问 / 百炼): also offer 千问自媒体一条龙 `qwen-self-media` (renders only in chat).
 - Question 17 is the only place services come up. If they ask how to set a key, say it is done later by them directly in
   that service's own settings or on this computer — never in this chat.
 - Not an e-commerce business? Keep the same order and adapt the wording (platforms → channels, SKUs → products or

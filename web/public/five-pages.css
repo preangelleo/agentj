@@ -13,10 +13,10 @@
 #five-mentions{position:fixed;left:16px;right:16px;bottom:calc(124px + env(safe-area-inset-bottom));z-index:42;max-height:300px;overflow:auto;background:var(--c-lotion);color:var(--c-sooty);border:1px dashed var(--c-black-mana);border-radius:20px;padding:8px}.fp-mention{display:flex;align-items:center;gap:12px;width:100%;min-height:52px;background:transparent;color:inherit;border:0;text-align:left;padding:8px 12px;font:inherit;cursor:pointer}.fp-mention[aria-selected=true]{background:#c7dedc;border-radius:12px}
 .fp-robot{flex:none;display:inline-block;width:24px;height:24px;background-image:url('assets/robots-12.png');background-size:312px 384px;background-repeat:no-repeat;image-rendering:pixelated}.fp-robot.working{animation:fp-dance 1s steps(12) infinite}@keyframes fp-dance{to{background-position-x:-288px}}
 .fp-link{display:inline;min-height:0;padding:0;border:0;background:transparent;font-size:inherit;font-family:inherit;font-weight:700;color:#ffe292;text-decoration:underline;text-decoration-thickness:1.5px;text-underline-offset:3px;cursor:pointer}.fp-link-person{color:#f8daec}.fp-link-doc{color:#c4f0f0}.fp-link-skill{color:#ebd8f5}.om .fp-link,.fp-prose .fp-link{color:var(--c-sooty);text-decoration-color:#fcbe7c}
-body:not([data-five-page=chat]) #orb{animation:fp-heart 2.4s ease-in-out infinite;transform-origin:center}@keyframes fp-heart{0%,30%,100%{transform:scale(1)}12%{transform:scale(1.03)}22%{transform:scale(1.018)}}
+
 .om{margin:0 12px;padding-bottom:20px}.rm{margin-top:-12px}
 @media(min-width:601px){.fp-menu-deck{margin-left:0}#five-mentions{max-width:720px;margin:auto}}
-@media(prefers-reduced-motion:reduce){.fp-robot.working,body:not([data-five-page=chat]) #orb{animation:none}}
+@media(prefers-reduced-motion:reduce){.fp-robot.working{animation:none}}
 
 .fp-menu-card{display:block}.fp-menu-head{position:absolute;left:24px;right:24px;top:20px;height:32px}.fp-menu-card h2{position:absolute;left:24px;right:24px;top:62px;margin:0;line-height:1.2}.fp-menu-card p{position:absolute;left:24px;right:24px;top:105px;line-height:1.4}
 
@@ -57,13 +57,13 @@ body:not([data-five-page=chat]) #orb{animation:fp-heart 2.4s ease-in-out infinit
    follow-system alike (colors.menu repaints them); the light cards keep their palette tints with Noir text. */
 #five-page,#five-detail{top:var(--fp-top,72px);background:var(--menu-bg);color:var(--menu-text)}
 [data-theme=dark] #five-page,[data-theme=dark] #five-detail{background:var(--menu-bg);color:var(--menu-text)}
-html:has(body:is([data-five-page]:not([data-five-page="chat"]),:has(>#five-detail:not([hidden])))),
-body:is([data-five-page]:not([data-five-page="chat"]),:has(>#five-detail:not([hidden]))){background:var(--menu-bg)}
-body:is([data-five-page]:not([data-five-page="chat"]),:has(>#five-detail:not([hidden]))) .top{background:var(--menu-bg);border-bottom:1.5px dashed var(--menu-line);
+html:has(body:is([data-five-page]:not([data-five-page="chat"]),:has(>#five-detail:not([hidden])),:has(>#five-menu:not([hidden])))),
+body:is([data-five-page]:not([data-five-page="chat"]),:has(>#five-detail:not([hidden])),:has(>#five-menu:not([hidden]))){background:var(--menu-bg)}
+body:is([data-five-page]:not([data-five-page="chat"]),:has(>#five-detail:not([hidden])),:has(>#five-menu:not([hidden]))) .top{background:var(--menu-bg);border-bottom:1.5px dashed var(--menu-line);
   --ink:var(--menu-text);--ink-soft:var(--menu-muted);--surface:var(--menu-chip);--raised:var(--menu-panel);--line:var(--menu-line)}
-body:is([data-five-page]:not([data-five-page="chat"]),:has(>#five-detail:not([hidden]))) .top .orb{box-shadow:none}
-body:is([data-five-page]:not([data-five-page="chat"]),:has(>#five-detail:not([hidden]))) .top .srchbtn{display:none}
-body:is([data-five-page]:not([data-five-page="chat"]),:has(>#five-detail:not([hidden])))[data-conn="on"] .connline{display:flex}
+body:is([data-five-page]:not([data-five-page="chat"]),:has(>#five-detail:not([hidden])),:has(>#five-menu:not([hidden]))) .top .orb{box-shadow:none}
+body:is([data-five-page]:not([data-five-page="chat"]),:has(>#five-detail:not([hidden])),:has(>#five-menu:not([hidden]))) .top .srchbtn{display:none}
+body:is([data-five-page]:not([data-five-page="chat"]),:has(>#five-detail:not([hidden])),:has(>#five-menu:not([hidden])))[data-conn="on"] .connline{display:flex}
 /* the page header row: the menu header (title one line, ellipsis; icons 44 px) */
 .fp-header{min-height:var(--menu-head-h);padding:var(--sp-2) var(--menu-pad);border-bottom:1.5px dashed var(--menu-line);max-width:none}
 .fp-header h1{font:700 var(--menu-title-2)/1.25 var(--font-title);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
@@ -120,3 +120,39 @@ body:is([data-five-page]:not([data-five-page="chat"]),:has(>#five-detail:not([hi
 .fp-raw[open]>summary::after{transform:rotate(225deg) translate(-3px,0)}
 #five-menu{top:var(--fp-top,72px)}
 .fp-dark-4{box-shadow:inset 0 0 0 1.5px color-mix(in srgb,var(--c-lotion) 32%,transparent)}   /* the Noir card on the Noir canvas keeps an edge */
+.fp-org{margin:4px 0 18px}.fp-org .fp-action{margin:8px 0 4px}.fp-org .fp-meta{margin:0;font-size:13px;line-height:1.5}.fp-secondary{background:transparent;color:inherit;border:1.5px solid currentColor}.fp-card .fp-secondary{display:block;margin:10px 0 0}.fp-unreg{display:block;margin-top:4px;font-weight:600}
+
+/* P302 (owner 2026-10-15 09:0x on a Mac): ① the header (back · title · reload) stays on top while a page scrolls, and the
+   skills tabs stay under it; ② Noir from the moment the five-card menu opens, the 「Agent J」 card Lama; ③ labels on the
+   light workflow cards in Noir; ④ the @ list in the slash list's dark form, the mention token in the composer's own
+   text colour; ⑤ spacing from the --ui-space-* tokens (text never touches a dashed line, buttons keep their gaps). */
+.fp-sticky{position:sticky;top:0;z-index:3;background:var(--menu-bg);border-bottom:1.5px dashed var(--menu-line)}
+.fp-sticky>.fp-header{border-bottom:0}
+.fp-bar{max-width:760px;margin:0 auto;padding:0 var(--menu-pad)}.fp-bar[hidden]{display:none}
+.fp-bar .fp-tabs{margin:0;padding:0 0 var(--ui-space-control);gap:var(--ui-space-btn)}
+.fp-group{top:var(--fp-sticky-h,0px)}
+#five-body>.fp-meta{margin:0 0 var(--ui-space-control);line-height:var(--ui-leading)}
+/* sticky offsets count from the padded edge: -24 px = flush with the top of #five-detail (its padding-top) */
+.fp-detail-bar{position:sticky;top:calc(-1 * var(--sp-5));z-index:2;display:flex;align-items:center;margin:calc(-1 * var(--sp-5)) 0 var(--ui-space-control);
+  padding:var(--sp-2) 0;background:var(--menu-bg);box-shadow:0 0 0 100vmax var(--menu-bg);clip-path:inset(0 -100vmax)}
+.fp-detail-bar>.fp-back{margin-left:calc(-1 * var(--sp-2))}
+#five-detail .fp-action{margin:var(--ui-space-control) var(--ui-space-btn) var(--ui-space-control) 0}
+#five-menu{background:var(--menu-bg);backdrop-filter:none;-webkit-backdrop-filter:none}
+.fp-dark-4{background:var(--lama);color:var(--c-noir);box-shadow:none}.fp-dark-4:focus-visible{outline-color:var(--c-noir)}
+/* a light palette tint is a light ground: everything on it reads in Noir (the menu tokens re-bound for the card) */
+.fp-card{--menu-text:var(--c-noir);--menu-muted:var(--c-noir);--menu-line:color-mix(in srgb,var(--c-noir) 28%,transparent)}
+.fp-card .fp-tabs{gap:var(--ui-space-btn);margin:var(--ui-space-control) 0}
+.fp-card .fp-tab{color:var(--c-noir);border-color:color-mix(in srgb,var(--c-noir) 45%,transparent);background:transparent}
+.fp-card .fp-tab[aria-pressed=true]{background:var(--c-noir);color:var(--c-lotion);border-color:var(--c-noir)}
+.fp-card .fp-expanded{border-top-color:color-mix(in srgb,var(--c-noir) 45%,transparent);padding-top:var(--ui-space-line);margin-top:var(--ui-space-line)}
+.fp-card .fp-person{gap:var(--ui-space-control);line-height:var(--ui-leading)}
+#five-mentions{background:var(--menu-panel);color:var(--menu-text);border:1px solid var(--menu-line);box-shadow:0 12px 32px rgb(20 20 20 / .36);color-scheme:dark}
+.fp-mention{color:var(--menu-text)}
+.fp-mention[aria-selected=true]{background:var(--menu-chip);box-shadow:inset 3px 0 0 var(--menu-accent)}
+.workflow-token{color:inherit}
+#busyList li{padding-block:var(--ui-space-line)}
+#busyDlg .gdlg-row{margin-top:var(--ui-space-content);gap:var(--ui-space-btn)}
+/* P302 追加 12: a finished /command in the composer = a Peek-a-Blue chip with Noir text (the @ mention keeps the composer's
+   own colour with its underline); the chip keeps the line height, so the field never jumps */
+.workflow-token.cmd-token{background:var(--c-peek-a-blue);color:var(--c-noir);text-decoration:none;border-radius:6px;padding:1px 6px;
+  box-decoration-break:clone;-webkit-box-decoration-break:clone}

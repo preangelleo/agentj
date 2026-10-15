@@ -25,6 +25,7 @@ from .text import pick
 from . import preferences as p
 from .state import State
 from . import tg_cursor
+from . import tg_pair
 
 def enrollment(st=None):
     st=st or State()
@@ -210,6 +211,8 @@ class Telegram:
         from .tg_owner_cmds import Runner
         self.owner_cmds=Runner();self.last_poll=None;self.menu_sig={};self.menu_retry={};self.fwd_inflight=set();self.fwd_sent={};self.fwd_rate=collections.defaultdict(collections.deque)
         self.ledger=self.root/tg_cursor.OFFSET
+        # P283: the live pairing code (tg_pair; serve memory only), the offset while polling for it, strangers answered
+        self.pairing=None;self.pair_offset=None;self.id_replied=collections.OrderedDict();self.strangers=0;self.guests=0
     def enabled(self):return any(x.get('type')=='telegram' and not x.get('disabled') for x in p.get(self.host.preferences,'channels.items',[]))
     def group(self, chat_id, sender_id):
         for row in p.get(self.host.preferences, 'telegram.groups', []):
@@ -349,21 +352,148 @@ class Telegram:
             try:data=await asyncio.to_thread(tg_media.read_checked,rec)
             except (Gone,OSError):
                 self.host.st.log('telegram_forward',device=device,kind='file',result='not_found');return {'ok':False,'why':'not_found'}
+            self.host.st.log('telegram_forward_stage',device=device,kind='file',phase='read',ms=int((time.monotonic()-now)*1000))
+            upload_at=time.monotonic()
             if configuration(self.host.st)!=cfg or not self.enabled():return {'ok':False,'why':'not_configured'}
-            method,field=tg_media.method_of(rec)
-            fields={'chat_id':cfg['owner_id']}
-            if method!='sendDocument':fields['caption']=rec['name'][:1024]
-            try:await asyncio.to_thread(upload,cfg,method,fields,field,rec['name'],rec['mime'],data)
-            except ValueError:
-                if method=='sendDocument':raise
-                await asyncio.to_thread(upload,cfg,'sendDocument',{'chat_id':cfg['owner_id']},'document',rec['name'],rec['mime'],data)
+            # An explicit file-card action always sends the original as a document, once.
+            await asyncio.to_thread(upload,cfg,'sendDocument',{'chat_id':cfg['owner_id']},'document',rec['name'],rec['mime'],data)
+            self.host.st.log('telegram_forward_stage',device=device,kind='file',phase='upload',ms=int((time.monotonic()-upload_at)*1000))
             self.fwd_sent={k:v for k,v in self.fwd_sent.items() if now-v<FWD_REPEAT};self.fwd_sent[key]=time.monotonic()
-            self.host.st.log('telegram_forward',device=device,kind='file',result='ok',bytes=rec['bytes'])
+            self.host.st.log('telegram_forward',device=device,kind='file',result='ok',bytes=rec['bytes'],ms=int((time.monotonic()-now)*1000))
             return {'ok':True}
         except ValueError:
-            self.host.st.log('telegram_forward',device=device,kind='file',result='send_failed')
+            self.host.st.log('telegram_forward',device=device,kind='file',result='send_failed',ms=int((time.monotonic()-now)*1000))
             return {'ok':False,'why':'send_failed'}
         finally:self.fwd_inflight.discard(key)
+
+    async def start_pairing(self,key_env=None):
+        """P283: a new one-time code for this bot (any older code stops working). The answer carries the code for the
+        paired phone's card only; the bot key is checked where the bot runs (serve's environment) and with getMe."""
+        key_env=key_env or (enrollment(self.host.st) or {}).get('key_env') or DEFAULT_KEY_ENV
+        if not isinstance(key_env,str) or not re.fullmatch(r'[A-Z][A-Z0-9_]{0,79}',key_env):return {'ok':False,'error':'bad_name'}
+        from . import service
+        try:service.load_launch_binary_env({'key_env':key_env})
+        except service.ServiceError as e:return {'ok':False,'error':e.detail or e.reason}
+        if not os.environ.get(key_env):return {'ok':False,'error':'missing_key','detail':service.missing_key_message(key_env,'service')}
+        try:me=await asyncio.to_thread(api,{'key_env':key_env},'getMe',{})
+        except TelegramError as e:
+            self.host.st.log('telegram_pair',result='getme_'+e.kind);return {'ok':False,'error':'bot_key_rejected'}
+        if not isinstance(me,dict) or type(me.get('id')) is not int:return {'ok':False,'error':'bot_key_rejected'}
+        user=me.get('username') if isinstance(me.get('username'),str) and re.fullmatch(r'\w{1,64}',me['username']) else None
+        pr=tg_pair.Pairing(key_env,user);pr.bot_id=me['id']
+        self.pairing=pr;self.pair_offset=None
+        self.host.st.log('telegram_pair',result='started')
+        return {'ok':True,'bot':user,'code':pr.code,'expires_in':tg_pair.TTL}
+
+    def pairing_live(self):
+        return self.pairing is not None and self.pairing.live()
+
+    async def pair_message(self,m):
+        """P283: a message while a code exists. None = not a pairing message; 'answered' = a wrong / expired / burnt code
+        got its fixed answer; 'bound' = the right code in a private chat: that sender is now the owner."""
+        pr=self.pairing
+        sender=m.get('from') or {};chat=m.get('chat') or {};uid=sender.get('id')
+        if pr is None or type(uid) is not int or sender.get('is_bot') or m.get('sender_chat'):return None
+        if chat.get('type')!='private' or chat.get('id')!=uid:return None        # groups never pair
+        if 'forward_origin' in m or 'forward_date' in m:return None             # a forwarded code is not the sender's own
+        text=m.get('text')
+        code=tg_pair.parse(text,pr.username)
+        if code is None or not (pr.live() or tg_pair.is_start(text)):return None
+        if type(m.get('date')) is int and m['date']<pr.started-tg_cursor.SKEW:return None   # written before this code
+        cfg={'key_env':pr.key_env,'owner_id':0}
+        lang=tg_pair.lang_of(sender,getattr(self.host,'lang','zh'))
+        result=pr.check(code,uid)
+        if result!='ok':
+            burnt=result=='wrong' and pr.done
+            self.host.st.log('telegram_pair',result='burnt' if burnt else result)
+            head=tg_pair.LOCKED[lang] if burnt or result=='locked' else tg_pair.WRONG[lang]
+            try:await asyncio.to_thread(api,cfg,'sendMessage',{'chat_id':uid,'text':head+'\n\n'+tg_pair.id_card(sender,lang)})
+            except TelegramError:pass
+            if burnt:
+                self.pairing=None
+                add=getattr(self.host,'hist_add',None)
+                if add:add({'k':'sys','text':''},tg_pair.phone_burnt(self.owner_lang()),'done')
+            return 'answered'
+        self.pairing=None
+        res=await asyncio.to_thread(enroll,uid,pr.key_env)
+        if not res.get('ok'):
+            self.host.st.log('telegram_pair',result='enroll_failed');return 'answered'
+        rows=[x for x in (p.get(self.host.preferences,'channels.items',[]) or []) if x.get('type')!='telegram']
+        rows.append({'id':'telegram','type':'telegram'})
+        setp=getattr(self.host,'set_pref',None)
+        if setp:
+            done=await setp('channels.items',rows)
+            if not (done or {}).get('ok'):self.host.st.log('telegram_pair',result='channel_failed')
+        self.host.st.log('telegram_pair',result='bound')
+        add=getattr(self.host,'hist_add',None)
+        if add:add({'k':'sys','text':''},tg_pair.phone_bound(self.owner_lang(),pr.username,uid),'done')
+        return 'bound'
+
+    def owner_lang(self):
+        return 'en' if getattr(self.host,'lang','zh')=='en' else 'zh'
+
+    async def stranger(self,cfg,m):
+        """P283: a private message from anyone who is not the owner → one fixed answer (their numeric ID and how to pair),
+        at most once a minute per sender; never the model, never their words in a log — only a count."""
+        sender=m.get('from') or {};uid=sender.get('id')
+        if type(uid) is not int or sender.get('is_bot'):return
+        self.strangers+=1
+        now=time.monotonic()
+        if now-self.id_replied.get(uid,-1e9)<tg_pair.ID_REPLY_GAP:
+            self.host.st.log('telegram_stranger',result='quiet',count=self.strangers);return
+        self.id_replied[uid]=now;self.id_replied.move_to_end(uid)
+        while len(self.id_replied)>tg_pair.ID_REPLY_KEEP:self.id_replied.popitem(last=False)
+        self.host.st.log('telegram_stranger',result='id_sent',count=self.strangers)
+        try:await asyncio.to_thread(api,{'key_env':cfg['key_env'],'owner_id':0},'sendMessage',
+                                    {'chat_id':uid,'text':tg_pair.id_card(sender,tg_pair.lang_of(sender,self.owner_lang()))})
+        except TelegramError:self.host.st.log('telegram_stranger',result='send_failed')
+
+    async def guest(self,cfg,update):
+        """P297: a private chat that is not the owner's → the customer-service bot the owner attached (signed on the phone),
+        as that bot's visitor: its own session, prompt, model, limits and Jev reviews, its own 30-day history. Never the
+        main session, never owner commands or approvals; a pairing code or "I am the owner" is only visitor text. False =
+        the switch is off (or the bot is paused / Stop everything): the caller answers with the ID card as before."""
+        rt=getattr(getattr(self.host,'bots',None),'runtime',None)
+        if rt is None or not hasattr(rt,'telegram_guest'):return False
+        owner=cfg['owner_id'];dest={'key_env':cfg['key_env'],'owner_id':0}
+        async def send(chat,text):
+            if chat==owner:return            # a visitor reply never goes into the owner's chat
+            await asyncio.to_thread(api,dest,'sendMessage',{'chat_id':chat,'text':text,'link_preview_options':{'is_disabled':True}})
+        try:ch=rt.telegram_guest(self.cursor.get('bot') or cfg['key_env'],send)
+        except Exception:
+            self.host.st.log('telegram_guest',result='unavailable');return False
+        if ch is None:return False
+        self.guests+=1
+        self.host.st.log('telegram_guest',result='routed' if ch.submit(update) else 'full',count=self.guests)   # counts, never text
+        return True
+
+    async def pair_poll(self):
+        """P283: no owner yet (or a code for another bot): poll that bot only for the code. Every private sender who is not
+        pairing gets the fixed ID answer; nothing reaches the Agent. The offset is kept on the bot's cursor, so the message
+        that paired is never delivered again once the owner is enrolled."""
+        pr=self.pairing;cfg={'key_env':pr.key_env,'owner_id':0}
+        if self.pair_offset is None:
+            cur=tg_cursor.load(self.root)
+            self.pair_offset=cur['offset'] if cur.get('bot')==pr.bot_id else 0
+        updates=await asyncio.to_thread(api,cfg,'getUpdates',{'offset':self.pair_offset,'timeout':10,'allowed_updates':['message']},15)
+        self.last_poll=time.time()
+        for u in sorted((x for x in updates or [] if isinstance(x,dict) and type(x.get('update_id')) is int),key=lambda x:x['update_id']):
+            if u['update_id']<self.pair_offset:continue
+            self.pair_offset=u['update_id']+1
+            m=u.get('message')
+            if not isinstance(m,dict) or (type(m.get('date')) is int and m['date']<pr.started-tg_cursor.SKEW):continue
+            got=await self.pair_message(m)
+            chat=m.get('chat') or {}
+            if got is None and chat.get('type')=='private' and chat.get('id')==(m.get('from') or {}).get('id') \
+                    and not m.get('sender_chat'):
+                await self.stranger(cfg,m)
+            if self.pairing is not pr:break
+        cur=tg_cursor.load(self.root)
+        reset=cur.get('bot') not in (None,pr.bot_id)
+        if reset:cur.update(imported=False,uncertain=[],pending_updates=[],inflight=None,enrollment=None)
+        cur.update(offset=self.pair_offset,bot=pr.bot_id)
+        tg_cursor.save(self.root,cur,reset=reset)
+        self.cursor.update(offset=cur['offset'],bot=pr.bot_id)
 
     async def owner_command(self,cfg,chat_id,mid,row,choice):
         t0=time.monotonic()
@@ -459,7 +589,7 @@ class Telegram:
             self.host.st.log('telegram_uncertain',id=r['turn'],reason=r['state'])
             if owner:notes+=1
         if notes:
-            note=UNCERTAIN_NOTE.format(n=notes)
+            note=UNCERTAIN_NOTE['en' if getattr(self.host,'lang','zh')=='en' else 'zh'].format(n=notes)
             try:self.out.put_nowait((dict(cfg),note))
             except asyncio.QueueFull:self.host.st.log('telegram_overflow')
             add=getattr(self.host,'hist_add',None)
@@ -527,10 +657,16 @@ class Telegram:
         m=update.get('message') or {};sender=m.get('from') or {};chat=m.get('chat') or {}
         uid, chat_id = sender.get('id'), chat.get('id')
         if type(uid) is not int or sender.get('is_bot') or m.get('sender_chat'):return False
+        if self.pairing is not None and not album:
+            got=await self.pair_message(m)
+            if got:return got=='bound'
         msgs=[m]+[x for x in album or () if isinstance(x,dict) and (x.get('from') or {}).get('id')==uid and (x.get('chat') or {}).get('id')==chat_id and not x.get('sender_chat')]
         private_owner = uid == cfg['owner_id'] and chat_id == cfg['owner_id'] and chat.get('type') == 'private'
         group = self.group(chat_id,uid) if type(chat_id) is int and chat_id < 0 and chat.get('type') in ('group','supergroup') else None
-        if not private_owner and not group:return False
+        if not private_owner and not group:
+            if chat.get('type')=='private' and chat_id==uid and not await self.guest(cfg,update):
+                await self.stranger(cfg,m)   # P283: their ID, nothing else (P297: unless a customer-service bot receives guests)
+            return False
         # Forwarding is not endorsement, even in the enrolled owner chat.
         forwarded = private_owner and any("forward_origin" in x or "forward_date" in x for x in msgs)
         owner = private_owner and not forwarded
@@ -551,7 +687,7 @@ class Telegram:
         command = raw.split(None,1)[0].split('@',1)[0].lower() if raw.strip() else ''
         if group and command in ('/approve','/deny','/pair','/resume','/config','/model'):return False
         if not forwarded and command in ('/approve','/deny','/pair','/resume','/config','/model'):
-            await asyncio.to_thread(api,cfg,'sendMessage',{'chat_id':chat_id,'text':'Use your paired phone or local terminal for this action.'});return False
+            await asyncio.to_thread(api,cfg,'sendMessage',{'chat_id':chat_id,'text':pick(getattr(self.host,'lang','zh'),'这个操作请在已配对的手机或电脑终端上做。','Use your paired phone or local terminal for this action.')});return False
         if command == '/stop' and owner:
             await self.host.stop_turn('telegram owner');return True
         if owner and len(msgs)==1 and not media_present(m):
@@ -579,7 +715,7 @@ class Telegram:
             self.host.st.log('telegram_friend_cmd',cmd=fc,result='ok');return True
         if word and word[0]=='compact' and not forwarded:
             if not owner:
-                await asyncio.to_thread(api,cfg,'sendMessage',{'chat_id':chat_id,'text':'只有机主在私聊里才能压缩上下文。Only the owner can compact the context, in a private chat.'})
+                await asyncio.to_thread(api,cfg,'sendMessage',{'chat_id':chat_id,'text':pick(getattr(self.host,'lang','zh'),'只有机主在私聊里才能压缩上下文。','Only the owner can compact the context, in a private chat.')})
                 self.host.st.log('telegram_compact',result='refused')
                 return False
             has_media=any(media_present(x) for x in msgs)
@@ -746,6 +882,10 @@ class Telegram:
             self.cursor.update(offset=off,bot=bot,enrollment=dict(cfg))
             tg_cursor.save(self.root,self.cursor,reset=reset)
             self.host.st.log('telegram_cursor',reason=why)
+            # P283: a fresh enrollment (pairing code or --owner-id) says once, in the owner's language, that it is connected
+            if type(cfg.get('at')) is int and 0<=time.time()-cfg['at']<=tg_pair.TTL:
+                try:self.out.put_nowait((dict(cfg),tg_pair.connected(self.owner_lang(),p.get(getattr(self.host,'preferences',None) or {},'owner.address','') or '')))
+                except asyncio.QueueFull:self.host.st.log('telegram_overflow')
         else:
             self.cursor['bot']=bot;tg_cursor.save(self.root,self.cursor)
         self.offset=self.cursor['offset']
@@ -753,6 +893,16 @@ class Telegram:
             if not self.offset and not self.cursor.get('imported') else None
         self.bot_id=bot;self.username=me.get('username')
         self.recover(cfg)
+        # P275: a bot without a photo gets the official Agent J one, once; never blocks or fails the bind.
+        if getattr(self,'avatar_task',None) is None or self.avatar_task.done():
+            self.avatar_task=asyncio.create_task(self.auto_avatar(cfg,bot))
+
+    async def auto_avatar(self,cfg,bot):
+        from . import tg_avatar
+        try:result=await asyncio.to_thread(tg_avatar.ensure,self.root,lambda m,v:api(cfg,m,v),lambda *a:upload(cfg,*a),bot)
+        except Exception as e:
+            self.host.st.log('telegram_avatar',result='failed',kind=failure_kind(e));return
+        if result!='skipped':self.host.st.log('telegram_avatar',result=result)
 
     async def drain(self,cfg):
         """Send every reply still owed (also while fenced: the drain before a switch)."""
@@ -824,10 +974,8 @@ class Telegram:
             self.cursor['inflight']=first['update_id'];tg_cursor.save(self.root,self.cursor)
             await self.incoming(first,cfg,album=[x['message'] for x in rest])
             complete([x['update_id'] for x in batches[key]]);handled.append(key)
-        if stale:
+        if stale:   # P283: messages from before the owner connected are simply not delivered — counted, never announced
             self.host.st.log('telegram_stale',status=str(stale))
-            add=getattr(self.host,'hist_add',None)
-            if add:add({'k':'sys','text':''},STALE_NOTE.format(n=stale),'done')
         return handled
 
     async def run(self):
@@ -841,6 +989,11 @@ class Telegram:
     async def _run(self):
         while not self.host.stopping.is_set():
             cfg=configuration(self.host.st)
+            if self.pairing_live() and (not self.enabled() or not cfg or self.pairing.key_env!=cfg['key_env']):
+                try:await self.pair_poll();self.recovered()
+                except Exception as e:
+                    self.failed(failure_kind(e));await asyncio.sleep(RETRY)
+                continue
             if not self.enabled() or not cfg:
                 if cfg or tg_cursor.fence(self.root):self.status(False,bool(tg_cursor.fence(self.root)))
                 await asyncio.sleep(1);continue
@@ -906,9 +1059,10 @@ DOWN_AFTER=3    # P129: failures in a row before the phone shows "Telegram unava
 DOWN_SECS=120   # … or this long failing, whichever comes first
 
 
-UNCERTAIN_NOTE=('Agent J 重启前有 {n} 条 Telegram 消息或回复没确认完成（可能没送到、没回或只回了一部分），没有自动重发。请先核实，需要再发一次。'
-                ' / {n} Telegram message(s) or replies were not confirmed before Agent J restarted; nothing was resent. Check, then send again if needed.')
-STALE_NOTE=('{n} 条接入 Telegram 之前的旧消息没有投递（没有可接续的 cursor）。 / {n} Telegram message(s) older than this enrollment were not delivered.')
+# P283: one language (the owner's), never both side by side
+UNCERTAIN_NOTE={'zh':'Agent J 重启前有 {n} 条 Telegram 消息或回复没确认完成（可能没送到、没回或只回了一部分），没有自动重发。请先核实，需要再发一次。',
+                'en':'{n} Telegram message(s) or replies were not confirmed before Agent J restarted; nothing was resent. Check, then send again if needed.'}
+DEFAULT_KEY_ENV='TELEGRAM_BOT_TOKEN'   # `agentj channel add telegram` / the phone's /telegram-pair when no name is given
 
 
 MAX_DOWNLOAD=20*1024*1024      # the Bot API's own getFile limit (cloud Bot API): larger files cannot be fetched at all
@@ -926,7 +1080,7 @@ MEDIA_NOTE={
           'download':'从 Telegram 下载附件失败，没有收到。请再发一次；还不行就改用 Agent J 网页的「文件」按钮。',
           'local':'电脑在本地处理这个附件时出错（保存或转写），没有收到。请再发一次，或改用 Agent J 网页的「文件」按钮。',
           'asr_fail':'[语音没能在本地转写（{why}），原件已附上]',
-          'asr_notice':'语音没能在本地转写（{why}），原件已交给 Agent。',
+          'asr_notice':'语音没能在本地转写（{why}），原件已交给 Agent J。',
           'asr_why':{'timeout':'处理超时','not_installed':'电脑上还没装语音转写','off':'语音转写已关闭','format':'音频格式无法解码',
                      'bad_audio':'音频格式不对','busy':'转写器忙','no_speech':'没有听到说话','broken':'转写器出错'}},
     'en':{'size':'Not received: this attachment is over 20 MB, the most a Telegram bot can download (a Telegram limit).',
@@ -941,7 +1095,7 @@ MEDIA_NOTE={
           'download':'Not received: downloading it from Telegram failed. Send it again, or use the File button in the Agent J web app.',
           'local':'Not received: the computer could not process it locally (saving or transcribing). Send it again, or use the File button in the Agent J web app.',
           'asr_fail':'[Local voice transcription failed ({why}); original attached]',
-          'asr_notice':'The voice could not be transcribed locally ({why}); the original went to the Agent.',
+          'asr_notice':'The voice could not be transcribed locally ({why}); the original went to Agent J.',
           'asr_why':{'timeout':'timed out','not_installed':'transcription is not installed','off':'transcription is off',
                      'format':'the audio could not be decoded','bad_audio':'wrong audio format','busy':'the transcriber is busy',
                      'no_speech':'no speech heard','broken':'the transcriber failed'}},

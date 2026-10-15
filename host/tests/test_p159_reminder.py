@@ -51,8 +51,8 @@ class Text(unittest.TestCase):
 
 class Core(unittest.TestCase):
     def test_v11_and_compressed(self):
-        self.assertEqual(main_identity.VERSION, 14)                       # P244: v12 (@folder dispatch + /skill naming)
-        self.assertEqual(main_identity.verify_core()["version"], 14)
+        self.assertEqual(main_identity.VERSION, 15)                       # P244: v12 (@folder dispatch + /skill naming)
+        self.assertEqual(main_identity.verify_core()["version"], 15)
         # P159: v10 was zh 4359 / en 13148 characters; the same rules ~10 % shorter
         # P186 added the chairman philosophy and moved bot / auto-update / long-task detail to their skills: zh stays ~flat
         # (the phone-turn additionalContext must stay inline under HOOK_MAX), en grows a little (it goes to the file anyway)

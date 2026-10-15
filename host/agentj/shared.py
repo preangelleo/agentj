@@ -22,10 +22,10 @@ import signal
 import sys
 import uuid
 
-from .text import pick, strip_reasoning
+from .text import drop_replacement, pick, strip_reasoning
 from .agent import Agent
 from .agent_opencode import OpenCodeAgent, Client, HTTPError, CONNECT_WAIT, to_tool, split_model
-from . import privacy, shared_hook, danger, provenance, handoff, approval_jev
+from . import privacy, shared_hook, danger, provenance, handoff, approval_jev, humane
 from .shared_state import AgentState
 from .agent import hooks_blocked, _bin, CLAUDE_EFFORTS
 from .shared_risk import RiskGuard
@@ -49,12 +49,31 @@ EMPTY_STOP_WAIT = 2.0   # P151b: a native Stop with no last_assistant_message: t
 END_TURN_TOOLS = ("ScheduleWakeup",)   # P151b: a tool that ends the turn — its result is the turn's end, Stop or not
 WAIT_NOTE_AFTER = 60    # P151b (追加 4): a phone turn this long without its reply shows what the host sees
 TURN_WAIT = 300         # phone turn: a stall card (继续等 / 中断) after this long without a turn end
+ASK_RESCUE_S = 20       # P307: a phone answer to AskUserQuestion the session has not taken by then is sent to it as text
+ASK_LOOSE = ("answers", "annotations")   # P307: what Claude Code adds to AskUserQuestion's input once it is answered
+
+
+def card_digest(tool, inp) -> str:
+    """The open-card key of a call: its tool + input. P307 (live 2.1.296): a finished AskUserQuestion carries the answers
+    (+ annotations) in its input (PostToolUse, transcript), so those keys are left out — a terminal answer finds the card."""
+    if tool == "AskUserQuestion" and isinstance(inp, dict):
+        inp = {k: v for k, v in inp.items() if k not in ASK_LOOSE}
+    return hashlib.sha256(json.dumps([tool, inp], sort_keys=True).encode()).hexdigest()
+
+
+def ask_answer_text(answers: dict, lang: str = "zh") -> str:
+    """P307: the owner's phone answer as a message to the session (rescue when the native dialog did not take it)."""
+    lines = "\n".join(f"- {str(q)[:300]} → {str(a)[:300]}" for q, a in list(answers.items())[:8])
+    return pick(lang, "〔Agent J〕主人已经在手机上回答了你刚才的问卷（AskUserQuestion），但电脑上的问卷弹窗没有收到这个回答。"
+                      "主人的回答：\n" + lines + "\n请按这个回答继续，不要再问一遍。",
+                "[Agent J] The owner answered your question (AskUserQuestion) on the phone, but the question dialog on this "
+                "computer did not take the answer. The owner's answer:\n" + lines + "\nContinue with it; do not ask again.")
 
 
 def public_text(text: str) -> str:
     # Reuse the product's deterministic scrubber; no provider/model call. Owner channel: paths (P127) and contacts
     # (P167: e-mail, phone) stay readable; secrets are redacted.
-    return privacy.owner_text(text)
+    return privacy.owner_text(drop_replacement(text))   # P281: a U+FFFD-only block is no text (nor a streamed reply)
 
 
 def tool_what(name: str, args) -> str:
@@ -250,6 +269,9 @@ class SharedClaudeAgent(Agent):
         self.turn_gen = 0               # P151b: bumped at every turn start
         self.endturn_ids = set()        # P151b: tool_use ids of END_TURN_TOOLS calls of this turn
         self.last_tool = None           # P151b (追加 4): (name, short description, wall clock started, tool_use id) or None
+        self.tool_digests = {}          # P307: main-thread tool_use id → card_digest (a transcript tool_result withdraws)
+        self.ask_answered = {}          # P307: card_digest → (answers, monotonic) a phone answer the session has not taken yet
+        self.ask_tasks = set()
         self.wait_more = None           # P151b (追加 4): an Event the stall card's 「继续等」 sets
         self.turn_wait_t0 = None
         # P151b (追加 5): a phone turn's text is delivered as soon as the session moves on to a tool call — how the turn
@@ -345,7 +367,9 @@ class SharedClaudeAgent(Agent):
             why = "token"
         else:
             pid, served_pid = event.get("_agentj_peer"), self.session.get("pid")
-            if isinstance(pid, int) and isinstance(served_pid, int) and served_pid not in shared_hook.ancestors(pid):
+            chain = event.get("_agentj_chain")      # P291: walked off the event loop by Channel.receive
+            if isinstance(pid, int) and isinstance(served_pid, int) and served_pid not in (
+                    chain if isinstance(chain, list) else shared_hook.ancestors(pid, 32, served_pid)):
                 why = "process"
         if why:
             self.host.st.log("shared_hook_refused", event=str(event.get("hook_event_name") or "?")[:32], reason=why)
@@ -432,7 +456,8 @@ class SharedClaudeAgent(Agent):
         P172: the main thread's Stop withdraws only the main thread's cards — a background sub-agent keeps waiting on its own
         dialog after the main turn ended, so its card stays until its call finishes, it stops (SubagentStop) or /clear."""
         if name in ("PostToolUse", "PostToolUseFailure"):
-            digest = hashlib.sha256(json.dumps([event.get("tool_name"), event.get("tool_input")], sort_keys=True).encode()).hexdigest()
+            digest = card_digest(event.get("tool_name"), event.get("tool_input"))
+            self.ask_answered.pop(digest, None)
             futs = self.open_cards.pop(digest, [])
         elif name in ("Stop", "SubagentStop", "SessionEnd") or (name == "SessionStart" and event.get("source") == "clear"):
             # not UserPromptSubmit: a queued phone message can be submitted while a dialog is still open
@@ -661,6 +686,10 @@ class SharedClaudeAgent(Agent):
             with contextlib.suppress(Exception):
                 busy.set_context("shared-" + str(self.kind), harness=self.kind, cwd=self.cfg.get("dir"))
                 busy.hook_event(event, scope="shared-" + str(self.kind))
+                if name in ("SubagentStart", "SubagentStop") and event.get("agent_id"):   # P291: metadata only, for diagnosis
+                    mem = getattr(busy, "mem", None)
+                    self.host.st.log("busy_sub", event=name, id=str(event.get("agent_id"))[:8],
+                                     count=len(mem) if isinstance(mem, dict) else None)
         self.sync_compacting()
         if name == "SessionStart" and event.get("source") == "clear" and self.clear_seen != sid:
             self.clear_seen = sid
@@ -748,7 +777,7 @@ class SharedClaudeAgent(Agent):
 
         if name == "PermissionRequest":
             tool, inp = event.get("tool_name", "?"), event.get("tool_input") or {}
-            digest = hashlib.sha256(json.dumps([tool, inp], sort_keys=True).encode()).hexdigest()
+            digest = card_digest(tool, inp)
             # Claude PermissionRequest may omit tool_use_id. Digest matches only a
             # pending guard-raised request; this cache never bypasses native asks.
             key = next((k for k in self.risk_requests if k[1] == digest), None)
@@ -796,6 +825,18 @@ class SharedClaudeAgent(Agent):
                         self.risk_denied.update(cats)
             decision = {"behavior": "allow"} if answer.get("behavior") == "allow" else {
                 "behavior": "deny", "message": "Denied by paired phone or timeout."}
+            if tool == "AskUserQuestion":
+                # P307 (Leo 10-15 11:0x, probed live 2.1.296): a bare allow leaves the terminal's question dialog open and
+                # the phone's answer lost — the answers ride in updatedInput (the host built them from the signed picks).
+                # A deny (phone cancel / timeout) closes the dialog with the host's own message.
+                upd = answer.get("updatedInput") if decision["behavior"] == "allow" else None
+                if isinstance(upd, dict) and isinstance(upd.get("answers"), dict) and upd["answers"]:
+                    decision["updatedInput"] = upd
+                    self._ask_watch(digest, upd["answers"])
+                elif decision["behavior"] == "allow":
+                    return {}                       # no answers to hand over: the dialog at the computer decides
+                elif isinstance(answer.get("message"), str) and answer["message"]:
+                    decision["message"] = answer["message"][:500]
             if decision["behavior"] == "deny":
                 # P198 (H): Claude Code 2.1.296 sends no PostToolUse(Failure) after a hook's deny — the card set by this
                 # PermissionRequest would hold the state at waiting past the turn's Stop (_commit_idle keeps a waiting card)
@@ -928,7 +969,7 @@ class SharedClaudeAgent(Agent):
             return Result(HELP + pick(getattr(self.host, "lang", "zh"), "\n共享 Claude：clear/compact 等当前回合结束后执行；成功以原生回执确认。", "\nShared Claude waits for the desktop turn and confirms native receipts."), "info")
         if name in ("context", "usage", "status", "cost", "model") and not arg:
             from . import claude_statusline
-            m = claude_statusline.read(self.host.st.root, (self.session or {}).get("sessionId"), self.compacted_at)
+            m = await self._fresh_native()        # P292: the status-line file is read off the loop
             self.meter(**m)
             if name == "context":
                 c = m.get("ctx") or {}
@@ -937,7 +978,7 @@ class SharedClaudeAgent(Agent):
                 return Result("5h: " + (str(m['h5']['pct']) + '%' if m.get('h5') else "—") + " · week: " + (str(m['week']['pct']) + '%' if m.get('week') else "—"), "info")
             if name == "cost":
                 # P116 (B5): Claude Code's own status-line figure for this session (cost.total_cost_usd), never an estimate.
-                usd = claude_statusline.cost(self.host.st.root, (self.session or {}).get("sessionId"))
+                usd = await asyncio.to_thread(claude_statusline.cost, self.host.st.root, (self.session or {}).get("sessionId"))
                 if usd is None:
                     return Result("花费 / Cost: —（原生状态栏还没有本会话读数；开启 agentj config claude-statusline on / no native reading yet）", "info")
                 return Result(f"花费 / Cost: ${usd:.2f}（本会话，Claude Code 原生状态栏读数 / this session, Claude Code's own status line）", "info")
@@ -1052,9 +1093,26 @@ class SharedClaudeAgent(Agent):
         # self-slash skill); built-in controls above never do. Host commands were handled before this point.
         return bool(name) and name not in __import__("agentj.slash", fromlist=["x"]).WHITELIST + ("undo_clear",)
 
-    def _native(self):
+    def _read_native(self):
         from . import claude_statusline
         return claude_statusline.read(self.host.st.root, (self.session or {}).get("sessionId"), self.compacted_at)
+
+    def _native(self):
+        """P292: on the event loop the last reading (refreshed off the loop by `_fresh_native` / `read_statusline`) — the
+        status-line read stats and reads settings layers and runs `git rev-parse`; 4.4 s on a thrashing disk (2026-10-14).
+        Off the loop (a worker thread, a test) it reads now."""
+        from . import diskq
+        if diskq.on_loop():
+            cached = getattr(self, "_native_last", None)
+            return dict(cached) if cached else {}
+        m = self._read_native()
+        self._native_last = m
+        return dict(m)
+
+    async def _fresh_native(self):
+        m = await asyncio.to_thread(self._read_native)
+        self._native_last = m
+        return dict(m)
 
     def cur_model(self):
         from .shared_modelswitch import key_of
@@ -1077,6 +1135,7 @@ class SharedClaudeAgent(Agent):
         """Rows the native picker last showed (learned), else the rows Relay verified; the running model always listed."""
         from . import shared_modelswitch as ms
         rows = [r for r in (self._picker_rows() or ms.LEGACY) if not r.startswith("Default")]
+        await self._fresh_native()
         cur, native = self.cur_model(), self._native().get("model_name")
         cache = [{"id": ms.slug(r), "name": r, "efforts": list(ms.EFFORTS)} for r in rows]
         if cur and cur not in {m["id"] for m in cache}:
@@ -1092,6 +1151,7 @@ class SharedClaudeAgent(Agent):
             # Long press: the picker's Default row (the owner's own default model), session-only; plus the configured effort.
             m, e = "default", self.cfg.get("effort") if self.cfg.get("effort") in ms.EFFORTS else None
         else:
+            await self._fresh_native()
             m, e = model or self.cur_model(), effort
             if m is None or not ms.valid_id(m):
                 return "unsupported"        # current model unknown (no status line): an effort-only change has no row
@@ -1137,7 +1197,7 @@ class SharedClaudeAgent(Agent):
         import time
         deadline = time.monotonic() + self.MODEL_WATCH
         while True:
-            n = self._native()
+            n = await self._fresh_native()
             fresh = (n.get("source_at") or 0) >= started
             hit = (model == "default" and fresh) or matches(model, key_of(n.get("model_name")))
             if hit and (effort is None or n.get("effort") == effort):
@@ -1165,7 +1225,7 @@ class SharedClaudeAgent(Agent):
         if changed:
             changed()
         if why is not None:
-            self.host.agent_notice("模型/思考强度没有切换成功（" + why + "），以电脑上的实际读数为准。 / The queued model/effort switch was not confirmed; the pill shows the native reading.")
+            self.host.agent_notice(humane.of(self, "shared.model_unconfirmed", why=why))
 
     async def _model_command(self, arg):
         """`/model <id|label|default> [effort]` or `/model <effort>` — the same picker path and receipt as the pill."""
@@ -1188,12 +1248,12 @@ class SharedClaudeAgent(Agent):
                 known = " ".join(dict.fromkeys(ms.slug(r) for r in (rows or ms.LEGACY) if not r.startswith("Default")))
                 return Result("没执行：不认识的模型。可用：" + known + " default（也可写 opus / sonnet / fable / haiku）。 / Unknown model.", "refused")
         why = await (self.apply_model(None, None, default=True) if model == "default" and effort is None else self.apply_model(model, effort))
-        n = self._native()
+        n = await self._fresh_native()
         now = str(n.get("model_name") or "—") + " · " + str(n.get("effort") or "—")
         if why is None:
-            return Result("已切换（原生状态栏确认，仅本会话）：" + now + " / Switched (native status line, this session only)", "ok")
+            return Result(humane.of(self, "shared.model_ok", reading=now), "ok")
         if why == "queued":
-            return Result("已排队：电脑上的回合结束后切换，结果以状态栏为准。 / Queued until the desktop is idle.", "info")
+            return Result(humane.of(self, "shared.model_queued"), "info")
         if why == "unconfirmed":
             return Result("未确认：按键已发，但状态栏没报告目标，当前实际：" + now + "。 / Not confirmed by the native status line.", "error")
         return Result("没切换（" + why + "）：当前实际 " + now + "。 / Not switched.", "error")
@@ -1297,6 +1357,14 @@ class SharedClaudeAgent(Agent):
                     "choices": [c[:8] for c in self.heal_choices]}
 
     async def _attach_selected(self, allow_start=True):
+        ok = await self._attach_once(allow_start)
+        if not ok and self.status == "idle":
+            # P306: nothing is attached (no live session / several / unreadable) — the phone shows that (grey, the notice
+            # names the fix) instead of a blue "idle" no message can reach. A later attach brings idle back.
+            self.set_status("down")
+        return ok
+
+    async def _attach_once(self, allow_start=True):
         pinned = self.cfg.get("shared_session_id", "")
         if pinned and pinned == self.host.st.agent_session(self.kind + ".clear_from"):
             self.cfg["shared_session_id"] = self.host.st.agent_session(self.kind) or pinned
@@ -1346,8 +1414,7 @@ class SharedClaudeAgent(Agent):
             self.set_status("idle")
         if self.healed and self.healed[1] == sid:
             self.healed = None
-            self.host.agent_notice(pick(getattr(self.host, "lang", "zh"), f"已接上新会话 {sid[:8]}。",
-                                        f"Reconnected to the new session {sid[:8]}."))
+            self.host.agent_notice(humane.of(self, "shared.reattached", sid=sid[:8]))
         # P142: the phone's model label has a catalogue from the start (it used to say "not supported" until /model ran)
         with contextlib.suppress(Exception):
             await self.refresh_models()
@@ -1437,9 +1504,22 @@ class SharedClaudeAgent(Agent):
             return False
 
     def read_statusline(self):
-        from . import claude_statusline
-        sid = (self.session or {}).get("sessionId")
-        self.meter(**claude_statusline.read(self.host.st.root, sid, self.compacted_at))
+        """The phones' meter from the session's status line. P292: on the loop the read runs in a thread — one at a time (a
+        stuck disk must not fill the default executor with observe passes) — and the meter follows when it lands."""
+        from . import diskq
+        if not diskq.on_loop():
+            self.meter(**self._native())
+            return
+        if getattr(self, "_native_reading", None) is not None:
+            return
+
+        async def run():
+            try:
+                self.meter(**await self._fresh_native())
+            finally:
+                self._native_reading = None
+        from . import bg
+        self._native_reading = bg.spawn(run(), "statusline_read", bg.host_log(self.host))
 
     def read_transcript(self):
         import time
@@ -1600,6 +1680,10 @@ class SharedClaudeAgent(Agent):
             elif b.get("type") == "tool_use" and isinstance(b.get("name"), str):
                 self._stream_texts()
                 self.last_tool = (b["name"][:40], tool_what(b["name"], b.get("input")), handoff.now(), b.get("id"))
+                if isinstance(b.get("id"), str):
+                    self.tool_digests[b["id"]] = card_digest(b["name"], b.get("input"))
+                    while len(self.tool_digests) > 64:
+                        self.tool_digests.pop(next(iter(self.tool_digests)))
                 if b["name"] in END_TURN_TOOLS and b.get("id"):
                     self.endturn_ids.add(b["id"])
 
@@ -1610,11 +1694,61 @@ class SharedClaudeAgent(Agent):
             if not isinstance(b, dict) or b.get("type") != "tool_result":
                 continue
             ident = b.get("tool_use_id")
+            digest = self.tool_digests.pop(ident, None)
+            if digest:
+                # P307: the call has its result — answered at the computer (incl. Esc on a question dialog, which sends no
+                # PostToolUse(Failure) and no Stop) or by our hook: the phone card for it is withdrawn now
+                self.ask_answered.pop(digest, None)
+                futs = [f for f in self.open_cards.pop(digest, []) if not f.done()]
+                for f in futs:
+                    f.set_result(True)
+                if futs:
+                    self.host.st.log("shared_card_withdrawn", event="tool_result", count=len(futs))
             if self.last_tool and ident == self.last_tool[3]:
                 self.last_tool = (self.last_tool[0], self.last_tool[1], None, ident)   # finished: the model thinks on
             if ident in self.endturn_ids:
                 self.endturn_ids.discard(ident)
                 self._turn_recorded_end(tool=True)
+
+    def _ask_watch(self, digest, answers):
+        """P307: remember a phone answer handed to Claude; if the session has not taken it (no PostToolUse / tool_result for
+        that call) within ASK_RESCUE_S, _ask_rescue sends it as text — the main Agent is never left hanging on it."""
+        import time
+        self.ask_answered[digest] = (dict(answers), time.monotonic())
+        loop = self.loop
+        if loop is None:
+            with contextlib.suppress(RuntimeError):
+                loop = asyncio.get_running_loop()
+        if loop is not None:
+            loop.call_later(ASK_RESCUE_S, self._ask_rescue, digest)
+
+    def _ask_rescue(self, digest, why="timer"):
+        """P307: the session did not take the phone's answer (its native question dialog stayed open — Leo 10-15). Send the
+        answer as a message (queued by Claude Code until the dialog closes) and tell the phone what to do at the computer.
+        Once per answer; the log keeps no question or answer text."""
+        keys = [digest] if digest is not None else list(self.ask_answered)
+        for d in keys:
+            item = self.ask_answered.pop(d, None)
+            if item is not None and self.session is not None:
+                task = asyncio.ensure_future(self._ask_send(item[0], why))
+                self.ask_tasks.add(task)
+                task.add_done_callback(self.ask_tasks.discard)
+
+    async def _ask_send(self, answers, why):
+        lang = getattr(self.host, "lang", "zh")
+        ok = True
+        try:
+            await asyncio.to_thread(claude_send, self.session, ask_answer_text(answers, lang))
+        except (OSError, ValueError, ConnectionError, KeyError, TypeError):
+            ok = False
+        self.host.st.log("shared_ask_rescue", why=why, result="sent" if ok else "error", n=len(answers))
+        with contextlib.suppress(Exception):
+            self.host.agent_notice(pick(lang,
+                "电脑上的问卷弹窗没有收到你在手机上的回答。" + ("已把你的回答作为文字发给 Agent；" if ok else "回答没能转交给 Agent；")
+                + "如果电脑上那个问卷还开着，在电脑上按 Esc 关掉它，Agent 就会按你的回答继续。",
+                "The question dialog on the computer did not take your phone answer. "
+                + ("Your answer was sent to the Agent as text; " if ok else "The answer could not be handed to the Agent; ")
+                + "if the question is still open on the computer, press Esc there and the Agent continues with your answer."))
 
     def _schedule_empty_stop(self):
         loop = self.loop
@@ -1704,8 +1838,7 @@ class SharedClaudeAgent(Agent):
             if self.phone_claim:
                 self.host.turn_queued_note(False)
             self.phone_reply_seen = True
-            text = pick(getattr(self.host, "lang", "zh"), "共享 Claude 这一回合已结束，但没有写文字回复。",
-                        "The shared Claude turn ended without a text reply.")
+            text = humane.of(self, "shared.empty_turn")
             note = getattr(self.host, "turn_wait_note", None)
             if note:                    # P151b: on the page itself — never a separate 「这一页没有你的输入」 page
                 note(text, final=True)
@@ -1907,9 +2040,9 @@ class SharedClaudeAgent(Agent):
             run = max(1, int((handoff.now() - tool[2]) // 60))
             return pick(lang, f"正在等待 {name}（已 {run} 分钟）", f"waiting for {name} ({run} min)")
         if tool:
-            return pick(lang, f"{tool[0]} 已结束，Agent 还在想（已 {mins} 分钟没有回复）",
-                        f"{tool[0]} finished; the Agent is still thinking (no reply for {mins} min)")
-        return pick(lang, f"Agent 还在想（已 {mins} 分钟没有回复）", f"the Agent is still thinking (no reply for {mins} min)")
+            return pick(lang, f"{tool[0]} 已结束，Agent J 还在想（已 {mins} 分钟没有回复）",
+                        f"{tool[0]} finished; Agent J is still thinking (no reply for {mins} min)")
+        return pick(lang, f"Agent J 还在想（已 {mins} 分钟没有回复）", f"Agent J is still thinking (no reply for {mins} min)")
 
     def _show_wait(self, stall=False):
         note = getattr(self.host, "turn_wait_note", None)
@@ -1940,6 +2073,7 @@ class SharedClaudeAgent(Agent):
                 stalled = True
                 limit = loop.time() + TURN_WAIT
                 self.host.st.log("shared_turn_stall", tool=(self.last_tool or ("-",))[0])
+                self._ask_rescue(None, why="stall")    # P307: a phone answer the session never took is sent as text
                 self._show_wait(stall=True)
                 continue
             waits = [asyncio.ensure_future(self.done.wait()), asyncio.ensure_future(self.wait_more.wait())]
@@ -2393,7 +2527,7 @@ class SharedOpenCodeAgent(OpenCodeAgent):
             except asyncio.TimeoutError:   # P198 (C): fail closed, but say why (was a bare 「Agent 出错（TimeoutError）」)
                 self.host.st.log('shared_guard_not_ready', agent=self.kind, channel=str(self.risk_channel.path))
                 self.local_fail(pick(getattr(self.host, "lang", "zh"),
-                    "手机审批守卫没有在 OpenCode 里就位，这条没有交给 Agent（安全起见不放行）。请运行 `agentj doctor`，或在设置里关掉隔离后重试。",
+                    "手机审批守卫没有在 OpenCode 里就位，这条没有交给 Agent J（安全起见不放行）。请运行 `agentj doctor`，或在设置里关掉隔离后重试。",
                     "The phone approval guard did not come up inside OpenCode, so this message was not handed over (fails closed). "
                     "Run `agentj doctor`, or retry with isolation off."))
                 return

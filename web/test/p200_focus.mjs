@@ -77,7 +77,7 @@ for (const pr of profiles) {
     await C('robots focused by script right after typing in the field: no ring', async () => {
       await tap('#input'); await p.keyboard.type('abc'); await p.keyboard.press('ArrowLeft');
       await p.evaluate(() => document.getElementById('busyDots').focus()); return noRing('robots after typing'); });
-    for (const [n, sel, close] of [['settings ⚙', '#setBtn', '#set-close'], ['≡ menu', '#menuBtn', null], ['the clear ×', '#input', null]]) {
+    for (const [n, sel, close] of [['settings ⚙', '#setBtn', '#setBtn'], ['≡ menu', '#menuBtn', null], ['the clear ×', '#input', null]]) {
       await C(`tap ${n}: no ring`, async () => {
         if (!(await p.$(sel)) || !(await p.isVisible(sel))) return { skipped: sel };
         await tap(sel); const m = await noRing(n);
