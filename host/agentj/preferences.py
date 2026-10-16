@@ -87,8 +87,26 @@ def merge(base,patch):
         return out
     return copy.deepcopy(patch)
 
+# P331: the pure-Python json5 parser costs ~20 ms per call for defaults.json5 alone on a fast desktop and 6–16 s on a
+# loaded Mac, and effective() runs from several serve loops. The file is still read every time (cheap); the parse is kept,
+# keyed by the exact text, so any change by any writer is seen at once. Callers get a private deep copy.
+_PARSED={}
+
+def _cached(slot,raw,make):
+    hit=_PARSED.get(slot)
+    if hit is None or hit[0]!=raw:
+        try: hit=(raw,True,make(raw))
+        except ConfigError as e: hit=(raw,False,e)
+        _PARSED[slot]=hit
+    if not hit[1]:
+        e=hit[2]; raise ConfigError(e.key,e.detail,e.line,e.code) from None
+    return copy.deepcopy(hit[2])
+
 def defaults():
-    out=json5.loads((DATA/'defaults.json5').read_text(),allow_duplicate_keys=False)
+    return _cached('defaults',(DATA/'defaults.json5').read_text(),_defaults)
+
+def _defaults(raw):
+    out=json5.loads(raw,allow_duplicate_keys=False)
     for k,m in SCHEMA.items():
         if m['tier']=='user' and get(out,k)!=m['default']: raise RuntimeError('schema/default drift: '+k)
     return out
@@ -248,7 +266,7 @@ def parse(raw):
 def read():
     try: raw=path().read_text()
     except FileNotFoundError: raw='// Agent J user overrides; factory defaults update independently.\n{version: 1}\n'
-    return raw,parse(raw)
+    return raw,_cached('parse',raw,parse)   # P331: parse once per distinct text
 
 def effective(st=None):
     _,doc=read(); out=validate(doc)

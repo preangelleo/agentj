@@ -796,9 +796,16 @@ def sweep_jobs(*, everything: bool = False, now: float | None = None) -> list[st
     return removed
 
 
+# P331 (0.22.1a1 掉线): "Background" put serve in darwinbg — PRI 4, the efficiency cores only (2 on an M1 Max), throttled
+# disk I/O, coalesced timers. Under the owner's daily load (15–25) a 1 s sleep came back up to 53 s late: every phone heartbeat
+# and relay ping missed its deadline (dev_gone / relay_down / reconnect storms). Measured on that Mac, same 50 ms tick:
+# Background avg 229 ms / worst 2557 ms, Standard 105 / 249, Interactive 27 / 59. serve answers a person waiting on a phone.
+PROCESS_TYPE = "Interactive"
+
+
 def plist_bytes(n: str, argv: list[str], env: dict, log_path: str) -> bytes:
     return plistlib.dumps({"Label": n, "ProgramArguments": argv + SERVE_ARGS, "EnvironmentVariables": {k: v for k, v in env.items() if k not in (*CAPTURED_ENV[1:], *CLAUDE_AUTH_ENV)},
-                           "RunAtLoad": True, "KeepAlive": True, "ThrottleInterval": 5, "ProcessType": "Background",
+                           "RunAtLoad": True, "KeepAlive": True, "ThrottleInterval": 5, "ProcessType": PROCESS_TYPE,
                            "StandardInPath": "/dev/null", "StandardOutPath": log_path, "StandardErrorPath": log_path})
 
 

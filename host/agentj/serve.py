@@ -115,6 +115,9 @@ SEAT_RETRY = 20        # s before the relay is tried again after a seat refusal 
 SEAT_TICK = 30         # s between seat_loop looks (local file reads; the Dashboard is asked only when seatcert says due)
 SEAT_NOTE = 600        # s between two "no seat" notices to the phones
 STOP_FLUSH = 5.0       # P292: serve's stop waits at most this long for queued fsyncs / log lines (launchd kills at 20 s)
+# P331: with any worker thread busy on CPU (json5, regex, rglob in to_thread), each syscall the loop makes waits one GIL
+# switch interval to run again (CPython default 5 ms): 400 read receipts took 5.2 s next to two busy threads, 0.8 s at 0.5 ms.
+SWITCH_INTERVAL = 0.0005
 LOOP_STALL = 3.0       # P129: the event loop answering this late (s) is logged as `loop_stall` (it delays every phone's pong)
 EMPTY_TURN = 5.0       # P326: a turn ending sooner than this (s) with nothing shown is an error the owner is told about
 _NONCE = re.compile(r"[A-Za-z0-9_-]{43}")   # relay auth challenge n = b64url(32 random bytes) (PROTOCOL §1)
@@ -2980,7 +2983,7 @@ class Host:
             with contextlib.suppress(Exception):
                 await asyncio.to_thread(self.busy.refresh_outside, n % 5 == 0)
                 self.background_done.tick()
-                self.busy.sample_load()
+                await asyncio.to_thread(self.busy.sample_load)   # P331: load / memory probes (vm_stat …) never on the loop
                 self.busy_changed()
                 colors = self.busy.take_colors()
                 if colors is not None:
@@ -6153,6 +6156,7 @@ class Host:
 
     async def _run(self) -> None:
         fence.no_dump()   # same-user processes cannot read this process's memory, environment or sockets
+        sys.setswitchinterval(SWITCH_INTERVAL)       # P331: a worker thread's CPU work no longer taxes every loop syscall 5 ms
         sock = self.st.sock_path
         if sock.exists():
             try:

@@ -1,6 +1,6 @@
 {
-  "version": "0.22.1a1",
+  "version": "0.22.2a1",
   "major": false,
-  "zh": "0.22.1：改设置不用重启（重新加载配置）、额度用完到点自动继续、任何底层工具都能弹选择卡、统一深色提示；重启不重复执行消息。",
-  "en": "Reload settings without a restart, auto-continue at the quota reset, choice cards on every tool, one dark notice style; restarts never run a message twice."
+  "zh": "0.22.2 热修：修复 macOS 上主机频繁掉线——后台服务被系统当成低优先级进程降速；电脑忙的时候手机也不再断开重连。",
+  "en": "Hotfix: Mac hosts no longer keep dropping off — macOS was slowing the background service down; a busy computer no longer drops the phone."
 }
