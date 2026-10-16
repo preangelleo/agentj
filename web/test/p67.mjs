@@ -41,8 +41,9 @@ try {
  fake.st.meter={model:'p67/gpt-6',ctx:{used:32000,max:128000},quota_windows:[{window:'weekly',pct:21},{window:'daily',pct:7}]};
  fake.st.onApp=async (_c,m,send)=>{
   if(m.t==='models_get'){await send({t:'models',r:m.r,...fake.st.models});return true;}
-  if(m.t==='provider_get'){await send({t:'providers',r:m.r,providers:[{id:'p67',name:'Test provider',key_editable:true}]});return true;}
-  if(m.t==='provider_key'){await send({t:'provider_res',r:m.r,ok:true});return true;}
+  // P352: the key manager replaced the provider list (keys_get → keys; 填写 → keys_set opens the existing key card)
+  if(m.t==='keys_get'){await send({t:'keys',r:m.r,id:'a'.repeat(32),n:'b'.repeat(32),base:[{id:'p67',name:{zh:'Test provider',en:'Test provider'},rows:[{type:'key',name:'P67_API_KEY',set:false}]}],third:[]});return true;}
+  if(m.t==='keys_set'){await send({t:'keys_res',r:m.r,ok:true,op:'set',name:m.name});return true;}
   if(m.t==='asr_install'){await send({t:'asr_install_res',r:m.r,ok:true,state:'ready'});return true;}
  };
  const pairing=fake.newPairing(web.url);
@@ -60,14 +61,14 @@ await waitState(p,'awaiting-approval');await fake.approve();await waitState(p,'r
  ok(await evaluate(p,`(()=>{const e=document.getElementById('brand-name');return e.textContent==='QA-J' && e.getBoundingClientRect().height>=20 && e.scrollWidth<=e.clientWidth+1})()`),'Settings shows the Agent name whole (P171: the ≡ menu moved here)');
  await shoot(p,'').then(x=>writeFileSync(new URL('menu.png',out),x));
  await evaluate(p,`document.getElementById('open-models').click()`);
- await waitFor(p,`document.getElementById('provider-options').children.length===1`);
+ await waitFor(p,`document.querySelectorAll('#keys-box .krow').length===1`);
  await shoot(p,'').then(x=>writeFileSync(new URL('models-key.png',out),x));
  await evaluate(p,`document.getElementById('model-options').children[1].click()`);
- await waitFor(p,`document.getElementById('provider-status').textContent===''`);await sleep(100);
+ await sleep(400);
  ok(fake.st.modelSets.some(m=>m.model==='p67/gpt-5'),'OpenCode model selection reaches model_set provider/model id');
- await evaluate(p,`document.getElementById('provider-options').children[0].click()`);
- await waitFor(p,`document.getElementById('provider-status').textContent.includes('密钥卡')`);
- ok(fake.log.some(m=>m.t==='provider_key'&&m.provider==='p67'),'provider Key entry requests existing encrypted key card without key values');
+ await evaluate(p,`document.querySelector('#keys-box .kbtn--set').click()`);
+ await waitFor(p,`document.getElementById('toast').textContent.includes('密钥卡')`);
+ ok(fake.log.some(m=>m.t==='keys_set'&&m.name==='P67_API_KEY'),'key 填写 requests the existing encrypted key card without key values (P352: keys_set)');
  // P187: back from a page opened in Settings returns to Settings; close it to reach the chat
  await evaluate(p,`document.getElementById('models-back').click();document.getElementById('setBtn').click();document.getElementById('mic').dispatchEvent(new PointerEvent('pointerdown',{pointerId:1,clientY:700,bubbles:true,isPrimary:true,button:0}))`);
  await waitFor(p,`!document.getElementById('confirm').hidden`);
@@ -75,11 +76,11 @@ await waitState(p,'awaiting-approval');await fake.approve();await waitState(p,'r
  await evaluate(p,`document.getElementById('confirm-yes').click()`);await sleep(200);
  ok(fake.log.some(m=>m.t==='asr_install' && m.enable===true),'missing ASR offers host install before recording');
  await fake.send({t:'meter',model:'p67/gpt-5',quota_windows:[],ctx:{used:32000,max:128000}});
- await waitFor(p,`document.getElementById('mWeek').hidden && document.getElementById('m5h').hidden`);
- ok(await evaluate(p,`getComputedStyle(document.getElementById('mWeek')).display==='none' && getComputedStyle(document.getElementById('m5h')).display==='none'`),'missing usage probe hides both quota bars');
+ await waitFor(p,`document.getElementById('mWeek').dataset.known==='0' && document.getElementById('m5h').dataset.known==='0'`);
+ ok(await evaluate(p,`['mWeek','m5h'].every(id=>{const e=document.getElementById(id);return !e.hidden && getComputedStyle(e).display!=='none' && e.querySelector('.lab').textContent===''})`),'missing usage probe keeps both quota rules, labels hidden (P340 D)');
  await fake.send({t:'meter',model:'p67/gpt-5',quota_windows:[{window:'monthly',pct:14}],ctx:{used:32000,max:128000}});
  await waitFor(p,`document.getElementById('mWeek').querySelector('.lab').textContent==='monthly 14%'`);
- ok(await evaluate(p,`document.getElementById('m5h').hidden`),'monthly-only usage shows measured window only');
+ ok(await evaluate(p,`!document.getElementById('m5h').hidden && document.getElementById('m5h').dataset.known==='0' && document.getElementById('m5h').querySelector('.lab').textContent===''`),'monthly-only usage labels the measured window only (P340 D: the empty rule stays)');
  await fake.send({t:'hist_turn',epoch:fake.st.epoch,turn:{id:999,ts:Date.now(),src:{k:'sys'},reply:{text:'这是一条测试提示。'},end:'done'}});
  await waitFor(p,`document.getElementById('words').textContent.includes('测试提示')`);
  ok(await evaluate(p,`document.getElementById('om').hidden`),'system notice without source input hides ambiguous original-message card');

@@ -25,7 +25,7 @@ try{
      await send({t:'ctl_res',r:m.r,action:m.t,ok:true,bot:config});return true;
     }
     const r={t:'bots_res',r:m.r,ok:true};
-    if(m.request.op==='list')Object.assign(r,{bots:config?[config]:[],host_timezone:'Asia/Tokyo'});
+    if(m.request.op==='list')Object.assign(r,{bots:config?[config]:[],host_timezone:'Asia/Tokyo',vendors:[{id:'ark',zh:'火山方舟（按量付费）',en:'Volcano Ark (pay as you go)',base_url:'https://ark.cn-beijing.volces.com/api/v3',api:'chat',model:'doubao-cheap',key:'BOT_ARK_API_KEY',console:'https://console.volcengine.com/ark'},{id:'dashscope',zh:'阿里云百炼 / 千问（按量付费）',en:'Alibaba Cloud Bailian / Qwen (pay as you go)',base_url:'https://dashscope.aliyuncs.com/compatible-mode/v1',api:'chat',model:'qwen-flash',key:'BOT_DASHSCOPE_API_KEY',console:'https://bailian.console.aliyun.com/'}]});
     if(m.request.op==='detail')Object.assign(r,{bot:config,knowledge:[{name:'manual.md',bytes:12}],tools:[{name:'order_status',description:'Own authorized order',enabled:false,level:'write'}],provider:{provider:'fixture',model:'small'},provider_problem:nativeProblem});
     if(m.request.op==='history')Object.assign(r,m.request.visitor?{messages:[{role:'user',text:'<img src=x onerror=alert(1)>',created:1}]}:{sessions:[{visitor:'b'.repeat(32),messages:1}]});
     if(m.request.op==='statistics')Object.assign(r,{days:[{day:'2026-10-09',calls:3,charged_tokens:12,actual_tokens:12}],tools:[{day:'2026-10-09',tool:'order_status',calls:1}]});
@@ -61,11 +61,17 @@ try{
    // P109: the rendered phone sends public config, and opens key cards without values.
    await click("document.querySelectorAll('.bots-tabs button')[0]");
    await waitFor(p,"document.querySelector('#bots-status').textContent==='' && document.querySelector('#bots-main select')");
-   await evaluate(p,"const s=document.querySelector('#bots-main select');s.value='own';s.dispatchEvent(new Event('change'));const inputs=[...document.querySelectorAll('#bots-main input')];inputs.find(e=>e.getAttribute('aria-label')?.includes('API')).value='https://openrouter.ai/api/v1';inputs.find(e=>e.getAttribute('aria-label')==='Model name'||e.getAttribute('aria-label')==='模型名称').value='openai/gpt-4.1-mini';");
+   // P348: own key = pick the provider first (Bailian here while the main Agent may be on Ark); its default model and key name show
+   await evaluate(p,"const s=document.querySelector('#bots-main select');s.value='own';s.dispatchEvent(new Event('change'));const v=document.querySelectorAll('#bots-main select')[1];v.value='dashscope';v.dispatchEvent(new Event('change'))");
+   assert.equal(await evaluate(p,"[...document.querySelectorAll('#bots-main input')].find(e=>e.getAttribute('aria-label')==='Model name'||e.getAttribute('aria-label')==='模型名称').value"),'qwen-flash');
+   assert.ok((await evaluate(p,"document.getElementById('bots-main').textContent")).includes('BOT_DASHSCOPE_API_KEY'));
+   assert.equal(await evaluate(p,"[...document.querySelectorAll('#bots-main input')].find(e=>e.getAttribute('aria-label')?.includes('API')).parentElement.hidden"),true);
+   await evaluate(p,"document.querySelectorAll('#bots-main select')[0].scrollIntoView({block:'center'})");writeFileSync(new URL(language+'-own-vendor-390.png',out),await shoot(p));
+   await evaluate(p,"const inputs=[...document.querySelectorAll('#bots-main input')];inputs.find(e=>e.getAttribute('aria-label')?.includes('API')).value='https://openrouter.ai/api/v1';inputs.find(e=>e.getAttribute('aria-label')==='Model name'||e.getAttribute('aria-label')==='模型名称').value='openai/gpt-4.1-mini';");
    await evaluate(p,`[...document.querySelectorAll('#bots-main button')].find(e=>e.textContent===${JSON.stringify(language==='zh'?'保存':'Save')}).click()`);
    await waitFor(p,"document.querySelector('#bots-status').textContent==='' && document.querySelector('#bots-main select')?.value==='own'");
-   assert.equal(writes.at(-1).config.provider.source,'own');assert.equal(writes.at(-1).config.own_model.model,'openai/gpt-4.1-mini');assert.equal(writes.at(-1).config.telegram.enabled,false);
-   for(const [label,op] of [[language==='zh'?'添加 / 更新自带模型 key':'Add / update own model key','model_key'],[language==='zh'?'添加 / 更换 Telegram token':'Add / replace Telegram token','telegram_key']]){
+   assert.equal(writes.at(-1).config.provider.source,'own');assert.equal(writes.at(-1).config.own_model.model,'openai/gpt-4.1-mini');assert.equal(writes.at(-1).config.own_model.vendor,'dashscope');assert.equal(writes.at(-1).config.own_model.base_url,undefined);assert.equal(writes.at(-1).config.telegram.enabled,false);
+   for(const [label,op] of [[language==='zh'?'添加 / 更新「阿里云百炼 / 千问（按量付费）」的 key':'Add / update the key for Alibaba Cloud Bailian / Qwen (pay as you go)','model_key'],[language==='zh'?'添加 / 更换 Telegram token':'Add / replace Telegram token','telegram_key']]){
     await evaluate(p,`[...document.querySelectorAll('#bots-main button')].find(e=>e.textContent===${JSON.stringify(label)}).click()`);
     await waitFor(p,"document.querySelector('#bots-status').textContent===''");
     assert.deepEqual(Object.keys(writes.at(-1)).sort(),['id','op']);assert.equal(writes.at(-1).op,op);

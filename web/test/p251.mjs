@@ -46,9 +46,11 @@ try{
     const {p,context}=await paired(browser,w,scheme);try{
      await p.waitForTimeout(200);const g=await geom(p);assert.equal(g.more,false);assert.equal(g.buttons.length,7);
      assert.equal(g.buttons[0].w,44);
-     assert.ok(g.group.w<=6*46+.5,'desktop pitch caps group width');
-     if(w>=768){assert.ok(Math.abs(g.group.w-6*46)<1);assert.ok(g.group.x-g.buttons[0].right>20,'surplus stays left');}
-     if(g.group.w<6*46-.5)assert.ok(g.group.x-g.buttons[0].right<1,'narrow group takes all remaining room');
+     // P340 (#38) replaces P251's 46 px pitch: right-packed, glyph gap = the last glyph's right margin; surplus stays left
+     {const ic=g.buttons.slice(1).map(b=>b.icon),gaps=ic.slice(1).map((x,i)=>x.x-ic[i].right),right=g.card.right-ic.at(-1).right;
+      for(const x of gaps)assert.ok(Math.abs(x-right)<=1,`P340 glyph gap ${x} = right margin ${right}`);
+      if(w>=768)assert.ok(g.group.x-g.buttons[0].right>20,'surplus stays left');
+      assert.ok(ic[0].x-g.buttons[0].right>=right/2-.5,'the left button keeps at least half a gap');}
      for(let i=0;i<g.buttons.length;i++){
       const b=g.buttons[i];assert.ok(b.x>=g.card.x-.5&&b.right<=g.card.right+.5&&b.bottom<=g.card.bottom+.5);
       assert.ok(b.w>=24&&b.h>=44);assert.ok(b.icon.cssw>=18&&b.icon.cssw<=b.w,JSON.stringify(b));
@@ -65,10 +67,10 @@ try{
      const future=await geom(p);for(let i=1;i<future.buttons.length;i++)assert.ok(future.buttons[i].x>=future.buttons[i-1].right-.5);
      await p.evaluate(()=>document.getElementById('future-action').remove());
      // Explicit narrow phase at the physical 18px floor; 6px between glyphs and distinct 24px targets.
-     await p.evaluate(()=>document.getElementById('rmIcons').style.maxWidth='144px');
-     await p.waitForFunction(()=>parseFloat(getComputedStyle(document.querySelector('#rmIcons .act:not([hidden]) svg')).width)===18);const floor=await geom(p);
-     for(const b of floor.buttons.slice(1)){assert.ok(Math.abs(b.w-24)<.5);assert.ok(Math.abs(b.icon.cssw-18)<.5&&Math.abs(b.icon.cssh-18)<.5,JSON.stringify(b));}
-     await p.evaluate(()=>document.getElementById('rmIcons').style.removeProperty('max-width'));
+     await p.evaluate(()=>document.getElementById('rmbar').style.width='210px');   // P340: the bar, not the group, is what fitBar measures
+     await p.waitForFunction(()=>parseFloat(getComputedStyle(document.querySelector('#rmIcons .act:not([hidden]) svg')).width)===18&&Math.abs(document.querySelector('#rmIcons .act:not([hidden])').getBoundingClientRect().width-24)<.5);const floor=await geom(p);
+     for(const b of floor.buttons.slice(1)){assert.ok(Math.abs(b.w-24)<.5,JSON.stringify({w,bw:b.w,bar:floor.card}));assert.ok(Math.abs(b.icon.cssw-18)<.5&&Math.abs(b.icon.cssh-18)<.5,JSON.stringify(b));}
+     await p.evaluate(()=>document.getElementById('rmbar').style.removeProperty('width'));
      await p.waitForTimeout(100);
      // All actions may disappear transiently; a later action must recover from a zero-width group.
      await p.evaluate(()=>{window.oldActions=[...document.querySelectorAll('#rmIcons .act')].map(b=>[b,b.hidden]);for(const [b]of window.oldActions)b.hidden=true;});

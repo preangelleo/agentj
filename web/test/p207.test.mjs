@@ -42,10 +42,11 @@ test('§3: copy icons, two-way switches, one-row segments, scan icon, scan page 
   assert.match(read('../public/app.js'), /scanActive = true; paintScanTrigger\(\);/);
   assert.match(html, /<select id="set-hb-every"/);
   for (const v of [30, 60, 120, 180, 240, 360, 480, 720, 1440]) assert.match(html, new RegExp(`<option value="${v}">`));
-  for (const id of ['set-hb-custom-n', 'set-hb-daily', 'set-hb-time', 'set-status-x', 'set-contacts-nav', 'set-contacts', 'ctm-list', 'ctm-q', 'ctm-add', 'ctm-import', 'ctm-export', 'ctmEdit'])
+  for (const id of ['set-hb-custom-n', 'set-hb-daily', 'set-hb-time', 'set-contacts-nav', 'set-contacts', 'ctm-list', 'ctm-q', 'ctm-add', 'ctm-import', 'ctm-export', 'ctmEdit'])
     assert.equal(html.split(`id="${id}"`).length, 2, id);
   const s = read('../public/js/settings.js');
   assert.match(s, /export const SAY_MS = 4000;/);
+  assert.ok(!html.includes('set-status-bar'), 'P340 #22: the old notice bar under the Settings header is gone');
   const c = read('../public/js/ctmanage.js');
   for (const t of ["'ct_list'", "'ct_save'", "'ct_rm'", "'ct_export'", "'ct_import'", "signedWrite('mail_allow'"]) assert.ok(c.includes(t), t);
 });

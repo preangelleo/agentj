@@ -44,9 +44,11 @@ from . import meeting  # P182: /会议总结 → minutes, recipients only from t
 from . import diskq  # P142: fsync'ed state writes off the loop (one ordered writer)
 from . import approval_jev  # P157: layer 2 of the approval card (Jev may only make fewer cards)
 from . import goal as goal_mod  # P158: /goal — one signed grant, reversible steps pass after a 10 s card
+from . import approval_level  # P336: safe / standard / full, goal without the opening card, cards while no remote is online
 from . import bg  # P192 (B18): swallowed errors on connection / approval paths leave a (rate-limited) line
 from . import loopwatch  # P136: what was running when the loop stalled
 from . import relaydiag  # P317: why a relay leg is not up (journal / status / doctor)
+from . import reset as reset_mod  # P332 (§33): 紧急修复 — the reset ladder, support help, repair actions
 from . import media as media_mod  # F21: files the Agent shows to the phone (PROTOCOL §13)
 from . import elevate  # F17: sudo + secret cards (PROTOCOL §11)
 from . import pair_card  # P153: add a remote from a remote (PROTOCOL §3.3)
@@ -174,7 +176,8 @@ P33_ONLY = ("say", "say_cancel", "cmd_cancel", "blob_open", "blob_chunk", "blob_
             "hist_find", "hist_read",     # P188 · P247 (owner-level read sync) (§28): chat search, a read like hist_get
             "auth_get", "auth_start", "auth_cancel", "auth_press",   # P258 (§31): AI 登录救援
             "imsg_check", "imsg_fda",   # P274 (§10.21): the iMessage card's 「重新检测」 / 「在电脑上打开授权页」
-            "qr_cancel")                # P314 (§32): cancel the automatic continue after a used-up usage limit
+            "qr_cancel",                # P314 (§32): cancel the automatic continue after a used-up usage limit
+            "keys_get", "keys_op", "keys_set")   # P352: 「模型和 API Key」 key manager (keys.py)
 # F14: paired phones may change optional warnings, session mode, isolation, docker and the upgrade mode (F19); native permissions stay authoritative.
 PREF_SET_KEYS = ("updates.mode", "appearance.language", "appearance.theme", "voice.wake_enabled", "voice.speak_replies",
                  "agent.high_risk_warnings", "agent.session_mode", "agent.isolation", "agent.allow_docker")
@@ -187,6 +190,7 @@ CARDS_OPEN_MAX = 256       # … and the open ids one `cards` answer carries
 UPG_TTL = 600              # P203 (§29.2): the upgrade confirmation card waits ten minutes
 PREF_SET_KEYS += ("heartbeat.daily_at",)         # P207: the phone's "wake every day at HH:MM" ("" = off; schema pattern)
 PREF_SET_KEYS += ("ui.card_hot_action",)         # P285: the reply card's bottom-left hot key (command / skill name; schema pattern)
+PREF_SET_KEYS += ("ui.composer_buttons",)        # P340: the order of the four buttons above the message box (a permutation)
 # P274: the iMessage card's parameters (macOS hosts only; on_pref_set refuses them elsewhere). instructions / vip / mute
 # stay off this list: the phone shows them, the Agent changes them with `agentj imessage …` at the owner's word.
 PREF_SET_KEYS += ("imessage.enabled", "imessage.interval_minutes", "imessage.delivery", "imessage.digest_at",
@@ -294,6 +298,11 @@ class Ask:
     allow_add: list = field(default_factory=list)     # P296: the ones the owner ticked (signed with the allow)
     goal: str = ""                 # P158: "auto" (10 s countdown, no answer = allowed) | "hold" | "attack" | "" (no goal)
     goal_why: str = ""             # P158: goal.WHY key shown on the card
+    goal_who: str = ""             # P339: who asks in plain words (Claude Code / Codex / a scheduled task's label)
+    goal_what: str = ""            # P339: what the step does in plain words (goal.human)
+    goal_add: dict | None = None   # P339: {"text", "grants"} — 「批准，并加进目标授权」 (signed like a P296 allow_add pick)
+    parked: bool = False           # P336 (#36): nobody was online — the Agent was told, the card waits on (approval_level)
+    park_key: tuple = ()           # P336: (tool, input sha, task, harness, folder) — who may use its allow
 
 
 @dataclass
@@ -502,6 +511,7 @@ class Host:
         self.elevate = elevate.Elevator(self)   # F17: admin password / secret cards (PROTOCOL §11)
         from .auth_rescue import Rescue
         self.auth_rescue = Rescue(self)          # P258: AI 登录救援 (subscription login expired → re-login from the phone)
+        self.reset_desk = reset_mod.Desk(self)    # P332 (§33): reset / rescue_do, one run at a time, also during an e-stop
         from .capability import Capabilities
         self.capabilities = Capabilities(self)  # 0.18 (ADR-A193): capability.sock, opening cards, dispatch
         self.goals = goal_mod.Goals(self)       # P158: <state>/goal.json, `agentj goal …` over capability.sock
@@ -995,7 +1005,7 @@ class Host:
             if not isinstance(text, str) or text_units(text) > limit:  # reject, never silently truncate
                 return await self.close_cid(s.cid, "bad_msg")
             hc = slash.parse(text)
-            if hc and (friend_cmds.name_of(hc[0]) or hc[0] in TG_PAIR_CMDS or hc[0] in RELOAD_CMDS):   # P73 · P283 · P320: the host's own answer
+            if hc and (friend_cmds.name_of(hc[0]) or hc[0] in TG_PAIR_CMDS or hc[0] in RELOAD_CMDS or hc[0] in reset_mod.RESET_CMDS):   # P73 · P283 · P320 · P332: the host's own answer
                 return await self.on_slash(s, hc[0], hc[1], confirm=False, typed=True)
             if hc and hc[0] == "goal" and goal_mod.host_cmd(hc[1]):  # P158: /goal status · /goal stop
                 return await self.on_slash(s, "goal", hc[1], confirm=False, typed=True)
@@ -1062,6 +1072,9 @@ class Host:
                 await self.on_upg_phone(s, t, obj)
         elif t in ("setup_get", "setup_mark", "setup_close"):   # P115 / P131: the first-run checklist (first_run.py)
             await self.on_setup(s, t, obj)
+        elif t in ("reset", "rescue_do"):   # P332 (§33): signed; allowed during an e-stop (repairs connectivity only)
+            if s.p33:
+                await self.reset_desk.on_phone(s, t, obj)
         elif t in PHONE_CONTROLS:
             await self.on_control(s, t, obj)
         elif t in WF_READS:             # P244 (§30): 工作流 · 技能 · 记忆 · Agent J pages, read-only
@@ -1076,6 +1089,9 @@ class Host:
         elif t == "mail_allow":         # P207 (§25): the address book adds an address to the mail allowlist (signed)
             if s.p33:
                 await self.on_mail_allow(s, obj)
+        elif t == "approval_set":       # P336 (§8): approval level / goal without the opening card — signed, never pref_set
+            if s.p33:
+                await self.on_approval_set(s, obj)
         elif t == "slash":              # a command from the phone's ≡「全部命令」 menu (or typed: the page sends it like this)
             name, arg = obj.get("cmd"), obj.get("arg", "")
             if isinstance(name, str) and isinstance(arg, str) and len(name) <= 32 and text_units(arg) <= slash.ARG_MAX:
@@ -1965,6 +1981,9 @@ class Host:
                     await self._ctl_send(w, self.harness_handoff(req))
                 elif cmd == "harness_progress":     # P281: the switch / scan job's phase → a fixed line the owner sees
                     await self._ctl_send(w, self.harness_progress(req))
+                elif cmd == "harness_job":          # P339: `agentj agent switch` → serve launches the job (semantic fields only)
+                    from . import switch_harness
+                    await self._ctl_send(w, await asyncio.to_thread(switch_harness.host_job, self.st, req))
                 elif cmd == "reload":               # P320 `agentj reload`: an Agent's terminal is not trusted with security keys
                     # trusted = what a claim needs (no Agent ancestry AND a terminal on stdin): `env -i setsid agentj reload`
                     # from an Agent escapes the ancestry check but has no terminal (security review P320 F3)
@@ -2479,7 +2498,7 @@ class Host:
             return "stopped"
         if not self.agent:
             return "none"
-        if any(not a.fut.done() for a in self.asks.values()) or self._open_question():
+        if any(not a.fut.done() and getattr(a, "parked", False) is not True for a in self.asks.values()) or self._open_question():
             return "waiting"
         return self.agent.status
 
@@ -2538,6 +2557,9 @@ class Host:
                              "named_by": n["named_by"], "self_name": clean_label(n["self_name"] or ""), "label": clean_label(device_label(v))})
         info = {"version": update.__version__, "language_at": at, "settable": list(PREF_SET_KEYS), "devices": devs,
                 "limit": MAX_DEVICES}   # P171: 「已用 N / 10」
+        info["signed_prefs"] = list(approval_level.KEYS)   # P336: changed only by the signed `approval_set` control
+        info["approval"] = {"level": approval_level.level(self.preferences, self.st),       # P336: what is in force
+                            "goal_nocard": approval_level.goal_preauth(self.st, self.preferences) is not None}
         from . import service as _svc
         info["platform"] = _svc.platform()   # P274: the phone shows the iMessage card only for "macos"
         im = getattr(self, "imessage", None)
@@ -2580,6 +2602,10 @@ class Host:
                 self.preferences = candidate
                 self.ask_ttl = min(ASK_TTL, preferences.get(candidate, "approval.timeout"))
                 self.config_problem = None
+                self._approvals_hot(old, candidate)
+                for k in approval_level.KEYS:          # P336 N4: a value written any other way voids that key's signature
+                    if preferences.get(old, k) != preferences.get(candidate, k) and k != self.__dict__.get("_approval_set_key"):
+                        approval_level.drop_signer(self.st, k)
             except (preferences.ConfigError, OSError) as e:
                 self.preferences = old
                 self.config_problem = e.result() if isinstance(e, preferences.ConfigError) else {"ok": False, "key": "/", "error": "runtime persistence failed ("+type(e).__name__+", errno="+str(e.errno)+")"}
@@ -2743,6 +2769,20 @@ class Host:
         self.reload_pending.clear()
         return note
 
+    def _approvals_hot(self, old: dict, new: dict) -> None:
+        """P336: a change of approval.level alone reaches the shared hooks at once (they read cfg live). A change that also
+        touches agent.approvals, or crosses `native` (the shared Codex guard is installed at spawn), waits for a reload."""
+        if preferences.get(old, approval_level.KEY) == preferences.get(new, approval_level.KEY) or \
+                preferences.get(old, "agent.approvals") != preferences.get(new, "agent.approvals"):
+            return
+        was, now = approval_level.shared_mode(old), approval_level.shared_mode(new)
+        if "native" in (was, now) and was != now:
+            self.reload_pending.add(approval_level.KEY)
+            return
+        for c in (self.agent_cfg, getattr(self.agent, "cfg", None) if self.agent is not None else None):
+            if c is not None and "approvals" in c:
+                c["approvals"] = now
+
     def _reload_agent_settings(self) -> list:
         """P320: the Agent settings read when the harness starts, refreshed into the running adapter's cfg from the ACTIVE,
         validated self.preferences — never the file on disk (an Agent's unapproved edit must not reach the harness; security
@@ -2752,7 +2792,7 @@ class Host:
         prefs, raw = self.preferences, (self.st.config().get("agent") or {})
         fresh = {"instructions": preferences.get(prefs, "agent.instructions", ""),
                  "high_risk_warnings": preferences.get(prefs, "agent.high_risk_warnings", False),
-                 "approvals": {"strict": "strict", "native": "native"}.get(preferences.get(prefs, "agent.approvals", "standard"), "standard"),
+                 "approvals": approval_level.shared_mode(prefs),   # P336: safe level → "safe"; else agent.approvals
                  "fence": raw.get("fence") is not False and preferences.get(prefs, "agent.isolation", True) is not False,
                  "docker": raw.get("docker") is True or preferences.get(prefs, "agent.allow_docker", False) is True}
         fields = [k for k in ("instructions", "high_risk_warnings", "approvals", "fence", "docker")
@@ -2875,7 +2915,9 @@ class Host:
         # P207: "integer" (heartbeat.interval_minutes) was missing here, so every phone change of it answered bad_value
         typ_ok = {"boolean": type(value) is bool, "string": isinstance(value, str),
                   "number": type(value) in (int, float) and math.isfinite(value),
-                  "integer": type(value) is int}.get(meta["type"], False)
+                  "integer": type(value) is int,
+                  # P340: the one phone-settable list — the composer buttons' order, a permutation of the four ids
+                  "array": key == "ui.composer_buttons" and preferences.composer_order_ok(value)}.get(meta["type"], False)
         if not typ_ok or ("enum" in meta and value not in meta["enum"]) or (meta["type"] in ("number", "integer") and not (
                 meta.get("minimum", -math.inf) <= value <= meta.get("maximum", math.inf) and (not meta.get("multipleOf") or abs(
                     value / meta["multipleOf"] - round(value / meta["multipleOf"])) < 1e-6))):
@@ -3103,6 +3145,86 @@ class Host:
                           tool=pick(self.lang, "邮件白名单", "Mail allowlist"), text=role)
         await self._ctl_res(s, r, "mail_allow", ok, **res)
 
+    async def on_approval_set(self, s: Session, obj: dict) -> None:
+        """P336: a signed `approval_set {r, key, value, n, ts, sig}` (controls action, object = key \n value) → the key is
+        written like `agentj config set` (set_pref), the signer is remembered (approval_level.note_signer: the goal switch
+        only counts while that remote stays paired), approvals.log gets the control line, every remote a notice, a security
+        push. → `ctl_res {r, action: "approval_set", ok, why?}`. The keys are not in PREF_SET_KEYS: an unsigned pref_set is
+        refused, an Agent's `agentj config set approval.*` stays an owner card."""
+        r = obj.get("r")
+        if not wire.is_rid(r):
+            return
+        key, value = obj.get("key"), obj.get("value")
+        if not ((key == approval_level.KEY and value in approval_level.LEVELS)
+                or (key == approval_level.GOAL_KEY and type(value) is bool)):
+            return await self._ctl_res(s, r, "approval_set", False, why="shape")
+        target = {"key": key, "value": value}
+        # P122 / P336: widening (to full, the goal switch on) also needs Face ID when this remote has a passkey — two steps:
+        # without `fa` the host answers passkey_required + the challenge over this very request (nonce untouched), the
+        # phone asks Face ID and sends the same signed request again with `fa`.
+        widen = (key == approval_level.KEY and value == "full") or (key == approval_level.GOAL_KEY and value is True)
+        pk = self.st.passkey_of_device(s.device) if widen else None
+        ch = None
+        if pk:
+            n = obj.get("n")
+            if not isinstance(n, str) or not re.fullmatch(r"[0-9a-f]{32}", n):
+                return await self._ctl_res(s, r, "approval_set", False, why="shape")
+            ch = passkey.elevate_challenge(self.channel, s.device, n, "approval_set", n,
+                                           controls.object_digest("approval_set", target))
+            if obj.get("fa") is None:
+                return await self._ctl_res(s, r, "approval_set", False, why="passkey_required", fa=pk["id"],
+                                           fa_ch=wire.b64u(ch))
+        why = controls.check(self.st, self.nonces, self.channel, s.device, obj, "approval_set", target)
+        if not why and pk:
+            try:
+                f = passkey.approval_fields(obj.get("fa"))
+                if f["id"] != pk["id"]:
+                    raise passkey.PasskeyError("bad", "credential")
+                self.st.passkey_count(s.device, pk["id"], passkey.verify_assertion(pk, f, ch))
+            except (passkey.PasskeyError, ValueError):
+                why = "passkey_failed"
+        if why:
+            self.st.log("control_refused", device=s.device, action="approval_set", reason=why)
+            controls.log(self.st, action="approval_set", device=s.device, result="refused:" + why)
+            return await self._ctl_res(s, r, "approval_set", False, why=why)
+        rid, sk = secrets.token_hex(16), self.st.sign_key(s.device)
+        text = controls.object_text("approval_set", target)
+        try:                                    # the signer first: the `preferences` broadcast below shows the effective value
+            await asyncio.to_thread(approval_level.note_signer, self.st, key, value, s.device, sk, rid,
+                                    {"n": obj["n"], "ts": obj["ts"], "sig": obj["sig"]})
+        except Exception as e:  # noqa: BLE001 — logged; full / the goal switch then simply do not count
+            bg.swallowed(self.st.log, "approval_signer_failed", e, every=0)
+        self._approval_set_key = key            # apply_preferences keeps this key's signer (N4: any other write drops it)
+        try:
+            res = {"ok": True} if preferences.get(self.preferences, key) == value else await self.set_pref(key, value)
+        finally:
+            self._approval_set_key = None
+        ok = bool(res.get("ok"))
+        controls.log(self.st, action="approval_set", device=s.device, result="ok" if ok else "rejected", obj=target,
+                     sig=obj.get("sig"), n=obj.get("n"), ts=obj.get("ts"))
+        if not ok:
+            await asyncio.to_thread(approval_level.drop_signer, self.st, key)
+            return await self._ctl_res(s, r, "approval_set", False, why="rejected")
+        digest = hashlib.sha256(text.encode()).hexdigest()
+        with contextlib.suppress(Exception):
+            approvals.record(self.st, rid=rid, agent="phone", tool="approval_set", input_sha256=digest, shown_sha256=digest,
+                             decision="allow", reason="device", device=s.device, sign_pub=sk, sig=wire.unb64u(obj["sig"]),
+                             control={"n": obj["n"], "sig_ts": obj["ts"],
+                                      "object_sha256": controls.object_digest("approval_set", target)})
+        await self._send_ready(lambda _: self.preferences_msg())   # the effective level / switch (host.approval)
+        self.st.log("approval_set", device=s.device, key=key, status=str(value))
+        if key == approval_level.GOAL_KEY and value is False:
+            d = goal_mod.load(self.st)          # a goal that started without a card ends with the switch that allowed it
+            if d and d.get("state") == "active" and d.get("preauth"):
+                self.goals.end("stopped", by="switch")
+        if key == approval_level.KEY:
+            self._unsigned_full_told = False
+        by = s.name or self._dname(s.device) or s.device
+        self.activity("decision", by=by, result="allow", tool=pick(self.lang, "审批设置", "Approval setting"), text=text[:80])
+        self.agent_notice(approval_level.changed_text(key, value, by, self.lang))
+        self.push_notify("security")
+        await self._ctl_res(s, r, "approval_set", True, key=key, value=value)
+
     def theme_refresh(self) -> bool:
         """P169: re-read the theme when <state>/agentperm/theme/current.json changed (`agentj theme apply|reset|restore`,
         also from inside the Agent's fence) → True when the phones need the new one. Off the event loop (PNG checks)."""
@@ -3281,15 +3403,30 @@ class Host:
         _hb_touch(self)
         self.turn_shown = True
         self.jev_plan = (getattr(self, "jev_plan", "") + "\n" + text)[-approval_jev.MAX_TEXT:]
-        from .silent import is_silent
+        from .silent import is_silent, MARKER
+        page = self.hist.get(self.cur_turn) if self.cur_turn is not None else None
         if is_silent(text):
-            if self.cur_turn is not None and self.hist.get(self.cur_turn) is not None:
-                changed = self.hist_update(self.cur_turn, append=text)
-                if changed:
-                    self.cur_turn = changed[-1]["id"]
+            if page is not None and getattr(self, "wait_note", None):
+                self.turn_wait_note(None)   # a wait line is the host's, never the Agent's words to fold
+            if page is not None:
+                # P351 (Leo 10-16): silence is the turn's final reply alone — process notes written earlier in the same turn
+                # (Codex commentary, Claude's text before a tool) fold into the silent turn; no push, no unread, no page
+                rep = page.get("reply") or {}
+                said = (rep.get("text") or "").strip()
+                if said and not rep.get("part") and not is_silent(said):
+                    self.hist_update(self.cur_turn, text=MARKER, pre=said)
+                    self.turn_text = False
+                    self.st.log("silent_folded", turn=self.cur_turn)
+                else:
+                    changed = self.hist_update(self.cur_turn, append=text)
+                    if changed:
+                        self.cur_turn = changed[-1]["id"]
             else:
                 self.hist_add({"k": "agent", "text": ""}, text, "done")
             return
+        if page is not None and (page.get("reply") or {}).get("pre") and is_silent(page["reply"].get("text")):
+            # P351: more text after the marker — the marker was not the final reply; the folded notes come back, in order
+            self.hist_update(self.cur_turn, text=page["reply"]["pre"] + "\n\n" + page["reply"]["text"], pre="")
         self.turn_text = True
         if getattr(self, "wait_note", None):
             self.turn_wait_note(None)       # P151b: the reply replaces the wait line, never follows it
@@ -3738,9 +3875,13 @@ class Host:
         if a.goal:                        # P158: the countdown / "waits for you" / red attack tag
             m["goal"] = a.goal
             m["goal_why"] = goal_mod.why_text(a.goal_why, card_lang(self.lang))
+            if a.goal_what:               # P339: plain words above the (folded) raw command
+                m["goal_who"], m["goal_what"] = a.goal_who[:60], a.goal_what[:160]
+            if a.goal_add:
+                m["goal_add"] = a.goal_add["text"]
         elif a.tool == goal_mod.TOOL:      # P158: the opening card (one signature for the whole goal)
             m["goal"] = "grant"
-        if a.allow_offer:                 # P296: unticked 「以后发给 X 不用再确认」 boxes on the mail card
+        if a.allow_offer and not a.goal_add:   # P296: unticked 「以后发给 X 不用再确认」 boxes on the mail card
             m["allow_offer"] = list(a.allow_offer)
         return m
 
@@ -3774,6 +3915,126 @@ class Host:
 
     def _approvers(self) -> list[str]:
         return [d for d, v in self.st.devices().items() if v.get("sk")]
+
+    # ------------------------------------------------------------ P336 (#36): cards while no remote is online
+    def _online_approvers(self) -> set:
+        return self._online() & set(self._approvers())
+
+    def _remind_offline(self) -> None:
+        """One content-free reminder (Telegram owner chat / owner e-mail, as set up) per approval_level.OFFLINE_GAP."""
+        now = time.monotonic()
+        if now - self.__dict__.get("_offline_reminded", -1e9) < approval_level.OFFLINE_GAP:
+            return
+        self._offline_reminded = now
+        n = sum(1 for a in self.asks.values() if not a.fut.done())
+
+        async def go():
+            sent = await approval_level.remind_offline(self, max(1, n))
+            self.st.log("offline_remind", result=",".join(sent) or "none", count=n)
+        self._bg(go(), "offline_remind")
+
+    def _park_key(self, tool: str, isha: str) -> tuple:
+        """Who may use a parked card's allow: the same step from the same requester (thread / scheduled task, harness, folder)."""
+        return (tool, isha, self.task_label, self.agent.kind if self.agent else "?", (self.agent_cfg or {}).get("dir"))
+
+    def _parked_find(self, key: tuple):
+        return next((a for a in self.asks.values() if a.parked and not a.fut.done() and a.park_key == key), None)
+
+    def _parked_take(self, key: tuple) -> dict | None:
+        ok = self.__dict__.setdefault("_parked_ok", {})
+        rec = ok.pop(key, None)
+        if rec is None or time.monotonic() > rec["until"] or self.st.sign_key(rec["device"]) != rec["sk"]:
+            return None
+        return rec
+
+    def _park(self, a: Ask, base: dict, summary: str, key: tuple) -> dict:
+        """Nobody online after PARK_GRACE: the card stays (PARK_SECS), the Agent is told now; the answer settles later."""
+        parked = [x for x in self.asks.values() if x.parked and not x.fut.done()]
+        for old in parked[:max(0, len(parked) - approval_level.PARK_MAX + 1)]:
+            old.fut.set_result(("deny", None, None, None))          # the oldest parked card is withdrawn
+        a.parked = True
+        a.park_key = key
+        a.deadline = time.monotonic() + approval_level.PARK_SECS
+        loop = asyncio.get_running_loop()
+        timer = loop.call_later(approval_level.PARK_SECS, lambda: a.fut.done() or a.fut.set_result(("deny", None, None, None)))
+        a.fut.add_done_callback(lambda f: (timer.cancel(), self._park_settle(a, base, summary)))
+        self.st.log("ask_parked", id=a.rid, tool=a.tool)
+        self.activity("decision", id=a.rid, tool=a.tool, result="parked", reason="offline", cats=a.cats, task=a.task,
+                      summary=summary[:200])
+        self.emit("ask_parked", id=a.rid)
+        return {"behavior": "deny", "message": approval_level.nobody_text(card_lang(self.lang))}
+
+    def _goal_grant_tap(self, a: Ask, did: str | None, picks: list) -> None:
+        """P339 「批准，并加进目标授权」: the owner's signed allow whose allow_add line is exactly the offer text this host made
+        appends the offered grant to the running goal; approvals.log `reason: goal_grant_add` names that allow; one quiet line."""
+        if not a.goal_add or not did or picks != [a.goal_add["text"]] or self.stopped():
+            return
+        cur = self.goals.current()               # review #4: only the goal the offer was made for, never a later one
+        if cur is None or not a.goal_add.get("gid") or cur.get("id") != a.goal_add["gid"]:
+            return
+        offer = approvals.allow_add_line([a.goal_add["text"]])   # review #7: the signed line's digest, re-checked on --verify
+        if not self.goals.add_grants(a.goal_add["grants"], a.rid, did, "tap", gid=a.goal_add["gid"], offer_sha256=offer):
+            return
+        approvals.record(self.st, rid=secrets.token_hex(16), agent=self.agent.kind if self.agent else "?", tool=goal_mod.TOOL_GRANT,
+                         input_sha256=approvals.input_digest(a.goal_add["grants"]), shown_sha256=a.digest, decision="allow",
+                         reason="goal_grant_add", device=did, grant=a.rid, auto="goal", scope_sha256=offer)
+        line = ("Added to the goal's grant: " if card_lang(self.lang) == "en" else "已加进目标授权：") + a.goal_add["text"][:160]
+        self._post(self._send_ready, lambda s: {"t": "auto", "id": a.rid, "tool": a.tool, "by": "goal", "summary": line})
+
+    def _park_settle(self, a: Ask, base: dict, summary: str) -> None:
+        self.asks.pop(a.rid, None)
+        try:
+            decision, did, sk, sig = a.fut.result()
+        except Exception:  # noqa: BLE001
+            decision, did, sk, sig = "deny", None, None, None
+        reason = "device" if did else ("estop" if self.stopped() else "serve_stop" if self.stopping.is_set() else "timeout")
+        picks = list(a.allow_add) if decision == "allow" and reason == "device" else []   # P339: the signed allow_add line
+        approvals.record(self.st, **base, decision=decision, reason=reason, device=did, sign_pub=sk, sig=sig,
+                         scope_sha256=approvals.allow_add_line(picks) if picks else None)
+        allowed = decision in ("allow", "allow_batch") and reason == "device"
+        if allowed and picks:
+            self._goal_grant_tap(a, did, picks)
+        if allowed and not self.stopped():
+            self.__dict__.setdefault("_parked_ok", {})[a.park_key] = {
+                "rid": a.rid, "device": did, "sk": sk, "until": time.monotonic() + approval_level.PARK_OK_SECS}
+        result = ("allow" if allowed else decision) if reason == "device" else {"timeout": "timeout", "estop": "stopped"}.get(reason, "gone")
+        self.st.log("ask_done", id=a.rid, tool=a.tool, decision=decision, reason=reason, device=did, parked=True)
+        self.activity("decision", id=a.rid, tool=a.tool, result=decision if reason == "device" else reason, reason=reason,
+                      by=self._dname(did) if did else None, cats=a.cats, task=a.task, summary=summary[:200])
+        self.emit("ask_done", id=a.rid, result=result, reason=reason, device=did)
+        self._post(self._send_ready, lambda s: {"t": "ask_done", "id": a.rid, "result": result})
+        self.status_changed()
+        if reason == "device" and a.task is None and self.agent is not None and not self.stopped():
+            from .capability import ReadBackSend
+            en = card_lang(self.lang) == "en"
+            first = summary.split("\n", 1)[0][:160]
+            note = ((f"[Agent J system note, not the owner's words] The owner {'allowed' if allowed else 'denied'} the step "
+                     f"that waited while no remote was online: {first}. " + ("Retry it now, exactly as before." if allowed
+                                                                           else "Do not retry it.")) if en else
+                    (f"〔Agent J 系统提示，不是主人说的话〕刚才没人在线时等着的那一步，主人{'批准' if allowed else '拒绝'}了：{first}。"
+                     + ("现在原样重试这一步。" if allowed else "不要重试它。")))
+            with contextlib.suppress(Exception):
+                self.agent.submit(ReadBackSend(note))
+
+    async def _parked_rewait(self, a: Ask, base: dict, gone, key: tuple) -> dict:
+        """The Agent retried a step whose parked card is still open: no second card. Nobody online → told again at once;
+        someone online → wait for that card's answer (up to the usual lifetime)."""
+        if not self._online_approvers():
+            approvals.record(self.st, **base, decision="deny", reason="offline")
+            self.st.log("ask_done", id=base["rid"], tool=a.tool, decision="deny", reason="offline")
+            return {"behavior": "deny", "message": approval_level.nobody_text(card_lang(self.lang), again=True)}
+        await asyncio.wait({a.fut} | ({gone} if gone else set()), timeout=self.ask_ttl, return_when=asyncio.FIRST_COMPLETED)
+        await asyncio.sleep(0)                  # the done-callback (_park_settle) runs first
+        ok = self._parked_take(key)
+        if ok is not None:
+            approvals.record(self.st, **base, decision="allow", reason="parked", device=ok["device"], grant=ok["rid"],
+                             auto="parked")
+            self.st.log("ask_done", id=base["rid"], tool=a.tool, decision="allow", reason="parked", device=ok["device"])
+            self.activity("auto", id=base["rid"], tool=a.tool, summary=a.summary, by="parked", task=self.task_label)
+            return {"behavior": "allow", "updatedInput": a.tool_input}
+        approvals.record(self.st, **base, decision="deny", reason="parked_wait")
+        msg = "用户在手机上拒绝了这个操作。" if a.fut.done() else f"手机上 {int(self.ask_ttl)} 秒内没有批准：默认拒绝。"
+        return {"behavior": "deny", "message": msg}
 
     def new_perm_env(self) -> dict:
         """A fresh one-time token for the next agent start (L2): the permission tool must claim perm.sock with it before
@@ -3883,14 +4144,19 @@ class Host:
             summary += CARD_TEXT[card_lang(self.lang)]["risk_scope"]
         if tool == "AuthRescue" and isinstance(tool_input.get("summary"), str):
             summary = tool_input["summary"][:600]   # P258: the rescue card shows (and the phone signs) exactly this text
-        if tool == goal_mod.TOOL and isinstance(tool_input.get("card"), str):
-            summary = tool_input["card"]            # P158: the goal card shows (and the phone signs) exactly this text
+        if tool in (goal_mod.TOOL, goal_mod.TOOL_GRANT) and isinstance(tool_input.get("card"), str):
+            summary = tool_input["card"]            # P158 / P339: the goal card shows (and the phone signs) exactly this text
         if origin:
             summary += "\n" + str(origin)[:120]     # last line: the first stays the command (notices, push)
         digest, isha = approvals.shown_digest(tool, summary), approvals.input_digest(tool_input)
         rid = secrets.token_hex(16)
         workdir = (self.agent_cfg or {}).get("dir")
-        sc = None if v.danger or not batch else danger.batch_scope(tool, tool_input, workdir, self.danger_extra)
+        lv = approval_level.level(self.preferences, self.st)   # P336: safe | standard (as before) | full (signed only)
+        if lv != "full" and not self.__dict__.get("_unsigned_full_told") and approval_level.unsigned_full(self.preferences, self.st):
+            self._unsigned_full_told = True    # the file says full, no live signed switch backs it: standard, told once
+            self.st.log("approval_level_unsigned")
+            self.agent_notice(approval_level.unsigned_text(self.lang))
+        sc = None if v.danger or not batch or lv == "safe" else danger.batch_scope(tool, tool_input, workdir, self.danger_extra)
         base = dict(rid=rid, agent=kind, tool=tool, input_sha256=isha, shown_sha256=digest, cats=v.cats)
         if self.stopped():                # stopped: nothing is asked, nothing runs
             approvals.record(self.st, **base, decision="deny", reason="estop")
@@ -3905,9 +4171,19 @@ class Host:
             self.emit("ask_done", id=rid, result="deny", reason="group_source")
             return {"behavior": "deny", "message": "这一轮来自 Telegram 群成员，不是主人本人：不能请求主人批准，已拒绝。"
                                                    " / A group member's turn cannot obtain the owner's approval."}
-        from .capability import host_mediated, staging_write
+        pkey = self._park_key(tool, isha)       # P336 N5: who is asking, fixed before any await
+        if not require_passkey and ttl is None:
+            ok = self._parked_take(pkey)
+            if ok is not None:                # P336 (#36): the owner allowed this exact step on its parked card
+                approvals.record(self.st, **base, decision="allow", reason="parked", device=ok["device"], grant=ok["rid"],
+                                 auto="parked")
+                self.st.log("ask_done", id=rid, tool=tool, decision="allow", reason="parked", device=ok["device"])
+                self.activity("auto", id=rid, tool=tool, summary=summary, by="parked", task=self.task_label)
+                return {"behavior": "allow", "updatedInput": tool_input}
+        from .capability import goal_cli, host_mediated, staging_write
         main_root = (self.agent_cfg or {}).get("dir") if self.task_label is None else None
-        if batch and not v.danger and (host_mediated(tool, tool_input) or staging_write(main_root, tool, tool_input)):
+        if batch and ((not v.danger and (host_mediated(tool, tool_input) or staging_write(main_root, tool, tool_input)))
+                      or goal_cli(tool, tool_input)):     # P339: `agentj goal grant --match scp` is data, not cred.sql
             # ADR-A194: host-gated long-task CLI / inert wizard staging — no card
             approvals.record(self.st, **base, decision="allow", reason="host")
             self.st.log("ask_done", id=rid, tool=tool, decision="allow", reason="host")
@@ -3939,7 +4215,11 @@ class Host:
         if not require_passkey and self.task_label is None and tool not in goal_mod.SOFT_EXEMPT:
             gd = self.goals.current()
             if gd is not None:                  # P158: the host sorts the request; the Agent's own words decide nothing
-                gt, gwhy = goal_mod.tier(gd, tool, tool_input, v, (self.agent_cfg or {}).get("dir"), self._classify)
+                # P339: off the event loop — the reversible check may ask git or (read-only) ssh, each bounded to 5 s
+                gt, gwhy = await asyncio.to_thread(goal_mod.tier, gd, tool, tool_input, v, (self.agent_cfg or {}).get("dir"),
+                                                   self._classify)
+                if gt == "granted" and gd.get("preauth") and approval_level.redline(tool, tool_input, v, self.danger_extra):
+                    gt, gwhy = "hold", "credentials"    # P336: a grant nobody signed never covers a red line
         if gt in ("low", "granted"):
             picks = gwhy if gt == "granted" else None
             self.goals.count(gt, picks)
@@ -3952,10 +4232,33 @@ class Host:
                 line = summary.split("\n", 1)[0][:200]
                 self._post(self._send_ready, lambda s: {"t": "auto", "id": rid, "tool": tool, "summary": line, "by": "goal"})
             return {"behavior": "allow", "updatedInput": tool_input}
-        if gt == "reversible" and not preferences.get(self.preferences, "approval.goal_auto", True):
-            gt, gwhy = "hold", gwhy             # the owner (enterprise) switched the countdown off: an ordinary card
+        if gt == "reversible" and (lv == "safe" or not preferences.get(self.preferences, "approval.goal_auto", True)):
+            gt, gwhy = "hold", gwhy             # the owner (enterprise / the safe level) switched the countdown off: a card
+        free = None                             # P336: full level / a goal without cards — everything but the red lines
+        if not require_passkey and ttl is None and gt != "attack" and not approval_level.host_card(tool) and self._approvers():
+            if lv == "full":
+                free = "level_full"
+            elif gd is not None and approval_level.goal_preauth(self.st, self.preferences):
+                free = "goal_nocard"
+            if free and approval_level.redline(tool, tool_input, v, self.danger_extra):
+                free = None                     # a suspected attack, credentials, money: still the owner's card
+        if free:
+            grant = gd["grant"].get("rid") if free == "goal_nocard" else approval_level.level_grant(self.st)
+            approvals.record(self.st, **base, decision="allow", reason=free,
+                             **({"grant": grant, "auto": "goal" if free == "goal_nocard" else "level"} if grant else {}))
+            self.st.log("ask_done", id=rid, tool=tool, decision="allow", reason=free)
+            if free == "goal_nocard":
+                self.goals.count("nocard")
+            self.activity("auto", id=rid, tool=tool, summary=summary, by=free, cats=v.cats, task=self.task_label)
+            self.emit("auto", id=rid, tool=tool, grant=None)
+            line = summary.split("\n", 1)[0][:200]
+            by = "full" if free == "level_full" else "goal"
+            self._post(self._send_ready, lambda s: {"t": "auto", "id": rid, "tool": tool, "summary": line, "by": by})
+            return {"behavior": "allow", "updatedInput": tool_input}
         if gt == "attack":
             pass                                # P158: a suspected attack never goes to Jev — the red card
+        elif lv == "safe":
+            pass                                # P336: no Jev layer 2 under the safe level — the card
         elif not require_passkey and approval_jev.gray(v) and approval_jev.available():
             # P157 layer 2: only a "can't tell" verdict, never a clear danger; any failure falls through to the card
             ctx = context if context is not None else {"owner": getattr(self, "jev_owner", ""), "plan": getattr(self, "jev_plan", "")}
@@ -3982,15 +4285,30 @@ class Host:
             self.activity("decision", id=rid, tool=tool, result="deny", reason="no_device", cats=v.cats, summary=summary)
             self.emit("ask_done", id=rid, result="deny", reason="no_device")
             return {"behavior": "deny", "message": "没有能批准的已配对手机：默认拒绝。先用 agentj pair 配对一台手机。"}
+        parkable = not require_passkey and ttl is None and gt != "reversible" and not approval_level.host_card(tool)
+        prev = self._parked_find(pkey) if parkable else None
+        if prev is not None:                    # P336 (#36): the same step's card is already waiting on the phone
+            return await self._parked_rewait(prev, base, gone, pkey)
         if sum(1 for a in self.asks.values() if not a.fut.done()) >= MAX_ASKS:
             approvals.record(self.st, **base, decision="deny", reason="too_many")
             return {"behavior": "deny", "message": "同时等待批准的请求太多：默认拒绝。"}
         wait = goal_mod.auto_secs() if gt == "reversible" else (ttl if ttl else self.ask_ttl)
+        g_who, g_what, g_add = "", "", None
+        if gt in ("reversible", "hold", "attack"):   # P339: who wants to do what, in plain words; maybe one-tap 加进目标授权
+            from .harness import LABEL as _HL
+            gl = card_lang(self.lang)
+            g_who = self.task_label or _HL.get(kind, kind if kind != "?" else "")
+            g_what = goal_mod.human(tool, tool_input, v, gl, self._classify)
+            if gt == "hold" and gwhy == "irreversible" and not allow_offer:
+                offer = goal_mod.offer_grant(tool, tool_input, v, (self.agent_cfg or {}).get("dir"), self._classify, gl)
+                if offer and len(gd.get("grants") or []) + len(offer) <= goal_mod.MAX_ALL_GRANTS:
+                    g_add = {"text": goal_mod.offer_text(offer, gl), "grants": offer, "gid": gd.get("id")}   # review #4: this goal only
         a = Ask(rid, tool, summary, digest, tool_input, isha, time.monotonic() + wait,
                 asyncio.get_running_loop().create_future(), cats=v.cats, why=v.why, why_en=v.why_en, cred=v.cred,
                 scope=sc[:2] if sc else None, scope_text=sc[2] if sc else None, task=self.task_label, require_passkey=require_passkey,
                 goal={"reversible": "auto", "hold": "hold", "attack": "attack"}.get(gt or "", ""), goal_why=str(gwhy or ""),
-                allow_offer=[str(x) for x in allow_offer or []][:10])
+                goal_who=g_who, goal_what=g_what, goal_add=g_add,
+                allow_offer=[g_add["text"]] if g_add else [str(x) for x in allow_offer or []][:10])
         self.asks[rid] = a
         self.activity("ask", id=rid, tool=tool, cats=v.cats, why=v.why or None, why_en=v.why_en or None, cred=v.cred or None,
                       summary=summary, task=self.task_label)
@@ -3999,10 +4317,19 @@ class Host:
         self._post(self._send_ready, lambda s: self._ask_msg(a, s))   # same queue as the Agent's text: order is kept
         self.status_changed()
         self.push_notify("ask")
+        offline = not self._online_approvers()
+        if offline and gt != "reversible":
+            self._remind_offline()               # P336 (#36): push above + one content-free Telegram / e-mail line
         try:
             waiters = {a.fut} | ({gone} if gone else set())
             # FIRST_COMPLETED: the answer (or the agent giving up) ends the wait at once — with the default ALL_COMPLETED an
             # approval only took effect at the deadline (L1 bug, found in L2)
+            if offline and parkable:
+                done, _ = await asyncio.wait(waiters, timeout=max(0.0, min(a.deadline - time.monotonic(),
+                                                                          approval_level.PARK_GRACE)),
+                                             return_when=asyncio.FIRST_COMPLETED)
+                if not done and not self._online_approvers() and not self.stopped() and not self.stopping.is_set():
+                    return self._park(a, base, summary, pkey)   # the card waits on; the Agent does the independent work
             done, _ = await asyncio.wait(waiters, timeout=max(0.0, a.deadline - time.monotonic()),
                                          return_when=asyncio.FIRST_COMPLETED)
             if a.fut in done:
@@ -4018,7 +4345,8 @@ class Host:
                 if not a.fut.done():
                     a.fut.set_result((decision, None, None, None))
         finally:
-            self.asks.pop(rid, None)
+            if not a.parked:
+                self.asks.pop(rid, None)
         gd = self.goals.current() if a.goal else None
         picks = list(a.allow_add) if decision == "allow" and reason == "device" else []
         approvals.record(self.st, **base, decision=decision, reason=reason, device=did, sign_pub=sk, sig=sig,
@@ -4032,7 +4360,9 @@ class Host:
             if reason == "goal_auto":
                 self.goals.count("auto")
             elif decision != "allow" and a.goal in ("hold", "attack") and reason in ("device", "timeout"):
-                self.goals.block(summary, a.goal_why or a.goal)
+                self.goals.block(summary, a.goal_why or a.goal, tool=tool, cats=a.cats, human_text=a.goal_what, who=a.goal_who)
+            elif decision == "allow" and reason == "device":
+                self._goal_grant_tap(a, did, picks)
         raw = decision
         if decision == "allow_batch" and reason == "device":
             self._open_grant(a, did)
@@ -4046,11 +4376,11 @@ class Host:
         self.status_changed()
         if decision == "allow":
             answer = {"behavior": "allow", "updatedInput": tool_input}
-            if risk_scope and reason == "device":       # P158: a goal countdown never becomes a turn-wide category grant
+            if risk_scope and reason == "device" and lv != "safe":   # P158: never from a countdown; P336: not under safe
                 answer["risk_grant"] = {"rid": rid, "device": did, "sign_pub": sk}
             if grant_info and reason == "device":
                 answer["grant_info"] = {"rid": rid, "device": did, "sign_pub": sk}
-            if picks:
+            if picks and not a.goal_add:
                 answer["allow_add"] = picks
             return answer
         if a.goal in ("hold", "attack") and reason in ("device", "timeout"):
@@ -4252,6 +4582,7 @@ class Host:
         self.st.log("estop", status="on", device=by.split(":", 1)[1] if by.startswith("phone:") else None)
         self.emit("estop", on=True, by=by)
         self.activity("estop", by=name)
+        self.__dict__.pop("_parked_ok", None)          # P336: an allow given to a parked card dies with 「全部停下」
         for a in list(self.asks.values()):
             if not a.fut.done():
                 a.fut.set_result(("deny", None, None, None))
@@ -4728,11 +5059,18 @@ class Host:
         """A command from a ready session of a paired device (the only place one can come from). /stop and /help at once;
         the rest after the turn in front of it (the Agent's queue). Logged: command name + result class, never text.
         Returns the id of the command's history page (§10.5)."""
+        name = slash.ALIAS.get(name, name)    # P341: /new from an older or third-party page is /clear
         by = s.name or s.device
         if name in TG_PAIR_CMDS:               # P283: 「重新绑定 Telegram」 — the host's own answer, a new pairing code
             self.st.log("slash_in", cid=s.cid, device=s.device, cmd="telegram-pair")
             turn = self.cmd_turn(s, "telegram-pair")
             await self.telegram_pair(by=by, turn=turn)
+            return turn
+        if name in reset_mod.RESET_CMDS:       # P332: /reset = ① (signed like /update; the run's steps go to 紧急修复)
+            self.st.log("slash_in", cid=s.cid, device=s.device, cmd="reset")
+            turn = self.cmd_turn(s, "reset")
+            text, kind = await self.reset_desk.slash(s, authorization)
+            self.cmd_card("reset", slash.Result(text, kind), by, turn)
             return turn
         if name in RELOAD_CMDS:                # P320: /reload — the host's own answer, no Agent, also while stopped
             self.st.log("slash_in", cid=s.cid, device=s.device, cmd="reload")
@@ -4876,15 +5214,27 @@ class Host:
             return friend_cmds.my_agent_id(self.st, lang, getattr(self.peers, "state", None))
         return friend_cmds.add_friend(arg, lang, channel)
 
-    async def stop_turn(self, by: str) -> "slash.Result":
+    async def stop_turn(self, by: str, answered: bool = True) -> "slash.Result":
         """/stop: the stop switch's interrupt for the running turn (and a running scheduled task) — nothing is paused,
-        the queue and every task's enabling stay as they are."""
-        busy = await self.agent.halt(clear_queue=False) if self.agent else False
+        the queue and every task's enabling stay as they are. P328: a running turn the phone cannot stop (Agent.cannot_halt)
+        answers with that one explanation — never also 「现在没有在跑的一轮」. answered=False (Telegram's /stop, whose caller shows
+        no answer): the explanation stays a notice on the phone."""
+        busy, note = False, None
+        if self.agent:
+            self.agent.halt_quiet, self.agent.halt_note = answered, None
+            try:
+                busy = await self.agent.halt(clear_queue=False)
+            finally:
+                self.agent.halt_quiet, note = False, self.agent.halt_note
+            note = note if isinstance(note, str) and note else None
         ran = await self.scheduler.stop_running()
         self.status_changed()
         if busy or ran:
             what = humane.of(self, "stop.what_both" if busy and ran else "stop.what_turn" if busy else "stop.what_task")
-            return slash.Result(humane.of(self, "stop.done", what=what))
+            done = humane.of(self, "stop.done", what=what)
+            return slash.Result(done + "\n" + note if note else done)
+        if note:
+            return slash.Result(note, "info")
         return slash.Result(humane.of(self, "stop.none"), "info")
 
     # ============================================================ relay parity (PROTOCOL §10, PROMPT-33)
@@ -5315,7 +5665,11 @@ class Host:
                 skills = [x for x in (getattr(self.agent, "init", {}) or {}).get("skills") or [] if isinstance(x, str)]
             wd = self.agent_cfg["dir"] if self.agent_cfg else None
             res = await asyncio.to_thread(menu.for_phone, wd, skills, self.lang, preferences.get(self.preferences, "menu.items", []))
-            return await self.send_app(s, {"t": "menu", "r": r, **res, "upgrade": update.phone_view(self.st), "reload": True})   # P320: ≡ Reload
+            return await self.send_app(s, {"t": "menu", "r": r, **res, "upgrade": update.phone_view(self.st), "reload": True,
+                                           "reset": True})   # P320: ≡ Reload · P332: ≡ 重置连接
+        if t in ("keys_get", "keys_op", "keys_set"):   # P352: names only; a copied value goes to this session alone
+            from . import keys
+            return await keys.on_phone(self, s, t, obj)
         if t in ("provider_get", "provider_key", "asr_install"):
             from . import provider_runtime
             r = obj.get("r")
@@ -5410,6 +5764,8 @@ class Host:
         send.onboarding_note = (self.speaker_note(s) if getattr(s, "source_kind", None) != "telegram" else "") + self.onboarding_note()
         gc = slash.parse(text) if not blobs else None
         if gc and gc[0] == "goal" and gc[1] and not goal_mod.host_cmd(gc[1]):   # P158: `/goal <what>` → the Agent proposes
+            if provenance.is_owner(getattr(s, "provenance", None)):
+                self.goals.owner_asked()       # P336: only the owner's own /goal may start without the opening card
             send.onboarding_note += goal_mod.start_note(gc[1], card_lang(self.lang))
             text = goal_mod.agent_words(gc[1], card_lang(self.lang))     # P198: never Claude Code's own /goal
         send.source = getattr(s, "provenance", None)      # B1: set only by host code (telegram.incoming), never from text
@@ -5482,7 +5838,8 @@ class Host:
             return await res(ok=False, why="too_many")
         is_meeting = meeting.parse(text) is not None      # P182: /会议总结 · /meeting-notes is a message for the Agent, never refused
         hc = slash.parse(text) if not att and reply_to is None and not is_meeting else None
-        if hc and (friend_cmds.name_of(hc[0]) or hc[0] in TG_PAIR_CMDS or hc[0] in RELOAD_CMDS or hc[0] == "goal" and goal_mod.host_cmd(hc[1])):
+        if hc and (friend_cmds.name_of(hc[0]) or hc[0] in TG_PAIR_CMDS or hc[0] in RELOAD_CMDS or hc[0] in reset_mod.RESET_CMDS
+                   or hc[0] == "goal" and goal_mod.host_cmd(hc[1])):
             # P73: /my-agent-id · /add-friend; P283: /telegram-pair; P158: /goal status · /goal stop — the host's own answer, also stopped / no Agent
             self.sends.add(compose.Send(s.device, sid, 0, state="delivered"))
             await _rcpt_recv(self, s.device, sid)

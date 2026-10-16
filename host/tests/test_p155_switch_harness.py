@@ -39,7 +39,7 @@ CANARY = "native-output-canary-7f3a"
 FAKE = r'''#!/usr/bin/env python3
 import json, os, sys, time
 kind = os.path.basename(sys.argv[0])
-if kind in ("kimi", "qwen"):             # P305 / P310: Kimi Code and Qwen Code speak ACP — the stand-in ACP agent
+if kind in ("kimi", "qwen", "dsh"):      # P305 / P310 / P329: Kimi Code, Qwen Code, DeepSeek Harness speak ACP — the stand-in
     os.execv(sys.executable, [sys.executable, "''' + str(HERE / 'fakeacp.py') + r'''"] + sys.argv[1:])
 mode = open(os.path.join(os.path.dirname(os.path.abspath(sys.argv[0])), kind + ".mode")).read().strip()
 log = os.path.join(os.path.dirname(os.path.abspath(sys.argv[0])), kind + ".argv")
@@ -105,7 +105,7 @@ class FakeHarnesses(unittest.TestCase):
 
     def test_three_harnesses_probe_ok_with_their_own_formats(self):
         d = harness.probe()
-        self.assertEqual(d["usable"], ["claude", "codex", "opencode", "kimi", "qwen"])   # P305 / P310: over ACP (fakeacp.py)
+        self.assertEqual(d["usable"], ["claude", "codex", "opencode", "kimi", "qwen", "dsh"])   # P305 / P310 / P329: over ACP (fakeacp.py)
         self.assertEqual(d["decision"], "ask_owner")
         for h in d["harnesses"]:
             self.assertTrue(h["installed"] and h["callable"], h)
@@ -189,7 +189,7 @@ class FakeHarnesses(unittest.TestCase):
         with redirect_stdout(buf):
             self.assertEqual(harness.main(as_json=True, call_probe=True), 0)
         d = json.loads(buf.getvalue())
-        self.assertEqual([h["callable"] for h in d["harnesses"]], [True, True, True, True, True])
+        self.assertEqual([h["callable"] for h in d["harnesses"]], [True, True, True, True, True, True])
 
 
 # ------------------------------------------------------------------ state + the job
@@ -448,7 +448,8 @@ class Request(unittest.TestCase):
         rows = {"claude": {"name": "claude", "installed": False},
                 "codex": {"name": "codex", "installed": True, "version": "0.162.1", "callable": True},
                 "opencode": {"name": "opencode", "installed": True, "version": "1.18", "callable": False, "probe_reason": "native_timeout"},
-                "kimi": {"name": "kimi", "installed": False}, "qwen": {"name": "qwen", "installed": False}}
+                "kimi": {"name": "kimi", "installed": False}, "qwen": {"name": "qwen", "installed": False},
+                "dsh": {"name": "dsh", "installed": False}}
         asked = []
 
         def probe(only=None, model=None, timeout=60):
@@ -463,10 +464,10 @@ class Request(unittest.TestCase):
         self.assertTrue(r["ok"])
         self.assertIn("--scan", self.launched[0])
         self.assertEqual([(h["name"], h["callable"]) for h in r["harnesses"]], [("claude", False), ("codex", True), ("opencode", False),
-                                                                                    ("kimi", False), ("qwen", False)])
+                                                                                    ("kimi", False), ("qwen", False), ("dsh", False)])
         self.assertEqual(r["current"], "claude")
         self.assertEqual(asked, [(("claude",), "claude-opus-5-5"), (("codex",), None), (("opencode",), "p66dqa/gpt-6"),
-                                (("kimi",), None), (("qwen",), None)])  # its own model; P219: Claude's default
+                                (("kimi",), None), (("qwen",), None), (("dsh",), None)])  # its own model; P219: Claude's default
         zh = sw._say_scan(r, "zh")
         self.assertIn("现在能切到：Codex", zh)
         self.assertIn("没装", zh)

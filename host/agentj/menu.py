@@ -47,7 +47,7 @@ FRIEND_GROUP = {"zh": "好友", "en": "Friends"}
 # P155: /switch-harness goes to the main Agent (inserted like every menu item; the owner may add words before sending).
 # Also appended to an owner's own menu.json that lacks it, so the item never disappears.
 AGENT_DESC = {
-    "zh": {"feedback-to-agentj-father": "反馈给 Agent J 爸爸", "switch-harness": "换底层 harness（Claude Code / Codex / OpenCode）：交给主 Agent，先检查、能用才切"},
+    "zh": {"feedback-to-agentj-father": "反馈给 Agent J Father", "switch-harness": "换底层 harness（Claude Code / Codex / OpenCode）：交给主 Agent，先检查、能用才切"},
     "en": {"feedback-to-agentj-father": "Feedback to Agent J Father", "switch-harness": "Switch the harness (Claude Code / Codex / OpenCode): your main Agent checks first, switches only if it works"},
 }
 AGENT_GROUP = {"zh": "主 Agent", "en": "Main Agent"}

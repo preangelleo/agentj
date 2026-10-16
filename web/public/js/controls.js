@@ -41,8 +41,19 @@ function command(obj) {                               // pending acknowledgement
 export async function signedWrite(action, target, extra) {
   try { return await command(await signed(action, target, extra)); } catch (e) { return { ok: false, why: e.message }; }
 }
+/** P336: like signedWrite, but a `passkey_required` answer asks `faceId(res)` for the Face ID `fa` object and resends the SAME
+ *  signed object (same n / ts / sig) with it; null from faceId = the owner cancelled → {ok:false, why:'cancel'}. */
+export async function signedWriteFa(action, target, extra, faceId) {
+  let obj;
+  try { obj = await signed(action, target, extra); } catch (e) { return { ok: false, why: e.message }; }
+  const res = await command(obj);
+  if (res.ok || res.why !== 'passkey_required') return res;
+  let fa;
+  try { fa = await faceId(res); } catch { return { ok: false, why: 'passkey_failed' }; }
+  return fa ? command({ ...obj, fa }) : { ok: false, why: 'cancel' };
+}
 const WHY_CODES = ['changed', 'unknown_item', 'bad_signature', 'no_key', 'stale', 'timeout', 'offline', 'not_found', 'exists', 'symlink',
-  'invalid', 'unknown', 'io', 'shape', 'replay'];
+  'invalid', 'unknown', 'io', 'shape', 'replay', 'rejected', 'passkey_failed'];
 const why = (code) => (WHY_CODES.includes(code) ? t('why.' + code) : String(code ?? ''));
 export const whyText = why;
 
@@ -107,7 +118,7 @@ export async function revokeGrants() {
 }
 export function showAuto(m) {
   if (typeof m.tool !== 'string' || typeof m.summary !== 'string') return;
-  toast(t(m.by === 'jev' ? 'ask.autoJev' : m.by === 'goal' ? 'ask.autoGoal' : 'ask.auto', { tool: m.tool, summary: m.summary.slice(0, 120) }), 2600);
+  toast(t(m.by === 'jev' ? 'ask.autoJev' : m.by === 'goal' ? 'ask.autoGoal' : m.by === 'full' ? 'p336.autoFull' : 'ask.auto', { tool: m.tool, summary: m.summary.slice(0, 120) }), 2600);
 }
 
 // ---- 它记住了什么
@@ -193,7 +204,7 @@ async function undoMemory(id) {
 // ---- 操作与审批记录 (activity)
 let actNext = null;
 const CATS = ['spend', 'delete', 'send', 'credentials', 'price', 'opaque'];
-const ACT_RESULTS = ['allow', 'deny', 'allow_batch', 'timeout', 'no_device', 'estop', 'serve_stop', 'agent_gone', 'too_many', 'policy', 'goal_auto'];
+const ACT_RESULTS = ['allow', 'deny', 'allow_batch', 'timeout', 'no_device', 'estop', 'serve_stop', 'agent_gone', 'too_many', 'policy', 'goal_auto', 'parked'];   // P336: parked = nobody online, the card waits
 const ACT_KINDS = ['turn_start', 'turn_end', 'ask', 'decision', 'auto', 'grant', 'grant_end', 'estop', 'resume', 'message_refused', 'mem_rm',
   'mem_undo', 'task_on', 'task_off', 'task_run', 'task_done', 'control_refused', 'slash', 'truncated', 'jev',
   'goal_propose', 'goal_start', 'goal_declined', 'goal_auto', 'goal_progress', 'goal_end'];   // P158
@@ -216,6 +227,7 @@ function actText(r) {
       : ACT_RESULTS.includes(r.result) ? t('act.result.' + r.result) : r.result ?? '',
   };
   if (r.k === 'decision') v.t = tx ? ' ' + tx : '';
+  if (r.k === 'auto' && ['level_full', 'goal_nocard', 'parked'].includes(r.by)) return t('p336.act.' + r.by, v);   // P336
   return t('act.k.' + r.k, v);
 }
 export function loadActivity(fresh) {

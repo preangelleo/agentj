@@ -112,7 +112,8 @@ class Heal(Fixture):
         await self.settle()
         self.assertEqual(a.session["sessionId"], new)
         self.assertEqual(a.cfg["shared_session_id"], new)
-        self.assertEqual(self.host.prefs, [("agent.shared_session_id", new)])
+        self.assertEqual(self.host.prefs, [])         # P330: never the global agent.shared_session_id
+        self.host.st.set_agent_session.assert_any_call("claude.pin", new)
         self.assertIn("又接上了，新会话 " + new[:8], self.host.notices[-1])
         self.assertEqual(self.host.statuses[-1], "idle")
 

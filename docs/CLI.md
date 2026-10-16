@@ -134,7 +134,7 @@ agentj --help
 
 ```text
 usage: agentj [-h] [-V] [--migrate-legacy] [--instance N] [--fresh]
-              {doctor,reload,service,update,init,serve,protocol,pair,devices,revoke,send,status,name,admin,login,report,unlink,report-hostname,remote-pair,remote-unbind,agent,passphrase,approvals,feedback,stop,resume,memory,activity,config,history,inbox,asr,tasks,wizard,keep-awake,browser,setup,google,mail,contacts,ask,workflows,sudo,secret,provider,sudo-helper,docs-rule,handover,telegram-cursor,plaza,support,capability,goal,heartbeat,quota,imessage,busy,recall,bots,friends,codex-sandbox,migrate,alias,instances,label,onboarding} ...
+              {doctor,reload,service,rescue,update,init,serve,protocol,pair,devices,revoke,send,status,name,admin,login,report,unlink,report-hostname,remote-pair,remote-unbind,agent,passphrase,approvals,feedback,stop,resume,memory,activity,config,history,inbox,asr,tasks,wizard,keep-awake,browser,setup,google,mail,contacts,ask,workflows,sudo,secret,provider,sudo-helper,docs-rule,handover,telegram-cursor,plaza,support,capability,goal,heartbeat,quota,imessage,busy,recall,bots,friends,codex-sandbox,migrate,alias,instances,label,onboarding} ...
 ```
 
 | Argument | Default | Required | Choices | Help |
@@ -194,7 +194,7 @@ usage: agentj admin [-h] [--port PORT] [--events {text,jsonl}]
 ### agentj agent
 
 ```text
-codex / opencode / kimi / qwen / off；reset = 开一段新对话（重启 serve 生效）；restart = 下一条消息前重启 Agent 进程、对话不变（换了 key 或代理后）；detect = 本机有哪些可用 / which agents are usable here；switch <claude\|codex\|opencode\|kimi\|qwen> = 先无头探测、能用才切，失败自动切回 / probe first, switch only if it works, switch back on failure；route = 按本机实测推荐 AI 路线（用不了 Claude Code / Codex 的地区推荐 Kimi 或阿里百炼 Token Plan）/ recommend an AI route from what works here
+codex / opencode / kimi / qwen / dsh / off；reset = 开一段新对话（重启 serve 生效）；restart = 下一条消息前重启 Agent 进程、对话不变（换了 key 或代理后）；detect = 本机有哪些可用 / which agents are usable here；switch <claude\|codex\|opencode\|kimi\|qwen\|dsh> = 先无头探测、能用才切，失败自动切回 / probe first, switch only if it works, switch back on failure；route = 按本机实测推荐 AI 路线（用不了 Claude Code / Codex 时：中国大陆首推火山方舟 Coding Plan、先买 Lite，香港 / 海外推荐 Kimi，已有某一家就继续用）/ recommend an AI route from what works here (without Claude Code / Codex: Volcano Ark Coding Plan, Lite first, in mainland China; Kimi in Hong Kong / overseas; keep a plan you already have)
 ```
 
 ```bash
@@ -204,17 +204,18 @@ agentj agent --help
 ```text
 usage: agentj agent [-h] [--probe] [--dry-run] [--result] [--scan] [--undo]
                     [--force] [--json] [--dir DIR]
-                    [--region {mainland-cn,global}] [--model MODEL]
-                    [--unfenced] [--allow-docker] [--shared | --independent]
-                    [{claude,codex,opencode,kimi,qwen,off,reset,restart,status,detect,switch,route}]
-                    [{claude,codex,opencode,kimi,qwen}]
+                    [--region {mainland-cn,global}] [--base-url BASE_URL]
+                    [--model MODEL] [--unfenced] [--allow-docker] [--shared |
+                    --independent]
+                    [{claude,codex,opencode,kimi,qwen,dsh,off,reset,restart,status,detect,switch,route}]
+                    [{claude,codex,opencode,kimi,qwen,dsh}]
 ```
 
 | Argument | Default | Required | Choices | Help |
 | --- | --- | --- | --- | --- |
 | `-h / --help` | `null` | false | — | `show this help message and exit` |
-| `mode` | `"status"` | false | `claude`, `codex`, `opencode`, `kimi`, `qwen`, `off`, `reset`, `restart`, `status`, `detect`, `switch`, `route` | `detect = 本机有哪些可用（不需要 init；只看是否安装、登录文件是否存在）/ which agents are usable here (no init needed; checks only what is installed and whether login files exist)` |
-| `target` | `null` | false | `claude`, `codex`, `opencode`, `kimi`, `qwen` | `the harness to switch to; with detect --probe: probe only this one` |
+| `mode` | `"status"` | false | `claude`, `codex`, `opencode`, `kimi`, `qwen`, `dsh`, `off`, `reset`, `restart`, `status`, `detect`, `switch`, `route` | `detect = 本机有哪些可用（不需要 init；只看是否安装、登录文件是否存在）/ which agents are usable here (no init needed; checks only what is installed and whether login files exist)` |
+| `target` | `null` | false | `claude`, `codex`, `opencode`, `kimi`, `qwen`, `dsh` | `the harness to switch to; with detect --probe: probe only this one` |
 | `--probe` | `false` | false | — | `detect: verify one tool-free model call using existing login (≤ 60 s each); no native output is returned` |
 | `--dry-run` | `false` | false | — | `only check whether it can switch` |
 | `--result` | `false` | false | — | `the last switch's outcome` |
@@ -225,7 +226,8 @@ usage: agentj agent [-h] [--probe] [--dry-run] [--result] [--scan] [--undo]
 | `--job` | `null` | false | — | `internal option (hidden from --help)` |
 | `--json` | `false` | false | — | `machine-readable detect output` |
 | `--dir` | `null` | false | — | `Agent 的工作目录（默认当前目录）` |
-| `--region` | `null` | false | `mainland-cn`, `global` | `kimi: which Kimi site the account is on (separate accounts, keys and quota)` |
+| `--region` | `null` | false | `mainland-cn`, `global` | `kimi: which Kimi site the membership was bought on (a kimi.com key works on both api.kimi.com and api.kimi.ai)` |
+| `--base-url` | `null` | false | — | `dsh: an OpenAI-compatible server (Olares Router …), with --model` |
 | `--model` | `null` | false | — | `模型（默认用你自己的设置）；OpenCode 写成 服务商/模型，例如 zhipuai/glm-5.3` |
 | `--unfenced` | `false` | false | — | `不隔离运行 Agent（按底层 harness 自己的权限）。默认 Agent 在 bubblewrap 里运行，看不到 Agent J 的状态` |
 | `--allow-docker` | `false` | false | — | `podman（默认不开；主人要求时可直接打开）。默认容器引擎的 socket 对 Agent 隐藏` |
@@ -1628,7 +1630,7 @@ agentj docs-rule --help
 
 ```text
 usage: agentj docs-rule [-h] [--lang {zh,en}] [--write]
-                        [--harness {claude,codex,kimi,opencode,qwen}]
+                        [--harness {claude,codex,dsh,kimi,opencode,qwen}]
 ```
 
 | Argument | Default | Required | Choices | Help |
@@ -1636,7 +1638,7 @@ usage: agentj docs-rule [-h] [--lang {zh,en}] [--write]
 | `-h / --help` | `null` | false | — | `show this help message and exit` |
 | `--lang` | `null` | false | `zh`, `en` | `只要中文或英文（默认两种都有）/ one language only (default: both)` |
 | `--write` | `false` | false | — | `加到 AI 的用户级记忆文件末尾（只加一次）/ append it once to the AI's user-level memory file` |
-| `--harness` | `null` | false | `claude`, `codex`, `kimi`, `opencode`, `qwen` | `和 --write 一起：claude → ~/.claude/CLAUDE.md · codex → ~/.codex/AGENTS.md · opencode → ~/.config/opencode/AGENTS.md` |
+| `--harness` | `null` | false | `claude`, `codex`, `dsh`, `kimi`, `opencode`, `qwen` | `和 --write 一起：claude → ~/.claude/CLAUDE.md · codex → ~/.codex/AGENTS.md · opencode → ~/.config/opencode/AGENTS.md` |
 
 ### agentj doctor
 
@@ -2125,7 +2127,7 @@ agentj goal --help
 ```
 
 ```text
-usage: agentj goal [-h] {propose,status,progress,done,stop} ...
+usage: agentj goal [-h] {propose,grant,status,progress,done,stop} ...
 ```
 
 | Argument | Default | Required | Choices | Help |
@@ -2152,6 +2154,37 @@ usage: agentj goal done [-h] --result {achieved,not_achieved}
 | `-h / --help` | `null` | false | — | `show this help message and exit` |
 | `--result` | `null` | true | `achieved`, `not_achieved` | `` |
 | `--summary` | `null` | false | — | `one or two lines` |
+| `--json` | `false` | false | — | `` |
+
+### agentj goal grant
+
+```text
+add a grant to the running goal (one card)
+```
+
+```bash
+agentj goal grant --help
+```
+
+```text
+usage: agentj goal grant [-h] [--file FILE] [--cat {spend,delete,send,price}]
+                         [--what WHAT] [--match MATCH] [--path PATH]
+                         [--dir DIR] [--max MAX] [--usd USD] [--no-wait]
+                         [--json]
+```
+
+| Argument | Default | Required | Choices | Help |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `--file` | `null` | false | — | `{"grants": [...]}（同 propose 的 grants 格式，- = stdin）/ grants like in propose` |
+| `--cat` | `null` | false | `spend`, `delete`, `send`, `price` | `` |
+| `--what` | `null` | false | — | `one line: what it is for` |
+| `--match` | `null` | false | — | `动作必须包含的文字（可重复）/ text the action must contain` |
+| `--path` | `null` | false | — | `只删这些目录下（cat delete）/ delete only under it` |
+| `--dir` | `null` | false | — | `only in this folder` |
+| `--max` | `null` | false | — | `最多次数（默认 50）/ at most N times` |
+| `--usd` | `null` | false | — | `spend cap` |
+| `--no-wait` | `false` | false | — | `return before the owner signs` |
 | `--json` | `false` | false | — | `` |
 
 ### agentj goal progress
@@ -2958,7 +2991,8 @@ usage: agentj mail [-h] [--address ADDRESS_OPT]
                    [--smtp-host SMTP_HOST] [--smtp-port SMTP_PORT]
                    [--smtp-security {ssl,starttls,plain}] [--poll POLL]
                    [--auth {strict,standard,off}] [--servid SERVID] [--guest]
-                   [--name NAME] [--to TO] [--to-owner] [--subject SUBJECT]
+                   [--name NAME] [--to TO] [--to-owner] [--cc CC] [--bcc BCC]
+                   [--format {markdown,html,text}] [--subject SUBJECT]
                    [--body BODY] [--body-file BODY_FILE] [--attach ATTACH]
                    [--from EXPECT_FROM] [--subject-has SUBJECT_HAS]
                    [--within WITHIN] [--lookback LOOKBACK] [--wait WAIT]
@@ -2988,6 +3022,9 @@ usage: agentj mail [-h] [--address ADDRESS_OPT]
 | `--name` | `null` | false | — | `a label` |
 | `--to` | `null` | false | — | `notes：收件人——邮箱，或通讯录里的名字 / 昵称 / 拼音（可多次；notes 只能是主人写过的地址）/ recipient: address or an address-book name (repeatable; notes: only addresses the owner named)` |
 | `--to-owner` | `false` | false | — | `send 和 notes：发给主人本人（通讯录 0 号位 + 白名单里的「我本人」地址）；和 --to 同时给就两边都发（去重，合计最多 10 个）/ the owner's own addresses (slot 0 + the owner allowlist rows); with --to: both (deduped, 10 at most)` |
+| `--cc` | `null` | false | — | `send：抄送——同 --to（可多次；白名单 / 手机批准规则每个收件人都算，合计最多 10 个）/ Cc: like --to (repeatable; every recipient counts for the approval rule; 10 in all)` |
+| `--bcc` | `null` | false | — | `Bcc: like --to, hidden from the others` |
+| `--format` | `null` | false | `markdown`, `html`, `text` | `send：正文格式——markdown（默认，排成带格式的邮件）· html（网页原样，.html 文件自动选它）· text（纯文本）/ body format: markdown (default, a formatted mail) · html (the page as is; picked for .html files) · text` |
 | `--subject` | `null` | false | — | `notes：标题 / subject` |
 | `--body` | `null` | false | — | `body` |
 | `--body-file` | `null` | false | — | `send：正文文件（- = 标准输入）；notes：纪要文件（不给就读标准输入）/ body or notes file (notes default: stdin)` |
@@ -3517,7 +3554,7 @@ usage: agentj protocol open [-h] url
 ### agentj provider
 
 ```text
-list / remove；bailian = 阿里百炼 Token Plan 预设（大陆推荐）· a third-party model service for OpenCode (base URL + key); bailian = the Alibaba Cloud Bailian Token Plan preset; ark = 火山方舟 Coding Plan 预设 / the Volcano Ark Coding Plan preset
+list / remove；ark = 火山方舟 Coding Plan 预设（中国大陆首推，先买 Lite）；bailian = 阿里百炼 Token Plan 预设 · a third-party model service for OpenCode (base URL + key); ark = the Volcano Ark Coding Plan preset (first choice in mainland China, Lite first); bailian = the Alibaba Cloud Bailian Token Plan preset
 ```
 
 ```bash
@@ -3921,6 +3958,26 @@ usage: agentj report-hostname [-h] [{on,off,status}]
 | `-h / --help` | `null` | false | — | `show this help message and exit` |
 | `mode` | `"status"` | false | `on`, `off`, `status` | `` |
 
+### agentj rescue
+
+```text
+the rescue watchdog (the phone's emergency repair works even when Agent J stops answering)
+```
+
+```bash
+agentj rescue --help
+```
+
+```text
+usage: agentj rescue [-h] [--json] {status,install,uninstall,watchdog,undo}
+```
+
+| Argument | Default | Required | Choices | Help |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `mode` | `null` | true | `status`, `install`, `uninstall`, `watchdog`, `undo` | `status and recent log lines · install · uninstall · watchdog: run in the foreground (what the service runs) · undo: go back to the conversation 「重置连接」 put aside` |
+| `--json` | `false` | false | — | `machine-readable status` |
+
 ### agentj resume
 
 ```text
@@ -4191,7 +4248,7 @@ usage: agentj sudo [-h] --why WHY [--effect EFFECT] [--timeout TIMEOUT]
 | Argument | Default | Required | Choices | Help |
 | --- | --- | --- | --- | --- |
 | `-h / --help` | `null` | false | — | `show this help message and exit` |
-| `--why` | `null` | true | — | `为什么要这条命令（手机上原样显示）/ why (shown on the phone)` |
+| `--why` | `null` | true | — | `这条命令是做什么用的，用大白话写（手机上第一行显示；至少 6 个汉字或 12 个英文字符，不能只是重复命令）/ what the command is for, in plain words (shown first on the phone; ≥ 6 CJK or 12 Latin characters, not the command repeated)` |
 | `--effect` | `""` | false | — | `what it changes (shown on the phone)` |
 | `--timeout` | `600` | false | — | `命令最长运行秒数（≤ 3600）` |
 | `--json` | `false` | false | — | `` |
@@ -4989,6 +5046,8 @@ usage: agentj workflows [-h] [--json] [--staff-hint FOLDER]
 
 Agent J Father is the official feedback platform. Say “Please report this to Agent J’s developers (support platform)”, or “Tell your dad about this”. Use `/feedback-to-agentj-father <text>` on the phone: owner requests send after redaction without asking twice; Agent-initiated reports need agreement first.
 
+The approval level (`approval.level`) and "Goal mode: no cards" (`approval.goal_nocard`) change only by a signed switch in Settings → Safety on a paired phone. When an Agent runs `agentj config set approval.level full`, nothing changes by itself: the owner gets a confirmation card on the phone. `agentj approvals --verify` checks every line: automatic approvals under Full access (level_full), Goal mode: no cards (goal_preauth, goal_nocard) and a retry after a card kept while the owner was offline (parked) must trace back to a signed confirmation on the phone; the denials sent to the Agent while nobody was online are logged as offline or parked_wait.
+
 For AI tool full-access flags, configuration, short aliases and rollback, see [Full-access launch (three ways)](/docs/setup-agents/#full-access).
 
 ---
@@ -5129,7 +5188,7 @@ agentj --help
 
 ```text
 usage: agentj [-h] [-V] [--migrate-legacy] [--instance N] [--fresh]
-              {doctor,reload,service,update,init,serve,protocol,pair,devices,revoke,send,status,name,admin,login,report,unlink,report-hostname,remote-pair,remote-unbind,agent,passphrase,approvals,feedback,stop,resume,memory,activity,config,history,inbox,asr,tasks,wizard,keep-awake,browser,setup,google,mail,contacts,ask,workflows,sudo,secret,provider,sudo-helper,docs-rule,handover,telegram-cursor,plaza,support,capability,goal,heartbeat,quota,imessage,busy,recall,bots,friends,codex-sandbox,migrate,alias,instances,label,onboarding} ...
+              {doctor,reload,service,rescue,update,init,serve,protocol,pair,devices,revoke,send,status,name,admin,login,report,unlink,report-hostname,remote-pair,remote-unbind,agent,passphrase,approvals,feedback,stop,resume,memory,activity,config,history,inbox,asr,tasks,wizard,keep-awake,browser,setup,google,mail,contacts,ask,workflows,sudo,secret,provider,sudo-helper,docs-rule,handover,telegram-cursor,plaza,support,capability,goal,heartbeat,quota,imessage,busy,recall,bots,friends,codex-sandbox,migrate,alias,instances,label,onboarding} ...
 ```
 
 | 参数 | 默认值 | 必填 | 可选值 | 说明 |
@@ -5199,17 +5258,18 @@ agentj agent --help
 ```text
 usage: agentj agent [-h] [--probe] [--dry-run] [--result] [--scan] [--undo]
                     [--force] [--json] [--dir DIR]
-                    [--region {mainland-cn,global}] [--model MODEL]
-                    [--unfenced] [--allow-docker] [--shared | --independent]
-                    [{claude,codex,opencode,kimi,qwen,off,reset,restart,status,detect,switch,route}]
-                    [{claude,codex,opencode,kimi,qwen}]
+                    [--region {mainland-cn,global}] [--base-url BASE_URL]
+                    [--model MODEL] [--unfenced] [--allow-docker] [--shared |
+                    --independent]
+                    [{claude,codex,opencode,kimi,qwen,dsh,off,reset,restart,status,detect,switch,route}]
+                    [{claude,codex,opencode,kimi,qwen,dsh}]
 ```
 
 | 参数 | 默认值 | 必填 | 可选值 | 说明 |
 | --- | --- | --- | --- | --- |
 | `-h / --help` | `null` | false | — | `show this help message and exit` |
-| `mode` | `"status"` | false | `claude`, `codex`, `opencode`, `kimi`, `qwen`, `off`, `reset`, `restart`, `status`, `detect`, `switch`, `route` | `detect = 本机有哪些可用（不需要 init；只看是否安装、登录文件是否存在）/ which agents are usable here (no init needed; checks only what is installed and whether login files exist)` |
-| `target` | `null` | false | `claude`, `codex`, `opencode`, `kimi`, `qwen` | `switch：要切到的 harness；detect --probe：只探测这一个（可加 --model）` |
+| `mode` | `"status"` | false | `claude`, `codex`, `opencode`, `kimi`, `qwen`, `dsh`, `off`, `reset`, `restart`, `status`, `detect`, `switch`, `route` | `detect = 本机有哪些可用（不需要 init；只看是否安装、登录文件是否存在）/ which agents are usable here (no init needed; checks only what is installed and whether login files exist)` |
+| `target` | `null` | false | `claude`, `codex`, `opencode`, `kimi`, `qwen`, `dsh` | `switch：要切到的 harness；detect --probe：只探测这一个（可加 --model）` |
 | `--probe` | `false` | false | — | `detect: verify one tool-free model call using existing login (≤ 60 s each); no native output is returned` |
 | `--dry-run` | `false` | false | — | `switch：只检查能不能切，不切` |
 | `--result` | `false` | false | — | `switch：上一次切换的结果` |
@@ -5220,7 +5280,8 @@ usage: agentj agent [-h] [--probe] [--dry-run] [--result] [--scan] [--undo]
 | `--job` | `null` | false | — | `内部参数（--help 隐藏）` |
 | `--json` | `false` | false | — | `detect 的机器可读输出` |
 | `--dir` | `null` | false | — | `Agent 的工作目录（默认当前目录）` |
-| `--region` | `null` | false | `mainland-cn`, `global` | `kimi：Kimi 账号在哪个站 —— mainland-cn = kimi.com（默认）· global = kimi.ai（两边账号、key、额度不通用）` |
+| `--region` | `null` | false | `mainland-cn`, `global` | `kimi：Kimi 会员在哪个站买的 —— mainland-cn = kimi.com（默认）· global = kimi.ai；kimi.com 的 key 在 api.kimi.com 和 api.kimi.ai 都能用` |
+| `--base-url` | `null` | false | — | `dsh：OpenAI 兼容服务的地址（Olares Router、LiteLLM、Ollama…），写成 https://<服务>/v1，配 --model` |
 | `--model` | `null` | false | — | `模型（默认用你自己的设置）；OpenCode 写成 服务商/模型，例如 zhipuai/glm-5.3` |
 | `--unfenced` | `false` | false | — | `不隔离运行 Agent（按底层 harness 自己的权限）。默认 Agent 在 bubblewrap 里运行，看不到 Agent J 的状态` |
 | `--allow-docker` | `false` | false | — | `隔离里也让 Agent 用 docker` |
@@ -6623,7 +6684,7 @@ agentj docs-rule --help
 
 ```text
 usage: agentj docs-rule [-h] [--lang {zh,en}] [--write]
-                        [--harness {claude,codex,kimi,opencode,qwen}]
+                        [--harness {claude,codex,dsh,kimi,opencode,qwen}]
 ```
 
 | 参数 | 默认值 | 必填 | 可选值 | 说明 |
@@ -6631,7 +6692,7 @@ usage: agentj docs-rule [-h] [--lang {zh,en}] [--write]
 | `-h / --help` | `null` | false | — | `show this help message and exit` |
 | `--lang` | `null` | false | `zh`, `en` | `只要中文或英文（默认两种都有）/ one language only (default: both)` |
 | `--write` | `false` | false | — | `加到 AI 的用户级记忆文件末尾（只加一次）/ append it once to the AI's user-level memory file` |
-| `--harness` | `null` | false | `claude`, `codex`, `kimi`, `opencode`, `qwen` | `和 --write 一起：claude → ~/.claude/CLAUDE.md · codex → ~/.codex/AGENTS.md · opencode → ~/.config/opencode/AGENTS.md` |
+| `--harness` | `null` | false | `claude`, `codex`, `dsh`, `kimi`, `opencode`, `qwen` | `和 --write 一起：claude → ~/.claude/CLAUDE.md · codex → ~/.codex/AGENTS.md · opencode → ~/.config/opencode/AGENTS.md` |
 
 ### agentj doctor
 
@@ -7120,7 +7181,7 @@ agentj goal --help
 ```
 
 ```text
-usage: agentj goal [-h] {propose,status,progress,done,stop} ...
+usage: agentj goal [-h] {propose,grant,status,progress,done,stop} ...
 ```
 
 | 参数 | 默认值 | 必填 | 可选值 | 说明 |
@@ -7147,6 +7208,37 @@ usage: agentj goal done [-h] --result {achieved,not_achieved}
 | `-h / --help` | `null` | false | — | `show this help message and exit` |
 | `--result` | `null` | true | `achieved`, `not_achieved` | `` |
 | `--summary` | `null` | false | — | `一两句结果` |
+| `--json` | `false` | false | — | `` |
+
+### agentj goal grant
+
+```text
+目标进行中追加授权：手机上一张卡，签名后加进目标
+```
+
+```bash
+agentj goal grant --help
+```
+
+```text
+usage: agentj goal grant [-h] [--file FILE] [--cat {spend,delete,send,price}]
+                         [--what WHAT] [--match MATCH] [--path PATH]
+                         [--dir DIR] [--max MAX] [--usd USD] [--no-wait]
+                         [--json]
+```
+
+| 参数 | 默认值 | 必填 | 可选值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `--file` | `null` | false | — | `{"grants": [...]}（同 propose 的 grants 格式，- = stdin）/ grants like in propose` |
+| `--cat` | `null` | false | `spend`, `delete`, `send`, `price` | `` |
+| `--what` | `null` | false | — | `一句话说明` |
+| `--match` | `null` | false | — | `动作必须包含的文字（可重复）/ text the action must contain` |
+| `--path` | `null` | false | — | `只删这些目录下（cat delete）/ delete only under it` |
+| `--dir` | `null` | false | — | `只在这个目录里` |
+| `--max` | `null` | false | — | `最多次数（默认 50）/ at most N times` |
+| `--usd` | `null` | false | — | `花费上限` |
+| `--no-wait` | `false` | false | — | `不等主人签名就返回` |
 | `--json` | `false` | false | — | `` |
 
 ### agentj goal progress
@@ -7953,7 +8045,8 @@ usage: agentj mail [-h] [--address ADDRESS_OPT]
                    [--smtp-host SMTP_HOST] [--smtp-port SMTP_PORT]
                    [--smtp-security {ssl,starttls,plain}] [--poll POLL]
                    [--auth {strict,standard,off}] [--servid SERVID] [--guest]
-                   [--name NAME] [--to TO] [--to-owner] [--subject SUBJECT]
+                   [--name NAME] [--to TO] [--to-owner] [--cc CC] [--bcc BCC]
+                   [--format {markdown,html,text}] [--subject SUBJECT]
                    [--body BODY] [--body-file BODY_FILE] [--attach ATTACH]
                    [--from EXPECT_FROM] [--subject-has SUBJECT_HAS]
                    [--within WITHIN] [--lookback LOOKBACK] [--wait WAIT]
@@ -7983,6 +8076,9 @@ usage: agentj mail [-h] [--address ADDRESS_OPT]
 | `--name` | `null` | false | — | `allow：备注名` |
 | `--to` | `null` | false | — | `send` |
 | `--to-owner` | `false` | false | — | `send 和 notes：发给主人本人（通讯录 0 号位 + 白名单里的「我本人」地址）；和 --to 同时给就两边都发（去重，合计最多 10 个）/ the owner's own addresses (slot 0 + the owner allowlist rows); with --to: both (deduped, 10 at most)` |
+| `--cc` | `null` | false | — | `send：抄送——同 --to（可多次；白名单 / 手机批准规则每个收件人都算，合计最多 10 个）/ Cc: like --to (repeatable; every recipient counts for the approval rule; 10 in all)` |
+| `--bcc` | `null` | false | — | `send：密送——同 --to，别的收件人看不到` |
+| `--format` | `null` | false | `markdown`, `html`, `text` | `send：正文格式——markdown（默认，排成带格式的邮件）· html（网页原样，.html 文件自动选它）· text（纯文本）/ body format: markdown (default, a formatted mail) · html (the page as is; picked for .html files) · text` |
 | `--subject` | `null` | false | — | `send` |
 | `--body` | `null` | false | — | `send：正文` |
 | `--body-file` | `null` | false | — | `send：正文文件（- = 标准输入）；notes：纪要文件（不给就读标准输入）/ body or notes file (notes default: stdin)` |
@@ -8916,6 +9012,26 @@ usage: agentj report-hostname [-h] [{on,off,status}]
 | `-h / --help` | `null` | false | — | `show this help message and exit` |
 | `mode` | `"status"` | false | `on`, `off`, `status` | `` |
 
+### agentj rescue
+
+```text
+救援守护（手机「紧急修复」在 Agent J 没响应时也能用）：status · install · uninstall
+```
+
+```bash
+agentj rescue --help
+```
+
+```text
+usage: agentj rescue [-h] [--json] {status,install,uninstall,watchdog,undo}
+```
+
+| 参数 | 默认值 | 必填 | 可选值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `mode` | `null` | true | `status`, `install`, `uninstall`, `watchdog`, `undo` | `status 状态与最近记录 · install 安装 · uninstall 删除 · watchdog 前台运行（服务用）· undo 找回「重置连接」换掉的对话` |
+| `--json` | `false` | false | — | `status 的机器可读输出` |
+
 ### agentj resume
 
 ```text
@@ -9186,7 +9302,7 @@ usage: agentj sudo [-h] --why WHY [--effect EFFECT] [--timeout TIMEOUT]
 | 参数 | 默认值 | 必填 | 可选值 | 说明 |
 | --- | --- | --- | --- | --- |
 | `-h / --help` | `null` | false | — | `show this help message and exit` |
-| `--why` | `null` | true | — | `为什么要这条命令（手机上原样显示）/ why (shown on the phone)` |
+| `--why` | `null` | true | — | `这条命令是做什么用的，用大白话写（手机上第一行显示；至少 6 个汉字或 12 个英文字符，不能只是重复命令）/ what the command is for, in plain words (shown first on the phone; ≥ 6 CJK or 12 Latin characters, not the command repeated)` |
 | `--effect` | `""` | false | — | `会改什么` |
 | `--timeout` | `600` | false | — | `命令最长运行秒数（≤ 3600）` |
 | `--json` | `false` | false | — | `` |
@@ -9259,7 +9375,7 @@ usage: agentj support ask [-h] [--file FILE] [--attach-doctor]
 ### agentj support feedback
 
 ```text
-反馈给 Agent J 爸爸
+反馈
 ```
 
 ```bash
@@ -9982,6 +10098,8 @@ usage: agentj workflows [-h] [--json] [--staff-hint FOLDER]
 
 </details>
 
-Agent J Father（Agent J 爸爸 / Agent J 父亲）是官方反馈平台。标准说法：请把问题汇报给 Agent J 开发者（客服平台）；轻松说法：把这事告诉你爸爸。手机用 `/feedback-to-agentj-father <内容>`，主人下令脱敏直发，Agent 自发先请示。
+Agent J Father 是官方反馈平台。标准说法：请把问题汇报给 Agent J 开发者（客服平台）；轻松说法：把这事告诉你爸爸。手机用 `/feedback-to-agentj-father <内容>`，主人下令脱敏直发，Agent 自发先请示。
+
+审批档位（`approval.level`）和「设了目标就不弹窗」（`approval.goal_nocard`）只能在已配对手机的「设置 → 安全」里签名切换。Agent 里运行 `agentj config set approval.level full` 不会直接生效，只会在主人手机上弹一张确认卡。`agentj approvals --verify` 会逐条核对：按全放行（level_full）、设了目标就不弹窗（goal_preauth、goal_nocard）、离线留卡后重试（parked）自动批准的记录，都要追到手机上那次签名确认；没人在线时回给 Agent 的拒绝记为 offline 或 parked_wait。
 
 AI 工具的全权限启动参数、配置、短别名与回退方法：[全权限启动（三种方式）](/docs/setup-agents/#full-access)。

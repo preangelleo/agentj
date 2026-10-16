@@ -11,7 +11,8 @@ import json
 from pathlib import Path
 
 DATA = Path(__file__).with_name("identity")
-VERSION = 15  # P290: v14 (P251/P253/P254) + P269 checked API / browser / Father paths (compressed wording, same limits)
+VERSION = 16  # P341: v15 with the feedback platform named "Agent J Father" only (no 爸爸/父亲 names; spoken triggers stay)
+# v15 (P290): v14 (P251/P253/P254) + P269 checked API / browser / Father paths (compressed wording, same limits)
 # v11 = P159 + P186 (0.20.0, v11 never shipped alone): P159 compressed the v10 rules ~10% (zh 4359→3927 chars);
 # P186 added the chairman philosophy (company = workflow, guide chairman thinking, intent → workflow / global / local skill,
 # documents are the company) and trimmed duplicated long-task detail: zh 3987, en 12452 chars (≤ v10, under the 120% budget);
@@ -21,9 +22,9 @@ VERSION = 15  # P290: v14 (P251/P253/P254) + P269 checked API / browser / Father
 # v9 (P113, ADR-A193): long tasks — preflight card, brief, CEO routing, report read-back
 # v8 (P82): owner-authorized customer-service bot management
 # v5 (P64): a workflow with a CEO is always dispatched — never run or edited by the main Agent; read-only reporting stays
-HASHES = {'en': 'e8bb7a3d9e41c70b60c254a34375319f7c87ef86ecece08c00d5a8611399f568', 'zh': '48613b5b6e2add3513e18e2427a55782fad3bd0dca953277148b2c8e78418eec'}
+HASHES = {'en': '90107e56e555e05ea74a6f58a49066f1c8c038f60fe830f1d84ee01a2914663a', 'zh': '32183a11dfc94369cfba3d37867e476cdfaf37eac8a34433315634557d76003e'}
 MECHANISMS = {"claude": "append-system-prompt", "codex": "developerInstructions", "opencode": "prompt_async.system",
-              "kimi": "acp.resource", "qwen": "acp.resource"}   # P305: ACP has no system-prompt field — an embedded resource block (acp.prompt_blocks)
+              "kimi": "acp.resource", "qwen": "acp.resource", "dsh": "acp.text"}   # P329: dsh takes no embedded resources (acp._block)   # P305: ACP has no system-prompt field — an embedded resource block (acp.prompt_blocks)
 
 class IdentityError(ValueError):
     pass
@@ -133,8 +134,8 @@ def language_of(cfg: dict) -> str:
 
 
 SILENCE_LINE = {
-    "zh": "\n当后台例行任务没有需要主人处理的新结果、通知已重复或群消息无需回复时，最终回复可以只写〔不回群〕。仅此标记会静默结束：不推送、不计未读、不进入主消息流；历史保留可展开的静默回合。主人直接提问、错误、风险、等待审批或必须报告的结果不得静默。标记旁有正文会正常发送。仅工具调用或空白最终回复不会向主人发空卡；手机会显示等待接手或无文字回复状态，阅读中的旧消息不会被新消息覆盖。切换服务商时先读 agentj-config skill，Key 只收手机密钥卡。\n",
-    "en": "\nFor routine background work with no new actionable result, duplicate notices, or group messages that need no answer, the entire final reply may be 〔不回群〕. Only this exact marker suppresses delivery and unread counts; history keeps an expandable silent turn. Never silence a direct question, error, risk, pending approval, or required result. Text alongside the marker is delivered normally. Tool-only or blank final replies never send an empty card; the phone shows delivery/no-text status and preserves the page being read. Read agentj-config before switching providers; keys enter only through the phone secret card.\n",
+    "zh": "\n当后台例行任务没有需要主人处理的新结果、通知已重复或群消息无需回复时，最终回复可以只写〔不回群〕。最终回复仅此标记即整回合静默（之前的过程说明一并折起）：不推送、不计未读、不进入主消息流；历史保留可展开的静默回合。主人直接提问、错误、风险、等待审批或必须报告的结果不得静默。标记旁有正文会正常发送。仅工具调用或空白最终回复不会向主人发空卡；手机会显示等待接手或无文字回复状态，阅读中的旧消息不会被新消息覆盖。切换服务商时先读 agentj-config skill，Key 只收手机密钥卡。\n",
+    "en": "\nFor routine background work with no new actionable result, duplicate notices, or group messages that need no answer, the entire final reply may be 〔不回群〕. A final reply of exactly this marker silences the whole turn (no delivery, no unread), earlier progress notes included; history keeps an expandable silent turn. Never silence a direct question, error, risk, pending approval, or required result. Text alongside the marker is delivered normally. Tool-only or blank final replies never send an empty card; the phone shows delivery/no-text status and preserves the page being read. Read agentj-config before switching providers; keys enter only through the phone secret card.\n",
 }
 
 SHARED_CODEX_LINE = {'zh': '电脑上的 Codex App 打开会话时，手机会从本机记录显示它实际使用的模型，并提示当前只读。发送被原生写入权拒绝时，消息不会投递，也不会自动新开会话。完全退出 Codex App 后重发，可尝试接着同一会话；仅切到 New chat 或等一轮回答结束不保证释放写入权。不要承诺两个独立客户端能同时写这个会话，也不要删写锁、注入桌面私有管道或改权限。被拒时手机会说明是谁占着：Agent J 自己上次留下的后台进程会自动清理；ChatGPT App、Codex App 或终端里的 codex 要主人自己退出。Codex 权限：config.toml 顶层没写 sandbox_mode 时，你直接跑在底层（danger-full-access，危险清单和手机审批照旧）；主人写了就照主人的。要改 Codex 沙箱只用 `agentj codex-sandbox set <模式>|default|fix`（只写文件顶层，改完 `agentj service restart`），不要把 sandbox_mode 追加到文件末尾。共享模式下因权限被拒，请主人在 Codex 桌面 App 里把这条对话的权限改成「完全访问」。\n', 'en': 'While the Codex App holds a session, the phone follows its actual model from local records and shows read-only status. A native active-writer refusal leaves the message undelivered and never automatically starts another thread. Quit the Codex App completely, then resend to try continuing the same thread; switching to New chat or waiting for a reply does not guarantee release. Do not promise concurrent writes from separate clients, delete writer locks, inject the App’s private pipes or change permissions. A refusal names the holder: an Agent J leftover background process is cleaned up automatically; the ChatGPT App, the Codex App or a terminal codex must be quit by the owner. Codex permissions: with no top-level sandbox_mode in config.toml you run directly on the system (danger-full-access; the danger list and phone approvals still apply); an explicit owner setting is kept. Change the Codex sandbox only with `agentj codex-sandbox set <mode>|default|fix` (top level only, then `agentj service restart`); never append sandbox_mode to the end of the file. In shared mode, a permission refusal means the owner sets this conversation to Full access in the Codex App.\n'}
@@ -254,8 +255,8 @@ HEARTBEAT_LINE["en"] += "On a background-job-ended [Agent J system notice], read
 
 # P158 (0.20.0): goal mode. Host line; core hashes unchanged.
 GOAL_LINE = {
-    "zh": '目标模式：主人发 `/goal <要做成什么>`（或说「我去睡了，把这件事做完」）时按 agentj-goal 技能写提案（目标、验收、截止、按类带上限的危险动作），运行 `agentj goal propose --file <json>` 只出一张开工授权卡，主人签名后再开工；被拒的不可逆步骤不要重试，先做其它独立部分。新会话、压缩或心跳醒来先 `agentj goal status`，有进行中的目标就接着做。\n',
-    "en": 'Goal mode: when the owner sends `/goal <what to finish>` (or says "finish this while I sleep"), follow the agentj-goal skill: a proposal (goal, acceptance, deadline, the dangerous actions by kind with limits) and `agentj goal propose --file <json>` — one opening card; start after the owner signs. Never retry a refused irreversible step; carry on with the independent parts. A new session, a compaction or a heartbeat first runs `agentj goal status` and continues a running goal.\n',
+    "zh": '目标模式：主人发 `/goal <要做成什么>`（或说「我去睡了，把这件事做完」）时按 agentj-goal 技能写提案（目标、验收、截止、按类带上限的危险动作），运行 `agentj goal propose --file <json>` 只出一张开工授权卡，主人签名后再开工（主人开了「设了目标就不弹窗」时直接返回 active，立即开工）；被拒的不可逆步骤不要重试，先做其它独立部分。新会话、压缩或心跳醒来先 `agentj goal status`，有进行中的目标就接着做。\n',
+    "en": 'Goal mode: when the owner sends `/goal <what to finish>` (or says "finish this while I sleep"), follow the agentj-goal skill: a proposal (goal, acceptance, deadline, the dangerous actions by kind with limits) and `agentj goal propose --file <json>` — one opening card; start after the owner signs (with the owner switch "Goal mode: no cards" on, it returns active at once — start). Never retry a refused irreversible step; carry on with the independent parts. A new session, a compaction or a heartbeat first runs `agentj goal status` and continues a running goal.\n',
 }
 
 # P198 (0.20.1): the fenced main conversation's handoff path. The core names only the shared session's state-dir path, and

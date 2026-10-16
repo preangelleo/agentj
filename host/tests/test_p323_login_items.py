@@ -151,7 +151,8 @@ class LoginItems(unittest.TestCase):
                 mock.patch.object(service, "agentj_argv", return_value=["/x/agentj"]), \
                 mock.patch.dict(os.environ, {"AGENTJ_SERVICE_NAME": "net.agentj.host"}):
             service.install(self.st)
-        self.assertEqual(sorted(p.name for p in self.agents.iterdir()), ["net.agentj.host.plist"])
+        # P332: the rescue watchdog is a resident LaunchAgent too (it must come back after a login); no one-shot job remains
+        self.assertEqual(sorted(p.name for p in self.agents.iterdir()), ["net.agentj.host.plist", "net.agentj.rescue.plist"])
         self.assertIn("launchd_jobs_swept", self.st.log_path.read_text())
         for label in labels:
             self.assertNotIn(label, self.st.log_path.read_text(), "the log carries the count only")

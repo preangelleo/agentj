@@ -198,7 +198,9 @@ class ArkPreset(Home):
             self.assertEqual(ark.cmd(a), 0)
         self.assertIn("--model kimi-k3", json.loads(out.getvalue())["next"][0])
         self.assertIn("ARK_CODING_PLAN_API_KEY", harness.OPENCODE_KEY_ENV)
-        self.assertTrue(any(x["how"] == "agentj provider ark" for x in ai_route.alternatives("CN")))
+        # P335: Ark is a main recommendation now (ai_route.ark_steps), no longer one of the alternatives
+        self.assertFalse(any(x["how"] == "agentj provider ark" for x in ai_route.alternatives("CN")))
+        self.assertIn("agentj provider ark", "\n".join(ai_route.ark_steps("zh")))
 
     def test_render_both_languages(self):
         r = self.install(dry_run=True)

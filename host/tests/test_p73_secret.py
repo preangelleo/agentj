@@ -203,7 +203,7 @@ class OutlivesCli(Base):
             await host.elevate.start()
             try:
                 r, w = await asyncio.open_unix_connection(str(host.elevate.sock_path))
-                w.write((json.dumps({"t": "sudo", "argv": ["true"], "why": "w", "early": True}) + "\n").encode())
+                w.write((json.dumps({"t": "sudo", "argv": ["true"], "why": "run a harmless test command", "early": True}) + "\n").encode())
                 await w.drain()
                 first = json.loads(await asyncio.wait_for(r.readline(), 5))
                 self.assertEqual((first["t"], first["kind"]), ("card", "sudo"))

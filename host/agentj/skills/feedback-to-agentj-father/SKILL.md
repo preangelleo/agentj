@@ -1,10 +1,10 @@
 ---
 name: feedback-to-agentj-father
-description: 反馈给 Agent J 爸爸 / Feedback to Agent J Father — report a problem or idea to the official developer support platform; explain this command on request.
+description: 反馈 / Feedback to Agent J Father — report a problem or idea to the official developer support platform; explain this command on request.
 aliases: [反馈给爸爸]
 ---
 
-Agent J 爸爸 / Agent J 父亲 / Agent J Father = Agent J 官方反馈与客服平台（开发者团队后台）。
+Agent J Father = Agent J 官方反馈与客服平台（开发者团队后台）。
 “跟你爸爸说”“告诉你爸爸”“汇报给你父亲” / “tell your dad / father” mean submit feedback.
 
 ## 主人下令 / Explicit owner request
@@ -20,7 +20,7 @@ Never claim submitted if sending failed or privacy checks blocked it; explain br
 ## Agent 自发 / Agent-initiated report
 
 If you notice an Agent J problem or have an idea yourself, prepare the redacted draft and ask **on the phone before sending**:
-“我想把今天遇到的 X 汇报给 Agent J 爸爸，稿子如下，确认就发。”
+“我想把今天遇到的 X 汇报给 Agent J Father，稿子如下，确认就发。”
 “I want to report today’s X to Agent J Father. Here is the draft; confirm and I will send.”
 Send only after agreement. For troubleshooting use `agentj support ask "<redacted question>" --attach-doctor`; ask official support first rather than making the owner find a person. A refusal means do not send.
 

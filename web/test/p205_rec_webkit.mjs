@@ -1,6 +1,6 @@
 // P205 item 5 — the recording card in WebKit (iPhone 390×844, 3×): WebKit on Linux has no audio stack, so no take can run;
-// this renders the card's three looks (held, locked, dimmed) on the paired page and measures them: a square, round circle
-// in the middle, the icons under it, dim = black. The behaviour itself is p205_rec.mjs (Chromium, fake microphone).
+// this renders the card's two looks (held, locked) on the paired page and measures them: a square, round circle
+// in the middle, the icons under it (P346 removed the dimmed look; its blur is p346_rec_blur_webkit.mjs). The behaviour itself is p205_rec.mjs (Chromium, fake microphone).
 // Shots → reports/qa/p205/rec-webkit-*.png. Not in the parity run (needs the owner's Playwright + PLAYWRIGHT_BROWSERS_PATH).
 // Usage: node web/test/p205_rec_webkit.mjs
 import { createRequire } from 'node:module';
@@ -40,8 +40,7 @@ try {
   }, [cls, hint, act, note]);
   for (const [name, cls, hint, act, note] of [
     ['hold', '', '松开转成文字 · 上滑取消', false, ''],
-    ['lock', 'lock', '再点一下结束 · 上滑取消', true, '请别按电源键锁屏，想省电可以点月亮进暗屏'],
-    ['dim', 'lock dim', '再点一下结束 · 上滑取消', true, '暗屏中，录音继续 · 点太阳恢复亮度'],
+    ['lock', 'lock', '再点一下结束 · 上滑取消', true, '请别按电源键锁屏，录音会继续'],
   ]) {
     const g = await look(cls, hint, act, note);
     await p.waitForTimeout(400);
@@ -49,12 +48,11 @@ try {
     assert.ok(parseFloat(g.radius) >= g.w / 2 - 1 || /50%/.test(g.radius), `${name}: round ${g.radius}`);
     assert.ok(Math.abs(g.cx - g.vw / 2) < 2, `${name}: centred`);
     if (act) assert.ok(g.actTop > g.circleBottom, `${name}: icons under the circle`);
-    if (name === 'dim') assert.equal(await p.evaluate(() => getComputedStyle(document.getElementById('ptt')).backgroundColor), 'rgb(0, 0, 0)');
     await p.screenshot({ path: OUT + `rec-webkit-${name}-390.png` });
     results['webkit-' + name] = 'PASS';
   }
   assert.deepEqual(problems, []);
 } finally { await B.close(); await fake.stop(); await web.stop(); }
 console.log(JSON.stringify(results));
-if (Object.keys(results).length !== 3) { console.log('FAILED'); process.exit(1); }
+if (Object.keys(results).length !== 2) { console.log('FAILED'); process.exit(1); }
 console.log('ALL PASS');

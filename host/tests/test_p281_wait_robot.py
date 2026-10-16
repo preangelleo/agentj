@@ -112,7 +112,8 @@ class Progress(unittest.TestCase):
             sw.scan_worker(st, "j1", probe=fake_probe(), ctl=lambda req: calls.append(req) or {"ok": True})
             self.assertEqual([(c["phase"], c.get("to"), c.get("k")) for c in calls],
                              [("scanning", None, None), ("scan_one", "claude", 1), ("scan_one", "codex", 2), ("scan_one", "opencode", 3),
-                              ("scan_one", "kimi", 4), ("scan_one", "qwen", 5)])   # P305, P310
+                              ("scan_one", "kimi", 4), ("scan_one", "qwen", 5),
+                              ("scan_one", "dsh", 6)])   # P305, P310, P329
 
 
 class ServeLines(unittest.TestCase):

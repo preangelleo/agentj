@@ -152,3 +152,11 @@ export async function secretOutDigest(fields) {
   for (const f of fields) lines.push(hexOf(await sha256(te.encode(f))));
   return hexOf(await sha256(te.encode(lines.join('\n'))));
 }
+
+// ---------------------------------------------------------------- P352 「模型和 API Key」: copy / delete a key from the host key file
+// Same Face ID assertion as above (elevateChallenge), kind "key_" + op, over this digest of the one thing the tap acts on
+// (pure; the host's agentj/keys.py computes the same): hex SHA-256(UTF-8("agentjarvis-keys-v1\n" + op + "\n" + NAME)).
+export const KEYS_CTX = 'agentjarvis-keys-v1';
+export async function keysDigest(op, name) {
+  return hexOf(await sha256(new TextEncoder().encode(KEYS_CTX + '\n' + op + '\n' + name)));
+}

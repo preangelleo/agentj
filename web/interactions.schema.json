@@ -31,8 +31,8 @@
       "type": "object", "required": ["zh", "en"], "additionalProperties": false,
       "properties": {"zh": {"type": "string", "minLength": 1}, "en": {"type": "string", "minLength": 1}}
     },
-    "scope": {"enum": ["chat", "input", "any", "reader", "viewer", "search", "sheet"],
-      "description": "chat = the chat screen with the focus outside any field; input = in the message box; any = both; reader / viewer / search / sheet = while that layer is open"},
+    "scope": {"enum": ["chat", "input", "any", "reader", "viewer", "search", "sheet", "keys"],
+      "description": "chat = the chat screen with the focus outside any field; input = in the message box; any = both; reader / viewer / search / sheet / keys (the shortcut list) = while that layer is open"},
     "impl": {"enum": ["table", "code"], "description": "table = dispatched by relay.js ACT through interactions.gen.js KEYMAP (chat scope: single key or Alt+key; any scope: Alt+Shift+Latin letter); code = a hand-written handler marked // @ix <id>"},
     "gesture": {
       "type": "object", "required": ["type"], "additionalProperties": false,
@@ -50,7 +50,9 @@
           "description": "one character (capital letter = with Shift) or a named key, after modifiers in the order Ctrl+Alt+Shift+Mod; Mod = ⌘ on Apple platforms, Ctrl elsewhere"},
         "how": {"enum": ["press", "hold", "double"], "default": "press"},
         "scope": {"$ref": "#/$defs/scope"},
-        "impl": {"$ref": "#/$defs/impl"}
+        "impl": {"$ref": "#/$defs/impl"},
+        "yields": {"type": "array", "items": {"$ref": "#/$defs/scope"},
+          "description": "an any-scope key that leaves the same key to these layers while they are open (P344: ⌘K / Ctrl+K searches the shortcut list instead of the chat)"}
       }
     },
     "entry": {

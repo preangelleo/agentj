@@ -1,9 +1,10 @@
 [project]
 name = "agentj"
 dynamic = ["version"]            # single source: agentj/__init__.py (`agentj --version`)
-description = "Agent J on your computer (`agentj`): talk to your own Claude Code, Codex or OpenCode from your phone, end-to-end encrypted"
+description = "Agent J on your computer (`agentj`): talk to your own Claude Code, Codex, OpenCode, Kimi Code or Qwen Code from your phone, end-to-end encrypted"
 requires-python = ">=3.11"       # tested on 3.11 and 3.13; uv fetches an interpreter by itself when the system one is older
 license = "Apache-2.0"
+license-files = ["LICENSE", "NOTICE"]   # P353: shipped in the wheel (.dist-info/licenses/) and sdist; byte-equal to release/public/
 dependencies = [
   "cryptography>=44,<49; sys_platform == 'darwin' and platform_machine == 'x86_64'",
   "cryptography>=44; sys_platform != 'darwin' or platform_machine != 'x86_64'", # X25519 / Ed25519 / AES-GCM
@@ -34,7 +35,7 @@ agentj = "agentj.cli:main"
 dev = ["noiseprotocol==0.3.1"]   # test-only third oracle for the Noise state machine; never imported at runtime
 
 [build-system]
-requires = ["hatchling>=1.24"]
+requires = ["hatchling>=1.27"]   # 1.27: PEP 639 license-files
 build-backend = "hatchling.build"
 
 [tool.hatch.version]
@@ -47,4 +48,4 @@ packages = ["agentj", "jarvis_host"]   # the package + its data files (admin/ pa
 exclude = ["agentj/admin/i18n/*.src.json", "agentj/admin/i18n/*.override.json"]
 
 [tool.hatch.build.targets.sdist]
-include = ["agentj", "jarvis_host", "pyproject.toml"]
+include = ["agentj", "jarvis_host", "pyproject.toml", "LICENSE", "NOTICE"]

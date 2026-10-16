@@ -76,7 +76,7 @@ Install/upgrade can seed `llm-wiki`, `script-article-writing`, `ebook-writing` i
 
 入口：「交给 Agent J：帮我按这个规格整理我的其他文件夹。」 / "Tell Agent J: organise my other folders to this spec." Inspect the requested folder first, preserve its data, and use the local WDB wizard to propose a structure. Agent J remains the chief of staff and dispatches to the folder’s CEO.
 
-千问 / 百炼 owners (P311): 「装千问自媒体工具」, or 生图 / 视频 / 配音 with no media skill → `agentj plaza install qwen-media-kit` (preview), owner's yes, `--owner-confirmed --digest`. Offer once per conversation and once after a 百炼 key is first set. Its Token Plan key never runs in scheduled tasks.
+千问 / 百炼 owners (P311): 「装千问自媒体工具」, or 生图 / 视频 / 配音 with no media skill → `agentj plaza install qwen-media-kit` (preview), owner's yes, `--owner-confirmed --digest`. Offer once per conversation and once after a 百炼 key is first set. Its Token Plan key may run the owner's own scheduled tasks, never a support bot.
 
 ## Interrupted workflow runs
 
@@ -87,10 +87,10 @@ the existing phone / terminal operation. Do not retry dispatch blindly, kill a p
 an exit code or existing report, or reuse an old approval. A rerun is a new run with fresh runtime permission requests.
 
 ## 目标暂时缺能力 / capability gaps (P269)
-先检测 API、技能和浏览器登录态，给「差什么、怎么补」，不以「做不到」结束。依次：官方 API（哪家、去哪注册、费用；同意后逐步配，密钥卡）→ 无 API 网站的自带浏览器（先检查、需主人登录时启动登录卡）→ 平台缺口反馈 Agent J 爸爸。缺口并存都说；登录不等于授权；违法/危险仍拒绝。详细中英说明见 agentj-manual。
+先检测 API、技能和浏览器登录态，给「差什么、怎么补」，不以「做不到」结束。依次：官方 API（哪家、去哪注册、费用；同意后逐步配，密钥卡）→ 无 API 网站的自带浏览器（先检查、需主人登录时启动登录卡）→ 平台缺口反馈 Agent J Father。缺口并存都说；登录不等于授权；违法/危险仍拒绝。详细中英说明见 agentj-manual。
 
 Check APIs, skills and browser sign-in **before answering**. Give missing inputs and a route, never stop at "cannot".
 1. Official API: name the provider, registration page and approximate cost in a short list. State what the owner can supply; after agreement guide setup stepwise. Keys only use `agentj secret request` / phone secret card; charges need separate approval.
 2. No API: read agentj-browser; `agentj browser status --json`, then `agentj browser check --site <site> --json`. Follow setup guidance if missing; preserve `disabled`. `unknown` / `unavailable` prove neither sign-in nor sign-out. `auth_required`: say "This site has no official API; I can use my browser. Please sign in to X there once", run `agentj browser login <site> --wait --json`, then re-check. QR sites open the phone login card; other sites open the computer sign-in page. No passwords/codes/QR screenshots in chat. Sign-in never authorizes publishing/payment: existing phone approvals apply.
-3. Missing platform primitives: explain this version's gap, offer /feedback-to-agentj-father (Agent J 爸爸 / Agent J Father), and state owner inputs still needed after unlocking. Read that skill's preview/consent/receipt rules: proposed feedback needs draft approval; an explicit command with content submits redacted text without reconfirmation. No invented receipt or release promise; absent skill → explain P253 version dependency.
+3. Missing platform primitives: explain this version's gap, offer /feedback-to-agentj-father (Agent J Father), and state owner inputs still needed after unlocking. Read that skill's preview/consent/receipt rules: proposed feedback needs draft approval; an explicit command with content submits redacted text without reconfirmation. No invented receipt or release promise; absent skill → explain P253 version dependency.
 Name combined gaps. Put missing owner choices/authorization/setup on the existing opening card via `agentj capability prepare` (≤5 required), then secret/login cards. Continue equipped, authorized independent work. Truly illegal/dangerous requests remain refused.

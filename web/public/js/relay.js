@@ -20,7 +20,8 @@ import { cycle, tier } from './quotapace.js';   // P303: day of the reset cycle 
 import { RelayMD } from './md.js';
 import { copyable } from './copycode.js';   // P292: every code / pre can be copied
 import { upgrade as upgradeWords, forget as forgetRendered } from './render.js';   // P57: lazy code / math / diagrams
-import { t, lang, onLang, fillText } from './t.js';
+import { cmdGist } from './cmdgist.js';   // P341: the approval card's plain line when the Agent gave none
+import { t, lang, onLang, fillText, both } from './t.js';
 import { el, toast, toastOff, toastAction, human, stamp, mmss, confirmSheet } from './ui.js';
 import * as sfx from './sfx.js';
 import * as sendvol from './sendvol.js';   // P154 追加 12: hold the grey Send → the send-sound slider
@@ -92,7 +93,7 @@ let wordsAt = 0, wordsTimer = null;
 // P281: wait words that are not a wait — 「已停下」 is over, 「电脑没有回音」 needs the owner — get no robot
 const NOT_WAITING = ["r.replyStopped", "r.replyNoEcho"];
 let themeGen = 0;          // P281: a new theme redraws the wait robot (its sheet) on the page shown
-function renderWords(text, pending = false, label = "", waitLine = false){
+function renderWords(text, pending = false, label = "", waitLine = false, sys = false){
   const tx = (text || "").trim();
   // P127: a compaction in flight (any mode: PreCompact on a shared Claude, system/status on our own) says so at once;
   // a page-specific label (queued behind a busy session) wins over the session-wide wait words
@@ -100,7 +101,7 @@ function renderWords(text, pending = false, label = "", waitLine = false){
   const wait = waitKey(cur, historySync, quiet ? Date.now() - quiet.at : 0);
   // P281: the page's words are a wait line (the host's own wait / queue / switch lines included) → the robot leads them
   const robot = pending && !tx ? !!label || !NOT_WAITING.includes(wait) : !!waitLine && !!tx;
-  const key = (pending && !tx ? "\u0000pending:" + (label || wait) + (!label && wait === "r.replyWorking" && ownerAddr ? "|" + ownerAddr : "") : tx)
+  const key = (sys ? "\u0000sys:" : "") + (pending && !tx ? "\u0000pending:" + (label || wait) + (!label && wait === "r.replyWorking" && ownerAddr ? "|" + ownerAddr : "") : tx)
     + (robot ? "\u0000robot:" + themeGen : "");
   if (key === wordsSrc) return;
   // P193 (B10): a streaming reply grows chunk by chunk and every redraw re-parses the whole Markdown (O(n²) over a long
@@ -115,16 +116,19 @@ function renderWords(text, pending = false, label = "", waitLine = false){
   wordsSrc = key;
   const w = el("words");
   w.className = "words" + (!tx ? " empty" : tx.length > 600 ? " l" : tx.length > 240 ? " m" : "");
-  fill(w, pending && !tx ? (label || waitText(wait)) : tx, pending && !tx);
+  fill(w, pending && !tx ? (label || waitText(wait)) : tx, pending && !tx, sys);
   afterWords(robot);
-  rdFollow(tx);
+  rdFollow(tx, sys);
 }
-function fill(w, tx, plain = false){
+// P341 (#19): a host-written system page (k "sys": goal results, notices) quotes commands — "$(…)" / "$HOME" — so it
+// renders Markdown without TeX; the Agent's own replies keep math.
+const sysPage = (p) => !!(p && p.source && p.source.k === "sys");
+function fill(w, tx, plain = false, sys = false){
   if (tx && !plain){
     try{
       const detail = tx.match(/^([\s\S]*)\n\n(\u8be6\u60c5|Details):\n```text\n([\s\S]*)\n```$/);
       tx = detail ? detail[1] : tx;
-      w.replaceChildren(RelayMD.toDOM(RelayMD.parse(tx), document)); upgradeWords(w); linkify(w);
+      w.replaceChildren(RelayMD.toDOM(RelayMD.parse(tx, {math: !sys}), document)); upgradeWords(w); linkify(w);
       if (detail){
         const d = document.createElement("details"), label = document.createElement("summary"), raw = document.createElement("pre");
         label.textContent = detail[2]; raw.textContent = detail[3]; d.append(label, copyable(raw, {click: false})); w.appendChild(d);
@@ -309,12 +313,12 @@ function paintTags(item){
     if (item.tool === "pair_device") { const s = document.createElement("span"); s.className = "atag danger"; s.textContent = t(item.passkey_required ? "pair.card.tagFace" : "pair.card.tag"); box.appendChild(s); }   // P153
     else if (item.passkey_required) { const s = document.createElement("span"); s.className = "atag danger"; s.textContent = t("ask.sandboxOnce"); box.appendChild(s); }
     else if (item.cats && item.cats.length) for (const c of item.cats){ const s = document.createElement("span"); s.className = "atag danger"; s.dataset.cat = c; s.textContent = t('ask.cat.' + catKey(c, item)); box.appendChild(s); }
-    else if (item.goal !== "grant") { const s = document.createElement("span"); s.className = "atag low"; s.textContent = t('ask.low'); box.appendChild(s); }
+    else if (item.goal !== "grant" && item.goal !== "attack") { const s = document.createElement("span"); s.className = "atag low"; s.textContent = t('ask.low'); box.appendChild(s); }   // P339: an attack card is never tagged low
   }
   if (item && item.task){ const s = document.createElement("span"); s.className = "atag task"; s.textContent = t('ask.task', {task: item.task}); box.appendChild(s); }
   if (item && item.goal){   // P158 goal mode: countdown (no answer = approved) · waits for you · possible attack (red)
     const s = document.createElement("span"); s.className = "atag goal " + (item.goal === "attack" ? "danger" : item.goal === "auto" ? "low" : "task");
-    s.dataset.goal = item.goal; s.textContent = t('ask.goal.' + item.goal) + (item.goal_why ? " · " + item.goal_why : ""); box.appendChild(s);
+    s.dataset.goal = item.goal; s.textContent = t('ask.goal.' + item.goal) + (item.goal_why && !goalHuman(item) ? " · " + item.goal_why : ""); box.appendChild(s);   // P339: the reason has its own line
   }
   box.hidden = !box.childElementCount;
   const more = C.openCount() - 1;
@@ -356,7 +360,8 @@ function renderCard(s){
   if (left > 0) askResultTimer = setTimeout(() => { if (cur) renderCard(cur); }, left * 1000 + 50);
   document.body.dataset.sheet = (pending && !folded) || result || presult ? "1" : "0";
   el("pendTag").hidden = !folded || (!!apprOpt && apprOpt.key === foldedCard);   // P154: a card answered here leaves no tag
-  el("apprBtns").hidden = true; el("apprBatch").hidden = true;
+  el("apprBtns").hidden = true; el("apprBatch").hidden = true; el("apprGoalAdd").hidden = true;
+  el("goalInfo").hidden = true; el("cmdToggle").hidden = true;   // P339: only a goal card in plain words shows them
   el("sheet").classList.remove("danger");
   el("frAsk").hidden = true;
   if (result){
@@ -404,7 +409,7 @@ function renderPermission(card, p){
   if (friendAsk(p)){
     el("sheet").classList.toggle("danger", !!(p.pq && p.pq.high_risk));
     el("sheet").classList.toggle("friend-neutral", !(p.pq && p.pq.high_risk));                                    // §17.7: friends.js draws the card into #frAsk; relay keeps the sheet
-    for (const id of ["cmdBox", "cmdCopy", "why", "qs", "askCancel", "askSend", "apprBtns", "apprBatch", "askState"]) el(id).hidden = true;
+    for (const id of ["cmdBox", "cmdCopy", "why", "qs", "askCancel", "askSend", "apprBtns", "apprBatch", "apprGoalAdd", "goalInfo", "cmdToggle", "askState"]) el(id).hidden = true;
     el("frAsk").hidden = false;
     renderFriendAsk(p, {open: apprState(p) === "open", sign: C.canSign(), repaint: () => { if (cur) renderCard(cur); },
       dismiss: () => { apprDismissed = p.id; if (cur && cur.card) foldedCard = cardKey(cur.card); if (cur) renderCard(cur); }});
@@ -420,6 +425,17 @@ function renderPermission(card, p){
   const danger = !!(p && (p.passkey_required || pairAsk || (p.cats && p.cats.length) || p.goal === "attack"));
   el("sheet").classList.toggle("danger", danger);
   el("sheetTitle").textContent = pairAsk ? t("pair.card.title") : p && p.passkey_required ? t("ask.sandboxTitle") : danger ? t('r.verb.danger', {verb: verb(tool)}) : verb(tool);
+  // P339: a goal card the host put in plain words — 「目标进行中：{who} 想{what}…」, the three lines under it, and the raw
+  // command (tool tag, 展开全部, description) folded behind 「详情」 (closed for every new card).
+  const human = goalHuman(p);
+  if (human){
+    el("sheetTitle").textContent = human;
+    // review #3: a card that looks like an attack shows its raw command in full from the start (never folded away)
+    if (goalOpen.id !== p.id){ goalOpen = {id: p.id, open: p.goal === "attack"}; if (p.goal === "attack") cmdOpenKey = cardKey(card); }
+    el("cmdBox").hidden = !goalOpen.open;
+    el("cmdToggle").hidden = false;
+    el("cmdToggle").setAttribute("aria-expanded", String(goalOpen.open));
+  }
   el("tool").textContent = pairAsk || (p && p.passkey_required) ? "Agent J" : tool;
   const {main} = summarize(p ? p.summary : card.summary);
   el("cmd").classList.toggle("sandbox", !!(p && (p.passkey_required || pairAsk)));
@@ -429,6 +445,11 @@ function renderPermission(card, p){
   const st = apprState(p), open = st === "open";
   const sign = C.canSign();
   paintMailAllow(p, open && sign);
+  if (human) paintGoalInfo(p, open, open && sign);
+  const goalAdd = !!(human && open && sign && p.goal === "hold" && p.goal_add && !p.local_only);
+  el("apprGoalAdd").hidden = !goalAdd;
+  el("apprGoalAdd").disabled = apprBusy;
+  if (goalAdd) el("apprGoalAddText").textContent = p.goal_add;
   el("apprBtns").hidden = !open || !sign;
   el("apprDeny").disabled = apprBusy;
   el("apprAllow").hidden = !p || p.local_only;
@@ -451,12 +472,35 @@ function renderPermission(card, p){
   el("elsewhereText").textContent = pairAsk && open ? t('pair.card.where') : !p ? t('r.appr.elsewhere') : p.local_only ? t('r.appr.st.localOnlyShort') : open ? t('r.appr.elsewhereLive') : t('r.appr.elsewhere');
   paintTags(p || null);
 }
+// P339: the goal card's plain title (null = an older host's card: it renders exactly as before).
+let goalOpen = {id: null, open: false};
+function goalHuman(p){
+  if (!p || !["auto", "hold", "attack"].includes(p.goal) || !p.goal_what) return null;
+  return t(p.goal === "auto" ? 'p339.titleAuto' : 'p339.title', {who: p.goal_who || t('p339.agent'), what: p.goal_what});
+}
+// Plain lines, text only: why it was not approved automatically · what happens if you don't tap · how to approve (and, with
+// a goal_add offer, how to let the same kind through from now on). A card already decided keeps only the reason.
+function paintGoalInfo(p, open, live){
+  const lines = [];
+  if (p.goal_why) lines.push(t('p339.why', {why: p.goal_why}));
+  if (open) lines.push(t(p.goal === "auto" ? 'p339.ifNotAuto' : 'p339.ifNot'));
+  if (live && p.goal !== "auto") lines.push(t('p339.how') + (p.goal === "hold" && p.goal_add ? t('p339.howAdd') : ""));
+  const box = el("goalInfo");
+  box.replaceChildren(...lines.map(x => { const n = document.createElement("p"); n.textContent = x; return n; }));
+  box.hidden = !lines.length;
+}
+function toggleGoalCmd(){
+  const p = cur && cur.approval;
+  if (!p) return;
+  goalOpen = {id: p.id, open: !(goalOpen.id === p.id && goalOpen.open)};
+  if (cur) renderCard(cur);
+}
 // P296: a mail card to someone not yet on the mail allowlist offers one unticked box per such recipient — 「以后发给 X 不用再
 //确认（加入白名单）」. Ticked ones go out with 长按批准, inside the same signature (api.approve → mailAllowMessage).
 let mailPicks = {id: null, set: new Set()};
 function paintMailAllow(p, live){
   const box = el("apprMailAllow");
-  const offer = live && p && p.tool === "agentj mail send" && Array.isArray(p.allow_offer) ? p.allow_offer : [];
+  const offer = live && p && p.tool === "agentj mail send" && !p.goal_add && Array.isArray(p.allow_offer) ? p.allow_offer : [];   // P339: a goal_add card offers that one line instead
   if (!offer.length){ box.hidden = true; box.replaceChildren(); return; }
   if (mailPicks.id !== p.id) mailPicks = {id: p.id, set: new Set()};
   if (box.dataset.id !== p.id || box.childElementCount !== offer.length + 1){
@@ -485,7 +529,9 @@ function paintCmd(text, fold, key, tool){
   let body = String(text || ""), desc = "";
   const cut = fold && tool === "Bash" ? body.lastIndexOf("\n— ") : -1;
   if (cut > 0){ desc = body.slice(cut + 3).trim(); body = body.slice(0, cut); }
-  el("cmdDesc").textContent = desc; el("cmdDesc").hidden = !desc;
+  const gist = !desc && fold && tool === "Bash" ? cmdGist(body) : "";   // P341 (#19): no description → a plain line of what it does
+  el("cmdDesc").textContent = desc || gist; el("cmdDesc").hidden = !(desc || gist);
+  el("cmdDesc").classList.toggle("gist", !!gist);
   cmdFull = body;
   if (pre.textContent !== cmdFull) pre.textContent = cmdFull;
   if (cmdOpenKey !== null && cmdOpenKey !== key) cmdOpenKey = null;
@@ -517,9 +563,11 @@ async function apprPost(p, action){
   apprFail = null;
   if (now){ apprOpt = {id: p.id, key: cardKey(cur.card), action}; foldedCard = apprOpt.key; apprDismissed = p.id; }
   apprBusy = true; if (cur) renderCard(cur);
-  const r = await C.api.approve(p, action, action === "allow" && mailPicks.id === p.id ? [...mailPicks.set] : undefined);
+  // P339: 「长按：批准，并加进目标授权」 = an allow whose signature also covers [goal_add] (the P296 allow_add line)
+  const r = action === "goaladd" ? await C.api.approve(p, "allow", [p.goal_add])
+    : await C.api.approve(p, action, action === "allow" && mailPicks.id === p.id ? [...mailPicks.set] : undefined);
   apprBusy = false;
-  if (r.ok){ apprSent = {id: p.id, state: action === "batch" ? "batch_sent" : action === "allow" ? "allow_sent" : "deny_sent"}; }
+  if (r.ok){ apprSent = {id: p.id, state: action === "batch" ? "batch_sent" : action === "allow" || action === "goaladd" ? "allow_sent" : "deny_sent"}; }
   else {
     const why = r.why === 'passkey_required' ? t('ask.passkeyRequired') : r.why === "offline" ? t('r.appr.net') : t('r.appr.fail');
     if (apprOpt && apprOpt.id === p.id){                        // it did not leave this phone: the card comes back, saying why
@@ -643,15 +691,21 @@ function paintUsage(u){
   paintPill(u);
   el("meta").title = u.source ? t('r.usage.age', {s: Math.round(u.age_s || 0)}) : t('r.usage.none');
   const windows = quotaWindows(u);
-  for (const [idx, id] of ['mWeek', 'm5h'].entries()) {
-    const bar = el(id), x = Array.isArray(u.quota_windows) ? windows[idx] : windows.find(w => w.window === (id === 'm5h' ? '5h' : 'weekly'));
-    bar.hidden = !x && id !== 'm5h'; bar.dataset.known = x ? '1' : '0';
+  // P340 D (#42, Leo 10-16): both rules stay on screen as page dividers whatever the harness / provider — no data hides only
+  // the label (no 「—」, no explanation), so switching harness never moves the page. Provider windows: the 5 h one goes to the
+  // bottom rule, the first longer one (weekly / monthly / daily) to the top rule.
+  const longer = windows.filter(w => w.window !== '5h');
+  for (const id of ['mWeek', 'm5h']) {
+    const bar = el(id), x = Array.isArray(u.quota_windows)
+      ? (id === 'mWeek' ? longer[0] : windows.find(w => w.window === '5h') || longer[1])
+      : windows.find(w => w.window === (id === 'm5h' ? '5h' : 'weekly'));
+    bar.hidden = false; bar.dataset.known = x ? '1' : '0';
     bar.dataset.zero = x && x.pct === 0 ? '1' : '0';
     bar.firstElementChild.style.width = x ? x.pct + '%' : '0';
     // P303: WEEKLY n%（第 N 天）, and a faint glow — fast (weekly only), ≥ 80 % Mellow Marrow, ≥ 90 % Peachy Feeling
-    const c = x ? cycle(x.window, quotaReset(u, x.window)) : null, day = c && x.window === 'weekly' ? t('p303.day', {n: c.step}) : '';
+    const c = x ? cycle(x.window, x.reset || quotaReset(u, x.window)) : null, day = c && x.window === 'weekly' ? t('p303.day', {n: c.step}) : '';
     bar.dataset.glow = x ? tier(x.pct, c, {pace: x.window === 'weekly'}) : '';
-    bar.querySelector('.lab').textContent = x ? `${x.window} ${Math.round(x.pct)}%${day}` : (id === 'm5h' ? '5h —' : '');
+    bar.querySelector('.lab').textContent = x ? `${x.window} ${Math.round(x.pct)}%${day}` : '';
     const label = x ? t('r.meter.' + ({weekly:'week',daily:'daily',monthly:'monthly','5h':'h5'}[x.window])) : '';
     bar.setAttribute('aria-label', x ? t('r.meter.used', {label, pct:x.pct}) + (day ? ' ' + t('p303.dayAria', {n: c.step, of: c.steps}) : '') : '');
     bar.title = bar.getAttribute('aria-label');
@@ -691,7 +745,7 @@ function quotaReset(u, w){
 // P207 §1: the numbers open the global centred dark dialog (js/usagedlg.js), not a toast pill at the top
 function meterToast(e){
   const u = (cur && cur.usage) || {};
-  const windows = u.source ? quotaWindows(u).map(x => ({window: x.window, reset: quotaReset(u, x.window), label: t('r.meter.' + ({weekly:'week',daily:'daily',monthly:'monthly','5h':'h5'}[x.window])), pct: x.pct})) : [];
+  const windows = u.source ? quotaWindows(u).map(x => ({window: x.window, reset: x.reset || quotaReset(u, x.window), label: t('r.meter.' + ({weekly:'week',daily:'daily',monthly:'monthly','5h':'h5'}[x.window])), pct: x.pct})) : [];
   const ctx = typeof u.context_pct === 'number' ? u.context_pct : null;
   const ctxText = ctx != null ? null : Number.isFinite(u.context_used) ? `${u.context_used} tokens` : postCompact ? t('p207set.usage.ctxPost') : null;
   openUsage({source: !!u.source, windows, ctx, ctxText, age: u.age_s != null ? u.age_s : null}, e && e.currentTarget);
@@ -716,6 +770,7 @@ export function render(s){
   renderCard(s);
   paintUsage(s.usage);
   paintCompacting(s.compacting === true);
+  paintSayCancel();                                    // P328: blue → the × stops the turn
   if (s.usage && typeof s.usage.context_pct === "number" && !s.compacting) postCompact = false;
   if (lastStatus !== null && s.status !== lastStatus && navigator.vibrate && document.body.dataset.conn === "on"){
     try{ navigator.vibrate(s.status === "waiting" ? [90,60,90] : 35); }catch(_){}
@@ -945,6 +1000,12 @@ function visiblePage(p){
   return !isSilent(p.reply) && (visibleReply(p) || !!src?.text?.trim() || !!src?.att?.length || !!p.card);
 }
 function toNewest(){ follow = true; tailWait = false; shownKey = null; stick = true; showPage(); }
+// P340 (Leo 10-16 #21): a message sent while he reads an older page leaves him there — only a send from the newest page
+// (or the page still waiting for its reply) follows it to the new page. His own page arriving does the same (upsertTurn);
+// a reply that lands while he is back in history lights the page number as any new reply does (P102 / P333).
+function onNewestPage(){ return follow || tailWait || pageAt < 0 || pageAt >= pages().length - 1; }
+let sentStay = false;
+function sendFollow(){ sentStay = !onNewestPage(); if (!sentStay) toNewest(); }
 const SRC_KINDS = ["leo", "dev", "host", "agent", "sys", "task", "cmd"];
 function pages(){
   if (pagesCache) return pagesCache;
@@ -980,7 +1041,7 @@ export function upsertTurn(p){
     if (!hist.firstId) hist.firstId = p.id;
   } else return;
   pagesCache = null;
-  if (p.source && ["phone","cmd"].includes(p.source.k) && p.source.dev === C.myDev() && p.end === "open" && !previous){ follow = true; shownKey = null; }
+  if (p.source && ["phone","cmd"].includes(p.source.k) && p.source.dev === C.myDev() && p.end === "open" && !previous && onNewestPage()){ follow = true; shownKey = null; }
   showPage();
 }
 export function historyReset(ep){ resetHistory(ep); showPage(); }
@@ -1014,6 +1075,7 @@ async function refreshNewest(retry = false){
       if (unread.mark() > j.read) sendRead();
     }
     pagesCache = null; historySync = false; historyDelay = 0;
+    unread.rebase(hist.turns.filter(visibleReply).map(x => x.id));   // P333: what the head brought (reload, foreground, reconnect) is not a live arrival
   }catch(_){
     if (generation === historyGeneration){   // keep the syncing wording and try again later
       historyDelay = Math.min(historyDelay ? historyDelay * 2 : RETRY_MS, RETRY_MAX_MS);
@@ -1183,6 +1245,7 @@ function showPage(){
     r.addEventListener("keydown", e => { if (e.key === "Enter" || e.key === " "){ e.preventDefault(); e.stopPropagation(); jumpToTurn(m.id); } });
     return r;
   }));
+  paintQFold(p);
   const total = totalPages(), n = total - (ps.length - 1 - pageAt);
   el("pg").textContent = blank && total <= 1 ? "0 / 0" : n + " / " + total;
   el("rmTime").textContent = p.ts ? "· " + hhmm(p.ts) : "";
@@ -1211,7 +1274,7 @@ function showPage(){
   const progress = open && typeof c.progress === "string" ? c.progress.trim().slice(0, 300) : "";
   const hostWait = open && (c.wait === true || c.queued === true) || (typeof c.switch === "string" && p === ps[ps.length - 1]);
   renderWords((isSilent(p.reply) ? "" : p.reply?.trim()) || (p.end === "open" || p.id === null ? "" : t('r.noReply')), open,
-    qd ? t('r.queue.card') + (ahead ? " · " + t('r.queue.ahead', {n: ahead}) : "") : progress, hostWait);
+    qd ? t('r.queue.card') + (ahead ? " · " + t('r.queue.ahead', {n: ahead}) : "") : progress, hostWait, sysPage(p));
   paintThinking(visibleReply(p) && !hostWait ? progress : "");
   el("words").classList.toggle("empty", !visibleReply(p));
   renderMedia(el("words"), p);
@@ -1358,17 +1421,20 @@ function unreadCovered(){
 function paintUnread(ps, p){
   const ids = replyIds(ps);
   if (!historySync) unread.sync(hist.epoch, ids);
+  unread.arrivals(ids, document.visibilityState === "visible");   // P333: also while the head is loading (a live turn is live)
   const covered = unreadCovered();
   if (!historySync && p && p.id !== null && visibleReply(p) && document.visibilityState === "visible" && document.body.dataset.view === "chat")
-    { if (unread.see(p.id, ids, covered) && unread.isOwner()) sendRead(); }
+    { unread.look(p.id); if (unread.see(p.id, ids, covered) && unread.isOwner()) sendRead(); }
   else unread.advance(ids, covered);
   if (!historySync && unread.isOwner()) retryRead();
-  const n = historySync ? 0 : unread.list(ids).length;
-  if (historySync || (unread.isOwner() && !n)) {
-    unreadReply = false; el("pgCorner").dataset.unread = "0";
-    el("pgLatest").setAttribute("aria-label", t("r.pg.latest"));
-    el("pgLatest").title = t("r.pg.latestHint");
-  }
+  // P333: another remote's receipt clears what it read, never this remote's own new-message alert (pulse + badge)
+  const al = historySync ? [] : unread.alerts(ids), n = al.length;
+  // P333: a return to the foreground (the head fetch) put the pulse out; a newer reply still new here lights it again
+  if (!historySync && !follow && p && p.id !== null && unread.newer(ids, p.id)) unreadReply = true;
+  if (historySync || (unread.isOwner() && !n)) unreadReply = false;
+  el("pgCorner").dataset.unread = unreadReply ? "1" : "0";
+  el("pgLatest").setAttribute("aria-label", t(unreadReply ? "r.newReply" : "r.pg.latest"));
+  el("pgLatest").title = t(unreadReply ? "r.newReply" : "r.pg.latestHint");
   const b = el("omUnread");
   el("omUnreadN").textContent = n > 99 ? "99+" : String(n);
   b.dataset.n = String(n);
@@ -1388,7 +1454,7 @@ async function fillUnread(){
 }
 async function goFirstUnread(tell){
   for (let i = 0; i < UNREAD_FILL_BATCHES * 2 && !unreadCovered(); i++){ const b = await loadOlderBatch(); if (!b || !b.all) break; }
-  const ps = pages(), first = unread.list(replyIds(ps))[0];
+  const ps = pages(), first = unread.alerts(replyIds(ps))[0];
   const at = first === undefined ? -1 : ps.findIndex(x => x.id === first);
   if (at < 0){ if (tell) toast(t('r.unread.none'), 1600); return false; }
   pageAt = at; follow = at === ps.length - 1; tailWait = false; shownKey = null; stick = true;
@@ -1430,17 +1496,64 @@ function paintActs(){
   paintSpeak(); paintFwd(); paintMail();
   fitBar();
 }
+// P340 (Leo 10-16 #35): a sent message with two to five quotes shows them folded into one row — 「引用 5 段」, the first
+// quote's words, 「+4」 — the look of the quote strip above the field before sending. A tap opens them all (each row still
+// jumps to its page), another tap folds them again. One quote stays as it was. Every page opens folded.
+let qOpen = null;
+export function qFoldWords(q, more){
+  if (!q) return null;
+  const n = 1 + (Array.isArray(more) ? more.length : 0);
+  if (n < 2) return null;
+  return {n, head: t('p340b.qfold.head', {n}), text: String(q.text || "").replace(/\s+/g, " ").trim(), more: "+" + (n - 1)};
+}
+function paintQFold(p){
+  const om = el("om"), b = el("omQuoteFold");
+  const q = p && p.source && p.source.quote ? p.source.quote : null, f = qFoldWords(q, q && q.more);
+  b.hidden = !f;
+  if (!f){ delete om.dataset.qfold; return; }
+  const open = p.id !== null && qOpen === p.id;
+  om.dataset.qfold = open ? "0" : "1";
+  b.setAttribute("aria-expanded", open ? "true" : "false");
+  b.setAttribute("aria-label", t(open ? 'p340b.qfold.close' : 'p340b.qfold.open'));
+  b.title = b.getAttribute("aria-label");
+  el("omqfHead").textContent = open ? f.head + " · " + t('p340b.qfold.close') : f.head;
+  el("omqfText").textContent = f.text;
+  el("omqfN").textContent = open ? "" : f.more;
+}
+function toggleQFold(){
+  const p = currentPage();
+  if (!p || p.id === null) return;
+  qOpen = qOpen === p.id ? null : p.id;
+  paintQFold(p);
+}
 // P251: equal-width hit regions; compress empty space before shrinking every glyph together.
+// P340 (#38): the group is right-packed, glyph gap = the last glyph's right margin (--rm-gap, app.css). Only when the row is
+// too narrow for that does this narrow the gap (to 12 px), then the glyphs (21 → 18 px), then the gap again (to 6 px).
+export function barFit(room, n, base){
+  const I = 21, need = (i, g) => n * (i + g) + g;
+  if (!(room > 0) || n < 1 || need(I, base) <= room) return {icon: I, gap: base};
+  let g = (room - n * I) / (n + 1);
+  if (g >= 12) return {icon: I, gap: g};
+  const i = (room - 12 - 12 * n) / n;
+  if (i >= 18) return {icon: i, gap: 12};
+  return {icon: 18, gap: Math.max(6, (room - 18 * n) / (n + 1))};
+}
 function fitBar(){
-  const group = el("rmIcons");
-  if (!group) return;
+  const group = el("rmIcons"), bar = el("rmbar");
+  if (!group || !bar) return;
   const count = [...group.querySelectorAll(".act")].filter(b => !b.hidden).length;
-  // Desktop used 44px targets + 2px gap. Cap at that pitch; surplus stays beside the left button.
   group.style.setProperty("--rm-count", count);
-  const room = group.getBoundingClientRect().width;
-  if (!room) return;
-  const slot = room / Math.max(1, count);
-  group.style.setProperty("--rm-icon", Math.min(21, Math.max(18, slot - 6)) + "px");
+  const br = bar.getBoundingClientRect();
+  if (!br.width) return;
+  const wr = el("webReportBtn"), cs = getComputedStyle(bar);
+  // from the bar's own box, not wr's current place: an overflowing row (before this fit lands) pushes wr left in WebKit
+  const wcs = wr && !wr.hidden && wr.getClientRects().length ? getComputedStyle(wr) : null;
+  const from = br.left + parseFloat(cs.paddingLeft || "0") + (wcs ? wr.offsetWidth + parseFloat(wcs.marginLeft || "0") + parseFloat(wcs.marginRight || "0") : 0);
+  bar.style.removeProperty("--rm-gap");
+  const base = 2 * parseFloat(getComputedStyle(bar).paddingRight) || 16;   // the padding is half the gap, resolved to px
+  const f = barFit(br.right - from, count, base);
+  if (f.gap !== base) bar.style.setProperty("--rm-gap", f.gap.toFixed(2) + "px");
+  group.style.setProperty("--rm-icon", f.icon.toFixed(2) + "px");
 }
 // P216 (Leo 10-13): 分享成网页报告 — puts the web-page-report skill's command at the front of the field, cursor after it,
 // never sends. The owner may add which part / who should see it, or send it bare and the Agent asks (the skill's own
@@ -1763,7 +1876,7 @@ function openReader(){
   try{ const s = getSelection(); if (s && !s.isCollapsed) s.removeAllRanges(); }catch(_){}
   const max = mainEl.scrollHeight - mainEl.clientHeight;
   rdAt = {key: shownKey, scroll: mainEl.scrollTop, text: tx};
-  fill(el("rdWords"), tx);
+  fill(el("rdWords"), tx, false, sysPage(p));
   renderReaderMedia(el("rdWords"), p);                 // P59 (ADR-A164): local pictures / files in place, not their Markdown
   rdHead();
   if (document.activeElement === input) input.blur();
@@ -1838,7 +1951,7 @@ function rdSync(){
   if (!rdHasText(p)) return;                    // an empty page on the way: the jump that brought us here moves on
   const tx = p.reply.trim();
   rdAt = {key: shownKey, scroll: 0, text: tx};
-  fill(el("rdWords"), tx); renderReaderMedia(el("rdWords"), p);
+  fill(el("rdWords"), tx, false, sysPage(p)); renderReaderMedia(el("rdWords"), p);
   el("rdScroll").scrollTop = 0;
 }
 // The footer: the reply card's six icons, cloned once (same glyphs, same order — 阅读 · 朗读 · 转发 · 邮件 · 复制 · 回复,
@@ -1901,10 +2014,10 @@ function closeReader(fromPop){
   if (!fromPop && rdPushed && history.state && history.state.ajReader){ rdSkipPop = true; history.back(); }
   rdPushed = false;
 }
-function rdFollow(tx){
+function rdFollow(tx, sys = false){
   if (!rdAt || rdAt.key !== shownKey || !tx || tx === rdAt.text) return;
   const sc = el("rdScroll"), top = sc.scrollTop;
-  rdAt.text = tx; fill(el("rdWords"), tx); sc.scrollTop = top;
+  rdAt.text = tx; fill(el("rdWords"), tx, false, sys); sc.scrollTop = top;
 }
 function dblTap(node, ok, fn){
   let down = null, last = null;
@@ -2003,7 +2116,7 @@ export function setConn(on, text){
   if (on && !was) uploadsResume();
   if (on) drainOut(); else outbox.lost();          // 0.15.2: the offline queue goes out on ready, stops on a drop
   paintOut();
-  wordsSrc = null; showPage(); paintChrome(); refreshSend();
+  wordsSrc = null; showPage(); paintChrome(); refreshSend(); paintSayCancel();
 }
 
 // P251: preserve text through the existing sealed draft store; never discard in-flight card/media work.
@@ -2410,7 +2523,7 @@ function launchLoop(){
   };
   L.delay = setTimeout(() => {
     L.started = true;
-    el("sayCancel").hidden = false; document.body.dataset.sending = "1";
+    document.body.dataset.sending = "1"; paintSayCancel();
     if (reduce || !logo || !document.body.animate){
       if (logo && logo.animate){
         logo.dataset.breath = "1";
@@ -2446,10 +2559,56 @@ let queueTimer = 0;
 const queuedShown = () => { const now = Date.now(); return queued.filter(q => now - (q.at || 0) >= QUEUE_QUIET_MS); };
 function queuedTurn(id){ return Number.isInteger(id) && queuedShown().some(q => q.turn === id); }
 function queuedAhead(id){ const i = queued.findIndex(q => q.turn === id); return i > 0 ? i : 0; }
+// P328 (Leo, 0.22.0a1): the × is one control with three jobs — take back this phone's send in flight (send), take back a
+// message still queued behind a busy session (queued), and, while the Agent works (blue) with nothing of ours to take back,
+// stop the running turn (turn: §8 slash stop, the same /stop the menu sends). It used to follow only the send, so a shared
+// Claude Code — which has the message in its TUI within milliseconds (say delivered) — lost it at once while the Agent kept
+// working, and a shared Codex (whose say stays queued until its app-server takes it) kept it: the same blue, two answers.
+// Now every harness shows it while blue; one that cannot be stopped from the phone says so in /stop's own answer.
+function sayCancelMode(){
+  const blue = cur && cur.status === "working" && document.body.dataset.conn === "on";
+  if (inflight) return document.body.dataset.sending === "1" || blue ? "send" : null;   // idle: only after 400 ms (no flash)
+  if (queued.length) return "queued";
+  if (blue && !(C && C.estopOn())) return "turn";
+  return null;
+}
+let sayCancelShown = null;
+function paintSayCancel(){
+  const b = el("sayCancel");
+  if (!b) return;
+  const mode = sayCancelMode();
+  b.hidden = !mode;
+  if (mode) b.dataset.mode = mode;
+  if (mode) document.body.dataset.saycancel = "1"; else delete document.body.dataset.saycancel;
+  if (mode && mode !== sayCancelShown){
+    const k = mode === "turn" ? "p328.stopAria" : "r.say.cancelAria";
+    b.setAttribute("data-i18n-attr", `aria-label=${k},title=${k}`);
+    b.setAttribute("aria-label", t(k)); b.title = t(k);
+  }
+  sayCancelShown = mode;
+  padForCancel();
+}
+// The typed words never run under the pill: the field's right padding reaches past its left edge (it changes width with
+// the language and the type size — a ResizeObserver re-measures). The button itself is never transformed (only its <b>
+// pops in), so its box is the real one.
+function padForCancel(){
+  const b = el("sayCancel"), f = input && input.closest(".field");
+  if (!b || !f) return;
+  if (b.hidden){ if (f.style.paddingRight){ f.style.paddingRight = ""; autosize(); } return; }
+  const pad = Math.ceil(f.getBoundingClientRect().right - b.getBoundingClientRect().left + 4) + "px";
+  if (f.style.paddingRight !== pad){ f.style.paddingRight = pad; autosize(); }
+}
+let stopAskedAt = 0;
+const STOP_AGAIN_MS = 2500;
+function stopTurn(){
+  if (Date.now() - stopAskedAt < STOP_AGAIN_MS) return;
+  if (!C.api.slash("stop")){ toast(t('p328.stopNet'), 2400); return; }
+  stopAskedAt = Date.now();
+  toNewest();
+  toast(t('p328.stopSent'), 2200);
+}
 function paintQueued(){
-  const show = !!inflight && document.body.dataset.sending === "1" || (!inflight && queued.length > 0);
-  el("sayCancel").hidden = !show;
-  el("sayCancel").dataset.mode = inflight ? "send" : "queued";
+  paintSayCancel();
   clearTimeout(queueTimer);
   const young = queued.filter(q => Date.now() - (q.at || 0) < QUEUE_QUIET_MS);
   if (young.length) queueTimer = setTimeout(paintQueued, Math.max(20, ...young.map(q => QUEUE_QUIET_MS - (Date.now() - q.at) + 20)));
@@ -2457,6 +2616,7 @@ function paintQueued(){
   if (hist.turns.length) showPage();
 }
 async function cancelSay(){
+  if (el("sayCancel").dataset.mode === "turn" && sayCancelMode() === "turn") return stopTurn();
   const S = inflight;
   if (S){
     if (S.cancelling || S.cancelled || S.delivered) return;
@@ -2510,9 +2670,10 @@ export function onSayState(m){
   else if (m.s === "failed"){ dequeue(m.sid); toast(t('r.say.failedLater'), 3200); }
 }
 // The whitelist commands (§8) run as commands when typed; /clear asks first. Anything else starting with / is text.
-const CMDS = ["clear", "compact", "model", "context", "cost", "usage", "status", "help", "stop", "update"];
+const CMDS = ["clear", "new", "compact", "model", "context", "cost", "usage", "status", "help", "stop", "update"];
 const CMD_RE = /^\/([A-Za-z][\w:.-]{0,63})(?:[ \t]+([\s\S]*))?$/;
 async function runCmd(cmd, arg = ""){
+  if (cmd === "new") cmd = "clear";                              // P341 (#50): /new is /clear (Codex users' word) — asks first too
   if (cmd === "model") pillDrop();                               // P239: typed /model is immediate; drop a waiting tap
   if (cmd === "clear"){
     if (!await confirmSheet(t('cmd.clearTitle'), t('cmd.clearText'), t('cmd.clearYes'))) return false;
@@ -2533,7 +2694,7 @@ const saySwitch = () => sayWords(SWITCH_CMD, t('p238.sent'));
 async function sayWords(text, done){
   if (C.estopOn()){ toast(t('r.say.stopped'), 3200); return false; }
   if (!C.connected()){ toast(t('p181.offline'), 3000); return false; }
-  toNewest();
+  sendFollow();
   let r;
   try{ r = await C.api.say({sid: C.api.newSid(), text, att: [], reply_to: null, excerpt: null}); }
   catch(_){ r = {ok: false, why: "other"}; }
@@ -2568,6 +2729,12 @@ async function say(voiceReady = false){
     if (await addFriendCmd((fa[1] || "").trim())){ pushHist(text); settleField(text); autosize(); saveDraft(); }
     return;
   }
+  // P332 (§33): /reset = 紧急修复 ① (the signed reset ladder) — before the stop / offline checks: it is how a stuck link is fixed
+  if (/^[/\uff0f]reset$/i.test(text.trim()) && !atts.length && !quotes.length){
+    pushHist(text); settleField(text); autosize(); saveDraft();
+    C.resetConn?.();
+    return;
+  }
   // P181: /customize (中文「定制命令」) sends the same preset message as a long press on the ≡ button
   if (/^[/\uff0f]customize$/i.test(text.trim()) && !atts.length && !quotes.length){
     if (await sayPreset("cmds")){ pushHist(text); settleField(text); autosize(); saveDraft(); }
@@ -2575,15 +2742,15 @@ async function say(voiceReady = false){
   }
   if (C.estopOn()){ toast(t('r.say.stopped'), 3200); return; }
   // 0.15.2: not connected, or older messages still waiting → it queues behind them (/stop, /clear never wait)
-  if (!C.connected() || (outbox.items.length && !/^\/(stop|clear)(\s|$)/i.test(text.trim()))) return sayLater(text);
+  if (!C.connected() || (outbox.items.length && !/^\/(stop|clear|new)(\s|$)/i.test(text.trim()))) return sayLater(text);
   const c = CMD_RE.exec(text.trim());
   if (c && CMDS.includes(c[1].toLowerCase()) && !atts.length && !quotes.length){
     if (!await runCmd(c[1].toLowerCase(), (c[2] || "").trim())) return;
-    pushHist(text); settleField(text); autosize(); saveDraft(); toNewest(); launchRocket();
+    pushHist(text); settleField(text); autosize(); saveDraft(); sendFollow(); launchRocket();
     return;
   }
   sending = true; refreshSend();
-  toNewest();
+  sendFollow();
   const batch = atts.slice();
   const S = inflight = {phase: "upload", batch, sid: null, cancelled: false, delivered: false, cancelling: false, wake: null};
   const loop = launchLoop();
@@ -2635,6 +2802,7 @@ async function say(voiceReady = false){
   finally{
     loop.stop(landed);
     if (landed) launchRocket();
+    if (landed && sentStay && !onNewestPage()) toast(t('p340b.sentStay'), 2200);   // P340: it went; he stays where he reads
     if (S.cancelled && !S.forgotten) toast(t('r.say.cancelled'), 2400);
     inflight = null;
     sending = false; autosize(); paintQueued();
@@ -2667,7 +2835,7 @@ function sayLater(text){
   const c = CMD_RE.exec(text.trim());
   const cmd = c && CMDS.includes(c[1].toLowerCase()) && !atts.length && !quotes.length ? c[1].toLowerCase() : null;
   // 全部停下 / 清空 are "now or not at all": a stop that lands minutes later would cut whatever runs then
-  if (cmd === "stop" || cmd === "clear"){ toast(t('offline.now'), 2800); return; }
+  if (cmd === "stop" || cmd === "clear" || cmd === "new"){ toast(t('offline.now'), 2800); return; }
   const bad = atts.filter(a => a.st === "failed");
   if (bad.length){ toast(t('r.say.badAtt', {n: bad.length}), 3200); return; }
   const list = atts.slice(), rt = quotes;
@@ -2683,7 +2851,7 @@ function sayLater(text){
   pushHist(text);
   if (rt.length && quotes === rt) cancelReply();
   settleField(text);
-  autosize(); saveDraft(); toNewest();
+  autosize(); saveDraft(); sendFollow();
   if (C.connected()) drainOut();
 }
 // One queued message → say_res-like (outbox.verdict decides). Files: upload (or resume) first, then the say with the
@@ -2735,7 +2903,7 @@ function outDone(e, r, kind){
 // (menu.json in the Agent's folder — they only INSERT text, the human still sends), then the Agent's own skills.
 const MENU_LIMITS = {items: 60, cmd: 64, desc: 200, group: 32};
 const MENU_CMD_RE = /^\/[A-Za-z0-9][A-Za-z0-9_:.\-]{0,62}$/;
-const RUN = ["compact", "clear", "model", "context", "cost", "usage", "status", "stop", "update"];
+const RUN = ["compact", "clear", "new", "model", "context", "cost", "usage", "status", "stop", "update"];
 const runDescription = c => t('r.run.' + c);
 let hostMenu = null;          // {items:[[cmd, desc, group]], skills:[[cmd, desc]]}
 // P238 (Leo 10-13 23:31): the version of the serve this connection talks to (every `preferences` message carries it). The
@@ -2842,6 +3010,7 @@ function renderMenu(){
     b.disabled = same || pending;
   }
   if (hostMenu?.reload) item("/reload", t('p320.reloadDesc'), {run: "reload"}).id = "reloadEntry";   // @ix app.reload_host (P320: a host that answers /reload)
+  item("/reset", t('p332.menuDesc'), {}).id = "resetEntry";   // P332 (§33): 紧急修复 ① — on every host (an old one simply never answers)
   item("/customize", t('p181.customize'), {prompt: "cmds"});   // P181: 定制命令 → the preset message (≡ hold does the same)
   for (const [cmd, why] of switchItems()) item(cmd, why, {}).id = "switchEntry";   // P238: one tap sends it
   const stop = item("■", C.estopOn() ? t('estop.resume') : t('estop.btn'), {estop: C.estopOn() ? "resume" : "stop"});
@@ -2861,7 +3030,7 @@ function renderMenu(){
     }
   }
   if (host.skills.length){ group(t('r.menu.skills')); for (const [cmd, why] of host.skills) item(cmd, why, {slash: cmd}); }
-  menuItems = RUN.map(c => ["/" + c, runDescription(c), ""]).concat(hostMenu?.reload ? [["/reload", t('p320.reloadDesc'), ""]] : [], [["/customize", t('p181.customize'), ""]], toolItems(true), switchItems(), fromHost, host.skills);
+  menuItems = RUN.map(c => ["/" + c, runDescription(c), ""]).concat(hostMenu?.reload ? [["/reload", t('p320.reloadDesc'), ""]] : [], [["/reset", t('p332.menuDesc'), ""]], [["/customize", t('p181.customize'), ""]], toolItems(true), switchItems(), fromHost, host.skills);
   const k = item("?", t('r.keys.title'), {});
   k.className = "keysentry"; k.id = "keysEntry";
   if (CLIP_READ){ const c = item("📋", t('r.menu.clip'), {}); c.className = "clipentry"; c.id = "clipEntry"; }
@@ -3055,18 +3224,16 @@ function pttUI(p){
   b.classList.toggle("rec", !!p && !p.cancel);
   b.classList.toggle("cancel", !!p && p.cancel);
   b.classList.toggle("lock", !!p && p.locked);
-  if (!p){ box.hidden = true; box.classList.remove("lock", "dim", "cancel"); document.body.classList.remove("recdim"); el("pttSeg").hidden = true; el("pttAct").hidden = true; el("pttNote").hidden = true; el("micLabel").textContent = asrBusy ? t('r.asr.tag') : t('r.mic.hold'); return; }
+  if (!p){ box.hidden = true; box.classList.remove("lock", "cancel"); document.body.classList.remove("recblur"); el("pttSeg").hidden = true; el("pttAct").hidden = true; el("pttNote").hidden = true; el("micLabel").textContent = asrBusy ? t('r.asr.tag') : t('r.mic.hold'); return; }
   box.hidden = false;
   box.classList.toggle("cancel", p.cancel);
   box.classList.toggle("lock", p.locked);
-  // P205: locked → end / dim / cancel under the circle; dim only while locked (a held take has a finger on the glass)
-  const dim = p.locked && recDim;
-  box.classList.toggle("dim", dim);
-  document.body.classList.toggle("recdim", dim);
+  // P205 / P346 (#54): every take (held or locked) blurs the page behind in its own state colour (app.css .ptt);
+  // locked → cancel · end · send under the circle (a held take has a finger on the glass, release ends it)
+  document.body.classList.add("recblur");
   el("pttAct").hidden = !p.locked;
-  el("pttDim").setAttribute("aria-label", t(dim ? 'r.ptt.undim' : 'r.ptt.dim')); el("pttDim").title = t(dim ? 'r.ptt.undim' : 'r.ptt.dim');
   const note = el("pttNote");
-  note.textContent = !p.locked || !p.rec ? "" : dim ? t('r.ptt.dimNote')
+  note.textContent = !p.locked || !p.rec ? ""
     : matchMedia("(pointer:coarse)").matches ? (p.wlFail ? t('r.ptt.awakeNoLock') : t('r.ptt.awake')) : "";
   note.hidden = !note.textContent;
   el("pttTime").dataset.lock = t('r.ptt.locked');
@@ -3123,9 +3290,7 @@ function wakeOff(p){ if (p.wl){ p.wl.release().catch(() => {}); p.wl = null; } }
 // nothing plays while recording (the speaker stops), so there is no echo to cancel. With it off, a stretch of true digital
 // silence means the system fed the page zeros — recorded as a gap (with track mute → unmute) and told to the owner.
 const MIC_AUDIO = {echoCancellation: false, noiseSuppression: false, autoGainControl: true};
-const SILENT_PEAK = 4 / 32768, DIM_KEY = "aj.recDim";
-let recDim = false;
-try{ recDim = localStorage.getItem(DIM_KEY) === "1"; }catch(_){}
+const SILENT_PEAK = 4 / 32768;
 // The level meter: an analyser on the take's stream (→ a muted gain → the destination, so every engine pulls it). Fails
 // soft — no meter, the ring breathes instead — and is closed with the take.
 function meterCtx(){
@@ -3207,7 +3372,8 @@ function pttStart(id, y){
                    seg: 0, segMs: segMs(), maxSegs: Math.max(1, Math.min(REC_SEGS, MAX_ATT - atts.length)),
                    takeP: null, take: null, stampS: stamp(), lastData: 0, mutedAt: 0, wl: null, wlFail: false, interrupted: false,
                    hidAt: 0, visAt: 0, cutAt: 0, segT0: 0, segT: [], gaps: [], muteT0: 0, nsOff: false, ac: null, silT0: 0, gapSeen: 0};
-  p.timer = setInterval(() => { meterSample(p); pttWatch(p); pttUI(p); }, 250);
+  // P346: a take the watch just ended (an interruption) is not painted back — pttEnd already took the card down
+  p.timer = setInterval(() => { meterSample(p); pttWatch(p); if (!p.over) pttUI(p); }, 250);
   pttUI(p);
   // Native permission/device acquisition may never settle. Do not leave a
   // locked take waiting forever, and do not retain a stream arriving after cancel.
@@ -3568,7 +3734,12 @@ function renderSilent(focusId){
     sm.append(tm, sc, ln);
     const full = document.createElement("div"); full.className = "full"; full.textContent = text || t('r.silent.noText');
     const rp = document.createElement("div"); rp.className = "rep"; rp.textContent = t('r.silent.reply') + turn.reply.trim();
-    d.append(sm, full, rp);
+    d.append(sm, full);
+    if (typeof turn.pre === "string" && turn.pre.trim()){       // P351: the turn's process notes, folded with it
+      const pr = document.createElement("div"); pr.className = "rep pre"; pr.textContent = t('r.silent.pre') + turn.pre.trim();
+      d.append(pr);
+    }
+    d.append(rp);
     return d;
   }));
   if (typeof focusId === "number"){
@@ -3600,17 +3771,18 @@ async function moreSilent(){
 const shownById = (id) => { const n = el(id); return !!n && !n.hidden; };
 const dialogOpen = () => search.isOpen() || !el("silent").hidden || !el("cam").hidden || !el("keys").hidden || !el("confirm").hidden || !el("badge-panel").hidden || !el("settings").hidden
   || shownById("lqr") || shownById("sout") || shownById("elev") || shownById("setup-view");
-function openKeys(){ paintKeys(); closeSug(); el("keys").hidden = false; el("keysClose").focus(); }   // P187: above the list / Settings
+function openKeys(){ closeKeysFind(); paintKeys(); closeSug(); el("keys").hidden = false; el("keysClose").focus(); }   // P187: above the list / Settings
 // P207: the 「键盘快捷键」 page is drawn from interactions.json (interactions.gen.js ROWS + the ix* dictionary texts), never
 // written by hand: one card per group, a row per entry with a key — its keys, what it does and the mouse / touch gesture.
 const isMac = () => /Mac|iP(hone|ad|od)/.test(navigator.platform || navigator.userAgent || "");
 function paintKeys(){
   const box = el("keysCols");
   if (!box) return;
-  const mac = isMac(), cards = [];
+  const mac = isMac(), cards = [], terms = keysTerms();
   for (const g of ['functional', 'single', 'gestures']){
     const rows = IX_ROWS.map(([id, keys, ges]) => [id, g === 'gestures' ? keys : keys.filter(k => k[0].startsWith('Alt+Shift+') === (g === 'functional')), ges])
-      .filter(r => g === 'gestures' ? r[2] : r[1].length);
+      .filter(r => g === 'gestures' ? r[2] : r[1].length)
+      .filter(r => !terms.length || terms.every(w => keysHay(g, r).includes(w)));   // @ix keys.search
     if (!rows.length) continue;
     const sec = document.createElement("section"); sec.className = "menucard"; sec.dataset.group = g;
     const h = document.createElement("h3"); h.className = "setg"; h.textContent = t('ixw.' + g);
@@ -3632,8 +3804,53 @@ function paintKeys(){
     sec.append(h, dl); cards.push(sec);
   }
   box.replaceChildren(...cards);
+  const none = el("keysNone");
+  if (none){ none.hidden = !(terms.length && !cards.length); none.textContent = none.hidden ? "" : t('r.keys.findNone'); }
 }
-function closeKeys(){ el("keys").hidden = true; if (document.activeElement) document.activeElement.blur(); }
+// P344: the sheet's search. A row matches when every word of the query is somewhere in its description, gesture text
+// (中文 and English, whichever language the page shows), its keys as written (Alt+Shift+H, ArrowLeft, Mod+K) or as drawn
+// (⌥⇧H / ⌘ / Ctrl / ←), or its card's / group's title (翻页, Files…); case-insensitive.
+const KEY_WORDS = {Mod: 'mod cmd command ctrl control ⌘', Alt: 'alt option opt ⌥', Shift: 'shift ⇧', Ctrl: 'ctrl control',
+  Escape: 'esc escape', Enter: 'enter return', Space: 'space', Backspace: 'backspace delete ⌫'};
+function keysHay(g, [id, keys]){
+  const parts = [...both('ix.' + id), ...both('ixges.' + id), ...both('ixw.' + g), ...both('ixgrp.' + id.split('.')[0])];
+  for (const [combo, how] of keys){
+    const drawn = [kbdTokens(combo, true), kbdTokens(combo, false)].map(x => x.join('+'));
+    parts.push(combo, ...drawn, ...drawn.map(x => x.replace(/\+/g, '')), combo.replace(/\+/g, ''));
+    parts.push(combo.split('+').map(k => ({Mod: '⌘', Alt: '⌥', Shift: '⇧', Ctrl: '⌃'})[k] || k).join(''));   // ⌥⇧C, as Mac menus write it
+    for (const p of combo.split('+')) if (KEY_WORDS[p]) parts.push(KEY_WORDS[p]);
+    if (combo.includes('Space')) parts.push(...both('ixw.space'));
+    if (how === 'hold') parts.push(...both('ixw.hold'));
+  }
+  return parts.join(' \n ').toLocaleLowerCase();
+}
+const keysTerms = () => { const f = el("keysFind"); return f && !f.hidden ? el("keysFindInput").value.trim().toLocaleLowerCase().split(/\s+/).filter(Boolean) : []; };
+function openKeysFind(){
+  const f = el("keysFind"), i = el("keysFindInput");
+  if (f.hidden){ f.hidden = false; el("keysFindBtn").setAttribute("aria-expanded", "true"); }
+  i.focus(); i.select();
+}
+// Esc / the magnifier again: the query goes and every row is back; the next Esc closes the sheet.
+function closeKeysFind(){
+  const f = el("keysFind");
+  if (!f) return;
+  const was = !f.hidden || !!el("keysFindInput").value;
+  const inField = document.activeElement === el("keysFindInput");
+  f.hidden = true; el("keysFindInput").value = ""; el("keysFindBtn").setAttribute("aria-expanded", "false");
+  if (inField) el("keysFindBtn").focus();
+  if (was) paintKeys();
+}
+const keysFindOpen = () => !!el("keysFind") && !el("keysFind").hidden;
+const escKeys = () => keysFindOpen() ? closeKeysFind() : closeKeys();
+// The sheet's own keys (/ and Ctrl / ⌘+K) only while it is the top layer, never from another field (the search field
+// itself keeps typing "/"), never over a confirm / sign-in / secret / camera layer above it.
+function keysFindKey(e, tg){
+  if (el("keys").hidden || !el("confirm").hidden || !el("cam").hidden || shownById("lqr") || shownById("sout") || shownById("elev")) return false;
+  const own = tg === el("keysFindInput");
+  if (e.key === "/" && !e.ctrlKey && !e.metaKey && !e.altKey) return !own && !typingIn(tg);
+  return (e.metaKey || e.ctrlKey) && !e.altKey && !e.shiftKey && (e.key === "k" || e.key === "K" || e.code === "KeyK") && (own || !typingIn(tg));
+}
+function closeKeys(){ closeKeysFind(); el("keys").hidden = true; if (document.activeElement) document.activeElement.blur(); }
 export async function pasteClipImages(){
   let items;
   try{ items = await navigator.clipboard.read(); }
@@ -3681,10 +3898,13 @@ export async function pasteClipImage(){
 }
 // P154 截图自动进附件 (js/shotclip.js): a new clipboard image after a screenshot round trip → the tray, like paste
 // (MAX_ATT and its message included); never sent by itself.
-export function attachShot(file){
+// P340 #27: quiet = the caller says it in its own notice (screenshot + clipboard); → {added, n, max}
+export function attachShot(file, quiet = false){
   const before = atts.length;
   takeFiles([pastedName(file, 0, 1)], 'r.verb2.shot', "paste");
-  if (atts.length > before) toast(t('r.shot.added', {n: atts.length, max: MAX_ATT}), 2600);
+  const added = atts.length > before;
+  if (added && !quiet) toast(t('r.shot.added', {n: atts.length, max: MAX_ATT}), 2600);
+  return {added, n: atts.length, max: MAX_ATT};
 }
 // P110 external shares enter the existing tray / encrypted upload path, never auto-send.
 /** P190: text from the scanner goes into the field at the caret (never sent by itself). */
@@ -3807,7 +4027,7 @@ const swallow = e => { e.preventDefault(); e.stopImmediatePropagation(); };
 
 // ---- language switch: everything this module wrote --------------------------------------------------
 function relang(){
-  RelayMD.LABELS.copy = t('r.md.copy'); RelayMD.LABELS.copyAria = t('r.md.copyAria'); RelayMD.LABELS.copied = t('r.md.copied'); RelayMD.LABELS.image = t('r.md.image'); RelayMD.LABELS.tapCopy = t('r.md.tapCopy');
+  RelayMD.LABELS.copy = t('r.md.copy'); RelayMD.LABELS.copyAria = t('r.md.copyAria'); RelayMD.LABELS.copied = t('r.md.copied'); RelayMD.LABELS.image = t('r.md.image'); RelayMD.LABELS.tapCopy = t('r.md.tapCopy'); RelayMD.LABELS.details = t('p339.details');
   wordsSrc = null; qsKey = null;
   renderMenu();
   pttUI(ptt); paintTray(); for (const a of atts) paintChip(a);
@@ -3824,7 +4044,8 @@ export function init(ctx){
   input = el("input"); mainEl = el("main"); deck = el("deck"); tray = el("tray"); menu = el("menu"); menuList = el("menuList"); sug = el("sug"); mic = el("mic");
   for(const [id,close,fallback,rank,trap] of [
     ['rd',closeReader,'readBtn',45,true],['cam',closeCam,'tCamera',50,true],
-    ['keys',closeKeys,'keysBtn',40,true],['silent',closeSilent,'input',40,true],
+    ['keys',escKeys,'keysBtn',40,true],   // @ix keys.search_close (P344: Esc clears + closes the sheet's search first)
+    ['silent',closeSilent,'input',40,true],   // P356: P344 had put this entry inside the comment above — the silent panel lost its layer
     ['menu',closeMenu,'slashBtn',30,true],['sug',()=>{sugDismissed=input.value;closeSug();},'input',25,false],
     ['qbar',cancelReply,'input',5,false]
   ])registerLayer({element:()=>el(id),open:()=>!el(id).hidden,close,fallback:()=>{const node=el(fallback);return node&&!node.closest('[hidden]')?node:(id==='keys'?el('setBtn'):input);},rank,trap});
@@ -3845,7 +4066,7 @@ export function init(ctx){
     },
   });
   registerLayer({element:()=>el('sheet'),open:()=>document.body.dataset.sheet==='1',close:()=>el('sheetClose').click(),fallback:()=>el('pendTag'),rank:20});
-  RelayMD.LABELS.copy = t('r.md.copy'); RelayMD.LABELS.copyAria = t('r.md.copyAria'); RelayMD.LABELS.copied = t('r.md.copied'); RelayMD.LABELS.image = t('r.md.image'); RelayMD.LABELS.tapCopy = t('r.md.tapCopy');
+  RelayMD.LABELS.copy = t('r.md.copy'); RelayMD.LABELS.copyAria = t('r.md.copyAria'); RelayMD.LABELS.copied = t('r.md.copied'); RelayMD.LABELS.image = t('r.md.image'); RelayMD.LABELS.tapCopy = t('r.md.tapCopy'); RelayMD.LABELS.details = t('p339.details');
   speaker = new Speaker((id, st, why) => {
     if (st === "idle") speakSt.delete(id); else speakSt.set(id, st);
     if (st === "failed"){ toast(t('r.speak.err.' + (["novoice", "empty", "unsupported", "engine", "missing_key", "provider_rejected", "provider_busy", "provider_unavailable", "network", "busy", "not_ready", "tap_play"].includes(why) ? why : "engine")), 2600); setTimeout(() => { if (speakSt.get(id) === "failed"){ speakSt.delete(id); paintSpeak(); } }, 3000); }
@@ -3867,6 +4088,8 @@ export function init(ctx){
   holdToApprove(el("apprAllow"), "allow");   // @ix appr.approve (+ apprHotkey: ⌘ / Ctrl+Enter)
   document.addEventListener("keydown", apprHotkey, true);     // capture: before the text box's Enter-to-send
   holdToApprove(el("apprBatch"), "batch");
+  holdToApprove(el("apprGoalAdd"), "goaladd");   // P339: approve + add the offered line to the goal's grant (a tap alone never approves)
+  el("cmdToggle").addEventListener("click", toggleGoalCmd);
   el("qs").addEventListener("click", e => {
     const b = e.target.closest && e.target.closest(".opt");
     const a = cur && cur.ask;
@@ -3942,7 +4165,9 @@ export function init(ctx){
   el("webReportBtn").addEventListener("click", () => hotTap(currentPage()));   // P216 / P285 @ix card.web_report
   longPress(el("webReportBtn"), openHot);   // P285 @ix card.hot_pick
   try{ const barSize = new ResizeObserver(() => fitBar());
-    barSize.observe(el("rmbar")); barSize.observe(el("rmIcons"));
+    // P340: the group's width is fitBar's own output now — observing it would loop (WebKit reports it); the bar and the
+    // left button (hidden / shown) are the inputs
+    barSize.observe(el("rmbar"), {box: "border-box"}); barSize.observe(el("webReportBtn"));   // border box: fitBar moves the padding
     new MutationObserver(fitBar).observe(el("rmIcons"), {childList:true,subtree:true,attributes:true,attributeFilter:["hidden"]});
   }catch(_){}
   for (const id of ["qbX", "qbJump"]) el(id).addEventListener("pointerdown", e => e.preventDefault());
@@ -3953,6 +4178,7 @@ export function init(ctx){
   el("quoteDlgDel").addEventListener("click", () => { const q = qdlgAt; closeQuote(); if (q) removeQuote(q); });
   registerLayer({element: () => el("quoteDlg"), open: () => !el("quoteDlg").hidden, close: closeQuote, fallback: () => input, rank: 48});
   el("omQuote").addEventListener("click", () => jumpToTurn(+el("omQuote").dataset.id));   // @ix page.quoted
+  el("omQuoteFold").addEventListener("click", e => { e.stopPropagation(); toggleQFold(); });   // P340: fold / unfold the quotes
   el("omQuote").addEventListener("keydown", e => {
     if (e.key !== "Enter" && e.key !== " ") return;
     e.preventDefault(); e.stopPropagation(); jumpToTurn(+el("omQuote").dataset.id);
@@ -4227,6 +4453,7 @@ export function init(ctx){
     if (b.id === "appEntry"){ closeMenu(); location.href = / AgentJApp\//.test(navigator.userAgent) ? "agentj-app://status" : "jarvis-app://status"; return; }
     if (b.id === "clipEntry"){ closeMenu(); pasteClipImages(); return; }
     if (b.id === "switchEntry"){ closeMenu(); saySwitch(); return; }
+    if (b.id === "resetEntry"){ closeMenu(); C.resetConn?.(); return; }   // P332: Settings → 紧急修复, ① starts
     if (b.dataset.run){ closeMenu(); if (await runCmd(b.dataset.run)) { toNewest(); toast(t('r.run.sent', {cmd: "/" + b.dataset.run}), 1600); } return; }
     if (b.dataset.prompt){ closeMenu(); sayPreset(b.dataset.prompt); return; }
     if (b.dataset.estop){ closeMenu(); C.estop(b.dataset.estop === "stop"); return; }
@@ -4311,14 +4538,12 @@ export function init(ctx){
   mic.addEventListener("contextmenu", e => e.preventDefault());
   mic.addEventListener("selectstart", e => e.preventDefault());
   mic.addEventListener("dblclick", e => e.preventDefault());
-  // P205: the recording card's icons (a locked take): end · dim ↔ normal · cancel
+  // P205 / P346 (#54): the recording card's three icons (a locked take): cancel · end · end and send
   el("pttEnd").addEventListener("click", () => { if (ptt && ptt.locked) pttEnd(ptt, "release"); });   // P205 @ix compose.rec_end
   el("pttCancel").addEventListener("click", () => { if (ptt && ptt.locked) pttEnd(ptt, "cancel"); });   // P205 @ix compose.rec_cancel
-  el("pttDim").addEventListener("click", () => {   // P205 @ix compose.rec_dim
-    recDim = !recDim;
-    try{ if (recDim) localStorage.setItem(DIM_KEY, "1"); else localStorage.removeItem(DIM_KEY); }catch(_){}
-    pttUI(ptt);
-  });
+  // P342 (#46): end + send in one tap — the same auto-send a released hold-to-talk take gets (short → words sent once
+  // transcribed, long → the voice attachment sent), so no 「结束」 then 「发送」
+  el("pttSend").addEventListener("click", () => { if (ptt && ptt.locked){ ptt.autoSend = true; pttEnd(ptt, "release"); } });   // @ix compose.rec_send
   mic.addEventListener("keydown", e => {
     if ((e.key === " " || e.key === "Enter") && !e.repeat){
       e.preventDefault();
@@ -4385,6 +4610,7 @@ export function init(ctx){
   el("send").addEventListener("click", () => { unlockWhoosh(); say(); });   // @ix compose.send (hold = sendvol.js: compose.volume)
   sendvol.attach(el("send"), input);
   el("sayCancel").addEventListener("click", e => { e.stopPropagation(); cancelSay(); });
+  if (window.ResizeObserver) new ResizeObserver(padForCancel).observe(el("sayCancel"));   // P328: language / type size
   const clr = el("clr");
   for (const ev of ["pointerdown", "mousedown"]) clr.addEventListener(ev, e => {
     clr._keep = clr._keep || document.activeElement === input;
@@ -4414,6 +4640,8 @@ export function init(ctx){
   el("keysClose").addEventListener("click", closeKeys);
   el("keysBtn").addEventListener("click", openKeys);   // @ix app.keys
   el("keys").addEventListener("click", e => { if (e.target === el("keys")) closeKeys(); });
+  el("keysFindBtn").addEventListener("click", () => { if (keysFindOpen()) closeKeysFind(); else openKeysFind(); });   // @ix keys.search
+  el("keysFindInput").addEventListener("input", () => paintKeys());
 
   // P207: what each table key of interactions.json does (tools/interactions check compares these ids with the JSON).
   const scrollStep = () => Math.max(40, Math.round(mainEl.clientHeight * 0.25));
@@ -4530,7 +4758,7 @@ export function init(ctx){
     if (e.key === "Escape"){
       if (!el("silent").hidden){ e.preventDefault(); closeSilent(); return; }
       if (rdOpen()){ e.preventDefault(); closeReader(); return; }
-      if (!el("keys").hidden){ e.preventDefault(); closeKeys(); return; }
+      if (!el("keys").hidden){ e.preventDefault(); escKeys(); return; }
       if (!el("cam").hidden || !el("confirm").hidden || !el("badge-panel").hidden || !el("settings").hidden) return;
       if (!menu.hidden){ e.preventDefault(); closeMenu(); return; }
       if (quotes.length){ e.preventDefault(); escAt = 0; cancelReply(); return; }   // @ix compose.cancel_reply
@@ -4545,6 +4773,7 @@ export function init(ctx){
       escAt = now;
       return;
     }
+    if (keysFindKey(e, tg)){ e.preventDefault(); openKeysFind(); return; }   // @ix keys.search (P344: before ⌘K / Ctrl+K = chat search)
     // @ix app.search
     // P188: ⌘K anywhere / Ctrl+K outside the field (in the field Ctrl+K stays readline's 删到行尾) opens 搜索聊天记录; again = close.
     if ((e.metaKey || (e.ctrlKey && tg !== input)) && !e.altKey && !e.shiftKey && (e.key === "k" || e.key === "K" || e.code === "KeyK")){

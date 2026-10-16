@@ -180,7 +180,7 @@ class Detect(unittest.TestCase):
                     f.write_text("#!/bin/sh\necho 1.0\n")
                     f.chmod(0o700)
                 os.environ.update(AGENTJ_OPENCODE_BIN=str(bins / "opencode"), AGENTJ_CLAUDE_BIN="/nonexistent",
-                                  AGENTJ_CODEX_BIN="/nonexistent", HOME=d)
+                                  AGENTJ_CODEX_BIN="/nonexistent", AGENTJ_DSH_BIN="/nonexistent", HOME=d)   # P329: a dsh on PATH
                 r = harness.detect()
                 oc_rec = next(h for h in r["harnesses"] if h["name"] == "opencode")
                 self.assertTrue(oc_rec["supported"] and oc_rec["installed"] and oc_rec["logged_in"])

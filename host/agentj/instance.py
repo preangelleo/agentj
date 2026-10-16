@@ -234,7 +234,7 @@ def default_kind() -> str:
     """The harness a new seat starts with: the same as instance 1's, else Claude Code."""
     try:
         k = (json.loads((state_root(1) / "config.json").read_text()).get("agent") or {}).get("kind")
-        return k if k in ("claude", "codex", "opencode", "kimi", "qwen") else "claude"
+        return k if k in ("claude", "codex", "opencode", "kimi", "qwen", "dsh") else "claude"
     except (OSError, ValueError, AttributeError):
         return "claude"
 

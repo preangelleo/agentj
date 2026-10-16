@@ -18,6 +18,7 @@ does (the text of the message):
     FORM                   mcpServer/elicitation/request; replies "FORM: <the answer>"
     AUTOCOMPACT [legacy]   Codex's own compaction inside the turn (contextCompaction item, meter → 5000; `legacy` adds
                            thread/compacted too), then "ECHO: …"     (P59)
+    SAYSEQ: a ;; b         one agentMessage per piece; all but the last phase "commentary" (P351)
     anything else          one agentMessage "ECHO: <text>"
 Every client message and every answer to a server request is logged to FAKE_CX_LOG (JSONL). FAKE_CX_POLICY = the human's
 approval_policy for config/read (JSON); FAKE_CX_THREADS = thread ids that "already exist" (resume); FAKE_CX_SANDBOX = the
@@ -86,9 +87,9 @@ def usage(tid, add):
                                                                                       "resetsAt": 1791046812}, "secondary": {"usedPercent": 7, "windowDurationMins": 300, "resetsAt": 1790950000}}})
 
 
-def say(tid, turn, text):
+def say(tid, turn, text, phase="final_answer"):
     iid = "msg_" + uuid.uuid4().hex[:12]
-    item = {"type": "agentMessage", "id": iid, "text": text, "phase": "final_answer"}
+    item = {"type": "agentMessage", "id": iid, "text": text, "phase": phase}
     note("item/started", {"item": {**item, "text": ""}, "threadId": tid, "turnId": turn})
     note("item/completed", {"item": item, "threadId": tid, "turnId": turn})
 
@@ -207,6 +208,10 @@ def run_turn(tid, turn, text):
         elif text.startswith("RUNSEQ: "):
             for c in text[8:].split(";;"):
                 command(tid, turn, c.strip())
+        elif text.startswith("SAYSEQ: "):
+            parts = text[8:].split(" ;; ")
+            for i, ln in enumerate(parts):
+                say(tid, turn, ln, "final_answer" if i == len(parts) - 1 else "commentary")
         elif text.startswith("NET: "):
             command(tid, turn, text[5:].strip(), net=True)
         elif text.startswith("PATCH: "):

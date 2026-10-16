@@ -89,7 +89,7 @@ const CONTRAST = (root) => `(() => {
     if (!m) { m = c.match(/color\\(srgb ([^)]+)\\)/); k = 255; } if (!m) return null;
     const v = m[1].split(/[ ,/]+/).filter(Boolean).map(Number); return [v[0] * k, v[1] * k, v[2] * k, v.length > 3 ? v[3] : 1]; };
   const over = (top, under) => { const a = top[3]; return [0, 1, 2].map((i) => top[i] * a + under[i] * (1 - a)).concat(1); };
-  const bgOf = (e) => { const stack = []; for (let n = e; n; n = n.parentElement) { const c = parse(getComputedStyle(n).backgroundColor); if (c && c[3] > 0) { stack.push(c); if (c[3] >= 1) break; } }
+  const bgOf = (e) => { const stack = []; for (let n = e; n; n = n.parentElement) { const pill = n === e && n.closest('.segrow') && getComputedStyle(n, '::after').content !== 'none' ? parse(getComputedStyle(n, '::after').backgroundColor) : null; if (pill && pill[3] >= 1) { stack.push(pill); break; } /* P336 × segrow: the pressed segment's pill is its ::after (z-index -1 under the text) */ const c = parse(getComputedStyle(n).backgroundColor); if (c && c[3] > 0) { stack.push(c); if (c[3] >= 1) break; } }
     let col = [255, 255, 255, 1]; for (let i = stack.length - 1; i >= 0; i--) col = over(stack[i], col); return col; };
   const lum = (c) => { const f = (v) => { v /= 255; return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; }; return 0.2126 * f(c[0]) + 0.7152 * f(c[1]) + 0.0722 * f(c[2]); };
   const ratio = (a, b) => { const x = lum(a), y = lum(b); return (Math.max(x, y) + 0.05) / (Math.min(x, y) + 0.05); };

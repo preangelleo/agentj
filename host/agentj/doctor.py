@@ -324,7 +324,7 @@ def check_dashboard(st: State) -> dict:
     return _c("dashboard", OK, f"服务器 / server {api} · 账号后台 / account dashboard {app}")
 
 
-AGENT_LABEL = {"claude": "Claude Code", "codex": "Codex", "opencode": "OpenCode", "kimi": "Kimi Code", "qwen": "Qwen Code"}
+AGENT_LABEL = {"claude": "Claude Code", "codex": "Codex", "opencode": "OpenCode", "kimi": "Kimi Code", "qwen": "Qwen Code", "dsh": "DeepSeek Harness"}
 BIN_ENV = harness.BIN_ENV
 # one implementation for doctor and `agentj agent detect` (existence checks only, never content)
 _agent_bin, _version_of = harness.agent_bin, harness.version_of
@@ -332,7 +332,7 @@ _claude_login, _codex_login, _opencode_login = harness.claude_login, harness.cod
 
 
 def _login(k: str) -> tuple[str, str]:
-    return harness.login_of(k) if k in ("kimi", "qwen") else {"claude": _claude_login, "codex": _codex_login, "opencode": _opencode_login}[k]()
+    return harness.login_of(k) if k in ("kimi", "qwen", "dsh") else {"claude": _claude_login, "codex": _codex_login, "opencode": _opencode_login}[k]()
 
 
 def check_agent(st: State) -> dict:
@@ -388,7 +388,10 @@ def check_codex_shared(st: State) -> dict | None:
     if not c or c.get("kind") != "codex" or c.get("session_mode") != "shared" or not os.path.isdir(c["dir"]):
         return None
     from . import shared_codex
-    sid = c.get("shared_session_id") or st.agent_session("codex") or ""
+    sid = shared_codex.effective_pin(st, c.get("shared_session_id")) or st.agent_session("codex") or ""
+    if not sid and shared_codex.clear_pending(st, c.get("shared_session_id") or ""):     # P328: the phone's /clear
+        return _c("codex_shared", OK, "Codex 共享：手机刚开了新对话，下一条消息新开 Codex 会话 / "
+                  "the phone started a new conversation; the next message opens a new Codex thread")
     if sid:
         try:
             path = shared_codex.selected_rollout(c["dir"], sid)
@@ -397,6 +400,16 @@ def check_codex_shared(st: State) -> dict | None:
                 raise shared_codex.Refusal("wrong thread/project")
             _, ctx, active = shared_codex.scan(path)
         except (OSError, ValueError) as e:
+            if getattr(e, "missing", False):         # P330 (FEEDBACK 26): the pinned thread's rollout is gone
+                rows = shared_codex.candidates(c["dir"], {sid}, shared_codex.HEAL_CHOICES)
+                nxt, how = shared_codex.heal_pick(rows)
+                then = (f"手机下一条消息会改接 {nxt[:8]} / the next phone message follows {nxt[:8]}" if nxt else
+                        "手机下一条消息会弹卡让你选接哪个 / the next phone message asks which thread to follow" if how == "ambiguous"
+                        else "手机下一条消息会新开一个 / the next phone message starts a new one")
+                return _c("codex_shared", WARN, f"Codex 共享：共享会话找不到了（{sid[:8]} 在这台电脑上已经没有记录）；{then} / "
+                          f"the shared session {sid[:8]} no longer exists on this computer",
+                          "想指定：`agentj config set agent.shared_session_id <会话 ID>` / to choose: "
+                          "`agentj config set agent.shared_session_id <thread ID>`")
             zh, en = shared_codex.REASONS.get(shared_codex.brief(e), ("所选会话不可用。", "The selected thread is unavailable."))
             return _c("codex_shared", WARN, f"Codex 共享：{zh}手机第一条消息会新开一个 Codex 会话 / {en} The first phone message starts a new Codex session",
                       "电脑上 `codex resume` 选好会话后在设置里填它的 ID；或者不管它 / pick a thread on the computer, or leave it")
@@ -603,6 +616,14 @@ def check_agent_cli(st: State, svc: dict) -> dict:
             s += f" · ~/.qwen/settings.json: {f['allow_rules']} permissions.allow rule(s) run without a phone card"
         if login == WARN:
             return _c("agent_cli", FAIL if c else WARN, s, agent_qwen.login_text("zh") + " / " + agent_qwen.login_text("en"))
+    if k == "dsh":                                  # P329: DeepSeek Harness — Agent J's route or the owner's own setup (names only)
+        from . import agent_dsh
+        why = agent_dsh.config_problem()
+        if why:                                      # P329: serve refuses to start dsh until the owner moves it aside
+            return _c("agent_cli", FAIL, s + f" · ~/.dsh: {why}", agent_dsh.config_text(why, "zh") + " / " +
+                      agent_dsh.config_text(why, "en"))
+        if login == WARN:
+            return _c("agent_cli", FAIL if c else WARN, s, agent_dsh.login_text("zh") + " / " + agent_dsh.login_text("en"))
     if login == WARN and k == "opencode":
         return _c("agent_cli", WARN if not c else FAIL, s, "人类在自己的终端运行 `opencode auth login` 存好模型服务的 key "
                   "（install.md 第 3 步）/ the human runs `opencode auth login` in their own terminal")
@@ -931,6 +952,15 @@ def check_friends(st: State, serve_status: dict | None = None) -> dict:
     return _c("friends", status, " · ".join(parts), hint)
 
 
+def _seen(st: State, svc: dict) -> dict:
+    """P339: the service row trusts serve's own answer when the manager cannot see it (inside the Agent fence launchd's gui
+    domain is invisible: `not_loaded`, never a reason to ask for sudo or a terminal)."""
+    try:
+        return names.seen_status(st, svc)
+    except Exception:  # noqa: BLE001 — a doctor row, never a crash
+        return svc
+
+
 def check_service(svc: dict, legacy: dict | None = None) -> dict:
     legacy = legacy or {}
     if legacy.get("installed") and not svc.get("installed"):
@@ -955,6 +985,9 @@ def check_service(svc: dict, legacy: dict | None = None) -> dict:
     if mismatch:
         return _c("service", FAIL, "unit/env file harness paths disagree: " + ", ".join(mismatch),
                   "Run `agentj service install` to remove stale unit paths; saved env overrides are preserved")
+    if svc.get("active") == "active" and svc.get("seen_by") == "socket":
+        return _c("service", OK, f"{n} 在运行（serve 在应答；这里看不到 launchd / systemd）/ running (serve answers; the service "
+                  "manager is not visible from here)")
     if svc.get("active") == "active":
         return _c("service", OK, f"{n} 已安装、运行中 / installed, active")
     hint = (f"journalctl --user -u {n} -n 50" if svc.get("kind") == "systemd" else "cat <state dir>/service.log")
@@ -1116,7 +1149,7 @@ def run(st: State | None = None, offline: bool = False) -> list[dict]:
     if reach_row:
         out.append(reach_row)
     out += [check_agent_cli(st, svc), check_harness(svc), check_fence(st), check_danger(st), check_passphrase(st), check_bound(st), check_seat(st), *filter(None, [check_jev_key(svc)]), check_onboarding(st),
-            check_serve(st), check_friends(st, _serve_status(st)), check_service(svc, service.legacy_status()), check_alias(),
+            check_serve(st), check_friends(st, _serve_status(st)), check_service(_seen(st, svc), service.legacy_status()), check_alias(),
             check_estop(st), check_tasks(st), check_activity(st)]
     out += check_asr(st)
     out += check_preferences(st)
@@ -1207,7 +1240,7 @@ def run_upgrade(st=None):
     st = st or State()
     svc = service.status()
     rows = [check_version(), check_python(), check_websockets(), check_platform(), check_state(st),
-            check_serve(st), check_service(svc, service.legacy_status())]
+            check_serve(st), check_service(_seen(st, svc), service.legacy_status())]
     try:
         version = main_identity.verify_core()['version']
         rows.append(_c('main-core', OK, f'Packaged main-Agent core v{version}: verified'))

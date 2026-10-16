@@ -1,4 +1,5 @@
 import { capturePage } from './js/pageshot.js';
+import * as shotcopy from './js/shotcopy.js';   // P340 #27: the screenshot also goes to the clipboard
 import * as fivePages from './js/five-pages.js';
 import { describeDevice } from './js/device-label.js';
 // agentj web client. Spec: agentjarvis/protocol/PROTOCOL.md §2–§4, §8–§10; design agentjarvis/parity/DESIGN.md (PROMPT-33).
@@ -13,7 +14,7 @@ import { parsePairing as parseLink } from './proto/wire.js';
 import VERSION from './version.js';
 import {probeEnvironment, publicPhoneLink} from './js/phone-env.js';
 import { t, lang, fillText, plain, applyStatic, onLang } from './js/t.js';
-import { el, toast, confirmSheet, closeConfirm } from './js/ui.js';
+import { el, toast, notify, confirmSheet, closeConfirm } from './js/ui.js';
 import { dbGet, dbPut, dbDel, deviceKey, signKey, wipeLocal, markPaired, wasPaired, askPersist } from './js/store.js';
 import { b64u, unb64u } from './proto/wire.js';
 import * as session from './js/session.js';
@@ -30,9 +31,11 @@ import {initShare, onShareReady, forgetShare} from './js/share.js';
 import * as elevate from './js/elevate.js';     // F17: sudo / secret cards (§11)
 import * as authrescue from './js/authrescue.js';   // P258: AI 登录救援 (red dot + pushes)
 import * as qresume from './js/qresume.js';         // P314 (§32): 「额度用完，预计 HH:MM 自动继续」 banner
+import * as rescue from './js/rescue.js';           // P332 (§33): Settings → 紧急修复 + the rescue-mode banner
 import { registerMailForward } from './js/mailfwd.js';   // P189: file card → the dialog below
 import * as contacts from './js/contacts.js';   // P184 (§25): contact cards + 「转发到邮箱」
 import * as secretout from './js/secretout.js'; // F32: secret pickup cards (§18)
+import * as keys from './js/keys.js';         // P352: 「模型和 API Key」 key manager
 import * as longtask from './js/longtask.js';   // 0.18: opening card + 「我的 Agent 会什么」 (§20)
 import * as logincard from './js/logincard.js'; // P114: sign-in QR cards (ADR-A194)
 import * as passkey from './js/faceid.js';     // F20: the same phone without a second pairing (§12)
@@ -59,6 +62,7 @@ import * as pairpage from './js/pairpage.js'; // P210: the numbered method cards
 
 import { registerLayer, initLayers } from './js/layers.js';
 import { initEdgeBack } from './js/edgeback.js';   // P302: left-edge swipe = back on every sub-page
+import { wireTopFit } from './js/topfit.js';      // P340: header icon gaps follow the gear's margin on narrow screens
 import { applyViewport, watchViewport } from './js/viewport.js';
 
 const $ = el;
@@ -338,8 +342,11 @@ session.configure({
     if (pendingRv) { const c = pendingRv; pendingRv = null; rvpair.approve(c).catch(() => {}); }
     api.myDeviceId().then(() => rerender());
     relay.onReady();
-    fivePages.refresh();
-    setTimeout(() => cardsync.sync(true), 1200);      // P203: after the host's own replay — fills gaps, drops cards that ended
+    rescue.onReady();                                 // P332: rescue mode on / off; a repair that dropped the link and came back
+    if (!session.peer.rescue) {                       // P332: the rescue watchdog answers nothing else — ask it nothing else
+      fivePages.refresh();
+      setTimeout(() => cardsync.sync(true), 1200);    // P203: after the host's own replay — fills gaps, drops cards that ended
+    }
     // P189: the file cards' 「转发到邮箱」 icon (P183, mailfwd.js) opens P184's dialog — only on a host with `contacts`
     registerMailForward(contacts.forwardAvailable() ? (req) => contacts.openForward({ mid: req.mid, name: req.name }) : null);
     blobs.onReconnect([]);
@@ -369,6 +376,10 @@ contacts.configure({ openSettingsMail: () => settings.openMail() });   // P184: 
 upgcard.configure({ upgrade: () => api.upgradeNow() });   // P203: 「现在升级」 = this phone's signed /update
 authrescue.configure({ openAuth: () => settings.openAuth() });   // P288: the chat's 「现在续期」 banner → Settings → AI 登录救援
 qresume.configure();                                           // P314: ✕ on the quota banner = qr_cancel
+rescue.configure({                                             // P332: 紧急修复 — the block, ≡ 重置连接, /reset, the banner
+  openSettings: () => settings.openRescue(),
+  toChat: () => { settings.close(); if (controls.panel !== 'chat') controls.openPanel('chat'); },
+});
 api.setUpgradeFlow(() => upgcard.start());                 // ≡ /update and Settings ask the computer first
 
 function onApp(m) {
@@ -393,6 +404,9 @@ function onApp(m) {
     case 'elev': elevate.add(m); return;             // F17 (§11)
     case 'auth_rescue': authrescue.onPush(m); return;   // P258 (§31)
     case 'quota_resume': qresume.onPush(m); return;     // P314 (§32)
+    case 'rescue': rescue.onRescue(m); return;          // P332 (§33): the rescue watchdog answers instead of Agent J
+    case 'reset_done': rescue.onDone(m); return;        // P332: a repair's end that reached this remote without its request
+    case 'reset_step': return;                          // (steps of another remote's repair: its own card shows them)
     case 'elev_done': elevate.done(m); return;
     case 'elev_refused': elevate.refused(m); return;   // ADR-A163: Face ID not accepted, the card stays open
     case 'ct_card': contacts.card(m); return;         // P184 (§25): save / complete a contact (the owner's tap)
@@ -591,6 +605,7 @@ async function setupFaceId() {
   session.sendApp({ t: 'pk_offer_req' }).catch(() => { pkForce = false; toast(t('elev.fail'), 3000); });
 }
 secretout.configure({ setupFaceId });
+keys.configure({ setupFaceId });   // P352: 拷贝 / 删除 on a phone without a passkey offer the same F20 setup
 let phoneEnvironment = null, phoneHintAfterPair = false, phoneHintDismissed = false;
 function renderPhoneEnvironment(force = false) {
   const e = phoneEnvironment;
@@ -958,10 +973,10 @@ function relang() {
 
 async function openModels() {
   closeMenu(); show('models');
-  const modelBox = $('model-options'), providerBox = $('provider-options');
-  modelBox.replaceChildren(); providerBox.replaceChildren();
-  $('provider-status').textContent = t('models.loading');
-  const [catalog, response] = await Promise.all([api.models(),api.providers()]);
+  const modelBox = $('model-options');
+  modelBox.replaceChildren();
+  keys.load($('keys-box')).catch(() => {});   // P352: the key manager (names / states only; values never on the page)
+  const catalog = await api.models();
   if (view !== 'models') return;
   if (catalog) snap.setModels(catalog);
   const c = snap.snapshot().switch;
@@ -974,17 +989,6 @@ async function openModels() {
     }); modelBox.append(b);
   }
   if (!c?.models?.length) modelBox.textContent = t('r.pill.unsupported');
-  if (view !== 'models') return;
-  $('provider-status').textContent = response ? '' : t('models.unavailable');
-  for (const provider of response?.providers || []) {
-    if (!provider || typeof provider.id !== 'string') continue;
-    const b = document.createElement('button'); b.type = 'button'; b.className = 'aj-btn';
-    b.textContent = t('models.key', {provider: provider.name || provider.id}); b.disabled = !provider.key_editable;
-    b.addEventListener('click', async () => {
-      b.disabled = true; const result = await api.providerKey(provider.id); b.disabled = false;
-      $('provider-status').textContent = t(result.ok ? 'models.card' : 'models.failed');
-    }); providerBox.append(b);
-  }
 }
 let asrInstalling = false;
 async function installAsr() {
@@ -1032,6 +1036,7 @@ function wire() {
   $('menu-about').addEventListener('click', () => toggleBadge(true));   // above Settings; closing it returns there
   initLayers({onEscape:relay.resetEscape});
   initEdgeBack();
+  wireTopFit();
   const layer = (id, close, fallback, rank = 20, trap = true) => registerLayer({element: () => $(id), open: () => !$(id).hidden, close, fallback: () => $(fallback), rank, trap});
   layer('confirm', closeConfirm, 'setBtn', 60);
   layer('badge-panel', () => toggleBadge(false), 'menu-about', 40);
@@ -1087,16 +1092,34 @@ function wire() {
     }),
   });
   offline.init();
+  $('offRescue').addEventListener('click', () => { offline.later(); rescue.openBlock(); });   // P332: the card's 「紧急修复」
   devRename.init({ myDev: api.myIdSync });
   let shotBusy = false;
-  const screenshot = async () => {
+  // P340 #27: the screenshot goes into the attachments AND the system clipboard. Synchronous up to copyImage(): it must
+  // run inside the gesture (the gear's release / Alt+Shift key), with the picture still a promise (Safari's rule).
+  const screenshot = () => {
     if (shotBusy || !PAIRED_VIEWS.includes(view)) return;
     shotBusy = true;
-    try {
-      const file = await capturePage();
-      settings.close(); show('chat'); relay.attachShot(file);
-    } catch { toast(t('p264.shotFail'), 2400); }
-    finally { shotBusy = false; }
+    const shot = capturePage();
+    const clip = shotcopy.copyImage(shot);
+    shot.then(async (file) => {
+      settings.close(); show('chat');
+      const tray = relay.attachShot(file, true);
+      const r = await clip;
+      if (r === 'ok') shotclip.remember();
+      shotNotice(file, r, tray);
+    }, () => toast(t('p264.shotFail'), 2400)).finally(() => { shotBusy = false; });
+  };
+  // the notice is the screenshot's preview: its picture, what happened, and the fallbacks (each a fresh tap = a fresh
+  // user activation, so 「复制图片」 can succeed where the first try was refused)
+  const shotNotice = (file, r, tray) => {
+    const plan = shotcopy.shotNoticePlan(r, { added: tray.added, canClip: shotcopy.clipSupport(), canShare: shotcopy.canShareFile(file) });
+    const url = URL.createObjectURL(file), img = document.createElement('img');
+    img.src = url; img.alt = ''; setTimeout(() => URL.revokeObjectURL(url), 60_000);
+    const actions = plan.actions.map((a) => a === 'copy'
+      ? { label: t('p340a.copyImg'), fn: () => shotcopy.copyImage(file).then((x) => { if (x === 'ok') shotclip.remember(); toast(t(x === 'ok' ? 'p340a.copied' : 'p340a.copyFail'), 3000, x === 'ok' ? 'success' : 'warn'); }) }
+      : { label: t('p340a.share'), fn: () => shotcopy.shareFile(file).then((x) => { if (x === 'failed') toast(t('p340a.shareFail'), 3000, 'warn'); }) });
+    notify({ kind: plan.kind, text: t(plan.key, { n: tray.n, max: tray.max }), media: img, actions, ms: actions.length ? 8000 : 3000 });
   };
   const assist = kind => {
     settings.close(); show('chat');
@@ -1213,6 +1236,7 @@ async function main() {
     saidOld: (text) => snap.synthSaid(text, api.myIdSync()),
     settings: settings.toggleFromKey,
     openSettings: () => settings.open(),
+    resetConn: rescue.resetFromCommand,              // P332: ≡ 重置连接 and /reset
     upgradeHost: settings.upgradeFromKey,
     refreshApp: settings.refreshApp,
     models: openModels,

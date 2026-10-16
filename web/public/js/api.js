@@ -95,6 +95,17 @@ export const history = (q) => snap.history(q);
 export const findHistory = (q, sort) => snap.findHistory(q, sort);   // P188 (§28)
 export const canFind = () => peer.p33 && peer.hfind;
 
+/** P296 / P339: what an allow may add, in the card's order — a mail card's offered addresses (allow_offer), a goal `hold`
+ *  card's one extra goal grant (goal_add). Only what the card offered; the host checks the same line in the signature. */
+export function allowOffer(p) {
+  if (!p) return [];
+  if (p.goal === 'hold' && typeof p.goal_add === 'string' && p.goal_add) return [p.goal_add];
+  return Array.isArray(p.allow_offer) ? p.allow_offer : [];
+}
+export function allowPicks(p, allowAdd) {
+  return Array.isArray(allowAdd) ? allowOffer(p).filter((a) => allowAdd.includes(a)) : [];
+}
+
 /** action: allow | deny | batch. Signed over exactly what the sheet shows (§8). allowAdd (P296, a mail card): the ticked
  *  「以后发给 X 不用再确认」 addresses, in the card's order — signed with the allow (mailAllowMessage). */
 export async function approve(p, action, allowAdd) {
@@ -112,7 +123,7 @@ export async function approve(p, action, allowAdd) {
     const batch = action === 'batch';
     if (batch && !p.scope) return { ok: false, why: 'no_batch' };
     const decision = batch ? 'allow_batch' : action === 'allow' ? 'allow' : 'deny';
-    const picks = decision === 'allow' && Array.isArray(allowAdd) && Array.isArray(p.allow_offer) ? p.allow_offer.filter((a) => allowAdd.includes(a)) : [];
+    const picks = decision === 'allow' ? allowPicks(p, allowAdd) : [];
     const msg = picks.length ? await mailAllowMessage(channel(), await myDeviceId(), p.id, p.tool, p.summary, picks)
       : await approveMessage(channel(), await myDeviceId(), p.id, decision, p.tool, p.summary, batch ? p.scope : undefined);
     const sig = new Uint8Array(await crypto.subtle.sign({ name: 'Ed25519' }, sk.priv, msg));
@@ -223,6 +234,24 @@ export async function providerKey(provider) {
   if (!isReady()) return {ok:false,why:'offline'};
   const m = await ask1({t:'provider_key',provider}, 'provider_res', 15000);
   return m.t === 'provider_res' ? m : {ok:false,why:m.t};
+}
+// P352 「模型和 API Key」 (js/keys.js): the host key file's names and states — never a value, except the one copy reply
+export async function keysGet() {
+  if (!isReady()) return null;
+  const m = await ask1({t:'keys_get'}, 'keys', 15000);
+  return m.t === 'keys' ? m : null;
+}
+/** op copy | delete, after Face ID (fa = the assertion over keysDigest). → keys_res (copy: {ok, value, n}) or {ok:false, why}. */
+export async function keysOp(op, name, id, n, fa) {
+  if (!isReady()) return {ok:false,why:'offline'};
+  const m = await ask1({t:'keys_op',op,name,id,n,fa}, 'keys_res', 30000);
+  return m.t === 'keys_res' ? m : {ok:false,why:m.t};
+}
+/** Edit / Add: the host opens the existing encrypted key card for `name` (its 同意 asks for Face ID itself). */
+export async function keysSet(name) {
+  if (!isReady()) return {ok:false,why:'offline'};
+  const m = await ask1({t:'keys_set',name}, 'keys_res', 15000);
+  return m.t === 'keys_res' ? m : {ok:false,why:m.t};
 }
 export async function asrInstall() {
   if (!isReady()) return {ok:false,why:'offline'};

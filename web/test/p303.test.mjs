@@ -75,7 +75,7 @@ test('P303 wiring: header label + glow, dialog rows, width, palette-only colours
   assert.match(relay, /import \{ cycle, tier \} from '\.\/quotapace\.js'/);
   assert.match(relay, /bar\.dataset\.glow = x \? tier\(x\.pct, c, \{pace: x\.window === 'weekly'\}\)/);
   assert.match(relay, /t\('p303\.day', \{n: c\.step\}\)/);
-  assert.match(relay, /reset: quotaReset\(u, x\.window\)/);
+  assert.match(relay, /reset: (x\.reset \|\| )?quotaReset\(u, x\.window\)/);   // P340 D: a provider window's own reset first
   assert.match(dlg, /t\('p303\.cycle'\)/);
   assert.match(dlg, /fitWidth\(\)/);
   assert.match(html, /class="sq namesq usagesq"/);

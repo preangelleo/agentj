@@ -85,10 +85,15 @@ def config(raw):
     if not isinstance(tg,dict) or not {'enabled'}<=set(tg)<={'enabled','owner_bot'} or any(type(v) is not bool for v in tg.values()):raise BotError('invalid_telegram')
     own=out['own_model']
     if own is not None:
-        if not isinstance(own,dict) or not {'base_url','model','daily_tokens'}<=set(own) or set(own)-{'base_url','model','daily_tokens','api'}:raise BotError('invalid_own_model')
-        if own.get('api','chat') not in ('chat','responses'):raise BotError('invalid_own_model')
-        from .provider import _valid
+        from .provider import _valid,coding_plan,VENDORS
+        if not isinstance(own,dict) or set(own)-{'base_url','model','daily_tokens','api','vendor'}:raise BotError('invalid_own_model')
+        if own.get('vendor') not in (None,'other',*VENDORS):raise BotError('invalid_own_model')
+        if own.get('vendor') in VENDORS:   # P348: a preset fixes endpoint and API shape; model defaults to its cheap one
+            v=VENDORS[own['vendor']];own=out['own_model']={**own,'base_url':v[2],'api':v[3],'model':own.get('model') or v[4]}
+        if not {'base_url','model','daily_tokens'}<=set(own):raise BotError('invalid_own_model')
+        if own.get('api','chat') not in ('chat','responses') and not (own.get('vendor')=='anthropic' and own['api']=='anthropic'):raise BotError('invalid_own_model')
         _valid(own['base_url'],own['model'],'chat','validation','own')
+        if coding_plan(own['base_url']):raise BotError('coding_plan_bot')   # P348: bots need a pay-as-you-go key
         if any(pattern.search(own[k]) for k in ('base_url','model') for _,pattern,_ in privacy._SECRETS):raise BotError('config_contains_secret')
         if type(own['daily_tokens']) is not int or not 1<=own['daily_tokens']<=100000:raise BotError('invalid_own_model')
     p=out['provider']

@@ -106,6 +106,6 @@ test('media.js: the reader shares the LRU and owns its own object URLs; no marku
   const code = MEDIA_SRC.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:\\'"])\/\/.*$/gm, '$1');
   assert.doesNotMatch(code, /innerHTML|outerHTML|insertAdjacentHTML|DOMParser|\bfetch\s*\(/);
   const relay = readFileSync(new URL('../public/js/relay.js', import.meta.url), 'utf8');
-  assert.match(relay, /fill\(el\("rdWords"\), tx\);\n\s+renderReaderMedia\(el\("rdWords"\), p\);/, 'the reader fills its slots when it opens');
+  assert.match(relay, /fill\(el\("rdWords"\), tx, false, sysPage\(p\)\);\n\s+renderReaderMedia\(el\("rdWords"\), p\);/, 'the reader fills its slots when it opens');
   assert.match(relay, /clearReaderMedia\(\);/, 'and lets go of its object URLs when it closes');
 });

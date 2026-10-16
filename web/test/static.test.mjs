@@ -26,7 +26,8 @@ const APP = read(pub('app.js'));
 const MODULES = ['api', 'blobs', 'boot', 'controls', 'md', 'push', 'relay', 'session', 'settings', 'snap', 'speak', 'store', 't', 'ui', 'wav', 'elevate', 'outbox', 'render', 'friends', 'qr', 'share', 'device-label', 'sfx', 'shotclip', 'sendvol',
   'media', 'mediawire', 'preview', 'mailfwd', 'icons', 'search',   // P183: the file cards, the preview views and the mail-dialog door
   'unread', 'interactions.gen',   // P207: this device's unread mark (turn ids only) + the key table generated from interactions.json
-  'version-notice', 'five-pages', 'workflow-compose'];   // P240: the version check (its one metadata GET had a branch below but the file was never in this list)
+  'version-notice', 'five-pages', 'workflow-compose',
+  'toolorder', 'toolsort'];   // P340: the composer buttons' order (aj.toolOrder, four ids) + its Settings row   // P240: the version check (its one metadata GET had a branch below but the file was never in this list)
 const OURS_FILES = ['app.js', ...MODULES.map((m) => `js/${m}.js`)];
 const OURS = OURS_FILES.map((r) => read(pub(r))).join('\n');
 const HTML = read(pub('index.html'));
@@ -116,6 +117,8 @@ test('no URLs to anywhere in shipped files except links to agentj.app pages', ()
         if ((rel(f) === 'js/five-pages.js' || rel(f) === 'js/vendor-marks.js' || /^assets\/vendors\/[^/]+\.svg$/.test(rel(f))) && ['http://www.w3.org/2000/svg','http://www.w3.org/1999/xlink'].includes(m[0].replace(/\\$/, ''))) continue; // P244: XML namespace, never a request
         // P266: owner-clicked ChatGPT security settings; never fetched by this page.
         if (rel(f) === 'js/authrescue.js' && m[0] === 'https://chatgpt.com/#settings/Security') continue;
+        // P332 (§33): the one line a helper at the computer pastes (`curl -fsSL https://agentj.app/rescue | sh`) — command text, never fetched
+        if (['i18n.js', 'index.html', 'js/rescue.js'].includes(rel(f)) && m[0] === 'https://agentj.app/rescue') continue;
         assert.match(m[0], SITE_LINK, `${rel(f)} contains URL ${m[0]}`);
       }
     }
@@ -211,8 +214,6 @@ test('app.js + js/*.js: only WebSocket egress, non-extractable keys, no plaintex
     'getItem(FZ_KEY)', 'setItem(FZ_KEY)', 'removeItem(FZ_KEY)',
     // P171: Settings writes the theme itself (the ≡ menu's brand switch is gone) — the same "aj.theme" brand/lang.js reads
     "setItem('aj.theme')", "removeItem('aj.theme')",
-    // P205: the recording card's brightness choice (DIM_KEY = "aj.recDim", "1"; removed at normal)
-    'getItem(DIM_KEY)', 'setItem(DIM_KEY)', 'removeItem(DIM_KEY)',
     // P207: this device's unread mark (UNREAD_KEY = "aj.unread": {e, m, s} — the history epoch and turn ids, numbers only)
     'getItem(UNREAD_KEY)', 'setItem(UNREAD_KEY)',
     // P247: only host/epoch-scoped numeric visual receipts; no conversation or credential bytes.
@@ -221,13 +222,16 @@ test('app.js + js/*.js: only WebSocket egress, non-extractable keys, no plaintex
     'getItem(VER_KEY)', 'setItem(VER_KEY)', 'setItem(VER_KEY)', 'getItem(DONE_KEY)', 'setItem(DONE_KEY)',
     // P302 #29: 「已更新到 x」 is consumed once (removeItem DONE_KEY) and seen once per version (ui.js flashLine onceKey =
     // "aj.verUpdatedSeen.<public version>", "1")
-    'removeItem(DONE_KEY)', 'getItem(onceKey)', 'setItem(onceKey)'].sort());
+    'removeItem(DONE_KEY)', 'getItem(onceKey)', 'setItem(onceKey)',
+    // P340: the composer buttons' order on this device (ORDER_KEY = "aj.toolOrder", the four ids as JSON; an older host's only copy)
+    'getItem(ORDER_KEY)', 'setItem(ORDER_KEY)'].sort());
   assert.match(OURS, /const VER_KEY='aj\.verRefresh';/);
   assert.match(read(pub('js/unread.js')), /JSON\.stringify\(\{e:st\.e,m:st\.m\}\)/);
   assert.match(OURS, /export const UNREAD_KEY = 'aj\.unread';/);
   assert.match(OURS, /const VOLUME_KEY = 'aj\.sfxVolume';/); assert.match(OURS, /const SHOT_KEY = 'aj\.shotClip';/);
-  assert.match(OURS, /const FZ_KEY = "aj\.pageFz";/); assert.match(OURS, /DIM_KEY = "aj\.recDim";/);
-  assert.equal(OURS_FILES.reduce((n, r) => n + (code(read(pub(r))).match(/localStorage/g) || []).length, 0), 40, 'localStorage appears only in these calls (P247: host-scoped numeric read receipts; P302 #29: aj.verUpdated consumed + aj.verUpdatedSeen.<version>; P240: aj.verRefresh; P171: + the two aj.theme writes; P182: aj.test.segMs only shortens a recording part, tests only; P205: aj.recDim) (homeInstalled is a boolean, never pairing data)');
+  assert.match(OURS, /const FZ_KEY = "aj\.pageFz";/); assert.doesNotMatch(OURS, /aj\.recDim/, 'P346: the dim mode is gone');
+  assert.match(OURS, /const ORDER_KEY = 'aj\.toolOrder';/);
+  assert.equal(OURS_FILES.reduce((n, r) => n + (code(read(pub(r))).match(/localStorage/g) || []).length, 0), 39, 'localStorage appears only in these calls (P340: aj.toolOrder get + set; P346: aj.recDim gone; P247: host-scoped numeric read receipts; P302 #29: aj.verUpdated consumed + aj.verUpdatedSeen.<version>; P240: aj.verRefresh; P171: + the two aj.theme writes; P182: aj.test.segMs only shortens a recording part, tests only; P205: aj.recDim) (homeInstalled is a boolean, never pairing data)');
   assert.match(OURS, /const IID_KEY = 'aj\.iid';/);
   assert.match(OURS, /const PAIRED_KEY = 'aj\.paired';/);
   assert.match(OURS, /const FONT_KEY = 'aj\.fontScale';/);
@@ -236,7 +240,7 @@ test('app.js + js/*.js: only WebSocket egress, non-extractable keys, no plaintex
   assert.match(OURS, /generateKeypair\(false\)/);
   assert.match(APP, /history\.replaceState/);
   // the Agent's words: Markdown through md.js (DOM nodes) or plain paragraphs via textContent — never markup
-  assert.match(read(pub('js/relay.js')), /RelayMD\.toDOM\(RelayMD\.parse\(tx\), document\)/);
+  assert.match(read(pub('js/relay.js')), /RelayMD\.toDOM\(RelayMD\.parse\(tx, \{math: !sys\}\), document\)/);
   assert.match(read(pub('js/relay.js')), /n\.textContent = p\.trim\(\)/);
   // IndexedDB: device key + approval key + host record + the sealing key (CryptoKeys, non-extractable) in clear;
   // drafts and input history ONLY through putSealed (AES-GCM ciphertext {v, iv, ct})

@@ -1,6 +1,6 @@
 {
-  "version": "0.22.2a1",
-  "major": false,
-  "zh": "0.22.2 热修：修复 macOS 上主机频繁掉线——后台服务被系统当成低优先级进程降速；电脑忙的时候手机也不再断开重连。",
-  "en": "Hotfix: Mac hosts no longer keep dropping off — macOS was slowing the background service down; a busy computer no longer drops the phone."
+  "version": "0.23.0a1",
+  "major": true,
+  "zh": "0.23：手机上一键紧急修复、审批三档、Key 管理页、带格式邮件与抄送、支持 DeepSeek Harness；Agent J 开源了。",
+  "en": "One-tap emergency repair on the phone, three approval levels, a key manager page, formatted e-mail with Cc, DeepSeek Harness; Agent J is open source."
 }

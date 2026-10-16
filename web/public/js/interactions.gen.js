@@ -2,7 +2,7 @@
 
 // P207: relay.js dispatches the chat screen's keys (focus outside any field) through KEYMAP → its ACT table; the
 // Settings 「键盘快捷键」 page is drawn from GROUPS + ROWS (texts: i18n ix.<id>, ixges.<id>, ixgrp.<group>, ixw.*).
-export const GROUPS = ["page","card","file","app","compose","read","viewer","search","appr"];
+export const GROUPS = ["page","card","file","app","keys","compose","read","viewer","search","appr"];
 /** [id, [[combo, how], …], has a gesture] — every entry with a key, in page order. */
 export const ROWS = [
   ["page.prev",[["Alt+Shift+J","press"],["j","press"],["ArrowLeft","press"]],1],
@@ -55,6 +55,8 @@ export const ROWS = [
   ["app.friends",[["Alt+Shift+F","press"]],1],
   ["app.bots",[["Alt+Shift+E","press"]],1],
   ["app.setup",[["Alt+Shift+V","press"]],0],
+  ["keys.search",[["/","press"],["Mod+K","press"]],1],
+  ["keys.search_close",[["Escape","press"]],1],
   ["compose.focus",[["i","press"],["Escape","press"]],1],
   ["compose.slash",[["/","press"]],1],
   ["compose.customize",[["Alt+/","press"]],1],
@@ -75,8 +77,8 @@ export const ROWS = [
   ["compose.clear",[["Escape","double"]],1],
   ["compose.rec_end",[],1],
   ["compose.rec_cancel",[],1],
-  ["compose.rec_dim",[],1],
   ["compose.quote_chip",[],1],
+  ["compose.rec_send",[],1],
   ["read.close",[["f","press"],["Escape","press"]],1],
   ["read.font",[["+","press"],["-","press"]],1],
   ["read.scroll",[["ArrowUp","press"],["ArrowDown","press"],["Space","press"]],1],

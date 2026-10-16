@@ -403,15 +403,21 @@ main::-webkit-scrollbar{display:none}
    hairline. Only the committed turns (an id) can be replied to / spoken / forwarded;
    the live page greys those three out. Every glyph is in the markup and picked by
    data-state, so no state ever builds markup. */
-/* P251: a fixed left button, equal-width right actions, never an overflow menu. */
-.rmbar{--rmbar-base:16px;--rmbar-inset:20px;flex:none;display:flex;justify-content:flex-end;align-items:flex-end;gap:0;
-  height:calc(var(--rmbar-base) + 40px);padding:0 calc(var(--rmbar-inset) - 11.5px) 0 var(--rmbar-inset);background:var(--rm-bg);
+/* P251: a fixed left button, equal-width right actions, never an overflow menu.
+   P340 (Leo 10-16 #38): the icons are one right-packed group whose glyph-to-glyph gap IS the last glyph's distance to the
+   card's right edge — one variable, --rm-gap (the content spacing token): each button is glyph + gap wide (half a gap each
+   side) and the bar's right padding is the other half. The surplus goes between 分享成网页报告 and the group. Too narrow:
+   relay.js fitBar() narrows --rm-gap (to 12 px), then the glyphs (to 18 px), then the gap again (to 6 px). */
+.rmbar{--rmbar-base:16px;--rmbar-inset:20px;--rm-gap:var(--space-content,16px);flex:none;display:flex;justify-content:flex-end;align-items:flex-end;gap:0;
+  height:calc(var(--rmbar-base) + 40px);padding:0 calc(var(--rm-gap) / 2) 0 var(--rmbar-inset);background:var(--rm-bg);
   min-width:0;overflow:hidden}
 @media (orientation: landscape){.rmbar{--rmbar-inset:24px}}
 .rmbar .act{-webkit-appearance:none;appearance:none;-webkit-tap-highlight-color:transparent;position:relative;
-  width:0;min-width:0;height:44px;flex:1 1 0;margin-bottom:calc(var(--rmbar-base) - 11.5px);border:0;border-radius:12px;background:none;color:var(--ink);
+  width:calc(var(--rm-icon,21px) + var(--rm-gap));min-width:0;height:44px;flex:none;margin-bottom:calc(var(--rmbar-base) - 11.5px);border:0;border-radius:12px;background:none;color:var(--ink);
   display:grid;place-items:center;padding:0;cursor:pointer;touch-action:manipulation}
 .rmbar .act svg{width:var(--rm-icon,21px);height:var(--rm-icon,21px);grid-area:1/1}
+/* P340: a button narrower than 44 px keeps a 44 px target, centred on its glyph (a neighbour's overlapping strip goes to it) */
+.rmbar .act::after{content:"";position:absolute;left:50%;top:0;width:max(100%,44px);height:44px;transform:translateX(-50%)}
 .rmbar .act:active,.rmbar .act.on{background:var(--surface)}
 .rmbar .act:disabled{opacity:.35;cursor:default;background:none}
 .rmbar .act .g{display:none}
@@ -652,6 +658,18 @@ body[data-sheet="1"] .deck{filter:blur(1.5px);opacity:.55}
 .words code.icode.copied{background:rgba(20,20,20,.42);box-shadow:0 0 0 2px rgba(20,20,20,.42)}
 .rd .words code.icode.copied{background:rgba(250,249,245,.30);box-shadow:0 0 0 2px rgba(250,249,245,.30)}
 @media (prefers-reduced-motion:reduce){.words code.icode{transition:none}}
+/* P339: a ```details fence (the goal result notice's raw commands) → a native <details>, closed; the summary is a 44 px
+   tap target, the commands wrap inside the bubble instead of running off a 390 px screen. */
+.mddetails{margin:0 0 .8em;max-width:100%}
+.mddetails>summary{display:inline-flex;align-items:center;gap:8px;min-height:44px;padding:0 10px 0 2px;cursor:pointer;list-style:none;
+  font:500 .9em/1.2 var(--font-body);text-decoration:underline;text-underline-offset:3px;-webkit-user-select:none;user-select:none}
+.mddetails>summary::-webkit-details-marker{display:none}
+.mddetails>summary::before{content:"";flex:none;width:7px;height:7px;margin:0 3px;border-right:2px solid currentColor;border-bottom:2px solid currentColor;
+  transform:rotate(-45deg);transition:transform .2s}
+.mddetails[open]>summary::before{transform:rotate(45deg)}
+.mddetails>summary:focus-visible{outline:2px solid currentColor;outline-offset:2px;border-radius:8px}
+.mddetails .codeblock{margin:4px 0 0}
+.mddetails .codeblock pre code{width:auto;white-space:pre-wrap;overflow-wrap:anywhere;word-break:break-all}
 .codeblock{position:relative;margin:0 0 .8em;max-width:100%;border-radius:14px;overflow:hidden;
   background:rgba(20,20,20,.30);display:flex;flex-direction:column}
 /* The bar sits ABOVE the code, so the button never covers a character.
@@ -787,8 +805,8 @@ body[data-kb="1"] .composer{padding-bottom:12px}   /* keyboard up: no home-indic
 /* P205: the recording card — one for hold to talk, a locked take and a long take. A dark circle in the middle of the screen
    (the P150 centred-dialog language, Noir in both themes), the microphone with a ring that follows the voice (--lv, 0…1, set
    per frame from an analyser; without one the ring just breathes), the time, and small text. A soft scrim lets the chat show
-   through and never takes a tap (the mic button stays the gesture surface). Locked: end / dim / cancel icons under the circle.
-   .dim = the same card on black, a tap anywhere but the icons does nothing (pocket-proof), the card at low brightness. */
+   through and never takes a tap (the mic button stays the gesture surface). Locked: cancel / end / send icons under the
+   circle. Every take blurs the page in its own colour (P346, below; P346 removed P205's dim-to-black mode at Leo's request). */
 .ptt{position:fixed;inset:0;z-index:60;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:18px;
   padding:var(--space-content);pointer-events:none;background:rgba(20,20,20,.28);user-select:none;-webkit-user-select:none;
   transition:background .25s}
@@ -811,7 +829,7 @@ body[data-kb="1"] .composer{padding-bottom:12px}   /* keyboard up: no home-indic
 .ptt .pttseg{font-size:calc(11px*var(--fz));opacity:.66}
 .ptt .pttseg[hidden]{display:none}
 .ptt.lock b::after{content:attr(data-lock);font:600 calc(11px*var(--fz))/1 var(--font-body);padding:3px 7px;border-radius:7px;
-  background:var(--peachy-feeling);color:#fff;letter-spacing:0}
+  background:var(--peachy-feeling);color:var(--lotion);letter-spacing:0}
 .ptt.cancel .pttc{--ring:var(--c-danger);background:#3a1712}
 .ptt.cancel .pttmic{display:none}
 .ptt.cancel .pttx{display:block}
@@ -822,20 +840,25 @@ body[data-kb="1"] .composer{padding-bottom:12px}   /* keyboard up: no home-indic
 .pttbtn{width:52px;height:52px;border-radius:50%;display:grid;place-items:center;border:1.5px solid rgba(250,249,245,.55);cursor:pointer;
   background:rgba(44,43,38,.82);color:#faf9f5;padding:0;-webkit-tap-highlight-color:transparent}
 .pttbtn svg{width:24px;height:24px}
-.pttbtn.go{background:var(--peachy-feeling);border-color:var(--peachy-feeling);color:#fff}
+.pttbtn.go{background:var(--peachy-feeling);border-color:var(--peachy-feeling);color:var(--lotion)}
+.pttbtn.go svg{transform:translate(-1px,1px)}
+/* P346 (#54): three icons (cancel · end · send); a narrow folded screen (280px) only tightens the gap */
+@media(max-width:330px){.pttact{gap:18px}}
 .pttbtn:focus-visible{outline:2px solid #faf9f5;outline-offset:3px}
-.pttbtn .sun{display:none}
 .pttnote{margin:0;max-width:min(320px,86vw);text-align:center;font:500 calc(12.5px*var(--fz))/1.4 var(--font-body);color:#faf9f5;
   padding:6px 12px;border-radius:999px;background:rgba(44,43,38,.72);text-wrap:balance}
 .pttnote[hidden]{display:none}
-.ptt.dim{background:#000;pointer-events:auto}
-.ptt.dim .pttc{background:#0b0b0a;color:rgba(250,249,245,.42);box-shadow:none;--ring:rgba(217,119,87,.45)}
-.ptt.dim .pttbtn{background:#0b0b0a;border-color:rgba(250,249,245,.22);color:rgba(250,249,245,.5)}
-.ptt.dim .pttbtn.go{background:rgba(217,119,87,.35);border-color:transparent}
-.ptt.dim .pttbtn .moon{display:none}
-.ptt.dim .pttbtn .sun{display:inline}
-.ptt.dim .pttnote{background:none;color:rgba(250,249,245,.38)}
-body.recdim .toast{z-index:61;position:fixed}
+/* P346 (#54, Leo: 「背景本来是蓝的就是蓝色模糊，本来是绿的就是绿色模糊」; 「push to talk 的时候和单击 lock 的时候，背景都是同样的
+   效果」): every take — held or locked — blurs the whole page behind the card (top line included) under a veil of the page's own
+   colour — --pg, so every state colour and a theme's own colours follow by themselves. Without backdrop-filter the veil is
+   simply thicker; without color-mix the old grey veil stays. Taps still pass through to the mic (pointer-events unchanged),
+   only the card and its icons sit on top, sharp. */
+.ptt{background:rgba(20,20,20,.55);background:color-mix(in srgb,var(--pg) 58%,transparent);
+  -webkit-backdrop-filter:blur(18px) saturate(1.1);backdrop-filter:blur(18px) saturate(1.1)}
+@supports not ((backdrop-filter:blur(1px)) or (-webkit-backdrop-filter:blur(1px))){
+  .ptt{background:rgba(20,20,20,.82);background:color-mix(in srgb,var(--pg) 90%,transparent)}}
+.ptt .pttcopy{color:var(--ink)}
+body.recblur .toast{z-index:61;position:fixed}
 @media(prefers-reduced-motion:reduce){.pttring,.pttring.r2,.pttc{animation:none!important;transition:none}}
 .row{display:flex;align-items:flex-end;gap:10px}
 /* ---- the reply strip (§2): a chat app's "Reply to …", directly above the field -------
@@ -886,7 +909,9 @@ body.recdim .toast{z-index:61;position:fixed}
    "new" × read as the old one and the owner never saw a cancel. It must not look like
    anything that was already on screen: a filled pill, with the word. */
 .composer .row{position:relative}
-.saycancel{position:absolute;right:calc(var(--rtap) + 18px);bottom:6px;height:44px;padding:0 4px;border-radius:22px;
+/* P328: centred on the field by layout, not by a fixed bottom offset — `bottom:6px` assumed a 56 px field and sat 4 px
+   high where a fine pointer makes --rtap 48 (the desktop app, Leo's screenshot); the row is exactly as tall as the field. */
+.saycancel{position:absolute;right:calc(var(--rtap) + 18px);top:0;bottom:0;margin:auto 0;height:44px;padding:0 4px;border-radius:22px;
   display:flex;align-items:center;background:transparent;color:var(--btn-strong-ink);z-index:3;
   -webkit-tap-highlight-color:transparent;touch-action:manipulation}
 .saycancel b{display:flex;align-items:center;gap:5px;height:32px;padding:0 13px 0 10px;border-radius:16px;
@@ -907,7 +932,7 @@ body[data-sending="1"] .field{padding-right:96px}
   background:transparent;color:var(--ink);z-index:3;-webkit-tap-highlight-color:transparent;touch-action:manipulation}
 .clr i{width:22px;height:22px;border-radius:50%;display:grid;place-items:center;background:var(--line)}
 .clr svg{width:10px;height:10px}
-.clr[hidden],body[data-sending="1"] .clr{display:none}
+.clr[hidden],body[data-sending="1"] .clr,body[data-saycancel="1"] .clr{display:none}
 .field:has(.clr:not([hidden])){padding-right:44px}
 .field{flex:1;min-width:0;position:relative;min-height:var(--rtap);display:flex;align-items:center;background:var(--surface);
   border-radius:28px;padding:0 20px;border:1px solid transparent;transition:border-color .2s}
@@ -1049,7 +1074,7 @@ textarea::placeholder{color:var(--ink-soft);font-size:calc(13.6px*var(--fz));lin
 .sheet h2{margin:0 0 16px;font:500 calc(22px*var(--fz))/1.45 var(--font-title);word-break:break-word}
 .cmd{background:var(--surface);border-radius:16px;padding:14px 16px;margin-bottom:10px}
 .cmd .tool{display:inline-block;margin-bottom:8px;padding:3px 10px;border-radius:var(--r-pill);
-  background:var(--tint-waiting);font:600 calc(12px*var(--fz))/1.4 var(--font-mono);letter-spacing:.04em}
+  background:var(--tint-waiting);color:var(--sooty);font:600 calc(12px*var(--fz))/1.4 var(--font-mono);letter-spacing:.04em}
 .cmd pre{margin:0;max-height:30vh;overflow:auto;white-space:pre-wrap;word-break:break-all;
   font:500 calc(15px*var(--fz))/1.5 var(--font-mono)}
 .why{margin:0 2px 12px;font-size:calc(15px*var(--fz));color:var(--ink-soft);word-break:break-word}
@@ -1165,6 +1190,11 @@ body[data-conn=off] .composer{filter:grayscale(1);opacity:.7}
 .toast .undo{min-height:44px;padding:0 16px;border-radius:var(--r-pill);font:600 var(--dlg-fs-body)/1 var(--font-body);
   color:var(--dlg-fg);background:var(--dlg-chip);border:1.5px solid var(--nt-accent,var(--windstorm))}
 .toast .undo:focus-visible{outline:2px solid var(--dlg-fg);outline-offset:2px}
+/* P340 #27: the screenshot notice carries its picture (top of the page, cropped) and puts its buttons on their own row */
+.toast .nt-media{flex:none;width:44px;height:64px;object-fit:cover;object-position:top;border-radius:8px;
+  box-shadow:0 0 0 1px color-mix(in srgb,var(--dlg-fg) 26%,transparent)}
+.toast.media.act{flex-wrap:wrap;row-gap:10px;padding:12px 12px 12px 14px}
+.toast.media .nt-acts{flex:1 0 100%;justify-content:flex-end}
 /* circle: the ✓ moment (saved, done) — centred like the hold-to-talk circle; .mail-saved (P256) is the same shape */
 .toast:is(.circle,.mail-saved){position:fixed;top:50%;z-index:90;width:calc(156px * var(--fz,1));height:calc(156px * var(--fz,1));
   max-width:none;aspect-ratio:1;border-radius:50%;flex-direction:column;justify-content:center;gap:8px;padding:18px;text-align:center;
@@ -1303,6 +1333,19 @@ body[data-agent="stopped"]{--state:var(--c-offline)}
 .apprbatch .lbl{position:relative;display:flex;flex-direction:column;gap:2px}
 .apprbatch b{font:600 calc(15px*var(--fz))/1.3 var(--font-body)}
 .apprbatch small{font:400 calc(12.5px*var(--fz))/1.35 var(--font-body);color:var(--ink-soft);word-break:break-word}
+/* P339: a goal card in plain words — the lines under the title, the 「详情」 toggle in front of the raw command, and the
+   second hold button 「长按：批准，并加进目标授权」 (the batch button's look and gesture). */
+.goalinfo{margin:-6px 2px 12px;display:flex;flex-direction:column;gap:6px}
+.goalinfo[hidden]{display:none}
+.goalinfo p{margin:0;font:400 calc(15px*var(--fz))/1.45 var(--font-body);color:var(--ink);word-break:break-word}
+.cmdtoggle{display:inline-flex;align-items:center;gap:6px;min-height:44px;margin:-6px 0 6px -4px;padding:0 10px 0 4px;background:none;border:0;
+  color:var(--ink);font:500 calc(14.5px*var(--fz))/1 var(--font-body);text-decoration:underline;text-underline-offset:3px;cursor:pointer}
+.cmdtoggle[hidden]{display:none}
+.cmdtoggle svg{width:16px;height:16px;flex:none;transition:transform .2s}
+.cmdtoggle[aria-expanded="true"] svg{transform:rotate(90deg)}
+.cmdtoggle:focus-visible{outline:2px solid var(--ink);outline-offset:2px;border-radius:8px}
+.cmd[hidden]{display:none}
+.apprgoaladd b{font-weight:600}
 .qs .optli{padding:0;background:none}
 .qs h3 .qhdr{display:inline-block;margin-right:8px;padding:1px 8px;border-radius:var(--r-pill);background:var(--surface);font:600 calc(11px*var(--fz))/1.5 var(--font-body)}
 
@@ -1532,7 +1575,6 @@ main{padding:6px 20px 24px}
 .setimsg .imsgrules[data-empty="1"]{color:var(--text-muted)}
 .setimsg .imsg-assist{display:flex;align-items:center;justify-content:center;gap:var(--sp-2);width:100%;min-height:52px;margin:var(--sp-3) 0 0;
   background:var(--menu-accent,var(--accent));border-color:var(--menu-accent,var(--accent));color:var(--c-noir,#111);font-weight:600}
-.setimsg .imsg-assist img{border-radius:8px}
 :is(#settings) .setimsg .imsg-assist:hover{filter:brightness(1.05);background:var(--menu-accent,var(--accent));border-color:var(--menu-accent,var(--accent))}
 .setimsg [data-imsg]:disabled{opacity:.55}
 @media (max-width:600px){.setmail .mailsrv{grid-template-columns:minmax(0,1fr) 5rem}.setmail .mailsrv .mailport:last-child{grid-column:1 / -1}
@@ -1641,6 +1683,8 @@ button.setval.setwide:hover{border-color:var(--text-muted)}
 .elev .elev-rows{margin:var(--sp-3) 0 0;display:grid;gap:var(--sp-1)}
 .elev .elev-rows dt{font-size:calc(12px*var(--fz));color:var(--text-muted);margin-top:var(--sp-2)}
 .elev .elev-rows dd{margin:0;white-space:pre-wrap;overflow-wrap:anywhere;font-size:calc(15px*var(--fz))}
+.elev .elev-rows dt:first-child{margin-top:0}
+.elev .elev-rows dd.purpose{font:500 calc(18px*var(--fz))/1.45 var(--font-body);color:var(--text)}   /* P339: 为了做什么 first and largest */
 .elev .elev-rows dd.mono{font-family:var(--font-mono);font-size:calc(14px*var(--fz));padding:var(--sp-2) var(--sp-3);
   border-radius:12px;background:var(--code-bg);border:1px solid var(--border);max-height:12em;overflow-y:auto}
 .elev .elev-label{display:block;margin-top:var(--sp-4);font-weight:500}
@@ -2698,7 +2742,7 @@ body[data-scan-paused="1"] .scan-finder .sf-sweep{animation-play-state:paused;op
 .omhd .pg-latest .pg{position:relative;left:4px}
 
 /* P251: fixed left action; all remaining width belongs to the elastic icon group. */
-.rmicons{display:flex;flex:1;min-width:0;max-width:calc(var(--rm-count,6) * 46px);margin-left:auto;align-items:flex-end;gap:0}
+.rmicons{display:flex;flex:none;min-width:0;margin-left:auto;align-items:flex-end;gap:0}   /* P340: as wide as its icons */
 
 .rmbar .act svg{align-self:end;margin-bottom:11.5px}
 /* P258 · Settings → AI 登录救援 */
@@ -2764,8 +2808,11 @@ code[data-cc],pre[data-cc],.cc-in{cursor:copy}
 /* P263: 16 native pixels → 32px, 12 official dance frames, no glowing overflow. */
 #orb.father-dance{object-position:-9999px -9999px;background-image:var(--father-sheet);background-origin:content-box;
   background-repeat:no-repeat;background-size:384px 32px;background-position:0 0;background-color:#faf9f5;
-  animation:father-dance 2.4s steps(12) infinite;filter:none;opacity:1;transform:none}
-@keyframes father-dance{to{background-position:-384px 0}}
+  animation:father-dance 2.4s step-end infinite;filter:none;opacity:1;transform:none;transition:none}
+/* P342 (#32): iPhone (iOS Safari) slid the whole sheet sideways instead of stepping frames. Each frame is a held pair of
+   keyframes (step-end inside, equal values on both ends), so even an engine that ignores steps() — or blends in .orb's
+   `transition:background` — can only ever show whole 32px frames; the transition is off while dancing. */
+@keyframes father-dance{0%,8.332%{background-position:0 0}8.333%,16.666%{background-position:-32px 0}16.667%,24.999%{background-position:-64px 0}25%,33.332%{background-position:-96px 0}33.333%,41.666%{background-position:-128px 0}41.667%,49.999%{background-position:-160px 0}50%,58.332%{background-position:-192px 0}58.333%,66.666%{background-position:-224px 0}66.667%,74.999%{background-position:-256px 0}75%,83.332%{background-position:-288px 0}83.333%,91.666%{background-position:-320px 0}91.667%,100%{background-position:-352px 0}}
 @media(prefers-reduced-motion:reduce){
   #orb.father-dance{object-position:50% 50%;background-image:none;animation:father-hint 2.4s ease-in-out infinite!important;animation-duration:2.4s!important;animation-iteration-count:infinite!important}
   @keyframes father-hint{0%,100%{box-shadow:inset 0 0 0 1px #629887}50%{box-shadow:inset 0 0 0 2px #faf9f5}}
@@ -2819,6 +2866,32 @@ code[data-cc],pre[data-cc],.cc-in{cursor:copy}
 .pttc .pttmic,.pttc .pttx{position:absolute;left:50%;top:50%;margin:-17px 0 0 -17px;color:var(--lotion)}
 .pttcopy{display:flex;flex-direction:column;align-items:center;gap:5px;width:min(320px,86vw);text-align:center;color:var(--dlg-fg)}
 
-.ptt.dim .pttc .pttmic,.ptt.dim .pttc .pttx{color:inherit}
 
-.ptt.dim .pttcopy{color:rgba(250,249,245,.42)}
+/* ---- P332 (§33): the rescue-mode banner (one line + 「紧急修复」) and the offline card's 「紧急修复」 row ---------------- */
+.rsbanner{align-items:center}
+.rsbanner .setup-banner__open{margin:0;display:flex;align-items:center;cursor:default;white-space:normal;overflow:visible;text-overflow:clip;padding-block:var(--sp-2)}
+.rsbanner .setup-banner__open::before{content:"";flex:none;width:8px;height:8px;border-radius:50%;background:var(--c-waiting);margin-right:var(--sp-2)}
+.rsbanner__go{flex:none;min-height:44px;margin:var(--sp-1) var(--space-control) var(--sp-1) 0;padding:0 var(--space-content);border:0;border-radius:999px;
+  background:var(--btn-strong-bg);color:var(--btn-strong-ink);font:600 calc(14px*var(--fz))/1 var(--font-body);cursor:pointer}
+.rsbanner__go:focus-visible{outline:2px solid var(--focus,currentColor);outline-offset:2px}
+.gdlg-row.off-rsrow+.gdlg-row{margin-top:0;padding-top:var(--space-control)}
+/* P340 (#35): two to five quotes on a sent message fold into one row, the look of one quote (.omq) — 「引用 N 段」 over the
+   first quote's words, 「+N-1」 at its end; open, the row is a small 「引用 N 段 · 收起」 header over every quote. */
+.omqfold{width:100%;min-height:44px;align-items:center;border:0;color:inherit;text-align:left;font-family:inherit;font-size:calc(13px*var(--fz));-webkit-appearance:none;appearance:none;
+  -webkit-tap-highlight-color:transparent;touch-action:manipulation}
+.omqfold[hidden]{display:none}
+.omqfold .qb{flex:1;min-width:0}
+.omqfold .qh,.omqfold .qt,.om.open .omqfold .qh,.om.open .omqfold .qt{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.omqfn{flex:none;font:600 calc(12px*var(--fz))/1 var(--font-mono);opacity:.78}
+.omqfn:empty{display:none}
+.om[data-qfold="1"] #omQuote,.om[data-qfold="1"] #omQuoteMore{display:none}
+.om[data-qfold="0"] .omqfold .qt{display:none}
+.om[data-qfold="0"] .omqfold{min-height:44px}
+/* the owner card opened (… / double tap / o) shows every quote, as before P340: no fold row there */
+.om.open .omqfold{display:none}
+.om.open[data-qfold="1"] #omQuote{display:flex}
+.om.open[data-qfold="1"] #omQuoteMore{display:block}
+/* P340 返工: a header button narrowed by js/topfit.js keeps a centred 44 px target; neighbouring centres stay ≥ 44 px apart */
+.top .bulb.tfit{position:relative;padding:0}
+.top .bulb.tfit::after{content:"";position:absolute;left:50%;top:0;width:44px;height:100%;transform:translateX(-50%)}
+.top .bulb svg{transform:translateX(var(--tfx,0px))}   /* P340 返工: 扫码's glyph slides inside its full 44 px box */

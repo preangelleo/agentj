@@ -63,6 +63,45 @@ def ctl_call(st, req: dict, timeout: float | None = None, max_bytes: int = 64 * 
         s.close()
 
 
+def elevate_sock(st):
+    """P339: the Agent-facing elevate.sock — reachable inside the fence, where control.sock is hidden. Inside a fence the
+    path serve exported wins (the fence unsets AGENTJ_STATE_DIR, so State() differs there); outside, the state's."""
+    import os
+    from pathlib import Path
+    from . import elevate, fence
+    env = os.environ.get(elevate.ENV)
+    return Path(env) if env and fence.inside() else st.perm_dir / elevate.SOCK_NAME
+
+
+def serve_answers(st, timeout: float = 5) -> bool:
+    """P339: is serve running? Asked of serve itself — control.sock, then (inside the Agent fence, where control.sock is
+    hidden and launchd / systemd are out of sight) the Agent-facing elevate.sock. Any answer there counts: only serve listens
+    on it (an older serve refuses the unknown request, which still proves it runs)."""
+    try:
+        if ctl_call(st, {"cmd": "status"}, timeout) is not None:
+            return True
+    except ServeBusy:
+        pass                   # busy, or (macOS fence) not connectable: ask the other socket
+    try:
+        from .elevate import client_request
+        return client_request(st, {"t": "serve_ping"}, timeout=timeout, path=elevate_sock(st)).get("result") != "unavailable"
+    except Exception:  # noqa: BLE001 — a status helper, never a crash
+        return False
+
+
+def seen_status(st, svc: dict | None = None, answering: bool | None = None) -> dict:
+    """P339: service.status() + what serve's own sockets say. When the manager query cannot see the service (inside the fence:
+    launchd's gui domain / the systemd user manager are invisible — `not_loaded` / `unknown`) but serve answers, the service
+    IS running: active = "active", seen_by = "socket" (manager_active keeps the manager's word). Always adds "serve"."""
+    from . import fence, service
+    svc = dict(service.status() if svc is None else svc)
+    ans = serve_answers(st) if answering is None else answering
+    svc["serve"] = "answering" if ans else "silent"
+    if ans and svc.get("active") != "active" and (fence.inside() or svc.get("active") in ("not_loaded", "unknown")):
+        svc.update(manager_active=svc.get("active"), active="active", seen_by="socket")
+    return svc
+
+
 def announce(st) -> None:
     """After a local name change: a running serve sends a report soon (debounced); without serve, a linked host reports now."""
     try:

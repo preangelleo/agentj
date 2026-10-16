@@ -37,13 +37,15 @@ T = {
            "held": "未附上",
            "kind": {"task": "定时任务", "agent": "{agent} 自己发起", "sys": "系统", "cmd": "命令", "telegram": "Telegram",
                     "email": "邮件"},
-           "foot": "这封邮件是从 {agent} 的手机遥控器转发的。", "powered": "Powered by Agent J", "lang": "zh-CN"},
+           "foot": "这封邮件是从 {agent} 的手机遥控器转发的。", "powered": "Powered by Agent J", "lang": "zh-CN",
+           "sent_by": "这封邮件由 {agent} 发出。"},
     "en": {"asked": "You asked", "answered": "{agent} answered", "from": "from {name}", "quote": "Quoting {who}: ",
            "sent_files": "Files sent with the message: ", "files": "Attachments", "too_big": "Too big, not attached",
            "gone": "No longer there, not attached", "held": "Not attached",
            "kind": {"task": "Scheduled task", "agent": "Started by {agent}", "sys": "System", "cmd": "Command",
                     "telegram": "Telegram", "email": "E-mail"},
-           "foot": "Forwarded from {agent}'s phone remote.", "powered": "Powered by Agent J", "lang": "en"},
+           "foot": "Forwarded from {agent}'s phone remote.", "powered": "Powered by Agent J", "lang": "en",
+           "sent_by": "Sent by {agent}."},
 }
 
 _DARK_CSS = (
@@ -363,8 +365,15 @@ def render(*, lang: str, agent: str, src: dict | None, reply: str, files=(), ski
               f'<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">{rows}</table></div>')
     parts.append(card(chip(L["answered"].format(agent=agent), MOON), markdown(reply) + fl))
 
-    pre = esc(" ".join((q["text"] if q else reply).split())[:120])
-    doc = (
+    pre = " ".join((q["text"] if q else reply).split())[:120]
+    doc = _shell(L, agent, subj, pre, "".join(parts), L["foot"].format(agent=agent))
+    return subj, text, doc
+
+
+def _shell(L: dict, agent: str, subj: str, pre: str, body: str, foot: str) -> str:
+    """The page around the cards: agent name, dashed seam, `body` (card rows), the dark footer with Powered by Agent J."""
+    pre = esc(pre)
+    return (
         f'<!DOCTYPE html><html lang="{L["lang"]}" xmlns="http://www.w3.org/1999/xhtml"><head><meta charset="utf-8">'
         '<meta name="viewport" content="width=device-width,initial-scale=1"><meta name="x-apple-disable-message-reformatting">'
         '<meta name="color-scheme" content="light dark"><meta name="supported-color-schemes" content="light dark">'
@@ -379,13 +388,53 @@ def render(*, lang: str, agent: str, src: dict | None, reply: str, files=(), ski
         f'color:{SOOTY};letter-spacing:.01em">{esc(agent)}</td></tr>'
         f'<tr><td class="aj-pad" style="padding:0 24px 18px"><div class="aj-seam" style="border-top:1.5px dashed {STRAW};'
         f'height:0;line-height:0;font-size:0">&nbsp;</div></td></tr>'
-        + "".join(parts) +
+        + body +
         f'<tr><td class="aj-pad" style="padding:8px 24px 0"><table role="presentation" width="100%" cellpadding="0" '
         f'cellspacing="0" border="0" bgcolor="{SOOTY}" class="aj-foot" style="background:{SOOTY};border-radius:16px">'
         f'<tr><td class="aj-foot" style="padding:16px 20px;border-top:1px dashed {LOTION};border-radius:16px;font-family:{BODY_FONT};'
-        f'font-size:12px;line-height:1.6;color:{LOTION}">{esc(L["foot"].format(agent=agent))}<br>'
+        f'font-size:12px;line-height:1.6;color:{LOTION}">{esc(foot)}<br>'
         f'<a href="{SITE}" style="color:{LOTION};text-decoration:underline;text-decoration-color:{WINDSTORM};'
         f'font-weight:700">{esc(L["powered"])}</a></td></tr></table></td></tr>'
         "</table></td></tr></table></body></html>"
     )
-    return subj, text, doc
+
+
+# ---------------------------------------------------------------- P355: `agentj mail send`
+FORMATS = ("markdown", "html", "text")
+
+
+def render_send(*, lang: str, agent: str, subject: str, body: str, fmt: str = "markdown",
+                text_fn=None) -> tuple[str, str | None, dict]:
+    """→ (plain text, HTML or None, info) for a mail the Agent writes. markdown: the same look as the forwarded
+    conversation without the 「你问 / Agent J 答」 pair — the subject as the card's title, the body below, the footer;
+    html: the page itself (mail_html.prepare: unsafe parts out, CSS inlined) with a one-line Powered by Agent J under it
+    and a plain-text copy; text: plain text only (no HTML part). markdown / text bodies must already be redacted by the
+    caller; an HTML body is redacted here, text node by text node, with `text_fn` (tags and CSS untouched)."""
+    L = T["en" if lang == "en" else "zh"]
+    agent = (agent or BRAND).strip() or BRAND
+    foot = L["sent_by"].format(agent=agent)
+    tail = f"\n\n-- \n{foot}\n{L['powered']} · {SITE}\n"
+    if fmt == "text":
+        return body, None, {}
+    if fmt == "html":
+        from . import mail_html
+        from .mail import html_text
+        fn = text_fn or (lambda x: x)
+        page, info = mail_html.prepare(body, fn)
+        line = (f'<div style="margin:24px auto 0;max-width:600px;padding:12px 16px;border-top:1px dashed {STRAW};'
+                f'font-family:{BODY_FONT};font-size:12px;line-height:1.6;color:{ARGENT};text-align:center">{esc(foot)} '
+                f'<a href="{SITE}" style="color:{ARGENT};text-decoration:underline;text-decoration-color:{WINDSTORM};'
+                f'font-weight:700">{esc(L["powered"])}</a></div>')
+        at = page.lower().rfind("</body>")
+        page = page[:at] + line + page[at:] if at >= 0 else page + line
+        return (fn(html_text(body)) or " ") + tail, page, info
+    title = (f'<h1 style="margin:0 0 14px;font-family:{TITLE_FONT};font-size:21px;line-height:1.35;font-weight:700">'
+             f'{inline(subject)}</h1>') if subject.strip() else ""
+    row = (f'<tr><td class="aj-pad" style="padding:0 24px 16px">'
+           f'<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" class="aj-card" '
+           f'style="background:{LOTION};border:1px solid {STRAW};border-radius:16px;border-collapse:separate;table-layout:fixed">'
+           f'<tr><td class="aj-tx aj-in" style="padding:18px 20px 8px;color:{SOOTY};font-family:{BODY_FONT}">'
+           f'{title}{markdown(body)}</td></tr></table></td></tr>')
+    from .mail import html_text                   # the inbox preview line: words, not Markdown marks
+    pre = " ".join(html_text(markdown(body)).split())[:120]
+    return body.strip() + tail, _shell(L, agent, subject or agent, pre, row, foot), {}

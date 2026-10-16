@@ -42,6 +42,12 @@
   --milky-waves:#71bbde;               /* Heavy blue — the accent (the retired Assassin's successor) */
   --strawberry-field:#f7827e;          /* Heavy red — danger on a dark surface */
   --lama:#dbb293;                      /* Heavy brown — the 「Agent J」 menu card on the Noir canvas (P302) */
+  /* P340 (owner 10-16: 「logo 和底色相同……heavy 的颜色上字体不能用黑色，要用我们指定的白色」): the action fill is ONE pair.
+     The fill is the logo green, so the robot mark (whose body IS that green) never stands on it bare: it gets a Lotion disc
+     (the header orb's look). Text on it is Lotion — 深底必白字. test/p340_contrast.test.mjs + p340_contrast.mjs hold it. */
+  --ui-action-bg:var(--c-shield);      /* 「让 Agent J 帮我设置」 and every logo-green action */
+  --ui-action-fg:var(--c-lotion);      /* its text — never Sooty / Noir */
+  --ui-mark-disc:var(--c-lotion);      /* the round light disc under a brand mark on a heavy fill */
   /* P302 spacing (owner: 「行间距、文字和线条的距离、按钮上下之间、左右之间」) — every menu / settings / detail page uses
      these; test/p302.mjs audits them (text ↔ a drawn line ≥ 8 px, sibling buttons ≥ 8 px apart, never overlapping) */
   --ui-space-line:var(--sp-3);         /* 12 — text ↔ a divider / dashed line, either side */
@@ -161,7 +167,7 @@ body:is([data-view="mem"],[data-view="act"],[data-view="tasks"],[data-view="mode
 .hotask .row{display:flex;gap:var(--sp-2);justify-content:flex-end;margin-top:var(--ui-space-control)}
 .hotask button{min-height:44px;padding:0 18px;border-radius:var(--ui-radius-pill);border:1px solid var(--menu-line);background:none;color:var(--menu-text);
   font:600 var(--ui-fs-body)/1 var(--font-body);cursor:pointer}
-.hotask button.yes{background:var(--c-shield);border-color:var(--c-shield);color:#fff}
+.hotask button.yes{background:var(--ui-action-bg);border-color:var(--ui-action-bg);color:var(--ui-action-fg)}
 .hotask button:disabled{opacity:.45;cursor:default}
 @media (prefers-reduced-motion:reduce){.hotask{animation:none}}
 .menubody{flex:1;min-height:0;overflow-y:auto;overscroll-behavior:contain;scrollbar-width:none;
@@ -438,12 +444,7 @@ body:is([data-view="mem"],[data-view="act"],[data-view="tasks"],[data-view="mode
 #settings .setrow>.segrow{grid-column:2;justify-self:end}
 @media (max-width:420px){ #settings .setrow:has(>.segrow){grid-template-columns:minmax(0,1fr)} #settings .setrow>.segrow{grid-column:1 / -1;justify-self:start} }
 
-/* the notice under the header: text + ✕, fades by itself (settings.js SAY_MS) */
-#settings .setstatusbar{display:flex;align-items:center;gap:var(--ui-space-control);padding-top:0;padding-bottom:0}
-#settings .setstatusbar[hidden]{display:none}
-#settings .setstatusbar>p{flex:1;min-width:0;margin:0;padding:var(--sp-2) 0}
-#settings .setstatusbar>.menuicon{margin-right:calc(-1 * var(--sp-2))}
-
+/* P340 #22: Settings' notices are the Noir Notification now (settings.js say → ui.js notify); no bar under the header */
 /* (f) heartbeat: interval dropdown + custom minutes + the daily time */
 #settings .sethb{grid-column:1 / -1;display:flex;flex-direction:column;gap:var(--ui-space-control);margin-top:var(--sp-1)}
 #settings .sethb-f{display:grid;grid-template-columns:minmax(0,1fr) minmax(8.5em,auto);align-items:center;gap:var(--ui-space-control);color:var(--menu-text);font-size:var(--ui-fs-small)}
@@ -504,8 +505,9 @@ body:is([data-view="mem"],[data-view="act"],[data-view="tasks"],[data-view="mode
 .set-find[hidden]{display:none}
 #set-find-input{width:100%;min-height:var(--ui-tap);background:var(--menu-card);color:var(--menu-text);border:1px solid var(--menu-line)}
 .set-found{outline:2px solid var(--menu-accent);outline-offset:-2px}
-.setup-assist{display:flex;align-items:center;justify-content:center;gap:var(--ui-space-control);width:100%;min-height:64px;padding:var(--sp-3);background:var(--c-shield);color:var(--c-sooty);border:0;border-radius:var(--ui-radius-control);font:inherit;font-weight:700;cursor:pointer}
-.setup-assist img{flex:none}
+.setup-assist{display:flex;align-items:center;justify-content:center;gap:var(--ui-space-control);width:100%;min-height:64px;padding:var(--sp-3);background:var(--ui-action-bg);color:var(--ui-action-fg);border:0;border-radius:var(--ui-radius-control);font:inherit;font-weight:700;cursor:pointer}
+/* P340: the robot on the green action = on its Lotion disc (as in the header orb), never green on green */
+.setup-assist img,.setimsg .imsg-assist img{flex:none;box-sizing:border-box;width:40px;height:40px;padding:4px;background:var(--ui-mark-disc);border-radius:50%;object-fit:contain;image-rendering:pixelated}
 
 #set-actions .bulb{margin:0;width:var(--ui-icon-btn);height:var(--ui-icon-btn)}
 
@@ -524,3 +526,149 @@ body:not([data-view="chat"]) #set-actions .bulb{display:flex}
 /* P302 追加 28 (owner 10-15: 「所有弹窗……最高只到 message card 的顶部」): the question / approval sheet never rises above the sheet
    ceiling (js/fit.js syncCeil → --ui-sheet-stage-top; DESIGN_TOKENS.md「Sheet ceiling」); a long one scrolls inside */
 #stage>.sheet{max-height:calc(100% - var(--ui-sheet-stage-top,0px))}
+
+/* ---- P332 · Settings → 紧急修复 (js/rescue.js, PROTOCOL §33): three numbered cards on the Sooty panel. Palette only:
+   green = Emerald Oasis fill with Lotion text (P340 深底必白字), failure = Strawberry Field line + text on the dark card (≥ 7:1), the
+   suggested next step = the menu accent. ② dimmed = dashed outline, muted number / title (body text keeps its contrast). */
+#settings .rscards{list-style:none;margin:var(--ui-space-content) 0 0;padding:0;display:flex;flex-direction:column;gap:var(--ui-space-control)}
+#settings .rscard{padding:var(--ui-space-content);border:1px solid var(--menu-line);border-radius:var(--ui-radius-panel);background:var(--menu-chip);
+  color:var(--menu-text);transition:background-color var(--ui-dur) var(--ui-ease),border-color var(--ui-dur) var(--ui-ease)}
+#settings .rshead{display:flex;align-items:center;gap:var(--ui-space-control)}
+#settings .rsnum{flex:none;width:28px;height:28px;border-radius:50%;display:grid;place-items:center;border:1.5px solid currentColor;
+  font:600 var(--ui-fs-small)/1 var(--font-body)}
+#settings .rstitle{margin:0;font:600 var(--ui-fs-body)/1.3 var(--font-body)}
+#settings .rsnote{margin:var(--ui-space-control) 0 0;color:var(--menu-muted);font-size:var(--ui-fs-small);line-height:var(--ui-leading)}
+#settings .rsbody:empty{display:none}
+#settings .rsbody>*{margin:var(--ui-space-control) 0 0}
+#settings .rsbody p{line-height:var(--ui-leading)}
+#settings .rsacts{display:flex;flex-wrap:wrap;gap:var(--ui-space-btn)}
+#settings .rsacts .aj-btn{min-height:var(--ui-btn-h);padding-inline:var(--ui-btn-px)}
+#settings .rslive{display:flex;flex-direction:column;gap:var(--ui-space-control)}
+#settings .rslive>*{margin:0}
+#settings .rsbar{height:6px;border-radius:var(--ui-radius-pill);background:var(--menu-press);overflow:hidden}
+#settings .rsbar i{display:block;height:100%;width:var(--p,10%);border-radius:inherit;background:var(--menu-accent);transition:width .4s var(--ui-ease)}
+#settings .rscard[data-state="run"] .rsbar i{animation:rs-breathe 1.6s ease-in-out infinite}
+@keyframes rs-breathe{50%{opacity:.55}}
+@media (prefers-reduced-motion:reduce){#settings .rscard[data-state="run"] .rsbar i{animation:none;transition:none}}
+#settings .rsnow{font-weight:600}
+#settings .rsok{font:600 var(--ui-fs-title-2)/1.3 var(--font-body)}
+#settings .rsfail{color:var(--menu-danger);font-weight:600}
+#settings .rshelper code,#settings .rsold code,#settings .rsticket code{overflow-wrap:anywhere}
+#settings .rssteps{list-style:none;padding:0;display:flex;flex-direction:column;gap:var(--sp-2)}
+#settings .rssteps li{display:flex;align-items:baseline;gap:var(--ui-space-control);line-height:var(--ui-leading)}
+#settings .rssteps li::before{content:"";flex:none;width:10px;height:10px;border-radius:50%;border:1.5px solid var(--menu-muted);transform:translateY(1px)}
+#settings .rssteps li[data-state="run"]::before{border-color:var(--menu-accent);background:var(--menu-accent);animation:rs-breathe 1.6s ease-in-out infinite}
+#settings .rssteps li[data-state="ok"]::before{border-color:var(--emerald-oasis);background:var(--emerald-oasis)}
+#settings .rssteps li[data-state="fail"]::before{border-color:var(--menu-danger);background:var(--menu-danger)}
+@media (prefers-reduced-motion:reduce){#settings .rssteps li::before{animation:none}}
+#settings .rsmore summary{min-height:var(--ui-tap);display:flex;align-items:center;cursor:pointer;color:var(--menu-muted);font-size:var(--ui-fs-small)}
+#settings .rsmore ul{margin:var(--sp-1) 0 0;padding-left:1.2em;color:var(--menu-muted);font-size:var(--ui-fs-small);overflow-wrap:anywhere}
+#settings .rsask{padding-block:var(--ui-space-line);border-top:1px dashed var(--menu-line)}
+#settings .rsask>*{margin:0}
+#settings .rsask>*+*{margin-top:var(--ui-space-control)}
+#settings .rstag{display:inline-block;padding:var(--sp-1) var(--ui-space-control);border-radius:var(--ui-radius-pill);background:var(--menu-accent);
+  color:var(--menu-on-accent);font:600 var(--ui-fs-caption)/1.4 var(--font-body)}
+#settings .rscard .setnav{margin-top:var(--ui-space-control);border-bottom:0}
+/* ② support's advice (LOW-12): a muted caution line above the advice, which stays plain text */
+#settings .rsadvbox>*{margin:0}
+#settings .rsadvcol{flex:1;min-width:0}
+#settings .rscaution{color:var(--menu-muted);font-size:var(--ui-fs-small);line-height:var(--ui-leading)}
+#settings .rsadvtext{white-space:pre-line;overflow-wrap:anywhere}
+#settings .rsadvbox>.rscaution+.rsadvtext{margin-top:var(--sp-1)}
+/* ② offers (HIGH-1): the repairs support suggested that only the owner's tap runs — one button + one plain line each */
+#settings .rsoffer{padding-top:var(--ui-space-line);border-top:1px dashed var(--menu-line);display:flex;flex-direction:column;gap:var(--ui-space-control)}
+#settings .rsoffer>*,#settings .rsoffitem>*,#settings .rsoffres>*{margin:0}
+#settings .rsoffitem{display:flex;flex-direction:column;align-items:flex-start;gap:var(--sp-1)}
+#settings .rsoffitem .aj-btn{min-height:var(--ui-btn-h);padding-inline:var(--ui-btn-px);max-width:100%;white-space:normal;text-align:start}
+#settings .rsoffitem .aj-btn:disabled{opacity:.55;cursor:default}
+#settings .rsoffres{display:flex;flex-direction:column;gap:var(--ui-space-control)}
+/* ② before ① has failed: dimmed, still a normal button */
+#settings .rscard[data-dim]{background:transparent;border-style:dashed}
+#settings .rscard[data-dim] .rshead{color:var(--menu-muted)}
+/* ① failed → ② is the next thing to try */
+#settings .rscard[data-hl]{border:2px solid var(--menu-accent);padding:calc(var(--ui-space-content) - 1px)}
+#settings .rscard[data-state="fail"]{border-color:var(--menu-danger)}
+/* success: the whole card turns green */
+#settings .rscard[data-state="ok"]{background:var(--emerald-oasis);border-color:var(--emerald-oasis);color:var(--c-lotion);
+  --menu-muted:var(--c-lotion);--menu-line:color-mix(in srgb,var(--c-lotion) 40%,transparent);--menu-text:var(--c-lotion);
+  --primary-bg:var(--c-sooty);--primary-fg:var(--c-lotion);--text:var(--c-lotion);--quiet-border:var(--c-lotion);--border:var(--c-lotion);
+  --code-bg:color-mix(in srgb,var(--c-sooty) 20%,transparent);--menu-chip:color-mix(in srgb,var(--c-sooty) 20%,transparent)}
+#settings .rscard[data-state="ok"] .aj-btn:not(.aj-btn--primary){background:transparent;color:var(--c-lotion);border-color:var(--c-lotion)}
+#settings .rscard[data-state="ok"] .aj-btn--primary:hover{background:var(--c-noir);border-color:var(--c-noir)}
+#settings .rsmode{padding:var(--ui-space-line) var(--ui-space-control);border-radius:var(--ui-radius-control);background:var(--menu-chip);
+  border-left:3px solid var(--menu-danger)}
+/* P344: the shortcut sheet's own search — magnifier at the top right, one field under the header bar lined up with the
+   cards (same side padding as .menuhead), text kept clear of the field's edges; "no match" in the muted text colour. */
+#keysFindBtn[aria-expanded="true"]{background:var(--menu-chip)}
+#keys .keys-find{padding:var(--sp-3) max(var(--menu-pad), calc((100% - var(--menu-max)) / 2));border-bottom:1px solid var(--menu-line)}
+#keysFindInput{width:100%;min-height:var(--ui-tap);padding:0 var(--sp-3);box-sizing:border-box;background:var(--menu-card);color:var(--menu-text);
+  border:1px solid var(--menu-line);border-radius:var(--ui-radius-control);font:400 var(--ui-fs-body)/1.3 var(--font-body);-webkit-appearance:none;appearance:none}
+#keysFindInput::placeholder{color:var(--menu-muted)}
+#keysFindInput:focus-visible{outline:var(--ui-focus-w) solid var(--menu-accent);outline-offset:var(--ui-focus-gap)}
+.keys-none{margin:0 0 var(--menu-gap);padding:var(--sp-3) 0;color:var(--menu-muted);font-size:var(--ui-fs-small)}
+.keys-none[hidden]{display:none}
+/* ---- P340 (#45) 输入框按钮顺序: the four composer buttons as a row the owner rearranges (js/toolsort.js) ---------------- */
+#settings .setrow>.toolsort{grid-column:1 / -1}
+#settings .setrow>#set-tools-reset{grid-column:2;grid-row:1;justify-self:end}
+.toolsort{list-style:none;margin:var(--ui-space-control) 0 var(--ui-space-control);padding:0;display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:var(--sp-2)}
+.toolsort li{min-width:0;display:flex}
+.toolsort .tschip{position:relative;flex:1;min-width:0;min-height:72px;padding:var(--sp-2) 4px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;
+  border:1px solid var(--menu-line);border-radius:var(--ui-radius-control);background:var(--menu-chip);color:var(--menu-text);cursor:grab;
+  font:500 var(--ui-fs-caption)/1.2 var(--font-body);touch-action:pan-y;user-select:none;-webkit-user-select:none;-webkit-touch-callout:none;
+  -webkit-tap-highlight-color:transparent;transition:border-color var(--ui-dur) var(--ui-ease),background-color var(--ui-dur) var(--ui-ease)}
+.toolsort .tschip *{pointer-events:none}
+.toolsort .tschip svg{width:24px;height:24px;flex:none}
+.toolsort .tschip span{max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.toolsort .tsnum{position:absolute;top:4px;left:7px;font:600 11px/1 var(--font-mono);font-style:normal;color:var(--menu-muted)}
+.toolsort .tschip:hover{border-color:var(--menu-muted)}
+.toolsort .tschip:focus-visible{outline:var(--ui-focus-w) solid var(--menu-accent);outline-offset:var(--ui-focus-gap)}
+.toolsort .tschip[aria-pressed="true"]{border-color:var(--menu-accent);box-shadow:inset 0 0 0 1px var(--menu-accent)}
+.toolsort .tschip[aria-pressed="true"] .tsnum{color:var(--menu-accent)}
+.toolsort.picking .tschip:not([aria-pressed="true"]){border-style:dashed}
+.toolsort .tschip.dragging{z-index:2;cursor:grabbing;border-color:var(--menu-accent);background:var(--menu-panel);
+  transform:translate(var(--dx,0),var(--dy,0)) scale(1.05);box-shadow:0 8px 24px color-mix(in srgb,var(--c-noir) 60%,transparent);transition:none}
+.toolsort.dragging .tschip:not(.dragging){border-style:dashed}
+@media (prefers-reduced-motion:reduce){ .toolsort .tschip{transition:none} .toolsort .tschip.dragging{transform:translate(var(--dx,0),var(--dy,0))} }
+/* P352 「模型和 API Key」 (js/keys.js): one dashed card per base-model vendor + one for the owner's other keys. A row = type tag ·
+   NAME (mono) over its state (masked + last 4, 未填, 已登录 / 未登录), icon-only buttons on the right (44 px, 8 px apart). Palette
+   only: Lotion text on Noir, Milky Waves for 订阅, Lama for 登录, Sage Sensation for 正在使用 / 已登录, Strawberry Field on 删除. */
+#models-view .keys-box{display:flex;flex-direction:column;gap:var(--ui-space-content);margin:var(--ui-space-content) 0 var(--ui-space-section)}
+#models-view .keys-box>h2,#models-view .keys-h h2{margin:var(--ui-space-control) 0 0;font-size:var(--menu-title-3);font-weight:600}
+#models-view .keys-h--third{display:flex;align-items:center;justify-content:space-between;gap:var(--ui-space-control)}
+#models-view .kvendor{border:1px dashed color-mix(in srgb,var(--menu-text) 34%,transparent);border-radius:var(--ui-radius-panel);padding:var(--sp-3) var(--ui-space-content)}
+#models-view .kvendor-h{margin:0 0 var(--sp-2);font-size:var(--ui-fs-body);font-weight:600}
+#models-view .klist{list-style:none;margin:0;padding:0;display:flex;flex-direction:column}
+#models-view .krow{display:flex;align-items:center;gap:var(--ui-space-control);min-height:var(--menu-row-2);padding:var(--sp-2) 0}
+#models-view .krow+.krow{border-top:1px solid var(--menu-line)}
+#models-view .kmain{flex:1;min-width:0;display:flex;flex-direction:column;gap:4px}
+#models-view .ktop{display:flex;align-items:baseline;flex-wrap:wrap;gap:var(--sp-2)}
+#models-view .ktag{flex:none;font-size:var(--ui-fs-caption);line-height:1.6;padding:0 8px;border-radius:var(--ui-radius-pill);
+  border:1px solid currentColor;color:var(--menu-muted)}
+#models-view .ktag--sub{color:var(--milky-waves)}
+#models-view .ktag--oauth{color:var(--lama)}
+#models-view .kname{font-family:var(--font-mono);font-size:var(--ui-fs-caption);background:transparent;padding:0;color:var(--menu-text);overflow-wrap:anywhere}
+#models-view .kname--login{font-family:var(--font-body);font-size:var(--ui-fs-small)}
+#models-view .kstate{font-size:var(--ui-fs-caption);color:var(--menu-muted);font-family:var(--font-mono);letter-spacing:.04em}
+#models-view .kstate[data-on="0"]{font-family:var(--font-body);letter-spacing:0}
+#models-view .krow[data-type="oauth"] .kstate[data-on="1"]{color:var(--sage-sensation);font-family:var(--font-body);letter-spacing:0}
+#models-view .kuse{margin-left:var(--sp-2);font-family:var(--font-body);letter-spacing:0;color:var(--sage-sensation)}
+#models-view .kacts{flex:none;display:flex;gap:8px}
+#models-view .kbtn{flex:none;display:inline-flex;align-items:center;justify-content:center;width:var(--ui-icon-btn);height:var(--ui-icon-btn);
+  padding:0;margin:0;border:0;border-radius:var(--ui-radius-control);background:var(--menu-chip);color:var(--menu-text);cursor:pointer}
+#models-view .kbtn:hover{background:var(--menu-press)}
+#models-view .kbtn:active{background:var(--menu-press)}
+#models-view .kbtn--delete{color:var(--menu-danger)}
+#models-view .kbtn--add{background:transparent;border:1px dashed color-mix(in srgb,var(--menu-text) 42%,transparent)}
+#models-view .kico{width:var(--ui-icon);height:var(--ui-icon)}
+#models-view .kempty{margin:0;color:var(--menu-muted);font-size:var(--ui-fs-small)}
+#models-view .kadd{display:flex;flex-direction:column;gap:var(--sp-2);margin-bottom:var(--ui-space-control)}
+#models-view .kadd[hidden]{display:none}
+#models-view .kadd-l{font-size:var(--ui-fs-small);color:var(--menu-muted)}
+#models-view .kadd-row{display:flex;gap:var(--ui-space-btn)}
+#models-view .kadd-i{flex:1;min-width:0;min-height:var(--ui-tap);padding:0 var(--sp-3);font:400 var(--ui-fs-body) var(--font-mono);color:var(--menu-text);
+  background:var(--menu-chip);border:1px solid var(--menu-line);border-radius:var(--ui-radius-control)}
+#models-view .kadd-i::placeholder{color:color-mix(in srgb,var(--menu-text) 55%,transparent)}
+#models-view .kadd-err{margin:0;font-size:var(--ui-fs-small);color:var(--menu-danger)}
+#models-view .kadd-err[hidden]{display:none}
+#models-view .keys-status{color:var(--menu-muted)}
+#models-view .keys-status[hidden]{display:none}

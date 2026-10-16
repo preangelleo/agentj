@@ -1,7 +1,7 @@
 // P205 item 5 — the recording card and the silent-gap notice, in real Chromium (fake microphone) + the Noise fake host.
 //   A. 390×844 touch (zh, en): hold to talk → the centred dark circle (square box, round, centred, ring live from the meter),
-//      no icons; double tap → locked: end / dim / cancel icons + the "don't press the power button" note; dim → black, a tap
-//      elsewhere does nothing; the end icon ends (words in the field); the cancel icon cancels; mute while hidden → unmute →
+//      no icons; double tap → locked: cancel / end / send icons + the "don't press the power button" note, the page blurred
+//      behind (P346 replaced the dim mode); the end icon ends (words in the field); the cancel icon cancels; mute while hidden → unmute →
 //      back on the page: "0:0x–0:0y came in silent", and again when the take ends.
 //   B. a fake microphone file with 5 s of digital zeros in the middle: the opened track has noiseSuppression false, and the
 //      finished take is told 「录音里 0:0x–0:0y 没有声音」 (live meter + decoded take).
@@ -22,8 +22,8 @@ import { parityRecorder } from '../../parity/lib.mjs';
 const out = fileURLToPath(new URL('../../../reports/qa/p205/', import.meta.url)); mkdirSync(out, {recursive: true});
 const results = {};
 const T = {
-  zh: {hint: '松手直接发送', awake: '请别按电源键锁屏', dimNote: '暗屏中', live: '没有声音，可能没录上', gap: '录音里 ', words: '这是转写出来的文字', cancelled: '已取消'},
-  en: {hint: 'Release to send', awake: "Please don't press the power button", dimNote: 'Dimmed', live: 'came in silent and may be missing', gap: 'of the recording came in silent', words: '这是转写出来的文字', cancelled: 'Cancelled'},
+  zh: {hint: '松手直接发送', awake: '请别按电源键锁屏', live: '没有声音，可能没录上', gap: '录音里 ', words: '这是转写出来的文字', cancelled: '已取消'},
+  en: {hint: 'Release to send', awake: "Please don't press the power button", live: 'came in silent and may be missing', gap: 'of the recording came in silent', words: '这是转写出来的文字', cancelled: 'Cancelled'},
 };
 const HOOKS = `(() => {
   const g = navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices); navigator.mediaDevices.getUserMedia = async (c) => { window.__gum = c; return (window.__stream = await g(c)); };
@@ -100,30 +100,20 @@ try {
       results['hold-circle-' + language] = 'PASS';
       await reset(p);
 
-      // locked: icons + note; dim; a stray tap does nothing; end icon ends
+      // locked: icons + note; the page behind blurred (P346 replaced the dim mode); end icon ends
       await lock(p);
       await sleep(600);
       g = await evaluate(p, geo);
       centred(g, 'locked');
       assert.ok(!g.act, 'icons under the circle'); assert.ok(g.note.includes(L.awake), g.note);
       writeFileSync(out + `rec-lock-${language}-390.png`, await shoot(p, ''));
-      await clickEl(p, '#pttDim');
-      await waitFor(p, `document.getElementById('ptt').classList.contains('dim') && document.body.classList.contains('recdim')`, 2000);
-      await sleep(450);                                                            // the .25 s fade to black
-      g = await evaluate(p, geo);
-      assert.ok(g.note.includes(L.dimNote), g.note);
-      assert.equal(await evaluate(p, `getComputedStyle(document.getElementById('ptt')).backgroundColor`), 'rgb(0, 0, 0)');
-      writeFileSync(out + `rec-dim-${language}-390.png`, await shoot(p, ''));
-      await tap(p, 195, 120); await tap(p, 60, 800); await sleep(300);           // pocket taps: swallowed by the black layer
-      assert.equal(await evaluate(p, `!document.getElementById('ptt').hidden && document.getElementById('mic').classList.contains('lock')`), true, 'still recording');
-      assert.equal(await evaluate(p, `localStorage.getItem('aj.recDim')`), '1', 'the brightness choice is remembered');
-      await clickEl(p, '#pttDim');
-      await waitFor(p, `!document.getElementById('ptt').classList.contains('dim')`, 2000);
+      assert.equal(await evaluate(p, `document.body.classList.contains('recblur') && /blur/.test(getComputedStyle(document.getElementById('ptt')).backdropFilter)`), true, 'P346: blurred');
+      assert.equal(await evaluate(p, `!!document.getElementById('pttDim')`), false, 'P346: no dim icon');
       await clickEl(p, '#pttEnd');
       await waitFor(p, `document.getElementById('ptt').hidden`, 4000);
       await waitFor(p, `document.getElementById('input').value.includes(${JSON.stringify(L.words)})`, 10000);
-      assert.equal(await evaluate(p, `document.body.classList.contains('recdim')`), false);
-      results['lock-icons-dim-end-' + language] = 'PASS';
+      assert.equal(await evaluate(p, `document.body.classList.contains('recblur')`), false);
+      results['lock-icons-blur-end-' + language] = 'PASS';
       await reset(p);
 
       // cancel icon

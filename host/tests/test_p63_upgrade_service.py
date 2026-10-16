@@ -118,7 +118,10 @@ class LaunchdBootstrap(unittest.TestCase):
         self.st = State(pathlib.Path(self.home) / "st")
         self.st.init(relay="ws://127.0.0.1:1")
         for target in (mock.patch.object(service, "platform", return_value="macos"),
-                       mock.patch("time.sleep", lambda s: None)):
+                       mock.patch("time.sleep", lambda s: None),
+                       # P332: install() also bootstraps the rescue watchdog's own label (test_p332_watchdog); these
+                       # tests count the serve label's bootout / bootstrap calls only
+                       mock.patch.object(service, "_rescue_note", lambda st, notes: None)):
             target.start()
             self.addCleanup(target.stop)
 

@@ -1,6 +1,7 @@
 """P315 (Leo, 2026-10-15): Volcano Engine Ark (火山方舟) Coding Plan — `agentj provider ark [--model …] [--harness claude]`.
 
-The third mainland China plan next to Kimi and Bailian (ai_route.py): one subscription (Lite / Pro; Kimi K3 only in Pro)
+P328: the first recommendation for mainland China starting from zero (ai_route.py; Lite first — Lite and Pro have the same
+models, Pro only 5x the quota; Kimi K3 is suggested for Pro because it uses quota fast): one subscription
 with ByteDance Doubao, Moonshot Kimi, Zhipu GLM, DeepSeek and MiniMax models. `ark.json` is the one place for its models:
 which read images (measured by the owner, support thread st_ASwQAUOspTnh8jMvSeueKA: kimi-k3, doubao-seed-2.1-pro …
 yes; glm-5.3, deepseek-v4-pro text only) and output limits (GLM-5.3's thinking used up OpenCode's 32k default).
@@ -26,13 +27,18 @@ from . import opencode_provider as op
 DATA = pathlib.Path(__file__).with_name("ark.json")
 PROFILE = "ark-claude"
 
-TERMS = {
-    "zh": "火山方舟 Coding Plan 是给编程工具交互使用的套餐（条款以方舟控制台为准）：定时任务、客服 bot 这类无人值守的活请用按量付费的方舟 "
-          "API Key——Agent J 不会把 Coding Plan 的 Key 交给定时任务或 bot。Coding Plan 不含生图模型。",
-    "en": "Volcano Ark Coding Plan is a plan for interactive use inside coding tools (Ark's console terms are authoritative): "
-          "unattended work such as scheduled tasks or support bots needs a pay-as-you-go Ark key — Agent J never gives the "
-          "Coding Plan key to scheduled tasks or bots. The Coding Plan has no image-generation models.",
+TERMS = {   # P348 (2026-10-16): the owner's own tasks may use the plan; support bots never (bots/provider.py)
+    "zh": "火山方舟 Coding Plan 是包月套餐（条款以方舟控制台为准）：你自己的定时任务和后台 Agent 可以用它；长时间连续跑的后台任务服务商"
+          "可能限流，可改用按量付费的方舟 API Key。客服 bot 是在服务别人，Agent J 不会把 Coding Plan 的 Key 交给 bot，要另填一把按量 Key。"
+          "Coding Plan 不含生图模型。",
+    "en": "Volcano Ark Coding Plan is a monthly plan (Ark's console terms are authoritative): your own scheduled tasks and "
+          "background Agents may use it; the provider may rate-limit long continuous background work, so you can switch those "
+          "to a pay-as-you-go Ark key. A support bot serves other people, so Agent J never gives it the Coding Plan key — add a "
+          "pay-as-you-go key for the bot. The Coding Plan has no image-generation models.",
 }
+# P328: Lite and Pro have the same models (Kimi K3 included); Ark only *suggests* Pro for K3 because it uses quota fast
+PRO_NOTE = {"zh": "（kimi-k3 扣额度快，方舟建议 Pro 套餐用；Lite 也能选）",
+            "en": " (kimi-k3 uses quota fast: Ark suggests it for Pro, but Lite can pick it too)"}
 
 
 def data() -> dict:
@@ -78,7 +84,7 @@ def install(model: str | None = None, dry_run: bool = False, environ=None) -> di
     return {"file": path, "harness": "opencode", "provider": pid, "kept": kept, "written": not kept and not dry_run,
             "model": f"{pid}/{model}", "vision": vision(model), "key_env": d["key_env"],
             "models": [f"{pid}/{m}" for m in models], "vision_models": [f"{pid}/{m}" for m in models if vision(m)],
-            "pro_only": d["pro_only"], "next": steps(model)}
+            "pro_suggested": d["pro_suggested"], "next": steps(model)}
 
 
 def steps(model: str | None = None) -> list[str]:
@@ -128,7 +134,7 @@ def model_note(model: str | None, lang: str = "zh") -> str | None:
     eye = ("" if vision(m) else
            f"（{m} 不能看图：截图、浏览器自动化要看图时换 {pid}/{d['model']} 或 {pid}/{d['model_strong']}）" if lang == "zh" else
            f" ({m} cannot read images: for screenshots / browser work use {pid}/{d['model']} or {pid}/{d['model_strong']})")
-    pro = ("（kimi-k3 只在 Pro 套餐里）" if lang == "zh" else " (kimi-k3 is in the Pro plan only)") if m in d["pro_only"] else ""
+    pro = (PRO_NOTE[lang] if m in d["pro_suggested"] else "")
     return TERMS[lang] + eye + pro
 
 
@@ -149,14 +155,14 @@ def render(r: dict, lang: str = "zh") -> str:
         head = (f"{r['file']} 里已经有 {r['provider']}：保持你原来的配置，没有改。" if r["kept"] else
                 ("已写入" if r["written"] else "（预演，未写入）") + f" {r['file']}：服务商 {r['provider']}（{len(r['models'])} 个模型），"
                 f"key 从环境变量 {r['key_env']} 读（这里不存 key）。")
-        return "\n".join([head, f"能看图的模型：{eyes}；glm-5.3、deepseek-v4-pro 等是纯文本。kimi-k3 只在 Pro 套餐里。", "接下来：",
+        return "\n".join([head, f"能看图的模型：{eyes}；glm-5.3、deepseek-v4-pro 等是纯文本。{PRO_NOTE['zh']}", "接下来：",
                           f"  1. {r['next'][0]}\n     （手机上弹出密钥卡，主人只把方舟控制台 {d['console_url']} 的 API Key 贴进卡片；Agent 看不到值）",
                           f"  2. {r['next'][1]}", f"  3. {r['next'][2]}" + ("（这个模型能看图）" if r["vision"] else ""),
                           f"想用 Claude Code：`agentj provider ark --harness claude`。", "⚠ " + TERMS["zh"]])
     head = (f"{r['provider']} already exists in {r['file']}: your own configuration is kept unchanged." if r["kept"] else
             ("Written" if r["written"] else "(dry run, nothing written)") + f" {r['file']}: provider {r['provider']} "
             f"({len(r['models'])} models), key read from {r['key_env']} (no key stored here).")
-    return "\n".join([head, f"Models that read images: {eyes}; glm-5.3, deepseek-v4-pro and others are text only. kimi-k3 is Pro only.",
+    return "\n".join([head, f"Models that read images: {eyes}; glm-5.3, deepseek-v4-pro and others are text only.{PRO_NOTE['en']}",
                       "Next:", f"  1. {r['next'][0]}\n     (a key card opens on the phone; the owner pastes the Ark API key there only)",
                       f"  2. {r['next'][1]}", f"  3. {r['next'][2]}" + (" (this model reads images)" if r["vision"] else ""),
                       "For Claude Code: `agentj provider ark --harness claude`.", "⚠ " + TERMS["en"]])

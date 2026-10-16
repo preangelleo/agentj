@@ -30,6 +30,7 @@ import subprocess
 import sys
 
 from .envcompat import getenv, isset
+from . import macapp
 
 DEFAULT_UNIT = "agentj"
 DEFAULT_LABEL = "net.agentj.host"
@@ -690,7 +691,27 @@ def systemd_problem() -> str | None:
     return classify_no_manager()
 
 
+def user_runtime_dir(environ=None) -> str | None:
+    """P329 live (Olares: its sshd runs without PAM): an SSH login gets no XDG_RUNTIME_DIR although the user manager runs
+    (linger), and `systemctl --user` says "No medium found". The manager's own socket /run/user/<uid>/bus (ours, a socket)
+    is the standard place: set XDG_RUNTIME_DIR to its folder for this process and its children. → the folder set, or None."""
+    import stat
+    e = os.environ if environ is None else environ
+    if e.get("XDG_RUNTIME_DIR") or platform() != "linux" or not hasattr(os, "getuid"):
+        return None
+    d = f"/run/user/{os.getuid()}"
+    try:
+        st = os.lstat(d + "/bus")
+    except OSError:
+        return None
+    if st.st_uid != os.getuid() or not stat.S_ISSOCK(st.st_mode):
+        return None
+    e["XDG_RUNTIME_DIR"] = d
+    return d
+
+
 def _systemctl(*args: str, check: bool = False, timeout: int = 30) -> subprocess.CompletedProcess:
+    user_runtime_dir()
     exe = shutil.which("systemctl")
     if not exe:
         raise ServiceError(classify_no_manager() if platform() == "linux" else "no_systemctl")
@@ -803,10 +824,10 @@ def sweep_jobs(*, everything: bool = False, now: float | None = None) -> list[st
 PROCESS_TYPE = "Interactive"
 
 
-def plist_bytes(n: str, argv: list[str], env: dict, log_path: str) -> bytes:
+def plist_bytes(n: str, argv: list[str], env: dict, log_path: str, extra: dict | None = None) -> bytes:
     return plistlib.dumps({"Label": n, "ProgramArguments": argv + SERVE_ARGS, "EnvironmentVariables": {k: v for k, v in env.items() if k not in (*CAPTURED_ENV[1:], *CLAUDE_AUTH_ENV)},
                            "RunAtLoad": True, "KeepAlive": True, "ThrottleInterval": 5, "ProcessType": PROCESS_TYPE,
-                           "StandardInPath": "/dev/null", "StandardOutPath": log_path, "StandardErrorPath": log_path})
+                           "StandardInPath": "/dev/null", "StandardOutPath": log_path, "StandardErrorPath": log_path, **(extra or {})})
 
 
 def _launchctl(*args: str, timeout: int = 30) -> subprocess.CompletedProcess:
@@ -893,6 +914,7 @@ def install(st) -> dict:
         _systemctl("restart", f"{n}.service", check=True)   # starts it, or picks up a rewritten unit (reinstall / upgrade)
         remember_binary_selection(st, n)
         _register_pair_protocol(notes)
+        _rescue_note(st, notes)       # P332: the rescue watchdog's unit (install and every upgrade pass here)
         if _linger() == "no":
             notes.append("常驻（包括多用户桌面）：`loginctl enable-linger $USER`；需要管理员时用 agentj sudo 手机密码卡 / "
                          "enable linger even on a shared desktop: otherwise logout stops this seat")
@@ -905,7 +927,9 @@ def install(st) -> dict:
         old = remove_legacy()
         if old:
             notes.append(f"旧服务 {old['name']} 已停止并删除 / the old service {old['name']} was stopped and removed")
-        _write(path, plist_bytes(n, argv, env, str(st.root / "service.log")), 0o644)
+        # P327: through the signed "Agent J.app" launcher when available (Login Items shows "Agent J"), else as before
+        argv, extra = macapp.wrap(argv, log=getattr(st, "log", None))
+        _write(path, plist_bytes(n, argv, env, str(st.root / "service.log"), extra), 0o644)
         # `launchctl enable` writes a permanent record into launchd's override database that only root can remove: call it
         # only when the label is disabled there (a bootstrap would fail), remember that, and put it back on uninstall
         if launchd_disabled(n) is True:
@@ -920,9 +944,185 @@ def install(st) -> dict:
             with contextlib.suppress(Exception):
                 st.log("launchd_jobs_swept", count=len(swept))
         _register_pair_protocol(notes)
+        _rescue_note(st, notes)       # P332
         notes.append(login_reminder())
         return {"kind": "launchd", "name": n, "path": path, "argv": argv + SERVE_ARGS, "notes": notes}
     raise ServiceError("unsupported_os")
+
+
+# ------------------------------------------------------------------ P332 (§33): the rescue watchdog's own unit
+RESCUE_LABEL = "net.agentj.rescue"
+RESCUE_ARGS = ["-P", "-m", "agentj.rescue_watchdog"]
+RESCUE_ENV = ("PATH", "AGENTJ_STATE_DIR", "AGENTJ_INSTANCE", "AGENTJ_SERVICE_NAME", *PROXY_ENV)
+
+
+def rescue_name(n: str | None = None) -> str:
+    """agentj → agentj-rescue · agentj-N → agentj-N-rescue · net.agentj.host[.N] → net.agentj.rescue[.N] · other → <n>.rescue."""
+    n = n or name()
+    if platform() == "macos":
+        if n == DEFAULT_LABEL or n.startswith(DEFAULT_LABEL + "."):
+            return RESCUE_LABEL + n[len(DEFAULT_LABEL):]
+        return n + ".rescue"
+    return n + "-rescue"
+
+
+def rescue_argv() -> list[str]:
+    """This interpreter, straight at the watchdog module (not through the CLI: smaller, and a broken CLI import after an
+    upgrade does not take the watchdog with it). `-P`: never the working directory on sys.path."""
+    return [os.path.abspath(sys.executable), *RESCUE_ARGS]
+
+
+def rescue_env(environ: dict | None = None) -> dict:
+    """Paths and credential-free proxies only (service_env), plus the serve unit's name so the watchdog restarts the right one."""
+    env, _ = service_env(environ)
+    e = os.environ if environ is None else environ
+    if getenv("AGENTJ_SERVICE_NAME", None, e):
+        env["AGENTJ_SERVICE_NAME"] = name()
+    return {k: v for k, v in env.items() if k in RESCUE_ENV}
+
+
+def rescue_unit_text(n: str, argv: list[str], env: dict) -> str:
+    """Independent of the serve unit on purpose (no PartOf / BindsTo / Requires): `systemctl --user stop agentj` must leave
+    it running — it exists for the time serve is not."""
+    lines = ["# Agent J rescue watchdog — written by `agentj service install` / `agentj rescue install`. No secrets here, by design.",
+             "[Unit]", "Description=Agent J rescue watchdog: keeps the phone's emergency repair reachable when Agent J stops answering",
+             "StartLimitIntervalSec=0", "",
+             "[Service]", "Type=simple",
+             "ExecStart=" + " ".join(_sd_quote(x) for x in argv),
+             "Restart=always", "RestartSec=10", "TimeoutStopSec=10", "StandardInput=null",
+             "Nice=10", "CPUWeight=20", "IOWeight=20", "MemoryHigh=64M", "MemoryMax=128M", "TasksMax=64"]
+    lines += [f"Environment={_sd_quote(f'{k}={v}')}" for k, v in env.items()]
+    lines += ["", "[Install]", "WantedBy=default.target", ""]
+    return "\n".join(lines)
+
+
+def rescue_plist_bytes(n: str, argv: list[str], env: dict, log_path: str) -> bytes:
+    return plistlib.dumps({"Label": n, "ProgramArguments": argv, "EnvironmentVariables": env,
+                           "RunAtLoad": True, "KeepAlive": True, "ThrottleInterval": 10, "ProcessType": "Background",
+                           "Nice": 10, "LowPriorityIO": True,
+                           "StandardInPath": "/dev/null", "StandardOutPath": log_path, "StandardErrorPath": log_path})
+
+
+def rescue_path(r: str) -> str:
+    return plist_path(r) if platform() == "macos" else os.path.join(unit_dir(), f"{r}.service")
+
+
+def install_rescue(st) -> dict:
+    """Write (or rewrite) + enable + (re)start the watchdog unit. Idempotent: `agentj service install`, every upgrade (the
+    recovery worker calls install()) and `agentj rescue install` all land here. Raises ServiceError."""
+    r, plat = rescue_name(), platform()
+    argv, env = rescue_argv(), rescue_env()
+    if plat == "linux":
+        path = rescue_path(r)
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        _write(path, rescue_unit_text(r, argv, env).encode(), 0o644)
+        _systemctl("daemon-reload", check=True)
+        _systemctl("enable", f"{r}.service", check=True)
+        _systemctl("reset-failed", f"{r}.service")
+        _systemctl("restart", f"{r}.service", check=True)      # picks up new code after an upgrade
+        return {"kind": "systemd", "name": r, "path": path}
+    if plat == "macos":
+        path = rescue_path(r)
+        new = not os.path.exists(path)
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        _write(path, rescue_plist_bytes(r, argv, env, str(st.root / "rescue-service.log")), 0o644)
+        if launchd_disabled(r) is True:
+            _launchctl("enable", f"{_gui()}/{r}")
+            _remember_enabled(st, r)
+        res = _bootstrap(r, path)
+        if res.returncode != 0:
+            raise ServiceError("launchctl_failed", (res.stderr or res.stdout).strip()[:300])
+        return {"kind": "launchd", "name": r, "path": path, "new": new}
+    raise ServiceError("unsupported_os")
+
+
+# macOS shows a new login item ("Background Items Added") the first time the watchdog is registered: say what it is.
+MAC_LOGIN_ITEM_NOTE = ("macOS 可能提示新增了一个登录项 / 后台项目：那是「Agent J 救援守护」——电脑上的 Agent J 卡住时，让手机还能救它。"
+                       "请保持开启 / macOS may say a login item (background item) was added: it is the Agent J rescue "
+                       "watchdog — when Agent J on this computer gets stuck, your phone can still rescue it. Keep it on.")
+
+
+def uninstall_rescue(st=None) -> dict:
+    r, plat = rescue_name(), platform()
+    path = rescue_path(r)
+    existed = os.path.exists(path)
+    if plat == "linux":
+        if existed or _systemctl("cat", f"{r}.service", timeout=10).returncode == 0:
+            _systemctl("disable", "--now", f"{r}.service")
+        if existed:
+            os.unlink(path)
+        _systemctl("daemon-reload")
+        _systemctl("reset-failed", f"{r}.service")
+        return {"kind": "systemd", "name": r, "path": path, "removed": existed}
+    if plat == "macos":
+        _launchctl("bootout", f"{_gui()}/{r}")
+        if existed:
+            os.unlink(path)
+        if st is not None:
+            with contextlib.suppress(OSError):
+                _restore_disabled(st, r)
+        return {"kind": "launchd", "name": r, "path": path, "removed": existed}
+    raise ServiceError("unsupported_os")
+
+
+def rescue_status() -> dict:
+    """{"kind", "name", "path", "installed", "active"}; never raises."""
+    try:
+        r = rescue_name()
+    except ServiceError:
+        return {"kind": "none", "name": None, "installed": False, "active": "bad_name"}
+    plat = platform()
+    if plat == "linux":
+        path = rescue_path(r)
+        if not shutil.which("systemctl"):
+            return {"kind": "none", "name": r, "path": path, "installed": os.path.exists(path), "active": "no_systemctl"}
+        try:
+            act = _systemctl("is-active", f"{r}.service", timeout=10).stdout.strip() or "unknown"
+        except (OSError, subprocess.TimeoutExpired, ServiceError):
+            act = "unknown"
+        return {"kind": "systemd", "name": r, "path": path, "installed": os.path.exists(path), "active": act}
+    if plat == "macos":
+        path = rescue_path(r)
+        try:
+            res = _launchctl("print", f"{_gui()}/{r}", timeout=10)
+        except (OSError, subprocess.TimeoutExpired):
+            return {"kind": "launchd", "name": r, "path": path, "installed": os.path.exists(path), "active": "unknown"}
+        m = re.search(r"^\s*state = (\S+)", res.stdout, re.M) if res.returncode == 0 else None
+        act = "active" if m and m.group(1) == "running" else ("inactive" if res.returncode == 0 else "not_loaded")
+        return {"kind": "launchd", "name": r, "path": path, "installed": os.path.exists(path), "active": act}
+    return {"kind": "none", "name": r, "installed": False, "active": "unsupported_os"}
+
+
+def _rescue_stop() -> None:
+    """`agentj service stop` is an intentional stop: the watchdog goes quiet too, or it would take the channel over and
+    restart serve ~45 s later (review P332 MEDIUM-2). Never raises; the unit stays installed (start brings it back)."""
+    with contextlib.suppress(ServiceError, OSError, subprocess.SubprocessError):
+        r, plat = rescue_name(), platform()
+        if plat == "linux" and os.path.exists(rescue_path(r)):
+            _systemctl("stop", f"{r}.service", timeout=20)
+        elif plat == "macos" and os.path.exists(rescue_path(r)):
+            _launchctl("bootout", f"{_gui()}/{r}")
+
+
+def _rescue_start() -> None:
+    """`service start` / `restart` bring an installed watchdog back (a no-op when it runs). Not installed (or removed with
+    `agentj rescue uninstall`) stays so: only `service install` / `rescue install` register it. Never raises."""
+    with contextlib.suppress(ServiceError, OSError, subprocess.SubprocessError):
+        r, plat = rescue_name(), platform()
+        if plat == "linux" and os.path.exists(rescue_path(r)):
+            _systemctl("start", f"{r}.service", timeout=20)
+        elif plat == "macos" and os.path.exists(rescue_path(r)) and not _loaded(f"{_gui()}/{r}"):
+            _bootstrap(r, rescue_path(r))
+
+
+def _rescue_note(st, notes: list) -> None:
+    """install(): the watchdog comes along; its failure never fails the serve install (one plain note instead)."""
+    try:
+        if install_rescue(st).get("new"):
+            notes.append(MAC_LOGIN_ITEM_NOTE)
+    except (ServiceError, OSError, subprocess.SubprocessError):
+        notes.append("救援守护没装上（不影响正常使用）：运行 agentj rescue install 重试 / the rescue watchdog was not installed "
+                     "(Agent J works without it): retry with agentj rescue install")
 
 
 _DISABLED_RX = r'^\s*"{label}"\s*=>\s*(disabled|enabled|true|false)\s*$'
@@ -992,6 +1192,7 @@ def restart() -> dict:
             raise ServiceError("launchctl_failed", (r.stderr or r.stdout or "").strip()[:300])
     else:
         raise ServiceError("unsupported_os")
+    _rescue_start()           # P332: back after an `agentj service stop`
     return {"name": n}
 
 
@@ -1026,6 +1227,7 @@ def start(st) -> dict:
         _acknowledge_recovery(st)
         return result
     if current.get("active") == "active":
+        _rescue_start()       # P332
         _acknowledge_recovery(st)
         return {"name": n}
     if plat == "linux":
@@ -1042,6 +1244,7 @@ def start(st) -> dict:
             raise ServiceError("launchctl_failed")
     else:
         raise ServiceError("unsupported_os")
+    _rescue_start()           # P332: `service stop` stopped the watchdog too
     _acknowledge_recovery(st)
     return {"name": n}
 
@@ -1056,8 +1259,11 @@ def _acknowledge_recovery(st):
 
 
 def stop() -> dict:
-    """Stop without deleting installation. launchd KeepAlive requires bootout."""
+    """Stop without deleting installation. launchd KeepAlive requires bootout. The rescue watchdog stops first (an
+    intentional stop must not be "repaired" by it; start / restart / install bring it back)."""
     n, plat = name(), platform()
+    if plat in ("linux", "macos"):
+        _rescue_stop()
     if plat == "linux":
         _systemctl("stop", f"{n}.service", check=True)
     elif plat == "macos":
@@ -1070,6 +1276,9 @@ def stop() -> dict:
 
 def uninstall(st=None) -> dict:
     n, plat = name(), platform()
+    if plat in ("linux", "macos"):
+        with contextlib.suppress(ServiceError, OSError, subprocess.SubprocessError):
+            uninstall_rescue(st)      # P332: the watchdog goes with the service
     if plat == "linux":
         path = os.path.join(unit_dir(), f"{n}.service")
         existed = os.path.exists(path)
@@ -1093,8 +1302,9 @@ def uninstall(st=None) -> dict:
         jobs = sweep_jobs(everything=True)        # P323: no one-shot job plist outlives the uninstall
         with contextlib.suppress(OSError):
             os.rmdir(job_dir())
+        app = macapp.remove_if_unused()           # P327: the launcher app goes with the last LaunchAgent using it
         return {"kind": "launchd", "name": n, "path": path, "removed": existed, "restored_disabled": restored,
-                "jobs_removed": len(jobs)}
+                "jobs_removed": len(jobs), "app_removed": app}
     raise ServiceError("unsupported_os")
 
 

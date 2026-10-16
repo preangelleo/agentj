@@ -145,6 +145,11 @@ def ignored(raw):
     except ValueError: return []
     return _undot(doc)[1] if isinstance(doc,dict) else []
 
+COMPOSER_BUTTONS = ('file', 'image', 'camera', 'mic')   # P340: the default left-to-right order above the phone's message box
+
+def composer_order_ok(v):
+    return isinstance(v, list) and len(v) == len(COMPOSER_BUTTONS) and all(isinstance(x, str) for x in v) and sorted(v) == sorted(COMPOSER_BUTTONS)
+
 def validate(doc,raw=''):
     if not isinstance(doc,dict): raise ConfigError('/', 'expected an object')
     dotted=_dotted(doc)
@@ -169,6 +174,8 @@ def validate(doc,raw=''):
         if len(lv)>200 or any(not isinstance(x,str) or not x.strip() or len(x)>100 or any(ord(c)<32 for c in x) for x in lv): raise ConfigError(lk,'a list of up to 200 numbers, e-mails or keywords (each 1–100 characters)')
     cats = get(doc, 'updates.skill_categories', [])
     if len(cats)>4 or any(c not in ('content','app','commerce','general') for c in cats): raise ConfigError('updates.skill_categories','allowed: content, app, commerce, general')
+    order = get(doc, 'ui.composer_buttons')   # P340: a permutation of the four ids; anything else is refused (the phone keeps the default)
+    if order is not None and not composer_order_ok(order): raise ConfigError('ui.composer_buttons','expected each of '+', '.join(COMPOSER_BUTTONS)+' exactly once, e.g. ["mic","file","image","camera"]',_line(raw,'ui.composer_buttons'))
     pif = get(doc, 'agent.private_instructions_file', '')
     if pif and not (pif.startswith('/') or pif.startswith('~/')):
         raise ConfigError('agent.private_instructions_file', 'use an absolute path or ~/path (a local file, never a URL)')
@@ -564,6 +571,9 @@ def command(args):
                     newraw=chosen.read_text()
                 else: newraw=raw
                 candidate=parse(newraw)
+                if key=='agent.shared_session_id' and a.action in ('set','unset') and not a.dry_run:
+                    from . import shared_pin  # P330: the owner chose (again): the next serve start absorbs it, even unchanged
+                    shared_pin.forget_owner(st) if a.action=='set' else shared_pin.unpin(st)
                 result={'ok':True,'applied':False,'verify':{'ok':True,'detail':'dry run'},'effective':validate(candidate)} if a.dry_run else transact(st,newraw)
                 if key in SCHEMA:result.update(key=key,old=get(validate(doc),key),new=get(validate(candidate),key),needs=result.get('needs',[]))
                 if key=='agent.session_mode' and result['old']!=result['new']:

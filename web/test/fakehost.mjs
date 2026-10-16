@@ -102,7 +102,7 @@ export async function startFakeHost() {
     epoch: 1, nextId: 1, turns: [], blobs: new Map(), staged: new Set(), queued: new Map(), opens: [], cancels: [], answers: [],
     qAnswers: [], chunks: 0, wavs: [], menu: null, models: null, meter: null, sigOk: [], says: [], modelSets: [], rate: true,
     firsts: [], errors: [], cards: false, cardsMute: false, cardGets: [], upgItems: [], upgOpen: null, upgOffs: [],   // P203
-    prefs: null, prefSet: true, prefSets: [], version: null,
+    prefs: null, prefSet: true, prefSets: [], approvalSets: [], signedPrefs: true, approvalWhy: null, approvalPasskey: false, approvalFaFail: false, approvalUnsigned: false, version: null,
     hfind: true, finds: [], findMute: false, findDelay: 0, olderDelay: 0,   // P188: the host answers hist_find (false = an older host)
     platform: 'linux', imsg: null, imsgCheck: null, imsgCalls: [],   // P274: the computer's OS + the iMessage card's status
   };
@@ -167,7 +167,7 @@ export async function startFakeHost() {
       if(c.removed){await sendApp(c,{t:'removed',why:'revoked'});return c.close(4010);}
       c.p33 = st.p33 && Array.isArray(m.caps) && m.caps.includes('p33');
       c.hello = m;
-      await sendApp(c, st.p33 ? { t: 'ready', caps: ['p33', ...(st.heartbeat ? ['heartbeat'] : []), ...(st.tgfwd ? ['tgfwd'] : []), ...(st.busyget ? ['busyget'] : []), ...(st.hfind ? ['hfind'] : []), ...(st.caps || []), ...(st.extraCaps || [])], asr: st.asr, hist: 'on', ...(st.kind || {}) } : { t: 'ready' });
+      await sendApp(c, st.p33 ? { t: 'ready', caps: ['p33', ...(st.heartbeat ? ['heartbeat'] : []), ...(st.tgfwd ? ['tgfwd'] : []), ...(st.busyget ? ['busyget'] : []), ...(st.hfind ? ['hfind'] : []), ...(st.caps || []), ...(st.extraCaps || [])], asr: st.asr, hist: 'on', ...(st.kind || {}), ...(st.readyMode ? { mode: st.readyMode } : {}) } : { t: 'ready' });   // P332: readyMode 'rescue' = the rescue watchdog
       c.isReady = true;
       return afterReady(c);
     }
@@ -299,6 +299,24 @@ export async function startFakeHost() {
       if (m.t === 'imsg_check' && res.ok) st.imsg = { ...(st.imsg || {}), status: 'ok' };
       await sendApp(c, { t: 'imsg_res', r: m.r, ...res });
       if (st.prefs) await broadcast(prefsMsg());
+      return;
+    }
+    if (m.t === 'approval_set') {                   // P336: the approval level / goal without cards — signed, never pref_set
+      const ok = await verifyControl(c, 'approval_set', m, { key: m.key, value: m.value });
+      st.approvalSets.push({ key: m.key, value: m.value, sigOk: ok, n: m.n, fa: m.fa });
+      const no = (why, more) => sendApp(c, { t: 'ctl_res', r: m.r, action: 'approval_set', ok: false, why, ...more });
+      if (!ok) return no('bad_signature');
+      // P336 addendum: a widening switch from a phone with a passkey (st.approvalPasskey) needs Face ID — any `fa` is accepted
+      const widen = (m.key === 'approval.level' && m.value === 'full') || (m.key === 'approval.goal_nocard' && m.value === true);
+      if (widen && st.approvalPasskey && !m.fa) return no('passkey_required', { fa: 'Y3JlZC0x', fa_ch: 'Y2hhbGxlbmdlLWNoYWxsZW5nZS0zMmJ5dGVz' });
+      if (widen && st.approvalPasskey && st.approvalFaFail) { st.approvalFaFail = false; return no('passkey_failed'); }
+      if (st.approvalWhy) { const why = st.approvalWhy; st.approvalWhy = null; return no(why); }
+      const good = m.key === 'approval.level' ? ['safe', 'standard', 'full'].includes(m.value) : m.key === 'approval.goal_nocard' && typeof m.value === 'boolean';
+      if (!good) return no('shape');
+      st.prefs = st.prefs || { appearance: { language: 'zh', theme: 'system' } };
+      st.prefs.approval = { ...(st.prefs.approval || {}), [m.key.split('.')[1]]: m.value };
+      await sendApp(c, { t: 'ctl_res', r: m.r, action: 'approval_set', ok: true, key: m.key, value: m.value });
+      await broadcast(prefsMsg());
       return;
     }
     if (m.t === 'pref_set') {                       // F13 · C6 / Amendment A1: user-tier whitelist only; older hosts (prefSet:false) ignore it
@@ -436,7 +454,10 @@ export async function startFakeHost() {
     const m = { t: 'preferences', value, problem: null };
     if (st.prefSet) m.host = { version: st.version || '0.15.0a1', language_at: 0, settable: Object.keys(PREF_ENUM),
       devices: [...conns].filter((c) => c.devId).map((c) => ({ id: c.devId, name: lastLabel || '', online: !!c.isReady, paired_at: 0 })),
-      platform: st.platform, ...(st.platform === 'macos' && st.imsg ? { imessage: st.imsg } : {}) };   // P274
+      platform: st.platform, ...(st.platform === 'macos' && st.imsg ? { imessage: st.imsg } : {}),   // P274
+      ...(st.signedPrefs ? { signed_prefs: ['approval.level', 'approval.goal_nocard'],   // P336 (+ what is in force)
+        approval: { level: st.approvalUnsigned ? 'standard' : (value?.approval?.level ?? 'standard'),
+          goal_nocard: !st.approvalUnsigned && value?.approval?.goal_nocard === true } } : {}) };
     return m;
   }
   async function afterReady(c) {
@@ -655,6 +676,8 @@ export async function startFakeHost() {
     },
     prefsMsg,
     answer(t, fn) { fixtures[t] = fn; },
+    /** P332: a test's own signed handler (reset / rescue_do) checks the §8 control signature like the real host */
+    verifyControl: (c, action, m, target) => verifyControl(c, action, m, target),
     async revokeAll() { allow.clear(); for (const c of conns) { if(c.isReady)await sendApp(c,{t:'removed',why:'revoked'}); c.close(4010); } },
     /** drop every device socket like a network failure (not a revoke) */
     refuseNextResumes(n) { st.refuseResumes = n; },
@@ -666,11 +689,11 @@ export async function startFakeHost() {
         autoReply: true, replyFor: null, epoch: st.epoch + 1, turns: [], blobs: new Map(), staged: new Set(), queued: new Map(), opens: [], cancels: [],
         answers: [], qAnswers: [], chunks: 0, wavs: [], menu: null, models: null, meter: null, sigOk: [], says: [], modelSets: [], slashes: [],
         stallAfter: 0, blobErr: null, sayWhy: null, estop: false, rate: true, firsts: [], errors: [], lastError: undefined,
-        prefs: null, prefSet: true, prefSets: [], version: null, friends: null, remotes: null, tgfwd: false, tgfwdWhy: null, tgFwds: [], holdAnswers: false,
+        prefs: null, prefSet: true, prefSets: [], approvalSets: [], signedPrefs: true, approvalWhy: null, approvalPasskey: false, approvalFaFail: false, approvalUnsigned: false, version: null, friends: null, remotes: null, tgfwd: false, tgfwdWhy: null, tgFwds: [], holdAnswers: false,
         resWatch: [], res: null, renames: [], renameWhy: null, busyget: false,
         hfind: true, finds: [], findMute: false, findDelay: 0, olderDelay: 0,
         cards: false, cardsMute: false, cardGets: [], upgItems: [], upgOpen: null, upgOffs: [],   // P203
-        platform: 'linux', imsg: null, imsgCheck: null, imsgCalls: [] });   // P274
+        platform: 'linux', imsg: null, imsgCheck: null, imsgCalls: [], readyMode: null });   // P274 · P332
       st.asksOpen = new Map();
       log.length = 0;
     },
@@ -689,6 +712,7 @@ PREF_ENUM['approval.goal_auto'] = [true, false];   // P302: the real host whitel
 PREF_ENUM['heartbeat.interval_minutes'] = (v) => Number.isInteger(v) && v >= 5 && v <= 1440;
 PREF_ENUM['heartbeat.daily_at'] = (v) => v === '' || (typeof v === 'string' && /^([01]\d|2[0-3]):[0-5]\d$/.test(v));
 PREF_ENUM['ui.card_hot_action'] = (v) => typeof v === 'string' && /^\/?[A-Za-z0-9][A-Za-z0-9_:.\-]{0,62}$/.test(v);   // P285: the schema's pattern
+PREF_ENUM['ui.composer_buttons'] = (v) => Array.isArray(v) && v.length === 4 && v.every((x) => typeof x === 'string') && [...v].sort().join() === 'camera,file,image,mic';   // P340: a permutation of the four ids (preferences.composer_order_ok)
 // P274: the iMessage card's parameters (the real host's schema; refused with not_macos unless st.platform === 'macos')
 const HM = '([01]\\d|2[0-3]):[0-5]\\d';
 Object.assign(PREF_ENUM, { 'imessage.enabled': [true, false], 'imessage.interval_minutes': (v) => Number.isInteger(v) && v >= 1 && v <= 1440,

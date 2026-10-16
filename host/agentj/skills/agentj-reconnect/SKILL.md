@@ -1,10 +1,22 @@
 ---
 name: agentj-reconnect
-description: Phone or web page grey / disconnected / "not connected", or the first turn of a new session (also after compaction, /clear or resume) — 「手机灰了」「网页断开了」「手机连不上你」「接上手机」「重连」, "phone is grey", "reconnect my phone", "connect my phone". Checks the background service, the relay and the Agent in turn with `agentj status --json`, repairs the broken link with `agentj doctor --reconnect`, and tells the owner one plain sentence.
+description: Phone or web page grey / disconnected / "not connected", or the first turn of a new session (also after compaction, /clear or resume) — 「手机灰了」「网页断开了」「手机连不上你」「接上手机」「重连」「手机卡住了」「紧急修复」「找回原来的对话」, "phone is grey", "reconnect my phone", "connect my phone", "bring back my earlier conversation". Points the owner to the phone's Settings → 紧急修复 ①; checks the background service, the relay and the Agent in turn with `agentj status --json`, repairs the broken link with `agentj doctor --reconnect`, and tells the owner one plain sentence; `agentj rescue undo` brings back the conversation a phone reset put aside.
 ---
 # Bring a grey phone back (起死回生)
 
 The owner should never need to know a command. You run these yourself.
+
+**The phone's own repair (P332).** When the owner says the phone / web page is stuck, offline or not replying, first point
+them to Settings → 「紧急修复」 / "Emergency repair" → ① 「重置连接」 / "Reset connection" (also ≡ or `/reset`; the offline card's
+「紧急修复」 button opens it). It reconnects → finds the conversation → opens a new conversation if needed (the old one is
+kept) → restarts Agent J, and stops at the first step that works. ① did not help → ② 「请 Agent J Father 远程帮忙」 (a redacted
+check-up the owner starts; support may only pick repairs from a fixed list). ③ 「AI 账号登录失效」 is the AI login rescue.
+- 「找回原来的对话」 / "bring back my earlier conversation" after a reset → run `agentj rescue undo` (it pins the conversation
+  the reset put aside; run it again to flip back), then tell the owner in one sentence.
+- `agentj rescue status` — the rescue watchdog (installed by `agentj service install` and every update; it answers the phone
+  when `agentj serve` is frozen). Not installed → `agentj rescue install`.
+- Someone at the computer and the phone cannot reach it at all → they paste `curl -fsSL https://agentj.app/rescue | sh`
+  (Windows PowerShell: `irm https://agentj.app/rescue.ps1 | iex`; page https://agentj.app/rescue/).
 
 1. `agentj status --json`
    - Not running (`running: false`) → step 2.
@@ -24,7 +36,7 @@ The owner should never need to know a command. You run these yourself.
 
 Why it happens: shared mode follows one Claude Code session. A reboot, a new window, `/clear` or an upgrade gives the
 desktop a new session; since 0.18.4 Agent J follows it by itself (the only live owner session in the folder, or the one
-that just started) and the phone says 「已接上新会话 <id>」. It stops and asks only when two sessions are equally likely.
+that just started) and the phone says 「又接上了，新会话 <id>」. It stops and asks only when two sessions are equally likely.
 A grey phone is not a broken relay — the three links are separate:
 
 | Link | Look at | Broken means |
@@ -36,4 +48,6 @@ A grey phone is not a broken relay — the three links are separate:
 中文：手机/网页变灰，先 `agentj status --json`，不正常就在本会话运行 `agentj doctor --reconnect`（依次查后台服务、中继、
 Agent 三段，哪段断了修哪段，并把运行它的会话接上手机），把最后那句结论原话告诉主人；列出多个会话时用
 `--session <ID>` 指定；仍失败按 agentj-manual 求助。手机灰 ≠ 中继坏，多半是电脑上换了新会话。
+主人说手机卡住/不回消息：先让他点 设置 →「紧急修复」→ ①「重置连接」，不行再点 ②；主人要「找回原来的对话」就运行
+`agentj rescue undo`；`agentj rescue status` 查看救援守护；电脑旁边有人时请他运行 `curl -fsSL https://agentj.app/rescue | sh`。
 Docs: https://agentj.app/docs/reconnect/zh.md · https://agentj.app/docs/reconnect/en.md

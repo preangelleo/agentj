@@ -169,6 +169,10 @@ class RealSystemdService(unittest.TestCase):
         subprocess.run(["systemctl", "--user", "disable", "--now", f"{self.name}.service"], capture_output=True, timeout=30)
         with contextlib.suppress(FileNotFoundError):
             self.unit.unlink()
+        # P332: `service install` also starts the rescue watchdog's own unit (Restart=always): never leave one behind
+        subprocess.run(["systemctl", "--user", "disable", "--now", f"{self.name}-rescue.service"], capture_output=True, timeout=30)
+        with contextlib.suppress(FileNotFoundError):
+            self.unit.with_name(f"{self.name}-rescue.service").unlink()
         subprocess.run(["systemctl", "--user", "daemon-reload"], capture_output=True, timeout=30)
         subprocess.run(["systemctl", "--user", "reset-failed", f"{self.name}.service"], capture_output=True, timeout=30)
         shutil.rmtree(self.dir, ignore_errors=True)
@@ -485,7 +489,9 @@ class WheelInstall(unittest.TestCase):
         # P282: +8 KiB (way-back gate, --undo, login hints, stale-path report; room for P281's progress lines) — measured 18.7 KiB. Flagged to Jarvis.
         # P312: + the no_reply diagnosis (zh + en next steps) and the start-probe call — measured +2.9 KiB on top of P282 → an
         # explicit 4 KiB, flagged to Jarvis for ratification (REPORT-312; the probe itself lives in agent_codex, core).
-        self.assertLessEqual(p155_bytes,16384+8192+4096,'P155 harness-switch allocation (+ P282 + P312) is bounded')
+        # P339 (#44: switch / scan through serve's socket for a fenced Agent — host_job, serve-made job id, one job at a time,
+        # scan rate limit, busy / too_soon words): measured +3.7 KiB → a further explicit 4 KiB, flagged to Jarvis (REPORT-339).
+        self.assertLessEqual(p155_bytes,16384+8192+4096+4096,'P155 harness-switch allocation (+ P282 + P312) is bounded')
         # P169 (0.20.0 phone themes): the theme module, its schema + the two factory presets (the robots preset carries the two
         # 16-robot sprite sheets, the same bytes as the web page's) and the agentj-theme skill get their own explicit 48 KiB.
         p169=[i for i in zipfile.ZipFile(self.wheel).infolist() if i.filename=='agentj/theme.py' or i.filename.startswith(('agentj/themes/','agentj/skills/agentj-theme/'))]
@@ -590,7 +596,10 @@ class WheelInstall(unittest.TestCase):
         self.assertEqual(len(p158),2)
         # P198 (0.20.1: goal scope — git rm, heredoc pieces — plus the native-/goal guard in goal.py): measured 20.1 KiB → a further
         # explicit 1 KiB, flagged to Jarvis.
-        self.assertLessEqual(p158_bytes,20480+1024,'P158 goal-mode allocation is bounded')
+        # P339 (#43: plain-words hold card + result notice, new-remote-file countdown tier, mid-goal grant add + `agentj goal grant`):
+        # measured +9.3 KiB → a further explicit 10 KiB, flagged to Jarvis for ratification (REPORT-339); its security-review fixes
+        # (structured upload / prefix grants, option whitelists, complete titles) measured +2.3 KiB → 12 KiB in all, flagged likewise.
+        self.assertLessEqual(p158_bytes,20480+1024+12288,'P158 goal-mode allocation is bounded')
         # P166 (0.20.0 any-file attachments: inbox MIME map, segmented say-time transcription, Telegram reason codes + bilingual
         # notes, the manual's file-sharing page): measured +3.8 KiB over the sum above → a further explicit 8 KiB, flagged to Jarvis.
         # P182 (0.20.0 long recordings + /会议总结: meeting.py, `agentj mail notes`, the agentj-meeting-notes skill): measured +2.2 KiB
@@ -778,7 +787,7 @@ class WheelInstall(unittest.TestCase):
             self.assertEqual({c["id"]: c["status"] for c in d_["checks"]}["state"], "ok")
             core = next(c for c in d_["checks"] if c["id"] == "main-core")
             self.assertEqual(core["status"], "ok")
-            self.assertIn("core v15:", core["summary"])
+            self.assertIn("core v16:", core["summary"])
 
     @unittest.skipUnless((sys.platform.startswith("linux") and shutil.which("bwrap")) or
                          (sys.platform == "darwin" and os.access(fence.SANDBOX_EXEC, os.X_OK)),

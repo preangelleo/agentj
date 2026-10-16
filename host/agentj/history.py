@@ -6,7 +6,7 @@ of a turn, appended (the last line of an id wins), rewritten atomically to the n
 lines — and `<state>/history/meta.json` {epoch, next_id, undo}. `history off` = the newest MEM_KEEP turns in memory only
 (epoch = the serve start time, so a phone never mixes two runs).
 
-A turn: {"id", "ts" (ms), "src": Src, "reply": {"text", "part"?: [k, N]}, "end": open|done|stopped|failed, "card"?,
+A turn: {"id", "ts" (ms), "src": Src, "reply": {"text", "part"?: [k, N], "pre"?}, "end": open|done|stopped|failed, "card"?,
 "media"?, "media_skip"? (F21, PROTOCOL §13: files the finished reply shows — media.py)}.
 Src = {"k": phone|host|agent|sys|task|cmd|telegram, "dev"?, "name"?, "text", "quote"?, "att"?, "local"?, "via"? (agent only, P132: loop|task)}. The reply of a turn = every
 finished reply text of that Agent turn joined by a blank line — results only, never tool calls; a reply over PART_MAX UTF-16
@@ -218,16 +218,21 @@ class History:
         return self.turns.get(tid) if type(tid) is int else None
 
     def update(self, tid: int, *, append: str | None = None, end: str | None = None, card: dict | None = None,
-               text: str | None = None, media: tuple | None = None) -> list[dict]:
+               text: str | None = None, media: tuple | None = None, pre: str | None = None) -> list[dict]:
         """Change one turn; returns every turn that changed (an append past PART_MAX adds a continuation page and renumbers
         the parts), the last one being where the next append goes. [] when the id is gone. text = replace the reply (a
-        command's interim line → its result)."""
+        command's interim line → its result). pre (P351) = the process notes a silent turn folds away ("" drops them)."""
         t = self.turns.get(tid)
         if t is None:
             return []
         changed = [t]
         if text is not None:
             t["reply"]["text"] = text[:_cut_units(text, PART_MAX)]
+        if pre is not None:
+            if pre:
+                t["reply"]["pre"] = pre[:_cut_units(pre, PART_MAX)]
+            else:
+                t["reply"].pop("pre", None)
         if append:
             cur = t["reply"]["text"]
             joined = cur + SEP + append if cur else append

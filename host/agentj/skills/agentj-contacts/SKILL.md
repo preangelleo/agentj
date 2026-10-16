@@ -24,6 +24,14 @@ a command.
    `not_found` → step 3; `denied` (exit 1: declined or nobody confirmed in time) → tell the owner it was NOT sent;
    `mail_not_configured` / `no_password` → the mailbox is not set up: read the e-mail section of agentj-config.
    Every address that went out is remembered automatically (new ones as contacts with source `agent`).
+5. Format, Cc, reports (P355): the body is Markdown by default and goes as a formatted mail (Agent J's mail look, Powered by
+   Agent J) with a plain-text copy — write headings, lists and tables, not HTML. `--cc` / `--bcc` take names or addresses
+   like `--to` (repeatable); every recipient counts for the no-card rule above, To + Cc + Bcc ≤ 10. A web report or any
+   HTML report goes as the mail itself: `agentj mail send --to … --subject '…' --body-file <report>/index.html` (an .html
+   file is sent as HTML; scripts / forms are dropped, CSS is inlined for Gmail / Outlook; local images become their alt
+   text — `local_images: n` in the answer, so add the published link). web-page-report: `wr render <json> -t <id> -o <dir>`
+   writes `<dir>/index.html`. `--format text` only when the owner asks for plain text. Scheduled tasks use the same command:
+   to the owner / allowlisted only → sent without a card each run; anyone else → a card every time.
 
 ## Slot 0 = the owner (「发给我自己」)
 - Slot 0 of the book is the owner themself: name, main e-mail (the first), optional phone. `agentj contacts owner show`.

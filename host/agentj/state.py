@@ -594,7 +594,7 @@ class State:
         return name
 
     # ------------------------------------------------------------ agent bridge (L1, PROTOCOL §8)
-    AGENT_KINDS = ("claude", "codex", "opencode", "kimi", "qwen")
+    AGENT_KINDS = ("claude", "codex", "opencode", "kimi", "qwen", "dsh")
 
     def agent_config(self) -> dict | None:
         """{"kind": "claude"|"codex"|"opencode", "dir": absolute path, "model": str|None} or None (no agent: terminal chat as in A2)."""
@@ -609,10 +609,11 @@ class State:
         # fence (L2): on unless `--unfenced` or (F14) the preference agent.isolation=false (CLI or a paired phone)
         # docker (G-A56): the container engines stay hidden unless `--allow-docker` or agent.allow_docker=true
         # effort (PROMPT-33 §10.11): the phone's pill; a short word the harness validates, or None (its default)
-        from . import preferences, session_choice
+        from . import approval_level, preferences, session_choice, shared_pin
         prefs = preferences.effective(self)
         root = preferences.get(prefs, "agent.working_root")
         directory = os.path.realpath(os.path.expanduser(root)) if root else a["dir"]
+        owner_pin = preferences.get(prefs, "agent.shared_session_id", "")
         return {"kind": a["kind"], "dir": directory, "working_root": directory,
                 "instructions": preferences.get(prefs, "agent.instructions", ""),
                 "private_instructions_file": preferences.get(prefs, "agent.private_instructions_file", ""),
@@ -623,10 +624,12 @@ class State:
                 "fence": a.get("fence") is not False and preferences.get(prefs, "agent.isolation", True) is not False,
                 "docker": a.get("docker") is True or preferences.get(prefs, "agent.allow_docker", False) is True,
                 "session_mode": session_choice.mode_in(self, prefs),
-                "shared_session_id": preferences.get(prefs, "agent.shared_session_id", ""),
+                # P330: this harness's own pin (agent.json `<kind>.pin`); the config value is only the owner's choice
+                "shared_session_id": shared_pin.resolve(self, a["kind"], owner_pin, directory),
+                "shared_pin_owner": owner_pin if isinstance(owner_pin, str) else "",
                 "shared_opencode_port": preferences.get(prefs, "agent.shared_opencode_port", 0),
                 "high_risk_warnings": preferences.get(prefs, "agent.high_risk_warnings", False),
-                "approvals": {"strict": "strict", "native": "native"}.get(preferences.get(prefs, "agent.approvals", "standard"), "standard"),
+                "approvals": approval_level.shared_mode(prefs),   # P336: safe level → "safe"; else agent.approvals
                 # P305: Kimi's site (kimi.com = mainland-cn, kimi.ai = global) for an API key / the login rescue; None = mainland-cn
                 "region": a.get("region") if a.get("region") in ("mainland-cn", "global") else None}
 
@@ -660,7 +663,7 @@ class State:
             working_root.record(self, pathlib.Path(d))
 
     def set_agent_region(self, region: str | None) -> None:
-        """P305: `agentj agent kimi --region mainland-cn|global` (Kimi's two sites; separate accounts and keys)."""
+        """P305: `agentj agent kimi --region mainland-cn|global` (Kimi's two sites; a kimi.com key works on both endpoints)."""
         with self.config_lock():
             cfg = self.config()
             if isinstance(cfg.get("agent"), dict):

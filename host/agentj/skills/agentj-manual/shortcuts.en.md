@@ -1,7 +1,7 @@
 <!-- generated from https://agentj.app/docs/shortcuts/en.md by agentjarvis/tools/manual_skill.mjs — do not edit -->
 # Keyboard shortcuts and gestures
 
-On a computer browser or a tablet with a keyboard, every gesture of the web app has a keyboard shortcut. Press `?` for the list; it is also in Settings → Keyboard shortcuts.
+On a computer browser or a tablet with a keyboard, every gesture of the web app has a keyboard shortcut. Press `?` for the list; it is also in Settings → Keyboard shortcuts. The magnifier at its top right (or `/`, `⌘+K` / `Ctrl+K`) searches it by action, key or gesture, in Chinese or English.
 
 Function keys use `Alt+Shift+letter` and work while a text field is focused. Single-letter keys work while the focus is not in the message box (press `Esc` to leave it). `Alt` is `⌥` on a Mac; where it says `⌘+K` / `Ctrl+K`, press `⌘` on a Mac and `Ctrl` on Windows and Linux. With a dialog open, `Esc` closes the dialog first.
 
@@ -30,7 +30,7 @@ Function keys also work while a text field is focused. System or input-method sh
 | `Alt+Shift+R` | Tap Update and reload in Settings | Update and reload page |
 | `Alt+Shift+L` | Tap Reload configuration in ≡ All commands | Reload the computer's configuration (no service restart) |
 | `Alt+Shift+P` | — | Add a remote |
-| `Alt+Shift+C` | Hold the gear; help via right-click or Keyboard shortcuts | Capture this page as an attachment |
+| `Alt+Shift+C` | Hold the gear; help via right-click or Keyboard shortcuts | Capture this page as an attachment and copy it to the clipboard |
 | `Alt+Shift+F` | Settings → Friends | Open Friends |
 | `Alt+Shift+E` | Settings → Bots | Open Customer service |
 | `Alt+Shift+V` | — | Open Setup |
@@ -75,6 +75,8 @@ Function keys also work while a text field is focused. System or input-method sh
 | `?` | Tap Keyboard shortcuts in Settings | Show this list of shortcuts |
 | `Alt+P` | Tap Pending | Reopen the approval or question card you put away |
 | `Alt+W` | Tap the logo | Open the five-page menu |
+| `/` · `⌘+K` / `Ctrl+K` | Tap the magnifier at the top right of the list | Search the shortcut list: type a word to filter by action, key or gesture, in Chinese or English |
+| `Esc` | Tap the magnifier again | Clear and close the search box; Esc again closes the shortcut list |
 | `i` · `Esc` | Tap the message box | Into the message box; Esc in it leaves (the draft stays) |
 | `/` | Tap ≡ | Commands: / outside the message box jumps in with / typed and the command menu open; not while a dialog or Settings is open |
 | `Alt+/` | Hold ≡ | Customise my commands (ask the Agent to add, change or remove / commands) |
@@ -162,9 +164,11 @@ Function keys also work while a text field is focused. System or input-method sh
 | `Alt+Shift+U` | Tap Upgrade computer in Settings | Upgrade computer (confirm on phone) |
 | `Alt+Shift+R` | Tap Update and reload in Settings | Update and reload page |
 | `Alt+Shift+L` | Tap Reload configuration in ≡ All commands | Reload the computer's configuration (no service restart) |
-| `Alt+Shift+C` | Hold the gear; help via right-click or Keyboard shortcuts | Capture this page as an attachment |
+| `Alt+Shift+C` | Hold the gear; help via right-click or Keyboard shortcuts | Capture this page as an attachment and copy it to the clipboard |
 | `Alt+Shift+F` | Settings → Friends | Open Friends |
 | `Alt+Shift+E` | Settings → Bots | Open Customer service |
+| `/` · `⌘+K` / `Ctrl+K` | Tap the magnifier at the top right of the list | Search the shortcut list: type a word to filter by action, key or gesture, in Chinese or English |
+| `Esc` | Tap the magnifier again | Clear and close the search box; Esc again closes the shortcut list |
 | `i` · `Esc` | Tap the message box | Into the message box; Esc in it leaves (the draft stays) |
 | `/` | Tap ≡ | Commands: / outside the message box jumps in with / typed and the command menu open; not while a dialog or Settings is open |
 | `Alt+/` | Hold ≡ | Customise my commands (ask the Agent to add, change or remove / commands) |
@@ -182,8 +186,8 @@ Function keys also work while a text field is focused. System or input-method sh
 | `Esc` `Esc` | Tap ✕ in the message box | Esc twice outside the message box clears text and attachments (✕ clears the text only, with undo). Esc never interrupts the Agent; to stop the current task, use the stop button or send /stop |
 | — | Tap the end icon on the recording card | End a locked recording; the text goes into the message box |
 | — | Tap the cancel icon on the recording card | Cancel a locked recording; nothing is transcribed |
-| — | Tap the dim icon on the recording card | Dim the screen while recording (tap again to restore; this phone remembers) |
 | — | Tap the quote’s time / words / ✕ | Tap the time to go back to its reply with the words highlighted; tap the words to read them in full; its own ✕ removes just that one |
+| — | Tap the send icon on the recording card | End a locked recording and send it in one step: a short one goes as text, a long one as a voice attachment — no second tap on send |
 | `f` · `Esc` | Double-tap the text; tap the book (bottom right; copy and reply leave too) | Leave the full-screen reader |
 | `+` · `-` | Pinch; tap the text-size icon (bottom left), then drag the slider or tap + / − | Larger / smaller text in the reader |
 | `↑` · `↓` · `Space` | Scroll | Scroll up / down; Space for a screen |

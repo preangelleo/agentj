@@ -48,7 +48,7 @@ shasum -a 256 setup-agents.sh
 ```
 
 
-SHA256 sh: `87b4fdf068beaead10fceca82e71acff6373282c17613d41866727c061bcc7c7`
+SHA256 sh: `4868818cbf2d73aeddc90cd03cc4537beac5611eb689d2e32f60ae3602abce84`
 
 
 ```bash
@@ -1292,17 +1292,21 @@ python3 ~/.config/agentsrelay/agentsrelay-setup.py --restore
 
 [AgentsRelay 官方配置页](https://agentsrelay.net/onboard/)
 
-## 用不了 Claude Code 和 Codex 的地区：Kimi {#kimi}
+## 用不了 Claude Code 和 Codex 的地区：方舟或 Kimi {#kimi}
 
-Anthropic 和 OpenAI 不服务香港、澳门、中国大陆等地区。在这些地方，Agent J 首推 Kimi 会员 Plus 或更高档，通过 OpenCode 使用。Go 档没有编程额度，用不了。装好 Agent J 后，Agent 会实测你这台电脑能用什么：
+Anthropic 和 OpenAI 不服务香港、澳门、中国大陆等地区。在这些地方这样选：
+
+- **中国大陆、从零开始**：首推[火山方舟 Coding Plan](/docs/setup-agents/#ark)，先买 Lite。Lite 和 Pro 的模型、工具一样，Pro 只是 5 倍用量。
+- **香港或海外**：Kimi 会员 Plus 或更高档，用 OpenCode 或 Kimi Code 接入。在海外访问按美元收费。Go 档没有编程额度，用不了。
+- **已经有其中一家**（方舟、Kimi 或[阿里百炼 Token Plan](/docs/setup-agents/#bailian)）：继续用那一家。
+
+装好 Agent J 后，Agent 会实测你这台电脑能用什么：
 
 ```bash
 agentj agent route
 ```
 
-它向 Claude、OpenAI 和 Kimi 的服务器各问一次，不带任何 key。时区只在拿不准时参考，不会发到任何地方。Claude Code 和 Codex 用不了时，它会给出 Agent J 官方的邀请链接，链接后面紧跟这句话：「这是 Agent J 官方的邀请链接，您和我们各得一次抽奖」。24 小时内付费订阅才算数。订阅后在 Kimi Code 控制台新建一把 key，只粘贴进手机上的密钥卡；Agent 会把 OpenCode 切到 `kimi-code-plan-cn/k3`。它也会列出备选：千问（阿里云百炼中国大陆站）、智谱 GLM / DeepSeek、OpenRouter、Kimi 开放平台按量付费。已经有其中某个服务账号的，继续用就行。在海外站 kimi.ai 买的会员，key 不通用，改用 `kimi-code-plan-global/k3`。和 Kimi 并列，它还会推荐[阿里百炼 Token Plan](/docs/setup-agents/#bailian)，两条由你挑。
-
-已经在用火山方舟 Coding Plan？不用再买别的，直接用它：见[火山方舟 Coding Plan](/docs/setup-agents/#ark)。
+它向 Claude、OpenAI 和 Kimi 的服务器各问一次，不带任何 key。时区只在拿不准时参考，不会发到任何地方。Claude Code 和 Codex 用不了时，它会按上面的规则列出每家的开通步骤。Kimi 那一项会给出 Agent J 官方的邀请链接，链接后面紧跟这句话：「这是 Agent J 官方的邀请链接，您和我们各得一次抽奖」。24 小时内付费订阅才算数。订阅后在 Kimi Code 控制台新建一把 key，只粘贴进手机上的密钥卡；Agent 会把 OpenCode 切到 `kimi-code-plan-cn/k3`。你自己的定时任务也可以用这把会员 key（长时间连续跑的后台任务服务商可能限流，遇到了就改用 Kimi 开放平台按量付费的 key）；客服 bot 拿不到它。它也会列出备选：千问（阿里云百炼中国大陆站）、智谱 GLM / DeepSeek、OpenRouter、Kimi 开放平台按量付费。已经有其中某个服务账号的，继续用就行。kimi.com 买的会员 key 在 api.kimi.com 和 api.kimi.ai 两个地址都能用；在海外站 kimi.ai 买的会员，Agent 会改用 `kimi-code-plan-global/k3`。
 
 ## 运行要求 {#requirements}
 
@@ -1337,7 +1341,7 @@ Please download https://agentj.app/install.md with curl, read the whole file wit
 
 仅有 Gemini 时，安装助手会提示：Agent J 主 Agent 暂不支持 Gemini，请再登录 Codex / Claude Code / OpenCode 之一或用 AgentsRelay。setup-agents 仍可安装 Gemini。
 
-## 安装 Kimi Code CLI {#kimi}
+## 安装 Kimi Code CLI {#kimi-cli}
 
 Kimi Code CLI（`kimi`，月之暗面，MIT 开源）是 Agent J 可以直接用的 AI 编程工具。官方脚本不需要 Node.js：
 
@@ -1345,7 +1349,7 @@ Kimi Code CLI（`kimi`，月之暗面，MIT 开源）是 Agent J 可以直接用
 
 Windows（PowerShell）：`irm https://code.kimi.com/kimi-code/install.ps1 | iex`（先装 Git for Windows）。也可以用 npm：`npm install -g @moonshot-ai/kimi-code`（在中国大陆加 `--registry=https://registry.npmmirror.com`）。装好用 `kimi --version` 检查，Agent J 需要 2.2.0 或更新。
 
-在你自己的终端登录：国内站 kimi.com 用 `kimi login --region mainland-cn`，海外站 kimi.ai 用 `kimi login --region global`（两边账号不通用）。它会给出一个链接和一次性设备码，在任何登录了 Kimi 的设备上确认就行。然后运行 `agentj agent switch kimi`。
+在你自己的终端登录：国内站 kimi.com 用 `kimi login --region mainland-cn`，海外站 kimi.ai 用 `kimi login --region global`（在 kimi.ai 买的会员）。它会给出一个链接和一次性设备码，在任何登录了 Kimi 的设备上确认就行。然后运行 `agentj agent switch kimi`。
 
 隔离：Kimi 没有自带沙箱，它的 hook 出错时会放行，所以 Agent J 让它和别的工具一样在隔离里运行，固定在手动审批模式，每个权限请求都发到你手机上。
 
@@ -1353,11 +1357,11 @@ Windows（PowerShell）：`irm https://code.kimi.com/kimi-code/install.ps1 | iex
 
 给编程工具用的包月套餐，不按 API 用量计费。Token Plan 个人版分 Lite、Essential、Standard、Pro 四档，按 Credits 计量（每月 11,500 / 25,500 / 45,000 / 180,000；Standard 起可以同时跑 3–4 个 Agent）。每档月费让 Agent 用 `agentj agent route` 列给你看，以阿里云订阅页为准。千问 3.8 Max 和 3.8 Flash 能看图，截图和浏览器自动化都能用；Agent J 默认用 `qwen3.8-max`，想省额度可以换 `qwen3.8-flash`。
 
-买之前先看清条款。只能你本人在编程工具里交互使用，不能拿这把 key 跑自动化脚本、做应用后端或者非交互的批量调用，违规的话阿里云可能暂停订阅或封掉 key。订阅期间，你发给模型的内容和模型生成的内容会被阿里云用于服务改进和模型优化，涉及隐私的数据要谨慎。套餐只限订阅人本人，不能共享。定时任务、客服 bot 这类没人值守的活，请用按量付费的 key：Agent J 不会把 Token Plan 的 key 交给定时任务或 bot。
+买之前先看清条款，以阿里云订阅页为准。你自己的定时任务和后台 Agent 可以用 Token Plan 的 key。长时间连续跑的后台任务，服务商可能限流，遇到了就把这些任务改用按量付费的 key。订阅期间，你发给模型的内容和模型生成的内容会被阿里云用于服务改进和模型优化，涉及隐私的数据要谨慎。套餐只限订阅人本人，不能共享。客服 bot 是在服务别人，Agent J 不会把 Token Plan 的 key 交给 bot，要给 bot 另填一把按量付费的 key（bot 设置页里会告诉你填在哪）。
 
 在 https://bailian.console.aliyun.com/cn-beijing/subscription/overview 订阅，再到控制台新建套餐专属 API Key。然后让 Agent 帮你配：它运行 `agentj provider bailian`，把百炼写进 OpenCode 的设置，你原来的设置一项都不动。接着手机上会弹出密钥卡，key 只粘贴在那里。Agent J 会用百炼只读的模型列表接口核对这把 key，不花 Credits。最后 Agent 把 OpenCode 切到 `bailian-token-plan-personal/qwen3.8-max`。
 
-Coding Plan（key 以 `sk-sp-` 开头）也能用（`agentj provider bailian --plan coding-plan`），但它没有 Max 模型，key 也没法事先核对。
+Coding Plan（key 以 `sk-sp-` 开头）也能用（`agentj provider bailian --plan coding-plan`），但它没有 Max 模型，key 也没法事先核对。你自己的定时任务可以用 Coding Plan 的 key（长时间连续跑的后台任务服务商可能限流，遇到了就改用按量付费的 key）；客服 bot 拿不到它，要另填按量付费的 key。
 
 ## 千问 Qwen Code {#qwen}
 
@@ -1371,12 +1375,26 @@ Qwen Code（`qwen`，阿里，Apache-2.0 开源）是阿里自己的编程 Agent
 
 ## 火山方舟 Coding Plan（中国大陆） {#ark}
 
-适合谁：你**已经开通**了火山引擎方舟 Coding Plan（Lite 或 Pro），或者想用一个套餐同时用上字节豆包、Kimi、智谱 GLM、DeepSeek 和 MiniMax 的模型。其他人还是首选上面的 Kimi 和百炼。价格只以方舟控制台为准。
+适合谁：在中国大陆、还没有任何套餐的人，我们首推它；已经开通的人也直接用它。一个套餐就能用字节豆包、Kimi、智谱 GLM、DeepSeek 和 MiniMax 的模型。先买 Lite：Lite 和 Pro 的模型、工具一样，Pro 只是 5 倍用量，Lite 不够用再升级。`agentj agent route` 会显示标价，以下单页为准。
 
-哪些模型能看图（2026-10-15 实测）：`doubao-seed-2.1-pro`（默认）、`kimi-k3`（只在 Pro 套餐里）、`kimi-k2.7-code`、`glm-5-3-flash`、`minimax-m3`、`deepseek-v4-1-flash` 能看截图；`glm-5.3`、`deepseek-v4-pro`、`deepseek-v4-flash` 是纯文本。Agent J 会把这些写进 OpenCode 的设置，同时调高输出上限（GLM-5.3 的思考会用光 OpenCode 默认的 32k）。Coding Plan 不含生图模型。
+哪些模型能看图（2026-10-15 实测）：`doubao-seed-2.1-pro`（默认）、`kimi-k3`（扣额度快，方舟建议 Pro 用，Lite 也能选）、`kimi-k2.7-code`、`glm-5-3-flash`、`minimax-m3`、`deepseek-v4-1-flash` 能看截图；`glm-5.3`、`deepseek-v4-pro`、`deepseek-v4-flash` 是纯文本。Agent J 会把这些写进 OpenCode 的设置，同时调高输出上限（GLM-5.3 的思考会用光 OpenCode 默认的 32k）。Coding Plan 不含生图模型。
 
-这是给编程工具交互使用的套餐，条款以方舟控制台为准。定时任务、客服 bot 这类无人值守的活，请用按量付费的方舟 key：Agent J 不会把 Coding Plan 的 key 交给定时任务或 bot。
+这是包月套餐，条款以方舟控制台为准。你自己的定时任务和后台 Agent 可以用 Coding Plan 的 key。长时间连续跑的后台任务，服务商可能限流，遇到了就把这些任务改用按量付费的方舟 key。客服 bot 是在服务别人，Agent J 不会把 Coding Plan 的 key 交给 bot，要给 bot 另填一把按量付费的 key（bot 设置页里会告诉你填在哪）。
 
-在方舟控制台（https://console.volcengine.com/ark/）新建一把 API Key。然后让 Agent 帮你配：用 OpenCode 时它运行 `agentj provider ark`，把套餐里的模型全部写进 OpenCode 的设置，你原来的设置一项都不动。接着手机上会弹出密钥卡，key 只粘贴在那里。方舟没有只读的核对接口，所以第一条回复就是核对。最后 Agent 把 OpenCode 切到 `ark-coding-plan/doubao-seed-2.1-pro`。
+在 https://www.volcengine.com/activity/codingplan 用手机号注册火山引擎、完成实名，订阅 Coding Plan。再到方舟控制台（https://console.volcengine.com/ark/）新建一把 API Key，然后让 Agent 帮你配：用 OpenCode 时它运行 `agentj provider ark`，把套餐里的模型全部写进 OpenCode 的设置，你原来的设置一项都不动。接着手机上会弹出密钥卡，key 只粘贴在那里。方舟没有只读的核对接口，所以第一条回复就是核对。最后 Agent 把 OpenCode 切到 `ark-coding-plan/doubao-seed-2.1-pro`。
 
 想用 Claude Code？让 Agent 改为给 Claude Code 配方舟，它按 Agent J 打印的三步做，key 还是走手机密钥卡。Claude Code 的 Haiku、Sonnet、Opus 默认模型和子 agent 模型都会指向同一个方舟模型，后台任务就不会去向方舟要 Claude 的模型名。
+
+## DeepSeek 编程工具 dsh {#dsh}
+
+dsh（`DeepSeek Harness`，DeepSeek 出品，MIT 开源）是 DeepSeek 自己的编程 Agent，现在还是开发者预览版。Olares 盒子自带的 Agent「Lares」里跑的也是它，所以在 Olares 上，它和盒子自己的 Router 正好配成一对。用 npm 安装（需要 Node.js 22.19 或更新，大约占 500 MB）：
+
+`npm install -g @deepseek-ai/dsh@latest`
+
+装好用 `dsh --version` 检查，Agent J 需要 0.2.0-rc.2 或更新。然后选模型从哪儿来：
+
+- **你自己的模型服务**（Olares Router、LiteLLM、Ollama、llama.cpp、vLLM，或任何 OpenAI 兼容服务）：让 Agent 运行 `agentj agent dsh --dir <目录> --base-url https://<服务>/v1 --model <模型 id>`。Agent J 把地址和模型存进 `~/.dsh/agentj-route.yml`，不往里写 key。明文 `http://` 只能用于本机或家里的局域网。服务要 key 的话，手机上会弹出密钥卡（`DSH_ROUTER_API_KEY`），key 只粘贴在那里。存好后再发一次消息就行，不用重启。
+- **DeepSeek 官方 API**（按量付费）：同样走手机密钥卡，存 `DEEPSEEK_API_KEY`。
+- **你自己已经配好了 dsh**（比如在 `dsh web` 的模型页里配过）：就用你自己的设置。
+
+隔离和审批：Agent J 让 dsh 以只读方式启动，每次都问。改文件、跑不是只读的命令，每一个都变成手机卡片，只批这一次。dsh 自己的使用数据上报已经关掉。dsh 暂时还不能看图；DeepSeek 也说，预览版以后可能还会大改。

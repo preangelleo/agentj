@@ -23,7 +23,7 @@ import re
 
 KEYS = ("v", "id", "title", "schedule", "tz", "prompt_file", "dry_run_prompt_file", "mode", "enabled", "needs", "outputs")
 OPTIONAL = ("harness",)
-HARNESS_NAMES = ("claude", "codex", "opencode", "kimi", "qwen")   # P305: + Kimi Code (ACP, tasks.py)
+HARNESS_NAMES = ("claude", "codex", "opencode", "kimi", "qwen", "dsh")   # P305: + Kimi Code (ACP, tasks.py)
 MODES = ("normal", "research")
 ID_RE = re.compile(r"[a-z0-9][a-z0-9-]{0,39}")
 _FILE_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,63}\.md")
@@ -106,7 +106,7 @@ def problems(obj: object, expect_id: str | None = None) -> list[str]:
         out.append("needs looks like it holds a credential: name the service only")
     h = obj.get("harness")
     if "harness" in obj and not (h in HARNESS_NAMES or (isinstance(h, list) and 0 < len(h) <= len(HARNESS_NAMES) and all(x in HARNESS_NAMES for x in h))):
-        out.append("harness must be claude, codex, opencode, kimi or qwen, or a list of them")
+        out.append("harness must be claude, codex, opencode, kimi, qwen or dsh, or a list of them")
     outs = obj.get("outputs")
     if "outputs" in obj and not (isinstance(outs, list) and 0 < len(outs) <= 10 and all(
             isinstance(x, str) and _OUT_RE.fullmatch(x) and ".." not in x.split("/") for x in outs)):

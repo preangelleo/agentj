@@ -9,11 +9,29 @@ function imageData(node) {
   try { const c = document.createElement('canvas'); c.width = node.naturalWidth; c.height = node.naturalHeight;
     c.getContext('2d').drawImage(node, 0, 0); return c.toDataURL('image/png'); } catch { return ''; }
 }
+// P349: a native player is drawn by the browser, not the DOM, so the SVG copy cannot paint it — the owner's screenshot had an
+// empty block where the file card's audio player was. Its box gets a stand-in: a pill (audio) or a dark frame (video) with
+// a play mark and the position / length. No source, poster or frame is copied.
+const clock = (s) => { s = Number.isFinite(s) && s > 0 ? Math.floor(s) : 0; return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`; };
+function player(node, style, rect) {
+  if (!node.controls && node.tagName === 'AUDIO') return null;
+  const video = node.tagName === 'VIDEO', dark = video || /dark/.test(style.colorScheme), fg = dark ? '#fff' : '#202124';
+  const el = (css, text) => { const e = document.createElementNS(XHTML, 'div'); e.style.cssText = css + `;color:${fg}`; if (text) e.textContent = text; return e; };
+  const out = el(`display:${style.display === 'inline' ? 'inline-flex' : 'flex'};align-items:${video ? 'flex-end' : 'center'};gap:10px;box-sizing:border-box;width:${rect.width}px;height:${rect.height}px;`
+    + `margin:${style.margin};flex:none;padding:0 14px ${video ? '10px' : '0'};border-radius:${video ? style.borderRadius : rect.height / 2 + 'px'};overflow:hidden;`
+    + `background:${video ? '#000' : dark ? '#3b3b3b' : '#f1f3f4'};font:500 13px/1 ${style.fontFamily};white-space:nowrap`);
+  out.setAttribute('data-pageshot', video ? 'video' : 'audio');
+  out.append(el('flex:none;width:0;height:0;border-style:solid;border-width:6px 0 6px 10px;border-color:transparent transparent transparent currentColor'),
+    el('flex:none', `${clock(node.currentTime)} / ${clock(node.duration)}`),
+    el(`flex:1;height:4px;border-radius:2px;background:${dark ? 'rgba(255,255,255,.5)' : 'rgba(32,33,36,.3)'}`));
+  return out;
+}
 function copy(node, parentRect = {left: 0, top: 0}) {
   if (node.nodeType === 3) return document.createTextNode(node.textContent);
-  if (node.nodeType !== 1 || /^(SCRIPT|STYLE|LINK|META|IFRAME|VIDEO|AUDIO)$/.test(node.tagName)) return null;
+  if (node.nodeType !== 1 || /^(SCRIPT|STYLE|LINK|META|IFRAME)$/.test(node.tagName)) return null;
   const style = getComputedStyle(node), rect = node.getBoundingClientRect();
   if (style.display === 'none' || style.visibility === 'hidden' || node.hidden) return null;
+  if (/^(VIDEO|AUDIO)$/.test(node.tagName)) return player(node, style, rect);
   const privateNode = node.matches(PRIVATE);
   // No attributes from live nodes: value, title, event handlers, URLs and data-* never enter the SVG.
   const tag = node.namespaceURI === 'http://www.w3.org/2000/svg' ? node.localName : (/^(INPUT|TEXTAREA|SELECT|CANVAS|IMG)$/.test(node.tagName) || privateNode ? 'div' : node.localName);
@@ -36,7 +54,11 @@ function copy(node, parentRect = {left: 0, top: 0}) {
   if (/^(INPUT|TEXTAREA|SELECT)$/.test(node.tagName)) out.textContent = node.tagName === 'SELECT' ? node.selectedOptions[0]?.textContent || '' : node.value;
   else if (node.tagName === 'IMG' || node.tagName === 'CANVAS') {
     const src = node.tagName === 'IMG' ? imageData(node) : (() => { try { return node.toDataURL(); } catch { return ''; } })();
-    if (src) { out.style.backgroundImage = `url("${src}")`; out.style.backgroundSize = '100% 100%'; }
+    // P340: the copy keeps the image's own box, not the computed background geometry. The header orb outside chat draws a
+    // dance sprite as its background (background-size 384px, an animated background-position) — copying those onto the
+    // embedded logo slid it out of the disc, and the owner's screenshot had an empty orb.
+    if (src) Object.assign(out.style, {backgroundImage: `url("${src}")`, backgroundRepeat: 'no-repeat', backgroundOrigin: 'content-box', backgroundClip: 'border-box',
+      backgroundPosition: 'center', backgroundSize: /^(contain|cover)$/.test(style.objectFit) ? style.objectFit : '100% 100%'});
   } else {
     const pseudo = which => { const st = getComputedStyle(node, which); if (st.content === 'none' || st.content === 'normal' || /url\(/i.test(st.content)) return null; const c = document.createElementNS(XHTML, 'span'); for (const prop of st) { const v = st.getPropertyValue(prop); if (!/url\(/i.test(v)) c.style.setProperty(prop, v); } c.textContent = st.content.replace(/^['"]|['"]$/g, ''); return c; };
     const before = pseudo('::before'); if (before) out.append(before);

@@ -22,7 +22,7 @@ class Runtime(unittest.TestCase):
                     text = a.provider_note(reason, 'openrouter', 'wrong desktop command')
                     self.assertNotIn('opencode auth', text)
                     self.assertNotIn('wrong desktop', text)
-                    self.assertIn('模型与 Key' if lang == 'zh' else 'Models & Key', text)
+                    self.assertIn('模型和 API Key' if lang == 'zh' else 'Models & API keys', text)
                     if lang == 'zh': self.assertNotIn('The account', text)
                     else: self.assertNotIn('账户', text)
 

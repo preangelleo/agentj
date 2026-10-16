@@ -58,6 +58,15 @@ T = {
         "why": {"timeout": "处理超时", "no_speech": "没有听到说话", "not_installed": "电脑上还没装语音转写",
                 "off": "语音转写已关闭", "broken": "转写器出错", "busy": "转写器忙", "bad_audio": "音频格式不对",
                 "format": "格式", "cancelled": "已取消", "cut": "超过 2 小时的部分没有转写"},
+        # P342 (#28): a Telegram message the human replied to — same shape as 「回复 #N」, but Telegram has no page id
+        "tg_quote_head": "【回复 Telegram 消息 · {who}{when}】",
+        "tg_quote_ext": "【回复另一个聊天里的消息 · {who}{when}】",
+        "tg_who": {"bot": "你（Agent，经这个 Telegram Bot 发出）", "owner": "主人", "member": "群成员 {id}",
+                   "bot_other": "{name}（机器人）", "unknown": "来源不明"},
+        "tg_media": {"photo": "[图片]", "voice": "[语音]", "audio": "[音频]", "video": "[视频]", "video_note": "[视频消息]",
+                     "animation": "[动图]", "sticker": "[贴纸]", "document": "[文件 {name}]", "location": "[位置]",
+                     "venue": "[地点]", "contact": "[联系人]", "poll": "[投票]"},
+        "tg_empty": "（那条消息没有文字）",
     },
     "en": {
         "att_head": "{n} attachment(s) (already in your working folder; their content did not travel through the chat — read "
@@ -80,6 +89,14 @@ T = {
                 "off": "transcription is off", "broken": "the transcriber failed", "busy": "the transcriber is busy",
                 "bad_audio": "wrong audio format", "format": "format", "cancelled": "cancelled",
                 "cut": "audio past 2 hours was not transcribed"},
+        "tg_quote_head": "[Reply to Telegram message · {who}{when}]",
+        "tg_quote_ext": "[Reply to a message from another chat · {who}{when}]",
+        "tg_who": {"bot": "you (the Agent, sent via this Telegram bot)", "owner": "the owner", "member": "group member {id}",
+                   "bot_other": "{name} (a bot)", "unknown": "unknown sender"},
+        "tg_media": {"photo": "[photo]", "voice": "[voice]", "audio": "[audio]", "video": "[video]", "video_note": "[video message]",
+                     "animation": "[GIF]", "sticker": "[sticker]", "document": "[file {name}]", "location": "[location]",
+                     "venue": "[place]", "contact": "[contact]", "poll": "[poll]"},
+        "tg_empty": "(that message has no text)",
     },
 }
 
@@ -149,6 +166,26 @@ def quotes_block(items: list, lang: str) -> str:
         out.append("\n".join(lines))
     return "\n\n".join(out)
 
+
+def tg_quote_block(q: dict, lang: str, limit: int = QUOTE_CHARS, wrap=None) -> str:
+    """P342 (#28): the Telegram message the human replied to, in `quote_block`'s shape — a head line, the words as `> `
+    lines, 「（摘录）」 when Telegram sent only the part they selected. q = {who, ts (ms, 0 = unknown), text, ex, ext,
+    named (who is a Telegram name, not our label)}. The words are at most `limit` characters (an ellipsis when cut).
+    `wrap` (a group / forward: provenance.body) neutralizes the untrusted words and name; the head and `> ` stay ours, so a
+    sender cannot draw a quote block of their own inside the envelope."""
+    t = T[lang]
+    wrap = wrap or (lambda x: x)
+    when = time.strftime(" · %H:%M", time.localtime(q["ts"] / 1000)) if q.get("ts") else ""
+    body = q.get("text") or t["tg_empty"]
+    if len(body) > limit:
+        body = body[:max(0, limit)] + "…"
+    body = wrap(body)
+    who = wrap(q["who"]) if q.get("named") else q["who"]
+    lines = [t["tg_quote_ext" if q.get("ext") else "tg_quote_head"].format(who=who, when=when)]
+    lines += ["> " + ln for ln in body.split("\n")]
+    if q.get("ex"):
+        lines.append("> " + t["excerpt"])
+    return "\n".join(lines)
 
 def render(text: str, files: list[dict], lang: str = "zh", quote: str | None = None) -> str:
     """files: [{"path", "mime", "bytes", "origin", "asr"?: {"ok", "text"?, "why"?, "secs"?}}]

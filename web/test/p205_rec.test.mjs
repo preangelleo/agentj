@@ -70,26 +70,29 @@ test('gaps come from mute → unmute, live digital silence, and the decoded take
 test('one recording card: a centred dark circle with the microphone, at body level (no transformed ancestor)', () => {
   const at = html.indexOf('id="ptt"');
   assert.ok(at > html.indexOf('</footer>') && at < html.indexOf('id="toast"'), 'moved out of the composer');
-  for (const id of ['pttTime', 'pttHint', 'pttSeg', 'pttAct', 'pttEnd', 'pttDim', 'pttCancel', 'pttNote']) assert.ok(html.includes(`id="${id}"`), id);
+  for (const id of ['pttTime', 'pttHint', 'pttSeg', 'pttAct', 'pttEnd', 'pttSend', 'pttCancel', 'pttNote']) assert.ok(html.includes(`id="${id}"`), id);
   assert.match(html, /class="pttcopy" role="status" aria-live="assertive"/);
   assert.match(css, /\.ptt\{position:fixed;inset:0;/);
   assert.match(css, /\.pttc\{[^}]*aspect-ratio:1;border-radius:50%/);
   assert.match(css, /\.pttc\{[^}]*background:var\(--dlg-bg\)/, 'P218: P207\'s one dialog token (Noir by default)');
   assert.match(html, /class="ptt gdlg--circle" id="ptt"/, 'P218: marked as the global circle dialog shape');
   assert.match(css, /\.pttring\{[^}]*var\(--lv\)/, 'the ring follows the voice');
-  assert.match(css, /\.ptt\.dim\{background:#000;pointer-events:auto\}/, 'dim: black, taps swallowed');
+  assert.doesNotMatch(html, /id="pttDim"/, 'P346: the dim icon is gone');
+  assert.match(css, /\.ptt\{[^}]*color-mix\(in srgb,var\(--pg\) \d+%,transparent\)[^}]*backdrop-filter:blur\(/, 'P346: every take blurs the page in its own colour');
   assert.match(css, /\.pttact\{[^}]*pointer-events:auto/);
   assert.doesNotMatch(css, /\.ptt\{position:absolute/);
+  assert.match(src, /pttWatch\(p\); if \(!p\.over\) pttUI\(p\);/, 'P346: an interrupted take is not painted back as a stuck card');
 });
 
-test('dictionaries: icons, dim, gaps (zh = src = override, en)', () => {
-  const keys = ['end', 'cancelBtn', 'dim', 'undim', 'dimNote', 'gap', 'gapLive'];
+test('dictionaries: icons, gaps (zh = src = override, en)', () => {
+  const keys = ['end', 'cancelBtn', 'send', 'actions', 'gap', 'gapLive'];
+  for (const k of ['dim', 'undim', 'dimNote']) assert.ok(!zh['r.ptt.' + k] && !en['r.ptt.' + k], 'P346: ' + k + ' removed');
   for (const k of keys) {
     assert.ok(zh['r.ptt.' + k] && en['r.ptt.' + k], k);
     assert.equal(zhSrc['r.ptt.' + k], zh['r.ptt.' + k]); assert.equal(ov['r.ptt.' + k], zh['r.ptt.' + k]);
   }
   assert.match(zh['r.ptt.gap'], /\{r\}/); assert.match(en['r.ptt.gap'], /\{r\}/);
   assert.match(zh['r.tray.gap'], /\{r\}/); assert.match(en['r.tray.gap'], /\{r\}/);
-  assert.match(zh.r.ptt.awake, /电源键/); assert.match(zh.r.ptt.awake, /暗屏/);
-  assert.match(en.r.ptt.awake, /power button/);
+  assert.match(zh.r.ptt.awake, /电源键/); assert.doesNotMatch(zh.r.ptt.awake, /暗屏|月亮/);
+  assert.match(en.r.ptt.awake, /power button/); assert.doesNotMatch(en.r.ptt.awake, /moon|dim/);
 });

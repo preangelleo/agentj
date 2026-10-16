@@ -182,6 +182,42 @@ def interpreter_command(argv: list[str]) -> bool:
                for name in (os.path.basename(argv[0]), os.path.basename(os.path.realpath(argv[0]))))
 
 
+_CJK = re.compile(r"[\u3040-\u30ff\u3400-\u9fff\uf900-\ufaff\uac00-\ud7af]")
+WHY_MIN_CJK, WHY_MIN_LATIN = 6, 12
+WHY_DETAIL = "--why must say in plain words what the command is for (shown first on the phone)"
+SERVICE_DETAIL = ("Agent J's own service never needs admin rights: it runs as you. Check `agentj service status` (it asks the "
+                  "service itself); to switch harness use `agentj agent switch`.")
+_AGENTJ_SVC = re.compile(r"(?:^|[\s/;&|('\"`])(?:agentj(?:-[\w.-]+)?|aj)\b[^;&|\n]*?\bservice\s+(?:start|restart|stop|install|uninstall)\b")
+_MANAGER = re.compile(r"(?:^|[\s/;&|('\"`])(?:launchctl|systemctl)\b([^;&|\n]*)")
+
+
+def own_service_command(cmd: str) -> bool:
+    """P339: the command manages Agent J's own service — `agentj service start|restart|stop|install|uninstall`, or
+    launchctl / systemctl acting on its label / unit. That runs as the owner, never as root: a sudo card for it is a
+    misdiagnosis (QA Mac 10-16: a fenced OpenCode could not see launchd, concluded the service was down, asked for sudo)."""
+    if _AGENTJ_SVC.search(cmd):
+        return True
+    labels = {"net.agentj.", "agentj.service"}
+    try:
+        from . import service
+        labels.add(service.name())
+    except Exception:  # noqa: BLE001 — the default patterns still apply
+        pass
+    for m in _MANAGER.finditer(cmd):
+        tail = m.group(1)
+        if any(n in tail for n in labels) or re.search(r"(?:^|[\s/])agentj(?:[\s.@]|$)", tail):
+            return True
+    return False
+
+
+def why_problem(why: str, cmd: str) -> bool:
+    """P339: the phone shows `why` first — it must say what the command is for, not repeat it or be a placeholder."""
+    w = " ".join(why.split())
+    if len(w) < (WHY_MIN_CJK if _CJK.search(w) else WHY_MIN_LATIN):
+        return True
+    return w.lower() in " ".join(cmd.split()).lower()
+
+
 def norm_sudo(req: dict) -> dict:
     argv = req.get("argv")
     if not isinstance(argv, list) or not 1 <= len(argv) <= 256 or \
@@ -198,12 +234,16 @@ def norm_sudo(req: dict) -> dict:
         raise Refused("shape", f"timeout: 1–{CMD_TIMEOUT_MAX} s")
     if sys.platform == "darwin" and re.search(r"with\s+administrator\s+privileges", cmd, re.I):
         raise Refused("local_authorization", "Use agentj sudo with the direct command; osascript administrator privileges opens a local dialog.")
+    if own_service_command(cmd):
+        raise Refused("agentj_service", SERVICE_DETAIL)
+    why = _text(req.get("why"), 300, required=True, field="why")
+    if why_problem(why, cmd):
+        raise Refused("why", WHY_DETAIL)
     effect = _text(req.get("effect"), 300, required=False, field="effect")
     if local_auth_risk():
         effect = (effect[:50] + "\n" + "本机 sudo 启用了生物验证，可能弹 Touch ID；此命令将拒绝执行。请在电脑前关闭 sudo Touch ID，见 /docs/keep-awake/。 / Local sudo biometrics may open Touch ID. Command will be refused; disable sudo Touch ID locally first. See /docs/keep-awake/.").strip()
     return {"kind": "sudo", "argv": list(argv), "cmd": cmd, "cwd": cwd, "timeout": timeout,
-            "why": _text(req.get("why"), 300, required=True, field="why"),
-            "effect": effect, "interpreter": interpreter_command(argv)}
+            "why": why, "effect": effect, "interpreter": interpreter_command(argv)}
 
 
 def parse_dest(dest: str, name: str, cwd: str | None, state_root: pathlib.Path) -> dict:
@@ -575,7 +615,7 @@ def remember(st, rid: str, rec: dict) -> None:
 def check_record(st, r: dict) -> str:
     """'ok' / 'ok_removed' (signature verifies; device still / no longer paired) · 'bad' · 'unsigned' (host-side outcome) ·
     'passkey' (F32 pickup: the paired device's Noise session + a user-verified passkey assertion; no Ed25519 line)."""
-    if r.get("kind") == "secret_out":
+    if r.get("kind") in ("secret_out", "keys"):   # P352: keys copy / delete — same passkey-only proof
         return "passkey" if r.get("passkey") == "uv" else "unsigned"
     if not r.get("sig"):
         return "unsigned"
@@ -1088,6 +1128,19 @@ class Elevator:
                 await w.drain()
                 w.close()
                 return
+            if isinstance(req, dict) and req.get("t") in ("harness_job", "serve_ping"):
+                # P339: `agentj agent switch` (any harness, fenced or not) — serve launches the switch / scan job itself from
+                # semantic fields (switch_harness.check_spec); inside the fence launchd / systemd cannot be reached.
+                # serve_ping: "is serve running?" answered by serve itself (`agentj service status` inside the fence).
+                if req["t"] == "serve_ping":
+                    res = {"ok": True, "serve": "answering"}
+                else:
+                    from . import switch_harness
+                    res = await asyncio.to_thread(switch_harness.host_job, self.st, req)
+                w.write((json.dumps(res) + "\n").encode())
+                await w.drain()
+                w.close()
+                return
             if isinstance(req, dict) and req.get("t") == "admin_open":
                 # P163: `agentj admin --open` from inside the Agent fence (state hidden, own pid namespace): serve opens
                 # the local admin page in the owner's default browser. The one-time link stays in the page process;
@@ -1162,10 +1215,10 @@ class Elevator:
 
 
 # ---------------------------------------------------------------- the CLI side (runs as the Agent)
-def client_request(st, req: dict, timeout: float = CMD_TIMEOUT_MAX + 400, on_card=None) -> dict:
+def client_request(st, req: dict, timeout: float = CMD_TIMEOUT_MAX + 400, on_card=None, path=None) -> dict:
     """One request on elevate.sock → the final JSON line. With `on_card` the request asks for the card id first (`early`):
-    `on_card({"t":"card","id",…})` is called as soon as the host shows the card."""
-    path = pathlib.Path(os.environ.get(ENV) or st.perm_dir / SOCK_NAME)
+    `on_card({"t":"card","id",…})` is called as soon as the host shows the card. `path`: a socket chosen by the caller."""
+    path = pathlib.Path(path or os.environ.get(ENV) or st.perm_dir / SOCK_NAME)
     if on_card is not None:
         req = {**req, "early": True}
     with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as s:
@@ -1342,7 +1395,9 @@ def add_parser(sub) -> None:
                                      "with sudo after the human approves it and types the password on the phone",
                         description="The phone shows the exact command, why, and what it changes; the password is typed "
                                     "there, sealed to this computer and given to `sudo -S -k` on stdin. You only get the output.")
-    sp.add_argument("--why", required=True, help="为什么要这条命令（手机上原样显示）/ why (shown on the phone)")
+    sp.add_argument("--why", required=True, help="这条命令是做什么用的，用大白话写（手机上第一行显示；至少 6 个汉字或 12 个英文字符，"
+                                                  "不能只是重复命令）/ what the command is for, in plain words (shown first on the "
+                                                  "phone; ≥ 6 CJK or 12 Latin characters, not the command repeated)")
     sp.add_argument("--effect", default="", help="会改什么 / what it changes (shown on the phone)")
     sp.add_argument("--timeout", type=int, default=CMD_TIMEOUT, help=f"命令最长运行秒数（≤ {CMD_TIMEOUT_MAX}）")
     sp.add_argument("--json", action="store_true")

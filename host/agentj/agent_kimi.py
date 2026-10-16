@@ -6,13 +6,14 @@ login `session/new` is refused with ACP `auth_required` (-32000) — that answer
 
 Logins (both the owner's own, both outside the Agent's reach):
 - the Kimi membership: `kimi login` — the official device-code flow (a link + a one-time code; the owner approves on any device
-  signed in to Kimi; the CLI polls and writes `~/.kimi-code/credentials/<name>.json` itself). Two sites with separate accounts
-  and quota: `--region mainland-cn` (kimi.com, the default) and `--region global` (kimi.ai). auth_rescue.KimiFlow runs it.
+  signed in to Kimi; the CLI polls and writes `~/.kimi-code/credentials/<name>.json` itself). Two sites: `--region mainland-cn`
+  (kimi.com, the default) and `--region global` (kimi.ai); a kimi.com member key also works on api.kimi.ai (measured 10-16). auth_rescue.KimiFlow runs it.
 - an API key, only through the phone's key card (`agentj secret request`, P279): `KIMI_API_KEY` = a Kimi Code console key
   (the membership's key: api.kimi.com/coding/v1, or api.kimi.ai/coding/v1 for kimi.ai), `MOONSHOT_API_KEY` = the open platform
   pay-as-you-go key (api.moonshot.cn/v1 · api.moonshot.ai/v1). Kimi never reads a key from the shell by itself; Agent J hands
   it over as Kimi's own in-memory model variables (`KIMI_MODEL_*`) for this process only — nothing is written to Kimi's
-  config — and only when Kimi has no login and no provider of its own.
+  config — and only when Kimi has no login and no provider of its own. The owner's own scheduled tasks / workflow CEOs get
+  the membership key too (P348, fence.PLAN_KEY_ENV), never MOONSHOT_API_KEY; support bots get none.
 
 Security (the owner's computer, the owner's Kimi): Kimi has no OS sandbox and its hooks fail open on error / timeout, so
 neither is relied on — the fence is Agent J's, every approval is an ACP permission request that serve answers from the phone
@@ -109,9 +110,9 @@ def version_ok(version: str | None) -> bool:
     return bool(m) and tuple(int(x) for x in m.groups()) >= MIN_VERSION
 
 
-def fresh_keys(base: dict) -> dict:
-    """The two key names from the service env file as it is NOW (a key card saved after serve started), else `base`."""
-    out = {k: base[k] for k in (KEY_ENV, PLATFORM_KEY_ENV) if base.get(k)}
+def fresh_keys(base: dict, names=(KEY_ENV, PLATFORM_KEY_ENV)) -> dict:
+    """The key names from the service env file as it is NOW (a key card saved after serve started), else `base`."""
+    out = {k: base[k] for k in names if base.get(k)}
     try:
         from . import service
         lines = Path(service.env_file(service.name())).read_text().splitlines()
@@ -119,7 +120,7 @@ def fresh_keys(base: dict) -> dict:
         return out
     for line in lines:
         k, sep, v = line.strip().partition("=")
-        if sep and k in (KEY_ENV, PLATFORM_KEY_ENV):
+        if sep and k in names:
             try:
                 parts = shlex.split(v, comments=False)
             except ValueError:
@@ -129,12 +130,13 @@ def fresh_keys(base: dict) -> dict:
     return out
 
 
-def key_environment(env: dict, region: str | None, model: str | None, source: dict | None = None) -> dict:
+def key_environment(env: dict, region: str | None, model: str | None, source: dict | None = None,
+                    names=(KEY_ENV, PLATFORM_KEY_ENV)) -> dict:
     """Kimi's in-memory model variables for an API key — only when Kimi has no login / provider of its own. `source` = where
     the key is read from (serve's environment); the returned dict holds the variables to add (never logged)."""
     if oauth_files(env) or config_facts(env)["providers"]:
         return {}
-    keys = fresh_keys(source if source is not None else os.environ)
+    keys = fresh_keys(source if source is not None else os.environ, names)
     r = region if region in REGIONS else "mainland-cn"
     if keys.get(KEY_ENV):
         return {"KIMI_MODEL_NAME": model or CODING_MODEL, "KIMI_MODEL_API_KEY": keys[KEY_ENV],
@@ -148,11 +150,11 @@ def key_environment(env: dict, region: str | None, model: str | None, source: di
 def login_text(region: str | None, lang: str = "zh") -> str:
     r = region if region in REGIONS else "mainland-cn"
     if lang == "en":
-        return (f"Kimi Code is not signed in. On the phone: Settings → AI login rescue (device code, {SITE[r]}); or at the computer "
-                f"`kimi login --region {r}` (kimi.com = mainland-cn, kimi.ai = global — separate accounts and quota). With a "
+        return (f"Kimi Code is not signed in. On the phone: Settings → Emergency repair → AI login rescue (device code, {SITE[r]}); or at the computer "
+                f"`kimi login --region {r}` (where you bought it: kimi.com = mainland-cn, kimi.ai = global; a kimi.com key works on both). With a "
                 f"Kimi Code console key instead: the Agent sends a key card (`agentj secret request --name {KEY_ENV} …`).")
-    return (f"Kimi Code 没登录。手机 设置 →「AI 登录救援」用设备码登录（{SITE[r]}）；或在电脑上运行 `kimi login --region {r}`"
-            f"（国内站 kimi.com = mainland-cn，海外站 kimi.ai = global，两边账号和额度不通用）。用 Kimi Code 控制台的 key 也行："
+    return (f"Kimi Code 没登录。手机 设置 → 紧急修复 →「AI 登录救援」用设备码登录（{SITE[r]}）；或在电脑上运行 `kimi login --region {r}`"
+            f"（按会员在哪个站买的选：kimi.com = mainland-cn，kimi.ai = global；kimi.com 的 key 两个地址都能用）。用 Kimi Code 控制台的 key 也行："
             f"让 Agent 发手机密钥卡（`agentj secret request --name {KEY_ENV} …`），不要把 key 发在对话里。")
 
 
@@ -167,8 +169,10 @@ class KimiAgent(AcpAgent):
     def child_env(self, env: dict) -> dict:
         env = dict(env)
         env[GUARD_ENV] = "true"              # Kimi's own dangerous-command policy stays on whatever the owner's file says
-        if not self.cfg.get("_workflow_ceo"):          # tasks use native login storage only (fence.auxiliary_environment)
-            env.update(key_environment(env, self.cfg.get("region"), self.cfg.get("model")))
+        # P348: the owner's own tasks / workflow CEOs may use the membership key (fence.PLAN_KEY_ENV), never the
+        # pay-as-you-go MOONSHOT_API_KEY (tasks otherwise authenticate from native login storage only)
+        names = (KEY_ENV,) if self.cfg.get("_workflow_ceo") else (KEY_ENV, PLATFORM_KEY_ENV)
+        env.update(key_environment(env, self.cfg.get("region"), self.cfg.get("model"), names=names))
         return env
 
     def login_hint(self) -> str:

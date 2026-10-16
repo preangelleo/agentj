@@ -38,9 +38,10 @@ def env_path():
     return service.env_file(service.name())
 
 
-def fresh_environment(base):
-    """Only configured env references, no shell evaluation; never mutate parent env."""
-    names = {key_name(p) for p in configured()} - {None}
+def fresh_environment(base, extra=()):
+    """Only configured env references (+ `extra` names: P340 D, OpenCode's built-in plan providers), no shell evaluation;
+    never mutate parent env."""
+    names = ({key_name(p) for p in configured()} | set(extra)) - {None}
     env = dict(base)
     try:
         lines = Path(env_path()).read_text().splitlines()
@@ -101,18 +102,26 @@ class NoRedirect(urllib.request.HTTPRedirectHandler):
 
 
 def probe(provider):
-    p = configured().get(provider, {})
-    url = public_url(options(p).get('baseURL'), 'usage')
-    name = key_name(provider)
-    key = fresh_environment(os.environ).get(name) if name else None
+    from . import coding_usage
+    p = configured().get(provider)
+    builtin = coding_usage.BUILTIN.get(provider)   # P340 D: OpenCode's own models.dev plan providers (no config block)
+    base = options(p).get('baseURL') if p else None
+    if not base and builtin:
+        base = builtin[0]
+    plan = coding_usage.endpoint(base)   # P340 D: a Coding Plan's own usage read (fixed hosts), else P67's compatible /v1/usage
+    url = plan[1] if plan else public_url(base, 'usage')
+    name = key_name(provider) or (builtin[1] if builtin and plan else None)
+    key = fresh_environment(os.environ, (name,)).get(name) if name else None
     if not url or not key:
         return []
+    auth = coding_usage.headers(plan[0], key) if plan else {'Authorization': 'Bearer '+key}
     try:
-        req = urllib.request.Request(url, headers={'Authorization': 'Bearer '+key, 'User-Agent': 'agentj/'+__version__, 'Accept': 'application/json'})
+        req = urllib.request.Request(url, headers={**auth, 'User-Agent': 'agentj/'+__version__, 'Accept': 'application/json'})
         with urllib.request.build_opener(NoRedirect).open(req, timeout=8) as r:
-            return windows(json.loads(r.read(65537)))
+            data = json.loads(r.read(65537))
     except (OSError, ValueError):
         return []
+    return coding_usage.parse(plan[0], data) if plan else windows(data)
 
 
 async def request_key(host, provider):

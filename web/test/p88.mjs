@@ -13,7 +13,8 @@ try {
   await fake.send({t:'meter',h5:{pct:1},ctx:{pct:49},source_at:1000});
   await waitFor(p,`document.getElementById('m5h').textContent.includes('1%')`);
   assert.equal(await evaluate(p,`document.getElementById('m5h').hidden`),false);
-  assert.equal(await evaluate(p,`document.getElementById('mWeek').hidden`),true);
+  assert.equal(await evaluate(p,`document.getElementById('mWeek').hidden`),false);   // P340 D: the rule stays, label empty
+  assert.equal(await evaluate(p,`document.querySelector('#mWeek .lab').textContent`),'');
   assert.ok(await evaluate(p,`document.querySelector('#m5h i').getBoundingClientRect().width>=6`));
   await navigate(p,web.url);await waitState(p,'ready');
   await waitFor(p,`document.getElementById('m5h').textContent.includes('1%')`);
@@ -23,7 +24,7 @@ try {
   assert.equal(await evaluate(p,`document.getElementById('m5h').dataset.zero`),'1');
   writeFileSync(new URL(label+'-zero.png',out),await shoot(p,''));
   await fake.send({t:'meter',h5:null,ctx:null});
-  await waitFor(p,`document.getElementById('m5h').textContent.includes('—')`);
+  await waitFor(p,`document.getElementById('m5h').dataset.known==='0' && document.getElementById('m5h').textContent===''`);   // P340 D: no 「—」
   assert.equal(await evaluate(p,`document.getElementById('m5h').dataset.known`),'0');
   for(const [length,reply] of [['short','Short reply'],['long','A long reply with readable content. '.repeat(300)]]) {
    await fake.addTurn({k:'phone',text:'A long input which expands. '.repeat(80)},reply);

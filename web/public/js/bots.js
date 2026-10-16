@@ -5,7 +5,7 @@ import { signedWrite } from './controls.js';
 import { lang } from './t.js';
 import { el, mk, toast, confirmSheet } from './ui.js';
 import { copyable, copyNow } from './copycode.js';   // P292: every pre can be copied (⧉)
-let hooks, selected=null, tab='settings', generation=0, pendingProposal=null,hostZone='UTC';
+let hooks, selected=null, tab='settings', generation=0, pendingProposal=null,hostZone='UTC',vendors=[];
 const copy=(zh,en)=>lang()==='en'?en:zh;
 const text=(v,max=6000)=>typeof v==='string'?v.slice(0,max):'';
 export const TABS=['settings','limits','knowledge','tools','conversations','statistics','embed'];
@@ -18,7 +18,9 @@ async function write(request){
   const m=await signedWrite('bots_write',{request},{t:'bots_write',request});
   if(!m.ok)throw new Error(m.why||'offline');return m;
 }
-async function act(fn){try{status(copy('处理中…','Working…'));await fn();status('');}catch(e){status(text(e.message,160));}}
+// P348: a support bot serves other people, so no Coding Plan / Token Plan key — the owner adds a pay-as-you-go one
+const planProblem=['客服 bot 是在服务别人，不能用 Coding Plan / Token Plan 的 key。请在模型来源里选「主人自带模型 key」，再选一家服务商（可以和主 Agent 不同家），保存后用手机密钥卡填那家的按量付费 API key（国内按量 key 不贵）。','A support bot serves other people, so it cannot use a Coding Plan / Token Plan key. Choose “Owner’s model key” as the model source, pick a provider (it may differ from your main Agent’s), save, then add that provider’s pay-as-you-go API key with the phone secret card.'];
+async function act(fn){try{status(copy('处理中…','Working…'));await fn();status('');}catch(e){status(e.message==='coding_plan_bot'?copy(...planProblem):text(e.message,160));}}
 function field(parent,label,value='',type='text'){
   const wrap=mk('label','bots-field'),title=mk('span','',label),input=mk(type==='textarea'?'textarea':'input');
   if(type!=='textarea')input.type=type;input.value=value;input.setAttribute('aria-label',label);wrap.append(title,input);parent.append(wrap);return input;
@@ -29,7 +31,7 @@ export async function refresh(){
   if(pendingProposal && pendingProposal.expires>Date.now()){paintProposal(pendingProposal);return;}
   pendingProposal=null;
   const g=++generation;await act(async()=>{
-    const list=await read({op:'list'});hostZone=list.host_timezone||'UTC';if(g!==generation)return;
+    const list=await read({op:'list'});hostZone=list.host_timezone||'UTC';vendors=Array.isArray(list.vendors)?list.vendors.slice(0,30):[];if(g!==generation)return;
     const side=el('bots-side');side.replaceChildren(button(copy('← 主对话','← Main chat'),()=>hooks.openPanel('chat')),button(copy('新建 bot','Create bot'),wizard));
     for(const bot of (list.bots||[]).slice(0,100))side.append(button(text(bot.title,80)+' · '+(bot.enabled?copy('已启用','Enabled'):copy('已暂停','Paused')),()=>{selected=bot.id;tab='settings';refresh();}));
     if(selected&&!list.bots?.some(b=>b.id===selected))selected=null;
@@ -51,12 +53,27 @@ function wizard(){selected=null;const main=el('bots-main');main.replaceChildren(
     if(step===3){main.append(mk('p','',copy('默认 20 条/访客/天、100 条/bot/天，主机合计 100 条和 100k 模型 tokens/天，含安全审核。可以调低。','Defaults: 20 messages/visitor/day, 100/bot/day; 100 messages and 100k model tokens/day across your computer, including safety reviews. You can lower them.')));privacy(main);const modelConfig=ownFields(main,{provider:{source:'main'},own_model:null});const risk=checkbox(main,copy('我已确认服务商条款，接受个人订阅对外服务可能受限的风险','I checked provider terms and accept possible restrictions on public use of a personal subscription'),false);main.append(mk('p','',copy('创建后必须注册 OpenRouter 并通过手机密钥卡添加审核 key，验证成功才能上线。','After creation, register with OpenRouter and add a review key through the phone secret card. Activation requires a successful check.')));const terms=checkbox(main,copy('我接受对外服务与内容责任条款','I accept public service and content responsibility terms'),false);main.append(button(copy('创建并保持暂停','Create paused'),()=>act(async()=>{config.terms_accepted=terms.checked;config.subscription_risk_accepted=risk.checked;Object.assign(config,modelConfig());const m=await write({op:'create',config});selected=m.bot.id;await refresh();})));}
   };render();
 }
+// P348: 「主人自带模型 key」 starts with the provider (it may differ from the main Agent's): each preset brings its endpoint,
+// a cheap default model and its own key name; 「其他」 = the owner's own OpenAI-compatible address (key BOT_MODEL_KEY)
+const vendorName=id=>{const v=vendors.find(x=>x.id===id);return v?copy(v.zh,v.en):copy('其他服务（自填地址）','Other service (own address)');};
 function ownFields(main,c){
   const choice=mk('select','aj-select');choice.setAttribute('aria-label',copy('模型计费通道','Model billing channel'));
   for(const [v,zh,en] of [['main','用主 Agent 套餐','Use main Agent plan'],['own','主人自带模型 key','Owner’s model key'],['profile','已有服务商档案','Existing provider profile']]){const o=mk('option','',copy(zh,en));o.value=v;choice.append(o);}choice.value=c.provider.source;main.append(choice);
-  const profile=field(main,copy('已有档案名称','Existing profile name'),c.provider.id||''),url=field(main,copy('模型 API 地址（OpenAI 兼容 / OpenRouter）','Model API URL (OpenAI compatible / OpenRouter)'),c.own_model?.base_url||'https://openrouter.ai/api/v1'),model=field(main,copy('模型名称','Model name'),c.own_model?.model||''),limit=field(main,copy('自带 key 每日模型 token 限额','Own-key daily model token limit'),String(c.own_model?.daily_tokens??100000),'number');
-  const update=()=>{profile.parentElement.hidden=choice.value!=='profile';for(const f of [url,model,limit])f.parentElement.hidden=choice.value!=='own';};choice.addEventListener('change',update);update();
-  return ()=>({provider:choice.value==='profile'?{source:'profile',id:profile.value}:{source:choice.value},own_model:choice.value==='own'?{base_url:url.value,model:model.value,daily_tokens:Number(limit.value),api:c.own_model?.api||'chat'}:c.own_model});
+  const vendorWrap=mk('label','bots-field'),vendor=mk('select','aj-select');vendor.setAttribute('aria-label',copy('客服 bot 用哪家的按量 key','Which provider’s pay-as-you-go key'));
+  vendorWrap.append(mk('span','',copy('客服 bot 用哪家的按量 key（可以和主 Agent 不同家）','Which provider’s pay-as-you-go key (may differ from your main Agent’s)')),vendor);main.append(vendorWrap);
+  for(const id of [...vendors.map(v=>v.id),'other']){const o=mk('option','',vendorName(id));o.value=id;vendor.append(o);}
+  vendor.value=c.own_model?(c.own_model.vendor||'other'):(vendors[0]?.id||'other');
+  const profile=field(main,copy('已有档案名称','Existing profile name'),c.provider.id||''),url=field(main,copy('模型 API 地址（OpenAI 兼容）','Model API URL (OpenAI compatible)'),c.own_model?.base_url||''),model=field(main,copy('模型名称','Model name'),c.own_model?.model||''),limit=field(main,copy('自带 key 每日模型 token 限额','Own-key daily model token limit'),String(c.own_model?.daily_tokens??100000),'number');
+  const hint=mk('p','small');main.append(hint);
+  let last=vendor.value;
+  const update=()=>{const own=choice.value==='own',v=vendors.find(x=>x.id===vendor.value);profile.parentElement.hidden=choice.value!=='profile';for(const f of [model,limit])f.parentElement.hidden=!own;vendorWrap.hidden=hint.hidden=!own;url.parentElement.hidden=!own||!!v;
+    hint.textContent=v?copy(`地址 ${v.base_url} · 默认模型 ${v.model} · 密钥卡会收 ${v.key}（只给这个 bot 用，和主 Agent 的 key 分开）· 去 ${v.console} 建按量 key`,`Address ${v.base_url} · default model ${v.model} · the secret card stores ${v.key} (this bot only, apart from your main Agent’s key) · create a pay-as-you-go key at ${v.console}`):copy('填一个 OpenAI 兼容的按量服务地址；密钥卡会收 BOT_MODEL_KEY。','Enter an OpenAI-compatible pay-as-you-go address; the secret card stores BOT_MODEL_KEY.');};
+  vendor.addEventListener('change',()=>{const was=vendors.find(x=>x.id===last),v=vendors.find(x=>x.id===vendor.value);if(!model.value||(was&&model.value===was.model))model.value=v?v.model:'';last=vendor.value;update();});
+  if(!model.value&&vendors.find(x=>x.id===vendor.value))model.value=vendors.find(x=>x.id===vendor.value).model;
+  choice.addEventListener('change',update);update();
+  const own=()=>({...(vendor.value==='other'?{vendor:'other',base_url:url.value,api:!c.own_model?.vendor||c.own_model.vendor==='other'?c.own_model?.api||'chat':'chat'}:{vendor:vendor.value}),model:model.value,daily_tokens:Number(limit.value)});
+  const out=()=>({provider:choice.value==='profile'?{source:'profile',id:profile.value}:{source:choice.value},own_model:choice.value==='own'?own():c.own_model});
+  out.vendor=()=>vendor.value;return out;
 }
 function draw(detail,main){const c=detail.bot;main.append(mk('h2','',text(c.title,80)));tabs(main);
   if(tab==='settings'){
@@ -65,7 +82,9 @@ function draw(detail,main){const c=detail.bot;main.append(mk('h2','',text(c.titl
     const modelConfig=ownFields(main,c);
     const enabled=checkbox(main,copy('接待访客','Serve visitors'),c.enabled),terms=checkbox(main,copy('接受对外服务条款','Accept public service terms'),c.terms_accepted),risk=checkbox(main,copy('已确认个人订阅对外服务的条款和风险','I checked terms and risks of public subscription use'),c.subscription_risk_accepted);privacy(main);
     const register=mk('a','',copy('注册 OpenRouter（审核费用自付）','Register OpenRouter (you pay review costs)'));register.href='https://openrouter.ai/';register.target='_blank';register.rel='noopener noreferrer';main.append(register,mk('p','',copy('密钥仅用手机密钥卡写入电脑。每次启用均真实验证 decisions，失败则保持暂停。','The phone secret card writes the key only to your computer. Each activation verifies decisions; failure keeps the bot paused.')),button(copy('添加 / 更新 OpenRouter 审核 key','Add / update OpenRouter review key'),()=>act(async()=>{await write({op:'audit_key',id:c.id});await refresh();})));
-    main.append(button(copy('添加 / 更新自带模型 key','Add / update own model key'),()=>act(async()=>{await write({op:'model_key',id:c.id});await refresh();})),button(copy('添加 / 更换 Telegram token','Add / replace Telegram token'),()=>act(async()=>{await write({op:'telegram_key',id:c.id});await refresh();})));
+    // P348: the card asks for the SAVED provider's key — a provider picked but not saved yet is saved first
+    const saved=c.own_model?(c.own_model.vendor||'other'):null;
+    main.append(button(copy(`添加 / 更新「${vendorName(saved||modelConfig.vendor())}」的 key`,`Add / update the key for ${vendorName(saved||modelConfig.vendor())}`),()=>act(async()=>{if(c.provider.source!=='own'||saved!==modelConfig.vendor())throw new Error(copy(`先在上面选「主人自带模型 key」和「${vendorName(modelConfig.vendor())}」并保存，再添加 key。`,`First choose “Owner’s model key” and “${vendorName(modelConfig.vendor())}” above and save, then add the key.`));await write({op:'model_key',id:c.id});await refresh();})),button(copy('添加 / 更换 Telegram token','Add / replace Telegram token'),()=>act(async()=>{await write({op:'telegram_key',id:c.id});await refresh();})));
     const telegram=checkbox(main,copy('在 Telegram 接待（停用后停止收发）','Serve on Telegram (disable to stop receiving and sending)'),c.telegram?.enabled);
     // P297: the owner's own Agent J Telegram bot — the owner's chat stays the main session; everyone else is this bot's visitor
     const guests=checkbox(main,copy('让我的 Agent J Telegram 机器人也接待客人','Let my Agent J Telegram bot receive guests'),c.telegram?.owner_bot);
@@ -79,7 +98,8 @@ function draw(detail,main){const c=detail.bot;main.append(mk('h2','',text(c.titl
       native_executable_missing:['找不到主 Agent 已选程序。请在电脑上检查安装路径。','The selected main Agent program was not found. Check its installation path on your computer.'],
       native_executable_not_executable:['主 Agent 已选程序不能执行。请在电脑上检查文件权限。','The selected main Agent program cannot run. Check its file permissions on your computer.'],
       native_executable_selection_failed:['主 Agent 程序路径无法确定。请在电脑上确认已选版本。','The main Agent program path is unresolved. Confirm the selected version on your computer.'],
-      native_spawn_failed:['客服程序未能启动，本次模型预留已释放。请检查电脑运行状态。','The bot program could not start. This model reservation was released. Check your computer.']
+      native_spawn_failed:['客服程序未能启动，本次模型预留已释放。请检查电脑运行状态。','The bot program could not start. This model reservation was released. Check your computer.'],
+      coding_plan_bot:planProblem
     };
     const problem=detail.provider_problem||detail.native_start_failure;
     if(problem)main.append(mk('p','',nativeProblems[problem]?copy(...nativeProblems[problem]):copy('请检查主 Agent 的登录，或用手机密钥卡添加自带 key。','Check your main Agent login or add your own key using the phone secret card.')));

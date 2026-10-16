@@ -58,7 +58,7 @@ class _Extra(p59.Chain):
 
 
 class ForeignPin(_Extra):
-    extra = {"shared_session_id": UUID_PIN, "shared_opencode_port": 0}
+    extra = {"shared_session_id": UUID_PIN, "shared_pin_owner": UUID_PIN, "shared_opencode_port": 0}   # P330: as config.json5 has it
 
     def test_claude_or_codex_pin_starts_our_own_server(self):
         async def script(c):
@@ -72,7 +72,8 @@ class ForeignPin(_Extra):
             self.assertEqual(a.cfg["shared_session_id"], a.sid)
             self.assertFalse(any("loopback" in m or "端口" in m for m in c.msgs()), c.msgs())
             ev = self.events()
-            self.assertIn("shared_pin_foreign", [e["ev"] for e in ev])
+            # P330: the foreign id is credited to its own harness at serve start (P326's guard stays as the backstop)
+            self.assertTrue({"shared_pin_foreign", "shared_pin_owner"} & {e["ev"] for e in ev})
             self.assertNotIn("turn_empty", [e["ev"] for e in ev])
             self.assertNotIn(UUID_PIN, self.st.log_path.read_text())
         self.run_chain(script)

@@ -97,7 +97,7 @@ class MacAuth(unittest.TestCase):
             (p/'sudo_local').write_text('# auth sufficient pam_tid.so\nauth optional pam_reattach.so\nauth sufficient pam_tid.so\n')
             risk=elevate.local_auth_risk(p); self.assertEqual(len(risk),2)
             with patch.object(elevate, 'local_auth_risk', return_value=risk), patch.object(elevate.subprocess, 'Popen') as launch:
-                card=elevate.norm_sudo({'argv':['true'],'why':'test'})
+                card=elevate.norm_sudo({'argv':['true'],'why':'run a harmless test command'})
                 self.assertIn('Touch ID',card['effect']); self.assertEqual(elevate.shown_fields(card)[2],card['effect'])
                 res=elevate.run_sudo(['true'],bytearray(b'fake'), '/', 2)
                 self.assertEqual(res['why'],'local_auth_required'); launch.assert_not_called()
@@ -107,7 +107,7 @@ class MacAuth(unittest.TestCase):
     def test_gui_osascript_elevation_refused(self):
         with patch.object(elevate.sys,'platform','darwin'):
             with self.assertRaises(elevate.Refused):
-                elevate.norm_sudo({'argv':['osascript','-e','do shell script "true" with administrator privileges'],'why':'test'})
+                elevate.norm_sudo({'argv':['osascript','-e','do shell script "true" with administrator privileges'],'why':'run a harmless test command'})
 
 # Reuse the real host/socket/paired-phone fixture; no system settings are changed.
 import test_f17 as f17
@@ -153,7 +153,7 @@ class SocketFlows(unittest.TestCase):
             self.assertIn('Touch ID',card['effect']); self.assertLessEqual(len(card['effect']),300)
             await host._app(session,f17.answer(ph,card,True,f17.PW))
         with patch.object(elevate,'local_auth_risk',return_value=['sudo_local: pam_tid.so']), patch.object(elevate.subprocess,'Popen') as launch:
-            res,_,_=self.run_flow({'t':'sudo','argv':['true'],'why':'test'},phone)
+            res,_,_=self.run_flow({'t':'sudo','argv':['true'],'why':'run a harmless test command'},phone)
             launch.assert_not_called()
         self.assertEqual(res['why'],'local_auth_required'); self.assertEqual(len(self.cards()),1)
         self.assert_no_leak(f17.PW,result=res)

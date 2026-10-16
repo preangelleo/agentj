@@ -397,7 +397,7 @@ class Detect(unittest.TestCase):
     def test_none(self):
         d = self.run_detect()
         self.assertEqual((d["usable"], d["decision"]), ([], "none"))
-        self.assertEqual([h["name"] for h in d["harnesses"]], ["claude", "codex", "opencode", "kimi", "qwen"])   # P305, P310
+        self.assertEqual([h["name"] for h in d["harnesses"]], ["claude", "codex", "opencode", "kimi", "qwen", "dsh"])   # P305, P310, P329
         self.assertTrue(all(set(h) >= {"name", "installed", "logged_in", "supported", "version"} for h in d["harnesses"]))
 
     def test_installed_but_not_logged_in_is_not_usable(self):

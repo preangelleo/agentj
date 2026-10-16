@@ -253,16 +253,14 @@ try {
         await ev(p, `(() => { const i = document.getElementById('set-hb-time'); i.value = '07:30'; i.dispatchEvent(new Event('change', { bubbles: true })); })()`); await sleep(400);
         ok(fake.st.prefSets.some((m) => m.key === 'heartbeat.daily_at' && m.value === '07:30'), 'daily → pref_set 07:30');
         await save(p, 'zh-phone-heartbeat-daily');
-        // a refused save: the notice can be closed and fades by itself
+        // a refused save: the notice is the Noir Notification (warn), fades by itself; P340 #22: no bar under the header
         fake.st.prefRefuse = 'bad_value';
         await ev(p, `(() => { const s = document.getElementById('set-hb-every'); s.value = '240'; s.dispatchEvent(new Event('change', { bubbles: true })); })()`); await sleep(400);
-        ok(/bad_value|没保存成功/.test(await ev(p, `document.getElementById('set-status').textContent`)), 'error shown');
-        ok(await ev(p, `!document.getElementById('set-status-x').hidden`), 'close button on the notice');
+        ok(/bad_value|没保存成功/.test(await ev(p, `(document.getElementById('toast').classList.contains('on') ? document.getElementById('toast').textContent : '')`)), 'error shown');
+        ok(await ev(p, `document.getElementById('toast').dataset.kind === 'warn' && !document.getElementById('set-status-bar')`), 'warn notice, no old bar');
         await save(p, 'zh-phone-heartbeat-error');
-        await click(p, '#set-status-x'); await sleep(100);
-        ok(await ev(p, `document.getElementById('set-status').textContent === ''`), 'closed');
         await ev(p, `(() => { const s = document.getElementById('set-hb-every'); s.value = '480'; s.dispatchEvent(new Event('change', { bubbles: true })); })()`); await sleep(4600);
-        ok(await ev(p, `document.getElementById('set-status').textContent === ''`), 'gone by itself after ~4 s');
+        ok(await ev(p, `!document.getElementById('toast').classList.contains('on')`), 'gone by itself after ~4 s');
         fake.st.prefRefuse = null;
       } finally { await p.dispose(); }
     });

@@ -10,7 +10,7 @@ import re
 import shutil
 import tomllib
 
-NAMES = ("claude", "codex", "opencode", "kimi", "qwen")
+NAMES = ("claude", "codex", "opencode", "kimi", "qwen", "dsh")
 ENV = {n: "AGENTJ_" + n.upper() + "_BIN" for n in (*NAMES, "gemini")}
 
 

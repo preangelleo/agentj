@@ -493,11 +493,14 @@ export async function runCases({ B, web, fake, only }) {
     await sendText('关于这一段');
     await sleep(500);
     ok(lastSay().excerpt === '要回复的' && Number.isInteger(lastSay().reply_to), 'say carries the excerpt');
+    // P340 (#21): sent from an older page, the page stays where he reads
+    ok((await text('#words')).startsWith('要回复的这一条'), 'a send from an older page keeps that page');
   });
   await C('excerpt-autocopy', async () => { ok((await clipboard()) === '要回复的', 'the selection was copied'); });
   await C('copy-source', async () => {
-    await wait(`document.getElementById('omText').textContent === '关于这一段'`);
     await ev(`document.activeElement && document.activeElement.blur(); getSelection().removeAllRanges()`);
+    await key(P, 'g', { code: 'KeyG' });   // P340 (#21): the send above stayed on the older page; the newest page holds it
+    await wait(`document.getElementById('omText').textContent === '关于这一段'`);
     await key(P, 'Y', { code: 'KeyY', shift: true, text: 'Y' });
     await waitToast(T('r.copy.source'));
     ok((await clipboard()) === '关于这一段', 'Y copies the source');
@@ -699,8 +702,9 @@ export async function runCases({ B, web, fake, only }) {
     await click('#sayCancel');
     await waitToast(T('r.say.withdrawn'));
     ok((await ev(`document.getElementById('input').value`)) === '排队中的话' && fake.st.cancels.length === 1, 'withdrawn: the words are back');
-    // withdrawn = as if never sent: its page leaves the history (no 「（无文字回复）」), the pending line and the × go
-    await wait(`document.getElementById('outbox').hidden && document.getElementById('sayCancel').hidden`);
+    // withdrawn = as if never sent: its page leaves the history (no 「（无文字回复）」), the pending line goes and the × no
+    // longer takes anything back — P328: the Agent is still working (blue), so it stays as 「stop this turn」 (mode turn)
+    await wait(`document.getElementById('outbox').hidden && document.getElementById('sayCancel').dataset.mode === 'turn'`);
     await wait(`!document.getElementById('words').textContent.includes(${JSON.stringify(T('r.noReply'))}) && document.getElementById('omText').textContent !== '排队中的话'`);
     ok(fake.st.turns.length === before + 1 && fake.st.turns[before].card?.withdrawn === true, 'the host page is marked withdrawn');
     ok((await pg()).split('/ ')[1] === total0, 'the withdrawn page is not counted: ' + await pg() + ' vs ' + total0);
@@ -717,9 +721,10 @@ export async function runCases({ B, web, fake, only }) {
     await clearField();
     await wait(`document.getElementById('words').textContent.includes(${JSON.stringify(T('r.queue.card'))}) && !document.getElementById('words').textContent.includes(${JSON.stringify(T('r.queue.ahead', { n: 1 }))})`, 3000);
     // P282 (追加): the Agent takes it (a shared Codex still opens its session before the write) — no longer 「排队中」, the
-    // × goes, the page reads as worked on; `delivered` follows later and changes nothing visible
+    // × stops taking it back (P328: while blue it stays as 「stop this turn」), the page reads as worked on; `delivered`
+    // follows later and changes nothing visible
     await fake.takeQueued();
-    await wait(`document.getElementById('sayCancel').hidden && document.body.dataset.pageQueued !== '1' && !document.getElementById('words').textContent.includes(${JSON.stringify(T('r.queue.card'))})`, 3000);
+    await wait(`document.getElementById('sayCancel').dataset.mode === 'turn' && document.body.dataset.pageQueued !== '1' && !document.getElementById('words').textContent.includes(${JSON.stringify(T('r.queue.card'))})`, 3000);
     // P281 (P290 merge): the working sign is the dancing robot — under the reply (.thinking) or leading the page's wait line
     ok(await ev(`getComputedStyle(document.querySelector('.thinking')).display !== 'none' || !!document.querySelector('#words .wbot')`), 'taken: the page shows the working dots');
     await fake.send({ t: 'status', s: 'idle', agent: 'claude', name: 'Wren' });

@@ -99,11 +99,12 @@ try {
         const g = await ev(p, `(() => { const top = document.querySelector('header.top'); const vis = [...top.children].filter((e) => e.getClientRects().length && getComputedStyle(e).display !== 'none');
           const r = (id) => document.getElementById(id).getBoundingClientRect();
           return { last: vis.at(-1).id, beforeLast: vis.at(-2).id, s: r('srchBtn').toJSON(), g: r('setBtn').toJSON(), si: document.querySelector('#srchBtn svg').getBoundingClientRect().width, gi: document.querySelector('#setBtn svg').getBoundingClientRect().width,
-            sw: getComputedStyle(document.querySelector('#srchBtn svg path')).strokeWidth, gw: getComputedStyle(document.querySelector('#setBtn svg path')).strokeWidth }; })()`);
+            tfit: document.getElementById('srchBtn').classList.contains('tfit') ? Math.round(parseFloat(getComputedStyle(document.getElementById('srchBtn'), '::after').width)) : null, sw: getComputedStyle(document.querySelector('#srchBtn svg path')).strokeWidth, gw: getComputedStyle(document.querySelector('#setBtn svg path')).strokeWidth }; })()`);
         assert.equal(g.last, 'setBtn', 'the gear is rightmost'); assert.equal(g.beforeLast, 'srchBtn', '🔍 is just left of it');
         assert.ok(g.s.right <= g.g.left + 1, 'search left of the gear ' + JSON.stringify([w, g.s, g.g]));
-        assert.deepEqual([Math.round(g.s.width), Math.round(g.s.height)], [Math.round(g.g.width), Math.round(g.g.height)]);
-        assert.ok(g.s.width >= 44 && g.s.height >= 44);
+        // P340 #41 (topfit.js): on a narrow header 搜索's box narrows (class tfit) and a centred 44 px ::after keeps the target
+        assert.equal(Math.round(g.s.height), Math.round(g.g.height));
+        assert.ok((g.s.width >= 44 || g.tfit === 44) && g.s.height >= 44, 'search target ' + JSON.stringify([w, g.s.width, g.tfit]));
         assert.equal(Math.round(g.si), Math.round(g.gi)); assert.equal(g.sw, g.gw);
         noProblems(p);
       } finally { await p.dispose(); }

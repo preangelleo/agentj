@@ -62,6 +62,11 @@
       "en": "Header and status"
     },
     {
+      "id": "keys",
+      "zh": "快捷键表",
+      "en": "Shortcut list"
+    },
+    {
       "id": "compose",
       "zh": "输入框与附件",
       "en": "Message box and attachments"
@@ -1129,7 +1134,10 @@
           "impl": "table"
         },
         {
-          "combo": "Mod+K"
+          "combo": "Mod+K",
+          "yields": [
+            "keys"
+          ]
         }
       ],
       "zh": "搜索聊天记录；设置页内搜索设置项（输入框里的 Ctrl+K 仍是删到行尾），再按一次关闭",
@@ -1788,29 +1796,6 @@
       "nokey": "Esc 取消锁定的录音（见 compose.talk_lock）"
     },
     {
-      "id": "compose.rec_dim",
-      "since": "0.20.2",
-      "impl": "code",
-      "scope": "chat",
-      "target": {
-        "selector": "#pttDim",
-        "zh": "录音卡「调暗屏幕」",
-        "en": "Recording card: dim"
-      },
-      "gestures": [
-        {
-          "type": "tap",
-          "pointer": "any"
-        }
-      ],
-      "keys": [],
-      "zh": "录音时把屏幕调暗（再点恢复；这台手机记住选择）",
-      "en": "Dim the screen while recording (tap again to restore; this phone remembers)",
-      "gesture_zh": "点录音卡上的调暗图标",
-      "gesture_en": "Tap the dim icon on the recording card",
-      "nokey": "只在锁定录音时出现，任意键已用于结束录音"
-    },
-    {
       "id": "compose.quote_chip",
       "since": "0.20.2",
       "impl": "code",
@@ -1832,6 +1817,29 @@
       "gesture_zh": "点引用的时间 / 文字 / ✕",
       "gesture_en": "Tap the quote’s time / words / ✕",
       "nokey": "Several small targets in one strip; Esc clears them all."
+    },
+    {
+      "id": "compose.rec_send",
+      "since": "0.22.2",
+      "impl": "code",
+      "scope": "chat",
+      "target": {
+        "selector": "#pttSend",
+        "zh": "录音卡「说完直接发送」",
+        "en": "Recording card: stop and send"
+      },
+      "gestures": [
+        {
+          "type": "tap",
+          "pointer": "any"
+        }
+      ],
+      "keys": [],
+      "zh": "锁定录音时一步结束并直接发送：短的转成文字发出，长的作为语音附件发出，不用再点发送",
+      "en": "End a locked recording and send it in one step: a short one goes as text, a long one as a voice attachment — no second tap on send",
+      "gesture_zh": "点录音卡上的发送图标",
+      "gesture_en": "Tap the send icon on the recording card",
+      "nokey": "锁定录音时任意键是结束（见 compose.talk_lock）；直接发送只在录音卡上点"
     },
     {
       "id": "read.close",
@@ -2332,8 +2340,8 @@
       "scope": "any",
       "target": {
         "selector": "#setBtn",
-        "zh": "截取当前页面并放入附件",
-        "en": "Capture this page as an attachment"
+        "zh": "截取当前页面，放入附件并复制到剪贴板",
+        "en": "Capture this page as an attachment and copy it to the clipboard"
       },
       "gestures": [
         {
@@ -2346,8 +2354,8 @@
           "combo": "Alt+Shift+C"
         }
       ],
-      "zh": "截取当前页面并放入附件",
-      "en": "Capture this page as an attachment",
+      "zh": "截取当前页面，放入附件并复制到剪贴板",
+      "en": "Capture this page as an attachment and copy it to the clipboard",
       "gesture_zh": "长按齿轮；说明见右键或快捷键页",
       "gesture_en": "Hold the gear; help via right-click or Keyboard shortcuts"
     },
@@ -2423,6 +2431,62 @@
       "en": "Open Setup",
       "gesture_zh": "",
       "gesture_en": ""
+    },
+    {
+      "id": "keys.search",
+      "since": "0.22.2",
+      "impl": "code",
+      "scope": "keys",
+      "target": {
+        "selector": "#keysFindBtn",
+        "zh": "快捷键表右上角的放大镜",
+        "en": "The magnifier at the top right of the shortcut list"
+      },
+      "gestures": [
+        {
+          "type": "tap",
+          "pointer": "any"
+        }
+      ],
+      "keys": [
+        {
+          "combo": "/"
+        },
+        {
+          "combo": "Mod+K"
+        }
+      ],
+      "zh": "在快捷键表里搜索：输入关键词，按说明、按键或手势筛选，中英文都行",
+      "en": "Search the shortcut list: type a word to filter by action, key or gesture, in Chinese or English",
+      "gesture_zh": "点快捷键表右上角的放大镜",
+      "gesture_en": "Tap the magnifier at the top right of the list"
+    },
+    {
+      "id": "keys.search_close",
+      "since": "0.22.2",
+      "impl": "code",
+      "scope": "keys",
+      "target": {
+        "selector": "#keysFind",
+        "zh": "快捷键表的搜索框",
+        "en": "The shortcut list search box"
+      },
+      "gestures": [
+        {
+          "type": "tap",
+          "pointer": "any",
+          "on": "#keysFindBtn"
+        }
+      ],
+      "keys": [
+        {
+          "combo": "Escape"
+        }
+      ],
+      "zh": "清空并收起搜索框，再按一次 Esc 关闭快捷键表",
+      "en": "Clear and close the search box; Esc again closes the shortcut list",
+      "gesture_zh": "再点一次放大镜",
+      "gesture_en": "Tap the magnifier again"
     },
     {
       "id": "read.prev",

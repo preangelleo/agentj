@@ -274,7 +274,7 @@ class KimiEnv(unittest.TestCase):
 
     def test_key_variables_only_without_a_kimi_login(self):
         src = {"KIMI_API_KEY": "sk-test-a"}
-        with mock.patch("agentj.agent_kimi.fresh_keys", lambda base: {k: base[k] for k in base if k.endswith("_API_KEY")}):
+        with mock.patch("agentj.agent_kimi.fresh_keys", lambda base, names=(): {k: base[k] for k in base if k.endswith("_API_KEY")}):
             out = agent_kimi.key_environment(self.env, "global", None, source=src)
             self.assertEqual(out["KIMI_MODEL_BASE_URL"], "https://api.kimi.ai/coding/v1")
             self.assertEqual(out["KIMI_MODEL_NAME"], "kimi-for-coding")

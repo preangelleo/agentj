@@ -48,7 +48,7 @@ shasum -a 256 setup-agents.sh
 ```
 
 
-SHA256 sh: `87b4fdf068beaead10fceca82e71acff6373282c17613d41866727c061bcc7c7`
+SHA256 sh: `4868818cbf2d73aeddc90cd03cc4537beac5611eb689d2e32f60ae3602abce84`
 
 
 ```bash
@@ -1292,17 +1292,21 @@ python3 ~/.config/agentsrelay/agentsrelay-setup.py --restore
 
 [AgentsRelay official onboarding](https://agentsrelay.net/onboard/)
 
-## Where Claude Code and Codex are not offered: Kimi {#kimi}
+## Where Claude Code and Codex are not offered: Ark or Kimi {#kimi}
 
-Anthropic and OpenAI do not serve Hong Kong, Macau, mainland China and some other places. There, Agent J's first recommendation is a Kimi membership, Plus or higher, used through OpenCode. The Go plan has no coding quota and does not work. After installing Agent J, your Agent checks what really works from your computer:
+Anthropic and OpenAI do not serve Hong Kong, Macau, mainland China and some other places. There, pick like this:
+
+- **Mainland China, starting from zero:** a [Volcano Ark Coding Plan](/docs/setup-agents/#ark). Buy Lite first: it has the same models and tools as Pro, and Pro only gives 5x the quota.
+- **Hong Kong or overseas:** a Kimi membership, Plus or higher, used through OpenCode or Kimi Code. Outside the mainland it is billed in USD. The Go plan has no coding quota and does not work.
+- **Already paying for one of them** (Ark, Kimi or an [Alibaba Cloud Bailian Token Plan](/docs/setup-agents/#bailian)): keep it.
+
+After installing Agent J, your Agent checks what really works from your computer:
 
 ```bash
 agentj agent route
 ```
 
-It asks the Claude, OpenAI and Kimi servers once each, without any key. Your time zone only breaks a tie and is never sent anywhere. When Claude Code and Codex are not available, it shows Agent J's official invite link with this sentence right next to it: "This is Agent J's official invite link: you and we each get one prize draw". The draw counts when you subscribe within 24 hours. Then create a key in the Kimi Code console and paste it only into the key card on your phone; your Agent switches OpenCode to `kimi-code-plan-cn/k3`. It also lists alternatives: Qwen (Alibaba Cloud Bailian, mainland China site), Zhipu GLM / DeepSeek, OpenRouter and Kimi's pay-as-you-go platform. If you already have an account with one of them, keep using it. A membership bought on the overseas site kimi.ai uses different keys: `kimi-code-plan-global/k3`. Side by side with Kimi it recommends an [Alibaba Cloud Bailian Token Plan](/docs/setup-agents/#bailian) — you choose.
-
-Already paying for a Volcano Ark (火山方舟) Coding Plan? Keep it and use it instead: see [Volcano Ark Coding Plan](/docs/setup-agents/#ark).
+It asks the Claude, OpenAI and Kimi servers once each, without any key. Your time zone only breaks a tie and is never sent anywhere. When Claude Code and Codex are not available, it prints the rule above with the steps for each plan. For Kimi it shows Agent J's official invite link with this sentence right next to it: "This is Agent J's official invite link: you and we each get one prize draw". The draw counts when you subscribe within 24 hours. Then create a key in the Kimi Code console and paste it only into the key card on your phone; your Agent switches OpenCode to `kimi-code-plan-cn/k3`. Your own scheduled tasks may use this membership key too (the provider may rate-limit long, continuous background work; switch those to a Kimi pay-as-you-go key if it does); a support bot never gets it. It also lists alternatives: Qwen (Alibaba Cloud Bailian, mainland China site), Zhipu GLM / DeepSeek, OpenRouter and Kimi's pay-as-you-go platform. If you already have an account with one of them, keep using it. A kimi.com membership key works on both api.kimi.com and api.kimi.ai; for a membership bought on kimi.ai, your Agent uses `kimi-code-plan-global/k3`.
 
 ## System requirements {#requirements}
 
@@ -1337,7 +1341,7 @@ Please download https://agentj.app/install.md with curl, read the whole file wit
 
 [Keep your computer awake](/docs/keep-awake/): commands, system settings and a request to send your Agent.
 
-## Kimi Code CLI {#kimi}
+## Kimi Code CLI {#kimi-cli}
 
 Kimi Code CLI (`kimi`, Moonshot AI, MIT) is an AI coding tool Agent J can use directly. The official script needs no Node.js:
 
@@ -1345,7 +1349,7 @@ Kimi Code CLI (`kimi`, Moonshot AI, MIT) is an AI coding tool Agent J can use di
 
 On Windows (PowerShell): `irm https://code.kimi.com/kimi-code/install.ps1 | iex` (install Git for Windows first). With npm instead: `npm install -g @moonshot-ai/kimi-code` (in mainland China add `--registry=https://registry.npmmirror.com`). Check with `kimi --version` — Agent J needs 2.2.0 or newer.
 
-Sign in in your own terminal: `kimi login --region mainland-cn` for kimi.com, `kimi login --region global` for kimi.ai (separate accounts). It prints a link and a one-time code; confirm on any device signed in to Kimi. Then `agentj agent switch kimi`.
+Sign in in your own terminal: `kimi login --region mainland-cn` for kimi.com, `kimi login --region global` for a membership bought on kimi.ai. It prints a link and a one-time code; confirm on any device signed in to Kimi. Then `agentj agent switch kimi`.
 
 Isolation: Kimi has no sandbox of its own and its hooks let calls through when they fail, so Agent J runs it inside the same isolation as the other tools, keeps it in manual-approval mode and sends every permission request to your phone.
 
@@ -1353,11 +1357,11 @@ Isolation: Kimi has no sandbox of its own and its hooks let calls through when t
 
 A monthly plan for coding tools instead of pay-as-you-go API prices. Token Plan, personal, has four tiers — Lite, Essential, Standard and Pro — metered in Credits (11,500 / 25,500 / 45,000 / 180,000 a month; Standard and up run 3–4 agents at once). Your Agent shows the monthly prices with `agentj agent route`; Alibaba Cloud's subscription page is authoritative. Qwen 3.8 Max and Qwen 3.8 Flash read images, so screenshots and browser work are fine; Agent J picks `qwen3.8-max` and offers `qwen3.8-flash` to save Credits.
 
-Read its terms before you buy. You may only use it yourself, interactively, inside a coding tool. Automation scripts, app back ends and non-interactive batch calls are not allowed with this key; Alibaba Cloud may suspend the plan or the key. While you are subscribed, what you send to the model and what it writes are used to improve Alibaba Cloud's models, so be careful with private data. The plan is for you only; do not share it. For unattended work such as scheduled tasks or a support bot, use a pay-as-you-go key: Agent J never gives the Token Plan key to tasks or bots.
+Read its terms before you buy; the Alibaba Cloud subscription page is authoritative. Your own scheduled tasks and background Agents may use the Token Plan key. The provider may rate-limit long, continuous background work; if that happens, switch those tasks to a pay-as-you-go key. While you are subscribed, what you send to the model and what it writes are used to improve Alibaba Cloud's models, so be careful with private data. The plan is for you only; do not share it. A support bot serves other people, so Agent J never gives it the Token Plan key: add a pay-as-you-go key for the bot (its settings page tells you where).
 
 Subscribe at https://bailian.console.aliyun.com/cn-beijing/subscription/overview and create the plan's own API key in the console. Then ask your Agent to set it up. It runs `agentj provider bailian`, which adds Bailian to OpenCode's settings and leaves everything you already have there untouched. A key card then opens on your phone: paste the key there and nowhere else. Agent J checks it against Bailian's read-only model list, which costs no Credits. Finally your Agent switches OpenCode to `bailian-token-plan-personal/qwen3.8-max`.
 
-The Coding Plan (keys starting with `sk-sp-`) also works (`agentj provider bailian --plan coding-plan`), but it has no Max model and its key cannot be checked in advance.
+The Coding Plan (keys starting with `sk-sp-`) also works (`agentj provider bailian --plan coding-plan`), but it has no Max model and its key cannot be checked in advance. Your own scheduled tasks may use the Coding Plan key (the provider may rate-limit long, continuous background work; switch those to a pay-as-you-go key if it does); a support bot never gets it and needs a pay-as-you-go key.
 
 ## Qwen Code {#qwen}
 
@@ -1371,12 +1375,26 @@ Isolation and approvals: Agent J runs Qwen Code inside the same isolation as the
 
 ## Volcano Ark Coding Plan (mainland China) {#ark}
 
-Who it is for: you **already have** a Volcano Engine Ark (火山方舟) Coding Plan (Lite or Pro), or you want ByteDance Doubao, Kimi, Zhipu GLM, DeepSeek and MiniMax models in one subscription. For everyone else, Kimi and Bailian above stay the first recommendations. Prices only from Ark's console.
+Who it is for: our first recommendation in mainland China if you have no plan yet, and anyone who already has one. One subscription covers ByteDance Doubao, Kimi, Zhipu GLM, DeepSeek and MiniMax models. Buy Lite first: Lite and Pro have the same models and tools, and Pro only gives 5x the quota, so upgrade only if Lite runs short. `agentj agent route` shows the list prices; the order page is authoritative.
 
-Which models read images (measured on 2026-10-15): `doubao-seed-2.1-pro` (the default), `kimi-k3` (Pro plan only), `kimi-k2.7-code`, `glm-5-3-flash`, `minimax-m3` and `deepseek-v4-1-flash` can look at screenshots; `glm-5.3`, `deepseek-v4-pro` and `deepseek-v4-flash` are text only. Agent J writes this into OpenCode's settings for you, together with higher output limits (GLM-5.3's thinking can use up OpenCode's 32k default). The Coding Plan has no image-generation model.
+Which models read images (measured on 2026-10-15): `doubao-seed-2.1-pro` (the default), `kimi-k3` (uses quota fast; Ark suggests it for Pro, but Lite can pick it too), `kimi-k2.7-code`, `glm-5-3-flash`, `minimax-m3` and `deepseek-v4-1-flash` can look at screenshots; `glm-5.3`, `deepseek-v4-pro` and `deepseek-v4-flash` are text only. Agent J writes this into OpenCode's settings for you, together with higher output limits (GLM-5.3's thinking can use up OpenCode's 32k default). The Coding Plan has no image-generation model.
 
-It is a plan for interactive use inside coding tools; Ark's console terms are authoritative. For unattended work such as scheduled tasks or a support bot, use a pay-as-you-go Ark key: Agent J never gives the Coding Plan key to tasks or bots.
+It is a monthly plan; Ark's console terms are authoritative. Your own scheduled tasks and background Agents may use the Coding Plan key. The provider may rate-limit long, continuous background work; if that happens, switch those tasks to a pay-as-you-go Ark key. A support bot serves other people, so Agent J never gives it the Coding Plan key: add a pay-as-you-go key for the bot (the bot's settings say where).
 
-Create an API key in the Ark console (https://console.volcengine.com/ark/). Then ask your Agent to set it up. For OpenCode it runs `agentj provider ark`, which adds all the plan's models to OpenCode's settings and leaves everything you already have there untouched. A key card then opens on your phone: paste the key there and nowhere else. Ark has no read-only check, so the first reply is the check. Finally your Agent switches OpenCode to `ark-coding-plan/doubao-seed-2.1-pro`.
+Sign up at https://www.volcengine.com/activity/codingplan with your phone number, verify your identity and subscribe to the Coding Plan. Then create an API key in the Ark console (https://console.volcengine.com/ark/) and ask your Agent to set it up. For OpenCode it runs `agentj provider ark`, which adds all the plan's models to OpenCode's settings and leaves everything you already have there untouched. A key card then opens on your phone: paste the key there and nowhere else. Ark has no read-only check, so the first reply is the check. Finally your Agent switches OpenCode to `ark-coding-plan/doubao-seed-2.1-pro`.
 
 Prefer Claude Code? Ask your Agent to set Ark up for Claude Code instead; it follows the three steps Agent J prints, with the same phone key card. Claude Code's Haiku, Sonnet and Opus defaults and its subagent model all point at the same Ark model, so background work never asks Ark for a Claude model name.
+
+## DeepSeek dsh {#dsh}
+
+dsh (`DeepSeek Harness`, MIT) is DeepSeek's own coding agent, still a developer preview. It is also the engine inside Lares, the agent that comes with an Olares box, so on Olares it pairs naturally with the box's own Router. Install it with npm (Node.js 22.19 or newer; about 500 MB):
+
+`npm install -g @deepseek-ai/dsh@latest`
+
+Check with `dsh --version`; Agent J needs 0.2.0-rc.2 or newer. Then choose where its model comes from:
+
+- **Your own model server** (Olares Router, LiteLLM, Ollama, llama.cpp, vLLM or any OpenAI-compatible server): ask your Agent to run `agentj agent dsh --dir <folder> --base-url https://<server>/v1 --model <model id>`. Agent J saves the address and the model in `~/.dsh/agentj-route.yml`; no key is written there. Plain `http://` works only for this computer or your home network. If the server needs a key, a key card opens on your phone (`DSH_ROUTER_API_KEY`): paste it there and nowhere else. Then just send your message again; no restart.
+- **DeepSeek's own API** (pay as you go): the same kind of phone key card, for `DEEPSEEK_API_KEY`.
+- **You already set dsh up yourself** (for example on the Models page of `dsh web`): your own settings are used.
+
+Isolation and approvals: Agent J starts dsh read-only, asking every time, so every file change or command that is not read-only becomes a phone card, for that one action only. dsh's own usage reporting is switched off. dsh cannot look at images yet, and DeepSeek says the preview may still change.

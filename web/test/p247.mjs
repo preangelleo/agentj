@@ -18,7 +18,10 @@ try {
   for(const p of [a,b]) await waitFor(p,`${badge}===2`);
   writeFileSync(out+'/'+lang+'-B-unread.png',await shoot(b,''));
   await evaluate(a,`document.getElementById('pgLatest').click()`);
-  for(const p of [a,b]) await waitFor(p,`${badge}===0`);
+  await waitFor(a,`${badge}===0`);await sleep(300);
+  // P333: B was on screen when Third / Fourth arrived — A's receipt clears the shared count, not B's own alert
+  assert.equal(await evaluate(b,badge),2,'B still says two new messages');
+  assert.equal(await evaluate(b,`document.getElementById('pgCorner').dataset.unread`),'1','B still pulses its page number');
   assert.equal(await evaluate(b,`document.getElementById('pg').textContent`),'1 / 4','remote receipt does not move B reading page');
   writeFileSync(out+'/'+lang+'-B-read.png',await shoot(b,''));
   await navigate(b,'about:blank');
@@ -39,6 +42,8 @@ try {
   await sleep(650);assert.equal(await evaluate(b,badge),0);assert.deepEqual(await evaluate(b,'window.flashes'),[]);
   fake.st.ownerReadHeadDelay=0;
   for(const p of [a,b]) await evaluate(p,`document.getElementById('pgPrev').click()`);
+  // P333: B in the background when Seventh arrives (phone in the pocket) — only the shared mark decides for it
+  await evaluate(b,`Object.defineProperty(document,'visibilityState',{get:()=>'hidden',configurable:true})`);
   await fake.addTurn({k:'agent'},'Seventh');for(const p of [a,b])await waitFor(p,`${badge}===1`);
   fake.st.ownerReadMute=true;await evaluate(a,`document.getElementById('pgLatest').click()`);await waitFor(a,`${badge}===0`);await sleep(100);
   assert.equal(await evaluate(b,badge),1,'lost receipt does not reach B yet');

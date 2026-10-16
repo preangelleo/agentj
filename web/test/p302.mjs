@@ -202,7 +202,8 @@ try{
   // ---- 9 settings (the other menu pages): spacing, Esc ----
   await click(p,'#setBtn');await waitFor(p,`!document.getElementById('settings').hidden`);await sleep(300);await snap('9-settings');await spacing('#settings','settings');
   // 追加 25' (owner 10-2x): 「Agent 与遥控器」 = the Agent J host row first, 「AI 登录救援」 second; the row carries the new logo
-  check(await cev(p,`(()=>{const s=document.getElementById('set-s-agent'),k=[...s.children].filter(e=>e.tagName!=='H3');return k[0].classList.contains('setid')&&k[1].id==='set-auth-nav';})()`),'host row first, AI rescue second '+name);
+  // P332 (Leo 10-16): the AI login entry moved into Settings → 紧急修复 (card ③, the second section); the host row stays first
+  check(await cev(p,`(()=>{const s=document.getElementById('set-s-agent'),k=[...s.children].filter(e=>e.tagName!=='H3');const n=s.nextElementSibling;return k[0].classList.contains('setid')&&n&&n.id==='set-s-rescue'&&!!document.getElementById('set-auth-nav').closest('#rs-auth');})()`),'host row first, 紧急修复 second with the AI login entry '+name);
   check(await cev(p,`/brand\\/img\\/logo-mark\\.png/.test(document.querySelector('#set-s-agent .setid img').getAttribute('src'))`),'host row = the new logo '+name);
   // 追加 23: the AI rescue page on the spacing tokens
   await click(p,'#set-auth-nav');await waitFor(p,`!document.getElementById('set-auth').hidden`);await sleep(300);await snap('9b-auth');await spacing('#set-auth','auth rescue');

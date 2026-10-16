@@ -41,6 +41,8 @@ ACTIONS += ("dev_name", "dev_unbind", "dev_add", "dev_confirm")   # P171 (§24):
 ACTIONS += ("agent_name",)          # P181 (§22.2): long-press the Agent's name in the reply card header → rename (names.py)
 ACTIONS += ("cards_get",)           # P203 (§29.1): the signed read of every open card (a snapshot, changes nothing)
 ACTIONS += ("mail_allow",)          # P207 (§25): the address book adds an address to the e-mail channel's allowlist (P170)
+ACTIONS += ("reset", "rescue_do")    # P332 (§33): 紧急修复 — ① reset the connection · a whitelisted repair action (reset.py)
+ACTIONS += ("approval_set",)        # P336 (§8): the approval level / goal-without-card switch (approval_level.py)
 TS_SKEW_MS = 120_000
 NONCE_KEEP_S = 600
 _NONCE = re.compile(r"[0-9a-f]{32}")
@@ -67,6 +69,9 @@ def object_text(action: str, obj: dict) -> str:
     agent_name : the new Agent name as typed (P181, §22.2)
     cards_get : "cards" (P203, §29.1)
     mail_allow : address as sent \n role (owner | guest)  (P207, §25)
+    reset    : the `what` ("connection")                  (P332, §33)
+    rescue_do : the action name (help | report | reconnect | restart | linger | rollback | new_session)
+    approval_set : key (approval.level | approval.goal_nocard) \n value (safe | standard | full | true | false)  (P336)
     (a missing / null text field is "", as wire.js `?? ''`)
     """
     if action == "bots_write":
@@ -87,6 +92,13 @@ def object_text(action: str, obj: dict) -> str:
         return str(obj["name"])
     if action == "mail_allow":       # P207: the address exactly as sent \n role
         return f"{obj['addr']}\n{obj['role']}"
+    if action == "reset":            # P332: ① — the object is constant {"what": "connection"}
+        return str(obj["what"])
+    if action == "rescue_do":        # P332: the whitelisted action's name (reset.RESCUE_ACTIONS); no argument travels
+        return str(obj["action"])
+    if action == "approval_set":     # P336: key \n value (a boolean as true / false)
+        v = obj["value"]
+        return f"{obj['key']}\n{('true' if v else 'false') if isinstance(v, bool) else v}"
     if action == "dev_add":
         return f"rv\n{obj['rv']}" if obj.get("rv") else "new"
     if action == "dev_confirm":      # the new device's id \n the 6-digit code its screen shows

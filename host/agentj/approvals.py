@@ -79,7 +79,7 @@ def record(st, *, rid: str, agent: str, tool: str, input_sha256: str, shown_sha2
            device: str | None = None, sign_pub: bytes | None = None, sig: bytes | None = None, cats: list | None = None,
            scope: str | None = None, grant: str | None = None, auto: str = "batch", control: dict | None = None,
            scope_sha256: str | None = None) -> dict:
-    """Append one decision to approvals.log (0600). reason: device | batch | goal | goal_auto (P158) | brief (0.18: inside a confirmed brief) | host (0.18: `agentj capability`, host-gated) | owner_direct / allowlist (P296: `agentj mail send` to the owner's own addresses / only allowlisted ones) | timeout | no_device | serve_stop | agent_gone |
+    """Append one decision to approvals.log (0600). reason: device | batch | goal | goal_auto (P158) | goal_grant_add (P339) | level_full / goal_nocard / goal_preauth / parked / offline (P336) | brief (0.18: inside a confirmed brief) | host (0.18: `agentj capability`, host-gated) | owner_direct / allowlist (P296: `agentj mail send` to the owner's own addresses / only allowlisted ones) | timeout | no_device | serve_stop | agent_gone |
     too_many | estop | policy (beyond the harness's own sandbox, never asked: ADR-A73). cats = danger categories ([] = low risk); scope = the signed batch scope (allow_batch); grant = for an
     automatic approval, the id of the signed allow_batch it relied on. control (P242) = a signed phone control (controls.py,
     e.g. dev_confirm / dev_unbind): {"n", "sig_ts", "object_sha256"} — the line is then kind "control" and `sig` is the
@@ -309,10 +309,39 @@ def check_record(st, r: dict, index: dict | None = None) -> str:
             return "bad"
         cur = st.sign_key(str(r.get("device")))
         return "ok_removed" if cur is None else ("ok" if cur == sk else "bad")
-    if r.get("reason") in ("goal", "goal_auto"):
-        # P158: allowed under a goal — the signed `agentj goal` allow it names must verify
+    if r.get("reason") in ("goal", "goal_auto", "goal_nocard"):
+        # P158: allowed under a goal — the signed `agentj goal` allow it names must verify (P336: or its goal_preauth line)
         g = (index or {}).get(str(r.get("grant")))
-        if not g or g.get("decision") != "allow" or g.get("tool") != "agentj goal" or g.get("reason") != "device":
+        if not g or g.get("decision") != "allow" or g.get("tool") != "agentj goal" or g.get("reason") not in ("device", "goal_preauth"):
+            return "bad"
+        return "auto" if check_record(st, g, index) in ("ok", "ok_removed", "auto") else "bad"
+    if r.get("reason") == "goal_grant_add":
+        # P339 「批准，并加进目标授权」: the owner's signed allow it names carries the offer line (allow_add_line) it added
+        g = (index or {}).get(str(r.get("grant")))
+        if not g or g.get("decision") != "allow" or g.get("reason") != "device" or not g.get("scope_sha256") \
+                or g.get("device") != r.get("device") or r.get("scope_sha256") != g.get("scope_sha256"):
+            return "bad"                      # review #7: the offer text it added is the one the owner signed
+        return "auto" if check_record(st, g) in ("ok", "ok_removed") else "bad"
+    if r.get("reason") == "goal_preauth":
+        # P336: a goal started under the owner's signed 「设了目标就不弹窗」 — that approval_set control line must verify
+        c = (index or {}).get(str(r.get("grant")))
+        want = hashlib.sha256(b"approval.goal_nocard\ntrue").hexdigest()
+        if not c or c.get("kind") != "control" or c.get("tool") != "approval_set" or c.get("object_sha256") != want \
+                or c.get("device") != r.get("device"):
+            return "bad"
+        return "auto" if check_record(st, c) in ("ok", "ok_removed") else "bad"
+    if r.get("reason") == "level_full" and r.get("grant"):
+        # P336: allowed under the full level — the signed switch to `full` it names must verify
+        c = (index or {}).get(str(r.get("grant")))
+        want = hashlib.sha256(b"approval.level\nfull").hexdigest()
+        if not c or c.get("kind") != "control" or c.get("tool") != "approval_set" or c.get("object_sha256") != want:
+            return "bad"
+        return "auto" if check_record(st, c) in ("ok", "ok_removed") else "bad"
+    if r.get("reason") == "parked":
+        # P336 (#36): the identical retry of a step the owner allowed on its parked card — that allow must verify
+        g = (index or {}).get(str(r.get("grant")))
+        if not g or g.get("decision") not in ("allow", "allow_batch") or g.get("reason") != "device" \
+                or g.get("tool") != r.get("tool") or g.get("input_sha256") != r.get("input_sha256"):
             return "bad"
         return "auto" if check_record(st, g) in ("ok", "ok_removed") else "bad"
     if r.get("reason") == "batch":

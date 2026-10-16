@@ -31,7 +31,7 @@ from . import preferences
 KEY = "agent.session_mode"
 PIN = "agent.shared_session_id"
 MARK = "session-mode-choice.json"
-LABEL = {"claude": "Claude Code", "codex": "Codex", "opencode": "OpenCode", "kimi": "Kimi Code", "qwen": "Qwen Code"}
+LABEL = {"claude": "Claude Code", "codex": "Codex", "opencode": "OpenCode", "kimi": "Kimi Code", "qwen": "Qwen Code", "dsh": "DeepSeek Harness"}
 
 
 # ------------------------------------------------------------------ the owner's recorded choice
@@ -169,6 +169,8 @@ def set_mode(st, mode: str, via: str = "agent") -> None:
 
 
 def set_pin(st, sid: str) -> None:
+    from . import shared_pin
+    shared_pin.forget_owner(st)         # P330: the owner's pick in the terminal: absorbed at the next serve start
     fd = _lock(st)
     try:
         raw, _ = preferences.read()
@@ -272,7 +274,8 @@ def pick(st, directory: str, lang: str = "zh", ask=None, out=None) -> str | None
         rows = candidates(directory)
     except OSError:
         return None
-    pinned = preferences.get(preferences.effective(st), PIN, "") or ""
+    from . import shared_pin           # P330: Claude's own pin (a Codex / OpenCode id in the config is not Claude's)
+    pinned = shared_pin.resolve(st, "claude", preferences.get(preferences.effective(st), PIN, "") or "", directory) or ""
     en = lang == "en"
     if pinned and any(r["id"] == pinned for r in rows):
         print(("Shared session: pinned to " if en else "共享会话：已指定 ") + pinned, file=out, flush=True)

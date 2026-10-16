@@ -169,11 +169,11 @@ class Units(unittest.TestCase):
         self.tmp.cleanup()
 
     def test_sudo_request_shape(self):
-        c = elevate.norm_sudo({"argv": ["apt-get", "install", "-y", "a b"], "why": "x", "cwd": str(self.d)})
+        c = elevate.norm_sudo({"argv": ["apt-get", "install", "-y", "a b"], "why": "装视频转码要用的包", "cwd": str(self.d)})
         self.assertEqual(c["cmd"], "apt-get install -y 'a b'")
-        for bad in ({"argv": [], "why": "x"}, {"argv": ["ls"], "why": ""}, {"argv": ["ls", ""], "why": "x"},
-                    {"argv": ["ls"], "why": "x\x07"}, {"argv": ["a" * 2100], "why": "x"},
-                    {"argv": ["ls"], "why": "x", "timeout": 99999}, {"argv": "ls", "why": "x"}):
+        for bad in ({"argv": [], "why": "装视频转码要用的包"}, {"argv": ["ls"], "why": ""}, {"argv": ["ls", ""], "why": "装视频转码要用的包"},
+                    {"argv": ["ls"], "why": "装视频转码要用的包\x07"}, {"argv": ["a" * 2100], "why": "装视频转码要用的包"},
+                    {"argv": ["ls"], "why": "装视频转码要用的包", "timeout": 99999}, {"argv": "ls", "why": "装视频转码要用的包"}):
             with self.assertRaises(elevate.Refused):
                 elevate.norm_sudo(bad)
 
@@ -551,7 +551,7 @@ class Helper(unittest.TestCase):
         hashes = {n: eh.sha(v) for n, v in fs.items()}
         for mac in (False, True):
             sc = eh.install_script("/x/agentperm/helper-abc", hashes, mac=mac)
-            c = elevate.norm_sudo({"argv": ["sh", "-c", sc], "why": "w"})       # fits on a card
+            c = elevate.norm_sudo({"argv": ["sh", "-c", sc], "why": "装视频转码要用的包"})       # fits on a card
             self.assertLessEqual(len(c["cmd"]), 2000)
             # root-owned snapshot first, then the hash check, then install; sudoers only after visudo
             order = [sc.index(x) for x in ("install -m 0600 -o root", "-c --quiet -", eh.HELPER, "visudo -cqf sudoers", eh.SUDOERS)]
@@ -623,7 +623,7 @@ class Helper(unittest.TestCase):
             await host.elevate.start()
             try:
                 t = asyncio.create_task(asyncio.to_thread(elevate.client_request, self.st,
-                                                          {"t": "sudo", "argv": ["/usr/bin/printf", "helper-ok\n"], "why": "w"}, 30))
+                                                          {"t": "sudo", "argv": ["/usr/bin/printf", "helper-ok\n"], "why": "装视频转码要用的包"}, 30))
                 for _ in range(500):
                     cards = [o for _, o in self.sent if o["t"] == "elev"]
                     if cards:

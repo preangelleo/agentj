@@ -640,6 +640,10 @@ class SharedClaudeAgent(Agent):
             origin = self.clear_pin or self.host.st.agent_session(self.kind + ".clear_from")
             self.host.st.set_agent_session(self.kind + ".clear_from", origin if isinstance(origin, str) else self.session["sessionId"])
             self.session = next(d for d in live if d["pid"] == self.session["pid"])
+            if self.cfg.get("shared_session_id"):   # P330: a pinned session moved by the desktop's /clear: the pin follows
+                from . import shared_pin
+                with contextlib.suppress(OSError):
+                    shared_pin.write(self.host.st, self.kind, sid)
             self.cfg["shared_session_id"] = sid
         if sid != self.session["sessionId"]:
             # Foreign sessions in the same project retain native permissions.
@@ -1288,13 +1292,12 @@ class SharedClaudeAgent(Agent):
         self.healed = (old or "", sid, how)
         self.heal_choices = []
         self.host.st.log("shared_reconnect", agent="claude", old=(old or "")[:8], new=sid[:8], how=how)
-        # The owner's pin follows (status, doctor, the next serve start); the config write is the same path as
-        # `agentj config set`. A test host / older host without it keeps the in-memory pin only.
-        setp = getattr(self.host, "set_pref", None)
-        if old and setp:
-            with contextlib.suppress(RuntimeError):
-                task = asyncio.get_running_loop().create_task(setp("agent.shared_session_id", sid))
-                self._pin_write = task          # keep a reference until it is done
+        # P330: the pin follows in Claude's own `claude.pin` (status, doctor, the next serve start) — never the global
+        # agent.shared_session_id, which is the owner's choice and must not leak a Claude id to Codex / OpenCode.
+        if old:
+            from . import shared_pin
+            with contextlib.suppress(OSError):
+                shared_pin.write(self.host.st, self.kind, sid)
 
     def _heal(self, dead):
         """The pinned session `dead` is not open. Pick its successor: the one live owner session in this folder; else the
@@ -2166,7 +2169,7 @@ class SharedClaudeAgent(Agent):
                     self.host.queue_dropped(item)
         # Esc must never answer a native approval dialog.
         if self.state.status == "waiting":
-            self.host.agent_notice(pick(getattr(self.host, "lang", "zh"), "请先处理审批卡片。", "Resolve the approval card first."))
+            self.cannot_halt(pick(getattr(self.host, "lang", "zh"), "请先处理审批卡片。", "Resolve the approval card first."))
             return False
         if not busy or not self.session:
             return busy
@@ -2179,8 +2182,11 @@ class SharedClaudeAgent(Agent):
         result = await asyncio.to_thread(interrupt, self.session)
         if result == "sent":
             self.done.set()
-        else:
-            self.host.agent_notice(pick(getattr(self.host, "lang", "zh"), "此电脑终端未提供安全中断通道。", "Desktop interrupt unavailable."))
+        elif result != "idle":      # P328: the phone's × / /stop reached a turn the phone cannot stop — say what to do instead
+            self.cannot_halt(pick(getattr(self.host, "lang", "zh"),
+                                  "电脑上的 Claude Code 会话不能从手机中断（它的终端没有安全的中断通道），请在电脑上按 Esc。",
+                                  "The Claude Code session on the computer can't be stopped from the phone (its terminal has "
+                                  "no safe interrupt route) — press Esc on the computer."))
         return result == "sent"
 
     async def stop(self):
@@ -2635,13 +2641,38 @@ class SharedOpenCodeAgent(OpenCodeAgent):
                 item = self.q.get_nowait()
                 if getattr(self.host, "queue_dropped", None):
                     self.host.queue_dropped(item)
+        owner = (clear_queue or self.halt_quiet) and owner_opencode_turn(self)   # a person asked, not a task making room
         await self.interrupt_request(self.proc)
         if self.turn_done:
             self.turn_done.set()
+        if owner:
+            self.cannot_halt(opencode_cannot_stop(self))
         return busy
 
 
+def owner_opencode_turn(agent) -> bool:
+    """P328: the owner's own turn (typed on the desktop) runs on the attached OpenCode session and no phone turn does —
+    the phone's abort is only ever sent for its own turn (interrupt_request), so it cannot stop this one."""
+    td = getattr(agent, "turn_done", None)
+    return bool(getattr(agent, "desktop_turn", False)) and not (td is not None and not td.is_set())
+
+
+def opencode_cannot_stop(agent) -> str:
+    return pick(getattr(agent.host, "lang", "zh"),
+                "电脑上的 OpenCode 正在回答电脑上发的这一轮，手机停不了它，请在电脑上按 Esc。",
+                "OpenCode on the computer is answering a turn typed on the computer; the phone can't stop it — "
+                "press Esc on the computer.")
+
+
 def make_shared(host, cfg):
+    if "shared_pin_owner" in cfg and cfg.get("kind") in ("claude", "codex", "opencode"):
+        # P330: absorb a new owner choice (or a pre-P330 config) into the per-harness pins once, at serve start
+        from . import shared_pin
+        with contextlib.suppress(OSError):
+            owner, seen = cfg["shared_pin_owner"] or "", host.st.agent_session(shared_pin.OWNER) or ""
+            pin = shared_pin.sync(host.st, cfg["kind"], owner, cfg.get("dir"))
+            if owner != seen:       # something was absorbed; else agent_config already resolved the same pin
+                cfg["shared_session_id"] = pin
     if cfg.get("high_risk_warnings", False) and cfg["kind"] not in ("claude", "codex", "opencode"):
         return UnavailableSharedAgent(host, cfg)
     if cfg["kind"] == "claude":

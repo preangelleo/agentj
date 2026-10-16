@@ -81,7 +81,7 @@ class DetectWithModel(_Env):
     def test_plain_probe_is_unchanged(self):
         code, out = self.run_cli("agent", "detect", "--probe", "--json")
         self.assertEqual(code, 0, out)
-        self.assertEqual(json.loads(out)["usable"], ["claude", "codex", "opencode", "kimi", "qwen"])   # P305 / P310: kimi, qwen = fakeacp.py
+        self.assertEqual(json.loads(out)["usable"], ["claude", "codex", "opencode", "kimi", "qwen", "dsh"])   # P305 / P310: kimi, qwen = fakeacp.py
         self.assertFalse(any("claude-opus-5-5" in a for a in self.argv("claude")[0]))
 
 

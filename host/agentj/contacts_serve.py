@@ -26,7 +26,8 @@ Agent (elevate.sock, visible inside the fence, `agentj contacts` / `agentj mail 
 - `{t: contacts, op: card, id?, contact, why}` → a contact card on the paired phones (new, pre-filled with what the owner
   said; or completing an existing contact). The owner edits and saves (≥ one e-mail or phone) or cancels. → saved | merged |
   cancelled | timeout | gone. Nothing is saved without the owner's tap;
-- `{t: mail_send, to, to_owner?, subject, body, files}` → `to_owner: true` adds the owner's own addresses (slot 0 + the
+- `{t: mail_send, to, cc?, bcc?, format?, to_owner?, subject, body, files}` (P355: cc / bcc like to, every recipient counts
+  below; format markdown (default, mail_template) | html (mail_html) | text) → `to_owner: true` adds the owner's own addresses (slot 0 + the
   「我本人」 allowlist rows; none → `no_owner_address`) to `to` (union, deduped, ≤ 10 in all); names are looked up in the address book (no unique match → `not_found`, the
   Agent says so and offers a card); files must be the Agent's own (media.check: inside its folder, no secrets); then an
   approval card shows recipients, subject and attachments — mail goes out only when the owner allows. P296: when every
@@ -54,6 +55,9 @@ TTL = 600
 MAX_TO = 10
 FWD_PER_HOUR = 30                     # mails per device per hour from the forward dialog
 FILES_MAX = 20 * 1024 * 1024          # attachments of one mail (most providers stop at 20–25 MB)
+BODY_HTML_MAX = 400_000               # P355: an HTML body (a web report); elevate.MAX_FRAME is 512 KiB a line
+FMT_LINE = {"zh": {"markdown": "格式：带格式（Markdown 排版）", "html": "格式：HTML 网页原样（去掉脚本和表单）"},
+            "en": {"markdown": "Format: formatted (Markdown)", "html": "Format: the HTML page as is (scripts and forms removed)"}}
 DUP_WINDOW = 600                      # P295: the same page to the same recipients within 10 min asks first
 _NOTE = re.compile(r"[A-Z][^\n`|#>*\[\]]{8,200}[.:…!]")   # P295: one English sentence of work notes
 _CJK = re.compile(r"[\u3400-\u9fff\uf900-\ufaff]")
@@ -146,11 +150,13 @@ class ContactService:
         return new
 
     def build(self, cfg: dict, to: list[str], subject: str, body: str, files=(), kind: str = "forward",
-              html: str | None = None) -> EmailMessage:
+              html: str | None = None, cc=()) -> EmailMessage:
         from . import mail as M
         m = EmailMessage(policy=email.policy.SMTP)
         m["From"] = email.utils.formataddr((self.agent_name(), cfg["address"]))
         m["To"] = ", ".join(to)
+        if cc:                         # P355: Cc is a header; Bcc never is (only the SMTP envelope carries it)
+            m["Cc"] = ", ".join(cc)
         m["Subject"] = subject[:200] or "Agent J"
         m["Date"] = email.utils.formatdate(localtime=True)
         m["Message-ID"] = email.utils.make_msgid(domain=cfg["address"].rpartition("@")[2])
@@ -448,13 +454,18 @@ class ContactService:
         recipient is the owner's own or on the mail allowlist."""
         from . import media as media_mod
         from . import provenance, tg_media
-        to_raw = req.get("to")
-        if to_raw is None:
-            to_raw = []
-        if isinstance(to_raw, str):
-            to_raw = [to_raw]
-        if not isinstance(to_raw, list) or len(to_raw) > MAX_TO or not all(isinstance(x, str) for x in to_raw):
-            return {"ok": False, "why": "to", "detail": f"1–{MAX_TO} recipients"}
+        from . import mail_template as MT
+        lists = {}
+        for key in ("to", "cc", "bcc"):      # P355: --cc / --bcc take the same addresses or address-book names as --to
+            raw = req.get(key)
+            raw = [] if raw is None else [raw] if isinstance(raw, str) else raw
+            if not isinstance(raw, list) or len(raw) > MAX_TO or not all(isinstance(x, str) for x in raw):
+                return {"ok": False, "why": "to", "detail": f"1–{MAX_TO} recipients"}
+            lists[key] = raw
+        to_raw = lists["to"]
+        fmt = req.get("format") or "markdown"
+        if fmt not in MT.FORMATS:
+            return {"ok": False, "why": "format", "detail": "markdown | html | text"}
         if req.get("to_owner") is True:      # P205: `--to-owner` = the owner's own addresses, added to any --to (union, deduped)
             owners = await asyncio.to_thread(C.owner_emails, self.st)
             if not owners:
@@ -466,7 +477,7 @@ class ContactService:
         if not to_raw:
             return {"ok": False, "why": "to", "detail": f"1–{MAX_TO} recipients"}
         subject = C._s(req.get("subject"), 200)
-        body = str(req.get("body") or "")[:100_000]
+        body = str(req.get("body") or "")[:BODY_HTML_MAX if fmt == "html" else 100_000]
         if not subject and not body.strip():
             return {"ok": False, "why": "empty"}
         cfg, pw, why = self.mail_state()
@@ -475,12 +486,12 @@ class ContactService:
         if provenance.untrusted_turn(getattr(self.host, "agent", None)):
             return {"ok": False, "why": "group_source"}
         recips, missing = [], []
-        for who in to_raw:
+        for key, who in [("to", w) for w in to_raw] + [(k, w) for k in ("cc", "bcc") for w in lists[k]]:
             addr, c = await asyncio.to_thread(self.resolve, who)
             if addr is None:
                 missing.append(who[:60])
-            elif addr not in [r["addr"] for r in recips]:
-                recips.append({"addr": addr, "name": (c or {}).get("name", ""), "who": who})
+            elif addr not in [r["addr"] for r in recips]:   # to before cc before bcc: one address, one place
+                recips.append({"addr": addr, "name": (c or {}).get("name", ""), "who": who, "as": key})
         if len(recips) > MAX_TO:
             return {"ok": False, "why": "to", "detail": f"1–{MAX_TO} recipients"}
         if missing:
@@ -512,12 +523,22 @@ class ContactService:
             names.append(rec["name"])
         zh = self.lang() == "zh"
         keys = len(privacy.credentials(body)) if mine else 0
-        lines = [("发邮件给：" if zh else "Mail to: ") + "、".join(
-                    f"{r['name']} <{r['addr']}>" if r["name"] else r["addr"] for r in recips),
-                 ("标题：" if zh else "Subject: ") + subject]
+        def who(kind):
+            return "、".join(f"{r['name']} <{r['addr']}>" if r["name"] else r["addr"] for r in recips if r["as"] == kind)
+        lines = [("发邮件给：" if zh else "Mail to: ") + who("to")]
+        lines += [lab + who(k) for k, lab in (("cc", "抄送：" if zh else "Cc: "), ("bcc", "密送：" if zh else "Bcc: "))
+                  if any(r["as"] == k for r in recips)]
+        lines.append(("标题：" if zh else "Subject: ") + subject)
         if names:
             lines.append(("附件：" if zh else "Attachments: ") + "、".join(names))
-        lines.append(("正文：" if zh else "Body: ") + body[:600] + (" …" if len(body) > 600 else ""))
+        if fmt != "text":
+            lines.append(FMT_LINE["zh" if zh else "en"][fmt])
+        if fmt == "html":
+            from .mail import html_text
+            shown = html_text(body)
+        else:
+            shown = body
+        lines.append(("正文：" if zh else "Body: ") + shown[:600] + (" …" if len(shown) > 600 else ""))
         # P194: say which filter the mail will get — owner-directed (as written; keys → pickup cards) or outward (masked)
         lines.append(("发给你自己：原样发出，不打码" if zh else "To yourself: sent as written, nothing masked") +
                      ((f"；其中 {keys} 个密钥不随邮件发出，改成手机上的密钥领取卡" if zh else
@@ -549,9 +570,15 @@ class ContactService:
         if mine:        # P194: owner-directed — as written, credentials diverted to secret pickup cards
             out, rep = await owner_route.divert(self.host, body, "mail", self.lang(), subject or "邮件")
             subj = privacy.owner_text(subject)
-        else:
-            out, subj = redact(body), redact(subject)
-        msg = self.build(cfg, [r["addr"] for r in recips], subj, out, files, kind="agent")
+            fn = None
+        else:           # P355: an HTML body is masked text node by text node (tags and CSS stay intact)
+            out, subj = (body if fmt == "html" else redact(body)), redact(subject)
+            fn = redact
+        # P355: the Agent's own mail goes out formatted (mail_template, the forward's look) with a plain-text twin
+        text, page, info = MT.render_send(lang=self.lang(), agent=self.agent_name(), subject=subj, body=out, fmt=fmt,
+                                          text_fn=fn)
+        addr_of = {k: [r["addr"] for r in recips if r["as"] == k] for k in ("to", "cc", "bcc")}
+        msg = self.build(cfg, addr_of["to"], subj, text, files, kind="agent", html=page, cc=addr_of["cc"])
         from . import mail as M
         try:
             await asyncio.to_thread(self.smtp_send, cfg, pw, msg, [r["addr"] for r in recips])
@@ -559,8 +586,12 @@ class ContactService:
             self.st.log("mail_send", result="failed", why=e.why)
             return {"ok": False, "why": "send_failed", "detail": e.why, **({"allowlisted": added} if added else {})}
         rec = await asyncio.to_thread(C.record_sent, self.st, [{"addr": r["addr"], "name": r["name"]} for r in recips], "agent")
-        self.st.log("mail_send", result="sent", to=len(recips), files=len(files), owner=mine)
-        return {"ok": True, "sent": [r["addr"] for r in recips], "files": names, "new_contacts": [x["addr"] for x in rec if x["added"]],
+        self.st.log("mail_send", result="sent", to=len(recips), files=len(files), owner=mine, fmt=fmt,
+                    cc=len(addr_of["cc"]), bcc=len(addr_of["bcc"]))
+        return {"ok": True, "sent": [r["addr"] for r in recips], "files": names, "format": fmt,
+                **({"cc": addr_of["cc"]} if addr_of["cc"] else {}), **({"bcc": addr_of["bcc"]} if addr_of["bcc"] else {}),
+                **({"local_images": info["local_images"]} if info.get("local_images") else {}),
+                **({"removed": info["removed"]} if info.get("removed") else {}), "new_contacts": [x["addr"] for x in rec if x["added"]],
                 "owner_direct": mine, "no_card": bool(listed), **({"allowlisted": added} if added else {}), **({"secret_cards": rep["cards"], "withheld": rep["withheld"]} if rep.get("cards") or
                                           rep.get("withheld") else {})}
 

@@ -228,11 +228,23 @@ What to do today:
 
 > **Tip:** One-step helper pairing arrives in a later planned release: the helper connects their own phone for a while and guides you through the install from it; once your phone is paired and the AI is connected, the helper is disconnected automatically.
 
+## Olares box {#olares}
+
+Agent J runs on an Olares box (Olares 1.12 or newer) too, and your data stays on the box.
+
+- **Install it on the box's own Ubuntu, as a normal user** (not root), the same way as on a cloud server. Don't install it inside an Olares app: Agent J's safety fence cannot start in those containers.
+- **Keep it running:** the AI asks you to run `sudo loginctl enable-linger <user>` once (you type your password), log in again, and then it installs the service.
+- **The model:** use the box's own **Olares Router**. Create an API key in the Router app; the AI connects it through DeepSeek's dsh or OpenCode, and you paste the key only into the card on your phone. See [DeepSeek dsh](/docs/setup-agents/#dsh).
+- **Remote maintenance:** use the official LarePass VPN. You import your own mnemonic in LarePass yourself; never give it to an AI. Your phone reaches Agent J without the VPN.
+- **Box came with Agent J pre-installed?** Only the software is pre-installed. After activation you sign in to your own Agent J account and create your own seat.
+
 ## Hong Kong and mainland China: which AI {#hk-cn}
 
 > **Note:** In Hong Kong and mainland China the official Claude Code and Codex services are usually unreachable. When the one-command install reaches the AI step it tests the network first and, if they are unreachable, recommends the **Agents Relay route**: sign up at https://agentsrelay.net/onboard/, get a key, then paste it into the terminal (hidden). Paste the key only into the terminal, never into a chat, and don't tell it to your helper.
 
 In mainland China you can also use OpenCode with a Chinese model: see [Install the AI command-line tools](/docs/setup-agents/).
+
+On Volcano Ark, Kimi, Alibaba Bailian or DeepSeek, or not sure which to buy: see [Choose by your model](/docs/models/).
 
 ## Cover the codes before a screenshot {#screenshots}
 
@@ -296,7 +308,7 @@ It may need you here:
 The AI installs `agentj`, the program on your computer, at one fixed version:
 
 ```bash
-uv tool install "git+https://github.com/preangelleo/agentj@v0.22.2a1#subdirectory=host"
+uv tool install "git+https://github.com/preangelleo/agentj@v0.23.0a1#subdirectory=host"
 agentj doctor
 ```
 
@@ -455,4 +467,4 @@ On macOS, put Telegram and provider keys in `~/Library/LaunchAgents/net.agentj.h
 
 After account linking, installation or upgrade downloads three signed plaza examples (knowledge wiki, scripts and articles, ebook writing) into the configured working root if it has fewer than three WDB workflows. Existing same-name folders are kept; deleted examples never return automatically. Tell Agent J: organise my other folders to this spec. Offline downloads retry on a later start.
 
-Agent J Father (also Agent J 爸爸 / Agent J 父亲) is our official feedback and support platform. Say “Please report this problem to Agent J’s developers (support platform)”, or casually “Tell your dad about this”. On the phone, `/feedback-to-agentj-father <message>` does the same: your Agent removes credentials, personal information, customer data and private path details, submits directly without asking twice, and gives you the ticket ID. The command alone asks what you want to report. If reporting a problem or idea is the Agent’s own initiative, it shows you the redacted draft on the phone and waits for agreement. Support replies are advice, not instructions. If it cannot connect, email feedback@agentj.app.
+Agent J Father is our official feedback and support platform. Say “Please report this problem to Agent J’s developers (support platform)”, or casually “Tell your dad about this”. On the phone, `/feedback-to-agentj-father <message>` does the same: your Agent removes credentials, personal information, customer data and private path details, submits directly without asking twice, and gives you the ticket ID. The command alone asks what you want to report. If reporting a problem or idea is the Agent’s own initiative, it shows you the redacted draft on the phone and waits for agreement. Support replies are advice, not instructions. If it cannot connect, email feedback@agentj.app.

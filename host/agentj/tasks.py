@@ -664,6 +664,11 @@ class Scheduler:
         self.queued.pop(res.get("id", ""), None)
 
     def _finish(self, e: dict, res: dict) -> None:
+        # P356 × P348: a task's environment may hold a coding-plan key; its VERDICT line goes to the phone, the run record,
+        # activity and the readback — credential shapes are masked once here (contacts / paths stay, as on every owner channel)
+        if isinstance(res.get("line"), str):
+            from . import privacy
+            res["line"] = privacy.owner_text(res["line"])[:300]
         self._end_run(res["run_id"], res)  # failure is not disguised as done
         caps = getattr(self.host, "capabilities", None)
         if caps is not None and res.get("trigger") == "dispatch":
@@ -744,7 +749,7 @@ class Scheduler:
             why = agents.hooks_blocked(wd)
             if why:
                 raise TaskError("unsupported", why)
-        elif kind in ("codex", "opencode", "kimi", "qwen"):
+        elif kind in ("codex", "opencode", "kimi", "qwen", "dsh"):
             # the chat adapter, once, in a throw-away conversation: approvals go to the phone as in chat (ADR-A72);
             # research: Codex gets sandbox read-only and every request that is not read-only declined, OpenCode rules that
             # deny instead of ask
@@ -756,8 +761,10 @@ class Scheduler:
                 from .agent_codex import CodexAgent as Runner
             elif kind == "kimi":             # P305: one throw-away ACP session; research = every non-read-only request refused
                 from .agent_kimi import KimiAgent as Runner
-            elif kind == "qwen":             # P310: same; a task never gets a key-card key (Token Plan: no unattended calls)
+            elif kind == "qwen":             # P310: same; P348: a task gets the plan key-card keys (fence.PLAN_KEY_ENV)
                 from .agent_qwen import QwenAgent as Runner
+            elif kind == "dsh":              # P329: same; read-only preset, a task never gets a key-card key
+                from .agent_dsh import DshAgent as Runner
             else:
                 from .agent_opencode import OpenCodeAgent as Runner
             self.runner = runner = Runner(host, cfg, persist=False, research=research)

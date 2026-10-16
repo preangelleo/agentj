@@ -294,7 +294,8 @@ class Jobs(unittest.TestCase):
         got = {}
         with mock.patch.object(service_recovery, "launch_job", side_effect=lambda st, argv, purpose, extra_env: got.update(
                 purpose=purpose, **extra_env)):
-            sw._launch(None, ["x"], None)
+            with mock.patch.object(sw, "_via_serve", return_value=False):     # P339: no serve to launch it → the caller does
+                sw._launch(None, {"kind": "scan", "job": "0" * 16}, None)
         self.assertEqual(got["purpose"], "switch")
         self.assertLess(abs(float(got["AGENTJ_JOB_AT"]) - time.time()), 5)
 

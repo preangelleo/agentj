@@ -8,7 +8,7 @@ import { longPress } from './longpress.js';
 import VERSION from '../version.js';
 import { RelayMD } from './md.js';
 import { t, fillText, onLang } from './t.js';
-import { el, noticeSheet, notify, confirmSheet } from './ui.js';
+import { el, noticeSheet, notify, confirmSheet, toast } from './ui.js';
 import { ask1, isReady, peer, sendApp } from './session.js';
 import * as push from './push.js';
 import * as sfx from './sfx.js';
@@ -19,6 +19,11 @@ import * as authrescue from './authrescue.js';   // P258
 import * as contacts from './contacts.js';
 import * as ctmanage from './ctmanage.js';   // P207 §3: Settings → 通讯录
 import * as imsg from './imessage.js';      // P274: Settings → iMessage 助手 (Mac hosts only)
+import { signedWriteFa, whyText } from './controls.js';
+import { approve as faApprove, canAssert } from './faceid.js';
+import { unb64u } from '../proto/wire.js';   // P336: approval level / goal without cards = signed approval_set
+import * as toolsort from './toolsort.js';   // P340: Settings → 输入框按钮顺序 (drag / hold-drag / tap / ← →)
+import * as toolorder from './toolorder.js';
 
 let H = { agentName: () => 'Agent J', paired: () => false, connected: () => false, unpair: () => {}, reload: () => location.reload(),
   view: () => document.body.dataset.view, forget: () => {} };
@@ -129,6 +134,7 @@ PREF_KEYS.push('updates.auto_install');                 // P203: half of the 升
 PREF_KEYS.push(...imsg.PREF_KEYS);       // P274: the iMessage card's parameters (host lists them only on a Mac)
 PREF_KEYS.push('heartbeat.daily_at');   // P207 §3: 「每天固定时间唤醒」 "HH:MM" | "" (host ≥ 0.20.2 lists it in settable)
 PREF_KEYS.push('ui.card_hot_action');   // P285: the reply card's bottom-left hot key (hotkey.js writes it from its own sheet)
+PREF_KEYS.push(toolorder.TOOL_KEY);     // P340: the composer buttons' order (toolsort.js writes it; an older host: this device only)
 // P207 §3 (was P156's ⇄ stepper): the idle interval is a dropdown of these (minutes) + a custom number 5–1440; a value set
 // elsewhere (agentj heartbeat set 45m) shows as 「自定义」 with that number
 export const HB_STEPS = [30, 60, 120, 180, 240, 360, 480, 720, 1440];
@@ -151,7 +157,7 @@ function problemText(p) {
 export async function setPref(key, value) {
   prefFail = null;
   if (!PREF_KEYS.includes(key)) return false;
-  if (!isReady()) { say(t('set.offline')); prefFail = { kind: 'offline' }; return false; }
+  if (!isReady()) { say(t('set.offline'), false, 'set.offline'); prefFail = { kind: 'offline' }; return false; }
   // a host that sent preferences without the `host` block (before 0.15), or one that does not list this key: no round
   // trip to wait for — show the command at once
   if ((prefs && !hostInfo) || (hostInfo && Array.isArray(hostInfo.settable) && !hostInfo.settable.includes(key))) {
@@ -159,10 +165,10 @@ export async function setPref(key, value) {
   }
   say(t('set.saving'), true);
   const m = await ask1({ t: 'pref_set', key, value }, 'pref_res', 8000);
-  if (m.t === 'pref_res' && m.ok === true) { noPrefSet = false; hideCmd(); say(t('set.saved')); notify({ kind: 'success', shape: 'circle', text: t('set.saved') }); if (m.reload) offerReload(); return true; }   // P318: the bar + the Noir ✓; P320: offer Reload
-  if (m.t === 'pref_res') { say(t('set.saveFail', { why: problemText(m.problem) })); prefFail = { kind: 'fail', why: problemText(m.problem), cmd: cmdFor(key, value) }; }
+  if (m.t === 'pref_res' && m.ok === true) { noPrefSet = false; hideCmd(); notify({ kind: 'success', shape: 'circle', text: t('set.saved') }); if (m.reload) offerReload(); return true; }   // P340 #22: only the Noir ✓ (the old bar is gone); P320: offer Reload
+  if (m.t === 'pref_res') { say(t('set.saveFail', { why: problemText(m.problem) }), false, 'set.saveFail'); prefFail = { kind: 'fail', why: problemText(m.problem), cmd: cmdFor(key, value) }; }
   else if (m.t === 'timeout') { noPrefSet = true; say(''); showCmd(key, value); prefFail = { kind: 'old', cmd: cmdFor(key, value) }; }
-  else { say(t('set.offline')); prefFail = { kind: 'offline' }; }
+  else { say(t('set.offline'), false, 'set.offline'); prefFail = { kind: 'offline' }; }
   render();
   return false;
 }
@@ -170,7 +176,7 @@ export async function setPref(key, value) {
  *  words below, 「Reload」 on the right. Reload = the host's /reload (no serve restart); 「稍后」 leaves it for ≡ /reload. */
 export async function offerReload() {
   if (!await confirmSheet(t('p320.needTitle'), t('p320.needText'), t('p320.reloadBtn'), false, t('p320.later'))) return false;
-  try { await sendApp({ t: 'slash', cmd: 'reload', arg: '' }); } catch { say(t('set.chanOffline')); return false; }
+  try { await sendApp({ t: 'slash', cmd: 'reload', arg: '' }); } catch { say(t('set.chanOffline'), false, 'set.chanOffline'); return false; }
   say(t('p320.reloading'));
   return true;
 }
@@ -200,16 +206,21 @@ export function applyThemeLocal(want) {
 }
 
 // ---------------------------------------------------------------- render
-// P207 §3: the notice bar under the header closes with its ✕ and fades by itself after ~4 s (it stayed forever before);
-// only 「正在保存…」 waits for its answer.
+// P340 #22 (Leo 10-16: 「有了新的就不用旧的」): Settings' notices are the one Noir Notification (ui.js notify), not the old
+// bar under the header. 「正在保存…」 holds until its answer replaces it; failures are the warn format; others fade after
+// SAY_MS. say('') takes back only a notice this page put up (another module's toast stays).
 export const SAY_MS = 4000;
-let sayTimer = 0;
-function say(s, keep = false) {
-  clearTimeout(sayTimer);
-  el('set-status').textContent = s || '';
-  el('set-status-bar').hidden = !s;
-  el('set-status-x').hidden = !s;
-  if (s && !keep) sayTimer = setTimeout(() => say(''), SAY_MS);
+const WARN_KEYS = ['set.saveFail', 'set.offline', 'set.chanOffline', 'set.refreshFail', 'p207set.hb.range', 'r.copy.fail'];
+let said = '';
+export function sayFormat(s, keep = false, key = '') {
+  if (keep) return { kind: 'progress', text: s, ms: 0 };
+  return { kind: WARN_KEYS.includes(key) ? 'warn' : 'info', text: s, ms: SAY_MS };
+}
+function say(s, keep = false, key = '') {
+  const box = el('toast');
+  if (!s) { if (said && box && box.classList.contains('on') && box.textContent === said) { clearTimeout(box._t); delete box.dataset.hold; box.classList.remove('on', 'act'); } said = ''; return; }
+  notify(sayFormat(s, keep, key));
+  said = box ? box.textContent : s;
 }
 const tgl = (id, on) => { el(id).setAttribute('aria-checked', String(!!on)); };
 function renderPush() {
@@ -227,6 +238,59 @@ function twoWay(id, right) {
   const sw = el(id);
   sw.setAttribute('aria-checked', String(!!right));
   for (const l of sw.parentElement.querySelectorAll('.tw-lab')) l.setAttribute('aria-current', String((l.dataset.side === 'right') === !!right));
+}
+// ---------------------------------------------------------------- P336 approval level + goal without cards
+// Both keys change ONLY by the signed `approval_set` control (never pref_set); a host without `signed_prefs` hides the rows.
+const LEVELS = ['safe', 'standard', 'full'];
+const signedKey = (key) => !!hostInfo && Array.isArray(hostInfo.signed_prefs) && hostInfo.signed_prefs.includes(key);
+// what is IN FORCE (host.approval: full only with a live signature) wins over the raw configuration value
+const eff = () => (hostInfo && hostInfo.approval && typeof hostInfo.approval === 'object' ? hostInfo.approval : null);
+const curLevel = () => { const v = eff()?.level ?? pget('approval.level', 'standard'); return LEVELS.includes(v) ? v : 'standard'; };
+const curGnc = () => (typeof eff()?.goal_nocard === 'boolean' ? eff().goal_nocard : pget('approval.goal_nocard', false) === true);
+function renderLevel() {
+  const paired = H.paired(), lv = curLevel();
+  el('set-level-row').hidden = !paired || !signedKey('approval.level');
+  el('set-gnc-row').hidden = !paired || !signedKey('approval.goal_nocard');
+  el('set-goal-safe').hidden = el('set-level-row').hidden;
+  for (const b of document.querySelectorAll('[data-set-level]')) b.setAttribute('aria-pressed', String(b.dataset.setLevel === lv));
+  el('set-level-note').textContent = t('p336.note.' + lv);
+  tgl('set-gnc', curGnc());
+}
+/** P336 addendum: a widening switch on a phone with a passkey → 「用 Face ID 确认」; the button tap starts Face ID
+ *  synchronously inside the tap (iOS gesture rule), so it listens on the confirm button itself, before the sheet resolves. */
+async function faceIdStep(res) {
+  if (typeof res.fa !== 'string' || typeof res.fa_ch !== 'string' || !canAssert()) return Promise.reject(new Error('passkey_failed'));
+  const yes = el('confirm-yes');
+  let p = null;
+  const grab = () => { p = faApprove(unb64u(res.fa_ch), res.fa); p.catch(() => {}); };
+  yes.addEventListener('click', grab);
+  say('');
+  const ok = await confirmSheet(t('p336.faTitle'), t('p336.faText'), t('p336.faYes'));
+  yes.removeEventListener('click', grab);
+  if (!ok || !p) return null;
+  say(t('set.saving'), true);
+  return p;
+}
+/** confirm → signed approval_set → ctl_res; ok = follow at once (the `preferences` broadcast confirms), else say why. */
+async function approvalSet(key, value) {
+  const full = key === 'approval.level' && value === 'full', goal = key === 'approval.goal_nocard';
+  const name = goal ? t('p336.goal') : t('p336.' + value);
+  const title = goal ? t(value ? 'p336.goalOnTitle' : 'p336.goalOffTitle') : t('p336.confirmTitle', { name });
+  const text = full ? t('p336.fullText') : goal ? t(value ? 'p336.goalOnText' : 'p336.goalOffText') : t('p336.note.' + value) + ' ' + t('p336.signNote');
+  const yes = goal ? t(value ? 'p336.turnOn' : 'p336.turnOff') : full ? t('p336.fullYes') : t('p336.switch');
+  if (!await confirmSheet(title, text, yes, full)) return;
+  if (!isReady()) { say(t('set.offline')); return; }
+  say(t('set.saving'), true);
+  const m = await signedWriteFa('approval_set', { key, value }, { t: 'approval_set', key, value }, faceIdStep);
+  if (m.why === 'cancel') { say(''); render(); return; }
+  if (m.ok) {
+    if (prefs) { const [a, b] = key.split('.'); prefs[a] = { ...(prefs[a] || {}), [b]: value }; }
+    if (eff()) hostInfo.approval = { ...hostInfo.approval, [key === 'approval.level' ? 'level' : 'goal_nocard']: value };
+    notify({ kind: 'success', shape: 'circle', text: t('set.saved') });
+  } else {
+    say(''); toast(m.why === 'passkey_failed' ? whyText(m.why) : t('p336.fail', { why: whyText(m.why) }), 4000);
+  }
+  render();
 }
 /** P294: say where isolation and Docker apply. Shared mode keeps isolation live (scheduled tasks, the OpenCode serve
  *  Agent J starts), so it only gets a note; Docker means nothing without isolation, so it greys out until isolation is on. */
@@ -258,7 +322,7 @@ function renderHb(on, n) {
 let dailyOn = false;           // the daily switch turned on, time not picked / saved yet
 function hbInterval(v) {
   const n = Math.round(Number(v));
-  if (!Number.isFinite(n) || n < HB_MIN || n > HB_MAX) { say(t('p207set.hb.range', { min: HB_MIN, max: HB_MAX })); return; }
+  if (!Number.isFinite(n) || n < HB_MIN || n > HB_MAX) { say(t('p207set.hb.range', { min: HB_MIN, max: HB_MAX }), false, 'p207set.hb.range'); return; }
   setPref('heartbeat.interval_minutes', n);
 }
 export function render() {
@@ -297,6 +361,7 @@ export function render() {
   el('set-qswitch-cmd').textContent = cmdFor('quota.auto_switch', qSwitch ? 'false' : 'true');
   el('set-risk-cmd').textContent = cmdFor('agent.high_risk_warnings', risk ? 'false' : 'true');
   renderJev();
+  renderLevel();
   const mode = pget('agent.session_mode', 'independent') === 'shared' ? 'shared' : 'independent';   // P174: independent by default
   twoWay('set-updates', !autoUpdates());     // P207 two-way (left 自动 · right 先问我) over P203's two keys: 自动 = install when idle
   twoWay('set-mode', mode === 'shared');                                // P207: left 独立 · right 共享
@@ -316,6 +381,7 @@ export function render() {
   el('set-owner-nav').hidden = !contacts.forwardAvailable();   // P194: slot 0 needs a host with the address book
   el('set-contacts-nav').hidden = !contacts.forwardAvailable(); // P207: the address book page, same host support
   el('set-imsg-nav').hidden = !imsg.available();               // P274: only when the computer is a Mac
+  toolsort.render();                                            // P340
   if (sub === 'imessage') { if (imsg.available()) imsg.render(); else showSub('main'); }
 }
 /** 「遥控器管理」 row: 已用 N / 10 (from the last dev_list / devs, else the preferences host block). */
@@ -335,6 +401,7 @@ export function deviceInfo(id) {
 export function setPrefs(value, host) {
   prefs = value && typeof value === 'object' ? value : null;
   hostInfo = host && typeof host === 'object' ? host : null;
+  toolorder.fromHost(prefs);              // P340: every remote repaints the composer buttons from the broadcast
   if (isOpen()) render();
 }
 
@@ -391,6 +458,16 @@ export function open(page = 'main', add = false) {
 export function back() { if (sub !== 'main') showSub('main'); else close(); }
 /** P184: 「转发到邮箱」 with no mailbox yet → Settings → 邮件通道. */
 export function openMail() { open(); if (isOpen()) showSub('mail'); }
+/** P332: Settings → 紧急修复 (the offline card, the rescue banner, ≡ 重置连接, /reset): open on the block itself. */
+export function openRescue() {
+  if (!isOpen()) open(); else if (sub !== 'main') showSub('main');
+  const s = el('set-s-rescue');
+  if (!isOpen() || !s || s.hidden) return;
+  closeSearch();
+  s.scrollIntoView({ block: 'start' });
+  markSection('set-s-rescue');
+  jumpedAt = performance.now();
+}
 /** P258: an expired-login alert → Settings → AI 登录救援. */
 export function openAuth() { open(); if (isOpen()) showSub('auth'); }
 export function close() {
@@ -398,6 +475,7 @@ export function close() {
   if (box.hidden) return;
   if (sub === 'remotes') remotes.close();
   if (sub === 'contacts') ctmanage.close();
+  toolsort.close();   // P340: a picked-up button is put down
   sub = 'main';
   say('');
   closeSearch();
@@ -422,7 +500,7 @@ export async function refreshApp({silent=false, beforeReload=null} = {}) {
     }
     if (globalThis.caches) for (const k of await caches.keys()) await caches.delete(k);
   } catch {
-    if (!silent) say(t('set.refreshFail'));
+    if (!silent) say(t('set.refreshFail'), false, 'set.refreshFail');
   }
   if (beforeReload && !await beforeReload()) return false;
   H.reload();
@@ -471,7 +549,9 @@ export function configure(hooks) {
   el('set-main').addEventListener('scroll', () => { cancelAnimationFrame(raf); raf = requestAnimationFrame(followScroll); }, { passive: true });
   el('set-remotes-open').addEventListener('click', () => showSub('remotes'));
   el('setBtn').addEventListener('click', () => (isOpen() ? close() : open()));
-  longPress(el('setBtn'), () => H.screenshot?.()); // @ix app.screenshot
+  // P340 #27: on release, not on the timer — the screenshot also writes the clipboard, which needs the user activation of the
+  // lift (touchend / mouseup; Safari never counts a timer after touchstart). The vibration still marks the hold.
+  longPress(el('setBtn'), () => H.screenshot?.(), { at: 'release' }); // @ix app.screenshot
   el('setBtn').addEventListener('contextmenu', e => {
     e.preventDefault();
     // Touch browsers may emit contextmenu during a hold: the gear's hold is exclusively capture.
@@ -523,8 +603,9 @@ export function configure(hooks) {
     else setPref('heartbeat.daily_at', '');
   });
   el('set-hb-time').addEventListener('change', () => { const v = el('set-hb-time').value; if (HHMM.test(v)) setPref('heartbeat.daily_at', v); });
-  el('set-status-x').addEventListener('click', () => say(''));
   el('set-hostupg').addEventListener('click', () => { if (H.upgradeHost) H.upgradeHost(); });   // P203: impact → card → /update @ix app.upgrade_host
+  for (const b of document.querySelectorAll('[data-set-level]')) b.addEventListener('click', () => { if (b.dataset.setLevel !== curLevel()) approvalSet('approval.level', b.dataset.setLevel); });
+  el('set-gnc').addEventListener('click', () => approvalSet('approval.goal_nocard', !curGnc()));
   el('set-jev-minus').addEventListener('click', () => setJev(jevAt() - 1));
   el('set-jev-plus').addEventListener('click', () => setJev(jevAt() + 1));
   el('set-font-minus').addEventListener('click', () => setFontStep(fontAt - 1));
@@ -554,17 +635,18 @@ export function configure(hooks) {
   mail.configure();
   el('set-imsg-nav').addEventListener('click', () => showSub('imessage'));   // P274
   imsg.configure({ pget, setPref, hostInfo: () => hostInfo, assist: (text) => { close(); if (H.assist) H.assist(text); } });
+  toolsort.configure({ setPref, settable: () => prefSettable(toolorder.TOOL_KEY), explain: explainPrefFail });   // P340
   // P207 §3: copy = an icon button; ✓ for 1.6 s on success (plus the fading notice for screen readers)
   // P283: 「重新绑定 Telegram」 — the host answers /telegram-pair with a one-time code card in the chat (no Agent, no model)
   el('set-tgpair').addEventListener('click', async () => {
-    if (!isReady()) { say(t('set.chanOffline')); return; }
-    try { await sendApp({ t: 'slash', cmd: 'telegram-pair', arg: '' }); } catch { say(t('set.chanOffline')); return; }
+    if (!isReady()) { say(t('set.chanOffline'), false, 'set.chanOffline'); return; }
+    try { await sendApp({ t: 'slash', cmd: 'telegram-pair', arg: '' }); } catch { say(t('set.chanOffline'), false, 'set.chanOffline'); return; }
     say(t('set.chanSent'));
     close();
   });
   for (const b of document.querySelectorAll('[data-copy]')) b.addEventListener('click', async () => {
     const ok = await RelayMD.copyText(el(b.dataset.copy).textContent);
-    say(ok ? t('set.copied') : t('r.copy.fail'));
+    say(ok ? t('set.copied') : t('r.copy.fail'), false, ok ? '' : 'r.copy.fail');
     if (!ok) return;
     b.dataset.done = '1'; clearTimeout(b._done);
     b._done = setTimeout(() => { delete b.dataset.done; }, 1600);

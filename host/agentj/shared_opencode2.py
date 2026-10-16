@@ -2,8 +2,8 @@
 
 `agent.session_mode = "shared"` is the default. Without an owner server (`shared_opencode_port` unset) Agent J starts an
 ordinary `opencode serve` itself (shared.py, `owned_server`). Before P63 that path asked `opencode --version` and refused
-2.x outright ("v2 的 /api 协议尚未接入") — the official installer ships v2, so a default install with the official OpenCode
-never answered (0.15.3a1). The independent mode was fine: P60's e2e only ran that one.
+2.x outright ("v2 的 /api 协议尚未接入") — the official installer shipped v2 then (1.x again since 1.19.2; P357), so a
+default install with the official OpenCode never answered (0.15.3a1). The independent mode was fine: P60's e2e only ran that one.
 
 This class is that owned ordinary server on v2: the protocol is agent_opencode2's (session / prompt / `/api/event` /
 permission reply / interrupt / compact / model / forms → question cards), the shared semantics are shared.py's:
@@ -332,7 +332,11 @@ class OwnerOpenCodeV2Agent(SharedOpenCodeV2Agent):
                 item = self.q.get_nowait()
                 if getattr(self.host, "queue_dropped", None):
                     self.host.queue_dropped(item)
+        from .shared import opencode_cannot_stop, owner_opencode_turn
+        owner = (clear_queue or self.halt_quiet) and owner_opencode_turn(self)   # a person asked, not a task making room
         await self.interrupt_request(self.proc)
         if self.turn_done:
             self.turn_done.set()
+        if owner:
+            self.cannot_halt(opencode_cannot_stop(self))
         return busy

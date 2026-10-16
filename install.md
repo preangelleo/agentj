@@ -1,15 +1,15 @@
 ---
 document: agentj-install
-version: 0.24.2
-released: 2026-10-16
+version: 0.25.0
+released: 2026-10-17
 status: beta (anyone can sign up; not advertised yet, pages are not indexed)
 host_package: agentj (the `agentj` command)
-host_version: 0.22.2a1
-source_tag: v0.22.2a1
-host_wheel: agentj-0.22.2a1-py3-none-any.whl
-host_wheel_sha256: aef00acadaa68979af00c5d17649ca1a17ab1b83a2f93a9595f944ae0a55a2ad
-host_sdist: agentj-0.22.2a1.tar.gz
-host_sdist_sha256: 453b002c368e52f7868fe4e3cd7ef89374640a3a13526a7b7eff6461527b4475
+host_version: 0.23.0a1
+source_tag: v0.23.0a1
+host_wheel: agentj-0.23.0a1-py3-none-any.whl
+host_wheel_sha256: ae5ea04521422392db0afa5c9b536a91c428ed1096f9d0cf830d5d3f92016f1e
+host_sdist: agentj-0.23.0a1.tar.gz
+host_sdist_sha256: c34e4ea519ae0bc0cac2980f190a6f669d6b1943f4cc5de3f597a13757898ff6
 canonical_url: https://agentj.app/install.md
 sha256_url: https://agentj.app/install.md.sha256
 alias: https://agentjarvis.net/install.md (the older address: the same file, kept for one more version)
@@ -354,7 +354,8 @@ change Agent J's own keys: bubblewrap on Linux, `sandbox-exec` on macOS. When th
 start (Step 9). Inside a Docker-style container the fence usually cannot start — install on the VM / server itself.
 
 **Which agent (the harness rule).** The phone talks to **one** agent on this computer: Claude Code, Codex, OpenCode,
-Kimi Code (`kimi`, Step 3e) or Qwen Code (`qwen`, Step 3g).
+Kimi Code (`kimi`, Step 3e), Qwen Code (`qwen`, Step 3g) or DeepSeek Harness (`dsh`, Step 3i — on an Olares box, or with
+any OpenAI-compatible model server).
 You are probably one of them yourself — that does **not** make you the choice. Usable = installed **and** logged in
 (OpenCode: a model key stored with `opencode auth login`, Step 3a — **or one of OpenCode's free models**, which need no
 account, key or payment: Step 3c).
@@ -367,11 +368,11 @@ account, key or payment: Step 3c).
   route in **mainland China**: Claude Code and Codex are not offered there — do not suggest a VPN, a proxy or another
   region's account to get them.
 - **Claude Code and Codex are not offered where this computer is** (Hong Kong, Macau, mainland China and the other places
-  Anthropic / OpenAI do not serve) → our first recommendation is a **Kimi membership, Plus or higher**, in OpenCode
-  (Step 3d) or in Kimi's own Kimi Code CLI (Step 3e), side by side with an **Alibaba Cloud Bailian Token Plan**
-  (personal) in OpenCode (Step 3f) or Qwen Code (Step 3g) — the human chooses. A human who already pays for a **Volcano
-  Ark (火山方舟) Coding Plan** uses it instead (Step 3h). After Step 4, `agentj agent route` decides
-  it from what really answers here, not from a guess.
+  Anthropic / OpenAI do not serve) → **mainland China, starting from zero:** a **Volcano Ark (火山方舟) Coding Plan** —
+  buy **Lite** first: the same models and tools as Pro, Pro only gives 5x the quota (Step 3h). **Hong Kong / overseas:** a
+  **Kimi membership**, Plus or higher, billed in USD outside the mainland, in OpenCode (Step 3d) or Kimi Code CLI (Step 3e).
+  **Already paying for one of them** (Ark, Kimi, or an Alibaba Cloud Bailian Token Plan — Steps 3f / 3g): keep it, never
+  sell a second plan. The human decides. After Step 4, `agentj agent route` checks what really answers here, not a guess.
 After Step 4, `agentj agent detect --json` gives the exact answer, including whether each one is logged in (it only checks
 that a login file exists; it never reads it). When Codex is installed it also asks api.openai.com once, without any key,
 whether this computer can reach OpenAI: `"chatgpt": "ok" | "region" | "unreachable" | "unknown"`. On `region` or
@@ -386,8 +387,9 @@ refused, like Codex's `request_user_input` outside Plan mode — the Agent runs 
 ### 3a. OpenCode with a model the human chooses (no usable agent, or mainland China)
 
 OpenCode (open source, MIT: https://opencode.ai/docs/) is the agent; the model behind it comes from a model vendor the
-human signs up with **themselves**. Where Claude Code and Codex are not offered, our recommendation is a Kimi
-membership (Step 3d) or a Bailian Token Plan (Step 3f), side by side; already on a Volcano Ark Coding Plan → Step 3h. Pay-as-you-go alternatives for mainland China: **GLM-5.3** (Zhipu) as the main model,
+human signs up with **themselves**. Where Claude Code and Codex are not offered: mainland China from zero → a Volcano Ark
+Coding Plan, Lite first (Step 3h); Hong Kong / overseas → a Kimi membership (Step 3d); already on one of them (Bailian:
+Step 3f) → keep it. Pay-as-you-go alternatives for mainland China: **GLM-5.3** (Zhipu) as the main model,
 plus **DeepSeek V4.1-Flash** (`deepseek-flash`, cheaper, can read images) for simple or image tasks.
 
 Before installing on macOS, run `opencode --version` (or the selected agent’s `--version`). If it runs successfully,
@@ -488,7 +490,7 @@ agentj agent | grep -F "<free_model>"                         # script self-chec
 - **Check by script, not by memory:** after any harness/model command, read the setting back (`agentj agent`) before you
   report it done — a model can undo a step it just did and still say "OK".
 
-### 3d. Where Claude Code and Codex are not offered: a Kimi membership in OpenCode
+### 3d. Where Claude Code and Codex are not offered: the route, and a Kimi membership in OpenCode
 
 After Step 4 (it works before `agentj init` too):
 ```bash
@@ -496,14 +498,20 @@ agentj agent route          # add --json for scripts
 ```
 It asks api.anthropic.com, api.openai.com and Kimi's coding API once each, **without any key**, and reads only the status
 and the provider's region error; the time zone / language of this computer only break a tie and are never sent anywhere.
-`"route": "kimi"` (both refused or unreachable, Kimi reachable) → tell your human, in their language:
-- our first recommendation is a **Kimi membership, Plus or higher**. **Go has no coding quota** — it does not work here.
+`"route": "kimi"` (both refused or unreachable, Kimi reachable) → tell your human, in their language, the rule it prints
+(`"primary"` in `--json`: `"ark"` for a mainland time zone, `"kimi"` for Hong Kong / Macau, `null` when unknown — then ask
+where they are):
+- **mainland China, starting from zero:** a **Volcano Ark Coding Plan, Lite first** — same models and tools as Pro, Pro
+  only gives 5x the quota (Step 3h; the command prints the prices and sign-up steps).
+- **Hong Kong / overseas:** a **Kimi membership, Plus or higher** (billed in USD outside the mainland). **Go has no coding
+  quota** — it does not work here.
+- **already paying for Ark, Kimi or a Bailian Token Plan (Step 3f):** keep it — do not sell them a second plan.
 - give the link exactly as the command prints it, **with the sentence right after it** — never one without the other, never
   the sentence only at the end: 「这是 Agent J 官方的邀请链接，您和我们各得一次抽奖」 / "This is Agent J's official invite
   link: you and we each get one prize draw". The draw counts only for a paid subscription within 24 hours. Never invent
   or change a link; prices only from Kimi's own page.
-- side by side with Kimi: an Alibaba Cloud Bailian Token Plan, personal (Step 3f) — tell its prices and terms as printed.
-  A human who already subscribes to a Volcano Ark Coding Plan keeps it (Step 3h) — do not sell them a second plan.
+- also possible on the mainland: an Alibaba Cloud Bailian Token Plan, personal (Step 3f) — tell its prices and terms as
+  printed, including that Alibaba Cloud uses the inputs and outputs to improve its models.
 - the alternatives it lists (Qwen pay-as-you-go on the mainland site, GLM / DeepSeek, OpenRouter, Kimi's pay-as-you-go
   platform). A human who already has an account with one of them keeps using it.
 ✋ The human subscribes, then creates a key in the Kimi Code console (shown once). The key goes **only** into the phone's
@@ -511,9 +519,10 @@ key card, never into this conversation or a terminal you run. So: install OpenCo
 the model even though no key is stored yet — `agentj agent opencode --dir ~/coding --model kimi-code-plan-cn/k3`; right
 after pairing (Step 11) run the `agentj secret request --name KIMI_API_KEY …` line the route command prints (the human
 pastes the key on the phone; it is checked read-only against `/coding/v1/models` and written 0600 into the background
-service's environment file), then `agentj service restart` and `agentj agent switch --scan`; then Step 12. A membership
-bought on the overseas site kimi.ai has different keys: `kimi-code-plan-global/k3`. `"route": "unsure"` → the harness
-rule above as usual, Kimi only if the first message fails with "region not supported"; `"offline"` → fix the
+service's environment file), then `agentj service restart` and `agentj agent switch --scan`; then Step 12. A kimi.com
+membership key works on both api.kimi.com and api.kimi.ai (measured); for a membership bought on kimi.ai use
+`kimi-code-plan-global/k3`. `"route": "unsure"` → the harness rule above as usual; only if the first message fails with
+"region not supported", the rule above (Ark on the mainland, Kimi elsewhere); `"offline"` → fix the
 network first. Never suggest a VPN or proxy.
 
 ### 3e. Kimi Code CLI (`kimi`) — the same Kimi membership without OpenCode
@@ -526,7 +535,7 @@ curl -fsSL https://code.kimi.com/kimi-code/install.sh | bash      # or: npm inst
 kimi --version                                                     # → 2.2.0 or newer
 ```
 ✋ The human signs in **in their own terminal**: `kimi login --region mainland-cn` (kimi.com, the default) or
-`kimi login --region global` (kimi.ai — a different account, different keys). It prints a link and a one-time code; they
+`kimi login --region global` (a membership bought on kimi.ai). It prints a link and a one-time code; they
 confirm on any device signed in to Kimi. Never ask for the code or open the link for them. (A Kimi Code console key
 works instead: the same `agentj secret request --name KIMI_API_KEY …` card as Step 3d, after pairing.) At Step 9 choose
 it with `agentj agent kimi --dir <folder>` (add `--region global` for kimi.ai). Kimi Code runs in an independent session
@@ -577,16 +586,20 @@ Code up (`~/.qwen/settings.json`, e.g. with `bl config agent --agent qwen-code`)
 
 ### 3h. Mainland China: a Volcano Ark (火山方舟) Coding Plan in OpenCode or Claude Code
 
-Who it is for: a human who **already has** a Volcano Engine Ark Coding Plan (Lite or Pro), or who wants ByteDance Doubao,
-Kimi, GLM, DeepSeek and MiniMax in one subscription. Kimi (3d) and Bailian (3f) stay the first recommendations for
-everyone else. Prices only from Ark's console — never from memory. What the owner measured (2026-10-15): **reads images**
-`doubao-seed-2.1-pro` (the default), `kimi-k3` (Pro plan only), `kimi-k2.7-code`, `glm-5-3-flash`, `minimax-m3`,
+Who it is for: **the first recommendation in mainland China for a human starting from zero**, and anyone who already has
+one. Tell them to buy **Lite** first: Lite and Pro have the same models (ByteDance Doubao, Kimi K3, GLM, DeepSeek, MiniMax)
+and tools; Pro only gives 5x the quota, so they upgrade only if it runs short. `agentj agent route` prints the list prices
+read on 2026-10-16 and the sign-up page; the order page is authoritative — never quote prices from memory. What the owner
+measured (2026-10-15): **reads images**
+`doubao-seed-2.1-pro` (the default), `kimi-k3` (uses quota fast — Ark suggests it for Pro; Lite can pick it too),
+`kimi-k2.7-code`, `glm-5-3-flash`, `minimax-m3`,
 `deepseek-v4-1-flash`; **text only** `glm-5.3`, `deepseek-v4-pro`, `deepseek-v4-flash` — pick an image model for
 screenshots and browser work. The Coding Plan has no image-generation model. Tell the human: it is a plan for interactive
 use in coding tools (Ark's console terms are authoritative); unattended work needs a pay-as-you-go key — Agent J never
 gives this key to tasks or bots.
 
-✋ The human creates an API key in the Ark console (https://console.volcengine.com/ark/). Then you, after Step 4:
+✋ The human signs up at https://www.volcengine.com/activity/codingplan (phone number, real-name verification), subscribes
+to the Coding Plan and creates an API key in the Ark console (https://console.volcengine.com/ark/). Then you, after Step 4:
 ```bash
 agentj provider ark                      # OpenCode: all 16 plan models, with image input and output limits; anything already there stays
 agentj provider ark --harness claude     # Claude Code instead: prints the three provider-profile commands
@@ -598,6 +611,41 @@ order (save the `ark-claude` profile with the `ark-coding` preset, the key card 
 the profile; it sends one real test message before writing anything) — it points Claude Code's HAIKU / SONNET / OPUS
 defaults and its subagent model at the same Ark model (otherwise background work asks Ark for a Claude model name and fails).
 
+### 3i. DeepSeek Harness (`dsh`) — Olares' Lares engine, or any OpenAI-compatible server
+
+DeepSeek Harness (DeepSeek, MIT, a **developer preview, 0.2.0-rc.2 or newer**) is the sixth agent Agent J can drive, over
+the same Agent Client Protocol as Kimi Code (`dsh --profile acp`). It is also the engine inside Olares' own agent Lares, so
+on an Olares box (section O) it is the natural pair with the box's own Router. Offer it when the human has a model server
+of their own — an Olares Router, LiteLLM, Ollama, llama.cpp, vLLM or any OpenAI-compatible server — or a DeepSeek API key.
+Install (needs Node.js 22.19 or newer; about 500 MB):
+```bash
+npm install -g @deepseek-ai/dsh@latest
+dsh --version                        # → 0.2.0-rc.2 or newer
+```
+Its login is one of three, all the human's own:
+- **A model server** — at Step 9: `agentj agent dsh --dir <folder> --base-url https://<server>/v1 --model <model id>` (the
+  id as the server lists it). Agent J writes `~/.dsh/agentj-route.yml`: the address, the model and the context size the
+  server's model list gives — the key only by its name. Plain `http://` is allowed only for this computer or a LAN address.
+  If the server answers its model list only with a key (an Olares Router does), the command says so and prints the exact
+  key-card line for `DSH_ROUTER_API_KEY` (`agentj secret request --name DSH_ROUTER_API_KEY … --verify-url <server>/v1/models`):
+  run it right after pairing (Step 11); the human pastes the key only on the phone. Until then `agentj doctor` and the phone
+  show that line, not a "no route" message. A local server without a key needs no card.
+- **DeepSeek's own API** (pay as you go): the key card for `DEEPSEEK_API_KEY`, after pairing.
+- **The human's own dsh setup** (`~/.dsh/.credentials.yaml` from `dsh web`'s Models page, `~/.dsh/.env`, or providers in
+  `~/.dsh/cordis.patch.yml`) is used as it is.
+After a key card the human just sends the message again: Agent J starts dsh again with the new key by itself (no restart)
+and, when the server's list needed the key, reads the model's context size once then. Independent sessions only. Safety: Agent J
+starts dsh in its read-only preset with approval "ask", so every file write or command that is not read-only arrives as a
+phone card (this once / reject — never "always"); dsh's own telemetry is switched off; and dsh is started outside the
+working folder, so a `.env` there never reaches the model's shell (sessions still open in the working folder). Before every
+start Agent J rewrites its own route file from its saved copy and checks `~/.dsh/cordis.patch.yml` and the `acp` profile:
+a layer that touches approvals, sandboxes, shells or plugins (or uses `!!js`) stops the start — `agentj doctor` names it,
+and the human moves it aside; writing to those files always asks the phone. On the phone /model lists the route model
+and DeepSeek's models; /context works; dsh compacts by itself near the window (no /compact over ACP); a local route has no
+plan quota for /usage. Images: 0.2.0-rc.2 takes text only. dsh reads `~/.dsh/skills` and `~/.agents/skills`, and
+`~/.dsh/AGENTS.md`, then `~/.agents/AGENTS.md`. Scheduled tasks may use it (`harness: dsh`) but never get a key-card key.
+DeepSeek says a preview may break; Agent J was measured on 0.2.0-rc.2.
+
 ## 4. Install the `agentj` program — stage `6-host`
 
 > Stuck here, or the text below seems wrong? Ask the support desk yourself (Step 2b; after Step 4: `agentj support ask`).
@@ -606,7 +654,7 @@ defaults and its subagent model at the same Ark model (otherwise background work
 carry over). So start every command line from here on with `export PATH="$HOME/.local/bin:$PATH";` — or call
 `~/.local/bin/agentj` by its full path. This document writes `agentj` for short.
 
-The program is pinned to one release: the tag `v0.22.2a1` (front matter `source_tag`). The tag never moves, and its
+The program is pinned to one release: the tag `v0.23.0a1` (front matter `source_tag`). The tag never moves, and its
 `host/` folder is byte for byte the same code as the two files on our site whose SHA-256 is in this document's front matter.
 ```bash
 cd ~/.agentj-install
@@ -617,7 +665,7 @@ uv tool install "./$W"
 
 Intel Mac: this release keeps `cryptography<49` because newer releases lack an Intel macOS wheel. If an older installer tries to compile OpenSSL (`openssl-sys` / OpenSSL not found), rerun `uv tool install --with "cryptography<49" "./$W"`. The same platform constraint applies to `agentj update apply`.
 
-export PATH="$HOME/.local/bin:$PATH"; agentj --version     # → agentj 0.22.2a1
+export PATH="$HOME/.local/bin:$PATH"; agentj --version     # → agentj 0.23.0a1
 export PATH="$HOME/.local/bin:$PATH"; agentj doctor
 ```
 **Your human's own terminal must find `agentj` too** — they may use `agentj passphrase set` and `agentj pair` as a local alternative
@@ -645,16 +693,16 @@ echo "$WS  $W" | sha256sum -c - && echo "$SS  $S" | sha256sum -c -    # macOS: s
 uv tool install "./$W"          # the wheel; its dependencies come from PyPI or the mirror in UV_DEFAULT_INDEX
 ```
 `uv tool install "./$S"` installs from the checked source archive instead (it builds the same program).
-`https://agentj.app/dl/latest.txt` and `https://agentj.app/dl/latest-sdist.txt` name the same two files. `agentj --version` is the program's own version (`0.22.2a1`); it is
-numbered separately from this document (`0.24.2`).
+`https://agentj.app/dl/latest.txt` and `https://agentj.app/dl/latest-sdist.txt` name the same two files. `agentj --version` is the program's own version (`0.23.0a1`); it is
+numbered separately from this document (`0.25.0`).
 
-Alternative from the matching published source tag: `uv tool install "git+https://github.com/preangelleo/agentj@v0.22.2a1#subdirectory=host"`.
+Alternative from the matching published source tag: `uv tool install "git+https://github.com/preangelleo/agentj@v0.23.0a1#subdirectory=host"`.
 
-Alternative without uv: `pipx install "git+https://github.com/preangelleo/agentj@v0.22.2a1#subdirectory=host"` (needs Python 3.11+).
+Alternative without uv: `pipx install "git+https://github.com/preangelleo/agentj@v0.23.0a1#subdirectory=host"` (needs Python 3.11+).
 
 **What each route checks.** The wheel and the source archive above are checked against the SHA-256 in this document. Each
 also has a minisign signature beside it (`<file>.minisig`, key `B79F925B0585F9D4` — front matter `signature`), which
-`agentj update apply` and the nightly automatic upgrade verify before they install (Section U). The two `git+https://…@v0.22.2a1`
+`agentj update apply` and the nightly automatic upgrade verify before they install (Section U). The two `git+https://…@v0.23.0a1`
 routes check **neither**: Git trusts GitHub's HTTPS and the tag name, and nothing compares that code with this document.
 Use them only when the checked files cannot be downloaded, and say so in the final feedback.
 `agentj doctor` lists what is ready and what is not (prerequisites, the fence, connectivity, which agents are usable).
@@ -826,7 +874,7 @@ code). The terminal, `agentj admin` and this check share one rule, so nobody lea
 has no usable Agent J seat (not bound yet, suspended, or unconfirmed for more than 72 hours) → no pairing route works: go back
 to Step 7 (bind) or ✋ have the owner renew on the account page; the check names the page.
 
-**After account binding, pair on the account page (0.20.3, P221).** Tell the owner: “On this computer’s account-page seat
+**After account binding, pair on the account page (0.20.3).** Tell the owner: “On this computer’s account-page seat
 card, select Add a remote, confirm it’s you and scan.” Confirming is either a passkey or this computer’s **remote pairing
 password** (遥控器配对密码): an email-code sign-in alone never approves a remote, so in a browser on another computer
 without a passkey the owner types the password in the card; the browser seals it to a one-time key of this computer and
@@ -836,7 +884,7 @@ terminal. The same account page works for another installed, bound, online compu
 session needs none for ten minutes; pairing requests expire after five minutes and add only one remote. Pending remotes,
 resume after Stop everything and scheduled-task enable also have account-page approval (passkey).
 
-**Pairing at the terminal needs the remote pairing password (0.20.3, P221 — replaces 0.20.0's “a bound computer's keyboard
+**Pairing at the terminal needs the remote pairing password (0.20.3 — replaces 0.20.0's “a bound computer's keyboard
 is enough”).** `agentj pair` / `agentj pair --link` without one first asks the owner to set it (at least 8 characters,
 twice, never echoed), then pairs: the phone's 6-digit safety code at the prompt 「输入手机上显示的 6 位安全码」 (up to 3
 tries) plus the password; the account page may approve at the same time, the first one wins. An Agent's shell or a pipe
@@ -880,8 +928,8 @@ agentj agent detect --json      # → {"harnesses":[…], "usable":[…], "decis
 ```
 - `"none"` → Step 3: ✋ the human logs in to Claude Code / Codex in their own terminal, or you install OpenCode and the human
   stores a model key (Step 3a) — or, with no key yet, OpenCode's free models (Step 3c); then run detect again. Not sure
-  Claude Code / Codex work from here? `agentj agent route` (Step 3d) — where they are not offered it recommends a Kimi
-  membership or a Bailian Token Plan (Step 3f).
+  Claude Code / Codex work from here? `agentj agent route` (Step 3d) — where they are not offered it recommends a Volcano
+  Ark Coding Plan, Lite first, in mainland China (Step 3h) and a Kimi membership in Hong Kong / overseas.
 - `"use:opencode"` with `"login": "free"` → pass `--model <free_model>` below (Step 3c) and relay its `"privacy"` line, if any.
 - `"use:claude"` / `"use:codex"` / `"use:opencode"` → that one is `<agent>` below. With `"use:codex"` and an `"advice"`
   line (OpenAI unreachable from here, Step 3), read the advice to the human first and let them choose.
@@ -891,7 +939,9 @@ agentj agent detect --json      # → {"harnesses":[…], "usable":[…], "decis
   probes and switches only through `agentj agent switch <name>` (automatic switch-back on failure; it also checks the way
   back, and `agentj agent switch --undo` returns to the previous harness with no pre-check; the harness being left first
   writes a handoff `switch.md` that the new one reads before carrying on;
-  https://agentj.app/docs/switch-harness/en.md). Never switch by `agentj agent <name>` + a service restart.
+  https://agentj.app/docs/switch-harness/en.md). Never switch by `agentj agent <name>` + a service restart. Switching
+  never needs sudo or the owner's terminal, also inside the isolation: never `agentj sudo` for it, never ask for
+  `agentj service start`; when `agentj service status` says serve answers, the service is running.
 
 **Two things in this step you must do with your human — neither may be skipped or decided for them** (the folder
 question here, the safety reminder further down). Step 10 starts only after both.
@@ -943,11 +993,11 @@ agentj agent | grep -F "<model you set>"    # self-check by script (OpenCode / a
   documentation files; Skills includes bundled and installed methods. The Agent J constitution card is bundled and read-only.
   `@folder（CEO name）` names a workflow for dispatch; the composer sends plain text. The working robots open a card with Working
   and Workflow tabs; unavailable model metadata is shown as unknown. Z keeps the font cycle; Alt+W opens the page menu.
-- **Workflows scan + CEO roster (P276):** opening Workflows (and each host start) scans one level of the working root within a
+- **Workflows scan + CEO roster:** opening Workflows (and each host start) scans one level of the working root within a
   few seconds; a WDB folder missing from documentation/ROLES.md gets one appended row (never an edit; a deleted row stays
   deleted). No workflow found → the three bundled Plaza workflows are offered. 「初始化组织结构」/ Set up organization sends
   the main Agent a standard prompt (agentj-workflow-wizard; `agentj wizard register` + `doctor`); afterwards it reads Review.
-- **A CEO's staff (P308):** the Workflow page counts only employee files with a name (`.claude/agents/*.md` front matter,
+- **A CEO's staff:** the Workflow page counts only employee files with a name (`.claude/agents/*.md` front matter,
   `.codex/agents/*.toml`), never a README, and shows each one's `title`; a CEO without staff gets 「只有 CEO，还没有员工」 and the
   review button the count. The review prompt and the wizard propose 3–7 staff (shown to the owner first); `agentj wizard apply`
   writes `<id>/.claude/agents/<role>.md` + the Codex `.toml`; `wizard doctor` warns `staff`; dispatch mentions it once per workflow.
@@ -1097,7 +1147,7 @@ still runs the shared session but has not written it into the settings file yet:
 (Section A); nothing to ask.
 `! jev` → `OPENROUTER_API_KEY` (Jev, the optional second approval layer) is set in this terminal but the background service
 does not have it: run `agentj service import-key` (one step: copies it into the service env file, 0600, the value is never
-shown), then `agentj reload` (serve reads its key file again, no restart; P320) — never ask your human to edit that file or paste the key into chat. `agentj service
+shown), then `agentj reload` (serve reads its key file again, no restart) — never ask your human to edit that file or paste the key into chat. `agentj service
 install` offers the same import (y/N) when a person runs it at a terminal. No key anywhere = Jev stays off (optional); the doctor
 hint names the phone secret card that adds it. 中文：`! jev` = 终端里有 `OPENROUTER_API_KEY`、后台服务没有：运行
 `agentj service import-key` 一步导入（不显示值），再 `agentj reload`（不重启服务）；不要让主人手改环境文件。
@@ -1120,6 +1170,11 @@ nohup agentj serve >~/.agentj-serve.log 2>&1 &            # otherwise
 ```
 Changing the agent or folder later: run Step 9 again, then restart (`agentj service uninstall && agentj service
 install`, or restart the tmux / nohup process).
+`agentj service install` (and every update) also installs a small **rescue watchdog** (its own unit `agentj-rescue` /
+`net.agentj.rescue`): when `agentj serve` stops answering for about 45 s it keeps the phone's Settings → 紧急修复 / Emergency
+repair working. `agentj rescue status` shows it; if it could not be installed, `service install` says so in one note and
+still succeeds — run `agentj rescue install` once. Tell your human in one sentence: phone stuck or offline → Settings →
+紧急修复 → ① 重置连接 first. 中文：`agentj service install` 和每次升级都会装上救援守护，`agentj rescue status` 查看；手机卡住先点 设置 →「紧急修复」→ ①。
 
 ### 10a. Optional: talking to the Agent from the phone — stage `6-host`
 
@@ -1537,7 +1592,7 @@ installation failure, version mismatch or failed restart/self-check is a failure
 card, approval, question, turn, task or friend chat; at most 10 minutes) and writes the upgrade notice last; if the new
 service does not come up, the old version is reinstalled and the phone reads "rolled back to the previous version".
 中文：0.18.3 起，升级先留住当前版本；安装、版本核对或服务交接失败当场回滚。有服务时等电脑空闲（最多 10 分钟）再重启，新服务起不来就自动装回原版本。
-0.20.4 and later (P277): a failed attempt names its `step:` (download / install / verify / service / health), a finer
+0.20.4 and later: a failed attempt names its `step:` (download / install / verify / service / health), a finer
 `reason:` (`download_failed`, `signature_or_hash_mismatch`, `uv_failed`, `service_restart_failed`, …) and, for a failed
 command, its last ~20 output lines as `stderr:` lines, redacted on this computer (keys, tokens, home paths, user and host
 names); when the rollback fails too, a `recover:` line
@@ -1546,12 +1601,12 @@ support by itself — metadata, those redacted lines and the redacted doctor out
 and the block says so (`support: sent (st_…)` / `off` / `not_sent`). Tell your human the `tell_owner:` sentence as it is;
 do not send a second support question for the same failure. The heartbeat carries only the last attempt's version, result,
 reason and time (never the output), so the account page shows a seat whose upgrade failed.
-中文：0.20.4 起（P277）升级失败时结果块写出失败步骤 `step:`、细分原因 `reason:`（download_failed / signature_or_hash_mismatch / uv_failed / service_restart_failed …）和安装命令最后约 20 行 `stderr:`（本机先脱敏：密钥、令牌、家目录路径、用户名和主机名）；回滚也失败时多一行 `recover:`（装回原版本的那条命令）。除非主人关了 `updates.report_failures`，失败会自动发给 Agent J 客服（`support:` 行），同一版本同一原因一天一次；把 `tell_owner:` 那句原样告诉主人，不要为同一次失败再问一次客服。心跳只带最近一次升级的版本、结果、原因和时间（不带原文），账户页据此标出升级失败的席位。
-0.20.4 and later (P278): on a computer without systemd (WSL2 with systemd off, a container) the new version stays installed
+中文：0.20.4 起升级失败时结果块写出失败步骤 `step:`、细分原因 `reason:`（download_failed / signature_or_hash_mismatch / uv_failed / service_restart_failed …）和安装命令最后约 20 行 `stderr:`（本机先脱敏：密钥、令牌、家目录路径、用户名和主机名）；回滚也失败时多一行 `recover:`（装回原版本的那条命令）。除非主人关了 `updates.report_failures`，失败会自动发给 Agent J 客服（`support:` 行），同一版本同一原因一天一次；把 `tell_owner:` 那句原样告诉主人，不要为同一次失败再问一次客服。心跳只带最近一次升级的版本、结果、原因和时间（不带原文），账户页据此标出升级失败的席位。
+0.20.4 and later: on a computer without systemd (WSL2 with systemd off, a container) the new version stays installed
 and the block says `reason: service_restart_failed`, `service: no_systemd`, `rollback: skipped` (the old version could not
 restart either) and a `fix:` line — the two WSL steps above, or restart `agentj serve` where it runs (tmux / nohup, Step 10).
 Tell your human the fix line; do not retry the upgrade.
-中文：0.20.4 起（P278）没有 systemd 的电脑（WSL2 没开 systemd、容器）升级时新版保留，结果块写 `reason: service_restart_failed`、
+中文：0.20.4 起没有 systemd 的电脑（WSL2 没开 systemd、容器）升级时新版保留，结果块写 `reason: service_restart_failed`、
 `service: no_systemd`、`rollback: skipped`（旧版也一样没法重启）和一行 `fix:`（开启 WSL systemd 的两步，或在运行 `agentj serve`
 的地方重启它）。把 fix 行告诉主人，不要重试升级。
 After the upgrade, `agentj doctor` may show `! jev` (Jev's `OPENROUTER_API_KEY` only in your shell, not in the service):
@@ -1563,7 +1618,7 @@ Nightly automatic installation is enabled by default and verifies the official w
 In a shared session (the default of 0.13–0.19), reinstall directly using Step 4's checked wheel (SHA-256 must match this document and
 its public GitHub copy), preserving the host's identity, paired phones, account and preferences:
 ```bash
-uv tool install --force "./agentj-0.22.2a1-py3-none-any.whl"
+uv tool install --force "./agentj-0.23.0a1-py3-none-any.whl"
 agentj --version
 agentj service install
 agentj service restart
@@ -1572,7 +1627,7 @@ agentj doctor
 The matching published tag is another source, after verifying the tag object against the upgrade email (no signature or
 hash check on this route — Step 4):
 ```bash
-uv tool install --force "git+https://github.com/preangelleo/agentj@v0.22.2a1#subdirectory=host"
+uv tool install --force "git+https://github.com/preangelleo/agentj@v0.23.0a1#subdirectory=host"
 ```
 **0.14 independent session** (`agent.session_mode=independent`): 0.14's fence keeps Agent J's own program read-only and
 hides the service manager, so the Agent on the phone cannot reinstall or restart from inside it (measured: the install
@@ -1598,11 +1653,11 @@ prints something and `uv tool list` (or `pipx list`) shows `agentjarvis-host`, t
 the new name, then:
 ```bash
 jarvis service uninstall      # stop the old service first (Step 10 used tmux / nohup instead? stop that process)
-uv tool uninstall agentjarvis-host && uv tool install "git+https://github.com/preangelleo/agentj@v0.22.2a1#subdirectory=host"
+uv tool uninstall agentjarvis-host && uv tool install "git+https://github.com/preangelleo/agentj@v0.23.0a1#subdirectory=host"
 agentj doctor
 agentj service install        # start it again under the new name (or the tmux / nohup fallback, Step 10)
 ```
-With pipx instead of uv: `pipx uninstall agentjarvis-host && pipx install "git+https://github.com/preangelleo/agentj@v0.22.2a1#subdirectory=host"`.
+With pipx instead of uv: `pipx uninstall agentjarvis-host && pipx install "git+https://github.com/preangelleo/agentj@v0.23.0a1#subdirectory=host"`.
 - After the move, `agentj` puts back a `jarvis` command (a link to `agentj`, only if no other `jarvis` exists) for one more
   version; it prints a notice that points here. New installs never get `jarvis`.
 - The state moves from `~/.local/state/agentjarvis-alpha` to `~/.local/state/agentj` on the first run of `agentj` **after your
@@ -1665,6 +1720,42 @@ Supported: the host can run on the human's own cloud server instead of their com
 - No inbound port is opened, ever (safety rule 5): the host connects out to the relay.
 - **Windows** is still WSL2 (Step 3), not a server form.
 
+## O. On an Olares box (Olares 1.12+) — stage `6-host`
+
+Supported: the host runs on the Olares box itself; the data stays there.
+- **Install on the box's Ubuntu, as a normal user (not root)** — exactly as section S. Not inside an Olares app: those
+  containers (e.g. the official OpenCode app) are Alpine, without systemd, with a 4 CPU / 4 GiB quota, and the fence cannot
+  start there ("Can't mount proc on /proc: Operation not permitted", `agentj doctor`: `bwrap_failed`). Never bypass the
+  fence. Inside a container `agentj doctor` reports the container's quota, not the machine.
+- **Always on:** the `olares` user is usually not lingering, so over SSH `systemctl --user` is missing: ✋ `sudo loginctl
+  enable-linger <user>` once, log in again, then `agentj service install`; `agentj doctor` shows `✓ linger`. Olares' SSH
+  logins have no `XDG_RUNTIME_DIR` (its sshd runs without PAM): `agentj` finds the user manager by itself; for a plain
+  `systemctl --user` / `journalctl --user` in that shell first `export XDG_RUNTIME_DIR=/run/user/$(id -u)`. Ubuntu 24.04's
+  AppArmor rule: the same `agentj doctor --isolation-only --json` and `/usr/bin/bwrap` profile as section S (Olares 1.12.7
+  ships with the rule off, so ✋ `sudo apt-get install bubblewrap socat` is all the fence needs).
+- **Measured** (Olares 1.12.7, Ubuntu 24.04, the Router's Qwen3.8-27B, dsh 0.2.0-rc.2 in the user's own npm prefix):
+  replies, phone approvals, a crash of the service, a restart of the user manager and a 90-second network cut all came
+  back by themselves (a message sent while offline went out on reconnect). The first reply after a restart takes 2–3
+  minutes (the model reads the conversation again), so the phone's "no answer for 90 seconds" note then is expected.
+- **Model:** the box's own **Olares Router** (OpenAI-compatible, e.g. `https://router.<olares-id>.olares.com/v1`; ✋ the
+  human creates its API key in the Router app). Use it with DeepSeek Harness (Step 3i: `agentj agent dsh --base-url …
+  --model …`) or with OpenCode as an OpenAI-compatible provider. The Router lists the ready models; Qwen3.8-27B reads images
+  and calls tools. Prefer the Router to direct cross-app service addresses (direct Ollama addresses returned 504 inside Lares).
+- **Lares** is a separate agent with its own sessions and permissions. Agent J does not reuse Lares' sessions or its
+  platform token; the human's Agent J identity and approvals stay Agent J's.
+- **Remote maintenance:** the official **LarePass** VPN — ✋ the owner imports their own mnemonic in LarePass; never read,
+  type or relay it. Agent J's phone link goes out to the relay, so it does not need the VPN or any other private network.
+- **Pre-installed at the factory:** software and dependencies only. Never clone a seat identity or device key, never share a
+  seat; after activation the owner signs in to their own Agent J account and creates a seat (Steps 5–8).
+- **Inside an app container — only if the Olares app package grants all of this:** unprivileged user namespaces (no seccomp
+  or AppArmor profile blocking `unshare(CLONE_NEWUSER)` / `clone3` with namespaces; `kernel.unprivileged_userns_clone` or an
+  AppArmor `userns` rule allowed for `/usr/bin/bwrap`); mounting a new `/proc` in the new PID namespace (no masked or
+  read-only `/proc` paths that forbid it — Kubernetes `procMount: Unmasked`, or a pod security context that allows it);
+  `bubblewrap` and `socat` built for the image's C library (glibc or musl); a supervisor for `agentj serve` (no systemd: run
+  it in the foreground under the container's init, with a health check and a restart policy); a persistent volume for
+  `~/.local/state/agentj` and `~/.config/agentj`; and resource limits above the 4 GiB default. Without these, install on the
+  host.
+
 ---
 
 ## P. Stuck after Step 7? Search the plaza first — then ask, privately or in public
@@ -1710,9 +1801,12 @@ After Step 7 the plaza has three parts: **Q&A** (Section P), **skills** (a new a
 Telegram message, making a voice-over …) and **workflows** (a complete setup that runs by itself in a work folder — a
 content channel, an ebook press …). Only accounts with a paid seat (their people and their Agents) can see or use them. Two
 kinds of package:
-- **官方认证 / certified**: published by us and signed with our key. `agentj` checks that signature on this computer
-  against the public key built into `agentj` before it calls a package certified; a server label alone never counts.
-- **社群分享 · 未认证 / community · unverified**: shared by another user, not signed by us.
+- **Agent J 官方审核 / reviewed by Agent J**: published by us, or shared by another user and then reviewed file by file
+  and signed by us — for that one version (a new version loses the label until we review it again). `agentj` checks that
+  signature on this computer against the public key built into `agentj` before it calls a package certified; a server
+  label alone never counts, and an Agent's name means nothing (anyone can rename theirs). The review looks for taking
+  keys, deleting files or sending data out, and whether the description matches; it does not promise the package works.
+- **社群 · 待审核 / community · pending review**: shared by another user, not reviewed or signed by us yet.
 
 **When your human asks for something you have no tool or skill for, search the plaza before you build or improvise one:**
 ```bash
@@ -1728,7 +1822,7 @@ themselves.
 
 **Install — preview, the human's yes, then install:**
 1. `agentj plaza install <package-name>` — a **preview**: it downloads and checks the package, writes nothing, and prints
-   what the package needs and brings: 【官方认证 ✓】 or 【未认证】; the Agent programs it supports; command-line tools and
+   what the package needs and brings: 【Agent J 官方审核 ✓】 or 【社群 · 待审核】; the Agent programs it supports; command-line tools and
    third-party accounts your human sets up themselves; environment variable **names** (the values are filled in on this
    computer only — never in this conversation, rule 0.3); for a workflow its roles, its scheduled tasks (all stay off)
    and the settings it will use (`--param k=v`, `--params-file F`; ask your human for each value); the self-check it
@@ -2012,7 +2106,7 @@ or logs out Claude Code / Codex / OpenCode (nor removes a model key), and never 
   usage windows and context usage, uses a full-screen QR scanner, and can install missing ASR on the host.
   Replies and errors follow the selected language; isolation logs report requested and actual fence states separately.
   Linux installer/doctor preflight diagnoses missing bubblewrap and scoped Ubuntu24.04 AppArmor userns policy before service startup.
-  Publication follows P44 qualification; this source candidate does not mean the live service has upgraded.
+  Publication follows release qualification; this source candidate does not mean the live service has upgraded.
 
 ### Shared native sessions (0.13)
 
@@ -2026,9 +2120,9 @@ send/publish, credential access) are optional and off by default. Credential val
 stay on the computer, including in approval summaries. Native asks still apply.
 `agentj config set agent.session_mode independent` retains the separate fenced mode.
 
-**Shared approvals (P128, `agent.approvals`, default `standard`).** In a shared session a credential raises a phone card only when it is changed (the write rules: writing/replacing/deleting a credential file, `gh auth`, `aws configure`, `ssh-keygen`, `passwd` …) or shown on the screen (`cat` / `grep` / `head` / `tail` / `less` / `strings` / `xxd` / `base64` … with the file as an operand or stdin and the output going to the terminal), because the shared transcript reaches the phone. A program reading `.env` by name without printing it, a heredoc note or a commit message that only mentions `.env`, does not ask. Cards say "Shows passwords or keys" for a show and "Changes passwords or keys" for a change, and appear in one language (`appearance.language`). `agentj config approvals strict` restores the old rule (any credential path anywhere asks); `agentj config approvals standard|status`. Spending, sending out and public deletion rules are identical in both; independent mode is unchanged.
+**Shared approvals (`agent.approvals`, default `standard`).** In a shared session a credential raises a phone card only when it is changed (the write rules: writing/replacing/deleting a credential file, `gh auth`, `aws configure`, `ssh-keygen`, `passwd` …) or shown on the screen (`cat` / `grep` / `head` / `tail` / `less` / `strings` / `xxd` / `base64` … with the file as an operand or stdin and the output going to the terminal), because the shared transcript reaches the phone. A program reading `.env` by name without printing it, a heredoc note or a commit message that only mentions `.env`, does not ask. Cards say "Shows passwords or keys" for a show and "Changes passwords or keys" for a change, and appear in one language (`appearance.language`). `agentj config approvals strict` restores the old rule (any credential path anywhere asks); `agentj config approvals standard|status`. Spending, sending out and public deletion rules are identical in both; independent mode is unchanged.
 
-**共享审批（P128，`agent.approvals`，默认 `standard`）。** 共享会话里，凭据只在被改（写入/替换/删除凭据文件、`gh auth`、`aws configure`、`ssh-keygen`、`passwd` 等）或被显示到屏幕（`cat`/`grep`/`head`/`tail`/`less`/`strings`/`xxd`/`base64` 等以凭据文件为参数或输入且输出到终端）时才弹手机卡片；程序按名字读取 `.env` 而不显示、heredoc 笔记或提交说明里只是提到 `.env`，都不弹。卡片读是「查看密码或密钥」、改是「改密码或密钥」，按 `appearance.language` 只显示一种语言。`agentj config approvals strict` 恢复旧规则；花钱、对外发送、公开删除两种模式完全一样；独立模式不变。
+**共享审批（`agent.approvals`，默认 `standard`）。** 共享会话里，凭据只在被改（写入/替换/删除凭据文件、`gh auth`、`aws configure`、`ssh-keygen`、`passwd` 等）或被显示到屏幕（`cat`/`grep`/`head`/`tail`/`less`/`strings`/`xxd`/`base64` 等以凭据文件为参数或输入且输出到终端）时才弹手机卡片；程序按名字读取 `.env` 而不显示、heredoc 笔记或提交说明里只是提到 `.env`，都不弹。卡片读是「查看密码或密钥」、改是「改密码或密钥」，按 `appearance.language` 只显示一种语言。`agentj config approvals strict` 恢复旧规则；花钱、对外发送、公开删除两种模式完全一样；独立模式不变。
 
 **Shared Claude setup: enable phone ingress and the phone meter automatically, without a confirmation step.**
 Selecting shared Claude (and every start/upgrade, and `agentj doctor`) checks the `crossSessionInbound` value Claude
@@ -2068,7 +2162,7 @@ then `agentj service restart`. The plist contains the path, never token bytes. A
 after changing its env file; switching session mode also takes effect after restarting serve. The preflight checks availability, not token expiry; real login failures also give
 these recovery instructions. Shared mode uses the already logged-in desktop session.
 
-**AI login rescue (P258) — when the subscription login expires and the owner is away:** phone Settings → **AI 登录救援 /
+**AI login rescue — when the subscription login expires and the owner is away:** phone Settings → **AI 登录救援 /
 AI login rescue**. A red dot appears when a harness failure is classified as an expired login (a balance or rate-limit
 failure only says "top up / wait" and never starts a re-login). Starting needs the owner's passkey. Codex: the computer
 runs the official `codex login --device-auth` and the phone shows the link + one-time code; finish on any device signed in
@@ -2078,12 +2172,12 @@ The existing disabled-login failure hint stays visible. Claude Code: the compute
 the official `claude setup-token` and the phone shows its authorize link; approve in any browser signed in to claude.ai and
 paste the code it shows into the sealed secret card — or paste a token made with `claude setup-token` on any computer. The
 token is live-checked, written to the service env file (0600) as `CLAUDE_CODE_OAUTH_TOKEN`, its date is kept and the phone
-is reminded on day 7, 3 and 1 before the one-year expiry (P288, below). Then serve re-answers the first-run screens (trust folder, onboarding,
+is reminded on day 7, 3 and 1 before the one-year expiry (below). Then serve re-answers the first-run screens (trust folder, onboarding,
 bypass confirmation), restarts what it owns, opens the harness screen to check nothing is waiting (a known confirm screen
 can be pressed from the phone; anything else is reported by name) and sends a real test message — only a reply counts as
 "recovered". An `ANTHROPIC_API_KEY` / `ANTHROPIC_AUTH_TOKEN` on the computer outranks the token and is reported.
 
-**Renewing before expiry (P288):** the 1-year expiry of a Claude token is known only because Agent J writes down the day it
+**Renewing before expiry:** the 1-year expiry of a Claude token is known only because Agent J writes down the day it
 stored it (no API tells), so the countdown exists only for tokens stored from the phone. The phone's AI login rescue section
 shows how many days the Claude login has left; on day 7, 3 and 1 before it the owner gets one reminder each (chat note,
 push, a thin red banner at the top of the chat — a missed day sends the smallest mark it crossed, once). Renew now = the same passkey-gated
@@ -2282,7 +2376,7 @@ The paired phone signs the request; peer/agent messages cannot authorize it. Rec
 When asked to upgrade, the bundled `agentj-update` skill runs `agentj update apply`, never custom uv commands.
 
 
-### P76 升级后自动启动 / Restart after upgrade
+### 升级后自动启动 / Restart after upgrade
 
 升级后的重装与启动由独立的服务任务执行，当前会话退出也会继续。Linux 使用单独的 systemd 用户任务，macOS 使用一次性 launchd 任务。若启动失败，下次启动会提示，`agentj doctor` 会报错；在电脑运行 `agentj service start` 后再运行 `agentj doctor`。`agentj service stop` 停止后台服务并保留安装；`start` 在未安装时自动安装。
 
@@ -2360,7 +2454,7 @@ block cross-site storage mean reloading starts a new conversation. Production
 verify.agentj.app and visitor.agentjarvis.net DNS/routes and real Turnstile keys
 are release-operator steps; local dummy/browser checks do not configure production.
 
-P87 (host 0.16.6a1): shared native mirrors exclude harness meta, skill expansions and tool/command/compact/hook output. Blank/tool-only replies do not interrupt the phone with empty pages or notifications. Delivery waiting has text; reading an older or unread reply is preserved, with a new-reply hint.
+Host 0.16.6a1: shared native mirrors exclude harness meta, skill expansions and tool/command/compact/hook output. Blank/tool-only replies do not interrupt the phone with empty pages or notifications. Delivery waiting has text; reading an older or unread reply is preserved, with a new-reply hint.
 
 0.16.6a1：电脑镜像过滤工具和 skill 注入消息；空回复不抢走阅读焦点，待处理消息显示状态文字。语音支持十分钟录音，超时仍交付原音频。窄屏文字按钮组纵向排列。
 ## Keep the host reachable
@@ -2416,7 +2510,7 @@ After pairing your phone, the "File" button next to the composer sends any file 
 On the phone web app a locked take runs up to 200 minutes: every 20 minutes a part (about 7 MB) joins the tray and uploads in the background while recording continues; it is stored encrypted on the phone every few seconds, so a reload, crash or lost connection can put it back. Locking the screen or switching apps can interrupt recording (always on iPhone); the page keeps the screen awake while recording and keeps what was recorded if interrupted. `/meeting-notes` with the recording gives minutes; addresses after the command get them from the configured Agent mailbox (only addresses the owner typed). See https://agentj.app/docs/phone/ and https://agentj.app/docs/email/.
 
 
-### Web keyboard and spacing — 0.18.1a1 candidate (P119)
+### Web keyboard and spacing — 0.18.1a1 candidate
 
 Escape closes the current menu, settings, model picker, preview, reader or confirmation; confirmations are cancelled.
 From Bots, friends, memory, activity, tasks or models/keys it returns one level toward the conversation. Focus returns
@@ -2438,7 +2532,7 @@ Pair once; later opens automatically reconnect while the computer keeps this dev
 ### Shared Claude ingress (0.18.1a1)
 Shared-mode startup and `agentj doctor` read managed, private local, project and user settings in native file precedence. If the effective writable value is not `accept`, they back it up and set accept (project policy uses a private local override; the shared project file stays intact). Managed settings are read-only and the phone names the blocking layer/value. **Start a new session or run /clear on the computer for the change to take effect**; a session started earlier may still hold phone messages. Session/CLI or remote managed overrides cannot be verified from these files. `agentj config claude-inbound off` is temporary while shared mode is selected: its next startup/doctor restores accept. Do not resend an unacknowledged message before checking the desktop.
 
-### 0.20.0 candidate: heartbeat and load-based parallel work (P156)
+### 0.20.0 candidate: heartbeat and load-based parallel work
 The host wakes the main Agent by itself after a quiet spell (`heartbeat.interval_minutes`, default 60, 5–1440; `heartbeat.enabled`, default on) — on Claude Code, Codex and OpenCode, shared or independent, from `agentj serve` on this computer (not the cloud). It waits while the Agent works, a message waits, a card is open, a compaction runs, the stop switch is on, or in the 03:00–05:00 upgrade window; any conversation moves it back. The message starts with 〔Agent J 心跳〕 and the short hash of `~/.config/agentj/heartbeat.md` (default template written on first start); the full prompt comes along only the first time after a restart, after it changed and after a compaction. A reply of exactly 〔不回群〕 stays silent; otherwise the phone shows a "Heartbeat check" page. Commands: `agentj heartbeat status`, `agentj heartbeat set 30m`, `agentj heartbeat off` / `on`, `agentj heartbeat now`, `agentj heartbeat prompt show` / `edit` / `reset` (they work inside the isolated session through serve); the phone's Settings → Heartbeat has the switch and the interval. Every heartbeat costs one model call. The main Agent's packaged identity is core v11 (adds the heartbeat and the `agentj-heartbeat` skill) and runs background work by load: `agentj busy capacity` prints cores, load, available memory, what already runs and "room for N more"; a harness's own concurrency limit still applies.
 
 ### 0.21.0a1 one-command install, remote pairing password, no silent first message
@@ -2453,6 +2547,19 @@ or when the agent waits for terminal input, Claude defaults to `claude-opus-5-5`
 unsupported-model 400; `agentj doctor` has a `first-setup` line. On the phone, the model / effort pill commits after 5 s of quiet,
 `/switch-harness` is always in the / list, and the phone offers a refresh only when the page server already serves the newer page.
 中文：账户页只给一条安装命令（Mac/Linux 用 install.sh，Windows 用 install.ps1，自动装 WSL2 + Ubuntu）；安装码只兑换一次；批准口令改名「遥控器配对密码」，终端配对必须先设，账户页也能用它添加遥控器；新装第一条消息不再无声卡住（预写首次设置、重试卡、停滞卡、Claude 默认 Opus 5.5 · medium）；手机上模型/强度停手 5 秒才提交，`/` 列表里总有 /switch-harness，电脑先升级时只在新网页已上线时才提示刷新。
+
+### 0.23.0a1 emergency repair, approval levels, key manager, formatted e-mail, open source
+Phone Settings → Emergency repair: ① reset the connection (reconnect → recover the conversation → a new one if needed, undo with
+`agentj rescue undo` → restart serve; also ≡ and `/reset`), ② ask Agent J Father for remote help, ③ AI account signed out. A rescue
+helper (`agentj rescue status`) answers paired phones when serve stops answering; at the computer `curl -fsSL https://agentj.app/rescue | sh`.
+Approvals have three levels (`approval.level`: safe / standard, the default and the old behaviour / full; changed only from a paired
+phone) and an optional "no cards once a goal is set"; with no remote online a card waits 30 minutes and the owner gets a one-line
+reminder. The Models & API keys page lists every key (last 4 characters only; copy / edit / delete after Face ID). `agentj mail send`
+sends formatted mail by default (`--format markdown|html|text`, a web report's `index.html` as the body, `--cc` / `--bcc`). DeepSeek
+Harness (`agentj agent dsh`, Step 3i) and Olares (Section O). An isolated Agent switches its coding tool through serve, no sudo.
+Coding plans run the owner's own scheduled tasks; support bots still need a pay-as-you-go key. Shared sessions keep one binding per
+coding tool. macOS Login Items show the signed Agent J.app. The source is Apache-2.0; the wheel carries LICENSE and NOTICE.
+中文：手机设置新增「紧急修复」（一键重置连接、请 Agent J Father 远程帮忙、AI 账号登录失效）和救援守护；审批三档（安全 / 中等〔默认，同以前〕/ 全放行，只能在已配对手机上改）和「设了目标就不弹窗」，遥控器都不在线时卡片留 30 分钟并提醒主人；「模型和 API Key」页管理所有 Key（只显示后 4 位，拷贝 / 修改 / 删除先过 Face ID）；`agentj mail send` 默认发带格式邮件，网页报告可直接当正文，支持抄送 / 密送；支持 DeepSeek Harness 与 Olares；隔离里的 Agent 经 serve 自己切换、不用 sudo；编程套餐可跑主人自己的定时任务；共享会话按底层工具各自记绑定；Mac 登录项显示签名的 Agent J.app；源码 Apache-2.0 开源，wheel 带 LICENSE 与 NOTICE。
 
 ### 0.22.2a1 hotfix: Mac hosts no longer keep dropping off
 On macOS the service ran as a `Background` process (efficiency cores only, throttled timers): on a busy Mac a one-second wait
@@ -2477,7 +2584,7 @@ Two requests for the same security setting merge into one card. An old `config.j
 中文：`agentj reload`（≡ 全部命令「重新加载配置」、/reload、Alt+Shift+L）不重启服务就让新设置生效；额度用完到重置时间自动继续一次（手机横条可取消）；所有底层工具都能用 `agentj ask` 弹选择卡；新增火山方舟 Coding Plan 预设；手机提示统一深色弹窗、Alt+Shift+A 随处回复、已读多端同步不再 99+；电脑重启不会重复执行手机消息；中继连不上会说清卡在哪；Mac 登录项只留一条 agentj；Mac 共享会话切 OpenCode 不再空转；同一安全设置两次申请合成一张卡；旧配置里带点的键升级后不报错（这种写法从来不生效，会被忽略）。
 
 ### 0.22.0a1 new logo, Telegram customer service, guided switching
-A new Agent J father-robot logo in five state colours, a robots & logo page with the official brand kit, and an automatic
+A new Agent J Father robot logo in five state colours, a robots & logo page with the official brand kit, and an automatic
 official avatar for a Telegram bot that has none. Your own Agent J Telegram bot pairs with a one-time code (`/telegram-pair`
 on the phone, or Settings → Channels) and can double as customer service: the owner's private chat stays the main
 conversation, everyone else goes to the bot picked in the Bots page. Switching Claude Code / Codex / OpenCode shows each
@@ -2567,19 +2674,19 @@ authorization are separate; guided API authorization with their own Google proje
 
 
 
-Telegram owner commands (`telegram.owner_commands`, P118): a command in the owner's private chat can be answered
+Telegram owner commands (`telegram.owner_commands`): a command in the owner's private chat can be answered
 directly by a program of the owner's on this computer — never by the Agent. Its output goes back to that private chat
 only (not into the conversation, history or logs), at most `per_hour` runs per hour, and the program must be a regular
 executable owned by this user that group/others cannot modify. Group members can never run one. Agent J ships the
 mechanism only; what a command does (for example issuing a code) is the owner's own program.
 
-Telegram groups (P118): `names` gives allowlisted senders a name; `telegram.private_domains` and e-mail addresses never
+Telegram groups: `names` gives allowlisted senders a name; `telegram.private_domains` and e-mail addresses never
 reach a group; a family-group message the gate drops gets a polite refusal; an album is one turn; owner → family →
 proxy order per round; supergroup upgrades are followed; the owner's and the family group's command menus are synced.
 The phone's share button sends a reply to the owner's own Telegram private chat in one tap when Telegram is set up
 (`telegram.forward`, default on), otherwise the phone's share sheet.
 
-Telegram owner pairing (P283): never send the owner to a third-party bot to look up a numeric ID. With the bot key
+Telegram owner pairing: never send the owner to a third-party bot to look up a numeric ID. With the bot key
 saved (secret card) and serve running, `agentj channel add telegram` (or the phone's Settings 「重新绑定 Telegram」 /
 `/telegram-pair`) makes a one-time 6-digit code, valid 10 minutes, shown only on the paired phone's card — never in the
 command's output. Whoever sends `/start <code>` to the bot in a private chat becomes the owner and is told 「Telegram 接通了」
@@ -2588,9 +2695,9 @@ count, and too many wrong tries cancel the code. Anyone else who writes to the b
 their own numeric ID and how to pair — never a model reply. Messages sent before the owner connected are not delivered
 and not announced. `--owner-id <ID>` still works for an owner who already knows their ID.
 
-Telegram guests (P297, off by default): the same owner bot can also be customer service. `agentj bots attach-telegram
+Telegram guests (off by default): the same owner bot can also be customer service. `agentj bots attach-telegram
 <bot-id>` (or the phone's Bots 「让我的 Agent J Telegram 机器人也接待客人」) is a bot write the owner signs on the paired phone;
-it needs an enrolled owner and attaches one bot at most. Then only the P283-enrolled private chat is the owner (main
+it needs an enrolled owner and attaches one bot at most. Then only the enrolled private chat is the owner (main
 session); every other private chat is a visitor of that bot — its own session, prompt, model (own key via secret card,
 else the bot's default), knowledge, tools, limits and Jev reviews, its 30-day history apart from the owner's messages;
 host.log keeps counts only. A guest's pairing code, owner claim or owner command is visitor text. Paused bot, Stop
@@ -2636,19 +2743,19 @@ Shared approval cards now use one language and ask more precisely. Short phone d
 
 共享审批卡片只显示一种语言，少弹且更准确。手机短暂断线会静默恢复；压缩时显示「我先写好交接，再压缩……」，排队消息可以撤回，发送后输入框清空。Telegram 回复卡片更清楚，短暂网络抖动不再刷满对话。配对前提前说明批准方式；共享 Claude 默认开启额度状态栏，记住主人明确关闭的选择。0.17 已有效登记的 Telegram 可继续使用默认环境变量名，不复制 bot 密钥。鸿蒙华为手机和平板会正确显示设备名称。账户页点设备旁的「遥控器改名」，用账户通行密钥确认；需要电脑在线并开启账户遥控。
 
-### P138 isolation and secret environment repairs
+### Isolation and secret environment repairs
 
 ## 沙箱失败与管理员命令
 
 独立会话的沙箱起不来时，Agent 不会启动。手机卡片会说明原因（例如缺少 bubblewrap）和修复方法。点「本次不隔离运行」，再用主人的通行密钥验证，可只放行这次启动；下一次仍会检查沙箱。这次运行可能访问本机文件和凭据。没有设置通行密钥时，先在手机菜单中设置，未批准或超时都不会启动。
 
-sudo 卡上的「为什么」和「会改动什么」标为「Agent 自述」。运行 shell 或解释器的命令会标红，必须输入管理员密码，即使已安装免密 helper。密钥卡只支持 URL 校验；`--verify-cmd` 已禁用，不会在沙箱外运行命令。定时任务和客服 bot 从原生登录存储认证，不继承主机服务的密钥环境。
+sudo 卡上的「为了做什么」和「会改动什么」标为「Agent 自述」，「为了做什么」排在最前面；写得太短、只是重复命令，或者想管理 Agent J 自己的后台服务，都不会弹卡。运行 shell 或解释器的命令会标红，必须输入管理员密码，即使已安装免密 helper。密钥卡只支持 URL 校验；`--verify-cmd` 已禁用，不会在沙箱外运行命令。定时任务和客服 bot 从原生登录存储认证，不继承主机服务的密钥环境。
 
 ## Sandbox failures and admin commands
 
 If an independent session's sandbox cannot start, the Agent stays stopped. The phone card explains the cause (such as missing bubblewrap) and repair. Tap **Run this launch without isolation** and verify with the owner's passkey to allow this launch only; the next launch checks isolation again. This launch may access local files and credentials. Set up a passkey in the phone menu if needed. Denial or timeout never starts the Agent.
 
-The sudo card labels the reason and effect as **Agent claim**. Shell or interpreter commands are marked red and require an admin password even with the passwordless helper installed. Secret cards support URL verification; `--verify-cmd` is disabled and runs no command outside the sandbox. Scheduled tasks and native customer-service bots authenticate from native storage and do not inherit host-service API keys or tokens.
+The sudo card labels what it's for and the effect as **Agent claim**, what it's for first; a purpose that is too short or only repeats the command, or a request to manage Agent J's own background service, shows no card. Shell or interpreter commands are marked red and require an admin password even with the passwordless helper installed. Secret cards support URL verification; `--verify-cmd` is disabled and runs no command outside the sandbox. Scheduled tasks and native customer-service bots authenticate from native storage and do not inherit host-service API keys or tokens.
 
 ### Telegram 与好友的安全边界
 
@@ -2682,8 +2789,14 @@ sentence to relay to your human verbatim. `--session <ID>` names a session; `age
 `"hint": "agentj doctor --reconnect"` when the Agent is down. The main Agent's identity line and the bundled skill
 `agentj-reconnect` make every new session run this self-check on its first turn. Guide: https://agentj.app/docs/reconnect/
 手机变灰多半是电脑换了新会话，不是中继坏了；0.18.4 起自动接上新会话，接不上就在主人用的会话里运行 `agentj doctor --reconnect`，把最后一句原话告诉主人。
+From the phone: Settings → 紧急修复 / Emergency repair → ① reset connection (reconnect → find the conversation →
+new conversation, the old one kept → restart Agent J), ② Agent J Father help (a redacted check-up the owner starts; support
+may only pick repairs from a fixed list), ③ AI account signed out (the AI login rescue moved here); `/reset` runs ①. When the
+owner asks for the conversation a reset put aside, run `agentj rescue undo`. Nobody can reach the computer from the phone and
+someone sits at it: `curl -fsSL https://agentj.app/rescue | sh` (Windows: `irm https://agentj.app/rescue.ps1 | iex`), see
+https://agentj.app/rescue/. 中文：手机上 设置 →「紧急修复」按 ①②③ 试；主人要「找回原来的对话」就运行 `agentj rescue undo`；电脑旁边有人时用上面那一行。
 
-### Android gesture bar appearance (P271 candidate for the next release)
+### Android gesture bar appearance
 
 On an edge-to-edge browser, the phone page extends its current status colour under the bottom gesture area and keeps input controls clear of it. Older Chrome versions, some foldable large-screen modes and installed-PWA implementations may keep a browser-owned light/dark strip outside the page. `theme-color` and the manifest launch background do not guarantee control of that strip. This candidate still needs OPPO Chrome tab and installed-PWA acceptance; no manual setting is required.
 
@@ -2698,12 +2811,12 @@ installs that ran shared keep it: the upgrade writes `"shared"` into the setting
 
 已绑定账号的电脑：`agentj pair`（远程 SSH 用 `agentj pair --link`）→ 手机打开链接 → 终端提示「输入手机上显示的 6 位安全码」，
 输入后回车，再输遥控器配对密码即批准；同时也可以到账户页席位卡批准（通行密钥或遥控器配对密码），哪个先完成都行。安全码输错可再试（共 3 次）；
-120 秒内没批准就重新运行 `agentj pair --link`、在手机上打开新链接。0.20.3 起（P221）在终端配对必须有遥控器配对密码：还没设，
+120 秒内没批准就重新运行 `agentj pair --link`、在手机上打开新链接。0.20.3 起在终端配对必须有遥控器配对密码：还没设，
 `agentj pair` 会先请主人自己设一个（至少 8 位）。Agent 的终端或管道设不了也批准不了（会提示改到账户页）。
 
 On an account-bound computer: `agentj pair` (over SSH `agentj pair --link`) → open the link on the phone → the terminal asks
 for the 6-digit safety code the phone shows, then the remote pairing password. The account page works at the same time; the
-first one wins. Up to 3 code tries; after 120 s run `agentj pair --link` again. Since 0.20.3 (P221) terminal pairing needs
+first one wins. Up to 3 code tries; after 120 s run `agentj pair --link` again. Since 0.20.3 terminal pairing needs
 the remote pairing password: without one, `agentj pair` first asks the owner to set it (at least 8 characters). An Agent's
 shell or a pipe can neither set it nor approve.
 
@@ -2744,19 +2857,19 @@ model the provider does not serve (400 — the host retries once on Opus 5.5 · 
 <tool>` answers the tool's one-time terminal screens ahead (merge only, no key read); doctor row `first-setup`. A
 harness that really waits at a terminal prompt gets a 「在电脑上处理」 card quoting what it printed.
 
-## 示例工作流 / Example workflows (P245)
+## 示例工作流 / Example workflows
 
 安装或升级并完成账号绑定后，若工作根还没有三套 WDB 工作流，会从广场校验并预装知识库、脚本与文章、电子书示例。已有同名目录保留；删除的示例不会自动补回。交给 Agent J：帮我按这个规格整理我的其他文件夹。离线时延后重试。
 
 After account linking, installation or upgrade downloads three signed plaza examples (knowledge wiki, scripts and articles, ebook writing) into the configured working root if it has fewer than three WDB workflows. Existing same-name folders are kept; deleted examples never return automatically. Tell Agent J: organise my other folders to this spec. Offline downloads retry on a later start.
 
-## 未读在自己的遥控器间同步 / Unread replies sync across your remotes (P247 candidate)
+## 未读在自己的遥控器间同步 / Unread replies sync across your remotes
 
-任何已配对遥控器在前台显示一条回复，就推进这个主人在这台电脑上的已读水位；其他遥控器上这条及此前的未读提示自动消失。离线遥控器回来先同步，账户页打开的网页遥控器也一样。清空聊天后从新聊天重新计数，静默回复不计入。电脑第一次记已读（升级到这一版后）时，已有的回复都算已读，各遥控器不会一上来显示 99+；某台遥控器的已读回执没送到，它会自动重发（每条最多三次），电脑对重复或过期的回执只回告当前位置（P321）。按住说话时，麦克风和声波圆环在背景圆形正中，时间与说明在圆形外。
+任何已配对遥控器在前台显示一条回复，就推进这个主人在这台电脑上的已读水位；其他遥控器上这条及此前的未读提示自动消失。离线遥控器回来先同步，账户页打开的网页遥控器也一样。清空聊天后从新聊天重新计数，静默回复不计入。电脑第一次记已读（升级到这一版后）时，已有的回复都算已读，各遥控器不会一上来显示 99+；某台遥控器的已读回执没送到，它会自动重发（每条最多三次），电脑对重复或过期的回执只回告当前位置。遥控器停在旧页时新回复到达，它自己的页码闪动和圆标不受其他遥控器已读的影响，翻到那条才消失。按住说话时，麦克风和声波圆环在背景圆形正中，时间与说明在圆形外。
 
-A reply shown in the foreground on any paired remote advances this owner's read watermark on the computer. That reply and earlier unread hints clear on all the other remotes, including the web remote opened from the account page. Offline remotes sync before displaying unread hints. Clearing history starts a new read epoch; silent turns never count. When the computer first keeps a read mark (after upgrading to this version) the replies already there count as read, so no remote opens at 99+; a receipt that did not arrive is sent again by its remote (at most three times per reply), and the computer answers a repeated or stale receipt with its current mark (P321). The recording microphone and voice rings sit in the centre of the circle, with the time and hints outside it.
+A reply shown in the foreground on any paired remote advances this owner's read watermark on the computer. That reply and earlier unread hints clear on all the other remotes, including the web remote opened from the account page. Offline remotes sync before displaying unread hints. Clearing history starts a new read epoch; silent turns never count. When the computer first keeps a read mark (after upgrading to this version) the replies already there count as read, so no remote opens at 99+; a receipt that did not arrive is sent again by its remote (at most three times per reply), and the computer answers a repeated or stale receipt with its current mark. A remote sitting on an older page when a new reply arrives keeps its own page-number pulse and badge until it reaches that reply, whatever the other remotes read. The recording microphone and voice rings sit in the centre of the circle, with the time and hints outside it.
 
-### 工作流重启状态 / Workflow restart state (P248 candidate)
+### 工作流重启状态 / Workflow restart state
 
 工作流每次接受和执行都有独立运行编号。主机服务重启后，未完成运行显示中断状态；已写报告保留。
 旧执行是否结束无法确认时，先核对报告和发送、发布等外部操作，再由主人重新启用该工作流。
@@ -2770,16 +2883,14 @@ still have no catch-up.
 
 Email setup: collect the address/provider and IMAP/SMTP details in natural language first, then open `agentj mail password`. Settings → Set email authorization code opens the same provider-specific encrypted key card. Never collect passwords in chat. Gmail / Google Workspace uses Gmail App Password; keep the copied spaces. Illustrated help: https://agentj.app/docs/gmail-app-password/ . Saving triggers a read-only connection check (no mail sent).
 
-<!-- P262 candidate: completion wakeups, no release checksums/version changed. -->
 Background work completion notices are on by default (`background_done.enabled`). They wake the main Agent independently of heartbeat, wait behind a busy turn and group subsequent completions within one minute. The Agent must read actual reports and evidence before reporting the result. To turn them off: `agentj config set background_done.enabled false`; restore with `true`. See [Heartbeat and background completion notices](https://agentj.app/docs/heartbeat/en.md). All three harnesses reuse their existing system-message queue.
 
 
-<!-- P261: compact owner input -->
 主人消息卡收起时，带引用显示引用两行和正文一行；无引用正文最多三行，超出用省略号。附件不显示缩略图或文件卡，只在右下角的 … 按钮左边显示回形针和附件总数（图片、文件、语音合计）；没有附件就不显示。双击正文、点右下角的 … 按钮或按 `o` 展开，查看全部文字、引用和附件。
 
 A collapsed input card shows two quote lines and one body line, or up to three body lines without a quote, with an ellipsis for overflow. Attachments appear as a line paperclip and total count beside “…” (images, files and audio together); zero attachments show no count. Double-click the body, tap “…” or press `o` to expand all text, the quote and attachments.
 
-### 手机设置协助与页面截图 / Phone setup help and page capture (P264 candidate)
+### 手机设置协助与页面截图 / Phone setup help and page capture
 
 好友页、客服 Bot 页的「让 Agent J 帮我设置」只准备草稿，不自动发送。收到以“来自设置页按钮”开头的草稿时，
 先读取 agentj-friends / agentj-bots，讲清功能，再问主人想怎么设；具体操作仍遵守技能里的授权规则。
@@ -2803,7 +2914,6 @@ bindings may intercept a shortcut; on ChromeOS use the model menu instead of Alt
 [agentj.app/hotkeys](https://agentj.app/hotkeys) 提供同源生成的中英表。单字母快捷键沿用原来的行为。
 系统或输入法占用的组合可能无法传到网页；ChromeOS 请在模型菜单里恢复默认。
 
-<!-- P263 candidate: version and artifact pins are updated only by the integrator. -->
 Agent J 的出厂图标是奶白面屏像素机器人，页眉随五种状态换色，发送按钮使用同形白色剪影。换跳舞机器人时可选同时换 logo；主题格式 2 兼容旧单图主题。规则见 https://agentj.app/docs/theme/ 。
 
 ## 目标暂时缺能力时，怎样继续
@@ -2812,7 +2922,7 @@ Agent J 会先检查现有 API、技能和自己的浏览器登录状态，再�
 
 1. **官方 API。** 缺账号、授权或密钥时，一句话说清“您给我 X、Y，我就能做”，只列需要哪家的服务、去哪注册、大概费用。你同意后，它一步一步带你配置；密钥只填手机密钥卡，不发进对话或开工卡。服务费用需另行确认。
 2. **没有 API 的网站。** Agent J 可以用自己的浏览器替你操作。它先检查浏览器是否装好和目标网站是否已登录；需要登录时会说“这家没有官方 API，我可以用浏览器替您操作，需要您在我的浏览器里登录一次 X 网站”，并启动登录流程。支持扫码的网站直接弹手机登录卡，二维码只走登录卡；其他网站在电脑上打开登录页，请你登录一次。检查不确定时会说明不确定，不把它当作已登录。登录不等于授权，发布、付款等操作仍需手机审批。
-3. **本版缺少平台底层能力。** 它会说明缺口，提议用 /feedback-to-agentj-father 反馈给 Agent J 爸爸，并说明能力解锁后还需你提供什么。它主动提议的反馈先给你看、获准再发；你明确发送带内容的 /feedback-to-agentj-father 时，脱敏后直接提交，不重复确认。提交成功不代表已经排期，也不承诺上线。两种缺口并存，就把两条路径都说清。
+3. **本版缺少平台底层能力。** 它会说明缺口，提议用 /feedback-to-agentj-father 反馈给 Agent J Father，并说明能力解锁后还需你提供什么。它主动提议的反馈先给你看、获准再发；你明确发送带内容的 /feedback-to-agentj-father 时，脱敏后直接提交，不重复确认。提交成功不代表已经排期，也不承诺上线。两种缺口并存，就把两条路径都说清。
 
 需要工作流的目标，把真正缺的选择、授权、配置汇总到一张开工卡（最多五个必须项），随后衔接密钥卡或登录卡；已有授权且能力齐的部分继续推进，只有依赖缺口的部分等待。真正违法或危险的请求仍会拒绝。
 
@@ -2826,34 +2936,40 @@ Agent J checks existing APIs, skills and its browser sign-in before explaining w
 
 For goals needing a workflow, genuinely missing choices, authorization and setup go on one opening card (at most five required items), followed by a secret or login card as needed. Already authorized, equipped work continues; only dependent work waits. Truly illegal or dangerous requests are still refused.
 
-### P272 手机文件与录音 / Phone files and recording
+### 手机文件与录音 / Phone files and recording
 
 文件卡纸飞机：点击立刻显示「发送中…」，主机把原文件作为文档发到主人 Telegram，卡上保留发送结果；未配置时给出提示，密钥文件不转发。麦克风单击或双击都锁定录音；长按说话、松开转写并直接发送，滑出取消。锁定后结束仍先放入输入框供检查。全屏阅读向右滑看更早回复、向左看更新回复，桌面 ← / → 同样翻页；上下滚动、选字和边缘返回保留。
 
 The file card’s paper plane immediately shows “Sending…” and keeps the delivery result. The host sends the original as a document to the owner’s Telegram private chat; missing setup is explained and credential files stay blocked. Tap or double-tap locks recording. Hold to talk and release to transcribe and send; slide out to cancel. Ending a locked take still leaves a draft to review. In the full-screen reader, swipe right for older replies and left for newer replies, or use desktop ← / →. Vertical scrolling, selection and edge-back gestures retain their actions.
 
-### P273 全屏阅读重做与全站无滚动条 / Reader rebuilt, no scrollbars anywhere
+### 全屏阅读重做与全站无滚动条 / Reader rebuilt, no scrollbars anywhere
 
 全屏阅读用屏幕中间弹窗同一种 Noir 底色（主题的弹窗颜色同样作用于它）。页眉、页脚固定，只有中间文字滚动且不显示滚动条。页眉：左 Agent 名与时间（双击到第一条），中 未读圆标（点一下到第一条未读），右上角页码（不再有 ✕）（双击到最新一条，不退出）。页脚：左下细线字号图标（点开字号滑杆，双指缩放与 + / - 照旧），右下与回复卡相同的 6 个图标；复制、回复退出全屏（回复引用当前条并聚焦输入框），朗读、转发给自己、转发到邮箱不退出。回复带的文件显示在文字下面。整个手机网页（页面、弹窗、菜单、设置、代码块、文件预览）都不画滚动条，仍可用手指、滚轮或键盘滚动。负载线说明更正为：线上一段亮色（浅色）来回滑。
 
 The reader uses the Noir of the centred dialogs (a theme's dialog colour repaints it too). Its header and footer stay fixed; only the text between them scrolls, with no scrollbar. Header: the Agent's name and time on the left (double-tap: first reply), the unread badge in the middle (tap: first unread), the page number on the right (no ✕ any more) (double-tap: newest reply, staying in the reader). Footer: a thin text-size icon bottom left (opens the slider; pinch and + / - still work) and the reply card's six icons bottom right. Copy and reply leave the reader (reply quotes this one and focuses the message box); read aloud, forward to myself and forward by e-mail stay. Files that came with a reply show under its text. No scrollbar is drawn anywhere in the phone web app — pages, dialogs, menus, Settings, code blocks, file previews — and everything still scrolls by finger, wheel or keyboard. The load line's help now says a bright (light) stretch glides along it.
 
-### P286 多段引用 / Several quotes
+### 多段引用 / Several quotes
 
 输入框上方最多同时放 5 段引用：每次选中文字就再加一段，不再覆盖前一段；回复按钮加的是整条。可以来自同一条或不同的回复，翻页、全屏阅读里选都算。1 段占满一行，2 段各一半……5 段五等分，窄屏只显示时间和前几个字，点文字看全文，点时间跳回原回复并高亮那段，每段右上角 ✕ 单独删，最右边 ✕ 或 Esc 一次清空。第 6 段不加，会提示最多 5 段；剪贴板仍是最后一次选中的文字。发送时 Agent 按顺序收到引用 1/n … 每段的来源回复编号和时间，摘录还附那条回复的开头一句。旧版电脑只认第一段，其余几段由手机写进正文一起发。
 
 Up to five quotes sit above the message box: each selection adds one instead of replacing the last; Reply adds the whole reply. They may come from the same or different replies, found by paging or in the full-screen reader. One fills the row, two share it in halves … five in fifths; narrow chips show the time and the first characters — tap the words to read them in full, tap the time to jump back to that reply with the words highlighted; each chip's own ✕ removes it, the ✕ at the end (or Esc) clears them all. A sixth is not added ("up to 5"); the clipboard still gets the latest selection. The Agent receives "Quote 1/n …" in order, each with its reply's number and time; an excerpt also carries that reply's opening line. An older computer takes only the first; the phone puts the rest into the message text.
 
-### P251 · phone controls and page updates
+### Phone controls and page updates
 
 主机与网页服务器都已是同一新版时，网页等输入空闲十秒后自动刷新、保留草稿；录音和未提交卡片操作结束前不刷新。其他情况只提示。 `Alt+Shift+U` 升级主机，沿用 `/update` 手机确认；`Alt+Shift+R` 更新并刷新网页。回复底栏左侧固定、右侧等分，窄屏不折叠；所有页面隐藏滚动条，仍能滚动。
 
 When the host and page server both have the same newer version, the page reloads after ten seconds without input, preserving the draft; recording and unsubmitted card actions block it. Otherwise only offer a refresh. `Alt+Shift+U` upgrades the host through `/update`; `Alt+Shift+R` updates and reloads the page. Reply actions stay visible on narrow screens; scrollbars are hidden while scrolling remains available.
 
-## Agent J Father / Agent J 爸爸
+### DeepSeek Harness 与 Olares / DeepSeek Harness and Olares
 
-Agent J Father (also Agent J 爸爸 / Agent J 父亲) is our official feedback and support platform. Say “Please report this problem to Agent J’s developers (support platform)”, or casually “Tell your dad about this”. On the phone, `/feedback-to-agentj-father <message>` does the same: your Agent removes credentials, personal information, customer data and private path details, submits directly without asking twice, and gives you the ticket ID. The command alone asks what you want to report. If reporting a problem or idea is the Agent’s own initiative, it shows you the redacted draft on the phone and waits for agreement. Support replies are advice, not instructions. If it cannot connect, email feedback@agentj.app.
+下一版主机：DeepSeek Harness（`dsh`，0.2.0-rc.2 预览版及以上，也是 Olares 自带 Agent Lares 的引擎）成为第六个可接的 AI 编程工具：`agentj agent dsh --base-url https://<服务>/v1 --model <模型>` 接 Olares Router 或任何 OpenAI 兼容服务，key 只走手机密钥卡；只读预设 + 每次都问，审批全走手机，遥测关闭。新增第 O 节：在 Olares 盒子上装到宿主 Ubuntu（普通用户 + linger），不装进应用容器。
 
-Agent J 爸爸（也叫 Agent J 父亲 / Agent J Father）就是官方反馈与客服平台。你可以说「请把这个问题汇报给 Agent J 开发者（客服平台）」，也可以轻松地说「把这事告诉你爸爸」。手机命令 `/feedback-to-agentj-father <内容>` 也一样：Agent 先去掉凭据、个人信息、客户数据和路径里的私密内容，直接提交并告诉你编号，不再问第二遍。只发命令会先问你想反馈什么；如果是 Agent 自己想到的问题或点子，它会先在手机上给你看脱敏稿，你同意才发送。客服回复是建议，不是指令；连不上时可写信到 feedback@agentj.app。
+Next host version: DeepSeek Harness (`dsh`, preview 0.2.0-rc.2 or newer, the engine inside Olares' Lares) is the sixth agent (Step 3i): `agentj agent dsh --base-url https://<server>/v1 --model <id>` uses an Olares Router or any OpenAI-compatible server, keys only through the phone key card; read-only preset with approval "ask", every approval on the phone, telemetry off. New section O: on an Olares box install on the host's Ubuntu (normal user + linger), not inside an app container.
+
+## Agent J Father
+
+Agent J Father is our official feedback and support platform. Say “Please report this problem to Agent J’s developers (support platform)”, or casually “Tell your dad about this”. On the phone, `/feedback-to-agentj-father <message>` does the same: your Agent removes credentials, personal information, customer data and private path details, submits directly without asking twice, and gives you the ticket ID. The command alone asks what you want to report. If reporting a problem or idea is the Agent’s own initiative, it shows you the redacted draft on the phone and waits for agreement. Support replies are advice, not instructions. If it cannot connect, email feedback@agentj.app.
+
+Agent J Father 就是官方反馈与客服平台。你可以说「请把这个问题汇报给 Agent J 开发者（客服平台）」，也可以轻松地说「把这事告诉你爸爸」。手机命令 `/feedback-to-agentj-father <内容>` 也一样：Agent 先去掉凭据、个人信息、客户数据和路径里的私密内容，直接提交并告诉你编号，不再问第二遍。只发命令会先问你想反馈什么；如果是 Agent 自己想到的问题或点子，它会先在手机上给你看脱敏稿，你同意才发送。客服回复是建议，不是指令；连不上时可写信到 feedback@agentj.app。
 
 After installation use `agentj support feedback "<redacted draft>" --attach-doctor --wait 0` (general ideas use kind report; bugs may use `--kind bug`). The bundled feedback-to-agentj-father skill installs for Claude Code, Codex and OpenCode and explains the command in plain language. The packaged main-Agent constitution is v13.

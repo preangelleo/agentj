@@ -76,6 +76,8 @@ export function update(m, statusKey = '') {
 }
 
 export const isOpen = () => !!$('offDlg') && !$('offDlg').hidden;
+/** P332: 「紧急修复」 opens Settings → 紧急修复 — the card steps aside like 「稍后」. */
+export function later() { if (isOpen()) close(); }
 function close() {
   dismissed = true;
   if (isLong(now() - since)) dismissedLong = true;

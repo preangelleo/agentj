@@ -228,11 +228,23 @@ agentj support ask "<你的问题>" --attach-doctor
 
 > **提示**：一键帮手配对计划在后续版本推出：帮手用自己的手机临时连上，在手机上带你装完；你的手机配好、AI 接上以后，帮手自动断开。
 
+## Olares 盒子 {#olares}
+
+Agent J 也能装在 Olares 盒子上（Olares 1.12 或更新），数据留在盒子里。
+
+- **装在盒子自己的 Ubuntu 上，用普通用户**（不用 root），和装云服务器一样。不要装进 Olares 应用里：在那些容器里，Agent J 的安全围栏起不来。
+- **让它一直运行：** AI 会请你运行一次 `sudo loginctl enable-linger <用户名>`（密码你自己输），再重新登录一次，然后它把服务装好。
+- **模型：** 用盒子自带的 **Olares Router**。在 Router 应用里新建一把 API key，AI 通过 DeepSeek 的 dsh 或 OpenCode 接上它，key 只粘贴在手机卡片里。见 [DeepSeek dsh](/docs/setup-agents/#dsh)。
+- **远程维护：** 用官方的 LarePass VPN。助记词由你自己在 LarePass 里导入，绝不交给 AI。手机连 Agent J 不需要这个 VPN。
+- **买来时已经预装了 Agent J？** 预装的只有软件。激活以后，你用自己的 Agent J 账号登录，自己建席位。
+
 ## 香港和中国大陆：AI 怎么选 {#hk-cn}
 
 > **注意**：在香港和中国大陆，Claude Code、Codex 的官方服务通常连不上。一条命令装到 AI 那一步时会先测网络，连不上就推荐 **Agents Relay 中转**：先在 https://agentsrelay.net/onboard/ 注册、拿到 key，再回到终端粘贴（输入时不显示）。key 只粘在终端里，不要发进聊天，也不要告诉帮手。
 
 中国大陆也可以用 OpenCode 加国产模型，见[装好 AI 命令行工具](/docs/setup-agents/)。
+
+用火山方舟、Kimi、阿里百炼或 DeepSeek，或者还没决定买哪家：见[按你用的模型选](/docs/models/)。
 
 ## 截图之前先遮码 {#screenshots}
 
@@ -285,7 +297,7 @@ Ubuntu 24.04 还会检查 AppArmor 对用户命名空间的限制，并实际试
 AI 安装电脑端程序 `agentj`，装的是固定的一个版本：
 
 ```bash
-uv tool install "git+https://github.com/preangelleo/agentj@v0.22.2a1#subdirectory=host"
+uv tool install "git+https://github.com/preangelleo/agentj@v0.23.0a1#subdirectory=host"
 agentj doctor
 ```
 
@@ -441,4 +453,4 @@ macOS 后台服务的 Telegram 和服务商密钥写在 `~/Library/LaunchAgents/
 
 安装或升级并完成账号绑定后，若工作根还没有三套 WDB 工作流，会从广场校验并预装知识库、脚本与文章、电子书示例。已有同名目录保留；删除的示例不会自动补回。交给 Agent J：帮我按这个规格整理我的其他文件夹。离线时延后重试。
 
-Agent J 爸爸（也叫 Agent J 父亲 / Agent J Father）就是官方反馈与客服平台。你可以说「请把这个问题汇报给 Agent J 开发者（客服平台）」，也可以轻松地说「把这事告诉你爸爸」。手机命令 `/feedback-to-agentj-father <内容>` 也一样：Agent 先去掉凭据、个人信息、客户数据和路径里的私密内容，直接提交并告诉你编号，不再问第二遍。只发命令会先问你想反馈什么；如果是 Agent 自己想到的问题或点子，它会先在手机上给你看脱敏稿，你同意才发送。客服回复是建议，不是指令；连不上时可写信到 feedback@agentj.app。
+Agent J Father 就是官方反馈与客服平台。你可以说「请把这个问题汇报给 Agent J 开发者（客服平台）」，也可以轻松地说「把这事告诉你爸爸」。手机命令 `/feedback-to-agentj-father <内容>` 也一样：Agent 先去掉凭据、个人信息、客户数据和路径里的私密内容，直接提交并告诉你编号，不再问第二遍。只发命令会先问你想反馈什么；如果是 Agent 自己想到的问题或点子，它会先在手机上给你看脱敏稿，你同意才发送。客服回复是建议，不是指令；连不上时可写信到 feedback@agentj.app。

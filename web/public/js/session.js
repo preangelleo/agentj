@@ -192,6 +192,7 @@ function readCaps(m) {
   peer.upg1 = peer.p33 && Array.isArray(m.caps) && m.caps.includes('upg1');     // P203 (§29.2): upgrade impact + card
   peer.mq = peer.p33 && Array.isArray(m.caps) && m.caps.includes('mq5');        // P286 (§10.6): ≤ 5 quotes in one say
   Object.assign(peer, hostKind(m));                   // P287: what the offline line says if this computer goes away
+  peer.rescue = m.mode === 'rescue';                  // P332 (§33): the rescue watchdog answers instead of Agent J
 }
 
 async function onApp(s, m) {

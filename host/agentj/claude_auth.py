@@ -38,11 +38,11 @@ def login_failure(text):
 
 def failure_notice(lang="zh"):
     if lang == "en":
-        return ("Claude is not logged in for the computer's service. Away from the computer: phone Settings → AI login rescue "
+        return ("Claude is not logged in for the computer's service. Away from the computer: phone Settings → Emergency repair → AI login rescue "
                 "signs it in again. At the computer: run `claude` and /login "
                 "(Keychain on macOS), or `claude setup-token` and write the token to the private service env file "
                 "(chmod 600), then `agentj service restart`. Never paste the token into chat.")
-    return ("电脑上的服务没有 Claude 登录。不在电脑旁：手机 设置 → AI 登录救援 可以直接重新登录。在电脑旁："
+    return ("电脑上的服务没有 Claude 登录。不在电脑旁：手机 设置 → 紧急修复 → AI 登录救援 可以直接重新登录。在电脑旁："
             "在终端运行 `claude` 并 /login 一次（macOS 存进钥匙串），"
             "或 `claude setup-token` 后自己写入服务专用 env 文件（chmod 600），再运行 `agentj service restart`。"
             "不要把 token 发到聊天里。")

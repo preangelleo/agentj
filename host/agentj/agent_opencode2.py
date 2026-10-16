@@ -1,7 +1,9 @@
 """OpenCode v2 adapter (P60): the same `opencode serve` child as v1 (agent_opencode.py) — same fence, same random
-`OPENCODE_SERVER_PASSWORD`, same startup line — but v2's server speaks a different protocol, and the official installer has
-shipped v2 (`@opencode/cli`, 2.0.x) since early October 2026: a user who installs OpenCode today gets v2, and before P60
-Agent J refused it outright ("OpenCode v2 的 /api 协议尚未接入"). Measured on 2.0.23 (reports/qa/p60/):
+`OPENCODE_SERVER_PASSWORD`, same startup line — but v2's server speaks a different protocol. Two lines ship side by side
+(as of 2026-10-17): `https://opencode.ai/install` and `npm i -g opencode-ai` install 1.x (since 1.19.2 the curl installer
+refuses 2.x; 1.x never updates itself to 2.x), `https://opencode.ai/v2/install`, `@opencode/cli`, Homebrew core and mise
+≥ 2026.10.9 install 2.x — so a Mac user's `brew upgrade` lands on v2. Before P60 Agent J refused v2 outright ("OpenCode v2
+的 /api 协议尚未接入"). Measured on 2.0.23 (reports/qa/p60/), rules re-checked on 2.0.31 source (P357):
 
 - every legacy route (`/session`, `/event`, `/provider` …) answers 200 with the web UI's HTML; the JSON API is `/api/*`
   (OpenAPI at `/openapi.json`), each answer wrapped as `{"data": …}`;
@@ -14,7 +16,8 @@ Agent J refused it outright ("OpenCode v2 的 /api 协议尚未接入"). Measure
   `session.step.failed` / `session.execution.failed` with `error: {type: "provider.auth" | "provider.no-route" | …, status,
   message}`, `permission.asked {id, action, resources}` answered by `POST /api/session/{sid}/permission/{id}/reply
   {decision: once | reject, message}`, `form.created` (the v1 question tool);
-- permission rules are `{action, resource, effect}` and the shell tool is called `shell` (v1: `bash`);
+- permission rules are `{action, resource, effect}`; the shell tool's action is `shell` (v1: `bash`), a subagent's
+  `subagent` (v1: `task`), write / patch ask as `edit` — renamed by `rules_to_v2` (P357, checked on 2.0.31 source);
 - which providers have a key: `GET /api/integration` → `connections` (env / key / oauth), never a value.
 
 Everything else (the fence, the phone's cards, danger.classify, the turn queue, tamper checks, key-failure restart) is the
@@ -47,13 +50,27 @@ def _data(r):
     return r.get("data") if isinstance(r, dict) else None
 
 
+# v1 permission names → v2 action names (v2.0.31 `v1/config/migrate.ts` normalizeAction). v2 renames them only while it
+# loads a config FILE; rules a client writes through the session API are taken as they are — before P357 our `task` deny
+# reached v2 as a `task` rule that matches no v2 tool, so a subagent fell through to `*` ask and, once approved, ran on the
+# general agent's own rules with no card for its shell / edits (a subagent session never sees its parent's rules).
+# Every other name is kept as it is (v2 has the same `read`, `edit`, `glob`, `grep`, `skill`, `webfetch`, `websearch`,
+# `question`, `external_directory`; v1-only `list` / `lsp` / `todo*` / `doom_loop` and anything unknown match no v2 tool,
+# so keeping them neither drops a deny nor widens an allow — `list` must NOT become `read`: our `list * allow` would then
+# come after `read *.env ask` and open .env). v2-only `execute` (Code Mode) is never asked itself: it runs JavaScript whose
+# every tool call asks under that tool's own action; the tool is offered unless the last rule naming it is a whole deny,
+# so in high-risk mode it follows our leading `* * ask` (on, inner calls carded) and in research mode `* * deny` (off).
+V1_TO_V2 = {"bash": "shell", "task": "subagent", "write": "edit", "patch": "edit"}
+V2_TO_V1 = {"shell": "bash", "subagent": "task"}
+
+
 def rules_from_v2(rules) -> list[dict]:
     """v2 {action, resource, effect} → the v1 shape session_rules / evaluate know ({permission, pattern, action}); the shell
-    tool is `bash` there."""
+    tool is `bash` there, a subagent `task`."""
     out = []
     for r in rules if isinstance(rules, list) else []:
         if isinstance(r, dict) and all(isinstance(r.get(k), str) for k in ("action", "resource", "effect")):
-            out.append({"permission": "bash" if r["action"] == "shell" else r["action"], "pattern": r["resource"],
+            out.append({"permission": V2_TO_V1.get(r["action"], r["action"]), "pattern": r["resource"],
                         "action": r["effect"]})
     return out
 
@@ -62,7 +79,7 @@ def rules_to_v2(rules) -> list[dict]:
     out = []
     for r in rules or []:
         perm = r["permission"]
-        out.append({"action": "shell" if perm == "bash" else perm, "resource": r["pattern"], "effect": r["action"]})
+        out.append({"action": V1_TO_V2.get(perm, perm), "resource": r["pattern"], "effect": r["action"]})
     return out
 
 
@@ -473,7 +490,7 @@ class OpenCodeV2Agent(OpenCodeAgent):
                 self.turn_progress = time.monotonic()
                 continue
             if time.monotonic() - self.turn_progress >= TURN_IDLE:
-                self.fail_notice("OpenCode 长时间没有回复。这条消息不会自动重发；可在手机「模型与 Key」检查或切换服务商后重试。" if self.cfg.get('language', 'en').startswith('zh') else "OpenCode has not responded for a long time. This message will not be resent automatically. Check or switch providers in Models & Key on the phone, then retry.")
+                self.fail_notice("OpenCode 长时间没有回复。这条消息不会自动重发；可在手机「模型和 API Key」检查或切换服务商后重试。" if self.cfg.get('language', 'en').startswith('zh') else "OpenCode has not responded for a long time. This message will not be resent automatically. Check or switch providers in Models & API keys on the phone, then retry.")
                 await self.interrupt_request(self.proc)
                 self._turn_end()
                 return

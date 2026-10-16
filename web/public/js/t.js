@@ -6,6 +6,8 @@ import { copyable } from './copycode.js';   // P292: every `command` in our text
 
 const fmtVars = (str, vars) => (vars ? String(str).replace(/\{(\w+)\}/g, (m, k) => (Object.prototype.hasOwnProperty.call(vars, k) ? String(vars[k]) : m)) : str);
 export function t(key, vars) { return window.AJLang ? window.AJLang.t(DICT, key, vars) : fmtVars(DICT.zh[key] ?? key, vars); }
+/** P344: one key's text in both languages (the shortcut sheet's search matches 中文 and English alike). */
+export const both = (key) => [DICT.zh[key], DICT.en[key]].filter(Boolean);
 export const lang = () => (window.AJLang ? window.AJLang.get() : 'zh');
 export const locale = () => (lang() === 'en' ? 'en-GB' : 'zh-CN');
 export const plain = (str) => String(str).replace(/`/g, '');

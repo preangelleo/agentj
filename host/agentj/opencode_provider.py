@@ -241,10 +241,10 @@ def cmd(a) -> int:
 
 
 def add_parser(sub) -> None:
-    sp = sub.add_parser("provider", help="OpenCode 的第三方模型服务（base_url + key）：add / list / remove；bailian = 阿里百炼 "
-                                         "Token Plan 预设（大陆推荐）· a third-party model service for OpenCode (base URL + key); "
-                                         "bailian = the Alibaba Cloud Bailian Token Plan preset; ark = 火山方舟 "
-                                         "Coding Plan 预设 / the Volcano Ark Coding Plan preset",
+    sp = sub.add_parser("provider", help="OpenCode 的第三方模型服务（base_url + key）：add / list / remove；ark = 火山方舟 Coding Plan "
+                                         "预设（中国大陆首推，先买 Lite）；bailian = 阿里百炼 Token Plan 预设 · a third-party model "
+                                         "service for OpenCode (base URL + key); ark = the Volcano Ark Coding Plan preset (first "
+                                         "choice in mainland China, Lite first); bailian = the Alibaba Cloud Bailian Token Plan preset",
                         description="Declares an OpenAI- or Anthropic-compatible service in OpenCode's config; the key is "
                                     "only referenced by name ({env:<ID>_API_KEY}) and is pasted on the phone's secret card.")
     sp.add_argument("action", choices=["add", "list", "remove", "bailian", "ark"])

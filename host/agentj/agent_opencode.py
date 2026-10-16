@@ -217,7 +217,7 @@ PROVIDER_NOTES = {
     "model": "模型名称不可用：运行 `opencode models` 核实服务商/模型 ID，再用 `agentj agent opencode --model <provider/model>` 更新。 / Run `opencode models`, then update the model ID.",
     "network": "连不上模型服务：核实网络与代理设置（`agentj config get proxy.https`）。 / Provider connection failed; check network and proxy.",
     "internal": "OpenCode 内部错误：在电脑运行 `agentj doctor`，再让 Agent 运行 `agentj agent restart`。 / OpenCode internal error; run `agentj doctor`, then `agentj agent restart`.",
-    "free_tier": "OpenCode 的免费通道暂时不让用（刚装好的头一两分钟常见，也可能是免费额度用完或这个免费模型下线了）：过一两分钟再发；还不行就在「模型与 Key」换一个免费模型（opencode/…-free），或用你自己的模型。 / OpenCode's free tier refused for now (common right after installing; or the free quota is used up / the model was withdrawn): send again in a minute or two, or pick another free model or one of your own in Models & Key.",
+    "free_tier": "OpenCode 的免费通道暂时不让用（刚装好的头一两分钟常见，也可能是免费额度用完或这个免费模型下线了）：过一两分钟再发；还不行就在「模型和 API Key」换一个免费模型（opencode/…-free），或用你自己的模型。 / OpenCode's free tier refused for now (common right after installing; or the free quota is used up / the model was withdrawn): send again in a minute or two, or pick another free model or one of your own in Models & API keys.",
     "provider": "模型服务或 OpenCode 报错：在电脑运行 `agentj doctor`，核实模型名称、余额和网络。 / Provider/OpenCode error; run `agentj doctor`, then check model, balance and network.",
 }
 
@@ -495,12 +495,12 @@ class OpenCodeAgent(Agent):
         zh = self.cfg.get("language", "en").startswith("zh")
         if reason in ("login", "no_key") and pid and key_name(pid):
             self._bg(request_key(self.host, pid))
-            return ("模型服务 Key 无效或缺失，请在手机密钥卡填写新 Key；也可从菜单「模型与 Key」打开。存好后再发消息。" if zh else
-                    "The provider key is missing or invalid. Update it on the phone key card, or open Models & Key in the menu, then send again.")
+            return ("模型服务 Key 无效或缺失，请在手机密钥卡填写新 Key；也可从菜单「模型和 API Key」打开。存好后再发消息。" if zh else
+                    "The provider key is missing or invalid. Update it on the phone key card, or open Models & API keys in the menu, then send again.")
         if reason in ('login', 'no_key'):
             name = clean_line(pid or ('当前服务商' if zh else 'the selected provider'), 40)
-            return (f'「{name}」的账户授权或 API Key 不可用。请在手机菜单「模型与 Key」切换到已配置的服务商；若该账户使用 OAuth，需要先完成服务商的账户授权。' if zh else
-                    f'The account authorization or API key for {name} is unavailable. Open Models & Key on the phone and select a configured provider. If this account uses OAuth, complete the provider account authorization first.')
+            return (f'「{name}」的账户授权或 API Key 不可用。请在手机菜单「模型和 API Key」切换到已配置的服务商；若该账户使用 OAuth，需要先完成服务商的账户授权。' if zh else
+                    f'The account authorization or API key for {name} is unavailable. Open Models & API keys on the phone and select a configured provider. If this account uses OAuth, complete the provider account authorization first.')
         parts = fallback.split(" / ", 1)
         return parts[0] if zh else parts[-1]
 
@@ -550,7 +550,7 @@ class OpenCodeAgent(Agent):
         from . import fence
         env = opencode_env(environment(fresh_environment(os.environ), self.host.preferences), password)
         if self.cfg.get("_workflow_ceo"):
-            env = fence.auxiliary_environment(env, self.kind, extra_keep=("AGENTJ_PERM_SOCK", "AGENTJ_PERM_CLAIM", "AGENTJ_PERM_WAIT", "OPENCODE_SERVER_PASSWORD", "OPENCODE_SERVER_USERNAME", "OPENCODE_CONFIG_CONTENT"))
+            env = fence.auxiliary_environment(env, self.kind, extra_keep=("AGENTJ_PERM_SOCK", "AGENTJ_PERM_CLAIM", "AGENTJ_PERM_WAIT", "OPENCODE_SERVER_PASSWORD", "OPENCODE_SERVER_USERNAME", "OPENCODE_CONFIG_CONTENT"), plan_keys=True)   # P348
         if self.cfg.get("fence", True):
             env = fence.launch_environment(env, self.cfg.get("docker", False), self.kind)
         proc = await asyncio.create_subprocess_exec(*argv, cwd=self.cfg["dir"], env=env,
@@ -1234,7 +1234,7 @@ class OpenCodeAgent(Agent):
             with contextlib.suppress(asyncio.TimeoutError):
                 await asyncio.wait_for(self.turn_done.wait(), WATCH)
             if not self.pending and not self.questions and time.monotonic() - self.turn_progress >= TURN_IDLE:
-                self.fail_notice("OpenCode 长时间没有回复。这条消息不会自动重发；可在手机「模型与 Key」检查或切换服务商后重试。" if self.cfg.get('language', 'en').startswith('zh') else "OpenCode has not responded for a long time. This message will not be resent automatically. Check or switch providers in Models & Key on the phone, then retry.")
+                self.fail_notice("OpenCode 长时间没有回复。这条消息不会自动重发；可在手机「模型和 API Key」检查或切换服务商后重试。" if self.cfg.get('language', 'en').startswith('zh') else "OpenCode has not responded for a long time. This message will not be resent automatically. Check or switch providers in Models & API keys on the phone, then retry.")
                 await self.interrupt_request(self.proc)
                 self._turn_end()
                 return

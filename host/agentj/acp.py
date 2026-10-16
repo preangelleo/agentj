@@ -1,6 +1,6 @@
 """P305: a generic Agent Client Protocol (ACP v1, https://agentclientprotocol.com) adapter — one long-lived `<agent> acp`
 (JSON-RPC 2.0, one JSON object per line on stdio) per Agent J host; Kimi Code CLI (agent_kimi.py) is the first harness on it,
-DeepSeek Harness (`dsh acp`) is meant to need only a subclass + measurements.
+Qwen Code (agent_qwen.py) the second, DeepSeek Harness (`dsh --profile acp`, agent_dsh.py, P329) the third.
 
 What serve does:
 - the harness runs inside the fence (fence.py) like the others; `initialize` with NO client capabilities for files or
@@ -114,6 +114,8 @@ class AcpAgent(Agent):
     BIN_ENV, BIN_NAME = "", ""
     MODE_DEFAULT = "default"         # the harness's "ask before anything not read-only" mode (session/set_mode)
     MODES_LOOSER = ()                # modes that approve by themselves: never kept
+    TOOL_ALIAS: dict = {}            # P329: the harness's own tool titles → the danger list's names (dsh: "bash" → "Bash")
+    LOGIN_ERRORS: tuple = ()         # P329: error texts that mean "no / bad model key" (dsh has no ACP auth_required)
 
     def __init__(self, host, cfg: dict, persist: bool = True, research: bool = False):
         if not persist:
@@ -154,6 +156,10 @@ class AcpAgent(Agent):
 
     def login_hint(self) -> str:
         return f"{self.LABEL} 没登录。"
+
+    def spawn_cwd(self) -> str:
+        """The process's own folder (P329: dsh reads `<process cwd>/.env`, so it starts elsewhere; sessions keep cfg["dir"])."""
+        return self.cfg["dir"]
 
     def is_down(self) -> bool:
         return self.failed_start
@@ -221,11 +227,11 @@ class AcpAgent(Agent):
         from . import fence
         env = environment(os.environ, self.host.preferences)
         if self.cfg.get("_workflow_ceo"):
-            env = fence.auxiliary_environment(env, self.kind)
+            env = fence.auxiliary_environment(env, self.kind, plan_keys=True)   # P348
         if self.cfg.get("fence", True):
             env = fence.launch_environment(env, self.cfg.get("docker", False), self.kind)
         env = self.child_env(env)
-        self.proc = p = await asyncio.create_subprocess_exec(*argv, cwd=self.cfg["dir"], env=env,
+        self.proc = p = await asyncio.create_subprocess_exec(*argv, cwd=self.spawn_cwd(), env=env,
                                                              stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE,
                                                              stderr=asyncio.subprocess.PIPE, limit=LINE_LIMIT,
                                                              start_new_session=True)
@@ -311,8 +317,9 @@ class AcpAgent(Agent):
         return o.get("currentValue") if o else None
 
     async def _strict_mode(self) -> None:
-        """Approvals only ever get stricter: whatever mode the owner's settings start a session in, this one asks."""
-        if self._mode() == self.MODE_DEFAULT:
+        """Approvals only ever get stricter: whatever mode the owner's settings start a session in, this one asks.
+        MODE_DEFAULT None (P329, dsh): the harness has no ACP modes — its subclass makes the process itself ask."""
+        if self.MODE_DEFAULT is None or self._mode() == self.MODE_DEFAULT:
             return
         try:
             await self.call("session/set_mode", {"sessionId": self.sid, "modeId": self.MODE_DEFAULT})
@@ -549,6 +556,7 @@ class AcpAgent(Agent):
             return await self._question(rid, tc, allows, reject)
         seen = self.tools.get(tc.get("toolCallId")) or {}
         title = tc.get("title") or seen.get("title")
+        title = self.TOOL_ALIAS.get(title, title) if isinstance(title, str) else title
         raw = tc.get("rawInput") if tc.get("rawInput") is not None else seen.get("raw")
         tool, inp = tool_of(title, tc.get("kind") or seen.get("kind"), raw)
         if not inp:
@@ -607,15 +615,21 @@ class AcpAgent(Agent):
                 self._answer(rid, ans)
 
     # ------------------------------------------------ turns
+    def _block(self, uri: str, mime: str, text: str) -> dict:
+        """An embedded resource — or, when the agent says it takes none (P329: dsh's embeddedContext false; ACP: a client
+        must not send what is not advertised), the same text as a plain text block that names its source."""
+        pc = self.caps.get("promptCapabilities") if isinstance(self.caps.get("promptCapabilities"), dict) else {}
+        if pc.get("embeddedContext") is False:
+            return {"type": "text", "text": f"<{uri}>\n{text}\n</{uri}>"}
+        return {"type": "resource", "resource": {"uri": uri, "mimeType": mime, "text": text}}
+
     def prompt_blocks(self, text: str) -> list[dict]:
         blocks = []
         if self.persist and not self.cfg.get("_workflow_ceo"):
             from . import main_identity
             if not self.identity_sent:
-                blocks.append({"type": "resource", "resource": {"uri": IDENTITY_URI, "mimeType": "text/markdown",
-                                                                 "text": main_identity.prompt(self.cfg)}})
-            blocks.append({"type": "resource", "resource": {"uri": REMINDER_URI, "mimeType": "text/plain",
-                                                             "text": main_identity.turn_reminder(self.cfg, True)}})
+                blocks.append(self._block(IDENTITY_URI, "text/markdown", main_identity.prompt(self.cfg)))
+            blocks.append(self._block(REMINDER_URI, "text/plain", main_identity.turn_reminder(self.cfg, True)))
         blocks.append({"type": "text", "text": text})
         return blocks
 
@@ -655,7 +669,7 @@ class AcpAgent(Agent):
             data = e.err.get("data")
             detail = msg + (("\n" + clean(json.dumps(data, ensure_ascii=False), 500)) if data else "")
             from . import auth_rescue
-            cls = auth_rescue.classify(self.kind, detail)
+            cls = "login" if any(w in detail for w in self.LOGIN_ERRORS) else auth_rescue.classify(self.kind, detail)
             if cls == "login":
                 self._login_needed(detail)
                 return

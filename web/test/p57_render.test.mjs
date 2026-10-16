@@ -187,7 +187,7 @@ test('P57 render.js: loads only our own vendor files, by <script src>, lazily; m
   assert.match(src, /dataset\.pageOpen === '1'/, 'an open (streaming) page is not upgraded');
   const relay = read('js/relay.js');
   assert.match(relay, /import \{ upgrade as upgradeWords, forget as forgetRendered \} from '\.\/render\.js';/);
-  assert.match(relay, /w\.replaceChildren\(RelayMD\.toDOM\(RelayMD\.parse\(tx\), document\)\); upgradeWords\(w\);/);
+  assert.match(relay, /w\.replaceChildren\(RelayMD\.toDOM\(RelayMD\.parse\(tx, \{math: !sys\}\), document\)\); upgradeWords\(w\);/);   // P341: system pages without TeX
   assert.match(relay, /forgetRendered\(\);/, 'unpair / revoke drops the rendered copies');
   const html = read('index.html');
   assert.doesNotMatch(html, /vendor\/(hljs|katex|mermaid)/, 'nothing new on first paint');

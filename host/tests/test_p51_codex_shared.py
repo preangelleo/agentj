@@ -64,7 +64,7 @@ class NoResumableThread(Base):
         self.assertEqual([m for m,_ in self.calls],['thread/start'])
         self.assertEqual(self.calls[0][1],{'cwd':str(self.proj)})          # owner's own Codex defaults, no overrides
         self.assertEqual(a.tid,NEW);self.assertEqual(a.cfg['shared_session_id'],NEW);self.assertEqual(a.original,{})
-        self.host.st.set_agent_session.assert_called_with('codex',NEW)
+        self.host.st.set_agent_session.assert_any_call('codex',NEW)
         self.assertIn('已为你新开一个 Codex 会话',self.notices());self.assertIn(f'codex resume {NEW}',self.notices())
         self.assertEqual(self.events('shared_new_thread')[0]['reason'],'exact Codex thread ID required')
 

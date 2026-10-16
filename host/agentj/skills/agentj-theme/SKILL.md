@@ -78,4 +78,4 @@ P263 / schema 2: `logo` accepts either the legacy `{image, disc}` or `{states: {
 
 换跳舞机器人时，先问「要同时换左上角的 logo 吗？」。要换就做一组五张，同形、随五种状态换主色，并逐张 validate；不换就从 active 导出保留 logo，或省略 logo（apply 会保留当前 logo；当前没有自定义 logo 则用出厂组）。Before redrawing dancing robots, ask whether the owner also wants a new logo set. Only build the set if requested; otherwise retain the active logo. Validate everything before applying.
 
-Official non-chat headers use the Agent J father robot with the current state colour, 12 dance frames in 2.4 seconds. Reduced motion keeps a static robot and a subtle inset heartbeat outline. Tap opens the menu; hold returns to chat. Custom logo images apply to chat only.
+Official non-chat headers use the Agent J Father robot with the current state colour, 12 dance frames in 2.4 seconds. Reduced motion keeps a static robot and a subtle inset heartbeat outline. Tap opens the menu; hold returns to chat. Custom logo images apply to chat only.

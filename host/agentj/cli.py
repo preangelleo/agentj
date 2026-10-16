@@ -1535,7 +1535,7 @@ def cmd_unlink(a) -> None:
         print(f"已删掉这台电脑上的账号记录（账号 {slug}）。账号后台那边，还要在账号后台里把这台电脑移除。")
 
 
-AGENT_LABEL = {"claude": "Claude Code", "codex": "Codex", "opencode": "OpenCode", "kimi": "Kimi Code", "qwen": "Qwen Code"}
+AGENT_LABEL = {"claude": "Claude Code", "codex": "Codex", "opencode": "OpenCode", "kimi": "Kimi Code", "qwen": "Qwen Code", "dsh": "DeepSeek Harness"}
 
 
 def _route_lang() -> str:
@@ -1566,8 +1566,12 @@ def _agent_line(st: State, lang: str | None = None) -> str:
     if c.get("session_mode") == "shared":
         fz = (f" · shared session (your own {label} on this computer, with its own permissions; outside Agent J's fence)" if en
               else f" · 共享会话（接你电脑上自己的 {label}，按它自己的权限运行，不在 Agent J 的隔离里）")
-        if c.get("shared_session_id"):
-            fz += (" · pinned " if en else " · 指定会话 ") + str(c["shared_session_id"])
+        pin = c.get("shared_session_id")
+        if c["kind"] == "codex" and pin:         # P328: a phone /clear moved Codex off the owner's pin (per-harness state)
+            from . import shared_codex
+            pin = shared_codex.effective_pin(st, pin) or ("new conversation at the next message" if en else "下一条消息开新对话")
+        if pin:
+            fz += (" · pinned " if en else " · 指定会话 ") + str(pin)
     elif c.get("fence", True):
         fz = " · independent session · fenced" if en else " · 独立会话 · 隔离运行"
         if c.get("docker"):
@@ -1599,11 +1603,33 @@ def cmd_agent(a) -> None:
             sys.exit(switch_harness.cli(a, st, _lang(st)))
     st = State()
     _need_init(st)
-    if a.mode in ("claude", "codex", "opencode", "kimi", "qwen"):
-        if a.mode in ("kimi", "qwen") and getattr(a, "session_mode", None) == "shared":
+    if a.mode in ("claude", "codex", "opencode", "kimi", "qwen", "dsh"):
+        if a.mode in ("kimi", "qwen", "dsh") and getattr(a, "session_mode", None) == "shared":
             sys.exit(f"✗ {AGENT_LABEL[a.mode]} 只支持独立会话（--independent）/ {AGENT_LABEL[a.mode]} runs independent sessions only")
-        if a.mode in ("kimi", "qwen"):
+        if a.mode in ("kimi", "qwen", "dsh"):
             a.session_mode = "independent"
+        if a.mode == "dsh" and getattr(a, "base_url", None):    # P329: an OpenAI-compatible route (Olares Router …)
+            from . import agent_dsh
+            if not a.model:
+                sys.exit("✗ --base-url 要配 --model（Router 列出的模型 id）/ --base-url needs --model (the id the server lists)")
+            try:
+                why = agent_dsh.check_url(a.base_url)
+                ctx, needs_key = (None, False) if why else agent_dsh.server_probe(
+                    a.base_url, a.model, agent_dsh.fresh_keys(dict(os.environ)).get(agent_dsh.ROUTE_KEY_ENV))
+                p = agent_dsh.write_route(a.base_url, a.model, context=ctx, needs_key=needs_key)
+            except ValueError as e:
+                sys.exit({"bad_url": "✗ 地址不对：写成 https://<服务>/v1 / not a usable address (https://<server>/v1)",
+                          "http_not_local": "✗ 明文 http 只允许本机或局域网地址；外网请用 https / plain http only for this "
+                                            "computer or the LAN",
+                          "bad_model": "✗ 模型 id 不对 / not a model id"}.get(str(e), "✗ " + str(e)))
+            from .service import tilde
+            print(f"✓ 路线已写入 {tilde(str(p))}（地址 + 模型{f' · 上下文 {ctx}' if ctx else ''}；key 只按名字 "
+                  f"{agent_dsh.ROUTE_KEY_ENV} 读，服务要 key 时让 Agent 发密钥卡）/ route written; the key is read by name only",
+                  flush=True)
+            if needs_key:   # P329 live: the Olares Router answers 401 without a key
+                print(f"! 这个服务要 key：配对（第 11 步）后运行下面这行，主人只在手机密钥卡里贴 key / this server wants a key: "
+                      f"after pairing (Step 11) run this line; the human pastes the key only on the phone's key card:\n"
+                      f"  {agent_dsh.key_card(a.base_url)}", flush=True)
         if a.mode == "opencode" and a.model and not re.fullmatch(r"[A-Za-z0-9._-]+/[^\s/][^\s]*", a.model):
             sys.exit("✗ OpenCode 的模型写成「服务商/模型」，例如 zhipuai/glm-5.3 或 deepseek/deepseek-flash（`opencode models` 列出可用的）")
         if a.unfenced:   # F14: the owner's (or, at the owner's request, the Agent's) switch — no passphrase
@@ -1641,7 +1667,7 @@ def cmd_agent(a) -> None:
                 model, effort = model or harness_setup.DEFAULT_CLAUDE_MODEL, effort or harness_setup.DEFAULT_CLAUDE_EFFORT
             st.set_agent_config(a.mode, str(root), model, fence=not a.unfenced, docker=bool(a.allow_docker and not a.unfenced),
                                 effort=effort)
-            if a.mode == "kimi":                 # P305: kimi.com (mainland-cn, default) or kimi.ai (global) — keys / login differ
+            if a.mode == "kimi":                 # P305: kimi.com (mainland-cn, default) or kimi.ai (global) — the sign-in site
                 st.set_agent_region(getattr(a, "region", None) or (prev.get("region") if same else None))
             back = st.agent_config() or {}          # P298: read back what was written — never trust anyone's account of it
             if back.get("kind") != a.mode or (back.get("model") or None) != (model or None):
@@ -1654,7 +1680,7 @@ def cmd_agent(a) -> None:
                 note = privacy_note(model, lang)
                 if note:
                     print("⚠ " + note, flush=True)
-                from .bailian import model_note       # P310: Token Plan terms (interactive use only; data used for training)
+                from .bailian import model_note       # P310: Token Plan terms (data used for training); P348: tasks OK, bots never
                 from .ark import model_note as ark_note   # P315: Ark Coding Plan terms + image input
                 note = model_note(model, "en" if lang == "en" else "zh") or ark_note(model, "en" if lang == "en" else "zh")
                 if note:
@@ -1713,7 +1739,7 @@ def cmd_agent(a) -> None:
             st.set_agent_session(k, None)
         print("已忘掉之前的对话：下一条手机消息开一段新对话。")
     print(_agent_line(st))
-    if a.mode in ("claude", "codex", "opencode", "kimi", "qwen", "off"):
+    if a.mode in ("claude", "codex", "opencode", "kimi", "qwen", "dsh", "off"):
         print("Takes effect after restarting `agentj serve`. The Agent runs as you, with your own login and permission settings; "
               "Agent J gives it no extra permission." if _lang(st) == "en" else
               "重启 `agentj serve` 后生效。Agent 以你自己的身份、登录和权限设置运行，本程序不会给它更多权限。")
@@ -1724,7 +1750,7 @@ def _first_connect(st: State, a) -> bool:
     Agent」. Nothing to switch from is a first connection: do exactly what `agentj agent <harness>` does, then restart the
     background service so it takes effect now. False = a real switch (or --scan / --result / the worker): unchanged."""
     target = getattr(a, "target", None)
-    if (target not in ("claude", "codex", "opencode", "kimi", "qwen") or getattr(a, "worker", False) or getattr(a, "scan", False)
+    if (target not in ("claude", "codex", "opencode", "kimi", "qwen", "dsh") or getattr(a, "worker", False) or getattr(a, "scan", False)
             or getattr(a, "result", False) or getattr(a, "dry_run", False)):
         return False
     try:
@@ -1776,6 +1802,13 @@ def cmd_approvals(a) -> None:
             elif r.get("reason") in ("goal", "goal_auto"):    # P158
                 who = ("目标模式：10 秒无人点，自动批准" if r.get("reason") == "goal_auto" else "目标模式：按目标授权自动批准") + \
                     f"（{str(r.get('grant'))[:8]}…）"
+            elif r.get("reason") == "goal_grant_add":         # P339
+                who = f"目标模式：手机 {r.get('device')} 批准并加进目标授权（{str(r.get('grant'))[:8]}…）"
+            elif r.get("reason") in ("level_full", "goal_nocard", "goal_preauth", "parked", "offline", "parked_wait"):   # P336
+                who = {"level_full": "全放行档位：自动批准", "goal_nocard": "设了目标就不弹窗：自动批准",
+                       "goal_preauth": "设了目标就不弹窗：目标直接开始（没有开工卡）",
+                       "parked": "主人批准了离线时留下的卡，重试直接执行", "offline": "主人没有遥控器在线，先告诉 Agent",
+                       "parked_wait": "离线卡仍未批准"}[r["reason"]] + (f"（{str(r.get('grant'))[:8]}…）" if r.get("grant") else "")
             mark = {"ok": " ✓签名有效", "ok_removed": " ✓签名有效（设备已移除）", "bad": " ✗签名无效", "unsigned": "",
                     "legacy": " ·旧版记录未存签名（controls.log 里也已找不到可核对的那一行）",
                     "auto": " ✓授权签名有效"}.get(v, "")
@@ -2320,6 +2353,11 @@ def cmd_doctor(a) -> None:
     sys.exit(doctor.main(as_json=a.json, offline=a.offline, isolation_only=a.isolation_only))
 
 
+SERVE_RUNNING = ("后台服务在运行（serve 在应答）；在 Agent 的隔离环境里看不到 launchd / systemd，以 serve 的应答为准 / the background "
+                 "service is running (serve answers); launchd / systemd may be invisible from inside the Agent's isolation — "
+                 "serve's own answer counts")
+
+
 def cmd_service(a) -> None:
     import subprocess
     from . import service
@@ -2353,14 +2391,28 @@ def cmd_service(a) -> None:
             if r == "imported":
                 print("  下一步 / next: agentj service restart")
             return
+        if a.mode in ("start", "restart") and names.serve_answers(State()):
+            from . import fence
+            if a.mode == "start":     # P339: serve answers on its own socket = running; nothing to start
+                print(SERVE_RUNNING + "\n  不用再启动 / nothing to start")
+                return
+            if fence.inside():        # P339: launchd / systemd are out of reach from inside the Agent's isolation
+                sys.exit("✗ " + SERVE_RUNNING + "\n  在 Agent 的隔离环境里够不到 launchd / systemd，这里不能重启服务；也不需要管理员"
+                         "权限（不要用 sudo）。切换 Agent 用 `agentj agent switch`（它自己会重启服务）。 / Inside the Agent's "
+                         "isolation launchd / systemd cannot be reached, so the service cannot be restarted from here; no admin "
+                         "rights are needed (never sudo). To switch the Agent use `agentj agent switch` (it restarts the "
+                         "service itself).")
         if a.mode in ("start", "stop"):
             r = service.start(State()) if a.mode == "start" else service.stop()
             print(f"✓ {'已启动 / started' if a.mode == 'start' else '已停止 / stopped'}: {r['name']}")
             return
         if a.mode == "status":
-            s = service.status()
+            s = names.seen_status(State())       # P339: serve's own answer first — launchd / systemd may be invisible here
             if a.json:
                 print(json.dumps({**s, "path": service.tilde(s["path"]) if s.get("path") else None}, ensure_ascii=False))
+                return
+            if s.get("seen_by") == "socket":
+                print(SERVE_RUNNING + (f"  ({s['name']})" if s.get("name") else ""))
                 return
             if s["kind"] == "none":
                 print(f"没有可用的服务管理器 / no service manager here ({s['active']})")
@@ -2419,6 +2471,103 @@ def cmd_service(a) -> None:
                                                                 else service.tilde(str(st.root / 'service.log'))))
     print("服务日志里不会有你的消息内容 / the service log never holds your messages.")
     print(SERVICE_NEXT)
+
+
+RESCUE_LOG_KEYS = ("ts", "ev", "why", "action", "result", "step", "code", "phase", "count", "reason")
+_CTRL = re.compile(r"[\x00-\x1f\x7f]")
+
+
+def rescue_log_tail(st: State, n: int = 8) -> list[dict]:
+    """The last n lines of <state>/rescue.log, only the metadata keys (the file never holds text or keys; this keeps it so)."""
+    try:
+        lines = (st.root / "rescue.log").read_text(errors="replace").splitlines()[-n:]
+    except OSError:
+        return []
+    out = []
+    for line in lines:
+        try:
+            rec = json.loads(line)
+        except ValueError:
+            continue
+        if isinstance(rec, dict):   # review P332 LOW-6: no control character (raw or JSON-escaped) reaches the terminal
+            out.append({k: (_CTRL.sub("", rec[k])[:80] if isinstance(rec[k], str) else rec[k])
+                        for k in RESCUE_LOG_KEYS if k in rec and isinstance(rec[k], (str, int, float))})
+    return out
+
+
+def cmd_rescue(a) -> None:
+    """P332 (§33): the rescue watchdog's unit."""
+    import subprocess
+    from . import service
+    if a.mode == "watchdog":
+        from . import rescue_watchdog
+        raise SystemExit(rescue_watchdog.main())
+    st = State()
+    if a.mode == "undo":   # 「重置连接」 step 3 put a conversation aside (reset_undo.json): pin it again
+        _rescue_undo(st)
+        return
+    try:
+        if a.mode == "status":
+            s = service.rescue_status()
+            tail = rescue_log_tail(st) if st.root.is_dir() else []
+            if a.json:
+                print(json.dumps({**s, "path": service.tilde(s["path"]) if s.get("path") else None, "log": tail}, ensure_ascii=False))
+                return
+            if s["kind"] == "none":
+                print(f"没有可用的服务管理器 / no service manager here ({s['active']})")
+            else:
+                print(f"{s['name']}：{'已安装 / installed' if s['installed'] else '没安装 / not installed'} · {s['active']}"
+                      + (f"  ({service.tilde(s['path'])})" if s["installed"] else ""))
+            for rec in tail:
+                ts = rec.pop("ts", 0)
+                when = time.strftime("%m-%d %H:%M:%S", time.localtime(ts if isinstance(ts, (int, float)) else 0))
+                print(f"  {when}  " + " ".join(f"{k}={v}" for k, v in rec.items()))
+            return
+        if a.mode == "uninstall":
+            r = service.uninstall_rescue(st if st.root.is_dir() else None)
+            print(f"✓ 已停止并删除 / stopped and removed: {r['name']}" if r["removed"] else f"{r['name']} 没安装 / was not installed")
+            return
+        _need_init(st)
+        r = service.install_rescue(st)
+    except service.ServiceError as e:
+        if e.reason in service.NO_MANAGER:
+            print("✗ " + service.MESSAGES[e.reason], file=sys.stderr)
+            sys.exit(service.NO_MANAGER_EXIT)
+        sys.exit("✗ " + service.MESSAGES.get(e.reason, e.reason) + (f"\n  {e.detail}" if e.detail else ""))
+    except (OSError, subprocess.SubprocessError) as e:
+        sys.exit(f"✗ 服务管理命令没能运行（{type(e).__name__}），运行 agentj doctor / a service-manager command could not run "
+                 f"({type(e).__name__}): run agentj doctor")
+    print(f"✓ 已安装 / installed: {r['name']} ({r['kind']}) → {service.tilde(r['path'])}")
+    if r.get("new"):
+        print("  " + service.MAC_LOGIN_ITEM_NOTE)
+
+
+def _rescue_undo(st: State) -> None:
+    """P332: go back to the conversation the phone's 「重置连接」 put aside (step 3). The id comes only from
+    <state>/reset_undo.json (written by reset.py); the owned harness restarts before its next turn and resumes it."""
+    from . import reset
+    try:
+        rec = json.loads((st.root / reset.UNDO).read_text())
+        kind, sid = rec.get("kind"), rec.get("session")
+    except (OSError, ValueError, AttributeError):
+        kind = sid = None
+    if kind not in st.AGENT_KINDS or not isinstance(sid, str) or not re.fullmatch(r"[A-Za-z0-9_.:-]{4,128}", sid):
+        sys.exit("没有可以找回的对话（「重置连接」没有换过新对话）/ nothing to go back to: no reset put a conversation aside")
+    cur = st.agent_session(kind)
+    st.set_agent_session(kind, sid)
+    if cur and cur != sid:   # the conversation opened after the reset can come back the same way
+        reset.write_undo(st, kind, cur)
+    else:
+        (st.root / reset.UNDO).unlink(missing_ok=True)
+    st.log("reset_undo", agent=kind, result="ok")
+    try:
+        res = names.ctl_call(st, {"cmd": "agent_restart"}, 10)
+    except names.ServeBusy:
+        res = None
+    if res is not None and res.get("error") == "shared":
+        print("✓ 已记下原来的对话；共享会话请在电脑上自己切回 / noted; a shared session is switched on the computer itself")
+        return
+    print("✓ 已找回原来的对话：下一条消息就接着它聊。/ The earlier conversation is back: the next message continues it.")
 
 
 def _offer_key_import(service) -> None:
@@ -2717,7 +2866,8 @@ def main(argv=None) -> None:
             instance.create(inst)
         except instance.InstanceError as e:
             sys.exit("✗ " + str(e))
-    from .service import load_launch_binary_env, ServiceError
+    from .service import load_launch_binary_env, ServiceError, user_runtime_dir
+    user_runtime_dir()   # P329: an SSH login without PAM (Olares) still reaches the user manager, journalctl and systemd-run
     try:
         load_launch_binary_env()
     except ServiceError as e:
@@ -2813,6 +2963,18 @@ def main(argv=None) -> None:
     sv.add_argument("--deferred", help=argparse.SUPPRESS)
     sv.add_argument("--recovery-worker", help=argparse.SUPPRESS)
     sv.set_defaults(fn=cmd_service)
+    rs = sub.add_parser("rescue", help="救援守护（手机「紧急修复」在 Agent J 没响应时也能用）：status · install · uninstall / "
+                                       "the rescue watchdog (the phone's emergency repair works even when Agent J stops answering)",
+                        description="独立的小进程：Agent J 约 45 秒没响应就接手手机连接，只接已配对手机的签名请求（重启、请求远程帮忙）。"
+                                    "agentj service install / update 会自动装上。 / A separate small process: when Agent J has not "
+                                    "answered for about 45 s it takes the phone link and accepts only signed requests from paired "
+                                    "phones (restart, ask support for help). Installed by agentj service install and every update.")
+    rs.add_argument("mode", choices=["status", "install", "uninstall", "watchdog", "undo"],
+                    help="status 状态与最近记录 · install 安装 · uninstall 删除 · watchdog 前台运行（服务用）· undo 找回「重置连接」"
+                         "换掉的对话 / status and recent log lines · install · uninstall · watchdog: run in the foreground (what "
+                         "the service runs) · undo: go back to the conversation 「重置连接」 put aside")
+    rs.add_argument("--json", action="store_true", help="status 的机器可读输出 / machine-readable status")
+    rs.set_defaults(fn=cmd_rescue)
     up = sub.add_parser("update", help="check 查版本 · apply Agent 自升级（无需终端）· auto on|off",
                         description="apply needs no y/N or terminal, restarts and runs doctor. F12 authorization remains optional.")
     up.add_argument("--yes", action="store_true", help="跳过升级前确认：现在会打断的事照样打断 / skip the check of what a restart now would interrupt")
@@ -2917,15 +3079,15 @@ def main(argv=None) -> None:
     ru = sub.add_parser("remote-unbind", help="允许 / 禁止在账号后台解绑这台电脑的手机遥控器（默认允许）/ allow unlinking phone remotes from the account dashboard")
     ru.add_argument("mode", nargs="?", choices=["on", "off", "status"], default="status")
     ru.set_defaults(fn=cmd_remote_unbind)
-    ag = sub.add_parser("agent", help="接哪个 Agent：claude / codex / opencode / kimi / qwen / off；reset = 开一段新对话（重启 serve 生效）；"
+    ag = sub.add_parser("agent", help="接哪个 Agent：claude / codex / opencode / kimi / qwen / dsh / off；reset = 开一段新对话（重启 serve 生效）；"
                                       "restart = 下一条消息前重启 Agent 进程、对话不变（换了 key 或代理后）；"
                                       "detect = 本机有哪些可用 / which agents are usable here；"
-                                      "switch <claude|codex|opencode|kimi|qwen> = 先无头探测、能用才切，失败自动切回 / probe first, switch only if it works, switch back on failure；"
-                                      "route = 按本机实测推荐 AI 路线（用不了 Claude Code / Codex 的地区推荐 Kimi 或阿里百炼 Token Plan）/ recommend an AI route from what works here")
-    ag.add_argument("mode", nargs="?", choices=["claude", "codex", "opencode", "kimi", "qwen", "off", "reset", "restart", "status", "detect", "switch", "route"], default="status",
+                                      "switch <claude|codex|opencode|kimi|qwen|dsh> = 先无头探测、能用才切，失败自动切回 / probe first, switch only if it works, switch back on failure；"
+                                      "route = 按本机实测推荐 AI 路线（用不了 Claude Code / Codex 时：中国大陆首推火山方舟 Coding Plan、先买 Lite，香港 / 海外推荐 Kimi，已有某一家就继续用）/ recommend an AI route from what works here (without Claude Code / Codex: Volcano Ark Coding Plan, Lite first, in mainland China; Kimi in Hong Kong / overseas; keep a plan you already have)")
+    ag.add_argument("mode", nargs="?", choices=["claude", "codex", "opencode", "kimi", "qwen", "dsh", "off", "reset", "restart", "status", "detect", "switch", "route"], default="status",
                     help="detect = 本机有哪些可用（不需要 init；只看是否安装、登录文件是否存在）/ which agents are usable here "
                          "(no init needed; checks only what is installed and whether login files exist)")
-    ag.add_argument("target", nargs="?", choices=["claude", "codex", "opencode", "kimi", "qwen"],
+    ag.add_argument("target", nargs="?", choices=["claude", "codex", "opencode", "kimi", "qwen", "dsh"],
                     help="switch：要切到的 harness；detect --probe：只探测这一个（可加 --model） / the harness to switch to; with detect --probe: probe only this one")
     ag.add_argument("--probe", action="store_true", help="detect: verify one tool-free model call using existing login (≤ 60 s each); no native output is returned")
     ag.add_argument("--dry-run", action="store_true", help="switch：只检查能不能切，不切 / only check whether it can switch")
@@ -2940,8 +3102,11 @@ def main(argv=None) -> None:
     ag.add_argument("--json", action="store_true", help="detect 的机器可读输出 / machine-readable detect output")
     ag.add_argument("--dir", help="Agent 的工作目录（默认当前目录）")
     ag.add_argument("--region", choices=["mainland-cn", "global"],
-                    help="kimi：Kimi 账号在哪个站 —— mainland-cn = kimi.com（默认）· global = kimi.ai（两边账号、key、额度不通用）"
-                         " / kimi: which Kimi site the account is on (separate accounts, keys and quota)")
+                    help="kimi：Kimi 会员在哪个站买的 —— mainland-cn = kimi.com（默认）· global = kimi.ai；kimi.com 的 key 在 api.kimi.com 和 api.kimi.ai 都能用"
+                         " / kimi: which Kimi site the membership was bought on (a kimi.com key works on both api.kimi.com and api.kimi.ai)")
+    ag.add_argument("--base-url", dest="base_url",
+                    help="dsh：OpenAI 兼容服务的地址（Olares Router、LiteLLM、Ollama…），写成 https://<服务>/v1，配 --model"
+                         " / dsh: an OpenAI-compatible server (Olares Router …), with --model")
     ag.add_argument("--model", help="模型（默认用你自己的设置）；OpenCode 写成 服务商/模型，例如 zhipuai/glm-5.3")
     ag.add_argument("--unfenced", action="store_true",
                     help="不隔离运行 Agent（按底层 harness 自己的权限）。默认 Agent 在 bubblewrap 里运行，看不到 Agent J 的状态")

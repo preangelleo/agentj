@@ -27,7 +27,7 @@ class Father(unittest.TestCase):
                                 rows = _ask(host,sent,mode,kind,own,lang,work)["items"]
                                 found=[r for r in rows if r["cmd"] == "/"+NAME]
                                 self.assertEqual(len(found),1)
-                                self.assertEqual(found[0]["desc"], "反馈给 Agent J 爸爸" if lang=="zh" else "Feedback to Agent J Father")
+                                self.assertEqual(found[0]["desc"], "反馈给 Agent J Father" if lang=="zh" else "Feedback to Agent J Father")
         self.assertIn(NAME,slash.AGENT_CMDS)
 
     def test_skill_installed_in_all_native_locations(self):
@@ -93,7 +93,7 @@ class Father(unittest.TestCase):
         self.assertNotIn("private-customer", public["body"])
 
     def test_pinned_identity_consent_in_all_harnesses(self):
-        self.assertEqual(main_identity.verify_core()["version"],15)
+        self.assertEqual(main_identity.verify_core()["version"],16)
         for lang in ("zh","en"):
             for harness in KINDS:
                 text=main_identity.prompt({"language":lang},harness)

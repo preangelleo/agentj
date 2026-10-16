@@ -21,6 +21,7 @@ FAKE_CLAUDE_USER_SETTINGS (a settings.json path: permissions.allow, e.g. "Bash(r
   /fake-skill            → "SKILL fake-skill ran" (a skill named in init.skills)
   FAKE_CLAUDE_SCRIPT     (optional env: a JSON file {"<message>": {"sleep": s, "reply": "<text>"}}) → that reply after that
                            sleep, for a message listed there (screenshots that need a real-looking answer)
+  SAYSEQ: a ;; b         → one assistant text message per piece (P351)
   anything else          → "ECHO: <text>"
 Every turn ends with a rate_limit_event before its result (what /usage shows).
 FAKE_CLAUDE_LOG (optional): append one JSON line per start with argv, so tests can assert the flags.
@@ -278,6 +279,10 @@ for line in sys.stdin:
         prepared = p57_prepare(text)
         if prepared is not None:
             say(prepared)
+    elif text.startswith("SAYSEQ: "):
+        parts = text[8:].split(" ;; ")
+        for ln in parts:
+            say(ln)
     elif text == "SLOW":
         time.sleep(1.5)
         say("慢回复")

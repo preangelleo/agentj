@@ -193,7 +193,7 @@ class FaceId(unittest.TestCase):
     def test_other_card_assertion_refused(self):
         async def script(host, s, ph):
             c1 = await self.wait_card(1)
-            t2 = asyncio.create_task(asyncio.to_thread(elevate.client_request, self.st, {**self.REQ, "why": "第二张"}, 30))
+            t2 = asyncio.create_task(asyncio.to_thread(elevate.client_request, self.st, {**self.REQ, "why": "第二张卡：同一条命令"}, 30))
             c2 = await self.wait_card(2)
             self.assertNotEqual(c1["id"], c2["id"])
             # c1's assertion on an answer for c2 (and vice versa): refused

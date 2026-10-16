@@ -18,7 +18,7 @@ from .. import controls,wire
 from .store import Store,BotError,canonical,ident,config
 from .knowledge import Knowledge
 from .tools import ToolRegistry
-from .provider import resolve_bot as resolve
+from .provider import resolve_bot as resolve,vendor_key,vendor_card,vendors_public
 
 from ..compose import Send
 
@@ -54,7 +54,7 @@ class Manager:
         return self.store
     def read(self,req):
         store=self.state();op=req.get('op');bid=req.get('id')
-        if op=='list':return {'bots':store.listing(),'host_timezone':str(store.timezone)}
+        if op=='list':return {'bots':store.listing(),'host_timezone':str(store.timezone),'vendors':vendors_public()}   # P348: own-key providers
         c=store.get(bid)
         if op=='detail':
             p=None;problem=None
@@ -67,7 +67,7 @@ class Manager:
             except BotError as e:p=None;problem=str(e)
             root=store.directory(bid)
             return {'bot':{'id':bid,**c},'knowledge':[{'name':p.name,'bytes':p.stat().st_size} for p in root.joinpath('knowledge').iterdir() if not p.name.endswith('.text') and not p.is_symlink()],
-                    'tools':ToolRegistry(store,bid).listing(),'secret_directory':str(store.secrets(bid)),'provider':p,'provider_problem':problem,'native_start_failure':next((r['outcome'] if r['outcome']!='ok' else None for r in store.db.execute("SELECT outcome FROM activity WHERE bot=? AND kind='native_start' ORDER BY rowid DESC LIMIT 1",(bid,))),None),'telegram':{'configured':(store.secrets(bid)/'TELEGRAM_BOT_TOKEN').is_file()},'own_key_configured':(store.secrets(bid)/'BOT_MODEL_KEY').is_file(),'audit':{'provider':'OpenRouter','secret_name':'OPENROUTER_API_KEY','configured':(store.secrets(bid)/'OPENROUTER_API_KEY').is_file()}}
+                    'tools':ToolRegistry(store,bid).listing(),'secret_directory':str(store.secrets(bid)),'provider':p,'provider_problem':problem,'native_start_failure':next((r['outcome'] if r['outcome']!='ok' else None for r in store.db.execute("SELECT outcome FROM activity WHERE bot=? AND kind='native_start' ORDER BY rowid DESC LIMIT 1",(bid,))),None),'telegram':{'configured':(store.secrets(bid)/'TELEGRAM_BOT_TOKEN').is_file()},'own_key_configured':(store.secrets(bid)/vendor_key(c.get('own_model'))).is_file(),'own_key_name':vendor_key(c.get('own_model')),'audit':{'provider':'OpenRouter','secret_name':'OPENROUTER_API_KEY','configured':(store.secrets(bid)/'OPENROUTER_API_KEY').is_file()}}
         if op=='statistics':return {'days':store.statistics(bid),'tools':[dict(r) for r in store.db.execute('SELECT tool,day,sum(calls) calls FROM tool_calls WHERE bot=? GROUP BY tool,day ORDER BY day DESC LIMIT 100',(bid,))]}
         if op=='handoffs':return {'handoffs':[dict(r) for r in store.db.execute("SELECT id,visitor,request,status,created FROM handoffs WHERE bot=? ORDER BY created DESC LIMIT 100",(bid,))]}
         if op=='history':
@@ -100,8 +100,9 @@ class Manager:
                 c['telegram']={**c['telegram'],'enabled':False};store.save(bid,c)
             elif c['provider']['source']=='own':
                 c['enabled']=False;store.save(bid,c)
-            name='TELEGRAM_BOT_TOKEN' if op=='telegram_key' else 'BOT_MODEL_KEY'
-            card=elevate.norm_secret({'name':name,'purpose':'Telegram bot token / Telegram bot 密钥' if op=='telegram_key' else 'Bot model key; separate billing / Bot 模型 key，独立计费','dest':'file:'+str(store.secrets(bid)/name)},self.host.st.root)
+            # P348: the card names the chosen provider's own key (BOT_ARK_API_KEY …) and where to create it
+            name='TELEGRAM_BOT_TOKEN' if op=='telegram_key' else vendor_key(c.get('own_model'))
+            card=elevate.norm_secret({'name':name,'purpose':'Telegram bot token / Telegram bot 密钥' if op=='telegram_key' else vendor_card(c.get('own_model')),'dest':'file:'+str(store.secrets(bid)/name)},self.host.st.root)
             result=await self.host.elevate.request(card,gone)
             if result.get('result')!='saved':raise BotError('key_required')
             return {'name':name,'stored':True}

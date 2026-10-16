@@ -17,8 +17,9 @@ How it works (all on this computer, never through the relay — a cloud push can
   time in this serve process (restart), when the hash changed, and after a compaction / clear of that conversation.
 - The prompt lives at a fixed, human path: `~/.config/agentj/heartbeat.md` (next to config.json5). Default template on
   first start; the owner or the main Agent maintains it (`agentj heartbeat prompt …`).
-- The reply page is marked `via: heartbeat` (folded label on the phone); a reply of exactly 〔不回群〕 stays silent — no
-  page, no push, no unread. Each conversation (own / shared, per harness and session id) keeps its own clock.
+- The reply page is marked `via: heartbeat` (folded label on the phone); a final reply of exactly 〔不回群〕 stays silent — no
+  page, no push, no unread; notes written before it in the same turn fold into the silent turn (P351). A Codex beat adds
+  NO_NOTES (no progress note first). Each conversation (own / shared, per harness and session id) keeps its own clock.
 - P207 `heartbeat.daily_at` ("HH:MM" local, "" = off): besides the idle beat, one beat a day once the clock passes HH:MM
   (it still waits for the same conditions). Rule: due when today's HH:MM has passed, no daily beat is recorded for today
   in heartbeat.json (`daily`: "YYYY-MM-DD", so a restart never fires twice), and serve was already running at HH:MM or
@@ -262,6 +263,11 @@ def message(lang: str, text: str, digest: str, full: bool, minutes: int) -> str:
     return head + "提示没变，不用重读，照上次的做。没有要报的，最终回复只写 " + SILENT
 
 
+# P351 (Leo 10-16): Codex writes a progress line before its final answer; with nothing to report it should not
+NO_NOTES = {"zh": "没有要报的，不要先写过程说明，直接只回 " + SILENT,
+            "en": "With nothing to report, write no progress note first — reply only " + SILENT}
+
+
 def phone_label(lang: str) -> str:
     return pick(lang, "心跳检查", "Heartbeat check")
 
@@ -462,6 +468,8 @@ class Heartbeat:
         full = self.seen.get(key) != digest
         idle_min = max(1, int((now - max(self.started, self.last_activity)) // 60))
         body = message(lang, text, digest, full, idle_min)
+        if getattr(a, "kind", None) == "codex":
+            body += "\n" + NO_NOTES[lang]
         with contextlib.suppress(Exception):          # P165 (P158 ask): a goal still running → one line at the end
             from . import goal as goal_mod
             g = goal_mod.heartbeat_line(h.st, lang)

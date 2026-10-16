@@ -218,6 +218,10 @@ def launch_environment(base=None, allow_docker: bool = False, kind: str = "codex
         # P310: Qwen's own settings (QWEN_HOME …) — names that look like secrets stay out; a key reaches Qwen only as
         # agent_qwen.key_environment's OPENAI_* variables, added after this filter.
         keep.update(name for name in env if name.startswith("QWEN_") and not SECRETISH.search(name))
+    if kind == "dsh":
+        # P329: dsh's own settings (DSH_HOME …) — names that look like secrets stay out; a key reaches dsh only as
+        # agent_dsh.key_environment's variables, added after this filter (the forced read-only preset too).
+        keep.update(name for name in env if name.startswith("DSH_") and not SECRETISH.search(name))
     if kind == "codex":
         # Same owner-selected native provider reference used by peer_session.
         # Only its env_key NAME is added; values still come from the original input.
@@ -230,20 +234,28 @@ def launch_environment(base=None, allow_docker: bool = False, kind: str = "codex
     return {name: env[name] for name in clean if name in env and name not in hidden}
 
 
-def auxiliary_environment(base=None, kind: str = "claude", extra_keep=()) -> dict:
-    """Tasks/bots authenticate from native storage, never serve's secret environment.
+# P348 (2026-10-16): the owner's own automation — scheduled tasks, workflow CEOs, goal countdowns — may use any plan key
+# (Ark / Bailian Coding Plan, Bailian Token Plan, Kimi For Coding membership); a support bot serves other people, so it
+# never gets one (bots/provider.py asks for a pay-as-you-go key).
+PLAN_KEY_ENV = ("ARK_CODING_PLAN_API_KEY", "BAILIAN_CODING_PLAN_API_KEY", "BAILIAN_TOKEN_PLAN_API_KEY", "KIMI_API_KEY")
+
+
+def auxiliary_environment(base=None, kind: str = "claude", extra_keep=(), plan_keys: bool = False) -> dict:
+    """Tasks/bots authenticate from native storage, never serve's secret environment — except the plan keys
+    (PLAN_KEY_ENV) when `plan_keys` (the owner's own tasks; bots never pass it).
 
     The permission socket claim is generated per task, not inherited host authority.
     """
     from .peer_session import clean_env
     env = dict(os.environ if base is None else base)
+    plans = set(PLAN_KEY_ENV) if plan_keys else set()
     extra_keep = set(extra_keep) | {k for k in _MAIN_ENV if k.startswith("FAKE_")} | {"AGENTJ_INSTANCE"}
-    clean = clean_env(kind, env, extra_keep=extra_keep)
+    clean = clean_env(kind, env, extra_keep=extra_keep | plans)
     hidden = set(hide_env(env))
     return {k: v for k, v in clean.items() if k not in hidden
             and not k.startswith("AGENTSRELAY_")
-            and not (k.endswith(("_TOKEN", "_API_KEY")) or k == "CLAUDE_CODE_OAUTH_TOKEN")
-            and (k in extra_keep or not k.endswith("_KEY"))}
+            and (k in plans or not (k.endswith(("_TOKEN", "_API_KEY")) or k == "CLAUDE_CODE_OAUTH_TOKEN"))
+            and (k in extra_keep or k in plans or not k.endswith("_KEY"))}
 
 
 def _env_dirs(env) -> list[str]:

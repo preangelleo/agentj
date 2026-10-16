@@ -25,7 +25,8 @@ beat from a regular one by its text — handle both the same way.
    `agentj capability list`), the newest run reports (never trust an exit code), the owner's to-dos and promises, work that
    died half-way (pick it up or dispatch it to its CEO as usual).
 3. Report only what the owner needs to know or decide, in a sentence or two. **Nothing to report → your final reply is
-   exactly `〔不回群〕`** (nothing reaches the phone: no page, no notification).
+   exactly `〔不回群〕`**, with no progress note written first (nothing reaches the phone: no page, no notification; notes
+   written earlier in the turn fold into the silent turn).
 4. Then go back to standby. A heartbeat is not a reason for a long turn; dispatch long work as usual.
 
 ## 〔额度提醒〕 / [Quota] lines on a heartbeat

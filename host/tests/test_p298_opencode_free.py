@@ -154,7 +154,8 @@ class Fake(unittest.TestCase):
         self.exe = str(exe)
         env = {"AGENTJ_OPENCODE_BIN": self.exe, "XDG_DATA_HOME": str(self.bin / "data"), "AGENTJ_OC_FREE_LIST": "on",
                "XDG_CONFIG_HOME": str(self.bin / "conf"), "AGENTJ_STATE_DIR": str(self.bin / "state"),
-               "AGENTJ_CLAUDE_BIN": str(self.bin / "none"), "AGENTJ_CODEX_BIN": str(self.bin / "none")}
+               "AGENTJ_CLAUDE_BIN": str(self.bin / "none"), "AGENTJ_CODEX_BIN": str(self.bin / "none"),
+               "AGENTJ_DSH_BIN": str(self.bin / "none")}   # P329: a dsh on the developer's PATH would make it "ask_owner"
         p = mock.patch.dict(os.environ, env)
         p.start()
         self.addCleanup(p.stop)

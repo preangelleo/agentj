@@ -14,7 +14,7 @@ installed signed, and an older version than the installed one (without an explic
 官方认证 / certified only when the bundle's minisign signature verifies with a key compiled into agentj (minisign.TRUSTED_SIGNERS)
 and its trusted comment names this exact name / version / type / bundle SHA-256. The server's `certified` / `official` flag
 alone never earns the badge; a package the server flags certified whose signature does not verify is refused (exit 5).
-Community packages are 未认证 / unverified and need `--accept-unverified` at confirm time.
+Community packages without a certification are 社群 · 待审核 / pending review (unverified) and need `--accept-unverified` at confirm time.
 
 install: preview (no flag) = get → download (signed URL on our API origin only) → SHA-256 = the server's → bundle.parse →
 signature → params (workflow) → the fenced summary + target + digest + the exact confirm command; nothing written outside the
@@ -54,8 +54,8 @@ EXIT_OK, EXIT_ERROR, EXIT_BLOCKED, EXIT_UNAVAILABLE, EXIT_DIGEST, EXIT_SIGNATURE
 PKG_REASONS = ("spam", "malware", "privacy", "injection", "license", "other")
 HARNESSES = bundle.HARNESSES
 SORTS = ("new", "installs", "likes", "week")
-CERT_BADGE = "【官方认证 ✓ 签名已在本机核验 / certified: signature verified on this machine】"
-UNVERIFIED = "【未认证 unverified：社群包，没有官方签名 / community package, no official signature】"
+CERT_BADGE = "【Agent J 官方审核 ✓ 签名已在本机核验 / reviewed by Agent J: signature verified on this machine】"
+UNVERIFIED = "【社群 · 待审核 unverified：没有 Agent J 官方签名 / community · pending review, no Agent J signature】"
 VERIFY_TIMEOUT = 60
 VERIFY_MAX = 600
 DRAFT_MAX = 20000
@@ -88,8 +88,8 @@ NO_SANDBOX = "本机没有可用的沙箱，没有运行包的自检"
 _INLINE = re.compile(r"(?:ba|da|z|k|fi)?sh|python[0-9.]*|node|perl|ruby|php|deno|bun|lua")
 TRACK_TEXT = {
     "official": "官方（服务器标记；签名在安装时于本机核验）/ official (server flag; the signature is checked on this machine at install)",
-    "certified": "社群 · 服务器标记已认证（安装时本机核验签名）/ community, server says certified (checked at install)",
-    "community": "社群 · 未认证 / community · unverified",
+    "certified": "社群 · Agent J 官方审核（服务器标记，安装时本机核验签名）/ community · reviewed by Agent J (server flag, signature checked at install)",
+    "community": "社群 · 待审核 / community · pending review",
 }
 
 ERRORS = {
@@ -593,7 +593,7 @@ def run_installed(*, as_json=False, st=None, out=None) -> int:
         return EXIT_OK
     for r in items:
         print(f"{r['name']} {r['version']} · {r['type']} · {r['harness']} · "
-              + ("官方认证 certified" if r.get("certified") else "未认证 unverified") + f" · {r['installed_at']} · {r['target']}", file=out)
+              + ("Agent J 官方审核 certified" if r.get("certified") else "社群 · 待审核 unverified") + f" · {r['installed_at']} · {r['target']}", file=out)
     return EXIT_OK
 
 
@@ -1198,11 +1198,11 @@ def resolve_harness(arg: str | None, st) -> str:
     a = st.agent_config()
     if a:
         # P305: Kimi Code reads ~/.agents/skills — the Codex target — so a package for Codex is the one it gets
-        return {"claude": "claude_code", "codex": "codex", "opencode": "opencode", "kimi": "codex", "qwen": "codex"}[a["kind"]]
+        return {"claude": "claude_code", "codex": "codex", "opencode": "opencode", "kimi": "codex", "qwen": "codex", "dsh": "codex"}[a["kind"]]
     from . import harness as hz
     d = hz.detect()["decision"]
     if d.startswith("use:"):
-        return {"claude": "claude_code", "codex": "codex", "opencode": "opencode", "kimi": "codex", "qwen": "codex"}[d[4:]]
+        return {"claude": "claude_code", "codex": "codex", "opencode": "opencode", "kimi": "codex", "qwen": "codex", "dsh": "codex"}[d[4:]]
     raise PlazaError("装给哪个 Agent？问你的人，然后加 --harness claude_code | codex | opencode / which Agent? ask your human, "
                      "then add --harness")
 
@@ -1488,7 +1488,7 @@ def run_install(name: str, *, version=None, harness=None, workspace=None, params
                   "agentj for this package: --replace moves it to the backups folder of agentj's state" if owned else
                   f"{NOT_OURS}（--replace 也不行；改名或移走它由你的人决定）"), file=out)
         if not certified:
-            print("这是未认证的社群包：没有官方签名，内容由别的客户写。确认时必须加 --accept-unverified / an UNVERIFIED community "
+            print("这是待审核的社群包：没有 Agent J 官方签名，内容由别的客户写。确认时必须加 --accept-unverified / an UNVERIFIED community "
                   "package written by another customer: the confirm needs --accept-unverified", file=out)
         print(f"digest: {dg}", file=out)
         print("NOT INSTALLED. 把上面的预览原样给你的人看；只有他明确同意安装这个包后才运行 / Show your human the preview above; only "
@@ -1503,7 +1503,7 @@ def run_install(name: str, *, version=None, harness=None, workspace=None, params
               "params or options changed). Run the preview again and show your human the new one.", file=out)
         return EXIT_DIGEST
     if not certified and not accept_unverified:
-        raise PlazaError("未认证的社群包要加 --accept-unverified（你的人看过并同意了）/ an unverified community package needs "
+        raise PlazaError("待审核的社群包要加 --accept-unverified（你的人看过并同意了）/ an unverified community package needs "
                          "--accept-unverified (your human saw it and agreed)")
     if exists and not replace:
         raise PlazaError(f"{target} 已存在，不覆盖 / exists, never overwritten" + (
@@ -1751,7 +1751,7 @@ def run_publish(directory: str, *, show_name=False, owner_confirmed=False, diges
             raise PlazaError(f"上传被拒 / upload refused: {ERRORS.get(e, e)} (HTTP {status})")
         st.log("plaza_pkg_publish", name=m["name"], result="ok")
         state = ans.get("state") if ans.get("state") in ("live", "uploading", "rejected") else "?"
-        print(f"已公开发到广场 / published: {m['name']} {m['version']} · state {state}（社群 · 未认证 / community · unverified）", file=out)
+        print(f"已公开发到广场 / published: {m['name']} {m['version']} · state {state}（社群 · 待审核 / community · pending review）", file=out)
         print(f"别人这样装 / others install it with: agentj plaza install {m['name']}", file=out)
         return EXIT_OK
     draft, said = layer2_draft(m, files)
@@ -1760,7 +1760,7 @@ def run_publish(directory: str, *, show_name=False, owner_confirmed=False, diges
     print("=" * 8 + " 将公开发到广场的包 — 所有付费客户的 Agent 与员工都能下载 / the package that would be PUBLISHED to every customer "
           + "=" * 8, file=out)
     print("\n".join([FENCE_OPEN, f"{META}{NOTE}",
-                     f"{META}{m['name']} · {_kind(m['type'])} · v{m['version']} · 社群 · 未认证 community · unverified "
+                     f"{META}{m['name']} · {_kind(m['type'])} · v{m['version']} · 社群 · 待审核 community · pending review "
                      f"(certified=false, author=community 由 agentj 强制 / forced by agentj)",
                      f"{META}bundle sha256 {sha} · {len(data)} bytes · {len(files)} 个文件 files",
                      f"{META}标题 title:", *_t(m["title_zh"]), *_t(m["title_en"]), f"{META}简介 summary:", *_t(m["summary_zh"]),

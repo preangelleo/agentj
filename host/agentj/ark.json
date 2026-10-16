@@ -1,6 +1,6 @@
 {
   "schema": "agentj.ark/v1",
-  "_comment": "P315: the ONE place for Volcano Engine Ark (火山方舟) Coding Plan in OpenCode / Claude Code. Model ids and image input from the owner's measured table (support thread st_ASwQAUOspTnh8jMvSeueKA, 2026-10-15: arkcli model-list + 32 image questions through OpenCode / Claude Code); endpoints: Anthropic-compatible …/api/coding, OpenAI-compatible …/api/coding/v3 (Ark docs). Unmeasured models are text-only on purpose: claiming image input a model lacks makes OpenCode send pictures it rejects. Output limits only where published (doubao-seed-2.1-pro 256k, deepseek-v4-pro 384k) or needed (glm-5.3: thinking used up OpenCode's 32k default).",
+  "_comment": "P315: the ONE place for Volcano Engine Ark (火山方舟) Coding Plan in OpenCode / Claude Code. Model ids and image input from the owner's measured table (support thread st_ASwQAUOspTnh8jMvSeueKA, 2026-10-15: arkcli model-list + 32 image questions through OpenCode / Claude Code); endpoints: Anthropic-compatible …/api/coding, OpenAI-compatible …/api/coding/v3 (Ark docs). Unmeasured models are text-only on purpose: claiming image input a model lacks makes OpenCode send pictures it rejects. Output limits only where published (doubao-seed-2.1-pro 256k, deepseek-v4-pro 384k) or needed (glm-5.3: thinking used up OpenCode's 32k default). pro_suggested: Ark's plan overview only says kimi-k3 is \"only suggested for Pro\" (it uses quota fast) — Lite can select it; Lite and Pro differ only in usage (P335, 10-16).",
   "provider": "ark-coding-plan",
   "key_env": "ARK_CODING_PLAN_API_KEY",
   "verify_url": null,
@@ -8,9 +8,16 @@
   "model": "doubao-seed-2.1-pro",
   "model_strong": "kimi-k3",
   "model_text": "glm-5.3",
-  "pro_only": [
+  "pro_suggested": [
     "kimi-k3"
   ],
+  "_comment_tiers": "P328: list prices read from Ark's official pages on 2026-10-16 (cn-coding-plans 1.0.1). Lite and Pro have the same models and tools; Pro only gives 5x the quota. Kimi K3 is merely suggested for Pro (it uses quota fast) — Lite can pick it too. Time-limited offers are left to the order page.",
+  "tiers": [
+    ["Lite", 40],
+    ["Pro", 200]
+  ],
+  "prices_checked": "2026-10-16",
+  "signup_url": "https://www.volcengine.com/activity/codingplan",
   "buy_url": "https://console.volcengine.com/ark/",
   "console_url": "https://console.volcengine.com/ark/",
   "block": {
@@ -113,7 +120,7 @@
         }
       },
       "kimi-k3": {
-        "name": "Kimi K3（Pro 套餐）",
+        "name": "Kimi K3（扣额度快）",
         "attachment": true,
         "modalities": {
           "input": [

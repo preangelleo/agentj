@@ -6,7 +6,7 @@
 // after 20 000 (the rest becomes one text node), so rendering cost stays linear in the input; P33-C08: links are https:,
 // http: or mailto: only, open with rel="noopener noreferrer", and a link whose words are not its address shows the real
 // host after them (small, .lhost): a link whose words say bank.com but which goes to evil.example reads "bank.com (evil.example)".
-const MOD = { LABELS: { copy: "Copy", copyAria: "Copy code", copied: "Copied", image: "image", tapCopy: "Click to copy" } };
+const MOD = { LABELS: { copy: "Copy", copyAria: "Copy code", copied: "Copied", image: "image", tapCopy: "Click to copy", details: "Details" } };
 // md.js — a small, safe Markdown subset for the agent's words (M1.5-pwa-md-ptt).
 //
 // The agent's text is untrusted input: it quotes web pages, files and tool
@@ -235,8 +235,13 @@ const MOD = { LABELS: { copy: "Copy", copyAria: "Copy code", copied: "Copied", i
     mc[tok] = { f: from, k };
     return k;
   }
-  const dollarCloses = (s, k) => !/[\s\\$]/.test(s[k - 1]) && !/[0-9$]/.test(s[k + 1] || "");
+  // P341 (#19): shell text is not math. A closer followed by a letter / "_" / "(" / "{" is the next shell variable
+  // ("$(ls -d x) … $HOME"), an opener "${" is one, and "&&" / "~/" inside is a command line — those stay text.
+  const dollarCloses = (s, k) => !/[\s\\$]/.test(s[k - 1]) && !/[0-9$A-Za-z_({]/.test(s[k + 1] || "");
+  const SHELLISH = /&&|~\/|\$\(|\$\{/;
+  let noMath = false;            // P341: parse(src, {math: false}) — host-written system pages never render TeX
   function mathAt(s, i, mc) {
+    if (noMath) return null;
     const two = s.slice(i, i + 2);
     const pair = two === "$$" ? ["$$", true] : two === "\\[" ? ["\\]", true] : two === "\\(" ? ["\\)", false] : null;
     let k, end;
@@ -254,7 +259,7 @@ const MOD = { LABELS: { copy: "Copy", copyAria: "Copy code", copied: "Copied", i
       end = k + 1;
     }
     const tex = s.slice(i + (pair ? 2 : 1), k);
-    if (!tex.trim() || tex.length > MAX_TEX) return null;
+    if (!tex.trim() || tex.length > MAX_TEX || !pair && (s[i + 1] === "{" || SHELLISH.test(tex))) return null;
     return { end, node: { tag: "math", tex, display: pair ? pair[1] : false, src: s.slice(i, end) } };
   }
 
@@ -387,7 +392,7 @@ const MOD = { LABELS: { copy: "Copy", copyAria: "Copy code", copied: "Copied", i
   function startsBlock(lines, i) {
     const l = lines[i];
     return RE.fence.test(l) || RE.heading.test(l) || RE.hr.test(l) || RE.quote.test(l) ||
-           RE.item.test(l) && !RE.blank.test(l.replace(RE.item, "$4")) || isTableStart(lines, i) || RE.math.test(l);
+           RE.item.test(l) && !RE.blank.test(l.replace(RE.item, "$4")) || isTableStart(lines, i) || !noMath && RE.math.test(l);
   }
 
   // P57: a display-math block — "$$ … $$" / "\[ … \]" on one line, or the opener's line … a line ending in the closer,
@@ -424,7 +429,7 @@ const MOD = { LABELS: { copy: "Copy", copyAria: "Copy code", copied: "Copied", i
       const line = lines[i];
       if (RE.blank.test(line)) { i++; continue; }
 
-      if (RE.math.test(line)) {                      // P57 display math; not a block → falls through to a paragraph
+      if (!noMath && RE.math.test(line)) {           // P57 display math; not a block → falls through to a paragraph
         const mb = mathBlock(lines, i, mc);
         if (mb) { out.push(mb.node); i = mb.next; continue; }
       }
@@ -570,15 +575,16 @@ const MOD = { LABELS: { copy: "Copy", copyAria: "Copy code", copied: "Copied", i
     return { node: list, next: i };
   }
 
-  function parse(src) {
+  function parse(src, opts) {
     if (src == null) return [];
+    noMath = !!opts && opts.math === false;
     let s = String(src).replace(/\r\n?/g, "\n").replace(/\u0000/g, "�");
     let tail = "";
     if (s.length > MAX_INPUT) { tail = s.slice(MAX_INPUT); s = s.slice(0, MAX_INPUT); }
     cellBudget = MAX_CELLS; linkWork = 0; clearCodeCache();
     const out = parseBlocks(s.split("\n").map(detab), 0);
     if (tail) out.push({ tag: "p", children: [text(tail)] });
-    clearCodeCache();
+    clearCodeCache(); noMath = false;
     return out;
   }
 
@@ -587,7 +593,7 @@ const MOD = { LABELS: { copy: "Copy", copyAria: "Copy code", copied: "Copied", i
   // attributes (with these values) can reach the document.
   const TAGS = new Set(["p", "h1", "h2", "h3", "h4", "h5", "h6", "strong", "em", "del", "code",
     "pre", "blockquote", "ul", "ol", "li", "a", "hr", "br", "span",
-    "table", "thead", "tbody", "tr", "th", "td"]);
+    "table", "thead", "tbody", "tr", "th", "td", "details", "summary"]);
   const ATTRS = {
     a: { href: v => safeHref(v) },
     ol: { start: v => /^\d{1,9}$/.test(v) ? v : null },
@@ -625,6 +631,19 @@ const MOD = { LABELS: { copy: "Copy", copyAria: "Copy code", copied: "Copied", i
     pre.appendChild(code);
     wrap.append(bar, pre);
     return wrap;
+  }
+
+  // P339: a fenced block whose info string is exactly `details` (the host's goal result notice puts the raw commands there)
+  // → a native <details>, closed, whose <summary> is the page's label (LABELS.details, 「详情」 / "Details") and whose body is
+  // the usual code block (copy button, textContent only; no language mark, so nothing tries to highlight "details").
+  function detailsBlock(node, doc) {
+    const d = doc.createElement("details");
+    d.className = "mddetails";
+    const s = doc.createElement("summary");
+    s.textContent = LABELS.details;
+    d.appendChild(s);
+    d.appendChild(codeBlock({ tag: "pre", lang: "", code: node.code }, doc));
+    return d;
   }
 
   // P57: math → <span class="math"> (inline) / <div class="math display"> (its own block) whose text is the source
@@ -668,7 +687,7 @@ const MOD = { LABELS: { copy: "Copy", copyAria: "Copy code", copied: "Copied", i
         break;
       }
       budget.left--;
-      if (n.tag === "pre") { parent.appendChild(codeBlock(n, doc)); continue; }
+      if (n.tag === "pre") { parent.appendChild(n.lang === "details" ? detailsBlock(n, doc) : codeBlock(n, doc)); continue; }
       if (n.tag === "math") { parent.appendChild(mathEl(n, doc)); continue; }
       if (n.tag === "mslot") {                       // F21: <span class="mslot" data-ref="…"> + the source text
         const sp = doc.createElement("span");

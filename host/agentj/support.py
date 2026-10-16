@@ -421,7 +421,7 @@ def add_parser(sub) -> None:
     ss = sp.add_subparsers(dest="support_cmd", required=True)
     for name, helptext in (("ask", "提问（默认等 3 分钟回复）/ ask a question (waits up to 3 min)"),
                            ("report", "报告 bug / 文档问题 / 工作流想法 / report a bug, a doc problem or a workflow idea"),
-                           ("feedback", "反馈给 Agent J 爸爸 / Feedback to Agent J Father")):
+                           ("feedback", "反馈 / Feedback to Agent J Father")):
         s = ss.add_parser(name, help=helptext)
         if name in ("report", "feedback"):
             s.add_argument("--kind", choices=("bug", "report"), default="report" if name == "feedback" else "bug")

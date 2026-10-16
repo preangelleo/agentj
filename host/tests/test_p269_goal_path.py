@@ -28,7 +28,7 @@ class GoalPaths(unittest.TestCase):
             self.assertLess(text.index(browser), text.index(platform))
 
     def test_no_budget_increase_and_verified_manifest(self):
-        self.assertEqual(main_identity.verify_core()["version"], 15)
+        self.assertEqual(main_identity.verify_core()["version"], 16)
         for lang, prior in (("zh", 4408), ("en", 13957)):   # P290: no growth over the shipped v14 (P269 measured against v12)
             self.assertLessEqual(len((main_identity.DATA / f"core.{lang}.md").read_text()), prior)
         self.assertEqual((shared.SharedClaudeAgent.INLINE_MAX, shared.SharedClaudeAgent.HOOK_MAX), (9500, 10000))

@@ -1416,7 +1416,7 @@ class Mail:
         save_state(self.st, st2)
         return drop("sent")
 
-    async def send_notes(self, to, subject, body, to_owner: bool = False) -> dict:
+    async def send_notes(self, to, subject, body, to_owner: bool = False, quiet: bool = False) -> dict:
         """P182 `agentj mail notes`: minutes to addresses the owner typed (meeting.grants) or the owner's own allowlisted
         addresses. The Agent cannot add a recipient: an address nobody named is refused (`not_named`), the mailbox must be
         set up (address + app password; the inbox check need not be on), and the hourly reply cap counts these too."""
@@ -1474,7 +1474,8 @@ class Mail:
         st2["sent"] = (st2["sent"] + [str(msg["Message-ID"])])[-KEEP_IDS:]
         self.count(st2, "notes_sent")
         save_state(self.st, st2)
-        self.note(T[lang]["notes_sent"].format(to=", ".join(rcpt)))
+        if not quiet:                            # P336: the offline-card reminder is not a 「纪要已发送」 line
+            self.note(T[lang]["notes_sent"].format(to=", ".join(rcpt)))
         self.log("notes", result="sent", count=len(rcpt))
         return {"ok": True, "to": rcpt}
 
@@ -1828,7 +1829,12 @@ def cmd(a) -> int:
             except (OSError, UnicodeDecodeError) as e:
                 return out({"ok": False, "why": "body_file", "detail": type(e).__name__})
         files = [str(pathlib.Path(f).expanduser().resolve()) for f in a.attach or []]
+        fmt = a.format                         # P355: default Markdown; an .html file or a whole HTML page goes as HTML
+        if fmt is None:
+            from .mail_html import looks_html
+            fmt = "html" if (a.body_file or "").lower().endswith((".html", ".htm")) or looks_html(body) else "markdown"
         res = client_request(st, {"t": "mail_send", "to": a.to or ([a.address] if a.address else []),
+                                  "cc": a.cc or [], "bcc": a.bcc or [], "format": fmt,
                                   "to_owner": bool(a.to_owner), "subject": a.subject or "",
                                   "body": body, "files": files}, timeout=700)
         if res.get("result") == "unavailable":
@@ -1956,6 +1962,12 @@ def add_parser(sub) -> None:
                                                  "recipient: address or an address-book name (repeatable; notes: only addresses the owner named)")
     p.add_argument("--to-owner", action="store_true", help="send 和 notes：发给主人本人（通讯录 0 号位 + 白名单里的「我本人」地址）；和 --to 同时给就两边都发（去重，合计最多 10 个）/ "
                                                        "the owner's own addresses (slot 0 + the owner allowlist rows); with --to: both (deduped, 10 at most)")
+    p.add_argument("--cc", action="append", help="send：抄送——同 --to（可多次；白名单 / 手机批准规则每个收件人都算，合计最多 10 个）/ "
+                                                 "Cc: like --to (repeatable; every recipient counts for the approval rule; 10 in all)")
+    p.add_argument("--bcc", action="append", help="send：密送——同 --to，别的收件人看不到 / Bcc: like --to, hidden from the others")
+    p.add_argument("--format", choices=["markdown", "html", "text"],
+                   help="send：正文格式——markdown（默认，排成带格式的邮件）· html（网页原样，.html 文件自动选它）· text（纯文本）/ "
+                        "body format: markdown (default, a formatted mail) · html (the page as is; picked for .html files) · text")
     p.add_argument("--subject", help="send / notes：标题 / subject")
     p.add_argument("--body", help="send：正文 / body")
     p.add_argument("--body-file", help="send：正文文件（- = 标准输入）；notes：纪要文件（不给就读标准输入）/ body or notes file (notes default: stdin)")

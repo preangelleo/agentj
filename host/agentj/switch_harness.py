@@ -24,13 +24,14 @@ import json
 import os
 import re
 import sys
+import threading
 import time
 from pathlib import Path
 
 from . import harness, opencode_free, service
 from .compose import Send
 
-KINDS = ("claude", "codex", "opencode", "kimi", "qwen")
+KINDS = ("claude", "codex", "opencode", "kimi", "qwen", "dsh")
 LABEL = harness.LABEL
 CMD = "switch-harness"
 RECEIPT = "harness-switch.json"
@@ -64,7 +65,8 @@ REASON = {
            "start_failed": "{x} 的长驻会话打不开", "start_timeout": "{x} 的长驻会话 150 秒内没打开（MCP 服务器 / 插件太多，或电脑太忙）",
            "owner_unreachable": "设置里指定的 {x} server（agent.shared_opencode_port）连不上；让 Agent J 自己管 {x}：agentj config unset agent.shared_opencode_port",
            "owner_password": "设置里指定的 {x} server 要密码，Agent J 还没有（agentj secret request --name OPENCODE_SERVER_PASSWORD）",
-           "owner_session": "设置里指定的 {x} server 里没有指定的会话（agent.shared_session_id）"},
+           "owner_session": "设置里指定的 {x} server 里没有指定的会话（agent.shared_session_id）",
+           "busy": "上一个切换 / 扫描任务还没结束，等它结束再试", "too_soon": "刚扫描过，{x} 秒后再试"},
     "en": {"not_installed": "{x} is not installed", "not_supported": "{x} is not supported yet",
            "native_timeout": "{x} did not answer within 60 s (usually not signed in, an expired token, or no network / proxy)",
            "native_failed": "{x} could not complete a call (usually not signed in or an expired token)",
@@ -86,7 +88,9 @@ REASON = {
            "start_timeout": "{x}'s long-running session did not open within 150 s (too many MCP servers / plugins, or a busy computer)",
            "owner_unreachable": "the {x} server named in the settings (agent.shared_opencode_port) cannot be reached; let Agent J manage {x} itself: agentj config unset agent.shared_opencode_port",
            "owner_password": "the {x} server named in the settings needs a password Agent J does not have (agentj secret request --name OPENCODE_SERVER_PASSWORD)",
-           "owner_session": "the pinned session (agent.shared_session_id) is not on the {x} server named in the settings"},
+           "owner_session": "the pinned session (agent.shared_session_id) is not on the {x} server named in the settings",
+           "busy": "the previous switch / scan job has not finished yet; try again when it has",
+           "too_soon": "a scan just ran; try again in {x} s"},
 }
 
 # P312: why a new Agent stayed silent (serve's status.agent_phase) + the owner's next step
@@ -152,7 +156,10 @@ LOGIN_HINT = {
            "kimi": "后台服务找不到 {x} 的登录。二选一：手机 设置 →「AI 登录救援」走设备码登录（或在终端运行 kimi login --region mainland-cn，"
                    "海外站 kimi.ai 用 --region global）；或让 Agent 发手机密钥卡存 Kimi Code 控制台的 key（KIMI_API_KEY），再 agentj service restart",
            "qwen": "{x} 没有模型 key。让 Agent 发手机密钥卡存阿里百炼 Token Plan 的 key（BAILIAN_TOKEN_PLAN_API_KEY；价格和条款见 "
-                   "agentj agent route），再 agentj service restart"},
+                   "agentj agent route），再 agentj service restart",
+           # P329: DeepSeek Harness — Agent J's OpenAI-compatible route (Olares Router …) or a DeepSeek key on the key card
+           "dsh": "{x} 没有模型路线。Olares / 任何 OpenAI 兼容服务：agentj agent dsh --base-url https://<Router>/v1 --model <模型 id>"
+                  "（要 key 时让 Agent 发密钥卡存 DSH_ROUTER_API_KEY）；用 DeepSeek 官方 API：密钥卡存 DEEPSEEK_API_KEY，再 agentj service restart"},
     "en": {"claude": "the background service finds no {x} login (it probably lives only in your terminal's environment, e.g. "
                      "CLAUDE_CODE_OAUTH_TOKEN in ~/.zshenv, which the service cannot read). Either run claude in a terminal and "
                      "/login once (the login is stored in {store}, which the service can use too), or in a terminal where claude "
@@ -168,7 +175,10 @@ LOGIN_HINT = {
                    "for a Kimi Code console key (KIMI_API_KEY), then agentj service restart",
            # P310: Qwen Code — no login of its own any more (free OAuth ended 2026-04-15): a Bailian key on the key card
            "qwen": "{x} has no model key. Have the Agent send a key card for an Alibaba Cloud Bailian Token Plan key "
-                   "(BAILIAN_TOKEN_PLAN_API_KEY; agentj agent route shows prices and terms), then agentj service restart"},
+                   "(BAILIAN_TOKEN_PLAN_API_KEY; agentj agent route shows prices and terms), then agentj service restart",
+           "dsh": "{x} has no model route. Olares or any OpenAI-compatible server: agentj agent dsh --base-url https://<router>/v1 "
+                  "--model <model id> (a key card for DSH_ROUTER_API_KEY if it needs a key); DeepSeek's own API: a key card for "
+                  "DEEPSEEK_API_KEY, then agentj service restart"},
 }
 
 
@@ -531,14 +541,18 @@ def request(st, target: str | None, model: str | None = None, dry_run: bool = Fa
     cur = current_kind(st)
     if cur == target:
         return {"ok": False, "reason": "same", "target": target, "from": cur}
-    job = os.urandom(8).hex()      # the service check is the job's: inside the fence the unit is invisible (QA-J 10-12)
-    write_receipt(st, {"status": "probing", "target": target, "from": cur, "job": job})
-    argv = service.agentj_argv() + ["agent", "switch"] + (["--undo"] if undo else [target]) + ["--worker", "--job", job] \
-        + (["--model", model] if model and not undo else []) + (["--dry-run"] if dry_run else []) + (["--force"] if force else [])
-    try:
-        _launch(st, argv, launch)
+    # the service check is the job's: inside the fence the unit is invisible (QA-J 10-12)
+    spec = {"kind": "switch", "target": None if undo else target, "model": model if model and not undo else None,
+            "dry_run": bool(dry_run), "force": bool(force), "undo": bool(undo)}
+    try:        # P339 review: serve picks the job id (and writes "probing"); launched here, the caller does as before
+        job = _launch(st, spec, launch, lambda j: write_receipt(st, {"status": "probing", "target": target, "from": cur, "job": j}))
+    except HostRefused as e:
+        if e.args[0] in _WAIT:      # another job is in flight: its receipt stays
+            return {"ok": False, "reason": e.args[0], "target": target, "from": cur}
+        write_receipt(st, {"status": "failed", "target": target, "from": cur, "reason": "launch_failed"})
+        return {"ok": False, "reason": "launch_failed", "target": target, "from": cur}
     except Exception:  # noqa: BLE001
-        write_receipt(st, {"status": "failed", "target": target, "from": cur, "reason": "launch_failed", "job": job})
+        write_receipt(st, {"status": "failed", "target": target, "from": cur, "reason": "launch_failed"})
         return {"ok": False, "reason": "launch_failed", "target": target, "from": cur}
     end = clock() + PROBE_WAIT
     while True:
@@ -569,21 +583,155 @@ def request(st, target: str | None, model: str | None = None, dry_run: bool = Fa
 SCAN_WAIT = 5 * 60 + 30 + opencode_free.WARM_EXTRA   # P310: five probes of ≤ 60 s each, in a row (+ P298 warm-up)
 
 
-def _launch(st, argv, launch):
+def job_argv(spec: dict) -> list[str]:
+    if spec["kind"] == "scan":
+        return service.agentj_argv() + ["agent", "switch", "--worker", "--scan", "--job", spec["job"]]
+    return service.agentj_argv() + ["agent", "switch"] + (["--undo"] if spec.get("undo") else [spec["target"]]) \
+        + ["--worker", "--job", spec["job"]] + (["--model", spec["model"]] if spec.get("model") and not spec.get("undo") else []) \
+        + (["--dry-run"] if spec.get("dry_run") else []) + (["--force"] if spec.get("force") else [])
+
+
+class HostRefused(Exception):
+    pass
+
+
+_JOB = re.compile(r"[0-9a-f]{16}")
+_SPEC_KEYS = frozenset({"kind", "target", "model", "dry_run", "force", "undo", "at"})   # P339 review: the job id is serve's
+_WAIT = ("busy", "too_soon")
+LIVE = ("probing", "waiting", "switching")
+SCAN_EVERY = 60       # s: at most one scan (five real model calls) per minute; a fresher result is handed out again
+_LOCK = threading.Lock()
+_LAST_SCAN: list = []  # [job, time.time()] of the scan this serve launched last
+
+
+def check_spec(req) -> tuple[dict | None, str | None]:
+    """P339 (serve): every field checked; never an argv / env from the caller. → (spec, None) | (None, code)."""
+    if not isinstance(req, dict):
+        return None, "bad_request"
+    req = {k: v for k, v in req.items() if k not in ("cmd", "t")}
+    if set(req) - _SPEC_KEYS:
+        return None, "bad_field"
+    kind = req.get("kind")
+    if kind not in ("switch", "scan"):
+        return None, "bad_kind"
+    flags = {}
+    for k in ("dry_run", "force", "undo"):
+        v = req.get(k, False)
+        if type(v) is not bool:
+            return None, "bad_" + k
+        flags[k] = v
+    at = req.get("at")
+    if at is not None and (type(at) not in (int, float) or abs(time.time() - at) > JOB_MAX_AGE):
+        return None, "bad_at"
+    target, model = req.get("target"), req.get("model")
+    if kind == "scan":
+        if target is not None or model is not None or any(flags.values()):
+            return None, "bad_field"
+        return {"kind": "scan"}, None
+    if flags["undo"]:
+        if target is not None or model is not None:
+            return None, "bad_field"
+    elif target not in KINDS:
+        return None, "bad_target"
+    if model is not None:
+        from .slash import MODEL_RE
+        if not (isinstance(model, str) and (_OC_MODEL.fullmatch(model) if target == "opencode" else MODEL_RE.fullmatch(model))):
+            return None, "bad_model"
+    return {"kind": "switch", "target": target, "model": model, **flags}, None
+
+
+def _admit(st, kind: str) -> dict | None:
+    """P339 review: one switch / scan job in flight at a time; a scan at most once per SCAN_EVERY. None = launch."""
+    now, rec, scan = time.time(), read_receipt(st) or {}, read_receipt(st, SCAN) or {}
+    if rec.get("status") in LIVE and now - rec["at"] < JOB_MAX_AGE:
+        return {"ok": False, "error": "busy"}
+    job, at = _LAST_SCAN or (None, 0.0)
+    if kind == "scan":
+        if _JOB.fullmatch(str(scan.get("job"))) and now - scan["at"] < SCAN_EVERY:
+            return {"ok": True, "job": scan["job"]}               # fresh: the same result again, no new model calls
+        if now - at < SCAN_EVERY:
+            return {"ok": False, "error": "too_soon", "wait": int(SCAN_EVERY - (now - at)) + 1}
+    if job and scan.get("job") != job and now - at < SCAN_WAIT:
+        return {"ok": False, "error": "busy"}
+    return None
+
+
+def host_job(st, req, launch_job=None) -> dict:
+    """P339: serve launches the job for any caller (a fenced one cannot reach launchd / systemd). Blocking: in a thread."""
+    spec, err = check_spec(req)
+    if err:
+        st.log("harness_job", result="refused", reason=err)
+        return {"ok": False, "error": err}
+    if launch_job is None:
+        from .service_recovery import launch_job
+    with _LOCK:
+        held = _admit(st, spec["kind"])
+        if held:
+            st.log("harness_job", result=held.get("error") or "reused", kind=spec["kind"])
+            return held
+        job = spec["job"] = os.urandom(8).hex()
+        if spec["kind"] == "switch":
+            write_receipt(st, {"status": "probing", "target": spec["target"] or (_previous(st) or {}).get("kind"),
+                               "from": current_kind(st), "job": job})
+        try:
+            launch_job(st, job_argv(spec), purpose="switch", extra_env={"AGENTJ_JOB_AT": str(int(time.time()))})
+        except Exception as e:  # noqa: BLE001
+            code = e.reason if isinstance(e, service.ServiceError) and e.reason in service.NO_MANAGER else "launch_failed"
+            if spec["kind"] == "switch":
+                write_receipt(st, {"status": "failed", "reason": "launch_failed", "job": job})
+            st.log("harness_job", result="failed", kind=spec["kind"], reason=code)
+            return {"ok": False, "error": code}
+        if spec["kind"] == "scan":
+            _LAST_SCAN[:] = [job, time.time()]
+    st.log("harness_job", result="launched", kind=spec["kind"])
+    return {"ok": True, "job": job}
+
+
+def _via_serve(st, spec: dict) -> str | None:
+    """serve's job id = launched by serve; None = no / older serve; HostRefused(code, wait). elevate.sock, then control.sock."""
+    from .elevate import client_request
+    from .names import ServeBusy, ctl_call, elevate_sock
+    req = {**spec, "at": int(time.time())}
+    r = client_request(st, {"t": "harness_job", **req}, timeout=30, path=elevate_sock(st))
+    if r.get("ok") is None:
+        try:
+            r = ctl_call(st, {"cmd": "harness_job", **req}, 30)
+        except ServeBusy:
+            return None
+        if r is None or r.get("error") == "unknown command":
+            return None
+    if r.get("ok") is True and _JOB.fullmatch(str(r.get("job"))):
+        return r["job"]
+    raise HostRefused(str(r.get("error") or "refused"), r.get("wait"))
+
+
+def _launch(st, spec, launch, before=None) -> str:
+    """→ the job id the caller waits on: serve's, or (no serve / an older one / a test's `launch`) a fresh one launched here
+    after `before(job)` (the receipt a switch caller writes first)."""
+    job = None if launch else _via_serve(st, spec)
+    if job:
+        return job
+    job = os.urandom(8).hex()
+    if before:
+        before(job)
+    argv = job_argv({**spec, "job": job})
     if launch:
         launch(st, argv)
-    else:
-        from .service_recovery import launch_job
-        launch_job(st, argv, purpose="switch", extra_env={"AGENTJ_JOB_AT": str(int(time.time()))})
+        return job
+    from .service_recovery import launch_job
+    launch_job(st, argv, purpose="switch", extra_env={"AGENTJ_JOB_AT": str(int(time.time()))})
+    return job
 
 
 def scan(st, *, launch=None, sleep=time.sleep, clock=time.monotonic) -> dict:
     """`agentj agent switch --scan`: installed / version / callable for all three, probed by the job in the SERVICE's
     environment — what the skill reports to the owner. (A fenced Agent's own `agentj agent detect` cannot see harnesses
     whose path or key lives only in the service environment.) {"ok", "harnesses": [...], "current"} or {"ok": False, reason}."""
-    job = os.urandom(8).hex()
     try:
-        _launch(st, service.agentj_argv() + ["agent", "switch", "--worker", "--scan", "--job", job], launch)
+        job = _launch(st, {"kind": "scan"}, launch)
+    except HostRefused as e:
+        return {"ok": False, "reason": e.args[0] if e.args[0] in _WAIT else "launch_failed",
+                **({"wait": e.args[1]} if type(e.args[1]) is int else {})}
     except Exception:  # noqa: BLE001
         return {"ok": False, "reason": "launch_failed"}
     end = clock() + SCAN_WAIT
@@ -640,7 +788,7 @@ def _where(h: dict) -> dict:
 
 def _say_scan(r: dict, lang: str) -> str:
     if not r.get("ok"):
-        return _say({**r, "target": ""}, lang) if r.get("pending") else ("✗ " + reason_text(r.get("reason") or "launch_failed", "", lang))
+        return _say({**r, "target": ""}, lang) if r.get("pending") else ("✗ " + reason_text(r.get("reason") or "launch_failed", str(r.get("wait", "")), lang))
     en = lang == "en"
     lines = []
     for h in r["harnesses"]:

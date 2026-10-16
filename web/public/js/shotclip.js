@@ -25,6 +25,11 @@ export async function supported() {
   return can;
 }
 export const enabled = () => on;
+/** P340 #27: the page itself just put its own screenshot on the clipboard (the gear). The first image found after that is
+ *  the baseline, not a new screenshot to attach — compared by "first read after the copy", not by hash, because Chromium
+ *  re-encodes images it writes to the clipboard (the bytes read back differ from the PNG we gave it). */
+let ownCopy = false;
+export function remember() { ownCopy = true; }
 
 async function sha(blob) {
   const d = await crypto.subtle.digest('SHA-256', await blob.arrayBuffer());
@@ -65,6 +70,7 @@ async function back() {
     if (!img) return;
     const h = await sha(img);
     if (h === lastHash) return;                    // the same image as last time: not a new screenshot
+    if (ownCopy) { ownCopy = false; lastHash = h; return; }   // P340 #27: our own screenshot, pasted elsewhere meanwhile
     lastHash = h;
     H.attach(new File([img], 'image', { type: img.type }));
   } catch { /* focus moved again, or the clipboard is busy: wait for the next return */ }

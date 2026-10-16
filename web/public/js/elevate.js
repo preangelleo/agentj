@@ -165,8 +165,9 @@ function render() {
     $('elev-title').textContent = sudo ? t('elev.sudo.title') : t('elev.secret.title', { name: c.name });
     const dl = $('elev-rows'); dl.replaceChildren();
     if (sudo) {
+      // P339 (backlog #44 ④): what it is for comes first and largest, right under the title; the command after it
+      row(dl, t('elev.sudo.why') + ' · ' + t('elev.agentClaim'), c.why, 'purpose');
       row(dl, t('elev.sudo.cmd'), c.cmd, 'mono');
-      row(dl, t('elev.sudo.why') + ' · ' + t('elev.agentClaim'), c.why);
       row(dl, t('elev.sudo.effect') + ' · ' + t('elev.agentClaim'), c.effect);
     } else {
       row(dl, t('elev.secret.name'), c.name, 'mono');

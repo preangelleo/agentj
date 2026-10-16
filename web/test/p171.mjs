@@ -139,7 +139,7 @@ try {
         })()`);
         if (w >= 900) { assert.equal(lay.side, true, 'side navigation on wide'); assert.equal(lay.cols, 2, 'two columns of cards on wide'); }
         else { assert.equal(lay.side, false, 'no side navigation on a phone'); assert.equal(lay.cols, 1, 'one column on a phone'); }
-        assert.equal(lay.n, 9, 'nine sections when paired (P165: + P170 沟通渠道)');
+        assert.equal(lay.n, 10, 'ten sections when paired (P165: + P170 沟通渠道, P332: + 紧急修复)');
         if (w >= 900) {          // the side navigation jumps and marks the section
           await click(p, '[data-set-jump="set-s-help"]');
           await sleep(700);

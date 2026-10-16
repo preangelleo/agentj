@@ -100,7 +100,7 @@ try {
       assert.equal(await ev(p, `document.getElementById('elev-input').type`), 'password');
       assert.equal(await ev(p, `document.getElementById('elev-title').textContent`), 'Agent J 想用管理员身份执行一条命令');
       const rows = await ev(p, `[...document.querySelectorAll('#elev-rows dd')].map((x) => x.textContent)`);
-      assert.deepEqual(rows, ['apt-get install -y ffmpeg', '把录音转成 mp3 要用 ffmpeg', '安装一个系统软件包']);
+      assert.deepEqual(rows, ['把录音转成 mp3 要用 ffmpeg', 'apt-get install -y ffmpeg', '安装一个系统软件包']);   // P339: what it is for, first
       assert.match(await ev(p, `document.getElementById('elev-left').textContent`), /还剩 1\d\d 秒/);
       // P73: nothing typed → the button says what is missing, nothing is sent (never a decline)
       await ev(p, `document.getElementById('elev-allow').click()`);

@@ -95,3 +95,28 @@ The rule: **no light toast, no ad-hoc popup.** A new notice calls `notify()`; it
 background. `test/p318_noir.test.mjs` (web-unit) fails when any CSS rule whose selector names toast / notice / snack /
 flash / notif paints a light (`--btn-strong-bg`, Lotion, `--pg`, `--bg`, `--surface`, `#fff`) or see-through background,
 when `.toast` / `.share-notice` leave `--dlg-bg` / `--dlg-fg`, or when FORMATS uses anything but the four accents.
+
+## Colour on heavy fills (P340, 2026-10-16)
+
+Owner (10-16, Bots / 客服 page): 「我们用了一个 logo 和底色相同的 logo，这个做法就不对……在比较 heavy 的颜色上，字体不能用黑色，
+要用我们指定的白色。」 The 「让 Agent J 帮我设置」 button painted the logo green `--c-shield` with Sooty text, and put the robot mark
+(`brand/img/logo-mark.png`, whose body IS `#629887`) bare on it — only the eyes were left.
+
+| Token (menu.css layer 1) | Value | Use it for |
+|---|---|---|
+| `--ui-action-bg` | `--c-shield` (Emerald Oasis #629887) | every logo-green action fill |
+| `--ui-action-fg` | `--c-lotion` | its text and line icons — never Sooty / Noir |
+| `--ui-mark-disc` | `--c-lotion` | the round light disc under a brand mark / robot that sits on a heavy fill (the header orb's look) |
+
+The rules:
+- A heavy fill (Dark Cluster, the state colours, Black Mana, Noir, Sooty) takes Lotion text (or an alpha of Lotion);
+  never Sooty, Noir, black, and never the off-palette `#fff`. Lotion on the Dark Cluster is 2.8–3.6:1 — the owner's
+  choice (P244 menu cards, this rule); everything else keeps ≥ 4.5:1.
+- A mark never wears its ground's colour: the robot on a green fill stands on `--ui-mark-disc`; factory robots on cards
+  are re-dressed by `js/robot-color.js` (ΔE00 ≥ 20).
+- A light tint (Mellow Marrow, Peek-a-Blue …) inside a page whose `--ink` is Lotion sets its own Sooty text.
+
+The checks: `test/p340_contrast.test.mjs` (web-unit, static: heavy-fill rules with dark or `#fff` text, the token pair, the
+robot without its disc on a green class) and `test/p340_contrast.mjs` (gate `p340c-contrast`, real Chromium: every text
+against its composited ground, every img / svg / mask / sprite icon by a four-shot pixel footprint — shown · hidden ·
+forced black · forced white — and the long-press page screenshot keeping the header robot). Output `reports/qa/p340/c/`.

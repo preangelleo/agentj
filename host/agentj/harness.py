@@ -25,11 +25,12 @@ from .service import tilde
 from .envcompat import getenv
 from .text import clean_line
 
-LABEL = {"claude": "Claude Code", "codex": "Codex", "opencode": "OpenCode", "kimi": "Kimi Code", "qwen": "Qwen Code"}
+LABEL = {"claude": "Claude Code", "codex": "Codex", "opencode": "OpenCode", "kimi": "Kimi Code", "qwen": "Qwen Code", "dsh": "DeepSeek Harness"}
 BIN_ENV = {"claude": "AGENTJ_CLAUDE_BIN", "codex": "AGENTJ_CODEX_BIN", "opencode": "AGENTJ_OPENCODE_BIN", "kimi": "AGENTJ_KIMI_BIN",
-           "qwen": "AGENTJ_QWEN_BIN"}
+           "qwen": "AGENTJ_QWEN_BIN", "dsh": "AGENTJ_DSH_BIN"}
 # P305: Kimi Code CLI (`kimi` 2.2.0+) over ACP (agent_kimi.py / acp.py)
-SUPPORTED = ("claude", "codex", "opencode", "kimi", "qwen")   # P310: + Qwen Code (`qwen --acp`, agent_qwen.py)
+SUPPORTED = ("claude", "codex", "opencode", "kimi", "qwen", "dsh")   # P310: + Qwen Code (`qwen --acp`, agent_qwen.py)
+# P329: + DeepSeek Harness (`dsh --profile acp`, agent_dsh.py) — the engine inside Olares' Lares
 # API-key variables of the model vendors OpenCode knows (its bundled models.dev list, 1.18.32): checked by NAME only.
 # KIMI_API_KEY (P279): Kimi For Coding (kimi-code-plan-cn / -global) — launchd loads only names listed here.
 OPENCODE_KEY_ENV = ("ZHIPU_API_KEY", "DEEPSEEK_API_KEY", "DASHSCOPE_API_KEY", "MOONSHOT_API_KEY", "KIMI_API_KEY", "ARK_API_KEY",
@@ -37,7 +38,7 @@ OPENCODE_KEY_ENV = ("ZHIPU_API_KEY", "DEEPSEEK_API_KEY", "DASHSCOPE_API_KEY", "M
                     "ANTHROPIC_API_KEY", "GEMINI_API_KEY", "GOOGLE_GENERATIVE_AI_API_KEY",
                     "BAILIAN_TOKEN_PLAN_API_KEY", "BAILIAN_CODING_PLAN_API_KEY",   # P310: bailian.py presets
                     "ARK_CODING_PLAN_API_KEY")   # P315: ark.py preset
-NAMES = ("claude", "codex", "opencode", "kimi", "qwen")
+NAMES = ("claude", "codex", "opencode", "kimi", "qwen", "dsh")
 LATER = "coming in a later version"
 VERSION_TIMEOUT = 15
 
@@ -227,6 +228,9 @@ def login_of(name: str) -> tuple[str, str]:
     if name == "qwen":
         from .agent_qwen import login
         return login()
+    if name == "dsh":
+        from .agent_dsh import login
+        return login()
     return {"claude": claude_login, "codex": codex_login, "opencode": opencode_login}[name]()
 
 
@@ -282,6 +286,16 @@ def _one(name: str, environ=None) -> dict:
                 f"{facts['allow_rules']} permissions.allow rule(s) run without a phone card" if facts["allow_rules"] else "",
                 f"tools.approvalMode = {facts['mode']} (Agent J asks anyway)" if (facts["mode"] or "default") != "default"
                 else "") if x))
+    if name == "dsh":
+        from . import agent_dsh
+        if not agent_dsh.version_ok(version):
+            rec.update(logged_in=None, note="DeepSeek Harness older than 0.2.0: its ACP profile may be missing; update it "
+                                            "(`npm install -g @deepseek-ai/dsh@latest`)")
+            return rec
+        facts = agent_dsh.own_facts()
+        rec["note"] = ("developer preview (breaking changes announced); Agent J runs it in the read-only preset, every write / "
+                       "command asks the phone" + (" · ~/.dsh would change approvals or plugins: Agent J does not start "
+                                                   "dsh until it is moved aside (agentj doctor)" if facts["loose"] else ""))
     status, where = opencode_login(version, exe=exe) if name == "opencode" else login_of(name)
     if name == "opencode":
         rec["note"] = "Local credential hints only; verify the running selected provider connection. Prefer Claude Code."
@@ -318,7 +332,7 @@ def no_login(name: str, model: str | None = None, version: str | None = None) ->
     try:
         if name == "opencode":
             return not opencode_v2(version) and opencode_login(version, model)[0] == "warn"
-        return name in ("claude", "codex", "kimi", "qwen") and login_of(name)[0] == "warn"
+        return name in ("claude", "codex", "kimi", "qwen", "dsh") and login_of(name)[0] == "warn"
     except Exception:  # noqa: BLE001
         return False
 
@@ -393,6 +407,12 @@ def probe(only: tuple | list | None = None, model: str | None = None, timeout: f
                     from . import agent_kimi, agent_qwen
                     try:
                         reply = agent_qwen.probe(h["executable"], env, timeout, cfg.model)
+                    except agent_kimi.ProbeError as e:
+                        raise BotError(str(e.args[0]) if e.args else "call_failed") from None
+                elif h["name"] == "dsh":         # P329: the same ACP probe, `dsh --profile acp`, Agent J's route / key card
+                    from . import agent_kimi, agent_dsh
+                    try:
+                        reply = agent_dsh.probe(h["executable"], env, timeout, cfg.model)
                     except agent_kimi.ProbeError as e:
                         raise BotError(str(e.args[0]) if e.args else "call_failed") from None
                 elif h["name"] == "opencode" and _free_path(oc_model, h):

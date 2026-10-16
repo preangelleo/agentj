@@ -88,6 +88,8 @@ export function notify(spec) {
   box.dataset.kind = f.kind; box.style.setProperty('--nt-accent', 'var(' + f.accent + ')');
   box.setAttribute('role', f.kind === 'error' || f.kind === 'warn' ? 'alert' : 'status');
   const t = spec.text == null ? '' : String(spec.text), n = mk('span', 'nt-body'), kids = [icon(f.icon)];
+  // P340 #27: a rect may carry a small picture of what it is about (the screenshot it just took) — an <img> the caller built
+  if (spec.media && f.shape === 'rect' && spec.media.nodeType === 1) { spec.media.classList.add('nt-media'); kids.push(spec.media); }
   const col = mk('span', 'nt-text');
   if (spec.title && f.shape === 'rect') col.appendChild(mk('b', 'nt-title', spec.title));
   // P292: a toast that names a `command` shows it as code with ⧉ (copycode.js) and stays long enough to tap it
@@ -110,6 +112,7 @@ export function notify(spec) {
   box.classList.add(f.shape);
   if (f.shape === 'rect') fitNotify(box);
   box.classList.toggle('cmd', cmd); box.classList.toggle('act', !!acts.length && f.shape === 'rect');
+  box.classList.toggle('media', kids.some((k) => k.classList && k.classList.contains('nt-media')));
   if (ms) delete box.dataset.hold; else box.dataset.hold = '1';
   box.classList.add('on');
   clearTimeout(box._t);

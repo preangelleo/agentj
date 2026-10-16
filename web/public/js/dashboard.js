@@ -3,5 +3,7 @@ export function quotaWindows(usage = {}) {
   const windows = Array.isArray(usage.quota_windows) ? usage.quota_windows :
     [{window:'weekly',pct:usage.week_pct},{window:'5h',pct:usage.five_hour_pct}];
   return windows.filter(x => x && ['weekly','daily','monthly','5h'].includes(x.window) && Number.isFinite(x.pct))
-    .slice(0,2).map(x => ({window:x.window,pct:Math.max(0,Math.min(100,x.pct))}));
+    .slice(0,2).map(x => ({window:x.window,pct:Math.max(0,Math.min(100,x.pct)),
+      // P340 D: a provider window may carry its own reset (unix s) — Kimi / Ark / Bailian Coding Plan usage
+      ...(Number.isFinite(x.reset) && x.reset > 0 ? {reset:x.reset} : {})}));
 }

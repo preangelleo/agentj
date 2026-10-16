@@ -77,7 +77,9 @@ export async function runP189() {
           check(await evaluate(p, `${$('fwdBtn')}.nextElementSibling===${$('mailBtn')}`), 'right after 转发 (Telegram)');
           check(await evaluate(p, `${$('mailBtn')}.getAttribute('aria-label')`) === s.icon, 'label ' + lang);
           const b = await box(p, '#mailBtn');
-          check(b.w >= 44 && b.h >= 44, `44 px (${b.w}x${b.h})`);
+          // P340 #38: the box is glyph + one gap wide; the 44 px target is its ::after (width:max(100%,44px))
+          const tw = await evaluate(p, `parseFloat(getComputedStyle(${$('mailBtn')}, '::after').width) || 0`);
+          check(Math.max(b.w, tw) >= 44 && b.h >= 44, `44 px target (${b.w}x${b.h}, ::after ${tw})`);
           const bar = await box(p, '#rmbar'), first = await box(p, '#readBtn');
           check(first.l >= bar.l && b.r <= bar.r + 0.5, 'the six icons fit the row');
           check(await evaluate(p, `document.documentElement.scrollWidth<=innerWidth`), 'no sideways overflow');

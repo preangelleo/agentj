@@ -108,7 +108,7 @@ class SharedV2Chain(_DefaultMode, p60.V2Chain):
             self.assertTrue(res.text.startswith("好，停下了这一轮"), res.text)
             await c.idle()
             self.assertTrue(any(r["p"].endswith("/interrupt") for r in self.requests()))
-            # key failures: no key → names the provider, serve restarted, SAME ordinary session; 401 → phone Models & Key path
+            # key failures: no key → names the provider, serve restarted, SAME ordinary session; 401 → phone Models & API keys path
             before = await self._whoami(c)
             await c.say("NOKEY")
             await c.wait(lambda: any("「deepseek」的账户授权或 API Key 不可用" in m for m in c.msgs()))
@@ -117,9 +117,9 @@ class SharedV2Chain(_DefaultMode, p60.V2Chain):
             # the new serve is asked for the same ordinary session first (the stand-in keeps sessions in memory only, so it
             # answers 404 and a new one opens; the real OpenCode keeps them in its database — e2e_p60 --mode shared)
             self.assertGreaterEqual(len([r for r in self.requests() if r["p"] == f"/api/session/{sid}" and r["m"] == "GET"]), 2)
-            previous_key_notices = sum("模型与 Key" in m for m in c.msgs())
+            previous_key_notices = sum("模型和 API Key" in m for m in c.msgs())
             await c.say("BADKEY")
-            await c.wait(lambda: sum("模型与 Key" in m for m in c.msgs()) > previous_key_notices)
+            await c.wait(lambda: sum("模型和 API Key" in m for m in c.msgs()) > previous_key_notices)
             await c.idle()
             # /clear → a new ordinary session
             r = await c.host.agent.command("clear", "")

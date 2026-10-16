@@ -179,7 +179,7 @@ _CODEX_SANDBOX = ("sandbox denied", "sandboxerror", "landlock", "seccomp", "bwra
 _CODEX_NETWORK = ("workspace routing discovery failed", "network", "connection", "timed out", "timeout", "proxy", "dns",
                   "failed to fetch", "stream disconnected", "httpconnectionfailed", "responsestreamconnectionfailed",
                   "responsestreamdisconnected", "certificate", "tls handshake", "error sending request")
-CODEX_FEEDBACK = "me@agentj.app"   # the site's one feedback mailbox (site tests: founder@ / me@ / noreply@ only)
+CODEX_FEEDBACK = "feedback@agentj.app"   # P168/P341: the one public support mailbox (founder@ = billing only)
 
 
 def _codex_retry_at(raw: str) -> str | None:
@@ -402,7 +402,7 @@ def codex_failure(raw, model: str | None, lang: str = "zh", provider: dict | Non
     return kind, text + ("\n\n" + ("Details" if en else "详情") + ":\n```text\n" + detail + "\n```" if detail else ""), blocked
 
 
-HARNESS_CMD = {"claude": "claude", "codex": "codex", "opencode": "opencode", "kimi": "kimi", "qwen": "qwen"}
+HARNESS_CMD = {"claude": "claude", "codex": "codex", "opencode": "opencode", "kimi": "kimi", "qwen": "qwen", "dsh": "dsh"}
 _CLAUDE_ID = re.compile(r"claude-(opus|sonnet|haiku|fable)-(\d+)(?:-(\d{1,2}))?(?:-\d{8})?(\[1m\])?", re.I)
 
 
@@ -461,6 +461,15 @@ def stall_text(kind: str, reason: str, excerpt: str, secs: int, lang: str = "zh"
 class Agent:
     """Base: a queue of user messages, one turn at a time, status reported to the host."""
     kind = "?"
+    halt_quiet = False      # P328: serve.stop_turn is asking — the reason goes into /stop's own answer, not a second notice
+    halt_note = None        # P328: why the last halt() could not stop the running turn (None = it could, or nothing ran)
+
+    def cannot_halt(self, text: str) -> None:
+        """P328: a running turn the phone cannot stop (an owner's desktop turn, a terminal without a safe interrupt route):
+        say what to do instead — once: as /stop's answer when stop_turn asked, else as a notice."""
+        self.halt_note = text
+        if not self.halt_quiet:
+            self.host.agent_notice(text)
 
     def __init__(self, host, cfg: dict):
         # Main adapters share the host model/effort configuration; workflow CEOs
@@ -690,7 +699,9 @@ class Agent:
 
     def _asks_open(self) -> bool:
         asks = getattr(self.host, "asks", None)
-        return isinstance(asks, dict) and any(not a.fut.done() for a in asks.values() if hasattr(a, "fut"))
+        # P336: a parked card (nobody was online, the Agent was told) is not what the Agent waits for
+        return isinstance(asks, dict) and any(not a.fut.done() and getattr(a, "parked", False) is not True
+                                              for a in asks.values() if hasattr(a, "fut"))
 
     async def _stall_watch(self) -> None:
         start = time.monotonic()
@@ -1173,7 +1184,7 @@ class ClaudeAgent(Agent):
         env["MCP_TOOL_TIMEOUT"] = str(int((self.host.ask_ttl + 60) * 1000))   # never cut a pending approval short
         from . import fence
         if self.cfg.get("_workflow_ceo"):
-            env = fence.auxiliary_environment(env, self.kind, extra_keep=("AGENTJ_PERM_SOCK", "AGENTJ_PERM_CLAIM", "AGENTJ_PERM_WAIT", "OPENCODE_SERVER_PASSWORD", "OPENCODE_SERVER_USERNAME", "OPENCODE_CONFIG_CONTENT"))
+            env = fence.auxiliary_environment(env, self.kind, extra_keep=("AGENTJ_PERM_SOCK", "AGENTJ_PERM_CLAIM", "AGENTJ_PERM_WAIT", "OPENCODE_SERVER_PASSWORD", "OPENCODE_SERVER_USERNAME", "OPENCODE_CONFIG_CONTENT"), plan_keys=True)   # P348
         if self.cfg.get("fence", True):
             env = fence.launch_environment(env, self.cfg.get("docker", False), self.kind)
         sid = self.host.st.agent_session(self.kind)
@@ -1741,6 +1752,9 @@ def make(host, cfg: dict | None):
     if cfg["kind"] == "qwen":                       # P310: Qwen Code over the same ACP adapter, independent sessions only
         from .agent_qwen import QwenAgent
         return QwenAgent(host, cfg)
+    if cfg["kind"] == "dsh":                        # P329: DeepSeek Harness over the same ACP adapter, independent sessions only
+        from .agent_dsh import DshAgent
+        return DshAgent(host, cfg)
     if cfg.get("session_mode") == "shared" and not cfg.get("_workflow_ceo"):
         from .shared import make_shared
         return make_shared(host, cfg)

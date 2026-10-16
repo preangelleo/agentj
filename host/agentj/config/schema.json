@@ -393,6 +393,41 @@
       "verify": "agentj config validate --json",
       "since": "0.20"
     },
+    "approval.level": {
+      "type": "string",
+      "default": "standard",
+      "enum": [
+        "safe",
+        "standard",
+        "full"
+      ],
+      "description": "Approval level: safe asks more (no Jev, no batch, no goal countdown); standard = as before; full = like --dangerously-skip-permissions, almost no cards, but a suspected attack, credentials and payments still ask. Changed only by a signed phone confirmation / 审批档位：安全多问、中等（默认，同以前）、全放行（几乎不弹卡，疑似攻击、凭据、花钱仍问）；只能在已配对手机上签名切换",
+      "aliases": [
+        "审批档位",
+        "审批模式",
+        "全放行",
+        "approval level",
+        "skip permissions"
+      ],
+      "tier": "user",
+      "apply": "hot",
+      "verify": "agentj config validate --json",
+      "since": "0.23.0"
+    },
+    "approval.goal_nocard": {
+      "type": "boolean",
+      "default": false,
+      "description": "Goal mode without the opening card: a /goal starts at once and its steps run without cards, except a suspected attack, credentials and payments. Counts only while the phone that switched it on stays paired / 设了目标就不弹窗：/goal 不再弹开工卡，目标里的步骤不弹卡（疑似攻击、凭据、花钱仍问）；只认打开它的那台已配对手机",
+      "aliases": [
+        "设了目标就不弹窗",
+        "目标免弹窗",
+        "goal no card"
+      ],
+      "tier": "user",
+      "apply": "hot",
+      "verify": "agentj config validate --json",
+      "since": "0.23.0"
+    },
     "security.e2e": {
       "type": "boolean",
       "default": true,
@@ -1146,6 +1181,29 @@
       "maxLength": 64,
       "pattern": "/?[A-Za-z0-9][A-Za-z0-9_:.\\-]{0,62}",
       "patternHint": "a command or skill name like web-page-report, status or compact (a leading / is fine)"
+    },
+    "ui.composer_buttons": {
+      "type": "array",
+      "default": [
+        "file",
+        "image",
+        "camera",
+        "mic"
+      ],
+      "tier": "user",
+      "description": "The order (left to right) of the four buttons above the phone's message box: file, image, camera, mic — each exactly once / 手机输入框上方四个按钮从左到右的顺序（file 文件、image 图片、camera 拍照、mic 麦克风，各一次）",
+      "aliases": [
+        "composer buttons",
+        "button order",
+        "input buttons",
+        "输入框按钮顺序",
+        "按钮顺序",
+        "麦克风放左边"
+      ],
+      "needs": [],
+      "apply": "hot",
+      "verify": "agentj config get ui.composer_buttons --json",
+      "since": "0.23.0"
     },
     "imessage.enabled": {
       "type": "boolean",

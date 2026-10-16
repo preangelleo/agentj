@@ -14,9 +14,14 @@ What a prompt does (its last text block):
     QTOOL: <cmd>     P310: Qwen Code's tool shape (title = command line, allow_always ×2 / allow_once / reject_once)
     QYOLO            P310: mode → yolo announced as Qwen's `qwen/notify/session/mode-update`
     ENV              P310: replies whether OPENAI_API_KEY is set, OPENAI_BASE_URL, OPENAI_MODEL, QWEN_CODE_DISABLE_CRON
+    DTOOL: <cmd>     P329: DeepSeek Harness' escalation shape (title "bash", kind other, rawInput.command +
+                     sandbox_permissions; the request carries only the toolCallId; allow-once / reject-once)
+    DENV             P329: the process's cwd, DSH_PERMISSION_MODE, DSH_TELEMETRY_MODE, which keys are set (never a value)
     anything else    "ECHO: <text>" in two chunks + a usage_update
 Env: FAKE_ACP_LOG = JSONL of every client message (and answers); FAKE_ACP_AUTH=1 → session/new | load | resume refused with
 -32000; FAKE_ACP_MODE = the mode a new session starts in (default "default"); FAKE_ACP_SESSIONS = ids that exist (resume).
+P329: FAKE_ACP_DSH=1 → dsh 0.2.0-rc.2's shapes: no authMethods / loadSession, embeddedContext false, sessions without modes
+(session/set_mode is "method not found"), the model option's values JSON pairs '["provider","model"]'.
 """
 import json
 import os
@@ -66,7 +71,22 @@ def ask(method, params):
     return WAITS.pop(rid)[1] or {}
 
 
+DSH_CONFIG = [{"id": "model", "name": "Model", "category": "model", "type": "select",
+               "currentValue": '["agentj-router","Olares/Qwen3.8-27B"]',
+               "options": [{"group": "agentj-router", "name": "Agent J route", "options": [
+                   {"value": '["agentj-router","Olares/Qwen3.8-27B"]', "name": "Olares/Qwen3.8-27B"}]},
+                   {"group": "deepseek-official", "name": "DeepSeek", "options": [
+                       {"value": '["deepseek-official","deepseek-flash"]', "name": "DeepSeek-V41-Flash"},
+                       {"value": '["deepseek-official","deepseek-v4-pro"]', "name": "DeepSeek-V4-Pro"}]}]}]
+
+
+def dsh():
+    return os.environ.get("FAKE_ACP_DSH") == "1"
+
+
 def session(rid, sid):
+    if dsh():
+        return {"sessionId": sid, "configOptions": DSH_CONFIG}
     return {"sessionId": sid, "modes": {"currentModeId": STATE["mode"].setdefault(sid, os.environ.get("FAKE_ACP_MODE", "default")),
                                         "availableModes": MODES}, "configOptions": CONFIG}
 
@@ -118,6 +138,22 @@ def prompt(rid, p):
     elif text == "ENV":                     # P310: which model variables the process got (names + OPENAI_MODEL, never a key)
         chunk(sid, "ENV: " + json.dumps({"key": bool(os.environ.get("OPENAI_API_KEY")), "base": os.environ.get("OPENAI_BASE_URL"),
                                          "model": os.environ.get("OPENAI_MODEL"), "cron_off": os.environ.get("QWEN_CODE_DISABLE_CRON")}))
+    elif text.startswith("DTOOL: "):        # P329: dsh asks only for an escalation retry, by toolCallId
+        tid = uuid.uuid4().hex[:16]
+        update(sid, {"sessionUpdate": "tool_call", "toolCallId": tid, "title": "bash", "kind": "other", "status": "in_progress",
+                     "rawInput": {"command": text[7:], "description": "d", "justification": "j",
+                                  "sandbox_permissions": "workspace-write"}})
+        r = ask("session/request_permission", {"sessionId": sid, "toolCall": {"toolCallId": tid},
+                                               "options": [{"optionId": "allow-once", "name": "Allow once", "kind": "allow_once"},
+                                                           {"optionId": "reject-once", "name": "Reject", "kind": "reject_once"}]})
+        chunk(sid, "PICKED: " + str(((r.get("result") or {}).get("outcome") or {}).get("optionId")))
+    elif text == "DENV":
+        chunk(sid, "DENV: " + json.dumps({"cwd": os.getcwd(), "perm": os.environ.get("DSH_PERMISSION_MODE"),
+                                          "telemetry": os.environ.get("DSH_TELEMETRY_MODE"),
+                                          "router_key": os.environ.get("DSH_ROUTER_API_KEY") == "agentj-no-key" and "placeholder"
+                                          or bool(os.environ.get("DSH_ROUTER_API_KEY")),
+                                          "deepseek_key": bool(os.environ.get("DEEPSEEK_API_KEY") or os.environ.get("DSH_DEEPSEEK_API_KEY")),
+                                          "deepseek_inner": bool(os.environ.get("DSH_DEEPSEEK_API_KEY")), "argv": sys.argv[1:]}))
     elif text == "YOLO":
         STATE["mode"][sid] = "yolo"
         update(sid, {"sessionUpdate": "current_mode_update", "currentModeId": "yolo"})
@@ -138,7 +174,15 @@ def handle(m):
             w[0].set()
         return
     auth = os.environ.get("FAKE_ACP_AUTH") == "1"
-    if method == "initialize":
+    if method == "initialize" and dsh():
+        out({"jsonrpc": "2.0", "id": rid, "result": {
+            "protocolVersion": 1, "agentInfo": {"name": "deepseek-harness-acp", "version": "0.0.1"},
+            "agentCapabilities": {"mcpCapabilities": {"http": True}, "promptCapabilities": {
+                "image": False, "audio": False, "embeddedContext": False},
+                "sessionCapabilities": {"close": {}, "list": {}, "resume": {}}}, "authMethods": []}})
+    elif method == "session/set_mode" and dsh():
+        out({"jsonrpc": "2.0", "id": rid, "error": {"code": -32601, "message": "Method not found"}})
+    elif method == "initialize":
         out({"jsonrpc": "2.0", "id": rid, "result": {
             "protocolVersion": 1, "agentInfo": {"name": "Fake ACP", "version": "2.2.0"},
             "agentCapabilities": {"loadSession": True, "sessionCapabilities": {"resume": {}, "close": {}}},
@@ -158,10 +202,10 @@ def handle(m):
         STATE["mode"][p.get("sessionId")] = p.get("modeId")
         out({"jsonrpc": "2.0", "id": rid, "result": {}})
     elif method == "session/set_config_option":
-        for o in CONFIG:
+        for o in (DSH_CONFIG if dsh() else CONFIG):
             if o["id"] == p.get("configId"):
                 o["currentValue"] = p.get("value")
-        out({"jsonrpc": "2.0", "id": rid, "result": {"configOptions": CONFIG}})
+        out({"jsonrpc": "2.0", "id": rid, "result": {"configOptions": DSH_CONFIG if dsh() else CONFIG}})
     elif method == "session/prompt":
         threading.Thread(target=prompt, args=(rid, p), daemon=True).start()
     elif method == "session/cancel":
@@ -174,7 +218,7 @@ def handle(m):
 
 def main():
     if "--version" in sys.argv:
-        print("2.2.0")
+        print("0.2.0-rc.2" if dsh() else "2.2.0")
         return
     for line in sys.stdin:
         try:

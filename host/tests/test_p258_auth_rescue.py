@@ -308,7 +308,7 @@ class Manager(Base, unittest.IsolatedAsyncioTestCase):
         self.r.text_signal("claude", "Login expired · Please run /login")
         self.r.text_signal("claude", "Please run /login")
         self.assertEqual(len(self.host.notices), 1)
-        self.assertIn("设置 → AI 登录救援", self.host.notices[0])
+        self.assertIn("设置 → 紧急修复 → AI 登录救援", self.host.notices[0])
         self.assertTrue(self.r.view()["dot"])
         self.r.clear("claude")
         self.r.text_signal("claude", "Credit balance is too low")

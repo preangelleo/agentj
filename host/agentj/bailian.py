@@ -14,8 +14,8 @@ list; this module never reads it.
 
 Terms (the purchase page, 2026-10-15): calls only inside coding tools used interactively — no automation scripts, app
 back ends or non-interactive batch calls with this key; inputs and outputs are used to improve the service; one subscriber,
-no sharing. So Agent J never hands this key to scheduled tasks or bots (fence.auxiliary_environment drops every *_API_KEY),
-and every text that recommends the plan says so.
+no sharing. P348 (Leo, 2026-10-16): both plan keys may still run the owner's own scheduled tasks (fence.PLAN_KEY_ENV) —
+the texts say the provider may rate-limit long background runs; support bots never get them (bots/provider.coding_plan).
 """
 from __future__ import annotations
 
@@ -31,16 +31,30 @@ PLANS = ("token-plan", "coding-plan")
 LABEL = {"token-plan": "Token Plan", "coding-plan": "Coding Plan"}
 VISION = ("qwen3.8-max", "qwen3.8-flash", "qwen3.7-plus", "qwen3.6-flash", "qwen3.6-plus", "qwen3.5-plus", "kimi-k2.5")
 
-TERMS = {
-    "zh": "百炼 Token Plan 的条款：只能在编程工具里由你本人交互使用；不能用于自动化脚本、应用后端或非交互批量调用（违规可能被暂停订阅或封 Key）；"
-          "使用期间模型输入和输出会被阿里云用于服务改进与模型优化（涉及隐私数据请慎用）；套餐限订阅人本人，不能共享。"
-          "定时任务、客服 bot 这类无人值守的活请用按量付费的 Key——Agent J 不会把 Token Plan 的 Key 交给定时任务或 bot。",
-    "en": "Bailian Token Plan terms: only for your own interactive use inside coding tools; not for automation scripts, app back "
-          "ends or non-interactive batch calls (the subscription or key may be suspended); while subscribed, model inputs and "
-          "outputs are used by Alibaba Cloud to improve the service (be careful with private data); for the subscriber only, "
-          "no sharing. Unattended work such as scheduled tasks or support bots needs a pay-as-you-go key — Agent J never gives "
-          "the Token Plan key to scheduled tasks or bots.",
+TERMS = {   # P348 (2026-10-16): the owner's own tasks may use the plan; support bots never (bots/provider.py)
+    "zh": "百炼 Token Plan 是包月套餐（条款以阿里云订阅页为准）：你自己的定时任务和后台 Agent 可以用它；长时间连续跑的后台任务服务商可能限流，"
+          "可改用按量付费的 Key。使用期间模型输入和输出会被阿里云用于服务改进与模型优化（涉及隐私数据请慎用）；套餐限订阅人本人，不能共享。"
+          "客服 bot 是在服务别人，Agent J 不会把 Token Plan 的 Key 交给 bot，要另填一把按量 Key。",
+    "en": "Bailian Token Plan is a monthly plan (the Alibaba Cloud subscription page is authoritative): your own scheduled tasks "
+          "and background Agents may use it; the provider may rate-limit long continuous background work, so you can switch "
+          "those to a pay-as-you-go key. While subscribed, model inputs and outputs are used by Alibaba Cloud to improve the "
+          "service (be careful with private data); for the subscriber only, no sharing. A support bot serves other people, so "
+          "Agent J never gives it the Token Plan key — add a pay-as-you-go key for the bot.",
 }
+
+# P348 (2026-10-16): the Coding Plan key may run the owner's own scheduled tasks (fence.PLAN_KEY_ENV); bots never
+CODING_TERMS = {
+    "zh": "百炼 Coding Plan 是包月套餐（条款以百炼控制台为准）：你自己的定时任务和后台 Agent 可以用它；长时间连续跑的后台任务服务商可能限流，"
+          "可改用按量付费的 Key。客服 bot 是在服务别人，Agent J 不会把 Coding Plan 的 Key 交给 bot，要另填一把按量 Key。",
+    "en": "Bailian Coding Plan is a monthly plan (the Bailian console's terms are authoritative): your own scheduled tasks and "
+          "background Agents may use it; the provider may rate-limit long continuous background work, so you can switch those "
+          "to a pay-as-you-go key. A support bot serves other people, so Agent J never gives it the Coding Plan key — add a "
+          "pay-as-you-go key for the bot.",
+}
+
+
+def terms(plan_name: str | None, lang: str = "zh") -> str:
+    return (CODING_TERMS if plan_name == "coding-plan" else TERMS)[lang]
 
 
 def data() -> dict:
@@ -146,7 +160,7 @@ def model_note(model: str | None, lang: str = "zh") -> str | None:
     eye = ("" if m in VISION else
            f"（{m} 不能看图：截图、浏览器自动化要看图时换 {p['provider']}/{p['model']} 或 {p['model_light']}）" if lang == "zh" else
            f" ({m} cannot read images: for screenshots / browser work use {p['provider']}/{p['model']} or {p['model_light']})")
-    return TERMS[lang] + eye
+    return terms(p["plan"], lang) + eye
 
 
 def render(r: dict, lang: str = "zh") -> str:
@@ -156,14 +170,14 @@ def render(r: dict, lang: str = "zh") -> str:
                 f"key 从环境变量 {r['key_env']} 读（这里不存 key）。")
         lines = [head, f"价格：{tiers_text(r['plan'], 'zh')}", "接下来：",
                  f"  1. {r['next'][0]}\n     （手机上弹出密钥卡，主人只把百炼控制台「套餐专属 API Key」贴进卡片；Agent 看不到值）",
-                 f"  2. {r['next'][1]}" + ("（这个模型能看图：截图、浏览器自动化都能用）" if r["vision"] else ""), "⚠ " + TERMS["zh"]]
+                 f"  2. {r['next'][1]}" + ("（这个模型能看图：截图、浏览器自动化都能用）" if r["vision"] else ""), "⚠ " + terms(r.get("plan"), "zh")]
     else:
         head = (f"{r['provider']} already exists in {r['file']}: your own configuration is kept unchanged." if r["kept"] else
                 ("Written" if r["written"] else "(dry run, nothing written)") + f" {r['file']}: provider {r['provider']} "
                 f"({len(r['models'])} models), key read from {r['key_env']} (no key stored here).")
         lines = [head, f"Prices: {tiers_text(r['plan'], 'en')}", "Next:",
                  f"  1. {r['next'][0]}\n     (a key card opens on the phone; the owner pastes the plan's own API key there only)",
-                 f"  2. {r['next'][1]}" + (" (this model reads images: screenshots, browser work)" if r["vision"] else ""), "⚠ " + TERMS["en"]]
+                 f"  2. {r['next'][1]}" + (" (this model reads images: screenshots, browser work)" if r["vision"] else ""), "⚠ " + terms(r.get("plan"), "en")]
     if r.get("plan") == "token-plan":   # P311: the media kit runs on the same Token Plan key
         lines.append("装好后可以说「装千问自媒体工具」：出图、出片、配音。" if lang == "zh" else
                      "Once set up, say 「装千问自媒体工具」 (install the Qwen media kit) for images, video and voice-over.")

@@ -689,13 +689,13 @@ def unit_text(argv: list[str], environ: dict | None = None) -> str:
     return "\n".join(lines)
 
 
-def plist_bytes(label: str, argv: list[str], log_path: str, environ: dict | None = None) -> bytes:
+def plist_bytes(label: str, argv: list[str], log_path: str, environ: dict | None = None, extra: dict | None = None) -> bytes:
     e = os.environ if environ is None else environ
     env = {k: e[k] for k in ("AGENTJ_STATE_DIR", "AGENTJ_INSTANCE") if e.get(k)}
     return plistlib.dumps({"Label": label, "ProgramArguments": argv + ["browser", "run"], "EnvironmentVariables": env,
                            "RunAtLoad": True, "KeepAlive": {"SuccessfulExit": False}, "ThrottleInterval": 10,
                            "LimitLoadToSessionType": "Aqua", "ProcessType": "Interactive",
-                           "StandardInPath": "/dev/null", "StandardOutPath": log_path, "StandardErrorPath": log_path})
+                           "StandardInPath": "/dev/null", "StandardOutPath": log_path, "StandardErrorPath": log_path, **(extra or {})})
 
 
 def service_install(st: State) -> dict:
@@ -719,7 +719,8 @@ def service_install(st: State) -> dict:
     if plat == "macos":
         path = os.path.join(os.path.expanduser("~"), "Library", "LaunchAgents", f"{n}.plist")
         os.makedirs(os.path.dirname(path), exist_ok=True)
-        service._write(path, plist_bytes(n, argv, str(bdir(st) / "service.log")), 0o644)
+        argv, extra = service.macapp.wrap(argv)      # P327: Login Items shows "Agent J" (signed launcher), else as before
+        service._write(path, plist_bytes(n, argv, str(bdir(st) / "service.log"), extra=extra), 0o644)
         r = service._bootstrap(n, path)
         if r.returncode != 0:
             raise BrowserError("no_service_manager", (r.stderr or r.stdout or "")[:200])

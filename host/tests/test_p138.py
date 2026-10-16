@@ -85,15 +85,15 @@ class Boundaries(unittest.TestCase):
 
     def test_interpreter_positive_direct_command_negative_and_symlink(self):
         for exe in ('sh','/bin/bash','zsh','python','python3','python3.13','python3.13t','pythonw','node','perl'):
-            self.assertTrue(elevate.norm_sudo({'argv':[exe,'-c','pass'],'why':'test'})['interpreter'],exe)
-        self.assertFalse(elevate.norm_sudo({'argv':['/usr/bin/true'],'why':'test'})['interpreter'])
+            self.assertTrue(elevate.norm_sudo({'argv':[exe,'-c','pass'],'why':'run a harmless test command'})['interpreter'],exe)
+        self.assertFalse(elevate.norm_sudo({'argv':['/usr/bin/true'],'why':'run a harmless test command'})['interpreter'])
         with tempfile.TemporaryDirectory() as d:
             p=Path(d)/'innocent';p.symlink_to('/bin/bash')
             self.assertTrue(elevate.interpreter_command([str(p)]))
         namespace={'__name__':'helper_test'}
         exec(elevate_helper.HELPER_SOURCE,namespace)
         # root helper rejects a signed-input route before any process launch.
-        fake={'argv':['python3','-c','pass'],'why':'test','channel':'c'}
+        fake={'argv':['python3','-c','pass'],'why':'run a harmless test command','channel':'c'}
         with patch.object(elevate_helper.os,'geteuid',return_value=0), patch('builtins.open',return_value=io.StringIO('{"channel":"c"}')),patch.object(sys,'stdin',io.StringIO(json.dumps(fake))),patch.object(sys,'stderr',io.StringIO()),patch.object(subprocess,'run') as run:
             with self.assertRaises(SystemExit) as e:namespace['main']()
             self.assertEqual(e.exception.code,126)
@@ -128,7 +128,7 @@ class SudoPhone(unittest.TestCase):
                 self.assertFalse(fixture.done())
                 await host._app(session,msg)
             with patch.object(elevate.Elevator,'helper_devices',return_value=['any-phone']),patch.object(elevate_helper,'run') as helper:
-                result,host,ph=fixture.run_flow({'t':'sudo','argv':['sh','-c','printf safe'],'why':'test'},script)
+                result,host,ph=fixture.run_flow({'t':'sudo','argv':['sh','-c','printf safe'],'why':'run a harmless test command'},script)
             self.assertEqual((result['result'],result['stdout']),('done','safe'))
             helper.assert_not_called()
             self.assertFalse(host.elevate.cards)

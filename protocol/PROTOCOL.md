@@ -522,6 +522,7 @@ App messages (all inside §3 transport messages):
 | device → host | `{"t":"slash","cmd":"clear"\|"compact"\|"model"\|"context"\|"cost"\|"usage"\|"status"\|"help"\|"stop"\|"undo_clear","arg":"<≤ 200>"?,"confirm":true?}` | a slash command (buttons, or typed; a `msg` whose text is `/name [args]` is treated the same, except that `/clear` needs `confirm` and `undo_clear` cannot be typed) |
 | host → device | `{"t":"msg",…,"from":"cmd","cmd":"<name>"\|"refused","ok":bool,"kind":"ok"\|"info"\|"error"\|"refused"[,"models":[{"id","name","desc","cur"}]][,"undo":true][,"sep":true][,"by":"<≤ 64>"]}` | its result card (a chat entry: backlog, replay, every phone); `models` = buttons that send `/model <id>`; `undo` = 「撤销清空」; `sep` = a divider |
 | device → host | P207: `{"t":"mail_allow","r","addr","role":"owner"\|"guest",SIG}` → `ctl_res` (object `addr\nrole`; §25) | add an address to the e-mail allowlist |
+| device → host | P336: `{"t":"approval_set","r","key":"approval.level"\|"approval.goal_nocard","value",SIG}` → `ctl_res` (object `key\nvalue`, a boolean as `true` / `false`; below) | the owner's approval level / 「设了目标就不弹窗」 switch — never via `pref_set` |
 | device → host | `{"t":"mem_rm","r","src","file","fsha","iid",SIG}` · `{"t":"mem_undo","r","id",SIG}` · `{"t":"estop","r",SIG}` · `{"t":"resume","r",SIG}` · `{"t":"task_set","r","id","on":bool,"tsha",SIG}` with SIG = `"n":"<32 hex>","ts":<ms>,"sig":"<b64url 64 B>"` → `{"t":"ctl_res","r","action","ok":bool[,"why"][,"undo","label"]}` | signed writes (below) |
 
 - **Phone controls (PROMPT-26 item 3; ARCHITECTURE ADR-A50 – A54)**. Reads (`mem_list`, `act_list`, `task_list`) are
@@ -539,6 +540,43 @@ App messages (all inside §3 transport messages):
   `unknown`, `io`. Every write, accepted or refused, is one line in `controls.log` (0600: time, action, device, result,
   SHA-256 of the object, nonce, ts, signature — never the object text). JS: `protocol/wire.js` `controlMessage` /
   `controlObject`; Python: `host/agentj/controls.py`.
+- **Approval level and the goal switch (P336, `host/agentj/approval_level.py`)**. `approval_set {r, key, value, n, ts, sig}`
+  is a signed phone control (action `approval_set`, object text `key + "\n" + value`, `value` = `safe` · `standard` · `full`
+  for `approval.level`, `true` · `false` for `approval.goal_nocard`; JS `signedWrite('approval_set', {key, value}, {t:
+  'approval_set', key, value})`). Wrong key / value → `ctl_res {ok:false, why:"shape"}`; the control checks above →
+  `stale` · `replay` · `no_key` · `bad_signature`; the write itself failing → `rejected`. **Widening** (`approval.level` →
+  `full`, `approval.goal_nocard` → `true`) from a remote that has a passkey (§12) takes Face ID, two steps on one signed
+  request: without `fa` the host answers `ctl_res {ok:false, why:"passkey_required", fa:<credential id b64u>, fa_ch:<challenge
+  b64u>}` with challenge = `passkey.elevate_challenge(channel, device, n, "approval_set", n, controls.object_digest(...))` and
+  the nonce **not** consumed; the phone runs WebAuthn on `fa_ch` inside the tap and re-sends the SAME object (same `n` / `ts` /
+  `sig`, within 120 s of `ts`) plus `fa` = `{id, cd, ad, sig}`; a failed assertion → `passkey_failed` (start over with a fresh
+  signature). Narrowing (`safe` / `standard`, switch off) and remotes without a passkey: signature only. Accepted: written like `agentj
+  config set` (no-op when equal), the signer remembered in `<state>/approval_signers.json` (0600: device, SHA-256 of its
+  approval key, the approvals.log id, and the control's `n` / `ts` / `sig`, re-verified with the device's CURRENT key at
+  every use: `full` without a live signed switch — a hand-edited file, the terminal — works as `standard` and the owner gets
+  one notice), one approvals.log line (kind `control`, tool `approval_set`), then `ctl_res {r,
+  action:"approval_set", ok:true, key, value}`, the normal `preferences` broadcast, one notice on every remote 「🔐 审批档位已改为
+  「全放行」（由「<设备名>」确认）。」 / 「🔐 「设了目标就不弹窗」已打开（由「…」确认）。」 and a `security` push. Both keys are
+  absent from the `pref_set` whitelist (§10.16), and an Agent's `agentj config set approval.*` is an owner card. The goal
+  switch counts only while its signer is still paired with the same approval key, only for the one proposal answering the
+  owner's own `/goal` (main thread, within 30 min) and never for a proposal with a `spend` / `price` grant (those show the
+  card); switching it off ends a goal that started without a card. Under `full` (or in a live goal with the
+  switch on) a request that would have asked is allowed at once and the phone gets `{"t":"auto","id","tool","summary","by":
+  "full"|"goal"}` (no card, no push); the red lines (suspected attack incl. download-and-run in one call; credentials changed, shown or
+  leaving with a send — any credential path or an environment dump in the call; spend / price) and the host's own cards
+  (`agentj …`, `pair_device`, `SandboxOnce`, `AuthRescue`, OpenCode `DoomLoop` / `task`, `AskUserQuestion`) still ask; Codex
+  sandbox / network escalations are allowed.
+- **A card while no remote is online (P336, #36)**. Online = a ready session of a paired device with an approval key. With
+  none online when a card is made, the `ask` is queued as usual (sent first thing after `ready`, included in `cards_get`), the
+  push goes out, and at most once per 15 min one content-free line goes to the owner's Telegram private chat (owner bot,
+  forwarding on) and the owner's own e-mail (mail channel set up). After 20 s with still nobody online the Agent's request is
+  answered deny with 「主人当前没有遥控器在线…」 and the card is **parked**: it stays open for 30 min, so a re-sent `ask` may
+  carry `ttl` up to 1800. An allow on it lets the identical retry (same tool, same input hash, same requester: main thread or the same scheduled
+  task, same harness, same folder, the allowing device still on the same key) pass once within 30 min (`estop` clears it)
+  and sends the main Agent a system note; a retry while still offline is denied at once with no second card. Not parked (they
+  wait their usual lifetime): the goal-mode countdown, a card with its own wait (the `agentj goal` card), passkey cards, the
+  host's own cards (as above).
+  Activity `decision {result:"parked", reason:"offline"}`.
 - **Stop everything** (`estop`, or `agentj stop` at the terminal): the switch is written first (`estop.json`, 0600; a
   restart comes back stopped; an unreadable file reads as stopped), then every open request is denied (`ask_done` result
   `stopped`, approvals.log reason `estop`), every batch grant ends (`grant_end` why `estop`), the Agent's turn is
@@ -762,7 +800,7 @@ a revoke in the middle stops the message there (P33-X07).
   `epoch` = the serve start time, so a phone never mixes two runs). (Host, PROMPT-33: one line per change of a page — the
   last line of an id wins — compacted to the newest 500 past 600 lines **or past 32 MiB**, keeping ≤ 16 MiB of pages (the
   newest one always), in memory too — P33-C06; `meta.json` also keeps the archive `undo` restores.)
-- **Turn** = one page: `{"id":n,"ts":<ms>,"src":Src,"reply":{"text":"…","part":[k,N]?},"end":"open"|"done"|"stopped"|"failed",
+- **Turn** = one page: `{"id":n,"ts":<ms>,"src":Src,"reply":{"text":"…","part":[k,N]?,"pre":"…"?},"end":"open"|"done"|"stopped"|"failed",
   "card":Card?}`. `Src = {"k":"phone"|"host"|"agent"|"sys"|"task"|"cmd","dev":"<device id>"?,"name":"<label ≤ 64>"?,
   "text":"≤ 20 000","quote":{"id","who","ts","text ≤ 300","ex":bool}?,"att":[{"name","mime","bytes","kind"}]?,"local":bool?,"via":"loop"|"task"?}` (`via`, P132: an `agent` turn a /loop or wake-up check, or a finished background task, started).
   Who: `phone` (a paired device; the page shows 「你」 when `dev` is its own id, else the label = 「另一台设备」), `host`
@@ -771,6 +809,9 @@ a revoke in the middle stops the message there (P33-X07).
   command: `src.text` = `/compact`, `card` = §8's result fields `{cmd, ok, kind, models?, undo?, sep?}`). The reply of one
   turn = every finished reply text of that turn, joined by a blank line — results only, never tool calls. A reply over
   200 000 code units continues on the next page(s) (`part`); nothing is truncated.
+  `pre` (P351): a silent turn's earlier notes — the turn's final reply was exactly 〔不回群〕 (`text` = the marker), and
+  what the Agent wrote before it in the same turn (e.g. Codex commentary) is kept here; phones show it only in the silent
+  panel. More text after the marker brings it back into `text` (the page is delivered).
 - **Waiting shared Claude controls (P144)**: an open clear/compact page may carry `card:{cmd,cancel_wait:true}` and
   "Waiting for the computer to become idle". The originating ready, allowlisted p33 device may send
   `{"t":"cmd_cancel","turn":<integer>}`. The host binds it to that open page's `src.dev` and the live queued/current
@@ -1054,7 +1095,8 @@ the account soon.
 (the paired phones as metadata, never keys). The safety switches the panel shows read-only are already in
 `value.agent.high_risk_warnings` / `value.agent.session_mode` / `value.agent.isolation` / `value.agent.allow_docker` (F14: all phone-settable; warnings default off; native permissions unchanged). Isolation / docker apply from the next Agent start. Renaming, unbinding and adding remotes from a
 phone is §24 (P171: signed controls; an add still needs the new device's safety code); `host` also carries `"limit"` (the
-allowlist cap, 10). The phone's own "forget this computer" (解除配对) stays local to that phone. A remote may also rename itself from the chat page (`dev_rename`, §10.16a, P179).
+allowlist cap, 10) and, since P336, `"signed_prefs": ["approval.level", "approval.goal_nocard"]` — keys the phone changes only by the
+signed `approval_set` control (§8); a host without it has neither row. The phone's own "forget this computer" (解除配对) stays local to that phone. A remote may also rename itself from the chat page (`dev_rename`, §10.16a, P179).
 
 ### 10.20 The e-mail channel's settings — `mail_get` · `mail_set` · `mail_key` · `mail_test` · `mail_check` (P170, host 0.20)
 
@@ -1130,6 +1172,16 @@ itself is malformed — argv 1–256 strings, shown command ≤ 2 000 chars, `wh
 directory, never a symlink or another user's file, parent must exist; `verify_url` https (http only to loopback), header
 template `Name: …{value}…`; one check at most). The CLI: exit = the command's status, 125 + `SUDO_RESULT:` / `SECRET_RESULT:`
 on stderr for a card outcome, 3 = saved but the check failed.
+P339: sudo is also `refused` with `why: "agentj_service"` (the command manages Agent J's own service: `agentj service
+start|restart|stop|install|uninstall`, or launchctl / systemctl on its label / unit — it runs as the owner) and `why: "why"`
+(`why` < 6 characters with CJK / < 12 Latin-only, or the command itself / a part of it); `detail` tells the Agent what to do.
+Same socket: `{"t":"harness_job","kind":"switch"|"scan","target"?,"model"?,"dry_run"?,"force"?,"undo"?,
+"at"?}` (no `job`: a caller-chosen id is `bad_field`) → serve checks every field and launches the `agentj agent switch
+--worker` job itself (argv and 16-hex job id chosen by serve) → `{"ok":true,"job":<16 hex>}` (the caller waits on that id;
+a scan result younger than 60 s is handed out again) | `{"ok":false,"error":<code>[,"wait":s]}` — `busy` (a switch receipt
+is still `probing`/`waiting`/`switching` and younger than 15 min, or this serve's scan is still running) · `too_soon`
+(a scan was launched < 60 s ago; `wait` = seconds); also `cmd: "harness_job"` on control.sock (not
+SENSITIVE). `{"t":"serve_ping"}` → `{"ok":true,"serve":"answering"}` (`agentj service status` inside the fence).
 
 **Host → device.** `{"t":"elev","id":<32 hex>,"kind":"sudo"|"secret","n":<32 hex one-time nonce>,"epk":<b64url X25519, this
 card only>,"ttl":s,"tries":n[,"bad":k]` + sudo `"cmd","why","effect"` / secret `"name","purpose","dest","verify"`}` — sent
@@ -2057,7 +2109,13 @@ names resolved in the book (no single clear match with an address → `{ok:false
 `media.check` (inside the Agent's folder, no secret-shaped content), then `serve.ask("agentj mail send", {summary})`
 (batch=false; a group / guest turn never reaches it) → sent only on allow (`X-AgentJ: agent`), recipients remembered with
 source `agent` → `{ok, sent[], files[], new_contacts[]}` · `why`: `denied` · `file` · `too_big` · `mail_not_configured` ·
-`no_password` · `send_failed` · `group_source`. Logs: counts and reason words only (`contacts_*`, `mail_fwd`, `mail_send`,
+`no_password` · `send_failed` · `group_source`. P355: `cc?:[…]`, `bcc?:[…]` (resolved like `to`; one address keeps its
+first place to > cc > bcc; every recipient counts for owner_direct / allowlist / the card's offer; ≤ 10 in all → else
+`why:"to"`), `format?: markdown (default) | html | text` (else `why:"format"`): markdown → `mail_template.render_send`
+(multipart/alternative, the forward's look without the question card), html (≤ 400 000 chars) → `mail_html.prepare`
+(script / iframe / form / on* / javascript: out, CSS vars resolved and inlined, sectioning tags → div, local images → alt;
+outsiders masked per text node) + a plain-text copy, text → text/plain only. Cc is a header, Bcc only the envelope. The
+answer adds `format`, `cc?`, `bcc?`, `local_images?`, `removed?`. Logs: counts and reason words only (`contacts_*`, `mail_fwd`, `mail_send`,
 `contact_card*`), never an address, a name or a body.
 
 P296 (Leo, 10-15): **no card** when every recipient is the owner's own address (slot 0 + 「我本人」 allowlist rows; approvals.log
@@ -2071,6 +2129,12 @@ Python `approvals.allow_add_line`; the log keeps that hash as `scope_sha256`, so
 the allowlist as `guest` (`allowlisted: […]` in the answer) — no second card. Declined / timed out → `why: denied`, the CLI prints
 「主人没在手机上确认，邮件没有发出」 on stderr and exits 1. `agentj mail allow <address>` from inside an Agent (P170 widening)
 now waits for its card (「加入后：他的来信会直接处理，给他发信不用再确认」) and exits 0 only when it was applied.
+
+P339 (goal mode): a goal card's `ask` may also carry `goal_who` (≤ 60) and `goal_what` (≤ 160) — plain words the host derived
+(display only, not signed) — and a `hold` card may carry `goal_add` (≤ 300, one line): the extra goal grant the host offers. The
+phone's 「批准，并加进目标授权」 sends `answer {…, ok:true, allow_add:[goal_add]}` signed exactly like the allowlist picks above
+(the host checks the pick against its own offer); on that allow the host appends the grant to the running goal and logs
+`reason: goal_grant_add` naming the signed allow. Such a card carries no `allow_offer`.
 
 Entry for other cards (P183): `js/contacts.js` `openForward({turn?, mid?, name?, whole?})` / `forwardAvailable()`, also
 `window.AgentJMailForward`, or any element with `data-mailfwd` + `data-turn` / `data-mid` / `data-name`.
@@ -2276,6 +2340,7 @@ Before painting unread after ready/foreground, the client fetches the head (`his
 - **Answer to a no-op receipt.** When a ready, allowlisted p33 remote's `hist_read` does not advance the mark (lower or equal id, unknown/silent id, other epoch), the host answers **that session only** with `{t:"hist_read",epoch,read}` (the current value). Pending / revoked sessions still get nothing. Clients already accept this frame (P247), so old pages are unaffected.
 - **Client retry.** In owner mode the client remembers the host's last value (`acked`). A local mark above it is pending and is sent again every 4 s while pending, at most three sends per id; a newer id starts again; another host or epoch forgets it. Old hosts without `read` keep the P207 device-local fallback.
 - Everything stays inside the paired Noise transport (end-to-end encrypted; the relay sees ciphertext only). The mark is a visual receipt and carries no approval or execution authority.
+- **P333 (client only, no wire change).** The shared mark is the count of what was read anywhere; it is not this remote's new-message alert. A reply that arrives live (`hist_turn`) while a remote is visible and not showing it stays new on that remote — page-number pulse and header badge — until that remote shows it, even after another remote's `hist_read` moved the mark past it. Replies a head fetch brings (reload, foreground, reconnect) and replies that came while the remote was hidden follow the shared mark, as before. In memory only.
 
 ## 30. The five pages: 工作流 · 技能 · 记忆 · Agent J · 消息 (P244, host 0.21, design P233 / P234)
 
@@ -2499,3 +2564,123 @@ record exists: `{"t":"quota_resume","items":[{"id","scope":"main|task","harness"
 reset; the page shows `at + 90 s`, or `at` when `to` is set). Cancel: `{"t":"qr_cancel","r","id"}` →
 `{"t":"qr_res","r","ok"[,"why":"gone"],"items"}` — unsigned like `grant_off`: it only stops an automatic action. The Agent:
 `agentj quota resume` / `agentj quota resume cancel <id>` (heartbeat.sock `quota_resume` read, `quota_resume_cancel` write).
+
+## 33. 紧急修复 — reset connection, Agent J Father help, the rescue watchdog (P332; the number is provisional until the merge)
+
+Goal: the owner can always get the remote working again **from the remote**, even when `agentj serve` is stuck or dead —
+"the hard reset button" — and, when that is not enough, ask Agent J Father to look at the computer. Host side
+`host/agentj/reset.py` (ladder + help flow, run by serve) + `host/agentj/rescue_watchdog.py` (a separate tiny process,
+its own systemd user unit `agentj-rescue.service` / launchd `net.agentj.rescue`) + `host/agentj/rescue_kit.py` (diagnosis,
+redaction, support-desk transport; also the one-line fallback for a helper at the computer, `https://agentj.app/rescue`).
+
+**Signed requests** (p33 sessions of a paired, ready device with an approval key; §8 control-v1):
+`{"t":"reset","r":"<16 hex>","n","ts","sig"}` — action `reset`, object `{"what":"connection"}`  (module ①).
+`{"t":"rescue_do","r","action","n","ts","sig"}` — action `rescue_do`, object `{"action":<action>}`, one of
+`help` (module ②: diagnose → redacted report to Agent J Father → ticket → carry out support's whitelisted actions) ·
+`report` (diagnose + send only) · `reconnect` · `restart` (restart serve) · `linger` (Linux `loginctl enable-linger <self>`) ·
+`rollback` (re-install the previous version from the local cache, when one exists) · `new_session`.
+Refused → `{"t":"reset_done","r","flow","ok":false,"why"}` (`shape` · `stale` · `no_key` · `bad_signature` · `replay` · `busy` ·
+`unavailable`) and one `controls.log` line. Unknown actions are refused; nothing outside this list ever runs. No argument
+travels with an action: nothing the phone or support sends becomes part of a command line.
+
+**Progress** (host → the asking device; every other ready p33 remote also gets `reset_done`):
+`{"t":"reset_step","r","flow":"reset"|"help","step":<n>,"state":"run"|"ok"|"fail"|"skip","text":"<one plain sentence, owner's language>"}`
+`{"t":"reset_done","r","flow","ok":bool,"step":<last step run>,"text","old_session"?:"<id>","ticket"?:"st_…","category"?}`.
+Texts never say relay / serve / harness / session id; technical words only go in `"detail"` (optional, shown folded).
+
+**① The reset ladder** (serve; each step runs only when the previous one did not bring the link back, each is shown):
+1. reconnect — what `agentj doctor --reconnect` does inside serve: relay link re-dialled, the three links checked
+   (service, relay, Agent); Agent `idle|working|waiting|compacting` → done.
+2. restore the conversation — re-pin the current harness's correct shared session (P330's wrong-thread correction, `shared._repin`).
+3. new conversation — open a fresh session for the current harness and pin it; the old session id is kept in
+   `<state>/reset_undo.json` (0600) and returned as `old_session` so the owner can go back (`agentj rescue undo`, also what the Agent runs when the owner asks for the earlier conversation).
+4. restart — serve answers `reset_done {ok:true, step:4}` first, then restarts itself through its service manager
+   (the watchdog answers the same request when serve cannot).
+Goal of every run: the remote works again, and the owner is told which step did it and how to find the old conversation.
+
+**Host decisions (P332, `reset.py`).** Signed object texts (controls.object_text / wire.js `controlObject`): `reset` →
+`"connection"`, `rescue_do` → the action name. `flow` = `"reset"` for `reset`, else the `rescue_do` action (`help`, `report`,
+`linger`, …); a refused unknown action answers `flow:"rescue"`. `reset` / `rescue_do` are accepted during an e-stop (they only
+repair connectivity; the stop switch stays on — step 1 then ends `ok:false, why:"estop"` without escalating, likewise
+`why:"no_agent"`). Step 1 really re-dials: every remote drops for a moment and resumes; serve waits ≤ 25 s for the relay and
+≤ 15 s for the asking remote before it goes on. Step 3 with an Agent-J-owned harness puts the conversation aside
+(`reset_undo.json` `{kind, session, at}`) and the next message opens the fresh one, which the adapter pins as usual; the
+owner's own shared window is `skip` (Agent J cannot open a window there). `rescue_do reconnect` = steps 1–2,
+`new_session` = step 3, `restart` = step 4; `rollback` installs the newest verified wheel in `<state>/upgrade-cache` older
+than the running version, then restarts; nothing cached → `why:"unavailable"`. In `help`, a `restart` support asks for (or
+the restart after a `rollback`) runs only after the results are posted and `reset_done` has gone; it is reported as scheduled (never `ok` before it is tried), and when the
+attempt fails serve sends `reset_step {step:4, state:"fail"}` and a second `reset_done {ok:false, step:4, why:"restart_failed"}`
+(`busy` is cleared either way — review P332 MEDIUM-5). Results go back with
+the support API's `thread` field (FEEDBACK_API.md: a follow-up on the same ticket). `/reset` (typed or ≡; `menu` carries
+`reset:true`) is signed like `/update` — action `reset`, the same object; unsigned → a refused command card.
+
+**② Agent J Father help** (`rescue_do help`; serve when alive, else the watchdog). 1 diagnose (rescue_kit, read-only, no
+`agentj doctor` when serve is the stuck part) → 2 redact on this computer and send to the support desk as
+`AGENTJ-RESCUE v1 [help]` over plain HTTPS (support conversations, FEEDBACK_API.md) → ticket `st_…` shown → 3 wait (≤ 3 min)
+for support's reply. The support desk's reply may end with ONE line `AGENTJ-ACTIONS: a,b` built by the desk from a fixed
+list (`reconnect,restart,linger,rollback,new_session`), never by the model's free text; the host keeps only actions on
+its own whitelist and announces each in plain words. Only `reconnect` and `restart` (what ① does anyway) run
+automatically; `rollback`, `linger` and `new_session` are never run on support's word: they are **offered** —
+`reset_step` / `reset_done` carry `"offer":[…]` and the page shows one button per offered action, which sends the owner's
+own signed `rescue_do <action>` (security review P332 HIGH-1: every persistent change is bound to the owner's tap). During an
+e-stop ② only sends the report (no action runs). The host posts the results back on the same thread
+(`AGENTJ-RESCUE v1 [result]`); at most 3 rounds, 15 min. Support's text is shown to the owner as advice, never run.
+*Offer decisions (host, `rescue_kit.help_flow`):* the announcing step is `reset_step {step:4, state:"skip", text:"客服建议：…（点下面的
+按钮确认后才会做）", offer:[…]}`; a round that offers anything ends the flow (the next move is the owner's) with
+`reset_done {ok:false, offer:[…], text:"…点按钮确认后才会做…"}`; `offer` holds only `rescue_do` action names (deduplicated, in
+support's order, serve and watchdog filter again). The `[result]` post says per name `ok` / `failed` / `scheduled` (a restart
+that runs after the report) / `offered to the owner`. During an e-stop every named action — `reconnect` / `restart` too — is
+offered, none runs, and the post notes it. `emit(step, state, text, offer=None)`; a 3-argument emit still gets the sentence.
+The desk files every rescue ticket in the Jarvis inbox as label `rescue` with a `category:` (`service_down` ·
+`relay_down` · `agent_down` · `sleep` · `linger` · `clock` · `disk` · `not_installed` · `network` · `other`) so the common
+ones can be fixed in a release (`support-desk inbox --stats`).
+
+**Rescue watchdog.** Stdlib + websockets + the host's own `noise` / `wire` / `controls` modules only; never imports serve.
+Every 15 s it asks serve's control socket `status` (3 s timeout). Three failures in a row (≈ 45 s: serve dead or its event
+loop starved) → it opens the relay **host** socket for this channel itself (same Ed25519 host key, cached seat certificate)
+and accepts RESUME from devices on the allowlist only (same §3 handshake; pairing is never accepted). After `hello` it sends
+`{"t":"ready","mode":"rescue"}` then `{"t":"rescue","on":true,"why":"serve_down"|"serve_stall","since":<ms>,"actions":[…]}`.
+It answers `ping`, `reset` (= restart serve, then waits up to 60 s for serve to answer `status`) and `rescue_do`; every
+other message gets `{"t":"rescue","on":true,…}` again. When serve answers `status` twice in a row it closes its relay socket
+(serve's own link replaces it — relay close 4001 — and the remote resumes against serve as usual); after a 4001 it waits for
+three fresh failures before taking over again. Every request and result is one line in `<state>/rescue.log` (no message text,
+no keys). No credential ever crosses the relay; the watchdog holds no more rights than serve (same user, same files).
+`agentj service install` / `agentj update` register the watchdog unit; `agentj rescue status|install|uninstall` manage it.
+A remote that never gets `rescue` (an old page) simply sees a connected computer that answers nothing but `ping`.
+
+*Watchdog decisions (host 0.22.x, `host/agentj/rescue_watchdog.py`):*
+- Unit: `<serve unit>-rescue` (systemd; `agentj-rescue`, instance N `agentj-N-rescue`) / `net.agentj.rescue[.N]` (launchd),
+  `Restart=always`, `Nice=10`, `MemoryMax=128M`, no `PartOf`/`BindsTo` (a dead or failed serve leaves it running). An
+  intentional stop is not "repaired" (review P332 MEDIUM-2): `agentj service stop` stops the watchdog first (unit kept);
+  `service start` / `restart` start an installed one again (an uninstalled one stays so; `service install` registers it);
+  and on Linux, when serve's unit is `LoadState=loaded`, `ActiveState=inactive`, `Result=success` (someone ran
+  `systemctl --user stop`; serve never exits 0 by itself), the watchdog stays passive — no takeover, an active one hands
+  back (`rescue.log` `passive` / `watching`). macOS has no such probe (launchd "not loaded" also means a failed bootstrap); `ExecStart` is the
+  venv's python `-P -m agentj.rescue_watchdog` (not through the CLI: ≈ 35 MB RSS idle, and a broken CLI import after an upgrade
+  does not take it down). `service install` registers it (the upgrade's recovery worker runs the same install); its failure is
+  one note, never a failed install. `service uninstall` removes it. On macOS it is one more Login Items row (it must survive a login).
+- One watchdog per state directory (`<state>/rescue.lock`, flock); `rescue.log` rotates at 256 KiB to `rescue.log.1`.
+- `ready` in rescue mode carries `caps: ["p33","heartbeat"]` to a p33 device only; a non-p33 session gets `{"t":"ready","mode":"rescue"}`
+  and every `reset` / `rescue_do` from it is refused `shape`. An unlisted RESUME is closed after msg1 (no `removed`, no passkey /
+  renewal restore); the watchdog never writes `devices.json` (no approval-key registration either).
+- `rescue.actions` lists what the watchdog can do now: `restart`, `help`, `report`, `linger` (Linux), `rollback` (when a cached
+  earlier version exists in reset.py). `reconnect` / `new_session` need serve → `reset_done {ok:false, why:"unavailable"}`.
+- `reset` and `rescue_do restart` (flow `reset`): step 1 restart serve, step 2 wait ≤ 60 s for `status`; `reset_done step 2`. If
+  serve's own link replaces the socket (4001) before that, the page gets serve's `ready` instead — that is the success case.
+- Hand-back sends `{"t":"rescue","on":false}` to every ready session, then closes the socket; it waits while an action runs.
+- Flapping (review P332 LOW-7): a 4001 within 60 s of its own takeover proves serve is alive, so the takeover threshold
+  doubles (3 → 6 → 12 … failures, ≤ 10 min of polls); two `status` answers in a row reset it (`rescue.log` `backoff`).
+- In `help` the watchdog lets support's word run only `restart` (`reconnect` needs serve → unavailable); it reads the e-stop
+  from `estop.json`. An unknown action name is logged as `"unknown"`, never verbatim; `agentj rescue status` strips control
+  characters from what it prints.
+  A seat refusal (4002) is retried every 60 s, other relay failures with 2 → 60 s backoff while serve still does not answer.
+
+**Page.** Settings: the first item is Agent J, the second is **「紧急修复」/ "Emergency repair"**, one block with three
+numbered cards in this order: ① 「重置连接」/ "Reset connection" (`reset`) · ② 「请 Agent J Father 远程帮忙」/ "Ask Agent J Father
+for help" (`rescue_do help`; dimmed — still clickable, with 「建议先试第 ① 步」 — until ① has failed) · ③ 「AI 账号登录失效」/
+"AI account signed out" (the existing P258 login rescue / renew flow, moved here; its old place in Settings is gone). Each card
+shows a progress bar and the current step in plain words; success turns the card green (palette green) with 「好了，可以回去聊天了」
+and a back button; failure says what to try next (① failed → highlight ②). ≡ (all commands) has 「重置连接」 and `/reset` runs ①.
+The offline card (「电脑可能关机或睡着了」) carries a 「紧急修复」 button that opens this block, plus the one-line command for
+someone at the computer: `curl -fsSL https://agentj.app/rescue | sh`. In rescue mode (`rescue on`) the page shows one banner
+「电脑上的 Agent J 没响应，救援守护在线」 and the same block.

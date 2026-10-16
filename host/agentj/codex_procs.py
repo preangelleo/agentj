@@ -13,13 +13,15 @@ app-server, or a `codex` still open in some terminal.
   one serve runs per state directory.
 - `who(st, rollout, current)`: first the processes that have this thread's rollout file open (Linux /proc/*/fd, macOS
   `lsof -t`), else the process list; classified as agentj (ours, recorded) / chatgpt_app / codex_app / app_server /
-  terminal / unknown. Nothing found = "unknown" — the phone is told exactly that, never a guess presented as fact.
+  terminal / unknown; P330: an app-server daemon followed over its unix socket to the terminal codex it serves =
+  terminal_daemon. Nothing found = "unknown" — the phone is told exactly that, never a guess presented as fact.
 """
 from __future__ import annotations
 
 import contextlib
 import json
 import os
+import re
 import shutil
 import signal
 import subprocess
@@ -28,6 +30,8 @@ import time
 
 FILE = "codex-app-server.json"
 PS_TIMEOUT = 5
+LSOF_TIMEOUT = 15       # P330: lsof under load (Mac launchd 10-16) took past 5 s → "unknown"; tried twice
+LSOF_PATHS = ("/usr/sbin/lsof", "/usr/bin/lsof", "/sbin/lsof")     # P330: launchd's PATH may not name it
 
 
 def _path(st):
@@ -126,14 +130,110 @@ def fd_holders(path) -> list[int] | None:
                             out.append(int(d))
                             break
         return out
-    exe = shutil.which("lsof")
+    r = _lsof(["-t", "--", real])
+    if r is None:
+        return None
+    return [int(x) for x in r.split() if x.isdigit()]
+
+
+def _lsof_exe() -> str | None:
+    return shutil.which("lsof") or next((p for p in LSOF_PATHS if os.access(p, os.X_OK)), None)
+
+
+def _lsof(args) -> str | None:
+    """lsof's stdout, None = no lsof / it never answered (P330: one retry after a timeout)."""
+    exe = _lsof_exe()
+    if not exe:
+        return None
+    for _ in range(2):
+        try:
+            return subprocess.run([exe, *args], capture_output=True, text=True, timeout=LSOF_TIMEOUT).stdout
+        except subprocess.TimeoutExpired:
+            continue
+        except (OSError, subprocess.SubprocessError):
+            return None
+    return None
+
+
+def held(paths, exclude=()) -> set:
+    """P330: which of these files another process has open (realpaths) — a thread some other Codex client is using.
+    One pass for all of them; set() when the platform gives no answer."""
+    want = {os.path.realpath(str(p)) for p in paths}
+    skip = set(exclude) | {os.getpid()}
+    out: set = set()
+    if not want:
+        return out
+    if _linux():
+        for d in os.listdir("/proc"):
+            if not d.isdigit() or int(d) in skip:
+                continue
+            fdd = f"/proc/{d}/fd"
+            with contextlib.suppress(OSError):
+                for fd in os.listdir(fdd):
+                    with contextlib.suppress(OSError):
+                        t = os.readlink(f"{fdd}/{fd}")
+                        if t in want:
+                            out.add(t)
+        return out
+    r = _lsof(["-F", "pn", "--", *sorted(want)])
+    pid = None
+    for ln in (r or "").splitlines():
+        if ln[:1] == "p" and ln[1:].isdigit():
+            pid = int(ln[1:])
+        elif ln[:1] == "n" and pid not in skip and ln[1:] in want:
+            out.add(ln[1:])
+    return out
+
+
+def _ss_unix() -> list[tuple[str, str, list[int]]] | None:
+    """Linux: (local inode, peer inode, pids) of every unix socket (`ss -xpn`); None = no ss."""
+    exe = shutil.which("ss") or next((p for p in ("/usr/sbin/ss", "/usr/bin/ss", "/sbin/ss") if os.access(p, os.X_OK)), None)
     if not exe:
         return None
     try:
-        r = subprocess.run([exe, "-t", "--", real], capture_output=True, text=True, timeout=PS_TIMEOUT)
+        r = subprocess.run([exe, "-xpn"], capture_output=True, text=True, timeout=PS_TIMEOUT)
     except (OSError, subprocess.SubprocessError):
         return None
-    return [int(x) for x in r.stdout.split() if x.isdigit()]
+    rows = []
+    for ln in r.stdout.splitlines()[1:]:
+        w = ln.split()
+        if len(w) < 8:
+            continue
+        pids = [int(x) for x in re.findall(r"pid=(\d+)", ln)]
+        rows.append((w[5], w[7], pids))
+    return rows
+
+
+def socket_clients(pid: int) -> list[int]:
+    """P330: processes connected to `pid`'s unix sockets — the clients of a managed `codex app-server` daemon (the terminal
+    codex that talks to it). Best effort: [] when the platform gives no answer."""
+    out: list = []
+    with contextlib.suppress(Exception):
+        if _linux():
+            rows = _ss_unix() or []
+            mine = {loc for loc, _, pids in rows if pid in pids}
+            peers = {peer for loc, peer, pids in rows if pid in pids}
+            for loc, peer, pids in rows:
+                if pid not in pids and (peer in mine or loc in peers):
+                    out.extend(p for p in pids if p not in out)
+            return out
+        r = _lsof(["-a", "-U", "-F", "pdn"]) or ""
+        cur = None
+        dev: dict = {}       # pid → its socket addresses
+        peer: dict = {}      # pid → the addresses it is connected to
+        for ln in r.splitlines():
+            tag, val = ln[:1], ln[1:]
+            if tag == "p" and val.isdigit():
+                cur = int(val)
+            elif cur is not None and tag == "d":
+                dev.setdefault(cur, set()).add(val.lower())
+            elif cur is not None and tag == "n" and val.startswith("->"):
+                peer.setdefault(cur, set()).add(val[2:].lower())
+        mine, theirs = dev.get(pid, set()), peer.get(pid, set())
+        for p in set(dev) | set(peer):
+            if p != pid and (peer.get(p, set()) & mine or dev.get(p, set()) & theirs):
+                out.append(p)
+    return out
 
 
 # ------------------------------------------------------------------ the pidfile
@@ -243,6 +343,14 @@ def classify(cmd: str) -> str | None:
     return None
 
 
+def _daemon_client(daemon: int, exclude=()) -> int | None:
+    """P330: the terminal `codex` a managed app-server daemon writes for (its unix-socket client), None = none found."""
+    for p in socket_clients(daemon):
+        if p not in exclude and p != os.getpid() and classify(cmdline(p)) == "terminal":
+            return p
+    return None
+
+
 def who(st, rollout=None, current=None) -> dict:
     """{"kind", "pid", "how": "fd"|"ps"|None}. `current` = the app-server that was just refused (never the holder)."""
     exclude = {current} if current else set()
@@ -258,6 +366,10 @@ def who(st, rollout=None, current=None) -> dict:
             if pid in ours:
                 return {"kind": "agentj", "pid": pid, "how": "fd"}
             kind = classify(cmdline(pid)) or "unknown"
+            if kind == "app_server":
+                term = _daemon_client(pid, exclude)
+                if term:              # P330: a managed daemon writes for the terminal codex that talks to it
+                    return {"kind": "terminal_daemon", "pid": term, "via": pid, "how": "socket"}
             return {"kind": kind, "pid": pid, "how": "fd"}
     if ours:
         return {"kind": "agentj", "pid": sorted(ours)[0], "how": "ps"}
@@ -291,6 +403,11 @@ TEXT = {
     "terminal": ("是终端里的 codex（PID {pid}）正在使用这个会话，手机现在只读。在那个终端里完全退出 codex（/quit 或 Ctrl+C）后重发。",
                  "A `codex` in a terminal (PID {pid}) is using this session; the phone is read-only. Quit that codex completely "
                  "(/quit or Ctrl+C), then resend."),
+    "terminal_daemon": ("是终端里的 codex（PID {pid}）正在使用这个会话（经 Codex 后台服务 PID {via} 写入），手机现在只读。"
+                        "在那个终端里完全退出 codex（/quit 或 Ctrl+C）后重发；退出后还是只读，就在电脑上运行 `kill {via}` 再重发。",
+                        "A `codex` in a terminal (PID {pid}) is using this session (writing through the Codex background service, "
+                        "PID {via}); the phone is read-only. Quit that codex completely (/quit or Ctrl+C), then resend; if it is "
+                        "still read-only afterwards, run `kill {via}` on the computer and resend."),
     "app_server": ("是另一个 Codex 后台进程（codex app-server，PID {pid}，可能是编辑器插件或 Codex App 的后台）正在使用这个会话，"
                    "手机现在只读。完全退出它（或它所属的程序）后重发。",
                    "Another Codex background process (codex app-server, PID {pid}; an editor extension or the Codex App's "
@@ -302,6 +419,6 @@ TEXT = {
 }
 
 
-def text(kind: str, pid=None, zh: bool = True) -> str:
+def text(kind: str, pid=None, zh: bool = True, via=None) -> str:
     zh_t, en_t = TEXT.get(kind) or TEXT["unknown"]
-    return (zh_t if zh else en_t).format(pid=pid if pid else "?")
+    return (zh_t if zh else en_t).format(pid=pid if pid else "?", via=via if via else "?")

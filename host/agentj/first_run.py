@@ -268,7 +268,7 @@ def probe(st, iid: str, ctx: dict) -> tuple[str, str | None]:
         return ("verified", None) if cloud.read_cloud(st) else ("waiting_local", "not_bound")
     if iid == "harness":
         c = st.agent_config()
-        # P279: where Claude Code / Codex are not offered (the last `agentj agent route`), the row recommends Kimi
+        # P279: where Claude Code / Codex are not offered (the last `agentj agent route`), the row recommends Ark / Kimi (P335)
         from . import ai_route
         route = ai_route.cached(st)
         kimi = bool(route and route["route"] == "kimi")
@@ -498,18 +498,22 @@ FACT = {
     "not_bound": ("还没完成：这台电脑还没加入你的 Agent J 账号。", "Not done: this computer has not joined your Agent J account."),
     "no_agent": ("还没完成：还没选主 AI。", "Not done: no main AI chosen yet."),
     "agent_not_running": ("没通过：主 AI 现在没在运行。", "Not passed: the main AI is not running."),
-    "no_agent_kimi": ("还没完成：还没选主 AI。这台电脑所在地区用不了 Claude Code 和 Codex，推荐 Kimi 会员 Plus 或更高档"
-                      "（Go 档没有编程额度），用 OpenCode 接入：{kimi}。也可以选阿里百炼 Token Plan 个人版（¥39 起/月，"
-                      "只限本人交互使用；`agentj agent route` 看详情）。订阅后让 Agent 发手机密钥卡收 key。",
-                      "Not done: no main AI chosen yet. Claude Code and Codex are not available where this computer is; we "
-                      "recommend a Kimi membership, Plus or higher (Go has no coding quota), through OpenCode: {kimi}. Or an "
-                      "Alibaba Cloud Bailian Token Plan, personal (from ¥39 a month, your own interactive use only; details: "
-                      "`agentj agent route`). After subscribing, ask your Agent for the phone key card."),
-    "agent_not_running_kimi": ("没通过：主 AI 现在没在运行，而这台电脑所在地区用不了 Claude Code 和 Codex。推荐改用 Kimi 会员 Plus "
-                               "或更高档（OpenCode）：{kimi}，或阿里百炼 Token Plan 个人版（`agentj agent route`）。",
+    "no_agent_kimi": ("还没完成：还没选主 AI。这台电脑所在地区用不了 Claude Code 和 Codex。中国大陆从零开始首推火山方舟 Coding Plan，"
+                      "先买 Lite（和 Pro 能力一样，只差 5 倍用量；`agentj provider ark`）；香港 / 海外推荐 Kimi 会员 Plus 或更高档"
+                      "（Go 档没有编程额度），用 OpenCode 接入：{kimi}。已经有其中一家的就继续用。详细步骤：`agentj agent route`。"
+                      "订阅后让 Agent 发手机密钥卡收 key。",
+                      "Not done: no main AI chosen yet. Claude Code and Codex are not available where this computer is. In "
+                      "mainland China, starting from zero, we recommend Volcano Ark Coding Plan — buy Lite first (same as Pro, "
+                      "only 1/5 of the quota; `agentj provider ark`). In Hong Kong / overseas, a Kimi membership, Plus or higher "
+                      "(Go has no coding quota), through OpenCode: {kimi}. Already paying for one of them? Keep it. Step by step: "
+                      "`agentj agent route`. After subscribing, ask your Agent for the phone key card."),
+    "agent_not_running_kimi": ("没通过：主 AI 现在没在运行，而这台电脑所在地区用不了 Claude Code 和 Codex。中国大陆推荐改用火山方舟 "
+                               "Coding Plan（先买 Lite），香港 / 海外推荐 Kimi 会员 Plus 或更高档（OpenCode）：{kimi}；已经有其中一家的"
+                               "就用它（`agentj agent route`）。",
                                "Not passed: the main AI is not running, and Claude Code and Codex are not available where "
-                               "this computer is. We recommend switching to a Kimi membership, Plus or higher (OpenCode): {kimi}, or an "
-                               "Alibaba Cloud Bailian Token Plan, personal (`agentj agent route`)."),
+                               "this computer is. In mainland China, switch to Volcano Ark Coding Plan (Lite first); in Hong Kong / "
+                               "overseas, a Kimi membership, Plus or higher (OpenCode): {kimi}. Already paying for one of them? "
+                               "Use it (`agentj agent route`)."),
     "not_paired": ("还没完成：还没配对。", "Not done: not paired yet."),
     "no_passkey": ("还没完成：手机上还没设通行密钥（Face ID / 指纹）。", "Not done: no passkey (Face ID / fingerprint) on the phone yet."),
     "sleep_enabled": ("没通过：这台电脑还会自动睡眠，睡着时手机就找不到它。", "Not passed: this computer still sleeps when idle; the phone can't reach it then."),

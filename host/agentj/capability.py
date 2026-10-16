@@ -68,7 +68,7 @@ REQ_MAX = 256 * 1024
 CARDS_KEEP = 50
 CLI_ALLOW = {"git": ["code.git"], "python3": ["code.python"], "node": ["code.node"], "curl": ["web.fetch"],
              "ffmpeg": ["media.convert"], "pandoc": ["docs.convert"]}
-HARNESS_TITLE = {"claude": "Claude Code", "codex": "Codex", "opencode": "OpenCode", "kimi": "Kimi Code", "qwen": "Qwen Code"}
+HARNESS_TITLE = {"claude": "Claude Code", "codex": "Codex", "opencode": "OpenCode", "kimi": "Kimi Code", "qwen": "Qwen Code", "dsh": "DeepSeek Harness"}
 PROBE_RESULTS = ("ok", "auth_required", "not_found", "permission_denied", "offline", "timeout", "unsupported")
 STATUS_OF = {"ok": "ready", "not_found": "missing", "auth_required": "unavailable", "permission_denied": "unavailable",
              "offline": "unavailable", "timeout": "unavailable", "unsupported": "unverified"}
@@ -955,10 +955,10 @@ _WIZARD_READ = re.compile(r"(?:cd [A-Za-z0-9_./~-]{1,300} ?(?:;|&&) ?)?agentj wi
                           r"(?: 2>&1)?(?: \| grep -v [^\s|;&$`'\"<>()\\]{1,40})?")
 
 
-# P158: `agentj goal …` — every effect is host-gated (propose = a card the owner signs; status reads; progress / done / stop
+# P158: `agentj goal …` — every effect is host-gated (propose / grant (P339) = a card the owner signs; status reads; progress / done / stop
 # only post a line or take the goal's power away). Single-quoted text is literal in the shell.
-_GOAL_CMD = re.compile(r"(?:cd [A-Za-z0-9_./~-]{1,300} ?(?:;|&&) ?)?agentj goal (?:propose|status|progress|done|stop)"
-                       r"(?: (?:[A-Za-z0-9_./=:@-]{1,200}|'[^'\n]{1,500}'|[^\s'\"`$\\|;&<>(){}*?\[\]#!~]{1,120})){0,10}(?: 2>&1)?")
+_GOAL_CMD = re.compile(r"(?:cd [A-Za-z0-9_./~-]{1,300} ?(?:;|&&) ?)?agentj goal (?:propose|status|progress|done|stop|grant)"
+                       r"(?: (?:[A-Za-z0-9_./=:@-]{1,200}|'[^'\n]{1,500}'|[^\s'\"`$\\|;&<>(){}*?\[\]#!~]{1,120})){0,16}(?: 2>&1)?")
 
 
 def staging_write(root: str | None, tool: str, tool_input) -> bool:
@@ -972,6 +972,16 @@ def staging_write(root: str | None, tool: str, tool_input) -> bool:
     base = os.path.realpath(os.path.join(root, ".agentj", "wizard-staging"))
     real = os.path.realpath(fp if os.path.isabs(fp) else os.path.join(root, fp))
     return real.startswith(base + os.sep)
+
+
+def goal_cli(tool: str, tool_input) -> bool:
+    """P339: exactly one plain `agentj goal …` command. Its words are data for the host (a grant's --what / --match, a
+    progress line), so the danger classifier must not judge them — `--cat send --match scp` is not a credential change
+    (cred.sql reads 「grant」): serve lets it through before classification and the host's own goal card is the one card."""
+    if tool != "Bash" or not isinstance(tool_input, dict):
+        return False
+    cmd = tool_input.get("command")
+    return isinstance(cmd, str) and bool(_GOAL_CMD.fullmatch(cmd.strip()))
 
 
 def host_mediated(tool: str, tool_input) -> bool:

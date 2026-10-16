@@ -386,7 +386,9 @@ def global_dirs(kind: str | None) -> list[str]:
     by = {"claude": [os.path.join(claude, "skills")], "codex": [os.path.join(h, ".agents", "skills"), os.path.join(codex, "skills")],
           "opencode": [os.path.join(xdg, "opencode", "skills")],
           "kimi": [os.path.join(h, ".kimi-code", "skills"), os.path.join(h, ".agents", "skills")],   # P305
-          "qwen": [os.path.join(h, ".qwen", "skills"), os.path.join(h, ".agents", "skills")]}   # P310
+          "qwen": [os.path.join(h, ".qwen", "skills"), os.path.join(h, ".agents", "skills")],   # P310
+          "dsh": [os.path.join(os.environ.get("DSH_HOME") or os.path.join(h, ".dsh"), "skills"),
+                  os.path.join(h, ".agents", "skills")]}   # P329
     return by.get(kind) or [d for v in by.values() for d in v]
 
 

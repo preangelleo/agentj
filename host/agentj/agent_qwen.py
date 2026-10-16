@@ -16,8 +16,8 @@ Logins (the owner's, never the Agent's):
 - otherwise a key from the phone's key card: BAILIAN_TOKEN_PLAN_API_KEY (Token Plan, personal — recommended; Qwen 3.8 with
   image input), BAILIAN_CODING_PLAN_API_KEY (Coding Plan) or DASHSCOPE_API_KEY (pay as you go). Agent J hands it to Qwen as
   its OpenAI-compatible variables (OPENAI_API_KEY / OPENAI_BASE_URL / OPENAI_MODEL) for this process only — nothing is written
-  to Qwen's settings — and never to scheduled tasks or bots (the Token Plan terms forbid unattended calls). With a Token Plan
-  key Qwen's own scheduler is switched off (QWEN_CODE_DISABLE_CRON) for the same reason; Agent J's tasks never get the key.
+  to Qwen's settings. The owner's own scheduled tasks / workflow CEOs get the plan keys too (P348, fence.PLAN_KEY_ENV: Token
+  Plan, Coding Plan — never the pay-as-you-go DASHSCOPE_API_KEY), and support bots get none.
 - `/model` with a key: the model is the process's OPENAI_MODEL, so a switch restarts Qwen with the new one and resumes the
   same session.
 """
@@ -99,24 +99,22 @@ def fresh_keys(base: dict) -> dict:
     return out
 
 
-def key_choice(env: dict, source: dict | None = None) -> tuple | None:
-    """The KEYS row whose key is set (Token Plan first), or None — None too when Qwen has the owner's own settings."""
+def key_choice(env: dict, source: dict | None = None, names=KEY_NAMES) -> tuple | None:
+    """The KEYS row (among `names`) whose key is set (Token Plan first), or None — None too when Qwen has the owner's own
+    settings."""
     if settings_facts(env)["own_auth"]:
         return None
     keys = fresh_keys(source if source is not None else os.environ)
-    return next(((row, keys[row[0]]) for row in KEYS if keys.get(row[0])), None)
+    return next(((row, keys[row[0]]) for row in KEYS if row[0] in names and keys.get(row[0])), None)
 
 
-def key_environment(env: dict, model: str | None, source: dict | None = None) -> dict:
+def key_environment(env: dict, model: str | None, source: dict | None = None, names=KEY_NAMES) -> dict:
     """Qwen's OpenAI-compatible variables for a key-card key (never logged); {} when the owner's settings log Qwen in."""
-    got = key_choice(env, source)
+    got = key_choice(env, source, names)
     if got is None:
         return {}
     (name, base, default, models), key = got
-    out = {"OPENAI_API_KEY": key, "OPENAI_BASE_URL": base, "OPENAI_MODEL": model if model in models else default}
-    if name == "BAILIAN_TOKEN_PLAN_API_KEY":
-        out["QWEN_CODE_DISABLE_CRON"] = "1"      # Token Plan: no unattended calls (its terms) — Agent J's tasks never get it
-    return out
+    return {"OPENAI_API_KEY": key, "OPENAI_BASE_URL": base, "OPENAI_MODEL": model if model in models else default}
 
 
 def login(environ=None) -> tuple[str, str]:
@@ -153,13 +151,17 @@ class QwenAgent(AcpAgent):
         from . import agent as _agentmod
         return [_agentmod._bin(self.BIN_ENV, self.BIN_NAME) or self.BIN_NAME, "--acp"]
 
+    def names(self) -> tuple:
+        # P348: the owner's own tasks / workflow CEOs may use the plan keys (fence.PLAN_KEY_ENV), never the pay-as-you-go one
+        from .fence import PLAN_KEY_ENV
+        return tuple(k for k in KEY_NAMES if k in PLAN_KEY_ENV) if self.cfg.get("_workflow_ceo") else KEY_NAMES
+
     def keyed(self) -> tuple | None:
-        return None if self.cfg.get("_workflow_ceo") else key_choice(dict(os.environ))
+        return key_choice(dict(os.environ), names=self.names())
 
     def child_env(self, env: dict) -> dict:
         env = dict(env)
-        if not self.cfg.get("_workflow_ceo"):            # tasks use native settings only (fence.auxiliary_environment)
-            env.update(key_environment(env, self.cfg.get("model")))
+        env.update(key_environment(env, self.cfg.get("model"), source=dict(os.environ), names=self.names()))
         return env
 
     def login_hint(self) -> str:

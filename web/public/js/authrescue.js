@@ -32,7 +32,10 @@ async function call(obj, ms = 20000) {
 export function onPush(m) { if (m && m.view && typeof m.view === 'object') setView(m.view); }
 export async function load() { say(t('ar.loading')); const m = await call({ t: 'auth_get' }); if (m) say(''); }
 
-function setView(v) { view = v; dot(); render(); banner(); }
+const watchers = [];      // P332: Settings → 紧急修复 card ③ shows this flow's state (rescue.js)
+function setView(v) { view = v; dot(); render(); banner(); for (const f of watchers) { try { f(view); } catch { /* a painter must not stop the rest */ } } }
+/** P332: card ③ of 紧急修复 follows the view (flow stage → progress / green / failure). */
+export function watch(fn) { watchers.push(fn); if (view) fn(view); }
 
 /** P288: the chat's renew banner — view.renew {kind, days_left, expires, mark}; ✕ hides it until the next reminder mark. */
 function renewTag(r) { return r ? `${r.expires}:${r.mark ?? ''}` : ''; }

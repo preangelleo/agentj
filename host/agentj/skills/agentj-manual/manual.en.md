@@ -67,7 +67,7 @@ closes it.
 
 The day in brackets after the weekly figure is where you are in the 7-day reset cycle. The Usage box also has a "Reset cycle" bar with how long until the reset and when, and a small line under each quota with how much you will have used by the reset at the current pace. The figures do not glow normally: the weekly one glows faint blue when it is used faster than the even pace (about 14% a day), and its used part turns light blue in the box; anything at 80% or more glows soft orange, at 90% or more orange-red — little is left. Providers that do not report a reset time show no day.
 
-5H or WEEKLY showing "—" usually means one of two things: ① your plan has no limit for that window (for example ChatGPT Pro at $200: OpenAI reports only the weekly window and a credit balance, no 5-hour window), or ② the figure is temporarily unavailable. Neither affects normal use.
+Both quota lines are always there, doubling as the page's top and bottom dividers. A line with no text beside it has no figure right now, usually because ① your plan has no limit for that window (for example ChatGPT Pro at $200: OpenAI reports only the weekly window and a credit balance, no 5-hour window), ② the provider offers no usage query (for example the Volcano Ark and Alibaba Bailian Coding Plans — check their consoles), or ③ the figure is temporarily unavailable. None of these affects normal use; the text appears by itself as soon as a model or AI coding tool reports it.
 
 （Screenshot：Water past half: the level in the background is above the middle — https://agentj.app/docs/manual/water-high.en.webp）
 ### The water is past half — what now?
@@ -110,7 +110,9 @@ hold still for a third of a second and then drag, and you are selecting text ins
 dragging a selection's handles. While a long reply scrolls, the name, the load line and the robots stay pinned at the top of
 the card.
 
-The header is split into three equal parts: double-tap the left third to go to the first (oldest) message, double-tap the right third (the page number) for the latest; the middle third is for unread replies. When replies arrived after you last looked, a small pulsing round badge in the middle of the header shows how many; tap it to jump to the first unread reply and page forward from there — the badge goes away once you reach the latest. With nothing unread there is no badge and a tap in the middle does nothing. Pressing `u` on a computer also jumps to the first unread reply. Unread replies sync across all your remotes: seeing a reply on any remote clears that reply and earlier unread hints on the others. An offline remote syncs before showing unread hints when it returns. After an upgrade the replies already there count as read, so no remote opens at 99+; a read that did not reach the computer is sent again by itself. Silent turns do not count.
+The header is split into three equal parts: double-tap the left third to go to the first (oldest) message, double-tap the right third (the page number) for the latest; the middle third is for unread replies. When replies arrived after you last looked, a small pulsing round badge in the middle of the header shows how many; tap it to jump to the first unread reply and page forward from there — the badge goes away once you reach the latest. With nothing unread there is no badge and a tap in the middle does nothing. Pressing `u` on a computer also jumps to the first unread reply. Unread replies sync across all your remotes: seeing a reply on any remote clears that reply and earlier unread hints on the others. An offline remote syncs before showing unread hints when it returns. After an upgrade the replies already there count as read, so no remote opens at 99+; a read that did not reach the computer is sent again by itself. One exception: if this remote is on an older page when a new reply arrives, its page number keeps pulsing and the badge keeps counting it until you reach that reply here, even when another remote already read it. Silent turns do not count.
+
+While you read an older page, nothing moves you: sending a message, or a new reply from the Agent, leaves you on the same page at the same scroll position; a new reply only makes the page number at the top right pulse, and you page on when you are ready. Only when you are already on the newest page does a sent message take you to its new page.
 
 The buttons under a reply, left to right:
 
@@ -124,6 +126,8 @@ The buttons under a reply, left to right:
 
 Select some text in a reply to quote just that part. Selecting somewhere else adds another quote instead of replacing it — up to 5, from any replies, also while paging or in the full-screen reader — side by side above the message box; tap a quote's words to read it in full, its time to jump back to it (highlighted), its ✕ to remove it; the ✕ at the end or Esc clears them all. The clipboard always holds your latest selection.
 
+When a message you sent carries two or more quotes, its card first folds them into one row — how many quotes there are, the start of the first one and how many more, the same look as above the message field before sending. Tap the row to show every quote (each still jumps back to its source); tap that top row again to fold them. A single quote shows as before.
+
 On its own at the bottom left of the reply card is a white round button (a ring with a gap and an arrow leaving it): Share as a web report — it turns what you worked out in the chat into a good-looking web page you can send to others. Tap it and the message box gets `/web-page-report` with the cursor after it; nothing is sent. Add a line if you like — "only the pricing part, for people at my company, open for a week" — or send it as it is and the Agent asks first: the whole conversation, a few topics or just this reply; who may open it (anyone with the link, an access code, only your company's e-mail domain, any e-mail sign-in); how long it stays up; whether to hide names and numbers. Once you have said it, it does not ask again. Tap it on an older reply and that reply goes along as a quote, so the Agent knows where to start. If the web report skill is not on your computer yet, the Agent asks whether to install it from the plaza first.
 
 Hold the round button and the Hot key sheet rises from the bottom: what it is bound to now and what a tap does, then every command and skill of the phone's 「/」 menu (one-tap commands, your own commands, the Agent's skills), with a search box. Bind it to anything you use often: pick one, tap Bind it, and from then on the button is that — the icon stays the same. Bound to a command (`/status`, `/compact` …) a tap runs it at once; one that wipes the conversation such as `/clear` still asks you first — a hot key never skips that. Bound to a skill, a tap puts it in the message box; add a line and send, and the Agent runs it on that reply. Back to default at the top of the list makes it Share as a web report again. You can also ask the Agent to change it, or run `agentj config set ui.card_hot_action status` on the computer.
@@ -136,7 +140,7 @@ Replies are laid out for you:
 
 - **Code** is syntax-highlighted and scrolls sideways when wide; a code block has a copy button at its top right. A short
   shaded command inside the text (inline code) copies with one tap ("Copied"), ready to paste into a terminal.
-- **Maths** (LaTeX) shows as formulas.
+- **Maths** (LaTeX) shows as formulas. Commands never turn into formulas: `$HOME` and `$(…)` stay as written, and system cards (such as a goal's result) show no formulas at all.
 - **Diagrams** (mermaid) are drawn as pictures.
 - **Images, audio, video, PDFs, web pages and other files the Agent mentions** show up right in the reply, as long as
   they are inside its working folder: tap an image to enlarge it, play audio and video in place, preview web pages in a
@@ -226,6 +230,7 @@ With Codex, as long as you never wrote `sandbox_mode` at the top of `~/.codex/co
 |---|---|
 | `/compact` | Compact the context (writes the handover first, see above) |
 | `/clear` | Clear the conversation (can be undone) |
+| `/new` | Same as `/clear` (the name Codex uses) |
 | `/model` | See which models you can switch to; `/model name` switches |
 | `/context` | How much context is used |
 | `/cost` | What this conversation cost |
@@ -233,6 +238,7 @@ With Codex, as long as you never wrote `sandbox_mode` at the top of `~/.codex/co
 | `/status` | The current state |
 | `/stop` | Interrupt the current turn |
 | `/help` | List these commands |
+| `/reset` | Reset connection: the same as Settings → Emergency repair → ① (below) |
 
 The two commands in the "Friends" group are put into the message box when tapped; finish them and send:
 
@@ -262,6 +268,7 @@ the answer did not arrive or the request had timed out. A long command shows two
 copy button at the right of the title copies the whole command. On a computer, `⌘↩` (Mac) or `Ctrl↩`
 (Windows / Linux) approves, the same as the hold; `Esc` tucks the card away.
 No answer within 2 minutes counts as a no. You can tuck the card away; a small tag at the top keeps reminding you.
+When none of your remotes is online, the card stays for 30 minutes instead: the Agent gets on with other work and runs the step once you approve.
 
 E-mail: mail to yourself, or to people who are all on your e-mail allowlist, goes out without a card. On a card for
 anyone else, each new recipient has an unticked "Don't ask again for mail to them (add to the allowlist)"; tick it and
@@ -271,7 +278,11 @@ In a shared session a card marked "Shows passwords or keys" would print a creden
 
 Only real danger asks: the five kinds ask on a clear match (`git push`, a deploy, a payment or messaging API, deleting cloud data, writing a credential file); writing an ordinary note (words like deploy or key inside a heredoc don't count), `--dry-run`, `list`, `status`, `systemctl --user` for your own background jobs and `sleep` wait loops don't. A command Agent J can't read clearly (the program is a variable like `$PY`) is first checked by Jev when it is set up (`OPENROUTER_API_KEY` on the computer): at or above "Jev threshold" in Settings (default 0.70, 0.50–0.95) it runs without a card and is logged in Activity. The threshold never affects the five clear dangers — they always ask. Too many cards? Tell the Agent; it explains and runs `agentj config set approval.jev_threshold 0.6` (one confirmation card on the phone).
 
-Goal mode (`/goal`): tap `/goal` in the ≡ menu and add what to finish and by when. The Agent first sends one opening card with the goal, how you'll know it's done, the deadline and the dangerous actions it needs (by kind, with limits, e.g. "push to repository X", "spend: one domain only"); approve it once and those actions stop asking for the rest of the goal, each one logged in Activity. Outside the grant, a step the computer can undo shows a 10-second countdown card that counts as yes if you don't tap; anything that can't be undone or looks like an attack waits for you and is listed in the result card at the end. `/goal status` shows progress, `/goal stop` withdraws the grant at once; a goal ends after 8 hours by default. For a company or team, switch off "Goal mode: approve in 10 s" under Settings → Safety.
+Goal mode (`/goal`): tap `/goal` in the ≡ menu and add what to finish and by when. The Agent first sends one opening card with the goal, how you'll know it's done, the deadline and the dangerous actions it needs (by kind, with limits, e.g. "push to repository X", "spend: one domain only"); approve it once and those actions stop asking for the rest of the goal, each one logged in Activity. Outside the grant, a step the computer can undo (including a new file copied with scp / rsync to a machine named in your `~/.ssh/config` that isn't there yet) shows a 10-second countdown card that counts as yes if you don't tap; anything that can't be undone or looks like an attack waits for you and is listed in the result card at the end. Cards that wait for you say in plain words who wants to do what, why it wasn't approved automatically, what happens if you don't tap (the step is skipped, everything else goes on) and how to approve; the raw command is folded under "Details". While the goal runs, pressing and holding "Hold: approve and add to the goal's grant" also lets the same kind of step through (up to 20 times, ending with the goal); the Agent can ask for one more grant with `agentj goal grant`, one card. `/goal status` shows progress, `/goal stop` withdraws the grant at once; a goal ends after 8 hours by default. For a company or team, switch off "Goal mode: approve in 10 s" under Settings → Safety.
+
+Approval level: "Approval level" in Settings → Safety has three settings. Safe asks more — unclear commands, batch approvals and goal-mode countdowns all wait for your tap. Standard is the default and works as before. Full access is like Claude Code's `--dangerously-skip-permissions`: almost no cards, everything logged in Activity, while suspected attacks (downloading and running included), passwords or keys (sending them out included), spending and price changes still ask one at a time. The same page has "Goal mode: no cards" (off by default): when it's on, your own `/goal` starts without the opening card and runs without cards, the red lines still ask and the result card still comes; a goal that spends money or changes prices still shows the card; it counts only for the phone that turned it on, and switching it off ends a goal that started without a card. Both change only with a signed confirmation on a paired phone (plus Face ID when loosening, if the phone has a passkey), never by the Agent, and Full access written into the configuration file on the computer works as Standard; if the Agent runs `agentj config set approval.level …`, you just get a confirmation card. More in [On the phone: approval level](https://agentj.app/docs/phone/#approval-level).
+
+No remote online: the card stays on the phone and the lock-screen alert goes out as usual. With Telegram or the e-mail channel set up, one content-free line also reaches your private Telegram chat and your own inbox (at most once every 15 minutes). After 20 seconds the Agent knows you're away and does other work; the card stays for 30 minutes, and once you approve, the same requester's next try of that step runs; "Stop everything" cancels an approval not yet used. More in [When no remote is online](https://agentj.app/docs/phone/#no-remote-online).
 
 （Screenshot：Tucked away: a small tag stays at the top — https://agentj.app/docs/manual/approval-later.en.webp）
 ### Question card (purple)
@@ -280,8 +291,8 @@ The Agent wants you to choose: tap an answer and confirm. If none fits, cancel t
 
 ### Admin-password card
 
-When the Agent needs to run one command as administrator (installing a system package, say), this card shows the
-command, why, and its effect. Type your computer's admin password on the card. It travels encrypted and is used for that
+When the Agent needs to run one command as administrator (installing a system package, say), this card shows first
+what it's for, then the command and its effect. Type your computer's admin password on the card. It travels encrypted and is used for that
 one command; **the Agent never sees your password**.
 
 （Screenshot：Admin-password card — https://agentj.app/docs/manual/sudo.en.webp）
@@ -328,18 +339,34 @@ approvals are withdrawn and scheduled tasks pause. The screen turns grey with a 
 
 （Screenshot：Settings — https://agentj.app/docs/manual/settings.en.webp）
 The gear in the top-right corner opens Settings, full screen (on a computer browser: `s`, or `⌘,` / `Ctrl+,`; Esc
-closes it). It is the only menu: Agent & remotes (the Agent's name, Remotes, Face ID, unpairing); Agent tools (Models & Key,
+closes it). It is the only menu: Agent & remotes (the Agent's name, Remotes, Face ID, unpairing); Emergency repair (below); Agent tools (Models & API keys,
 Memory — rules the Agent keeps, you can delete them —, Activity — what it did recently and who approved what —, Schedules,
 Friends, Bots, the first-run checklist); language and appearance; reply text size, send sound volume, auto-read, wake word;
 lock-screen alerts; Channels (re-pair Telegram, Email, Contacts — your friends' e-mails and phones, one tap onto the e-mail allowlist — and My contact details); safety options (high-risk warnings, session mode, isolation, Docker); the web app (how updates happen, upgrade Agent J on the computer,
 versions, update and reload, Add to Home Screen, keyboard shortcuts); account, help, and the security, privacy and terms
 pages. The phone must be connected to the computer to change settings.
 
+Message box buttons (under language and appearance): the four buttons above the message box (File, Photos, Camera and the mic) can go in any order — put the mic on the far left, say, to talk with the phone in your left hand. On a phone, hold a button for a moment, then drag it; or tap one, then tap where it should go. On a computer, drag it with the mouse, or focus it and press ← →. The new order shows at once and follows you to every remote; when the Agent J on your computer is too old for that, it is saved on this device only. Restore default puts back the usual order. The Agent can change it for you too: `agentj config set ui.composer_buttons '["mic","file","image","camera"]'`.
+
 Every menu — Settings and the pages it opens, ≡ All commands, keyboard shortcuts, silent history, "How safe is this web app?" — is a full-screen dark page with the same header, icons and buttons. The back arrow at the top left does what Esc does: one level up, so a page opened from Settings returns to Settings. Confirmations and risky actions still ask in a centred card.
+
+### Emergency repair
+
+Settings → Emergency repair is the second item. Use it when the chat is stuck, offline or not replying, and go in order:
+
+- **① Reset connection**: tap this first. It reconnects, finds your conversation again, starts a new conversation if it has to, and as a last step restarts Agent J on the computer; it stops at the first step that works and shows each one. A green card saying "Fixed. You can go back to the chat." means done. If it started a new conversation, the earlier one is kept: ask the Agent in the chat to bring it back. `/reset` in ≡ does the same.
+- **② Ask Agent J Father for remote help**: when ① didn't help. The computer checks itself, removes private details on the computer and sends the report to Agent J Father; you get a ticket number. Support can only suggest a few fixed repairs, and the card shows each one the computer runs. Nothing goes out until you tap.
+- **③ AI account signed out**: for a Claude / Codex login that expired; it opens AI login rescue (next section).
+
+When Agent J on the computer stops answering, a small rescue helper there answers instead: a banner says "Agent J on your computer isn't responding · rescue helper online", and ① and ② still work. The offline card has an **Emergency repair** button too, plus a line for someone at the computer: `curl -fsSL https://agentj.app/rescue | sh`. See [Phone grey or disconnected?](https://agentj.app/docs/reconnect/).
+
+### Models & API keys
+
+"Models & API keys" in Settings keeps the model picker at the top and two sections below it. "Base models" shows one dashed card per provider (Anthropic, OpenAI, Volcano Ark, Alibaba Bailian, Kimi, DeepSeek and more), each key tagged Subscription, Pay-as-you-go or Sign-in; "Third-party API keys" lists the other keys on the computer (ElevenLabs, for example). A row shows only the name and "Not set" or a mask (at most the last 4 characters) — the key itself is never shown on the page. The icons on the right are Copy, Edit and Delete; an empty row only has Add, and "Add" at the bottom lets you name a new key first. Copy and Delete need Face ID first, and Delete asks once more; Copy puts the value straight on the clipboard. Edit and Add open the ordinary key card, so the Agent never sees what you type. Every copy, delete and edit is written to the audit log — the name, never the key. After installing, fill your keys in here and you can leave the terminal.
 
 ### AI login rescue and renewing before expiry
 
-When the computer's Claude Code / Codex login expires, the Agent cannot reply. Open Settings → AI login rescue and sign in
+When the computer's Claude Code / Codex login expires, the Agent cannot reply. Open Settings → Emergency repair → ③ AI account signed out → AI login rescue and sign in
 again from the phone, without going back to the computer: Codex shows a link and a device code; Claude Code shows an
 authorize link, and its code goes only into the secret card.
 
@@ -372,7 +399,7 @@ The scan icon at the top right (or holding the camera button) reads QR codes: a 
 ## Keyboard shortcuts
 
 （Screenshot：Keyboard shortcuts — https://agentj.app/docs/manual/keys.en.webp）
-On a computer browser or a tablet with a keyboard, press `?` for the full list (it is in Settings too). Every tap, hold and swipe with its key: [Keyboard shortcuts and gestures](https://agentj.app/docs/shortcuts/). The ones you will use most:
+On a computer browser or a tablet with a keyboard, press `?` for the full list (it is in Settings too); to find one, tap the magnifier at its top right or press `/` and type a word. Every tap, hold and swipe with its key: [Keyboard shortcuts and gestures](https://agentj.app/docs/shortcuts/). The ones you will use most:
 
 | Key | What it does |
 |---|---|
@@ -470,9 +497,9 @@ For older Agent J versions that keep an old model/provider, start a new Codex co
 
 Shared Claude makes the phone-message setting Claude Code really uses in the work folder accept (organization policy > the folder's private `.claude/settings.local.json` > its `.claude/settings.json` > `~/.claude/settings.json`), at selection, startup and upgrade, backing up the file first; the phone is told once. A hold in user or private local settings is changed where it is; a hold in the shared project file is overridden from the private local layer. Organization policy, `refuse` and an explicit `agentj config claude-inbound off` are only reported. Enabled: phone messages no longer need individual confirmation on the computer; to disable, run `agentj config claude-inbound off`. A session started before the change needs /clear or a new session. Only Claude Code is affected; Codex/OpenCode have no equivalent mechanism. When a message is not acknowledged, the phone names the reason (organization policy, project settings, turned off, needs /clear, computer busy); check the computer before resending. The phone's model/quota bars (`agentj config claude-statusline`) are turned on at the same moment unless the owner turned them off, chained at the status-line layer in effect; `agentj doctor` reports a layer that hides them.
 
-Shared mode: Claude `/clear` and `/compact` wait for the current desktop turn and confirm native hook receipts. A successful clear archives phone pages and starts at zero, including clears typed on the desktop. Context uses only new-session/post-compaction measurements; pending readings show “—”, never the previous value. A timeout reports an unconfirmed change; check the desktop before retrying. Shared Claude has no native undo-clear button: history remains archived locally; use desktop `/resume` to restore a conversation. Independent mode retains undo. Attached Codex cannot switch the desktop thread: use desktop `/new` and select the new thread. Attached OpenCode supports `/compact`; use desktop `/new` and select the new session to clear. Agent J's own Claude PTY accepts controls directly; an existing terminal requires an exact-session Herdr input route, otherwise the phone explains the reason and native command. Shared `/context`, `/usage`, `/status` and `/model` without an argument read measured data; unavailable values show “—”.
+Shared mode: Claude `/clear` and `/compact` wait for the current desktop turn and confirm native hook receipts. A successful clear archives phone pages and starts at zero, including clears typed on the desktop. Context uses only new-session/post-compaction measurements; pending readings show “—”, never the previous value. A timeout reports an unconfirmed change; check the desktop before retrying. Shared Claude has no native undo-clear button: history remains archived locally; use desktop `/resume` to restore a conversation. Independent mode retains undo. Attached Codex clears from the phone with `/clear`: the next phone message opens a new Codex conversation, the phone archives its earlier pages as usual, and Undo clear works until that message is sent. The Codex App / terminal on the computer does not follow by itself; once the new conversation is open the phone shows `codex resume <id>` to run there. While the desktop Codex is mid-answer nothing is cleared; clear again when it finishes. Attached OpenCode supports `/compact`; use desktop `/new` and select the new session to clear. Agent J's own Claude PTY accepts controls directly; an existing terminal requires an exact-session Herdr input route, otherwise the phone explains the reason and native command. Shared `/context`, `/usage`, `/status` and `/model` without an argument read measured data; unavailable values show “—”.
 
-The 5h line remains visible at 1%; 0% has a start marker. “5h —” means no reported measurement. Expanding the input card reduces the reply reading area while keeping the action row and composer fixed; long inputs and replies scroll within their cards.
+The 5h line remains visible at 1%; 0% has a start marker. No text beside it means no reported measurement. Expanding the input card reduces the reply reading area while keeping the action row and composer fixed; long inputs and replies scroll within their cards.
 
 ## Shared sessions
 
@@ -521,7 +548,7 @@ On a new computer it is usually one of four, and the phone says which: the model
 
 If an independent session's sandbox cannot start, the Agent stays stopped. The phone card explains the cause (such as missing bubblewrap) and repair. Tap **Run this launch without isolation** and verify with the owner's passkey to allow this launch only; the next launch checks isolation again. This launch may access local files and credentials. Set up a passkey in the phone menu if needed. Denial or timeout never starts the Agent.
 
-The sudo card labels the reason and effect as **Agent claim**. Shell or interpreter commands are marked red and require an admin password even with the passwordless helper installed. Secret cards support URL verification; `--verify-cmd` is disabled and runs no command outside the sandbox. Scheduled tasks and native customer-service bots authenticate from native storage and do not inherit host-service API keys or tokens.
+The sudo card labels what it's for and the effect as **Agent claim**, what it's for first; a purpose that is too short or only repeats the command, or a request to manage Agent J's own background service, shows no card. Shell or interpreter commands are marked red and require an admin password even with the passwordless helper installed. Secret cards support URL verification; `--verify-cmd` is disabled and runs no command outside the sandbox. Scheduled tasks and native customer-service bots authenticate from native storage and do not inherit host-service API keys or tokens.
 
 ### Connecting Telegram
 
@@ -540,6 +567,7 @@ Support bots process Telegram private chats independently, preserving order with
 ## Getting help
 
 - When your Agent can report the problem itself, have it use `agentj support` to ask our support desk; you don't have to find a person. See [Getting help from the support desk](https://agentj.app/docs/support/).
+- The phone can't reach the computer, or the chat is stuck: Settings → Emergency repair, starting with ① (above).
 - If it can't connect at all (offline, the install failed, it can't reach our servers), or agentj.app won't open (for example in mainland China), email feedback@agentj.app — email gets through from anywhere. Include your account ID, what happened and when, and a screenshot.
 
 ## Five pages (candidate after 0.20.3)
@@ -551,7 +579,7 @@ Double-click or double-tap a non-audio file card (image, video, PDF, document, t
 
 A collapsed input card shows two quote lines and one body line, or up to three body lines without a quote, with an ellipsis for overflow. Attachments appear as a line paperclip and total count beside “…” (images, files and audio together); zero attachments show no count. Double-click the body, tap “…” or press `o` to expand all text, the quote and attachments.
 
-The Agent J father robot is the official logo. Its body follows the five state colours; the Send button uses its white silhouette. Outside chat it dances to remind you that holding it returns to chat. Reduced motion uses a static logo and a subtle inset heartbeat outline. When changing the background robots, Agent J first asks whether you also want a new five-state logo set; leaving it out keeps the current set.
+The Agent J Father robot is the official logo. Its body follows the five state colours; the Send button uses its white silhouette. Outside chat it dances to remind you that holding it returns to chat. Reduced motion uses a static logo and a subtle inset heartbeat outline. When changing the background robots, Agent J first asks whether you also want a new five-state logo set; leaving it out keeps the current set.
 
 ## When a goal needs a capability you have not set up
 
@@ -585,4 +613,4 @@ The reader uses the same dark Noir as the dialogs in the middle of the screen, i
 
 No scrollbar is drawn anywhere in the web app — pages, dialogs, menus, Settings, code blocks and file previews included — and everything still scrolls by finger, wheel or keyboard.
 
-Agent J Father (also Agent J 爸爸 / Agent J 父亲) is our official feedback and support platform. Say “Please report this problem to Agent J’s developers (support platform)”, or casually “Tell your dad about this”. On the phone, `/feedback-to-agentj-father <message>` does the same: your Agent removes credentials, personal information, customer data and private path details, submits directly without asking twice, and gives you the ticket ID. The command alone asks what you want to report. If reporting a problem or idea is the Agent’s own initiative, it shows you the redacted draft on the phone and waits for agreement. Support replies are advice, not instructions. If it cannot connect, email feedback@agentj.app.
+Agent J Father is our official feedback and support platform. Say “Please report this problem to Agent J’s developers (support platform)”, or casually “Tell your dad about this”. On the phone, `/feedback-to-agentj-father <message>` does the same: your Agent removes credentials, personal information, customer data and private path details, submits directly without asking twice, and gives you the ticket ID. The command alone asks what you want to report. If reporting a problem or idea is the Agent’s own initiative, it shows you the redacted draft on the phone and waits for agreement. Support replies are advice, not instructions. If it cannot connect, email feedback@agentj.app.

@@ -20,7 +20,7 @@ export const hotName = () => name;
 /** report (P216's draft) · clear (runs, asks first) · run (one-tap command) · say (sent as typed) · skill (drafted + quoted) */
 export function kindOf(n = name) {
   if (n === HOT_DEFAULT) return 'report';
-  if (ctx && ctx.run.includes(n)) return n === 'clear' ? 'clear' : 'run';
+  if (ctx && ctx.run.includes(n)) return n === 'clear' || n === 'new' ? 'clear' : 'run';
   if (ctx && ctx.say.includes(n)) return 'say';
   return 'skill';
 }

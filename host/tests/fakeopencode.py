@@ -19,6 +19,7 @@ What a prompt does (the text of the message):
     SLEEP: <s>            works for s seconds (POST /session/{id}/abort ends it, like OpenCode: MessageAbortedError)
     ASK: <json questions> the question tool: denied by the rules → "question tool denied"; else question.asked, then
                           "ANSWERS: <answers>" on /question/{id}/reply, "REJECTED" on /reject
+    SAYSEQ: a ;; b        one text part per piece (P351)
     anything else         one text part "ECHO: <text>"
 Slash-command endpoints (PROMPT-26 7a): POST /session/{id}/summarize (a summary text part that is NOT a reply, then the
 assistant message with summary:true and small tokens), POST /session/{id}/abort, GET /config/providers, GET /global/health;
@@ -249,6 +250,9 @@ def run_prompt(sid, text):
             code, _, why = text[6:].partition(" ")
             publish("session.error", {"sessionID": sid, "error": {"name": "APIError", "data": {
                 "message": why, "statusCode": int(code), "isRetryable": False}}})
+        elif text.startswith("SAYSEQ: "):
+            for ln in text[8:].split(" ;; "):
+                text_part(sid, msg, ln)
         elif text.strip() == "EMPTY":             # P326: the turn ends at once without a word (no text part, no error)
             pass
         elif text.strip() == "DROPSSE":

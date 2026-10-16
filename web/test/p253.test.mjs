@@ -7,7 +7,7 @@ const pick = (name,end) => src.slice(src.indexOf(`function ${name}(`),src.indexO
 test('P253: host feedback command appears once among Agent J tools and typeahead, including configured menus',()=>{
   const ctx=vm.createContext({MENU_LIMITS:{items:60,cmd:64,desc:200,group:32},MENU_CMD_RE:/^\/[a-z0-9-]+$/,SWITCH_CMD:'/switch-harness',t:k=>k});
   vm.runInContext(pick('menuFromHost','const IN_APP')+pick('toolItems','// P238: /switch-harness'),ctx);
-  for (const desc of ['反馈给 Agent J 爸爸','Feedback to Agent J Father']) {
+  for (const desc of ['反馈给 Agent J Father','Feedback to Agent J Father']) {
     ctx.payload={items:[{cmd:'/own',desc:'Own'},{cmd:'/feedback-to-agentj-father',desc}],skills:[{cmd:'/feedback-to-agentj-father'}]};
     vm.runInContext('hostMenu=menuFromHost(payload); result=toolItems(true)',ctx);
     assert.equal(ctx.result.filter(x=>x[0]==='/feedback-to-agentj-father').length,1);

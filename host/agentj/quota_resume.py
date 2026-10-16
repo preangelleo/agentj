@@ -40,7 +40,7 @@ MAX_WAIT = 8 * 86400         # a reset further away than this is not believed
 MIN_LEAD = 30                # a reset this close (or past) is a stale reading: unknown
 EXHAUSTED = 95.0
 SWITCH_DELAY = 20            # the rerun on another account starts after this many seconds (time to cancel)
-NAMES = {"claude": "Claude Code", "codex": "Codex", "opencode": "OpenCode", "kimi": "Kimi Code", "qwen": "Qwen Code"}
+NAMES = {"claude": "Claude Code", "codex": "Codex", "opencode": "OpenCode", "kimi": "Kimi Code", "qwen": "Qwen Code", "dsh": "DeepSeek Harness"}
 
 _CLAUDE_LIMIT = re.compile(r"usage limit reached|limit reached\s*[∙·•|]|hit your (?:[\w-]+ )?limit|limit will reset|"
                            r"(?:5-hour|weekly|session|opus|sonnet) limit reached", re.I)

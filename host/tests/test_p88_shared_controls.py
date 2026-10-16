@@ -129,8 +129,11 @@ class Controls(unittest.IsolatedAsyncioTestCase):
             self.assertEqual((await self.a.command(name,arg)).kind,'refused')
         self.assertEqual(self.read(),b'')
     async def test_codex_clear_never_claims_to_clear_desktop_thread(self):
-        a=shared_codex.SharedCodexAgent(self.host,{'kind':'codex','dir':str(self.root),'session_mode':'shared','_workflow_ceo':True})
-        self.assertEqual((await a.command('clear','')).kind,'refused')
+        # P328: Codex /clear now opens a new conversation (test_p328_codex_clear); with no thread at all it is a no-op
+        with patch.dict(os.environ,{'CODEX_HOME':str(self.root/'codex')}):
+            a=shared_codex.SharedCodexAgent(self.host,{'kind':'codex','dir':str(self.root),'session_mode':'shared','_workflow_ceo':True})
+            res=await a.command('clear','')
+        self.assertEqual(res.kind,'info');self.assertFalse(res.undo)
         self.host.st.set_agent_session.assert_not_called();self.host.meter_update.assert_not_called()
 
 class OpenCodeControls(unittest.IsolatedAsyncioTestCase):

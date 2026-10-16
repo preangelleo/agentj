@@ -16,7 +16,7 @@ try {
   const p=await newPage(B,w,852,scheme,{allow:[web.url,fake.relay+'/'],touch:w<500});
   await navigate(p,fake.newPairing(web.url+'?lang='+lang));await waitState(p,'awaiting-approval');await fake.approve();await waitState(p,'ready');
   await fake.send({t:'status',s:'idle',agent:'claude',name:'Agent J'});
-  for(const [code,kind] of [['KeyG','friends'],['KeyB','bots']]){
+  for(const [code,kind] of [['KeyF','friends'],['KeyE','bots']]){
    await hot(p,code); await waitFor(p,`document.body.dataset.view==='${kind}'`);
    assert.equal(await ev(p,`document.getElementById('assist-${kind}').getBoundingClientRect().height>=56`),true);
    await click(p,'setBtn');assert.ok(await ev(p,`['scanBtn','srchBtn','setBtn'].every(id=>document.getElementById(id).getClientRects().length>0)`));await click(p,'setBtn');checks++;
@@ -44,7 +44,7 @@ try {
     const data=await new Promise(r=>{const x=new FileReader();x.onload=()=>r(x.result.split(',')[1]);x.readAsDataURL(f);});return {data,private:snap.svg.includes('PRIVATE-'),type:f.type,size:f.size,w:img.width,h:img.height,pixel};
   })()`);
   writeFileSync(new URL(`dom-${scheme}-${lang}-${w}.png`,out),Buffer.from(shot.data,'base64'));assert.equal(shot.private,false);assert.equal(shot.type,'image/png');assert.ok(shot.size>1000);assert.equal(shot.pixel[3],255);assert.ok(shot.pixel[0]<30);checks+=4;
-  await hot(p,'KeyY');await waitFor(p,`document.getElementById('settings').hidden && document.body.dataset.view==='chat' && document.querySelectorAll('#tray .chip').length>0`);checks++;
+  await hot(p,'KeyC');await waitFor(p,`document.getElementById('settings').hidden && document.body.dataset.view==='chat' && document.querySelectorAll('#tray .chip').length>0`);checks++;
   // Long press is capture, and the following click cannot also open Settings.
   await click(p,'setBtn');
   await ev(p,`document.getElementById('setBtn').dispatchEvent(new PointerEvent('pointerdown',{pointerId:1,isPrimary:true,button:0,clientX:20,clientY:20,bubbles:true}))`);

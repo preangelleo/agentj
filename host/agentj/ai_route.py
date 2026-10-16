@@ -7,12 +7,20 @@ status code and the provider's error type are read — the same answer the provi
 break a tie; they are read on this computer and never sent anywhere.
 
   any official service answers        → "official"  (the install.md harness rule as before: Claude Code / Codex)
-  both refused or unreachable         → "kimi"      (Kimi membership Plus or higher in OpenCode — or, P305, in Kimi's own
-                                                      CLI `kimi` (KIMI_CLI); + alternatives)
+  both refused or unreachable         → "kimi"      (P335: mainland → Volcano Ark Coding Plan first (ark.py), Hong Kong /
+                                                      Macau → Kimi membership Plus or higher in OpenCode or, P305, Kimi's own
+                                                      CLI `kimi`; Bailian side by side; + alternatives. The route keeps its
+                                                      name "kimi": first-run journals and caches already store it)
   … and Kimi unreachable as well      → "offline"   (no network: recommend nothing, check the network first)
   one refused by REGION, other unknown → "kimi"     (partial)
   nothing measured, zone HK / MO / CN → "kimi"      (hint only — the text says so)
   otherwise                           → "unsure"    (official rule; Kimi named as the fallback)
+
+P328 (Leo, 2026-10-16) — what the "kimi" route recommends, by the local region hint (cn-coding-plans 1.0.1):
+  mainland China, starting from zero → Volcano Ark Coding Plan, Lite first (same models as Pro, Pro = 5x quota; ark.py)
+  Hong Kong / Macau / overseas        → a Kimi membership (billed in USD outside the mainland)
+  already paying for one of them      → keep it (said in words: this module never reads keys or configs)
+  region unknown                      → both, each labelled with where it applies (Ark first)
 
 The invite link lives in ONE place: ai_route.json next to this file; a bound host prefers the platform's partner entry
 (slot ai-coding, name Kimi — changeable without a release). Every link is printed with its disclosure right next to it.
@@ -188,12 +196,9 @@ def decide(anthropic: str, openai: str, kimi: str = "unknown", region: str | Non
 # ------------------------------------------------------------------ text
 def alternatives(region: str | None) -> list[dict]:
     """Existing routes (install.md Step 3a, plaza packages), mainland-first when the zone is mainland China."""
-    cn = [{"zh": "千问 Qwen 按量付费（阿里云百炼，中国大陆站，需实名；定时任务 / bot 用这条）",
-           "en": "Qwen pay as you go (Alibaba Cloud Bailian, mainland China site; for scheduled tasks / bots)",
+    cn = [{"zh": "千问 Qwen 按量付费（阿里云百炼，中国大陆站，需实名；客服 bot 用这条）",
+           "en": "Qwen pay as you go (Alibaba Cloud Bailian, mainland China site; for support bots)",
            "how": "agentj plaza show qwen-in-opencode-cn", "url": "https://bailian.console.aliyun.com/"},
-          {"zh": "火山方舟 Coding Plan（字节豆包 / Kimi / GLM / DeepSeek 一个套餐；已经订了方舟的用这条）",
-           "en": "Volcano Ark Coding Plan (Doubao / Kimi / GLM / DeepSeek in one plan; for owners already on Ark)",
-           "how": "agentj provider ark", "url": "https://console.volcengine.com/ark/"},   # P315: ark.py
           {"zh": "智谱 GLM-5.3 / DeepSeek（install.md 第 3a 步）", "en": "Zhipu GLM-5.3 / DeepSeek (install.md Step 3a)",
            "how": "agentj agent switch opencode --model zhipuai/glm-5.3", "url": "https://open.bigmodel.cn/"}]
     intl = [{"zh": "OpenRouter（国际信用卡，按量付费）", "en": "OpenRouter (card, pay as you go)",
@@ -201,6 +206,50 @@ def alternatives(region: str | None) -> list[dict]:
             {"zh": "Kimi 开放平台按量付费（不是会员）", "en": "Kimi open platform, pay as you go (not the membership)",
              "how": "agentj agent switch opencode --model moonshotai/kimi-k3", "env": "MOONSHOT_API_KEY", "url": "https://platform.kimi.ai/"}]
     return cn + intl if region == "CN" else intl + cn
+
+
+# P328: the first recommendation by region — mainland China → Ark (Lite first), Hong Kong / Macau → Kimi, unknown → both
+PRIMARY = {"CN": "ark", "HK": "kimi", "MO": "kimi"}
+
+
+def primary(region: str | None) -> str | None:
+    return PRIMARY.get(region or "")
+
+
+def ark_info() -> dict:
+    from . import ark
+    d = ark.data()
+    return {"provider": d["provider"], "model": f"{d['provider']}/{d['model']}", "key_env": d["key_env"],
+            "signup_url": d["signup_url"], "console_url": d["console_url"], "start_tier": "Lite",
+            "tiers": [{"name": n, "cny_month": c} for n, c in d["tiers"]], "prices_checked": d["prices_checked"],
+            "harness_options": ["opencode", "claude"], "terms": ark.TERMS}
+
+
+def ark_steps(lang: str) -> list[str]:
+    from . import ark
+    a = ark_info()
+    tiers = " · ".join(f"{t['name']} ¥{t['cny_month']}/" + ("月" if lang == "zh" else "month") for t in a["tiers"])
+    if lang == "zh":
+        return [f"价格（{a['prices_checked']} 火山引擎官网价，以下单页为准）：{tiers}；限时活动价看下单页。先买 **Lite**："
+                "和 Pro 的模型、工具完全一样（含 Kimi K3），Pro 只是 5 倍用量，不够再升级。",
+                f"主人打开 {a['signup_url']} ，用手机号注册火山引擎、完成实名，订阅 Coding Plan；再到方舟控制台 {a['console_url']}"
+                " →「API Key 管理」新建一把 key（不要发到聊天里）。",
+                "你运行 `agentj provider ark`：把套餐里的模型写进 OpenCode 配置（已有的配置不动），并打印密钥卡命令；"
+                f"主人只把 key 粘贴进手机密钥卡（{a['key_env']}）。",
+                f"`agentj service restart`，然后 `agentj agent switch opencode --model {a['model']}`（能看图；方舟没有只读核对，"
+                "第一条回复就是核对）。想用 Claude Code：`agentj provider ark --harness claude`。",
+                "⚠ " + ark.TERMS["zh"]]
+    return [f"Prices (Volcano Engine's page on {a['prices_checked']}; the order page is authoritative): {tiers}; time-limited "
+            "offers are on the order page. Start with **Lite**: the same models and tools as Pro (Kimi K3 included) — Pro only "
+            "gives 5x the quota; upgrade if it runs short.",
+            f"The owner opens {a['signup_url']} , signs up to Volcano Engine with a phone number, verifies their identity and "
+            f"subscribes to Coding Plan; then creates a key under API Key management in the Ark console {a['console_url']} "
+            "(never paste it into chat).",
+            "You run `agentj provider ark`: it adds the plan's models to OpenCode's config (existing settings untouched) and "
+            f"prints the key-card command; the owner pastes the key only into the phone's key card ({a['key_env']}).",
+            f"`agentj service restart`, then `agentj agent switch opencode --model {a['model']}` (reads images; Ark has no "
+            "read-only check, so the first reply is the check). For Claude Code: `agentj provider ark --harness claude`.",
+            "⚠ " + ark.TERMS["en"]]
 
 
 def steps(lang: str, env_file: str) -> list[str]:
@@ -221,7 +270,7 @@ def steps(lang: str, env_file: str) -> list[str]:
             f"`agentj agent switch opencode --model {d['model']}` (light tasks: {d['model_light']})."]
 
 
-# P310: Alibaba Cloud Bailian Token Plan (personal) — the second mainland recommendation, side by side with Kimi (bailian.py)
+# P310: Alibaba Cloud Bailian Token Plan (personal) — a mainland option next to Ark (P328) and Kimi (bailian.py)
 def bailian_info() -> dict:
     from . import bailian
     p = bailian.plan("token-plan")
@@ -261,12 +310,12 @@ def kimi_cli_steps(lang: str) -> list[str]:
     if lang == "zh":
         return ["装 Kimi Code CLI（官方，2.2.0 或更新）：`curl -fsSL https://code.kimi.com/kimi-code/install.sh | bash`"
                 "（不用 Node.js；也可以 `npm install -g @moonshot-ai/kimi-code`）。",
-                "登录（二选一）：手机 设置 →「AI 登录救援」→ Kimi Code 设备码登录；或主人在电脑终端运行 `kimi login --region mainland-cn`"
+                "登录（二选一）：手机 设置 → 紧急修复 →「AI 登录救援」→ Kimi Code 设备码登录；或主人在电脑终端运行 `kimi login --region mainland-cn`"
                 "（海外站 kimi.ai 的会员用 `--region global`）。也可以用上面第 3 步的手机密钥卡存 KIMI_API_KEY。",
                 "`agentj agent switch kimi`（kimi.ai 的会员加 `--region global`）：先无头测试，能用才切，失败自动切回。"]
     return ["Install Kimi Code CLI (official, 2.2.0 or newer): `curl -fsSL https://code.kimi.com/kimi-code/install.sh | bash` "
             "(no Node.js needed; or `npm install -g @moonshot-ai/kimi-code`).",
-            "Sign in (either): phone Settings → AI login rescue → Kimi Code device code; or the owner runs `kimi login --region mainland-cn` "
+            "Sign in (either): phone Settings → Emergency repair → AI login rescue → Kimi Code device code; or the owner runs `kimi login --region mainland-cn` "
             "in a terminal (`--region global` for a kimi.ai membership). The key card of step 3 (KIMI_API_KEY) works too.",
             "`agentj agent switch kimi` (add `--region global` for kimi.ai): tested headless first, switched only if it works, "
             "switched back on failure."]
@@ -283,23 +332,32 @@ HEAD = {
     "official": ("Claude Code / Codex 在这台电脑上能连通：按 install.md 的规则选（只有一个能用就用它，多个就问主人）。",
                  "Claude Code / Codex can be reached from this computer: follow the install.md rule (one usable → that one; "
                  "several → ask the owner)."),
-    "kimi": ("这台电脑所在地区用不了 Claude Code 和 Codex。推荐两条，并列、让主人选：**Kimi 会员 Plus 或更高档**，或 **阿里百炼 "
-             "Token Plan 个人版**（见下）。Kimi 用 OpenCode 接入：",
-             "Claude Code and Codex are not available where this computer is. Two recommendations, side by side — let the owner "
-             "choose: **Kimi membership Plus or higher**, or **Alibaba Cloud Bailian Token Plan (personal)** (below). Kimi, "
-             "through OpenCode:"),
+    "kimi": ("这台电脑所在地区用不了 Claude Code 和 Codex。按下面选，让主人拍板：",
+             "Claude Code and Codex are not available where this computer is. Pick by the rule below and let the owner decide:"),
     "offline": ("Claude Code、Codex、Kimi 都连不上：先检查这台电脑的网络，再运行一次 `agentj agent route`。",
                 "Neither Claude Code, Codex nor Kimi can be reached: check this computer's network first, then run "
                 "`agentj agent route` again."),
-    "unsure": ("没能确认 Claude Code / Codex 在这里能不能用：先按 install.md 的规则试；第一条消息就失败（地区不支持）时，改用下面的 Kimi 路线。",
+    "unsure": ("没能确认 Claude Code / Codex 在这里能不能用：先按 install.md 的规则试；第一条消息就失败（地区不支持）时，按下面选：",
                "Could not confirm whether Claude Code / Codex work here: try them first (install.md rule); if the first "
-               "message fails (region not supported), use the Kimi route below."),
+               "message fails (region not supported), pick by the rule below:"),
 }
 HINT_NOTE = ("（只按本机时区判断，没有实测成功；装好后用 `agentj agent switch --scan` 确认。）",
              "(Judged from this computer's time zone only, not measured; confirm with `agentj agent switch --scan` later.)")
-GLOBAL_NOTE = ("  注：上面是 kimi.com 的会员（实测通过）。在海外站 kimi.ai 买的会员，key 不通用：改用 {model_global}，验证地址 {verify_url_global}。",
-               "  Note: the above is a kimi.com membership (measured). A membership bought on kimi.ai is a different site with "
-               "different keys: use {model_global} and verify against {verify_url_global}.")
+PICK = (("  · 中国大陆、从零开始：首推 **火山方舟 Coding Plan**，先买 **Lite**（和 Pro 能力一样，只差 5 倍用量）。",
+         "  · 香港 / 海外：**Kimi 会员** Plus 或更高档（海外访问按美元收费）。",
+         "  · 已经有其中某一家的：继续用那一家，不用再买。"),
+        ("  · Mainland China, starting from zero: first choice **Volcano Ark Coding Plan** — buy **Lite** first (same models "
+         "and tools as Pro; Pro only gives 5x the quota).",
+         "  · Hong Kong / overseas: a **Kimi membership**, Plus or higher (billed in USD outside the mainland).",
+         "  · Already paying for one of them: keep using it — no second plan."))
+ARK_HEAD = ("火山方舟 Coding Plan（中国大陆首推；OpenCode 或 Claude Code）：",
+            "Volcano Ark Coding Plan (first choice in mainland China; OpenCode or Claude Code):")
+KIMI_HEAD = ("Kimi 会员（香港 / 海外首推，澳门也是，大陆也能用；Plus 或更高档，用 OpenCode 接入）：",
+             "Kimi membership (first choice in Hong Kong / Macau / overseas; works in the mainland too; Plus or higher, through OpenCode):")
+GLOBAL_NOTE = ("  注：kimi.com 买的会员，key 在 api.kimi.com 和 api.kimi.ai 两个地址都能用（实测）。在海外站 kimi.ai 买的会员用 "
+               "{model_global}，验证地址 {verify_url_global}。",
+               "  Note: a kimi.com membership key works on both api.kimi.com and api.kimi.ai (measured). For a membership bought "
+               "on kimi.ai, use {model_global} and verify against {verify_url_global}.")
 REASON = {"region": ("不服务此地区", "region not served"), "unreachable": ("连不上", "unreachable"), "ok": ("能连通", "reachable"),
           "unknown": ("没能确认", "not confirmed"), "skipped": ("未探测", "not probed")}
 
@@ -314,15 +372,24 @@ def render(res: dict, lang: str) -> str:
     if res["confidence"] == "hint":
         out.append(HINT_NOTE[i])
     if res["route"] in ("kimi", "unsure"):
+        out += list(PICK[i])
+        ark_block = [ARK_HEAD[i], *(f"  {n}. {t}" for n, t in enumerate(ark_steps(lang), 1))]
+        ark_first = res.get("primary") != "kimi"          # mainland or unknown: Ark's steps first; HK / MO: after Bailian (P335)
+        if ark_first:
+            out += ark_block
+        out.append(KIMI_HEAD[i])
         out.append("→ " + link_line(res["link"], lang))
         out += [f"  {n}. {t}" for n, t in enumerate(steps(lang, res["env_file"]), 1)]
         out.append(GLOBAL_NOTE[i].format(**data()))
         out.append("或者不用 OpenCode，用 Kimi 自己的 Kimi Code CLI 接同一个会员（让主人选）：" if i == 0 else
                    "Or, instead of OpenCode, Kimi's own Kimi Code CLI on the same membership (let the owner choose):")
         out += [f"  {n}. {t}" for n, t in enumerate(kimi_cli_steps(lang), 1)]
-        out.append("并列推荐：阿里百炼 Token Plan 个人版（大陆直连，OpenCode 或 Qwen Code）：" if i == 0 else
-                   "Side by side: Alibaba Cloud Bailian Token Plan, personal (mainland China, OpenCode or Qwen Code):")
+        out.append("也可以：阿里百炼 Token Plan 个人版（中国大陆，OpenCode 或 Qwen Code；先看下面的数据条款）：" if i == 0 else
+                   "Also possible: Alibaba Cloud Bailian Token Plan, personal (mainland China, OpenCode or Qwen Code; read its "
+                   "data terms below first):")
         out += [f"  {n}. {t}" for n, t in enumerate(bailian_steps(lang), 1)]
+        if not ark_first:
+            out += ark_block
         out.append("备选：" if i == 0 else "Alternatives:")
         out += [f"  - {a[lang]} {a['url']} — `{a['how']}`" + (f"（{a['env']}）" if lang == "zh" and a.get("env") else
                 f" ({a['env']})" if a.get("env") else "") for a in res["alternatives"]]
@@ -347,7 +414,9 @@ def run(st=None, environ: dict | None = None, signals: dict | None = None, call=
                link=invite(st, call, use_platform and res["route"] in ("kimi", "unsure")),
                model=data()["model"], key_env=data()["key_env"], alternatives=alternatives(h["region"]),
                harness_options=list(HARNESS_OPTIONS) if res["route"] in ("kimi", "unsure") else [],
-               bailian=bailian_info() if res["route"] in ("kimi", "unsure") else None)
+               bailian=bailian_info() if res["route"] in ("kimi", "unsure") else None,
+               primary=primary(h["region"]) if res["route"] in ("kimi", "unsure") else None,
+               ark=ark_info() if res["route"] in ("kimi", "unsure") else None)
     _save(st, res)
     return res
 

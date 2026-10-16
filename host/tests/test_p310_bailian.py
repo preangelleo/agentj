@@ -97,9 +97,9 @@ class Preset(ConfigHome):
             zh, en = bailian.render(r, "zh"), bailian.render(r, "en")
         for t in (zh, en, json.dumps(r)):
             self.assertNotIn(SENTINEL, t)
-        for s in ("¥39", "¥139", "45,000 Credits", "交互使用", "非交互批量调用", "模型优化", "不能共享", "不会把 Token Plan 的 Key 交给定时任务或 bot"):
+        for s in ("¥39", "¥139", "45,000 Credits", "定时任务", "限流", "模型优化", "不能共享", "不会把 Token Plan 的 Key 交给 bot"):   # P348
             self.assertIn(s, zh)
-        for s in ("interactive use", "non-interactive batch", "improve", "no sharing", "never gives"):
+        for s in ("scheduled tasks", "rate-limit", "improve", "no sharing", "never gives it the Token Plan key"):
             self.assertIn(s, en)
 
     def test_verify_for_and_model_note(self):
@@ -196,11 +196,11 @@ class Boundaries(unittest.TestCase):
         self.assertEqual(res["bailian"]["harness_options"], ["opencode", "qwen"])
         self.assertEqual([t["cny_month"] for t in res["bailian"]["tiers"]], [39, 79, 139, 499])
         zh, en = ai_route.render(res, "zh"), ai_route.render(res, "en")
-        self.assertIn("并列", zh)
+        self.assertIn("也可以：阿里百炼 Token Plan", zh)                          # P328: an option next to Ark / Kimi
         self.assertLess(zh.index("Kimi 会员"), zh.index("阿里百炼 Token Plan"))
-        for s in ("agentj provider bailian", "¥139", "非交互批量调用", "模型优化", "agentj agent switch qwen"):
+        for s in ("agentj provider bailian", "¥139", "限流", "模型优化", "agentj agent switch qwen"):
             self.assertIn(s, zh)
-        self.assertIn("side by side", en)
+        self.assertIn("Also possible: Alibaba Cloud Bailian Token Plan", en)
         self.assertIn("这是 Agent J 官方的邀请链接，您和我们各得一次抽奖", zh)        # P279's disclosure unchanged
         off = ai_route.run(None, signals={"anthropic": "ok", "openai": "ok", "kimi": "ok"}, use_platform=False)
         self.assertIsNone(off["bailian"])
@@ -221,12 +221,13 @@ class QwenKeys(unittest.TestCase):
         env = {"HOME": str(self.home)}
         src = {"DASHSCOPE_API_KEY": "d", "BAILIAN_TOKEN_PLAN_API_KEY": SENTINEL}
         k = agent_qwen.key_environment(env, None, source=src)
-        self.assertEqual((k["OPENAI_API_KEY"], k["OPENAI_MODEL"], k["QWEN_CODE_DISABLE_CRON"]), (SENTINEL, "qwen3.8-max", "1"))
+        self.assertEqual((k["OPENAI_API_KEY"], k["OPENAI_MODEL"]), (SENTINEL, "qwen3.8-max"))
+        self.assertNotIn("QWEN_CODE_DISABLE_CRON", k)                   # P348: the owner's own schedules may use the plan
         self.assertEqual(k["OPENAI_BASE_URL"], "https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1")
         self.assertEqual(agent_qwen.key_environment(env, "qwen3.8-flash", source=src)["OPENAI_MODEL"], "qwen3.8-flash")
         self.assertEqual(agent_qwen.key_environment(env, "kimi-k3", source=src)["OPENAI_MODEL"], "qwen3.8-max")
         k = agent_qwen.key_environment(env, None, source={"DASHSCOPE_API_KEY": "d"})
-        self.assertNotIn("QWEN_CODE_DISABLE_CRON", k)                   # pay as you go: unattended use allowed
+        self.assertNotIn("QWEN_CODE_DISABLE_CRON", k)
         self.assertEqual(agent_qwen.key_environment(env, None, source={}), {})
 
     def test_owner_settings_win_and_facts_are_names_only(self):
@@ -298,7 +299,7 @@ class QwenAcp(AcpCase):
         await a.turn("ENV")
         got = json.loads(self.host.texts[-1][5:])
         self.assertEqual(got, {"key": True, "base": "https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1",
-                               "model": "qwen3.8-flash", "cron_off": "1"})
+                               "model": "qwen3.8-flash", "cron_off": None})   # P348
         self.assertNotIn(SENTINEL, self.log.read_text())
         self.assertFalse((self.d / "home" / ".qwen" / "settings.json").exists())      # nothing written to Qwen's settings
         names = [m["id"] for m in a.models_cache]
@@ -310,14 +311,20 @@ class QwenAcp(AcpCase):
         self.assertIsNone(a.proc)                                                      # restarted with the new OPENAI_MODEL
         self.assertEqual((await a.cmd_model("gpt-6")).kind, "error")
 
-    async def test_task_runner_never_gets_the_key(self):
-        os.environ["BAILIAN_TOKEN_PLAN_API_KEY"] = SENTINEL
+    async def test_task_runner_gets_the_plan_key_never_pay_as_you_go(self):   # P348 (was: never gets the key)
+        os.environ["DASHSCOPE_API_KEY"] = SENTINEL
         from test_p305_kimi import FakeHost, FakeSt
         self.host = FakeHost(FakeSt())
         self.agent = agent_qwen.QwenAgent(self.host, {"kind": "qwen", "dir": str(self.d / "work"), "fence": False}, persist=False)
         text, code = await self.agent.run_once("ENV")
         self.assertEqual(code, 0)
-        self.assertEqual(json.loads(text[5:])["key"], False)
+        self.assertEqual(json.loads(text[5:])["key"], False)                       # pay as you go: never a task
+        os.environ["BAILIAN_TOKEN_PLAN_API_KEY"] = SENTINEL
+        self.agent = agent_qwen.QwenAgent(self.host, {"kind": "qwen", "dir": str(self.d / "work"), "fence": False}, persist=False)
+        text, code = await self.agent.run_once("ENV")
+        got = json.loads(text[5:])
+        self.assertEqual((code, got["key"], got["cron_off"]), (0, True, None))     # the owner's own task runs on the plan
+        self.assertNotIn(SENTINEL, text)
         self.agent = None
 
     async def test_no_key_is_a_login_hint(self):

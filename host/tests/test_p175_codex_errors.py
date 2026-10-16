@@ -107,7 +107,7 @@ class Classify(unittest.TestCase):
             line = codex_failure("weird", None, lang)[1].split("\n\n")[0]
             self.assertIn(CODEX_FEEDBACK, line)
             self.assertIn("截图" if lang == "zh" else "screenshot", line)
-        self.assertEqual(CODEX_FEEDBACK, "me@agentj.app")
+        self.assertEqual(CODEX_FEEDBACK, "feedback@agentj.app")  # P341 (#25)
 
     def test_crash_names_the_exit_code(self):
         self.assertIn("137", codex_failure("Codex 退出了（137）", None)[1])

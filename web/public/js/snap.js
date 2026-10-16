@@ -24,6 +24,17 @@ const nowS = () => Date.now() / 1000;
 const CATS = ['spend', 'delete', 'send', 'credentials', 'price', 'opaque'];
 
 // ---------------------------------------------------------------- requests that need a human
+// P339: a goal card in plain words — who wants it (≤ 60), what, as a verb phrase in the host's language (≤ 160), and on a
+// `hold` card the extra goal grant the host offers (≤ 300). who / what are display text: one line, control characters out.
+// goal_add is SIGNED (api.approve → mailAllowMessage over [goal_add]), so it is kept byte-exact or dropped, never cut.
+const oneLine = (v, n) => (typeof v === 'string' ? v.replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, n) : '');
+export function goalWords(m) {
+  const goal = ['auto', 'hold', 'attack'].includes(m.goal) ? m.goal : '';
+  if (!goal) return { goal_who: '', goal_what: '', goal_add: '' };
+  const add = goal === 'hold' && typeof m.goal_add === 'string' && m.goal_add.trim() && m.goal_add.length <= 300
+    && !/[\u0000-\u001f\u007f]/.test(m.goal_add) ? m.goal_add : '';
+  return { goal_who: oneLine(m.goal_who, 60), goal_what: oneLine(m.goal_what, 160), goal_add: add };
+}
 export function addAsk(m) {
   if (typeof m.id !== 'string' || !/^[0-9a-f]{32}$/.test(m.id) || typeof m.tool !== 'string' || typeof m.summary !== 'string') return;
   if (S.asks.has(m.id)) return;
@@ -39,6 +50,7 @@ export function addAsk(m) {
     task: typeof m.task === 'string' ? m.task.slice(0, 80) : '',
     allow_offer: m.tool === 'agentj mail send' && Array.isArray(m.allow_offer) ? m.allow_offer.filter((a) => typeof a === 'string' && a.length <= 254).slice(0, 10) : [],   // P296
     goal: ['auto', 'hold', 'attack', 'grant'].includes(m.goal) ? m.goal : '', goal_why: typeof m.goal_why === 'string' ? m.goal_why.slice(0, 120) : '',   // P158
+    ...goalWords(m),                                                                                                       // P339
     at: nowS(), deadline: Date.now() + ttl * 1000, state: 'open', final_at: null,
     ...(m.tool === 'friend_request' && m.fr && typeof m.fr === 'object' ? { fr: m.fr } : {}),     // display-only copies (friends.js)
     ...(m.tool === 'peer_question' && m.pq && typeof m.pq === 'object' ? { pq: m.pq } : {}) });
@@ -162,7 +174,7 @@ export function dropReplacement(s) {
   if (!s.includes('\ufffd')) return s;
   return s.replace(/^\s*\ufffd[\s\ufffd]*|[\s\ufffd]*\ufffd\s*$/g, '').replace(/^[ \t]*\ufffd+[ \t]*(?:\n|$)/gm, '');
 }
-/** Agent J turn (wire) → the page's turn {id, ts (s), source, reply, end, card, part}. */
+/** Agent J turn (wire) → the page's turn {id, ts (s), source, reply, end, card, part, pre?}. */
 export function toPage(t) {
   if (!t || !Number.isInteger(t.id) || t.id < 0) return null;
   const src = t.src && typeof t.src === 'object' ? t.src : {};
@@ -181,6 +193,7 @@ export function toPage(t) {
       text: typeof src.text !== 'string' ? '' : k === 'telegram' ? src.text.replace(TG_SOURCE_LINE, '') : src.text, quote: q, att, local: src.local === true, ...(k === 'sys' && typeof src.notice_id === 'string' && /^[A-Za-z0-9_-]{22}$/.test(src.notice_id) ? {notice_id:src.notice_id} : {}), ...(k === 'agent' && ['loop', 'task', 'quota'].includes(src.via) ? {via: src.via} : {}) },
     reply: typeof reply.text === 'string' ? dropReplacement(reply.text) : '',
     part: Array.isArray(reply.part) && reply.part.length === 2 ? reply.part.map(Number) : null,
+    ...(typeof reply.pre === 'string' && reply.pre ? { pre: dropReplacement(reply.pre) } : {}),   // P351: a silent turn's notes
     end: ['open', 'done', 'stopped', 'failed'].includes(t.end) ? t.end : 'done',
     card: t.card && typeof t.card === 'object' ? t.card : null,
     ...((m) => ({ media: m.media, mediaSkip: m.skip }))(mediaOf(t)),   // F21: files the reply shows (§13)

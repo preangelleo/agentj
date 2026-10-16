@@ -1,0 +1,15 @@
+Agent J
+Copyright 2025-2026 The Agent J authors
+
+This product includes software developed by the Agent J project (https://github.com/preangelleo/agentj).
+
+This product bundles third-party components, each under its own license:
+
+- web/public/vendor/: jsQR (Apache-2.0), highlight.js (BSD-3-Clause), KaTeX (MIT), mermaid (MIT),
+  pdf.js (Apache-2.0), mammoth (BSD-2-Clause), SheetJS Community Edition (Apache-2.0).
+  Versions, sources and license files: web/public/vendor/VERSIONS.md and the LICENSE file next to each library.
+- web/public/brand/fonts/ and host/agentj/admin/brand/fonts/: Ubuntu font (Ubuntu Font Licence 1.0) and
+  Lexend (SIL Open Font License 1.1); license texts in the same folders.
+- host/agentj/config/: data derived from the CMU Pronouncing Dictionary, Copyright (C) 1993-2015 Carnegie Mellon
+  University; see host/agentj/config/CMUDICT-LICENSE.txt.
+- android/gradle/wrapper/: the Gradle Wrapper (Apache-2.0).

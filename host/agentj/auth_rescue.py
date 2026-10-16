@@ -836,34 +836,34 @@ def heartbeat_line(st, lang: str) -> str | None:
         return None
     d = max(due["days_left"], 0)
     if lang == "en":
-        return (f"Agent J: the Claude Code login expires in {d} days ({due['expires']}). Tell the owner: Settings → AI login "
+        return (f"Agent J: the Claude Code login expires in {d} days ({due['expires']}). Tell the owner: Settings → Emergency repair → AI login "
                 "rescue → Renew now (one sign-in on the phone; never ask for the token in chat).")
-    return (f"Agent J 提示：Claude Code 登录还有 {d} 天到期（{due['expires']}）。请提醒主人：设置 → AI 登录救援 → 现在续期"
+    return (f"Agent J 提示：Claude Code 登录还有 {d} 天到期（{due['expires']}）。请提醒主人：设置 → 紧急修复 → AI 登录救援 → 现在续期"
             "（手机上授权一次即可；绝不在对话里索要 token）。")
 
 
 # ------------------------------------------------------------------ the manager serve owns
 TEXT = {
     "zh": {
-        "alert_login": "{h} 的订阅登录已过期，Agent J 暂时不能回复。打开 设置 → AI 登录救援，在手机上一键重新登录（不用回电脑）。",
+        "alert_login": "{h} 的订阅登录已过期，Agent J 暂时不能回复。打开 设置 → 紧急修复 → AI 登录救援，在手机上一键重新登录（不用回电脑）。",
         "alert_balance": "{h} 的余额 / 额度不足：到服务商网站充值即可，不需要重新登录。",
-        "warn_token": "Claude Code 登录还有 {d} 天到期（{e}）。打开 设置 → AI 登录救援 → 现在续期：在手机上授权一次就换上新的，不用回电脑。",
-        "warn_today": "Claude Code 登录今天到期（{e}）。打开 设置 → AI 登录救援 → 现在续期：在手机上授权一次就换上新的，不用回电脑。",
-        "health_login": "每日体检：{h} 的登录已失效（可能在网页上退出了全部设备，或被官方撤销）。打开 设置 → AI 登录救援，在手机上重新登录。",
+        "warn_token": "Claude Code 登录还有 {d} 天到期（{e}）。打开 设置 → 紧急修复 → AI 登录救援 → 现在续期：在手机上授权一次就换上新的，不用回电脑。",
+        "warn_today": "Claude Code 登录今天到期（{e}）。打开 设置 → 紧急修复 → AI 登录救援 → 现在续期：在手机上授权一次就换上新的，不用回电脑。",
+        "health_login": "每日体检：{h} 的登录已失效（可能在网页上退出了全部设备，或被官方撤销）。打开 设置 → 紧急修复 → AI 登录救援，在手机上重新登录。",
         "recovered": "{h} 已重新登录并恢复：重启后没有待确认的界面，测试消息已拿到回复。",
         "partial": "{h} 新登录已写入，但自检没有通过：{why}",
         "confirm_title": "AI 登录救援：重新登录 {h}",
     },
     "en": {
-        "alert_login": "{h}'s subscription login expired; Agent J cannot reply. Open Settings → AI login rescue to sign in "
+        "alert_login": "{h}'s subscription login expired; Agent J cannot reply. Open Settings → Emergency repair → AI login rescue to sign in "
                        "again from the phone (no need to go back to the computer).",
         "alert_balance": "{h} is out of balance / quota: top up on the provider's site — no new sign-in needed.",
-        "warn_token": "The Claude Code login expires in {d} days ({e}). Settings → AI login rescue → Renew now: approve once on "
+        "warn_token": "The Claude Code login expires in {d} days ({e}). Settings → Emergency repair → AI login rescue → Renew now: approve once on "
                       "the phone and the new one is in place — no need to go back to the computer.",
-        "warn_today": "The Claude Code login expires today ({e}). Settings → AI login rescue → Renew now: approve once on the "
+        "warn_today": "The Claude Code login expires today ({e}). Settings → Emergency repair → AI login rescue → Renew now: approve once on the "
                       "phone and the new one is in place — no need to go back to the computer.",
         "health_login": "Daily check: {h}'s login no longer works (signed out of all devices on the web, or revoked). Open "
-                        "Settings → AI login rescue to sign in again from the phone.",
+                        "Settings → Emergency repair → AI login rescue to sign in again from the phone.",
         "recovered": "{h} is signed in again: no prompt waiting after the restart, and a test message got a reply.",
         "partial": "{h}'s new login is written, but the self-check failed: {why}",
         "confirm_title": "AI login rescue: sign in to {h} again",
@@ -1299,8 +1299,8 @@ class Rescue:
             self.flow["why"] = b[self.lang()]
             self.broadcast()
             self.host.agent_notice(self.t("partial", h=LABEL[kind], why=b[self.lang()] +
-                                          ("（可在 设置 → AI 登录救援 里点「代按确认」）" if b["action"] == "confirm" and self.lang() == "zh"
-                                           else " (Settings → AI login rescue → Press it for me)" if b["action"] == "confirm" else "")))
+                                          ("（可在 设置 → 紧急修复 → AI 登录救援 里点「代按确认」）" if b["action"] == "confirm" and self.lang() == "zh"
+                                           else " (Settings → Emergency repair → AI login rescue → Press it for me)" if b["action"] == "confirm" else "")))
             return {"ok": False, "why": "blocked", "screen": b["id"]}
         d = await asyncio.to_thread(harness.probe, (kind,))
         row = next((h for h in d.get("harnesses", []) if h.get("name") == kind), {})

@@ -637,8 +637,11 @@ def cred_path(p: str) -> str | None:
 
 # A5 (P139): the files that hold an Agent's hooks — Agent J's shared-mode approvals live there, so a session rewriting them
 # could approve itself. Writes are a credential change that asks every time (ALWAYS_CARD), never covered by a grant.
-_HOOK_FILES = re.compile(r"(?:^|/)(?:\.claude/settings(?:\.local)?\.json|\.codex/hooks\.json)$")
-_HOOK_TEXT = re.compile(r"\.claude/settings(?:\.local)?\.json|\.codex/hooks\.json")
+# P329: DeepSeek Harness' own patch layers, route, key store and profiles decide its approvals and plugins (serve also checks
+# them outside the fence before every start: agent_dsh.prepare).
+_DSH = r"\.dsh/(?:cordis\.patch\.yml|agentj-route\.yml|agentj-deepseek\.yml|\.credentials\.yaml|\.env|profiles/[^/\s'\"]+/[^/\s'\"]+)"
+_HOOK_FILES = re.compile(r"(?:^|/)(?:\.claude/settings(?:\.local)?\.json|\.codex/hooks\.json|" + _DSH + r")$")
+_HOOK_TEXT = re.compile(r"\.claude/settings(?:\.local)?\.json|\.codex/hooks\.json|" + _DSH)
 _HOOK_CODE = re.compile(r"(?:^|[\s;&|(])(?:python[0-9.]*|node|nodejs|perl|ruby|deno|bun|php)(?:\s|$)")
 _HOOK_WRITE = re.compile(r"open\(|write|dump|unlink|remove|rename|replace|truncate|>")
 ALWAYS_CARD = frozenset({"credentials:hooks"})
@@ -2229,8 +2232,10 @@ def classify_shared(tool: str, tool_input, extra=None, mode: str = "standard") -
     policy. P128 `mode`: "standard" (default) asks for a credential only when it CHANGES or is SHOWN on screen — a program
     reading .env by name, or a note / commit message that merely mentions it, does not ask; "strict" = the P40 rule (any
     credential path anywhere in the call asks). Spend / send / public delete rules are the same in both modes.
+    P336 "safe" (the owner's safe approval level) = strict + every deletion, local files too.
     """
-    strict = mode == "strict"
+    strict = mode in ("strict", "safe")
+    alldel = mode == "safe"
     if tool in ('exec_command', 'shell_command'):
         inp = tool_input if isinstance(tool_input, dict) else {}
         tool, tool_input = 'Bash', {'command': inp.get('cmd', inp.get('command', ''))}
@@ -2254,13 +2259,13 @@ def classify_shared(tool: str, tool_input, extra=None, mode: str = "standard") -
         items += [x for x in real if x[1] not in {r for _, r, _ in items}]
     rules = [r for _, r, _ in items]
     cred_rules = [r for r in rules if r.startswith("cred.") or r == "extra.credentials"]
-    cats = [c for c in v.cats if c in ('spend', 'send', 'opaque') or
+    cats = [c for c in v.cats if c in ('spend', 'send', 'opaque') or (c == 'delete' and alldel) or
             (c == 'delete' and any(r in _SHARED_PUBLIC_DELETE or
              r.startswith(('delete.gh_', 'delete.npm', 'delete.pypi', 'delete.cargo')) for r in rules))]
     if cred_rules:
         cats.append('credentials')
     keep = set(cats) | {"credentials"}
-    rules = [r for c, r, _ in items if c in keep and (c not in ("delete", "opaque") or c == "opaque" or
+    rules = [r for c, r, _ in items if c in keep and (c not in ("delete", "opaque") or c == "opaque" or alldel or
                                                        r in _SHARED_PUBLIC_DELETE or
                                                        r.startswith(('delete.gh_', 'delete.npm', 'delete.pypi', 'delete.cargo')))
              and (c != "credentials" or r in cred_rules)]

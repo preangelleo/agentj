@@ -81,6 +81,49 @@ class V2Pieces(unittest.TestCase):
         self.assertIn({"action": "shell", "resource": "rm *", "effect": "deny"}, r)
         self.assertNotIn("ask", {x["effect"] for x in r})
 
+    def test_v2_action_names_p357(self):
+        """P357: v2 renames v1 actions only while loading a config file, never for session-API rules — our rules must
+        arrive with v2's names (2.0.31: shell, subagent, edit), or the subagent deny matches nothing."""
+        def ev(action, resource, rules):          # v2 Permission.evaluate: last rule matching action + resource, none → ask
+            return oc.evaluate(action, resource, [{"permission": r["action"], "pattern": r["resource"],
+                                                   "action": r["effect"]} for r in rules])
+
+        def wholly_off(action, rules):            # v2 tool.ts whollyDisabled: the tool is not even offered to the model
+            hit = [r for r in rules if oc.wildcard(action, r["action"])]
+            return bool(hit) and hit[-1]["resource"] == "*" and hit[-1]["effect"] == "deny"
+
+        # the general agent's own rules allow everything (like the e2e human); a write deny the human set must stay a deny
+        agent = oc2.rules_from_v2([{"action": "*", "resource": "*", "effect": "allow"},
+                                   {"action": "subagent", "resource": "*", "effect": "allow"}])
+        self.assertEqual(agent[1]["permission"], "task")
+        hi = oc2.rules_to_v2(oc.session_rules(agent + [oc._rule("write", "secret/*", "deny")]))
+        self.assertNotIn("task", {r["action"] for r in hi})
+        self.assertNotIn("bash", {r["action"] for r in hi})
+        for sub in ("general", "explore", "my-reviewer"):
+            self.assertEqual(ev("subagent", sub, hi), "deny")
+        self.assertTrue(wholly_off("subagent", hi))
+        self.assertEqual(ev("shell", "rm -rf x", hi), "ask")
+        self.assertEqual(ev("shell", "ls -la", hi), "allow")
+        self.assertEqual(ev("edit", "secret/a.txt", hi), "deny")          # v1 write → v2 edit, still deny
+        self.assertEqual(ev("edit", "src/a.py", hi), "ask")
+        self.assertEqual(ev("read", ".env", hi), "ask")
+        self.assertEqual(ev("execute", "*", hi), "ask")                   # Code Mode on, each inner call asks itself
+        self.assertFalse(wholly_off("execute", hi))
+        research = oc2.rules_to_v2(oc.session_rules(agent, research=True))
+        self.assertEqual(ev("subagent", "general", research), "deny")
+        self.assertTrue(wholly_off("execute", research))                  # read-only run: no Code Mode at all
+        # the v1 → v2 names, and unknown names kept as they are (neither dropped nor widened)
+        v1 = [oc._rule(p, "*", "deny") for p in ("bash", "task", "write", "patch", "edit", "list", "lsp", "todowrite",
+                                                 "doom_loop", "codesearch", "my_mcp_tool", "*")]
+        self.assertEqual([r["action"] for r in oc2.rules_to_v2(v1)],
+                         ["shell", "subagent", "edit", "edit", "edit", "list", "lsp", "todowrite", "doom_loop",
+                          "codesearch", "my_mcp_tool", "*"])
+        self.assertEqual({r["effect"] for r in oc2.rules_to_v2(v1)}, {"deny"})
+        # `list` must not become `read`: our `list * allow` would land after `read *.env ask`
+        self.assertEqual(ev("read", "a/.env", oc2.rules_to_v2(oc.our_rules())), "ask")
+        # the tamper check compares both sides through rules_from_v2: still "ours" after a write deny became edit
+        self.assertTrue(oc.ends_with_ours(oc2.rules_from_v2(hi), oc2.rules_from_v2(hi)))
+
     def test_permission_request_shape(self):
         req = oc2.to_v1_request({"id": "per_1", "action": "shell", "resources": ["rm -rf x"], "save": ["rm *"]})
         self.assertEqual(oc.to_tool(req, "/w"), ("Bash", {"command": "rm -rf x"}))
@@ -282,10 +325,10 @@ class V2Chain(unittest.TestCase):
             await c.wait(lambda: any("「deepseek」的账户授权或 API Key 不可用" in m for m in c.msgs()))
             await c.idle()
             self.assertNotEqual(await self._whoami(c), before, "a fresh serve after a key failure")
-            # 6. 401 → single-language phone Models & Key path
-            previous_key_notices = sum("模型与 Key" in m for m in c.msgs())
+            # 6. 401 → single-language phone Models & API keys path
+            previous_key_notices = sum("模型和 API Key" in m for m in c.msgs())
             await c.say("BADKEY")
-            await c.wait(lambda: sum("模型与 Key" in m for m in c.msgs()) > previous_key_notices)
+            await c.wait(lambda: sum("模型和 API Key" in m for m in c.msgs()) > previous_key_notices)
             await c.idle()
             ev = [json.loads(x) for x in self.st.log_path.read_text().splitlines()]
             self.assertIn("v2", [e.get("version") for e in ev if e.get("ev") == "agent_protocol"])
